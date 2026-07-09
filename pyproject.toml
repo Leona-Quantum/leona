@@ -5,7 +5,7 @@ requires-python = ">=3.12"
 dependencies = ["majorana-contracts"]
 
 [dependency-groups]
-dev = ["pytest>=8"]
+dev = ["pytest>=8", "ruff>=0.14"]
 
 [tool.uv.workspace]
 members = ["services/api", "services/worker", "packages/py/*"]
