@@ -2,7 +2,7 @@
 
 | Name | Store | Consumer | Created |
 |---|---|---|---|
-| SNYK_TOKEN | GitHub Actions secret (repo) | security.yml Snyk job | 2026-07-10 |
+| SNYK_TOKEN | GitHub Actions secret (repo) | security.yml Snyk job | 2026-07-09 (UTC) |
 
 ## Infrastructure projects (names only)
 
