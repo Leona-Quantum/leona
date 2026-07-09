@@ -2,9 +2,21 @@
 name = "majorana-workspace"
 version = "0.0.0"
 requires-python = ">=3.12"
+dependencies = ["majorana-contracts"]
+
+[dependency-groups]
+dev = ["pytest>=8"]
 
 [tool.uv.workspace]
 members = ["services/api", "services/worker", "packages/py/*"]
+
+[tool.uv]
+# hardlink mode writes .pth files flagged UF_HIDDEN on macOS (uv 0.11.x), and
+# Python 3.13 silently skips hidden .pth files — editable installs break.
+link-mode = "copy"
+
+[tool.uv.sources]
+majorana-contracts = { workspace = true }
 
 [tool.ruff]
 line-length = 100

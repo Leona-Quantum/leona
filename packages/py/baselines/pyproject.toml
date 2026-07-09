@@ -1,0 +1,5 @@
+# Stub — real package lands in its phase (plans/rebuild/08-phases.md)
+[project]
+name = "majorana-baselines"
+version = "0.0.0"
+requires-python = ">=3.12"
