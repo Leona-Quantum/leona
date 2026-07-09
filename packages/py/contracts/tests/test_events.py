@@ -107,6 +107,19 @@ def test_every_event_type_round_trips():
         assert run_event_adapter.validate_python(wire) == event
 
 
+def test_lossy_export_requires_reason():
+    lossy = {
+        **ENVELOPE,
+        "type": "export.classified",
+        "status": "lossy_with_reason",
+        "qasm_available": False,
+    }
+    with pytest.raises(ValidationError):
+        run_event_adapter.validate_python(lossy)
+    event = run_event_adapter.validate_python({**lossy, "reason": "mid-circuit reset dropped"})
+    assert event.reason == "mid-circuit reset dropped"
+
+
 def test_stage_enum_covers_pipeline_order():
     assert [s.value for s in Stage] == [
         "plan",

@@ -10,3 +10,6 @@ __pycache__/
 .turbo/
 coverage/
 report.json
+.venv
+.venv.nosync/
+.DS_Store

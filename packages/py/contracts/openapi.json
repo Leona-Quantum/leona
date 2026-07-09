@@ -1479,6 +1479,7 @@
         "type": "object"
       },
       "Scope": {
+        "additionalProperties": false,
         "properties": {
           "role": {
             "$ref": "#/components/schemas/Role"

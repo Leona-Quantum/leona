@@ -7,7 +7,7 @@ from datetime import datetime
 from typing import Annotated, Any, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
+from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, model_validator
 
 from .enums import (
     BaselineKind,
@@ -119,6 +119,12 @@ class ExportClassified(_EventBase):
         default=None, description="Required when status is lossy_with_reason"
     )
     qasm_available: bool
+
+    @model_validator(mode="after")
+    def _reason_required_when_lossy(self) -> "ExportClassified":
+        if self.status is ExportStatus.LOSSY_WITH_REASON and not self.reason:
+            raise ValueError("reason is required when status is lossy_with_reason")
+        return self
 
 
 class ArtifactSaved(_EventBase):

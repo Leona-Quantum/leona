@@ -10,7 +10,7 @@ from .enums import Role
 
 
 class Scope(BaseModel):
-    model_config = ConfigDict(frozen=True)
+    model_config = ConfigDict(frozen=True, extra="forbid")
 
     user_id: UUID
     workspace_id: UUID

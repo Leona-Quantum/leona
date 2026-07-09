@@ -11,8 +11,10 @@ dev = ["pytest>=8", "ruff>=0.14"]
 members = ["services/api", "services/worker", "packages/py/*"]
 
 [tool.uv]
-# hardlink mode writes .pth files flagged UF_HIDDEN on macOS (uv 0.11.x), and
-# Python 3.13 silently skips hidden .pth files — editable installs break.
+# This repo lives under iCloud-synced ~/Documents; iCloud flags venv .pth files
+# UF_HIDDEN and Python 3.13 silently skips hidden .pth files, breaking editable
+# installs. Local venv must be .venv.nosync (iCloud-excluded) with a .venv
+# symlink; copy link-mode keeps cache inodes from inheriting the flag.
 link-mode = "copy"
 
 [tool.uv.sources]
