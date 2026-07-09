@@ -30,7 +30,8 @@ jobs:
       - if: steps.token.outputs.have == 'true'
         run: |
           snyk test --all-projects --severity-threshold=high
-          snyk code test --severity-threshold=high
+          # exit 3 = no supported source files yet (scaffold); real once Phase 1 lands
+          snyk code test --severity-threshold=high || { ec=$?; [ "$ec" -eq 3 ] && echo "Snyk Code: no supported files yet — treated as pass" || exit "$ec"; }
         env:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
       - if: steps.token.outputs.have != 'true'
