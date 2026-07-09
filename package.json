@@ -1,0 +1,14 @@
+{
+  "name": "majorana",
+  "private": true,
+  "packageManager": "pnpm@11.10.0",
+  "scripts": {
+    "lint": "turbo run lint",
+    "typecheck": "turbo run typecheck",
+    "test": "turbo run test",
+    "build": "turbo run build"
+  },
+  "devDependencies": {
+    "turbo": "^2.5.8"
+  }
+}

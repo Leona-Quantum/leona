@@ -1,10 +1,30 @@
-# Phase 0 stub — becomes fully real in Phase 1 (plans/rebuild/03-repo-structure.md §4)
+# Phase 0 minimal gates — real machinery, vacuous until packages land. Phase 1
+# makes this fully real: contracts-gen diff, import-linter, authz suite, migration
+# up/down vs Neon branch (plans/rebuild/03-repo-structure.md §4).
 name: ci
 on:
   pull_request:
+
 jobs:
-  placeholder:
+  ts:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - run: echo "CI gates land in Phase 0 step 4 / Phase 1; see plans/rebuild/08-phases.md"
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 26
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm turbo run lint typecheck test
+
+  py:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.12"
+      - run: uvx ruff check .
+      # exit 5 = "no tests collected" — acceptable only until Phase 1 lands real suites
+      - run: uvx pytest || { rc=$?; [ "$rc" -eq 5 ] && echo "no tests yet (Phase 0)"; [ "$rc" -eq 5 ]; }
