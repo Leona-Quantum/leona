@@ -1,6 +1,6 @@
-# Phase 1 gates (contracts landed; import-linter, authz suite, migration up/down
-# vs Neon branch arrive with their steps — plans/rebuild/03-repo-structure.md §4).
-# Job names ts/py are required checks on dev+prod — do not rename.
+# Phase 1 gates (contracts + migrations landed; import-linter and authz suite
+# arrive with their steps — plans/rebuild/03-repo-structure.md §4).
+# Job names ts/py/db are required checks on dev+prod — do not rename.
 # Contracts chain (ADR-0008): models are truth → py job verifies openapi.json is
 # current → ts job regenerates schema.d.ts and fails on diff.
 name: ci
@@ -37,3 +37,37 @@ jobs:
       - run: uv run pytest -q
       - name: openapi.json is current
         run: uv run python -m majorana_contracts.export --check
+
+  # Migration gate (04-database.md §4): up→down→up + seed against a fresh Neon
+  # branch on every PR; B-D3 budget (<60 s) enforced by `timeout`.
+  db:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.12"
+      - run: uv sync --all-packages --frozen
+      - uses: neondatabase/create-branch-action@v5
+        id: neon
+        with:
+          project_id: twilight-wildflower-01313590
+          branch_name: ci-pr${{ github.event.number }}-run${{ github.run_id }}
+          api_key: ${{ secrets.NEON_API_KEY }}
+      - name: migrate up→down→up (B-D3 <60s) + seed
+        env:
+          DATABASE_URL: ${{ steps.neon.outputs.db_url }}
+        run: |
+          timeout 60 bash -c '
+            set -e
+            uv run --package majorana-api alembic -c db/alembic.ini upgrade head
+            uv run --package majorana-api alembic -c db/alembic.ini downgrade base
+            uv run --package majorana-api alembic -c db/alembic.ini upgrade head
+          '
+          uv run --package majorana-api python db/seeds/seed.py
+      - uses: neondatabase/delete-branch-action@v3
+        if: always()
+        with:
+          project_id: twilight-wildflower-01313590
+          branch: ci-pr${{ github.event.number }}-run${{ github.run_id }}
+          api_key: ${{ secrets.NEON_API_KEY }}

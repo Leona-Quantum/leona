@@ -3,6 +3,7 @@
 | Name | Store | Consumer | Created |
 |---|---|---|---|
 | SNYK_TOKEN | GitHub Actions secret (repo) | security.yml Snyk job | 2026-07-09 (UTC) |
+| NEON_API_KEY | GitHub Actions secret (repo) | ci.yml db job (branch create/delete) — Neon org API key `gh-ci-majorana` | 2026-07-10 |
 
 ## Infrastructure projects (names only)
 

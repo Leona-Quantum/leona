@@ -1,5 +1,14 @@
-# Stub — real service lands in Phase 1 steps 5-6
+# Stub — real service lands in Phase 1 steps 5-6. Already owns db/ (Alembic, seeds).
 [project]
 name = "majorana-api"
 version = "0.0.0"
 requires-python = ">=3.12"
+dependencies = [
+    "majorana-contracts",
+    "alembic>=1.16",
+    "sqlalchemy>=2.0",
+    "psycopg[binary]>=3.2",
+]
+
+[tool.uv.sources]
+majorana-contracts = { workspace = true }
