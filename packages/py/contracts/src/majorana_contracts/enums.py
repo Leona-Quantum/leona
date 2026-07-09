@@ -1,0 +1,154 @@
+"""Closed enums shared across every boundary. Values match the DB CHECK constraints
+(plans/rebuild/04-database.md §2) — additive changes only within /v1."""
+
+from enum import StrEnum
+
+
+class Framework(StrEnum):
+    QISKIT = "qiskit"
+    PENNYLANE = "pennylane"
+    CIRQ = "cirq"
+
+
+class RunMode(StrEnum):
+    EXECUTE = "execute"
+    IDEATE = "ideate"
+    EXPLAIN = "explain"
+
+
+class RunStatus(StrEnum):
+    QUEUED = "queued"
+    RUNNING = "running"
+    SUCCEEDED = "succeeded"
+    FAILED = "failed"
+    CANCELLED = "cancelled"
+
+
+class Stage(StrEnum):
+    """Pipeline stages in execution order; the orchestrator owns transitions."""
+
+    PLAN = "plan"
+    GENERATE = "generate"
+    SIMULATE = "simulate"
+    VERIFY = "verify"
+    BASELINE = "baseline"
+    EXPORT = "export"
+    SAVE = "save"
+
+
+class VerifierDecision(StrEnum):
+    PASS = "pass"
+    FAIL = "fail"
+    INCONCLUSIVE = "inconclusive"
+
+
+class VerificationMethod(StrEnum):
+    EXACT = "exact"
+    STATISTICAL = "statistical"
+    BRUTE_FORCE = "brute_force"
+    EXACT_DIAG = "exact_diag"
+    RETURN_CONTRACT = "return_contract"
+    QASM_PARSE = "qasm_parse"
+
+
+class VerificationResultKind(StrEnum):
+    PASS = "pass"
+    FAIL = "fail"
+
+
+class ExportStatus(StrEnum):
+    LOSSLESS = "lossless"
+    LOSSY_WITH_REASON = "lossy_with_reason"
+    DOWNLOAD_ONLY = "download_only"
+    UNSUPPORTED = "unsupported"
+
+
+class Visibility(StrEnum):
+    PRIVATE = "private"
+    PUBLIC = "public"
+
+
+class WorkspaceKind(StrEnum):
+    PERSONAL = "personal"
+    TEAM = "team"
+
+
+class Role(StrEnum):
+    OWNER = "owner"
+    ADMIN = "admin"
+    MEMBER = "member"
+    VIEWER = "viewer"
+
+
+class JobStatus(StrEnum):
+    QUEUED = "queued"
+    RUNNING = "running"
+    DONE = "done"
+    FAILED = "failed"
+    DEAD = "dead"
+
+
+class Algorithm(StrEnum):
+    VQE = "VQE"
+    QAOA = "QAOA"
+    GROVER = "Grover"
+    BELL = "Bell"
+    GHZ = "GHZ"
+    QFT = "QFT"
+    QPE = "QPE"
+    AMPLITUDE_ESTIMATION = "AmplitudeEstimation"
+    STATE_PREPARATION = "StatePreparation"
+    CIRCUIT_SYNTHESIS = "CircuitSynthesis"
+    GATE_DECOMPOSITION = "GateDecomposition"
+    TRANSPILATION = "Transpilation"
+    SIMULATION = "Simulation"
+    ERROR_CORRECTION = "ErrorCorrection"
+    OTHER = "other"
+
+
+class Optimizer(StrEnum):
+    COBYLA = "COBYLA"
+    SPSA = "SPSA"
+    L_BFGS_B = "L_BFGS_B"
+
+
+class ArtifactType(StrEnum):
+    SCRIPT = "script"
+    FUNCTION = "function"
+    CLASS = "class"
+    QUANTUM_CIRCUIT = "QuantumCircuit"
+    OPENQASM = "OpenQASM"
+    COUNTS = "counts"
+    STATEVECTOR = "statevector"
+    OPERATOR = "operator"
+    CLIFFORD = "clifford"
+    PASS_MANAGER = "pass_manager"
+    OTHER = "other"
+
+
+class MeasurementPolicy(StrEnum):
+    NONE = "none"
+    ONLY_IF_REQUESTED = "only_if_requested"
+    MEASURE_ALL = "measure_all"
+    SPECIFIED = "specified"
+    NOT_APPLICABLE = "not_applicable"
+
+
+class TopLevelExecution(StrEnum):
+    REQUIRED = "required"
+    DEMO_ONLY = "demo_only"
+    FORBIDDEN = "forbidden"
+
+
+class BaselineKind(StrEnum):
+    MAXCUT = "maxcut"
+    QUBO = "qubo"
+    PORTFOLIO = "portfolio"
+    HAMILTONIAN = "hamiltonian"
+    NONE = "none"
+
+
+class UsageKind(StrEnum):
+    RUN = "run"
+    LLM_TOKENS = "llm_tokens"
+    SANDBOX_SECONDS = "sandbox_seconds"

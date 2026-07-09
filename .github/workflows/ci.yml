@@ -1,6 +1,8 @@
-# Phase 0 minimal gates — real machinery, vacuous until packages land. Phase 1
-# makes this fully real: contracts-gen diff, import-linter, authz suite, migration
-# up/down vs Neon branch (plans/rebuild/03-repo-structure.md §4).
+# Phase 1 gates (contracts landed; import-linter, authz suite, migration up/down
+# vs Neon branch arrive with their steps — plans/rebuild/03-repo-structure.md §4).
+# Job names ts/py are required checks on dev+prod — do not rename.
+# Contracts chain (ADR-0008): models are truth → py job verifies openapi.json is
+# current → ts job regenerates schema.d.ts and fails on diff.
 name: ci
 on:
   pull_request:
@@ -17,6 +19,10 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm turbo run lint typecheck test
+      - name: contracts-gen is current
+        run: |
+          pnpm --filter @majorana/contracts-gen gen
+          git diff --exit-code packages/ts/contracts-gen
 
   py:
     runs-on: ubuntu-latest
@@ -25,6 +31,9 @@ jobs:
       - uses: astral-sh/setup-uv@v6
         with:
           python-version: "3.12"
-      - run: uvx ruff check .
-      # exit 5 = "no tests collected" — acceptable only until Phase 1 lands real suites
-      - run: uvx pytest || { rc=$?; [ "$rc" -eq 5 ] && echo "no tests yet (Phase 0)"; [ "$rc" -eq 5 ]; }
+      - run: uv sync --all-packages --frozen
+      - run: uv run ruff check .
+      - run: uv run ruff format --check .
+      - run: uv run pytest -q
+      - name: openapi.json is current
+        run: uv run python -m majorana_contracts.export --check

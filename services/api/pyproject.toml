@@ -1,0 +1,5 @@
+# Stub — real service lands in Phase 1 steps 5-6
+[project]
+name = "majorana-api"
+version = "0.0.0"
+requires-python = ">=3.12"

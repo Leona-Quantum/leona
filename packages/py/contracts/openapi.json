@@ -1,0 +1,1973 @@
+{
+  "components": {
+    "schemas": {
+      "Algorithm": {
+        "enum": [
+          "VQE",
+          "QAOA",
+          "Grover",
+          "Bell",
+          "GHZ",
+          "QFT",
+          "QPE",
+          "AmplitudeEstimation",
+          "StatePreparation",
+          "CircuitSynthesis",
+          "GateDecomposition",
+          "Transpilation",
+          "Simulation",
+          "ErrorCorrection",
+          "other"
+        ],
+        "title": "Algorithm",
+        "type": "string"
+      },
+      "Artifact": {
+        "additionalProperties": false,
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "current_version_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Current Version Id"
+          },
+          "deleted_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Deleted At"
+          },
+          "family": {
+            "description": "Algorithm category",
+            "title": "Family",
+            "type": "string"
+          },
+          "framework": {
+            "$ref": "#/components/schemas/Framework"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "parent_artifact_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Provenance edge",
+            "title": "Parent Artifact Id"
+          },
+          "slug": {
+            "description": "Unique; used for public pages",
+            "title": "Slug",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          },
+          "visibility": {
+            "$ref": "#/components/schemas/Visibility"
+          },
+          "workspace_id": {
+            "format": "uuid",
+            "title": "Workspace Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "workspace_id",
+          "slug",
+          "title",
+          "family",
+          "framework",
+          "visibility",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "Artifact",
+        "type": "object"
+      },
+      "ArtifactContract": {
+        "additionalProperties": false,
+        "properties": {
+          "artifact_type": {
+            "$ref": "#/components/schemas/ArtifactType"
+          },
+          "entry_point": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Function/class name to implement, if requested",
+            "title": "Entry Point"
+          },
+          "expected_return_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "e.g. QuantumCircuit, dict[str, int], Statevector",
+            "title": "Expected Return Type"
+          },
+          "measurement_policy": {
+            "$ref": "#/components/schemas/MeasurementPolicy"
+          },
+          "return_shape": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Structural constraints: keys, array length, bitstring format",
+            "title": "Return Shape"
+          },
+          "top_level_execution": {
+            "$ref": "#/components/schemas/TopLevelExecution"
+          }
+        },
+        "required": [
+          "artifact_type",
+          "measurement_policy",
+          "top_level_execution"
+        ],
+        "title": "ArtifactContract",
+        "type": "object"
+      },
+      "ArtifactSaved": {
+        "additionalProperties": false,
+        "properties": {
+          "artifact_id": {
+            "format": "uuid",
+            "title": "Artifact Id",
+            "type": "string"
+          },
+          "run_id": {
+            "format": "uuid",
+            "title": "Run Id",
+            "type": "string"
+          },
+          "seq": {
+            "description": "Unique per run; powers replay and SSE Last-Event-ID",
+            "minimum": 0,
+            "title": "Seq",
+            "type": "integer"
+          },
+          "ts": {
+            "format": "date-time",
+            "title": "Ts",
+            "type": "string"
+          },
+          "type": {
+            "const": "artifact.saved",
+            "default": "artifact.saved",
+            "title": "Type",
+            "type": "string"
+          },
+          "version_id": {
+            "format": "uuid",
+            "title": "Version Id",
+            "type": "string"
+          },
+          "version_seq": {
+            "minimum": 1,
+            "title": "Version Seq",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "run_id",
+          "seq",
+          "ts",
+          "artifact_id",
+          "version_id",
+          "version_seq"
+        ],
+        "title": "ArtifactSaved",
+        "type": "object"
+      },
+      "ArtifactType": {
+        "enum": [
+          "script",
+          "function",
+          "class",
+          "QuantumCircuit",
+          "OpenQASM",
+          "counts",
+          "statevector",
+          "operator",
+          "clifford",
+          "pass_manager",
+          "other"
+        ],
+        "title": "ArtifactType",
+        "type": "string"
+      },
+      "ArtifactVersion": {
+        "additionalProperties": false,
+        "properties": {
+          "artifact_id": {
+            "format": "uuid",
+            "title": "Artifact Id",
+            "type": "string"
+          },
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "code_lang": {
+            "title": "Code Lang",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "export_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Export Reason"
+          },
+          "export_status": {
+            "$ref": "#/components/schemas/ExportStatus"
+          },
+          "fingerprint": {
+            "description": "Unique per artifact; dedupes identical versions",
+            "title": "Fingerprint",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "ir": {
+            "additionalProperties": true,
+            "title": "Ir",
+            "type": "object"
+          },
+          "ir_version": {
+            "title": "Ir Version",
+            "type": "string"
+          },
+          "limitations": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Limitations"
+          },
+          "qasm": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Qasm"
+          },
+          "resource_estimates": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Resource Estimates"
+          },
+          "seq": {
+            "minimum": 1,
+            "title": "Seq",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "artifact_id",
+          "seq",
+          "ir_version",
+          "ir",
+          "code",
+          "code_lang",
+          "fingerprint",
+          "export_status",
+          "created_at"
+        ],
+        "title": "ArtifactVersion",
+        "type": "object"
+      },
+      "BaselineKind": {
+        "enum": [
+          "maxcut",
+          "qubo",
+          "portfolio",
+          "hamiltonian",
+          "none"
+        ],
+        "title": "BaselineKind",
+        "type": "string"
+      },
+      "BaselinePlan": {
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "$ref": "#/components/schemas/BaselineKind"
+          },
+          "reason": {
+            "description": "Why this classical baseline applies, or why none does",
+            "minLength": 3,
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "reason"
+        ],
+        "title": "BaselinePlan",
+        "type": "object"
+      },
+      "BaselineResult": {
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "$ref": "#/components/schemas/BaselineKind"
+          },
+          "not_applicable_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Not Applicable Reason"
+          },
+          "result": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Result"
+          },
+          "run_id": {
+            "format": "uuid",
+            "title": "Run Id",
+            "type": "string"
+          },
+          "seq": {
+            "description": "Unique per run; powers replay and SSE Last-Event-ID",
+            "minimum": 0,
+            "title": "Seq",
+            "type": "integer"
+          },
+          "ts": {
+            "format": "date-time",
+            "title": "Ts",
+            "type": "string"
+          },
+          "type": {
+            "const": "baseline.result",
+            "default": "baseline.result",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "run_id",
+          "seq",
+          "ts",
+          "kind"
+        ],
+        "title": "BaselineResult",
+        "type": "object"
+      },
+      "CodeGenerated": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "language": {
+            "title": "Language",
+            "type": "string"
+          },
+          "revision": {
+            "description": "1 = first generation; +1 per repair iteration",
+            "minimum": 1,
+            "title": "Revision",
+            "type": "integer"
+          },
+          "run_id": {
+            "format": "uuid",
+            "title": "Run Id",
+            "type": "string"
+          },
+          "seq": {
+            "description": "Unique per run; powers replay and SSE Last-Event-ID",
+            "minimum": 0,
+            "title": "Seq",
+            "type": "integer"
+          },
+          "ts": {
+            "format": "date-time",
+            "title": "Ts",
+            "type": "string"
+          },
+          "type": {
+            "const": "code.generated",
+            "default": "code.generated",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "run_id",
+          "seq",
+          "ts",
+          "language",
+          "code",
+          "revision"
+        ],
+        "title": "CodeGenerated",
+        "type": "object"
+      },
+      "ExportClassified": {
+        "additionalProperties": false,
+        "properties": {
+          "qasm_available": {
+            "title": "Qasm Available",
+            "type": "boolean"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Required when status is lossy_with_reason",
+            "title": "Reason"
+          },
+          "run_id": {
+            "format": "uuid",
+            "title": "Run Id",
+            "type": "string"
+          },
+          "seq": {
+            "description": "Unique per run; powers replay and SSE Last-Event-ID",
+            "minimum": 0,
+            "title": "Seq",
+            "type": "integer"
+          },
+          "status": {
+            "$ref": "#/components/schemas/ExportStatus"
+          },
+          "ts": {
+            "format": "date-time",
+            "title": "Ts",
+            "type": "string"
+          },
+          "type": {
+            "const": "export.classified",
+            "default": "export.classified",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "run_id",
+          "seq",
+          "ts",
+          "status",
+          "qasm_available"
+        ],
+        "title": "ExportClassified",
+        "type": "object"
+      },
+      "ExportStatus": {
+        "enum": [
+          "lossless",
+          "lossy_with_reason",
+          "download_only",
+          "unsupported"
+        ],
+        "title": "ExportStatus",
+        "type": "string"
+      },
+      "Framework": {
+        "enum": [
+          "qiskit",
+          "pennylane",
+          "cirq"
+        ],
+        "title": "Framework",
+        "type": "string"
+      },
+      "LlmCall": {
+        "additionalProperties": false,
+        "description": "One completed LLM call; every call is logged with token counts (ADR-0009).",
+        "properties": {
+          "duration_ms": {
+            "minimum": 0,
+            "title": "Duration Ms",
+            "type": "integer"
+          },
+          "input_tokens": {
+            "minimum": 0,
+            "title": "Input Tokens",
+            "type": "integer"
+          },
+          "model": {
+            "title": "Model",
+            "type": "string"
+          },
+          "output_tokens": {
+            "minimum": 0,
+            "title": "Output Tokens",
+            "type": "integer"
+          },
+          "run_id": {
+            "format": "uuid",
+            "title": "Run Id",
+            "type": "string"
+          },
+          "seq": {
+            "description": "Unique per run; powers replay and SSE Last-Event-ID",
+            "minimum": 0,
+            "title": "Seq",
+            "type": "integer"
+          },
+          "stage": {
+            "$ref": "#/components/schemas/Stage"
+          },
+          "ts": {
+            "format": "date-time",
+            "title": "Ts",
+            "type": "string"
+          },
+          "type": {
+            "const": "llm.call",
+            "default": "llm.call",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "run_id",
+          "seq",
+          "ts",
+          "stage",
+          "model",
+          "input_tokens",
+          "output_tokens",
+          "duration_ms"
+        ],
+        "title": "LlmCall",
+        "type": "object"
+      },
+      "LlmDelta": {
+        "additionalProperties": false,
+        "description": "Streaming text fragment for live UI rendering; not required for replay\ncorrectness (the terminal events carry the full state).",
+        "properties": {
+          "run_id": {
+            "format": "uuid",
+            "title": "Run Id",
+            "type": "string"
+          },
+          "seq": {
+            "description": "Unique per run; powers replay and SSE Last-Event-ID",
+            "minimum": 0,
+            "title": "Seq",
+            "type": "integer"
+          },
+          "stage": {
+            "$ref": "#/components/schemas/Stage"
+          },
+          "text": {
+            "title": "Text",
+            "type": "string"
+          },
+          "ts": {
+            "format": "date-time",
+            "title": "Ts",
+            "type": "string"
+          },
+          "type": {
+            "const": "llm.delta",
+            "default": "llm.delta",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "run_id",
+          "seq",
+          "ts",
+          "stage",
+          "text"
+        ],
+        "title": "LlmDelta",
+        "type": "object"
+      },
+      "MeasurementPolicy": {
+        "enum": [
+          "none",
+          "only_if_requested",
+          "measure_all",
+          "specified",
+          "not_applicable"
+        ],
+        "title": "MeasurementPolicy",
+        "type": "string"
+      },
+      "Optimizer": {
+        "enum": [
+          "COBYLA",
+          "SPSA",
+          "L_BFGS_B"
+        ],
+        "title": "Optimizer",
+        "type": "string"
+      },
+      "Plan": {
+        "additionalProperties": false,
+        "properties": {
+          "algorithm": {
+            "$ref": "#/components/schemas/Algorithm"
+          },
+          "algorithm_rationale": {
+            "minLength": 5,
+            "title": "Algorithm Rationale",
+            "type": "string"
+          },
+          "artifact_contract": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ArtifactContract"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "baseline_plan": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/BaselinePlan"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "domain": {
+            "description": "Problem domain: chemistry, finance, ...",
+            "minLength": 2,
+            "title": "Domain",
+            "type": "string"
+          },
+          "expected_output_keys": {
+            "description": "Keys the executed code prints in its result dict",
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1,
+            "title": "Expected Output Keys",
+            "type": "array"
+          },
+          "expected_runtime_sec": {
+            "maximum": 300,
+            "minimum": 1,
+            "title": "Expected Runtime Sec",
+            "type": "integer"
+          },
+          "framework": {
+            "$ref": "#/components/schemas/Framework"
+          },
+          "parameters": {
+            "$ref": "#/components/schemas/PlanParameters"
+          },
+          "problem_summary": {
+            "minLength": 5,
+            "title": "Problem Summary",
+            "type": "string"
+          },
+          "qubits_estimate": {
+            "description": "Planned qubit count; 27 is the default sandbox lane ceiling",
+            "maximum": 27,
+            "minimum": 1,
+            "title": "Qubits Estimate",
+            "type": "integer"
+          },
+          "success_criteria": {
+            "$ref": "#/components/schemas/SuccessCriteria"
+          },
+          "verification_plan": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/VerificationPlan"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          }
+        },
+        "required": [
+          "domain",
+          "framework",
+          "algorithm",
+          "problem_summary",
+          "algorithm_rationale",
+          "parameters",
+          "qubits_estimate",
+          "expected_runtime_sec",
+          "success_criteria",
+          "expected_output_keys"
+        ],
+        "title": "Plan",
+        "type": "object"
+      },
+      "PlanParameters": {
+        "additionalProperties": false,
+        "properties": {
+          "custom": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Domain-specific free parameters, e.g. {molecule: 'H2', bond_length: 0.735}",
+            "title": "Custom"
+          },
+          "max_iterations": {
+            "anyOf": [
+              {
+                "maximum": 500,
+                "minimum": 1,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Max Iterations"
+          },
+          "optimizer": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Optimizer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "shots": {
+            "anyOf": [
+              {
+                "maximum": 20000,
+                "minimum": 1,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Shots"
+          }
+        },
+        "title": "PlanParameters",
+        "type": "object"
+      },
+      "PlanProduced": {
+        "additionalProperties": false,
+        "properties": {
+          "plan": {
+            "$ref": "#/components/schemas/Plan"
+          },
+          "run_id": {
+            "format": "uuid",
+            "title": "Run Id",
+            "type": "string"
+          },
+          "seq": {
+            "description": "Unique per run; powers replay and SSE Last-Event-ID",
+            "minimum": 0,
+            "title": "Seq",
+            "type": "integer"
+          },
+          "ts": {
+            "format": "date-time",
+            "title": "Ts",
+            "type": "string"
+          },
+          "type": {
+            "const": "plan.produced",
+            "default": "plan.produced",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "run_id",
+          "seq",
+          "ts",
+          "plan"
+        ],
+        "title": "PlanProduced",
+        "type": "object"
+      },
+      "Role": {
+        "enum": [
+          "owner",
+          "admin",
+          "member",
+          "viewer"
+        ],
+        "title": "Role",
+        "type": "string"
+      },
+      "Run": {
+        "additionalProperties": false,
+        "properties": {
+          "artifact_version_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Artifact Version Id"
+          },
+          "baseline": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Baseline result, or {not_applicable_reason}",
+            "title": "Baseline"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "finished_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Finished At"
+          },
+          "framework": {
+            "$ref": "#/components/schemas/Framework"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "mode": {
+            "$ref": "#/components/schemas/RunMode"
+          },
+          "residual_risks": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Residual Risks"
+          },
+          "sandbox_meta": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Duration, memory, exit code as reported by the provider",
+            "title": "Sandbox Meta"
+          },
+          "sandbox_provider": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Sandbox Provider"
+          },
+          "seed": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Seed"
+          },
+          "shots": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Shots"
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Started At"
+          },
+          "status": {
+            "$ref": "#/components/schemas/RunStatus"
+          },
+          "task_prompt": {
+            "title": "Task Prompt",
+            "type": "string"
+          },
+          "timeout_s": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Timeout S"
+          },
+          "tolerances": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "type": "number"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Tolerances"
+          },
+          "user_id": {
+            "format": "uuid",
+            "title": "User Id",
+            "type": "string"
+          },
+          "verifier_decision": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/VerifierDecision"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "workspace_id": {
+            "format": "uuid",
+            "title": "Workspace Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "workspace_id",
+          "user_id",
+          "task_prompt",
+          "mode",
+          "status",
+          "framework",
+          "created_at"
+        ],
+        "title": "Run",
+        "type": "object"
+      },
+      "RunErrorEvent": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "description": "Machine-readable error code (RFC 9457 style)",
+            "title": "Code",
+            "type": "string"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "run_id": {
+            "format": "uuid",
+            "title": "Run Id",
+            "type": "string"
+          },
+          "seq": {
+            "description": "Unique per run; powers replay and SSE Last-Event-ID",
+            "minimum": 0,
+            "title": "Seq",
+            "type": "integer"
+          },
+          "stage": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Stage"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "ts": {
+            "format": "date-time",
+            "title": "Ts",
+            "type": "string"
+          },
+          "type": {
+            "const": "run.error",
+            "default": "run.error",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "run_id",
+          "seq",
+          "ts",
+          "code",
+          "message"
+        ],
+        "title": "RunErrorEvent",
+        "type": "object"
+      },
+      "RunEvent": {
+        "description": "Discriminated union of all run event types (class name sets the schema id).",
+        "discriminator": {
+          "mapping": {
+            "artifact.saved": "#/components/schemas/ArtifactSaved",
+            "baseline.result": "#/components/schemas/BaselineResult",
+            "code.generated": "#/components/schemas/CodeGenerated",
+            "export.classified": "#/components/schemas/ExportClassified",
+            "llm.call": "#/components/schemas/LlmCall",
+            "llm.delta": "#/components/schemas/LlmDelta",
+            "plan.produced": "#/components/schemas/PlanProduced",
+            "run.error": "#/components/schemas/RunErrorEvent",
+            "run.finished": "#/components/schemas/RunFinished",
+            "run.queued": "#/components/schemas/RunQueued",
+            "run.started": "#/components/schemas/RunStarted",
+            "sandbox.result": "#/components/schemas/SandboxResult",
+            "stage.finished": "#/components/schemas/StageFinished",
+            "stage.started": "#/components/schemas/StageStarted",
+            "verification.result": "#/components/schemas/VerificationResult"
+          },
+          "propertyName": "type"
+        },
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/RunQueued"
+          },
+          {
+            "$ref": "#/components/schemas/RunStarted"
+          },
+          {
+            "$ref": "#/components/schemas/StageStarted"
+          },
+          {
+            "$ref": "#/components/schemas/StageFinished"
+          },
+          {
+            "$ref": "#/components/schemas/PlanProduced"
+          },
+          {
+            "$ref": "#/components/schemas/LlmCall"
+          },
+          {
+            "$ref": "#/components/schemas/LlmDelta"
+          },
+          {
+            "$ref": "#/components/schemas/CodeGenerated"
+          },
+          {
+            "$ref": "#/components/schemas/SandboxResult"
+          },
+          {
+            "$ref": "#/components/schemas/VerificationResult"
+          },
+          {
+            "$ref": "#/components/schemas/BaselineResult"
+          },
+          {
+            "$ref": "#/components/schemas/ExportClassified"
+          },
+          {
+            "$ref": "#/components/schemas/ArtifactSaved"
+          },
+          {
+            "$ref": "#/components/schemas/RunErrorEvent"
+          },
+          {
+            "$ref": "#/components/schemas/RunFinished"
+          }
+        ],
+        "title": "RunEvent"
+      },
+      "RunFinished": {
+        "additionalProperties": false,
+        "properties": {
+          "residual_risks": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Residual Risks"
+          },
+          "run_id": {
+            "format": "uuid",
+            "title": "Run Id",
+            "type": "string"
+          },
+          "seq": {
+            "description": "Unique per run; powers replay and SSE Last-Event-ID",
+            "minimum": 0,
+            "title": "Seq",
+            "type": "integer"
+          },
+          "status": {
+            "$ref": "#/components/schemas/RunStatus"
+          },
+          "ts": {
+            "format": "date-time",
+            "title": "Ts",
+            "type": "string"
+          },
+          "type": {
+            "const": "run.finished",
+            "default": "run.finished",
+            "title": "Type",
+            "type": "string"
+          },
+          "verifier_decision": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/VerifierDecision"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          }
+        },
+        "required": [
+          "run_id",
+          "seq",
+          "ts",
+          "status"
+        ],
+        "title": "RunFinished",
+        "type": "object"
+      },
+      "RunMode": {
+        "enum": [
+          "execute",
+          "ideate",
+          "explain"
+        ],
+        "title": "RunMode",
+        "type": "string"
+      },
+      "RunQueued": {
+        "additionalProperties": false,
+        "properties": {
+          "framework": {
+            "$ref": "#/components/schemas/Framework"
+          },
+          "mode": {
+            "$ref": "#/components/schemas/RunMode"
+          },
+          "run_id": {
+            "format": "uuid",
+            "title": "Run Id",
+            "type": "string"
+          },
+          "seq": {
+            "description": "Unique per run; powers replay and SSE Last-Event-ID",
+            "minimum": 0,
+            "title": "Seq",
+            "type": "integer"
+          },
+          "ts": {
+            "format": "date-time",
+            "title": "Ts",
+            "type": "string"
+          },
+          "type": {
+            "const": "run.queued",
+            "default": "run.queued",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "run_id",
+          "seq",
+          "ts",
+          "mode",
+          "framework"
+        ],
+        "title": "RunQueued",
+        "type": "object"
+      },
+      "RunStarted": {
+        "additionalProperties": false,
+        "properties": {
+          "run_id": {
+            "format": "uuid",
+            "title": "Run Id",
+            "type": "string"
+          },
+          "seq": {
+            "description": "Unique per run; powers replay and SSE Last-Event-ID",
+            "minimum": 0,
+            "title": "Seq",
+            "type": "integer"
+          },
+          "ts": {
+            "format": "date-time",
+            "title": "Ts",
+            "type": "string"
+          },
+          "type": {
+            "const": "run.started",
+            "default": "run.started",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "run_id",
+          "seq",
+          "ts"
+        ],
+        "title": "RunStarted",
+        "type": "object"
+      },
+      "RunStatus": {
+        "enum": [
+          "queued",
+          "running",
+          "succeeded",
+          "failed",
+          "cancelled"
+        ],
+        "title": "RunStatus",
+        "type": "string"
+      },
+      "SandboxResult": {
+        "additionalProperties": false,
+        "properties": {
+          "duration_ms": {
+            "minimum": 0,
+            "title": "Duration Ms",
+            "type": "integer"
+          },
+          "exit_code": {
+            "title": "Exit Code",
+            "type": "integer"
+          },
+          "memory_mb": {
+            "anyOf": [
+              {
+                "minimum": 0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Memory Mb"
+          },
+          "run_id": {
+            "format": "uuid",
+            "title": "Run Id",
+            "type": "string"
+          },
+          "seq": {
+            "description": "Unique per run; powers replay and SSE Last-Event-ID",
+            "minimum": 0,
+            "title": "Seq",
+            "type": "integer"
+          },
+          "stderr": {
+            "title": "Stderr",
+            "type": "string"
+          },
+          "stdout": {
+            "title": "Stdout",
+            "type": "string"
+          },
+          "truncated": {
+            "default": false,
+            "title": "Truncated",
+            "type": "boolean"
+          },
+          "ts": {
+            "format": "date-time",
+            "title": "Ts",
+            "type": "string"
+          },
+          "type": {
+            "const": "sandbox.result",
+            "default": "sandbox.result",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "run_id",
+          "seq",
+          "ts",
+          "exit_code",
+          "duration_ms",
+          "stdout",
+          "stderr"
+        ],
+        "title": "SandboxResult",
+        "type": "object"
+      },
+      "Scope": {
+        "additionalProperties": false,
+        "properties": {
+          "role": {
+            "$ref": "#/components/schemas/Role"
+          },
+          "user_id": {
+            "format": "uuid",
+            "title": "User Id",
+            "type": "string"
+          },
+          "workspace_id": {
+            "format": "uuid",
+            "title": "Workspace Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "user_id",
+          "workspace_id",
+          "role"
+        ],
+        "title": "Scope",
+        "type": "object"
+      },
+      "Stage": {
+        "description": "Pipeline stages in execution order; the orchestrator owns transitions.",
+        "enum": [
+          "plan",
+          "generate",
+          "simulate",
+          "verify",
+          "baseline",
+          "export",
+          "save"
+        ],
+        "title": "Stage",
+        "type": "string"
+      },
+      "StageFinished": {
+        "additionalProperties": false,
+        "properties": {
+          "duration_ms": {
+            "minimum": 0,
+            "title": "Duration Ms",
+            "type": "integer"
+          },
+          "ok": {
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "run_id": {
+            "format": "uuid",
+            "title": "Run Id",
+            "type": "string"
+          },
+          "seq": {
+            "description": "Unique per run; powers replay and SSE Last-Event-ID",
+            "minimum": 0,
+            "title": "Seq",
+            "type": "integer"
+          },
+          "stage": {
+            "$ref": "#/components/schemas/Stage"
+          },
+          "ts": {
+            "format": "date-time",
+            "title": "Ts",
+            "type": "string"
+          },
+          "type": {
+            "const": "stage.finished",
+            "default": "stage.finished",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "run_id",
+          "seq",
+          "ts",
+          "stage",
+          "ok",
+          "duration_ms"
+        ],
+        "title": "StageFinished",
+        "type": "object"
+      },
+      "StageStarted": {
+        "additionalProperties": false,
+        "properties": {
+          "run_id": {
+            "format": "uuid",
+            "title": "Run Id",
+            "type": "string"
+          },
+          "seq": {
+            "description": "Unique per run; powers replay and SSE Last-Event-ID",
+            "minimum": 0,
+            "title": "Seq",
+            "type": "integer"
+          },
+          "stage": {
+            "$ref": "#/components/schemas/Stage"
+          },
+          "ts": {
+            "format": "date-time",
+            "title": "Ts",
+            "type": "string"
+          },
+          "type": {
+            "const": "stage.started",
+            "default": "stage.started",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "run_id",
+          "seq",
+          "ts",
+          "stage"
+        ],
+        "title": "StageStarted",
+        "type": "object"
+      },
+      "SuccessCriteria": {
+        "additionalProperties": false,
+        "properties": {
+          "additional_notes": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Additional Notes"
+          },
+          "expected_range": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "type": "number"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Acceptable {min, max} range for primary_metric",
+            "title": "Expected Range"
+          },
+          "primary_metric": {
+            "description": "Key extracted from the run's result dict, e.g. ground_state_energy_Ha",
+            "title": "Primary Metric",
+            "type": "string"
+          }
+        },
+        "required": [
+          "primary_metric"
+        ],
+        "title": "SuccessCriteria",
+        "type": "object"
+      },
+      "TopLevelExecution": {
+        "enum": [
+          "required",
+          "demo_only",
+          "forbidden"
+        ],
+        "title": "TopLevelExecution",
+        "type": "string"
+      },
+      "VerificationMethod": {
+        "enum": [
+          "exact",
+          "statistical",
+          "brute_force",
+          "exact_diag",
+          "return_contract",
+          "qasm_parse"
+        ],
+        "title": "VerificationMethod",
+        "type": "string"
+      },
+      "VerificationPlan": {
+        "additionalProperties": false,
+        "properties": {
+          "expected_metrics": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Metrics the verification result dict must contain",
+            "title": "Expected Metrics"
+          },
+          "feedback_policy": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "What to minimally fix and re-verify on failure",
+            "title": "Feedback Policy"
+          },
+          "forbidden_operations": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "APIs/side effects the code must not use",
+            "title": "Forbidden Operations"
+          },
+          "methods": {
+            "description": "Verification primitives to run against the generated code",
+            "items": {
+              "$ref": "#/components/schemas/VerificationMethod"
+            },
+            "minItems": 1,
+            "title": "Methods",
+            "type": "array"
+          },
+          "reference_method": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Independent reference, e.g. exact diagonalization",
+            "title": "Reference Method"
+          },
+          "required_invariants": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Invariants that must survive any repair iteration",
+            "title": "Required Invariants"
+          },
+          "thresholds": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "type": "number"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Pass thresholds per metric, e.g. {fidelity_min: 0.999}",
+            "title": "Thresholds"
+          }
+        },
+        "required": [
+          "methods"
+        ],
+        "title": "VerificationPlan",
+        "type": "object"
+      },
+      "VerificationRecord": {
+        "additionalProperties": false,
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "details": {
+            "additionalProperties": true,
+            "title": "Details",
+            "type": "object"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "method": {
+            "$ref": "#/components/schemas/VerificationMethod"
+          },
+          "params": {
+            "additionalProperties": true,
+            "title": "Params",
+            "type": "object"
+          },
+          "result": {
+            "$ref": "#/components/schemas/VerificationResultKind"
+          },
+          "run_id": {
+            "format": "uuid",
+            "title": "Run Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "run_id",
+          "method",
+          "params",
+          "result",
+          "details",
+          "created_at"
+        ],
+        "title": "VerificationRecord",
+        "type": "object"
+      },
+      "VerificationResult": {
+        "additionalProperties": false,
+        "properties": {
+          "details": {
+            "additionalProperties": true,
+            "title": "Details",
+            "type": "object"
+          },
+          "method": {
+            "$ref": "#/components/schemas/VerificationMethod"
+          },
+          "result": {
+            "$ref": "#/components/schemas/VerificationResultKind"
+          },
+          "run_id": {
+            "format": "uuid",
+            "title": "Run Id",
+            "type": "string"
+          },
+          "seq": {
+            "description": "Unique per run; powers replay and SSE Last-Event-ID",
+            "minimum": 0,
+            "title": "Seq",
+            "type": "integer"
+          },
+          "ts": {
+            "format": "date-time",
+            "title": "Ts",
+            "type": "string"
+          },
+          "type": {
+            "const": "verification.result",
+            "default": "verification.result",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "run_id",
+          "seq",
+          "ts",
+          "method",
+          "result"
+        ],
+        "title": "VerificationResult",
+        "type": "object"
+      },
+      "VerificationResultKind": {
+        "enum": [
+          "pass",
+          "fail"
+        ],
+        "title": "VerificationResultKind",
+        "type": "string"
+      },
+      "VerifierDecision": {
+        "enum": [
+          "pass",
+          "fail",
+          "inconclusive"
+        ],
+        "title": "VerifierDecision",
+        "type": "string"
+      },
+      "Visibility": {
+        "enum": [
+          "private",
+          "public"
+        ],
+        "title": "Visibility",
+        "type": "string"
+      },
+      "Workspace": {
+        "additionalProperties": false,
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "deleted_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Deleted At"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/WorkspaceKind"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "owner_user_id": {
+            "format": "uuid",
+            "title": "Owner User Id",
+            "type": "string"
+          },
+          "plan": {
+            "title": "Plan",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "name",
+          "owner_user_id",
+          "plan",
+          "created_at"
+        ],
+        "title": "Workspace",
+        "type": "object"
+      },
+      "WorkspaceKind": {
+        "enum": [
+          "personal",
+          "team"
+        ],
+        "title": "WorkspaceKind",
+        "type": "string"
+      }
+    }
+  },
+  "info": {
+    "description": "Cross-boundary types only; API paths are owned by services/api.",
+    "title": "majorana-contracts",
+    "version": "1.0.0"
+  },
+  "openapi": "3.1.0",
+  "paths": {}
+}
