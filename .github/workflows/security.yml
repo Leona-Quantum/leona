@@ -2,6 +2,9 @@
 # is set (docs/runbooks/secrets.md). Dependency-review needs GHAS on private
 # repos — add it in Phase 1 if GHAS is enabled, else when the repo goes public.
 name: security
+permissions:
+  contents: read
+  pull-requests: read
 on:
   pull_request:
   schedule:
