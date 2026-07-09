@@ -10,7 +10,7 @@
 |---|---|---|
 | Neon | `majorana` (ID `twilight-wildflower-01313590`) | Postgres 17, aws-us-west-2, org `org-tiny-glade-89486766`, free tier |
 | GCP | `majorana-core` (number 639400385957) | Secret Manager + Cloud Run APIs enabled; billing linked |
-| WorkOS | pending (owner — dashboard signup, no CLI) | AuthKit project, Phase 1 |
+| WorkOS | `majorana` | AuthKit project, dashboard signup done 2026-07-10 (owner); API key + client ID pulled into env at Phase 1 step 5 |
 | Snyk | org `eshmis` | free plan; personal API token used as SNYK_TOKEN |
 | Vercel | account `eshmis` | project created in Phase 1 (web deploy) |
 
