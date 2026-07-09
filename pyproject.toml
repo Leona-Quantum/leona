@@ -1,0 +1,13 @@
+[project]
+name = "majorana-workspace"
+version = "0.0.0"
+requires-python = ">=3.12"
+
+[tool.uv.workspace]
+members = ["services/api", "services/worker", "packages/py/*"]
+
+[tool.ruff]
+line-length = 100
+
+[tool.pytest.ini_options]
+testpaths = ["services", "packages/py"]

@@ -1,0 +1,10 @@
+# Phase 0 stub — becomes fully real in Phase 1 (plans/rebuild/03-repo-structure.md §4)
+name: ci
+on:
+  pull_request:
+jobs:
+  placeholder:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: echo "CI gates land in Phase 0 step 4 / Phase 1; see plans/rebuild/08-phases.md"

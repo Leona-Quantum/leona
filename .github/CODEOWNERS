@@ -1,0 +1,7 @@
+# Blast-radius surfaces: owner/orchestrator review required (see plans/rebuild/03 §5)
+/db/migrations/            @EshMis
+/packages/py/contracts/    @EshMis
+/packages/py/sandbox/      @EshMis
+/.github/workflows/        @EshMis
+/apps/web/middleware.ts    @EshMis
+/services/api/app/auth/    @EshMis

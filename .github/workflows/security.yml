@@ -1,0 +1,15 @@
+# Phase 0 stub — gitleaks required from day one; Snyk added in Phase 0 step 4
+name: security
+on:
+  pull_request:
+  schedule:
+    - cron: "0 3 * * 1" # weekly full-history scan
+jobs:
+  gitleaks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
