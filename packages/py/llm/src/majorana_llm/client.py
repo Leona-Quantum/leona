@@ -84,22 +84,33 @@ class OpenAICompatibleLLM:
         if not api_key:
             raise RuntimeError(f"{key_env} is not set (required for model {request.model!r})")
 
+        # GPT-5-series chat completions deprecate max_tokens (reasoning tokens
+        # count against max_completion_tokens) and reject non-default temperature;
+        # DeepSeek keeps the classic parameters. Route the kwargs per endpoint.
+        params: dict[str, Any] = {"max_completion_tokens": request.max_tokens}
+        if key_env == "DEEPSEEK_API_KEY":
+            params = {"max_tokens": request.max_tokens, "temperature": request.temperature}
+
         client = AsyncOpenAI(api_key=api_key, base_url=base_url)
         completion = await client.chat.completions.create(
             model=request.model,
-            max_tokens=request.max_tokens,
-            temperature=request.temperature,
             messages=[
                 {"role": "system", "content": request.system},
                 {"role": "user", "content": request.user},
             ],
+            **params,
         )
+        text = completion.choices[0].message.content or ""
         usage = completion.usage
+        # Missing usage must not silently zero the llm.call event (quota/event
+        # integrity) — fall back to the FakeLLM length heuristic.
         return LLMResponse(
-            text=completion.choices[0].message.content or "",
+            text=text,
             model=request.model,
-            input_tokens=usage.prompt_tokens if usage else 0,
-            output_tokens=usage.completion_tokens if usage else 0,
+            input_tokens=usage.prompt_tokens
+            if usage
+            else max(1, len(request.system) + len(request.user)) // 4,
+            output_tokens=usage.completion_tokens if usage else max(1, len(text)) // 4,
         )
 
 

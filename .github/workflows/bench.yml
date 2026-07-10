@@ -18,10 +18,13 @@ jobs:
     if: ${{ github.repository == 'EshMis/majorana' }}
     steps:
       - uses: actions/checkout@v4
-      - name: guard on provider key
+      - name: guard on provider keys
+        # The openai profile needs BOTH keys (gpt-5.5 plans/verifies,
+        # deepseek-v4-pro generates/writes back) — starting with one would fail
+        # mid-run. Anthropic alone is the alternate complete profile.
         run: |
-          if [ -z "${{ secrets.OPENAI_API_KEY }}" ] && [ -z "${{ secrets.ANTHROPIC_API_KEY }}" ]; then
-            echo "No LLM provider key set — skipping the real baseline run."
+          if { [ -z "${{ secrets.OPENAI_API_KEY }}" ] || [ -z "${{ secrets.DEEPSEEK_API_KEY }}" ]; } && [ -z "${{ secrets.ANTHROPIC_API_KEY }}" ]; then
+            echo "No complete LLM provider profile — skipping the real baseline run."
             echo "skip=true" >> "$GITHUB_ENV"
           fi
       - if: ${{ env.skip != 'true' }}
