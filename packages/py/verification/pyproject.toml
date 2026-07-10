@@ -1,5 +1,24 @@
-# Stub — real package lands in its phase (plans/rebuild/08-phases.md)
 [project]
 name = "majorana-verification"
-version = "0.0.0"
+version = "0.1.0"
+description = "Verification primitives: exact/statistical equivalence, exact-diag, brute-force, return-contract, QASM-parse"
 requires-python = ">=3.12"
+dependencies = [
+    "pydantic>=2.8",
+    "numpy>=1.26",
+    "majorana-contracts",
+    "majorana-ir",
+    "majorana-baselines",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/majorana_verification"]
+
+[tool.uv.sources]
+majorana-contracts = { workspace = true }
+majorana-ir = { workspace = true }
+majorana-baselines = { workspace = true }
