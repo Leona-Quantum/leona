@@ -6,10 +6,12 @@ from majorana_llm import (
     FakeLLM,
     LLMRequest,
     StageOutputError,
+    endpoint_for,
     extract_code,
     extract_qasm,
     model_for,
     parse_plan,
+    resolve_provider,
 )
 from majorana_llm.prompts import GENERATE_SYSTEM_PROMPT, PLAN_SYSTEM_PROMPT
 
@@ -31,6 +33,38 @@ def test_model_constants_are_stage_specific_and_env_overridable(monkeypatch):
     assert model_for(Stage.PLAN) != model_for(Stage.GENERATE)
     monkeypatch.setenv("MAJORANA_MODEL_PLAN", "custom-model")
     assert model_for(Stage.PLAN) == "custom-model"
+
+
+def _clear_provider_env(monkeypatch):
+    for var in ("MAJORANA_LLM_PROVIDER", "OPENAI_API_KEY", "DEEPSEEK_API_KEY", "ANTHROPIC_API_KEY"):
+        monkeypatch.delenv(var, raising=False)
+
+
+def test_provider_resolution_prefers_owner_confirmed_keys(monkeypatch):
+    _clear_provider_env(monkeypatch)
+    assert resolve_provider() == "anthropic"  # no keys → safe fallback
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "x")
+    assert resolve_provider() == "openai"
+    monkeypatch.setenv("MAJORANA_LLM_PROVIDER", "anthropic")
+    assert resolve_provider() == "anthropic"  # explicit env wins
+    monkeypatch.setenv("MAJORANA_LLM_PROVIDER", "nonsense")
+    with pytest.raises(ValueError):
+        resolve_provider()
+
+
+def test_model_defaults_follow_provider_profile(monkeypatch):
+    _clear_provider_env(monkeypatch)
+    monkeypatch.setenv("OPENAI_API_KEY", "x")
+    assert model_for(Stage.GENERATE).startswith("deepseek")
+    assert model_for(Stage.VERIFY).startswith("gpt")
+
+
+def test_endpoint_routing_by_model_prefix(monkeypatch):
+    monkeypatch.delenv("DEEPSEEK_BASE_URL", raising=False)
+    base, key_env = endpoint_for("deepseek-v4-pro")
+    assert base == "https://api.deepseek.com" and key_env == "DEEPSEEK_API_KEY"
+    base, key_env = endpoint_for("gpt-5.5")
+    assert base is None and key_env == "OPENAI_API_KEY"
 
 
 def test_plan_prompt_encodes_qiskit_default_and_ir_limits():

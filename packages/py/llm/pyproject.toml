@@ -6,9 +6,10 @@ requires-python = ">=3.12"
 dependencies = ["pydantic>=2.8", "majorana-contracts"]
 
 [project.optional-dependencies]
-# The real provider client. Kept optional so prompts + FakeLLM install without the
-# SDK (which needs an API key to do anything). Provider is Anthropic by default;
-# see models.py — the rebuild plan did not pin one, so this is owner-confirmable.
+# Real provider clients. Kept optional so prompts + FakeLLM install without any
+# SDK. Owner confirmed OpenAI + DeepSeek (2026-07-10); DeepSeek speaks the OpenAI
+# wire protocol, so one SDK covers both. Anthropic stays as an alternate profile.
+openai = ["openai>=1.50"]
 anthropic = ["anthropic>=0.40"]
 
 [build-system]
