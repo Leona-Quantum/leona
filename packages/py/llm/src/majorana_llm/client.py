@@ -74,7 +74,9 @@ class OpenAICompatibleLLM:
         try:
             from openai import AsyncOpenAI  # type: ignore
         except Exception as exc:  # pragma: no cover - only without the SDK
-            raise RuntimeError("install majorana-llm[openai] and set OPENAI_API_KEY/DEEPSEEK_API_KEY") from exc
+            raise RuntimeError(
+                "install majorana-llm[openai] and set OPENAI_API_KEY/DEEPSEEK_API_KEY"
+            ) from exc
         import os
 
         base_url, key_env = endpoint_for(request.model)
