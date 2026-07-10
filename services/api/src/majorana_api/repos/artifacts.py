@@ -39,12 +39,16 @@ async def list_artifacts(
     return list((await session.execute(stmt)).scalars().all())
 
 
-async def get_artifact(scope: Scope, session: AsyncSession, artifact_id: uuid.UUID) -> Artifact:
+async def get_artifact(
+    scope: Scope, session: AsyncSession, artifact_id: uuid.UUID, *, for_update: bool = False
+) -> Artifact:
     stmt = select(Artifact).where(
         Artifact.id == artifact_id,
         Artifact.workspace_id == scope.workspace_id,
         Artifact.deleted_at.is_(None),
     )
+    if for_update:
+        stmt = stmt.with_for_update()
     artifact = (await session.execute(stmt)).scalars().first()
     if artifact is None:
         raise NotFoundError("artifact")
@@ -130,7 +134,9 @@ async def create_version(
     limitations: str | None = None,
 ) -> ArtifactVersion:
     require_write(scope)
-    artifact = await get_artifact(scope, session, artifact_id)  # scope check
+    # Lock the artifact row: serializes concurrent version creation so
+    # max(seq)+1 can't collide (uq_artifact_versions_seq rejects the loser).
+    artifact = await get_artifact(scope, session, artifact_id, for_update=True)
     next_seq = (
         await session.execute(
             select(func.coalesce(func.max(ArtifactVersion.seq), 0) + 1).where(

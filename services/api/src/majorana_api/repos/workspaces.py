@@ -8,7 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..orm import Membership, Workspace
-from ._base import NotFoundError, require_admin
+from ._base import AuthzError, NotFoundError, require_admin
 
 
 async def get_workspace(scope: Scope, session: AsyncSession) -> Workspace:
@@ -31,6 +31,8 @@ async def add_member(
     scope: Scope, session: AsyncSession, *, user_id: uuid.UUID, role: Role
 ) -> Membership:
     require_admin(scope)
+    if role == Role.OWNER:  # ownership transfer is a separate deliberate operation
+        raise AuthzError("cannot grant owner via add_member")
     member = Membership(workspace_id=scope.workspace_id, user_id=user_id, role=role)
     session.add(member)
     await session.flush()

@@ -22,6 +22,8 @@ async def record_usage(
     meta: dict[str, Any] | None = None,
 ) -> UsageEvent:
     require_write(scope)
+    if quantity < 0:  # append-only billing substrate: corrections are new kinds, not negatives
+        raise ValueError("quantity must be non-negative")
     event = UsageEvent(
         id=uuid7(),
         workspace_id=scope.workspace_id,

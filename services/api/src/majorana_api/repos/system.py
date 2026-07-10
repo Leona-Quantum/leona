@@ -14,6 +14,7 @@ from typing import Any
 
 from majorana_contracts.enums import Role
 from sqlalchemy import func, select, update
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..ids import uuid7
@@ -55,7 +56,15 @@ async def get_or_provision_user(
 
     user = User(id=uuid7(), workos_user_id=workos_user_id, email=email, display_name=display_name)
     session.add(user)
-    await session.flush()
+    try:
+        await session.flush()
+    except IntegrityError:
+        # Concurrent first-login lost the workos_user_id unique race: start over
+        # on the row the winner created.
+        await session.rollback()
+        return await get_or_provision_user(
+            session, workos_user_id=workos_user_id, email=email, display_name=display_name
+        )
     ws = Workspace(id=uuid7(), kind="personal", name=email, owner_user_id=user.id)
     session.add(ws)
     await session.flush()
@@ -111,8 +120,16 @@ async def finish_job(
 ) -> None:
     if status not in ("done", "failed", "dead"):
         raise ValueError(f"not a terminal job status: {status}")
-    await session.execute(
+    result = await session.execute(
         update(Job)
         .where(Job.id == job_id)
-        .values(status=status, last_error=last_error, updated_at=func.now())
+        .values(
+            status=status,
+            last_error=last_error,
+            locked_by=None,
+            locked_at=None,
+            updated_at=func.now(),
+        )
     )
+    if result.rowcount == 0:
+        raise ValueError(f"no such job: {job_id}")

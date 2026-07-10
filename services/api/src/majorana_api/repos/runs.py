@@ -17,8 +17,12 @@ from ..orm import Run, RunEvent, VerificationRecord
 from ._base import NotFoundError, require_write
 
 
-async def get_run(scope: Scope, session: AsyncSession, run_id: uuid.UUID) -> Run:
+async def get_run(
+    scope: Scope, session: AsyncSession, run_id: uuid.UUID, *, for_update: bool = False
+) -> Run:
     stmt = select(Run).where(Run.id == run_id, Run.workspace_id == scope.workspace_id)
+    if for_update:
+        stmt = stmt.with_for_update()
     run = (await session.execute(stmt)).scalars().first()
     if run is None:
         raise NotFoundError("run")
@@ -79,6 +83,21 @@ async def create_run(
     return run
 
 
+# The only run columns a status transition may touch — an open **fields would
+# let a caller rewrite workspace_id/user_id and pierce the scope invariant.
+_RUN_STATUS_FIELDS = frozenset(
+    {
+        "started_at",
+        "finished_at",
+        "sandbox_provider",
+        "sandbox_meta",
+        "verifier_decision",
+        "residual_risks",
+        "baseline",
+    }
+)
+
+
 async def update_run_status(
     scope: Scope,
     session: AsyncSession,
@@ -87,6 +106,8 @@ async def update_run_status(
     **fields: Any,
 ) -> None:
     require_write(scope)
+    if not _RUN_STATUS_FIELDS.issuperset(fields):
+        raise ValueError(f"not status-transition fields: {set(fields) - _RUN_STATUS_FIELDS}")
     stmt = (
         update(Run)
         .where(Run.id == run_id, Run.workspace_id == scope.workspace_id)
@@ -106,7 +127,9 @@ async def append_run_event(
     payload: dict[str, Any],
 ) -> RunEvent:
     require_write(scope)
-    run = await get_run(scope, session, run_id)  # scope check
+    # Lock the run row: serializes concurrent appends so max(seq)+1 can't collide
+    # (uq_run_events_seq would reject the loser otherwise).
+    run = await get_run(scope, session, run_id, for_update=True)
     next_seq = (
         await session.execute(
             select(func.coalesce(func.max(RunEvent.seq), 0) + 1).where(RunEvent.run_id == run.id)
