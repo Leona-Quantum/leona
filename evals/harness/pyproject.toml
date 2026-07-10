@@ -1,0 +1,24 @@
+[project]
+name = "majorana-evals"
+version = "0.1.0"
+description = "Eval corpus loader + harness: runs the pipeline over corpus cases and scores them"
+requires-python = ">=3.12"
+dependencies = [
+    "pydantic>=2.8",
+    "pyyaml>=6",
+    "majorana-contracts",
+    "majorana-api",
+    "majorana-worker",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/majorana_evals"]
+
+[tool.uv.sources]
+majorana-contracts = { workspace = true }
+majorana-api = { workspace = true }
+majorana-worker = { workspace = true }

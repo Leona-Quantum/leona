@@ -1,0 +1,8 @@
+id: bench-10
+category: "C — QFT/QPE"
+prompt: "Build a 3-qubit quantum Fourier transform circuit and return its statevector."
+framework: qiskit
+expect:
+  verifier_decision: pass
+  export_status: lossless
+  saves_artifact: true

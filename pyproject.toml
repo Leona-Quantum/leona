@@ -5,10 +5,10 @@ requires-python = ">=3.12"
 dependencies = ["majorana-contracts"]
 
 [dependency-groups]
-dev = ["pytest>=8", "pytest-asyncio>=1.0", "ruff>=0.14", "import-linter>=2.3", "httpx>=0.27"]
+dev = ["pytest>=8", "pytest-asyncio>=1.0", "ruff>=0.14", "import-linter>=2.3", "httpx>=0.27", "pyyaml>=6"]
 
 [tool.uv.workspace]
-members = ["services/api", "services/worker", "packages/py/*"]
+members = ["services/api", "services/worker", "packages/py/*", "evals/harness"]
 
 [tool.uv]
 # This repo lives under iCloud-synced ~/Documents; iCloud flags venv .pth files
@@ -24,7 +24,7 @@ majorana-contracts = { workspace = true }
 line-length = 100
 
 [tool.pytest.ini_options]
-testpaths = ["services", "packages/py"]
+testpaths = ["services", "packages/py", "evals/harness"]
 asyncio_mode = "auto"
 
 # Authz invariant enforcement (02-architecture.md §4): SQLAlchemy/psycopg are
