@@ -12,7 +12,7 @@ from typing import Any, Awaitable, Callable
 from majorana_contracts import Scope
 from majorana_contracts.enums import Framework, Role, RunMode, RunStatus
 from majorana_contracts.events import run_event_adapter
-from majorana_llm import AnthropicLLM, LLMClient
+from majorana_llm import LLMClient, default_llm
 from majorana_pipeline import RunContext, execute_run
 from majorana_sandbox import Sandbox, VercelSandbox
 
@@ -28,8 +28,8 @@ DEFAULT_RUN_TIMEOUT_S = 300.0
 
 
 def _default_llm() -> LLMClient:
-    """Production LLM client (reads ANTHROPIC_API_KEY at call time)."""
-    return AnthropicLLM()
+    """Production LLM client for the active provider profile (keys read at call time)."""
+    return default_llm()
 
 
 def _default_sandbox() -> Sandbox:

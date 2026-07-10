@@ -3,8 +3,17 @@ structured-output parsing for the pipeline (plans/rebuild/08-phases.md §Phase 2
 step 3). The pipeline depends only on the LLMClient protocol; FakeLLM and
 AnthropicLLM are drop-in swappable."""
 
-from majorana_llm.client import AnthropicLLM, FakeLLM, LLMClient, LLMRequest, LLMResponse
-from majorana_llm.models import model_for
+from majorana_llm.client import (
+    AnthropicLLM,
+    FakeLLM,
+    LLMClient,
+    LLMRequest,
+    LLMResponse,
+    OpenAICompatibleLLM,
+    default_llm,
+    endpoint_for,
+)
+from majorana_llm.models import model_for, resolve_provider
 from majorana_llm.parsing import (
     StageOutputError,
     extract_code,
@@ -26,7 +35,11 @@ __all__ = [
     "LLMResponse",
     "FakeLLM",
     "AnthropicLLM",
+    "OpenAICompatibleLLM",
+    "default_llm",
+    "endpoint_for",
     "model_for",
+    "resolve_provider",
     "parse_plan",
     "extract_code",
     "extract_qasm",

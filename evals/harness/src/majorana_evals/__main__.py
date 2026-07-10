@@ -3,9 +3,10 @@
   uv run --package majorana-evals python -m majorana_evals \
       --corpus evals/corpus --out evals/report.json
 
-Needs DATABASE_URL and (for a real baseline) ANTHROPIC_API_KEY + Vercel Sandbox
-auth. Without a provider key this run cannot produce the honest baseline number —
-that is the owner-gated spend the nightly workflow is waiting on."""
+Needs DATABASE_URL and (for a real baseline) provider keys — OPENAI_API_KEY +
+DEEPSEEK_API_KEY for the default profile, or ANTHROPIC_API_KEY with
+MAJORANA_LLM_PROVIDER=anthropic — plus Vercel Sandbox auth. Without a provider key
+this run cannot produce the honest baseline number."""
 
 from __future__ import annotations
 
@@ -16,7 +17,7 @@ from pathlib import Path
 
 from majorana_contracts import Scope
 from majorana_contracts.enums import Role
-from majorana_llm import AnthropicLLM
+from majorana_llm import default_llm
 from majorana_sandbox import VercelSandbox
 
 from majorana_api.db import engine_from_env, session_factory
@@ -44,7 +45,7 @@ async def _main(corpus_dir: str, out: str) -> int:
             cases,
             factory=factory,
             scope=scope,
-            llm=AnthropicLLM(),
+            llm=default_llm(),
             sandbox=VercelSandbox(),
             note="baseline run against real providers",
         )

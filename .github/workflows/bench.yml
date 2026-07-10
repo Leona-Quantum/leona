@@ -1,8 +1,9 @@
 # Nightly eval baseline (Phase 2 step 7). Runs the corpus through the real
 # pipeline and records the honest pass rate. INERT until its secrets exist:
-# ANTHROPIC_API_KEY (the owner-gated LLM spend) is required for a real baseline;
-# without it the job is skipped, never faked. The ≥60% target in 08-phases.md is
-# a calibration goal, not a release gate — this workflow does not block merges.
+# a provider key (OPENAI_API_KEY + DEEPSEEK_API_KEY — the owner-confirmed
+# providers — or ANTHROPIC_API_KEY) is required for a real baseline; without one
+# the job is skipped, never faked. The ≥60% target in 08-phases.md is a
+# calibration goal, not a release gate — this workflow does not block merges.
 name: bench
 
 on:
@@ -17,10 +18,10 @@ jobs:
     if: ${{ github.repository == 'EshMis/majorana' }}
     steps:
       - uses: actions/checkout@v4
-      - name: guard on ANTHROPIC_API_KEY
+      - name: guard on provider key
         run: |
-          if [ -z "${{ secrets.ANTHROPIC_API_KEY }}" ]; then
-            echo "ANTHROPIC_API_KEY not set — skipping the real baseline run."
+          if [ -z "${{ secrets.OPENAI_API_KEY }}" ] && [ -z "${{ secrets.ANTHROPIC_API_KEY }}" ]; then
+            echo "No LLM provider key set — skipping the real baseline run."
             echo "skip=true" >> "$GITHUB_ENV"
           fi
       - if: ${{ env.skip != 'true' }}
@@ -45,6 +46,8 @@ jobs:
         name: run corpus → report.json
         env:
           DATABASE_URL: ${{ steps.neon.outputs.db_url }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
           VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
