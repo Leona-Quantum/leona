@@ -13,7 +13,12 @@ from majorana_llm import (
     parse_plan,
     resolve_provider,
 )
-from majorana_llm.prompts import GENERATE_SYSTEM_PROMPT, PLAN_SYSTEM_PROMPT
+from majorana_llm.prompts import (
+    CRITIC_SYSTEM_PROMPT,
+    GENERATE_SYSTEM_PROMPT,
+    PLAN_SYSTEM_PROMPT,
+    WRITEBACK_SYSTEM_PROMPT,
+)
 
 PLAN_JSON = {
     "domain": "education",
@@ -72,6 +77,51 @@ def test_plan_prompt_encodes_qiskit_default_and_ir_limits():
     assert "never switch" in PLAN_SYSTEM_PROMPT.lower() or "never a silent" in PLAN_SYSTEM_PROMPT
     assert "terminal measurement" in PLAN_SYSTEM_PROMPT
     assert "OpenQASM 2" in GENERATE_SYSTEM_PROMPT
+
+
+def test_v2_prompt_deltas_present():
+    # v2 port (Nameko_System_Prompts_v2.md): seeds + chemistry pragmatism in generate,
+    # calibration/evidence rules in the critic, sandbox+IR provenance in writeback.
+    assert "deterministic seeds" in GENERATE_SYSTEM_PROMPT.lower()
+    assert "hard-code the Hamiltonian coefficients" in GENERATE_SYSTEM_PROMPT
+    assert "it did not pass" in CRITIC_SYSTEM_PROMPT
+    assert "highest severity" in CRITIC_SYSTEM_PROMPT
+    assert "IR" in WRITEBACK_SYSTEM_PROMPT and "sandbox" in WRITEBACK_SYSTEM_PROMPT
+    # IR-on-demand directive (DECISIONS 2026-07-11): export-unsupported ≠ failure.
+    assert "never diminishes" in WRITEBACK_SYSTEM_PROMPT
+
+
+def test_structured_decoding_routes_per_endpoint():
+    from majorana_llm.client import decode_params
+
+    schema = {"type": "object", "properties": {"a": {"type": "string"}}}
+    req = LLMRequest(model="m", system="sys", user="u", response_schema=schema, schema_name="plan")
+    # OpenAI: true json_schema, system untouched.
+    params, system = decode_params(req, "OPENAI_API_KEY")
+    assert params["response_format"]["type"] == "json_schema"
+    assert params["response_format"]["json_schema"]["schema"] == schema
+    assert system == "sys"
+    # DeepSeek rejects json_schema → json_object + schema injected into the system.
+    params, system = decode_params(req, "DEEPSEEK_API_KEY")
+    assert params["response_format"] == {"type": "json_object"}
+    assert '"a"' in system and system.startswith("sys")
+    # No schema → no response_format at all.
+    params, system = decode_params(LLMRequest(model="m", system="sys", user="u"), "OPENAI_API_KEY")
+    assert "response_format" not in params
+
+
+async def test_request_schema_is_optional_and_fake_llm_ignores_it():
+    fake = FakeLLM({"*": json.dumps(PLAN_JSON)})
+    req = LLMRequest(
+        model="m",
+        system="s",
+        user="u",
+        response_schema={"type": "object"},
+        schema_name="request_plan",
+    )
+    resp = await fake.complete(req)
+    assert parse_plan(resp.text).algorithm == "Bell"
+    assert LLMRequest(model="m", system="s", user="u").response_schema is None
 
 
 async def test_fake_llm_is_deterministic_and_counts_tokens():

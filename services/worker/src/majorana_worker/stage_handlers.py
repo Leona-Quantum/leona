@@ -106,7 +106,15 @@ def build_stage_handlers(
         model = model_for(Stage.PLAN)
         t0 = time.monotonic()
         resp = await llm.complete(
-            LLMRequest(model=model, system=STAGE_PROMPTS["plan"], user=ctx.task_prompt)
+            LLMRequest(
+                model=model,
+                system=STAGE_PROMPTS["plan"],
+                user=ctx.task_prompt,
+                # Structured decoding pins the exact Plan field names/enums —
+                # prompt-only schema injection is proven unreliable (plan_invalid).
+                response_schema=Plan.model_json_schema(),
+                schema_name="request_plan",
+            )
         )
         await _emit_llm_call(ctx, Stage.PLAN, model, resp, int((time.monotonic() - t0) * 1000))
         try:

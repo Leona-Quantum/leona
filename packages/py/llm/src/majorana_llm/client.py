@@ -7,6 +7,7 @@ enforce quotas."""
 
 from __future__ import annotations
 
+import json
 from typing import Any, Callable, Protocol
 
 from pydantic import BaseModel, Field
@@ -18,6 +19,12 @@ class LLMRequest(BaseModel):
     user: str
     max_tokens: int = Field(default=4096, ge=1)
     temperature: float = Field(default=0.0, ge=0.0, le=2.0)
+    # Structured decoding: a JSON Schema the reply must satisfy. On OpenAI-compatible
+    # endpoints this becomes response_format json_schema (the durable fix for
+    # plan_invalid — prompt-only schema injection is proven unreliable, DECISIONS
+    # 2026-07-11); other clients fall back to injecting the schema into the prompt.
+    response_schema: dict[str, Any] | None = None
+    schema_name: str = "structured_output"
 
 
 class LLMResponse(BaseModel):
@@ -64,6 +71,41 @@ def endpoint_for(model: str) -> tuple[str | None, str]:
     return None, "OPENAI_API_KEY"
 
 
+def decode_params(request: LLMRequest, key_env: str) -> tuple[dict[str, Any], str]:
+    """(extra completion kwargs, effective system prompt) for an OpenAI-compatible
+    call. GPT-5-series chat completions deprecate max_tokens (reasoning tokens count
+    against max_completion_tokens) and reject non-default temperature; DeepSeek keeps
+    the classic parameters. Structured decoding: OpenAI gets response_format
+    json_schema; DeepSeek 400s on json_schema ("This response_format type is
+    unavailable now", verified live 2026-07-11), so it gets json_object (guarantees
+    syntactically valid JSON) plus the schema injected into the system message to pin
+    field names/enums. Module-level so the routing is testable without the SDK."""
+    params: dict[str, Any] = {"max_completion_tokens": request.max_tokens}
+    if key_env == "DEEPSEEK_API_KEY":
+        params = {"max_tokens": request.max_tokens, "temperature": request.temperature}
+    system = request.system
+    if request.response_schema is not None:
+        if key_env == "DEEPSEEK_API_KEY":
+            params["response_format"] = {"type": "json_object"}
+            system = (
+                f"{system}\n\nYour reply must be exactly one JSON object that "
+                f"validates against this JSON Schema:\n"
+                f"{json.dumps(request.response_schema)}"
+            )
+        else:
+            # Not strict-mode: the Plan schema has optional fields and value
+            # constraints that strict json_schema rejects; schema-guided
+            # decoding is what fixes plan_invalid, not strict validation.
+            params["response_format"] = {
+                "type": "json_schema",
+                "json_schema": {
+                    "name": request.schema_name,
+                    "schema": request.response_schema,
+                },
+            }
+    return params, system
+
+
 class OpenAICompatibleLLM:
     """Owner-confirmed production client (OpenAI + DeepSeek, 2026-07-10). Routes
     per model id via endpoint_for, so one client serves the mixed per-stage
@@ -84,18 +126,13 @@ class OpenAICompatibleLLM:
         if not api_key:
             raise RuntimeError(f"{key_env} is not set (required for model {request.model!r})")
 
-        # GPT-5-series chat completions deprecate max_tokens (reasoning tokens
-        # count against max_completion_tokens) and reject non-default temperature;
-        # DeepSeek keeps the classic parameters. Route the kwargs per endpoint.
-        params: dict[str, Any] = {"max_completion_tokens": request.max_tokens}
-        if key_env == "DEEPSEEK_API_KEY":
-            params = {"max_tokens": request.max_tokens, "temperature": request.temperature}
+        params, system = decode_params(request, key_env)
 
         client = AsyncOpenAI(api_key=api_key, base_url=base_url)
         completion = await client.chat.completions.create(
             model=request.model,
             messages=[
-                {"role": "system", "content": request.system},
+                {"role": "system", "content": system},
                 {"role": "user", "content": request.user},
             ],
             **params,
@@ -109,7 +146,7 @@ class OpenAICompatibleLLM:
             model=request.model,
             input_tokens=usage.prompt_tokens
             if usage
-            else max(1, len(request.system) + len(request.user)) // 4,
+            else max(1, len(system) + len(request.user)) // 4,
             output_tokens=usage.completion_tokens if usage else max(1, len(text)) // 4,
         )
 
@@ -137,12 +174,22 @@ class AnthropicLLM:
         except Exception as exc:  # pragma: no cover - only without the SDK
             raise RuntimeError("install majorana-llm[anthropic] and set ANTHROPIC_API_KEY") from exc
 
+        # No response_format on the Messages API — approximate structured decoding
+        # by appending the schema to the system prompt (weaker; the OpenAI-compatible
+        # profile is the production default).
+        system = request.system
+        if request.response_schema is not None:
+            system = (
+                f"{system}\n\nYour reply must be exactly one JSON object that validates "
+                f"against this JSON Schema:\n{json.dumps(request.response_schema)}"
+            )
+
         client = AsyncAnthropic(api_key=self._api_key)  # picks up ANTHROPIC_API_KEY
         message = await client.messages.create(
             model=request.model,
             max_tokens=request.max_tokens,
             temperature=request.temperature,
-            system=request.system,
+            system=system,
             messages=[{"role": "user", "content": request.user}],
         )
         text = "".join(block.text for block in message.content if block.type == "text")
