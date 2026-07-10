@@ -14,6 +14,7 @@ import signal
 import socket
 
 from majorana_api.db import engine_from_env, session_factory
+from majorana_api.observability import init_telemetry
 from majorana_api.repos import system
 
 from .handlers import HANDLERS
@@ -112,6 +113,7 @@ async def run_forever() -> None:
 
 def main() -> None:
     logging.basicConfig(level=logging.INFO)
+    init_telemetry("majorana-worker")
     asyncio.run(run_forever())
 
 

@@ -4,7 +4,6 @@ REST + SSE under /v1; errors are RFC 9457 problem+json; CORS pinned to the web
 origin (02-architecture.md §3, 05-security.md §1).
 """
 
-import os
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException, Request
@@ -13,6 +12,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from .db import engine_from_env, session_factory
+from .observability import init_telemetry
 from .repos import AuthzError, NotFoundError
 from .routes.me import router as me_router
 from .routes.runs import router as runs_router
@@ -20,24 +20,9 @@ from .settings import Settings
 
 
 def _wire_observability(app: FastAPI) -> None:
-    """AD-10: OTel once, exported twice — everything env-gated so local dev and
-    CI run with zero observability config. Sentry via SENTRY_DSN; traces via
-    the standard OTEL_EXPORTER_OTLP_* variables (Grafana Cloud)."""
-    if os.environ.get("SENTRY_DSN"):
-        import sentry_sdk
-
-        sentry_sdk.init(dsn=os.environ["SENTRY_DSN"], traces_sample_rate=0.1)
-    if os.environ.get("OTEL_EXPORTER_OTLP_ENDPOINT"):
-        from opentelemetry import trace
-        from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
+    if init_telemetry("majorana-api") is not None:
         from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
-        from opentelemetry.sdk.resources import Resource
-        from opentelemetry.sdk.trace import TracerProvider
-        from opentelemetry.sdk.trace.export import BatchSpanProcessor
 
-        provider = TracerProvider(resource=Resource.create({"service.name": "majorana-api"}))
-        provider.add_span_processor(BatchSpanProcessor(OTLPSpanExporter()))
-        trace.set_tracer_provider(provider)
         FastAPIInstrumentor.instrument_app(app)
 
 
