@@ -7,7 +7,7 @@ requires-python = ">=3.12"
 dependencies = [
     "majorana-contracts",
     "alembic>=1.16",
-    "sqlalchemy>=2.0",
+    "sqlalchemy[asyncio]>=2.0",
     "psycopg[binary]>=3.2",
 ]
 

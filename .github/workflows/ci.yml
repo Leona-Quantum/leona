@@ -70,6 +70,12 @@ jobs:
             uv run --package majorana-api alembic -c db/alembic.ini upgrade head
           '
           uv run --package majorana-api python db/seeds/seed.py
+      # Authz suite (Phase 1 step 4): entity × role × cross-workspace against
+      # the same throwaway branch. Required-check status rides on this db job.
+      - name: authz suite
+        env:
+          DATABASE_URL: ${{ steps.neon.outputs.db_url }}
+        run: uv run pytest services/api/tests/authz -q
       - uses: neondatabase/delete-branch-action@v3
         if: always()
         with:
