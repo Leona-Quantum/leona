@@ -1,0 +1,9 @@
+id: bench-03
+category: "A — Bell/GHZ state prep"
+prompt: "Prepare a 3-qubit GHZ state and measure all qubits. Return the counts."
+framework: qiskit
+expect:
+  verifier_decision: pass
+  export_status: lossless
+  output_keys: ["counts"]
+  saves_artifact: true
