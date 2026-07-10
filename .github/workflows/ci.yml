@@ -76,6 +76,11 @@ jobs:
         env:
           DATABASE_URL: ${{ steps.neon.outputs.db_url }}
         run: uv run pytest services/api/tests/authz -q
+      # Pipeline spine E2E (Phase 2 step 1): run -> job -> events -> SSE replay
+      - name: pipeline e2e
+        env:
+          DATABASE_URL: ${{ steps.neon.outputs.db_url }}
+        run: uv run pytest services/api/tests/test_pipeline_e2e.py -q
       - uses: neondatabase/delete-branch-action@v3
         if: always()
         with:
