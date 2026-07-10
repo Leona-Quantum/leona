@@ -18,7 +18,7 @@ from pathlib import Path
 from majorana_contracts import Scope
 from majorana_contracts.enums import Role
 from majorana_llm import default_llm
-from majorana_sandbox import VercelSandbox
+from majorana_sandbox import LocalSubprocessSandbox, VercelSandbox
 
 from majorana_api.db import engine_from_env, session_factory
 from majorana_api.repos import system
@@ -27,7 +27,7 @@ from majorana_evals.runner import run_corpus
 from majorana_evals.schema import load_corpus
 
 
-async def _main(corpus_dir: str, out: str) -> int:
+async def _main(corpus_dir: str, out: str, sandbox: str = "vercel") -> int:
     cases = load_corpus(corpus_dir)
     engine = engine_from_env()
     factory = session_factory(engine)
@@ -46,8 +46,11 @@ async def _main(corpus_dir: str, out: str) -> int:
             factory=factory,
             scope=scope,
             llm=default_llm(),
-            sandbox=VercelSandbox(),
-            note="baseline run against real providers",
+            # --sandbox local: real LLMs but the subprocess double instead of the
+            # Vercel microVM — for local baselines before the runner image exists
+            # (Phase 4). The report note records which boundary was used.
+            sandbox=LocalSubprocessSandbox() if sandbox == "local" else VercelSandbox(),
+            note=f"baseline run against real LLM providers (sandbox={sandbox})",
         )
     finally:
         await engine.dispose()
@@ -61,8 +64,9 @@ def main() -> None:
     parser = argparse.ArgumentParser(prog="majorana_evals")
     parser.add_argument("--corpus", default="evals/corpus")
     parser.add_argument("--out", default="evals/report.json")
+    parser.add_argument("--sandbox", choices=["vercel", "local"], default="vercel")
     args = parser.parse_args()
-    raise SystemExit(asyncio.run(_main(args.corpus, args.out)))
+    raise SystemExit(asyncio.run(_main(args.corpus, args.out, args.sandbox)))
 
 
 if __name__ == "__main__":
