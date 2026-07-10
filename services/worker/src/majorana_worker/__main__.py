@@ -19,6 +19,21 @@ log = logging.getLogger("majorana_worker")
 POLL_INTERVAL_S = float(os.environ.get("WORKER_POLL_INTERVAL_S", "2.0"))
 
 
+async def _liveness_listener(stop: asyncio.Event) -> None:
+    """Cloud Run services must accept on $PORT (AD-7 runs the worker as a
+    second service off the api image). Any request gets a static 200."""
+
+    async def handle(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
+        await reader.read(1024)
+        writer.write(b"HTTP/1.1 200 OK\r\ncontent-length: 2\r\nconnection: close\r\n\r\nok")
+        await writer.drain()
+        writer.close()
+
+    server = await asyncio.start_server(handle, "0.0.0.0", int(os.environ["PORT"]))
+    async with server:
+        await stop.wait()
+
+
 async def run_forever() -> None:
     worker_id = f"{socket.gethostname()}:{os.getpid()}"
     engine = engine_from_env()
@@ -27,6 +42,7 @@ async def run_forever() -> None:
     loop = asyncio.get_running_loop()
     for sig in (signal.SIGTERM, signal.SIGINT):
         loop.add_signal_handler(sig, stop.set)
+    liveness = asyncio.create_task(_liveness_listener(stop)) if os.environ.get("PORT") else None
     log.info("worker %s started (poll %.1fs)", worker_id, POLL_INTERVAL_S)
 
     while not stop.is_set():
@@ -49,6 +65,8 @@ async def run_forever() -> None:
             await asyncio.wait_for(stop.wait(), timeout=POLL_INTERVAL_S)
         except TimeoutError:
             pass
+    if liveness is not None:
+        await liveness
     await engine.dispose()
     log.info("worker %s drained and stopped", worker_id)
 
