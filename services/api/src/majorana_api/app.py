@@ -91,8 +91,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         # Never leak internals (05-security.md §1); detail lives in logs/Sentry.
         return _problem(500, "internal error", "internal_error")
 
-    @app.get("/healthz")
-    async def healthz():
+    # /health, not /healthz: Google Front End intercepts /healthz on run.app
+    # URLs and returns its own 404 before the container ever sees the request.
+    @app.get("/health")
+    async def health():
         return {"ok": True}
 
     app.include_router(me_router, prefix="/v1")
