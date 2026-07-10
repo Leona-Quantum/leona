@@ -107,6 +107,7 @@ class Run(Base):
     )
     task_prompt: Mapped[str]
     mode: Mapped[str]
+    idempotency_key: Mapped[str | None]
     status: Mapped[str | None] = mapped_column(server_default="queued")
     framework: Mapped[str]
     seed: Mapped[int | None] = mapped_column(BigInteger)

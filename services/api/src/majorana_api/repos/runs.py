@@ -50,6 +50,16 @@ async def list_runs(
     return list((await session.execute(stmt)).scalars().all())
 
 
+async def find_run_by_idempotency_key(
+    scope: Scope, session: AsyncSession, idempotency_key: str
+) -> Run | None:
+    stmt = select(Run).where(
+        Run.workspace_id == scope.workspace_id,
+        Run.idempotency_key == idempotency_key,
+    )
+    return (await session.execute(stmt)).scalars().first()
+
+
 async def create_run(
     scope: Scope,
     session: AsyncSession,
@@ -62,9 +72,11 @@ async def create_run(
     shots: int | None = None,
     tolerances: dict[str, Any] | None = None,
     timeout_s: int | None = None,
+    idempotency_key: str | None = None,
 ) -> Run:
     require_write(scope)
     run = Run(
+        idempotency_key=idempotency_key,
         id=uuid7(),
         workspace_id=scope.workspace_id,
         user_id=scope.user_id,
@@ -80,6 +92,9 @@ async def create_run(
     )
     session.add(run)
     await session.flush()
+    # Server defaults (status/created_at/updated_at) aren't populated by flush;
+    # load them now — a lazy attribute refresh later would MissingGreenlet.
+    await session.refresh(run)
     return run
 
 
@@ -103,11 +118,20 @@ async def update_run_status(
     session: AsyncSession,
     run_id: uuid.UUID,
     status: RunStatus,
+    *,
+    set_started_at: bool = False,
+    set_finished_at: bool = False,
     **fields: Any,
 ) -> None:
     require_write(scope)
     if not _RUN_STATUS_FIELDS.issuperset(fields):
         raise ValueError(f"not status-transition fields: {set(fields) - _RUN_STATUS_FIELDS}")
+    # Timestamp flags exist so non-repository callers (the worker) never need
+    # to construct func.now() themselves — sqlalchemy stays behind this layer.
+    if set_started_at:
+        fields["started_at"] = func.now()
+    if set_finished_at:
+        fields["finished_at"] = func.now()
     stmt = (
         update(Run)
         .where(Run.id == run_id, Run.workspace_id == scope.workspace_id)

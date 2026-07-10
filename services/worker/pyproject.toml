@@ -3,13 +3,14 @@
 name = "majorana-worker"
 version = "0.0.0"
 requires-python = ">=3.12"
-dependencies = ["majorana-api"]
+dependencies = ["majorana-api", "majorana-pipeline"]
 
 [project.scripts]
 majorana-worker = "majorana_worker.__main__:main"
 
 [tool.uv.sources]
 majorana-api = { workspace = true }
+majorana-pipeline = { workspace = true }
 
 [build-system]
 requires = ["hatchling"]

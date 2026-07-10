@@ -5,7 +5,7 @@ requires-python = ">=3.12"
 dependencies = ["majorana-contracts"]
 
 [dependency-groups]
-dev = ["pytest>=8", "pytest-asyncio>=1.0", "ruff>=0.14", "import-linter>=2.3"]
+dev = ["pytest>=8", "pytest-asyncio>=1.0", "ruff>=0.14", "import-linter>=2.3", "httpx>=0.27"]
 
 [tool.uv.workspace]
 members = ["services/api", "services/worker", "packages/py/*"]
@@ -31,7 +31,7 @@ asyncio_mode = "auto"
 # importable only by the repository layer + db/orm modules. Second gate:
 # scripts/check_raw_queries.py (both run in CI's py job).
 [tool.importlinter]
-root_packages = ["majorana_api", "majorana_contracts", "majorana_worker"]
+root_packages = ["majorana_api", "majorana_contracts", "majorana_pipeline", "majorana_worker"]
 include_external_packages = true
 
 [[tool.importlinter.contracts]]
@@ -43,10 +43,16 @@ forbidden_modules = ["majorana_api"]
 [[tool.importlinter.contracts]]
 name = "DB access only inside the repository layer"
 type = "forbidden"
-source_modules = ["majorana_api", "majorana_worker"]
+source_modules = ["majorana_api", "majorana_pipeline", "majorana_worker"]
 forbidden_modules = ["sqlalchemy", "psycopg", "alembic"]
 ignore_imports = [
     "majorana_api.db -> sqlalchemy",
     "majorana_api.orm -> sqlalchemy",
     "majorana_api.repos.* -> sqlalchemy",
 ]
+
+[[tool.importlinter.contracts]]
+name = "pipeline stays pure (contracts only)"
+type = "forbidden"
+source_modules = ["majorana_pipeline"]
+forbidden_modules = ["majorana_api", "majorana_worker", "fastapi", "httpx"]
