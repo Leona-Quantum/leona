@@ -71,6 +71,10 @@ async def run_forever() -> None:
     log.info("worker %s drained and stopped", worker_id)
 
 
-if __name__ == "__main__":
+def main() -> None:
     logging.basicConfig(level=logging.INFO)
     asyncio.run(run_forever())
+
+
+if __name__ == "__main__":
+    main()
