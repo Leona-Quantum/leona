@@ -4,4 +4,5 @@ packages:
 # 05-security supply chain: build scripts stay blocked. sharp (next/image) is
 # explicitly denied - we do not use image optimization yet; revisit in Phase 3.
 allowBuilds:
+  '@sentry/cli': false  # only used for source-map upload; we don't
   sharp: false
