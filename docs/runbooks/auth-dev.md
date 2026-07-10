@@ -9,6 +9,9 @@ verification → first-login provisioning (user + personal workspace) → `/v1/m
    *API key* (staging environment).
 2. WorkOS dashboard → **Redirects**: add `http://localhost:3000/auth/callback`
    as a redirect URI.
+2b. WorkOS dashboard → **Authentication → Sessions → JWT template**: add
+   `"email": {{user.email}}` (and optionally `"name": {{user.first_name}}`) —
+   the API requires the email claim to provision and 403s without it.
 3. `cp apps/web/.env.local.example apps/web/.env.local`, fill in the two values,
    and set `WORKOS_COOKIE_PASSWORD` to the output of `openssl rand -base64 32`.
 

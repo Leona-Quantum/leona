@@ -5,7 +5,9 @@ import { authkitMiddleware } from "@workos-inc/authkit-nextjs";
 export default authkitMiddleware({
   middlewareAuth: {
     enabled: true,
-    unauthenticatedPaths: ["/"],
+    // The callback handles the code exchange BEFORE a session exists — gating
+    // it would break every login.
+    unauthenticatedPaths: ["/", "/auth/callback"],
   },
 });
 

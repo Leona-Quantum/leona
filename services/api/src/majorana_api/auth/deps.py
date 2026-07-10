@@ -32,8 +32,9 @@ async def get_verified_token(
     settings: Annotated[Settings, Depends(get_settings)],
     authorization: Annotated[str | None, Header()] = None,
 ) -> VerifiedToken:
+    challenge = {"WWW-Authenticate": "Bearer"}
     if authorization is None or not authorization.startswith("Bearer "):
-        raise HTTPException(401, "missing bearer token")
+        raise HTTPException(401, "missing bearer token", headers=challenge)
     try:
         return await verify_bearer_token(
             authorization.removeprefix("Bearer "),
@@ -41,15 +42,24 @@ async def get_verified_token(
             issuer=settings.workos_jwt_issuer,
         )
     except TokenError:
-        raise HTTPException(401, "invalid token") from None
+        raise HTTPException(401, "invalid token", headers=challenge) from None
 
 
 async def get_identity(
     token: Annotated[VerifiedToken, Depends(get_verified_token)],
     session: Annotated[AsyncSession, Depends(get_session)],
 ) -> tuple[User, Workspace]:
-    """User + personal workspace; provisions both on first login."""
-    email = token.claims.get("email") or f"{token.workos_user_id}@placeholder.invalid"
+    """User + personal workspace; provisions both on first login.
+
+    Requires an email claim — AuthKit doesn't include it by default, so the
+    WorkOS JWT template must add it (docs/runbooks/auth-dev.md). Failing closed
+    beats persisting a placeholder identity.
+    """
+    email = token.claims.get("email")
+    if not email:
+        raise HTTPException(
+            403, "access token lacks email claim; configure the WorkOS JWT template"
+        )
     return await system.get_or_provision_user(
         session,
         workos_user_id=token.workos_user_id,
