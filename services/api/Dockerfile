@@ -18,4 +18,4 @@ USER appuser
 ENV PATH="/app/.venv/bin:$PATH" PORT=8080
 # api (default): uvicorn control plane. worker: override command with
 #   python -m majorana_worker  (Phase 2 — worker loop lands with the pipeline)
-CMD ["sh", "-c", "uvicorn --factory majorana_api.app:create_app --host 0.0.0.0 --port ${PORT}"]
+CMD ["sh", "-c", "exec uvicorn --factory majorana_api.app:create_app --host 0.0.0.0 --port ${PORT}"]

@@ -5,7 +5,7 @@
 | SNYK_TOKEN | GitHub Actions secret (repo) | security.yml Snyk job | 2026-07-09 (UTC) |
 | NEON_API_KEY | GitHub Actions secret (repo) | ci.yml db job (branch create/delete) — Neon org API key `gh-ci-majorana` | 2026-07-10 |
 | DATABASE_URL | GCP Secret Manager (majorana-core) | Cloud Run api+worker — Neon pooled URL, default branch | 2026-07-10 |
-| WORKOS_CLIENT_ID / WORKOS_API_KEY / WORKOS_COOKIE_PASSWORD | apps/web/.env.local (dev) + Vercel env Sensitive (deploy) | AuthKit (web); the API needs WORKOS_CLIENT_ID only | pending owner (step 5 browser test) |
+| WORKOS_CLIENT_ID / WORKOS_API_KEY / WORKOS_COOKIE_PASSWORD | apps/web/.env.local (dev) + Vercel env Sensitive (deploy) | AuthKit (web); the API needs WORKOS_CLIENT_ID only. Vercel preview holds PLACEHOLDERS until the owner sets real values (step 5 browser test) | 2026-07-10 |
 
 ## Infrastructure projects (names only)
 
