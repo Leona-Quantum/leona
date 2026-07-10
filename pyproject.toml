@@ -5,7 +5,7 @@ requires-python = ">=3.12"
 dependencies = ["majorana-contracts"]
 
 [dependency-groups]
-dev = ["pytest>=8", "ruff>=0.14"]
+dev = ["pytest>=8", "pytest-asyncio>=1.0", "ruff>=0.14", "import-linter>=2.3"]
 
 [tool.uv.workspace]
 members = ["services/api", "services/worker", "packages/py/*"]
@@ -25,3 +25,28 @@ line-length = 100
 
 [tool.pytest.ini_options]
 testpaths = ["services", "packages/py"]
+asyncio_mode = "auto"
+
+# Authz invariant enforcement (02-architecture.md §4): SQLAlchemy/psycopg are
+# importable only by the repository layer + db/orm modules. Second gate:
+# scripts/check_raw_queries.py (both run in CI's py job).
+[tool.importlinter]
+root_packages = ["majorana_api", "majorana_contracts"]
+include_external_packages = true
+
+[[tool.importlinter.contracts]]
+name = "contracts imports nothing internal"
+type = "forbidden"
+source_modules = ["majorana_contracts"]
+forbidden_modules = ["majorana_api"]
+
+[[tool.importlinter.contracts]]
+name = "DB access only inside the repository layer"
+type = "forbidden"
+source_modules = ["majorana_api"]
+forbidden_modules = ["sqlalchemy", "psycopg", "alembic"]
+ignore_imports = [
+    "majorana_api.db -> sqlalchemy",
+    "majorana_api.orm -> sqlalchemy",
+    "majorana_api.repos.* -> sqlalchemy",
+]

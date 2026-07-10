@@ -37,6 +37,11 @@ jobs:
       - run: uv run pytest -q
       - name: openapi.json is current
         run: uv run python -m majorana_contracts.export --check
+      # Authz invariant (02-architecture §4): DB access only via the repository layer
+      - name: import-linter
+        run: uv run lint-imports
+      - name: no raw queries outside repository layer
+        run: uv run python scripts/check_raw_queries.py
 
   # Migration gate (04-database.md §4): up→down→up + seed against a fresh Neon
   # branch on every PR; B-D3 budget (<60 s) enforced by `timeout`.
