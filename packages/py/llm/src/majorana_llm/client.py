@@ -146,7 +146,7 @@ class OpenAICompatibleLLM:
             model=request.model,
             input_tokens=usage.prompt_tokens
             if usage
-            else max(1, len(request.system) + len(request.user)) // 4,
+            else max(1, len(system) + len(request.user)) // 4,
             output_tokens=usage.completion_tokens if usage else max(1, len(text)) // 4,
         )
 

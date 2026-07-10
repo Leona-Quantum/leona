@@ -58,7 +58,9 @@ OpenQASM 2 so it can be parsed to the canonical IR.
 - Use deterministic seeds for sampling and optimization wherever the framework \
 supports them.
 - For chemistry at PoC scale, hard-code the Hamiltonian coefficients rather than \
-importing heavy chemistry packages — the sandbox does not have them.
+importing heavy chemistry packages — the sandbox does not have them. Coefficients must \
+come from the request, the plan, or standard published values for the named system — \
+never fabricated numbers.
 - Do not add measurements unless the artifact contract requests them; respect the \
 measurement policy. If the user asked for counts or samples, measurement is required \
 and explicit.
