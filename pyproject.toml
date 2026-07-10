@@ -31,7 +31,7 @@ asyncio_mode = "auto"
 # importable only by the repository layer + db/orm modules. Second gate:
 # scripts/check_raw_queries.py (both run in CI's py job).
 [tool.importlinter]
-root_packages = ["majorana_api", "majorana_contracts"]
+root_packages = ["majorana_api", "majorana_contracts", "majorana_worker"]
 include_external_packages = true
 
 [[tool.importlinter.contracts]]
@@ -43,7 +43,7 @@ forbidden_modules = ["majorana_api"]
 [[tool.importlinter.contracts]]
 name = "DB access only inside the repository layer"
 type = "forbidden"
-source_modules = ["majorana_api"]
+source_modules = ["majorana_api", "majorana_worker"]
 forbidden_modules = ["sqlalchemy", "psycopg", "alembic"]
 ignore_imports = [
     "majorana_api.db -> sqlalchemy",
