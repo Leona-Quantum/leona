@@ -48,6 +48,9 @@ class RecordingSession:
     async def flush(self):
         pass
 
+    async def refresh(self, obj):
+        pass
+
 
 def compiled(stmt) -> tuple[str, dict]:
     c = stmt.compile(dialect=postgresql.dialect())

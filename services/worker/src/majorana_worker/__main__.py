@@ -1,8 +1,9 @@
-"""Worker loop skeleton (AD-7): claim → dispatch → finish, polling run_after.
+"""Worker loop (AD-7): claim → dispatch via HANDLERS → finish, polling run_after.
 
-No job kinds exist until the Phase 2 pipeline lands; an unknown kind is marked
-`dead` (fail closed, never retry-loop garbage). SIGTERM drains gracefully —
-Cloud Run sends it before scale-down.
+An unknown kind is marked `dead` (fail closed, never retry-loop garbage); a
+handler exception marks the job `failed` (retry is Phase 2 backlog — jobs stay
+inspectable rather than looping). SIGTERM drains gracefully — Cloud Run sends
+it before scale-down.
 """
 
 import asyncio
@@ -14,6 +15,8 @@ import socket
 
 from majorana_api.db import engine_from_env, session_factory
 from majorana_api.repos import system
+
+from .handlers import HANDLERS
 
 log = logging.getLogger("majorana_worker")
 
@@ -53,21 +56,44 @@ async def run_forever() -> None:
         while not stop.is_set():
             delay = POLL_INTERVAL_S
             try:
+                claimed: tuple[object, str, dict] | None = None
                 async with factory() as session:
                     job = await system.claim_job(session, worker_id=worker_id)
                     if job is not None:
-                        # No job kinds exist until the Phase 2 pipeline
-                        # registers handlers; fail closed rather than retry.
-                        await system.finish_job(
-                            session,
-                            job_id=job.id,
-                            status="dead",
-                            last_error=f"no handler registered for kind {job.kind!r}",
-                        )
-                        log.error("job %s dead: no handler for kind %r", job.id, job.kind)
-                        await session.commit()
-                        continue  # drain the queue before sleeping again
-                    await session.commit()
+                        claimed = (job.id, job.kind, job.payload)
+                    await session.commit()  # claim visible before the (long) handler runs
+                if claimed is not None:
+                    job_id, kind, payload = claimed
+                    handler = HANDLERS.get(kind)
+                    if handler is None:
+                        # Fail closed rather than retry-loop garbage.
+                        async with factory() as session:
+                            await system.finish_job(
+                                session,
+                                job_id=job_id,
+                                status="dead",
+                                last_error=f"no handler registered for kind {kind!r}",
+                            )
+                            await session.commit()
+                        log.error("job %s dead: no handler for kind %r", job_id, kind)
+                    else:
+                        try:
+                            async with factory() as session:
+                                await handler(session, payload)
+                            async with factory() as session:
+                                await system.finish_job(session, job_id=job_id, status="done")
+                                await session.commit()
+                        except Exception as exc:
+                            log.exception("job %s (%s) failed", job_id, kind)
+                            async with factory() as session:
+                                await system.finish_job(
+                                    session,
+                                    job_id=job_id,
+                                    status="failed",
+                                    last_error=str(exc)[:2000],
+                                )
+                                await session.commit()
+                    continue  # drain the queue before sleeping again
             except Exception:
                 # Transient DB failure: log, back off, keep the worker alive.
                 log.exception("poll cycle failed; backing off %.0fs", ERROR_BACKOFF_S)
