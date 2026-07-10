@@ -131,7 +131,10 @@ def build_stage_handlers(
         user = f"Plan:\n{plan.model_dump_json(indent=2)}\n\nGenerate the code."
         t0 = time.monotonic()
         resp = await llm.complete(
-            LLMRequest(model=model, system=STAGE_PROMPTS["generate"], user=user)
+            # 8192: real algorithm implementations (VQE/QAOA + QASM emission) overflow
+            # the 4096 default — DeepSeek then returns an empty completion, which
+            # surfaced as generate_invalid in the 2026-07-11 baseline.
+            LLMRequest(model=model, system=STAGE_PROMPTS["generate"], user=user, max_tokens=8192)
         )
         await _emit_llm_call(ctx, Stage.GENERATE, model, resp, int((time.monotonic() - t0) * 1000))
         try:

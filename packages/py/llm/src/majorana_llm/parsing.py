@@ -50,7 +50,10 @@ def extract_code(text: str) -> str:
             return body
     if text.strip():
         return text.strip()
-    raise StageOutputError("no code found in generation output")
+    # Length + head make an empty/truncated completion diagnosable from run events.
+    raise StageOutputError(
+        f"no code found in generation output (len={len(text)}, head={text[:80]!r})"
+    )
 
 
 def extract_qasm(text: str) -> str | None:

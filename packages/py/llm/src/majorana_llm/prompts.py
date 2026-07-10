@@ -55,6 +55,11 @@ plan.expected_output_keys entry.
 - For circuit-bearing tasks, define FINAL_CIRCUIT (Qiskit: a QuantumCircuit; Cirq: a \
 cirq.Circuit; PennyLane: an argument-free QNode or tape-able function) and emit its \
 OpenQASM 2 so it can be parsed to the canonical IR.
+- The sandbox has Qiskit 2.x. Its removed legacy APIs do not exist: emit QASM with \
+`from qiskit.qasm2 import dumps; dumps(FINAL_CIRCUIT)` (QuantumCircuit.qasm() is gone), \
+run via qiskit_aer's AerSimulator with transpile + run (execute() and BasicAer are \
+gone), and never call .c_if() (removed; classical feed-forward is outside the IR gate \
+set anyway).
 - Use deterministic seeds for sampling and optimization wherever the framework \
 supports them.
 - For chemistry at PoC scale, hard-code the Hamiltonian coefficients rather than \
