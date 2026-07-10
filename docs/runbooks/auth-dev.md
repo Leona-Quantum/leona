@@ -1,0 +1,38 @@
+# Auth dev loop (Phase 1 step 5)
+
+End-to-end: AuthKit session (Next.js) → WorkOS access token → FastAPI JWKS
+verification → first-login provisioning (user + personal workspace) → `/v1/me`.
+
+## One-time setup (owner — dashboard values, never committed)
+
+1. WorkOS dashboard → project `majorana` → **API keys**: copy *Client ID* and
+   *API key* (staging environment).
+2. WorkOS dashboard → **Redirects**: add `http://localhost:3000/auth/callback`
+   as a redirect URI.
+2b. WorkOS dashboard → **Authentication → Sessions → JWT template**: add
+   `"email": {{user.email}}` (and optionally `"name": {{user.first_name}}`) —
+   the API requires the email claim to provision and 403s without it.
+3. `cp apps/web/.env.local.example apps/web/.env.local`, fill in the two values,
+   and set `WORKOS_COOKIE_PASSWORD` to the output of `openssl rand -base64 32`.
+
+## Run locally
+
+```bash
+# API (needs a dev DB — create/reuse a Neon branch, run migrations first)
+export DATABASE_URL="$(neonctl connection-string dev-local --project-id twilight-wildflower-01313590)"
+export WORKOS_CLIENT_ID="client_..."          # same value as apps/web/.env.local
+uv run --package majorana-api alembic -c db/alembic.ini upgrade head
+uv run --package majorana-api uvicorn --factory majorana_api.app:create_app --port 8000
+
+# Web
+pnpm --filter @majorana/web dev
+```
+
+Browser test: `http://localhost:3000` → Sign in → AuthKit hosted flow →
+`/dashboard` must show your email AND a `/v1/me` JSON block with a real
+`workspace_id` + `role: owner` (that proves JWKS verify + provisioning worked).
+
+If `/v1/me` is 401 with a valid session: check the API log — an issuer
+mismatch means the token's `iss` differs from the pinned default
+(`https://api.workos.com/user_management/<client_id>`); set `WORKOS_JWT_ISSUER`
+(and `WORKOS_JWKS_URL` if on a custom auth domain) to the actual values.

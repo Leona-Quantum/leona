@@ -4,4 +4,4 @@
 /packages/py/sandbox/      @EshMis
 /.github/workflows/        @EshMis
 /apps/web/middleware.ts    @EshMis
-/services/api/app/auth/    @EshMis
+/services/api/src/majorana_api/auth/  @EshMis
