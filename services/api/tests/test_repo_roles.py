@@ -4,7 +4,7 @@ members cannot administer."""
 import uuid
 
 import pytest
-from conftest import make_scope
+from repo_test_helpers import make_scope
 from majorana_contracts.enums import Role, RunMode, UsageKind, VerificationMethod
 
 from majorana_api.repos import AuthzError, artifacts, audit, runs, usage, workspaces

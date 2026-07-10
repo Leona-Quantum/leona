@@ -21,6 +21,36 @@ from ..ids import uuid7
 from ..orm import Job, Membership, User, Workspace
 
 
+async def _existing_user(
+    session: AsyncSession, workos_user_id: str
+) -> tuple[User, Workspace] | None:
+    user = (
+        (await session.execute(select(User).where(User.workos_user_id == workos_user_id)))
+        .scalars()
+        .first()
+    )
+    if user is None:
+        return None
+    ws = (
+        (
+            await session.execute(
+                select(Workspace)
+                .join(Membership, Membership.workspace_id == Workspace.id)
+                .where(
+                    Membership.user_id == user.id,
+                    Workspace.kind == "personal",
+                    Workspace.deleted_at.is_(None),
+                )
+            )
+        )
+        .scalars()
+        .first()
+    )
+    if ws is None:
+        raise RuntimeError(f"user {user.id} has no personal workspace")
+    return user, ws
+
+
 async def get_or_provision_user(
     session: AsyncSession,
     *,
@@ -29,42 +59,24 @@ async def get_or_provision_user(
     display_name: str | None = None,
 ) -> tuple[User, Workspace]:
     """First login: create user + personal workspace + owner membership (04 §1)."""
-    user = (
-        (await session.execute(select(User).where(User.workos_user_id == workos_user_id)))
-        .scalars()
-        .first()
-    )
-    if user is not None:
-        ws = (
-            (
-                await session.execute(
-                    select(Workspace)
-                    .join(Membership, Membership.workspace_id == Workspace.id)
-                    .where(
-                        Membership.user_id == user.id,
-                        Workspace.kind == "personal",
-                        Workspace.deleted_at.is_(None),
-                    )
-                )
-            )
-            .scalars()
-            .first()
-        )
-        if ws is None:
-            raise RuntimeError(f"user {user.id} has no personal workspace")
-        return user, ws
+    found = await _existing_user(session, workos_user_id)
+    if found is not None:
+        return found
 
     user = User(id=uuid7(), workos_user_id=workos_user_id, email=email, display_name=display_name)
     session.add(user)
     try:
         await session.flush()
-    except IntegrityError:
-        # Concurrent first-login lost the workos_user_id unique race: start over
-        # on the row the winner created.
+    except IntegrityError as exc:
         await session.rollback()
-        return await get_or_provision_user(
-            session, workos_user_id=workos_user_id, email=email, display_name=display_name
-        )
+        # Exactly one retry, and only for losing the workos_user_id unique race
+        # (23505): the winner's row must exist now. Anything else re-raises.
+        if getattr(exc.orig, "sqlstate", None) != "23505":
+            raise
+        found = await _existing_user(session, workos_user_id)
+        if found is None:
+            raise
+        return found
     ws = Workspace(id=uuid7(), kind="personal", name=email, owner_user_id=user.id)
     session.add(ws)
     await session.flush()

@@ -9,7 +9,7 @@ import datetime as dt
 import uuid
 from typing import Any
 
-from sqlalchemy import TIMESTAMP, BigInteger, ForeignKey, Integer, Numeric, Text
+from sqlalchemy import TIMESTAMP, BigInteger, ForeignKey, Integer, Numeric, Text, func, text
 from sqlalchemy.dialects.postgresql import INET, JSONB, UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
@@ -32,9 +32,9 @@ class User(Base):
     workos_user_id: Mapped[str] = mapped_column(unique=True)
     email: Mapped[str]
     display_name: Mapped[str | None]
-    plan: Mapped[str | None]
-    created_at: Mapped[dt.datetime | None]
-    updated_at: Mapped[dt.datetime | None]
+    plan: Mapped[str | None] = mapped_column(server_default="free")
+    created_at: Mapped[dt.datetime | None] = mapped_column(server_default=func.now())
+    updated_at: Mapped[dt.datetime | None] = mapped_column(server_default=func.now())
 
 
 class Workspace(Base):
@@ -44,10 +44,10 @@ class Workspace(Base):
     kind: Mapped[str]
     name: Mapped[str]
     owner_user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"))
-    plan: Mapped[str | None]
+    plan: Mapped[str | None] = mapped_column(server_default="free")
     deleted_at: Mapped[dt.datetime | None]
-    created_at: Mapped[dt.datetime | None]
-    updated_at: Mapped[dt.datetime | None]
+    created_at: Mapped[dt.datetime | None] = mapped_column(server_default=func.now())
+    updated_at: Mapped[dt.datetime | None] = mapped_column(server_default=func.now())
 
 
 class Membership(Base):
@@ -56,8 +56,8 @@ class Membership(Base):
     workspace_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("workspaces.id"), primary_key=True)
     user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"), primary_key=True)
     role: Mapped[str]
-    created_at: Mapped[dt.datetime | None]
-    updated_at: Mapped[dt.datetime | None]
+    created_at: Mapped[dt.datetime | None] = mapped_column(server_default=func.now())
+    updated_at: Mapped[dt.datetime | None] = mapped_column(server_default=func.now())
 
 
 class Artifact(Base):
@@ -69,12 +69,12 @@ class Artifact(Base):
     title: Mapped[str]
     family: Mapped[str]
     framework: Mapped[str]
-    visibility: Mapped[str | None]
+    visibility: Mapped[str | None] = mapped_column(server_default="private")
     parent_artifact_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("artifacts.id"))
     current_version_id: Mapped[uuid.UUID | None] = mapped_column(_UUID)
     deleted_at: Mapped[dt.datetime | None]
-    created_at: Mapped[dt.datetime | None]
-    updated_at: Mapped[dt.datetime | None]
+    created_at: Mapped[dt.datetime | None] = mapped_column(server_default=func.now())
+    updated_at: Mapped[dt.datetime | None] = mapped_column(server_default=func.now())
 
 
 class ArtifactVersion(Base):
@@ -93,7 +93,7 @@ class ArtifactVersion(Base):
     qasm: Mapped[str | None]
     resource_estimates: Mapped[dict[str, Any] | None]
     limitations: Mapped[str | None]
-    created_at: Mapped[dt.datetime | None]
+    created_at: Mapped[dt.datetime | None] = mapped_column(server_default=func.now())
 
 
 class Run(Base):
@@ -107,7 +107,7 @@ class Run(Base):
     )
     task_prompt: Mapped[str]
     mode: Mapped[str]
-    status: Mapped[str | None]
+    status: Mapped[str | None] = mapped_column(server_default="queued")
     framework: Mapped[str]
     seed: Mapped[int | None] = mapped_column(BigInteger)
     shots: Mapped[int | None] = mapped_column(Integer)
@@ -120,8 +120,8 @@ class Run(Base):
     baseline: Mapped[dict[str, Any] | None]
     started_at: Mapped[dt.datetime | None]
     finished_at: Mapped[dt.datetime | None]
-    created_at: Mapped[dt.datetime | None]
-    updated_at: Mapped[dt.datetime | None]
+    created_at: Mapped[dt.datetime | None] = mapped_column(server_default=func.now())
+    updated_at: Mapped[dt.datetime | None] = mapped_column(server_default=func.now())
 
 
 class RunEvent(Base):
@@ -130,10 +130,10 @@ class RunEvent(Base):
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True)
     run_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("runs.id"))
     seq: Mapped[int] = mapped_column(Integer)
-    ts: Mapped[dt.datetime | None]
+    ts: Mapped[dt.datetime | None] = mapped_column(server_default=func.now())
     type: Mapped[str]
     payload: Mapped[dict[str, Any]]
-    created_at: Mapped[dt.datetime | None]
+    created_at: Mapped[dt.datetime | None] = mapped_column(server_default=func.now())
 
 
 class VerificationRecord(Base):
@@ -142,10 +142,10 @@ class VerificationRecord(Base):
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True)
     run_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("runs.id"))
     method: Mapped[str]
-    params: Mapped[dict[str, Any] | None]
+    params: Mapped[dict[str, Any] | None] = mapped_column(server_default=text("'{}'::jsonb"))
     result: Mapped[str]
     details: Mapped[dict[str, Any] | None]
-    created_at: Mapped[dt.datetime | None]
+    created_at: Mapped[dt.datetime | None] = mapped_column(server_default=func.now())
 
 
 class Job(Base):
@@ -154,15 +154,15 @@ class Job(Base):
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True)
     kind: Mapped[str]
     payload: Mapped[dict[str, Any]]
-    status: Mapped[str | None]
+    status: Mapped[str | None] = mapped_column(server_default="queued")
     run_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("runs.id"))
-    attempts: Mapped[int | None] = mapped_column(Integer)
+    attempts: Mapped[int | None] = mapped_column(Integer, server_default="0")
     locked_by: Mapped[str | None]
     locked_at: Mapped[dt.datetime | None]
-    run_after: Mapped[dt.datetime | None]
+    run_after: Mapped[dt.datetime | None] = mapped_column(server_default=func.now())
     last_error: Mapped[str | None]
-    created_at: Mapped[dt.datetime | None]
-    updated_at: Mapped[dt.datetime | None]
+    created_at: Mapped[dt.datetime | None] = mapped_column(server_default=func.now())
+    updated_at: Mapped[dt.datetime | None] = mapped_column(server_default=func.now())
 
 
 class UsageEvent(Base):
@@ -174,8 +174,8 @@ class UsageEvent(Base):
     kind: Mapped[str]
     quantity: Mapped[float] = mapped_column(Numeric)
     meta: Mapped[dict[str, Any] | None]
-    ts: Mapped[dt.datetime | None]
-    created_at: Mapped[dt.datetime | None]
+    ts: Mapped[dt.datetime | None] = mapped_column(server_default=func.now())
+    created_at: Mapped[dt.datetime | None] = mapped_column(server_default=func.now())
 
 
 class AuditLog(Base):
@@ -188,6 +188,6 @@ class AuditLog(Base):
     target_kind: Mapped[str | None]
     target_id: Mapped[uuid.UUID | None] = mapped_column(_UUID)
     ip: Mapped[str | None] = mapped_column(INET)
-    ts: Mapped[dt.datetime | None]
+    ts: Mapped[dt.datetime | None] = mapped_column(server_default=func.now())
     meta: Mapped[dict[str, Any] | None]
-    created_at: Mapped[dt.datetime | None]
+    created_at: Mapped[dt.datetime | None] = mapped_column(server_default=func.now())

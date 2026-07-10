@@ -5,7 +5,7 @@ probes land with the step-4 authz suite."""
 import uuid
 
 import pytest
-from conftest import compiled
+from repo_test_helpers import compiled
 from majorana_contracts.enums import RunMode, UsageKind, VerificationMethod
 
 from majorana_api.repos import NotFoundError, artifacts, audit, runs, usage, workspaces
