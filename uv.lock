@@ -571,8 +571,20 @@ requires-dist = [
 
 [[package]]
 name = "majorana-baselines"
-version = "0.0.0"
-source = { virtual = "packages/py/baselines" }
+version = "0.1.0"
+source = { editable = "packages/py/baselines" }
+dependencies = [
+    { name = "majorana-contracts" },
+    { name = "numpy" },
+    { name = "pydantic" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "majorana-contracts", editable = "packages/py/contracts" },
+    { name = "numpy", specifier = ">=1.26" },
+    { name = "pydantic", specifier = ">=2.8" },
+]
 
 [[package]]
 name = "majorana-contracts"
@@ -630,8 +642,24 @@ source = { virtual = "packages/py/sandbox" }
 
 [[package]]
 name = "majorana-verification"
-version = "0.0.0"
-source = { virtual = "packages/py/verification" }
+version = "0.1.0"
+source = { editable = "packages/py/verification" }
+dependencies = [
+    { name = "majorana-baselines" },
+    { name = "majorana-contracts" },
+    { name = "majorana-ir" },
+    { name = "numpy" },
+    { name = "pydantic" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "majorana-baselines", editable = "packages/py/baselines" },
+    { name = "majorana-contracts", editable = "packages/py/contracts" },
+    { name = "majorana-ir", editable = "packages/py/ir" },
+    { name = "numpy", specifier = ">=1.26" },
+    { name = "pydantic", specifier = ">=2.8" },
+]
 
 [[package]]
 name = "majorana-worker"
