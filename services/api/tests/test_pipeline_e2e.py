@@ -19,7 +19,6 @@ from majorana_api.auth import deps as auth_deps
 from majorana_api.db import engine_from_env, session_factory
 from majorana_api.repos import system
 from majorana_api.settings import Settings
-from majorana_api.jobs import RUN_EXECUTE_JOB_KIND
 from majorana_worker.handlers import HANDLERS
 
 requires_db = pytest.mark.skipif(
@@ -59,19 +58,30 @@ async def env():
     await engine.dispose()
 
 
-async def _work_one_job(factory, expected_kind: str) -> None:
-    """One worker dispatch cycle, exactly as __main__ sequences it."""
-    async with factory() as session:
-        job = await system.claim_job(session, worker_id="e2e-test")
-        assert job is not None, "expected a queued job"
-        assert job.kind == expected_kind
-        job_id, payload = job.id, job.payload
-        await session.commit()
-    async with factory() as session:
-        await HANDLERS[expected_kind](session, payload)
-    async with factory() as session:
-        await system.finish_job(session, job_id=job_id, status="done")
-        await session.commit()
+async def _work_until_run_processed(factory, run_id: str) -> None:
+    """Worker dispatch cycles, exactly as __main__ sequences them, until the job
+    for `run_id` has been handled. Other queued jobs (e.g. the seed fixture's
+    run.execute row with a stub payload) go through the same real dispatch path
+    and are marked failed on error — mirroring the loop's semantics."""
+    for _ in range(10):
+        async with factory() as session:
+            job = await system.claim_job(session, worker_id="e2e-test")
+            assert job is not None, f"queue drained before run {run_id} was processed"
+            job_id, kind, payload = job.id, job.kind, job.payload
+            await session.commit()
+        try:
+            async with factory() as session:
+                await HANDLERS[kind](session, payload)
+            status = "done"
+        except Exception:
+            status = "failed"
+        async with factory() as session:
+            await system.finish_job(session, job_id=job_id, status=status)
+            await session.commit()
+        if payload.get("run_id") == run_id:
+            assert status == "done"
+            return
+    raise AssertionError(f"job for run {run_id} not found in 10 claims")
 
 
 @requires_db
@@ -96,7 +106,7 @@ async def test_run_executes_end_to_end_with_full_event_log(env):
     )
     assert retry.json()["id"] == run["id"]
 
-    await _work_one_job(factory, RUN_EXECUTE_JOB_KIND)
+    await _work_until_run_processed(factory, run["id"])
 
     final = (await client.get(f"/v1/runs/{run['id']}")).json()
     assert final["status"] == "succeeded"
@@ -150,7 +160,7 @@ async def test_cancel_queued_run_prevents_execution(env):
     assert again.status_code == 409
 
     # the queued job is claimed but the executor no-ops on the cancelled run
-    await _work_one_job(factory, RUN_EXECUTE_JOB_KIND)
+    await _work_until_run_processed(factory, run["id"])
     final = (await client.get(f"/v1/runs/{run['id']}")).json()
     assert final["status"] == "cancelled"
     types = [e["type"] for e in (await client.get(f"/v1/runs/{run['id']}/events")).json()]
