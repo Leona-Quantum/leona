@@ -1,5 +1,21 @@
-# Stub — real package lands in its phase (plans/rebuild/08-phases.md)
 [project]
 name = "majorana-sandbox"
-version = "0.0.0"
+version = "0.1.0"
+description = "Ephemeral execution sandbox for untrusted generated code — deny-all egress, caps, static guard"
 requires-python = ">=3.12"
+dependencies = ["pydantic>=2.8", "majorana-contracts"]
+
+[project.optional-dependencies]
+# The real Vercel Sandbox provider. Kept optional so the guard + local test
+# double install without the SDK (the SDK needs Vercel OIDC/token to do anything).
+vercel = ["vercel>=0.4"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/majorana_sandbox"]
+
+[tool.uv.sources]
+majorana-contracts = { workspace = true }
