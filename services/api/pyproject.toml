@@ -9,6 +9,9 @@ dependencies = [
     "alembic>=1.16",
     "sqlalchemy[asyncio]>=2.0",
     "psycopg[binary]>=3.2",
+    "fastapi>=0.115",
+    "uvicorn>=0.35",
+    "pyjwt[crypto]>=2.9",
 ]
 
 [tool.uv.sources]

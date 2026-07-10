@@ -51,6 +51,24 @@ async def _existing_user(
     return user, ws
 
 
+async def find_membership(
+    session: AsyncSession, *, workspace_id: Any, user_id: Any
+) -> Membership | None:
+    """Scope derivation (auth layer): the membership row, if any. Pre-Scope by
+    necessity — this lookup is what a Scope is built FROM."""
+    return (
+        (
+            await session.execute(
+                select(Membership).where(
+                    Membership.workspace_id == workspace_id, Membership.user_id == user_id
+                )
+            )
+        )
+        .scalars()
+        .first()
+    )
+
+
 async def get_or_provision_user(
     session: AsyncSession,
     *,
