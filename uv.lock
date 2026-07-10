@@ -750,6 +750,7 @@ source = { editable = "evals/harness" }
 dependencies = [
     { name = "majorana-api" },
     { name = "majorana-contracts" },
+    { name = "majorana-llm", extra = ["anthropic", "openai"] },
     { name = "majorana-worker" },
     { name = "pydantic" },
     { name = "pyyaml" },
@@ -759,6 +760,7 @@ dependencies = [
 requires-dist = [
     { name = "majorana-api", editable = "services/api" },
     { name = "majorana-contracts", editable = "packages/py/contracts" },
+    { name = "majorana-llm", extras = ["openai", "anthropic"], editable = "packages/py/llm" },
     { name = "majorana-worker", editable = "services/worker" },
     { name = "pydantic", specifier = ">=2.8" },
     { name = "pyyaml", specifier = ">=6" },
