@@ -12,15 +12,29 @@ from typing import Any, Awaitable, Callable
 from majorana_contracts import Scope
 from majorana_contracts.enums import Framework, Role, RunMode, RunStatus
 from majorana_contracts.events import run_event_adapter
+from majorana_llm import AnthropicLLM, LLMClient
 from majorana_pipeline import RunContext, execute_run
+from majorana_sandbox import Sandbox, VercelSandbox
 
 from majorana_api.db import AsyncSession
 from majorana_api.jobs import RUN_EXECUTE_JOB_KIND
 from majorana_api.repos import runs as runs_repo
 
+from .stage_handlers import build_stage_handlers
+
 log = logging.getLogger("majorana_worker")
 
 DEFAULT_RUN_TIMEOUT_S = 300.0
+
+
+def _default_llm() -> LLMClient:
+    """Production LLM client (reads ANTHROPIC_API_KEY at call time)."""
+    return AnthropicLLM()
+
+
+def _default_sandbox() -> Sandbox:
+    """Production sandbox (the real Firecracker boundary; needs Vercel creds)."""
+    return VercelSandbox()
 
 
 class RepoEventSink:
@@ -86,7 +100,13 @@ def _scope_from_payload(payload: dict[str, Any]) -> Scope:
     )
 
 
-async def handle_run_execute(session: AsyncSession, payload: dict[str, Any]) -> None:
+async def handle_run_execute(
+    session: AsyncSession,
+    payload: dict[str, Any],
+    *,
+    llm: LLMClient | None = None,
+    sandbox: Sandbox | None = None,
+) -> None:
     scope = _scope_from_payload(payload)
     run_id = uuid.UUID(payload["run_id"])
     run = await runs_repo.get_run(scope, session, run_id)
@@ -102,9 +122,12 @@ async def handle_run_execute(session: AsyncSession, payload: dict[str, Any]) -> 
         sink=RepoEventSink(scope, session, run_id),
     )
     store = RepoRunStateStore(scope, session, run_id)
+    handlers = build_stage_handlers(
+        scope, session, run_id, llm or _default_llm(), sandbox or _default_sandbox()
+    )
     try:
         async with asyncio.timeout(run.timeout_s or DEFAULT_RUN_TIMEOUT_S):
-            final = await execute_run(ctx, store)
+            final = await execute_run(ctx, store, handlers)
     except TimeoutError:
         # The stage coroutine was cancelled mid-flight; reset the session and
         # record the failure so the event log never ends mid-run.

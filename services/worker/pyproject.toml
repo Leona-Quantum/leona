@@ -3,7 +3,15 @@
 name = "majorana-worker"
 version = "0.0.0"
 requires-python = ">=3.12"
-dependencies = ["majorana-api", "majorana-pipeline"]
+dependencies = [
+    "majorana-api",
+    "majorana-pipeline",
+    "majorana-llm",
+    "majorana-sandbox",
+    "majorana-ir",
+    "majorana-verification",
+    "majorana-baselines",
+]
 
 [project.scripts]
 majorana-worker = "majorana_worker.__main__:main"
@@ -11,6 +19,11 @@ majorana-worker = "majorana_worker.__main__:main"
 [tool.uv.sources]
 majorana-api = { workspace = true }
 majorana-pipeline = { workspace = true }
+majorana-llm = { workspace = true }
+majorana-sandbox = { workspace = true }
+majorana-ir = { workspace = true }
+majorana-verification = { workspace = true }
+majorana-baselines = { workspace = true }
 
 [build-system]
 requires = ["hatchling"]

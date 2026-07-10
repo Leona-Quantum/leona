@@ -846,13 +846,23 @@ version = "0.0.0"
 source = { editable = "services/worker" }
 dependencies = [
     { name = "majorana-api" },
+    { name = "majorana-baselines" },
+    { name = "majorana-ir" },
+    { name = "majorana-llm" },
     { name = "majorana-pipeline" },
+    { name = "majorana-sandbox" },
+    { name = "majorana-verification" },
 ]
 
 [package.metadata]
 requires-dist = [
     { name = "majorana-api", editable = "services/api" },
+    { name = "majorana-baselines", editable = "packages/py/baselines" },
+    { name = "majorana-ir", editable = "packages/py/ir" },
+    { name = "majorana-llm", editable = "packages/py/llm" },
     { name = "majorana-pipeline", editable = "packages/py/pipeline" },
+    { name = "majorana-sandbox", editable = "packages/py/sandbox" },
+    { name = "majorana-verification", editable = "packages/py/verification" },
 ]
 
 [[package]]

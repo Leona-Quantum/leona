@@ -142,6 +142,21 @@ async def update_run_status(
         raise NotFoundError("run")
 
 
+async def set_run_artifact_version(
+    scope: Scope, session: AsyncSession, run_id: uuid.UUID, version_id: uuid.UUID
+) -> None:
+    """Link a saved artifact version back to the run that produced it (SAVE stage)."""
+    require_write(scope)
+    stmt = (
+        update(Run)
+        .where(Run.id == run_id, Run.workspace_id == scope.workspace_id)
+        .values(artifact_version_id=version_id, updated_at=func.now())
+    )
+    result = await session.execute(stmt)
+    if result.rowcount == 0:
+        raise NotFoundError("run")
+
+
 async def append_run_event(
     scope: Scope,
     session: AsyncSession,

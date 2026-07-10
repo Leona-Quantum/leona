@@ -10,7 +10,9 @@ from majorana_contracts.plan import Plan
 from pydantic import ValidationError
 
 _FENCE_RE = re.compile(r"```(?:json|python)?\s*(.*?)```", re.DOTALL)
-_QASM_RE = re.compile(r"(OPENQASM\s+2\.0;.*?)(?:```|$)", re.DOTALL | re.IGNORECASE)
+# Greedy to the LAST semicolon: QASM statements end in `;`, so this stops before a
+# trailing JSON result line (which has none) even when the two share one stdout.
+_QASM_RE = re.compile(r"(OPENQASM\s+2\.0;.*;)", re.DOTALL | re.IGNORECASE)
 
 
 class StageOutputError(ValueError):
