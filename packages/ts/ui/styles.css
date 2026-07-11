@@ -126,9 +126,18 @@ div.mj-rail-row:hover {
 }
 .mj-rail-name {
   font-weight: 500;
+  /* Yield first: min-width:0 lets a long name shrink and ellipsize inside the
+     fixed 240px rail rather than shoving the elapsed label off the row. Names are
+     enum-fixed today, so this is a structural guard, not a visible change. The full
+     name always survives in the row's aria-label. */
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .mj-rail-elapsed {
   margin-left: auto;
+  flex-shrink: 0; /* the elapsed label holds its width; the name is what yields */
   font-family: var(--font-mono);
   font-size: var(--fs-12);
   color: var(--text-1);
