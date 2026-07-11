@@ -54,8 +54,9 @@ for any measured circuit of that size.
 - brute_force: same, for kind maxcut/qubo/portfolio optimization values.
 - Never choose `exact` — it needs an independent reference circuit the engine does not \
 have.
-When you choose exact_diag or brute_force, `baseline_instance` must appear in \
-expected_output_keys so the generated code prints it.
+When you choose exact_diag or brute_force, OR whenever baseline_plan.kind is not \
+"none", `baseline_instance` must appear in expected_output_keys so the generated code \
+prints the structured instance for the classical solve.
 
 Return only the Plan as one JSON object. The Plan JSON Schema is supplied to you via \
 structured decoding — satisfy it exactly; use only its field names and enum values."""

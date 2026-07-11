@@ -30,6 +30,7 @@ from majorana_baselines import (
 )
 from majorana_contracts.enums import (
     Algorithm,
+    ArtifactType,
     BaselineKind,
     ExportStatus,
     Framework,
@@ -398,6 +399,15 @@ def _parse_result_dict(stdout: str) -> dict[str, Any] | None:
     return None
 
 
+def _circuit_expected(plan: Plan) -> bool:
+    """Whether the plan promises a circuit artifact (and therefore QASM on
+    stdout). Unknown contract defaults to True — this is a quantum-circuit
+    product; only an explicitly non-circuit artifact type opts out."""
+    if plan.artifact_contract is None:
+        return True
+    return plan.artifact_contract.artifact_type is not ArtifactType.OTHER
+
+
 def _baseline_instance(result: dict[str, Any]) -> BaselineInstance | None:
     """Build a structured baseline instance if the result carries one under
     `baseline_instance` (the model supplies structure, never code)."""
@@ -424,6 +434,8 @@ def _run_verification(method: VerificationMethod, plan: Plan, result: dict[str, 
         qasm = state.get("qasm")
         if qasm:
             return verify_qasm_parse(qasm)
+        if not _circuit_expected(plan):
+            return None  # non-circuit run; nothing was promised, skip honestly
         # The generate contract requires circuit-bearing runs to print their
         # FINAL_CIRCUIT QASM on stdout. Missing QASM is a broken promise, not
         # missing data — FAIL, never skip (this is the bench-28 honesty case).
