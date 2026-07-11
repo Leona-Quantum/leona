@@ -35,6 +35,7 @@ from majorana_contracts.enums import (
     Framework,
     Stage,
     VerificationMethod,
+    VerificationResultKind,
     VerifierDecision,
 )
 from majorana_contracts.plan import Plan
@@ -53,10 +54,13 @@ from majorana_pipeline import RunContext, StageHandler, StageOutcome
 from majorana_sandbox import ExecutionSpec, GuardRejection, QubitCeilingExceeded, Sandbox
 from majorana_sandbox import run as sandbox_run
 from majorana_verification import (
+    VerificationOutcome,
+    extract_counts,
     verify_brute_force,
     verify_exact_diag,
     verify_qasm_parse,
     verify_return_contract,
+    verify_statistical_counts,
 )
 
 from majorana_api.db import AsyncSession
@@ -209,9 +213,14 @@ def build_stage_handlers(
     async def verify_stage(ctx: RunContext) -> StageOutcome:
         plan: Plan = ctx.state["plan"]
         result: dict[str, Any] = ctx.state["result"]
-        methods = plan.verification_plan.methods if plan.verification_plan else []
-        if not methods:  # always at least confirm the promised keys + parseability
-            methods = [VerificationMethod.RETURN_CONTRACT, VerificationMethod.QASM_PARSE]
+        methods = list(plan.verification_plan.methods) if plan.verification_plan else []
+        # Contract checks ALWAYS run, in addition to plan-chosen methods. A plan
+        # that picks only headless-unavailable methods must never starve the
+        # verdict into INCONCLUSIVE (baseline-2026-07-11 "verifier method
+        # starvation" — the dominant 0/6 cause).
+        for required in (VerificationMethod.RETURN_CONTRACT, VerificationMethod.QASM_PARSE):
+            if required not in methods:
+                methods.append(required)
 
         outcomes = []
         for method in methods:
@@ -413,7 +422,29 @@ def _run_verification(method: VerificationMethod, plan: Plan, result: dict[str, 
         return verify_return_contract(result, expected, rtype)
     if method is VerificationMethod.QASM_PARSE:
         qasm = state.get("qasm")
-        return verify_qasm_parse(qasm) if qasm else None
+        if qasm:
+            return verify_qasm_parse(qasm)
+        # The generate contract requires circuit-bearing runs to print their
+        # FINAL_CIRCUIT QASM on stdout. Missing QASM is a broken promise, not
+        # missing data — FAIL, never skip (this is the bench-28 honesty case).
+        return VerificationOutcome(
+            method=VerificationMethod.QASM_PARSE,
+            result=VerificationResultKind.FAIL,
+            details={
+                "error": "no parseable OpenQASM 2 on stdout; the generate contract "
+                "requires circuit-bearing runs to emit FINAL_CIRCUIT as QASM"
+            },
+        )
+    if method is VerificationMethod.STATISTICAL:
+        circuit = state.get("circuit")
+        counts = extract_counts(result, plan.expected_output_keys)
+        if circuit is None or counts is None:
+            return None  # no parsed circuit or no counts to test; skip honestly
+        thresholds = plan.verification_plan.thresholds if plan.verification_plan else None
+        threshold = None
+        if thresholds:
+            threshold = thresholds.get("tvd_max") or thresholds.get("total_variation_max")
+        return verify_statistical_counts(circuit, counts, threshold=threshold)
     if method is VerificationMethod.EXACT_DIAG:
         instance = _baseline_instance(result)
         metric = plan.success_criteria.primary_metric
@@ -426,6 +457,6 @@ def _run_verification(method: VerificationMethod, plan: Plan, result: dict[str, 
         if instance is None or metric not in result:
             return None
         return verify_brute_force(instance, float(result[metric]))
-    # EXACT / STATISTICAL need an independent reference circuit we don't have in
-    # the headless path yet; skip rather than fabricate.
+    # EXACT needs an independent reference circuit the headless path doesn't
+    # have; skip rather than fabricate. (The plan prompt now excludes it.)
     return None

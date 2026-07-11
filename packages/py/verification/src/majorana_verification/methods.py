@@ -21,6 +21,7 @@ from majorana_baselines import (
 )
 from majorana_verification.statevector import (
     EquivalenceReport,
+    counts_vs_ideal,
     exact_equivalence,
     statistical_equivalence,
 )
@@ -76,6 +77,58 @@ def verify_statistical(
         reference, candidate, shots=shots, seed=seed, threshold=threshold
     )
     return _from_report(VerificationMethod.STATISTICAL, report)
+
+
+def verify_statistical_counts(
+    circuit: Circuit,
+    counts: dict[str, int],
+    threshold: float | None = None,
+) -> VerificationOutcome:
+    """Statistical verification without a reference circuit: the emitted circuit
+    is simulated directly (pure-numpy statevector) and the run's reported counts
+    are tested against the exact Born distribution (TVD vs a finite-shot
+    concentration bound — see statevector.counts_vs_ideal). This is the headless
+    `statistical` path: direct-simulation evidence, not circuit-vs-circuit
+    equivalence."""
+    try:
+        report = counts_vs_ideal(circuit, counts, threshold=threshold)
+    except ValueError as exc:
+        return VerificationOutcome(
+            method=VerificationMethod.STATISTICAL, result=FAIL, details={"error": str(exc)}
+        )
+    outcome = _from_report(VerificationMethod.STATISTICAL, report)
+    outcome.details["evidence"] = "direct_simulation_vs_reported_counts"
+    return outcome
+
+
+_COUNTS_FALLBACK_KEYS = ("counts", "measurement_counts", "results", "samples")
+
+
+def extract_counts(
+    result: dict[str, Any], preferred_keys: list[str] | None = None
+) -> dict[str, int] | None:
+    """Find a measurement-counts dict in the run's result: plan-promised keys
+    first, then conventional names, then any top-level value shaped like
+    {bitstring: count}. Returns None when the result carries no counts."""
+
+    def _counts_shaped(value: Any) -> bool:
+        if not isinstance(value, dict) or not value:
+            return False
+        for key, count in value.items():
+            bits = str(key).replace(" ", "")
+            if not bits or set(bits) - {"0", "1"}:
+                return False
+            if not isinstance(count, int | float) or isinstance(count, bool) or count < 0:
+                return False
+        return True
+
+    for key in [*(preferred_keys or []), *_COUNTS_FALLBACK_KEYS]:
+        if _counts_shaped(result.get(key)):
+            return {k: int(v) for k, v in result[key].items()}
+    for value in result.values():
+        if _counts_shaped(value):
+            return {k: int(v) for k, v in value.items()}
+    return None
 
 
 def verify_return_contract(
