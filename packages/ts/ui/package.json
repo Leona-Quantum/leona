@@ -14,6 +14,9 @@
     "typecheck": "tsc --noEmit",
     "lint": "node ../../../scripts/check-raw-hex.mjs"
   },
+  "dependencies": {
+    "@majorana/contracts-gen": "workspace:*"
+  },
   "peerDependencies": {
     "react": "^19.0.0"
   },
