@@ -5,6 +5,30 @@ Plan authority: `~/Documents/Projects/Majorana/plans/rebuild/` (00-INDEX.md is t
 Scope your context: each app/service/package has its own AGENTS.md — read the one for
 the package you're touching, not the whole tree.
 
+## Fresh-session bootstrap (mandatory)
+
+Before substantive work in a fresh standalone Codex session, read these sources in order:
+
+1. `/Users/Eshaan/Documents/AGENTS.md` (AI-OS map, safety rules, session protocol).
+2. `/Users/Eshaan/Documents/Projects/_ops/WORKFLOW.md` §3 and
+   `CODEX_ONBOARDING.md` (Claude/Codex handoff and Codex environment).
+3. `/Users/Eshaan/Documents/Projects/Majorana/memory/START_NEXT.md` if present; process
+   its Owner Inbox first, then read `STATUS.md` and `NEXT.md`.
+4. `/Users/Eshaan/Documents/Projects/Majorana/plans/rebuild/00-INDEX.md` and
+   `plans/roadmap/00-INDEX.md`.
+5. The nested `AGENTS.md` for every package you will touch.
+
+Then report exactly five short lines covering current phase/revision, active pickup,
+lane boundary, highest risk or plan gap, and intended next action. After that, proceed
+with the user's bounded request unless it requires an owner decision or ask-first action.
+
+Codex's standing lane is non-UI: pressure-test plans; inspect and improve `evals/` and
+`packages/py/{llm,ir,contracts,verification,sandbox}`; own Lane B deterministic QASM
+emission and Python test coverage. Do not build or restyle `apps/web` or `packages/ts/ui`
+unless Eshaan explicitly overrides the lane. Use `feature/*` branches for repo changes;
+Claude reviews and merges. Never push, merge, perform destructive work, or touch
+credentials/secrets without the required owner approval.
+
 ## What this repo is
 
 Majorana: a platform that turns LLM-generated quantum code into verified, reproducible,
