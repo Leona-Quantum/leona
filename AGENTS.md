@@ -9,13 +9,13 @@ the package you're touching, not the whole tree.
 
 Before substantive work in a fresh standalone Codex session, read these sources in order:
 
-1. `/Users/Eshaan/Documents/AGENTS.md` (AI-OS map, safety rules, session protocol).
-2. `/Users/Eshaan/Documents/Projects/_ops/WORKFLOW.md` §3 and
-   `CODEX_ONBOARDING.md` (Claude/Codex handoff and Codex environment).
-3. `/Users/Eshaan/Documents/Projects/Majorana/memory/START_NEXT.md` if present; process
+1. `~/Documents/AGENTS.md` (AI-OS map, safety rules, session protocol).
+2. `~/Documents/Projects/_ops/WORKFLOW.md` §3 and
+   `~/Documents/Projects/_ops/CODEX_ONBOARDING.md` (Claude/Codex handoff and Codex environment).
+3. `~/Documents/Projects/Majorana/memory/START_NEXT.md` if present; process
    its Owner Inbox first, then read `STATUS.md` and `NEXT.md`.
-4. `/Users/Eshaan/Documents/Projects/Majorana/plans/rebuild/00-INDEX.md` and
-   `plans/roadmap/00-INDEX.md`.
+4. `~/Documents/Projects/Majorana/plans/rebuild/00-INDEX.md` and
+   `~/Documents/Projects/Majorana/plans/roadmap/00-INDEX.md`.
 5. The nested `AGENTS.md` for every package you will touch.
 
 Then report exactly five short lines covering current phase/revision, active pickup,
