@@ -1,0 +1,249 @@
+/* Component styles for @majorana/ui — consumes tokens.css variables only.
+ * No raw hex here (CI-enforced); values come from tokens.
+ * Only permitted animations (spec §0.3): rail state transitions (150ms ease-out
+ * opacity/color), skeleton shimmer, toast enter/exit. */
+
+/* ---------- app shell ---------- */
+.mj-shell {
+  min-height: 100dvh;
+  background: var(--bg-0);
+  color: var(--text-0);
+  font-family: var(--font-ui);
+  font-size: var(--fs-13);
+}
+.mj-shell-header {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-6);
+  padding: 0 var(--sp-6);
+  height: 48px;
+  border-bottom: 1px solid var(--border-0);
+  background: var(--bg-1);
+}
+.mj-shell-brand {
+  font-weight: 600;
+  font-size: var(--fs-14);
+  color: var(--text-0);
+  text-decoration: none;
+}
+.mj-shell-nav {
+  display: flex;
+  gap: var(--sp-4);
+}
+.mj-shell-nav a {
+  color: var(--text-1);
+  text-decoration: none;
+  font-weight: 500;
+  padding: var(--sp-1) var(--sp-2);
+  border-radius: var(--radius-control);
+  transition: color 150ms ease-out, background-color 150ms ease-out;
+}
+.mj-shell-nav a:hover {
+  color: var(--text-0);
+  background: var(--bg-2);
+}
+.mj-shell-nav a[aria-current="page"] {
+  color: var(--text-0);
+}
+.mj-shell-right {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  color: var(--text-1);
+}
+.mj-shell-main {
+  max-width: var(--content-max);
+  margin: 0 auto;
+  padding: var(--sp-6);
+}
+a {
+  color: var(--accent);
+}
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* ---------- pipeline stage rail (S3 — the brand) ---------- */
+.mj-rail {
+  width: 240px;
+  flex-shrink: 0;
+  align-self: stretch; /* reserves full height at mount — no CLS */
+  border-right: 1px solid var(--border-0);
+  padding: var(--sp-4) 0;
+  margin: 0;
+  list-style: none;
+}
+.mj-rail-row {
+  width: 100%;
+  display: block;
+  background: none;
+  border: none;
+  text-align: left;
+  font: inherit;
+  padding: var(--sp-2) var(--sp-4);
+  cursor: pointer;
+  color: var(--text-2);
+  transition: color 150ms ease-out, background-color 150ms ease-out;
+}
+.mj-rail-row:hover {
+  background: var(--bg-2);
+}
+.mj-rail-row-line {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+}
+.mj-rail-dot {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  border: 2px solid var(--border-0); /* pending default */
+  background: transparent;
+  transition: background-color 150ms ease-out, border-color 150ms ease-out;
+}
+.mj-rail-name {
+  font-weight: 500;
+}
+.mj-rail-elapsed {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-size: var(--fs-12);
+  color: var(--text-1);
+  font-variant-numeric: tabular-nums;
+}
+.mj-rail-row[data-state="running"] {
+  color: var(--text-0);
+}
+.mj-rail-row[data-state="running"] .mj-rail-dot {
+  border-color: var(--accent);
+  background: var(--accent);
+  animation: mj-pulse 1.2s ease-in-out infinite;
+}
+.mj-rail-row[data-state="pass"] {
+  color: var(--text-0);
+}
+.mj-rail-row[data-state="pass"] .mj-rail-dot {
+  border-color: var(--ok);
+  background: var(--ok);
+}
+.mj-rail-row[data-state="skipped"] {
+  color: var(--text-1);
+}
+.mj-rail-row[data-state="skipped"] .mj-rail-dot {
+  border-color: var(--warn);
+  background: var(--warn);
+}
+.mj-rail-row[data-state="fail"] {
+  color: var(--text-0);
+}
+.mj-rail-row[data-state="fail"] .mj-rail-dot {
+  border-color: var(--err);
+  background: var(--err);
+}
+/* skipped reason / fail summary: inline, never hover-only (touch devices) */
+.mj-rail-note {
+  display: block;
+  font-size: var(--fs-12);
+  color: var(--text-1);
+  padding-left: calc(16px + var(--sp-3));
+  margin-top: var(--sp-1);
+}
+.mj-rail-note--err {
+  color: var(--err);
+}
+.mj-rail-retry {
+  margin-top: var(--sp-2);
+  margin-left: calc(16px + var(--sp-3));
+  font: inherit;
+  font-size: var(--fs-12);
+  font-weight: 500;
+  color: var(--accent);
+  background: var(--bg-2);
+  border: 1px solid var(--border-0);
+  border-radius: var(--radius-control);
+  padding: var(--sp-1) var(--sp-2);
+  cursor: pointer;
+}
+.mj-rail-retry:active {
+  color: var(--accent-press);
+}
+@keyframes mj-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .mj-rail-row[data-state="running"] .mj-rail-dot {
+    animation: none;
+  }
+  .mj-shell-nav a,
+  .mj-rail-row,
+  .mj-rail-dot {
+    transition: none;
+  }
+}
+
+/* ---------- verdict banner (S4 — full-width strip, never truncated) ---------- */
+.mj-verdict {
+  display: block;
+  width: 100%;
+  padding: var(--sp-3) var(--sp-4);
+  border-radius: var(--radius-control);
+  border: 1px solid var(--border-0);
+  font-weight: 500;
+  font-size: var(--fs-14);
+}
+.mj-verdict-detail {
+  display: block;
+  margin-top: var(--sp-1);
+  font-family: var(--font-mono);
+  font-size: var(--fs-12);
+  font-weight: 400;
+  color: var(--text-1);
+}
+.mj-verdict[data-tone="ok"] {
+  border-color: var(--ok);
+  color: var(--ok);
+  background: var(--bg-1);
+}
+.mj-verdict[data-tone="warn"] {
+  border-color: var(--warn);
+  color: var(--warn);
+  background: var(--bg-1);
+}
+.mj-verdict[data-tone="err"] {
+  border-color: var(--err);
+  color: var(--err);
+  background: var(--bg-1);
+}
+
+/* ---------- designed empty state (every list gets one) ---------- */
+.mj-empty {
+  border: 1px dashed var(--border-0);
+  border-radius: var(--radius-card);
+  padding: var(--sp-8);
+  text-align: center;
+  color: var(--text-1);
+}
+.mj-empty-action {
+  display: inline-block;
+  margin-top: var(--sp-4);
+  background: var(--accent);
+  color: var(--bg-0);
+  font-weight: 500;
+  text-decoration: none;
+  border: none;
+  border-radius: var(--radius-control);
+  padding: var(--sp-2) var(--sp-4);
+  cursor: pointer;
+}
+.mj-empty-action:active {
+  background: var(--accent-press);
+}

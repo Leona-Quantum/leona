@@ -1,0 +1,33 @@
+@import "../../../packages/ts/ui/tokens.css";
+@import "../../../packages/ts/ui/styles.css";
+@import "tailwindcss";
+
+/* Map tokens into Tailwind v4 theme names so utilities resolve to token vars.
+ * tokens.css stays the single source of hex (CI: scripts/check-raw-hex.mjs). */
+@theme inline {
+  --color-bg-0: var(--bg-0);
+  --color-bg-1: var(--bg-1);
+  --color-bg-2: var(--bg-2);
+  --color-border-0: var(--border-0);
+  --color-text-0: var(--text-0);
+  --color-text-1: var(--text-1);
+  --color-text-2: var(--text-2);
+  --color-accent: var(--accent);
+  --color-accent-press: var(--accent-press);
+  --color-ok: var(--ok);
+  --color-warn: var(--warn);
+  --color-err: var(--err);
+  --color-mono-tint: var(--mono-tint);
+  --font-sans: var(--font-ui);
+  --font-mono: var(--font-mono);
+  --radius-control: var(--radius-control);
+  --radius-card: var(--radius-card);
+}
+
+body {
+  background: var(--bg-0);
+  color: var(--text-0);
+  font-family: var(--font-ui);
+  font-size: var(--fs-13);
+  margin: 0;
+}

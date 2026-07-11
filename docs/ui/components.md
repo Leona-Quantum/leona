@@ -1,0 +1,44 @@
+# Components (`packages/ts/ui`)
+
+Vendored, owned code. No component libraries; Radix primitives only when a component
+genuinely needs one. Components are pure renderers of typed data — no fetching, no
+run state — so stored-run replay renders identically and fixtures drive every state.
+All states visible at `/dev/ui` (route fixtures; dev/CI only).
+
+Permitted animations (only these): rail state transitions 150 ms ease-out, skeleton
+shimmer, toast enter/exit. `prefers-reduced-motion` disables them.
+
+## StageRail (S3 — the brand; get this pixel-right)
+
+240 px fixed, full height reserved at mount (no CLS). Row = 16 px dot + stage name +
+right-aligned mono elapsed. Stages: Plan → Generate → Simulate → Verify → Baseline →
+Export → Save (Convert folded into Export).
+
+| state | dot | text | extra |
+|---|---|---|---|
+| pending | `--border-0` outline | `--text-2` | |
+| running | `--accent`, pulse opacity 0.5↔1 @1.2 s | `--text-0` | live elapsed |
+| pass | solid `--ok` | `--text-0` | |
+| skipped | `--warn` | `--text-1` | reason inline at 12 px — hover-only info is banned |
+| fail | `--err` | `--text-0` | row stays expanded: error summary + "Retry from here" |
+
+Clicking a row scrolls the content panel to that stage's card (`onSelect`).
+Acceptance test: refresh mid-run restores identical state from the event log.
+
+## VerdictBanner (S4)
+
+Full-width strip, never truncated; first element of the result panel. Tones map
+verified→ok, verified_caveats/not_verified→warn, failed→err. Detail line is mono and
+names the method + parameters with units/tolerances, e.g.
+"Verified — statistical (TVD 0.0088 ≤ δ 0.05) · seed 42 · 4096 shots".
+P1: never say "IR" here — say what was checked.
+
+## AppShell / nav
+
+Top bar: brand, primary nav (labels from `src/nav-config.ts` ONLY — owner-revisable),
+right slot for quota meter/identity. `aria-current="page"` on the active surface.
+
+## EmptyState
+
+One sentence + one action. Every list gets one (e.g. Library: "Nothing verified yet.
+Your first verified run will appear here." + [Start a run]).

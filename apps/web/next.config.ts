@@ -1,6 +1,8 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  // @majorana/ui ships TS/TSX source (vendored components) — Next transpiles it.
+  transpilePackages: ["@majorana/ui"],
   // Security headers baseline (05-security.md §1 platform+edge); CSP tightens in Phase 3
   // when the real asset/style surface exists.
   async headers() {
