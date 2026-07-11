@@ -6,7 +6,7 @@ run state — so stored-run replay renders identically and fixtures drive every 
 All states visible at `/dev/ui` (route fixtures; dev/CI only).
 
 Permitted animations (only these): rail state transitions 150 ms ease-out, the
-running-dot pulse (opacity 0.5↔1 @ 1.2 s — explicitly specified by spec §2, not an
+running-ring fade (border-color `--accent`↔transparent @ 1.2 s — spec §2, not an
 exception), skeleton shimmer, toast enter/exit. `prefers-reduced-motion` disables them.
 
 ## StageRail (S3 — the brand; get this pixel-right)
@@ -15,17 +15,19 @@ exception), skeleton shimmer, toast enter/exit. `prefers-reduced-motion` disable
 right-aligned mono elapsed. Stages: Plan → Generate → Simulate → Verify → Baseline →
 Export → Save (Convert folded into Export).
 
-Terminal states carry a shape glyph (centered in the dot, `--bg-0`, plain text not emoji)
-so status is not color-only — colorblind-safe, and it disambiguates the two green dots
-(running vs pass) even in a static screenshot.
+The dot is never a filled disc (owner directive 2026-07-12): each terminal state is a
+shape glyph in the state color, framed by a thin (1.5 px) same-color ring. The glyph is
+the primary signal — status is not color-only, so it stays colorblind-safe and
+disambiguates the two green dots (running vs pass) even in a static screenshot. Glyphs
+are plain text, not emoji.
 
-| state | dot | glyph | text | extra |
+| state | ring | glyph | text | extra |
 |---|---|---|---|---|
-| pending | `--border-0` outline | — | `--text-2` | |
-| running | `--accent`, pulse opacity 0.5↔1 @1.2 s | — (pulse is the cue) | `--text-0` | live elapsed |
-| pass | solid `--ok` | ✓ | `--text-0` | |
-| skipped | `--warn` | – | `--text-1` | reason inline at 12 px — hover-only info is banned |
-| fail | `--err` | ✕ | `--text-0` | row stays expanded: error summary + "Retry from here" |
+| pending | `--border-0` hollow ring | — | `--text-2` | |
+| running | `--accent` ring, fades to transparent @1.2 s (glyph stays solid) | – `--accent` | `--text-0` | live elapsed |
+| pass | `--ok` ring | ✓ `--ok` | `--text-0` | |
+| skipped | `--warn` ring | – `--warn` | `--text-1` | reason inline at 12 px — hover-only info is banned |
+| fail | `--err` ring | ✕ `--err` | `--text-0` | row stays expanded: error summary + "Retry from here" |
 
 `RailStage` is a discriminated union: `skipped` requires `skipReason`, `fail` requires
 `errorSummary`. With `onSelect`, rows are buttons that scroll the content panel to the
