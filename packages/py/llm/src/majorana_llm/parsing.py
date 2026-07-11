@@ -50,9 +50,12 @@ def extract_code(text: str) -> str:
             return body
     if text.strip():
         return text.strip()
-    # Length + head make an empty/truncated completion diagnosable from run events.
+    # Machine-safe metadata only: this message flows into durable run events, so it
+    # must never carry raw model output. Length + blankness still make an empty or
+    # truncated completion diagnosable.
     raise StageOutputError(
-        f"no code found in generation output (len={len(text)}, head={text[:80]!r})"
+        f"no code found in generation output "
+        f"(len={len(text)}, blank={not text.strip()})"
     )
 
 
