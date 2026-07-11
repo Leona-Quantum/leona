@@ -107,9 +107,22 @@ div.mj-rail-row:hover {
   height: 16px;
   border-radius: 50%;
   flex-shrink: 0;
-  border: 2px solid var(--border-0); /* pending default */
+  border: 1.5px solid var(--border-0); /* pending default — thin ring, no fill */
   background: transparent;
-  transition: background-color 150ms ease-out, border-color 150ms ease-out;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: border-color 150ms ease-out;
+}
+/* The glyph itself is the primary signal and carries the state color; a thin
+   same-color ring frames it (no filled disc — owner directive 2026-07-12). Status
+   never rides on color alone (the ✓/–/✕ shape is the colorblind-safe cue). Pending
+   carries no glyph (the hollow ring is its cue); running carries a – whose ring
+   fades. Glyphs are plain text, not emoji. */
+.mj-rail-dot::before {
+  font-size: 11px;
+  line-height: 1;
+  font-weight: 600; /* max documented weight (tokens: 400/500/600) */
 }
 .mj-rail-name {
   font-weight: 500;
@@ -126,29 +139,44 @@ div.mj-rail-row:hover {
 }
 .mj-rail-row[data-state="running"] .mj-rail-dot {
   border-color: var(--accent);
-  background: var(--accent);
-  animation: mj-pulse 1.2s ease-in-out infinite;
+  background: transparent;
+  /* the RING fades in and out while the stage runs; the – glyph stays solid
+     (owner directive 2026-07-12) — so only border-color animates, not the dot */
+  animation: mj-ring-fade 1.2s ease-in-out infinite;
+}
+.mj-rail-row[data-state="running"] .mj-rail-dot::before {
+  content: "–";
+  color: var(--accent);
 }
 .mj-rail-row[data-state="pass"] {
   color: var(--text-0);
 }
 .mj-rail-row[data-state="pass"] .mj-rail-dot {
   border-color: var(--ok);
-  background: var(--ok);
+}
+.mj-rail-row[data-state="pass"] .mj-rail-dot::before {
+  content: "✓";
+  color: var(--ok);
 }
 .mj-rail-row[data-state="skipped"] {
   color: var(--text-1);
 }
 .mj-rail-row[data-state="skipped"] .mj-rail-dot {
   border-color: var(--warn);
-  background: var(--warn);
+}
+.mj-rail-row[data-state="skipped"] .mj-rail-dot::before {
+  content: "–";
+  color: var(--warn);
 }
 .mj-rail-row[data-state="fail"] {
   color: var(--text-0);
 }
 .mj-rail-row[data-state="fail"] .mj-rail-dot {
   border-color: var(--err);
-  background: var(--err);
+}
+.mj-rail-row[data-state="fail"] .mj-rail-dot::before {
+  content: "✕";
+  color: var(--err);
 }
 /* skipped reason / fail summary: inline, never hover-only (touch devices) */
 .mj-rail-note {
@@ -177,13 +205,13 @@ div.mj-rail-row:hover {
 .mj-rail-retry:active {
   color: var(--accent-press);
 }
-@keyframes mj-pulse {
+@keyframes mj-ring-fade {
   0%,
   100% {
-    opacity: 1;
+    border-color: var(--accent);
   }
   50% {
-    opacity: 0.5;
+    border-color: transparent;
   }
 }
 @media (prefers-reduced-motion: reduce) {
@@ -198,12 +226,18 @@ div.mj-rail-row:hover {
 }
 
 /* ---------- verdict banner (S4 — full-width strip, never truncated) ---------- */
+/* Tone lives on a single 3-px left edge, not a full-perimeter color wash — the label
+   text stays neutral (--text-0) so the strip reads calm/grayscale. The word itself
+   ("Verified" / "Failed" / …) is the colorblind-safe cue; color only reinforces it. */
 .mj-verdict {
   display: block;
   width: 100%;
   padding: var(--sp-3) var(--sp-4);
   border-radius: var(--radius-control);
   border: 1px solid var(--border-0);
+  border-left-width: 3px;
+  background: var(--bg-1);
+  color: var(--text-0);
   font-weight: 500;
   font-size: var(--fs-14);
 }
@@ -216,19 +250,13 @@ div.mj-rail-row:hover {
   color: var(--text-1);
 }
 .mj-verdict[data-tone="ok"] {
-  border-color: var(--ok);
-  color: var(--ok);
-  background: var(--bg-1);
+  border-left-color: var(--ok);
 }
 .mj-verdict[data-tone="warn"] {
-  border-color: var(--warn);
-  color: var(--warn);
-  background: var(--bg-1);
+  border-left-color: var(--warn);
 }
 .mj-verdict[data-tone="err"] {
-  border-color: var(--err);
-  color: var(--err);
-  background: var(--bg-1);
+  border-left-color: var(--err);
 }
 
 /* ---------- designed empty state (every list gets one) ---------- */
