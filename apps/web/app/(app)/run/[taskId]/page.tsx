@@ -22,11 +22,9 @@ export default async function RunDetail({ params }: { params: Promise<{ taskId: 
 
   return (
     <section>
-      <header style={{ marginBottom: "var(--sp-4)" }}>
-        <h1 style={{ fontSize: "var(--fs-20)", fontWeight: 600, margin: 0 }}>Run</h1>
-        <p style={{ color: "var(--text-1)", fontFamily: "var(--font-mono)", fontSize: "var(--fs-12)", margin: "var(--sp-1) 0 0" }}>
-          {taskId}
-        </p>
+      <header className="mb-4">
+        <h1 className="m-0 text-20 font-semibold">Run</h1>
+        <p className="mt-1 mb-0 font-mono text-12 text-text-1">{taskId}</p>
       </header>
 
       <RunView events={events} emptyMessage="Waiting for the pipeline to start…" />
@@ -34,25 +32,16 @@ export default async function RunDetail({ params }: { params: Promise<{ taskId: 
       {/* Fixture switcher — dev aid for taste-check screenshots (not product chrome). */}
       <nav
         aria-label="Demo runs"
-        style={{
-          marginTop: "var(--sp-8)",
-          paddingTop: "var(--sp-4)",
-          borderTop: "1px solid var(--border-0)",
-          display: "flex",
-          gap: "var(--sp-4)",
-          flexWrap: "wrap",
-        }}
+        className="mt-8 flex flex-wrap gap-4 border-t border-border-0 pt-4"
       >
         {RUN_FIXTURE_META.map((f) => (
           <a
             key={f.id}
             href={`/run/${f.id}`}
             aria-current={f.id === taskId ? "page" : undefined}
-            style={{
-              fontSize: "var(--fs-12)",
-              color: f.id === taskId ? "var(--text-0)" : "var(--text-1)",
-              textDecoration: "none",
-            }}
+            className={`text-12 no-underline ${
+              f.id === taskId ? "text-text-0" : "text-text-1"
+            }`}
           >
             {f.label}
           </a>
