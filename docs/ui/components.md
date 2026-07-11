@@ -13,7 +13,9 @@ exception), skeleton shimmer, toast enter/exit. `prefers-reduced-motion` disable
 
 240 px fixed, full height reserved at mount (no CLS). Row = 16 px dot + stage name +
 right-aligned mono elapsed. Stages: Plan → Generate → Simulate → Verify → Baseline →
-Export → Save (Convert folded into Export).
+Export → Save (Convert folded into Export). The name yields first: it truncates with an
+ellipsis (`min-width:0`) so it can never collide with the elapsed label inside the fixed
+width; the elapsed label holds its width, and the full name stays in the row's aria-label.
 
 The dot is never a filled disc (owner directive 2026-07-12): each terminal state is a
 shape glyph in the state color, framed by a thin (1.5 px) same-color ring. The glyph is
