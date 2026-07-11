@@ -15,18 +15,22 @@ const SKIP_DIRS = new Set(["node_modules", ".next", ".turbo", ".vercel", "dist"]
 const HEX_RE = /#(?:[0-9a-fA-F]{3,4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})\b/g;
 
 const failures = [];
-for (const root of SCAN_ROOTS) walk(join(repoRoot, root));
+for (const root of SCAN_ROOTS) {
+  // Fail closed: a missing scan root (typo, rename, partial checkout) must not
+  // silently pass as "nothing to scan".
+  if (!statSync(join(repoRoot, root), { throwIfNoEntry: false })?.isDirectory()) {
+    console.error(`check-raw-hex: scan root missing: ${root}`);
+    process.exit(1);
+  }
+  walk(join(repoRoot, root));
+}
 
 function walk(dir) {
-  let entries;
-  try {
-    entries = readdirSync(dir);
-  } catch {
-    return;
-  }
+  const entries = readdirSync(dir);
   for (const entry of entries) {
     const full = join(dir, entry);
-    const rel = relative(repoRoot, full);
+    // posix separators so ALLOWED matches on Windows too
+    const rel = relative(repoRoot, full).replaceAll("\\", "/");
     const stats = statSync(full, { throwIfNoEntry: false });
     if (!stats) continue;
     if (stats.isDirectory()) {

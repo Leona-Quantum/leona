@@ -21,7 +21,7 @@
   background: var(--bg-1);
 }
 .mj-shell-brand {
-  font-weight: 600;
+  font-weight: 500;
   font-size: var(--fs-14);
   color: var(--text-0);
   text-decoration: none;
@@ -89,6 +89,13 @@ a {
 }
 .mj-rail-row:hover {
   background: var(--bg-2);
+}
+/* non-interactive rail (rendered as div when there is no content panel) */
+div.mj-rail-row {
+  cursor: default;
+}
+div.mj-rail-row:hover {
+  background: transparent;
 }
 .mj-rail-row-line {
   display: flex;

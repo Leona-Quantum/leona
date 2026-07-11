@@ -5,8 +5,9 @@ genuinely needs one. Components are pure renderers of typed data — no fetching
 run state — so stored-run replay renders identically and fixtures drive every state.
 All states visible at `/dev/ui` (route fixtures; dev/CI only).
 
-Permitted animations (only these): rail state transitions 150 ms ease-out, skeleton
-shimmer, toast enter/exit. `prefers-reduced-motion` disables them.
+Permitted animations (only these): rail state transitions 150 ms ease-out, the
+running-dot pulse (opacity 0.5↔1 @ 1.2 s — explicitly specified by spec §2, not an
+exception), skeleton shimmer, toast enter/exit. `prefers-reduced-motion` disables them.
 
 ## StageRail (S3 — the brand; get this pixel-right)
 
@@ -22,7 +23,9 @@ Export → Save (Convert folded into Export).
 | skipped | `--warn` | `--text-1` | reason inline at 12 px — hover-only info is banned |
 | fail | `--err` | `--text-0` | row stays expanded: error summary + "Retry from here" |
 
-Clicking a row scrolls the content panel to that stage's card (`onSelect`).
+`RailStage` is a discriminated union: `skipped` requires `skipReason`, `fail` requires
+`errorSummary`. With `onSelect`, rows are buttons that scroll the content panel to the
+stage's card; without it the rail renders non-interactive markup (no focusable no-ops).
 Acceptance test: refresh mid-run restores identical state from the event log.
 
 ## VerdictBanner (S4)
@@ -40,5 +43,6 @@ right slot for quota meter/identity. `aria-current="page"` on the active surface
 
 ## EmptyState
 
-One sentence + one action. Every list gets one (e.g. Library: "Nothing verified yet.
-Your first verified run will appear here." + [Start a run]).
+One sentence + one action (`action` is an all-or-nothing `{label, href}` object).
+Every list gets one (e.g. Library: "Nothing verified yet. Your first verified run
+will appear here." + [Start a run]).

@@ -83,8 +83,7 @@ export function UiFixtures() {
         <h2 style={{ fontSize: "var(--fs-16)", fontWeight: 500 }}>Empty state</h2>
         <EmptyState
           message="Nothing verified yet. Your first verified run will appear here."
-          actionLabel="Start a run"
-          actionHref="/run"
+          action={{ label: "Start a run", href: "/run" }}
         />
       </section>
     </div>

@@ -7,17 +7,20 @@ import type { ReactNode } from "react";
 
 export type StageState = "pending" | "running" | "pass" | "skipped" | "fail";
 
-export interface RailStage {
+interface RailStageBase {
   id: string;
   name: string;
-  state: StageState;
   /** Elapsed label, e.g. "3.2 s" — caller formats (units always shown). */
   elapsed?: string;
-  /** Required for skipped (shown inline — hover-only info is banned). */
-  skipReason?: string;
-  /** Required for fail; row stays expanded. */
-  errorSummary?: string;
 }
+
+// Discriminated so the type enforces the explanatory copy each state requires.
+export type RailStage =
+  | (RailStageBase & { state: "pending" | "running" | "pass" })
+  // Shown inline — hover-only info is banned (touch devices).
+  | (RailStageBase & { state: "skipped"; skipReason: string })
+  // Row stays expanded with the summary.
+  | (RailStageBase & { state: "fail"; errorSummary: string });
 
 // Convert is folded into Export per the current pipeline (spec §2).
 export const PIPELINE_STAGE_NAMES = [
@@ -42,34 +45,57 @@ export function StageRail({
 }): ReactNode {
   return (
     <ol className="mj-rail" aria-label="Pipeline stages">
-      {stages.map((stage) => (
-        <li key={stage.id}>
-          <button
-            type="button"
-            className="mj-rail-row"
-            data-state={stage.state}
-            onClick={() => onSelect?.(stage.id)}
-            aria-label={`${stage.name}: ${stageStateLabel(stage)}`}
-          >
+      {stages.map((stage) => {
+        const rowContent = (
+          <>
             <span className="mj-rail-row-line">
               <span className="mj-rail-dot" aria-hidden="true" />
               <span className="mj-rail-name">{stage.name}</span>
               {stage.elapsed ? <span className="mj-rail-elapsed">{stage.elapsed}</span> : null}
             </span>
-            {stage.state === "skipped" && stage.skipReason ? (
+            {stage.state === "skipped" ? (
               <span className="mj-rail-note">Skipped — {stage.skipReason}</span>
             ) : null}
-            {stage.state === "fail" && stage.errorSummary ? (
+            {stage.state === "fail" ? (
               <span className="mj-rail-note mj-rail-note--err">{stage.errorSummary}</span>
             ) : null}
-          </button>
-          {stage.state === "fail" && onRetry ? (
-            <button type="button" className="mj-rail-retry" onClick={() => onRetry(stage.id)}>
-              Retry from here
-            </button>
-          ) : null}
-        </li>
-      ))}
+          </>
+        );
+        return (
+          <li key={stage.id}>
+            {onSelect ? (
+              <button
+                type="button"
+                className="mj-rail-row"
+                data-state={stage.state}
+                onClick={() => onSelect(stage.id)}
+                aria-label={`${stage.name}: ${stageStateLabel(stage)}`}
+              >
+                {rowContent}
+              </button>
+            ) : (
+              // Non-interactive rail (no content panel) — don't render focusable no-ops.
+              <div
+                className="mj-rail-row"
+                data-state={stage.state}
+                aria-label={`${stage.name}: ${stageStateLabel(stage)}`}
+              >
+                {rowContent}
+              </div>
+            )}
+            {stage.state === "fail" && onRetry ? (
+              <button
+                type="button"
+                className="mj-rail-retry"
+                aria-label={`Retry from ${stage.name}`}
+                onClick={() => onRetry(stage.id)}
+              >
+                Retry from here
+              </button>
+            ) : null}
+          </li>
+        );
+      })}
     </ol>
   );
 }
@@ -83,8 +109,8 @@ function stageStateLabel(stage: RailStage): string {
     case "pass":
       return stage.elapsed ? `passed in ${stage.elapsed}` : "passed";
     case "skipped":
-      return stage.skipReason ? `skipped — ${stage.skipReason}` : "skipped";
+      return `skipped — ${stage.skipReason}`;
     case "fail":
-      return stage.errorSummary ? `failed — ${stage.errorSummary}` : "failed";
+      return `failed — ${stage.errorSummary}`;
   }
 }

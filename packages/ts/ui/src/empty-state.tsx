@@ -3,19 +3,18 @@ import type { ReactNode } from "react";
 
 export function EmptyState({
   message,
-  actionLabel,
-  actionHref,
+  action,
 }: {
   message: string;
-  actionLabel?: string;
-  actionHref?: string;
+  /** All-or-nothing: an action always has both a label and a destination. */
+  action?: { label: string; href: string };
 }): ReactNode {
   return (
     <div className="mj-empty">
       <p>{message}</p>
-      {actionLabel && actionHref ? (
-        <a className="mj-empty-action" href={actionHref}>
-          {actionLabel}
+      {action ? (
+        <a className="mj-empty-action" href={action.href}>
+          {action.label}
         </a>
       ) : null}
     </div>

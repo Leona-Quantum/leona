@@ -10,8 +10,7 @@ export default function LibraryList() {
       <h1 style={{ fontSize: "var(--fs-20)", fontWeight: 600 }}>Library</h1>
       <EmptyState
         message="Nothing verified yet. Your first verified run will appear here."
-        actionLabel="Start a run"
-        actionHref="/run"
+        action={{ label: "Start a run", href: "/run" }}
       />
     </section>
   );

@@ -9,7 +9,7 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
   return (
     <Shell
       headerRight={
-        user ? <span style={{ fontFamily: "var(--font-mono)" }}>{user.email}</span> : undefined
+        user ? <span className="font-mono">{user.email}</span> : undefined
       }
     >
       {children}
