@@ -54,8 +54,7 @@ def extract_code(text: str) -> str:
     # must never carry raw model output. Length + blankness still make an empty or
     # truncated completion diagnosable.
     raise StageOutputError(
-        f"no code found in generation output "
-        f"(len={len(text)}, blank={not text.strip()})"
+        f"no code found in generation output (len={len(text)}, blank={not text.strip()})"
     )
 
 
