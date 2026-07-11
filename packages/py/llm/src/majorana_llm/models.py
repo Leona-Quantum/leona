@@ -19,7 +19,10 @@ _DEFAULTS: dict[str, dict[str, str]] = {
     "openai": {
         # Legacy nameko tiering: GPT for judgment, DeepSeek for volume work.
         "plan": "gpt-5.5",  # structured planning + judgment
-        "generate": "deepseek-v4-pro",  # code generation (cheap, benchmarked)
+        # Non-reasoning tier: v4-pro reproducibly burned its whole 8192 budget on
+        # reasoning with zero content on VQE-scale tasks (bench-14, 2026-07-11);
+        # deepseek-chat produced real code in 1.5k tokens / 14s on the same case.
+        "generate": "deepseek-chat",
         "verify": "gpt-5.5",  # strict critic — high-stakes review
         "writeback": "deepseek-v4-pro",  # library metadata + explanations
     },

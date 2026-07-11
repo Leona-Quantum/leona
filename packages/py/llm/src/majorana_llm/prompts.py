@@ -81,6 +81,8 @@ gone), and never call .c_if() (removed; classical feed-forward is outside the IR
 set anyway).
 - Use deterministic seeds for sampling and optimization wherever the framework \
 supports them.
+- Cast every value in the result JSON to plain Python types (int/float/str/list/dict) \
+before json.dumps — numpy scalars and arrays are not JSON-serializable.
 - For chemistry at PoC scale, hard-code the Hamiltonian coefficients rather than \
 importing heavy chemistry packages — the sandbox does not have them. Coefficients must \
 come from the request, the plan, or standard published values for the named system — \
