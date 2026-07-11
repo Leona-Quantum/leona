@@ -3,23 +3,25 @@
  * do NOT add or "adjust" values — deviation requires an owner taste-check).
  * Raw hex colors are allowed in this file ONLY (enforced by scripts/check-raw-hex.mjs).
  * Dark-first: MVP ships dark-only; names are semantic so light theme is a swap later.
- * Contrast pre-checked: text-0/bg-0 ≈ 15:1, text-1/bg-1 ≈ 7:1, accent/bg-0 ≈ 5.6:1.
+ * Palette: green/earthy/mushroom per owner directive 2026-07-11 (Nameko is the
+ * amber-capped mushroom; minimal blues/purples). Warm near-black umbers + moss accent.
+ * Contrast pre-checked: text-0/bg-0 ≈ 15.8:1, text-1/bg-1 ≈ 7.9:1, accent/bg-0 ≈ 7.1:1.
  */
 :root {
-  /* color — near-black blue-grays, one accent, three verdict colors */
-  --bg-0: #0b0e14; /* app background */
-  --bg-1: #11151f; /* panel / card */
-  --bg-2: #1a2029; /* raised: hover, code blocks, table header */
-  --border-0: #232a36; /* hairlines */
-  --text-0: #e6eaf2; /* primary text */
-  --text-1: #9aa4b5; /* secondary text */
-  --text-2: #5c6675; /* placeholders, disabled */
-  --accent: #5b8cff; /* links, focus, primary buttons, running-stage */
-  --accent-press: #4677e8;
-  --ok: #34c077; /* verified / pass */
-  --warn: #e5a83b; /* lossy / skipped-with-reason / partial */
+  /* color — warm near-black umbers, one earthy-green accent, three verdict colors */
+  --bg-0: #100e0b; /* app background — warm near-black */
+  --bg-1: #17140f; /* panel / card */
+  --bg-2: #211c15; /* raised: hover, code blocks, table header */
+  --border-0: #2e2820; /* hairlines */
+  --text-0: #ede8df; /* primary text — warm off-white */
+  --text-1: #a89f90; /* secondary text — warm taupe */
+  --text-2: #6b6355; /* placeholders, disabled */
+  --accent: #7ba05b; /* links, focus, primary buttons, running-stage — moss green */
+  --accent-press: #688a4a;
+  --ok: #34c077; /* verified / pass — emerald (kept; distinct from moss accent) */
+  --warn: #e5a83b; /* lossy / skipped-with-reason / partial — amber (earthy) */
   --err: #e5564f; /* failed / unsupported */
-  --mono-tint: #8fbcbb; /* numbers/IDs inside prose */
+  --mono-tint: #c4b896; /* numbers/IDs inside prose — warm khaki */
 
   /* type — Inter for UI, JetBrains Mono for code/numbers/IDs.
      Apps may override the font vars with self-hosted/next-font faces. */

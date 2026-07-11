@@ -4,6 +4,12 @@ Source of truth: `packages/ts/ui/tokens.css` — the ONLY file allowed to contai
 hex (CI: `scripts/check-raw-hex.mjs`). Values are owner-ratified taste from
 `plans/roadmap/04-ui-specifications.md` §1; do not add or "adjust" values.
 
+Palette (owner directive 2026-07-11): green/earthy/mushroom — warm near-black umber
+neutrals + a moss-green `--accent`, minimal blues/purples. Nameko is the amber-capped
+mushroom; Quepo (Library) shares these tokens for now ("maybe similar" — a surface-scoped
+accent can be added later if it needs to diverge). Verdict colors (`--ok` emerald,
+`--warn` amber, `--err` red) are kept as universal signal colors and already read earthy.
+
 Rules:
 - Dark-first; MVP ships dark-only. Names are semantic (`--bg-0`, `--text-1`, verdict
   colors `--ok/--warn/--err`) so a light theme is a token swap later.
