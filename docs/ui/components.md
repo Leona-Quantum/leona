@@ -15,13 +15,17 @@ exception), skeleton shimmer, toast enter/exit. `prefers-reduced-motion` disable
 right-aligned mono elapsed. Stages: Plan → Generate → Simulate → Verify → Baseline →
 Export → Save (Convert folded into Export).
 
-| state | dot | text | extra |
-|---|---|---|---|
-| pending | `--border-0` outline | `--text-2` | |
-| running | `--accent`, pulse opacity 0.5↔1 @1.2 s | `--text-0` | live elapsed |
-| pass | solid `--ok` | `--text-0` | |
-| skipped | `--warn` | `--text-1` | reason inline at 12 px — hover-only info is banned |
-| fail | `--err` | `--text-0` | row stays expanded: error summary + "Retry from here" |
+Terminal states carry a shape glyph (centered in the dot, `--bg-0`, plain text not emoji)
+so status is not color-only — colorblind-safe, and it disambiguates the two green dots
+(running vs pass) even in a static screenshot.
+
+| state | dot | glyph | text | extra |
+|---|---|---|---|---|
+| pending | `--border-0` outline | — | `--text-2` | |
+| running | `--accent`, pulse opacity 0.5↔1 @1.2 s | — (pulse is the cue) | `--text-0` | live elapsed |
+| pass | solid `--ok` | ✓ | `--text-0` | |
+| skipped | `--warn` | – | `--text-1` | reason inline at 12 px — hover-only info is banned |
+| fail | `--err` | ✕ | `--text-0` | row stays expanded: error summary + "Retry from here" |
 
 `RailStage` is a discriminated union: `skipped` requires `skipReason`, `fail` requires
 `errorSummary`. With `onSelect`, rows are buttons that scroll the content panel to the
@@ -31,7 +35,10 @@ Acceptance test: refresh mid-run restores identical state from the event log.
 ## VerdictBanner (S4)
 
 Full-width strip, never truncated; first element of the result panel. Tones map
-verified→ok, verified_caveats/not_verified→warn, failed→err. Detail line is mono and
+verified→ok, verified_caveats/not_verified→warn, failed→err. **Color-minimal treatment:**
+the label text stays neutral (`--text-0`) and the tone shows only as a 3-px colored left
+edge — not a full-color text/border wash. The word label ("Verified" / "Failed" / …) is
+the colorblind-safe cue; color merely reinforces it. Detail line is mono (`--text-1`) and
 names the method + parameters with units/tolerances, e.g.
 "Verified — statistical (TVD 0.0088 ≤ δ 0.05) · seed 42 · 4096 shots".
 P1: never say "IR" here — say what was checked.

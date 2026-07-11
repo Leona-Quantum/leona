@@ -109,7 +109,19 @@ div.mj-rail-row:hover {
   flex-shrink: 0;
   border: 2px solid var(--border-0); /* pending default */
   background: transparent;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   transition: background-color 150ms ease-out, border-color 150ms ease-out;
+}
+/* Shape cue inside the dot — status never rides on color alone (colorblind-safe).
+   Dark glyph reads against the filled dot; pending/running carry no glyph
+   (hollow ring / pulse are their cues). Glyphs are plain text, not emoji. */
+.mj-rail-dot::before {
+  font-size: 10px;
+  line-height: 1;
+  font-weight: 600;
+  color: var(--bg-0);
 }
 .mj-rail-name {
   font-weight: 500;
@@ -136,6 +148,9 @@ div.mj-rail-row:hover {
   border-color: var(--ok);
   background: var(--ok);
 }
+.mj-rail-row[data-state="pass"] .mj-rail-dot::before {
+  content: "✓";
+}
 .mj-rail-row[data-state="skipped"] {
   color: var(--text-1);
 }
@@ -143,12 +158,18 @@ div.mj-rail-row:hover {
   border-color: var(--warn);
   background: var(--warn);
 }
+.mj-rail-row[data-state="skipped"] .mj-rail-dot::before {
+  content: "–";
+}
 .mj-rail-row[data-state="fail"] {
   color: var(--text-0);
 }
 .mj-rail-row[data-state="fail"] .mj-rail-dot {
   border-color: var(--err);
   background: var(--err);
+}
+.mj-rail-row[data-state="fail"] .mj-rail-dot::before {
+  content: "✕";
 }
 /* skipped reason / fail summary: inline, never hover-only (touch devices) */
 .mj-rail-note {
@@ -198,12 +219,18 @@ div.mj-rail-row:hover {
 }
 
 /* ---------- verdict banner (S4 — full-width strip, never truncated) ---------- */
+/* Tone lives on a single 3-px left edge, not a full-perimeter color wash — the label
+   text stays neutral (--text-0) so the strip reads calm/grayscale. The word itself
+   ("Verified" / "Failed" / …) is the colorblind-safe cue; color only reinforces it. */
 .mj-verdict {
   display: block;
   width: 100%;
   padding: var(--sp-3) var(--sp-4);
   border-radius: var(--radius-control);
   border: 1px solid var(--border-0);
+  border-left-width: 3px;
+  background: var(--bg-1);
+  color: var(--text-0);
   font-weight: 500;
   font-size: var(--fs-14);
 }
@@ -216,19 +243,13 @@ div.mj-rail-row:hover {
   color: var(--text-1);
 }
 .mj-verdict[data-tone="ok"] {
-  border-color: var(--ok);
-  color: var(--ok);
-  background: var(--bg-1);
+  border-left-color: var(--ok);
 }
 .mj-verdict[data-tone="warn"] {
-  border-color: var(--warn);
-  color: var(--warn);
-  background: var(--bg-1);
+  border-left-color: var(--warn);
 }
 .mj-verdict[data-tone="err"] {
-  border-color: var(--err);
-  color: var(--err);
-  background: var(--bg-1);
+  border-left-color: var(--err);
 }
 
 /* ---------- designed empty state (every list gets one) ---------- */
