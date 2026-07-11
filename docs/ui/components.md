@@ -34,6 +34,30 @@ are plain text, not emoji.
 stage's card; without it the rail renders non-interactive markup (no focusable no-ops).
 Acceptance test: refresh mid-run restores identical state from the event log.
 
+## RunView + `reduceRunEvents` (S3/S4 — the pipeline view body)
+
+`RunView` composes `StageRail` + the result panel for `/run/[taskId]`. It holds no state
+and reads no wall clock: `reduceRunEvents(events)` is a **pure fold** of the typed
+`RunEvent` log into a view model, so the same log always yields identical DOM and a
+mid-run refresh just replays a shorter *prefix* of the same log (07 §6). That purity is
+the S3 acceptance test — the `/run/[taskId]` fixtures are built so MID_RUN/QUEUED are
+strict prefixes of the VERIFIED log, making prefix-replay demonstrable without a server.
+
+Reducer rules worth knowing (all deterministic):
+- Stage rail derives from `stage.started`/`stage.finished`; a `baseline` that reports
+  `not_applicable_reason` renders **skipped-with-reason**, not pass. `code.generated`
+  keeps the highest `revision` (repairs supersede).
+- Verdict comes from `run.finished.verifier_decision`: `pass` with a numeric method
+  (exact/statistical/brute_force/exact_diag) → `verified`; `pass` with only structural
+  checks → `verified_caveats`; `fail`/failed status → `failed`; `inconclusive` →
+  `not_verified`.
+- Key numbers label the verification distance with its **own** metric name (e.g. TVD),
+  never the plan's `primary_metric` (a different quantity).
+
+Result panel order is FIXED (spec §3): verdict banner → key numbers → code → baseline →
+export badges → Library link. Each section renders only when its data exists; rail rows
+scroll to the matching card via `STAGE_TO_ANCHOR`.
+
 ## VerdictBanner (S4)
 
 Full-width strip, never truncated; first element of the result panel. Tones map

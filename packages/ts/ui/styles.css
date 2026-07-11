@@ -282,3 +282,135 @@ div.mj-rail-row:hover {
 .mj-empty-action:active {
   background: var(--accent-press);
 }
+
+/* ---------- run page (S3 rail + S4 result panel) ---------- */
+/* Rail left, content panel right — the panel is a pure render of the reduced event log. */
+.mj-run {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sp-6);
+}
+.mj-run-panel {
+  flex: 1 1 auto;
+  min-width: 0; /* let the code block scroll instead of blowing out the layout */
+  padding: var(--sp-4) 0;
+}
+.mj-run-waiting {
+  color: var(--text-1);
+  font-size: var(--fs-13);
+}
+
+/* Result panel — fixed section order (spec §3); each section renders only when it has data */
+.mj-result {
+  display: grid;
+  gap: var(--sp-6);
+  max-width: 720px;
+}
+.mj-result-section {
+  display: grid;
+  gap: var(--sp-2);
+}
+.mj-result-h {
+  font-size: var(--fs-14);
+  font-weight: 500;
+  color: var(--text-0);
+  margin: 0;
+}
+.mj-result-note {
+  color: var(--text-1);
+  font-size: var(--fs-13);
+  margin: 0;
+}
+
+/* key-numbers table (also reused for baseline rows) */
+.mj-keynums {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: var(--fs-13);
+}
+.mj-keynums th {
+  text-align: left;
+  font-weight: 400;
+  color: var(--text-1);
+  padding: var(--sp-1) var(--sp-4) var(--sp-1) 0;
+  white-space: nowrap;
+}
+.mj-keynums td {
+  text-align: right;
+  font-family: var(--font-mono);
+  color: var(--text-0);
+  font-variant-numeric: tabular-nums;
+  padding: var(--sp-1) 0;
+  width: 100%;
+}
+.mj-keynums tr + tr th,
+.mj-keynums tr + tr td {
+  border-top: 1px solid var(--border-0);
+}
+
+/* code block — filename tab + horizontally scrollable body (never wraps the page) */
+.mj-code {
+  border: 1px solid var(--border-0);
+  border-radius: var(--radius-card);
+  overflow: hidden;
+  background: var(--bg-1);
+}
+.mj-code-head {
+  display: flex;
+  align-items: center;
+  padding: var(--sp-2) var(--sp-3);
+  border-bottom: 1px solid var(--border-0);
+  background: var(--bg-2);
+}
+.mj-code-file {
+  font-family: var(--font-mono);
+  font-size: var(--fs-12);
+  color: var(--text-1);
+}
+.mj-code-body {
+  margin: 0;
+  padding: var(--sp-3);
+  overflow-x: auto;
+  font-family: var(--font-mono);
+  font-size: var(--fs-12);
+  line-height: 1.5;
+  color: var(--text-0);
+}
+
+/* export badges row */
+.mj-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+}
+.mj-badge {
+  display: inline-flex;
+  align-items: center;
+  font-size: var(--fs-12);
+  font-weight: 500;
+  padding: var(--sp-1) var(--sp-2);
+  border-radius: var(--radius-control);
+  border: 1px solid var(--border-0);
+  color: var(--text-1);
+  background: var(--bg-1);
+}
+/* Tone rides on a thin left edge + label, matching the verdict strip's calm treatment. */
+.mj-badge[data-tone="ok"] {
+  border-left: 3px solid var(--ok);
+}
+.mj-badge[data-tone="warn"] {
+  border-left: 3px solid var(--warn);
+}
+.mj-badge[data-tone="err"] {
+  border-left: 3px solid var(--err);
+}
+
+.mj-result-link {
+  font-size: var(--fs-13);
+  font-weight: 500;
+  color: var(--accent);
+  text-decoration: none;
+}
+.mj-result-link:hover {
+  text-decoration: underline;
+}
