@@ -1,0 +1,50 @@
+/* Design tokens — SINGLE SOURCE for color/type/spacing/radius.
+ * Spec: plans/roadmap/04-ui-specifications.md §1 (values are owner-ratified taste;
+ * do NOT add or "adjust" values — deviation requires an owner taste-check).
+ * Raw hex colors are allowed in this file ONLY (enforced by scripts/check-raw-hex.mjs).
+ * Dark-first: MVP ships dark-only; names are semantic so light theme is a swap later.
+ * Contrast pre-checked: text-0/bg-0 ≈ 15:1, text-1/bg-1 ≈ 7:1, accent/bg-0 ≈ 5.6:1.
+ */
+:root {
+  /* color — near-black blue-grays, one accent, three verdict colors */
+  --bg-0: #0b0e14; /* app background */
+  --bg-1: #11151f; /* panel / card */
+  --bg-2: #1a2029; /* raised: hover, code blocks, table header */
+  --border-0: #232a36; /* hairlines */
+  --text-0: #e6eaf2; /* primary text */
+  --text-1: #9aa4b5; /* secondary text */
+  --text-2: #5c6675; /* placeholders, disabled */
+  --accent: #5b8cff; /* links, focus, primary buttons, running-stage */
+  --accent-press: #4677e8;
+  --ok: #34c077; /* verified / pass */
+  --warn: #e5a83b; /* lossy / skipped-with-reason / partial */
+  --err: #e5564f; /* failed / unsupported */
+  --mono-tint: #8fbcbb; /* numbers/IDs inside prose */
+
+  /* type — Inter for UI, JetBrains Mono for code/numbers/IDs.
+     Apps may override the font vars with self-hosted/next-font faces. */
+  --font-ui: "Inter", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, monospace;
+  /* scale (px): 12, 13(base), 14, 16, 20, 28 — nothing else */
+  --fs-12: 12px;
+  --fs-13: 13px;
+  --fs-14: 14px;
+  --fs-16: 16px;
+  --fs-20: 20px;
+  --fs-28: 28px;
+  /* weights: 400, 500 (headings/buttons), 600 (page title only) */
+
+  /* space: 4-px grid */
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-6: 24px;
+  --sp-8: 32px;
+  --sp-12: 48px;
+
+  /* radius: 6 controls, 10 cards; shadows: none (borders do the work) */
+  --radius-control: 6px;
+  --radius-card: 10px;
+  --content-max: 1200px;
+}
