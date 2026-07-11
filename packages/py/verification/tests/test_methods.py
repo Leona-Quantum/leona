@@ -67,13 +67,26 @@ def test_statistical_counts_fails_for_biased_counts():
     assert not outcome.passed
 
 
-def test_statistical_counts_accepts_either_bit_order():
+def test_statistical_counts_bit_order_conventions():
     # |100> from x q[0]: engine big-endian says "100"; Qiskit reports "001".
     circuit = from_openqasm('OPENQASM 2.0;\ninclude "qelib1.inc";\nqreg q[3];\nx q[0];\n')
+    # auto (unknown producer): either orientation matches, wrong state never.
     for reported in ("100", "001"):
-        outcome = verify_statistical_counts(circuit, {reported: 1024})
-        assert outcome.passed, reported
+        assert verify_statistical_counts(circuit, {reported: 1024}).passed, reported
     assert not verify_statistical_counts(circuit, {"010": 1024}).passed
+    # Explicit convention: only the declared orientation is accepted, so a
+    # genuinely bit-reversed (wrong) state cannot be absolved.
+    assert verify_statistical_counts(circuit, {"001": 1024}, bit_order="little").passed
+    assert not verify_statistical_counts(circuit, {"100": 1024}, bit_order="little").passed
+    assert verify_statistical_counts(circuit, {"100": 1024}, bit_order="big").passed
+    assert not verify_statistical_counts(circuit, {"001": 1024}, bit_order="big").passed
+
+
+def test_statistical_counts_rejects_fractional_counts():
+    circuit = from_openqasm(BELL)
+    assert verify_statistical_counts(circuit, {"00": 512.0, "11": 512.0}).passed  # integral floats
+    assert not verify_statistical_counts(circuit, {"00": 511.9, "11": 512.1}).passed
+    assert not verify_statistical_counts(circuit, {"00": float("nan")}).passed
 
 
 def test_statistical_counts_rejects_malformed_counts():
@@ -98,8 +111,9 @@ def test_extract_counts_finds_plan_key_then_conventions():
     counts = {"00": 10, "11": 12}
     assert extract_counts({"counts": counts}, ["counts"]) == counts
     assert extract_counts({"measurement_counts": counts}, ["energy"]) == counts
-    # Qiskit multi-register spacing and float counts normalize.
+    # Qiskit multi-register spacing and integral floats normalize; fractions never.
     assert extract_counts({"data": {"00 1": 5.0}}, []) == {"00 1": 5}
+    assert extract_counts({"counts": {"00": 1.9}}, ["counts"]) is None
     assert extract_counts({"energy": -1.1}, ["energy"]) is None
     assert extract_counts({"notes": {"abc": 1}}, []) is None
 

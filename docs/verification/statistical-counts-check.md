@@ -54,23 +54,26 @@ note in the run record.
 ## Bit-order convention
 
 Qiskit reports counts little-endian (qubit 0 = rightmost bit); the engine
-indexes big-endian (qubit 0 = leftmost). Both orientations are scored and the
-better one is taken, with `bit_order` recorded in the protocol. Endianness is a
-representation convention, not a correctness property; accepting either cannot
-admit a wrong distribution — a distribution matches under at most one
-orientation unless it is (near-)symmetric under bit reversal, in which case both
-claims coincide.
+indexes big-endian (qubit 0 = leftmost). The worker passes the producing
+framework's convention explicitly (`bit_order="little"` for Qiskit, `"big"` for
+cirq/pennylane orderings), and the orientation used is recorded in the protocol.
+An `"auto"` mode (score both, take the better) exists for unknown producers
+only — it is not used in the pipeline, because for an asymmetric circuit it
+could absolve a genuinely bit-reversed (wrong) state.
 
 ## Failure semantics
 
 Per the package rule (never a silent PASS):
 
 - Malformed counts (non-bitstring keys, wrong width vs the circuit, empty,
-  negative) → **FAIL** with the reason — a run that promised counts and printed
-  garbage is a broken contract, not missing data.
-- Missing counts or missing parsed circuit → the *worker* skips the method
-  (honest "cannot run"); the always-run contract checks still produce a verdict,
-  so skipping can no longer starve the run into INCONCLUSIVE.
+  negative, fractional, non-finite) → **FAIL** with the reason — a run that
+  promised counts and printed garbage is a broken contract, not missing data.
+  Values are never coerced: `5.0` is accepted as 5, `1.9` is rejected.
+- Missing counts in the result → the *worker* skips the `statistical` method
+  (honest "cannot run"). Missing *QASM* is different: `QASM_PARSE` always runs
+  and FAILs when a circuit-bearing run emitted none. Either way the always-run
+  contract checks produce a verdict, so skipping can no longer starve the run
+  into INCONCLUSIVE.
 - \> 20 qubits → FAIL with "exceeds statevector limit" (the plan prompt steers
   plans away from choosing `statistical` there; larger circuits await the
   playbook's stabilizer/MPS methods).

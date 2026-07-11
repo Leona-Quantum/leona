@@ -262,6 +262,7 @@ def counts_vs_ideal(
     delta: float = 1e-3,
     max_bins: int = 256,
     max_qubits: int = 20,
+    bit_order: Literal["big", "little", "auto"] = "auto",
 ) -> EquivalenceReport:
     """Check reported measurement counts against a direct statevector simulation
     of the circuit (the headless statistical verification: no reference circuit
@@ -274,12 +275,19 @@ def counts_vs_ideal(
     confidence delta: TVD_max = sqrt((d ln2 + ln(1/delta)) / (2N)). Correct code
     sampling from the true distribution exceeds this with probability <= delta.
 
-    Counts bitstring convention: Qiskit reports counts little-endian (qubit 0
-    rightmost); the engine is big-endian. Both orientations are tried and the
-    better one is recorded — bit order is representation, not correctness.
+    Counts bitstring convention: the engine indexes big-endian (qubit 0
+    leftmost); Qiskit reports counts little-endian (qubit 0 rightmost). Pass the
+    producer's convention via bit_order ("little" reverses keys before
+    comparison). "auto" scores both orientations and takes the better one — use
+    it only when the producing framework is unknown, since for an asymmetric
+    circuit it can absolve a genuinely reversed (wrong) state.
     """
     if circuit.qubits > max_qubits:
         raise ValueError(f"statistical counts check supports at most {max_qubits} qubits")
+    if max_bins < 1:
+        raise ValueError("max_bins must be >= 1")
+    if not 0 < delta < 1:
+        raise ValueError("delta must be in (0, 1)")
     normalized: dict[str, int] = {}
     for key, value in counts.items():
         bits = str(key).replace(" ", "")
@@ -289,23 +297,34 @@ def counts_vs_ideal(
             raise ValueError(
                 f"counts key {key!r} has {len(bits)} bits; circuit has {circuit.qubits} qubits"
             )
+        if (
+            isinstance(value, bool)
+            or not isinstance(value, int | float)
+            or not math.isfinite(value)
+            or value != int(value)
+            or value < 0
+        ):
+            raise ValueError(f"count for {key!r} is not a non-negative integer: {value!r}")
         normalized[bits] = normalized.get(bits, 0) + int(value)
     shots = sum(normalized.values())
     if shots <= 0:
         raise ValueError("counts are empty")
 
     ideal = ideal_distribution(circuit)
+    orientations = {"big": ("as_is",), "little": ("reversed",), "auto": ("as_is", "reversed")}[
+        bit_order
+    ]
     tvds: dict[str, float] = {}
     coarse_bins = 0
-    for orientation in ("as_is", "reversed"):
+    for orientation in orientations:
         observed = {
             (key if orientation == "as_is" else key[::-1]): count / shots
             for key, count in normalized.items()
         }
         coarse_ideal, coarse_observed, coarse_bins = _coarsen(ideal, observed, max_bins)
         tvds[orientation] = _total_variation(coarse_ideal, coarse_observed)
-    bit_order = min(tvds, key=tvds.get)  # type: ignore[arg-type]
-    tvd = tvds[bit_order]
+    orientation_used = min(tvds, key=tvds.get)  # type: ignore[arg-type]
+    tvd = tvds[orientation_used]
 
     threshold_source = "plan" if threshold is not None else "shot_noise_bound"
     if threshold is None:
@@ -318,6 +337,7 @@ def counts_vs_ideal(
         "delta": delta,
         "bins": coarse_bins,
         "bit_order": bit_order,
+        "orientation_used": orientation_used,
     }
     payload = {"candidate": canonical_json(circuit), "protocol": protocol, "tvd": tvd}
     return EquivalenceReport(

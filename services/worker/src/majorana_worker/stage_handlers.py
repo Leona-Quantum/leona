@@ -442,9 +442,15 @@ def _run_verification(method: VerificationMethod, plan: Plan, result: dict[str, 
             return None  # no parsed circuit or no counts to test; skip honestly
         thresholds = plan.verification_plan.thresholds if plan.verification_plan else None
         threshold = None
-        if thresholds:
-            threshold = thresholds.get("tvd_max") or thresholds.get("total_variation_max")
-        return verify_statistical_counts(circuit, counts, threshold=threshold)
+        if thresholds:  # explicit membership checks — a plan-set 0.0 must survive
+            for key in ("tvd_max", "total_variation_max"):
+                if thresholds.get(key) is not None:
+                    threshold = thresholds[key]
+                    break
+        # Counts convention follows the generating framework: Qiskit reports
+        # little-endian; the engine (and cirq/pennylane orderings) are big-endian.
+        bit_order = "little" if Framework(plan.framework) is Framework.QISKIT else "big"
+        return verify_statistical_counts(circuit, counts, threshold=threshold, bit_order=bit_order)
     if method is VerificationMethod.EXACT_DIAG:
         instance = _baseline_instance(result)
         metric = plan.success_criteria.primary_metric
