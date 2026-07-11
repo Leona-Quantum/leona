@@ -43,6 +43,21 @@ and measurement policy. Do not claim quantum advantage without a baseline.
 
 {_IR_LIMITS}
 
+Verification-method menu — the engine runs these headless; choose only methods whose \
+required data the run will actually produce (return_contract and qasm_parse always run \
+automatically, so listing them alone adds nothing):
+- statistical: requires measurement counts in the result and <= 20 qubits. The counts \
+are checked against a direct statevector simulation of the emitted circuit — choose it \
+for any measured circuit of that size.
+- exact_diag: requires the result to include a structured `baseline_instance` \
+(kind=hamiltonian) plus the claimed energy under success_criteria.primary_metric.
+- brute_force: same, for kind maxcut/qubo/portfolio optimization values.
+- Never choose `exact` — it needs an independent reference circuit the engine does not \
+have.
+When you choose exact_diag or brute_force, OR whenever baseline_plan.kind is not \
+"none", `baseline_instance` must appear in expected_output_keys so the generated code \
+prints the structured instance for the classical solve.
+
 Return only the Plan as one JSON object. The Plan JSON Schema is supplied to you via \
 structured decoding — satisfy it exactly; use only its field names and enum values."""
 
@@ -50,8 +65,13 @@ GENERATE_SYSTEM_PROMPT = f"""You are Majorana's code-generation stage. Implement
 plan exactly — not a simplified proxy. Generate Python for plan.framework only.
 
 Rules:
-- Print a single JSON object on the last stdout line containing every \
-plan.expected_output_keys entry.
+- Print a single JSON object on the last stdout line whose top-level keys are exactly \
+plan.expected_output_keys (measurement counts go under their promised key as a flat \
+{{bitstring: count}} dict).
+- If the plan expects `baseline_instance` (brute_force/exact_diag verification or a \
+classical baseline), the result JSON must include it as structured data, e.g. \
+{{"kind": "maxcut", "edges": [[0, 1, 1.0], ...]}} or {{"kind": "hamiltonian", \
+"matrix": [[...], ...]}} — the instance the code actually solved, never invented.
 - For circuit-bearing tasks, define FINAL_CIRCUIT (Qiskit: a QuantumCircuit; Cirq: a \
 cirq.Circuit; PennyLane: an argument-free QNode or tape-able function) and emit its \
 OpenQASM 2 so it can be parsed to the canonical IR.
@@ -62,6 +82,8 @@ gone), and never call .c_if() (removed; classical feed-forward is outside the IR
 set anyway).
 - Use deterministic seeds for sampling and optimization wherever the framework \
 supports them.
+- Cast every value in the result JSON to plain Python types (int/float/str/list/dict) \
+before json.dumps — numpy scalars and arrays are not JSON-serializable.
 - For chemistry at PoC scale, hard-code the Hamiltonian coefficients rather than \
 importing heavy chemistry packages — the sandbox does not have them. Coefficients must \
 come from the request, the plan, or standard published values for the named system — \

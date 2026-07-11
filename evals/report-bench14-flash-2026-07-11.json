@@ -1,0 +1,22 @@
+{
+  "total": 1,
+  "passed": 0,
+  "pass_rate": 0.0,
+  "cases": [
+    {
+      "id": "bench-14",
+      "category": "D — VQE H2",
+      "passed": false,
+      "run_status": "failed",
+      "verifier_decision": null,
+      "export_status": null,
+      "saved": false,
+      "reasons": [
+        "verifier_decision None != expected 'pass'",
+        "expected a saved artifact, none was written",
+        "result missing promised key 'ground_state_energy_Ha'"
+      ]
+    }
+  ],
+  "note": "baseline run against real LLM providers (sandbox=local)"
+}

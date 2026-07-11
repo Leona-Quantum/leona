@@ -226,6 +226,129 @@ def _total_variation(left: dict[str, float], right: dict[str, float]) -> float:
     return 0.5 * sum(abs(left.get(key, 0.0) - right.get(key, 0.0)) for key in keys)
 
 
+def ideal_distribution(circuit: Circuit) -> dict[str, float]:
+    """Exact Born probabilities of the circuit on |0...0>, keyed by big-endian
+    bitstrings (qubit 0 leftmost — the engine's convention)."""
+    state = simulate_statevector(circuit)
+    probabilities = np.abs(state) ** 2
+    return {
+        format(index, f"0{circuit.qubits}b"): float(p)
+        for index, p in enumerate(probabilities)
+        if p > 0.0
+    }
+
+
+def _coarsen(
+    ideal: dict[str, float], observed: dict[str, float], max_bins: int
+) -> tuple[dict[str, float], dict[str, float], int]:
+    """Bin both distributions onto the ideal distribution's highest-probability
+    outcomes plus one TAIL bin. Coarsening is a projection, so the coarse TVD
+    lower-bounds the full TVD (data-processing inequality) — passing the coarse
+    test is a necessary condition, and keeping d_eff small keeps the
+    finite-shot threshold below useless."""
+    kept = [k for k, _ in sorted(ideal.items(), key=lambda kv: -kv[1])[:max_bins]]
+    kept_set = set(kept)
+    coarse_ideal = {k: ideal[k] for k in kept}
+    coarse_ideal["__TAIL__"] = max(0.0, 1.0 - sum(coarse_ideal.values()))
+    coarse_observed = {k: observed.get(k, 0.0) for k in kept}
+    coarse_observed["__TAIL__"] = sum(v for k, v in observed.items() if k not in kept_set)
+    return coarse_ideal, coarse_observed, len(kept) + 1
+
+
+def counts_vs_ideal(
+    circuit: Circuit,
+    counts: dict[str, int],
+    threshold: float | None = None,
+    delta: float = 1e-3,
+    max_bins: int = 256,
+    max_qubits: int = 20,
+    bit_order: Literal["big", "little", "auto"] = "auto",
+) -> EquivalenceReport:
+    """Check reported measurement counts against a direct statevector simulation
+    of the circuit (the headless statistical verification: no reference circuit
+    needed — the emitted circuit itself is simulated independently).
+
+    Statistical test: total-variation distance between the empirical distribution
+    and the exact Born distribution, both coarsened to <= max_bins+1 bins. With no
+    explicit threshold, the pass bound is the Weissman et al. L1 concentration
+    inequality — P(||p_hat - p||_1 >= eps) <= 2^d exp(-N eps^2 / 2) — solved at
+    confidence delta: TVD_max = sqrt((d ln2 + ln(1/delta)) / (2N)). Correct code
+    sampling from the true distribution exceeds this with probability <= delta.
+
+    Counts bitstring convention: the engine indexes big-endian (qubit 0
+    leftmost); Qiskit reports counts little-endian (qubit 0 rightmost). Pass the
+    producer's convention via bit_order ("little" reverses keys before
+    comparison). "auto" scores both orientations and takes the better one — use
+    it only when the producing framework is unknown, since for an asymmetric
+    circuit it can absolve a genuinely reversed (wrong) state.
+    """
+    if circuit.qubits > max_qubits:
+        raise ValueError(f"statistical counts check supports at most {max_qubits} qubits")
+    if max_bins < 1:
+        raise ValueError("max_bins must be >= 1")
+    if not 0 < delta < 1:
+        raise ValueError("delta must be in (0, 1)")
+    normalized: dict[str, int] = {}
+    for key, value in counts.items():
+        bits = str(key).replace(" ", "")
+        if not bits or set(bits) - {"0", "1"}:
+            raise ValueError(f"counts key {key!r} is not a bitstring")
+        if len(bits) != circuit.qubits:
+            raise ValueError(
+                f"counts key {key!r} has {len(bits)} bits; circuit has {circuit.qubits} qubits"
+            )
+        if (
+            isinstance(value, bool)
+            or not isinstance(value, int | float)
+            or not math.isfinite(value)
+            or value != int(value)
+            or value < 0
+        ):
+            raise ValueError(f"count for {key!r} is not a non-negative integer: {value!r}")
+        normalized[bits] = normalized.get(bits, 0) + int(value)
+    shots = sum(normalized.values())
+    if shots <= 0:
+        raise ValueError("counts are empty")
+
+    ideal = ideal_distribution(circuit)
+    orientations = {"big": ("as_is",), "little": ("reversed",), "auto": ("as_is", "reversed")}[
+        bit_order
+    ]
+    tvds: dict[str, float] = {}
+    coarse_bins = 0
+    for orientation in orientations:
+        observed = {
+            (key if orientation == "as_is" else key[::-1]): count / shots
+            for key, count in normalized.items()
+        }
+        coarse_ideal, coarse_observed, coarse_bins = _coarsen(ideal, observed, max_bins)
+        tvds[orientation] = _total_variation(coarse_ideal, coarse_observed)
+    orientation_used = min(tvds, key=tvds.get)  # type: ignore[arg-type]
+    tvd = tvds[orientation_used]
+
+    threshold_source = "plan" if threshold is not None else "shot_noise_bound"
+    if threshold is None:
+        threshold = math.sqrt((coarse_bins * math.log(2) + math.log(1 / delta)) / (2 * shots))
+    protocol = {
+        "name": "statistical_counts",
+        "shots": shots,
+        "threshold": threshold,
+        "threshold_source": threshold_source,
+        "delta": delta,
+        "bins": coarse_bins,
+        "bit_order": bit_order,
+        "orientation_used": orientation_used,
+    }
+    payload = {"candidate": canonical_json(circuit), "protocol": protocol, "tvd": tvd}
+    return EquivalenceReport(
+        fingerprint_type="statistical_distribution",
+        protocol=protocol,
+        fingerprint_hash=hashlib.sha256(json.dumps(payload, sort_keys=True).encode()).hexdigest(),
+        passed=tvd <= threshold,
+        scores={"total_variation_distance": tvd, "both_orientations": tvds},
+    )
+
+
 def statistical_equivalence(
     reference: Circuit,
     candidate: Circuit,
