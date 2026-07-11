@@ -2,7 +2,7 @@
 // loading/empty/error states.
 export default function AppLoading() {
   return (
-    <p role="status" style={{ color: "var(--text-2)", padding: "var(--sp-6)" }}>
+    <p role="status" className="p-6 text-text-2">
       Loading…
     </p>
   );

@@ -20,6 +20,13 @@
   --color-mono-tint: var(--mono-tint);
   --font-sans: var(--font-ui);
   --font-mono: var(--font-mono);
+  /* type-scale utilities (text-12 … text-28) resolve to the token scale */
+  --text-12: var(--fs-12);
+  --text-13: var(--fs-13);
+  --text-14: var(--fs-14);
+  --text-16: var(--fs-16);
+  --text-20: var(--fs-20);
+  --text-28: var(--fs-28);
   --radius-control: var(--radius-control);
   --radius-card: var(--radius-card);
 }
