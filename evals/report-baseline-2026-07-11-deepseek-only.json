@@ -1,0 +1,92 @@
+{
+  "total": 6,
+  "passed": 0,
+  "pass_rate": 0.0,
+  "cases": [
+    {
+      "id": "bench-01",
+      "category": "A — Bell/GHZ state prep",
+      "passed": false,
+      "run_status": "failed",
+      "verifier_decision": null,
+      "export_status": null,
+      "saved": false,
+      "reasons": [
+        "verifier_decision None != expected 'pass'",
+        "export_status None != expected 'lossless'",
+        "expected a saved artifact, none was written",
+        "result missing promised key 'counts'"
+      ]
+    },
+    {
+      "id": "bench-03",
+      "category": "A — Bell/GHZ state prep",
+      "passed": false,
+      "run_status": "succeeded",
+      "verifier_decision": "inconclusive",
+      "export_status": "unsupported",
+      "saved": false,
+      "reasons": [
+        "verifier_decision 'inconclusive' != expected 'pass'",
+        "export_status 'unsupported' != expected 'lossless'",
+        "expected a saved artifact, none was written"
+      ]
+    },
+    {
+      "id": "bench-10",
+      "category": "C — QFT/QPE",
+      "passed": false,
+      "run_status": "failed",
+      "verifier_decision": null,
+      "export_status": null,
+      "saved": false,
+      "reasons": [
+        "verifier_decision None != expected 'pass'",
+        "export_status None != expected 'lossless'",
+        "expected a saved artifact, none was written"
+      ]
+    },
+    {
+      "id": "bench-14",
+      "category": "D — VQE H2",
+      "passed": false,
+      "run_status": "failed",
+      "verifier_decision": null,
+      "export_status": null,
+      "saved": false,
+      "reasons": [
+        "verifier_decision None != expected 'pass'",
+        "expected a saved artifact, none was written",
+        "result missing promised key 'ground_state_energy_Ha'"
+      ]
+    },
+    {
+      "id": "bench-18",
+      "category": "E — QAOA MaxCut",
+      "passed": false,
+      "run_status": "failed",
+      "verifier_decision": null,
+      "export_status": null,
+      "saved": false,
+      "reasons": [
+        "verifier_decision None != expected 'pass'",
+        "expected a saved artifact, none was written",
+        "result missing promised key 'cut_value'"
+      ]
+    },
+    {
+      "id": "bench-28",
+      "category": "G — Transpilation/export honesty",
+      "passed": false,
+      "run_status": "failed",
+      "verifier_decision": null,
+      "export_status": null,
+      "saved": false,
+      "reasons": [
+        "verifier_decision None != expected 'fail'",
+        "export_status None != expected 'unsupported'"
+      ]
+    }
+  ],
+  "note": "baseline run against real LLM providers (sandbox=local)"
+}

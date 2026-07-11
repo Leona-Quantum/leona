@@ -50,7 +50,12 @@ def extract_code(text: str) -> str:
             return body
     if text.strip():
         return text.strip()
-    raise StageOutputError("no code found in generation output")
+    # Machine-safe metadata only: this message flows into durable run events, so it
+    # must never carry raw model output. Length + blankness still make an empty or
+    # truncated completion diagnosable.
+    raise StageOutputError(
+        f"no code found in generation output (len={len(text)}, blank={not text.strip()})"
+    )
 
 
 def extract_qasm(text: str) -> str | None:
