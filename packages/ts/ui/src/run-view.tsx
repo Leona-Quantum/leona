@@ -410,7 +410,14 @@ function ResultPanel({ result }: { result: ResultView }): ReactNode {
             <div className="mj-code-head">
               <span className="mj-code-file">{result.code.filename}</span>
             </div>
-            <pre className="mj-code-body">
+            {/* Focusable + labelled: the block scrolls horizontally, so keyboard users
+                need to reach it (WCAG 2.1.1; a11y gate: packages/ts/ui-visual). */}
+            <pre
+              className="mj-code-body"
+              tabIndex={0}
+              role="region"
+              aria-label={`${result.code.filename} source`}
+            >
               <code>{result.code.code}</code>
             </pre>
           </div>

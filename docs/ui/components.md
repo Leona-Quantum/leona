@@ -25,7 +25,7 @@ are plain text, not emoji.
 
 | state | ring | glyph | text | extra |
 |---|---|---|---|---|
-| pending | `--border-0` hollow ring | — | `--text-2` | |
+| pending | `--border-0` hollow ring | — | `--text-1` | text-2 on bg-0 is 3.19:1 (< AA); text-1 keeps pending dim but readable |
 | running | `--accent` ring, fades to transparent @1.2 s (glyph stays solid) | – `--accent` | `--text-0` | live elapsed |
 | pass | `--ok` ring | ✓ `--ok` | `--text-0` | |
 | skipped | `--warn` ring | – `--warn` | `--text-1` | reason inline at 12 px — hover-only info is banned |
@@ -58,7 +58,9 @@ Reducer rules worth knowing (all deterministic):
 
 Result panel order is FIXED (spec §3): verdict banner → key numbers → code → baseline →
 export badges → Library link. Each section renders only when its data exists; rail rows
-scroll to the matching card via `STAGE_TO_ANCHOR`.
+scroll to the matching card via `STAGE_TO_ANCHOR`. The code block scrolls horizontally, so
+its `<pre>` is keyboard-focusable (`tabIndex=0`, `role="region"`, `aria-label`) — a
+scrollable region with no keyboard access is a WCAG 2.1.1 failure.
 
 ## VerdictBanner (S4)
 
@@ -75,6 +77,18 @@ P1: never say "IR" here — say what was checked.
 
 Top bar: brand, primary nav (labels from `src/nav-config.ts` ONLY — owner-revisable),
 right slot for quota meter/identity. `aria-current="page"` on the active surface.
+
+## Accessibility harness (`packages/ts/ui-visual`)
+
+`packages/ts/ui-visual` renders the real components to static HTML from source (esbuild +
+`renderToStaticMarkup`, tokens/styles inlined) and asserts **zero WCAG A/AA violations**
+per story via `@axe-core/playwright`. It runs as its own CI job (`ui-visual`) — separate
+from the required `ts` job, since it needs a chromium download. Its `a11y` script is
+deliberately not named `test` so `turbo run … test` in the `ts` job never triggers the
+browser install. First real catches (both fixed in `@majorana/ui`): pending rail-name
+contrast (text-2 → text-1) and the code-block keyboard-focus gap. When axe flags a real
+issue, fix the component — do not relax the rule set. This is slice **a** of roadmap 04 §5
+step 2; the screenshot visual-diff slice (b) reuses the same `dist/*.html`.
 
 ## EmptyState
 
