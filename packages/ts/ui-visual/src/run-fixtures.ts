@@ -119,7 +119,7 @@ const VERIFIED: RunEvent[] = [
 ];
 
 const FAILED: RunEvent[] = [
-  ...VERIFIED.slice(0, 11),
+  ...VERIFIED.slice(0, 12),
   {
     type: "verification.result",
     run_id: RUN,

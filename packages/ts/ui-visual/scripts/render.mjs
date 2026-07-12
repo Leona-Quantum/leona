@@ -2,7 +2,7 @@
 // inlining *.css via the text loader) and run it to emit dist/*.html. Kept as a plain .mjs
 // driver so there is no pre-existing toolchain assumption beyond esbuild. No Next, no auth.
 import esbuild from "esbuild";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -30,5 +30,9 @@ const bundleDir = mkdtempSync(join(tmpdir(), "ui-visual-render-"));
 const bundlePath = join(bundleDir, "render-entry.mjs");
 writeFileSync(bundlePath, result.outputFiles[0].text, "utf8");
 
-const mod = await import(pathToFileURL(bundlePath).href);
-mod.renderAll();
+try {
+  const mod = await import(pathToFileURL(bundlePath).href);
+  await mod.renderAll();
+} finally {
+  rmSync(bundleDir, { recursive: true, force: true });
+}
