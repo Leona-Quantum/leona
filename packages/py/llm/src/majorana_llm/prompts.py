@@ -73,13 +73,12 @@ classical baseline), the result JSON must include it as structured data, e.g. \
 {{"kind": "maxcut", "edges": [[0, 1, 1.0], ...]}} or {{"kind": "hamiltonian", \
 "matrix": [[...], ...]}} — the instance the code actually solved, never invented.
 - For circuit-bearing tasks, define FINAL_CIRCUIT (Qiskit: a QuantumCircuit; Cirq: a \
-cirq.Circuit; PennyLane: an argument-free QNode or tape-able function) and emit its \
-OpenQASM 2 so it can be parsed to the canonical IR.
-- The sandbox has Qiskit 2.x. Its removed legacy APIs do not exist: emit QASM with \
-`from qiskit.qasm2 import dumps; dumps(FINAL_CIRCUIT)` (QuantumCircuit.qasm() is gone), \
-run via qiskit_aer's AerSimulator with transpile + run (execute() and BasicAer are \
-gone), and never call .c_if() (removed; classical feed-forward is outside the IR gate \
-set anyway).
+cirq.Circuit; PennyLane: an argument-free QNode or tape-able function). For Qiskit, do \
+not serialize it yourself: the sandbox deterministically emits FINAL_CIRCUIT OpenQASM 2 \
+after your program succeeds. Cirq/PennyLane must still emit supported OpenQASM 2 themselves.
+- The sandbox has Qiskit 2.x. Its removed legacy APIs do not exist: run via qiskit_aer's \
+AerSimulator with transpile + run (execute() and BasicAer are gone), and never call .c_if() \
+(removed; classical feed-forward is outside the IR gate set anyway).
 - Use deterministic seeds for sampling and optimization wherever the framework \
 supports them.
 - Cast every value in the result JSON to plain Python types (int/float/str/list/dict) \

@@ -9,6 +9,7 @@ from majorana_llm import (
     endpoint_for,
     extract_code,
     extract_qasm,
+    extract_qasm_with_provenance,
     model_for,
     parse_plan,
     resolve_provider,
@@ -158,3 +159,30 @@ def test_extract_code_and_qasm():
     assert "QuantumCircuit" in extract_code(text)
     qasm = extract_qasm(text)
     assert qasm and "cx q[0],q[1];" in qasm
+
+
+def test_qasm_envelope_wins_over_model_stdout_and_preserves_provenance():
+    text = """OPENQASM 2.0;
+qreg q[1];
+x q[0];
+__MAJORANA_FINAL_QASM_BEGIN__
+OPENQASM 2.0;
+qreg q[1];
+h q[0];
+__MAJORANA_FINAL_QASM_END__
+"""
+    extraction = extract_qasm_with_provenance(text)
+    assert extraction.source == "sandbox_epilogue"
+    assert extraction.qasm and "h q[0]" in extraction.qasm
+    assert "x q[0]" not in extraction.qasm
+
+
+def test_qasm_provenance_records_epilogue_error_before_fallback():
+    text = """__MAJORANA_FINAL_QASM_ERROR__:QASM2ExportError
+OPENQASM 2.0;
+qreg q[1];
+x q[0];
+"""
+    extraction = extract_qasm_with_provenance(text)
+    assert extraction.source == "model_stdout"
+    assert extraction.epilogue_error == "QASM2ExportError"

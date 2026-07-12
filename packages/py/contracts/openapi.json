@@ -908,6 +908,49 @@
         "title": "PlanProduced",
         "type": "object"
       },
+      "QasmEmission": {
+        "additionalProperties": false,
+        "description": "Provenance for the OpenQASM payload recovered from sandbox stdout.\n\n``sandbox_epilogue`` is Majorana's observed serialization of ``FINAL_CIRCUIT``;\n``model_stdout`` is a compatibility fallback and is not equivalent evidence.",
+        "properties": {
+          "available": {
+            "title": "Available",
+            "type": "boolean"
+          },
+          "epilogue_applied": {
+            "title": "Epilogue Applied",
+            "type": "boolean"
+          },
+          "epilogue_error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Exception type only; raw sandbox exception text is never persisted here.",
+            "title": "Epilogue Error"
+          },
+          "source": {
+            "enum": [
+              "sandbox_epilogue",
+              "model_stdout",
+              "missing"
+            ],
+            "title": "Source",
+            "type": "string"
+          }
+        },
+        "required": [
+          "epilogue_applied",
+          "source",
+          "available"
+        ],
+        "title": "QasmEmission",
+        "type": "object"
+      },
       "Role": {
         "enum": [
           "owner",
@@ -1429,6 +1472,17 @@
             ],
             "default": null,
             "title": "Memory Mb"
+          },
+          "qasm_emission": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/QasmEmission"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
           },
           "run_id": {
             "format": "uuid",

@@ -43,11 +43,14 @@ from majorana_contracts.plan import Plan
 from majorana_ir import IR_VERSION_TAG, canonical_dict, circuit_fingerprint
 from majorana_ir.connectors import OpenQASMError, from_openqasm
 from majorana_llm import (
+    FINAL_QASM_BEGIN,
+    FINAL_QASM_END,
+    FINAL_QASM_ERROR,
     STAGE_PROMPTS,
     LLMClient,
     LLMRequest,
     extract_code,
-    extract_qasm,
+    extract_qasm_with_provenance,
     model_for,
     parse_plan,
 )
@@ -82,6 +85,33 @@ _BASELINE_INSTANCE_TYPES = {
     "portfolio": PortfolioInstance,
     "hamiltonian": HamiltonianInstance,
 }
+
+
+def _qiskit_qasm_epilogue(code: str) -> str:
+    """Append Majorana-owned serialization of a generated ``FINAL_CIRCUIT``.
+
+    The epilogue deliberately does not replace user code, inspect result JSON, or
+    attempt to repair a model program. It observes the completed Qiskit circuit after
+    the program runs and emits a marked QASM payload. Missing/unsupported final circuits
+    leave the program result intact; model stdout remains the documented fallback.
+    """
+    return f'''{code}
+
+# Majorana-owned deterministic QASM emission. The line markers are parsed by the
+# control plane and must remain separate from the model's result JSON contract.
+_majorana_final_circuit = globals().get("FINAL_CIRCUIT")
+if _majorana_final_circuit is not None:
+    try:
+        from qiskit.qasm2 import dumps as _majorana_qasm_dumps
+
+        _majorana_final_qasm = _majorana_qasm_dumps(_majorana_final_circuit)
+    except Exception as _majorana_qasm_exc:
+        print("{FINAL_QASM_ERROR}:" + type(_majorana_qasm_exc).__name__)
+    else:
+        print("{FINAL_QASM_BEGIN}")
+        print(_majorana_final_qasm)
+        print("{FINAL_QASM_END}")
+'''
 
 
 async def _emit_llm_call(ctx: RunContext, stage: Stage, model: str, resp: Any, dt_ms: int) -> None:
@@ -154,8 +184,11 @@ def build_stage_handlers(
 
     async def simulate_stage(ctx: RunContext) -> StageOutcome:
         plan: Plan = ctx.state["plan"]
+        epilogue_applied = Framework(plan.framework) is Framework.QISKIT and _circuit_expected(plan)
         spec = ExecutionSpec(
-            code=ctx.state["code"],
+            code=(
+                _qiskit_qasm_epilogue(ctx.state["code"]) if epilogue_applied else ctx.state["code"]
+            ),
             timeout_s=min(plan.expected_runtime_sec, 120),
             qubits_estimate=plan.qubits_estimate,
         )
@@ -166,6 +199,7 @@ def build_stage_handlers(
         except QubitCeilingExceeded as exc:
             return StageOutcome(ok=False, error_code="qubit_ceiling", error_message=str(exc))
 
+        qasm_extraction = extract_qasm_with_provenance(result.stdout)
         await ctx.sink.emit(
             "sandbox.result",
             {
@@ -175,6 +209,12 @@ def build_stage_handlers(
                 "stdout": result.stdout,
                 "stderr": result.stderr,
                 "truncated": result.truncated,
+                "qasm_emission": {
+                    "epilogue_applied": epilogue_applied,
+                    "source": qasm_extraction.source,
+                    "available": qasm_extraction.qasm is not None,
+                    "epilogue_error": qasm_extraction.epilogue_error,
+                },
             },
         )
         await runs_repo.update_run_status(
@@ -202,11 +242,14 @@ def build_stage_handlers(
                 error_message="generated code printed no JSON result object",
             )
         ctx.state["result"] = parsed
-        qasm = extract_qasm(result.stdout)
+        qasm = qasm_extraction.qasm
         if qasm:
+            # Preserve a syntactically invalid payload for qasm_parse so the verifier
+            # can report the real parse error rather than mislabeling it as missing.
+            ctx.state["qasm"] = qasm
+            ctx.state["qasm_source"] = qasm_extraction.source
             try:
                 ctx.state["circuit"] = from_openqasm(qasm)
-                ctx.state["qasm"] = qasm
             except OpenQASMError:
                 pass  # verify's qasm_parse will record the failure
         return StageOutcome(ok=True)

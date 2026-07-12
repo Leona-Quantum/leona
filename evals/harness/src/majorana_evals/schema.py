@@ -31,6 +31,17 @@ class CorpusCase(BaseModel):
     expect: Expect = Field(default_factory=Expect)
 
 
+class CaseEvidence(BaseModel):
+    """Reproducible attribution fields observed during one pipeline attempt."""
+
+    failed_stage: str | None = None
+    error_code: str | None = None
+    qasm_source: str | None = None
+    qasm_epilogue_applied: bool | None = None
+    qasm_available: bool | None = None
+    qasm_epilogue_error: str | None = None
+
+
 class CaseResult(BaseModel):
     id: str
     category: str
@@ -40,6 +51,7 @@ class CaseResult(BaseModel):
     export_status: str | None = None
     saved: bool = False
     reasons: list[str] = Field(default_factory=list)
+    evidence: CaseEvidence = Field(default_factory=CaseEvidence)
 
 
 class Report(BaseModel):

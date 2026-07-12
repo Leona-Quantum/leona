@@ -88,6 +88,24 @@ class CodeGenerated(_EventBase):
     revision: int = Field(ge=1, description="1 = first generation; +1 per repair iteration")
 
 
+class QasmEmission(BaseModel):
+    """Provenance for the OpenQASM payload recovered from sandbox stdout.
+
+    ``sandbox_epilogue`` is Majorana's observed serialization of ``FINAL_CIRCUIT``;
+    ``model_stdout`` is a compatibility fallback and is not equivalent evidence.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    epilogue_applied: bool
+    source: Literal["sandbox_epilogue", "model_stdout", "missing"]
+    available: bool
+    epilogue_error: str | None = Field(
+        default=None,
+        description="Exception type only; raw sandbox exception text is never persisted here.",
+    )
+
+
 class SandboxResult(_EventBase):
     type: Literal["sandbox.result"] = "sandbox.result"
     exit_code: int
@@ -96,6 +114,7 @@ class SandboxResult(_EventBase):
     stdout: str
     stderr: str
     truncated: bool = False
+    qasm_emission: QasmEmission | None = None
 
 
 class VerificationResult(_EventBase):

@@ -97,6 +97,8 @@ async def test_harness_scores_a_passing_bell_case():
         assert result.verifier_decision == "pass"
         assert result.export_status == "lossless"
         assert result.saved
+        assert result.evidence.qasm_source == "model_stdout"
+        assert result.evidence.qasm_epilogue_applied is True
 
         report = await run_corpus(
             [case], factory=factory, scope=scope, llm=_fake(), sandbox=LocalSubprocessSandbox()

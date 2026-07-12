@@ -468,6 +468,30 @@ export interface components {
             type: "plan.produced";
         };
         /**
+         * QasmEmission
+         * @description Provenance for the OpenQASM payload recovered from sandbox stdout.
+         *
+         *     ``sandbox_epilogue`` is Majorana's observed serialization of ``FINAL_CIRCUIT``;
+         *     ``model_stdout`` is a compatibility fallback and is not equivalent evidence.
+         */
+        QasmEmission: {
+            /** Available */
+            available: boolean;
+            /** Epilogue Applied */
+            epilogue_applied: boolean;
+            /**
+             * Epilogue Error
+             * @description Exception type only; raw sandbox exception text is never persisted here.
+             * @default null
+             */
+            epilogue_error: string | null;
+            /**
+             * Source
+             * @enum {string}
+             */
+            source: "sandbox_epilogue" | "model_stdout" | "missing";
+        };
+        /**
          * Role
          * @enum {string}
          */
@@ -702,6 +726,8 @@ export interface components {
              * @default null
              */
             memory_mb: number | null;
+            /** @default null */
+            qasm_emission: components["schemas"]["QasmEmission"] | null;
             /**
              * Run Id
              * Format: uuid
