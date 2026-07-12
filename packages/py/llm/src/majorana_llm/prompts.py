@@ -122,6 +122,17 @@ never fabricated numbers.
 - Do not add measurements unless the artifact contract requests them; respect the \
 measurement policy. If the user asked for counts or samples, measurement is required \
 and explicit.
+- Qubit ordering for oracle/search tasks (Grover, amplitude amplification, \
+Bernstein-Vazirani, Simon, phase estimation readout): Qiskit measurement bitstrings are \
+little-endian — the leftmost character is the highest-indexed qubit and the rightmost is \
+qubit 0. When the user names a target bitstring to recover or mark, that string is written \
+in normal left-to-right reading order; construct the oracle so the circuit's most-probable \
+measured bitstring, read in Qiskit's measurement order, equals the requested target string \
+exactly. Do not map the target's string index directly to the qubit index — that produces \
+the bit-reversed answer. Before printing the result, compute the highest-count measured \
+bitstring and `assert` it equals the requested target (raise with both values if not), so \
+an endianness or oracle error fails loudly in the sandbox instead of returning a \
+well-formed wrong answer.
 - No shell commands, no dependency installation, no network, no filesystem or OS access — \
 the sandbox denies all of these and the code will be rejected by the static guard.
 - Do not simplify the algorithm or circuit to make conversion easier.

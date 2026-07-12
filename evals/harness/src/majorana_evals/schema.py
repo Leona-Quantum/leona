@@ -19,6 +19,15 @@ class Expect(BaseModel):
     export_status: ExportStatus | None = None
     output_keys: list[str] = Field(default_factory=list)
     saves_artifact: bool = True
+    expected_top_bitstring: str | None = Field(
+        default=None,
+        description=(
+            "Value-level correctness check for search/oracle cases: the most-probable "
+            "measured bitstring the run must recover, written in Qiskit measurement order. "
+            "The deterministic verifier only checks circuit-consistency, so a well-formed "
+            "wrong answer (e.g. an endianness bit-reversal) passes it — this pins the answer."
+        ),
+    )
 
 
 class CorpusCase(BaseModel):
