@@ -28,6 +28,25 @@ FRAMEWORK_DIRECTIVE = (
     "silently. The user may override the framework explicitly."
 )
 
+_RUNTIME_LIMITS = (
+    "The sandbox runtime exposes qiskit, qiskit_aer, numpy, scipy, sympy, networkx, "
+    "Cirq, and PennyLane plus side-effect-free standard-library modules. It does not "
+    "install qiskit_algorithms, qiskit_nature, pyscf, or other optional Qiskit "
+    "packages. For VQE/QAOA-sized tasks, implement the small reference method with "
+    "qiskit plus numpy/scipy instead of importing an unavailable package."
+)
+
+_PIPELINE_CONTRACT = (
+    "The control plane executes this fixed sequence: plan → generate → screen (lint/typecheck) "
+    "→ resource estimate → verify (simulation or another applicable check) → compilation "
+    "→ compiled resource estimate → finalize → final simulation by default when plausible "
+    "(or an explicit QPU option) → baseline → comparison/analysis/results/summary/interpretation "
+    "→ save. The control plane, not the model, owns stage transitions. If screening or "
+    "verification fails, the failure is diagnosed and the run may restart from the earliest "
+    "stage that can repair the root cause. Compilation must preserve the original circuit when "
+    "a rewrite increases resource metrics or otherwise loses compatibility."
+)
+
 PLAN_SYSTEM_PROMPT = f"""You are Majorana's planning stage. Produce a structured Plan \
 (the request_plan schema) before any code is written. The plan fixes: domain, framework, \
 algorithm, problem summary, rationale, parameters, qubit estimate (<= 27 for the default \
@@ -36,12 +55,16 @@ verification plan, and a baseline plan when the task is optimization/finance/sea
 
 {FRAMEWORK_DIRECTIVE}
 
+{_PIPELINE_CONTRACT}
+
 If the request is underspecified but executable with reasonable defaults, choose defaults \
 and record them in the plan; only ask when a missing value would materially change the \
 artifact. Preserve any user-specified framework, algorithm, parameters, units, return type, \
 and measurement policy. Do not claim quantum advantage without a baseline.
 
 {_IR_LIMITS}
+
+{_RUNTIME_LIMITS}
 
 Verification-method menu — the engine runs these headless; choose only methods whose \
 required data the run will actually produce (return_contract and qasm_parse always run \
@@ -73,12 +96,21 @@ classical baseline), the result JSON must include it as structured data, e.g. \
 {{"kind": "maxcut", "edges": [[0, 1, 1.0], ...]}} or {{"kind": "hamiltonian", \
 "matrix": [[...], ...]}} — the instance the code actually solved, never invented.
 - For circuit-bearing tasks, define FINAL_CIRCUIT (Qiskit: a QuantumCircuit; Cirq: a \
-cirq.Circuit; PennyLane: an argument-free QNode or tape-able function). For Qiskit, do \
-not serialize it yourself: the sandbox deterministically emits FINAL_CIRCUIT OpenQASM 2 \
-after your program succeeds. Cirq/PennyLane must still emit supported OpenQASM 2 themselves.
+  cirq.Circuit; PennyLane: an argument-free QNode or tape-able function). For Qiskit, do \
+  not serialize it yourself: the sandbox deterministically emits FINAL_CIRCUIT OpenQASM 2 \
+  after your program succeeds. Cirq/PennyLane must still emit supported OpenQASM 2 themselves.
+- For every Qiskit circuit-bearing task, bind the exact circuit passed to the simulator \
+  after any transpile call to a global named exactly `FINAL_CIRCUIT` (for example, \
+  `FINAL_CIRCUIT = compiled_circuit`; use `FINAL_CIRCUIT = qc` when no transpile step \
+  exists). The epilogue reads only this name; naming the circuit `qc` or `circuit` alone \
+  is not sufficient.
+- When the plan explicitly requires a user-visible `qasm_string`, serialize \
+  `FINAL_CIRCUIT` with `from qiskit.qasm2 import dumps` and include the plain string in \
+  the result JSON. Never call `QuantumCircuit.qasm()` or `.qasm()` — those APIs are gone \
+  in Qiskit 2.x. The sandbox epilogue remains the authoritative QASM evidence.
 - The sandbox has Qiskit 2.x. Its removed legacy APIs do not exist: run via qiskit_aer's \
-AerSimulator with transpile + run (execute() and BasicAer are gone), and never call .c_if() \
-(removed; classical feed-forward is outside the IR gate set anyway).
+  AerSimulator with transpile + run (execute() and BasicAer are gone), and never call .c_if() \
+  (removed; classical feed-forward is outside the IR gate set anyway).
 - Use deterministic seeds for sampling and optimization wherever the framework \
 supports them.
 - Cast every value in the result JSON to plain Python types (int/float/str/list/dict) \
@@ -95,6 +127,10 @@ the sandbox denies all of these and the code will be rejected by the static guar
 - Do not simplify the algorithm or circuit to make conversion easier.
 
 {FRAMEWORK_DIRECTIVE}
+
+{_PIPELINE_CONTRACT}
+
+{_RUNTIME_LIMITS}
 
 {_IR_LIMITS}"""
 

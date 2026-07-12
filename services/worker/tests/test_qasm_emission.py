@@ -9,7 +9,12 @@ import pytest
 from majorana_llm import extract_qasm_with_provenance
 from majorana_sandbox.guard import check_python_code
 
-from majorana_worker.stage_handlers import _parse_result_dict, _qiskit_qasm_epilogue
+from majorana_ir import Circuit, Operation
+from majorana_worker.stage_handlers import (
+    _parse_result_dict,
+    _qiskit_qasm_epilogue,
+    _rewrite_qiskit_final_circuit,
+)
 
 
 def _install_fake_qiskit(monkeypatch, dumps) -> None:
@@ -70,4 +75,23 @@ print(json.dumps({"counts": {"0": 1}}))
 
     extraction = extract_qasm_with_provenance(capsys.readouterr().out)
     assert extraction.source == "sandbox_epilogue"
-    assert extraction.qasm and "h q[0];" in extraction.qasm
+    assert extraction.qasm and "u(pi/2,0,pi) q[0];" in extraction.qasm
+
+
+def test_compiler_rewrite_updates_the_qiskit_variable_used_by_final_run():
+    code = """from qiskit import QuantumCircuit
+compiled_circuit = QuantumCircuit(1)
+FINAL_CIRCUIT = compiled_circuit
+result = AerSimulator().run(compiled_circuit).result()
+"""
+    circuit = Circuit(
+        qubits=1,
+        classical_bits=0,
+        operations=[Operation(gate="x", qubits=[0])],
+    )
+
+    rewritten = _rewrite_qiskit_final_circuit(code, circuit)
+
+    assert rewritten is not None
+    assert "compiled_circuit = QuantumCircuit.from_qasm_str" in rewritten
+    assert "FINAL_CIRCUIT = compiled_circuit" in rewritten

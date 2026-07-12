@@ -50,8 +50,9 @@ def resolve_provider() -> str:
 
 
 def model_for(stage: Stage | str) -> str:
-    """The model id for a pipeline stage. Stages with no LLM call (simulate,
-    baseline, export, save) fall back to the generate-tier default if asked."""
+    """The model id for a pipeline stage. Deterministic control-plane stages
+    (screen, estimates, compilation, execution, baseline, analysis, save) fall
+    back to the generate-tier default if a caller asks for a model anyway."""
     key = stage.value if isinstance(stage, Stage) else str(stage)
     env = os.environ.get(f"MAJORANA_MODEL_{key.upper()}")
     defaults = _DEFAULTS[resolve_provider()]

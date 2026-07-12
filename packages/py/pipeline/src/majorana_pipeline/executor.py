@@ -3,9 +3,11 @@ log as it goes. Persistence is behind two narrow protocols (EventSink, RunStateS
 so this module stays pure; the worker supplies repo-backed implementations.
 
 Event/status choreography per run:
-  run.started + RUNNING → (stage.started → handler → stage.finished) × 7
+  run.started + RUNNING → (stage.started → handler → stage.finished) × 12
   → run.finished(succeeded) + SUCCEEDED
-Any stage failure or exception: run.error → run.finished(failed) + FAILED.
+Repairable failures emit run.diagnosed + run.restarted and resume at the
+diagnosed stage, bounded by MAX_RESTARTS. Non-repairable failures continue to
+analysis when the handler returns ok=True with a failed verifier decision.
 Cancellation is checked between stages (co-operative; a stage in flight finishes).
 """
 
@@ -16,6 +18,8 @@ from typing import Any, Protocol
 from majorana_contracts.enums import Framework, RunMode, RunStatus, Stage, VerifierDecision
 
 from .machine import STAGE_ORDER, assert_transition
+
+MAX_RESTARTS = 2
 
 
 class EventSink(Protocol):
@@ -54,6 +58,8 @@ class StageOutcome:
     ok: bool
     error_code: str | None = None
     error_message: str | None = None
+    retry_from: Stage | None = None
+    diagnosis: str | None = None
 
 
 class StageHandler(Protocol):
@@ -98,7 +104,40 @@ async def execute_run(
         await store.set_status(RunStatus.FAILED, finished_at_now=True)
         return RunStatus.FAILED
 
-    for stage in STAGE_ORDER:
+    # State keys are tagged with the stage that produced them so a restart can
+    # discard stale downstream values while retaining the accepted plan/code.
+    state_origin = {
+        "plan": Stage.PLAN,
+        "code": Stage.GENERATE,
+        "screen": Stage.SCREEN,
+        "pre_resource_estimate": Stage.RESOURCE_ESTIMATE,
+        "result": Stage.VERIFY,
+        "qasm": Stage.VERIFY,
+        "qasm_source": Stage.VERIFY,
+        "circuit": Stage.VERIFY,
+        "verifier_decision": Stage.VERIFY,
+        "compilation": Stage.COMPILE,
+        "compiled_circuit": Stage.COMPILE,
+        "compiled_resource_estimate": Stage.COMPILED_RESOURCE_ESTIMATE,
+        "export": Stage.FINALIZE,
+        "final_code": Stage.FINALIZE,
+        "final_result": Stage.FINAL_EXECUTE,
+        "final_qasm": Stage.FINAL_EXECUTE,
+        "final_circuit": Stage.FINAL_EXECUTE,
+        "baseline": Stage.BASELINE,
+        "analysis": Stage.ANALYZE,
+    }
+
+    def reset_for_restart(from_stage: Stage) -> None:
+        restart_index = STAGE_ORDER.index(from_stage)
+        for key, origin in state_origin.items():
+            if key in ctx.state and STAGE_ORDER.index(origin) >= restart_index:
+                del ctx.state[key]
+
+    stage_index = 0
+    restart_count = 0
+    while stage_index < len(STAGE_ORDER):
+        stage = STAGE_ORDER[stage_index]
         if await store.current_status() is RunStatus.CANCELLED:
             await ctx.sink.emit("run.finished", {"status": RunStatus.CANCELLED})
             return RunStatus.CANCELLED
@@ -125,11 +164,38 @@ async def execute_run(
             },
         )
         if not outcome.ok:
+            retry_from = outcome.retry_from
+            if (
+                retry_from is not None
+                and STAGE_ORDER.index(retry_from) <= stage_index
+                and restart_count < MAX_RESTARTS
+            ):
+                restart_count += 1
+                message = outcome.diagnosis or outcome.error_message or f"stage {stage} failed"
+                await ctx.sink.emit(
+                    "run.diagnosed",
+                    {
+                        "failed_stage": stage,
+                        "restart_from": retry_from,
+                        "code": outcome.error_code or "stage_failed",
+                        "message": message,
+                        "attempt": restart_count,
+                    },
+                )
+                reset_for_restart(retry_from)
+                ctx.state["repair_feedback"] = message
+                await ctx.sink.emit(
+                    "run.restarted",
+                    {"from_stage": retry_from, "attempt": restart_count, "reason": message},
+                )
+                stage_index = STAGE_ORDER.index(retry_from)
+                continue
             return await _fail(
                 stage,
                 outcome.error_code or "stage_failed",
                 outcome.error_message or f"stage {stage} failed",
             )
+        stage_index += 1
 
     assert_transition(RunStatus.RUNNING, RunStatus.SUCCEEDED)
     await ctx.sink.emit(

@@ -10,6 +10,7 @@ from majorana_ir.canonical import (
     canonicalize_circuit,
     circuit_fingerprint,
 )
+from majorana_ir.compilation import CompilationOutcome, compile_circuit, resource_metrics
 from majorana_ir.export import ExportClassification, classify_export
 from majorana_ir.models import (
     IR_VERSION,
@@ -47,4 +48,7 @@ __all__ = [
     "upgrade_to_v3",
     "ExportClassification",
     "classify_export",
+    "CompilationOutcome",
+    "compile_circuit",
+    "resource_metrics",
 ]
