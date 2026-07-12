@@ -115,7 +115,21 @@ const VERIFIED: RunEvent[] = [
   { type: "artifact.saved", run_id: RUN, seq: 21, ts: ts(30), artifact_id: ART, version_id: `${ART}-v1`, version_seq: 1 },
   { type: "stage.finished", run_id: RUN, seq: 22, ts: ts(31), stage: "save", ok: true, duration_ms: 210 },
 
-  { type: "run.finished", run_id: RUN, seq: 23, ts: ts(32), status: "succeeded", verifier_decision: "pass", residual_risks: null },
+  { type: "stage.started", run_id: RUN, seq: 23, ts: ts(32), stage: "analyze" },
+  {
+    type: "run.analysis",
+    run_id: RUN,
+    seq: 24,
+    ts: ts(33),
+    summary: "Final simulation reproduced the verified MaxCut result.",
+    interpretation: "The circuit reaches the expected cut value of 4 on the sampled 5-node ring.",
+    results: { cut_value: 4, bitstring: "01010" },
+    comparison: { baseline_cut: 4, final_cut: 4 },
+    residual_risks: "Simulation only; no QPU execution was requested.",
+  },
+  { type: "stage.finished", run_id: RUN, seq: 25, ts: ts(34), stage: "analyze", ok: true, duration_ms: 20 },
+
+  { type: "run.finished", run_id: RUN, seq: 26, ts: ts(35), status: "succeeded", verifier_decision: "pass", residual_risks: null },
 ];
 
 const FAILED: RunEvent[] = [

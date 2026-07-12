@@ -56,9 +56,13 @@ Reducer rules worth knowing (all deterministic):
 - Key numbers label the verification distance with its **own** metric name (e.g. TVD),
   never the plan's `primary_metric` (a different quantity).
 
-Result panel order is FIXED (spec §3): verdict banner → key numbers → code → baseline →
-export badges → Library link. Each section renders only when its data exists; rail rows
-scroll to the matching card via `STAGE_TO_ANCHOR`. The code block scrolls horizontally, so
+Result panel order is FIXED (spec §3): verdict banner → Answer → Approach → key numbers →
+Verification → code → baseline → export badges → Library link. Answer is the natural-language
+interpretation from `run.analysis`, including comparison values and any residual-risk caveat.
+Approach names the selected algorithm, problem summary, and rationale from `plan.produced`.
+Verification lists each method that actually ran with its measured evidence, so the user can
+see what was checked rather than only seeing a verdict. Each section renders only when its data
+exists; rail rows scroll to the matching card via `STAGE_TO_ANCHOR`. The code block scrolls horizontally, so
 its `<pre>` is keyboard-focusable (`tabIndex=0`, `role="region"`, `aria-label`) — a
 scrollable region with no keyboard access is a WCAG 2.1.1 failure.
 

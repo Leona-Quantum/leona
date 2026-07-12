@@ -427,3 +427,51 @@ div.mj-rail-row:hover {
 .mj-result-link:hover {
   text-decoration: underline;
 }
+
+/* Answer box — the natural-language result (run.analysis) leads the evidence sections */
+.mj-answer-lead {
+  color: var(--text-0);
+  font-size: var(--fs-14);
+  line-height: 1.55;
+  margin: 0;
+}
+
+/* Verification rows — one per method that ran; a thin left edge carries the pass/fail tone,
+   matching the export badges' calm treatment. Method name + measured evidence per row. */
+.mj-verify {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: var(--sp-2);
+}
+.mj-verify-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--sp-1) var(--sp-3);
+  padding: var(--sp-1) var(--sp-3);
+  border-left: 3px solid var(--border-0);
+  background: var(--bg-1);
+  border-radius: var(--radius-control);
+}
+.mj-verify-row[data-result="pass"] {
+  border-left-color: var(--ok);
+}
+.mj-verify-row[data-result="fail"] {
+  border-left-color: var(--err);
+}
+.mj-verify-row[data-result="inconclusive"] {
+  border-left-color: var(--warn);
+}
+.mj-verify-method {
+  font-weight: 500;
+  font-size: var(--fs-13);
+  color: var(--text-0);
+}
+.mj-verify-detail {
+  font-family: var(--font-mono);
+  font-size: var(--fs-12);
+  color: var(--text-1);
+  font-variant-numeric: tabular-nums;
+}

@@ -72,9 +72,32 @@ export interface KeyNumber {
   label: string;
   value: string;
 }
+// The natural-language answer (run.analysis) — the result stated in words, not just a verdict
+// chip. This is what a user actually asked for; it leads the panel (P1: answer, then evidence).
+export interface AnswerView {
+  summary: string;
+  interpretation: string;
+  comparison: KeyNumber[];
+  residualRisks: string | null;
+}
+// Method + why — the plan's scientific choice, restated for the reader (never "IR"/schema).
+export interface ApproachView {
+  algorithm: string;
+  rationale: string | null;
+  problem: string | null;
+}
+// One row per verification method actually run: what was checked and the evidence for it.
+export interface VerificationRow {
+  method: string;
+  result: Schemas["VerificationResult"]["result"];
+  detail: string;
+}
 export interface ResultView {
   verdict: { verdict: Verdict; detail: string } | null;
+  answer: AnswerView | null;
+  approach: ApproachView | null;
   keyNumbers: KeyNumber[];
+  verification: VerificationRow[];
   code: { filename: string; language: string; code: string } | null;
   baseline: { title: string; rows: KeyNumber[]; notApplicable: string | null } | null;
   export: { label: string; tone: "ok" | "warn" | "err" | "neutral"; qasmAvailable: boolean } | null;
@@ -165,6 +188,7 @@ export function reduceRunEvents(events: readonly RunEvent[]): RunViewModel {
   let baseline: Schemas["BaselineResult"] | null = null;
   let exportEv: Schemas["ExportClassified"] | null = null;
   let saved: Schemas["ArtifactSaved"] | null = null;
+  let analysis: Schemas["RunAnalysis"] | null = null;
   let finishedRun: Schemas["RunFinished"] | null = null;
   let status: Schemas["RunStatus"] | null = null;
   const stageError = new Map<Stage, string>();
@@ -210,6 +234,9 @@ export function reduceRunEvents(events: readonly RunEvent[]): RunViewModel {
       case "artifact.saved":
         saved = ev;
         break;
+      case "run.analysis":
+        analysis = ev;
+        break;
       case "run.error":
         if (ev.stage) stageError.set(ev.stage, ev.message);
         break;
@@ -254,7 +281,10 @@ export function reduceRunEvents(events: readonly RunEvent[]): RunViewModel {
   const verdict = deriveVerdict(finishedRun, verifyResults);
   const result: ResultView = {
     verdict: verdict ? { verdict, detail: buildVerdictDetail(verdict, primaryVerify(verifyResults, verdict)) } : null,
+    answer: buildAnswer(analysis, finishedRun),
+    approach: buildApproach(plan),
     keyNumbers: buildKeyNumbers(plan, sandbox, verifyResults),
+    verification: buildVerificationRows(verifyResults),
     code: finalizedCode
       ? {
           filename: filenameFor(finalizedCode.language),
@@ -271,6 +301,9 @@ export function reduceRunEvents(events: readonly RunEvent[]): RunViewModel {
 
   const hasResult =
     result.verdict !== null ||
+    result.answer !== null ||
+    result.approach !== null ||
+    result.verification.length > 0 ||
     result.code !== null ||
     result.baseline !== null ||
     result.export !== null ||
@@ -334,6 +367,69 @@ function buildKeyNumbers(
   return rows;
 }
 
+// Flatten a free-form results/comparison dict to display rows (scalars only; nested
+// structures are omitted rather than stringified into noise).
+function dictToRows(d: Record<string, unknown>): KeyNumber[] {
+  const rows: KeyNumber[] = [];
+  for (const [k, v] of Object.entries(d)) {
+    if (typeof v === "number" || typeof v === "string" || typeof v === "boolean") {
+      rows.push({ label: k, value: String(v) });
+    }
+  }
+  return rows;
+}
+
+// The natural-language answer from the analyze stage. residual_risks falls back to the
+// terminal run.finished value so the caveat still shows if analysis omitted it.
+function buildAnswer(
+  analysis: Schemas["RunAnalysis"] | null,
+  finishedRun: Schemas["RunFinished"] | null,
+): AnswerView | null {
+  if (!analysis) return null;
+  return {
+    summary: analysis.summary,
+    interpretation: analysis.interpretation,
+    comparison: dictToRows((analysis.comparison ?? {}) as Record<string, unknown>),
+    residualRisks: str(analysis.residual_risks) ?? str(finishedRun?.residual_risks),
+  };
+}
+
+function buildApproach(plan: Schemas["Plan"] | null): ApproachView | null {
+  if (!plan) return null;
+  const algorithm = str(plan.algorithm);
+  if (!algorithm) return null;
+  return {
+    algorithm,
+    rationale: str(plan.algorithm_rationale),
+    problem: str(plan.problem_summary),
+  };
+}
+
+// One row per verification method the run actually executed — names the check and, for
+// numeric methods, the measured distance vs. its threshold (P1: name what was checked).
+function buildVerificationRows(results: Schemas["VerificationResult"][]): VerificationRow[] {
+  return results.map((r) => {
+    const d = (r.details ?? {}) as Record<string, unknown>;
+    const metric = str(d.metric) ?? str(d.metric_label);
+    const value = num(d.metric_value) ?? num(d.tvd);
+    const threshold = num(d.threshold) ?? num(d.delta);
+    const seed = num(d.seed);
+    const shots = num(d.shots);
+    const tail =
+      (seed !== null ? ` · seed ${seed}` : "") + (shots !== null ? ` · ${shots} shots` : "");
+    let detail: string;
+    if (metric && value !== null && threshold !== null) {
+      detail = `${metric} ${value} ${r.result === "fail" ? ">" : "≤"} δ ${threshold}${tail}`;
+    } else if (metric && value !== null) {
+      detail = `${metric} ${value}${tail}`;
+    } else {
+      // Structural methods (return-contract, QASM-parse) carry no metric.
+      detail = (str(d.note) ?? "structural check") + tail;
+    }
+    return { method: METHOD_LABEL[r.method], result: r.result, detail };
+  });
+}
+
 function buildBaseline(baseline: Schemas["BaselineResult"] | null): ResultView["baseline"] {
   if (!baseline) return null;
   if (baseline.not_applicable_reason) {
@@ -367,12 +463,13 @@ function buildExportBadge(ev: Schemas["ExportClassified"]): NonNullable<ResultVi
 // ---- presentational composition ----------------------------------------------------------
 // Maps a rail stage to the panel section it should scroll to (best-effort; spec §2).
 const STAGE_TO_ANCHOR: Partial<Record<Stage, string>> = {
+  plan: "mj-result-approach",
   generate: "mj-result-code",
   screen: "mj-result-code",
-  verify: "mj-result-verdict",
+  verify: "mj-result-verification",
   finalize: "mj-result-code",
   baseline: "mj-result-baseline",
-  analyze: "mj-result-verdict",
+  analyze: "mj-result-answer",
   save: "mj-result-library",
 };
 
@@ -419,6 +516,43 @@ function ResultPanel({ result }: { result: ResultView }): ReactNode {
         </section>
       ) : null}
 
+      {result.answer ? (
+        <section className="mj-result-section" id="mj-result-answer">
+          <h2 className="mj-result-h">Answer</h2>
+          <p className="mj-answer-lead">{result.answer.interpretation}</p>
+          {result.answer.summary && result.answer.summary !== result.answer.interpretation ? (
+            <p className="mj-result-note">{result.answer.summary}</p>
+          ) : null}
+          {result.answer.comparison.length ? (
+            <table className="mj-keynums">
+              <tbody>
+                {result.answer.comparison.map((n) => (
+                  <tr key={n.label}>
+                    <th scope="row">{n.label}</th>
+                    <td>{n.value}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          ) : null}
+          {result.answer.residualRisks ? (
+            <p className="mj-result-note">Caveat — {result.answer.residualRisks}</p>
+          ) : null}
+        </section>
+      ) : null}
+
+      {result.approach ? (
+        <section className="mj-result-section" id="mj-result-approach">
+          <h2 className="mj-result-h">Approach — {result.approach.algorithm}</h2>
+          {result.approach.problem ? (
+            <p className="mj-result-note">{result.approach.problem}</p>
+          ) : null}
+          {result.approach.rationale ? (
+            <p className="mj-result-note">{result.approach.rationale}</p>
+          ) : null}
+        </section>
+      ) : null}
+
       {result.keyNumbers.length ? (
         <section className="mj-result-section" id="mj-result-keynums">
           <table className="mj-keynums">
@@ -431,6 +565,20 @@ function ResultPanel({ result }: { result: ResultView }): ReactNode {
               ))}
             </tbody>
           </table>
+        </section>
+      ) : null}
+
+      {result.verification.length ? (
+        <section className="mj-result-section" id="mj-result-verification">
+          <h2 className="mj-result-h">Verification</h2>
+          <ul className="mj-verify">
+            {result.verification.map((v, i) => (
+              <li key={`${v.method}-${i}`} className="mj-verify-row" data-result={v.result}>
+                <span className="mj-verify-method">{v.method}</span>
+                <span className="mj-verify-detail">{v.detail}</span>
+              </li>
+            ))}
+          </ul>
         </section>
       ) : null}
 
