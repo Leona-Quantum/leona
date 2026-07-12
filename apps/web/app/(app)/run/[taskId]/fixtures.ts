@@ -1,14 +1,11 @@
-// Fixture RunEvent logs for the pipeline view. These stand in for the persisted event
-// stream until the BFF glue lands; the page is a pure renderer of whichever log it's given
-// (07 §6). MID_RUN / QUEUED are strict PREFIXES of VERIFIED — reducing a prefix is exactly
-// what a mid-run refresh does, so "prefix renders identical partial state" is demonstrable
-// here without a server. Types are checked against the generated contract.
+// Fixture RunEvent logs for the canonical pipeline. These stand in for the persisted
+// event stream until the BFF glue lands; the page is a pure renderer of whichever log
+// it receives. Prefixes of VERIFIED model refreshes during a live run.
 import type { RunEvent } from "@majorana/ui";
 
 const RUN = "1f8e2a10-0000-4000-8000-000000000001";
 const ART = "a7c1b0d2-0000-4000-8000-0000000000aa";
 
-// Deterministic ISO timestamps, 1 s apart from a fixed epoch (no wall clock).
 function ts(sec: number): string {
   return new Date(Date.UTC(2026, 6, 12, 12, 0, sec)).toISOString();
 }
@@ -24,12 +21,29 @@ for a, b in [(0, 1), (1, 2), (2, 3), (3, 4), (4, 0)]:
     qc.rz(0.8, b)
     qc.cx(a, b)
 qc.measure_all()
+FINAL_CIRCUIT = qc
 
 result = AerSimulator().run(qc, shots=4096, seed_simulator=42).result()
 counts = result.get_counts()
 print({"cut_value": 4, "bitstring": max(counts, key=counts.get)})`;
 
-// ---- the canonical successful run (seq 0..23) --------------------------------------------
+const METRICS = {
+  qubits: 5,
+  depth: 16,
+  gate_count: 32,
+  two_qubit_gate_count: 15,
+  measurement_count: 5,
+  estimated_runtime_ms: 40,
+};
+const COMPILED_METRICS = { ...METRICS, depth: 14, gate_count: 30 };
+const QASM = {
+  epilogue_applied: true,
+  source: "sandbox_epilogue" as const,
+  available: true,
+  epilogue_error: null,
+};
+
+// ---- canonical successful run -----------------------------------------------------------
 const VERIFIED: RunEvent[] = [
   { type: "run.queued", run_id: RUN, seq: 0, ts: ts(0), framework: "qiskit", mode: "execute" },
   { type: "run.started", run_id: RUN, seq: 1, ts: ts(1) },
@@ -62,75 +76,179 @@ const VERIFIED: RunEvent[] = [
   { type: "code.generated", run_id: RUN, seq: 6, ts: ts(6), code: SAMPLE_CODE, language: "python", revision: 1 },
   { type: "stage.finished", run_id: RUN, seq: 7, ts: ts(13), stage: "generate", ok: true, duration_ms: 8400 },
 
-  { type: "stage.started", run_id: RUN, seq: 8, ts: ts(14), stage: "simulate" },
+  { type: "stage.started", run_id: RUN, seq: 8, ts: ts(14), stage: "screen" },
+  { type: "screen.result", run_id: RUN, seq: 9, ts: ts(15), lint_ok: true, typecheck_ok: true, diagnostics: [] },
+  { type: "stage.finished", run_id: RUN, seq: 10, ts: ts(16), stage: "screen", ok: true, duration_ms: 180 },
+
+  { type: "stage.started", run_id: RUN, seq: 11, ts: ts(17), stage: "resource_estimate" },
+  {
+    type: "resource.estimate",
+    run_id: RUN,
+    seq: 12,
+    ts: ts(18),
+    phase: "pre_verify",
+    source: "plan_static",
+    metrics: METRICS,
+    notes: [],
+  },
+  { type: "stage.finished", run_id: RUN, seq: 13, ts: ts(19), stage: "resource_estimate", ok: true, duration_ms: 40 },
+
+  { type: "stage.started", run_id: RUN, seq: 14, ts: ts(20), stage: "verify" },
   {
     type: "sandbox.result",
     run_id: RUN,
-    seq: 9,
-    ts: ts(18),
+    seq: 15,
+    ts: ts(21),
+    phase: "verification",
     duration_ms: 4520,
     exit_code: 0,
     memory_mb: 128,
     stderr: "",
     stdout: '{"cut_value": 4, "bitstring": "01010"}',
     truncated: false,
+    qasm_emission: QASM,
   },
-  { type: "stage.finished", run_id: RUN, seq: 10, ts: ts(19), stage: "simulate", ok: true, duration_ms: 4520 },
-
-  { type: "stage.started", run_id: RUN, seq: 11, ts: ts(20), stage: "verify" },
   {
     type: "verification.result",
     run_id: RUN,
-    seq: 12,
-    ts: ts(21),
+    seq: 16,
+    ts: ts(22),
     method: "statistical",
     result: "pass",
     details: { metric: "TVD", metric_value: 0.0088, threshold: 0.05, seed: 42, shots: 4096 },
   },
-  { type: "stage.finished", run_id: RUN, seq: 13, ts: ts(22), stage: "verify", ok: true, duration_ms: 1100 },
+  { type: "stage.finished", run_id: RUN, seq: 17, ts: ts(23), stage: "verify", ok: true, duration_ms: 5620 },
 
-  { type: "stage.started", run_id: RUN, seq: 14, ts: ts(23), stage: "baseline" },
+  { type: "stage.started", run_id: RUN, seq: 18, ts: ts(24), stage: "compile" },
+  {
+    type: "compilation.result",
+    run_id: RUN,
+    seq: 19,
+    ts: ts(25),
+    accepted: true,
+    mode: "compressed",
+    target: "qiskit",
+    source_fingerprint: "sha256:source",
+    compiled_fingerprint: "sha256:compressed",
+    before: METRICS,
+    after: COMPILED_METRICS,
+    compatibility: { qiskit: "lossless", openqasm2: "lossless", pennylane: "lossless" },
+    reason: "Adjacent self-inverse gates removed without worsening resources.",
+  },
+  { type: "stage.finished", run_id: RUN, seq: 20, ts: ts(26), stage: "compile", ok: true, duration_ms: 90 },
+
+  { type: "stage.started", run_id: RUN, seq: 21, ts: ts(27), stage: "compiled_resource_estimate" },
+  {
+    type: "resource.estimate",
+    run_id: RUN,
+    seq: 22,
+    ts: ts(28),
+    phase: "compiled",
+    source: "compiler",
+    metrics: COMPILED_METRICS,
+    notes: [],
+  },
+  { type: "stage.finished", run_id: RUN, seq: 23, ts: ts(29), stage: "compiled_resource_estimate", ok: true, duration_ms: 35 },
+
+  { type: "stage.started", run_id: RUN, seq: 24, ts: ts(30), stage: "finalize" },
+  { type: "export.classified", run_id: RUN, seq: 25, ts: ts(31), status: "lossless", reason: null, qasm_available: true },
+  {
+    type: "code.finalized",
+    run_id: RUN,
+    seq: 26,
+    ts: ts(32),
+    language: "python",
+    code: SAMPLE_CODE,
+    revision: 1,
+    compilation_applied: false,
+    simulation_plausible: true,
+    qpu_available: false,
+    conversion_options: ["openqasm2", "qiskit", "pennylane"],
+    execution_options: ["simulate"],
+    export_status: "lossless",
+    export_reason: null,
+    finalization_reason: null,
+  },
+  { type: "stage.finished", run_id: RUN, seq: 27, ts: ts(33), stage: "finalize", ok: true, duration_ms: 120 },
+
+  { type: "stage.started", run_id: RUN, seq: 28, ts: ts(34), stage: "final_execute" },
+  {
+    type: "sandbox.result",
+    run_id: RUN,
+    seq: 29,
+    ts: ts(35),
+    phase: "final",
+    duration_ms: 4480,
+    exit_code: 0,
+    memory_mb: 128,
+    stderr: "",
+    stdout: '{"cut_value": 4, "bitstring": "01010"}',
+    truncated: false,
+    qasm_emission: QASM,
+  },
+  { type: "stage.finished", run_id: RUN, seq: 30, ts: ts(36), stage: "final_execute", ok: true, duration_ms: 4480 },
+
+  { type: "stage.started", run_id: RUN, seq: 31, ts: ts(37), stage: "baseline" },
   {
     type: "baseline.result",
     run_id: RUN,
-    seq: 15,
-    ts: ts(24),
+    seq: 32,
+    ts: ts(38),
     kind: "maxcut",
     not_applicable_reason: null,
     result: { classical_cut: 4, quantum_cut: 4, approx_ratio: 1.0 },
   },
-  { type: "stage.finished", run_id: RUN, seq: 16, ts: ts(25), stage: "baseline", ok: true, duration_ms: 300 },
+  { type: "stage.finished", run_id: RUN, seq: 33, ts: ts(39), stage: "baseline", ok: true, duration_ms: 300 },
 
-  { type: "stage.started", run_id: RUN, seq: 17, ts: ts(26), stage: "export" },
-  { type: "export.classified", run_id: RUN, seq: 18, ts: ts(27), status: "lossless", reason: null, qasm_available: true },
-  { type: "stage.finished", run_id: RUN, seq: 19, ts: ts(28), stage: "export", ok: true, duration_ms: 120 },
+  { type: "stage.started", run_id: RUN, seq: 34, ts: ts(40), stage: "analyze" },
+  {
+    type: "run.analysis",
+    run_id: RUN,
+    seq: 35,
+    ts: ts(41),
+    summary: "Final simulation reproduced the verified MaxCut result.",
+    interpretation: "The circuit reaches the expected cut value on the sampled ring instance.",
+    results: { cut_value: 4, bitstring: "01010" },
+    comparison: { baseline_cut: 4, final_cut: 4, compilation_mode: "compressed" },
+    residual_risks: "Simulation only; no QPU execution was requested.",
+  },
+  { type: "stage.finished", run_id: RUN, seq: 36, ts: ts(42), stage: "analyze", ok: true, duration_ms: 20 },
 
-  { type: "stage.started", run_id: RUN, seq: 20, ts: ts(29), stage: "save" },
-  { type: "artifact.saved", run_id: RUN, seq: 21, ts: ts(30), artifact_id: ART, version_id: `${ART}-v1`, version_seq: 1 },
-  { type: "stage.finished", run_id: RUN, seq: 22, ts: ts(31), stage: "save", ok: true, duration_ms: 210 },
-
-  { type: "run.finished", run_id: RUN, seq: 23, ts: ts(32), status: "succeeded", verifier_decision: "pass", residual_risks: null },
+  { type: "stage.started", run_id: RUN, seq: 37, ts: ts(43), stage: "save" },
+  { type: "artifact.saved", run_id: RUN, seq: 38, ts: ts(44), artifact_id: ART, version_id: `${ART}-v1`, version_seq: 1 },
+  { type: "stage.finished", run_id: RUN, seq: 39, ts: ts(45), stage: "save", ok: true, duration_ms: 210 },
+  { type: "run.finished", run_id: RUN, seq: 40, ts: ts(46), status: "succeeded", verifier_decision: "pass", residual_risks: "Simulation only; no QPU execution was requested." },
 ];
 
-// ---- a run that fails verification (fail state + retry; run ends) -------------------------
+// ---- a run that fails verification -------------------------------------------------------
 const FAILED: RunEvent[] = [
-  ...VERIFIED.slice(0, 11), // through stage.started verify (seq 0..10 pass, verify starts)
+  ...VERIFIED.slice(0, 15), // through sandbox result in verification
   {
     type: "verification.result",
     run_id: RUN,
-    seq: 12,
-    ts: ts(21),
+    seq: 16,
+    ts: ts(22),
     method: "statistical",
     result: "fail",
     details: { metric: "TVD", metric_value: 0.21, threshold: 0.05, seed: 42, shots: 4096 },
   },
-  { type: "stage.finished", run_id: RUN, seq: 13, ts: ts(22), stage: "verify", ok: false, duration_ms: 1100 },
-  { type: "run.finished", run_id: RUN, seq: 14, ts: ts(23), status: "failed", verifier_decision: "fail", residual_risks: null },
+  { type: "stage.finished", run_id: RUN, seq: 17, ts: ts(23), stage: "verify", ok: false, duration_ms: 1100 },
+  {
+    type: "run.diagnosed",
+    run_id: RUN,
+    seq: 18,
+    ts: ts(24),
+    failed_stage: "verify",
+    restart_from: "generate",
+    code: "verification_failed",
+    message: "Statistical mismatch exceeds tolerance; regenerate before retrying.",
+    attempt: 1,
+  },
+  { type: "run.finished", run_id: RUN, seq: 19, ts: ts(25), status: "failed", verifier_decision: "fail", residual_risks: "Verification failed; no final execution was attempted." },
 ];
 
-// Prefixes of VERIFIED = exactly what a refresh at that moment replays.
-const MID_RUN: RunEvent[] = VERIFIED.slice(0, 10); // simulate running (sandbox in, not finished)
-const QUEUED: RunEvent[] = VERIFIED.slice(0, 2); // queued/started only → waiting panel
+const MID_RUN: RunEvent[] = VERIFIED.slice(0, 16); // verification running; verifier pending
+const QUEUED: RunEvent[] = VERIFIED.slice(0, 2); // queued/started only
 
 export const RUN_FIXTURES: Record<string, RunEvent[]> = {
   "demo-verified": VERIFIED,
@@ -142,6 +260,6 @@ export const RUN_FIXTURES: Record<string, RunEvent[]> = {
 export const RUN_FIXTURE_META: { id: string; label: string }[] = [
   { id: "demo-verified", label: "Verified run (full pipeline)" },
   { id: "demo-failed", label: "Failed verification" },
-  { id: "demo-midrun", label: "Mid-run (simulate)" },
+  { id: "demo-midrun", label: "Mid-run (verify)" },
   { id: "demo-queued", label: "Queued (waiting)" },
 ];

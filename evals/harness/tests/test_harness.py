@@ -17,7 +17,14 @@ from majorana_sandbox import LocalSubprocessSandbox
 from majorana_api.db import engine_from_env, session_factory
 from majorana_api.repos import system
 
-from majorana_evals import CorpusCase, Expect, load_corpus, run_case, run_corpus
+from majorana_evals import (
+    CorpusCase,
+    Expect,
+    load_corpus,
+    run_case,
+    run_corpus,
+    top_measured_bitstring,
+)
 
 requires_db = pytest.mark.skipif(
     "DATABASE_URL" not in os.environ, reason="harness self-test needs DATABASE_URL"
@@ -38,17 +45,12 @@ _PLAN = {
 
 _CODE = """```python
 import json
-qasm = (
-    'OPENQASM 2.0;\\n'
-    'include "qelib1.inc";\\n'
-    'qreg q[2];\\n'
-    'creg c[2];\\n'
-    'h q[0];\\n'
-    'cx q[0],q[1];\\n'
-    'measure q[0] -> c[0];\\n'
-    'measure q[1] -> c[1];'
-)
-print(qasm)
+from qiskit import QuantumCircuit
+
+FINAL_CIRCUIT = QuantumCircuit(2)
+FINAL_CIRCUIT.h(0)
+FINAL_CIRCUIT.cx(0, 1)
+FINAL_CIRCUIT.measure_all()
 print(json.dumps({"counts": {"00": 512, "11": 512}}))
 ```"""
 
@@ -58,6 +60,40 @@ def _fake() -> FakeLLM:
         return json.dumps(_PLAN)
 
     return FakeLLM({model_for("plan"): plan, model_for("generate"): _CODE})
+
+
+def test_top_measured_bitstring_picks_dominant_state():
+    # dominant state wins; the last JSON line is the one parsed
+    stdout = 'noise\n{"counts": {"1100": 970, "0000": 12, "1000": 18}}'
+    assert top_measured_bitstring(stdout) == "1100"
+    # register-separator spaces are stripped so it compares to a plain target
+    assert top_measured_bitstring('{"counts": {"11 00": 900, "00 11": 5}}') == "1100"
+    # no counts / unparseable → None, not a crash
+    assert top_measured_bitstring('{"energy": -1.137}') is None
+    assert top_measured_bitstring("not json at all") is None
+    assert top_measured_bitstring("") is None
+
+
+def test_value_check_catches_endianness_bit_reversal():
+    # The Grover-1100 failure mode: circuit is well-formed and the verifier passes it,
+    # but the recovered top state is the bit-reversal 0011. The value-level check must
+    # reject it even though verifier_decision would say pass. Guards NEXT.md's warning
+    # that a naive bench-30 gives false comfort on a wrong answer.
+    bit_reversed = '{"counts": {"0011": 973, "0000": 27}}'
+    assert top_measured_bitstring(bit_reversed) == "0011"
+    assert top_measured_bitstring(bit_reversed) != "1100"
+
+    correct = '{"counts": {"1100": 973, "0000": 27}}'
+    assert top_measured_bitstring(correct) == "1100"
+
+
+def test_bench_30_corpus_case_pins_the_target():
+    from pathlib import Path
+
+    corpus = load_corpus(Path(__file__).parents[3] / "evals" / "corpus")
+    bench_30 = next((c for c in corpus if c.id == "bench-30"), None)
+    assert bench_30 is not None, "bench-30 Grover recovery case should be in the corpus"
+    assert bench_30.expect.expected_top_bitstring == "1100"
 
 
 def test_corpus_loads_from_yaml():
@@ -97,6 +133,8 @@ async def test_harness_scores_a_passing_bell_case():
         assert result.verifier_decision == "pass"
         assert result.export_status == "lossless"
         assert result.saved
+        assert result.evidence.qasm_source == "sandbox_epilogue"
+        assert result.evidence.qasm_epilogue_applied is True
 
         report = await run_corpus(
             [case], factory=factory, scope=scope, llm=_fake(), sandbox=LocalSubprocessSandbox()

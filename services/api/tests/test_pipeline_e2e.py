@@ -1,6 +1,7 @@
 """Pipeline E2E (Phase 2 Output — headless run demo): POST /v1/runs → jobs row →
-worker handler drives the REAL stage handlers (plan→generate→simulate→verify→
-baseline→export→save) → full run_events choreography → SSE replay.
+worker handler drives the REAL stage handlers (plan→generate→screen→estimate→
+verify→compile→finalize→final execution→baseline→analysis→save) → full
+run_events choreography → SSE replay.
 
 Providers are injected: a deterministic FakeLLM (canned Bell plan + code) and the
 LocalSubprocessSandbox, so the honest end-to-end path runs in CI without a paid
@@ -20,6 +21,7 @@ from majorana_contracts import Scope
 from majorana_contracts.enums import Role
 from majorana_llm import FakeLLM
 from majorana_llm.models import model_for
+from majorana_pipeline import STAGE_ORDER
 from majorana_sandbox import LocalSubprocessSandbox
 
 from majorana_api.app import create_app
@@ -56,23 +58,17 @@ _PLAN = {
     "expected_output_keys": ["counts"],
 }
 
-# Pure-stdlib code (no qiskit needed in the test venv): emits the circuit as
-# OpenQASM 2 and a JSON result on the last line — exactly the contract the
-# simulate handler consumes.
+# Qiskit code binds FINAL_CIRCUIT for the deterministic screen/QASM epilogue and
+# prints a JSON result on the last line — exactly the result contract the worker
+# consumes.
 _CODE = """```python
 import json
+from qiskit import QuantumCircuit
 
-qasm = (
-    'OPENQASM 2.0;\\n'
-    'include "qelib1.inc";\\n'
-    'qreg q[2];\\n'
-    'creg c[2];\\n'
-    'h q[0];\\n'
-    'cx q[0],q[1];\\n'
-    'measure q[0] -> c[0];\\n'
-    'measure q[1] -> c[1];'
-)
-print(qasm)
+FINAL_CIRCUIT = QuantumCircuit(2)
+FINAL_CIRCUIT.h(0)
+FINAL_CIRCUIT.cx(0, 1)
+FINAL_CIRCUIT.measure_all()
 print(json.dumps({"counts": {"00": 512, "11": 512}}))
 ```"""
 
@@ -168,7 +164,7 @@ async def test_run_executes_end_to_end_with_real_stages(env):
     assert types[0] == "run.queued"
     assert types[1] == "run.started"
     assert types[-1] == "run.finished"
-    assert types.count("stage.started") == types.count("stage.finished") == 7
+    assert types.count("stage.started") == types.count("stage.finished") == len(STAGE_ORDER)
     assert [e["seq"] for e in events] == list(range(1, len(events) + 1))
     assert events[-1]["verifier_decision"] == "pass"
 
@@ -177,8 +173,13 @@ async def test_run_executes_end_to_end_with_real_stages(env):
         "plan.produced",
         "llm.call",
         "code.generated",
+        "screen.result",
+        "resource.estimate",
         "sandbox.result",
         "verification.result",
+        "compilation.result",
+        "code.finalized",
+        "run.analysis",
         "baseline.result",
         "export.classified",
         "artifact.saved",

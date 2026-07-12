@@ -66,6 +66,17 @@ class ArtifactVersion(_ResourceBase):
     created_at: datetime
 
 
+class ResourceMetrics(_ResourceBase):
+    """Comparable circuit-resource measurements recorded before and after compilation."""
+
+    qubits: int = Field(ge=0)
+    depth: int | None = Field(default=None, ge=0)
+    gate_count: int | None = Field(default=None, ge=0)
+    two_qubit_gate_count: int | None = Field(default=None, ge=0)
+    measurement_count: int | None = Field(default=None, ge=0)
+    estimated_runtime_ms: int | None = Field(default=None, ge=0)
+
+
 class Run(_ResourceBase):
     id: UUID
     workspace_id: UUID

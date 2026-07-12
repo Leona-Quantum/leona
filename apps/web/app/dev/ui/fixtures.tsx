@@ -8,17 +8,23 @@ import { EmptyState, StageRail, VerdictBanner, type RailStage } from "@majorana/
 const MID_RUN: RailStage[] = [
   { id: "plan", name: "Plan", state: "pass", elapsed: "2.1 s" },
   { id: "generate", name: "Generate", state: "pass", elapsed: "8.4 s" },
-  { id: "simulate", name: "Simulate", state: "running", elapsed: "3.0 s" },
+  { id: "screen", name: "Screen", state: "pass", elapsed: "180 ms" },
+  { id: "resource_estimate", name: "Resource estimate", state: "pass", elapsed: "40 ms" },
   { id: "verify", name: "Verify", state: "pending" },
+  { id: "compile", name: "Compilation", state: "pending" },
+  { id: "compiled_resource_estimate", name: "Compiled resource estimate", state: "pending" },
+  { id: "finalize", name: "Finalize", state: "pending" },
+  { id: "final_execute", name: "Final simulation / QPU", state: "pending" },
   { id: "baseline", name: "Baseline", state: "pending" },
-  { id: "export", name: "Export", state: "pending" },
+  { id: "analyze", name: "Analysis", state: "pending" },
   { id: "save", name: "Save", state: "pending" },
 ];
 
 const FAILED_RUN: RailStage[] = [
   { id: "plan", name: "Plan", state: "pass", elapsed: "1.8 s" },
   { id: "generate", name: "Generate", state: "pass", elapsed: "7.2 s" },
-  { id: "simulate", name: "Simulate", state: "pass", elapsed: "4.5 s" },
+  { id: "screen", name: "Screen", state: "pass", elapsed: "180 ms" },
+  { id: "resource_estimate", name: "Resource estimate", state: "pass", elapsed: "40 ms" },
   {
     id: "verify",
     name: "Verify",
@@ -26,13 +32,17 @@ const FAILED_RUN: RailStage[] = [
     elapsed: "1.1 s",
     errorSummary: "Statistical check failed: TVD 0.21 > δ 0.05 (seed 42, 4096 shots)",
   },
+  { id: "compile", name: "Compilation", state: "pending" },
+  { id: "compiled_resource_estimate", name: "Compiled resource estimate", state: "pending" },
+  { id: "finalize", name: "Finalize", state: "pending" },
+  { id: "final_execute", name: "Final simulation / QPU", state: "pending" },
   {
     id: "baseline",
     name: "Baseline",
     state: "skipped",
     skipReason: "no classical baseline applies to this task",
   },
-  { id: "export", name: "Export", state: "pending" },
+  { id: "analyze", name: "Analysis", state: "pending" },
   { id: "save", name: "Save", state: "pending" },
 ];
 

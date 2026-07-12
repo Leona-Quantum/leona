@@ -9,6 +9,7 @@ from majorana_llm import (
     endpoint_for,
     extract_code,
     extract_qasm,
+    extract_qasm_with_provenance,
     model_for,
     parse_plan,
     resolve_provider,
@@ -76,7 +77,13 @@ def test_plan_prompt_encodes_qiskit_default_and_ir_limits():
     assert "Default framework is Qiskit" in PLAN_SYSTEM_PROMPT
     assert "never switch" in PLAN_SYSTEM_PROMPT.lower() or "never a silent" in PLAN_SYSTEM_PROMPT
     assert "terminal measurement" in PLAN_SYSTEM_PROMPT
+    assert "resource estimate" in PLAN_SYSTEM_PROMPT
+    assert "control plane" in GENERATE_SYSTEM_PROMPT
     assert "OpenQASM 2" in GENERATE_SYSTEM_PROMPT
+    # oracle/search endianness directive: little-endian convention + loud self-check,
+    # so an endianness bug fails in the sandbox instead of returning a bit-reversed answer.
+    assert "little-endian" in GENERATE_SYSTEM_PROMPT
+    assert "bit-reversed" in GENERATE_SYSTEM_PROMPT
 
 
 def test_v2_prompt_deltas_present():
@@ -84,6 +91,9 @@ def test_v2_prompt_deltas_present():
     # calibration/evidence rules in the critic, sandbox+IR provenance in writeback.
     assert "deterministic seeds" in GENERATE_SYSTEM_PROMPT.lower()
     assert "hard-code the Hamiltonian coefficients" in GENERATE_SYSTEM_PROMPT
+    assert "FINAL_CIRCUIT = compiled_circuit" in GENERATE_SYSTEM_PROMPT
+    assert "qiskit_algorithms" in GENERATE_SYSTEM_PROMPT
+    assert "QuantumCircuit.qasm()" in GENERATE_SYSTEM_PROMPT
     assert "it did not pass" in CRITIC_SYSTEM_PROMPT
     assert "highest severity" in CRITIC_SYSTEM_PROMPT
     assert "IR" in WRITEBACK_SYSTEM_PROMPT and "sandbox" in WRITEBACK_SYSTEM_PROMPT
@@ -158,3 +168,30 @@ def test_extract_code_and_qasm():
     assert "QuantumCircuit" in extract_code(text)
     qasm = extract_qasm(text)
     assert qasm and "cx q[0],q[1];" in qasm
+
+
+def test_qasm_envelope_wins_over_model_stdout_and_preserves_provenance():
+    text = """OPENQASM 2.0;
+qreg q[1];
+x q[0];
+__MAJORANA_FINAL_QASM_BEGIN__
+OPENQASM 2.0;
+qreg q[1];
+h q[0];
+__MAJORANA_FINAL_QASM_END__
+"""
+    extraction = extract_qasm_with_provenance(text)
+    assert extraction.source == "sandbox_epilogue"
+    assert extraction.qasm and "h q[0]" in extraction.qasm
+    assert "x q[0]" not in extraction.qasm
+
+
+def test_qasm_provenance_records_epilogue_error_before_fallback():
+    text = """__MAJORANA_FINAL_QASM_ERROR__:QASM2ExportError
+OPENQASM 2.0;
+qreg q[1];
+x q[0];
+"""
+    extraction = extract_qasm_with_provenance(text)
+    assert extraction.source == "model_stdout"
+    assert extraction.epilogue_error == "QASM2ExportError"

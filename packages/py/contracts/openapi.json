@@ -456,6 +456,117 @@
         "title": "BaselineResult",
         "type": "object"
       },
+      "CodeFinalized": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "compilation_applied": {
+            "title": "Compilation Applied",
+            "type": "boolean"
+          },
+          "conversion_options": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Conversion Options",
+            "type": "array"
+          },
+          "execution_options": {
+            "items": {
+              "enum": [
+                "simulate",
+                "qpu"
+              ],
+              "type": "string"
+            },
+            "title": "Execution Options",
+            "type": "array"
+          },
+          "export_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Export Reason"
+          },
+          "export_status": {
+            "$ref": "#/components/schemas/ExportStatus"
+          },
+          "finalization_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Finalization Reason"
+          },
+          "language": {
+            "title": "Language",
+            "type": "string"
+          },
+          "qpu_available": {
+            "title": "Qpu Available",
+            "type": "boolean"
+          },
+          "revision": {
+            "minimum": 1,
+            "title": "Revision",
+            "type": "integer"
+          },
+          "run_id": {
+            "format": "uuid",
+            "title": "Run Id",
+            "type": "string"
+          },
+          "seq": {
+            "description": "Unique per run; powers replay and SSE Last-Event-ID",
+            "minimum": 0,
+            "title": "Seq",
+            "type": "integer"
+          },
+          "simulation_plausible": {
+            "title": "Simulation Plausible",
+            "type": "boolean"
+          },
+          "ts": {
+            "format": "date-time",
+            "title": "Ts",
+            "type": "string"
+          },
+          "type": {
+            "const": "code.finalized",
+            "default": "code.finalized",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "run_id",
+          "seq",
+          "ts",
+          "language",
+          "code",
+          "revision",
+          "compilation_applied",
+          "simulation_plausible",
+          "qpu_available",
+          "export_status"
+        ],
+        "title": "CodeFinalized",
+        "type": "object"
+      },
       "CodeGenerated": {
         "additionalProperties": false,
         "properties": {
@@ -505,6 +616,132 @@
           "revision"
         ],
         "title": "CodeGenerated",
+        "type": "object"
+      },
+      "CompilationResult": {
+        "additionalProperties": false,
+        "properties": {
+          "accepted": {
+            "title": "Accepted",
+            "type": "boolean"
+          },
+          "after": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ResourceMetrics"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "before": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ResourceMetrics"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "compatibility": {
+            "additionalProperties": true,
+            "title": "Compatibility",
+            "type": "object"
+          },
+          "compiled_fingerprint": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Compiled Fingerprint"
+          },
+          "mode": {
+            "enum": [
+              "not_applicable",
+              "unchanged",
+              "transpiled",
+              "compressed",
+              "rejected"
+            ],
+            "title": "Mode",
+            "type": "string"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Reason"
+          },
+          "run_id": {
+            "format": "uuid",
+            "title": "Run Id",
+            "type": "string"
+          },
+          "seq": {
+            "description": "Unique per run; powers replay and SSE Last-Event-ID",
+            "minimum": 0,
+            "title": "Seq",
+            "type": "integer"
+          },
+          "source_fingerprint": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Source Fingerprint"
+          },
+          "target": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Target"
+          },
+          "ts": {
+            "format": "date-time",
+            "title": "Ts",
+            "type": "string"
+          },
+          "type": {
+            "const": "compilation.result",
+            "default": "compilation.result",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "run_id",
+          "seq",
+          "ts",
+          "accepted",
+          "mode"
+        ],
+        "title": "CompilationResult",
         "type": "object"
       },
       "ExportClassified": {
@@ -908,6 +1145,194 @@
         "title": "PlanProduced",
         "type": "object"
       },
+      "QasmEmission": {
+        "additionalProperties": false,
+        "description": "Provenance for the OpenQASM payload recovered from sandbox stdout.\n\n``sandbox_epilogue`` is Majorana's observed serialization of ``FINAL_CIRCUIT``;\n``model_stdout`` is a compatibility fallback and is not equivalent evidence.",
+        "properties": {
+          "available": {
+            "title": "Available",
+            "type": "boolean"
+          },
+          "epilogue_applied": {
+            "title": "Epilogue Applied",
+            "type": "boolean"
+          },
+          "epilogue_error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Exception type only; raw sandbox exception text is never persisted here.",
+            "title": "Epilogue Error"
+          },
+          "source": {
+            "enum": [
+              "sandbox_epilogue",
+              "model_stdout",
+              "missing"
+            ],
+            "title": "Source",
+            "type": "string"
+          }
+        },
+        "required": [
+          "epilogue_applied",
+          "source",
+          "available"
+        ],
+        "title": "QasmEmission",
+        "type": "object"
+      },
+      "ResourceEstimateResult": {
+        "additionalProperties": false,
+        "properties": {
+          "metrics": {
+            "$ref": "#/components/schemas/ResourceMetrics"
+          },
+          "notes": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Notes",
+            "type": "array"
+          },
+          "phase": {
+            "enum": [
+              "pre_verify",
+              "compiled"
+            ],
+            "title": "Phase",
+            "type": "string"
+          },
+          "run_id": {
+            "format": "uuid",
+            "title": "Run Id",
+            "type": "string"
+          },
+          "seq": {
+            "description": "Unique per run; powers replay and SSE Last-Event-ID",
+            "minimum": 0,
+            "title": "Seq",
+            "type": "integer"
+          },
+          "source": {
+            "enum": [
+              "plan_static",
+              "ir",
+              "compiler"
+            ],
+            "title": "Source",
+            "type": "string"
+          },
+          "ts": {
+            "format": "date-time",
+            "title": "Ts",
+            "type": "string"
+          },
+          "type": {
+            "const": "resource.estimate",
+            "default": "resource.estimate",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "run_id",
+          "seq",
+          "ts",
+          "phase",
+          "source",
+          "metrics"
+        ],
+        "title": "ResourceEstimateResult",
+        "type": "object"
+      },
+      "ResourceMetrics": {
+        "additionalProperties": false,
+        "description": "Comparable circuit-resource measurements recorded before and after compilation.",
+        "properties": {
+          "depth": {
+            "anyOf": [
+              {
+                "minimum": 0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Depth"
+          },
+          "estimated_runtime_ms": {
+            "anyOf": [
+              {
+                "minimum": 0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Estimated Runtime Ms"
+          },
+          "gate_count": {
+            "anyOf": [
+              {
+                "minimum": 0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Gate Count"
+          },
+          "measurement_count": {
+            "anyOf": [
+              {
+                "minimum": 0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Measurement Count"
+          },
+          "qubits": {
+            "minimum": 0,
+            "title": "Qubits",
+            "type": "integer"
+          },
+          "two_qubit_gate_count": {
+            "anyOf": [
+              {
+                "minimum": 0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Two Qubit Gate Count"
+          }
+        },
+        "required": [
+          "qubits"
+        ],
+        "title": "ResourceMetrics",
+        "type": "object"
+      },
       "Role": {
         "enum": [
           "owner",
@@ -1121,6 +1546,137 @@
         "title": "Run",
         "type": "object"
       },
+      "RunAnalysis": {
+        "additionalProperties": false,
+        "properties": {
+          "comparison": {
+            "additionalProperties": true,
+            "title": "Comparison",
+            "type": "object"
+          },
+          "interpretation": {
+            "title": "Interpretation",
+            "type": "string"
+          },
+          "residual_risks": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Residual Risks"
+          },
+          "results": {
+            "additionalProperties": true,
+            "title": "Results",
+            "type": "object"
+          },
+          "run_id": {
+            "format": "uuid",
+            "title": "Run Id",
+            "type": "string"
+          },
+          "seq": {
+            "description": "Unique per run; powers replay and SSE Last-Event-ID",
+            "minimum": 0,
+            "title": "Seq",
+            "type": "integer"
+          },
+          "summary": {
+            "title": "Summary",
+            "type": "string"
+          },
+          "ts": {
+            "format": "date-time",
+            "title": "Ts",
+            "type": "string"
+          },
+          "type": {
+            "const": "run.analysis",
+            "default": "run.analysis",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "run_id",
+          "seq",
+          "ts",
+          "summary",
+          "interpretation"
+        ],
+        "title": "RunAnalysis",
+        "type": "object"
+      },
+      "RunDiagnosed": {
+        "additionalProperties": false,
+        "properties": {
+          "attempt": {
+            "minimum": 1,
+            "title": "Attempt",
+            "type": "integer"
+          },
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "failed_stage": {
+            "$ref": "#/components/schemas/Stage"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "restart_from": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Stage"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "run_id": {
+            "format": "uuid",
+            "title": "Run Id",
+            "type": "string"
+          },
+          "seq": {
+            "description": "Unique per run; powers replay and SSE Last-Event-ID",
+            "minimum": 0,
+            "title": "Seq",
+            "type": "integer"
+          },
+          "ts": {
+            "format": "date-time",
+            "title": "Ts",
+            "type": "string"
+          },
+          "type": {
+            "const": "run.diagnosed",
+            "default": "run.diagnosed",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "run_id",
+          "seq",
+          "ts",
+          "failed_stage",
+          "code",
+          "message",
+          "attempt"
+        ],
+        "title": "RunDiagnosed",
+        "type": "object"
+      },
       "RunErrorEvent": {
         "additionalProperties": false,
         "properties": {
@@ -1183,16 +1739,23 @@
           "mapping": {
             "artifact.saved": "#/components/schemas/ArtifactSaved",
             "baseline.result": "#/components/schemas/BaselineResult",
+            "code.finalized": "#/components/schemas/CodeFinalized",
             "code.generated": "#/components/schemas/CodeGenerated",
+            "compilation.result": "#/components/schemas/CompilationResult",
             "export.classified": "#/components/schemas/ExportClassified",
             "llm.call": "#/components/schemas/LlmCall",
             "llm.delta": "#/components/schemas/LlmDelta",
             "plan.produced": "#/components/schemas/PlanProduced",
+            "resource.estimate": "#/components/schemas/ResourceEstimateResult",
+            "run.analysis": "#/components/schemas/RunAnalysis",
+            "run.diagnosed": "#/components/schemas/RunDiagnosed",
             "run.error": "#/components/schemas/RunErrorEvent",
             "run.finished": "#/components/schemas/RunFinished",
             "run.queued": "#/components/schemas/RunQueued",
+            "run.restarted": "#/components/schemas/RunRestarted",
             "run.started": "#/components/schemas/RunStarted",
             "sandbox.result": "#/components/schemas/SandboxResult",
+            "screen.result": "#/components/schemas/ScreenResult",
             "stage.finished": "#/components/schemas/StageFinished",
             "stage.started": "#/components/schemas/StageStarted",
             "verification.result": "#/components/schemas/VerificationResult"
@@ -1225,6 +1788,18 @@
             "$ref": "#/components/schemas/CodeGenerated"
           },
           {
+            "$ref": "#/components/schemas/ScreenResult"
+          },
+          {
+            "$ref": "#/components/schemas/ResourceEstimateResult"
+          },
+          {
+            "$ref": "#/components/schemas/CompilationResult"
+          },
+          {
+            "$ref": "#/components/schemas/CodeFinalized"
+          },
+          {
             "$ref": "#/components/schemas/SandboxResult"
           },
           {
@@ -1238,6 +1813,15 @@
           },
           {
             "$ref": "#/components/schemas/ArtifactSaved"
+          },
+          {
+            "$ref": "#/components/schemas/RunAnalysis"
+          },
+          {
+            "$ref": "#/components/schemas/RunDiagnosed"
+          },
+          {
+            "$ref": "#/components/schemas/RunRestarted"
           },
           {
             "$ref": "#/components/schemas/RunErrorEvent"
@@ -1360,6 +1944,55 @@
         "title": "RunQueued",
         "type": "object"
       },
+      "RunRestarted": {
+        "additionalProperties": false,
+        "properties": {
+          "attempt": {
+            "minimum": 1,
+            "title": "Attempt",
+            "type": "integer"
+          },
+          "from_stage": {
+            "$ref": "#/components/schemas/Stage"
+          },
+          "reason": {
+            "title": "Reason",
+            "type": "string"
+          },
+          "run_id": {
+            "format": "uuid",
+            "title": "Run Id",
+            "type": "string"
+          },
+          "seq": {
+            "description": "Unique per run; powers replay and SSE Last-Event-ID",
+            "minimum": 0,
+            "title": "Seq",
+            "type": "integer"
+          },
+          "ts": {
+            "format": "date-time",
+            "title": "Ts",
+            "type": "string"
+          },
+          "type": {
+            "const": "run.restarted",
+            "default": "run.restarted",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "run_id",
+          "seq",
+          "ts",
+          "from_stage",
+          "attempt",
+          "reason"
+        ],
+        "title": "RunRestarted",
+        "type": "object"
+      },
       "RunStarted": {
         "additionalProperties": false,
         "properties": {
@@ -1429,6 +2062,26 @@
             ],
             "default": null,
             "title": "Memory Mb"
+          },
+          "phase": {
+            "default": "verification",
+            "enum": [
+              "verification",
+              "final"
+            ],
+            "title": "Phase",
+            "type": "string"
+          },
+          "qasm_emission": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/QasmEmission"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
           },
           "run_id": {
             "format": "uuid",
@@ -1503,16 +2156,74 @@
         "title": "Scope",
         "type": "object"
       },
+      "ScreenResult": {
+        "additionalProperties": false,
+        "properties": {
+          "diagnostics": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Diagnostics",
+            "type": "array"
+          },
+          "lint_ok": {
+            "title": "Lint Ok",
+            "type": "boolean"
+          },
+          "run_id": {
+            "format": "uuid",
+            "title": "Run Id",
+            "type": "string"
+          },
+          "seq": {
+            "description": "Unique per run; powers replay and SSE Last-Event-ID",
+            "minimum": 0,
+            "title": "Seq",
+            "type": "integer"
+          },
+          "ts": {
+            "format": "date-time",
+            "title": "Ts",
+            "type": "string"
+          },
+          "type": {
+            "const": "screen.result",
+            "default": "screen.result",
+            "title": "Type",
+            "type": "string"
+          },
+          "typecheck_ok": {
+            "title": "Typecheck Ok",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "run_id",
+          "seq",
+          "ts",
+          "lint_ok",
+          "typecheck_ok"
+        ],
+        "title": "ScreenResult",
+        "type": "object"
+      },
       "Stage": {
         "description": "Pipeline stages in execution order; the orchestrator owns transitions.",
         "enum": [
           "plan",
           "generate",
-          "simulate",
+          "screen",
+          "resource_estimate",
           "verify",
+          "compile",
+          "compiled_resource_estimate",
+          "finalize",
+          "final_execute",
           "baseline",
-          "export",
-          "save"
+          "analyze",
+          "save",
+          "simulate",
+          "export"
         ],
         "title": "Stage",
         "type": "string"

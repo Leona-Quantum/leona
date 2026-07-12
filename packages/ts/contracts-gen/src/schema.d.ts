@@ -237,6 +237,56 @@ export interface components {
              */
             type: "baseline.result";
         };
+        /** CodeFinalized */
+        CodeFinalized: {
+            /** Code */
+            code: string;
+            /** Compilation Applied */
+            compilation_applied: boolean;
+            /** Conversion Options */
+            conversion_options?: string[];
+            /** Execution Options */
+            execution_options?: ("simulate" | "qpu")[];
+            /**
+             * Export Reason
+             * @default null
+             */
+            export_reason: string | null;
+            export_status: components["schemas"]["ExportStatus"];
+            /**
+             * Finalization Reason
+             * @default null
+             */
+            finalization_reason: string | null;
+            /** Language */
+            language: string;
+            /** Qpu Available */
+            qpu_available: boolean;
+            /** Revision */
+            revision: number;
+            /**
+             * Run Id
+             * Format: uuid
+             */
+            run_id: string;
+            /**
+             * Seq
+             * @description Unique per run; powers replay and SSE Last-Event-ID
+             */
+            seq: number;
+            /** Simulation Plausible */
+            simulation_plausible: boolean;
+            /**
+             * Ts
+             * Format: date-time
+             */
+            ts: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "code.finalized";
+        };
         /** CodeGenerated */
         CodeGenerated: {
             /** Code */
@@ -268,6 +318,64 @@ export interface components {
              * @enum {string}
              */
             type: "code.generated";
+        };
+        /** CompilationResult */
+        CompilationResult: {
+            /** Accepted */
+            accepted: boolean;
+            /** @default null */
+            after: components["schemas"]["ResourceMetrics"] | null;
+            /** @default null */
+            before: components["schemas"]["ResourceMetrics"] | null;
+            /** Compatibility */
+            compatibility?: {
+                [key: string]: unknown;
+            };
+            /**
+             * Compiled Fingerprint
+             * @default null
+             */
+            compiled_fingerprint: string | null;
+            /**
+             * Mode
+             * @enum {string}
+             */
+            mode: "not_applicable" | "unchanged" | "transpiled" | "compressed" | "rejected";
+            /**
+             * Reason
+             * @default null
+             */
+            reason: string | null;
+            /**
+             * Run Id
+             * Format: uuid
+             */
+            run_id: string;
+            /**
+             * Seq
+             * @description Unique per run; powers replay and SSE Last-Event-ID
+             */
+            seq: number;
+            /**
+             * Source Fingerprint
+             * @default null
+             */
+            source_fingerprint: string | null;
+            /**
+             * Target
+             * @default null
+             */
+            target: string | null;
+            /**
+             * Ts
+             * Format: date-time
+             */
+            ts: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "compilation.result";
         };
         /** ExportClassified */
         ExportClassified: {
@@ -468,6 +576,99 @@ export interface components {
             type: "plan.produced";
         };
         /**
+         * QasmEmission
+         * @description Provenance for the OpenQASM payload recovered from sandbox stdout.
+         *
+         *     ``sandbox_epilogue`` is Majorana's observed serialization of ``FINAL_CIRCUIT``;
+         *     ``model_stdout`` is a compatibility fallback and is not equivalent evidence.
+         */
+        QasmEmission: {
+            /** Available */
+            available: boolean;
+            /** Epilogue Applied */
+            epilogue_applied: boolean;
+            /**
+             * Epilogue Error
+             * @description Exception type only; raw sandbox exception text is never persisted here.
+             * @default null
+             */
+            epilogue_error: string | null;
+            /**
+             * Source
+             * @enum {string}
+             */
+            source: "sandbox_epilogue" | "model_stdout" | "missing";
+        };
+        /** ResourceEstimateResult */
+        ResourceEstimateResult: {
+            metrics: components["schemas"]["ResourceMetrics"];
+            /** Notes */
+            notes?: string[];
+            /**
+             * Phase
+             * @enum {string}
+             */
+            phase: "pre_verify" | "compiled";
+            /**
+             * Run Id
+             * Format: uuid
+             */
+            run_id: string;
+            /**
+             * Seq
+             * @description Unique per run; powers replay and SSE Last-Event-ID
+             */
+            seq: number;
+            /**
+             * Source
+             * @enum {string}
+             */
+            source: "plan_static" | "ir" | "compiler";
+            /**
+             * Ts
+             * Format: date-time
+             */
+            ts: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "resource.estimate";
+        };
+        /**
+         * ResourceMetrics
+         * @description Comparable circuit-resource measurements recorded before and after compilation.
+         */
+        ResourceMetrics: {
+            /**
+             * Depth
+             * @default null
+             */
+            depth: number | null;
+            /**
+             * Estimated Runtime Ms
+             * @default null
+             */
+            estimated_runtime_ms: number | null;
+            /**
+             * Gate Count
+             * @default null
+             */
+            gate_count: number | null;
+            /**
+             * Measurement Count
+             * @default null
+             */
+            measurement_count: number | null;
+            /** Qubits */
+            qubits: number;
+            /**
+             * Two Qubit Gate Count
+             * @default null
+             */
+            two_qubit_gate_count: number | null;
+        };
+        /**
          * Role
          * @enum {string}
          */
@@ -565,6 +766,78 @@ export interface components {
              */
             workspace_id: string;
         };
+        /** RunAnalysis */
+        RunAnalysis: {
+            /** Comparison */
+            comparison?: {
+                [key: string]: unknown;
+            };
+            /** Interpretation */
+            interpretation: string;
+            /**
+             * Residual Risks
+             * @default null
+             */
+            residual_risks: string | null;
+            /** Results */
+            results?: {
+                [key: string]: unknown;
+            };
+            /**
+             * Run Id
+             * Format: uuid
+             */
+            run_id: string;
+            /**
+             * Seq
+             * @description Unique per run; powers replay and SSE Last-Event-ID
+             */
+            seq: number;
+            /** Summary */
+            summary: string;
+            /**
+             * Ts
+             * Format: date-time
+             */
+            ts: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "run.analysis";
+        };
+        /** RunDiagnosed */
+        RunDiagnosed: {
+            /** Attempt */
+            attempt: number;
+            /** Code */
+            code: string;
+            failed_stage: components["schemas"]["Stage"];
+            /** Message */
+            message: string;
+            /** @default null */
+            restart_from: components["schemas"]["Stage"] | null;
+            /**
+             * Run Id
+             * Format: uuid
+             */
+            run_id: string;
+            /**
+             * Seq
+             * @description Unique per run; powers replay and SSE Last-Event-ID
+             */
+            seq: number;
+            /**
+             * Ts
+             * Format: date-time
+             */
+            ts: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "run.diagnosed";
+        };
         /** RunErrorEvent */
         RunErrorEvent: {
             /**
@@ -601,7 +874,7 @@ export interface components {
          * RunEvent
          * @description Discriminated union of all run event types (class name sets the schema id).
          */
-        RunEvent: components["schemas"]["RunQueued"] | components["schemas"]["RunStarted"] | components["schemas"]["StageStarted"] | components["schemas"]["StageFinished"] | components["schemas"]["PlanProduced"] | components["schemas"]["LlmCall"] | components["schemas"]["LlmDelta"] | components["schemas"]["CodeGenerated"] | components["schemas"]["SandboxResult"] | components["schemas"]["VerificationResult"] | components["schemas"]["BaselineResult"] | components["schemas"]["ExportClassified"] | components["schemas"]["ArtifactSaved"] | components["schemas"]["RunErrorEvent"] | components["schemas"]["RunFinished"];
+        RunEvent: components["schemas"]["RunQueued"] | components["schemas"]["RunStarted"] | components["schemas"]["StageStarted"] | components["schemas"]["StageFinished"] | components["schemas"]["PlanProduced"] | components["schemas"]["LlmCall"] | components["schemas"]["LlmDelta"] | components["schemas"]["CodeGenerated"] | components["schemas"]["ScreenResult"] | components["schemas"]["ResourceEstimateResult"] | components["schemas"]["CompilationResult"] | components["schemas"]["CodeFinalized"] | components["schemas"]["SandboxResult"] | components["schemas"]["VerificationResult"] | components["schemas"]["BaselineResult"] | components["schemas"]["ExportClassified"] | components["schemas"]["ArtifactSaved"] | components["schemas"]["RunAnalysis"] | components["schemas"]["RunDiagnosed"] | components["schemas"]["RunRestarted"] | components["schemas"]["RunErrorEvent"] | components["schemas"]["RunFinished"];
         /** RunFinished */
         RunFinished: {
             /**
@@ -663,6 +936,34 @@ export interface components {
              */
             type: "run.queued";
         };
+        /** RunRestarted */
+        RunRestarted: {
+            /** Attempt */
+            attempt: number;
+            from_stage: components["schemas"]["Stage"];
+            /** Reason */
+            reason: string;
+            /**
+             * Run Id
+             * Format: uuid
+             */
+            run_id: string;
+            /**
+             * Seq
+             * @description Unique per run; powers replay and SSE Last-Event-ID
+             */
+            seq: number;
+            /**
+             * Ts
+             * Format: date-time
+             */
+            ts: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "run.restarted";
+        };
         /** RunStarted */
         RunStarted: {
             /**
@@ -702,6 +1003,14 @@ export interface components {
              * @default null
              */
             memory_mb: number | null;
+            /**
+             * Phase
+             * @default verification
+             * @enum {string}
+             */
+            phase: "verification" | "final";
+            /** @default null */
+            qasm_emission: components["schemas"]["QasmEmission"] | null;
             /**
              * Run Id
              * Format: uuid
@@ -746,12 +1055,41 @@ export interface components {
              */
             workspace_id: string;
         };
+        /** ScreenResult */
+        ScreenResult: {
+            /** Diagnostics */
+            diagnostics?: string[];
+            /** Lint Ok */
+            lint_ok: boolean;
+            /**
+             * Run Id
+             * Format: uuid
+             */
+            run_id: string;
+            /**
+             * Seq
+             * @description Unique per run; powers replay and SSE Last-Event-ID
+             */
+            seq: number;
+            /**
+             * Ts
+             * Format: date-time
+             */
+            ts: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "screen.result";
+            /** Typecheck Ok */
+            typecheck_ok: boolean;
+        };
         /**
          * Stage
          * @description Pipeline stages in execution order; the orchestrator owns transitions.
          * @enum {string}
          */
-        Stage: "plan" | "generate" | "simulate" | "verify" | "baseline" | "export" | "save";
+        Stage: "plan" | "generate" | "screen" | "resource_estimate" | "verify" | "compile" | "compiled_resource_estimate" | "finalize" | "final_execute" | "baseline" | "analyze" | "save" | "simulate" | "export";
         /** StageFinished */
         StageFinished: {
             /** Duration Ms */

@@ -19,6 +19,15 @@ class Expect(BaseModel):
     export_status: ExportStatus | None = None
     output_keys: list[str] = Field(default_factory=list)
     saves_artifact: bool = True
+    expected_top_bitstring: str | None = Field(
+        default=None,
+        description=(
+            "Value-level correctness check for search/oracle cases: the most-probable "
+            "measured bitstring the run must recover, written in Qiskit measurement order. "
+            "The deterministic verifier only checks circuit-consistency, so a well-formed "
+            "wrong answer (e.g. an endianness bit-reversal) passes it — this pins the answer."
+        ),
+    )
 
 
 class CorpusCase(BaseModel):
@@ -31,6 +40,17 @@ class CorpusCase(BaseModel):
     expect: Expect = Field(default_factory=Expect)
 
 
+class CaseEvidence(BaseModel):
+    """Reproducible attribution fields observed during one pipeline attempt."""
+
+    failed_stage: str | None = None
+    error_code: str | None = None
+    qasm_source: str | None = None
+    qasm_epilogue_applied: bool | None = None
+    qasm_available: bool | None = None
+    qasm_epilogue_error: str | None = None
+
+
 class CaseResult(BaseModel):
     id: str
     category: str
@@ -40,6 +60,7 @@ class CaseResult(BaseModel):
     export_status: str | None = None
     saved: bool = False
     reasons: list[str] = Field(default_factory=list)
+    evidence: CaseEvidence = Field(default_factory=CaseEvidence)
 
 
 class Report(BaseModel):

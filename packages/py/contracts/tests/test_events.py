@@ -17,6 +17,7 @@ from majorana_contracts import (
     VerificationResultKind,
     run_event_adapter,
 )
+from majorana_pipeline import STAGE_ORDER
 
 ENVELOPE = {"run_id": str(uuid4()), "seq": 0, "ts": "2026-07-10T00:00:00Z"}
 
@@ -74,8 +75,16 @@ def test_every_event_type_round_trips():
         },
         {"type": "llm.delta", "stage": "generate", "text": "qc = QuantumCircuit(2)"},
         {"type": "code.generated", "language": "python", "code": "print(1)", "revision": 1},
+        {"type": "screen.result", "lint_ok": True, "typecheck_ok": True},
+        {
+            "type": "resource.estimate",
+            "phase": "pre_verify",
+            "source": "plan_static",
+            "metrics": {"qubits": 2},
+        },
         {
             "type": "sandbox.result",
+            "phase": "verification",
             "exit_code": 0,
             "duration_ms": 1500,
             "stdout": "{}",
@@ -86,7 +95,45 @@ def test_every_event_type_round_trips():
             "method": VerificationMethod.EXACT.value,
             "result": VerificationResultKind.PASS.value,
         },
+        {
+            "type": "compilation.result",
+            "accepted": False,
+            "mode": "unchanged",
+            "compatibility": {},
+        },
+        {
+            "type": "resource.estimate",
+            "phase": "compiled",
+            "source": "compiler",
+            "metrics": {"qubits": 2, "depth": 1},
+        },
+        {
+            "type": "code.finalized",
+            "language": "qiskit",
+            "code": "print(1)",
+            "revision": 1,
+            "compilation_applied": False,
+            "simulation_plausible": True,
+            "qpu_available": False,
+            "execution_options": ["simulate"],
+            "export_status": "lossless",
+        },
         {"type": "baseline.result", "kind": "maxcut", "result": {"cut": 4}},
+        {
+            "type": "run.analysis",
+            "summary": "summary",
+            "interpretation": "interpretation",
+            "results": {"counts": {"00": 1}},
+        },
+        {
+            "type": "run.diagnosed",
+            "failed_stage": "verify",
+            "restart_from": "generate",
+            "code": "verification_failed",
+            "message": "retry",
+            "attempt": 1,
+        },
+        {"type": "run.restarted", "from_stage": "generate", "attempt": 1, "reason": "retry"},
         {
             "type": "export.classified",
             "status": ExportStatus.LOSSLESS.value,
@@ -121,12 +168,19 @@ def test_lossy_export_requires_reason():
 
 
 def test_stage_enum_covers_pipeline_order():
-    assert [s.value for s in Stage] == [
+    assert [s.value for s in STAGE_ORDER] == [
         "plan",
         "generate",
-        "simulate",
+        "screen",
+        "resource_estimate",
         "verify",
+        "compile",
+        "compiled_resource_estimate",
+        "finalize",
+        "final_execute",
         "baseline",
-        "export",
+        "analyze",
         "save",
     ]
+    assert Stage.SIMULATE.value == "simulate"
+    assert Stage.EXPORT.value == "export"
