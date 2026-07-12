@@ -22,14 +22,20 @@ export type RailStage =
   // Row stays expanded with the summary.
   | (RailStageBase & { state: "fail"; errorSummary: string });
 
-// Convert is folded into Export per the current pipeline (spec §2).
+// The rail mirrors the canonical run choreography. Legacy stored events are not shown
+// as new stages; they are folded into the corresponding result cards by the reducer.
 export const PIPELINE_STAGE_NAMES = [
   "Plan",
   "Generate",
-  "Simulate",
+  "Screen",
+  "Resource estimate",
   "Verify",
+  "Compilation",
+  "Compiled resource estimate",
+  "Finalize",
+  "Final simulation / QPU",
   "Baseline",
-  "Export",
+  "Analysis",
   "Save",
 ] as const;
 

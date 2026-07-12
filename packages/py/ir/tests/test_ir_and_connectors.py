@@ -1,5 +1,7 @@
 """IR round-trip, canonicalization, and fingerprint tests (ported from quepo)."""
 
+import pytest
+
 from majorana_ir import (
     Circuit,
     Operation,
@@ -26,6 +28,20 @@ def test_openqasm_roundtrip_is_stable():
     circuit = from_openqasm(BELL)
     again = from_openqasm(to_openqasm(circuit))
     assert canonical_json(circuit) == canonical_json(again)
+
+
+def test_qiskit_u2_u3_aliases_parse_to_canonical_u():
+    circuit = from_openqasm(
+        """
+OPENQASM 2.0;
+include "qelib1.inc";
+qreg q[1];
+u2(0,pi) q[0];
+u3(pi/2,0,pi) q[0];
+"""
+    )
+    assert [operation.gate for operation in circuit.operations] == ["u", "u"]
+    assert circuit.operations[0].params[0] == pytest.approx(1.5707963267948966)
 
 
 def test_fingerprint_is_deterministic_and_collision_free():

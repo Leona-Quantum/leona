@@ -8,7 +8,7 @@ export default function RunHome() {
     <section style={{ maxWidth: "720px", margin: "0 auto" }}>
       <h1 style={{ fontSize: "var(--fs-20)", fontWeight: 600 }}>Run</h1>
       <p style={{ color: "var(--text-1)" }}>
-        Describe the circuit or problem to plan, generate, simulate, and verify it.
+        Describe the circuit or problem to plan, generate, screen, compile, and verify it.
       </p>
       <textarea
         disabled

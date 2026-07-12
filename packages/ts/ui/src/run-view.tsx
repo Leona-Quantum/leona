@@ -17,24 +17,37 @@ export type RunEvent = Schemas["RunEvent"];
 type Stage = Schemas["Stage"];
 type VerificationMethod = Schemas["VerificationMethod"];
 
-// Execution order + display labels (Convert is folded into Export — 7 stages, spec §2).
+// Execution order + display labels. Legacy simulate/export values remain readable in
+// stored events but are intentionally absent from new-run choreography.
 const STAGE_ORDER: readonly Stage[] = [
   "plan",
   "generate",
-  "simulate",
+  "screen",
+  "resource_estimate",
   "verify",
+  "compile",
+  "compiled_resource_estimate",
+  "finalize",
+  "final_execute",
   "baseline",
-  "export",
+  "analyze",
   "save",
 ] as const;
 const STAGE_LABEL: Record<Stage, string> = {
   plan: "Plan",
   generate: "Generate",
-  simulate: "Simulate",
+  screen: "Screen",
+  resource_estimate: "Resource estimate",
   verify: "Verify",
+  compile: "Compilation",
+  compiled_resource_estimate: "Compiled resource estimate",
+  finalize: "Finalize",
+  final_execute: "Final simulation / QPU",
   baseline: "Baseline",
-  export: "Export",
+  analyze: "Analysis",
   save: "Save",
+  simulate: "Simulate (legacy)",
+  export: "Export (legacy)",
 };
 
 // Human method names — P1: name what was checked, never "IR".
@@ -146,6 +159,7 @@ export function reduceRunEvents(events: readonly RunEvent[]): RunViewModel {
 
   let plan: Schemas["Plan"] | null = null;
   let code: Schemas["CodeGenerated"] | null = null;
+  let finalizedCode: Schemas["CodeFinalized"] | null = null;
   let sandbox: Schemas["SandboxResult"] | null = null;
   const verifyResults: Schemas["VerificationResult"][] = [];
   let baseline: Schemas["BaselineResult"] | null = null;
@@ -178,6 +192,9 @@ export function reduceRunEvents(events: readonly RunEvent[]): RunViewModel {
         // Keep the highest revision (repairs supersede earlier code).
         if (!code || ev.revision >= code.revision) code = ev;
         break;
+      case "code.finalized":
+        finalizedCode = ev;
+        break;
       case "sandbox.result":
         sandbox = ev;
         break;
@@ -195,6 +212,9 @@ export function reduceRunEvents(events: readonly RunEvent[]): RunViewModel {
         break;
       case "run.error":
         if (ev.stage) stageError.set(ev.stage, ev.message);
+        break;
+      case "run.diagnosed":
+        stageError.set(ev.failed_stage, ev.message);
         break;
       case "run.finished":
         finishedRun = ev;
@@ -235,7 +255,15 @@ export function reduceRunEvents(events: readonly RunEvent[]): RunViewModel {
   const result: ResultView = {
     verdict: verdict ? { verdict, detail: buildVerdictDetail(verdict, primaryVerify(verifyResults, verdict)) } : null,
     keyNumbers: buildKeyNumbers(plan, sandbox, verifyResults),
-    code: code ? { filename: filenameFor(code.language), language: code.language, code: code.code } : null,
+    code: finalizedCode
+      ? {
+          filename: filenameFor(finalizedCode.language),
+          language: finalizedCode.language,
+          code: finalizedCode.code,
+        }
+      : code
+        ? { filename: filenameFor(code.language), language: code.language, code: code.code }
+        : null,
     baseline: buildBaseline(baseline),
     export: exportEv ? buildExportBadge(exportEv) : null,
     libraryHref: saved ? `/library/${saved.artifact_id}` : null,
@@ -340,9 +368,11 @@ function buildExportBadge(ev: Schemas["ExportClassified"]): NonNullable<ResultVi
 // Maps a rail stage to the panel section it should scroll to (best-effort; spec §2).
 const STAGE_TO_ANCHOR: Partial<Record<Stage, string>> = {
   generate: "mj-result-code",
+  screen: "mj-result-code",
   verify: "mj-result-verdict",
+  finalize: "mj-result-code",
   baseline: "mj-result-baseline",
-  export: "mj-result-export",
+  analyze: "mj-result-verdict",
   save: "mj-result-library",
 };
 

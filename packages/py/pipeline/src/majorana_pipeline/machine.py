@@ -5,8 +5,22 @@ API (cancel) and the worker (execute) enforce the same legality table.
 
 from majorana_contracts.enums import RunStatus, Stage
 
-# Execution order is the Stage enum's declaration order (contracts is the truth).
-STAGE_ORDER: tuple[Stage, ...] = tuple(Stage)
+# Execution order is explicit so legacy ``simulate``/``export`` event values stay
+# parseable without accidentally reintroducing them into new runs.
+STAGE_ORDER: tuple[Stage, ...] = (
+    Stage.PLAN,
+    Stage.GENERATE,
+    Stage.SCREEN,
+    Stage.RESOURCE_ESTIMATE,
+    Stage.VERIFY,
+    Stage.COMPILE,
+    Stage.COMPILED_RESOURCE_ESTIMATE,
+    Stage.FINALIZE,
+    Stage.FINAL_EXECUTE,
+    Stage.BASELINE,
+    Stage.ANALYZE,
+    Stage.SAVE,
+)
 
 _LEGAL: dict[RunStatus, frozenset[RunStatus]] = {
     RunStatus.QUEUED: frozenset({RunStatus.RUNNING, RunStatus.CANCELLED}),

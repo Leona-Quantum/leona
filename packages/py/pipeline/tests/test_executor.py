@@ -5,7 +5,7 @@ import uuid
 from typing import Any
 
 from majorana_contracts.enums import Framework, RunMode, RunStatus, Stage, VerifierDecision
-from majorana_pipeline import RunContext, StageOutcome, default_handlers, execute_run
+from majorana_pipeline import STAGE_ORDER, RunContext, StageOutcome, default_handlers, execute_run
 
 
 class FakeSink:
@@ -54,13 +54,13 @@ async def test_happy_path_emits_full_choreography():
     assert final is RunStatus.SUCCEEDED
     assert store.status is RunStatus.SUCCEEDED
     expected = ["run.started"]
-    for stage in Stage:
+    for stage in STAGE_ORDER:
         expected += ["stage.started", "stage.finished"]
     expected += ["run.finished"]
     assert sink.types == expected
     # every stage.finished ok, in declaration order
     finished = [p for t, p in sink.events if t == "stage.finished"]
-    assert [p["stage"] for p in finished] == list(Stage)
+    assert [p["stage"] for p in finished] == list(STAGE_ORDER)
     assert all(p["ok"] for p in finished)
     # the spine has verified nothing — run.finished must say so
     assert sink.events[-1][1]["verifier_decision"] is VerifierDecision.INCONCLUSIVE
@@ -69,20 +69,53 @@ async def test_happy_path_emits_full_choreography():
 async def test_stage_failure_stops_pipeline_and_fails_run():
     sink, store = FakeSink(), FakeStore()
 
-    async def bad_simulate(ctx):
+    async def bad_screen(ctx):
         return StageOutcome(ok=False, error_code="boom", error_message="qubit fell over")
 
-    handlers = default_handlers() | {Stage.SIMULATE: bad_simulate}
+    handlers = default_handlers() | {Stage.SCREEN: bad_screen}
     final = await execute_run(make_ctx(sink), store, handlers)
 
     assert final is RunStatus.FAILED
     assert store.status is RunStatus.FAILED
-    assert sink.types.count("stage.started") == 3  # plan, generate, simulate — then stop
+    assert sink.types.count("stage.started") == 3  # plan, generate, screen — then stop
     assert (
         "run.error",
-        {"stage": Stage.SIMULATE, "code": "boom", "message": "qubit fell over"},
+        {"stage": Stage.SCREEN, "code": "boom", "message": "qubit fell over"},
     ) in sink.events
     assert sink.events[-1] == ("run.finished", {"status": RunStatus.FAILED})
+
+
+async def test_repairable_failure_diagnoses_and_restarts_from_requested_stage():
+    sink, store = FakeSink(), FakeStore()
+
+    async def flaky_screen(ctx):
+        if not ctx.state.get("screen_attempted"):
+            ctx.state["screen_attempted"] = True
+            return StageOutcome(
+                ok=False,
+                error_code="screen_failed",
+                error_message="missing FINAL_CIRCUIT",
+                retry_from=Stage.GENERATE,
+                diagnosis="bind the final circuit before screening again",
+            )
+        return StageOutcome(ok=True)
+
+    handlers = default_handlers() | {Stage.SCREEN: flaky_screen}
+    final = await execute_run(make_ctx(sink), store, handlers)
+
+    assert final is RunStatus.SUCCEEDED
+    assert sink.types.count("stage.started") == len(STAGE_ORDER) + 2
+    diagnosed = next(payload for kind, payload in sink.events if kind == "run.diagnosed")
+    assert diagnosed == {
+        "failed_stage": Stage.SCREEN,
+        "restart_from": Stage.GENERATE,
+        "code": "screen_failed",
+        "message": "bind the final circuit before screening again",
+        "attempt": 1,
+    }
+    restarted = next(payload for kind, payload in sink.events if kind == "run.restarted")
+    assert restarted["from_stage"] is Stage.GENERATE
+    assert restarted["attempt"] == 1
 
 
 async def test_handler_exception_is_absorbed_into_failed():
@@ -117,7 +150,7 @@ async def test_cancel_between_stages_stops_cooperatively():
     final = await execute_run(make_ctx(sink), store, handlers)
 
     assert final is RunStatus.CANCELLED
-    assert sink.types.count("stage.started") == 2  # plan, generate; simulate never starts
+    assert sink.types.count("stage.started") == 2  # plan, generate; screen never starts
     assert sink.events[-1] == ("run.finished", {"status": RunStatus.CANCELLED})
 
 

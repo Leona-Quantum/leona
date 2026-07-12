@@ -38,17 +38,12 @@ _PLAN = {
 
 _CODE = """```python
 import json
-qasm = (
-    'OPENQASM 2.0;\\n'
-    'include "qelib1.inc";\\n'
-    'qreg q[2];\\n'
-    'creg c[2];\\n'
-    'h q[0];\\n'
-    'cx q[0],q[1];\\n'
-    'measure q[0] -> c[0];\\n'
-    'measure q[1] -> c[1];'
-)
-print(qasm)
+from qiskit import QuantumCircuit
+
+FINAL_CIRCUIT = QuantumCircuit(2)
+FINAL_CIRCUIT.h(0)
+FINAL_CIRCUIT.cx(0, 1)
+FINAL_CIRCUIT.measure_all()
 print(json.dumps({"counts": {"00": 512, "11": 512}}))
 ```"""
 
@@ -97,6 +92,8 @@ async def test_harness_scores_a_passing_bell_case():
         assert result.verifier_decision == "pass"
         assert result.export_status == "lossless"
         assert result.saved
+        assert result.evidence.qasm_source == "sandbox_epilogue"
+        assert result.evidence.qasm_epilogue_applied is True
 
         report = await run_corpus(
             [case], factory=factory, scope=scope, llm=_fake(), sandbox=LocalSubprocessSandbox()

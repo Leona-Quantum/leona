@@ -15,9 +15,14 @@ from majorana_llm.client import (
 )
 from majorana_llm.models import model_for, resolve_provider
 from majorana_llm.parsing import (
+    FINAL_QASM_BEGIN,
+    FINAL_QASM_END,
+    FINAL_QASM_ERROR,
+    QasmExtraction,
     StageOutputError,
     extract_code,
     extract_qasm,
+    extract_qasm_with_provenance,
     parse_plan,
 )
 from majorana_llm.prompts import (
@@ -43,6 +48,11 @@ __all__ = [
     "parse_plan",
     "extract_code",
     "extract_qasm",
+    "extract_qasm_with_provenance",
+    "QasmExtraction",
+    "FINAL_QASM_BEGIN",
+    "FINAL_QASM_END",
+    "FINAL_QASM_ERROR",
     "StageOutputError",
     "PLAN_SYSTEM_PROMPT",
     "GENERATE_SYSTEM_PROMPT",

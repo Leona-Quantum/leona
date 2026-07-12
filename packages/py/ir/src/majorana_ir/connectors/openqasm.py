@@ -29,6 +29,14 @@ _U_RE = re.compile(
     r"u\s*\(([^)]*),([^)]*),([^)]*)\)\s+([A-Za-z_][A-Za-z0-9_]*)\[(\d+)\]\s*;",
     re.IGNORECASE,
 )
+_U2_RE = re.compile(
+    r"u2\s*\(([^)]*),([^)]*)\)\s+([A-Za-z_][A-Za-z0-9_]*)\[(\d+)\]\s*;",
+    re.IGNORECASE,
+)
+_U3_RE = re.compile(
+    r"u3\s*\(([^)]*),([^)]*),([^)]*)\)\s+([A-Za-z_][A-Za-z0-9_]*)\[(\d+)\]\s*;",
+    re.IGNORECASE,
+)
 _GATE_RE = re.compile(r"([A-Za-z][A-Za-z0-9_]*)\s+(.+)\s*;")
 _ARG_RE = re.compile(r"([A-Za-z_][A-Za-z0-9_]*)\[(\d+)\]")
 
@@ -159,6 +167,34 @@ def from_openqasm(text: str, metadata: dict[str, Any] | None = None) -> Circuit:
                     gate="cp",
                     qubits=[int(left_index), int(right_index)],
                     params=[_safe_eval_numeric(param)],
+                )
+            )
+            continue
+        if u2_match := _U2_RE.fullmatch(line):
+            phi, lam, register, index = u2_match.groups()
+            if register != qreg_name:
+                raise OpenQASMError(f"unknown qreg '{register}'")
+            operations.append(
+                Operation(
+                    gate="u",
+                    qubits=[int(index)],
+                    params=[math.pi / 2, _safe_eval_numeric(phi), _safe_eval_numeric(lam)],
+                )
+            )
+            continue
+        if u3_match := _U3_RE.fullmatch(line):
+            theta, phi, lam, register, index = u3_match.groups()
+            if register != qreg_name:
+                raise OpenQASMError(f"unknown qreg '{register}'")
+            operations.append(
+                Operation(
+                    gate="u",
+                    qubits=[int(index)],
+                    params=[
+                        _safe_eval_numeric(theta),
+                        _safe_eval_numeric(phi),
+                        _safe_eval_numeric(lam),
+                    ],
                 )
             )
             continue

@@ -29,11 +29,21 @@ class Stage(StrEnum):
 
     PLAN = "plan"
     GENERATE = "generate"
-    SIMULATE = "simulate"
+    SCREEN = "screen"
+    RESOURCE_ESTIMATE = "resource_estimate"
     VERIFY = "verify"
+    COMPILE = "compile"
+    COMPILED_RESOURCE_ESTIMATE = "compiled_resource_estimate"
+    FINALIZE = "finalize"
+    FINAL_EXECUTE = "final_execute"
     BASELINE = "baseline"
-    EXPORT = "export"
+    ANALYZE = "analyze"
     SAVE = "save"
+
+    # Legacy event values remain parseable for stored runs created before the
+    # expanded pipeline contract. They are not part of the new execution order.
+    SIMULATE = "simulate"
+    EXPORT = "export"
 
 
 class VerifierDecision(StrEnum):

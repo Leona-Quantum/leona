@@ -13,10 +13,15 @@ def test_stage_order_matches_contracts_declaration():
     assert STAGE_ORDER == (
         Stage.PLAN,
         Stage.GENERATE,
-        Stage.SIMULATE,
+        Stage.SCREEN,
+        Stage.RESOURCE_ESTIMATE,
         Stage.VERIFY,
+        Stage.COMPILE,
+        Stage.COMPILED_RESOURCE_ESTIMATE,
+        Stage.FINALIZE,
+        Stage.FINAL_EXECUTE,
         Stage.BASELINE,
-        Stage.EXPORT,
+        Stage.ANALYZE,
         Stage.SAVE,
     )
 

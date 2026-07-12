@@ -20,6 +20,7 @@ from .enums import (
     VerificationResultKind,
     VerifierDecision,
 )
+from .models import ResourceMetrics
 from .plan import Plan
 
 
@@ -88,14 +89,77 @@ class CodeGenerated(_EventBase):
     revision: int = Field(ge=1, description="1 = first generation; +1 per repair iteration")
 
 
+class ScreenResult(_EventBase):
+    type: Literal["screen.result"] = "screen.result"
+    lint_ok: bool
+    typecheck_ok: bool
+    diagnostics: list[str] = Field(default_factory=list)
+
+
+class ResourceEstimateResult(_EventBase):
+    type: Literal["resource.estimate"] = "resource.estimate"
+    phase: Literal["pre_verify", "compiled"]
+    source: Literal["plan_static", "ir", "compiler"]
+    metrics: ResourceMetrics
+    notes: list[str] = Field(default_factory=list)
+
+
+class CompilationResult(_EventBase):
+    type: Literal["compilation.result"] = "compilation.result"
+    accepted: bool
+    mode: Literal["not_applicable", "unchanged", "transpiled", "compressed", "rejected"]
+    target: str | None = None
+    source_fingerprint: str | None = None
+    compiled_fingerprint: str | None = None
+    before: ResourceMetrics | None = None
+    after: ResourceMetrics | None = None
+    compatibility: dict[str, Any] = Field(default_factory=dict)
+    reason: str | None = None
+
+
+class CodeFinalized(_EventBase):
+    type: Literal["code.finalized"] = "code.finalized"
+    language: str
+    code: str
+    revision: int = Field(ge=1)
+    compilation_applied: bool
+    simulation_plausible: bool
+    qpu_available: bool
+    conversion_options: list[str] = Field(default_factory=list)
+    execution_options: list[Literal["simulate", "qpu"]] = Field(default_factory=list)
+    export_status: ExportStatus
+    export_reason: str | None = None
+    finalization_reason: str | None = None
+
+
+class QasmEmission(BaseModel):
+    """Provenance for the OpenQASM payload recovered from sandbox stdout.
+
+    ``sandbox_epilogue`` is Majorana's observed serialization of ``FINAL_CIRCUIT``;
+    ``model_stdout`` is a compatibility fallback and is not equivalent evidence.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    epilogue_applied: bool
+    source: Literal["sandbox_epilogue", "model_stdout", "missing"]
+    available: bool
+    epilogue_error: str | None = Field(
+        default=None,
+        description="Exception type only; raw sandbox exception text is never persisted here.",
+    )
+
+
 class SandboxResult(_EventBase):
     type: Literal["sandbox.result"] = "sandbox.result"
+    phase: Literal["verification", "final"] = "verification"
     exit_code: int
     duration_ms: int = Field(ge=0)
     memory_mb: int | None = Field(default=None, ge=0)
     stdout: str
     stderr: str
     truncated: bool = False
+    qasm_emission: QasmEmission | None = None
 
 
 class VerificationResult(_EventBase):
@@ -134,6 +198,31 @@ class ArtifactSaved(_EventBase):
     version_seq: int = Field(ge=1)
 
 
+class RunAnalysis(_EventBase):
+    type: Literal["run.analysis"] = "run.analysis"
+    summary: str
+    interpretation: str
+    results: dict[str, Any] = Field(default_factory=dict)
+    comparison: dict[str, Any] = Field(default_factory=dict)
+    residual_risks: str | None = None
+
+
+class RunDiagnosed(_EventBase):
+    type: Literal["run.diagnosed"] = "run.diagnosed"
+    failed_stage: Stage
+    restart_from: Stage | None = None
+    code: str
+    message: str
+    attempt: int = Field(ge=1)
+
+
+class RunRestarted(_EventBase):
+    type: Literal["run.restarted"] = "run.restarted"
+    from_stage: Stage
+    attempt: int = Field(ge=1)
+    reason: str
+
+
 class RunErrorEvent(_EventBase):
     type: Literal["run.error"] = "run.error"
     stage: Stage | None = None
@@ -157,11 +246,18 @@ RunEvent = Annotated[
     | LlmCall
     | LlmDelta
     | CodeGenerated
+    | ScreenResult
+    | ResourceEstimateResult
+    | CompilationResult
+    | CodeFinalized
     | SandboxResult
     | VerificationResult
     | BaselineResult
     | ExportClassified
     | ArtifactSaved
+    | RunAnalysis
+    | RunDiagnosed
+    | RunRestarted
     | RunErrorEvent
     | RunFinished,
     Field(discriminator="type"),

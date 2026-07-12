@@ -19,7 +19,7 @@ from majorana_api.repos import runs as runs_repo
 from majorana_api.repos import system
 from majorana_worker.handlers import handle_run_execute
 
-from majorana_evals.schema import CaseResult, CorpusCase, Report
+from majorana_evals.schema import CaseEvidence, CaseResult, CorpusCase, Report
 
 
 async def run_case(
@@ -68,8 +68,19 @@ async def run_case(
     types = {e.type for e in events}
     verifier = run.verifier_decision
     export_event = next((e for e in events if e.type == "export.classified"), None)
+    error_event = next((e for e in events if e.type == "run.error"), None)
+    sandbox_event = next((e for e in events if e.type == "sandbox.result"), None)
     export_status = export_event.payload.get("status") if export_event else None
     saved = "artifact.saved" in types
+    qasm_emission = sandbox_event.payload.get("qasm_emission", {}) if sandbox_event else {}
+    evidence = CaseEvidence(
+        failed_stage=error_event.payload.get("stage") if error_event else None,
+        error_code=error_event.payload.get("code") if error_event else None,
+        qasm_source=qasm_emission.get("source"),
+        qasm_epilogue_applied=qasm_emission.get("epilogue_applied"),
+        qasm_available=qasm_emission.get("available"),
+        qasm_epilogue_error=qasm_emission.get("epilogue_error"),
+    )
 
     expect = case.expect
     if verifier != expect.verifier_decision.value:
@@ -98,6 +109,7 @@ async def run_case(
         export_status=export_status,
         saved=saved,
         reasons=reasons,
+        evidence=evidence,
     )
 
 
