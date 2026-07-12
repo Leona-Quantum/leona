@@ -14,5 +14,6 @@ export {
   type RunEvent,
   type ResultView,
   type KeyNumber,
+  type SourceView,
   type RunViewModel,
 } from "./run-view";

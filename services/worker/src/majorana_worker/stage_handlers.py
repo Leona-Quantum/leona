@@ -169,6 +169,22 @@ def build_stage_handlers(
         research = await research_for_prompt(ctx.task_prompt)
         research_context = research.as_prompt() if research else ""
         ctx.state["research_context"] = research_context
+        if research:
+            await ctx.sink.emit(
+                "research.completed",
+                {
+                    "query": research.query,
+                    "sources": [
+                        {
+                            "title": source.title,
+                            "url": source.url,
+                            "excerpt": source.excerpt,
+                        }
+                        for source in research.sources
+                    ],
+                    "error": research.error,
+                },
+            )
         user = ctx.task_prompt
         if research_context:
             user = f"{ctx.task_prompt}\n\n{research_context}"

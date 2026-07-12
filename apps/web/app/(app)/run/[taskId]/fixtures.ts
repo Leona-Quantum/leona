@@ -217,7 +217,22 @@ const VERIFIED: RunEvent[] = [
   { type: "stage.started", run_id: RUN, seq: 37, ts: ts(43), stage: "save" },
   { type: "artifact.saved", run_id: RUN, seq: 38, ts: ts(44), artifact_id: ART, version_id: `${ART}-v1`, version_seq: 1 },
   { type: "stage.finished", run_id: RUN, seq: 39, ts: ts(45), stage: "save", ok: true, duration_ms: 210 },
-  { type: "run.finished", run_id: RUN, seq: 40, ts: ts(46), status: "succeeded", verifier_decision: "pass", residual_risks: "Simulation only; no QPU execution was requested." },
+  {
+    type: "research.completed",
+    run_id: RUN,
+    seq: 40,
+    ts: ts(46),
+    query: "MaxCut on a 5-node ring",
+    sources: [
+      {
+        title: "Qiskit MaxCut tutorial",
+        url: "https://qiskit.qotlabs.org/learning/courses/quantum-approximate-optimization-algorithm",
+        excerpt: "QAOA is a variational method for approximate combinatorial optimization.",
+      },
+    ],
+    error: null,
+  },
+  { type: "run.finished", run_id: RUN, seq: 41, ts: ts(47), status: "succeeded", verifier_decision: "pass", residual_risks: "Simulation only; no QPU execution was requested." },
 ];
 
 // ---- a run that fails verification -------------------------------------------------------

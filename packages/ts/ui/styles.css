@@ -436,6 +436,22 @@ div.mj-rail-row:hover {
   margin: 0;
 }
 
+/* Research provenance — bounded public references, kept readable without turning the
+   result panel into a citation dump. */
+.mj-source-list {
+  list-style: none;
+  display: grid;
+  gap: var(--sp-3);
+  margin: 0;
+  padding: 0;
+}
+.mj-source-list li {
+  display: grid;
+  gap: var(--sp-1);
+  padding-left: var(--sp-3);
+  border-left: 2px solid var(--border-0);
+}
+
 /* Verification rows — one per method that ran; a thin left edge carries the pass/fail tone,
    matching the export badges' calm treatment. Method name + measured evidence per row. */
 .mj-verify {

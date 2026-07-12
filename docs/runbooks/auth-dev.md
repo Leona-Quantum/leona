@@ -17,6 +17,29 @@ verification → first-login provisioning (user + personal workspace) → `/v1/m
 
 ## Run locally
 
+### WorkOS-free local loop
+
+For a local product walkthrough, the owner can use the explicit development-only
+auth seam instead of a WorkOS account. This still uses the real API database and
+the real user/workspace provisioning path; it only replaces the WorkOS session
+and JWT verification at the two auth choke points.
+
+```bash
+# API — these guards are required; do not use this mode in CI, Cloud Run, or Vercel
+export MAJORANA_ENV=development
+export MAJORANA_LOCAL_DEV_AUTH=true
+export DATABASE_URL="$(neonctl connection-string dev-local --project-id twilight-wildflower-01313590 --pooled)"
+uv run --package majorana-api uvicorn --factory majorana_api.app:create_app --port 8000
+
+# Web — Next must be running in development mode
+MAJORANA_LOCAL_DEV_AUTH=true pnpm --filter @majorana/web dev
+```
+
+Open `http://localhost:3000/run`. The web BFF uses the synthetic local developer
+identity and the API provisions `local-dev@majorana.test` in the real dev database.
+The seam is fail-closed outside a local development process and never accepts a
+production/Cloud Run/Vercel configuration.
+
 ```bash
 # API (needs a dev DB — create/reuse a Neon branch, run migrations first)
 export DATABASE_URL="$(neonctl connection-string dev-local --project-id twilight-wildflower-01313590)"

@@ -1188,6 +1188,99 @@
         "title": "QasmEmission",
         "type": "object"
       },
+      "ResearchCitation": {
+        "additionalProperties": false,
+        "description": "A bounded public reference shown as provenance for the planning decision.",
+        "properties": {
+          "excerpt": {
+            "maxLength": 4000,
+            "minLength": 1,
+            "title": "Excerpt",
+            "type": "string"
+          },
+          "title": {
+            "maxLength": 500,
+            "minLength": 1,
+            "title": "Title",
+            "type": "string"
+          },
+          "url": {
+            "maxLength": 2048,
+            "minLength": 1,
+            "title": "Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "title",
+          "url",
+          "excerpt"
+        ],
+        "title": "ResearchCitation",
+        "type": "object"
+      },
+      "ResearchCompleted": {
+        "additionalProperties": false,
+        "properties": {
+          "error": {
+            "anyOf": [
+              {
+                "maxLength": 120,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Error"
+          },
+          "query": {
+            "maxLength": 300,
+            "minLength": 1,
+            "title": "Query",
+            "type": "string"
+          },
+          "run_id": {
+            "format": "uuid",
+            "title": "Run Id",
+            "type": "string"
+          },
+          "seq": {
+            "description": "Unique per run; powers replay and SSE Last-Event-ID",
+            "minimum": 0,
+            "title": "Seq",
+            "type": "integer"
+          },
+          "sources": {
+            "items": {
+              "$ref": "#/components/schemas/ResearchCitation"
+            },
+            "maxItems": 5,
+            "title": "Sources",
+            "type": "array"
+          },
+          "ts": {
+            "format": "date-time",
+            "title": "Ts",
+            "type": "string"
+          },
+          "type": {
+            "const": "research.completed",
+            "default": "research.completed",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "run_id",
+          "seq",
+          "ts",
+          "query"
+        ],
+        "title": "ResearchCompleted",
+        "type": "object"
+      },
       "ResourceEstimateResult": {
         "additionalProperties": false,
         "properties": {
@@ -1746,6 +1839,7 @@
             "llm.call": "#/components/schemas/LlmCall",
             "llm.delta": "#/components/schemas/LlmDelta",
             "plan.produced": "#/components/schemas/PlanProduced",
+            "research.completed": "#/components/schemas/ResearchCompleted",
             "resource.estimate": "#/components/schemas/ResourceEstimateResult",
             "run.analysis": "#/components/schemas/RunAnalysis",
             "run.diagnosed": "#/components/schemas/RunDiagnosed",
@@ -1777,6 +1871,9 @@
           },
           {
             "$ref": "#/components/schemas/PlanProduced"
+          },
+          {
+            "$ref": "#/components/schemas/ResearchCompleted"
           },
           {
             "$ref": "#/components/schemas/LlmCall"

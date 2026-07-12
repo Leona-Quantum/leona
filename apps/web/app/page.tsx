@@ -1,8 +1,8 @@
-import { getSignInUrl, withAuth } from "@workos-inc/authkit-nextjs";
 import Link from "next/link";
+import { getMajoranaAuth, getMajoranaSignInUrl } from "../lib/auth";
 
 export default async function Home() {
-  const { user } = await withAuth();
+  const { user } = await getMajoranaAuth();
   if (user) {
     return (
       <main>
@@ -13,7 +13,7 @@ export default async function Home() {
       </main>
     );
   }
-  const signInUrl = await getSignInUrl();
+  const signInUrl = await getMajoranaSignInUrl();
   return (
     <main>
       <h1>Majorana</h1>

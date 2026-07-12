@@ -66,6 +66,17 @@ def test_every_event_type_round_trips():
         {"type": "stage.started", "stage": "plan"},
         {"type": "stage.finished", "stage": "plan", "ok": True, "duration_ms": 120},
         {
+            "type": "research.completed",
+            "query": "H2 ground state energy",
+            "sources": [
+                {
+                    "title": "Reference note",
+                    "url": "https://example.com/h2",
+                    "excerpt": "A bounded source excerpt.",
+                }
+            ],
+        },
+        {
             "type": "llm.call",
             "stage": "generate",
             "model": "example-model",

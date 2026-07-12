@@ -129,7 +129,22 @@ const VERIFIED: RunEvent[] = [
   },
   { type: "stage.finished", run_id: RUN, seq: 25, ts: ts(34), stage: "analyze", ok: true, duration_ms: 20 },
 
-  { type: "run.finished", run_id: RUN, seq: 26, ts: ts(35), status: "succeeded", verifier_decision: "pass", residual_risks: null },
+  {
+    type: "research.completed",
+    run_id: RUN,
+    seq: 26,
+    ts: ts(35),
+    query: "MaxCut on a 5-node ring",
+    sources: [
+      {
+        title: "Qiskit MaxCut tutorial",
+        url: "https://qiskit.qotlabs.org/learning/courses/quantum-approximate-optimization-algorithm",
+        excerpt: "QAOA is a variational method for approximate combinatorial optimization.",
+      },
+    ],
+    error: null,
+  },
+  { type: "run.finished", run_id: RUN, seq: 27, ts: ts(36), status: "succeeded", verifier_decision: "pass", residual_risks: null },
 ];
 
 const FAILED: RunEvent[] = [

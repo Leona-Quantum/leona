@@ -86,6 +86,11 @@ export interface ApproachView {
   rationale: string | null;
   problem: string | null;
 }
+export interface SourceView {
+  query: string;
+  sources: Schemas["ResearchCitation"][];
+  error: string | null;
+}
 // One row per verification method actually run: what was checked and the evidence for it.
 export interface VerificationRow {
   method: string;
@@ -96,6 +101,7 @@ export interface ResultView {
   verdict: { verdict: Verdict; detail: string } | null;
   answer: AnswerView | null;
   approach: ApproachView | null;
+  sources: SourceView | null;
   keyNumbers: KeyNumber[];
   verification: VerificationRow[];
   code: { filename: string; language: string; code: string } | null;
@@ -189,6 +195,7 @@ export function reduceRunEvents(events: readonly RunEvent[]): RunViewModel {
   let exportEv: Schemas["ExportClassified"] | null = null;
   let saved: Schemas["ArtifactSaved"] | null = null;
   let analysis: Schemas["RunAnalysis"] | null = null;
+  let research: Schemas["ResearchCompleted"] | null = null;
   let finishedRun: Schemas["RunFinished"] | null = null;
   let status: Schemas["RunStatus"] | null = null;
   const stageError = new Map<Stage, string>();
@@ -237,6 +244,9 @@ export function reduceRunEvents(events: readonly RunEvent[]): RunViewModel {
       case "run.analysis":
         analysis = ev;
         break;
+      case "research.completed":
+        research = ev;
+        break;
       case "run.error":
         if (ev.stage) stageError.set(ev.stage, ev.message);
         break;
@@ -283,6 +293,7 @@ export function reduceRunEvents(events: readonly RunEvent[]): RunViewModel {
     verdict: verdict ? { verdict, detail: buildVerdictDetail(verdict, primaryVerify(verifyResults, verdict)) } : null,
     answer: buildAnswer(analysis, finishedRun),
     approach: buildApproach(plan),
+    sources: buildSources(research),
     keyNumbers: buildKeyNumbers(plan, sandbox, verifyResults),
     verification: buildVerificationRows(verifyResults),
     code: finalizedCode
@@ -303,6 +314,7 @@ export function reduceRunEvents(events: readonly RunEvent[]): RunViewModel {
     result.verdict !== null ||
     result.answer !== null ||
     result.approach !== null ||
+    result.sources !== null ||
     result.verification.length > 0 ||
     result.code !== null ||
     result.baseline !== null ||
@@ -402,6 +414,15 @@ function buildApproach(plan: Schemas["Plan"] | null): ApproachView | null {
     algorithm,
     rationale: str(plan.algorithm_rationale),
     problem: str(plan.problem_summary),
+  };
+}
+
+function buildSources(research: Schemas["ResearchCompleted"] | null): SourceView | null {
+  if (!research) return null;
+  return {
+    query: research.query,
+    sources: research.sources ?? [],
+    error: research.error,
   };
 }
 
@@ -505,8 +526,8 @@ export function RunView({
   );
 }
 
-// Result panel — order is FIXED (spec §3): verdict → key numbers → code → baseline →
-// export badges → Library link. Sections render only when their data exists.
+// Result panel — order is FIXED (spec §3): verdict → Answer → Approach → Sources → key numbers
+// → Verification → code → baseline → export badges → Library link.
 function ResultPanel({ result }: { result: ResultView }): ReactNode {
   return (
     <div className="mj-result">
@@ -550,6 +571,36 @@ function ResultPanel({ result }: { result: ResultView }): ReactNode {
           {result.approach.rationale ? (
             <p className="mj-result-note">{result.approach.rationale}</p>
           ) : null}
+        </section>
+      ) : null}
+
+      {result.sources ? (
+        <section className="mj-result-section" id="mj-result-sources">
+          <h2 className="mj-result-h">Sources</h2>
+          <p className="mj-result-note">Research query — {result.sources.query}</p>
+          {result.sources.sources.length ? (
+            <ul className="mj-source-list">
+              {result.sources.sources.map((source) => (
+                <li key={source.url}>
+                  <a
+                    className="mj-result-link"
+                    href={source.url}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    {source.title}
+                  </a>
+                  <p className="mj-result-note">{source.excerpt}</p>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="mj-result-note">
+              {result.sources.error
+                ? `Research unavailable — ${result.sources.error}`
+                : "No usable public sources were found."}
+            </p>
+          )}
         </section>
       ) : null}
 
