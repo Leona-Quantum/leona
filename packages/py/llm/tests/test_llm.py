@@ -80,6 +80,10 @@ def test_plan_prompt_encodes_qiskit_default_and_ir_limits():
     assert "resource estimate" in PLAN_SYSTEM_PROMPT
     assert "control plane" in GENERATE_SYSTEM_PROMPT
     assert "OpenQASM 2" in GENERATE_SYSTEM_PROMPT
+    # oracle/search endianness directive: little-endian convention + loud self-check,
+    # so an endianness bug fails in the sandbox instead of returning a bit-reversed answer.
+    assert "little-endian" in GENERATE_SYSTEM_PROMPT
+    assert "bit-reversed" in GENERATE_SYSTEM_PROMPT
 
 
 def test_v2_prompt_deltas_present():
