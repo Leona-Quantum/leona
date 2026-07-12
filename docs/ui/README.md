@@ -19,16 +19,19 @@ Domain home for the product surface (`apps/web` + `packages/ts/ui`), per
 | Verdict banner (S4) | `packages/ts/ui/src/verdict-banner.tsx` |
 | Empty states | `packages/ts/ui/src/empty-state.tsx` |
 | Route fixtures (all component states, screenshot source) | `apps/web/app/dev/ui` (404s in prod) |
+| a11y gate (axe WCAG A/AA over rendered components) | `packages/ts/ui-visual` → CI job `ui-visual` |
 | Style gate (no raw hex outside tokens.css) | `scripts/check-raw-hex.mjs`, runs as `@majorana/ui` `lint` in CI |
 | Tailwind v4 theme mapping | `apps/web/app/globals.css` (`@theme inline` → token vars) |
 
 ## Current state (2026-07-11)
 
 Shell + nav + tokens + rail/banner/empty components shipped with route stubs for
-/run, /library, /account (first UI PR). Not built yet: real composer (S2), live
-pipeline view against the RunEvent stream (S3/S4 wiring), library list/detail
-(S5/S6), public pages (S7), landing (S1), account meters (S9), Playwright
-screenshot/axe CI, owner taste-check (pending on S3/S4).
+/run, /library, /account (first UI PR). S3/S4 pipeline view (RunView + pure
+`reduceRunEvents`) landed at `/run/[taskId]`; owner taste-check approved. The axe/WCAG
+slice of the visual CI shipped (`packages/ts/ui-visual`, CI job `ui-visual`) and caught two
+real component a11y bugs (now fixed). Not built yet: real composer (S2), library list/detail
+(S5/S6), public pages (S7), landing (S1), account meters (S9), the screenshot visual-diff
+slice (04 §5 step 2b).
 
 ## Quality bar (CI-checkable subset in 07 §5)
 

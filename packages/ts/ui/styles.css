@@ -84,7 +84,11 @@ a {
   font: inherit;
   padding: var(--sp-2) var(--sp-4);
   cursor: pointer;
-  color: var(--text-2);
+  /* Pending rows (the only state that doesn't override this) sit at text-1, not text-2:
+     text-2 on bg-0 is 3.19:1 — below WCAG AA (4.5:1) for the stage NAME. text-1 keeps
+     pending as the least-emphasized *readable* state; active states override to text-0
+     below. (a11y gate: packages/ts/ui-visual.) */
+  color: var(--text-1);
   transition: color 150ms ease-out, background-color 150ms ease-out;
 }
 .mj-rail-row:hover {

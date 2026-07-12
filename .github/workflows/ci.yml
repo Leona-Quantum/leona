@@ -24,6 +24,26 @@ jobs:
           pnpm --filter @majorana/contracts-gen gen
           git diff --exit-code packages/ts/contracts-gen
 
+  # UI a11y gate (roadmap 04 §5 step 2, slice a): render the real @majorana/ui
+  # components to static HTML from source and assert zero WCAG A/AA violations via
+  # @axe-core/playwright. Own job (needs a chromium download) so the required ts/py/db
+  # checks stay untouched; not a required check yet. The screenshot visual-diff slice
+  # lands separately.
+  ui-visual:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 26
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: install chromium
+        run: pnpm --filter @majorana/ui-visual exec playwright install --with-deps chromium
+      - name: axe (WCAG A/AA over rendered @majorana/ui stories)
+        run: pnpm --filter @majorana/ui-visual run a11y
+
   py:
     runs-on: ubuntu-latest
     steps:
