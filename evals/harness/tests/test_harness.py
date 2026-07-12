@@ -6,6 +6,7 @@ owner-gated number the nightly workflow produces."""
 import json
 import os
 import uuid
+from types import SimpleNamespace
 
 import pytest
 from majorana_contracts import Scope
@@ -25,6 +26,7 @@ from majorana_evals import (
     run_corpus,
     top_measured_bitstring,
 )
+from majorana_evals.runner import _last_json_object, _latest_sandbox_event
 
 requires_db = pytest.mark.skipif(
     "DATABASE_URL" not in os.environ, reason="harness self-test needs DATABASE_URL"
@@ -72,6 +74,38 @@ def test_top_measured_bitstring_picks_dominant_state():
     assert top_measured_bitstring('{"energy": -1.137}') is None
     assert top_measured_bitstring("not json at all") is None
     assert top_measured_bitstring("") is None
+
+
+def test_top_measured_bitstring_ignores_appended_qasm_epilogue():
+    stdout = """{\"counts\": {\"1100\": 973, \"0000\": 27}}
+__MAJORANA_FINAL_QASM_BEGIN__
+OPENQASM 2.0;
+include \"qelib1.inc\";
+qreg q[4];
+creg c[4];
+measure q[0] -> c[0];
+__MAJORANA_FINAL_QASM_END__"""
+    assert top_measured_bitstring(stdout) == "1100"
+
+
+def test_latest_sandbox_event_uses_repaired_terminal_attempt():
+    first = SimpleNamespace(type="sandbox.result", payload={"stdout": ""})
+    final = SimpleNamespace(
+        type="sandbox.result", payload={"stdout": '{"ground_state_energy_Ha": -1.1}'}
+    )
+    unrelated = SimpleNamespace(type="stage.started", payload={})
+    assert _latest_sandbox_event([first, unrelated, final]) is final
+
+
+def test_last_json_object_reads_pretty_result_before_qasm_epilogue():
+    stdout = """{
+  \"ground_state_energy_Ha\": -1.1373,
+  \"counts\": {\"00\": 10}
+}
+__MAJORANA_FINAL_QASM_BEGIN__
+OPENQASM 2.0;
+__MAJORANA_FINAL_QASM_END__"""
+    assert _last_json_object(stdout)["ground_state_energy_Ha"] == -1.1373
 
 
 def test_value_check_catches_endianness_bit_reversal():

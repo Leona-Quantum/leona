@@ -42,6 +42,9 @@ u3(pi/2,0,pi) q[0];
     )
     assert [operation.gate for operation in circuit.operations] == ["u", "u"]
     assert circuit.operations[0].params[0] == pytest.approx(1.5707963267948966)
+    assert circuit.operations[1].params[0] == pytest.approx(1.5707963267948966)
+    assert circuit.operations[1].params[1] == pytest.approx(0)
+    assert circuit.operations[1].params[2] == pytest.approx(3.141592653589793)
 
 
 def test_fingerprint_is_deterministic_and_collision_free():

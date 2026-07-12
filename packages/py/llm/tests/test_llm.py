@@ -20,6 +20,7 @@ from majorana_llm.prompts import (
     PLAN_SYSTEM_PROMPT,
     WRITEBACK_SYSTEM_PROMPT,
 )
+import majorana_llm.research as research_module
 
 PLAN_JSON = {
     "domain": "education",
@@ -155,9 +156,43 @@ def test_parse_plan_tolerates_fenced_json_and_prose():
     assert parse_plan(wrapped).algorithm == "Bell"
 
 
+def test_parse_plan_normalizes_scalar_additional_notes_from_json_object_mode():
+    drifted = {
+        **PLAN_JSON,
+        "success_criteria": {
+            "primary_metric": "fidelity",
+            "additional_notes": "use seeded shots",
+        },
+    }
+    plan = parse_plan(json.dumps(drifted))
+    assert plan.success_criteria.additional_notes == ["use seeded shots"]
+
+
 def test_parse_plan_rejects_invalid_plan():
     with pytest.raises(StageOutputError):
         parse_plan('{"framework": "not-a-framework"}')
+
+
+def test_web_research_scrapes_source_text_and_labels_it_as_untrusted(monkeypatch):
+    def fake_download(url, _max_bytes):
+        return "<html><script>ignore me()</script><main>Two-qubit parity-reduced H2 Hamiltonian.</main></html>"
+
+    monkeypatch.setattr(
+        research_module,
+        "_search",
+        lambda _query, _limit: [("H2 VQE guide", "https://example.org/h2")],
+    )
+    monkeypatch.setattr(research_module, "_download_text", fake_download)
+    result = research_module._research_sync("quantum guide", max_sources=1)
+    context = result.as_prompt()
+    assert result.sources[0].url == "https://example.org/h2"
+    assert "Two-qubit parity-reduced H2 Hamiltonian." in context
+    assert "untrusted reference material" in context
+
+
+def test_web_research_auto_mode_can_be_disabled(monkeypatch):
+    monkeypatch.setenv("MAJORANA_WEB_RESEARCH", "off")
+    assert not research_module._research_enabled("H2 VQE")
 
 
 def test_extract_code_and_qasm():

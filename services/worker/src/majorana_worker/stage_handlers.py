@@ -63,6 +63,7 @@ from majorana_llm import (
     extract_qasm_with_provenance,
     model_for,
     parse_plan,
+    research_for_prompt,
 )
 from majorana_pipeline import RunContext, StageHandler, StageOutcome
 from majorana_sandbox import ExecutionSpec, GuardRejection, QubitCeilingExceeded, Sandbox
@@ -165,12 +166,18 @@ def build_stage_handlers(
 
     async def plan_stage(ctx: RunContext) -> StageOutcome:
         model = model_for(Stage.PLAN)
+        research = await research_for_prompt(ctx.task_prompt)
+        research_context = research.as_prompt() if research else ""
+        ctx.state["research_context"] = research_context
+        user = ctx.task_prompt
+        if research_context:
+            user = f"{ctx.task_prompt}\n\n{research_context}"
         t0 = time.monotonic()
         resp = await llm.complete(
             LLMRequest(
                 model=model,
                 system=STAGE_PROMPTS["plan"],
-                user=ctx.task_prompt,
+                user=user,
                 # Structured decoding pins the exact Plan field names/enums —
                 # prompt-only schema injection is proven unreliable (plan_invalid).
                 response_schema=Plan.model_json_schema(),
@@ -190,7 +197,10 @@ def build_stage_handlers(
         plan: Plan = ctx.state["plan"]
         model = model_for(Stage.GENERATE)
         feedback = ctx.state.get("repair_feedback")
+        research_context = ctx.state.get("research_context", "")
         user = f"Plan:\n{plan.model_dump_json(indent=2)}\n\nGenerate the code."
+        if research_context:
+            user = f"{research_context}\n\n{user}"
         if feedback:
             user += (
                 "\n\nThe previous attempt failed a deterministic screen or verification check. "
@@ -424,6 +434,15 @@ def build_stage_handlers(
             {"lint_ok": lint_ok, "typecheck_ok": typecheck_ok, "diagnostics": diagnostics},
         )
         if not lint_ok or not typecheck_ok:
+            if (
+                circuit_expected
+                and Framework(plan.framework) is Framework.QISKIT
+                and not final_binding
+            ):
+                diagnostics.append(
+                    "repair invariant: preserve or add a module-level FINAL_CIRCUIT = <final bound "
+                    "circuit> assignment immediately before printing the result JSON"
+                )
             message = "; ".join(diagnostics) or "generated code failed the screen"
             return StageOutcome(
                 ok=False,

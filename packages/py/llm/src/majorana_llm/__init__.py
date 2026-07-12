@@ -33,6 +33,7 @@ from majorana_llm.prompts import (
     STAGE_PROMPTS,
     WRITEBACK_SYSTEM_PROMPT,
 )
+from majorana_llm.research import ResearchResult, ResearchSource, research_for_prompt
 
 __all__ = [
     "LLMClient",
@@ -60,4 +61,7 @@ __all__ = [
     "WRITEBACK_SYSTEM_PROMPT",
     "FRAMEWORK_DIRECTIVE",
     "STAGE_PROMPTS",
+    "ResearchResult",
+    "ResearchSource",
+    "research_for_prompt",
 ]

@@ -10,6 +10,7 @@ which is exactly what the ≥60% calibration target in 08-phases.md is about."""
 from __future__ import annotations
 
 import json
+import re
 
 from majorana_contracts import Scope
 from majorana_contracts.enums import RunMode
@@ -39,27 +40,49 @@ def _looks_like_counts(value: object) -> bool:
     )
 
 
+def _last_json_object(stdout: str) -> dict | None:
+    """Recover the terminal JSON result even when it was pretty-printed."""
+    decoder = json.JSONDecoder()
+    for match in re.finditer(r"\{", stdout):
+        try:
+            candidate, _ = decoder.raw_decode(stdout[match.start() :])
+        except json.JSONDecodeError:
+            continue
+        if isinstance(candidate, dict):
+            return candidate
+    return None
+
+
 def top_measured_bitstring(stdout: str) -> str | None:
     """The most-probable measured bitstring from a run's stdout, or None if no
-    counts dict is present. The generated program prints one JSON object on its last
-    stdout line; measurement counts live under one of its keys as {bitstring: count}.
-    Register-separator spaces are stripped so the result compares to a plain target.
-    Ties resolve deterministically to the lexicographically smallest bitstring."""
-    line = next((ln for ln in reversed(stdout.splitlines()) if ln.strip()), None)
-    if line is None:
-        return None
-    try:
-        result = json.loads(line)
-    except (json.JSONDecodeError, ValueError):
-        return None
-    if not isinstance(result, dict):
-        return None
-    counts = next((v for v in result.values() if _looks_like_counts(v)), None)
+    counts dict is present. The generated program prints one JSON object, while
+    the sandbox may append a non-JSON QASM epilogue afterwards; scan backward for
+    the last JSON object that actually carries measurement counts. Register-separator
+    spaces are stripped so the result compares to a plain target. Ties resolve
+    deterministically to the lexicographically smallest bitstring."""
+    counts = None
+    for line in reversed(stdout.splitlines()):
+        if not line.strip():
+            continue
+        try:
+            result = json.loads(line)
+        except (json.JSONDecodeError, ValueError):
+            continue
+        if not isinstance(result, dict):
+            continue
+        counts = next((v for v in result.values() if _looks_like_counts(v)), None)
+        if counts is not None:
+            break
     if counts is None:
         return None
     # Max count, tie-broken by bitstring for determinism.
     top = max(counts.items(), key=lambda kv: (kv[1], [-ord(c) for c in kv[0]]))[0]
     return top.replace(" ", "")
+
+
+def _latest_sandbox_event(events):
+    """Return the terminal sandbox attempt from a retrying pipeline."""
+    return next((event for event in reversed(events) if event.type == "sandbox.result"), None)
 
 
 async def run_case(
@@ -109,7 +132,11 @@ async def run_case(
     verifier = run.verifier_decision
     export_event = next((e for e in events if e.type == "export.classified"), None)
     error_event = next((e for e in events if e.type == "run.error"), None)
-    sandbox_event = next((e for e in events if e.type == "sandbox.result"), None)
+    # A repair loop can emit several sandbox results. Score the terminal/latest
+    # attempt; the first attempt may have failed before the repaired program printed
+    # its promised result (bench-14 exposed this by omitting a key that the final
+    # attempt did print).
+    sandbox_event = _latest_sandbox_event(events)
     export_status = export_event.payload.get("status") if export_event else None
     saved = "artifact.saved" in types
     qasm_emission = sandbox_event.payload.get("qasm_emission", {}) if sandbox_event else {}
@@ -137,6 +164,17 @@ async def run_case(
             )
         elif got != want:
             reasons.append(f"top measured bitstring {got!r} != expected {want!r}")
+    if expect.expected_values:
+        result_json = _last_json_object(stdout)
+        for key, want in expect.expected_values.items():
+            actual = result_json.get(key) if result_json else None
+            if not isinstance(actual, int | float) or isinstance(actual, bool):
+                reasons.append(f"expected numeric result {key!r} was not found")
+            elif abs(float(actual) - want) > expect.expected_value_tolerance:
+                reasons.append(
+                    f"result {key!r} {actual!r} is outside expected {want!r} ± "
+                    f"{expect.expected_value_tolerance}"
+                )
     if verifier != expect.verifier_decision.value:
         reasons.append(
             f"verifier_decision {verifier!r} != expected {expect.verifier_decision.value!r}"

@@ -91,6 +91,7 @@ def _safe_eval_numeric(expr: str) -> float | str:
         ast.UAdd,
         ast.Constant,
         ast.Name,
+        ast.Load,
     )
     for node in ast.walk(tree):
         if not isinstance(node, allowed_nodes):
