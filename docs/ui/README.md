@@ -26,18 +26,23 @@ Domain home for the product surface (`apps/web` + `packages/ts/ui`), per
 | Style gate (no raw hex outside tokens.css) | `scripts/check-raw-hex.mjs`, runs as `@majorana/ui` `lint` in CI |
 | Tailwind v4 theme mapping | `apps/web/app/globals.css` (`@theme inline` → token vars) |
 
-## Current state (2026-07-13)
+## Current state (2026-07-14)
 
-The usable workspace slice is now wired: `/run` has a bottom composer, example prompts,
-mode selection, and a persistent collapsible sidebar with recent chats; `/run/[taskId]`
-keeps the result scrollable above the composer and replays the live SSE event log; and
-`/library` is the Quepo Studio list with search/filter controls plus artifact detail tabs,
-copyable source code, export state, run provenance, and the Library → Run context handoff.
-The UI uses replayable local fixtures when the control plane is not configured, while the
-artifact BFF routes read workspace-scoped artifacts and current versions from the API.
-The public landing page and local fail-closed auth path are also present. The remaining
-work is primarily real persistence/write flows, account meters, visual-diff automation,
-and replacing seeded fixtures with the connected repository in deployed environments.
+The usable authenticated workspace slice is now wired: `/run` has a bottom composer, example
+prompts, mode selection, and a persistent collapsible sidebar with recent API-backed runs;
+`/run/[taskId]` keeps the result scrollable above the composer and replays the live SSE event
+log; and `/library` is the Quepo Studio list with search/filter controls plus artifact detail
+tabs, copyable source code, export state, run provenance, and the Library → Run context handoff.
+Account now reads identity, workspace, artifact/run counts, and members from the API, with an
+owner/admin path to attach an already-provisioned WorkOS user to the workspace. New API users
+receive a workspace-scoped Bell-state starter artifact. Replay fixtures are restricted to the
+explicit `/demo` route; authenticated pages use the API and retain only a small local fallback
+for a just-completed run while remote data settles.
+
+The public landing page and local fail-closed auth path are also present. Remaining work is a
+hosted verified-artifact acceptance run, fuller remote chat/history persistence, account meters
+and workspace selection, visual-diff automation, and the owner-controlled `dev` → Production
+promotion.
 
 ## Quality bar (CI-checkable subset in 07 §5)
 

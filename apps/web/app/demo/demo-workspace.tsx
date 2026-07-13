@@ -27,7 +27,7 @@ export function DemoWorkspace() {
           <a className={view === "library" ? "is-active" : ""} href="/demo?view=library" role="tab" aria-selected={view === "library"}>Quepo Studio</a>
         </div>
       </div>
-      {view === "library" ? <LibraryStudio /> : <RunWorkspace demoMode />}
+      {view === "library" ? <LibraryStudio demoMode /> : <RunWorkspace demoMode />}
     </Shell>
   );
 }

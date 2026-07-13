@@ -87,7 +87,11 @@ async def get_scope(
     workspace_id: Annotated[uuid.UUID | None, Header(alias="X-Workspace-Id")] = None,
 ) -> Scope:
     user, personal_ws = identity
-    target_ws = workspace_id or personal_ws.id
+    target_ws = workspace_id or await system.default_workspace_id(
+        session,
+        user_id=user.id,
+        personal_workspace_id=personal_ws.id,
+    )
     membership = await system.find_membership(session, workspace_id=target_ws, user_id=user.id)
     if membership is None:
         raise HTTPException(404, "workspace not found")

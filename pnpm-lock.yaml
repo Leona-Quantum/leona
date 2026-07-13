@@ -14,6 +14,9 @@ importers:
 
   apps/web:
     dependencies:
+      '@majorana/contracts-gen':
+        specifier: workspace:*
+        version: link:../../packages/ts/contracts-gen
       '@majorana/ui':
         specifier: workspace:*
         version: link:../../packages/ts/ui

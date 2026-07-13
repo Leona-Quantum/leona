@@ -51,7 +51,16 @@ from .events import (
     VerificationResult,
     run_event_adapter,
 )
-from .models import Artifact, ArtifactVersion, ResourceMetrics, Run, VerificationRecord, Workspace
+from .models import (
+    Artifact,
+    ArtifactVersion,
+    ResourceMetrics,
+    Run,
+    VerificationRecord,
+    Workspace,
+    WorkspaceMember,
+    WorkspaceOverview,
+)
 from .plan import (
     ArtifactContract,
     BaselinePlan,
@@ -123,6 +132,8 @@ __all__ = [
     "VerifierDecision",
     "Visibility",
     "Workspace",
+    "WorkspaceMember",
+    "WorkspaceOverview",
     "WorkspaceKind",
     "run_event_adapter",
 ]

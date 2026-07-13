@@ -1,38 +1,31 @@
-// S9 Account — stub: identity + sign-out. Plan/usage meters land with the S9 build.
 import { getMajoranaAuth, signOutMajorana } from "../../../lib/auth";
+import { AccountSettings } from "./account-settings";
 
 export const metadata = { title: "Account — Majorana" };
 
 export default async function Account() {
   const { user } = await getMajoranaAuth({ ensureSignedIn: true });
   return (
-    <section>
-      <h1 style={{ fontSize: "var(--fs-20)", fontWeight: 600 }}>Account</h1>
-      <p>
-        Signed in as <span style={{ fontFamily: "var(--font-mono)" }}>{user.email}</span>
-      </p>
-      <form
-        action={async () => {
-          "use server";
-          await signOutMajorana();
-        }}
-      >
-        <button
-          type="submit"
-          style={{
-            background: "var(--bg-2)",
-            border: "1px solid var(--border-0)",
-            borderRadius: "var(--radius-control)",
-            color: "var(--text-0)",
-            font: "inherit",
-            fontWeight: 500,
-            padding: "var(--sp-2) var(--sp-4)",
-            cursor: "pointer",
-          }}
-        >
-          Sign out
-        </button>
-      </form>
-    </section>
+    <div className="mj-library-page">
+      <div className="mj-library-scroll">
+        <div className="mj-workspace-content">
+          <header className="mj-page-header">
+            <div>
+              <h1 className="mj-page-title">Settings</h1>
+              <p className="mj-page-lede">Identity, workspace access, and the data held for your Majorana workspace.</p>
+            </div>
+            <form
+              action={async () => {
+                "use server";
+                await signOutMajorana();
+              }}
+            >
+              <button className="mj-secondary-button" type="submit">Sign out</button>
+            </form>
+          </header>
+          <AccountSettings initialEmail={user.email} />
+        </div>
+      </div>
+    </div>
   );
 }

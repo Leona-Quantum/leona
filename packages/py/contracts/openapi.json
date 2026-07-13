@@ -2777,6 +2777,81 @@
         ],
         "title": "WorkspaceKind",
         "type": "string"
+      },
+      "WorkspaceMember": {
+        "additionalProperties": false,
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "display_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Display Name"
+          },
+          "email": {
+            "title": "Email",
+            "type": "string"
+          },
+          "role": {
+            "$ref": "#/components/schemas/Role"
+          },
+          "user_id": {
+            "format": "uuid",
+            "title": "User Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "user_id",
+          "email",
+          "role",
+          "created_at"
+        ],
+        "title": "WorkspaceMember",
+        "type": "object"
+      },
+      "WorkspaceOverview": {
+        "additionalProperties": false,
+        "properties": {
+          "artifact_count": {
+            "minimum": 0,
+            "title": "Artifact Count",
+            "type": "integer"
+          },
+          "members": {
+            "items": {
+              "$ref": "#/components/schemas/WorkspaceMember"
+            },
+            "title": "Members",
+            "type": "array"
+          },
+          "run_count": {
+            "minimum": 0,
+            "title": "Run Count",
+            "type": "integer"
+          },
+          "workspace": {
+            "$ref": "#/components/schemas/Workspace"
+          }
+        },
+        "required": [
+          "workspace",
+          "members",
+          "artifact_count",
+          "run_count"
+        ],
+        "title": "WorkspaceOverview",
+        "type": "object"
       }
     }
   },

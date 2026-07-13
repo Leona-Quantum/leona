@@ -9,6 +9,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@majorana/contracts-gen": "workspace:*",
     "@majorana/ui": "workspace:*",
     "@sentry/nextjs": "^10.64.0",
     "@vercel/otel": "^2.1.3",

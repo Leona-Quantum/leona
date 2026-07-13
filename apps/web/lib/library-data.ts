@@ -22,6 +22,12 @@ export interface LibraryArtifact {
 
 const STORAGE_KEY = "majorana.library.v1";
 const LIBRARY_EVENT = "majorana:library";
+const DEMO_ARTIFACT_IDS = new Set([
+  "a7c1b0d2-0000-4000-8000-0000000000aa",
+  "a7c1b0d2-0000-4000-8000-0000000000bb",
+  "a7c1b0d2-0000-4000-8000-0000000000cc",
+  "a7c1b0d2-0000-4000-8000-0000000000dd",
+]);
 
 const DEMO_CODE = `from qiskit import QuantumCircuit
 from qiskit_aer import AerSimulator
@@ -131,17 +137,22 @@ function persist(artifacts: LibraryArtifact[]): LibraryArtifact[] {
   return artifacts;
 }
 
-export function loadLibraryArtifacts(): LibraryArtifact[] {
-  if (!canUseStorage()) return DEMO_ARTIFACTS;
+export function loadLibraryArtifacts({ includeDemo = false }: { includeDemo?: boolean } = {}): LibraryArtifact[] {
+  if (!canUseStorage()) return includeDemo ? DEMO_ARTIFACTS : [];
   try {
     const raw = window.localStorage.getItem(STORAGE_KEY);
-    if (!raw) return persist(DEMO_ARTIFACTS);
+    if (!raw) return includeDemo ? DEMO_ARTIFACTS : [];
     const parsed = JSON.parse(raw) as unknown;
-    if (!Array.isArray(parsed) || parsed.length === 0) return persist(DEMO_ARTIFACTS);
-    const valid = parsed.filter(isLibraryArtifact).sort(sortNewestFirst);
-    return valid.length ? valid : persist(DEMO_ARTIFACTS);
+    if (!Array.isArray(parsed)) return includeDemo ? DEMO_ARTIFACTS : [];
+    const valid = parsed
+      .filter(isLibraryArtifact)
+      .filter((artifact) => includeDemo || !isDemoArtifact(artifact))
+      .sort(sortNewestFirst);
+    if (!includeDemo) return valid;
+    const local = valid.filter((artifact) => !isDemoArtifact(artifact));
+    return [...DEMO_ARTIFACTS, ...local].sort(sortNewestFirst);
   } catch {
-    return DEMO_ARTIFACTS;
+    return includeDemo ? DEMO_ARTIFACTS : [];
   }
 }
 
@@ -221,4 +232,8 @@ function isLibraryArtifact(value: unknown): value is LibraryArtifact {
   if (!value || typeof value !== "object") return false;
   const candidate = value as Partial<LibraryArtifact>;
   return typeof candidate.id === "string" && typeof candidate.title === "string" && typeof candidate.updatedAt === "string";
+}
+
+function isDemoArtifact(artifact: LibraryArtifact): boolean {
+  return artifact.source === "demo" || DEMO_ARTIFACT_IDS.has(artifact.id);
 }
