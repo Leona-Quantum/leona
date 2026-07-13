@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from typing import Literal
 
 from majorana_contracts.plan import Plan
+from majorana_llm.models import AnalysisOutput
 from pydantic import ValidationError
 
 _FENCE_RE = re.compile(r"```(?:json|python)?\s*(.*?)```", re.DOTALL)
@@ -81,6 +82,15 @@ def parse_plan(text: str) -> Plan:
         return Plan.model_validate(payload)
     except (ValidationError, json.JSONDecodeError, TypeError) as exc:
         raise StageOutputError(f"planning output is not a valid Plan: {exc}") from exc
+
+
+def parse_analysis(text: str) -> AnalysisOutput:
+    """Parse the internal analysis record without exposing its JSON framing."""
+    raw = _extract_json(text)
+    try:
+        return AnalysisOutput.model_validate(json.loads(raw))
+    except (ValidationError, json.JSONDecodeError, TypeError) as exc:
+        raise StageOutputError(f"analysis output is not valid narrative data: {exc}") from exc
 
 
 def extract_code(text: str) -> str:

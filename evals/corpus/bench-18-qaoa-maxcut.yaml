@@ -1,6 +1,6 @@
 id: bench-18
 category: "E — QAOA MaxCut"
-prompt: "Solve MaxCut on a triangle graph with QAOA (p=1) and compare against the brute-force optimum. Return the cut value and the classical baseline."
+prompt: "Solve MaxCut on a triangle graph with QAOA (p=1)."
 framework: qiskit
 expect:
   verifier_decision: pass

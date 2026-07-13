@@ -1,7 +1,4 @@
-"""Harness self-test (db-gated): proves the harness drives the pipeline and scores
-a case correctly, using a prompt-aware FakeLLM + LocalSubprocessSandbox so no paid
-provider is needed. The real baseline run (real providers, full corpus) is the
-owner-gated number the nightly workflow produces."""
+"""Harness tests for scoring helpers plus an explicitly gated live-provider run."""
 
 import json
 import os
@@ -11,8 +8,7 @@ from types import SimpleNamespace
 import pytest
 from majorana_contracts import Scope
 from majorana_contracts.enums import Role
-from majorana_llm import FakeLLM, LLMRequest
-from majorana_llm.models import model_for
+from majorana_llm import default_llm
 from majorana_sandbox import LocalSubprocessSandbox
 
 from majorana_api.db import engine_from_env, session_factory
@@ -32,36 +28,22 @@ requires_db = pytest.mark.skipif(
     "DATABASE_URL" not in os.environ, reason="harness self-test needs DATABASE_URL"
 )
 
-_PLAN = {
-    "domain": "education",
-    "framework": "qiskit",
-    "algorithm": "Bell",
-    "problem_summary": "Prepare a Bell state and measure both qubits",
-    "algorithm_rationale": "Hadamard then CX entangles the two qubits",
-    "parameters": {},
-    "qubits_estimate": 2,
-    "expected_runtime_sec": 5,
-    "success_criteria": {"primary_metric": "fidelity"},
-    "expected_output_keys": ["counts"],
-}
 
-_CODE = """```python
-import json
-from qiskit import QuantumCircuit
-
-FINAL_CIRCUIT = QuantumCircuit(2)
-FINAL_CIRCUIT.h(0)
-FINAL_CIRCUIT.cx(0, 1)
-FINAL_CIRCUIT.measure_all()
-print(json.dumps({"counts": {"00": 512, "11": 512}}))
-```"""
+def _live_provider_ready() -> bool:
+    provider = os.environ.get("MAJORANA_LLM_PROVIDER", "").strip().lower()
+    if provider == "anthropic":
+        return bool(os.environ.get("ANTHROPIC_API_KEY"))
+    if provider == "openai":
+        return bool(os.environ.get("OPENAI_API_KEY") and os.environ.get("DEEPSEEK_API_KEY"))
+    return bool(os.environ.get("ANTHROPIC_API_KEY")) or bool(
+        os.environ.get("OPENAI_API_KEY") and os.environ.get("DEEPSEEK_API_KEY")
+    )
 
 
-def _fake() -> FakeLLM:
-    def plan(_req: LLMRequest) -> str:
-        return json.dumps(_PLAN)
-
-    return FakeLLM({model_for("plan"): plan, model_for("generate"): _CODE})
+requires_live_llm = pytest.mark.skipif(
+    os.environ.get("MAJORANA_RUN_LIVE_LLM") != "1" or not _live_provider_ready(),
+    reason="live provider test requires MAJORANA_RUN_LIVE_LLM=1 and configured credentials",
+)
 
 
 def test_top_measured_bitstring_picks_dominant_state():
@@ -141,6 +123,7 @@ def test_corpus_loads_from_yaml():
 
 
 @requires_db
+@requires_live_llm
 async def test_harness_scores_a_passing_bell_case():
     engine = engine_from_env()
     factory = session_factory(engine)
@@ -161,7 +144,7 @@ async def test_harness_scores_a_passing_bell_case():
             expect=Expect(output_keys=["counts"]),
         )
         result = await run_case(
-            case, factory=factory, scope=scope, llm=_fake(), sandbox=LocalSubprocessSandbox()
+            case, factory=factory, scope=scope, llm=default_llm(), sandbox=LocalSubprocessSandbox()
         )
         assert result.passed, result.reasons
         assert result.verifier_decision == "pass"
@@ -171,7 +154,11 @@ async def test_harness_scores_a_passing_bell_case():
         assert result.evidence.qasm_epilogue_applied is True
 
         report = await run_corpus(
-            [case], factory=factory, scope=scope, llm=_fake(), sandbox=LocalSubprocessSandbox()
+            [case],
+            factory=factory,
+            scope=scope,
+            llm=default_llm(),
+            sandbox=LocalSubprocessSandbox(),
         )
         assert report.pass_rate == 1.0
         # report serializes to the report.json the nightly workflow writes

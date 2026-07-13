@@ -1,13 +1,13 @@
 "use client";
 
-// Pipeline view (S3 + S4) — the run page's body. Spec: plans/roadmap/04-ui-specifications.md
-// §2 (rail) + §3 (result-panel order) and plans/rebuild/07-ui-product.md §6 (replay rule).
+// Pipeline view (S3 + S4). The event log still contains the detailed internal
+// choreography, but the customer-facing rail deliberately projects it to four
+// stages: Plan, Generate, Verify, and Analysis.
 //
-// `reduceRunEvents` is a PURE fold of the typed RunEvent log into the view model the
-// presentational components consume. It reads no wall clock and holds no state: the same
-// event array always yields the same view, so replaying a stored run (or a mid-run prefix,
-// on refresh) renders byte-identical DOM. That is the S3 acceptance test — keep this pure.
-import type { ReactNode } from "react";
+// `reduceRunEvents` is a PURE fold of the typed RunEvent log. It reads no wall
+// clock and holds no state, so replaying a stored run or a mid-run prefix gives
+// the same view every time.
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import type { components } from "@majorana/contracts-gen";
 import { StageRail, type RailStage } from "./stage-rail";
 import { VerdictBanner, type Verdict } from "./verdict-banner";
@@ -16,10 +16,35 @@ type Schemas = components["schemas"];
 export type RunEvent = Schemas["RunEvent"];
 type Stage = Schemas["Stage"];
 type VerificationMethod = Schemas["VerificationMethod"];
+type RailStageId = "plan" | "generate" | "verify" | "analyze";
 
-// Execution order + display labels. Legacy simulate/export values remain readable in
-// stored events but are intentionally absent from new-run choreography.
-const STAGE_ORDER: readonly Stage[] = [
+const RAIL_STAGE_ORDER: readonly RailStageId[] = ["plan", "generate", "verify", "analyze"];
+const RAIL_STAGE_LABEL: Record<RailStageId, string> = {
+  plan: "Plan",
+  generate: "Generate",
+  verify: "Verify",
+  analyze: "Analysis",
+};
+
+// Internal stages remain in the event contract because they are useful evidence;
+// this map controls only what the user sees on the rail.
+const RAIL_GROUP: Record<Stage, RailStageId> = {
+  plan: "plan",
+  generate: "generate",
+  screen: "generate",
+  resource_estimate: "generate",
+  verify: "verify",
+  compile: "verify",
+  compiled_resource_estimate: "verify",
+  finalize: "verify",
+  final_execute: "verify",
+  baseline: "analyze",
+  analyze: "analyze",
+  save: "analyze",
+  simulate: "verify",
+  export: "verify",
+};
+const INTERNAL_STAGE_ORDER: readonly Stage[] = [
   "plan",
   "generate",
   "screen",
@@ -32,8 +57,8 @@ const STAGE_ORDER: readonly Stage[] = [
   "baseline",
   "analyze",
   "save",
-] as const;
-const STAGE_LABEL: Record<Stage, string> = {
+];
+const INTERNAL_STAGE_LABEL: Record<Stage, string> = {
   plan: "Plan",
   generate: "Generate",
   screen: "Screen",
@@ -46,11 +71,24 @@ const STAGE_LABEL: Record<Stage, string> = {
   baseline: "Baseline",
   analyze: "Analysis",
   save: "Save",
-  simulate: "Simulate (legacy)",
-  export: "Export (legacy)",
+  simulate: "Simulate",
+  export: "Export",
+};
+const INTERNAL_STAGE_GROUPS: Record<RailStageId, readonly Stage[]> = {
+  plan: ["plan"],
+  generate: ["generate", "screen", "resource_estimate"],
+  verify: [
+    "verify",
+    "compile",
+    "compiled_resource_estimate",
+    "finalize",
+    "final_execute",
+    "simulate",
+    "export",
+  ],
+  analyze: ["baseline", "analyze", "save"],
 };
 
-// Human method names — P1: name what was checked, never "IR".
 const METHOD_LABEL: Record<VerificationMethod, string> = {
   exact: "exact",
   statistical: "statistical",
@@ -59,8 +97,6 @@ const METHOD_LABEL: Record<VerificationMethod, string> = {
   return_contract: "return-contract",
   qasm_parse: "QASM-parse",
 };
-// Methods that check numbers, not just structure — a pass on only the structural ones is
-// "Verified with caveats", not fully "Verified".
 const NUMERIC_METHODS: ReadonlySet<VerificationMethod> = new Set<VerificationMethod>([
   "exact",
   "statistical",
@@ -72,39 +108,72 @@ export interface KeyNumber {
   label: string;
   value: string;
 }
-// The natural-language answer (run.analysis) — the result stated in words, not just a verdict
-// chip. This is what a user actually asked for; it leads the panel (P1: answer, then evidence).
+export interface ModelActivity {
+  stage: Stage;
+  kind: "reasoning" | "output";
+  text: string;
+}
+export interface LiveOutput {
+  thoughts: string | null;
+  narrative: string | null;
+}
 export interface AnswerView {
   summary: string;
   interpretation: string;
   comparison: KeyNumber[];
   residualRisks: string | null;
 }
-// Method + why — the plan's scientific choice, restated for the reader (never "IR"/schema).
-export interface ApproachView {
-  algorithm: string;
-  rationale: string | null;
-  problem: string | null;
+export interface VerificationRow {
+  method: string;
+  result: Schemas["VerificationResult"]["result"];
+  detail: string;
+}
+export interface CodeView {
+  filename: string;
+  language: string;
+  code: string;
+}
+export interface CodeQualityView {
+  checks: KeyNumber[];
+  diagnostics: string[];
+}
+export interface ResourceEstimateView {
+  phase: string;
+  rows: KeyNumber[];
+  notes: string[];
+}
+export interface CompilationView {
+  accepted: boolean;
+  mode: string;
+  reason: string | null;
+  before: KeyNumber[];
+  after: KeyNumber[];
+}
+export interface SimulationView {
+  ok: boolean;
+  duration: string;
+  exitCode: number;
+  memory: string | null;
+  qasmAvailable: boolean;
+  rows: KeyNumber[];
 }
 export interface SourceView {
   query: string;
   sources: Schemas["ResearchCitation"][];
   error: string | null;
 }
-// One row per verification method actually run: what was checked and the evidence for it.
-export interface VerificationRow {
-  method: string;
-  result: Schemas["VerificationResult"]["result"];
-  detail: string;
-}
 export interface ResultView {
   verdict: { verdict: Verdict; detail: string } | null;
   answer: AnswerView | null;
-  approach: ApproachView | null;
+  generatedCode: CodeView | null;
+  codeQuality: CodeQualityView | null;
+  resourceEstimates: ResourceEstimateView[];
+  verification: VerificationRow[];
+  compilation: CompilationView | null;
+  finalCode: CodeView | null;
+  finalSimulation: SimulationView | null;
   sources: SourceView | null;
   keyNumbers: KeyNumber[];
-  verification: VerificationRow[];
-  code: { filename: string; language: string; code: string } | null;
   baseline: { title: string; rows: KeyNumber[]; notApplicable: string | null } | null;
   export: { label: string; tone: "ok" | "warn" | "err" | "neutral"; qasmAvailable: boolean } | null;
   libraryHref: string | null;
@@ -112,85 +181,200 @@ export interface ResultView {
 export interface RunViewModel {
   stages: RailStage[];
   result: ResultView;
+  modelActivity: ModelActivity[];
+  liveOutput: LiveOutput;
   status: Schemas["RunStatus"] | null;
-  /** True once any result-panel content exists (verdict/code/baseline/export/save). */
+  /** True once evidence or a terminal result exists. */
   hasResult: boolean;
 }
 
-// ---- formatting (deterministic; no locale, no wall clock) --------------------------------
+const MODEL_ACTIVITY_MAX_CHARS = 12_000;
+const PROSE_TYPE_SPEED_MS = 12;
+const THOUGHT_TYPE_SPEED_MS = 5;
+
+/**
+ * Reveal live natural-language output a few characters at a time. This is
+ * intentionally presentation-only: the event reducer remains a pure fold and
+ * replay still receives the same complete target strings.
+ */
+function useTypedText(target: string, enabled: boolean, speedMs: number): string {
+  const [visible, setVisible] = useState(() => (enabled ? "" : target));
+  const visibleRef = useRef(visible);
+
+  useEffect(() => {
+    if (!enabled) {
+      visibleRef.current = target;
+      setVisible(target);
+      return;
+    }
+    if (!target) {
+      visibleRef.current = "";
+      setVisible("");
+      return;
+    }
+    if (
+      typeof window !== "undefined" &&
+      typeof window.matchMedia === "function" &&
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches
+    ) {
+      visibleRef.current = target;
+      setVisible(target);
+      return;
+    }
+
+    let index = target.startsWith(visibleRef.current) ? visibleRef.current.length : 0;
+    if (index === 0 && visibleRef.current !== "") {
+      visibleRef.current = "";
+      setVisible("");
+    }
+
+    // Keep very long model traces moving without making the user wait minutes
+    // for a verbose reasoning stream to catch up.
+    const charsPerTick = Math.max(1, Math.ceil(target.length / 2400));
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let cancelled = false;
+
+    const advance = () => {
+      if (cancelled) return;
+      index = Math.min(target.length, index + charsPerTick);
+      const next = target.slice(0, index);
+      visibleRef.current = next;
+      setVisible(next);
+      if (index < target.length) timer = setTimeout(advance, speedMs);
+    };
+
+    if (index < target.length) timer = setTimeout(advance, speedMs);
+    return () => {
+      cancelled = true;
+      if (timer) clearTimeout(timer);
+    };
+  }, [enabled, speedMs, target]);
+
+  return visible;
+}
+
+function TypedText({
+  text,
+  enabled,
+  speedMs = PROSE_TYPE_SPEED_MS,
+}: {
+  text: string;
+  enabled: boolean;
+  speedMs?: number;
+}): ReactNode {
+  const visible = useTypedText(text, enabled, speedMs);
+  if (!enabled) return text;
+  return (
+    <span aria-label={text} data-typing={visible.length < text.length ? "active" : "complete"}>
+      <span aria-hidden="true">{visible}</span>
+    </span>
+  );
+}
+
+// ---- formatting -------------------------------------------------------------------------
 function formatDuration(ms: number): string {
   if (ms >= 1000) return `${(ms / 1000).toFixed(1)} s`;
   return `${Math.round(ms)} ms`;
 }
+
 function elapsedBetween(startTs: string, endTs: string): string | undefined {
   const start = Date.parse(startTs);
   const end = Date.parse(endTs);
-  // end <= start ⇒ the stage only just started (no later event yet); show no timer rather
-  // than a premature "0 ms".
   if (Number.isNaN(start) || Number.isNaN(end) || end <= start) return undefined;
   return formatDuration(end - start);
 }
+
 function num(value: unknown): number | null {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
+
 function str(value: unknown): string | null {
   return typeof value === "string" && value.length > 0 ? value : null;
 }
+
 function filenameFor(language: string): string {
   const lang = language.toLowerCase();
   if (lang.startsWith("py")) return "circuit.py";
-  if (lang === "qasm" || lang === "openqasm") return "circuit.qasm";
+  if (lang.includes("qasm")) return "circuit.qasm";
   return "circuit.txt";
 }
 
-// Detail line under the verdict. Tolerant of the free-form `details` dict: it reads a small
-// set of optional keys (metric/value/threshold/comparator/seed/shots) and degrades to the
-// method name if they're absent — the UI still names the method (spec §3, P1).
-function buildVerdictDetail(
+function labelize(value: string): string {
+  return value
+    .replace(/_ms$/, "")
+    .replace(/_/g, " ")
+    .replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
+function metricValue(key: string, value: unknown): string | null {
+  if (value === null || value === undefined) return null;
+  if (typeof value === "boolean") return value ? "yes" : "no";
+  if (typeof value !== "number" && typeof value !== "string") return null;
+  if (typeof value === "string") return value;
+  if (key === "qubits") return `${value} qubits`;
+  if (key === "depth") return `${value} layers`;
+  if (key === "gate_count") return `${value} gates`;
+  if (key === "two_qubit_gate_count") return `${value} two-qubit gates`;
+  if (key === "measurement_count") return `${value} measurements`;
+  if (key === "estimated_runtime_ms") return `${value} ms`;
+  return String(value);
+}
+
+function metricRows(metrics: Record<string, unknown> | null | undefined): KeyNumber[] {
+  if (!metrics) return [];
+  return Object.entries(metrics).flatMap(([key, value]) => {
+    const formatted = metricValue(key, value);
+    return formatted === null ? [] : [{ label: labelize(key), value: formatted }];
+  });
+}
+
+function formatVerdictDetail(
   verdict: Verdict,
   primary: Schemas["VerificationResult"] | null,
 ): string {
   if (verdict === "not_verified" || !primary) {
     return "No verification method applies to this task class";
   }
-  const d = (primary.details ?? {}) as Record<string, unknown>;
+  const details = (primary.details ?? {}) as Record<string, unknown>;
   const method = METHOD_LABEL[primary.method];
-  const metric = str(d.metric) ?? str(d.metric_label);
-  const value = num(d.metric_value) ?? num(d.tvd);
-  const threshold = num(d.threshold) ?? num(d.delta);
-  const seed = num(d.seed);
-  const shots = num(d.shots);
+  const metric = str(details.metric) ?? str(details.metric_label);
+  const value = num(details.metric_value) ?? num(details.tvd);
+  const threshold = num(details.threshold) ?? num(details.delta);
+  const seed = num(details.seed);
+  const shots = num(details.shots);
   const tail =
-    (seed !== null ? ` · seed ${seed}` : "") + (shots !== null ? ` · ${shots} shots` : "");
+    (seed !== null ? `, seed ${seed}` : "") + (shots !== null ? `, ${shots} shots` : "");
 
   if (verdict === "failed") {
-    const cap = method.charAt(0).toUpperCase() + method.slice(1);
     if (metric && value !== null && threshold !== null) {
-      return `${cap} check failed: ${metric} ${value} > δ ${threshold}${tail}`;
+      return `${method} check failed: ${metric} ${value} > delta ${threshold}${tail}`;
     }
-    return `${cap} check failed${tail}`;
+    return `${method} check failed${tail}`;
   }
-  // verified / verified_caveats
   if (verdict === "verified_caveats") {
-    return `Contract checks passed; numeric check skipped${tail ? " ·" + tail.slice(2) : ""}`;
+    return `Contract checks passed; numeric check skipped${tail}`;
   }
   if (metric && value !== null && threshold !== null) {
-    return `Verified — ${method} (${metric} ${value} ≤ δ ${threshold})${tail}`;
+    return `Verified - ${method} (${metric} ${value} <= delta ${threshold}${tail})`;
   }
-  return `Verified — ${method}${tail}`;
+  return `Verified - ${method}${tail}`;
 }
 
-// ---- the pure reducer --------------------------------------------------------------------
+// ---- event reduction --------------------------------------------------------------------
 export function reduceRunEvents(events: readonly RunEvent[]): RunViewModel {
-  // Per-stage accumulators from stage.started / stage.finished.
   const started = new Map<Stage, string>();
   const finished = new Map<Stage, { ok: boolean; durationMs: number }>();
+  const stageError = new Map<Stage, string>();
 
   let plan: Schemas["Plan"] | null = null;
-  let code: Schemas["CodeGenerated"] | null = null;
-  let finalizedCode: Schemas["CodeFinalized"] | null = null;
-  let sandbox: Schemas["SandboxResult"] | null = null;
+  let generatedCode: Schemas["CodeGenerated"] | null = null;
+  let screen: Schemas["ScreenResult"] | null = null;
+  const resourceEstimates = new Map<"pre_verify" | "compiled", Schemas["ResourceEstimateResult"]>();
+  let verificationSandbox: Schemas["SandboxResult"] | null = null;
+  let finalSimulation: Schemas["SandboxResult"] | null = null;
   const verifyResults: Schemas["VerificationResult"][] = [];
+  let compilation: Schemas["CompilationResult"] | null = null;
+  let finalizedCode: Schemas["CodeFinalized"] | null = null;
   let baseline: Schemas["BaselineResult"] | null = null;
   let exportEv: Schemas["ExportClassified"] | null = null;
   let saved: Schemas["ArtifactSaved"] | null = null;
@@ -198,8 +382,71 @@ export function reduceRunEvents(events: readonly RunEvent[]): RunViewModel {
   let research: Schemas["ResearchCompleted"] | null = null;
   let finishedRun: Schemas["RunFinished"] | null = null;
   let status: Schemas["RunStatus"] | null = null;
-  const stageError = new Map<Stage, string>();
+  const modelActivity = new Map<string, ModelActivity>();
   let lastTs: string | null = null;
+
+  function clearStageData(stage: Stage): void {
+    switch (stage) {
+      case "plan":
+        plan = null;
+        research = null;
+        break;
+      case "generate":
+        generatedCode = null;
+        break;
+      case "screen":
+        screen = null;
+        break;
+      case "resource_estimate":
+        resourceEstimates.delete("pre_verify");
+        break;
+      case "verify":
+        verificationSandbox = null;
+        verifyResults.length = 0;
+        break;
+      case "compile":
+        compilation = null;
+        break;
+      case "compiled_resource_estimate":
+        resourceEstimates.delete("compiled");
+        break;
+      case "finalize":
+        finalizedCode = null;
+        exportEv = null;
+        break;
+      case "final_execute":
+        finalSimulation = null;
+        break;
+      case "baseline":
+        baseline = null;
+        break;
+      case "analyze":
+        analysis = null;
+        break;
+      case "save":
+        saved = null;
+        break;
+      case "simulate":
+        verificationSandbox = null;
+        break;
+      case "export":
+        exportEv = null;
+        break;
+    }
+  }
+
+  function clearFrom(stage: Stage): void {
+    const index = INTERNAL_STAGE_ORDER.indexOf(stage);
+    if (index < 0) return;
+    for (const current of INTERNAL_STAGE_ORDER.slice(index)) {
+      started.delete(current);
+      finished.delete(current);
+      stageError.delete(current);
+      clearStageData(current);
+    }
+    modelActivity.clear();
+    finishedRun = null;
+  }
 
   for (const ev of events) {
     if ("ts" in ev && typeof ev.ts === "string") lastTs = ev.ts;
@@ -210,8 +457,15 @@ export function reduceRunEvents(events: readonly RunEvent[]): RunViewModel {
       case "run.started":
         status = "running";
         break;
+      case "run.restarted":
+        clearFrom(ev.from_stage);
+        status = "running";
+        break;
       case "stage.started":
         started.set(ev.stage, ev.ts);
+        finished.delete(ev.stage);
+        stageError.delete(ev.stage);
+        clearStageData(ev.stage);
         break;
       case "stage.finished":
         finished.set(ev.stage, { ok: ev.ok, durationMs: ev.duration_ms });
@@ -220,17 +474,26 @@ export function reduceRunEvents(events: readonly RunEvent[]): RunViewModel {
         plan = ev.plan;
         break;
       case "code.generated":
-        // Keep the highest revision (repairs supersede earlier code).
-        if (!code || ev.revision >= code.revision) code = ev;
+        if (!generatedCode || ev.revision >= generatedCode.revision) generatedCode = ev;
         break;
-      case "code.finalized":
-        finalizedCode = ev;
+      case "screen.result":
+        screen = ev;
+        break;
+      case "resource.estimate":
+        resourceEstimates.set(ev.phase, ev);
         break;
       case "sandbox.result":
-        sandbox = ev;
+        if (ev.phase === "final") finalSimulation = ev;
+        else verificationSandbox = ev;
         break;
       case "verification.result":
         verifyResults.push(ev);
+        break;
+      case "compilation.result":
+        compilation = ev;
+        break;
+      case "code.finalized":
+        finalizedCode = ev;
         break;
       case "baseline.result":
         baseline = ev;
@@ -247,6 +510,14 @@ export function reduceRunEvents(events: readonly RunEvent[]): RunViewModel {
       case "research.completed":
         research = ev;
         break;
+      case "llm.delta": {
+        const kind = ev.kind ?? "output";
+        const key = `${ev.stage}:${kind}`;
+        const previous = modelActivity.get(key);
+        const text = `${previous?.text ?? ""}${ev.text}`.slice(-MODEL_ACTIVITY_MAX_CHARS);
+        modelActivity.set(key, { stage: ev.stage, kind, text });
+        break;
+      }
       case "run.error":
         if (ev.stage) stageError.set(ev.stage, ev.message);
         break;
@@ -257,79 +528,174 @@ export function reduceRunEvents(events: readonly RunEvent[]): RunViewModel {
         finishedRun = ev;
         status = ev.status;
         break;
-      // llm.call / llm.delta carry no view state here.
+      // llm.call is telemetry; its token counts are not user-facing evidence.
     }
   }
 
-  // ---- rail stages ----
-  const stages: RailStage[] = STAGE_ORDER.map((stage) => {
-    const name = STAGE_LABEL[stage];
-    const fin = finished.get(stage);
-    const start = started.get(stage);
-    if (fin) {
-      const elapsed = formatDuration(fin.durationMs);
-      // Baseline that reports "not applicable" reads as skipped-with-reason, not pass.
-      if (stage === "baseline" && baseline?.not_applicable_reason) {
-        return { id: stage, name, state: "skipped", skipReason: baseline.not_applicable_reason };
-      }
-      if (fin.ok) return { id: stage, name, state: "pass", elapsed };
-      const summary =
-        stageError.get(stage) ??
-        (stage === "verify" && verifyResults.some((v) => v.result === "fail")
-          ? buildVerdictDetail("failed", lastFailingVerify(verifyResults))
-          : `${name} failed`);
-      return { id: stage, name, state: "fail", elapsed, errorSummary: summary };
-    }
-    if (start) {
-      const elapsed = lastTs ? elapsedBetween(start, lastTs) : undefined;
-      return { id: stage, name, state: "running", elapsed };
-    }
-    return { id: stage, name, state: "pending" };
-  });
-
-  // ---- result panel ----
+  const stages = buildRailStages(started, finished, stageError, verifyResults, lastTs);
   const verdict = deriveVerdict(finishedRun, verifyResults);
   const result: ResultView = {
-    verdict: verdict ? { verdict, detail: buildVerdictDetail(verdict, primaryVerify(verifyResults, verdict)) } : null,
+    verdict: verdict
+      ? { verdict, detail: formatVerdictDetail(verdict, primaryVerify(verifyResults, verdict)) }
+      : null,
     answer: buildAnswer(analysis, finishedRun),
-    approach: buildApproach(plan),
-    sources: buildSources(research),
-    keyNumbers: buildKeyNumbers(plan, sandbox, verifyResults),
+    generatedCode: generatedCode ? buildCodeView(generatedCode.language, generatedCode.code) : null,
+    codeQuality: buildCodeQuality(screen),
+    resourceEstimates: Array.from(resourceEstimates.values()).map(buildResourceEstimate),
     verification: buildVerificationRows(verifyResults),
-    code: finalizedCode
-      ? {
-          filename: filenameFor(finalizedCode.language),
-          language: finalizedCode.language,
-          code: finalizedCode.code,
-        }
-      : code
-        ? { filename: filenameFor(code.language), language: code.language, code: code.code }
-        : null,
+    compilation: buildCompilation(compilation),
+    finalCode: finalizedCode ? buildCodeView(finalizedCode.language, finalizedCode.code) : null,
+    finalSimulation: finalSimulation ? buildSimulation(finalSimulation) : null,
+    sources: buildSources(research),
+    keyNumbers: buildKeyNumbers(plan, verificationSandbox, finalSimulation, verifyResults),
     baseline: buildBaseline(baseline),
     export: exportEv ? buildExportBadge(exportEv) : null,
     libraryHref: saved ? `/library/${saved.artifact_id}` : null,
   };
-
+  const liveOutput: LiveOutput = {
+    thoughts: modelActivity.get("plan:reasoning")?.text ?? null,
+    narrative: plan ? buildPlanNarrative(plan) : null,
+  };
   const hasResult =
     result.verdict !== null ||
     result.answer !== null ||
-    result.approach !== null ||
-    result.sources !== null ||
+    result.generatedCode !== null ||
+    result.codeQuality !== null ||
+    result.resourceEstimates.length > 0 ||
     result.verification.length > 0 ||
-    result.code !== null ||
+    result.compilation !== null ||
+    result.finalCode !== null ||
+    result.finalSimulation !== null ||
+    result.sources !== null ||
+    result.keyNumbers.length > 0 ||
     result.baseline !== null ||
     result.export !== null ||
     result.libraryHref !== null;
 
-  return { stages, result, status, hasResult };
+  return {
+    stages,
+    result,
+    modelActivity: Array.from(modelActivity.values()),
+    liveOutput,
+    status,
+    hasResult,
+  };
+}
+
+function buildRailStages(
+  started: Map<Stage, string>,
+  finished: Map<Stage, { ok: boolean; durationMs: number }>,
+  stageError: Map<Stage, string>,
+  verifyResults: Schemas["VerificationResult"][],
+  lastTs: string | null,
+): RailStage[] {
+  return RAIL_STAGE_ORDER.map((id) => {
+    const name = RAIL_STAGE_LABEL[id];
+    const members = INTERNAL_STAGE_GROUPS[id];
+    const active = members.find((stage) => started.has(stage) && !finished.has(stage));
+    const failures = members.filter((stage) => finished.get(stage)?.ok === false);
+    const errors = members.flatMap((stage) => {
+      const error = stageError.get(stage);
+      return error ? [error] : [];
+    });
+    const observed = members.some((stage) => started.has(stage) || finished.has(stage) || stageError.has(stage));
+    const durations = members.reduce((sum, stage) => sum + (finished.get(stage)?.durationMs ?? 0), 0);
+    const elapsed = durations > 0 ? formatDuration(durations) : undefined;
+
+    if (active) {
+      return {
+        id,
+        name,
+        state: "running",
+        elapsed: lastTs ? elapsedBetween(started.get(active) ?? lastTs, lastTs) : undefined,
+      } satisfies RailStage;
+    }
+    if (failures.length || errors.length) {
+      const detail =
+        errors[0] ??
+        (id === "verify" && verifyResults.some((result) => result.result === "fail")
+          ? formatVerdictDetail("failed", lastFailingVerify(verifyResults))
+          : `${name} failed`);
+      return { id, name, state: "fail", elapsed, errorSummary: detail } satisfies RailStage;
+    }
+    if (observed) return { id, name, state: "pass", elapsed } satisfies RailStage;
+    return { id, name, state: "pending" } satisfies RailStage;
+  });
+}
+
+function buildPlanNarrative(plan: Schemas["Plan"]): string {
+  return `I will use ${plan.algorithm} in ${plan.framework} for ${plan.problem_summary}. ${plan.algorithm_rationale}`;
+}
+
+function buildCodeView(language: string, code: string): CodeView {
+  return { filename: filenameFor(language), language, code };
+}
+
+function buildCodeQuality(screen: Schemas["ScreenResult"] | null): CodeQualityView | null {
+  if (!screen) return null;
+  return {
+    checks: [
+      { label: "Lint", value: screen.lint_ok ? "passed" : "failed" },
+      { label: "Type and safety screen", value: screen.typecheck_ok ? "passed" : "failed" },
+    ],
+    diagnostics: screen.diagnostics ?? [],
+  };
+}
+
+function buildResourceEstimate(ev: Schemas["ResourceEstimateResult"]): ResourceEstimateView {
+  return {
+    phase: ev.phase === "pre_verify" ? "Before verification" : "After compilation",
+    rows: metricRows(ev.metrics as Record<string, unknown>),
+    notes: ev.notes ?? [],
+  };
+}
+
+function buildCompilation(ev: Schemas["CompilationResult"] | null): CompilationView | null {
+  if (!ev) return null;
+  return {
+    accepted: ev.accepted,
+    mode: ev.mode,
+    reason: ev.reason,
+    before: metricRows((ev.before ?? {}) as Record<string, unknown>),
+    after: metricRows((ev.after ?? {}) as Record<string, unknown>),
+  };
+}
+
+function parseOutputObject(stdout: string): Record<string, unknown> | null {
+  for (const line of stdout.split("\n").reverse()) {
+    try {
+      const parsed: unknown = JSON.parse(line.trim());
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+        return parsed as Record<string, unknown>;
+      }
+    } catch {
+      // The sandbox may also contain a marked QASM payload; it is not result JSON.
+    }
+  }
+  return null;
+}
+
+function buildSimulation(ev: Schemas["SandboxResult"]): SimulationView {
+  const output = parseOutputObject(ev.stdout);
+  return {
+    ok: ev.exit_code === 0,
+    duration: formatDuration(ev.duration_ms),
+    exitCode: ev.exit_code,
+    memory: ev.memory_mb === null ? null : `${ev.memory_mb} MB`,
+    qasmAvailable: ev.qasm_emission?.available ?? false,
+    rows: dictToRows(output ?? {}),
+  };
 }
 
 function lastFailingVerify(
   results: Schemas["VerificationResult"][],
 ): Schemas["VerificationResult"] | null {
-  for (let i = results.length - 1; i >= 0; i--) if (results[i].result === "fail") return results[i];
+  for (let index = results.length - 1; index >= 0; index -= 1) {
+    if (results[index].result === "fail") return results[index];
+  }
   return null;
 }
+
 function primaryVerify(
   results: Schemas["VerificationResult"][],
   verdict: Verdict,
@@ -347,52 +713,47 @@ function deriveVerdict(
   if (finishedRun.status === "failed" || decision === "fail") return "failed";
   if (decision === "inconclusive") return "not_verified";
   if (decision === "pass") {
-    const hasNumeric = verifyResults.some((v) => NUMERIC_METHODS.has(v.method));
-    return hasNumeric ? "verified" : "verified_caveats";
+    return verifyResults.some((result) => NUMERIC_METHODS.has(result.method))
+      ? "verified"
+      : "verified_caveats";
   }
-  // succeeded with no explicit decision → treat as caveated pass.
   if (finishedRun.status === "succeeded") return "verified_caveats";
   return null;
 }
 
 function buildKeyNumbers(
   plan: Schemas["Plan"] | null,
-  sandbox: Schemas["SandboxResult"] | null,
+  verificationSandbox: Schemas["SandboxResult"] | null,
+  finalSimulation: Schemas["SandboxResult"] | null,
   verifyResults: Schemas["VerificationResult"][],
 ): KeyNumber[] {
   const rows: KeyNumber[] = [];
   if (plan) {
-    rows.push({ label: "Qubits", value: String(plan.qubits_estimate) });
+    rows.push({ label: "Qubits", value: `${plan.qubits_estimate} qubits` });
     const shots = plan.parameters.shots;
-    if (shots !== null) rows.push({ label: "Shots", value: String(shots) });
+    if (shots !== null) rows.push({ label: "Shots", value: `${shots} shots` });
   }
-  if (sandbox) rows.push({ label: "Sim time", value: formatDuration(sandbox.duration_ms) });
-  // The verification distance (e.g. TVD) — labelled with its OWN metric name, never the
-  // plan's primary_metric (that's a different quantity: the distance ≠ the result value).
+  const simulation = finalSimulation ?? verificationSandbox;
+  if (simulation) rows.push({ label: "Simulation time", value: formatDuration(simulation.duration_ms) });
   const primary = verifyResults.length ? verifyResults[verifyResults.length - 1] : null;
   if (primary) {
-    const d = (primary.details ?? {}) as Record<string, unknown>;
-    const metric = str(d.metric);
-    const value = num(d.metric_value) ?? num(d.tvd);
+    const details = (primary.details ?? {}) as Record<string, unknown>;
+    const metric = str(details.metric);
+    const value = num(details.metric_value) ?? num(details.tvd);
     if (metric && value !== null) rows.push({ label: metric, value: String(value) });
   }
   return rows;
 }
 
-// Flatten a free-form results/comparison dict to display rows (scalars only; nested
-// structures are omitted rather than stringified into noise).
-function dictToRows(d: Record<string, unknown>): KeyNumber[] {
-  const rows: KeyNumber[] = [];
-  for (const [k, v] of Object.entries(d)) {
-    if (typeof v === "number" || typeof v === "string" || typeof v === "boolean") {
-      rows.push({ label: k, value: String(v) });
+function dictToRows(data: Record<string, unknown>): KeyNumber[] {
+  return Object.entries(data).flatMap(([label, value]) => {
+    if (typeof value === "number" || typeof value === "string" || typeof value === "boolean") {
+      return [{ label, value: String(value) }];
     }
-  }
-  return rows;
+    return [];
+  });
 }
 
-// The natural-language answer from the analyze stage. residual_risks falls back to the
-// terminal run.finished value so the caveat still shows if analysis omitted it.
 function buildAnswer(
   analysis: Schemas["RunAnalysis"] | null,
   finishedRun: Schemas["RunFinished"] | null,
@@ -406,48 +767,30 @@ function buildAnswer(
   };
 }
 
-function buildApproach(plan: Schemas["Plan"] | null): ApproachView | null {
-  if (!plan) return null;
-  const algorithm = str(plan.algorithm);
-  if (!algorithm) return null;
-  return {
-    algorithm,
-    rationale: str(plan.algorithm_rationale),
-    problem: str(plan.problem_summary),
-  };
-}
-
 function buildSources(research: Schemas["ResearchCompleted"] | null): SourceView | null {
   if (!research) return null;
-  return {
-    query: research.query,
-    sources: research.sources ?? [],
-    error: research.error,
-  };
+  return { query: research.query, sources: research.sources ?? [], error: research.error };
 }
 
-// One row per verification method the run actually executed — names the check and, for
-// numeric methods, the measured distance vs. its threshold (P1: name what was checked).
 function buildVerificationRows(results: Schemas["VerificationResult"][]): VerificationRow[] {
-  return results.map((r) => {
-    const d = (r.details ?? {}) as Record<string, unknown>;
-    const metric = str(d.metric) ?? str(d.metric_label);
-    const value = num(d.metric_value) ?? num(d.tvd);
-    const threshold = num(d.threshold) ?? num(d.delta);
-    const seed = num(d.seed);
-    const shots = num(d.shots);
+  return results.map((result) => {
+    const details = (result.details ?? {}) as Record<string, unknown>;
+    const metric = str(details.metric) ?? str(details.metric_label);
+    const value = num(details.metric_value) ?? num(details.tvd);
+    const threshold = num(details.threshold) ?? num(details.delta);
+    const seed = num(details.seed);
+    const shots = num(details.shots);
     const tail =
-      (seed !== null ? ` · seed ${seed}` : "") + (shots !== null ? ` · ${shots} shots` : "");
+      (seed !== null ? `, seed ${seed}` : "") + (shots !== null ? `, ${shots} shots` : "");
     let detail: string;
     if (metric && value !== null && threshold !== null) {
-      detail = `${metric} ${value} ${r.result === "fail" ? ">" : "≤"} δ ${threshold}${tail}`;
+      detail = `${metric} ${value} ${result.result === "fail" ? ">" : "<="} delta ${threshold}${tail}`;
     } else if (metric && value !== null) {
       detail = `${metric} ${value}${tail}`;
     } else {
-      // Structural methods (return-contract, QASM-parse) carry no metric.
-      detail = (str(d.note) ?? "structural check") + tail;
+      detail = (str(details.note) ?? "structural check") + tail;
     }
-    return { method: METHOD_LABEL[r.method], result: r.result, detail };
+    return { method: METHOD_LABEL[result.method], result: result.result, detail };
   });
 }
 
@@ -456,12 +799,11 @@ function buildBaseline(baseline: Schemas["BaselineResult"] | null): ResultView["
   if (baseline.not_applicable_reason) {
     return { title: "Classical baseline", rows: [], notApplicable: baseline.not_applicable_reason };
   }
-  const rows: KeyNumber[] = [];
-  const res = (baseline.result ?? {}) as Record<string, unknown>;
-  for (const [k, v] of Object.entries(res)) {
-    if (typeof v === "number" || typeof v === "string") rows.push({ label: k, value: String(v) });
-  }
-  return { title: `Baseline — ${baseline.kind}`, rows, notApplicable: null };
+  return {
+    title: `Baseline - ${baseline.kind}`,
+    rows: dictToRows((baseline.result ?? {}) as Record<string, unknown>),
+    notApplicable: null,
+  };
 }
 
 function buildExportBadge(ev: Schemas["ExportClassified"]): NonNullable<ResultView["export"]> {
@@ -470,7 +812,7 @@ function buildExportBadge(ev: Schemas["ExportClassified"]): NonNullable<ResultVi
       return { label: "Lossless", tone: "ok", qasmAvailable: ev.qasm_available };
     case "lossy_with_reason":
       return {
-        label: ev.reason ? `Lossy — ${ev.reason}` : "Lossy",
+        label: ev.reason ? `Lossy - ${ev.reason}` : "Lossy",
         tone: "warn",
         qasmAvailable: ev.qasm_available,
       };
@@ -481,32 +823,29 @@ function buildExportBadge(ev: Schemas["ExportClassified"]): NonNullable<ResultVi
   }
 }
 
-// ---- presentational composition ----------------------------------------------------------
-// Maps a rail stage to the panel section it should scroll to (best-effort; spec §2).
-const STAGE_TO_ANCHOR: Partial<Record<Stage, string>> = {
-  plan: "mj-result-approach",
-  generate: "mj-result-code",
-  screen: "mj-result-code",
+// ---- composition ------------------------------------------------------------------------
+const STAGE_TO_ANCHOR: Record<RailStageId, string> = {
+  plan: "mj-live-output",
+  generate: "mj-result-generate-code",
   verify: "mj-result-verification",
-  finalize: "mj-result-code",
-  baseline: "mj-result-baseline",
   analyze: "mj-result-answer",
-  save: "mj-result-library",
 };
 
 export function RunView({
   events,
   emptyMessage = "This run has no events yet.",
+  animateText = false,
 }: {
   events: readonly RunEvent[];
   emptyMessage?: string;
+  animateText?: boolean;
 }): ReactNode {
   const view = reduceRunEvents(events);
 
   const onSelect = (stageId: string) => {
-    const anchor = STAGE_TO_ANCHOR[stageId as Stage];
-    const el = anchor ? document.getElementById(anchor) : null;
-    (el ?? document.getElementById("mj-run-panel"))?.scrollIntoView({
+    const anchor = STAGE_TO_ANCHOR[stageId as RailStageId];
+    const element = anchor ? document.getElementById(anchor) : null;
+    (element ?? document.getElementById("mj-run-panel"))?.scrollIntoView({
       behavior: "smooth",
       block: "start",
     });
@@ -516,23 +855,195 @@ export function RunView({
     <div className="mj-run">
       <StageRail stages={view.stages} onSelect={onSelect} />
       <div className="mj-run-panel" id="mj-run-panel">
+        {view.liveOutput.thoughts || view.liveOutput.narrative ? (
+          <LiveOutput output={view.liveOutput} animateText={animateText} />
+        ) : null}
         {view.hasResult ? (
-          <ResultPanel result={view.result} />
-        ) : (
+          <ResultPanel result={view.result} animateText={animateText} />
+        ) : !view.liveOutput.thoughts && !view.liveOutput.narrative ? (
           <p className="mj-run-waiting">{emptyMessage}</p>
-        )}
+        ) : null}
       </div>
     </div>
   );
 }
 
-// Result panel — order is FIXED (spec §3): verdict → Answer → Approach → Sources → key numbers
-// → Verification → code → baseline → export badges → Library link.
-function ResultPanel({ result }: { result: ResultView }): ReactNode {
+function LiveOutput({ output, animateText }: { output: LiveOutput; animateText: boolean }): ReactNode {
+  return (
+    <div className="mj-live-output" id="mj-live-output" aria-live={animateText ? "off" : "polite"}>
+      {output.thoughts ? (
+        <p className="mj-live-thought">
+          <TypedText text={output.thoughts} enabled={animateText} speedMs={THOUGHT_TYPE_SPEED_MS} />
+        </p>
+      ) : null}
+      {output.narrative ? (
+        <p className="mj-live-narrative">
+          <TypedText text={output.narrative} enabled={animateText} />
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
+function CodeBlock({ code, id }: { code: CodeView; id?: string }): ReactNode {
+  return (
+    <div className="mj-code" id={id}>
+      <div className="mj-code-head">
+        <span className="mj-code-file">{code.filename}</span>
+      </div>
+      <pre
+        className="mj-code-body"
+        tabIndex={0}
+        role="region"
+        aria-label={`${code.filename} source`}
+      >
+        <code>{code.code}</code>
+      </pre>
+    </div>
+  );
+}
+
+function KeyNumbers({ rows }: { rows: KeyNumber[] }): ReactNode {
+  if (!rows.length) return null;
+  return (
+    <table className="mj-keynums">
+      <tbody>
+        {rows.map((row, index) => (
+          <tr key={`${row.label}-${index}`}>
+            <th scope="row">{row.label}</th>
+            <td>{row.value}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
+
+function ResultPanel({ result, animateText }: { result: ResultView; animateText: boolean }): ReactNode {
   return (
     <div className="mj-result">
+      {result.generatedCode || result.codeQuality || result.resourceEstimates.length ? (
+        <section className="mj-result-section" id="mj-result-generate">
+          {result.generatedCode ? (
+            <section className="mj-result-section" id="mj-result-generate-code">
+              <h2 className="mj-result-h">Code</h2>
+              <CodeBlock code={result.generatedCode} />
+            </section>
+          ) : null}
+          {result.codeQuality ? (
+            <section className="mj-result-section" id="mj-result-code-quality">
+              <h2 className="mj-result-h">Code Quality</h2>
+              <KeyNumbers rows={result.codeQuality.checks} />
+              {result.codeQuality.diagnostics.length ? (
+                <ul className="mj-evidence-list">
+                  {result.codeQuality.diagnostics.map((diagnostic) => (
+                    <li key={diagnostic}>
+                      <TypedText text={diagnostic} enabled={animateText} />
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
+            </section>
+          ) : null}
+          {result.resourceEstimates.map((estimate) => (
+            <section className="mj-result-section" key={estimate.phase}>
+              <h2 className="mj-result-h">Resource Estimation - {estimate.phase}</h2>
+              <KeyNumbers rows={estimate.rows} />
+              {estimate.notes.map((note) => (
+                <p className="mj-result-note" key={note}>
+                  <TypedText text={note} enabled={animateText} />
+                </p>
+              ))}
+            </section>
+          ))}
+        </section>
+      ) : null}
+
+      {result.verification.length || result.compilation || result.finalCode || result.finalSimulation ? (
+        <section className="mj-result-section" id="mj-result-verify">
+          {result.verification.length ? (
+            <section className="mj-result-section" id="mj-result-verification">
+              <h2 className="mj-result-h">Verification Results</h2>
+              <ul className="mj-verify">
+                {result.verification.map((verification, index) => (
+                  <li
+                    key={`${verification.method}-${index}`}
+                    className="mj-verify-row"
+                    data-result={verification.result}
+                  >
+                    <span className="mj-verify-method">{verification.method}</span>
+                    <span className="mj-verify-detail">{verification.detail}</span>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          ) : null}
+
+          {result.compilation ? (
+            <section className="mj-result-section" id="mj-result-compilation">
+              <h2 className="mj-result-h">Compilation Results</h2>
+              <KeyNumbers
+                rows={[{ label: "Status", value: result.compilation.accepted ? "accepted" : "not accepted" }]}
+              />
+              <p className="mj-result-note">
+                <TypedText text={`Mode - ${result.compilation.mode}`} enabled={animateText} />
+              </p>
+              {result.compilation.reason ? (
+                <p className="mj-result-note">
+                  <TypedText text={result.compilation.reason} enabled={animateText} />
+                </p>
+              ) : null}
+              {result.compilation.before.length ? (
+                <div>
+                  <p className="mj-result-subh">Before</p>
+                  <KeyNumbers rows={result.compilation.before} />
+                </div>
+              ) : null}
+              {result.compilation.after.length ? (
+                <div>
+                  <p className="mj-result-subh">After</p>
+                  <KeyNumbers rows={result.compilation.after} />
+                </div>
+              ) : null}
+            </section>
+          ) : null}
+
+          {result.finalCode ? (
+            <section className="mj-result-section" id="mj-result-final-code">
+              <h2 className="mj-result-h">Final Code</h2>
+              <CodeBlock code={result.finalCode} />
+            </section>
+          ) : null}
+
+          {result.finalSimulation ? (
+            <section className="mj-result-section" id="mj-result-final-simulation">
+              <h2 className="mj-result-h">Final Simulation Results</h2>
+              <KeyNumbers
+                rows={[
+                  { label: "Execution", value: result.finalSimulation.ok ? "completed" : "failed" },
+                  { label: "Duration", value: result.finalSimulation.duration },
+                  ...(result.finalSimulation.memory
+                    ? [{ label: "Memory", value: result.finalSimulation.memory }]
+                    : []),
+                ]}
+              />
+              {result.finalSimulation.rows.length ? (
+                <KeyNumbers rows={result.finalSimulation.rows} />
+              ) : (
+                <p className="mj-result-note">
+                  <TypedText
+                    text="No scalar result fields were available to display."
+                    enabled={animateText}
+                  />
+                </p>
+              )}
+            </section>
+          ) : null}
+        </section>
+      ) : null}
+
       {result.verdict ? (
-        <section id="mj-result-verdict">
+        <section className="mj-result-section" id="mj-result-verdict">
           <VerdictBanner verdict={result.verdict.verdict} detail={result.verdict.detail} />
         </section>
       ) : null}
@@ -540,36 +1051,19 @@ function ResultPanel({ result }: { result: ResultView }): ReactNode {
       {result.answer ? (
         <section className="mj-result-section" id="mj-result-answer">
           <h2 className="mj-result-h">Answer</h2>
-          <p className="mj-answer-lead">{result.answer.interpretation}</p>
+          <p className="mj-answer-lead">
+            <TypedText text={result.answer.interpretation} enabled={animateText} />
+          </p>
           {result.answer.summary && result.answer.summary !== result.answer.interpretation ? (
-            <p className="mj-result-note">{result.answer.summary}</p>
+            <p className="mj-result-note">
+              <TypedText text={result.answer.summary} enabled={animateText} />
+            </p>
           ) : null}
-          {result.answer.comparison.length ? (
-            <table className="mj-keynums">
-              <tbody>
-                {result.answer.comparison.map((n) => (
-                  <tr key={n.label}>
-                    <th scope="row">{n.label}</th>
-                    <td>{n.value}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          ) : null}
+          <KeyNumbers rows={result.answer.comparison} />
           {result.answer.residualRisks ? (
-            <p className="mj-result-note">Caveat — {result.answer.residualRisks}</p>
-          ) : null}
-        </section>
-      ) : null}
-
-      {result.approach ? (
-        <section className="mj-result-section" id="mj-result-approach">
-          <h2 className="mj-result-h">Approach — {result.approach.algorithm}</h2>
-          {result.approach.problem ? (
-            <p className="mj-result-note">{result.approach.problem}</p>
-          ) : null}
-          {result.approach.rationale ? (
-            <p className="mj-result-note">{result.approach.rationale}</p>
+            <p className="mj-result-note">
+              <TypedText text={`Caveat - ${result.answer.residualRisks}`} enabled={animateText} />
+            </p>
           ) : null}
         </section>
       ) : null}
@@ -577,28 +1071,32 @@ function ResultPanel({ result }: { result: ResultView }): ReactNode {
       {result.sources ? (
         <section className="mj-result-section" id="mj-result-sources">
           <h2 className="mj-result-h">Sources</h2>
-          <p className="mj-result-note">Research query — {result.sources.query}</p>
+          <p className="mj-result-note">
+            <TypedText text={`Research query - ${result.sources.query}`} enabled={animateText} />
+          </p>
           {result.sources.sources.length ? (
             <ul className="mj-source-list">
               {result.sources.sources.map((source) => (
                 <li key={source.url}>
-                  <a
-                    className="mj-result-link"
-                    href={source.url}
-                    target="_blank"
-                    rel="noreferrer"
-                  >
+                  <a className="mj-result-link" href={source.url} target="_blank" rel="noreferrer">
                     {source.title}
                   </a>
-                  <p className="mj-result-note">{source.excerpt}</p>
+                  <p className="mj-result-note">
+                    <TypedText text={source.excerpt} enabled={animateText} />
+                  </p>
                 </li>
               ))}
             </ul>
           ) : (
             <p className="mj-result-note">
-              {result.sources.error
-                ? `Research unavailable — ${result.sources.error}`
-                : "No usable public sources were found."}
+              <TypedText
+                text={
+                  result.sources.error
+                    ? `Research unavailable - ${result.sources.error}`
+                    : "No usable public sources were found."
+                }
+                enabled={animateText}
+              />
             </p>
           )}
         </section>
@@ -606,50 +1104,7 @@ function ResultPanel({ result }: { result: ResultView }): ReactNode {
 
       {result.keyNumbers.length ? (
         <section className="mj-result-section" id="mj-result-keynums">
-          <table className="mj-keynums">
-            <tbody>
-              {result.keyNumbers.map((n) => (
-                <tr key={n.label}>
-                  <th scope="row">{n.label}</th>
-                  <td>{n.value}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </section>
-      ) : null}
-
-      {result.verification.length ? (
-        <section className="mj-result-section" id="mj-result-verification">
-          <h2 className="mj-result-h">Verification</h2>
-          <ul className="mj-verify">
-            {result.verification.map((v, i) => (
-              <li key={`${v.method}-${i}`} className="mj-verify-row" data-result={v.result}>
-                <span className="mj-verify-method">{v.method}</span>
-                <span className="mj-verify-detail">{v.detail}</span>
-              </li>
-            ))}
-          </ul>
-        </section>
-      ) : null}
-
-      {result.code ? (
-        <section className="mj-result-section" id="mj-result-code">
-          <div className="mj-code">
-            <div className="mj-code-head">
-              <span className="mj-code-file">{result.code.filename}</span>
-            </div>
-            {/* Focusable + labelled: the block scrolls horizontally, so keyboard users
-                need to reach it (WCAG 2.1.1; a11y gate: packages/ts/ui-visual). */}
-            <pre
-              className="mj-code-body"
-              tabIndex={0}
-              role="region"
-              aria-label={`${result.code.filename} source`}
-            >
-              <code>{result.code.code}</code>
-            </pre>
-          </div>
+          <KeyNumbers rows={result.keyNumbers} />
         </section>
       ) : null}
 
@@ -657,18 +1112,14 @@ function ResultPanel({ result }: { result: ResultView }): ReactNode {
         <section className="mj-result-section" id="mj-result-baseline">
           <h2 className="mj-result-h">{result.baseline.title}</h2>
           {result.baseline.notApplicable ? (
-            <p className="mj-result-note">Not applicable — {result.baseline.notApplicable}</p>
+            <p className="mj-result-note">
+              <TypedText
+                text={`Not applicable - ${result.baseline.notApplicable}`}
+                enabled={animateText}
+              />
+            </p>
           ) : (
-            <table className="mj-keynums">
-              <tbody>
-                {result.baseline.rows.map((n) => (
-                  <tr key={n.label}>
-                    <th scope="row">{n.label}</th>
-                    <td>{n.value}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            <KeyNumbers rows={result.baseline.rows} />
           )}
         </section>
       ) : null}
@@ -680,7 +1131,7 @@ function ResultPanel({ result }: { result: ResultView }): ReactNode {
               {result.export.label}
             </span>
             <span className="mj-badge" data-tone={result.export.qasmAvailable ? "ok" : "neutral"}>
-              {result.export.qasmAvailable ? "QASM available" : "No QASM"}
+              {result.export.qasmAvailable ? "OpenQASM 3 available" : "No native QASM export"}
             </span>
           </div>
         </section>
@@ -689,7 +1140,7 @@ function ResultPanel({ result }: { result: ResultView }): ReactNode {
       {result.libraryHref ? (
         <section className="mj-result-section" id="mj-result-library">
           <a className="mj-result-link" href={result.libraryHref}>
-            Open in Library →
+            Open in Library -&gt;
           </a>
         </section>
       ) : null}

@@ -28,8 +28,17 @@ and JWT verification at the two auth choke points.
 # API — these guards are required; do not use this mode in CI, Cloud Run, or Vercel
 export MAJORANA_ENV=development
 export MAJORANA_LOCAL_DEV_AUTH=true
+export MAJORANA_SANDBOX=local  # DEV/TEST double only; never production
 export DATABASE_URL="$(neonctl connection-string dev-local --project-id twilight-wildflower-01313590 --pooled)"
 uv run --package majorana-api uvicorn --factory majorana_api.app:create_app --port 8000
+
+# In a second terminal, start the worker with the same database and the local
+# subprocess double. This lets the UI exercise a real provider without Vercel
+# sandbox credentials; it is not a production isolation boundary.
+export MAJORANA_ENV=development
+export MAJORANA_SANDBOX=local
+export DATABASE_URL="$(neonctl connection-string dev-local --project-id twilight-wildflower-01313590 --pooled)"
+uv run --package majorana-worker majorana-worker
 
 # Web — Next must be running in development mode
 MAJORANA_LOCAL_DEV_AUTH=true pnpm --filter @majorana/web dev

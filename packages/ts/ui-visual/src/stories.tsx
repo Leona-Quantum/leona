@@ -25,11 +25,8 @@ export interface Story {
 const MID_RUN: RailStage[] = [
   { id: "plan", name: "Plan", state: "pass", elapsed: "2.1 s" },
   { id: "generate", name: "Generate", state: "pass", elapsed: "8.4 s" },
-  { id: "simulate", name: "Simulate", state: "running", elapsed: "3.0 s" },
-  { id: "verify", name: "Verify", state: "pending" },
-  { id: "baseline", name: "Baseline", state: "pending" },
-  { id: "export", name: "Export", state: "pending" },
-  { id: "save", name: "Save", state: "pending" },
+  { id: "verify", name: "Verify", state: "running", elapsed: "3.0 s" },
+  { id: "analyze", name: "Analysis", state: "pending" },
 ];
 
 const ALL_PASS: RailStage[] = MID_RUN.map((s) => ({
@@ -46,19 +43,13 @@ const ALL_STATES: RailStage[] = [
   { id: "plan", name: "Plan", state: "pass", elapsed: "1.8 s" },
   { id: "generate", name: "Generate", state: "running", elapsed: "2.0 s" },
   {
-    id: "baseline",
-    name: "Baseline",
-    state: "skipped",
-    skipReason: "no classical baseline applies to this task",
-  },
-  {
     id: "verify",
     name: "Verify",
     state: "fail",
     elapsed: "1.1 s",
     errorSummary: "Statistical check failed: TVD 0.21 > δ 0.05 (seed 42, 4096 shots)",
   },
-  { id: "save", name: "Save", state: "pending" },
+  { id: "analyze", name: "Analysis", state: "skipped", skipReason: "waiting for verification" },
 ];
 
 export const STORIES: Story[] = [
@@ -174,13 +165,18 @@ export const STORIES: Story[] = [
     node: <RunView events={RUN_FIXTURES.verified} />,
   },
   {
+    name: "runview-model-activity",
+    title: "RunView — live plan output",
+    node: <RunView events={RUN_FIXTURES["model-activity"]} />,
+  },
+  {
     name: "runview-failed",
     title: "RunView — failed verification",
     node: <RunView events={RUN_FIXTURES.failed} />,
   },
   {
     name: "runview-midrun",
-    title: "RunView — mid-run (simulate)",
+    title: "RunView — mid-run (verify)",
     node: <RunView events={RUN_FIXTURES.midrun} />,
   },
   {

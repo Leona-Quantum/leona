@@ -13,6 +13,18 @@ from __future__ import annotations
 import os
 
 from majorana_contracts.enums import Stage
+from pydantic import BaseModel, ConfigDict, Field
+
+
+class AnalysisOutput(BaseModel):
+    """Internal schema for the user-facing analysis prose."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    summary: str = Field(min_length=1)
+    interpretation: str = Field(min_length=1)
+    residual_risks: str | None = None
+
 
 # Per-provider stage defaults. Override any stage with MAJORANA_MODEL_<STAGE>.
 _DEFAULTS: dict[str, dict[str, str]] = {
@@ -24,12 +36,14 @@ _DEFAULTS: dict[str, dict[str, str]] = {
         # deepseek-chat produced real code in 1.5k tokens / 14s on the same case.
         "generate": "deepseek-chat",
         "verify": "gpt-5.5",  # strict critic — high-stakes review
+        "analyze": "gpt-5.5",  # evidence-grounded natural-language explanation
         "writeback": "deepseek-v4-pro",  # library metadata + explanations
     },
     "anthropic": {
         "plan": "claude-opus-4-8",
         "generate": "claude-sonnet-5",
         "verify": "claude-opus-4-8",
+        "analyze": "claude-opus-4-8",
         "writeback": "claude-haiku-4-5-20251001",
     },
 }

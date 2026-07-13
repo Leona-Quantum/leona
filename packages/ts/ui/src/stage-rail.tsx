@@ -22,21 +22,13 @@ export type RailStage =
   // Row stays expanded with the summary.
   | (RailStageBase & { state: "fail"; errorSummary: string });
 
-// The rail mirrors the canonical run choreography. Legacy stored events are not shown
-// as new stages; they are folded into the corresponding result cards by the reducer.
+// The rail is intentionally a product-level projection, not a dump of internal
+// orchestration. Detailed evidence remains in the content surface.
 export const PIPELINE_STAGE_NAMES = [
   "Plan",
   "Generate",
-  "Screen",
-  "Resource estimate",
   "Verify",
-  "Compilation",
-  "Compiled resource estimate",
-  "Finalize",
-  "Final simulation / QPU",
-  "Baseline",
   "Analysis",
-  "Save",
 ] as const;
 
 export function StageRail({

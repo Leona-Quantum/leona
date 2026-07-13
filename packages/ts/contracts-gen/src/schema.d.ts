@@ -461,6 +461,12 @@ export interface components {
          */
         LlmDelta: {
             /**
+             * Kind
+             * @default output
+             * @enum {string}
+             */
+            kind: "reasoning" | "output";
+            /**
              * Run Id
              * Format: uuid
              */

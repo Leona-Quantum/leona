@@ -5,17 +5,23 @@ genuinely needs one. Components are pure renderers of typed data — no fetching
 run state — so stored-run replay renders identically and fixtures drive every state.
 All states visible at `/dev/ui` (route fixtures; dev/CI only).
 
-Permitted animations (only these): rail state transitions 150 ms ease-out, the
-running-ring fade (border-color `--accent`↔transparent @ 1.2 s — spec §2, not an
-exception), skeleton shimmer, toast enter/exit. `prefers-reduced-motion` disables them.
+Permitted animations: rail state transitions 150 ms ease-out, the running-ring fade
+(border-color `--accent`↔transparent @ 1.2 s — spec §2), skeleton shimmer, toast enter/exit,
+and the owner-requested live prose reveal on `/run` (2026-07-13). The prose reveal is
+opt-in (`RunView` receives `animateText`), presentation-only, and `prefers-reduced-motion`
+shows the complete text immediately. Static fixtures keep it off so screenshot and a11y
+stories remain deterministic.
 
 ## StageRail (S3 — the brand; get this pixel-right)
 
 240 px fixed, full height reserved at mount (no CLS). Row = 16 px dot + stage name +
-right-aligned mono elapsed. Stages: Plan → Generate → Simulate → Verify → Baseline →
-Export → Save (Convert folded into Export). The name yields first: it truncates with an
-ellipsis (`min-width:0`) so it can never collide with the elapsed label inside the fixed
-width; the elapsed label holds its width, and the full name stays in the row's aria-label.
+right-aligned mono elapsed. The user-facing stages are only: Plan → Generate → Verify →
+Analysis. The detailed event log remains an internal implementation contract; its
+generate/screen/estimate events project into Generate, its compile/final-execute events
+project into Verify, and its baseline/save events project into Analysis. The name yields
+first: it truncates with an ellipsis (`min-width:0`) so it can never collide with the
+elapsed label inside the fixed width; the elapsed label holds its width, and the full name
+stays in the row's aria-label.
 
 The dot is never a filled disc (owner directive 2026-07-12): each terminal state is a
 shape glyph in the state color, framed by a thin (1.5 px) same-color ring. The glyph is
@@ -45,6 +51,15 @@ mid-run refresh just replays a shorter *prefix* of the same log (07 §6). That p
 the S3 acceptance test — the `/run/[taskId]` fixtures are built so MID_RUN/QUEUED are
 strict prefixes of the VERIFIED log, making prefix-replay demonstrable without a server.
 
+The unframed `Live output` surface renders bounded `llm.delta` fragments while plan or
+generation is streaming. Plan reasoning is secondary/faint text; the plan itself is
+primary natural-language output. On the live route, prose is revealed incrementally so
+it reads like an assistant composing the answer; the reducer still stores and returns the
+complete target string, and provider JSON/internal schemas are never rendered.
+The terminal evidence surface keeps fixed groups: Generate → Code, Code Quality, Resource
+Estimation; Verify → Verification Results, Compilation Results, Final Code, Final Simulation
+Results; Analysis → Answer, Sources, comparison values, and residual risks.
+
 Reducer rules worth knowing (all deterministic):
 - Stage rail derives from `stage.started`/`stage.finished`; a `baseline` that reports
   `not_applicable_reason` renders **skipped-with-reason**, not pass. `code.generated`
@@ -56,17 +71,17 @@ Reducer rules worth knowing (all deterministic):
 - Key numbers label the verification distance with its **own** metric name (e.g. TVD),
   never the plan's `primary_metric` (a different quantity).
 
-Result panel order is FIXED (spec §3): verdict banner → Answer → Approach → Sources → key numbers →
-Verification → code → baseline → export badges → Library link. Answer is the natural-language
-interpretation from `run.analysis`, including comparison values and any residual-risk caveat.
-Approach names the selected algorithm, problem summary, and rationale from `plan.produced`.
-Sources lists bounded public references from `research.completed`, including the query and short
-excerpts; failed or empty research is shown honestly. Verification lists each method that actually
-ran with its measured evidence, so the user can see what was checked rather than only seeing a
-verdict. Each section renders only when its data exists; rail rows scroll to the matching card via
-`STAGE_TO_ANCHOR`. The code block scrolls horizontally, so
-its `<pre>` is keyboard-focusable (`tabIndex=0`, `role="region"`, `aria-label`) — a
-scrollable region with no keyboard access is a WCAG 2.1.1 failure.
+Result panel order is FIXED (spec §3): verdict banner → Generate evidence → Verify evidence →
+Analysis answer and sources → baseline/comparison → export badges → Library link. Answer is the
+natural-language interpretation from `run.analysis`, including comparison values and any
+residual-risk caveat. Plan reasoning and rationale stay in the live output surface rather than
+becoming a second schema-heavy card. Sources lists bounded public references from
+`research.completed`, including the query and short excerpts; failed or empty research is shown
+honestly. Verification lists each method that actually ran with its measured evidence, so the
+user can see what was checked rather than only seeing a verdict. Each section renders only when
+its data exists; rail rows scroll to the matching card via `STAGE_TO_ANCHOR`. The code block scrolls
+horizontally, so its `<pre>` is keyboard-focusable (`tabIndex=0`, `role="region"`,
+`aria-label`) — a scrollable region with no keyboard access is a WCAG 2.1.1 failure.
 
 ## VerdictBanner (S4)
 
@@ -81,8 +96,20 @@ P1: never say "IR" here — say what was checked.
 
 ## AppShell / nav
 
-Top bar: brand, primary nav (labels from `src/nav-config.ts` ONLY — owner-revisable),
-right slot for quota meter/identity. `aria-current="page"` on the active surface.
+`AppShell` stays a server-compatible, domain-agnostic renderer: it accepts the top bar,
+right slot, and an optional sidebar slot. In workspace mode the sidebar toggle is owned by
+the app wrapper, while `AppShell` supplies the landmark and accessible expanded state.
+`apps/web/components/shell.tsx` composes the product-specific sidebar: new chat, recent
+chat links, Run/Library navigation, Settings, and the local workspace identity. Chat
+summaries are persisted in `apps/web/lib/chat-history.ts`, so starting a new chat never
+removes older run links. Labels from `src/nav-config.ts` remain the only source for the
+shared primary surfaces; `aria-current="page"` is applied to active workspace links.
+
+The run and library routes deliberately keep data ownership outside shared UI components:
+`RunComposer` is a presentational bottom dock, `/run` and `/run/[taskId]` own submission and
+SSE state, and Quepo Studio owns artifact filtering/detail tabs. This keeps later UI/UX work
+localized to the route shell and tokenized CSS rather than coupling data fetching to the
+renderers.
 
 ## Accessibility harness (`packages/ts/ui-visual`)
 

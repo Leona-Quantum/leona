@@ -885,6 +885,15 @@
         "additionalProperties": false,
         "description": "Streaming text fragment for live UI rendering; not required for replay\ncorrectness (the terminal events carry the full state).",
         "properties": {
+          "kind": {
+            "default": "output",
+            "enum": [
+              "reasoning",
+              "output"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
           "run_id": {
             "format": "uuid",
             "title": "Run Id",

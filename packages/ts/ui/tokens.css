@@ -54,4 +54,9 @@
   --radius-control: 6px;
   --radius-card: 10px;
   --content-max: 1200px;
+
+  /* workspace geometry — shared shell and composer bounds */
+  --sidebar-expanded: 224px;
+  --sidebar-collapsed: 64px;
+  --composer-max: 720px;
 }

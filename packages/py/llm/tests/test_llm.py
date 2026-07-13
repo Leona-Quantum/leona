@@ -1,9 +1,10 @@
 import json
+import sys
+from types import SimpleNamespace
 
 import pytest
 from majorana_contracts.enums import Stage
 from majorana_llm import (
-    FakeLLM,
     LLMRequest,
     StageOutputError,
     endpoint_for,
@@ -11,7 +12,10 @@ from majorana_llm import (
     extract_qasm,
     extract_qasm_with_provenance,
     model_for,
+    parse_analysis,
     parse_plan,
+    render_generate_prompt,
+    render_plan_prompt,
     resolve_provider,
 )
 from majorana_llm.prompts import (
@@ -121,34 +125,90 @@ def test_structured_decoding_routes_per_endpoint():
     assert "response_format" not in params
 
 
-async def test_request_schema_is_optional_and_fake_llm_ignores_it():
-    fake = FakeLLM({"*": json.dumps(PLAN_JSON)})
-    req = LLMRequest(
-        model="m",
-        system="s",
-        user="u",
-        response_schema={"type": "object"},
-        schema_name="request_plan",
-    )
-    resp = await fake.complete(req)
-    assert parse_plan(resp.text).algorithm == "Bell"
+def test_request_schema_is_optional_on_the_request_model():
     assert LLMRequest(model="m", system="s", user="u").response_schema is None
 
 
-async def test_fake_llm_is_deterministic_and_counts_tokens():
-    fake = FakeLLM({"claude-opus-4-8": json.dumps(PLAN_JSON)})
-    resp = await fake.complete(
-        LLMRequest(model="claude-opus-4-8", system="sys", user="prepare a bell state")
+async def test_openai_compatible_llm_streams_reasoning_and_output(monkeypatch):
+    calls: list[dict] = []
+
+    async def provider_stream():
+        yield SimpleNamespace(
+            choices=[
+                SimpleNamespace(delta=SimpleNamespace(reasoning_content="think ", content=None))
+            ],
+            usage=None,
+        )
+        yield SimpleNamespace(
+            choices=[
+                SimpleNamespace(delta=SimpleNamespace(reasoning_content=None, content="answer"))
+            ],
+            usage=SimpleNamespace(prompt_tokens=3, completion_tokens=2),
+        )
+
+    class RecordingCompletions:
+        async def create(self, **kwargs):
+            calls.append(kwargs)
+            return provider_stream()
+
+    class RecordingAsyncOpenAI:
+        def __init__(self, **_kwargs):
+            self.chat = SimpleNamespace(completions=RecordingCompletions())
+
+    monkeypatch.setitem(sys.modules, "openai", SimpleNamespace(AsyncOpenAI=RecordingAsyncOpenAI))
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "test-key")
+
+    from majorana_llm.client import OpenAICompatibleLLM
+
+    seen: list[tuple[str, str]] = []
+
+    async def on_delta(text: str, kind: str) -> None:
+        seen.append((text, kind))
+
+    response = await OpenAICompatibleLLM().complete(
+        LLMRequest(model="deepseek-chat", system="system", user="user"),
+        on_delta=on_delta,
     )
-    assert resp.output_tokens > 0
-    assert resp.input_tokens > 0
-    assert parse_plan(resp.text).framework == "qiskit"
+
+    assert response.text == "answer"
+    assert response.input_tokens == 3
+    assert response.output_tokens == 2
+    assert seen == [("think ", "reasoning"), ("answer", "output")]
+    assert calls[0]["stream"] is True
 
 
-async def test_fake_llm_supports_callables_and_wildcard():
-    fake = FakeLLM({"*": lambda req: f"echo:{req.user}"})
-    resp = await fake.complete(LLMRequest(model="anything", system="", user="hi"))
-    assert resp.text == "echo:hi"
+def test_langchain_prompt_rendering_keeps_request_and_internal_instructions_separate():
+    rendered = render_plan_prompt(
+        "Build a noisy 4-qubit QAOA circuit and explain which verification strategy is useful.",
+        "Reference material: compare local simulation with an exact small-instance check.",
+    )
+    assert rendered.user.startswith("User request:")
+    assert "Build a noisy 4-qubit QAOA circuit" in rendered.user
+    assert "Reference material" in rendered.user
+    assert "machine" in rendered.system.lower()
+    assert "plumbing" in rendered.system.lower()
+    assert "benchmark" in rendered.system.lower()
+
+
+def test_generate_prompt_is_role_rendered_without_exposing_a_schema_to_the_user():
+    rendered = render_generate_prompt(json.dumps(PLAN_JSON))
+    assert "Internal plan record" in rendered.user
+    assert "Implement the plan now." in rendered.user
+    assert "JSON schema" not in rendered.user
+
+
+def test_analysis_parser_accepts_the_internal_narrative_contract():
+    analysis = parse_analysis(
+        json.dumps(
+            {
+                "summary": "The circuit passed the recorded verification checks.",
+                "interpretation": "The measured distribution agrees with the expected result.",
+                "residual_risks": "The run used local simulation rather than a QPU.",
+            }
+        )
+    )
+    assert analysis.summary.startswith("The circuit passed")
+    assert analysis.residual_risks is not None
 
 
 def test_parse_plan_tolerates_fenced_json_and_prose():

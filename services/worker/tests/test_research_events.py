@@ -1,31 +1,34 @@
-"""Research provenance is emitted before the plan reaches the UI."""
+"""A live provider run emits research provenance before the plan reaches the UI."""
 
-import json
+import os
 from dataclasses import dataclass, field
 from typing import Any
 from uuid import uuid4
 
+import pytest
 from majorana_contracts.enums import Framework, RunMode, Stage
 from majorana_contracts.events import run_event_adapter
-from majorana_llm import FakeLLM
-from majorana_llm.models import model_for
+from majorana_llm import default_llm
 from majorana_llm.research import ResearchResult, ResearchSource
 from majorana_pipeline import RunContext
 from majorana_worker import stage_handlers
 
 
-PLAN = {
-    "domain": "education",
-    "framework": "qiskit",
-    "algorithm": "Bell",
-    "problem_summary": "Prepare a Bell state",
-    "algorithm_rationale": "Hadamard plus CX creates entanglement.",
-    "parameters": {"shots": 128},
-    "qubits_estimate": 2,
-    "expected_runtime_sec": 5,
-    "success_criteria": {"primary_metric": "fidelity"},
-    "expected_output_keys": ["counts"],
-}
+def _live_provider_ready() -> bool:
+    provider = os.environ.get("MAJORANA_LLM_PROVIDER", "").strip().lower()
+    if provider == "anthropic":
+        return bool(os.environ.get("ANTHROPIC_API_KEY"))
+    if provider == "openai":
+        return bool(os.environ.get("OPENAI_API_KEY") and os.environ.get("DEEPSEEK_API_KEY"))
+    return bool(os.environ.get("ANTHROPIC_API_KEY")) or bool(
+        os.environ.get("OPENAI_API_KEY") and os.environ.get("DEEPSEEK_API_KEY")
+    )
+
+
+requires_live_llm = pytest.mark.skipif(
+    os.environ.get("MAJORANA_RUN_LIVE_LLM") != "1" or not _live_provider_ready(),
+    reason="live provider test requires MAJORANA_RUN_LIVE_LLM=1 and configured credentials",
+)
 
 
 @dataclass
@@ -36,6 +39,7 @@ class RecordingSink:
         self.events.append((event_type, payload))
 
 
+@requires_live_llm
 async def test_plan_emits_valid_research_event(monkeypatch):
     source = ResearchSource(
         title="Reference",
@@ -51,7 +55,7 @@ async def test_plan_emits_valid_research_event(monkeypatch):
         scope=None,
         session=None,
         run_id=uuid4(),
-        llm=FakeLLM({model_for("plan"): json.dumps(PLAN)}),
+        llm=default_llm(),
         sandbox=None,
     )
     sink = RecordingSink()
@@ -82,6 +86,10 @@ async def test_plan_emits_valid_research_event(monkeypatch):
         }
     )
     assert event.sources[0].url == source.url
+    delta_type, delta_payload = next(event for event in sink.events if event[0] == "llm.delta")
+    assert delta_type == "llm.delta"
+    assert delta_payload["stage"] == Stage.PLAN
+    assert delta_payload["kind"] == "output"
 
 
 async def _research_result(source: ResearchSource) -> ResearchResult:

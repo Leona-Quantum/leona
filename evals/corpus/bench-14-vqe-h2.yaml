@@ -1,6 +1,6 @@
 id: bench-14
 category: "D — VQE H2"
-prompt: "Estimate the ground-state energy of H2 at bond length 0.735 Angstrom in STO-3G with VQE. Use online research when useful to identify a standard parity-reduced two-qubit or documented four-qubit UCC-style Hamiltonian/ansatz; do not invent coefficients. Prepare the Hartree-Fock reference, optimize a physically appropriate ansatz, compare against exact diagonalization, and return the total energy in Hartree with the Hamiltonian assumptions and source URLs. The expected total ground-state energy is approximately -1.1373 Hartree. The result JSON MUST use the exact key ground_state_energy_Ha for that total energy; do not substitute total_energy_Ha or electronic_energy_Ha."
+prompt: "Estimate the ground-state energy of H2 at bond length 0.735 Angstrom."
 framework: qiskit
 expect:
   verifier_decision: pass

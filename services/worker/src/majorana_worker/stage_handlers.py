@@ -9,8 +9,9 @@ Data threaded through ctx.state within a run:
   + qasm (str) → verifier_decision → compiled circuit/resource evidence → finalized
   code → final result → baseline/analysis → export/writeback metadata
 
-Providers are injected: production builds AnthropicLLM + VercelSandbox from env;
-tests/offline E2E inject FakeLLM + LocalSubprocessSandbox.
+Providers are injected: production builds the configured real LLM client and
+VercelSandbox from env; local development may pair a real LLM with the guarded
+LocalSubprocessSandbox.
 """
 
 from __future__ import annotations
@@ -56,15 +57,19 @@ from majorana_llm import (
     FINAL_QASM_BEGIN,
     FINAL_QASM_END,
     FINAL_QASM_ERROR,
-    STAGE_PROMPTS,
     LLMClient,
     LLMRequest,
     extract_code,
     extract_qasm_with_provenance,
     model_for,
+    parse_analysis,
     parse_plan,
     research_for_prompt,
+    render_analysis_prompt,
+    render_generate_prompt,
+    render_plan_prompt,
 )
+from majorana_llm.models import AnalysisOutput
 from majorana_pipeline import RunContext, StageHandler, StageOutcome
 from majorana_sandbox import ExecutionSpec, GuardRejection, QubitCeilingExceeded, Sandbox
 from majorana_sandbox import run as sandbox_run
@@ -154,6 +159,33 @@ async def _emit_llm_call(ctx: RunContext, stage: Stage, model: str, resp: Any, d
     )
 
 
+_LLM_DELTA_CHUNK_CHARS = 240
+
+
+def _llm_delta_emitter(ctx: RunContext, stage: Stage):
+    """Coalesce provider chunks before persisting them as replayable events."""
+    buffers = {"reasoning": "", "output": ""}
+
+    async def on_delta(text: str, kind: str) -> None:
+        if not text:
+            return
+        normalized = kind if kind in buffers else "output"
+        buffers[normalized] += text
+        while len(buffers[normalized]) >= _LLM_DELTA_CHUNK_CHARS:
+            chunk, buffers[normalized] = (
+                buffers[normalized][:_LLM_DELTA_CHUNK_CHARS],
+                buffers[normalized][_LLM_DELTA_CHUNK_CHARS:],
+            )
+            await ctx.sink.emit("llm.delta", {"stage": stage, "kind": normalized, "text": chunk})
+
+    async def flush() -> None:
+        for kind, text in buffers.items():
+            if text:
+                await ctx.sink.emit("llm.delta", {"stage": stage, "kind": kind, "text": text})
+
+    return on_delta, flush
+
+
 def build_stage_handlers(
     scope: Scope,
     session: AsyncSession,
@@ -185,21 +217,24 @@ def build_stage_handlers(
                     "error": research.error,
                 },
             )
-        user = ctx.task_prompt
-        if research_context:
-            user = f"{ctx.task_prompt}\n\n{research_context}"
+        prompt = render_plan_prompt(ctx.task_prompt, research_context)
         t0 = time.monotonic()
-        resp = await llm.complete(
-            LLMRequest(
-                model=model,
-                system=STAGE_PROMPTS["plan"],
-                user=user,
-                # Structured decoding pins the exact Plan field names/enums —
-                # prompt-only schema injection is proven unreliable (plan_invalid).
-                response_schema=Plan.model_json_schema(),
-                schema_name="request_plan",
+        on_delta, flush_deltas = _llm_delta_emitter(ctx, Stage.PLAN)
+        try:
+            resp = await llm.complete(
+                LLMRequest(
+                    model=model,
+                    system=prompt.system,
+                    user=prompt.user,
+                    # Structured decoding pins the exact Plan field names/enums —
+                    # prompt-only schema injection is proven unreliable (plan_invalid).
+                    response_schema=Plan.model_json_schema(),
+                    schema_name="request_plan",
+                ),
+                on_delta=on_delta,
             )
-        )
+        finally:
+            await flush_deltas()
         await _emit_llm_call(ctx, Stage.PLAN, model, resp, int((time.monotonic() - t0) * 1000))
         try:
             plan = parse_plan(resp.text)
@@ -214,21 +249,21 @@ def build_stage_handlers(
         model = model_for(Stage.GENERATE)
         feedback = ctx.state.get("repair_feedback")
         research_context = ctx.state.get("research_context", "")
-        user = f"Plan:\n{plan.model_dump_json(indent=2)}\n\nGenerate the code."
-        if research_context:
-            user = f"{research_context}\n\n{user}"
-        if feedback:
-            user += (
-                "\n\nThe previous attempt failed a deterministic screen or verification check. "
-                f"Diagnose and fix only this issue before regenerating:\n{feedback}"
-            )
-        t0 = time.monotonic()
-        resp = await llm.complete(
-            # 8192: real algorithm implementations (VQE/QAOA + QASM emission) overflow
-            # the 4096 default — DeepSeek then returns an empty completion, which
-            # surfaced as generate_invalid in the 2026-07-11 baseline.
-            LLMRequest(model=model, system=STAGE_PROMPTS["generate"], user=user, max_tokens=8192)
+        prompt = render_generate_prompt(
+            plan.model_dump_json(indent=2), research_context, feedback=feedback
         )
+        t0 = time.monotonic()
+        on_delta, flush_deltas = _llm_delta_emitter(ctx, Stage.GENERATE)
+        try:
+            resp = await llm.complete(
+                # 8192: real algorithm implementations (VQE/QAOA + QASM emission) overflow
+                # the 4096 default — DeepSeek then returns an empty completion, which
+                # surfaced as generate_invalid in the 2026-07-11 baseline.
+                LLMRequest(model=model, system=prompt.system, user=prompt.user, max_tokens=8192),
+                on_delta=on_delta,
+            )
+        finally:
+            await flush_deltas()
         await _emit_llm_call(ctx, Stage.GENERATE, model, resp, int((time.monotonic() - t0) * 1000))
         try:
             code = extract_code(resp.text)
@@ -383,6 +418,10 @@ def build_stage_handlers(
             decision = VerifierDecision.PASS
         else:
             decision = VerifierDecision.FAIL
+        ctx.state["verification_evidence"] = [
+            {"method": outcome.method, "result": outcome.result, "details": outcome.details}
+            for outcome in outcomes
+        ]
         ctx.state["verifier_decision"] = decision
         await runs_repo.update_run_status(
             scope,
@@ -505,7 +544,7 @@ def build_stage_handlers(
         compatibility: dict[str, Any] = {}
         from majorana_ir import classify_export
 
-        for target in ("openqasm2", "qiskit", "pennylane"):
+        for target in ("openqasm2", "openqasm3", "qiskit", "pennylane"):
             try:
                 classification = classify_export(outcome.selected, target)
                 compatibility[target] = {
@@ -611,7 +650,7 @@ def build_stage_handlers(
             ctx.state.get("verifier_decision") is VerifierDecision.PASS and circuit is not None
         )
         ctx.state["simulation_plausible"] = simulation_plausible
-        conversion_options = ["openqasm2", "qiskit", "pennylane"] if circuit else []
+        conversion_options = ["openqasm3", "openqasm2", "qiskit", "pennylane"] if circuit else []
         execution_options = ["simulate"] if simulation_plausible else []
         await ctx.sink.emit(
             "code.finalized",
@@ -637,6 +676,7 @@ def build_stage_handlers(
         return await simulate_stage(ctx, phase="final")
 
     async def analyze_stage(ctx: RunContext) -> StageOutcome:
+        plan: Plan = ctx.state["plan"]
         decision = ctx.state.get("verifier_decision", VerifierDecision.INCONCLUSIVE)
         baseline = ctx.state.get("baseline")
         compilation = ctx.state.get("compilation")
@@ -653,7 +693,6 @@ def build_stage_handlers(
         else:
             summary = "The run completed without enough evidence for a verification verdict."
             interpretation = "Treat the result as inconclusive until a stronger check is available."
-        residual_risks = "Compilation was analyzed conservatively; target-specific transpilation/QPU execution is not available in this run."
         comparison = {
             "baseline": baseline,
             "final_result": ctx.state.get("final_result", ctx.state.get("result")),
@@ -663,7 +702,72 @@ def build_stage_handlers(
                 else None
             ),
         }
-        ctx.state["analysis"] = {"summary": summary, "interpretation": interpretation}
+        default_risks = (
+            "Compilation was analyzed conservatively; target-specific transpilation and "
+            "QPU execution are not available in this run."
+        )
+        fallback = AnalysisOutput(
+            summary=summary,
+            interpretation=interpretation,
+            residual_risks=default_risks,
+        )
+        narrative = fallback
+        analysis_error: str | None = None
+        final_result = ctx.state.get("final_result", ctx.state.get("result", {}))
+        compilation_record = (
+            {"mode": compilation.mode, "accepted": compilation.accepted}
+            if compilation is not None
+            else None
+        )
+        prompt = render_analysis_prompt(
+            task_prompt=ctx.task_prompt,
+            plan_json=plan.model_dump_json(indent=2),
+            verification_evidence=json.dumps(
+                ctx.state.get("verification_evidence", []), sort_keys=True, default=str
+            ),
+            final_result=json.dumps(final_result, sort_keys=True, default=str),
+            baseline=json.dumps(baseline, sort_keys=True, default=str),
+            compilation=json.dumps(compilation_record, sort_keys=True, default=str),
+        )
+        model = model_for(Stage.ANALYZE)
+        t0 = time.monotonic()
+        on_delta, flush_deltas = _llm_delta_emitter(ctx, Stage.ANALYZE)
+        response = None
+        try:
+            response = await llm.complete(
+                LLMRequest(
+                    model=model,
+                    system=prompt.system,
+                    user=prompt.user,
+                    max_tokens=2048,
+                    response_schema=AnalysisOutput.model_json_schema(),
+                    schema_name="analysis_output",
+                ),
+                on_delta=on_delta,
+            )
+        except Exception as exc:
+            # Analysis is explanatory, not a reason to discard an otherwise honest
+            # run. Preserve a deterministic narrative and surface the provider type
+            # as a caveat without persisting raw provider text.
+            analysis_error = type(exc).__name__
+        finally:
+            await flush_deltas()
+        if response is not None:
+            await _emit_llm_call(
+                ctx, Stage.ANALYZE, model, response, int((time.monotonic() - t0) * 1000)
+            )
+            try:
+                narrative = parse_analysis(response.text)
+            except Exception as exc:
+                analysis_error = type(exc).__name__
+
+        residual_risks = narrative.residual_risks or default_risks
+        if analysis_error:
+            residual_risks = f"LLM narrative unavailable ({analysis_error}). {residual_risks}"
+        ctx.state["analysis"] = {
+            "summary": narrative.summary,
+            "interpretation": narrative.interpretation,
+        }
         ctx.state["residual_risks"] = residual_risks
         await runs_repo.update_run_status(
             scope,
@@ -676,9 +780,9 @@ def build_stage_handlers(
         await ctx.sink.emit(
             "run.analysis",
             {
-                "summary": summary,
-                "interpretation": interpretation,
-                "results": ctx.state.get("final_result", ctx.state.get("result", {})),
+                "summary": narrative.summary,
+                "interpretation": narrative.interpretation,
+                "results": final_result,
                 "comparison": comparison,
                 "residual_risks": residual_risks,
             },

@@ -9,9 +9,8 @@ dependencies = [
     "majorana-contracts",
     "majorana-api",
     "majorana-worker",
-    # The harness runs REAL providers to produce the honest baseline, so unlike
-    # the core worker/pipeline (SDK-agnostic, FakeLLM in unit tests) it must pull
-    # the provider SDKs. Both complete profiles the bench guard accepts:
+    # The harness runs REAL providers to produce the honest baseline and therefore
+    # pulls the provider SDKs. Both complete profiles the bench guard accepts:
     # openai+deepseek (one SDK) and anthropic.
     "majorana-llm[openai,anthropic]",
 ]

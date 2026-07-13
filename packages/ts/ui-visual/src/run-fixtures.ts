@@ -162,11 +162,27 @@ const FAILED: RunEvent[] = [
   { type: "run.finished", run_id: RUN, seq: 14, ts: ts(23), status: "failed", verifier_decision: "fail", residual_risks: null },
 ];
 
+// Tail fragments exercise the organic plan output against the same replay reducer and
+// typed event union. The provider's internal Plan JSON is intentionally not rendered.
+const WITH_MODEL_ACTIVITY: RunEvent[] = [
+  ...VERIFIED,
+  {
+    type: "llm.delta",
+    run_id: RUN,
+    seq: 28,
+    ts: ts(37),
+    stage: "plan",
+    kind: "reasoning",
+    text: "I am checking the requested graph size and the strongest independent check before implementation.",
+  },
+];
+
 const MID_RUN: RunEvent[] = VERIFIED.slice(0, 10); // simulate running (sandbox in, not finished)
 const QUEUED: RunEvent[] = VERIFIED.slice(0, 2); // queued/started only → waiting panel
 
 export const RUN_FIXTURES: Record<string, RunEvent[]> = {
   verified: VERIFIED,
+  "model-activity": WITH_MODEL_ACTIVITY,
   failed: FAILED,
   midrun: MID_RUN,
   queued: QUEUED,

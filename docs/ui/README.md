@@ -15,6 +15,9 @@ Domain home for the product surface (`apps/web` + `packages/ts/ui`), per
 | Design tokens (only source of hex/sizes/spacing) | `packages/ts/ui/tokens.css` (+ `docs/ui/tokens.md` rules) |
 | Component styles | `packages/ts/ui/styles.css` (`mj-*` classes) |
 | App shell + primary nav | `packages/ts/ui/src/app-shell.tsx`; labels ONLY in `src/nav-config.ts` |
+| Workspace sidebar/history | `apps/web/components/shell.tsx` + `apps/web/lib/chat-history.ts` |
+| Run composer | `apps/web/components/run-composer.tsx` (bottom dock; route owns submission) |
+| Quepo Studio list/detail | `apps/web/app/(app)/library` + `apps/web/lib/library-data.ts` |
 | Pipeline stage rail (S3, the brand) | `packages/ts/ui/src/stage-rail.tsx` |
 | Verdict banner (S4) | `packages/ts/ui/src/verdict-banner.tsx` |
 | Empty states | `packages/ts/ui/src/empty-state.tsx` |
@@ -23,18 +26,23 @@ Domain home for the product surface (`apps/web` + `packages/ts/ui`), per
 | Style gate (no raw hex outside tokens.css) | `scripts/check-raw-hex.mjs`, runs as `@majorana/ui` `lint` in CI |
 | Tailwind v4 theme mapping | `apps/web/app/globals.css` (`@theme inline` → token vars) |
 
-## Current state (2026-07-11)
+## Current state (2026-07-13)
 
-Shell + nav + tokens + rail/banner/empty components shipped with route stubs for
-/run, /library, /account (first UI PR). S3/S4 pipeline view (RunView + pure
-`reduceRunEvents`) landed at `/run/[taskId]`; owner taste-check approved. The axe/WCAG
-slice of the visual CI shipped (`packages/ts/ui-visual`, CI job `ui-visual`) and caught two
-real component a11y bugs (now fixed). Not built yet: real composer (S2), library list/detail
-(S5/S6), public pages (S7), landing (S1), account meters (S9), the screenshot visual-diff
-slice (04 §5 step 2b).
+The usable workspace slice is now wired: `/run` has a bottom composer, example prompts,
+mode selection, and a persistent collapsible sidebar with recent chats; `/run/[taskId]`
+keeps the result scrollable above the composer and replays the live SSE event log; and
+`/library` is the Quepo Studio list with search/filter controls plus artifact detail tabs,
+copyable source code, export state, run provenance, and the Library → Run context handoff.
+The UI uses replayable local fixtures when the control plane is not configured, while the
+artifact BFF routes read workspace-scoped artifacts and current versions from the API.
+The public landing page and local fail-closed auth path are also present. The remaining
+work is primarily real persistence/write flows, account meters, visual-diff automation,
+and replacing seeded fixtures with the connected repository in deployed environments.
 
 ## Quality bar (CI-checkable subset in 07 §5)
 
 WCAG 2.1 AA; designed loading/empty/error states on every async view; CLS < 0.1
 (rail reserves height); /run first-load JS < 250 KB gz; every number rendered has
-units/tolerances; replay of a stored run re-renders identically (07 §6).
+units/tolerances; replay of a stored run re-renders identically (07 §6); the output
+scroll region must not push the composer off-screen; source code must be keyboard-focusable
+and copyable.

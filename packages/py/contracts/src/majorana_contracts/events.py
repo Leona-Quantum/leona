@@ -96,6 +96,7 @@ class LlmDelta(_EventBase):
 
     type: Literal["llm.delta"] = "llm.delta"
     stage: Stage
+    kind: Literal["reasoning", "output"] = "output"
     text: str
 
 

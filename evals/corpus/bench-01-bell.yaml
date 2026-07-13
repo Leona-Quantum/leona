@@ -1,6 +1,6 @@
 id: bench-01
 category: "A — Bell/GHZ state prep"
-prompt: "Prepare a Bell state on two qubits and measure both. Return the measurement counts."
+prompt: "Prepare a Bell state on two qubits and measure both."
 framework: qiskit
 expect:
   verifier_decision: pass

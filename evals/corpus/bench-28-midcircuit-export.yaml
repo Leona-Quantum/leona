@@ -1,6 +1,6 @@
 id: bench-28
 category: "G — Transpilation/export honesty"
-prompt: "Take a circuit that mid-circuit measures a qubit and conditionally applies X, and export it to OpenQASM 2. Classify the export honestly."
+prompt: "Take a circuit that mid-circuit measures a qubit and conditionally applies X, and export it to OpenQASM 3. Classify the export honestly."
 framework: qiskit
 expect:
   # JC-5: the IR's terminal-measurement limit makes this unsupported; the honest

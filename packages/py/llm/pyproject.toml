@@ -3,12 +3,13 @@ name = "majorana-llm"
 version = "0.1.0"
 description = "LLM client, per-stage model constants, and system prompts for the pipeline"
 requires-python = ">=3.12"
-dependencies = ["pydantic>=2.8", "majorana-contracts"]
+dependencies = ["langchain-core>=1.0,<2", "pydantic>=2.8", "majorana-contracts"]
 
 [project.optional-dependencies]
-# Real provider clients. Kept optional so prompts + FakeLLM install without any
-# SDK. Owner confirmed OpenAI + DeepSeek (2026-07-10); DeepSeek speaks the OpenAI
-# wire protocol, so one SDK covers both. Anthropic stays as an alternate profile.
+# Real provider clients. Kept optional so the core package can be imported for
+# prompt parsing and adapter tests without a provider SDK. Owner confirmed OpenAI
+# + DeepSeek (2026-07-10); DeepSeek speaks the OpenAI wire protocol, so one SDK
+# covers both. Anthropic stays as an alternate profile.
 openai = ["openai>=1.50"]
 anthropic = ["anthropic>=0.40"]
 

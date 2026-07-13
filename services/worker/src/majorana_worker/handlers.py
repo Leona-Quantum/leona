@@ -6,6 +6,7 @@ at enqueue time), never a broader one; repos.system stays provisioning+jobs only
 
 import asyncio
 import logging
+import os
 import uuid
 from typing import Any, Awaitable, Callable
 
@@ -14,7 +15,7 @@ from majorana_contracts.enums import Framework, Role, RunMode, RunStatus
 from majorana_contracts.events import run_event_adapter
 from majorana_llm import LLMClient, default_llm
 from majorana_pipeline import RunContext, execute_run
-from majorana_sandbox import Sandbox, VercelSandbox
+from majorana_sandbox import LocalSubprocessSandbox, Sandbox, VercelSandbox
 
 from majorana_api.db import AsyncSession
 from majorana_api.jobs import RUN_EXECUTE_JOB_KIND
@@ -33,8 +34,25 @@ def _default_llm() -> LLMClient:
 
 
 def _default_sandbox() -> Sandbox:
-    """Production sandbox (the real Firecracker boundary; needs Vercel creds)."""
-    return VercelSandbox()
+    """Choose the execution boundary without silently weakening production.
+
+    The local subprocess double is useful for a paid-provider walkthrough on a
+    developer machine, but it is not a security boundary and must never be
+    selected by a Cloud Run, Vercel, or CI process.
+    """
+    provider = os.environ.get("MAJORANA_SANDBOX", "vercel").strip().lower()
+    if provider == "local":
+        if os.environ.get("MAJORANA_ENV", "").strip().lower() != "development" or any(
+            os.environ.get(name)
+            for name in ("K_SERVICE", "K_REVISION", "K_CONFIGURATION", "VERCEL", "CI")
+        ):
+            raise RuntimeError(
+                "MAJORANA_SANDBOX=local requires MAJORANA_ENV=development and a local process"
+            )
+        return LocalSubprocessSandbox()
+    if provider == "vercel":
+        return VercelSandbox()
+    raise RuntimeError("MAJORANA_SANDBOX must be 'vercel' or 'local'")
 
 
 class RepoEventSink:

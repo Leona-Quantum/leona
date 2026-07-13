@@ -1,6 +1,7 @@
 """Harness v1: run each corpus case through the real pipeline and score it against
-its honest expectations. Providers are injected — a real run uses AnthropicLLM +
-VercelSandbox (the honest baseline number); the self-test uses fakes.
+its honest expectations. Providers are injected, but every harness run must use the
+configured real LLM and sandbox. The harness deliberately drives the handler
+directly and never enqueues a job, so a background worker cannot claim the same case.
 
 Scoring is structural, never a golden number: verifier_decision, export status
 (when the case pins one), promised output keys, and whether a verified artifact
@@ -17,9 +18,7 @@ from majorana_contracts.enums import RunMode
 from majorana_llm import LLMClient
 from majorana_sandbox import Sandbox
 
-from majorana_api.jobs import RUN_EXECUTE_JOB_KIND
 from majorana_api.repos import runs as runs_repo
-from majorana_api.repos import system
 from majorana_worker.handlers import handle_run_execute
 
 from majorana_evals.schema import CaseEvidence, CaseResult, CorpusCase, Report
@@ -93,7 +92,8 @@ async def run_case(
     llm: LLMClient,
     sandbox: Sandbox,
 ) -> CaseResult:
-    # Create the run + enqueue exactly as the API route does, then drive it.
+    # Direct-handler ownership is intentional: this standalone harness creates the
+    # run and drives it itself, without creating a queue row for a worker to claim.
     async with factory() as session:
         run = await runs_repo.create_run(
             scope,
@@ -115,7 +115,6 @@ async def run_case(
             "workspace_id": str(scope.workspace_id),
             "user_id": str(scope.user_id),
         }
-        await system.enqueue_job(session, kind=RUN_EXECUTE_JOB_KIND, payload=payload, run_id=run_id)
         await session.commit()
 
     reasons: list[str] = []

@@ -1,11 +1,8 @@
-"""majorana-llm — LLM client, per-stage model constants, system prompts, and
-structured-output parsing for the pipeline (plans/rebuild/08-phases.md §Phase 2
-step 3). The pipeline depends only on the LLMClient protocol; FakeLLM and
-AnthropicLLM are drop-in swappable."""
+"""majorana-llm — provider clients, per-stage model constants, system prompts,
+and structured-output parsing for the pipeline."""
 
 from majorana_llm.client import (
     AnthropicLLM,
-    FakeLLM,
     LLMClient,
     LLMRequest,
     LLMResponse,
@@ -13,7 +10,7 @@ from majorana_llm.client import (
     default_llm,
     endpoint_for,
 )
-from majorana_llm.models import model_for, resolve_provider
+from majorana_llm.models import AnalysisOutput, model_for, resolve_provider
 from majorana_llm.parsing import (
     FINAL_QASM_BEGIN,
     FINAL_QASM_END,
@@ -23,6 +20,7 @@ from majorana_llm.parsing import (
     extract_code,
     extract_qasm,
     extract_qasm_with_provenance,
+    parse_analysis,
     parse_plan,
 )
 from majorana_llm.prompts import (
@@ -30,8 +28,12 @@ from majorana_llm.prompts import (
     FRAMEWORK_DIRECTIVE,
     GENERATE_SYSTEM_PROMPT,
     PLAN_SYSTEM_PROMPT,
+    RenderedPrompt,
     STAGE_PROMPTS,
     WRITEBACK_SYSTEM_PROMPT,
+    render_analysis_prompt,
+    render_generate_prompt,
+    render_plan_prompt,
 )
 from majorana_llm.research import ResearchResult, ResearchSource, research_for_prompt
 
@@ -39,13 +41,13 @@ __all__ = [
     "LLMClient",
     "LLMRequest",
     "LLMResponse",
-    "FakeLLM",
     "AnthropicLLM",
     "OpenAICompatibleLLM",
     "default_llm",
     "endpoint_for",
     "model_for",
     "resolve_provider",
+    "AnalysisOutput",
     "parse_plan",
     "extract_code",
     "extract_qasm",
@@ -55,12 +57,17 @@ __all__ = [
     "FINAL_QASM_END",
     "FINAL_QASM_ERROR",
     "StageOutputError",
+    "parse_analysis",
     "PLAN_SYSTEM_PROMPT",
     "GENERATE_SYSTEM_PROMPT",
     "CRITIC_SYSTEM_PROMPT",
     "WRITEBACK_SYSTEM_PROMPT",
     "FRAMEWORK_DIRECTIVE",
     "STAGE_PROMPTS",
+    "RenderedPrompt",
+    "render_plan_prompt",
+    "render_generate_prompt",
+    "render_analysis_prompt",
     "ResearchResult",
     "ResearchSource",
     "research_for_prompt",
