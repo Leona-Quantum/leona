@@ -91,4 +91,6 @@ async def get_current_version(
     artifact = await artifacts_repo.get_artifact(scope, session, artifact_id)
     if artifact.current_version_id is None:
         raise HTTPException(status_code=404, detail="artifact version")
-    return _to_version(await artifacts_repo.get_version(scope, session, artifact.current_version_id))
+    return _to_version(
+        await artifacts_repo.get_version(scope, session, artifact.current_version_id)
+    )

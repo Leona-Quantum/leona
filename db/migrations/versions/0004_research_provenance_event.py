@@ -78,4 +78,8 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     op.drop_constraint("ck_type_enum", "run_events", type_="check")
-    op.create_check_constraint("ck_type_enum", "run_events", _check(_PREVIOUS_EVENT_TYPES))
+    # Preserve research.completed rows when a shared CI parent already contains
+    # them; a later upgrade restores the complete validated allowlist.
+    op.execute(
+        f"ALTER TABLE run_events ADD CONSTRAINT ck_type_enum CHECK ({_check(_PREVIOUS_EVENT_TYPES)}) NOT VALID"
+    )
