@@ -7,6 +7,8 @@ from majorana_api.settings import Settings
 
 def test_local_dev_auth_can_start_without_workos(monkeypatch):
     monkeypatch.delenv("WORKOS_CLIENT_ID", raising=False)
+    for name in ("CI", "VERCEL", "K_SERVICE", "K_REVISION", "K_CONFIGURATION"):
+        monkeypatch.delenv(name, raising=False)
     monkeypatch.setenv("MAJORANA_ENV", "development")
     monkeypatch.setenv("MAJORANA_LOCAL_DEV_AUTH", "true")
     settings = Settings.from_env()
