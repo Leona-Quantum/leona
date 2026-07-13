@@ -115,7 +115,36 @@ const VERIFIED: RunEvent[] = [
   { type: "artifact.saved", run_id: RUN, seq: 21, ts: ts(30), artifact_id: ART, version_id: `${ART}-v1`, version_seq: 1 },
   { type: "stage.finished", run_id: RUN, seq: 22, ts: ts(31), stage: "save", ok: true, duration_ms: 210 },
 
-  { type: "run.finished", run_id: RUN, seq: 23, ts: ts(32), status: "succeeded", verifier_decision: "pass", residual_risks: null },
+  { type: "stage.started", run_id: RUN, seq: 23, ts: ts(32), stage: "analyze" },
+  {
+    type: "run.analysis",
+    run_id: RUN,
+    seq: 24,
+    ts: ts(33),
+    summary: "Final simulation reproduced the verified MaxCut result.",
+    interpretation: "The circuit reaches the expected cut value of 4 on the sampled 5-node ring.",
+    results: { cut_value: 4, bitstring: "01010" },
+    comparison: { baseline_cut: 4, final_cut: 4 },
+    residual_risks: "Simulation only; no QPU execution was requested.",
+  },
+  { type: "stage.finished", run_id: RUN, seq: 25, ts: ts(34), stage: "analyze", ok: true, duration_ms: 20 },
+
+  {
+    type: "research.completed",
+    run_id: RUN,
+    seq: 26,
+    ts: ts(35),
+    query: "MaxCut on a 5-node ring",
+    sources: [
+      {
+        title: "Qiskit MaxCut tutorial",
+        url: "https://qiskit.qotlabs.org/learning/courses/quantum-approximate-optimization-algorithm",
+        excerpt: "QAOA is a variational method for approximate combinatorial optimization.",
+      },
+    ],
+    error: null,
+  },
+  { type: "run.finished", run_id: RUN, seq: 27, ts: ts(36), status: "succeeded", verifier_decision: "pass", residual_risks: null },
 ];
 
 const FAILED: RunEvent[] = [
@@ -133,11 +162,27 @@ const FAILED: RunEvent[] = [
   { type: "run.finished", run_id: RUN, seq: 14, ts: ts(23), status: "failed", verifier_decision: "fail", residual_risks: null },
 ];
 
+// Tail fragments exercise the organic plan output against the same replay reducer and
+// typed event union. The provider's internal Plan JSON is intentionally not rendered.
+const WITH_MODEL_ACTIVITY: RunEvent[] = [
+  ...VERIFIED,
+  {
+    type: "llm.delta",
+    run_id: RUN,
+    seq: 28,
+    ts: ts(37),
+    stage: "plan",
+    kind: "reasoning",
+    text: "I am checking the requested graph size and the strongest independent check before implementation.",
+  },
+];
+
 const MID_RUN: RunEvent[] = VERIFIED.slice(0, 10); // simulate running (sandbox in, not finished)
 const QUEUED: RunEvent[] = VERIFIED.slice(0, 2); // queued/started only → waiting panel
 
 export const RUN_FIXTURES: Record<string, RunEvent[]> = {
   verified: VERIFIED,
+  "model-activity": WITH_MODEL_ACTIVITY,
   failed: FAILED,
   midrun: MID_RUN,
   queued: QUEUED,

@@ -71,4 +71,9 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     op.drop_constraint("ck_type_enum", "run_events", type_="check")
-    op.create_check_constraint("ck_type_enum", "run_events", _check(_LEGACY_EVENT_TYPES))
+    # CI branches can inherit append-only events written by this revision
+    # before exercising a downgrade. Preserve that history while enforcing the
+    # legacy allowlist for new writes; the next upgrade validates the full set.
+    op.execute(
+        f"ALTER TABLE run_events ADD CONSTRAINT ck_type_enum CHECK ({_check(_LEGACY_EVENT_TYPES)}) NOT VALID"
+    )

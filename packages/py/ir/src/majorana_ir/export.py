@@ -28,13 +28,13 @@ from majorana_contracts.enums import ExportStatus
 from pydantic import BaseModel
 
 from majorana_ir.connectors.codegen import pennylane_code, qiskit_code
-from majorana_ir.connectors.openqasm import to_openqasm
+from majorana_ir.connectors.openqasm import to_openqasm, to_openqasm3
 from majorana_ir.models import Circuit, validate_circuit
 
 # Targets we can reason about. "native" ones have a faithful generator here;
 # the rest have no native generator, so the honest ceiling is download_only.
 Target = Literal["openqasm2", "openqasm3", "qiskit", "pennylane", "cudaq"]
-_NATIVE_TARGETS = frozenset({"openqasm2", "qiskit", "pennylane"})
+_NATIVE_TARGETS = frozenset({"openqasm2", "openqasm3", "qiskit", "pennylane"})
 
 
 class ExportClassification(BaseModel):
@@ -74,8 +74,9 @@ def classify_export(circuit: Circuit, target: Target) -> ExportClassification:
             qasm_available=False,
         )
 
-    # A valid static IR circuit always has a downloadable OpenQASM 2 rendering.
+    # A valid static IR circuit always has native OpenQASM 2 and 3 renderings.
     qasm = to_openqasm(circuit)
+    qasm3 = to_openqasm3(circuit)
 
     if target == "openqasm2":
         return ExportClassification(
@@ -83,6 +84,15 @@ def classify_export(circuit: Circuit, target: Target) -> ExportClassification:
             status=ExportStatus.LOSSLESS,
             code=qasm,
             qasm=qasm,
+            qasm_available=True,
+        )
+
+    if target == "openqasm3":
+        return ExportClassification(
+            target=target,
+            status=ExportStatus.LOSSLESS,
+            code=qasm3,
+            qasm=qasm3,
             qasm_available=True,
         )
 
@@ -130,16 +140,14 @@ def classify_export(circuit: Circuit, target: Target) -> ExportClassification:
             qasm_available=True,
         )
 
-    if target in ("openqasm3", "cudaq"):
-        # No native generator here. OpenQASM 3 is a superset of QASM 2 and CUDA-Q
-        # can ingest QASM, so a validated OpenQASM 2 rendering is downloadable —
-        # but we have not *proven* a target-native lossless form, so per JC-2 we
-        # do not claim lossless.
+    if target == "cudaq":
+        # CUDA-Q has no target-native generator here, so a validated OpenQASM
+        # rendering is downloadable without claiming target-native fidelity.
         return ExportClassification(
             target=target,
             status=ExportStatus.DOWNLOAD_ONLY,
             reason=(
-                f"no native {target} generator; a validated OpenQASM 2 rendering "
+                f"no native {target} generator; a validated OpenQASM rendering "
                 "is available for download but a target-native faithful export "
                 "has not been proven"
             ),

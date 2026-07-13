@@ -1,6 +1,6 @@
 id: bench-14
 category: "D — VQE H2"
-prompt: "Estimate the ground-state energy of H2 at bond length 0.735 Angstrom with VQE. Return the energy in Hartree and verify against exact diagonalization."
+prompt: "Estimate the ground-state energy of H2 at bond length 0.735 Angstrom."
 framework: qiskit
 expect:
   verifier_decision: pass

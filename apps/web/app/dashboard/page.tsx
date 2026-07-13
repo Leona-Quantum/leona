@@ -1,6 +1,6 @@
 // The step-5 round-trip: AuthKit session → WorkOS access token → FastAPI
 // verifies via JWKS → provisions user+workspace → /v1/me echoes the Scope.
-import { signOut, withAuth } from "@workos-inc/authkit-nextjs";
+import { getMajoranaAuth, signOutMajorana } from "../../lib/auth";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
@@ -27,7 +27,7 @@ async function fetchMe(accessToken: string): Promise<Me | { error: string }> {
 }
 
 export default async function Dashboard() {
-  const { user, accessToken } = await withAuth({ ensureSignedIn: true });
+  const { user, accessToken } = await getMajoranaAuth({ ensureSignedIn: true });
   const me = await fetchMe(accessToken);
   return (
     <main>
@@ -38,7 +38,7 @@ export default async function Dashboard() {
       <form
         action={async () => {
           "use server";
-          await signOut();
+          await signOutMajorana();
         }}
       >
         <button type="submit">Sign out</button>

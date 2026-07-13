@@ -1,5 +1,8 @@
 """CLI: run the corpus against the REAL providers and write report.json.
 
+The harness uses direct-handler ownership: it does not enqueue jobs, so a separate
+worker cannot race the evaluation process.
+
   uv run --package majorana-evals python -m majorana_evals \
       --corpus evals/corpus --out evals/report.json
 

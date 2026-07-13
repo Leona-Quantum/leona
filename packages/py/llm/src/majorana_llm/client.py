@@ -1,14 +1,16 @@
-"""LLM client abstraction. The pipeline depends only on the `LLMClient` protocol,
-so the deterministic `FakeLLM` (tests, offline E2E) and the real clients —
-`OpenAICompatibleLLM` (OpenAI + DeepSeek, the owner-confirmed providers) and
-`AnthropicLLM` — are drop-in swappable; `default_llm()` picks by env. Every call
+"""LLM client abstraction for the configured production providers.
+
+The worker depends only on the `LLMClient` protocol; `default_llm()` selects the
+configured OpenAI-compatible or Anthropic client from the environment. Every call
 returns token counts so the worker can emit the llm.call event (ADR-0009) and
-enforce quotas."""
+enforce quotas.
+"""
 
 from __future__ import annotations
 
 import json
-from typing import Any, Callable, Protocol
+from collections.abc import Awaitable, Callable
+from typing import Any, Protocol
 
 from pydantic import BaseModel, Field
 
@@ -34,29 +36,13 @@ class LLMResponse(BaseModel):
     output_tokens: int = Field(ge=0)
 
 
+DeltaHandler = Callable[[str, str], Awaitable[None]]
+
+
 class LLMClient(Protocol):
-    async def complete(self, request: LLMRequest) -> LLMResponse: ...
-
-
-class FakeLLM:
-    """Deterministic client for tests and offline E2E. `responses` maps a model id
-    (or "*") to the text to return, or to a callable(request) -> text. Token counts
-    are derived from text length so llm.call events are non-trivial but stable."""
-
-    def __init__(self, responses: dict[str, str | Callable[[LLMRequest], str]]) -> None:
-        self._responses = responses
-
-    async def complete(self, request: LLMRequest) -> LLMResponse:
-        handler: Any = self._responses.get(request.model, self._responses.get("*"))
-        if handler is None:
-            raise KeyError(f"FakeLLM has no scripted response for model {request.model!r}")
-        text = handler(request) if callable(handler) else handler
-        return LLMResponse(
-            text=text,
-            model=request.model,
-            input_tokens=max(1, len(request.system) + len(request.user)) // 4,
-            output_tokens=max(1, len(text)) // 4,
-        )
+    async def complete(
+        self, request: LLMRequest, *, on_delta: DeltaHandler | None = None
+    ) -> LLMResponse: ...
 
 
 def endpoint_for(model: str) -> tuple[str | None, str]:
@@ -112,7 +98,9 @@ class OpenAICompatibleLLM:
     tiering (GPT for plan/verify, DeepSeek for generate/writeback). Lazy SDK
     import, same as AnthropicLLM."""
 
-    async def complete(self, request: LLMRequest) -> LLMResponse:
+    async def complete(
+        self, request: LLMRequest, *, on_delta: DeltaHandler | None = None
+    ) -> LLMResponse:
         try:
             from openai import AsyncOpenAI  # type: ignore
         except Exception as exc:  # pragma: no cover - only without the SDK
@@ -129,18 +117,42 @@ class OpenAICompatibleLLM:
         params, system = decode_params(request, key_env)
 
         client = AsyncOpenAI(api_key=api_key, base_url=base_url)
-        completion = await client.chat.completions.create(
-            model=request.model,
-            messages=[
-                {"role": "system", "content": system},
-                {"role": "user", "content": request.user},
-            ],
-            **params,
-        )
-        text = completion.choices[0].message.content or ""
-        usage = completion.usage
+        messages = [
+            {"role": "system", "content": system},
+            {"role": "user", "content": request.user},
+        ]
+        if on_delta is None:
+            completion = await client.chat.completions.create(
+                model=request.model,
+                messages=messages,
+                **params,
+            )
+            text = completion.choices[0].message.content or ""
+            usage = completion.usage
+        else:
+            stream = await client.chat.completions.create(
+                model=request.model,
+                messages=messages,
+                stream=True,
+                **params,
+            )
+            text_parts: list[str] = []
+            usage = None
+            async for chunk in stream:
+                if getattr(chunk, "usage", None) is not None:
+                    usage = chunk.usage
+                for choice in getattr(chunk, "choices", []) or []:
+                    delta = choice.delta
+                    reasoning = getattr(delta, "reasoning_content", None) or ""
+                    content = getattr(delta, "content", None) or ""
+                    if reasoning:
+                        await on_delta(reasoning, "reasoning")
+                    if content:
+                        text_parts.append(content)
+                        await on_delta(content, "output")
+            text = "".join(text_parts)
         # Missing usage must not silently zero the llm.call event (quota/event
-        # integrity) — fall back to the FakeLLM length heuristic.
+        # integrity); use a conservative character-length estimate instead.
         return LLMResponse(
             text=text,
             model=request.model,
@@ -161,14 +173,14 @@ def default_llm() -> "LLMClient":
 
 
 class AnthropicLLM:
-    """Real provider client. Imports the SDK lazily and reads ANTHROPIC_API_KEY, so
-    the package installs and the FakeLLM path runs without either. Provider choice
-    is owner-confirmable (see models.py)."""
+    """Real Anthropic provider client with lazy SDK loading."""
 
     def __init__(self, api_key: str | None = None) -> None:
         self._api_key = api_key
 
-    async def complete(self, request: LLMRequest) -> LLMResponse:
+    async def complete(
+        self, request: LLMRequest, *, on_delta: DeltaHandler | None = None
+    ) -> LLMResponse:
         try:
             from anthropic import AsyncAnthropic  # type: ignore
         except Exception as exc:  # pragma: no cover - only without the SDK
@@ -193,6 +205,8 @@ class AnthropicLLM:
             messages=[{"role": "user", "content": request.user}],
         )
         text = "".join(block.text for block in message.content if block.type == "text")
+        if on_delta is not None and text:
+            await on_delta(text, "output")
         return LLMResponse(
             text=text,
             model=request.model,

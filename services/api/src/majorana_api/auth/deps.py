@@ -33,6 +33,19 @@ async def get_verified_token(
     authorization: Annotated[str | None, Header()] = None,
 ) -> VerifiedToken:
     challenge = {"WWW-Authenticate": "Bearer"}
+
+    if settings.local_dev_auth:
+        if authorization != f"Bearer {settings.local_dev_token}":
+            raise HTTPException(401, "invalid local development token", headers=challenge)
+        return VerifiedToken(
+            workos_user_id=settings.local_dev_user_id,
+            session_id="local-dev-session",
+            claims={
+                "email": settings.local_dev_email,
+                "name": settings.local_dev_display_name,
+            },
+        )
+
     if authorization is None or not authorization.startswith("Bearer "):
         raise HTTPException(401, "missing bearer token", headers=challenge)
     try:

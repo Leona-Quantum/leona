@@ -1,10 +1,10 @@
 // S9 Account — stub: identity + sign-out. Plan/usage meters land with the S9 build.
-import { signOut, withAuth } from "@workos-inc/authkit-nextjs";
+import { getMajoranaAuth, signOutMajorana } from "../../../lib/auth";
 
 export const metadata = { title: "Account — Majorana" };
 
 export default async function Account() {
-  const { user } = await withAuth({ ensureSignedIn: true });
+  const { user } = await getMajoranaAuth({ ensureSignedIn: true });
   return (
     <section>
       <h1 style={{ fontSize: "var(--fs-20)", fontWeight: 600 }}>Account</h1>
@@ -14,7 +14,7 @@ export default async function Account() {
       <form
         action={async () => {
           "use server";
-          await signOut();
+          await signOutMajorana();
         }}
       >
         <button

@@ -62,6 +62,23 @@ class PlanProduced(_EventBase):
     plan: Plan
 
 
+class ResearchCitation(BaseModel):
+    """A bounded public reference shown as provenance for the planning decision."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    title: str = Field(min_length=1, max_length=500)
+    url: str = Field(min_length=1, max_length=2048)
+    excerpt: str = Field(min_length=1, max_length=4000)
+
+
+class ResearchCompleted(_EventBase):
+    type: Literal["research.completed"] = "research.completed"
+    query: str = Field(min_length=1, max_length=300)
+    sources: list[ResearchCitation] = Field(default_factory=list, max_length=5)
+    error: str | None = Field(default=None, max_length=120)
+
+
 class LlmCall(_EventBase):
     """One completed LLM call; every call is logged with token counts (ADR-0009)."""
 
@@ -79,6 +96,7 @@ class LlmDelta(_EventBase):
 
     type: Literal["llm.delta"] = "llm.delta"
     stage: Stage
+    kind: Literal["reasoning", "output"] = "output"
     text: str
 
 
@@ -243,6 +261,7 @@ RunEvent = Annotated[
     | StageStarted
     | StageFinished
     | PlanProduced
+    | ResearchCompleted
     | LlmCall
     | LlmDelta
     | CodeGenerated

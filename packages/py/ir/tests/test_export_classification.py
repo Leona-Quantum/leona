@@ -58,13 +58,16 @@ def test_pennylane_with_reset_is_download_only_not_unsupported():
     assert result.qasm_available
 
 
-def test_openqasm3_and_cudaq_are_download_only_never_overclaimed():
-    # JC-2: with no native generator we must NOT claim lossless.
-    for target in ("openqasm3", "cudaq"):
-        result = classify_export(from_openqasm(BELL), target)
-        assert result.status is ExportStatus.DOWNLOAD_ONLY
-        assert result.status is not ExportStatus.LOSSLESS
-        assert result.qasm_available
+def test_openqasm3_is_native_and_cudaq_stays_download_only():
+    qasm3 = classify_export(from_openqasm(BELL), "openqasm3")
+    assert qasm3.status is ExportStatus.LOSSLESS
+    assert qasm3.qasm_available
+    assert qasm3.code and qasm3.code.startswith("OPENQASM 3.0;")
+
+    cudaq = classify_export(from_openqasm(BELL), "cudaq")
+    assert cudaq.status is ExportStatus.DOWNLOAD_ONLY
+    assert cudaq.status is not ExportStatus.LOSSLESS
+    assert cudaq.qasm_available
 
 
 def test_mid_circuit_measurement_is_unsupported_blaming_the_ir_layer():

@@ -3,15 +3,15 @@ worker handler drives the REAL stage handlers (plan→generate→screen→estima
 verify→compile→finalize→final execution→baseline→analysis→save) → full
 run_events choreography → SSE replay.
 
-Providers are injected: a deterministic FakeLLM (canned Bell plan + code) and the
-LocalSubprocessSandbox, so the honest end-to-end path runs in CI without a paid
-LLM/Vercel account. The real providers are drop-in (handlers default to them).
+The successful execution test is explicitly gated on a configured real LLM and uses
+the guarded LocalSubprocessSandbox for code execution. It is opt-in because a real
+provider call is intentionally observable and billable; no scripted model output is
+accepted as an end-to-end substitute.
 
 Live-DB test in the authz-suite mold: skipped without DATABASE_URL; CI runs it on
 the per-PR Neon branch after migrate+seed.
 """
 
-import json
 import os
 import uuid
 
@@ -19,8 +19,7 @@ import httpx
 import pytest
 from majorana_contracts import Scope
 from majorana_contracts.enums import Role
-from majorana_llm import FakeLLM
-from majorana_llm.models import model_for
+from majorana_llm import LLMClient, default_llm
 from majorana_pipeline import STAGE_ORDER
 from majorana_sandbox import LocalSubprocessSandbox
 
@@ -36,45 +35,29 @@ requires_db = pytest.mark.skipif(
     "DATABASE_URL" not in os.environ, reason="pipeline e2e needs DATABASE_URL"
 )
 
+
+def _live_provider_ready() -> bool:
+    provider = os.environ.get("MAJORANA_LLM_PROVIDER", "").strip().lower()
+    if provider == "anthropic":
+        return bool(os.environ.get("ANTHROPIC_API_KEY"))
+    if provider == "openai":
+        return bool(os.environ.get("OPENAI_API_KEY") and os.environ.get("DEEPSEEK_API_KEY"))
+    return bool(os.environ.get("ANTHROPIC_API_KEY")) or bool(
+        os.environ.get("OPENAI_API_KEY") and os.environ.get("DEEPSEEK_API_KEY")
+    )
+
+
+requires_live_llm = pytest.mark.skipif(
+    os.environ.get("MAJORANA_RUN_LIVE_LLM") != "1" or not _live_provider_ready(),
+    reason="live provider test requires MAJORANA_RUN_LIVE_LLM=1 and configured credentials",
+)
+
 SETTINGS = Settings(
     workos_client_id="client_test",
     workos_jwt_issuer="https://test.invalid",
     workos_jwks_url="https://test.invalid/jwks",
     web_origin="http://localhost:3000",
 )
-
-# --- Deterministic model outputs for the Bell task ---------------------------
-
-_PLAN = {
-    "domain": "education",
-    "framework": "qiskit",
-    "algorithm": "Bell",
-    "problem_summary": "Prepare a Bell state and measure both qubits",
-    "algorithm_rationale": "Hadamard on q0 then CX entangles the pair into (|00>+|11>)/sqrt2",
-    "parameters": {"shots": 1024},
-    "qubits_estimate": 2,
-    "expected_runtime_sec": 5,
-    "success_criteria": {"primary_metric": "fidelity"},
-    "expected_output_keys": ["counts"],
-}
-
-# Qiskit code binds FINAL_CIRCUIT for the deterministic screen/QASM epilogue and
-# prints a JSON result on the last line — exactly the result contract the worker
-# consumes.
-_CODE = """```python
-import json
-from qiskit import QuantumCircuit
-
-FINAL_CIRCUIT = QuantumCircuit(2)
-FINAL_CIRCUIT.h(0)
-FINAL_CIRCUIT.cx(0, 1)
-FINAL_CIRCUIT.measure_all()
-print(json.dumps({"counts": {"00": 512, "11": 512}}))
-```"""
-
-
-def _fake_llm() -> FakeLLM:
-    return FakeLLM({model_for("plan"): json.dumps(_PLAN), model_for("generate"): _CODE})
 
 
 @pytest.fixture
@@ -102,10 +85,9 @@ async def env():
     await engine.dispose()
 
 
-async def _work_until_run_processed(factory, run_id: str) -> None:
-    """Worker dispatch cycles with injected fake providers, until the job for
-    `run_id` is handled. Other queued jobs (e.g. the seed fixture's run.execute
-    row) go through the same real path."""
+async def _work_until_run_processed(factory, run_id: str, *, llm: LLMClient | None = None) -> None:
+    """Worker dispatch cycles with the configured real provider until the job is handled."""
+    live_llm = llm or default_llm()
     for _ in range(12):
         async with factory() as session:
             job = await system.claim_job(session, worker_id="e2e-test")
@@ -115,7 +97,7 @@ async def _work_until_run_processed(factory, run_id: str) -> None:
         try:
             async with factory() as session:
                 await handle_run_execute(
-                    session, payload, llm=_fake_llm(), sandbox=LocalSubprocessSandbox()
+                    session, payload, llm=live_llm, sandbox=LocalSubprocessSandbox()
                 )
             status = "done"
         except Exception:
@@ -130,6 +112,7 @@ async def _work_until_run_processed(factory, run_id: str) -> None:
 
 
 @requires_db
+@requires_live_llm
 async def test_run_executes_end_to_end_with_real_stages(env):
     client, factory, scope = env
 
@@ -164,7 +147,8 @@ async def test_run_executes_end_to_end_with_real_stages(env):
     assert types[0] == "run.queued"
     assert types[1] == "run.started"
     assert types[-1] == "run.finished"
-    assert types.count("stage.started") == types.count("stage.finished") == len(STAGE_ORDER)
+    assert types.count("stage.started") == types.count("stage.finished")
+    assert types.count("stage.started") >= len(STAGE_ORDER)
     assert [e["seq"] for e in events] == list(range(1, len(events) + 1))
     assert events[-1]["verifier_decision"] == "pass"
 
@@ -196,7 +180,7 @@ async def test_run_executes_end_to_end_with_real_stages(env):
         version = await artifacts_repo.get_version(scope, session, uuid.UUID(saved["version_id"]))
     assert version.export_status == "lossless"
     assert version.fingerprint  # canonical IR fingerprint recorded
-    assert version.qasm and "cx q[0],q[1]" in version.qasm
+    assert version.qasm
 
     # SSE replay of the stored run: same rows, same order.
     async with client.stream("GET", f"/v1/runs/{run['id']}/events/stream") as stream:

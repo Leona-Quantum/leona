@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from typing import Literal
 
 from majorana_contracts.plan import Plan
+from majorana_llm.models import AnalysisOutput
 from pydantic import ValidationError
 
 _FENCE_RE = re.compile(r"```(?:json|python)?\s*(.*?)```", re.DOTALL)
@@ -65,9 +66,31 @@ def parse_plan(text: str) -> Plan:
     """Parse and validate a Plan from the planning stage's output."""
     raw = _extract_json(text)
     try:
-        return Plan.model_validate_json(raw)
-    except (ValidationError, json.JSONDecodeError) as exc:
+        payload = json.loads(raw)
+        # DeepSeek's json_object mode has occasionally emitted the optional
+        # list-valued notes field as one string. Preserve the note while restoring
+        # the contract shape before validation; no semantic plan field is inferred.
+        success_criteria = payload.get("success_criteria") if isinstance(payload, dict) else None
+        if isinstance(success_criteria, dict) and isinstance(
+            success_criteria.get("additional_notes"), str
+        ):
+            payload = dict(payload)
+            payload["success_criteria"] = {
+                **success_criteria,
+                "additional_notes": [success_criteria["additional_notes"]],
+            }
+        return Plan.model_validate(payload)
+    except (ValidationError, json.JSONDecodeError, TypeError) as exc:
         raise StageOutputError(f"planning output is not a valid Plan: {exc}") from exc
+
+
+def parse_analysis(text: str) -> AnalysisOutput:
+    """Parse the internal analysis record without exposing its JSON framing."""
+    raw = _extract_json(text)
+    try:
+        return AnalysisOutput.model_validate(json.loads(raw))
+    except (ValidationError, json.JSONDecodeError, TypeError) as exc:
+        raise StageOutputError(f"analysis output is not valid narrative data: {exc}") from exc
 
 
 def extract_code(text: str) -> str:

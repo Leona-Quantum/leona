@@ -28,6 +28,11 @@ class Expect(BaseModel):
             "wrong answer (e.g. an endianness bit-reversal) passes it — this pins the answer."
         ),
     )
+    expected_values: dict[str, float] = Field(
+        default_factory=dict,
+        description="Numeric result fields that must match within expected_value_tolerance.",
+    )
+    expected_value_tolerance: float = Field(default=0.01, ge=0)
 
 
 class CorpusCase(BaseModel):

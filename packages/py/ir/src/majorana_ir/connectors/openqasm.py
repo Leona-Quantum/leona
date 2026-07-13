@@ -91,6 +91,7 @@ def _safe_eval_numeric(expr: str) -> float | str:
         ast.UAdd,
         ast.Constant,
         ast.Name,
+        ast.Load,
     )
     for node in ast.walk(tree):
         if not isinstance(node, allowed_nodes):
@@ -270,5 +271,35 @@ def to_openqasm(circuit: Circuit) -> str:
             lines.append(f"u({params}) q[{operation.qubits[0]}];")
         else:
             args = ",".join(f"q[{qubit}]" for qubit in operation.qubits)
+            lines.append(f"{operation.gate} {args};")
+    return "\n".join(lines) + "\n"
+
+
+def to_openqasm3(circuit: Circuit) -> str:
+    """Render the narrow canonical circuit as native OpenQASM 3.0."""
+    circuit = canonicalize_circuit(circuit)
+    lines = [
+        "OPENQASM 3.0;",
+        'include "stdgates.inc";',
+        f"qubit[{circuit.qubits}] q;",
+    ]
+    if circuit.classical_bits:
+        lines.append(f"bit[{circuit.classical_bits}] c;")
+
+    for operation in circuit.operations:
+        if operation.gate == "measure":
+            lines.append(f"c[{operation.clbits[0]}] = measure q[{operation.qubits[0]}];")
+        elif operation.gate in {"rx", "ry", "rz", "cp"}:
+            params = ", ".join(_format_param(param) for param in operation.params)
+            args = ", ".join(f"q[{qubit}]" for qubit in operation.qubits)
+            lines.append(f"{operation.gate}({params}) {args};")
+        elif operation.gate == "u":
+            params = ", ".join(_format_param(param) for param in operation.params)
+            lines.append(f"U({params}) q[{operation.qubits[0]}];")
+        elif operation.gate == "barrier":
+            args = ", ".join(f"q[{qubit}]" for qubit in operation.qubits)
+            lines.append(f"barrier {args};")
+        else:
+            args = ", ".join(f"q[{qubit}]" for qubit in operation.qubits)
             lines.append(f"{operation.gate} {args};")
     return "\n".join(lines) + "\n"

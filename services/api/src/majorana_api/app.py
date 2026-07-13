@@ -14,6 +14,7 @@ from fastapi.responses import JSONResponse
 from .db import engine_from_env, session_factory
 from .observability import init_telemetry
 from .repos import AuthzError, NotFoundError
+from .routes.artifacts import router as artifacts_router
 from .routes.me import router as me_router
 from .routes.runs import router as runs_router
 from .settings import Settings
@@ -84,6 +85,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         return {"ok": True}
 
     app.include_router(me_router, prefix="/v1")
+    app.include_router(artifacts_router, prefix="/v1")
     app.include_router(runs_router, prefix="/v1")
     _wire_observability(app)
     return app
