@@ -1,6 +1,7 @@
-"""Framework code generation from IR (Qiskit / PennyLane Python source). Pure
-string generation — no SDK import needed to *produce* the code. Ported from quepo
-`qhte.repository.exports`. The Qiskit-object import path lives in qiskit_bridge."""
+"""Framework code generation from IR (Qiskit / PennyLane / Cirq Python source).
+Pure string generation — no SDK import needed to *produce* the code. Ported from
+quepo `qhte.repository.exports`. The Qiskit-object import path lives in
+qiskit_bridge."""
 
 from __future__ import annotations
 
@@ -86,4 +87,73 @@ def pennylane_code(circuit: Circuit) -> str:
         lines.append(f"    return qml.sample(wires={measured!r})")
     else:
         lines.append("    return qml.state()")
+    return "\n".join(lines) + "\n"
+
+
+def cirq_code(circuit: Circuit) -> str:
+    """Render a static IR circuit as readable Cirq source.
+
+    Cirq has no direct equivalent for the canonical ``u`` gate or non-Z
+    measurement bases in this narrow connector, so those cases fail explicitly
+    and the export classifier can retain a validated OpenQASM download instead
+    of claiming a target-native conversion.
+    """
+    if any(
+        op.gate == "u" or (op.gate == "measure" and op.measurement and op.measurement.basis != "Z")
+        for op in circuit.operations
+    ):
+        raise ValueError("Cirq export does not yet support u gates or non-Z measurements")
+
+    symbols = _symbols(circuit)
+    lines = ["import cirq"]
+    if symbols or any(op.gate == "cp" for op in circuit.operations):
+        lines.append("import sympy")
+    lines.append("")
+    for symbol in symbols:
+        lines.append(f"{symbol} = sympy.Symbol({symbol!r})")
+    if symbols:
+        lines.append("")
+    lines.extend(
+        [
+            f"qubits = cirq.LineQubit.range({circuit.qubits})",
+            "circuit = cirq.Circuit()",
+        ]
+    )
+
+    def parameter(value: float | str) -> str:
+        return _value(value)
+
+    for op in circuit.operations:
+        qubits = ", ".join(f"qubits[{qubit}]" for qubit in op.qubits)
+        if op.gate == "barrier":
+            lines.append(
+                "# Barrier omitted; Cirq preserves source order without a barrier primitive."
+            )
+            continue
+        if op.gate == "measure":
+            lines.append(f"circuit.append(cirq.measure({qubits}, key={f'c{op.clbits[0]}'!r}))")
+            continue
+        if op.gate == "reset":
+            expression = f"cirq.ResetChannel().on({qubits})"
+        elif op.gate in {"x", "y", "z", "h", "s", "t"}:
+            expression = f"cirq.{op.gate.upper()}({qubits})"
+        elif op.gate in {"rx", "ry", "rz"}:
+            expression = f"cirq.{op.gate}({parameter(op.params[0])})({qubits})"
+        elif op.gate == "cx":
+            expression = f"cirq.CNOT({qubits})"
+        elif op.gate == "cz":
+            expression = f"cirq.CZ({qubits})"
+        elif op.gate == "swap":
+            expression = f"cirq.SWAP({qubits})"
+        elif op.gate == "cp":
+            expression = (
+                f"cirq.CZPowGate(exponent=({parameter(op.params[0])}) / sympy.pi).on({qubits})"
+            )
+        elif op.gate == "ccx":
+            expression = f"cirq.TOFFOLI({qubits})"
+        elif op.gate == "cswap":
+            expression = f"cirq.FREDKIN({qubits})"
+        else:
+            raise ValueError(f"Cirq export does not support gate '{op.gate}'")
+        lines.append(f"circuit.append({expression})")
     return "\n".join(lines) + "\n"

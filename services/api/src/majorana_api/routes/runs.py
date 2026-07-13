@@ -41,6 +41,7 @@ class CreateRunRequest(BaseModel):
     shots: int | None = Field(default=None, ge=1, le=1_000_000)
     tolerances: dict[str, float] | None = None
     timeout_s: int | None = Field(default=None, ge=1, le=600)
+    source_code: str | None = Field(default=None, max_length=100_000)
 
 
 def _to_resource(run: RunRow) -> RunResource:
@@ -108,6 +109,7 @@ async def create_run(
             "run_id": str(run.id),
             "workspace_id": str(scope.workspace_id),
             "user_id": str(scope.user_id),
+            **({"source_code": body.source_code} if body.source_code is not None else {}),
         },
         run_id=run.id,
     )

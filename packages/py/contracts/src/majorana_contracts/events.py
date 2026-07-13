@@ -135,6 +135,17 @@ class CompilationResult(_EventBase):
     reason: str | None = None
 
 
+class CodeVariant(BaseModel):
+    """A deterministic, copyable framework rendering of the verified circuit."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    language: str
+    code: str
+    export_status: ExportStatus
+    export_reason: str | None = None
+
+
 class CodeFinalized(_EventBase):
     type: Literal["code.finalized"] = "code.finalized"
     language: str
@@ -143,6 +154,7 @@ class CodeFinalized(_EventBase):
     compilation_applied: bool
     simulation_plausible: bool
     qpu_available: bool
+    framework_variants: dict[str, CodeVariant] = Field(default_factory=dict)
     conversion_options: list[str] = Field(default_factory=list)
     execution_options: list[Literal["simulate", "qpu"]] = Field(default_factory=list)
     export_status: ExportStatus

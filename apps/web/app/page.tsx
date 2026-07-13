@@ -15,7 +15,7 @@ export default async function Home() {
         <p className="mj-landing-mark">Majorana</p>
         <h1>From quantum question to verified artifact.</h1>
         <p className="mj-landing-copy">
-          Nameko Run plans and verifies technical work. Quepo Studio keeps the evidence, code, and reusable exports together.
+          Nameko Run plans and verifies technical work. Library keeps the evidence and reusable exports; Studio is where circuits are edited and checked.
         </p>
         <div className="mj-landing-actions">
           {demoEnabled ? <a className="mj-primary-button" href="/demo">Open the public preview</a> : null}

@@ -12,6 +12,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from langchain_core.prompts import ChatPromptTemplate
+from majorana_contracts.enums import Framework, RunMode
 
 
 _IR_LIMITS = (
@@ -138,6 +139,20 @@ compression gains, sources, or advantages. If a check failed or was skipped, say
 plainly. The response is parsed into an internal object and then rendered as prose; do
 not discuss JSON, schemas, or internal field names in the answer."""
 
+CONVERSATION_SYSTEM_PROMPT = """You are Majorana's natural-language assistant.
+
+Answer the user's actual request directly. The selected mode is guidance for your
+behavior, not a reason to expose internal plans, JSON, stage names, or provider
+telemetry. Be useful for ordinary questions such as greetings, quantum-computing
+concepts, code reviews, and requests for a circuit. If you include code, keep it
+copyable and use the selected framework unless the user explicitly asks for another.
+
+In Learn mode, teach step by step and call out assumptions. In Explain mode, review
+or explain the supplied material and distinguish observations from suggestions. Do
+not claim that a circuit ran, was verified, or produced measurements unless the
+request is being handled by the Execute pipeline and the event evidence says so.
+{framework_directive}"""
+
 WRITEBACK_SYSTEM_PROMPT = """You are Majorana's library-writeback stage. Given a verified,
 saved run, write concise repository metadata and a human-readable explanation for reuse:
 what the artifact does, how it was verified, which framework and export statuses exist,
@@ -168,7 +183,10 @@ class RenderedPrompt:
 _PLAN_CHAIN = ChatPromptTemplate.from_messages(
     [
         ("system", "{system_prompt}"),
-        ("human", "User request:\n{task_prompt}\n\n{research_context}"),
+        (
+            "human",
+            "User request:\n{task_prompt}\n\nSelected framework: {requested_framework}\n\n{research_context}",
+        ),
     ]
 )
 _GENERATE_CHAIN = ChatPromptTemplate.from_messages(
@@ -176,6 +194,7 @@ _GENERATE_CHAIN = ChatPromptTemplate.from_messages(
         ("system", "{system_prompt}"),
         (
             "human",
+            "Requested framework: {requested_framework}\n\n"
             "Internal plan record:\n{plan_json}\n\n{research_context}\n\n"
             "Repair feedback, if any:\n{feedback}\n\nImplement the plan now.",
         ),
@@ -193,6 +212,15 @@ _ANALYZE_CHAIN = ChatPromptTemplate.from_messages(
             "Recorded baseline:\n{baseline}\n\n"
             "Recorded compilation evidence:\n{compilation}\n\n"
             "Write the natural-language analysis.",
+        ),
+    ]
+)
+_CONVERSATION_CHAIN = ChatPromptTemplate.from_messages(
+    [
+        ("system", "{system_prompt}"),
+        (
+            "human",
+            "Selected mode: {mode}\nSelected framework: {framework}\n\nUser request:\n{task_prompt}",
         ),
     ]
 )
@@ -214,12 +242,17 @@ def _render(prompt: ChatPromptTemplate, values: dict[str, str]) -> RenderedPromp
     return RenderedPrompt(system="\n\n".join(system_parts), user="\n\n".join(user_parts))
 
 
-def render_plan_prompt(task_prompt: str, research_context: str = "") -> RenderedPrompt:
+def render_plan_prompt(
+    task_prompt: str,
+    research_context: str = "",
+    requested_framework: Framework | None = None,
+) -> RenderedPrompt:
     return _render(
         _PLAN_CHAIN,
         {
             "system_prompt": PLAN_SYSTEM_PROMPT,
             "task_prompt": task_prompt,
+            "requested_framework": _framework_label(requested_framework),
             "research_context": research_context or "No additional research context was available.",
         },
     )
@@ -229,12 +262,14 @@ def render_generate_prompt(
     plan_json: str,
     research_context: str = "",
     feedback: str | None = None,
+    requested_framework: Framework | None = None,
 ) -> RenderedPrompt:
     return _render(
         _GENERATE_CHAIN,
         {
             "system_prompt": GENERATE_SYSTEM_PROMPT,
             "plan_json": plan_json,
+            "requested_framework": _framework_label(requested_framework),
             "research_context": research_context or "No additional research context was available.",
             "feedback": feedback or "No repair feedback: this is the first implementation attempt.",
         },
@@ -262,3 +297,33 @@ def render_analysis_prompt(
             "compilation": compilation,
         },
     )
+
+
+def render_conversation_prompt(
+    task_prompt: str,
+    mode: RunMode,
+    framework: Framework,
+) -> RenderedPrompt:
+    mode_label = (
+        "Learn" if mode is RunMode.IDEATE else "Explain" if mode is RunMode.EXPLAIN else "Execute"
+    )
+    framework_label = _framework_label(framework)
+    return _render(
+        _CONVERSATION_CHAIN,
+        {
+            "system_prompt": CONVERSATION_SYSTEM_PROMPT.format(
+                framework_directive=FRAMEWORK_DIRECTIVE
+            ),
+            "mode": mode_label,
+            "framework": framework_label,
+            "task_prompt": task_prompt,
+        },
+    )
+
+
+def _framework_label(framework: Framework | None) -> str:
+    if framework is Framework.PENNYLANE:
+        return "PennyLane"
+    if framework is Framework.CIRQ:
+        return "Cirq"
+    return "Qiskit (default)" if framework is None else "Qiskit"

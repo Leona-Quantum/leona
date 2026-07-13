@@ -130,6 +130,7 @@ async def create_version(
     export_status: ExportStatus,
     export_reason: str | None = None,
     qasm: str | None = None,
+    framework_variants: dict[str, str] | None = None,
     resource_estimates: dict[str, Any] | None = None,
     limitations: str | None = None,
 ) -> ArtifactVersion:
@@ -156,6 +157,7 @@ async def create_version(
         export_status=export_status,
         export_reason=export_reason,
         qasm=qasm,
+        framework_variants=framework_variants,
         resource_estimates=resource_estimates,
         limitations=limitations,
     )

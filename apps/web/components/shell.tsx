@@ -12,6 +12,7 @@ import {
   PlayIcon,
   PlusIcon,
   SettingsIcon,
+  StudioIcon,
 } from "./icons";
 import {
   CHAT_HISTORY_EVENT,
@@ -74,7 +75,9 @@ export function Shell({
   }
 
   const surfaceLabel = pathname.startsWith("/library")
-    ? "Quepo Studio"
+    ? "Library"
+    : pathname.startsWith("/studio")
+      ? "Studio"
     : pathname.startsWith("/demo")
       ? "Public preview"
     : pathname.startsWith("/account")
@@ -111,6 +114,7 @@ function WorkspaceSidebar({
   const demoHref = (view: "run" | "library") => `/demo?view=${view}`;
   const runHref = demoMode ? demoHref("run") : "/run";
   const libraryHref = demoMode ? demoHref("library") : "/library";
+  const studioHref = demoMode ? libraryHref : "/studio";
   const sidebarName = demoMode ? "Public preview" : userEmail ?? "Local developer";
   const sidebarInitial = sidebarName.slice(0, 1).toUpperCase();
 
@@ -162,11 +166,11 @@ function WorkspaceSidebar({
             return (
               <a
                 className={`mj-sidebar-nav-item${active || (demoMode && currentPath === "/demo") ? " is-active" : ""}`}
-                href={demoMode ? (surface.href === "/library" ? libraryHref : runHref) : surface.href}
+                href={demoMode ? (surface.href === "/library" ? libraryHref : studioHref) : surface.href}
                 key={surface.href}
               >
-                {surface.href === "/run" ? <PlayIcon size={16} /> : <LibraryIcon size={16} />}
-                <span className="mj-sidebar-copy">{surface.href === "/library" ? "Library" : surface.label}</span>
+                {surface.href === "/run" ? <PlayIcon size={16} /> : surface.href === "/library" ? <LibraryIcon size={16} /> : <StudioIcon size={16} />}
+                <span className="mj-sidebar-copy">{surface.label}</span>
               </a>
             );
           })}

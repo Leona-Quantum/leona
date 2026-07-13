@@ -10,6 +10,10 @@ gets units and, where relevant, tolerance. Never render an unlabeled float.
   "Not supported". Never overclaim (honesty taxonomy binds UI copy too).
 - **Buttons:** verb-first — "Run", "Save to Library", "Open in Run",
   "Retry from Verify".
+- **Modes:** user-facing labels are "Execute", "Learn", and "Explain". The
+  internal compatibility value `ideate` is never rendered.
+- **Studio:** "Simulate", "Verify", "Save version", "Open in Studio", and
+  "Generate version". A draft is never labeled Verified.
 - **Errors:** what happened + what we did + one action. Never a bare stack trace
   outside collapsible details.
 - **Empty states:** one sentence + one action. Library: "Nothing verified yet. Your

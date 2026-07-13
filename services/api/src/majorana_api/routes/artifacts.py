@@ -49,6 +49,7 @@ def _to_version(row: ArtifactVersionRow) -> ArtifactVersionResource:
         export_status=ExportStatus(row.export_status),
         export_reason=row.export_reason,
         qasm=row.qasm,
+        framework_variants=row.framework_variants,
         resource_estimates=row.resource_estimates,
         limitations=row.limitations,
         created_at=row.created_at,

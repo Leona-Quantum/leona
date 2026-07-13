@@ -25,6 +25,7 @@ from majorana_llm.parsing import (
 )
 from majorana_llm.prompts import (
     CRITIC_SYSTEM_PROMPT,
+    CONVERSATION_SYSTEM_PROMPT,
     FRAMEWORK_DIRECTIVE,
     GENERATE_SYSTEM_PROMPT,
     PLAN_SYSTEM_PROMPT,
@@ -32,6 +33,7 @@ from majorana_llm.prompts import (
     STAGE_PROMPTS,
     WRITEBACK_SYSTEM_PROMPT,
     render_analysis_prompt,
+    render_conversation_prompt,
     render_generate_prompt,
     render_plan_prompt,
 )
@@ -61,6 +63,7 @@ __all__ = [
     "PLAN_SYSTEM_PROMPT",
     "GENERATE_SYSTEM_PROMPT",
     "CRITIC_SYSTEM_PROMPT",
+    "CONVERSATION_SYSTEM_PROMPT",
     "WRITEBACK_SYSTEM_PROMPT",
     "FRAMEWORK_DIRECTIVE",
     "STAGE_PROMPTS",
@@ -68,6 +71,7 @@ __all__ = [
     "render_plan_prompt",
     "render_generate_prompt",
     "render_analysis_prompt",
+    "render_conversation_prompt",
     "ResearchResult",
     "ResearchSource",
     "research_for_prompt",

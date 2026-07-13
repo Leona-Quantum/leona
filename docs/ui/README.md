@@ -17,7 +17,8 @@ Domain home for the product surface (`apps/web` + `packages/ts/ui`), per
 | App shell + primary nav | `packages/ts/ui/src/app-shell.tsx`; labels ONLY in `src/nav-config.ts` |
 | Workspace sidebar/history | `apps/web/components/shell.tsx` + `apps/web/lib/chat-history.ts` |
 | Run composer | `apps/web/components/run-composer.tsx` (bottom dock; route owns submission) |
-| Quepo Studio list/detail | `apps/web/app/(app)/library` + `apps/web/lib/library-data.ts` |
+| Library list/detail | `apps/web/app/(app)/library` + `apps/web/lib/library-data.ts` |
+| Studio editor/circuit workspace | `apps/web/app/(app)/studio` + `docs/ui/studio.md` |
 | Pipeline stage rail (S3, the brand) | `packages/ts/ui/src/stage-rail.tsx` |
 | Verdict banner (S4) | `packages/ts/ui/src/verdict-banner.tsx` |
 | Empty states | `packages/ts/ui/src/empty-state.tsx` |
@@ -31,18 +32,19 @@ Domain home for the product surface (`apps/web` + `packages/ts/ui`), per
 The usable authenticated workspace slice is now wired: `/run` has a bottom composer, example
 prompts, mode selection, and a persistent collapsible sidebar with recent API-backed runs;
 `/run/[taskId]` keeps the result scrollable above the composer and replays the live SSE event
-log; and `/library` is the Quepo Studio list with search/filter controls plus artifact detail
-tabs, copyable source code, export state, run provenance, and the Library → Run context handoff.
+log; `/library` is the storage-only artifact list/detail surface; and `/studio` is the separate
+R&D editor with code, circuit, inspector, output, and framework-version surfaces.
 Account now reads identity, workspace, artifact/run counts, and members from the API, with an
 owner/admin path to attach an already-provisioned WorkOS user to the workspace. New API users
 receive a workspace-scoped Bell-state starter artifact. Replay fixtures are restricted to the
 explicit `/demo` route; authenticated pages use the API and retain only a small local fallback
 for a just-completed run while remote data settles.
 
-The public landing page and local fail-closed auth path are also present. Remaining work is a
+The public landing page and local fail-closed auth path are also present. Remaining work is the
 hosted verified-artifact acceptance run, fuller remote chat/history persistence, account meters
 and workspace selection, visual-diff automation, and the owner-controlled `dev` → Production
-promotion.
+promotion. Studio edits and framework variants now have a control-plane write/read path; hosted
+acceptance still needs to exercise it against the deployed migration.
 
 ## Quality bar (CI-checkable subset in 07 §5)
 

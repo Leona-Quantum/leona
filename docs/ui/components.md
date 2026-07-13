@@ -107,7 +107,7 @@ shared primary surfaces; `aria-current="page"` is applied to active workspace li
 
 The run and library routes deliberately keep data ownership outside shared UI components:
 `RunComposer` is a presentational bottom dock, `/run` and `/run/[taskId]` own submission and
-SSE state, and Quepo Studio owns artifact filtering/detail tabs. This keeps later UI/UX work
+SSE state, and Library owns artifact filtering/detail tabs while Studio owns editing. This keeps later UI/UX work
 localized to the route shell and tokenized CSS rather than coupling data fetching to the
 renderers.
 
