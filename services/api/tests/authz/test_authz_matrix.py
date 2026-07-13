@@ -82,7 +82,10 @@ async def test_lists_and_aggregates_scoped(db, dataset):
     a, b = dataset
     for role in ALL_ROLES:
         sa = scope_for(a, role)
-        assert {x.id for x in await artifacts.list_artifacts(sa, db, limit=1000)} == {a.artifact_id}
+        assert {x.id for x in await artifacts.list_artifacts(sa, db, limit=1000)} == {
+            a.starter_artifact_id,
+            a.artifact_id,
+        }
         assert {r.id for r in await runs.list_runs(sa, db, limit=1000)} == {a.run_id}
         member_ids = {m.user_id for m in await workspaces.list_members(sa, db)}
         assert set(a.users.values()) == member_ids

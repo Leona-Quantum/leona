@@ -15,8 +15,10 @@ import uuid
 import pytest
 from majorana_contracts import Scope
 from majorana_contracts.enums import Role, RunMode, UsageKind, VerificationMethod
+from sqlalchemy import select
 
 from majorana_api.db import engine_from_env, session_factory
+from majorana_api.orm import Artifact
 from majorana_api.repos import artifacts, audit, runs, system, usage, workspaces
 
 requires_db = pytest.mark.skipif(
@@ -30,6 +32,7 @@ ALL_ROLES = (Role.OWNER, Role.ADMIN, Role.MEMBER, Role.VIEWER)
 class WorkspaceData:
     workspace_id: uuid.UUID
     users: dict[Role, uuid.UUID]
+    starter_artifact_id: uuid.UUID
     artifact_id: uuid.UUID
     version_id: uuid.UUID
     run_id: uuid.UUID
@@ -55,6 +58,14 @@ async def _build_workspace(session, tag: str) -> WorkspaceData:
         await workspaces.add_member(owner_scope, session, user_id=member.id, role=role)
         users[role] = member.id
 
+    starter_artifact_id = (
+        await session.execute(
+            select(Artifact.id).where(
+                Artifact.workspace_id == ws.id,
+                Artifact.slug == system.starter_bell_slug(ws.id),
+            )
+        )
+    ).scalar_one()
     artifact = await artifacts.create_artifact(
         owner_scope,
         session,
@@ -87,6 +98,7 @@ async def _build_workspace(session, tag: str) -> WorkspaceData:
     return WorkspaceData(
         workspace_id=ws.id,
         users=users,
+        starter_artifact_id=starter_artifact_id,
         artifact_id=artifact.id,
         version_id=version.id,
         run_id=run.id,
