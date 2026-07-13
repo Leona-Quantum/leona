@@ -3,13 +3,14 @@
 import { authkitMiddleware } from "@workos-inc/authkit-nextjs";
 import { NextResponse, type NextFetchEvent, type NextRequest } from "next/server";
 import { isLocalDevAuthEnabled } from "./lib/local-dev-auth";
+import { isPublicDemoEnabled } from "./lib/public-demo";
 
 const workosMiddleware = authkitMiddleware({
   middlewareAuth: {
     enabled: true,
     // The callback handles the code exchange BEFORE a session exists — gating
     // it would break every login.
-    unauthenticatedPaths: ["/", "/auth/callback"],
+    unauthenticatedPaths: ["/", "/auth/callback", ...(isPublicDemoEnabled() ? ["/demo"] : [])],
   },
 });
 

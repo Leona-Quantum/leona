@@ -25,9 +25,11 @@ const SIDEBAR_STORAGE_KEY = "majorana.sidebar-collapsed.v1";
 export function Shell({
   children,
   headerRight,
+  demoMode = false,
 }: {
   children: ReactNode;
   headerRight?: ReactNode;
+  demoMode?: boolean;
 }) {
   const pathname = usePathname();
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
@@ -52,6 +54,8 @@ export function Shell({
 
   const surfaceLabel = pathname.startsWith("/library")
     ? "Quepo Studio"
+    : pathname.startsWith("/demo")
+      ? "Public preview"
     : pathname.startsWith("/account")
       ? "Account"
       : "Nameko Run";
@@ -60,7 +64,7 @@ export function Shell({
     <AppShell
       currentPath={pathname}
       headerRight={headerRight}
-      sidebar={<WorkspaceSidebar currentPath={pathname} chats={chats} collapsed={sidebarCollapsed} />}
+      sidebar={<WorkspaceSidebar currentPath={pathname} chats={chats} collapsed={sidebarCollapsed} demoMode={demoMode} />}
       sidebarCollapsed={sidebarCollapsed}
       onToggleSidebar={toggleSidebar}
       surfaceLabel={surfaceLabel}
@@ -74,11 +78,17 @@ function WorkspaceSidebar({
   currentPath,
   chats,
   collapsed,
+  demoMode,
 }: {
   currentPath: string;
   chats: ChatSummary[];
   collapsed: boolean;
+  demoMode: boolean;
 }) {
+  const demoHref = (view: "run" | "library") => `/demo?view=${view}`;
+  const runHref = demoMode ? demoHref("run") : "/run";
+  const libraryHref = demoMode ? demoHref("library") : "/library";
+
   return (
     <div className="mj-sidebar-inner">
       <div className="mj-sidebar-brand-row">
@@ -91,7 +101,7 @@ function WorkspaceSidebar({
         </button>
       </div>
 
-      <a className="mj-sidebar-new" href="/run">
+      <a className="mj-sidebar-new" href={runHref}>
         <PlusIcon size={16} />
         <span className="mj-sidebar-copy">New chat</span>
       </a>
@@ -116,7 +126,7 @@ function WorkspaceSidebar({
             </a>
           ))}
         </nav>
-        <a className="mj-sidebar-view-all" href="/library">
+        <a className="mj-sidebar-view-all" href={libraryHref}>
           <span className="mj-sidebar-copy">View all</span>
           <span aria-hidden="true">→</span>
         </a>
@@ -125,7 +135,11 @@ function WorkspaceSidebar({
           {NAV_SURFACES.filter((surface) => surface.href !== "/account").map((surface) => {
             const active = currentPath === surface.href || currentPath.startsWith(`${surface.href}/`);
             return (
-              <a className={`mj-sidebar-nav-item${active ? " is-active" : ""}`} href={surface.href} key={surface.href}>
+              <a
+                className={`mj-sidebar-nav-item${active || (demoMode && currentPath === "/demo") ? " is-active" : ""}`}
+                href={demoMode ? (surface.href === "/library" ? libraryHref : runHref) : surface.href}
+                key={surface.href}
+              >
                 {surface.href === "/run" ? <PlayIcon size={16} /> : <LibraryIcon size={16} />}
                 <span className="mj-sidebar-copy">{surface.href === "/library" ? "Library" : surface.label}</span>
               </a>
@@ -135,15 +149,15 @@ function WorkspaceSidebar({
       </div>
 
       <div className="mj-sidebar-footer">
-        <a className="mj-sidebar-nav-item" href="/account">
+        <a className="mj-sidebar-nav-item" href={demoMode ? runHref : "/account"}>
           <SettingsIcon size={16} />
           <span className="mj-sidebar-copy">Settings</span>
         </a>
-        <a className="mj-sidebar-user" href="/account">
+        <a className="mj-sidebar-user" href={demoMode ? runHref : "/account"}>
           <span className="mj-avatar">L</span>
           <span className="mj-sidebar-user-copy mj-sidebar-copy">
-            <strong>Local developer</strong>
-            <small>Personal workspace</small>
+            <strong>{demoMode ? "Public preview" : "Local developer"}</strong>
+            <small>{demoMode ? "Read-only fixture data" : "Personal workspace"}</small>
           </span>
           <span className="mj-sidebar-user-caret mj-sidebar-copy">⌄</span>
         </a>

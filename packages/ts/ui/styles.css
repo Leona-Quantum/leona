@@ -1263,6 +1263,62 @@
   gap: var(--sp-3);
   margin-top: var(--sp-8);
 }
+
+.mj-landing-status {
+  color: var(--mj-text-muted);
+  font-size: 0.8rem;
+}
+
+.mj-demo-banner {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 1.5rem;
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: 1.25rem 1.25rem 0;
+}
+
+.mj-demo-banner h1 {
+  margin: 0.25rem 0 0;
+  color: var(--mj-text);
+  font-size: clamp(1.35rem, 2vw, 1.8rem);
+  letter-spacing: -0.03em;
+}
+
+.mj-demo-banner p {
+  max-width: 650px;
+  margin: 0.45rem 0 0;
+  color: var(--mj-text-muted);
+  font-size: 0.84rem;
+  line-height: 1.55;
+}
+
+.mj-demo-tabs {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 0.25rem;
+  padding: 0.25rem;
+  border: 1px solid var(--mj-border);
+  border-radius: 0.8rem;
+  background: var(--mj-surface);
+}
+
+.mj-demo-tabs a {
+  padding: 0.55rem 0.7rem;
+  border-radius: 0.55rem;
+  color: var(--mj-text-muted);
+  font-size: 0.74rem;
+  font-weight: 650;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.mj-demo-tabs a:hover,
+.mj-demo-tabs a.is-active {
+  background: var(--mj-surface-strong);
+  color: var(--mj-text);
+}
 .mj-landing-actions a {
   text-decoration: none;
 }

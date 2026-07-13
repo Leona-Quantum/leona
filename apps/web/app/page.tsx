@@ -1,12 +1,14 @@
 import { redirect } from "next/navigation";
-import { getMajoranaAuth, getMajoranaSignInUrl } from "../lib/auth";
+import { getMajoranaAuth, getMajoranaSignInUrl, isMajoranaAuthConfigured } from "../lib/auth";
+import { isPublicDemoEnabled } from "../lib/public-demo";
 
 export default async function Home() {
   const { user } = await getMajoranaAuth();
   if (user) {
     redirect("/run");
   }
-  const signInUrl = await getMajoranaSignInUrl();
+  const demoEnabled = isPublicDemoEnabled();
+  const signInUrl = isMajoranaAuthConfigured() ? await getMajoranaSignInUrl() : null;
   return (
     <main className="mj-landing">
       <div className="mj-landing-inner">
@@ -16,8 +18,12 @@ export default async function Home() {
           Nameko Run plans and verifies technical work. Quepo Studio keeps the evidence, code, and reusable exports together.
         </p>
         <div className="mj-landing-actions">
-          <a className="mj-primary-button" href={signInUrl}>Open the workspace</a>
-          <a className="mj-secondary-button" href={signInUrl}>Sign in</a>
+          {demoEnabled ? <a className="mj-primary-button" href="/demo">Open the public preview</a> : null}
+          {signInUrl ? (
+            <a className="mj-secondary-button" href={signInUrl}>Sign in</a>
+          ) : (
+            <span className="mj-landing-status">Workspace sign-in is being configured.</span>
+          )}
         </div>
       </div>
     </main>
