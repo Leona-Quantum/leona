@@ -2,6 +2,7 @@
 // requires an AuthKit session unless listed in unauthenticatedPaths.
 import { authkitMiddleware } from "@workos-inc/authkit-nextjs";
 import { NextResponse, type NextFetchEvent, type NextRequest } from "next/server";
+import { isWorkosAuthConfigured } from "./lib/auth-config";
 import { isLocalDevAuthEnabled } from "./lib/local-dev-auth";
 import { isPublicDemoEnabled } from "./lib/public-demo";
 
@@ -16,6 +17,16 @@ const workosMiddleware = authkitMiddleware({
 
 export default function middleware(request: NextRequest, event: NextFetchEvent) {
   if (isLocalDevAuthEnabled()) return NextResponse.next();
+  if (!isWorkosAuthConfigured()) {
+    const { pathname } = request.nextUrl;
+    if (pathname === "/" || pathname === "/demo" || pathname === "/auth/callback") {
+      return NextResponse.next();
+    }
+    if (pathname.startsWith("/api/")) {
+      return NextResponse.json({ error: "Authentication is not configured." }, { status: 503 });
+    }
+    return NextResponse.redirect(new URL("/", request.url));
+  }
   return workosMiddleware(request, event);
 }
 

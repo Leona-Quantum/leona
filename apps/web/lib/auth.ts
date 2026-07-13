@@ -5,6 +5,7 @@ import {
   type NoUserInfo,
   type UserInfo,
 } from "@workos-inc/authkit-nextjs";
+import { isWorkosAuthConfigured } from "./auth-config";
 import { isLocalDevAuthEnabled, LOCAL_DEV_ACCESS_TOKEN } from "./local-dev-auth";
 
 const LOCAL_DEV_AUTH: UserInfo = {
@@ -33,6 +34,12 @@ export function getMajoranaAuth(
 ): Promise<UserInfo | NoUserInfo>;
 export async function getMajoranaAuth(options?: { ensureSignedIn?: boolean }) {
   if (isLocalDevAuthEnabled()) return LOCAL_DEV_AUTH;
+  if (!isWorkosAuthConfigured()) {
+    if (options?.ensureSignedIn) {
+      throw new Error("Majorana authentication is not configured.");
+    }
+    return { user: null } satisfies NoUserInfo;
+  }
   if (options?.ensureSignedIn) return withAuth({ ensureSignedIn: true });
   return withAuth();
 }
@@ -43,11 +50,7 @@ export async function getMajoranaSignInUrl(): Promise<string> {
 }
 
 export function isMajoranaAuthConfigured(): boolean {
-  return Boolean(
-    process.env.WORKOS_CLIENT_ID &&
-    process.env.WORKOS_API_KEY &&
-    process.env.WORKOS_COOKIE_PASSWORD,
-  );
+  return isWorkosAuthConfigured();
 }
 
 export async function signOutMajorana(): Promise<void> {
