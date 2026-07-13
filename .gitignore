@@ -8,6 +8,7 @@ __pycache__/
 .env.local
 .env*.local
 .turbo/
+.vercel/
 coverage/
 report.json
 .venv
