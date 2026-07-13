@@ -26,10 +26,12 @@ export function Shell({
   children,
   headerRight,
   demoMode = false,
+  userEmail,
 }: {
   children: ReactNode;
   headerRight?: ReactNode;
   demoMode?: boolean;
+  userEmail?: string;
 }) {
   const pathname = usePathname();
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
@@ -38,11 +40,30 @@ export function Shell({
   useEffect(() => {
     const saved = window.localStorage.getItem(SIDEBAR_STORAGE_KEY);
     setSidebarCollapsed(saved === "true" || (saved === null && window.innerWidth < 720));
-    const refresh = () => setChats(loadChatHistory());
-    refresh();
+    let active = true;
+    async function refresh() {
+      const local = loadChatHistory({ includeDemo: demoMode });
+      if (demoMode) {
+        setChats(local);
+        return;
+      }
+      try {
+        const response = await fetch("/api/runs?limit=20", { cache: "no-store" });
+        const payload = (await response.json()) as unknown;
+        const remote = Array.isArray(payload) ? payload.flatMap(chatFromRun) : [];
+        const byId = new Map([...local, ...remote].map((chat) => [chat.id, chat]));
+        if (active) setChats([...byId.values()].sort((a, b) => b.createdAt.localeCompare(a.createdAt)));
+      } catch {
+        if (active) setChats(local);
+      }
+    }
+    void refresh();
     window.addEventListener(CHAT_HISTORY_EVENT, refresh);
-    return () => window.removeEventListener(CHAT_HISTORY_EVENT, refresh);
-  }, []);
+    return () => {
+      active = false;
+      window.removeEventListener(CHAT_HISTORY_EVENT, refresh);
+    };
+  }, [demoMode]);
 
   function toggleSidebar() {
     setSidebarCollapsed((current) => {
@@ -64,7 +85,7 @@ export function Shell({
     <AppShell
       currentPath={pathname}
       headerRight={headerRight}
-      sidebar={<WorkspaceSidebar currentPath={pathname} chats={chats} collapsed={sidebarCollapsed} demoMode={demoMode} />}
+      sidebar={<WorkspaceSidebar currentPath={pathname} chats={chats} collapsed={sidebarCollapsed} demoMode={demoMode} userEmail={userEmail} />}
       sidebarCollapsed={sidebarCollapsed}
       onToggleSidebar={toggleSidebar}
       surfaceLabel={surfaceLabel}
@@ -79,15 +100,19 @@ function WorkspaceSidebar({
   chats,
   collapsed,
   demoMode,
+  userEmail,
 }: {
   currentPath: string;
   chats: ChatSummary[];
   collapsed: boolean;
   demoMode: boolean;
+  userEmail?: string;
 }) {
   const demoHref = (view: "run" | "library") => `/demo?view=${view}`;
   const runHref = demoMode ? demoHref("run") : "/run";
   const libraryHref = demoMode ? demoHref("library") : "/library";
+  const sidebarName = demoMode ? "Public preview" : userEmail ?? "Local developer";
+  const sidebarInitial = sidebarName.slice(0, 1).toUpperCase();
 
   return (
     <div className="mj-sidebar-inner">
@@ -114,7 +139,7 @@ function WorkspaceSidebar({
           {chats.map((chat) => (
             <a
               className={`mj-sidebar-chat${currentPath === `/run/${chat.id}` ? " is-active" : ""}`}
-              href={`/run/${chat.id}`}
+              href={demoMode ? runHref : `/run/${chat.id}`}
               key={chat.id}
               title={collapsed ? chat.title : undefined}
             >
@@ -154,9 +179,9 @@ function WorkspaceSidebar({
           <span className="mj-sidebar-copy">Settings</span>
         </a>
         <a className="mj-sidebar-user" href={demoMode ? runHref : "/account"}>
-          <span className="mj-avatar">L</span>
+          <span className="mj-avatar">{sidebarInitial}</span>
           <span className="mj-sidebar-user-copy mj-sidebar-copy">
-            <strong>{demoMode ? "Public preview" : "Local developer"}</strong>
+            <strong>{sidebarName}</strong>
             <small>{demoMode ? "Read-only fixture data" : "Personal workspace"}</small>
           </span>
           <span className="mj-sidebar-user-caret mj-sidebar-copy">⌄</span>
@@ -183,4 +208,30 @@ function formatRelativeDate(value: string): string {
   if (days === 1) return "Yesterday";
   if (days < 7) return `${days}d ago`;
   return date.toLocaleDateString([], { month: "short", day: "numeric" });
+}
+
+function chatFromRun(value: unknown): ChatSummary[] {
+  if (!value || typeof value !== "object") return [];
+  const run = value as Record<string, unknown>;
+  if (typeof run.id !== "string" || typeof run.task_prompt !== "string") return [];
+  const status = run.status === "failed"
+    ? "failed"
+    : run.status === "succeeded" && run.verifier_decision === "pass"
+      ? "verified"
+      : run.status === "running"
+        ? "running"
+        : "queued";
+  return [{
+    id: run.id,
+    title: titleFromPrompt(run.task_prompt),
+    prompt: run.task_prompt,
+    createdAt: typeof run.created_at === "string" ? run.created_at : new Date().toISOString(),
+    status,
+    framework: typeof run.framework === "string" ? run.framework.toUpperCase() : undefined,
+  }];
+}
+
+function titleFromPrompt(prompt: string): string {
+  const firstLine = prompt.split(/\r?\n/, 1)[0].trim();
+  return firstLine.length > 54 ? `${firstLine.slice(0, 54).trimEnd()}…` : firstLine;
 }

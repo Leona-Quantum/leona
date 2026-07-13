@@ -16,7 +16,7 @@ const STATUS_OPTIONS: Array<{ value: "all" | LibraryStatus; label: string }> = [
   { value: "failed", label: "Failed" },
 ];
 
-export function LibraryStudio() {
+export function LibraryStudio({ demoMode = false }: { demoMode?: boolean }) {
   const [artifacts, setArtifacts] = useState<LibraryArtifact[]>([]);
   const [query, setQuery] = useState("");
   const [framework, setFramework] = useState("all");
@@ -24,7 +24,8 @@ export function LibraryStudio() {
 
   useEffect(() => {
     let active = true;
-    setArtifacts(loadLibraryArtifacts());
+    setArtifacts(loadLibraryArtifacts({ includeDemo: demoMode }));
+    if (demoMode) return;
     void fetch("/api/artifacts", { cache: "no-store" })
       .then(async (response) => {
         if (!response.ok) throw new Error("Artifact API unavailable");
@@ -43,7 +44,7 @@ export function LibraryStudio() {
     return () => {
       active = false;
     };
-  }, []);
+  }, [demoMode]);
 
   const frameworks = useMemo(
     () => ["all", ...new Set(artifacts.map((artifact) => artifact.framework))],
@@ -61,6 +62,7 @@ export function LibraryStudio() {
       return matchesQuery && (framework === "all" || artifact.framework === framework) && (status === "all" || artifact.status === status);
     });
   }, [artifacts, framework, query, status]);
+  const runHref = demoMode ? "/demo?view=run" : "/run";
 
   return (
     <div className="mj-library-page">
@@ -74,7 +76,7 @@ export function LibraryStudio() {
               </div>
               <p className="mj-page-lede">Your verified quantum workspace. Library stores durable artifacts; Nameko Run creates and revises them.</p>
             </div>
-            <a className="mj-primary-button" href="/run">New artifact</a>
+            <a className="mj-primary-button" href={runHref}>New artifact</a>
           </header>
 
           <section className="mj-library-toolbar" aria-label="Filter artifacts">
@@ -115,26 +117,26 @@ export function LibraryStudio() {
                 <span role="columnheader">Updated</span>
                 <span aria-hidden="true" />
               </div>
-              {filtered.length ? filtered.map((artifact) => <ArtifactRow artifact={artifact} key={artifact.id} />) : (
+              {filtered.length ? filtered.map((artifact) => <ArtifactRow artifact={artifact} demoMode={demoMode} key={artifact.id} />) : (
                 <div className="mj-library-empty" role="row">
                   <strong>No artifacts match these filters.</strong>
                   <span>Clear a filter or start a new verified run.</span>
-                  <a className="mj-secondary-button" href="/run">Start a run</a>
+                  <a className="mj-secondary-button" href={runHref}>Start a run</a>
                 </div>
               )}
             </div>
           </section>
 
-          <p className="mj-library-footer-note">Sample artifacts are replayable UI fixtures. Runs saved from this workspace appear here automatically.</p>
+          <p className="mj-library-footer-note">{demoMode ? "Reference artifacts are shown in the public preview." : "Verified runs saved from this workspace appear here automatically."}</p>
         </div>
       </div>
     </div>
   );
 }
 
-function ArtifactRow({ artifact }: { artifact: LibraryArtifact }) {
+function ArtifactRow({ artifact, demoMode }: { artifact: LibraryArtifact; demoMode: boolean }) {
   return (
-    <a className="mj-library-row mj-library-row--artifact" href={`/library/${artifact.id}`} role="row">
+    <a className="mj-library-row mj-library-row--artifact" href={demoMode ? "/demo?view=library" : `/library/${artifact.id}`} role="row">
       <span className="mj-library-name-cell" role="cell">
         <span className="mj-library-star" aria-hidden="true">☆</span>
         <span>

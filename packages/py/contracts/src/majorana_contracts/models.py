@@ -10,6 +10,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from .enums import (
     ExportStatus,
     Framework,
+    Role,
     RunMode,
     RunStatus,
     VerificationMethod,
@@ -32,6 +33,21 @@ class Workspace(_ResourceBase):
     plan: str
     created_at: datetime
     deleted_at: datetime | None = None
+
+
+class WorkspaceMember(_ResourceBase):
+    user_id: UUID
+    email: str
+    display_name: str | None = None
+    role: Role
+    created_at: datetime
+
+
+class WorkspaceOverview(_ResourceBase):
+    workspace: Workspace
+    members: list[WorkspaceMember]
+    artifact_count: int = Field(ge=0)
+    run_count: int = Field(ge=0)
 
 
 class Artifact(_ResourceBase):

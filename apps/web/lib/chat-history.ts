@@ -13,6 +13,8 @@ export interface ChatSummary {
 const STORAGE_KEY = "majorana.chat-history.v1";
 export const CHAT_HISTORY_EVENT = "majorana:chat-history";
 
+type HistoryOptions = { includeDemo?: boolean };
+
 const DEFAULT_CHATS: ChatSummary[] = [
   {
     id: "demo-verified",
@@ -57,22 +59,25 @@ function persist(chats: ChatSummary[]): ChatSummary[] {
   return chats;
 }
 
-export function loadChatHistory(): ChatSummary[] {
-  if (!canUseStorage()) return DEFAULT_CHATS;
+export function loadChatHistory({ includeDemo = true }: HistoryOptions = {}): ChatSummary[] {
+  if (!canUseStorage()) return includeDemo ? DEFAULT_CHATS : [];
   try {
     const raw = window.localStorage.getItem(STORAGE_KEY);
-    if (!raw) return persist(DEFAULT_CHATS);
+    if (!raw) return includeDemo ? DEFAULT_CHATS : [];
     const parsed = JSON.parse(raw) as unknown;
-    if (!Array.isArray(parsed) || parsed.length === 0) return persist(DEFAULT_CHATS);
-    const valid = parsed.filter(isChatSummary).sort(sortNewestFirst);
-    return valid.length ? valid : persist(DEFAULT_CHATS);
+    if (!Array.isArray(parsed)) return includeDemo ? DEFAULT_CHATS : [];
+    const valid = parsed
+      .filter(isChatSummary)
+      .filter((chat) => includeDemo || !chat.demo)
+      .sort(sortNewestFirst);
+    return valid.length || !includeDemo ? valid : DEFAULT_CHATS;
   } catch {
-    return DEFAULT_CHATS;
+    return includeDemo ? DEFAULT_CHATS : [];
   }
 }
 
 export function rememberChat(chat: ChatSummary): ChatSummary[] {
-  const current = loadChatHistory().filter((item) => item.id !== chat.id);
+  const current = loadChatHistory({ includeDemo: false }).filter((item) => item.id !== chat.id);
   return persist([chat, ...current].sort(sortNewestFirst));
 }
 
@@ -81,7 +86,7 @@ export function updateChat(
   patch: Partial<Pick<ChatSummary, "title" | "status" | "framework">>,
 ): ChatSummary[] {
   return persist(
-    loadChatHistory().map((chat) => (chat.id === id ? { ...chat, ...patch } : chat)),
+    loadChatHistory({ includeDemo: false }).map((chat) => (chat.id === id ? { ...chat, ...patch } : chat)),
   );
 }
 

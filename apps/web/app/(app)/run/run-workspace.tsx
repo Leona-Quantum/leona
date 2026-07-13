@@ -38,9 +38,38 @@ export function RunWorkspace({ demoMode = false }: { demoMode?: boolean } = {}) 
     const artifactId = new URLSearchParams(window.location.search).get("artifact");
     if (!artifactId) return;
     const artifact = getLibraryArtifact(artifactId);
-    if (!artifact) return;
-    setContextArtifact(artifact);
-    setPrompt(`Create a follow-up from the saved Quepo artifact “${artifact.title}”. Preserve the verified structure, explain any changes, and re-run the checks.`);
+    if (artifact) {
+      setContextArtifact(artifact);
+      setPrompt(`Create a follow-up from the saved Quepo artifact “${artifact.title}”. Preserve the verified structure, explain any changes, and re-run the checks.`);
+      return;
+    }
+    void fetch(`/api/artifacts/${encodeURIComponent(artifactId)}`, { cache: "no-store" })
+      .then(async (response) => {
+        if (!response.ok) throw new Error("Artifact context unavailable");
+        return (await response.json()) as Record<string, unknown>;
+      })
+      .then((remote) => {
+        if (typeof remote.id !== "string" || typeof remote.title !== "string") return;
+        const remoteArtifact: LibraryArtifact = {
+          id: remote.id,
+          slug: typeof remote.slug === "string" ? remote.slug : remote.id,
+          title: remote.title,
+          family: typeof remote.family === "string" ? remote.family : "Simulation",
+          framework: typeof remote.framework === "string" ? remote.framework : "Qiskit",
+          status: "verified",
+          updatedAt: typeof remote.updated_at === "string" ? remote.updated_at : new Date().toISOString(),
+          description: "Saved artifact in the workspace repository.",
+          tags: [typeof remote.family === "string" ? remote.family.toLowerCase() : "artifact"],
+          verification: "Verification evidence is retained with the saved run.",
+          code: "",
+          qasm: null,
+          resourceRows: [],
+          source: "run",
+        };
+        setContextArtifact(remoteArtifact);
+        setPrompt(`Create a follow-up from the saved Quepo artifact “${remoteArtifact.title}”. Preserve the verified structure, explain any changes, and re-run the checks.`);
+      })
+      .catch(() => undefined);
   }, []);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
@@ -147,7 +176,7 @@ export function RunWorkspace({ demoMode = false }: { demoMode?: boolean } = {}) 
                 <strong>{contextArtifact.title}</strong>
                 <span>{contextArtifact.framework} · {contextArtifact.family} · {contextArtifact.status === "verified" ? "Verified" : "Saved with caveats"}</span>
               </div>
-              <a className="mj-secondary-button" href={`/library/${contextArtifact.id}`}>View artifact</a>
+              <a className="mj-secondary-button" href={demoMode ? "/demo?view=library" : `/library/${contextArtifact.id}`}>View artifact</a>
             </aside>
           ) : null}
         </div>

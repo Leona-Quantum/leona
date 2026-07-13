@@ -11,6 +11,7 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
       headerRight={
         user ? <span className="font-mono">{user.email}</span> : undefined
       }
+      userEmail={user?.email}
     >
       {children}
     </Shell>

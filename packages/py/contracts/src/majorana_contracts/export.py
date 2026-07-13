@@ -27,6 +27,8 @@ EXPORTED = [
     plan.Plan,
     scope.Scope,
     models.Workspace,
+    models.WorkspaceMember,
+    models.WorkspaceOverview,
     models.Artifact,
     models.ArtifactVersion,
     models.Run,

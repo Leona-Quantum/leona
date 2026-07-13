@@ -1374,6 +1374,37 @@ export interface components {
          * @enum {string}
          */
         WorkspaceKind: "personal" | "team";
+        /** WorkspaceMember */
+        WorkspaceMember: {
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Display Name
+             * @default null
+             */
+            display_name: string | null;
+            /** Email */
+            email: string;
+            role: components["schemas"]["Role"];
+            /**
+             * User Id
+             * Format: uuid
+             */
+            user_id: string;
+        };
+        /** WorkspaceOverview */
+        WorkspaceOverview: {
+            /** Artifact Count */
+            artifact_count: number;
+            /** Members */
+            members: components["schemas"]["WorkspaceMember"][];
+            /** Run Count */
+            run_count: number;
+            workspace: components["schemas"]["Workspace"];
+        };
     };
     responses: never;
     parameters: never;
