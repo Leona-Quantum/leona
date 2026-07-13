@@ -1,12 +1,16 @@
 "use client";
 
-import { useSearchParams } from "next/navigation";
+import { useEffect, useState } from "react";
 import { Shell } from "../../components/shell";
 import { RunWorkspace } from "../(app)/run/run-workspace";
 import { LibraryStudio } from "../(app)/library/library-studio";
 
 export function DemoWorkspace() {
-  const view = useSearchParams().get("view") === "library" ? "library" : "run";
+  const [view, setView] = useState<"run" | "library">("run");
+
+  useEffect(() => {
+    setView(new URLSearchParams(window.location.search).get("view") === "library" ? "library" : "run");
+  }, []);
 
   return (
     <Shell demoMode headerRight={<span className="font-mono">Read-only preview</span>}>
