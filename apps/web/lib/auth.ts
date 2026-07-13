@@ -34,10 +34,7 @@ export function getMajoranaAuth(
 ): Promise<UserInfo | NoUserInfo>;
 export async function getMajoranaAuth(options?: { ensureSignedIn?: boolean }) {
   if (isLocalDevAuthEnabled()) return LOCAL_DEV_AUTH;
-  if (!isWorkosAuthConfigured()) {
-    if (options?.ensureSignedIn) {
-      throw new Error("Majorana authentication is not configured.");
-    }
+  if (!isWorkosAuthConfigured() && !options?.ensureSignedIn) {
     return { user: null } satisfies NoUserInfo;
   }
   if (options?.ensureSignedIn) return withAuth({ ensureSignedIn: true });
