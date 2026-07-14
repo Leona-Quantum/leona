@@ -1,10 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-
-type Theme = "light" | "dark";
-
-const THEME_STORAGE_KEY = "majorana.theme.v1";
+import { THEME_STORAGE_KEY, readDocumentTheme, type Theme } from "../lib/theme";
 
 function applyTheme(theme: Theme) {
   document.documentElement.dataset.theme = theme;
@@ -32,7 +29,10 @@ export function ThemeToggle() {
   const [theme, setTheme] = useState<Theme | null>(null);
 
   useEffect(() => {
-    setTheme(document.documentElement.dataset.theme === "dark" ? "dark" : "light");
+    // The blocking layout script applies the stored theme before hydration.
+    // Keep aria-pressed unset until this client-only sync so server and client
+    // markup match while CSS still reflects the active document theme.
+    setTheme(readDocumentTheme());
   }, []);
 
   function selectTheme(nextTheme: Theme) {

@@ -19,6 +19,8 @@ Light palette (owner directive 2026-07-14): **strictly monochrome.** White, blac
 and neutral gray values provide the entire surface, including accents and verdict tokens.
 Status remains distinguishable through its existing glyph and word-label pairings. The
 header toggle stores the explicit selection locally; without one, the OS preference is used.
+The light audit pairs are text-0/bg-0 19.8:1, text-1/bg-1 7.5:1, text-2/bg-1 4.5:1,
+accent/bg-0 17.9:1, ok/bg-1 17.2:1, warn/bg-1 9.9:1, and err/bg-1 19.0:1.
 
 Rules:
 - Light and dark themes share semantic names (`--bg-0`, `--text-1`, verdict colors

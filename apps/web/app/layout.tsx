@@ -1,11 +1,12 @@
 import type { CSSProperties, ReactNode } from "react";
 import type { Metadata } from "next";
 import { Inter, JetBrains_Mono } from "next/font/google";
+import { THEME_STORAGE_KEY } from "../lib/theme";
 import "./globals.css";
 
 const themeScript = `(() => {
   try {
-    const saved = localStorage.getItem("majorana.theme.v1");
+    const saved = localStorage.getItem(${JSON.stringify(THEME_STORAGE_KEY)});
     const theme = saved === "light" || saved === "dark"
       ? saved
       : matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";

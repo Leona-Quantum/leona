@@ -84,6 +84,7 @@
 }
 
 @media (prefers-color-scheme: dark) {
+  /* Keep this fallback synchronized with :root[data-theme="dark"] above. */
   :root:not([data-theme]) {
     color-scheme: dark;
     --bg-0: #131211;

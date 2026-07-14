@@ -128,13 +128,13 @@
   width: 13px;
   height: 13px;
   fill: none;
-  stroke: currentColor;
+  stroke: currentcolor;
   stroke-width: 1.25;
   stroke-linecap: round;
   stroke-linejoin: round;
 }
 .mj-theme-toggle circle {
-  fill: currentColor;
+  fill: currentcolor;
   stroke: none;
 }
 .mj-public-overline {
@@ -886,6 +886,7 @@
     margin: -1px;
     overflow: hidden;
     clip: rect(0, 0, 0, 0);
+    clip-path: inset(50%);
     white-space: nowrap;
   }
   .mj-public-footer {
