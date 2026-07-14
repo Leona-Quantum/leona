@@ -87,6 +87,67 @@ function statusLabel(status: PublicRepositoryEntry["status"], locale: PublicLoca
   return "Community review";
 }
 
+const FAMILY_LABELS_JA: Record<string, string> = {
+  "Single-qubit gate": "単一量子ビットゲート",
+  "Pauli operator": "パウリ演算子",
+  "Controlled gate": "制御ゲート",
+  "Two-qubit gate": "2量子ビットゲート",
+  "Quantum query algorithm": "量子クエリアルゴリズム",
+  "Bell / entanglement": "ベル / エンタングルメント",
+  "GHZ / entanglement": "GHZ / エンタングルメント",
+  QAOA: "QAOA",
+  "Amplitude amplification": "振幅増幅",
+  "Hidden-period / factoring": "隠れ周期 / 因数分解",
+  "Amplitude estimation": "振幅推定",
+  "Variational quantum algorithm": "変分量子アルゴリズム",
+  "Eigenvalue estimation": "固有値推定",
+  "Quantum linear algebra": "量子線形代数",
+  "Quantum machine learning": "量子機械学習",
+  "Entanglement and communication": "エンタングルメントと通信",
+  "Quantum error correction": "量子誤り訂正",
+  "Quantum Fourier transform": "量子フーリエ変換",
+};
+
+const RESOURCE_LABELS_JA: Record<string, string> = {
+  Qubits: "量子ビット",
+  Depth: "深さ",
+  Outcomes: "出力",
+  Shots: "ショット",
+  Evidence: "根拠",
+  Claim: "主張",
+  Output: "出力",
+  Target: "対象",
+  Access: "アクセス",
+  Registers: "レジスタ",
+  Precision: "精度",
+  Core: "中核",
+  Input: "入力",
+  Risk: "リスク",
+  "Quantum core": "量子コア",
+  "Classical post": "古典後処理",
+  Readiness: "実用化条件",
+  "Classical bits": "古典ビット",
+  "Shared resource": "共有リソース",
+  Logical: "論理",
+  Physical: "物理",
+  Corrects: "訂正対象",
+  "Quantum role": "量子側の役割",
+  "Classical role": "古典側の役割",
+  "Main metric": "主指標",
+  Queries: "クエリ数",
+  "Input register": "入力レジスタ",
+  "Output register": "出力レジスタ",
+  Samples: "サンプル数",
+};
+
+function familyLabel(family: string, locale: PublicLocale): string {
+  return locale === "ja" ? FAMILY_LABELS_JA[family] ?? family : family;
+}
+
+function resourceLabel(label: string, locale: PublicLocale): string {
+  return locale === "ja" ? RESOURCE_LABELS_JA[label] ?? label : label;
+}
+
 export function RepositoryBrowser({
   entries,
   locale,
@@ -101,13 +162,10 @@ export function RepositoryBrowser({
   const copy = COPY[locale];
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState<"all" | PublicRepositoryCategory>("all");
-  const [family, setFamily] = useState<string>(copy.allFamilies);
-  const [framework, setFramework] = useState<string>(copy.allFrameworks);
+  const [family, setFamily] = useState<string>("");
+  const [framework, setFramework] = useState<string>("");
 
-  const families = useMemo(
-    () => [copy.allFamilies, ...Array.from(new Set(entries.map((entry) => entry.algorithmFamily)))],
-    [copy.allFamilies, entries],
-  );
+  const families = useMemo(() => Array.from(new Set(entries.map((entry) => entry.algorithmFamily))), [entries]);
   const filteredEntries = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase();
     return entries.filter((entry) => {
@@ -122,8 +180,8 @@ export function RepositoryBrowser({
         ...entry.tags,
       ].join(" ").toLowerCase().includes(normalizedQuery);
       const matchesCategory = category === "all" || entry.category === category;
-      const matchesFamily = family === copy.allFamilies || entry.algorithmFamily === family;
-      const matchesFramework = framework === copy.allFrameworks || entry.framework === framework;
+      const matchesFamily = !family || entry.algorithmFamily === family;
+      const matchesFramework = !framework || entry.framework === framework;
       return matchesQuery && matchesCategory && matchesFamily && matchesFramework;
     });
   }, [category, copy.allFamilies, copy.allFrameworks, entries, family, framework, query]);
@@ -131,8 +189,8 @@ export function RepositoryBrowser({
   function clearFilters() {
     setQuery("");
     setCategory("all");
-    setFamily(copy.allFamilies);
-    setFramework(copy.allFrameworks);
+    setFamily("");
+    setFramework("");
   }
 
   return (
@@ -150,13 +208,14 @@ export function RepositoryBrowser({
         <label>
           <span>{copy.family}</span>
           <select value={family} onChange={(event) => setFamily(event.target.value)}>
-            {families.map((option) => <option key={option}>{option}</option>)}
+            <option value="">{copy.allFamilies}</option>
+            {families.map((option) => <option key={option} value={option}>{familyLabel(option, locale)}</option>)}
           </select>
         </label>
         <label>
           <span>{copy.framework}</span>
           <select value={framework} onChange={(event) => setFramework(event.target.value)}>
-            <option>{copy.allFrameworks}</option>
+            <option value="">{copy.allFrameworks}</option>
             {PUBLIC_REPOSITORY_FRAMEWORKS.map((option) => <option key={option}>{option}</option>)}
           </select>
         </label>
@@ -169,6 +228,7 @@ export function RepositoryBrowser({
             key={option.value}
             type="button"
             aria-pressed={category === option.value}
+            title={locale === "ja" ? option.labelJa : option.label}
             onClick={() => setCategory(option.value)}
           >
             {locale === "ja" ? option.labelJa : option.label}
@@ -177,7 +237,7 @@ export function RepositoryBrowser({
       </div>
 
       <p className="mj-repository-result-count" aria-live="polite">
-        {filteredEntries.length} public {locale === "ja" ? copy.entries : filteredEntries.length === 1 ? copy.entry : copy.entries}
+        {locale === "ja" ? `${filteredEntries.length}${copy.entries}` : `${filteredEntries.length} public ${filteredEntries.length === 1 ? copy.entry : copy.entries}`}
       </p>
 
       {filteredEntries.length ? (
@@ -203,13 +263,13 @@ export function RepositoryBrowser({
                 <div className="mj-repository-resource-row">
                   {entry.resources.map((resource) => (
                     <div key={resource.label}>
-                      <span>{resource.label}</span>
+                      <span>{resourceLabel(resource.label, locale)}</span>
                       <strong>{resource.value}</strong>
                     </div>
                   ))}
                 </div>
                 <dl className="mj-repository-evidence">
-                  <div><dt>{copy.familyLabel}</dt><dd>{entry.algorithmFamily}</dd></div>
+                  <div><dt>{copy.familyLabel}</dt><dd>{familyLabel(entry.algorithmFamily, locale)}</dd></div>
                   <div><dt>{copy.verification}</dt><dd>{entry.verification}</dd></div>
                   <div><dt>{copy.export}</dt><dd>{entry.exportStatus}</dd></div>
                   <div><dt>{copy.provenance}</dt><dd>{entry.provenance}</dd></div>
@@ -219,7 +279,7 @@ export function RepositoryBrowser({
                     {entry.tags.map((tag) => <span key={tag}>{tag}</span>)}
                   </div>
                   <div className="mj-repository-entry-links">
-                    <RepositoryExportAction slug={entry.slug} title={title} isSignedIn={isSignedIn} signInHref={signInHref} />
+                    <RepositoryExportAction slug={entry.slug} title={title} isSignedIn={isSignedIn} signInHref={signInHref} locale={locale} />
                     <a className="mj-text-link" href={`/repository/${entry.slug}`}>{copy.view} ↗</a>
                   </div>
                 </div>

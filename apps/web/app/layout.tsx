@@ -2,6 +2,7 @@ import type { CSSProperties, ReactNode } from "react";
 import type { Metadata } from "next";
 import { Inter, JetBrains_Mono } from "next/font/google";
 import { THEME_STORAGE_KEY } from "../lib/theme";
+import { getPublicLocale } from "../lib/public-locale-server";
 import "./globals.css";
 
 const themeScript = `(() => {
@@ -20,16 +21,17 @@ const jetbrainsMono = JetBrains_Mono({ subsets: ["latin"], variable: "--font-jbm
 
 export const metadata: Metadata = {
   title: {
-    default: "Majorana · Verified quantum work",
-    template: "%s · Majorana",
+    default: "Leona Quantum · Evidence for quantum work",
+    template: "%s · Leona Quantum",
   },
-  description: "A quantum workbench for executable code, measured evidence, and reusable verified artifacts.",
+  description: "Leona Quantum connects public research, private workspaces, and verifiable quantum execution.",
 };
 
-export default function RootLayout({ children }: { children: ReactNode }) {
+export default async function RootLayout({ children }: { children: ReactNode }) {
+  const locale = await getPublicLocale();
   return (
     <html
-      lang="en"
+      lang={locale}
       suppressHydrationWarning
       className={`${inter.variable} ${jetbrainsMono.variable}`}
       style={

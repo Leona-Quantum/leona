@@ -1,8 +1,9 @@
 import { StudioWorkspace } from "./studio-workspace";
+import { getPublicLocale } from "../../../lib/public-locale-server";
 
-export const metadata = { title: "Studio — Majorana" };
+export const metadata = { title: "Studio — Leona Quantum" };
 
 export default async function StudioPage({ searchParams }: { searchParams: Promise<{ artifact?: string }> }) {
-  const params = await searchParams;
-  return <StudioWorkspace artifactId={params.artifact} />;
+  const [params, locale] = await Promise.all([searchParams, getPublicLocale()]);
+  return <StudioWorkspace artifactId={params.artifact} locale={locale} />;
 }

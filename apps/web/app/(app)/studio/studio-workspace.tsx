@@ -4,6 +4,8 @@ import { useEffect, useState } from "react";
 import { CheckIcon, CopyIcon, StudioIcon } from "../../../components/icons";
 import type { ComposerFramework } from "../../../components/run-composer";
 import { frameworkVariantsFromRemote, getLibraryArtifact, loadLibraryArtifacts, type LibraryArtifact } from "../../../lib/library-data";
+import type { PublicLocale } from "../../../lib/public-locale";
+import { WORKSPACE_COPY } from "../../../lib/workspace-locale";
 
 type StudioPanel = "canvas" | "code" | "versions";
 type StudioAction = "simulate" | "verify" | "save";
@@ -40,7 +42,8 @@ circuit = cirq.Circuit(
 )`,
 };
 
-export function StudioWorkspace({ artifactId }: { artifactId?: string }) {
+export function StudioWorkspace({ artifactId, locale = "en" }: { artifactId?: string; locale?: PublicLocale }) {
+  const copy = WORKSPACE_COPY[locale].studio;
   const initialArtifact = artifactId ? getLibraryArtifact(artifactId) : null;
   const initialFramework = normalizeFramework(initialArtifact?.framework);
   const initialDrafts = makeDrafts(initialArtifact);
@@ -79,13 +82,13 @@ export function StudioWorkspace({ artifactId }: { artifactId?: string }) {
           if (active && loaded) applyArtifact(loaded);
         })
         .catch(() => {
-          if (active) setMessage("The selected artifact could not be loaded.");
+          if (active) setMessage(copy.selectedUnavailable);
         });
     }
     return () => {
       active = false;
     };
-  }, [artifactId]);
+  }, [artifactId, copy]);
 
   function applyArtifact(next: LibraryArtifact | null) {
     setArtifact(next);
@@ -110,9 +113,9 @@ export function StudioWorkspace({ artifactId }: { artifactId?: string }) {
     try {
       const loaded = await loadArtifact(id);
       if (loaded) applyArtifact(loaded);
-      else setMessage("That artifact has no current version to edit.");
+      else setMessage(copy.noCurrentVersion);
     } catch {
-      setMessage("The selected artifact could not be loaded.");
+      setMessage(copy.selectedUnavailable);
     }
   }
 
@@ -121,17 +124,17 @@ export function StudioWorkspace({ artifactId }: { artifactId?: string }) {
     setDrafts((current) => ({ ...current, [framework]: code }));
     setFramework(next);
     setCode(drafts[next] || STARTER_CODES[next]);
-    setMessage(`Editing the ${frameworkLabel(next)} draft. Run it before treating it as verified.`);
+    setMessage(copy.editingDraft(frameworkLabel(next)));
   }
 
   async function copyCode() {
     try {
       await navigator.clipboard.writeText(code);
       setCopied(true);
-      setMessage(`${frameworkLabel(framework)} code copied.`);
+      setMessage(copy.codeCopied(frameworkLabel(framework)));
       window.setTimeout(() => setCopied(false), 1600);
     } catch {
-      setMessage("Copy is unavailable in this browser context.");
+      setMessage(copy.copyUnavailable);
     }
   }
 
@@ -161,9 +164,9 @@ export function StudioWorkspace({ artifactId }: { artifactId?: string }) {
         throw new Error(payload.detail ?? payload.error ?? `Run submission failed (${response.status})`);
       }
       setRunId(payload.id);
-      setMessage(action === "save" ? "Verification started. A passing run will become the next saved version." : `${action === "simulate" ? "Simulation" : "Verification"} started in Nameko Run.`);
+      setMessage(action === "save" ? copy.verificationStarted : copy.actionStarted(action === "simulate" ? (locale === "ja" ? "シミュレーション" : "Simulation") : (locale === "ja" ? "検証" : "Verification")));
     } catch (cause) {
-      setMessage(cause instanceof Error ? cause.message : "Run submission failed");
+      setMessage(cause instanceof Error ? cause.message : copy.submissionFailed);
     } finally {
       setBusy(null);
     }
@@ -175,21 +178,21 @@ export function StudioWorkspace({ artifactId }: { artifactId?: string }) {
         <div className="mj-studio-brand">
           <StudioIcon size={18} />
           <div>
-            <span className="mj-section-label">R&amp;D workspace</span>
-            <strong>Studio</strong>
+            <span className="mj-section-label">{copy.label}</span>
+            <strong>{copy.title}</strong>
           </div>
         </div>
         <div className="mj-studio-header-meta">
-          <span className="mj-studio-status"><span className="mj-status-dot" aria-hidden="true" />Draft changes are local until verified</span>
-          <a className="mj-secondary-button" href={selectedId ? `/library/${selectedId}` : "/library"}>Back to Library</a>
+          <span className="mj-studio-status"><span className="mj-status-dot" aria-hidden="true" />{copy.draftStatus}</span>
+          <a className="mj-secondary-button" href={selectedId ? `/library/${selectedId}` : "/library"}>{copy.backLibrary}</a>
         </div>
       </header>
 
       <div className="mj-studio-workspace">
-        <aside className="mj-studio-sidebar" aria-label="Studio artifacts">
+        <aside className="mj-studio-sidebar" aria-label={`${copy.title} ${copy.artifacts}`}>
           <div className="mj-studio-sidebar-head">
-            <span className="mj-section-label">Artifacts</span>
-            <button className="mj-secondary-button" type="button" onClick={() => applyArtifact(null)}>New</button>
+            <span className="mj-section-label">{copy.artifacts}</span>
+            <button className="mj-secondary-button" type="button" onClick={() => applyArtifact(null)} title={copy.new}>{copy.new}</button>
           </div>
           <div className="mj-studio-artifact-list">
             {artifacts.length ? artifacts.map((item) => (
@@ -202,67 +205,67 @@ export function StudioWorkspace({ artifactId }: { artifactId?: string }) {
                 <span className="mj-studio-artifact-mark" aria-hidden="true">{item.status === "verified" ? "✓" : "–"}</span>
                 <span><strong>{item.title}</strong><small>{item.framework} · {item.family}</small></span>
               </button>
-            )) : <p className="mj-studio-empty">No saved artifacts yet. Start with the Bell-state draft.</p>}
+            )) : <p className="mj-studio-empty">{copy.empty}</p>}
           </div>
-          <p className="mj-studio-sidebar-note">Library stores saved artifacts. Studio is where drafts become evidence.</p>
+          <p className="mj-studio-sidebar-note">{copy.sidebarNote}</p>
         </aside>
 
         <main className="mj-studio-main">
           <div className="mj-studio-main-head">
             <div className="mj-studio-title-block">
-              <label className="mj-section-label" htmlFor="studio-title">Working circuit</label>
+              <label className="mj-section-label" htmlFor="studio-title">{copy.workingCircuit}</label>
               <input id="studio-title" className="mj-studio-title-input" value={title} onChange={(event) => setTitle(event.target.value)} />
-              <p>{artifact ? `Editing version ${artifact.currentVersionId ? artifact.currentVersionId.slice(0, 8) : "draft"} · ${artifact.framework}` : "A clean draft for exploring a circuit before it enters Library."}</p>
+              <p>{artifact ? copy.editingVersion(artifact.currentVersionId ? artifact.currentVersionId.slice(0, 8) : (locale === "ja" ? "下書き" : "draft"), artifact.framework) : copy.newDraft}</p>
             </div>
             <div className="mj-studio-actions">
-              <button className="mj-secondary-button" type="button" onClick={() => void copyCode()}><CopyIcon size={14} />{copied ? "Copied" : "Copy code"}</button>
-              <button className="mj-secondary-button" type="button" disabled={busy !== null} onClick={() => void startRun("simulate")}>{busy === "simulate" ? "Starting…" : "Simulate"}</button>
-              <button className="mj-primary-button" type="button" disabled={busy !== null} onClick={() => void startRun("save")}>{busy === "save" ? "Starting…" : "Verify & save"}</button>
+              <button className="mj-secondary-button" type="button" onClick={() => void copyCode()} title={copied ? copy.copied : copy.copyCode}><CopyIcon size={14} />{copied ? copy.copied : copy.copyCode}</button>
+              <button className="mj-secondary-button" type="button" disabled={busy !== null} onClick={() => void startRun("simulate")}>{busy === "simulate" ? copy.starting : copy.simulate}</button>
+              <button className="mj-primary-button" type="button" disabled={busy !== null} onClick={() => void startRun("save")}>{busy === "save" ? copy.starting : copy.verifySave}</button>
             </div>
           </div>
 
-          <nav className="mj-studio-tabs" aria-label="Studio view">
+          <nav className="mj-studio-tabs" aria-label={copy.view}>
             {(["canvas", "code", "versions"] as StudioPanel[]).map((item) => (
               <button className={panel === item ? "is-active" : ""} type="button" key={item} onClick={() => setPanel(item)}>
-                {item === "canvas" ? "Circuit" : item === "code" ? "Code" : "Versions"}
+                {item === "canvas" ? copy.circuit : item === "code" ? copy.code : copy.versions}
               </button>
             ))}
           </nav>
 
-          {panel === "canvas" ? <CircuitCanvas framework={framework} code={code} selectedGate={selectedGate} onSelectGate={setSelectedGate} /> : null}
-          {panel === "code" ? <CodeEditor code={code} framework={framework} onChange={setCode} onCopy={() => void copyCode()} copied={copied} /> : null}
-          {panel === "versions" ? <VersionPanel artifact={artifact} runId={runId} /> : null}
+          {panel === "canvas" ? <CircuitCanvas framework={framework} code={code} selectedGate={selectedGate} onSelectGate={setSelectedGate} copy={copy} /> : null}
+          {panel === "code" ? <CodeEditor code={code} framework={framework} onChange={setCode} onCopy={() => void copyCode()} copied={copied} copy={copy} /> : null}
+          {panel === "versions" ? <VersionPanel artifact={artifact} runId={runId} copy={copy} /> : null}
 
           <footer className="mj-studio-footer" aria-live="polite">
-            <span>{message ?? "Select a gate to inspect it, or switch to Code to edit the source."}</span>
-            {runId ? <a href={`/run/${runId}`}>Open live run →</a> : null}
+            <span>{message ?? copy.footer}</span>
+            {runId ? <a href={`/run/${runId}`}>{copy.openRun} →</a> : null}
           </footer>
         </main>
 
-        <aside className="mj-studio-inspector" aria-label="Circuit inspector">
-          <div className="mj-studio-inspector-head"><span className="mj-section-label">Inspector</span><span className="mj-mono-muted">live draft</span></div>
+        <aside className="mj-studio-inspector" aria-label={copy.inspector}>
+          <div className="mj-studio-inspector-head"><span className="mj-section-label">{copy.inspector}</span><span className="mj-mono-muted">{copy.liveDraft}</span></div>
           <label className="mj-studio-field">
-            <span>Framework</span>
+            <span>{locale === "ja" ? "フレームワーク" : "Framework"}</span>
             <select value={framework} onChange={(event) => changeFramework(event.target.value as ComposerFramework)}>
               {FRAMEWORK_OPTIONS.map((option) => <option value={option.value} key={option.value}>{option.label}</option>)}
             </select>
           </label>
           <div className="mj-studio-inspector-card">
-            <span className="mj-section-label">Selected gate</span>
+            <span className="mj-section-label">{copy.selectedGate}</span>
             <strong>{selectedGate}</strong>
-            <p>{gateDescription(selectedGate)}</p>
+            <p>{copy.gateDescriptions[selectedGate] ?? copy.gateDescriptions.H}</p>
           </div>
           <div className="mj-studio-inspector-card">
-            <span className="mj-section-label">Run contract</span>
+            <span className="mj-section-label">{copy.runContract}</span>
             <dl className="mj-studio-contract">
-              <div><dt>Mode</dt><dd>Execute</dd></div>
-              <div><dt>Source</dt><dd>{artifact ? "Existing version" : "New draft"}</dd></div>
-              <div><dt>Evidence</dt><dd>Sandbox + verifier</dd></div>
+              <div><dt>{copy.mode}</dt><dd>{copy.execute}</dd></div>
+              <div><dt>{copy.source}</dt><dd>{artifact ? copy.existingVersion : copy.newDraftSource}</dd></div>
+              <div><dt>{copy.evidence}</dt><dd>{copy.sandboxVerifier}</dd></div>
             </dl>
           </div>
           <div className="mj-studio-framework-note">
             <CheckIcon size={14} />
-            <span>Qiskit stays the default. Switch only when you want a different framework draft.</span>
+            <span>{copy.frameworkNote}</span>
           </div>
         </aside>
       </div>
@@ -270,17 +273,19 @@ export function StudioWorkspace({ artifactId }: { artifactId?: string }) {
   );
 }
 
-function CircuitCanvas({ framework, code, selectedGate, onSelectGate }: { framework: ComposerFramework; code: string; selectedGate: string; onSelectGate: (gate: string) => void }) {
+type StudioCopy = (typeof WORKSPACE_COPY)[PublicLocale]["studio"];
+
+function CircuitCanvas({ framework, code, selectedGate, onSelectGate, copy }: { framework: ComposerFramework; code: string; selectedGate: string; onSelectGate: (gate: string) => void; copy: StudioCopy }) {
   const hasMeasure = code.toLowerCase().includes("measure") || code.toLowerCase().includes("sample");
   const gates = ["H", "CX", ...(hasMeasure ? ["M"] : [])];
   return (
-    <section className="mj-studio-surface mj-studio-canvas" aria-label="Circuit canvas">
+    <section className="mj-studio-surface mj-studio-canvas" aria-label={copy.canvasLabel}>
       <div className="mj-studio-surface-head">
-        <div><span className="mj-section-label">Circuit canvas</span><h2>Bell-state starter</h2></div>
-        <span className="mj-mono-muted">{frameworkLabel(framework)} · 2 qubits</span>
+        <div><span className="mj-section-label">{copy.canvasLabel}</span><h2>{copy.starterTitle}</h2></div>
+        <span className="mj-mono-muted">{frameworkLabel(framework)} · {copy.qubits}</span>
       </div>
       <div className="mj-circuit-stage">
-        <svg className="mj-circuit-svg" viewBox="0 0 720 300" role="img" aria-label={`${frameworkLabel(framework)} circuit with two qubits`}>
+        <svg className="mj-circuit-svg" viewBox="0 0 720 300" role="img" aria-label={copy.circuitAria(frameworkLabel(framework))}>
           <line className="mj-circuit-wire" x1="86" y1="105" x2="655" y2="105" />
           <line className="mj-circuit-wire" x1="86" y1="195" x2="655" y2="195" />
           <text className="mj-circuit-label" x="28" y="111">q0</text>
@@ -305,27 +310,27 @@ function CircuitCanvas({ framework, code, selectedGate, onSelectGate }: { framew
           <text className="mj-circuit-output" x="640" y="92">out</text>
         </svg>
       </div>
-      <div className="mj-studio-canvas-footer"><span>Click a gate to inspect its role.</span><span className="mj-mono-muted">{gates.join(" → ")}</span></div>
+      <div className="mj-studio-canvas-footer"><span>{copy.clickGate}</span><span className="mj-mono-muted">{gates.join(" → ")}</span></div>
     </section>
   );
 }
 
-function CodeEditor({ code, framework, onChange, onCopy, copied }: { code: string; framework: ComposerFramework; onChange: (code: string) => void; onCopy: () => void; copied: boolean }) {
+function CodeEditor({ code, framework, onChange, onCopy, copied, copy }: { code: string; framework: ComposerFramework; onChange: (code: string) => void; onCopy: () => void; copied: boolean; copy: StudioCopy }) {
   return (
-    <section className="mj-studio-surface mj-studio-code-panel" aria-label="Source editor">
-      <div className="mj-studio-surface-head"><div><span className="mj-section-label">Source editor</span><h2>{frameworkLabel(framework)} implementation</h2></div><button className="mj-secondary-button" type="button" onClick={onCopy}><CopyIcon size={14} />{copied ? "Copied" : "Copy code"}</button></div>
-      <textarea className="mj-studio-code-editor" value={code} onChange={(event) => onChange(event.target.value)} spellCheck={false} aria-label={`${frameworkLabel(framework)} source editor`} />
-      <p className="mj-studio-editor-note">Edit the draft directly. Simulate or verify it to produce evidence before it becomes a saved Library version.</p>
+    <section className="mj-studio-surface mj-studio-code-panel" aria-label={copy.sourceEditor}>
+      <div className="mj-studio-surface-head"><div><span className="mj-section-label">{copy.sourceEditor}</span><h2>{copy.implementation(frameworkLabel(framework))}</h2></div><button className="mj-secondary-button" type="button" onClick={onCopy} title={copied ? copy.copied : copy.copyCode}><CopyIcon size={14} />{copied ? copy.copied : copy.copyCode}</button></div>
+      <textarea className="mj-studio-code-editor" value={code} onChange={(event) => onChange(event.target.value)} spellCheck={false} aria-label={`${frameworkLabel(framework)} ${copy.sourceEditorInput}`} />
+      <p className="mj-studio-editor-note">{copy.editorNote}</p>
     </section>
   );
 }
 
-function VersionPanel({ artifact, runId }: { artifact: LibraryArtifact | null; runId: string | null }) {
+function VersionPanel({ artifact, runId, copy }: { artifact: LibraryArtifact | null; runId: string | null; copy: StudioCopy }) {
   return (
-    <section className="mj-studio-surface mj-studio-version-panel" aria-label="Artifact versions">
-      <div className="mj-studio-surface-head"><div><span className="mj-section-label">Version history</span><h2>{artifact ? artifact.title : "New draft"}</h2></div><span className="mj-mono-muted">repository view</span></div>
-      <div className="mj-studio-version-row"><span className="mj-studio-version-dot" /><div><strong>{artifact?.currentVersionId ? `Current · ${artifact.currentVersionId.slice(0, 12)}` : "Draft · not saved"}</strong><p>{artifact ? "The current Library version remains unchanged until a passing verification run saves the next version." : "Run verification to create the first durable artifact version."}</p></div></div>
-      {runId ? <div className="mj-studio-version-row"><span className="mj-studio-version-dot is-pending" /><div><strong>Verification run queued</strong><p>Run <a href={`/run/${runId}`}>{runId.slice(0, 12)}</a> will attach evidence when it finishes.</p></div></div> : null}
+    <section className="mj-studio-surface mj-studio-version-panel" aria-label={copy.versionHistory}>
+      <div className="mj-studio-surface-head"><div><span className="mj-section-label">{copy.versionHistory}</span><h2>{artifact ? artifact.title : copy.newDraftSource}</h2></div><span className="mj-mono-muted">{copy.repositoryView}</span></div>
+      <div className="mj-studio-version-row"><span className="mj-studio-version-dot" /><div><strong>{artifact?.currentVersionId ? copy.currentVersion(artifact.currentVersionId.slice(0, 12)) : copy.draftNotSaved}</strong><p>{artifact ? copy.currentVersionNote : copy.draftVersionNote}</p></div></div>
+      {runId ? <div className="mj-studio-version-row"><span className="mj-studio-version-dot is-pending" /><div><strong>{copy.verificationQueued}</strong><p><a href={`/run/${runId}`}>{runId.slice(0, 12)}</a> · {copy.verificationAttach(runId.slice(0, 12))}</p></div></div> : null}
     </section>
   );
 }
@@ -393,12 +398,6 @@ function normalizeFramework(value: string | undefined): ComposerFramework {
 
 function frameworkLabel(framework: ComposerFramework): string {
   return framework === "pennylane" ? "PennyLane" : framework === "cirq" ? "Cirq" : "Qiskit";
-}
-
-function gateDescription(gate: string): string {
-  if (gate === "CX") return "Controlled-X entangles the target with the control qubit.";
-  if (gate === "M") return "Measurement records the final computational-basis result.";
-  return "Hadamard creates an equal superposition on the selected qubit.";
 }
 
 function resourceRowsFromRemote(value: unknown): Array<{ label: string; value: string }> {

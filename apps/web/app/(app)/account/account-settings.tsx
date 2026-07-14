@@ -2,6 +2,8 @@
 
 import type { components } from "@majorana/contracts-gen";
 import { type FormEvent, useEffect, useState } from "react";
+import type { PublicLocale } from "../../../lib/public-locale";
+import { ACCOUNT_COPY } from "../../../lib/workspace-locale";
 
 type WorkspaceOverview = components["schemas"]["WorkspaceOverview"];
 
@@ -14,7 +16,8 @@ type Me = {
   role: components["schemas"]["Role"];
 };
 
-export function AccountSettings({ initialEmail }: { initialEmail: string }) {
+export function AccountSettings({ initialEmail, locale }: { initialEmail: string; locale: PublicLocale }) {
+  const copy = ACCOUNT_COPY[locale];
   const [me, setMe] = useState<Me | null>(null);
   const [workspace, setWorkspace] = useState<WorkspaceOverview | null>(null);
   const [displayName, setDisplayName] = useState("");
@@ -25,8 +28,8 @@ export function AccountSettings({ initialEmail }: { initialEmail: string }) {
   useEffect(() => {
     let active = true;
     Promise.all([
-      fetch("/api/me", { cache: "no-store" }).then(parseJson<Me>),
-      fetch("/api/workspace", { cache: "no-store" }).then(parseJson<WorkspaceOverview>),
+      fetch("/api/me", { cache: "no-store" }).then((response) => parseJson<Me>(response, copy.requestFailed)),
+      fetch("/api/workspace", { cache: "no-store" }).then((response) => parseJson<WorkspaceOverview>(response, copy.requestFailed)),
     ])
       .then(([identity, overview]) => {
         if (!active) return;
@@ -37,13 +40,13 @@ export function AccountSettings({ initialEmail }: { initialEmail: string }) {
       })
       .catch((cause) => {
         if (!active) return;
-        setMessage(cause instanceof Error ? cause.message : "Workspace data unavailable");
+        setMessage(cause instanceof AccountRequestError ? cause.message : copy.unavailable);
         setLoading(false);
       });
     return () => {
       active = false;
     };
-  }, []);
+  }, [copy]);
 
   async function saveProfile(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -56,54 +59,59 @@ export function AccountSettings({ initialEmail }: { initialEmail: string }) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ display_name: displayName }),
       });
-      const payload = (await response.json()) as Me | { title?: string; error?: string };
+      let payload: Me | { title?: string; error?: string };
+      try {
+        payload = (await response.json()) as Me | { title?: string; error?: string };
+      } catch {
+        throw new AccountRequestError(copy.profileSaveFailed);
+      }
       if (!response.ok || !("user_id" in payload)) {
-        throw new Error(errorDetail(payload, "Profile could not be saved"));
+        throw new AccountRequestError(errorDetail(payload, copy.profileSaveFailed));
       }
       setMe(payload);
       setDisplayName(payload.display_name ?? "");
-      setMessage("Profile saved.");
+      setMessage(copy.profileSaved);
     } catch (cause) {
-      setMessage(cause instanceof Error ? cause.message : "Profile could not be saved");
+      setMessage(cause instanceof AccountRequestError ? cause.message : copy.profileSaveFailed);
     } finally {
       setSaving(false);
     }
   }
 
-  if (loading) return <p className="mj-page-lede">Loading workspace data…</p>;
-  if (!workspace || !me) return <p className="mj-page-lede" role="alert">{message ?? `Signed in as ${initialEmail}. Workspace data is unavailable.`}</p>;
+  if (loading) return <p className="mj-page-lede">{copy.loading}</p>;
+  if (!workspace || !me) return <p className="mj-page-lede" role="alert">{message ?? `${initialEmail}: ${copy.unavailable}`}</p>;
 
   return (
     <div className="mj-artifact-grid">
       <section className="mj-artifact-panel">
-        <div className="mj-panel-heading"><h2>Identity</h2><span className="mj-mono-muted">{me.role}</span></div>
+        <div className="mj-panel-heading"><h2>{copy.identity}</h2><span className="mj-mono-muted">{me.role}</span></div>
         <dl className="mj-resource-list">
-          <div><dt>Email</dt><dd>{me.email}</dd></div>
-          <div><dt>Workspace</dt><dd>{me.workspace_name}</dd></div>
+          <div><dt>{copy.email}</dt><dd>{me.email}</dd></div>
+          <div><dt>{copy.workspace}</dt><dd>{me.workspace_name}</dd></div>
         </dl>
         <form className="mj-account-profile-form" onSubmit={saveProfile}>
           <label>
-            <span>Display name</span>
-            <input value={displayName} onChange={(event) => setDisplayName(event.target.value)} maxLength={120} placeholder="Your name" />
+            <span>{copy.displayName}</span>
+            <input value={displayName} onChange={(event) => setDisplayName(event.target.value)} maxLength={120} placeholder={copy.yourName} />
           </label>
-          <button className="mj-primary-button" disabled={saving} type="submit">{saving ? "Saving…" : "Save name"}</button>
+          <button className="mj-primary-button" disabled={saving} type="submit">{saving ? copy.saving : copy.saveName}</button>
         </form>
       </section>
       <section className="mj-artifact-panel">
-        <div className="mj-panel-heading"><h2>Personal workspace</h2><span className="mj-mono-muted">{workspace.workspace.plan}</span></div>
-        <p className="mj-artifact-copy">This workspace belongs only to you. Collaboration and shared workspaces are planned, but not enabled yet.</p>
+        <div className="mj-panel-heading"><h2>{copy.personalWorkspace}</h2><span className="mj-mono-muted">{workspace.workspace.plan}</span></div>
+        <p className="mj-artifact-copy">{copy.personalWorkspaceHelp}</p>
         <dl className="mj-resource-list">
-          <div><dt>Artifacts</dt><dd>{workspace.artifact_count}</dd></div>
-          <div><dt>Runs</dt><dd>{workspace.run_count}</dd></div>
-          <div><dt>Access</dt><dd>Private</dd></div>
+          <div><dt>{copy.artifacts}</dt><dd>{workspace.artifact_count}</dd></div>
+          <div><dt>{copy.runs}</dt><dd>{workspace.run_count}</dd></div>
+          <div><dt>{copy.access}</dt><dd>{copy.privateAccess}</dd></div>
         </dl>
       </section>
       <section className="mj-artifact-panel mj-artifact-panel--wide">
-        <div className="mj-panel-heading"><h2>Workspace boundaries</h2><span className="mj-mono-muted">v1</span></div>
+        <div className="mj-panel-heading"><h2>{copy.workspaceBoundaries}</h2><span className="mj-mono-muted">v1</span></div>
         <div className="mj-account-boundary-grid">
-          <div><strong>Library</strong><p>Saved runs and public references stay in your personal Library.</p></div>
-          <div><strong>Repository export</strong><p>Sign in to copy a public entry into this workspace and open it in Studio.</p></div>
-          <div><strong>Collaboration</strong><p>Deferred until shared access, invitations, and permissions are productized.</p></div>
+          <div><strong>{copy.library}</strong><p>{copy.libraryHelp}</p></div>
+          <div><strong>{copy.repositoryExport}</strong><p>{copy.repositoryExportHelp}</p></div>
+          <div><strong>{copy.collaboration}</strong><p>{copy.collaborationHelp}</p></div>
         </div>
         {message ? <p className="mj-page-lede" role="status">{message}</p> : null}
       </section>
@@ -111,13 +119,20 @@ export function AccountSettings({ initialEmail }: { initialEmail: string }) {
   );
 }
 
-async function parseJson<T>(response: Response): Promise<T> {
-  const payload = (await response.json()) as unknown;
+async function parseJson<T>(response: Response, fallback: string): Promise<T> {
+  let payload: unknown;
+  try {
+    payload = await response.json();
+  } catch {
+    throw new AccountRequestError(fallback);
+  }
   if (!response.ok) {
-    throw new Error(errorDetail(payload, "Request failed"));
+    throw new AccountRequestError(errorDetail(payload, fallback));
   }
   return payload as T;
 }
+
+class AccountRequestError extends Error {}
 
 function errorDetail(payload: unknown, fallback: string): string {
   if (!payload || typeof payload !== "object") return fallback;

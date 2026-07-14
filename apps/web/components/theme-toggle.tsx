@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { THEME_STORAGE_KEY, readDocumentTheme, type Theme } from "../lib/theme";
+import type { PublicLocale } from "../lib/public-locale";
 
 function applyTheme(theme: Theme) {
   document.documentElement.dataset.theme = theme;
@@ -25,7 +26,7 @@ function ThemeIcon({ theme }: { theme: Theme }) {
   );
 }
 
-export function ThemeToggle() {
+export function ThemeToggle({ locale = "en" }: { locale?: PublicLocale }) {
   const [theme, setTheme] = useState<Theme | null>(null);
 
   useEffect(() => {
@@ -40,19 +41,24 @@ export function ThemeToggle() {
     applyTheme(nextTheme);
   }
 
+  const copy = locale === "ja"
+    ? { group: "カラーテーマ", light: "ライト", dark: "ダーク", lightTitle: "ライトテーマを使用", darkTitle: "ダークテーマを使用" }
+    : { group: "Color theme", light: "Light", dark: "Dark", lightTitle: "Use light theme", darkTitle: "Use dark theme" };
+
   return (
-    <div className="mj-theme-toggle" role="group" aria-label="Color theme">
+    <div className="mj-theme-toggle" role="group" aria-label={copy.group} title={copy.group}>
       {(["light", "dark"] as const).map((option) => (
         <button
           key={option}
           type="button"
           data-theme-option={option}
-          aria-label={`Use ${option} theme`}
+          aria-label={option === "light" ? copy.lightTitle : copy.darkTitle}
+          title={option === "light" ? copy.lightTitle : copy.darkTitle}
           aria-pressed={theme === null ? undefined : theme === option}
           onClick={() => selectTheme(option)}
         >
           <ThemeIcon theme={option} />
-          <span>{option === "light" ? "Light" : "Dark"}</span>
+          <span>{option === "light" ? copy.light : copy.dark}</span>
         </button>
       ))}
     </div>

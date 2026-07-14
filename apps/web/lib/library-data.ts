@@ -195,7 +195,7 @@ export function rememberArtifactFromRun(events: readonly RunEvent[], prompt: str
     framework,
     status: finished?.type === "run.finished" && finished.verifier_decision === "pass" ? "verified" : "verified_caveats",
     updatedAt,
-    description: `Saved from the verified Nameko run for: ${prompt}`,
+    description: `Saved from the verified Leona Run for: ${prompt}`,
     tags: [String(family).toLowerCase(), String(framework).toLowerCase(), "run"],
     verification,
     code,

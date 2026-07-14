@@ -5,28 +5,12 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { rememberChat } from "../../../lib/chat-history";
 import { getLibraryArtifact, type LibraryArtifact } from "../../../lib/library-data";
+import type { PublicLocale } from "../../../lib/public-locale";
+import { WORKSPACE_COPY } from "../../../lib/workspace-locale";
 import { RunComposer, type ComposerFramework, type ComposerMode } from "../../../components/run-composer";
 
-const EXAMPLES = [
-  {
-    title: "Recover a marked state with Grover",
-    prompt: "Use Grover to recover the marked state 1100 and verify the measured distribution.",
-  },
-  {
-    title: "Compare QAOA with a classical baseline",
-    prompt: "Use QAOA to solve MaxCut on a 5-node ring and compare the result with an exact classical baseline.",
-  },
-  {
-    title: "Build and verify a Bell state",
-    prompt: "Build a Bell state in Qiskit, simulate it, and verify the expected 00/11 distribution.",
-  },
-  {
-    title: "Estimate a QFT resource profile",
-    prompt: "Estimate the qubit count, depth, and gate profile for a QFT circuit on eight qubits.",
-  },
-];
-
-export function RunWorkspace({ demoMode = false }: { demoMode?: boolean } = {}) {
+export function RunWorkspace({ demoMode = false, locale = "en" }: { demoMode?: boolean; locale?: PublicLocale } = {}) {
+  const copy = WORKSPACE_COPY[locale].run;
   const router = useRouter();
   const [prompt, setPrompt] = useState("");
   const [mode, setMode] = useState<ComposerMode>("execute");
@@ -41,7 +25,7 @@ export function RunWorkspace({ demoMode = false }: { demoMode?: boolean } = {}) 
     const artifact = getLibraryArtifact(artifactId);
     if (artifact) {
       setContextArtifact(artifact);
-      setPrompt(`Create a follow-up from the saved Quepo artifact “${artifact.title}”. Preserve the verified structure, explain any changes, and re-run the checks.`);
+      setPrompt(`Create a follow-up from the saved Library artifact “${artifact.title}”. Preserve the verified structure, explain any changes, and re-run the checks.`);
       return;
     }
     void fetch(`/api/artifacts/${encodeURIComponent(artifactId)}`, { cache: "no-store" })
@@ -68,7 +52,7 @@ export function RunWorkspace({ demoMode = false }: { demoMode?: boolean } = {}) 
           source: "run",
         };
         setContextArtifact(remoteArtifact);
-        setPrompt(`Create a follow-up from the saved Quepo artifact “${remoteArtifact.title}”. Preserve the verified structure, explain any changes, and re-run the checks.`);
+        setPrompt(`Create a follow-up from the saved Library artifact “${remoteArtifact.title}”. Preserve the verified structure, explain any changes, and re-run the checks.`);
       })
       .catch(() => undefined);
   }, []);
@@ -117,43 +101,28 @@ export function RunWorkspace({ demoMode = false }: { demoMode?: boolean } = {}) 
         <div className="mj-run-home-content">
           <header className="mj-run-home-heading">
             <div>
-              <h1>What are you working on?</h1>
-              <p>
-                Nameko plans the method, writes the code, runs the simulation, and explains the evidence. Start with a natural-language problem or open a verified artifact from Library.
-              </p>
+              <h1>{copy.title}</h1>
+              <p>{copy.lede}</p>
             </div>
-            <div className="mj-run-home-status" aria-label="Model status">
+            <div className="mj-run-home-status" aria-label={locale === "ja" ? "モデルの状態" : "Model status"}>
               <span className="mj-status-dot" aria-hidden="true" />
-              {demoMode ? "Public preview · view-only" : "DeepSeek · ready"}
+              {demoMode ? copy.previewStatus : copy.readyStatus}
             </div>
           </header>
 
           <div className="mj-run-home-grid">
             <section className="mj-home-panel" aria-labelledby="run-workflow-title">
-              <h2 id="run-workflow-title">A visible path from question to evidence</h2>
-              <p>
-                Every run keeps its plan, generated code, checks, results, and saved artifact addressable. You can return to an older chat without losing the work in progress.
-              </p>
+              <h2 id="run-workflow-title">{copy.workflowTitle}</h2>
+              <p>{copy.workflowBody}</p>
               <div className="mj-home-capabilities">
-                <div className="mj-capability">
-                  <strong>Plan first</strong>
-                  <span>Choose a method and state the verification target before compute.</span>
-                </div>
-                <div className="mj-capability">
-                  <strong>Show the work</strong>
-                  <span>Watch model output, code, compilation, and checks arrive as evidence.</span>
-                </div>
-                <div className="mj-capability">
-                  <strong>Save to Quepo</strong>
-                  <span>Verified runs become reusable artifacts in the connected Library.</span>
-                </div>
+                {copy.capabilities.map((capability) => <div className="mj-capability" key={capability.title}><strong>{capability.title}</strong><span>{capability.body}</span></div>)}
               </div>
             </section>
 
             <section className="mj-home-example" aria-labelledby="examples-title">
-              <h2 id="examples-title">Try an example</h2>
+              <h2 id="examples-title">{copy.examplesTitle}</h2>
               <div className="mj-example-list">
-                {EXAMPLES.map((example) => (
+                {copy.examples.map((example) => (
                   <button
                     className="mj-example-button"
                     key={example.title}
@@ -171,13 +140,13 @@ export function RunWorkspace({ demoMode = false }: { demoMode?: boolean } = {}) 
             </section>
           </div>
           {contextArtifact ? (
-            <aside className="mj-run-context-card" aria-label="Quepo artifact context">
+            <aside className="mj-run-context-card" aria-label={copy.contextLabel}>
               <div>
-                <span className="mj-section-label">Quepo context</span>
+                <span className="mj-section-label">{copy.contextLabel}</span>
                 <strong>{contextArtifact.title}</strong>
-                <span>{contextArtifact.framework} · {contextArtifact.family} · {contextArtifact.status === "verified" ? "Verified" : "Saved with caveats"}</span>
+                <span>{contextArtifact.framework} · {contextArtifact.family} · {contextArtifact.status === "verified" ? (locale === "ja" ? "検証済み" : "Verified") : (locale === "ja" ? "注意付きで保存" : "Saved with caveats")}</span>
               </div>
-              <a className="mj-secondary-button" href={demoMode ? "/demo?view=library" : `/library/${contextArtifact.id}`}>View artifact</a>
+              <a className="mj-secondary-button" href={demoMode ? "/demo?view=library" : `/library/${contextArtifact.id}`}>{copy.viewArtifact}</a>
             </aside>
           ) : null}
         </div>
@@ -192,7 +161,8 @@ export function RunWorkspace({ demoMode = false }: { demoMode?: boolean } = {}) 
         onModeChange={setMode}
         onFrameworkChange={setFramework}
         onSubmit={submit}
-        onAttach={() => setError("Attachments are not enabled yet; paste code or context into the prompt.")}
+        onAttach={() => setError(locale === "ja" ? "添付はまだ利用できません。コードやコンテキストを問いに貼り付けてください。" : "Attachments are not enabled yet; paste code or context into the prompt.")}
+        locale={locale}
       />
     </div>
   );

@@ -2,11 +2,12 @@
 
 import { type FormEvent, useState } from "react";
 import { CONTACT_EMAIL } from "../../lib/public-contact";
+import { CONTACT_COPY } from "../../lib/public-copy";
+import type { PublicLocale } from "../../lib/public-locale";
 
-const TOPICS = ["Product access", "Research workflow", "Enterprise R&D", "Open-source contribution", "Other"];
-
-export function ContactForm() {
+export function ContactForm({ locale }: { locale: PublicLocale }) {
   const [status, setStatus] = useState<string | null>(null);
+  const copy = CONTACT_COPY[locale];
 
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -15,26 +16,26 @@ export function ContactForm() {
     const email = String(form.get("email") ?? "").trim();
     const topic = String(form.get("topic") ?? "").trim();
     const message = String(form.get("message") ?? "").trim();
-    const subject = `[Majorana] ${topic || "Inquiry"}`;
+    const subject = `[Leona Quantum] ${topic || "Inquiry"}`;
     const body = [
-      `Name: ${name}`,
-      `Reply-to: ${email}`,
-      `Topic: ${topic}`,
+      `${copy.fields.name}: ${name}`,
+      `${copy.fields.email}: ${email}`,
+      `${copy.fields.topic}: ${topic}`,
       "",
       message,
     ].join("\n");
     window.location.href = `mailto:${CONTACT_EMAIL}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
-    setStatus("Your email app should open with the inquiry prepared. Send it to add the note to the queue.");
+    setStatus(copy.fields.status);
   }
 
   return (
     <form className="mj-contact-form" onSubmit={submit}>
-      <label><span>Name</span><input name="name" required autoComplete="name" /></label>
-      <label><span>Email</span><input name="email" required type="email" autoComplete="email" /></label>
-      <label><span>What is this about?</span><select name="topic" defaultValue={TOPICS[0]}>{TOPICS.map((topic) => <option key={topic}>{topic}</option>)}</select></label>
-      <label className="mj-contact-form-wide"><span>Message</span><textarea name="message" required rows={7} placeholder="What are you building, and what evidence or access would help?" /></label>
+      <label><span>{copy.fields.name}</span><input name="name" required autoComplete="name" /></label>
+      <label><span>{copy.fields.email}</span><input name="email" required type="email" autoComplete="email" /></label>
+      <label><span>{copy.fields.topic}</span><select name="topic" defaultValue={copy.topics[0]}>{copy.topics.map((topic) => <option key={topic}>{topic}</option>)}</select></label>
+      <label className="mj-contact-form-wide"><span>{copy.fields.message}</span><textarea name="message" required rows={7} placeholder={copy.fields.placeholder} /></label>
       <div className="mj-contact-form-actions">
-        <button className="mj-primary-button" type="submit">Prepare email to {CONTACT_EMAIL}</button>
+        <button className="mj-primary-button" type="submit">{copy.fields.submit}</button>
         {status ? <p role="status">{status}</p> : null}
       </div>
     </form>

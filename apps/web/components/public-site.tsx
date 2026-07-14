@@ -1,6 +1,8 @@
 import type { ReactNode } from "react";
+import { BrandMark } from "./icons";
 import { getMajoranaAuth, getMajoranaSignInUrl, isMajoranaAuthConfigured } from "../lib/auth";
 import { PUBLIC_SHELL_COPY, type PublicLocale } from "../lib/public-locale";
+import { getPublicLocale } from "../lib/public-locale-server";
 import { LanguageToggle } from "./language-toggle";
 import { ThemeToggle } from "./theme-toggle";
 import { CONTACT_EMAIL, CONTACT_MAILTO } from "../lib/public-contact";
@@ -13,8 +15,8 @@ export async function PublicSite({
   activePath,
   children,
   className = "",
-  locale = "en",
-  showLanguageToggle = false,
+  locale,
+  showLanguageToggle = true,
 }: {
   activePath?: string;
   children: ReactNode;
@@ -22,7 +24,8 @@ export async function PublicSite({
   locale?: PublicLocale;
   showLanguageToggle?: boolean;
 }) {
-  const copy = PUBLIC_SHELL_COPY[locale];
+  const resolvedLocale = locale ?? await getPublicLocale();
+  const copy = PUBLIC_SHELL_COPY[resolvedLocale];
   const publicNav = [
     { href: "/", label: copy.nav.product },
     { href: "/pricing", label: copy.nav.pricing },
@@ -42,11 +45,11 @@ export async function PublicSite({
     <main className={["mj-public-site", className].filter(Boolean).join(" ")}>
       <div className="mj-public-frame">
         <header className="mj-public-header">
-          <a className="mj-public-brand" href="/" aria-label="Majorana home">
-            <span className="mj-public-brand-mark" aria-hidden="true">M</span>
-            <span>Majorana</span>
+          <a className="mj-public-brand" href="/" aria-label="Leona Quantum home" title="Leona Quantum home">
+            <BrandMark size={24} />
+            <span>Leona Quantum</span>
           </a>
-          <nav className="mj-public-nav" aria-label="Public navigation">
+          <nav className="mj-public-nav" aria-label={resolvedLocale === "ja" ? "公開ナビゲーション" : "Public navigation"}>
             {publicNav.map((item) => (
               <a
                 key={item.href}
@@ -57,8 +60,8 @@ export async function PublicSite({
               </a>
             ))}
           </nav>
-          {showLanguageToggle ? <LanguageToggle locale={locale} /> : null}
-          <ThemeToggle />
+          {showLanguageToggle ? <LanguageToggle locale={resolvedLocale} /> : null}
+          <ThemeToggle locale={resolvedLocale} />
           <a className="mj-public-nav-primary" href={primaryAction.href}>
             {primaryAction.label}
           </a>
@@ -68,9 +71,9 @@ export async function PublicSite({
 
         <footer className="mj-public-footer">
           <div className="mj-public-footer-brand">
-            <a className="mj-public-brand" href="/">
-              <span className="mj-public-brand-mark" aria-hidden="true">M</span>
-              <span>Majorana</span>
+            <a className="mj-public-brand" href="/" aria-label="Leona Quantum home">
+              <BrandMark size={24} />
+              <span>Leona Quantum</span>
             </a>
             <p>{copy.footer.promise}</p>
           </div>
@@ -84,8 +87,6 @@ export async function PublicSite({
             <div>
               <span>{copy.footer.company}</span>
               <a href="/contact">{copy.footer.contact}</a>
-              <a href={CONTACT_MAILTO}>{copy.footer.email}</a>
-              <a href={REPOSITORY_URL} target="_blank" rel="noreferrer">GitHub ↗</a>
             </div>
             <div>
               <span>{copy.footer.legal}</span>
@@ -94,7 +95,7 @@ export async function PublicSite({
             </div>
           </div>
           <div className="mj-public-footer-bottom">
-            <span>© 2026 Majorana</span>
+            <span>© 2026 Leona Quantum</span>
             <span>{copy.footer.builtFor}</span>
           </div>
         </footer>
