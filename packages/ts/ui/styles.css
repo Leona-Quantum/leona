@@ -2574,6 +2574,26 @@
 .mj-artifact-panel--wide {
   min-height: 240px;
 }
+.mj-language-preference-panel {
+  min-height: 0;
+  margin-bottom: var(--sp-4);
+}
+.mj-language-preference {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-6);
+}
+.mj-language-preference strong {
+  color: var(--text-0);
+  font-size: var(--fs-13);
+  font-weight: 500;
+}
+.mj-language-preference p {
+  margin: var(--sp-1) 0 0;
+  color: var(--text-1);
+  line-height: 1.5;
+}
 .mj-panel-heading {
   justify-content: space-between;
   gap: var(--sp-3);

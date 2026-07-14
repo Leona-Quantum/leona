@@ -1,7 +1,7 @@
 export { AppShell } from "./app-shell";
 export { SyntaxHighlightedCode } from "./code-block";
 export { EmptyState } from "./empty-state";
-export { BRAND_NAME, NAV_SURFACES, type NavSurface } from "./nav-config";
+export { BRAND_NAME, NAV_SURFACES, navSurfaceLabel, type NavSurface } from "./nav-config";
 export {
   PIPELINE_STAGE_NAMES,
   StageRail,

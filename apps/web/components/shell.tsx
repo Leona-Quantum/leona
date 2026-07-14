@@ -4,7 +4,7 @@
 import type { FormEvent, ReactNode } from "react";
 import { usePathname } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
-import { AppShell, BRAND_NAME, NAV_SURFACES } from "@majorana/ui";
+import { AppShell, BRAND_NAME, NAV_SURFACES, navSurfaceLabel } from "@majorana/ui";
 import {
   BrandMark,
   LibraryIcon,
@@ -29,6 +29,8 @@ import {
   type ChatSummary,
 } from "../lib/chat-history";
 import { ThemeToggle } from "./theme-toggle";
+import type { PublicLocale } from "../lib/public-locale";
+import { WORKSPACE_COPY } from "../lib/workspace-locale";
 
 const SIDEBAR_STORAGE_KEY = "majorana.sidebar-collapsed.v1";
 
@@ -37,11 +39,13 @@ export function Shell({
   headerRight,
   demoMode = false,
   userEmail,
+  locale = "en",
 }: {
   children: ReactNode;
   headerRight?: ReactNode;
   demoMode?: boolean;
   userEmail?: string;
+  locale?: PublicLocale;
 }) {
   const pathname = usePathname();
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
@@ -112,15 +116,16 @@ export function Shell({
     });
   }
 
+  const copy = WORKSPACE_COPY[locale];
   const surfaceLabel = pathname.startsWith("/library")
-    ? "Library"
+    ? copy.surfaces.library
     : pathname.startsWith("/studio")
-      ? "Studio"
+      ? copy.surfaces.studio
     : pathname.startsWith("/demo")
-      ? "Public preview"
+      ? copy.surfaces.preview
     : pathname.startsWith("/account")
-      ? "Account"
-      : "Nameko Run";
+      ? copy.surfaces.account
+      : copy.surfaces.run;
 
   return (
     <AppShell
@@ -131,10 +136,11 @@ export function Shell({
           {headerRight}
         </>
       }
-      sidebar={<WorkspaceSidebar currentPath={pathname} chats={chats} folders={folders} collapsed={sidebarCollapsed} demoMode={demoMode} userEmail={userEmail} folderSyncState={folderSyncState} />}
+      sidebar={<WorkspaceSidebar currentPath={pathname} chats={chats} folders={folders} collapsed={sidebarCollapsed} demoMode={demoMode} userEmail={userEmail} folderSyncState={folderSyncState} locale={locale} />}
       sidebarCollapsed={sidebarCollapsed}
       onToggleSidebar={toggleSidebar}
       surfaceLabel={surfaceLabel}
+      locale={locale}
     >
       {children}
     </AppShell>
@@ -149,6 +155,7 @@ function WorkspaceSidebar({
   demoMode,
   userEmail,
   folderSyncState,
+  locale,
 }: {
   currentPath: string;
   chats: ChatSummary[];
@@ -157,12 +164,14 @@ function WorkspaceSidebar({
   demoMode: boolean;
   userEmail?: string;
   folderSyncState: "local" | "synced" | "error";
+  locale: PublicLocale;
 }) {
+  const copy = WORKSPACE_COPY[locale].sidebar;
   const demoHref = (view: "run" | "library") => `/demo?view=${view}`;
   const runHref = demoMode ? demoHref("run") : "/run";
   const libraryHref = demoMode ? demoHref("library") : "/library";
   const studioHref = demoMode ? libraryHref : "/studio";
-  const sidebarName = demoMode ? "Public preview" : userEmail ?? "Local developer";
+  const sidebarName = demoMode ? copy.publicPreview : userEmail ?? copy.localDeveloper;
   const sidebarInitial = sidebarName.slice(0, 1).toUpperCase();
   const [activeFolderId, setActiveFolderId] = useState<string | null>(null);
   const [creatingFolder, setCreatingFolder] = useState(false);
@@ -200,21 +209,21 @@ function WorkspaceSidebar({
           <BrandMark size={20} />
           <span className="mj-sidebar-copy">{BRAND_NAME}</span>
         </a>
-        <button className="mj-sidebar-more" type="button" aria-label="Workspace options">
+        <button className="mj-sidebar-more" type="button" aria-label={copy.workspaceOptions}>
           <MoreIcon size={16} />
         </button>
       </div>
 
       <a className="mj-sidebar-new" href={runHref}>
         <PlusIcon size={16} />
-        <span className="mj-sidebar-copy">New chat</span>
+        <span className="mj-sidebar-copy">{copy.newChat}</span>
       </a>
 
       <div className="mj-sidebar-scroll">
         <div className="mj-sidebar-section-label">
-          <span className="mj-sidebar-copy">Recent</span>
+          <span className="mj-sidebar-copy">{copy.recent}</span>
         </div>
-        <nav className="mj-sidebar-chats" aria-label="Recent chats">
+        <nav className="mj-sidebar-chats" aria-label={copy.recentChats}>
           {visibleChats.map((chat) => (
             <div className="mj-sidebar-chat-row" key={chat.id}>
               <a
@@ -226,16 +235,16 @@ function WorkspaceSidebar({
                   {statusGlyph(chat.status)}
                 </span>
                 <span className="mj-sidebar-chat-title mj-sidebar-copy">{chat.title}</span>
-                <span className="mj-sidebar-chat-time mj-sidebar-copy">{formatRelativeDate(chat.createdAt)}</span>
+                <span className="mj-sidebar-chat-time mj-sidebar-copy">{formatRelativeDate(chat.createdAt, locale)}</span>
               </a>
               {!collapsed && !demoMode && folders.length > 0 ? (
                 <select
-                  aria-label={`Move ${chat.title} to folder`}
+                  aria-label={copy.moveToFolder(chat.title)}
                   className="mj-sidebar-chat-folder"
                   value={chat.folderId ?? ""}
                   onChange={(event) => assignFolder(chat.id, event.target.value || undefined)}
                 >
-                  <option value="">No folder</option>
+                  <option value="">{copy.noFolder}</option>
                   {folders.map((folder) => <option key={folder.id} value={folder.id}>{folder.name}</option>)}
                 </select>
               ) : null}
@@ -243,23 +252,23 @@ function WorkspaceSidebar({
           ))}
         </nav>
         {!demoMode ? (
-          <section className="mj-sidebar-folders" aria-label="Chat folders">
+          <section className="mj-sidebar-folders" aria-label={copy.chatFolders}>
             <div className="mj-sidebar-section-label mj-sidebar-folder-heading">
-              <span className="mj-sidebar-copy">Folders</span>
+              <span className="mj-sidebar-copy">{copy.folders}</span>
               <span className="mj-sidebar-copy" aria-live="polite">
-                {folderSyncState === "synced" ? "Synced" : folderSyncState === "error" ? "Local only" : ""}
+                {folderSyncState === "synced" ? copy.synced : folderSyncState === "error" ? copy.localOnly : ""}
               </span>
-              <button className="mj-sidebar-folder-add" type="button" aria-label="Create chat folder" onClick={() => setCreatingFolder(true)}>+</button>
+              <button className="mj-sidebar-folder-add" type="button" aria-label={copy.createChatFolder} onClick={() => setCreatingFolder(true)}>+</button>
             </div>
             {creatingFolder ? (
               <form className="mj-sidebar-folder-form" onSubmit={submitFolder}>
-                <input aria-label="Folder name" autoFocus maxLength={80} value={folderName} onChange={(event) => setFolderName(event.target.value)} placeholder="Folder name" />
-                <button type="submit" aria-label="Save folder" disabled={!folderName.trim()}>✓</button>
-                <button type="button" aria-label="Cancel folder creation" onClick={() => { setCreatingFolder(false); setFolderName(""); }}>×</button>
+                <input aria-label={copy.folderName} autoFocus maxLength={80} value={folderName} onChange={(event) => setFolderName(event.target.value)} placeholder={copy.folderName} />
+                <button type="submit" aria-label={copy.saveFolder} disabled={!folderName.trim()}>✓</button>
+                <button type="button" aria-label={copy.cancelFolder} onClick={() => { setCreatingFolder(false); setFolderName(""); }}>×</button>
               </form>
             ) : null}
             <button className={`mj-sidebar-folder${activeFolderId === null ? " is-active" : ""}`} type="button" onClick={() => setActiveFolderId(null)}>
-              <span aria-hidden="true">◌</span><span className="mj-sidebar-copy">All chats</span><span className="mj-sidebar-folder-count">{chats.length}</span>
+              <span aria-hidden="true">◌</span><span className="mj-sidebar-copy">{copy.allChats}</span><span className="mj-sidebar-folder-count">{chats.length}</span>
             </button>
             {folders.map((folder) => (
               <button className={`mj-sidebar-folder${activeFolderId === folder.id ? " is-active" : ""}`} key={folder.id} type="button" onClick={() => setActiveFolderId(folder.id)}>
@@ -269,11 +278,11 @@ function WorkspaceSidebar({
           </section>
         ) : null}
         <a className="mj-sidebar-view-all" href={libraryHref}>
-          <span className="mj-sidebar-copy">View all</span>
+          <span className="mj-sidebar-copy">{copy.viewAll}</span>
           <span aria-hidden="true">→</span>
         </a>
 
-        <nav className="mj-sidebar-nav" aria-label="Workspace">
+        <nav className="mj-sidebar-nav" aria-label={copy.workspaceNav}>
           {NAV_SURFACES.filter((surface) => surface.href !== "/account").map((surface) => {
             const active = currentPath === surface.href || currentPath.startsWith(`${surface.href}/`);
             return (
@@ -283,7 +292,7 @@ function WorkspaceSidebar({
                 key={surface.href}
               >
                 {surface.href === "/run" ? <PlayIcon size={16} /> : surface.href === "/library" ? <LibraryIcon size={16} /> : <StudioIcon size={16} />}
-                <span className="mj-sidebar-copy">{surface.label}</span>
+                <span className="mj-sidebar-copy">{navSurfaceLabel(surface, locale)}</span>
               </a>
             );
           })}
@@ -293,13 +302,13 @@ function WorkspaceSidebar({
       <div className="mj-sidebar-footer">
         <a className="mj-sidebar-nav-item" href={demoMode ? runHref : "/account"}>
           <SettingsIcon size={16} />
-          <span className="mj-sidebar-copy">Settings</span>
+          <span className="mj-sidebar-copy">{copy.settings}</span>
         </a>
         <a className="mj-sidebar-user" href={demoMode ? runHref : "/account"}>
           <span className="mj-avatar">{sidebarInitial}</span>
           <span className="mj-sidebar-user-copy mj-sidebar-copy">
             <strong>{sidebarName}</strong>
-            <small>{demoMode ? "Read-only fixture data" : "Personal workspace"}</small>
+            <small>{demoMode ? copy.readOnlyData : copy.personalWorkspace}</small>
           </span>
           <span className="mj-sidebar-user-caret mj-sidebar-copy">⌄</span>
         </a>
@@ -315,16 +324,17 @@ function statusGlyph(status: ChatStatus): string {
   return "·";
 }
 
-function formatRelativeDate(value: string): string {
+function formatRelativeDate(value: string, locale: PublicLocale = "en"): string {
   const date = new Date(value);
   if (Number.isNaN(date.valueOf())) return "";
   const now = new Date();
   const sameDay = date.toDateString() === now.toDateString();
   if (sameDay) return date.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
   const days = Math.max(1, Math.round((now.valueOf() - date.valueOf()) / 86_400_000));
-  if (days === 1) return "Yesterday";
-  if (days < 7) return `${days}d ago`;
-  return date.toLocaleDateString([], { month: "short", day: "numeric" });
+  const copy = WORKSPACE_COPY[locale].sidebar;
+  if (days === 1) return copy.yesterday;
+  if (days < 7) return copy.daysAgo(days);
+  return date.toLocaleDateString(locale === "ja" ? "ja-JP" : "en-US", { month: "short", day: "numeric" });
 }
 
 function chatFromRun(value: unknown): ChatSummary[] {

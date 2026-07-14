@@ -1,7 +1,7 @@
 // Shared shell: top nav across the three surfaces (07-ui-product.md §1).
 // Server-compatible; active-link highlighting is the caller's job (pass currentPath).
 import type { ReactNode } from "react";
-import { BRAND_NAME, NAV_SURFACES } from "./nav-config";
+import { BRAND_NAME, NAV_SURFACES, navSurfaceLabel } from "./nav-config";
 
 function SidebarChevron({ direction }: { direction: "left" | "right" }) {
   return (
@@ -19,6 +19,7 @@ export function AppShell({
   sidebarCollapsed = false,
   onToggleSidebar,
   surfaceLabel,
+  locale = "en",
 }: {
   children: ReactNode;
   /** Pathname for aria-current on the active surface. */
@@ -30,6 +31,7 @@ export function AppShell({
   sidebarCollapsed?: boolean;
   onToggleSidebar?: () => void;
   surfaceLabel?: string;
+  locale?: "en" | "ja";
 }): ReactNode {
   return (
     <div
@@ -69,7 +71,7 @@ export function AppShell({
                       : undefined
                   }
                 >
-                  {surface.label}
+                  {navSurfaceLabel(surface, locale)}
                 </a>
               ))}
             </nav>
