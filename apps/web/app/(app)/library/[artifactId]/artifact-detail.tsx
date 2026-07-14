@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { CopyIcon, MoreIcon } from "../../../../components/icons";
-import { getLibraryArtifact, type LibraryArtifact } from "../../../../lib/library-data";
+import { frameworkVariantsFromRemote, getLibraryArtifact, type LibraryArtifact } from "../../../../lib/library-data";
 
 type DetailTab = "overview" | "code" | "runs" | "verification" | "notes";
 
@@ -32,6 +32,7 @@ export function ArtifactDetail({ artifactId }: { artifactId: string }) {
           family: typeof remote.family === "string" ? remote.family : current?.family ?? "Simulation",
           framework: typeof remote.framework === "string" ? remote.framework : current?.framework ?? "Qiskit",
           updatedAt: typeof remote.updated_at === "string" ? remote.updated_at : current?.updatedAt ?? new Date().toISOString(),
+          currentVersionId: typeof remote.current_version_id === "string" ? remote.current_version_id : current?.currentVersionId,
         }));
         if (typeof remote.current_version_id !== "string") return;
         return fetch(`/api/artifacts/${encodeURIComponent(artifactId)}/versions/current`, { cache: "no-store" })
@@ -44,6 +45,7 @@ export function ArtifactDetail({ artifactId }: { artifactId: string }) {
             setArtifact((current) => ({
               ...(current ?? fallbackArtifact(artifactId)),
               code: typeof version.code === "string" ? version.code : current?.code ?? "",
+              frameworkVariants: frameworkVariantsFromRemote(version.framework_variants) ?? current?.frameworkVariants,
               qasm: typeof version.qasm === "string" ? version.qasm : current?.qasm ?? null,
               resourceRows: current?.resourceRows?.length ? current.resourceRows : resourceRowsFromRemote(version.resource_estimates),
             }));
@@ -57,9 +59,9 @@ export function ArtifactDetail({ artifactId }: { artifactId: string }) {
     };
   }, [artifactId]);
 
-  async function copyCode() {
-    if (!artifact?.code) return;
-    await navigator.clipboard.writeText(artifact.code);
+  async function copyCode(value = artifact?.code) {
+    if (!value) return;
+    await navigator.clipboard.writeText(value);
     setCopied(true);
     window.setTimeout(() => setCopied(false), 1600);
   }
@@ -84,6 +86,7 @@ export function ArtifactDetail({ artifactId }: { artifactId: string }) {
             </div>
             <div className="mj-artifact-actions">
               <button className="mj-icon-button" type="button" aria-label="Artifact options"><MoreIcon size={16} /></button>
+              <a className="mj-secondary-button" href={`/studio?artifact=${encodeURIComponent(artifact.id)}`}>Open in Studio</a>
               <a className="mj-secondary-button" href={`/run?artifact=${encodeURIComponent(artifact.id)}`}>Open in Run</a>
             </div>
           </header>
@@ -140,12 +143,15 @@ function Overview({ artifact }: { artifact: LibraryArtifact }) {
   );
 }
 
-function CodeAndExport({ artifact, copied, onCopy }: { artifact: LibraryArtifact; copied: boolean; onCopy: () => void }) {
+function CodeAndExport({ artifact, copied, onCopy }: { artifact: LibraryArtifact; copied: boolean; onCopy: (code?: string) => void }) {
+  const options = frameworkCodeOptions(artifact);
+  const [selected, setSelected] = useState(options[0]?.key ?? "qiskit");
+  const selectedCode = options.find((option) => option.key === selected)?.code ?? artifact.code;
   return (
     <div className="mj-artifact-grid mj-artifact-grid--code">
       <section className="mj-artifact-panel mj-artifact-panel--wide">
-        <div className="mj-panel-heading"><h2>Source code</h2><button className="mj-secondary-button" type="button" onClick={onCopy}><CopyIcon size={14} />{copied ? "Copied" : "Copy code"}</button></div>
-        <pre className="mj-artifact-code" tabIndex={0} role="region" aria-label={`${artifact.title} source code`}><code>{artifact.code || "Code will appear after the artifact is loaded from the control plane."}</code></pre>
+        <div className="mj-panel-heading"><h2>Source code</h2><div className="mj-artifact-code-actions">{options.length > 1 ? <label><span className="sr-only">Framework</span><select value={selected} onChange={(event) => setSelected(event.target.value)}>{options.map((option) => <option key={option.key} value={option.key}>{option.label}</option>)}</select></label> : null}<button className="mj-secondary-button" type="button" onClick={() => onCopy(selectedCode)}><CopyIcon size={14} />{copied ? "Copied" : "Copy code"}</button></div></div>
+        <pre className="mj-artifact-code" tabIndex={0} role="region" aria-label={`${artifact.title} ${selected} source code`}><code>{selectedCode || "Code will appear after the artifact is loaded from the control plane."}</code></pre>
       </section>
       <section className="mj-artifact-panel">
         <div className="mj-panel-heading"><h2>Export</h2><span className="mj-mono-muted">classified</span></div>
@@ -153,6 +159,26 @@ function CodeAndExport({ artifact, copied, onCopy }: { artifact: LibraryArtifact
       </section>
     </div>
   );
+}
+
+function frameworkCodeOptions(artifact: LibraryArtifact): Array<{ key: string; label: string; code: string }> {
+  const options = new Map<string, { key: string; label: string; code: string }>();
+  const primary = normalizeFramework(artifact.framework);
+  options.set(primary, { key: primary, label: frameworkLabel(primary), code: artifact.code });
+  for (const [framework, code] of Object.entries(artifact.frameworkVariants ?? {})) {
+    options.set(normalizeFramework(framework), { key: normalizeFramework(framework), label: frameworkLabel(framework), code });
+  }
+  return [...options.values()];
+}
+
+function normalizeFramework(value: string): string {
+  const normalized = value.toLowerCase();
+  return normalized === "pennylane" ? "pennylane" : normalized === "cirq" ? "cirq" : "qiskit";
+}
+
+function frameworkLabel(value: string): string {
+  const normalized = normalizeFramework(value);
+  return normalized === "pennylane" ? "PennyLane" : normalized === "cirq" ? "Cirq" : "Qiskit";
 }
 
 function Runs({ artifact }: { artifact: LibraryArtifact }) {

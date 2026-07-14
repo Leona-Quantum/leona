@@ -50,6 +50,9 @@ class RunContext:
     tolerances: dict[str, Any] | None
     timeout_s: int | None
     sink: EventSink
+    source_code: str | None = None
+    source_framework: Framework | None = None
+    parent_artifact_id: Any | None = None
     state: dict[str, Any] = field(default_factory=dict)
 
 

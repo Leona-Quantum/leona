@@ -10,11 +10,12 @@ build status and decisions that postdate those docs.
 | S2 | Run home | shipped (`/run` composer submits through the authenticated BFF; examples, mode selection, and recent runs are present) |
 | S3 | Pipeline view | `RunView` + pure `reduceRunEvents` shipped at `/run/[taskId]`; live BFF event-stream replay, resumable SSE, and typed prose are wired |
 | S4 | Result panel | assembled — verdict → key numbers → code → baseline → export → Library link, in spec §3 order; renders from the same replayed log |
-| S5 | Library list | shipped with workspace-scoped API loading, search/filter controls, empty/error states, and explicit demo-only fixtures |
+| S5 | Library list | shipped with workspace-scoped API loading, search/filter controls, empty/error states, explicit demo-only fixtures, and storage-only copy |
 | S6 | Artifact detail | shipped — tabs include "Code & Export", never "Code & IR" (P1); current-version, provenance, copy, and Run handoff are wired |
-| S7 | Public artifact page | not started |
-| S8 | Auth screens | WorkOS AuthKit flow live from Phase 1 |
-| S9 | Account | shipped for identity, workspace data, members, and owner/admin member attach; meters and workspace selection pending |
+| S7 | Studio editor | owner-directed slice — code editor, semantic circuit preview, inspector, output drawer, and persisted framework variants |
+| S8 | Public artifact page | not started |
+| S9 | Auth screens | WorkOS AuthKit flow live from Phase 1 |
+| S10 | Account | shipped for identity, workspace data, members, and owner/admin member attach; meters and workspace selection pending |
 
 Build order (Phase 3): shell+nav ✅ → S3/S4 → S2 → S5/S6 → S7 → S1 → S8/S9 polish.
 Owner taste-checks: S3+S4 first, then S6. Result-panel order and QPU-panel spec:

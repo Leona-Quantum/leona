@@ -157,6 +157,13 @@ export interface components {
              */
             fingerprint: string;
             /**
+             * Framework Variants
+             * @default null
+             */
+            framework_variants: {
+                [key: string]: string;
+            } | null;
+            /**
              * Id
              * Format: uuid
              */
@@ -258,6 +265,10 @@ export interface components {
              * @default null
              */
             finalization_reason: string | null;
+            /** Framework Variants */
+            framework_variants?: {
+                [key: string]: components["schemas"]["CodeVariant"];
+            };
             /** Language */
             language: string;
             /** Qpu Available */
@@ -318,6 +329,22 @@ export interface components {
              * @enum {string}
              */
             type: "code.generated";
+        };
+        /**
+         * CodeVariant
+         * @description A deterministic, copyable framework rendering of the verified circuit.
+         */
+        CodeVariant: {
+            /** Code */
+            code: string;
+            /**
+             * Export Reason
+             * @default null
+             */
+            export_reason: string | null;
+            export_status: components["schemas"]["ExportStatus"];
+            /** Language */
+            language: string;
         };
         /** CompilationResult */
         CompilationResult: {

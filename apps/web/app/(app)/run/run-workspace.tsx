@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { rememberChat } from "../../../lib/chat-history";
 import { getLibraryArtifact, type LibraryArtifact } from "../../../lib/library-data";
-import { RunComposer, type ComposerMode } from "../../../components/run-composer";
+import { RunComposer, type ComposerFramework, type ComposerMode } from "../../../components/run-composer";
 
 const EXAMPLES = [
   {
@@ -30,6 +30,7 @@ export function RunWorkspace({ demoMode = false }: { demoMode?: boolean } = {}) 
   const router = useRouter();
   const [prompt, setPrompt] = useState("");
   const [mode, setMode] = useState<ComposerMode>("execute");
+  const [framework, setFramework] = useState<ComposerFramework>("qiskit");
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [contextArtifact, setContextArtifact] = useState<LibraryArtifact | null>(null);
@@ -89,7 +90,7 @@ export function RunWorkspace({ demoMode = false }: { demoMode?: boolean } = {}) 
           "Content-Type": "application/json",
           "Idempotency-Key": crypto.randomUUID(),
         },
-        body: JSON.stringify({ task_prompt: taskPrompt, mode }),
+        body: JSON.stringify({ task_prompt: taskPrompt, mode, framework }),
       });
       const payload = (await response.json()) as { id?: string; detail?: string; error?: string };
       if (!response.ok || !payload.id) {
@@ -101,7 +102,7 @@ export function RunWorkspace({ demoMode = false }: { demoMode?: boolean } = {}) 
         prompt: taskPrompt,
         createdAt: new Date().toISOString(),
         status: "queued",
-        framework: "Qiskit",
+        framework: frameworkLabel(framework),
       });
       router.push(`/run/${payload.id}`);
     } catch (cause) {
@@ -184,10 +185,12 @@ export function RunWorkspace({ demoMode = false }: { demoMode?: boolean } = {}) 
       <RunComposer
         value={prompt}
         mode={mode}
+        framework={framework}
         pending={pending}
         error={error}
         onChange={setPrompt}
         onModeChange={setMode}
+        onFrameworkChange={setFramework}
         onSubmit={submit}
         onAttach={() => setError("Attachments are not enabled yet; paste code or context into the prompt.")}
       />
@@ -198,4 +201,8 @@ export function RunWorkspace({ demoMode = false }: { demoMode?: boolean } = {}) 
 function titleFromPrompt(prompt: string): string {
   const firstLine = prompt.split(/\r?\n/, 1)[0].trim();
   return firstLine.length > 54 ? `${firstLine.slice(0, 54).trimEnd()}…` : firstLine;
+}
+
+function frameworkLabel(framework: ComposerFramework): string {
+  return framework === "pennylane" ? "PennyLane" : framework === "cirq" ? "Cirq" : "Qiskit";
 }

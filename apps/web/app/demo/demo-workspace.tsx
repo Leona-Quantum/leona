@@ -24,7 +24,7 @@ export function DemoWorkspace() {
         </div>
         <div className="mj-demo-tabs" role="tablist" aria-label="Preview surface">
           <a className={view === "run" ? "is-active" : ""} href="/demo?view=run" role="tab" aria-selected={view === "run"}>Nameko Run</a>
-          <a className={view === "library" ? "is-active" : ""} href="/demo?view=library" role="tab" aria-selected={view === "library"}>Quepo Studio</a>
+          <a className={view === "library" ? "is-active" : ""} href="/demo?view=library" role="tab" aria-selected={view === "library"}>Library</a>
         </div>
       </div>
       {view === "library" ? <LibraryStudio demoMode /> : <RunWorkspace demoMode />}

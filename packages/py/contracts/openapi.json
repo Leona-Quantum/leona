@@ -290,6 +290,21 @@
             "title": "Fingerprint",
             "type": "string"
           },
+          "framework_variants": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Framework Variants"
+          },
           "id": {
             "format": "uuid",
             "title": "Id",
@@ -512,6 +527,13 @@
             "default": null,
             "title": "Finalization Reason"
           },
+          "framework_variants": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/CodeVariant"
+            },
+            "title": "Framework Variants",
+            "type": "object"
+          },
           "language": {
             "title": "Language",
             "type": "string"
@@ -616,6 +638,42 @@
           "revision"
         ],
         "title": "CodeGenerated",
+        "type": "object"
+      },
+      "CodeVariant": {
+        "additionalProperties": false,
+        "description": "A deterministic, copyable framework rendering of the verified circuit.",
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "export_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Export Reason"
+          },
+          "export_status": {
+            "$ref": "#/components/schemas/ExportStatus"
+          },
+          "language": {
+            "title": "Language",
+            "type": "string"
+          }
+        },
+        "required": [
+          "language",
+          "code",
+          "export_status"
+        ],
+        "title": "CodeVariant",
         "type": "object"
       },
       "CompilationResult": {

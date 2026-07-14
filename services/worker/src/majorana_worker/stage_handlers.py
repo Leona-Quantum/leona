@@ -53,6 +53,7 @@ from majorana_ir import (
     resource_metrics,
 )
 from majorana_ir.connectors import OpenQASMError, from_openqasm, to_openqasm
+from majorana_ir.export import classify_export
 from majorana_llm import (
     FINAL_QASM_BEGIN,
     FINAL_QASM_END,
@@ -93,8 +94,35 @@ from majorana_api.repos import runs as runs_repo
 _EXPORT_TARGET = {
     Framework.QISKIT: "qiskit",
     Framework.PENNYLANE: "pennylane",
-    Framework.CIRQ: "openqasm2",  # no native cirq generator; QASM 2 is downloadable
+    Framework.CIRQ: "cirq",
 }
+
+
+def _framework_variants(
+    circuit, selected_framework: Framework, selected_code: str
+) -> dict[str, dict[str, Any]]:
+    """Build the copyable native framework variants for a verified circuit.
+
+    The selected framework keeps the pipeline's final source (which may include
+    the model's runnable result contract); alternate frameworks use the
+    deterministic IR connector output. Unsupported native conversions are
+    omitted and remain available through the explicit OpenQASM conversion path.
+    """
+    if circuit is None:
+        return {}
+    variants: dict[str, dict[str, Any]] = {}
+    for framework, target in _EXPORT_TARGET.items():
+        classification = classify_export(circuit, target)
+        if classification.code is None:
+            continue
+        variants[framework.value] = {
+            "language": framework.value,
+            "code": selected_code if framework is selected_framework else classification.code,
+            "export_status": classification.status,
+            "export_reason": classification.reason,
+        }
+    return variants
+
 
 _BASELINE_INSTANCE_TYPES = {
     "maxcut": MaxCutInstance,
@@ -217,7 +245,11 @@ def build_stage_handlers(
                     "error": research.error,
                 },
             )
-        prompt = render_plan_prompt(ctx.task_prompt, research_context)
+        prompt = render_plan_prompt(
+            ctx.task_prompt,
+            research_context,
+            requested_framework=ctx.framework,
+        )
         t0 = time.monotonic()
         on_delta, flush_deltas = _llm_delta_emitter(ctx, Stage.PLAN)
         try:
@@ -240,17 +272,44 @@ def build_stage_handlers(
             plan = parse_plan(resp.text)
         except Exception as exc:
             return StageOutcome(ok=False, error_code="plan_invalid", error_message=str(exc))
+        if (
+            ctx.source_code is not None
+            and ctx.source_framework is not None
+            and plan.framework != ctx.source_framework
+        ):
+            plan = plan.model_copy(update={"framework": ctx.source_framework})
         ctx.state["plan"] = plan
         await ctx.sink.emit("plan.produced", {"plan": plan.model_dump(mode="json")})
         return StageOutcome(ok=True)
 
     async def generate_stage(ctx: RunContext) -> StageOutcome:
         plan: Plan = ctx.state["plan"]
+        if ctx.source_code is not None:
+            code = ctx.source_code.strip()
+            if not code:
+                return StageOutcome(
+                    ok=False, error_code="source_empty", error_message="edited source code is empty"
+                )
+            revision = int(ctx.state.get("code_revision", 0)) + 1
+            ctx.state["code_revision"] = revision
+            ctx.state["code"] = code
+            await ctx.sink.emit(
+                "code.generated",
+                {
+                    "language": (ctx.source_framework or Framework(plan.framework)).value,
+                    "code": code,
+                    "revision": revision,
+                },
+            )
+            return StageOutcome(ok=True)
         model = model_for(Stage.GENERATE)
         feedback = ctx.state.get("repair_feedback")
         research_context = ctx.state.get("research_context", "")
         prompt = render_generate_prompt(
-            plan.model_dump_json(indent=2), research_context, feedback=feedback
+            plan.model_dump_json(indent=2),
+            research_context,
+            feedback=feedback,
+            requested_framework=ctx.framework,
         )
         t0 = time.monotonic()
         on_delta, flush_deltas = _llm_delta_emitter(ctx, Stage.GENERATE)
@@ -542,9 +601,7 @@ def build_stage_handlers(
         ctx.state["compiled_circuit"] = outcome.selected
         ctx.state["compilation"] = outcome
         compatibility: dict[str, Any] = {}
-        from majorana_ir import classify_export
-
-        for target in ("openqasm2", "openqasm3", "qiskit", "pennylane"):
+        for target in ("openqasm2", "openqasm3", "qiskit", "pennylane", "cirq"):
             try:
                 classification = classify_export(outcome.selected, target)
                 compatibility[target] = {
@@ -625,8 +682,6 @@ def build_stage_handlers(
             classification_reason = "no circuit produced"
             qasm_available = False
         else:
-            from majorana_ir import classify_export
-
             target = _EXPORT_TARGET.get(Framework(plan.framework), "openqasm2")
             classification = classify_export(circuit, target)
             classification_status = classification.status
@@ -650,7 +705,11 @@ def build_stage_handlers(
             ctx.state.get("verifier_decision") is VerifierDecision.PASS and circuit is not None
         )
         ctx.state["simulation_plausible"] = simulation_plausible
-        conversion_options = ["openqasm3", "openqasm2", "qiskit", "pennylane"] if circuit else []
+        framework_variants = _framework_variants(circuit, Framework(plan.framework), final_code)
+        ctx.state["framework_variants"] = framework_variants
+        conversion_options = (
+            ["openqasm3", "openqasm2", *framework_variants.keys()] if circuit else []
+        )
         execution_options = ["simulate"] if simulation_plausible else []
         await ctx.sink.emit(
             "code.finalized",
@@ -661,6 +720,7 @@ def build_stage_handlers(
                 "compilation_applied": compilation_applied,
                 "simulation_plausible": simulation_plausible,
                 "qpu_available": False,
+                "framework_variants": framework_variants,
                 "conversion_options": conversion_options,
                 "execution_options": execution_options,
                 "export_status": classification_status,
@@ -849,18 +909,21 @@ def build_stage_handlers(
             return StageOutcome(ok=True)
         plan: Plan = ctx.state["plan"]
         export = ctx.state.get("export")
-        artifact = await artifacts_repo.create_artifact(
-            scope,
-            session,
-            slug=f"run-{run_id.hex[:12]}",
-            title=plan.problem_summary[:200],
-            family=Algorithm(plan.algorithm),
-            framework=Framework(plan.framework),
-        )
+        artifact_id = ctx.parent_artifact_id
+        if artifact_id is None:
+            artifact = await artifacts_repo.create_artifact(
+                scope,
+                session,
+                slug=f"run-{run_id.hex[:12]}",
+                title=plan.problem_summary[:200],
+                family=Algorithm(plan.algorithm),
+                framework=Framework(plan.framework),
+            )
+            artifact_id = artifact.id
         version = await artifacts_repo.create_version(
             scope,
             session,
-            artifact.id,
+            artifact_id,
             ir_version=IR_VERSION_TAG,
             ir=canonical_dict(circuit),
             code=ctx.state.get("final_code", ctx.state["code"]),
@@ -869,6 +932,10 @@ def build_stage_handlers(
             export_status=export.status if export else ExportStatus.UNSUPPORTED,
             export_reason=export.reason if export else None,
             qasm=ctx.state.get("final_qasm", ctx.state.get("qasm")),
+            framework_variants={
+                name: variant["code"]
+                for name, variant in ctx.state.get("framework_variants", {}).items()
+            },
             resource_estimates={
                 "qubits": circuit.qubits,
                 "operations": len(circuit.operations),

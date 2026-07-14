@@ -14,7 +14,9 @@ export interface LibraryArtifact {
   tags: string[];
   verification: string;
   code: string;
+  frameworkVariants?: Record<string, string>;
   qasm: string | null;
+  currentVersionId?: string;
   resourceRows: Array<{ label: string; value: string }>;
   runId?: string;
   source: "demo" | "run";
@@ -176,6 +178,9 @@ export function rememberArtifactFromRun(events: readonly RunEvent[], prompt: str
   const verify = [...events].reverse().find((event) => event.type === "verification.result");
   const resource = [...events].reverse().find((event) => event.type === "resource.estimate");
   const code = finalCode?.type === "code.finalized" ? finalCode.code : generatedCode?.type === "code.generated" ? generatedCode.code : "";
+  const frameworkVariants = finalCode?.type === "code.finalized"
+    ? Object.fromEntries(Object.entries(finalCode.framework_variants ?? {}).map(([name, variant]) => [name, variant.code]))
+    : undefined;
   const title = plan?.type === "plan.produced" ? plan.plan.problem_summary : prompt;
   const family = plan?.type === "plan.produced" ? plan.plan.algorithm : "Simulation";
   const framework = plan?.type === "plan.produced" ? plan.plan.framework : queued?.type === "run.queued" ? queued.framework : "Qiskit";
@@ -194,7 +199,9 @@ export function rememberArtifactFromRun(events: readonly RunEvent[], prompt: str
     tags: [String(family).toLowerCase(), String(framework).toLowerCase(), "run"],
     verification,
     code,
+    frameworkVariants,
     qasm: "OpenQASM 3 availability follows the saved run export classification.",
+    currentVersionId: saved.version_id,
     resourceRows,
     runId: saved.run_id,
     source: "run",
@@ -218,6 +225,14 @@ function resourceRowsFromEvent(metrics: Record<string, unknown>): Array<{ label:
     const unit = label.includes("runtime") ? " ms" : label.includes("count") || label === "depth" || label === "qubits" ? "" : "";
     return [{ label: label.replaceAll("_", " "), value: `${value}${unit}` }];
   });
+}
+
+export function frameworkVariantsFromRemote(value: unknown): Record<string, string> | undefined {
+  if (!value || typeof value !== "object") return undefined;
+  const variants = Object.entries(value as Record<string, unknown>).flatMap(([name, code]) =>
+    typeof code === "string" ? [[name, code] as const] : [],
+  );
+  return variants.length ? Object.fromEntries(variants) : undefined;
 }
 
 function slugify(value: string): string {

@@ -27,14 +27,14 @@ from typing import Literal
 from majorana_contracts.enums import ExportStatus
 from pydantic import BaseModel
 
-from majorana_ir.connectors.codegen import pennylane_code, qiskit_code
+from majorana_ir.connectors.codegen import cirq_code, pennylane_code, qiskit_code
 from majorana_ir.connectors.openqasm import to_openqasm, to_openqasm3
 from majorana_ir.models import Circuit, validate_circuit
 
 # Targets we can reason about. "native" ones have a faithful generator here;
 # the rest have no native generator, so the honest ceiling is download_only.
-Target = Literal["openqasm2", "openqasm3", "qiskit", "pennylane", "cudaq"]
-_NATIVE_TARGETS = frozenset({"openqasm2", "openqasm3", "qiskit", "pennylane"})
+Target = Literal["openqasm2", "openqasm3", "qiskit", "pennylane", "cirq", "cudaq"]
+_NATIVE_TARGETS = frozenset({"openqasm2", "openqasm3", "qiskit", "pennylane", "cirq"})
 
 
 class ExportClassification(BaseModel):
@@ -123,6 +123,39 @@ def classify_export(circuit: Circuit, target: Target) -> ExportClassification:
             approximations.append("barriers become comments")
         if any(op.gate == "measure" for op in circuit.operations):
             approximations.append("terminal measurements become qml.sample")
+        if approximations:
+            return ExportClassification(
+                target=target,
+                status=ExportStatus.LOSSY_WITH_REASON,
+                reason="; ".join(approximations),
+                code=code,
+                qasm=qasm,
+                qasm_available=True,
+            )
+        return ExportClassification(
+            target=target,
+            status=ExportStatus.LOSSLESS,
+            code=code,
+            qasm=qasm,
+            qasm_available=True,
+        )
+
+    if target == "cirq":
+        try:
+            code = cirq_code(circuit)
+        except ValueError as exc:
+            return ExportClassification(
+                target=target,
+                status=ExportStatus.DOWNLOAD_ONLY,
+                reason=f"Cirq cannot represent this circuit natively: {exc}",
+                qasm=qasm,
+                qasm_available=True,
+            )
+        approximations: list[str] = []
+        if any(op.gate == "barrier" for op in circuit.operations):
+            approximations.append("barriers become comments")
+        if any(op.gate == "measure" for op in circuit.operations):
+            approximations.append("terminal measurements become Cirq measurement keys")
         if approximations:
             return ExportClassification(
                 target=target,

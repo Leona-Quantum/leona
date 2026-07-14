@@ -91,6 +91,7 @@ class ArtifactVersion(Base):
     export_status: Mapped[str]
     export_reason: Mapped[str | None]
     qasm: Mapped[str | None]
+    framework_variants: Mapped[dict[str, Any] | None]
     resource_estimates: Mapped[dict[str, Any] | None]
     limitations: Mapped[str | None]
     created_at: Mapped[dt.datetime | None] = mapped_column(server_default=func.now())

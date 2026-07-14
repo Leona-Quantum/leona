@@ -3,7 +3,7 @@ import sys
 from types import SimpleNamespace
 
 import pytest
-from majorana_contracts.enums import Stage
+from majorana_contracts.enums import Framework, RunMode, Stage
 from majorana_llm import (
     LLMRequest,
     StageOutputError,
@@ -15,6 +15,7 @@ from majorana_llm import (
     parse_analysis,
     parse_plan,
     render_generate_prompt,
+    render_conversation_prompt,
     render_plan_prompt,
     resolve_provider,
 )
@@ -195,6 +196,15 @@ def test_generate_prompt_is_role_rendered_without_exposing_a_schema_to_the_user(
     assert "Internal plan record" in rendered.user
     assert "Implement the plan now." in rendered.user
     assert "JSON schema" not in rendered.user
+
+
+def test_conversation_prompt_exposes_mode_and_framework_without_internal_plumbing():
+    rendered = render_conversation_prompt(
+        "Teach me how a Bell state works.", RunMode.IDEATE, Framework.CIRQ
+    )
+    assert "Selected mode: Learn" in rendered.user
+    assert "Selected framework: Cirq" in rendered.user
+    assert "internal plans" in rendered.system
 
 
 def test_analysis_parser_accepts_the_internal_narrative_contract():

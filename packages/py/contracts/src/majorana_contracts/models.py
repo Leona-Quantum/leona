@@ -77,6 +77,7 @@ class ArtifactVersion(_ResourceBase):
     export_status: ExportStatus
     export_reason: str | None = None
     qasm: str | None = None
+    framework_variants: dict[str, str] | None = None
     resource_estimates: dict[str, Any] | None = None
     limitations: str | None = None
     created_at: datetime

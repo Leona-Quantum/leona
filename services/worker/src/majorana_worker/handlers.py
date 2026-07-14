@@ -11,17 +11,18 @@ import uuid
 from typing import Any, Awaitable, Callable
 
 from majorana_contracts import Scope
-from majorana_contracts.enums import Framework, Role, RunMode, RunStatus
+from majorana_contracts.enums import Framework, Role, RunMode, RunStatus, Stage, VerifierDecision
 from majorana_contracts.events import run_event_adapter
-from majorana_llm import LLMClient, default_llm
+from majorana_llm import LLMClient, LLMRequest, default_llm, model_for, render_conversation_prompt
 from majorana_pipeline import RunContext, execute_run
 from majorana_sandbox import LocalSubprocessSandbox, Sandbox, VercelSandbox
 
 from majorana_api.db import AsyncSession
 from majorana_api.jobs import RUN_EXECUTE_JOB_KIND
 from majorana_api.repos import runs as runs_repo
+from majorana_api.repos import artifacts as artifacts_repo
 
-from .stage_handlers import build_stage_handlers
+from .stage_handlers import _emit_llm_call, _llm_delta_emitter, build_stage_handlers
 
 log = logging.getLogger("majorana_worker")
 
@@ -128,6 +129,10 @@ async def handle_run_execute(
     scope = _scope_from_payload(payload)
     run_id = uuid.UUID(payload["run_id"])
     run = await runs_repo.get_run(scope, session, run_id)
+    parent_artifact_id = None
+    if run.artifact_version_id is not None:
+        version = await artifacts_repo.get_version(scope, session, run.artifact_version_id)
+        parent_artifact_id = version.artifact_id
     ctx = RunContext(
         run_id=run_id,
         task_prompt=run.task_prompt,
@@ -138,14 +143,21 @@ async def handle_run_execute(
         tolerances=run.tolerances,
         timeout_s=run.timeout_s,
         sink=RepoEventSink(scope, session, run_id),
+        source_code=payload.get("source_code"),
+        source_framework=Framework(run.framework),
+        parent_artifact_id=parent_artifact_id,
     )
     store = RepoRunStateStore(scope, session, run_id)
-    handlers = build_stage_handlers(
-        scope, session, run_id, llm or _default_llm(), sandbox or _default_sandbox()
-    )
     try:
         async with asyncio.timeout(run.timeout_s or DEFAULT_RUN_TIMEOUT_S):
-            final = await execute_run(ctx, store, handlers)
+            provider = llm or _default_llm()
+            if ctx.mode is not RunMode.EXECUTE:
+                final = await _handle_conversation(ctx, store, provider)
+            else:
+                handlers = build_stage_handlers(
+                    scope, session, run_id, provider, sandbox or _default_sandbox()
+                )
+                final = await execute_run(ctx, store, handlers)
     except TimeoutError:
         # The stage coroutine was cancelled mid-flight; reset the session and
         # record the failure so the event log never ends mid-run.
@@ -159,6 +171,71 @@ async def handle_run_execute(
             await store.set_status(RunStatus.FAILED, finished_at_now=True)
         final = RunStatus.FAILED
     log.info("run %s finished: %s", run_id, final)
+
+
+async def _handle_conversation(
+    ctx: RunContext, store: RepoRunStateStore, llm: LLMClient
+) -> RunStatus:
+    """Answer Learn/Explain requests without pretending that they were executions."""
+    status = await store.current_status()
+    if status is not RunStatus.QUEUED:
+        return status
+    await store.set_status(RunStatus.RUNNING, started_at_now=True)
+    await ctx.sink.emit("run.started", {})
+
+    prompt = render_conversation_prompt(ctx.task_prompt, ctx.mode, ctx.framework)
+    model = model_for(Stage.ANALYZE)
+    started = asyncio.get_running_loop().time()
+    on_delta, flush_deltas = _llm_delta_emitter(ctx, Stage.ANALYZE)
+    try:
+        response = await llm.complete(
+            LLMRequest(model=model, system=prompt.system, user=prompt.user, max_tokens=4096),
+            on_delta=on_delta,
+        )
+    except Exception as exc:
+        message = f"conversation provider failed: {exc}"
+        await ctx.sink.emit(
+            "run.error",
+            {"stage": Stage.ANALYZE, "code": "conversation_failed", "message": message},
+        )
+        await ctx.sink.emit("run.finished", {"status": RunStatus.FAILED})
+        await store.set_status(RunStatus.FAILED, finished_at_now=True)
+        return RunStatus.FAILED
+    finally:
+        await flush_deltas()
+
+    await _emit_llm_call(
+        ctx,
+        Stage.ANALYZE,
+        model,
+        response,
+        int((asyncio.get_running_loop().time() - started) * 1000),
+    )
+    interpretation = response.text.strip() or "The assistant returned an empty response."
+    summary = next(
+        (line.strip() for line in interpretation.splitlines() if line.strip()), interpretation
+    )[:300]
+    residual_risks = "Conversational response only; no circuit was executed or verified."
+    await ctx.sink.emit(
+        "run.analysis",
+        {
+            "summary": summary,
+            "interpretation": interpretation,
+            "results": {},
+            "comparison": {},
+            "residual_risks": residual_risks,
+        },
+    )
+    await ctx.sink.emit(
+        "run.finished",
+        {
+            "status": RunStatus.SUCCEEDED,
+            "verifier_decision": VerifierDecision.INCONCLUSIVE,
+            "residual_risks": residual_risks,
+        },
+    )
+    await store.set_status(RunStatus.SUCCEEDED, finished_at_now=True, residual_risks=residual_risks)
+    return RunStatus.SUCCEEDED
 
 
 JobHandler = Callable[[AsyncSession, dict[str, Any]], Awaitable[None]]

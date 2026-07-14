@@ -72,11 +72,14 @@ export function LibraryStudio({ demoMode = false }: { demoMode?: boolean }) {
             <div>
               <div className="mj-library-title-row">
                 <LibraryIcon size={20} />
-                <h1 className="mj-page-title">Quepo Studio</h1>
+                <h1 className="mj-page-title">Library</h1>
               </div>
-              <p className="mj-page-lede">Your verified quantum workspace. Library stores durable artifacts; Nameko Run creates and revises them.</p>
+              <p className="mj-page-lede">Saved circuits, versions, and verification evidence. Open an artifact in Studio to edit or simulate it.</p>
             </div>
-            <a className="mj-primary-button" href={runHref}>New artifact</a>
+            <div className="mj-artifact-actions">
+              <a className="mj-secondary-button" href={demoMode ? "/demo?view=library" : "/studio"}>Open Studio</a>
+              <a className="mj-primary-button" href={runHref}>New run</a>
+            </div>
           </header>
 
           <section className="mj-library-toolbar" aria-label="Filter artifacts">
@@ -181,6 +184,7 @@ function toLibraryArtifact(value: unknown): LibraryArtifact[] {
     verification: existing?.verification ?? "Verification record available in artifact detail.",
     code: existing?.code ?? "",
     qasm: existing?.qasm ?? null,
+    currentVersionId: typeof artifact.current_version_id === "string" ? artifact.current_version_id : existing?.currentVersionId,
     resourceRows: existing?.resourceRows ?? [],
     runId: existing?.runId,
     source: existing?.source ?? "run",

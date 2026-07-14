@@ -6,7 +6,7 @@ import { useEffect, useRef, useState } from "react";
 import { RunView, type RunEvent } from "@majorana/ui";
 import { loadChatHistory, rememberChat, updateChat } from "../../../../lib/chat-history";
 import { rememberArtifactFromRun } from "../../../../lib/library-data";
-import { RunComposer, type ComposerMode } from "../../../../components/run-composer";
+import { RunComposer, type ComposerFramework, type ComposerMode } from "../../../../components/run-composer";
 import { RUN_FIXTURES } from "./fixtures";
 
 function parseEvent(block: string): { id: number | null; data: string } | null {
@@ -29,6 +29,7 @@ export function LiveRun({ taskId }: { taskId: string }) {
   const [error, setError] = useState<string | null>(null);
   const [prompt, setPrompt] = useState("");
   const [mode, setMode] = useState<ComposerMode>("execute");
+  const [framework, setFramework] = useState<ComposerFramework>("qiskit");
   const [pending, setPending] = useState(false);
   const lastEventId = useRef<number | null>(null);
 
@@ -119,7 +120,7 @@ export function LiveRun({ taskId }: { taskId: string }) {
           "Content-Type": "application/json",
           "Idempotency-Key": crypto.randomUUID(),
         },
-        body: JSON.stringify({ task_prompt: taskPrompt, mode }),
+        body: JSON.stringify({ task_prompt: taskPrompt, mode, framework }),
       });
       const payload = (await response.json()) as { id?: string; detail?: string; error?: string };
       if (!response.ok || !payload.id) {
@@ -131,7 +132,7 @@ export function LiveRun({ taskId }: { taskId: string }) {
         prompt: taskPrompt,
         createdAt: new Date().toISOString(),
         status: "queued",
-        framework: "Qiskit",
+        framework: frameworkLabel(framework),
       });
       router.push(`/run/${payload.id}`);
     } catch (cause) {
@@ -163,10 +164,12 @@ export function LiveRun({ taskId }: { taskId: string }) {
       <RunComposer
         value={prompt}
         mode={mode}
+        framework={framework}
         pending={pending}
         error={null}
         onChange={setPrompt}
         onModeChange={setMode}
+        onFrameworkChange={setFramework}
         onSubmit={submitFollowup}
         onAttach={() => setError("Attachments are not enabled yet; paste code or context into the prompt.")}
       />
@@ -177,4 +180,8 @@ export function LiveRun({ taskId }: { taskId: string }) {
 function titleFromPrompt(prompt: string): string {
   const firstLine = prompt.split(/\r?\n/, 1)[0].trim();
   return firstLine.length > 54 ? `${firstLine.slice(0, 54).trimEnd()}…` : firstLine;
+}
+
+function frameworkLabel(framework: ComposerFramework): string {
+  return framework === "pennylane" ? "PennyLane" : framework === "cirq" ? "Cirq" : "Qiskit";
 }

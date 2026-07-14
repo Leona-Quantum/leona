@@ -171,6 +171,7 @@ export interface ResultView {
   verification: VerificationRow[];
   compilation: CompilationView | null;
   finalCode: CodeView | null;
+  finalCodeVariants: CodeView[];
   finalSimulation: SimulationView | null;
   sources: SourceView | null;
   keyNumbers: KeyNumber[];
@@ -179,6 +180,7 @@ export interface ResultView {
   libraryHref: string | null;
 }
 export interface RunViewModel {
+  mode: Schemas["RunMode"] | null;
   stages: RailStage[];
   result: ResultView;
   modelActivity: ModelActivity[];
@@ -381,6 +383,7 @@ export function reduceRunEvents(events: readonly RunEvent[]): RunViewModel {
   let analysis: Schemas["RunAnalysis"] | null = null;
   let research: Schemas["ResearchCompleted"] | null = null;
   let finishedRun: Schemas["RunFinished"] | null = null;
+  let mode: Schemas["RunMode"] | null = null;
   let status: Schemas["RunStatus"] | null = null;
   const modelActivity = new Map<string, ModelActivity>();
   let lastTs: string | null = null;
@@ -452,6 +455,7 @@ export function reduceRunEvents(events: readonly RunEvent[]): RunViewModel {
     if ("ts" in ev && typeof ev.ts === "string") lastTs = ev.ts;
     switch (ev.type) {
       case "run.queued":
+        mode = ev.mode;
         status = "queued";
         break;
       case "run.started":
@@ -545,6 +549,11 @@ export function reduceRunEvents(events: readonly RunEvent[]): RunViewModel {
     verification: buildVerificationRows(verifyResults),
     compilation: buildCompilation(compilation),
     finalCode: finalizedCode ? buildCodeView(finalizedCode.language, finalizedCode.code) : null,
+    finalCodeVariants: finalizedCode
+      ? Object.entries(finalizedCode.framework_variants ?? {})
+          .filter(([framework]) => framework !== finalizedCode?.language)
+          .map(([framework, variant]) => buildCodeView(variant.language || framework, variant.code))
+      : [],
     finalSimulation: finalSimulation ? buildSimulation(finalSimulation) : null,
     sources: buildSources(research),
     keyNumbers: buildKeyNumbers(plan, verificationSandbox, finalSimulation, verifyResults),
@@ -573,6 +582,7 @@ export function reduceRunEvents(events: readonly RunEvent[]): RunViewModel {
     result.libraryHref !== null;
 
   return {
+    mode,
     stages,
     result,
     modelActivity: Array.from(modelActivity.values()),
@@ -852,8 +862,8 @@ export function RunView({
   };
 
   return (
-    <div className="mj-run">
-      <StageRail stages={view.stages} onSelect={onSelect} />
+    <div className={`mj-run${view.mode === "execute" ? " mj-run--execute" : " mj-run--conversation"}`}>
+      {view.mode === "execute" ? <StageRail stages={view.stages} onSelect={onSelect} /> : null}
       <div className="mj-run-panel" id="mj-run-panel">
         {view.liveOutput.thoughts || view.liveOutput.narrative ? (
           <LiveOutput output={view.liveOutput} animateText={animateText} />
@@ -886,10 +896,23 @@ function LiveOutput({ output, animateText }: { output: LiveOutput; animateText: 
 }
 
 function CodeBlock({ code, id }: { code: CodeView; id?: string }): ReactNode {
+  const [copied, setCopied] = useState(false);
+
+  async function copyCode() {
+    try {
+      await navigator.clipboard.writeText(code.code);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1600);
+    } catch {
+      setCopied(false);
+    }
+  }
+
   return (
     <div className="mj-code" id={id}>
       <div className="mj-code-head">
         <span className="mj-code-file">{code.filename}</span>
+        <button className="mj-code-copy" type="button" onClick={() => void copyCode()}>{copied ? "Copied" : "Copy"}</button>
       </div>
       <pre
         className="mj-code-body"
@@ -1012,6 +1035,13 @@ function ResultPanel({ result, animateText }: { result: ResultView; animateText:
             <section className="mj-result-section" id="mj-result-final-code">
               <h2 className="mj-result-h">Final Code</h2>
               <CodeBlock code={result.finalCode} />
+              {result.finalCodeVariants.length ? (
+                <div className="mj-result-variants">
+                  <h3 className="mj-result-subh">Framework variants</h3>
+                  <p className="mj-result-note">Copyable native renderings of the verified circuit.</p>
+                  {result.finalCodeVariants.map((variant) => <CodeBlock key={variant.filename} code={variant} />)}
+                </div>
+              ) : null}
             </section>
           ) : null}
 

@@ -1,4 +1,4 @@
-from majorana_ir.connectors.codegen import pennylane_code, qiskit_code
+from majorana_ir.connectors.codegen import cirq_code, pennylane_code, qiskit_code
 from majorana_ir.connectors.openqasm import OpenQASMError, from_openqasm, to_openqasm, to_openqasm3
 from majorana_ir.connectors.qiskit_bridge import (
     QiskitDependencyError,
@@ -13,6 +13,7 @@ __all__ = [
     "to_openqasm3",
     "qiskit_code",
     "pennylane_code",
+    "cirq_code",
     "QiskitDependencyError",
     "from_qiskit",
     "to_qiskit",

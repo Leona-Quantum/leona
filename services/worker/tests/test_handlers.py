@@ -1,4 +1,7 @@
 import pytest
+from majorana_contracts.enums import Framework, RunMode, RunStatus
+from majorana_llm import LLMResponse
+from majorana_pipeline import RunContext
 from majorana_sandbox import LocalSubprocessSandbox
 from majorana_worker import handlers
 
@@ -40,3 +43,58 @@ def test_default_sandbox_rejects_unknown_provider(monkeypatch):
 
     with pytest.raises(RuntimeError, match="must be 'vercel' or 'local'"):
         handlers._default_sandbox()
+
+
+class _RecordingSink:
+    def __init__(self):
+        self.events = []
+
+    async def emit(self, event_type, payload):
+        self.events.append((event_type, payload))
+
+
+class _FakeStore:
+    def __init__(self):
+        self.status = RunStatus.QUEUED
+
+    async def current_status(self):
+        return self.status
+
+    async def set_status(self, new, **_fields):
+        self.status = new
+
+
+class _ConversationLLM:
+    async def complete(self, request, *, on_delta=None):
+        if on_delta is not None:
+            await on_delta("A short answer.", "output")
+        return LLMResponse(
+            text="A short answer.",
+            model=request.model,
+            input_tokens=4,
+            output_tokens=3,
+        )
+
+
+async def test_conversation_mode_answers_without_pipeline_or_sandbox():
+    sink = _RecordingSink()
+    ctx = RunContext(
+        run_id="conversation-test",
+        task_prompt="What is a Bell state?",
+        mode=RunMode.IDEATE,
+        framework=Framework.QISKIT,
+        seed=None,
+        shots=None,
+        tolerances=None,
+        timeout_s=None,
+        sink=sink,
+    )
+    store = _FakeStore()
+
+    final = await handlers._handle_conversation(ctx, store, _ConversationLLM())
+
+    assert final is RunStatus.SUCCEEDED
+    assert store.status is RunStatus.SUCCEEDED
+    assert "stage.started" not in [event_type for event_type, _ in sink.events]
+    assert any(event_type == "run.analysis" for event_type, _ in sink.events)
+    assert sink.events[-1][0] == "run.finished"

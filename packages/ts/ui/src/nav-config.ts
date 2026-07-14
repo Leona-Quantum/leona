@@ -8,6 +8,7 @@ export interface NavSurface {
 export const NAV_SURFACES: NavSurface[] = [
   { href: "/run", label: "Run" },
   { href: "/library", label: "Library" },
+  { href: "/studio", label: "Studio" },
   { href: "/account", label: "Account" },
 ];
 
