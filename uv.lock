@@ -958,7 +958,7 @@ dependencies = [
     { name = "majorana-ir" },
     { name = "majorana-llm" },
     { name = "majorana-pipeline" },
-    { name = "majorana-sandbox" },
+    { name = "majorana-sandbox", extra = ["vercel"] },
     { name = "majorana-verification" },
 ]
 
@@ -969,7 +969,7 @@ requires-dist = [
     { name = "majorana-ir", editable = "packages/py/ir" },
     { name = "majorana-llm", editable = "packages/py/llm" },
     { name = "majorana-pipeline", editable = "packages/py/pipeline" },
-    { name = "majorana-sandbox", editable = "packages/py/sandbox" },
+    { name = "majorana-sandbox", extras = ["vercel"], editable = "packages/py/sandbox" },
     { name = "majorana-verification", editable = "packages/py/verification" },
 ]
 
