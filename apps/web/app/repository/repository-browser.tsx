@@ -162,8 +162,8 @@ export function RepositoryBrowser({
   const copy = COPY[locale];
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState<"all" | PublicRepositoryCategory>("all");
-  const [family, setFamily] = useState<string>(copy.allFamilies);
-  const [framework, setFramework] = useState<string>(copy.allFrameworks);
+  const [family, setFamily] = useState<string>("");
+  const [framework, setFramework] = useState<string>("");
 
   const families = useMemo(() => Array.from(new Set(entries.map((entry) => entry.algorithmFamily))), [entries]);
   const filteredEntries = useMemo(() => {
@@ -180,8 +180,8 @@ export function RepositoryBrowser({
         ...entry.tags,
       ].join(" ").toLowerCase().includes(normalizedQuery);
       const matchesCategory = category === "all" || entry.category === category;
-      const matchesFamily = family === copy.allFamilies || entry.algorithmFamily === family;
-      const matchesFramework = framework === copy.allFrameworks || entry.framework === framework;
+      const matchesFamily = !family || entry.algorithmFamily === family;
+      const matchesFramework = !framework || entry.framework === framework;
       return matchesQuery && matchesCategory && matchesFamily && matchesFramework;
     });
   }, [category, copy.allFamilies, copy.allFrameworks, entries, family, framework, query]);
@@ -189,8 +189,8 @@ export function RepositoryBrowser({
   function clearFilters() {
     setQuery("");
     setCategory("all");
-    setFamily(copy.allFamilies);
-    setFramework(copy.allFrameworks);
+    setFamily("");
+    setFramework("");
   }
 
   return (
@@ -208,14 +208,14 @@ export function RepositoryBrowser({
         <label>
           <span>{copy.family}</span>
           <select value={family} onChange={(event) => setFamily(event.target.value)}>
-            <option value={copy.allFamilies}>{copy.allFamilies}</option>
+            <option value="">{copy.allFamilies}</option>
             {families.map((option) => <option key={option} value={option}>{familyLabel(option, locale)}</option>)}
           </select>
         </label>
         <label>
           <span>{copy.framework}</span>
           <select value={framework} onChange={(event) => setFramework(event.target.value)}>
-            <option>{copy.allFrameworks}</option>
+            <option value="">{copy.allFrameworks}</option>
             {PUBLIC_REPOSITORY_FRAMEWORKS.map((option) => <option key={option}>{option}</option>)}
           </select>
         </label>
