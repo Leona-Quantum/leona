@@ -131,6 +131,28 @@ _BASELINE_INSTANCE_TYPES = {
     "hamiltonian": HamiltonianInstance,
 }
 
+_LEGACY_QASM_CALL_RE = re.compile(r"\b(?P<expression>[A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*)\.qasm\(\)")
+
+
+def _repair_legacy_qiskit_qasm(code: str) -> str:
+    """Make Qiskit 1.x-style QASM calls runnable on the Qiskit 2.x image.
+
+    The model is instructed not to call ``QuantumCircuit.qasm()``, but older
+    provider behavior can still emit it. Qiskit 2.x keeps the functional QASM 2
+    serializer, so this narrow source repair preserves the model's result contract
+    while keeping the failure out of the paid sandbox path.
+    """
+    if not _LEGACY_QASM_CALL_RE.search(code):
+        return code
+    rewritten = _LEGACY_QASM_CALL_RE.sub(
+        r"_majorana_qasm2_dumps(\g<expression>)",
+        code,
+    )
+    import_line = "from qiskit.qasm2 import dumps as _majorana_qasm2_dumps"
+    if not re.search(rf"(?m)^\s*{re.escape(import_line)}\s*$", code):
+        rewritten = f"{import_line}\n{rewritten}"
+    return rewritten
+
 
 def _qiskit_qasm_epilogue(code: str) -> str:
     """Append Majorana-owned serialization of a generated ``FINAL_CIRCUIT``.
@@ -517,6 +539,19 @@ def build_stage_handlers(
         plan: Plan = ctx.state["plan"]
         code = ctx.state["code"]
         diagnostics: list[str] = []
+        repaired_legacy_qasm = _LEGACY_QASM_CALL_RE.search(code) is not None
+        if repaired_legacy_qasm:
+            code = _repair_legacy_qiskit_qasm(code)
+            ctx.state["code"] = code
+            revision = int(ctx.state.get("code_revision", 0)) + 1
+            ctx.state["code_revision"] = revision
+            await ctx.sink.emit(
+                "code.generated",
+                {"language": plan.framework, "code": code, "revision": revision},
+            )
+            diagnostics.append(
+                "compatibility:rewrote removed QuantumCircuit.qasm() to qiskit.qasm2.dumps"
+            )
         syntax_ok = True
         try:
             ast.parse(code)

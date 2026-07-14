@@ -1,7 +1,7 @@
 "use client";
 
 // Client wrapper so AppShell gets the live pathname for aria-current.
-import type { ReactNode } from "react";
+import type { FormEvent, ReactNode } from "react";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import { AppShell, BRAND_NAME, NAV_SURFACES } from "@majorana/ui";
@@ -16,7 +16,12 @@ import {
 } from "./icons";
 import {
   CHAT_HISTORY_EVENT,
+  CHAT_FOLDERS_EVENT,
+  assignChatToFolder,
+  createChatFolder,
+  loadChatFolders,
   loadChatHistory,
+  type ChatFolder,
   type ChatStatus,
   type ChatSummary,
 } from "../lib/chat-history";
@@ -37,11 +42,13 @@ export function Shell({
   const pathname = usePathname();
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [chats, setChats] = useState<ChatSummary[]>([]);
+  const [folders, setFolders] = useState<ChatFolder[]>([]);
 
   useEffect(() => {
     const saved = window.localStorage.getItem(SIDEBAR_STORAGE_KEY);
     setSidebarCollapsed(saved === "true" || (saved === null && window.innerWidth < 720));
     let active = true;
+    setFolders(loadChatFolders());
     async function refresh() {
       const local = loadChatHistory({ includeDemo: demoMode });
       if (demoMode) {
@@ -52,7 +59,11 @@ export function Shell({
         const response = await fetch("/api/runs?limit=20", { cache: "no-store" });
         const payload = (await response.json()) as unknown;
         const remote = Array.isArray(payload) ? payload.flatMap(chatFromRun) : [];
-        const byId = new Map([...local, ...remote].map((chat) => [chat.id, chat]));
+        const byId = new Map(remote.map((chat) => [chat.id, chat]));
+        for (const chat of local) {
+          const remoteChat = byId.get(chat.id);
+          byId.set(chat.id, remoteChat ? { ...remoteChat, folderId: chat.folderId } : chat);
+        }
         if (active) setChats([...byId.values()].sort((a, b) => b.createdAt.localeCompare(a.createdAt)));
       } catch {
         if (active) setChats(local);
@@ -60,9 +71,12 @@ export function Shell({
     }
     void refresh();
     window.addEventListener(CHAT_HISTORY_EVENT, refresh);
+    const refreshFolders = () => setFolders(loadChatFolders());
+    window.addEventListener(CHAT_FOLDERS_EVENT, refreshFolders);
     return () => {
       active = false;
       window.removeEventListener(CHAT_HISTORY_EVENT, refresh);
+      window.removeEventListener(CHAT_FOLDERS_EVENT, refreshFolders);
     };
   }, [demoMode]);
 
@@ -88,7 +102,7 @@ export function Shell({
     <AppShell
       currentPath={pathname}
       headerRight={headerRight}
-      sidebar={<WorkspaceSidebar currentPath={pathname} chats={chats} collapsed={sidebarCollapsed} demoMode={demoMode} userEmail={userEmail} />}
+      sidebar={<WorkspaceSidebar currentPath={pathname} chats={chats} folders={folders} collapsed={sidebarCollapsed} demoMode={demoMode} userEmail={userEmail} />}
       sidebarCollapsed={sidebarCollapsed}
       onToggleSidebar={toggleSidebar}
       surfaceLabel={surfaceLabel}
@@ -101,12 +115,14 @@ export function Shell({
 function WorkspaceSidebar({
   currentPath,
   chats,
+  folders,
   collapsed,
   demoMode,
   userEmail,
 }: {
   currentPath: string;
   chats: ChatSummary[];
+  folders: ChatFolder[];
   collapsed: boolean;
   demoMode: boolean;
   userEmail?: string;
@@ -117,6 +133,21 @@ function WorkspaceSidebar({
   const studioHref = demoMode ? libraryHref : "/studio";
   const sidebarName = demoMode ? "Public preview" : userEmail ?? "Local developer";
   const sidebarInitial = sidebarName.slice(0, 1).toUpperCase();
+  const [activeFolderId, setActiveFolderId] = useState<string | null>(null);
+  const [creatingFolder, setCreatingFolder] = useState(false);
+  const [folderName, setFolderName] = useState("");
+  const visibleChats = activeFolderId ? chats.filter((chat) => chat.folderId === activeFolderId) : chats;
+
+  function submitFolder(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const next = createChatFolder(folderName);
+    const created = next[next.length - 1];
+    if (created && created.name.toLocaleLowerCase() === folderName.trim().toLocaleLowerCase()) {
+      setActiveFolderId(created.id);
+    }
+    setFolderName("");
+    setCreatingFolder(false);
+  }
 
   return (
     <div className="mj-sidebar-inner">
@@ -140,21 +171,56 @@ function WorkspaceSidebar({
           <span className="mj-sidebar-copy">Recent</span>
         </div>
         <nav className="mj-sidebar-chats" aria-label="Recent chats">
-          {chats.map((chat) => (
-            <a
-              className={`mj-sidebar-chat${currentPath === `/run/${chat.id}` ? " is-active" : ""}`}
-              href={demoMode ? runHref : `/run/${chat.id}`}
-              key={chat.id}
-              title={collapsed ? chat.title : undefined}
-            >
-              <span className={`mj-chat-status mj-chat-status--${chat.status}`} aria-hidden="true">
-                {statusGlyph(chat.status)}
-              </span>
-              <span className="mj-sidebar-chat-title mj-sidebar-copy">{chat.title}</span>
-              <span className="mj-sidebar-chat-time mj-sidebar-copy">{formatRelativeDate(chat.createdAt)}</span>
-            </a>
+          {visibleChats.map((chat) => (
+            <div className="mj-sidebar-chat-row" key={chat.id}>
+              <a
+                className={`mj-sidebar-chat${currentPath === `/run/${chat.id}` ? " is-active" : ""}`}
+                href={demoMode ? runHref : `/run/${chat.id}`}
+                title={collapsed ? chat.title : undefined}
+              >
+                <span className={`mj-chat-status mj-chat-status--${chat.status}`} aria-hidden="true">
+                  {statusGlyph(chat.status)}
+                </span>
+                <span className="mj-sidebar-chat-title mj-sidebar-copy">{chat.title}</span>
+                <span className="mj-sidebar-chat-time mj-sidebar-copy">{formatRelativeDate(chat.createdAt)}</span>
+              </a>
+              {!collapsed && !demoMode && folders.length > 0 ? (
+                <select
+                  aria-label={`Move ${chat.title} to folder`}
+                  className="mj-sidebar-chat-folder"
+                  value={chat.folderId ?? ""}
+                  onChange={(event) => assignChatToFolder(chat.id, event.target.value || undefined)}
+                >
+                  <option value="">No folder</option>
+                  {folders.map((folder) => <option key={folder.id} value={folder.id}>{folder.name}</option>)}
+                </select>
+              ) : null}
+            </div>
           ))}
         </nav>
+        {!demoMode ? (
+          <section className="mj-sidebar-folders" aria-label="Chat folders">
+            <div className="mj-sidebar-section-label mj-sidebar-folder-heading">
+              <span className="mj-sidebar-copy">Folders</span>
+              <button className="mj-sidebar-folder-add" type="button" aria-label="Create chat folder" onClick={() => setCreatingFolder(true)}>+</button>
+            </div>
+            {creatingFolder ? (
+              <form className="mj-sidebar-folder-form" onSubmit={submitFolder}>
+                <input aria-label="Folder name" autoFocus maxLength={80} value={folderName} onChange={(event) => setFolderName(event.target.value)} placeholder="Folder name" />
+                <button type="submit" aria-label="Save folder" disabled={!folderName.trim()}>✓</button>
+                <button type="button" aria-label="Cancel folder creation" onClick={() => { setCreatingFolder(false); setFolderName(""); }}>×</button>
+              </form>
+            ) : null}
+            <button className={`mj-sidebar-folder${activeFolderId === null ? " is-active" : ""}`} type="button" onClick={() => setActiveFolderId(null)}>
+              <span aria-hidden="true">◌</span><span className="mj-sidebar-copy">All chats</span><span className="mj-sidebar-folder-count">{chats.length}</span>
+            </button>
+            {folders.map((folder) => (
+              <button className={`mj-sidebar-folder${activeFolderId === folder.id ? " is-active" : ""}`} key={folder.id} type="button" onClick={() => setActiveFolderId(folder.id)}>
+                <span aria-hidden="true">▱</span><span className="mj-sidebar-copy">{folder.name}</span><span className="mj-sidebar-folder-count">{chats.filter((chat) => chat.folderId === folder.id).length}</span>
+              </button>
+            ))}
+          </section>
+        ) : null}
         <a className="mj-sidebar-view-all" href={libraryHref}>
           <span className="mj-sidebar-copy">View all</span>
           <span aria-hidden="true">→</span>

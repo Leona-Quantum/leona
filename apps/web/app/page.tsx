@@ -19,6 +19,7 @@ export default async function Home() {
         </p>
         <div className="mj-landing-actions">
           {demoEnabled ? <a className="mj-primary-button" href="/demo">Open the public preview</a> : null}
+          <a className="mj-secondary-button" href="/open-source">Open source ↗</a>
           {signInUrl ? (
             <a className="mj-secondary-button" href={signInUrl}>Sign in</a>
           ) : (
