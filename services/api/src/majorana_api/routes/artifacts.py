@@ -4,12 +4,15 @@ The web surface is a renderer; artifact ownership and workspace scoping stay in
 the control plane's repository layer.
 """
 
+import re
 import uuid
+from typing import Any
 
 from fastapi import APIRouter, HTTPException
 from majorana_contracts import Artifact as ArtifactResource
 from majorana_contracts import ArtifactVersion as ArtifactVersionResource
 from majorana_contracts.enums import Algorithm, ExportStatus, Framework, Visibility
+from pydantic import AnyHttpUrl, BaseModel, ConfigDict, Field
 
 from ..auth.deps import CurrentScope, DbSession
 from ..repos import artifacts as artifacts_repo
@@ -17,6 +20,50 @@ from ..orm import Artifact as ArtifactRow
 from ..orm import ArtifactVersion as ArtifactVersionRow
 
 router = APIRouter()
+
+
+class ImportPublicArtifactRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    source_slug: str = Field(min_length=1, max_length=160)
+    title: str = Field(min_length=1, max_length=240)
+    family: str = Field(min_length=1, max_length=120)
+    framework: Framework
+    code: str = Field(min_length=1, max_length=100_000)
+    code_lang: str = Field(min_length=1, max_length=40)
+    qasm: str | None = Field(default=None, max_length=100_000)
+    framework_variants: dict[str, str] | None = None
+    resource_estimates: dict[str, Any] | None = None
+    export_status: ExportStatus = ExportStatus.DOWNLOAD_ONLY
+    source_url: AnyHttpUrl
+    source_title: str = Field(min_length=1, max_length=400)
+    source_license: str = Field(min_length=1, max_length=400)
+    introduction: str = Field(min_length=1, max_length=20_000)
+    explanation: str = Field(min_length=1, max_length=20_000)
+    verification: str = Field(min_length=1, max_length=20_000)
+
+
+def _public_family(value: str) -> Algorithm:
+    normalized = value.lower()
+    family_map = (
+        ("qaoa", Algorithm.QAOA),
+        ("vqe", Algorithm.VQE),
+        ("grover", Algorithm.GROVER),
+        ("bell", Algorithm.BELL),
+        ("ghz", Algorithm.GHZ),
+        ("qft", Algorithm.QFT),
+        ("quantum fourier", Algorithm.QFT),
+        ("qpe", Algorithm.QPE),
+        ("amplitude estimation", Algorithm.AMPLITUDE_ESTIMATION),
+        ("state preparation", Algorithm.STATE_PREPARATION),
+        ("error correction", Algorithm.ERROR_CORRECTION),
+    )
+    return next((family for marker, family in family_map if marker in normalized), Algorithm.OTHER)
+
+
+def _public_slug(value: str) -> str:
+    normalized = re.sub(r"[^a-z0-9]+", "-", value.lower()).strip("-")
+    return normalized[:120] or "reference"
 
 
 def _to_artifact(row: ArtifactRow) -> ArtifactResource:
@@ -72,6 +119,67 @@ async def list_artifacts(
         limit=min(max(limit, 1), 100),
     )
     return [_to_artifact(row) for row in rows]
+
+
+@router.post("/artifacts/import-public", response_model=ArtifactResource, status_code=201)
+async def import_public_artifact(
+    body: ImportPublicArtifactRequest,
+    scope: CurrentScope,
+    session: DbSession,
+) -> ArtifactResource:
+    """Copy a public reference into the caller's personal Library.
+
+    This is an import snapshot, not a new verification result. The source and
+    limitations are retained in the version IR so the private copy does not
+    lose its public provenance.
+    """
+    slug = f"public-{_public_slug(body.source_slug)}-{scope.workspace_id.hex}"
+    existing = await artifacts_repo.get_artifact_by_slug(scope, session, slug)
+    if existing is not None:
+        return _to_artifact(existing)
+
+    artifact = await artifacts_repo.create_artifact(
+        scope,
+        session,
+        slug=slug,
+        title=body.title,
+        family=_public_family(body.family),
+        framework=body.framework,
+    )
+    await artifacts_repo.create_version(
+        scope,
+        session,
+        artifact.id,
+        ir_version="public-reference-v1",
+        ir={
+            "ir_version": 3,
+            "source": {
+                "kind": "public_repository",
+                "slug": body.source_slug,
+                "title": body.source_title,
+                "url": str(body.source_url),
+                "license": body.source_license,
+            },
+            "metadata": {
+                "introduction": body.introduction,
+                "explanation": body.explanation,
+                "verification": body.verification,
+            },
+        },
+        code=body.code,
+        code_lang=body.code_lang,
+        fingerprint=f"public-reference:{body.source_slug}",
+        export_status=body.export_status,
+        qasm=body.qasm,
+        framework_variants=body.framework_variants,
+        resource_estimates=body.resource_estimates,
+        limitations=(
+            "Imported from the public research database. This private copy preserves public "
+            "source context but is not a new execution or verification record. Review the "
+            "source license and rerun the artifact before relying on it."
+        ),
+    )
+    return _to_artifact(artifact)
 
 
 @router.get("/artifacts/{artifact_id}", response_model=ArtifactResource)

@@ -13,6 +13,7 @@ const PUBLIC_PATHS = [
   "/pricing",
   "/repository",
   ...PUBLIC_REPOSITORY_ENTRIES.map((entry) => `/repository/${entry.slug}`),
+  "/workspace",
   "/open-source",
   "/contact",
   "/privacy",

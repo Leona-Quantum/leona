@@ -4320,3 +4320,428 @@ div.mj-rail-row:hover {
   width: 100%;
   margin: 0;
 }
+
+/* ---------- public repository index, export, and contact queue ---------- */
+.mj-repository-index-hero {
+  padding: var(--sp-8) 0 var(--sp-10);
+  border-bottom: 1px solid var(--border-0);
+}
+.mj-repository-index-hero h1 {
+  max-width: 760px;
+  margin: 0;
+  font-size: clamp(1.9rem, 4vw, 3.6rem);
+  font-weight: 600;
+  letter-spacing: -0.045em;
+  line-height: 1;
+}
+.mj-repository-index-hero > p {
+  max-width: 760px;
+  margin: var(--sp-4) 0 0;
+  color: var(--text-1);
+  font-size: var(--fs-14);
+  line-height: 1.6;
+}
+.mj-repository-index-hero .mj-repository-browser {
+  margin-top: var(--sp-8);
+}
+.mj-repository-entry-links {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--sp-3);
+}
+.mj-repository-export-button {
+  min-height: 30px;
+  padding: 0 var(--sp-3);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-control);
+  color: var(--text-0);
+  background: var(--bg-2);
+  font: inherit;
+  font-size: var(--fs-12);
+  cursor: pointer;
+}
+.mj-repository-export-button:hover {
+  color: var(--bg-0);
+  background: var(--accent);
+}
+.mj-repository-export-button:disabled {
+  cursor: wait;
+  opacity: 0.65;
+}
+.mj-repository-export-status {
+  flex-basis: 100%;
+  margin: 0;
+  color: var(--warn);
+  font-size: var(--fs-12);
+  text-align: right;
+}
+.mj-repository-entry-details {
+  margin-top: var(--sp-5);
+  border-top: 1px solid var(--border-0);
+}
+.mj-repository-entry-details > summary,
+.mj-repository-entry-sections details > summary {
+  padding: var(--sp-3) 0;
+  color: var(--text-1);
+  font-size: var(--fs-12);
+  cursor: pointer;
+}
+.mj-repository-entry-details > summary:hover,
+.mj-repository-entry-sections details > summary:hover {
+  color: var(--accent);
+}
+.mj-repository-entry-sections {
+  display: grid;
+  gap: var(--sp-2);
+  padding-bottom: var(--sp-2);
+}
+.mj-repository-entry-sections details {
+  padding: 0 var(--sp-3);
+  border: 1px solid var(--border-0);
+  border-radius: var(--radius-control);
+  background: var(--bg-0);
+}
+.mj-repository-entry-sections details > p {
+  margin: 0 0 var(--sp-4);
+  color: var(--text-1);
+  font-size: var(--fs-12);
+  line-height: 1.55;
+}
+.mj-repository-mini-circuit {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+  padding: 0 0 var(--sp-3);
+}
+.mj-repository-mini-circuit span {
+  padding: var(--sp-1) var(--sp-2);
+  border: 1px solid var(--border-0);
+  border-radius: var(--radius-control);
+  color: var(--text-1);
+  font-family: var(--font-mono);
+  font-size: var(--fs-11);
+}
+.mj-repository-mini-circuit span[data-tone="accent"] { border-color: var(--accent); color: var(--accent); }
+.mj-repository-mini-circuit span[data-tone="ok"] { border-color: var(--ok); color: var(--ok); }
+.mj-repository-mini-circuit span[data-tone="warn"] { border-color: var(--warn); color: var(--warn); }
+.mj-repository-mini-outcomes {
+  display: grid;
+  gap: var(--sp-3);
+  padding-bottom: var(--sp-3);
+}
+.mj-repository-mini-outcomes > div {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: var(--sp-2);
+  color: var(--text-1);
+  font-size: var(--fs-12);
+}
+.mj-repository-mini-outcomes strong {
+  color: var(--text-0);
+  font-family: var(--font-mono);
+  font-weight: 500;
+}
+.mj-repository-mini-outcome-track {
+  grid-column: 1 / -1;
+  height: 5px;
+  overflow: hidden;
+  border-radius: var(--radius-control);
+  background: var(--bg-2);
+}
+.mj-repository-mini-outcome-track span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--accent);
+}
+.mj-repository-mini-code-label {
+  display: block;
+  padding-bottom: var(--sp-2);
+  color: var(--ok);
+  font-family: var(--font-mono);
+  font-size: var(--fs-11);
+}
+.mj-repository-mini-code {
+  max-height: 220px;
+  margin: 0 0 var(--sp-3);
+  overflow: auto;
+  padding: var(--sp-3);
+  border: 1px solid var(--border-0);
+  border-radius: var(--radius-control);
+  color: var(--text-0);
+  background: var(--bg-1);
+  font-family: var(--font-mono);
+  font-size: var(--fs-11);
+  line-height: 1.5;
+  white-space: pre;
+}
+.mj-repository-entry-sections details > .mj-repository-mini-dl {
+  margin: 0 0 var(--sp-3);
+}
+.mj-repository-mini-dl {
+  display: grid;
+  gap: var(--sp-2);
+}
+.mj-repository-mini-dl > div {
+  display: grid;
+  grid-template-columns: minmax(90px, 0.35fr) minmax(0, 1fr);
+  gap: var(--sp-3);
+}
+.mj-repository-mini-dl dt {
+  color: var(--text-2);
+  font-size: var(--fs-11);
+}
+.mj-repository-mini-dl dd {
+  margin: 0;
+  color: var(--text-1);
+  font-size: var(--fs-11);
+  line-height: 1.45;
+}
+.mj-repository-legend {
+  display: grid;
+  grid-template-columns: minmax(0, 0.7fr) minmax(0, 1.3fr);
+  gap: var(--sp-12);
+  padding: var(--sp-12) 0;
+  border-bottom: 1px solid var(--border-0);
+}
+.mj-repository-legend h2 {
+  max-width: 500px;
+  margin: 0;
+  font-size: clamp(1.5rem, 3vw, 2.5rem);
+  font-weight: 600;
+  letter-spacing: -0.04em;
+  line-height: 1.05;
+}
+.mj-repository-legend-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--sp-4);
+}
+.mj-repository-legend-grid > div {
+  display: grid;
+  gap: var(--sp-2);
+  padding: var(--sp-4);
+  border: 1px solid var(--border-0);
+  border-radius: var(--radius-card);
+  background: var(--bg-1);
+}
+.mj-repository-legend-grid strong {
+  color: var(--text-0);
+  font-size: var(--fs-13);
+  font-weight: 500;
+}
+.mj-repository-legend-grid span {
+  color: var(--text-1);
+  font-size: var(--fs-12);
+  line-height: 1.5;
+}
+.mj-repository-deferred-note {
+  padding-left: var(--sp-4);
+  border-left: 2px solid var(--warn);
+}
+.mj-repository-detail-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-4);
+  margin-top: var(--sp-6);
+}
+.mj-repository-detail-action-note {
+  color: var(--text-2);
+  font-family: var(--font-mono);
+  font-size: var(--fs-11);
+}
+.mj-repository-dialog-backdrop {
+  position: fixed;
+  z-index: 50;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: var(--sp-4);
+  background: color-mix(in srgb, var(--bg-0) 78%, transparent);
+}
+.mj-repository-dialog {
+  position: relative;
+  width: min(100%, 480px);
+  padding: var(--sp-8);
+  border: 1px solid var(--border-0);
+  border-radius: var(--radius-card);
+  background: var(--bg-1);
+}
+.mj-repository-dialog h2 {
+  margin: 0;
+  font-size: var(--fs-24);
+  font-weight: 600;
+  letter-spacing: -0.03em;
+}
+.mj-repository-dialog p:not(.mj-section-label) {
+  margin: var(--sp-4) 0 0;
+  color: var(--text-1);
+  line-height: 1.6;
+}
+.mj-repository-dialog .mj-primary-button {
+  margin-top: var(--sp-6);
+  text-decoration: none;
+}
+.mj-repository-dialog .mj-text-link {
+  display: inline-block;
+  margin-top: var(--sp-4);
+}
+.mj-repository-dialog-close {
+  position: absolute;
+  top: var(--sp-3);
+  right: var(--sp-3);
+}
+.mj-repository-dialog-note {
+  font-size: var(--fs-12);
+}
+.mj-contact-form-section {
+  display: grid;
+  grid-template-columns: minmax(0, 0.7fr) minmax(0, 1.3fr);
+  gap: var(--sp-12);
+  padding: var(--sp-12) 0;
+}
+.mj-contact-form-section h2 {
+  margin: 0;
+  font-size: clamp(1.5rem, 3vw, 2.5rem);
+  font-weight: 600;
+  letter-spacing: -0.04em;
+  line-height: 1.05;
+}
+.mj-contact-form {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--sp-4);
+  padding: var(--sp-6);
+  border: 1px solid var(--border-0);
+  border-radius: var(--radius-card);
+  background: var(--bg-1);
+}
+.mj-contact-form label,
+.mj-account-profile-form label {
+  display: grid;
+  gap: var(--sp-2);
+  color: var(--text-1);
+  font-size: var(--fs-12);
+}
+.mj-contact-form input,
+.mj-contact-form select,
+.mj-contact-form textarea,
+.mj-account-profile-form input {
+  box-sizing: border-box;
+  width: 100%;
+  padding: var(--sp-3);
+  border: 1px solid var(--border-0);
+  border-radius: var(--radius-control);
+  color: var(--text-0);
+  background: var(--bg-0);
+  font: inherit;
+}
+.mj-contact-form textarea {
+  resize: vertical;
+}
+.mj-contact-form input:focus,
+.mj-contact-form select:focus,
+.mj-contact-form textarea:focus,
+.mj-account-profile-form input:focus {
+  border-color: var(--accent);
+  outline: none;
+}
+.mj-contact-form-wide {
+  grid-column: 1 / -1;
+}
+.mj-contact-form-actions {
+  display: flex;
+  grid-column: 1 / -1;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-3);
+}
+.mj-contact-form-actions p {
+  margin: 0;
+  color: var(--text-1);
+  font-size: var(--fs-12);
+  line-height: 1.5;
+}
+.mj-account-profile-form {
+  display: grid;
+  gap: var(--sp-4);
+  margin-top: var(--sp-6);
+  padding-top: var(--sp-4);
+  border-top: 1px solid var(--border-0);
+}
+.mj-account-profile-form .mj-primary-button {
+  justify-self: start;
+}
+.mj-account-boundary-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--sp-4);
+}
+.mj-account-boundary-grid > div {
+  padding: var(--sp-4);
+  border: 1px solid var(--border-0);
+  border-radius: var(--radius-control);
+  background: var(--bg-0);
+}
+.mj-account-boundary-grid strong {
+  color: var(--text-0);
+  font-size: var(--fs-13);
+  font-weight: 500;
+}
+.mj-account-boundary-grid p {
+  margin: var(--sp-2) 0 0;
+  color: var(--text-1);
+  font-size: var(--fs-12);
+  line-height: 1.5;
+}
+.mj-verification-summary--reference {
+  border-left-color: var(--warn);
+}
+.mj-verification-summary--reference > span {
+  border-color: var(--warn);
+  color: var(--warn);
+}
+
+@media (max-width: 860px) {
+  .mj-repository-legend,
+  .mj-contact-form-section {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .mj-repository-legend-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .mj-account-boundary-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 620px) {
+  .mj-repository-legend-grid,
+  .mj-contact-form {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .mj-contact-form-wide,
+  .mj-contact-form-actions {
+    grid-column: auto;
+  }
+  .mj-repository-entry-actions {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+  .mj-repository-entry-links {
+    justify-content: flex-start;
+  }
+  .mj-repository-export-status {
+    text-align: left;
+  }
+  .mj-repository-detail-actions {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+  .mj-repository-dialog {
+    padding: var(--sp-6);
+  }
+}

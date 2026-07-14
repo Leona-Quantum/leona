@@ -216,30 +216,8 @@ async def default_workspace_id(
     user_id: Any,
     personal_workspace_id: Any,
 ) -> Any:
-    """Prefer a workspace where the user was added as a collaborator.
-
-    Owners keep their personal workspace by default. A member or viewer who
-    has been attached to another workspace should see that shared workspace
-    without needing to copy an internal workspace header into the browser.
-    """
-    shared = (
-        (
-            await session.execute(
-                select(Membership.workspace_id)
-                .join(Workspace, Workspace.id == Membership.workspace_id)
-                .where(
-                    Membership.user_id == user_id,
-                    Membership.role != Role.OWNER,
-                    Workspace.deleted_at.is_(None),
-                )
-                .order_by(Membership.created_at.desc(), Membership.workspace_id)
-                .limit(1)
-            )
-        )
-        .scalars()
-        .first()
-    )
-    return shared or personal_workspace_id
+    """Return the personal workspace until collaboration is productized."""
+    return personal_workspace_id
 
 
 async def get_or_provision_user(
@@ -250,12 +228,31 @@ async def get_or_provision_user(
     display_name: str | None = None,
 ) -> tuple[User, Workspace]:
     """First login: create user + personal workspace + owner membership (04 §1)."""
+    normalized_email = email.strip().lower()
     found = await _existing_user(session, workos_user_id)
     if found is not None:
-        await ensure_starter_bell_artifact(session, found[1].id)
-        return found
+        user, workspace = found
+        changed = False
+        if user.email != normalized_email:
+            user.email = normalized_email
+            changed = True
+        if display_name is not None:
+            normalized_name = " ".join(display_name.strip().split())
+            if normalized_name and user.display_name != normalized_name:
+                user.display_name = normalized_name
+                changed = True
+        if changed:
+            await session.flush()
+        await ensure_starter_bell_artifact(session, workspace.id)
+        return user, workspace
 
-    user = User(id=uuid7(), workos_user_id=workos_user_id, email=email, display_name=display_name)
+    normalized_name = " ".join(display_name.strip().split()) if display_name else None
+    user = User(
+        id=uuid7(),
+        workos_user_id=workos_user_id,
+        email=normalized_email,
+        display_name=normalized_name or None,
+    )
     session.add(user)
     try:
         await session.flush()
@@ -268,9 +265,15 @@ async def get_or_provision_user(
         found = await _existing_user(session, workos_user_id)
         if found is None:
             raise
-        await ensure_starter_bell_artifact(session, found[1].id)
-        return found
-    ws = Workspace(id=uuid7(), kind="personal", name=email, owner_user_id=user.id)
+        existing_user, workspace = found
+        if display_name:
+            existing_user.display_name = normalized_name or existing_user.display_name
+        if existing_user.email != normalized_email:
+            existing_user.email = normalized_email
+        await session.flush()
+        await ensure_starter_bell_artifact(session, workspace.id)
+        return existing_user, workspace
+    ws = Workspace(id=uuid7(), kind="personal", name=normalized_email, owner_user_id=user.id)
     session.add(ws)
     await session.flush()
     session.add(Membership(workspace_id=ws.id, user_id=user.id, role=Role.OWNER))

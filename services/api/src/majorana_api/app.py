@@ -55,7 +55,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         allow_origins=[app.state.settings.web_origin],
         allow_credentials=True,
         allow_methods=["*"],
-        allow_headers=["Authorization", "Content-Type", "X-Workspace-Id"],
+        allow_headers=["Authorization", "Content-Type"],
     )
 
     @app.exception_handler(HTTPException)

@@ -99,85 +99,94 @@ export const ACCOUNT_COPY: Record<PublicLocale, {
   languageHelp: string;
   identity: string;
   email: string;
-  name: string;
-  notSet: string;
   workspace: string;
-  workspaceData: string;
+  displayName: string;
+  yourName: string;
+  saveName: string;
+  saving: string;
+  profileSaved: string;
+  profileSaveFailed: string;
+  personalWorkspace: string;
+  personalWorkspaceHelp: string;
   artifacts: string;
   runs: string;
-  members: string;
-  workspaceMembers: string;
-  sharedAccess: string;
-  collaboratorEmail: string;
-  collaboratorRole: string;
-  member: string;
-  viewer: string;
-  addMember: string;
-  adding: string;
+  access: string;
+  privateAccess: string;
+  workspaceBoundaries: string;
+  library: string;
+  libraryHelp: string;
+  repositoryExport: string;
+  repositoryExportHelp: string;
+  collaboration: string;
+  collaborationHelp: string;
   loading: string;
   unavailable: string;
-  memberAddFailed: string;
   requestFailed: string;
-  memberAdded: (email: string) => string;
 }> = {
   en: {
     title: "Settings",
-    lede: "Identity, workspace access, and preferences for your Majorana workspace.",
+    lede: "Your identity, private Library, personal workspace data, and display preferences.",
     signOut: "Sign out",
     preferences: "Preferences",
     language: "Language",
     languageHelp: "Choose the language used for shared navigation and account settings.",
     identity: "Identity",
     email: "Email",
-    name: "Name",
-    notSet: "Not set",
     workspace: "Workspace",
-    workspaceData: "Workspace data",
+    displayName: "Display name",
+    yourName: "Your name",
+    saveName: "Save name",
+    saving: "Saving…",
+    profileSaved: "Profile saved.",
+    profileSaveFailed: "Profile could not be saved",
+    personalWorkspace: "Personal workspace",
+    personalWorkspaceHelp: "This workspace belongs only to you. Collaboration and shared workspaces are planned, but not enabled yet.",
     artifacts: "Artifacts",
     runs: "Runs",
-    members: "Members",
-    workspaceMembers: "Workspace members",
-    sharedAccess: "shared access",
-    collaboratorEmail: "Collaborator email",
-    collaboratorRole: "Collaborator role",
-    member: "Member",
-    viewer: "Viewer",
-    addMember: "Add member",
-    adding: "Adding…",
+    access: "Access",
+    privateAccess: "Private",
+    workspaceBoundaries: "Workspace boundaries",
+    library: "Library",
+    libraryHelp: "Saved runs and public references stay in your personal Library.",
+    repositoryExport: "Repository export",
+    repositoryExportHelp: "Sign in to copy a public entry into this workspace and open it in Studio.",
+    collaboration: "Collaboration",
+    collaborationHelp: "Deferred until shared access, invitations, and permissions are productized.",
     loading: "Loading workspace data…",
     unavailable: "Workspace data is unavailable.",
-    memberAddFailed: "Member could not be added",
     requestFailed: "Request failed",
-    memberAdded: (email) => `${email} can now use this workspace.`,
   },
   ja: {
     title: "設定",
-    lede: "Majoranaワークスペースの本人情報、アクセス権、表示設定を管理します。",
+    lede: "本人情報、非公開ライブラリ、個人ワークスペースのデータ、表示設定を管理します。",
     signOut: "サインアウト",
     preferences: "表示設定",
     language: "言語",
     languageHelp: "共通ナビゲーションとアカウント設定で使用する言語を選択します。",
     identity: "本人情報",
     email: "メールアドレス",
-    name: "名前",
-    notSet: "未設定",
     workspace: "ワークスペース",
-    workspaceData: "ワークスペースデータ",
+    displayName: "表示名",
+    yourName: "名前",
+    saveName: "名前を保存",
+    saving: "保存中…",
+    profileSaved: "プロフィールを保存しました。",
+    profileSaveFailed: "プロフィールを保存できませんでした",
+    personalWorkspace: "個人ワークスペース",
+    personalWorkspaceHelp: "このワークスペースはあなただけが利用できます。共同利用と共有ワークスペースは今後対応予定です。",
     artifacts: "アーティファクト",
     runs: "実行",
-    members: "メンバー",
-    workspaceMembers: "ワークスペースメンバー",
-    sharedAccess: "共有アクセス",
-    collaboratorEmail: "共同利用者のメールアドレス",
-    collaboratorRole: "共同利用者の権限",
-    member: "メンバー",
-    viewer: "閲覧者",
-    addMember: "メンバーを追加",
-    adding: "追加中…",
+    access: "アクセス",
+    privateAccess: "非公開",
+    workspaceBoundaries: "ワークスペースの範囲",
+    library: "ライブラリ",
+    libraryHelp: "保存した実行と公開リファレンスは、個人ライブラリに保持されます。",
+    repositoryExport: "リポジトリから保存",
+    repositoryExportHelp: "サインインすると、公開エントリをこのワークスペースへコピーしてStudioで開けます。",
+    collaboration: "共同利用",
+    collaborationHelp: "共有アクセス、招待、権限の正式対応まで利用できません。",
     loading: "ワークスペースデータを読み込んでいます…",
     unavailable: "ワークスペースデータを取得できません。",
-    memberAddFailed: "メンバーを追加できませんでした",
     requestFailed: "リクエストに失敗しました",
-    memberAdded: (email) => `${email} がこのワークスペースを利用できるようになりました。`,
   },
 };

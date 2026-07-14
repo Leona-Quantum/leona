@@ -6,7 +6,6 @@ import type { PublicLocale } from "../../../lib/public-locale";
 import { ACCOUNT_COPY } from "../../../lib/workspace-locale";
 
 type WorkspaceOverview = components["schemas"]["WorkspaceOverview"];
-type WorkspaceMember = components["schemas"]["WorkspaceMember"];
 
 type Me = {
   user_id: string;
@@ -21,8 +20,7 @@ export function AccountSettings({ initialEmail, locale }: { initialEmail: string
   const copy = ACCOUNT_COPY[locale];
   const [me, setMe] = useState<Me | null>(null);
   const [workspace, setWorkspace] = useState<WorkspaceOverview | null>(null);
-  const [email, setEmail] = useState("");
-  const [role, setRole] = useState<"member" | "viewer">("member");
+  const [displayName, setDisplayName] = useState("");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
@@ -36,6 +34,7 @@ export function AccountSettings({ initialEmail, locale }: { initialEmail: string
       .then(([identity, overview]) => {
         if (!active) return;
         setMe(identity);
+        setDisplayName(identity.display_name ?? "");
         setWorkspace(overview);
         setLoading(false);
       })
@@ -49,29 +48,26 @@ export function AccountSettings({ initialEmail, locale }: { initialEmail: string
     };
   }, []);
 
-  async function addMember(event: FormEvent<HTMLFormElement>) {
+  async function saveProfile(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!email.trim() || saving) return;
+    if (saving) return;
     setSaving(true);
     setMessage(null);
     try {
-      const response = await fetch("/api/workspace/members", {
-        method: "POST",
+      const response = await fetch("/api/me", {
+        method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: email.trim(), role }),
+        body: JSON.stringify({ display_name: displayName }),
       });
-      const payload = (await response.json()) as WorkspaceMember | { title?: string; error?: string };
+      const payload = (await response.json()) as Me | { title?: string; error?: string };
       if (!response.ok || !("user_id" in payload)) {
-        throw new Error(errorDetail(payload, copy.memberAddFailed));
+        throw new Error(errorDetail(payload, copy.profileSaveFailed));
       }
-      setWorkspace((current) => current ? {
-        ...current,
-        members: [...current.members.filter((member) => member.user_id !== payload.user_id), payload],
-      } : current);
-      setEmail("");
-      setMessage(copy.memberAdded(payload.email));
+      setMe(payload);
+      setDisplayName(payload.display_name ?? "");
+      setMessage(copy.profileSaved);
     } catch (cause) {
-      setMessage(cause instanceof Error ? cause.message : copy.memberAddFailed);
+      setMessage(cause instanceof Error ? cause.message : copy.profileSaveFailed);
     } finally {
       setSaving(false);
     }
@@ -80,51 +76,38 @@ export function AccountSettings({ initialEmail, locale }: { initialEmail: string
   if (loading) return <p className="mj-page-lede">{copy.loading}</p>;
   if (!workspace || !me) return <p className="mj-page-lede" role="alert">{message ?? `${initialEmail}: ${copy.unavailable}`}</p>;
 
-  const canManage = me.role === "owner" || me.role === "admin";
   return (
     <div className="mj-artifact-grid">
       <section className="mj-artifact-panel">
         <div className="mj-panel-heading"><h2>{copy.identity}</h2><span className="mj-mono-muted">{me.role}</span></div>
         <dl className="mj-resource-list">
           <div><dt>{copy.email}</dt><dd>{me.email}</dd></div>
-          <div><dt>{copy.name}</dt><dd>{me.display_name ?? copy.notSet}</dd></div>
           <div><dt>{copy.workspace}</dt><dd>{me.workspace_name}</dd></div>
         </dl>
+        <form className="mj-account-profile-form" onSubmit={saveProfile}>
+          <label>
+            <span>{copy.displayName}</span>
+            <input value={displayName} onChange={(event) => setDisplayName(event.target.value)} maxLength={120} placeholder={copy.yourName} />
+          </label>
+          <button className="mj-primary-button" disabled={saving} type="submit">{saving ? copy.saving : copy.saveName}</button>
+        </form>
       </section>
       <section className="mj-artifact-panel">
-        <div className="mj-panel-heading"><h2>{copy.workspaceData}</h2><span className="mj-mono-muted">{workspace.workspace.plan}</span></div>
+        <div className="mj-panel-heading"><h2>{copy.personalWorkspace}</h2><span className="mj-mono-muted">{workspace.workspace.plan}</span></div>
+        <p className="mj-artifact-copy">{copy.personalWorkspaceHelp}</p>
         <dl className="mj-resource-list">
           <div><dt>{copy.artifacts}</dt><dd>{workspace.artifact_count}</dd></div>
           <div><dt>{copy.runs}</dt><dd>{workspace.run_count}</dd></div>
-          <div><dt>{copy.members}</dt><dd>{workspace.members.length}</dd></div>
+          <div><dt>{copy.access}</dt><dd>{copy.privateAccess}</dd></div>
         </dl>
       </section>
       <section className="mj-artifact-panel mj-artifact-panel--wide">
-        <div className="mj-panel-heading"><h2>{copy.workspaceMembers}</h2><span className="mj-mono-muted">{copy.sharedAccess}</span></div>
-        <div className="mj-resource-list">
-          {workspace.members.map((member) => (
-            <div key={member.user_id}>
-              <dt>{member.display_name ?? member.email}</dt>
-              <dd>{member.display_name ? `${member.email} · ${member.role}` : member.role}</dd>
-            </div>
-          ))}
+        <div className="mj-panel-heading"><h2>{copy.workspaceBoundaries}</h2><span className="mj-mono-muted">v1</span></div>
+        <div className="mj-account-boundary-grid">
+          <div><strong>{copy.library}</strong><p>{copy.libraryHelp}</p></div>
+          <div><strong>{copy.repositoryExport}</strong><p>{copy.repositoryExportHelp}</p></div>
+          <div><strong>{copy.collaboration}</strong><p>{copy.collaborationHelp}</p></div>
         </div>
-        {canManage ? (
-          <form className="mj-library-toolbar" onSubmit={addMember}>
-            <label className="mj-library-search">
-              <span className="sr-only">{copy.collaboratorEmail}</span>
-              <input value={email} onChange={(event) => setEmail(event.target.value)} placeholder={copy.collaboratorEmail} type="email" />
-            </label>
-            <label className="mj-filter-select">
-              <span className="sr-only">{copy.collaboratorRole}</span>
-              <select value={role} onChange={(event) => setRole(event.target.value as "member" | "viewer")}>
-                <option value="member">{copy.member}</option>
-                <option value="viewer">{copy.viewer}</option>
-              </select>
-            </label>
-            <button className="mj-primary-button" disabled={saving || !email.trim()} type="submit">{saving ? copy.adding : copy.addMember}</button>
-          </form>
-        ) : null}
         {message ? <p className="mj-page-lede" role="status">{message}</p> : null}
       </section>
     </div>

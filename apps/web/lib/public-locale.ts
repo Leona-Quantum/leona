@@ -7,7 +7,7 @@ export function parsePublicLocale(value: string | undefined): PublicLocale {
 }
 
 export const PUBLIC_SHELL_COPY: Record<PublicLocale, {
-  nav: { product: string; pricing: string; repository: string; openSource: string; contact: string };
+  nav: { product: string; pricing: string; repository: string; workspace: string; contact: string };
   footer: {
     promise: string;
     explore: string;
@@ -22,7 +22,7 @@ export const PUBLIC_SHELL_COPY: Record<PublicLocale, {
   actions: { workspace: string; signIn: string; talk: string };
 }> = {
   en: {
-    nav: { product: "Product", pricing: "Pricing", repository: "Repository", openSource: "Open source", contact: "Contact" },
+    nav: { product: "Product", pricing: "Pricing", repository: "Repository", workspace: "Workspace", contact: "Contact" },
     footer: {
       promise: "Trustworthy quantum work, one verified artifact at a time.",
       explore: "Explore",
@@ -37,7 +37,7 @@ export const PUBLIC_SHELL_COPY: Record<PublicLocale, {
     actions: { workspace: "Open workspace", signIn: "Sign in", talk: "Talk to us" },
   },
   ja: {
-    nav: { product: "プロダクト", pricing: "料金", repository: "リポジトリ", openSource: "オープンソース", contact: "連絡先" },
+    nav: { product: "プロダクト", pricing: "料金", repository: "リポジトリ", workspace: "ワークスペース", contact: "連絡先" },
     footer: {
       promise: "検証済みアーティファクトを通じて、信頼できる量子研究を支えます。",
       explore: "探索",
