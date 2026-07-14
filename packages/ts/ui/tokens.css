@@ -2,7 +2,7 @@
  * Spec: plans/roadmap/04-ui-specifications.md §1 (values are owner-ratified taste;
  * do NOT add or "adjust" values — deviation requires an owner taste-check).
  * Raw hex colors are allowed in this file ONLY (enforced by scripts/check-raw-hex.mjs).
- * Dark-first: MVP ships dark-only; names are semantic so light theme is a swap later.
+ * Theme values stay semantic so the product can switch palettes without component changes.
  * Palette: warm-gray + one earthy accent, per owner directive 2026-07-11:
  * "keep colors to a minimum… more grayscale like ChatGPT/Claude Code, easier on the
  * eyes and colorblind-accessible — but keep that warm flavour." So: neutrals are a
@@ -12,21 +12,24 @@
  * Contrast pre-checked (WCAG AA): text-0/bg-0 15.6:1, text-1/bg-1 6.4:1,
  * accent/bg-0 6.3:1, ok/bg-1 7.5:1, warn/bg-1 8.3:1, err/bg-1 4.8:1.
  */
-:root {
-  /* color — warm-gray neutrals (low chroma), one earthy-green accent, verdict signals */
-  --bg-0: #131211; /* app background — warm charcoal */
-  --bg-1: #1b1917; /* panel / card */
-  --bg-2: #262320; /* raised: hover, code blocks, table header */
-  --border-0: #332f2b; /* hairlines */
-  --text-0: #eceae6; /* primary text — warm off-white */
-  --text-1: #a29c93; /* secondary text — warm gray */
-  --text-2: #6a645b; /* placeholders, disabled */
-  --accent: #7ba05b; /* links, focus, primary buttons, running-stage — moss green */
-  --accent-press: #688a4a;
-  --ok: #34c077; /* verified / pass — emerald (paired with ✓ glyph) */
-  --warn: #e5a83b; /* lossy / skipped-with-reason / partial — amber (paired with glyph) */
-  --err: #e5564f; /* failed / unsupported (paired with ✕ glyph) */
-  --mono-tint: #bdb4a4; /* numbers/IDs inside prose — muted warm gray */
+:root,
+:root[data-theme="light"] {
+  color-scheme: light;
+
+  /* color — strict monochrome for the light surface */
+  --bg-0: #ffffff;
+  --bg-1: #fafafa;
+  --bg-2: #f0f0f0;
+  --border-0: #d4d4d4;
+  --text-0: #0a0a0a;
+  --text-1: #525252;
+  --text-2: #737373;
+  --accent: #171717;
+  --accent-press: #000000;
+  --ok: #171717;
+  --warn: #404040;
+  --err: #0a0a0a;
+  --mono-tint: #404040;
 
   /* type — Inter for UI, JetBrains Mono for code/numbers/IDs.
      Apps may override the font vars with self-hosted/next-font faces. */
@@ -59,4 +62,42 @@
   --sidebar-expanded: 224px;
   --sidebar-collapsed: 64px;
   --composer-max: 720px;
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+
+  /* color — warm-gray neutrals (low chroma), one earthy-green accent, verdict signals */
+  --bg-0: #131211; /* app background — warm charcoal */
+  --bg-1: #1b1917; /* panel / card */
+  --bg-2: #262320; /* raised: hover, code blocks, table header */
+  --border-0: #332f2b; /* hairlines */
+  --text-0: #eceae6; /* primary text — warm off-white */
+  --text-1: #a29c93; /* secondary text — warm gray */
+  --text-2: #6a645b; /* placeholders, disabled */
+  --accent: #7ba05b; /* links, focus, primary buttons, running-stage — moss green */
+  --accent-press: #688a4a;
+  --ok: #34c077; /* verified / pass — emerald (paired with ✓ glyph) */
+  --warn: #e5a83b; /* lossy / skipped-with-reason / partial — amber (paired with glyph) */
+  --err: #e5564f; /* failed / unsupported (paired with ✕ glyph) */
+  --mono-tint: #bdb4a4; /* numbers/IDs inside prose — muted warm gray */
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme]) {
+    color-scheme: dark;
+    --bg-0: #131211;
+    --bg-1: #1b1917;
+    --bg-2: #262320;
+    --border-0: #332f2b;
+    --text-0: #eceae6;
+    --text-1: #a29c93;
+    --text-2: #6a645b;
+    --accent: #7ba05b;
+    --accent-press: #688a4a;
+    --ok: #34c077;
+    --warn: #e5a83b;
+    --err: #e5564f;
+    --mono-tint: #bdb4a4;
+  }
 }

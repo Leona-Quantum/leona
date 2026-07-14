@@ -3,6 +3,16 @@ import type { Metadata } from "next";
 import { Inter, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
 
+const themeScript = `(() => {
+  try {
+    const saved = localStorage.getItem("majorana.theme.v1");
+    const theme = saved === "light" || saved === "dark"
+      ? saved
+      : matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+    document.documentElement.dataset.theme = theme;
+  } catch {}
+})();`;
+
 // Fonts land as CSS variables that override the tokens.css fallback stacks.
 const inter = Inter({ subsets: ["latin"], variable: "--font-inter" });
 const jetbrainsMono = JetBrains_Mono({ subsets: ["latin"], variable: "--font-jbmono" });
@@ -19,6 +29,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html
       lang="en"
+      suppressHydrationWarning
       className={`${inter.variable} ${jetbrainsMono.variable}`}
       style={
         {
@@ -27,6 +38,9 @@ export default function RootLayout({ children }: { children: ReactNode }) {
         } as CSSProperties
       }
     >
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: themeScript }} />
+      </head>
       <body>{children}</body>
     </html>
   );

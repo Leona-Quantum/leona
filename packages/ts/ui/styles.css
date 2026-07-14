@@ -90,6 +90,51 @@
 .mj-public-nav-primary:hover {
   background: var(--accent-press);
 }
+.mj-theme-toggle {
+  display: inline-grid;
+  grid-template-columns: repeat(2, auto);
+  flex-shrink: 0;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--border-0);
+  border-radius: var(--radius-card);
+  background: var(--bg-1);
+}
+.mj-theme-toggle button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sp-1);
+  min-height: 26px;
+  padding: 0 var(--sp-2);
+  border: 0;
+  border-radius: var(--radius-control);
+  color: var(--text-2);
+  background: transparent;
+  font: inherit;
+  font-size: var(--fs-12);
+  cursor: pointer;
+}
+.mj-theme-toggle button:hover {
+  color: var(--text-0);
+}
+.mj-theme-toggle button[aria-pressed="true"] {
+  color: var(--bg-0);
+  background: var(--text-0);
+}
+.mj-theme-toggle svg {
+  width: 13px;
+  height: 13px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.25;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.mj-theme-toggle circle {
+  fill: currentColor;
+  stroke: none;
+}
 .mj-public-overline {
   margin: 0 0 var(--sp-4);
   color: var(--accent);
@@ -830,6 +875,16 @@
   }
   .mj-public-nav-primary {
     margin-left: auto;
+  }
+  .mj-public-header > .mj-theme-toggle span {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
   }
   .mj-public-footer {
     grid-template-columns: minmax(0, 1fr);
