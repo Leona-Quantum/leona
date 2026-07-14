@@ -2,8 +2,11 @@
 // loading/empty/error states.
 export default function AppLoading() {
   return (
-    <p role="status" className="p-6 text-text-2">
-      Loading…
-    </p>
+    <main className="mj-loading-screen" aria-busy="true" aria-label="Loading workspace">
+      <span className="mj-skeleton mj-skeleton--eyebrow" />
+      <span className="mj-skeleton mj-skeleton--title" />
+      <span className="mj-skeleton mj-skeleton--copy" />
+      <span className="mj-skeleton mj-skeleton--panel" />
+    </main>
   );
 }

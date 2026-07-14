@@ -2,9 +2,7 @@ import { notFound } from "next/navigation";
 import { Shell } from "../../../components/shell";
 import { UiFixtures } from "./fixtures";
 
-export const dynamic = "force-static";
-
-export const metadata = { title: "UI fixtures — Majorana" };
+export const metadata = { title: "UI fixtures — Leona Quantum" };
 
 // Dev/CI only (still auth-gated by middleware); 404s in production builds.
 export default function UiFixturesPage() {

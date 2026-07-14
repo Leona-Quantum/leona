@@ -38,13 +38,11 @@ export function Shell({
   children,
   headerRight,
   demoMode = false,
-  userEmail,
   locale = "en",
 }: {
   children: ReactNode;
   headerRight?: ReactNode;
   demoMode?: boolean;
-  userEmail?: string;
   locale?: PublicLocale;
 }) {
   const pathname = usePathname();
@@ -133,11 +131,11 @@ export function Shell({
       currentPath={pathname}
       headerRight={
         <>
-          <ThemeToggle />
+          <ThemeToggle locale={locale} />
           {headerRight}
         </>
       }
-      sidebar={<WorkspaceSidebar currentPath={pathname} chats={chats} folders={folders} collapsed={sidebarCollapsed} demoMode={demoMode} userEmail={userEmail} folderSyncState={folderSyncState} locale={locale} />}
+      sidebar={<WorkspaceSidebar currentPath={pathname} chats={chats} folders={folders} collapsed={sidebarCollapsed} demoMode={demoMode} folderSyncState={folderSyncState} locale={locale} />}
       sidebarCollapsed={sidebarCollapsed}
       onToggleSidebar={toggleSidebar}
       surfaceLabel={surfaceLabel}
@@ -154,7 +152,6 @@ function WorkspaceSidebar({
   folders,
   collapsed,
   demoMode,
-  userEmail,
   folderSyncState,
   locale,
 }: {
@@ -163,7 +160,6 @@ function WorkspaceSidebar({
   folders: ChatFolder[];
   collapsed: boolean;
   demoMode: boolean;
-  userEmail?: string;
   folderSyncState: "local" | "synced" | "error";
   locale: PublicLocale;
 }) {
@@ -172,7 +168,7 @@ function WorkspaceSidebar({
   const runHref = demoMode ? demoHref("run") : "/run";
   const libraryHref = demoMode ? demoHref("library") : "/library";
   const studioHref = demoMode ? libraryHref : "/studio";
-  const sidebarName = demoMode ? copy.publicPreview : userEmail ?? copy.localDeveloper;
+  const sidebarName = demoMode ? copy.publicPreview : copy.personalWorkspace;
   const sidebarInitial = sidebarName.slice(0, 1).toUpperCase();
   const [activeFolderId, setActiveFolderId] = useState<string | null>(null);
   const [creatingFolder, setCreatingFolder] = useState(false);

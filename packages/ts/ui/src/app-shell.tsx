@@ -36,6 +36,7 @@ export function AppShell({
   const sidebarToggleLabel = locale === "ja"
     ? sidebarCollapsed ? "サイドバーを展開" : "サイドバーを折りたたむ"
     : sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar";
+  const primaryNavLabel = locale === "ja" ? "主要ナビゲーション" : "Primary navigation";
 
   return (
     <div
@@ -50,6 +51,7 @@ export function AppShell({
               className="mj-shell-toggle"
               type="button"
               aria-label={sidebarToggleLabel}
+              title={sidebarToggleLabel}
               aria-expanded={!sidebarCollapsed}
               onClick={onToggleSidebar}
             >
@@ -64,7 +66,7 @@ export function AppShell({
             </a>
           )}
           {!sidebar ? (
-            <nav className="mj-shell-nav" aria-label="Primary">
+            <nav className="mj-shell-nav" aria-label={primaryNavLabel}>
               {NAV_SURFACES.map((surface) => (
                 <a
                   key={surface.href}

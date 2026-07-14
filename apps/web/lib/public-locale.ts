@@ -1,6 +1,7 @@
 export type PublicLocale = "en" | "ja";
 
-export const PUBLIC_LOCALE_COOKIE = "majorana.locale.v1";
+export const PUBLIC_LOCALE_COOKIE = "leona.locale.v2";
+export const LEGACY_PUBLIC_LOCALE_COOKIE = "majorana.locale.v1";
 
 export function parsePublicLocale(value: string | undefined): PublicLocale {
   return value === "ja" ? "ja" : "en";
@@ -14,7 +15,6 @@ export const PUBLIC_SHELL_COPY: Record<PublicLocale, {
     company: string;
     legal: string;
     contact: string;
-    email: string;
     privacy: string;
     terms: string;
     builtFor: string;
@@ -29,10 +29,9 @@ export const PUBLIC_SHELL_COPY: Record<PublicLocale, {
       company: "Company",
       legal: "Legal",
       contact: "Contact us",
-      email: "Email Eshaan",
       privacy: "Privacy policy",
       terms: "Terms",
-      builtFor: "Built for researchers, engineers, and teams who need evidence.",
+      builtFor: "For researchers, engineers, and teams who need evidence.",
     },
     actions: { workspace: "Open workspace", signIn: "Sign in", talk: "Talk to us" },
   },
@@ -44,10 +43,9 @@ export const PUBLIC_SHELL_COPY: Record<PublicLocale, {
       company: "会社情報",
       legal: "法務",
       contact: "お問い合わせ",
-      email: "Eshaanにメール",
       privacy: "プライバシー",
       terms: "利用規約",
-      builtFor: "証拠を必要とする研究者、エンジニア、チームのために。",
+      builtFor: "根拠を必要とする研究者、エンジニア、チームのために。",
     },
     actions: { workspace: "ワークスペースを開く", signIn: "サインイン", talk: "相談する" },
   },

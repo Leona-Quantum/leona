@@ -19,6 +19,7 @@ export function LanguageToggle({ locale, label = "Language" }: { locale: PublicL
           key={option}
           type="button"
           aria-pressed={locale === option}
+          title={option === "en" ? "Use English" : "日本語を使用"}
           onClick={() => selectLocale(option)}
         >
           {option === "en" ? "EN" : "日本語"}

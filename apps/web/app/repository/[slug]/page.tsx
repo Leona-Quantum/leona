@@ -13,9 +13,10 @@ export async function generateStaticParams() {
 export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }): Promise<Metadata> {
   const { slug } = await params;
   const entry = getPublicRepositoryEntry(slug);
+  const locale = await getPublicLocale();
   return entry
-    ? { title: entry.title, description: entry.description }
-    : { title: "Repository entry" };
+    ? { title: locale === "ja" ? entry.titleJa : entry.title, description: locale === "ja" ? entry.descriptionJa : entry.description }
+    : { title: locale === "ja" ? "リポジトリエントリ" : "Repository entry" };
 }
 
 export default async function RepositoryEntryPage({ params }: { params: Promise<{ slug: string }> }) {

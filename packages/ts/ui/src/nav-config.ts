@@ -16,4 +16,4 @@ export function navSurfaceLabel(surface: NavSurface, locale: "en" | "ja" = "en")
   return surface.labels[locale];
 }
 
-export const BRAND_NAME = "Majorana";
+export const BRAND_NAME = "Leona Quantum";
