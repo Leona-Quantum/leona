@@ -59,6 +59,7 @@ from .models import (
     Run,
     VerificationRecord,
     Workspace,
+    WorkspaceFolder,
     WorkspaceMember,
     WorkspaceOverview,
 )
@@ -134,6 +135,7 @@ __all__ = [
     "VerifierDecision",
     "Visibility",
     "Workspace",
+    "WorkspaceFolder",
     "WorkspaceMember",
     "WorkspaceOverview",
     "WorkspaceKind",

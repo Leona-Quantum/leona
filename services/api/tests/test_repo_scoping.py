@@ -8,7 +8,7 @@ import pytest
 from repo_test_helpers import compiled
 from majorana_contracts.enums import RunMode, UsageKind, VerificationMethod
 
-from majorana_api.repos import NotFoundError, artifacts, audit, runs, usage, workspaces
+from majorana_api.repos import NotFoundError, artifacts, audit, folders, runs, usage, workspaces
 
 
 def assert_workspace_bound(stmt, scope):
@@ -76,6 +76,17 @@ async def test_list_runs(scope, session):
     assert_workspace_bound(session.statements[0], scope)
 
 
+async def test_list_folders(scope, session):
+    await folders.list_folders(scope, session)
+    assert_workspace_bound(session.statements[0], scope)
+
+
+async def test_get_folder(scope, session):
+    with pytest.raises(NotFoundError):
+        await folders.get_folder(scope, session, uuid.uuid4())
+    assert_workspace_bound(session.statements[0], scope)
+
+
 async def test_update_run_status(scope, session):
     with pytest.raises(NotFoundError):
         await runs.update_run_status(scope, session, uuid.uuid4(), "running")
@@ -130,6 +141,10 @@ async def test_created_rows_carry_scope_workspace(scope, session):
     )
     assert run.workspace_id == scope.workspace_id
     assert run.user_id == scope.user_id
+
+    folder = await folders.create_folder(scope, session, name="  shared   work  ")
+    assert folder.workspace_id == scope.workspace_id
+    assert folder.name == "shared work"
 
     event = await usage.record_usage(scope, session, kind=UsageKind.RUN, quantity=1)
     assert event.workspace_id == scope.workspace_id

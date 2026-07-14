@@ -775,6 +775,11 @@ export interface components {
              * @default null
              */
             finished_at: string | null;
+            /**
+             * Folder Id
+             * @default null
+             */
+            folder_id: string | null;
             framework: components["schemas"]["Framework"];
             /**
              * Id
@@ -1395,6 +1400,31 @@ export interface components {
             owner_user_id: string;
             /** Plan */
             plan: string;
+        };
+        /** WorkspaceFolder */
+        WorkspaceFolder: {
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Name */
+            name: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+            /**
+             * Workspace Id
+             * Format: uuid
+             */
+            workspace_id: string;
         };
         /**
          * WorkspaceKind

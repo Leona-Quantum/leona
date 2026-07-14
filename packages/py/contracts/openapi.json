@@ -1551,6 +1551,19 @@
             "default": null,
             "title": "Finished At"
           },
+          "folder_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Folder Id"
+          },
           "framework": {
             "$ref": "#/components/schemas/Framework"
           },
@@ -2826,6 +2839,46 @@
           "created_at"
         ],
         "title": "Workspace",
+        "type": "object"
+      },
+      "WorkspaceFolder": {
+        "additionalProperties": false,
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          },
+          "workspace_id": {
+            "format": "uuid",
+            "title": "Workspace Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "workspace_id",
+          "name",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "WorkspaceFolder",
         "type": "object"
       },
       "WorkspaceKind": {

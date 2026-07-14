@@ -60,6 +60,16 @@ class Membership(Base):
     updated_at: Mapped[dt.datetime | None] = mapped_column(server_default=func.now())
 
 
+class WorkspaceFolder(Base):
+    __tablename__ = "workspace_folders"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True)
+    workspace_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("workspaces.id"))
+    name: Mapped[str]
+    created_at: Mapped[dt.datetime | None] = mapped_column(server_default=func.now())
+    updated_at: Mapped[dt.datetime | None] = mapped_column(server_default=func.now())
+
+
 class Artifact(Base):
     __tablename__ = "artifacts"
 
@@ -106,6 +116,7 @@ class Run(Base):
     artifact_version_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("artifact_versions.id")
     )
+    folder_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("workspace_folders.id"))
     task_prompt: Mapped[str]
     mode: Mapped[str]
     idempotency_key: Mapped[str | None]
