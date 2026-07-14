@@ -5,12 +5,14 @@ import { NextResponse, type NextFetchEvent, type NextRequest } from "next/server
 import { isWorkosAuthConfigured } from "./lib/auth-config";
 import { isLocalDevAuthEnabled } from "./lib/local-dev-auth";
 import { isPublicDemoEnabled } from "./lib/public-demo";
+import { PUBLIC_REPOSITORY_ENTRIES } from "./lib/public-repository";
 
 const PUBLIC_PATHS = [
   "/",
   "/auth/callback",
   "/pricing",
   "/repository",
+  ...PUBLIC_REPOSITORY_ENTRIES.map((entry) => `/repository/${entry.slug}`),
   "/open-source",
   "/contact",
   "/privacy",

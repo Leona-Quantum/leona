@@ -1,35 +1,41 @@
 import type { ReactNode } from "react";
 import { getMajoranaAuth, getMajoranaSignInUrl, isMajoranaAuthConfigured } from "../lib/auth";
+import { PUBLIC_SHELL_COPY, type PublicLocale } from "../lib/public-locale";
+import { LanguageToggle } from "./language-toggle";
 import { ThemeToggle } from "./theme-toggle";
 
 export const CONTACT_EMAIL = "eshuneesh@gmail.com";
 export const CONTACT_MAILTO = `mailto:${CONTACT_EMAIL}?subject=Majorana%20inquiry`;
 export const REPOSITORY_URL = "https://github.com/EshMis/majorana";
 
-const PUBLIC_NAV = [
-  { href: "/", label: "Product" },
-  { href: "/pricing", label: "Pricing" },
-  { href: "/repository", label: "Repository" },
-  { href: "/open-source", label: "Open source" },
-  { href: "/contact", label: "Contact" },
-];
-
 export async function PublicSite({
   activePath,
   children,
   className = "",
+  locale = "en",
+  showLanguageToggle = false,
 }: {
   activePath?: string;
   children: ReactNode;
   className?: string;
+  locale?: PublicLocale;
+  showLanguageToggle?: boolean;
 }) {
+  const copy = PUBLIC_SHELL_COPY[locale];
+  const publicNav = [
+    { href: "/", label: copy.nav.product },
+    { href: "/pricing", label: copy.nav.pricing },
+    { href: "/repository", label: copy.nav.repository },
+    { href: "/open-source", label: copy.nav.openSource },
+    { href: "/contact", label: copy.nav.contact },
+  ];
   const { user } = await getMajoranaAuth();
   const signInHref = isMajoranaAuthConfigured() ? await getMajoranaSignInUrl() : null;
   const primaryAction = user
-    ? { href: "/run", label: "Open workspace" }
+    ? { href: "/run", label: copy.actions.workspace }
     : signInHref
-      ? { href: signInHref, label: "Sign in" }
-      : { href: "/contact", label: "Talk to us" };
+      ? { href: signInHref, label: copy.actions.signIn }
+      : { href: "/contact", label: copy.actions.talk };
 
   return (
     <main className={["mj-public-site", className].filter(Boolean).join(" ")}>
@@ -40,7 +46,7 @@ export async function PublicSite({
             <span>Majorana</span>
           </a>
           <nav className="mj-public-nav" aria-label="Public navigation">
-            {PUBLIC_NAV.map((item) => (
+            {publicNav.map((item) => (
               <a
                 key={item.href}
                 href={item.href}
@@ -50,6 +56,7 @@ export async function PublicSite({
               </a>
             ))}
           </nav>
+          {showLanguageToggle ? <LanguageToggle locale={locale} /> : null}
           <ThemeToggle />
           <a className="mj-public-nav-primary" href={primaryAction.href}>
             {primaryAction.label}
@@ -64,30 +71,30 @@ export async function PublicSite({
               <span className="mj-public-brand-mark" aria-hidden="true">M</span>
               <span>Majorana</span>
             </a>
-            <p>Trustworthy quantum work, one verified artifact at a time.</p>
+            <p>{copy.footer.promise}</p>
           </div>
           <div className="mj-public-footer-links">
             <div>
-              <span>Explore</span>
-              <a href="/repository">Repository</a>
-              <a href="/open-source">Open source</a>
-              <a href="/pricing">Pricing</a>
+              <span>{copy.footer.explore}</span>
+              <a href="/repository">{copy.nav.repository}</a>
+              <a href="/open-source">{copy.nav.openSource}</a>
+              <a href="/pricing">{copy.nav.pricing}</a>
             </div>
             <div>
-              <span>Company</span>
-              <a href="/contact">Contact us</a>
-              <a href={CONTACT_MAILTO}>Email Eshaan</a>
+              <span>{copy.footer.company}</span>
+              <a href="/contact">{copy.footer.contact}</a>
+              <a href={CONTACT_MAILTO}>{copy.footer.email}</a>
               <a href={REPOSITORY_URL} target="_blank" rel="noreferrer">GitHub ↗</a>
             </div>
             <div>
-              <span>Legal</span>
-              <a href="/privacy">Privacy policy</a>
-              <a href="/terms">Terms</a>
+              <span>{copy.footer.legal}</span>
+              <a href="/privacy">{copy.footer.privacy}</a>
+              <a href="/terms">{copy.footer.terms}</a>
             </div>
           </div>
           <div className="mj-public-footer-bottom">
             <span>© 2026 Majorana</span>
-            <span>Built for researchers, engineers, and teams who need evidence.</span>
+            <span>{copy.footer.builtFor}</span>
           </div>
         </footer>
       </div>
