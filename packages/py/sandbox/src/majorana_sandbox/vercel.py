@@ -59,7 +59,12 @@ class VercelSandbox:
             ) from exc
 
         started = time.monotonic()
-        sandbox = await AsyncSandbox.create(**_create_kwargs(spec, self._image))
+        try:
+            sandbox = await AsyncSandbox.create(**_create_kwargs(spec, self._image))
+        except Exception as exc:
+            raise SandboxProviderError(
+                "Vercel sandbox could not be created; provide Vercel OIDC/token auth"
+            ) from exc
         try:
             await sandbox.write_files(
                 [{"path": f"{_RUN_DIR}/main.py", "content": spec.code.encode("utf-8")}]
