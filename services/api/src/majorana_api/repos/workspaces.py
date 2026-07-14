@@ -22,6 +22,30 @@ async def get_workspace(scope: Scope, session: AsyncSession) -> Workspace:
     return ws
 
 
+async def update_display_name(
+    scope: Scope,
+    session: AsyncSession,
+    *,
+    display_name: str | None,
+) -> User:
+    """Update only the scoped user's profile name."""
+    stmt = (
+        select(User)
+        .join(Membership, Membership.user_id == User.id)
+        .where(
+            User.id == scope.user_id,
+            Membership.workspace_id == scope.workspace_id,
+        )
+        .with_for_update()
+    )
+    user = (await session.execute(stmt)).scalars().first()
+    if user is None:
+        raise NotFoundError("user")
+    user.display_name = display_name
+    await session.flush()
+    return user
+
+
 async def list_members(scope: Scope, session: AsyncSession) -> list[Membership]:
     stmt = select(Membership).where(Membership.workspace_id == scope.workspace_id)
     return list((await session.execute(stmt)).scalars().all())

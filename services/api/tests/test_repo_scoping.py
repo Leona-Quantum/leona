@@ -42,6 +42,17 @@ async def test_get_artifact(scope, session):
     assert_workspace_bound(session.statements[0], scope)
 
 
+async def test_get_artifact_by_slug(scope, session):
+    assert await artifacts.get_artifact_by_slug(scope, session, "public-reference") is None
+    assert_workspace_bound(session.statements[0], scope)
+
+
+async def test_update_display_name_is_scoped(scope, session):
+    with pytest.raises(NotFoundError):
+        await workspaces.update_display_name(scope, session, display_name="Eshaan")
+    assert_workspace_bound(session.statements[0], scope)
+
+
 async def test_get_version_joins_artifact(scope, session):
     with pytest.raises(NotFoundError):
         await artifacts.get_version(scope, session, uuid.uuid4())

@@ -17,13 +17,6 @@ from ..repos import workspaces as workspaces_repo
 router = APIRouter()
 
 
-class AddMemberRequest(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    email: str = Field(min_length=3, max_length=320)
-    role: Role = Role.MEMBER
-
-
 class CreateFolderRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -96,15 +89,3 @@ async def create_workspace_folder(
 ) -> WorkspaceFolderResource:
     folder = await folders_repo.create_folder(scope, session, name=body.name)
     return _to_folder(folder)
-
-
-@router.post("/workspace/members", response_model=WorkspaceMember, status_code=201)
-async def add_workspace_member(
-    body: AddMemberRequest,
-    scope: CurrentScope,
-    session: DbSession,
-) -> WorkspaceMember:
-    membership, user = await workspaces_repo.add_member_by_email(
-        scope, session, email=body.email, role=body.role
-    )
-    return _to_member(membership, user)

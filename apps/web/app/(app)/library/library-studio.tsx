@@ -171,13 +171,15 @@ function toLibraryArtifact(value: unknown): LibraryArtifact[] {
   const artifact = value as Record<string, unknown>;
   if (typeof artifact.id !== "string" || typeof artifact.title !== "string") return [];
   const existing = getLibraryArtifact(artifact.id);
+  const slug = typeof artifact.slug === "string" ? artifact.slug : artifact.id;
+  const isPublicReference = slug.startsWith("public-");
   return [{
     id: artifact.id,
-    slug: typeof artifact.slug === "string" ? artifact.slug : artifact.id,
+    slug,
     title: artifact.title,
     family: typeof artifact.family === "string" ? artifact.family : "Simulation",
     framework: typeof artifact.framework === "string" ? artifact.framework : "Qiskit",
-    status: existing?.status ?? "verified",
+    status: existing?.status ?? (isPublicReference ? "verified_caveats" : "verified"),
     updatedAt: typeof artifact.updated_at === "string" ? artifact.updated_at : new Date().toISOString(),
     description: existing?.description ?? "Saved artifact in the workspace repository.",
     tags: existing?.tags ?? [typeof artifact.family === "string" ? artifact.family.toLowerCase() : "artifact"],
@@ -187,6 +189,6 @@ function toLibraryArtifact(value: unknown): LibraryArtifact[] {
     currentVersionId: typeof artifact.current_version_id === "string" ? artifact.current_version_id : existing?.currentVersionId,
     resourceRows: existing?.resourceRows ?? [],
     runId: existing?.runId,
-    source: existing?.source ?? "run",
+    source: existing?.source ?? (isPublicReference ? "public" : "run"),
   }];
 }

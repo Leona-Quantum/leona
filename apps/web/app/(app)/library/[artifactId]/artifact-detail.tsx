@@ -24,15 +24,19 @@ export function ArtifactDetail({ artifactId }: { artifactId: string }) {
         const remoteId = remote.id;
         const remoteTitle = remote.title;
         if (!active || typeof remoteId !== "string" || typeof remoteTitle !== "string") return;
+        const remoteSlug = typeof remote.slug === "string" ? remote.slug : artifactId;
+        const isPublicReference = remoteSlug.startsWith("public-");
         setArtifact((current) => ({
           ...(current ?? fallbackArtifact(artifactId)),
           id: remoteId,
-          slug: typeof remote.slug === "string" ? remote.slug : artifactId,
+          slug: remoteSlug,
           title: remoteTitle,
           family: typeof remote.family === "string" ? remote.family : current?.family ?? "Simulation",
           framework: typeof remote.framework === "string" ? remote.framework : current?.framework ?? "Qiskit",
           updatedAt: typeof remote.updated_at === "string" ? remote.updated_at : current?.updatedAt ?? new Date().toISOString(),
           currentVersionId: typeof remote.current_version_id === "string" ? remote.current_version_id : current?.currentVersionId,
+          status: current?.status ?? (isPublicReference ? "verified_caveats" : "verified"),
+          source: current?.source ?? (isPublicReference ? "public" : "run"),
         }));
         if (typeof remote.current_version_id !== "string") return;
         return fetch(`/api/artifacts/${encodeURIComponent(artifactId)}/versions/current`, { cache: "no-store" })
@@ -42,8 +46,11 @@ export function ArtifactDetail({ artifactId }: { artifactId: string }) {
           })
           .then((version) => {
             if (!active) return;
+            const publicMetadata = metadataFromIr(version.ir);
             setArtifact((current) => ({
               ...(current ?? fallbackArtifact(artifactId)),
+              description: publicMetadata.introduction ?? current?.description ?? "Saved artifact in the workspace repository.",
+              verification: publicMetadata.verification ?? current?.verification ?? "Verification record available in the control plane.",
               code: typeof version.code === "string" ? version.code : current?.code ?? "",
               frameworkVariants: frameworkVariantsFromRemote(version.framework_variants) ?? current?.frameworkVariants,
               qasm: typeof version.qasm === "string" ? version.qasm : current?.qasm ?? null,
@@ -80,7 +87,7 @@ export function ArtifactDetail({ artifactId }: { artifactId: string }) {
               <div className="mj-artifact-title-row">
                 <span className="mj-artifact-star" aria-hidden="true">☆</span>
                 <h1 className="mj-page-title">{artifact.title}</h1>
-                <span className="mj-library-status mj-library-status--verified"><span aria-hidden="true">✓</span>Verified</span>
+                <span className={`mj-library-status mj-library-status--${artifact.status}`}><span aria-hidden="true">{artifact.source === "public" ? "–" : "✓"}</span>{artifact.source === "public" ? "Reference" : "Verified"}</span>
               </div>
               <p className="mj-page-lede">{artifact.description}</p>
             </div>
@@ -95,7 +102,7 @@ export function ArtifactDetail({ artifactId }: { artifactId: string }) {
             <Meta label="Framework" value={artifact.framework} />
             <Meta label="Type" value={`${artifact.family} artifact`} />
             <Meta label="Updated" value={formatDate(artifact.updatedAt)} />
-            <Meta label="Source" value={artifact.source === "run" ? "Nameko Run" : "Curated example"} />
+            <Meta label="Source" value={artifact.source === "run" ? "Nameko Run" : artifact.source === "public" ? "Public repository" : "Curated example"} />
           </div>
 
           <nav className="mj-artifact-tabs" aria-label="Artifact detail tabs">
@@ -125,7 +132,7 @@ function Overview({ artifact }: { artifact: LibraryArtifact }) {
         <p className="mj-artifact-copy">{artifact.description}</p>
         <div className="mj-tag-list">{artifact.tags.map((tag) => <span key={tag}>{tag}</span>)}</div>
         <h3>Verification summary</h3>
-        <div className="mj-verification-summary"><span aria-hidden="true">✓</span><div><strong>Verified</strong><p>{artifact.verification}</p></div></div>
+        <div className={`mj-verification-summary${artifact.source === "public" ? " mj-verification-summary--reference" : ""}`}><span aria-hidden="true">{artifact.source === "public" ? "–" : "✓"}</span><div><strong>{artifact.source === "public" ? "Public reference" : "Verified"}</strong><p>{artifact.source === "public" ? `${artifact.verification} This is retained public evidence, not a new workspace verification.` : artifact.verification}</p></div></div>
       </section>
       <section className="mj-artifact-panel">
         <div className="mj-panel-heading"><h2>Resources</h2><span className="mj-mono-muted">current version</span></div>
@@ -182,15 +189,17 @@ function frameworkLabel(value: string): string {
 }
 
 function Runs({ artifact }: { artifact: LibraryArtifact }) {
-  return <section className="mj-artifact-panel"><div className="mj-panel-heading"><h2>Run records</h2><span className="mj-mono-muted">{artifact.runId ?? "curated example"}</span></div><div className="mj-run-record"><span className="mj-chat-status mj-chat-status--verified">✓</span><div><strong>{artifact.source === "run" ? "Verified Nameko run" : "Reference run"}</strong><p>Simulation evidence, verification parameters, and export status are retained with this artifact.</p></div><span className="mj-library-status mj-library-status--verified"><span aria-hidden="true">✓</span>Verified</span></div></section>;
+  const isPublicReference = artifact.source === "public";
+  return <section className="mj-artifact-panel"><div className="mj-panel-heading"><h2>Run records</h2><span className="mj-mono-muted">{artifact.runId ?? (isPublicReference ? "public reference" : "curated example")}</span></div><div className="mj-run-record"><span className="mj-chat-status mj-chat-status--verified">{isPublicReference ? "–" : "✓"}</span><div><strong>{artifact.source === "run" ? "Verified Nameko run" : isPublicReference ? "Public reference snapshot" : "Reference run"}</strong><p>{isPublicReference ? "Public source context and export metadata are retained. Run this copy before treating it as new workspace evidence." : "Simulation evidence, verification parameters, and export status are retained with this artifact."}</p></div><span className={`mj-library-status mj-library-status--${artifact.status}`}><span aria-hidden="true">{isPublicReference ? "–" : "✓"}</span>{isPublicReference ? "Reference" : "Verified"}</span></div></section>;
 }
 
 function Verification({ artifact }: { artifact: LibraryArtifact }) {
-  return <section className="mj-artifact-panel"><div className="mj-panel-heading"><h2>Verification evidence</h2><span className="mj-mono-muted">audit surface</span></div><div className="mj-verification-detail"><div className="mj-verification-summary"><span aria-hidden="true">✓</span><div><strong>Verified</strong><p>{artifact.verification}</p></div></div><details><summary>What was checked</summary><p>Method output, generated code, simulation result, and artifact export status were recorded by the pipeline. Raw run-record JSON remains available when the control plane is connected.</p></details></div></section>;
+  const isPublicReference = artifact.source === "public";
+  return <section className="mj-artifact-panel"><div className="mj-panel-heading"><h2>Verification evidence</h2><span className="mj-mono-muted">audit surface</span></div><div className="mj-verification-detail"><div className={`mj-verification-summary${isPublicReference ? " mj-verification-summary--reference" : ""}`}><span aria-hidden="true">{isPublicReference ? "–" : "✓"}</span><div><strong>{isPublicReference ? "Public reference" : "Verified"}</strong><p>{isPublicReference ? `${artifact.verification} This imported copy has not been re-executed.` : artifact.verification}</p></div></div><details><summary>What was checked</summary><p>{isPublicReference ? "The public record's stated method, result, source, and export boundary were preserved. Execute this private copy to create workspace-specific evidence." : "Method output, generated code, simulation result, and artifact export status were recorded by the pipeline. Raw run-record JSON remains available when the control plane is connected."}</p></details></div></section>;
 }
 
 function Notes({ artifact }: { artifact: LibraryArtifact }) {
-  return <section className="mj-artifact-panel"><div className="mj-panel-heading"><h2>Notes</h2><span className="mj-mono-muted">workspace</span></div><p className="mj-artifact-copy">This artifact is ready to open in Nameko Run for a follow-up or explanation. {artifact.source === "demo" ? "This is a curated replayable example." : "This entry was saved from a live workspace run."}</p></section>;
+  return <section className="mj-artifact-panel"><div className="mj-panel-heading"><h2>Notes</h2><span className="mj-mono-muted">workspace</span></div><p className="mj-artifact-copy">This artifact is ready to open in Nameko Run for a follow-up or explanation. {artifact.source === "demo" ? "This is a curated replayable example." : artifact.source === "public" ? "This entry was imported from the public research database; source and license context are retained in the saved version." : "This entry was saved from a live workspace run."}</p></section>;
 }
 
 function Meta({ label, value }: { label: string; value: string }) {
@@ -199,6 +208,17 @@ function Meta({ label, value }: { label: string; value: string }) {
 
 function fallbackArtifact(id: string): LibraryArtifact {
   return { id, slug: id, title: "Artifact", family: "Simulation", framework: "Qiskit", status: "verified_caveats", updatedAt: new Date().toISOString(), description: "Saved artifact in the workspace repository.", tags: ["artifact"], verification: "Verification record available in the control plane.", code: "", qasm: null, resourceRows: [], source: "run" };
+}
+
+function metadataFromIr(value: unknown): { introduction?: string; verification?: string } {
+  if (!value || typeof value !== "object") return {};
+  const metadata = (value as { metadata?: unknown }).metadata;
+  if (!metadata || typeof metadata !== "object") return {};
+  const record = metadata as Record<string, unknown>;
+  return {
+    introduction: typeof record.introduction === "string" ? record.introduction : undefined,
+    verification: typeof record.verification === "string" ? record.verification : undefined,
+  };
 }
 
 function resourceRowsFromRemote(value: unknown): Array<{ label: string; value: string }> {

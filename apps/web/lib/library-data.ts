@@ -19,7 +19,7 @@ export interface LibraryArtifact {
   currentVersionId?: string;
   resourceRows: Array<{ label: string; value: string }>;
   runId?: string;
-  source: "demo" | "run";
+  source: "demo" | "run" | "public";
 }
 
 const STORAGE_KEY = "majorana.library.v1";

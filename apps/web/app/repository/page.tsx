@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { CONTACT_MAILTO, PublicSite } from "../../components/public-site";
+import { getMajoranaAuth, getMajoranaSignInUrl, isMajoranaAuthConfigured } from "../../lib/auth";
 import {
   PUBLIC_REPOSITORY_ENTRIES,
   PUBLIC_REPOSITORY_GUIDANCE,
@@ -9,50 +10,42 @@ import { RepositoryBrowser } from "./repository-browser";
 
 export const metadata: Metadata = {
   title: "Repository",
-  description: "Browse public Majorana reference artifacts with verification, export, and provenance context.",
+  description: "A public research database for circuits and algorithms with evidence, sources, and export boundaries visible.",
 };
 
 export default async function RepositoryPage() {
   const locale = await getPublicLocale();
+  const { user } = await getMajoranaAuth();
+  const signInHref = !user && isMajoranaAuthConfigured() ? await getMajoranaSignInUrl() : null;
   const isJapanese = locale === "ja";
+
   return (
     <PublicSite activePath="/repository" className="mj-repository-site" locale={locale} showLanguageToggle>
-      <section className="mj-public-page-hero">
-        <p className="mj-public-overline">{isJapanese ? "公開研究データベース" : "Public research database"}</p>
-        <h1>{isJapanese ? "再利用する前に、根拠を確認できる。" : "Evidence you can inspect before you reuse it."}</h1>
+      <section className="mj-repository-index-hero" aria-labelledby="repository-heading">
+        <h1 id="repository-heading">{isJapanese ? "公開研究データベース" : "Public research database"}</h1>
         <p>
           {isJapanese
-            ? "回路とアルゴリズムをカテゴリ、系統、フレームワーク、検証、エクスポート、出典から探せます。各エントリは限界を隠しません。"
-            : "Browse reference circuits and algorithms by category, family, framework, verification, export classification, and provenance. Every entry makes its limits visible."}
+            ? "回路とアルゴリズムを検索し、仕組み、シミュレーション、コード、出典、ライセンス、検証の境界を確認できます。"
+            : "Search circuits and algorithms, then inspect how they work, what simulation shows, which code is available, and where source, license, and verification boundaries begin."}
         </p>
-        <div className="mj-public-actions">
-          <a className="mj-primary-button" href="#repository-heading">{isJapanese ? "データベースを見る" : "Browse the database"}</a>
-          <a className="mj-secondary-button" href={CONTACT_MAILTO}>{isJapanese ? "出典を提案する" : "Suggest a source"}</a>
-        </div>
+        <RepositoryBrowser
+          entries={PUBLIC_REPOSITORY_ENTRIES}
+          locale={locale}
+          isSignedIn={Boolean(user)}
+          signInHref={signInHref}
+        />
       </section>
 
-      <section className="mj-repository-section" aria-labelledby="repository-heading">
-        <div className="mj-repository-section-heading">
-          <div>
-            <p className="mj-section-label">{isJapanese ? "リポジトリ / 参照セット" : "Repository / reference set"}</p>
-            <h2 id="repository-heading">{isJapanese ? "小さく、読みやすいコーパスから始める。" : "Start with a small, legible corpus."}</h2>
-          </div>
-          <p>{isJapanese
-            ? "公開エントリは非公開Libraryとは分離されています。保存と公開は、サービス拡張時に明示的なアカウント操作として追加します。"
-            : "Public entries are separate from private Libraries. Saving and publishing will become explicit account actions as the repository service expands."}</p>
-        </div>
-        <RepositoryBrowser entries={PUBLIC_REPOSITORY_ENTRIES} locale={locale} />
-      </section>
-
-      <section className="mj-repository-provenance" aria-labelledby="provenance-heading">
+      <section className="mj-repository-legend" aria-labelledby="repository-legend-heading">
         <div>
-          <p className="mj-section-label">{isJapanese ? "エントリの読み方" : "How to read an entry"}</p>
-          <h2 id="provenance-heading">{isJapanese ? "検証には境界がある。" : "Verification is a claim with a boundary."}</h2>
+          <p className="mj-section-label">{isJapanese ? "凡例" : "Legend"}</p>
+          <h2 id="repository-legend-heading">{isJapanese ? "レコードの境界を読む" : "Read the record boundaries"}</h2>
         </div>
-        <div className="mj-repository-provenance-list">
-          <p><strong>{isJapanese ? "検証" : "Verification"}</strong> {isJapanese ? "どの検査と指標・契約が通ったかを示します。" : "tells you which checks passed and what metric or contract was used."}</p>
-          <p><strong>{isJapanese ? "エクスポート" : "Export"}</strong> {isJapanese ? "他のフレームワークやOpenQASMの経路が、直接利用可能か、変換扱いかを示します。" : "tells you whether another framework or OpenQASM path is available, lossless, caveated, or code-only."}</p>
-          <p><strong>{isJapanese ? "出典" : "Provenance"}</strong> {isJapanese ? "エントリの由来を示し、公開参照資料と非公開ワークスペースを分離します。" : "tells you where the entry came from and keeps public reference material distinct from private workspace artifacts."}</p>
+        <div className="mj-repository-legend-grid">
+          <div><strong>Classification</strong><span>What kind of gate, state, operator, or algorithm the record describes.</span></div>
+          <div><strong>Verification</strong><span>Which check passed for the stated conditions; it is not a universal correctness claim.</span></div>
+          <div><strong>Export</strong><span>Native, converted, downloadable, or unsupported paths are kept distinct.</span></div>
+          <div><strong>License / source</strong><span>The displayed source and license travel with the public reference; personal Library copies remain private.</span></div>
         </div>
       </section>
 
@@ -66,6 +59,12 @@ export default async function RepositoryPage() {
           <a className="mj-text-link" href={PUBLIC_REPOSITORY_GUIDANCE.sourceUrl} target="_blank" rel="noreferrer">
             {PUBLIC_REPOSITORY_GUIDANCE.sourceLabel} ↗
           </a>
+          <p className="mj-repository-deferred-note">
+            {isJapanese
+              ? "投稿、レビュー、公開、ライセンスの詳細ポリシーは、サービス化の前に確定します。"
+              : "Submission, review, publication, and exact licensing policy are deferred until the catalog becomes a service-backed contribution flow."}
+          </p>
+          <a className="mj-secondary-button" href={CONTACT_MAILTO}>{isJapanese ? "出典を提案する" : "Suggest a source"}</a>
         </div>
       </section>
     </PublicSite>

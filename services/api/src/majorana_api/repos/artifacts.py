@@ -55,6 +55,16 @@ async def get_artifact(
     return artifact
 
 
+async def get_artifact_by_slug(scope: Scope, session: AsyncSession, slug: str) -> Artifact | None:
+    """Return an in-scope artifact by slug for idempotent imports."""
+    stmt = select(Artifact).where(
+        Artifact.slug == slug,
+        Artifact.workspace_id == scope.workspace_id,
+        Artifact.deleted_at.is_(None),
+    )
+    return (await session.execute(stmt)).scalars().first()
+
+
 async def create_artifact(
     scope: Scope,
     session: AsyncSession,
@@ -168,6 +178,11 @@ async def create_version(
         .where(Artifact.id == artifact.id, Artifact.workspace_id == scope.workspace_id)
         .values(current_version_id=version.id, updated_at=func.now())
     )
+    # The SQL expression above can expire ORM attributes under AsyncSession;
+    # keep the just-written object safe for callers that serialize it in the
+    # same request without triggering implicit IO.
+    artifact.current_version_id = version.id
+    artifact.updated_at = dt.datetime.now(dt.timezone.utc)
     return version
 
 
