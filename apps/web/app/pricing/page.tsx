@@ -63,7 +63,7 @@ export default function PricingPage() {
               {plan.features.map((feature) => <li key={feature}>{feature}</li>)}
             </ul>
             <a className={plan.tone === "featured" ? "mj-primary-button" : "mj-secondary-button"} href={plan.name === "Free" && demoEnabled ? "/demo" : "/contact"}>
-              {plan.action}
+              {plan.name === "Free" && !demoEnabled ? "Talk to us" : plan.action}
             </a>
           </article>
         ))}
