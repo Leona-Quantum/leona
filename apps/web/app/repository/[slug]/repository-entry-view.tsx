@@ -10,6 +10,7 @@ import {
   type PublicRepositoryFramework,
 } from "../../../lib/public-repository";
 import type { PublicLocale } from "../../../lib/public-locale";
+import { RepositoryExportAction } from "../repository-export";
 
 const COPY = {
   en: {
@@ -42,6 +43,7 @@ const COPY = {
     related: "Related entries",
     native: "Native snippet",
     noCode: "No native snippet published yet.",
+    library: "Personal Library",
   },
   ja: {
     back: "← リポジトリに戻る",
@@ -73,6 +75,7 @@ const COPY = {
     related: "関連エントリ",
     native: "ネイティブスニペット",
     noCode: "ネイティブスニペットはまだ公開されていません。",
+    library: "個人Library",
   },
 } as const;
 type RepositoryCopy = (typeof COPY)[keyof typeof COPY];
@@ -99,7 +102,17 @@ function variantLabel(status: "native" | "conversion" | "unsupported", locale: P
   return "Unsupported";
 }
 
-export function RepositoryEntryView({ entry, locale }: { entry: PublicRepositoryEntry; locale: PublicLocale }) {
+export function RepositoryEntryView({
+  entry,
+  locale,
+  isSignedIn,
+  signInHref,
+}: {
+  entry: PublicRepositoryEntry;
+  locale: PublicLocale;
+  isSignedIn: boolean;
+  signInHref: string | null;
+}) {
   const copy = COPY[locale];
   const [framework, setFramework] = useState<PublicRepositoryFramework>(entry.framework);
   const [copied, setCopied] = useState(false);
@@ -129,6 +142,10 @@ export function RepositoryEntryView({ entry, locale }: { entry: PublicRepository
         <p>{description}</p>
         <div className="mj-repository-tags" aria-label="Tags">
           {entry.tags.map((tag) => <span key={tag}>{tag}</span>)}
+        </div>
+        <div className="mj-repository-detail-actions">
+          <RepositoryExportAction slug={entry.slug} title={title} isSignedIn={isSignedIn} signInHref={signInHref} />
+          <span className="mj-repository-detail-action-note">{copy.library}: private to your account</span>
         </div>
       </section>
 

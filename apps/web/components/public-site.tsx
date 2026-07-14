@@ -3,9 +3,10 @@ import { getMajoranaAuth, getMajoranaSignInUrl, isMajoranaAuthConfigured } from 
 import { PUBLIC_SHELL_COPY, type PublicLocale } from "../lib/public-locale";
 import { LanguageToggle } from "./language-toggle";
 import { ThemeToggle } from "./theme-toggle";
+import { CONTACT_EMAIL, CONTACT_MAILTO } from "../lib/public-contact";
 
-export const CONTACT_EMAIL = "eshuneesh@gmail.com";
-export const CONTACT_MAILTO = `mailto:${CONTACT_EMAIL}?subject=Majorana%20inquiry`;
+export { CONTACT_EMAIL, CONTACT_MAILTO } from "../lib/public-contact";
+
 export const REPOSITORY_URL = "https://github.com/EshMis/majorana";
 
 export async function PublicSite({
@@ -26,7 +27,7 @@ export async function PublicSite({
     { href: "/", label: copy.nav.product },
     { href: "/pricing", label: copy.nav.pricing },
     { href: "/repository", label: copy.nav.repository },
-    { href: "/open-source", label: copy.nav.openSource },
+    { href: "/workspace", label: copy.nav.workspace },
     { href: "/contact", label: copy.nav.contact },
   ];
   const { user } = await getMajoranaAuth();
@@ -77,7 +78,7 @@ export async function PublicSite({
             <div>
               <span>{copy.footer.explore}</span>
               <a href="/repository">{copy.nav.repository}</a>
-              <a href="/open-source">{copy.nav.openSource}</a>
+              <a href="/workspace">{copy.nav.workspace}</a>
               <a href="/pricing">{copy.nav.pricing}</a>
             </div>
             <div>

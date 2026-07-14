@@ -4,7 +4,6 @@ import type { components } from "@majorana/contracts-gen";
 import { type FormEvent, useEffect, useState } from "react";
 
 type WorkspaceOverview = components["schemas"]["WorkspaceOverview"];
-type WorkspaceMember = components["schemas"]["WorkspaceMember"];
 
 type Me = {
   user_id: string;
@@ -18,8 +17,7 @@ type Me = {
 export function AccountSettings({ initialEmail }: { initialEmail: string }) {
   const [me, setMe] = useState<Me | null>(null);
   const [workspace, setWorkspace] = useState<WorkspaceOverview | null>(null);
-  const [email, setEmail] = useState("");
-  const [role, setRole] = useState<"member" | "viewer">("member");
+  const [displayName, setDisplayName] = useState("");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
@@ -33,6 +31,7 @@ export function AccountSettings({ initialEmail }: { initialEmail: string }) {
       .then(([identity, overview]) => {
         if (!active) return;
         setMe(identity);
+        setDisplayName(identity.display_name ?? "");
         setWorkspace(overview);
         setLoading(false);
       })
@@ -46,29 +45,26 @@ export function AccountSettings({ initialEmail }: { initialEmail: string }) {
     };
   }, []);
 
-  async function addMember(event: FormEvent<HTMLFormElement>) {
+  async function saveProfile(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!email.trim() || saving) return;
+    if (saving) return;
     setSaving(true);
     setMessage(null);
     try {
-      const response = await fetch("/api/workspace/members", {
-        method: "POST",
+      const response = await fetch("/api/me", {
+        method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: email.trim(), role }),
+        body: JSON.stringify({ display_name: displayName }),
       });
-      const payload = (await response.json()) as WorkspaceMember | { title?: string; error?: string };
+      const payload = (await response.json()) as Me | { title?: string; error?: string };
       if (!response.ok || !("user_id" in payload)) {
-        throw new Error(errorDetail(payload, "Member could not be added"));
+        throw new Error(errorDetail(payload, "Profile could not be saved"));
       }
-      setWorkspace((current) => current ? {
-        ...current,
-        members: [...current.members.filter((member) => member.user_id !== payload.user_id), payload],
-      } : current);
-      setEmail("");
-      setMessage(`${payload.email} can now use this workspace.`);
+      setMe(payload);
+      setDisplayName(payload.display_name ?? "");
+      setMessage("Profile saved.");
     } catch (cause) {
-      setMessage(cause instanceof Error ? cause.message : "Member could not be added");
+      setMessage(cause instanceof Error ? cause.message : "Profile could not be saved");
     } finally {
       setSaving(false);
     }
@@ -77,51 +73,38 @@ export function AccountSettings({ initialEmail }: { initialEmail: string }) {
   if (loading) return <p className="mj-page-lede">Loading workspace data…</p>;
   if (!workspace || !me) return <p className="mj-page-lede" role="alert">{message ?? `Signed in as ${initialEmail}. Workspace data is unavailable.`}</p>;
 
-  const canManage = me.role === "owner" || me.role === "admin";
   return (
     <div className="mj-artifact-grid">
       <section className="mj-artifact-panel">
         <div className="mj-panel-heading"><h2>Identity</h2><span className="mj-mono-muted">{me.role}</span></div>
         <dl className="mj-resource-list">
           <div><dt>Email</dt><dd>{me.email}</dd></div>
-          <div><dt>Name</dt><dd>{me.display_name ?? "Not set"}</dd></div>
           <div><dt>Workspace</dt><dd>{me.workspace_name}</dd></div>
         </dl>
+        <form className="mj-account-profile-form" onSubmit={saveProfile}>
+          <label>
+            <span>Display name</span>
+            <input value={displayName} onChange={(event) => setDisplayName(event.target.value)} maxLength={120} placeholder="Your name" />
+          </label>
+          <button className="mj-primary-button" disabled={saving} type="submit">{saving ? "Saving…" : "Save name"}</button>
+        </form>
       </section>
       <section className="mj-artifact-panel">
-        <div className="mj-panel-heading"><h2>Workspace data</h2><span className="mj-mono-muted">{workspace.workspace.plan}</span></div>
+        <div className="mj-panel-heading"><h2>Personal workspace</h2><span className="mj-mono-muted">{workspace.workspace.plan}</span></div>
+        <p className="mj-artifact-copy">This workspace belongs only to you. Collaboration and shared workspaces are planned, but not enabled yet.</p>
         <dl className="mj-resource-list">
           <div><dt>Artifacts</dt><dd>{workspace.artifact_count}</dd></div>
           <div><dt>Runs</dt><dd>{workspace.run_count}</dd></div>
-          <div><dt>Members</dt><dd>{workspace.members.length}</dd></div>
+          <div><dt>Access</dt><dd>Private</dd></div>
         </dl>
       </section>
       <section className="mj-artifact-panel mj-artifact-panel--wide">
-        <div className="mj-panel-heading"><h2>Workspace members</h2><span className="mj-mono-muted">shared access</span></div>
-        <div className="mj-resource-list">
-          {workspace.members.map((member) => (
-            <div key={member.user_id}>
-              <dt>{member.display_name ?? member.email}</dt>
-              <dd>{member.display_name ? `${member.email} · ${member.role}` : member.role}</dd>
-            </div>
-          ))}
+        <div className="mj-panel-heading"><h2>Workspace boundaries</h2><span className="mj-mono-muted">v1</span></div>
+        <div className="mj-account-boundary-grid">
+          <div><strong>Library</strong><p>Saved runs and public references stay in your personal Library.</p></div>
+          <div><strong>Repository export</strong><p>Sign in to copy a public entry into this workspace and open it in Studio.</p></div>
+          <div><strong>Collaboration</strong><p>Deferred until shared access, invitations, and permissions are productized.</p></div>
         </div>
-        {canManage ? (
-          <form className="mj-library-toolbar" onSubmit={addMember}>
-            <label className="mj-library-search">
-              <span className="sr-only">Collaborator email</span>
-              <input value={email} onChange={(event) => setEmail(event.target.value)} placeholder="Collaborator email" type="email" />
-            </label>
-            <label className="mj-filter-select">
-              <span className="sr-only">Collaborator role</span>
-              <select value={role} onChange={(event) => setRole(event.target.value as "member" | "viewer")}>
-                <option value="member">Member</option>
-                <option value="viewer">Viewer</option>
-              </select>
-            </label>
-            <button className="mj-primary-button" disabled={saving || !email.trim()} type="submit">{saving ? "Adding…" : "Add member"}</button>
-          </form>
-        ) : null}
         {message ? <p className="mj-page-lede" role="status">{message}</p> : null}
       </section>
     </div>

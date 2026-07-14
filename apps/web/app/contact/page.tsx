@@ -1,9 +1,10 @@
 import type { Metadata } from "next";
-import { CONTACT_EMAIL, CONTACT_MAILTO, PublicSite } from "../../components/public-site";
+import { CONTACT_EMAIL, PublicSite } from "../../components/public-site";
+import { ContactForm } from "./contact-form";
 
 export const metadata: Metadata = {
   title: "Contact",
-  description: "Contact Majorana about product access, research, and collaboration.",
+  description: "Send a Majorana inquiry to the product contact queue.",
 };
 
 export default function ContactPage() {
@@ -11,13 +12,13 @@ export default function ContactPage() {
     <PublicSite activePath="/contact" className="mj-contact-site">
       <section className="mj-contact-hero">
         <div>
-          <h1>Let’s make quantum work more trustworthy.</h1>
+          <p className="mj-public-overline">Contact queue</p>
+          <h1>Tell us what you are trying to build or validate.</h1>
           <p>
-            Majorana is building the evidence layer around quantum software: a place where
-            generated code can be run, checked, explained, and reused. Tell us what you are
-            trying to build or validate.
+            Majorana is building the evidence layer around quantum software: public research,
+            private workspaces, and execution that can be inspected. Your note will be prepared
+            for {CONTACT_EMAIL}.
           </p>
-          <a className="mj-primary-button" href={CONTACT_MAILTO}>Email {CONTACT_EMAIL}</a>
         </div>
         <div className="mj-contact-panel">
           <span className="mj-section-label">Good reasons to write</span>
@@ -30,16 +31,13 @@ export default function ContactPage() {
         </div>
       </section>
 
-      <section className="mj-contact-details" aria-labelledby="contact-details-heading">
+      <section className="mj-contact-form-section" aria-labelledby="contact-form-heading">
         <div>
-          <p className="mj-section-label">Direct line</p>
-          <h2 id="contact-details-heading">No form queue. Just an email.</h2>
+          <p className="mj-section-label">Start a conversation</p>
+          <h2 id="contact-form-heading">A short brief is enough.</h2>
+          <p className="mj-contact-note">Submitting opens a prepared email in your email app. The current queue is mailto-backed; server-side delivery, CRM routing, and support SLAs are deferred until the operating workflow is finalized.</p>
         </div>
-        <div>
-          <p>For now, contact goes directly to the person building Majorana.</p>
-          <a className="mj-contact-email" href={CONTACT_MAILTO}>{CONTACT_EMAIL}</a>
-          <p className="mj-contact-note">A useful first note includes the framework, problem type, and what evidence you need to trust the result.</p>
-        </div>
+        <ContactForm />
       </section>
     </PublicSite>
   );

@@ -12,7 +12,7 @@ export default async function Account() {
           <header className="mj-page-header">
             <div>
               <h1 className="mj-page-title">Settings</h1>
-              <p className="mj-page-lede">Identity, workspace access, and the data held for your Majorana workspace.</p>
+              <p className="mj-page-lede">Your identity, private Library, and personal workspace data.</p>
             </div>
             <form
               action={async () => {

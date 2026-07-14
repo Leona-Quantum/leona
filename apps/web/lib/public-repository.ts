@@ -1650,3 +1650,19 @@ export function getPublicRepositoryVariant(
     note: `A ${framework} variant is not published for this record yet. The catalog keeps the requested framework visible so conversion work can be reviewed rather than implied.`,
   };
 }
+
+const PERSONAL_LIBRARY_FRAMEWORKS: PublicRepositoryFramework[] = ["Qiskit", "PennyLane", "Cirq"];
+
+/**
+ * Select the first published framework variant that the personal Library can
+ * store today. OpenQASM and future framework-only records remain visible in
+ * the catalog, but are not mislabeled as executable Library imports.
+ */
+export function getPublicRepositoryLibraryVariant(
+  entry: PublicRepositoryEntry,
+): PublicRepositoryCodeVariant | undefined {
+  const candidates = [entry.framework, ...PERSONAL_LIBRARY_FRAMEWORKS];
+  return candidates
+    .map((framework) => getPublicRepositoryVariant(entry, framework))
+    .find((variant) => PERSONAL_LIBRARY_FRAMEWORKS.includes(variant.framework) && variant.status === "native" && Boolean(variant.code));
+}

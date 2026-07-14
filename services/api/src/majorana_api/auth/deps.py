@@ -5,7 +5,6 @@ login) → membership row → Scope(user, workspace, role). A workspace the call
 has no membership in yields 401/404 — indistinguishable from absence.
 """
 
-import uuid
 from typing import Annotated
 
 from fastapi import Depends, Header, HTTPException, Request
@@ -84,18 +83,22 @@ async def get_identity(
 async def get_scope(
     identity: Annotated[tuple[User, Workspace], Depends(get_identity)],
     session: Annotated[AsyncSession, Depends(get_session)],
-    workspace_id: Annotated[uuid.UUID | None, Header(alias="X-Workspace-Id")] = None,
 ) -> Scope:
+    """Derive a private personal-workspace scope for the authenticated user.
+
+    Collaboration is intentionally deferred. Do not accept a browser-selected
+    workspace id here: the personal workspace is the only tenant exposed by
+    the current product contract.
+    """
     user, personal_ws = identity
-    target_ws = workspace_id or await system.default_workspace_id(
+    membership = await system.find_membership(
         session,
+        workspace_id=personal_ws.id,
         user_id=user.id,
-        personal_workspace_id=personal_ws.id,
     )
-    membership = await system.find_membership(session, workspace_id=target_ws, user_id=user.id)
     if membership is None:
         raise HTTPException(404, "workspace not found")
-    return Scope(user_id=user.id, workspace_id=target_ws, role=membership.role)
+    return Scope(user_id=user.id, workspace_id=personal_ws.id, role=membership.role)
 
 
 CurrentScope = Annotated[Scope, Depends(get_scope)]
