@@ -40,11 +40,16 @@ receive a workspace-scoped Bell-state starter artifact. Replay fixtures are rest
 explicit `/demo` route; authenticated pages use the API and retain only a small local fallback
 for a just-completed run while remote data settles.
 
-The public landing page and local fail-closed auth path are also present. Remaining work is the
-hosted verified-artifact acceptance run, fuller remote chat/history persistence, account meters
-and workspace selection, visual-diff automation, and the owner-controlled `dev` → Production
-promotion. Studio edits and framework variants now have a control-plane write/read path; hosted
-acceptance still needs to exercise it against the deployed migration.
+The public surface now includes a shared company shell/footer, a formal landing page, early-access
+pricing, contact, privacy, and terms routes, plus a searchable public Repository catalog that
+exposes classification, verification, export status, and provenance without mixing in private
+Library data. Public routes are explicitly allowed through the fail-closed middleware. The current
+catalog records are static reference data; save/publish actions and API-backed repository search
+remain follow-up work. Remaining work is the hosted verified-artifact acceptance run, fuller remote
+chat/history persistence, account meters and workspace selection, visual-diff automation, and the
+owner-controlled `dev` → Production promotion. Studio edits and framework variants now have a
+control-plane write/read path; hosted acceptance still needs to exercise it against the deployed
+migration.
 
 ## Quality bar (CI-checkable subset in 07 §5)
 
