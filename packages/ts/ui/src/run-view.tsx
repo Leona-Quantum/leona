@@ -9,6 +9,7 @@
 // the same view every time.
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import type { components } from "@majorana/contracts-gen";
+import { SyntaxHighlightedCode } from "./code-block";
 import { StageRail, type RailStage } from "./stage-rail";
 import { VerdictBanner, type Verdict } from "./verdict-banner";
 
@@ -920,7 +921,7 @@ function CodeBlock({ code, id }: { code: CodeView; id?: string }): ReactNode {
         role="region"
         aria-label={`${code.filename} source`}
       >
-        <code>{code.code}</code>
+        <SyntaxHighlightedCode code={code.code} language={code.language} />
       </pre>
     </div>
   );
