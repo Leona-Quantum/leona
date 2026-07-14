@@ -53,6 +53,7 @@ class VercelSandbox:
     async def _execute(self, spec: ExecutionSpec) -> SandboxResult:
         try:
             from vercel.sandbox.aio import Sandbox as AsyncSandbox  # type: ignore
+            from vercel.sandbox import SandboxAuthError  # type: ignore
         except Exception as exc:  # pragma: no cover - exercised only without the SDK
             raise SandboxProviderError(
                 "install majorana-sandbox[vercel] and provide Vercel OIDC/token auth"
@@ -61,10 +62,12 @@ class VercelSandbox:
         started = time.monotonic()
         try:
             sandbox = await AsyncSandbox.create(**_create_kwargs(spec, self._image))
-        except Exception as exc:
+        except SandboxAuthError as exc:
             raise SandboxProviderError(
-                "Vercel sandbox could not be created; provide Vercel OIDC/token auth"
+                "Vercel sandbox authentication failed; provide Vercel OIDC/token auth"
             ) from exc
+        except Exception as exc:
+            raise SandboxProviderError("Vercel sandbox could not be created") from exc
         try:
             await sandbox.write_files(
                 [{"path": f"{_RUN_DIR}/main.py", "content": spec.code.encode("utf-8")}]
