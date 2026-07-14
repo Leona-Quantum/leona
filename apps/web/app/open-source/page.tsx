@@ -1,26 +1,16 @@
 import type { Metadata } from "next";
+import { PublicSite, REPOSITORY_URL } from "../../components/public-site";
 
 export const metadata: Metadata = {
-  title: "Open source | Majorana",
+  title: "Open source",
   description: "The public engineering page for Majorana's verified quantum workbench.",
 };
 
-const REPOSITORY_URL = "https://github.com/EshMis/majorana";
-
 export default function OpenSourcePage() {
   return (
-    <main className="mj-open-source">
+    <PublicSite activePath="/open-source" className="mj-open-source">
       <div className="mj-open-source-inner">
-        <nav className="mj-open-source-nav" aria-label="Public navigation">
-          <a className="mj-open-source-brand" href="/">Majorana</a>
-          <div>
-            <a href="/open-source" aria-current="page">Open source</a>
-            <a href={REPOSITORY_URL} target="_blank" rel="noreferrer">GitHub ↗</a>
-          </div>
-        </nav>
-
         <section className="mj-open-source-hero">
-          <p className="mj-landing-mark">OPEN ENGINEERING</p>
           <h1>Quantum work you can inspect, run, and reuse.</h1>
           <p className="mj-landing-copy">
             Majorana connects a natural-language LLM workflow to a guarded circuit sandbox,
@@ -30,7 +20,7 @@ export default function OpenSourcePage() {
           </p>
           <div className="mj-landing-actions">
             <a className="mj-primary-button" href={REPOSITORY_URL} target="_blank" rel="noreferrer">View the repository ↗</a>
-            <a className="mj-secondary-button" href="/">Open Majorana</a>
+            <a className="mj-secondary-button" href="/repository">Browse verified entries</a>
           </div>
         </section>
 
@@ -77,12 +67,7 @@ export default function OpenSourcePage() {
 uv sync --all-packages
 pnpm --filter @majorana/web dev`}</code></pre>
         </section>
-
-        <footer className="mj-open-source-footer">
-          <span>Majorana · open source quantum workbench</span>
-          <a href={REPOSITORY_URL} target="_blank" rel="noreferrer">github.com/EshMis/majorana ↗</a>
-        </footer>
       </div>
-    </main>
+    </PublicSite>
   );
 }

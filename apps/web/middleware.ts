@@ -6,12 +6,28 @@ import { isWorkosAuthConfigured } from "./lib/auth-config";
 import { isLocalDevAuthEnabled } from "./lib/local-dev-auth";
 import { isPublicDemoEnabled } from "./lib/public-demo";
 
+const PUBLIC_PATHS = [
+  "/",
+  "/auth/callback",
+  "/pricing",
+  "/repository",
+  "/open-source",
+  "/contact",
+  "/privacy",
+  "/terms",
+  ...(isPublicDemoEnabled() ? ["/demo"] : []),
+];
+
+function isPublicPath(pathname: string): boolean {
+  return PUBLIC_PATHS.some((path) => path === "/" ? pathname === "/" : pathname === path || pathname.startsWith(`${path}/`));
+}
+
 const workosMiddleware = authkitMiddleware({
   middlewareAuth: {
     enabled: true,
     // The callback handles the code exchange BEFORE a session exists — gating
     // it would break every login.
-    unauthenticatedPaths: ["/", "/auth/callback", ...(isPublicDemoEnabled() ? ["/demo"] : [])],
+    unauthenticatedPaths: PUBLIC_PATHS,
   },
 });
 
@@ -19,9 +35,7 @@ export default function middleware(request: NextRequest, event: NextFetchEvent) 
   if (isLocalDevAuthEnabled()) return NextResponse.next();
   if (!isWorkosAuthConfigured()) {
     const { pathname } = request.nextUrl;
-    if (pathname === "/" || pathname === "/demo" || pathname === "/auth/callback") {
-      return NextResponse.next();
-    }
+    if (isPublicPath(pathname)) return NextResponse.next();
     if (pathname.startsWith("/api/")) {
       return NextResponse.json({ error: "Authentication is not configured." }, { status: 503 });
     }

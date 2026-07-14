@@ -1,4 +1,5 @@
 import type { CSSProperties, ReactNode } from "react";
+import type { Metadata } from "next";
 import { Inter, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
 
@@ -6,7 +7,13 @@ import "./globals.css";
 const inter = Inter({ subsets: ["latin"], variable: "--font-inter" });
 const jetbrainsMono = JetBrains_Mono({ subsets: ["latin"], variable: "--font-jbmono" });
 
-export const metadata = { title: "Majorana" };
+export const metadata: Metadata = {
+  title: {
+    default: "Majorana · Verified quantum work",
+    template: "%s · Majorana",
+  },
+  description: "A quantum workbench for executable code, measured evidence, and reusable verified artifacts.",
+};
 
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
