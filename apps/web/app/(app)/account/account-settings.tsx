@@ -40,13 +40,13 @@ export function AccountSettings({ initialEmail, locale }: { initialEmail: string
       })
       .catch((cause) => {
         if (!active) return;
-        setMessage(cause instanceof Error ? cause.message : copy.unavailable);
+        setMessage(cause instanceof AccountRequestError ? cause.message : copy.unavailable);
         setLoading(false);
       });
     return () => {
       active = false;
     };
-  }, []);
+  }, [copy]);
 
   async function saveProfile(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -59,15 +59,20 @@ export function AccountSettings({ initialEmail, locale }: { initialEmail: string
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ display_name: displayName }),
       });
-      const payload = (await response.json()) as Me | { title?: string; error?: string };
+      let payload: Me | { title?: string; error?: string };
+      try {
+        payload = (await response.json()) as Me | { title?: string; error?: string };
+      } catch {
+        throw new AccountRequestError(copy.profileSaveFailed);
+      }
       if (!response.ok || !("user_id" in payload)) {
-        throw new Error(errorDetail(payload, copy.profileSaveFailed));
+        throw new AccountRequestError(errorDetail(payload, copy.profileSaveFailed));
       }
       setMe(payload);
       setDisplayName(payload.display_name ?? "");
       setMessage(copy.profileSaved);
     } catch (cause) {
-      setMessage(cause instanceof Error ? cause.message : copy.profileSaveFailed);
+      setMessage(cause instanceof AccountRequestError ? cause.message : copy.profileSaveFailed);
     } finally {
       setSaving(false);
     }
@@ -115,12 +120,19 @@ export function AccountSettings({ initialEmail, locale }: { initialEmail: string
 }
 
 async function parseJson<T>(response: Response, fallback: string): Promise<T> {
-  const payload = (await response.json()) as unknown;
+  let payload: unknown;
+  try {
+    payload = await response.json();
+  } catch {
+    throw new AccountRequestError(fallback);
+  }
   if (!response.ok) {
-    throw new Error(errorDetail(payload, fallback));
+    throw new AccountRequestError(errorDetail(payload, fallback));
   }
   return payload as T;
 }
+
+class AccountRequestError extends Error {}
 
 function errorDetail(payload: unknown, fallback: string): string {
   if (!payload || typeof payload !== "object") return fallback;
