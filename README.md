@@ -12,6 +12,8 @@ Public product page: `https://web-majoranaq.vercel.app/open-source`
 - FastAPI control plane and a separate Cloud Run worker backed by Neon Postgres.
 - OpenAI-compatible and DeepSeek LLM routing, with stage-specific model selection.
 - Vercel Sandbox with explicit deny-all egress for generated code.
+- The reproducible Vercel Sandbox runner image lives in `infra/sandbox/Dockerfile` and
+  carries the pinned Qiskit, Aer, PennyLane, and Cirq runtime used by production.
 - Canonical circuit IR with Qiskit, PennyLane, Cirq, OpenQASM 2, and OpenQASM 3 connectors.
 
 The control plane stores run events and artifacts; the sandbox never receives provider

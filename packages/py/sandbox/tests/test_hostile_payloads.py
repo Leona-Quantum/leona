@@ -88,6 +88,8 @@ def test_vercel_create_always_requests_deny_all_egress():
     # The one line that makes a sandbox network-locked. If this ever regresses to
     # allow-all, it's a release-blocking bug (AGENTS.md rule 3).
     kwargs = _create_kwargs(ExecutionSpec(code="print(1)"), image="majorana-runner")
+    assert kwargs["image"] == "majorana-runner"
+    assert "runtime" not in kwargs  # custom images and built-in runtimes are exclusive
     assert kwargs["network_policy"] == DENY_ALL_EGRESS
     assert kwargs["env"] == {}  # no credentials inside the sandbox
 
