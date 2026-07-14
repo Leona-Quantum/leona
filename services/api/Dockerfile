@@ -7,6 +7,7 @@ ENV UV_LINK_MODE=copy UV_COMPILE_BYTECODE=1
 COPY pyproject.toml uv.lock ./
 COPY services ./services
 COPY packages/py ./packages/py
+COPY evals/harness ./evals/harness
 COPY db ./db
 RUN uv sync --all-packages --frozen --no-dev
 
