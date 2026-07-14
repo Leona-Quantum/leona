@@ -118,7 +118,9 @@
 .mj-theme-toggle button:hover {
   color: var(--text-0);
 }
-.mj-theme-toggle button[aria-pressed="true"] {
+.mj-theme-toggle button[aria-pressed="true"],
+:root[data-theme="light"] .mj-theme-toggle button[data-theme-option="light"],
+:root[data-theme="dark"] .mj-theme-toggle button[data-theme-option="dark"] {
   color: var(--bg-0);
   background: var(--text-0);
 }

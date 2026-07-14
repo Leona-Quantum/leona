@@ -29,7 +29,7 @@ function ThemeIcon({ theme }: { theme: Theme }) {
 }
 
 export function ThemeToggle() {
-  const [theme, setTheme] = useState<Theme>("light");
+  const [theme, setTheme] = useState<Theme | null>(null);
 
   useEffect(() => {
     setTheme(document.documentElement.dataset.theme === "dark" ? "dark" : "light");
@@ -46,8 +46,9 @@ export function ThemeToggle() {
         <button
           key={option}
           type="button"
+          data-theme-option={option}
           aria-label={`Use ${option} theme`}
-          aria-pressed={theme === option}
+          aria-pressed={theme === null ? undefined : theme === option}
           onClick={() => selectTheme(option)}
         >
           <ThemeIcon theme={option} />
