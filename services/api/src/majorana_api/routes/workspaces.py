@@ -4,12 +4,14 @@ import datetime as dt
 
 from fastapi import APIRouter
 from majorana_contracts import Workspace as WorkspaceResource
+from majorana_contracts import WorkspaceFolder as WorkspaceFolderResource
 from majorana_contracts import WorkspaceMember, WorkspaceOverview
 from majorana_contracts.enums import Role, WorkspaceKind
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from ..auth.deps import CurrentScope, DbSession
-from ..orm import Membership, User
+from ..orm import Membership, User, WorkspaceFolder
+from ..repos import folders as folders_repo
 from ..repos import workspaces as workspaces_repo
 
 router = APIRouter()
@@ -22,6 +24,20 @@ class AddMemberRequest(BaseModel):
     role: Role = Role.MEMBER
 
 
+class CreateFolderRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    name: str = Field(min_length=1, max_length=80)
+
+    @field_validator("name")
+    @classmethod
+    def require_non_blank_name(cls, value: str) -> str:
+        normalized = " ".join(value.strip().split())
+        if not normalized:
+            raise ValueError("folder name cannot be blank")
+        return normalized
+
+
 def _to_member(membership: Membership, user: User) -> WorkspaceMember:
     return WorkspaceMember(
         user_id=user.id,
@@ -29,6 +45,17 @@ def _to_member(membership: Membership, user: User) -> WorkspaceMember:
         display_name=user.display_name,
         role=Role(membership.role),
         created_at=membership.created_at or dt.datetime.now(dt.timezone.utc),
+    )
+
+
+def _to_folder(folder: WorkspaceFolder) -> WorkspaceFolderResource:
+    now = dt.datetime.now(dt.timezone.utc)
+    return WorkspaceFolderResource(
+        id=folder.id,
+        workspace_id=folder.workspace_id,
+        name=folder.name,
+        created_at=folder.created_at or now,
+        updated_at=folder.updated_at or now,
     )
 
 
@@ -51,6 +78,24 @@ async def get_workspace(scope: CurrentScope, session: DbSession) -> WorkspaceOve
         artifact_count=artifact_count,
         run_count=run_count,
     )
+
+
+@router.get("/workspace/folders", response_model=list[WorkspaceFolderResource])
+async def list_workspace_folders(
+    scope: CurrentScope, session: DbSession
+) -> list[WorkspaceFolderResource]:
+    folders = await folders_repo.list_folders(scope, session)
+    return [_to_folder(folder) for folder in folders]
+
+
+@router.post("/workspace/folders", response_model=WorkspaceFolderResource, status_code=201)
+async def create_workspace_folder(
+    body: CreateFolderRequest,
+    scope: CurrentScope,
+    session: DbSession,
+) -> WorkspaceFolderResource:
+    folder = await folders_repo.create_folder(scope, session, name=body.name)
+    return _to_folder(folder)
 
 
 @router.post("/workspace/members", response_model=WorkspaceMember, status_code=201)

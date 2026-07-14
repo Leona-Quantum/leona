@@ -19,6 +19,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from ..auth.deps import CurrentScope, DbSession
 from ..jobs import RUN_EXECUTE_JOB_KIND
 from ..orm import Run as RunRow
+from ..repos import folders as folders_repo
 from ..repos import runs as runs_repo
 from ..repos import system
 
@@ -44,12 +45,19 @@ class CreateRunRequest(BaseModel):
     source_code: str | None = Field(default=None, max_length=100_000)
 
 
+class SetRunFolderRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    folder_id: uuid.UUID | None = None
+
+
 def _to_resource(run: RunRow) -> RunResource:
     return RunResource(
         id=run.id,
         workspace_id=run.workspace_id,
         user_id=run.user_id,
         artifact_version_id=run.artifact_version_id,
+        folder_id=run.folder_id,
         task_prompt=run.task_prompt,
         mode=RunMode(run.mode),
         status=RunStatus(run.status),
@@ -133,6 +141,17 @@ async def list_runs(
 @router.get("/runs/{run_id}", response_model=RunResource)
 async def get_run(run_id: uuid.UUID, scope: CurrentScope, session: DbSession) -> RunResource:
     return _to_resource(await runs_repo.get_run(scope, session, run_id))
+
+
+@router.patch("/runs/{run_id}/folder", response_model=RunResource)
+async def set_run_folder(
+    run_id: uuid.UUID,
+    body: SetRunFolderRequest,
+    scope: CurrentScope,
+    session: DbSession,
+) -> RunResource:
+    run = await folders_repo.set_run_folder(scope, session, run_id, body.folder_id)
+    return _to_resource(run)
 
 
 @router.post("/runs/{run_id}/cancel", response_model=RunResource)

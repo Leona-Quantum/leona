@@ -14,6 +14,7 @@ from majorana_api.repos import (
     NotFoundError,
     artifacts,
     audit,
+    folders,
     runs,
     usage,
     workspaces,
@@ -32,6 +33,8 @@ async def test_cross_workspace_reads_rejected(db, dataset):
             await artifacts.get_version(sa, db, b.version_id)
         with pytest.raises(NotFoundError):
             await runs.get_run(sa, db, b.run_id)
+        with pytest.raises(NotFoundError):
+            await folders.get_folder(sa, db, b.folder_id)
         assert await runs.list_run_events(sa, db, b.run_id) == []
         assert await runs.list_verification_records(sa, db, b.run_id) == []
 
@@ -44,6 +47,8 @@ async def test_cross_workspace_writes_rejected(db, dataset):
             await runs.append_run_event(sa, db, b.run_id, type="run.error", payload={})
         with pytest.raises(NotFoundError):
             await runs.update_run_status(sa, db, b.run_id, "cancelled")
+        with pytest.raises(NotFoundError):
+            await folders.set_run_folder(sa, db, b.run_id, b.folder_id)
         with pytest.raises(NotFoundError):
             await runs.add_verification_record(
                 sa, db, b.run_id, method=VerificationMethod.EXACT, result="fail"
@@ -87,6 +92,7 @@ async def test_lists_and_aggregates_scoped(db, dataset):
             a.artifact_id,
         }
         assert {r.id for r in await runs.list_runs(sa, db, limit=1000)} == {a.run_id}
+        assert {f.id for f in await folders.list_folders(sa, db)} == {a.folder_id}
         member_ids = {m.user_id for m in await workspaces.list_members(sa, db)}
         assert set(a.users.values()) == member_ids
         assert (await workspaces.get_workspace(sa, db)).id == a.workspace_id
@@ -106,6 +112,7 @@ async def test_in_scope_access_works(db, dataset):
     assert (await artifacts.get_artifact(sa, db, a.artifact_id)).id == a.artifact_id
     assert (await artifacts.get_version(sa, db, a.version_id)).id == a.version_id
     assert (await runs.get_run(sa, db, a.run_id)).id == a.run_id
+    assert (await folders.get_folder(sa, db, a.folder_id)).id == a.folder_id
     events = await runs.list_run_events(sa, db, a.run_id)
     assert [e.seq for e in events] == [1, 2]
     event = await runs.append_run_event(sa, db, a.run_id, type="run.finished", payload={})
@@ -117,6 +124,10 @@ async def test_role_gates_live(db, dataset):
     viewer = scope_for(a, Role.VIEWER)
     with pytest.raises(AuthzError):
         await runs.create_run(viewer, db, task_prompt="x", mode=RunMode.EXECUTE, framework="qiskit")
+    with pytest.raises(AuthzError):
+        await folders.create_folder(viewer, db, name="viewer cannot create")
+    with pytest.raises(AuthzError):
+        await folders.set_run_folder(viewer, db, a.run_id, a.folder_id)
     with pytest.raises(AuthzError):
         await runs.append_run_event(viewer, db, a.run_id, type="run.error", payload={})
     member = scope_for(a, Role.MEMBER)

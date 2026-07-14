@@ -50,6 +50,14 @@ class WorkspaceOverview(_ResourceBase):
     run_count: int = Field(ge=0)
 
 
+class WorkspaceFolder(_ResourceBase):
+    id: UUID
+    workspace_id: UUID
+    name: str = Field(min_length=1, max_length=80)
+    created_at: datetime
+    updated_at: datetime
+
+
 class Artifact(_ResourceBase):
     id: UUID
     workspace_id: UUID
@@ -99,6 +107,7 @@ class Run(_ResourceBase):
     workspace_id: UUID
     user_id: UUID
     artifact_version_id: UUID | None = None
+    folder_id: UUID | None = None
     task_prompt: str
     mode: RunMode
     status: RunStatus

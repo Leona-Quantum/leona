@@ -66,6 +66,10 @@ function emitFoldersChange(): void {
   if (typeof window !== "undefined") window.dispatchEvent(new Event(CHAT_FOLDERS_EVENT));
 }
 
+function normalizeFolderName(name: string): string {
+  return name.trim().replace(/\s+/g, " ").slice(0, 80);
+}
+
 function persist(chats: ChatSummary[]): ChatSummary[] {
   if (canUseStorage()) window.localStorage.setItem(STORAGE_KEY, JSON.stringify(chats));
   emitChange();
@@ -116,8 +120,20 @@ export function loadChatFolders(): ChatFolder[] {
   }
 }
 
+function persistFolders(folders: ChatFolder[]): ChatFolder[] {
+  if (canUseStorage()) window.localStorage.setItem(FOLDERS_STORAGE_KEY, JSON.stringify(folders));
+  emitFoldersChange();
+  return folders;
+}
+
+export function replaceChatFolders(folders: ChatFolder[]): ChatFolder[] {
+  return persistFolders(
+    [...folders].sort((a, b) => a.createdAt.localeCompare(b.createdAt)),
+  );
+}
+
 export function createChatFolder(name: string): ChatFolder[] {
-  const normalized = name.trim().replace(/\s+/g, " ");
+  const normalized = normalizeFolderName(name);
   if (!normalized) return loadChatFolders();
   const current = loadChatFolders();
   if (current.some((folder) => folder.name.toLocaleLowerCase() === normalized.toLocaleLowerCase())) {
@@ -129,13 +145,115 @@ export function createChatFolder(name: string): ChatFolder[] {
     createdAt: new Date().toISOString(),
   };
   const next = [...current, folder];
-  if (canUseStorage()) window.localStorage.setItem(FOLDERS_STORAGE_KEY, JSON.stringify(next));
-  emitFoldersChange();
-  return next;
+  return persistFolders(next);
 }
 
 export function assignChatToFolder(chatId: string, folderId?: string): ChatSummary[] {
   return updateChat(chatId, { folderId: folderId || undefined });
+}
+
+type RemoteFolder = {
+  id: string;
+  name: string;
+  created_at: string;
+};
+
+function isRemoteFolder(value: unknown): value is RemoteFolder {
+  if (!value || typeof value !== "object") return false;
+  const candidate = value as Partial<RemoteFolder>;
+  return (
+    typeof candidate.id === "string" &&
+    typeof candidate.name === "string" &&
+    typeof candidate.created_at === "string"
+  );
+}
+
+function toChatFolder(folder: RemoteFolder): ChatFolder {
+  return {
+    id: folder.id,
+    name: folder.name,
+    createdAt: folder.created_at,
+  };
+}
+
+export async function createRemoteChatFolder(name: string): Promise<ChatFolder> {
+  const normalized = normalizeFolderName(name);
+  const response = await fetch("/api/workspace/folders", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name: normalized }),
+    cache: "no-store",
+  });
+  if (!response.ok) throw new Error("Workspace folder could not be saved");
+  const payload = (await response.json()) as unknown;
+  if (!isRemoteFolder(payload)) throw new Error("Workspace folder response was invalid");
+  const folder = toChatFolder(payload);
+  replaceChatFolders([...loadChatFolders().filter((item) => item.id !== folder.id), folder]);
+  return folder;
+}
+
+export async function assignChatToRemoteFolder(
+  chatId: string,
+  folderId?: string,
+): Promise<void> {
+  const response = await fetch(`/api/runs/${encodeURIComponent(chatId)}/folder`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ folder_id: folderId || null }),
+    cache: "no-store",
+  });
+  if (!response.ok) throw new Error("Chat folder assignment could not be saved");
+}
+
+export async function hydrateChatFolders(chats: ChatSummary[]): Promise<{
+  folders: ChatFolder[];
+  localIdMap: Record<string, string>;
+}> {
+  const response = await fetch("/api/workspace/folders", { cache: "no-store" });
+  if (!response.ok) throw new Error("Workspace folders could not be loaded");
+  const payload = (await response.json()) as unknown;
+  if (!Array.isArray(payload)) throw new Error("Workspace folder response was invalid");
+
+  const remote = payload.filter(isRemoteFolder).map(toChatFolder);
+  const byName = new Map(remote.map((folder) => [folder.name.toLocaleLowerCase(), folder]));
+  const localIdMap: Record<string, string> = {};
+  const created: ChatFolder[] = [];
+
+  for (const local of loadChatFolders()) {
+    const existing = byName.get(local.name.toLocaleLowerCase());
+    if (existing) {
+      localIdMap[local.id] = existing.id;
+      continue;
+    }
+    const folder = await createRemoteChatFolder(local.name);
+    byName.set(folder.name.toLocaleLowerCase(), folder);
+    localIdMap[local.id] = folder.id;
+    created.push(folder);
+  }
+
+  const folders = [...remote, ...created].filter(
+    (folder, index, all) => all.findIndex((item) => item.id === folder.id) === index,
+  );
+  replaceChatFolders(folders);
+
+  const currentChats = loadChatHistory({ includeDemo: false });
+  const migratedChats = currentChats.map((chat) => {
+    if (!chat.folderId || !localIdMap[chat.folderId]) return chat;
+    return { ...chat, folderId: localIdMap[chat.folderId] };
+  });
+  if (migratedChats.some((chat, index) => chat.folderId !== currentChats[index]?.folderId)) {
+    persist(migratedChats);
+  }
+
+  await Promise.all(
+    chats.flatMap((chat) => {
+      const folderId = chat.folderId ? localIdMap[chat.folderId] ?? chat.folderId : undefined;
+      if (!folderId || chat.demo) return [];
+      return [assignChatToRemoteFolder(chat.id, folderId).catch(() => undefined)];
+    }),
+  );
+
+  return { folders, localIdMap };
 }
 
 function sortNewestFirst(a: ChatSummary, b: ChatSummary): number {

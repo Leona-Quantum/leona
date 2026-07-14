@@ -12,7 +12,7 @@ destructive/visibility operations need owner/admin (see _base.py).
 worker job loop run before/outside any workspace scope.
 """
 
-from . import artifacts, audit, runs, system, usage, workspaces
+from . import artifacts, audit, folders, runs, system, usage, workspaces
 from ._base import ADMIN_ROLES, WRITE_ROLES, AuthzError, NotFoundError, RepoError
 
 __all__ = [
@@ -23,6 +23,7 @@ __all__ = [
     "RepoError",
     "artifacts",
     "audit",
+    "folders",
     "runs",
     "system",
     "usage",

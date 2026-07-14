@@ -19,7 +19,7 @@ from sqlalchemy import select
 
 from majorana_api.db import engine_from_env, session_factory
 from majorana_api.orm import Artifact
-from majorana_api.repos import artifacts, audit, runs, system, usage, workspaces
+from majorana_api.repos import artifacts, audit, folders, runs, system, usage, workspaces
 
 requires_db = pytest.mark.skipif(
     "DATABASE_URL" not in os.environ, reason="authz suite needs DATABASE_URL"
@@ -36,6 +36,7 @@ class WorkspaceData:
     artifact_id: uuid.UUID
     version_id: uuid.UUID
     run_id: uuid.UUID
+    folder_id: uuid.UUID
     usage_quantity: float
 
 
@@ -88,6 +89,8 @@ async def _build_workspace(session, tag: str) -> WorkspaceData:
     run = await runs.create_run(
         owner_scope, session, task_prompt=f"authz {tag}", mode=RunMode.EXECUTE, framework="qiskit"
     )
+    folder = await folders.create_folder(owner_scope, session, name=f"{tag} folder")
+    await folders.set_run_folder(owner_scope, session, run.id, folder.id)
     await runs.append_run_event(owner_scope, session, run.id, type="run.queued", payload={})
     await runs.append_run_event(owner_scope, session, run.id, type="run.started", payload={})
     await runs.add_verification_record(
@@ -102,6 +105,7 @@ async def _build_workspace(session, tag: str) -> WorkspaceData:
         artifact_id=artifact.id,
         version_id=version.id,
         run_id=run.id,
+        folder_id=folder.id,
         usage_quantity=7.0,
     )
 

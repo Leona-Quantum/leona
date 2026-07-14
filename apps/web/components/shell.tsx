@@ -3,7 +3,7 @@
 // Client wrapper so AppShell gets the live pathname for aria-current.
 import type { FormEvent, ReactNode } from "react";
 import { usePathname } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { AppShell, BRAND_NAME, NAV_SURFACES } from "@majorana/ui";
 import {
   BrandMark,
@@ -17,8 +17,11 @@ import {
 import {
   CHAT_HISTORY_EVENT,
   CHAT_FOLDERS_EVENT,
+  assignChatToRemoteFolder,
   assignChatToFolder,
   createChatFolder,
+  createRemoteChatFolder,
+  hydrateChatFolders,
   loadChatFolders,
   loadChatHistory,
   type ChatFolder,
@@ -43,10 +46,13 @@ export function Shell({
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [chats, setChats] = useState<ChatSummary[]>([]);
   const [folders, setFolders] = useState<ChatFolder[]>([]);
+  const [folderSyncState, setFolderSyncState] = useState<"local" | "synced" | "error">("local");
+  const folderSyncAttempted = useRef(false);
 
   useEffect(() => {
     const saved = window.localStorage.getItem(SIDEBAR_STORAGE_KEY);
     setSidebarCollapsed(saved === "true" || (saved === null && window.innerWidth < 720));
+    folderSyncAttempted.current = demoMode;
     let active = true;
     setFolders(loadChatFolders());
     async function refresh() {
@@ -55,6 +61,20 @@ export function Shell({
         setChats(local);
         return;
       }
+      let localFolderIdMap: Record<string, string> = {};
+      if (!folderSyncAttempted.current) {
+        folderSyncAttempted.current = true;
+        try {
+          const synced = await hydrateChatFolders(local);
+          localFolderIdMap = synced.localIdMap;
+          if (active) {
+            setFolders(synced.folders);
+            setFolderSyncState("synced");
+          }
+        } catch {
+          if (active) setFolderSyncState("error");
+        }
+      }
       try {
         const response = await fetch("/api/runs?limit=20", { cache: "no-store" });
         const payload = (await response.json()) as unknown;
@@ -62,7 +82,10 @@ export function Shell({
         const byId = new Map(remote.map((chat) => [chat.id, chat]));
         for (const chat of local) {
           const remoteChat = byId.get(chat.id);
-          byId.set(chat.id, remoteChat ? { ...remoteChat, folderId: chat.folderId } : chat);
+          const localChat = chat.folderId
+            ? { ...chat, folderId: localFolderIdMap[chat.folderId] ?? chat.folderId }
+            : chat;
+          byId.set(chat.id, remoteChat ? { ...localChat, ...remoteChat, folderId: remoteChat.folderId ?? localChat.folderId } : localChat);
         }
         if (active) setChats([...byId.values()].sort((a, b) => b.createdAt.localeCompare(a.createdAt)));
       } catch {
@@ -102,7 +125,7 @@ export function Shell({
     <AppShell
       currentPath={pathname}
       headerRight={headerRight}
-      sidebar={<WorkspaceSidebar currentPath={pathname} chats={chats} folders={folders} collapsed={sidebarCollapsed} demoMode={demoMode} userEmail={userEmail} />}
+      sidebar={<WorkspaceSidebar currentPath={pathname} chats={chats} folders={folders} collapsed={sidebarCollapsed} demoMode={demoMode} userEmail={userEmail} folderSyncState={folderSyncState} />}
       sidebarCollapsed={sidebarCollapsed}
       onToggleSidebar={toggleSidebar}
       surfaceLabel={surfaceLabel}
@@ -119,6 +142,7 @@ function WorkspaceSidebar({
   collapsed,
   demoMode,
   userEmail,
+  folderSyncState,
 }: {
   currentPath: string;
   chats: ChatSummary[];
@@ -126,6 +150,7 @@ function WorkspaceSidebar({
   collapsed: boolean;
   demoMode: boolean;
   userEmail?: string;
+  folderSyncState: "local" | "synced" | "error";
 }) {
   const demoHref = (view: "run" | "library") => `/demo?view=${view}`;
   const runHref = demoMode ? demoHref("run") : "/run";
@@ -138,15 +163,28 @@ function WorkspaceSidebar({
   const [folderName, setFolderName] = useState("");
   const visibleChats = activeFolderId ? chats.filter((chat) => chat.folderId === activeFolderId) : chats;
 
-  function submitFolder(event: FormEvent<HTMLFormElement>) {
+  async function submitFolder(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const next = createChatFolder(folderName);
-    const created = next[next.length - 1];
-    if (created && created.name.toLocaleLowerCase() === folderName.trim().toLocaleLowerCase()) {
-      setActiveFolderId(created.id);
+    try {
+      const created = demoMode ? null : await createRemoteChatFolder(folderName);
+      if (created) setActiveFolderId(created.id);
+      else {
+        const next = createChatFolder(folderName);
+        const local = next[next.length - 1];
+        if (local) setActiveFolderId(local.id);
+      }
+    } catch {
+      const next = createChatFolder(folderName);
+      const local = next[next.length - 1];
+      if (local) setActiveFolderId(local.id);
     }
     setFolderName("");
     setCreatingFolder(false);
+  }
+
+  function assignFolder(chatId: string, folderId?: string) {
+    assignChatToFolder(chatId, folderId);
+    void assignChatToRemoteFolder(chatId, folderId).catch(() => undefined);
   }
 
   return (
@@ -189,7 +227,7 @@ function WorkspaceSidebar({
                   aria-label={`Move ${chat.title} to folder`}
                   className="mj-sidebar-chat-folder"
                   value={chat.folderId ?? ""}
-                  onChange={(event) => assignChatToFolder(chat.id, event.target.value || undefined)}
+                  onChange={(event) => assignFolder(chat.id, event.target.value || undefined)}
                 >
                   <option value="">No folder</option>
                   {folders.map((folder) => <option key={folder.id} value={folder.id}>{folder.name}</option>)}
@@ -202,6 +240,9 @@ function WorkspaceSidebar({
           <section className="mj-sidebar-folders" aria-label="Chat folders">
             <div className="mj-sidebar-section-label mj-sidebar-folder-heading">
               <span className="mj-sidebar-copy">Folders</span>
+              <span className="mj-sidebar-copy" aria-live="polite">
+                {folderSyncState === "synced" ? "Synced" : folderSyncState === "error" ? "Local only" : ""}
+              </span>
               <button className="mj-sidebar-folder-add" type="button" aria-label="Create chat folder" onClick={() => setCreatingFolder(true)}>+</button>
             </div>
             {creatingFolder ? (
@@ -298,6 +339,7 @@ function chatFromRun(value: unknown): ChatSummary[] {
     createdAt: typeof run.created_at === "string" ? run.created_at : new Date().toISOString(),
     status,
     framework: typeof run.framework === "string" ? run.framework.toUpperCase() : undefined,
+    folderId: typeof run.folder_id === "string" ? run.folder_id : undefined,
   }];
 }
 
