@@ -28,6 +28,7 @@ import {
   type ChatStatus,
   type ChatSummary,
 } from "../lib/chat-history";
+import { ThemeToggle } from "./theme-toggle";
 
 const SIDEBAR_STORAGE_KEY = "majorana.sidebar-collapsed.v1";
 
@@ -124,7 +125,12 @@ export function Shell({
   return (
     <AppShell
       currentPath={pathname}
-      headerRight={headerRight}
+      headerRight={
+        <>
+          <ThemeToggle />
+          {headerRight}
+        </>
+      }
       sidebar={<WorkspaceSidebar currentPath={pathname} chats={chats} folders={folders} collapsed={sidebarCollapsed} demoMode={demoMode} userEmail={userEmail} folderSyncState={folderSyncState} />}
       sidebarCollapsed={sidebarCollapsed}
       onToggleSidebar={toggleSidebar}

@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import { getMajoranaAuth, getMajoranaSignInUrl, isMajoranaAuthConfigured } from "../lib/auth";
+import { ThemeToggle } from "./theme-toggle";
 
 export const CONTACT_EMAIL = "eshuneesh@gmail.com";
 export const CONTACT_MAILTO = `mailto:${CONTACT_EMAIL}?subject=Majorana%20inquiry`;
@@ -49,6 +50,7 @@ export async function PublicSite({
               </a>
             ))}
           </nav>
+          <ThemeToggle />
           <a className="mj-public-nav-primary" href={primaryAction.href}>
             {primaryAction.label}
           </a>
