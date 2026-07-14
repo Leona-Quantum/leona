@@ -13,6 +13,7 @@ from majorana_ir import Circuit, Operation
 from majorana_worker.stage_handlers import (
     _parse_result_dict,
     _qiskit_qasm_epilogue,
+    _repair_legacy_qiskit_qasm,
     _rewrite_qiskit_final_circuit,
 )
 
@@ -95,3 +96,16 @@ result = AerSimulator().run(compiled_circuit).result()
     assert rewritten is not None
     assert "compiled_circuit = QuantumCircuit.from_qasm_str" in rewritten
     assert "FINAL_CIRCUIT = compiled_circuit" in rewritten
+
+
+def test_legacy_qiskit_qasm_method_is_repaired_for_qiskit_2x():
+    code = """from qiskit import QuantumCircuit
+FINAL_CIRCUIT = QuantumCircuit(2)
+circuit_qasm = FINAL_CIRCUIT.qasm()
+"""
+
+    repaired = _repair_legacy_qiskit_qasm(code)
+
+    assert "from qiskit.qasm2 import dumps as _majorana_qasm2_dumps" in repaired
+    assert "_majorana_qasm2_dumps(FINAL_CIRCUIT)" in repaired
+    assert ".qasm()" not in repaired

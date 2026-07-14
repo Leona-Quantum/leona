@@ -97,7 +97,9 @@ Execution contract:
   that binding. OpenQASM 3 is the preferred user-visible export; OpenQASM 2 is an
   internal compatibility bridge for the current parser.
 - For every Qiskit circuit, use Qiskit 2.x APIs: AerSimulator plus transpile and run;
-  never QuantumCircuit.qasm(), execute(), BasicAer, or .c_if().
+  never QuantumCircuit.qasm(), execute(), BasicAer, or .c_if(). If your own result
+  needs a QASM string, use qiskit.qasm2.dumps(circuit) or qiskit.qasm3.dumps(circuit),
+  never a circuit method call.
 - Use deterministic seeds wherever the framework supports them. Do not add
   measurements unless the artifact contract requests them.
 - For chemistry at PoC scale, hard-code the Hamiltonian coefficients from the request,

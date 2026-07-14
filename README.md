@@ -1,19 +1,37 @@
 # Majorana
 
-A verified quantum algorithm workbench: an AI execution agent (Run) that plans,
-generates, simulates, and verifies quantum code, and a durable library (Library) of
-verified artifacts with full provenance and run records.
+Majorana is an open quantum workbench that turns a natural-language question into
+copyable code, a measured result, and an evidence-backed artifact. Run owns the
+pipeline, Studio edits verified versions, and Library keeps the provenance.
 
-**Status:** rebuild in progress. Plan: `~/Documents/Projects/Majorana/plans/rebuild/`.
+Public product page: `https://web-majoranaq.vercel.app/open-source`
 
-## Stack
-Next.js (Vercel) · FastAPI control plane + worker (Cloud Run) · Neon Postgres (Alembic)
-· WorkOS AuthKit · Vercel Sandbox (deny-all egress) for untrusted code · OTel → Sentry +
-Grafana Cloud.
+## Architecture
 
-## Quickstart (Phase 1+)
+- Next.js web app on Vercel, with WorkOS AuthKit for workspace identity.
+- FastAPI control plane and a separate Cloud Run worker backed by Neon Postgres.
+- OpenAI-compatible and DeepSeek LLM routing, with stage-specific model selection.
+- Vercel Sandbox with explicit deny-all egress for generated code.
+- Canonical circuit IR with Qiskit, PennyLane, Cirq, OpenQASM 2, and OpenQASM 3 connectors.
+
+The control plane stores run events and artifacts; the sandbox never receives provider
+credentials. See `docs/` for the security and verification contracts.
+
+## Local quickstart
+
 ```bash
-pnpm install && uv sync
-pnpm turbo run dev        # web
-uv run fastapi dev services/api/app/main.py
+pnpm install
+uv sync --all-packages
+pnpm --filter @majorana/web dev
 ```
+
+For the API and worker, use the commands in `docs/runbooks/`. Provider credentials are
+required only for real LLM acceptance and must never be committed.
+
+## Contributing
+
+Read [CONTRIBUTING.md](CONTRIBUTING.md), run the focused checks for the files you touch,
+and keep generated contracts current. New circuit behavior should include a connector
+or worker regression test plus a hosted acceptance note when it crosses the live path.
+
+Licensed under the MIT License.
