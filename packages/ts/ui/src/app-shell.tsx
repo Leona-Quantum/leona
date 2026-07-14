@@ -33,6 +33,10 @@ export function AppShell({
   surfaceLabel?: string;
   locale?: "en" | "ja";
 }): ReactNode {
+  const sidebarToggleLabel = locale === "ja"
+    ? sidebarCollapsed ? "サイドバーを展開" : "サイドバーを折りたたむ"
+    : sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar";
+
   return (
     <div
       className={`mj-shell${sidebar ? " mj-shell--workspace" : ""}`}
@@ -45,7 +49,7 @@ export function AppShell({
             <button
               className="mj-shell-toggle"
               type="button"
-              aria-label={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+              aria-label={sidebarToggleLabel}
               aria-expanded={!sidebarCollapsed}
               onClick={onToggleSidebar}
             >

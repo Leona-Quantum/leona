@@ -4,6 +4,8 @@ import { CONTACT_EMAIL, CONTACT_MAILTO, PublicSite } from "../components/public-
 import { getMajoranaAuth } from "../lib/auth";
 import { isPublicDemoEnabled } from "../lib/public-demo";
 
+export const dynamic = "force-static";
+
 export const metadata: Metadata = {
   title: "Verified quantum work",
   description: "Majorana turns quantum questions into executable code, measured evidence, and reusable artifacts.",

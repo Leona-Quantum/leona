@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import { PublicSite, REPOSITORY_URL } from "../../components/public-site";
 
+export const dynamic = "force-static";
+
 export const metadata: Metadata = {
   title: "Open source",
   description: "The public engineering page for Majorana's verified quantum workbench.",

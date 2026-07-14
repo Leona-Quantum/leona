@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import { CONTACT_EMAIL, CONTACT_MAILTO, PublicSite } from "../../components/public-site";
 
+export const dynamic = "force-static";
+
 export const metadata: Metadata = {
   title: "Contact",
   description: "Contact Majorana about product access, research, and collaboration.",

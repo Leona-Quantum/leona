@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import { CONTACT_EMAIL, CONTACT_MAILTO, PublicSite } from "../../components/public-site";
 
+export const dynamic = "force-static";
+
 export const metadata: Metadata = {
   title: "Terms of service",
   description: "Majorana early-access terms of service for the public website and product.",

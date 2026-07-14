@@ -1,7 +1,8 @@
 import type { PublicLocale } from "./public-locale";
 
 export const WORKSPACE_COPY: Record<PublicLocale, {
-  surfaces: { run: string; library: string; studio: string; preview: string; account: string };
+  /* Nameko is the branded exception to nav-config's generic Run label. */
+  surfaces: { brandedRun: string; preview: string };
   sidebar: {
     newChat: string;
     recent: string;
@@ -30,7 +31,7 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
   };
 }> = {
   en: {
-    surfaces: { run: "Nameko Run", library: "Library", studio: "Studio", preview: "Public preview", account: "Account" },
+    surfaces: { brandedRun: "Nameko Run", preview: "Public preview" },
     sidebar: {
       newChat: "New chat",
       recent: "Recent",
@@ -59,7 +60,7 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
     },
   },
   ja: {
-    surfaces: { run: "Nameko 実行", library: "ライブラリ", studio: "スタジオ", preview: "公開プレビュー", account: "アカウント" },
+    surfaces: { brandedRun: "Nameko 実行", preview: "公開プレビュー" },
     sidebar: {
       newChat: "新しいチャット",
       recent: "最近",

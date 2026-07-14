@@ -117,15 +117,16 @@ export function Shell({
   }
 
   const copy = WORKSPACE_COPY[locale];
-  const surfaceLabel = pathname.startsWith("/library")
-    ? copy.surfaces.library
-    : pathname.startsWith("/studio")
-      ? copy.surfaces.studio
-    : pathname.startsWith("/demo")
-      ? copy.surfaces.preview
-    : pathname.startsWith("/account")
-      ? copy.surfaces.account
-      : copy.surfaces.run;
+  const activeSurface = NAV_SURFACES.find(
+    (surface) => pathname === surface.href || pathname.startsWith(`${surface.href}/`),
+  );
+  const surfaceLabel = pathname.startsWith("/demo")
+    ? copy.surfaces.preview
+    : pathname.startsWith("/run")
+      ? copy.surfaces.brandedRun
+      : activeSurface
+        ? navSurfaceLabel(activeSurface, locale)
+        : BRAND_NAME;
 
   return (
     <AppShell
@@ -329,7 +330,9 @@ function formatRelativeDate(value: string, locale: PublicLocale = "en"): string 
   if (Number.isNaN(date.valueOf())) return "";
   const now = new Date();
   const sameDay = date.toDateString() === now.toDateString();
-  if (sameDay) return date.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+  if (sameDay) {
+    return date.toLocaleTimeString(locale === "ja" ? "ja-JP" : "en-US", { hour: "numeric", minute: "2-digit" });
+  }
   const days = Math.max(1, Math.round((now.valueOf() - date.valueOf()) / 86_400_000));
   const copy = WORKSPACE_COPY[locale].sidebar;
   if (days === 1) return copy.yesterday;

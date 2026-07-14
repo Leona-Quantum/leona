@@ -2,6 +2,8 @@ import type { Metadata } from "next";
 import { PublicSite } from "../../components/public-site";
 import { isPublicDemoEnabled } from "../../lib/public-demo";
 
+export const dynamic = "force-static";
+
 export const metadata: Metadata = {
   title: "Pricing",
   description: "Early-access Majorana plans for individual researchers and teams.",
