@@ -7,7 +7,7 @@ dependencies = [
     "majorana-api",
     "majorana-pipeline",
     "majorana-llm",
-    "majorana-sandbox",
+    "majorana-sandbox[vercel]",
     "majorana-ir",
     "majorana-verification",
     "majorana-baselines",
