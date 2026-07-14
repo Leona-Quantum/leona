@@ -118,9 +118,7 @@ export function RunWorkspace({ demoMode = false }: { demoMode?: boolean } = {}) 
           <header className="mj-run-home-heading">
             <div>
               <h1>What are you working on?</h1>
-              <p>
-                Nameko plans the method, writes the code, runs the simulation, and explains the evidence. Start with a natural-language problem or open a verified artifact from Library.
-              </p>
+              <p>Describe a quantum problem, paste code to review, or continue from a saved artifact.</p>
             </div>
             <div className="mj-run-home-status" aria-label="Model status">
               <span className="mj-status-dot" aria-hidden="true" />
@@ -128,47 +126,58 @@ export function RunWorkspace({ demoMode = false }: { demoMode?: boolean } = {}) 
             </div>
           </header>
 
-          <div className="mj-run-home-grid">
-            <section className="mj-home-panel" aria-labelledby="run-workflow-title">
-              <h2 id="run-workflow-title">A visible path from question to evidence</h2>
-              <p>
-                Every run keeps its plan, generated code, checks, results, and saved artifact addressable. You can return to an older chat without losing the work in progress.
-              </p>
-              <div className="mj-home-capabilities">
-                <div className="mj-capability">
-                  <strong>Plan first</strong>
-                  <span>Choose a method and state the verification target before compute.</span>
-                </div>
-                <div className="mj-capability">
-                  <strong>Show the work</strong>
-                  <span>Watch model output, code, compilation, and checks arrive as evidence.</span>
-                </div>
-                <div className="mj-capability">
-                  <strong>Save to Quepo</strong>
-                  <span>Verified runs become reusable artifacts in the connected Library.</span>
+          <div className="mj-run-home-disclosures">
+            <details className="mj-run-disclosure" name="run-home-detail">
+              <summary>
+                <span>Try an example</span>
+                <span className="mj-run-disclosure-count">4 prompts</span>
+              </summary>
+              <div className="mj-run-disclosure-content">
+                <div className="mj-example-list">
+                  {EXAMPLES.map((example) => (
+                    <button
+                      className="mj-example-button"
+                      key={example.title}
+                      type="button"
+                      onClick={(event) => {
+                        setPrompt(example.prompt);
+                        setError(null);
+                        event.currentTarget.closest("details")?.removeAttribute("open");
+                      }}
+                    >
+                      <strong>{example.title}</strong>
+                      <span>{example.prompt}</span>
+                    </button>
+                  ))}
                 </div>
               </div>
-            </section>
+            </details>
 
-            <section className="mj-home-example" aria-labelledby="examples-title">
-              <h2 id="examples-title">Try an example</h2>
-              <div className="mj-example-list">
-                {EXAMPLES.map((example) => (
-                  <button
-                    className="mj-example-button"
-                    key={example.title}
-                    type="button"
-                    onClick={() => {
-                      setPrompt(example.prompt);
-                      setError(null);
-                    }}
-                  >
-                    <strong>{example.title}</strong>
-                    <span>{example.prompt}</span>
-                  </button>
-                ))}
+            <details className="mj-run-disclosure" name="run-home-detail">
+              <summary>
+                <span>How Nameko works</span>
+                <span className="mj-run-disclosure-count">3 steps</span>
+              </summary>
+              <div className="mj-run-disclosure-content">
+                <p className="mj-run-disclosure-intro">
+                  Every run keeps its plan, generated code, checks, results, and saved artifact together.
+                </p>
+                <div className="mj-home-capabilities">
+                  <div className="mj-capability">
+                    <strong>Plan first</strong>
+                    <span>Choose a method and verification target before compute.</span>
+                  </div>
+                  <div className="mj-capability">
+                    <strong>Show the work</strong>
+                    <span>Follow code, compilation, and checks as evidence arrives.</span>
+                  </div>
+                  <div className="mj-capability">
+                    <strong>Save to Quepo</strong>
+                    <span>Keep verified runs as reusable Library artifacts.</span>
+                  </div>
+                </div>
               </div>
-            </section>
+            </details>
           </div>
           {contextArtifact ? (
             <aside className="mj-run-context-card" aria-label="Quepo artifact context">
