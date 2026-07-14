@@ -36,7 +36,6 @@ def _create_kwargs(spec: ExecutionSpec, image: str) -> dict[str, Any]:
     """Build the AsyncSandbox.create(...) kwargs. Isolated so tests can assert the
     deny-all egress policy without a live provider."""
     return {
-        "runtime": "python3.13",
         "image": image,
         "timeout": spec.timeout_s * 1000,  # SDK takes milliseconds
         "network_policy": DENY_ALL_EGRESS,  # <-- the invariant
