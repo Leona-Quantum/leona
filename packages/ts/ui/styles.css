@@ -294,24 +294,6 @@
   border-radius: var(--radius-card);
   background: var(--bg-1);
 }
-.mj-company-hero-copy,
-.mj-company-hero-art,
-.mj-company-section,
-.mj-company-final-cta {
-  animation: mj-company-rise 600ms ease-out both;
-}
-.mj-company-hero-art {
-  animation-delay: 100ms;
-}
-.mj-company-section:nth-of-type(3) {
-  animation-delay: 160ms;
-}
-.mj-company-section:nth-of-type(4) {
-  animation-delay: 220ms;
-}
-.mj-company-final-cta {
-  animation-delay: 280ms;
-}
 .mj-company-hero-orbit {
   position: relative;
   display: grid;
@@ -337,11 +319,9 @@
   inset: 25%;
   border-style: dashed;
   transform: rotate(32deg) scaleX(1.35);
-  animation: mj-company-orbit 18s linear infinite;
 }
 .mj-company-orbit-ring--one {
   transform: rotate(-24deg) scaleX(1.18);
-  animation: mj-company-orbit-reverse 24s linear infinite;
 }
 .mj-company-orbit-dot {
   position: absolute;
@@ -1412,23 +1392,6 @@
   }
 }
 
-@keyframes mj-company-rise {
-  from {
-    opacity: 0;
-    transform: translateY(10px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-@keyframes mj-company-orbit {
-  to { transform: rotate(392deg) scaleX(1.35); }
-}
-@keyframes mj-company-orbit-reverse {
-  to { transform: rotate(-384deg) scaleX(1.18); }
-}
-
 /* Shared loading surface: quiet skeletons keep route transitions useful without
    turning a loading state into a large block of copy. */
 .mj-loading-screen {
@@ -1456,12 +1419,6 @@
   to { background-position: -100% 0; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .mj-company-hero-copy,
-  .mj-company-hero-art,
-  .mj-company-section,
-  .mj-company-final-cta,
-  .mj-company-orbit-ring--one,
-  .mj-company-orbit-ring--two,
   .mj-skeleton {
     animation: none;
   }

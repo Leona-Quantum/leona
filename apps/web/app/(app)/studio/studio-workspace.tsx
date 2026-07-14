@@ -319,7 +319,7 @@ function CodeEditor({ code, framework, onChange, onCopy, copied, copy }: { code:
   return (
     <section className="mj-studio-surface mj-studio-code-panel" aria-label={copy.sourceEditor}>
       <div className="mj-studio-surface-head"><div><span className="mj-section-label">{copy.sourceEditor}</span><h2>{copy.implementation(frameworkLabel(framework))}</h2></div><button className="mj-secondary-button" type="button" onClick={onCopy} title={copied ? copy.copied : copy.copyCode}><CopyIcon size={14} />{copied ? copy.copied : copy.copyCode}</button></div>
-      <textarea className="mj-studio-code-editor" value={code} onChange={(event) => onChange(event.target.value)} spellCheck={false} aria-label={`${frameworkLabel(framework)} source editor`} />
+      <textarea className="mj-studio-code-editor" value={code} onChange={(event) => onChange(event.target.value)} spellCheck={false} aria-label={`${frameworkLabel(framework)} ${copy.sourceEditorInput}`} />
       <p className="mj-studio-editor-note">{copy.editorNote}</p>
     </section>
   );

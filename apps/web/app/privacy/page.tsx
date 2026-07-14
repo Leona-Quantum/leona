@@ -19,7 +19,7 @@ export default async function PrivacyPage() {
         <span>{copy.updated}</span>
       </section>
       <article className="mj-legal-document">
-        <p className="mj-legal-note"><strong>{locale === "ja" ? "早期アクセスに関する注記:" : "Early-access note:"}</strong> {copy.note.replace(/^Early-access note: |^早期アクセスに関する注記: /, "")}</p>
+        <p className="mj-legal-note"><strong>{copy.noteLabel}</strong> {copy.noteBody}</p>
         {copy.sections.map((section) => (
           <section key={section.title}>
             <h2>{section.title}</h2>

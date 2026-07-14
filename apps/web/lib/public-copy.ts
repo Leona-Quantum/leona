@@ -1,5 +1,28 @@
 import type { PublicLocale } from "./public-locale";
 
+export const LOADING_COPY: Record<PublicLocale, {
+  root: string;
+  workspace: string;
+  dashboard: string;
+  repository: string;
+  status: string;
+}> = {
+  en: {
+    root: "Loading Leona Quantum",
+    workspace: "Loading workspace",
+    dashboard: "Loading dashboard",
+    repository: "Loading repository",
+    status: "Loading content",
+  },
+  ja: {
+    root: "Leona Quantumを読み込んでいます",
+    workspace: "ワークスペースを読み込んでいます",
+    dashboard: "ダッシュボードを読み込んでいます",
+    repository: "リポジトリを読み込んでいます",
+    status: "コンテンツを読み込んでいます",
+  },
+};
+
 export const HOME_COPY: Record<PublicLocale, {
   hero: {
     title: string;
@@ -277,14 +300,16 @@ export const PRIVACY_COPY: Record<PublicLocale, {
   title: string;
   lede: string;
   updated: string;
-  note: string;
+  noteLabel: string;
+  noteBody: string;
   sections: Array<{ title: string; paragraphs: string[] }>;
 }> = {
   en: {
     title: "Privacy policy",
     lede: "How Leona Quantum handles information on the public website and early-access product.",
     updated: "Last updated: July 15, 2026",
-    note: "Early-access note: this page describes the current product and operating practices. It will be updated as Leona Quantum grows, adds paid services, and formalizes its operating entity.",
+    noteLabel: "Early-access note:",
+    noteBody: "This page describes the current product and operating practices. It will be updated as Leona Quantum grows, adds paid services, and formalizes its operating entity.",
     sections: [
       { title: "1. Information we receive", paragraphs: ["We may receive account information such as your email address and authentication details when you create or use an account.", "When you use the workbench, we may process prompts, generated code, circuit data, run settings, simulation results, verification records, saved artifacts, and related metadata that you choose to submit.", "If you contact us, we receive the information you include in that message and the reply details needed to respond."] },
       { title: "2. How we use information", paragraphs: ["We use information to authenticate users, run and verify requested workflows, save and reopen Library artifacts, provide support, secure the service, diagnose failures, and improve reliability and product quality.", "We may use aggregated or de-identified operational information to understand performance. We do not present private workspace artifacts as public repository material without an explicit publish action."] },
@@ -299,7 +324,8 @@ export const PRIVACY_COPY: Record<PublicLocale, {
     title: "プライバシーポリシー",
     lede: "公開サイトと早期アクセスのプロダクトで、Leona Quantumが情報をどのように扱うかを説明します。",
     updated: "最終更新日: 2026年7月15日",
-    note: "早期アクセスに関する注記: このページは現在のプロダクトと運用方法を説明します。Leona Quantumの成長、有料サービス、事業体制の正式化に合わせて更新します。",
+    noteLabel: "早期アクセスに関する注記:",
+    noteBody: "このページは現在のプロダクトと運用方法を説明します。Leona Quantumの成長、有料サービス、事業体制の正式化に合わせて更新します。",
     sections: [
       { title: "1. 受け取る情報", paragraphs: ["アカウントを作成または利用すると、メールアドレスや認証情報などのアカウント情報を受け取ることがあります。", "ワークベンチの利用時には、送信した問い、生成コード、回路データ、実行設定、シミュレーション結果、検証記録、保存アーティファクト、関連メタデータを処理することがあります。", "お問い合わせいただいた場合は、メッセージに含まれる情報と返信に必要な情報を受け取ります。"] },
       { title: "2. 情報の利用目的", paragraphs: ["認証、ワークフローの実行と検証、Libraryアーティファクトの保存と再開、サポート、セキュリティ、障害診断、信頼性と品質の改善に利用します。", "集計または匿名化した運用情報を性能理解と改善に利用することがあります。非公開ワークスペースのアーティファクトを、明示的な公開操作なしに公開リポジトリへ掲載することはありません。"] },
@@ -316,14 +342,16 @@ export const TERMS_COPY: Record<PublicLocale, {
   title: string;
   lede: string;
   updated: string;
-  note: string;
+  noteLabel: string;
+  noteBody: string;
   sections: Array<{ title: string; paragraphs: string[] }>;
 }> = {
   en: {
     title: "Terms of service",
     lede: "The rules for using the Leona Quantum website, workbench, Library, and public repository.",
     updated: "Last updated: July 15, 2026",
-    note: "Early-access note: these plain-language terms are a practical starting point for the current product. Additional commercial terms may apply when paid plans or enterprise agreements become available.",
+    noteLabel: "Early-access note:",
+    noteBody: "These plain-language terms are a practical starting point for the current product. Additional commercial terms may apply when paid plans or enterprise agreements become available.",
     sections: [
       { title: "1. Using Leona Quantum", paragraphs: ["By accessing Leona Quantum, you agree to use the service lawfully, respect other users, and follow these terms. If you use it for an organization, you represent that you have authority to accept these terms on its behalf."] },
       { title: "2. Prohibited use", paragraphs: ["Do not use the service to violate law or third-party rights, exfiltrate secrets, attack infrastructure, bypass usage controls, submit malware, or interfere with the service or another person’s workspace. Do not use generated code or results as a substitute for professional review in safety-critical, financial, medical, or regulated settings."] },
@@ -338,7 +366,8 @@ export const TERMS_COPY: Record<PublicLocale, {
     title: "利用規約",
     lede: "Leona Quantumの公開サイト、ワークベンチ、Library、公開リポジトリを利用するためのルールです。",
     updated: "最終更新日: 2026年7月15日",
-    note: "早期アクセスに関する注記: これは現在のプロダクトのための平易な出発点です。有料プランやエンタープライズ契約には追加の商用条件が適用されることがあります。",
+    noteLabel: "早期アクセスに関する注記:",
+    noteBody: "これは現在のプロダクトのための平易な出発点です。有料プランやエンタープライズ契約には追加の商用条件が適用されることがあります。",
     sections: [
       { title: "1. Leona Quantumの利用", paragraphs: ["Leona Quantumへアクセスすることで、適法に利用し、他の利用者を尊重し、本規約に従うことに同意します。組織のために利用する場合、その組織を代表して同意する権限があることを表明します。"] },
       { title: "2. 禁止される利用", paragraphs: ["法令や第三者の権利への違反、秘密情報の持ち出し、インフラへの攻撃、利用制限の回避、マルウェアの送信、サービスや他の人のワークスペースへの妨害に利用しないでください。安全性が重要な分野、金融、医療、規制対象の場面で、生成コードや結果を専門家の確認の代わりにしないでください。"] },

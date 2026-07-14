@@ -114,6 +114,7 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
     circuitAria: (framework: string) => string;
     clickGate: string;
     sourceEditor: string;
+    sourceEditorInput: string;
     implementation: (framework: string) => string;
     editorNote: string;
     versionHistory: string;
@@ -251,6 +252,7 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
       circuitAria: (framework) => `${framework} circuit with two qubits`,
       clickGate: "Click a gate to inspect its role.",
       sourceEditor: "Source editor",
+      sourceEditorInput: "source editor",
       implementation: (framework) => `${framework} implementation`,
       editorNote: "Edit the draft directly. Simulate or verify it to produce evidence before it becomes a saved Library version.",
       versionHistory: "Version history",
@@ -392,6 +394,7 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
       circuitAria: (framework) => `${framework}の2量子ビット回路`,
       clickGate: "ゲートをクリックして役割を確認します。",
       sourceEditor: "ソースエディタ",
+      sourceEditorInput: "ソースエディタ",
       implementation: (framework) => `${framework}の実装`,
       editorNote: "下書きを直接編集できます。保存済みLibraryバージョンにする前に、シミュレーションまたは検証を実行してください。",
       versionHistory: "バージョン履歴",
