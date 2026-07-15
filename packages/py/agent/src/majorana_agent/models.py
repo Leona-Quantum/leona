@@ -26,6 +26,7 @@ class AgentState(StrEnum):
     PLANNED = "planned"
     EXECUTED = "executed"
     REPAIR_REQUIRED = "repair_required"
+    RESOURCE_EXHAUSTED = "resource_exhausted"
     VERIFIED = "verified"
     QASM_ATTEMPTED = "qasm_attempted"
     PUBLISHED = "published"
@@ -38,8 +39,16 @@ class CandidateStatus(StrEnum):
     CREATED = "created"
     EXECUTED = "executed"
     REPAIR_REQUIRED = "repair_required"
+    RESOURCE_EXHAUSTED = "resource_exhausted"
     VERIFIED = "verified"
     PUBLISHED = "published"
+
+
+class ExecutionFailureKind(StrEnum):
+    CODE_ERROR = "code_error"
+    TIMEOUT = "timeout"
+    MEMORY_EXHAUSTED = "memory_exhausted"
+    RESOURCE_LIMIT = "resource_limit"
 
 
 class ToolName(StrEnum):
@@ -122,6 +131,7 @@ class ExecutionEvidence(_Record):
     environment_fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
     sandbox_provider: str = Field(min_length=1, max_length=100)
     exit_code: int
+    failure_kind: ExecutionFailureKind | None = None
     duration_ms: int = Field(ge=0)
     result: dict[str, Any] = Field(default_factory=dict)
     observation: dict[str, Any] = Field(default_factory=dict)
@@ -129,6 +139,21 @@ class ExecutionEvidence(_Record):
     @property
     def succeeded(self) -> bool:
         return self.exit_code == 0
+
+    @property
+    def resource_exhausted(self) -> bool:
+        return self.failure_kind in {
+            ExecutionFailureKind.MEMORY_EXHAUSTED,
+            ExecutionFailureKind.RESOURCE_LIMIT,
+        }
+
+    @model_validator(mode="after")
+    def failure_kind_matches_exit(self) -> "ExecutionEvidence":
+        if self.exit_code == 0 and self.failure_kind is not None:
+            raise ValueError("successful execution cannot have a failure_kind")
+        if self.exit_code != 0 and self.failure_kind is None:
+            raise ValueError("failed execution requires a failure_kind")
+        return self
 
 
 class RepairInstruction(_Record):

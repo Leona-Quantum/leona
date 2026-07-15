@@ -1,14 +1,13 @@
 [project]
 name = "majorana-verification"
 version = "0.1.0"
-description = "Verification primitives: exact/statistical equivalence, exact-diag, brute-force, return-contract, QASM-parse"
+description = "Verification primitives: exact/statistical equivalence, return-contract, QASM-parse"
 requires-python = ">=3.12"
 dependencies = [
     "pydantic>=2.8",
     "numpy>=1.26",
     "majorana-contracts",
     "majorana-openqasm",
-    "majorana-baselines",
 ]
 
 [build-system]
@@ -21,4 +20,3 @@ packages = ["src/majorana_verification"]
 [tool.uv.sources]
 majorana-contracts = { workspace = true }
 majorana-openqasm = { workspace = true }
-majorana-baselines = { workspace = true }

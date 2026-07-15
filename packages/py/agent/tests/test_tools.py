@@ -1,9 +1,11 @@
 from uuid import UUID, uuid4
 
 from majorana_agent import (
+    AgentState,
     AgentPolicy,
     CircuitToolset,
     ExecutionOutput,
+    ExecutionFailureKind,
     MemoryAgentStore,
     PublishedArtifact,
     ToolBroker,
@@ -222,3 +224,49 @@ async def test_simulate_retry_reconciles_status_after_evidence_commit():
     assert (await store.latest_candidate(run_id)).status is CandidateStatus.CREATED
     assert (await broker.dispatch(run_id, call)).ok
     assert (await store.latest_candidate(run_id)).status is CandidateStatus.EXECUTED
+
+
+class ResourceExhaustedExecutor:
+    async def run_candidate(self, _candidate, _plan):
+        return ExecutionOutput(
+            environment_fingerprint="1" * 64,
+            sandbox_provider="test",
+            exit_code=75,
+            duration_ms=0,
+            result={},
+            observation={"estimated_memory_mb": 4096, "memory_limit_mb": 2048},
+            failure_kind=ExecutionFailureKind.RESOURCE_LIMIT,
+        )
+
+
+async def test_resource_exhaustion_is_terminal_without_candidate_repair():
+    store = MemoryAgentStore()
+    run_id = uuid4()
+    tools = CircuitToolset(
+        store=store,
+        framework=Framework.QISKIT,
+        planner=Planner(),
+        executor=ResourceExhaustedExecutor(),
+        verifier=Verifier(),
+        converter=Converter(),
+        publisher=Publisher(),
+    )
+    broker = ToolBroker(
+        store=store,
+        policy=AgentPolicy(framework=Framework.QISKIT),
+        handlers=tools.handlers(),
+    )
+    await broker.dispatch(run_id, ToolCall(tool_call_id="plan", name=ToolName.REQUEST_PLAN))
+    result = await broker.dispatch(
+        run_id,
+        ToolCall(
+            tool_call_id="simulate",
+            name=ToolName.SIMULATE_QISKIT,
+            arguments={"source": "FINAL_CIRCUIT = object()\nRESULT = {}"},
+        ),
+    )
+
+    assert result.state is AgentState.RESOURCE_EXHAUSTED
+    assert result.payload["resource_exhausted"] is True
+    assert "repair" not in result.payload
+    assert (await store.latest_candidate(run_id)).status is CandidateStatus.RESOURCE_EXHAUSTED

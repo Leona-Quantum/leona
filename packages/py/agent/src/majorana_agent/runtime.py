@@ -48,6 +48,7 @@ class AgentRuntime:
                 AgentState.COMPLETED,
                 AgentState.FAILED,
                 AgentState.CANCELLED,
+                AgentState.RESOURCE_EXHAUSTED,
             }:
                 return state
             if self._cancel_requested is not None and await self._cancel_requested():

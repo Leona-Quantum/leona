@@ -1,11 +1,8 @@
-from majorana_baselines import HamiltonianInstance, MaxCutInstance
-from majorana_contracts.enums import VerificationMethod, VerificationResultKind
+from majorana_contracts.enums import VerificationMethod
 
 from majorana_verification import (
     extract_counts,
-    verify_brute_force,
     verify_exact,
-    verify_exact_diag,
     verify_qasm_parse,
     verify_return_contract,
     verify_statistical,
@@ -162,20 +159,3 @@ def test_qasm_parse_accepts_valid_post_measurement_gate():
         "measure q[0] -> c[0];\nx q[0];\n"
     )
     assert bad.passed
-
-
-def test_exact_diag_matches_ground_state():
-    inst = HamiltonianInstance(matrix=[[1.0, 0.0], [0.0, -1.0]])
-    assert verify_exact_diag(inst, claimed_energy=-1.0).passed
-    # A claimed energy off by more than chemical accuracy fails.
-    assert not verify_exact_diag(inst, claimed_energy=-0.5).passed
-
-
-def test_brute_force_flags_impossible_claim():
-    inst = MaxCutInstance(edges=[(0, 1, 1.0), (1, 2, 1.0), (0, 2, 1.0)])
-    # Exact optimum is 2.0; claiming to beat it is fabricated → FAIL.
-    fabricated = verify_brute_force(inst, claimed_value=3.0)
-    assert not fabricated.passed
-    assert fabricated.details["beats_exact_optimum"]
-    assert verify_brute_force(inst, claimed_value=2.0).passed
-    assert VerificationResultKind.PASS is VerificationResultKind.PASS

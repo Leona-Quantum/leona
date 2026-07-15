@@ -32,6 +32,7 @@ _TOOLS_BY_STATE: dict[AgentState, tuple[ToolName, ...]] = {
     AgentState.PLANNED: tuple(SIMULATION_TOOL_BY_FRAMEWORK.values()),
     AgentState.EXECUTED: (ToolName.VERIFY_INTENT_ALIGNMENT,),
     AgentState.REPAIR_REQUIRED: tuple(SIMULATION_TOOL_BY_FRAMEWORK.values()),
+    AgentState.RESOURCE_EXHAUSTED: (),
     AgentState.VERIFIED: (ToolName.CONVERT_TO_OPENQASM, ToolName.PUBLISH_ARTIFACT),
     AgentState.QASM_ATTEMPTED: (ToolName.PUBLISH_ARTIFACT,),
     AgentState.PUBLISHED: (),

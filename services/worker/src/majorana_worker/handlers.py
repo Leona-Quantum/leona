@@ -292,6 +292,30 @@ async def _handle_agent_execution(
             verifier_decision="pass",
         )
         return RunStatus.SUCCEEDED
+    if final is AgentState.RESOURCE_EXHAUSTED:
+        await ctx.sink.emit(
+            "run.error",
+            {
+                "stage": None,
+                "code": "resource_exhausted",
+                "message": (
+                    "The selected execution lane does not have enough memory or capacity "
+                    "for this circuit. The candidate was not sent through code repair."
+                ),
+            },
+            event_id=uuid.uuid5(ctx.run_id, "run.error.resource_exhausted"),
+        )
+        await ctx.sink.emit(
+            "run.finished",
+            {"status": RunStatus.FAILED, "verifier_decision": "inconclusive"},
+            event_id=uuid.uuid5(ctx.run_id, "run.finished"),
+        )
+        await run_store.set_status(
+            RunStatus.FAILED,
+            finished_at_now=True,
+            verifier_decision="inconclusive",
+        )
+        return RunStatus.FAILED
     await ctx.sink.emit(
         "run.error",
         {"stage": None, "code": "agent_failed", "message": "agent tool loop failed"},

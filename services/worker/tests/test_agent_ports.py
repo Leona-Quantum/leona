@@ -91,7 +91,12 @@ async def test_deterministic_failure_short_circuits_semantic_critic():
 class PassingCriticLLM:
     async def complete(self, request, *, on_delta=None):
         return LLMResponse(
-            text='{"decision":"pass","findings":[],"repairs":[]}',
+            text=(
+                '{"decision":"pass","confidence":"high","severity":"none",'
+                '"summary":"Request, plan, code, and result align.","passed_checks":["intent"],'
+                '"failed_checks":[],"mismatches":[],"suggestions":[],"repair_plan":[],'
+                '"required_recheck":[],"residual_risks":[]}'
+            ),
             model=request.model,
             input_tokens=1,
             output_tokens=1,
@@ -182,28 +187,50 @@ async def test_executor_uses_unique_sidecars_and_counts_repeat_duration():
     assert sandbox.paths[2] != sandbox.paths[0]
 
 
-def test_verifier_rejects_boolean_baseline_claim():
+class MustNotCreateSandbox:
+    provider = "must-not-run"
+
+    async def _execute(self, _spec):
+        raise AssertionError("memory preflight must run before sandbox creation")
+
+
+async def test_executor_reports_resource_exhaustion_before_large_statevector_run():
+    plan = Plan.model_validate(_plan().model_dump(mode="json") | {"qubits_estimate": 27})
+    output = await SandboxCandidateExecutor(MustNotCreateSandbox()).run_candidate(
+        _candidate(), plan
+    )
+
+    assert output.failure_kind.value == "resource_limit"
+    assert output.observation["estimated_memory_mb"] == 4096
+    assert output.observation["memory_limit_mb"] == 2048
+    assert output.observation["sandbox_runs"] == 0
+
+
+class LowConfidenceCriticLLM:
+    async def complete(self, request, *, on_delta=None):
+        return LLMResponse(
+            text=(
+                '{"decision":"pass","confidence":"low","severity":"none",'
+                '"summary":"Evidence is insufficient.","passed_checks":[],"failed_checks":[],'
+                '"mismatches":[],"suggestions":["Provide stronger evidence"],'
+                '"repair_plan":[],"required_recheck":["semantic_critic"],'
+                '"residual_risks":["intent uncertain"]}'
+            ),
+            model=request.model,
+            input_tokens=1,
+            output_tokens=1,
+        )
+
+
+async def test_semantic_critic_fails_closed_on_low_confidence_pass():
     candidate = _candidate()
-    plan = Plan.model_validate(
-        _plan(expected_keys=["objective"]).model_dump(mode="json")
-        | {
-            "success_criteria": {"primary_metric": "objective"},
-            "verification_plan": {"methods": [VerificationMethod.BRUTE_FORCE]},
-        }
+    output = await EvidenceVerifier(llm=LowConfidenceCriticLLM(), task_prompt="Bell state").verify(
+        candidate, _execution(candidate), _plan()
     )
-    execution = _execution(
-        candidate,
-        result={
-            "objective": True,
-            "baseline_instance": {"kind": "maxcut", "edges": [[0, 1, 1.0]]},
-        },
-    )
-    checks = EvidenceVerifier(llm=MustNotRunLLM(), task_prompt="test")._deterministic_checks(
-        candidate, execution, plan
-    )
-    baseline = next(check for check in checks if check["method"] == "brute_force")
-    assert baseline["result"] == "fail"
-    assert baseline["details"] == {"error": "required evidence unavailable"}
+
+    assert output.decision is VerifierDecision.FAIL
+    assert output.repair is not None
+    assert output.repair.required_rechecks == ["semantic_critic"]
 
 
 def test_verifier_respects_non_circuit_artifact_contract():

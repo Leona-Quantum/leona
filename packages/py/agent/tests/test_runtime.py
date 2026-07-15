@@ -6,6 +6,7 @@ from majorana_agent import (
     AgentRuntime,
     AgentState,
     CircuitToolset,
+    ExecutionFailureKind,
     ExecutionOutput,
     MemoryAgentStore,
     PublishedArtifact,
@@ -47,6 +48,7 @@ class RepairingExecutor:
             environment_fingerprint="1" * 64,
             sandbox_provider="test",
             exit_code=1 if broken else 0,
+            failure_kind=ExecutionFailureKind.CODE_ERROR if broken else None,
             duration_ms=1,
             result={} if broken else {"counts": {"00": 5, "11": 5}},
             observation={
