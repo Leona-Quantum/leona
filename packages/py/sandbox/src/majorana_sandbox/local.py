@@ -16,8 +16,14 @@ import resource
 import signal
 import sys
 import time
+from pathlib import Path
 
-from majorana_sandbox.spec import MAX_OUTPUT_BYTES, ExecutionSpec, SandboxResult
+from majorana_sandbox.spec import (
+    MAX_OUTPUT_BYTES,
+    ExecutionSpec,
+    SandboxResult,
+    parse_protected_result,
+)
 
 # Minimal, side-effect-free environment for the child (mirrors the legacy runner's
 # allowlist so the child sees no host credentials or config).
@@ -51,7 +57,7 @@ class LocalSubprocessSandbox:
             sys.executable,
             "-I",  # isolated mode: no user site, no PYTHON* env influence
             "-c",
-            spec.code,
+            spec.code + spec.trusted_epilogue,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
             env=env,
@@ -76,6 +82,15 @@ class LocalSubprocessSandbox:
         exit_code = -signal.SIGKILL if timed_out else (proc.returncode or 0)
         if timed_out:
             err = (err + "\n" if err else "") + f"killed: exceeded {spec.timeout_s}s timeout"
+        protected_result = None
+        if spec.protected_result_path is not None:
+            result_path = Path(spec.protected_result_path)
+            try:
+                protected_result = parse_protected_result(result_path.read_bytes())
+            except OSError:
+                pass
+            finally:
+                result_path.unlink(missing_ok=True)
         return SandboxResult(
             ok=(not timed_out) and exit_code == 0,
             exit_code=exit_code,
@@ -85,6 +100,7 @@ class LocalSubprocessSandbox:
             stderr=err,
             truncated=out_trunc or err_trunc,
             provider=self.provider,
+            protected_result=protected_result,
         )
 
 

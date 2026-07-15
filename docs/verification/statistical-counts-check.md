@@ -25,9 +25,10 @@ not reproducible from the exact code being saved.
 
 - Empty distributions fail.
 - A TVD above the configured threshold fails and enters the bounded repair loop.
-- If the program does not return a counts-shaped value, the statistical method is
-  skipped honestly; return-contract and any applicable independent problem check still
-  determine the verdict.
+- If the program does not return a counts-shaped value, the statistical method fails
+  with an explicit missing-evidence reason. Return-contract and applicable independent
+  problem checks still run, but the run cannot pass without the promised statistical
+  evidence.
 - OpenQASM availability has no effect on this check or on artifact persistence.
 
 ## What this does not prove

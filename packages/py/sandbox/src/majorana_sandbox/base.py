@@ -30,6 +30,8 @@ class Sandbox(Protocol):
 async def run(sandbox: Sandbox, spec: ExecutionSpec) -> SandboxResult:
     """Guarded entry point: static guard → pre-flight caps → provider execute.
     Raises GuardRejection / QubitCeilingExceeded before any sandbox is created."""
+    # Only generated code is inspected here. ``trusted_epilogue`` is control-plane
+    # instrumentation assembled after generation and executed by the provider.
     guard = check_python_code(spec.code)
     if not guard.ok:
         raise GuardRejection(guard.violations, guard.reason or "blocked by static guard")

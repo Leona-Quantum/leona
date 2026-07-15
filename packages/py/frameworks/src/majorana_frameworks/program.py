@@ -1,41 +1,24 @@
 """Framework-native source programs and the sandbox circuit-observation protocol.
 
 The generated Python source remains authoritative throughout the pipeline.  A sandbox
-epilogue may observe a Qiskit ``FINAL_CIRCUIT`` and serialize it to OpenQASM for later
-cross-framework conversion, but that optional payload never replaces the source.
+epilogue may observe a Qiskit ``FINAL_CIRCUIT`` and serialize it through a provider-read
+sidecar for later conversion, but that optional payload never replaces the source.
 """
 
 from __future__ import annotations
 
 import hashlib
-import re
 from dataclasses import dataclass
-from typing import Literal
+from typing import Any, Literal, Mapping
 
 from majorana_contracts.enums import Framework
 from majorana_contracts.models import ResourceMetrics
-from majorana_frameworks.adapters import (
-    INTERCHANGE_QASM_BEGIN,
-    INTERCHANGE_QASM_END,
-    INTERCHANGE_QASM_ERROR,
-    NativeOptimization,
-    adapter_for,
-)
-
-_INTERCHANGE_RE = re.compile(
-    rf"^{re.escape(INTERCHANGE_QASM_BEGIN)}\r?$\n(?P<qasm>.*?)"
-    rf"^{re.escape(INTERCHANGE_QASM_END)}\r?$",
-    re.DOTALL | re.MULTILINE,
-)
-_INTERCHANGE_ERROR_RE = re.compile(
-    rf"^{re.escape(INTERCHANGE_QASM_ERROR)}:(?P<error>[A-Za-z_][A-Za-z0-9_]*)\s*$",
-    re.MULTILINE,
-)
+from majorana_frameworks.adapters import NativeOptimization, adapter_for
 
 
 def _normalize_source(source: str) -> str:
-    lines = source.replace("\r\n", "\n").replace("\r", "\n").split("\n")
-    return "\n".join(line.rstrip() for line in lines).strip() + "\n"
+    normalized = source.replace("\r\n", "\n").replace("\r", "\n")
+    return normalized if normalized.endswith("\n") else normalized + "\n"
 
 
 @dataclass(frozen=True)
@@ -73,41 +56,50 @@ class FrameworkProgram:
             self.source, circuit_expected=circuit_expected
         )
 
-    def native_optimization(self) -> NativeOptimization:
+    def native_optimization(self, observation: dict[str, Any] | None = None) -> NativeOptimization:
         """Classify optimization already present in the selected framework code.
 
         Arbitrary Python source cannot be rewritten safely after verification.  The
         generator therefore emits native optimization calls, and this boundary records
         whether such a call is part of the exact source that was executed.
         """
-        return adapter_for(self.framework).native_optimization(self.source)
+        return adapter_for(self.framework).native_optimization(self.source, observation)
 
-    def resource_metrics(self, *, qubits: int, expected_runtime_sec: int) -> ResourceMetrics:
+    def resource_metrics(
+        self,
+        *,
+        qubits: int,
+        expected_runtime_sec: int,
+        observation: dict[str, Any] | None = None,
+    ) -> ResourceMetrics:
         """Estimate operations directly from the selected-framework source."""
         return adapter_for(self.framework).resource_metrics(
             self.source,
             qubits=qubits,
             expected_runtime_sec=expected_runtime_sec,
+            observation=observation,
         )
 
-    def instrument_for_interchange(self, *, circuit_expected: bool) -> str:
-        """Append optional Qiskit→OpenQASM observation after native execution.
+    def trusted_epilogue(self, result_path: str, *, circuit_expected: bool) -> str:
+        """Build provider-owned Qiskit→OpenQASM observation code.
 
         Cirq and PennyLane remain valid framework-native programs without OpenQASM.
         Their future converters belong behind this boundary rather than in the worker.
         """
-        return adapter_for(self.framework).instrument_for_interchange(
-            self.source, circuit_expected=circuit_expected
+        return adapter_for(self.framework).trusted_epilogue(
+            self.source, result_path, circuit_expected=circuit_expected
         )
 
 
-def extract_interchange_qasm(text: str) -> InterchangeExtraction:
-    """Recover only a Majorana-owned interchange envelope from sandbox stdout."""
-    errors = _INTERCHANGE_ERROR_RE.findall(text)
-    epilogue_error = errors[-1] if errors else None
-    envelopes = list(_INTERCHANGE_RE.finditer(text))
-    if envelopes:
-        qasm = envelopes[-1].group("qasm").strip()
-        if qasm:
-            return InterchangeExtraction(qasm, "sandbox_epilogue", epilogue_error)
+def extract_interchange_qasm(
+    protected_result: Mapping[str, Any] | None,
+) -> InterchangeExtraction:
+    """Recover interchange only from the provider-owned structured result field."""
+    if protected_result is None:
+        return InterchangeExtraction(None, "missing")
+    error = protected_result.get("interchange_error")
+    epilogue_error = error if isinstance(error, str) else None
+    qasm = protected_result.get("interchange_qasm")
+    if isinstance(qasm, str) and qasm.strip():
+        return InterchangeExtraction(qasm.strip(), "sandbox_epilogue", epilogue_error)
     return InterchangeExtraction(None, "missing", epilogue_error)

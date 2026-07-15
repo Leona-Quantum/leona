@@ -21,8 +21,9 @@ _OPENQASM_CONTRACT = (
 
 FRAMEWORK_DIRECTIVE = (
     "Default framework is Qiskit for executable Python. Generate PennyLane or Cirq "
-    "only when the user asks for it or Qiskit genuinely cannot express the task; "
-    "never switch silently. Generate, optimize, execute, and return code in the selected "
+    "only when the user explicitly selects it. If Qiskit cannot express the task, "
+    "report that limitation rather than switching frameworks; never switch silently. "
+    "Generate, optimize, execute, and return code in the selected "
     "framework. OpenQASM must not become the user-facing result or the source of truth."
 )
 

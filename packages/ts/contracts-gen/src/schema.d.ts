@@ -153,7 +153,7 @@ export interface components {
             export_status: components["schemas"]["ExportStatus"];
             /**
              * Fingerprint
-             * @description Unique per artifact; normally hashes normalized selected-framework source
+             * @description Digest of the framework and normalized selected-framework source; identical source may share a fingerprint across artifact versions
              */
             fingerprint: string;
             /**
@@ -713,7 +713,7 @@ export interface components {
         };
         /**
          * QasmEmission
-         * @description Provenance for optional OpenQASM interchange recovered from sandbox stdout.
+         * @description Provenance for optional OpenQASM interchange from a protected sandbox result.
          *
          *     ``sandbox_epilogue`` is Majorana's observed serialization of ``FINAL_CIRCUIT``;
          *     ``model_stdout`` is retained only for replaying legacy events.

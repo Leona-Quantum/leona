@@ -43,6 +43,7 @@ from majorana_contracts.enums import (
     Framework,
     Stage,
     VerificationMethod,
+    VerificationResultKind,
     VerifierDecision,
 )
 from majorana_contracts.models import ResourceMetrics
@@ -67,6 +68,7 @@ from majorana_sandbox import ExecutionSpec, GuardRejection, QubitCeilingExceeded
 from majorana_sandbox import run as sandbox_run
 from majorana_sandbox.guard import check_python_code
 from majorana_verification import (
+    VerificationOutcome,
     extract_counts,
     verify_brute_force,
     verify_exact_diag,
@@ -319,12 +321,17 @@ def build_stage_handlers(
         # before trying compilation/finalization again.
         retry_from = Stage.GENERATE
         program: FrameworkProgram = ctx.state[program_key]
-        instrumented = program.instrument_for_interchange(circuit_expected=_circuit_expected(plan))
-        epilogue_applied = instrumented != program.source
+        protected_result_path = f"/tmp/.majorana-observation-{uuid.uuid4().hex}.json"
+        trusted_epilogue = program.trusted_epilogue(
+            protected_result_path, circuit_expected=_circuit_expected(plan)
+        )
+        epilogue_applied = bool(trusted_epilogue)
         spec = ExecutionSpec(
-            code=instrumented,
+            code=program.source,
             timeout_s=min(plan.expected_runtime_sec, 120),
             qubits_estimate=plan.qubits_estimate,
+            trusted_epilogue=trusted_epilogue,
+            protected_result_path=protected_result_path if epilogue_applied else None,
         )
         try:
             result = await sandbox_run(sandbox, spec)
@@ -345,7 +352,7 @@ def build_stage_handlers(
                 diagnosis=str(exc),
             )
 
-        qasm_extraction = extract_interchange_qasm(result.stdout)
+        qasm_extraction = extract_interchange_qasm(result.protected_result)
         await ctx.sink.emit(
             "sandbox.result",
             {
@@ -395,6 +402,9 @@ def build_stage_handlers(
                 diagnosis="generated code printed no JSON result object",
             )
         ctx.state[result_key] = parsed
+        if result.protected_result is not None and phase != "verification_repeat":
+            observation_key = "final_framework_observation" if is_final else "framework_observation"
+            ctx.state[observation_key] = result.protected_result
         interchange_qasm = qasm_extraction.qasm
         if interchange_qasm and phase != "verification_repeat":
             ctx.state[interchange_key] = interchange_qasm
@@ -568,7 +578,7 @@ def build_stage_handlers(
 
     async def compile_stage(ctx: RunContext) -> StageOutcome:
         program: FrameworkProgram = ctx.state["program"]
-        outcome = program.native_optimization()
+        outcome = program.native_optimization(ctx.state.get("framework_observation"))
         ctx.state["compilation"] = outcome
         compatibility = {
             program.framework.value: {"status": ExportStatus.LOSSLESS, "reason": None},
@@ -594,9 +604,10 @@ def build_stage_handlers(
         metrics = program.resource_metrics(
             qubits=plan.qubits_estimate,
             expected_runtime_sec=plan.expected_runtime_sec,
+            observation=ctx.state.get("framework_observation"),
         )
-        source = "plan_static"
-        notes = ["Estimate reflects the selected-framework source retained after optimization."]
+        source = "sandbox_observation" if ctx.state.get("framework_observation") else "plan_static"
+        notes = ["Estimate reflects the selected-framework circuit retained after optimization."]
         ctx.state["compiled_resource_estimate"] = metrics
         await ctx.sink.emit(
             "resource.estimate",
@@ -861,7 +872,7 @@ def build_stage_handlers(
         interchange_qasm = ctx.state.get("final_interchange_qasm") or ctx.state.get(
             "interchange_qasm"
         )
-        canonical_qasm = normalize(interchange_qasm) if interchange_qasm is not None else None
+        canonical_qasm = interchange_qasm if isinstance(interchange_qasm, str) else None
         plan: Plan = ctx.state["plan"]
         final_program: FrameworkProgram = ctx.state["final_program"]
         artifact_id = ctx.parent_artifact_id
@@ -994,7 +1005,11 @@ def _run_verification(method: VerificationMethod, plan: Plan, result: dict[str, 
             else None
         )
         if first_counts is None or repeat_counts is None:
-            return None
+            return VerificationOutcome(
+                method=VerificationMethod.STATISTICAL,
+                result=VerificationResultKind.FAIL,
+                details={"error": "statistical evidence requires counts from both executions"},
+            )
         thresholds = plan.verification_plan.thresholds if plan.verification_plan else None
         threshold = None
         if thresholds:  # explicit membership checks — a plan-set 0.0 must survive

@@ -119,6 +119,16 @@ def verify_statistical_counts_pair(
     Problem-specific correctness still comes from exact-diagonalization, brute-force,
     return-contract, and other independent checks selected by the plan.
     """
+    if any(
+        type(count) is not int or count < 0
+        for counts in (first, second)
+        for count in counts.values()
+    ):
+        return VerificationOutcome(
+            method=VerificationMethod.STATISTICAL,
+            result=FAIL,
+            details={"error": "counts must be non-negative integers"},
+        )
     first_total = sum(first.values())
     second_total = sum(second.values())
     if first_total <= 0 or second_total <= 0:

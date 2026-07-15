@@ -81,6 +81,25 @@ async def test_legitimate_run_succeeds_on_local_double():
     assert result.provider == "local-subprocess"
 
 
+async def test_provider_returns_trusted_epilogue_sidecar_as_protected_result(tmp_path):
+    result_path = tmp_path / "protected-result.json"
+    result = await run(
+        LocalSubprocessSandbox(),
+        ExecutionSpec(
+            code='print("model stdout")',
+            trusted_epilogue=(
+                f'\nwith open({str(result_path)!r}, "w", encoding="utf-8") as result_file:\n'
+                '    result_file.write(\'{"interchange_qasm":"OPENQASM 3.0;"}\')\n'
+            ),
+            protected_result_path=str(result_path),
+        ),
+    )
+
+    assert result.ok
+    assert result.protected_result == {"interchange_qasm": "OPENQASM 3.0;"}
+    assert not result_path.exists()
+
+
 # --- The deny-all egress invariant (provider adapter) ------------------------
 
 

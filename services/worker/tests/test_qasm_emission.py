@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import sys
+import json
 from types import ModuleType
 
 import pytest
@@ -24,7 +25,7 @@ def _install_fake_qiskit(monkeypatch, dumps) -> None:
     monkeypatch.setitem(sys.modules, "qiskit.qasm3", qasm3)
 
 
-def test_owned_qiskit_epilogue_emits_marked_final_circuit_without_model_qasm(monkeypatch, capsys):
+def test_owned_qiskit_epilogue_returns_protected_final_circuit(monkeypatch, capsys, tmp_path):
     expected_qasm = "OPENQASM 3.0;\nqubit q;\nh q;"
     _install_fake_qiskit(monkeypatch, lambda circuit: expected_qasm)
     code = """import json
@@ -32,21 +33,21 @@ FINAL_CIRCUIT = object()
 print(json.dumps({"counts": {"0": 1}}))
 """
 
-    composed = FrameworkProgram(Framework.QISKIT, code).instrument_for_interchange(
-        circuit_expected=True
-    )
-    assert check_python_code(composed).ok
-    exec(composed, {})
+    program = FrameworkProgram(Framework.QISKIT, code)
+    result_path = tmp_path / "observation.json"
+    epilogue = program.trusted_epilogue(str(result_path), circuit_expected=True)
+    assert check_python_code(program.source).ok
+    exec(program.source + epilogue, {})
 
     stdout = capsys.readouterr().out
     assert _parse_result_dict(stdout) == {"counts": {"0": 1}}
-    extraction = extract_interchange_qasm(stdout)
+    extraction = extract_interchange_qasm(json.loads(result_path.read_text()))
     assert extraction.source == "sandbox_epilogue"
     assert extraction.qasm == expected_qasm
 
 
 def test_owned_epilogue_records_serialization_error_without_trusting_model_stdout(
-    monkeypatch, capsys
+    monkeypatch, capsys, tmp_path
 ):
     def fail_dumps(circuit):
         raise RuntimeError("do not persist raw sandbox errors")
@@ -59,15 +60,16 @@ print(json.dumps({"counts": {"1": 1}}))
 """
 
     program = FrameworkProgram(Framework.QISKIT, code)
-    exec(program.instrument_for_interchange(circuit_expected=True), {})
+    result_path = tmp_path / "observation.json"
+    exec(program.source + program.trusted_epilogue(str(result_path), circuit_expected=True), {})
 
-    extraction = extract_interchange_qasm(capsys.readouterr().out)
+    extraction = extract_interchange_qasm(json.loads(result_path.read_text()))
     assert extraction.source == "missing"
     assert extraction.qasm is None
     assert extraction.epilogue_error == "RuntimeError"
 
 
-def test_owned_epilogue_serializes_a_real_qiskit_circuit_when_available(capsys):
+def test_owned_epilogue_serializes_a_real_qiskit_circuit_when_available(capsys, tmp_path):
     qiskit = pytest.importorskip("qiskit")
     quantum_circuit = qiskit.QuantumCircuit
     code = """import json
@@ -77,12 +79,13 @@ print(json.dumps({"counts": {"0": 1}}))
 """
 
     program = FrameworkProgram(Framework.QISKIT, code)
+    result_path = tmp_path / "observation.json"
     exec(
-        program.instrument_for_interchange(circuit_expected=True),
+        program.source + program.trusted_epilogue(str(result_path), circuit_expected=True),
         {"QuantumCircuit": quantum_circuit},
     )
 
-    extraction = extract_interchange_qasm(capsys.readouterr().out)
+    extraction = extract_interchange_qasm(json.loads(result_path.read_text()))
     assert extraction.source == "sandbox_epilogue"
     assert extraction.qasm and extraction.qasm.startswith("OPENQASM 3.0;")
 

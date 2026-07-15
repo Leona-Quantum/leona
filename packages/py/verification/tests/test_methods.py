@@ -139,6 +139,13 @@ def test_statistical_pair_checks_selected_framework_reexecution():
     assert not changed.passed
 
 
+def test_statistical_pair_rejects_negative_fractional_and_boolean_counts():
+    for invalid in (-1, 1.5, True):
+        outcome = verify_statistical_counts_pair({"0": invalid}, {"0": 1})
+        assert not outcome.passed
+        assert outcome.details["error"] == "counts must be non-negative integers"
+
+
 def test_return_contract_missing_key_fails():
     ok = verify_return_contract({"energy": -1.1, "counts": {}}, ["energy", "counts"])
     assert ok.passed

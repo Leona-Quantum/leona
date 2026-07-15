@@ -4,6 +4,9 @@ from the plan's resource estimate), so an over-budget run never consumes a sandb
 
 from __future__ import annotations
 
+import json
+from typing import Any
+
 from pydantic import BaseModel, Field
 
 # 05-security.md §1 caps for the default lane.
@@ -27,6 +30,8 @@ class ExecutionSpec(BaseModel):
         description="From the plan; checked against the lane ceiling pre-dispatch",
     )
     qubit_ceiling: int = Field(default=DEFAULT_QUBIT_CEILING, ge=1)
+    trusted_epilogue: str = ""
+    protected_result_path: str | None = None
 
 
 class SandboxResult(BaseModel):
@@ -41,6 +46,7 @@ class SandboxResult(BaseModel):
     stderr: str
     truncated: bool = False
     provider: str
+    protected_result: dict[str, Any] | None = None
 
 
 class QubitCeilingExceeded(ValueError):
@@ -57,3 +63,14 @@ def preflight(spec: ExecutionSpec) -> None:
             f"{spec.qubit_ceiling}-qubit default-lane ceiling; the Modal heavy lane "
             "is not yet enabled (build the routing seam, not the lane — AD-12)"
         )
+
+
+def parse_protected_result(raw: bytes | None) -> dict[str, Any] | None:
+    """Decode a bounded provider-read sidecar; malformed optional data is ignored."""
+    if raw is None or len(raw) > MAX_OUTPUT_BYTES:
+        return None
+    try:
+        value = json.loads(raw)
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        return None
+    return value if isinstance(value, dict) else None

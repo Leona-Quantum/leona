@@ -186,7 +186,7 @@ class CodeFinalized(_EventBase):
 
 
 class QasmEmission(BaseModel):
-    """Provenance for optional OpenQASM interchange recovered from sandbox stdout.
+    """Provenance for optional OpenQASM interchange from a protected sandbox result.
 
     ``sandbox_epilogue`` is Majorana's observed serialization of ``FINAL_CIRCUIT``;
     ``model_stdout`` is retained only for replaying legacy events.

@@ -310,7 +310,7 @@
             "$ref": "#/components/schemas/ExportStatus"
           },
           "fingerprint": {
-            "description": "Unique per artifact; normally hashes normalized selected-framework source",
+            "description": "Digest of the framework and normalized selected-framework source; identical source may share a fingerprint across artifact versions",
             "title": "Fingerprint",
             "type": "string"
           },
@@ -1421,7 +1421,7 @@
       },
       "QasmEmission": {
         "additionalProperties": false,
-        "description": "Provenance for optional OpenQASM interchange recovered from sandbox stdout.\n\n``sandbox_epilogue`` is Majorana's observed serialization of ``FINAL_CIRCUIT``;\n``model_stdout`` is retained only for replaying legacy events.",
+        "description": "Provenance for optional OpenQASM interchange from a protected sandbox result.\n\n``sandbox_epilogue`` is Majorana's observed serialization of ``FINAL_CIRCUIT``;\n``model_stdout`` is retained only for replaying legacy events.",
         "properties": {
           "available": {
             "title": "Available",

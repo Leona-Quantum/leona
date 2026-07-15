@@ -109,7 +109,10 @@ class ArtifactVersion(_ResourceBase):
     code: str
     code_lang: str
     fingerprint: str = Field(
-        description="Unique per artifact; normally hashes normalized selected-framework source"
+        description=(
+            "Digest of the framework and normalized selected-framework source; "
+            "identical source may share a fingerprint across artifact versions"
+        )
     )
     export_status: ExportStatus
     export_reason: str | None = None

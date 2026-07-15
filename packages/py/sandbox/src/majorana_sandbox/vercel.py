@@ -16,7 +16,12 @@ from __future__ import annotations
 import time
 from typing import Any
 
-from majorana_sandbox.spec import MAX_OUTPUT_BYTES, ExecutionSpec, SandboxResult
+from majorana_sandbox.spec import (
+    MAX_OUTPUT_BYTES,
+    ExecutionSpec,
+    SandboxResult,
+    parse_protected_result,
+)
 
 # The one value that must never change silently. Asserted by CI.
 DENY_ALL_EGRESS = "deny-all"
@@ -69,7 +74,12 @@ class VercelSandbox:
             raise SandboxProviderError("Vercel sandbox could not be created") from exc
         try:
             await sandbox.write_files(
-                [{"path": f"{_RUN_DIR}/main.py", "content": spec.code.encode("utf-8")}]
+                [
+                    {
+                        "path": f"{_RUN_DIR}/main.py",
+                        "content": (spec.code + spec.trusted_epilogue).encode("utf-8"),
+                    }
+                ]
             )
             result = await sandbox.run_command(
                 cmd="python", args=["-I", f"{_RUN_DIR}/main.py"], cwd=_RUN_DIR
@@ -77,6 +87,16 @@ class VercelSandbox:
             exit_code = result.exit_code
             stdout = (await result.stdout())[:MAX_OUTPUT_BYTES]
             stderr = (await result.stderr())[:MAX_OUTPUT_BYTES]
+            protected_result = None
+            if spec.protected_result_path is not None:
+                try:
+                    protected_result = parse_protected_result(
+                        await sandbox.read_file(spec.protected_result_path)
+                    )
+                except Exception:
+                    # Interchange and SDK observations are optional. A missing or
+                    # malformed sidecar must never discard a successful native run.
+                    pass
         finally:
             await sandbox.stop()
 
@@ -89,4 +109,5 @@ class VercelSandbox:
             stderr=stderr,
             truncated=len(stdout) >= MAX_OUTPUT_BYTES or len(stderr) >= MAX_OUTPUT_BYTES,
             provider=self.provider,
+            protected_result=protected_result,
         )
