@@ -5,29 +5,13 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { rememberChat } from "../../../lib/chat-history";
 import { getLibraryArtifact, type LibraryArtifact } from "../../../lib/library-data";
+import type { PublicLocale } from "../../../lib/public-locale";
+import { WORKSPACE_COPY } from "../../../lib/workspace-locale";
 import { RunComposer, type ComposerFramework, type ComposerMode } from "../../../components/run-composer";
 import { BrandMark } from "../../../components/icons";
 
-const EXAMPLES = [
-  {
-    title: "Recover a marked state with Grover",
-    prompt: "Use Grover to recover the marked state 1100 and verify the measured distribution.",
-  },
-  {
-    title: "Compare QAOA with a classical baseline",
-    prompt: "Use QAOA to solve MaxCut on a 5-node ring and compare the result with an exact classical baseline.",
-  },
-  {
-    title: "Build and verify a Bell state",
-    prompt: "Build a Bell state in Qiskit, simulate it, and verify the expected 00/11 distribution.",
-  },
-  {
-    title: "Estimate a QFT resource profile",
-    prompt: "Estimate the qubit count, depth, and gate profile for a QFT circuit on eight qubits.",
-  },
-];
-
-export function RunWorkspace({ demoMode = false }: { demoMode?: boolean } = {}) {
+export function RunWorkspace({ demoMode = false, locale = "en" }: { demoMode?: boolean; locale?: PublicLocale } = {}) {
+  const copy = WORKSPACE_COPY[locale].run;
   const router = useRouter();
   const [prompt, setPrompt] = useState("");
   const [mode, setMode] = useState<ComposerMode>("execute");
@@ -42,7 +26,7 @@ export function RunWorkspace({ demoMode = false }: { demoMode?: boolean } = {}) 
     const artifact = getLibraryArtifact(artifactId);
     if (artifact) {
       setContextArtifact(artifact);
-      setPrompt(`Create a follow-up from the saved Quepo artifact “${artifact.title}”. Preserve the verified structure, explain any changes, and re-run the checks.`);
+      setPrompt(`Create a follow-up from the saved Library artifact “${artifact.title}”. Preserve the verified structure, explain any changes, and re-run the checks.`);
       return;
     }
     void fetch(`/api/artifacts/${encodeURIComponent(artifactId)}`, { cache: "no-store" })
@@ -69,7 +53,7 @@ export function RunWorkspace({ demoMode = false }: { demoMode?: boolean } = {}) 
           source: "run",
         };
         setContextArtifact(remoteArtifact);
-        setPrompt(`Create a follow-up from the saved Quepo artifact “${remoteArtifact.title}”. Preserve the verified structure, explain any changes, and re-run the checks.`);
+        setPrompt(`Create a follow-up from the saved Library artifact “${remoteArtifact.title}”. Preserve the verified structure, explain any changes, and re-run the checks.`);
       })
       .catch(() => undefined);
   }, []);
@@ -121,22 +105,22 @@ export function RunWorkspace({ demoMode = false }: { demoMode?: boolean } = {}) 
               <span className="mj-run-home-mark"><BrandMark size={18} /></span>
               <span className="mj-run-home-wordmark">LeonaQ</span>
             </div>
-            <h1>What are you working on?</h1>
-            <p>Describe a quantum problem, paste code to review, or continue from a saved artifact.</p>
+            <h1>{copy.title}</h1>
+            <p>{copy.lede}</p>
           </header>
 
           <div className="mj-run-home-disclosures">
             <details className="mj-run-disclosure" name="run-home-detail">
               <summary>
                 <span className="mj-run-disclosure-label">
-                  <span>Starter prompts</span>
-                  <strong>Try an example</strong>
+                  <span>{copy.starterPrompts}</span>
+                  <strong>{copy.examplesTitle}</strong>
                 </span>
-                <span className="mj-run-disclosure-count">4 prompts</span>
+                <span className="mj-run-disclosure-count">{copy.promptCount}</span>
               </summary>
               <div className="mj-run-disclosure-content">
                 <div className="mj-example-list">
-                  {EXAMPLES.map((example) => (
+                  {copy.examples.map((example) => (
                     <button
                       className="mj-example-button"
                       key={example.title}
@@ -158,40 +142,27 @@ export function RunWorkspace({ demoMode = false }: { demoMode?: boolean } = {}) 
             <details className="mj-run-disclosure" name="run-home-detail">
               <summary>
                 <span className="mj-run-disclosure-label">
-                  <span>Process</span>
-                  <strong>How Nameko works</strong>
+                  <span>{copy.process}</span>
+                  <strong>{copy.workflowTitle}</strong>
                 </span>
-                <span className="mj-run-disclosure-count">3 steps</span>
+                <span className="mj-run-disclosure-count">{copy.stepCount}</span>
               </summary>
               <div className="mj-run-disclosure-content">
-                <p className="mj-run-disclosure-intro">
-                  Every run keeps its plan, generated code, checks, results, and saved artifact together.
-                </p>
+                <p className="mj-run-disclosure-intro">{copy.workflowBody}</p>
                 <div className="mj-home-capabilities">
-                  <div className="mj-capability">
-                    <strong>Plan first</strong>
-                    <span>Choose a method and verification target before compute.</span>
-                  </div>
-                  <div className="mj-capability">
-                    <strong>Show the work</strong>
-                    <span>Follow code, compilation, and checks as evidence arrives.</span>
-                  </div>
-                  <div className="mj-capability">
-                    <strong>Save to Quepo</strong>
-                    <span>Keep verified runs as reusable Library artifacts.</span>
-                  </div>
+                  {copy.capabilities.map((capability) => <div className="mj-capability" key={capability.title}><strong>{capability.title}</strong><span>{capability.body}</span></div>)}
                 </div>
               </div>
             </details>
           </div>
           {contextArtifact ? (
-            <aside className="mj-run-context-card" aria-label="Quepo artifact context">
+            <aside className="mj-run-context-card" aria-label={copy.contextLabel}>
               <div>
-                <span className="mj-section-label">Quepo context</span>
+                <span className="mj-section-label">{copy.contextLabel}</span>
                 <strong>{contextArtifact.title}</strong>
-                <span>{contextArtifact.framework} · {contextArtifact.family} · {contextArtifact.status === "verified" ? "Verified" : "Saved with caveats"}</span>
+                <span>{contextArtifact.framework} · {contextArtifact.family} · {contextArtifact.status === "verified" ? (locale === "ja" ? "検証済み" : "Verified") : (locale === "ja" ? "注意付きで保存" : "Saved with caveats")}</span>
               </div>
-              <a className="mj-secondary-button" href={demoMode ? "/demo?view=library" : `/library/${contextArtifact.id}`}>View artifact</a>
+              <a className="mj-secondary-button" href={demoMode ? "/demo?view=library" : `/library/${contextArtifact.id}`}>{copy.viewArtifact}</a>
             </aside>
           ) : null}
         </div>
@@ -206,7 +177,8 @@ export function RunWorkspace({ demoMode = false }: { demoMode?: boolean } = {}) 
         onModeChange={setMode}
         onFrameworkChange={setFramework}
         onSubmit={submit}
-        onAttach={() => setError("Attachments are not enabled yet; paste code or context into the prompt.")}
+        onAttach={() => setError(locale === "ja" ? "添付はまだ利用できません。コードやコンテキストを問いに貼り付けてください。" : "Attachments are not enabled yet; paste code or context into the prompt.")}
+        locale={locale}
       />
     </div>
   );

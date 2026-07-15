@@ -10,7 +10,7 @@ import { RepositoryBrowser } from "./repository-browser";
 
 export const metadata: Metadata = {
   title: "Repository",
-  description: "A public research database for circuits and algorithms with evidence, sources, and export boundaries visible.",
+  description: "A public LeonaQ research database for circuits and algorithms with evidence, sources, and export boundaries visible.",
 };
 
 export default async function RepositoryPage() {
@@ -42,10 +42,10 @@ export default async function RepositoryPage() {
           <h2 id="repository-legend-heading">{isJapanese ? "レコードの境界を読む" : "Read the record boundaries"}</h2>
         </div>
         <div className="mj-repository-legend-grid">
-          <div><strong>Classification</strong><span>What kind of gate, state, operator, or algorithm the record describes.</span></div>
-          <div><strong>Verification</strong><span>Which check passed for the stated conditions; it is not a universal correctness claim.</span></div>
-          <div><strong>Export</strong><span>Native, converted, downloadable, or unsupported paths are kept distinct.</span></div>
-          <div><strong>License / source</strong><span>The displayed source and license travel with the public reference; personal Library copies remain private.</span></div>
+          <div><strong>{isJapanese ? "分類" : "Classification"}</strong><span>{isJapanese ? "ゲート、状態、演算子、アルゴリズムのどれを説明する記録か。" : "What kind of gate, state, operator, or algorithm the record describes."}</span></div>
+          <div><strong>{isJapanese ? "検証" : "Verification"}</strong><span>{isJapanese ? "記載された条件で通ったチェック。普遍的な正しさを示すものではありません。" : "Which check passed for the stated conditions; it is not a universal correctness claim."}</span></div>
+          <div><strong>{isJapanese ? "エクスポート" : "Export"}</strong><span>{isJapanese ? "ネイティブ、変換、ダウンロード、未対応の経路を分けて表示します。" : "Native, converted, downloadable, or unsupported paths are kept distinct."}</span></div>
+          <div><strong>{isJapanese ? "ライセンス / 出典" : "License / source"}</strong><span>{isJapanese ? "表示した出典とライセンスを公開リファレンスに保持し、個人Libraryのコピーは非公開にします。" : "The displayed source and license travel with the public reference; personal Library copies remain private."}</span></div>
         </div>
       </section>
 

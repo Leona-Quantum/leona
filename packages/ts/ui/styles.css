@@ -40,6 +40,10 @@
   font-weight: 600;
   text-decoration: none;
 }
+.mj-public-brand > svg {
+  flex: 0 0 auto;
+  color: var(--accent);
+}
 .mj-public-brand-mark {
   display: inline-flex;
   align-items: center;
@@ -240,7 +244,7 @@
 .mj-contact-hero h1 {
   max-width: 820px;
   margin: 0;
-  font-size: clamp(2rem, 5vw, 4.4rem);
+  font-size: clamp(2rem, 4.4vw, 3.6rem);
   font-weight: 600;
   letter-spacing: -0.04em;
   line-height: 1.02;
@@ -264,7 +268,7 @@
 .mj-company-hero-copy h1 {
   max-width: 700px;
   margin: 0;
-  font-size: clamp(2.4rem, 6vw, 5.2rem);
+  font-size: clamp(2.3rem, 4.8vw, 4.2rem);
   font-weight: 600;
   letter-spacing: -0.05em;
   line-height: 0.98;
@@ -284,10 +288,57 @@
   line-height: 1.6;
 }
 .mj-company-hero-art {
+  position: relative;
   padding: var(--sp-6);
   border: 1px solid var(--border-0);
   border-radius: var(--radius-card);
   background: var(--bg-1);
+}
+.mj-company-hero-orbit {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: min(100%, 320px);
+  aspect-ratio: 1;
+  margin: var(--sp-6) auto var(--sp-4);
+}
+.mj-company-hero-orbit > svg {
+  position: relative;
+  z-index: 2;
+  width: 42%;
+  height: 42%;
+  color: var(--accent);
+}
+.mj-company-orbit-ring {
+  position: absolute;
+  inset: 10%;
+  border: 1px solid var(--border-0);
+  border-radius: 50%;
+}
+.mj-company-orbit-ring--two {
+  inset: 25%;
+  border-style: dashed;
+  transform: rotate(32deg) scaleX(1.35);
+}
+.mj-company-orbit-ring--one {
+  transform: rotate(-24deg) scaleX(1.18);
+}
+.mj-company-orbit-dot {
+  position: absolute;
+  z-index: 3;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+.mj-company-orbit-dot--one {
+  top: 12%;
+  right: 20%;
+}
+.mj-company-orbit-dot--two {
+  bottom: 20%;
+  left: 17%;
+  background: var(--border-0);
 }
 .mj-public-art-head,
 .mj-public-art-foot,
@@ -369,6 +420,43 @@
 .mj-contact-details {
   padding: var(--sp-12) 0;
   border-top: 1px solid var(--border-0);
+}
+.mj-company-product-band {
+  padding-inline: var(--sp-6);
+  border: 0;
+  border-radius: var(--radius-card);
+  background: var(--text-0);
+  color: var(--bg-0);
+}
+.mj-company-product-band h2,
+.mj-company-product-band h3,
+.mj-company-product-band .mj-section-label {
+  color: var(--bg-0);
+}
+.mj-company-product-band .mj-section-label,
+.mj-company-product-band .mj-company-index,
+.mj-company-product-band .mj-company-capability-note {
+  color: var(--accent);
+}
+.mj-company-product-band .mj-company-capability-list {
+  border-color: var(--bg-2);
+}
+.mj-company-product-band .mj-company-capability-list article {
+  border-color: var(--bg-2);
+}
+.mj-company-product-band .mj-company-capability-list p {
+  color: var(--bg-2);
+}
+:root[data-theme="dark"] .mj-company-product-band {
+  background: var(--bg-2);
+  color: var(--text-0);
+}
+:root[data-theme="dark"] .mj-company-product-band h2,
+:root[data-theme="dark"] .mj-company-product-band h3 {
+  color: var(--text-0);
+}
+:root[data-theme="dark"] .mj-company-product-band .mj-company-capability-list p {
+  color: var(--text-1);
 }
 .mj-company-section h2,
 .mj-company-final-cta h2,
@@ -700,10 +788,12 @@
   gap: var(--sp-3);
 }
 .mj-repository-evidence dd {
+  min-width: 0;
   margin: 0;
   color: var(--text-1);
   font-size: var(--fs-12);
   line-height: 1.45;
+  overflow-wrap: anywhere;
 }
 .mj-repository-tags {
   display: flex;
@@ -719,6 +809,7 @@
   font-size: var(--fs-12);
 }
 .mj-repository-entry-actions {
+  min-width: 0;
   display: flex;
   align-items: end;
   justify-content: space-between;
@@ -835,8 +926,13 @@
 }
 .mj-repository-detail-layout {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(260px, 0.34fr);
+  grid-template-columns: minmax(0, 1fr) minmax(280px, 0.38fr);
   gap: var(--sp-12);
+}
+.mj-repository-detail-layout > *,
+.mj-repository-aside-card,
+.mj-repository-entry-links {
+  min-width: 0;
 }
 .mj-repository-detail-main {
   min-width: 0;
@@ -1067,6 +1163,7 @@
   border: 1px solid var(--border-0);
   border-radius: var(--radius-card);
   background: var(--bg-1);
+  overflow-wrap: anywhere;
 }
 .mj-repository-aside-card > p:not(.mj-section-label) {
   margin: var(--sp-3) 0 0;
@@ -1292,6 +1389,38 @@
   }
   .mj-repository-section-heading {
     gap: var(--sp-6);
+  }
+}
+
+/* Shared loading surface: quiet skeletons keep route transitions useful without
+   turning a loading state into a large block of copy. */
+.mj-loading-screen {
+  display: grid;
+  gap: var(--sp-4);
+  max-width: var(--content-max);
+  margin: 0 auto;
+  padding: var(--sp-12) var(--sp-6);
+}
+.mj-skeleton {
+  display: block;
+  min-height: 16px;
+  border-radius: var(--radius-control);
+  background: linear-gradient(90deg, var(--bg-2), var(--bg-1), var(--bg-2));
+  background-size: 220% 100%;
+  animation: mj-skeleton-shimmer 1.5s ease-in-out infinite;
+}
+.mj-skeleton--eyebrow { width: 120px; min-height: 10px; }
+.mj-skeleton--title { width: min(620px, 78%); min-height: 48px; }
+.mj-skeleton--copy { width: min(720px, 92%); min-height: 20px; }
+.mj-skeleton--short { width: min(360px, 62%); }
+.mj-skeleton--panel { min-height: 220px; margin-top: var(--sp-4); }
+@keyframes mj-skeleton-shimmer {
+  from { background-position: 100% 0; }
+  to { background-position: -100% 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .mj-skeleton {
+    animation: none;
   }
 }
 
@@ -2644,6 +2773,26 @@
 }
 .mj-artifact-panel--wide {
   min-height: 240px;
+}
+.mj-language-preference-panel {
+  min-height: 0;
+  margin-bottom: var(--sp-4);
+}
+.mj-language-preference {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-6);
+}
+.mj-language-preference strong {
+  color: var(--text-0);
+  font-size: var(--fs-13);
+  font-weight: 500;
+}
+.mj-language-preference p {
+  margin: var(--sp-1) 0 0;
+  color: var(--text-1);
+  line-height: 1.5;
 }
 .mj-panel-heading {
   justify-content: space-between;
@@ -4409,6 +4558,7 @@ div.mj-rail-row:hover {
   align-items: center;
   justify-content: flex-end;
   gap: var(--sp-3);
+  min-width: 0;
 }
 .mj-repository-export-button {
   min-height: 30px;

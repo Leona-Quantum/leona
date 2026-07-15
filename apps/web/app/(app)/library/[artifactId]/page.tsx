@@ -1,13 +1,14 @@
 import { ArtifactDetail } from "./artifact-detail";
+import { getPublicLocale } from "../../../../lib/public-locale-server";
 
 export const dynamic = "force-dynamic";
 
 export async function generateMetadata({ params }: { params: Promise<{ artifactId: string }> }) {
   const { artifactId } = await params;
-  return { title: `Artifact ${artifactId} — Library` };
+  return { title: `Artifact ${artifactId} — LeonaQ Library` };
 }
 
 export default async function ArtifactPage({ params }: { params: Promise<{ artifactId: string }> }) {
-  const { artifactId } = await params;
-  return <ArtifactDetail artifactId={artifactId} />;
+  const [{ artifactId }, locale] = await Promise.all([params, getPublicLocale()]);
+  return <ArtifactDetail artifactId={artifactId} locale={locale} />;
 }

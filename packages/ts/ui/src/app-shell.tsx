@@ -1,7 +1,7 @@
 // Shared shell: top nav across the three surfaces (07-ui-product.md §1).
 // Server-compatible; active-link highlighting is the caller's job (pass currentPath).
 import type { ReactNode } from "react";
-import { BRAND_NAME, NAV_SURFACES } from "./nav-config";
+import { BRAND_NAME, NAV_SURFACES, navSurfaceLabel } from "./nav-config";
 
 function SidebarChevron({ direction }: { direction: "left" | "right" }) {
   return (
@@ -19,6 +19,7 @@ export function AppShell({
   sidebarCollapsed = false,
   onToggleSidebar,
   surfaceLabel,
+  locale = "en",
 }: {
   children: ReactNode;
   /** Pathname for aria-current on the active surface. */
@@ -30,7 +31,13 @@ export function AppShell({
   sidebarCollapsed?: boolean;
   onToggleSidebar?: () => void;
   surfaceLabel?: string;
+  locale?: "en" | "ja";
 }): ReactNode {
+  const sidebarToggleLabel = locale === "ja"
+    ? sidebarCollapsed ? "サイドバーを展開" : "サイドバーを折りたたむ"
+    : sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar";
+  const primaryNavLabel = locale === "ja" ? "主要ナビゲーション" : "Primary navigation";
+
   return (
     <div
       className={`mj-shell${sidebar ? " mj-shell--workspace" : ""}`}
@@ -43,7 +50,8 @@ export function AppShell({
             <button
               className="mj-shell-toggle"
               type="button"
-              aria-label={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+              aria-label={sidebarToggleLabel}
+              title={sidebarToggleLabel}
               aria-expanded={!sidebarCollapsed}
               onClick={onToggleSidebar}
             >
@@ -58,7 +66,7 @@ export function AppShell({
             </a>
           )}
           {!sidebar ? (
-            <nav className="mj-shell-nav" aria-label="Primary">
+            <nav className="mj-shell-nav" aria-label={primaryNavLabel}>
               {NAV_SURFACES.map((surface) => (
                 <a
                   key={surface.href}
@@ -69,7 +77,7 @@ export function AppShell({
                       : undefined
                   }
                 >
-                  {surface.label}
+                  {navSurfaceLabel(surface, locale)}
                 </a>
               ))}
             </nav>

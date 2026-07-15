@@ -15,7 +15,7 @@ build status and decisions that postdate those docs.
 | S7 | Studio editor | owner-directed slice — code editor, semantic circuit preview, inspector, output drawer, and persisted framework variants |
 | S8 | Public artifact page | not started |
 | S9 | Auth screens | WorkOS AuthKit flow live from Phase 1 |
-| S10 | Account | shipped for identity, workspace data, members, and owner/admin member attach; meters and workspace selection pending |
+| S10 | Account | shipped for identity, workspace data, members, owner/admin member attach, and persisted EN/日本語 preference for shared workspace navigation and account copy; meters, workspace selection, and remaining screen-level translation pending |
 
 Build order (Phase 3): shell+nav ✅ → S3/S4 → S2 → S5/S6 → S7 → S1 → S8/S9 polish.
 Owner taste-checks: S3+S4 first, then S6. Result-panel order and QPU-panel spec:

@@ -102,6 +102,64 @@ function variantLabel(status: "native" | "conversion" | "unsupported", locale: P
   return "Unsupported";
 }
 
+const DATA_LABELS_JA: Record<string, string> = {
+  Qubits: "量子ビット",
+  Depth: "深さ",
+  Outcomes: "出力",
+  Shots: "ショット",
+  Queries: "クエリ数",
+  Phase: "位相",
+  "Rotation layers": "回転レイヤー",
+  "Gate family": "ゲート系統",
+  "Bit order": "ビット順",
+  Export: "エクスポート",
+  Matrix: "行列",
+  Rotation: "回転",
+  Square: "二乗",
+  Power: "累乗",
+  Family: "系統",
+  Control: "制御",
+  Target: "対象",
+  "Universal role": "万能性での役割",
+  "Native form": "ネイティブ形式",
+  Decomposition: "分解",
+  Role: "役割",
+  Promise: "約束条件",
+  "Quantum queries": "量子クエリ",
+  "Classical queries": "古典クエリ",
+  Function: "関数",
+  "Input register": "入力レジスタ",
+  "Output register": "出力レジスタ",
+  Samples: "サンプル数",
+  Constraint: "制約",
+  Encoding: "符号化",
+  Transmission: "送信",
+  Readout: "読み出し",
+};
+
+function dataLabel(label: string, locale: PublicLocale): string {
+  return locale === "ja" ? DATA_LABELS_JA[label] ?? label : label;
+}
+
+function familyLabel(label: string, locale: PublicLocale): string {
+  if (locale !== "ja") return label;
+  const labels: Record<string, string> = {
+    "Single-qubit gate": "単一量子ビットゲート",
+    "Pauli operator": "パウリ演算子",
+    "Controlled gate": "制御ゲート",
+    "Two-qubit gate": "2量子ビットゲート",
+    "Quantum query algorithm": "量子クエリアルゴリズム",
+    "Hidden-period / factoring": "隠れ周期 / 因数分解",
+    "Entanglement and communication": "エンタングルメントと通信",
+  };
+  return labels[label] ?? label;
+}
+
+function outcomeLabel(label: string, locale: PublicLocale): string {
+  if (locale !== "ja") return label;
+  return label.replace("Control 0", "制御0").replace("Control 1", "制御1").replace("secret s", "秘密文字列 s");
+}
+
 export function RepositoryEntryView({
   entry,
   locale,
@@ -136,16 +194,16 @@ export function RepositoryEntryView({
         <div className="mj-repository-detail-kicker">
           <span className="mj-repository-status" data-status={entry.status}>{statusLabel(entry.status, locale)}</span>
           <span>{locale === "ja" ? entry.categoryLabelJa : entry.categoryLabel}</span>
-          <span>{entry.algorithmFamily}</span>
+          <span>{familyLabel(entry.algorithmFamily, locale)}</span>
         </div>
         <h1>{title}</h1>
         <p>{description}</p>
-        <div className="mj-repository-tags" aria-label="Tags">
+        <div className="mj-repository-tags" aria-label={locale === "ja" ? "タグ" : "Tags"}>
           {entry.tags.map((tag) => <span key={tag}>{tag}</span>)}
         </div>
         <div className="mj-repository-detail-actions">
-          <RepositoryExportAction slug={entry.slug} title={title} isSignedIn={isSignedIn} signInHref={signInHref} />
-          <span className="mj-repository-detail-action-note">{copy.library}: private to your account</span>
+          <RepositoryExportAction slug={entry.slug} title={title} isSignedIn={isSignedIn} signInHref={signInHref} locale={locale} />
+          <span className="mj-repository-detail-action-note">{copy.library}: {locale === "ja" ? "アカウント専用" : "private to your account"}</span>
         </div>
       </section>
 
@@ -168,7 +226,7 @@ export function RepositoryEntryView({
             <div className="mj-repository-outcomes" aria-label={copy.outcomes}>
               {entry.visualization.outcomes.map((outcome) => (
                 <div className="mj-repository-outcome" key={outcome.label}>
-                  <div className="mj-repository-outcome-label"><span>{outcome.label}</span><strong>{Math.round(outcome.probability * 100)}%</strong></div>
+                  <div className="mj-repository-outcome-label"><span>{outcomeLabel(outcome.label, locale)}</span><strong>{Math.round(outcome.probability * 100)}%</strong></div>
                   <div className="mj-repository-outcome-track"><span style={{ width: `${Math.max(0, Math.min(1, outcome.probability)) * 100}%` }} /></div>
                 </div>
               ))}
@@ -235,8 +293,8 @@ export function RepositoryEntryView({
         </main>
 
         <aside className="mj-repository-detail-aside">
-          <DetailList title={copy.resources} rows={entry.resources} />
-          <DetailList title={copy.metadata} rows={entry.metadata} />
+          <DetailList title={copy.resources} rows={entry.resources} locale={locale} />
+          <DetailList title={copy.metadata} rows={entry.metadata} locale={locale} />
           <section className="mj-repository-aside-card">
             <p className="mj-section-label">{copy.verification}</p>
             <span className="mj-repository-status" data-status={entry.status}>{statusLabel(entry.status, locale)}</span>
@@ -250,7 +308,7 @@ export function RepositoryEntryView({
             <p className="mj-section-label">{copy.source}</p>
             <a className="mj-repository-source-title" href={entry.source.url} target="_blank" rel="noreferrer">{entry.source.title} ↗</a>
             <dl className="mj-repository-detail-dl">
-              <div><dt>{locale === "ja" ? "種別" : "Kind"}</dt><dd>{entry.source.kind.replaceAll("_", " ")}</dd></div>
+              <div><dt>{locale === "ja" ? "種別" : "Kind"}</dt><dd>{locale === "ja" ? entry.source.kind === "curated_reference" ? "キュレーション参照" : entry.source.kind === "verified_run" ? "検証済み実行" : "コミュニティ投稿" : entry.source.kind.replaceAll("_", " ")}</dd></div>
               {entry.source.contributor ? <div><dt>{locale === "ja" ? "投稿者" : "Contributor"}</dt><dd>{entry.source.contributor}</dd></div> : null}
               {entry.source.reviewedBy ? <div><dt>{locale === "ja" ? "レビュー" : "Reviewed by"}</dt><dd>{entry.source.reviewedBy}</dd></div> : null}
               <div><dt>{locale === "ja" ? "ライセンス" : "License"}</dt><dd>{entry.source.license}</dd></div>
@@ -290,12 +348,12 @@ export function RepositoryEntryView({
   );
 }
 
-function DetailList({ title, rows }: { title: string; rows: Array<{ label: string; value: string }> }) {
+function DetailList({ title, rows, locale }: { title: string; rows: Array<{ label: string; value: string }>; locale: PublicLocale }) {
   return (
     <section className="mj-repository-aside-card">
       <p className="mj-section-label">{title}</p>
       <dl className="mj-repository-detail-dl">
-        {rows.map((row) => <div key={row.label}><dt>{row.label}</dt><dd>{row.value}</dd></div>)}
+        {rows.map((row) => <div key={row.label}><dt>{dataLabel(row.label, locale)}</dt><dd>{row.value}</dd></div>)}
       </dl>
     </section>
   );
@@ -338,7 +396,7 @@ function defaultClassicalComparison(entry: PublicRepositoryEntry): PublicReposit
 
 function CircuitDiagram({ entry, locale }: { entry: PublicRepositoryEntry; locale: PublicLocale }) {
   return (
-    <div className="mj-repository-circuit" role="img" aria-label={`${locale === "ja" ? entry.titleJa : entry.title} circuit or workflow diagram`}>
+    <div className="mj-repository-circuit" role="img" aria-label={`${locale === "ja" ? entry.titleJa : entry.title}${locale === "ja" ? "の回路またはワークフロー図" : " circuit or workflow diagram"}`}>
       {entry.visualization.wires.map((wire, index) => (
         <div className="mj-repository-circuit-row" key={wire}>
           <span className="mj-repository-circuit-wire">{wire}</span>
