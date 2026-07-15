@@ -117,6 +117,8 @@ export function RunWorkspace({ demoMode = false, locale = "en" }: { demoMode?: b
               <span className="mj-status-dot" aria-hidden="true" />
               {demoMode ? copy.previewStatus : copy.readyStatus}
             </div>
+            <h1>{copy.title}</h1>
+            <p>{copy.lede}</p>
           </header>
 
           <RunComposer
