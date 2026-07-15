@@ -15,8 +15,8 @@ uv run ruff format --check .
 uv run pytest -q
 ```
 
-For circuit changes, add or update tests for normalized OpenQASM and every affected
-framework connector. For worker changes, keep the sandbox deny-all invariant and add a
+For circuit changes, add or update tests for selected-framework source behavior and every
+affected framework boundary; test OpenQASM only when conversion behavior changes. For worker changes, keep the sandbox deny-all invariant and add a
 regression test for any provider or compatibility failure.
 
 Do not commit credentials, private workspace exports, generated local environments, or

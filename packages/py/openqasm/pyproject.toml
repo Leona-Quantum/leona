@@ -1,7 +1,7 @@
 [project]
 name = "majorana-openqasm"
 version = "0.1.0"
-description = "OpenQASM 3 normalization, fingerprints, compilation, and resource metrics"
+description = "Optional OpenQASM interchange normalization and inspection"
 requires-python = ">=3.12"
 dependencies = [
     "pydantic>=2.8",

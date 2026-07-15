@@ -109,23 +109,24 @@ async def execute_run(
         return RunStatus.FAILED
 
     # State keys are tagged with the stage that produced them so a restart can
-    # discard stale downstream values while retaining the accepted plan/code.
+    # discard stale downstream values while retaining the accepted plan/program.
     state_origin = {
         "plan": Stage.PLAN,
         "code": Stage.GENERATE,
+        "program": Stage.GENERATE,
         "screen": Stage.SCREEN,
         "pre_resource_estimate": Stage.RESOURCE_ESTIMATE,
         "result": Stage.VERIFY,
-        "qasm": Stage.VERIFY,
-        "qasm_source": Stage.VERIFY,
+        "verification_repeat_result": Stage.VERIFY,
+        "interchange_qasm": Stage.VERIFY,
         "verifier_decision": Stage.VERIFY,
         "compilation": Stage.COMPILE,
-        "compiled_qasm": Stage.COMPILE,
         "compiled_resource_estimate": Stage.COMPILED_RESOURCE_ESTIMATE,
         "export": Stage.FINALIZE,
         "final_code": Stage.FINALIZE,
+        "final_program": Stage.FINALIZE,
         "final_result": Stage.FINAL_EXECUTE,
-        "final_qasm": Stage.FINAL_EXECUTE,
+        "final_interchange_qasm": Stage.FINAL_EXECUTE,
         "baseline": Stage.BASELINE,
         "analysis": Stage.ANALYZE,
     }

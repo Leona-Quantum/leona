@@ -159,7 +159,7 @@ class CompilationResult(_EventBase):
 
 
 class CodeVariant(BaseModel):
-    """A deterministic, copyable framework rendering of the verified circuit."""
+    """A deterministic, copyable selected-framework source variant."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -186,10 +186,10 @@ class CodeFinalized(_EventBase):
 
 
 class QasmEmission(BaseModel):
-    """Provenance for the OpenQASM payload recovered from sandbox stdout.
+    """Provenance for optional OpenQASM interchange recovered from sandbox stdout.
 
     ``sandbox_epilogue`` is Majorana's observed serialization of ``FINAL_CIRCUIT``;
-    ``model_stdout`` is a compatibility fallback and is not equivalent evidence.
+    ``model_stdout`` is retained only for replaying legacy events.
     """
 
     model_config = ConfigDict(extra="forbid")

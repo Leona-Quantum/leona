@@ -5,3 +5,5 @@ Seed list: ADR-0001..0012 correspond to AD-1..AD-12 in
 Phase 0 step 5. New decisions: copy 0000-template.md, number sequentially.
 An architecture choice without an ADR did not happen.
 - 2026-07-09: Phase 0 CI smoke PR
+- 2026-07-15: ADR-0013 makes selected-framework source authoritative and limits
+  OpenQASM to optional conversion interchange.

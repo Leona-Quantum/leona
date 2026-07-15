@@ -107,6 +107,44 @@ def verify_statistical_counts(
     return outcome
 
 
+def verify_statistical_counts_pair(
+    first: dict[str, int],
+    second: dict[str, int],
+    threshold: float | None = None,
+) -> VerificationOutcome:
+    """Compare two native executions of the selected-framework program.
+
+    This check intentionally does not reconstruct the circuit through OpenQASM.  It
+    measures reproducibility of the framework code that will be returned to the user.
+    Problem-specific correctness still comes from exact-diagonalization, brute-force,
+    return-contract, and other independent checks selected by the plan.
+    """
+    first_total = sum(first.values())
+    second_total = sum(second.values())
+    if first_total <= 0 or second_total <= 0:
+        return VerificationOutcome(
+            method=VerificationMethod.STATISTICAL,
+            result=FAIL,
+            details={"error": "both executions must contain at least one shot"},
+        )
+    keys = set(first) | set(second)
+    tvd = 0.5 * sum(
+        abs(first.get(key, 0) / first_total - second.get(key, 0) / second_total) for key in keys
+    )
+    limit = 0.05 if threshold is None else threshold
+    return VerificationOutcome(
+        method=VerificationMethod.STATISTICAL,
+        result=PASS if tvd <= limit else FAIL,
+        details={
+            "evidence": "selected_framework_reexecution",
+            "total_variation_distance": tvd,
+            "threshold": limit,
+            "first_shots": first_total,
+            "second_shots": second_total,
+        },
+    )
+
+
 _COUNTS_FALLBACK_KEYS = ("counts", "measurement_counts", "results", "samples")
 
 

@@ -10,6 +10,7 @@ from majorana_verification import (
     verify_return_contract,
     verify_statistical,
     verify_statistical_counts,
+    verify_statistical_counts_pair,
 )
 
 BELL = """
@@ -127,6 +128,15 @@ def test_extract_counts_finds_plan_key_then_conventions():
     assert extract_counts({"counts": {"00": 1.9}}, ["counts"]) is None
     assert extract_counts({"energy": -1.1}, ["energy"]) is None
     assert extract_counts({"notes": {"abc": 1}}, []) is None
+
+
+def test_statistical_pair_checks_selected_framework_reexecution():
+    stable = verify_statistical_counts_pair({"00": 500, "11": 500}, {"00": 490, "11": 510})
+    changed = verify_statistical_counts_pair({"00": 500, "11": 500}, {"00": 800, "11": 200})
+
+    assert stable.passed
+    assert stable.details["evidence"] == "selected_framework_reexecution"
+    assert not changed.passed
 
 
 def test_return_contract_missing_key_fails():

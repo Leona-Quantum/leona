@@ -13,16 +13,17 @@ from majorana_contracts.enums import Framework, RunMode
 
 
 _OPENQASM_CONTRACT = (
-    "OpenQASM 3 is the canonical circuit representation. Preserve semantics that "
-    "OpenQASM 3 can express, including dynamic control where the selected SDK supports it."
+    "The selected framework's executable Python source is the canonical circuit "
+    "representation. OpenQASM is optional internal interchange data used only when an "
+    "explicit cross-framework conversion can preserve the circuit; never simplify a "
+    "program merely to make OpenQASM conversion possible."
 )
 
 FRAMEWORK_DIRECTIVE = (
     "Default framework is Qiskit for executable Python. Generate PennyLane or Cirq "
     "only when the user asks for it or Qiskit genuinely cannot express the task; "
-    "never switch silently. OpenQASM 3.0 is a native, lossless export target after "
-    "a verified circuit is available. OpenQASM 2 may appear as an internal "
-    "compatibility bridge, but it is not the product's preferred user-facing format."
+    "never switch silently. Generate, optimize, execute, and return code in the selected "
+    "framework. OpenQASM must not become the user-facing result or the source of truth."
 )
 
 _RUNTIME_LIMITS = (
@@ -53,8 +54,8 @@ plumbing and will not be shown to the user as JSON.
 {_PIPELINE_CONTRACT}
 
 Choose the smallest useful artifact contract and the strongest applicable verification
-strategy. A verification plan may use statistical simulation, brute force, exact
-diagonalization, return-contract, or QASM-parse checks when their evidence exists. Do
+strategy. A verification plan may use selected-framework re-execution, brute force,
+exact diagonalization, or return-contract checks when their evidence exists. Do
 not invent a baseline, resource result, QPU result, compression result, source claim,
 or measurement. Use null or a no-baseline explanation where the schema permits it.
 Record requested technical options such as compression, QPU execution, or a particular
@@ -87,14 +88,17 @@ Execution contract:
   are a flat bitstring-to-count mapping and every value is a plain Python type.
 - If baseline_instance is promised, print the exact structured instance the code
   actually solved. Never invent an instance or result.
-- For circuit-bearing Qiskit code, define FINAL_CIRCUIT as the circuit passed to the
-  simulator after any transpile call. Majorana owns deterministic serialization of
-  that binding. OpenQASM 3 is the preferred user-visible export; OpenQASM 2 is an
-  internal compatibility bridge for the current parser.
+- For every circuit-bearing program, define FINAL_CIRCUIT as the final circuit object
+  in the selected framework. This binding is an execution boundary, not a request to
+  print or return OpenQASM.
+- Apply optimization with the selected framework's native APIs when semantically safe:
+  Qiskit transpile with deterministic settings, Cirq target-gateset/transformer APIs,
+  or PennyLane compile/transforms. Bind FINAL_CIRCUIT after that native optimization.
+  If optimization would change requested behavior or is unsupported, retain the original.
 - For every Qiskit circuit, use Qiskit 2.x APIs: AerSimulator plus transpile and run;
   never QuantumCircuit.qasm(), execute(), BasicAer, or .c_if(). If your own result
-  needs a QASM string, use qiskit.qasm2.dumps(circuit) or qiskit.qasm3.dumps(circuit),
-  never a circuit method call.
+  explicitly needs a QASM string, use qiskit.qasm3.dumps(circuit), never a circuit
+  method call. Do not emit QASM unless the user explicitly requested it.
 - Use deterministic seeds wherever the framework supports them. Do not add
   measurements unless the artifact contract requests them.
 - For chemistry at PoC scale, hard-code the Hamiltonian coefficients from the request,
@@ -148,10 +152,10 @@ CONVERSATION_SYSTEM_PROMPT = QUANTUM_AGENT_SYSTEM_PROMPT
 
 WRITEBACK_SYSTEM_PROMPT = """You are Majorana's library-writeback stage. Given a verified,
 saved run, write concise repository metadata and a human-readable explanation for reuse:
-what the artifact does, how it was verified, which framework and export statuses exist,
-and known limitations. State the sandbox boundary and OpenQASM version from the run record.
-OpenQASM 3 is the preferred native circuit export; an OpenQASM 2 compatibility bridge
-must not be presented as the product's primary format. An unsupported export status
+what the artifact does, how it was verified, which selected framework and conversion
+statuses exist, and known limitations. State the sandbox boundary from the run record.
+The selected-framework code is the primary artifact. OpenQASM, when present, is internal
+interchange data and must not be presented as the product's primary format. An unsupported conversion
 never diminishes a verified run: report it as a transfer limitation, not a failure.
 Never mark an artifact verified unless verification passed. State the classical baseline
 comparison plainly, including when the baseline wins."""

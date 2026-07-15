@@ -7,12 +7,13 @@ import { rememberChat } from "../../../lib/chat-history";
 import { getLibraryArtifact, type LibraryArtifact } from "../../../lib/library-data";
 import type { PublicLocale } from "../../../lib/public-locale";
 import { WORKSPACE_COPY } from "../../../lib/workspace-locale";
-import { RunComposer } from "../../../components/run-composer";
+import { RunComposer, type ComposerFramework } from "../../../components/run-composer";
 
 export function RunWorkspace({ demoMode = false, locale = "en" }: { demoMode?: boolean; locale?: PublicLocale } = {}) {
   const copy = WORKSPACE_COPY[locale].run;
   const router = useRouter();
   const [prompt, setPrompt] = useState("");
+  const [framework, setFramework] = useState<ComposerFramework>("qiskit");
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [contextArtifact, setContextArtifact] = useState<LibraryArtifact | null>(null);
@@ -57,6 +58,7 @@ export function RunWorkspace({ demoMode = false, locale = "en" }: { demoMode?: b
       }
       if (!active) return;
       setContextArtifact(artifact);
+      setFramework(frameworkValue(artifact.framework));
       setPrompt(`Use the saved Library artifact “${artifact.title}” as context for my next question.`);
     }
 
@@ -83,6 +85,8 @@ export function RunWorkspace({ demoMode = false, locale = "en" }: { demoMode?: b
         },
         body: JSON.stringify({
           task_prompt: taskPrompt,
+          mode: "execute",
+          framework,
         }),
       });
       const payload = (await response.json()) as { id?: string; conversation_id?: string; detail?: string; error?: string };
@@ -124,6 +128,8 @@ export function RunWorkspace({ demoMode = false, locale = "en" }: { demoMode?: b
             pending={pending}
             error={error}
             onChange={setPrompt}
+            framework={framework}
+            onFrameworkChange={setFramework}
             onSubmit={submit}
             centered
             contextArtifact={contextArtifact ? { title: contextArtifact.title, framework: contextArtifact.framework, codeAvailable: Boolean(contextArtifact.code) } : null}
@@ -165,4 +171,10 @@ export function RunWorkspace({ demoMode = false, locale = "en" }: { demoMode?: b
 function titleFromPrompt(prompt: string): string {
   const firstLine = prompt.split(/\r?\n/, 1)[0].trim();
   return firstLine.length > 54 ? `${firstLine.slice(0, 54).trimEnd()}…` : firstLine;
+}
+
+function frameworkValue(value: string): ComposerFramework {
+  const normalized = value.toLowerCase();
+  if (normalized === "cirq" || normalized === "pennylane") return normalized;
+  return "qiskit";
 }

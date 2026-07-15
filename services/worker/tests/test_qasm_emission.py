@@ -1,4 +1,4 @@
-"""Lane-B Qiskit epilogue contract tests (no database or real Qiskit required)."""
+"""Optional Qiskit interchange instrumentation tests."""
 
 from __future__ import annotations
 
@@ -6,12 +6,12 @@ import sys
 from types import ModuleType
 
 import pytest
-from majorana_llm import extract_qasm_with_provenance
+from majorana_contracts.enums import Framework
+from majorana_frameworks import FrameworkProgram, extract_interchange_qasm
 from majorana_sandbox.guard import check_python_code
 
 from majorana_worker.stage_handlers import (
     _parse_result_dict,
-    _qiskit_qasm_epilogue,
     _repair_legacy_qiskit_qasm,
 )
 
@@ -32,18 +32,22 @@ FINAL_CIRCUIT = object()
 print(json.dumps({"counts": {"0": 1}}))
 """
 
-    composed = _qiskit_qasm_epilogue(code)
+    composed = FrameworkProgram(Framework.QISKIT, code).instrument_for_interchange(
+        circuit_expected=True
+    )
     assert check_python_code(composed).ok
     exec(composed, {})
 
     stdout = capsys.readouterr().out
     assert _parse_result_dict(stdout) == {"counts": {"0": 1}}
-    extraction = extract_qasm_with_provenance(stdout)
+    extraction = extract_interchange_qasm(stdout)
     assert extraction.source == "sandbox_epilogue"
     assert extraction.qasm == expected_qasm
 
 
-def test_owned_epilogue_records_serialization_error_and_keeps_model_fallback(monkeypatch, capsys):
+def test_owned_epilogue_records_serialization_error_without_trusting_model_stdout(
+    monkeypatch, capsys
+):
     def fail_dumps(circuit):
         raise RuntimeError("do not persist raw sandbox errors")
 
@@ -54,10 +58,12 @@ print("OPENQASM 2.0;\\nqreg q[1];\\nx q[0];")
 print(json.dumps({"counts": {"1": 1}}))
 """
 
-    exec(_qiskit_qasm_epilogue(code), {})
+    program = FrameworkProgram(Framework.QISKIT, code)
+    exec(program.instrument_for_interchange(circuit_expected=True), {})
 
-    extraction = extract_qasm_with_provenance(capsys.readouterr().out)
-    assert extraction.source == "model_stdout"
+    extraction = extract_interchange_qasm(capsys.readouterr().out)
+    assert extraction.source == "missing"
+    assert extraction.qasm is None
     assert extraction.epilogue_error == "RuntimeError"
 
 
@@ -70,9 +76,13 @@ FINAL_CIRCUIT.h(0)
 print(json.dumps({"counts": {"0": 1}}))
 """
 
-    exec(_qiskit_qasm_epilogue(code), {"QuantumCircuit": quantum_circuit})
+    program = FrameworkProgram(Framework.QISKIT, code)
+    exec(
+        program.instrument_for_interchange(circuit_expected=True),
+        {"QuantumCircuit": quantum_circuit},
+    )
 
-    extraction = extract_qasm_with_provenance(capsys.readouterr().out)
+    extraction = extract_interchange_qasm(capsys.readouterr().out)
     assert extraction.source == "sandbox_epilogue"
     assert extraction.qasm and extraction.qasm.startswith("OPENQASM 3.0;")
 

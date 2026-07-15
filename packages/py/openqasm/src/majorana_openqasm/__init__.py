@@ -1,13 +1,11 @@
-"""OpenQASM-native circuit boundary.
+"""Optional OpenQASM interchange boundary.
 
-New artifacts persist normalized OpenQASM 3. Qiskit ``QuantumCircuit`` objects
-exist only while parsing, verifying, compiling, or calculating metrics.
+Selected-framework source is canonical. Qiskit ``QuantumCircuit`` objects exist only
+while normalizing or inspecting interchange data.
 """
 
 from majorana_openqasm.program import (
-    CompilationOutcome,
     OpenQASMError,
-    compile_program,
     detect_version,
     fingerprint,
     normalize,
@@ -15,9 +13,7 @@ from majorana_openqasm.program import (
 )
 
 __all__ = [
-    "CompilationOutcome",
     "OpenQASMError",
-    "compile_program",
     "detect_version",
     "fingerprint",
     "normalize",

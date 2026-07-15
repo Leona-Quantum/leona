@@ -36,8 +36,8 @@ class CreateRunRequest(BaseModel):
 
     task_prompt: str = Field(min_length=1, max_length=20_000)
     mode: RunMode = RunMode.CHAT
-    # Qiskit by default (owner directive 2026-07-10); the plan stage may pick
-    # another framework only when Qiskit can't express the task.
+    # Qiskit is the product default. Once supplied, this choice is authoritative
+    # throughout generation, verification, optimization, and artifact writeback.
     framework: Framework = Framework.QISKIT
     artifact_version_id: uuid.UUID | None = None
     seed: int | None = None

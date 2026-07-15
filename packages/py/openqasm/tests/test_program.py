@@ -1,10 +1,4 @@
-from majorana_openqasm import (
-    compile_program,
-    detect_version,
-    fingerprint,
-    normalize,
-    resource_metrics,
-)
+from majorana_openqasm import detect_version, fingerprint, normalize, resource_metrics
 
 BELL_2 = """OPENQASM 2.0;
 include "qelib1.inc";
@@ -35,18 +29,6 @@ def test_metrics_use_sdk_circuit_semantics():
     assert metrics.gate_count == 2
     assert metrics.two_qubit_gate_count == 1
     assert metrics.measurement_count == 2
-
-
-def test_compiler_cancels_adjacent_h_gates():
-    source = """OPENQASM 3.0;
-include "stdgates.inc";
-qubit q;
-h q;
-h q;
-"""
-    outcome = compile_program(source)
-    assert outcome.accepted
-    assert outcome.candidate.gate_count == 0
 
 
 def test_qasm3_dynamic_control_is_preserved():
