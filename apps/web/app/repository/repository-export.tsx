@@ -70,7 +70,7 @@ export function RepositoryExportAction({
             ) : (
               <p className="mj-repository-dialog-note">Authentication is not configured in this environment yet. Contact us to request access.</p>
             )}
-            <a className="mj-text-link" href="/contact">Contact Majorana ↗</a>
+            <a className="mj-text-link" href="/contact">Contact LeonaQ ↗</a>
           </section>
         </div>
       ) : null}

@@ -3,7 +3,7 @@ import { CONTACT_EMAIL, CONTACT_MAILTO, PublicSite } from "../components/public-
 
 export const metadata: Metadata = {
   title: "Product",
-  description: "Majorana is building the evidence layer for the future of quantum development.",
+  description: "LeonaQ is building the evidence layer for the future of quantum development.",
 };
 
 export default function Home() {
@@ -13,7 +13,7 @@ export default function Home() {
         <div className="mj-company-hero-copy">
           <h1>The evidence layer for the future of quantum development.</h1>
           <p className="mj-company-hero-lede">
-            Majorana brings public research, private experimentation, and trustworthy execution
+            LeonaQ brings public research, private experimentation, and trustworthy execution
             into one place. Inspect what exists, ask what to build, run it, and keep the evidence
             attached to the work.
           </p>
@@ -26,9 +26,9 @@ export default function Home() {
             Built for researchers, quantum engineers, and R&amp;D teams who need more than plausible code.
           </p>
         </div>
-        <div className="mj-company-hero-art" aria-label="Majorana product surfaces">
+        <div className="mj-company-hero-art" aria-label="LeonaQ product surfaces">
           <div className="mj-public-art-head">
-            <span>MAJORANA / PRODUCT</span>
+            <span>LEONAQ / PRODUCT</span>
             <span className="mj-public-art-status">EVIDENCE FIRST</span>
           </div>
           <div className="mj-public-pipeline">
@@ -63,7 +63,7 @@ export default function Home() {
         <p>
           The next generation of quantum software will not be built from isolated snippets alone.
           It will be built from research that can be inspected, experiments that can be repeated,
-          and results whose assumptions remain visible. Majorana is building that connective layer.
+          and results whose assumptions remain visible. LeonaQ is building that connective layer.
         </p>
       </section>
 

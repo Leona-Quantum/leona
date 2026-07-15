@@ -3,7 +3,7 @@ import { CONTACT_EMAIL, CONTACT_MAILTO, PublicSite } from "../../components/publ
 
 export const metadata: Metadata = {
   title: "Privacy policy",
-  description: "Majorana privacy policy for the early-access product and public website.",
+  description: "LeonaQ privacy policy for the early-access product and public website.",
 };
 
 export default function PrivacyPage() {
@@ -11,15 +11,15 @@ export default function PrivacyPage() {
     <PublicSite activePath="/privacy" className="mj-legal-site">
       <section className="mj-legal-hero">
         <h1>Privacy policy</h1>
-        <p>How Majorana handles information on the public website and early-access product.</p>
+        <p>How LeonaQ handles information on the public website and early-access product.</p>
         <span>Last updated: July 14, 2026</span>
       </section>
       <article className="mj-legal-document">
-        <p className="mj-legal-note"><strong>Early-access note:</strong> this page describes the current product and operating practices. It will be updated as Majorana grows, adds paid services, and formalizes its operating entity.</p>
+        <p className="mj-legal-note"><strong>Early-access note:</strong> this page describes the current product and operating practices. It will be updated as LeonaQ grows, adds paid services, and formalizes its operating entity.</p>
 
         <section>
           <h2>1. Information we receive</h2>
-          <p>We may receive account information such as your email address and authentication details when you create or use a Majorana account.</p>
+          <p>We may receive account information such as your email address and authentication details when you create or use a LeonaQ account.</p>
           <p>When you use the workbench, we may process prompts, generated code, circuit data, run settings, simulation results, verification records, saved artifacts, and related metadata that you choose to submit. These records are necessary to provide the product and keep evidence attached to your work.</p>
           <p>If you email us, we receive the information you include in that message and any reply details needed to respond.</p>
         </section>
@@ -32,7 +32,7 @@ export default function PrivacyPage() {
 
         <section>
           <h2>3. Service providers and infrastructure</h2>
-          <p>Majorana relies on specialized providers for hosting, authentication, databases, observability, model access, and isolated code execution. Those providers may process information only as needed to provide their services, subject to their own terms and privacy practices.</p>
+          <p>LeonaQ relies on specialized providers for hosting, authentication, databases, observability, model access, and isolated code execution. Those providers may process information only as needed to provide their services, subject to their own terms and privacy practices.</p>
           <p>Generated code is treated as untrusted input and is intended to run in an isolated, network-restricted execution environment. No security boundary is absolute, so do not submit secrets or information you are not authorized to process.</p>
         </section>
 

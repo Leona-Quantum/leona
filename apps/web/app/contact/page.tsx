@@ -4,7 +4,7 @@ import { ContactForm } from "./contact-form";
 
 export const metadata: Metadata = {
   title: "Contact",
-  description: "Send a Majorana inquiry to the product contact queue.",
+  description: "Send a LeonaQ inquiry to the product contact queue.",
 };
 
 export default function ContactPage() {
@@ -15,7 +15,7 @@ export default function ContactPage() {
           <p className="mj-public-overline">Contact queue</p>
           <h1>Tell us what you are trying to build or validate.</h1>
           <p>
-            Majorana is building the evidence layer around quantum software: public research,
+            LeonaQ is building the evidence layer around quantum software: public research,
             private workspaces, and execution that can be inspected. Your note will be prepared
             for {CONTACT_EMAIL}.
           </p>

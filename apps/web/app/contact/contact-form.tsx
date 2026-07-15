@@ -15,7 +15,7 @@ export function ContactForm() {
     const email = String(form.get("email") ?? "").trim();
     const topic = String(form.get("topic") ?? "").trim();
     const message = String(form.get("message") ?? "").trim();
-    const subject = `[Majorana] ${topic || "Inquiry"}`;
+    const subject = `[LeonaQ] ${topic || "Inquiry"}`;
     const body = [
       `Name: ${name}`,
       `Reply-to: ${email}`,

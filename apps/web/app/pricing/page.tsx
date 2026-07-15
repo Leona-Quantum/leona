@@ -4,14 +4,14 @@ import { isPublicDemoEnabled } from "../../lib/public-demo";
 
 export const metadata: Metadata = {
   title: "Pricing",
-  description: "Early-access Majorana plans for individual researchers and teams.",
+  description: "Early-access LeonaQ plans for individual researchers and teams.",
 };
 
 const plans = [
   {
     name: "Free",
     price: "$0",
-    cadence: "while Majorana is in preview",
+    cadence: "while LeonaQ is in preview",
     description: "A low-friction way to try the verified workbench and browse public evidence.",
     features: ["Public repository access", "Small verified-run allowance", "Private Library for saved work", "Limited Studio access"],
     action: "Try the preview",
@@ -49,7 +49,7 @@ export default function PricingPage() {
         </p>
       </section>
 
-      <section className="mj-pricing-grid" aria-label="Majorana plans">
+      <section className="mj-pricing-grid" aria-label="LeonaQ plans">
         {plans.map((plan) => (
           <article className={`mj-pricing-card mj-pricing-card--${plan.tone}`} key={plan.name}>
             <div className="mj-pricing-card-head">

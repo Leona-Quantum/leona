@@ -42,9 +42,9 @@ export async function PublicSite({
     <main className={["mj-public-site", className].filter(Boolean).join(" ")}>
       <div className="mj-public-frame">
         <header className="mj-public-header">
-          <a className="mj-public-brand" href="/" aria-label="Majorana home">
+          <a className="mj-public-brand" href="/" aria-label="LeonaQ home">
             <span className="mj-public-brand-mark" aria-hidden="true">M</span>
-            <span>Majorana</span>
+            <span>LeonaQ</span>
           </a>
           <nav className="mj-public-nav" aria-label="Public navigation">
             {publicNav.map((item) => (
@@ -70,7 +70,7 @@ export async function PublicSite({
           <div className="mj-public-footer-brand">
             <a className="mj-public-brand" href="/">
               <span className="mj-public-brand-mark" aria-hidden="true">M</span>
-              <span>Majorana</span>
+              <span>LeonaQ</span>
             </a>
             <p>{copy.footer.promise}</p>
           </div>
@@ -94,7 +94,7 @@ export async function PublicSite({
             </div>
           </div>
           <div className="mj-public-footer-bottom">
-            <span>© 2026 Majorana</span>
+            <span>© 2026 LeonaQ</span>
             <span>{copy.footer.builtFor}</span>
           </div>
         </footer>

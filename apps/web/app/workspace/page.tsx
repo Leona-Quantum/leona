@@ -3,7 +3,7 @@ import { PublicSite, REPOSITORY_URL } from "../../components/public-site";
 
 export const metadata: Metadata = {
   title: "Workspace",
-  description: "Majorana's personal quantum workspace for LLM-assisted development, Studio, and verified Library artifacts.",
+  description: "LeonaQ's personal quantum workspace for LLM-assisted development, Studio, and verified Library artifacts.",
 };
 
 export default function WorkspacePage() {
@@ -14,7 +14,7 @@ export default function WorkspacePage() {
           <p className="mj-public-overline">Personal quantum workspace</p>
           <h1>Turn a quantum question into work you can reopen.</h1>
           <p className="mj-landing-copy">
-            Majorana connects an LLM-guided workflow to a guarded simulator, verification evidence,
+            LeonaQ connects an LLM-guided workflow to a guarded simulator, verification evidence,
             Studio editing, and a personal Library. Every account starts with its own workspace;
             your prompts, runs, and saved artifacts are not shared with another user by default.
           </p>

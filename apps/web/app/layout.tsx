@@ -20,8 +20,8 @@ const jetbrainsMono = JetBrains_Mono({ subsets: ["latin"], variable: "--font-jbm
 
 export const metadata: Metadata = {
   title: {
-    default: "Majorana · Verified quantum work",
-    template: "%s · Majorana",
+    default: "LeonaQ · Verified quantum work",
+    template: "%s · LeonaQ",
   },
   description: "A quantum workbench for executable code, measured evidence, and reusable verified artifacts.",
 };

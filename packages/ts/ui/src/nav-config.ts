@@ -12,4 +12,4 @@ export const NAV_SURFACES: NavSurface[] = [
   { href: "/account", label: "Account" },
 ];
 
-export const BRAND_NAME = "Majorana";
+export const BRAND_NAME = "LeonaQ";

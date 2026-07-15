@@ -1,7 +1,7 @@
 import { getMajoranaAuth, signOutMajorana } from "../../../lib/auth";
 import { AccountSettings } from "./account-settings";
 
-export const metadata = { title: "Account — Majorana" };
+export const metadata = { title: "Account — LeonaQ" };
 
 export default async function Account() {
   const { user } = await getMajoranaAuth({ ensureSignedIn: true });
