@@ -3,11 +3,37 @@
 import type { FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
-import { RunView, type RunEvent } from "@majorana/ui";
-import { loadChatHistory, rememberChat, updateChat } from "../../../../lib/chat-history";
-import { rememberArtifactFromRun } from "../../../../lib/library-data";
-import { RunComposer, type ComposerFramework, type ComposerMode } from "../../../../components/run-composer";
+import type { RunEvent } from "@majorana/ui";
+import { ChatMarkdown } from "../../../../components/chat-markdown";
+import { archiveChat, deleteChat, loadChatHistory, rememberChat, updateChat, type ChatSummary } from "../../../../lib/chat-history";
+import { RunComposer } from "../../../../components/run-composer";
 import { RUN_FIXTURES } from "./fixtures";
+
+type WireEvent = {
+  run_id: string;
+  seq?: number;
+  type: string;
+  kind?: "reasoning" | "output";
+  text?: string;
+  message?: string;
+  status?: string;
+  verifier_decision?: string | null;
+  interpretation?: string;
+};
+
+type ConversationPayload = {
+  id: string;
+  turns: Array<{
+    run: { id: string; task_prompt: string; conversation_id: string };
+    events: WireEvent[];
+  }>;
+};
+
+type Turn = {
+  id: string;
+  prompt: string;
+  answer: string | null;
+};
 
 function parseEvent(block: string): { id: number | null; data: string } | null {
   const lines = block.split("\n");
@@ -22,28 +48,79 @@ function parseEvent(block: string): { id: number | null; data: string } | null {
   return { id: Number.isFinite(parsedId) ? parsedId : null, data };
 }
 
+function answerFromEvents(events: WireEvent[]): string | null {
+  const completed = [...events].reverse().find((event) => event.type === "chat.completed" && event.text);
+  if (completed?.text) return completed.text;
+  const legacy = [...events].reverse().find((event) => event.type === "run.analysis" && event.interpretation);
+  return legacy?.interpretation ?? null;
+}
+
+function turnsFromConversation(payload: ConversationPayload): Turn[] {
+  return payload.turns.map((turn) => ({
+    id: turn.run.id,
+    prompt: turn.run.task_prompt,
+    answer: answerFromEvents(turn.events),
+  }));
+}
+
+function fixtureTurns(events: RunEvent[]): Turn[] {
+  const queued = events.find((event) => event.type === "run.queued");
+  const answer = events.find((event) => event.type === "run.analysis");
+  return [{
+    id: queued?.run_id ?? "example",
+    prompt: "Use QAOA to solve MaxCut on a 5-node ring and verify the cut value.",
+    answer: answer?.type === "run.analysis" ? answer.interpretation : "This is an example run transcript.",
+  }];
+}
+
 export function LiveRun({ taskId }: { taskId: string }) {
   const router = useRouter();
   const fixtureEvents = RUN_FIXTURES[taskId] ?? null;
-  const [events, setEvents] = useState<RunEvent[]>(fixtureEvents ?? []);
+  const [turns, setTurns] = useState<Turn[]>(fixtureEvents ? fixtureTurns(fixtureEvents) : []);
+  const [conversationId, setConversationId] = useState<string | null>(null);
+  const [streamingText, setStreamingText] = useState("");
+  const [reasoningText, setReasoningText] = useState("");
+  const [streaming, setStreaming] = useState(!fixtureEvents);
   const [error, setError] = useState<string | null>(null);
   const [prompt, setPrompt] = useState("");
-  const [mode, setMode] = useState<ComposerMode>("execute");
-  const [framework, setFramework] = useState<ComposerFramework>("qiskit");
   const [pending, setPending] = useState(false);
+  const [existingChat, setExistingChat] = useState<ChatSummary | null>(null);
   const lastEventId = useRef<number | null>(null);
 
   useEffect(() => {
-    if (fixtureEvents) {
-      setEvents(fixtureEvents);
-      setError(null);
-      return;
-    }
+    setExistingChat(
+      loadChatHistory({ includeArchived: true }).find(
+        (item) => item.id === taskId || item.conversationId === conversationId,
+      ) ?? null,
+    );
+  }, [conversationId, taskId]);
 
+  const title = existingChat?.title ?? turns[0]?.prompt ?? "Quantum chat";
+
+  useEffect(() => {
+    if (fixtureEvents) return;
     const controller = new AbortController();
     let reconnectTimer: ReturnType<typeof setTimeout> | undefined;
 
+    async function loadConversation() {
+      const response = await fetch(`/api/runs/${encodeURIComponent(taskId)}/conversation`, {
+        cache: "no-store",
+        signal: controller.signal,
+      });
+      if (!response.ok) throw new Error(`Conversation could not be loaded (${response.status})`);
+      const payload = (await response.json()) as ConversationPayload;
+      if (!controller.signal.aborted) {
+        setConversationId(payload.id);
+        setTurns(turnsFromConversation(payload));
+        setPending(payload.turns.some((turn) => turn.run.id === taskId && !answerFromEvents(turn.events)));
+      }
+    }
+
     async function consume() {
+      void loadConversation().catch((cause) => {
+        if (!controller.signal.aborted) setError(cause instanceof Error ? cause.message : "Conversation could not be loaded");
+      });
+
       while (!controller.signal.aborted) {
         try {
           const headers: Record<string, string> = {};
@@ -53,8 +130,8 @@ export function LiveRun({ taskId }: { taskId: string }) {
             cache: "no-store",
             signal: controller.signal,
           });
-          if (!response.ok) throw new Error(`Event stream failed (${response.status})`);
-          if (!response.body) throw new Error("Event stream returned no body");
+          if (!response.ok) throw new Error(`Response stream failed (${response.status})`);
+          if (!response.body) throw new Error("Response stream returned no body");
 
           const reader = response.body.getReader();
           const decoder = new TextDecoder();
@@ -69,20 +146,36 @@ export function LiveRun({ taskId }: { taskId: string }) {
             for (const block of blocks) {
               const parsed = parseEvent(block);
               if (!parsed) continue;
-              const event = JSON.parse(parsed.data) as RunEvent;
+              const event = JSON.parse(parsed.data) as WireEvent;
               if (parsed.id !== null) lastEventId.current = parsed.id;
-              setEvents((current) => {
-                if (current.some((item) => item.seq === event.seq)) return current;
-                return [...current, event].sort((a, b) => a.seq - b.seq);
-              });
-              if (event.type === "run.finished") terminal = true;
+              if (event.type === "chat.delta" && event.text) {
+                setStreaming(true);
+                if (event.kind === "reasoning") setReasoningText((current) => `${current}${event.text}`);
+                else setStreamingText((current) => `${current}${event.text}`);
+              }
+              if (event.type === "chat.completed" && event.text) {
+                setStreamingText(event.text);
+                setStreaming(false);
+              }
+              if (event.type === "chat.error" || event.type === "run.error") {
+                setError(event.message ?? "The assistant could not complete this response.");
+                setStreaming(false);
+                setPending(false);
+              }
+              if (event.type === "run.finished") {
+                terminal = true;
+                setPending(false);
+                setStreaming(false);
+                updateChat(taskId, { status: event.status === "succeeded" ? "draft" : "failed" });
+                if (event.status === "succeeded") void loadConversation().catch(() => undefined);
+              }
             }
           }
           if (terminal) return;
-          throw new Error("Event stream ended before the run finished");
+          throw new Error("Response stream ended before the response finished");
         } catch (cause) {
           if (controller.signal.aborted) return;
-          setError(cause instanceof Error ? cause.message : "Event stream failed");
+          setError(cause instanceof Error ? cause.message : "Response stream failed");
           await new Promise<void>((resolve) => {
             reconnectTimer = setTimeout(resolve, 1000);
           });
@@ -98,15 +191,6 @@ export function LiveRun({ taskId }: { taskId: string }) {
     };
   }, [fixtureEvents, taskId]);
 
-  useEffect(() => {
-    const finished = [...events].reverse().find((event) => event.type === "run.finished");
-    if (!finished || finished.type !== "run.finished") return;
-    const status = finished.verifier_decision === "pass" ? "verified" : "failed";
-    updateChat(taskId, { status });
-    const chat = loadChatHistory().find((item) => item.id === taskId);
-    if (chat) rememberArtifactFromRun(events, chat.prompt);
-  }, [events, taskId]);
-
   async function submitFollowup(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const taskPrompt = prompt.trim();
@@ -120,59 +204,113 @@ export function LiveRun({ taskId }: { taskId: string }) {
           "Content-Type": "application/json",
           "Idempotency-Key": crypto.randomUUID(),
         },
-        body: JSON.stringify({ task_prompt: taskPrompt, mode, framework }),
+        body: JSON.stringify({ task_prompt: taskPrompt, conversation_id: conversationId }),
       });
-      const payload = (await response.json()) as { id?: string; detail?: string; error?: string };
-      if (!response.ok || !payload.id) {
-        throw new Error(payload.detail ?? payload.error ?? `Run submission failed (${response.status})`);
-      }
+      const payload = (await response.json()) as { id?: string; conversation_id?: string; detail?: string; error?: string };
+      if (!response.ok || !payload.id) throw new Error(payload.detail ?? payload.error ?? `Message submission failed (${response.status})`);
       rememberChat({
         id: payload.id,
+        conversationId: payload.conversation_id ?? conversationId ?? undefined,
         title: titleFromPrompt(taskPrompt),
         prompt: taskPrompt,
         createdAt: new Date().toISOString(),
         status: "queued",
-        framework: frameworkLabel(framework),
       });
       router.push(`/run/${payload.id}`);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Run submission failed");
+      setError(cause instanceof Error ? cause.message : "Message submission failed");
       setPending(false);
     }
   }
 
+  const activePrompt = turns.find((turn) => turn.id === taskId)?.prompt ?? existingChat?.prompt;
+  const showActiveUser = Boolean(activePrompt && !turns.some((turn) => turn.id === taskId));
+
   return (
     <div className="mj-run-task">
       <div className="mj-run-task-scroll">
-        <div className="mj-run-task-content">
-          <header className="mj-run-task-header">
+        <div className="mj-chat-content">
+          <header className="mj-chat-header">
             <div>
-              <h1>{fixtureEvents ? "MaxCut on a 5-node ring" : "Run in progress"}</h1>
-              <span className="mj-run-task-id">{taskId}</span>
+              <h1>{title}</h1>
+              <span className="mj-chat-subtitle">{fixtureEvents ? "Example conversation" : streaming || pending ? "Streaming response" : "Conversation"}</span>
             </div>
-            <span className="mj-run-home-status">
-              <span className="mj-status-dot" aria-hidden="true" />
-              {fixtureEvents ? "Example run" : "Live event stream"}
-            </span>
+            <div className="mj-run-task-actions">
+              <span className="mj-run-home-status">
+                <span className="mj-status-dot" aria-hidden="true" />
+                {fixtureEvents ? "Example" : streaming || pending ? "Live" : "Ready"}
+              </span>
+              {!fixtureEvents && existingChat ? (
+                <>
+                  <button className="mj-secondary-button" type="button" onClick={() => { archiveChat(existingChat.id, existingChat); router.push("/run"); }}>Archive</button>
+                  <button className="mj-secondary-button mj-danger-button" type="button" onClick={() => { deleteChat(existingChat.id); router.push("/run"); }}>Delete</button>
+                </>
+              ) : null}
+            </div>
           </header>
-          {error ? <p className="mj-run-stream-error" role="status">{error}; reconnecting</p> : null}
-          <div className="mj-run-task-canvas">
-            <RunView events={events} emptyMessage="Connecting to the pipeline…" animateText={!fixtureEvents} />
+          {error ? <p className="mj-run-stream-error" role="status">{error}</p> : null}
+          <div className="mj-chat-thread" aria-live="polite">
+            {turns.map((turn) => (
+              <div className="mj-chat-turn" key={turn.id}>
+                <div className="mj-chat-message mj-chat-message--user">
+                  <ChatMarkdown source={turn.prompt} />
+                </div>
+                {turn.answer ? (
+                  <div className="mj-chat-message mj-chat-message--assistant">
+                    <ChatMarkdown source={turn.answer} />
+                  </div>
+                ) : turn.id === taskId && (streamingText || reasoningText) ? (
+                  <AssistantMessage reasoning={reasoningText} text={streamingText} streaming={streaming} />
+                ) : turn.id === taskId && pending ? (
+                  <AssistantLoading />
+                ) : null}
+              </div>
+            ))}
+            {showActiveUser ? (
+              <div className="mj-chat-turn">
+                <div className="mj-chat-message mj-chat-message--user"><ChatMarkdown source={activePrompt ?? ""} /></div>
+                {streamingText || reasoningText ? (
+                  <AssistantMessage reasoning={reasoningText} text={streamingText} streaming={streaming} />
+                ) : pending ? <AssistantLoading /> : null}
+              </div>
+            ) : null}
+            {!turns.length && !activePrompt && !pending ? <p className="mj-run-waiting">Connecting to the conversation…</p> : null}
           </div>
         </div>
       </div>
       <RunComposer
         value={prompt}
-        mode={mode}
-        framework={framework}
         pending={pending}
         error={null}
         onChange={setPrompt}
-        onModeChange={setMode}
-        onFrameworkChange={setFramework}
         onSubmit={submitFollowup}
-        onAttach={() => setError("Attachments are not enabled yet; paste code or context into the prompt.")}
+        onAttach={() => setError("Attachments are not enabled yet; paste code or context into the message.")}
       />
+    </div>
+  );
+}
+
+function AssistantMessage({ reasoning, text, streaming }: { reasoning: string; text: string; streaming: boolean }) {
+  return (
+    <div className="mj-chat-message mj-chat-message--assistant">
+      {reasoning ? (
+        <details className="mj-chat-thinking" open={streaming}>
+          <summary>Thinking</summary>
+          <ChatMarkdown source={reasoning} />
+        </details>
+      ) : null}
+      {text ? <ChatMarkdown source={text} /> : <AssistantLoading />}
+      {streaming ? <span className="mj-chat-caret" aria-label="Response is streaming" /> : null}
+    </div>
+  );
+}
+
+function AssistantLoading() {
+  return (
+    <div className="mj-chat-message mj-chat-message--assistant mj-chat-message--loading" aria-label="Waiting for response">
+      <span className="mj-chat-loading-dot" />
+      <span className="mj-chat-loading-dot" />
+      <span className="mj-chat-loading-dot" />
     </div>
   );
 }
@@ -180,8 +318,4 @@ export function LiveRun({ taskId }: { taskId: string }) {
 function titleFromPrompt(prompt: string): string {
   const firstLine = prompt.split(/\r?\n/, 1)[0].trim();
   return firstLine.length > 54 ? `${firstLine.slice(0, 54).trimEnd()}…` : firstLine;
-}
-
-function frameworkLabel(framework: ComposerFramework): string {
-  return framework === "pennylane" ? "PennyLane" : framework === "cirq" ? "Cirq" : "Qiskit";
 }

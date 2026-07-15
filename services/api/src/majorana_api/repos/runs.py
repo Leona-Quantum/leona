@@ -73,11 +73,13 @@ async def create_run(
     tolerances: dict[str, Any] | None = None,
     timeout_s: int | None = None,
     idempotency_key: str | None = None,
+    conversation_id: uuid.UUID | None = None,
 ) -> Run:
     require_write(scope)
     run = Run(
         idempotency_key=idempotency_key,
         id=uuid7(),
+        conversation_id=conversation_id or uuid7(),
         workspace_id=scope.workspace_id,
         user_id=scope.user_id,
         artifact_version_id=artifact_version_id,
@@ -96,6 +98,79 @@ async def create_run(
     # load them now — a lazy attribute refresh later would MissingGreenlet.
     await session.refresh(run)
     return run
+
+
+async def list_conversation_runs(
+    scope: Scope,
+    session: AsyncSession,
+    conversation_id: uuid.UUID,
+    *,
+    limit: int = 50,
+) -> list[Run]:
+    """Return the scoped turns in chronological order for durable chat replay."""
+    stmt = (
+        select(Run)
+        .where(
+            Run.workspace_id == scope.workspace_id,
+            Run.conversation_id == conversation_id,
+        )
+        .order_by(Run.created_at, Run.id)
+        .limit(min(max(limit, 1), 100))
+    )
+    return list((await session.execute(stmt)).scalars().all())
+
+
+async def list_conversation_messages(
+    scope: Scope,
+    session: AsyncSession,
+    conversation_id: uuid.UUID,
+    *,
+    exclude_run_id: uuid.UUID | None = None,
+    limit: int = 20,
+) -> list[dict[str, str]]:
+    """Build provider-neutral user/assistant history from stored chat turns.
+
+    Only completed assistant text is replayed into a new provider request. A
+    failed or in-flight turn contributes no invented answer.
+    """
+    conditions = [
+        Run.workspace_id == scope.workspace_id,
+        Run.conversation_id == conversation_id,
+    ]
+    if exclude_run_id is not None:
+        conditions.append(Run.id != exclude_run_id)
+    stmt = (
+        select(Run)
+        .where(*conditions)
+        .order_by(Run.created_at.desc(), Run.id.desc())
+        .limit(min(max(limit, 1), 50))
+    )
+    rows = list((await session.execute(stmt)).scalars().all())
+    rows.reverse()
+    messages: list[dict[str, str]] = []
+    for row in rows:
+        events = await list_run_events(scope, session, row.id)
+        assistant_text: str | None = None
+        for event in reversed(events):
+            if event.type == "chat.completed":
+                value = event.payload.get("text")
+                if isinstance(value, str) and value.strip():
+                    assistant_text = value
+                    break
+            if event.type == "run.analysis":
+                value = event.payload.get("interpretation")
+                if isinstance(value, str) and value.strip():
+                    assistant_text = value
+                    break
+        if assistant_text is None:
+            continue
+        messages.extend(
+            [
+                {"role": "user", "content": row.task_prompt},
+                {"role": "assistant", "content": assistant_text},
+            ]
+        )
+    return messages
 
 
 # The only run columns a status transition may touch — an open **fields would

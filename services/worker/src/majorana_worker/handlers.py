@@ -11,9 +11,9 @@ import uuid
 from typing import Any, Awaitable, Callable
 
 from majorana_contracts import Scope
-from majorana_contracts.enums import Framework, Role, RunMode, RunStatus, Stage, VerifierDecision
+from majorana_contracts.enums import Framework, Role, RunMode, RunStatus
 from majorana_contracts.events import run_event_adapter
-from majorana_llm import LLMClient, LLMRequest, default_llm, model_for, render_conversation_prompt
+from majorana_llm import LLMClient, LLMRequest, QUANTUM_AGENT_SYSTEM_PROMPT, default_llm, model_for
 from majorana_pipeline import RunContext, execute_run
 from majorana_sandbox import LocalSubprocessSandbox, Sandbox, VercelSandbox
 
@@ -22,7 +22,7 @@ from majorana_api.jobs import RUN_EXECUTE_JOB_KIND
 from majorana_api.repos import runs as runs_repo
 from majorana_api.repos import artifacts as artifacts_repo
 
-from .stage_handlers import _emit_llm_call, _llm_delta_emitter, build_stage_handlers
+from .stage_handlers import build_stage_handlers
 
 log = logging.getLogger("majorana_worker")
 
@@ -143,6 +143,7 @@ async def handle_run_execute(
         tolerances=run.tolerances,
         timeout_s=run.timeout_s,
         sink=RepoEventSink(scope, session, run_id),
+        conversation_id=run.conversation_id,
         source_code=payload.get("source_code"),
         source_framework=Framework(run.framework),
         parent_artifact_id=parent_artifact_id,
@@ -176,65 +177,92 @@ async def handle_run_execute(
 async def _handle_conversation(
     ctx: RunContext, store: RepoRunStateStore, llm: LLMClient
 ) -> RunStatus:
-    """Answer Learn/Explain requests without pretending that they were executions."""
+    """Answer a direct chat turn without invoking the execution pipeline."""
     status = await store.current_status()
     if status is not RunStatus.QUEUED:
         return status
     await store.set_status(RunStatus.RUNNING, started_at_now=True)
     await ctx.sink.emit("run.started", {})
 
-    prompt = render_conversation_prompt(ctx.task_prompt, ctx.mode, ctx.framework)
-    model = model_for(Stage.ANALYZE)
+    history = (
+        await runs_repo.list_conversation_messages(
+            store._scope,
+            store._session,
+            ctx.conversation_id,
+            exclude_run_id=ctx.run_id,
+        )
+        if ctx.conversation_id is not None
+        else []
+    )
+    model = model_for("chat")
     started = asyncio.get_running_loop().time()
-    on_delta, flush_deltas = _llm_delta_emitter(ctx, Stage.ANALYZE)
+    buffers = {"reasoning": "", "output": ""}
+
+    async def on_delta(text: str, kind: str) -> None:
+        normalized = kind if kind in buffers else "output"
+        if not text:
+            return
+        buffers[normalized] += text
+        while len(buffers[normalized]) >= 160:
+            chunk, buffers[normalized] = (
+                buffers[normalized][:160],
+                buffers[normalized][160:],
+            )
+            await ctx.sink.emit(
+                "chat.delta",
+                {"kind": normalized, "text": chunk},
+            )
+
+    async def flush_deltas() -> None:
+        for kind, text in buffers.items():
+            if text:
+                await ctx.sink.emit("chat.delta", {"kind": kind, "text": text})
+
     try:
         response = await llm.complete(
-            LLMRequest(model=model, system=prompt.system, user=prompt.user, max_tokens=4096),
+            LLMRequest(
+                model=model,
+                system=QUANTUM_AGENT_SYSTEM_PROMPT,
+                user=ctx.task_prompt,
+                messages=[*history, {"role": "user", "content": ctx.task_prompt}],
+                max_tokens=8192,
+                temperature=0.7,
+            ),
             on_delta=on_delta,
         )
-    except Exception as exc:
-        message = f"conversation provider failed: {exc}"
+    except Exception:
+        log.exception("chat provider failed for run %s", ctx.run_id)
+        await flush_deltas()
         await ctx.sink.emit(
-            "run.error",
-            {"stage": Stage.ANALYZE, "code": "conversation_failed", "message": message},
+            "chat.error",
+            {
+                "code": "provider_failed",
+                "message": "The assistant could not complete this response.",
+            },
         )
         await ctx.sink.emit("run.finished", {"status": RunStatus.FAILED})
         await store.set_status(RunStatus.FAILED, finished_at_now=True)
         return RunStatus.FAILED
-    finally:
-        await flush_deltas()
 
-    await _emit_llm_call(
-        ctx,
-        Stage.ANALYZE,
-        model,
-        response,
-        int((asyncio.get_running_loop().time() - started) * 1000),
-    )
+    await flush_deltas()
     interpretation = response.text.strip() or "The assistant returned an empty response."
-    summary = next(
-        (line.strip() for line in interpretation.splitlines() if line.strip()), interpretation
-    )[:300]
-    residual_risks = "Conversational response only; no circuit was executed or verified."
     await ctx.sink.emit(
-        "run.analysis",
+        "chat.completed",
         {
-            "summary": summary,
-            "interpretation": interpretation,
-            "results": {},
-            "comparison": {},
-            "residual_risks": residual_risks,
+            "text": interpretation,
+            "model": response.model,
+            "input_tokens": response.input_tokens,
+            "output_tokens": response.output_tokens,
+            "duration_ms": int((asyncio.get_running_loop().time() - started) * 1000),
         },
     )
     await ctx.sink.emit(
         "run.finished",
         {
             "status": RunStatus.SUCCEEDED,
-            "verifier_decision": VerifierDecision.INCONCLUSIVE,
-            "residual_risks": residual_risks,
         },
     )
-    await store.set_status(RunStatus.SUCCEEDED, finished_at_now=True, residual_risks=residual_risks)
+    await store.set_status(RunStatus.SUCCEEDED, finished_at_now=True)
     return RunStatus.SUCCEEDED
 
 

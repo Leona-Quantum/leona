@@ -3,6 +3,15 @@ import type { PublicLocale } from "./public-locale";
 export const WORKSPACE_COPY: Record<PublicLocale, {
   surfaces: { brandedRun: string; preview: string };
   sidebar: {
+    surfaceSwitch: string;
+    run: string;
+    studio: string;
+    library: string;
+    projects: string;
+    chats: string;
+    artifacts: string;
+    newArtifact: string;
+    viewLibrary: string;
     newChat: string;
     recent: string;
     folders: string;
@@ -27,6 +36,30 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
     createChatFolder: string;
     saveFolder: string;
     cancelFolder: string;
+    createArtifactFolder: string;
+    emptyProject: string;
+    emptyChats: string;
+    emptyArtifacts: string;
+    pinned: string;
+    archive: string;
+    archiveArtifacts: string;
+    archiveRetention: string;
+    archiveEmpty: string;
+    daysLeft: (days: number) => string;
+    pinChat: (title: string) => string;
+    unpinChat: (title: string) => string;
+    archiveChat: (title: string) => string;
+    deleteChat: (title: string) => string;
+    restoreChat: (title: string) => string;
+    pinArtifact: (title: string) => string;
+    unpinArtifact: (title: string) => string;
+    archiveArtifact: (title: string) => string;
+    deleteArtifact: (title: string) => string;
+    deleteConfirmTitle: string;
+    deleteChatWarning: (title: string) => string;
+    deleteArtifactWarning: (title: string) => string;
+    cancel: string;
+    delete: string;
   };
   run: {
     title: string;
@@ -36,10 +69,6 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
     workflowTitle: string;
     workflowBody: string;
     capabilities: Array<{ title: string; body: string }>;
-    starterPrompts: string;
-    promptCount: string;
-    process: string;
-    stepCount: string;
     examplesTitle: string;
     examples: Array<{ title: string; prompt: string }>;
     contextLabel: string;
@@ -66,6 +95,11 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
     noMatch: string;
     noMatchBody: string;
     startRun: string;
+    askInRun: string;
+    archive: string;
+    delete: string;
+    deleteConfirmTitle: string;
+    deleteWarning: (title: string) => string;
     previewFooter: string;
     workspaceFooter: string;
     unknown: string;
@@ -77,6 +111,9 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
     backLibrary: string;
     artifacts: string;
     new: string;
+    search: string;
+    searchPlaceholder: string;
+    noSearchResults: string;
     empty: string;
     sidebarNote: string;
     workingCircuit: string;
@@ -134,8 +171,17 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
   };
 }> = {
   en: {
-    surfaces: { brandedRun: "LeonaQ Run", preview: "Public preview" },
+    surfaces: { brandedRun: "Leona Run", preview: "Public preview" },
     sidebar: {
+      surfaceSwitch: "Workspace mode",
+      run: "Run",
+      studio: "Studio",
+      library: "Library",
+      projects: "Projects",
+      chats: "Chats",
+      artifacts: "Artifacts",
+      newArtifact: "New draft",
+      viewLibrary: "View Library",
       newChat: "New chat",
       recent: "Recent",
       folders: "Folders",
@@ -160,23 +206,43 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
       createChatFolder: "Create chat folder",
       saveFolder: "Save folder",
       cancelFolder: "Cancel folder creation",
+      createArtifactFolder: "Create artifact project",
+      emptyProject: "No items yet",
+      emptyChats: "Chats without a project appear here",
+      emptyArtifacts: "Artifacts without a project appear here",
+      pinned: "Pinned",
+      archive: "Archived chats",
+      archiveArtifacts: "Archived artifacts",
+      archiveRetention: "Archived items are deleted after 14 days.",
+      archiveEmpty: "Nothing archived",
+      daysLeft: (days) => `${days}d left`,
+      pinChat: (title) => `Pin ${title}`,
+      unpinChat: (title) => `Unpin ${title}`,
+      archiveChat: (title) => `Archive ${title}`,
+      deleteChat: (title) => `Delete ${title}`,
+      restoreChat: (title) => `Restore ${title}`,
+      pinArtifact: (title) => `Pin ${title}`,
+      unpinArtifact: (title) => `Unpin ${title}`,
+      archiveArtifact: (title) => `Archive ${title}`,
+      deleteArtifact: (title) => `Delete ${title}`,
+      deleteConfirmTitle: "Are you sure?",
+      deleteChatWarning: (title) => `“${title}” will be removed from your workspace and not saved.`,
+      deleteArtifactWarning: (title) => `“${title}” will be removed from your workspace and not saved.`,
+      cancel: "Cancel",
+      delete: "Delete",
     },
     run: {
       title: "What are you working on?",
-      lede: "LeonaQ turns a natural-language question into a visible plan, implementation, simulation, verification, and saved Library record.",
+      lede: "Ask a quantum algorithm assistant in plain language and get its response as it arrives.",
       previewStatus: "Public preview · view-only",
-      readyStatus: "DeepSeek · ready",
-      workflowTitle: "A visible path from question to evidence",
-      workflowBody: "Every run keeps its plan, generated code, checks, results, and saved artifact addressable. Return to an older chat without losing the work in progress.",
+      readyStatus: "Assistant · ready",
+      workflowTitle: "Natural language in, natural language out",
+      workflowBody: "Messages are sent to the configured model with a minimal quantum-assistant instruction. The response is streamed and the conversation is kept for replay.",
       capabilities: [
-        { title: "Plan first", body: "Choose a method and state the verification target before compute." },
-        { title: "Show the work", body: "Watch model output, code, compilation, and checks arrive as evidence." },
-        { title: "Save to Library", body: "Verified runs become reusable artifacts in the connected Library." },
+        { title: "Ask naturally", body: "Use the same open-ended conversation style as a general LLM client." },
+        { title: "Stream the response", body: "Markdown, code, and LaTeX appear as the provider sends them." },
+        { title: "Keep the thread", body: "Return to the conversation with its messages available for replay." },
       ],
-      starterPrompts: "Starter prompts",
-      promptCount: "4 prompts",
-      process: "Process",
-      stepCount: "3 steps",
       examplesTitle: "Try an example",
       examples: [
         { title: "Recover a marked state with Grover", prompt: "Use Grover to recover the marked state 1100 and verify the measured distribution." },
@@ -208,6 +274,11 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
       noMatch: "No artifacts match these filters.",
       noMatchBody: "Clear a filter or start a new verified run.",
       startRun: "Start a run",
+      askInRun: "Ask in Run",
+      archive: "Archive",
+      delete: "Delete",
+      deleteConfirmTitle: "Are you sure?",
+      deleteWarning: (title) => `“${title}” will be removed from your workspace and not saved.`,
       previewFooter: "Reference artifacts are shown in the public preview.",
       workspaceFooter: "Verified runs saved from this workspace appear here automatically.",
       unknown: "Unknown",
@@ -219,6 +290,9 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
       backLibrary: "Back to Library",
       artifacts: "Artifacts",
       new: "New",
+      search: "Search artifacts",
+      searchPlaceholder: "Search by name, framework, or tag…",
+      noSearchResults: "No artifacts match this search.",
       empty: "No saved artifacts yet. Start with the Bell-state draft.",
       sidebarNote: "Library stores saved artifacts. Studio is where drafts become evidence.",
       workingCircuit: "Working circuit",
@@ -252,7 +326,7 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
       codeCopied: (framework) => `${framework} code copied.`,
       editingDraft: (framework) => `Editing the ${framework} draft. Run it before treating it as verified.`,
       verificationStarted: "Verification started. A passing run will become the next saved version.",
-      actionStarted: (action) => `${action} started in LeonaQ Run.`,
+      actionStarted: (action) => `${action} started in Leona Run.`,
       submissionFailed: "Run submission failed",
       canvasLabel: "Circuit canvas",
       starterTitle: "Bell-state starter",
@@ -280,8 +354,17 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
     },
   },
   ja: {
-    surfaces: { brandedRun: "LeonaQ 実行", preview: "公開プレビュー" },
+    surfaces: { brandedRun: "Leona 実行", preview: "公開プレビュー" },
     sidebar: {
+      surfaceSwitch: "ワークスペースモード",
+      run: "実行",
+      studio: "Studio",
+      library: "Library",
+      projects: "プロジェクト",
+      chats: "チャット",
+      artifacts: "アーティファクト",
+      newArtifact: "新しい下書き",
+      viewLibrary: "Libraryを見る",
       newChat: "新しいチャット",
       recent: "最近",
       folders: "フォルダ",
@@ -306,23 +389,43 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
       createChatFolder: "チャットフォルダを作成",
       saveFolder: "フォルダを保存",
       cancelFolder: "フォルダ作成をキャンセル",
+      createArtifactFolder: "アーティファクトプロジェクトを作成",
+      emptyProject: "まだ項目がありません",
+      emptyChats: "プロジェクトに属さないチャットがここに表示されます",
+      emptyArtifacts: "プロジェクトに属さないアーティファクトがここに表示されます",
+      pinned: "ピン留め",
+      archive: "アーカイブ済みチャット",
+      archiveArtifacts: "アーカイブ済みアーティファクト",
+      archiveRetention: "アーカイブした項目は14日後に削除されます。",
+      archiveEmpty: "アーカイブはありません",
+      daysLeft: (days) => `残り${days}日`,
+      pinChat: (title) => `${title}をピン留め`,
+      unpinChat: (title) => `${title}のピン留めを解除`,
+      archiveChat: (title) => `${title}をアーカイブ`,
+      deleteChat: (title) => `${title}を削除`,
+      restoreChat: (title) => `${title}を復元`,
+      pinArtifact: (title) => `${title}をピン留め`,
+      unpinArtifact: (title) => `${title}のピン留めを解除`,
+      archiveArtifact: (title) => `${title}をアーカイブ`,
+      deleteArtifact: (title) => `${title}を削除`,
+      deleteConfirmTitle: "削除してもよいですか？",
+      deleteChatWarning: (title) => `「${title}」はワークスペースから削除され、保存されません。`,
+      deleteArtifactWarning: (title) => `「${title}」はワークスペースから削除され、保存されません。`,
+      cancel: "キャンセル",
+      delete: "削除",
     },
     run: {
       title: "何を研究していますか？",
-      lede: "LeonaQは自然言語の問いを、計画、実装、シミュレーション、検証、保存できるLibraryの記録へつなげます。",
+      lede: "量子アルゴリズムのアシスタントに自然言語で質問し、届いた応答をそのまま表示します。",
       previewStatus: "公開プレビュー · 閲覧のみ",
-      readyStatus: "DeepSeek · 準備完了",
-      workflowTitle: "問いから根拠までを見える形に",
-      workflowBody: "各実行の計画、生成コード、チェック、結果、保存アーティファクトをたどれます。途中の作業を失わず、過去のチャットに戻れます。",
+      readyStatus: "アシスタント · 準備完了",
+      workflowTitle: "自然言語で問い、自然言語で答える",
+      workflowBody: "最小限の量子アルゴリズム向け指示とともに、設定されたモデルへメッセージを送ります。応答はストリーミングされ、会話は再生用に保持されます。",
       capabilities: [
-        { title: "先に計画", body: "計算の前に方法と検証対象を選びます。" },
-        { title: "作業を表示", body: "モデル出力、コード、コンパイル、チェックを根拠として確認します。" },
-        { title: "Libraryに保存", body: "検証済みの実行を再利用できるアーティファクトとして残します。" },
+        { title: "自然に質問", body: "一般的なLLMクライアントと同じように、自由に会話できます。" },
+        { title: "応答をストリーム", body: "Markdown、コード、LaTeXをモデルから届いた順に表示します。" },
+        { title: "会話を保持", body: "メッセージを再生できる状態で、同じスレッドに戻れます。" },
       ],
-      starterPrompts: "スタータープロンプト",
-      promptCount: "4件",
-      process: "プロセス",
-      stepCount: "3ステップ",
       examplesTitle: "例から始める",
       examples: [
         { title: "Groverでマーク状態を探す", prompt: "Groverでマークされた状態1100を見つけ、測定分布を検証してください。" },
@@ -354,6 +457,11 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
       noMatch: "条件に一致するアーティファクトがありません。",
       noMatchBody: "条件を解除するか、新しい検証実行を始めてください。",
       startRun: "実行を始める",
+      askInRun: "実行で質問",
+      archive: "アーカイブ",
+      delete: "削除",
+      deleteConfirmTitle: "削除してもよいですか？",
+      deleteWarning: (title) => `「${title}」はワークスペースから削除され、保存されません。`,
       previewFooter: "公開プレビューではリファレンスアーティファクトを表示しています。",
       workspaceFooter: "このワークスペースで保存した検証済み実行がここに表示されます。",
       unknown: "不明",
@@ -365,6 +473,9 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
       backLibrary: "Libraryに戻る",
       artifacts: "アーティファクト",
       new: "新規",
+      search: "アーティファクトを検索",
+      searchPlaceholder: "名前、フレームワーク、タグで検索…",
+      noSearchResults: "検索に一致するアーティファクトがありません。",
       empty: "保存されたアーティファクトはありません。ベル状態の下書きから始められます。",
       sidebarNote: "Libraryは保存したアーティファクトを置く場所です。Studioで下書きを根拠へ変えます。",
       workingCircuit: "作業中の回路",

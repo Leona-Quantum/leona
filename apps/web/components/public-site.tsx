@@ -45,9 +45,9 @@ export async function PublicSite({
     <main className={["mj-public-site", className].filter(Boolean).join(" ")}>
       <div className="mj-public-frame">
         <header className="mj-public-header">
-          <a className="mj-public-brand" href="/" aria-label="LeonaQ home" title="LeonaQ home">
+          <a className="mj-public-brand" href="/" aria-label="Leona Quantum home" title="Leona Quantum home">
             <BrandMark size={24} />
-            <span>LeonaQ</span>
+            <span>Leona Quantum</span>
           </a>
           <nav className="mj-public-nav" aria-label={resolvedLocale === "ja" ? "公開ナビゲーション" : "Public navigation"}>
             {publicNav.map((item) => (
@@ -71,9 +71,9 @@ export async function PublicSite({
 
         <footer className="mj-public-footer">
           <div className="mj-public-footer-brand">
-            <a className="mj-public-brand" href="/" aria-label="LeonaQ home">
+            <a className="mj-public-brand" href="/" aria-label="Leona Quantum home">
               <BrandMark size={24} />
-              <span>LeonaQ</span>
+              <span>Leona Quantum</span>
             </a>
             <p>{copy.footer.promise}</p>
           </div>
@@ -95,7 +95,7 @@ export async function PublicSite({
             </div>
           </div>
           <div className="mj-public-footer-bottom">
-            <span>© 2026 LeonaQ</span>
+            <span>© 2026 Leona Quantum</span>
             <span>{copy.footer.builtFor}</span>
           </div>
         </footer>

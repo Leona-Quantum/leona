@@ -11,6 +11,8 @@ from typing import Annotated, Any
 
 from fastapi import APIRouter, Header, HTTPException, Request
 from fastapi.responses import StreamingResponse
+from majorana_contracts import Conversation as ConversationResource
+from majorana_contracts import ConversationTurn
 from majorana_contracts import Run as RunResource
 from majorana_contracts.enums import Framework, RunMode, RunStatus
 from majorana_pipeline import IllegalTransition, assert_transition, is_terminal
@@ -33,7 +35,7 @@ class CreateRunRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     task_prompt: str = Field(min_length=1, max_length=20_000)
-    mode: RunMode = RunMode.EXECUTE
+    mode: RunMode = RunMode.CHAT
     # Qiskit by default (owner directive 2026-07-10); the plan stage may pick
     # another framework only when Qiskit can't express the task.
     framework: Framework = Framework.QISKIT
@@ -43,6 +45,7 @@ class CreateRunRequest(BaseModel):
     tolerances: dict[str, float] | None = None
     timeout_s: int | None = Field(default=None, ge=1, le=600)
     source_code: str | None = Field(default=None, max_length=100_000)
+    conversation_id: uuid.UUID | None = None
 
 
 class SetRunFolderRequest(BaseModel):
@@ -54,6 +57,7 @@ class SetRunFolderRequest(BaseModel):
 def _to_resource(run: RunRow) -> RunResource:
     return RunResource(
         id=run.id,
+        conversation_id=run.conversation_id,
         workspace_id=run.workspace_id,
         user_id=run.user_id,
         artifact_version_id=run.artifact_version_id,
@@ -100,6 +104,7 @@ async def create_run(
         tolerances=body.tolerances,
         timeout_s=body.timeout_s,
         idempotency_key=idempotency_key,
+        conversation_id=body.conversation_id,
     )
     await runs_repo.append_run_event(
         scope,
@@ -141,6 +146,27 @@ async def list_runs(
 @router.get("/runs/{run_id}", response_model=RunResource)
 async def get_run(run_id: uuid.UUID, scope: CurrentScope, session: DbSession) -> RunResource:
     return _to_resource(await runs_repo.get_run(scope, session, run_id))
+
+
+@router.get("/runs/{run_id}/conversation", response_model=ConversationResource)
+async def get_conversation(
+    run_id: uuid.UUID, scope: CurrentScope, session: DbSession
+) -> ConversationResource:
+    current = await runs_repo.get_run(scope, session, run_id)
+    turns: list[ConversationTurn] = []
+    for row in await runs_repo.list_conversation_runs(scope, session, current.conversation_id):
+        events = await runs_repo.list_run_events(scope, session, row.id)
+        turns.append(
+            ConversationTurn(
+                run=_to_resource(row),
+                events=[_event_json(event) for event in events],
+            )
+        )
+    return ConversationResource(
+        id=current.conversation_id,
+        workspace_id=scope.workspace_id,
+        turns=turns,
+    )
 
 
 @router.patch("/runs/{run_id}/folder", response_model=RunResource)

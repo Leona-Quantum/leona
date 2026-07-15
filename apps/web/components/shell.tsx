@@ -1,38 +1,59 @@
 "use client";
 
-// Client wrapper so AppShell gets the live pathname for aria-current.
 import type { FormEvent, ReactNode } from "react";
 import { usePathname } from "next/navigation";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { AppShell, BRAND_NAME, NAV_SURFACES, navSurfaceLabel } from "@majorana/ui";
 import {
+  ArchiveIcon,
   BrandMark,
+  ChevronIcon,
+  FolderIcon,
   LibraryIcon,
   MoreIcon,
   PlayIcon,
   PlusIcon,
   SettingsIcon,
   StudioIcon,
+  TrashIcon,
 } from "./icons";
 import {
-  CHAT_HISTORY_EVENT,
   CHAT_FOLDERS_EVENT,
+  CHAT_HISTORY_EVENT,
+  archiveChat,
   assignChatToRemoteFolder,
   assignChatToFolder,
   createChatFolder,
   createRemoteChatFolder,
+  daysUntilArchiveDeletion,
+  deleteChat,
   hydrateChatFolders,
   loadChatFolders,
   loadChatHistory,
+  restoreChat,
   type ChatFolder,
   type ChatStatus,
   type ChatSummary,
 } from "../lib/chat-history";
+import {
+  ARTIFACT_FOLDERS_EVENT,
+  assignArtifactToFolder,
+  createArtifactFolder,
+  getArtifactFolderId,
+  loadArtifactFolders,
+  type ArtifactFolder,
+} from "../lib/artifact-folders";
+import { archiveArtifact, daysUntilArtifactDeletion, deleteArtifact, getLibraryArtifact, isArtifactDeleted, loadLibraryArtifacts, restoreArtifact, type LibraryArtifact } from "../lib/library-data";
+import { WORKSPACE_PINS_EVENT, isPinned, setPinned, togglePinned } from "../lib/workspace-pins";
 import { ThemeToggle } from "./theme-toggle";
 import type { PublicLocale } from "../lib/public-locale";
 import { WORKSPACE_COPY } from "../lib/workspace-locale";
 
 const SIDEBAR_STORAGE_KEY = "majorana.sidebar-collapsed.v1";
+type WorkspaceSurface = "run" | "studio";
+type DeleteTarget =
+  | { kind: "chat"; item: ChatSummary }
+  | { kind: "artifact"; item: LibraryArtifact };
 
 export function Shell({
   children,
@@ -48,63 +69,90 @@ export function Shell({
   const pathname = usePathname();
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [chats, setChats] = useState<ChatSummary[]>([]);
-  const [folders, setFolders] = useState<ChatFolder[]>([]);
+  const [archivedChats, setArchivedChats] = useState<ChatSummary[]>([]);
+  const [chatFolders, setChatFolders] = useState<ChatFolder[]>([]);
+  const [artifacts, setArtifacts] = useState<LibraryArtifact[]>([]);
+  const [archivedArtifacts, setArchivedArtifacts] = useState<LibraryArtifact[]>([]);
+  const [artifactFolders, setArtifactFolders] = useState<ArtifactFolder[]>([]);
   const [folderSyncState, setFolderSyncState] = useState<"local" | "synced" | "error">("local");
-  const folderSyncAttempted = useRef(false);
+  const [refreshTick, setRefreshTick] = useState(0);
 
   useEffect(() => {
     const saved = window.localStorage.getItem(SIDEBAR_STORAGE_KEY);
     setSidebarCollapsed(saved === "true" || (saved === null && window.innerWidth < 720));
-    folderSyncAttempted.current = demoMode;
+  }, []);
+
+  useEffect(() => {
     let active = true;
-    setFolders(loadChatFolders());
-    async function refresh() {
-      const local = loadChatHistory({ includeDemo: demoMode });
-      if (demoMode) {
-        setChats(local);
-        return;
-      }
-      let localFolderIdMap: Record<string, string> = {};
-      if (!folderSyncAttempted.current) {
-        folderSyncAttempted.current = true;
-        try {
-          const synced = await hydrateChatFolders(local);
-          localFolderIdMap = synced.localIdMap;
-          if (active) {
-            setFolders(synced.folders);
-            setFolderSyncState("synced");
-          }
-        } catch {
-          if (active) setFolderSyncState("error");
-        }
-      }
+
+    async function refreshWorkspace() {
+      const localHistory = loadChatHistory({ includeDemo: demoMode, includeArchived: true });
+      const localActiveChats = localHistory.filter((chat) => !chat.archivedAt);
+      setChatFolders(loadChatFolders());
+      setArtifactFolders(loadArtifactFolders());
+      setChats(localActiveChats);
+      setArchivedChats(localHistory.filter((chat) => Boolean(chat.archivedAt)));
+      const localArtifacts = loadLibraryArtifacts({ includeDemo: demoMode, includeArchived: true });
+      setArtifacts(localArtifacts.filter((artifact) => !artifact.archivedAt));
+      setArchivedArtifacts(localArtifacts.filter((artifact) => Boolean(artifact.archivedAt)));
+
+      if (demoMode) return;
+
       try {
-        const response = await fetch("/api/runs?limit=20", { cache: "no-store" });
-        const payload = (await response.json()) as unknown;
-        const remote = Array.isArray(payload) ? payload.flatMap(chatFromRun) : [];
-        const byId = new Map(remote.map((chat) => [chat.id, chat]));
-        for (const chat of local) {
-          const remoteChat = byId.get(chat.id);
-          const localChat = chat.folderId
-            ? { ...chat, folderId: localFolderIdMap[chat.folderId] ?? chat.folderId }
-            : chat;
-          byId.set(chat.id, remoteChat ? { ...localChat, ...remoteChat, folderId: remoteChat.folderId ?? localChat.folderId } : localChat);
+        const synced = await hydrateChatFolders(localActiveChats);
+        if (active) {
+          setChatFolders(synced.folders);
+          setFolderSyncState("synced");
         }
-        if (active) setChats([...byId.values()].sort((a, b) => b.createdAt.localeCompare(a.createdAt)));
       } catch {
-        if (active) setChats(local);
+        if (active) setFolderSyncState("error");
+      }
+
+      try {
+        const [runsResponse, artifactsResponse] = await Promise.all([
+          fetch("/api/runs?limit=50", { cache: "no-store" }),
+          fetch("/api/artifacts", { cache: "no-store" }),
+        ]);
+        const runPayload = runsResponse.ok ? ((await runsResponse.json()) as unknown) : [];
+        const artifactPayload = artifactsResponse.ok ? ((await artifactsResponse.json()) as unknown) : [];
+        const byId = new Map(Array.isArray(runPayload) ? runPayload.flatMap(chatFromRun).map((chat) => [chat.id, chat]) : []);
+        for (const local of loadChatHistory({ includeDemo: false, includeArchived: true })) {
+          const remote = byId.get(local.id);
+          byId.set(local.id, remote ? { ...local, ...remote, folderId: remote.folderId ?? local.folderId } : local);
+        }
+        const mergedChats = [...byId.values()].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+        const remoteArtifacts = Array.isArray(artifactPayload) ? artifactPayload.flatMap(toLibraryArtifact).filter((artifact) => !isArtifactDeleted(artifact.id)) : [];
+        const storedArtifacts = loadLibraryArtifacts({ includeArchived: true });
+        const artifactById = new Map([...remoteArtifacts, ...storedArtifacts].map((artifact) => [artifact.id, artifact]));
+        if (active) {
+          setChats(mergedChats.filter((chat) => !chat.archivedAt));
+          setArchivedChats(mergedChats.filter((chat) => Boolean(chat.archivedAt)));
+          const mergedArtifacts = [...artifactById.values()].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+          setArtifacts(mergedArtifacts.filter((artifact) => !artifact.archivedAt));
+          setArchivedArtifacts(mergedArtifacts.filter((artifact) => Boolean(artifact.archivedAt)));
+        }
+      } catch {
+        // The local workspace remains usable while the control plane is unavailable.
       }
     }
-    void refresh();
-    window.addEventListener(CHAT_HISTORY_EVENT, refresh);
-    const refreshFolders = () => setFolders(loadChatFolders());
+
+    void refreshWorkspace();
+    const refreshFolders = () => {
+      setChatFolders(loadChatFolders());
+      setArtifactFolders(loadArtifactFolders());
+    };
+    window.addEventListener(CHAT_HISTORY_EVENT, refreshWorkspace);
     window.addEventListener(CHAT_FOLDERS_EVENT, refreshFolders);
+    window.addEventListener(ARTIFACT_FOLDERS_EVENT, refreshFolders);
+    window.addEventListener(WORKSPACE_PINS_EVENT, refreshWorkspace);
     return () => {
       active = false;
-      window.removeEventListener(CHAT_HISTORY_EVENT, refresh);
+      window.removeEventListener(CHAT_HISTORY_EVENT, refreshWorkspace);
       window.removeEventListener(CHAT_FOLDERS_EVENT, refreshFolders);
+      window.removeEventListener(ARTIFACT_FOLDERS_EVENT, refreshFolders);
+      window.removeEventListener(WORKSPACE_PINS_EVENT, refreshWorkspace);
     };
-  }, [demoMode]);
+  }, [demoMode, refreshTick]);
 
   function toggleSidebar() {
     setSidebarCollapsed((current) => {
@@ -115,16 +163,21 @@ export function Shell({
   }
 
   const copy = WORKSPACE_COPY[locale];
-  const activeSurface = NAV_SURFACES.find(
+  const activeSurface: WorkspaceSurface = pathname.startsWith("/studio") ? "studio" : "run";
+  const activeNavSurface = NAV_SURFACES.find(
     (surface) => pathname === surface.href || pathname.startsWith(`${surface.href}/`),
   );
   const surfaceLabel = pathname.startsWith("/demo")
     ? copy.surfaces.preview
     : pathname.startsWith("/run")
       ? copy.surfaces.brandedRun
-      : activeSurface
-        ? navSurfaceLabel(activeSurface, locale)
+      : activeNavSurface
+        ? navSurfaceLabel(activeNavSurface, locale)
         : BRAND_NAME;
+
+  function refreshAfterLocalChange() {
+    setRefreshTick((value) => value + 1);
+  }
 
   return (
     <AppShell
@@ -135,7 +188,48 @@ export function Shell({
           {headerRight}
         </>
       }
-      sidebar={<WorkspaceSidebar currentPath={pathname} chats={chats} folders={folders} collapsed={sidebarCollapsed} demoMode={demoMode} folderSyncState={folderSyncState} locale={locale} />}
+      sidebar={
+        <WorkspaceSidebar
+          currentPath={pathname}
+          surface={activeSurface}
+          chats={chats}
+          archivedChats={archivedChats}
+          folders={chatFolders}
+          artifacts={artifacts}
+          archivedArtifacts={archivedArtifacts}
+          artifactFolders={artifactFolders}
+          collapsed={sidebarCollapsed}
+          demoMode={demoMode}
+          folderSyncState={folderSyncState}
+          locale={locale}
+          onArchive={(chat) => {
+            archiveChat(chat.id, chat);
+            refreshAfterLocalChange();
+          }}
+          onRestore={(chat) => {
+            restoreChat(chat.id);
+            refreshAfterLocalChange();
+          }}
+          onArchiveArtifact={(artifact) => {
+            archiveArtifact(artifact.id, artifact);
+            refreshAfterLocalChange();
+          }}
+          onRestoreArtifact={(artifact) => {
+            restoreArtifact(artifact.id);
+            refreshAfterLocalChange();
+          }}
+          onDeleteChat={(chat) => {
+            setPinned("chat", chat.id, false);
+            deleteChat(chat.id);
+            refreshAfterLocalChange();
+          }}
+          onDeleteArtifact={(artifact) => {
+            setPinned("artifact", artifact.id, false);
+            deleteArtifact(artifact.id);
+            refreshAfterLocalChange();
+          }}
+        />
+      }
       sidebarCollapsed={sidebarCollapsed}
       onToggleSidebar={toggleSidebar}
       surfaceLabel={surfaceLabel}
@@ -148,55 +242,107 @@ export function Shell({
 
 function WorkspaceSidebar({
   currentPath,
+  surface,
   chats,
+  archivedChats,
   folders,
+  artifacts,
+  archivedArtifacts,
+  artifactFolders,
   collapsed,
   demoMode,
   folderSyncState,
   locale,
+  onArchive,
+  onRestore,
+  onArchiveArtifact,
+  onRestoreArtifact,
+  onDeleteChat,
+  onDeleteArtifact,
 }: {
   currentPath: string;
+  surface: WorkspaceSurface;
   chats: ChatSummary[];
+  archivedChats: ChatSummary[];
   folders: ChatFolder[];
+  artifacts: LibraryArtifact[];
+  archivedArtifacts: LibraryArtifact[];
+  artifactFolders: ArtifactFolder[];
   collapsed: boolean;
   demoMode: boolean;
   folderSyncState: "local" | "synced" | "error";
   locale: PublicLocale;
+  onArchive: (chat: ChatSummary) => void;
+  onRestore: (chat: ChatSummary) => void;
+  onArchiveArtifact: (artifact: LibraryArtifact) => void;
+  onRestoreArtifact: (artifact: LibraryArtifact) => void;
+  onDeleteChat: (chat: ChatSummary) => void;
+  onDeleteArtifact: (artifact: LibraryArtifact) => void;
 }) {
   const copy = WORKSPACE_COPY[locale].sidebar;
-  const demoHref = (view: "run" | "library") => `/demo?view=${view}`;
-  const runHref = demoMode ? demoHref("run") : "/run";
-  const libraryHref = demoMode ? demoHref("library") : "/library";
-  const studioHref = demoMode ? libraryHref : "/studio";
-  const sidebarName = demoMode ? copy.publicPreview : copy.personalWorkspace;
-  const sidebarInitial = sidebarName.slice(0, 1).toUpperCase();
-  const [activeFolderId, setActiveFolderId] = useState<string | null>(null);
+  const [openFolders, setOpenFolders] = useState<Set<string>>(new Set());
   const [creatingFolder, setCreatingFolder] = useState(false);
   const [folderName, setFolderName] = useState("");
-  const visibleChats = activeFolderId ? chats.filter((chat) => chat.folderId === activeFolderId) : chats;
+  const [creatingArtifactFolder, setCreatingArtifactFolder] = useState(false);
+  const [artifactFolderName, setArtifactFolderName] = useState("");
+  const [deleteTarget, setDeleteTarget] = useState<DeleteTarget | null>(null);
+  const runHref = demoMode ? "/demo?view=run" : "/run";
+  const studioHref = demoMode ? "/demo?view=library" : "/studio";
+  const sidebarName = demoMode ? copy.publicPreview : copy.personalWorkspace;
+  const sidebarInitial = sidebarName.slice(0, 1).toUpperCase();
+  const pinnedChats = chats.filter((chat) => isPinned("chat", chat.id));
+  const unpinnedChats = chats.filter((chat) => !isPinned("chat", chat.id));
+  const pinnedArtifacts = artifacts.filter((artifact) => isPinned("artifact", artifact.id));
+  const unpinnedArtifacts = artifacts.filter((artifact) => !isPinned("artifact", artifact.id));
+  const standaloneChats = unpinnedChats.filter((chat) => !chat.folderId);
+  const standaloneArtifacts = unpinnedArtifacts.filter((artifact) => !getArtifactFolderId(artifact.id));
 
-  async function submitFolder(event: FormEvent<HTMLFormElement>) {
+  useEffect(() => {
+    if (!deleteTarget) return;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setDeleteTarget(null);
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [deleteTarget]);
+
+  function toggleFolder(id: string) {
+    setOpenFolders((current) => {
+      const next = new Set(current);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  async function submitChatFolder(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    const name = folderName.trim();
+    if (!name) return;
     try {
-      const created = demoMode ? null : await createRemoteChatFolder(folderName);
-      if (created) setActiveFolderId(created.id);
-      else {
-        const next = createChatFolder(folderName);
-        const local = next[next.length - 1];
-        if (local) setActiveFolderId(local.id);
-      }
+      if (!demoMode) await createRemoteChatFolder(name);
+      else createChatFolder(name);
     } catch {
-      const next = createChatFolder(folderName);
-      const local = next[next.length - 1];
-      if (local) setActiveFolderId(local.id);
+      createChatFolder(name);
     }
     setFolderName("");
     setCreatingFolder(false);
   }
 
+  function submitArtifactFolder(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    createArtifactFolder(artifactFolderName);
+    setArtifactFolderName("");
+    setCreatingArtifactFolder(false);
+  }
+
   function assignFolder(chatId: string, folderId?: string) {
     assignChatToFolder(chatId, folderId);
-    void assignChatToRemoteFolder(chatId, folderId).catch(() => undefined);
+    if (!demoMode) void assignChatToRemoteFolder(chatId, folderId).catch(() => undefined);
+  }
+
+  function assignArtifact(artifactId: string, folderId?: string) {
+    assignArtifactToFolder(artifactId, folderId);
   }
 
   return (
@@ -206,95 +352,138 @@ function WorkspaceSidebar({
           <BrandMark size={20} />
           <span className="mj-sidebar-copy">{BRAND_NAME}</span>
         </a>
-        <button className="mj-sidebar-more" type="button" aria-label={copy.workspaceOptions}>
+        <button className="mj-sidebar-more" type="button" aria-label={copy.workspaceOptions} title={copy.workspaceOptions}>
           <MoreIcon size={16} />
         </button>
       </div>
 
-      <a className="mj-sidebar-new" href={runHref}>
-        <PlusIcon size={16} />
-        <span className="mj-sidebar-copy">{copy.newChat}</span>
-      </a>
-
-      <div className="mj-sidebar-scroll">
-        <div className="mj-sidebar-section-label">
-          <span className="mj-sidebar-copy">{copy.recent}</span>
-        </div>
-        <nav className="mj-sidebar-chats" aria-label={copy.recentChats}>
-          {visibleChats.map((chat) => (
-            <div className="mj-sidebar-chat-row" key={chat.id}>
-              <a
-                className={`mj-sidebar-chat${currentPath === `/run/${chat.id}` ? " is-active" : ""}`}
-                href={demoMode ? runHref : `/run/${chat.id}`}
-                title={collapsed ? chat.title : undefined}
-              >
-                <span className={`mj-chat-status mj-chat-status--${chat.status}`} aria-hidden="true">
-                  {statusGlyph(chat.status)}
-                </span>
-                <span className="mj-sidebar-chat-title mj-sidebar-copy">{chat.title}</span>
-                <span className="mj-sidebar-chat-time mj-sidebar-copy">{formatRelativeDate(chat.createdAt, locale)}</span>
-              </a>
-              {!collapsed && !demoMode && folders.length > 0 ? (
-                <select
-                  aria-label={copy.moveToFolder(chat.title)}
-                  className="mj-sidebar-chat-folder"
-                  value={chat.folderId ?? ""}
-                  onChange={(event) => assignFolder(chat.id, event.target.value || undefined)}
-                >
-                  <option value="">{copy.noFolder}</option>
-                  {folders.map((folder) => <option key={folder.id} value={folder.id}>{folder.name}</option>)}
-                </select>
-              ) : null}
-            </div>
-          ))}
-        </nav>
-        {!demoMode ? (
-          <section className="mj-sidebar-folders" aria-label={copy.chatFolders}>
-            <div className="mj-sidebar-section-label mj-sidebar-folder-heading">
-              <span className="mj-sidebar-copy">{copy.folders}</span>
-              <span className="mj-sidebar-copy" aria-live="polite">
-                {folderSyncState === "synced" ? copy.synced : folderSyncState === "error" ? copy.localOnly : ""}
-              </span>
-              <button className="mj-sidebar-folder-add" type="button" aria-label={copy.createChatFolder} onClick={() => setCreatingFolder(true)}>+</button>
-            </div>
-            {creatingFolder ? (
-              <form className="mj-sidebar-folder-form" onSubmit={submitFolder}>
-                <input aria-label={copy.folderName} autoFocus maxLength={80} value={folderName} onChange={(event) => setFolderName(event.target.value)} placeholder={copy.folderName} />
-                <button type="submit" aria-label={copy.saveFolder} disabled={!folderName.trim()}>✓</button>
-                <button type="button" aria-label={copy.cancelFolder} onClick={() => { setCreatingFolder(false); setFolderName(""); }}>×</button>
-              </form>
-            ) : null}
-            <button className={`mj-sidebar-folder${activeFolderId === null ? " is-active" : ""}`} type="button" onClick={() => setActiveFolderId(null)}>
-              <span aria-hidden="true">◌</span><span className="mj-sidebar-copy">{copy.allChats}</span><span className="mj-sidebar-folder-count">{chats.length}</span>
-            </button>
-            {folders.map((folder) => (
-              <button className={`mj-sidebar-folder${activeFolderId === folder.id ? " is-active" : ""}`} key={folder.id} type="button" onClick={() => setActiveFolderId(folder.id)}>
-                <span aria-hidden="true">▱</span><span className="mj-sidebar-copy">{folder.name}</span><span className="mj-sidebar-folder-count">{chats.filter((chat) => chat.folderId === folder.id).length}</span>
-              </button>
-            ))}
-          </section>
-        ) : null}
-        <a className="mj-sidebar-view-all" href={libraryHref}>
-          <span className="mj-sidebar-copy">{copy.viewAll}</span>
-          <span aria-hidden="true">→</span>
+      <nav className="mj-sidebar-surface-switch" aria-label={copy.surfaceSwitch}>
+        <a className={surface === "run" ? "is-active" : ""} href={runHref} aria-current={surface === "run" ? "page" : undefined}>
+          <PlayIcon size={15} />
+          <span className="mj-sidebar-copy">{copy.run}</span>
         </a>
+        <a className={surface === "studio" ? "is-active" : ""} href={studioHref} aria-current={surface === "studio" ? "page" : undefined}>
+          <StudioIcon size={15} />
+          <span className="mj-sidebar-copy">{copy.studio}</span>
+        </a>
+      </nav>
 
-        <nav className="mj-sidebar-nav" aria-label={copy.workspaceNav}>
-          {NAV_SURFACES.filter((surface) => surface.href !== "/account").map((surface) => {
-            const active = currentPath === surface.href || currentPath.startsWith(`${surface.href}/`);
-            return (
-              <a
-                className={`mj-sidebar-nav-item${active || (demoMode && currentPath === "/demo") ? " is-active" : ""}`}
-                href={demoMode ? (surface.href === "/library" ? libraryHref : studioHref) : surface.href}
-                key={surface.href}
-              >
-                {surface.href === "/run" ? <PlayIcon size={16} /> : surface.href === "/library" ? <LibraryIcon size={16} /> : <StudioIcon size={16} />}
-                <span className="mj-sidebar-copy">{navSurfaceLabel(surface, locale)}</span>
-              </a>
-            );
-          })}
-        </nav>
-      </div>
+      {surface === "run" ? (
+        <div className="mj-sidebar-scroll">
+          <a className="mj-sidebar-new" href={runHref}>
+            <PlusIcon size={16} />
+            <span className="mj-sidebar-copy">{copy.newChat}</span>
+          </a>
+          <a className="mj-sidebar-library-link" href={demoMode ? "/demo?view=library" : "/library"}>
+            <LibraryIcon size={16} />
+            <span className="mj-sidebar-copy">{copy.library}</span>
+          </a>
+
+          {pinnedChats.length ? (
+            <>
+              <SidebarSectionHeader label={copy.pinned} />
+              <nav className="mj-sidebar-chats mj-sidebar-pinned-list" aria-label={copy.pinned}>
+                {pinnedChats.map((chat) => <ChatRow key={chat.id} chat={chat} currentPath={currentPath} demoMode={demoMode} locale={locale} onArchive={onArchive} onDelete={(item) => setDeleteTarget({ kind: "chat", item })} onAssignFolder={assignFolder} folders={folders} />)}
+              </nav>
+            </>
+          ) : null}
+
+          <SidebarSectionHeader label={copy.projects} status={folderSyncState === "synced" ? copy.synced : folderSyncState === "error" ? copy.localOnly : undefined} actionLabel={copy.createChatFolder} onAction={() => setCreatingFolder(true)} />
+          {creatingFolder ? (
+            <form className="mj-sidebar-folder-form" onSubmit={submitChatFolder}>
+              <input aria-label={copy.folderName} autoFocus maxLength={80} value={folderName} onChange={(event) => setFolderName(event.target.value)} placeholder={copy.folderName} />
+              <button type="submit" aria-label={copy.saveFolder} disabled={!folderName.trim()}>✓</button>
+              <button type="button" aria-label={copy.cancelFolder} onClick={() => { setCreatingFolder(false); setFolderName(""); }}>×</button>
+            </form>
+          ) : null}
+          <div className="mj-sidebar-folder-list">
+            {folders.map((folder) => {
+              const folderChats = unpinnedChats.filter((chat) => chat.folderId === folder.id);
+              return (
+                <div className="mj-sidebar-disclosure" key={folder.id}>
+                  <button className="mj-sidebar-folder-trigger" type="button" aria-expanded={openFolders.has(folder.id)} onClick={() => toggleFolder(folder.id)}>
+                    <ChevronIcon className={openFolders.has(folder.id) ? "is-open" : ""} size={14} />
+                    <FolderIcon size={15} />
+                    <span className="mj-sidebar-copy">{folder.name}</span>
+                    <span className="mj-sidebar-folder-count">{folderChats.length}</span>
+                  </button>
+                  {openFolders.has(folder.id) ? (
+                    <div className="mj-sidebar-disclosure-items">
+                      {folderChats.length ? folderChats.map((chat) => <ChatRow key={chat.id} chat={chat} currentPath={currentPath} demoMode={demoMode} locale={locale} onArchive={onArchive} onDelete={(item) => setDeleteTarget({ kind: "chat", item })} onAssignFolder={assignFolder} folders={folders} />) : <span className="mj-sidebar-empty">{copy.emptyProject}</span>}
+                    </div>
+                  ) : null}
+                </div>
+              );
+            })}
+          </div>
+
+          <SidebarSectionHeader label={copy.chats} />
+          <nav className="mj-sidebar-chats" aria-label={copy.recentChats}>
+            {standaloneChats.length ? standaloneChats.map((chat) => <ChatRow key={chat.id} chat={chat} currentPath={currentPath} demoMode={demoMode} locale={locale} onArchive={onArchive} onDelete={(item) => setDeleteTarget({ kind: "chat", item })} onAssignFolder={assignFolder} folders={folders} />) : <span className="mj-sidebar-empty">{copy.emptyChats}</span>}
+          </nav>
+
+          <ArchiveSection chats={archivedChats} currentPath={currentPath} locale={locale} demoMode={demoMode} onRestore={onRestore} onDelete={onDeleteChat} />
+        </div>
+      ) : (
+        <div className="mj-sidebar-scroll">
+          <a className="mj-sidebar-new" href={demoMode ? studioHref : "/studio?new=1"}>
+            <PlusIcon size={16} />
+            <span className="mj-sidebar-copy">{copy.newArtifact}</span>
+          </a>
+          <a className="mj-sidebar-library-link" href={demoMode ? "/demo?view=library" : "/library"}>
+            <LibraryIcon size={16} />
+            <span className="mj-sidebar-copy">{copy.library}</span>
+          </a>
+
+          {pinnedArtifacts.length ? (
+            <>
+              <SidebarSectionHeader label={copy.pinned} />
+              <nav className="mj-sidebar-chats mj-sidebar-pinned-list" aria-label={copy.pinned}>
+                {pinnedArtifacts.map((artifact) => <ArtifactRow key={artifact.id} artifact={artifact} currentPath={currentPath} folders={artifactFolders} onAssignFolder={assignArtifact} onArchive={onArchiveArtifact} onDelete={(item) => setDeleteTarget({ kind: "artifact", item })} locale={locale} />)}
+              </nav>
+            </>
+          ) : null}
+
+          <SidebarSectionHeader label={copy.projects} actionLabel={copy.createArtifactFolder} onAction={() => setCreatingArtifactFolder(true)} />
+          {creatingArtifactFolder ? (
+            <form className="mj-sidebar-folder-form" onSubmit={submitArtifactFolder}>
+              <input aria-label={copy.folderName} autoFocus maxLength={80} value={artifactFolderName} onChange={(event) => setArtifactFolderName(event.target.value)} placeholder={copy.folderName} />
+              <button type="submit" aria-label={copy.saveFolder} disabled={!artifactFolderName.trim()}>✓</button>
+              <button type="button" aria-label={copy.cancelFolder} onClick={() => { setCreatingArtifactFolder(false); setArtifactFolderName(""); }}>×</button>
+            </form>
+          ) : null}
+          <div className="mj-sidebar-folder-list">
+            {artifactFolders.map((folder) => {
+              const folderArtifacts = unpinnedArtifacts.filter((artifact) => getArtifactFolderId(artifact.id) === folder.id);
+              return (
+                <div className="mj-sidebar-disclosure" key={folder.id}>
+                  <button className="mj-sidebar-folder-trigger" type="button" aria-expanded={openFolders.has(folder.id)} onClick={() => toggleFolder(folder.id)}>
+                    <ChevronIcon className={openFolders.has(folder.id) ? "is-open" : ""} size={14} />
+                    <FolderIcon size={15} />
+                    <span className="mj-sidebar-copy">{folder.name}</span>
+                    <span className="mj-sidebar-folder-count">{folderArtifacts.length}</span>
+                  </button>
+                  {openFolders.has(folder.id) ? (
+                    <div className="mj-sidebar-disclosure-items">
+                      {folderArtifacts.length ? folderArtifacts.map((artifact) => <ArtifactRow key={artifact.id} artifact={artifact} currentPath={currentPath} folders={artifactFolders} onAssignFolder={assignArtifact} onArchive={onArchiveArtifact} onDelete={(item) => setDeleteTarget({ kind: "artifact", item })} locale={locale} />) : <span className="mj-sidebar-empty">{copy.emptyProject}</span>}
+                    </div>
+                  ) : null}
+                </div>
+              );
+            })}
+          </div>
+
+          <SidebarSectionHeader label={copy.artifacts} />
+          <nav className="mj-sidebar-chats" aria-label={copy.artifacts}>
+            {standaloneArtifacts.length ? standaloneArtifacts.map((artifact) => <ArtifactRow key={artifact.id} artifact={artifact} currentPath={currentPath} folders={artifactFolders} onAssignFolder={assignArtifact} onArchive={onArchiveArtifact} onDelete={(item) => setDeleteTarget({ kind: "artifact", item })} locale={locale} />) : <span className="mj-sidebar-empty">{copy.emptyArtifacts}</span>}
+          </nav>
+          <ArtifactArchiveSection artifacts={archivedArtifacts} locale={locale} onRestore={onRestoreArtifact} onDelete={onDeleteArtifact} />
+          <a className="mj-sidebar-library-link mj-sidebar-library-link--bottom" href={demoMode ? "/demo?view=library" : "/library"}>
+            <LibraryIcon size={16} />
+            <span className="mj-sidebar-copy">{copy.viewLibrary}</span>
+          </a>
+        </div>
+      )}
 
       <div className="mj-sidebar-footer">
         <a className="mj-sidebar-nav-item" href={demoMode ? runHref : "/account"}>
@@ -310,8 +499,198 @@ function WorkspaceSidebar({
           <span className="mj-sidebar-user-caret mj-sidebar-copy">⌄</span>
         </a>
       </div>
+      {deleteTarget ? (
+        <DeleteConfirmationDialog
+          target={deleteTarget}
+          locale={locale}
+          onCancel={() => setDeleteTarget(null)}
+          onConfirm={() => {
+            if (deleteTarget.kind === "chat") onDeleteChat(deleteTarget.item);
+            else onDeleteArtifact(deleteTarget.item);
+            setDeleteTarget(null);
+          }}
+        />
+      ) : null}
     </div>
   );
+}
+
+function SidebarSectionHeader({ label, status, actionLabel, onAction }: { label: string; status?: string; actionLabel?: string; onAction?: () => void }) {
+  return (
+    <div className="mj-sidebar-section-heading">
+      <span className="mj-sidebar-section-label mj-sidebar-copy">{label}</span>
+      <span className="mj-sidebar-section-status mj-sidebar-copy">{status}</span>
+      {onAction ? <button className="mj-sidebar-folder-add" type="button" aria-label={actionLabel} title={actionLabel} onClick={onAction}>+</button> : null}
+    </div>
+  );
+}
+
+function ChatRow({ chat, currentPath, demoMode, locale, folders, onArchive, onDelete, onAssignFolder }: { chat: ChatSummary; currentPath: string; demoMode: boolean; locale: PublicLocale; folders: ChatFolder[]; onArchive: (chat: ChatSummary) => void; onDelete: (chat: ChatSummary) => void; onAssignFolder: (chatId: string, folderId?: string) => void }) {
+  const copy = WORKSPACE_COPY[locale].sidebar;
+  return (
+    <div className="mj-sidebar-chat-row">
+      <a className={`mj-sidebar-chat${currentPath === `/run/${chat.id}` ? " is-active" : ""}`} href={demoMode ? "/demo?view=run" : `/run/${chat.id}`} title={collapsedTitle(chat.title)}>
+        <span className={`mj-chat-status mj-chat-status--${chat.status}`} aria-hidden="true">{statusGlyph(chat.status)}</span>
+        <span className="mj-sidebar-chat-title mj-sidebar-copy">{chat.title}</span>
+        <span className="mj-sidebar-chat-time mj-sidebar-copy">{formatRelativeDate(chat.createdAt, locale)}</span>
+      </a>
+      {!demoMode ? (
+        <div className="mj-sidebar-chat-actions">
+          {folders.length ? (
+            <select aria-label={copy.moveToFolder(chat.title)} className="mj-sidebar-chat-folder" value={chat.folderId ?? ""} onChange={(event) => onAssignFolder(chat.id, event.target.value || undefined)}>
+              <option value="">{copy.noFolder}</option>
+              {folders.map((folder) => <option key={folder.id} value={folder.id}>{folder.name}</option>)}
+            </select>
+          ) : null}
+          <ItemOverflowMenu
+            kind="chat"
+            title={chat.title}
+            pinned={isPinned("chat", chat.id)}
+            locale={locale}
+            onTogglePin={() => togglePinned("chat", chat.id)}
+            onArchive={() => onArchive(chat)}
+            onDelete={() => onDelete(chat)}
+          />
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function ArtifactRow({ artifact, currentPath, folders, onAssignFolder, onArchive, onDelete, locale }: { artifact: LibraryArtifact; currentPath: string; folders: ArtifactFolder[]; onAssignFolder: (artifactId: string, folderId?: string) => void; onArchive: (artifact: LibraryArtifact) => void; onDelete: (artifact: LibraryArtifact) => void; locale: PublicLocale }) {
+  const copy = WORKSPACE_COPY[locale].sidebar;
+  const href = `/studio?artifact=${encodeURIComponent(artifact.id)}`;
+  return (
+    <div className="mj-sidebar-artifact-row">
+      <a className={`mj-sidebar-chat${currentPath === href ? " is-active" : ""}`} href={href} title={artifact.title}>
+        <span className="mj-studio-artifact-mark" aria-hidden="true">{artifact.status === "verified" ? "✓" : "–"}</span>
+        <span className="mj-sidebar-chat-title mj-sidebar-copy">{artifact.title}</span>
+      </a>
+      <div className="mj-sidebar-artifact-actions">
+        <select aria-label={`Move ${artifact.title} to a project`} className="mj-sidebar-chat-folder" value={getArtifactFolderId(artifact.id) ?? ""} onChange={(event) => onAssignFolder(artifact.id, event.target.value || undefined)}>
+          <option value="">No project</option>
+          {folders.map((folder) => <option key={folder.id} value={folder.id}>{folder.name}</option>)}
+        </select>
+        <ItemOverflowMenu
+          kind="artifact"
+          title={artifact.title}
+          pinned={isPinned("artifact", artifact.id)}
+          locale={locale}
+          onTogglePin={() => togglePinned("artifact", artifact.id)}
+          onArchive={() => onArchive(artifact)}
+          onDelete={() => onDelete(artifact)}
+        />
+      </div>
+    </div>
+  );
+}
+
+function ItemOverflowMenu({ kind, title, pinned, locale, onTogglePin, onArchive, onDelete }: { kind: "chat" | "artifact"; title: string; pinned: boolean; locale: PublicLocale; onTogglePin: () => void; onArchive: () => void; onDelete: () => void }) {
+  const copy = WORKSPACE_COPY[locale].sidebar;
+  const [open, setOpen] = useState(false);
+  const pinLabel = kind === "chat" ? (pinned ? copy.unpinChat(title) : copy.pinChat(title)) : (pinned ? copy.unpinArtifact(title) : copy.pinArtifact(title));
+  const archiveLabel = kind === "chat" ? copy.archiveChat(title) : copy.archiveArtifact(title);
+  const deleteLabel = kind === "chat" ? copy.deleteChat(title) : copy.deleteArtifact(title);
+
+  return (
+    <div className="mj-sidebar-item-menu">
+      <button className="mj-sidebar-menu-trigger" type="button" aria-label={`${title} options`} aria-expanded={open} title={`${title} options`} onClick={(event) => { event.preventDefault(); event.stopPropagation(); setOpen((value) => !value); }}>
+        <MoreIcon size={15} />
+      </button>
+      {open ? (
+        <div className="mj-sidebar-item-menu-popover" role="menu" onClick={(event) => event.stopPropagation()}>
+          <button type="button" role="menuitem" onClick={() => { onTogglePin(); setOpen(false); }}>{pinLabel}</button>
+          <button type="button" role="menuitem" onClick={() => { onArchive(); setOpen(false); }}>{archiveLabel}</button>
+          <button className="is-danger" type="button" role="menuitem" onClick={() => { onDelete(); setOpen(false); }}>{deleteLabel}</button>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function DeleteConfirmationDialog({ target, locale, onCancel, onConfirm }: { target: DeleteTarget; locale: PublicLocale; onCancel: () => void; onConfirm: () => void }) {
+  const copy = WORKSPACE_COPY[locale].sidebar;
+  const title = target.item.title;
+  const warning = target.kind === "chat" ? copy.deleteChatWarning(title) : copy.deleteArtifactWarning(title);
+  return (
+    <div className="mj-delete-dialog-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onCancel(); }}>
+      <section className="mj-delete-dialog" role="dialog" aria-modal="true" aria-labelledby="mj-delete-dialog-title">
+        <p className="mj-eyebrow">{target.kind === "chat" ? copy.chats : copy.artifacts}</p>
+        <h2 id="mj-delete-dialog-title">{copy.deleteConfirmTitle}</h2>
+        <p>{warning}</p>
+        <div className="mj-delete-dialog-actions">
+          <button className="mj-secondary-button" type="button" onClick={onCancel}>{copy.cancel}</button>
+          <button className="mj-danger-button" type="button" onClick={onConfirm}>{copy.delete}</button>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function ArchiveSection({ chats, currentPath, locale, demoMode, onRestore, onDelete }: { chats: ChatSummary[]; currentPath: string; locale: PublicLocale; demoMode: boolean; onRestore: (chat: ChatSummary) => void; onDelete: (chat: ChatSummary) => void }) {
+  const copy = WORKSPACE_COPY[locale].sidebar;
+  return (
+    <section className="mj-sidebar-archive" aria-label={copy.archive}>
+      <div className="mj-sidebar-section-heading">
+        <ArchiveIcon size={15} />
+        <span className="mj-sidebar-section-label mj-sidebar-copy">{copy.archive}</span>
+        <span className="mj-sidebar-section-status">{chats.length}</span>
+      </div>
+      {chats.length ? (
+        <div className="mj-sidebar-archive-list">
+          {chats.map((chat) => (
+            <div className="mj-sidebar-archived-row" key={chat.id}>
+              <a href={demoMode ? "/demo?view=run" : `/run/${chat.id}`} className="mj-sidebar-chat" title={chat.title}>
+                <span className="mj-sidebar-chat-title mj-sidebar-copy">{chat.title}</span>
+                <small>{copy.daysLeft(daysUntilArchiveDeletion(chat.archivedAt ?? new Date().toISOString()))}</small>
+              </a>
+              {!demoMode ? (
+                <div className="mj-sidebar-chat-actions">
+                  <button className="mj-sidebar-chat-action" type="button" aria-label={copy.restoreChat(chat.title)} title={copy.restoreChat(chat.title)} onClick={() => onRestore(chat)}>↶</button>
+                  <button className="mj-sidebar-chat-action mj-sidebar-chat-action--danger" type="button" aria-label={copy.deleteChat(chat.title)} title={copy.deleteChat(chat.title)} onClick={() => onDelete(chat)}><TrashIcon size={14} /></button>
+                </div>
+              ) : null}
+            </div>
+          ))}
+        </div>
+      ) : <span className="mj-sidebar-empty mj-sidebar-copy">{copy.archiveEmpty}</span>}
+      <p className="mj-sidebar-archive-note mj-sidebar-copy">{copy.archiveRetention}</p>
+    </section>
+  );
+}
+
+function ArtifactArchiveSection({ artifacts, locale, onRestore, onDelete }: { artifacts: LibraryArtifact[]; locale: PublicLocale; onRestore: (artifact: LibraryArtifact) => void; onDelete: (artifact: LibraryArtifact) => void }) {
+  const copy = WORKSPACE_COPY[locale].sidebar;
+  return (
+    <section className="mj-sidebar-archive mj-sidebar-artifact-archive" aria-label={copy.archiveArtifacts}>
+      <div className="mj-sidebar-section-heading">
+        <ArchiveIcon size={15} />
+        <span className="mj-sidebar-section-label mj-sidebar-copy">{copy.archiveArtifacts}</span>
+        <span className="mj-sidebar-section-status">{artifacts.length}</span>
+      </div>
+      {artifacts.length ? (
+        <div className="mj-sidebar-archive-list">
+          {artifacts.map((artifact) => (
+            <div className="mj-sidebar-archived-row" key={artifact.id}>
+              <a href={`/studio?artifact=${encodeURIComponent(artifact.id)}`} className="mj-sidebar-chat" title={artifact.title}>
+                <span className="mj-sidebar-chat-title mj-sidebar-copy">{artifact.title}</span>
+                <small>{copy.daysLeft(daysUntilArtifactDeletion(artifact.archivedAt ?? new Date().toISOString()))}</small>
+              </a>
+              <div className="mj-sidebar-chat-actions">
+                <button className="mj-sidebar-chat-action" type="button" aria-label={`Restore ${artifact.title}`} title={`Restore ${artifact.title}`} onClick={() => onRestore(artifact)}>↶</button>
+                <button className="mj-sidebar-chat-action mj-sidebar-chat-action--danger" type="button" aria-label={`Delete ${artifact.title}`} title={`Delete ${artifact.title}`} onClick={() => onDelete(artifact)}><TrashIcon size={14} /></button>
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : <span className="mj-sidebar-empty mj-sidebar-copy">{copy.archiveEmpty}</span>}
+      <p className="mj-sidebar-archive-note mj-sidebar-copy">{copy.archiveRetention}</p>
+    </section>
+  );
+}
+
+function collapsedTitle(title: string): string {
+  return title;
 }
 
 function statusGlyph(status: ChatStatus): string {
@@ -326,9 +705,7 @@ function formatRelativeDate(value: string, locale: PublicLocale = "en"): string 
   if (Number.isNaN(date.valueOf())) return "";
   const now = new Date();
   const sameDay = date.toDateString() === now.toDateString();
-  if (sameDay) {
-    return date.toLocaleTimeString(locale === "ja" ? "ja-JP" : "en-US", { hour: "numeric", minute: "2-digit" });
-  }
+  if (sameDay) return date.toLocaleTimeString(locale === "ja" ? "ja-JP" : "en-US", { hour: "numeric", minute: "2-digit" });
   const days = Math.max(1, Math.round((now.valueOf() - date.valueOf()) / 86_400_000));
   const copy = WORKSPACE_COPY[locale].sidebar;
   if (days === 1) return copy.yesterday;
@@ -355,6 +732,32 @@ function chatFromRun(value: unknown): ChatSummary[] {
     status,
     framework: typeof run.framework === "string" ? run.framework.toUpperCase() : undefined,
     folderId: typeof run.folder_id === "string" ? run.folder_id : undefined,
+  }];
+}
+
+function toLibraryArtifact(value: unknown): LibraryArtifact[] {
+  if (!value || typeof value !== "object") return [];
+  const remote = value as Record<string, unknown>;
+  if (typeof remote.id !== "string" || typeof remote.title !== "string") return [];
+  const existing = getLibraryArtifact(remote.id);
+  const slug = typeof remote.slug === "string" ? remote.slug : remote.id;
+  return [{
+    id: remote.id,
+    slug,
+    title: remote.title,
+    family: typeof remote.family === "string" ? remote.family : "Simulation",
+    framework: typeof remote.framework === "string" ? remote.framework : "Qiskit",
+    status: existing?.status ?? (slug.startsWith("public-") ? "verified_caveats" : "verified"),
+    updatedAt: typeof remote.updated_at === "string" ? remote.updated_at : new Date().toISOString(),
+    description: existing?.description ?? "Saved artifact in the workspace repository.",
+    tags: existing?.tags ?? [typeof remote.family === "string" ? remote.family.toLowerCase() : "artifact"],
+    verification: existing?.verification ?? "Verification evidence is available after loading the current version.",
+    code: existing?.code ?? "",
+    qasm: existing?.qasm ?? null,
+    currentVersionId: typeof remote.current_version_id === "string" ? remote.current_version_id : existing?.currentVersionId,
+    resourceRows: existing?.resourceRows ?? [],
+    runId: existing?.runId,
+    source: existing?.source ?? (slug.startsWith("public-") ? "public" : "run"),
   }];
 }
 

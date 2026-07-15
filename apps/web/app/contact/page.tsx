@@ -6,7 +6,7 @@ import { ContactForm } from "./contact-form";
 
 export const metadata: Metadata = {
   title: "Contact",
-  description: "Contact LeonaQ about research workflows and early product access.",
+  description: "Contact Leona Quantum about research workflows and early product access.",
 };
 
 export default async function ContactPage() {

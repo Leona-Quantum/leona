@@ -41,6 +41,18 @@ export function LibraryIcon(props: IconProps) {
   return <Icon {...props}><path d="M3.5 3.5h9v9h-9zM5.5 5.5h5M5.5 8h5M5.5 10.5h3" /></Icon>;
 }
 
+export function FolderIcon(props: IconProps) {
+  return <Icon {...props}><path d="M2.5 4.5h4l1.5 1.7h5.5v5.3a1 1 0 0 1-1 1h-9a1 1 0 0 1-1-1z" /><path d="M2.5 6.2h11" /></Icon>;
+}
+
+export function ArchiveIcon(props: IconProps) {
+  return <Icon {...props}><path d="M3 4.5h10v8H3zM2.5 3h11v2h-11zM6 8h4" /></Icon>;
+}
+
+export function TrashIcon(props: IconProps) {
+  return <Icon {...props}><path d="M3.5 5.5h9M6 3.5h4M5 5.5v7h6v-7M7 7.5v3M9 7.5v3" /></Icon>;
+}
+
 export function StudioIcon(props: IconProps) {
   return <Icon {...props}><path d="M3 4.5h10v7H3zM5 2.5h6M6 14h4M8 11.5V14" /><path d="m6 7 1.2 1.2L10 5.5" /></Icon>;
 }

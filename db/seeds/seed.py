@@ -144,14 +144,15 @@ def main() -> None:
             framework = FRAMEWORKS[i % len(FRAMEWORKS)]
             created = ts_for(run_id)
             cur.execute(
-                "insert into runs (id, workspace_id, user_id, artifact_version_id, task_prompt,"
+                "insert into runs (id, workspace_id, user_id, conversation_id, artifact_version_id, task_prompt,"
                 " mode, status, framework, seed, shots, timeout_s, sandbox_provider,"
                 " sandbox_meta, verifier_decision, started_at, finished_at, created_at)"
-                " values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
+                " values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
                 (
                     run_id,
                     ws,
                     user,
+                    run_id,
                     version_id,
                     f"Seed run {i:03d}: build a {FAMILIES[i % len(FAMILIES)]} circuit",
                     "execute" if i % 3 else "explain",

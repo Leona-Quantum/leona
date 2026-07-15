@@ -26,7 +26,7 @@ const COPY: Record<PublicLocale, {
     body: "can be copied into your private Library, where you can open the code in Studio or continue it in a verified Run. Each account has its own workspace.",
     signIn: "Sign in to continue",
     unavailable: "Authentication is not configured in this environment yet. Contact us to request access.",
-    contact: "Contact LeonaQ ↗",
+    contact: "Contact Leona Quantum ↗",
     error: "The entry could not be added to your Library.",
   },
   ja: {
@@ -39,7 +39,7 @@ const COPY: Record<PublicLocale, {
     body: "を非公開Libraryへコピーすると、Studioでコードを開いたり、検証済みの実行で続けたりできます。アカウントごとに専用ワークスペースがあります。",
     signIn: "サインインして続ける",
     unavailable: "この環境では認証がまだ設定されていません。アクセスを申請するにはお問い合わせください。",
-    contact: "LeonaQに連絡 ↗",
+    contact: "Leona Quantumに連絡 ↗",
     error: "エントリをLibraryに追加できませんでした。",
   },
 };

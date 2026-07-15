@@ -244,6 +244,100 @@ export interface components {
              */
             type: "baseline.result";
         };
+        /** ChatCompleted */
+        ChatCompleted: {
+            /** Duration Ms */
+            duration_ms: number;
+            /** Input Tokens */
+            input_tokens: number;
+            /** Model */
+            model: string;
+            /** Output Tokens */
+            output_tokens: number;
+            /**
+             * Run Id
+             * Format: uuid
+             */
+            run_id: string;
+            /**
+             * Seq
+             * @description Unique per run; powers replay and SSE Last-Event-ID
+             */
+            seq: number;
+            /** Text */
+            text: string;
+            /**
+             * Ts
+             * Format: date-time
+             */
+            ts: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "chat.completed";
+        };
+        /**
+         * ChatDelta
+         * @description A provider-native chat fragment; no stage or output schema is imposed.
+         */
+        ChatDelta: {
+            /**
+             * Kind
+             * @default output
+             * @enum {string}
+             */
+            kind: "reasoning" | "output";
+            /**
+             * Run Id
+             * Format: uuid
+             */
+            run_id: string;
+            /**
+             * Seq
+             * @description Unique per run; powers replay and SSE Last-Event-ID
+             */
+            seq: number;
+            /** Text */
+            text: string;
+            /**
+             * Ts
+             * Format: date-time
+             */
+            ts: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "chat.delta";
+        };
+        /** ChatError */
+        ChatError: {
+            /** Code */
+            code: string;
+            /** Message */
+            message: string;
+            /**
+             * Run Id
+             * Format: uuid
+             */
+            run_id: string;
+            /**
+             * Seq
+             * @description Unique per run; powers replay and SSE Last-Event-ID
+             */
+            seq: number;
+            /**
+             * Ts
+             * Format: date-time
+             */
+            ts: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "chat.error";
+        };
         /** CodeFinalized */
         CodeFinalized: {
             /** Code */
@@ -766,6 +860,11 @@ export interface components {
                 [key: string]: unknown;
             } | null;
             /**
+             * Conversation Id
+             * Format: uuid
+             */
+            conversation_id: string;
+            /**
              * Created At
              * Format: date-time
              */
@@ -956,7 +1055,7 @@ export interface components {
          * RunEvent
          * @description Discriminated union of all run event types (class name sets the schema id).
          */
-        RunEvent: components["schemas"]["RunQueued"] | components["schemas"]["RunStarted"] | components["schemas"]["StageStarted"] | components["schemas"]["StageFinished"] | components["schemas"]["PlanProduced"] | components["schemas"]["ResearchCompleted"] | components["schemas"]["LlmCall"] | components["schemas"]["LlmDelta"] | components["schemas"]["CodeGenerated"] | components["schemas"]["ScreenResult"] | components["schemas"]["ResourceEstimateResult"] | components["schemas"]["CompilationResult"] | components["schemas"]["CodeFinalized"] | components["schemas"]["SandboxResult"] | components["schemas"]["VerificationResult"] | components["schemas"]["BaselineResult"] | components["schemas"]["ExportClassified"] | components["schemas"]["ArtifactSaved"] | components["schemas"]["RunAnalysis"] | components["schemas"]["RunDiagnosed"] | components["schemas"]["RunRestarted"] | components["schemas"]["RunErrorEvent"] | components["schemas"]["RunFinished"];
+        RunEvent: components["schemas"]["RunQueued"] | components["schemas"]["RunStarted"] | components["schemas"]["StageStarted"] | components["schemas"]["StageFinished"] | components["schemas"]["PlanProduced"] | components["schemas"]["ResearchCompleted"] | components["schemas"]["LlmCall"] | components["schemas"]["LlmDelta"] | components["schemas"]["ChatDelta"] | components["schemas"]["ChatCompleted"] | components["schemas"]["ChatError"] | components["schemas"]["CodeGenerated"] | components["schemas"]["ScreenResult"] | components["schemas"]["ResourceEstimateResult"] | components["schemas"]["CompilationResult"] | components["schemas"]["CodeFinalized"] | components["schemas"]["SandboxResult"] | components["schemas"]["VerificationResult"] | components["schemas"]["BaselineResult"] | components["schemas"]["ExportClassified"] | components["schemas"]["ArtifactSaved"] | components["schemas"]["RunAnalysis"] | components["schemas"]["RunDiagnosed"] | components["schemas"]["RunRestarted"] | components["schemas"]["RunErrorEvent"] | components["schemas"]["RunFinished"];
         /** RunFinished */
         RunFinished: {
             /**
@@ -992,7 +1091,7 @@ export interface components {
          * RunMode
          * @enum {string}
          */
-        RunMode: "execute" | "ideate" | "explain";
+        RunMode: "chat" | "execute" | "ideate" | "explain";
         /** RunQueued */
         RunQueued: {
             framework: components["schemas"]["Framework"];

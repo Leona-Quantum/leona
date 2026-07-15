@@ -6,7 +6,7 @@ import { isPublicDemoEnabled } from "../../lib/public-demo";
 
 export const metadata: Metadata = {
   title: "Pricing",
-  description: "Early-access LeonaQ plans for individual researchers and teams.",
+  description: "Early-access Leona Quantum plans for individual researchers and teams.",
 };
 
 export default async function PricingPage() {
@@ -20,7 +20,7 @@ export default async function PricingPage() {
         <p>{copy.hero.body}</p>
       </section>
 
-      <section className="mj-pricing-grid" aria-label={locale === "ja" ? "LeonaQのプラン" : "LeonaQ plans"}>
+      <section className="mj-pricing-grid" aria-label={locale === "ja" ? "Leona Quantumのプラン" : "Leona Quantum plans"}>
         {copy.plans.map((plan) => (
           <article className={`mj-pricing-card mj-pricing-card--${plan.tone}`} key={plan.name}>
             <div className="mj-pricing-card-head">

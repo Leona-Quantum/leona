@@ -100,6 +100,29 @@ class LlmDelta(_EventBase):
     text: str
 
 
+class ChatDelta(_EventBase):
+    """A provider-native chat fragment; no stage or output schema is imposed."""
+
+    type: Literal["chat.delta"] = "chat.delta"
+    kind: Literal["reasoning", "output"] = "output"
+    text: str = Field(min_length=1, max_length=12_000)
+
+
+class ChatCompleted(_EventBase):
+    type: Literal["chat.completed"] = "chat.completed"
+    text: str = Field(min_length=1, max_length=200_000)
+    model: str = Field(min_length=1, max_length=200)
+    input_tokens: int = Field(ge=0)
+    output_tokens: int = Field(ge=0)
+    duration_ms: int = Field(ge=0)
+
+
+class ChatError(_EventBase):
+    type: Literal["chat.error"] = "chat.error"
+    code: str = Field(min_length=1, max_length=120)
+    message: str = Field(min_length=1, max_length=2_000)
+
+
 class CodeGenerated(_EventBase):
     type: Literal["code.generated"] = "code.generated"
     language: str
@@ -276,6 +299,9 @@ RunEvent = Annotated[
     | ResearchCompleted
     | LlmCall
     | LlmDelta
+    | ChatDelta
+    | ChatCompleted
+    | ChatError
     | CodeGenerated
     | ScreenResult
     | ResourceEstimateResult

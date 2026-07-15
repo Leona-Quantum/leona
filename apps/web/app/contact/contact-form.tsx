@@ -16,7 +16,7 @@ export function ContactForm({ locale }: { locale: PublicLocale }) {
     const email = String(form.get("email") ?? "").trim();
     const topic = String(form.get("topic") ?? "").trim();
     const message = String(form.get("message") ?? "").trim();
-    const subject = `[LeonaQ] ${topic || "Inquiry"}`;
+    const subject = `[Leona Quantum] ${topic || "Inquiry"}`;
     const body = [
       `${copy.fields.name}: ${name}`,
       `${copy.fields.email}: ${email}`,

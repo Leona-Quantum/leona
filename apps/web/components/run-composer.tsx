@@ -1,48 +1,87 @@
 "use client";
 
 import type { FormEvent } from "react";
-import { ChevronIcon, PaperclipIcon } from "./icons";
+import { PaperclipIcon } from "./icons";
 import type { PublicLocale } from "../lib/public-locale";
 
+// Kept as shared vocabulary for Studio's explicit execution controls. The chat
+// composer intentionally exposes neither of these controls to the user.
 export type ComposerMode = "execute" | "ideate" | "explain";
 export type ComposerFramework = "qiskit" | "pennylane" | "cirq";
 
 export function RunComposer({
   value,
-  mode,
-  framework,
   pending,
   error,
   onChange,
-  onModeChange,
-  onFrameworkChange,
   onSubmit,
   onAttach,
+  contextArtifact,
+  onClearContext,
+  centered = false,
   locale = "en",
 }: {
   value: string;
-  mode: ComposerMode;
-  framework: ComposerFramework;
   pending: boolean;
   error: string | null;
   onChange: (value: string) => void;
-  onModeChange: (mode: ComposerMode) => void;
-  onFrameworkChange: (framework: ComposerFramework) => void;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
   onAttach?: () => void;
+  contextArtifact?: { title: string; framework: string; codeAvailable: boolean } | null;
+  onClearContext?: () => void;
+  centered?: boolean;
   locale?: PublicLocale;
 }) {
   const labels = locale === "ja"
-    ? { task: "問い", mode: "モード", framework: "フレームワーク", attach: "コンテキストを添付", model: "計画駆動モデル", quota: "本日の実行 3/5", pending: "開始中", run: "実行", execute: "実行", learn: "学習", explain: "説明" }
-    : { task: "Task prompt", mode: "Mode", framework: "Framework", attach: "Attach context", model: "Plan-driven model", quota: "3/5 runs today", pending: "Starting", run: "Run", execute: "Execute", learn: "Learn", explain: "Explain" };
+    ? {
+        task: "メッセージ",
+        attach: "コンテキストを添付",
+        pending: "応答中",
+        send: "送信",
+        context: "コンテキスト",
+        codeAttached: "コードを添付済み",
+        removeContext: "コンテキストを外す",
+        hint: "Markdown · LaTeX",
+      }
+    : {
+        task: "Message",
+        attach: "Attach context",
+        pending: "Thinking",
+        send: "Send",
+        context: "Context",
+        codeAttached: "code attached",
+        removeContext: "Remove context",
+        hint: "Markdown · LaTeX",
+      };
+
   return (
-    <div className="mj-composer-dock">
+    <div className={`mj-composer-dock${centered ? " mj-composer-dock--centered" : ""}`}>
       <form className="mj-composer" onSubmit={onSubmit}>
+        {contextArtifact ? (
+          <div className="mj-composer-context" aria-label={`${labels.context}: ${contextArtifact.title}`}>
+            <PaperclipIcon size={14} />
+            <span>
+              <strong>{contextArtifact.title}</strong>
+              <small>{contextArtifact.framework} · {contextArtifact.codeAvailable ? labels.codeAttached : labels.context}</small>
+            </span>
+            {onClearContext ? (
+              <button type="button" aria-label={labels.removeContext} title={labels.removeContext} onClick={onClearContext}>
+                ×
+              </button>
+            ) : null}
+          </div>
+        ) : null}
         <textarea
           className="mj-composer-input"
           value={value}
           onChange={(event) => onChange(event.target.value)}
-          placeholder={locale === "ja" ? "問い、回路、レビューするコードを入力…" : "Ask a question, describe a circuit, or paste code to review…"}
+          onKeyDown={(event) => {
+            if (event.key === "Enter" && !event.shiftKey) {
+              event.preventDefault();
+              event.currentTarget.form?.requestSubmit();
+            }
+          }}
+          placeholder={locale === "ja" ? "量子アルゴリズムについて何でも聞いてください…" : "Ask anything about quantum algorithms…"}
           aria-label={labels.task}
           rows={2}
           disabled={pending}
@@ -52,31 +91,12 @@ export function RunComposer({
             <button className="mj-icon-button" type="button" aria-label={labels.attach} title={labels.attach} onClick={onAttach}>
               <PaperclipIcon size={16} />
             </button>
-            <label className="mj-composer-select">
-              <span className="sr-only">{labels.mode}</span>
-              <select value={mode} onChange={(event) => onModeChange(event.target.value as ComposerMode)} disabled={pending}>
-                <option value="execute">{labels.execute}</option>
-                <option value="ideate">{labels.learn}</option>
-                <option value="explain">{labels.explain}</option>
-              </select>
-              <ChevronIcon size={14} />
-            </label>
-            <label className="mj-composer-select">
-              <span className="sr-only">{labels.framework}</span>
-              <select value={framework} onChange={(event) => onFrameworkChange(event.target.value as ComposerFramework)} disabled={pending}>
-                <option value="qiskit">Qiskit</option>
-                <option value="pennylane">PennyLane</option>
-                <option value="cirq">Cirq</option>
-              </select>
-              <ChevronIcon size={14} />
-            </label>
-            <span className="mj-composer-model">{labels.model}</span>
+            <span className="mj-composer-model">{labels.hint}</span>
           </div>
           <div className="mj-composer-right">
             {error ? <span className="mj-composer-error" role="alert">{error}</span> : null}
-            <span className="mj-composer-quota">{labels.quota}</span>
             <button className="mj-primary-button" type="submit" disabled={pending || !value.trim()}>
-              {pending ? labels.pending : labels.run}
+              {pending ? labels.pending : labels.send}
               <span className="mj-command-hint">⌘↵</span>
             </button>
           </div>

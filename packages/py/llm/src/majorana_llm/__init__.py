@@ -4,6 +4,7 @@ and structured-output parsing for the pipeline."""
 from majorana_llm.client import (
     AnthropicLLM,
     LLMClient,
+    LLMMessage,
     LLMRequest,
     LLMResponse,
     OpenAICompatibleLLM,
@@ -29,6 +30,7 @@ from majorana_llm.prompts import (
     FRAMEWORK_DIRECTIVE,
     GENERATE_SYSTEM_PROMPT,
     PLAN_SYSTEM_PROMPT,
+    QUANTUM_AGENT_SYSTEM_PROMPT,
     RenderedPrompt,
     STAGE_PROMPTS,
     WRITEBACK_SYSTEM_PROMPT,
@@ -41,6 +43,7 @@ from majorana_llm.research import ResearchResult, ResearchSource, research_for_p
 
 __all__ = [
     "LLMClient",
+    "LLMMessage",
     "LLMRequest",
     "LLMResponse",
     "AnthropicLLM",
@@ -64,6 +67,7 @@ __all__ = [
     "GENERATE_SYSTEM_PROMPT",
     "CRITIC_SYSTEM_PROMPT",
     "CONVERSATION_SYSTEM_PROMPT",
+    "QUANTUM_AGENT_SYSTEM_PROMPT",
     "WRITEBACK_SYSTEM_PROMPT",
     "FRAMEWORK_DIRECTIVE",
     "STAGE_PROMPTS",

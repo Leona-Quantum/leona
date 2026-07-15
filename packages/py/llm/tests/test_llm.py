@@ -178,7 +178,7 @@ async def test_openai_compatible_llm_streams_reasoning_and_output(monkeypatch):
     assert calls[0]["stream"] is True
 
 
-def test_langchain_prompt_rendering_keeps_request_and_internal_instructions_separate():
+def test_provider_neutral_prompt_rendering_keeps_request_and_internal_instructions_separate():
     rendered = render_plan_prompt(
         "Build a noisy 4-qubit QAOA circuit and explain which verification strategy is useful.",
         "Reference material: compare local simulation with an exact small-instance check.",
@@ -198,13 +198,15 @@ def test_generate_prompt_is_role_rendered_without_exposing_a_schema_to_the_user(
     assert "JSON schema" not in rendered.user
 
 
-def test_conversation_prompt_exposes_mode_and_framework_without_internal_plumbing():
+def test_conversation_prompt_is_provider_native_and_ignores_product_controls():
     rendered = render_conversation_prompt(
         "Teach me how a Bell state works.", RunMode.IDEATE, Framework.CIRQ
     )
-    assert "Selected mode: Learn" in rendered.user
-    assert "Selected framework: Cirq" in rendered.user
-    assert "internal plans" in rendered.system
+    assert rendered.user == "Teach me how a Bell state works."
+    assert "Selected mode" not in rendered.user
+    assert "Selected framework" not in rendered.user
+    assert "internal plans" not in rendered.system
+    assert "quantum algorithm assistant" in rendered.system
 
 
 def test_analysis_parser_accepts_the_internal_narrative_contract():

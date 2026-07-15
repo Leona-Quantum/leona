@@ -65,7 +65,11 @@ class _FakeStore:
 
 
 class _ConversationLLM:
+    def __init__(self):
+        self.request = None
+
     async def complete(self, request, *, on_delta=None):
+        self.request = request
         if on_delta is not None:
             await on_delta("A short answer.", "output")
         return LLMResponse(
@@ -81,7 +85,7 @@ async def test_conversation_mode_answers_without_pipeline_or_sandbox():
     ctx = RunContext(
         run_id="conversation-test",
         task_prompt="What is a Bell state?",
-        mode=RunMode.IDEATE,
+        mode=RunMode.CHAT,
         framework=Framework.QISKIT,
         seed=None,
         shots=None,
@@ -91,10 +95,24 @@ async def test_conversation_mode_answers_without_pipeline_or_sandbox():
     )
     store = _FakeStore()
 
-    final = await handlers._handle_conversation(ctx, store, _ConversationLLM())
+    llm = _ConversationLLM()
+    final = await handlers._handle_conversation(ctx, store, llm)
 
     assert final is RunStatus.SUCCEEDED
     assert store.status is RunStatus.SUCCEEDED
     assert "stage.started" not in [event_type for event_type, _ in sink.events]
-    assert any(event_type == "run.analysis" for event_type, _ in sink.events)
+    assert any(event_type == "chat.delta" for event_type, _ in sink.events)
+    assert any(event_type == "chat.completed" for event_type, _ in sink.events)
+    assert all(event_type != "llm.call" for event_type, _ in sink.events)
+    assert (
+        llm.request.system
+        == """You are a helpful quantum algorithm assistant.
+
+Answer the user's messages directly. Explain quantum computing and quantum algorithms,
+write or review code, and use Markdown and LaTeX when useful. Be accurate and say when
+you are uncertain."""
+    )
+    assert [message.model_dump() for message in llm.request.messages] == [
+        {"role": "user", "content": "What is a Bell state?"}
+    ]
     assert sink.events[-1][0] == "run.finished"

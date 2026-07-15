@@ -10,7 +10,7 @@ import { RepositoryBrowser } from "./repository-browser";
 
 export const metadata: Metadata = {
   title: "Repository",
-  description: "A public LeonaQ research database for circuits and algorithms with evidence, sources, and export boundaries visible.",
+  description: "A public Leona Quantum research database for circuits and algorithms with evidence, sources, and export boundaries visible.",
 };
 
 export default async function RepositoryPage() {

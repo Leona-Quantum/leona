@@ -1701,7 +1701,7 @@ function makeAdditionalReferenceEntry(options: AdditionalReferenceOptions): Publ
       kind: options.status === "community_review" ? "community_submission" : "curated_reference",
       title: options.sourceTitle,
       url: options.sourceUrl,
-      reviewedBy: "LeonaQ curation pass",
+      reviewedBy: "Leona Quantum curation pass",
       license: options.sourceLicense ?? "CC BY 4.0-compatible reference metadata",
     },
     visualization: {
@@ -2075,7 +2075,7 @@ const ADDITIONAL_PUBLIC_REPOSITORY_ENTRIES: PublicRepositoryEntry[] = [
 
 function replaceLegacyBrand(value: string): string {
   return value
-    .replaceAll("Majorana", "LeonaQ")
+    .replaceAll("Majorana", "Leona Quantum")
     .replaceAll("Nameko", "Leona")
     .replaceAll("Quepo", "Library");
 }
