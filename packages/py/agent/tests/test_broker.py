@@ -137,3 +137,37 @@ async def test_publish_requires_matching_verified_latest_candidate():
     )
     assert published.ok
     assert published.state is AgentState.PUBLISHED
+
+
+async def test_memory_evidence_is_append_only():
+    store = MemoryAgentStore()
+    run_id, candidate_id = uuid4(), uuid4()
+    source = "FINAL_CIRCUIT = object()\n"
+    fingerprint = FrameworkProgram(Framework.QISKIT, source).fingerprint
+    await store.add_candidate(
+        CandidateRevision(
+            candidate_id=candidate_id,
+            run_id=run_id,
+            tool_call_id="simulate",
+            revision=1,
+            plan_id=uuid4(),
+            framework=Framework.QISKIT,
+            source=source,
+            source_fingerprint=fingerprint,
+        )
+    )
+    evidence = ExecutionEvidence(
+        execution_id=uuid4(),
+        candidate_id=candidate_id,
+        source_fingerprint=fingerprint,
+        environment_fingerprint="0" * 64,
+        sandbox_provider="test",
+        exit_code=0,
+        duration_ms=1,
+    )
+    await store.add_execution(evidence)
+    await store.add_execution(evidence)
+    import pytest
+
+    with pytest.raises(ValueError, match="immutable"):
+        await store.add_execution(evidence.model_copy(update={"duration_ms": 2}))

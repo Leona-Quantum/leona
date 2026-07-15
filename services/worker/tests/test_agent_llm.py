@@ -31,6 +31,9 @@ class Session:
     async def commit(self):
         self.commits += 1
 
+    async def rollback(self):
+        pass
+
 
 async def test_agent_llm_records_event_and_token_usage(monkeypatch):
     recorded = []
@@ -73,3 +76,28 @@ async def test_agent_llm_records_event_and_token_usage(monkeypatch):
         },
     }
     assert session.commits == 1
+
+
+async def test_metering_failure_does_not_retry_completed_provider_call(monkeypatch):
+    calls = 0
+
+    class CountingDelegate:
+        async def complete(self, request, *, on_delta=None):
+            nonlocal calls
+            calls += 1
+            return LLMResponse(text="{}", model=request.model, input_tokens=1, output_tokens=1)
+
+    async def fail_usage(*_args, **_kwargs):
+        raise RuntimeError("meter unavailable")
+
+    monkeypatch.setattr("majorana_worker.agent_llm.usage_repo.record_usage", fail_usage)
+    llm = MeteredAgentLLM(
+        delegate=CountingDelegate(),
+        sink=Sink(),
+        scope=Scope(user_id=uuid4(), workspace_id=uuid4(), role=Role.MEMBER),
+        session=Session(),
+        run_id=uuid4(),
+    )
+    response = await llm.complete(LLMRequest(model="test", system="test"))
+    assert response.text == "{}"
+    assert calls == 1

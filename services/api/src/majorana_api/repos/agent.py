@@ -165,7 +165,18 @@ async def add_candidate(
     scope: Scope, session: AsyncSession, run_id: uuid.UUID, values: dict[str, Any]
 ) -> RunCandidate:
     require_write(scope)
-    await _scoped_run(scope, session, run_id)
+    agent_run = await get_or_create_agent_run(scope, session, run_id)
+    if agent_run.plan_id is None or agent_run.plan_id != values.get("plan_id"):
+        raise ValueError("candidate plan does not belong to the run")
+    parent_id = values.get("parent_candidate_id")
+    if parent_id is not None:
+        parent = await get_candidate(scope, session, run_id, parent_id)
+        if parent is None:
+            raise ValueError("candidate parent does not belong to the run")
+        if values.get("revision") != parent.revision + 1:
+            raise ValueError("candidate parent must be the preceding revision")
+    elif values.get("revision") != 1:
+        raise ValueError("only the first candidate may omit a parent")
     row = RunCandidate(run_id=run_id, **values)
     session.add(row)
     await session.flush()
@@ -261,6 +272,8 @@ async def add_execution(
     candidate = await get_candidate(scope, session, run_id, values["candidate_id"])
     if candidate is None:
         raise NotFoundError("candidate")
+    if candidate.source_fingerprint != values.get("source_fingerprint"):
+        raise ValueError("execution fingerprint does not match candidate")
     row = CandidateExecution(**values)
     session.add(row)
     await session.flush()
@@ -288,8 +301,20 @@ async def add_verification(
     scope: Scope, session: AsyncSession, run_id: uuid.UUID, values: dict[str, Any]
 ) -> CandidateVerification:
     require_write(scope)
-    if await get_candidate(scope, session, run_id, values["candidate_id"]) is None:
+    candidate = await get_candidate(scope, session, run_id, values["candidate_id"])
+    if candidate is None:
         raise NotFoundError("candidate")
+    execution = await get_execution(scope, session, run_id, candidate.id)
+    if execution is None:
+        raise NotFoundError("candidate_execution")
+    if execution.id != values.get("execution_id"):
+        raise ValueError("verification references a different execution")
+    if not (
+        candidate.source_fingerprint
+        == execution.source_fingerprint
+        == values.get("source_fingerprint")
+    ):
+        raise ValueError("verification evidence fingerprint mismatch")
     row = CandidateVerification(**values)
     session.add(row)
     await session.flush()
@@ -317,8 +342,18 @@ async def add_conversion(
     scope: Scope, session: AsyncSession, run_id: uuid.UUID, values: dict[str, Any]
 ) -> CandidateConversion:
     require_write(scope)
-    if await get_candidate(scope, session, run_id, values["candidate_id"]) is None:
+    candidate = await get_candidate(scope, session, run_id, values["candidate_id"])
+    if candidate is None:
         raise NotFoundError("candidate")
+    verification = await get_verification(scope, session, run_id, candidate.id)
+    if verification is None:
+        raise NotFoundError("candidate_verification")
+    if not (
+        candidate.source_fingerprint
+        == verification.source_fingerprint
+        == values.get("source_fingerprint")
+    ):
+        raise ValueError("conversion evidence fingerprint mismatch")
     row = CandidateConversion(**values)
     session.add(row)
     await session.flush()
@@ -347,8 +382,10 @@ async def set_publication(
 ) -> None:
     require_write(scope)
     await _scoped_run(scope, session, run_id)
-    await session.execute(
+    changed = await session.execute(
         update(AgentRun)
         .where(AgentRun.run_id == run_id)
         .values(publication=publication, updated_at=func.now())
     )
+    if changed.rowcount == 0:
+        raise NotFoundError("agent_run")

@@ -11,6 +11,7 @@ from uuid import UUID
 
 from majorana_agent.models import (
     AgentState,
+    CandidateStatus,
     CandidateRevision,
     ConversionEvidence,
     ExecutionEvidence,
@@ -96,7 +97,7 @@ class MemoryAgentStore:
         revisions = self._candidates[run_id]
         for index, candidate in enumerate(revisions):
             if candidate.candidate_id == candidate_id:
-                revisions[index] = candidate.model_copy(update={"status": status})
+                revisions[index] = candidate.model_copy(update={"status": CandidateStatus(status)})
                 return
         raise KeyError(candidate_id)
 
@@ -139,7 +140,11 @@ class MemoryAgentStore:
         candidate = await self.candidate(key, evidence.candidate_id)
         if candidate.source_fingerprint != evidence.source_fingerprint:
             raise ValueError("execution fingerprint does not match candidate")
-        self._executions[(key, evidence.candidate_id)] = evidence
+        evidence_key = (key, evidence.candidate_id)
+        existing = self._executions.get(evidence_key)
+        if existing is not None and existing != evidence:
+            raise ValueError("candidate execution evidence is immutable")
+        self._executions[evidence_key] = evidence
 
     async def execution_for(self, run_id: UUID, candidate_id: UUID) -> ExecutionEvidence | None:
         return self._executions.get((run_id, candidate_id))
@@ -160,7 +165,11 @@ class MemoryAgentStore:
         if execution.source_fingerprint != evidence.source_fingerprint:
             raise ValueError("verification fingerprint does not match execution")
         owner = next(run for (run, cid) in self._executions if cid == evidence.candidate_id)
-        self._verifications[(owner, evidence.candidate_id)] = evidence
+        evidence_key = (owner, evidence.candidate_id)
+        existing = self._verifications.get(evidence_key)
+        if existing is not None and existing != evidence:
+            raise ValueError("candidate verification evidence is immutable")
+        self._verifications[evidence_key] = evidence
 
     async def verification_for(
         self, run_id: UUID, candidate_id: UUID
@@ -176,20 +185,16 @@ class MemoryAgentStore:
         verification = self._verifications[(owner, evidence.candidate_id)]
         if verification.source_fingerprint != evidence.source_fingerprint:
             raise ValueError("conversion fingerprint does not match verification")
-        self._conversions[(owner, evidence.candidate_id)] = evidence
+        evidence_key = (owner, evidence.candidate_id)
+        existing = self._conversions.get(evidence_key)
+        if existing is not None and existing != evidence:
+            raise ValueError("candidate conversion evidence is immutable")
+        self._conversions[evidence_key] = evidence
 
     async def conversion_for(self, run_id: UUID, candidate_id: UUID) -> ConversionEvidence | None:
         return self._conversions.get((run_id, candidate_id))
 
     async def add_publication(self, publication: PublishedArtifact) -> None:
-        existing = next(
-            (item for item in self.publications if item.candidate_id == publication.candidate_id),
-            None,
-        )
-        if existing is not None and existing != publication:
-            raise ValueError("candidate publication is immutable")
-        if existing is None:
-            self.publications.append(publication)
         owner = next(
             (
                 run_id
@@ -200,6 +205,14 @@ class MemoryAgentStore:
         )
         if owner is None:
             raise KeyError(publication.candidate_id)
+        existing = next(
+            (item for item in self.publications if item.candidate_id == publication.candidate_id),
+            None,
+        )
+        if existing is not None and existing != publication:
+            raise ValueError("candidate publication is immutable")
+        if existing is None:
+            self.publications.append(publication)
         self._publication_owners[publication.candidate_id] = owner
 
     async def publication_for(self, run_id: UUID, candidate_id: UUID) -> PublishedArtifact | None:

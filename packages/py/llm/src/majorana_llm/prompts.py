@@ -31,8 +31,8 @@ _RUNTIME_LIMITS = (
 )
 
 _AGENT_CONTRACT = (
-    "The model chooses one supplied tool at a time. The Tool Broker owns legal state "
-    "transitions, selected-framework enforcement, budgets, candidate identity, source "
+    "The model may propose one supplied tool at a time. The Tool Broker owns tool order, "
+    "legal tool/state transitions, selected-framework enforcement, budgets, candidate identity, source "
     "fingerprints, and publication gates. A failed execution or verification creates "
     "repair feedback and requires a new immutable Candidate revision. Never resubmit or "
     "reconstruct stored execution evidence for verification, conversion, or publication."

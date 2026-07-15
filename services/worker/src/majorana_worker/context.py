@@ -9,7 +9,9 @@ from majorana_contracts.enums import Framework, RunMode
 
 
 class EventSink(Protocol):
-    async def emit(self, type: str, payload: dict[str, Any]) -> None: ...
+    async def emit(
+        self, type: str, payload: dict[str, Any], *, event_id: Any | None = None
+    ) -> None: ...
 
 
 @dataclass(frozen=True)

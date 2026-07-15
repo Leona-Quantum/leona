@@ -61,10 +61,10 @@ class AgentRuntime:
                 continue
             call = await self._model.next_tool(run_id=run_id, state=state, history=history)
             prior = next((item for item in history if item.tool_call_id == call.tool_call_id), None)
-            if prior is not None and prior.state is state:
-                # Idempotent replay is useful only when a crash left the state
-                # behind the completed result. Reusing an already-applied call
-                # would otherwise spin forever without consuming step budget.
+            if prior is not None:
+                # The crash-recovery case was handled above before asking the
+                # model for another call. Any completed ID proposed here is a
+                # replay, even if its result belongs to an older state.
                 await self._store.set_state(run_id, AgentState.FAILED)
                 return AgentState.FAILED
             if self._observer is not None:

@@ -9,7 +9,18 @@ import datetime as dt
 import uuid
 from typing import Any
 
-from sqlalchemy import TIMESTAMP, BigInteger, ForeignKey, Integer, Numeric, Text, func, text
+from sqlalchemy import (
+    TIMESTAMP,
+    BigInteger,
+    ForeignKey,
+    ForeignKeyConstraint,
+    Integer,
+    Numeric,
+    Text,
+    UniqueConstraint,
+    func,
+    text,
+)
 from sqlalchemy.dialects.postgresql import INET, JSONB, UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
@@ -164,6 +175,7 @@ class VerificationRecord(Base):
 
 class AgentRun(Base):
     __tablename__ = "agent_runs"
+    __table_args__ = (UniqueConstraint("run_id", "plan_id"),)
 
     run_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("runs.id"), primary_key=True)
     state: Mapped[str] = mapped_column(server_default="new")
@@ -193,12 +205,20 @@ class AgentStep(Base):
 
 class RunCandidate(Base):
     __tablename__ = "run_candidates"
+    __table_args__ = (
+        UniqueConstraint("run_id", "id"),
+        UniqueConstraint("id", "source_fingerprint"),
+        ForeignKeyConstraint(
+            ["run_id", "parent_candidate_id"], ["run_candidates.run_id", "run_candidates.id"]
+        ),
+        ForeignKeyConstraint(["run_id", "plan_id"], ["agent_runs.run_id", "agent_runs.plan_id"]),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True)
     run_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("runs.id"))
     tool_call_id: Mapped[str]
     revision: Mapped[int] = mapped_column(Integer)
-    parent_candidate_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("run_candidates.id"))
+    parent_candidate_id: Mapped[uuid.UUID | None]
     plan_id: Mapped[uuid.UUID]
     framework: Mapped[str]
     source: Mapped[str]
@@ -209,9 +229,17 @@ class RunCandidate(Base):
 
 class CandidateExecution(Base):
     __tablename__ = "candidate_executions"
+    __table_args__ = (
+        UniqueConstraint("id", "candidate_id", "source_fingerprint"),
+        ForeignKeyConstraint(
+            ["candidate_id", "source_fingerprint"],
+            ["run_candidates.id", "run_candidates.source_fingerprint"],
+            ondelete="CASCADE",
+        ),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True)
-    candidate_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("run_candidates.id"), unique=True)
+    candidate_id: Mapped[uuid.UUID] = mapped_column(unique=True)
     source_fingerprint: Mapped[str]
     environment_fingerprint: Mapped[str]
     sandbox_provider: Mapped[str]
@@ -224,10 +252,21 @@ class CandidateExecution(Base):
 
 class CandidateVerification(Base):
     __tablename__ = "candidate_verifications"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["execution_id", "candidate_id", "source_fingerprint"],
+            [
+                "candidate_executions.id",
+                "candidate_executions.candidate_id",
+                "candidate_executions.source_fingerprint",
+            ],
+            ondelete="CASCADE",
+        ),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True)
-    candidate_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("run_candidates.id"), unique=True)
-    execution_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("candidate_executions.id"))
+    candidate_id: Mapped[uuid.UUID] = mapped_column(unique=True)
+    execution_id: Mapped[uuid.UUID]
     source_fingerprint: Mapped[str]
     decision: Mapped[str]
     deterministic_checks: Mapped[list[dict[str, Any]]] = mapped_column(JSONB)
@@ -238,10 +277,15 @@ class CandidateVerification(Base):
 
 class CandidateConversion(Base):
     __tablename__ = "candidate_conversions"
-
-    candidate_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("run_candidates.id"), primary_key=True
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["candidate_id", "source_fingerprint"],
+            ["run_candidates.id", "run_candidates.source_fingerprint"],
+            ondelete="CASCADE",
+        ),
     )
+
+    candidate_id: Mapped[uuid.UUID] = mapped_column(primary_key=True)
     source_fingerprint: Mapped[str]
     status: Mapped[str]
     qasm: Mapped[str | None]

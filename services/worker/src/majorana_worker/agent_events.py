@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from uuid import UUID
+from uuid import UUID, uuid5
 
 from majorana_agent import AgentState, ToolCall, ToolName, ToolResult
 from majorana_contracts.enums import ExportStatus, VerificationMethod
@@ -20,23 +20,49 @@ class AgentEventObserver:
         # duplicated into the public event stream before execution succeeds.
         return None
 
+    async def recover(self, run_id: UUID) -> None:
+        """Replay every completed step; deterministic event IDs make this idempotent."""
+        for result in await self._store.list_tool_results(run_id):
+            await self.tool_finished(run_id, result)
+
+    async def _emit(
+        self,
+        run_id: UUID,
+        result: ToolResult,
+        key: str,
+        event_type: str,
+        payload: dict,
+    ) -> None:
+        event_id = uuid5(run_id, f"tool:{result.tool_call_id}:{key}")
+        await self._sink.emit(event_type, payload, event_id=event_id)
+
     async def tool_finished(self, run_id: UUID, result: ToolResult) -> None:
         if not result.ok:
             return
         if result.name is ToolName.REQUEST_PLAN:
             plan = await self._store.latest_plan(run_id)
             if plan is not None:
-                await self._sink.emit("plan.produced", {"plan": plan.plan.model_dump(mode="json")})
+                await self._emit(
+                    run_id,
+                    result,
+                    "plan",
+                    "plan.produced",
+                    {"plan": plan.plan.model_dump(mode="json")},
+                )
             return
         if result.name in {
             ToolName.SIMULATE_QISKIT,
             ToolName.SIMULATE_CIRQ,
             ToolName.SIMULATE_PENNYLANE,
         }:
-            candidate = await self._store.latest_candidate(run_id)
-            if candidate is None:
+            candidate_id = result.payload.get("candidate_id")
+            if candidate_id is None:
                 return
-            await self._sink.emit(
+            candidate = await self._store.candidate(run_id, UUID(str(candidate_id)))
+            await self._emit(
+                run_id,
+                result,
+                "code",
                 "code.generated",
                 {
                     "language": candidate.framework.value,
@@ -46,7 +72,10 @@ class AgentEventObserver:
             )
             execution = await self._store.execution_for(run_id, candidate.candidate_id)
             if execution is not None:
-                await self._sink.emit(
+                await self._emit(
+                    run_id,
+                    result,
+                    "sandbox",
                     "sandbox.result",
                     {
                         "phase": "verification",
@@ -59,18 +88,22 @@ class AgentEventObserver:
                 )
             return
         if result.name is ToolName.VERIFY_INTENT_ALIGNMENT:
-            candidate = await self._store.latest_candidate(run_id)
-            if candidate is None:
+            candidate_id = result.payload.get("candidate_id")
+            if candidate_id is None:
                 return
+            candidate = await self._store.candidate(run_id, UUID(str(candidate_id)))
             verification = await self._store.verification_for(run_id, candidate.candidate_id)
             if verification is None:
                 return
             supported = {method.value: method for method in VerificationMethod}
-            for check in verification.deterministic_checks:
+            for index, check in enumerate(verification.deterministic_checks):
                 method = supported.get(str(check.get("method")))
                 if method is None:
                     continue
-                await self._sink.emit(
+                await self._emit(
+                    run_id,
+                    result,
+                    f"verification:{index}",
                     "verification.result",
                     {
                         "method": method,
@@ -80,12 +113,16 @@ class AgentEventObserver:
                 )
             return
         if result.name is ToolName.PUBLISH_ARTIFACT:
-            candidate = await self._store.latest_candidate(run_id)
-            if candidate is None:
+            candidate_id = result.payload.get("candidate_id")
+            if candidate_id is None:
                 return
+            candidate = await self._store.candidate(run_id, UUID(str(candidate_id)))
             conversion = await self._store.conversion_for(run_id, candidate.candidate_id)
             qasm_available = bool(conversion and conversion.status == "available")
-            await self._sink.emit(
+            await self._emit(
+                run_id,
+                result,
+                "finalized",
                 "code.finalized",
                 {
                     "language": candidate.framework.value,
@@ -109,7 +146,10 @@ class AgentEventObserver:
                     "finalization_reason": "latest candidate passed bound verification",
                 },
             )
-            await self._sink.emit(
+            await self._emit(
+                run_id,
+                result,
+                "artifact",
                 "artifact.saved",
                 {
                     "artifact_id": result.payload["artifact_id"],

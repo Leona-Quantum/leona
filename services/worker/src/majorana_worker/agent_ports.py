@@ -5,7 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 from typing import Any
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from majorana_agent import (
     CandidateRevision,
@@ -104,7 +104,7 @@ class SandboxCandidateExecutor:
             qubits_estimate=plan.qubits_estimate,
             trusted_setup=program.trusted_setup(circuit_expected=circuit_expected),
             trusted_observer=program.trusted_observer(circuit_expected=circuit_expected),
-            protected_result_path="/tmp/majorana-result.json",
+            protected_result_path=f"/tmp/majorana-result-{uuid4().hex}.json",
             source_fingerprint=candidate.source_fingerprint,
         )
         result = await sandbox_run(self._sandbox, spec)
@@ -130,6 +130,7 @@ class SandboxCandidateExecutor:
             )
         if result.ok and self._needs_repeat(plan):
             repeated = await sandbox_run(self._sandbox, spec)
+            total_duration_ms = result.duration_ms + repeated.duration_ms
             repeated_observation = repeated.protected_result or {}
             if (
                 not repeated.ok
@@ -149,12 +150,13 @@ class SandboxCandidateExecutor:
                 "sandbox_runs": 2,
             }
         else:
+            total_duration_ms = result.duration_ms
             observation = observation | {"sandbox_runs": 1}
         return ExecutionOutput(
             environment_fingerprint=self._environment_fingerprint(candidate, plan),
             sandbox_provider=result.provider,
             exit_code=result.exit_code,
-            duration_ms=result.duration_ms,
+            duration_ms=total_duration_ms,
             result=structured_result if isinstance(structured_result, dict) else {},
             observation=observation,
         )
@@ -258,7 +260,11 @@ class EvidenceVerifier:
         self, candidate: CandidateRevision, execution: ExecutionEvidence, plan: Plan
     ) -> list[dict[str, Any]]:
         program = FrameworkProgram(candidate.framework, candidate.source)
-        diagnostics = program.contract_diagnostics(circuit_expected=True)
+        circuit_expected = (
+            plan.artifact_contract is None
+            or plan.artifact_contract.artifact_type is not ArtifactType.OTHER
+        )
+        diagnostics = program.contract_diagnostics(circuit_expected=circuit_expected)
         checks: list[dict[str, Any]] = [
             {
                 "method": "structural",
@@ -268,7 +274,7 @@ class EvidenceVerifier:
         ]
         metrics = execution.observation.get("resource_metrics")
         observed_qubits = metrics.get("qubits") if isinstance(metrics, dict) else None
-        resource_ok = (
+        resource_ok = not circuit_expected or (
             type(observed_qubits) is int
             and observed_qubits > 0
             and observed_qubits <= plan.qubits_estimate
@@ -362,7 +368,11 @@ class EvidenceVerifier:
             elif method in {VerificationMethod.BRUTE_FORCE, VerificationMethod.EXACT_DIAG}:
                 instance = self._baseline_instance(execution.result)
                 claimed = execution.result.get(plan.success_criteria.primary_metric)
-                if instance is not None and isinstance(claimed, int | float):
+                if (
+                    instance is not None
+                    and isinstance(claimed, int | float)
+                    and not isinstance(claimed, bool)
+                ):
                     outcome = (
                         verify_brute_force(instance, float(claimed))
                         if method is VerificationMethod.BRUTE_FORCE

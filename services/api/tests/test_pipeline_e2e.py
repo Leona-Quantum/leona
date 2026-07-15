@@ -1,9 +1,8 @@
 """Agent E2E: POST /v1/runs → job → durable tool loop → verified artifact → SSE.
 
-The successful execution test is explicitly gated on a configured real LLM and uses
-the guarded LocalSubprocessSandbox for code execution. It is opt-in because a real
-provider call is intentionally observable and billable; no scripted model output is
-accepted as an end-to-end substitute.
+The successful execution test is explicitly gated on a configured real LLM. Generated
+code is not executed by this orchestration test: a deterministic sandbox double returns
+provider-owned evidence, so the test cannot accidentally grant network access.
 
 Live-DB test in the authz-suite mold: skipped without DATABASE_URL; CI runs it on
 the per-PR Neon branch after migrate+seed.
@@ -18,7 +17,7 @@ from majorana_contracts import Scope
 from majorana_contracts.enums import Framework, Role
 from majorana_frameworks import FrameworkProgram
 from majorana_llm import LLMClient, default_llm
-from majorana_sandbox import LocalSubprocessSandbox
+from majorana_sandbox import ExecutionSpec, SandboxResult
 
 from majorana_api.app import create_app
 from majorana_api.auth import deps as auth_deps
@@ -55,6 +54,29 @@ SETTINGS = Settings(
     workos_jwks_url="https://test.invalid/jwks",
     web_origin="http://localhost:3000",
 )
+
+
+class _NonExecutingSandbox:
+    provider = "non-executing-test-double"
+    environment_id = "test-double:bell-evidence-v1"
+
+    async def _execute(self, spec: ExecutionSpec) -> SandboxResult:
+        return SandboxResult(
+            ok=True,
+            exit_code=0,
+            duration_ms=1,
+            stdout="",
+            stderr="",
+            provider=self.provider,
+            protected_result={
+                "source_fingerprint": spec.source_fingerprint,
+                "result": {
+                    "counts": {"00": 512, "11": 512},
+                    "success_probability": 1.0,
+                },
+                "resource_metrics": {"qubits": 2, "depth": 2, "two_qubit_gates": 1},
+            },
+        )
 
 
 @pytest.fixture
@@ -94,7 +116,7 @@ async def _work_until_run_processed(factory, run_id: str, *, llm: LLMClient | No
         try:
             async with factory() as session:
                 await handle_run_execute(
-                    session, payload, llm=live_llm, sandbox=LocalSubprocessSandbox()
+                    session, payload, llm=live_llm, sandbox=_NonExecutingSandbox()
                 )
             status = "done"
         except Exception:

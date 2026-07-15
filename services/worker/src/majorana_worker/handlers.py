@@ -83,7 +83,9 @@ class RepoEventSink:
         self._session = session
         self._run_id = run_id
 
-    async def emit(self, type: str, payload: dict[str, Any]) -> None:
+    async def emit(
+        self, type: str, payload: dict[str, Any], *, event_id: uuid.UUID | None = None
+    ) -> None:
         candidate = {
             "run_id": self._run_id,
             "seq": 0,  # placeholder; the repo assigns the real seq under lock
@@ -94,7 +96,12 @@ class RepoEventSink:
         validated = run_event_adapter.validate_python(candidate)
         wire = validated.model_dump(mode="json", exclude={"run_id", "seq", "ts", "type"})
         await runs_repo.append_run_event(
-            self._scope, self._session, self._run_id, type=type, payload=wire
+            self._scope,
+            self._session,
+            self._run_id,
+            type=type,
+            payload=wire,
+            event_id=event_id,
         )
         await self._session.commit()  # each event visible to SSE readers immediately
 
@@ -207,10 +214,13 @@ async def _handle_agent_execution(
     parent_artifact_id: uuid.UUID | None,
 ) -> RunStatus:
     status = await run_store.current_status()
-    if status is not RunStatus.QUEUED:
+    if status not in {RunStatus.QUEUED, RunStatus.RUNNING}:
         return status
-    await run_store.set_status(RunStatus.RUNNING, started_at_now=True)
-    await ctx.sink.emit("run.started", {})
+    if status is RunStatus.QUEUED:
+        await run_store.set_status(RunStatus.RUNNING, started_at_now=True)
+    # Re-emitting on RUNNING repairs a crash between the status transition and
+    # event append; the deterministic ID prevents a duplicate event.
+    await ctx.sink.emit("run.started", {}, event_id=uuid.uuid5(ctx.run_id, "run.started"))
 
     agent_store = RepoAgentStore(scope, session)
     metered_llm = MeteredAgentLLM(
@@ -248,6 +258,8 @@ async def _handle_agent_execution(
     async def cancelled() -> bool:
         return await run_store.current_status() is RunStatus.CANCELLED
 
+    observer = AgentEventObserver(store=agent_store, sink=ctx.sink)
+    await observer.recover(ctx.run_id)
     runtime = AgentRuntime(
         store=agent_store,
         broker=broker,
@@ -257,17 +269,22 @@ async def _handle_agent_execution(
             framework=ctx.framework,
             initial_source=ctx.source_code,
         ),
-        observer=AgentEventObserver(store=agent_store, sink=ctx.sink),
+        observer=observer,
         cancel_requested=cancelled,
     )
     final = await runtime.run(ctx.run_id)
     if final is AgentState.CANCELLED:
-        await ctx.sink.emit("run.finished", {"status": RunStatus.CANCELLED})
+        await ctx.sink.emit(
+            "run.finished",
+            {"status": RunStatus.CANCELLED},
+            event_id=uuid.uuid5(ctx.run_id, "run.finished"),
+        )
         return RunStatus.CANCELLED
     if final is AgentState.PUBLISHED:
         await ctx.sink.emit(
             "run.finished",
             {"status": RunStatus.SUCCEEDED, "verifier_decision": "pass"},
+            event_id=uuid.uuid5(ctx.run_id, "run.finished"),
         )
         await run_store.set_status(
             RunStatus.SUCCEEDED,
@@ -278,8 +295,13 @@ async def _handle_agent_execution(
     await ctx.sink.emit(
         "run.error",
         {"stage": None, "code": "agent_failed", "message": "agent tool loop failed"},
+        event_id=uuid.uuid5(ctx.run_id, "run.error.agent_failed"),
     )
-    await ctx.sink.emit("run.finished", {"status": RunStatus.FAILED})
+    await ctx.sink.emit(
+        "run.finished",
+        {"status": RunStatus.FAILED},
+        event_id=uuid.uuid5(ctx.run_id, "run.finished"),
+    )
     await run_store.set_status(RunStatus.FAILED, finished_at_now=True)
     return RunStatus.FAILED
 

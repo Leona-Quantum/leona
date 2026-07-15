@@ -160,13 +160,13 @@ class CircuitToolset:
                 observation=output.observation,
             )
             await self._store.add_execution(evidence)
-            await self._store.set_candidate_status(
-                run_id,
-                candidate.candidate_id,
-                CandidateStatus.EXECUTED.value
-                if evidence.succeeded
-                else CandidateStatus.REPAIR_REQUIRED.value,
-            )
+        await self._store.set_candidate_status(
+            run_id,
+            candidate.candidate_id,
+            CandidateStatus.EXECUTED.value
+            if evidence.succeeded
+            else CandidateStatus.REPAIR_REQUIRED.value,
+        )
         if not evidence.succeeded:
             return {
                 "candidate_id": str(candidate.candidate_id),
@@ -215,13 +215,13 @@ class CircuitToolset:
                 repair=output.repair,
             )
             await self._store.add_verification(evidence)
-            await self._store.set_candidate_status(
-                run_id,
-                candidate.candidate_id,
-                CandidateStatus.VERIFIED.value
-                if evidence.decision is VerifierDecision.PASS
-                else CandidateStatus.REPAIR_REQUIRED.value,
-            )
+        await self._store.set_candidate_status(
+            run_id,
+            candidate.candidate_id,
+            CandidateStatus.VERIFIED.value
+            if evidence.decision is VerifierDecision.PASS
+            else CandidateStatus.REPAIR_REQUIRED.value,
+        )
         return {
             "candidate_id": str(candidate.candidate_id),
             "verification_id": str(evidence.verification_id),

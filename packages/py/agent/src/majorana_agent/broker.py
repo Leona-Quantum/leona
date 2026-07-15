@@ -97,6 +97,10 @@ class ToolBroker:
         return result
 
     async def _validate(self, run_id: UUID, state: AgentState, call: ToolCall) -> None:
+        if "__model_selection_error__" in call.arguments:
+            raise ToolPolicyError(
+                "invalid_tool_selection", str(call.arguments["__model_selection_error__"])
+            )
         if call.name not in _ALLOWED[state]:
             raise ToolPolicyError(
                 "invalid_transition", f"{call.name.value} is not allowed from {state.value}"

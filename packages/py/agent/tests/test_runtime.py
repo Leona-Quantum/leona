@@ -208,3 +208,37 @@ async def test_runtime_fails_closed_when_model_repeats_applied_tool_call():
         model=OneCallModel(),
     )
     assert await runtime.run(run_id) is AgentState.FAILED
+
+
+async def test_runtime_rejects_completed_call_id_from_an_older_state():
+    store = MemoryAgentStore()
+    run_id = uuid4()
+    call = ToolCall(tool_call_id="old-plan", name=ToolName.REQUEST_PLAN)
+    await store.begin_tool_call(run_id, call)
+    from majorana_agent import ToolResult
+
+    await store.finish_tool_call(
+        run_id,
+        ToolResult(
+            tool_call_id=call.tool_call_id,
+            name=call.name,
+            ok=True,
+            state=AgentState.PLANNED,
+        ),
+    )
+    await store.set_state(run_id, AgentState.EXECUTED)
+
+    class ReplaysOldCall:
+        async def next_tool(self, **_kwargs):
+            return call
+
+    runtime = AgentRuntime(
+        store=store,
+        broker=ToolBroker(
+            store=store,
+            policy=AgentPolicy(framework=Framework.QISKIT),
+            handlers={ToolName.REQUEST_PLAN: lambda *_args: None},
+        ),
+        model=ReplaysOldCall(),
+    )
+    assert await runtime.run(run_id) is AgentState.FAILED

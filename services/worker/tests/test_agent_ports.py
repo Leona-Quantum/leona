@@ -1,7 +1,7 @@
 from uuid import uuid4
 
 from majorana_agent import CandidateRevision, ExecutionEvidence
-from majorana_contracts.enums import Algorithm, Framework, VerifierDecision
+from majorana_contracts.enums import Algorithm, Framework, VerificationMethod, VerifierDecision
 from majorana_contracts.plan import Plan
 from majorana_frameworks import FrameworkProgram
 from majorana_llm import LLMResponse
@@ -140,3 +140,102 @@ async def test_openqasm_converter_never_uses_stdout_or_reexecutes():
     )
     assert qasm is None
     assert reason == "framework export unavailable"
+
+
+class RecordingSandbox:
+    provider = "recording"
+    environment_id = "recording:v1"
+
+    def __init__(self):
+        self.paths = []
+        self.calls = 0
+
+    async def _execute(self, spec):
+        self.paths.append(spec.protected_result_path)
+        self.calls += 1
+        return SandboxResult(
+            ok=True,
+            exit_code=0,
+            duration_ms=self.calls,
+            stdout="",
+            stderr="",
+            provider=self.provider,
+            protected_result={
+                "source_fingerprint": spec.source_fingerprint,
+                "result": {"counts": {"00": 1}},
+            },
+        )
+
+
+async def test_executor_uses_unique_sidecars_and_counts_repeat_duration():
+    plan = Plan.model_validate(
+        _plan().model_dump(mode="json")
+        | {"verification_plan": {"methods": [VerificationMethod.STATISTICAL]}}
+    )
+    sandbox = RecordingSandbox()
+    output = await SandboxCandidateExecutor(sandbox).run_candidate(_candidate(), plan)
+    assert len(set(sandbox.paths)) == 1  # one unique path reused only within this execution
+    assert sandbox.paths[0].startswith("/tmp/majorana-result-")
+    assert output.duration_ms == 3
+
+    await SandboxCandidateExecutor(sandbox).run_candidate(_candidate(), plan)
+    assert sandbox.paths[2] != sandbox.paths[0]
+
+
+def test_verifier_rejects_boolean_baseline_claim():
+    candidate = _candidate()
+    plan = Plan.model_validate(
+        _plan(expected_keys=["objective"]).model_dump(mode="json")
+        | {
+            "success_criteria": {"primary_metric": "objective"},
+            "verification_plan": {"methods": [VerificationMethod.BRUTE_FORCE]},
+        }
+    )
+    execution = _execution(
+        candidate,
+        result={
+            "objective": True,
+            "baseline_instance": {"kind": "maxcut", "edges": [[0, 1, 1.0]]},
+        },
+    )
+    checks = EvidenceVerifier(llm=MustNotRunLLM(), task_prompt="test")._deterministic_checks(
+        candidate, execution, plan
+    )
+    baseline = next(check for check in checks if check["method"] == "brute_force")
+    assert baseline["result"] == "fail"
+    assert baseline["details"] == {"error": "required evidence unavailable"}
+
+
+def test_verifier_respects_non_circuit_artifact_contract():
+    source = "RESULT = {'value': 1}\n"
+    candidate = CandidateRevision(
+        candidate_id=uuid4(),
+        run_id=uuid4(),
+        tool_call_id="simulate-other",
+        revision=1,
+        plan_id=uuid4(),
+        framework=Framework.QISKIT,
+        source=source,
+        source_fingerprint=FrameworkProgram(Framework.QISKIT, source).fingerprint,
+    )
+    plan = Plan.model_validate(
+        _plan(expected_keys=["value"]).model_dump(mode="json")
+        | {
+            "success_criteria": {"primary_metric": "value"},
+            "artifact_contract": {
+                "artifact_type": "other",
+                "measurement_policy": "not_applicable",
+                "top_level_execution": "required",
+            },
+        }
+    )
+    checks = EvidenceVerifier(llm=MustNotRunLLM(), task_prompt="test")._deterministic_checks(
+        candidate,
+        _execution(candidate, result={"value": 1}, observation={}),
+        plan,
+    )
+    assert next(check for check in checks if check["method"] == "structural")["result"] == "pass"
+    assert (
+        next(check for check in checks if check["method"] == "resource_contract")["result"]
+        == "pass"
+    )

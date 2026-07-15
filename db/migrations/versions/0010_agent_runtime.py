@@ -38,6 +38,7 @@ def upgrade() -> None:
             "'qasm_attempted','published','completed','failed','cancelled')",
             name="ck_agent_runs_state",
         ),
+        sa.UniqueConstraint("run_id", "plan_id", name="uq_agent_runs_run_plan"),
     )
     op.create_table(
         "agent_steps",
@@ -74,7 +75,7 @@ def upgrade() -> None:
         sa.Column("run_id", _UUID, sa.ForeignKey("runs.id", ondelete="CASCADE"), nullable=False),
         sa.Column("tool_call_id", sa.Text(), nullable=False),
         sa.Column("revision", sa.Integer(), nullable=False),
-        sa.Column("parent_candidate_id", _UUID, sa.ForeignKey("run_candidates.id")),
+        sa.Column("parent_candidate_id", _UUID),
         sa.Column("plan_id", _UUID, nullable=False),
         sa.Column("framework", sa.Text(), nullable=False),
         sa.Column("source", sa.Text(), nullable=False),
@@ -85,6 +86,18 @@ def upgrade() -> None:
         ),
         sa.UniqueConstraint("run_id", "revision", name="uq_run_candidates_revision"),
         sa.UniqueConstraint("run_id", "tool_call_id", name="uq_run_candidates_tool_call"),
+        sa.UniqueConstraint("run_id", "id", name="uq_run_candidates_run_id"),
+        sa.UniqueConstraint("id", "source_fingerprint", name="uq_run_candidates_id_fingerprint"),
+        sa.ForeignKeyConstraint(
+            ["run_id", "parent_candidate_id"],
+            ["run_candidates.run_id", "run_candidates.id"],
+            name="fk_run_candidates_parent_same_run",
+        ),
+        sa.ForeignKeyConstraint(
+            ["run_id", "plan_id"],
+            ["agent_runs.run_id", "agent_runs.plan_id"],
+            name="fk_run_candidates_plan_same_run",
+        ),
         sa.CheckConstraint("revision >= 1", name="ck_run_candidates_revision"),
         sa.CheckConstraint(
             "char_length(source) BETWEEN 1 AND 200000", name="ck_run_candidates_source_length"
@@ -104,13 +117,7 @@ def upgrade() -> None:
     op.create_table(
         "candidate_executions",
         sa.Column("id", _UUID, primary_key=True),
-        sa.Column(
-            "candidate_id",
-            _UUID,
-            sa.ForeignKey("run_candidates.id", ondelete="CASCADE"),
-            nullable=False,
-            unique=True,
-        ),
+        sa.Column("candidate_id", _UUID, nullable=False, unique=True),
         sa.Column("source_fingerprint", sa.Text(), nullable=False),
         sa.Column("environment_fingerprint", sa.Text(), nullable=False),
         sa.Column("sandbox_provider", sa.Text(), nullable=False),
@@ -130,23 +137,21 @@ def upgrade() -> None:
             "environment_fingerprint ~ '^[0-9a-f]{64}$'",
             name="ck_candidate_executions_environment_fingerprint",
         ),
+        sa.UniqueConstraint(
+            "id", "candidate_id", "source_fingerprint", name="uq_candidate_executions_chain"
+        ),
+        sa.ForeignKeyConstraint(
+            ["candidate_id", "source_fingerprint"],
+            ["run_candidates.id", "run_candidates.source_fingerprint"],
+            ondelete="CASCADE",
+            name="fk_candidate_executions_candidate_fingerprint",
+        ),
     )
     op.create_table(
         "candidate_verifications",
         sa.Column("id", _UUID, primary_key=True),
-        sa.Column(
-            "candidate_id",
-            _UUID,
-            sa.ForeignKey("run_candidates.id", ondelete="CASCADE"),
-            nullable=False,
-            unique=True,
-        ),
-        sa.Column(
-            "execution_id",
-            _UUID,
-            sa.ForeignKey("candidate_executions.id", ondelete="CASCADE"),
-            nullable=False,
-        ),
+        sa.Column("candidate_id", _UUID, nullable=False, unique=True),
+        sa.Column("execution_id", _UUID, nullable=False),
         sa.Column("source_fingerprint", sa.Text(), nullable=False),
         sa.Column("decision", sa.Text(), nullable=False),
         sa.Column(
@@ -164,15 +169,20 @@ def upgrade() -> None:
             "source_fingerprint ~ '^[0-9a-f]{64}$'",
             name="ck_candidate_verifications_fingerprint",
         ),
+        sa.ForeignKeyConstraint(
+            ["execution_id", "candidate_id", "source_fingerprint"],
+            [
+                "candidate_executions.id",
+                "candidate_executions.candidate_id",
+                "candidate_executions.source_fingerprint",
+            ],
+            ondelete="CASCADE",
+            name="fk_candidate_verifications_execution_chain",
+        ),
     )
     op.create_table(
         "candidate_conversions",
-        sa.Column(
-            "candidate_id",
-            _UUID,
-            sa.ForeignKey("run_candidates.id", ondelete="CASCADE"),
-            primary_key=True,
-        ),
+        sa.Column("candidate_id", _UUID, primary_key=True),
         sa.Column("source_fingerprint", sa.Text(), nullable=False),
         sa.Column("status", sa.Text(), nullable=False),
         sa.Column("qasm", sa.Text()),
@@ -186,6 +196,12 @@ def upgrade() -> None:
         sa.CheckConstraint(
             "source_fingerprint ~ '^[0-9a-f]{64}$'",
             name="ck_candidate_conversions_fingerprint",
+        ),
+        sa.ForeignKeyConstraint(
+            ["candidate_id", "source_fingerprint"],
+            ["run_candidates.id", "run_candidates.source_fingerprint"],
+            ondelete="CASCADE",
+            name="fk_candidate_conversions_candidate_fingerprint",
         ),
     )
     op.execute(

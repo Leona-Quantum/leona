@@ -10,6 +10,7 @@ from majorana_agent import (
     ToolCall,
     ToolName,
     VerificationOutput,
+    CandidateStatus,
 )
 from majorana_contracts.enums import (
     Algorithm,
@@ -177,3 +178,47 @@ async def test_simulate_resumes_same_candidate_after_partial_commit():
     resumed = await broker.dispatch(run_id, call)
     assert resumed.ok
     assert len(await store.list_candidates(run_id)) == 1
+
+
+class CrashAfterExecutionStore(MemoryAgentStore):
+    def __init__(self):
+        super().__init__()
+        self.crash_once = True
+
+    async def add_execution(self, evidence):
+        await super().add_execution(evidence)
+        if self.crash_once:
+            self.crash_once = False
+            raise RuntimeError("worker crashed after evidence commit")
+
+
+async def test_simulate_retry_reconciles_status_after_evidence_commit():
+    store = CrashAfterExecutionStore()
+    run_id = uuid4()
+    tools = CircuitToolset(
+        store=store,
+        framework=Framework.QISKIT,
+        planner=Planner(),
+        executor=Executor(),
+        verifier=Verifier(),
+        converter=Converter(),
+        publisher=Publisher(),
+    )
+    broker = ToolBroker(
+        store=store,
+        policy=AgentPolicy(framework=Framework.QISKIT),
+        handlers=tools.handlers(),
+    )
+    await broker.dispatch(run_id, ToolCall(tool_call_id="plan", name=ToolName.REQUEST_PLAN))
+    call = ToolCall(
+        tool_call_id="simulate",
+        name=ToolName.SIMULATE_QISKIT,
+        arguments={"source": "FINAL_CIRCUIT = object()\nRESULT = {'counts': {'0': 1}}"},
+    )
+    import pytest
+
+    with pytest.raises(RuntimeError, match="evidence commit"):
+        await broker.dispatch(run_id, call)
+    assert (await store.latest_candidate(run_id)).status is CandidateStatus.CREATED
+    assert (await broker.dispatch(run_id, call)).ok
+    assert (await store.latest_candidate(run_id)).status is CandidateStatus.EXECUTED

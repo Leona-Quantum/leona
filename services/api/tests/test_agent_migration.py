@@ -27,3 +27,13 @@ def test_agent_migration_declares_each_column_once(monkeypatch):
 
     assert list(tables["agent_steps"].columns).count(tables["agent_steps"].c.tool_call_id) == 1
     assert "tool_call_id" in tables["run_candidates"].c
+    constraint_names = {
+        constraint.name for table in tables.values() for constraint in table.constraints
+    }
+    assert {
+        "fk_run_candidates_parent_same_run",
+        "fk_run_candidates_plan_same_run",
+        "fk_candidate_executions_candidate_fingerprint",
+        "fk_candidate_verifications_execution_chain",
+        "fk_candidate_conversions_candidate_fingerprint",
+    } <= constraint_names

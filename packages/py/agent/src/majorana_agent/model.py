@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from hashlib import sha256
 from uuid import UUID
 
 from majorana_agent.models import (
@@ -15,7 +16,7 @@ from majorana_agent.models import (
 from majorana_agent.prompts import AGENT_SYSTEM_PROMPT
 from majorana_contracts.enums import Framework
 from majorana_llm import LLMClient, LLMRequest, model_for
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 
 class _SelectedTool(BaseModel):
@@ -153,7 +154,20 @@ class StructuredToolModel:
                 schema_name="agent_tool_call",
             )
         )
-        selected = _SelectedTool.model_validate_json(response.text)
-        if selected.name not in allowed:
-            raise ValueError(f"model selected disallowed tool {selected.name.value}")
+        try:
+            selected = _SelectedTool.model_validate_json(response.text)
+            if selected.name not in allowed:
+                raise ValueError(f"model selected disallowed tool {selected.name.value}")
+        except (ValidationError, ValueError) as exc:
+            # Route malformed provider output through the broker so it becomes
+            # bounded, durable policy feedback instead of aborting the run or
+            # retrying forever without consuming the step budget.
+            digest = sha256(
+                f"{run_id}:{state.value}:{len(history)}:{response.text}".encode()
+            ).hexdigest()[:32]
+            return ToolCall(
+                tool_call_id=f"invalid-selection-{digest}",
+                name=allowed[0],
+                arguments={"__model_selection_error__": str(exc)},
+            )
         return ToolCall.model_validate(selected.model_dump())

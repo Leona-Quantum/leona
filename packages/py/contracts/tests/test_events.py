@@ -178,7 +178,5 @@ def test_lossy_export_requires_reason():
 
 
 def test_legacy_stage_values_remain_parseable_for_stored_events():
-    assert Stage.PLAN.value == "plan"
-    assert Stage.SAVE.value == "save"
-    assert Stage.SIMULATE.value == "simulate"
-    assert Stage.EXPORT.value == "export"
+    for raw in ("plan", "save", "simulate", "export"):
+        assert Stage(raw).value == raw
