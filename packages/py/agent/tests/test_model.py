@@ -15,7 +15,8 @@ class FakeLLM:
         self.request = request
         return LLMResponse(
             text=self.text
-            or json.dumps(
+            if self.text is not None
+            else json.dumps(
                 {
                     "tool_call_id": "call-1",
                     "name": "simulate_qiskit",

@@ -246,7 +246,17 @@ async def append_run_event(
     # (uq_run_events_seq would reject the loser otherwise).
     run = await get_run(scope, session, run_id, for_update=True)
     if event_id is not None:
-        existing = await session.get(RunEvent, event_id)
+        existing = (
+            await session.execute(
+                select(RunEvent)
+                .join(Run, RunEvent.run_id == Run.id)
+                .where(
+                    RunEvent.id == event_id,
+                    RunEvent.run_id == run.id,
+                    Run.workspace_id == scope.workspace_id,
+                )
+            )
+        ).scalar_one_or_none()
         if existing is not None:
             if existing.run_id != run.id or existing.type != type or existing.payload != payload:
                 raise ValueError("run event idempotency key was reused with different content")

@@ -11,6 +11,7 @@ from sqlalchemy import func, select, update
 from ..db import AsyncSession
 from ..orm import (
     AgentRun,
+    AgentLLMCall,
     AgentStep,
     CandidateConversion,
     CandidateExecution,
@@ -105,6 +106,60 @@ async def list_steps(scope: Scope, session: AsyncSession, run_id: uuid.UUID) -> 
         .scalars()
         .all()
     )
+
+
+async def get_llm_call(
+    scope: Scope, session: AsyncSession, run_id: uuid.UUID, request_fingerprint: str
+) -> AgentLLMCall | None:
+    return (
+        await session.execute(
+            select(AgentLLMCall)
+            .join(Run, AgentLLMCall.run_id == Run.id)
+            .where(
+                AgentLLMCall.run_id == run_id,
+                AgentLLMCall.request_fingerprint == request_fingerprint,
+                Run.workspace_id == scope.workspace_id,
+            )
+        )
+    ).scalar_one_or_none()
+
+
+async def add_llm_call(
+    scope: Scope,
+    session: AsyncSession,
+    run_id: uuid.UUID,
+    *,
+    call_id: uuid.UUID,
+    request_fingerprint: str,
+    response: dict[str, Any],
+    duration_ms: int,
+) -> AgentLLMCall:
+    require_write(scope)
+    await _scoped_run(scope, session, run_id)
+    row = AgentLLMCall(
+        id=call_id,
+        run_id=run_id,
+        request_fingerprint=request_fingerprint,
+        response=response,
+        duration_ms=duration_ms,
+    )
+    session.add(row)
+    await session.flush()
+    return row
+
+
+async def mark_llm_call_metered(
+    scope: Scope, session: AsyncSession, run_id: uuid.UUID, call_id: uuid.UUID
+) -> None:
+    require_write(scope)
+    await _scoped_run(scope, session, run_id)
+    changed = await session.execute(
+        update(AgentLLMCall)
+        .where(AgentLLMCall.id == call_id, AgentLLMCall.run_id == run_id)
+        .values(metered=True, metered_at=func.now())
+    )
+    if changed.rowcount == 0:
+        raise NotFoundError("agent_llm_call")
 
 
 async def begin_step(

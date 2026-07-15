@@ -2,15 +2,18 @@
 
 from __future__ import annotations
 
-import time
+import hashlib
+import json
 import logging
-from uuid import UUID
+import time
+from uuid import UUID, uuid5
 
 from majorana_contracts import Scope
 from majorana_contracts.enums import Stage, UsageKind
 from majorana_llm import LLMClient, LLMRequest, LLMResponse
 
 from majorana_api.db import AsyncSession
+from majorana_api.repos import agent as agent_repo
 from majorana_api.repos import usage as usage_repo
 
 
@@ -40,9 +43,35 @@ class MeteredAgentLLM:
         self._run_id = run_id
 
     async def complete(self, request: LLMRequest, *, on_delta=None) -> LLMResponse:
-        started = time.monotonic()
-        response = await self._delegate.complete(request, on_delta=on_delta)
-        duration_ms = int((time.monotonic() - started) * 1000)
+        request_fingerprint = hashlib.sha256(
+            json.dumps(
+                request.model_dump(mode="json"), sort_keys=True, separators=(",", ":")
+            ).encode()
+        ).hexdigest()
+        call_id = uuid5(self._run_id, request_fingerprint)
+        stored = await agent_repo.get_llm_call(
+            self._scope, self._session, self._run_id, request_fingerprint
+        )
+        if stored is None:
+            started = time.monotonic()
+            response = await self._delegate.complete(request, on_delta=on_delta)
+            duration_ms = int((time.monotonic() - started) * 1000)
+            stored = await agent_repo.add_llm_call(
+                self._scope,
+                self._session,
+                self._run_id,
+                call_id=call_id,
+                request_fingerprint=request_fingerprint,
+                response=response.model_dump(mode="json"),
+                duration_ms=duration_ms,
+            )
+            # The response is the durable inbox for accounting retries.
+            await self._session.commit()
+        else:
+            response = LLMResponse.model_validate(stored.response)
+            duration_ms = stored.duration_ms
+        if stored.metered:
+            return response
         stage = _ROLE_STAGE.get(request.schema_name, Stage.GENERATE)
         try:
             await self._sink.emit(
@@ -54,6 +83,7 @@ class MeteredAgentLLM:
                     "output_tokens": response.output_tokens,
                     "duration_ms": duration_ms,
                 },
+                event_id=uuid5(call_id, "llm.call"),
             )
             await usage_repo.record_usage(
                 self._scope,
@@ -67,11 +97,14 @@ class MeteredAgentLLM:
                     "output_tokens": response.output_tokens,
                     "run_id": str(self._run_id),
                 },
+                event_id=uuid5(call_id, "usage"),
+            )
+            await agent_repo.mark_llm_call_metered(
+                self._scope, self._session, self._run_id, call_id
             )
             await self._session.commit()
         except Exception:
-            # The paid provider call already completed. Accounting failures are
-            # operational alerts, not a reason to issue the same request again.
             await self._session.rollback()
-            log.exception("LLM call succeeded but metering persistence failed")
+            log.exception("LLM response persisted but metering reconciliation failed")
+            raise
         return response

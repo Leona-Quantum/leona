@@ -70,6 +70,24 @@ def upgrade() -> None:
     )
     op.create_index("ix_agent_steps_run_created", "agent_steps", ["run_id", "created_at"])
     op.create_table(
+        "agent_llm_calls",
+        sa.Column("id", _UUID, primary_key=True),
+        sa.Column("run_id", _UUID, sa.ForeignKey("runs.id", ondelete="CASCADE"), nullable=False),
+        sa.Column("request_fingerprint", sa.Text(), nullable=False),
+        sa.Column("response", _JSON, nullable=False),
+        sa.Column("duration_ms", sa.Integer(), nullable=False),
+        sa.Column("metered", sa.Boolean(), nullable=False, server_default=sa.false()),
+        sa.Column(
+            "created_at", sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.func.now()
+        ),
+        sa.Column("metered_at", sa.TIMESTAMP(timezone=True)),
+        sa.UniqueConstraint("run_id", "request_fingerprint", name="uq_agent_llm_calls_request"),
+        sa.CheckConstraint("duration_ms >= 0", name="ck_agent_llm_calls_duration"),
+        sa.CheckConstraint(
+            "request_fingerprint ~ '^[0-9a-f]{64}$'", name="ck_agent_llm_calls_fingerprint"
+        ),
+    )
+    op.create_table(
         "run_candidates",
         sa.Column("id", _UUID, primary_key=True),
         sa.Column("run_id", _UUID, sa.ForeignKey("runs.id", ondelete="CASCADE"), nullable=False),
@@ -209,7 +227,7 @@ def upgrade() -> None:
         do $$ begin
             if exists (select 1 from pg_roles where rolname = 'app_rw') then
                 grant select, insert, update, delete on
-                    agent_runs, agent_steps, run_candidates, candidate_executions,
+                    agent_runs, agent_steps, agent_llm_calls, run_candidates, candidate_executions,
                     candidate_verifications, candidate_conversions to app_rw;
             end if;
         end $$;
@@ -223,6 +241,7 @@ def downgrade() -> None:
     op.drop_table("candidate_executions")
     op.drop_index("ix_run_candidates_run", table_name="run_candidates")
     op.drop_table("run_candidates")
+    op.drop_table("agent_llm_calls")
     op.drop_index("ix_agent_steps_run_created", table_name="agent_steps")
     op.drop_table("agent_steps")
     op.drop_table("agent_runs")

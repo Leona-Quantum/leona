@@ -203,6 +203,20 @@ class AgentStep(Base):
     completed_at: Mapped[dt.datetime | None]
 
 
+class AgentLLMCall(Base):
+    __tablename__ = "agent_llm_calls"
+    __table_args__ = (UniqueConstraint("run_id", "request_fingerprint"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True)
+    run_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("runs.id"))
+    request_fingerprint: Mapped[str]
+    response: Mapped[dict[str, Any]]
+    duration_ms: Mapped[int] = mapped_column(Integer)
+    metered: Mapped[bool] = mapped_column(server_default=text("false"))
+    created_at: Mapped[dt.datetime | None] = mapped_column(server_default=func.now())
+    metered_at: Mapped[dt.datetime | None]
+
+
 class RunCandidate(Base):
     __tablename__ = "run_candidates"
     __table_args__ = (
