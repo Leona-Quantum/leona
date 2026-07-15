@@ -147,7 +147,7 @@ def main() -> None:
                 "insert into runs (id, workspace_id, user_id, conversation_id, artifact_version_id, task_prompt,"
                 " mode, status, framework, seed, shots, timeout_s, sandbox_provider,"
                 " sandbox_meta, verifier_decision, started_at, finished_at, created_at)"
-                " values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
+                " values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
                 (
                     run_id,
                     ws,
