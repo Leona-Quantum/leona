@@ -119,10 +119,7 @@ export function RunWorkspace({ demoMode = false }: { demoMode?: boolean } = {}) 
           <header className="mj-run-home-heading">
             <div className="mj-run-home-identity">
               <span className="mj-run-home-mark"><BrandMark size={18} /></span>
-              <div className="mj-run-home-status" aria-label="Model status">
-                <span className="mj-status-dot" aria-hidden="true" />
-                {demoMode ? "Public preview · view-only" : "DeepSeek · ready"}
-              </div>
+              <span className="mj-run-home-wordmark">LeonaQ</span>
             </div>
             <h1>What are you working on?</h1>
             <p>Describe a quantum problem, paste code to review, or continue from a saved artifact.</p>

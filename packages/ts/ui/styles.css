@@ -2023,17 +2023,21 @@
   color: var(--text-0);
   background: var(--bg-1);
 }
+.mj-run-home-wordmark {
+  color: var(--text-0);
+  font-size: var(--fs-14);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
 .mj-run-home-status {
   display: inline-flex;
   align-items: center;
   gap: var(--sp-2);
-  padding: 0;
-  border: 0;
+  padding: var(--sp-2) var(--sp-3);
+  border: 1px solid var(--border-0);
+  border-radius: var(--radius-control);
   color: var(--text-1);
-  font-family: var(--font-mono);
   font-size: var(--fs-12);
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
   white-space: nowrap;
 }
 .mj-status-dot {
