@@ -77,9 +77,11 @@ def test_qiskit_interchange_is_optional_observation(monkeypatch):
     namespace = {}
     exec(program.source, namespace)
     observation = {}
+    observer_scope = {"_majorana_namespace": namespace, "_majorana_observation": observation}
+    exec(program.trusted_setup(circuit_expected=True), observer_scope)
     exec(
         program.trusted_observer(circuit_expected=True),
-        {"_majorana_namespace": namespace, "_majorana_observation": observation},
+        observer_scope,
     )
 
     extraction = extract_interchange_qasm(observation)
@@ -137,8 +139,14 @@ def test_pennylane_measurements_are_not_counted_as_gates():
         measurements = [ExpectationMP()]
         wires = (0, 1)
 
-    program = FrameworkProgram(Framework.PENNYLANE, "FINAL_CIRCUIT = tape\n")
-    namespace = {"tape": Tape()}
+        def __bool__(self):
+            return False
+
+    class QNode:
+        tape = Tape()
+
+    program = FrameworkProgram(Framework.PENNYLANE, "FINAL_CIRCUIT = qnode\n")
+    namespace = {"qnode": QNode()}
     exec(program.source, namespace)
     observation = {}
     exec(

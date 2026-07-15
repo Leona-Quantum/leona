@@ -323,11 +323,13 @@ def build_stage_handlers(
         program: FrameworkProgram = ctx.state[program_key]
         protected_result_path = f"/tmp/.majorana-observation-{uuid.uuid4().hex}.json"
         trusted_observer = program.trusted_observer(circuit_expected=_circuit_expected(plan))
+        trusted_setup = program.trusted_setup(circuit_expected=_circuit_expected(plan))
         epilogue_applied = bool(trusted_observer)
         spec = ExecutionSpec(
             code=program.source,
             timeout_s=min(plan.expected_runtime_sec, 120),
             qubits_estimate=plan.qubits_estimate,
+            trusted_setup=trusted_setup,
             trusted_observer=trusted_observer,
             protected_result_path=protected_result_path if epilogue_applied else None,
         )

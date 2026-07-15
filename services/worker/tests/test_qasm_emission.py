@@ -22,6 +22,8 @@ def _install_fake_qiskit(monkeypatch, dumps) -> None:
     qiskit = ModuleType("qiskit")
     qasm3 = ModuleType("qiskit.qasm3")
     qasm3.dumps = dumps
+    qiskit.__path__ = []
+    qiskit.qasm3 = qasm3
     monkeypatch.setitem(sys.modules, "qiskit", qiskit)
     monkeypatch.setitem(sys.modules, "qiskit.qasm3", qasm3)
 
@@ -30,6 +32,8 @@ def test_owned_qiskit_epilogue_returns_protected_final_circuit(monkeypatch, caps
     expected_qasm = "OPENQASM 3.0;\nqubit q;\nh q;"
     _install_fake_qiskit(monkeypatch, lambda circuit: expected_qasm)
     code = """import json
+import qiskit.qasm3
+qiskit.qasm3.dumps = lambda circuit: "FORGED"
 class Instruction:
     qubits = (0, 1)
 class Circuit:
@@ -48,6 +52,7 @@ print(json.dumps({"counts": {"0": 1}}))
         compose_execution(
             ExecutionSpec(
                 code=program.source,
+                trusted_setup=program.trusted_setup(circuit_expected=True),
                 trusted_observer=program.trusted_observer(circuit_expected=True),
                 protected_result_path=str(result_path),
             )
@@ -83,6 +88,7 @@ print(json.dumps({"counts": {"1": 1}}))
         compose_execution(
             ExecutionSpec(
                 code=program.source,
+                trusted_setup=program.trusted_setup(circuit_expected=True),
                 trusted_observer=program.trusted_observer(circuit_expected=True),
                 protected_result_path=str(result_path),
             )
@@ -113,6 +119,7 @@ print(json.dumps({"counts": {"0": 1}}))
         compose_execution(
             ExecutionSpec(
                 code=program.source,
+                trusted_setup=program.trusted_setup(circuit_expected=True),
                 trusted_observer=program.trusted_observer(circuit_expected=True),
                 protected_result_path=str(result_path),
             )

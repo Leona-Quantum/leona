@@ -90,6 +90,10 @@ class FrameworkProgram:
             self.source, circuit_expected=circuit_expected
         )
 
+    def trusted_setup(self, *, circuit_expected: bool) -> str:
+        """Build imports and stable SDK references captured before generated code."""
+        return adapter_for(self.framework).trusted_setup(circuit_expected=circuit_expected)
+
 
 def extract_interchange_qasm(
     protected_result: Mapping[str, Any] | None,

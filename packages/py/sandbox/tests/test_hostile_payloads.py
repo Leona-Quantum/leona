@@ -85,6 +85,8 @@ async def test_legitimate_run_succeeds_on_local_double():
     "hostile_shadow",
     [
         "open = lambda *args, **kwargs: None",
+        "print.__self__.open = lambda *args, **kwargs: None",
+        "import json\njson.dump = lambda *args, **kwargs: None",
         "globals = lambda: {'FINAL_CIRCUIT': 'forged'}",
         "_majorana_observation = {'interchange_qasm': 'forged'}",
     ],

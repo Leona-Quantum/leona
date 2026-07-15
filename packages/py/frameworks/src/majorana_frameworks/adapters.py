@@ -40,6 +40,8 @@ class FrameworkAdapter(Protocol):
         observation: dict[str, Any] | None = None,
     ) -> ResourceMetrics: ...
 
+    def trusted_setup(self, *, circuit_expected: bool) -> str: ...
+
     def trusted_observer(self, source: str, *, circuit_expected: bool) -> str: ...
 
 
@@ -148,6 +150,9 @@ class PythonFrameworkAdapter:
             estimated_runtime_ms=expected_runtime_sec * 1000,
         )
 
+    def trusted_setup(self, *, circuit_expected: bool) -> str:
+        return ""
+
     def trusted_observer(self, source: str, *, circuit_expected: bool) -> str:
         if not circuit_expected:
             return ""
@@ -171,7 +176,11 @@ if _majorana_final_circuit is not None:
             _majorana_qubits = len(_majorana_final_circuit.all_qubits())
             _majorana_depth = len(_majorana_final_circuit)
         else:
-            _majorana_tape = getattr(_majorana_final_circuit, "tape", None) or getattr(_majorana_final_circuit, "_tape", None) or _majorana_final_circuit
+            _majorana_tape = getattr(_majorana_final_circuit, "tape", None)
+            if _majorana_tape is None:
+                _majorana_tape = getattr(_majorana_final_circuit, "_tape", None)
+            if _majorana_tape is None:
+                _majorana_tape = _majorana_final_circuit
             _majorana_operations = list(getattr(_majorana_tape, "operations", []))
             _majorana_measurements = list(getattr(_majorana_tape, "measurements", []))
             _majorana_gate_operations = _majorana_operations
@@ -190,6 +199,16 @@ if _majorana_final_circuit is not None:
 
 
 class QiskitAdapter(PythonFrameworkAdapter):
+    def trusted_setup(self, *, circuit_expected: bool) -> str:
+        if not circuit_expected:
+            return ""
+        return """_majorana_interchange_dumps = None
+try:
+    from qiskit.qasm3 import dumps as _majorana_interchange_dumps
+except Exception:
+    pass
+"""
+
     def trusted_observer(self, source: str, *, circuit_expected: bool) -> str:
         if not circuit_expected:
             return ""
@@ -200,8 +219,8 @@ _majorana_observation["native_optimization"] = {{"applied": {optimized_literal}}
 _majorana_final_circuit = _majorana_namespace.get("FINAL_CIRCUIT")
 if _majorana_final_circuit is not None:
     try:
-        from qiskit.qasm3 import dumps as _majorana_interchange_dumps
-        _majorana_observation["interchange_qasm"] = _majorana_interchange_dumps(_majorana_final_circuit)
+        if _majorana_interchange_dumps is not None:
+            _majorana_observation["interchange_qasm"] = _majorana_interchange_dumps(_majorana_final_circuit)
     except Exception as _majorana_interchange_exc:
         _majorana_observation["interchange_error"] = type(_majorana_interchange_exc).__name__
     try:
