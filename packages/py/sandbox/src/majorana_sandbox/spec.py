@@ -4,6 +4,10 @@ from the plan's resource estimate), so an over-budget run never consumes a sandb
 
 from __future__ import annotations
 
+import json
+import textwrap
+from typing import Any
+
 from pydantic import BaseModel, Field
 
 # 05-security.md §1 caps for the default lane.
@@ -27,6 +31,9 @@ class ExecutionSpec(BaseModel):
         description="From the plan; checked against the lane ceiling pre-dispatch",
     )
     qubit_ceiling: int = Field(default=DEFAULT_QUBIT_CEILING, ge=1)
+    trusted_setup: str = ""
+    trusted_observer: str = ""
+    protected_result_path: str | None = None
 
 
 class SandboxResult(BaseModel):
@@ -41,6 +48,7 @@ class SandboxResult(BaseModel):
     stderr: str
     truncated: bool = False
     provider: str
+    protected_result: dict[str, Any] | None = None
 
 
 class QubitCeilingExceeded(ValueError):
@@ -57,3 +65,51 @@ def preflight(spec: ExecutionSpec) -> None:
             f"{spec.qubit_ceiling}-qubit default-lane ceiling; the Modal heavy lane "
             "is not yet enabled (build the routing seam, not the lane — AD-12)"
         )
+
+
+def parse_protected_result(raw: bytes | None) -> dict[str, Any] | None:
+    """Decode a bounded provider-read sidecar; malformed optional data is ignored."""
+    if raw is None or len(raw) > MAX_OUTPUT_BYTES:
+        return None
+    try:
+        value = json.loads(raw)
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        return None
+    return value if isinstance(value, dict) else None
+
+
+def compose_execution(spec: ExecutionSpec) -> str:
+    """Wrap generated code with provider-owned observation and serialization."""
+    if not spec.trusted_observer or spec.protected_result_path is None:
+        return spec.code
+    setup = textwrap.indent(spec.trusted_setup.strip(), "    ")
+    observer = textwrap.indent(spec.trusted_observer.strip(), "    ")
+    return f"""def _majorana_host_run():
+    import builtins as _majorana_builtins
+    import json as _majorana_json
+    _majorana_open = _majorana_builtins.open
+    _majorana_json_dump = _majorana_json.dump
+    _majorana_exception = _majorana_builtins.Exception
+    _majorana_getattr = _majorana_builtins.getattr
+    _majorana_hasattr = _majorana_builtins.hasattr
+    _majorana_int = _majorana_builtins.int
+    _majorana_len = _majorana_builtins.len
+    _majorana_list = _majorana_builtins.list
+    _majorana_str = _majorana_builtins.str
+    _majorana_sum = _majorana_builtins.sum
+    _majorana_type = _majorana_builtins.type
+    _majorana_namespace = {{"__name__": "__main__"}}
+    _majorana_observation = {{}}
+{setup}
+    _majorana_builtins.exec(
+        _majorana_builtins.compile({spec.code!r}, "<majorana-generated>", "exec"),
+        _majorana_namespace,
+    )
+{observer}
+    with _majorana_open(
+        {spec.protected_result_path!r}, "w", encoding="utf-8"
+    ) as _majorana_result_file:
+        _majorana_json_dump(_majorana_observation, _majorana_result_file)
+
+_majorana_host_run()
+"""

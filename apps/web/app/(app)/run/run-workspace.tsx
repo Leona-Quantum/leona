@@ -2,17 +2,27 @@
 
 import type { FormEvent } from "react";
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { rememberChat } from "../../../lib/chat-history";
 import { getLibraryArtifact, type LibraryArtifact } from "../../../lib/library-data";
 import type { PublicLocale } from "../../../lib/public-locale";
 import { WORKSPACE_COPY } from "../../../lib/workspace-locale";
-import { RunComposer } from "../../../components/run-composer";
+import {
+  canSubmitAfterArtifactHydration,
+  hydrateArtifactFramework,
+  type ArtifactFrameworkHydration,
+} from "../../../lib/framework-selection";
+import { RunComposer, type ComposerFramework } from "../../../components/run-composer";
 
 export function RunWorkspace({ demoMode = false, locale = "en" }: { demoMode?: boolean; locale?: PublicLocale } = {}) {
   const copy = WORKSPACE_COPY[locale].run;
   const router = useRouter();
   const [prompt, setPrompt] = useState("");
+  const [framework, setFramework] = useState<ComposerFramework>("qiskit");
+  const [artifactHydration, setArtifactHydration] =
+    useState<ArtifactFrameworkHydration>("checking");
+  const frameworkCurrent = useRef<ComposerFramework>("qiskit");
+  const frameworkTouched = useRef(false);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [contextArtifact, setContextArtifact] = useState<LibraryArtifact | null>(null);
@@ -20,7 +30,11 @@ export function RunWorkspace({ demoMode = false, locale = "en" }: { demoMode?: b
   useEffect(() => {
     let active = true;
     const artifactId = new URLSearchParams(window.location.search).get("artifact");
-    if (!artifactId) return () => { active = false; };
+    if (!artifactId) {
+      setArtifactHydration("idle");
+      return () => { active = false; };
+    }
+    setArtifactHydration("loading");
     const selectedArtifactId = artifactId;
 
     async function loadContext() {
@@ -57,10 +71,27 @@ export function RunWorkspace({ demoMode = false, locale = "en" }: { demoMode?: b
       }
       if (!active) return;
       setContextArtifact(artifact);
+      const hydrated = hydrateArtifactFramework(
+        frameworkCurrent.current,
+        frameworkTouched.current,
+        artifact.framework,
+      );
+      if (hydrated.error) {
+        setError(hydrated.error);
+        setArtifactHydration("error");
+        return;
+      }
+      frameworkCurrent.current = hydrated.framework;
+      setFramework(hydrated.framework);
+      setArtifactHydration("ready");
       setPrompt(`Use the saved Library artifact “${artifact.title}” as context for my next question.`);
     }
 
-    void loadContext().catch(() => undefined);
+    void loadContext().catch(() => {
+      if (!active) return;
+      setError("Artifact context unavailable");
+      setArtifactHydration("error");
+    });
     return () => { active = false; };
   }, []);
 
@@ -68,6 +99,14 @@ export function RunWorkspace({ demoMode = false, locale = "en" }: { demoMode?: b
     event.preventDefault();
     const taskPrompt = prompt.trim();
     if (!taskPrompt || pending) return;
+    if (!canSubmitAfterArtifactHydration(artifactHydration)) {
+      setError(
+        artifactHydration === "error"
+          ? "Resolve the artifact context error before submitting."
+          : "Wait for the artifact framework to finish loading.",
+      );
+      return;
+    }
     if (demoMode) {
       setError("Public preview mode is view-only. Sign in to start a real run.");
       return;
@@ -83,6 +122,8 @@ export function RunWorkspace({ demoMode = false, locale = "en" }: { demoMode?: b
         },
         body: JSON.stringify({
           task_prompt: taskPrompt,
+          mode: "execute",
+          framework,
         }),
       });
       const payload = (await response.json()) as { id?: string; conversation_id?: string; detail?: string; error?: string };
@@ -124,6 +165,12 @@ export function RunWorkspace({ demoMode = false, locale = "en" }: { demoMode?: b
             pending={pending}
             error={error}
             onChange={setPrompt}
+            framework={framework}
+            onFrameworkChange={(value) => {
+              frameworkTouched.current = true;
+              frameworkCurrent.current = value;
+              setFramework(value);
+            }}
             onSubmit={submit}
             centered
             contextArtifact={contextArtifact ? { title: contextArtifact.title, framework: contextArtifact.framework, codeAvailable: Boolean(contextArtifact.code) } : null}
@@ -131,6 +178,13 @@ export function RunWorkspace({ demoMode = false, locale = "en" }: { demoMode?: b
             onAttach={() => setError(locale === "ja" ? "添付はまだ利用できません。コードやコンテキストを問いに貼り付けてください。" : "Attachments are not enabled yet; paste code or context into the prompt.")}
             locale={locale}
           />
+
+          {artifactHydration === "checking" || artifactHydration === "loading" ? (
+            <p className="mj-run-context-link" role="status">Loading artifact context…</p>
+          ) : null}
+          {artifactHydration === "error" ? (
+            <p className="mj-run-context-link" role="alert">Artifact context could not be loaded.</p>
+          ) : null}
 
           {contextArtifact ? <a className="mj-run-context-link" href={demoMode ? "/demo?view=library" : `/library/${contextArtifact.id}`}>{copy.contextLabel}: {contextArtifact.title} · {copy.viewArtifact}</a> : null}
 

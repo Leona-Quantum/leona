@@ -8,6 +8,7 @@ dependencies = [
     "majorana-pipeline",
     "majorana-llm",
     "majorana-sandbox[vercel]",
+    "majorana-frameworks",
     "majorana-openqasm",
     "majorana-verification",
     "majorana-baselines",
@@ -21,6 +22,7 @@ majorana-api = { workspace = true }
 majorana-pipeline = { workspace = true }
 majorana-llm = { workspace = true }
 majorana-sandbox = { workspace = true }
+majorana-frameworks = { workspace = true }
 majorana-openqasm = { workspace = true }
 majorana-verification = { workspace = true }
 majorana-baselines = { workspace = true }

@@ -13,16 +13,16 @@ research pack (Coda conversation → `Codex/2026-07-11` distillation), adopted
   GHZ results — do not invent them).
 - `nameko_verification_ai_context.md` — compact drop-in prompt for agents working
   on Nameko verification behavior (feeds the Phase-3 chat-surface prompts).
-- `statistical-counts-check.md` — the math behind the engine's headless
-  `statistical` method (`majorana_verification.counts_vs_ideal`).
+- `statistical-counts-check.md` — the framework-native re-execution contract behind
+  the pipeline's headless `statistical` method.
 
 How this maps to the engine today (`packages/py/verification`):
 
 | Playbook concept | Engine primitive |
 |---|---|
-| Direct simulation (Tier 1 evidence, ≤ ~20 qubits) | `simulate_statevector`, `counts_vs_ideal` |
-| Statistical/marginal checks over counts | `verify_statistical_counts` |
-| Syntax and semantic parseability | `verify_qasm_parse` through the Qiskit OpenQASM importer |
+| Framework-native reproducibility | `verify_statistical_counts_pair` over two sandbox executions |
+| Direct simulation for explicit conversion checks | `simulate_statevector`, `counts_vs_ideal` |
+| OpenQASM interchange parseability | `verify_qasm_parse` (conversion paths only) |
 | Independent classical reference | `verify_exact_diag`, `verify_brute_force` |
 | Structural contract | `verify_return_contract` |
 | Exact unitary equivalence (needs a reference circuit) | `verify_exact` (chat surface only, not headless) |

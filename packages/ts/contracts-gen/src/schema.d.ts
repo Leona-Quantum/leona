@@ -153,7 +153,7 @@ export interface components {
             export_status: components["schemas"]["ExportStatus"];
             /**
              * Fingerprint
-             * @description Unique per artifact; dedupes identical versions
+             * @description Digest of the framework and normalized selected-framework source; identical source may share a fingerprint across artifact versions
              */
             fingerprint: string;
             /**
@@ -175,7 +175,7 @@ export interface components {
             limitations: string | null;
             /**
              * Metadata
-             * @description Provenance and legacy migration data; never the canonical circuit source
+             * @description Canonical-source role, provenance, and legacy migration data
              * @default null
              */
             metadata: {
@@ -183,13 +183,13 @@ export interface components {
             } | null;
             /**
              * Qasm
-             * @description Canonical circuit source of truth
+             * @description Optional normalized OpenQASM interchange for framework conversion
              * @default null
              */
             qasm: string | null;
             /**
              * Qasm Version
-             * @description OpenQASM language version; 3.0 for new circuit artifacts
+             * @description Optional OpenQASM interchange version
              * @default null
              */
             qasm_version: "3.0" | null;
@@ -435,7 +435,7 @@ export interface components {
         };
         /**
          * CodeVariant
-         * @description A deterministic, copyable framework rendering of the verified circuit.
+         * @description A deterministic, copyable selected-framework source variant.
          */
         CodeVariant: {
             /** Code */
@@ -713,10 +713,10 @@ export interface components {
         };
         /**
          * QasmEmission
-         * @description Provenance for the OpenQASM payload recovered from sandbox stdout.
+         * @description Provenance for optional OpenQASM interchange from a protected sandbox result.
          *
          *     ``sandbox_epilogue`` is Majorana's observed serialization of ``FINAL_CIRCUIT``;
-         *     ``model_stdout`` is a compatibility fallback and is not equivalent evidence.
+         *     ``model_stdout`` is retained only for replaying legacy events.
          */
         QasmEmission: {
             /** Available */
@@ -817,7 +817,7 @@ export interface components {
         };
         /**
          * ResourceMetrics
-         * @description Comparable circuit-resource measurements recorded before and after compilation.
+         * @description Comparable circuit-resource measurements for selected-framework source.
          */
         ResourceMetrics: {
             /**

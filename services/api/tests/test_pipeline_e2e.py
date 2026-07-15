@@ -18,9 +18,9 @@ import uuid
 import httpx
 import pytest
 from majorana_contracts import Scope
-from majorana_contracts.enums import Role
+from majorana_contracts.enums import Framework, Role
+from majorana_frameworks import FrameworkProgram
 from majorana_llm import LLMClient, default_llm
-from majorana_openqasm import fingerprint
 from majorana_pipeline import STAGE_ORDER
 from majorana_sandbox import LocalSubprocessSandbox
 
@@ -182,7 +182,9 @@ async def test_run_executes_end_to_end_with_real_stages(env):
     assert version.export_status == "lossless"
     assert version.qasm_version == "3.0"
     assert version.qasm and version.qasm.startswith("OPENQASM 3.0;")
-    assert fingerprint(version.qasm) == version.fingerprint
+    assert version.fingerprint == FrameworkProgram(Framework.QISKIT, version.code).fingerprint
+    assert version.metadata["canonical_representation"] == "framework_code"
+    assert version.metadata["openqasm_role"] == "interchange"
 
     # SSE replay of the stored run: same rows, same order.
     async with client.stream("GET", f"/v1/runs/{run['id']}/events/stream") as stream:

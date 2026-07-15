@@ -310,7 +310,7 @@
             "$ref": "#/components/schemas/ExportStatus"
           },
           "fingerprint": {
-            "description": "Unique per artifact; dedupes identical versions",
+            "description": "Digest of the framework and normalized selected-framework source; identical source may share a fingerprint across artifact versions",
             "title": "Fingerprint",
             "type": "string"
           },
@@ -357,7 +357,7 @@
               }
             ],
             "default": null,
-            "description": "Provenance and legacy migration data; never the canonical circuit source",
+            "description": "Canonical-source role, provenance, and legacy migration data",
             "title": "Metadata"
           },
           "qasm": {
@@ -370,7 +370,7 @@
               }
             ],
             "default": null,
-            "description": "Canonical circuit source of truth",
+            "description": "Optional normalized OpenQASM interchange for framework conversion",
             "title": "Qasm"
           },
           "qasm_version": {
@@ -384,7 +384,7 @@
               }
             ],
             "default": null,
-            "description": "OpenQASM language version; 3.0 for new circuit artifacts",
+            "description": "Optional OpenQASM interchange version",
             "title": "Qasm Version"
           },
           "resource_estimates": {
@@ -849,7 +849,7 @@
       },
       "CodeVariant": {
         "additionalProperties": false,
-        "description": "A deterministic, copyable framework rendering of the verified circuit.",
+        "description": "A deterministic, copyable selected-framework source variant.",
         "properties": {
           "code": {
             "title": "Code",
@@ -1421,7 +1421,7 @@
       },
       "QasmEmission": {
         "additionalProperties": false,
-        "description": "Provenance for the OpenQASM payload recovered from sandbox stdout.\n\n``sandbox_epilogue`` is Majorana's observed serialization of ``FINAL_CIRCUIT``;\n``model_stdout`` is a compatibility fallback and is not equivalent evidence.",
+        "description": "Provenance for optional OpenQASM interchange from a protected sandbox result.\n\n``sandbox_epilogue`` is Majorana's observed serialization of ``FINAL_CIRCUIT``;\n``model_stdout`` is retained only for replaying legacy events.",
         "properties": {
           "available": {
             "title": "Available",
@@ -1621,7 +1621,7 @@
       },
       "ResourceMetrics": {
         "additionalProperties": false,
-        "description": "Comparable circuit-resource measurements recorded before and after compilation.",
+        "description": "Comparable circuit-resource measurements for selected-framework source.",
         "properties": {
           "depth": {
             "anyOf": [

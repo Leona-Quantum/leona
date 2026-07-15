@@ -96,16 +96,24 @@ class ArtifactVersion(_ResourceBase):
     artifact_id: UUID
     seq: int = Field(ge=1)
     qasm_version: Literal["3.0"] | None = Field(
-        default=None, description="OpenQASM language version; 3.0 for new circuit artifacts"
+        default=None, description="Optional OpenQASM interchange version"
     )
-    qasm: str | None = Field(default=None, description="Canonical circuit source of truth")
+    qasm: str | None = Field(
+        default=None,
+        description="Optional normalized OpenQASM interchange for framework conversion",
+    )
     metadata: dict[str, Any] | None = Field(
         default=None,
-        description="Provenance and legacy migration data; never the canonical circuit source",
+        description="Canonical-source role, provenance, and legacy migration data",
     )
     code: str
     code_lang: str
-    fingerprint: str = Field(description="Unique per artifact; dedupes identical versions")
+    fingerprint: str = Field(
+        description=(
+            "Digest of the framework and normalized selected-framework source; "
+            "identical source may share a fingerprint across artifact versions"
+        )
+    )
     export_status: ExportStatus
     export_reason: str | None = None
     framework_variants: dict[str, str] | None = None
@@ -124,7 +132,7 @@ class ArtifactVersion(_ResourceBase):
 
 
 class ResourceMetrics(_ResourceBase):
-    """Comparable circuit-resource measurements recorded before and after compilation."""
+    """Comparable circuit-resource measurements for selected-framework source."""
 
     qubits: int = Field(ge=0)
     depth: int | None = Field(default=None, ge=0)

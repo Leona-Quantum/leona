@@ -1,11 +1,9 @@
 "use client";
 
 import type { FormEvent } from "react";
-import { PaperclipIcon } from "./icons";
+import { ChevronIcon, PaperclipIcon } from "./icons";
 import type { PublicLocale } from "../lib/public-locale";
 
-// Kept as shared vocabulary for Studio's explicit execution controls. The chat
-// composer intentionally exposes neither of these controls to the user.
 export type ComposerMode = "execute" | "ideate" | "explain";
 export type ComposerFramework = "qiskit" | "pennylane" | "cirq";
 
@@ -18,6 +16,8 @@ export function RunComposer({
   onAttach,
   contextArtifact,
   onClearContext,
+  framework,
+  onFrameworkChange,
   centered = false,
   locale = "en",
 }: {
@@ -29,6 +29,8 @@ export function RunComposer({
   onAttach?: () => void;
   contextArtifact?: { title: string; framework: string; codeAvailable: boolean } | null;
   onClearContext?: () => void;
+  framework?: ComposerFramework;
+  onFrameworkChange?: (framework: ComposerFramework) => void;
   centered?: boolean;
   locale?: PublicLocale;
 }) {
@@ -42,6 +44,7 @@ export function RunComposer({
         codeAttached: "コードを添付済み",
         removeContext: "コンテキストを外す",
         hint: "Markdown · LaTeX",
+        framework: "回路フレームワーク",
       }
     : {
         task: "Message",
@@ -52,6 +55,7 @@ export function RunComposer({
         codeAttached: "code attached",
         removeContext: "Remove context",
         hint: "Markdown · LaTeX",
+        framework: "Circuit framework",
       };
 
   return (
@@ -91,6 +95,22 @@ export function RunComposer({
             <button className="mj-icon-button" type="button" aria-label={labels.attach} title={labels.attach} onClick={onAttach}>
               <PaperclipIcon size={16} />
             </button>
+            {framework && onFrameworkChange ? (
+              <label className="mj-composer-select">
+                <span className="sr-only">{labels.framework}</span>
+                <select
+                  aria-label={labels.framework}
+                  value={framework}
+                  disabled={pending}
+                  onChange={(event) => onFrameworkChange(event.target.value as ComposerFramework)}
+                >
+                  <option value="qiskit">Qiskit</option>
+                  <option value="cirq">Cirq</option>
+                  <option value="pennylane">PennyLane</option>
+                </select>
+                <ChevronIcon size={12} />
+              </label>
+            ) : null}
             <span className="mj-composer-model">{labels.hint}</span>
           </div>
           <div className="mj-composer-right">

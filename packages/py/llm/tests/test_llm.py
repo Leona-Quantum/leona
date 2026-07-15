@@ -9,8 +9,6 @@ from majorana_llm import (
     StageOutputError,
     endpoint_for,
     extract_code,
-    extract_qasm,
-    extract_qasm_with_provenance,
     model_for,
     parse_analysis,
     parse_plan,
@@ -79,13 +77,13 @@ def test_endpoint_routing_by_model_prefix(monkeypatch):
     assert base is None and key_env == "OPENAI_API_KEY"
 
 
-def test_plan_prompt_encodes_qiskit_default_and_openqasm_contract():
+def test_plan_prompt_encodes_framework_native_contract():
     assert "Default framework is Qiskit" in PLAN_SYSTEM_PROMPT
     assert "never switch" in PLAN_SYSTEM_PROMPT.lower() or "never a silent" in PLAN_SYSTEM_PROMPT
-    assert "OpenQASM 3 is the canonical circuit representation" in PLAN_SYSTEM_PROMPT
+    assert "selected framework's executable Python source is the canonical" in PLAN_SYSTEM_PROMPT
     assert "resource estimate" in PLAN_SYSTEM_PROMPT
     assert "control plane" in GENERATE_SYSTEM_PROMPT
-    assert "OpenQASM 2" in GENERATE_SYSTEM_PROMPT
+    assert "OpenQASM must not become the user-facing result" in GENERATE_SYSTEM_PROMPT
     # oracle/search endianness directive: little-endian convention + loud self-check,
     # so an endianness bug fails in the sandbox instead of returning a bit-reversed answer.
     assert "little-endian" in GENERATE_SYSTEM_PROMPT
@@ -94,7 +92,7 @@ def test_plan_prompt_encodes_qiskit_default_and_openqasm_contract():
 
 def test_v2_prompt_deltas_present():
     # v2 port (Nameko_System_Prompts_v2.md): seeds + chemistry pragmatism in generate,
-    # calibration/evidence rules in the critic, sandbox+OpenQASM provenance in writeback.
+    # calibration/evidence rules in the critic, sandbox+conversion provenance in writeback.
     assert "deterministic seeds" in GENERATE_SYSTEM_PROMPT.lower()
     assert "hard-code the Hamiltonian coefficients" in GENERATE_SYSTEM_PROMPT
     assert "FINAL_CIRCUIT = compiled_circuit" in GENERATE_SYSTEM_PROMPT
@@ -103,9 +101,9 @@ def test_v2_prompt_deltas_present():
     assert "it did not pass" in CRITIC_SYSTEM_PROMPT
     assert "highest severity" in CRITIC_SYSTEM_PROMPT
     assert "OpenQASM" in WRITEBACK_SYSTEM_PROMPT and "sandbox" in WRITEBACK_SYSTEM_PROMPT
-    assert "OpenQASM version from the run record" in WRITEBACK_SYSTEM_PROMPT
-    assert "OpenQASM 3 is the preferred native circuit export" in WRITEBACK_SYSTEM_PROMPT
-    assert "OpenQASM 2 compatibility bridge" in WRITEBACK_SYSTEM_PROMPT
+    assert "OpenQASM, when present, is internal" in WRITEBACK_SYSTEM_PROMPT
+    assert "selected-framework code is the primary artifact" in WRITEBACK_SYSTEM_PROMPT
+    assert "conversion" in WRITEBACK_SYSTEM_PROMPT
     # Export limitations never negate independent verification.
     assert "never diminishes" in WRITEBACK_SYSTEM_PROMPT
 
@@ -270,38 +268,9 @@ def test_web_research_auto_mode_can_be_disabled(monkeypatch):
     assert not research_module._research_enabled("H2 VQE")
 
 
-def test_extract_code_and_qasm():
+def test_extract_code():
     text = (
         "```python\nfrom qiskit import QuantumCircuit\nqc = QuantumCircuit(2)\n```\n"
         'OPENQASM 2.0;\ninclude "qelib1.inc";\nqreg q[2];\nh q[0];\ncx q[0],q[1];\n'
     )
     assert "QuantumCircuit" in extract_code(text)
-    qasm = extract_qasm(text)
-    assert qasm and "cx q[0],q[1];" in qasm
-
-
-def test_qasm_envelope_wins_over_model_stdout_and_preserves_provenance():
-    text = """OPENQASM 2.0;
-qreg q[1];
-x q[0];
-__MAJORANA_FINAL_QASM_BEGIN__
-OPENQASM 2.0;
-qreg q[1];
-h q[0];
-__MAJORANA_FINAL_QASM_END__
-"""
-    extraction = extract_qasm_with_provenance(text)
-    assert extraction.source == "sandbox_epilogue"
-    assert extraction.qasm and "h q[0]" in extraction.qasm
-    assert "x q[0]" not in extraction.qasm
-
-
-def test_qasm_provenance_records_epilogue_error_before_fallback():
-    text = """__MAJORANA_FINAL_QASM_ERROR__:QASM2ExportError
-OPENQASM 2.0;
-qreg q[1];
-x q[0];
-"""
-    extraction = extract_qasm_with_provenance(text)
-    assert extraction.source == "model_stdout"
-    assert extraction.epilogue_error == "QASM2ExportError"

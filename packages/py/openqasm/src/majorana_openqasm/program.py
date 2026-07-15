@@ -1,14 +1,13 @@
-"""Standard OpenQASM ingestion and canonicalization through Qiskit."""
+"""OpenQASM interchange ingestion and normalization through Qiskit."""
 
 from __future__ import annotations
 
 import hashlib
 import re
-from dataclasses import dataclass
 from typing import Literal
 
 from majorana_contracts.models import ResourceMetrics
-from qiskit import QuantumCircuit, transpile
+from qiskit import QuantumCircuit
 from qiskit import qasm2, qasm3
 
 _VERSION_RE = re.compile(r"^\s*OPENQASM\s+(?P<version>[23](?:\.0)?)\s*;", re.IGNORECASE)
@@ -41,7 +40,7 @@ def _load_circuit(source: str) -> QuantumCircuit:
 
 
 def normalize(source: str) -> str:
-    """Return the canonical persisted representation: Qiskit-emitted OpenQASM 3."""
+    """Return normalized OpenQASM 3 for optional interchange persistence."""
     try:
         return qasm3.dumps(_load_circuit(source))
     except OpenQASMError:
@@ -76,72 +75,3 @@ def _resource_metrics(circuit: QuantumCircuit) -> ResourceMetrics:
 def resource_metrics(source: str) -> ResourceMetrics:
     """Calculate resource metrics from an OpenQASM string."""
     return _resource_metrics(_load_circuit(source))
-
-
-@dataclass(frozen=True)
-class CompilationOutcome:
-    source_qasm: str
-    selected_qasm: str
-    accepted: bool
-    mode: Literal["unchanged", "optimized", "rejected"]
-    before: ResourceMetrics
-    candidate: ResourceMetrics
-    reason: str | None = None
-
-
-def _not_worse(before: ResourceMetrics, after: ResourceMetrics) -> bool:
-    comparable = (
-        (before.depth, after.depth),
-        (before.gate_count, after.gate_count),
-        (before.two_qubit_gate_count, after.two_qubit_gate_count),
-    )
-    return all(left is None or right is None or right <= left for left, right in comparable)
-
-
-def compile_program(source: str) -> CompilationOutcome:
-    """Apply deterministic SDK optimization and retain it only when not worse."""
-    canonical = normalize(source)
-    circuit = _load_circuit(canonical)
-    before = _resource_metrics(circuit)
-    try:
-        candidate_circuit = transpile(circuit, optimization_level=1, seed_transpiler=0)
-        candidate_qasm = qasm3.dumps(candidate_circuit)
-        candidate = _resource_metrics(candidate_circuit)
-    except Exception as exc:
-        return CompilationOutcome(
-            source_qasm=canonical,
-            selected_qasm=canonical,
-            accepted=False,
-            mode="rejected",
-            before=before,
-            candidate=before,
-            reason=f"Qiskit optimization failed: {type(exc).__name__}",
-        )
-    if candidate_qasm == canonical:
-        return CompilationOutcome(
-            source_qasm=canonical,
-            selected_qasm=canonical,
-            accepted=False,
-            mode="unchanged",
-            before=before,
-            candidate=candidate,
-            reason="no deterministic reduction was found",
-        )
-    if not _not_worse(before, candidate):
-        return CompilationOutcome(
-            source_qasm=canonical,
-            selected_qasm=canonical,
-            accepted=False,
-            mode="rejected",
-            before=before,
-            candidate=candidate,
-            reason="candidate increased circuit complexity; original retained",
-        )
-    return CompilationOutcome(
-        source_qasm=canonical,
-        selected_qasm=candidate_qasm,
-        accepted=True,
-        mode="optimized",
-        before=before,
-        candidate=candidate,
-    )

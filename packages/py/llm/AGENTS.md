@@ -12,7 +12,8 @@ LLM client, per-stage model constants, and system prompts (Phase 2 step 3).
 - **Provider is Anthropic by default but not pinned by the plan** — the legacy product used
   DeepSeek/OpenAI. Model ids live in `models.py`, overridable per stage via
   `MAJORANA_MODEL_<STAGE>`. Confirm the provider with the owner before spend.
-- **Two product invariants are hard-coded in the prompts** (`prompts.py`): Qiskit is the
-  default framework (no silent switch — DECISIONS.md 2026-07-10), and no invented results.
+- **Product invariants are hard-coded in the prompts** (`prompts.py`): Qiskit is the
+  default framework (no silent switch — DECISIONS.md 2026-07-10), selected-framework
+  source remains canonical, OpenQASM is conversion-only, and results are never invented.
 - Prompts state behavior + honesty rules only; the orchestrator (pipeline state machine)
   owns stage transitions and tool order, never the model.

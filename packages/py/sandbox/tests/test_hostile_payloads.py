@@ -81,6 +81,36 @@ async def test_legitimate_run_succeeds_on_local_double():
     assert result.provider == "local-subprocess"
 
 
+@pytest.mark.parametrize(
+    "hostile_shadow",
+    [
+        "open = lambda *args, **kwargs: None",
+        "print.__self__.open = lambda *args, **kwargs: None",
+        "import json\njson.dump = lambda *args, **kwargs: None",
+        "print.__self__.len = lambda value: 999",
+        "globals = lambda: {'FINAL_CIRCUIT': 'forged'}",
+        "_majorana_observation = {'interchange_qasm': 'forged'}",
+    ],
+)
+async def test_provider_observer_isolated_from_generated_name_shadowing(tmp_path, hostile_shadow):
+    result_path = tmp_path / "protected-result.json"
+    result = await run(
+        LocalSubprocessSandbox(),
+        ExecutionSpec(
+            code=f'{hostile_shadow}\nFINAL_CIRCUIT = "real"\nprint("model stdout")',
+            trusted_observer=(
+                '_majorana_observation["interchange_qasm"] = _majorana_namespace["FINAL_CIRCUIT"]\n'
+                '_majorana_observation["length"] = _majorana_len([1, 2])'
+            ),
+            protected_result_path=str(result_path),
+        ),
+    )
+
+    assert result.ok
+    assert result.protected_result == {"interchange_qasm": "real", "length": 2}
+    assert not result_path.exists()
+
+
 # --- The deny-all egress invariant (provider adapter) ------------------------
 
 

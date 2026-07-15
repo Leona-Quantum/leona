@@ -8,6 +8,7 @@ members = [
     "majorana-baselines",
     "majorana-contracts",
     "majorana-evals",
+    "majorana-frameworks",
     "majorana-llm",
     "majorana-openqasm",
     "majorana-pipeline",
@@ -778,6 +779,17 @@ requires-dist = [
 ]
 
 [[package]]
+name = "majorana-frameworks"
+version = "0.1.0"
+source = { editable = "packages/py/frameworks" }
+dependencies = [
+    { name = "majorana-contracts" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "majorana-contracts", editable = "packages/py/contracts" }]
+
+[[package]]
 name = "majorana-llm"
 version = "0.1.0"
 source = { editable = "packages/py/llm" }
@@ -883,6 +895,7 @@ source = { editable = "services/worker" }
 dependencies = [
     { name = "majorana-api" },
     { name = "majorana-baselines" },
+    { name = "majorana-frameworks" },
     { name = "majorana-llm" },
     { name = "majorana-openqasm" },
     { name = "majorana-pipeline" },
@@ -894,6 +907,7 @@ dependencies = [
 requires-dist = [
     { name = "majorana-api", editable = "services/api" },
     { name = "majorana-baselines", editable = "packages/py/baselines" },
+    { name = "majorana-frameworks", editable = "packages/py/frameworks" },
     { name = "majorana-llm", editable = "packages/py/llm" },
     { name = "majorana-openqasm", editable = "packages/py/openqasm" },
     { name = "majorana-pipeline", editable = "packages/py/pipeline" },
