@@ -70,6 +70,12 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    # Revisions before 0007 cannot represent provider-native chat events or the
+    # chat run mode. Remove the chat-only event stream and retain its parent run as
+    # an explanatory run before restoring the older constraints.
+    op.execute("DELETE FROM run_events WHERE type LIKE 'chat.%'")
+    op.execute("UPDATE runs SET mode = 'explain' WHERE mode = 'chat'")
+
     op.drop_constraint("ck_type_enum", "run_events", type_="check")
     previous = tuple(value for value in _EVENT_TYPES if not value.startswith("chat."))
     op.create_check_constraint("ck_type_enum", "run_events", _check(previous))
