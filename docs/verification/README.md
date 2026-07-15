@@ -23,7 +23,6 @@ How this maps to the engine today (`packages/py/verification`):
 | Framework-native reproducibility | `verify_statistical_counts_pair` over two sandbox executions |
 | Direct simulation for explicit conversion checks | `simulate_statevector`, `counts_vs_ideal` |
 | OpenQASM interchange parseability | `verify_qasm_parse` (conversion paths only) |
-| Independent classical reference | `verify_exact_diag`, `verify_brute_force` |
 | Structural contract | `verify_return_contract` |
 | Exact unitary equivalence (needs a reference circuit) | `verify_exact` (chat surface only, not headless) |
 

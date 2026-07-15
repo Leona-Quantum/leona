@@ -4,25 +4,20 @@ from __future__ import annotations
 
 import hashlib
 import json
-from typing import Any
+import signal
+from typing import Any, Literal
 from uuid import UUID, uuid4
 
 from majorana_agent import (
     CandidateRevision,
     ConversionEvidence,
     ExecutionEvidence,
+    ExecutionFailureKind,
     ExecutionOutput,
     PublishedArtifact,
     RepairInstruction,
     VerificationEvidence,
     VerificationOutput,
-)
-from majorana_baselines import (
-    BaselineInstance,
-    HamiltonianInstance,
-    MaxCutInstance,
-    PortfolioInstance,
-    QuboInstance,
 )
 from majorana_contracts import Scope
 from majorana_contracts.enums import (
@@ -41,12 +36,10 @@ from majorana_sandbox import ExecutionSpec, Sandbox
 from majorana_sandbox import run as sandbox_run
 from majorana_verification import (
     extract_counts,
-    verify_brute_force,
-    verify_exact_diag,
     verify_return_contract,
     verify_statistical_counts_pair,
 )
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from majorana_api.db import AsyncSession
 from majorana_api.repos import artifacts as artifacts_repo
@@ -79,6 +72,8 @@ class LLMPlanner:
 
 
 class SandboxCandidateExecutor:
+    _STATEVECTOR_BYTES_PER_AMPLITUDE = 32
+
     def __init__(self, sandbox: Sandbox) -> None:
         self._sandbox = sandbox
 
@@ -94,6 +89,7 @@ class SandboxCandidateExecutor:
                 environment_fingerprint=self._environment_fingerprint(candidate, plan),
                 sandbox_provider=self._sandbox.provider,
                 exit_code=2,
+                failure_kind=ExecutionFailureKind.CODE_ERROR,
                 duration_ms=0,
                 result={},
                 observation={"contract_diagnostics": diagnostics},
@@ -107,13 +103,48 @@ class SandboxCandidateExecutor:
             protected_result_path=f"/tmp/majorana-result-{uuid4().hex}.json",
             source_fingerprint=candidate.source_fingerprint,
         )
+        estimated_memory_mb = self._statevector_memory_mb(plan.qubits_estimate)
+        if circuit_expected and estimated_memory_mb >= spec.memory_mb:
+            return ExecutionOutput(
+                environment_fingerprint=self._environment_fingerprint(candidate, plan),
+                sandbox_provider=self._sandbox.provider,
+                exit_code=75,
+                failure_kind=ExecutionFailureKind.RESOURCE_LIMIT,
+                duration_ms=0,
+                result={},
+                observation={
+                    "evidence_error": "statevector_memory_preflight_exceeded",
+                    "estimated_memory_mb": estimated_memory_mb,
+                    "memory_limit_mb": spec.memory_mb,
+                    "estimate_model": "32_bytes_per_complex_amplitude",
+                    "qubits": plan.qubits_estimate,
+                    "sandbox_runs": 0,
+                },
+            )
         result = await sandbox_run(self._sandbox, spec)
         observation = result.protected_result or {}
+        if not result.ok:
+            failure_kind = self._classify_failure(result.exit_code, result.stderr)
+            return ExecutionOutput(
+                environment_fingerprint=self._environment_fingerprint(candidate, plan),
+                sandbox_provider=result.provider,
+                exit_code=result.exit_code or 1,
+                failure_kind=failure_kind,
+                duration_ms=result.duration_ms,
+                result={},
+                observation=observation
+                | {
+                    "evidence_error": failure_kind.value,
+                    "sandbox_error": result.stderr[-4000:],
+                    "sandbox_runs": 1,
+                },
+            )
         if observation.get("source_fingerprint") != candidate.source_fingerprint:
             return ExecutionOutput(
                 environment_fingerprint=self._environment_fingerprint(candidate, plan),
                 sandbox_provider=result.provider,
                 exit_code=result.exit_code or 3,
+                failure_kind=ExecutionFailureKind.CODE_ERROR,
                 duration_ms=result.duration_ms,
                 result={},
                 observation={"evidence_error": "source_fingerprint_mismatch"},
@@ -124,6 +155,7 @@ class SandboxCandidateExecutor:
                 environment_fingerprint=self._environment_fingerprint(candidate, plan),
                 sandbox_provider=result.provider,
                 exit_code=3,
+                failure_kind=ExecutionFailureKind.CODE_ERROR,
                 duration_ms=result.duration_ms,
                 result={},
                 observation=observation | {"evidence_error": "RESULT_missing"},
@@ -141,9 +173,19 @@ class SandboxCandidateExecutor:
                     environment_fingerprint=self._environment_fingerprint(candidate, plan),
                     sandbox_provider=result.provider,
                     exit_code=repeated.exit_code or 4,
+                    failure_kind=(
+                        self._classify_failure(repeated.exit_code, repeated.stderr)
+                        if not repeated.ok
+                        else ExecutionFailureKind.CODE_ERROR
+                    ),
                     duration_ms=result.duration_ms + repeated.duration_ms,
                     result=structured_result or {},
-                    observation=observation | {"evidence_error": "repeat_execution_failed"},
+                    observation=observation
+                    | {
+                        "evidence_error": "repeat_execution_failed",
+                        "repeat_sandbox_error": repeated.stderr[-4000:],
+                        "sandbox_runs": 2,
+                    },
                 )
             observation = observation | {
                 "verification_repeat_result": repeated_observation["result"],
@@ -160,6 +202,22 @@ class SandboxCandidateExecutor:
             result=structured_result if isinstance(structured_result, dict) else {},
             observation=observation,
         )
+
+    @classmethod
+    def _statevector_memory_mb(cls, qubits: int) -> int:
+        return (cls._STATEVECTOR_BYTES_PER_AMPLITUDE * (1 << qubits) + (1 << 20) - 1) // (1 << 20)
+
+    @staticmethod
+    def _classify_failure(exit_code: int, stderr: str) -> ExecutionFailureKind:
+        message = stderr.lower()
+        if "timeout" in message or "timed out" in message:
+            return ExecutionFailureKind.TIMEOUT
+        if any(
+            marker in message
+            for marker in ("memoryerror", "out of memory", "oom", "cannot allocate memory")
+        ) or exit_code in {-signal.SIGKILL, 128 + signal.SIGKILL}:
+            return ExecutionFailureKind.MEMORY_EXHAUSTED
+        return ExecutionFailureKind.CODE_ERROR
 
     @staticmethod
     def _needs_repeat(plan: Plan) -> bool:
@@ -183,20 +241,30 @@ class SandboxCandidateExecutor:
         return hashlib.sha256(manifest.encode()).hexdigest()
 
 
+class _CriticMismatch(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    area: str = Field(min_length=1, max_length=120)
+    expected: str = Field(min_length=1, max_length=1000)
+    observed: str = Field(min_length=1, max_length=1000)
+    evidence: str = Field(min_length=1, max_length=2000)
+    severity: Literal["minor", "major", "blocking"]
+
+
 class _CriticOutput(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     decision: VerifierDecision
-    findings: list[str] = Field(default_factory=list, max_length=20)
-    repairs: list[str] = Field(default_factory=list, max_length=20)
-
-
-_BASELINE_TYPES: dict[str, type[BaselineInstance]] = {
-    "maxcut": MaxCutInstance,
-    "qubo": QuboInstance,
-    "portfolio": PortfolioInstance,
-    "hamiltonian": HamiltonianInstance,
-}
+    confidence: Literal["high", "medium", "low"]
+    severity: Literal["none", "minor", "major", "blocking"]
+    summary: str = Field(min_length=1, max_length=2000)
+    passed_checks: list[str] = Field(default_factory=list, max_length=30)
+    failed_checks: list[str] = Field(default_factory=list, max_length=30)
+    mismatches: list[_CriticMismatch] = Field(default_factory=list, max_length=20)
+    suggestions: list[str] = Field(default_factory=list, max_length=20)
+    repair_plan: list[str] = Field(default_factory=list, max_length=20)
+    required_recheck: list[str] = Field(default_factory=list, max_length=20)
+    residual_risks: list[str] = Field(default_factory=list, max_length=20)
 
 
 class EvidenceVerifier:
@@ -233,26 +301,37 @@ class EvidenceVerifier:
                 ),
             )
         critic = await self._critic(candidate, execution, plan, checks)
-        if critic.decision is VerifierDecision.PASS:
+        critic_passed = (
+            critic.decision is VerifierDecision.PASS
+            and critic.confidence != "low"
+            and critic.severity in {"none", "minor"}
+            and not critic.failed_checks
+            and not critic.mismatches
+        )
+        if critic_passed:
             return VerificationOutput(
                 decision=VerifierDecision.PASS,
                 deterministic_checks=checks,
                 critic=critic.model_dump(mode="json"),
             )
         return VerificationOutput(
-            decision=critic.decision,
+            decision=VerifierDecision.FAIL,
             deterministic_checks=checks,
             critic=critic.model_dump(mode="json"),
             repair=(
                 RepairInstruction(
                     category="intent_alignment_failed",
-                    evidence=critic.findings,
-                    repairs=critic.repairs or ["Align the implementation with the accepted plan."],
+                    evidence=[
+                        critic.summary,
+                        *critic.failed_checks,
+                        *(item.model_dump_json() for item in critic.mismatches),
+                    ],
+                    repairs=critic.repair_plan
+                    or critic.suggestions
+                    or ["Align the implementation with the accepted plan."],
                     preserve_invariants=[f"framework={candidate.framework.value}", "assign RESULT"],
-                    required_rechecks=["all"],
+                    required_rechecks=critic.required_recheck or ["all"],
                 )
-                if critic.decision is VerifierDecision.FAIL
-                else None
             ),
         )
 
@@ -365,19 +444,6 @@ class EvidenceVerifier:
                     thresholds = plan.verification_plan.thresholds or {}
                     threshold = thresholds.get("tvd_max", thresholds.get("total_variation_max"))
                     outcome = verify_statistical_counts_pair(first, second, threshold)
-            elif method in {VerificationMethod.BRUTE_FORCE, VerificationMethod.EXACT_DIAG}:
-                instance = self._baseline_instance(execution.result)
-                claimed = execution.result.get(plan.success_criteria.primary_metric)
-                if (
-                    instance is not None
-                    and isinstance(claimed, int | float)
-                    and not isinstance(claimed, bool)
-                ):
-                    outcome = (
-                        verify_brute_force(instance, float(claimed))
-                        if method is VerificationMethod.BRUTE_FORCE
-                        else verify_exact_diag(instance, float(claimed))
-                    )
             if outcome is None:
                 checks.append(
                     {
@@ -396,19 +462,6 @@ class EvidenceVerifier:
                 )
         return checks
 
-    @staticmethod
-    def _baseline_instance(result: dict[str, Any]) -> BaselineInstance | None:
-        raw = result.get("baseline_instance")
-        if not isinstance(raw, dict):
-            return None
-        cls = _BASELINE_TYPES.get(str(raw.get("kind")))
-        if cls is None:
-            return None
-        try:
-            return cls.model_validate(raw)
-        except ValueError:
-            return None
-
     async def _critic(
         self,
         candidate: CandidateRevision,
@@ -420,9 +473,13 @@ class EvidenceVerifier:
             LLMRequest(
                 model=model_for("verify"),
                 system=(
-                    "Judge semantic alignment using only the supplied request, plan, exact source, "
-                    "and deterministic evidence. Deterministic checks already passed and cannot be "
-                    "overridden. Return pass only if the implementation fulfills the user intent."
+                    "Act as an independent, fail-closed quantum-program critic. Judge request-to-plan, "
+                    "plan-to-code, and success-criteria-to-result alignment using only supplied evidence. "
+                    "Check the artifact contract, selected framework, measurement policy, seeds, shots, "
+                    "tolerances, qubit ordering, forbidden operations, required invariants, and whether "
+                    "the evidence actually proves each claim. Deterministic checks already passed and "
+                    "cannot be overridden. Return pass only with medium/high confidence, no mismatch, "
+                    "and at most minor severity; otherwise give a concrete repair plan and rechecks."
                 ),
                 user=json.dumps(
                     {
@@ -441,7 +498,19 @@ class EvidenceVerifier:
                 schema_name="intent_alignment",
             )
         )
-        return _CriticOutput.model_validate_json(response.text)
+        try:
+            return _CriticOutput.model_validate_json(response.text)
+        except ValidationError as exc:
+            return _CriticOutput(
+                decision=VerifierDecision.FAIL,
+                confidence="low",
+                severity="blocking",
+                summary="Semantic critic returned invalid structured evidence.",
+                failed_checks=["critic_output_schema"],
+                repair_plan=["Re-run semantic verification with valid structured evidence."],
+                required_recheck=["semantic_critic"],
+                residual_risks=[str(exc)[:1000]],
+            )
 
 
 class TrustedOpenQASMConverter:

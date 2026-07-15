@@ -32,6 +32,7 @@ _ALLOWED: dict[AgentState, frozenset[ToolName]] = {
     AgentState.PLANNED: frozenset(SIMULATION_TOOL_BY_FRAMEWORK.values()),
     AgentState.EXECUTED: frozenset({ToolName.VERIFY_INTENT_ALIGNMENT}),
     AgentState.REPAIR_REQUIRED: frozenset(SIMULATION_TOOL_BY_FRAMEWORK.values()),
+    AgentState.RESOURCE_EXHAUSTED: frozenset(),
     AgentState.VERIFIED: frozenset({ToolName.CONVERT_TO_OPENQASM, ToolName.PUBLISH_ARTIFACT}),
     AgentState.QASM_ATTEMPTED: frozenset({ToolName.PUBLISH_ARTIFACT}),
     AgentState.PUBLISHED: frozenset(),
@@ -206,6 +207,8 @@ class ToolBroker:
         if name is ToolName.REQUEST_PLAN:
             return AgentState.PLANNED
         if name in SIMULATION_TOOL_BY_FRAMEWORK.values():
+            if payload.get("resource_exhausted"):
+                return AgentState.RESOURCE_EXHAUSTED
             return (
                 AgentState.EXECUTED
                 if payload.get("execution_ok", True)

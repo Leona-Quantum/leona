@@ -17,6 +17,7 @@ from majorana_agent.models import (
     CandidateStatus,
     ConversionEvidence,
     ExecutionEvidence,
+    ExecutionFailureKind,
     PlanRecord,
     PublishedArtifact,
     RepairInstruction,
@@ -42,6 +43,7 @@ class ExecutionOutput:
     duration_ms: int
     result: dict[str, Any]
     observation: dict[str, Any]
+    failure_kind: ExecutionFailureKind | None = None
 
 
 class CandidateExecutor(Protocol):
@@ -155,25 +157,45 @@ class CircuitToolset:
                 environment_fingerprint=output.environment_fingerprint,
                 sandbox_provider=output.sandbox_provider,
                 exit_code=output.exit_code,
+                failure_kind=output.failure_kind,
                 duration_ms=output.duration_ms,
                 result=output.result,
                 observation=output.observation,
             )
             await self._store.add_execution(evidence)
+        status = (
+            CandidateStatus.EXECUTED
+            if evidence.succeeded
+            else CandidateStatus.RESOURCE_EXHAUSTED
+            if evidence.resource_exhausted
+            else CandidateStatus.REPAIR_REQUIRED
+        )
         await self._store.set_candidate_status(
             run_id,
             candidate.candidate_id,
-            CandidateStatus.EXECUTED.value
-            if evidence.succeeded
-            else CandidateStatus.REPAIR_REQUIRED.value,
+            status.value,
         )
         if not evidence.succeeded:
+            if evidence.resource_exhausted:
+                return {
+                    "candidate_id": str(candidate.candidate_id),
+                    "revision": candidate.revision,
+                    "source_fingerprint": candidate.source_fingerprint,
+                    "execution_id": str(evidence.execution_id),
+                    "execution_ok": False,
+                    "resource_exhausted": True,
+                    "failure_kind": evidence.failure_kind.value,
+                    "sandbox_runs": evidence.observation.get("sandbox_runs", 0),
+                    "resource_evidence": evidence.observation,
+                }
             return {
                 "candidate_id": str(candidate.candidate_id),
                 "revision": candidate.revision,
                 "source_fingerprint": candidate.source_fingerprint,
                 "execution_id": str(evidence.execution_id),
                 "execution_ok": False,
+                "resource_exhausted": False,
+                "failure_kind": evidence.failure_kind.value,
                 "sandbox_runs": evidence.observation.get("sandbox_runs", 1),
                 "repair": {
                     "category": "execution_failed",

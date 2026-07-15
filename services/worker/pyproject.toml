@@ -11,7 +11,6 @@ dependencies = [
     "majorana-frameworks",
     "majorana-openqasm",
     "majorana-verification",
-    "majorana-baselines",
 ]
 
 [project.scripts]
@@ -25,7 +24,6 @@ majorana-sandbox = { workspace = true }
 majorana-frameworks = { workspace = true }
 majorana-openqasm = { workspace = true }
 majorana-verification = { workspace = true }
-majorana-baselines = { workspace = true }
 
 [build-system]
 requires = ["hatchling"]

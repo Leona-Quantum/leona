@@ -230,6 +230,13 @@ def test_parse_plan_tolerates_fenced_json_and_prose():
     assert parse_plan(wrapped).algorithm == "Bell"
 
 
+def test_parse_plan_rejects_removed_baseline_verification_for_new_runs():
+    payload = PLAN_JSON | {"verification_plan": {"methods": ["brute_force"]}}
+
+    with pytest.raises(StageOutputError, match="removed baseline verification"):
+        parse_plan(json.dumps(payload))
+
+
 def test_parse_plan_normalizes_scalar_additional_notes_from_json_object_mode():
     drifted = {
         **PLAN_JSON,

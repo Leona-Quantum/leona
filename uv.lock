@@ -6,7 +6,6 @@ requires-python = ">=3.12"
 members = [
     "majorana-agent",
     "majorana-api",
-    "majorana-baselines",
     "majorana-contracts",
     "majorana-evals",
     "majorana-frameworks",
@@ -745,23 +744,6 @@ requires-dist = [
 ]
 
 [[package]]
-name = "majorana-baselines"
-version = "0.1.0"
-source = { editable = "packages/py/baselines" }
-dependencies = [
-    { name = "majorana-contracts" },
-    { name = "numpy" },
-    { name = "pydantic" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "majorana-contracts", editable = "packages/py/contracts" },
-    { name = "numpy", specifier = ">=1.26" },
-    { name = "pydantic", specifier = ">=2.8" },
-]
-
-[[package]]
 name = "majorana-contracts"
 version = "0.1.0"
 source = { editable = "packages/py/contracts" }
@@ -878,7 +860,6 @@ name = "majorana-verification"
 version = "0.1.0"
 source = { editable = "packages/py/verification" }
 dependencies = [
-    { name = "majorana-baselines" },
     { name = "majorana-contracts" },
     { name = "majorana-openqasm" },
     { name = "numpy" },
@@ -887,7 +868,6 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
-    { name = "majorana-baselines", editable = "packages/py/baselines" },
     { name = "majorana-contracts", editable = "packages/py/contracts" },
     { name = "majorana-openqasm", editable = "packages/py/openqasm" },
     { name = "numpy", specifier = ">=1.26" },
@@ -901,7 +881,6 @@ source = { editable = "services/worker" }
 dependencies = [
     { name = "majorana-agent" },
     { name = "majorana-api" },
-    { name = "majorana-baselines" },
     { name = "majorana-frameworks" },
     { name = "majorana-llm" },
     { name = "majorana-openqasm" },
@@ -913,7 +892,6 @@ dependencies = [
 requires-dist = [
     { name = "majorana-agent", editable = "packages/py/agent" },
     { name = "majorana-api", editable = "services/api" },
-    { name = "majorana-baselines", editable = "packages/py/baselines" },
     { name = "majorana-frameworks", editable = "packages/py/frameworks" },
     { name = "majorana-llm", editable = "packages/py/llm" },
     { name = "majorana-openqasm", editable = "packages/py/openqasm" },
