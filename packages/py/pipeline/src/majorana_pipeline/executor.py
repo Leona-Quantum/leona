@@ -50,6 +50,7 @@ class RunContext:
     tolerances: dict[str, Any] | None
     timeout_s: int | None
     sink: EventSink
+    conversation_id: Any | None = None
     source_code: str | None = None
     source_framework: Framework | None = None
     parent_artifact_id: Any | None = None

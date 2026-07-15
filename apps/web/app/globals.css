@@ -1,5 +1,6 @@
 @import "../../../packages/ts/ui/tokens.css";
 @import "../../../packages/ts/ui/styles.css";
+@import "katex/dist/katex.min.css";
 @import "tailwindcss";
 
 /* Map tokens into Tailwind v4 theme names so utilities resolve to token vars.

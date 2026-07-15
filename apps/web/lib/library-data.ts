@@ -19,10 +19,13 @@ export interface LibraryArtifact {
   currentVersionId?: string;
   resourceRows: Array<{ label: string; value: string }>;
   runId?: string;
+  archivedAt?: string;
   source: "demo" | "run" | "public";
 }
 
 const STORAGE_KEY = "majorana.library.v1";
+const DELETED_STORAGE_KEY = "majorana.deleted-artifacts.v1";
+export const ARTIFACT_ARCHIVE_RETENTION_DAYS = 14;
 const LIBRARY_EVENT = "majorana:library";
 const DEMO_ARTIFACT_IDS = new Set([
   "a7c1b0d2-0000-4000-8000-0000000000aa",
@@ -139,20 +142,43 @@ function persist(artifacts: LibraryArtifact[]): LibraryArtifact[] {
   return artifacts;
 }
 
-export function loadLibraryArtifacts({ includeDemo = false }: { includeDemo?: boolean } = {}): LibraryArtifact[] {
+function persistSilently(artifacts: LibraryArtifact[]): void {
+  if (canUseStorage()) window.localStorage.setItem(STORAGE_KEY, JSON.stringify(artifacts));
+}
+
+function loadDeletedIds(): Set<string> {
+  if (!canUseStorage()) return new Set();
+  try {
+    const parsed = JSON.parse(window.localStorage.getItem(DELETED_STORAGE_KEY) ?? "[]") as unknown;
+    return new Set(Array.isArray(parsed) ? parsed.filter((value): value is string => typeof value === "string") : []);
+  } catch {
+    return new Set();
+  }
+}
+
+function persistDeletedIds(ids: Set<string>): void {
+  if (canUseStorage()) window.localStorage.setItem(DELETED_STORAGE_KEY, JSON.stringify([...ids]));
+}
+
+export function loadLibraryArtifacts({ includeDemo = false, includeArchived = false }: { includeDemo?: boolean; includeArchived?: boolean } = {}): LibraryArtifact[] {
   if (!canUseStorage()) return includeDemo ? DEMO_ARTIFACTS : [];
   try {
     const raw = window.localStorage.getItem(STORAGE_KEY);
     if (!raw) return includeDemo ? DEMO_ARTIFACTS : [];
     const parsed = JSON.parse(raw) as unknown;
     if (!Array.isArray(parsed)) return includeDemo ? DEMO_ARTIFACTS : [];
+    const deletedIds = loadDeletedIds();
     const valid = parsed
       .filter(isLibraryArtifact)
+      .filter((artifact) => !deletedIds.has(artifact.id))
       .filter((artifact) => includeDemo || !isDemoArtifact(artifact))
       .sort(sortNewestFirst);
-    if (!includeDemo) return valid;
-    const local = valid.filter((artifact) => !isDemoArtifact(artifact));
-    return [...DEMO_ARTIFACTS, ...local].sort(sortNewestFirst);
+    const retained = valid.filter((artifact) => !artifact.archivedAt || !isArtifactArchiveExpired(artifact.archivedAt));
+    if (retained.length !== valid.length) persistSilently(retained);
+    const visible = includeArchived ? retained : retained.filter((artifact) => !artifact.archivedAt);
+    if (!includeDemo) return visible;
+    const local = retained.filter((artifact) => !isDemoArtifact(artifact));
+    return [...DEMO_ARTIFACTS, ...local.filter((artifact) => includeArchived || !artifact.archivedAt)].sort(sortNewestFirst);
   } catch {
     return includeDemo ? DEMO_ARTIFACTS : [];
   }
@@ -163,8 +189,53 @@ export function getLibraryArtifact(id: string): LibraryArtifact | null {
 }
 
 export function rememberArtifact(artifact: LibraryArtifact): LibraryArtifact[] {
-  const current = loadLibraryArtifacts().filter((item) => item.id !== artifact.id);
-  return persist([artifact, ...current].sort(sortNewestFirst));
+  const deletedIds = loadDeletedIds();
+  deletedIds.delete(artifact.id);
+  persistDeletedIds(deletedIds);
+  const current = loadLibraryArtifacts({ includeArchived: true }).filter((item) => item.id !== artifact.id);
+  const activeArtifact = { ...artifact };
+  delete activeArtifact.archivedAt;
+  return persist([activeArtifact, ...current].sort(sortNewestFirst));
+}
+
+export function archiveArtifact(id: string, fallback?: LibraryArtifact): LibraryArtifact[] {
+  const current = loadLibraryArtifacts({ includeArchived: true });
+  const archivedAt = new Date().toISOString();
+  const existing = current.find((artifact) => artifact.id === id);
+  if (existing) return persist(current.map((artifact) => (artifact.id === id ? { ...artifact, archivedAt } : artifact)));
+  if (!fallback) return current;
+  return persist([{ ...fallback, archivedAt }, ...current].sort(sortNewestFirst));
+}
+
+export function restoreArtifact(id: string): LibraryArtifact[] {
+  return persist(
+    loadLibraryArtifacts({ includeArchived: true }).map((artifact) => {
+      if (artifact.id !== id) return artifact;
+      const restored = { ...artifact };
+      delete restored.archivedAt;
+      return restored;
+    }),
+  );
+}
+
+export function deleteArtifact(id: string): LibraryArtifact[] {
+  const deletedIds = loadDeletedIds();
+  deletedIds.add(id);
+  persistDeletedIds(deletedIds);
+  return persist(loadLibraryArtifacts({ includeArchived: true }).filter((artifact) => artifact.id !== id));
+}
+
+export function isArtifactDeleted(id: string): boolean {
+  return loadDeletedIds().has(id);
+}
+
+export function daysUntilArtifactDeletion(archivedAt: string, now = new Date()): number {
+  const expiresAt = new Date(archivedAt).valueOf() + ARTIFACT_ARCHIVE_RETENTION_DAYS * 86_400_000;
+  return Math.max(0, Math.ceil((expiresAt - now.valueOf()) / 86_400_000));
+}
+
+function isArtifactArchiveExpired(archivedAt: string): boolean {
+  return daysUntilArtifactDeletion(archivedAt) <= 0;
 }
 
 export function rememberArtifactFromRun(events: readonly RunEvent[], prompt: string): LibraryArtifact | null {

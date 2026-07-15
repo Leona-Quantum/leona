@@ -29,6 +29,7 @@ class AnalysisOutput(BaseModel):
 # Per-provider stage defaults. Override any stage with MAJORANA_MODEL_<STAGE>.
 _DEFAULTS: dict[str, dict[str, str]] = {
     "openai": {
+        "chat": "deepseek-chat",
         # Legacy nameko tiering: GPT for judgment, DeepSeek for volume work.
         "plan": "gpt-5.5",  # structured planning + judgment
         # Non-reasoning tier: v4-pro reproducibly burned its whole 8192 budget on
@@ -40,6 +41,7 @@ _DEFAULTS: dict[str, dict[str, str]] = {
         "writeback": "deepseek-v4-pro",  # library metadata + explanations
     },
     "anthropic": {
+        "chat": "claude-sonnet-5",
         "plan": "claude-opus-4-8",
         "generate": "claude-sonnet-5",
         "verify": "claude-opus-4-8",

@@ -471,6 +471,171 @@
         "title": "BaselineResult",
         "type": "object"
       },
+      "ChatCompleted": {
+        "additionalProperties": false,
+        "properties": {
+          "duration_ms": {
+            "minimum": 0,
+            "title": "Duration Ms",
+            "type": "integer"
+          },
+          "input_tokens": {
+            "minimum": 0,
+            "title": "Input Tokens",
+            "type": "integer"
+          },
+          "model": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Model",
+            "type": "string"
+          },
+          "output_tokens": {
+            "minimum": 0,
+            "title": "Output Tokens",
+            "type": "integer"
+          },
+          "run_id": {
+            "format": "uuid",
+            "title": "Run Id",
+            "type": "string"
+          },
+          "seq": {
+            "description": "Unique per run; powers replay and SSE Last-Event-ID",
+            "minimum": 0,
+            "title": "Seq",
+            "type": "integer"
+          },
+          "text": {
+            "maxLength": 200000,
+            "minLength": 1,
+            "title": "Text",
+            "type": "string"
+          },
+          "ts": {
+            "format": "date-time",
+            "title": "Ts",
+            "type": "string"
+          },
+          "type": {
+            "const": "chat.completed",
+            "default": "chat.completed",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "run_id",
+          "seq",
+          "ts",
+          "text",
+          "model",
+          "input_tokens",
+          "output_tokens",
+          "duration_ms"
+        ],
+        "title": "ChatCompleted",
+        "type": "object"
+      },
+      "ChatDelta": {
+        "additionalProperties": false,
+        "description": "A provider-native chat fragment; no stage or output schema is imposed.",
+        "properties": {
+          "kind": {
+            "default": "output",
+            "enum": [
+              "reasoning",
+              "output"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "run_id": {
+            "format": "uuid",
+            "title": "Run Id",
+            "type": "string"
+          },
+          "seq": {
+            "description": "Unique per run; powers replay and SSE Last-Event-ID",
+            "minimum": 0,
+            "title": "Seq",
+            "type": "integer"
+          },
+          "text": {
+            "maxLength": 12000,
+            "minLength": 1,
+            "title": "Text",
+            "type": "string"
+          },
+          "ts": {
+            "format": "date-time",
+            "title": "Ts",
+            "type": "string"
+          },
+          "type": {
+            "const": "chat.delta",
+            "default": "chat.delta",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "run_id",
+          "seq",
+          "ts",
+          "text"
+        ],
+        "title": "ChatDelta",
+        "type": "object"
+      },
+      "ChatError": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Code",
+            "type": "string"
+          },
+          "message": {
+            "maxLength": 2000,
+            "minLength": 1,
+            "title": "Message",
+            "type": "string"
+          },
+          "run_id": {
+            "format": "uuid",
+            "title": "Run Id",
+            "type": "string"
+          },
+          "seq": {
+            "description": "Unique per run; powers replay and SSE Last-Event-ID",
+            "minimum": 0,
+            "title": "Seq",
+            "type": "integer"
+          },
+          "ts": {
+            "format": "date-time",
+            "title": "Ts",
+            "type": "string"
+          },
+          "type": {
+            "const": "chat.error",
+            "default": "chat.error",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "run_id",
+          "seq",
+          "ts",
+          "code",
+          "message"
+        ],
+        "title": "ChatError",
+        "type": "object"
+      },
       "CodeFinalized": {
         "additionalProperties": false,
         "properties": {
@@ -1533,6 +1698,11 @@
             "description": "Baseline result, or {not_applicable_reason}",
             "title": "Baseline"
           },
+          "conversation_id": {
+            "format": "uuid",
+            "title": "Conversation Id",
+            "type": "string"
+          },
           "created_at": {
             "format": "date-time",
             "title": "Created At",
@@ -1708,6 +1878,7 @@
         },
         "required": [
           "id",
+          "conversation_id",
           "workspace_id",
           "user_id",
           "task_prompt",
@@ -1912,6 +2083,9 @@
           "mapping": {
             "artifact.saved": "#/components/schemas/ArtifactSaved",
             "baseline.result": "#/components/schemas/BaselineResult",
+            "chat.completed": "#/components/schemas/ChatCompleted",
+            "chat.delta": "#/components/schemas/ChatDelta",
+            "chat.error": "#/components/schemas/ChatError",
             "code.finalized": "#/components/schemas/CodeFinalized",
             "code.generated": "#/components/schemas/CodeGenerated",
             "compilation.result": "#/components/schemas/CompilationResult",
@@ -1960,6 +2134,15 @@
           },
           {
             "$ref": "#/components/schemas/LlmDelta"
+          },
+          {
+            "$ref": "#/components/schemas/ChatDelta"
+          },
+          {
+            "$ref": "#/components/schemas/ChatCompleted"
+          },
+          {
+            "$ref": "#/components/schemas/ChatError"
           },
           {
             "$ref": "#/components/schemas/CodeGenerated"
@@ -2072,6 +2255,7 @@
       },
       "RunMode": {
         "enum": [
+          "chat",
           "execute",
           "ideate",
           "explain"

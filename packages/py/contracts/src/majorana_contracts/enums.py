@@ -11,6 +11,7 @@ class Framework(StrEnum):
 
 
 class RunMode(StrEnum):
+    CHAT = "chat"
     EXECUTE = "execute"
     IDEATE = "ideate"
     EXPLAIN = "explain"

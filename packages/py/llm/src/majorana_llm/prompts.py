@@ -1,17 +1,14 @@
-"""Prompt policy and LangChain Core prompt composition for Majorana.
+"""Prompt policy and provider-neutral message rendering for Majorana.
 
-The model sees a natural-language task and evidence, not a benchmark script. The
-pipeline still keeps a typed Plan internally because the worker needs a reliable
-execution contract, but that record is plumbing and is never the product surface.
-LangChain Core owns the role-separated prompt templates; the worker remains the
-deterministic stage orchestrator.
+The direct chat path intentionally has one small system prompt and passes the
+conversation through unchanged. The legacy execution pipeline keeps its internal
+prompts for the explicit execute API, but it is not the default chat surface.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 
-from langchain_core.prompts import ChatPromptTemplate
 from majorana_contracts.enums import Framework, RunMode
 
 
@@ -122,14 +119,15 @@ CRITIC_SYSTEM_PROMPT = """You are Majorana's independent verification critic.
 Judge whether the recorded request, plan, generated code, and measured result agree.
 The fact that code ran is never sufficient. If a check did not pass, treat it as a
 failure until concrete evidence says otherwise; if it did not pass, it is not certified.
-Prefer a false negative and another
-repair over certifying an unverified artifact. Every failed check must cite concrete
-evidence, and disagreements use the highest severity.
+Prefer a false negative and another repair over certifying an unverified artifact.
+Every failed check must cite concrete evidence, and disagreements use the highest
+severity.
 
 Check request -> plan, plan -> code, success criteria -> result, and verification
 strength. Check seeds, shots, tolerances, qubit ordering, framework, measurement policy,
 and the distinction between a verified result and an export or QPU option. Never invent
-results or silently repair a mismatch."""
+results or silently repair a mismatch. When evidence disagrees, use the highest severity
+for the finding."""
 
 ANALYZE_SYSTEM_PROMPT = """You are Majorana's final analysis writer.
 
@@ -141,19 +139,14 @@ compression gains, sources, or advantages. If a check failed or was skipped, say
 plainly. The response is parsed into an internal object and then rendered as prose; do
 not discuss JSON, schemas, or internal field names in the answer."""
 
-CONVERSATION_SYSTEM_PROMPT = """You are Majorana's natural-language assistant.
+QUANTUM_AGENT_SYSTEM_PROMPT = """You are a helpful quantum algorithm assistant.
 
-Answer the user's actual request directly. The selected mode is guidance for your
-behavior, not a reason to expose internal plans, JSON, stage names, or provider
-telemetry. Be useful for ordinary questions such as greetings, quantum-computing
-concepts, code reviews, and requests for a circuit. If you include code, keep it
-copyable and use the selected framework unless the user explicitly asks for another.
+Answer the user's messages directly. Explain quantum computing and quantum algorithms,
+write or review code, and use Markdown and LaTeX when useful. Be accurate and say when
+you are uncertain."""
 
-In Learn mode, teach step by step and call out assumptions. In Explain mode, review
-or explain the supplied material and distinguish observations from suggestions. Do
-not claim that a circuit ran, was verified, or produced measurements unless the
-request is being handled by the Execute pipeline and the event evidence says so.
-{framework_directive}"""
+# Compatibility name for callers that still import the old conversation prompt.
+CONVERSATION_SYSTEM_PROMPT = QUANTUM_AGENT_SYSTEM_PROMPT
 
 WRITEBACK_SYSTEM_PROMPT = """You are Majorana's library-writeback stage. Given a verified,
 saved run, write concise repository metadata and a human-readable explanation for reuse:
@@ -176,72 +169,14 @@ STAGE_PROMPTS = {
 
 @dataclass(frozen=True)
 class RenderedPrompt:
-    """Provider-neutral system/user messages rendered by LangChain Core."""
+    """Provider-neutral system/user messages."""
 
     system: str
     user: str
 
 
-_PLAN_CHAIN = ChatPromptTemplate.from_messages(
-    [
-        ("system", "{system_prompt}"),
-        (
-            "human",
-            "User request:\n{task_prompt}\n\nSelected framework: {requested_framework}\n\n{research_context}",
-        ),
-    ]
-)
-_GENERATE_CHAIN = ChatPromptTemplate.from_messages(
-    [
-        ("system", "{system_prompt}"),
-        (
-            "human",
-            "Requested framework: {requested_framework}\n\n"
-            "Internal plan record:\n{plan_json}\n\n{research_context}\n\n"
-            "Repair feedback, if any:\n{feedback}\n\nImplement the plan now.",
-        ),
-    ]
-)
-_ANALYZE_CHAIN = ChatPromptTemplate.from_messages(
-    [
-        ("system", "{system_prompt}"),
-        (
-            "human",
-            "User request:\n{task_prompt}\n\n"
-            "Internal plan record:\n{plan_json}\n\n"
-            "Recorded verification evidence:\n{verification_evidence}\n\n"
-            "Recorded final result:\n{final_result}\n\n"
-            "Recorded baseline:\n{baseline}\n\n"
-            "Recorded compilation evidence:\n{compilation}\n\n"
-            "Write the natural-language analysis.",
-        ),
-    ]
-)
-_CONVERSATION_CHAIN = ChatPromptTemplate.from_messages(
-    [
-        ("system", "{system_prompt}"),
-        (
-            "human",
-            "Selected mode: {mode}\nSelected framework: {framework}\n\nUser request:\n{task_prompt}",
-        ),
-    ]
-)
-
-
-def _render(prompt: ChatPromptTemplate, values: dict[str, str]) -> RenderedPrompt:
-    """Render role-separated messages while preserving provider-neutral strings."""
-    messages = prompt.invoke(values).to_messages()
-    system_parts: list[str] = []
-    user_parts: list[str] = []
-    for message in messages:
-        content = message.content if isinstance(message.content, str) else str(message.content)
-        if message.type == "system":
-            system_parts.append(content)
-        elif message.type in {"human", "user"}:
-            user_parts.append(content)
-    if not system_parts or not user_parts:
-        raise ValueError("stage prompt must render one system message and one user message")
-    return RenderedPrompt(system="\n\n".join(system_parts), user="\n\n".join(user_parts))
+def _render(system: str, user: str) -> RenderedPrompt:
+    return RenderedPrompt(system=system, user=user)
 
 
 def render_plan_prompt(
@@ -250,13 +185,10 @@ def render_plan_prompt(
     requested_framework: Framework | None = None,
 ) -> RenderedPrompt:
     return _render(
-        _PLAN_CHAIN,
-        {
-            "system_prompt": PLAN_SYSTEM_PROMPT,
-            "task_prompt": task_prompt,
-            "requested_framework": _framework_label(requested_framework),
-            "research_context": research_context or "No additional research context was available.",
-        },
+        PLAN_SYSTEM_PROMPT,
+        f"User request:\n{task_prompt}\n\n"
+        f"Selected framework: {_framework_label(requested_framework)}\n\n"
+        f"{research_context or 'No additional research context was available.'}",
     )
 
 
@@ -267,14 +199,12 @@ def render_generate_prompt(
     requested_framework: Framework | None = None,
 ) -> RenderedPrompt:
     return _render(
-        _GENERATE_CHAIN,
-        {
-            "system_prompt": GENERATE_SYSTEM_PROMPT,
-            "plan_json": plan_json,
-            "requested_framework": _framework_label(requested_framework),
-            "research_context": research_context or "No additional research context was available.",
-            "feedback": feedback or "No repair feedback: this is the first implementation attempt.",
-        },
+        GENERATE_SYSTEM_PROMPT,
+        f"Requested framework: {_framework_label(requested_framework)}\n\n"
+        f"Internal plan record:\n{plan_json}\n\n"
+        f"{research_context or 'No additional research context was available.'}\n\n"
+        f"Repair feedback, if any:\n{feedback or 'No repair feedback: this is the first implementation attempt.'}\n\n"
+        "Implement the plan now.",
     )
 
 
@@ -288,39 +218,25 @@ def render_analysis_prompt(
     compilation: str,
 ) -> RenderedPrompt:
     return _render(
-        _ANALYZE_CHAIN,
-        {
-            "system_prompt": ANALYZE_SYSTEM_PROMPT,
-            "task_prompt": task_prompt,
-            "plan_json": plan_json,
-            "verification_evidence": verification_evidence,
-            "final_result": final_result,
-            "baseline": baseline,
-            "compilation": compilation,
-        },
+        ANALYZE_SYSTEM_PROMPT,
+        f"User request:\n{task_prompt}\n\n"
+        f"Internal plan record:\n{plan_json}\n\n"
+        f"Recorded verification evidence:\n{verification_evidence}\n\n"
+        f"Recorded final result:\n{final_result}\n\n"
+        f"Recorded baseline:\n{baseline}\n\n"
+        f"Recorded compilation evidence:\n{compilation}\n\n"
+        "Write the natural-language analysis.",
     )
 
 
 def render_conversation_prompt(
     task_prompt: str,
-    mode: RunMode,
-    framework: Framework,
+    mode: RunMode | None = None,
+    framework: Framework | None = None,
 ) -> RenderedPrompt:
-    mode_label = (
-        "Learn" if mode is RunMode.IDEATE else "Explain" if mode is RunMode.EXPLAIN else "Execute"
-    )
-    framework_label = _framework_label(framework)
-    return _render(
-        _CONVERSATION_CHAIN,
-        {
-            "system_prompt": CONVERSATION_SYSTEM_PROMPT.format(
-                framework_directive=FRAMEWORK_DIRECTIVE
-            ),
-            "mode": mode_label,
-            "framework": framework_label,
-            "task_prompt": task_prompt,
-        },
-    )
+    """Compatibility helper; direct chat ignores product mode/framework controls."""
+    del mode, framework
+    return _render(QUANTUM_AGENT_SYSTEM_PROMPT, task_prompt)
 
 
 def _framework_label(framework: Framework | None) -> str:

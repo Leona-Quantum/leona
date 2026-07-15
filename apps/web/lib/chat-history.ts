@@ -2,12 +2,14 @@ export type ChatStatus = "queued" | "running" | "verified" | "failed" | "draft";
 
 export interface ChatSummary {
   id: string;
+  conversationId?: string;
   title: string;
   prompt: string;
   createdAt: string;
   status: ChatStatus;
   framework?: string;
   folderId?: string;
+  archivedAt?: string;
   demo?: boolean;
 }
 
@@ -19,10 +21,12 @@ export interface ChatFolder {
 
 const STORAGE_KEY = "majorana.chat-history.v1";
 const FOLDERS_STORAGE_KEY = "majorana.chat-folders.v1";
+const DELETED_STORAGE_KEY = "majorana.deleted-chats.v1";
+export const CHAT_ARCHIVE_RETENTION_DAYS = 14;
 export const CHAT_HISTORY_EVENT = "majorana:chat-history";
 export const CHAT_FOLDERS_EVENT = "majorana:chat-folders";
 
-type HistoryOptions = { includeDemo?: boolean };
+type HistoryOptions = { includeDemo?: boolean; includeArchived?: boolean };
 
 const DEFAULT_CHATS: ChatSummary[] = [
   {
@@ -76,35 +80,99 @@ function persist(chats: ChatSummary[]): ChatSummary[] {
   return chats;
 }
 
-export function loadChatHistory({ includeDemo = true }: HistoryOptions = {}): ChatSummary[] {
+function persistSilently(chats: ChatSummary[]): void {
+  if (canUseStorage()) window.localStorage.setItem(STORAGE_KEY, JSON.stringify(chats));
+}
+
+function loadDeletedIds(): Set<string> {
+  if (!canUseStorage()) return new Set();
+  try {
+    const parsed = JSON.parse(window.localStorage.getItem(DELETED_STORAGE_KEY) ?? "[]") as unknown;
+    return new Set(Array.isArray(parsed) ? parsed.filter((value): value is string => typeof value === "string") : []);
+  } catch {
+    return new Set();
+  }
+}
+
+function persistDeletedIds(ids: Set<string>): void {
+  if (canUseStorage()) window.localStorage.setItem(DELETED_STORAGE_KEY, JSON.stringify([...ids]));
+}
+
+export function loadChatHistory({ includeDemo = true, includeArchived = false }: HistoryOptions = {}): ChatSummary[] {
   if (!canUseStorage()) return includeDemo ? DEFAULT_CHATS : [];
   try {
     const raw = window.localStorage.getItem(STORAGE_KEY);
     if (!raw) return includeDemo ? DEFAULT_CHATS : [];
     const parsed = JSON.parse(raw) as unknown;
     if (!Array.isArray(parsed)) return includeDemo ? DEFAULT_CHATS : [];
+    const deletedIds = loadDeletedIds();
     const valid = parsed
       .filter(isChatSummary)
+      .filter((chat) => !deletedIds.has(chat.id))
       .filter((chat) => includeDemo || !chat.demo)
       .sort(sortNewestFirst);
-    return valid.length || !includeDemo ? valid : DEFAULT_CHATS;
+    const retained = valid.filter((chat) => !chat.archivedAt || !isArchiveExpired(chat.archivedAt));
+    if (retained.length !== valid.length) persistSilently(retained);
+    const visible = includeArchived ? retained : retained.filter((chat) => !chat.archivedAt);
+    return visible.length || !includeDemo ? visible : DEFAULT_CHATS;
   } catch {
     return includeDemo ? DEFAULT_CHATS : [];
   }
 }
 
 export function rememberChat(chat: ChatSummary): ChatSummary[] {
-  const current = loadChatHistory({ includeDemo: false }).filter((item) => item.id !== chat.id);
-  return persist([chat, ...current].sort(sortNewestFirst));
+  const deletedIds = loadDeletedIds();
+  deletedIds.delete(chat.id);
+  persistDeletedIds(deletedIds);
+  const current = loadChatHistory({ includeDemo: false, includeArchived: true }).filter((item) => item.id !== chat.id);
+  const activeChat = { ...chat };
+  delete activeChat.archivedAt;
+  return persist([activeChat, ...current].sort(sortNewestFirst));
 }
 
 export function updateChat(
   id: string,
-  patch: Partial<Pick<ChatSummary, "title" | "status" | "framework" | "folderId">>,
+  patch: Partial<Pick<ChatSummary, "title" | "status" | "framework" | "folderId" | "archivedAt">>,
 ): ChatSummary[] {
   return persist(
-    loadChatHistory({ includeDemo: false }).map((chat) => (chat.id === id ? { ...chat, ...patch } : chat)),
+    loadChatHistory({ includeDemo: false, includeArchived: true }).map((chat) => (chat.id === id ? { ...chat, ...patch } : chat)),
   );
+}
+
+export function archiveChat(id: string, fallback?: ChatSummary): ChatSummary[] {
+  const current = loadChatHistory({ includeDemo: false, includeArchived: true });
+  const archivedAt = new Date().toISOString();
+  const existing = current.find((chat) => chat.id === id);
+  if (existing) return persist(current.map((chat) => (chat.id === id ? { ...chat, archivedAt } : chat)));
+  if (!fallback) return current;
+  return persist([{ ...fallback, archivedAt }, ...current].sort(sortNewestFirst));
+}
+
+export function restoreChat(id: string): ChatSummary[] {
+  return persist(
+    loadChatHistory({ includeDemo: false, includeArchived: true }).map((chat) => {
+      if (chat.id !== id) return chat;
+      const restored = { ...chat };
+      delete restored.archivedAt;
+      return restored;
+    }),
+  );
+}
+
+export function deleteChat(id: string): ChatSummary[] {
+  const deletedIds = loadDeletedIds();
+  deletedIds.add(id);
+  persistDeletedIds(deletedIds);
+  return persist(loadChatHistory({ includeDemo: false, includeArchived: true }).filter((chat) => chat.id !== id));
+}
+
+export function daysUntilArchiveDeletion(archivedAt: string, now = new Date()): number {
+  const expiresAt = new Date(archivedAt).valueOf() + CHAT_ARCHIVE_RETENTION_DAYS * 86_400_000;
+  return Math.max(0, Math.ceil((expiresAt - now.valueOf()) / 86_400_000));
+}
+
+function isArchiveExpired(archivedAt: string): boolean {
+  return daysUntilArchiveDeletion(archivedAt) <= 0;
 }
 
 export function loadChatFolders(): ChatFolder[] {

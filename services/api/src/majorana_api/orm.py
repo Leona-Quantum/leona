@@ -111,6 +111,7 @@ class Run(Base):
     __tablename__ = "runs"
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True)
+    conversation_id: Mapped[uuid.UUID] = mapped_column(nullable=False)
     workspace_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("workspaces.id"))
     user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"))
     artifact_version_id: Mapped[uuid.UUID | None] = mapped_column(

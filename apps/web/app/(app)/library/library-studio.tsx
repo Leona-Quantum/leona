@@ -2,6 +2,8 @@
 
 import { useEffect, useMemo, useState } from "react";
 import {
+  archiveArtifact,
+  deleteArtifact,
   getLibraryArtifact,
   loadLibraryArtifacts,
   type LibraryArtifact,
@@ -17,6 +19,23 @@ export function LibraryStudio({ demoMode = false, locale = "en" }: { demoMode?: 
   const [query, setQuery] = useState("");
   const [framework, setFramework] = useState("all");
   const [status, setStatus] = useState<"all" | LibraryStatus>("all");
+  const [deleteTarget, setDeleteTarget] = useState<LibraryArtifact | null>(null);
+
+  function refreshArtifacts() {
+    setArtifacts(loadLibraryArtifacts({ includeDemo: demoMode }));
+  }
+
+  function handleArchive(artifact: LibraryArtifact) {
+    archiveArtifact(artifact.id, artifact);
+    refreshArtifacts();
+  }
+
+  function handleDelete() {
+    if (!deleteTarget) return;
+    deleteArtifact(deleteTarget.id);
+    setDeleteTarget(null);
+    refreshArtifacts();
+  }
 
   useEffect(() => {
     let active = true;
@@ -122,7 +141,7 @@ export function LibraryStudio({ demoMode = false, locale = "en" }: { demoMode?: 
                 <span role="columnheader">{locale === "ja" ? "更新" : "Updated"}</span>
                 <span aria-hidden="true" />
               </div>
-              {filtered.length ? filtered.map((artifact) => <ArtifactRow artifact={artifact} demoMode={demoMode} locale={locale} key={artifact.id} />) : (
+              {filtered.length ? filtered.map((artifact) => <ArtifactRow artifact={artifact} demoMode={demoMode} locale={locale} onArchive={handleArchive} onDelete={setDeleteTarget} key={artifact.id} />) : (
                 <div className="mj-library-empty" role="row">
                   <strong>{copy.noMatch}</strong>
                   <span>{copy.noMatchBody}</span>
@@ -135,26 +154,45 @@ export function LibraryStudio({ demoMode = false, locale = "en" }: { demoMode?: 
           <p className="mj-library-footer-note">{demoMode ? copy.previewFooter : copy.workspaceFooter}</p>
         </div>
       </div>
+      {deleteTarget ? (
+        <div className="mj-delete-dialog-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setDeleteTarget(null); }}>
+          <section className="mj-delete-dialog" role="dialog" aria-modal="true" aria-labelledby="mj-library-delete-title">
+            <p className="mj-eyebrow">{copy.title}</p>
+            <h2 id="mj-library-delete-title">{copy.deleteConfirmTitle}</h2>
+            <p>{copy.deleteWarning(deleteTarget.title)}</p>
+            <div className="mj-delete-dialog-actions">
+              <button className="mj-secondary-button" type="button" onClick={() => setDeleteTarget(null)}>{locale === "ja" ? "キャンセル" : "Cancel"}</button>
+              <button className="mj-danger-button" type="button" onClick={handleDelete}>{copy.delete}</button>
+            </div>
+          </section>
+        </div>
+      ) : null}
     </div>
   );
 }
 
-function ArtifactRow({ artifact, demoMode, locale }: { artifact: LibraryArtifact; demoMode: boolean; locale: PublicLocale }) {
+function ArtifactRow({ artifact, demoMode, locale, onArchive, onDelete }: { artifact: LibraryArtifact; demoMode: boolean; locale: PublicLocale; onArchive: (artifact: LibraryArtifact) => void; onDelete: (artifact: LibraryArtifact) => void }) {
   const copy = WORKSPACE_COPY[locale].library;
   return (
-    <a className="mj-library-row mj-library-row--artifact" href={demoMode ? "/demo?view=library" : `/library/${artifact.id}`} role="row">
-      <span className="mj-library-name-cell" role="cell">
+    <div className="mj-library-row mj-library-row--artifact" role="row">
+      <a className="mj-library-name-cell" href={demoMode ? "/demo?view=library" : `/library/${artifact.id}`} role="cell">
         <span className="mj-library-star" aria-hidden="true">☆</span>
         <span>
           <strong>{artifact.title}</strong>
           <small>{artifact.family} · {artifact.tags.slice(0, 2).join(" · ")}</small>
         </span>
-      </span>
+      </a>
       <span role="cell" className="mj-library-mono">{artifact.framework}</span>
       <span role="cell"><StatusLabel status={artifact.status} locale={locale} /></span>
       <span role="cell" className="mj-library-date">{formatDate(artifact.updatedAt, locale, copy.unknown)}</span>
-      <span className="mj-library-open" aria-hidden="true">→</span>
-    </a>
+      <span role="cell" className="mj-library-row-actions">
+        <a href={`/run?artifact=${encodeURIComponent(artifact.id)}`}>{copy.askInRun}</a>
+        {!demoMode ? <>
+          <button type="button" onClick={() => onArchive(artifact)}>{copy.archive}</button>
+          <button className="is-danger" type="button" onClick={() => onDelete(artifact)}>{copy.delete}</button>
+        </> : null}
+      </span>
+    </div>
   );
 }
 

@@ -104,6 +104,7 @@ class ResourceMetrics(_ResourceBase):
 
 class Run(_ResourceBase):
     id: UUID
+    conversation_id: UUID
     workspace_id: UUID
     user_id: UUID
     artifact_version_id: UUID | None = None
@@ -128,6 +129,17 @@ class Run(_ResourceBase):
     created_at: datetime
     started_at: datetime | None = None
     finished_at: datetime | None = None
+
+
+class ConversationTurn(_ResourceBase):
+    run: Run
+    events: list[dict[str, Any]] = Field(default_factory=list)
+
+
+class Conversation(_ResourceBase):
+    id: UUID
+    workspace_id: UUID
+    turns: list[ConversationTurn] = Field(default_factory=list)
 
 
 class VerificationRecord(_ResourceBase):

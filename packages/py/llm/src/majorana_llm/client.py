@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Awaitable, Callable
-from typing import Any, Protocol
+from typing import Any, Literal, Protocol
 
 from pydantic import BaseModel, Field
 
@@ -18,7 +18,8 @@ from pydantic import BaseModel, Field
 class LLMRequest(BaseModel):
     model: str
     system: str
-    user: str
+    user: str = ""
+    messages: list["LLMMessage"] | None = None
     max_tokens: int = Field(default=4096, ge=1)
     temperature: float = Field(default=0.0, ge=0.0, le=2.0)
     # Structured decoding: a JSON Schema the reply must satisfy. On OpenAI-compatible
@@ -37,6 +38,18 @@ class LLMResponse(BaseModel):
 
 
 DeltaHandler = Callable[[str, str], Awaitable[None]]
+
+
+class LLMMessage(BaseModel):
+    role: Literal["user", "assistant"]
+    content: str
+
+
+def request_messages(request: LLMRequest) -> list[dict[str, str]]:
+    """Return the conversation body without changing the legacy single-user API."""
+    if request.messages is not None:
+        return [message.model_dump() for message in request.messages]
+    return [{"role": "user", "content": request.user}]
 
 
 class LLMClient(Protocol):
@@ -117,10 +130,7 @@ class OpenAICompatibleLLM:
         params, system = decode_params(request, key_env)
 
         client = AsyncOpenAI(api_key=api_key, base_url=base_url)
-        messages = [
-            {"role": "system", "content": system},
-            {"role": "user", "content": request.user},
-        ]
+        messages = [{"role": "system", "content": system}, *request_messages(request)]
         if on_delta is None:
             completion = await client.chat.completions.create(
                 model=request.model,
@@ -197,16 +207,30 @@ class AnthropicLLM:
             )
 
         client = AsyncAnthropic(api_key=self._api_key)  # picks up ANTHROPIC_API_KEY
-        message = await client.messages.create(
-            model=request.model,
-            max_tokens=request.max_tokens,
-            temperature=request.temperature,
-            system=system,
-            messages=[{"role": "user", "content": request.user}],
-        )
-        text = "".join(block.text for block in message.content if block.type == "text")
-        if on_delta is not None and text:
-            await on_delta(text, "output")
+        messages = request_messages(request)
+        if on_delta is None:
+            message = await client.messages.create(
+                model=request.model,
+                max_tokens=request.max_tokens,
+                temperature=request.temperature,
+                system=system,
+                messages=messages,
+            )
+            text = "".join(block.text for block in message.content if block.type == "text")
+        else:
+            text_parts: list[str] = []
+            async with client.messages.stream(
+                model=request.model,
+                max_tokens=request.max_tokens,
+                temperature=request.temperature,
+                system=system,
+                messages=messages,
+            ) as stream:
+                async for fragment in stream.text_stream:
+                    text_parts.append(fragment)
+                    await on_delta(fragment, "output")
+                message = await stream.get_final_message()
+            text = "".join(text_parts)
         return LLMResponse(
             text=text,
             model=request.model,

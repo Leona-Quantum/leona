@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { CheckIcon, CopyIcon, StudioIcon } from "../../../components/icons";
+import { CheckIcon, CopyIcon, SearchIcon } from "../../../components/icons";
 import type { ComposerFramework } from "../../../components/run-composer";
 import { frameworkVariantsFromRemote, getLibraryArtifact, loadLibraryArtifacts, type LibraryArtifact } from "../../../lib/library-data";
 import type { PublicLocale } from "../../../lib/public-locale";
@@ -42,14 +42,15 @@ circuit = cirq.Circuit(
 )`,
 };
 
-export function StudioWorkspace({ artifactId, locale = "en" }: { artifactId?: string; locale?: PublicLocale }) {
+export function StudioWorkspace({ artifactId, newDraft = false, locale = "en" }: { artifactId?: string; newDraft?: boolean; locale?: PublicLocale }) {
   const copy = WORKSPACE_COPY[locale].studio;
   const initialArtifact = artifactId ? getLibraryArtifact(artifactId) : null;
   const initialFramework = normalizeFramework(initialArtifact?.framework);
   const initialDrafts = makeDrafts(initialArtifact);
   const [artifacts, setArtifacts] = useState<LibraryArtifact[]>(() => loadLibraryArtifacts());
   const [artifact, setArtifact] = useState<LibraryArtifact | null>(initialArtifact);
-  const [selectedId, setSelectedId] = useState(artifactId ?? "");
+  const [showEditor, setShowEditor] = useState(Boolean(artifactId || newDraft));
+  const [query, setQuery] = useState("");
   const [title, setTitle] = useState(initialArtifact?.title ?? "Untitled circuit");
   const [framework, setFramework] = useState<ComposerFramework>(initialFramework);
   const [drafts, setDrafts] = useState<Record<ComposerFramework, string>>(initialDrafts);
@@ -91,8 +92,8 @@ export function StudioWorkspace({ artifactId, locale = "en" }: { artifactId?: st
   }, [artifactId, copy]);
 
   function applyArtifact(next: LibraryArtifact | null) {
+    setShowEditor(true);
     setArtifact(next);
-    setSelectedId(next?.id ?? "");
     setTitle(next?.title ?? "Untitled circuit");
     const nextDrafts = makeDrafts(next);
     const nextFramework = normalizeFramework(next?.framework);
@@ -102,6 +103,11 @@ export function StudioWorkspace({ artifactId, locale = "en" }: { artifactId?: st
     setPanel("canvas");
     setRunId(null);
   }
+
+  const filteredArtifacts = artifacts.filter((item) => {
+    const normalized = query.trim().toLowerCase();
+    return !normalized || [item.title, item.family, item.framework, item.description, ...item.tags].join(" ").toLowerCase().includes(normalized);
+  });
 
   async function selectArtifact(id: string) {
     setMessage(null);
@@ -174,100 +180,96 @@ export function StudioWorkspace({ artifactId, locale = "en" }: { artifactId?: st
 
   return (
     <div className="mj-studio-page">
-      <header className="mj-studio-header">
-        <div className="mj-studio-brand">
-          <StudioIcon size={18} />
-          <div>
-            <span className="mj-section-label">{copy.label}</span>
-            <strong>{copy.title}</strong>
-          </div>
-        </div>
-        <div className="mj-studio-header-meta">
-          <span className="mj-studio-status"><span className="mj-status-dot" aria-hidden="true" />{copy.draftStatus}</span>
-          <a className="mj-secondary-button" href={selectedId ? `/library/${selectedId}` : "/library"}>{copy.backLibrary}</a>
-        </div>
-      </header>
+      <div className={`mj-studio-workspace${showEditor ? " mj-studio-workspace--editor" : " mj-studio-workspace--discovery"}`}>
+        {showEditor ? (
+          <>
+            <section className="mj-studio-main">
+              <div className="mj-studio-main-head">
+                <div className="mj-studio-title-block">
+                  <label className="mj-section-label" htmlFor="studio-title">{copy.workingCircuit}</label>
+                  <input id="studio-title" className="mj-studio-title-input" value={title} onChange={(event) => setTitle(event.target.value)} />
+                  <p>{artifact ? copy.editingVersion(artifact.currentVersionId ? artifact.currentVersionId.slice(0, 8) : (locale === "ja" ? "下書き" : "draft"), artifact.framework) : copy.newDraft}</p>
+                </div>
+                <div className="mj-studio-actions">
+                  <button className="mj-secondary-button" type="button" onClick={() => void copyCode()} title={copied ? copy.copied : copy.copyCode}><CopyIcon size={14} />{copied ? copy.copied : copy.copyCode}</button>
+                  <button className="mj-secondary-button" type="button" disabled={busy !== null} onClick={() => void startRun("simulate")}>{busy === "simulate" ? copy.starting : copy.simulate}</button>
+                  <button className="mj-primary-button" type="button" disabled={busy !== null} onClick={() => void startRun("save")}>{busy === "save" ? copy.starting : copy.verifySave}</button>
+                </div>
+              </div>
 
-      <div className="mj-studio-workspace">
-        <aside className="mj-studio-sidebar" aria-label={`${copy.title} ${copy.artifacts}`}>
-          <div className="mj-studio-sidebar-head">
-            <span className="mj-section-label">{copy.artifacts}</span>
-            <button className="mj-secondary-button" type="button" onClick={() => applyArtifact(null)} title={copy.new}>{copy.new}</button>
-          </div>
-          <div className="mj-studio-artifact-list">
-            {artifacts.length ? artifacts.map((item) => (
-              <button
-                className={`mj-studio-artifact${item.id === selectedId ? " is-active" : ""}`}
-                type="button"
-                key={item.id}
-                onClick={() => void selectArtifact(item.id)}
-              >
-                <span className="mj-studio-artifact-mark" aria-hidden="true">{item.status === "verified" ? "✓" : "–"}</span>
-                <span><strong>{item.title}</strong><small>{item.framework} · {item.family}</small></span>
-              </button>
-            )) : <p className="mj-studio-empty">{copy.empty}</p>}
-          </div>
-          <p className="mj-studio-sidebar-note">{copy.sidebarNote}</p>
-        </aside>
+              <nav className="mj-studio-tabs" aria-label={copy.view}>
+                {(["canvas", "code", "versions"] as StudioPanel[]).map((item) => (
+                  <button className={panel === item ? "is-active" : ""} type="button" key={item} onClick={() => setPanel(item)}>
+                    {item === "canvas" ? copy.circuit : item === "code" ? copy.code : copy.versions}
+                  </button>
+                ))}
+              </nav>
 
-        <main className="mj-studio-main">
-          <div className="mj-studio-main-head">
-            <div className="mj-studio-title-block">
-              <label className="mj-section-label" htmlFor="studio-title">{copy.workingCircuit}</label>
-              <input id="studio-title" className="mj-studio-title-input" value={title} onChange={(event) => setTitle(event.target.value)} />
-              <p>{artifact ? copy.editingVersion(artifact.currentVersionId ? artifact.currentVersionId.slice(0, 8) : (locale === "ja" ? "下書き" : "draft"), artifact.framework) : copy.newDraft}</p>
+              {panel === "canvas" ? <CircuitCanvas framework={framework} code={code} selectedGate={selectedGate} onSelectGate={setSelectedGate} copy={copy} /> : null}
+              {panel === "code" ? <CodeEditor code={code} framework={framework} onChange={setCode} onCopy={() => void copyCode()} copied={copied} copy={copy} /> : null}
+              {panel === "versions" ? <VersionPanel artifact={artifact} runId={runId} copy={copy} /> : null}
+
+              <footer className="mj-studio-footer" aria-live="polite">
+                <span>{message ?? copy.footer}</span>
+                {runId ? <a href={`/run/${runId}`}>{copy.openRun} →</a> : null}
+              </footer>
+            </section>
+
+            <aside className="mj-studio-inspector" aria-label={copy.inspector}>
+              <div className="mj-studio-inspector-head"><span className="mj-section-label">{copy.inspector}</span><span className="mj-mono-muted">{copy.liveDraft}</span></div>
+              <label className="mj-studio-field">
+                <span>{locale === "ja" ? "フレームワーク" : "Framework"}</span>
+                <select value={framework} onChange={(event) => changeFramework(event.target.value as ComposerFramework)}>
+                  {FRAMEWORK_OPTIONS.map((option) => <option value={option.value} key={option.value}>{option.label}</option>)}
+                </select>
+              </label>
+              <div className="mj-studio-inspector-card">
+                <span className="mj-section-label">{copy.selectedGate}</span>
+                <strong>{selectedGate}</strong>
+                <p>{copy.gateDescriptions[selectedGate] ?? copy.gateDescriptions.H}</p>
+              </div>
+              <div className="mj-studio-inspector-card">
+                <span className="mj-section-label">{copy.runContract}</span>
+                <dl className="mj-studio-contract">
+                  <div><dt>{copy.mode}</dt><dd>{copy.execute}</dd></div>
+                  <div><dt>{copy.source}</dt><dd>{artifact ? copy.existingVersion : copy.newDraftSource}</dd></div>
+                  <div><dt>{copy.evidence}</dt><dd>{copy.sandboxVerifier}</dd></div>
+                </dl>
+              </div>
+              <div className="mj-studio-framework-note">
+                <CheckIcon size={14} />
+                <span>{copy.frameworkNote}</span>
+              </div>
+            </aside>
+          </>
+        ) : (
+          <section className="mj-studio-discovery">
+            <div className="mj-studio-discovery-heading">
+              <div>
+                <span className="mj-section-label">{copy.label}</span>
+                <h1>{copy.title}</h1>
+                <p>{copy.sidebarNote}</p>
+              </div>
+              <button className="mj-primary-button" type="button" onClick={() => applyArtifact(null)}>{copy.new}</button>
             </div>
-            <div className="mj-studio-actions">
-              <button className="mj-secondary-button" type="button" onClick={() => void copyCode()} title={copied ? copy.copied : copy.copyCode}><CopyIcon size={14} />{copied ? copy.copied : copy.copyCode}</button>
-              <button className="mj-secondary-button" type="button" disabled={busy !== null} onClick={() => void startRun("simulate")}>{busy === "simulate" ? copy.starting : copy.simulate}</button>
-              <button className="mj-primary-button" type="button" disabled={busy !== null} onClick={() => void startRun("save")}>{busy === "save" ? copy.starting : copy.verifySave}</button>
+            <label className="mj-studio-search">
+              <SearchIcon size={17} />
+              <span className="sr-only">{copy.search}</span>
+              <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={copy.searchPlaceholder} />
+            </label>
+            <div className="mj-studio-discovery-list">
+              {filteredArtifacts.length ? filteredArtifacts.map((item) => (
+                <article className="mj-studio-discovery-card" key={item.id}>
+                  <button type="button" onClick={() => void selectArtifact(item.id)}>
+                    <span className="mj-studio-artifact-mark" aria-hidden="true">{item.status === "verified" ? "✓" : "–"}</span>
+                    <span><strong>{item.title}</strong><small>{item.framework} · {item.family} · {formatDiscoveryDate(item.updatedAt, locale)}</small><em>{item.description}</em></span>
+                  </button>
+                  <a className="mj-secondary-button" href={`/run?artifact=${encodeURIComponent(item.id)}`}>{copy.openRun}</a>
+                </article>
+              )) : <p className="mj-studio-empty">{artifacts.length ? copy.noSearchResults : copy.empty}</p>}
             </div>
-          </div>
-
-          <nav className="mj-studio-tabs" aria-label={copy.view}>
-            {(["canvas", "code", "versions"] as StudioPanel[]).map((item) => (
-              <button className={panel === item ? "is-active" : ""} type="button" key={item} onClick={() => setPanel(item)}>
-                {item === "canvas" ? copy.circuit : item === "code" ? copy.code : copy.versions}
-              </button>
-            ))}
-          </nav>
-
-          {panel === "canvas" ? <CircuitCanvas framework={framework} code={code} selectedGate={selectedGate} onSelectGate={setSelectedGate} copy={copy} /> : null}
-          {panel === "code" ? <CodeEditor code={code} framework={framework} onChange={setCode} onCopy={() => void copyCode()} copied={copied} copy={copy} /> : null}
-          {panel === "versions" ? <VersionPanel artifact={artifact} runId={runId} copy={copy} /> : null}
-
-          <footer className="mj-studio-footer" aria-live="polite">
-            <span>{message ?? copy.footer}</span>
-            {runId ? <a href={`/run/${runId}`}>{copy.openRun} →</a> : null}
-          </footer>
-        </main>
-
-        <aside className="mj-studio-inspector" aria-label={copy.inspector}>
-          <div className="mj-studio-inspector-head"><span className="mj-section-label">{copy.inspector}</span><span className="mj-mono-muted">{copy.liveDraft}</span></div>
-          <label className="mj-studio-field">
-            <span>{locale === "ja" ? "フレームワーク" : "Framework"}</span>
-            <select value={framework} onChange={(event) => changeFramework(event.target.value as ComposerFramework)}>
-              {FRAMEWORK_OPTIONS.map((option) => <option value={option.value} key={option.value}>{option.label}</option>)}
-            </select>
-          </label>
-          <div className="mj-studio-inspector-card">
-            <span className="mj-section-label">{copy.selectedGate}</span>
-            <strong>{selectedGate}</strong>
-            <p>{copy.gateDescriptions[selectedGate] ?? copy.gateDescriptions.H}</p>
-          </div>
-          <div className="mj-studio-inspector-card">
-            <span className="mj-section-label">{copy.runContract}</span>
-            <dl className="mj-studio-contract">
-              <div><dt>{copy.mode}</dt><dd>{copy.execute}</dd></div>
-              <div><dt>{copy.source}</dt><dd>{artifact ? copy.existingVersion : copy.newDraftSource}</dd></div>
-              <div><dt>{copy.evidence}</dt><dd>{copy.sandboxVerifier}</dd></div>
-            </dl>
-          </div>
-          <div className="mj-studio-framework-note">
-            <CheckIcon size={14} />
-            <span>{copy.frameworkNote}</span>
-          </div>
-        </aside>
+          </section>
+        )}
       </div>
     </div>
   );
@@ -398,6 +400,12 @@ function normalizeFramework(value: string | undefined): ComposerFramework {
 
 function frameworkLabel(framework: ComposerFramework): string {
   return framework === "pennylane" ? "PennyLane" : framework === "cirq" ? "Cirq" : "Qiskit";
+}
+
+function formatDiscoveryDate(value: string, locale: PublicLocale): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.valueOf())) return "";
+  return date.toLocaleDateString(locale === "ja" ? "ja-JP" : "en-US", { month: "short", day: "numeric" });
 }
 
 function resourceRowsFromRemote(value: unknown): Array<{ label: string; value: string }> {
