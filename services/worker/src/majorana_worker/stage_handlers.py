@@ -1,12 +1,12 @@
 """Real pipeline stage handlers — the seam where the pure state machine
-(majorana-pipeline) meets the LLM, sandbox, verification, baseline, and IR
+(majorana-pipeline) meets the LLM, sandbox, verification, baseline, and OpenQASM
 packages. These live in the WORKER, not the pipeline package, so the pipeline
 stays pure (contracts only). The orchestrator still owns transitions; each handler
 only does its stage's work, writes to ctx.state, and emits events.
 
 Data threaded through ctx.state within a run:
-  plan (Plan) → code (str) → screen/resource evidence → result (dict) + circuit (IR)
-  + qasm (str) → verifier_decision → compiled circuit/resource evidence → finalized
+  plan (Plan) → code (str) → screen/resource evidence → result (dict)
+  + normalized OpenQASM 3 → verifier_decision → compiled QASM/resource evidence → finalized
   code → final result → baseline/analysis → export/writeback metadata
 
 Providers are injected: production builds the configured real LLM client and
@@ -45,15 +45,13 @@ from majorana_contracts.enums import (
 )
 from majorana_contracts.models import ResourceMetrics
 from majorana_contracts.plan import Plan
-from majorana_ir import (
-    IR_VERSION_TAG,
-    canonical_dict,
-    circuit_fingerprint,
-    compile_circuit,
+from majorana_openqasm import (
+    OpenQASMError,
+    compile_program,
+    fingerprint,
+    normalize,
     resource_metrics,
 )
-from majorana_ir.connectors import OpenQASMError, from_openqasm, to_openqasm
-from majorana_ir.export import classify_export
 from majorana_llm import (
     FINAL_QASM_BEGIN,
     FINAL_QASM_END,
@@ -90,38 +88,21 @@ from majorana_contracts import Scope
 from majorana_api.repos import artifacts as artifacts_repo
 from majorana_api.repos import runs as runs_repo
 
-# Export target per framework (the classifier's target vocabulary).
-_EXPORT_TARGET = {
-    Framework.QISKIT: "qiskit",
-    Framework.PENNYLANE: "pennylane",
-    Framework.CIRQ: "cirq",
-}
-
 
 def _framework_variants(
-    circuit, selected_framework: Framework, selected_code: str
+    qasm: str | None, selected_framework: Framework, selected_code: str
 ) -> dict[str, dict[str, Any]]:
-    """Build the copyable native framework variants for a verified circuit.
-
-    The selected framework keeps the pipeline's final source (which may include
-    the model's runnable result contract); alternate frameworks use the
-    deterministic IR connector output. Unsupported native conversions are
-    omitted and remain available through the explicit OpenQASM conversion path.
-    """
-    if circuit is None:
+    """Retain only the proven source variant; OpenQASM is the interchange format."""
+    if qasm is None:
         return {}
-    variants: dict[str, dict[str, Any]] = {}
-    for framework, target in _EXPORT_TARGET.items():
-        classification = classify_export(circuit, target)
-        if classification.code is None:
-            continue
-        variants[framework.value] = {
-            "language": framework.value,
-            "code": selected_code if framework is selected_framework else classification.code,
-            "export_status": classification.status,
-            "export_reason": classification.reason,
+    return {
+        selected_framework.value: {
+            "language": selected_framework.value,
+            "code": selected_code,
+            "export_status": ExportStatus.LOSSLESS,
+            "export_reason": None,
         }
-    return variants
+    }
 
 
 _BASELINE_INSTANCE_TYPES = {
@@ -169,23 +150,7 @@ def _qiskit_qasm_epilogue(code: str) -> str:
 _majorana_final_circuit = globals().get("FINAL_CIRCUIT")
 if _majorana_final_circuit is not None:
     try:
-        from qiskit.qasm2 import dumps as _majorana_qasm_dumps
-
-        # Serialize through the narrow IR-compatible basis when Qiskit can do so.
-        # This keeps simulator/backend-specific composites (u2/u3/rxx/rzx/...) from
-        # being mistaken for canonical IR gates by the verifier. Dynamic circuits
-        # that cannot be lowered remain an explicit export/verification limitation.
-        try:
-            from qiskit import transpile as _majorana_transpile
-        except Exception:
-            _majorana_transpile = None
-        if _majorana_transpile is not None:
-            _majorana_final_circuit = _majorana_transpile(
-                _majorana_final_circuit,
-                basis_gates=["u", "cx"],
-                optimization_level=0,
-            )
-
+        from qiskit.qasm3 import dumps as _majorana_qasm_dumps
         _majorana_final_qasm = _majorana_qasm_dumps(_majorana_final_circuit)
     except Exception as _majorana_qasm_exc:
         print("{FINAL_QASM_ERROR}:" + type(_majorana_qasm_exc).__name__)
@@ -363,7 +328,6 @@ def build_stage_handlers(
         code_key = "final_code" if phase == "final" else "code"
         result_key = "final_result" if phase == "final" else "result"
         qasm_key = "final_qasm" if phase == "final" else "qasm"
-        circuit_key = "final_circuit" if phase == "final" else "circuit"
         # A failed final simulation is still a generated-program failure: feed the
         # concrete runtime diagnostic back to generation, then re-screen/re-estimate
         # before trying compilation/finalization again.
@@ -449,13 +413,11 @@ def build_stage_handlers(
         ctx.state[result_key] = parsed
         qasm = qasm_extraction.qasm
         if qasm:
-            # Preserve a syntactically invalid payload for qasm_parse so the verifier
-            # can report the real parse error rather than mislabeling it as missing.
             ctx.state[qasm_key] = qasm
             try:
-                ctx.state[circuit_key] = from_openqasm(qasm)
+                ctx.state[qasm_key] = normalize(qasm)
             except OpenQASMError:
-                pass  # verify's qasm_parse will record the failure
+                pass  # qasm_parse records the original parser diagnostic
         return StageOutcome(ok=True)
 
     async def verify_stage(ctx: RunContext) -> StageOutcome:
@@ -516,12 +478,11 @@ def build_stage_handlers(
             details_text = json.dumps(
                 [outcome.details for outcome in outcomes], sort_keys=True, default=str
             )
-            # An IR capability limitation is an honest terminal result, not a
-            # prompt-repair loop. Ordinary contract/statistical failures restart
-            # generation with the concrete evidence as feedback.
+            # Dynamic programs unsupported by the current SDK importer are an
+            # explicit capability result, not useful prompt-repair feedback.
             non_repairable = any(
                 marker in details_text.lower()
-                for marker in ("terminal-measurement", "ir limitation", "mid-circuit")
+                for marker in ("dynamic circuit", "control flow", "not supported by qiskit")
             )
             if not non_repairable:
                 return StageOutcome(
@@ -618,42 +579,50 @@ def build_stage_handlers(
         return StageOutcome(ok=True)
 
     async def compile_stage(ctx: RunContext) -> StageOutcome:
-        circuit = ctx.state.get("circuit")
-        if circuit is None:
-            ctx.state["compiled_circuit"] = None
+        qasm = ctx.state.get("qasm")
+        if qasm is None:
+            ctx.state["compiled_qasm"] = None
             await ctx.sink.emit(
                 "compilation.result",
                 {
                     "accepted": False,
                     "mode": "not_applicable",
-                    "reason": "no verified circuit was available for compilation",
+                    "reason": "no verified OpenQASM program was available for compilation",
                     "compatibility": {},
                 },
             )
             return StageOutcome(ok=True)
 
-        outcome = compile_circuit(circuit)
-        ctx.state["compiled_circuit"] = outcome.selected
+        try:
+            outcome = compile_program(qasm)
+        except OpenQASMError as exc:
+            ctx.state["compiled_qasm"] = None
+            ctx.state["compilation"] = None
+            await ctx.sink.emit(
+                "compilation.result",
+                {
+                    "accepted": False,
+                    "mode": "not_applicable",
+                    "reason": str(exc),
+                    "compatibility": {},
+                },
+            )
+            return StageOutcome(ok=True)
+        ctx.state["compiled_qasm"] = outcome.selected_qasm
         ctx.state["compilation"] = outcome
-        compatibility: dict[str, Any] = {}
-        for target in ("openqasm2", "openqasm3", "qiskit", "pennylane", "cirq"):
-            try:
-                classification = classify_export(outcome.selected, target)
-                compatibility[target] = {
-                    "status": classification.status,
-                    "reason": classification.reason,
-                }
-            except Exception as exc:
-                compatibility[target] = {"status": "unsupported", "reason": type(exc).__name__}
+        compatibility = {
+            "openqasm3": {"status": ExportStatus.LOSSLESS, "reason": None},
+            "qiskit": {"status": ExportStatus.LOSSLESS, "reason": None},
+        }
 
         await ctx.sink.emit(
             "compilation.result",
             {
                 "accepted": outcome.accepted,
                 "mode": outcome.mode,
-                "target": "canonical_ir",
-                "source_fingerprint": circuit_fingerprint(outcome.source),
-                "compiled_fingerprint": circuit_fingerprint(outcome.selected),
+                "target": "openqasm3",
+                "source_fingerprint": fingerprint(outcome.source_qasm),
+                "compiled_fingerprint": fingerprint(outcome.selected_qasm),
                 "before": outcome.before.model_dump(mode="json"),
                 "after": outcome.candidate.model_dump(mode="json"),
                 "compatibility": compatibility,
@@ -664,13 +633,13 @@ def build_stage_handlers(
 
     async def compiled_resource_estimate_stage(ctx: RunContext) -> StageOutcome:
         plan: Plan = ctx.state["plan"]
-        circuit = ctx.state.get("compiled_circuit")
-        if circuit is None:
+        qasm = ctx.state.get("compiled_qasm")
+        if qasm is None:
             metrics = _static_resource_metrics(plan, ctx.state["code"])
             source = "plan_static"
-            notes = ["No parsed circuit; compiled estimate is unavailable."]
+            notes = ["No parsed OpenQASM program; compiled estimate is unavailable."]
         else:
-            metrics = resource_metrics(circuit)
+            metrics = resource_metrics(qasm)
             source = "compiler"
             notes = ["Estimate reflects the selected compiler candidate."]
         ctx.state["compiled_resource_estimate"] = metrics
@@ -687,42 +656,23 @@ def build_stage_handlers(
 
     async def finalize_stage(ctx: RunContext) -> StageOutcome:
         plan: Plan = ctx.state["plan"]
-        source_circuit = ctx.state.get("circuit")
+        source_qasm = ctx.state.get("qasm")
         compilation = ctx.state.get("compilation")
-        circuit = source_circuit
         final_code = ctx.state["code"]
+        # Optimization is evidence-only. Rewriting model source around an SDK AST
+        # pattern is brittle; the measured source and its QASM stay paired.
         compilation_applied = False
-        finalization_reason = None
-        if (
-            source_circuit is not None
-            and compilation is not None
-            and compilation.accepted
-            and Framework(plan.framework) is Framework.QISKIT
-        ):
-            rewritten = _rewrite_qiskit_final_circuit(ctx.state["code"], compilation.selected)
-            if rewritten is not None:
-                final_code = rewritten
-                circuit = compilation.selected
-                compilation_applied = True
-            else:
-                finalization_reason = (
-                    "compiler candidate was retained for evidence, but the result-producing "
-                    "source had no safe Qiskit final-run rewrite point; original circuit kept"
-                )
-        elif compilation is not None and not compilation.accepted:
-            finalization_reason = compilation.reason
+        finalization_reason = compilation.reason if compilation is not None else None
 
-        if circuit is None:
+        if source_qasm is None:
             classification_status = ExportStatus.UNSUPPORTED
-            classification_reason = "no circuit produced"
+            classification_reason = "no valid OpenQASM program produced"
             qasm_available = False
         else:
-            target = _EXPORT_TARGET.get(Framework(plan.framework), "openqasm2")
-            classification = classify_export(circuit, target)
-            classification_status = classification.status
-            classification_reason = classification.reason
-            qasm_available = classification.qasm_available
-            ctx.state["export"] = classification
+            classification_status = ExportStatus.LOSSLESS
+            classification_reason = None
+            qasm_available = True
+            ctx.state["export_status"] = classification_status
 
         await ctx.sink.emit(
             "export.classified",
@@ -737,14 +687,12 @@ def build_stage_handlers(
         ctx.state["compilation_applied"] = compilation_applied
         ctx.state["finalization_reason"] = finalization_reason
         simulation_plausible = (
-            ctx.state.get("verifier_decision") is VerifierDecision.PASS and circuit is not None
+            ctx.state.get("verifier_decision") is VerifierDecision.PASS and source_qasm is not None
         )
         ctx.state["simulation_plausible"] = simulation_plausible
-        framework_variants = _framework_variants(circuit, Framework(plan.framework), final_code)
+        framework_variants = _framework_variants(source_qasm, Framework(plan.framework), final_code)
         ctx.state["framework_variants"] = framework_variants
-        conversion_options = (
-            ["openqasm3", "openqasm2", *framework_variants.keys()] if circuit else []
-        )
+        conversion_options = ["openqasm3", *framework_variants.keys()] if source_qasm else []
         execution_options = ["simulate"] if simulation_plausible else []
         await ctx.sink.emit(
             "code.finalized",
@@ -768,7 +716,28 @@ def build_stage_handlers(
     async def final_execute_stage(ctx: RunContext) -> StageOutcome:
         if not ctx.state.get("simulation_plausible", False):
             return StageOutcome(ok=True)
-        return await simulate_stage(ctx, phase="final")
+        outcome = await simulate_stage(ctx, phase="final")
+        if not outcome.ok:
+            return outcome
+        verified_qasm = ctx.state.get("qasm")
+        final_qasm = ctx.state.get("final_qasm")
+        if verified_qasm is None or final_qasm is None:
+            return StageOutcome(
+                ok=False,
+                error_code="final_qasm_missing",
+                error_message="final execution did not emit its OpenQASM program",
+                retry_from=Stage.GENERATE,
+                diagnosis="final execution must emit the same OpenQASM program that was verified",
+            )
+        if fingerprint(verified_qasm) != fingerprint(final_qasm):
+            return StageOutcome(
+                ok=False,
+                error_code="final_qasm_changed",
+                error_message="final execution produced a different circuit",
+                retry_from=Stage.GENERATE,
+                diagnosis="the final OpenQASM fingerprint differs from the verified program",
+            )
+        return StageOutcome(ok=True)
 
     async def analyze_stage(ctx: RunContext) -> StageOutcome:
         plan: Plan = ctx.state["plan"]
@@ -934,16 +903,11 @@ def build_stage_handlers(
         # verification as "verified" — 05-security.md, writeback prompt).
         if ctx.state.get("verifier_decision") is not VerifierDecision.PASS:
             return StageOutcome(ok=True)
-        source_circuit = ctx.state.get("circuit")
-        circuit = ctx.state.get("final_circuit") or (
-            ctx.state.get("compiled_circuit")
-            if ctx.state.get("compilation_applied")
-            else source_circuit
-        )
-        if circuit is None:
+        qasm = ctx.state.get("final_qasm") or ctx.state.get("qasm")
+        if qasm is None:
             return StageOutcome(ok=True)
+        canonical_qasm = normalize(qasm)
         plan: Plan = ctx.state["plan"]
-        export = ctx.state.get("export")
         artifact_id = ctx.parent_artifact_id
         if artifact_id is None:
             artifact = await artifacts_repo.create_artifact(
@@ -959,21 +923,20 @@ def build_stage_handlers(
             scope,
             session,
             artifact_id,
-            ir_version=IR_VERSION_TAG,
-            ir=canonical_dict(circuit),
+            qasm_version="3.0",
+            qasm=canonical_qasm,
+            metadata={"source": "verified_pipeline", "openqasm_version": "3.0"},
             code=ctx.state.get("final_code", ctx.state["code"]),
             code_lang=plan.framework,
-            fingerprint=circuit_fingerprint(circuit),
-            export_status=export.status if export else ExportStatus.UNSUPPORTED,
-            export_reason=export.reason if export else None,
-            qasm=ctx.state.get("final_qasm", ctx.state.get("qasm")),
+            fingerprint=fingerprint(canonical_qasm),
+            export_status=ctx.state.get("export_status", ExportStatus.LOSSLESS),
+            export_reason=None,
             framework_variants={
                 name: variant["code"]
                 for name, variant in ctx.state.get("framework_variants", {}).items()
             },
             resource_estimates={
-                "qubits": circuit.qubits,
-                "operations": len(circuit.operations),
+                **resource_metrics(canonical_qasm).model_dump(mode="json"),
                 "pre_verify": (
                     ctx.state["pre_resource_estimate"].model_dump(mode="json")
                     if isinstance(ctx.state.get("pre_resource_estimate"), ResourceMetrics)
@@ -985,7 +948,7 @@ def build_stage_handlers(
                     else None
                 ),
             },
-            limitations=export.reason if export else None,
+            limitations=None,
         )
         await runs_repo.set_run_artifact_version(scope, session, run_id, version.id)
         await session.commit()
@@ -1009,60 +972,6 @@ def build_stage_handlers(
         Stage.ANALYZE: analyze_stage,
         Stage.SAVE: save_stage,
     }
-
-
-def _rewrite_qiskit_final_circuit(code: str, circuit) -> str | None:
-    """Replace a safe ``FINAL_CIRCUIT = variable`` binding with compiled QASM.
-
-    This deliberately rewrites only the binding used by a later ``.run(variable)``
-    call. If the generated program has a more complicated result contract, the
-    compiler candidate remains evidence-only and the original source is retained.
-    """
-
-    try:
-        tree = ast.parse(code)
-        qasm = to_openqasm(circuit)
-    except Exception:
-        return None
-
-    binding = None
-    for node in ast.walk(tree):
-        if not isinstance(node, ast.Assign) or len(node.targets) != 1:
-            continue
-        target = node.targets[0]
-        if (
-            isinstance(target, ast.Name)
-            and target.id == "FINAL_CIRCUIT"
-            and isinstance(node.value, ast.Name)
-        ):
-            binding = node
-            break
-    if binding is None or binding.end_lineno is None:
-        return None
-
-    source_name = binding.value.id
-    if not any(
-        isinstance(node, ast.Call)
-        and isinstance(node.func, ast.Attribute)
-        and node.func.attr == "run"
-        and node.args
-        and isinstance(node.args[0], ast.Name)
-        and node.args[0].id == source_name
-        and node.lineno > binding.lineno
-        for node in ast.walk(tree)
-    ):
-        return None
-
-    lines = code.splitlines()
-    start = binding.lineno - 1
-    end = binding.end_lineno
-    indent = re.match(r"\s*", lines[start]).group(0) if start < len(lines) else ""
-    replacement = [
-        f"{indent}{source_name} = QuantumCircuit.from_qasm_str({qasm!r})",
-        f"{indent}FINAL_CIRCUIT = {source_name}",
-    ]
-    rewritten = [*lines[:start], *replacement, *lines[end:]]
-    return "\n".join(rewritten) + "\n"
 
 
 def _static_resource_metrics(plan: Plan, code: str) -> ResourceMetrics:
@@ -1139,15 +1048,15 @@ def _run_verification(method: VerificationMethod, plan: Plan, result: dict[str, 
             method=VerificationMethod.QASM_PARSE,
             result=VerificationResultKind.FAIL,
             details={
-                "error": "no parseable OpenQASM 2 on stdout; the generate contract "
+                "error": "no parseable OpenQASM on stdout; the generate contract "
                 "requires circuit-bearing runs to emit FINAL_CIRCUIT as QASM"
             },
         )
     if method is VerificationMethod.STATISTICAL:
-        circuit = state.get("circuit")
+        qasm = state.get("qasm")
         counts = extract_counts(result, plan.expected_output_keys)
-        if circuit is None or counts is None:
-            return None  # no parsed circuit or no counts to test; skip honestly
+        if qasm is None or counts is None:
+            return None  # no parsed program or no counts to test; skip honestly
         thresholds = plan.verification_plan.thresholds if plan.verification_plan else None
         threshold = None
         if thresholds:  # explicit membership checks — a plan-set 0.0 must survive
@@ -1155,10 +1064,8 @@ def _run_verification(method: VerificationMethod, plan: Plan, result: dict[str, 
                 if thresholds.get(key) is not None:
                     threshold = thresholds[key]
                     break
-        # Counts convention follows the generating framework: Qiskit reports
-        # little-endian; the engine (and cirq/pennylane orderings) are big-endian.
         bit_order = "little" if Framework(plan.framework) is Framework.QISKIT else "big"
-        return verify_statistical_counts(circuit, counts, threshold=threshold, bit_order=bit_order)
+        return verify_statistical_counts(qasm, counts, threshold=threshold, bit_order=bit_order)
     if method is VerificationMethod.EXACT_DIAG:
         instance = _baseline_instance(result)
         metric = plan.success_criteria.primary_metric

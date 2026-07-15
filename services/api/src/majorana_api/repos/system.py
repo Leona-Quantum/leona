@@ -13,6 +13,8 @@ import datetime as dt
 from typing import Any
 
 from majorana_contracts.enums import Role
+from majorana_openqasm import fingerprint as qasm_fingerprint
+from majorana_openqasm import normalize
 from sqlalchemy import func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -40,39 +42,46 @@ c[1] = measure q[1];
 
 
 def starter_bell_slug(workspace_id) -> str:
+    """Return the workspace-unique slug for the starter artifact."""
     return f"{STARTER_BELL_SLUG_PREFIX}-{workspace_id.hex}"
 
 
-def starter_bell_ir() -> dict[str, Any]:
-    return {
-        "ir_version": 3,
-        "qubits": 2,
-        "classical_bits": 2,
-        "operations": [
-            {"gate": "h", "qubits": [0]},
-            {"gate": "cx", "qubits": [0, 1]},
-            {
-                "gate": "measure",
-                "qubits": [0],
-                "clbits": [0],
-                "measurement": {"basis": "Z", "register_name": "c"},
-            },
-            {
-                "gate": "measure",
-                "qubits": [1],
-                "clbits": [1],
-                "measurement": {"basis": "Z", "register_name": "c"},
-            },
-        ],
-        "quantum_registers": [{"name": "q", "size": 2, "offset": 0}],
-        "classical_registers": [{"name": "c", "size": 2, "offset": 0}],
-        "gate_definitions": [],
-        "decomposition_applied": None,
-        "objective_functions": [],
-        "noise_model_annotations": {},
-        "annotations": {"starter": True},
-        "metadata": {"description": "Two-qubit Bell state preparation."},
-    }
+def insert_seed_artifact_version(
+    cursor: Any,
+    *,
+    version_id: Any,
+    artifact_id: Any,
+    seq: int,
+    qasm: str | None,
+    code: str,
+    code_lang: str,
+    fallback_fingerprint: str,
+    export_status: str,
+    resource_estimates: str,
+    created_at: dt.datetime,
+) -> None:
+    """Persist a seed version through the repository-owned QASM boundary."""
+    canonical_qasm = normalize(qasm) if qasm is not None else None
+    cursor.execute(
+        "insert into artifact_versions (id, artifact_id, seq, qasm_version, code,"
+        " code_lang, fingerprint, export_status, qasm, resource_estimates, created_at)"
+        " values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
+        (
+            version_id,
+            artifact_id,
+            seq,
+            "3.0" if canonical_qasm is not None else None,
+            code,
+            code_lang,
+            qasm_fingerprint(canonical_qasm)
+            if canonical_qasm is not None
+            else fallback_fingerprint,
+            export_status,
+            canonical_qasm,
+            resource_estimates,
+            created_at,
+        ),
+    )
 
 
 async def ensure_starter_bell_artifact(session: AsyncSession, workspace_id) -> None:
@@ -136,17 +145,18 @@ async def ensure_starter_bell_artifact(session: AsyncSession, workspace_id) -> N
     )
     session.add(artifact)
     await session.flush()
+    canonical_qasm = normalize(STARTER_BELL_QASM)
     version = ArtifactVersion(
         id=uuid7(),
         artifact_id=artifact.id,
         seq=1,
-        ir_version="ir-v1",
-        ir=starter_bell_ir(),
+        qasm_version="3.0",
+        qasm=canonical_qasm,
+        artifact_metadata={"description": "Two-qubit Bell state preparation.", "starter": True},
         code=STARTER_BELL_CODE,
         code_lang="python",
-        fingerprint="starter-bell-state-v1",
+        fingerprint=qasm_fingerprint(canonical_qasm),
         export_status="lossless",
-        qasm=STARTER_BELL_QASM,
         resource_estimates={
             "qubits": 2,
             "depth": 2,

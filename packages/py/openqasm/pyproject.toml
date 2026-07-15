@@ -1,0 +1,21 @@
+[project]
+name = "majorana-openqasm"
+version = "0.1.0"
+description = "OpenQASM 3 normalization, fingerprints, compilation, and resource metrics"
+requires-python = ">=3.12"
+dependencies = [
+    "pydantic>=2.8",
+    "qiskit>=2.4,<3",
+    "qiskit-qasm3-import>=0.6,<0.7",
+    "majorana-contracts",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/majorana_openqasm"]
+
+[tool.uv.sources]
+majorana-contracts = { workspace = true }

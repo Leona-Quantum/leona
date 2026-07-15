@@ -168,22 +168,31 @@ export interface components {
              * Format: uuid
              */
             id: string;
-            /** Ir */
-            ir: {
-                [key: string]: unknown;
-            };
-            /** Ir Version */
-            ir_version: string;
             /**
              * Limitations
              * @default null
              */
             limitations: string | null;
             /**
+             * Metadata
+             * @description Provenance and legacy migration data; never the canonical circuit source
+             * @default null
+             */
+            metadata: {
+                [key: string]: unknown;
+            } | null;
+            /**
              * Qasm
+             * @description Canonical circuit source of truth
              * @default null
              */
             qasm: string | null;
+            /**
+             * Qasm Version
+             * @description OpenQASM language version; 3.0 for new circuit artifacts
+             * @default null
+             */
+            qasm_version: "3.0" | null;
             /**
              * Resource Estimates
              * @default null
@@ -193,7 +202,7 @@ export interface components {
             } | null;
             /** Seq */
             seq: number;
-        };
+        } & unknown;
         /**
          * BaselineKind
          * @enum {string}
@@ -794,7 +803,7 @@ export interface components {
              * Source
              * @enum {string}
              */
-            source: "plan_static" | "ir" | "compiler";
+            source: "plan_static" | "openqasm" | "compiler";
             /**
              * Ts
              * Format: date-time

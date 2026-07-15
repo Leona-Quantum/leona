@@ -93,14 +93,14 @@ class ArtifactVersion(Base):
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True)
     artifact_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("artifacts.id"))
     seq: Mapped[int] = mapped_column(Integer)
-    ir_version: Mapped[str]
-    ir: Mapped[dict[str, Any]]
+    qasm_version: Mapped[str | None]
+    qasm: Mapped[str | None]
+    artifact_metadata: Mapped[dict[str, Any] | None] = mapped_column("metadata")
     code: Mapped[str]
     code_lang: Mapped[str]
     fingerprint: Mapped[str]
     export_status: Mapped[str]
     export_reason: Mapped[str | None]
-    qasm: Mapped[str | None]
     framework_variants: Mapped[dict[str, Any] | None]
     resource_estimates: Mapped[dict[str, Any] | None]
     limitations: Mapped[str | None]

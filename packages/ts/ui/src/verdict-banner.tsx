@@ -1,6 +1,6 @@
 // Verdict banner (S4) — full-width strip, never truncated. Copy per docs/ui/copy.md:
 // "Verified" / "Verified with caveats" / "Not verified" / "Failed" — never "Success!".
-// The detail line names the method (P1: say what was checked, never "IR"), e.g.
+// The detail line names the concrete verification method, e.g.
 // "Verified — statistical (TVD 0.0088 ≤ δ) · seed 42 · 4096 shots".
 import type { ReactNode } from "react";
 

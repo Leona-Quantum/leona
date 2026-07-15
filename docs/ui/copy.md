@@ -18,5 +18,5 @@ gets units and, where relevant, tolerance. Never render an unlabeled float.
   outside collapsible details.
 - **Empty states:** one sentence + one action. Library: "Nothing verified yet. Your
   first verified run will appear here." + [Start a run].
-- **Vocabulary (P1):** "IR" is not user vocabulary — say what was checked/exported
+- **Vocabulary (P1):** describe the OpenQASM program or the concrete check performed
   in framework terms. "Library stores, Studio/Run creates" (P2) shapes verbs.

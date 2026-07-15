@@ -12,6 +12,7 @@ from fastapi import APIRouter, HTTPException
 from majorana_contracts import Artifact as ArtifactResource
 from majorana_contracts import ArtifactVersion as ArtifactVersionResource
 from majorana_contracts.enums import Algorithm, ExportStatus, Framework, Visibility
+from majorana_openqasm import OpenQASMError, fingerprint, normalize
 from pydantic import AnyHttpUrl, BaseModel, ConfigDict, Field
 
 from ..auth.deps import CurrentScope, DbSession
@@ -66,6 +67,16 @@ def _public_slug(value: str) -> str:
     return normalized[:120] or "reference"
 
 
+def _canonical_public_qasm(source: str | None) -> tuple[str | None, str | None, str | None]:
+    if source is None:
+        return None, None, None
+    try:
+        canonical = normalize(source)
+    except OpenQASMError as exc:
+        raise HTTPException(status_code=422, detail=f"invalid OpenQASM: {exc}") from exc
+    return canonical, "3.0", fingerprint(canonical)
+
+
 def _to_artifact(row: ArtifactRow) -> ArtifactResource:
     return ArtifactResource(
         id=row.id,
@@ -88,14 +99,14 @@ def _to_version(row: ArtifactVersionRow) -> ArtifactVersionResource:
         id=row.id,
         artifact_id=row.artifact_id,
         seq=row.seq,
-        ir_version=row.ir_version,
-        ir=row.ir,
+        qasm_version=row.qasm_version,
+        qasm=row.qasm,
+        metadata=row.artifact_metadata,
         code=row.code,
         code_lang=row.code_lang,
         fingerprint=row.fingerprint,
         export_status=ExportStatus(row.export_status),
         export_reason=row.export_reason,
-        qasm=row.qasm,
         framework_variants=row.framework_variants,
         resource_estimates=row.resource_estimates,
         limitations=row.limitations,
@@ -130,7 +141,7 @@ async def import_public_artifact(
     """Copy a public reference into the caller's personal Library.
 
     This is an import snapshot, not a new verification result. The source and
-    limitations are retained in the version IR so the private copy does not
+    limitations are retained on the artifact version so the private copy does not
     lose its public provenance.
     """
     slug = f"public-{_public_slug(body.source_slug)}-{scope.workspace_id.hex}"
@@ -138,6 +149,7 @@ async def import_public_artifact(
     if existing is not None:
         return _to_artifact(existing)
 
+    qasm, qasm_version, qasm_fingerprint = _canonical_public_qasm(body.qasm)
     artifact = await artifacts_repo.create_artifact(
         scope,
         session,
@@ -150,9 +162,9 @@ async def import_public_artifact(
         scope,
         session,
         artifact.id,
-        ir_version="public-reference-v1",
-        ir={
-            "ir_version": 3,
+        qasm_version=qasm_version,
+        qasm=qasm,
+        metadata={
             "source": {
                 "kind": "public_repository",
                 "slug": body.source_slug,
@@ -160,17 +172,14 @@ async def import_public_artifact(
                 "url": str(body.source_url),
                 "license": body.source_license,
             },
-            "metadata": {
-                "introduction": body.introduction,
-                "explanation": body.explanation,
-                "verification": body.verification,
-            },
+            "introduction": body.introduction,
+            "explanation": body.explanation,
+            "verification": body.verification,
         },
         code=body.code,
         code_lang=body.code_lang,
-        fingerprint=f"public-reference:{body.source_slug}",
+        fingerprint=qasm_fingerprint or f"public-reference:{body.source_slug}",
         export_status=body.export_status,
-        qasm=body.qasm,
         framework_variants=body.framework_variants,
         resource_estimates=body.resource_estimates,
         limitations=(

@@ -22,7 +22,7 @@ How this maps to the engine today (`packages/py/verification`):
 |---|---|
 | Direct simulation (Tier 1 evidence, ≤ ~20 qubits) | `simulate_statevector`, `counts_vs_ideal` |
 | Statistical/marginal checks over counts | `verify_statistical_counts` |
-| Invariant checks (gate set, width, parseability) | `verify_qasm_parse` + IR `validate_circuit` |
+| Syntax and semantic parseability | `verify_qasm_parse` through the Qiskit OpenQASM importer |
 | Independent classical reference | `verify_exact_diag`, `verify_brute_force` |
 | Structural contract | `verify_return_contract` |
 | Exact unitary equivalence (needs a reference circuit) | `verify_exact` (chat surface only, not headless) |

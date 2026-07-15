@@ -23,7 +23,7 @@ lane boundary, highest risk or plan gap, and intended next action. After that, p
 with the user's bounded request unless it requires an owner decision or ask-first action.
 
 Codex's standing lane is non-UI: pressure-test plans; inspect and improve `evals/` and
-`packages/py/{llm,ir,contracts,verification,sandbox}`; own Lane B deterministic QASM
+`packages/py/{llm,openqasm,contracts,verification,sandbox}`; own Lane B deterministic QASM
 emission and Python test coverage. Do not build or restyle `apps/web` or `packages/ts/ui`
 unless Eshaan explicitly overrides the lane. Use `feature/*` branches for repo changes;
 Claude reviews and merges. Never push, merge, perform destructive work, or touch
@@ -40,7 +40,7 @@ code runs only in ephemeral network-locked sandboxes (`packages/py/sandbox`).
 
 - `apps/web` — Next.js App Router UI (Vercel)
 - `services/api`, `services/worker` — FastAPI control plane + job runner (Cloud Run)
-- `packages/py/*` — contracts (source of truth), pipeline, verification, baselines, ir, sandbox, llm
+- `packages/py/*` — contracts, pipeline, verification, baselines, openqasm, sandbox, llm
 - `packages/ts/*` — ui (vendored components), contracts-gen (GENERATED — never hand-edit)
 - `db/migrations` — Alembic, single linear history, every migration reversible
 - `evals/`, `bench/` — product evals and performance benchmarks (CI-run, JSON reports)

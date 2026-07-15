@@ -79,10 +79,10 @@ def test_endpoint_routing_by_model_prefix(monkeypatch):
     assert base is None and key_env == "OPENAI_API_KEY"
 
 
-def test_plan_prompt_encodes_qiskit_default_and_ir_limits():
+def test_plan_prompt_encodes_qiskit_default_and_openqasm_contract():
     assert "Default framework is Qiskit" in PLAN_SYSTEM_PROMPT
     assert "never switch" in PLAN_SYSTEM_PROMPT.lower() or "never a silent" in PLAN_SYSTEM_PROMPT
-    assert "terminal measurement" in PLAN_SYSTEM_PROMPT
+    assert "OpenQASM 3 is the canonical circuit representation" in PLAN_SYSTEM_PROMPT
     assert "resource estimate" in PLAN_SYSTEM_PROMPT
     assert "control plane" in GENERATE_SYSTEM_PROMPT
     assert "OpenQASM 2" in GENERATE_SYSTEM_PROMPT
@@ -94,7 +94,7 @@ def test_plan_prompt_encodes_qiskit_default_and_ir_limits():
 
 def test_v2_prompt_deltas_present():
     # v2 port (Nameko_System_Prompts_v2.md): seeds + chemistry pragmatism in generate,
-    # calibration/evidence rules in the critic, sandbox+IR provenance in writeback.
+    # calibration/evidence rules in the critic, sandbox+OpenQASM provenance in writeback.
     assert "deterministic seeds" in GENERATE_SYSTEM_PROMPT.lower()
     assert "hard-code the Hamiltonian coefficients" in GENERATE_SYSTEM_PROMPT
     assert "FINAL_CIRCUIT = compiled_circuit" in GENERATE_SYSTEM_PROMPT
@@ -102,8 +102,11 @@ def test_v2_prompt_deltas_present():
     assert "QuantumCircuit.qasm()" in GENERATE_SYSTEM_PROMPT
     assert "it did not pass" in CRITIC_SYSTEM_PROMPT
     assert "highest severity" in CRITIC_SYSTEM_PROMPT
-    assert "IR" in WRITEBACK_SYSTEM_PROMPT and "sandbox" in WRITEBACK_SYSTEM_PROMPT
-    # IR-on-demand directive (DECISIONS 2026-07-11): export-unsupported ≠ failure.
+    assert "OpenQASM" in WRITEBACK_SYSTEM_PROMPT and "sandbox" in WRITEBACK_SYSTEM_PROMPT
+    assert "OpenQASM version from the run record" in WRITEBACK_SYSTEM_PROMPT
+    assert "OpenQASM 3 is the preferred native circuit export" in WRITEBACK_SYSTEM_PROMPT
+    assert "OpenQASM 2 compatibility bridge" in WRITEBACK_SYSTEM_PROMPT
+    # Export limitations never negate independent verification.
     assert "never diminishes" in WRITEBACK_SYSTEM_PROMPT
 
 

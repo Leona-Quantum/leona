@@ -251,6 +251,30 @@
       },
       "ArtifactVersion": {
         "additionalProperties": false,
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "qasm": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "qasm"
+              ]
+            },
+            "then": {
+              "properties": {
+                "qasm_version": {
+                  "const": "3.0"
+                }
+              },
+              "required": [
+                "qasm_version"
+              ]
+            }
+          }
+        ],
         "properties": {
           "artifact_id": {
             "format": "uuid",
@@ -310,15 +334,6 @@
             "title": "Id",
             "type": "string"
           },
-          "ir": {
-            "additionalProperties": true,
-            "title": "Ir",
-            "type": "object"
-          },
-          "ir_version": {
-            "title": "Ir Version",
-            "type": "string"
-          },
           "limitations": {
             "anyOf": [
               {
@@ -331,6 +346,20 @@
             "default": null,
             "title": "Limitations"
           },
+          "metadata": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Provenance and legacy migration data; never the canonical circuit source",
+            "title": "Metadata"
+          },
           "qasm": {
             "anyOf": [
               {
@@ -341,7 +370,22 @@
               }
             ],
             "default": null,
+            "description": "Canonical circuit source of truth",
             "title": "Qasm"
+          },
+          "qasm_version": {
+            "anyOf": [
+              {
+                "const": "3.0",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "OpenQASM language version; 3.0 for new circuit artifacts",
+            "title": "Qasm Version"
           },
           "resource_estimates": {
             "anyOf": [
@@ -366,8 +410,6 @@
           "id",
           "artifact_id",
           "seq",
-          "ir_version",
-          "ir",
           "code",
           "code_lang",
           "fingerprint",
@@ -1548,7 +1590,7 @@
           "source": {
             "enum": [
               "plan_static",
-              "ir",
+              "openqasm",
               "compiler"
             ],
             "title": "Source",

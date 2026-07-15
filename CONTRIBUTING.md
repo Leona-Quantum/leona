@@ -15,7 +15,7 @@ uv run ruff format --check .
 uv run pytest -q
 ```
 
-For circuit changes, add or update tests for the canonical IR and every affected
+For circuit changes, add or update tests for normalized OpenQASM and every affected
 framework connector. For worker changes, keep the sandbox deny-all invariant and add a
 regression test for any provider or compatibility failure.
 

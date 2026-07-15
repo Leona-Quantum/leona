@@ -92,7 +92,7 @@ edge — not a full-color text/border wash. The word label ("Verified" / "Failed
 the colorblind-safe cue; color merely reinforces it. Detail line is mono (`--text-1`) and
 names the method + parameters with units/tolerances, e.g.
 "Verified — statistical (TVD 0.0088 ≤ δ 0.05) · seed 42 · 4096 shots".
-P1: never say "IR" here — say what was checked.
+P1: name the OpenQASM or verification operation that was actually checked.
 
 ## AppShell / nav
 
