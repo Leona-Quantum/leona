@@ -113,7 +113,11 @@ def main() -> None:
                     version_id=ver_id,
                     artifact_id=art_id,
                     seq=seq,
-                    qasm="OPENQASM 3.0;" if seq % 2 else None,
+                    qasm=(
+                        f'OPENQASM 3.0;\ninclude "stdgates.inc";\nqubit q;\nrx({seq}.0) q;\n'
+                        if seq % 2
+                        else None
+                    ),
                     code=f"# seed {family} v{seq}\nprint('seed')",
                     code_lang="python",
                     fallback_fingerprint=f"fp-{art_id.hex[:8]}-{seq}",
