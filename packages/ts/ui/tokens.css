@@ -31,9 +31,13 @@
   --err: #0a0a0a;
   --mono-tint: #404040;
 
-  /* type — Inter for UI, JetBrains Mono for code/numbers/IDs.
-     Apps may override the font vars with self-hosted/next-font faces. */
-  --font-ui: "Inter", system-ui, sans-serif;
+  /* type — Instrument Sans for UI, Instrument Serif for public display headings,
+     JetBrains Mono for code/numbers/IDs (owner taste-check 2026-07-16: the previous
+     Inter + oversized-clamp pairing read as generic; see docs/ui/tokens.md).
+     --font-display is PUBLIC-SITE ONLY — the product surfaces stay entirely sans so
+     the workspace keeps one voice. Apps override these with next-font faces. */
+  --font-ui: "Instrument Sans", system-ui, sans-serif;
+  --font-display: "Instrument Serif", Georgia, serif;
   --font-mono: "JetBrains Mono", ui-monospace, monospace;
   /* scale (px): 12, 13(base), 14, 16, 20, 28 — nothing else */
   --fs-12: 12px;
@@ -42,16 +46,30 @@
   --fs-16: 16px;
   --fs-20: 20px;
   --fs-28: 28px;
+  /* display scale — public marketing surface only, and ONLY for h1/h2 there.
+     Added 2026-07-16 to replace ad-hoc clamps in styles.css that ran to 5.2rem
+     (83px). Fluid so the top of each range is a desktop ceiling, not a target;
+     nothing above --fs-display-1. Never use these inside the product shell. */
+  --fs-display-1: clamp(2rem, 3.2vw, 2.75rem); /* 32 → 44px: landing hero only */
+  --fs-display-2: clamp(1.75rem, 2.4vw, 2.125rem); /* 28 → 34px: page h1 */
+  --fs-display-3: clamp(1.375rem, 1.6vw, 1.5rem); /* 22 → 24px: section h2 */
   /* weights: 400, 500 (headings/buttons), 600 (page title only) */
 
-  /* space: 4-px grid */
+  /* space: 4-px grid — --sp-N is N × 4px.
+     5 / 10 / 16 were referenced by styles.css but never defined here, so ~18
+     padding/gap declarations silently dropped (an undefined custom property
+     invalidates the whole declaration). Defined 2026-07-16 rather than remapped:
+     the name states the intent, and they are on the 4-px grid. */
   --sp-1: 4px;
   --sp-2: 8px;
   --sp-3: 12px;
   --sp-4: 16px;
+  --sp-5: 20px;
   --sp-6: 24px;
   --sp-8: 32px;
+  --sp-10: 40px;
   --sp-12: 48px;
+  --sp-16: 64px;
 
   /* radius: 6 controls, 10 cards; shadows: none (borders do the work) */
   --radius-control: 6px;

@@ -12,7 +12,7 @@
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "lint": "node ../../../scripts/check-raw-hex.mjs"
+    "lint": "node ../../../scripts/check-raw-hex.mjs && node ../../../scripts/check-token-vars.mjs"
   },
   "dependencies": {
     "@majorana/contracts-gen": "workspace:*"
