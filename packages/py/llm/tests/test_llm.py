@@ -81,8 +81,9 @@ def test_plan_prompt_encodes_framework_native_contract():
     assert "Default framework is Qiskit" in PLAN_SYSTEM_PROMPT
     assert "never switch" in PLAN_SYSTEM_PROMPT.lower() or "never a silent" in PLAN_SYSTEM_PROMPT
     assert "selected framework's executable Python source is the canonical" in PLAN_SYSTEM_PROMPT
-    assert "resource estimate" in PLAN_SYSTEM_PROMPT
-    assert "control plane" in GENERATE_SYSTEM_PROMPT
+    assert "source fingerprints" in PLAN_SYSTEM_PROMPT
+    assert "Tool Broker" in GENERATE_SYSTEM_PROMPT
+    assert "Assign one plain JSON-compatible dictionary named RESULT" in GENERATE_SYSTEM_PROMPT
     assert "OpenQASM must not become the user-facing result" in GENERATE_SYSTEM_PROMPT
     # oracle/search endianness directive: little-endian convention + loud self-check,
     # so an endianness bug fails in the sandbox instead of returning a bit-reversed answer.

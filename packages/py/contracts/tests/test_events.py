@@ -17,7 +17,6 @@ from majorana_contracts import (
     VerificationResultKind,
     run_event_adapter,
 )
-from majorana_pipeline import STAGE_ORDER
 
 ENVELOPE = {"run_id": str(uuid4()), "seq": 0, "ts": "2026-07-10T00:00:00Z"}
 
@@ -178,20 +177,6 @@ def test_lossy_export_requires_reason():
     assert event.reason == "mid-circuit reset dropped"
 
 
-def test_stage_enum_covers_pipeline_order():
-    assert [s.value for s in STAGE_ORDER] == [
-        "plan",
-        "generate",
-        "screen",
-        "resource_estimate",
-        "verify",
-        "compile",
-        "compiled_resource_estimate",
-        "finalize",
-        "final_execute",
-        "baseline",
-        "analyze",
-        "save",
-    ]
-    assert Stage.SIMULATE.value == "simulate"
-    assert Stage.EXPORT.value == "export"
+def test_legacy_stage_values_remain_parseable_for_stored_events():
+    for raw in ("plan", "save", "simulate", "export"):
+        assert Stage(raw).value == raw

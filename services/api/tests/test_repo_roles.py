@@ -7,7 +7,16 @@ import pytest
 from repo_test_helpers import make_scope
 from majorana_contracts.enums import Role, RunMode, UsageKind, VerificationMethod
 
-from majorana_api.repos import AuthzError, artifacts, audit, folders, runs, usage, workspaces
+from majorana_api.repos import (
+    AuthzError,
+    agent,
+    artifacts,
+    audit,
+    folders,
+    runs,
+    usage,
+    workspaces,
+)
 
 VIEWER_BLOCKED_WRITES = [
     lambda s, db: artifacts.create_artifact(
@@ -33,6 +42,14 @@ VIEWER_BLOCKED_WRITES = [
         s, db, uuid.uuid4(), method=VerificationMethod.EXACT, result="pass"
     ),
     lambda s, db: usage.record_usage(s, db, kind=UsageKind.RUN, quantity=1),
+    lambda s, db: agent.begin_step(
+        s,
+        db,
+        uuid.uuid4(),
+        tool_call_id="call",
+        name="request_plan",
+        arguments={},
+    ),
 ]
 
 MEMBER_BLOCKED_ADMIN = [

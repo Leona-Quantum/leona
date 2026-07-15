@@ -1,9 +1,9 @@
 import pytest
 from majorana_contracts.enums import Framework, RunMode, RunStatus
 from majorana_llm import LLMResponse
-from majorana_pipeline import RunContext
 from majorana_sandbox import LocalSubprocessSandbox
 from majorana_worker import handlers
+from majorana_worker.context import RunContext
 
 
 def _clear_deploy_markers(monkeypatch):

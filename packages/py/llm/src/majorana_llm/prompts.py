@@ -1,9 +1,4 @@
-"""Prompt policy and provider-neutral message rendering for Majorana.
-
-The direct chat path intentionally has one small system prompt and passes the
-conversation through unchanged. The legacy execution pipeline keeps its internal
-prompts for the explicit execute API, but it is not the default chat surface.
-"""
+"""Prompt policy and provider-neutral message rendering for Majorana."""
 
 from __future__ import annotations
 
@@ -35,12 +30,12 @@ _RUNTIME_LIMITS = (
     "qiskit plus numpy/scipy instead of importing an unavailable package."
 )
 
-_PIPELINE_CONTRACT = (
-    "The control plane owns the internal sequence: plan -> generate -> screen -> "
-    "resource estimate -> verify -> compile -> final simulation or an explicit QPU "
-    "option -> baseline when relevant -> analysis -> save. You do not own stage "
-    "transitions or tool order. A failed deterministic check may send the run back "
-    "to the earliest repairable stage."
+_AGENT_CONTRACT = (
+    "The model may propose one supplied tool at a time. The Tool Broker owns tool order, "
+    "legal tool/state transitions, selected-framework enforcement, budgets, candidate identity, source "
+    "fingerprints, and publication gates. A failed execution or verification creates "
+    "repair feedback and requires a new immutable Candidate revision. Never resubmit or "
+    "reconstruct stored execution evidence for verification, conversion, or publication."
 )
 
 PLAN_SYSTEM_PROMPT = f"""You are Majorana's planning mind.
@@ -52,7 +47,7 @@ or claim that every task needs the full pipeline. The internal Plan record is ma
 plumbing and will not be shown to the user as JSON.
 
 {FRAMEWORK_DIRECTIVE}
-{_PIPELINE_CONTRACT}
+{_AGENT_CONTRACT}
 
 Choose the smallest useful artifact contract and the strongest applicable verification
 strategy. A verification plan may use selected-framework re-execution, brute force,
@@ -78,15 +73,16 @@ Return one object that satisfies the supplied internal request_plan schema. The 
 exists to make execution reliable; never expose its field names or JSON framing in the
 user-facing answer."""
 
-GENERATE_SYSTEM_PROMPT = f"""You are Majorana's implementation stage.
+GENERATE_SYSTEM_PROMPT = f"""You are Majorana's framework-native circuit implementer.
 
 Implement the accepted internal plan faithfully. Generate code only for the selected
 framework and do not simplify the algorithm or circuit to make conversion easier.
-The final stdout record is internal machine plumbing; it is not user-facing JSON.
+The protected RESULT record is internal machine plumbing; it is not user-facing JSON.
 
 Execution contract:
-- Print one JSON object on the last stdout line with the promised output keys. Counts
-  are a flat bitstring-to-count mapping and every value is a plain Python type.
+- Assign one plain JSON-compatible dictionary named RESULT with the promised output
+  keys. Stdout is not a trusted result channel. Counts are a flat bitstring-to-count
+  mapping and every value is a plain Python type.
 - If baseline_instance is promised, print the exact structured instance the code
   actually solved. Never invent an instance or result.
 - For every circuit-bearing program, define FINAL_CIRCUIT as the final circuit object
@@ -113,7 +109,7 @@ Execution contract:
 - No shell commands, dependency installation, network, filesystem, or OS access.
 
 {FRAMEWORK_DIRECTIVE}
-{_PIPELINE_CONTRACT}
+{_AGENT_CONTRACT}
 {_RUNTIME_LIMITS}
 {_OPENQASM_CONTRACT}"""
 

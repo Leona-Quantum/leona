@@ -1,5 +1,5 @@
-"""Per-stage model constants. Strong model for judgment-heavy stages (plan,
-verify-critic), cheaper tiers for generation and writeback — the token-economy
+"""Per-role model constants. Strong model for planning and verification judgment,
+cheaper tiers for implementation and writeback — the token-economy
 tiering from the house workflow.
 
 Provider: owner confirmed OpenAI + DeepSeek (2026-07-10 Owner Inbox — the legacy
@@ -66,9 +66,7 @@ def resolve_provider() -> str:
 
 
 def model_for(stage: Stage | str) -> str:
-    """The model id for a pipeline stage. Deterministic control-plane stages
-    (screen, estimates, compilation, execution, baseline, analysis, save) fall
-    back to the generate-tier default if a caller asks for a model anyway."""
+    """Resolve the model for an agent role; legacy Stage values remain accepted."""
     key = stage.value if isinstance(stage, Stage) else str(stage)
     env = os.environ.get(f"MAJORANA_MODEL_{key.upper()}")
     defaults = _DEFAULTS[resolve_provider()]

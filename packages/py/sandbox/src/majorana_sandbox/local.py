@@ -11,12 +11,16 @@ thing standing between it and the host, which is not enough on its own.
 from __future__ import annotations
 
 import asyncio
+import hashlib
+import json
 import os
+import platform
 import resource
 import signal
 import sys
 import time
 from pathlib import Path
+from importlib import metadata
 
 from majorana_sandbox.spec import (
     MAX_OUTPUT_BYTES,
@@ -49,6 +53,28 @@ def _limits(memory_mb: int, cpu_s: int):
 
 class LocalSubprocessSandbox:
     provider = "local-subprocess"
+
+    @property
+    def environment_id(self) -> str:
+        dependencies: dict[str, str | None] = {}
+        for name in ("qiskit", "cirq", "pennylane", "numpy", "scipy"):
+            try:
+                dependencies[name] = metadata.version(name)
+            except metadata.PackageNotFoundError:
+                dependencies[name] = None
+        manifest = json.dumps(
+            {
+                "python": platform.python_version(),
+                "implementation": platform.python_implementation(),
+                "system": platform.system(),
+                "release": platform.release(),
+                "machine": platform.machine(),
+                "dependencies": dependencies,
+            },
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+        return f"local:{hashlib.sha256(manifest.encode()).hexdigest()}"
 
     async def _execute(self, spec: ExecutionSpec) -> SandboxResult:
         env = {key: os.environ[key] for key in _ENV_ALLOWLIST if key in os.environ}

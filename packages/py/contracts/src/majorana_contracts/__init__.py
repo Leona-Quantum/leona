@@ -77,6 +77,7 @@ from .plan import (
     VerificationPlan,
 )
 from .scope import Scope
+from .lifecycle import IllegalTransition, TERMINAL_STATUSES, assert_transition, is_terminal
 
 CONTRACTS_VERSION = "1.0.0"
 
@@ -102,6 +103,7 @@ __all__ = [
     "ExportStatus",
     "Framework",
     "JobStatus",
+    "IllegalTransition",
     "LlmCall",
     "LlmDelta",
     "MeasurementPolicy",
@@ -134,6 +136,7 @@ __all__ = [
     "StageStarted",
     "SuccessCriteria",
     "TopLevelExecution",
+    "TERMINAL_STATUSES",
     "UsageKind",
     "VerificationMethod",
     "VerificationPlan",
@@ -150,4 +153,6 @@ __all__ = [
     "WorkspaceOverview",
     "WorkspaceKind",
     "run_event_adapter",
+    "assert_transition",
+    "is_terminal",
 ]

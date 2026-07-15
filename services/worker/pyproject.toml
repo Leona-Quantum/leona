@@ -5,7 +5,7 @@ version = "0.0.0"
 requires-python = ">=3.12"
 dependencies = [
     "majorana-api",
-    "majorana-pipeline",
+    "majorana-agent",
     "majorana-llm",
     "majorana-sandbox[vercel]",
     "majorana-frameworks",
@@ -19,7 +19,7 @@ majorana-worker = "majorana_worker.__main__:main"
 
 [tool.uv.sources]
 majorana-api = { workspace = true }
-majorana-pipeline = { workspace = true }
+majorana-agent = { workspace = true }
 majorana-llm = { workspace = true }
 majorana-sandbox = { workspace = true }
 majorana-frameworks = { workspace = true }

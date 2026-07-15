@@ -41,7 +41,7 @@ code runs only in ephemeral network-locked sandboxes (`packages/py/sandbox`).
 
 - `apps/web` — Next.js App Router UI (Vercel)
 - `services/api`, `services/worker` — FastAPI control plane + job runner (Cloud Run)
-- `packages/py/*` — contracts, pipeline, verification, baselines, openqasm, sandbox, llm
+- `packages/py/*` — agent, contracts, verification, baselines, openqasm, sandbox, llm
 - `packages/ts/*` — ui (vendored components), contracts-gen (GENERATED — never hand-edit)
 - `db/migrations` — Alembic, single linear history, every migration reversible
 - `evals/`, `bench/` — product evals and performance benchmarks (CI-run, JSON reports)

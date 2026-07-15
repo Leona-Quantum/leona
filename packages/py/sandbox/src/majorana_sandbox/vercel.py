@@ -55,6 +55,11 @@ class VercelSandbox:
     def __init__(self, image: str = DEFAULT_IMAGE) -> None:
         self._image = image
 
+    @property
+    def environment_id(self) -> str:
+        """Pinned runner identity recorded with reproducibility evidence."""
+        return f"vercel:{self._image}"
+
     async def _execute(self, spec: ExecutionSpec) -> SandboxResult:
         try:
             from vercel.sandbox.aio import Sandbox as AsyncSandbox  # type: ignore

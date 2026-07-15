@@ -239,17 +239,36 @@ async def append_run_event(
     *,
     type: str,
     payload: dict[str, Any],
+    event_id: uuid.UUID | None = None,
 ) -> RunEvent:
     require_write(scope)
     # Lock the run row: serializes concurrent appends so max(seq)+1 can't collide
     # (uq_run_events_seq would reject the loser otherwise).
     run = await get_run(scope, session, run_id, for_update=True)
+    if event_id is not None:
+        existing = (
+            await session.execute(
+                select(RunEvent)
+                .join(Run, RunEvent.run_id == Run.id)
+                .where(
+                    RunEvent.id == event_id,
+                    RunEvent.run_id == run.id,
+                    Run.workspace_id == scope.workspace_id,
+                )
+            )
+        ).scalar_one_or_none()
+        if existing is not None:
+            if existing.run_id != run.id or existing.type != type or existing.payload != payload:
+                raise ValueError("run event idempotency key was reused with different content")
+            return existing
     next_seq = (
         await session.execute(
             select(func.coalesce(func.max(RunEvent.seq), 0) + 1).where(RunEvent.run_id == run.id)
         )
     ).scalar_one()
-    event = RunEvent(id=uuid7(), run_id=run.id, seq=next_seq, type=type, payload=payload)
+    event = RunEvent(
+        id=event_id or uuid7(), run_id=run.id, seq=next_seq, type=type, payload=payload
+    )
     session.add(event)
     await session.flush()
     return event

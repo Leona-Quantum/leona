@@ -1,5 +1,4 @@
-"""majorana-llm — provider clients, per-stage model constants, system prompts,
-and structured-output parsing for the pipeline."""
+"""Provider clients and structured prompts for chat and the circuit agent."""
 
 from majorana_llm.client import (
     AnthropicLLM,
