@@ -7,6 +7,7 @@ from typing import Any
 from majorana_contracts import Scope
 from majorana_contracts.enums import UsageKind
 from sqlalchemy import func, select
+from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..ids import uuid7
@@ -27,6 +28,18 @@ async def record_usage(
     if quantity < 0:  # append-only billing substrate: corrections are new kinds, not negatives
         raise ValueError("quantity must be non-negative")
     if event_id is not None:
+        await session.execute(
+            insert(UsageEvent)
+            .values(
+                id=event_id,
+                workspace_id=scope.workspace_id,
+                user_id=scope.user_id,
+                kind=kind,
+                quantity=quantity,
+                meta=meta,
+            )
+            .on_conflict_do_nothing(index_elements=[UsageEvent.id])
+        )
         existing = (
             await session.execute(
                 select(UsageEvent).where(
@@ -36,14 +49,15 @@ async def record_usage(
                 )
             )
         ).scalar_one_or_none()
-        if existing is not None:
-            if (
-                existing.kind != kind
-                or float(existing.quantity) != float(quantity)
-                or existing.meta != meta
-            ):
-                raise ValueError("usage event idempotency key was reused with different content")
-            return existing
+        if existing is None:
+            raise ValueError("usage event id is unavailable in this scope")
+        if (
+            existing.kind != kind
+            or float(existing.quantity) != float(quantity)
+            or existing.meta != meta
+        ):
+            raise ValueError("usage event idempotency key was reused with different content")
+        return existing
     event = UsageEvent(
         id=event_id or uuid7(),
         workspace_id=scope.workspace_id,
