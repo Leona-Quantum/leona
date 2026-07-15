@@ -104,11 +104,14 @@ async def test_conversation_mode_answers_without_pipeline_or_sandbox():
     assert any(event_type == "chat.delta" for event_type, _ in sink.events)
     assert any(event_type == "chat.completed" for event_type, _ in sink.events)
     assert all(event_type != "llm.call" for event_type, _ in sink.events)
-    assert llm.request.system == """You are a helpful quantum algorithm assistant.
+    assert (
+        llm.request.system
+        == """You are a helpful quantum algorithm assistant.
 
 Answer the user's messages directly. Explain quantum computing and quantum algorithms,
 write or review code, and use Markdown and LaTeX when useful. Be accurate and say when
 you are uncertain."""
+    )
     assert [message.model_dump() for message in llm.request.messages] == [
         {"role": "user", "content": "What is a Bell state?"}
     ]
