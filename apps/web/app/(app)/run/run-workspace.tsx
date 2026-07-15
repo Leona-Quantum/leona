@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 import { rememberChat } from "../../../lib/chat-history";
 import { getLibraryArtifact, type LibraryArtifact } from "../../../lib/library-data";
 import { RunComposer, type ComposerFramework, type ComposerMode } from "../../../components/run-composer";
+import { BrandMark } from "../../../components/icons";
 
 const EXAMPLES = [
   {
@@ -116,20 +117,24 @@ export function RunWorkspace({ demoMode = false }: { demoMode?: boolean } = {}) 
       <div className="mj-run-home-scroll">
         <div className="mj-run-home-content">
           <header className="mj-run-home-heading">
-            <div>
-              <h1>What are you working on?</h1>
-              <p>Describe a quantum problem, paste code to review, or continue from a saved artifact.</p>
+            <div className="mj-run-home-identity">
+              <span className="mj-run-home-mark"><BrandMark size={18} /></span>
+              <div className="mj-run-home-status" aria-label="Model status">
+                <span className="mj-status-dot" aria-hidden="true" />
+                {demoMode ? "Public preview · view-only" : "DeepSeek · ready"}
+              </div>
             </div>
-            <div className="mj-run-home-status" aria-label="Model status">
-              <span className="mj-status-dot" aria-hidden="true" />
-              {demoMode ? "Public preview · view-only" : "DeepSeek · ready"}
-            </div>
+            <h1>What are you working on?</h1>
+            <p>Describe a quantum problem, paste code to review, or continue from a saved artifact.</p>
           </header>
 
           <div className="mj-run-home-disclosures">
             <details className="mj-run-disclosure" name="run-home-detail">
               <summary>
-                <span>Try an example</span>
+                <span className="mj-run-disclosure-label">
+                  <span>Starter prompts</span>
+                  <strong>Try an example</strong>
+                </span>
                 <span className="mj-run-disclosure-count">4 prompts</span>
               </summary>
               <div className="mj-run-disclosure-content">
@@ -155,7 +160,10 @@ export function RunWorkspace({ demoMode = false }: { demoMode?: boolean } = {}) 
 
             <details className="mj-run-disclosure" name="run-home-detail">
               <summary>
-                <span>How Nameko works</span>
+                <span className="mj-run-disclosure-label">
+                  <span>Process</span>
+                  <strong>How Nameko works</strong>
+                </span>
                 <span className="mj-run-disclosure-count">3 steps</span>
               </summary>
               <div className="mj-run-disclosure-content">
