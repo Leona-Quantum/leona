@@ -10,7 +10,7 @@ import math
 from typing import Any
 
 from majorana_contracts.enums import VerificationMethod, VerificationResultKind
-from majorana_openqasm import OpenQASMError, load_circuit, normalize
+from majorana_openqasm import OpenQASMError, normalize, resource_metrics
 from pydantic import BaseModel, Field
 
 from majorana_baselines import (
@@ -73,9 +73,14 @@ def verify_statistical(
     threshold: float = 0.05,
 ) -> VerificationOutcome:
     """Seeded sampled-distribution equivalence (total-variation distance)."""
-    report = statistical_equivalence(
-        reference, candidate, shots=shots, seed=seed, threshold=threshold
-    )
+    try:
+        report = statistical_equivalence(
+            reference, candidate, shots=shots, seed=seed, threshold=threshold
+        )
+    except (OpenQASMError, ValueError) as exc:
+        return VerificationOutcome(
+            method=VerificationMethod.STATISTICAL, result=FAIL, details={"error": str(exc)}
+        )
     return _from_report(VerificationMethod.STATISTICAL, report)
 
 
@@ -86,7 +91,7 @@ def verify_statistical_counts(
     bit_order: str = "auto",
 ) -> VerificationOutcome:
     """Statistical verification without a reference circuit: the emitted circuit
-    is simulated directly (pure-numpy statevector) and the run's reported counts
+    is simulated through an independent statevector path and the run's reported counts
     are tested against the exact Born distribution (TVD vs a finite-shot
     concentration bound — see statevector.counts_vs_ideal). This is the headless
     `statistical` path: direct-simulation evidence, not circuit-vs-circuit
@@ -166,8 +171,8 @@ def verify_return_contract(
 def verify_qasm_parse(qasm: str) -> VerificationOutcome:
     """Parse and normalize an emitted OpenQASM 2/3 program."""
     try:
-        circuit = load_circuit(qasm)
         canonical = normalize(qasm)
+        metrics = resource_metrics(canonical)
     except OpenQASMError as exc:
         return VerificationOutcome(
             method=VerificationMethod.QASM_PARSE, result=FAIL, details={"parse_error": str(exc)}
@@ -177,8 +182,8 @@ def verify_qasm_parse(qasm: str) -> VerificationOutcome:
         result=PASS,
         details={
             "qasm_version": "3.0",
-            "qubits": circuit.num_qubits,
-            "operations": circuit.size(),
+            "qubits": metrics.qubits,
+            "operations": (metrics.gate_count or 0) + (metrics.measurement_count or 0),
             "normalized_bytes": len(canonical.encode("utf-8")),
         },
     )

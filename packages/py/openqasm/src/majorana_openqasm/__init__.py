@@ -10,7 +10,6 @@ from majorana_openqasm.program import (
     compile_program,
     detect_version,
     fingerprint,
-    load_circuit,
     normalize,
     resource_metrics,
 )
@@ -21,7 +20,6 @@ __all__ = [
     "compile_program",
     "detect_version",
     "fingerprint",
-    "load_circuit",
     "normalize",
     "resource_metrics",
 ]

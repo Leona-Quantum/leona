@@ -251,6 +251,30 @@
       },
       "ArtifactVersion": {
         "additionalProperties": false,
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "qasm": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "qasm"
+              ]
+            },
+            "then": {
+              "properties": {
+                "qasm_version": {
+                  "const": "3.0"
+                }
+              },
+              "required": [
+                "qasm_version"
+              ]
+            }
+          }
+        ],
         "properties": {
           "artifact_id": {
             "format": "uuid",
@@ -333,7 +357,7 @@
               }
             ],
             "default": null,
-            "description": "Descriptive provenance; never a circuit representation",
+            "description": "Provenance and legacy migration data; never the canonical circuit source",
             "title": "Metadata"
           },
           "qasm": {
@@ -352,6 +376,7 @@
           "qasm_version": {
             "anyOf": [
               {
+                "const": "3.0",
                 "type": "string"
               },
               {

@@ -9,8 +9,9 @@ from collections import Counter
 from typing import Literal
 
 import numpy as np
-from majorana_openqasm import fingerprint, load_circuit, normalize
+from majorana_openqasm import fingerprint, normalize
 from pydantic import BaseModel, Field
+from qiskit import QuantumCircuit, qasm3
 from qiskit.quantum_info import Operator, Statevector
 
 
@@ -22,8 +23,13 @@ class EquivalenceReport(BaseModel):
     scores: dict = Field(default_factory=dict)
 
 
+def _load_circuit(source: str) -> QuantumCircuit:
+    """Create an ephemeral SDK circuit from the canonical string boundary."""
+    return qasm3.loads(normalize(source))
+
+
 def _unitary_circuit(source: str):
-    circuit = load_circuit(source)
+    circuit = _load_circuit(source)
     return circuit.remove_final_measurements(inplace=False)
 
 
@@ -53,8 +59,8 @@ def exact_equivalence(
     tolerance: float = 1e-9,
     max_qubits: int = 6,
 ) -> EquivalenceReport:
-    left = load_circuit(reference)
-    right = load_circuit(candidate)
+    left = _load_circuit(reference)
+    right = _load_circuit(candidate)
     if left.num_qubits != right.num_qubits:
         distance = float("inf")
         passed = False
@@ -80,7 +86,7 @@ def exact_equivalence(
 
 
 def ideal_distribution(source: str) -> dict[str, float]:
-    circuit = load_circuit(source)
+    circuit = _load_circuit(source)
     probabilities = np.abs(simulate_statevector(source)) ** 2
     return {
         format(index, f"0{circuit.num_qubits}b"): float(value)
@@ -90,7 +96,9 @@ def ideal_distribution(source: str) -> dict[str, float]:
 
 
 def _sample_distribution(source: str, shots: int, seed: int) -> dict[str, float]:
-    circuit = load_circuit(source)
+    if shots < 1:
+        raise ValueError("shots must be >= 1")
+    circuit = _load_circuit(source)
     probabilities = np.abs(simulate_statevector(source)) ** 2
     rng = np.random.default_rng(seed)
     samples = rng.choice(len(probabilities), size=shots, p=probabilities)
@@ -103,20 +111,6 @@ def _total_variation(left: dict[str, float], right: dict[str, float]) -> float:
     return 0.5 * sum(abs(left.get(key, 0.0) - right.get(key, 0.0)) for key in keys)
 
 
-def _coarsen(
-    ideal: dict[str, float], observed: dict[str, float], max_bins: int
-) -> tuple[dict[str, float], dict[str, float], int]:
-    kept = [key for key, _ in sorted(ideal.items(), key=lambda item: -item[1])[:max_bins]]
-    kept_set = set(kept)
-    coarse_ideal = {key: ideal[key] for key in kept}
-    coarse_ideal["__TAIL__"] = max(0.0, 1.0 - sum(coarse_ideal.values()))
-    coarse_observed = {key: observed.get(key, 0.0) for key in kept}
-    coarse_observed["__TAIL__"] = sum(
-        value for key, value in observed.items() if key not in kept_set
-    )
-    return coarse_ideal, coarse_observed, len(kept) + 1
-
-
 def counts_vs_ideal(
     source: str,
     counts: dict[str, int],
@@ -126,7 +120,7 @@ def counts_vs_ideal(
     max_qubits: int = 20,
     bit_order: Literal["big", "little", "auto"] = "auto",
 ) -> EquivalenceReport:
-    circuit = load_circuit(source)
+    circuit = _load_circuit(source)
     if circuit.num_qubits > max_qubits:
         raise ValueError(f"statistical counts check supports at most {max_qubits} qubits")
     if max_bins < 1:
@@ -156,7 +150,7 @@ def counts_vs_ideal(
         raise ValueError("counts are empty")
 
     ideal = ideal_distribution(source)
-    orientations = {"big": ("as_is",), "little": ("reversed",), "auto": ("as_is", "reversed")}[
+    orientations = {"little": ("as_is",), "big": ("reversed",), "auto": ("as_is", "reversed")}[
         bit_order
     ]
     tvds: dict[str, float] = {}
@@ -165,9 +159,15 @@ def counts_vs_ideal(
         observed = {
             (key if orientation == "as_is" else key[::-1]): count / shots
             for key, count in normalized_counts.items()
+            if count > 0
         }
-        coarse_ideal, coarse_observed, coarse_bins = _coarsen(ideal, observed, max_bins)
-        tvds[orientation] = _total_variation(coarse_ideal, coarse_observed)
+        support = set(ideal) | set(observed)
+        if len(support) > max_bins:
+            raise ValueError(
+                f"statistical counts check supports at most {max_bins} nonzero outcomes"
+            )
+        coarse_bins = len(support)
+        tvds[orientation] = _total_variation(ideal, observed)
     orientation_used = min(tvds, key=tvds.get)  # type: ignore[arg-type]
     tvd = tvds[orientation_used]
     threshold_source = "plan" if threshold is not None else "shot_noise_bound"

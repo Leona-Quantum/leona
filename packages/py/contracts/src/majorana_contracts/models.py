@@ -2,10 +2,10 @@
 the /v1 response shapes, not ORM rows — the repository layer maps between them."""
 
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal, Self
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from .enums import (
     ExportStatus,
@@ -74,15 +74,34 @@ class Artifact(_ResourceBase):
 
 
 class ArtifactVersion(_ResourceBase):
+    model_config = ConfigDict(
+        extra="forbid",
+        json_schema_extra={
+            "allOf": [
+                {
+                    "if": {
+                        "required": ["qasm"],
+                        "properties": {"qasm": {"type": "string"}},
+                    },
+                    "then": {
+                        "required": ["qasm_version"],
+                        "properties": {"qasm_version": {"const": "3.0"}},
+                    },
+                }
+            ]
+        },
+    )
+
     id: UUID
     artifact_id: UUID
     seq: int = Field(ge=1)
-    qasm_version: str | None = Field(
+    qasm_version: Literal["3.0"] | None = Field(
         default=None, description="OpenQASM language version; 3.0 for new circuit artifacts"
     )
     qasm: str | None = Field(default=None, description="Canonical circuit source of truth")
     metadata: dict[str, Any] | None = Field(
-        default=None, description="Descriptive provenance; never a circuit representation"
+        default=None,
+        description="Provenance and legacy migration data; never the canonical circuit source",
     )
     code: str
     code_lang: str
@@ -93,6 +112,15 @@ class ArtifactVersion(_ResourceBase):
     resource_estimates: dict[str, Any] | None = None
     limitations: str | None = None
     created_at: datetime
+
+    @model_validator(mode="after")
+    def validate_qasm_version(self) -> Self:
+        """Require canonical QASM text and its version marker to appear together."""
+        if self.qasm is None and self.qasm_version is not None:
+            raise ValueError("qasm_version must be null when qasm is null")
+        if self.qasm is not None and self.qasm_version != "3.0":
+            raise ValueError('qasm_version must be "3.0" when qasm is present')
+        return self
 
 
 class ResourceMetrics(_ResourceBase):

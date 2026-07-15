@@ -17,6 +17,7 @@ import sys
 import uuid
 
 import psycopg
+from majorana_api.repos.system import insert_seed_artifact_version
 
 RNG = random.Random(42)
 BASE_TS = dt.datetime(2026, 1, 1, tzinfo=dt.timezone.utc)
@@ -107,23 +108,20 @@ def main() -> None:
             for seq in range(1, RNG.randint(1, 3) + 1):
                 ver_id = uuid7()
                 version_ids.append(ver_id)
-                cur.execute(
-                    "insert into artifact_versions (id, artifact_id, seq, qasm_version, code,"
-                    " code_lang, fingerprint, export_status, qasm, resource_estimates, created_at)"
-                    " values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
-                    (
-                        ver_id,
-                        art_id,
-                        seq,
-                        "3.0" if seq % 2 else None,
-                        f"# seed {family} v{seq}\nprint('seed')",
-                        "python",
-                        f"fp-{art_id.hex[:8]}-{seq}",
-                        "lossless" if seq % 2 else "lossy_with_reason",
-                        "OPENQASM 3.0;" if seq % 2 else None,
-                        json.dumps({"depth": RNG.randint(3, 40), "gates": RNG.randint(5, 200)}),
-                        ts_for(ver_id),
+                insert_seed_artifact_version(
+                    cur,
+                    version_id=ver_id,
+                    artifact_id=art_id,
+                    seq=seq,
+                    qasm="OPENQASM 3.0;" if seq % 2 else None,
+                    code=f"# seed {family} v{seq}\nprint('seed')",
+                    code_lang="python",
+                    fallback_fingerprint=f"fp-{art_id.hex[:8]}-{seq}",
+                    export_status="lossless" if seq % 2 else "lossy_with_reason",
+                    resource_estimates=json.dumps(
+                        {"depth": RNG.randint(3, 40), "gates": RNG.randint(5, 200)}
                     ),
+                    created_at=ts_for(ver_id),
                 )
             cur.execute(
                 "update artifacts set current_version_id = %s where id = %s",

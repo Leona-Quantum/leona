@@ -19,13 +19,14 @@ class OpenQASMError(ValueError):
 
 
 def detect_version(source: str) -> Literal["2.0", "3.0"]:
+    """Return the declared supported OpenQASM version."""
     match = _VERSION_RE.match(source)
     if match is None:
         raise OpenQASMError("missing OPENQASM 2.0 or 3.0 declaration")
     return "2.0" if match.group("version").startswith("2") else "3.0"
 
 
-def load_circuit(source: str) -> QuantumCircuit:
+def _load_circuit(source: str) -> QuantumCircuit:
     """Parse OpenQASM 2/3 using Qiskit's maintained importers."""
     try:
         if detect_version(source) == "2.0":
@@ -38,7 +39,7 @@ def load_circuit(source: str) -> QuantumCircuit:
 def normalize(source: str) -> str:
     """Return the canonical persisted representation: Qiskit-emitted OpenQASM 3."""
     try:
-        return qasm3.dumps(load_circuit(source))
+        return qasm3.dumps(_load_circuit(source))
     except OpenQASMError:
         raise
     except Exception as exc:
@@ -46,13 +47,11 @@ def normalize(source: str) -> str:
 
 
 def fingerprint(source: str) -> str:
+    """Hash the normalized OpenQASM 3 representation."""
     return hashlib.sha256(normalize(source).encode("utf-8")).hexdigest()
 
 
-def resource_metrics(source_or_circuit: str | QuantumCircuit) -> ResourceMetrics:
-    circuit = (
-        load_circuit(source_or_circuit) if isinstance(source_or_circuit, str) else source_or_circuit
-    )
+def _resource_metrics(circuit: QuantumCircuit) -> ResourceMetrics:
     operations = circuit.count_ops()
     measurements = int(operations.get("measure", 0))
     gate_count = max(0, circuit.size() - measurements)
@@ -68,6 +67,11 @@ def resource_metrics(source_or_circuit: str | QuantumCircuit) -> ResourceMetrics
         two_qubit_gate_count=two_qubit,
         measurement_count=measurements,
     )
+
+
+def resource_metrics(source: str) -> ResourceMetrics:
+    """Calculate resource metrics from an OpenQASM string."""
+    return _resource_metrics(_load_circuit(source))
 
 
 @dataclass(frozen=True)
@@ -93,12 +97,12 @@ def _not_worse(before: ResourceMetrics, after: ResourceMetrics) -> bool:
 def compile_program(source: str) -> CompilationOutcome:
     """Apply deterministic SDK optimization and retain it only when not worse."""
     canonical = normalize(source)
-    circuit = load_circuit(canonical)
-    before = resource_metrics(circuit)
+    circuit = _load_circuit(canonical)
+    before = _resource_metrics(circuit)
     try:
         candidate_circuit = transpile(circuit, optimization_level=1, seed_transpiler=0)
         candidate_qasm = qasm3.dumps(candidate_circuit)
-        candidate = resource_metrics(candidate_circuit)
+        candidate = _resource_metrics(candidate_circuit)
     except Exception as exc:
         return CompilationOutcome(
             source_qasm=canonical,

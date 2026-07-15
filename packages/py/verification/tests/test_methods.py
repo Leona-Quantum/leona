@@ -72,10 +72,25 @@ def test_statistical_counts_bit_order_conventions():
     assert not verify_statistical_counts(circuit, {"010": 1024}).passed
     # Explicit convention: only the declared orientation is accepted, so a
     # genuinely bit-reversed (wrong) state cannot be absolved.
-    assert verify_statistical_counts(circuit, {"001": 1024}, bit_order="big").passed
-    assert not verify_statistical_counts(circuit, {"100": 1024}, bit_order="big").passed
-    assert verify_statistical_counts(circuit, {"100": 1024}, bit_order="little").passed
-    assert not verify_statistical_counts(circuit, {"001": 1024}, bit_order="little").passed
+    assert verify_statistical_counts(circuit, {"100": 1024}, bit_order="big").passed
+    assert not verify_statistical_counts(circuit, {"001": 1024}, bit_order="big").passed
+    assert verify_statistical_counts(circuit, {"001": 1024}, bit_order="little").passed
+    assert not verify_statistical_counts(circuit, {"100": 1024}, bit_order="little").passed
+
+
+def test_statistical_counts_fails_closed_when_support_exceeds_limit():
+    circuit = 'OPENQASM 2.0;\ninclude "qelib1.inc";\nqreg q[9];\n' + "\n".join(
+        f"h q[{index}];" for index in range(9)
+    )
+    outcome = verify_statistical_counts(circuit, {"0" * 9: 1024})
+    assert not outcome.passed
+    assert "at most 256 nonzero outcomes" in outcome.details["error"]
+
+
+def test_statistical_equivalence_rejects_zero_shots():
+    outcome = verify_statistical(BELL, BELL, shots=0)
+    assert not outcome.passed
+    assert outcome.details["error"] == "shots must be >= 1"
 
 
 def test_statistical_counts_rejects_fractional_counts():

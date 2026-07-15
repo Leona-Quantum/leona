@@ -175,7 +175,7 @@ export interface components {
             limitations: string | null;
             /**
              * Metadata
-             * @description Descriptive provenance; never a circuit representation
+             * @description Provenance and legacy migration data; never the canonical circuit source
              * @default null
              */
             metadata: {
@@ -192,7 +192,7 @@ export interface components {
              * @description OpenQASM language version; 3.0 for new circuit artifacts
              * @default null
              */
-            qasm_version: string | null;
+            qasm_version: "3.0" | null;
             /**
              * Resource Estimates
              * @default null
@@ -202,7 +202,7 @@ export interface components {
             } | null;
             /** Seq */
             seq: number;
-        };
+        } & unknown;
         /**
          * BaselineKind
          * @enum {string}

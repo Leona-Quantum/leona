@@ -20,6 +20,7 @@ import pytest
 from majorana_contracts import Scope
 from majorana_contracts.enums import Role
 from majorana_llm import LLMClient, default_llm
+from majorana_openqasm import fingerprint
 from majorana_pipeline import STAGE_ORDER
 from majorana_sandbox import LocalSubprocessSandbox
 
@@ -179,8 +180,9 @@ async def test_run_executes_end_to_end_with_real_stages(env):
     async with factory() as session:
         version = await artifacts_repo.get_version(scope, session, uuid.UUID(saved["version_id"]))
     assert version.export_status == "lossless"
-    assert version.fingerprint  # normalized OpenQASM fingerprint recorded
-    assert version.qasm
+    assert version.qasm_version == "3.0"
+    assert version.qasm and version.qasm.startswith("OPENQASM 3.0;")
+    assert fingerprint(version.qasm) == version.fingerprint
 
     # SSE replay of the stored run: same rows, same order.
     async with client.stream("GET", f"/v1/runs/{run['id']}/events/stream") as stream:

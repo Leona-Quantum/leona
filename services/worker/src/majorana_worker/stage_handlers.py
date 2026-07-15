@@ -593,7 +593,21 @@ def build_stage_handlers(
             )
             return StageOutcome(ok=True)
 
-        outcome = compile_program(qasm)
+        try:
+            outcome = compile_program(qasm)
+        except OpenQASMError as exc:
+            ctx.state["compiled_qasm"] = None
+            ctx.state["compilation"] = None
+            await ctx.sink.emit(
+                "compilation.result",
+                {
+                    "accepted": False,
+                    "mode": "not_applicable",
+                    "reason": str(exc),
+                    "compatibility": {},
+                },
+            )
+            return StageOutcome(ok=True)
         ctx.state["compiled_qasm"] = outcome.selected_qasm
         ctx.state["compilation"] = outcome
         compatibility = {
@@ -1050,9 +1064,7 @@ def _run_verification(method: VerificationMethod, plan: Plan, result: dict[str, 
                 if thresholds.get(key) is not None:
                     threshold = thresholds[key]
                     break
-        # QASM is parsed through Qiskit; its standard displayed bitstring ordering
-        # is also what Aer counts use, so no reversal is needed.
-        bit_order = "big"
+        bit_order = "little" if Framework(plan.framework) is Framework.QISKIT else "big"
         return verify_statistical_counts(qasm, counts, threshold=threshold, bit_order=bit_order)
     if method is VerificationMethod.EXACT_DIAG:
         instance = _baseline_instance(result)

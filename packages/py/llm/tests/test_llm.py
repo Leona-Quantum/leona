@@ -103,6 +103,9 @@ def test_v2_prompt_deltas_present():
     assert "it did not pass" in CRITIC_SYSTEM_PROMPT
     assert "highest severity" in CRITIC_SYSTEM_PROMPT
     assert "OpenQASM" in WRITEBACK_SYSTEM_PROMPT and "sandbox" in WRITEBACK_SYSTEM_PROMPT
+    assert "OpenQASM version from the run record" in WRITEBACK_SYSTEM_PROMPT
+    assert "OpenQASM 3 is the preferred native circuit export" in WRITEBACK_SYSTEM_PROMPT
+    assert "OpenQASM 2 compatibility bridge" in WRITEBACK_SYSTEM_PROMPT
     # Export limitations never negate independent verification.
     assert "never diminishes" in WRITEBACK_SYSTEM_PROMPT
 

@@ -2,7 +2,6 @@ from majorana_openqasm import (
     compile_program,
     detect_version,
     fingerprint,
-    load_circuit,
     normalize,
     resource_metrics,
 )
@@ -22,7 +21,7 @@ def test_qasm2_ingests_as_canonical_qasm3():
     canonical = normalize(BELL_2)
     assert canonical.startswith("OPENQASM 3.0;")
     assert detect_version(canonical) == "3.0"
-    assert load_circuit(canonical).num_qubits == 2
+    assert resource_metrics(canonical).qubits == 2
 
 
 def test_fingerprint_ignores_qasm2_formatting():
@@ -60,7 +59,5 @@ c = measure q;
 if (c == true) { x q; }
 """
     canonical = normalize(source)
-    circuit = load_circuit(canonical)
-
-    assert circuit.count_ops()["if_else"] == 1
     assert "if (" in canonical
+    assert normalize(canonical) == canonical
