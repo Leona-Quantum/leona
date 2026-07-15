@@ -1,6 +1,6 @@
 import type { CSSProperties, ReactNode } from "react";
 import type { Metadata } from "next";
-import { Inter, JetBrains_Mono } from "next/font/google";
+import { Instrument_Sans, Instrument_Serif, JetBrains_Mono } from "next/font/google";
 import { THEME_STORAGE_KEY } from "../lib/theme";
 import { getPublicLocale } from "../lib/public-locale-server";
 import "./globals.css";
@@ -16,7 +16,10 @@ const themeScript = `(() => {
 })();`;
 
 // Fonts land as CSS variables that override the tokens.css fallback stacks.
-const inter = Inter({ subsets: ["latin"], variable: "--font-inter" });
+const instrumentSans = Instrument_Sans({ subsets: ["latin"], variable: "--font-instrument-sans" });
+// Display face for the public site only — one weight, loaded because the marketing
+// surface is the only place that renders it (see --font-display in tokens.css).
+const instrumentSerif = Instrument_Serif({ subsets: ["latin"], weight: "400", variable: "--font-instrument-serif" });
 const jetbrainsMono = JetBrains_Mono({ subsets: ["latin"], variable: "--font-jbmono" });
 
 export const metadata: Metadata = {
@@ -33,10 +36,11 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
     <html
       lang={locale}
       suppressHydrationWarning
-      className={`${inter.variable} ${jetbrainsMono.variable}`}
+      className={`${instrumentSans.variable} ${instrumentSerif.variable} ${jetbrainsMono.variable}`}
       style={
         {
-          "--font-ui": "var(--font-inter), system-ui, sans-serif",
+          "--font-ui": "var(--font-instrument-sans), system-ui, sans-serif",
+          "--font-display": "var(--font-instrument-serif), Georgia, serif",
           "--font-mono": "var(--font-jbmono), ui-monospace, monospace",
         } as CSSProperties
       }

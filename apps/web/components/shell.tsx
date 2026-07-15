@@ -60,11 +60,15 @@ export function Shell({
   headerRight,
   demoMode = false,
   locale = "en",
+  accountName,
 }: {
   children: ReactNode;
   headerRight?: ReactNode;
   demoMode?: boolean;
   locale?: PublicLocale;
+  /** Signed-in user's display name for the sidebar footer. Omitted on surfaces
+   * with no session (the /dev fixtures page), which fall back to the generic label. */
+  accountName?: string;
 }) {
   const pathname = usePathname();
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
@@ -202,6 +206,7 @@ export function Shell({
           demoMode={demoMode}
           folderSyncState={folderSyncState}
           locale={locale}
+          accountName={accountName}
           onArchive={(chat) => {
             archiveChat(chat.id, chat);
             refreshAfterLocalChange();
@@ -253,6 +258,7 @@ function WorkspaceSidebar({
   demoMode,
   folderSyncState,
   locale,
+  accountName,
   onArchive,
   onRestore,
   onArchiveArtifact,
@@ -272,6 +278,7 @@ function WorkspaceSidebar({
   demoMode: boolean;
   folderSyncState: "local" | "synced" | "error";
   locale: PublicLocale;
+  accountName?: string;
   onArchive: (chat: ChatSummary) => void;
   onRestore: (chat: ChatSummary) => void;
   onArchiveArtifact: (artifact: LibraryArtifact) => void;
@@ -288,7 +295,15 @@ function WorkspaceSidebar({
   const [deleteTarget, setDeleteTarget] = useState<DeleteTarget | null>(null);
   const runHref = demoMode ? "/demo?view=run" : "/run";
   const studioHref = demoMode ? "/demo?view=library" : "/studio";
-  const sidebarName = demoMode ? copy.publicPreview : copy.personalWorkspace;
+  // Title and subtitle must never be the same string: before accountName was
+  // plumbed through, both rendered copy.personalWorkspace and the footer showed
+  // "Personal workspace" twice, stacked.
+  const sidebarName = demoMode ? copy.publicPreview : accountName || copy.personalWorkspace;
+  const sidebarSubtitle = demoMode
+    ? copy.readOnlyData
+    : accountName
+      ? copy.personalWorkspace
+      : null;
   const sidebarInitial = sidebarName.slice(0, 1).toUpperCase();
   const pinnedChats = chats.filter((chat) => isPinned("chat", chat.id));
   const unpinnedChats = chats.filter((chat) => !isPinned("chat", chat.id));
@@ -494,7 +509,7 @@ function WorkspaceSidebar({
           <span className="mj-avatar">{sidebarInitial}</span>
           <span className="mj-sidebar-user-copy mj-sidebar-copy">
             <strong>{sidebarName}</strong>
-            <small>{demoMode ? copy.readOnlyData : copy.personalWorkspace}</small>
+            {sidebarSubtitle ? <small>{sidebarSubtitle}</small> : null}
           </span>
           <span className="mj-sidebar-user-caret mj-sidebar-copy">⌄</span>
         </a>
