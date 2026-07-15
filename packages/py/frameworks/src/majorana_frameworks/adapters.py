@@ -163,37 +163,37 @@ _majorana_observation["native_optimization"] = {{"applied": {optimized_literal}}
 _majorana_final_circuit = _majorana_namespace.get("FINAL_CIRCUIT")
 if _majorana_final_circuit is not None:
     try:
-        if hasattr(_majorana_final_circuit, "all_operations"):
-            _majorana_operations = list(_majorana_final_circuit.all_operations())
+        if _majorana_hasattr(_majorana_final_circuit, "all_operations"):
+            _majorana_operations = _majorana_list(_majorana_final_circuit.all_operations())
             _majorana_measurements = [
                 op
                 for op in _majorana_operations
-                if "measure" in type(getattr(op, "gate", op)).__name__.lower()
+                if "measure" in _majorana_type(_majorana_getattr(op, "gate", op)).__name__.lower()
             ]
             _majorana_gate_operations = [
                 op for op in _majorana_operations if op not in _majorana_measurements
             ]
-            _majorana_qubits = len(_majorana_final_circuit.all_qubits())
-            _majorana_depth = len(_majorana_final_circuit)
+            _majorana_qubits = _majorana_len(_majorana_final_circuit.all_qubits())
+            _majorana_depth = _majorana_len(_majorana_final_circuit)
         else:
-            _majorana_tape = getattr(_majorana_final_circuit, "tape", None)
+            _majorana_tape = _majorana_getattr(_majorana_final_circuit, "tape", None)
             if _majorana_tape is None:
-                _majorana_tape = getattr(_majorana_final_circuit, "_tape", None)
+                _majorana_tape = _majorana_getattr(_majorana_final_circuit, "_tape", None)
             if _majorana_tape is None:
                 _majorana_tape = _majorana_final_circuit
-            _majorana_operations = list(getattr(_majorana_tape, "operations", []))
-            _majorana_measurements = list(getattr(_majorana_tape, "measurements", []))
+            _majorana_operations = _majorana_list(_majorana_getattr(_majorana_tape, "operations", []))
+            _majorana_measurements = _majorana_list(_majorana_getattr(_majorana_tape, "measurements", []))
             _majorana_gate_operations = _majorana_operations
-            _majorana_qubits = len(getattr(_majorana_tape, "wires", []))
+            _majorana_qubits = _majorana_len(_majorana_getattr(_majorana_tape, "wires", []))
             _majorana_depth = None
         _majorana_observation["resource_metrics"] = {{
             "qubits": _majorana_qubits,
             "depth": _majorana_depth,
-            "gate_count": len(_majorana_gate_operations),
-            "two_qubit_gate_count": sum(len(getattr(op, "qubits", getattr(op, "wires", []))) == 2 for op in _majorana_gate_operations),
-            "measurement_count": len(_majorana_measurements),
+            "gate_count": _majorana_len(_majorana_gate_operations),
+            "two_qubit_gate_count": _majorana_sum(_majorana_len(_majorana_getattr(op, "qubits", _majorana_getattr(op, "wires", []))) == 2 for op in _majorana_gate_operations),
+            "measurement_count": _majorana_len(_majorana_measurements),
         }}
-    except Exception:
+    except _majorana_exception:
         pass
 """
 
@@ -221,23 +221,23 @@ if _majorana_final_circuit is not None:
     try:
         if _majorana_interchange_dumps is not None:
             _majorana_observation["interchange_qasm"] = _majorana_interchange_dumps(_majorana_final_circuit)
-    except Exception as _majorana_interchange_exc:
-        _majorana_observation["interchange_error"] = type(_majorana_interchange_exc).__name__
+    except _majorana_exception as _majorana_interchange_exc:
+        _majorana_observation["interchange_error"] = _majorana_type(_majorana_interchange_exc).__name__
     try:
-        _majorana_ops = {{str(k): int(v) for k, v in _majorana_final_circuit.count_ops().items()}}
-        _majorana_two_qubit_count = sum(
+        _majorana_ops = {{_majorana_str(k): _majorana_int(v) for k, v in _majorana_final_circuit.count_ops().items()}}
+        _majorana_two_qubit_count = _majorana_sum(
             1
             for instruction in _majorana_final_circuit.data
-            if len(instruction.qubits) == 2
+            if _majorana_len(instruction.qubits) == 2
         )
         _majorana_observation["resource_metrics"] = {{
-            "qubits": int(_majorana_final_circuit.num_qubits),
-            "depth": int(_majorana_final_circuit.depth()),
-            "gate_count": sum(v for k, v in _majorana_ops.items() if k not in {{"measure"}}),
+            "qubits": _majorana_int(_majorana_final_circuit.num_qubits),
+            "depth": _majorana_int(_majorana_final_circuit.depth()),
+            "gate_count": _majorana_sum(v for k, v in _majorana_ops.items() if k not in {{"measure"}}),
             "two_qubit_gate_count": _majorana_two_qubit_count,
             "measurement_count": _majorana_ops.get("measure", 0),
         }}
-    except Exception:
+    except _majorana_exception:
         pass
 """
 

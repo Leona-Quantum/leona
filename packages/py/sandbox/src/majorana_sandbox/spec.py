@@ -89,6 +89,15 @@ def compose_execution(spec: ExecutionSpec) -> str:
     import json as _majorana_json
     _majorana_open = _majorana_builtins.open
     _majorana_json_dump = _majorana_json.dump
+    _majorana_exception = _majorana_builtins.Exception
+    _majorana_getattr = _majorana_builtins.getattr
+    _majorana_hasattr = _majorana_builtins.hasattr
+    _majorana_int = _majorana_builtins.int
+    _majorana_len = _majorana_builtins.len
+    _majorana_list = _majorana_builtins.list
+    _majorana_str = _majorana_builtins.str
+    _majorana_sum = _majorana_builtins.sum
+    _majorana_type = _majorana_builtins.type
     _majorana_namespace = {{"__name__": "__main__"}}
     _majorana_observation = {{}}
 {setup}

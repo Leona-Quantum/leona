@@ -1,5 +1,23 @@
+import builtins
+
 from majorana_contracts.enums import Framework
 from majorana_frameworks import FrameworkProgram, extract_interchange_qasm
+
+
+def _observer_scope(namespace, observation):
+    return {
+        "_majorana_namespace": namespace,
+        "_majorana_observation": observation,
+        "_majorana_exception": builtins.Exception,
+        "_majorana_getattr": builtins.getattr,
+        "_majorana_hasattr": builtins.hasattr,
+        "_majorana_int": builtins.int,
+        "_majorana_len": builtins.len,
+        "_majorana_list": builtins.list,
+        "_majorana_str": builtins.str,
+        "_majorana_sum": builtins.sum,
+        "_majorana_type": builtins.type,
+    }
 
 
 def test_fingerprint_is_framework_aware_and_preserves_source_whitespace():
@@ -77,7 +95,7 @@ def test_qiskit_interchange_is_optional_observation(monkeypatch):
     namespace = {}
     exec(program.source, namespace)
     observation = {}
-    observer_scope = {"_majorana_namespace": namespace, "_majorana_observation": observation}
+    observer_scope = _observer_scope(namespace, observation)
     exec(program.trusted_setup(circuit_expected=True), observer_scope)
     exec(
         program.trusted_observer(circuit_expected=True),
@@ -117,7 +135,7 @@ def test_cirq_metrics_are_observed_from_final_sandbox_object():
     observation = {}
     exec(
         program.trusted_observer(circuit_expected=True),
-        {"_majorana_namespace": namespace, "_majorana_observation": observation},
+        _observer_scope(namespace, observation),
     )
 
     metrics = program.resource_metrics(qubits=99, expected_runtime_sec=1, observation=observation)
@@ -151,7 +169,7 @@ def test_pennylane_measurements_are_not_counted_as_gates():
     observation = {}
     exec(
         program.trusted_observer(circuit_expected=True),
-        {"_majorana_namespace": namespace, "_majorana_observation": observation},
+        _observer_scope(namespace, observation),
     )
 
     metrics = program.resource_metrics(qubits=99, expected_runtime_sec=1, observation=observation)
