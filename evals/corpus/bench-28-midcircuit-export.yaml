@@ -3,8 +3,8 @@ category: "G — Transpilation/export honesty"
 prompt: "Take a circuit that mid-circuit measures a qubit and conditionally applies X, and export it to OpenQASM 3. Classify the export honestly."
 framework: qiskit
 expect:
-  # JC-5: the IR's terminal-measurement limit makes this unsupported; the honest
-  # run must classify it unsupported, not fabricate a lossless export.
-  export_status: unsupported
-  saves_artifact: false
-  verifier_decision: fail
+  # OpenQASM 3 natively represents mid-circuit measurement and classical control.
+  # The artifact must remain lossless instead of inheriting a private-model limit.
+  export_status: lossless
+  saves_artifact: true
+  verifier_decision: pass

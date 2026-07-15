@@ -8,7 +8,7 @@ playbook's terms this is Tier-1 direct-simulation evidence at sandbox sizes
 
 ## What is being tested
 
-Let `p` be the exact Born distribution of the parsed IR circuit on |0…0⟩,
+Let `p` be the exact Born distribution of the parsed OpenQASM program on |0…0⟩,
 computed as |⟨x|U|0…0⟩|² by the pure-numpy engine. Let `p̂` be the empirical
 distribution from the run's counts, `p̂(x) = n_x / N` with `N = Σ n_x` shots.
 

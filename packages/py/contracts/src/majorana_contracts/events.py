@@ -140,7 +140,7 @@ class ScreenResult(_EventBase):
 class ResourceEstimateResult(_EventBase):
     type: Literal["resource.estimate"] = "resource.estimate"
     phase: Literal["pre_verify", "compiled"]
-    source: Literal["plan_static", "ir", "compiler"]
+    source: Literal["plan_static", "openqasm", "compiler"]
     metrics: ResourceMetrics
     notes: list[str] = Field(default_factory=list)
 

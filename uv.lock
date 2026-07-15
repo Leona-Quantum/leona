@@ -8,8 +8,8 @@ members = [
     "majorana-baselines",
     "majorana-contracts",
     "majorana-evals",
-    "majorana-ir",
     "majorana-llm",
+    "majorana-openqasm",
     "majorana-pipeline",
     "majorana-sandbox",
     "majorana-verification",
@@ -66,6 +66,15 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/66/a2/d31f14e28d49bae983a3634e38dfb4b31c50110b5e403596c5c6a20b23f8/anthropic-0.116.0.tar.gz", hash = "sha256:5fc248fbb9fe03ef686f8a774f81586bca31a043260aab88b387ea3660f4a396", size = 949149, upload-time = "2026-07-02T19:08:10.534Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/c7/dd/2a1e81cf1b163acc340afc4ec74ed1d86f5eed1a809fabdeed3e0997b346/anthropic-0.116.0-py3-none-any.whl", hash = "sha256:6c0a7698e8d652455da3499978279bb2588c7264d0a35be3666009a4258c8256", size = 956896, upload-time = "2026-07-02T19:08:08.756Z" },
+]
+
+[[package]]
+name = "antlr4-python3-runtime"
+version = "4.13.2"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/33/5f/2cdf6f7aca3b20d3f316e9f505292e1f256a32089bd702034c29ebde6242/antlr4_python3_runtime-4.13.2.tar.gz", hash = "sha256:909b647e1d2fc2b70180ac586df3933e38919c85f98ccc656a96cd3f25ef3916", size = 117467, upload-time = "2024-08-03T19:00:12.757Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/89/03/a851e84fcbb85214dc637b6378121ef9a0dd61b4c65264675d8a5c9b1ae7/antlr4_python3_runtime-4.13.2-py3-none-any.whl", hash = "sha256:fe3835eb8d33daece0e799090eda89719dbccee7aa39ef94eed3818cafa5a7e8", size = 144462, upload-time = "2024-08-03T19:00:11.134Z" },
 ]
 
 [[package]]
@@ -688,6 +697,7 @@ dependencies = [
     { name = "alembic" },
     { name = "fastapi" },
     { name = "majorana-contracts" },
+    { name = "majorana-openqasm" },
     { name = "majorana-pipeline" },
     { name = "opentelemetry-exporter-otlp-proto-http" },
     { name = "opentelemetry-instrumentation-fastapi" },
@@ -704,6 +714,7 @@ requires-dist = [
     { name = "alembic", specifier = ">=1.16" },
     { name = "fastapi", specifier = ">=0.115" },
     { name = "majorana-contracts", editable = "packages/py/contracts" },
+    { name = "majorana-openqasm", editable = "packages/py/openqasm" },
     { name = "majorana-pipeline", editable = "packages/py/pipeline" },
     { name = "opentelemetry-exporter-otlp-proto-http", specifier = ">=1.27" },
     { name = "opentelemetry-instrumentation-fastapi", specifier = ">=0.48b0" },
@@ -767,28 +778,6 @@ requires-dist = [
 ]
 
 [[package]]
-name = "majorana-ir"
-version = "0.1.0"
-source = { editable = "packages/py/ir" }
-dependencies = [
-    { name = "majorana-contracts" },
-    { name = "pydantic" },
-]
-
-[package.optional-dependencies]
-qiskit = [
-    { name = "qiskit" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "majorana-contracts", editable = "packages/py/contracts" },
-    { name = "pydantic", specifier = ">=2.8" },
-    { name = "qiskit", marker = "extra == 'qiskit'", specifier = ">=1.2" },
-]
-provides-extras = ["qiskit"]
-
-[[package]]
 name = "majorana-llm"
 version = "0.1.0"
 source = { editable = "packages/py/llm" }
@@ -813,6 +802,25 @@ requires-dist = [
     { name = "pydantic", specifier = ">=2.8" },
 ]
 provides-extras = ["openai", "anthropic"]
+
+[[package]]
+name = "majorana-openqasm"
+version = "0.1.0"
+source = { editable = "packages/py/openqasm" }
+dependencies = [
+    { name = "majorana-contracts" },
+    { name = "pydantic" },
+    { name = "qiskit" },
+    { name = "qiskit-qasm3-import" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "majorana-contracts", editable = "packages/py/contracts" },
+    { name = "pydantic", specifier = ">=2.8" },
+    { name = "qiskit", specifier = ">=2.4,<3" },
+    { name = "qiskit-qasm3-import", specifier = ">=0.6,<0.7" },
+]
 
 [[package]]
 name = "majorana-pipeline"
@@ -854,7 +862,7 @@ source = { editable = "packages/py/verification" }
 dependencies = [
     { name = "majorana-baselines" },
     { name = "majorana-contracts" },
-    { name = "majorana-ir" },
+    { name = "majorana-openqasm" },
     { name = "numpy" },
     { name = "pydantic" },
 ]
@@ -863,7 +871,7 @@ dependencies = [
 requires-dist = [
     { name = "majorana-baselines", editable = "packages/py/baselines" },
     { name = "majorana-contracts", editable = "packages/py/contracts" },
-    { name = "majorana-ir", editable = "packages/py/ir" },
+    { name = "majorana-openqasm", editable = "packages/py/openqasm" },
     { name = "numpy", specifier = ">=1.26" },
     { name = "pydantic", specifier = ">=2.8" },
 ]
@@ -875,8 +883,8 @@ source = { editable = "services/worker" }
 dependencies = [
     { name = "majorana-api" },
     { name = "majorana-baselines" },
-    { name = "majorana-ir" },
     { name = "majorana-llm" },
+    { name = "majorana-openqasm" },
     { name = "majorana-pipeline" },
     { name = "majorana-sandbox", extra = ["vercel"] },
     { name = "majorana-verification" },
@@ -886,8 +894,8 @@ dependencies = [
 requires-dist = [
     { name = "majorana-api", editable = "services/api" },
     { name = "majorana-baselines", editable = "packages/py/baselines" },
-    { name = "majorana-ir", editable = "packages/py/ir" },
     { name = "majorana-llm", editable = "packages/py/llm" },
+    { name = "majorana-openqasm", editable = "packages/py/openqasm" },
     { name = "majorana-pipeline", editable = "packages/py/pipeline" },
     { name = "majorana-sandbox", extras = ["vercel"], editable = "packages/py/sandbox" },
     { name = "majorana-verification", editable = "packages/py/verification" },
@@ -1088,6 +1096,20 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/78/60/d4219875289b11d2c2f7da93c36283da224a2e55865ed865ab64e0ce9217/openai-2.45.0.tar.gz", hash = "sha256:10d34ca9c5643bce775852fddbfc172505cb1d4de1ccd101696c3ecff358765d", size = 1109653, upload-time = "2026-07-09T18:02:44.091Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/f1/b0/2291689e3ec4723fbf5bbf3b54afcd7b160f9ddc98ca7aedfd0132af5677/openai-2.45.0-py3-none-any.whl", hash = "sha256:5df105f5f8c9b711fcb9d06d2d3888cebc82506db216484c14a4e53cdf651777", size = 1629470, upload-time = "2026-07-09T18:02:42.21Z" },
+]
+
+[[package]]
+name = "openqasm3"
+version = "1.0.1"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/92/a0/678ce1e4efbeb1cf06a7728b4056754e52bfd2c5cad174dae0f2a17b2d03/openqasm3-1.0.1.tar.gz", hash = "sha256:c589dc05d4ced50ca24167d14e0f2c916e717499ba0442e0ff2a3030ef312d0a", size = 536861, upload-time = "2025-02-19T22:51:06.204Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/75/dd/2aa7698341948f3229f7a1cb75e84d9677444d9c730632d1907716574dc5/openqasm3-1.0.1-py3-none-any.whl", hash = "sha256:0d3a1ebe3465e3ea619bcaa369858bba8944cbb0c49604b24f94662d3ec41d41", size = 541545, upload-time = "2025-02-19T22:51:01.852Z" },
+]
+
+[package.optional-dependencies]
+parser = [
+    { name = "antlr4-python3-runtime" },
 ]
 
 [[package]]
@@ -1545,6 +1567,19 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/75/b9/4dfdfafe83762144a1cf1456eafb3e17052c1b7ad9195c6af30d9899cd28/qiskit-2.5.0-cp310-abi3-manylinux_2_28_s390x.whl", hash = "sha256:4aa04541b78f3a81967ae411733929749fd67ae4bce2d228a9cdcb06e64dc9c7", size = 9512568, upload-time = "2026-07-02T23:31:04.374Z" },
     { url = "https://files.pythonhosted.org/packages/da/a4/78971e41c5ce8bd54f750f82d5ce7313cae821b0730c8fdac9dd8cbaafd7/qiskit-2.5.0-cp310-abi3-manylinux_2_28_x86_64.whl", hash = "sha256:6efe02541f49c97aac2073befd9458a37cfae58a3ee1616db12ee3ee8791eef7", size = 9763212, upload-time = "2026-07-02T20:05:38.61Z" },
     { url = "https://files.pythonhosted.org/packages/08/c1/193fbdfceebec892c7aed59ccbd521dacc1e596780032ba7ba5a138a0a27/qiskit-2.5.0-cp310-abi3-win_amd64.whl", hash = "sha256:f9daa14b6499ec0da4db0eadb57d28ea2a38922cefa158b49723f78c544a27f5", size = 9449710, upload-time = "2026-07-02T20:05:41.156Z" },
+]
+
+[[package]]
+name = "qiskit-qasm3-import"
+version = "0.6.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "openqasm3", extra = ["parser"] },
+    { name = "qiskit" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/ea/e4/0229893ae295763a9273e47a7b1a8f10599ee49c2963750440d56a4b0023/qiskit_qasm3_import-0.6.0.tar.gz", hash = "sha256:6b763ee58538b33eaf5aaa8126b687f3c03f26c4d28e6a4f04f9be24a6b184ff", size = 37141, upload-time = "2025-06-10T16:34:11.287Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/3e/7e/b8bbfbf1acfe0b40872727ef4741b54794beb65da34c4c327dc31a73d35d/qiskit_qasm3_import-0.6.0-py3-none-any.whl", hash = "sha256:2109b65a6859bec4a51e7b61bd525365f298f67f19b3952bf602423c6d21d697", size = 29490, upload-time = "2025-06-10T16:34:10.035Z" },
 ]
 
 [[package]]

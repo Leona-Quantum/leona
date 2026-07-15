@@ -108,15 +108,14 @@ def main() -> None:
                 ver_id = uuid7()
                 version_ids.append(ver_id)
                 cur.execute(
-                    "insert into artifact_versions (id, artifact_id, seq, ir_version, ir, code,"
+                    "insert into artifact_versions (id, artifact_id, seq, qasm_version, code,"
                     " code_lang, fingerprint, export_status, qasm, resource_estimates, created_at)"
-                    " values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
+                    " values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
                     (
                         ver_id,
                         art_id,
                         seq,
-                        "1.0",
-                        json.dumps({"algorithm": family, "qubits": RNG.randint(2, 12)}),
+                        "3.0" if seq % 2 else None,
                         f"# seed {family} v{seq}\nprint('seed')",
                         "python",
                         f"fp-{art_id.hex[:8]}-{seq}",

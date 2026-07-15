@@ -1,6 +1,5 @@
 from majorana_baselines import HamiltonianInstance, MaxCutInstance
 from majorana_contracts.enums import VerificationMethod, VerificationResultKind
-from majorana_ir.connectors import from_openqasm
 
 from majorana_verification import (
     extract_counts,
@@ -23,29 +22,26 @@ cx q[0],q[1];
 
 
 def test_exact_equivalence_passes_for_identical_circuit():
-    circuit = from_openqasm(BELL)
-    outcome = verify_exact(circuit, circuit)
+    outcome = verify_exact(BELL, BELL)
     assert outcome.passed
     assert outcome.method is VerificationMethod.EXACT
     assert outcome.details["scores"]["max_abs_distance"] == 0
 
 
 def test_exact_equivalence_fails_for_different_circuit():
-    outcome = verify_exact(
-        from_openqasm(BELL), from_openqasm("OPENQASM 2.0;\nqreg q[2];\nx q[0];\n")
-    )
+    outcome = verify_exact(BELL, "OPENQASM 2.0;\nqreg q[2];\nx q[0];\n")
     assert not outcome.passed
 
 
 def test_statistical_equivalence_is_seeded():
-    circuit = from_openqasm("OPENQASM 2.0;\nqreg q[1];\nh q[0];\n")
+    circuit = 'OPENQASM 2.0;\ninclude "qelib1.inc";\nqreg q[1];\nh q[0];\n'
     outcome = verify_statistical(circuit, circuit, shots=256, seed=7)
     assert outcome.passed
     assert outcome.details["scores"]["total_variation_distance"] == 0
 
 
 def test_statistical_counts_passes_for_honest_bell_counts():
-    circuit = from_openqasm(BELL)
+    circuit = BELL
     outcome = verify_statistical_counts(circuit, {"00": 512, "11": 512})
     assert outcome.passed
     assert outcome.method is VerificationMethod.STATISTICAL
@@ -54,50 +50,50 @@ def test_statistical_counts_passes_for_honest_bell_counts():
 
 
 def test_statistical_counts_fails_for_fabricated_distribution():
-    circuit = from_openqasm(BELL)
+    circuit = BELL
     # A Bell state never yields |01>/|10>; counts dominated by them are fabricated.
     outcome = verify_statistical_counts(circuit, {"01": 500, "10": 500, "00": 24})
     assert not outcome.passed
 
 
 def test_statistical_counts_fails_for_biased_counts():
-    circuit = from_openqasm(BELL)
+    circuit = BELL
     # Right support, wrong weights: 90/10 vs the ideal 50/50 (TVD 0.4).
     outcome = verify_statistical_counts(circuit, {"00": 3686, "11": 410})
     assert not outcome.passed
 
 
 def test_statistical_counts_bit_order_conventions():
-    # |100> from x q[0]: engine big-endian says "100"; Qiskit reports "001".
-    circuit = from_openqasm('OPENQASM 2.0;\ninclude "qelib1.inc";\nqreg q[3];\nx q[0];\n')
+    # Qiskit/OpenQASM displays q[0] as the rightmost bit: x q[0] yields "001".
+    circuit = 'OPENQASM 2.0;\ninclude "qelib1.inc";\nqreg q[3];\nx q[0];\n'
     # auto (unknown producer): either orientation matches, wrong state never.
     for reported in ("100", "001"):
         assert verify_statistical_counts(circuit, {reported: 1024}).passed, reported
     assert not verify_statistical_counts(circuit, {"010": 1024}).passed
     # Explicit convention: only the declared orientation is accepted, so a
     # genuinely bit-reversed (wrong) state cannot be absolved.
-    assert verify_statistical_counts(circuit, {"001": 1024}, bit_order="little").passed
-    assert not verify_statistical_counts(circuit, {"100": 1024}, bit_order="little").passed
-    assert verify_statistical_counts(circuit, {"100": 1024}, bit_order="big").passed
-    assert not verify_statistical_counts(circuit, {"001": 1024}, bit_order="big").passed
+    assert verify_statistical_counts(circuit, {"001": 1024}, bit_order="big").passed
+    assert not verify_statistical_counts(circuit, {"100": 1024}, bit_order="big").passed
+    assert verify_statistical_counts(circuit, {"100": 1024}, bit_order="little").passed
+    assert not verify_statistical_counts(circuit, {"001": 1024}, bit_order="little").passed
 
 
 def test_statistical_counts_rejects_fractional_counts():
-    circuit = from_openqasm(BELL)
+    circuit = BELL
     assert verify_statistical_counts(circuit, {"00": 512.0, "11": 512.0}).passed  # integral floats
     assert not verify_statistical_counts(circuit, {"00": 511.9, "11": 512.1}).passed
     assert not verify_statistical_counts(circuit, {"00": float("nan")}).passed
 
 
 def test_statistical_counts_rejects_malformed_counts():
-    circuit = from_openqasm(BELL)
+    circuit = BELL
     assert not verify_statistical_counts(circuit, {}).passed
     assert not verify_statistical_counts(circuit, {"0": 100}).passed  # wrong width
     assert not verify_statistical_counts(circuit, {"2x": 100}).passed  # not a bitstring
 
 
 def test_statistical_counts_respects_explicit_threshold():
-    circuit = from_openqasm(BELL)
+    circuit = BELL
     # 60/40 split has TVD 0.1 from ideal — fails the shot-noise bound at these
     # shots, passes a plan-supplied looser threshold.
     counts = {"00": 2458, "11": 1638}
@@ -126,13 +122,14 @@ def test_return_contract_missing_key_fails():
     assert bad.details["missing_keys"] == ["counts"]
 
 
-def test_qasm_parse_rejects_post_measurement_gate():
+def test_qasm_parse_accepts_valid_post_measurement_gate():
     good = verify_qasm_parse(BELL)
     assert good.passed
     bad = verify_qasm_parse(
-        "OPENQASM 2.0;\nqreg q[1];\ncreg c[1];\nmeasure q[0] -> c[0];\nx q[0];\n"
+        'OPENQASM 2.0;\ninclude "qelib1.inc";\nqreg q[1];\ncreg c[1];\n'
+        "measure q[0] -> c[0];\nx q[0];\n"
     )
-    assert not bad.passed
+    assert bad.passed
 
 
 def test_exact_diag_matches_ground_state():

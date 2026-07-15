@@ -1,7 +1,7 @@
 """majorana-verification — the verify stage's toolbox.
 
-Statevector simulation + exact/statistical circuit equivalence (ported from the
-quepo engine, pure numpy over the majorana IR), plus return-contract, QASM-parse,
+Statevector simulation + exact/statistical circuit equivalence over parsed OpenQASM,
+plus return-contract, QASM-parse,
 exact-diagonalization, and brute-force checks. Every primitive maps to the
 contracts VerificationMethod/VerificationResultKind taxonomy and fails rather than
 fabricates when it cannot run (plans/rebuild/08-phases.md §Phase 2 step 4)."""

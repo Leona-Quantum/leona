@@ -43,38 +43,6 @@ def starter_bell_slug(workspace_id) -> str:
     return f"{STARTER_BELL_SLUG_PREFIX}-{workspace_id.hex}"
 
 
-def starter_bell_ir() -> dict[str, Any]:
-    return {
-        "ir_version": 3,
-        "qubits": 2,
-        "classical_bits": 2,
-        "operations": [
-            {"gate": "h", "qubits": [0]},
-            {"gate": "cx", "qubits": [0, 1]},
-            {
-                "gate": "measure",
-                "qubits": [0],
-                "clbits": [0],
-                "measurement": {"basis": "Z", "register_name": "c"},
-            },
-            {
-                "gate": "measure",
-                "qubits": [1],
-                "clbits": [1],
-                "measurement": {"basis": "Z", "register_name": "c"},
-            },
-        ],
-        "quantum_registers": [{"name": "q", "size": 2, "offset": 0}],
-        "classical_registers": [{"name": "c", "size": 2, "offset": 0}],
-        "gate_definitions": [],
-        "decomposition_applied": None,
-        "objective_functions": [],
-        "noise_model_annotations": {},
-        "annotations": {"starter": True},
-        "metadata": {"description": "Two-qubit Bell state preparation."},
-    }
-
-
 async def ensure_starter_bell_artifact(session: AsyncSession, workspace_id) -> None:
     """Provision one durable Bell example for a workspace.
 
@@ -140,13 +108,13 @@ async def ensure_starter_bell_artifact(session: AsyncSession, workspace_id) -> N
         id=uuid7(),
         artifact_id=artifact.id,
         seq=1,
-        ir_version="ir-v1",
-        ir=starter_bell_ir(),
+        qasm_version="3.0",
+        qasm=STARTER_BELL_QASM,
+        artifact_metadata={"description": "Two-qubit Bell state preparation.", "starter": True},
         code=STARTER_BELL_CODE,
         code_lang="python",
         fingerprint="starter-bell-state-v1",
         export_status="lossless",
-        qasm=STARTER_BELL_QASM,
         resource_estimates={
             "qubits": 2,
             "depth": 2,

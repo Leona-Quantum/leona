@@ -7,7 +7,7 @@ dependencies = [
     "pydantic>=2.8",
     "numpy>=1.26",
     "majorana-contracts",
-    "majorana-ir",
+    "majorana-openqasm",
     "majorana-baselines",
 ]
 
@@ -20,5 +20,5 @@ packages = ["src/majorana_verification"]
 
 [tool.uv.sources]
 majorana-contracts = { workspace = true }
-majorana-ir = { workspace = true }
+majorana-openqasm = { workspace = true }
 majorana-baselines = { workspace = true }

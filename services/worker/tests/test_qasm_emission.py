@@ -9,25 +9,23 @@ import pytest
 from majorana_llm import extract_qasm_with_provenance
 from majorana_sandbox.guard import check_python_code
 
-from majorana_ir import Circuit, Operation
 from majorana_worker.stage_handlers import (
     _parse_result_dict,
     _qiskit_qasm_epilogue,
     _repair_legacy_qiskit_qasm,
-    _rewrite_qiskit_final_circuit,
 )
 
 
 def _install_fake_qiskit(monkeypatch, dumps) -> None:
     qiskit = ModuleType("qiskit")
-    qasm2 = ModuleType("qiskit.qasm2")
-    qasm2.dumps = dumps
+    qasm3 = ModuleType("qiskit.qasm3")
+    qasm3.dumps = dumps
     monkeypatch.setitem(sys.modules, "qiskit", qiskit)
-    monkeypatch.setitem(sys.modules, "qiskit.qasm2", qasm2)
+    monkeypatch.setitem(sys.modules, "qiskit.qasm3", qasm3)
 
 
 def test_owned_qiskit_epilogue_emits_marked_final_circuit_without_model_qasm(monkeypatch, capsys):
-    expected_qasm = "OPENQASM 2.0;\nqreg q[1];\nh q[0];"
+    expected_qasm = "OPENQASM 3.0;\nqubit q;\nh q;"
     _install_fake_qiskit(monkeypatch, lambda circuit: expected_qasm)
     code = """import json
 FINAL_CIRCUIT = object()
@@ -76,26 +74,7 @@ print(json.dumps({"counts": {"0": 1}}))
 
     extraction = extract_qasm_with_provenance(capsys.readouterr().out)
     assert extraction.source == "sandbox_epilogue"
-    assert extraction.qasm and "u(pi/2,0,pi) q[0];" in extraction.qasm
-
-
-def test_compiler_rewrite_updates_the_qiskit_variable_used_by_final_run():
-    code = """from qiskit import QuantumCircuit
-compiled_circuit = QuantumCircuit(1)
-FINAL_CIRCUIT = compiled_circuit
-result = AerSimulator().run(compiled_circuit).result()
-"""
-    circuit = Circuit(
-        qubits=1,
-        classical_bits=0,
-        operations=[Operation(gate="x", qubits=[0])],
-    )
-
-    rewritten = _rewrite_qiskit_final_circuit(code, circuit)
-
-    assert rewritten is not None
-    assert "compiled_circuit = QuantumCircuit.from_qasm_str" in rewritten
-    assert "FINAL_CIRCUIT = compiled_circuit" in rewritten
+    assert extraction.qasm and extraction.qasm.startswith("OPENQASM 3.0;")
 
 
 def test_legacy_qiskit_qasm_method_is_repaired_for_qiskit_2x():

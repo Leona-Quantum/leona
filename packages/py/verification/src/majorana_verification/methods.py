@@ -10,8 +10,7 @@ import math
 from typing import Any
 
 from majorana_contracts.enums import VerificationMethod, VerificationResultKind
-from majorana_ir import Circuit, validate_circuit
-from majorana_ir.connectors import OpenQASMError, from_openqasm
+from majorana_openqasm import OpenQASMError, load_circuit, normalize
 from pydantic import BaseModel, Field
 
 from majorana_baselines import (
@@ -54,7 +53,7 @@ def _from_report(method: VerificationMethod, report: EquivalenceReport) -> Verif
 
 
 def verify_exact(
-    reference: Circuit, candidate: Circuit, tolerance: float = 1e-9, max_qubits: int = 6
+    reference: str, candidate: str, tolerance: float = 1e-9, max_qubits: int = 6
 ) -> VerificationOutcome:
     """Exact unitary equivalence (phase-aligned) for small circuits."""
     try:
@@ -67,8 +66,8 @@ def verify_exact(
 
 
 def verify_statistical(
-    reference: Circuit,
-    candidate: Circuit,
+    reference: str,
+    candidate: str,
     shots: int = 4096,
     seed: int = 1234,
     threshold: float = 0.05,
@@ -81,7 +80,7 @@ def verify_statistical(
 
 
 def verify_statistical_counts(
-    circuit: Circuit,
+    qasm: str,
     counts: dict[str, int],
     threshold: float | None = None,
     bit_order: str = "auto",
@@ -93,7 +92,7 @@ def verify_statistical_counts(
     `statistical` path: direct-simulation evidence, not circuit-vs-circuit
     equivalence."""
     try:
-        report = counts_vs_ideal(circuit, counts, threshold=threshold, bit_order=bit_order)  # type: ignore[arg-type]
+        report = counts_vs_ideal(qasm, counts, threshold=threshold, bit_order=bit_order)  # type: ignore[arg-type]
     except ValueError as exc:
         return VerificationOutcome(
             method=VerificationMethod.STATISTICAL, result=FAIL, details={"error": str(exc)}
@@ -165,24 +164,22 @@ def verify_return_contract(
 
 
 def verify_qasm_parse(qasm: str) -> VerificationOutcome:
-    """Parse emitted OpenQASM into the canonical IR and validate it. A circuit
-    that won't parse or violates the IR limits fails here rather than silently
-    proceeding to export."""
+    """Parse and normalize an emitted OpenQASM 2/3 program."""
     try:
-        circuit = from_openqasm(qasm)
+        circuit = load_circuit(qasm)
+        canonical = normalize(qasm)
     except OpenQASMError as exc:
         return VerificationOutcome(
             method=VerificationMethod.QASM_PARSE, result=FAIL, details={"parse_error": str(exc)}
         )
-    validation = validate_circuit(circuit)
     return VerificationOutcome(
         method=VerificationMethod.QASM_PARSE,
-        result=PASS if validation.passed else FAIL,
+        result=PASS,
         details={
-            "qubits": circuit.qubits,
-            "operations": len(circuit.operations),
-            "errors": validation.errors,
-            "warnings": validation.warnings,
+            "qasm_version": "3.0",
+            "qubits": circuit.num_qubits,
+            "operations": circuit.size(),
+            "normalized_bytes": len(canonical.encode("utf-8")),
         },
     )
 

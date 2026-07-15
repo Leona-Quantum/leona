@@ -77,14 +77,18 @@ class ArtifactVersion(_ResourceBase):
     id: UUID
     artifact_id: UUID
     seq: int = Field(ge=1)
-    ir_version: str
-    ir: dict[str, Any]
+    qasm_version: str | None = Field(
+        default=None, description="OpenQASM language version; 3.0 for new circuit artifacts"
+    )
+    qasm: str | None = Field(default=None, description="Canonical circuit source of truth")
+    metadata: dict[str, Any] | None = Field(
+        default=None, description="Descriptive provenance; never a circuit representation"
+    )
     code: str
     code_lang: str
     fingerprint: str = Field(description="Unique per artifact; dedupes identical versions")
     export_status: ExportStatus
     export_reason: str | None = None
-    qasm: str | None = None
     framework_variants: dict[str, str] | None = None
     resource_estimates: dict[str, Any] | None = None
     limitations: str | None = None

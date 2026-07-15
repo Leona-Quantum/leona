@@ -72,7 +72,7 @@ class StageHandler(Protocol):
 
 async def _stub_stage(ctx: RunContext) -> StageOutcome:
     """Placeholder until the real stage lands (08-phases.md §Phase 2 steps 2-6:
-    sandbox, llm+prompts, verification+baselines, IR/export, writeback)."""
+    sandbox, llm+prompts, verification+baselines, OpenQASM/export, writeback)."""
     return StageOutcome(ok=True)
 
 
@@ -118,16 +118,14 @@ async def execute_run(
         "result": Stage.VERIFY,
         "qasm": Stage.VERIFY,
         "qasm_source": Stage.VERIFY,
-        "circuit": Stage.VERIFY,
         "verifier_decision": Stage.VERIFY,
         "compilation": Stage.COMPILE,
-        "compiled_circuit": Stage.COMPILE,
+        "compiled_qasm": Stage.COMPILE,
         "compiled_resource_estimate": Stage.COMPILED_RESOURCE_ESTIMATE,
         "export": Stage.FINALIZE,
         "final_code": Stage.FINALIZE,
         "final_result": Stage.FINAL_EXECUTE,
         "final_qasm": Stage.FINAL_EXECUTE,
-        "final_circuit": Stage.FINAL_EXECUTE,
         "baseline": Stage.BASELINE,
         "analysis": Stage.ANALYZE,
     }

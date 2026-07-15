@@ -179,7 +179,7 @@ async def test_run_executes_end_to_end_with_real_stages(env):
     async with factory() as session:
         version = await artifacts_repo.get_version(scope, session, uuid.UUID(saved["version_id"]))
     assert version.export_status == "lossless"
-    assert version.fingerprint  # canonical IR fingerprint recorded
+    assert version.fingerprint  # normalized OpenQASM fingerprint recorded
     assert version.qasm
 
     # SSE replay of the stored run: same rows, same order.
