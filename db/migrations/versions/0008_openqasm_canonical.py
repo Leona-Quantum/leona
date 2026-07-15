@@ -18,7 +18,11 @@ depends_on = None
 def _normalize_qasm(source: str) -> str:
     """Freeze the Qiskit-backed normalization used by this migration."""
     if source.lstrip().upper().startswith("OPENQASM 2.0;"):
-        circuit = qasm2.loads(source, strict=True)
+        circuit = qasm2.loads(
+            source,
+            strict=True,
+            custom_instructions=qasm2.LEGACY_CUSTOM_INSTRUCTIONS,
+        )
     else:
         circuit = qasm3.loads(source)
     return qasm3.dumps(circuit)
