@@ -5,8 +5,8 @@ import { HOME_COPY } from "../lib/public-copy";
 import { getPublicLocale } from "../lib/public-locale-server";
 
 export const metadata: Metadata = {
-  title: "Leona Quantum",
-  description: "Leona Quantum connects public research, private workspaces, and verifiable quantum execution.",
+  title: "LeonaQ",
+  description: "LeonaQ connects public research, private workspaces, and verifiable quantum execution.",
 };
 
 export default async function Home() {

@@ -21,10 +21,10 @@ const jetbrainsMono = JetBrains_Mono({ subsets: ["latin"], variable: "--font-jbm
 
 export const metadata: Metadata = {
   title: {
-    default: "Leona Quantum · Evidence for quantum work",
-    template: "%s · Leona Quantum",
+    default: "LeonaQ · Evidence for quantum work",
+    template: "%s · LeonaQ",
   },
-  description: "Leona Quantum connects public research, private workspaces, and verifiable quantum execution.",
+  description: "LeonaQ connects public research, private workspaces, and verifiable quantum execution.",
 };
 
 export default async function RootLayout({ children }: { children: ReactNode }) {

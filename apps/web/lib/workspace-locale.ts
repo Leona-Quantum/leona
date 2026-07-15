@@ -36,6 +36,10 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
     workflowTitle: string;
     workflowBody: string;
     capabilities: Array<{ title: string; body: string }>;
+    starterPrompts: string;
+    promptCount: string;
+    process: string;
+    stepCount: string;
     examplesTitle: string;
     examples: Array<{ title: string; prompt: string }>;
     contextLabel: string;
@@ -130,7 +134,7 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
   };
 }> = {
   en: {
-    surfaces: { brandedRun: "Leona Run", preview: "Public preview" },
+    surfaces: { brandedRun: "LeonaQ Run", preview: "Public preview" },
     sidebar: {
       newChat: "New chat",
       recent: "Recent",
@@ -159,7 +163,7 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
     },
     run: {
       title: "What are you working on?",
-      lede: "Leona turns a natural-language question into a visible plan, implementation, simulation, verification, and saved Library record.",
+      lede: "LeonaQ turns a natural-language question into a visible plan, implementation, simulation, verification, and saved Library record.",
       previewStatus: "Public preview · view-only",
       readyStatus: "DeepSeek · ready",
       workflowTitle: "A visible path from question to evidence",
@@ -169,6 +173,10 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
         { title: "Show the work", body: "Watch model output, code, compilation, and checks arrive as evidence." },
         { title: "Save to Library", body: "Verified runs become reusable artifacts in the connected Library." },
       ],
+      starterPrompts: "Starter prompts",
+      promptCount: "4 prompts",
+      process: "Process",
+      stepCount: "3 steps",
       examplesTitle: "Try an example",
       examples: [
         { title: "Recover a marked state with Grover", prompt: "Use Grover to recover the marked state 1100 and verify the measured distribution." },
@@ -244,7 +252,7 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
       codeCopied: (framework) => `${framework} code copied.`,
       editingDraft: (framework) => `Editing the ${framework} draft. Run it before treating it as verified.`,
       verificationStarted: "Verification started. A passing run will become the next saved version.",
-      actionStarted: (action) => `${action} started in Leona Run.`,
+      actionStarted: (action) => `${action} started in LeonaQ Run.`,
       submissionFailed: "Run submission failed",
       canvasLabel: "Circuit canvas",
       starterTitle: "Bell-state starter",
@@ -272,7 +280,7 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
     },
   },
   ja: {
-    surfaces: { brandedRun: "Leona 実行", preview: "公開プレビュー" },
+    surfaces: { brandedRun: "LeonaQ 実行", preview: "公開プレビュー" },
     sidebar: {
       newChat: "新しいチャット",
       recent: "最近",
@@ -301,7 +309,7 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
     },
     run: {
       title: "何を研究していますか？",
-      lede: "Leonaは自然言語の問いを、計画、実装、シミュレーション、検証、保存できるLibraryの記録へつなげます。",
+      lede: "LeonaQは自然言語の問いを、計画、実装、シミュレーション、検証、保存できるLibraryの記録へつなげます。",
       previewStatus: "公開プレビュー · 閲覧のみ",
       readyStatus: "DeepSeek · 準備完了",
       workflowTitle: "問いから根拠までを見える形に",
@@ -311,6 +319,10 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
         { title: "作業を表示", body: "モデル出力、コード、コンパイル、チェックを根拠として確認します。" },
         { title: "Libraryに保存", body: "検証済みの実行を再利用できるアーティファクトとして残します。" },
       ],
+      starterPrompts: "スタータープロンプト",
+      promptCount: "4件",
+      process: "プロセス",
+      stepCount: "3ステップ",
       examplesTitle: "例から始める",
       examples: [
         { title: "Groverでマーク状態を探す", prompt: "Groverでマークされた状態1100を見つけ、測定分布を検証してください。" },

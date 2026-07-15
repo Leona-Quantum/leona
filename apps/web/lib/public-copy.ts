@@ -8,14 +8,14 @@ export const LOADING_COPY: Record<PublicLocale, {
   status: string;
 }> = {
   en: {
-    root: "Loading Leona Quantum",
+    root: "Loading LeonaQ",
     workspace: "Loading workspace",
     dashboard: "Loading dashboard",
     repository: "Loading repository",
     status: "Loading content",
   },
   ja: {
-    root: "Leona Quantumを読み込んでいます",
+    root: "LeonaQを読み込んでいます",
     workspace: "ワークスペースを読み込んでいます",
     dashboard: "ダッシュボードを読み込んでいます",
     repository: "リポジトリを読み込んでいます",
@@ -55,14 +55,14 @@ export const HOME_COPY: Record<PublicLocale, {
   en: {
     hero: {
       title: "Evidence for quantum work.",
-      lede: "Leona Quantum brings public research, a private workspace, and verified execution into one calm place.",
+      lede: "LeonaQ brings public research, a private workspace, and verified execution into one calm place.",
       primary: "Explore the repository",
       secondary: "Open the workspace",
       contact: "Get in touch",
       note: "For researchers and teams who need results they can inspect and revisit.",
     },
     visual: {
-      label: "LEONA QUANTUM / PRODUCT",
+      label: "LEONAQ / PRODUCT",
       status: "EVIDENCE FIRST",
       pipeline: [
         { number: "01", label: "Repository", detail: "Public algorithms and sources" },
@@ -76,7 +76,7 @@ export const HOME_COPY: Record<PublicLocale, {
     intro: {
       label: "The company",
       title: "Quantum work needs somewhere for evidence to live.",
-      body: "The next generation of quantum software will be built from research that can be inspected, experiments that can be repeated, and results whose assumptions stay visible. Leona Quantum is building that connective layer.",
+      body: "The next generation of quantum software will be built from research that can be inspected, experiments that can be repeated, and results whose assumptions stay visible. LeonaQ is building that connective layer.",
     },
     product: {
       label: "Our product",
@@ -107,14 +107,14 @@ export const HOME_COPY: Record<PublicLocale, {
   ja: {
     hero: {
       title: "量子研究に、検証できる根拠を。",
-      lede: "Leona Quantumは、公開研究、個人ワークスペース、検証済みの実行をひとつの場所につなぎます。",
+      lede: "LeonaQは、公開研究、個人ワークスペース、検証済みの実行をひとつの場所につなぎます。",
       primary: "リポジトリを見る",
       secondary: "ワークスペースを開く",
       contact: "お問い合わせ",
       note: "結果を確かめ、あとからもう一度たどりたい研究者とチームのために。",
     },
     visual: {
-      label: "LEONA QUANTUM / PRODUCT",
+      label: "LEONAQ / PRODUCT",
       status: "根拠を優先",
       pipeline: [
         { number: "01", label: "リポジトリ", detail: "公開アルゴリズムと出典" },
@@ -128,7 +128,7 @@ export const HOME_COPY: Record<PublicLocale, {
     intro: {
       label: "会社情報",
       title: "量子研究には、根拠を置いておける場所が必要です。",
-      body: "これからの量子ソフトウェアは、確認できる研究、繰り返せる実験、前提が見える結果から生まれます。Leona Quantumは、その間をつなぐ層をつくっています。",
+      body: "これからの量子ソフトウェアは、確認できる研究、繰り返せる実験、前提が見える結果から生まれます。LeonaQは、その間をつなぐ層をつくっています。",
     },
     product: {
       label: "プロダクト",
@@ -199,7 +199,7 @@ export const CONTACT_COPY: Record<PublicLocale, {
   en: {
     overline: "Contact queue",
     title: "Tell us what you are trying to build or validate.",
-    body: "Leona Quantum is building an evidence layer around quantum software: public research, private workspaces, and execution that can be inspected. Send a short brief and we’ll take it from there.",
+    body: "LeonaQ is building an evidence layer around quantum software: public research, private workspaces, and execution that can be inspected. Send a short brief and we’ll take it from there.",
     panelTitle: "Good reasons to write",
     reasons: ["Research workflows and early product access", "Enterprise R&D and private-corpus conversations", "Public research contributions and technical feedback", "Press, partnerships, and speaking"],
     formLabel: "Start a conversation",
@@ -212,7 +212,7 @@ export const CONTACT_COPY: Record<PublicLocale, {
   ja: {
     overline: "お問い合わせ",
     title: "つくりたいもの、確かめたいものを教えてください。",
-    body: "Leona Quantumは、公開研究、非公開ワークスペース、確認できる実行をつなぐ量子ソフトウェアの根拠の層をつくっています。短い概要をお送りください。",
+    body: "LeonaQは、公開研究、非公開ワークスペース、確認できる実行をつなぐ量子ソフトウェアの根拠の層をつくっています。短い概要をお送りください。",
     panelTitle: "ご連絡いただける内容",
     reasons: ["研究ワークフローと早期アクセス", "企業R&Dと非公開コーパス", "公開研究への投稿と技術フィードバック", "取材、パートナーシップ、登壇"],
     formLabel: "対話を始める",
@@ -245,7 +245,7 @@ export const WORKSPACE_LANDING_COPY: Record<PublicLocale, {
   en: {
     overline: "Personal quantum workspace",
     title: "Turn a quantum question into work you can reopen.",
-    body: "Leona Quantum connects a guided workflow to a guarded simulator, verification evidence, Studio editing, and a personal Library. Every account starts with its own workspace; prompts, runs, and saved artifacts are private by default.",
+    body: "LeonaQ connects a guided workflow to a guarded simulator, verification evidence, Studio editing, and a personal Library. Every account starts with its own workspace; prompts, runs, and saved artifacts are private by default.",
     primary: "Request workspace access",
     secondary: "Start from the repository",
     loopLabel: "One personal loop",
@@ -271,7 +271,7 @@ export const WORKSPACE_LANDING_COPY: Record<PublicLocale, {
   ja: {
     overline: "個人量子ワークスペース",
     title: "量子の問いを、あとから開ける研究へ。",
-    body: "Leona Quantumは、ガイド付きのワークフローを保護されたシミュレータ、検証の根拠、Studio編集、個人Libraryにつなぎます。各アカウントは専用ワークスペースから始まり、問い、実行、保存アーティファクトは基本的に非公開です。",
+    body: "LeonaQは、ガイド付きのワークフローを保護されたシミュレータ、検証の根拠、Studio編集、個人Libraryにつなぎます。各アカウントは専用ワークスペースから始まり、問い、実行、保存アーティファクトは基本的に非公開です。",
     primary: "ワークスペースを相談する",
     secondary: "リポジトリから始める",
     loopLabel: "個人の研究ループ",
@@ -306,14 +306,14 @@ export const PRIVACY_COPY: Record<PublicLocale, {
 }> = {
   en: {
     title: "Privacy policy",
-    lede: "How Leona Quantum handles information on the public website and early-access product.",
+    lede: "How LeonaQ handles information on the public website and early-access product.",
     updated: "Last updated: July 15, 2026",
     noteLabel: "Early-access note:",
-    noteBody: "This page describes the current product and operating practices. It will be updated as Leona Quantum grows, adds paid services, and formalizes its operating entity.",
+    noteBody: "This page describes the current product and operating practices. It will be updated as LeonaQ grows, adds paid services, and formalizes its operating entity.",
     sections: [
       { title: "1. Information we receive", paragraphs: ["We may receive account information such as your email address and authentication details when you create or use an account.", "When you use the workbench, we may process prompts, generated code, circuit data, run settings, simulation results, verification records, saved artifacts, and related metadata that you choose to submit.", "If you contact us, we receive the information you include in that message and the reply details needed to respond."] },
       { title: "2. How we use information", paragraphs: ["We use information to authenticate users, run and verify requested workflows, save and reopen Library artifacts, provide support, secure the service, diagnose failures, and improve reliability and product quality.", "We may use aggregated or de-identified operational information to understand performance. We do not present private workspace artifacts as public repository material without an explicit publish action."] },
-      { title: "3. Service providers and infrastructure", paragraphs: ["Leona Quantum relies on specialized providers for hosting, authentication, databases, observability, model access, and isolated code execution. Those providers may process information only as needed to provide their services.", "Generated code is treated as untrusted input and is intended to run in an isolated, network-restricted execution environment. Do not submit secrets or information you are not authorized to process."] },
+      { title: "3. Service providers and infrastructure", paragraphs: ["LeonaQ relies on specialized providers for hosting, authentication, databases, observability, model access, and isolated code execution. Those providers may process information only as needed to provide their services.", "Generated code is treated as untrusted input and is intended to run in an isolated, network-restricted execution environment. Do not submit secrets or information you are not authorized to process."] },
       { title: "4. Public and private work", paragraphs: ["Public repository entries are separate from private Libraries. A Library entry is private by default. Publishing is an explicit action that may make an artifact, its code, and its evidence available to other people; review the content before publishing."] },
       { title: "5. Retention and your choices", paragraphs: ["We retain account and workspace records for as long as needed to provide the service, meet legitimate operational needs, resolve disputes, and comply with applicable obligations. Retention may vary by record type and account status.", "You can ask about the information associated with your account, request correction or deletion where applicable, or ask a privacy question through the contact page. We may need to verify your request before acting on it."] },
       { title: "6. Cookies and security", paragraphs: ["The authenticated product uses cookies or similar technologies to maintain a secure session. The public site may also receive ordinary technical information from your browser and hosting infrastructure.", "We use reasonable technical and organizational measures for the stage of the product, but no online service can promise perfect security. Keep account credentials private and do not place API keys, passwords, or regulated data in prompts or generated code."] },
@@ -322,14 +322,14 @@ export const PRIVACY_COPY: Record<PublicLocale, {
   },
   ja: {
     title: "プライバシーポリシー",
-    lede: "公開サイトと早期アクセスのプロダクトで、Leona Quantumが情報をどのように扱うかを説明します。",
+    lede: "公開サイトと早期アクセスのプロダクトで、LeonaQが情報をどのように扱うかを説明します。",
     updated: "最終更新日: 2026年7月15日",
     noteLabel: "早期アクセスに関する注記:",
-    noteBody: "このページは現在のプロダクトと運用方法を説明します。Leona Quantumの成長、有料サービス、事業体制の正式化に合わせて更新します。",
+    noteBody: "このページは現在のプロダクトと運用方法を説明します。LeonaQの成長、有料サービス、事業体制の正式化に合わせて更新します。",
     sections: [
       { title: "1. 受け取る情報", paragraphs: ["アカウントを作成または利用すると、メールアドレスや認証情報などのアカウント情報を受け取ることがあります。", "ワークベンチの利用時には、送信した問い、生成コード、回路データ、実行設定、シミュレーション結果、検証記録、保存アーティファクト、関連メタデータを処理することがあります。", "お問い合わせいただいた場合は、メッセージに含まれる情報と返信に必要な情報を受け取ります。"] },
       { title: "2. 情報の利用目的", paragraphs: ["認証、ワークフローの実行と検証、Libraryアーティファクトの保存と再開、サポート、セキュリティ、障害診断、信頼性と品質の改善に利用します。", "集計または匿名化した運用情報を性能理解と改善に利用することがあります。非公開ワークスペースのアーティファクトを、明示的な公開操作なしに公開リポジトリへ掲載することはありません。"] },
-      { title: "3. サービスプロバイダとインフラ", paragraphs: ["Leona Quantumは、ホスティング、認証、データベース、可観測性、モデル利用、隔離されたコード実行のために専門プロバイダを利用します。プロバイダはサービス提供に必要な範囲で情報を処理します。", "生成コードは信頼できない入力として扱い、隔離されネットワーク制限された環境で実行することを想定しています。秘密情報や、処理する権限のない情報は送信しないでください。"] },
+      { title: "3. サービスプロバイダとインフラ", paragraphs: ["LeonaQは、ホスティング、認証、データベース、可観測性、モデル利用、隔離されたコード実行のために専門プロバイダを利用します。プロバイダはサービス提供に必要な範囲で情報を処理します。", "生成コードは信頼できない入力として扱い、隔離されネットワーク制限された環境で実行することを想定しています。秘密情報や、処理する権限のない情報は送信しないでください。"] },
       { title: "4. 公開と非公開の研究", paragraphs: ["公開リポジトリのエントリは非公開Libraryと分離されています。Libraryの内容は基本的に非公開です。公開操作を行うと、アーティファクト、コード、根拠が他の人に見える可能性があるため、公開前に内容を確認してください。"] },
       { title: "5. 保持と選択肢", paragraphs: ["サービス提供、正当な運用、紛争解決、適用される義務への対応に必要な期間、アカウントとワークスペースの記録を保持します。保持期間は記録の種類やアカウント状態で異なることがあります。", "アカウントに関する情報の確認、該当する場合の訂正・削除、プライバシーに関する質問はお問い合わせページからご連絡ください。対応前に本人確認をお願いすることがあります。"] },
       { title: "6. Cookieとセキュリティ", paragraphs: ["認証済みプロダクトでは、安全なセッションを維持するためにCookieなどを利用します。公開サイトでも、ブラウザやホスティング基盤から通常の技術情報を受け取ることがあります。", "プロダクトの段階に応じた合理的な対策を講じますが、オンラインサービスが完全な安全性を保証することはできません。認証情報を管理し、APIキー、パスワード、規制対象データを問いや生成コードに入れないでください。"] },
@@ -348,33 +348,33 @@ export const TERMS_COPY: Record<PublicLocale, {
 }> = {
   en: {
     title: "Terms of service",
-    lede: "The rules for using the Leona Quantum website, workbench, Library, and public repository.",
+    lede: "The rules for using the LeonaQ website, workbench, Library, and public repository.",
     updated: "Last updated: July 15, 2026",
     noteLabel: "Early-access note:",
     noteBody: "These plain-language terms are a practical starting point for the current product. Additional commercial terms may apply when paid plans or enterprise agreements become available.",
     sections: [
-      { title: "1. Using Leona Quantum", paragraphs: ["By accessing Leona Quantum, you agree to use the service lawfully, respect other users, and follow these terms. If you use it for an organization, you represent that you have authority to accept these terms on its behalf."] },
+      { title: "1. Using LeonaQ", paragraphs: ["By accessing LeonaQ, you agree to use the service lawfully, respect other users, and follow these terms. If you use it for an organization, you represent that you have authority to accept these terms on its behalf."] },
       { title: "2. Prohibited use", paragraphs: ["Do not use the service to violate law or third-party rights, exfiltrate secrets, attack infrastructure, bypass usage controls, submit malware, or interfere with the service or another person’s workspace. Do not use generated code or results as a substitute for professional review in safety-critical, financial, medical, or regulated settings."] },
-      { title: "3. Generated work and verification", paragraphs: ["Leona Quantum helps generate, execute, and analyze technical work. Generated code can be incomplete or wrong. A verification result means that the documented checks passed for the recorded run and conditions; it is not a guarantee of correctness in every environment or a promise of algorithmic advantage."] },
-      { title: "4. Your content", paragraphs: ["You keep the rights you have in content you submit. You grant Leona Quantum the limited permission needed to host, process, execute, display, back up, and improve the service for you. Private Library content is not public by default."] },
-      { title: "5. Early-access packaging", paragraphs: ["Leona Quantum is currently an early-access product. The pricing page describes intended packaging; paid billing, limits, credits, and refunds will be governed by terms shown before a transaction is enabled."] },
-      { title: "6. Disclaimers", paragraphs: ["To the extent permitted by law, the service is provided without warranties that it will be uninterrupted, error-free, secure, or suitable for a particular purpose. You use generated code, simulations, exports, and public artifacts at your own risk.", "Nothing on Leona Quantum is legal, medical, financial, or safety advice. Any limitation of liability or indemnity terms required for a paid or enterprise relationship will be stated in the applicable commercial agreement."] },
+      { title: "3. Generated work and verification", paragraphs: ["LeonaQ helps generate, execute, and analyze technical work. Generated code can be incomplete or wrong. A verification result means that the documented checks passed for the recorded run and conditions; it is not a guarantee of correctness in every environment or a promise of algorithmic advantage."] },
+      { title: "4. Your content", paragraphs: ["You keep the rights you have in content you submit. You grant LeonaQ the limited permission needed to host, process, execute, display, back up, and improve the service for you. Private Library content is not public by default."] },
+      { title: "5. Early-access packaging", paragraphs: ["LeonaQ is currently an early-access product. The pricing page describes intended packaging; paid billing, limits, credits, and refunds will be governed by terms shown before a transaction is enabled."] },
+      { title: "6. Disclaimers", paragraphs: ["To the extent permitted by law, the service is provided without warranties that it will be uninterrupted, error-free, secure, or suitable for a particular purpose. You use generated code, simulations, exports, and public artifacts at your own risk.", "Nothing on LeonaQ is legal, medical, financial, or safety advice. Any limitation of liability or indemnity terms required for a paid or enterprise relationship will be stated in the applicable commercial agreement."] },
       { title: "7. Changes and contact", paragraphs: ["Use the contact page for questions about these terms. We may update them as the service adds accounts, paid plans, and new execution capabilities; the date above identifies the current version."] },
     ],
   },
   ja: {
     title: "利用規約",
-    lede: "Leona Quantumの公開サイト、ワークベンチ、Library、公開リポジトリを利用するためのルールです。",
+    lede: "LeonaQの公開サイト、ワークベンチ、Library、公開リポジトリを利用するためのルールです。",
     updated: "最終更新日: 2026年7月15日",
     noteLabel: "早期アクセスに関する注記:",
     noteBody: "これは現在のプロダクトのための平易な出発点です。有料プランやエンタープライズ契約には追加の商用条件が適用されることがあります。",
     sections: [
-      { title: "1. Leona Quantumの利用", paragraphs: ["Leona Quantumへアクセスすることで、適法に利用し、他の利用者を尊重し、本規約に従うことに同意します。組織のために利用する場合、その組織を代表して同意する権限があることを表明します。"] },
+      { title: "1. LeonaQの利用", paragraphs: ["LeonaQへアクセスすることで、適法に利用し、他の利用者を尊重し、本規約に従うことに同意します。組織のために利用する場合、その組織を代表して同意する権限があることを表明します。"] },
       { title: "2. 禁止される利用", paragraphs: ["法令や第三者の権利への違反、秘密情報の持ち出し、インフラへの攻撃、利用制限の回避、マルウェアの送信、サービスや他の人のワークスペースへの妨害に利用しないでください。安全性が重要な分野、金融、医療、規制対象の場面で、生成コードや結果を専門家の確認の代わりにしないでください。"] },
-      { title: "3. 生成物と検証", paragraphs: ["Leona Quantumは技術的な作業の生成、実行、分析を支援します。生成コードは不完全または誤っている可能性があります。検証結果は、記録された実行と条件に対して文書化されたチェックが通ったことを示すもので、あらゆる環境での正しさやアルゴリズム上の優位性を保証しません。"] },
-      { title: "4. 利用者のコンテンツ", paragraphs: ["送信したコンテンツについて、利用者が持つ権利は保持されます。Leona Quantumには、サービスを提供するためにホスト、処理、実行、表示、バックアップ、改善するための限定的な許諾を与えます。非公開Libraryの内容は基本的に公開されません。"] },
-      { title: "5. 早期アクセスのパッケージ", paragraphs: ["Leona Quantumは現在早期アクセスのプロダクトです。料金ページは想定パッケージを示すもので、有料化前に表示される条件が決済、上限、クレジット、返金を定めます。"] },
-      { title: "6. 免責事項", paragraphs: ["法令で許される範囲で、サービスが中断しないこと、エラーがないこと、安全であること、特定目的に適合することを保証しません。生成コード、シミュレーション、エクスポート、公開アーティファクトの利用は自己責任で行ってください。", "Leona Quantum上の情報は、法務、医療、金融、安全に関する助言ではありません。有料またはエンタープライズ関係に必要な責任制限や補償条件は、該当する商用契約に記載します。"] },
+      { title: "3. 生成物と検証", paragraphs: ["LeonaQは技術的な作業の生成、実行、分析を支援します。生成コードは不完全または誤っている可能性があります。検証結果は、記録された実行と条件に対して文書化されたチェックが通ったことを示すもので、あらゆる環境での正しさやアルゴリズム上の優位性を保証しません。"] },
+      { title: "4. 利用者のコンテンツ", paragraphs: ["送信したコンテンツについて、利用者が持つ権利は保持されます。LeonaQには、サービスを提供するためにホスト、処理、実行、表示、バックアップ、改善するための限定的な許諾を与えます。非公開Libraryの内容は基本的に公開されません。"] },
+      { title: "5. 早期アクセスのパッケージ", paragraphs: ["LeonaQは現在早期アクセスのプロダクトです。料金ページは想定パッケージを示すもので、有料化前に表示される条件が決済、上限、クレジット、返金を定めます。"] },
+      { title: "6. 免責事項", paragraphs: ["法令で許される範囲で、サービスが中断しないこと、エラーがないこと、安全であること、特定目的に適合することを保証しません。生成コード、シミュレーション、エクスポート、公開アーティファクトの利用は自己責任で行ってください。", "LeonaQ上の情報は、法務、医療、金融、安全に関する助言ではありません。有料またはエンタープライズ関係に必要な責任制限や補償条件は、該当する商用契約に記載します。"] },
       { title: "7. 変更とお問い合わせ", paragraphs: ["規約に関する質問はお問い合わせページからお送りください。アカウント、有料プラン、新しい実行機能の追加に応じて更新することがあります。上記の日付が最新版を示します。"] },
     ],
   },

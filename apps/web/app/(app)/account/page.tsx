@@ -4,7 +4,7 @@ import { LanguageToggle } from "../../../components/language-toggle";
 import { getPublicLocale } from "../../../lib/public-locale-server";
 import { ACCOUNT_COPY } from "../../../lib/workspace-locale";
 
-export const metadata = { title: "Account — Leona Quantum" };
+export const metadata = { title: "Account — LeonaQ" };
 
 export default async function Account() {
   const [{ user }, locale] = await Promise.all([

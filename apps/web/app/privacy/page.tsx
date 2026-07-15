@@ -5,7 +5,7 @@ import { getPublicLocale } from "../../lib/public-locale-server";
 
 export const metadata: Metadata = {
   title: "Privacy policy",
-  description: "Leona Quantum privacy policy for the early-access product and public website.",
+  description: "LeonaQ privacy policy for the early-access product and public website.",
 };
 
 export default async function PrivacyPage() {

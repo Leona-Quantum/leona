@@ -207,7 +207,7 @@ const RAW_PUBLIC_REPOSITORY_ENTRIES: PublicRepositoryEntry[] = [
       kind: "curated_reference",
       title: "OpenQASM 3 standard gate set",
       url: "https://openqasm.com/language/gates.html",
-      reviewedBy: "Majorana curation pass",
+      reviewedBy: "LeonaQ curation pass",
       license: "CC BY 4.0-compatible reference metadata",
     },
     visualization: {
@@ -286,7 +286,7 @@ const RAW_PUBLIC_REPOSITORY_ENTRIES: PublicRepositoryEntry[] = [
       kind: "curated_reference",
       title: "OpenQASM 3 standard gate set",
       url: "https://openqasm.com/language/gates.html",
-      reviewedBy: "Majorana curation pass",
+      reviewedBy: "LeonaQ curation pass",
       license: "CC BY 4.0-compatible reference metadata",
     },
     visualization: {
@@ -353,10 +353,10 @@ const RAW_PUBLIC_REPOSITORY_ENTRIES: PublicRepositoryEntry[] = [
     ],
     source: {
       kind: "verified_run",
-      title: "Majorana starter verification fixture",
+      title: "LeonaQ starter verification fixture",
       url: "https://qiskit.org/learn/",
-      contributor: "Majorana public reference set",
-      reviewedBy: "Majorana verification pass",
+      contributor: "LeonaQ public reference set",
+      reviewedBy: "LeonaQ verification pass",
       license: "CC BY 4.0-compatible reference metadata",
     },
     visualization: {
@@ -439,7 +439,7 @@ const RAW_PUBLIC_REPOSITORY_ENTRIES: PublicRepositoryEntry[] = [
       kind: "curated_reference",
       title: "PennyLane quantum operations reference",
       url: "https://docs.pennylane.ai/en/stable/introduction/circuits.html",
-      reviewedBy: "Majorana curation pass",
+      reviewedBy: "LeonaQ curation pass",
       license: "CC BY 4.0-compatible reference metadata",
     },
     visualization: {
@@ -515,10 +515,10 @@ const RAW_PUBLIC_REPOSITORY_ENTRIES: PublicRepositoryEntry[] = [
     ],
     source: {
       kind: "verified_run",
-      title: "Majorana live evaluation record",
+      title: "LeonaQ live evaluation record",
       url: "https://github.com/EshMis/majorana",
-      contributor: "Majorana evaluation harness",
-      reviewedBy: "Majorana verification pass",
+      contributor: "LeonaQ evaluation harness",
+      reviewedBy: "LeonaQ verification pass",
       license: "CC BY 4.0-compatible reference metadata",
     },
     visualization: {
@@ -709,7 +709,7 @@ const RAW_PUBLIC_REPOSITORY_ENTRIES: PublicRepositoryEntry[] = [
       kind: "curated_reference",
       title: "A fast quantum mechanical algorithm for database search",
       url: "https://arxiv.org/abs/quant-ph/9605043",
-      reviewedBy: "Majorana literature curation pass",
+      reviewedBy: "LeonaQ literature curation pass",
       license: "Public bibliographic link; code is an original reference implementation",
     },
     visualization: {
@@ -793,7 +793,7 @@ const RAW_PUBLIC_REPOSITORY_ENTRIES: PublicRepositoryEntry[] = [
       kind: "curated_reference",
       title: "Polynomial-Time Algorithms for Prime Factorization and Discrete Logarithms on a Quantum Computer",
       url: "https://arxiv.org/abs/quant-ph/9508027",
-      reviewedBy: "Majorana literature curation pass",
+      reviewedBy: "LeonaQ literature curation pass",
       license: "Public bibliographic link; code is an original reference sketch",
     },
     visualization: {
@@ -877,7 +877,7 @@ const RAW_PUBLIC_REPOSITORY_ENTRIES: PublicRepositoryEntry[] = [
       kind: "curated_reference",
       title: "Quantum Amplitude Amplification and Estimation",
       url: "https://arxiv.org/abs/quant-ph/0005055",
-      reviewedBy: "Majorana literature curation pass",
+      reviewedBy: "LeonaQ literature curation pass",
       license: "Public bibliographic link; code is an original reference implementation",
     },
     visualization: {
@@ -962,7 +962,7 @@ const RAW_PUBLIC_REPOSITORY_ENTRIES: PublicRepositoryEntry[] = [
       kind: "curated_reference",
       title: "A variational eigenvalue solver on a quantum processor",
       url: "https://arxiv.org/abs/1304.3061",
-      reviewedBy: "Majorana literature curation pass",
+      reviewedBy: "LeonaQ literature curation pass",
       license: "Public bibliographic link; code is an original reference implementation",
     },
     visualization: {
@@ -1054,7 +1054,7 @@ const RAW_PUBLIC_REPOSITORY_ENTRIES: PublicRepositoryEntry[] = [
       kind: "curated_reference",
       title: "Quantum measurements and the Abelian Stabilizer Problem",
       url: "https://arxiv.org/abs/quant-ph/9511026",
-      reviewedBy: "Majorana literature curation pass",
+      reviewedBy: "LeonaQ literature curation pass",
       license: "Public bibliographic link; code is an original reference implementation",
     },
     visualization: {
@@ -1146,7 +1146,7 @@ const RAW_PUBLIC_REPOSITORY_ENTRIES: PublicRepositoryEntry[] = [
       kind: "curated_reference",
       title: "Quantum algorithm for linear systems of equations",
       url: "https://arxiv.org/abs/0811.3171",
-      reviewedBy: "Majorana literature curation pass",
+      reviewedBy: "LeonaQ literature curation pass",
       license: "Public bibliographic link; code is an original reference sketch",
     },
     visualization: {
@@ -1230,7 +1230,7 @@ const RAW_PUBLIC_REPOSITORY_ENTRIES: PublicRepositoryEntry[] = [
       kind: "curated_reference",
       title: "Quantum classifier with tailored quantum kernel",
       url: "https://arxiv.org/abs/1909.02611",
-      reviewedBy: "Majorana literature curation pass",
+      reviewedBy: "LeonaQ literature curation pass",
       license: "Public bibliographic link; code is an original reference implementation",
     },
     visualization: {
@@ -1322,7 +1322,7 @@ const RAW_PUBLIC_REPOSITORY_ENTRIES: PublicRepositoryEntry[] = [
       kind: "curated_reference",
       title: "Teleporting an unknown quantum state via dual classical and EPR channels",
       url: "https://doi.org/10.1103/PhysRevLett.70.1895",
-      reviewedBy: "Majorana literature curation pass",
+      reviewedBy: "LeonaQ literature curation pass",
       license: "Public bibliographic link; code is an original reference implementation",
     },
     visualization: {
@@ -1406,7 +1406,7 @@ const RAW_PUBLIC_REPOSITORY_ENTRIES: PublicRepositoryEntry[] = [
       kind: "curated_reference",
       title: "Scheme for reducing decoherence in quantum computer memory",
       url: "https://doi.org/10.1103/PhysRevA.52.R2493",
-      reviewedBy: "Majorana literature curation pass",
+      reviewedBy: "LeonaQ literature curation pass",
       license: "Public bibliographic link; code is an original reference sketch",
     },
     visualization: {
@@ -1498,7 +1498,7 @@ const RAW_PUBLIC_REPOSITORY_ENTRIES: PublicRepositoryEntry[] = [
       kind: "curated_reference",
       title: "The XZZX surface code",
       url: "https://arxiv.org/abs/2009.07851",
-      reviewedBy: "Majorana literature curation pass",
+      reviewedBy: "LeonaQ literature curation pass",
       license: "Public bibliographic link; code is an original reference sketch",
     },
     visualization: {
@@ -1593,7 +1593,7 @@ const RAW_PUBLIC_REPOSITORY_ENTRIES: PublicRepositoryEntry[] = [
       kind: "curated_reference",
       title: "Cirq circuit construction reference",
       url: "https://quantumai.google/cirq",
-      reviewedBy: "Majorana curation pass",
+      reviewedBy: "LeonaQ curation pass",
       license: "CC BY 4.0-compatible reference metadata",
     },
     visualization: {
@@ -1701,7 +1701,7 @@ function makeAdditionalReferenceEntry(options: AdditionalReferenceOptions): Publ
       kind: options.status === "community_review" ? "community_submission" : "curated_reference",
       title: options.sourceTitle,
       url: options.sourceUrl,
-      reviewedBy: "Leona Quantum curation pass",
+      reviewedBy: "LeonaQ curation pass",
       license: options.sourceLicense ?? "CC BY 4.0-compatible reference metadata",
     },
     visualization: {
@@ -2075,7 +2075,7 @@ const ADDITIONAL_PUBLIC_REPOSITORY_ENTRIES: PublicRepositoryEntry[] = [
 
 function replaceLegacyBrand(value: string): string {
   return value
-    .replaceAll("Majorana", "Leona Quantum")
+    .replaceAll("Majorana", "LeonaQ")
     .replaceAll("Nameko", "Leona")
     .replaceAll("Quepo", "Library");
 }

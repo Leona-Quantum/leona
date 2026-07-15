@@ -8,6 +8,7 @@ import { getLibraryArtifact, type LibraryArtifact } from "../../../lib/library-d
 import type { PublicLocale } from "../../../lib/public-locale";
 import { WORKSPACE_COPY } from "../../../lib/workspace-locale";
 import { RunComposer, type ComposerFramework, type ComposerMode } from "../../../components/run-composer";
+import { BrandMark } from "../../../components/icons";
 
 export function RunWorkspace({ demoMode = false, locale = "en" }: { demoMode?: boolean; locale?: PublicLocale } = {}) {
   const copy = WORKSPACE_COPY[locale].run;
@@ -100,44 +101,59 @@ export function RunWorkspace({ demoMode = false, locale = "en" }: { demoMode?: b
       <div className="mj-run-home-scroll">
         <div className="mj-run-home-content">
           <header className="mj-run-home-heading">
-            <div>
-              <h1>{copy.title}</h1>
-              <p>{copy.lede}</p>
+            <div className="mj-run-home-identity">
+              <span className="mj-run-home-mark"><BrandMark size={18} /></span>
+              <span className="mj-run-home-wordmark">LeonaQ</span>
             </div>
-            <div className="mj-run-home-status" aria-label={locale === "ja" ? "モデルの状態" : "Model status"}>
-              <span className="mj-status-dot" aria-hidden="true" />
-              {demoMode ? copy.previewStatus : copy.readyStatus}
-            </div>
+            <h1>{copy.title}</h1>
+            <p>{copy.lede}</p>
           </header>
 
-          <div className="mj-run-home-grid">
-            <section className="mj-home-panel" aria-labelledby="run-workflow-title">
-              <h2 id="run-workflow-title">{copy.workflowTitle}</h2>
-              <p>{copy.workflowBody}</p>
-              <div className="mj-home-capabilities">
-                {copy.capabilities.map((capability) => <div className="mj-capability" key={capability.title}><strong>{capability.title}</strong><span>{capability.body}</span></div>)}
+          <div className="mj-run-home-disclosures">
+            <details className="mj-run-disclosure" name="run-home-detail">
+              <summary>
+                <span className="mj-run-disclosure-label">
+                  <span>{copy.starterPrompts}</span>
+                  <strong>{copy.examplesTitle}</strong>
+                </span>
+                <span className="mj-run-disclosure-count">{copy.promptCount}</span>
+              </summary>
+              <div className="mj-run-disclosure-content">
+                <div className="mj-example-list">
+                  {copy.examples.map((example) => (
+                    <button
+                      className="mj-example-button"
+                      key={example.title}
+                      type="button"
+                      onClick={(event) => {
+                        setPrompt(example.prompt);
+                        setError(null);
+                        event.currentTarget.closest("details")?.removeAttribute("open");
+                      }}
+                    >
+                      <strong>{example.title}</strong>
+                      <span>{example.prompt}</span>
+                    </button>
+                  ))}
+                </div>
               </div>
-            </section>
+            </details>
 
-            <section className="mj-home-example" aria-labelledby="examples-title">
-              <h2 id="examples-title">{copy.examplesTitle}</h2>
-              <div className="mj-example-list">
-                {copy.examples.map((example) => (
-                  <button
-                    className="mj-example-button"
-                    key={example.title}
-                    type="button"
-                    onClick={() => {
-                      setPrompt(example.prompt);
-                      setError(null);
-                    }}
-                  >
-                    <strong>{example.title}</strong>
-                    <span>{example.prompt}</span>
-                  </button>
-                ))}
+            <details className="mj-run-disclosure" name="run-home-detail">
+              <summary>
+                <span className="mj-run-disclosure-label">
+                  <span>{copy.process}</span>
+                  <strong>{copy.workflowTitle}</strong>
+                </span>
+                <span className="mj-run-disclosure-count">{copy.stepCount}</span>
+              </summary>
+              <div className="mj-run-disclosure-content">
+                <p className="mj-run-disclosure-intro">{copy.workflowBody}</p>
+                <div className="mj-home-capabilities">
+                  {copy.capabilities.map((capability) => <div className="mj-capability" key={capability.title}><strong>{capability.title}</strong><span>{capability.body}</span></div>)}
+                </div>
               </div>
-            </section>
+            </details>
           </div>
           {contextArtifact ? (
             <aside className="mj-run-context-card" aria-label={copy.contextLabel}>

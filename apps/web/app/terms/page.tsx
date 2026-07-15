@@ -5,7 +5,7 @@ import { getPublicLocale } from "../../lib/public-locale-server";
 
 export const metadata: Metadata = {
   title: "Terms of service",
-  description: "Leona Quantum early-access terms for the public website and product.",
+  description: "LeonaQ early-access terms for the public website and product.",
 };
 
 export default async function TermsPage() {
