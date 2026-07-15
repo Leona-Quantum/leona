@@ -4,6 +4,12 @@ Source of truth: `packages/ts/ui/tokens.css` — the ONLY file allowed to contai
 hex (CI: `scripts/check-raw-hex.mjs`). Values are owner-ratified taste from
 `plans/roadmap/04-ui-specifications.md` §1; do not add or "adjust" values.
 
+Every `var(--token)` must resolve: an undefined custom property invalidates the whole
+declaration and the browser drops it silently. CI enforces this (`scripts/check-token-vars.mjs`)
+because it had already bitten us — `--fs-11`, `--fs-24`, `--sp-5/10/16`, and the entire
+`--mj-*` namespace were referenced but never defined, so those rules never applied. Give
+`var()` a fallback if you genuinely mean "may be absent".
+
 Dark palette (owner directive 2026-07-11, refined same day): **warm-gray, color-minimal.**
 The owner approved the earthy dark palette but asked to keep chromatic color to a minimum —
 "more grayscale like ChatGPT/Claude Code, easier on the eyes and colorblind-accessible,
@@ -27,9 +33,19 @@ Rules:
   `--ok/--warn/--err`); components must never branch on the active palette.
 - Type scale (px): 12, 13 (base), 14, 16, 20, 28 — nothing else. Weights 400 / 500
   (headings, buttons) / 600 (page title only).
-- Fonts: Inter (UI), JetBrains Mono (code, numbers, IDs — always mono for numerics).
-  Apps load real faces via next/font and override `--font-ui` / `--font-mono`.
-- Space: 4-px grid (4, 8, 12, 16, 24, 32, 48). Radius: 6 controls / 10 cards.
+- Fonts (owner taste-check 2026-07-16, replacing Inter): **Instrument Sans** (UI),
+  **Instrument Serif** (`--font-display`), JetBrains Mono (code, numbers, IDs — always
+  mono for numerics). Apps load real faces via next/font and override the font vars.
+- `--font-display` is **public-marketing-site h1/h2 only** — never inside the product
+  shell, which stays entirely sans so the workspace keeps one voice. It ships a single
+  weight: render it at 400 only, or the browser fakes a smeared bold.
+- Display scale: `--fs-display-1` (32→44px, landing hero only), `--fs-display-2`
+  (28→34px, page h1), `--fs-display-3` (22→24px, section h2). These are the ONLY
+  sanctioned sizes above 28px, and 44px is the ceiling. They replaced ad-hoc `clamp()`
+  rules that reached 83px — the "huge vibecoded text" the owner called out. Do not
+  reintroduce a bare `clamp()` font-size; add a token or use one of these.
+- Space: 4-px grid, `--sp-N` = N×4px (4, 8, 12, 16, 20, 24, 32, 40, 48, 64).
+  Radius: 6 controls / 10 cards.
   Shadows: none — borders do the work. Content max-width 1200 px.
 - Contrast pre-checked, all ≥ WCAG AA (text-0/bg-0 15.6:1, text-1/bg-1 6.4:1,
   accent/bg-0 6.3:1, ok/bg-1 7.5:1, warn/bg-1 8.3:1, err/bg-1 4.8:1); never "brighten"

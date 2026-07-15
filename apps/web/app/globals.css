@@ -20,6 +20,7 @@
   --color-err: var(--err);
   --color-mono-tint: var(--mono-tint);
   --font-sans: var(--font-ui);
+  --font-display: var(--font-display);
   --font-mono: var(--font-mono);
   /* type-scale utilities (text-12 … text-28) resolve to the token scale */
   --text-12: var(--fs-12);

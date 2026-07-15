@@ -81,14 +81,17 @@ export function PaperclipIcon(props: IconProps) {
   return <Icon {...props}><path d="m6 8.5 3.4-3.4a2.1 2.1 0 0 1 3 3L7.5 13A3.2 3.2 0 0 1 3 8.5l4.9-4.9" /></Icon>;
 }
 
+/* Brand mark: Dirac ket notation — |ψ⟩ — reduced to a bar, a chevron, and the
+ * state between them. Reads to the actual audience (quantum researchers) rather
+ * than as another orbit-and-electron logo, and survives 16px because it is three
+ * shapes on one baseline. Monochrome via currentColor so the light theme's
+ * strictly-monochrome palette (owner directive 2026-07-14) holds without a variant. */
 export function BrandMark({ size = 20, ...props }: IconProps) {
   return (
     <svg aria-hidden="true" width={size} height={size} viewBox="0 0 20 20" fill="none" {...props}>
-      <path d="M3 12.6C2.4 8.1 5.1 3.9 9.5 3.9c2.7 0 4.9 1.7 5.6 4.1-.4-.5-.9-.9-1.5-1.2" stroke="currentColor" strokeWidth="1.25" strokeLinecap="round" strokeLinejoin="round" />
-      <path d="M8.3 6.5 7.2 3.8l2.2 1.2M9 8.7c.7.4 1.5.4 2.2 0M12.2 10.1c-.3 1.3-1.4 2.1-2.8 2.2" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round" strokeLinejoin="round" />
-      <path d="M2.1 12.2c2.6 5.1 10.7 7.1 15.2 1.4" stroke="currentColor" strokeWidth="1.15" strokeLinecap="round" />
-      <path d="M4.3 15.1c3.3-1.8 8.8-2.1 13.2-5.4" stroke="currentColor" strokeWidth="1.15" strokeLinecap="round" />
-      <circle cx="16.5" cy="4.2" r="1.1" fill="currentColor" />
+      <path d="M4.6 3.8v12.4" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
+      <path d="m11.9 3.8 3.9 6.2-3.9 6.2" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
+      <circle cx="8.3" cy="10" r="1.5" fill="currentColor" />
     </svg>
   );
 }
