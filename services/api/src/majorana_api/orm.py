@@ -162,6 +162,93 @@ class VerificationRecord(Base):
     created_at: Mapped[dt.datetime | None] = mapped_column(server_default=func.now())
 
 
+class AgentRun(Base):
+    __tablename__ = "agent_runs"
+
+    run_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("runs.id"), primary_key=True)
+    state: Mapped[str] = mapped_column(server_default="new")
+    plan_id: Mapped[uuid.UUID | None] = mapped_column(_UUID)
+    plan: Mapped[dict[str, Any] | None]
+    publication: Mapped[dict[str, Any] | None]
+    created_at: Mapped[dt.datetime | None] = mapped_column(server_default=func.now())
+    updated_at: Mapped[dt.datetime | None] = mapped_column(server_default=func.now())
+
+
+class AgentStep(Base):
+    __tablename__ = "agent_steps"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True)
+    run_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("runs.id"))
+    tool_call_id: Mapped[str]
+    name: Mapped[str]
+    arguments: Mapped[dict[str, Any]]
+    status: Mapped[str] = mapped_column(server_default="started")
+    state: Mapped[str | None]
+    result: Mapped[dict[str, Any] | None]
+    error_code: Mapped[str | None]
+    error_message: Mapped[str | None]
+    created_at: Mapped[dt.datetime | None] = mapped_column(server_default=func.now())
+    completed_at: Mapped[dt.datetime | None]
+
+
+class RunCandidate(Base):
+    __tablename__ = "run_candidates"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True)
+    run_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("runs.id"))
+    tool_call_id: Mapped[str]
+    revision: Mapped[int] = mapped_column(Integer)
+    parent_candidate_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("run_candidates.id"))
+    plan_id: Mapped[uuid.UUID]
+    framework: Mapped[str]
+    source: Mapped[str]
+    source_fingerprint: Mapped[str]
+    status: Mapped[str] = mapped_column(server_default="created")
+    created_at: Mapped[dt.datetime | None] = mapped_column(server_default=func.now())
+
+
+class CandidateExecution(Base):
+    __tablename__ = "candidate_executions"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True)
+    candidate_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("run_candidates.id"), unique=True)
+    source_fingerprint: Mapped[str]
+    environment_fingerprint: Mapped[str]
+    sandbox_provider: Mapped[str]
+    exit_code: Mapped[int] = mapped_column(Integer)
+    duration_ms: Mapped[int] = mapped_column(Integer)
+    result: Mapped[dict[str, Any]]
+    observation: Mapped[dict[str, Any]]
+    created_at: Mapped[dt.datetime | None] = mapped_column(server_default=func.now())
+
+
+class CandidateVerification(Base):
+    __tablename__ = "candidate_verifications"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True)
+    candidate_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("run_candidates.id"), unique=True)
+    execution_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("candidate_executions.id"))
+    source_fingerprint: Mapped[str]
+    decision: Mapped[str]
+    deterministic_checks: Mapped[list[dict[str, Any]]] = mapped_column(JSONB)
+    critic: Mapped[dict[str, Any] | None]
+    repair: Mapped[dict[str, Any] | None]
+    created_at: Mapped[dt.datetime | None] = mapped_column(server_default=func.now())
+
+
+class CandidateConversion(Base):
+    __tablename__ = "candidate_conversions"
+
+    candidate_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("run_candidates.id"), primary_key=True
+    )
+    source_fingerprint: Mapped[str]
+    status: Mapped[str]
+    qasm: Mapped[str | None]
+    reason: Mapped[str | None]
+    created_at: Mapped[dt.datetime | None] = mapped_column(server_default=func.now())
+
+
 class Job(Base):
     __tablename__ = "jobs"
 

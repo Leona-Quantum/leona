@@ -1,0 +1,179 @@
+from uuid import UUID, uuid4
+
+from majorana_agent import (
+    AgentPolicy,
+    CircuitToolset,
+    ExecutionOutput,
+    MemoryAgentStore,
+    PublishedArtifact,
+    ToolBroker,
+    ToolCall,
+    ToolName,
+    VerificationOutput,
+)
+from majorana_contracts.enums import (
+    Algorithm,
+    Framework,
+    VerifierDecision,
+    VerificationMethod,
+)
+from majorana_contracts.plan import Plan
+
+
+def _plan() -> Plan:
+    return Plan.model_validate(
+        {
+            "domain": "quantum information",
+            "framework": "qiskit",
+            "algorithm": Algorithm.BELL,
+            "problem_summary": "Create and measure a Bell state",
+            "algorithm_rationale": "Entanglement demonstrates the requested circuit",
+            "parameters": {"shots": 1000},
+            "qubits_estimate": 2,
+            "expected_runtime_sec": 2,
+            "success_criteria": {"primary_metric": "counts"},
+            "expected_output_keys": ["counts"],
+            "verification_plan": {"methods": [VerificationMethod.RETURN_CONTRACT]},
+        }
+    )
+
+
+class Planner:
+    async def create_plan(self, _run_id):
+        return _plan()
+
+
+class Executor:
+    async def run_candidate(self, _candidate, _plan):
+        return ExecutionOutput(
+            environment_fingerprint="1" * 64,
+            sandbox_provider="test",
+            exit_code=0,
+            duration_ms=2,
+            result={"counts": {"00": 500, "11": 500}},
+            observation={"interchange_qasm": "OPENQASM 3.0;\nqubit[2] q;"},
+        )
+
+
+class Verifier:
+    async def verify(self, _candidate, _execution, _plan):
+        return VerificationOutput(
+            decision=VerifierDecision.PASS,
+            deterministic_checks=[{"method": "return_contract", "result": "pass"}],
+        )
+
+
+class Converter:
+    async def convert(self, _candidate, execution):
+        return execution.observation.get("interchange_qasm"), None
+
+
+class Publisher:
+    async def publish(self, candidate, _verification, _conversion, _plan):
+        return PublishedArtifact(
+            artifact_id=uuid4(),
+            version_id=uuid4(),
+            version_seq=1,
+            candidate_id=candidate.candidate_id,
+            framework=candidate.framework,
+            source_fingerprint=candidate.source_fingerprint,
+        )
+
+
+async def test_tools_bind_execution_verification_conversion_and_publish():
+    store = MemoryAgentStore()
+    run_id = uuid4()
+    tools = CircuitToolset(
+        store=store,
+        framework=Framework.QISKIT,
+        planner=Planner(),
+        executor=Executor(),
+        verifier=Verifier(),
+        converter=Converter(),
+        publisher=Publisher(),
+    )
+    broker = ToolBroker(
+        store=store,
+        policy=AgentPolicy(framework=Framework.QISKIT),
+        handlers=tools.handlers(),
+    )
+    plan = await broker.dispatch(run_id, ToolCall(tool_call_id="1", name=ToolName.REQUEST_PLAN))
+    assert plan.ok
+    source = "from qiskit import QuantumCircuit\nFINAL_CIRCUIT = QuantumCircuit(2)\n"
+    simulation = await broker.dispatch(
+        run_id,
+        ToolCall(tool_call_id="2", name=ToolName.SIMULATE_QISKIT, arguments={"source": source}),
+    )
+    candidate_id = simulation.payload["candidate_id"]
+    verification = await broker.dispatch(
+        run_id,
+        ToolCall(
+            tool_call_id="3",
+            name=ToolName.VERIFY_INTENT_ALIGNMENT,
+            arguments={"candidate_id": candidate_id},
+        ),
+    )
+    assert verification.payload["decision"] == "pass"
+    conversion = await broker.dispatch(
+        run_id,
+        ToolCall(
+            tool_call_id="4",
+            name=ToolName.CONVERT_TO_OPENQASM,
+            arguments={"candidate_id": candidate_id},
+        ),
+    )
+    assert conversion.payload["status"] == "available"
+    published = await broker.dispatch(
+        run_id,
+        ToolCall(
+            tool_call_id="5",
+            name=ToolName.PUBLISH_ARTIFACT,
+            arguments={"candidate_id": candidate_id},
+        ),
+    )
+    assert published.ok
+    assert UUID(published.payload["candidate_id"]) == UUID(candidate_id)
+
+
+class CrashAfterCandidateStore(MemoryAgentStore):
+    def __init__(self):
+        super().__init__()
+        self.crash_once = True
+
+    async def add_candidate(self, candidate):
+        await super().add_candidate(candidate)
+        if self.crash_once:
+            self.crash_once = False
+            raise RuntimeError("worker crashed after candidate commit")
+
+
+async def test_simulate_resumes_same_candidate_after_partial_commit():
+    store = CrashAfterCandidateStore()
+    run_id = uuid4()
+    tools = CircuitToolset(
+        store=store,
+        framework=Framework.QISKIT,
+        planner=Planner(),
+        executor=Executor(),
+        verifier=Verifier(),
+        converter=Converter(),
+        publisher=Publisher(),
+    )
+    broker = ToolBroker(
+        store=store,
+        policy=AgentPolicy(framework=Framework.QISKIT),
+        handlers=tools.handlers(),
+    )
+    await broker.dispatch(run_id, ToolCall(tool_call_id="plan", name=ToolName.REQUEST_PLAN))
+    call = ToolCall(
+        tool_call_id="simulate",
+        name=ToolName.SIMULATE_QISKIT,
+        arguments={"source": "FINAL_CIRCUIT = object()\nRESULT = {'counts': {'0': 1}}"},
+    )
+    import pytest
+
+    with pytest.raises(RuntimeError, match="candidate commit"):
+        await broker.dispatch(run_id, call)
+    resumed = await broker.dispatch(run_id, call)
+    assert resumed.ok
+    assert len(await store.list_candidates(run_id)) == 1

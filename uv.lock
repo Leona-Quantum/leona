@@ -4,6 +4,7 @@ requires-python = ">=3.12"
 
 [manifest]
 members = [
+    "majorana-agent",
     "majorana-api",
     "majorana-baselines",
     "majorana-contracts",
@@ -11,7 +12,6 @@ members = [
     "majorana-frameworks",
     "majorana-llm",
     "majorana-openqasm",
-    "majorana-pipeline",
     "majorana-sandbox",
     "majorana-verification",
     "majorana-worker",
@@ -691,6 +691,25 @@ wheels = [
 ]
 
 [[package]]
+name = "majorana-agent"
+version = "0.0.0"
+source = { editable = "packages/py/agent" }
+dependencies = [
+    { name = "majorana-contracts" },
+    { name = "majorana-frameworks" },
+    { name = "majorana-llm" },
+    { name = "pydantic" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "majorana-contracts", editable = "packages/py/contracts" },
+    { name = "majorana-frameworks", editable = "packages/py/frameworks" },
+    { name = "majorana-llm", editable = "packages/py/llm" },
+    { name = "pydantic", specifier = ">=2" },
+]
+
+[[package]]
 name = "majorana-api"
 version = "0.0.0"
 source = { editable = "services/api" }
@@ -699,7 +718,6 @@ dependencies = [
     { name = "fastapi" },
     { name = "majorana-contracts" },
     { name = "majorana-openqasm" },
-    { name = "majorana-pipeline" },
     { name = "opentelemetry-exporter-otlp-proto-http" },
     { name = "opentelemetry-instrumentation-fastapi" },
     { name = "opentelemetry-sdk" },
@@ -716,7 +734,6 @@ requires-dist = [
     { name = "fastapi", specifier = ">=0.115" },
     { name = "majorana-contracts", editable = "packages/py/contracts" },
     { name = "majorana-openqasm", editable = "packages/py/openqasm" },
-    { name = "majorana-pipeline", editable = "packages/py/pipeline" },
     { name = "opentelemetry-exporter-otlp-proto-http", specifier = ">=1.27" },
     { name = "opentelemetry-instrumentation-fastapi", specifier = ">=0.48b0" },
     { name = "opentelemetry-sdk", specifier = ">=1.27" },
@@ -835,17 +852,6 @@ requires-dist = [
 ]
 
 [[package]]
-name = "majorana-pipeline"
-version = "0.1.0"
-source = { editable = "packages/py/pipeline" }
-dependencies = [
-    { name = "majorana-contracts" },
-]
-
-[package.metadata]
-requires-dist = [{ name = "majorana-contracts", editable = "packages/py/contracts" }]
-
-[[package]]
 name = "majorana-sandbox"
 version = "0.1.0"
 source = { editable = "packages/py/sandbox" }
@@ -893,24 +899,24 @@ name = "majorana-worker"
 version = "0.0.0"
 source = { editable = "services/worker" }
 dependencies = [
+    { name = "majorana-agent" },
     { name = "majorana-api" },
     { name = "majorana-baselines" },
     { name = "majorana-frameworks" },
     { name = "majorana-llm" },
     { name = "majorana-openqasm" },
-    { name = "majorana-pipeline" },
     { name = "majorana-sandbox", extra = ["vercel"] },
     { name = "majorana-verification" },
 ]
 
 [package.metadata]
 requires-dist = [
+    { name = "majorana-agent", editable = "packages/py/agent" },
     { name = "majorana-api", editable = "services/api" },
     { name = "majorana-baselines", editable = "packages/py/baselines" },
     { name = "majorana-frameworks", editable = "packages/py/frameworks" },
     { name = "majorana-llm", editable = "packages/py/llm" },
     { name = "majorana-openqasm", editable = "packages/py/openqasm" },
-    { name = "majorana-pipeline", editable = "packages/py/pipeline" },
     { name = "majorana-sandbox", extras = ["vercel"], editable = "packages/py/sandbox" },
     { name = "majorana-verification", editable = "packages/py/verification" },
 ]

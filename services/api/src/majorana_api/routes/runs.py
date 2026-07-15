@@ -13,9 +13,9 @@ from fastapi import APIRouter, Header, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from majorana_contracts import Conversation as ConversationResource
 from majorana_contracts import ConversationTurn
+from majorana_contracts import IllegalTransition, assert_transition, is_terminal
 from majorana_contracts import Run as RunResource
 from majorana_contracts.enums import Framework, RunMode, RunStatus
-from majorana_pipeline import IllegalTransition, assert_transition, is_terminal
 from pydantic import BaseModel, ConfigDict, Field
 
 from ..auth.deps import CurrentScope, DbSession

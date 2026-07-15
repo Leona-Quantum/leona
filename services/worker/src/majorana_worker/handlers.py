@@ -12,9 +12,16 @@ from typing import Any, Awaitable, Callable
 
 from majorana_contracts import Scope
 from majorana_contracts.enums import Framework, Role, RunMode, RunStatus
+from majorana_agent import (
+    AgentPolicy,
+    AgentRuntime,
+    AgentState,
+    CircuitToolset,
+    StructuredToolModel,
+    ToolBroker,
+)
 from majorana_contracts.events import run_event_adapter
 from majorana_llm import LLMClient, LLMRequest, QUANTUM_AGENT_SYSTEM_PROMPT, default_llm, model_for
-from majorana_pipeline import RunContext, execute_run
 from majorana_sandbox import LocalSubprocessSandbox, Sandbox, VercelSandbox
 
 from majorana_api.db import AsyncSession
@@ -22,7 +29,17 @@ from majorana_api.jobs import RUN_EXECUTE_JOB_KIND
 from majorana_api.repos import runs as runs_repo
 from majorana_api.repos import artifacts as artifacts_repo
 
-from .stage_handlers import build_stage_handlers
+from .agent_events import AgentEventObserver
+from .agent_llm import MeteredAgentLLM
+from .agent_ports import (
+    EvidenceVerifier,
+    LLMPlanner,
+    RepoArtifactPublisher,
+    SandboxCandidateExecutor,
+    TrustedOpenQASMConverter,
+)
+from .agent_store import RepoAgentStore
+from .context import RunContext
 
 log = logging.getLogger("majorana_worker")
 
@@ -155,10 +172,15 @@ async def handle_run_execute(
             if ctx.mode is not RunMode.EXECUTE:
                 final = await _handle_conversation(ctx, store, provider)
             else:
-                handlers = build_stage_handlers(
-                    scope, session, run_id, provider, sandbox or _default_sandbox()
+                final = await _handle_agent_execution(
+                    ctx,
+                    store,
+                    scope=scope,
+                    session=session,
+                    llm=provider,
+                    sandbox=sandbox or _default_sandbox(),
+                    parent_artifact_id=parent_artifact_id,
                 )
-                final = await execute_run(ctx, store, handlers)
     except TimeoutError:
         # The stage coroutine was cancelled mid-flight; reset the session and
         # record the failure so the event log never ends mid-run.
@@ -172,6 +194,94 @@ async def handle_run_execute(
             await store.set_status(RunStatus.FAILED, finished_at_now=True)
         final = RunStatus.FAILED
     log.info("run %s finished: %s", run_id, final)
+
+
+async def _handle_agent_execution(
+    ctx: RunContext,
+    run_store: RepoRunStateStore,
+    *,
+    scope: Scope,
+    session: AsyncSession,
+    llm: LLMClient,
+    sandbox: Sandbox,
+    parent_artifact_id: uuid.UUID | None,
+) -> RunStatus:
+    status = await run_store.current_status()
+    if status is not RunStatus.QUEUED:
+        return status
+    await run_store.set_status(RunStatus.RUNNING, started_at_now=True)
+    await ctx.sink.emit("run.started", {})
+
+    agent_store = RepoAgentStore(scope, session)
+    metered_llm = MeteredAgentLLM(
+        delegate=llm,
+        sink=ctx.sink,
+        scope=scope,
+        session=session,
+        run_id=ctx.run_id,
+    )
+    toolset = CircuitToolset(
+        store=agent_store,
+        framework=ctx.framework,
+        planner=LLMPlanner(
+            llm=metered_llm,
+            task_prompt=ctx.task_prompt,
+            framework=ctx.framework,
+        ),
+        executor=SandboxCandidateExecutor(sandbox),
+        verifier=EvidenceVerifier(llm=metered_llm, task_prompt=ctx.task_prompt),
+        converter=TrustedOpenQASMConverter(),
+        publisher=RepoArtifactPublisher(
+            scope=scope,
+            session=session,
+            run_id=ctx.run_id,
+            parent_artifact_id=parent_artifact_id,
+            title=ctx.task_prompt,
+        ),
+    )
+    broker = ToolBroker(
+        store=agent_store,
+        policy=AgentPolicy(framework=ctx.framework),
+        handlers=toolset.handlers(),
+    )
+
+    async def cancelled() -> bool:
+        return await run_store.current_status() is RunStatus.CANCELLED
+
+    runtime = AgentRuntime(
+        store=agent_store,
+        broker=broker,
+        model=StructuredToolModel(
+            llm=metered_llm,
+            task_prompt=ctx.task_prompt,
+            framework=ctx.framework,
+            initial_source=ctx.source_code,
+        ),
+        observer=AgentEventObserver(store=agent_store, sink=ctx.sink),
+        cancel_requested=cancelled,
+    )
+    final = await runtime.run(ctx.run_id)
+    if final is AgentState.CANCELLED:
+        await ctx.sink.emit("run.finished", {"status": RunStatus.CANCELLED})
+        return RunStatus.CANCELLED
+    if final is AgentState.PUBLISHED:
+        await ctx.sink.emit(
+            "run.finished",
+            {"status": RunStatus.SUCCEEDED, "verifier_decision": "pass"},
+        )
+        await run_store.set_status(
+            RunStatus.SUCCEEDED,
+            finished_at_now=True,
+            verifier_decision="pass",
+        )
+        return RunStatus.SUCCEEDED
+    await ctx.sink.emit(
+        "run.error",
+        {"stage": None, "code": "agent_failed", "message": "agent tool loop failed"},
+    )
+    await ctx.sink.emit("run.finished", {"status": RunStatus.FAILED})
+    await run_store.set_status(RunStatus.FAILED, finished_at_now=True)
+    return RunStatus.FAILED
 
 
 async def _handle_conversation(

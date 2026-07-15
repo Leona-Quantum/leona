@@ -1,0 +1,29 @@
+"""Request context shared by direct chat and the circuit agent assembly."""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from typing import Any, Protocol
+
+from majorana_contracts.enums import Framework, RunMode
+
+
+class EventSink(Protocol):
+    async def emit(self, type: str, payload: dict[str, Any]) -> None: ...
+
+
+@dataclass(frozen=True)
+class RunContext:
+    run_id: Any
+    task_prompt: str
+    mode: RunMode
+    framework: Framework
+    seed: int | None
+    shots: int | None
+    tolerances: dict[str, Any] | None
+    timeout_s: int | None
+    sink: EventSink
+    conversation_id: Any | None = None
+    source_code: str | None = None
+    source_framework: Framework | None = None
+    parent_artifact_id: Any | None = None

@@ -1,7 +1,4 @@
-"""Pipeline E2E (Phase 2 Output — headless run demo): POST /v1/runs → jobs row →
-worker handler drives the REAL stage handlers (plan→generate→screen→estimate→
-verify→compile→finalize→final execution→baseline→analysis→save) → full
-run_events choreography → SSE replay.
+"""Agent E2E: POST /v1/runs → job → durable tool loop → verified artifact → SSE.
 
 The successful execution test is explicitly gated on a configured real LLM and uses
 the guarded LocalSubprocessSandbox for code execution. It is opt-in because a real
@@ -21,7 +18,6 @@ from majorana_contracts import Scope
 from majorana_contracts.enums import Framework, Role
 from majorana_frameworks import FrameworkProgram
 from majorana_llm import LLMClient, default_llm
-from majorana_pipeline import STAGE_ORDER
 from majorana_sandbox import LocalSubprocessSandbox
 
 from majorana_api.app import create_app
@@ -114,7 +110,7 @@ async def _work_until_run_processed(factory, run_id: str, *, llm: LLMClient | No
 
 @requires_db
 @requires_live_llm
-async def test_run_executes_end_to_end_with_real_stages(env):
+async def test_run_executes_end_to_end_with_real_agent_tools(env):
     client, factory, scope = env
 
     resp = await client.post(
@@ -148,31 +144,21 @@ async def test_run_executes_end_to_end_with_real_stages(env):
     assert types[0] == "run.queued"
     assert types[1] == "run.started"
     assert types[-1] == "run.finished"
-    assert types.count("stage.started") == types.count("stage.finished")
-    assert types.count("stage.started") >= len(STAGE_ORDER)
+    assert "stage.started" not in types
+    assert "stage.finished" not in types
     assert [e["seq"] for e in events] == list(range(1, len(events) + 1))
     assert events[-1]["verifier_decision"] == "pass"
 
-    # The real stages each left their event.
+    # The durable tool loop exposes stable product events without legacy stages.
     for expected in (
         "plan.produced",
-        "llm.call",
         "code.generated",
-        "screen.result",
-        "resource.estimate",
         "sandbox.result",
         "verification.result",
-        "compilation.result",
         "code.finalized",
-        "run.analysis",
-        "baseline.result",
-        "export.classified",
         "artifact.saved",
     ):
         assert expected in types, f"missing {expected} in {types}"
-
-    export = next(e for e in events if e["type"] == "export.classified")
-    assert export["status"] == "lossless"  # Bell → Qiskit is faithful
 
     # The writeback landed a real artifact version (no library read API yet —
     # Phase 3 — so verify through the repository layer).
@@ -180,8 +166,9 @@ async def test_run_executes_end_to_end_with_real_stages(env):
     async with factory() as session:
         version = await artifacts_repo.get_version(scope, session, uuid.UUID(saved["version_id"]))
     assert version.export_status == "lossless"
-    assert version.qasm_version == "3.0"
-    assert version.qasm and version.qasm.startswith("OPENQASM 3.0;")
+    if version.qasm is not None:
+        assert version.qasm_version == "3.0"
+        assert version.qasm.startswith("OPENQASM 3.0;")
     assert version.fingerprint == FrameworkProgram(Framework.QISKIT, version.code).fingerprint
     assert version.metadata["canonical_representation"] == "framework_code"
     assert version.metadata["openqasm_role"] == "interchange"

@@ -8,5 +8,7 @@ FastAPI control plane. THE only process that talks to Postgres (role `app_rw`).
   idempotency keys on mutations.
 - Auth: verify WorkOS-minted JWT via JWKS (issuer/audience pinned). Auth code is
   blast-radius (CODEOWNERS).
-- Pipeline stages transition ONLY via the state machine in packages/py/pipeline.
+- Top-level run statuses use `majorana_contracts.lifecycle`; circuit-agent state and
+  tool transitions are enforced by `majorana_agent.ToolBroker` and persisted only
+  through the scoped repository layer.
 Schema: plans/rebuild/04-database.md. Migrations live in /db/migrations (blast-radius).

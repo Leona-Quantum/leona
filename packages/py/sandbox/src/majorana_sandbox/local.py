@@ -50,6 +50,10 @@ def _limits(memory_mb: int, cpu_s: int):
 class LocalSubprocessSandbox:
     provider = "local-subprocess"
 
+    @property
+    def environment_id(self) -> str:
+        return f"local:{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}"
+
     async def _execute(self, spec: ExecutionSpec) -> SandboxResult:
         env = {key: os.environ[key] for key in _ENV_ALLOWLIST if key in os.environ}
         env["PYTHONUNBUFFERED"] = "1"

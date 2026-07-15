@@ -8,7 +8,16 @@ import pytest
 from repo_test_helpers import compiled
 from majorana_contracts.enums import RunMode, UsageKind, VerificationMethod
 
-from majorana_api.repos import NotFoundError, artifacts, audit, folders, runs, usage, workspaces
+from majorana_api.repos import (
+    NotFoundError,
+    agent,
+    artifacts,
+    audit,
+    folders,
+    runs,
+    usage,
+    workspaces,
+)
 
 
 def assert_workspace_bound(stmt, scope):
@@ -120,6 +129,22 @@ async def test_list_run_events_joins_runs(scope, session):
 
 async def test_list_verification_records_joins_runs(scope, session):
     await runs.list_verification_records(scope, session, uuid.uuid4())
+    stmt = session.statements[0]
+    sql, _ = compiled(stmt)
+    assert "JOIN runs" in sql
+    assert_workspace_bound(stmt, scope)
+
+
+async def test_agent_steps_join_runs_for_scope(scope, session):
+    await agent.list_steps(scope, session, uuid.uuid4())
+    stmt = session.statements[0]
+    sql, _ = compiled(stmt)
+    assert "JOIN runs" in sql
+    assert_workspace_bound(stmt, scope)
+
+
+async def test_candidate_lookup_joins_runs_for_scope(scope, session):
+    assert await agent.get_candidate_by_id(scope, session, uuid.uuid4()) is None
     stmt = session.statements[0]
     sql, _ = compiled(stmt)
     assert "JOIN runs" in sql

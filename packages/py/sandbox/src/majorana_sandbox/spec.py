@@ -34,6 +34,7 @@ class ExecutionSpec(BaseModel):
     trusted_setup: str = ""
     trusted_observer: str = ""
     protected_result_path: str | None = None
+    source_fingerprint: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
 
 
 class SandboxResult(BaseModel):
@@ -84,11 +85,17 @@ def compose_execution(spec: ExecutionSpec) -> str:
         return spec.code
     setup = textwrap.indent(spec.trusted_setup.strip(), "    ")
     observer = textwrap.indent(spec.trusted_observer.strip(), "    ")
+    fingerprint = (
+        f'    _majorana_observation["source_fingerprint"] = {spec.source_fingerprint!r}\n'
+        if spec.source_fingerprint is not None
+        else ""
+    )
     return f"""def _majorana_host_run():
     import builtins as _majorana_builtins
     import json as _majorana_json
     _majorana_open = _majorana_builtins.open
     _majorana_json_dump = _majorana_json.dump
+    _majorana_json_dumps = _majorana_json.dumps
     _majorana_exception = _majorana_builtins.Exception
     _majorana_getattr = _majorana_builtins.getattr
     _majorana_hasattr = _majorana_builtins.hasattr
@@ -100,12 +107,32 @@ def compose_execution(spec: ExecutionSpec) -> str:
     _majorana_type = _majorana_builtins.type
     _majorana_namespace = {{"__name__": "__main__"}}
     _majorana_observation = {{}}
+{fingerprint.rstrip()}
 {setup}
     _majorana_builtins.exec(
         _majorana_builtins.compile({spec.code!r}, "<majorana-generated>", "exec"),
         _majorana_namespace,
     )
+    _majorana_result = _majorana_namespace.get("RESULT")
+    if _majorana_result is not None:
+        try:
+            _majorana_json_dumps(_majorana_result)
+            _majorana_observation["result"] = _majorana_result
+        except _majorana_exception:
+            _majorana_observation["result_error"] = "not_json_serializable"
 {observer}
+    try:
+        _majorana_serialized_observation = _majorana_json_dumps(_majorana_observation)
+        if _majorana_len(_majorana_serialized_observation.encode("utf-8")) > {MAX_OUTPUT_BYTES}:
+            _majorana_observation = {{
+                "source_fingerprint": {spec.source_fingerprint!r},
+                "evidence_error": "protected_result_too_large",
+            }}
+    except _majorana_exception:
+        _majorana_observation = {{
+            "source_fingerprint": {spec.source_fingerprint!r},
+            "evidence_error": "protected_result_not_json_serializable",
+        }}
     with _majorana_open(
         {spec.protected_result_path!r}, "w", encoding="utf-8"
     ) as _majorana_result_file:

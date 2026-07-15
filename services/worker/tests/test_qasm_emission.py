@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-import sys
 import json
+import sys
 from types import ModuleType
 
 import pytest
@@ -11,11 +11,6 @@ from majorana_contracts.enums import Framework
 from majorana_frameworks import FrameworkProgram, extract_interchange_qasm
 from majorana_sandbox.guard import check_python_code
 from majorana_sandbox.spec import ExecutionSpec, compose_execution
-
-from majorana_worker.stage_handlers import (
-    _parse_result_dict,
-    _repair_legacy_qiskit_qasm,
-)
 
 
 def _install_fake_qiskit(monkeypatch, dumps) -> None:
@@ -42,7 +37,7 @@ class Circuit:
     def count_ops(self): return {"custom_entangler": 1, "measure": 2}
     def depth(self): return 3
 FINAL_CIRCUIT = Circuit()
-print(json.dumps({"counts": {"0": 1}}))
+RESULT = {"counts": {"0": 1}}
 """
 
     program = FrameworkProgram(Framework.QISKIT, code)
@@ -60,9 +55,9 @@ print(json.dumps({"counts": {"0": 1}}))
         {},
     )
 
-    stdout = capsys.readouterr().out
-    assert _parse_result_dict(stdout) == {"counts": {"0": 1}}
+    assert capsys.readouterr().out == ""
     protected_result = json.loads(result_path.read_text())
+    assert protected_result["result"] == {"counts": {"0": 1}}
     extraction = extract_interchange_qasm(protected_result)
     assert extraction.source == "sandbox_epilogue"
     assert extraction.qasm == expected_qasm
@@ -79,7 +74,7 @@ def test_owned_epilogue_records_serialization_error_without_trusting_model_stdou
     code = """import json
 FINAL_CIRCUIT = object()
 print("OPENQASM 2.0;\\nqreg q[1];\\nx q[0];")
-print(json.dumps({"counts": {"1": 1}}))
+RESULT = {"counts": {"1": 1}}
 """
 
     program = FrameworkProgram(Framework.QISKIT, code)
@@ -109,7 +104,7 @@ def test_owned_epilogue_serializes_a_real_qiskit_circuit_when_available(capsys, 
 from qiskit import QuantumCircuit
 FINAL_CIRCUIT = QuantumCircuit(1)
 FINAL_CIRCUIT.h(0)
-print(json.dumps({"counts": {"0": 1}}))
+RESULT = {"counts": {"0": 1}}
 """
 
     program = FrameworkProgram(Framework.QISKIT, code)
@@ -130,16 +125,3 @@ print(json.dumps({"counts": {"0": 1}}))
     extraction = extract_interchange_qasm(json.loads(result_path.read_text()))
     assert extraction.source == "sandbox_epilogue"
     assert extraction.qasm and extraction.qasm.startswith("OPENQASM 3.0;")
-
-
-def test_legacy_qiskit_qasm_method_is_repaired_for_qiskit_2x():
-    code = """from qiskit import QuantumCircuit
-FINAL_CIRCUIT = QuantumCircuit(2)
-circuit_qasm = FINAL_CIRCUIT.qasm()
-"""
-
-    repaired = _repair_legacy_qiskit_qasm(code)
-
-    assert "from qiskit.qasm2 import dumps as _majorana_qasm2_dumps" in repaired
-    assert "_majorana_qasm2_dumps(FINAL_CIRCUIT)" in repaired
-    assert ".qasm()" not in repaired

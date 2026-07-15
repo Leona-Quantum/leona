@@ -111,6 +111,45 @@ async def test_provider_observer_isolated_from_generated_name_shadowing(tmp_path
     assert not result_path.exists()
 
 
+async def test_protected_result_binds_source_fingerprint_and_structured_result(tmp_path):
+    result_path = tmp_path / "protected-result.json"
+    fingerprint = "a" * 64
+    result = await run(
+        LocalSubprocessSandbox(),
+        ExecutionSpec(
+            code='RESULT = {"counts": {"00": 2}}',
+            trusted_observer='_majorana_observation["observed"] = True',
+            protected_result_path=str(result_path),
+            source_fingerprint=fingerprint,
+        ),
+    )
+    assert result.ok
+    assert result.protected_result == {
+        "source_fingerprint": fingerprint,
+        "result": {"counts": {"00": 2}},
+        "observed": True,
+    }
+
+
+async def test_protected_result_is_bounded_before_provider_read(tmp_path):
+    result_path = tmp_path / "protected-result.json"
+    fingerprint = "b" * 64
+    result = await run(
+        LocalSubprocessSandbox(),
+        ExecutionSpec(
+            code='RESULT = {"payload": "x" * 1_100_000}',
+            trusted_observer='_majorana_observation["observed"] = True',
+            protected_result_path=str(result_path),
+            source_fingerprint=fingerprint,
+        ),
+    )
+    assert result.ok
+    assert result.protected_result == {
+        "source_fingerprint": fingerprint,
+        "evidence_error": "protected_result_too_large",
+    }
+
+
 # --- The deny-all egress invariant (provider adapter) ------------------------
 
 
@@ -122,6 +161,9 @@ def test_vercel_create_always_requests_deny_all_egress():
     assert "runtime" not in kwargs  # custom images and built-in runtimes are exclusive
     assert kwargs["network_policy"] == DENY_ALL_EGRESS
     assert kwargs["env"] == {}  # no credentials inside the sandbox
+    assert VercelSandbox(image="majorana-runner@sha256:test").environment_id == (
+        "vercel:majorana-runner@sha256:test"
+    )
 
 
 async def test_vercel_execute_without_sdk_raises_not_silently_runs():
