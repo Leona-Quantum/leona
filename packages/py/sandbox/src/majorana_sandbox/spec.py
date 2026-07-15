@@ -5,6 +5,7 @@ from the plan's resource estimate), so an over-budget run never consumes a sandb
 from __future__ import annotations
 
 import json
+import textwrap
 from typing import Any
 
 from pydantic import BaseModel, Field
@@ -30,7 +31,7 @@ class ExecutionSpec(BaseModel):
         description="From the plan; checked against the lane ceiling pre-dispatch",
     )
     qubit_ceiling: int = Field(default=DEFAULT_QUBIT_CEILING, ge=1)
-    trusted_epilogue: str = ""
+    trusted_observer: str = ""
     protected_result_path: str | None = None
 
 
@@ -74,3 +75,27 @@ def parse_protected_result(raw: bytes | None) -> dict[str, Any] | None:
     except (UnicodeDecodeError, json.JSONDecodeError):
         return None
     return value if isinstance(value, dict) else None
+
+
+def compose_execution(spec: ExecutionSpec) -> str:
+    """Wrap generated code with provider-owned observation and serialization."""
+    if not spec.trusted_observer or spec.protected_result_path is None:
+        return spec.code
+    observer = textwrap.indent(spec.trusted_observer.strip(), "    ")
+    return f"""def _majorana_host_run():
+    import builtins as _majorana_builtins
+    import json as _majorana_json
+    _majorana_namespace = {{"__name__": "__main__"}}
+    _majorana_observation = {{}}
+    _majorana_builtins.exec(
+        _majorana_builtins.compile({spec.code!r}, "<majorana-generated>", "exec"),
+        _majorana_namespace,
+    )
+{observer}
+    with _majorana_builtins.open(
+        {spec.protected_result_path!r}, "w", encoding="utf-8"
+    ) as _majorana_result_file:
+        _majorana_json.dump(_majorana_observation, _majorana_result_file)
+
+_majorana_host_run()
+"""

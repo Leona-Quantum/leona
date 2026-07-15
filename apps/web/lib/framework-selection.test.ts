@@ -1,7 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { hydrateArtifactFramework, frameworkValue } from "./framework-selection.ts";
+import {
+  canSubmitAfterArtifactHydration,
+  hydrateArtifactFramework,
+  frameworkValue,
+} from "./framework-selection.ts";
 
 test("delayed artifact hydration preserves an intervening framework selection", () => {
   const hydrated = hydrateArtifactFramework("pennylane", true, "Cirq");
@@ -22,4 +26,12 @@ test("unsupported framework is surfaced and never rewritten as Qiskit", () => {
     framework: "cirq",
     error: "Unsupported artifact framework: unknown-sdk",
   });
+});
+
+test("submission stays blocked until artifact framework hydration succeeds", () => {
+  assert.equal(canSubmitAfterArtifactHydration("checking"), false);
+  assert.equal(canSubmitAfterArtifactHydration("loading"), false);
+  assert.equal(canSubmitAfterArtifactHydration("error"), false);
+  assert.equal(canSubmitAfterArtifactHydration("ready"), true);
+  assert.equal(canSubmitAfterArtifactHydration("idle"), true);
 });

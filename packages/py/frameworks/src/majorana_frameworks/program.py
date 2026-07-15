@@ -80,14 +80,14 @@ class FrameworkProgram:
             observation=observation,
         )
 
-    def trusted_epilogue(self, result_path: str, *, circuit_expected: bool) -> str:
-        """Build provider-owned Qiskit→OpenQASM observation code.
+    def trusted_observer(self, *, circuit_expected: bool) -> str:
+        """Build provider-owned SDK observation code.
 
         Cirq and PennyLane remain valid framework-native programs without OpenQASM.
         Their future converters belong behind this boundary rather than in the worker.
         """
-        return adapter_for(self.framework).trusted_epilogue(
-            self.source, result_path, circuit_expected=circuit_expected
+        return adapter_for(self.framework).trusted_observer(
+            self.source, circuit_expected=circuit_expected
         )
 
 

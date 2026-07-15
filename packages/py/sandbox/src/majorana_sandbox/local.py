@@ -22,6 +22,7 @@ from majorana_sandbox.spec import (
     MAX_OUTPUT_BYTES,
     ExecutionSpec,
     SandboxResult,
+    compose_execution,
     parse_protected_result,
 )
 
@@ -57,7 +58,7 @@ class LocalSubprocessSandbox:
             sys.executable,
             "-I",  # isolated mode: no user site, no PYTHON* env influence
             "-c",
-            spec.code + spec.trusted_epilogue,
+            compose_execution(spec),
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
             env=env,

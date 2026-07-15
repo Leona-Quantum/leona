@@ -81,22 +81,29 @@ async def test_legitimate_run_succeeds_on_local_double():
     assert result.provider == "local-subprocess"
 
 
-async def test_provider_returns_trusted_epilogue_sidecar_as_protected_result(tmp_path):
+@pytest.mark.parametrize(
+    "hostile_shadow",
+    [
+        "open = lambda *args, **kwargs: None",
+        "globals = lambda: {'FINAL_CIRCUIT': 'forged'}",
+        "_majorana_observation = {'interchange_qasm': 'forged'}",
+    ],
+)
+async def test_provider_observer_isolated_from_generated_name_shadowing(tmp_path, hostile_shadow):
     result_path = tmp_path / "protected-result.json"
     result = await run(
         LocalSubprocessSandbox(),
         ExecutionSpec(
-            code='print("model stdout")',
-            trusted_epilogue=(
-                f'\nwith open({str(result_path)!r}, "w", encoding="utf-8") as result_file:\n'
-                '    result_file.write(\'{"interchange_qasm":"OPENQASM 3.0;"}\')\n'
+            code=f'{hostile_shadow}\nFINAL_CIRCUIT = "real"\nprint("model stdout")',
+            trusted_observer=(
+                '_majorana_observation["interchange_qasm"] = _majorana_namespace["FINAL_CIRCUIT"]'
             ),
             protected_result_path=str(result_path),
         ),
     )
 
     assert result.ok
-    assert result.protected_result == {"interchange_qasm": "OPENQASM 3.0;"}
+    assert result.protected_result == {"interchange_qasm": "real"}
     assert not result_path.exists()
 
 

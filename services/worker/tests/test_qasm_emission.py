@@ -10,6 +10,7 @@ import pytest
 from majorana_contracts.enums import Framework
 from majorana_frameworks import FrameworkProgram, extract_interchange_qasm
 from majorana_sandbox.guard import check_python_code
+from majorana_sandbox.spec import ExecutionSpec, compose_execution
 
 from majorana_worker.stage_handlers import (
     _parse_result_dict,
@@ -29,21 +30,38 @@ def test_owned_qiskit_epilogue_returns_protected_final_circuit(monkeypatch, caps
     expected_qasm = "OPENQASM 3.0;\nqubit q;\nh q;"
     _install_fake_qiskit(monkeypatch, lambda circuit: expected_qasm)
     code = """import json
-FINAL_CIRCUIT = object()
+class Instruction:
+    qubits = (0, 1)
+class Circuit:
+    num_qubits = 2
+    data = [Instruction()]
+    def count_ops(self): return {"custom_entangler": 1, "measure": 2}
+    def depth(self): return 3
+FINAL_CIRCUIT = Circuit()
 print(json.dumps({"counts": {"0": 1}}))
 """
 
     program = FrameworkProgram(Framework.QISKIT, code)
     result_path = tmp_path / "observation.json"
-    epilogue = program.trusted_epilogue(str(result_path), circuit_expected=True)
     assert check_python_code(program.source).ok
-    exec(program.source + epilogue, {})
+    exec(
+        compose_execution(
+            ExecutionSpec(
+                code=program.source,
+                trusted_observer=program.trusted_observer(circuit_expected=True),
+                protected_result_path=str(result_path),
+            )
+        ),
+        {},
+    )
 
     stdout = capsys.readouterr().out
     assert _parse_result_dict(stdout) == {"counts": {"0": 1}}
-    extraction = extract_interchange_qasm(json.loads(result_path.read_text()))
+    protected_result = json.loads(result_path.read_text())
+    extraction = extract_interchange_qasm(protected_result)
     assert extraction.source == "sandbox_epilogue"
     assert extraction.qasm == expected_qasm
+    assert protected_result["resource_metrics"]["two_qubit_gate_count"] == 1
 
 
 def test_owned_epilogue_records_serialization_error_without_trusting_model_stdout(
@@ -61,7 +79,16 @@ print(json.dumps({"counts": {"1": 1}}))
 
     program = FrameworkProgram(Framework.QISKIT, code)
     result_path = tmp_path / "observation.json"
-    exec(program.source + program.trusted_epilogue(str(result_path), circuit_expected=True), {})
+    exec(
+        compose_execution(
+            ExecutionSpec(
+                code=program.source,
+                trusted_observer=program.trusted_observer(circuit_expected=True),
+                protected_result_path=str(result_path),
+            )
+        ),
+        {},
+    )
 
     extraction = extract_interchange_qasm(json.loads(result_path.read_text()))
     assert extraction.source == "missing"
@@ -73,6 +100,7 @@ def test_owned_epilogue_serializes_a_real_qiskit_circuit_when_available(capsys, 
     qiskit = pytest.importorskip("qiskit")
     quantum_circuit = qiskit.QuantumCircuit
     code = """import json
+from qiskit import QuantumCircuit
 FINAL_CIRCUIT = QuantumCircuit(1)
 FINAL_CIRCUIT.h(0)
 print(json.dumps({"counts": {"0": 1}}))
@@ -80,9 +108,16 @@ print(json.dumps({"counts": {"0": 1}}))
 
     program = FrameworkProgram(Framework.QISKIT, code)
     result_path = tmp_path / "observation.json"
+    assert quantum_circuit is not None
     exec(
-        program.source + program.trusted_epilogue(str(result_path), circuit_expected=True),
-        {"QuantumCircuit": quantum_circuit},
+        compose_execution(
+            ExecutionSpec(
+                code=program.source,
+                trusted_observer=program.trusted_observer(circuit_expected=True),
+                protected_result_path=str(result_path),
+            )
+        ),
+        {},
     )
 
     extraction = extract_interchange_qasm(json.loads(result_path.read_text()))

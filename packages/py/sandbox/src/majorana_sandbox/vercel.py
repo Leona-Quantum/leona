@@ -20,6 +20,7 @@ from majorana_sandbox.spec import (
     MAX_OUTPUT_BYTES,
     ExecutionSpec,
     SandboxResult,
+    compose_execution,
     parse_protected_result,
 )
 
@@ -77,7 +78,7 @@ class VercelSandbox:
                 [
                     {
                         "path": f"{_RUN_DIR}/main.py",
-                        "content": (spec.code + spec.trusted_epilogue).encode("utf-8"),
+                        "content": compose_execution(spec).encode("utf-8"),
                     }
                 ]
             )

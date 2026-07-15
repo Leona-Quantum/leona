@@ -1,5 +1,11 @@
 import type { ComposerFramework } from "../components/run-composer";
 
+export type ArtifactFrameworkHydration = "checking" | "idle" | "loading" | "ready" | "error";
+
+export function canSubmitAfterArtifactHydration(state: ArtifactFrameworkHydration): boolean {
+  return state === "idle" || state === "ready";
+}
+
 export function frameworkValue(value: string): ComposerFramework | null {
   const normalized = value.toLowerCase();
   if (normalized === "qiskit" || normalized === "cirq" || normalized === "pennylane") {

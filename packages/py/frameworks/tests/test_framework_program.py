@@ -1,5 +1,3 @@
-import json
-
 from majorana_contracts.enums import Framework
 from majorana_frameworks import FrameworkProgram, extract_interchange_qasm
 
@@ -62,7 +60,7 @@ def test_resource_metrics_follow_selected_framework_syntax():
     assert metrics.estimated_runtime_ms == 3000
 
 
-def test_qiskit_interchange_is_optional_observation(tmp_path, monkeypatch):
+def test_qiskit_interchange_is_optional_observation(monkeypatch):
     import sys
     from types import ModuleType
 
@@ -76,11 +74,15 @@ def test_qiskit_interchange_is_optional_observation(tmp_path, monkeypatch):
         Framework.QISKIT,
         'FINAL_CIRCUIT = object()\nprint("native result")\n',
     )
-    result_path = tmp_path / "observation.json"
-    epilogue = program.trusted_epilogue(str(result_path), circuit_expected=True)
-    exec(program.source + epilogue, {})
+    namespace = {}
+    exec(program.source, namespace)
+    observation = {}
+    exec(
+        program.trusted_observer(circuit_expected=True),
+        {"_majorana_namespace": namespace, "_majorana_observation": observation},
+    )
 
-    extraction = extract_interchange_qasm(json.loads(result_path.read_text()))
+    extraction = extract_interchange_qasm(observation)
     assert extraction.source == "sandbox_epilogue"
     assert extraction.qasm == "OPENQASM 3.0;\nqubit q;"
 
@@ -88,11 +90,11 @@ def test_qiskit_interchange_is_optional_observation(tmp_path, monkeypatch):
 def test_non_qiskit_program_is_not_forced_through_openqasm():
     program = FrameworkProgram(Framework.PENNYLANE, "FINAL_CIRCUIT = object()\n")
 
-    assert program.trusted_epilogue("/tmp/unused", circuit_expected=False) == ""
+    assert program.trusted_observer(circuit_expected=False) == ""
     assert extract_interchange_qasm(None).qasm is None
 
 
-def test_cirq_metrics_are_observed_from_final_sandbox_object(tmp_path):
+def test_cirq_metrics_are_observed_from_final_sandbox_object():
     class Operation:
         def __init__(self, *qubits):
             self.qubits = qubits
@@ -108,18 +110,46 @@ def test_cirq_metrics_are_observed_from_final_sandbox_object(tmp_path):
             return 2
 
     program = FrameworkProgram(Framework.CIRQ, "FINAL_CIRCUIT = circuit\n")
-    result_path = tmp_path / "cirq-observation.json"
+    namespace = {"circuit": FakeCircuit()}
+    exec(program.source, namespace)
+    observation = {}
     exec(
-        program.source + program.trusted_epilogue(str(result_path), circuit_expected=True),
-        {"circuit": FakeCircuit()},
+        program.trusted_observer(circuit_expected=True),
+        {"_majorana_namespace": namespace, "_majorana_observation": observation},
     )
-    observation = json.loads(result_path.read_text())
 
     metrics = program.resource_metrics(qubits=99, expected_runtime_sec=1, observation=observation)
     assert metrics.qubits == 2
     assert metrics.depth == 2
     assert metrics.gate_count == 2
     assert metrics.two_qubit_gate_count == 1
+
+
+def test_pennylane_measurements_are_not_counted_as_gates():
+    class Operation:
+        wires = (0, 1)
+
+    class ExpectationMP:
+        wires = (0,)
+
+    class Tape:
+        operations = [Operation()]
+        measurements = [ExpectationMP()]
+        wires = (0, 1)
+
+    program = FrameworkProgram(Framework.PENNYLANE, "FINAL_CIRCUIT = tape\n")
+    namespace = {"tape": Tape()}
+    exec(program.source, namespace)
+    observation = {}
+    exec(
+        program.trusted_observer(circuit_expected=True),
+        {"_majorana_namespace": namespace, "_majorana_observation": observation},
+    )
+
+    metrics = program.resource_metrics(qubits=99, expected_runtime_sec=1, observation=observation)
+    assert metrics.gate_count == 1
+    assert metrics.two_qubit_gate_count == 1
+    assert metrics.measurement_count == 1
 
 
 def test_model_stdout_cannot_forge_interchange():

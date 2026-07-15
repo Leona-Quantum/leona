@@ -322,15 +322,13 @@ def build_stage_handlers(
         retry_from = Stage.GENERATE
         program: FrameworkProgram = ctx.state[program_key]
         protected_result_path = f"/tmp/.majorana-observation-{uuid.uuid4().hex}.json"
-        trusted_epilogue = program.trusted_epilogue(
-            protected_result_path, circuit_expected=_circuit_expected(plan)
-        )
-        epilogue_applied = bool(trusted_epilogue)
+        trusted_observer = program.trusted_observer(circuit_expected=_circuit_expected(plan))
+        epilogue_applied = bool(trusted_observer)
         spec = ExecutionSpec(
             code=program.source,
             timeout_s=min(plan.expected_runtime_sec, 120),
             qubits_estimate=plan.qubits_estimate,
-            trusted_epilogue=trusted_epilogue,
+            trusted_observer=trusted_observer,
             protected_result_path=protected_result_path if epilogue_applied else None,
         )
         try:

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import ast
-import json
 from dataclasses import dataclass
 from typing import Any, Literal, Protocol
 
@@ -41,7 +40,7 @@ class FrameworkAdapter(Protocol):
         observation: dict[str, Any] | None = None,
     ) -> ResourceMetrics: ...
 
-    def trusted_epilogue(self, source: str, result_path: str, *, circuit_expected: bool) -> str: ...
+    def trusted_observer(self, source: str, *, circuit_expected: bool) -> str: ...
 
 
 def _syntax(source: str) -> ast.Module | None:
@@ -149,60 +148,56 @@ class PythonFrameworkAdapter:
             estimated_runtime_ms=expected_runtime_sec * 1000,
         )
 
-    def trusted_epilogue(self, source: str, result_path: str, *, circuit_expected: bool) -> str:
+    def trusted_observer(self, source: str, *, circuit_expected: bool) -> str:
         if not circuit_expected:
             return ""
         optimized = any(name in self.optimization_calls for name in _calls(source))
-        path_literal = json.dumps(result_path)
         optimized_literal = "True" if optimized else "False"
         return f"""
-
-# Majorana-owned observation runs after generated source. SDK objects stay inside the
-# sandbox; only primitive metrics cross the provider-owned sidecar boundary.
-_majorana_observation = {{"native_optimization": {{"applied": {optimized_literal}}}}}
-_majorana_final_circuit = globals().get("FINAL_CIRCUIT")
+_majorana_observation["native_optimization"] = {{"applied": {optimized_literal}}}
+_majorana_final_circuit = _majorana_namespace.get("FINAL_CIRCUIT")
 if _majorana_final_circuit is not None:
     try:
         if hasattr(_majorana_final_circuit, "all_operations"):
             _majorana_operations = list(_majorana_final_circuit.all_operations())
+            _majorana_measurements = [
+                op
+                for op in _majorana_operations
+                if "measure" in type(getattr(op, "gate", op)).__name__.lower()
+            ]
+            _majorana_gate_operations = [
+                op for op in _majorana_operations if op not in _majorana_measurements
+            ]
             _majorana_qubits = len(_majorana_final_circuit.all_qubits())
             _majorana_depth = len(_majorana_final_circuit)
         else:
             _majorana_tape = getattr(_majorana_final_circuit, "tape", None) or getattr(_majorana_final_circuit, "_tape", None) or _majorana_final_circuit
             _majorana_operations = list(getattr(_majorana_tape, "operations", []))
             _majorana_measurements = list(getattr(_majorana_tape, "measurements", []))
-            _majorana_operations.extend(_majorana_measurements)
+            _majorana_gate_operations = _majorana_operations
             _majorana_qubits = len(getattr(_majorana_tape, "wires", []))
             _majorana_depth = None
-        _majorana_measurement_count = sum("measure" in type(getattr(op, "gate", op)).__name__.lower() for op in _majorana_operations)
         _majorana_observation["resource_metrics"] = {{
             "qubits": _majorana_qubits,
             "depth": _majorana_depth,
-            "gate_count": len(_majorana_operations) - _majorana_measurement_count,
-            "two_qubit_gate_count": sum(len(getattr(op, "qubits", getattr(op, "wires", []))) == 2 and "measure" not in type(getattr(op, "gate", op)).__name__.lower() for op in _majorana_operations),
-            "measurement_count": _majorana_measurement_count,
+            "gate_count": len(_majorana_gate_operations),
+            "two_qubit_gate_count": sum(len(getattr(op, "qubits", getattr(op, "wires", []))) == 2 for op in _majorana_gate_operations),
+            "measurement_count": len(_majorana_measurements),
         }}
     except Exception:
         pass
-import json as _majorana_json
-with open({path_literal}, "w", encoding="utf-8") as _majorana_result_file:
-    _majorana_json.dump(_majorana_observation, _majorana_result_file)
 """
 
 
 class QiskitAdapter(PythonFrameworkAdapter):
-    def trusted_epilogue(self, source: str, result_path: str, *, circuit_expected: bool) -> str:
+    def trusted_observer(self, source: str, *, circuit_expected: bool) -> str:
         if not circuit_expected:
             return ""
         optimized = any(name in self.optimization_calls for name in _calls(source))
-        path_literal = json.dumps(result_path)
         optimized_literal = "True" if optimized else "False"
         return f"""
-
-# Majorana-owned observation runs after generated source. Providers read this sidecar
-# into SandboxResult.protected_result; generated stdout is never used as provenance.
-_majorana_observation = {{"native_optimization": {{"applied": {optimized_literal}}}}}
-_majorana_final_circuit = globals().get("FINAL_CIRCUIT")
+_majorana_observation["native_optimization"] = {{"applied": {optimized_literal}}}
+_majorana_final_circuit = _majorana_namespace.get("FINAL_CIRCUIT")
 if _majorana_final_circuit is not None:
     try:
         from qiskit.qasm3 import dumps as _majorana_interchange_dumps
@@ -211,18 +206,20 @@ if _majorana_final_circuit is not None:
         _majorana_observation["interchange_error"] = type(_majorana_interchange_exc).__name__
     try:
         _majorana_ops = {{str(k): int(v) for k, v in _majorana_final_circuit.count_ops().items()}}
+        _majorana_two_qubit_count = sum(
+            1
+            for instruction in _majorana_final_circuit.data
+            if len(instruction.qubits) == 2
+        )
         _majorana_observation["resource_metrics"] = {{
             "qubits": int(_majorana_final_circuit.num_qubits),
             "depth": int(_majorana_final_circuit.depth()),
             "gate_count": sum(v for k, v in _majorana_ops.items() if k not in {{"measure"}}),
-            "two_qubit_gate_count": sum(v for k, v in _majorana_ops.items() if k in {{"cx", "cz", "swap", "cp"}}),
+            "two_qubit_gate_count": _majorana_two_qubit_count,
             "measurement_count": _majorana_ops.get("measure", 0),
         }}
     except Exception:
         pass
-import json as _majorana_json
-with open({path_literal}, "w", encoding="utf-8") as _majorana_result_file:
-    _majorana_json.dump(_majorana_observation, _majorana_result_file)
 """
 
 
