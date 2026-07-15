@@ -30,7 +30,11 @@ def _load_circuit(source: str) -> QuantumCircuit:
     """Parse OpenQASM 2/3 using Qiskit's maintained importers."""
     try:
         if detect_version(source) == "2.0":
-            return qasm2.loads(source, strict=True)
+            return qasm2.loads(
+                source,
+                strict=True,
+                custom_instructions=qasm2.LEGACY_CUSTOM_INSTRUCTIONS,
+            )
         return qasm3.loads(source)
     except Exception as exc:
         raise OpenQASMError(str(exc)) from exc
