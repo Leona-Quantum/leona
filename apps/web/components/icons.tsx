@@ -81,6 +81,10 @@ export function PaperclipIcon(props: IconProps) {
   return <Icon {...props}><path d="m6 8.5 3.4-3.4a2.1 2.1 0 0 1 3 3L7.5 13A3.2 3.2 0 0 1 3 8.5l4.9-4.9" /></Icon>;
 }
 
+export function StarIcon({ filled = false, ...props }: IconProps & { filled?: boolean }) {
+  return <Icon {...props} fill={filled ? "currentColor" : "none"}><path d="m8 2.25 1.78 3.61 3.97.58-2.87 2.8.68 3.96L8 11.33l-3.56 1.87.68-3.96-2.87-2.8 3.97-.58z" /></Icon>;
+}
+
 /* Brand mark: Dirac ket notation — |ψ⟩ — reduced to a bar, a chevron, and the
  * state between them. The state is the Leo "sickle" asterism (the lion's-head
  * star pattern; Leona = lioness), with Regulus as the bright state-dot and the

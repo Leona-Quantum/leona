@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import {
   entryVerificationMethods,
   PUBLIC_REPOSITORY_CATEGORIES,
@@ -10,6 +10,8 @@ import {
 } from "../../lib/public-repository";
 import type { PublicLocale } from "../../lib/public-locale";
 import { VerificationTierBadge } from "../../components/repository-verification";
+import { StarIcon } from "../../components/icons";
+import { loadStarredRepositorySlugs, toggleRepositoryStar } from "../../lib/repository-stars";
 import { RepositoryExportAction } from "./repository-export";
 
 const COPY = {
@@ -23,6 +25,9 @@ const COPY = {
     entry: "entry",
     entries: "entries",
     view: "View",
+    star: "Star",
+    unstar: "Unstar",
+    starNote: "Repository stars stay in this public list. Saving an entry to Library starts an unstarred private copy.",
     emptyTitle: "No entries match those filters.",
     emptyBody: "Try a broader search or return to the full reference set.",
     clear: "Clear filters",
@@ -37,6 +42,9 @@ const COPY = {
     entry: "件",
     entries: "件",
     view: "詳細",
+    star: "スターを付ける",
+    unstar: "スターを外す",
+    starNote: "公開リポジトリのスターはこの一覧に保存されます。Libraryに保存すると、非公開コピーは未スターで始まります。",
     emptyTitle: "条件に一致するエントリがありません。",
     emptyBody: "検索範囲を広げるか、すべての参照セットに戻してください。",
     clear: "条件をクリア",
@@ -96,6 +104,24 @@ export function RepositoryBrowser({
   const [category, setCategory] = useState<"all" | PublicRepositoryCategory>("all");
   const [family, setFamily] = useState<string>("");
   const [framework, setFramework] = useState<string>("");
+  const [starredSlugs, setStarredSlugs] = useState<Set<string>>(new Set());
+
+  useEffect(() => {
+    setStarredSlugs(loadStarredRepositorySlugs());
+    const handleRepositoryStarChange = () => setStarredSlugs(loadStarredRepositorySlugs());
+    window.addEventListener("majorana:repository-stars", handleRepositoryStarChange);
+    return () => window.removeEventListener("majorana:repository-stars", handleRepositoryStarChange);
+  }, []);
+
+  function handleStar(slug: string) {
+    const starred = toggleRepositoryStar(slug);
+    setStarredSlugs((current) => {
+      const next = new Set(current);
+      if (starred) next.add(slug);
+      else next.delete(slug);
+      return next;
+    });
+  }
 
   const families = useMemo(() => Array.from(new Set(entries.map((entry) => entry.algorithmFamily))).sort(), [entries]);
   const filteredEntries = useMemo(() => {
@@ -173,6 +199,7 @@ export function RepositoryBrowser({
       <p className="mj-repository-result-count" aria-live="polite">
         {locale === "ja" ? `${filteredEntries.length}${copy.entries}` : `${filteredEntries.length} public ${filteredEntries.length === 1 ? copy.entry : copy.entries}`}
       </p>
+      <p className="mj-repository-star-note">{copy.starNote}</p>
 
       {filteredEntries.length ? (
         <div className="mj-repo-list">
@@ -196,6 +223,10 @@ export function RepositoryBrowser({
                     {entry.tags.slice(0, 3).map((tag) => <span key={tag}>{tag}</span>)}
                   </div>
                   <div className="mj-repo-card-links">
+                    <button className={`mj-star-toggle${starredSlugs.has(entry.slug) ? " is-starred" : ""}`} type="button" aria-pressed={starredSlugs.has(entry.slug)} title={starredSlugs.has(entry.slug) ? copy.unstar : copy.star} onClick={() => handleStar(entry.slug)}>
+                      <StarIcon size={14} filled={starredSlugs.has(entry.slug)} />
+                      {starredSlugs.has(entry.slug) ? copy.unstar : copy.star}
+                    </button>
                     <RepositoryExportAction slug={entry.slug} title={title} isSignedIn={isSignedIn} signInHref={signInHref} locale={locale} />
                     <a className="mj-text-link" href={`/repository/${entry.slug}`}>{copy.view} ↗</a>
                   </div>

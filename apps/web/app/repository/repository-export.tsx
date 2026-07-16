@@ -15,6 +15,7 @@ const COPY: Record<PublicLocale, {
   unavailable: string;
   contact: string;
   error: string;
+  starBoundary: string;
 }> = {
   en: {
     adding: "Adding…",
@@ -28,6 +29,7 @@ const COPY: Record<PublicLocale, {
     unavailable: "Authentication is not configured in this environment yet. Contact us to request access.",
     contact: "Contact Leona Quantum ↗",
     error: "The entry could not be added to your Library.",
+    starBoundary: "This public Repository star is not copied into Library; the private copy starts unstarred.",
   },
   ja: {
     adding: "追加中…",
@@ -41,6 +43,7 @@ const COPY: Record<PublicLocale, {
     unavailable: "この環境では認証がまだ設定されていません。アクセスを申請するにはお問い合わせください。",
     contact: "Leona Quantumに連絡 ↗",
     error: "エントリをLibraryに追加できませんでした。",
+    starBoundary: "公開リポジトリのスターはLibraryにはコピーされません。非公開コピーは未スターで始まります。",
   },
 };
 
@@ -109,6 +112,7 @@ export function RepositoryExportAction({
             <p>
               {title} {copy.body}
             </p>
+            <p className="mj-repository-dialog-note">{copy.starBoundary}</p>
             {signInHref ? (
               <a className="mj-primary-button" href={signInHref}>{copy.signIn}</a>
             ) : (

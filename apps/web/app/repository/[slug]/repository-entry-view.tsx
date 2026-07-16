@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { SyntaxHighlightedCode } from "@majorana/ui";
 import {
   entryVerificationMethods,
@@ -12,7 +12,9 @@ import {
 } from "../../../lib/public-repository";
 import type { PublicLocale } from "../../../lib/public-locale";
 import { MarkdownContent } from "../../../components/chat-markdown";
+import { StarIcon } from "../../../components/icons";
 import { VerificationMethodChips, VerificationTierBadge } from "../../../components/repository-verification";
+import { loadStarredRepositorySlugs, toggleRepositoryStar } from "../../../lib/repository-stars";
 import { RepositoryExportAction } from "../repository-export";
 
 const COPY = {
@@ -26,6 +28,9 @@ const COPY = {
     copy: "Copy code",
     copied: "Copied",
     request: "Request a conversion",
+    star: "Star",
+    unstar: "Unstar",
+    starNote: "Repository stars stay in the public catalog. Saving this entry to Library starts an unstarred private copy.",
     resources: "Facts",
     verification: "Verification",
     method: "Method",
@@ -55,6 +60,9 @@ const COPY = {
     copy: "コードをコピー",
     copied: "コピー済み",
     request: "変換をリクエスト",
+    star: "スターを付ける",
+    unstar: "スターを外す",
+    starNote: "公開リポジトリのスターは公開カタログに保存されます。このエントリをLibraryに保存すると、非公開コピーは未スターで始まります。",
     resources: "基本情報",
     verification: "検証",
     method: "方法",
@@ -151,6 +159,7 @@ export function RepositoryEntryView({
   const copy = COPY[locale];
   const [framework, setFramework] = useState<PublicRepositoryFramework>(entry.framework);
   const [copied, setCopied] = useState(false);
+  const [starred, setStarred] = useState(false);
   const variant = useMemo(() => getPublicRepositoryVariant(entry, framework), [entry, framework]);
   const methods = entryVerificationMethods(entry);
   const title = locale === "ja" ? entry.titleJa : entry.title;
@@ -159,6 +168,14 @@ export function RepositoryEntryView({
   const explanation = locale === "ja"
     ? entry.explanationMdJa ?? entry.explanationJa
     : entry.explanationMd ?? entry.explanation;
+
+  useEffect(() => {
+    setStarred(loadStarredRepositorySlugs().has(entry.slug));
+  }, [entry.slug]);
+
+  function handleStar() {
+    setStarred(toggleRepositoryStar(entry.slug));
+  }
 
   async function copyCode() {
     if (!variant.code) return;
@@ -183,8 +200,13 @@ export function RepositoryEntryView({
           <div className="mj-repository-tags" aria-label={locale === "ja" ? "タグ" : "Tags"}>
             {entry.tags.map((tag) => <span key={tag}>{tag}</span>)}
           </div>
+          <button className={`mj-star-toggle${starred ? " is-starred" : ""}`} type="button" aria-pressed={starred} title={starred ? copy.unstar : copy.star} onClick={handleStar}>
+            <StarIcon size={14} filled={starred} />
+            {starred ? copy.unstar : copy.star}
+          </button>
           <RepositoryExportAction slug={entry.slug} title={title} isSignedIn={isSignedIn} signInHref={signInHref} locale={locale} />
         </div>
+        <p className="mj-repository-star-note">{copy.starNote}</p>
       </section>
 
       <div className="mj-repository-detail-layout">

@@ -25,6 +25,7 @@ export interface LibraryArtifact {
 
 const STORAGE_KEY = "majorana.library.v1";
 const DELETED_STORAGE_KEY = "majorana.deleted-artifacts.v1";
+const STARRED_STORAGE_KEY = "majorana.library-stars.v1";
 export const ARTIFACT_ARCHIVE_RETENTION_DAYS = 14;
 const LIBRARY_EVENT = "majorana:library";
 const DEMO_ARTIFACT_IDS = new Set([
@@ -158,6 +159,33 @@ function loadDeletedIds(): Set<string> {
 
 function persistDeletedIds(ids: Set<string>): void {
   if (canUseStorage()) window.localStorage.setItem(DELETED_STORAGE_KEY, JSON.stringify([...ids]));
+}
+
+function loadStarredIds(): Set<string> {
+  if (!canUseStorage()) return new Set();
+  try {
+    const parsed = JSON.parse(window.localStorage.getItem(STARRED_STORAGE_KEY) ?? "[]") as unknown;
+    return new Set(Array.isArray(parsed) ? parsed.filter((value): value is string => typeof value === "string") : []);
+  } catch {
+    return new Set();
+  }
+}
+
+export function loadStarredLibraryArtifactIds(): Set<string> {
+  return loadStarredIds();
+}
+
+export function isLibraryArtifactStarred(id: string): boolean {
+  return loadStarredIds().has(id);
+}
+
+export function toggleLibraryArtifactStar(id: string): boolean {
+  const starred = loadStarredIds();
+  if (starred.has(id)) starred.delete(id);
+  else starred.add(id);
+  if (canUseStorage()) window.localStorage.setItem(STARRED_STORAGE_KEY, JSON.stringify([...starred]));
+  emitChange();
+  return starred.has(id);
 }
 
 export function loadLibraryArtifacts({ includeDemo = false, includeArchived = false }: { includeDemo?: boolean; includeArchived?: boolean } = {}): LibraryArtifact[] {
