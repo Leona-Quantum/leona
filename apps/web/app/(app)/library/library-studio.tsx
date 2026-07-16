@@ -6,10 +6,12 @@ import {
   deleteArtifact,
   getLibraryArtifact,
   loadLibraryArtifacts,
+  loadStarredLibraryArtifactIds,
+  toggleLibraryArtifactStar,
   type LibraryArtifact,
   type LibraryStatus,
 } from "../../../lib/library-data";
-import { LibraryIcon, MoreIcon, SearchIcon } from "../../../components/icons";
+import { LibraryIcon, MoreIcon, SearchIcon, StarIcon } from "../../../components/icons";
 import type { PublicLocale } from "../../../lib/public-locale";
 import { WORKSPACE_COPY } from "../../../lib/workspace-locale";
 
@@ -20,6 +22,7 @@ export function LibraryStudio({ demoMode = false, locale = "en" }: { demoMode?: 
   const [framework, setFramework] = useState("all");
   const [status, setStatus] = useState<"all" | LibraryStatus>("all");
   const [deleteTarget, setDeleteTarget] = useState<LibraryArtifact | null>(null);
+  const [starredIds, setStarredIds] = useState<Set<string>>(new Set());
 
   function refreshArtifacts() {
     setArtifacts(loadLibraryArtifacts({ includeDemo: demoMode }));
@@ -37,10 +40,29 @@ export function LibraryStudio({ demoMode = false, locale = "en" }: { demoMode?: 
     refreshArtifacts();
   }
 
+  function handleStar(id: string) {
+    const starred = toggleLibraryArtifactStar(id);
+    setStarredIds((current) => {
+      const next = new Set(current);
+      if (starred) next.add(id);
+      else next.delete(id);
+      return next;
+    });
+  }
+
   useEffect(() => {
     let active = true;
     setArtifacts(loadLibraryArtifacts({ includeDemo: demoMode }));
-    if (demoMode) return;
+    setStarredIds(loadStarredLibraryArtifactIds());
+    const handleLibraryChange = () => {
+      if (!active) return;
+      setStarredIds(loadStarredLibraryArtifactIds());
+    };
+    window.addEventListener("majorana:library", handleLibraryChange);
+    if (demoMode) return () => {
+      active = false;
+      window.removeEventListener("majorana:library", handleLibraryChange);
+    };
     void fetch("/api/artifacts", { cache: "no-store" })
       .then(async (response) => {
         if (!response.ok) throw new Error("Artifact API unavailable");
@@ -58,6 +80,7 @@ export function LibraryStudio({ demoMode = false, locale = "en" }: { demoMode?: 
       });
     return () => {
       active = false;
+      window.removeEventListener("majorana:library", handleLibraryChange);
     };
   }, [demoMode]);
 
@@ -103,6 +126,8 @@ export function LibraryStudio({ demoMode = false, locale = "en" }: { demoMode?: 
             </div>
           </header>
 
+          <p className="mj-library-star-note">{copy.starBoundary}</p>
+
           <section className="mj-library-toolbar" aria-label={copy.filterArtifacts}>
             <label className="mj-library-search">
               <SearchIcon size={16} />
@@ -141,7 +166,7 @@ export function LibraryStudio({ demoMode = false, locale = "en" }: { demoMode?: 
                 <span role="columnheader">{locale === "ja" ? "更新" : "Updated"}</span>
                 <span aria-hidden="true" />
               </div>
-              {filtered.length ? filtered.map((artifact) => <ArtifactRow artifact={artifact} demoMode={demoMode} locale={locale} onArchive={handleArchive} onDelete={setDeleteTarget} key={artifact.id} />) : (
+              {filtered.length ? filtered.map((artifact) => <ArtifactRow artifact={artifact} demoMode={demoMode} locale={locale} starred={starredIds.has(artifact.id)} onToggleStar={handleStar} onArchive={handleArchive} onDelete={setDeleteTarget} key={artifact.id} />) : (
                 <div className="mj-library-empty" role="row">
                   <strong>{copy.noMatch}</strong>
                   <span>{copy.noMatchBody}</span>
@@ -171,17 +196,21 @@ export function LibraryStudio({ demoMode = false, locale = "en" }: { demoMode?: 
   );
 }
 
-function ArtifactRow({ artifact, demoMode, locale, onArchive, onDelete }: { artifact: LibraryArtifact; demoMode: boolean; locale: PublicLocale; onArchive: (artifact: LibraryArtifact) => void; onDelete: (artifact: LibraryArtifact) => void }) {
+function ArtifactRow({ artifact, demoMode, locale, starred, onToggleStar, onArchive, onDelete }: { artifact: LibraryArtifact; demoMode: boolean; locale: PublicLocale; starred: boolean; onToggleStar: (id: string) => void; onArchive: (artifact: LibraryArtifact) => void; onDelete: (artifact: LibraryArtifact) => void }) {
   const copy = WORKSPACE_COPY[locale].library;
   return (
     <div className="mj-library-row mj-library-row--artifact" role="row">
-      <a className="mj-library-name-cell" href={demoMode ? "/demo?view=library" : `/library/${artifact.id}`} role="cell">
-        <span className="mj-library-star" aria-hidden="true">☆</span>
-        <span>
+      <div className="mj-library-name-cell" role="cell">
+        <button className={`mj-star-toggle mj-star-toggle--icon${starred ? " is-starred" : ""}`} type="button" aria-label={starred ? copy.unstar : copy.star} aria-pressed={starred} title={starred ? copy.unstar : copy.star} onClick={() => onToggleStar(artifact.id)}>
+          <StarIcon size={16} filled={starred} />
+        </button>
+        <a href={demoMode ? "/demo?view=library" : `/library/${artifact.id}`}>
+          <span>
           <strong>{artifact.title}</strong>
           <small>{artifact.family} · {artifact.tags.slice(0, 2).join(" · ")}</small>
-        </span>
-      </a>
+          </span>
+        </a>
+      </div>
       <span role="cell" className="mj-library-mono">{artifact.framework}</span>
       <span role="cell"><StatusLabel status={artifact.status} locale={locale} /></span>
       <span role="cell" className="mj-library-date">{formatDate(artifact.updatedAt, locale, copy.unknown)}</span>

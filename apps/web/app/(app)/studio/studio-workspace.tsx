@@ -1,10 +1,11 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, type KeyboardEvent, type MouseEvent } from "react";
 import { CheckIcon, CopyIcon, SearchIcon } from "../../../components/icons";
 import type { ComposerFramework } from "../../../components/run-composer";
 import { frameworkVariantsFromRemote, getLibraryArtifact, loadLibraryArtifacts, type LibraryArtifact } from "../../../lib/library-data";
 import type { PublicLocale } from "../../../lib/public-locale";
+import { BUILDER_GATES, builderStepLabel, createBuilderStepId, generateBuilderCode, ROTATION_GATES, TWO_QUBIT_GATES, type BuilderGate, type BuilderStep, type CustomGateDefinition } from "../../../lib/studio-builder";
 import { WORKSPACE_COPY } from "../../../lib/workspace-locale";
 
 type StudioPanel = "canvas" | "code" | "versions";
@@ -205,19 +206,18 @@ export function StudioWorkspace({ artifactId, newDraft = false, locale = "en" }:
                 ))}
               </nav>
 
-              {panel === "canvas" ? (
-                <CircuitBuilder
-                  framework={framework}
-                  selectedGate={selectedGate}
-                  onSelectGate={setSelectedGate}
-                  copy={copy}
-                  onApply={(codes) => {
-                    setDrafts(codes);
-                    setCode(codes[framework]);
-                    setMessage(copy.appliedToCode);
-                  }}
-                />
-              ) : null}
+              <CircuitBuilder
+                framework={framework}
+                selectedGate={selectedGate}
+                onSelectGate={setSelectedGate}
+                hidden={panel !== "canvas"}
+                copy={copy}
+                onApply={(codes) => {
+                  setDrafts(codes);
+                  setCode(codes[framework]);
+                  setMessage(copy.appliedToCode);
+                }}
+              />
               {panel === "code" ? <CodeEditor code={code} framework={framework} onChange={setCode} onCopy={() => void copyCode()} copied={copied} copy={copy} /> : null}
               {panel === "versions" ? <VersionPanel artifact={artifact} runId={runId} copy={copy} /> : null}
 
@@ -237,8 +237,8 @@ export function StudioWorkspace({ artifactId, newDraft = false, locale = "en" }:
               </label>
               <div className="mj-studio-inspector-card">
                 <span className="mj-section-label">{copy.selectedGate}</span>
-                <strong>{selectedGate}</strong>
-                <p>{copy.gateDescriptions[selectedGate] ?? copy.gateDescriptions.H}</p>
+                <strong>{selectedGate.startsWith("custom:") ? copy.customGateLabel : selectedGate}</strong>
+                <p>{selectedGate.startsWith("custom:") ? copy.customGateInspector : copy.gateDescriptions[selectedGate] ?? copy.gateDescriptions.H}</p>
               </div>
               <div className="mj-studio-inspector-card">
                 <span className="mj-section-label">{copy.runContract}</span>
@@ -289,45 +289,135 @@ export function StudioWorkspace({ artifactId, newDraft = false, locale = "en" }:
 
 type StudioCopy = (typeof WORKSPACE_COPY)[PublicLocale]["studio"];
 
-type BuilderGate = "H" | "X" | "Y" | "Z" | "S" | "T" | "RX" | "RY" | "RZ" | "CX" | "CZ" | "SWAP" | "M";
-type BuilderStep = { gate: BuilderGate; qubits: number[]; param?: string };
-
-const BUILDER_GATES: BuilderGate[] = ["H", "X", "Y", "Z", "S", "T", "RX", "RY", "RZ", "CX", "CZ", "SWAP", "M"];
-const TWO_QUBIT_GATES: BuilderGate[] = ["CX", "CZ", "SWAP"];
-const ROTATION_GATES: BuilderGate[] = ["RX", "RY", "RZ"];
 const ANGLE_OPTIONS = ["pi/8", "pi/4", "pi/2", "pi", "3*pi/2", "2*pi"];
 
-function CircuitBuilder({ framework, selectedGate, onSelectGate, onApply, copy }: { framework: ComposerFramework; selectedGate: string; onSelectGate: (gate: string) => void; onApply: (codes: Record<ComposerFramework, string>) => void; copy: StudioCopy }) {
+function CircuitBuilder({ framework, selectedGate, onSelectGate, onApply, hidden, copy }: { framework: ComposerFramework; selectedGate: string; onSelectGate: (gate: string) => void; onApply: (codes: Record<ComposerFramework, string>) => void; hidden: boolean; copy: StudioCopy }) {
   const [qubitCount, setQubitCount] = useState(2);
   const [steps, setSteps] = useState<BuilderStep[]>([]);
-  const [pendingControl, setPendingControl] = useState<number | null>(null);
+  const [pendingQubits, setPendingQubits] = useState<number[]>([]);
   const [angle, setAngle] = useState("pi/2");
+  const [selectedStepIds, setSelectedStepIds] = useState<string[]>([]);
+  const [customGates, setCustomGates] = useState<CustomGateDefinition[]>([]);
+  const [showCustomGateForm, setShowCustomGateForm] = useState(false);
+  const [customGateName, setCustomGateName] = useState("");
+  const [builderMessage, setBuilderMessage] = useState<string | null>(null);
 
-  const armed = (BUILDER_GATES as string[]).includes(selectedGate) ? (selectedGate as BuilderGate) : "H";
+  const armedCustomId = selectedGate.startsWith("custom:") ? selectedGate.slice("custom:".length) : null;
+  const armedCustom = armedCustomId ? customGates.find((gate) => gate.id === armedCustomId) ?? null : null;
+  const armed: BuilderGate = (BUILDER_GATES as string[]).includes(selectedGate) ? selectedGate as BuilderGate : armedCustom ? "CUSTOM" : "H";
+  const requiredQubits = armedCustom?.qubitCount ?? (TWO_QUBIT_GATES.includes(armed as (typeof TWO_QUBIT_GATES)[number]) ? 2 : 1);
+  const selectedLabel = armed === "CUSTOM" ? armedCustom?.name ?? "Custom gate" : armed;
 
   function placeOnQubit(qubit: number) {
-    if (TWO_QUBIT_GATES.includes(armed)) {
-      if (pendingControl === null) {
-        setPendingControl(qubit);
+    if (requiredQubits > 1) {
+      if (pendingQubits.includes(qubit)) {
+        setPendingQubits((current) => current.filter((item) => item !== qubit));
         return;
       }
-      if (pendingControl === qubit) {
-        setPendingControl(null);
+      const nextQubits = [...pendingQubits, qubit];
+      if (nextQubits.length < requiredQubits) {
+        setPendingQubits(nextQubits);
         return;
       }
-      setSteps((current) => [...current, { gate: armed, qubits: [pendingControl, qubit] }]);
-      setPendingControl(null);
+      const nextStep: BuilderStep = armed === "CUSTOM" && armedCustom
+        ? { id: createBuilderStepId(), gate: "CUSTOM", customGateId: armedCustom.id, qubits: nextQubits }
+        : { id: createBuilderStepId(), gate: armed, qubits: nextQubits };
+      setSteps((current) => [...current, nextStep]);
+      setPendingQubits([]);
       return;
     }
-    setSteps((current) => [...current, { gate: armed, qubits: [qubit], ...(ROTATION_GATES.includes(armed) ? { param: angle } : {}) }]);
+    setSteps((current) => [...current, { id: createBuilderStepId(), gate: armed, qubits: [qubit], ...(ROTATION_GATES.includes(armed as (typeof ROTATION_GATES)[number]) ? { param: angle } : {}) }]);
+    setBuilderMessage(null);
   }
 
   function changeQubitCount(delta: number) {
     const next = Math.min(6, Math.max(1, qubitCount + delta));
     if (next === qubitCount) return;
     setQubitCount(next);
-    setPendingControl(null);
+    setPendingQubits((current) => current.filter((qubit) => qubit < next));
     if (next < qubitCount) setSteps((current) => current.filter((step) => step.qubits.every((q) => q < next)));
+  }
+
+  function selectStep(stepId: string, multi = false) {
+    setSelectedStepIds((current) => {
+      if (!multi) return [stepId];
+      return current.includes(stepId) ? current.filter((id) => id !== stepId) : [...current, stepId];
+    });
+    setBuilderMessage(null);
+  }
+
+  function deleteSelected() {
+    if (!selectedStepIds.length) return;
+    const selected = new Set(selectedStepIds);
+    setSteps((current) => current.filter((step) => !selected.has(step.id)));
+    setSelectedStepIds([]);
+    setBuilderMessage(null);
+  }
+
+  function deleteStep(stepId: string) {
+    setSteps((current) => current.filter((step) => step.id !== stepId));
+    setSelectedStepIds((current) => current.filter((id) => id !== stepId));
+    setBuilderMessage(null);
+  }
+
+  function createCustomGate() {
+    const selected = steps.filter((step) => selectedStepIds.includes(step.id));
+    if (selected.length < 2 || selected.some((step) => step.gate === "CUSTOM" || step.gate === "M")) {
+      setBuilderMessage(copy.customGateCannotGroup);
+      return;
+    }
+    const name = customGateName.trim() || `Custom gate ${customGates.length + 1}`;
+    const qubitOrder = Array.from(new Set(selected.flatMap((step) => step.qubits)));
+    const definition: CustomGateDefinition = {
+      id: createBuilderStepId("custom"),
+      name,
+      qubitCount: qubitOrder.length,
+      steps: selected.map((step) => ({
+        ...step,
+        id: createBuilderStepId("definition"),
+        qubits: step.qubits.map((qubit) => qubitOrder.indexOf(qubit)),
+      })),
+    };
+    const groupedStep: BuilderStep = {
+      id: createBuilderStepId(),
+      gate: "CUSTOM",
+      customGateId: definition.id,
+      qubits: qubitOrder,
+    };
+    const selectedIds = new Set(selectedStepIds);
+    let inserted = false;
+    const nextSteps = steps.flatMap((step) => {
+      if (!selectedIds.has(step.id)) return [step];
+      if (inserted) return [];
+      inserted = true;
+      return [groupedStep];
+    });
+    setCustomGates((current) => [...current, definition]);
+    setSteps(nextSteps);
+    setSelectedStepIds([groupedStep.id]);
+    setShowCustomGateForm(false);
+    setCustomGateName("");
+    setPendingQubits([]);
+    onSelectGate(`custom:${definition.id}`);
+    setBuilderMessage(copy.customGateCreated(name));
+  }
+
+  function removeCustomGate(id: string) {
+    setCustomGates((current) => current.filter((gate) => gate.id !== id));
+    setSteps((current) => current.filter((step) => step.customGateId !== id));
+    setSelectedStepIds((current) => current.filter((stepId) => steps.some((step) => step.id === stepId && step.customGateId !== id)));
+    if (selectedGate === `custom:${id}`) onSelectGate("H");
+    setPendingQubits([]);
+  }
+
+  function handleStepKeyDown(stepId: string, event: KeyboardEvent<SVGGElement>) {
+    if (event.key === "Delete" || event.key === "Backspace") {
+      event.preventDefault();
+      deleteStep(stepId);
+    } else if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      selectStep(stepId);
+    }
   }
 
   const columnWidth = 52;
@@ -338,7 +428,7 @@ function CircuitBuilder({ framework, selectedGate, onSelectGate, onApply, copy }
   const height = topPad + qubitCount * rowHeight + 10;
 
   return (
-    <section className="mj-studio-surface mj-studio-canvas" aria-label={copy.canvasLabel}>
+    <section className="mj-studio-surface mj-studio-canvas" aria-label={copy.canvasLabel} hidden={hidden}>
       <div className="mj-studio-surface-head">
         <div><span className="mj-section-label">{copy.canvasLabel}</span><h2>{copy.generatedPreview}</h2></div>
         <span className="mj-mono-muted">{frameworkLabel(framework)} · {qubitCount}q · {steps.length} ops</span>
@@ -346,11 +436,11 @@ function CircuitBuilder({ framework, selectedGate, onSelectGate, onApply, copy }
 
       <div className="mj-builder-palette" role="toolbar" aria-label={copy.palette}>
         {BUILDER_GATES.map((gate) => (
-          <button key={gate} type="button" className={`mj-builder-gate${armed === gate ? " is-active" : ""}`} aria-pressed={armed === gate} onClick={() => { onSelectGate(gate); setPendingControl(null); }}>
+          <button key={gate} type="button" className={`mj-builder-gate${armed === gate ? " is-active" : ""}`} aria-pressed={armed === gate} onClick={() => { onSelectGate(gate); setPendingQubits([]); setBuilderMessage(null); }}>
             {gate}
           </button>
         ))}
-        {ROTATION_GATES.includes(armed) ? (
+        {ROTATION_GATES.includes(armed as (typeof ROTATION_GATES)[number]) ? (
           <label className="mj-builder-angle">
             <span>{copy.angleLabel}</span>
             <select value={angle} onChange={(event) => setAngle(event.target.value)}>
@@ -359,6 +449,23 @@ function CircuitBuilder({ framework, selectedGate, onSelectGate, onApply, copy }
           </label>
         ) : null}
       </div>
+
+      {customGates.length ? (
+        <div className="mj-builder-custom-gates" aria-label={copy.customGates}>
+          <span className="mj-section-label">{copy.customGates}</span>
+          {customGates.map((gate) => {
+            const active = selectedGate === `custom:${gate.id}`;
+            return (
+              <div className="mj-builder-custom-gate" key={gate.id}>
+                <button className={`mj-builder-gate${active ? " is-active" : ""}`} type="button" aria-pressed={active} onClick={() => { onSelectGate(`custom:${gate.id}`); setPendingQubits([]); setBuilderMessage(null); }}>
+                  {gate.name}<small>{gate.qubitCount}q</small>
+                </button>
+                <button className="mj-builder-custom-remove" type="button" aria-label={copy.deleteCustomGate(gate.name)} title={copy.deleteCustomGate(gate.name)} onClick={() => removeCustomGate(gate.id)}>×</button>
+              </div>
+            );
+          })}
+        </div>
+      ) : null}
 
       <div className="mj-circuit-stage">
         <svg className="mj-circuit-svg" viewBox={`0 0 ${width} ${height}`} role="img" aria-label={copy.circuitAria(frameworkLabel(framework))} style={{ maxWidth: "100%" }}>
@@ -369,10 +476,10 @@ function CircuitBuilder({ framework, selectedGate, onSelectGate, onApply, copy }
                 <text className="mj-circuit-label" x="18" y={y + 5}>q{q}</text>
                 <line className="mj-circuit-wire" x1={leftPad - 16} y1={y} x2={width - 24} y2={y} />
                 <g
-                  className={`mj-circuit-gate mj-builder-slot${pendingControl === q ? " is-selected" : ""}`}
+                  className={`mj-circuit-gate mj-builder-slot${pendingQubits.includes(q) ? " is-selected" : ""}`}
                   role="button"
                   tabIndex={0}
-                  aria-label={`q${q}: ${armed}`}
+                  aria-label={`q${q}: ${selectedLabel}`}
                   onClick={() => placeOnQubit(q)}
                   onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); placeOnQubit(q); } }}
                 >
@@ -385,10 +492,36 @@ function CircuitBuilder({ framework, selectedGate, onSelectGate, onApply, copy }
           {steps.map((step, index) => {
             const x = leftPad + index * columnWidth;
             const yFor = (q: number) => topPad + q * rowHeight;
+            const selected = selectedStepIds.includes(step.id);
+            const label = builderStepLabel(step, customGates);
+            const selectProps = {
+              role: "button" as const,
+              tabIndex: 0,
+              "aria-label": `${label} on ${step.qubits.map((qubit) => `q${qubit}`).join(", ")}`,
+              onClick: (event: MouseEvent<SVGGElement>) => selectStep(step.id, event.shiftKey),
+              onKeyDown: (event: KeyboardEvent<SVGGElement>) => handleStepKeyDown(step.id, event),
+            };
+            if (step.gate === "CUSTOM") {
+              const custom = customGates.find((gate) => gate.id === step.customGateId);
+              const minQubit = Math.min(...step.qubits);
+              const maxQubit = Math.max(...step.qubits);
+              return (
+                <g className={`mj-circuit-gate mj-circuit-custom-gate${selected ? " is-selected" : ""}`} key={step.id} {...selectProps}>
+                  <title>{label}</title>
+                  <line className="mj-circuit-control" x1={x} y1={yFor(minQubit)} x2={x} y2={yFor(maxQubit)} />
+                  {step.qubits.map((qubit, qubitIndex) => (
+                    <g key={`${step.id}-${qubit}`}>
+                      <rect x={x - 17} y={yFor(qubit) - 17} width="34" height="34" rx="7" />
+                      <text x={x} y={yFor(qubit) + 5}>{qubitIndex === 0 ? (custom?.name ?? "CG").slice(0, 5) : "·"}</text>
+                    </g>
+                  ))}
+                </g>
+              );
+            }
             if (step.gate === "CX" || step.gate === "CZ" || step.gate === "SWAP") {
               const [control, target] = step.qubits;
               return (
-                <g className="mj-circuit-gate" key={index}>
+                <g className={`mj-circuit-gate${selected ? " is-selected" : ""}`} key={step.id} {...selectProps}>
                   <line className="mj-circuit-control" x1={x} y1={yFor(control)} x2={x} y2={yFor(target)} />
                   {step.gate === "SWAP" ? (
                     <>
@@ -413,7 +546,7 @@ function CircuitBuilder({ framework, selectedGate, onSelectGate, onApply, copy }
             }
             const y = yFor(step.qubits[0]);
             return (
-              <g className="mj-circuit-gate" key={index}>
+              <g className={`mj-circuit-gate${selected ? " is-selected" : ""}`} key={step.id} {...selectProps}>
                 <rect x={x - 17} y={y - 17} width="34" height="34" rx="7" />
                 <text x={x} y={y + 5}>{step.gate === "M" ? "M" : step.gate}</text>
                 {step.param ? <text className="mj-circuit-label" x={x} y={y + 30}>{step.param.replace("pi", "π").replace("*", "")}</text> : null}
@@ -426,111 +559,30 @@ function CircuitBuilder({ framework, selectedGate, onSelectGate, onApply, copy }
       <div className="mj-builder-controls">
         <button className="mj-secondary-button" type="button" onClick={() => changeQubitCount(1)} disabled={qubitCount >= 6}>{copy.addQubit}</button>
         <button className="mj-secondary-button" type="button" onClick={() => changeQubitCount(-1)} disabled={qubitCount <= 1}>{copy.removeQubit}</button>
-        <button className="mj-secondary-button" type="button" onClick={() => { setSteps((current) => current.slice(0, -1)); setPendingControl(null); }} disabled={!steps.length}>{copy.undo}</button>
-        <button className="mj-secondary-button" type="button" onClick={() => { setSteps([]); setPendingControl(null); }} disabled={!steps.length}>{copy.clearAll}</button>
-        <button className="mj-primary-button" type="button" onClick={() => onApply(generateBuilderCode(steps, qubitCount))} disabled={!steps.length}>{copy.applyToCode}</button>
+        <button className="mj-secondary-button" type="button" onClick={() => { const removed = steps[steps.length - 1]; setSteps((current) => current.slice(0, -1)); if (removed) setSelectedStepIds((current) => current.filter((id) => id !== removed.id)); setPendingQubits([]); }} disabled={!steps.length}>{copy.undo}</button>
+        <button className="mj-secondary-button" type="button" onClick={() => { setSteps([]); setSelectedStepIds([]); setPendingQubits([]); setBuilderMessage(null); }} disabled={!steps.length}>{copy.clearAll}</button>
+        <button className="mj-secondary-button" type="button" onClick={deleteSelected} disabled={!selectedStepIds.length}>{copy.deleteSelected}</button>
+        {selectedStepIds.length >= 2 ? <button className="mj-secondary-button" type="button" onClick={() => setShowCustomGateForm(true)}>{copy.groupSelected}</button> : null}
+        <button className="mj-primary-button" type="button" onClick={() => onApply(generateBuilderCode(steps, qubitCount, customGates))} disabled={!steps.length}>{copy.applyToCode}</button>
       </div>
 
+      {showCustomGateForm ? (
+        <form className="mj-builder-custom-form" onSubmit={(event) => { event.preventDefault(); createCustomGate(); }}>
+          <label>
+            <span>{copy.customGates}</span>
+            <input autoFocus value={customGateName} onChange={(event) => setCustomGateName(event.target.value)} placeholder={copy.customGatePlaceholder} />
+          </label>
+          <button className="mj-primary-button" type="submit">{copy.createCustomGate}</button>
+          <button className="mj-secondary-button" type="button" onClick={() => setShowCustomGateForm(false)}>{copy.cancelCustomGate}</button>
+        </form>
+      ) : null}
+
       <div className="mj-studio-canvas-footer" aria-live="polite">
-        <span>{pendingControl !== null ? copy.pickTarget : steps.length ? copy.builderHint : copy.builderEmpty}</span>
-        <span className="mj-mono-muted">{steps.length ? steps.map((step) => step.gate).join(" → ") : "—"}</span>
+        <span>{builderMessage ?? (pendingQubits.length ? copy.pickTarget : selectedStepIds.length ? copy.selectedCount(selectedStepIds.length) : steps.length ? copy.builderHint : copy.builderEmpty)}</span>
+        <span className="mj-mono-muted">{steps.length ? steps.map((step) => builderStepLabel(step, customGates)).join(" → ") : "—"}</span>
       </div>
     </section>
   );
-}
-
-function generateBuilderCode(steps: BuilderStep[], qubitCount: number): Record<ComposerFramework, string> {
-  const ordered = steps.filter((step) => step.gate !== "M");
-  const measured = steps.some((step) => step.gate === "M");
-  const usesAngle = ordered.some((step) => step.param);
-
-  const qiskitLines = ordered.map((step) => {
-    const [a, b] = step.qubits;
-    switch (step.gate) {
-      case "H": return `qc.h(${a})`;
-      case "X": return `qc.x(${a})`;
-      case "Y": return `qc.y(${a})`;
-      case "Z": return `qc.z(${a})`;
-      case "S": return `qc.s(${a})`;
-      case "T": return `qc.t(${a})`;
-      case "RX": return `qc.rx(${step.param}, ${a})`;
-      case "RY": return `qc.ry(${step.param}, ${a})`;
-      case "RZ": return `qc.rz(${step.param}, ${a})`;
-      case "CX": return `qc.cx(${a}, ${b})`;
-      case "CZ": return `qc.cz(${a}, ${b})`;
-      case "SWAP": return `qc.swap(${a}, ${b})`;
-      default: return "";
-    }
-  }).filter(Boolean);
-  const qiskit = [
-    "from qiskit import QuantumCircuit",
-    ...(usesAngle ? ["from numpy import pi"] : []),
-    "",
-    `qc = QuantumCircuit(${qubitCount})`,
-    ...qiskitLines,
-    ...(measured ? ["qc.measure_all()"] : []),
-  ].join("\n");
-
-  const pennylaneLines = ordered.map((step) => {
-    const [a, b] = step.qubits;
-    switch (step.gate) {
-      case "H": return `    qml.Hadamard(wires=${a})`;
-      case "X": return `    qml.PauliX(wires=${a})`;
-      case "Y": return `    qml.PauliY(wires=${a})`;
-      case "Z": return `    qml.PauliZ(wires=${a})`;
-      case "S": return `    qml.S(wires=${a})`;
-      case "T": return `    qml.T(wires=${a})`;
-      case "RX": return `    qml.RX(${step.param}, wires=${a})`;
-      case "RY": return `    qml.RY(${step.param}, wires=${a})`;
-      case "RZ": return `    qml.RZ(${step.param}, wires=${a})`;
-      case "CX": return `    qml.CNOT(wires=[${a}, ${b}])`;
-      case "CZ": return `    qml.CZ(wires=[${a}, ${b}])`;
-      case "SWAP": return `    qml.SWAP(wires=[${a}, ${b}])`;
-      default: return "";
-    }
-  }).filter(Boolean);
-  const pennylane = [
-    "import pennylane as qml",
-    ...(usesAngle ? ["from numpy import pi"] : []),
-    "",
-    `dev = qml.device("default.qubit", wires=${qubitCount}${measured ? ", shots=1000" : ""})`,
-    "",
-    "@qml.qnode(dev)",
-    "def circuit():",
-    ...(pennylaneLines.length ? pennylaneLines : ["    pass"]),
-    measured ? "    return qml.sample()" : "    return qml.state()",
-  ].join("\n");
-
-  const cirqLines = ordered.map((step) => {
-    const [a, b] = step.qubits;
-    switch (step.gate) {
-      case "H": return `    cirq.H(qubits[${a}]),`;
-      case "X": return `    cirq.X(qubits[${a}]),`;
-      case "Y": return `    cirq.Y(qubits[${a}]),`;
-      case "Z": return `    cirq.Z(qubits[${a}]),`;
-      case "S": return `    cirq.S(qubits[${a}]),`;
-      case "T": return `    cirq.T(qubits[${a}]),`;
-      case "RX": return `    cirq.rx(${step.param}).on(qubits[${a}]),`;
-      case "RY": return `    cirq.ry(${step.param}).on(qubits[${a}]),`;
-      case "RZ": return `    cirq.rz(${step.param}).on(qubits[${a}]),`;
-      case "CX": return `    cirq.CNOT(qubits[${a}], qubits[${b}]),`;
-      case "CZ": return `    cirq.CZ(qubits[${a}], qubits[${b}]),`;
-      case "SWAP": return `    cirq.SWAP(qubits[${a}], qubits[${b}]),`;
-      default: return "";
-    }
-  }).filter(Boolean);
-  const cirq = [
-    "import cirq",
-    ...(usesAngle ? ["from numpy import pi"] : []),
-    "",
-    `qubits = cirq.LineQubit.range(${qubitCount})`,
-    "circuit = cirq.Circuit(",
-    ...cirqLines,
-    ...(measured ? ["    cirq.measure(*qubits, key=\"result\"),"] : []),
-    ")",
-  ].join("\n");
-
-  return { qiskit, pennylane, cirq };
 }
 
 function CodeEditor({ code, framework, onChange, onCopy, copied, copy }: { code: string; framework: ComposerFramework; onChange: (code: string) => void; onCopy: () => void; copied: boolean; copy: StudioCopy }) {

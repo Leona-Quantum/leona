@@ -108,6 +108,9 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
     delete: string;
     deleteConfirmTitle: string;
     deleteWarning: (title: string) => string;
+    star: string;
+    unstar: string;
+    starBoundary: string;
     previewFooter: string;
     workspaceFooter: string;
     unknown: string;
@@ -188,6 +191,19 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
     angleLabel: string;
     builderEmpty: string;
     generatedPreview: string;
+    selectedCount: (count: number) => string;
+    selectToGroup: string;
+    deleteSelected: string;
+    groupSelected: string;
+    customGates: string;
+    customGateLabel: string;
+    customGateInspector: string;
+    customGatePlaceholder: string;
+    createCustomGate: string;
+    cancelCustomGate: string;
+    deleteCustomGate: (name: string) => string;
+    customGateCreated: (name: string) => string;
+    customGateCannotGroup: string;
   };
 }> = {
   en: {
@@ -307,6 +323,9 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
       delete: "Delete",
       deleteConfirmTitle: "Are you sure?",
       deleteWarning: (title) => `“${title}” will be removed from your workspace and not saved.`,
+      star: "Star artifact",
+      unstar: "Remove artifact star",
+      starBoundary: "Library stars are personal. A public Repository entry starts unstarred when saved here.",
       previewFooter: "Reference artifacts are shown in the public preview.",
       workspaceFooter: "Verified runs saved from this workspace appear here automatically.",
       unknown: "Unknown",
@@ -390,8 +409,8 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
         M: "Measurement records the final computational-basis result.",
       },
       palette: "Gate palette",
-      builderHint: "Pick a gate, then click a wire to place it. Two-qubit gates take two clicks: control first, then target.",
-      pickTarget: "Now click the target qubit.",
+      builderHint: "Pick a gate, then click a wire to place it. Click a placed gate to select it; Shift-click to select multiple.",
+      pickTarget: "Now select the remaining qubits.",
       addQubit: "Add qubit",
       removeQubit: "Remove qubit",
       undo: "Undo",
@@ -401,6 +420,19 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
       angleLabel: "Rotation angle",
       builderEmpty: "Empty circuit — place gates from the palette.",
       generatedPreview: "Built circuit",
+      selectedCount: (count) => `${count} gates selected`,
+      selectToGroup: "Click a placed gate to select it. Shift-click to select multiple.",
+      deleteSelected: "Delete selected",
+      groupSelected: "Group as custom gate",
+      customGates: "Custom gates",
+      customGateLabel: "Custom gate",
+      customGateInspector: "A saved custom gate from this composer.",
+      customGatePlaceholder: "Custom gate name",
+      createCustomGate: "Create custom gate",
+      cancelCustomGate: "Cancel",
+      deleteCustomGate: (name) => `Delete custom gate ${name}`,
+      customGateCreated: (name) => `${name} is ready in the gate palette.`,
+      customGateCannotGroup: "Select two or more unitary gates to create a custom gate.",
     },
   },
   ja: {
@@ -520,6 +552,9 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
       delete: "削除",
       deleteConfirmTitle: "削除してもよいですか？",
       deleteWarning: (title) => `「${title}」はワークスペースから削除され、保存されません。`,
+      star: "アーティファクトにスターを付ける",
+      unstar: "アーティファクトのスターを外す",
+      starBoundary: "Libraryのスターは個人用です。公開リポジトリから保存したエントリは、ここでは未スターになります。",
       previewFooter: "公開プレビューではリファレンスアーティファクトを表示しています。",
       workspaceFooter: "このワークスペースで保存した検証済み実行がここに表示されます。",
       unknown: "不明",
@@ -603,8 +638,8 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
         M: "測定は計算基底での最終結果を記録します。",
       },
       palette: "ゲートパレット",
-      builderHint: "ゲートを選び、ワイヤをクリックして配置します。2量子ビットゲートは制御→対象の順に2回クリックします。",
-      pickTarget: "次に対象の量子ビットをクリックしてください。",
+      builderHint: "ゲートを選び、ワイヤをクリックして配置します。配置済みのゲートをクリックして選択し、Shiftクリックで複数選択できます。",
+      pickTarget: "残りの量子ビットを選択してください。",
       addQubit: "量子ビットを追加",
       removeQubit: "量子ビットを削除",
       undo: "元に戻す",
@@ -614,6 +649,19 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
       angleLabel: "回転角",
       builderEmpty: "空の回路 — パレットからゲートを配置してください。",
       generatedPreview: "作成中の回路",
+      selectedCount: (count) => `${count}個のゲートを選択中`,
+      selectToGroup: "配置したゲートをクリックして選択。Shiftクリックで複数選択できます。",
+      deleteSelected: "選択を削除",
+      groupSelected: "カスタムゲートにまとめる",
+      customGates: "カスタムゲート",
+      customGateLabel: "カスタムゲート",
+      customGateInspector: "このComposerで保存したカスタムゲートです。",
+      customGatePlaceholder: "カスタムゲート名",
+      createCustomGate: "カスタムゲートを作成",
+      cancelCustomGate: "キャンセル",
+      deleteCustomGate: (name) => `カスタムゲート${name}を削除`,
+      customGateCreated: (name) => `${name}をパレットに追加しました。`,
+      customGateCannotGroup: "カスタムゲートには、2つ以上の単一ゲートを選択してください。",
     },
   },
 };
