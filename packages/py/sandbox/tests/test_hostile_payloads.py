@@ -15,6 +15,7 @@ without a paid provider plus the deny-all-at-creation contract.
 
 import sys
 
+import httpx
 import pytest
 from majorana_sandbox import (
     DENY_ALL_EGRESS,
@@ -172,4 +173,19 @@ async def test_vercel_execute_without_sdk_raises_not_silently_runs():
     # Without the SDK / creds the adapter must fail loudly, never fall through to
     # an unsandboxed execution.
     with pytest.raises(SandboxProviderError):
+        await VercelSandbox()._execute(ExecutionSpec(code="print(1)"))
+
+
+async def test_vercel_permission_failure_exposes_actionable_authorization_error(monkeypatch):
+    from vercel.sandbox import SandboxPermissionError
+    from vercel.sandbox.aio import Sandbox as AsyncSandbox
+
+    async def denied_create(**kwargs):
+        raise SandboxPermissionError(httpx.Response(403), "Not authorized")
+
+    monkeypatch.setattr(AsyncSandbox, "create", denied_create)
+
+    from majorana_sandbox import SandboxProviderError
+
+    with pytest.raises(SandboxProviderError, match="HTTP 403"):
         await VercelSandbox()._execute(ExecutionSpec(code="print(1)"))

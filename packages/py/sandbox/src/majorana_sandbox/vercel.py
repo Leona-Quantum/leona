@@ -63,7 +63,7 @@ class VercelSandbox:
     async def _execute(self, spec: ExecutionSpec) -> SandboxResult:
         try:
             from vercel.sandbox.aio import Sandbox as AsyncSandbox  # type: ignore
-            from vercel.sandbox import SandboxAuthError  # type: ignore
+            from vercel.sandbox import SandboxAuthError, SandboxPermissionError  # type: ignore
         except Exception as exc:  # pragma: no cover - exercised only without the SDK
             raise SandboxProviderError(
                 "install majorana-sandbox[vercel] and provide Vercel OIDC/token auth"
@@ -75,6 +75,11 @@ class VercelSandbox:
         except SandboxAuthError as exc:
             raise SandboxProviderError(
                 "Vercel sandbox authentication failed; provide Vercel OIDC/token auth"
+            ) from exc
+        except SandboxPermissionError as exc:
+            raise SandboxProviderError(
+                "Vercel sandbox authorization failed (HTTP 403); verify the runtime "
+                "token can access VERCEL_PROJECT_ID under VERCEL_TEAM_ID"
             ) from exc
         except Exception as exc:
             raise SandboxProviderError("Vercel sandbox could not be created") from exc
