@@ -189,9 +189,6 @@ export const CONTACT_COPY: Record<PublicLocale, {
   body: string;
   panelTitle: string;
   reasons: string[];
-  formLabel: string;
-  formTitle: string;
-  formBody: string;
   note: string;
   fields: { name: string; email: string; topic: string; message: string; placeholder: string; submit: string; status: string };
   topics: string[];
@@ -202,9 +199,6 @@ export const CONTACT_COPY: Record<PublicLocale, {
     body: "Leona Quantum is building an evidence layer around quantum software: public research, private workspaces, and execution that can be inspected. Send a short brief and we’ll take it from there.",
     panelTitle: "Good reasons to write",
     reasons: ["Research workflows and early product access", "Enterprise R&D and private-corpus conversations", "Public research contributions and technical feedback", "Press, partnerships, and speaking"],
-    formLabel: "Start a conversation",
-    formTitle: "A short brief is enough.",
-    formBody: "Tell us the question, the current workflow, and what evidence would help you move forward.",
     note: "Submitting opens a prepared email in your email app. The current queue is mailto-backed; server-side delivery and CRM routing will follow when the operating workflow is finalized.",
     fields: { name: "Name", email: "Email", topic: "What is this about?", message: "Message", placeholder: "What are you building, and what evidence or access would help?", submit: "Prepare inquiry", status: "Your email app should open with the inquiry prepared. Send it to add the note to the queue." },
     topics: ["Product access", "Research workflow", "Enterprise R&D", "Public research contribution", "Other"],
@@ -215,9 +209,6 @@ export const CONTACT_COPY: Record<PublicLocale, {
     body: "Leona Quantumは、公開研究、非公開ワークスペース、確認できる実行をつなぐ量子ソフトウェアの根拠の層をつくっています。短い概要をお送りください。",
     panelTitle: "ご連絡いただける内容",
     reasons: ["研究ワークフローと早期アクセス", "企業R&Dと非公開コーパス", "公開研究への投稿と技術フィードバック", "取材、パートナーシップ、登壇"],
-    formLabel: "対話を始める",
-    formTitle: "短い概要で十分です。",
-    formBody: "問い、現在のワークフロー、前に進むために必要な根拠を教えてください。",
     note: "送信すると、メールアプリで内容を準備したメールが開きます。現在はmailto方式で、サーバー配信とCRM連携は運用が固まり次第対応します。",
     fields: { name: "お名前", email: "メールアドレス", topic: "内容", message: "メッセージ", placeholder: "何をつくり、どんな根拠やアクセスが必要ですか？", submit: "問い合わせを準備", status: "メールアプリに内容を準備したメールが開きます。送信するとキューに追加されます。" },
     topics: ["プロダクトへのアクセス", "研究ワークフロー", "企業R&D", "公開研究への投稿", "その他"],

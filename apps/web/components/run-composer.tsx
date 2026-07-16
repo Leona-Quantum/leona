@@ -1,11 +1,18 @@
 "use client";
 
-import type { FormEvent } from "react";
+import { useRef, type FormEvent } from "react";
 import { ChevronIcon, PaperclipIcon } from "./icons";
 import type { PublicLocale } from "../lib/public-locale";
 
 export type ComposerMode = "execute" | "ideate" | "explain";
 export type ComposerFramework = "qiskit" | "pennylane" | "cirq";
+
+export interface ComposerAttachment {
+  name: string;
+  size: number;
+}
+
+export const COMPOSER_ATTACHMENT_ACCEPT = ".py,.txt,.md,.json,.qasm,.csv";
 
 export function RunComposer({
   value,
@@ -14,6 +21,9 @@ export function RunComposer({
   onChange,
   onSubmit,
   onAttach,
+  onFiles,
+  attachments,
+  onRemoveAttachment,
   contextArtifact,
   onClearContext,
   framework,
@@ -27,6 +37,9 @@ export function RunComposer({
   onChange: (value: string) => void;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
   onAttach?: () => void;
+  onFiles?: (files: File[]) => void;
+  attachments?: ComposerAttachment[];
+  onRemoveAttachment?: (name: string) => void;
   contextArtifact?: { title: string; framework: string; codeAvailable: boolean } | null;
   onClearContext?: () => void;
   framework?: ComposerFramework;
@@ -34,10 +47,11 @@ export function RunComposer({
   centered?: boolean;
   locale?: PublicLocale;
 }) {
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const labels = locale === "ja"
     ? {
         task: "メッセージ",
-        attach: "コンテキストを添付",
+        attach: "ファイルを添付",
         pending: "応答中",
         send: "送信",
         context: "コンテキスト",
@@ -48,7 +62,7 @@ export function RunComposer({
       }
     : {
         task: "Message",
-        attach: "Attach context",
+        attach: "Attach files",
         pending: "Thinking",
         send: "Send",
         context: "Context",
@@ -75,6 +89,20 @@ export function RunComposer({
             ) : null}
           </div>
         ) : null}
+        {attachments?.length ? (
+          <div className="mj-composer-attachments" aria-label={locale === "ja" ? "添付ファイル" : "Attachments"}>
+            {attachments.map((attachment) => (
+              <span className="mj-composer-attachment" key={attachment.name}>
+                <PaperclipIcon size={12} />
+                <span>{attachment.name}</span>
+                <small>{formatAttachmentSize(attachment.size)}</small>
+                {onRemoveAttachment ? (
+                  <button type="button" aria-label={`${locale === "ja" ? "添付を削除" : "Remove attachment"} ${attachment.name}`} onClick={() => onRemoveAttachment(attachment.name)}>×</button>
+                ) : null}
+              </span>
+            ))}
+          </div>
+        ) : null}
         <textarea
           className="mj-composer-input"
           value={value}
@@ -92,9 +120,32 @@ export function RunComposer({
         />
         <div className="mj-composer-controls">
           <div className="mj-composer-left">
-            <button className="mj-icon-button" type="button" aria-label={labels.attach} title={labels.attach} onClick={onAttach}>
+            <button
+              className="mj-icon-button"
+              type="button"
+              aria-label={labels.attach}
+              title={labels.attach}
+              onClick={() => {
+                if (onFiles) fileInputRef.current?.click();
+                else onAttach?.();
+              }}
+            >
               <PaperclipIcon size={16} />
             </button>
+            {onFiles ? (
+              <input
+                ref={fileInputRef}
+                type="file"
+                hidden
+                multiple
+                accept={COMPOSER_ATTACHMENT_ACCEPT}
+                onChange={(event) => {
+                  const files = Array.from(event.target.files ?? []);
+                  if (files.length) onFiles(files);
+                  event.target.value = "";
+                }}
+              />
+            ) : null}
             {framework && onFrameworkChange ? (
               <label className="mj-composer-select">
                 <span className="sr-only">{labels.framework}</span>
@@ -124,4 +175,8 @@ export function RunComposer({
       </form>
     </div>
   );
+}
+
+function formatAttachmentSize(size: number): string {
+  return size >= 1024 ? `${Math.round(size / 1024)} KB` : `${size} B`;
 }

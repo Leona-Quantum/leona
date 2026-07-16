@@ -1,15 +1,29 @@
 "use client";
 
-import { useEffect, useState, type KeyboardEvent, type MouseEvent } from "react";
+import { useEffect, useRef, useState, type KeyboardEvent, type MouseEvent } from "react";
 import { CheckIcon, CopyIcon, SearchIcon } from "../../../components/icons";
 import type { ComposerFramework } from "../../../components/run-composer";
 import { frameworkVariantsFromRemote, getLibraryArtifact, loadLibraryArtifacts, type LibraryArtifact } from "../../../lib/library-data";
 import type { PublicLocale } from "../../../lib/public-locale";
 import { BUILDER_GATES, builderStepLabel, createBuilderStepId, generateBuilderCode, ROTATION_GATES, TWO_QUBIT_GATES, type BuilderGate, type BuilderStep, type CustomGateDefinition } from "../../../lib/studio-builder";
+import { loadStoredCircuit, saveStoredCircuit } from "../../../lib/studio-circuits";
+import { parseBuilderCircuit } from "../../../lib/studio-parse";
 import { WORKSPACE_COPY } from "../../../lib/workspace-locale";
 
 type StudioPanel = "canvas" | "code" | "versions";
 type StudioAction = "simulate" | "verify" | "save";
+
+type BuilderSeed = {
+  key: string;
+  artifactIdentity: string | null;
+  qubitCount: number;
+  steps: BuilderStep[];
+  customGates: CustomGateDefinition[];
+};
+
+type ArtifactHydration = "loading" | "ready" | "error";
+
+const EMPTY_SEED: Omit<BuilderSeed, "key"> = { artifactIdentity: null, qubitCount: 2, steps: [], customGates: [] };
 
 const FRAMEWORK_OPTIONS: Array<{ value: ComposerFramework; label: string }> = [
   { value: "qiskit", label: "Qiskit" },
@@ -45,26 +59,33 @@ circuit = cirq.Circuit(
 
 export function StudioWorkspace({ artifactId, newDraft = false, locale = "en" }: { artifactId?: string; newDraft?: boolean; locale?: PublicLocale }) {
   const copy = WORKSPACE_COPY[locale].studio;
-  const initialArtifact = artifactId ? getLibraryArtifact(artifactId) : null;
-  const initialFramework = normalizeFramework(initialArtifact?.framework);
-  const initialDrafts = makeDrafts(initialArtifact);
-  const [artifacts, setArtifacts] = useState<LibraryArtifact[]>(() => loadLibraryArtifacts());
-  const [artifact, setArtifact] = useState<LibraryArtifact | null>(initialArtifact);
+  const [artifacts, setArtifacts] = useState<LibraryArtifact[]>([]);
+  const [artifact, setArtifact] = useState<LibraryArtifact | null>(null);
   const [showEditor, setShowEditor] = useState(Boolean(artifactId || newDraft));
   const [query, setQuery] = useState("");
-  const [title, setTitle] = useState(initialArtifact?.title ?? "Untitled circuit");
-  const [framework, setFramework] = useState<ComposerFramework>(initialFramework);
-  const [drafts, setDrafts] = useState<Record<ComposerFramework, string>>(initialDrafts);
-  const [code, setCode] = useState(initialDrafts[initialFramework]);
+  const [title, setTitle] = useState("Untitled circuit");
+  const [framework, setFramework] = useState<ComposerFramework>("qiskit");
+  const [drafts, setDrafts] = useState<Record<ComposerFramework, string>>(() => makeDrafts(null));
+  const [code, setCode] = useState(STARTER_CODES.qiskit);
   const [panel, setPanel] = useState<StudioPanel>("canvas");
   const [selectedGate, setSelectedGate] = useState("H");
   const [busy, setBusy] = useState<StudioAction | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [runId, setRunId] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const [inspectorOpen, setInspectorOpen] = useState(true);
+  const [artifactHydration, setArtifactHydration] = useState<ArtifactHydration>(() => artifactId && !newDraft ? "loading" : "ready");
+  const [artifactSyncError, setArtifactSyncError] = useState(false);
+  const [builderSeed, setBuilderSeed] = useState<BuilderSeed>({ key: "seed-0", ...EMPTY_SEED });
+  const seedCounter = useRef(0);
 
+  // Local storage is read only after mount so the server and client render
+  // the same initial markup; the artifact then hydrates through applyArtifact.
   useEffect(() => {
     let active = true;
+    setArtifacts(loadLibraryArtifacts());
+    setArtifactSyncError(false);
+    setArtifactHydration(artifactId && !newDraft ? "loading" : "ready");
     void fetch("/api/artifacts", { cache: "no-store" })
       .then(async (response) => {
         if (!response.ok) throw new Error("Artifact API unavailable");
@@ -76,23 +97,55 @@ export function StudioWorkspace({ artifactId, newDraft = false, locale = "en" }:
         const byId = new Map([...loadLibraryArtifacts(), ...remote].map((item) => [item.id, item]));
         setArtifacts([...byId.values()].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)));
       })
-      .catch(() => undefined);
+      .catch(() => {
+        if (active) setArtifactSyncError(true);
+      });
 
-    if (artifactId && !initialArtifact) {
-      void loadArtifact(artifactId)
-        .then((loaded) => {
-          if (active && loaded) applyArtifact(loaded);
-        })
-        .catch(() => {
-          if (active) setMessage(copy.selectedUnavailable);
-        });
+    if (artifactId) {
+      const local = getLibraryArtifact(artifactId);
+      if (local?.code) {
+        applyArtifact(local);
+      } else {
+        if (local) applyArtifact(local);
+        void loadArtifact(artifactId)
+          .then((loaded) => {
+            if (active && loaded) applyArtifact(loaded);
+            else if (active) {
+              setArtifactHydration("error");
+              setMessage(copy.selectedUnavailable);
+            }
+          })
+          .catch(() => {
+            if (active) {
+              setArtifactHydration("error");
+              setMessage(copy.selectedUnavailable);
+            }
+          });
+      }
     }
     return () => {
       active = false;
     };
   }, [artifactId, copy]);
 
+  function seedForArtifact(next: LibraryArtifact, activeDrafts: Record<ComposerFramework, string>, activeFramework: ComposerFramework): { seed: BuilderSeed; note: string | null } {
+    seedCounter.current += 1;
+    const key = `${next.id}:${seedCounter.current}`;
+    const stored = loadStoredCircuit(next.id);
+    const artifactIdentity = studioArtifactIdentity(next);
+    if (stored?.artifactIdentity === artifactIdentity) {
+      return { seed: { key, artifactIdentity, qubitCount: stored.qubitCount, steps: stored.steps, customGates: stored.customGates }, note: copy.circuitRestored };
+    }
+    const hasOwnCode = Boolean(next.code || next.frameworkVariants);
+    const parsed = hasOwnCode ? parseBuilderCircuit(activeDrafts[activeFramework], activeFramework) : null;
+    if (parsed) {
+      return { seed: { key, artifactIdentity, qubitCount: parsed.qubitCount, steps: parsed.steps, customGates: [] }, note: copy.circuitRestored };
+    }
+    return { seed: { key, ...EMPTY_SEED, artifactIdentity }, note: hasOwnCode ? copy.circuitNotRebuildable : null };
+  }
+
   function applyArtifact(next: LibraryArtifact | null) {
+    setArtifactHydration("ready");
     setShowEditor(true);
     setArtifact(next);
     setTitle(next?.title ?? "Untitled circuit");
@@ -103,6 +156,15 @@ export function StudioWorkspace({ artifactId, newDraft = false, locale = "en" }:
     setCode(nextDrafts[nextFramework]);
     setPanel("canvas");
     setRunId(null);
+    if (!next) {
+      seedCounter.current += 1;
+      setBuilderSeed({ key: `draft-${seedCounter.current}`, ...EMPTY_SEED });
+      setMessage(null);
+      return;
+    }
+    const { seed, note } = seedForArtifact(next, nextDrafts, nextFramework);
+    setBuilderSeed(seed);
+    setMessage(note);
   }
 
   const filteredArtifacts = artifacts.filter((item) => {
@@ -181,7 +243,7 @@ export function StudioWorkspace({ artifactId, newDraft = false, locale = "en" }:
 
   return (
     <div className="mj-studio-page">
-      <div className={`mj-studio-workspace${showEditor ? " mj-studio-workspace--editor" : " mj-studio-workspace--discovery"}`}>
+      <div className={`mj-studio-workspace${showEditor ? ` mj-studio-workspace--editor${inspectorOpen ? "" : " mj-studio-workspace--editor-solo"}` : " mj-studio-workspace--discovery"}`}>
         {showEditor ? (
           <>
             <section className="mj-studio-main">
@@ -192,6 +254,7 @@ export function StudioWorkspace({ artifactId, newDraft = false, locale = "en" }:
                   <p>{artifact ? copy.editingVersion(artifact.currentVersionId ? artifact.currentVersionId.slice(0, 8) : (locale === "ja" ? "下書き" : "draft"), artifact.framework) : copy.newDraft}</p>
                 </div>
                 <div className="mj-studio-actions">
+                  {!inspectorOpen ? <button className="mj-secondary-button" type="button" onClick={() => setInspectorOpen(true)} title={copy.showInspector}>{copy.showInspector}</button> : null}
                   <button className="mj-secondary-button" type="button" onClick={() => void copyCode()} title={copied ? copy.copied : copy.copyCode}><CopyIcon size={14} />{copied ? copy.copied : copy.copyCode}</button>
                   <button className="mj-secondary-button" type="button" disabled={busy !== null} onClick={() => void startRun("simulate")}>{busy === "simulate" ? copy.starting : copy.simulate}</button>
                   <button className="mj-primary-button" type="button" disabled={busy !== null} onClick={() => void startRun("save")}>{busy === "save" ? copy.starting : copy.verifySave}</button>
@@ -206,29 +269,49 @@ export function StudioWorkspace({ artifactId, newDraft = false, locale = "en" }:
                 ))}
               </nav>
 
-              <CircuitBuilder
-                framework={framework}
-                selectedGate={selectedGate}
-                onSelectGate={setSelectedGate}
-                hidden={panel !== "canvas"}
-                copy={copy}
-                onApply={(codes) => {
-                  setDrafts(codes);
-                  setCode(codes[framework]);
-                  setMessage(copy.appliedToCode);
-                }}
-              />
-              {panel === "code" ? <CodeEditor code={code} framework={framework} onChange={setCode} onCopy={() => void copyCode()} copied={copied} copy={copy} /> : null}
-              {panel === "versions" ? <VersionPanel artifact={artifact} runId={runId} copy={copy} /> : null}
+              {artifactId && !newDraft && artifactHydration !== "ready" ? (
+                <div className="mj-studio-empty" role={artifactHydration === "error" ? "alert" : "status"}>
+                  {artifactHydration === "loading" ? copy.loadingArtifacts : copy.selectedUnavailable}
+                </div>
+              ) : (
+                <>
+                  <CircuitBuilder
+                    key={builderSeed.key}
+                    seed={builderSeed}
+                    framework={framework}
+                    selectedGate={selectedGate}
+                    onSelectGate={setSelectedGate}
+                    hidden={panel !== "canvas"}
+                    copy={copy}
+                    onCircuitChange={(circuit) => {
+                      if (!artifact) return;
+                      const persisted = saveStoredCircuit(artifact.id, { artifactIdentity: studioArtifactIdentity(artifact), ...circuit });
+                      if (!persisted) setMessage(copy.persistenceUnavailable);
+                    }}
+                    onApply={(codes) => {
+                      setDrafts(codes);
+                      setCode(codes[framework]);
+                      setMessage(copy.appliedToCode);
+                    }}
+                  />
+                  {panel === "code" ? <CodeEditor code={code} framework={framework} onChange={setCode} onCopy={() => void copyCode()} copied={copied} copy={copy} /> : null}
+                  {panel === "versions" ? <VersionPanel artifact={artifact} runId={runId} copy={copy} /> : null}
+                </>
+              )}
 
               <footer className="mj-studio-footer" aria-live="polite">
+                {artifactSyncError ? <span role="alert">{copy.remoteSyncUnavailable}</span> : null}
                 <span>{message ?? copy.footer}</span>
                 {runId ? <a href={`/run/${runId}`}>{copy.openRun} →</a> : null}
               </footer>
             </section>
 
-            <aside className="mj-studio-inspector" aria-label={copy.inspector}>
-              <div className="mj-studio-inspector-head"><span className="mj-section-label">{copy.inspector}</span><span className="mj-mono-muted">{copy.liveDraft}</span></div>
+            <aside className="mj-studio-inspector" aria-label={copy.inspector} hidden={!inspectorOpen}>
+              <div className="mj-studio-inspector-head">
+                <span className="mj-section-label">{copy.inspector}</span>
+                <span className="mj-mono-muted">{copy.liveDraft}</span>
+                <button className="mj-studio-inspector-close" type="button" aria-label={copy.hideInspector} title={copy.hideInspector} onClick={() => setInspectorOpen(false)}>×</button>
+              </div>
               <label className="mj-studio-field">
                 <span>{locale === "ja" ? "フレームワーク" : "Framework"}</span>
                 <select value={framework} onChange={(event) => changeFramework(event.target.value as ComposerFramework)}>
@@ -269,6 +352,7 @@ export function StudioWorkspace({ artifactId, newDraft = false, locale = "en" }:
               <span className="sr-only">{copy.search}</span>
               <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={copy.searchPlaceholder} />
             </label>
+            {artifactSyncError ? <p className="mj-studio-empty" role="alert">{copy.remoteSyncUnavailable}</p> : null}
             <div className="mj-studio-discovery-list">
               {filteredArtifacts.length ? filteredArtifacts.map((item) => (
                 <article className="mj-studio-discovery-card" key={item.id}>
@@ -291,16 +375,26 @@ type StudioCopy = (typeof WORKSPACE_COPY)[PublicLocale]["studio"];
 
 const ANGLE_OPTIONS = ["pi/8", "pi/4", "pi/2", "pi", "3*pi/2", "2*pi"];
 
-function CircuitBuilder({ framework, selectedGate, onSelectGate, onApply, hidden, copy }: { framework: ComposerFramework; selectedGate: string; onSelectGate: (gate: string) => void; onApply: (codes: Record<ComposerFramework, string>) => void; hidden: boolean; copy: StudioCopy }) {
-  const [qubitCount, setQubitCount] = useState(2);
-  const [steps, setSteps] = useState<BuilderStep[]>([]);
+function CircuitBuilder({ seed, framework, selectedGate, onSelectGate, onApply, onCircuitChange, hidden, copy }: { seed: BuilderSeed; framework: ComposerFramework; selectedGate: string; onSelectGate: (gate: string) => void; onApply: (codes: Record<ComposerFramework, string>) => void; onCircuitChange?: (circuit: { qubitCount: number; steps: BuilderStep[]; customGates: CustomGateDefinition[] }) => void; hidden: boolean; copy: StudioCopy }) {
+  const [qubitCount, setQubitCount] = useState(seed.qubitCount);
+  const [steps, setSteps] = useState<BuilderStep[]>(seed.steps);
   const [pendingQubits, setPendingQubits] = useState<number[]>([]);
   const [angle, setAngle] = useState("pi/2");
   const [selectedStepIds, setSelectedStepIds] = useState<string[]>([]);
-  const [customGates, setCustomGates] = useState<CustomGateDefinition[]>([]);
+  const [customGates, setCustomGates] = useState<CustomGateDefinition[]>(seed.customGates);
   const [showCustomGateForm, setShowCustomGateForm] = useState(false);
   const [customGateName, setCustomGateName] = useState("");
   const [builderMessage, setBuilderMessage] = useState<string | null>(null);
+
+  const onCircuitChangeRef = useRef(onCircuitChange);
+  onCircuitChangeRef.current = onCircuitChange;
+  useEffect(() => {
+    // The untouched seed is not re-persisted; only user edits are reported.
+    // Reference equality is the signal: any edit replaces these arrays, while
+    // StrictMode's double-invoked mount effect still sees the seed values.
+    if (qubitCount === seed.qubitCount && steps === seed.steps && customGates === seed.customGates) return;
+    onCircuitChangeRef.current?.({ qubitCount, steps, customGates });
+  }, [qubitCount, steps, customGates, seed]);
 
   const armedCustomId = selectedGate.startsWith("custom:") ? selectedGate.slice("custom:".length) : null;
   const armedCustom = armedCustomId ? customGates.find((gate) => gate.id === armedCustomId) ?? null : null;
@@ -606,22 +700,20 @@ function VersionPanel({ artifact, runId, copy }: { artifact: LibraryArtifact | n
 }
 
 async function loadArtifact(id: string): Promise<LibraryArtifact | null> {
-  const existing = getLibraryArtifact(id);
   const response = await fetch(`/api/artifacts/${encodeURIComponent(id)}`, { cache: "no-store" });
-  if (!response.ok) return existing;
+  if (!response.ok) return null;
   const payload = (await response.json()) as Record<string, unknown>;
   const artifact = toLibraryArtifact(payload)[0];
-  if (!artifact) return existing;
+  if (!artifact) return null;
   if (typeof payload.current_version_id === "string") {
     const versionResponse = await fetch(`/api/artifacts/${encodeURIComponent(id)}/versions/current`, { cache: "no-store" });
-    if (versionResponse.ok) {
-      const version = (await versionResponse.json()) as Record<string, unknown>;
-      artifact.code = typeof version.code === "string" ? version.code : artifact.code;
-      artifact.frameworkVariants = frameworkVariantsFromRemote(version.framework_variants) ?? artifact.frameworkVariants;
-      artifact.qasm = typeof version.qasm === "string" ? version.qasm : artifact.qasm;
-      artifact.currentVersionId = payload.current_version_id;
-      artifact.resourceRows = resourceRowsFromRemote(version.resource_estimates);
-    }
+    if (!versionResponse.ok) return null;
+    const version = (await versionResponse.json()) as Record<string, unknown>;
+    artifact.code = typeof version.code === "string" ? version.code : artifact.code;
+    artifact.frameworkVariants = frameworkVariantsFromRemote(version.framework_variants) ?? artifact.frameworkVariants;
+    artifact.qasm = typeof version.qasm === "string" ? version.qasm : artifact.qasm;
+    artifact.currentVersionId = payload.current_version_id;
+    artifact.resourceRows = resourceRowsFromRemote(version.resource_estimates);
   }
   return artifact;
 }
@@ -664,6 +756,15 @@ function makeDrafts(artifact: LibraryArtifact | null): Record<ComposerFramework,
 function normalizeFramework(value: string | undefined): ComposerFramework {
   const normalized = value?.toLowerCase();
   return normalized === "pennylane" ? "pennylane" : normalized === "cirq" ? "cirq" : "qiskit";
+}
+
+function studioArtifactIdentity(artifact: LibraryArtifact): string {
+  if (artifact.currentVersionId) return `version:${artifact.currentVersionId}`;
+  let hash = 2166136261;
+  for (const character of `${artifact.framework}\u0000${artifact.code}`) {
+    hash = Math.imul(hash ^ character.charCodeAt(0), 16777619);
+  }
+  return `source:${(hash >>> 0).toString(16)}`;
 }
 
 function frameworkLabel(framework: ComposerFramework): string {

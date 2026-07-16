@@ -80,6 +80,11 @@
   --sidebar-expanded: 256px;
   --sidebar-collapsed: 64px;
   --composer-max: 720px;
+  --border-hairline: 1px;
+  --sidebar-menu-min-width: 152px;
+  --sidebar-menu-max-width: 200px;
+  --sidebar-menu-item-height: 30px;
+  --shadow-popover: 0 8px 24px rgb(0 0 0 / 0.28);
 }
 
 :root[data-theme="dark"] {

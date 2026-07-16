@@ -2,7 +2,7 @@
 
 import type { DragEvent, FormEvent, ReactNode } from "react";
 import { usePathname } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { AppShell, BRAND_NAME, NAV_SURFACES, navSurfaceLabel } from "@majorana/ui";
 import {
   ArchiveIcon,
@@ -678,14 +678,32 @@ function ItemOverflowMenu({ kind, title, pinned, locale, folders, currentFolderI
   const [open, setOpen] = useState(false);
   const [renaming, setRenaming] = useState(false);
   const [name, setName] = useState(title);
-  const pinLabel = kind === "chat" ? (pinned ? copy.unpinChat(title) : copy.pinChat(title)) : (pinned ? copy.unpinArtifact(title) : copy.pinArtifact(title));
-  const archiveLabel = kind === "chat" ? copy.archiveChat(title) : copy.archiveArtifact(title);
-  const deleteLabel = kind === "chat" ? copy.deleteChat(title) : copy.deleteArtifact(title);
+  const [placement, setPlacement] = useState<{ left: number; top?: number; bottom?: number }>({ left: 0, top: 0 });
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const pinAria = kind === "chat" ? (pinned ? copy.unpinChat(title) : copy.pinChat(title)) : (pinned ? copy.unpinArtifact(title) : copy.pinArtifact(title));
+  const archiveAria = kind === "chat" ? copy.archiveChat(title) : copy.archiveArtifact(title);
+  const deleteAria = kind === "chat" ? copy.deleteChat(title) : copy.deleteArtifact(title);
   const currentFolder = folders.find((folder) => folder.id === currentFolderId);
 
   function close() {
     setOpen(false);
     setRenaming(false);
+  }
+
+  function toggleOpen() {
+    if (!open) {
+      // Anchor the popover to the trigger in viewport space so it never
+      // clips inside the sidebar scroll area; flip above near the bottom.
+      const rect = triggerRef.current?.getBoundingClientRect();
+      if (rect) {
+        const left = Math.max(8, Math.min(rect.right - 200, window.innerWidth - 208));
+        if (rect.bottom > window.innerHeight - 280) setPlacement({ left, bottom: window.innerHeight - rect.top });
+        else setPlacement({ left, top: rect.bottom });
+      }
+    }
+    setOpen((value) => !value);
+    setRenaming(false);
+    setName(title);
   }
 
   function submitRename(event: FormEvent<HTMLFormElement>) {
@@ -699,21 +717,47 @@ function ItemOverflowMenu({ kind, title, pinned, locale, folders, currentFolderI
     // The popover is hover-scoped per the owner request: leaving the menu area
     // dismisses it without needing a click elsewhere.
     <div className="mj-sidebar-item-menu" onMouseLeave={close}>
-      <button className="mj-sidebar-menu-trigger" type="button" aria-label={`${title} options`} aria-expanded={open} title={`${title} options`} onClick={(event) => { event.preventDefault(); event.stopPropagation(); setOpen((value) => !value); setRenaming(false); setName(title); }}>
+      <button ref={triggerRef} className="mj-sidebar-menu-trigger" type="button" aria-label={`${title} options`} aria-expanded={open} title={`${title} options`} onClick={(event) => { event.preventDefault(); event.stopPropagation(); toggleOpen(); }}>
         <MoreIcon size={15} />
       </button>
       {open ? (
-        <div className="mj-sidebar-item-menu-popover" role="menu" onClick={(event) => event.stopPropagation()}>
+        <div
+          className="mj-sidebar-item-menu-popover"
+          role="menu"
+          style={placement}
+          onClick={(event) => event.stopPropagation()}
+          onKeyDown={(event) => {
+            if (event.key !== "Escape") return;
+            event.preventDefault();
+            close();
+            triggerRef.current?.focus();
+          }}
+        >
           {renaming ? (
             <form className="mj-sidebar-rename-form" onSubmit={submitRename}>
-              <input aria-label={copy.rename(title)} autoFocus maxLength={80} value={name} onChange={(event) => setName(event.target.value)} placeholder={copy.renamePlaceholder} />
-              <button type="submit" aria-label={copy.renameSave} disabled={!name.trim()}>✓</button>
+              <input
+                aria-label={copy.rename(title)}
+                autoFocus
+                maxLength={80}
+                value={name}
+                onChange={(event) => setName(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Escape") {
+                    event.preventDefault();
+                    close();
+                  } else if (event.key === "Enter") {
+                    event.preventDefault();
+                    event.currentTarget.form?.requestSubmit();
+                  }
+                }}
+                placeholder={copy.renamePlaceholder}
+              />
             </form>
           ) : (
             <>
-              <button type="button" role="menuitem" onClick={() => setRenaming(true)}>{copy.rename(title)}</button>
-              <button type="button" role="menuitem" onClick={() => { onTogglePin(); close(); }}>{pinLabel}</button>
-              <button type="button" role="menuitem" onClick={() => { onArchive(); close(); }}>{archiveLabel}</button>
+              <button type="button" role="menuitem" aria-label={copy.rename(title)} onClick={() => setRenaming(true)}>{copy.menuRename}</button>
+              <button type="button" role="menuitem" aria-label={pinAria} onClick={() => { onTogglePin(); close(); }}>{pinned ? copy.menuUnpin : copy.menuPin}</button>
+              <button type="button" role="menuitem" aria-label={archiveAria} onClick={() => { onArchive(); close(); }}>{copy.menuArchive}</button>
               <div className="mj-sidebar-menu-folder">
                 <span>{copy.projectLabel}</span>
                 <select aria-label={copy.moveToFolder(title)} value={currentFolderId ?? ""} onChange={(event) => { onAssignFolder(event.target.value || undefined); close(); }}>
@@ -722,7 +766,7 @@ function ItemOverflowMenu({ kind, title, pinned, locale, folders, currentFolderI
                 </select>
                 {currentFolder ? <small>{currentFolder.name}</small> : null}
               </div>
-              <button className="is-danger" type="button" role="menuitem" onClick={() => { onDelete(); close(); }}>{deleteLabel}</button>
+              <button className="is-danger" type="button" role="menuitem" aria-label={deleteAria} onClick={() => { onDelete(); close(); }}>{copy.menuDelete}</button>
             </>
           )}
         </div>
