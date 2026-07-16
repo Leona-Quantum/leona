@@ -545,6 +545,90 @@
   color: var(--text-0);
   font-weight: 500;
 }
+.mj-company-principle-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--sp-4);
+  margin-top: var(--sp-8);
+}
+.mj-company-principle-card {
+  height: 100%;
+  box-sizing: border-box;
+  padding: var(--sp-6);
+  border: 1px solid var(--border-0);
+  border-radius: var(--radius-card);
+  background: var(--bg-1);
+  transition: transform 150ms ease-out, border-color 150ms ease-out;
+}
+.mj-company-principle-card:hover {
+  border-color: var(--accent);
+  transform: translateY(-3px);
+}
+.mj-company-principle-card h3 {
+  margin: 0 0 var(--sp-2);
+  font-size: var(--fs-16);
+  font-weight: 500;
+}
+.mj-company-principle-card p {
+  margin: 0;
+  color: var(--text-1);
+  line-height: 1.6;
+}
+.mj-company-capability-list article {
+  transition: transform 150ms ease-out;
+}
+.mj-company-capability-list article:hover {
+  transform: translateX(var(--sp-1));
+}
+/* Decorative landing circuit band; motion lives in the app surface. */
+.mj-qband {
+  padding-top: var(--sp-10);
+}
+.mj-qband svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+.mj-qband-wire {
+  stroke: var(--border-0);
+  stroke-width: 1;
+}
+.mj-qband-gate {
+  stroke: var(--text-2);
+  stroke-width: 1.2;
+  stroke-linecap: round;
+}
+.mj-qband-gate rect {
+  fill: var(--bg-1);
+}
+.mj-qband-gate text {
+  stroke: none;
+  fill: var(--text-1);
+  font-family: var(--font-mono);
+  font-size: var(--fs-12);
+  text-anchor: middle;
+}
+.mj-qband-control {
+  fill: var(--text-2);
+}
+.mj-qband-target {
+  fill: none;
+}
+.mj-qband-pulse {
+  fill: var(--accent);
+  stroke: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .mj-company-principle-card,
+  .mj-company-capability-list article {
+    transition: none;
+  }
+}
+@media (max-width: 620px) {
+  .mj-company-principle-grid {
+    grid-template-columns: 1fr;
+  }
+}
 .mj-company-final-cta {
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: end;
@@ -1920,7 +2004,9 @@
 }
 .mj-sidebar-item-menu-popover {
   /* Fixed so the sidebar scroll area can never clip it; the row component
-     computes viewport coordinates and flips above near the bottom edge. */
+     places it just past the sidebar's right edge, aligned with its row, and
+     flips above near the bottom edge. The ::before bridge keeps the pointer
+     path from the trigger to the menu inside the hover area. */
   position: fixed;
   z-index: 60;
   display: grid;
@@ -1931,6 +2017,14 @@
   border-radius: var(--radius-card);
   background: var(--bg-1);
   box-shadow: var(--shadow-popover);
+}
+.mj-sidebar-item-menu-popover::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: calc(-1 * var(--sp-4));
+  width: var(--sp-4);
 }
 .mj-sidebar-item-menu-popover button {
   min-height: var(--sidebar-menu-item-height);

@@ -126,8 +126,6 @@ export function LibraryStudio({ demoMode = false, locale = "en" }: { demoMode?: 
             </div>
           </header>
 
-          <p className="mj-library-star-note">{copy.starBoundary}</p>
-
           <section className="mj-library-toolbar" aria-label={copy.filterArtifacts}>
             <label className="mj-library-search">
               <SearchIcon size={16} />
@@ -153,7 +151,6 @@ export function LibraryStudio({ demoMode = false, locale = "en" }: { demoMode?: 
 
           <div className="mj-library-meta">
             <span>{filtered.length} {copy.artifacts}</span>
-            <span className="mj-library-meta-note">{copy.connected}</span>
           </div>
 
           <section className="mj-library-table-wrap" aria-labelledby="artifact-list-title">
@@ -176,7 +173,7 @@ export function LibraryStudio({ demoMode = false, locale = "en" }: { demoMode?: 
             </div>
           </section>
 
-          <p className="mj-library-footer-note">{demoMode ? copy.previewFooter : copy.workspaceFooter}</p>
+          {demoMode ? <p className="mj-library-footer-note">{copy.previewFooter}</p> : null}
         </div>
       </div>
       {deleteTarget ? (

@@ -41,8 +41,236 @@ body {
   margin: 0;
 }
 
+/* Run-home hero — the constellation mark and greeting are the only heading;
+ * explanatory copy was retired per owner direction 2026-07-17. App-surface
+ * motion lives here, keeping the vendored UI package within its allowlist. */
+.mj-run-composer-stage {
+  display: contents;
+}
+.mj-run-home-hero {
+  gap: var(--sp-3);
+}
+.mj-run-greeting--hero {
+  margin: 0;
+  color: var(--text-0);
+  font-size: var(--fs-28);
+  font-weight: 600;
+  letter-spacing: -0.025em;
+  line-height: 1.15;
+}
+.mj-run-greeting--hero .mj-run-greeting-caret {
+  height: 0.9em;
+  margin-left: 3px;
+}
+.mj-hero-mark {
+  display: inline-grid;
+  place-items: center;
+  color: var(--text-1);
+  transition: transform 300ms ease-out;
+}
+.mj-hero-mark svg {
+  overflow: visible;
+}
+.mj-hero-link {
+  stroke: var(--border-0);
+  stroke-width: 1;
+  stroke-dasharray: 1;
+  stroke-dashoffset: 0;
+  animation: mj-hero-draw 700ms ease-out both;
+  transition: stroke 300ms ease;
+}
+.mj-hero-star {
+  fill: var(--text-1);
+  transform-origin: center;
+  transform-box: fill-box;
+  animation: mj-hero-pop 500ms ease-out both;
+  transition: fill 300ms ease;
+}
+.mj-hero-star--bright {
+  fill: var(--accent);
+}
+.mj-hero-orbit {
+  animation: mj-hero-orbit 7s linear infinite;
+}
+.mj-hero-orbit-dot {
+  fill: var(--accent);
+  opacity: 0.75;
+}
+.mj-hero-mark:hover {
+  transform: rotate(-2deg) scale(1.04);
+}
+.mj-hero-mark:hover .mj-hero-link {
+  stroke: var(--text-2);
+}
+.mj-hero-mark:hover .mj-hero-star {
+  fill: var(--text-0);
+}
+.mj-hero-mark:hover .mj-hero-star--bright,
+.mj-hero-mark.is-engaged .mj-hero-star--bright {
+  fill: var(--accent-press);
+}
+.mj-hero-mark.is-engaged {
+  transform: translateY(5px) scale(0.97);
+}
+.mj-hero-mark.is-engaged .mj-hero-orbit {
+  animation-duration: 3.5s;
+}
+@keyframes mj-hero-draw {
+  from { stroke-dashoffset: 1; }
+  to { stroke-dashoffset: 0; }
+}
+@keyframes mj-hero-pop {
+  from { opacity: 0; transform: scale(0.2); }
+  60% { opacity: 1; transform: scale(1.35); }
+  to { opacity: 1; transform: scale(1); }
+}
+@keyframes mj-hero-orbit {
+  to { transform: rotate(360deg); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .mj-hero-link,
+  .mj-hero-star {
+    animation: none;
+  }
+  .mj-hero-orbit {
+    animation: none;
+  }
+  .mj-hero-mark,
+  .mj-hero-mark:hover,
+  .mj-hero-mark.is-engaged {
+    transform: none;
+    transition: none;
+  }
+}
+
+/* Studio — the constellation companion perched on the discovery search bar,
+ * and the inspector pop-in. */
+.mj-studio-search--perch {
+  position: relative;
+}
+.mj-studio-perch {
+  position: absolute;
+  right: var(--sp-5);
+  top: -15px;
+  color: var(--text-1);
+  pointer-events: none;
+  animation: mj-perch-settle 1600ms ease-in-out both;
+}
+.mj-perch-line,
+.mj-perch-tail,
+.mj-perch-paw {
+  stroke: currentColor;
+  stroke-width: 1;
+  stroke-linecap: round;
+  fill: none;
+  opacity: 0.7;
+}
+.mj-perch-dot {
+  fill: currentColor;
+}
+.mj-perch-dot--bright {
+  fill: var(--accent);
+}
+.mj-perch-tail {
+  transform-origin: 9.5px 14px;
+  transform-box: view-box;
+  animation: mj-perch-sway 5s ease-in-out 1600ms infinite;
+}
+.mj-perch-paw {
+  transform-origin: 7.6px 13.6px;
+  transform-box: view-box;
+}
+.mj-studio-search--perch:hover .mj-studio-perch,
+.mj-studio-search--perch:focus-within .mj-studio-perch {
+  color: var(--text-0);
+}
+.mj-studio-search--perch:hover .mj-perch-paw {
+  animation: mj-perch-paw 700ms ease-in-out;
+}
+@keyframes mj-perch-settle {
+  from { transform: translate(-76px, 0); opacity: 0; }
+  20% { opacity: 1; }
+  30% { transform: translate(-52px, -3px); }
+  45% { transform: translate(-34px, 0); }
+  60% { transform: translate(-18px, -3px); }
+  80% { transform: translate(-4px, 0); }
+  to { transform: translate(0, 0); opacity: 1; }
+}
+@keyframes mj-perch-sway {
+  0%, 100% { transform: rotate(0deg); }
+  50% { transform: rotate(5deg); }
+}
+@keyframes mj-perch-paw {
+  0%, 100% { transform: rotate(0deg); }
+  35% { transform: rotate(-16deg); }
+  65% { transform: rotate(9deg); }
+}
+.mj-studio-inspector:not([hidden]) {
+  animation: mj-inspector-pop 220ms ease-out;
+}
+.mj-studio-inspector-toggle.is-open {
+  color: var(--accent);
+}
+@keyframes mj-inspector-pop {
+  from { opacity: 0; transform: translateX(14px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .mj-studio-perch,
+  .mj-perch-tail,
+  .mj-perch-paw {
+    animation: none;
+  }
+  .mj-studio-inspector:not([hidden]) {
+    animation: none;
+  }
+}
+
 /* Public landing-page motion belongs to the app surface, keeping the vendored
  * UI package within its shared animation allowlist. */
+.mj-hero-word {
+  display: inline-block;
+  animation: mj-company-rise 600ms ease-out both;
+}
+.mj-public-pipeline--live .mj-public-pipeline-step .mj-public-pipeline-number {
+  animation: mj-pipeline-glow 6s ease-in-out infinite;
+}
+.mj-public-pipeline--live .mj-public-pipeline-step:nth-child(2) .mj-public-pipeline-number { animation-delay: 1.5s; }
+.mj-public-pipeline--live .mj-public-pipeline-step:nth-child(3) .mj-public-pipeline-number { animation-delay: 3s; }
+.mj-public-pipeline--live .mj-public-pipeline-step:nth-child(4) .mj-public-pipeline-number { animation-delay: 4.5s; }
+@keyframes mj-pipeline-glow {
+  0%, 24%, 100% { background: transparent; color: var(--accent); }
+  8% { background: var(--accent); color: var(--bg-0); }
+}
+.mj-qband-pulse {
+  animation: mj-qband-travel 5.4s linear infinite;
+}
+.mj-qband-gate {
+  animation: mj-qband-light 5.4s ease-in-out infinite;
+}
+@keyframes mj-qband-travel {
+  from { transform: translateX(20px); opacity: 0; }
+  4% { opacity: 1; }
+  96% { opacity: 1; }
+  to { transform: translateX(740px); opacity: 0; }
+}
+@keyframes mj-qband-light {
+  0%, 14%, 100% { stroke: var(--text-2); }
+  5% { stroke: var(--accent); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .mj-hero-word,
+  .mj-qband-gate {
+    animation: none;
+  }
+  .mj-qband-pulse {
+    animation: none;
+    opacity: 0;
+  }
+  .mj-public-pipeline--live .mj-public-pipeline-step .mj-public-pipeline-number {
+    animation: none;
+  }
+}
 .mj-company-hero-copy,
 .mj-company-hero-art,
 .mj-company-section,

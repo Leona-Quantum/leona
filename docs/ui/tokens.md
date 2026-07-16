@@ -21,12 +21,13 @@ amber, `--err` red) are **always paired with a glyph** so status never rides on 
 (deuteranopia-safe): the rail dots carry ✓ / – / ✕, and the verdict banner leads with its
 word label ("Verified" / "Failed" / …) plus a thin colored left edge — no full-color text.
 
-Light palette (owner directive 2026-07-14): **strictly monochrome.** White, black,
-and neutral gray values provide the entire surface, including accents and verdict tokens.
-Status remains distinguishable through its existing glyph and word-label pairings. The
-header toggle stores the explicit selection locally; without one, the OS preference is used.
-The light audit pairs are text-0/bg-0 19.8:1, text-1/bg-1 7.5:1, text-2/bg-1 4.5:1,
-accent/bg-0 17.9:1, ok/bg-1 17.2:1, warn/bg-1 9.9:1, and err/bg-1 19.0:1.
+Light palette (owner directive 2026-07-17, superseding the 2026-07-14 strict-monochrome
+rule): light shares the **same chromatic identity as dark** — warm paper neutrals, the
+moss `--accent`, and emerald/amber/red verdict tokens. Hues match the dark palette;
+lightness is dropped where AA contrast requires it. Status stays glyph-and-word paired.
+The header toggle stores the explicit selection locally; without one, the OS preference
+is used. The light audit pairs are text-0/bg-0 16.5:1, text-1/bg-1 6.6:1,
+text-2/bg-0 5.0:1, accent/bg-0 5.3:1, ok/bg-1 4.6:1, warn/bg-1 5.2:1, and err/bg-1 5.3:1.
 
 Rules:
 - Light and dark themes share semantic names (`--bg-0`, `--text-1`, verdict colors

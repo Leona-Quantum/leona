@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { CircuitBand } from "../components/circuit-band";
 import { BrandMark } from "../components/icons";
 import { LeoConstellation } from "../components/leo-constellation";
 import { PublicSite } from "../components/public-site";
@@ -19,7 +20,16 @@ export default async function Home() {
       <section className="mj-company-hero">
         <LeoConstellation className="mj-company-constellation" />
         <div className="mj-company-hero-copy">
-          <h1>{copy.hero.title}</h1>
+          <h1 className="mj-company-hero-title">
+            {copy.hero.title.split(" ").map((word, index) => (
+              // The joining space lives outside the inline-block span — trailing
+              // whitespace inside one is trimmed and the words would run together.
+              <span key={`${word}-${index}`}>
+                {index > 0 ? " " : ""}
+                <span className="mj-hero-word" style={{ animationDelay: `${index * 90}ms` }}>{word}</span>
+              </span>
+            ))}
+          </h1>
           <p className="mj-company-hero-lede">{copy.hero.lede}</p>
           <div className="mj-public-actions">
             <a className="mj-primary-button" href="/repository">{copy.hero.primary}</a>
@@ -40,7 +50,7 @@ export default async function Home() {
             <span className="mj-company-orbit-dot mj-company-orbit-dot--one" />
             <span className="mj-company-orbit-dot mj-company-orbit-dot--two" />
           </div>
-          <div className="mj-public-pipeline">
+          <div className="mj-public-pipeline mj-public-pipeline--live">
             {copy.visual.pipeline.map((step, index) => (
               <div className="mj-public-pipeline-step" key={step.number}>
                 <span className="mj-public-pipeline-number">{step.number}</span>
@@ -69,6 +79,10 @@ export default async function Home() {
         </section>
       </Reveal>
 
+      <Reveal>
+        <CircuitBand />
+      </Reveal>
+
       <section className="mj-company-section mj-company-product-band" aria-labelledby="surfaces-heading">
         <div className="mj-company-section-heading">
           <p className="mj-section-label">{copy.product.label}</p>
@@ -92,19 +106,24 @@ export default async function Home() {
         </div>
       </section>
 
-      <Reveal>
-        <section className="mj-company-section mj-company-principles" aria-labelledby="principles-heading">
+      <section className="mj-company-section mj-company-principles" aria-labelledby="principles-heading">
+        <Reveal>
           <div>
             <p className="mj-section-label">{copy.principles.label}</p>
             <h2 id="principles-heading">{copy.principles.title}</h2>
           </div>
-          <div className="mj-company-principle-list">
-            {copy.principles.items.map((item) => (
-              <p key={item.title}><strong>{item.title}.</strong> {item.body}</p>
-            ))}
-          </div>
-        </section>
-      </Reveal>
+        </Reveal>
+        <div className="mj-company-principle-grid">
+          {copy.principles.items.map((item, index) => (
+            <Reveal key={item.title} delay={index * 90}>
+              <article className="mj-company-principle-card">
+                <h3>{item.title}</h3>
+                <p>{item.body}</p>
+              </article>
+            </Reveal>
+          ))}
+        </div>
+      </section>
 
       <Reveal>
         <section className="mj-company-final-cta" aria-labelledby="company-cta-heading">

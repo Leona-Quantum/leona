@@ -13,7 +13,7 @@ import { useEffect, useRef } from "react";
  * Chertan, Adhafera, Ras Elased, Eta/Mu Leonis) in normalized [0,1] space,
  * x mirrored so the lioness faces the copy.
  */
-const LEO_STARS: Array<{ x: number; y: number; r: number; name?: string }> = [
+export const LEO_STARS: Array<{ x: number; y: number; r: number; name?: string }> = [
   { x: 0.18, y: 0.78, r: 2.6, name: "Regulus" },
   { x: 0.2, y: 0.55, r: 1.7, name: "Eta" },
   { x: 0.27, y: 0.38, r: 2.1, name: "Algieba" },
@@ -26,7 +26,7 @@ const LEO_STARS: Array<{ x: number; y: number; r: number; name?: string }> = [
   { x: 0.6, y: 0.72, r: 1.5, name: "Iota" },
 ];
 
-const LEO_LINKS: Array<[number, number]> = [
+export const LEO_LINKS: Array<[number, number]> = [
   [0, 1], [1, 2], [2, 3], [3, 4], [4, 5], [5, 2],
   [1, 6], [6, 7], [7, 8], [8, 9], [9, 6], [0, 6],
 ];
