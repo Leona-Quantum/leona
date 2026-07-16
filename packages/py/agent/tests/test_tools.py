@@ -72,7 +72,7 @@ class Converter:
 
 
 class Publisher:
-    async def publish(self, candidate, _verification, _conversion, _plan):
+    async def publish(self, candidate, _execution, _verification, _conversion, _plan):
         return PublishedArtifact(
             artifact_id=uuid4(),
             version_id=uuid4(),
@@ -108,6 +108,8 @@ async def test_tools_bind_execution_verification_conversion_and_publish():
         ToolCall(tool_call_id="2", name=ToolName.SIMULATE_QISKIT, arguments={"source": source}),
     )
     candidate_id = simulation.payload["candidate_id"]
+    assert simulation.payload["result_keys"] == ["counts"]
+    assert "result" not in simulation.payload
     verification = await broker.dispatch(
         run_id,
         ToolCall(
@@ -117,6 +119,7 @@ async def test_tools_bind_execution_verification_conversion_and_publish():
         ),
     )
     assert verification.payload["decision"] == "pass"
+    assert "deterministic_checks" not in verification.payload
     conversion = await broker.dispatch(
         run_id,
         ToolCall(

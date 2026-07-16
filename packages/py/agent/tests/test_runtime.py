@@ -73,7 +73,7 @@ class Converter:
 
 
 class Publisher:
-    async def publish(self, candidate, _verification, _conversion, _plan):
+    async def publish(self, candidate, _execution, _verification, _conversion, _plan):
         return PublishedArtifact(
             artifact_id=uuid4(),
             version_id=uuid4(),
