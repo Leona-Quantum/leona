@@ -65,3 +65,21 @@ test("code outside the builder subset refuses to parse instead of guessing", () 
   );
   assert.equal(parseBuilderCircuit(customHelpers.qiskit, "qiskit"), null);
 });
+
+test("malformed angle literals are rejected", () => {
+  for (const angle of ["2pi", "*pi", ".pi", "1.2.3"]) {
+    const code = `from qiskit import QuantumCircuit\n\nqc = QuantumCircuit(1)\nqc.rx(${angle}, 0)`;
+    assert.equal(parseBuilderCircuit(code, "qiskit"), null, angle);
+  }
+});
+
+test("measurement and return operations are terminal", () => {
+  const qiskit = "from qiskit import QuantumCircuit\n\nqc = QuantumCircuit(1)\nqc.measure_all()\nqc.h(0)";
+  assert.equal(parseBuilderCircuit(qiskit, "qiskit"), null);
+
+  const pennylane = "import pennylane as qml\n\ndev = qml.device('default.qubit', wires=1)\n@qml.qnode(dev)\ndef circuit():\n    return qml.sample()\n    qml.Hadamard(wires=0)";
+  assert.equal(parseBuilderCircuit(pennylane, "pennylane"), null);
+
+  const cirq = "import cirq\n\nqubits = cirq.LineQubit.range(1)\ncircuit = cirq.Circuit(\n    cirq.measure(*qubits, key='result'),\n    cirq.H(qubits[0]),\n)";
+  assert.equal(parseBuilderCircuit(cirq, "cirq"), null);
+});

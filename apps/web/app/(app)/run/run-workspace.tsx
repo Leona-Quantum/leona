@@ -109,26 +109,35 @@ export function RunWorkspace({ demoMode = false, locale = "en" }: { demoMode?: b
 
   function addFiles(files: File[]) {
     void (async () => {
+      const candidates: PromptAttachment[] = [];
+      const errors: string[] = [];
       for (const file of files) {
         const lowered = file.name.toLowerCase();
         if (!ATTACHMENT_EXTENSIONS.some((extension) => lowered.endsWith(extension))) {
-          setError(copy.attachUnsupported(file.name));
+          errors.push(copy.attachUnsupported(file.name));
           continue;
         }
         if (file.size > ATTACHMENT_MAX_BYTES) {
-          setError(copy.attachTooLarge(file.name));
+          errors.push(copy.attachTooLarge(file.name));
           continue;
         }
-        const content = await file.text();
-        setAttachments((current) => {
-          if (current.length >= ATTACHMENT_MAX_COUNT) {
-            setError(copy.attachLimit);
-            return current;
-          }
-          setError(null);
-          return [...current.filter((item) => item.name !== file.name), { name: file.name, size: file.size, content }];
-        });
+        try {
+          candidates.push({ name: file.name, size: file.size, content: await file.text() });
+        } catch {
+          errors.push(copy.attachReadFailed(file.name));
+        }
       }
+
+      const nextByName = new Map(attachments.map((item) => [item.name, item]));
+      for (const candidate of candidates) {
+        if (!nextByName.has(candidate.name) && nextByName.size >= ATTACHMENT_MAX_COUNT) {
+          errors.push(copy.attachLimit);
+          continue;
+        }
+        nextByName.set(candidate.name, candidate);
+      }
+      setAttachments([...nextByName.values()]);
+      setError([...new Set(errors)].join(" ") || null);
     })();
   }
 
@@ -154,7 +163,7 @@ export function RunWorkspace({ demoMode = false, locale = "en" }: { demoMode?: b
       setError("Public preview mode is view-only. Sign in to start a real run.");
       return;
     }
-    if (contextArtifact && !confirmingSend) {
+    if (contextArtifact) {
       setConfirmingSend(true);
       return;
     }
@@ -333,7 +342,15 @@ function ExampleStrip({ copy, onPick }: { copy: (typeof WORKSPACE_COPY)[PublicLo
         <h2 id="examples-title">{copy.examplesTitle}</h2>
         <span>{copy.workflowTitle}</span>
       </div>
-      <div className="mj-example-strip" onMouseEnter={() => setPaused(true)} onMouseLeave={() => setPaused(false)}>
+      <div
+        className="mj-example-strip"
+        onMouseEnter={() => setPaused(true)}
+        onMouseLeave={() => setPaused(false)}
+        onFocus={() => setPaused(true)}
+        onBlur={(event) => {
+          if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setPaused(false);
+        }}
+      >
         <button className="mj-example-ticker" type="button" key={active.title} onClick={() => onPick(active.prompt)}>
           <strong>{active.title}</strong>
           <span>{active.prompt}</span>

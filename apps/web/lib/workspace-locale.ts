@@ -99,6 +99,7 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
     removeAttachment: (name: string) => string;
     attachTooLarge: (name: string) => string;
     attachUnsupported: (name: string) => string;
+    attachReadFailed: (name: string) => string;
     attachLimit: string;
     contextLabel: string;
     viewArtifact: string;
@@ -174,6 +175,9 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
     newDraftSource: string;
     sandboxVerifier: string;
     selectedUnavailable: string;
+    loadingArtifacts: string;
+    remoteSyncUnavailable: string;
+    persistenceUnavailable: string;
     noCurrentVersion: string;
     copyUnavailable: string;
     codeCopied: (framework: string) => string;
@@ -348,6 +352,7 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
       removeAttachment: (name) => `Remove attachment ${name}`,
       attachTooLarge: (name) => `${name} is larger than 64 KB — paste the relevant part instead.`,
       attachUnsupported: (name) => `${name} is not a supported text attachment (.py, .txt, .md, .json, .qasm, .csv).`,
+      attachReadFailed: (name) => `${name} could not be read.`,
       attachLimit: "Up to 4 attachments per message.",
       contextLabel: "Library context",
       viewArtifact: "View artifact",
@@ -423,6 +428,9 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
       newDraftSource: "New draft",
       sandboxVerifier: "Sandbox + verifier",
       selectedUnavailable: "The selected artifact could not be loaded.",
+      loadingArtifacts: "Loading the selected artifact…",
+      remoteSyncUnavailable: "Remote artifacts could not be synchronized. Local artifacts remain available.",
+      persistenceUnavailable: "Studio edits could not be saved in this browser.",
       noCurrentVersion: "That artifact has no current version to edit.",
       copyUnavailable: "Copy is unavailable in this browser context.",
       codeCopied: (framework) => `${framework} code copied.`,
@@ -611,6 +619,7 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
       removeAttachment: (name) => `添付 ${name} を削除`,
       attachTooLarge: (name) => `${name} は64KBを超えています。必要な部分を貼り付けてください。`,
       attachUnsupported: (name) => `${name} は対応するテキスト添付ではありません（.py, .txt, .md, .json, .qasm, .csv）。`,
+      attachReadFailed: (name) => `${name} を読み込めませんでした。`,
       attachLimit: "1メッセージに添付できるのは4件までです。",
       contextLabel: "Libraryのコンテキスト",
       viewArtifact: "アーティファクトを見る",
@@ -686,6 +695,9 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
       newDraftSource: "新しい下書き",
       sandboxVerifier: "サンドボックス + 検証器",
       selectedUnavailable: "選択したアーティファクトを読み込めませんでした。",
+      loadingArtifacts: "選択したアーティファクトを読み込んでいます…",
+      remoteSyncUnavailable: "リモートのアーティファクトを同期できませんでした。ローカルのアーティファクトは利用できます。",
+      persistenceUnavailable: "このブラウザにStudioの編集内容を保存できませんでした。",
       noCurrentVersion: "編集できる現在のバージョンがありません。",
       copyUnavailable: "このブラウザではコピーを利用できません。",
       codeCopied: (framework) => `${framework}のコードをコピーしました。`,

@@ -59,7 +59,7 @@ function gateStep(gate: BuiltinBuilderGate, qubits: number[], param?: string): B
 
 function parseAngle(raw: string): string | null {
   const cleaned = raw.trim().replaceAll(/\s+/g, "");
-  return /^[\d.]*\*?pi(\/\d+)?$|^[\d.]+$/.test(cleaned) ? cleaned : null;
+  return /^(?:(?:\d+(?:\.\d+)?\*)?pi(?:\/\d+(?:\.\d+)?)?|\d+(?:\.\d+)?)$/.test(cleaned) ? cleaned : null;
 }
 
 function parseQiskit(lines: string[]): ParsedBuilderCircuit | null {
@@ -68,6 +68,7 @@ function parseQiskit(lines: string[]): ParsedBuilderCircuit | null {
   const steps: BuilderStep[] = [];
   for (const line of lines) {
     if (/^(from|import)\s/.test(line)) continue;
+    if (measured) return null;
     const circuit = /^qc\s*=\s*QuantumCircuit\((\d+)\)$/.exec(line);
     if (circuit) { qubitCount = Number(circuit[1]); continue; }
     if (/^qc\.measure_all\(\)$/.test(line)) { measured = true; continue; }
@@ -100,14 +101,16 @@ function parseQiskit(lines: string[]): ParsedBuilderCircuit | null {
 function parsePennylane(lines: string[]): ParsedBuilderCircuit | null {
   let qubitCount = 0;
   let measured = false;
+  let returnedSeen = false;
   const steps: BuilderStep[] = [];
   for (const line of lines) {
     if (/^(from|import)\s/.test(line)) continue;
+    if (returnedSeen) return null;
     if (/^@qml\.qnode\(/.test(line) || /^def\s+\w+\(\s*\)\s*:/.test(line)) continue;
     const device = /^dev\s*=\s*qml\.device\(\s*["']default\.qubit["']\s*,\s*wires\s*=\s*(\d+)/.exec(line);
     if (device) { qubitCount = Number(device[1]); continue; }
     const returned = /^return\s+qml\.(sample|probs|state|expval)\(/.exec(line);
-    if (returned) { if (returned[1] === "sample") measured = true; continue; }
+    if (returned) { returnedSeen = true; measured = returned[1] === "sample"; continue; }
     const call = /^qml\.(\w+)\((.*)\)$/.exec(line);
     if (!call) return null;
     const gate = PENNYLANE_GATE_NAMES[call[1]];
@@ -138,13 +141,17 @@ function parsePennylane(lines: string[]): ParsedBuilderCircuit | null {
 function parseCirq(lines: string[]): ParsedBuilderCircuit | null {
   let qubitCount = 0;
   let measured = false;
+  let closed = false;
   const steps: BuilderStep[] = [];
   for (const rawLine of lines) {
     const line = rawLine.replace(/,$/, "");
     if (/^(from|import)\s/.test(line)) continue;
-    if (/^circuit\s*=\s*cirq\.Circuit\($/.test(line) || line === ")" || /^circuit\s*=\s*cirq\.Circuit\(\)$/.test(line)) continue;
+    if (closed) return null;
+    if (/^circuit\s*=\s*cirq\.Circuit\($/.test(line) || /^circuit\s*=\s*cirq\.Circuit\(\)$/.test(line)) continue;
+    if (line === ")") { closed = true; continue; }
     const range = /^qubits\s*=\s*cirq\.LineQubit\.range\((\d+)\)$/.exec(line);
     if (range) { qubitCount = Number(range[1]); continue; }
+    if (measured) return null;
     if (/^cirq\.measure\(\*qubits/.test(line)) { measured = true; continue; }
     const rotation = /^cirq\.(rx|ry|rz)\((.+?)\)\.on\(qubits\[(\d+)\]\)$/.exec(line);
     if (rotation) {

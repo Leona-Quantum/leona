@@ -721,7 +721,18 @@ function ItemOverflowMenu({ kind, title, pinned, locale, folders, currentFolderI
         <MoreIcon size={15} />
       </button>
       {open ? (
-        <div className="mj-sidebar-item-menu-popover" role="menu" style={placement} onClick={(event) => event.stopPropagation()}>
+        <div
+          className="mj-sidebar-item-menu-popover"
+          role="menu"
+          style={placement}
+          onClick={(event) => event.stopPropagation()}
+          onKeyDown={(event) => {
+            if (event.key !== "Escape") return;
+            event.preventDefault();
+            close();
+            triggerRef.current?.focus();
+          }}
+        >
           {renaming ? (
             <form className="mj-sidebar-rename-form" onSubmit={submitRename}>
               <input

@@ -194,26 +194,34 @@ export function LiveRun({ taskId }: { taskId: string }) {
 
   function addFiles(files: File[]) {
     void (async () => {
+      const candidates: Array<{ name: string; size: number; content: string }> = [];
+      const errors: string[] = [];
       for (const file of files) {
         const lowered = file.name.toLowerCase();
         if (![".py", ".txt", ".md", ".json", ".qasm", ".csv"].some((extension) => lowered.endsWith(extension))) {
-          setError(`${file.name} is not a supported text attachment (.py, .txt, .md, .json, .qasm, .csv).`);
+          errors.push(`${file.name} is not a supported text attachment (.py, .txt, .md, .json, .qasm, .csv).`);
           continue;
         }
         if (file.size > 64 * 1024) {
-          setError(`${file.name} is larger than 64 KB — paste the relevant part instead.`);
+          errors.push(`${file.name} is larger than 64 KB — paste the relevant part instead.`);
           continue;
         }
-        const content = await file.text();
-        setAttachments((current) => {
-          if (current.length >= 4) {
-            setError("Up to 4 attachments per message.");
-            return current;
-          }
-          setError(null);
-          return [...current.filter((item) => item.name !== file.name), { name: file.name, size: file.size, content }];
-        });
+        try {
+          candidates.push({ name: file.name, size: file.size, content: await file.text() });
+        } catch {
+          errors.push(`${file.name} could not be read.`);
+        }
       }
+      const nextByName = new Map(attachments.map((item) => [item.name, item]));
+      for (const candidate of candidates) {
+        if (!nextByName.has(candidate.name) && nextByName.size >= 4) {
+          errors.push("Up to 4 attachments per message.");
+          continue;
+        }
+        nextByName.set(candidate.name, candidate);
+      }
+      setAttachments([...nextByName.values()]);
+      setError([...new Set(errors)].join(" ") || null);
     })();
   }
 
