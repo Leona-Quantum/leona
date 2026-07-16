@@ -14,6 +14,16 @@ import {
 } from "../../../lib/framework-selection";
 import { RunComposer, type ComposerFramework } from "../../../components/run-composer";
 
+interface PromptAttachment {
+  name: string;
+  size: number;
+  content: string;
+}
+
+const ATTACHMENT_EXTENSIONS = [".py", ".txt", ".md", ".json", ".qasm", ".csv"];
+const ATTACHMENT_MAX_BYTES = 64 * 1024;
+const ATTACHMENT_MAX_COUNT = 4;
+
 export function RunWorkspace({ demoMode = false, locale = "en" }: { demoMode?: boolean; locale?: PublicLocale } = {}) {
   const copy = WORKSPACE_COPY[locale].run;
   const router = useRouter();
@@ -26,6 +36,8 @@ export function RunWorkspace({ demoMode = false, locale = "en" }: { demoMode?: b
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [contextArtifact, setContextArtifact] = useState<LibraryArtifact | null>(null);
+  const [attachments, setAttachments] = useState<PromptAttachment[]>([]);
+  const [confirmingSend, setConfirmingSend] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -95,6 +107,37 @@ export function RunWorkspace({ demoMode = false, locale = "en" }: { demoMode?: b
     return () => { active = false; };
   }, []);
 
+  function addFiles(files: File[]) {
+    void (async () => {
+      for (const file of files) {
+        const lowered = file.name.toLowerCase();
+        if (!ATTACHMENT_EXTENSIONS.some((extension) => lowered.endsWith(extension))) {
+          setError(copy.attachUnsupported(file.name));
+          continue;
+        }
+        if (file.size > ATTACHMENT_MAX_BYTES) {
+          setError(copy.attachTooLarge(file.name));
+          continue;
+        }
+        const content = await file.text();
+        setAttachments((current) => {
+          if (current.length >= ATTACHMENT_MAX_COUNT) {
+            setError(copy.attachLimit);
+            return current;
+          }
+          setError(null);
+          return [...current.filter((item) => item.name !== file.name), { name: file.name, size: file.size, content }];
+        });
+      }
+    })();
+  }
+
+  function promptWithAttachments(taskPrompt: string): string {
+    if (!attachments.length) return taskPrompt;
+    const blocks = attachments.map((attachment) => `\n\n--- Attachment: ${attachment.name} ---\n${attachment.content}`);
+    return `${taskPrompt}${blocks.join("")}`;
+  }
+
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const taskPrompt = prompt.trim();
@@ -111,6 +154,16 @@ export function RunWorkspace({ demoMode = false, locale = "en" }: { demoMode?: b
       setError("Public preview mode is view-only. Sign in to start a real run.");
       return;
     }
+    if (contextArtifact && !confirmingSend) {
+      setConfirmingSend(true);
+      return;
+    }
+    await sendRun(taskPrompt);
+  }
+
+  async function sendRun(taskPrompt: string) {
+    if (pending) return;
+    setConfirmingSend(false);
     setPending(true);
     setError(null);
     try {
@@ -121,9 +174,11 @@ export function RunWorkspace({ demoMode = false, locale = "en" }: { demoMode?: b
           "Idempotency-Key": crypto.randomUUID(),
         },
         body: JSON.stringify({
-          task_prompt: taskPrompt,
+          task_prompt: promptWithAttachments(taskPrompt),
           mode: "execute",
           framework,
+          ...(contextArtifact?.code ? { source_code: contextArtifact.code } : {}),
+          ...(contextArtifact?.currentVersionId ? { artifact_version_id: contextArtifact.currentVersionId } : {}),
         }),
       });
       const payload = (await response.json()) as { id?: string; conversation_id?: string; detail?: string; error?: string };
@@ -151,6 +206,7 @@ export function RunWorkspace({ demoMode = false, locale = "en" }: { demoMode?: b
         <div className="mj-run-home-content mj-run-home-content--centered">
           <header className="mj-run-home-heading">
             <div>
+              <RunGreeting copy={copy} />
               <h1>{copy.title}</h1>
               <p>{copy.lede}</p>
             </div>
@@ -174,10 +230,28 @@ export function RunWorkspace({ demoMode = false, locale = "en" }: { demoMode?: b
             onSubmit={submit}
             centered
             contextArtifact={contextArtifact ? { title: contextArtifact.title, framework: contextArtifact.framework, codeAvailable: Boolean(contextArtifact.code) } : null}
-            onClearContext={() => setContextArtifact(null)}
-            onAttach={() => setError(locale === "ja" ? "添付はまだ利用できません。コードやコンテキストを問いに貼り付けてください。" : "Attachments are not enabled yet; paste code or context into the prompt.")}
+            onClearContext={() => {
+              setContextArtifact(null);
+              setConfirmingSend(false);
+            }}
+            onFiles={demoMode ? undefined : addFiles}
+            attachments={attachments.map(({ name, size }) => ({ name, size }))}
+            onRemoveAttachment={(name) => setAttachments((current) => current.filter((item) => item.name !== name))}
+            onAttach={demoMode ? () => setError(locale === "ja" ? "公開プレビューでは添付を利用できません。" : "Attachments are unavailable in the public preview.") : undefined}
             locale={locale}
           />
+
+          {confirmingSend && contextArtifact ? (
+            <div className="mj-run-confirm" role="alertdialog" aria-labelledby="run-confirm-title" aria-describedby="run-confirm-body">
+              <strong id="run-confirm-title">{copy.confirmSendTitle}</strong>
+              <p id="run-confirm-body">{copy.confirmSendBody(contextArtifact.title)}</p>
+              <blockquote>{prompt.trim()}</blockquote>
+              <div className="mj-run-confirm-actions">
+                <button className="mj-primary-button" type="button" disabled={pending} onClick={() => void sendRun(prompt.trim())}>{copy.confirmSend}</button>
+                <button className="mj-secondary-button" type="button" onClick={() => setConfirmingSend(false)}>{copy.confirmCancel}</button>
+              </div>
+            </div>
+          ) : null}
 
           {artifactHydration === "checking" || artifactHydration === "loading" ? (
             <p className="mj-run-context-link" role="status">Loading artifact context…</p>
@@ -188,31 +262,105 @@ export function RunWorkspace({ demoMode = false, locale = "en" }: { demoMode?: b
 
           {contextArtifact ? <a className="mj-run-context-link" href={demoMode ? "/demo?view=library" : `/library/${contextArtifact.id}`}>{copy.contextLabel}: {contextArtifact.title} · {copy.viewArtifact}</a> : null}
 
-          <section className="mj-run-home-examples" aria-labelledby="examples-title">
-            <div className="mj-run-home-examples-head">
-              <h2 id="examples-title">{copy.examplesTitle}</h2>
-              <span>{copy.workflowTitle}</span>
-            </div>
-            <div className="mj-example-list">
-              {copy.examples.map((example) => (
-                <button
-                  className="mj-example-button"
-                  key={example.title}
-                  type="button"
-                  onClick={() => {
-                    setPrompt(example.prompt);
-                    setError(null);
-                  }}
-                >
-                  <strong>{example.title}</strong>
-                  <span>{example.prompt}</span>
-                </button>
-              ))}
-            </div>
-          </section>
+          <ExampleStrip
+            copy={copy}
+            onPick={(value) => {
+              setPrompt(value);
+              setError(null);
+            }}
+          />
         </div>
       </div>
     </div>
+  );
+}
+
+function RunGreeting({ copy }: { copy: (typeof WORKSPACE_COPY)[PublicLocale]["run"] }) {
+  const [typed, setTyped] = useState("");
+  const [done, setDone] = useState(false);
+
+  useEffect(() => {
+    const hour = new Date().getHours();
+    const full = hour < 12 ? copy.greetingMorning : hour < 18 ? copy.greetingAfternoon : copy.greetingEvening;
+    if (typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      setTyped(full);
+      setDone(true);
+      return;
+    }
+    let index = 0;
+    setTyped("");
+    setDone(false);
+    const timer = window.setInterval(() => {
+      index += 1;
+      setTyped(full.slice(0, index));
+      if (index >= full.length) {
+        window.clearInterval(timer);
+        setDone(true);
+      }
+    }, 55);
+    return () => window.clearInterval(timer);
+  }, [copy]);
+
+  return (
+    <p className="mj-run-greeting" aria-label={typed}>
+      <span className="mj-run-greeting-mark" aria-hidden="true">|Λ⟩</span>
+      <span aria-hidden="true">
+        {typed}
+        <span className={`mj-run-greeting-caret${done ? " is-done" : ""}`} />
+      </span>
+      <span className={`mj-run-greeting-tagline${done ? " is-visible" : ""}`}>{copy.greetingTagline}</span>
+    </p>
+  );
+}
+
+function ExampleStrip({ copy, onPick }: { copy: (typeof WORKSPACE_COPY)[PublicLocale]["run"]; onPick: (prompt: string) => void }) {
+  const [index, setIndex] = useState(0);
+  const [expanded, setExpanded] = useState(false);
+  const [paused, setPaused] = useState(false);
+  const examples = copy.examples;
+  const allPrompts = [...copy.examples, ...copy.morePrompts];
+
+  useEffect(() => {
+    if (paused || expanded) return;
+    const timer = window.setInterval(() => setIndex((current) => (current + 1) % examples.length), 6000);
+    return () => window.clearInterval(timer);
+  }, [paused, expanded, examples.length]);
+
+  const active = examples[index];
+  return (
+    <section className="mj-run-home-examples" aria-labelledby="examples-title">
+      <div className="mj-run-home-examples-head">
+        <h2 id="examples-title">{copy.examplesTitle}</h2>
+        <span>{copy.workflowTitle}</span>
+      </div>
+      <div className="mj-example-strip" onMouseEnter={() => setPaused(true)} onMouseLeave={() => setPaused(false)}>
+        <button className="mj-example-ticker" type="button" key={active.title} onClick={() => onPick(active.prompt)}>
+          <strong>{active.title}</strong>
+          <span>{active.prompt}</span>
+        </button>
+        <button className="mj-secondary-button mj-example-more" type="button" aria-expanded={expanded} onClick={() => setExpanded((current) => !current)}>
+          {expanded ? copy.examplesClose : copy.examplesMore}
+        </button>
+      </div>
+      {expanded ? (
+        <div className="mj-example-popout">
+          {allPrompts.map((example) => (
+            <button
+              className="mj-example-button"
+              key={example.title}
+              type="button"
+              onClick={() => {
+                onPick(example.prompt);
+                setExpanded(false);
+              }}
+            >
+              <strong>{example.title}</strong>
+              <span>{example.prompt}</span>
+            </button>
+          ))}
+        </div>
+      ) : null}
+    </section>
   );
 }
 

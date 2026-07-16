@@ -84,6 +84,7 @@ export function LiveRun({ taskId }: { taskId: string }) {
   const [error, setError] = useState<string | null>(null);
   const [prompt, setPrompt] = useState("");
   const [pending, setPending] = useState(false);
+  const [attachments, setAttachments] = useState<Array<{ name: string; size: number; content: string }>>([]);
   const [existingChat, setExistingChat] = useState<ChatSummary | null>(null);
   const lastEventId = useRef<number | null>(null);
 
@@ -191,12 +192,38 @@ export function LiveRun({ taskId }: { taskId: string }) {
     };
   }, [fixtureEvents, taskId]);
 
+  function addFiles(files: File[]) {
+    void (async () => {
+      for (const file of files) {
+        const lowered = file.name.toLowerCase();
+        if (![".py", ".txt", ".md", ".json", ".qasm", ".csv"].some((extension) => lowered.endsWith(extension))) {
+          setError(`${file.name} is not a supported text attachment (.py, .txt, .md, .json, .qasm, .csv).`);
+          continue;
+        }
+        if (file.size > 64 * 1024) {
+          setError(`${file.name} is larger than 64 KB — paste the relevant part instead.`);
+          continue;
+        }
+        const content = await file.text();
+        setAttachments((current) => {
+          if (current.length >= 4) {
+            setError("Up to 4 attachments per message.");
+            return current;
+          }
+          setError(null);
+          return [...current.filter((item) => item.name !== file.name), { name: file.name, size: file.size, content }];
+        });
+      }
+    })();
+  }
+
   async function submitFollowup(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const taskPrompt = prompt.trim();
     if (!taskPrompt || pending) return;
     setPending(true);
     setError(null);
+    const attachmentBlocks = attachments.map((attachment) => `\n\n--- Attachment: ${attachment.name} ---\n${attachment.content}`).join("");
     try {
       const response = await fetch("/api/runs", {
         method: "POST",
@@ -204,7 +231,7 @@ export function LiveRun({ taskId }: { taskId: string }) {
           "Content-Type": "application/json",
           "Idempotency-Key": crypto.randomUUID(),
         },
-        body: JSON.stringify({ task_prompt: taskPrompt, conversation_id: conversationId }),
+        body: JSON.stringify({ task_prompt: `${taskPrompt}${attachmentBlocks}`, conversation_id: conversationId }),
       });
       const payload = (await response.json()) as { id?: string; conversation_id?: string; detail?: string; error?: string };
       if (!response.ok || !payload.id) throw new Error(payload.detail ?? payload.error ?? `Message submission failed (${response.status})`);
@@ -284,7 +311,9 @@ export function LiveRun({ taskId }: { taskId: string }) {
         error={null}
         onChange={setPrompt}
         onSubmit={submitFollowup}
-        onAttach={() => setError("Attachments are not enabled yet; paste code or context into the message.")}
+        onFiles={addFiles}
+        attachments={attachments.map(({ name, size }) => ({ name, size }))}
+        onRemoveAttachment={(name) => setAttachments((current) => current.filter((item) => item.name !== name))}
       />
     </div>
   );

@@ -63,6 +63,11 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
     rename: (title: string) => string;
     renamePlaceholder: string;
     renameSave: string;
+    menuRename: string;
+    menuPin: string;
+    menuUnpin: string;
+    menuArchive: string;
+    menuDelete: string;
     projectLabel: string;
     dropOutside: string;
     accountMenu: string;
@@ -79,6 +84,22 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
     capabilities: Array<{ title: string; body: string }>;
     examplesTitle: string;
     examples: Array<{ title: string; prompt: string }>;
+    morePrompts: Array<{ title: string; prompt: string }>;
+    examplesMore: string;
+    examplesClose: string;
+    greetingMorning: string;
+    greetingAfternoon: string;
+    greetingEvening: string;
+    greetingTagline: string;
+    confirmSendTitle: string;
+    confirmSendBody: (title: string) => string;
+    confirmSend: string;
+    confirmCancel: string;
+    attachmentsLabel: string;
+    removeAttachment: (name: string) => string;
+    attachTooLarge: (name: string) => string;
+    attachUnsupported: (name: string) => string;
+    attachLimit: string;
     contextLabel: string;
     viewArtifact: string;
     contextStatus: string;
@@ -204,6 +225,10 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
     deleteCustomGate: (name: string) => string;
     customGateCreated: (name: string) => string;
     customGateCannotGroup: string;
+    hideInspector: string;
+    showInspector: string;
+    circuitRestored: string;
+    circuitNotRebuildable: string;
   };
 }> = {
   en: {
@@ -269,6 +294,11 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
       rename: (title) => `Rename ${title}`,
       renamePlaceholder: "New name",
       renameSave: "Save name",
+      menuRename: "Rename",
+      menuPin: "Pin",
+      menuUnpin: "Unpin",
+      menuArchive: "Archive",
+      menuDelete: "Delete",
       projectLabel: "Project",
       dropOutside: "Drop here to remove from project",
       accountMenu: "Account menu",
@@ -294,6 +324,31 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
         { title: "Build and verify a Bell state", prompt: "Build a Bell state in the selected framework, simulate it, and verify the expected 00/11 distribution." },
         { title: "Estimate a QFT resource profile", prompt: "Estimate the qubit count, depth, and gate profile for a QFT circuit on eight qubits." },
       ],
+      morePrompts: [
+        { title: "Route a delivery fleet as a QUBO", prompt: "Formulate a delivery-route assignment for 12 vehicles and 40 stops as a QUBO, then build a QAOA circuit sized for a simulator and report the best cut found." },
+        { title: "Price an option with amplitude estimation", prompt: "Price a European call option with quantum amplitude estimation instead of classical Monte Carlo, show the circuit, and state the expected quadratic speedup and its caveats." },
+        { title: "Optimize a portfolio under a risk budget", prompt: "Select an optimal 8-asset portfolio under a fixed risk budget by encoding it as a QUBO, solve it with QAOA, and compare against a classical greedy baseline." },
+        { title: "Estimate H₂ ground-state energy with VQE", prompt: "Estimate the ground-state energy of the H₂ molecule with a two-qubit VQE ansatz, report the convergence curve, and compare with the exact diagonalization value." },
+        { title: "Schedule jobs on machines as a QUBO", prompt: "Encode a 6-job, 3-machine job-shop scheduling instance as a QUBO with makespan penalties and propose a variational circuit to explore it." },
+        { title: "Sketch a quantum kernel for fraud features", prompt: "Build a quantum kernel classifier sketch for 4 transaction-fraud features, explain the feature map, and state honestly where quantum helps and where it does not." },
+        { title: "Simulate credit-risk tails with QAE", prompt: "Model a small credit-portfolio loss distribution and show how quantum amplitude estimation would sample its tail risk versus classical Monte Carlo." },
+        { title: "Cut a supply network with MaxCut", prompt: "Model a 6-node supplier network partition as MaxCut, solve it with QAOA at p=2, and verify the result against brute force." },
+      ],
+      examplesMore: "More prompts",
+      examplesClose: "Close",
+      greetingMorning: "Good morning.",
+      greetingAfternoon: "Good afternoon.",
+      greetingEvening: "Good evening.",
+      greetingTagline: "The lioness is listening — plain language in, verified circuits out.",
+      confirmSendTitle: "Send this artifact context and prompt to the LLM?",
+      confirmSendBody: (title) => `The saved artifact “${title}” (its code) and your prompt below will be sent to the model. Nothing is sent until you confirm.`,
+      confirmSend: "Send to LLM",
+      confirmCancel: "Cancel",
+      attachmentsLabel: "Attachments",
+      removeAttachment: (name) => `Remove attachment ${name}`,
+      attachTooLarge: (name) => `${name} is larger than 64 KB — paste the relevant part instead.`,
+      attachUnsupported: (name) => `${name} is not a supported text attachment (.py, .txt, .md, .json, .qasm, .csv).`,
+      attachLimit: "Up to 4 attachments per message.",
       contextLabel: "Library context",
       viewArtifact: "View artifact",
       contextStatus: "Verified context retained",
@@ -433,6 +488,10 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
       deleteCustomGate: (name) => `Delete custom gate ${name}`,
       customGateCreated: (name) => `${name} is ready in the gate palette.`,
       customGateCannotGroup: "Select two or more unitary gates to create a custom gate.",
+      hideInspector: "Hide inspector",
+      showInspector: "Inspector",
+      circuitRestored: "Circuit loaded from the saved artifact. Edits stay in this draft until you verify & save.",
+      circuitNotRebuildable: "This artifact's code goes beyond the visual builder — edit it in the Code tab.",
     },
   },
   ja: {
@@ -498,6 +557,11 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
       rename: (title) => `「${title}」の名前を変更`,
       renamePlaceholder: "新しい名前",
       renameSave: "名前を保存",
+      menuRename: "名前を変更",
+      menuPin: "ピン留め",
+      menuUnpin: "ピン留めを外す",
+      menuArchive: "アーカイブ",
+      menuDelete: "削除",
       projectLabel: "プロジェクト",
       dropOutside: "ここにドロップしてプロジェクトから外す",
       accountMenu: "アカウントメニュー",
@@ -523,6 +587,31 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
         { title: "ベル状態を作って検証", prompt: "選択したフレームワークでベル状態を作り、シミュレーションして00/11分布を検証してください。" },
         { title: "QFTのリソースを見積もる", prompt: "8量子ビットのQFT回路の量子ビット数、深さ、ゲート構成を見積もってください。" },
       ],
+      morePrompts: [
+        { title: "配送ルートをQUBOで最適化", prompt: "12台の車両と40の配送先のルート割当をQUBOとして定式化し、シミュレータ向けのQAOA回路を作って最良カットを報告してください。" },
+        { title: "振幅推定でオプション価格を計算", prompt: "古典モンテカルロの代わりに量子振幅推定でヨーロピアンコールオプションの価格を計算し、回路と二次加速の条件・注意点を示してください。" },
+        { title: "リスク制約付きポートフォリオ最適化", prompt: "リスク予算の制約下で8資産のポートフォリオ選択をQUBOに符号化し、QAOAで解いて古典的な貪欲法ベースラインと比較してください。" },
+        { title: "VQEでH₂の基底状態エネルギーを推定", prompt: "2量子ビットのVQE ansatzでH₂分子の基底状態エネルギーを推定し、収束曲線を報告して厳密対角化の値と比較してください。" },
+        { title: "ジョブスケジューリングをQUBOに変換", prompt: "6ジョブ・3マシンのジョブショップスケジューリングをメイクスパンペナルティ付きQUBOに符号化し、探索用の変分回路を提案してください。" },
+        { title: "不正検知の量子カーネルを設計", prompt: "取引不正の4特徴量に対する量子カーネル分類器の設計を示し、特徴マップを説明した上で、量子が役立つ場面と役立たない場面を正直に述べてください。" },
+        { title: "QAEで信用リスクの裾を推定", prompt: "小規模な信用ポートフォリオの損失分布をモデル化し、量子振幅推定が古典モンテカルロと比べて裾リスクをどうサンプルするか示してください。" },
+        { title: "サプライ網の分割をMaxCutで解く", prompt: "6ノードのサプライヤー網の分割をMaxCutとしてモデル化し、p=2のQAOAで解いて総当たりと照合してください。" },
+      ],
+      examplesMore: "他のプロンプト",
+      examplesClose: "閉じる",
+      greetingMorning: "おはようございます。",
+      greetingAfternoon: "こんにちは。",
+      greetingEvening: "こんばんは。",
+      greetingTagline: "雌ライオンが聞いています — 自然言語で尋ね、検証済み回路を受け取ってください。",
+      confirmSendTitle: "このアーティファクトのコンテキストとプロンプトをLLMに送信しますか？",
+      confirmSendBody: (title) => `保存済みアーティファクト「${title}」のコードと下のプロンプトがモデルに送信されます。確認するまで何も送信されません。`,
+      confirmSend: "LLMに送信",
+      confirmCancel: "キャンセル",
+      attachmentsLabel: "添付ファイル",
+      removeAttachment: (name) => `添付 ${name} を削除`,
+      attachTooLarge: (name) => `${name} は64KBを超えています。必要な部分を貼り付けてください。`,
+      attachUnsupported: (name) => `${name} は対応するテキスト添付ではありません（.py, .txt, .md, .json, .qasm, .csv）。`,
+      attachLimit: "1メッセージに添付できるのは4件までです。",
       contextLabel: "Libraryのコンテキスト",
       viewArtifact: "アーティファクトを見る",
       contextStatus: "検証済みコンテキストを保持",
@@ -662,6 +751,10 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
       deleteCustomGate: (name) => `カスタムゲート${name}を削除`,
       customGateCreated: (name) => `${name}をパレットに追加しました。`,
       customGateCannotGroup: "カスタムゲートには、2つ以上の単一ゲートを選択してください。",
+      hideInspector: "インスペクタを隠す",
+      showInspector: "インスペクタ",
+      circuitRestored: "保存済みアーティファクトから回路を読み込みました。検証して保存するまで、編集はこの下書きに留まります。",
+      circuitNotRebuildable: "このアーティファクトのコードはビジュアルビルダーの範囲を超えています。コードタブで編集してください。",
     },
   },
 };

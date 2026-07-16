@@ -22,13 +22,9 @@ export default async function ContactPage() {
         </div>
       </section>
 
-      <section className="mj-contact-form-section" aria-labelledby="contact-form-heading">
-        <div>
-          <p className="mj-section-label">{copy.formLabel}</p>
-          <h2 id="contact-form-heading">{copy.formTitle}</h2>
-          <p className="mj-contact-note">{copy.formBody} {copy.note}</p>
-        </div>
+      <section className="mj-contact-form-section mj-contact-form-section--solo" aria-label={copy.overline}>
         <ContactForm locale={locale} />
+        <p className="mj-contact-note">{copy.note}</p>
       </section>
     </PublicSite>
   );
