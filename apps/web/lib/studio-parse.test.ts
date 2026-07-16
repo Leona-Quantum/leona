@@ -40,7 +40,7 @@ test("simple hand-written artifact code parses", () => {
     { gate: "M", qubits: [1] },
   ]);
 
-  const ghz = "import pennylane as qml\n\n@qml.qnode(qml.device('default.qubit', wires=3))\ndef ghz():\n    qml.Hadamard(0)\n    qml.CNOT(wires=[0,1])\n    qml.CNOT(wires=[1,2])\n    return qml.probs()";
+  const ghz = "import pennylane as qml\n\n@qml.qnode(qml.device('default.qubit', wires=3))\ndef ghz():\n    qml.Hadamard(0)\n    qml.CNOT(wires=[0,1])\n    qml.CNOT(wires=[1,2])\n    return qml.state()";
   const parsedGhz = parseBuilderCircuit(ghz, "pennylane");
   assert.ok(parsedGhz);
   assert.equal(parsedGhz.qubitCount, 3);
@@ -67,10 +67,21 @@ test("code outside the builder subset refuses to parse instead of guessing", () 
 });
 
 test("malformed angle literals are rejected", () => {
-  for (const angle of ["2pi", "*pi", ".pi", "1.2.3"]) {
+  for (const angle of ["2pi", "*pi", ".pi", "1.2.3", "pi/0", "2*pi/0.0"]) {
     const code = `from qiskit import QuantumCircuit\n\nqc = QuantumCircuit(1)\nqc.rx(${angle}, 0)`;
     assert.equal(parseBuilderCircuit(code, "qiskit"), null, angle);
   }
+});
+
+test("PennyLane returns must be fully supported before reconstruction", () => {
+  const unsupported = "import pennylane as qml\n\ndev = qml.device('default.qubit', wires=2)\n@qml.qnode(dev)\ndef circuit():\n    qml.Hadamard(wires=0)\n    return qml.probs(wires=[0])";
+  assert.equal(parseBuilderCircuit(unsupported, "pennylane"), null);
+
+  const subsetSample = "import pennylane as qml\n\ndev = qml.device('default.qubit', wires=2)\n@qml.qnode(dev)\ndef circuit():\n    qml.Hadamard(wires=0)\n    return qml.sample(wires=[0])";
+  assert.equal(parseBuilderCircuit(subsetSample, "pennylane"), null);
+
+  const malformed = "import pennylane as qml\n\ndev = qml.device('default.qubit', wires=1)\n@qml.qnode(dev)\ndef circuit():\n    return qml.sample() trailing";
+  assert.equal(parseBuilderCircuit(malformed, "pennylane"), null);
 });
 
 test("measurement and return operations are terminal", () => {
@@ -82,4 +93,7 @@ test("measurement and return operations are terminal", () => {
 
   const cirq = "import cirq\n\nqubits = cirq.LineQubit.range(1)\ncircuit = cirq.Circuit(\n    cirq.measure(*qubits, key='result'),\n    cirq.H(qubits[0]),\n)";
   assert.equal(parseBuilderCircuit(cirq, "cirq"), null);
+
+  const closedCirq = "import cirq\n\nqubits = cirq.LineQubit.range(1)\ncircuit = cirq.Circuit()\ncirq.H(qubits[0])";
+  assert.equal(parseBuilderCircuit(closedCirq, "cirq"), null);
 });

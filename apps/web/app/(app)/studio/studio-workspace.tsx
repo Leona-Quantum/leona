@@ -6,7 +6,7 @@ import type { ComposerFramework } from "../../../components/run-composer";
 import { frameworkVariantsFromRemote, getLibraryArtifact, loadLibraryArtifacts, type LibraryArtifact } from "../../../lib/library-data";
 import type { PublicLocale } from "../../../lib/public-locale";
 import { BUILDER_GATES, builderStepLabel, createBuilderStepId, generateBuilderCode, ROTATION_GATES, TWO_QUBIT_GATES, type BuilderGate, type BuilderStep, type CustomGateDefinition } from "../../../lib/studio-builder";
-import { loadStoredCircuit, removeStoredCircuit, saveStoredCircuit } from "../../../lib/studio-circuits";
+import { loadStoredCircuit, saveStoredCircuit } from "../../../lib/studio-circuits";
 import { parseBuilderCircuit } from "../../../lib/studio-parse";
 import { WORKSPACE_COPY } from "../../../lib/workspace-locale";
 
@@ -285,9 +285,7 @@ export function StudioWorkspace({ artifactId, newDraft = false, locale = "en" }:
                     copy={copy}
                     onCircuitChange={(circuit) => {
                       if (!artifact) return;
-                      const persisted = circuit.steps.length || circuit.customGates.length
-                        ? saveStoredCircuit(artifact.id, { artifactIdentity: studioArtifactIdentity(artifact), ...circuit })
-                        : removeStoredCircuit(artifact.id);
+                      const persisted = saveStoredCircuit(artifact.id, { artifactIdentity: studioArtifactIdentity(artifact), ...circuit });
                       if (!persisted) setMessage(copy.persistenceUnavailable);
                     }}
                     onApply={(codes) => {

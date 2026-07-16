@@ -46,7 +46,11 @@ export function parseBuilderCircuit(code: string, framework: "qiskit" | "pennyla
 }
 
 function measurementSteps(qubitCount: number): BuilderStep[] {
-  return Array.from({ length: qubitCount }, (_, qubit) => ({ id: createBuilderStepId(), gate: "M" as const, qubits: [qubit] }));
+  return measurementStepsForQubits(Array.from({ length: qubitCount }, (_, qubit) => qubit));
+}
+
+function measurementStepsForQubits(qubits: number[]): BuilderStep[] {
+  return qubits.map((qubit) => ({ id: createBuilderStepId(), gate: "M" as const, qubits: [qubit] }));
 }
 
 function gateStep(gate: BuiltinBuilderGate, qubits: number[], param?: string): BuilderStep | null {
@@ -59,7 +63,9 @@ function gateStep(gate: BuiltinBuilderGate, qubits: number[], param?: string): B
 
 function parseAngle(raw: string): string | null {
   const cleaned = raw.trim().replaceAll(/\s+/g, "");
-  return /^(?:(?:\d+(?:\.\d+)?\*)?pi(?:\/\d+(?:\.\d+)?)?|\d+(?:\.\d+)?)$/.test(cleaned) ? cleaned : null;
+  if (!/^(?:(?:\d+(?:\.\d+)?\*)?pi(?:\/\d+(?:\.\d+)?)?|\d+(?:\.\d+)?)$/.test(cleaned)) return null;
+  const denominator = /\/(\d+(?:\.\d+)?)$/.exec(cleaned);
+  return denominator && Number(denominator[1]) === 0 ? null : cleaned;
 }
 
 function parseQiskit(lines: string[]): ParsedBuilderCircuit | null {
@@ -100,7 +106,7 @@ function parseQiskit(lines: string[]): ParsedBuilderCircuit | null {
 
 function parsePennylane(lines: string[]): ParsedBuilderCircuit | null {
   let qubitCount = 0;
-  let measured = false;
+  let measuredWires: number[] | "all" | null = null;
   let returnedSeen = false;
   const steps: BuilderStep[] = [];
   for (const line of lines) {
@@ -109,8 +115,23 @@ function parsePennylane(lines: string[]): ParsedBuilderCircuit | null {
     if (/^@qml\.qnode\(/.test(line) || /^def\s+\w+\(\s*\)\s*:/.test(line)) continue;
     const device = /^dev\s*=\s*qml\.device\(\s*["']default\.qubit["']\s*,\s*wires\s*=\s*(\d+)/.exec(line);
     if (device) { qubitCount = Number(device[1]); continue; }
-    const returned = /^return\s+qml\.(sample|probs|state|expval)\(/.exec(line);
-    if (returned) { returnedSeen = true; measured = returned[1] === "sample"; continue; }
+    const returned = /^return\s+qml\.(sample|probs|state|expval)\((.*)\)$/.exec(line);
+    if (returned) {
+      const operation = returned[1];
+      const args = returned[2].trim();
+      if (operation === "sample") {
+        // The builder only represents measurements across every wire. Refuse
+        // subset/op-based samples instead of silently widening their meaning.
+        if (args) return null;
+        measuredWires = "all";
+      } else if (operation !== "state" || args) {
+        // probs/expval and parameterized state returns have no faithful builder
+        // representation; do not reconstruct a circuit with changed semantics.
+        return null;
+      }
+      returnedSeen = true;
+      continue;
+    }
     const call = /^qml\.(\w+)\((.*)\)$/.exec(line);
     if (!call) return null;
     const gate = PENNYLANE_GATE_NAMES[call[1]];
@@ -134,8 +155,8 @@ function parsePennylane(lines: string[]): ParsedBuilderCircuit | null {
     steps.push(step);
   }
   if (!qubitCount && !steps.length) return null;
-  const count = Math.max(qubitCount, 1);
-  return { qubitCount: count, steps: measured ? [...steps, ...measurementSteps(Math.max(qubitCount, ...steps.flatMap((step) => step.qubits.map((qubit) => qubit + 1)), 1))] : steps };
+  const count = Math.max(qubitCount, ...steps.flatMap((step) => step.qubits.map((qubit) => qubit + 1)), 1);
+  return { qubitCount: count, steps: measuredWires === "all" ? [...steps, ...measurementSteps(count)] : steps };
 }
 
 function parseCirq(lines: string[]): ParsedBuilderCircuit | null {
@@ -147,7 +168,8 @@ function parseCirq(lines: string[]): ParsedBuilderCircuit | null {
     const line = rawLine.replace(/,$/, "");
     if (/^(from|import)\s/.test(line)) continue;
     if (closed) return null;
-    if (/^circuit\s*=\s*cirq\.Circuit\($/.test(line) || /^circuit\s*=\s*cirq\.Circuit\(\)$/.test(line)) continue;
+    if (/^circuit\s*=\s*cirq\.Circuit\($/.test(line)) continue;
+    if (/^circuit\s*=\s*cirq\.Circuit\(\)$/.test(line)) { closed = true; continue; }
     if (line === ")") { closed = true; continue; }
     const range = /^qubits\s*=\s*cirq\.LineQubit\.range\((\d+)\)$/.exec(line);
     if (range) { qubitCount = Number(range[1]); continue; }
@@ -188,7 +210,7 @@ function parseIndex(raw: string): number | null {
 }
 
 function parseWires(raw: string): number[] | null {
-  const list = /^wires\s*=\s*\[(.+)\]$/.exec(raw.trim());
+  const list = /^(?:wires\s*=\s*)?\[(.+)\]$/.exec(raw.trim());
   if (list) {
     const wires = splitArgs(list[1]).map(parseIndex);
     return wires.some((wire) => wire === null) ? null : (wires as number[]);

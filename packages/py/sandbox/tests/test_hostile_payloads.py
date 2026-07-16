@@ -187,5 +187,9 @@ async def test_vercel_permission_failure_exposes_actionable_authorization_error(
 
     from majorana_sandbox import SandboxProviderError
 
-    with pytest.raises(SandboxProviderError, match="HTTP 403"):
+    with pytest.raises(SandboxProviderError) as exc_info:
         await VercelSandbox()._execute(ExecutionSpec(code="print(1)"))
+    message = str(exc_info.value)
+    assert "HTTP 403" in message
+    assert "VERCEL_PROJECT_ID" in message
+    assert "VERCEL_TEAM_ID" in message
