@@ -1,8 +1,9 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import { SyntaxHighlightedCode } from "@majorana/ui";
 import {
+  entryVerificationMethods,
   getPublicRepositoryVariant,
   PUBLIC_REPOSITORY_FRAMEWORKS,
   type PublicRepositoryClassicalComparison,
@@ -10,86 +11,71 @@ import {
   type PublicRepositoryFramework,
 } from "../../../lib/public-repository";
 import type { PublicLocale } from "../../../lib/public-locale";
+import { MarkdownContent } from "../../../components/chat-markdown";
+import { VerificationMethodChips, VerificationTierBadge } from "../../../components/repository-verification";
 import { RepositoryExportAction } from "../repository-export";
 
 const COPY = {
   en: {
-    back: "← Back to repository",
-    database: "Public research database",
-    introduction: "Introduction",
-    explanation: "How it works",
-    visualization: "Circuit / workflow view",
+    back: "← Repository",
+    circuit: "Circuit & simulation",
     outcomes: "Expected outcomes",
-    code: "Framework implementation",
+    how: "How it works",
+    code: "Implementation",
     framework: "Framework",
     copy: "Copy code",
     copied: "Copied",
     request: "Request a conversion",
-    conversion: "Conversion boundary",
-    resources: "Resources",
-    metadata: "Metadata",
-    verification: "Verification boundary",
+    resources: "Facts",
+    verification: "Verification",
     method: "Method",
     result: "Result",
     caveat: "Caveat",
-    source: "Source and provenance",
-    openSource: "Open source record",
-    literature: "Literature and references",
+    source: "Source",
+    literature: "Literature & references",
     comparison: "Quantum vs classical",
     baseline: "Classical baseline",
     quantum: "Quantum claim",
-    practical: "How to compare in practice",
+    practical: "How to compare",
     industry: "Industry use cases",
     related: "Related entries",
-    native: "Native snippet",
     noCode: "No native snippet published yet.",
-    library: "Personal Library",
+    kind: "Kind",
+    contributor: "Contributor",
+    reviewedBy: "Reviewed by",
+    license: "License",
   },
   ja: {
-    back: "← リポジトリに戻る",
-    database: "公開研究データベース",
-    introduction: "概要",
-    explanation: "仕組み",
-    visualization: "回路 / ワークフロー",
+    back: "← リポジトリ",
+    circuit: "回路とシミュレーション",
     outcomes: "期待される出力",
-    code: "フレームワーク実装",
+    how: "仕組み",
+    code: "実装",
     framework: "フレームワーク",
     copy: "コードをコピー",
     copied: "コピー済み",
     request: "変換をリクエスト",
-    conversion: "変換の境界",
-    resources: "リソース",
-    metadata: "メタデータ",
-    verification: "検証の境界",
+    resources: "基本情報",
+    verification: "検証",
     method: "方法",
     result: "結果",
     caveat: "注意点",
-    source: "出典と来歴",
-    openSource: "公開レコード",
+    source: "出典",
     literature: "文献と参考資料",
     comparison: "量子と古典の比較",
     baseline: "古典ベースライン",
     quantum: "量子側の主張",
-    practical: "実務での比較方法",
+    practical: "比較の方法",
     industry: "産業ユースケース",
     related: "関連エントリ",
-    native: "ネイティブスニペット",
     noCode: "ネイティブスニペットはまだ公開されていません。",
-    library: "個人Library",
+    kind: "種別",
+    contributor: "投稿者",
+    reviewedBy: "レビュー",
+    license: "ライセンス",
   },
 } as const;
 type RepositoryCopy = (typeof COPY)[keyof typeof COPY];
-
-function statusLabel(status: PublicRepositoryEntry["status"], locale: PublicLocale): string {
-  if (locale === "ja") {
-    if (status === "verified") return "検証済み";
-    if (status === "verified_caveats") return "注意付き検証済み";
-    return "コミュニティレビュー中";
-  }
-  if (status === "verified") return "Verified";
-  if (status === "verified_caveats") return "Verified with caveats";
-  return "Community review";
-}
 
 function variantLabel(status: "native" | "conversion" | "unsupported", locale: PublicLocale): string {
   if (locale === "ja") {
@@ -141,23 +127,12 @@ function dataLabel(label: string, locale: PublicLocale): string {
   return locale === "ja" ? DATA_LABELS_JA[label] ?? label : label;
 }
 
-function familyLabel(label: string, locale: PublicLocale): string {
-  if (locale !== "ja") return label;
-  const labels: Record<string, string> = {
-    "Single-qubit gate": "単一量子ビットゲート",
-    "Pauli operator": "パウリ演算子",
-    "Controlled gate": "制御ゲート",
-    "Two-qubit gate": "2量子ビットゲート",
-    "Quantum query algorithm": "量子クエリアルゴリズム",
-    "Hidden-period / factoring": "隠れ周期 / 因数分解",
-    "Entanglement and communication": "エンタングルメントと通信",
-  };
-  return labels[label] ?? label;
-}
-
-function outcomeLabel(label: string, locale: PublicLocale): string {
-  if (locale !== "ja") return label;
-  return label.replace("Control 0", "制御0").replace("Control 1", "制御1").replace("secret s", "秘密文字列 s");
+export interface RelatedEntrySummary {
+  slug: string;
+  title: string;
+  titleJa: string;
+  categoryLabel: string;
+  categoryLabelJa: string;
 }
 
 export function RepositoryEntryView({
@@ -165,20 +140,25 @@ export function RepositoryEntryView({
   locale,
   isSignedIn,
   signInHref,
+  related,
 }: {
   entry: PublicRepositoryEntry;
   locale: PublicLocale;
   isSignedIn: boolean;
   signInHref: string | null;
+  related: RelatedEntrySummary[];
 }) {
   const copy = COPY[locale];
   const [framework, setFramework] = useState<PublicRepositoryFramework>(entry.framework);
   const [copied, setCopied] = useState(false);
   const variant = useMemo(() => getPublicRepositoryVariant(entry, framework), [entry, framework]);
+  const methods = entryVerificationMethods(entry);
   const title = locale === "ja" ? entry.titleJa : entry.title;
   const description = locale === "ja" ? entry.descriptionJa : entry.description;
   const introduction = locale === "ja" ? entry.introductionJa : entry.introduction;
-  const explanation = locale === "ja" ? entry.explanationJa : entry.explanation;
+  const explanation = locale === "ja"
+    ? entry.explanationMdJa ?? entry.explanationJa
+    : entry.explanationMd ?? entry.explanation;
 
   async function copyCode() {
     if (!variant.code) return;
@@ -189,72 +169,54 @@ export function RepositoryEntryView({
 
   return (
     <>
-      <section className="mj-repository-detail-hero">
+      <section className="mj-repo-detail-hero">
         <a className="mj-back-link" href="/repository">{copy.back}</a>
         <div className="mj-repository-detail-kicker">
-          <span className="mj-repository-status" data-status={entry.status}>{statusLabel(entry.status, locale)}</span>
+          <VerificationTierBadge methods={methods} locale={locale} />
           <span>{locale === "ja" ? entry.categoryLabelJa : entry.categoryLabel}</span>
-          <span>{familyLabel(entry.algorithmFamily, locale)}</span>
+          <span>{entry.algorithmFamily}</span>
+          <time dateTime={entry.updatedAt}>{entry.updatedAt}</time>
         </div>
         <h1>{title}</h1>
         <p>{description}</p>
-        <div className="mj-repository-tags" aria-label={locale === "ja" ? "タグ" : "Tags"}>
-          {entry.tags.map((tag) => <span key={tag}>{tag}</span>)}
-        </div>
-        <div className="mj-repository-detail-actions">
+        <div className="mj-repo-detail-hero-foot">
+          <div className="mj-repository-tags" aria-label={locale === "ja" ? "タグ" : "Tags"}>
+            {entry.tags.map((tag) => <span key={tag}>{tag}</span>)}
+          </div>
           <RepositoryExportAction slug={entry.slug} title={title} isSignedIn={isSignedIn} signInHref={signInHref} locale={locale} />
-          <span className="mj-repository-detail-action-note">{copy.library}: {locale === "ja" ? "アカウント専用" : "private to your account"}</span>
         </div>
       </section>
 
       <div className="mj-repository-detail-layout">
         <main className="mj-repository-detail-main">
-          <section className="mj-repository-detail-section">
-            <p className="mj-section-label">{copy.introduction}</p>
-            <p className="mj-repository-detail-lede">{introduction}</p>
-          </section>
+          <p className="mj-repo-detail-lede">{introduction}</p>
 
-          <section className="mj-repository-detail-section" aria-labelledby="visualization-heading">
-            <div className="mj-repository-detail-heading">
-              <div>
-                <p className="mj-section-label">{copy.visualization}</p>
-                <h2 id="visualization-heading">{title}</h2>
-              </div>
-              <span className="mj-mono-muted">{entry.updatedAt}</span>
-            </div>
+          <DetailSection title={copy.circuit} defaultOpen>
             <CircuitDiagram entry={entry} locale={locale} />
             <div className="mj-repository-outcomes" aria-label={copy.outcomes}>
               {entry.visualization.outcomes.map((outcome) => (
                 <div className="mj-repository-outcome" key={outcome.label}>
-                  <div className="mj-repository-outcome-label"><span>{outcomeLabel(outcome.label, locale)}</span><strong>{Math.round(outcome.probability * 100)}%</strong></div>
+                  <div className="mj-repository-outcome-label"><span>{outcome.label}</span><strong>{Math.round(outcome.probability * 100)}%</strong></div>
                   <div className="mj-repository-outcome-track"><span style={{ width: `${Math.max(0, Math.min(1, outcome.probability)) * 100}%` }} /></div>
                 </div>
               ))}
             </div>
-          </section>
+          </DetailSection>
 
-          <section className="mj-repository-detail-section" aria-labelledby="explanation-heading">
-            <p className="mj-section-label">{copy.explanation}</p>
-            <h2 id="explanation-heading">{locale === "ja" ? "何が起きているか" : "What the circuit is claiming"}</h2>
-            <p className="mj-repository-detail-copy">{explanation}</p>
-          </section>
+          <DetailSection title={copy.how} defaultOpen>
+            <MarkdownContent source={explanation} className="mj-repo-markdown" />
+          </DetailSection>
 
-          <ClassicalComparison comparison={entry.classicalComparison ?? defaultClassicalComparison(entry)} locale={locale} copy={copy} />
-
-          <section className="mj-repository-detail-section" aria-labelledby="code-heading">
-            <div className="mj-repository-detail-heading">
-              <div>
-                <p className="mj-section-label">{copy.code}</p>
-                <h2 id="code-heading">{framework}</h2>
-              </div>
+          <DetailSection title={copy.code} defaultOpen>
+            <div className="mj-repo-code-controls">
+              <label className="mj-repository-framework-picker">
+                <span>{copy.framework}</span>
+                <select value={framework} onChange={(event) => setFramework(event.target.value as PublicRepositoryFramework)}>
+                  {PUBLIC_REPOSITORY_FRAMEWORKS.map((option) => <option key={option} value={option}>{option}</option>)}
+                </select>
+              </label>
               <span className={`mj-repository-variant-status mj-repository-variant-status--${variant.status}`}>{variantLabel(variant.status, locale)}</span>
             </div>
-            <label className="mj-repository-framework-picker">
-              <span>{copy.framework}</span>
-              <select value={framework} onChange={(event) => setFramework(event.target.value as PublicRepositoryFramework)}>
-                {PUBLIC_REPOSITORY_FRAMEWORKS.map((option) => <option key={option} value={option}>{option}</option>)}
-              </select>
-            </label>
             {variant.code ? (
               <div className="mj-code">
                 <div className="mj-code-head">
@@ -273,12 +235,14 @@ export function RepositoryEntryView({
               </div>
             )}
             {variant.note && variant.code ? <p className="mj-repository-code-note">{variant.note}</p> : null}
-          </section>
+          </DetailSection>
+
+          <DetailSection title={copy.comparison}>
+            <ClassicalComparison comparison={entry.classicalComparison ?? defaultClassicalComparison(entry)} locale={locale} copy={copy} />
+          </DetailSection>
 
           {entry.literature?.length ? (
-            <section className="mj-repository-detail-section" aria-labelledby="literature-heading">
-              <p className="mj-section-label">{copy.literature}</p>
-              <h2 id="literature-heading">{locale === "ja" ? "この記録を読むための文献" : "Literature behind the record"}</h2>
+            <DetailSection title={copy.literature}>
               <div className="mj-repository-literature-list">
                 {entry.literature.map((citation) => (
                   <article key={citation.url}>
@@ -288,16 +252,15 @@ export function RepositoryEntryView({
                   </article>
                 ))}
               </div>
-            </section>
+            </DetailSection>
           ) : null}
         </main>
 
         <aside className="mj-repository-detail-aside">
-          <DetailList title={copy.resources} rows={entry.resources} locale={locale} />
-          <DetailList title={copy.metadata} rows={entry.metadata} locale={locale} />
           <section className="mj-repository-aside-card">
             <p className="mj-section-label">{copy.verification}</p>
-            <span className="mj-repository-status" data-status={entry.status}>{statusLabel(entry.status, locale)}</span>
+            <VerificationTierBadge methods={methods} locale={locale} />
+            <VerificationMethodChips methods={methods} locale={locale} />
             <dl className="mj-repository-detail-dl">
               <div><dt>{copy.method}</dt><dd>{entry.verificationDetails.method}</dd></div>
               <div><dt>{copy.result}</dt><dd>{entry.verificationDetails.result}</dd></div>
@@ -305,13 +268,21 @@ export function RepositoryEntryView({
             </dl>
           </section>
           <section className="mj-repository-aside-card">
+            <p className="mj-section-label">{copy.resources}</p>
+            <dl className="mj-repository-detail-dl">
+              {[...entry.resources, ...entry.metadata].map((row) => (
+                <div key={`${row.label}-${row.value}`}><dt>{dataLabel(row.label, locale)}</dt><dd>{row.value}</dd></div>
+              ))}
+            </dl>
+          </section>
+          <section className="mj-repository-aside-card">
             <p className="mj-section-label">{copy.source}</p>
             <a className="mj-repository-source-title" href={entry.source.url} target="_blank" rel="noreferrer">{entry.source.title} ↗</a>
             <dl className="mj-repository-detail-dl">
-              <div><dt>{locale === "ja" ? "種別" : "Kind"}</dt><dd>{locale === "ja" ? entry.source.kind === "curated_reference" ? "キュレーション参照" : entry.source.kind === "verified_run" ? "検証済み実行" : "コミュニティ投稿" : entry.source.kind.replaceAll("_", " ")}</dd></div>
-              {entry.source.contributor ? <div><dt>{locale === "ja" ? "投稿者" : "Contributor"}</dt><dd>{entry.source.contributor}</dd></div> : null}
-              {entry.source.reviewedBy ? <div><dt>{locale === "ja" ? "レビュー" : "Reviewed by"}</dt><dd>{entry.source.reviewedBy}</dd></div> : null}
-              <div><dt>{locale === "ja" ? "ライセンス" : "License"}</dt><dd>{entry.source.license}</dd></div>
+              <div><dt>{copy.kind}</dt><dd>{locale === "ja" ? entry.source.kind === "curated_reference" ? "キュレーション参照" : entry.source.kind === "verified_run" ? "検証済み実行" : "コミュニティ投稿" : entry.source.kind.replaceAll("_", " ")}</dd></div>
+              {entry.source.contributor ? <div><dt>{copy.contributor}</dt><dd>{entry.source.contributor}</dd></div> : null}
+              {entry.source.reviewedBy ? <div><dt>{copy.reviewedBy}</dt><dd>{entry.source.reviewedBy}</dd></div> : null}
+              <div><dt>{copy.license}</dt><dd>{entry.source.license}</dd></div>
             </dl>
           </section>
           {entry.industryUseCases?.length ? (
@@ -322,54 +293,43 @@ export function RepositoryEntryView({
               </ul>
             </section>
           ) : null}
-          <section className="mj-repository-aside-card">
-            <p className="mj-section-label">{copy.openSource}</p>
-            <p>{locale === "ja" ? "このページのコードとメタデータは公開参照用です。非公開Libraryのデータは含みません。" : "Code and metadata on this page are public reference material. Private Library data is not included."}</p>
-            <span className="mj-mono-muted">{entry.updatedAt}</span>
-          </section>
         </aside>
       </div>
 
-      <section className="mj-repository-related" aria-labelledby="related-heading">
-        <div className="mj-repository-detail-heading">
-          <div>
-            <p className="mj-section-label">{copy.related}</p>
-            <h2 id="related-heading">{locale === "ja" ? "次に読む" : "Continue through the corpus"}</h2>
+      {related.length ? (
+        <section className="mj-repository-related" aria-label={copy.related}>
+          <p className="mj-section-label">{copy.related}</p>
+          <div className="mj-repository-related-grid">
+            {related.map((item) => (
+              <a className="mj-repository-related-card" key={item.slug} href={`/repository/${item.slug}`}>
+                <span>{locale === "ja" ? item.categoryLabelJa : item.categoryLabel}</span>
+                <strong>{locale === "ja" ? item.titleJa : item.title}</strong>
+                <span aria-hidden="true">↗</span>
+              </a>
+            ))}
           </div>
-          <a className="mj-text-link" href="/repository">{copy.database} ↗</a>
-        </div>
-        <div className="mj-repository-related-grid">
-          {entry.relatedSlugs.map((slug) => {
-            return <RelatedEntry key={slug} slug={slug} locale={locale} />;
-          })}
-        </div>
-      </section>
+        </section>
+      ) : null}
     </>
   );
 }
 
-function DetailList({ title, rows, locale }: { title: string; rows: Array<{ label: string; value: string }>; locale: PublicLocale }) {
+function DetailSection({ title, defaultOpen, children }: { title: string; defaultOpen?: boolean; children: ReactNode }) {
   return (
-    <section className="mj-repository-aside-card">
-      <p className="mj-section-label">{title}</p>
-      <dl className="mj-repository-detail-dl">
-        {rows.map((row) => <div key={row.label}><dt>{dataLabel(row.label, locale)}</dt><dd>{row.value}</dd></div>)}
-      </dl>
-    </section>
+    <details className="mj-repo-section" open={defaultOpen}>
+      <summary>{title}</summary>
+      <div className="mj-repo-section-body">{children}</div>
+    </details>
   );
 }
 
 function ClassicalComparison({ comparison, locale, copy }: { comparison: NonNullable<PublicRepositoryEntry["classicalComparison"]>; locale: PublicLocale; copy: RepositoryCopy }) {
   return (
-    <section className="mj-repository-detail-section mj-repository-comparison" aria-labelledby="comparison-heading">
-      <p className="mj-section-label">{copy.comparison}</p>
-      <h2 id="comparison-heading">{locale === "ja" ? "速さだけではなく、同じ問題を比べる" : "Compare the problem, not just the circuit"}</h2>
-      <div className="mj-repository-comparison-grid">
-        <div><h3>{copy.baseline}</h3><p>{locale === "ja" ? comparison.baselineJa : comparison.baseline}</p></div>
-        <div><h3>{copy.quantum}</h3><p>{locale === "ja" ? comparison.quantumClaimJa : comparison.quantumClaim}</p></div>
-        <div><h3>{copy.practical}</h3><p>{locale === "ja" ? comparison.practicalReadJa : comparison.practicalRead}</p></div>
-      </div>
-    </section>
+    <div className="mj-repo-comparison">
+      <div><h3>{copy.baseline}</h3><p>{locale === "ja" ? comparison.baselineJa : comparison.baseline}</p></div>
+      <div><h3>{copy.quantum}</h3><p>{locale === "ja" ? comparison.quantumClaimJa : comparison.quantumClaim}</p></div>
+      <div><h3>{copy.practical}</h3><p>{locale === "ja" ? comparison.practicalReadJa : comparison.practicalRead}</p></div>
+    </div>
   );
 }
 
@@ -394,27 +354,44 @@ function defaultClassicalComparison(entry: PublicRepositoryEntry): PublicReposit
   };
 }
 
+/**
+ * Moment-aligned circuit rendering: each operation occupies its own column so
+ * multi-qubit gates line up vertically, with a connector spanning the involved
+ * wires — a readable approximation of a standard circuit diagram without a
+ * drawing library.
+ */
 function CircuitDiagram({ entry, locale }: { entry: PublicRepositoryEntry; locale: PublicLocale }) {
+  const { wires, operations } = entry.visualization;
   return (
-    <div className="mj-repository-circuit" role="img" aria-label={`${locale === "ja" ? entry.titleJa : entry.title}${locale === "ja" ? "の回路またはワークフロー図" : " circuit or workflow diagram"}`}>
-      {entry.visualization.wires.map((wire, index) => (
-        <div className="mj-repository-circuit-row" key={wire}>
-          <span className="mj-repository-circuit-wire">{wire}</span>
-          <div className="mj-repository-circuit-line">
-            {entry.visualization.operations.filter((operation) => operation.qubits.includes(index)).map((operation, operationIndex) => (
-              <span className={`mj-repository-circuit-op mj-repository-circuit-op--${operation.tone}`} key={`${operation.label}-${operationIndex}`}>
-                {operation.label}
-              </span>
-            ))}
+    <div
+      className="mj-repo-circuit"
+      role="img"
+      aria-label={`${locale === "ja" ? entry.titleJa : entry.title}${locale === "ja" ? "の回路またはワークフロー図" : " circuit or workflow diagram"}`}
+    >
+      {wires.map((wire, wireIndex) => (
+        <div className="mj-repo-circuit-row" key={wire}>
+          <span className="mj-repo-circuit-wire">{wire}</span>
+          <div className="mj-repo-circuit-track">
+            {operations.map((operation, opIndex) => {
+              const involved = operation.qubits.includes(wireIndex);
+              const spanMin = Math.min(...operation.qubits);
+              const spanMax = Math.max(...operation.qubits);
+              const insideSpan = wireIndex > spanMin && wireIndex < spanMax;
+              return (
+                <span
+                  className="mj-repo-circuit-cell"
+                  data-connector={!involved && insideSpan ? "true" : undefined}
+                  key={`${operation.label}-${opIndex}`}
+                >
+                  {involved ? (
+                    <span className="mj-repo-circuit-op" data-tone={operation.tone}>{operation.label}</span>
+                  ) : null}
+                </span>
+              );
+            })}
           </div>
         </div>
       ))}
     </div>
   );
-}
-
-function RelatedEntry({ slug, locale }: { slug: string; locale: PublicLocale }) {
-  // The server has already validated related slugs; keep this client component link-only.
-  const label = slug.replaceAll("-", " ");
-  return <a className="mj-repository-related-card" href={`/repository/${slug}`}><span>{locale === "ja" ? "参照" : "Entry"}</span><strong>{label}</strong><span>↗</span></a>;
 }

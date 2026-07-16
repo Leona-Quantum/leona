@@ -60,6 +60,14 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
     deleteArtifactWarning: (title: string) => string;
     cancel: string;
     delete: string;
+    rename: (title: string) => string;
+    renamePlaceholder: string;
+    renameSave: string;
+    projectLabel: string;
+    dropOutside: string;
+    accountMenu: string;
+    usageLimits: string;
+    signOut: string;
   };
   run: {
     title: string;
@@ -168,6 +176,18 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
     verificationAttach: (id: string) => string;
     frameworkNote: string;
     gateDescriptions: Record<string, string>;
+    palette: string;
+    builderHint: string;
+    pickTarget: string;
+    addQubit: string;
+    removeQubit: string;
+    undo: string;
+    clearAll: string;
+    applyToCode: string;
+    appliedToCode: string;
+    angleLabel: string;
+    builderEmpty: string;
+    generatedPreview: string;
   };
 }> = {
   en: {
@@ -230,6 +250,14 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
       deleteArtifactWarning: (title) => `“${title}” will be removed from your workspace and not saved.`,
       cancel: "Cancel",
       delete: "Delete",
+      rename: (title) => `Rename ${title}`,
+      renamePlaceholder: "New name",
+      renameSave: "Save name",
+      projectLabel: "Project",
+      dropOutside: "Drop here to remove from project",
+      accountMenu: "Account menu",
+      usageLimits: "Usage & limits",
+      signOut: "Log out",
     },
     run: {
       title: "What are you working on?",
@@ -348,9 +376,31 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
       frameworkNote: "Qiskit stays the default. Switch only when you want a different framework draft.",
       gateDescriptions: {
         H: "Hadamard creates an equal superposition on the selected qubit.",
+        X: "Pauli-X flips the selected qubit between |0⟩ and |1⟩.",
+        Y: "Pauli-Y combines a bit flip with a phase rotation.",
+        Z: "Pauli-Z flips the phase of |1⟩ without changing probabilities.",
+        S: "S applies a π/2 phase to |1⟩.",
+        T: "T applies a π/4 phase — the non-Clifford workhorse.",
+        RX: "RX rotates the qubit around the X axis by the chosen angle.",
+        RY: "RY rotates the qubit around the Y axis by the chosen angle.",
+        RZ: "RZ rotates the qubit around the Z axis by the chosen angle.",
         CX: "Controlled-X entangles the target with the control qubit.",
+        CZ: "Controlled-Z applies a phase when both qubits are |1⟩.",
+        SWAP: "SWAP exchanges the states of two qubits.",
         M: "Measurement records the final computational-basis result.",
       },
+      palette: "Gate palette",
+      builderHint: "Pick a gate, then click a wire to place it. Two-qubit gates take two clicks: control first, then target.",
+      pickTarget: "Now click the target qubit.",
+      addQubit: "Add qubit",
+      removeQubit: "Remove qubit",
+      undo: "Undo",
+      clearAll: "Clear",
+      applyToCode: "Apply to code",
+      appliedToCode: "Generated code applied to all framework drafts.",
+      angleLabel: "Rotation angle",
+      builderEmpty: "Empty circuit — place gates from the palette.",
+      generatedPreview: "Built circuit",
     },
   },
   ja: {
@@ -413,6 +463,14 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
       deleteArtifactWarning: (title) => `「${title}」はワークスペースから削除され、保存されません。`,
       cancel: "キャンセル",
       delete: "削除",
+      rename: (title) => `「${title}」の名前を変更`,
+      renamePlaceholder: "新しい名前",
+      renameSave: "名前を保存",
+      projectLabel: "プロジェクト",
+      dropOutside: "ここにドロップしてプロジェクトから外す",
+      accountMenu: "アカウントメニュー",
+      usageLimits: "使用状況と上限",
+      signOut: "ログアウト",
     },
     run: {
       title: "何を研究していますか？",
@@ -531,9 +589,31 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
       frameworkNote: "既定値はQiskitです。別のフレームワークの下書きを作るときだけ切り替えてください。",
       gateDescriptions: {
         H: "アダマールゲートは、選択した量子ビットに均等な重ね合わせを作ります。",
+        X: "パウリXは、選択した量子ビットを|0⟩と|1⟩の間で反転します。",
+        Y: "パウリYは、ビット反転と位相回転を組み合わせます。",
+        Z: "パウリZは、確率を変えずに|1⟩の位相を反転します。",
+        S: "Sゲートは|1⟩にπ/2の位相を与えます。",
+        T: "Tゲートは|1⟩にπ/4の位相を与える非クリフォードゲートです。",
+        RX: "RXは選択した角度だけX軸周りに回転します。",
+        RY: "RYは選択した角度だけY軸周りに回転します。",
+        RZ: "RZは選択した角度だけZ軸周りに回転します。",
         CX: "制御Xゲートは、制御量子ビットと対象量子ビットをもつれさせます。",
+        CZ: "制御Zゲートは、両方が|1⟩のとき位相を反転します。",
+        SWAP: "SWAPゲートは2つの量子ビットの状態を交換します。",
         M: "測定は計算基底での最終結果を記録します。",
       },
+      palette: "ゲートパレット",
+      builderHint: "ゲートを選び、ワイヤをクリックして配置します。2量子ビットゲートは制御→対象の順に2回クリックします。",
+      pickTarget: "次に対象の量子ビットをクリックしてください。",
+      addQubit: "量子ビットを追加",
+      removeQubit: "量子ビットを削除",
+      undo: "元に戻す",
+      clearAll: "クリア",
+      applyToCode: "コードに反映",
+      appliedToCode: "生成コードをすべてのフレームワーク下書きに反映しました。",
+      angleLabel: "回転角",
+      builderEmpty: "空の回路 — パレットからゲートを配置してください。",
+      generatedPreview: "作成中の回路",
     },
   },
 };
@@ -570,6 +650,14 @@ export const ACCOUNT_COPY: Record<PublicLocale, {
   loading: string;
   unavailable: string;
   requestFailed: string;
+  usageTitle: string;
+  usageHelp: string;
+  usagePlan: string;
+  usagePlanValue: string;
+  usageRuns: string;
+  usageRunsValue: string;
+  usageStorage: string;
+  usageStorageValue: string;
 }> = {
   en: {
     title: "Settings",
@@ -603,6 +691,14 @@ export const ACCOUNT_COPY: Record<PublicLocale, {
     loading: "Loading workspace data…",
     unavailable: "Workspace data is unavailable.",
     requestFailed: "Request failed",
+    usageTitle: "Usage & limits",
+    usageHelp: "Early access has no metered billing. These are the current soft boundaries; contact us if you need more.",
+    usagePlan: "Plan",
+    usagePlanValue: "Early access",
+    usageRuns: "Runs",
+    usageRunsValue: "Fair use — no hard cap during early access",
+    usageStorage: "Library storage",
+    usageStorageValue: "Fair use — artifacts and versions retained",
   },
   ja: {
     title: "設定",
@@ -636,5 +732,13 @@ export const ACCOUNT_COPY: Record<PublicLocale, {
     loading: "ワークスペースデータを読み込んでいます…",
     unavailable: "ワークスペースデータを取得できません。",
     requestFailed: "リクエストに失敗しました",
+    usageTitle: "使用状況と上限",
+    usageHelp: "アーリーアクセス期間中は従量課金はありません。現在の目安の上限は以下のとおりです。追加が必要な場合はご連絡ください。",
+    usagePlan: "プラン",
+    usagePlanValue: "アーリーアクセス",
+    usageRuns: "実行",
+    usageRunsValue: "フェアユース — アーリーアクセス中は固定上限なし",
+    usageStorage: "ライブラリ保存",
+    usageStorageValue: "フェアユース — アーティファクトとバージョンを保持",
   },
 };

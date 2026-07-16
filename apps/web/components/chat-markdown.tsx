@@ -4,9 +4,9 @@ import ReactMarkdown from "react-markdown";
 import rehypeKatex from "rehype-katex";
 import remarkMath from "remark-math";
 
-export function ChatMarkdown({ source }: { source: string }) {
+export function MarkdownContent({ source, className }: { source: string; className: string }) {
   return (
-    <div className="mj-chat-markdown">
+    <div className={className}>
       <ReactMarkdown
         remarkPlugins={[remarkMath]}
         rehypePlugins={[rehypeKatex]}
@@ -22,6 +22,10 @@ export function ChatMarkdown({ source }: { source: string }) {
       </ReactMarkdown>
     </div>
   );
+}
+
+export function ChatMarkdown({ source }: { source: string }) {
+  return <MarkdownContent source={source} className="mj-chat-markdown" />;
 }
 
 function normalizeMathDelimiters(source: string): string {

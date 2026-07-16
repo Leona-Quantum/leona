@@ -41,6 +41,15 @@ export default async function Account() {
             </div>
           </section>
           <AccountSettings initialEmail={user.email} locale={locale} />
+          <section className="mj-artifact-panel" id="usage" aria-labelledby="usage-heading">
+            <div className="mj-panel-heading"><h2 id="usage-heading">{copy.usageTitle}</h2></div>
+            <p className="mj-panel-help">{copy.usageHelp}</p>
+            <dl className="mj-usage-list">
+              <div><dt>{copy.usagePlan}</dt><dd>{copy.usagePlanValue}</dd></div>
+              <div><dt>{copy.usageRuns}</dt><dd>{copy.usageRunsValue}</dd></div>
+              <div><dt>{copy.usageStorage}</dt><dd>{copy.usageStorageValue}</dd></div>
+            </dl>
+          </section>
         </div>
       </div>
     </div>

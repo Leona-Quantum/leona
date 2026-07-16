@@ -77,7 +77,7 @@
   --content-max: 1200px;
 
   /* workspace geometry — shared shell and composer bounds */
-  --sidebar-expanded: 224px;
+  --sidebar-expanded: 256px;
   --sidebar-collapsed: 64px;
   --composer-max: 720px;
 }

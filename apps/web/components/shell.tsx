@@ -1,6 +1,6 @@
 "use client";
 
-import type { FormEvent, ReactNode } from "react";
+import type { DragEvent, FormEvent, ReactNode } from "react";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import { AppShell, BRAND_NAME, NAV_SURFACES, navSurfaceLabel } from "@majorana/ui";
@@ -31,6 +31,7 @@ import {
   loadChatFolders,
   loadChatHistory,
   restoreChat,
+  updateChat,
   type ChatFolder,
   type ChatStatus,
   type ChatSummary,
@@ -43,7 +44,7 @@ import {
   loadArtifactFolders,
   type ArtifactFolder,
 } from "../lib/artifact-folders";
-import { archiveArtifact, daysUntilArtifactDeletion, deleteArtifact, getLibraryArtifact, isArtifactDeleted, loadLibraryArtifacts, restoreArtifact, type LibraryArtifact } from "../lib/library-data";
+import { archiveArtifact, daysUntilArtifactDeletion, deleteArtifact, getLibraryArtifact, isArtifactDeleted, loadLibraryArtifacts, rememberArtifact, restoreArtifact, type LibraryArtifact } from "../lib/library-data";
 import { WORKSPACE_PINS_EVENT, isPinned, setPinned, togglePinned } from "../lib/workspace-pins";
 import { ThemeToggle } from "./theme-toggle";
 import type { PublicLocale } from "../lib/public-locale";
@@ -122,7 +123,12 @@ export function Shell({
         const byId = new Map(Array.isArray(runPayload) ? runPayload.flatMap(chatFromRun).map((chat) => [chat.id, chat]) : []);
         for (const local of loadChatHistory({ includeDemo: false, includeArchived: true })) {
           const remote = byId.get(local.id);
-          byId.set(local.id, remote ? { ...local, ...remote, folderId: remote.folderId ?? local.folderId } : local);
+          byId.set(
+            local.id,
+            remote
+              ? { ...local, ...remote, title: local.titleOverride ?? remote.title, folderId: remote.folderId ?? local.folderId }
+              : local,
+          );
         }
         const mergedChats = [...byId.values()].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
         const remoteArtifacts = Array.isArray(artifactPayload) ? artifactPayload.flatMap(toLibraryArtifact).filter((artifact) => !isArtifactDeleted(artifact.id)) : [];
@@ -233,6 +239,14 @@ export function Shell({
             deleteArtifact(artifact.id);
             refreshAfterLocalChange();
           }}
+          onRenameChat={(chat, name) => {
+            updateChat(chat.id, { title: name, titleOverride: name });
+            refreshAfterLocalChange();
+          }}
+          onRenameArtifact={(artifact, name) => {
+            rememberArtifact({ ...artifact, title: name });
+            refreshAfterLocalChange();
+          }}
         />
       }
       sidebarCollapsed={sidebarCollapsed}
@@ -265,6 +279,8 @@ function WorkspaceSidebar({
   onRestoreArtifact,
   onDeleteChat,
   onDeleteArtifact,
+  onRenameChat,
+  onRenameArtifact,
 }: {
   currentPath: string;
   surface: WorkspaceSurface;
@@ -285,9 +301,13 @@ function WorkspaceSidebar({
   onRestoreArtifact: (artifact: LibraryArtifact) => void;
   onDeleteChat: (chat: ChatSummary) => void;
   onDeleteArtifact: (artifact: LibraryArtifact) => void;
+  onRenameChat: (chat: ChatSummary, name: string) => void;
+  onRenameArtifact: (artifact: LibraryArtifact, name: string) => void;
 }) {
   const copy = WORKSPACE_COPY[locale].sidebar;
   const [openFolders, setOpenFolders] = useState<Set<string>>(new Set());
+  const [dragTarget, setDragTarget] = useState<string | null>(null);
+  const [userMenuOpen, setUserMenuOpen] = useState(false);
   const [creatingFolder, setCreatingFolder] = useState(false);
   const [folderName, setFolderName] = useState("");
   const [creatingArtifactFolder, setCreatingArtifactFolder] = useState(false);
@@ -360,6 +380,30 @@ function WorkspaceSidebar({
     assignArtifactToFolder(artifactId, folderId);
   }
 
+  // HTML5 drag & drop: rows publish their id under a kind-specific type, folder
+  // triggers and the standalone lists accept only the matching kind.
+  function dropProps(kind: "chat" | "artifact", targetKey: string, folderId?: string) {
+    const mime = kind === "chat" ? "application/x-mj-chat" : "application/x-mj-artifact";
+    return {
+      onDragOver: (event: DragEvent<HTMLElement>) => {
+        if (!event.dataTransfer.types.includes(mime)) return;
+        event.preventDefault();
+        event.dataTransfer.dropEffect = "move";
+        setDragTarget(targetKey);
+      },
+      onDragLeave: () => setDragTarget((current) => (current === targetKey ? null : current)),
+      onDrop: (event: DragEvent<HTMLElement>) => {
+        const id = event.dataTransfer.getData(mime);
+        setDragTarget(null);
+        if (!id) return;
+        event.preventDefault();
+        if (kind === "chat") assignFolder(id, folderId);
+        else assignArtifact(id, folderId);
+      },
+      "data-drag-over": dragTarget === targetKey || undefined,
+    };
+  }
+
   return (
     <div className="mj-sidebar-inner">
       <div className="mj-sidebar-brand-row">
@@ -398,7 +442,7 @@ function WorkspaceSidebar({
             <>
               <SidebarSectionHeader label={copy.pinned} />
               <nav className="mj-sidebar-chats mj-sidebar-pinned-list" aria-label={copy.pinned}>
-                {pinnedChats.map((chat) => <ChatRow key={chat.id} chat={chat} currentPath={currentPath} demoMode={demoMode} locale={locale} onArchive={onArchive} onDelete={(item) => setDeleteTarget({ kind: "chat", item })} onAssignFolder={assignFolder} folders={folders} />)}
+                {pinnedChats.map((chat) => <ChatRow key={chat.id} chat={chat} currentPath={currentPath} demoMode={demoMode} locale={locale} onArchive={onArchive} onDelete={(item) => setDeleteTarget({ kind: "chat", item })} onAssignFolder={assignFolder} onRename={onRenameChat} folders={folders} />)}
               </nav>
             </>
           ) : null}
@@ -416,7 +460,7 @@ function WorkspaceSidebar({
               const folderChats = unpinnedChats.filter((chat) => chat.folderId === folder.id);
               return (
                 <div className="mj-sidebar-disclosure" key={folder.id}>
-                  <button className="mj-sidebar-folder-trigger" type="button" aria-expanded={openFolders.has(folder.id)} onClick={() => toggleFolder(folder.id)}>
+                  <button className="mj-sidebar-folder-trigger" type="button" aria-expanded={openFolders.has(folder.id)} onClick={() => toggleFolder(folder.id)} {...dropProps("chat", `chat-folder-${folder.id}`, folder.id)}>
                     <ChevronIcon className={openFolders.has(folder.id) ? "is-open" : ""} size={14} />
                     <FolderIcon size={15} />
                     <span className="mj-sidebar-copy">{folder.name}</span>
@@ -424,7 +468,7 @@ function WorkspaceSidebar({
                   </button>
                   {openFolders.has(folder.id) ? (
                     <div className="mj-sidebar-disclosure-items">
-                      {folderChats.length ? folderChats.map((chat) => <ChatRow key={chat.id} chat={chat} currentPath={currentPath} demoMode={demoMode} locale={locale} onArchive={onArchive} onDelete={(item) => setDeleteTarget({ kind: "chat", item })} onAssignFolder={assignFolder} folders={folders} />) : <span className="mj-sidebar-empty">{copy.emptyProject}</span>}
+                      {folderChats.length ? folderChats.map((chat) => <ChatRow key={chat.id} chat={chat} currentPath={currentPath} demoMode={demoMode} locale={locale} onArchive={onArchive} onDelete={(item) => setDeleteTarget({ kind: "chat", item })} onAssignFolder={assignFolder} onRename={onRenameChat} folders={folders} />) : <span className="mj-sidebar-empty">{copy.emptyProject}</span>}
                     </div>
                   ) : null}
                 </div>
@@ -433,8 +477,8 @@ function WorkspaceSidebar({
           </div>
 
           <SidebarSectionHeader label={copy.chats} />
-          <nav className="mj-sidebar-chats" aria-label={copy.recentChats}>
-            {standaloneChats.length ? standaloneChats.map((chat) => <ChatRow key={chat.id} chat={chat} currentPath={currentPath} demoMode={demoMode} locale={locale} onArchive={onArchive} onDelete={(item) => setDeleteTarget({ kind: "chat", item })} onAssignFolder={assignFolder} folders={folders} />) : <span className="mj-sidebar-empty">{copy.emptyChats}</span>}
+          <nav className="mj-sidebar-chats" aria-label={copy.recentChats} {...dropProps("chat", "chat-standalone", undefined)}>
+            {standaloneChats.length ? standaloneChats.map((chat) => <ChatRow key={chat.id} chat={chat} currentPath={currentPath} demoMode={demoMode} locale={locale} onArchive={onArchive} onDelete={(item) => setDeleteTarget({ kind: "chat", item })} onAssignFolder={assignFolder} onRename={onRenameChat} folders={folders} />) : <span className="mj-sidebar-empty">{copy.emptyChats}</span>}
           </nav>
 
           <ArchiveSection chats={archivedChats} currentPath={currentPath} locale={locale} demoMode={demoMode} onRestore={onRestore} onDelete={onDeleteChat} />
@@ -454,7 +498,7 @@ function WorkspaceSidebar({
             <>
               <SidebarSectionHeader label={copy.pinned} />
               <nav className="mj-sidebar-chats mj-sidebar-pinned-list" aria-label={copy.pinned}>
-                {pinnedArtifacts.map((artifact) => <ArtifactRow key={artifact.id} artifact={artifact} currentPath={currentPath} folders={artifactFolders} onAssignFolder={assignArtifact} onArchive={onArchiveArtifact} onDelete={(item) => setDeleteTarget({ kind: "artifact", item })} locale={locale} />)}
+                {pinnedArtifacts.map((artifact) => <ArtifactRow key={artifact.id} artifact={artifact} currentPath={currentPath} folders={artifactFolders} onAssignFolder={assignArtifact} onArchive={onArchiveArtifact} onDelete={(item) => setDeleteTarget({ kind: "artifact", item })} onRename={onRenameArtifact} locale={locale} />)}
               </nav>
             </>
           ) : null}
@@ -472,7 +516,7 @@ function WorkspaceSidebar({
               const folderArtifacts = unpinnedArtifacts.filter((artifact) => getArtifactFolderId(artifact.id) === folder.id);
               return (
                 <div className="mj-sidebar-disclosure" key={folder.id}>
-                  <button className="mj-sidebar-folder-trigger" type="button" aria-expanded={openFolders.has(folder.id)} onClick={() => toggleFolder(folder.id)}>
+                  <button className="mj-sidebar-folder-trigger" type="button" aria-expanded={openFolders.has(folder.id)} onClick={() => toggleFolder(folder.id)} {...dropProps("artifact", `artifact-folder-${folder.id}`, folder.id)}>
                     <ChevronIcon className={openFolders.has(folder.id) ? "is-open" : ""} size={14} />
                     <FolderIcon size={15} />
                     <span className="mj-sidebar-copy">{folder.name}</span>
@@ -480,7 +524,7 @@ function WorkspaceSidebar({
                   </button>
                   {openFolders.has(folder.id) ? (
                     <div className="mj-sidebar-disclosure-items">
-                      {folderArtifacts.length ? folderArtifacts.map((artifact) => <ArtifactRow key={artifact.id} artifact={artifact} currentPath={currentPath} folders={artifactFolders} onAssignFolder={assignArtifact} onArchive={onArchiveArtifact} onDelete={(item) => setDeleteTarget({ kind: "artifact", item })} locale={locale} />) : <span className="mj-sidebar-empty">{copy.emptyProject}</span>}
+                      {folderArtifacts.length ? folderArtifacts.map((artifact) => <ArtifactRow key={artifact.id} artifact={artifact} currentPath={currentPath} folders={artifactFolders} onAssignFolder={assignArtifact} onArchive={onArchiveArtifact} onDelete={(item) => setDeleteTarget({ kind: "artifact", item })} onRename={onRenameArtifact} locale={locale} />) : <span className="mj-sidebar-empty">{copy.emptyProject}</span>}
                     </div>
                   ) : null}
                 </div>
@@ -489,8 +533,8 @@ function WorkspaceSidebar({
           </div>
 
           <SidebarSectionHeader label={copy.artifacts} />
-          <nav className="mj-sidebar-chats" aria-label={copy.artifacts}>
-            {standaloneArtifacts.length ? standaloneArtifacts.map((artifact) => <ArtifactRow key={artifact.id} artifact={artifact} currentPath={currentPath} folders={artifactFolders} onAssignFolder={assignArtifact} onArchive={onArchiveArtifact} onDelete={(item) => setDeleteTarget({ kind: "artifact", item })} locale={locale} />) : <span className="mj-sidebar-empty">{copy.emptyArtifacts}</span>}
+          <nav className="mj-sidebar-chats" aria-label={copy.artifacts} {...dropProps("artifact", "artifact-standalone", undefined)}>
+            {standaloneArtifacts.length ? standaloneArtifacts.map((artifact) => <ArtifactRow key={artifact.id} artifact={artifact} currentPath={currentPath} folders={artifactFolders} onAssignFolder={assignArtifact} onArchive={onArchiveArtifact} onDelete={(item) => setDeleteTarget({ kind: "artifact", item })} onRename={onRenameArtifact} locale={locale} />) : <span className="mj-sidebar-empty">{copy.emptyArtifacts}</span>}
           </nav>
           <ArtifactArchiveSection artifacts={archivedArtifacts} locale={locale} onRestore={onRestoreArtifact} onDelete={onDeleteArtifact} />
           <a className="mj-sidebar-library-link mj-sidebar-library-link--bottom" href={demoMode ? "/demo?view=library" : "/library"}>
@@ -501,18 +545,37 @@ function WorkspaceSidebar({
       )}
 
       <div className="mj-sidebar-footer">
-        <a className="mj-sidebar-nav-item" href={demoMode ? runHref : "/account"}>
-          <SettingsIcon size={16} />
-          <span className="mj-sidebar-copy">{copy.settings}</span>
-        </a>
-        <a className="mj-sidebar-user" href={demoMode ? runHref : "/account"}>
-          <span className="mj-avatar">{sidebarInitial}</span>
-          <span className="mj-sidebar-user-copy mj-sidebar-copy">
-            <strong>{sidebarName}</strong>
-            {sidebarSubtitle ? <small>{sidebarSubtitle}</small> : null}
-          </span>
-          <span className="mj-sidebar-user-caret mj-sidebar-copy">⌄</span>
-        </a>
+        {demoMode ? (
+          <a className="mj-sidebar-user" href={runHref}>
+            <span className="mj-avatar">{sidebarInitial}</span>
+            <span className="mj-sidebar-user-copy mj-sidebar-copy">
+              <strong>{sidebarName}</strong>
+              {sidebarSubtitle ? <small>{sidebarSubtitle}</small> : null}
+            </span>
+          </a>
+        ) : (
+          <div className="mj-sidebar-user-menu" onMouseLeave={() => setUserMenuOpen(false)}>
+            <button className="mj-sidebar-user" type="button" aria-label={copy.accountMenu} aria-expanded={userMenuOpen} onClick={() => setUserMenuOpen((value) => !value)}>
+              <span className="mj-avatar">{sidebarInitial}</span>
+              <span className="mj-sidebar-user-copy mj-sidebar-copy">
+                <strong>{sidebarName}</strong>
+                {sidebarSubtitle ? <small>{sidebarSubtitle}</small> : null}
+              </span>
+              <span className="mj-sidebar-user-caret mj-sidebar-copy">⌄</span>
+            </button>
+            {userMenuOpen ? (
+              <div className="mj-sidebar-user-popover" role="menu">
+                <div className="mj-sidebar-user-popover-name">
+                  <strong>{sidebarName}</strong>
+                  {sidebarSubtitle ? <small>{sidebarSubtitle}</small> : null}
+                </div>
+                <a role="menuitem" href="/account"><SettingsIcon size={15} />{copy.settings}</a>
+                <a role="menuitem" href="/account#usage">{copy.usageLimits}</a>
+                <a role="menuitem" className="is-danger" href="/auth/sign-out">{copy.signOut}</a>
+              </div>
+            ) : null}
+          </div>
+        )}
       </div>
       {deleteTarget ? (
         <DeleteConfirmationDialog
@@ -540,10 +603,16 @@ function SidebarSectionHeader({ label, status, actionLabel, onAction }: { label:
   );
 }
 
-function ChatRow({ chat, currentPath, demoMode, locale, folders, onArchive, onDelete, onAssignFolder }: { chat: ChatSummary; currentPath: string; demoMode: boolean; locale: PublicLocale; folders: ChatFolder[]; onArchive: (chat: ChatSummary) => void; onDelete: (chat: ChatSummary) => void; onAssignFolder: (chatId: string, folderId?: string) => void }) {
-  const copy = WORKSPACE_COPY[locale].sidebar;
+function ChatRow({ chat, currentPath, demoMode, locale, folders, onArchive, onDelete, onAssignFolder, onRename }: { chat: ChatSummary; currentPath: string; demoMode: boolean; locale: PublicLocale; folders: ChatFolder[]; onArchive: (chat: ChatSummary) => void; onDelete: (chat: ChatSummary) => void; onAssignFolder: (chatId: string, folderId?: string) => void; onRename: (chat: ChatSummary, name: string) => void }) {
   return (
-    <div className="mj-sidebar-chat-row">
+    <div
+      className="mj-sidebar-chat-row"
+      draggable={!demoMode}
+      onDragStart={(event) => {
+        event.dataTransfer.setData("application/x-mj-chat", chat.id);
+        event.dataTransfer.effectAllowed = "move";
+      }}
+    >
       <a className={`mj-sidebar-chat${currentPath === `/run/${chat.id}` ? " is-active" : ""}`} href={demoMode ? "/demo?view=run" : `/run/${chat.id}`} title={collapsedTitle(chat.title)}>
         <span className={`mj-chat-status mj-chat-status--${chat.status}`} aria-hidden="true">{statusGlyph(chat.status)}</span>
         <span className="mj-sidebar-chat-title mj-sidebar-copy">{chat.title}</span>
@@ -551,17 +620,15 @@ function ChatRow({ chat, currentPath, demoMode, locale, folders, onArchive, onDe
       </a>
       {!demoMode ? (
         <div className="mj-sidebar-chat-actions">
-          {folders.length ? (
-            <select aria-label={copy.moveToFolder(chat.title)} className="mj-sidebar-chat-folder" value={chat.folderId ?? ""} onChange={(event) => onAssignFolder(chat.id, event.target.value || undefined)}>
-              <option value="">{copy.noFolder}</option>
-              {folders.map((folder) => <option key={folder.id} value={folder.id}>{folder.name}</option>)}
-            </select>
-          ) : null}
           <ItemOverflowMenu
             kind="chat"
             title={chat.title}
             pinned={isPinned("chat", chat.id)}
             locale={locale}
+            folders={folders}
+            currentFolderId={chat.folderId}
+            onAssignFolder={(folderId) => onAssignFolder(chat.id, folderId)}
+            onRename={(name) => onRename(chat, name)}
             onTogglePin={() => togglePinned("chat", chat.id)}
             onArchive={() => onArchive(chat)}
             onDelete={() => onDelete(chat)}
@@ -572,25 +639,31 @@ function ChatRow({ chat, currentPath, demoMode, locale, folders, onArchive, onDe
   );
 }
 
-function ArtifactRow({ artifact, currentPath, folders, onAssignFolder, onArchive, onDelete, locale }: { artifact: LibraryArtifact; currentPath: string; folders: ArtifactFolder[]; onAssignFolder: (artifactId: string, folderId?: string) => void; onArchive: (artifact: LibraryArtifact) => void; onDelete: (artifact: LibraryArtifact) => void; locale: PublicLocale }) {
-  const copy = WORKSPACE_COPY[locale].sidebar;
+function ArtifactRow({ artifact, currentPath, folders, onAssignFolder, onArchive, onDelete, onRename, locale }: { artifact: LibraryArtifact; currentPath: string; folders: ArtifactFolder[]; onAssignFolder: (artifactId: string, folderId?: string) => void; onArchive: (artifact: LibraryArtifact) => void; onDelete: (artifact: LibraryArtifact) => void; onRename: (artifact: LibraryArtifact, name: string) => void; locale: PublicLocale }) {
   const href = `/studio?artifact=${encodeURIComponent(artifact.id)}`;
   return (
-    <div className="mj-sidebar-artifact-row">
+    <div
+      className="mj-sidebar-artifact-row"
+      draggable
+      onDragStart={(event) => {
+        event.dataTransfer.setData("application/x-mj-artifact", artifact.id);
+        event.dataTransfer.effectAllowed = "move";
+      }}
+    >
       <a className={`mj-sidebar-chat${currentPath === href ? " is-active" : ""}`} href={href} title={artifact.title}>
         <span className="mj-studio-artifact-mark" aria-hidden="true">{artifact.status === "verified" ? "✓" : "–"}</span>
         <span className="mj-sidebar-chat-title mj-sidebar-copy">{artifact.title}</span>
       </a>
       <div className="mj-sidebar-artifact-actions">
-        <select aria-label={`Move ${artifact.title} to a project`} className="mj-sidebar-chat-folder" value={getArtifactFolderId(artifact.id) ?? ""} onChange={(event) => onAssignFolder(artifact.id, event.target.value || undefined)}>
-          <option value="">No project</option>
-          {folders.map((folder) => <option key={folder.id} value={folder.id}>{folder.name}</option>)}
-        </select>
         <ItemOverflowMenu
           kind="artifact"
           title={artifact.title}
           pinned={isPinned("artifact", artifact.id)}
           locale={locale}
+          folders={folders}
+          currentFolderId={getArtifactFolderId(artifact.id) ?? undefined}
+          onAssignFolder={(folderId) => onAssignFolder(artifact.id, folderId)}
+          onRename={(name) => onRename(artifact, name)}
           onTogglePin={() => togglePinned("artifact", artifact.id)}
           onArchive={() => onArchive(artifact)}
           onDelete={() => onDelete(artifact)}
@@ -600,23 +673,58 @@ function ArtifactRow({ artifact, currentPath, folders, onAssignFolder, onArchive
   );
 }
 
-function ItemOverflowMenu({ kind, title, pinned, locale, onTogglePin, onArchive, onDelete }: { kind: "chat" | "artifact"; title: string; pinned: boolean; locale: PublicLocale; onTogglePin: () => void; onArchive: () => void; onDelete: () => void }) {
+function ItemOverflowMenu({ kind, title, pinned, locale, folders, currentFolderId, onAssignFolder, onRename, onTogglePin, onArchive, onDelete }: { kind: "chat" | "artifact"; title: string; pinned: boolean; locale: PublicLocale; folders: Array<{ id: string; name: string }>; currentFolderId?: string; onAssignFolder: (folderId?: string) => void; onRename: (name: string) => void; onTogglePin: () => void; onArchive: () => void; onDelete: () => void }) {
   const copy = WORKSPACE_COPY[locale].sidebar;
   const [open, setOpen] = useState(false);
+  const [renaming, setRenaming] = useState(false);
+  const [name, setName] = useState(title);
   const pinLabel = kind === "chat" ? (pinned ? copy.unpinChat(title) : copy.pinChat(title)) : (pinned ? copy.unpinArtifact(title) : copy.pinArtifact(title));
   const archiveLabel = kind === "chat" ? copy.archiveChat(title) : copy.archiveArtifact(title);
   const deleteLabel = kind === "chat" ? copy.deleteChat(title) : copy.deleteArtifact(title);
+  const currentFolder = folders.find((folder) => folder.id === currentFolderId);
+
+  function close() {
+    setOpen(false);
+    setRenaming(false);
+  }
+
+  function submitRename(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const next = name.trim();
+    if (next && next !== title) onRename(next);
+    close();
+  }
 
   return (
-    <div className="mj-sidebar-item-menu">
-      <button className="mj-sidebar-menu-trigger" type="button" aria-label={`${title} options`} aria-expanded={open} title={`${title} options`} onClick={(event) => { event.preventDefault(); event.stopPropagation(); setOpen((value) => !value); }}>
+    // The popover is hover-scoped per the owner request: leaving the menu area
+    // dismisses it without needing a click elsewhere.
+    <div className="mj-sidebar-item-menu" onMouseLeave={close}>
+      <button className="mj-sidebar-menu-trigger" type="button" aria-label={`${title} options`} aria-expanded={open} title={`${title} options`} onClick={(event) => { event.preventDefault(); event.stopPropagation(); setOpen((value) => !value); setRenaming(false); setName(title); }}>
         <MoreIcon size={15} />
       </button>
       {open ? (
         <div className="mj-sidebar-item-menu-popover" role="menu" onClick={(event) => event.stopPropagation()}>
-          <button type="button" role="menuitem" onClick={() => { onTogglePin(); setOpen(false); }}>{pinLabel}</button>
-          <button type="button" role="menuitem" onClick={() => { onArchive(); setOpen(false); }}>{archiveLabel}</button>
-          <button className="is-danger" type="button" role="menuitem" onClick={() => { onDelete(); setOpen(false); }}>{deleteLabel}</button>
+          {renaming ? (
+            <form className="mj-sidebar-rename-form" onSubmit={submitRename}>
+              <input aria-label={copy.rename(title)} autoFocus maxLength={80} value={name} onChange={(event) => setName(event.target.value)} placeholder={copy.renamePlaceholder} />
+              <button type="submit" aria-label={copy.renameSave} disabled={!name.trim()}>✓</button>
+            </form>
+          ) : (
+            <>
+              <button type="button" role="menuitem" onClick={() => setRenaming(true)}>{copy.rename(title)}</button>
+              <button type="button" role="menuitem" onClick={() => { onTogglePin(); close(); }}>{pinLabel}</button>
+              <button type="button" role="menuitem" onClick={() => { onArchive(); close(); }}>{archiveLabel}</button>
+              <div className="mj-sidebar-menu-folder">
+                <span>{copy.projectLabel}</span>
+                <select aria-label={copy.moveToFolder(title)} value={currentFolderId ?? ""} onChange={(event) => { onAssignFolder(event.target.value || undefined); close(); }}>
+                  <option value="">{copy.noFolder}</option>
+                  {folders.map((folder) => <option key={folder.id} value={folder.id}>{folder.name}</option>)}
+                </select>
+                {currentFolder ? <small>{currentFolder.name}</small> : null}
+              </div>
+              <button className="is-danger" type="button" role="menuitem" onClick={() => { onDelete(); close(); }}>{deleteLabel}</button>
+            </>
+          )}
         </div>
       ) : null}
     </div>

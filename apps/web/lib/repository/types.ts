@@ -1,0 +1,125 @@
+import type { VerificationMethodId } from "./verification";
+
+export type PublicRepositoryCategory = "gates" | "algorithms" | "operators" | "states";
+export type PublicRepositoryStatus = "verified" | "verified_caveats" | "community_review";
+export type PublicRepositoryFramework =
+  | "Qiskit"
+  | "PennyLane"
+  | "Cirq"
+  | "CUDA-Q"
+  | "Amazon Braket"
+  | "OpenQASM 3.0"
+  | "PyQuil";
+export type PublicRepositoryVariantStatus = "native" | "conversion" | "unsupported";
+
+export interface PublicRepositoryCodeVariant {
+  framework: PublicRepositoryFramework;
+  status: PublicRepositoryVariantStatus;
+  language: "python" | "typescript" | "openqasm" | "text";
+  filename: string;
+  code: string;
+  note?: string;
+}
+
+export interface PublicRepositoryCitation {
+  title: string;
+  authors: string;
+  year: string;
+  url: string;
+  relevance: string;
+  relevanceJa: string;
+}
+
+export interface PublicRepositoryClassicalComparison {
+  baseline: string;
+  baselineJa: string;
+  quantumClaim: string;
+  quantumClaimJa: string;
+  practicalRead: string;
+  practicalReadJa: string;
+}
+
+export interface PublicRepositoryEntry {
+  slug: string;
+  title: string;
+  titleJa: string;
+  category: PublicRepositoryCategory;
+  categoryLabel: string;
+  categoryLabelJa: string;
+  algorithmFamily: string;
+  framework: PublicRepositoryFramework;
+  status: PublicRepositoryStatus;
+  /**
+   * How the record was verified, classified against the tiered taxonomy in
+   * ./verification. Optional in raw data: entries without an explicit list are
+   * classified deterministically in public-repository.ts (see
+   * deriveVerificationMethods) and audited by scripts/check-repository-data.mjs.
+   */
+  verificationMethods?: VerificationMethodId[];
+  verification: string;
+  verificationDetails: {
+    method: string;
+    result: string;
+    caveat?: string;
+  };
+  exportStatus: string;
+  provenance: string;
+  updatedAt: string;
+  description: string;
+  descriptionJa: string;
+  introduction: string;
+  introductionJa: string;
+  explanation: string;
+  explanationJa: string;
+  /**
+   * Long-form explanation in Markdown with TeX math ($...$ / $$...$$), rendered
+   * through the KaTeX pipeline on the detail page. Falls back to the plain
+   * `explanation` string when absent.
+   */
+  explanationMd?: string;
+  explanationMdJa?: string;
+  tags: string[];
+  resources: Array<{ label: string; value: string }>;
+  metadata: Array<{ label: string; value: string }>;
+  source: {
+    kind: "curated_reference" | "verified_run" | "community_submission";
+    title: string;
+    url: string;
+    contributor?: string;
+    reviewedBy?: string;
+    license: string;
+  };
+  visualization: {
+    wires: string[];
+    operations: Array<{ label: string; qubits: number[]; tone: "accent" | "ok" | "warn" | "neutral" }>;
+    outcomes: Array<{ label: string; probability: number }>;
+  };
+  codeVariants: PublicRepositoryCodeVariant[];
+  relatedSlugs: string[];
+  literature?: PublicRepositoryCitation[];
+  classicalComparison?: PublicRepositoryClassicalComparison;
+  industryUseCases?: string[];
+  industryUseCasesJa?: string[];
+}
+
+export const PUBLIC_REPOSITORY_CATEGORIES: Array<{
+  value: "all" | PublicRepositoryCategory;
+  label: string;
+  labelJa: string;
+}> = [
+  { value: "all", label: "All categories", labelJa: "すべてのカテゴリ" },
+  { value: "gates", label: "Gates", labelJa: "ゲート" },
+  { value: "algorithms", label: "Algorithms", labelJa: "アルゴリズム" },
+  { value: "operators", label: "Operators", labelJa: "演算子" },
+  { value: "states", label: "States", labelJa: "状態" },
+];
+
+export const PUBLIC_REPOSITORY_FRAMEWORKS: PublicRepositoryFramework[] = [
+  "Qiskit",
+  "PennyLane",
+  "Cirq",
+  "CUDA-Q",
+  "Amazon Braket",
+  "OpenQASM 3.0",
+  "PyQuil",
+];
