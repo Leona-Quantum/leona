@@ -13,12 +13,6 @@ from majorana_contracts.enums import VerificationMethod, VerificationResultKind
 from majorana_openqasm import OpenQASMError, normalize, resource_metrics
 from pydantic import BaseModel, Field
 
-from majorana_baselines import (
-    BaselineInstance,
-    CapError,
-    compute_quantum_gap,
-    solve,
-)
 from majorana_verification.statevector import (
     EquivalenceReport,
     counts_vs_ideal,
@@ -233,67 +227,5 @@ def verify_qasm_parse(qasm: str) -> VerificationOutcome:
             "qubits": metrics.qubits,
             "operations": (metrics.gate_count or 0) + (metrics.measurement_count or 0),
             "normalized_bytes": len(canonical.encode("utf-8")),
-        },
-    )
-
-
-def verify_exact_diag(
-    instance: BaselineInstance,
-    claimed_energy: float,
-    tolerance: float = 1.6e-3,
-) -> VerificationOutcome:
-    """Exact-diagonalization reference for a claimed ground-state energy (VQE).
-    Default tolerance is chemical accuracy (1.6e-3 Ha, JC-4)."""
-    try:
-        solution = solve(instance)
-    except CapError as exc:
-        return VerificationOutcome(
-            method=VerificationMethod.EXACT_DIAG, result=FAIL, details={"error": str(exc)}
-        )
-    error = abs(claimed_energy - solution.baseline_value)
-    return VerificationOutcome(
-        method=VerificationMethod.EXACT_DIAG,
-        result=PASS if error <= tolerance else FAIL,
-        details={
-            "reference_energy": solution.baseline_value,
-            "claimed_energy": claimed_energy,
-            "absolute_error": error,
-            "tolerance": tolerance,
-        },
-    )
-
-
-def verify_brute_force(
-    instance: BaselineInstance,
-    claimed_value: float,
-    tolerance: float = 1e-9,
-) -> VerificationOutcome:
-    """Brute-force optimum for a claimed optimization value. Passes when the
-    claimed value matches the classical optimum (within tolerance) and does not
-    beat it in the wrong direction."""
-    try:
-        solution = solve(instance)
-    except CapError as exc:
-        return VerificationOutcome(
-            method=VerificationMethod.BRUTE_FORCE, result=FAIL, details={"error": str(exc)}
-        )
-    gap = compute_quantum_gap(instance.kind, solution.baseline_value, claimed_value)
-    # A claimed value that "beats" the exact optimum is impossible → fabricated.
-    matches = abs(gap.gap_vs_quantum) <= tolerance
-    impossible = (
-        gap.gap_vs_quantum > tolerance
-        if instance.kind == "maxcut"
-        else (gap.gap_vs_quantum < -tolerance)
-    )
-    ok = matches and not impossible
-    return VerificationOutcome(
-        method=VerificationMethod.BRUTE_FORCE,
-        result=PASS if ok else FAIL,
-        details={
-            "optimum": solution.baseline_value,
-            "claimed_value": claimed_value,
-            "gap_vs_quantum": gap.gap_vs_quantum,
-            "relative_gap": gap.relative_gap,
-            "beats_exact_optimum": impossible,
         },
     )

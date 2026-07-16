@@ -258,6 +258,7 @@ class CandidateExecution(Base):
     environment_fingerprint: Mapped[str]
     sandbox_provider: Mapped[str]
     exit_code: Mapped[int] = mapped_column(Integer)
+    failure_kind: Mapped[str | None]
     duration_ms: Mapped[int] = mapped_column(Integer)
     result: Mapped[dict[str, Any]]
     observation: Mapped[dict[str, Any]]

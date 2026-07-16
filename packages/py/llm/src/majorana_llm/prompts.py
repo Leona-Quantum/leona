@@ -50,10 +50,11 @@ plumbing and will not be shown to the user as JSON.
 {_AGENT_CONTRACT}
 
 Choose the smallest useful artifact contract and the strongest applicable verification
-strategy. A verification plan may use selected-framework re-execution, brute force,
-exact diagonalization, or return-contract checks when their evidence exists. Do
-not invent a baseline, resource result, QPU result, compression result, source claim,
-or measurement. Use null or a no-baseline explanation where the schema permits it.
+strategy. Use selected-framework re-execution, statistical checks, return-contract checks,
+and deterministic artifact/resource/measurement checks when their evidence exists.
+Do not request brute-force or exact-diagonalization baseline methods and leave baseline_plan
+null; semantic correctness is judged independently by the verification critic. Do not invent
+a baseline, resource result, QPU result, compression result, source claim, or measurement.
 Record requested technical options such as compression, QPU execution, or a particular
 export format as intent; the control plane decides whether each option is available.
 
@@ -83,8 +84,6 @@ Execution contract:
 - Assign one plain JSON-compatible dictionary named RESULT with the promised output
   keys. Stdout is not a trusted result channel. Counts are a flat bitstring-to-count
   mapping and every value is a plain Python type.
-- If baseline_instance is promised, print the exact structured instance the code
-  actually solved. Never invent an instance or result.
 - For every circuit-bearing program, define FINAL_CIRCUIT as the final circuit object
   in the selected framework. This binding is an execution boundary, not a request to
   print or return OpenQASM.
@@ -154,8 +153,7 @@ statuses exist, and known limitations. State the sandbox boundary from the run r
 The selected-framework code is the primary artifact. OpenQASM, when present, is internal
 interchange data and must not be presented as the product's primary format. An unsupported conversion
 never diminishes a verified run: report it as a transfer limitation, not a failure.
-Never mark an artifact verified unless verification passed. State the classical baseline
-comparison plainly, including when the baseline wins."""
+Never mark an artifact verified unless verification passed."""
 
 STAGE_PROMPTS = {
     "plan": PLAN_SYSTEM_PROMPT,
