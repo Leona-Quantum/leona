@@ -1,14 +1,15 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import {
-  getPublicRepositoryLibraryVariant,
+  entryVerificationMethods,
   PUBLIC_REPOSITORY_CATEGORIES,
   PUBLIC_REPOSITORY_FRAMEWORKS,
   type PublicRepositoryCategory,
   type PublicRepositoryEntry,
 } from "../../lib/public-repository";
 import type { PublicLocale } from "../../lib/public-locale";
+import { VerificationTierBadge } from "../../components/repository-verification";
 import { RepositoryExportAction } from "./repository-export";
 
 const COPY = {
@@ -21,24 +22,7 @@ const COPY = {
     allFrameworks: "All frameworks",
     entry: "entry",
     entries: "entries",
-    view: "View entry",
-    explore: "Explore this record",
-    visualization: "Circuit visualization",
-    simulation: "Simulation visualization",
-    how: "How it works",
-    comparison: "Classical comparison",
-    code: "Code",
-    resources: "Resources and classification",
-    source: "Source",
-    license: "License",
-    familyLabel: "Family",
-    verification: "Verification",
-    export: "Export",
-    provenance: "Provenance",
-    tags: "Tags",
-    outcomes: "Expected outcomes",
-    native: "Native snippet",
-    noCode: "No supported native Library snippet is published for this entry yet.",
+    view: "View",
     emptyTitle: "No entries match those filters.",
     emptyBody: "Try a broader search or return to the full reference set.",
     clear: "Clear filters",
@@ -52,40 +36,12 @@ const COPY = {
     allFrameworks: "すべてのフレームワーク",
     entry: "件",
     entries: "件",
-    view: "詳細を見る",
-    explore: "レコードを見る",
-    visualization: "回路の可視化",
-    simulation: "シミュレーションの可視化",
-    how: "仕組み",
-    comparison: "古典との比較",
-    code: "コード",
-    resources: "リソースと分類",
-    source: "出典",
-    license: "ライセンス",
-    familyLabel: "系統",
-    verification: "検証",
-    export: "エクスポート",
-    provenance: "出典種別",
-    tags: "タグ",
-    outcomes: "期待される出力",
-    native: "ネイティブスニペット",
-    noCode: "Libraryに追加できるネイティブコードはまだ公開されていません。",
+    view: "詳細",
     emptyTitle: "条件に一致するエントリがありません。",
     emptyBody: "検索範囲を広げるか、すべての参照セットに戻してください。",
     clear: "条件をクリア",
   },
 } as const;
-
-function statusLabel(status: PublicRepositoryEntry["status"], locale: PublicLocale): string {
-  if (locale === "ja") {
-    if (status === "verified") return "検証済み";
-    if (status === "verified_caveats") return "注意付き検証済み";
-    return "コミュニティレビュー中";
-  }
-  if (status === "verified") return "Verified";
-  if (status === "verified_caveats") return "Verified with caveats";
-  return "Community review";
-}
 
 const FAMILY_LABELS_JA: Record<string, string> = {
   "Single-qubit gate": "単一量子ビットゲート",
@@ -106,46 +62,20 @@ const FAMILY_LABELS_JA: Record<string, string> = {
   "Entanglement and communication": "エンタングルメントと通信",
   "Quantum error correction": "量子誤り訂正",
   "Quantum Fourier transform": "量子フーリエ変換",
-};
-
-const RESOURCE_LABELS_JA: Record<string, string> = {
-  Qubits: "量子ビット",
-  Depth: "深さ",
-  Outcomes: "出力",
-  Shots: "ショット",
-  Evidence: "根拠",
-  Claim: "主張",
-  Output: "出力",
-  Target: "対象",
-  Access: "アクセス",
-  Registers: "レジスタ",
-  Precision: "精度",
-  Core: "中核",
-  Input: "入力",
-  Risk: "リスク",
-  "Quantum core": "量子コア",
-  "Classical post": "古典後処理",
-  Readiness: "実用化条件",
-  "Classical bits": "古典ビット",
-  "Shared resource": "共有リソース",
-  Logical: "論理",
-  Physical: "物理",
-  Corrects: "訂正対象",
-  "Quantum role": "量子側の役割",
-  "Classical role": "古典側の役割",
-  "Main metric": "主指標",
-  Queries: "クエリ数",
-  "Input register": "入力レジスタ",
-  "Output register": "出力レジスタ",
-  Samples: "サンプル数",
+  "Hamiltonian simulation": "ハミルトニアンシミュレーション",
+  "Hamiltonian / observable": "ハミルトニアン / 観測量",
+  "Rotation gate": "回転ゲート",
+  "Phase gate": "位相ゲート",
+  "Multi-qubit gate": "多量子ビットゲート",
+  "Entangled state": "エンタングル状態",
+  "Encoded state": "符号化状態",
+  "Sampling / benchmarking": "サンプリング / ベンチマーク",
+  "Error mitigation": "誤り緩和",
+  "Optimization / annealing": "最適化 / アニーリング",
 };
 
 function familyLabel(family: string, locale: PublicLocale): string {
   return locale === "ja" ? FAMILY_LABELS_JA[family] ?? family : family;
-}
-
-function resourceLabel(label: string, locale: PublicLocale): string {
-  return locale === "ja" ? RESOURCE_LABELS_JA[label] ?? label : label;
 }
 
 export function RepositoryBrowser({
@@ -153,11 +83,13 @@ export function RepositoryBrowser({
   locale,
   isSignedIn,
   signInHref,
+  legend,
 }: {
   entries: PublicRepositoryEntry[];
   locale: PublicLocale;
   isSignedIn: boolean;
   signInHref: string | null;
+  legend?: ReactNode;
 }) {
   const copy = COPY[locale];
   const [query, setQuery] = useState("");
@@ -165,7 +97,7 @@ export function RepositoryBrowser({
   const [family, setFamily] = useState<string>("");
   const [framework, setFramework] = useState<string>("");
 
-  const families = useMemo(() => Array.from(new Set(entries.map((entry) => entry.algorithmFamily))), [entries]);
+  const families = useMemo(() => Array.from(new Set(entries.map((entry) => entry.algorithmFamily))).sort(), [entries]);
   const filteredEntries = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase();
     return entries.filter((entry) => {
@@ -184,7 +116,7 @@ export function RepositoryBrowser({
       const matchesFramework = !framework || entry.framework === framework;
       return matchesQuery && matchesCategory && matchesFamily && matchesFramework;
     });
-  }, [category, copy.allFamilies, copy.allFrameworks, entries, family, framework, query]);
+  }, [category, entries, family, framework, query]);
 
   function clearFilters() {
     setQuery("");
@@ -236,103 +168,38 @@ export function RepositoryBrowser({
         ))}
       </div>
 
+      {legend}
+
       <p className="mj-repository-result-count" aria-live="polite">
         {locale === "ja" ? `${filteredEntries.length}${copy.entries}` : `${filteredEntries.length} public ${filteredEntries.length === 1 ? copy.entry : copy.entries}`}
       </p>
 
       {filteredEntries.length ? (
-        <div className="mj-repository-grid">
+        <div className="mj-repo-list">
           {filteredEntries.map((entry) => {
             const title = locale === "ja" ? entry.titleJa : entry.title;
             const description = locale === "ja" ? entry.descriptionJa : entry.description;
-            const libraryVariant = getPublicRepositoryLibraryVariant(entry);
+            const qubits = entry.resources.find((resource) => resource.label === "Qubits")?.value;
             return (
-              <article className="mj-repository-entry" key={entry.slug}>
-                <div className="mj-repository-entry-head">
-                  <div className="mj-repository-status-row">
-                    <span className="mj-repository-status" data-status={entry.status}>
-                      {statusLabel(entry.status, locale)}
-                    </span>
-                    <span>{locale === "ja" ? entry.categoryLabelJa : entry.categoryLabel}</span>
-                    <span>{entry.framework}</span>
-                  </div>
+              <article className="mj-repo-card" key={entry.slug}>
+                <div className="mj-repo-card-top">
+                  <VerificationTierBadge methods={entryVerificationMethods(entry)} locale={locale} />
+                  <span>{locale === "ja" ? entry.categoryLabelJa : entry.categoryLabel}</span>
+                  <span>{familyLabel(entry.algorithmFamily, locale)}</span>
+                  {qubits ? <span className="mj-repo-card-qubits">{qubits} q</span> : null}
                   <time dateTime={entry.updatedAt}>{entry.updatedAt}</time>
                 </div>
                 <h3><a href={`/repository/${entry.slug}`}>{title}</a></h3>
                 <p>{description}</p>
-                <div className="mj-repository-resource-row">
-                  {entry.resources.map((resource) => (
-                    <div key={resource.label}>
-                      <span>{resourceLabel(resource.label, locale)}</span>
-                      <strong>{resource.value}</strong>
-                    </div>
-                  ))}
-                </div>
-                <dl className="mj-repository-evidence">
-                  <div><dt>{copy.familyLabel}</dt><dd>{familyLabel(entry.algorithmFamily, locale)}</dd></div>
-                  <div><dt>{copy.verification}</dt><dd>{entry.verification}</dd></div>
-                  <div><dt>{copy.export}</dt><dd>{entry.exportStatus}</dd></div>
-                  <div><dt>{copy.provenance}</dt><dd>{entry.provenance}</dd></div>
-                </dl>
-                <div className="mj-repository-entry-actions">
-                  <div className="mj-repository-tags" aria-label={copy.tags}>
-                    {entry.tags.map((tag) => <span key={tag}>{tag}</span>)}
+                <div className="mj-repo-card-foot">
+                  <div className="mj-repository-tags" aria-label={locale === "ja" ? "タグ" : "Tags"}>
+                    {entry.tags.slice(0, 3).map((tag) => <span key={tag}>{tag}</span>)}
                   </div>
-                  <div className="mj-repository-entry-links">
+                  <div className="mj-repo-card-links">
                     <RepositoryExportAction slug={entry.slug} title={title} isSignedIn={isSignedIn} signInHref={signInHref} locale={locale} />
                     <a className="mj-text-link" href={`/repository/${entry.slug}`}>{copy.view} ↗</a>
                   </div>
                 </div>
-
-                <details className="mj-repository-entry-details">
-                  <summary>{copy.explore}</summary>
-                  <div className="mj-repository-entry-sections">
-                    <details>
-                      <summary>{copy.visualization}</summary>
-                      <div className="mj-repository-mini-circuit">
-                        {entry.visualization.operations.map((operation, index) => <span key={`${operation.label}-${index}`} data-tone={operation.tone}>{operation.label} · q{operation.qubits.join(", q")}</span>)}
-                      </div>
-                    </details>
-                    <details>
-                      <summary>{copy.simulation}</summary>
-                      <div className="mj-repository-mini-outcomes" aria-label={copy.outcomes}>
-                        {entry.visualization.outcomes.map((outcome) => (
-                          <div key={outcome.label}>
-                            <span>{outcome.label}</span><strong>{Math.round(outcome.probability * 100)}%</strong>
-                            <span className="mj-repository-mini-outcome-track"><span style={{ width: `${Math.max(0, Math.min(1, outcome.probability)) * 100}%` }} /></span>
-                          </div>
-                        ))}
-                      </div>
-                    </details>
-                    <details>
-                      <summary>{copy.how}</summary>
-                      <p>{locale === "ja" ? entry.explanationJa : entry.explanation}</p>
-                    </details>
-                    <details>
-                      <summary>{copy.comparison}</summary>
-                      <p>{entry.classicalComparison
-                        ? locale === "ja" ? entry.classicalComparison.practicalReadJa : entry.classicalComparison.practicalRead
-                        : "A matched classical baseline is not published for this reference record yet."}</p>
-                    </details>
-                    <details>
-                      <summary>{copy.code}</summary>
-                      {libraryVariant ? (
-                        <>
-                          <span className="mj-repository-mini-code-label">{copy.native}: {libraryVariant.framework}</span>
-                          <pre className="mj-repository-mini-code"><code>{libraryVariant.code}</code></pre>
-                        </>
-                      ) : <p>{copy.noCode}</p>}
-                    </details>
-                    <details>
-                      <summary>{copy.resources}</summary>
-                      <dl className="mj-repository-mini-dl">
-                        {[...entry.metadata, { label: copy.source, value: entry.source.title }, { label: copy.license, value: entry.source.license }].map((row) => (
-                          <div key={`${row.label}-${row.value}`}><dt>{row.label}</dt><dd>{row.value}</dd></div>
-                        ))}
-                      </dl>
-                    </details>
-                  </div>
-                </details>
               </article>
             );
           })}

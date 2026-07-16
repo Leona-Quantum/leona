@@ -82,15 +82,21 @@ export function PaperclipIcon(props: IconProps) {
 }
 
 /* Brand mark: Dirac ket notation — |ψ⟩ — reduced to a bar, a chevron, and the
- * state between them. Reads to the actual audience (quantum researchers) rather
- * than as another orbit-and-electron logo, and survives 16px because it is three
- * shapes on one baseline. Monochrome via currentColor so the light theme's
- * strictly-monochrome palette (owner directive 2026-07-14) holds without a variant. */
+ * state between them. The state is the Leo "sickle" asterism (the lion's-head
+ * star pattern; Leona = lioness), with Regulus as the bright state-dot and the
+ * mane arcing above it — the lioness rendered as a quantum state. Survives 16px
+ * because the sickle degrades to the original dot plus a faint plume. Monochrome
+ * via currentColor so the light theme's strictly-monochrome palette (owner
+ * directive 2026-07-14) holds without a variant. */
 export function BrandMark({ size = 20, ...props }: IconProps) {
   return (
     <svg aria-hidden="true" width={size} height={size} viewBox="0 0 20 20" fill="none" {...props}>
       <path d="M4.6 3.8v12.4" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
       <path d="m11.9 3.8 3.9 6.2-3.9 6.2" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M8.3 10 7.5 7.9l.7-1.8 1.6-.5" stroke="currentColor" strokeWidth="0.9" strokeLinecap="round" strokeLinejoin="round" opacity="0.75" />
+      <circle cx="7.5" cy="7.9" r="0.65" fill="currentColor" />
+      <circle cx="8.2" cy="6.1" r="0.65" fill="currentColor" />
+      <circle cx="9.8" cy="5.6" r="0.65" fill="currentColor" />
       <circle cx="8.3" cy="10" r="1.5" fill="currentColor" />
     </svg>
   );
