@@ -4764,6 +4764,9 @@ div.mj-rail-row:hover {
   .mj-studio-workspace {
     grid-template-columns: 170px minmax(0, 1fr);
   }
+  .mj-studio-workspace--editor {
+    grid-template-columns: minmax(0, 1fr);
+  }
   .mj-studio-main-head {
     flex-wrap: wrap;
     gap: var(--sp-3);
