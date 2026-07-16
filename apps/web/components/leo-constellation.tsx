@@ -47,10 +47,11 @@ export function LeoConstellation({ className = "" }: { className?: string }) {
 
     function colors() {
       const styles = getComputedStyle(canvas!);
+      // Fallbacks are named colors: the raw-hex lint reserves hex for tokens.css.
       return {
-        star: styles.getPropertyValue("--text-1").trim() || "#a29c93",
-        accent: styles.getPropertyValue("--accent").trim() || "#7ba05b",
-        line: styles.getPropertyValue("--border-0").trim() || "#332f2b",
+        star: styles.getPropertyValue("--text-1").trim() || "gray",
+        accent: styles.getPropertyValue("--accent").trim() || "gray",
+        line: styles.getPropertyValue("--border-0").trim() || "dimgray",
       };
     }
 

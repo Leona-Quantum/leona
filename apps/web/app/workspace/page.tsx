@@ -47,17 +47,6 @@ export default async function WorkspacePage() {
           <p className="mj-open-source-note">{copy.note}</p>
         </section>
 
-        <section className="mj-open-source-section mj-open-source-start" aria-labelledby="workspace-open-heading">
-          <div>
-            <p className="mj-section-label">{copy.foundationsLabel}</p>
-            <h2 id="workspace-open-heading">{copy.foundationsTitle}</h2>
-            <p>{copy.foundationsBody}</p>
-            <a className="mj-text-link" href="/repository">{copy.codeLink} ↗</a>
-          </div>
-          <pre><code>{`pnpm install
-uv sync --all-packages
-pnpm --dir apps/web dev`}</code></pre>
-        </section>
       </div>
     </PublicSite>
   );

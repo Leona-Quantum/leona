@@ -19,7 +19,7 @@ export const PUBLIC_SHELL_COPY: Record<PublicLocale, {
     terms: string;
     builtFor: string;
   };
-  actions: { workspace: string; signIn: string; talk: string };
+  actions: { workspace: string; signIn: string; talk: string; signOut: string };
 }> = {
   en: {
     nav: { product: "Product", pricing: "Pricing", repository: "Repository", workspace: "Workspace", contact: "Contact" },
@@ -33,7 +33,7 @@ export const PUBLIC_SHELL_COPY: Record<PublicLocale, {
       terms: "Terms",
       builtFor: "For researchers, engineers, and teams who need evidence.",
     },
-    actions: { workspace: "Open workspace", signIn: "Sign in", talk: "Talk to us" },
+    actions: { workspace: "Open workspace", signIn: "Sign in", talk: "Talk to us", signOut: "Sign out" },
   },
   ja: {
     nav: { product: "プロダクト", pricing: "料金", repository: "リポジトリ", workspace: "ワークスペース", contact: "連絡先" },
@@ -47,6 +47,6 @@ export const PUBLIC_SHELL_COPY: Record<PublicLocale, {
       terms: "利用規約",
       builtFor: "根拠を必要とする研究者、エンジニア、チームのために。",
     },
-    actions: { workspace: "ワークスペースを開く", signIn: "サインイン", talk: "相談する" },
+    actions: { workspace: "ワークスペースを開く", signIn: "サインイン", talk: "相談する", signOut: "サインアウト" },
   },
 };

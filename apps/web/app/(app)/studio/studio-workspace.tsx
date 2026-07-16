@@ -205,7 +205,19 @@ export function StudioWorkspace({ artifactId, newDraft = false, locale = "en" }:
                 ))}
               </nav>
 
-              {panel === "canvas" ? <CircuitCanvas framework={framework} code={code} selectedGate={selectedGate} onSelectGate={setSelectedGate} copy={copy} /> : null}
+              {panel === "canvas" ? (
+                <CircuitBuilder
+                  framework={framework}
+                  selectedGate={selectedGate}
+                  onSelectGate={setSelectedGate}
+                  copy={copy}
+                  onApply={(codes) => {
+                    setDrafts(codes);
+                    setCode(codes[framework]);
+                    setMessage(copy.appliedToCode);
+                  }}
+                />
+              ) : null}
               {panel === "code" ? <CodeEditor code={code} framework={framework} onChange={setCode} onCopy={() => void copyCode()} copied={copied} copy={copy} /> : null}
               {panel === "versions" ? <VersionPanel artifact={artifact} runId={runId} copy={copy} /> : null}
 
@@ -277,44 +289,248 @@ export function StudioWorkspace({ artifactId, newDraft = false, locale = "en" }:
 
 type StudioCopy = (typeof WORKSPACE_COPY)[PublicLocale]["studio"];
 
-function CircuitCanvas({ framework, code, selectedGate, onSelectGate, copy }: { framework: ComposerFramework; code: string; selectedGate: string; onSelectGate: (gate: string) => void; copy: StudioCopy }) {
-  const hasMeasure = code.toLowerCase().includes("measure") || code.toLowerCase().includes("sample");
-  const gates = ["H", "CX", ...(hasMeasure ? ["M"] : [])];
+type BuilderGate = "H" | "X" | "Y" | "Z" | "S" | "T" | "RX" | "RY" | "RZ" | "CX" | "CZ" | "SWAP" | "M";
+type BuilderStep = { gate: BuilderGate; qubits: number[]; param?: string };
+
+const BUILDER_GATES: BuilderGate[] = ["H", "X", "Y", "Z", "S", "T", "RX", "RY", "RZ", "CX", "CZ", "SWAP", "M"];
+const TWO_QUBIT_GATES: BuilderGate[] = ["CX", "CZ", "SWAP"];
+const ROTATION_GATES: BuilderGate[] = ["RX", "RY", "RZ"];
+const ANGLE_OPTIONS = ["pi/8", "pi/4", "pi/2", "pi", "3*pi/2", "2*pi"];
+
+function CircuitBuilder({ framework, selectedGate, onSelectGate, onApply, copy }: { framework: ComposerFramework; selectedGate: string; onSelectGate: (gate: string) => void; onApply: (codes: Record<ComposerFramework, string>) => void; copy: StudioCopy }) {
+  const [qubitCount, setQubitCount] = useState(2);
+  const [steps, setSteps] = useState<BuilderStep[]>([]);
+  const [pendingControl, setPendingControl] = useState<number | null>(null);
+  const [angle, setAngle] = useState("pi/2");
+
+  const armed = (BUILDER_GATES as string[]).includes(selectedGate) ? (selectedGate as BuilderGate) : "H";
+
+  function placeOnQubit(qubit: number) {
+    if (TWO_QUBIT_GATES.includes(armed)) {
+      if (pendingControl === null) {
+        setPendingControl(qubit);
+        return;
+      }
+      if (pendingControl === qubit) {
+        setPendingControl(null);
+        return;
+      }
+      setSteps((current) => [...current, { gate: armed, qubits: [pendingControl, qubit] }]);
+      setPendingControl(null);
+      return;
+    }
+    setSteps((current) => [...current, { gate: armed, qubits: [qubit], ...(ROTATION_GATES.includes(armed) ? { param: angle } : {}) }]);
+  }
+
+  function changeQubitCount(delta: number) {
+    const next = Math.min(6, Math.max(1, qubitCount + delta));
+    if (next === qubitCount) return;
+    setQubitCount(next);
+    setPendingControl(null);
+    if (next < qubitCount) setSteps((current) => current.filter((step) => step.qubits.every((q) => q < next)));
+  }
+
+  const columnWidth = 52;
+  const leftPad = 74;
+  const topPad = 34;
+  const rowHeight = 52;
+  const width = Math.max(560, leftPad + (steps.length + 2) * columnWidth + 40);
+  const height = topPad + qubitCount * rowHeight + 10;
+
   return (
     <section className="mj-studio-surface mj-studio-canvas" aria-label={copy.canvasLabel}>
       <div className="mj-studio-surface-head">
-        <div><span className="mj-section-label">{copy.canvasLabel}</span><h2>{copy.starterTitle}</h2></div>
-        <span className="mj-mono-muted">{frameworkLabel(framework)} · {copy.qubits}</span>
+        <div><span className="mj-section-label">{copy.canvasLabel}</span><h2>{copy.generatedPreview}</h2></div>
+        <span className="mj-mono-muted">{frameworkLabel(framework)} · {qubitCount}q · {steps.length} ops</span>
       </div>
+
+      <div className="mj-builder-palette" role="toolbar" aria-label={copy.palette}>
+        {BUILDER_GATES.map((gate) => (
+          <button key={gate} type="button" className={`mj-builder-gate${armed === gate ? " is-active" : ""}`} aria-pressed={armed === gate} onClick={() => { onSelectGate(gate); setPendingControl(null); }}>
+            {gate}
+          </button>
+        ))}
+        {ROTATION_GATES.includes(armed) ? (
+          <label className="mj-builder-angle">
+            <span>{copy.angleLabel}</span>
+            <select value={angle} onChange={(event) => setAngle(event.target.value)}>
+              {ANGLE_OPTIONS.map((option) => <option key={option} value={option}>{option.replace("pi", "π").replace("*", "")}</option>)}
+            </select>
+          </label>
+        ) : null}
+      </div>
+
       <div className="mj-circuit-stage">
-        <svg className="mj-circuit-svg" viewBox="0 0 720 300" role="img" aria-label={copy.circuitAria(frameworkLabel(framework))}>
-          <line className="mj-circuit-wire" x1="86" y1="105" x2="655" y2="105" />
-          <line className="mj-circuit-wire" x1="86" y1="195" x2="655" y2="195" />
-          <text className="mj-circuit-label" x="28" y="111">q0</text>
-          <text className="mj-circuit-label" x="28" y="201">q1</text>
-          <g className={`mj-circuit-gate${selectedGate === "H" ? " is-selected" : ""}`} role="button" tabIndex={0} onClick={() => onSelectGate("H")} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") onSelectGate("H"); }}>
-            <rect x="170" y="80" width="50" height="50" rx="8" />
-            <text x="195" y="111">H</text>
-          </g>
-          <g className={`mj-circuit-gate${selectedGate === "CX" ? " is-selected" : ""}`} role="button" tabIndex={0} onClick={() => onSelectGate("CX")} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") onSelectGate("CX"); }}>
-            <line className="mj-circuit-control" x1="365" y1="105" x2="365" y2="195" />
-            <circle className="mj-circuit-control-dot" cx="365" cy="105" r="7" />
-            <circle className="mj-circuit-target" cx="365" cy="195" r="17" />
-            <path d="M365 184v22M354 195h22" />
-            <text x="365" y="250">CX</text>
-          </g>
-          {hasMeasure ? (
-            <g className={`mj-circuit-gate${selectedGate === "M" ? " is-selected" : ""}`} role="button" tabIndex={0} onClick={() => onSelectGate("M")} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") onSelectGate("M"); }}>
-              <rect x="520" y="80" width="50" height="140" rx="8" />
-              <text x="545" y="158">M</text>
-            </g>
-          ) : null}
-          <text className="mj-circuit-output" x="640" y="92">out</text>
+        <svg className="mj-circuit-svg" viewBox={`0 0 ${width} ${height}`} role="img" aria-label={copy.circuitAria(frameworkLabel(framework))} style={{ maxWidth: "100%" }}>
+          {Array.from({ length: qubitCount }, (_, q) => {
+            const y = topPad + q * rowHeight;
+            return (
+              <g key={q}>
+                <text className="mj-circuit-label" x="18" y={y + 5}>q{q}</text>
+                <line className="mj-circuit-wire" x1={leftPad - 16} y1={y} x2={width - 24} y2={y} />
+                <g
+                  className={`mj-circuit-gate mj-builder-slot${pendingControl === q ? " is-selected" : ""}`}
+                  role="button"
+                  tabIndex={0}
+                  aria-label={`q${q}: ${armed}`}
+                  onClick={() => placeOnQubit(q)}
+                  onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); placeOnQubit(q); } }}
+                >
+                  <rect x={leftPad + steps.length * columnWidth - 17} y={y - 17} width="34" height="34" rx="7" strokeDasharray="4 3" fill="transparent" />
+                  <text x={leftPad + steps.length * columnWidth} y={y + 5}>+</text>
+                </g>
+              </g>
+            );
+          })}
+          {steps.map((step, index) => {
+            const x = leftPad + index * columnWidth;
+            const yFor = (q: number) => topPad + q * rowHeight;
+            if (step.gate === "CX" || step.gate === "CZ" || step.gate === "SWAP") {
+              const [control, target] = step.qubits;
+              return (
+                <g className="mj-circuit-gate" key={index}>
+                  <line className="mj-circuit-control" x1={x} y1={yFor(control)} x2={x} y2={yFor(target)} />
+                  {step.gate === "SWAP" ? (
+                    <>
+                      <path d={`M${x - 7} ${yFor(control) - 7}l14 14M${x - 7} ${yFor(control) + 7}l14 -14`} />
+                      <path d={`M${x - 7} ${yFor(target) - 7}l14 14M${x - 7} ${yFor(target) + 7}l14 -14`} />
+                    </>
+                  ) : (
+                    <>
+                      <circle className="mj-circuit-control-dot" cx={x} cy={yFor(control)} r="6" />
+                      {step.gate === "CX" ? (
+                        <>
+                          <circle className="mj-circuit-target" cx={x} cy={yFor(target)} r="13" />
+                          <path d={`M${x} ${yFor(target) - 9}v18M${x - 9} ${yFor(target)}h18`} />
+                        </>
+                      ) : (
+                        <circle className="mj-circuit-control-dot" cx={x} cy={yFor(target)} r="6" />
+                      )}
+                    </>
+                  )}
+                </g>
+              );
+            }
+            const y = yFor(step.qubits[0]);
+            return (
+              <g className="mj-circuit-gate" key={index}>
+                <rect x={x - 17} y={y - 17} width="34" height="34" rx="7" />
+                <text x={x} y={y + 5}>{step.gate === "M" ? "M" : step.gate}</text>
+                {step.param ? <text className="mj-circuit-label" x={x} y={y + 30}>{step.param.replace("pi", "π").replace("*", "")}</text> : null}
+              </g>
+            );
+          })}
         </svg>
       </div>
-      <div className="mj-studio-canvas-footer"><span>{copy.clickGate}</span><span className="mj-mono-muted">{gates.join(" → ")}</span></div>
+
+      <div className="mj-builder-controls">
+        <button className="mj-secondary-button" type="button" onClick={() => changeQubitCount(1)} disabled={qubitCount >= 6}>{copy.addQubit}</button>
+        <button className="mj-secondary-button" type="button" onClick={() => changeQubitCount(-1)} disabled={qubitCount <= 1}>{copy.removeQubit}</button>
+        <button className="mj-secondary-button" type="button" onClick={() => { setSteps((current) => current.slice(0, -1)); setPendingControl(null); }} disabled={!steps.length}>{copy.undo}</button>
+        <button className="mj-secondary-button" type="button" onClick={() => { setSteps([]); setPendingControl(null); }} disabled={!steps.length}>{copy.clearAll}</button>
+        <button className="mj-primary-button" type="button" onClick={() => onApply(generateBuilderCode(steps, qubitCount))} disabled={!steps.length}>{copy.applyToCode}</button>
+      </div>
+
+      <div className="mj-studio-canvas-footer" aria-live="polite">
+        <span>{pendingControl !== null ? copy.pickTarget : steps.length ? copy.builderHint : copy.builderEmpty}</span>
+        <span className="mj-mono-muted">{steps.length ? steps.map((step) => step.gate).join(" → ") : "—"}</span>
+      </div>
     </section>
   );
+}
+
+function generateBuilderCode(steps: BuilderStep[], qubitCount: number): Record<ComposerFramework, string> {
+  const ordered = steps.filter((step) => step.gate !== "M");
+  const measured = steps.some((step) => step.gate === "M");
+  const usesAngle = ordered.some((step) => step.param);
+
+  const qiskitLines = ordered.map((step) => {
+    const [a, b] = step.qubits;
+    switch (step.gate) {
+      case "H": return `qc.h(${a})`;
+      case "X": return `qc.x(${a})`;
+      case "Y": return `qc.y(${a})`;
+      case "Z": return `qc.z(${a})`;
+      case "S": return `qc.s(${a})`;
+      case "T": return `qc.t(${a})`;
+      case "RX": return `qc.rx(${step.param}, ${a})`;
+      case "RY": return `qc.ry(${step.param}, ${a})`;
+      case "RZ": return `qc.rz(${step.param}, ${a})`;
+      case "CX": return `qc.cx(${a}, ${b})`;
+      case "CZ": return `qc.cz(${a}, ${b})`;
+      case "SWAP": return `qc.swap(${a}, ${b})`;
+      default: return "";
+    }
+  }).filter(Boolean);
+  const qiskit = [
+    "from qiskit import QuantumCircuit",
+    ...(usesAngle ? ["from numpy import pi"] : []),
+    "",
+    `qc = QuantumCircuit(${qubitCount})`,
+    ...qiskitLines,
+    ...(measured ? ["qc.measure_all()"] : []),
+  ].join("\n");
+
+  const pennylaneLines = ordered.map((step) => {
+    const [a, b] = step.qubits;
+    switch (step.gate) {
+      case "H": return `    qml.Hadamard(wires=${a})`;
+      case "X": return `    qml.PauliX(wires=${a})`;
+      case "Y": return `    qml.PauliY(wires=${a})`;
+      case "Z": return `    qml.PauliZ(wires=${a})`;
+      case "S": return `    qml.S(wires=${a})`;
+      case "T": return `    qml.T(wires=${a})`;
+      case "RX": return `    qml.RX(${step.param}, wires=${a})`;
+      case "RY": return `    qml.RY(${step.param}, wires=${a})`;
+      case "RZ": return `    qml.RZ(${step.param}, wires=${a})`;
+      case "CX": return `    qml.CNOT(wires=[${a}, ${b}])`;
+      case "CZ": return `    qml.CZ(wires=[${a}, ${b}])`;
+      case "SWAP": return `    qml.SWAP(wires=[${a}, ${b}])`;
+      default: return "";
+    }
+  }).filter(Boolean);
+  const pennylane = [
+    "import pennylane as qml",
+    ...(usesAngle ? ["from numpy import pi"] : []),
+    "",
+    `dev = qml.device("default.qubit", wires=${qubitCount}${measured ? ", shots=1000" : ""})`,
+    "",
+    "@qml.qnode(dev)",
+    "def circuit():",
+    ...(pennylaneLines.length ? pennylaneLines : ["    pass"]),
+    measured ? "    return qml.sample()" : "    return qml.state()",
+  ].join("\n");
+
+  const cirqLines = ordered.map((step) => {
+    const [a, b] = step.qubits;
+    switch (step.gate) {
+      case "H": return `    cirq.H(qubits[${a}]),`;
+      case "X": return `    cirq.X(qubits[${a}]),`;
+      case "Y": return `    cirq.Y(qubits[${a}]),`;
+      case "Z": return `    cirq.Z(qubits[${a}]),`;
+      case "S": return `    cirq.S(qubits[${a}]),`;
+      case "T": return `    cirq.T(qubits[${a}]),`;
+      case "RX": return `    cirq.rx(${step.param}).on(qubits[${a}]),`;
+      case "RY": return `    cirq.ry(${step.param}).on(qubits[${a}]),`;
+      case "RZ": return `    cirq.rz(${step.param}).on(qubits[${a}]),`;
+      case "CX": return `    cirq.CNOT(qubits[${a}], qubits[${b}]),`;
+      case "CZ": return `    cirq.CZ(qubits[${a}], qubits[${b}]),`;
+      case "SWAP": return `    cirq.SWAP(qubits[${a}], qubits[${b}]),`;
+      default: return "";
+    }
+  }).filter(Boolean);
+  const cirq = [
+    "import cirq",
+    ...(usesAngle ? ["from numpy import pi"] : []),
+    "",
+    `qubits = cirq.LineQubit.range(${qubitCount})`,
+    "circuit = cirq.Circuit(",
+    ...cirqLines,
+    ...(measured ? ["    cirq.measure(*qubits, key=\"result\"),"] : []),
+    ")",
+  ].join("\n");
+
+  return { qiskit, pennylane, cirq };
 }
 
 function CodeEditor({ code, framework, onChange, onCopy, copied, copy }: { code: string; framework: ComposerFramework; onChange: (code: string) => void; onCopy: () => void; copied: boolean; copy: StudioCopy }) {

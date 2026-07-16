@@ -20,10 +20,6 @@ export default async function ContactPage() {
           <h1>{copy.title}</h1>
           <p>{copy.body}</p>
         </div>
-        <div className="mj-contact-panel">
-          <span className="mj-section-label">{copy.panelTitle}</span>
-          <ul>{copy.reasons.map((reason) => <li key={reason}>{reason}</li>)}</ul>
-        </div>
       </section>
 
       <section className="mj-contact-form-section" aria-labelledby="contact-form-heading">

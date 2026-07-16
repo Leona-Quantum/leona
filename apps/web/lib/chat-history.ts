@@ -4,6 +4,8 @@ export interface ChatSummary {
   id: string;
   conversationId?: string;
   title: string;
+  /** User-chosen name; wins over titles re-derived from remote run prompts. */
+  titleOverride?: string;
   prompt: string;
   createdAt: string;
   status: ChatStatus;
@@ -132,7 +134,7 @@ export function rememberChat(chat: ChatSummary): ChatSummary[] {
 
 export function updateChat(
   id: string,
-  patch: Partial<Pick<ChatSummary, "title" | "status" | "framework" | "folderId" | "archivedAt">>,
+  patch: Partial<Pick<ChatSummary, "title" | "titleOverride" | "status" | "framework" | "folderId" | "archivedAt">>,
 ): ChatSummary[] {
   return persist(
     loadChatHistory({ includeDemo: false, includeArchived: true }).map((chat) => (chat.id === id ? { ...chat, ...patch } : chat)),

@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import { BrandMark } from "../components/icons";
+import { LeoConstellation } from "../components/leo-constellation";
 import { PublicSite } from "../components/public-site";
+import { Reveal } from "../components/reveal";
 import { HOME_COPY } from "../lib/public-copy";
 import { getPublicLocale } from "../lib/public-locale-server";
 
@@ -15,6 +17,7 @@ export default async function Home() {
   return (
     <PublicSite activePath="/" className="mj-company-site" locale={locale}>
       <section className="mj-company-hero">
+        <LeoConstellation className="mj-company-constellation" />
         <div className="mj-company-hero-copy">
           <h1>{copy.hero.title}</h1>
           <p className="mj-company-hero-lede">{copy.hero.lede}</p>
@@ -56,13 +59,15 @@ export default async function Home() {
         </div>
       </section>
 
-      <section className="mj-company-section mj-company-intro" aria-labelledby="company-intro-heading">
-        <div>
-          <p className="mj-section-label">{copy.intro.label}</p>
-          <h2 id="company-intro-heading">{copy.intro.title}</h2>
-        </div>
-        <p>{copy.intro.body}</p>
-      </section>
+      <Reveal>
+        <section className="mj-company-section mj-company-intro" aria-labelledby="company-intro-heading">
+          <div>
+            <p className="mj-section-label">{copy.intro.label}</p>
+            <h2 id="company-intro-heading">{copy.intro.title}</h2>
+          </div>
+          <p>{copy.intro.body}</p>
+        </section>
+      </Reveal>
 
       <section className="mj-company-section mj-company-product-band" aria-labelledby="surfaces-heading">
         <div className="mj-company-section-heading">
@@ -71,42 +76,48 @@ export default async function Home() {
         </div>
         <div className="mj-company-capability-list">
           {copy.product.items.map((item, index) => (
-            <article key={item.index}>
-              <span className="mj-company-index">{item.index}</span>
-              <div>
-                <h3>{item.title}</h3>
-                <p>{item.body}</p>
-              </div>
-              <a className="mj-company-capability-note" href={index === 0 ? "/repository" : index === 1 ? "/workspace" : "/contact"}>
-                {item.action} ↗
-              </a>
-            </article>
+            <Reveal key={item.index} delay={index * 90}>
+              <article>
+                <span className="mj-company-index">{item.index}</span>
+                <div>
+                  <h3>{item.title}</h3>
+                  <p>{item.body}</p>
+                </div>
+                <a className="mj-company-capability-note" href={index === 0 ? "/repository" : index === 1 ? "/workspace" : "/contact"}>
+                  {item.action} ↗
+                </a>
+              </article>
+            </Reveal>
           ))}
         </div>
       </section>
 
-      <section className="mj-company-section mj-company-principles" aria-labelledby="principles-heading">
-        <div>
-          <p className="mj-section-label">{copy.principles.label}</p>
-          <h2 id="principles-heading">{copy.principles.title}</h2>
-        </div>
-        <div className="mj-company-principle-list">
-          {copy.principles.items.map((item) => (
-            <p key={item.title}><strong>{item.title}.</strong> {item.body}</p>
-          ))}
-        </div>
-      </section>
+      <Reveal>
+        <section className="mj-company-section mj-company-principles" aria-labelledby="principles-heading">
+          <div>
+            <p className="mj-section-label">{copy.principles.label}</p>
+            <h2 id="principles-heading">{copy.principles.title}</h2>
+          </div>
+          <div className="mj-company-principle-list">
+            {copy.principles.items.map((item) => (
+              <p key={item.title}><strong>{item.title}.</strong> {item.body}</p>
+            ))}
+          </div>
+        </section>
+      </Reveal>
 
-      <section className="mj-company-final-cta" aria-labelledby="company-cta-heading">
-        <div>
-          <p className="mj-section-label">{copy.cta.label}</p>
-          <h2 id="company-cta-heading">{copy.cta.title}</h2>
-        </div>
-        <div className="mj-public-actions">
-          <a className="mj-primary-button" href="/contact">{copy.cta.contact}</a>
-          <a className="mj-secondary-button" href="/pricing">{copy.cta.pricing}</a>
-        </div>
-      </section>
+      <Reveal>
+        <section className="mj-company-final-cta" aria-labelledby="company-cta-heading">
+          <div>
+            <p className="mj-section-label">{copy.cta.label}</p>
+            <h2 id="company-cta-heading">{copy.cta.title}</h2>
+          </div>
+          <div className="mj-public-actions">
+            <a className="mj-primary-button" href="/contact">{copy.cta.contact}</a>
+            <a className="mj-secondary-button" href="/pricing">{copy.cta.pricing}</a>
+          </div>
+        </section>
+      </Reveal>
     </PublicSite>
   );
 }

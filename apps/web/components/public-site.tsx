@@ -62,6 +62,11 @@ export async function PublicSite({
           </nav>
           {showLanguageToggle ? <LanguageToggle locale={resolvedLocale} /> : null}
           <ThemeToggle locale={resolvedLocale} />
+          {user ? (
+            <a className="mj-public-nav-signout" href="/auth/sign-out">
+              {copy.actions.signOut}
+            </a>
+          ) : null}
           <a className="mj-public-nav-primary" href={primaryAction.href}>
             {primaryAction.label}
           </a>
