@@ -74,6 +74,7 @@ class ArtifactPublisher(Protocol):
     async def publish(
         self,
         candidate: CandidateRevision,
+        execution: ExecutionEvidence,
         verification: VerificationEvidence,
         conversion: ConversionEvidence | None,
         plan: Plan,
@@ -212,7 +213,7 @@ class CircuitToolset:
             "execution_id": str(evidence.execution_id),
             "execution_ok": True,
             "sandbox_runs": evidence.observation.get("sandbox_runs", 1),
-            "result": evidence.result,
+            "result_keys": sorted(str(key) for key in evidence.result)[:100],
         }
 
     async def verify(self, run_id: UUID, call: ToolCall) -> dict[str, Any]:
@@ -248,7 +249,6 @@ class CircuitToolset:
             "candidate_id": str(candidate.candidate_id),
             "verification_id": str(evidence.verification_id),
             "decision": evidence.decision.value,
-            "deterministic_checks": evidence.deterministic_checks,
             "repair": evidence.repair.model_dump(mode="json") if evidence.repair else None,
         }
 
@@ -282,9 +282,20 @@ class CircuitToolset:
             raise ToolPolicyError("fingerprint_mismatch", "verified source differs from candidate")
         publication = await self._store.publication_for(run_id, candidate.candidate_id)
         if publication is None:
+            execution = await self._store.execution_for(run_id, candidate.candidate_id)
+            if execution is None or not execution.succeeded:
+                raise ToolPolicyError(
+                    "execution_missing", "publication requires successful execution evidence"
+                )
+            if execution.source_fingerprint != candidate.source_fingerprint:
+                raise ToolPolicyError(
+                    "fingerprint_mismatch", "executed source differs from candidate"
+                )
             conversion = await self._store.conversion_for(run_id, candidate.candidate_id)
             plan = (await self._store.plan(run_id, candidate.plan_id)).plan
-            publication = await self._publisher.publish(candidate, verification, conversion, plan)
+            publication = await self._publisher.publish(
+                candidate, execution, verification, conversion, plan
+            )
             if publication.candidate_id != candidate.candidate_id:
                 raise ToolPolicyError(
                     "publication_mismatch", "publisher returned a different candidate"

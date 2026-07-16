@@ -1,6 +1,7 @@
+from types import SimpleNamespace
 from uuid import uuid4
 
-from majorana_agent import CandidateRevision, ExecutionEvidence
+from majorana_agent import CandidateRevision, ExecutionEvidence, VerificationEvidence
 from majorana_contracts.enums import Algorithm, Framework, VerificationMethod, VerifierDecision
 from majorana_contracts.plan import Plan
 from majorana_frameworks import FrameworkProgram
@@ -8,6 +9,7 @@ from majorana_llm import LLMResponse
 from majorana_sandbox import SandboxResult
 from majorana_worker.agent_ports import (
     EvidenceVerifier,
+    RepoArtifactPublisher,
     SandboxCandidateExecutor,
     TrustedOpenQASMConverter,
 )
@@ -231,6 +233,74 @@ async def test_semantic_critic_fails_closed_on_low_confidence_pass():
     assert output.decision is VerifierDecision.FAIL
     assert output.repair is not None
     assert output.repair.required_rechecks == ["semantic_critic"]
+
+
+async def test_publisher_keeps_compact_long_term_evidence_without_duplicate_variant(
+    monkeypatch,
+):
+    candidate = _candidate()
+    execution = _execution(candidate)
+    verification = VerificationEvidence(
+        verification_id=uuid4(),
+        candidate_id=candidate.candidate_id,
+        execution_id=execution.execution_id,
+        source_fingerprint=candidate.source_fingerprint,
+        decision=VerifierDecision.PASS,
+        deterministic_checks=[
+            {
+                "method": "return_contract",
+                "result": "pass",
+                "details": {"large_transient_evidence": "not copied"},
+            }
+        ],
+        critic={
+            "confidence": "high",
+            "severity": "minor",
+            "summary": "The implementation aligns with the request.",
+            "residual_risks": ["Shot noise remains."],
+            "repair_plan": [],
+        },
+    )
+    artifact_id = uuid4()
+    version_id = uuid4()
+    captured = {}
+
+    async def create_artifact(*_args, **_kwargs):
+        return SimpleNamespace(id=artifact_id)
+
+    async def create_version(*_args, **kwargs):
+        captured.update(kwargs)
+        return SimpleNamespace(id=version_id, seq=1)
+
+    async def set_run_artifact_version(*_args, **_kwargs):
+        return None
+
+    monkeypatch.setattr(
+        "majorana_worker.agent_ports.artifacts_repo.create_artifact", create_artifact
+    )
+    monkeypatch.setattr("majorana_worker.agent_ports.artifacts_repo.create_version", create_version)
+    monkeypatch.setattr(
+        "majorana_worker.agent_ports.runs_repo.set_run_artifact_version",
+        set_run_artifact_version,
+    )
+
+    publication = await RepoArtifactPublisher(
+        scope=object(),
+        session=object(),
+        run_id=candidate.run_id,
+        parent_artifact_id=None,
+        title="Bell circuit",
+    ).publish(candidate, execution, verification, None, _plan())
+
+    assert publication.version_id == version_id
+    assert captured["code"] == candidate.source
+    assert captured["framework_variants"] is None
+    assert captured["resource_estimates"] == execution.observation["resource_metrics"]
+    assert captured["limitations"] == "Shot noise remains."
+    summary = captured["metadata"]["verification_summary"]
+    assert summary["decision"] == "pass"
+    assert summary["deterministic_checks"] == [{"method": "return_contract", "result": "pass"}]
+    assert "repair_plan" not in summary["critic"]
 
 
 def test_verifier_respects_non_circuit_artifact_contract():
