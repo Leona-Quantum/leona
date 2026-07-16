@@ -361,15 +361,13 @@ function CircuitBuilder({ seed, framework, selectedGate, onSelectGate, onApply, 
 
   const onCircuitChangeRef = useRef(onCircuitChange);
   onCircuitChangeRef.current = onCircuitChange;
-  const emittedRef = useRef(false);
   useEffect(() => {
-    // The seed itself is not re-persisted; only user edits are reported.
-    if (!emittedRef.current) {
-      emittedRef.current = true;
-      return;
-    }
+    // The untouched seed is not re-persisted; only user edits are reported.
+    // Reference equality is the signal: any edit replaces these arrays, while
+    // StrictMode's double-invoked mount effect still sees the seed values.
+    if (qubitCount === seed.qubitCount && steps === seed.steps && customGates === seed.customGates) return;
     onCircuitChangeRef.current?.({ qubitCount, steps, customGates });
-  }, [qubitCount, steps, customGates]);
+  }, [qubitCount, steps, customGates, seed]);
 
   const armedCustomId = selectedGate.startsWith("custom:") ? selectedGate.slice("custom:".length) : null;
   const armedCustom = armedCustomId ? customGates.find((gate) => gate.id === armedCustomId) ?? null : null;
