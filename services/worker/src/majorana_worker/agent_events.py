@@ -131,14 +131,9 @@ class AgentEventObserver:
                     "compilation_applied": False,
                     "simulation_plausible": True,
                     "qpu_available": False,
-                    "framework_variants": {
-                        candidate.framework.value: {
-                            "language": candidate.framework.value,
-                            "code": candidate.source,
-                            "export_status": ExportStatus.LOSSLESS,
-                            "export_reason": None,
-                        }
-                    },
+                    # The selected-framework source already lives in `code`.
+                    # Variants are reserved for genuinely different frameworks.
+                    "framework_variants": {},
                     "conversion_options": ["openqasm"] if qasm_available else [],
                     "execution_options": ["simulate"],
                     "export_status": ExportStatus.LOSSLESS,

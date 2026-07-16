@@ -547,6 +547,7 @@ class RepoArtifactPublisher:
     async def publish(
         self,
         candidate: CandidateRevision,
+        execution: ExecutionEvidence,
         verification: VerificationEvidence,
         conversion: ConversionEvidence | None,
         plan: Plan,
@@ -563,6 +564,20 @@ class RepoArtifactPublisher:
             )
             artifact_id = artifact.id
         qasm = conversion.qasm if conversion and conversion.status == "available" else None
+        resource_metrics = execution.observation.get("resource_metrics")
+        resource_estimates = resource_metrics if isinstance(resource_metrics, dict) else None
+        critic = verification.critic if isinstance(verification.critic, dict) else {}
+        critic_summary = {
+            key: critic[key]
+            for key in ("confidence", "severity", "summary", "residual_risks")
+            if key in critic
+        }
+        residual_risks = critic.get("residual_risks")
+        limitations = (
+            "\n".join(str(item) for item in residual_risks)
+            if isinstance(residual_risks, list) and residual_risks
+            else None
+        )
         version = await artifacts_repo.create_version(
             self._scope,
             self._session,
@@ -576,12 +591,25 @@ class RepoArtifactPublisher:
                 "verification_id": str(verification.verification_id),
                 "canonical_representation": "framework_code",
                 "openqasm_role": "interchange" if qasm else "unavailable",
+                "verification_summary": {
+                    "decision": verification.decision.value,
+                    "deterministic_checks": [
+                        {
+                            "method": check.get("method"),
+                            "result": check.get("result"),
+                        }
+                        for check in verification.deterministic_checks
+                    ],
+                    "critic": critic_summary or None,
+                },
             },
             code=candidate.source,
             code_lang=candidate.framework.value,
             fingerprint=candidate.source_fingerprint,
             export_status=ExportStatus.LOSSLESS,
-            framework_variants={candidate.framework.value: candidate.source},
+            framework_variants=None,
+            resource_estimates=resource_estimates,
+            limitations=limitations,
         )
         await runs_repo.set_run_artifact_version(
             self._scope, self._session, self._run_id, version.id
