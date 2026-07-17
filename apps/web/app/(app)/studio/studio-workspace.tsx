@@ -2,12 +2,12 @@
 
 import { useEffect, useRef, useState, type KeyboardEvent, type MouseEvent } from "react";
 import { CheckIcon, CopyIcon, PanelRightIcon, SearchIcon } from "../../../components/icons";
-import type { ComposerFramework } from "../../../components/run-composer";
 import { frameworkVariantsFromRemote, getLibraryArtifact, loadLibraryArtifacts, type LibraryArtifact } from "../../../lib/library-data";
 import type { PublicLocale } from "../../../lib/public-locale";
-import { BUILDER_GATES, builderStepLabel, createBuilderStepId, generateBuilderCode, ROTATION_GATES, TWO_QUBIT_GATES, type BuilderGate, type BuilderStep, type CustomGateDefinition } from "../../../lib/studio-builder";
+import { BUILDER_GATES, builderStepLabel, createBuilderStepId, generateBuilderCode, ROTATION_GATES, TWO_QUBIT_GATES, type BuilderCodeVariants, type BuilderGate, type BuilderStep, type CustomGateDefinition } from "../../../lib/studio-builder";
 import { loadStoredCircuit, saveStoredCircuit } from "../../../lib/studio-circuits";
-import { parseBuilderCircuit } from "../../../lib/studio-parse";
+import { parseCircuitSource, allCircuitConversions, looksLikeOpenQasm3 } from "../../../lib/circuit-conversion";
+import { CIRCUIT_FRAMEWORKS, circuitFramework, isExecutableCircuitFramework, type CircuitFrameworkKey } from "../../../lib/circuit-frameworks";
 import { WORKSPACE_COPY } from "../../../lib/workspace-locale";
 
 type StudioPanel = "canvas" | "code" | "versions";
@@ -25,37 +25,19 @@ type ArtifactHydration = "loading" | "ready" | "error";
 
 const EMPTY_SEED: Omit<BuilderSeed, "key"> = { artifactIdentity: null, qubitCount: 2, steps: [], customGates: [] };
 
-const FRAMEWORK_OPTIONS: Array<{ value: ComposerFramework; label: string }> = [
-  { value: "qiskit", label: "Qiskit" },
-  { value: "pennylane", label: "PennyLane" },
-  { value: "cirq", label: "Cirq" },
-];
+type StudioFramework = CircuitFrameworkKey;
 
-const STARTER_CODES: Record<ComposerFramework, string> = {
-  qiskit: `from qiskit import QuantumCircuit
+const FRAMEWORK_OPTIONS = CIRCUIT_FRAMEWORKS.map(({ key: value, label, executable }) => ({
+  value,
+  label: executable ? label : `${label} · export`,
+}));
 
-qc = QuantumCircuit(2)
-qc.h(0)
-qc.cx(0, 1)
-qc.measure_all()`,
-  pennylane: `import pennylane as qml
-
-dev = qml.device("default.qubit", wires=2, shots=1000)
-
-@qml.qnode(dev)
-def bell_state():
-    qml.Hadamard(wires=0)
-    qml.CNOT(wires=[0, 1])
-    return qml.sample()`,
-  cirq: `import cirq
-
-qubits = cirq.LineQubit.range(2)
-circuit = cirq.Circuit(
-    cirq.H(qubits[0]),
-    cirq.CNOT(qubits[0], qubits[1]),
-    cirq.measure(*qubits, key="result"),
-)`,
-};
+const STARTER_CODES: BuilderCodeVariants = generateBuilderCode([
+  { id: "starter-h", gate: "H", qubits: [0] },
+  { id: "starter-cx", gate: "CX", qubits: [0, 1] },
+  { id: "starter-m0", gate: "M", qubits: [0] },
+  { id: "starter-m1", gate: "M", qubits: [1] },
+], 2);
 
 export function StudioWorkspace({ artifactId, newDraft = false, locale = "en" }: { artifactId?: string; newDraft?: boolean; locale?: PublicLocale }) {
   const copy = WORKSPACE_COPY[locale].studio;
@@ -64,8 +46,8 @@ export function StudioWorkspace({ artifactId, newDraft = false, locale = "en" }:
   const [showEditor, setShowEditor] = useState(Boolean(artifactId || newDraft));
   const [query, setQuery] = useState("");
   const [title, setTitle] = useState("Untitled circuit");
-  const [framework, setFramework] = useState<ComposerFramework>("qiskit");
-  const [drafts, setDrafts] = useState<Record<ComposerFramework, string>>(() => makeDrafts(null));
+  const [framework, setFramework] = useState<StudioFramework>("qiskit");
+  const [drafts, setDrafts] = useState<BuilderCodeVariants>(() => makeDrafts(null));
   const [code, setCode] = useState(STARTER_CODES.qiskit);
   const [panel, setPanel] = useState<StudioPanel>("canvas");
   const [selectedGate, setSelectedGate] = useState("H");
@@ -128,7 +110,7 @@ export function StudioWorkspace({ artifactId, newDraft = false, locale = "en" }:
     };
   }, [artifactId, copy]);
 
-  function seedForArtifact(next: LibraryArtifact, activeDrafts: Record<ComposerFramework, string>, activeFramework: ComposerFramework): { seed: BuilderSeed; note: string | null } {
+  function seedForArtifact(next: LibraryArtifact, activeDrafts: BuilderCodeVariants, activeFramework: StudioFramework): { seed: BuilderSeed; note: string | null } {
     seedCounter.current += 1;
     const key = `${next.id}:${seedCounter.current}`;
     const stored = loadStoredCircuit(next.id);
@@ -136,8 +118,15 @@ export function StudioWorkspace({ artifactId, newDraft = false, locale = "en" }:
     if (stored?.artifactIdentity === artifactIdentity) {
       return { seed: { key, artifactIdentity, qubitCount: stored.qubitCount, steps: stored.steps, customGates: stored.customGates }, note: copy.circuitRestored };
     }
-    const hasOwnCode = Boolean(next.code || next.frameworkVariants);
-    const parsed = hasOwnCode ? parseBuilderCircuit(activeDrafts[activeFramework], activeFramework) : null;
+    const hasOwnCode = Boolean(next.code || next.frameworkVariants || next.qasm);
+    const candidates = [
+      { framework: activeFramework, code: activeDrafts[activeFramework] },
+      ...Object.entries(next.frameworkVariants ?? {}).map(([name, code]) => ({ framework: normalizeFramework(name), code })),
+      ...(next.qasm ? [{ framework: "openqasm3" as const, code: next.qasm }] : []),
+    ];
+    const parsed = hasOwnCode
+      ? candidates.map((candidate) => parseCircuitSource(candidate.code, candidate.framework)).find(Boolean) ?? null
+      : null;
     if (parsed) {
       return { seed: { key, artifactIdentity, qubitCount: parsed.qubitCount, steps: parsed.steps, customGates: [] }, note: copy.circuitRestored };
     }
@@ -188,12 +177,23 @@ export function StudioWorkspace({ artifactId, newDraft = false, locale = "en" }:
     }
   }
 
-  function changeFramework(next: ComposerFramework) {
+  function changeFramework(next: StudioFramework) {
     if (next === framework) return;
-    setDrafts((current) => ({ ...current, [framework]: code }));
+    const nextDrafts = { ...drafts, [framework]: code };
+    setDrafts(nextDrafts);
     setFramework(next);
-    setCode(drafts[next] || STARTER_CODES[next]);
-    setMessage(copy.editingDraft(frameworkLabel(next)));
+    setCode(nextDrafts[next]);
+    setMessage(
+      !nextDrafts[next]
+        ? locale === "ja"
+          ? `${frameworkLabel(next)} へ変換できる移植可能な回路またはOpenQASM 3が保存されていません。`
+          : `No portable circuit or stored OpenQASM 3 is available for a ${frameworkLabel(next)} conversion.`
+        : isExecutableCircuitFramework(next)
+        ? copy.editingDraft(frameworkLabel(next))
+        : locale === "ja"
+          ? `${frameworkLabel(next)} のエクスポートを編集中です。実行と検証は Qiskit、PennyLane、Cirq で利用できます。`
+          : `Editing the ${frameworkLabel(next)} export. Run and verification remain available in Qiskit, PennyLane, and Cirq.`,
+    );
   }
 
   async function copyCode() {
@@ -208,7 +208,7 @@ export function StudioWorkspace({ artifactId, newDraft = false, locale = "en" }:
   }
 
   async function startRun(action: StudioAction) {
-    if (!code.trim() || busy) return;
+    if (!code.trim() || busy || !isExecutableCircuitFramework(framework)) return;
     setBusy(action);
     setMessage(null);
     setRunId(null);
@@ -265,8 +265,8 @@ export function StudioWorkspace({ artifactId, newDraft = false, locale = "en" }:
                     <PanelRightIcon size={15} open={inspectorOpen} />
                   </button>
                   <button className="mj-secondary-button" type="button" onClick={() => void copyCode()} title={copied ? copy.copied : copy.copyCode}><CopyIcon size={14} />{copied ? copy.copied : copy.copyCode}</button>
-                  <button className="mj-secondary-button" type="button" disabled={busy !== null} onClick={() => void startRun("simulate")}>{busy === "simulate" ? copy.starting : copy.simulate}</button>
-                  <button className="mj-primary-button" type="button" disabled={busy !== null} onClick={() => void startRun("save")}>{busy === "save" ? copy.starting : copy.verifySave}</button>
+                  <button className="mj-secondary-button" type="button" disabled={busy !== null || !isExecutableCircuitFramework(framework)} onClick={() => void startRun("simulate")}>{busy === "simulate" ? copy.starting : copy.simulate}</button>
+                  <button className="mj-primary-button" type="button" disabled={busy !== null || !isExecutableCircuitFramework(framework)} onClick={() => void startRun("save")}>{busy === "save" ? copy.starting : copy.verifySave}</button>
                 </div>
               </div>
 
@@ -323,7 +323,7 @@ export function StudioWorkspace({ artifactId, newDraft = false, locale = "en" }:
               </div>
               <label className="mj-studio-field">
                 <span>{locale === "ja" ? "フレームワーク" : "Framework"}</span>
-                <select value={framework} onChange={(event) => changeFramework(event.target.value as ComposerFramework)}>
+                <select value={framework} onChange={(event) => changeFramework(event.target.value as StudioFramework)}>
                   {FRAMEWORK_OPTIONS.map((option) => <option value={option.value} key={option.value}>{option.label}</option>)}
                 </select>
               </label>
@@ -342,7 +342,11 @@ export function StudioWorkspace({ artifactId, newDraft = false, locale = "en" }:
               </div>
               <div className="mj-studio-framework-note">
                 <CheckIcon size={14} />
-                <span>{copy.frameworkNote}</span>
+                <span>{isExecutableCircuitFramework(framework)
+                  ? copy.frameworkNote
+                  : locale === "ja"
+                    ? "この形式はコピーとエクスポート用です。Leona Quantum のサンドボックス実行は Qiskit、PennyLane、Cirq に限定されています。"
+                    : "This format is available for copy and export. Leona Quantum sandbox execution is limited to Qiskit, PennyLane, and Cirq."}</span>
               </div>
             </aside>
           </>
@@ -427,7 +431,7 @@ function StudioLioness() {
 
 const ANGLE_OPTIONS = ["pi/8", "pi/4", "pi/2", "pi", "3*pi/2", "2*pi"];
 
-function CircuitBuilder({ seed, framework, selectedGate, onSelectGate, onApply, onCircuitChange, hidden, copy }: { seed: BuilderSeed; framework: ComposerFramework; selectedGate: string; onSelectGate: (gate: string) => void; onApply: (codes: Record<ComposerFramework, string>) => void; onCircuitChange?: (circuit: { qubitCount: number; steps: BuilderStep[]; customGates: CustomGateDefinition[] }) => void; hidden: boolean; copy: StudioCopy }) {
+function CircuitBuilder({ seed, framework, selectedGate, onSelectGate, onApply, onCircuitChange, hidden, copy }: { seed: BuilderSeed; framework: StudioFramework; selectedGate: string; onSelectGate: (gate: string) => void; onApply: (codes: BuilderCodeVariants) => void; onCircuitChange?: (circuit: { qubitCount: number; steps: BuilderStep[]; customGates: CustomGateDefinition[] }) => void; hidden: boolean; copy: StudioCopy }) {
   const [qubitCount, setQubitCount] = useState(seed.qubitCount);
   const [steps, setSteps] = useState<BuilderStep[]>(seed.steps);
   const [pendingQubits, setPendingQubits] = useState<number[]>([]);
@@ -731,7 +735,7 @@ function CircuitBuilder({ seed, framework, selectedGate, onSelectGate, onApply, 
   );
 }
 
-function CodeEditor({ code, framework, onChange, onCopy, copied, copy }: { code: string; framework: ComposerFramework; onChange: (code: string) => void; onCopy: () => void; copied: boolean; copy: StudioCopy }) {
+function CodeEditor({ code, framework, onChange, onCopy, copied, copy }: { code: string; framework: StudioFramework; onChange: (code: string) => void; onCopy: () => void; copied: boolean; copy: StudioCopy }) {
   return (
     <section className="mj-studio-surface mj-studio-code-panel" aria-label={copy.sourceEditor}>
       <div className="mj-studio-surface-head"><div><span className="mj-section-label">{copy.sourceEditor}</span><h2>{copy.implementation(frameworkLabel(framework))}</h2></div><button className="mj-secondary-button" type="button" onClick={onCopy} title={copied ? copy.copied : copy.copyCode}><CopyIcon size={14} />{copied ? copy.copied : copy.copyCode}</button></div>
@@ -795,32 +799,51 @@ function toLibraryArtifact(value: unknown): LibraryArtifact[] {
   }];
 }
 
-function makeDrafts(artifact: LibraryArtifact | null): Record<ComposerFramework, string> {
+function makeDrafts(artifact: LibraryArtifact | null): BuilderCodeVariants {
+  if (!artifact) return { ...STARTER_CODES };
   const active = normalizeFramework(artifact?.framework);
   const variants = artifact?.frameworkVariants ?? {};
-  return {
-    qiskit: variants.qiskit ?? (active === "qiskit" && artifact?.code ? artifact.code : STARTER_CODES.qiskit),
-    pennylane: variants.pennylane ?? (active === "pennylane" && artifact?.code ? artifact.code : STARTER_CODES.pennylane),
-    cirq: variants.cirq ?? (active === "cirq" && artifact?.code ? artifact.code : STARTER_CODES.cirq),
-  };
+  const provided = Object.fromEntries(
+    Object.entries(variants).map(([name, code]) => [normalizeFramework(name), code]),
+  ) as Partial<BuilderCodeVariants>;
+  if (artifact.code) provided[active] = artifact.code;
+  const qasm = artifact.qasm && looksLikeOpenQasm3(artifact.qasm) ? artifact.qasm : null;
+  if (qasm) provided.openqasm3 = qasm;
+  const candidates = Object.entries(provided)
+    .map(([framework, code]) => ({ framework: framework as StudioFramework, code }))
+  const source = candidates.find((candidate) => Boolean(parseCircuitSource(candidate.code, candidate.framework)))
+    ?? (qasm ? { framework: "openqasm3" as const, code: qasm } : undefined);
+  const converted = source
+    ? allCircuitConversions(source.code, source.framework, qasm)
+    : {};
+  return Object.fromEntries(
+    CIRCUIT_FRAMEWORKS.map(({ key }) => [key, provided[key] ?? converted[key] ?? ""]),
+  ) as BuilderCodeVariants;
 }
 
-function normalizeFramework(value: string | undefined): ComposerFramework {
-  const normalized = value?.toLowerCase();
-  return normalized === "pennylane" ? "pennylane" : normalized === "cirq" ? "cirq" : "qiskit";
+function normalizeFramework(value: string | undefined): StudioFramework {
+  return circuitFramework(value ?? "qiskit").key;
 }
 
 function studioArtifactIdentity(artifact: LibraryArtifact): string {
   if (artifact.currentVersionId) return `version:${artifact.currentVersionId}`;
   let hash = 2166136261;
-  for (const character of `${artifact.framework}\u0000${artifact.code}`) {
+  const variants = Object.entries(artifact.frameworkVariants ?? {})
+    .sort(([left], [right]) => left.localeCompare(right));
+  const identitySource = JSON.stringify({
+    framework: artifact.framework,
+    code: artifact.code,
+    qasm: artifact.qasm,
+    variants,
+  });
+  for (const character of identitySource) {
     hash = Math.imul(hash ^ character.charCodeAt(0), 16777619);
   }
   return `source:${(hash >>> 0).toString(16)}`;
 }
 
-function frameworkLabel(framework: ComposerFramework): string {
-  return framework === "pennylane" ? "PennyLane" : framework === "cirq" ? "Cirq" : "Qiskit";
+function frameworkLabel(framework: StudioFramework): string {
+  return circuitFramework(framework).label;
 }
 
 function formatDiscoveryDate(value: string, locale: PublicLocale): string {

@@ -18,9 +18,9 @@ function shape(parsed: readonly BuilderStep[]): Array<{ gate: string; qubits: nu
   return parsed.map((step) => ({ gate: step.gate, qubits: step.qubits, ...(step.param ? { param: step.param } : {}) }));
 }
 
-test("builder-generated code round-trips through the parser in every framework", () => {
+test("builder-generated executable and interchange code round-trips through the parser", () => {
   const generated = generateBuilderCode(steps, 3);
-  for (const framework of ["qiskit", "pennylane", "cirq"] as const) {
+  for (const framework of ["qiskit", "pennylane", "cirq", "openqasm3"] as const) {
     const parsed = parseBuilderCircuit(generated[framework], framework);
     assert.ok(parsed, `${framework} code should parse`);
     assert.equal(parsed.qubitCount, 3, framework);

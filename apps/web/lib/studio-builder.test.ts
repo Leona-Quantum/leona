@@ -18,7 +18,7 @@ const steps: BuilderStep[] = [
   { id: "measurement", gate: "M", qubits: [0] },
 ];
 
-test("custom gates emit named helper definitions in every supported framework", () => {
+test("custom gates emit named helpers or flattened operations in all seven frameworks", () => {
   const generated = generateBuilderCode(steps, 2, [customGate]);
 
   assert.match(generated.qiskit, /def custom_bell_pair_abc123\(qc, qubits\):/);
@@ -27,4 +27,11 @@ test("custom gates emit named helper definitions in every supported framework", 
   assert.match(generated.pennylane, /custom_bell_pair_abc123\(\[0, 1\]\)/);
   assert.match(generated.cirq, /def custom_bell_pair_abc123\(qubits\):/);
   assert.match(generated.cirq, /\*custom_bell_pair_abc123\(\[qubits\[0\], qubits\[1\]\]\)/);
+  assert.match(generated.cudaq, /h\(q\[0\]\)/);
+  assert.match(generated.cudaq, /x\.ctrl\(q\[0\], q\[1\]\)/);
+  assert.match(generated.braket, /circuit\.cnot\(0, 1\)/);
+  assert.match(generated.openqasm3, /OPENQASM 3\.0;/);
+  assert.match(generated.openqasm3, /cx q\[0\], q\[1\];/);
+  assert.match(generated.pyquil, /program \+= CNOT\(0, 1\)/);
+  assert.match(generated.pyquil, /program \+= MEASURE\(1, ro\[1\]\)/);
 });

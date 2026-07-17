@@ -107,11 +107,69 @@ def test_qiskit_interchange_is_optional_observation(monkeypatch):
     assert extraction.qasm == "OPENQASM 3.0;\nqubit q;"
 
 
-def test_non_qiskit_program_is_not_forced_through_openqasm():
+def test_non_circuit_program_is_not_forced_through_openqasm():
     program = FrameworkProgram(Framework.PENNYLANE, "FINAL_CIRCUIT = object()\n")
 
     assert program.trusted_observer(circuit_expected=False) == ""
     assert extract_interchange_qasm(None).qasm is None
+
+
+def test_cirq_interchange_uses_native_openqasm3_export():
+    class FakeCircuit:
+        def to_qasm(self, *, version):
+            assert version == "3.0"
+            return "OPENQASM 3.0;\nqubit q;"
+
+        def all_operations(self):
+            return []
+
+        def all_qubits(self):
+            return set()
+
+        def __len__(self):
+            return 0
+
+    program = FrameworkProgram(Framework.CIRQ, "FINAL_CIRCUIT = circuit\n")
+    namespace = {"circuit": FakeCircuit()}
+    exec(program.source, namespace)
+    observation = {}
+    exec(
+        program.trusted_observer(circuit_expected=True),
+        _observer_scope(namespace, observation),
+    )
+
+    extraction = extract_interchange_qasm(observation)
+    assert extraction.source == "sandbox_epilogue"
+    assert extraction.qasm == "OPENQASM 3.0;\nqubit q;"
+
+
+def test_pennylane_interchange_uses_trusted_tape_export(monkeypatch):
+    import sys
+    from types import ModuleType
+
+    pennylane = ModuleType("pennylane")
+    pennylane.to_openqasm = lambda tape: "OPENQASM 2.0;\nqreg q[1];"
+    monkeypatch.setitem(sys.modules, "pennylane", pennylane)
+
+    class Tape:
+        operations = []
+        measurements = []
+        wires = (0,)
+
+    class QNode:
+        tape = Tape()
+
+    program = FrameworkProgram(Framework.PENNYLANE, "FINAL_CIRCUIT = qnode\n")
+    namespace = {"qnode": QNode()}
+    exec(program.source, namespace)
+    observation = {}
+    observer_scope = _observer_scope(namespace, observation)
+    exec(program.trusted_setup(circuit_expected=True), observer_scope)
+    exec(program.trusted_observer(circuit_expected=True), observer_scope)
+
+    extraction = extract_interchange_qasm(observation)
+    assert extraction.source == "sandbox_epilogue"
+    assert extraction.qasm == "OPENQASM 2.0;\nqreg q[1];"
 
 
 def test_cirq_metrics_are_observed_from_final_sandbox_object():
