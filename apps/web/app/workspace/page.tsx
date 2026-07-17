@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { PublicSite } from "../../components/public-site";
+import { Reveal } from "../../components/reveal";
 import { WORKSPACE_LANDING_COPY } from "../../lib/public-copy";
 import { getPublicLocale } from "../../lib/public-locale-server";
 
@@ -25,26 +26,34 @@ export default async function WorkspacePage() {
         </section>
 
         <section className="mj-open-source-section" aria-labelledby="workspace-flow-heading">
-          <p className="mj-section-label">{copy.loopLabel}</p>
-          <h2 id="workspace-flow-heading">{copy.loopTitle}</h2>
+          <Reveal>
+            <p className="mj-section-label">{copy.loopLabel}</p>
+            <h2 id="workspace-flow-heading">{copy.loopTitle}</h2>
+          </Reveal>
           <div className="mj-open-source-grid">
-            {copy.loop.map((item) => (
-              <article className="mj-open-source-card" key={item.kicker}>
-                <span className="mj-open-source-kicker">{item.kicker}</span>
-                <h3>{item.title}</h3>
-                <p>{item.body}</p>
-              </article>
+            {copy.loop.map((item, index) => (
+              <Reveal delay={index * 90} key={item.kicker}>
+                <article className="mj-open-source-card">
+                  <span className="mj-open-source-kicker">{item.kicker}</span>
+                  <h3>{item.title}</h3>
+                  <p>{item.body}</p>
+                </article>
+              </Reveal>
             ))}
           </div>
         </section>
 
         <section className="mj-open-source-section" aria-labelledby="compute-heading">
-          <p className="mj-section-label">{copy.computeLabel}</p>
-          <h2 id="compute-heading">{copy.computeTitle}</h2>
-          <div className="mj-open-source-circuits">
-            {copy.compute.map((item) => <div key={item.title}><strong>{item.title}</strong><span>{item.body}</span></div>)}
-          </div>
-          <p className="mj-open-source-note">{copy.note}</p>
+          <Reveal>
+            <p className="mj-section-label">{copy.computeLabel}</p>
+            <h2 id="compute-heading">{copy.computeTitle}</h2>
+          </Reveal>
+          <Reveal delay={90}>
+            <div className="mj-open-source-circuits">
+              {copy.compute.map((item) => <div key={item.title}><strong>{item.title}</strong><span>{item.body}</span></div>)}
+            </div>
+            <p className="mj-open-source-note">{copy.note}</p>
+          </Reveal>
         </section>
 
       </div>
