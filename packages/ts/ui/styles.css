@@ -559,6 +559,8 @@
   gap: var(--sp-4);
   margin-top: var(--sp-8);
 }
+/* Hover motion for these cards lives in the app surface (globals.css), like the
+   qband — this package's animation allowlist stays fixed. */
 .mj-company-principle-card {
   height: 100%;
   box-sizing: border-box;
@@ -566,11 +568,9 @@
   border: 1px solid var(--border-0);
   border-radius: var(--radius-card);
   background: var(--bg-1);
-  transition: transform 150ms ease-out, border-color 150ms ease-out;
 }
 .mj-company-principle-card:hover {
   border-color: var(--accent);
-  transform: translateY(-3px);
 }
 .mj-company-principle-card h3 {
   margin: 0 0 var(--sp-2);
@@ -581,12 +581,6 @@
   margin: 0;
   color: var(--text-1);
   line-height: 1.6;
-}
-.mj-company-capability-list article {
-  transition: transform 150ms ease-out;
-}
-.mj-company-capability-list article:hover {
-  transform: translateX(var(--sp-1));
 }
 /* Decorative landing circuit band; motion lives in the app surface. */
 .mj-qband {
@@ -625,12 +619,6 @@
 .mj-qband-pulse {
   fill: var(--accent);
   stroke: none;
-}
-@media (prefers-reduced-motion: reduce) {
-  .mj-company-principle-card,
-  .mj-company-capability-list article {
-    transition: none;
-  }
 }
 @media (max-width: 620px) {
   .mj-company-principle-grid {

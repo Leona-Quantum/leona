@@ -258,6 +258,20 @@ body {
   0%, 14%, 100% { stroke: var(--text-2); }
   5% { stroke: var(--accent); }
 }
+/* Company-card hover motion — kept out of the vendored UI package, whose
+   animation allowlist is fixed; the package carries only the static styles. */
+.mj-company-principle-card {
+  transition: transform 150ms ease-out, border-color 150ms ease-out;
+}
+.mj-company-principle-card:hover {
+  transform: translateY(-3px);
+}
+.mj-company-capability-list article {
+  transition: transform 150ms ease-out;
+}
+.mj-company-capability-list article:hover {
+  transform: translateX(var(--sp-1));
+}
 @media (prefers-reduced-motion: reduce) {
   .mj-hero-word,
   .mj-qband-gate {
@@ -269,6 +283,13 @@ body {
   }
   .mj-public-pipeline--live .mj-public-pipeline-step .mj-public-pipeline-number {
     animation: none;
+  }
+  .mj-company-principle-card,
+  .mj-company-principle-card:hover,
+  .mj-company-capability-list article,
+  .mj-company-capability-list article:hover {
+    transition: none;
+    transform: none;
   }
 }
 .mj-company-hero-copy,
