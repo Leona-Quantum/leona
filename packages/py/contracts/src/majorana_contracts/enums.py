@@ -82,6 +82,7 @@ class Visibility(StrEnum):
 class WorkspaceKind(StrEnum):
     PERSONAL = "personal"
     TEAM = "team"
+    SYSTEM = "system"
 
 
 class Role(StrEnum):

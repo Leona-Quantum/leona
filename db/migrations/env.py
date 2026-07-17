@@ -9,9 +9,11 @@ from sqlalchemy import create_engine
 
 
 def _database_url() -> str:
-    url = os.environ.get("DATABASE_URL")
+    url = os.environ.get("DATABASE_URL_DIRECT")
     if not url:
-        raise RuntimeError("DATABASE_URL is not set (use the Neon direct endpoint, role `migrate`)")
+        raise RuntimeError(
+            "DATABASE_URL_DIRECT is not set (use the Neon direct endpoint, role `migrate`)"
+        )
     # Normalize scheme so SQLAlchemy picks the psycopg3 driver.
     if url.startswith("postgres://"):
         url = url.replace("postgres://", "postgresql+psycopg://", 1)

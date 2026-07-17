@@ -3110,7 +3110,8 @@
       "WorkspaceKind": {
         "enum": [
           "personal",
-          "team"
+          "team",
+          "system"
         ],
         "title": "WorkspaceKind",
         "type": "string"

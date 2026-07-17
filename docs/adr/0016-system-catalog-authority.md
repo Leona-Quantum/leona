@@ -1,6 +1,6 @@
 # ADR-0016: System catalog authority is isolated through server-owned principals
 
-**Date:** 2026-07-18 · **Status:** proposed (owner decision required)
+**Date:** 2026-07-18 · **Status:** accepted for Step 2 implementation; CODEOWNER review required before deploy
 **Context:** The existing API authorizes repository operations with an immutable
 user/workspace `Scope`, while the new Neon catalog needs importer mutations,
 reviewed publication, and anonymous public reads without exposing personal or team
@@ -13,8 +13,7 @@ server-owned importer principal may create staged records, while review and
 publication remain attributable actions by an authenticated authorized human. A
 read-only catalog principal is constructed only by the public FastAPI dependency from
 server configuration. Clients never provide these principal or workspace IDs.
-Catalog repository functions continue to
-take scoped authority first and independently require the catalog workspace,
+Catalog repository functions continue to take scoped authority first and independently require the catalog workspace,
 `review_state = accepted`, `publication_state = public`, and a non-deleted artifact
 for public reads. Public response models exclude raw import metadata, internal review
 notes, and service identity fields. Next.js accesses the catalog only through HTTPS
@@ -27,8 +26,10 @@ response contracts, publication-state checks, and audit coverage. Service-princi
 rows and IDs are configuration, not credentials; no signing secret or database URL is
 placed in a job payload or browser bundle. Publication and quarantine release remain
 owner/admin actions and should require a reviewer other than the importer when the
-team can support two-person review. The exact `WorkspaceKind` addition, service-row
-bootstrap, and role mapping require owner/CODEOWNER approval before implementation.
+team can support two-person review. The owner requested Step 2 implementation on
+2026-07-18. The additive `WorkspaceKind` change, service-row bootstrap, auth boundary,
+and workflow changes remain blast-radius changes requiring CODEOWNER review and a
+temporary-Neon-branch up→down→up result before deployment.
 Reversal trigger: a future database-enforced catalog role or RLS design may add
 defense in depth, but it must preserve pooled-connection constraints and cannot
 replace application scoping without a new reviewed ADR and leakage test matrix.

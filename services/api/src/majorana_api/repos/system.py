@@ -18,6 +18,7 @@ from majorana_contracts.enums import Role
 from majorana_openqasm import fingerprint as qasm_fingerprint
 from majorana_openqasm import normalize
 from sqlalchemy import func, or_, select, update
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -54,6 +55,117 @@ class JobLeaseLostError(RuntimeError):
 class StaleJobRecovery:
     requeued: int
     dead_jobs: tuple[Job, ...]
+
+
+@dataclass(frozen=True)
+class SystemCatalogAuthority:
+    workspace: Workspace
+    importer: User
+    public_reader: User
+
+
+SYSTEM_CATALOG_IMPORTER_SUB = "system:catalog-importer"
+SYSTEM_CATALOG_READER_SUB = "system:catalog-public-reader"
+SYSTEM_CATALOG_IMPORTER_EMAIL = "catalog-importer@system.invalid"
+SYSTEM_CATALOG_READER_EMAIL = "catalog-public-reader@system.invalid"
+
+
+async def ensure_system_catalog_authority(
+    session: AsyncSession,
+    *,
+    workspace_id: uuid.UUID,
+    importer_user_id: uuid.UUID,
+    public_reader_user_id: uuid.UUID,
+) -> SystemCatalogAuthority:
+    """Idempotently provision identities and one empty system workspace.
+
+    This is an explicit operator action. It deliberately creates no catalog
+    artifacts and never runs from API startup or an Alembic migration.
+    """
+    if len({workspace_id, importer_user_id, public_reader_user_id}) != 3:
+        raise ValueError("catalog authority IDs must be distinct")
+
+    for user_id, workos_sub, email, display_name in (
+        (
+            importer_user_id,
+            SYSTEM_CATALOG_IMPORTER_SUB,
+            SYSTEM_CATALOG_IMPORTER_EMAIL,
+            "System catalog importer",
+        ),
+        (
+            public_reader_user_id,
+            SYSTEM_CATALOG_READER_SUB,
+            SYSTEM_CATALOG_READER_EMAIL,
+            "System catalog public reader",
+        ),
+    ):
+        await session.execute(
+            pg_insert(User)
+            .values(
+                id=user_id,
+                workos_user_id=workos_sub,
+                email=email,
+                display_name=display_name,
+            )
+            .on_conflict_do_nothing(index_elements=[User.id])
+        )
+
+    await session.execute(
+        pg_insert(Workspace)
+        .values(
+            id=workspace_id,
+            kind="system",
+            name="Majorana public quantum catalog",
+            owner_user_id=importer_user_id,
+        )
+        .on_conflict_do_nothing(index_elements=[Workspace.id])
+    )
+    for user_id, role in (
+        (importer_user_id, Role.OWNER),
+        (public_reader_user_id, Role.VIEWER),
+    ):
+        await session.execute(
+            pg_insert(Membership)
+            .values(workspace_id=workspace_id, user_id=user_id, role=role)
+            .on_conflict_do_nothing(index_elements=[Membership.workspace_id, Membership.user_id])
+        )
+    await session.flush()
+
+    importer = await session.get(User, importer_user_id)
+    public_reader = await session.get(User, public_reader_user_id)
+    workspace = await session.get(Workspace, workspace_id)
+    importer_membership = await session.get(Membership, (workspace_id, importer_user_id))
+    reader_membership = await session.get(Membership, (workspace_id, public_reader_user_id))
+    if (
+        importer is None
+        or public_reader is None
+        or workspace is None
+        or importer.workos_user_id != SYSTEM_CATALOG_IMPORTER_SUB
+        or public_reader.workos_user_id != SYSTEM_CATALOG_READER_SUB
+        or workspace.kind != "system"
+        or workspace.owner_user_id != importer_user_id
+        or importer_membership is None
+        or importer_membership.role != Role.OWNER
+        or reader_membership is None
+        or reader_membership.role != Role.VIEWER
+    ):
+        raise RuntimeError("catalog authority exists but does not match the configured identity")
+    return SystemCatalogAuthority(
+        workspace=workspace,
+        importer=importer,
+        public_reader=public_reader,
+    )
+
+
+async def count_workspace_artifacts(session: AsyncSession, *, workspace_id: uuid.UUID) -> int:
+    """Operator-only safety check used before catalog data exists."""
+    return int(
+        (
+            await session.execute(
+                select(func.count(Artifact.id)).where(Artifact.workspace_id == workspace_id)
+            )
+        ).scalar_one()
+    )
 
 
 def _bounded_error(value: str) -> str:

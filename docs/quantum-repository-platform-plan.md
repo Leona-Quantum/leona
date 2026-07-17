@@ -1,6 +1,6 @@
 # Quantum Repository Platform - staged implementation plan
 
-Status: proposed implementation baseline  
+Status: Step 2 implemented locally; live Neon and CODEOWNER gates pending  
 Owner lane: Rei / Neon catalog, FastAPI repository API, classification, and ingestion  
 Prepared: 2026-07-18  
 Target branch: `feature/repository`  
@@ -519,6 +519,10 @@ continues unchanged.
 
 ### Step 2 - Neon connection and catalog authority
 
+Implementation status (2026-07-18): complete on `feature/repository`, pending the
+operator-run temporary Neon branch gate in `docs/runbooks/neon-system-catalog.md`.
+No catalog records were imported.
+
 Scope:
 
 - separate pooled application and direct migration configuration;
@@ -790,13 +794,13 @@ Owner decisions required before the relevant phase:
 
 ## 14. Immediate next slice
 
-Step 0 and the latest-`dev` integration gate are complete. Execute Step 1 only:
+Step 2 is implemented locally. Before Step 3:
 
-1. add additive queue lease and retry fields in one reversible migration;
-2. add claim fencing, heartbeat, stale recovery, bounded retry, and dead-letter behavior;
-3. preserve `run.execute` semantics and fail closed on unknown job kinds;
-4. add queue recovery/ownership tests and run existing pipeline regression tests;
-5. stop before catalog scope, schema, importer, bootstrap, or data changes.
+1. obtain pooled and direct URLs for one temporary Neon branch;
+2. run the 0013 up→down→up migration gate with the direct URL;
+3. provision the empty system authority once with the pooled URL;
+4. run the live authz and pipeline matrices using the pooled URL;
+5. verify that the system workspace contains zero artifacts, then obtain CODEOWNER review.
 
-Do not import data or edit the 285 TypeScript source records during Step 1. Bootstrap
-implementation begins only in its scheduled importer slice.
+Do not import or publish any of the 285 bootstrap records during this gate. Step 3 may
+start only after the temporary branch passes and is deleted.
