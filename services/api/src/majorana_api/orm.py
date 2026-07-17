@@ -93,6 +93,12 @@ class Artifact(Base):
     visibility: Mapped[str | None] = mapped_column(server_default="private")
     parent_artifact_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("artifacts.id"))
     current_version_id: Mapped[uuid.UUID | None] = mapped_column(_UUID)
+    # Catalog classification (migration 0014): NULL for every artifact outside
+    # the Step 3 private staging path (repos/catalog.py).
+    artifact_kind: Mapped[str | None]
+    execution_state: Mapped[str | None]
+    review_state: Mapped[str | None]
+    publication_state: Mapped[str | None]
     deleted_at: Mapped[dt.datetime | None]
     created_at: Mapped[dt.datetime | None] = mapped_column(server_default=func.now())
     updated_at: Mapped[dt.datetime | None] = mapped_column(server_default=func.now())
@@ -115,6 +121,18 @@ class ArtifactVersion(Base):
     framework_variants: Mapped[dict[str, Any] | None]
     resource_estimates: Mapped[dict[str, Any] | None]
     limitations: Mapped[str | None]
+    # Catalog hash fields (migration 0014): NULL outside Step 3 staging. See
+    # catalog_hashing.py for source_blob_sha256/normalized_source_hash
+    # meanings; normalized_source_hash carries a global UNIQUE constraint.
+    metadata_schema_version: Mapped[str | None]
+    authoritative_framework: Mapped[str | None]
+    authoritative_framework_version: Mapped[str | None]
+    source_language: Mapped[str | None]
+    source_blob_sha256: Mapped[str | None]
+    normalized_source_hash: Mapped[str | None]
+    semantic_fingerprint: Mapped[str | None]
+    semantic_fingerprint_algorithm: Mapped[str | None]
+    toolchain_digest: Mapped[str | None]
     created_at: Mapped[dt.datetime | None] = mapped_column(server_default=func.now())
 
 

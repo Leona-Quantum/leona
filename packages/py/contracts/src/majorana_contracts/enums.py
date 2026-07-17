@@ -85,6 +85,41 @@ class WorkspaceKind(StrEnum):
     SYSTEM = "system"
 
 
+class ArtifactKind(StrEnum):
+    """Catalog classification (repository Step 3); unset for pre-catalog artifacts."""
+
+    CIRCUIT = "circuit"
+    GATE = "gate"
+    ALGORITHM_TEMPLATE = "algorithm_template"
+    STATE_PREPARATION = "state_preparation"
+    OPERATOR = "operator"
+    BENCHMARK_INSTANCE = "benchmark_instance"
+    LITERATURE_METHOD = "literature_method"
+
+
+class ExecutionState(StrEnum):
+    EXECUTABLE = "executable"
+    TEMPLATE_ONLY = "template_only"
+    DOCUMENTATION_ONLY = "documentation_only"
+    UNSUPPORTED = "unsupported"
+
+
+class ReviewState(StrEnum):
+    DRAFT = "draft"
+    QUARANTINED = "quarantined"
+    PENDING_REVIEW = "pending_review"
+    ACCEPTED = "accepted"
+    REJECTED = "rejected"
+
+
+class PublicationState(StrEnum):
+    PRIVATE = "private"
+    STAGED = "staged"
+    PUBLIC = "public"
+    RETRACTED = "retracted"
+    DEPRECATED = "deprecated"
+
+
 class Role(StrEnum):
     OWNER = "owner"
     ADMIN = "admin"

@@ -116,3 +116,12 @@ class CatalogAuthority:
             workspace_id=self.workspace_id,
             role=Role.OWNER,
         )
+
+    def is_importer_scope(self, scope: Scope) -> bool:
+        """Compare against configured authority without emitting issuance telemetry."""
+        self.require_configured()
+        return (
+            scope.user_id == self.importer_user_id
+            and scope.workspace_id == self.workspace_id
+            and scope.role == Role.OWNER
+        )

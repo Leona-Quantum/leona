@@ -1,6 +1,6 @@
 # Quantum Repository Platform - staged implementation plan
 
-Status: Step 2 implementation and temporary-Neon gate complete; CODEOWNER review pending  
+Status: Steps 2-3 implemented and locally validated; CODEOWNER review pending before Step 4  
 Owner lane: Rei / Neon catalog, FastAPI repository API, classification, and ingestion  
 Prepared: 2026-07-18  
 Target branch: `feature/repository`  
@@ -795,13 +795,22 @@ Owner decisions required before the relevant phase:
 
 ## 14. Immediate next slice
 
-Step 2's temporary Neon gate passed. Before Step 3:
+Step 2's temporary Neon gate passed and its CI output-name bug (`db_url_pooled` →
+`db_url_with_pooler`) is fixed. Step 3 (migration `0014`, `catalog_hashing.py`,
+`CatalogAuthority.is_importer_scope`, `repos/catalog.py` staging functions) is
+implemented and validated against a throwaway local Postgres 14 — see
+`docs/repository-step3-catalog-schema.md`. Before Step 4:
 
-1. obtain CODEOWNER review for the migration, auth boundary, contracts, and workflows;
+1. obtain CODEOWNER review for migrations `0013`+`0014`, the auth boundary, contracts,
+   and workflows;
 2. retain `SYSTEM_CATALOG_ENABLED=false`;
 3. delete the disposable Step 2 Neon branch after review evidence is captured;
 4. resolve the local uv workspace-discovery issue independently of repository work;
-5. begin Step 3 only as a new additive schema/staging slice.
+5. begin Step 4 only as a new additive provenance/rights/review slice, in its own small
+   reviewable commit per decision 5 (§1).
 
-Do not import or publish any of the 285 bootstrap records before the reviewed Step 3
-schema exists. Do not promote the temporary branch as a production database.
+Do not import or publish any of the 285 bootstrap records before the reviewed Step 4/5
+schema exists. Do not promote a temporary branch as a production database. Step 5
+introduces real external network fetching (SSRF/quarantine hardening, allowlisted
+connectors) and should get its own explicit scoping and review checkpoint before
+implementation starts, given its larger security surface relative to Steps 3-4.

@@ -86,3 +86,19 @@ async def test_private_workspace_cannot_be_substituted_into_catalog_read():
     with pytest.raises(AuthzError):
         await catalog.get_catalog_workspace(private_scope, session, authority=configured)
     assert session.statements == []
+
+
+def test_is_importer_scope_matches_configured_identity():
+    configured = authority()
+    assert configured.is_importer_scope(configured.importer_scope())
+
+
+def test_is_importer_scope_rejects_public_reader_scope():
+    configured = authority()
+    assert not configured.is_importer_scope(configured.public_scope())
+
+
+def test_is_importer_scope_rejects_wrong_user():
+    configured = authority()
+    substituted = configured.importer_scope().model_copy(update={"user_id": uuid.uuid4()})
+    assert not configured.is_importer_scope(substituted)
