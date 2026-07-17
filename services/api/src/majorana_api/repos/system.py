@@ -10,12 +10,14 @@ stays behind the scoped repositories.
 """
 
 import datetime as dt
+import uuid
+from dataclasses import dataclass
 from typing import Any
 
 from majorana_contracts.enums import Role
 from majorana_openqasm import fingerprint as qasm_fingerprint
 from majorana_openqasm import normalize
-from sqlalchemy import func, select, update
+from sqlalchemy import func, or_, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -39,6 +41,29 @@ cx q[0], q[1];
 c[0] = measure q[0];
 c[1] = measure q[1];
 """
+
+DEFAULT_JOB_MAX_ATTEMPTS = 3
+MAX_JOB_MAX_ATTEMPTS = 20
+
+
+class JobLeaseLostError(RuntimeError):
+    """The worker no longer owns the fenced lease for a job."""
+
+
+@dataclass(frozen=True)
+class StaleJobRecovery:
+    requeued: int
+    dead_jobs: tuple[Job, ...]
+
+
+def _bounded_error(value: str) -> str:
+    return value[:2000]
+
+
+def _lease_delta(lease_seconds: float) -> dt.timedelta:
+    if not 0 < lease_seconds <= 3600:
+        raise ValueError("lease_seconds must be in (0, 3600]")
+    return dt.timedelta(seconds=lease_seconds)
 
 
 def starter_bell_slug(workspace_id) -> str:
@@ -299,8 +324,17 @@ async def enqueue_job(
     payload: dict[str, Any],
     run_id: Any | None = None,
     run_after: dt.datetime | None = None,
+    max_attempts: int = DEFAULT_JOB_MAX_ATTEMPTS,
 ) -> Job:
-    job = Job(id=uuid7(), kind=kind, payload=payload, run_id=run_id)
+    if not 1 <= max_attempts <= MAX_JOB_MAX_ATTEMPTS:
+        raise ValueError(f"max_attempts must be in [1, {MAX_JOB_MAX_ATTEMPTS}]")
+    job = Job(
+        id=uuid7(),
+        kind=kind,
+        payload=payload,
+        run_id=run_id,
+        max_attempts=max_attempts,
+    )
     if run_after is not None:
         job.run_after = run_after
     session.add(job)
@@ -308,11 +342,65 @@ async def enqueue_job(
     return job
 
 
-async def claim_job(session: AsyncSession, *, worker_id: str) -> Job | None:
+async def recover_stale_jobs(session: AsyncSession) -> StaleJobRecovery:
+    """Requeue expired leases or dead-letter rows that exhausted attempts.
+
+    The predicates are repeated on both updates, so concurrent workers can run
+    recovery safely: once one update changes a row, the other workers no longer
+    match it.
+    """
+    stale = (
+        Job.status == "running",
+        or_(Job.lease_expires_at.is_(None), Job.lease_expires_at <= func.now()),
+    )
+    dead_result = await session.execute(
+        update(Job)
+        .where(*stale, Job.attempts >= Job.max_attempts)
+        .values(
+            status="dead",
+            last_error="worker lease expired after maximum attempts",
+            last_error_kind="lease_expired",
+            locked_by=None,
+            locked_at=None,
+            lease_token=None,
+            lease_expires_at=None,
+            last_heartbeat_at=None,
+            updated_at=func.now(),
+        )
+        .returning(Job)
+    )
+    dead_jobs = tuple(dead_result.scalars().all())
+    requeue_result = await session.execute(
+        update(Job)
+        .where(*stale, Job.attempts < Job.max_attempts)
+        .values(
+            status="queued",
+            run_after=func.now(),
+            last_error="worker lease expired; job requeued",
+            last_error_kind="lease_expired",
+            locked_by=None,
+            locked_at=None,
+            lease_token=None,
+            lease_expires_at=None,
+            last_heartbeat_at=None,
+            updated_at=func.now(),
+        )
+    )
+    return StaleJobRecovery(requeued=requeue_result.rowcount, dead_jobs=dead_jobs)
+
+
+async def claim_job(
+    session: AsyncSession, *, worker_id: str, lease_seconds: float = 120.0
+) -> Job | None:
     """FOR UPDATE SKIP LOCKED claim (AD-7); polls run_after — no LISTEN/NOTIFY."""
+    lease_delta = _lease_delta(lease_seconds)
     stmt = (
         select(Job)
-        .where(Job.status == "queued", Job.run_after <= func.now())
+        .where(
+            Job.status == "queued",
+            Job.run_after <= func.now(),
+            Job.attempts < Job.max_attempts,
+        )
         .order_by(Job.run_after)
         .limit(1)
         .with_for_update(skip_locked=True)
@@ -320,35 +408,190 @@ async def claim_job(session: AsyncSession, *, worker_id: str) -> Job | None:
     job = (await session.execute(stmt)).scalars().first()
     if job is None:
         return None
+    lease_token = uuid.uuid4()
+    next_attempt = int(job.attempts or 0) + 1
     await session.execute(
         update(Job)
-        .where(Job.id == job.id)
+        .where(Job.id == job.id, Job.status == "queued")
         .values(
             status="running",
             locked_by=worker_id,
             locked_at=func.now(),
-            attempts=Job.attempts + 1,
+            lease_token=lease_token,
+            lease_expires_at=func.now() + lease_delta,
+            last_heartbeat_at=func.now(),
+            attempts=next_attempt,
             updated_at=func.now(),
         )
     )
+    job.status = "running"
+    job.locked_by = worker_id
+    job.lease_token = lease_token
+    job.attempts = next_attempt
     return job
 
 
+async def heartbeat_job(
+    session: AsyncSession,
+    *,
+    job_id: Any,
+    lease_token: uuid.UUID,
+    lease_seconds: float = 120.0,
+) -> bool:
+    """Extend an unexpired lease only when the caller still owns its token."""
+    lease_delta = _lease_delta(lease_seconds)
+    result = await session.execute(
+        update(Job)
+        .where(
+            Job.id == job_id,
+            Job.status == "running",
+            Job.lease_token == lease_token,
+            Job.lease_expires_at > func.now(),
+        )
+        .values(
+            lease_expires_at=func.now() + lease_delta,
+            last_heartbeat_at=func.now(),
+            updated_at=func.now(),
+        )
+    )
+    return result.rowcount == 1
+
+
 async def finish_job(
-    session: AsyncSession, *, job_id: Any, status: str, last_error: str | None = None
+    session: AsyncSession,
+    *,
+    job_id: Any,
+    lease_token: uuid.UUID,
+    status: str,
+    last_error: str | None = None,
+    last_error_kind: str | None = None,
 ) -> None:
     if status not in ("done", "failed", "dead"):
         raise ValueError(f"not a terminal job status: {status}")
     result = await session.execute(
         update(Job)
-        .where(Job.id == job_id)
+        .where(
+            Job.id == job_id,
+            Job.status == "running",
+            Job.lease_token == lease_token,
+        )
         .values(
             status=status,
-            last_error=last_error,
+            last_error=_bounded_error(last_error) if last_error is not None else None,
+            last_error_kind=last_error_kind,
             locked_by=None,
             locked_at=None,
+            lease_token=None,
+            lease_expires_at=None,
+            last_heartbeat_at=None,
             updated_at=func.now(),
         )
     )
     if result.rowcount == 0:
-        raise ValueError(f"no such job: {job_id}")
+        raise JobLeaseLostError(f"job lease lost before terminal update: {job_id}")
+
+
+async def retry_job(
+    session: AsyncSession,
+    *,
+    job_id: Any,
+    lease_token: uuid.UUID,
+    last_error: str,
+    last_error_kind: str,
+    base_delay_seconds: float = 5.0,
+    max_delay_seconds: float = 300.0,
+) -> tuple[str, float]:
+    """Schedule a fenced bounded retry, or dead-letter an exhausted job."""
+    if not 0 < base_delay_seconds <= max_delay_seconds <= 3600:
+        raise ValueError("retry delays must satisfy 0 < base <= max <= 3600")
+    job = (
+        (
+            await session.execute(
+                select(Job)
+                .where(
+                    Job.id == job_id,
+                    Job.status == "running",
+                    Job.lease_token == lease_token,
+                )
+                .with_for_update()
+            )
+        )
+        .scalars()
+        .first()
+    )
+    if job is None:
+        raise JobLeaseLostError(f"job lease lost before retry update: {job_id}")
+
+    attempts = int(job.attempts or 0)
+    max_attempts = int(job.max_attempts or DEFAULT_JOB_MAX_ATTEMPTS)
+    terminal = attempts >= max_attempts
+    delay_seconds = (
+        0.0
+        if terminal
+        else min(base_delay_seconds * (2 ** max(attempts - 1, 0)), max_delay_seconds)
+    )
+    await session.execute(
+        update(Job)
+        .where(Job.id == job_id, Job.lease_token == lease_token)
+        .values(
+            status="dead" if terminal else "queued",
+            run_after=func.now() + dt.timedelta(seconds=delay_seconds),
+            last_error=_bounded_error(last_error),
+            last_error_kind=last_error_kind,
+            locked_by=None,
+            locked_at=None,
+            lease_token=None,
+            lease_expires_at=None,
+            last_heartbeat_at=None,
+            updated_at=func.now(),
+        )
+    )
+    return ("dead" if terminal else "queued", delay_seconds)
+
+
+async def list_pending_dead_letters(session: AsyncSession, *, limit: int = 50) -> list[Job]:
+    """Return terminal jobs whose idempotent dead-letter callback is pending."""
+    if not 1 <= limit <= 500:
+        raise ValueError("dead-letter limit must be in [1, 500]")
+    stmt = (
+        select(Job)
+        .where(
+            Job.status.in_(("failed", "dead")),
+            Job.dead_lettered_at.is_(None),
+            Job.run_after <= func.now(),
+        )
+        .order_by(Job.updated_at)
+        .limit(limit)
+    )
+    return list((await session.execute(stmt)).scalars().all())
+
+
+async def mark_job_dead_lettered(
+    session: AsyncSession,
+    *,
+    job_id: Any,
+    error: str | None = None,
+    retry_delay_seconds: float = 30.0,
+) -> bool:
+    """Persist dead-letter delivery success or a retryable callback error."""
+    if not 0 < retry_delay_seconds <= 3600:
+        raise ValueError("dead-letter retry delay must be in (0, 3600]")
+    values: dict[str, Any] = {
+        "dead_letter_error": _bounded_error(error) if error is not None else None,
+        "dead_letter_attempts": Job.dead_letter_attempts + 1,
+        "updated_at": func.now(),
+    }
+    if error is None:
+        values["dead_lettered_at"] = func.now()
+    else:
+        values["run_after"] = func.now() + dt.timedelta(seconds=retry_delay_seconds)
+    result = await session.execute(
+        update(Job)
+        .where(
+            Job.id == job_id,
+            Job.status.in_(("failed", "dead")),
+            Job.dead_lettered_at.is_(None),
+        )
+        .values(**values)
+    )
+    return result.rowcount == 1

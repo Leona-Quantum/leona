@@ -317,10 +317,18 @@ class Job(Base):
     status: Mapped[str | None] = mapped_column(server_default="queued")
     run_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("runs.id"))
     attempts: Mapped[int | None] = mapped_column(Integer, server_default="0")
+    max_attempts: Mapped[int | None] = mapped_column(Integer, server_default="3")
     locked_by: Mapped[str | None]
     locked_at: Mapped[dt.datetime | None]
+    lease_token: Mapped[uuid.UUID | None] = mapped_column(_UUID)
+    lease_expires_at: Mapped[dt.datetime | None]
+    last_heartbeat_at: Mapped[dt.datetime | None]
     run_after: Mapped[dt.datetime | None] = mapped_column(server_default=func.now())
     last_error: Mapped[str | None]
+    last_error_kind: Mapped[str | None]
+    dead_lettered_at: Mapped[dt.datetime | None]
+    dead_letter_error: Mapped[str | None]
+    dead_letter_attempts: Mapped[int | None] = mapped_column(Integer, server_default="0")
     created_at: Mapped[dt.datetime | None] = mapped_column(server_default=func.now())
     updated_at: Mapped[dt.datetime | None] = mapped_column(server_default=func.now())
 

@@ -1,0 +1,124 @@
+# Quantum Repository Step 1 - durable queue recovery report
+
+Status: implemented on `feature/repository`; owner/CODEOWNER review and live Neon
+migration gate pending  
+Scope: shared Postgres job queue reliability only  
+Catalog schema/import/data changes: none
+
+## 1. Safety invariants
+
+- A claimed job receives a random `lease_token`; heartbeat and terminal updates
+  require the same token.
+- A Worker whose lease expires cannot finish, retry, or overwrite a replacement
+  Worker.
+- Heartbeat uses a separate short database session and stops the handler before
+  the locally known lease expires when renewal is unavailable.
+- Expired jobs requeue only while `attempts < max_attempts`; exhausted jobs become
+  `dead`.
+- Only `RetryableJobError` requests a retry. Unknown exceptions remain terminal
+  `failed` outcomes rather than looping unexpectedly.
+- Unknown job kinds fail closed as `dead`.
+- Dead-letter callbacks are at-least-once and must be idempotent. The existing
+  `run.execute` callback uses deterministic event IDs and closes an active Run as
+  failed.
+- Historical terminal jobs are marked delivered by the migration so deployment
+  cannot replay old dead-letter callbacks.
+
+## 2. Additive schema
+
+Migration `0012_job_leases.py` adds:
+
+```text
+lease_token
+lease_expires_at
+last_heartbeat_at
+max_attempts
+last_error_kind
+dead_lettered_at
+dead_letter_error
+dead_letter_attempts
+```
+
+It also adds lease-shape and retry-budget checks plus partial indexes for expired
+running jobs and pending dead letters. No existing status enum value changes.
+
+## 3. State behavior
+
+```text
+queued
+  -> running (new token, attempt + 1, lease deadline)
+  -> running (heartbeat extends the same token)
+  -> done
+  -> failed (unclassified/permanent handler error)
+  -> queued with run_after (explicit retryable error or expired lease)
+  -> dead (unknown kind or exhausted attempt budget)
+```
+
+Terminal `failed` and `dead` rows remain inspectable. A separate idempotent callback
+closes related domain state and records `dead_lettered_at`; callback errors remain
+pending with a delayed retry so they cannot create a tight loop or starve new jobs.
+
+## 4. Configuration and telemetry
+
+| Environment variable | Default | Constraint |
+|---|---:|---|
+| `WORKER_JOB_LEASE_S` | 120 | positive, at most 3600 in repository validation |
+| `WORKER_JOB_HEARTBEAT_S` | 30 or lease/3 | positive and less than lease |
+| `WORKER_RETRY_BASE_S` | 5 | positive and not greater than max |
+| `WORKER_RETRY_MAX_S` | 300 | positive |
+| `WORKER_DEAD_LETTER_TIMEOUT_S` | 30 | positive; callback batch is capped at 10 |
+
+OTLP telemetry records claims, queue age, attempt count, requeues by reason,
+terminal outcomes, and lease loss. With no OTLP endpoint the instruments remain
+safe no-ops and local/CI behavior does not require observability credentials.
+
+## 5. Deployment and rollback
+
+Deployment order:
+
+1. stop or drain old Workers;
+2. run migration 0012 through the direct Neon migration connection;
+3. deploy API and Worker from the same reviewed revision;
+4. confirm heartbeat, queue-age, requeue, terminal, and lease-loss telemetry;
+5. inject one controlled Worker interruption and prove recovery before importer work.
+
+Rollback order:
+
+1. stop/drain Workers and stop new job creation;
+2. inspect running and pending dead-letter rows;
+3. downgrade 0012 only after no new Worker is using fenced lease fields;
+4. deploy the previous API/Worker revision together;
+5. verify queued Runs and jobs reconcile before reopening traffic.
+
+Do not run an old Worker concurrently with the new schema behavior during migration
+or rollback.
+
+## 6. Verification evidence
+
+Executed locally:
+
+- Ruff formatting and checks over all changed Python files: passed;
+- queue repository and migration tests: 8 passed;
+- focused Worker queue/handler tests: 6 passed;
+- complete `services/api/tests` plus `services/worker/tests`: 90 passed, 9 skipped;
+- import-linter: 3 contracts kept, 0 broken;
+- raw-query guard: clean;
+- repository catalog validator: 285 entries valid;
+- OTLP metric exporter and Worker queue imports: passed.
+
+Not executed locally:
+
+- live Neon `upgrade -> downgrade -> upgrade`;
+- live database pipeline E2E and live LLM tests represented by the skipped tests;
+- contention benchmark B-Q3.
+
+These remain required CI/review gates. The normal `uv` workspace command is currently
+blocked before test startup because `packages/py/baselines` matches the workspace glob
+but has no `pyproject.toml`; local verification used the existing `.venv` and explicit
+package source paths without modifying that unrelated directory.
+
+## 7. Exit state
+
+Step 1 implementation is complete but not production-approved. Step 2 must not start
+until this shared queue change receives Ryu/Eshaan/CODEOWNER review and the live Neon
+migration plus pipeline checks pass.

@@ -423,7 +423,36 @@ async def _handle_conversation(
 
 
 JobHandler = Callable[[AsyncSession, dict[str, Any]], Awaitable[None]]
+DeadLetterHandler = Callable[[AsyncSession, dict[str, Any], str], Awaitable[None]]
+
+
+async def handle_run_dead_letter(
+    session: AsyncSession, payload: dict[str, Any], reason: str
+) -> None:
+    """Close an active run when its durable execution job cannot continue."""
+    scope = _scope_from_payload(payload)
+    run_id = uuid.UUID(payload["run_id"])
+    store = RepoRunStateStore(scope, session, run_id)
+    if await store.current_status() not in {RunStatus.QUEUED, RunStatus.RUNNING}:
+        return
+    sink = RepoEventSink(scope, session, run_id)
+    await sink.emit(
+        "run.error",
+        {"stage": None, "code": "job_dead_letter", "message": reason[:2000]},
+        event_id=uuid.uuid5(run_id, "run.error.job_dead_letter"),
+    )
+    await sink.emit(
+        "run.finished",
+        {"status": RunStatus.FAILED},
+        event_id=uuid.uuid5(run_id, "run.finished"),
+    )
+    await store.set_status(RunStatus.FAILED, finished_at_now=True)
+
 
 HANDLERS: dict[str, JobHandler] = {
     RUN_EXECUTE_JOB_KIND: handle_run_execute,
+}
+
+DEAD_LETTER_HANDLERS: dict[str, DeadLetterHandler] = {
+    RUN_EXECUTE_JOB_KIND: handle_run_dead_letter,
 }
