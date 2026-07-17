@@ -42,8 +42,11 @@ export async function getMajoranaAuth(options?: { ensureSignedIn?: boolean }) {
 }
 
 export async function getMajoranaSignInUrl(): Promise<string> {
-  if (isLocalDevAuthEnabled()) return "/dashboard";
-  return getSignInUrl();
+  if (isLocalDevAuthEnabled()) return "/run";
+  // Keep the post-AuthKit destination explicit at the call site as well as in
+  // the callback route. This avoids falling back to a stale caller/default
+  // pathname when a user starts sign-in from a public page.
+  return getSignInUrl({ returnTo: "/run" });
 }
 
 export function isMajoranaAuthConfigured(): boolean {
@@ -51,5 +54,5 @@ export function isMajoranaAuthConfigured(): boolean {
 }
 
 export async function signOutMajorana(): Promise<void> {
-  if (!isLocalDevAuthEnabled()) await signOut();
+  if (!isLocalDevAuthEnabled()) await signOut({ returnTo: "/" });
 }

@@ -355,11 +355,11 @@ export function StudioWorkspace({ artifactId, newDraft = false, locale = "en" }:
               </div>
               <button className="mj-primary-button" type="button" onClick={() => applyArtifact(null)}>{copy.new}</button>
             </div>
-            <label className="mj-studio-search mj-studio-search--perch">
+            <label className="mj-studio-search mj-studio-search--lioness">
               <SearchIcon size={17} />
               <span className="sr-only">{copy.search}</span>
               <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={copy.searchPlaceholder} />
-              <StudioPerch />
+              <StudioLioness />
             </label>
             {artifactSyncError ? <p className="mj-studio-empty" role="alert">{copy.remoteSyncUnavailable}</p> : null}
             <div className="mj-studio-discovery-list">
@@ -383,22 +383,43 @@ export function StudioWorkspace({ artifactId, newDraft = false, locale = "en" }:
 type StudioCopy = (typeof WORKSPACE_COPY)[PublicLocale]["studio"];
 
 /**
- * Decorative constellation companion perched on the discovery search bar: the
- * Leo sickle settles onto the top edge on mount, its tail drooping over the
- * rim, and hovering the bar makes it paw toward the search icon. Pure CSS
- * motion (globals.css) that collapses under prefers-reduced-motion.
+ * Decorative studio companion: a small moss-green lioness walks in along the
+ * top edge of the discovery search bar, lies down sphinx-style above the
+ * search icon, and paws at the icon while the bar is hovered. The walking →
+ * lying stage flip lives here (a timer) so the lying pose is a plain CSS
+ * transform that hover pawing can compose with; all motion is CSS
+ * (globals.css) and reduced-motion skips straight to the lying pose.
  */
-function StudioPerch() {
+function StudioLioness() {
+  const [pose, setPose] = useState<"walking" | "lying">("walking");
+  useEffect(() => {
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      setPose("lying");
+      return;
+    }
+    const timer = window.setTimeout(() => setPose("lying"), 2600);
+    return () => window.clearTimeout(timer);
+  }, []);
   return (
-    <span className="mj-studio-perch" aria-hidden="true">
-      <svg viewBox="0 0 30 24" width={30} height={24} fill="none">
-        <path className="mj-perch-line" d="M7 11 9.5 14l1-6.2 4.2-1.1" />
-        <path className="mj-perch-tail" d="M9.5 14c3.8 0.6 6.6 0.4 8.6 3s3.6 3.2 5.6 2.3" />
-        <path className="mj-perch-paw" d="M7.6 13.6c-0.9 1.9-1 3.1-2.2 4.4" />
-        <circle className="mj-perch-dot" cx="7" cy="11" r="1" />
-        <circle className="mj-perch-dot" cx="10.5" cy="7.8" r="1" />
-        <circle className="mj-perch-dot" cx="14.7" cy="6.7" r="1" />
-        <circle className="mj-perch-dot mj-perch-dot--bright" cx="9.5" cy="14" r="1.7" />
+    <span className={`mj-lioness is-${pose}`} aria-hidden="true">
+      <svg viewBox="0 0 72 34" width={72} height={34} fill="none">
+        <g className="mj-lioness-figure">
+          <g className="mj-lioness-tail">
+            <path d="M47 16.5c4.2-1.2 6.8-3.6 8.2-7.4" />
+            <circle cx="55.6" cy="8.4" r="1.9" />
+          </g>
+          <g className="mj-lioness-leg mj-lioness-leg--front-far"><path d="M27.5 20.5v9" /></g>
+          <g className="mj-lioness-leg mj-lioness-leg--rear-far"><path d="M43.5 20.5v9" /></g>
+          <ellipse className="mj-lioness-body" cx="35" cy="17.6" rx="13.6" ry="6" />
+          <g className="mj-lioness-leg mj-lioness-leg--rear-near"><path d="M46.5 20.5v9.4" /></g>
+          <g className="mj-lioness-leg mj-lioness-leg--front-near"><path d="M24 20.5v9.4" /></g>
+          <g className="mj-lioness-head">
+            <circle cx="16.2" cy="11.2" r="5.3" />
+            <circle className="mj-lioness-ear" cx="13" cy="7" r="1.8" />
+            <circle className="mj-lioness-ear" cx="19.4" cy="6.8" r="1.8" />
+            <path className="mj-lioness-muzzle" d="M11.4 12c-1.5.2-2.4.7-2.9 1.5" />
+          </g>
+        </g>
       </svg>
     </span>
   );

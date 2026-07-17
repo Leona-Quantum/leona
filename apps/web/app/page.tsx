@@ -17,6 +17,9 @@ export default async function Home() {
   const copy = HOME_COPY[locale];
   return (
     <PublicSite activePath="/" className="mj-company-site" locale={locale}>
+      {/* Centered hero over the constellation, with the live pipeline as a
+          full-width band beneath — the owner retired the old split
+          left-copy/right-card composition (Owner Inbox 2026-07-17). */}
       <section className="mj-company-hero">
         <LeoConstellation className="mj-company-constellation" />
         <div className="mj-company-hero-copy">
@@ -38,29 +41,31 @@ export default async function Home() {
           </div>
           <p className="mj-company-hero-note">{copy.hero.note}</p>
         </div>
-        <div className="mj-company-hero-art" aria-label={copy.visual.label}>
+        <div className="mj-company-pipeline-band" aria-label={copy.visual.label}>
           <div className="mj-public-art-head">
             <span>{copy.visual.label}</span>
             <span className="mj-public-art-status">{copy.visual.status}</span>
           </div>
-          <div className="mj-company-hero-orbit" aria-hidden="true">
-            <span className="mj-company-orbit-ring mj-company-orbit-ring--one" />
-            <span className="mj-company-orbit-ring mj-company-orbit-ring--two" />
-            <BrandMark size={124} />
-            <span className="mj-company-orbit-dot mj-company-orbit-dot--one" />
-            <span className="mj-company-orbit-dot mj-company-orbit-dot--two" />
-          </div>
-          <div className="mj-public-pipeline mj-public-pipeline--live">
-            {copy.visual.pipeline.map((step, index) => (
-              <div className="mj-public-pipeline-step" key={step.number}>
-                <span className="mj-public-pipeline-number">{step.number}</span>
-                <div>
-                  <strong>{step.label}</strong>
-                  <span>{step.detail}</span>
+          <div className="mj-company-pipeline-flow">
+            <div className="mj-company-hero-orbit" aria-hidden="true">
+              <span className="mj-company-orbit-ring mj-company-orbit-ring--one" />
+              <span className="mj-company-orbit-ring mj-company-orbit-ring--two" />
+              <BrandMark size={72} />
+              <span className="mj-company-orbit-dot mj-company-orbit-dot--one" />
+              <span className="mj-company-orbit-dot mj-company-orbit-dot--two" />
+            </div>
+            <div className="mj-public-pipeline mj-public-pipeline--live mj-public-pipeline--row">
+              {copy.visual.pipeline.map((step, index) => (
+                <div className="mj-public-pipeline-step" key={step.number}>
+                  <span className="mj-public-pipeline-number">{step.number}</span>
+                  <div>
+                    <strong>{step.label}</strong>
+                    <span>{step.detail}</span>
+                  </div>
+                  {index < copy.visual.pipeline.length - 1 ? <span className="mj-public-pipeline-line" aria-hidden="true" /> : null}
                 </div>
-                {index < copy.visual.pipeline.length - 1 ? <span className="mj-public-pipeline-line" aria-hidden="true" /> : null}
-              </div>
-            ))}
+              ))}
+            </div>
           </div>
           <div className="mj-public-art-foot">
             <span>{copy.visual.footer}</span>

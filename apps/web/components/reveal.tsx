@@ -5,8 +5,10 @@ import { useEffect, useRef, type ReactNode } from "react";
 /**
  * Scroll-reveal wrapper for the public marketing surface. Content is visible by
  * default (no-JS and reduced-motion safe): the hidden state is only applied
- * after mount, and only for elements still below the viewport; CSS drops the
- * transition entirely under prefers-reduced-motion.
+ * after mount by the observer, and only while the element is outside the
+ * viewport, so reveals replay on the way back up as well as on the way down
+ * (Owner Inbox 2026-07-17). CSS drops the transition entirely under
+ * prefers-reduced-motion.
  */
 export function Reveal({
   children,
@@ -23,17 +25,16 @@ export function Reveal({
     const node = ref.current;
     if (!node) return;
     if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
-    const rect = node.getBoundingClientRect();
-    if (rect.top < window.innerHeight * 0.9) return;
 
-    node.classList.add("mj-reveal--pending");
+    // Toggle rather than disconnect after the first pass: hidden exactly while
+    // out of view, so the rise replays in both scroll directions. The first
+    // async callback also replaces the old mount-time rect check — elements
+    // already in view get a no-op, elements below the fold get hidden before
+    // they can be seen.
     const observer = new IntersectionObserver(
       (entries) => {
         for (const entry of entries) {
-          if (entry.isIntersecting) {
-            node.classList.remove("mj-reveal--pending");
-            observer.disconnect();
-          }
+          node.classList.toggle("mj-reveal--pending", !entry.isIntersecting);
         }
       },
       { rootMargin: "0px 0px -10% 0px" },

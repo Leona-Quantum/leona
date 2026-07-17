@@ -7,8 +7,10 @@ import {
   ADDITIONAL_PUBLIC_REPOSITORY_ENTRIES,
 } from "./repository/entries-legacy";
 import { GATE_ENTRIES } from "./repository/entries-gates";
+import { GATE_ENTRIES_2 } from "./repository/entries-gates-2";
 import { ALGORITHM_ENTRIES } from "./repository/entries-algorithms";
 import { STATE_OPERATOR_ENTRIES } from "./repository/entries-states-operators";
+import { STATE_OPERATOR_ENTRIES_2 } from "./repository/entries-states-operators-2";
 import type {
   PublicRepositoryCodeVariant,
   PublicRepositoryEntry,
@@ -132,8 +134,10 @@ const ALL_RAW_ENTRIES: PublicRepositoryEntry[] = [
   ...RAW_PUBLIC_REPOSITORY_ENTRIES,
   ...ADDITIONAL_PUBLIC_REPOSITORY_ENTRIES,
   ...GATE_ENTRIES,
+  ...GATE_ENTRIES_2,
   ...ALGORITHM_ENTRIES,
   ...STATE_OPERATOR_ENTRIES,
+  ...STATE_OPERATOR_ENTRIES_2,
 ];
 
 export const PUBLIC_REPOSITORY_ENTRIES: PublicRepositoryEntry[] = ALL_RAW_ENTRIES.map((raw) => {

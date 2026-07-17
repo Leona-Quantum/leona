@@ -260,51 +260,69 @@
   line-height: 1.6;
 }
 
-/* company landing */
+/* company landing — centered hero copy over the constellation, with the live
+   pipeline as a full-width band beneath (owner retired the split
+   left-copy/right-card hero, 2026-07-17). */
 .mj-company-hero {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(360px, 0.84fr);
+  display: flex;
+  flex-direction: column;
   align-items: center;
-  gap: var(--sp-12);
+  gap: var(--sp-10);
   padding: var(--sp-12) 0;
 }
+.mj-company-hero-copy {
+  text-align: center;
+}
 .mj-company-hero-copy h1 {
-  max-width: 560px;
-  margin: 0;
+  max-width: 760px;
+  margin: 0 auto;
   font-family: var(--font-display);
   font-size: var(--fs-display-1);
   font-weight: 400;
   letter-spacing: -0.01em;
   line-height: 1.1;
 }
+.mj-company-hero-copy .mj-public-actions {
+  justify-content: center;
+  margin-top: var(--sp-8);
+}
 .mj-company-hero-lede {
   max-width: 640px;
-  margin: var(--sp-6) 0 0;
+  margin: var(--sp-6) auto 0;
   color: var(--text-1);
   font-size: var(--fs-16);
   line-height: 1.6;
 }
 .mj-company-hero-note {
   max-width: 560px;
-  margin: var(--sp-6) 0 0;
+  margin: var(--sp-6) auto 0;
   color: var(--text-2);
   font-size: var(--fs-12);
   line-height: 1.6;
 }
-.mj-company-hero-art {
-  position: relative;
+.mj-company-pipeline-band {
+  width: 100%;
+  box-sizing: border-box;
   padding: var(--sp-6);
   border: 1px solid var(--border-0);
   border-radius: var(--radius-card);
   background: var(--bg-1);
+  text-align: left;
+}
+.mj-company-pipeline-flow {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-10);
+  padding: var(--sp-6) 0;
 }
 .mj-company-hero-orbit {
   position: relative;
   display: grid;
   place-items: center;
-  width: min(100%, 240px);
+  width: 132px;
+  flex: 0 0 auto;
   aspect-ratio: 1;
-  margin: var(--sp-4) auto var(--sp-3);
+  margin: 0;
 }
 .mj-company-hero-orbit > svg {
   position: relative;
@@ -369,6 +387,33 @@
 .mj-public-pipeline {
   margin: var(--sp-8) 0;
 }
+/* Row variant for the hero pipeline band: steps flow horizontally on wide
+   viewports, with the connector rotated into the column gap; below 860px the
+   default vertical layout applies untouched. */
+.mj-public-pipeline--row {
+  margin: 0;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+@media (min-width: 861px) {
+  .mj-public-pipeline--row {
+    display: grid;
+    grid-auto-flow: column;
+    grid-auto-columns: minmax(0, 1fr);
+    gap: var(--sp-8);
+  }
+  .mj-public-pipeline--row .mj-public-pipeline-step {
+    min-height: 0;
+  }
+  .mj-public-pipeline--row .mj-public-pipeline-line {
+    top: 12px;
+    left: 100%;
+    height: 0;
+    width: var(--sp-8);
+    border-left: 0;
+    border-top: 1px solid var(--border-0);
+  }
+}
 .mj-public-pipeline-step {
   position: relative;
   align-items: flex-start;
@@ -426,49 +471,30 @@
   border-top: 1px solid var(--border-0);
 }
 .mj-company-product-band {
+  /* Raised token surface in BOTH themes (Owner Inbox 2026-07-17: the light
+     theme must not carry a near-black band). accent/bg-2 is AA in both
+     palettes: 5.08:1 light, 5.23:1 dark; text-1/bg-2 5.95:1 / 5.74:1. */
   padding-inline: var(--sp-6);
   border: 0;
   border-radius: var(--radius-card);
-  background: var(--text-0);
-  color: var(--bg-0);
+  background: var(--bg-2);
+  color: var(--text-0);
 }
 .mj-company-product-band h2,
-.mj-company-product-band h3,
-.mj-company-product-band .mj-section-label {
-  color: var(--bg-0);
+.mj-company-product-band h3 {
+  color: var(--text-0);
 }
 .mj-company-product-band .mj-section-label,
 .mj-company-product-band .mj-company-index,
 .mj-company-product-band .mj-company-capability-note {
-  /* Light theme paints this band with --text-0 (near-black), where the light
-     accent lands at ~2.2:1; lift it toward paper for AA (~6.7:1). Dark theme
-     restores the plain accent below (band is --bg-2 there, already AA). */
-  color: color-mix(in srgb, var(--accent) 60%, var(--bg-0));
+  color: var(--accent);
 }
-.mj-company-product-band .mj-company-capability-list {
-  border-color: var(--bg-2);
-}
+.mj-company-product-band .mj-company-capability-list,
 .mj-company-product-band .mj-company-capability-list article {
-  border-color: var(--bg-2);
+  border-color: var(--border-0);
 }
 .mj-company-product-band .mj-company-capability-list p {
-  color: var(--bg-2);
-}
-:root[data-theme="dark"] .mj-company-product-band {
-  background: var(--bg-2);
-  color: var(--text-0);
-}
-:root[data-theme="dark"] .mj-company-product-band h2,
-:root[data-theme="dark"] .mj-company-product-band h3 {
-  color: var(--text-0);
-}
-:root[data-theme="dark"] .mj-company-product-band .mj-company-capability-list p {
   color: var(--text-1);
-}
-:root[data-theme="dark"] .mj-company-product-band .mj-section-label,
-:root[data-theme="dark"] .mj-company-product-band .mj-company-index,
-:root[data-theme="dark"] .mj-company-product-band .mj-company-capability-note {
-  color: var(--accent);
 }
 .mj-company-section h2,
 .mj-company-final-cta h2,
@@ -1175,7 +1201,6 @@
 }
 
 @media (max-width: 860px) {
-  .mj-company-hero,
   .mj-contact-hero,
   .mj-company-intro,
   .mj-company-principles,
@@ -1183,8 +1208,13 @@
   .mj-repository-provenance {
     grid-template-columns: minmax(0, 1fr);
   }
-  .mj-company-hero-art {
-    max-width: 620px;
+  .mj-company-pipeline-flow {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--sp-4);
+  }
+  .mj-company-pipeline-flow .mj-company-hero-orbit {
+    align-self: center;
   }
   .mj-company-intro > p,
   .mj-company-principle-list,
@@ -1295,7 +1325,7 @@
   .mj-legal-hero {
     padding-block: var(--sp-8);
   }
-  .mj-company-hero-art {
+  .mj-company-pipeline-band {
     padding: var(--sp-4);
   }
   .mj-company-capability-list article {
@@ -6008,8 +6038,103 @@ div.mj-rail-row:hover {
 .mj-repo-circuit-op[data-tone="ok"] { border-color: color-mix(in srgb, var(--ok) 55%, var(--border-0)); color: var(--ok); }
 .mj-repo-circuit-op[data-tone="warn"] { border-color: color-mix(in srgb, var(--warn) 55%, var(--border-0)); color: var(--warn); }
 
+/* Gates-category grid: gates are simple, so the list view collapses into
+   compact cards with an inline circuit; the toggle swaps between the single
+   collapsed gate and its basic-gate decomposition. */
+.mj-gate-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: var(--sp-4);
+}
+.mj-gate-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+  box-sizing: border-box;
+  padding: var(--sp-5);
+  border: 1px solid var(--border-0);
+  border-radius: var(--radius-card);
+  background: var(--bg-1);
+}
+.mj-gate-card-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--sp-3);
+}
+.mj-gate-card-head h3 {
+  margin: 0;
+  font-size: var(--fs-16);
+  font-weight: 500;
+}
+.mj-gate-card-head h3 a {
+  color: var(--text-0);
+  text-decoration: none;
+}
+.mj-gate-card-head h3 a:hover {
+  color: var(--accent);
+}
+.mj-gate-card-family {
+  margin: 0;
+  color: var(--text-2);
+  font-family: var(--font-mono);
+  font-size: var(--fs-12);
+}
+.mj-gate-card .mj-repo-circuit {
+  flex: 1 1 auto;
+}
+.mj-repo-circuit--mini {
+  padding: var(--sp-3);
+  gap: var(--sp-1);
+}
+.mj-gate-card-decomp {
+  margin: 0;
+  color: var(--text-1);
+  font-size: var(--fs-12);
+  line-height: 1.5;
+}
+.mj-gate-card-decomp > span {
+  color: var(--text-2);
+  font-family: var(--font-mono);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.mj-gate-card-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  flex-wrap: wrap;
+}
+.mj-gate-toggle {
+  padding: var(--sp-1) var(--sp-3);
+  border: 1px solid var(--border-0);
+  border-radius: var(--radius-control);
+  color: var(--text-1);
+  background: transparent;
+  font: inherit;
+  font-size: var(--fs-12);
+  cursor: pointer;
+}
+.mj-gate-toggle:hover {
+  color: var(--text-0);
+  border-color: var(--text-2);
+}
+.mj-gate-toggle[aria-pressed="true"] {
+  color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--border-0));
+}
+.mj-gate-atomic {
+  color: var(--text-2);
+  font-family: var(--font-mono);
+  font-size: var(--fs-12);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
 @media (max-width: 900px) {
   .mj-repo-list { grid-template-columns: minmax(0, 1fr); }
+  .mj-gate-grid { grid-template-columns: minmax(0, 1fr); }
   .mj-vlegend-tier dl > div { grid-template-columns: minmax(0, 1fr); gap: var(--sp-1); }
   .mj-repo-comparison > div { grid-template-columns: minmax(0, 1fr); gap: var(--sp-1); }
   .mj-repo-card-top time { margin-left: 0; }
@@ -6027,7 +6152,7 @@ div.mj-rail-row:hover {
   pointer-events: none;
 }
 .mj-company-hero-copy,
-.mj-company-hero-art {
+.mj-company-pipeline-band {
   position: relative;
   z-index: 1;
 }

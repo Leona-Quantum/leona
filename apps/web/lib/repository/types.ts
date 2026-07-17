@@ -39,6 +39,23 @@ export interface PublicRepositoryClassicalComparison {
   practicalReadJa: string;
 }
 
+/**
+ * How a composite gate breaks into more basic gates. Rendered on the gates
+ * browser as a per-card expanded/collapsed toggle: `visualization` is the
+ * collapsed single-gate form; this is the expanded circuit of basic gates.
+ * Atomic gates (single hardware-native primitives) simply omit it.
+ */
+export interface PublicRepositoryDecomposition {
+  /** e.g. "3 × CNOT" — short summary shown beside the toggle. */
+  summary: string;
+  summaryJa: string;
+  wires: string[];
+  operations: Array<{ label: string; qubits: number[]; tone: "accent" | "ok" | "warn" | "neutral" }>;
+  /** Which identity the expansion uses, one sentence. */
+  note?: string;
+  noteJa?: string;
+}
+
 export interface PublicRepositoryEntry {
   slug: string;
   title: string;
@@ -94,6 +111,7 @@ export interface PublicRepositoryEntry {
     operations: Array<{ label: string; qubits: number[]; tone: "accent" | "ok" | "warn" | "neutral" }>;
     outcomes: Array<{ label: string; probability: number }>;
   };
+  decomposition?: PublicRepositoryDecomposition;
   codeVariants: PublicRepositoryCodeVariant[];
   relatedSlugs: string[];
   literature?: PublicRepositoryCitation[];
