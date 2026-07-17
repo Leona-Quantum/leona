@@ -614,7 +614,6 @@ function ChatRow({ chat, currentPath, demoMode, locale, folders, onArchive, onDe
       }}
     >
       <a className={`mj-sidebar-chat${currentPath === `/run/${chat.id}` ? " is-active" : ""}`} href={demoMode ? "/demo?view=run" : `/run/${chat.id}`} title={collapsedTitle(chat.title)}>
-        <span className={`mj-chat-status mj-chat-status--${chat.status}`} aria-hidden="true">{statusGlyph(chat.status)}</span>
         <span className="mj-sidebar-chat-title mj-sidebar-copy">{chat.title}</span>
         <span className="mj-sidebar-chat-time mj-sidebar-copy">{formatRelativeDate(chat.createdAt, locale)}</span>
       </a>
@@ -651,7 +650,6 @@ function ArtifactRow({ artifact, currentPath, folders, onAssignFolder, onArchive
       }}
     >
       <a className={`mj-sidebar-chat${currentPath === href ? " is-active" : ""}`} href={href} title={artifact.title}>
-        <span className="mj-studio-artifact-mark" aria-hidden="true">{artifact.status === "verified" ? "✓" : "–"}</span>
         <span className="mj-sidebar-chat-title mj-sidebar-copy">{artifact.title}</span>
       </a>
       <div className="mj-sidebar-artifact-actions">
@@ -685,25 +683,58 @@ function ItemOverflowMenu({ kind, title, pinned, locale, folders, currentFolderI
   const deleteAria = kind === "chat" ? copy.deleteChat(title) : copy.deleteArtifact(title);
   const currentFolder = folders.find((folder) => folder.id === currentFolderId);
 
+  const closeTimer = useRef<number | null>(null);
+  const renamingRef = useRef(false);
+  renamingRef.current = renaming;
+
+  useEffect(() => () => {
+    if (closeTimer.current !== null) window.clearTimeout(closeTimer.current);
+  }, []);
+
+  function cancelScheduledClose() {
+    if (closeTimer.current !== null) {
+      window.clearTimeout(closeTimer.current);
+      closeTimer.current = null;
+    }
+  }
+
   function close() {
+    cancelScheduledClose();
     setOpen(false);
     setRenaming(false);
   }
 
-  function toggleOpen() {
-    if (!open) {
-      // Anchor the popover to the trigger in viewport space so it never
-      // clips inside the sidebar scroll area; flip above near the bottom.
-      const rect = triggerRef.current?.getBoundingClientRect();
-      if (rect) {
-        const left = Math.max(8, Math.min(rect.right - 200, window.innerWidth - 208));
-        if (rect.bottom > window.innerHeight - 280) setPlacement({ left, bottom: window.innerHeight - rect.top });
-        else setPlacement({ left, top: rect.bottom });
-      }
+  // Hover-driven with a short grace period: the popover sits just past the
+  // sidebar's right edge, aligned with its row, and the timer keeps it alive
+  // while the pointer crosses from the trigger to the menu.
+  function scheduleClose() {
+    cancelScheduledClose();
+    closeTimer.current = window.setTimeout(() => {
+      closeTimer.current = null;
+      // An in-progress rename keeps the menu open; Escape or submit ends it.
+      if (renamingRef.current) return;
+      setOpen(false);
+    }, 240);
+  }
+
+  function openMenu() {
+    cancelScheduledClose();
+    if (open) return;
+    const rect = triggerRef.current?.getBoundingClientRect();
+    if (rect) {
+      const rail = triggerRef.current?.closest(".mj-sidebar-inner")?.getBoundingClientRect();
+      const left = Math.min((rail?.right ?? rect.right) + 4, window.innerWidth - 208);
+      if (rect.top > window.innerHeight - 300) setPlacement({ left, bottom: Math.max(8, window.innerHeight - rect.bottom) });
+      else setPlacement({ left, top: rect.top });
     }
-    setOpen((value) => !value);
+    setOpen(true);
     setRenaming(false);
     setName(title);
+  }
+
+  function toggleOpen() {
+    if (open) close();
+    else openMenu();
   }
 
   function submitRename(event: FormEvent<HTMLFormElement>) {
@@ -714,9 +745,10 @@ function ItemOverflowMenu({ kind, title, pinned, locale, folders, currentFolderI
   }
 
   return (
-    // The popover is hover-scoped per the owner request: leaving the menu area
-    // dismisses it without needing a click elsewhere.
-    <div className="mj-sidebar-item-menu" onMouseLeave={close}>
+    // The popover is hover-scoped per the owner request: hovering the trigger
+    // opens it, leaving the menu area dismisses it after a short grace period,
+    // and click still toggles for keyboard and touch.
+    <div className="mj-sidebar-item-menu" onMouseEnter={openMenu} onMouseLeave={scheduleClose}>
       <button ref={triggerRef} className="mj-sidebar-menu-trigger" type="button" aria-label={`${title} options`} aria-expanded={open} title={`${title} options`} onClick={(event) => { event.preventDefault(); event.stopPropagation(); toggleOpen(); }}>
         <MoreIcon size={15} />
       </button>
@@ -858,13 +890,6 @@ function ArtifactArchiveSection({ artifacts, locale, onRestore, onDelete }: { ar
 
 function collapsedTitle(title: string): string {
   return title;
-}
-
-function statusGlyph(status: ChatStatus): string {
-  if (status === "verified") return "✓";
-  if (status === "failed") return "×";
-  if (status === "running") return "–";
-  return "·";
 }
 
 function formatRelativeDate(value: string, locale: PublicLocale = "en"): string {

@@ -75,13 +75,7 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
     signOut: string;
   };
   run: {
-    title: string;
-    lede: string;
     previewStatus: string;
-    readyStatus: string;
-    workflowTitle: string;
-    workflowBody: string;
-    capabilities: Array<{ title: string; body: string }>;
     examplesTitle: string;
     examples: Array<{ title: string; prompt: string }>;
     morePrompts: Array<{ title: string; prompt: string }>;
@@ -90,7 +84,6 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
     greetingMorning: string;
     greetingAfternoon: string;
     greetingEvening: string;
-    greetingTagline: string;
     confirmSendTitle: string;
     confirmSendBody: (title: string) => string;
     confirmSend: string;
@@ -120,7 +113,6 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
     caveats: string;
     failed: string;
     artifacts: string;
-    connected: string;
     savedArtifacts: string;
     noMatch: string;
     noMatchBody: string;
@@ -132,9 +124,7 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
     deleteWarning: (title: string) => string;
     star: string;
     unstar: string;
-    starBoundary: string;
     previewFooter: string;
-    workspaceFooter: string;
     unknown: string;
   };
   studio: {
@@ -148,7 +138,6 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
     searchPlaceholder: string;
     noSearchResults: string;
     empty: string;
-    sidebarNote: string;
     workingCircuit: string;
     editingVersion: (version: string, framework: string) => string;
     newDraft: string;
@@ -310,17 +299,7 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
       signOut: "Log out",
     },
     run: {
-      title: "What are you working on?",
-      lede: "Describe the circuit in plain language, choose a framework, and receive verified framework-native code.",
       previewStatus: "Public preview · view-only",
-      readyStatus: "Circuit pipeline · ready",
-      workflowTitle: "Natural language to verified framework code",
-      workflowBody: "The selected framework remains authoritative through generation, sandbox execution, verification, native optimization, and artifact writeback.",
-      capabilities: [
-        { title: "Choose the framework", body: "Generate and return Qiskit, Cirq, or PennyLane source without a silent switch." },
-        { title: "Verify the source", body: "Execute the selected-framework code in the guarded sandbox and record concrete evidence." },
-        { title: "Save the artifact", body: "Keep the verified code, resource evidence, and optional conversion metadata together." },
-      ],
       examplesTitle: "Try an example",
       examples: [
         { title: "Recover a marked state with Grover", prompt: "Use Grover to recover the marked state 1100 and verify the measured distribution." },
@@ -343,7 +322,6 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
       greetingMorning: "Good morning.",
       greetingAfternoon: "Good afternoon.",
       greetingEvening: "Good evening.",
-      greetingTagline: "The lioness is listening — plain language in, verified circuits out.",
       confirmSendTitle: "Send this artifact context and prompt to the LLM?",
       confirmSendBody: (title) => `The saved artifact “${title}” (its code) and your prompt below will be sent to the model. Nothing is sent until you confirm.`,
       confirmSend: "Send to LLM",
@@ -361,7 +339,7 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
     },
     library: {
       title: "Library",
-      lede: "Saved circuits, versions, and verification evidence. Open an artifact in Studio to edit or simulate it.",
+      lede: "Saved circuits, versions, and evidence.",
       openStudio: "Open Studio",
       newRun: "New run",
       filterArtifacts: "Filter artifacts",
@@ -373,7 +351,6 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
       caveats: "Caveats",
       failed: "Failed",
       artifacts: "artifacts",
-      connected: "Connected to the workspace repository",
       savedArtifacts: "Saved artifacts",
       noMatch: "No artifacts match these filters.",
       noMatchBody: "Clear a filter or start a new verified run.",
@@ -385,13 +362,11 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
       deleteWarning: (title) => `“${title}” will be removed from your workspace and not saved.`,
       star: "Star artifact",
       unstar: "Remove artifact star",
-      starBoundary: "Library stars are personal. A public Repository entry starts unstarred when saved here.",
       previewFooter: "Reference artifacts are shown in the public preview.",
-      workspaceFooter: "Verified runs saved from this workspace appear here automatically.",
       unknown: "Unknown",
     },
     studio: {
-      label: "R&D workspace",
+      label: "Quantum R&D",
       title: "Studio",
       draftStatus: "Draft changes are local until verified",
       backLibrary: "Back to Library",
@@ -401,7 +376,6 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
       searchPlaceholder: "Search by name, framework, or tag…",
       noSearchResults: "No artifacts match this search.",
       empty: "No saved artifacts yet. Start with the Bell-state draft.",
-      sidebarNote: "Library stores saved artifacts. Studio is where drafts become evidence.",
       workingCircuit: "Working circuit",
       editingVersion: (version, framework) => `Editing version ${version} · ${framework}`,
       newDraft: "A clean draft for exploring a circuit before it enters Library.",
@@ -577,17 +551,7 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
       signOut: "ログアウト",
     },
     run: {
-      title: "何を研究していますか？",
-      lede: "自然言語で回路を説明し、フレームワークを選ぶと、検証済みのフレームワークコードを生成します。",
       previewStatus: "公開プレビュー · 閲覧のみ",
-      readyStatus: "回路パイプライン · 準備完了",
-      workflowTitle: "自然言語から検証済みフレームワークコードへ",
-      workflowBody: "選択したフレームワークを正本として、生成、sandbox実行、検証、ネイティブ最適化、アーティファクト保存まで一貫して処理します。",
-      capabilities: [
-        { title: "フレームワークを選択", body: "Qiskit、Cirq、PennyLaneのコードを暗黙に切り替えず生成します。" },
-        { title: "コード自体を検証", body: "選択フレームワークのコードを保護されたsandboxで実行し、根拠を記録します。" },
-        { title: "アーティファクトを保存", body: "検証済みコード、リソース情報、任意の変換メタデータをまとめて保持します。" },
-      ],
       examplesTitle: "例から始める",
       examples: [
         { title: "Groverでマーク状態を探す", prompt: "Groverでマークされた状態1100を見つけ、測定分布を検証してください。" },
@@ -610,7 +574,6 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
       greetingMorning: "おはようございます。",
       greetingAfternoon: "こんにちは。",
       greetingEvening: "こんばんは。",
-      greetingTagline: "雌ライオンが聞いています — 自然言語で尋ね、検証済み回路を受け取ってください。",
       confirmSendTitle: "このアーティファクトのコンテキストとプロンプトをLLMに送信しますか？",
       confirmSendBody: (title) => `保存済みアーティファクト「${title}」のコードと下のプロンプトがモデルに送信されます。確認するまで何も送信されません。`,
       confirmSend: "LLMに送信",
@@ -628,7 +591,7 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
     },
     library: {
       title: "Library",
-      lede: "保存した回路、バージョン、検証の根拠です。Studioでアーティファクトを編集またはシミュレーションできます。",
+      lede: "保存した回路、バージョン、そして根拠。",
       openStudio: "Studioを開く",
       newRun: "新しい実行",
       filterArtifacts: "アーティファクトを絞り込む",
@@ -640,7 +603,6 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
       caveats: "注意付き",
       failed: "失敗",
       artifacts: "件",
-      connected: "ワークスペースのリポジトリに接続済み",
       savedArtifacts: "保存したアーティファクト",
       noMatch: "条件に一致するアーティファクトがありません。",
       noMatchBody: "条件を解除するか、新しい検証実行を始めてください。",
@@ -652,13 +614,11 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
       deleteWarning: (title) => `「${title}」はワークスペースから削除され、保存されません。`,
       star: "アーティファクトにスターを付ける",
       unstar: "アーティファクトのスターを外す",
-      starBoundary: "Libraryのスターは個人用です。公開リポジトリから保存したエントリは、ここでは未スターになります。",
       previewFooter: "公開プレビューではリファレンスアーティファクトを表示しています。",
-      workspaceFooter: "このワークスペースで保存した検証済み実行がここに表示されます。",
       unknown: "不明",
     },
     studio: {
-      label: "R&Dワークスペース",
+      label: "量子R&D",
       title: "Studio",
       draftStatus: "下書きの変更は検証されるまでローカルです",
       backLibrary: "Libraryに戻る",
@@ -668,7 +628,6 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
       searchPlaceholder: "名前、フレームワーク、タグで検索…",
       noSearchResults: "検索に一致するアーティファクトがありません。",
       empty: "保存されたアーティファクトはありません。ベル状態の下書きから始められます。",
-      sidebarNote: "Libraryは保存したアーティファクトを置く場所です。Studioで下書きを根拠へ変えます。",
       workingCircuit: "作業中の回路",
       editingVersion: (version, framework) => `バージョン${version}を編集中 · ${framework}`,
       newDraft: "Libraryに入れる前の回路を試すための新しい下書きです。",

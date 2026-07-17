@@ -69,6 +69,16 @@ export function MoreIcon(props: IconProps) {
   return <Icon {...props}><circle cx="4" cy="8" r=".6" fill="currentColor" stroke="none" /><circle cx="8" cy="8" r=".6" fill="currentColor" stroke="none" /><circle cx="12" cy="8" r=".6" fill="currentColor" stroke="none" /></Icon>;
 }
 
+export function PanelRightIcon({ open = true, ...props }: IconProps & { open?: boolean }) {
+  return (
+    <Icon {...props}>
+      <rect x="2.5" y="3.5" width="11" height="9" rx="1" />
+      <path d="M10 3.5v9" />
+      {open ? <path d="M10.75 6.5h1.5M10.75 8.5h1.5" strokeWidth="1" /> : null}
+    </Icon>
+  );
+}
+
 export function CopyIcon(props: IconProps) {
   return <Icon {...props}><rect x="5" y="5" width="7" height="8" rx="1" /><path d="M10 5V3H4a1 1 0 0 0-1 1v7h2" /></Icon>;
 }
@@ -89,9 +99,9 @@ export function StarIcon({ filled = false, ...props }: IconProps & { filled?: bo
  * state between them. The state is the Leo "sickle" asterism (the lion's-head
  * star pattern; Leona = lioness), with Regulus as the bright state-dot and the
  * mane arcing above it — the lioness rendered as a quantum state. Survives 16px
- * because the sickle degrades to the original dot plus a faint plume. Monochrome
- * via currentColor so the light theme's strictly-monochrome palette (owner
- * directive 2026-07-14) holds without a variant. */
+ * because the sickle degrades to the original dot plus a faint plume. Drawn in
+ * currentColor so it rides whatever text color the surface gives it — no
+ * per-theme variant needed. */
 export function BrandMark({ size = 20, ...props }: IconProps) {
   return (
     <svg aria-hidden="true" width={size} height={size} viewBox="0 0 20 20" fill="none" {...props}>

@@ -9,27 +9,34 @@
  * near-neutral warm-gray ramp (subtle R>G>B, low chroma — the "flavour"); chromatic
  * color is rationed to one moss accent + three verdict signals, and every verdict is
  * paired with a glyph so it never relies on hue alone (deuteranopia-safe).
- * Contrast pre-checked (WCAG AA): text-0/bg-0 15.6:1, text-1/bg-1 6.4:1,
- * accent/bg-0 6.3:1, ok/bg-1 7.5:1, warn/bg-1 8.3:1, err/bg-1 4.8:1.
+ * Owner directive 2026-07-17: light shares the dark palette's identity (moss accent,
+ * emerald/amber/red verdicts, warm neutrals) — the earlier strict-monochrome light
+ * surface is retired. Hues match dark; lightness is dropped where AA requires it.
+ * Contrast pre-checked (WCAG AA), light: text-0/bg-0 16.5:1, text-1/bg-1 6.6:1,
+ * accent/bg-0 6.1:1, accent/bg-2 5.1:1, ok/bg-1 4.6:1, warn/bg-1 5.2:1, err/bg-1 5.3:1.
+ * Accent must clear bg-2, not just bg-0 — accent-colored text sits on raised surfaces
+ * (e.g. the rail retry button); CI axe caught 4.42:1 there at the original #4f7233.
+ * Dark: text-0/bg-0 15.6:1, text-1/bg-1 6.4:1, accent/bg-0 6.3:1, ok/bg-1 7.5:1,
+ * warn/bg-1 8.3:1, err/bg-1 4.8:1.
  */
 :root,
 :root[data-theme="light"] {
   color-scheme: light;
 
-  /* color — strict monochrome for the light surface */
-  --bg-0: #ffffff;
-  --bg-1: #fafafa;
-  --bg-2: #f0f0f0;
-  --border-0: #d4d4d4;
-  --text-0: #0a0a0a;
-  --text-1: #525252;
-  --text-2: #737373;
-  --accent: #171717;
-  --accent-press: #000000;
-  --ok: #171717;
-  --warn: #404040;
-  --err: #0a0a0a;
-  --mono-tint: #404040;
+  /* color — warm paper neutrals, same chromatic identity as dark */
+  --bg-0: #faf9f7; /* app background — warm paper */
+  --bg-1: #f3f1ec; /* panel / card */
+  --bg-2: #e9e5de; /* raised: hover, code blocks, table header */
+  --border-0: #d8d2c8; /* hairlines */
+  --text-0: #1c1a17; /* primary text — warm near-black */
+  --text-1: #5b5449; /* secondary text — warm gray */
+  --text-2: #736b5e; /* placeholders, disabled */
+  --accent: #48682e; /* links, focus, primary buttons — moss green (AA on bg-0..bg-2) */
+  --accent-press: #405d29;
+  --ok: #1e7c4d; /* verified / pass — emerald (paired with ✓ glyph) */
+  --warn: #8a5c0a; /* lossy / partial — amber (paired with glyph) */
+  --err: #b03a33; /* failed / unsupported (paired with ✕ glyph) */
+  --mono-tint: #6a6355; /* numbers/IDs inside prose — muted warm gray */
 
   /* type — Instrument Sans for UI, Instrument Serif for public display headings,
      JetBrains Mono for code/numbers/IDs (owner taste-check 2026-07-16: the previous

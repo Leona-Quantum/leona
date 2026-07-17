@@ -13,6 +13,7 @@ import {
   type ArtifactFrameworkHydration,
 } from "../../../lib/framework-selection";
 import { RunComposer, type ComposerFramework } from "../../../components/run-composer";
+import { RunHeroMark } from "../../../components/run-hero-mark";
 
 interface PromptAttachment {
   name: string;
@@ -38,6 +39,7 @@ export function RunWorkspace({ demoMode = false, locale = "en" }: { demoMode?: b
   const [contextArtifact, setContextArtifact] = useState<LibraryArtifact | null>(null);
   const [attachments, setAttachments] = useState<PromptAttachment[]>([]);
   const [confirmingSend, setConfirmingSend] = useState(false);
+  const [composerEngaged, setComposerEngaged] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -213,42 +215,49 @@ export function RunWorkspace({ demoMode = false, locale = "en" }: { demoMode?: b
     <div className="mj-run-home">
       <div className="mj-run-home-scroll">
         <div className="mj-run-home-content mj-run-home-content--centered">
-          <header className="mj-run-home-heading">
-            <div>
-              <RunGreeting copy={copy} />
-              <h1>{copy.title}</h1>
-              <p>{copy.lede}</p>
-            </div>
-            <div className="mj-run-home-status" aria-label={locale === "ja" ? "モデルの状態" : "Model status"}>
-              <span className="mj-status-dot" aria-hidden="true" />
-              {demoMode ? copy.previewStatus : copy.readyStatus}
-            </div>
+          <header className="mj-run-home-heading mj-run-home-hero">
+            <RunHeroMark engaged={composerEngaged} />
+            <RunGreeting copy={copy} />
+            {demoMode ? (
+              <div className="mj-run-home-status" aria-label={locale === "ja" ? "モデルの状態" : "Model status"}>
+                <span className="mj-status-dot" aria-hidden="true" />
+                {copy.previewStatus}
+              </div>
+            ) : null}
           </header>
 
-          <RunComposer
-            value={prompt}
-            pending={pending}
-            error={error}
-            onChange={setPrompt}
-            framework={framework}
-            onFrameworkChange={(value) => {
-              frameworkTouched.current = true;
-              frameworkCurrent.current = value;
-              setFramework(value);
+          <div
+            className="mj-run-composer-stage"
+            onFocusCapture={() => setComposerEngaged(true)}
+            onBlurCapture={(event) => {
+              if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setComposerEngaged(false);
             }}
-            onSubmit={submit}
-            centered
-            contextArtifact={contextArtifact ? { title: contextArtifact.title, framework: contextArtifact.framework, codeAvailable: Boolean(contextArtifact.code) } : null}
-            onClearContext={() => {
-              setContextArtifact(null);
-              setConfirmingSend(false);
-            }}
-            onFiles={demoMode ? undefined : addFiles}
-            attachments={attachments.map(({ name, size }) => ({ name, size }))}
-            onRemoveAttachment={(name) => setAttachments((current) => current.filter((item) => item.name !== name))}
-            onAttach={demoMode ? () => setError(locale === "ja" ? "公開プレビューでは添付を利用できません。" : "Attachments are unavailable in the public preview.") : undefined}
-            locale={locale}
-          />
+          >
+            <RunComposer
+              value={prompt}
+              pending={pending}
+              error={error}
+              onChange={setPrompt}
+              framework={framework}
+              onFrameworkChange={(value) => {
+                frameworkTouched.current = true;
+                frameworkCurrent.current = value;
+                setFramework(value);
+              }}
+              onSubmit={submit}
+              centered
+              contextArtifact={contextArtifact ? { title: contextArtifact.title, framework: contextArtifact.framework, codeAvailable: Boolean(contextArtifact.code) } : null}
+              onClearContext={() => {
+                setContextArtifact(null);
+                setConfirmingSend(false);
+              }}
+              onFiles={demoMode ? undefined : addFiles}
+              attachments={attachments.map(({ name, size }) => ({ name, size }))}
+              onRemoveAttachment={(name) => setAttachments((current) => current.filter((item) => item.name !== name))}
+              onAttach={demoMode ? () => setError(locale === "ja" ? "公開プレビューでは添付を利用できません。" : "Attachments are unavailable in the public preview.") : undefined}
+              locale={locale}
+            />
+          </div>
 
           {confirmingSend && contextArtifact ? (
             <div className="mj-run-confirm" role="alertdialog" aria-labelledby="run-confirm-title" aria-describedby="run-confirm-body">
@@ -285,14 +294,16 @@ export function RunWorkspace({ demoMode = false, locale = "en" }: { demoMode?: b
 }
 
 function RunGreeting({ copy }: { copy: (typeof WORKSPACE_COPY)[PublicLocale]["run"] }) {
+  const [full, setFull] = useState("");
   const [typed, setTyped] = useState("");
   const [done, setDone] = useState(false);
 
   useEffect(() => {
     const hour = new Date().getHours();
-    const full = hour < 12 ? copy.greetingMorning : hour < 18 ? copy.greetingAfternoon : copy.greetingEvening;
+    const greeting = hour < 12 ? copy.greetingMorning : hour < 18 ? copy.greetingAfternoon : copy.greetingEvening;
+    setFull(greeting);
     if (typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
-      setTyped(full);
+      setTyped(greeting);
       setDone(true);
       return;
     }
@@ -301,8 +312,8 @@ function RunGreeting({ copy }: { copy: (typeof WORKSPACE_COPY)[PublicLocale]["ru
     setDone(false);
     const timer = window.setInterval(() => {
       index += 1;
-      setTyped(full.slice(0, index));
-      if (index >= full.length) {
+      setTyped(greeting.slice(0, index));
+      if (index >= greeting.length) {
         window.clearInterval(timer);
         setDone(true);
       }
@@ -311,14 +322,12 @@ function RunGreeting({ copy }: { copy: (typeof WORKSPACE_COPY)[PublicLocale]["ru
   }, [copy]);
 
   return (
-    <p className="mj-run-greeting" aria-label={typed}>
-      <span className="mj-run-greeting-mark" aria-hidden="true">|Λ⟩</span>
+    <h1 className="mj-run-greeting mj-run-greeting--hero" aria-label={full}>
       <span aria-hidden="true">
         {typed}
         <span className={`mj-run-greeting-caret${done ? " is-done" : ""}`} />
       </span>
-      <span className={`mj-run-greeting-tagline${done ? " is-visible" : ""}`}>{copy.greetingTagline}</span>
-    </p>
+    </h1>
   );
 }
 
@@ -340,7 +349,6 @@ function ExampleStrip({ copy, onPick }: { copy: (typeof WORKSPACE_COPY)[PublicLo
     <section className="mj-run-home-examples" aria-labelledby="examples-title">
       <div className="mj-run-home-examples-head">
         <h2 id="examples-title">{copy.examplesTitle}</h2>
-        <span>{copy.workflowTitle}</span>
       </div>
       <div
         className="mj-example-strip"

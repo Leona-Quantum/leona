@@ -440,7 +440,10 @@
 .mj-company-product-band .mj-section-label,
 .mj-company-product-band .mj-company-index,
 .mj-company-product-band .mj-company-capability-note {
-  color: var(--accent);
+  /* Light theme paints this band with --text-0 (near-black), where the light
+     accent lands at ~2.2:1; lift it toward paper for AA (~6.7:1). Dark theme
+     restores the plain accent below (band is --bg-2 there, already AA). */
+  color: color-mix(in srgb, var(--accent) 60%, var(--bg-0));
 }
 .mj-company-product-band .mj-company-capability-list {
   border-color: var(--bg-2);
@@ -461,6 +464,11 @@
 }
 :root[data-theme="dark"] .mj-company-product-band .mj-company-capability-list p {
   color: var(--text-1);
+}
+:root[data-theme="dark"] .mj-company-product-band .mj-section-label,
+:root[data-theme="dark"] .mj-company-product-band .mj-company-index,
+:root[data-theme="dark"] .mj-company-product-band .mj-company-capability-note {
+  color: var(--accent);
 }
 .mj-company-section h2,
 .mj-company-final-cta h2,
@@ -544,6 +552,78 @@
 .mj-company-principle-list strong {
   color: var(--text-0);
   font-weight: 500;
+}
+.mj-company-principle-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--sp-4);
+  margin-top: var(--sp-8);
+}
+/* Hover motion for these cards lives in the app surface (globals.css), like the
+   qband — this package's animation allowlist stays fixed. */
+.mj-company-principle-card {
+  height: 100%;
+  box-sizing: border-box;
+  padding: var(--sp-6);
+  border: 1px solid var(--border-0);
+  border-radius: var(--radius-card);
+  background: var(--bg-1);
+}
+.mj-company-principle-card:hover {
+  border-color: var(--accent);
+}
+.mj-company-principle-card h3 {
+  margin: 0 0 var(--sp-2);
+  font-size: var(--fs-16);
+  font-weight: 500;
+}
+.mj-company-principle-card p {
+  margin: 0;
+  color: var(--text-1);
+  line-height: 1.6;
+}
+/* Decorative landing circuit band; motion lives in the app surface. */
+.mj-qband {
+  padding-top: var(--sp-10);
+}
+.mj-qband svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+.mj-qband-wire {
+  stroke: var(--border-0);
+  stroke-width: 1;
+}
+.mj-qband-gate {
+  stroke: var(--text-2);
+  stroke-width: 1.2;
+  stroke-linecap: round;
+}
+.mj-qband-gate rect {
+  fill: var(--bg-1);
+}
+.mj-qband-gate text {
+  stroke: none;
+  fill: var(--text-1);
+  font-family: var(--font-mono);
+  font-size: var(--fs-12);
+  text-anchor: middle;
+}
+.mj-qband-control {
+  fill: var(--text-2);
+}
+.mj-qband-target {
+  fill: none;
+}
+.mj-qband-pulse {
+  fill: var(--accent);
+  stroke: none;
+}
+@media (max-width: 620px) {
+  .mj-company-principle-grid {
+    grid-template-columns: 1fr;
+  }
 }
 .mj-company-final-cta {
   grid-template-columns: minmax(0, 1fr) auto;
@@ -1920,7 +2000,9 @@
 }
 .mj-sidebar-item-menu-popover {
   /* Fixed so the sidebar scroll area can never clip it; the row component
-     computes viewport coordinates and flips above near the bottom edge. */
+     places it just past the sidebar's right edge, aligned with its row, and
+     flips above near the bottom edge. The ::before bridge keeps the pointer
+     path from the trigger to the menu inside the hover area. */
   position: fixed;
   z-index: 60;
   display: grid;
@@ -1931,6 +2013,14 @@
   border-radius: var(--radius-card);
   background: var(--bg-1);
   box-shadow: var(--shadow-popover);
+}
+.mj-sidebar-item-menu-popover::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: calc(-1 * var(--sp-4));
+  width: var(--sp-4);
 }
 .mj-sidebar-item-menu-popover button {
   min-height: var(--sidebar-menu-item-height);
@@ -2145,10 +2235,6 @@
   flex: 1 1 auto;
   overflow-y: auto;
   padding: var(--sp-8) var(--sp-12) var(--sp-6);
-  background-image:
-    linear-gradient(90deg, transparent calc(50% - 1px), var(--border-0) 50%, transparent calc(50% + 1px));
-  background-size: 100% 96px;
-  background-repeat: no-repeat;
 }
 .mj-run-home-content {
   display: flex;

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, type KeyboardEvent, type MouseEvent } from "react";
-import { CheckIcon, CopyIcon, SearchIcon } from "../../../components/icons";
+import { CheckIcon, CopyIcon, PanelRightIcon, SearchIcon } from "../../../components/icons";
 import type { ComposerFramework } from "../../../components/run-composer";
 import { frameworkVariantsFromRemote, getLibraryArtifact, loadLibraryArtifacts, type LibraryArtifact } from "../../../lib/library-data";
 import type { PublicLocale } from "../../../lib/public-locale";
@@ -254,7 +254,16 @@ export function StudioWorkspace({ artifactId, newDraft = false, locale = "en" }:
                   <p>{artifact ? copy.editingVersion(artifact.currentVersionId ? artifact.currentVersionId.slice(0, 8) : (locale === "ja" ? "下書き" : "draft"), artifact.framework) : copy.newDraft}</p>
                 </div>
                 <div className="mj-studio-actions">
-                  {!inspectorOpen ? <button className="mj-secondary-button" type="button" onClick={() => setInspectorOpen(true)} title={copy.showInspector}>{copy.showInspector}</button> : null}
+                  <button
+                    className={`mj-secondary-button mj-studio-inspector-toggle${inspectorOpen ? " is-open" : ""}`}
+                    type="button"
+                    aria-pressed={inspectorOpen}
+                    aria-label={inspectorOpen ? copy.hideInspector : copy.showInspector}
+                    title={inspectorOpen ? copy.hideInspector : copy.showInspector}
+                    onClick={() => setInspectorOpen((value) => !value)}
+                  >
+                    <PanelRightIcon size={15} open={inspectorOpen} />
+                  </button>
                   <button className="mj-secondary-button" type="button" onClick={() => void copyCode()} title={copied ? copy.copied : copy.copyCode}><CopyIcon size={14} />{copied ? copy.copied : copy.copyCode}</button>
                   <button className="mj-secondary-button" type="button" disabled={busy !== null} onClick={() => void startRun("simulate")}>{busy === "simulate" ? copy.starting : copy.simulate}</button>
                   <button className="mj-primary-button" type="button" disabled={busy !== null} onClick={() => void startRun("save")}>{busy === "save" ? copy.starting : copy.verifySave}</button>
@@ -343,14 +352,14 @@ export function StudioWorkspace({ artifactId, newDraft = false, locale = "en" }:
               <div>
                 <span className="mj-section-label">{copy.label}</span>
                 <h1>{copy.title}</h1>
-                <p>{copy.sidebarNote}</p>
               </div>
               <button className="mj-primary-button" type="button" onClick={() => applyArtifact(null)}>{copy.new}</button>
             </div>
-            <label className="mj-studio-search">
+            <label className="mj-studio-search mj-studio-search--perch">
               <SearchIcon size={17} />
               <span className="sr-only">{copy.search}</span>
               <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={copy.searchPlaceholder} />
+              <StudioPerch />
             </label>
             {artifactSyncError ? <p className="mj-studio-empty" role="alert">{copy.remoteSyncUnavailable}</p> : null}
             <div className="mj-studio-discovery-list">
@@ -372,6 +381,28 @@ export function StudioWorkspace({ artifactId, newDraft = false, locale = "en" }:
 }
 
 type StudioCopy = (typeof WORKSPACE_COPY)[PublicLocale]["studio"];
+
+/**
+ * Decorative constellation companion perched on the discovery search bar: the
+ * Leo sickle settles onto the top edge on mount, its tail drooping over the
+ * rim, and hovering the bar makes it paw toward the search icon. Pure CSS
+ * motion (globals.css) that collapses under prefers-reduced-motion.
+ */
+function StudioPerch() {
+  return (
+    <span className="mj-studio-perch" aria-hidden="true">
+      <svg viewBox="0 0 30 24" width={30} height={24} fill="none">
+        <path className="mj-perch-line" d="M7 11 9.5 14l1-6.2 4.2-1.1" />
+        <path className="mj-perch-tail" d="M9.5 14c3.8 0.6 6.6 0.4 8.6 3s3.6 3.2 5.6 2.3" />
+        <path className="mj-perch-paw" d="M7.6 13.6c-0.9 1.9-1 3.1-2.2 4.4" />
+        <circle className="mj-perch-dot" cx="7" cy="11" r="1" />
+        <circle className="mj-perch-dot" cx="10.5" cy="7.8" r="1" />
+        <circle className="mj-perch-dot" cx="14.7" cy="6.7" r="1" />
+        <circle className="mj-perch-dot mj-perch-dot--bright" cx="9.5" cy="14" r="1.7" />
+      </svg>
+    </span>
+  );
+}
 
 const ANGLE_OPTIONS = ["pi/8", "pi/4", "pi/2", "pi", "3*pi/2", "2*pi"];
 
