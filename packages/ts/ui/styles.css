@@ -440,7 +440,10 @@
 .mj-company-product-band .mj-section-label,
 .mj-company-product-band .mj-company-index,
 .mj-company-product-band .mj-company-capability-note {
-  color: var(--accent);
+  /* Light theme paints this band with --text-0 (near-black), where the light
+     accent lands at ~2.2:1; lift it toward paper for AA (~6.7:1). Dark theme
+     restores the plain accent below (band is --bg-2 there, already AA). */
+  color: color-mix(in srgb, var(--accent) 60%, var(--bg-0));
 }
 .mj-company-product-band .mj-company-capability-list {
   border-color: var(--bg-2);
@@ -461,6 +464,11 @@
 }
 :root[data-theme="dark"] .mj-company-product-band .mj-company-capability-list p {
   color: var(--text-1);
+}
+:root[data-theme="dark"] .mj-company-product-band .mj-section-label,
+:root[data-theme="dark"] .mj-company-product-band .mj-company-index,
+:root[data-theme="dark"] .mj-company-product-band .mj-company-capability-note {
+  color: var(--accent);
 }
 .mj-company-section h2,
 .mj-company-final-cta h2,
