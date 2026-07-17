@@ -36,3 +36,10 @@ limit is a reviewed configuration change. Reversal trigger: archive or repositor
 checkout support may be introduced only with a separate threat review covering
 expansion ratio, file count, nesting, path traversal, symlinks, device files, hooks,
 submodules, LFS, and cleanup after partial failure.
+
+The built-in 285-record TypeScript bootstrap is a controlled local connector,
+not a direct database seed. It bundles one pinned commit into a deterministic
+checksummed manifest and submits that manifest through the same quarantine,
+normalization, rights, deduplication, review, and publication states. Existing
+catalog labels and prose cannot be promoted to execution or license evidence
+merely because the source is maintained in Majorana.

@@ -12,26 +12,29 @@ This plan supersedes the earlier catalog plan for `feature/repository`.
 
 1. Neon Postgres is the canonical catalog database.
 2. FastAPI is the only application boundary allowed to read or write Neon.
-3. The existing 78 TypeScript catalog records are not imported, migrated, transformed, counted,
-   used as seed data, or used as evidence for the new catalog.
-4. The first milestone is at least 150 newly accepted, unique Neon catalog entries.
+3. The 285 records validated on the pinned `origin/dev` baseline are the default bootstrap input
+   for Neon. They pass through the same importer, hashing, rights, review, and evidence gates as
+   every other source; their TypeScript status text is not trusted as execution evidence.
+4. A fresh development or preview catalog can idempotently stage all 285 bootstrap records through
+   an explicit post-migration command. Application startup and Alembic never seed or publish them.
 5. Work lands in small, independently reviewable slices on `feature/repository`.
 6. Existing application invariants remain in force: repository-layer scoping, immutable artifact
    versions, framework-native authority, deny-all execution sandboxes, generated contracts, and
    reversible migrations.
-7. A later UI cutover may remove the legacy TypeScript surface, but the backend implementation does
-   not edit or depend on the legacy data files.
+7. After bootstrap, Neon is authoritative. Later TypeScript changes require a new pinned manifest
+   and explicit import job; there is no runtime fallback or continuous dual-source synchronization.
 8. Nothing is published externally, deployed, pushed to a protected branch, or executed on a paid
    QPU without the required owner approval.
 
-The old TypeScript catalog is a temporary legacy surface only:
+The TypeScript catalog is a pinned bootstrap source and temporary legacy UI surface:
 
 ```text
 apps/web/lib/repository/*
         |
-        +-- remains isolated while the Neon catalog is built
-        +-- excluded from counts, imports, API responses, new-catalog tests, and exports
-        +-- no TypeScript-to-Neon migration path will be implemented
+        +-- validator proves exactly 285 source records on the pinned baseline
+        +-- deterministic manifest -> normal importer -> staged Neon records
+        +-- no direct SQL copy, migration seed, startup seed, or evidence promotion
+        +-- after import, public reads and exports use Neon only
 ```
 
 ## 2. Outcome and measurable acceptance
@@ -43,9 +46,11 @@ Build a quantum-artifact repository with:
 - quantum-specific framework, conversion, verification, and later hardware evidence;
 - a Neon-backed FastAPI catalog that remains compatible with the current Majorana architecture.
 
-The 150-entry milestone is complete only when all of the following are true:
+The 285-record bootstrap milestone is complete only when all of the following are true:
 
-- at least 150 accepted entries were created through the new Neon ingestion path;
+- exactly 285 source items were recorded by one pinned, schema-versioned bootstrap manifest;
+- every source item has a durable terminal or review state in Neon, including rejected or
+  quarantined items, so failures cannot disappear from the report;
 - exact duplicates do not count;
 - every accepted entry has immutable source identity, hashes, classification, reviewed rights
   state, and citations where required;
@@ -59,7 +64,8 @@ The 150-entry milestone is complete only when all of the following are true:
 - public reads return only accepted records in the dedicated catalog scope;
 - private workspace artifacts cannot appear in catalog reads, search, cache entries, or exports.
 
-Before scaling to 150, a 20-entry proof must demonstrate the complete path:
+Before importing the full 285, a representative 20-entry slice of the same pinned manifest must
+demonstrate the complete path:
 
 ```text
 pinned upstream source or controlled upload
@@ -105,7 +111,8 @@ The implementation must not create:
 - a separate unscoped ORM path;
 - a second framework execution system;
 - another source of truth in GitHub or Hugging Face;
-- a fallback that combines legacy TypeScript and Neon records in one public result set.
+- a fallback that combines TypeScript and Neon records in one public result set;
+- direct database seeding from TypeScript modules, Alembic, or application startup.
 
 ### 3.2 Known integration gaps to resolve explicitly
 
@@ -281,9 +288,9 @@ Only `native`, `executed_conversion`, or `equivalence_checked` with matching sto
 presented as tested support. A qBraid path, pytket extension, generated snippet, or loader recipe is
 not by itself evidence of equivalence.
 
-Hardware tables are deferred until after the 150-entry software catalog is accepted. Until then,
-QPU evidence is `not_run`. Provider interfaces may be designed, but no credentials, paid calls, or
-hardware performance claims are part of this milestone.
+Hardware tables are deferred until after the 285-record software catalog bootstrap is reviewed.
+Until then, QPU evidence is `not_run`. Provider interfaces may be designed, but no credentials,
+paid calls, or hardware performance claims are part of this milestone.
 
 ## 6. Import and publication pipeline
 
@@ -375,18 +382,33 @@ version binding is missing.
 
 ## 8. Initial source strategy
 
-Prepare 180-220 candidates and publish at least 150 that pass the acceptance contract.
+The first source release is the 285-record snapshot validated on the integrated `origin/dev`
+baseline: 29 gates, 60 operators, 13 states, and 183 algorithms. The bootstrap manifest records the
+source commit, generator version, schema version, deterministic ordering, per-record source hash,
+and whole-manifest checksum.
 
-| Candidate source | Planning target | Purpose |
-|---|---:|---|
-| MQT Bench | 70-90 candidates | Reproducible algorithm families and useful sizes |
-| QASMBench | 70-90 candidates | OpenQASM 2 structural variety and benchmark provenance |
-| Linked GitHub/Hugging Face projects | 30-50 candidates | Maintained real-project artifacts pinned to commits/releases |
-| New Majorana-native exemplars | 20-30 candidates | High-quality reference and verification examples created through the new API |
+`default` means that a fresh development or preview Neon branch runs an explicit, idempotent
+post-migration bootstrap command and receives all 285 import items. It does not mean that records
+are silently inserted by Alembic, application startup, or a Next.js process. Production bootstrap
+and publication remain owner-approved actions.
 
-These are candidate ranges, not publication quotas. License failures, duplicates, parser failures,
-unsupported features, and inconclusive evidence reduce the accepted count without lowering the
-quality bar.
+Bootstrap rules:
+
+- bundle and validate the catalog from one pinned commit; never read a moving branch during import;
+- convert each record to a typed manifest item outside the database transaction;
+- submit the manifest through the normal FastAPI/service importer contract;
+- preserve the TypeScript slug and bilingual documentation as source data;
+- treat existing license strings, verification prose, tier labels, and `verified` status as claims
+  requiring normalization and review, not as legal approval or a passing execution;
+- create one durable import item for every source record, even when rejected or quarantined;
+- use source and normalized hashes for idempotency and exact duplicate handling;
+- stage records before review; only accepted/public records appear in anonymous reads;
+- after successful import, treat Neon as the only editable catalog authority;
+- require a new manifest release and explicit import job for later source changes.
+
+MQT Bench, QASMBench, linked GitHub/Hugging Face projects, and new Majorana-native entries remain
+future additive sources after the 285-record bootstrap is stable. They use the same acceptance
+contract and cannot lower the rights or evidence bar.
 
 ### 8.1 MQT Bench
 
@@ -464,7 +486,7 @@ checks and review are complete.
 
 Scope:
 
-- approve this plan and record that the existing 78 TypeScript records are out of scope;
+- approve this plan and record the pinned 285-record TypeScript snapshot as bootstrap input only;
 - document catalog authority, public-read scope, fingerprint semantics, publication approval, and
   threat boundaries in ADRs;
 - inventory files likely to overlap with Rui, Ryu, Eshaan, contracts, migrations, and web work;
@@ -527,7 +549,7 @@ Done when:
 - an authorized service can create an immutable staged entry/version;
 - normal users cannot access it;
 - duplicate and state-transition tests pass;
-- no public endpoint or legacy TypeScript dependency is introduced.
+- no public endpoint or runtime TypeScript dependency is introduced.
 
 Rollback: feature flag off, then reversible migration downgrade while no accepted records exist.
 
@@ -553,6 +575,7 @@ Rollback: feature flag off; records remain staged and non-public.
 Scope:
 
 - add import jobs/items and one controlled local/file fixture adapter;
+- add a deterministic 285-record bootstrap-manifest adapter pinned to an approved source commit;
 - implement idempotency, leases, item-level retry, quarantine, stable failure codes, and limits;
 - implement allowlisted MQT Bench and QASMBench adapters after malicious fixture tests pass;
 - parse only in deny-all sandboxes.
@@ -571,7 +594,7 @@ audit or approved deletion.
 
 Scope:
 
-- import the representative 20-entry batch from new sources only;
+- import a representative 20-entry slice from the pinned 285-record bootstrap manifest;
 - add reviewed publication transition;
 - implement public list/detail/version/source reads with pagination, ETags, and leakage tests;
 - expose a feature-flagged proof route or test client without mixing legacy and Neon results.
@@ -621,20 +644,20 @@ Done when:
 
 Rollback: disable individual conversion adapters; native entries and stored attempts remain.
 
-### Step 9 - scale to at least 150 accepted entries
+### Step 9 - import and reconcile all 285 bootstrap records
 
 Scope:
 
-- process the reviewed 180-220 candidate pool in bounded batches;
+- process the pinned 285-record manifest in bounded batches;
 - monitor quarantine, rejection, retry, duplicate, and verification rates after every batch;
 - pause automatically when thresholds or error budgets are exceeded;
 - produce a machine-readable acceptance report.
 
 Done when:
 
-- all milestone metrics in Section 2 pass;
+- all 285 source items have durable outcomes and all milestone metrics in Section 2 pass;
 - every accepted item has provenance, rights, classification, hashes, and review history;
-- no legacy TypeScript record is present in the catalog lineage;
+- every imported lineage points to the pinned manifest, source commit, and source hash;
 - reproducibility sampling reruns a representative accepted subset from pinned inputs.
 
 Rollback: stop new imports and retract affected entries through audited state changes; never delete
@@ -736,7 +759,7 @@ High-conflict files receive dedicated PRs and prior coordination:
 - exact, global-phase, observational, lossy, unsupported, inconclusive, and converter-disagreement
   cases;
 - deterministic export checksum and Neon watermark checks;
-- 20-entry proof report and final 150-entry acceptance report;
+- 20-entry proof report and final 285-record bootstrap/reconciliation report;
 - standard Ruff, formatting, pytest, TypeScript lint/typecheck/test, accessibility where UI changes,
   import-linter, raw-query guard, and OpenAPI freshness checks.
 
@@ -760,20 +783,20 @@ Owner decisions required before the relevant phase:
 1. system catalog principal and public-read authority design;
 2. auto-acceptable SPDX expressions and rights reviewers;
 3. publication and quarantine-release roles, including two-person review policy;
-4. candidate-source allocation and batch error budgets;
+4. bootstrap acceptance policy, manifest pin, and batch error budgets;
 5. UI cutover timing and legacy TypeScript removal;
 6. external GitHub organization/Hugging Face dataset publication;
 7. any QPU/GPU provider, credential, budget, or public performance comparison.
 
 ## 14. Immediate next slice
 
-After this plan is reviewed, execute Step 0 only:
+Step 0 and the latest-`dev` integration gate are complete. Execute Step 1 only:
 
-1. add the catalog authority/public-read ADR;
-2. add the ingestion threat-model ADR;
-3. add the fingerprint/evidence ADR;
-4. create a file-overlap map for current Rui, Ryu, Eshaan, contracts, migration, and UI work;
-5. obtain owner decisions needed before Steps 1-3.
+1. add additive queue lease and retry fields in one reversible migration;
+2. add claim fencing, heartbeat, stale recovery, bounded retry, and dead-letter behavior;
+3. preserve `run.execute` semantics and fail closed on unknown job kinds;
+4. add queue recovery/ownership tests and run existing pipeline regression tests;
+5. stop before catalog scope, schema, importer, bootstrap, or data changes.
 
-Do not create catalog migrations, import data, or touch the legacy 78 TypeScript records in the
-same change as this plan.
+Do not import data or edit the 285 TypeScript source records during Step 1. Bootstrap
+implementation begins only in its scheduled importer slice.
