@@ -25,17 +25,24 @@ export interface PortableCircuit {
 }
 
 export const CIRCUIT_FRAMEWORK_KEYS = CIRCUIT_FRAMEWORKS.map((framework) => framework.key);
-export const EXECUTABLE_CIRCUIT_FRAMEWORK_KEYS: ExecutableCircuitFrameworkKey[] = ["qiskit", "pennylane", "cirq"];
+export const EXECUTABLE_CIRCUIT_FRAMEWORK_KEYS = CIRCUIT_FRAMEWORKS
+  .filter((framework) => framework.executable)
+  .map((framework) => framework.key) as ExecutableCircuitFrameworkKey[];
 
-export function circuitFramework(value: CircuitFrameworkKey | CircuitFrameworkLabel | string): CircuitFramework {
-  const normalized = value.trim().toLowerCase().replaceAll(/[\s._-]+/g, "");
+export function circuitFrameworkOrNull(value: string | null | undefined): CircuitFramework | null {
+  const normalized = value?.trim().toLowerCase().replaceAll(/[\s._-]+/g, "");
+  if (!normalized) return null;
   if (normalized === "openqasm30" || normalized === "openqasm3" || normalized === "qasm3") {
     return CIRCUIT_FRAMEWORKS.find((framework) => framework.key === "openqasm3")!;
   }
   return CIRCUIT_FRAMEWORKS.find((framework) => (
     framework.key.replaceAll(/[._-]+/g, "") === normalized
     || framework.label.toLowerCase().replaceAll(/[\s._-]+/g, "") === normalized
-  )) ?? CIRCUIT_FRAMEWORKS[0];
+  )) ?? null;
+}
+
+export function circuitFramework(value: CircuitFrameworkKey | CircuitFrameworkLabel | string): CircuitFramework {
+  return circuitFrameworkOrNull(value) ?? CIRCUIT_FRAMEWORKS[0];
 }
 
 export function isExecutableCircuitFramework(value: CircuitFrameworkKey): value is ExecutableCircuitFrameworkKey {

@@ -35,7 +35,11 @@ const CIRQ_ROTATIONS: Record<string, BuiltinBuilderGate> = { rx: "RX", ry: "RY",
  * of rendering a circuit that lies about the code.
  */
 export function parseBuilderCircuit(code: string, framework: "qiskit" | "pennylane" | "cirq" | "openqasm3"): ParsedBuilderCircuit | null {
-  const lines = code.split(/\r?\n/).map((line) => line.trim()).filter((line) => line && !line.startsWith("#"));
+  const lines = code
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .split(/\r?\n/)
+    .map((line) => line.replace(/\/\/.*$/, "").trim())
+    .filter((line) => line && !line.startsWith("#"));
   const parsed = framework === "qiskit"
     ? parseQiskit(lines)
     : framework === "pennylane"
@@ -59,7 +63,7 @@ const OPENQASM_GATE_NAMES: Record<string, BuiltinBuilderGate> = {
 
 function parseOpenQasm3(lines: string[]): ParsedBuilderCircuit | null {
   let qubitCount = 0;
-  let bitCount = 0;
+  let bitCount: number | null = null;
   let measured = false;
   let headerSeen = false;
   const steps: BuilderStep[] = [];
@@ -72,7 +76,7 @@ function parseOpenQasm3(lines: string[]): ParsedBuilderCircuit | null {
     if (bits) { bitCount = Number(bits[1]); continue; }
     if (measured) return null;
     if (/^c\s*=\s*measure\s+q\s*;$/.test(line)) {
-      if (!qubitCount || (bitCount && bitCount !== qubitCount)) return null;
+      if (!qubitCount || bitCount !== qubitCount) return null;
       measured = true;
       continue;
     }
@@ -98,8 +102,8 @@ function parseOpenQasm3(lines: string[]): ParsedBuilderCircuit | null {
     steps.push(step);
   }
   if (!headerSeen || (!qubitCount && !steps.length)) return null;
-  const count = Math.max(qubitCount, ...steps.flatMap((step) => step.qubits.map((qubit) => qubit + 1)), 1);
-  return { qubitCount: count, steps: measured ? [...steps, ...measurementSteps(count)] : steps };
+  if (steps.some((step) => step.qubits.some((qubit) => qubit >= qubitCount))) return null;
+  return { qubitCount, steps: measured ? [...steps, ...measurementSteps(qubitCount)] : steps };
 }
 
 function measurementSteps(qubitCount: number): BuilderStep[] {

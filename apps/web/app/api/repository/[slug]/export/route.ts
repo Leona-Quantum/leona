@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getMajoranaAuth } from "../../../../../lib/auth";
+import { looksLikeOpenQasm3 } from "../../../../../lib/circuit-conversion";
 import {
   getPublicRepositoryEntry,
   getPublicRepositoryLibraryVariant,
@@ -67,7 +68,7 @@ function publicImportPayload(
     framework: libraryVariant.framework.toLowerCase(),
     code: libraryVariant.code,
     code_lang: libraryVariant.language,
-    qasm: qasmVariant.status !== "unsupported" && qasmVariant.code.startsWith("OPENQASM 3") ? qasmVariant.code : null,
+    qasm: qasmVariant.status !== "unsupported" && looksLikeOpenQasm3(qasmVariant.code) ? qasmVariant.code : null,
     framework_variants: Object.keys(frameworkVariants).length ? frameworkVariants : null,
     resource_estimates: Object.fromEntries(entry.resources.map((resource) => [resource.label, resource.value])),
     export_status: exportStatus(entry.exportStatus),

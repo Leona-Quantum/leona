@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { CopyIcon, MoreIcon, StarIcon } from "../../../../components/icons";
 import { archiveArtifact, deleteArtifact, frameworkVariantsFromRemote, getLibraryArtifact, loadStarredLibraryArtifactIds, toggleLibraryArtifactStar, type LibraryArtifact } from "../../../../lib/library-data";
 import type { PublicLocale } from "../../../../lib/public-locale";
-import { CIRCUIT_FRAMEWORKS, circuitFramework } from "../../../../lib/circuit-frameworks";
+import { CIRCUIT_FRAMEWORKS, circuitFramework, circuitFrameworkOrNull } from "../../../../lib/circuit-frameworks";
 import { convertCircuitSource, looksLikeOpenQasm3, parseCircuitSource } from "../../../../lib/circuit-conversion";
 
 type DetailTab = "overview" | "code" | "runs" | "verification" | "notes";
@@ -228,11 +228,12 @@ function CodeAndExport({ artifact, copied, onCopy, copy }: { artifact: LibraryAr
 
 function frameworkCodeOptions(artifact: LibraryArtifact): Array<{ key: string; label: string; code: string }> {
   const provided = new Map<string, string>();
-  const primary = normalizeFramework(artifact.framework);
-  if (artifact.code) provided.set(primary, artifact.code);
   for (const [framework, code] of Object.entries(artifact.frameworkVariants ?? {})) {
-    provided.set(normalizeFramework(framework), code);
+    const normalized = normalizeFramework(framework);
+    if (normalized && code) provided.set(normalized, code);
   }
+  const primary = normalizeFramework(artifact.framework);
+  if (primary && artifact.code) provided.set(primary, artifact.code);
   if (artifact.qasm && looksLikeOpenQasm3(artifact.qasm)) provided.set("openqasm3", artifact.qasm);
 
   const qasm = artifact.qasm && looksLikeOpenQasm3(artifact.qasm) ? artifact.qasm : null;
@@ -250,8 +251,8 @@ function frameworkCodeOptions(artifact: LibraryArtifact): Array<{ key: string; l
   });
 }
 
-function normalizeFramework(value: string): string {
-  return circuitFramework(value).key;
+function normalizeFramework(value: string): string | null {
+  return circuitFrameworkOrNull(value)?.key ?? null;
 }
 
 function Runs({ artifact, copy }: { artifact: LibraryArtifact; copy: ArtifactCopy }) {

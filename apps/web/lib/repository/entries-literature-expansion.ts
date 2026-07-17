@@ -410,7 +410,7 @@ function vqeEntry(concept: Concept): PublicRepositoryEntry {
       { label: "Execution", value: "Requires a concrete ansatz and Hamiltonian" },
     ],
     metadata: [
-      { label: "Evidence", value: "Citation and construction review" },
+      { label: "Evidence", value: "Literature curation" },
       { label: "Conversion", value: "Not applicable until a circuit is supplied" },
     ],
     sourceTitle: source.title,

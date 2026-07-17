@@ -35,6 +35,9 @@ const STATUSES = new Set(["verified", "verified_caveats", "community_review"]);
 const FRAMEWORKS = new Set(["Qiskit", "PennyLane", "Cirq", "CUDA-Q", "Amazon Braket", "OpenQASM 3.0", "PyQuil"]);
 const LANGUAGES = new Set(["python", "typescript", "openqasm", "text"]);
 const TONES = new Set(["accent", "ok", "warn", "neutral"]);
+const SINGLE_QUBIT_GATES = new Set(["H", "X", "Y", "Z", "S", "T", "RX", "RY", "RZ"]);
+const TWO_QUBIT_GATES = new Set(["CX", "CZ", "SWAP"]);
+const ROTATION_GATES = new Set(["RX", "RY", "RZ"]);
 
 const outDir = mkdtempSync(join(tmpdir(), "repo-data-"));
 const outFile = join(outDir, "public-repository.mjs");
@@ -104,6 +107,12 @@ function fail(slug, message) {
 }
 
 const nonEmpty = (value) => typeof value === "string" && value.trim().length > 0;
+const validRotationParameter = (value) => {
+  const normalized = typeof value === "string" ? value.trim().replaceAll(/\s+/g, "") : "";
+  if (!/^(?:(?:\d+(?:\.\d+)?\*)?pi(?:\/\d+(?:\.\d+)?)?|\d+(?:\.\d+)?)$/.test(normalized)) return false;
+  const denominator = /\/(\d+(?:\.\d+)?)$/.exec(normalized);
+  return !denominator || Number(denominator[1]) !== 0;
+};
 
 for (const entry of entries) {
   const slug = entry.slug ?? "<missing slug>";
@@ -164,7 +173,20 @@ for (const entry of entries) {
       if (!["H", "X", "Y", "Z", "S", "T", "RX", "RY", "RZ", "CX", "CZ", "SWAP"].includes(step.gate)) {
         fail(slug, `portableCircuit step ${index} has unsupported gate ${step.gate}`);
       }
-      for (const qubit of step.qubits ?? []) {
+      if (!Array.isArray(step.qubits)) {
+        fail(slug, `portableCircuit step ${index} has invalid qubits`);
+        continue;
+      }
+      if (SINGLE_QUBIT_GATES.has(step.gate) && step.qubits.length !== 1) {
+        fail(slug, `portableCircuit step ${index} gate ${step.gate} requires one qubit`);
+      }
+      if (TWO_QUBIT_GATES.has(step.gate) && (step.qubits.length !== 2 || step.qubits[0] === step.qubits[1])) {
+        fail(slug, `portableCircuit step ${index} gate ${step.gate} requires two distinct qubits`);
+      }
+      if (ROTATION_GATES.has(step.gate) && !validRotationParameter(step.param)) {
+        fail(slug, `portableCircuit step ${index} gate ${step.gate} has invalid rotation parameter`);
+      }
+      for (const qubit of step.qubits) {
         if (!Number.isInteger(qubit) || qubit < 0 || qubit >= portable.qubitCount) {
           fail(slug, `portableCircuit step ${index} references qubit ${qubit} outside width ${portable.qubitCount}`);
         }

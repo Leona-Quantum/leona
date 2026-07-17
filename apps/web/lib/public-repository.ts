@@ -225,26 +225,6 @@ export function getPublicRepositoryVariant(
   };
 }
 
-const VISUAL_GATE_NAMES: Record<string, PortableCircuitGate | "M"> = {
-  h: "H",
-  hadamard: "H",
-  x: "X",
-  paulix: "X",
-  y: "Y",
-  pauliy: "Y",
-  z: "Z",
-  pauliz: "Z",
-  s: "S",
-  t: "T",
-  cx: "CX",
-  cnot: "CX",
-  cz: "CZ",
-  swap: "SWAP",
-  m: "M",
-  measure: "M",
-  measurement: "M",
-};
-
 function inferPortableCircuit(entry: PublicRepositoryEntry): PortableCircuit | null {
   for (const variant of entry.codeVariants) {
     if (variant.status !== "native" || !variant.code) continue;
@@ -259,21 +239,7 @@ function inferPortableCircuit(entry: PublicRepositoryEntry): PortableCircuit | n
     };
   }
 
-  if (!entry.visualization.operations.length || entry.visualization.wires.length > 32) return null;
-  const converted = entry.visualization.operations.map((operation) => {
-    const normalized = operation.label.toLowerCase().replaceAll(/[^a-z0-9]+/g, "");
-    const gate = VISUAL_GATE_NAMES[normalized];
-    return gate ? { gate, qubits: operation.qubits } : null;
-  });
-  if (converted.some((operation) => operation === null)) return null;
-  const operations = converted as Array<{ gate: PortableCircuitGate | "M"; qubits: number[] }>;
-  return {
-    qubitCount: entry.visualization.wires.length,
-    steps: operations
-      .filter((operation): operation is { gate: PortableCircuitGate; qubits: number[] } => operation.gate !== "M")
-      .map((operation) => ({ gate: operation.gate, qubits: operation.qubits })),
-    measure: operations.some((operation) => operation.gate === "M"),
-  };
+  return null;
 }
 
 const PERSONAL_LIBRARY_FRAMEWORKS: PublicRepositoryFramework[] = ["Qiskit", "PennyLane", "Cirq"];

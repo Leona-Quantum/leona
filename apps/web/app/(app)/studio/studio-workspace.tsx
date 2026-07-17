@@ -7,7 +7,7 @@ import type { PublicLocale } from "../../../lib/public-locale";
 import { BUILDER_GATES, builderStepLabel, createBuilderStepId, generateBuilderCode, ROTATION_GATES, TWO_QUBIT_GATES, type BuilderCodeVariants, type BuilderGate, type BuilderStep, type CustomGateDefinition } from "../../../lib/studio-builder";
 import { loadStoredCircuit, saveStoredCircuit } from "../../../lib/studio-circuits";
 import { parseCircuitSource, allCircuitConversions, looksLikeOpenQasm3 } from "../../../lib/circuit-conversion";
-import { CIRCUIT_FRAMEWORKS, circuitFramework, isExecutableCircuitFramework, type CircuitFrameworkKey } from "../../../lib/circuit-frameworks";
+import { CIRCUIT_FRAMEWORKS, circuitFramework, circuitFrameworkOrNull, isExecutableCircuitFramework, type CircuitFrameworkKey } from "../../../lib/circuit-frameworks";
 import { WORKSPACE_COPY } from "../../../lib/workspace-locale";
 
 type StudioPanel = "canvas" | "code" | "versions";
@@ -121,7 +121,10 @@ export function StudioWorkspace({ artifactId, newDraft = false, locale = "en" }:
     const hasOwnCode = Boolean(next.code || next.frameworkVariants || next.qasm);
     const candidates = [
       { framework: activeFramework, code: activeDrafts[activeFramework] },
-      ...Object.entries(next.frameworkVariants ?? {}).map(([name, code]) => ({ framework: normalizeFramework(name), code })),
+      ...Object.entries(next.frameworkVariants ?? {}).flatMap(([name, code]) => {
+        const framework = normalizeFramework(name);
+        return framework ? [{ framework, code }] : [];
+      }),
       ...(next.qasm ? [{ framework: "openqasm3" as const, code: next.qasm }] : []),
     ];
     const parsed = hasOwnCode
@@ -139,7 +142,9 @@ export function StudioWorkspace({ artifactId, newDraft = false, locale = "en" }:
     setArtifact(next);
     setTitle(next?.title ?? "Untitled circuit");
     const nextDrafts = makeDrafts(next);
-    const nextFramework = normalizeFramework(next?.framework);
+    const nextFramework = normalizeFramework(next?.framework)
+      ?? CIRCUIT_FRAMEWORKS.find(({ key }) => Boolean(nextDrafts[key]))?.key
+      ?? "qiskit";
     setDrafts(nextDrafts);
     setFramework(nextFramework);
     setCode(nextDrafts[nextFramework]);
@@ -265,8 +270,8 @@ export function StudioWorkspace({ artifactId, newDraft = false, locale = "en" }:
                     <PanelRightIcon size={15} open={inspectorOpen} />
                   </button>
                   <button className="mj-secondary-button" type="button" onClick={() => void copyCode()} title={copied ? copy.copied : copy.copyCode}><CopyIcon size={14} />{copied ? copy.copied : copy.copyCode}</button>
-                  <button className="mj-secondary-button" type="button" disabled={busy !== null || !isExecutableCircuitFramework(framework)} onClick={() => void startRun("simulate")}>{busy === "simulate" ? copy.starting : copy.simulate}</button>
-                  <button className="mj-primary-button" type="button" disabled={busy !== null || !isExecutableCircuitFramework(framework)} onClick={() => void startRun("save")}>{busy === "save" ? copy.starting : copy.verifySave}</button>
+                  <button className="mj-secondary-button" type="button" disabled={!code.trim() || busy !== null || !isExecutableCircuitFramework(framework)} onClick={() => void startRun("simulate")}>{busy === "simulate" ? copy.starting : copy.simulate}</button>
+                  <button className="mj-primary-button" type="button" disabled={!code.trim() || busy !== null || !isExecutableCircuitFramework(framework)} onClick={() => void startRun("save")}>{busy === "save" ? copy.starting : copy.verifySave}</button>
                 </div>
               </div>
 
@@ -803,10 +808,12 @@ function makeDrafts(artifact: LibraryArtifact | null): BuilderCodeVariants {
   if (!artifact) return { ...STARTER_CODES };
   const active = normalizeFramework(artifact?.framework);
   const variants = artifact?.frameworkVariants ?? {};
-  const provided = Object.fromEntries(
-    Object.entries(variants).map(([name, code]) => [normalizeFramework(name), code]),
-  ) as Partial<BuilderCodeVariants>;
-  if (artifact.code) provided[active] = artifact.code;
+  const provided: Partial<BuilderCodeVariants> = {};
+  for (const [name, code] of Object.entries(variants)) {
+    const framework = normalizeFramework(name);
+    if (framework && code) provided[framework] = code;
+  }
+  if (artifact.code && active) provided[active] = artifact.code;
   const qasm = artifact.qasm && looksLikeOpenQasm3(artifact.qasm) ? artifact.qasm : null;
   if (qasm) provided.openqasm3 = qasm;
   const candidates = Object.entries(provided)
@@ -821,8 +828,8 @@ function makeDrafts(artifact: LibraryArtifact | null): BuilderCodeVariants {
   ) as BuilderCodeVariants;
 }
 
-function normalizeFramework(value: string | undefined): StudioFramework {
-  return circuitFramework(value ?? "qiskit").key;
+function normalizeFramework(value: string | undefined): StudioFramework | null {
+  return circuitFrameworkOrNull(value)?.key ?? null;
 }
 
 function studioArtifactIdentity(artifact: LibraryArtifact): string {
