@@ -70,4 +70,5 @@ The normal `uv run` entry point is blocked only in this working copy because an
 untracked `packages/py/baselines/` directory matches `packages/py/*` without a
 `pyproject.toml`. Validation used the existing `.venv` and explicit package source
 paths. A clean CI checkout does not contain that untracked directory. Live Neon
-up→down→up was not run because connection credentials are an owner operation.
+up→down→up ran on the temporary Step 2 branch (see the gate result above); it was
+not attempted against the production branch.

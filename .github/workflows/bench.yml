@@ -49,7 +49,7 @@ jobs:
       - if: ${{ env.skip != 'true' }}
         name: run corpus → report.json
         env:
-          DATABASE_URL: ${{ steps.neon.outputs.db_url_pooled }}
+          DATABASE_URL: ${{ steps.neon.outputs.db_url_with_pooler }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}

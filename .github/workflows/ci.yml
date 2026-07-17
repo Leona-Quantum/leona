@@ -98,14 +98,14 @@ jobs:
       # the same throwaway branch. Required-check status rides on this db job.
       - name: authz suite
         env:
-          DATABASE_URL: ${{ steps.neon.outputs.db_url_pooled }}
+          DATABASE_URL: ${{ steps.neon.outputs.db_url_with_pooler }}
         run: uv run pytest services/api/tests/authz -q
       # Pipeline spine E2E (Phase 2 step 1): run -> job -> events -> SSE replay.
       # --all-extras keeps qiskit installed (a prior `uv run --package` step can
       # prune it) so the sandbox subprocess can import it for the QASM epilogue.
       - name: pipeline e2e
         env:
-          DATABASE_URL: ${{ steps.neon.outputs.db_url_pooled }}
+          DATABASE_URL: ${{ steps.neon.outputs.db_url_with_pooler }}
         run: uv run --all-extras pytest services/api/tests/test_pipeline_e2e.py -q
       - uses: neondatabase/delete-branch-action@v3
         if: always()
