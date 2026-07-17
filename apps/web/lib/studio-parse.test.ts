@@ -97,3 +97,32 @@ test("measurement and return operations are terminal", () => {
   const closedCirq = "import cirq\n\nqubits = cirq.LineQubit.range(1)\ncircuit = cirq.Circuit()\ncirq.H(qubits[0])";
   assert.equal(parseBuilderCircuit(closedCirq, "cirq"), null);
 });
+
+test("OpenQASM comments and declarations preserve the bounded parser contract", () => {
+  const commented = `OPENQASM 3.0;
+include "stdgates.inc";
+/* prepare a Bell state
+   over the two declared qubits */
+qubit[2] q;
+bit[2] c;
+// Entangle the register.
+h q[0];
+cx q[0], q[1];
+c = measure q;`;
+  const parsed = parseBuilderCircuit(commented, "openqasm3");
+  assert.ok(parsed);
+  assert.equal(parsed.qubitCount, 2);
+  assert.deepEqual(shape(parsed.steps), [
+    { gate: "H", qubits: [0] },
+    { gate: "CX", qubits: [0, 1] },
+    { gate: "M", qubits: [0] },
+    { gate: "M", qubits: [1] },
+  ]);
+
+  const missingBits = "OPENQASM 3.0;\nqubit[1] q;\nc = measure q;";
+  const mismatchedBits = "OPENQASM 3.0;\nqubit[1] q;\nbit[0] c;\nc = measure q;";
+  const outOfRange = "OPENQASM 3.0;\nqubit[1] q;\nx q[1];";
+  assert.equal(parseBuilderCircuit(missingBits, "openqasm3"), null);
+  assert.equal(parseBuilderCircuit(mismatchedBits, "openqasm3"), null);
+  assert.equal(parseBuilderCircuit(outOfRange, "openqasm3"), null);
+});

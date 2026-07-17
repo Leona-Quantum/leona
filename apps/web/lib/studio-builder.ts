@@ -39,7 +39,21 @@ export function builderStepLabel(step: BuilderStep, customGates: CustomGateDefin
 }
 
 function usedCustomGates(steps: BuilderStep[], customGates: CustomGateDefinition[]): CustomGateDefinition[] {
-  const usedIds = new Set(steps.flatMap((step) => step.gate === "CUSTOM" && step.customGateId ? [step.customGateId] : []));
+  const byId = new Map(customGates.map((gate) => [gate.id, gate]));
+  const usedIds = new Set<string>();
+  const visit = (id: string, ancestors: ReadonlySet<string>) => {
+    if (ancestors.has(id) || usedIds.has(id)) return;
+    const gate = byId.get(id);
+    if (!gate) return;
+    usedIds.add(id);
+    const nextAncestors = new Set(ancestors).add(id);
+    for (const step of gate.steps) {
+      if (step.gate === "CUSTOM" && step.customGateId) visit(step.customGateId, nextAncestors);
+    }
+  };
+  for (const step of steps) {
+    if (step.gate === "CUSTOM" && step.customGateId) visit(step.customGateId, new Set());
+  }
   return customGates.filter((gate) => usedIds.has(gate.id));
 }
 
@@ -120,18 +134,18 @@ function cirqOperation(step: BuilderStep, resolve: QubitReference, customGates: 
   }
 }
 
-function qiskitDefinition(gate: CustomGateDefinition): string[] {
-  const operations = gate.steps.map((step) => qiskitOperation(step, (qubit) => `qubits[${qubit}]`, [])).filter(Boolean);
+function qiskitDefinition(gate: CustomGateDefinition, customGates: CustomGateDefinition[]): string[] {
+  const operations = gate.steps.map((step) => qiskitOperation(step, (qubit) => `qubits[${qubit}]`, customGates)).filter(Boolean);
   return [`def ${customGateFunctionName(gate)}(qc, qubits):`, ...(operations.length ? operations.map((line) => `    ${line}`) : ["    pass"])];
 }
 
-function pennylaneDefinition(gate: CustomGateDefinition): string[] {
-  const operations = gate.steps.map((step) => pennylaneOperation(step, (qubit) => `wires[${qubit}]`, [])).filter(Boolean);
+function pennylaneDefinition(gate: CustomGateDefinition, customGates: CustomGateDefinition[]): string[] {
+  const operations = gate.steps.map((step) => pennylaneOperation(step, (qubit) => `wires[${qubit}]`, customGates)).filter(Boolean);
   return [`def ${customGateFunctionName(gate)}(wires):`, ...(operations.length ? operations.map((line) => `    ${line}`) : ["    pass"])];
 }
 
-function cirqDefinition(gate: CustomGateDefinition): string[] {
-  const operations = gate.steps.map((step) => cirqOperation(step, (qubit) => `qubits[${qubit}]`, [])).filter(Boolean);
+function cirqDefinition(gate: CustomGateDefinition, customGates: CustomGateDefinition[]): string[] {
+  const operations = gate.steps.map((step) => cirqOperation(step, (qubit) => `qubits[${qubit}]`, customGates)).filter(Boolean);
   return [
     `def ${customGateFunctionName(gate)}(qubits):`,
     "    return [",
@@ -144,18 +158,20 @@ function flattenBuilderSteps(
   steps: BuilderStep[],
   customGates: CustomGateDefinition[],
 ): BuilderStep[] {
-  return steps.flatMap((step) => {
+  const byId = new Map(customGates.map((gate) => [gate.id, gate]));
+  const flatten = (step: BuilderStep, ancestors: ReadonlySet<string>): BuilderStep[] => {
     if (step.gate !== "CUSTOM") return [step];
-    const custom = customGates.find((gate) => gate.id === step.customGateId);
+    if (!step.customGateId || ancestors.has(step.customGateId)) return [];
+    const custom = byId.get(step.customGateId);
     if (!custom) return [];
+    const nextAncestors = new Set(ancestors).add(custom.id);
     return custom.steps.flatMap((definitionStep) => {
-      if (definitionStep.gate === "CUSTOM") return [];
       const qubits = definitionStep.qubits.map((qubit) => step.qubits[qubit]).filter((qubit) => qubit !== undefined);
-      return qubits.length === definitionStep.qubits.length
-        ? [{ ...definitionStep, id: `${step.id}-${definitionStep.id}`, qubits }]
-        : [];
+      if (qubits.length !== definitionStep.qubits.length) return [];
+      return flatten({ ...definitionStep, id: `${step.id}-${definitionStep.id}`, qubits }, nextAncestors);
     });
-  });
+  };
+  return steps.flatMap((step) => flatten(step, new Set()));
 }
 
 function cudaqOperation(step: BuilderStep): string {
@@ -253,7 +269,7 @@ export function generateBuilderCode(
     "from qiskit import QuantumCircuit",
     ...(usesAngle ? ["from numpy import pi"] : []),
     "",
-    ...activeCustomGates.flatMap((gate) => [...qiskitDefinition(gate), ""]),
+    ...activeCustomGates.flatMap((gate) => [...qiskitDefinition(gate, customGates), ""]),
     `qc = QuantumCircuit(${qubitCount})`,
     ...qiskitLines,
     ...(measured ? ["qc.measure_all()"] : []),
@@ -264,7 +280,7 @@ export function generateBuilderCode(
     "import pennylane as qml",
     ...(usesAngle ? ["from numpy import pi"] : []),
     "",
-    ...activeCustomGates.flatMap((gate) => [...pennylaneDefinition(gate), ""]),
+    ...activeCustomGates.flatMap((gate) => [...pennylaneDefinition(gate, customGates), ""]),
     `dev = qml.device("default.qubit", wires=${qubitCount})`,
     "",
     measured ? "@qml.qnode(dev, shots=1000)" : "@qml.qnode(dev)",
@@ -278,7 +294,7 @@ export function generateBuilderCode(
     "import cirq",
     ...(usesAngle ? ["from numpy import pi"] : []),
     "",
-    ...activeCustomGates.flatMap((gate) => [...cirqDefinition(gate), ""]),
+    ...activeCustomGates.flatMap((gate) => [...cirqDefinition(gate, customGates), ""]),
     `qubits = cirq.LineQubit.range(${qubitCount})`,
     "circuit = cirq.Circuit(",
     ...cirqLines.map((line) => `    ${line},`),
