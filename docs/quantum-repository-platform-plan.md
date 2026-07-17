@@ -1,6 +1,6 @@
 # Quantum Repository Platform - staged implementation plan
 
-Status: Step 2 implemented locally; live Neon and CODEOWNER gates pending  
+Status: Step 2 implementation and temporary-Neon gate complete; CODEOWNER review pending  
 Owner lane: Rei / Neon catalog, FastAPI repository API, classification, and ingestion  
 Prepared: 2026-07-18  
 Target branch: `feature/repository`  
@@ -519,9 +519,10 @@ continues unchanged.
 
 ### Step 2 - Neon connection and catalog authority
 
-Implementation status (2026-07-18): complete on `feature/repository`, pending the
-operator-run temporary Neon branch gate in `docs/runbooks/neon-system-catalog.md`.
-No catalog records were imported.
+Implementation status (2026-07-18): complete on `feature/repository`. Temporary
+branch `step2-catalog-authority-20260718` passed 0011→0013→0012→0013,
+idempotent authority provisioning, pooled authz tests, and zero-catalog-data checks.
+No catalog records were imported. CODEOWNER review remains required before deployment.
 
 Scope:
 
@@ -794,13 +795,13 @@ Owner decisions required before the relevant phase:
 
 ## 14. Immediate next slice
 
-Step 2 is implemented locally. Before Step 3:
+Step 2's temporary Neon gate passed. Before Step 3:
 
-1. obtain pooled and direct URLs for one temporary Neon branch;
-2. run the 0013 up→down→up migration gate with the direct URL;
-3. provision the empty system authority once with the pooled URL;
-4. run the live authz and pipeline matrices using the pooled URL;
-5. verify that the system workspace contains zero artifacts, then obtain CODEOWNER review.
+1. obtain CODEOWNER review for the migration, auth boundary, contracts, and workflows;
+2. retain `SYSTEM_CATALOG_ENABLED=false`;
+3. delete the disposable Step 2 Neon branch after review evidence is captured;
+4. resolve the local uv workspace-discovery issue independently of repository work;
+5. begin Step 3 only as a new additive schema/staging slice.
 
-Do not import or publish any of the 285 bootstrap records during this gate. Step 3 may
-start only after the temporary branch passes and is deleted.
+Do not import or publish any of the 285 bootstrap records before the reviewed Step 3
+schema exists. Do not promote the temporary branch as a production database.
