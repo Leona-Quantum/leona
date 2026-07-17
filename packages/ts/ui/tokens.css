@@ -13,7 +13,9 @@
  * emerald/amber/red verdicts, warm neutrals) — the earlier strict-monochrome light
  * surface is retired. Hues match dark; lightness is dropped where AA requires it.
  * Contrast pre-checked (WCAG AA), light: text-0/bg-0 16.5:1, text-1/bg-1 6.6:1,
- * accent/bg-0 5.3:1, ok/bg-1 4.6:1, warn/bg-1 5.2:1, err/bg-1 5.3:1.
+ * accent/bg-0 6.1:1, accent/bg-2 5.1:1, ok/bg-1 4.6:1, warn/bg-1 5.2:1, err/bg-1 5.3:1.
+ * Accent must clear bg-2, not just bg-0 — accent-colored text sits on raised surfaces
+ * (e.g. the rail retry button); CI axe caught 4.42:1 there at the original #4f7233.
  * Dark: text-0/bg-0 15.6:1, text-1/bg-1 6.4:1, accent/bg-0 6.3:1, ok/bg-1 7.5:1,
  * warn/bg-1 8.3:1, err/bg-1 4.8:1.
  */
@@ -29,7 +31,7 @@
   --text-0: #1c1a17; /* primary text — warm near-black */
   --text-1: #5b5449; /* secondary text — warm gray */
   --text-2: #736b5e; /* placeholders, disabled */
-  --accent: #4f7233; /* links, focus, primary buttons — moss green */
+  --accent: #48682e; /* links, focus, primary buttons — moss green (AA on bg-0..bg-2) */
   --accent-press: #405d29;
   --ok: #1e7c4d; /* verified / pass — emerald (paired with ✓ glyph) */
   --warn: #8a5c0a; /* lossy / partial — amber (paired with glyph) */
