@@ -136,6 +136,70 @@ class ArtifactVersion(Base):
     created_at: Mapped[dt.datetime | None] = mapped_column(server_default=func.now())
 
 
+class ArtifactSource(Base):
+    """Provenance (migration 0015): one pinned source record per version."""
+
+    __tablename__ = "artifact_sources"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True)
+    artifact_version_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("artifact_versions.id"), unique=True
+    )
+    source_kind: Mapped[str]
+    repository: Mapped[str | None]
+    ref: Mapped[str | None]
+    path: Mapped[str | None]
+    package_version: Mapped[str | None]
+    retrieved_at: Mapped[dt.datetime]
+    retrieval_metadata: Mapped[dict[str, Any] | None]
+    content_hash: Mapped[str]
+    created_at: Mapped[dt.datetime | None] = mapped_column(server_default=func.now())
+
+
+class LicenseAssertion(Base):
+    """Append-only rights ledger (migration 0015): never UPDATEd; a
+    correction is a new row with supersedes_assertion_id set."""
+
+    __tablename__ = "license_assertions"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True)
+    artifact_version_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("artifact_versions.id"))
+    spdx_id: Mapped[str | None]
+    assertion_kind: Mapped[str]
+    evidence_hash: Mapped[str | None]
+    license_scope: Mapped[str]
+    confidence: Mapped[float | None] = mapped_column(Numeric)
+    reviewer_decision: Mapped[str] = mapped_column(server_default="pending")
+    reviewer_user_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id"))
+    supersedes_assertion_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("license_assertions.id")
+    )
+    created_at: Mapped[dt.datetime | None] = mapped_column(server_default=func.now())
+
+
+class ArtifactCitation(Base):
+    __tablename__ = "artifact_citations"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True)
+    artifact_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("artifacts.id"))
+    doi: Mapped[str | None]
+    arxiv_id: Mapped[str | None]
+    url: Mapped[str | None]
+    specification_ref: Mapped[str | None]
+    authors: Mapped[list[str] | None] = mapped_column(JSONB)
+    year: Mapped[int | None] = mapped_column(Integer)
+    relation: Mapped[str]
+    created_at: Mapped[dt.datetime | None] = mapped_column(server_default=func.now())
+
+
+class ArtifactTag(Base):
+    __tablename__ = "artifact_tags"
+
+    artifact_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("artifacts.id"), primary_key=True)
+    tag: Mapped[str] = mapped_column(primary_key=True)
+    created_at: Mapped[dt.datetime | None] = mapped_column(server_default=func.now())
+
+
 class Run(Base):
     __tablename__ = "runs"
 

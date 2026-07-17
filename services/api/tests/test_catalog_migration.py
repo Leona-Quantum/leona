@@ -155,3 +155,68 @@ def test_catalog_classification_migration_downgrade_fails_closed_with_staged_dat
         assert "staged catalog artifacts exist" in str(exc)
     else:
         raise AssertionError("expected downgrade to fail closed while staged data exists")
+
+
+def _patch_table_ops(monkeypatch, module, *, staged_count: int):
+    created_tables = []
+    indexes = []
+    dropped_tables = []
+    dropped_indexes = []
+    monkeypatch.setattr(
+        module.op,
+        "create_table",
+        lambda name, *cols, **kw: created_tables.append(name),
+    )
+    monkeypatch.setattr(
+        module.op,
+        "create_index",
+        lambda name, table, columns, **kw: indexes.append((name, table)),
+    )
+    monkeypatch.setattr(
+        module.op,
+        "drop_table",
+        lambda name: dropped_tables.append(name),
+    )
+    monkeypatch.setattr(
+        module.op,
+        "drop_index",
+        lambda name, table_name=None: dropped_indexes.append((name, table_name)),
+    )
+    monkeypatch.setattr(module.op, "get_bind", lambda: _Connection(staged_count))
+    return {
+        "created_tables": created_tables,
+        "indexes": indexes,
+        "dropped_tables": dropped_tables,
+        "dropped_indexes": dropped_indexes,
+    }
+
+
+def test_catalog_provenance_migration_is_linear_and_reversible(monkeypatch):
+    module = _module("0015", "0015_catalog_provenance.py")
+    recorded = _patch_table_ops(monkeypatch, module, staged_count=0)
+
+    module.upgrade()
+    module.downgrade()
+
+    assert module.down_revision == "0014"
+    assert set(recorded["created_tables"]) == {
+        "artifact_sources",
+        "license_assertions",
+        "artifact_citations",
+        "artifact_tags",
+    }
+    assert set(recorded["dropped_tables"]) == set(recorded["created_tables"])
+    assert len(recorded["dropped_indexes"]) == len(recorded["indexes"])
+
+
+def test_catalog_provenance_migration_downgrade_fails_closed_with_data(monkeypatch):
+    module = _module("0015", "0015_catalog_provenance.py")
+    _patch_table_ops(monkeypatch, module, staged_count=1)
+
+    module.upgrade()
+    try:
+        module.downgrade()
+    except RuntimeError as exc:
+        assert "provenance/rights/citation/tag rows exist" in str(exc)
+    else:
+        raise AssertionError("expected downgrade to fail closed while rows exist")

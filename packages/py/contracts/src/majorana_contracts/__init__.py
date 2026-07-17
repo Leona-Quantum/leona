@@ -6,10 +6,14 @@ from .enums import (
     ArtifactKind,
     ArtifactType,
     BaselineKind,
+    CitationRelation,
     ExecutionState,
     ExportStatus,
     Framework,
     JobStatus,
+    LicenseAssertionKind,
+    LicenseDecision,
+    LicenseScope,
     MeasurementPolicy,
     Optimizer,
     PublicationState,
@@ -17,6 +21,7 @@ from .enums import (
     Role,
     RunMode,
     RunStatus,
+    SourceKind,
     Stage,
     TopLevelExecution,
     UsageKind,
@@ -81,7 +86,14 @@ from .plan import (
     VerificationPlan,
 )
 from .scope import Scope
-from .lifecycle import IllegalTransition, TERMINAL_STATUSES, assert_transition, is_terminal
+from .lifecycle import (
+    IllegalReviewTransition,
+    IllegalTransition,
+    TERMINAL_STATUSES,
+    assert_review_transition,
+    assert_transition,
+    is_terminal,
+)
 
 CONTRACTS_VERSION = "1.0.0"
 
@@ -104,12 +116,17 @@ __all__ = [
     "ChatCompleted",
     "ChatDelta",
     "ChatError",
+    "CitationRelation",
     "ExecutionState",
     "ExportClassified",
     "ExportStatus",
     "Framework",
     "JobStatus",
+    "IllegalReviewTransition",
     "IllegalTransition",
+    "LicenseAssertionKind",
+    "LicenseDecision",
+    "LicenseScope",
     "LlmCall",
     "LlmDelta",
     "MeasurementPolicy",
@@ -139,6 +156,7 @@ __all__ = [
     "ResourceMetrics",
     "ScreenResult",
     "Scope",
+    "SourceKind",
     "Stage",
     "StageFinished",
     "StageStarted",
@@ -161,6 +179,7 @@ __all__ = [
     "WorkspaceOverview",
     "WorkspaceKind",
     "run_event_adapter",
+    "assert_review_transition",
     "assert_transition",
     "is_terminal",
 ]

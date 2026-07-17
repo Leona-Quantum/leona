@@ -120,6 +120,41 @@ class PublicationState(StrEnum):
     DEPRECATED = "deprecated"
 
 
+class SourceKind(StrEnum):
+    """Catalog provenance (repository Step 4)."""
+
+    GIT = "git"
+    PACKAGE = "package"
+    UPLOAD = "upload"
+    BENCHMARK_MANIFEST = "benchmark_manifest"
+    LITERATURE = "literature"
+
+
+class LicenseAssertionKind(StrEnum):
+    DECLARED = "declared"
+    DETECTED = "detected"
+
+
+class LicenseScope(StrEnum):
+    WHOLE = "whole"
+    FILE = "file"
+    VARIANT = "variant"
+
+
+class LicenseDecision(StrEnum):
+    PENDING = "pending"
+    APPROVED = "approved"
+    REJECTED = "rejected"
+    QUARANTINED = "quarantined"
+
+
+class CitationRelation(StrEnum):
+    DESCRIBES = "describes"
+    ORIGINAL_SOURCE = "original_source"
+    BENCHMARK_REFERENCE = "benchmark_reference"
+    IMPLEMENTATION_OF = "implementation_of"
+
+
 class Role(StrEnum):
     OWNER = "owner"
     ADMIN = "admin"

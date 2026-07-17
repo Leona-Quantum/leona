@@ -1,6 +1,6 @@
 # Quantum Repository Platform - staged implementation plan
 
-Status: Steps 2-3 implemented and locally validated; CODEOWNER review pending before Step 4  
+Status: Steps 2-4 implemented and locally validated; CODEOWNER review pending before Step 5  
 Owner lane: Rei / Neon catalog, FastAPI repository API, classification, and ingestion  
 Prepared: 2026-07-18  
 Target branch: `feature/repository`  
@@ -797,17 +797,22 @@ Owner decisions required before the relevant phase:
 
 Step 2's temporary Neon gate passed and its CI output-name bug (`db_url_pooled` →
 `db_url_with_pooler`) is fixed. Step 3 (migration `0014`, `catalog_hashing.py`,
-`CatalogAuthority.is_importer_scope`, `repos/catalog.py` staging functions) is
-implemented and validated against a throwaway local Postgres 14 — see
-`docs/repository-step3-catalog-schema.md`. Before Step 4:
+`CatalogAuthority.is_importer_scope`, `repos/catalog.py` staging functions) and Step 4
+(migration `0015`, `catalog_publication.py`, `assert_review_transition`,
+`repos/catalog.py` provenance/rights/review functions) are implemented and validated
+against a throwaway local Postgres 14 — see `docs/repository-step3-catalog-schema.md`
+and `docs/repository-step4-provenance-rights.md`. Before Step 5:
 
-1. obtain CODEOWNER review for migrations `0013`+`0014`, the auth boundary, contracts,
+1. obtain CODEOWNER review for migrations `0013`-`0015`, the auth boundary, contracts,
    and workflows;
 2. retain `SYSTEM_CATALOG_ENABLED=false`;
 3. delete the disposable Step 2 Neon branch after review evidence is captured;
 4. resolve the local uv workspace-discovery issue independently of repository work;
-5. begin Step 4 only as a new additive provenance/rights/review slice, in its own small
-   reviewable commit per decision 5 (§1).
+5. scope Step 5 explicitly before implementation: it introduces real external network
+   fetching (SSRF/quarantine hardening, allowlisted connectors) — a materially larger
+   security surface than Steps 2-4, and per decision 5 (§1) it should land in its own
+   small reviewable slices with an explicit go-ahead, not be bundled into a prior step's
+   review.
 
 Do not import or publish any of the 285 bootstrap records before the reviewed Step 4/5
 schema exists. Do not promote a temporary branch as a production database. Step 5

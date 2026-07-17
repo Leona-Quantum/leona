@@ -8,7 +8,8 @@ authz gate, the query shape, and the hard-coded non-public defaults.
 import uuid
 
 import pytest
-from repo_test_helpers import compiled
+from repo_test_helpers import Row as _Row
+from repo_test_helpers import SequencedSession, compiled
 
 from majorana_api.catalog_authority import CatalogAuthority
 from majorana_api.catalog_hashing import hash_normalized_source, hash_source_blob
@@ -23,44 +24,6 @@ from majorana_contracts.enums import (
     ReviewState,
     Visibility,
 )
-
-
-class _Row:
-    """Wraps one value with the subset of the Result API repo code calls."""
-
-    def __init__(self, value):
-        self._value = value
-
-    def scalars(self):
-        return self
-
-    def first(self):
-        return self._value
-
-    def scalar_one(self):
-        return self._value
-
-
-class SequencedSession:
-    """Returns queued results in call order; records every statement/insert."""
-
-    def __init__(self, results):
-        self._results = list(results)
-        self.statements = []
-        self.added = []
-
-    async def execute(self, stmt, params=None):
-        self.statements.append(stmt)
-        return self._results.pop(0)
-
-    def add(self, obj):
-        self.added.append(obj)
-
-    async def flush(self):
-        pass
-
-    async def rollback(self):
-        pass
 
 
 def authority() -> CatalogAuthority:
