@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { PublicSite } from "../../components/public-site";
+import { Reveal } from "../../components/reveal";
 import { CONTACT_COPY } from "../../lib/public-copy";
 import { getPublicLocale } from "../../lib/public-locale-server";
 import { ContactForm } from "./contact-form";
@@ -22,10 +23,12 @@ export default async function ContactPage() {
         </div>
       </section>
 
-      <section className="mj-contact-form-section mj-contact-form-section--solo" aria-label={copy.overline}>
-        <ContactForm locale={locale} />
-        <p className="mj-contact-note">{copy.note}</p>
-      </section>
+      <Reveal>
+        <section className="mj-contact-form-section mj-contact-form-section--solo" aria-label={copy.overline}>
+          <ContactForm locale={locale} />
+          <p className="mj-contact-note">{copy.note}</p>
+        </section>
+      </Reveal>
     </PublicSite>
   );
 }

@@ -31,6 +31,7 @@ export const HOME_COPY: Record<PublicLocale, {
     secondary: string;
     contact: string;
     note: string;
+    scrollCue: string;
   };
   visual: {
     label: string;
@@ -60,6 +61,7 @@ export const HOME_COPY: Record<PublicLocale, {
       secondary: "Open the workspace",
       contact: "Get in touch",
       note: "For researchers and teams who need results they can inspect and revisit.",
+      scrollCue: "Scroll",
     },
     visual: {
       label: "LEONA QUANTUM / PRODUCT",
@@ -112,6 +114,7 @@ export const HOME_COPY: Record<PublicLocale, {
       secondary: "ワークスペースを開く",
       contact: "お問い合わせ",
       note: "結果を確かめ、あとからもう一度たどりたい研究者とチームのために。",
+      scrollCue: "スクロール",
     },
     visual: {
       label: "LEONA QUANTUM / PRODUCT",

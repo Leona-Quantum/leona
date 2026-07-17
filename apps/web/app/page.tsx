@@ -4,6 +4,7 @@ import { BrandMark } from "../components/icons";
 import { LeoConstellation } from "../components/leo-constellation";
 import { PublicSite } from "../components/public-site";
 import { Reveal } from "../components/reveal";
+import { ScrollCue } from "../components/scroll-cue";
 import { HOME_COPY } from "../lib/public-copy";
 import { getPublicLocale } from "../lib/public-locale-server";
 
@@ -72,6 +73,10 @@ export default async function Home() {
             <span className="font-mono">{copy.visual.meta}</span>
           </div>
         </div>
+        <ScrollCue href="#company-intro-heading" targetId="company-intro-heading">
+          <span>{copy.hero.scrollCue}</span>
+          <span className="mj-company-scroll-cue-chevron" aria-hidden="true">⌄</span>
+        </ScrollCue>
       </section>
 
       <Reveal>
@@ -89,10 +94,12 @@ export default async function Home() {
       </Reveal>
 
       <section className="mj-company-section mj-company-product-band" aria-labelledby="surfaces-heading">
-        <div className="mj-company-section-heading">
-          <p className="mj-section-label">{copy.product.label}</p>
-          <h2 id="surfaces-heading">{copy.product.title}</h2>
-        </div>
+        <Reveal>
+          <div className="mj-company-section-heading">
+            <p className="mj-section-label">{copy.product.label}</p>
+            <h2 id="surfaces-heading">{copy.product.title}</h2>
+          </div>
+        </Reveal>
         <div className="mj-company-capability-list">
           {copy.product.items.map((item, index) => (
             <Reveal key={item.index} delay={index * 90}>
