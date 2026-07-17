@@ -34,15 +34,72 @@ const CIRQ_ROTATIONS: Record<string, BuiltinBuilderGate> = { rx: "RX", ry: "RY",
  * registers — returns null so callers fall back to an empty canvas instead
  * of rendering a circuit that lies about the code.
  */
-export function parseBuilderCircuit(code: string, framework: "qiskit" | "pennylane" | "cirq"): ParsedBuilderCircuit | null {
+export function parseBuilderCircuit(code: string, framework: "qiskit" | "pennylane" | "cirq" | "openqasm3"): ParsedBuilderCircuit | null {
   const lines = code.split(/\r?\n/).map((line) => line.trim()).filter((line) => line && !line.startsWith("#"));
-  const parsed = framework === "qiskit" ? parseQiskit(lines) : framework === "pennylane" ? parsePennylane(lines) : parseCirq(lines);
+  const parsed = framework === "qiskit"
+    ? parseQiskit(lines)
+    : framework === "pennylane"
+      ? parsePennylane(lines)
+      : framework === "cirq"
+        ? parseCirq(lines)
+        : parseOpenQasm3(lines);
   if (!parsed) return null;
   const usedQubits = parsed.steps.flatMap((step) => step.qubits);
   const qubitCount = Math.max(parsed.qubitCount, ...usedQubits.map((qubit) => qubit + 1), 1);
   if (qubitCount > MAX_BUILDER_QUBITS) return null;
   if (usedQubits.some((qubit) => qubit < 0)) return null;
   return { qubitCount, steps: parsed.steps };
+}
+
+const OPENQASM_GATE_NAMES: Record<string, BuiltinBuilderGate> = {
+  h: "H", x: "X", y: "Y", z: "Z", s: "S", t: "T",
+  rx: "RX", ry: "RY", rz: "RZ",
+  cx: "CX", cz: "CZ", swap: "SWAP",
+};
+
+function parseOpenQasm3(lines: string[]): ParsedBuilderCircuit | null {
+  let qubitCount = 0;
+  let bitCount = 0;
+  let measured = false;
+  let headerSeen = false;
+  const steps: BuilderStep[] = [];
+  for (const line of lines) {
+    if (/^OPENQASM\s+3(?:\.0)?\s*;$/i.test(line)) { headerSeen = true; continue; }
+    if (/^include\s+["']stdgates\.inc["']\s*;$/i.test(line)) continue;
+    const qubits = /^qubit\[(\d+)\]\s+q\s*;$/.exec(line);
+    if (qubits) { qubitCount = Number(qubits[1]); continue; }
+    const bits = /^bit\[(\d+)\]\s+c\s*;$/.exec(line);
+    if (bits) { bitCount = Number(bits[1]); continue; }
+    if (measured) return null;
+    if (/^c\s*=\s*measure\s+q\s*;$/.test(line)) {
+      if (!qubitCount || (bitCount && bitCount !== qubitCount)) return null;
+      measured = true;
+      continue;
+    }
+    const rotation = /^(rx|ry|rz)\((.+)\)\s+q\[(\d+)\]\s*;$/.exec(line);
+    if (rotation) {
+      const angle = parseAngle(rotation[2]);
+      if (angle === null) return null;
+      const step = gateStep(OPENQASM_GATE_NAMES[rotation[1]], [Number(rotation[3])], angle);
+      if (!step) return null;
+      steps.push(step);
+      continue;
+    }
+    const call = /^(h|x|y|z|s|t|cx|cz|swap)\s+(.+)\s*;$/.exec(line);
+    if (!call) return null;
+    const gate = OPENQASM_GATE_NAMES[call[1]];
+    const operands = splitArgs(call[2]).map((operand) => {
+      const match = /^q\[(\d+)\]$/.exec(operand);
+      return match ? Number(match[1]) : null;
+    });
+    if (operands.some((qubit) => qubit === null)) return null;
+    const step = gateStep(gate, operands as number[]);
+    if (!step) return null;
+    steps.push(step);
+  }
+  if (!headerSeen || (!qubitCount && !steps.length)) return null;
+  const count = Math.max(qubitCount, ...steps.flatMap((step) => step.qubits.map((qubit) => qubit + 1)), 1);
+  return { qubitCount: count, steps: measured ? [...steps, ...measurementSteps(count)] : steps };
 }
 
 function measurementSteps(qubitCount: number): BuilderStep[] {
