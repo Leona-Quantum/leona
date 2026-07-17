@@ -1,542 +1,779 @@
-# Quantum Repository Platform - working implementation plan
+# Quantum Repository Platform - staged implementation plan
 
-Status: proposed  
-Owner lane: Rei / backend repository and catalog ingestion  
+Status: proposed implementation baseline  
+Owner lane: Rei / Neon catalog, FastAPI repository API, classification, and ingestion  
 Prepared: 2026-07-18  
-Target branch: `feature/repository`
+Target branch: `feature/repository`  
+Review and production authority: Eshaan / owner / applicable CODEOWNERS
 
-## 1. Outcome
+## 1. Fixed decisions
 
-Build a quantum-artifact repository with the collaboration and version history of GitHub,
-the searchable cards and dataset exports of Hugging Face, and quantum-specific evidence that
-neither platform models directly:
+This plan supersedes the earlier catalog plan for `feature/repository`.
 
-- framework-native executable source and immutable versions;
-- explicit cross-framework conversion paths and compatibility warnings;
-- source, citation, license, and review provenance;
-- simulator and real-QPU execution evidence;
-- hardware calibration snapshots and run-specific performance;
-- a Neon-backed FastAPI catalog that is the only application database interface.
+1. Neon Postgres is the canonical catalog database.
+2. FastAPI is the only application boundary allowed to read or write Neon.
+3. The existing 78 TypeScript catalog records are not imported, migrated, transformed, counted,
+   used as seed data, or used as evidence for the new catalog.
+4. The first milestone is at least 150 newly accepted, unique Neon catalog entries.
+5. Work lands in small, independently reviewable slices on `feature/repository`.
+6. Existing application invariants remain in force: repository-layer scoping, immutable artifact
+   versions, framework-native authority, deny-all execution sandboxes, generated contracts, and
+   reversible migrations.
+7. A later UI cutover may remove the legacy TypeScript surface, but the backend implementation does
+   not edit or depend on the legacy data files.
+8. Nothing is published externally, deployed, pushed to a protected branch, or executed on a paid
+   QPU without the required owner approval.
 
-The first release contains **150 accepted, unique catalog entries**, not 150 separate GitHub
-repositories. One entry is a logical artifact with versions, source records, framework variants,
-verification evidence, and hardware runs beneath it. GitHub and Hugging Face are connectors and
-distribution surfaces; Neon is the source of truth.
+The old TypeScript catalog is a temporary legacy surface only:
 
-## 2. Current state and the gap
-
-The repository already has more of the foundation than the meeting notes imply:
-
-- `apps/web/lib/repository/*` contains 78 validated static entries: 29 gates, 26 algorithms,
-  10 operators, and 13 states.
-- `artifacts` and immutable `artifact_versions` already hold identity, visibility, native code,
-  fingerprint, optional OpenQASM, framework variants, resource estimates, and limitations.
-- the FastAPI repository layer is already the only database caller and enforces workspace scope;
-- the API already uses async SQLAlchemy against a Neon pooled connection;
-- the worker already has durable jobs and deny-all sandbox execution;
-- verification has a four-tier classification, but it currently lives in TypeScript catalog data;
-- there is no Neon-backed public catalog read API, normalized source/license/citation model,
-  import pipeline, conversion evidence model, or hardware-performance model.
-
-The implementation should therefore migrate and extend the existing model rather than create a
-second catalog system.
-
-## 3. Non-negotiable design decisions
-
-1. **Framework-native source remains authoritative.** Per ADR-0013 and ADR-0014, the exact
-   Qiskit, Cirq, or PennyLane source that was executed and verified is the durable authority.
-   OpenQASM is optional interchange and an ingestion bridge, never a silent replacement.
-2. **Conversions are derived evidence.** A converted variant never overwrites its source. Store
-   every conversion attempt, path, dependency version, warning, output fingerprint, and result.
-3. **Neon is the canonical index.** Generated GitHub manifests and Hugging Face Parquet files are
-   reproducible exports of accepted Neon records, not independently editable sources of truth.
-4. **Provenance is immutable and pinned.** Import a Git commit SHA, release tag, package version,
-   file path, retrieval timestamp, and SHA-256. Never store only a mutable `main` URL.
-5. **License and citation are different.** A citation is scholarly attribution, not permission to
-   redistribute. Preserve SPDX expressions, license text/evidence, copyright notices, and source
-   URLs separately from DOI/arXiv references.
-6. **Missing evidence is explicit.** `not_run`, `unsupported`, and `inconclusive` are valid states.
-   Missing hardware results must never appear as zero performance.
-7. **Untrusted imports do not execute in FastAPI.** Network retrieval is performed by a bounded
-   fetcher; parsing, conversion, and execution occur in an ephemeral deny-all sandbox.
-8. **No public release by automation.** Publishing a GitHub mirror, Hugging Face dataset, or paid
-   QPU run remains an owner-approved action.
-
-## 4. Product model
-
-```mermaid
-flowchart LR
-    U["Upstream source\nGitHub / MQT / QASMBench"] --> I["Import job\nfetch + license + hash"]
-    I --> S["Offline sandbox\nparse + inspect + execute"]
-    S --> N["Neon\nartifact + immutable version"]
-    N --> C["Conversion evidence\nqBraid / pytket / native adapters"]
-    N --> V["Verification evidence\nsimulation / QCEC / statistics"]
-    N --> H["Hardware evidence\nbackend snapshot + execution"]
-    N --> A["FastAPI public catalog"]
-    N --> G["Generated GitHub registry export"]
-    N --> F["Generated Hugging Face dataset export"]
+```text
+apps/web/lib/repository/*
+        |
+        +-- remains isolated while the Neon catalog is built
+        +-- excluded from counts, imports, API responses, new-catalog tests, and exports
+        +-- no TypeScript-to-Neon migration path will be implemented
 ```
 
-The user-facing mental model is:
+## 2. Outcome and measurable acceptance
 
-- **Entry** - stable slug and conceptual identity, similar to a GitHub/HF repository page.
-- **Version** - immutable executable source revision.
-- **Variant** - a derived representation in another framework or interchange format.
-- **Evidence** - a conversion, verification, simulation, or QPU execution bound to exact hashes.
-- **Card** - bilingual documentation, intended use, limitations, license, citations, and metrics.
+Build a quantum-artifact repository with:
 
-## 5. Neon data model
+- GitHub-style stable identity, provenance, review, and immutable revisions;
+- Hugging Face-style searchable cards and deterministic dataset exports;
+- quantum-specific framework, conversion, verification, and later hardware evidence;
+- a Neon-backed FastAPI catalog that remains compatible with the current Majorana architecture.
 
-Reuse `artifacts` and `artifact_versions`. Add normalized side tables rather than placing every
-filterable or repeatable fact into the existing `metadata` JSONB column.
+The 150-entry milestone is complete only when all of the following are true:
 
-| Table | Purpose | Important fields / constraints |
-|---|---|---|
-| `artifact_sources` | Exact upstream origin for a version | `artifact_version_id`, source kind, repo URL, commit SHA/tag, path, package version, retrieval time, source SHA-256; unique source identity |
-| `license_assertions` | Reviewable redistribution decision | SPDX expression, detected value, declared value, evidence URL/path/hash, confidence, reviewer, decision, reviewed time |
-| `artifact_citations` | Papers, datasets, specifications | identifier type, DOI/arXiv/URL, relation type, title, authors, year; DataCite-style relations |
-| `artifact_tags` | Stable faceted search | artifact ID + controlled tag; unique pair |
-| `import_jobs` | Durable batch-level state | provider, upstream ref, idempotency key, requested/accepted/rejected counts, state, timestamps |
-| `import_items` | Per-source quarantine and audit | job ID, upstream identity, state, failure code, raw metadata JSONB, resulting version ID |
-| `conversion_attempts` | One directed conversion result | source version/hash, target framework/version, engine/version, ordered path JSONB, options, output hash, status, loss report, duration |
-| `artifact_verifications` | Version-bound correctness evidence | version/hash, method, tier, verifier/version, environment fingerprint, parameters, decision, metrics, logs reference |
-| `hardware_backends` | Provider/backend identity | provider, backend ID, device family, region, simulator flag, qubit count; unique provider/backend pair |
-| `backend_snapshots` | Immutable time-varying calibration | backend ID, captured/calibrated time, native gates, coupling map, raw payload JSONB, extracted summary metrics |
-| `hardware_executions` | Run-specific real-device evidence | version/hash, conversion ID, snapshot ID, shots, compile policy, layout, transpiled metrics, queue/compile/run times, result, quality metrics |
+- at least 150 accepted entries were created through the new Neon ingestion path;
+- exact duplicates do not count;
+- every accepted entry has immutable source identity, hashes, classification, reviewed rights
+  state, and citations where required;
+- at least 80 entries contain executable framework-native circuit source;
+- at least 60 entries parse and re-execute in the pinned environment;
+- at least 40 entries have stored non-LLM correctness evidence;
+- no framework or conversion is advertised as tested without a stored attempt bound to exact
+  input and output hashes;
+- missing simulator, conversion, or QPU evidence is shown as `not_run`, `unsupported`, or
+  `inconclusive`, never inferred as success or zero performance;
+- public reads return only accepted records in the dedicated catalog scope;
+- private workspace artifacts cannot appear in catalog reads, search, cache entries, or exports.
 
-Implementation details:
+Before scaling to 150, a 20-entry proof must demonstrate the complete path:
 
-- keep provider-specific payloads in versioned JSONB, but promote searchable/comparable values to
-  typed columns;
-- add `metadata_schema_version` to imported metadata;
-- use UUIDv7 keys and cursor pagination, matching the current repository layer;
-- retain canonical source and small circuit text in Postgres for the first 150 entries; introduce
-  object storage only when payload size or access measurements justify it;
-- use a dedicated system catalog workspace so existing workspace scoping remains enforceable;
-- resolve the anonymous-public-read scope explicitly before the migration. Do not bypass the
-  repository-layer `Scope` invariant as an implementation shortcut;
-- migrations require owner/CODEOWNER review and must demonstrate up -> down -> up.
+```text
+pinned upstream source or controlled upload
+    -> FastAPI import request
+    -> durable job and item records
+    -> bounded fetch into quarantine
+    -> deny-all offline parse and observation
+    -> classification, rights, provenance, and fingerprint gates
+    -> Neon staging records
+    -> human review and audited publication
+    -> public FastAPI list/detail read
+    -> feature-flagged web proof
+```
 
-### Search indexes for the first release
+The proof batch must include a Qiskit-native circuit, OpenQASM 2 import, measurements,
+parameters, an exact duplicate, a malformed item, an unknown-license item, an unsupported item,
+and at least two verification states.
 
-- retain trigram search on title and add normalized title/slug search;
-- B-tree indexes for category/family, framework, visibility, review state, SPDX expression,
-  qubit count, and updated time;
-- GIN only for deliberately queried JSONB keys; do not create a generic index for raw provider
-  payloads;
-- normalized tag rows for facets rather than a JSON string array;
-- defer embeddings/vector search until relevance can be evaluated against a fixed query set.
+## 3. Compatibility with the current repository
 
-## 6. Metadata contract
+### 3.1 Reuse rather than replace
 
-Every accepted version exposes the following groups. Fields that do not apply are null with a
-reason, not silently absent.
+The implementation extends these existing components:
 
-### Identity and documentation
+| Existing component | Reuse rule |
+|---|---|
+| `services/api` | Remains the only database-facing application service |
+| `services/api/src/majorana_api/repos` | All catalog SQL and ORM access stays here and takes scoped authority first |
+| `artifacts` | Stable identity in a dedicated system catalog workspace |
+| `artifact_versions` | Immutable framework-native source revisions |
+| `jobs` and Worker dispatch | Durable asynchronous import/verification/conversion work |
+| `verification_records` | Existing run evidence remains valid and is linked rather than silently copied |
+| `packages/py/contracts` | Source of truth for shared API types; changes remain additive within `/v1` |
+| generated TypeScript contracts | Regenerated from OpenAPI; never hand-edited |
+| `packages/py/frameworks` | Authoritative Qiskit, Cirq, and PennyLane execution adapters |
+| `packages/py/openqasm` | Optional normalized interchange and OpenQASM fingerprint support |
+| `packages/py/sandbox` | Deny-all execution boundary for untrusted parse/execute operations |
 
-- stable UUID, slug, title, Japanese title, summary, detailed card, category, algorithm family;
-- intended use, non-goals, limitations, maturity/review status, tags;
-- created, updated, deprecated, and superseded-by timestamps/relations;
-- uploader, maintainers, named reviewers, and expert-review status.
+The implementation must not create:
 
-### Provenance and rights
+- a second catalog database;
+- direct Neon access from Next.js;
+- a separate unscoped ORM path;
+- a second framework execution system;
+- another source of truth in GitHub or Hugging Face;
+- a fallback that combines legacy TypeScript and Neon records in one public result set.
 
-- source type: curated, GitHub, package generator, benchmark suite, community, or paper-derived;
-- repository owner/name, immutable commit SHA, tag/release, file path, file hash;
-- upstream package and version, importer and importer version;
-- SPDX license expression plus detection/review state and evidence;
-- original authors/copyright holders and required notices;
-- DOI, arXiv, URL, citation text, and typed relations such as `IsDerivedFrom`, `Cites`,
-  `IsVersionOf`, and `IsReviewedBy`.
+### 3.2 Known integration gaps to resolve explicitly
 
-### Intrinsic circuit properties
+The current code has the following constraints. Each is addressed in a separate slice rather than
+hidden inside a large migration.
 
+- FastAPI and Worker already use the pooled `DATABASE_URL`, but Alembic currently reads
+  `DATABASE_URL`; migration configuration must explicitly introduce or map
+  `DATABASE_URL_DIRECT`.
+- `WorkspaceKind` currently has only personal and team values, and every workspace requires an
+  owner user. The system catalog identity and service principal need an approved design.
+- normal repository reads require a user `Scope`; anonymous-safe catalog reads do not yet exist.
+- `Framework` currently supports Qiskit, Cirq, and PennyLane. OpenQASM imports therefore preserve
+  original QASM as provenance and use an evidenced supported loader for authoritative execution.
+- artifact fingerprint uniqueness currently applies within one artifact, not across the public
+  catalog. Global exact deduplication needs its own constraint or deduplication ledger.
+- the job queue can claim jobs, but long import work needs an explicit lease, heartbeat, stale-job
+  recovery, retry classification, and dead-letter behavior.
+- the current `/v1/artifacts/import-public` endpoint copies a legacy public record into a private
+  workspace. It remains untouched until the new catalog API has a replacement with equivalent
+  user behavior.
+
+## 4. System boundaries and authority
+
+```mermaid
+flowchart TB
+    WEB["Next.js / Vercel"] -->|"HTTPS; no database credentials"| API["FastAPI / Cloud Run"]
+    API -->|"pooled DATABASE_URL"| NEON[("Neon Postgres")]
+    WORKER["Worker / Cloud Run"] -->|"pooled DATABASE_URL"| NEON
+    MIG["Alembic / approved admin job"] -->|"direct DATABASE_URL_DIRECT"| NEON
+    API -->|"enqueue only"| JOB["Durable jobs"]
+    JOB --> FETCH["Bounded allowlisted fetcher"]
+    FETCH --> QUAR["Content-addressed quarantine"]
+    QUAR --> SBOX["Ephemeral deny-all sandbox"]
+    SBOX --> STAGE["Neon staging and evidence"]
+    STAGE --> REVIEW["Human review"]
+    REVIEW --> PUBLIC["Accepted public catalog"]
+    WEB -. "forbidden" .-> NEON
+    SBOX -. "deny all egress" .-> WEB
+    SBOX -. "no provider or database credentials" .-> NEON
+```
+
+### 4.1 Catalog principals
+
+Before schema work, record an ADR choosing the concrete authority model. It must provide:
+
+- one dedicated catalog workspace or equivalent explicit catalog boundary;
+- a non-human service identity for importer mutations;
+- a public-read authority that cannot access personal or team workspaces;
+- no user-controlled way to select the catalog workspace ID;
+- separate import, review, and publish permissions;
+- owner/admin authority for publication and quarantine release;
+- audit records for import request, rights decision, review, publication, retraction, and export.
+
+The design must preserve the repository-layer scope invariant. It must not fabricate arbitrary
+normal-user scopes in request handlers or bypass workspace predicates.
+
+### 4.2 Database connections
+
+- API and Worker use the pooled Neon URL, short transactions, one session per request/job unit,
+  `pool_pre_ping`, and bounded per-instance pools.
+- Alembic and approved administrative tools use the direct Neon URL.
+- Pooled traffic must not rely on session `SET`, session advisory locks, `LISTEN/NOTIFY`, or
+  persistent temporary state.
+- Application startup never mutates the schema.
+- Secrets remain server-side and are never serialized into job payloads, logs, catalog records,
+  browser responses, or sandboxes.
+
+## 5. Minimal catalog model
+
+Add data only when a phase needs it. Prefer typed columns for stable filters and versioned JSONB
+only for provider- or tool-specific payloads.
+
+### 5.1 Identity and publication
+
+Add to `artifacts`:
+
+- `artifact_kind`: `circuit`, `gate`, `algorithm_template`, `state_preparation`, `operator`,
+  `benchmark_instance`, or `literature_method`;
+- `execution_state`: `executable`, `template_only`, `documentation_only`, or `unsupported`;
+- `review_state`: `draft`, `quarantined`, `pending_review`, `accepted`, or `rejected`;
+- `publication_state`: `private`, `staged`, `public`, `retracted`, or `deprecated`;
+- bilingual summaries only when the public API/UI phase needs them.
+
+Add to `artifact_versions`:
+
+- `metadata_schema_version`;
 - authoritative framework and exact SDK version;
-- source language/format and optional OpenQASM version;
-- qubits, classical bits, registers, parameters, width, depth, total gates, 1Q/2Q/multi-Q counts;
-- operation histogram, native/observed gate set, measurement count and density;
-- mid-circuit measurement, reset, classical conditions/control flow, delay/timing, pulse calibration,
-  noise channels, custom gates, and symbolic-parameter feature flags;
-- QASMBench-derived structural metrics where well-defined: gate density, retention lifespan,
-  measurement density, and entanglement variance;
-- canonical source fingerprint and semantic/family fingerprint for duplicate detection.
+- source language/format;
+- `source_blob_sha256`;
+- `normalized_source_hash`;
+- `semantic_fingerprint` plus algorithm/version;
+- toolchain/environment digest.
 
-### Conversion evidence
+Hash meanings must never be overloaded:
 
-- source and target framework + versions;
-- conversion engine (`native`, `qbraid`, `pytket`) and exact version;
-- ordered conversion path, e.g. `qiskit -> qasm3 -> braket`;
-- dependency/environment fingerprint, options, seed, input/output hashes, duration;
-- feature support matrix before conversion;
-- status: `exact`, `global_phase`, `observational`, `lossy`, `unsupported`, or `failed`;
-- warnings for bit order, angle units, implicit swaps, measurements, conditions, unsupported gates,
-  dropped metadata, and changed register structure;
-- total/partial equivalence result and verifier evidence ID.
+```text
+source_blob_sha256       exact retrieved bytes
+normalized_source_hash   deterministic normalized source
+semantic_fingerprint     reviewer aid for quantum/logical similarity
+```
 
-### Verification evidence
+Only exact hashes can automatically reject a duplicate. Semantic matches create a review task and
+must not auto-merge entries.
 
-- existing Tier 1-4 method taxonomy, moved into shared Python contracts;
-- exact simulator/backend and version, seed, shots, tolerances, environment/container digest;
-- expected result, observed result, raw counts/artifact reference;
-- state/process fidelity, total variation distance, Hellinger fidelity, expectation error, or
-  invariant results as appropriate;
-- decision (`pass`, `fail`, `inconclusive`) and residual risks;
-- exact source fingerprint binding so repaired or converted code cannot reuse stale evidence.
+### 5.2 Provenance and rights
 
-### Real-hardware metadata and performance
+| Table | Purpose |
+|---|---|
+| `artifact_sources` | Pinned source kind, repository, commit/release, path, package version, retrieval metadata, and content hash |
+| `license_assertions` | Append-only declared/detected SPDX, evidence hash, file/variant scope, confidence, reviewer decision, superseded assertion |
+| `artifact_citations` | DOI, arXiv, URL, specification, authors, year, and typed relation |
+| `artifact_tags` | Controlled faceted tags with a unique artifact/tag pair |
 
-Separate **device calibration** from **this artifact's execution**.
+License review and citation are separate. A citation does not grant redistribution permission.
+Unknown, conflicting, custom, or missing rights remain quarantined until an authorized reviewer
+records a decision.
 
-Device snapshot:
+### 5.3 Import control plane
 
-- provider/backend ID, device family/generation, simulator flag, operational state;
-- total/available qubits, basis gates, coupling map/topology, dynamic-circuit capabilities;
-- calibration timestamp and collection timestamp;
-- per-qubit T1, T2, frequency, readout error, asymmetric readout probabilities, readout duration;
-- per-instruction/per-edge error and duration, native 2Q operation;
-- provider-published metrics when available: Quantum Volume, CLOPS, layer fidelity/EPLG;
-- raw provider payload and units. Provider-specific metrics must not be presented as universally
-  comparable without matching methodology.
+| Table | Purpose |
+|---|---|
+| `import_jobs` | Provider, pinned upstream ref, idempotency key, state, lease, heartbeat, counts, timestamps |
+| `import_items` | Stable upstream identity, state, failure code, raw metadata, exact hashes, resulting version |
 
-Execution:
+Required terminal or intermediate states include:
 
-- requested and transpiled circuit hashes, compile SDK/pass manager/optimization level/seed;
-- initial/final layout, routing, native gate counts, depth, 2Q count, SWAP count;
-- shots, job/provider IDs, submission/start/end times, queue/compile/execution wall time;
-- mitigation/suppression options, dynamic decoupling, twirling, and resilience settings;
-- raw counts/expectations plus success probability, TVD/Hellinger fidelity versus ideal, and
-  application-specific score;
-- calibration snapshot ID and a disclosure if calibration and execution times differ materially;
-- cost only when allowed and explicitly captured; never infer it.
+```text
+queued -> fetching -> quarantined -> parsing -> staged -> pending_review -> accepted
+                                                                  \-> rejected
+any active state -> retry_wait -> active
+any active state -> dead
+```
 
-Fair comparisons require the same logical circuit version, target definition, shot count,
-compiler policy, scoring function, and nearby calibration window. Store raw evidence so derived
-rankings can be recomputed.
+Jobs may finish `completed_with_rejections`. Each item commits or quarantines independently so one
+bad input cannot roll back or publish an entire batch.
 
-## 7. Ingestion pipeline
+### 5.4 Evidence
 
-1. **Discover** a pinned upstream release/commit and enumerate candidate files/configurations.
-2. **Fetch** over a bounded allowlisted connector; record HTTP metadata, ETag, commit, path, and
-   SHA-256.
-3. **License gate** using declared license, GitHub License API as a hint, SPDX normalization, and
-   manual review for mismatch/unknown. Unknown rights stay quarantined.
-4. **Parse offline** in a deny-all sandbox with pinned dependencies and size/time limits.
-5. **Observe** circuit structure through the framework adapter; preserve the exact source.
-6. **Normalize metadata** without converting the authoritative source.
-7. **Deduplicate** first by source identity, then exact fingerprint, then semantic similarity for
-   reviewer assistance. Semantic matches are not auto-merged.
-8. **Verify** using the strongest bounded method that fits the circuit.
-9. **Convert** only requested target formats, recording unsupported/lossy results explicitly.
-10. **Stage** the entry and all evidence; no partial record becomes public.
-11. **Review** license, citation, metadata, and verification outcomes.
-12. **Publish** atomically by switching review/visibility state.
+| Table | Purpose |
+|---|---|
+| `artifact_verifications` | Version-bound public evidence, with an optional link to the existing run and verification record |
+| `conversion_attempts` | Directed conversion input/output hashes, tools, versions, path, warnings, status, and verifier link |
 
-Each item is independently retryable. Import jobs may finish `completed_with_rejections`; rejected
-items retain machine-readable failure codes. The combination of provider + immutable upstream
-identity + importer version is an idempotency key.
+Verification states:
 
-## 8. First 150 entries
+```text
+not_run
+documented
+literature_attested
+reexecuted
+formally_verified
+hardware_reproduced
+inconclusive
+failed
+```
 
-The acceptance target is 150 unique, published artifacts after fingerprint deduplication.
+Conversion labels remain separate from framework support:
 
-| Cohort | Target | Selection |
+```text
+native
+stored_variant
+generated_subset
+import_recipe
+executed_conversion
+equivalence_checked
+lossy
+unsupported
+failed
+```
+
+Only `native`, `executed_conversion`, or `equivalence_checked` with matching stored evidence may be
+presented as tested support. A qBraid path, pytket extension, generated snippet, or loader recipe is
+not by itself evidence of equivalence.
+
+Hardware tables are deferred until after the 150-entry software catalog is accepted. Until then,
+QPU evidence is `not_run`. Provider interfaces may be designed, but no credentials, paid calls, or
+hardware performance claims are part of this milestone.
+
+## 6. Import and publication pipeline
+
+1. **Receive** a typed FastAPI request with an idempotency key and a supported connector ID, not an
+   arbitrary execution command.
+2. **Authorize** the caller and create durable job/item records in one short transaction.
+3. **Resolve** a commit SHA, release, package version, or benchmark configuration.
+4. **Fetch** through the bounded connector into content-addressed quarantine.
+5. **Record provenance** before parsing: immutable ref, response metadata, exact bytes hash, size,
+   retrieval time, and importer version.
+6. **Classify rights** from pinned evidence and quarantine unknown or conflicting cases.
+7. **Parse offline** in a deny-all sandbox with pinned dependencies and strict resource limits.
+8. **Observe** framework-native circuit properties without replacing authoritative source.
+9. **Normalize metadata** and classify artifact, execution, and evidence states.
+10. **Deduplicate** by immutable source identity and exact hashes; use semantic similarity only to
+    assist review.
+11. **Verify** with the strongest bounded non-LLM method appropriate for the artifact.
+12. **Convert only requested targets** and preserve unsupported, lossy, failed, and inconclusive
+    attempts.
+13. **Stage atomically** per item in the catalog boundary.
+14. **Review** rights, provenance, classification, evidence, and public card content.
+15. **Publish** review and publication state together in an audited transaction.
+
+Publication must fail closed if any required source hash, rights decision, reviewer, or exact
+version binding is missing.
+
+## 7. Security and systems-engineering controls
+
+### 7.1 External fetch and quarantine
+
+- allowlist schemes, hosts, ports, connector operations, and maximum redirect count;
+- reject loopback, private, link-local, multicast, metadata-service, and non-routable destinations;
+- revalidate DNS and resolved IP at every connection and redirect to prevent rebinding/TOCTOU;
+- enforce connect, read, total-time, response-size, and concurrency limits;
+- limit archive compressed size, expanded size, file count, nesting depth, and compression ratio;
+- reject absolute paths, traversal, symlinks, device files, executable hooks, implicit Git
+  submodules, and implicit Git LFS downloads;
+- do not run `git clone` or package installation from an untrusted request in FastAPI;
+- store raw bytes by hash and never render untrusted Markdown/HTML without sanitization;
+- log accepted and blocked destinations without recording credentials or sensitive query strings.
+
+### 7.2 Sandbox and supply chain
+
+- parsing, conversion, and execution use ephemeral deny-all egress sandboxes;
+- sandbox images and Python dependencies are pinned by digest/lockfile;
+- CPU, memory, wall time, process count, file count, disk, and output bytes are bounded;
+- no Neon, GitHub, Hugging Face, QPU, cloud, or signing credentials enter the sandbox;
+- environment image digest, package versions, command/recipe ID, parameters, seed, and input/output
+  hashes are stored with evidence;
+- dependency updates are reviewed and tested against malicious and compatibility fixtures;
+- generated GitHub/Hugging Face exports include schema version, export watermark, and checksums.
+
+### 7.3 Authorization and data isolation
+
+- every catalog repository function applies catalog, review, publication, and deletion predicates
+  itself;
+- public reads require the conjunction of catalog boundary, `review_state = accepted`, and
+  `publication_state = public`;
+- private and public response models are distinct so internal review notes and raw payloads cannot
+  leak through serialization;
+- cross-workspace tests cover list, detail, version, source, evidence, search, export, and cache;
+- public cache keys contain no user-specific data; authenticated responses are never cached as
+  public;
+- import, review, and publish actions are rate limited and audited;
+- publication and quarantine release require owner/admin authority and preferably a reviewer other
+  than the importer.
+
+### 7.4 Reliability and recovery
+
+- every mutation uses an idempotency key with a database uniqueness constraint;
+- jobs use leases, heartbeat, stale-job recovery, bounded retry, exponential backoff, and dead-letter
+  handling;
+- failure codes distinguish retryable infrastructure failures from permanent data failures;
+- one item failure cannot publish partial data or block unrelated items;
+- reconciliation checks compare job counts, item states, artifacts, versions, evidence, and exports;
+- metrics cover connection errors, pool wait, query latency, queue age, lease expiry, retries,
+  quarantine rate, acceptance rate, and sandbox timeout/resource failures;
+- alerts and runbooks exist before bulk ingestion begins.
+
+### 7.5 Change and migration safety
+
+- all schema changes are additive until the Neon catalog is stable;
+- one migration has one responsibility and a reversible downgrade;
+- CI proves `upgrade -> downgrade -> upgrade` on a temporary Neon branch;
+- application startup never performs migrations or seed publication;
+- backfills are resumable, idempotent jobs, not unbounded migration SQL;
+- new API behavior is behind a server-side feature flag until scope and leakage tests pass;
+- every phase declares rollback and stop conditions before implementation.
+
+## 8. Initial source strategy
+
+Prepare 180-220 candidates and publish at least 150 that pass the acceptance contract.
+
+| Candidate source | Planning target | Purpose |
 |---|---:|---|
-| Existing Majorana static catalog | 78 | Migrate all after schema, source, and license audit |
-| MQT Bench | 36 | 18 algorithm families x 2 useful sizes; prefer algorithm-level Qiskit generators and diversity across simulation, search, optimization, arithmetic, QML, and states |
-| QASMBench | 36 | Small/medium OpenQASM 2 circuits that parse reproducibly, have clear BSD provenance, and fit bounded verification |
-| **Total** | **150** | Exact duplicates do not count; pull replacements from the same reviewed candidate pool |
+| MQT Bench | 70-90 candidates | Reproducible algorithm families and useful sizes |
+| QASMBench | 70-90 candidates | OpenQASM 2 structural variety and benchmark provenance |
+| Linked GitHub/Hugging Face projects | 30-50 candidates | Maintained real-project artifacts pinned to commits/releases |
+| New Majorana-native exemplars | 20-30 candidates | High-quality reference and verification examples created through the new API |
 
-MQT import rules:
+These are candidate ranges, not publication quotas. License failures, duplicates, parser failures,
+unsupported features, and inconclusive evidence reduce the accepted count without lowering the
+quality bar.
 
-- pin `mqt.bench` and generator parameters;
-- generate a minimal Qiskit-native source wrapper that binds `FINAL_CIRCUIT`;
-- record benchmark family, size, abstraction level, target/gateset when applicable;
-- do not count multiple abstraction levels of the same exact circuit as separate entries when they
-  are better represented as variants/versions.
+### 8.1 MQT Bench
 
-QASMBench import rules:
+- pin package version, generator, parameters, size, abstraction level, target, and gate set;
+- preserve the generator invocation and environment digest as provenance;
+- produce a minimal supported framework-native wrapper exposing the final circuit;
+- represent abstraction levels or hardware mappings as versions/variants when they share logical
+  identity;
+- do not count exact duplicate outputs as separate entries.
 
-- preserve the original OpenQASM 2 file and upstream hash as source evidence;
-- create a Qiskit-native executable wrapper using the official Qiskit OpenQASM 2 loader;
-- optional OpenQASM 3 output is a derived interchange variant;
-- carry BSD license evidence, NOTICE, benchmark reference, original routine citation, and
-  QASMBench structural metrics;
-- prefer small/medium circuits for the first release; do not publish huge circuits merely to hit
-  the numerical target.
+### 8.2 QASMBench
 
-Acceptance criteria per entry:
+- preserve original OpenQASM 2 bytes, commit, path, hash, license evidence, notices, and citation;
+- import through a pinned supported loader and store the executable wrapper as a distinct version
+  representation with derivation evidence;
+- store OpenQASM 3 only as a derived variant after an actual conversion attempt;
+- prioritize small and medium circuits that fit bounded parsing and verification;
+- do not publish large circuits solely to reach the numerical milestone.
 
-- immutable source identity and SHA-256;
-- reviewed SPDX assertion and required notice/citation;
-- deterministic parse and resource observation in the pinned environment;
-- complete required metadata and a unique catalog slug/fingerprint;
-- at least one non-LLM verification method, or an explicit non-verified review state;
-- no conversion is marked supported without stored conversion and equivalence evidence;
-- API round-trip and generated export validation pass.
+### 8.3 GitHub and Hugging Face
 
-## 9. Framework interoperability strategy
+- support a small allowlisted connector set first; do not accept arbitrary repository automation;
+- pin commit SHA/release and path, and retain content hashes;
+- treat provider license metadata as a detection hint, not legal approval;
+- prefer repositories linked from papers or maintained project pages;
+- defer general paper-to-circuit extraction because papers may omit executable details;
+- use GitHub as an upstream and generated registry, and Hugging Face as one versioned dataset with
+  configurations rather than creating one repository per circuit.
 
-Use three layers instead of selecting one universal converter:
+## 9. Public FastAPI surface
 
-1. existing Majorana native adapters for authoritative Qiskit/Cirq/PennyLane execution;
-2. qBraid's directed conversion graph for path discovery and broad format coverage;
-3. pytket extensions for explicit two-way SDK conversion, target rebasing, and an independent
-   conversion implementation.
-
-The two external tools are complementary evidence providers. Disagreement is valuable evidence,
-not a reason to choose whichever output looks successful.
-
-Initial matrix:
-
-| Source | Targets in MVP | Primary path | Required checks |
-|---|---|---|---|
-| Qiskit | Cirq, PennyLane, Braket, PyQuil, OpenQASM 3 | native/qBraid; pytket cross-check where available | bit order, register/measurement preservation, total or partial equivalence |
-| Cirq | Qiskit, Braket, OpenQASM | qBraid/native adapter | moments vs sequential semantics, measurement keys, custom gates |
-| PennyLane | Qiskit/OpenQASM when supported | explicit adapter only | tape/measurement semantics, observables, trainable parameters |
-| OpenQASM 2 import | Qiskit authoritative wrapper, optional QASM 3 | official Qiskit loader/exporter | include/custom gate resolution, conditions, measurement mapping |
-| pytket | Qiskit/Braket/Cirq/PyQuil/QIR where extensions support it | pytket extension | opposite Qiskit/tket qubit ordering, implicit swaps, symbolic limits |
-
-Conversion verification ladder:
-
-- parse/feature inventory before conversion;
-- output parse and resource delta report;
-- exact unitary comparison for small unitary circuits;
-- MQT QCEC total equivalence, including global-phase result;
-- QCEC partial/observational equivalence for measured/ancilla circuits;
-- fixed-seed statevector or sample-distribution comparison when formal checking is out of bounds;
-- fail closed with `unsupported` or `inconclusive` when dynamic control, pulse calibration, noise,
-  externs, or framework-specific observables cannot be preserved.
-
-OpenQASM 3 supports classical feed-forward, explicit timing, externs, and calibration constructs,
-but a language specification does not imply every SDK implements every construct. Capability must
-be measured per tool/version and stored with the attempt.
-
-## 10. FastAPI surface
+Introduce endpoints only after the underlying scope and state predicates are tested.
 
 Public reads:
 
-- `GET /v1/repository` - cursor pagination, full-text query, facets;
-- `GET /v1/repository/{slug}` - current card and evidence summary;
-- `GET /v1/repository/{slug}/versions`;
-- `GET /v1/repository/{slug}/versions/{seq}`;
-- `GET /v1/repository/{slug}/exports/{framework}` - only stored, evidenced variants;
-- `GET /v1/repository/{slug}/conversions`;
-- `GET /v1/repository/{slug}/hardware-runs`;
-- `GET /v1/backends/{provider}/{backend_id}/snapshots`.
+```text
+GET /v1/repository
+GET /v1/repository/{slug}
+GET /v1/repository/{slug}/versions
+GET /v1/repository/{slug}/versions/{seq}
+GET /v1/repository/{slug}/sources
+GET /v1/repository/{slug}/verifications
+GET /v1/repository/{slug}/conversions
+GET /v1/repository/{slug}/exports/{framework}
+```
 
-Admin/service mutations:
+Controlled mutations:
 
-- `POST /v1/imports` with `Idempotency-Key`;
-- `GET /v1/imports/{id}` and per-item failures;
-- `POST /v1/repository/{id}/conversion-jobs`;
-- `POST /v1/repository/{id}/verification-jobs`;
-- `POST /v1/repository/{id}/hardware-jobs` only after credential/spend approval;
-- `POST /v1/integrations/github/webhooks` with signature and delivery-ID validation.
+```text
+POST /v1/imports
+GET  /v1/imports/{id}
+GET  /v1/imports/{id}/items
+POST /v1/repository/{id}/verification-jobs
+POST /v1/repository/{id}/conversion-jobs
+POST /v1/repository/{id}/publish
+POST /v1/repository/{id}/retract
+```
 
-Filters should include category/family, framework, source suite, SPDX license, verification tier,
-review state, qubit range, dynamic-feature flags, hardware-tested state, and evidenced conversion
-target. Mutations use RFC 9457 errors, typed contracts, cursor pagination, and scoped repository
-functions consistent with the existing API.
+API rules:
 
-## 11. Neon and operational practices
+- typed Pydantic contracts and generated TypeScript types;
+- RFC 9457-compatible errors;
+- cursor pagination with deterministic tie-breaking;
+- explicit immutable cache headers and ETags for versions;
+- bounded filter combinations and query timeouts;
+- no external fetch, parsing, conversion, or execution in an HTTP request lifecycle;
+- only stored accepted variants with matching evidence may be exported.
 
-- keep the pooled Neon connection for FastAPI and workers; PgBouncer transaction mode means short
-  transactions and no session `SET`, `LISTEN/NOTIFY`, session advisory locks, or session temp state;
-- use a direct Neon connection for Alembic and administrative tooling;
-- retain `pool_pre_ping`; bound application pool size per Cloud Run instance and monitor both
-  client and server pool connections;
-- run import work through the existing durable job model, never inside a request lifecycle;
-- batch discovery, but commit/quarantine items independently so one malformed circuit cannot roll
-  back the complete import;
-- use explicit timeouts and exponential backoff for external APIs, not database retries around
-  arbitrary non-idempotent work;
-- aggregate/filter in Postgres rather than transferring raw provider JSON for list pages;
-- test cross-workspace/public leakage, idempotent retries, concurrent version creation, pagination,
-  and deletion/deprecation behavior.
+## 10. Small-step delivery plan
 
-## 12. GitHub and Hugging Face integration
+Every step is one focused PR or smaller. A step begins only after the previous step's required
+checks and review are complete.
 
-### GitHub
+### Step 0 - plan, ADRs, and conflict map
 
-Use GitHub as an upstream source and optional generated registry mirror. Do not create 150
-independent repositories in the first release.
+Scope:
 
-- prefer a GitHub App with minimum metadata/contents permissions over a personal token;
-- pin imports to commit SHA and use Contents/Trees APIs according to repository size;
-- save ETag/Last-Modified and use conditional requests;
-- avoid polling; use signed webhooks for subscribed repositories;
-- validate `X-Hub-Signature-256`, deduplicate `X-GitHub-Delivery`, return 2xx quickly, and process
-  asynchronously;
-- process API work serially through a queue and honor Retry-After/rate-limit headers;
-- treat GitHub's Licensee/SPDX result as detection evidence, not final legal approval;
-- optional generated mirror layout: `entries/<slug>/manifest.json`, card, source, variants,
-  evidence summaries, `CITATION.cff`, and license notices.
+- approve this plan and record that the existing 78 TypeScript records are out of scope;
+- document catalog authority, public-read scope, fingerprint semantics, publication approval, and
+  threat boundaries in ADRs;
+- inventory files likely to overlap with Rui, Ryu, Eshaan, contracts, migrations, and web work;
+- define API and DB naming before changing shared contracts.
 
-### Hugging Face
+Done when:
 
-Publish one mixed-license **dataset repository** after owner approval, not one repository per
-circuit. Use a dataset card and Parquet-friendly tables:
+- decisions and unresolved owner questions are explicit;
+- no runtime or schema behavior changed;
+- reviewers agree on file ownership and PR order.
 
-- `circuits` config: one row per accepted immutable version;
-- `conversions` config: one row per conversion attempt/evidence record;
-- `hardware_runs` config: one row per real/simulator execution;
-- `backend_snapshots` config: calibration snapshots with large raw payloads moved to separate files;
-- README dataset card with intended use, limitations, creation process, update policy, citations,
-  and mixed-license explanation;
-- per-row SPDX/source fields and bundled notices; use a dataset-level `other` license marker when
-  one license cannot truthfully cover every row;
-- keep very large code/raw JSON values out of the first viewer rows and use sensible Parquet row
-  groups/page indexes;
-- tag releases and include the Neon export watermark/schema version so a dataset can be reproduced.
+Rollback: revert documentation only.
 
-## 13. Real-QPU pilot
+### Step 1 - queue recovery prerequisite
 
-Hardware testing is a separate, owner-approved milestone because it may require credentials and
-spend. It does not block publication of metadata-complete entries.
+Scope:
 
-Pilot with roughly 12 small, interpretable circuits (Bell/GHZ at several sizes, BV,
-Deutsch-Jozsa, small QFT/Grover/QAOA) on at least two accessible backends if terms and budget allow.
-For every run:
+- add job lease, heartbeat, stale recovery, retry classification, and dead-letter behavior;
+- preserve current `run.execute` behavior and add regression tests;
+- add metrics for queue age, lease expiry, attempts, and terminal failures.
 
-- capture the backend calibration snapshot immediately before submission;
-- record exact transpilation and mitigation policy;
-- compare against ideal simulation using an algorithm-appropriate score;
-- repeat enough to show uncertainty rather than a single lucky result;
-- display calibration time and execution time together;
-- label provider metrics and methodology instead of combining them into an unsupported universal
-  ranking.
+Done when:
 
-## 14. Delivery sequence
+- a killed Worker is recovered without duplicate publication or a permanently stuck job;
+- existing pipeline E2E remains green;
+- Ryu/Eshaan review the shared queue change.
 
-Each item should be a focused PR from `feature/repository` and receive Claude/owner review before
-merge, especially contracts, migrations, auth, and sandbox changes.
+Rollback: disable the reaper/heartbeat path and revert the additive columns; existing job dispatch
+continues unchanged.
 
-### PR 1 - Contracts and schema proposal
+### Step 2 - Neon connection and catalog authority
 
-- finalize catalog/public scope decision and metadata JSON schema;
-- add typed contracts and reversible migrations for sources, rights, imports, conversions, and
-  verification evidence;
-- add indexes and authz/raw-query tests;
-- demonstrate up -> down -> up.
+Scope:
 
-Definition of done: schema review approved; generated OpenAPI/TypeScript contracts current; DB,
-authz, and import-linter checks pass.
+- separate pooled application and direct migration configuration;
+- implement the approved system catalog identity/service principal mechanism;
+- add public-safe catalog authority and cross-workspace leakage tests;
+- add connection and scope telemetry.
 
-### PR 2 - Public repository reads
+Done when:
 
-- implement repository-layer list/detail/version/evidence reads;
-- add public-safe response mapping, facets, search, cursor pagination, cache headers;
-- ensure no private workspace data can enter public results.
+- API and Worker use pooled connections and Alembic uses direct connection;
+- Next.js has no Neon credential or database import;
+- temporary Neon branch migration and scope matrix pass;
+- no catalog data exists yet.
 
-Definition of done: API contract and cross-workspace matrix tests pass; no UI work required.
+Rollback: feature flag off; revert the catalog principal seed/config and additive migration.
 
-### PR 3 - Durable importer
+### Step 3 - minimal identity schema and private staging API
 
-- add import job/item repositories and worker handler;
-- implement bounded GitHub/package/file fetch adapters, license quarantine, hashing, parser limits,
-  idempotency, retry, and audit events;
-- produce a dry-run manifest without Neon writes.
+Scope:
 
-Definition of done: retrying a job creates no duplicate versions; malformed/unlicensed candidates
-are quarantined with stable codes; sandbox has deny-all egress.
+- add artifact classification, review/publication states, version schema/hash fields, and indexes;
+- add private/admin staging repository functions and typed contracts;
+- keep all created records non-public;
+- prove exact hash stability and global duplicate rejection.
 
-### PR 4 - Migrate existing 78
+Done when:
 
-- transform TypeScript entries into reviewed manifests;
-- reconcile source/license/citation data and preserve slugs;
-- import into a Neon test branch and compare API output against the static catalog;
-- leave the current renderer untouched until owner approves the data-source cutover.
+- an authorized service can create an immutable staged entry/version;
+- normal users cannot access it;
+- duplicate and state-transition tests pass;
+- no public endpoint or legacy TypeScript dependency is introduced.
 
-Definition of done: exactly 78 accepted unique records, zero unexplained field loss, validator and
-focused API tests pass.
+Rollback: feature flag off, then reversible migration downgrade while no accepted records exist.
 
-### PR 5 - Reach 150
+### Step 4 - provenance, rights, citations, and review
 
-- implement pinned MQT Bench and QASMBench adapters;
-- select 36 + 36 candidates with replacement pools;
-- parse, fingerprint, deduplicate, verify, review, and import;
-- generate an acceptance report containing every accepted/rejected source and real command result.
+Scope:
 
-Definition of done: exactly 150 accepted unique public records; every record has rights evidence,
-provenance, structural metrics, and verification/review state; no invented benchmark result.
+- add source, license assertion, citation, tag, and audit records;
+- implement append-only rights decisions and controlled review transitions;
+- implement publication precondition checks without yet publishing records.
 
-### PR 6 - Interoperability evidence
+Done when:
 
-- integrate qBraid conversion graph and pytket cross-checks behind optional worker dependencies;
-- store conversion paths, compatibility features, warnings, output hashes, and QCEC evidence;
-- create a fixed conversion corpus covering measurements, parameterized gates, custom gates,
-  bit-order differences, implicit swaps, and unsupported dynamic constructs.
+- unknown/conflicting licenses fail closed into quarantine;
+- a new source revision cannot reuse stale review/evidence;
+- provenance and rights survive API round-trip with identical hashes;
+- importer and reviewer separation is tested.
 
-Definition of done: support claims are generated only from stored passing attempts; loss and
-unsupported states are visible and tested.
+Rollback: feature flag off; records remain staged and non-public.
 
-### PR 7 - Exports and hardware evidence
+### Step 5 - durable importer skeleton and safe fetcher
 
-- deterministic GitHub registry and Hugging Face Parquet/card export;
-- backend snapshot and execution ingestion;
-- owner-approved QPU pilot, or explicitly report it as not run.
+Scope:
 
-Definition of done: exports reproduce from a Neon watermark; checksums match; public/spend actions
-occur only with approval.
+- add import jobs/items and one controlled local/file fixture adapter;
+- implement idempotency, leases, item-level retry, quarantine, stable failure codes, and limits;
+- implement allowlisted MQT Bench and QASMBench adapters after malicious fixture tests pass;
+- parse only in deny-all sandboxes.
 
-## 15. Test and quality gates
+Done when:
 
-- unit: schema validation, SPDX parsing, fingerprint stability, conversion status, metric units;
-- property/golden: importer normalization and deterministic export;
-- integration: FastAPI -> repository -> temporary Neon branch;
-- authz: public/private and cross-workspace matrix;
-- migration: up -> down -> up plus seed/import smoke test;
-- sandbox: deny-all egress, time/memory/output limits, malicious import fixtures;
-- conversion: exact, global-phase, partial, lossy, unsupported, timeout, and dependency-missing cases;
-- provenance: commit/path/hash and citation relation round-trip;
-- hardware: calibration timestamp binding, unit normalization, absent metric handling;
-- acceptance: 150 unique fingerprints, source/license coverage, no unreviewed public records;
-- standard repo gates: Ruff, format, pytest, import-linter, raw-query guard, generated contracts.
+- retry creates no duplicate version;
+- SSRF, redirect, archive, path traversal, oversized, malformed, and timeout fixtures fail safely;
+- a crashed import resumes from durable item state;
+- rejected items never create public artifacts.
 
-## 16. Risks and explicit owner decisions
+Rollback: disable import creation and drain/cancel active jobs; staged data remains non-public for
+audit or approved deletion.
 
-1. **Public scope model:** approve a dedicated catalog workspace/service scope before schema work.
-2. **License policy:** decide which SPDX expressions are auto-acceptable and who reviews unknown,
-   custom, or paper-derived circuits.
-3. **Static-to-API cutover:** decide when the UI stops importing TypeScript records; backend work can
-   finish first.
-4. **Framework expansion:** current durable execution supports Qiskit, Cirq, and PennyLane.
-   Braket, PyQuil, CUDA-Q, and pytket should initially be stored as derived/unsupported variants
-   until execution contracts are owner-approved.
-5. **GitHub/HF publication:** public account/org/repository creation needs explicit approval.
-6. **QPU access and spend:** backend choice, credentials, result-redistribution terms, and budget
-   must be approved before running hardware jobs.
-7. **Provider comparison:** do not ship a single cross-provider score until the methodology has a
-   versioned specification and uncertainty treatment.
-8. **Plan authority gap:** the external `Documents/Projects/Majorana/plans` and memory files named
-   in repository instructions were not available in this environment; this is a working plan and
-   should be reconciled with the authoritative plan before implementation.
+### Step 6 - 20-entry end-to-end proof and public reads
 
-## 17. Research basis
+Scope:
 
-Primary documentation and project sources consulted on 2026-07-18:
+- import the representative 20-entry batch from new sources only;
+- add reviewed publication transition;
+- implement public list/detail/version/source reads with pagination, ETags, and leakage tests;
+- expose a feature-flagged proof route or test client without mixing legacy and Neon results.
 
-- [MQT Bench](https://www.cda.cit.tum.de/mqtbench/index) and
-  [MQT Bench documentation](https://mqt.readthedocs.io/projects/bench/en/latest/)
-- [QASMBench](https://github.com/pnnl/QASMBench)
-- [NWQBench](https://github.com/pnnl/nwqbench)
-- [QED-C application-oriented benchmarks](https://github.com/SRI-International/QC-App-Oriented-Benchmarks)
-- [Qiskit Benchpress](https://github.com/Qiskit/benchpress)
-- [qBraid transpiler](https://docs.qbraid.com/v2/sdk/user-guide/transpiler)
-- [pytket user guide](https://docs.quantinuum.com/tket/user-guide/) and
-  [pytket-Qiskit conversion API](https://docs.quantinuum.com/tket/extensions/pytket-qiskit/api.html)
-- [MQT QCEC](https://mqt.readthedocs.io/projects/qcec/en/stable/) and
-  [partial equivalence](https://mqt.readthedocs.io/projects/qcec/en/stable/partial_equivalence.html)
-- [OpenQASM 3 specification](https://openqasm.com/intro.html)
-- [IBM backend/calibration properties](https://quantum.cloud.ibm.com/docs/en/guides/qpu-information)
-- [Neon connection pooling](https://neon.com/docs/connect/connection-pooling)
-- [Hugging Face dataset cards](https://huggingface.co/docs/hub/en/datasets-cards),
-  [repositories](https://huggingface.co/docs/hub/en/repositories), and
-  [Parquet dataset viewer](https://huggingface.co/docs/dataset-viewer/parquet)
-- [GitHub REST API best practices](https://docs.github.com/en/rest/using-the-rest-api/best-practices-for-using-the-rest-api),
-  [webhook best practices](https://docs.github.com/en/webhooks/using-webhooks/best-practices-for-using-webhooks),
-  and [license API](https://docs.github.com/en/rest/licenses/licenses)
-- [SPDX specification](https://spdx.dev/use/specifications/),
-  [DataCite related identifiers](https://datacite-metadata-schema.readthedocs.io/en/4.6/properties/relatedidentifier/),
-  and [CodeMeta terms](https://codemeta.github.io/terms/)
+Done when:
 
+- all 20 decisions have acceptance/rejection reports;
+- public responses contain only accepted Neon records;
+- private/cross-workspace/cache tests pass;
+- rollback to no public Neon route is demonstrated.
+
+Rollback: turn off public catalog feature flag; Neon records and audit history remain intact.
+
+### Step 7 - verification evidence
+
+Scope:
+
+- add version-bound public verification records and links to existing run evidence;
+- move only the necessary Tier vocabulary into shared Python contracts;
+- implement bounded non-LLM methods for accepted circuit families;
+- display `not_run`, `inconclusive`, and `failed` without optimistic defaults.
+
+Done when:
+
+- evidence source and environment hashes match the published artifact version;
+- source changes invalidate old evidence for support claims;
+- descriptive text and LLM review cannot create a passing verification record.
+
+Rollback: hide evidence endpoints/fields; artifact publication remains valid only under the
+previously approved minimum contract.
+
+### Step 8 - interoperability evidence
+
+Scope:
+
+- add requested qBraid paths and maintained pytket adapters behind optional dependencies;
+- record complete conversion attempts, paths, versions, warnings, hashes, and resource deltas;
+- verify exact/global-phase equivalence when bounded, observational equivalence when defined, and
+  otherwise report lossy/unsupported/inconclusive.
+
+Done when:
+
+- support labels are generated from stored attempts, not package availability;
+- bit order, register layout, angle, measurement, control-flow, custom-gate, and metadata-loss cases
+  are covered;
+- converter disagreement is retained as evidence instead of selecting a convenient output.
+
+Rollback: disable individual conversion adapters; native entries and stored attempts remain.
+
+### Step 9 - scale to at least 150 accepted entries
+
+Scope:
+
+- process the reviewed 180-220 candidate pool in bounded batches;
+- monitor quarantine, rejection, retry, duplicate, and verification rates after every batch;
+- pause automatically when thresholds or error budgets are exceeded;
+- produce a machine-readable acceptance report.
+
+Done when:
+
+- all milestone metrics in Section 2 pass;
+- every accepted item has provenance, rights, classification, hashes, and review history;
+- no legacy TypeScript record is present in the catalog lineage;
+- reproducibility sampling reruns a representative accepted subset from pinned inputs.
+
+Rollback: stop new imports and retract affected entries through audited state changes; never delete
+evidence to conceal a failed batch.
+
+### Step 10 - coordinated UI cutover
+
+Primary owner: web/UI owner, coordinated with Rei.
+
+Scope:
+
+- switch repository list/detail pages to the FastAPI catalog under a feature flag;
+- replace the legacy private-copy flow with the new accepted-version import endpoint;
+- verify parity for loading, empty, error, pagination, localization, and unsupported states;
+- remove the legacy TypeScript runtime dependency in a separate reviewed change.
+
+Done when:
+
+- production UI reads only Neon through FastAPI;
+- no merged legacy/Neon result set or hidden legacy fallback exists;
+- rollback is a route/feature configuration change, not a data restore;
+- UI screenshots, accessibility, TypeScript, and generated-contract checks pass.
+
+### Step 11 - deterministic GitHub/Hugging Face exports
+
+Scope:
+
+- generate exports from a committed Neon watermark and accepted records only;
+- include schema version, checksums, SPDX/source fields, citations, evidence, and limitations;
+- validate GitHub webhook signatures/delivery IDs if inbound synchronization is later enabled;
+- create no public repository or dataset without owner approval.
+
+Done when:
+
+- two exports from the same watermark are byte-for-byte reproducible;
+- checksums and counts match the Neon acceptance report;
+- no private, staged, quarantined, retracted, or internal review data is exported.
+
+Hardware/QPU integration is a later plan after the software catalog, credential model, cost
+approval, provider policy, and backend-snapshot methodology are separately approved.
+
+## 11. Conflict-avoidance and version-control protocol
+
+All implementation work uses `feature/repository` and the repository's commit conventions.
+
+Before each slice:
+
+1. verify a clean worktree and current branch;
+2. fetch the latest remote state;
+3. inspect `origin/dev...feature/repository` and active changes in likely overlap files;
+4. confirm the slice's file ownership and dependencies;
+5. stop and coordinate before editing a file actively changed by another lane.
+
+During each slice:
+
+- touch the smallest file set possible;
+- do not combine schema, shared contracts, importer, evidence, and UI work in one commit;
+- make additive contract/schema changes before consumers and remove nothing in the same slice;
+- generate OpenAPI and TypeScript contracts; never hand-edit generated output;
+- keep migrations linear, reversible, and independently testable;
+- preserve unrelated user changes in a dirty worktree;
+- use one logical change per commit with the approved English prefix;
+- record actual test output; never report a benchmark or import that was not run.
+
+Before review:
+
+1. re-check the diff against the current `origin/dev`;
+2. run targeted tests first, then the required repository checks proportional to the change;
+3. run migration `upgrade -> downgrade -> upgrade` for every DB change;
+4. regenerate contracts and prove no unexpected diff;
+5. update operational memory/session documentation required by `AGENTS.md`;
+6. document rollback, data effects, unresolved risks, and owner decisions in the PR;
+7. let Eshaan/owner review, merge, deploy, publish, or perform protected-branch actions.
+
+High-conflict files receive dedicated PRs and prior coordination:
+
+- `packages/py/contracts/**`;
+- `packages/ts/contracts-gen/**`;
+- `db/migrations/**`;
+- authentication and scope dependencies;
+- `services/worker` queue/dispatch code;
+- `.github/workflows/**`;
+- repository UI routes and `apps/web/lib/repository/**`.
+
+## 12. Required tests and quality gates
+
+- Pydantic schema and generated TypeScript contract checks;
+- repository-layer import boundary and raw-query guard;
+- temporary Neon branch integration;
+- migration `upgrade -> downgrade -> upgrade` and empty/non-empty downgrade cases;
+- public/private/cross-workspace authorization matrix;
+- publication state-machine and concurrent transition tests;
+- idempotency, exact duplicate, semantic-collision, and retry tests;
+- lease expiry, Worker crash, stale recovery, bounded retry, and dead-letter tests;
+- source/provenance/license/citation hash round-trip;
+- SSRF, DNS rebinding, redirect, archive bomb, traversal, symlink, oversized, malformed, timeout,
+  output flood, and missing-dependency fixtures;
+- deny-all egress, CPU, memory, process, file, disk, and output limits;
+- exact, global-phase, observational, lossy, unsupported, inconclusive, and converter-disagreement
+  cases;
+- deterministic export checksum and Neon watermark checks;
+- 20-entry proof report and final 150-entry acceptance report;
+- standard Ruff, formatting, pytest, TypeScript lint/typecheck/test, accessibility where UI changes,
+  import-linter, raw-query guard, and OpenAPI freshness checks.
+
+## 13. Stop conditions and owner decisions
+
+Stop the affected phase and do not publish when any of the following occurs:
+
+- catalog/public scope cannot be proven isolated from personal or team data;
+- a migration cannot cleanly complete the required round trip;
+- a fetched source has unknown/conflicting redistribution rights;
+- provenance cannot be pinned to immutable bytes and a stable identity;
+- fingerprint behavior changes across the same pinned environment;
+- sandbox egress, credential exposure, or resource-boundary failure is observed;
+- a Worker crash can strand or duplicate an import/publication;
+- evidence hashes do not match the exact published version;
+- required CI, CODEOWNER review, or owner approval is unavailable;
+- batch error, quarantine, or retry rates exceed the approved error budget.
+
+Owner decisions required before the relevant phase:
+
+1. system catalog principal and public-read authority design;
+2. auto-acceptable SPDX expressions and rights reviewers;
+3. publication and quarantine-release roles, including two-person review policy;
+4. candidate-source allocation and batch error budgets;
+5. UI cutover timing and legacy TypeScript removal;
+6. external GitHub organization/Hugging Face dataset publication;
+7. any QPU/GPU provider, credential, budget, or public performance comparison.
+
+## 14. Immediate next slice
+
+After this plan is reviewed, execute Step 0 only:
+
+1. add the catalog authority/public-read ADR;
+2. add the ingestion threat-model ADR;
+3. add the fingerprint/evidence ADR;
+4. create a file-overlap map for current Rui, Ryu, Eshaan, contracts, migration, and UI work;
+5. obtain owner decisions needed before Steps 1-3.
+
+Do not create catalog migrations, import data, or touch the legacy 78 TypeScript records in the
+same change as this plan.
