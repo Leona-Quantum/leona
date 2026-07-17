@@ -10,6 +10,9 @@ import { PUBLIC_REPOSITORY_ENTRIES } from "./lib/public-repository";
 const PUBLIC_PATHS = [
   "/",
   "/auth/callback",
+  // Logout must remain reachable after the session cookie is gone; the route
+  // itself makes the operation idempotent for already-signed-out visitors.
+  "/auth/sign-out",
   "/pricing",
   "/repository",
   ...PUBLIC_REPOSITORY_ENTRIES.map((entry) => `/repository/${entry.slug}`),

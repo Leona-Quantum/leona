@@ -3,6 +3,7 @@ import type {
   PublicRepositoryCitation,
   PublicRepositoryClassicalComparison,
   PublicRepositoryCodeVariant,
+  PublicRepositoryDecomposition,
   PublicRepositoryEntry,
   PublicRepositoryFramework,
   PublicRepositoryStatus,
@@ -44,6 +45,8 @@ export type ReferenceEntryOptions = {
   wires: string[];
   operations: Array<{ label: string; qubits: number[]; tone: "accent" | "ok" | "warn" | "neutral" }>;
   outcomes: Array<{ label: string; probability: number }>;
+  /** Composite gates only: the expanded basic-gate circuit for the gates-browser toggle. */
+  decomposition?: PublicRepositoryDecomposition;
   code: string;
   filename: string;
   language: PublicRepositoryCodeVariant["language"];
@@ -100,6 +103,7 @@ export function makeReferenceEntry(options: ReferenceEntryOptions): PublicReposi
       operations: options.operations,
       outcomes: options.outcomes,
     },
+    ...(options.decomposition ? { decomposition: options.decomposition } : {}),
     codeVariants: [
       {
         framework: options.framework,

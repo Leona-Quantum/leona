@@ -1,4 +1,4 @@
-import { getMajoranaAuth, signOutMajorana } from "../../../lib/auth";
+import { getMajoranaAuth } from "../../../lib/auth";
 import { AccountSettings } from "./account-settings";
 import { LanguageToggle } from "../../../components/language-toggle";
 import { getPublicLocale } from "../../../lib/public-locale-server";
@@ -21,14 +21,7 @@ export default async function Account() {
               <h1 className="mj-page-title">{copy.title}</h1>
               <p className="mj-page-lede">{copy.lede}</p>
             </div>
-            <form
-              action={async () => {
-                "use server";
-                await signOutMajorana();
-              }}
-            >
-              <button className="mj-secondary-button" type="submit">{copy.signOut}</button>
-            </form>
+            <a className="mj-secondary-button" href="/auth/sign-out">{copy.signOut}</a>
           </header>
           <section className="mj-artifact-panel mj-language-preference-panel">
             <div className="mj-panel-heading"><h2>{copy.preferences}</h2><span className="mj-mono-muted">{locale.toUpperCase()}</span></div>

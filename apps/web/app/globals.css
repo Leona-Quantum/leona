@@ -143,67 +143,118 @@ body {
   }
 }
 
-/* Studio — the constellation companion perched on the discovery search bar,
- * and the inspector pop-in. */
-.mj-studio-search--perch {
+/* Studio — the moss lioness companion on the discovery search bar, and the
+ * inspector pop-in. The lioness walks in leftward along the bar's top edge
+ * (leg-swing + bob while .is-walking), then .is-lying folds her into a sphinx
+ * pose via plain transitioned transforms so the hover paw animation can
+ * compose on top of the folded leg. */
+.mj-studio-search--lioness {
   position: relative;
 }
-.mj-studio-perch {
+.mj-lioness {
   position: absolute;
-  right: var(--sp-5);
-  top: -15px;
-  color: var(--text-1);
+  left: 0;
+  top: -28px;
+  color: var(--accent);
   pointer-events: none;
-  animation: mj-perch-settle 1600ms ease-in-out both;
 }
-.mj-perch-line,
-.mj-perch-tail,
-.mj-perch-paw {
-  stroke: currentColor;
-  stroke-width: 1;
-  stroke-linecap: round;
-  fill: none;
-  opacity: 0.7;
+.mj-lioness.is-walking {
+  animation: mj-lioness-walk-in 2600ms ease-out both;
 }
-.mj-perch-dot {
+.mj-lioness-body,
+.mj-lioness-head circle,
+.mj-lioness-tail circle {
   fill: currentColor;
 }
-.mj-perch-dot--bright {
-  fill: var(--accent);
+.mj-lioness-muzzle,
+.mj-lioness-tail path {
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  fill: none;
 }
-.mj-perch-tail {
-  transform-origin: 9.5px 14px;
+.mj-lioness-leg path {
+  stroke: currentColor;
+  stroke-width: 2.6;
+  stroke-linecap: round;
+}
+.mj-lioness-leg--front-far path,
+.mj-lioness-leg--rear-far path {
+  opacity: 0.55;
+}
+.mj-lioness-figure,
+.mj-lioness-head,
+.mj-lioness-leg {
   transform-box: view-box;
-  animation: mj-perch-sway 5s ease-in-out 1600ms infinite;
+  transition: transform 600ms ease-out;
 }
-.mj-perch-paw {
-  transform-origin: 7.6px 13.6px;
+.mj-lioness-leg--front-near { transform-origin: 24px 20.5px; }
+.mj-lioness-leg--front-far { transform-origin: 27.5px 20.5px; }
+.mj-lioness-leg--rear-near { transform-origin: 46.5px 20.5px; }
+.mj-lioness-leg--rear-far { transform-origin: 43.5px 20.5px; }
+.mj-lioness-leg path {
   transform-box: view-box;
+  transform-origin: inherit;
 }
-.mj-studio-search--perch:hover .mj-studio-perch,
-.mj-studio-search--perch:focus-within .mj-studio-perch {
-  color: var(--text-0);
+.mj-lioness-head { transform-origin: 16.2px 11.2px; }
+.mj-lioness-tail {
+  transform-box: view-box;
+  transform-origin: 47px 16.5px;
+  animation: mj-lioness-tail-sway 4200ms ease-in-out infinite;
 }
-.mj-studio-search--perch:hover .mj-perch-paw {
-  animation: mj-perch-paw 700ms ease-in-out;
+/* Walk cycle: diagonal leg pairs swing in opposite phase; the figure bobs. */
+.mj-lioness.is-walking .mj-lioness-figure {
+  animation: mj-lioness-bob 430ms ease-in-out infinite alternate;
 }
-@keyframes mj-perch-settle {
-  from { transform: translate(-76px, 0); opacity: 0; }
-  20% { opacity: 1; }
-  30% { transform: translate(-52px, -3px); }
-  45% { transform: translate(-34px, 0); }
-  60% { transform: translate(-18px, -3px); }
-  80% { transform: translate(-4px, 0); }
-  to { transform: translate(0, 0); opacity: 1; }
+.mj-lioness.is-walking .mj-lioness-leg--front-near path,
+.mj-lioness.is-walking .mj-lioness-leg--rear-far path {
+  animation: mj-lioness-step 430ms ease-in-out infinite alternate;
 }
-@keyframes mj-perch-sway {
+.mj-lioness.is-walking .mj-lioness-leg--front-far path,
+.mj-lioness.is-walking .mj-lioness-leg--rear-near path {
+  animation: mj-lioness-step 430ms ease-in-out infinite alternate-reverse;
+}
+/* Sphinx pose: body settles toward the bar, front legs stretch forward over
+ * the search icon, rear legs tuck, head dips. */
+.mj-lioness.is-lying .mj-lioness-figure {
+  transform: translateY(4.5px);
+}
+.mj-lioness.is-lying .mj-lioness-leg--front-near { transform: rotate(72deg); }
+.mj-lioness.is-lying .mj-lioness-leg--front-far { transform: rotate(64deg); }
+.mj-lioness.is-lying .mj-lioness-leg--rear-near { transform: rotate(78deg); }
+.mj-lioness.is-lying .mj-lioness-leg--rear-far { transform: rotate(70deg); }
+.mj-lioness.is-lying .mj-lioness-head { transform: translateY(2px) rotate(-4deg); }
+.mj-studio-search--lioness:hover .mj-lioness,
+.mj-studio-search--lioness:focus-within .mj-lioness {
+  color: var(--accent-press);
+}
+.mj-studio-search--lioness:hover .mj-lioness.is-lying .mj-lioness-leg--front-near path {
+  animation: mj-lioness-paw 800ms ease-in-out;
+}
+@keyframes mj-lioness-walk-in {
+  from { transform: translateX(150px); opacity: 0; }
+  12% { opacity: 1; }
+  to { transform: translateX(0); opacity: 1; }
+}
+@keyframes mj-lioness-bob {
+  from { transform: translateY(0); }
+  to { transform: translateY(-1.4px); }
+}
+@keyframes mj-lioness-step {
+  from { transform: rotate(-14deg); }
+  to { transform: rotate(14deg); }
+}
+/* Composes with the folded front leg (group rotate 72deg): the extra inner
+ * rotation dips the paw down onto the search icon and back, twice. */
+@keyframes mj-lioness-paw {
   0%, 100% { transform: rotate(0deg); }
-  50% { transform: rotate(5deg); }
+  30% { transform: rotate(24deg); }
+  55% { transform: rotate(6deg); }
+  75% { transform: rotate(20deg); }
 }
-@keyframes mj-perch-paw {
+@keyframes mj-lioness-tail-sway {
   0%, 100% { transform: rotate(0deg); }
-  35% { transform: rotate(-16deg); }
-  65% { transform: rotate(9deg); }
+  50% { transform: rotate(7deg); }
 }
 .mj-studio-inspector:not([hidden]) {
   animation: mj-inspector-pop 220ms ease-out;
@@ -216,10 +267,17 @@ body {
   to { opacity: 1; transform: translateX(0); }
 }
 @media (prefers-reduced-motion: reduce) {
-  .mj-studio-perch,
-  .mj-perch-tail,
-  .mj-perch-paw {
+  .mj-lioness.is-walking,
+  .mj-lioness .mj-lioness-figure,
+  .mj-lioness .mj-lioness-tail,
+  .mj-lioness .mj-lioness-leg path,
+  .mj-studio-search--lioness:hover .mj-lioness.is-lying .mj-lioness-leg--front-near path {
     animation: none;
+  }
+  .mj-lioness-figure,
+  .mj-lioness-head,
+  .mj-lioness-leg {
+    transition: none;
   }
   .mj-studio-inspector:not([hidden]) {
     animation: none;
@@ -293,12 +351,12 @@ body {
   }
 }
 .mj-company-hero-copy,
-.mj-company-hero-art,
+.mj-company-pipeline-band,
 .mj-company-section,
 .mj-company-final-cta {
   animation: mj-company-rise 600ms ease-out both;
 }
-.mj-company-hero-art { animation-delay: 100ms; }
+.mj-company-pipeline-band { animation-delay: 100ms; }
 .mj-company-section:nth-of-type(3) { animation-delay: 160ms; }
 .mj-company-section:nth-of-type(4) { animation-delay: 220ms; }
 .mj-company-final-cta { animation-delay: 280ms; }
@@ -316,7 +374,7 @@ body {
 }
 @media (prefers-reduced-motion: reduce) {
   .mj-company-hero-copy,
-  .mj-company-hero-art,
+  .mj-company-pipeline-band,
   .mj-company-section,
   .mj-company-final-cta,
   .mj-company-orbit-ring--one,
