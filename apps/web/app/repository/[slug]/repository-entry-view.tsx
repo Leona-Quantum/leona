@@ -45,6 +45,7 @@ const COPY = {
     industry: "Industry use cases",
     related: "Related entries",
     noCode: "No native snippet published yet.",
+    notCircuit: "This record is not a concrete circuit.",
     kind: "Kind",
     contributor: "Contributor",
     reviewedBy: "Reviewed by",
@@ -77,6 +78,7 @@ const COPY = {
     industry: "産業ユースケース",
     related: "関連エントリ",
     noCode: "ネイティブスニペットはまだ公開されていません。",
+    notCircuit: "この記録は具体的な回路ではありません。",
     kind: "種別",
     contributor: "投稿者",
     reviewedBy: "レビュー",
@@ -88,11 +90,11 @@ type RepositoryCopy = (typeof COPY)[keyof typeof COPY];
 function variantLabel(status: "native" | "conversion" | "unsupported", locale: PublicLocale): string {
   if (locale === "ja") {
     if (status === "native") return "ネイティブ";
-    if (status === "conversion") return "変換待ち";
+    if (status === "conversion") return "変換済み";
     return "未対応";
   }
   if (status === "native") return "Native";
-  if (status === "conversion") return "Conversion pending";
+  if (status === "conversion") return "Converted";
   return "Unsupported";
 }
 
@@ -251,9 +253,9 @@ export function RepositoryEntryView({
               </div>
             ) : (
               <div className="mj-repository-code-placeholder">
-                <strong>{copy.noCode}</strong>
+                <strong>{variant.status === "unsupported" ? copy.notCircuit : copy.noCode}</strong>
                 <p>{variant.note}</p>
-                <a className="mj-secondary-button" href="/contact">{copy.request}</a>
+                {variant.status !== "unsupported" ? <a className="mj-secondary-button" href="/contact">{copy.request}</a> : null}
               </div>
             )}
             {variant.note && variant.code ? <p className="mj-repository-code-note">{variant.note}</p> : null}

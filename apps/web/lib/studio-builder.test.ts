@@ -18,7 +18,7 @@ const steps: BuilderStep[] = [
   { id: "measurement", gate: "M", qubits: [0] },
 ];
 
-test("custom gates emit named helper definitions in every supported framework", () => {
+test("custom gates emit named helpers or flattened operations in all seven frameworks", () => {
   const generated = generateBuilderCode(steps, 2, [customGate]);
 
   assert.match(generated.qiskit, /def custom_bell_pair_abc123\(qc, qubits\):/);
@@ -27,4 +27,53 @@ test("custom gates emit named helper definitions in every supported framework", 
   assert.match(generated.pennylane, /custom_bell_pair_abc123\(\[0, 1\]\)/);
   assert.match(generated.cirq, /def custom_bell_pair_abc123\(qubits\):/);
   assert.match(generated.cirq, /\*custom_bell_pair_abc123\(\[qubits\[0\], qubits\[1\]\]\)/);
+  assert.match(generated.cudaq, /h\(q\[0\]\)/);
+  assert.match(generated.cudaq, /x\.ctrl\(q\[0\], q\[1\]\)/);
+  assert.match(generated.braket, /circuit\.cnot\(0, 1\)/);
+  assert.match(generated.openqasm3, /OPENQASM 3\.0;/);
+  assert.match(generated.openqasm3, /cx q\[0\], q\[1\];/);
+  assert.match(generated.pyquil, /program \+= CNOT\(0, 1\)/);
+  assert.match(generated.pyquil, /program \+= MEASURE\(1, ro\[1\]\)/);
+});
+
+test("nested custom gates flatten recursively and cyclic definitions terminate safely", () => {
+  const inner: CustomGateDefinition = {
+    id: "inner",
+    name: "Inner",
+    qubitCount: 2,
+    steps: [
+      { id: "inner-h", gate: "H", qubits: [1] },
+      { id: "inner-cx", gate: "CX", qubits: [1, 0] },
+    ],
+  };
+  const outer: CustomGateDefinition = {
+    id: "outer",
+    name: "Outer",
+    qubitCount: 2,
+    steps: [{ id: "outer-inner", gate: "CUSTOM", customGateId: inner.id, qubits: [0, 1] }],
+  };
+  const cycleA: CustomGateDefinition = {
+    id: "cycle-a",
+    name: "Cycle A",
+    qubitCount: 1,
+    steps: [{ id: "a-b", gate: "CUSTOM", customGateId: "cycle-b", qubits: [0] }],
+  };
+  const cycleB: CustomGateDefinition = {
+    id: "cycle-b",
+    name: "Cycle B",
+    qubitCount: 1,
+    steps: [{ id: "b-a", gate: "CUSTOM", customGateId: "cycle-a", qubits: [0] }],
+  };
+  const generated = generateBuilderCode([
+    { id: "outer-step", gate: "CUSTOM", customGateId: outer.id, qubits: [0, 1] },
+    { id: "cycle-step", gate: "CUSTOM", customGateId: cycleA.id, qubits: [0] },
+  ], 2, [outer, inner, cycleA, cycleB]);
+
+  for (const source of [generated.cudaq, generated.braket, generated.openqasm3, generated.pyquil]) {
+    assert.match(source, /(?:h\(q\[1\]\)|circuit\.h\(1\)|h q\[1\];|program \+= H\(1\))/);
+    assert.match(source, /(?:q\[1\].*q\[0\]|1, 0|q\[1\], q\[0\]|CNOT\(1, 0\))/);
+    assert.doesNotMatch(source, /cycle_a|cycle_b/i);
+  }
+  assert.match(generated.qiskit, /def custom_inner_inner/);
+  assert.match(generated.qiskit, /custom_inner_inner\(qc, \[qubits\[0\], qubits\[1\]\]\)/);
 });

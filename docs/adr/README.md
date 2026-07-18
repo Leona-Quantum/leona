@@ -9,3 +9,6 @@ An architecture choice without an ADR did not happen.
   OpenQASM to optional conversion interchange.
 - 2026-07-16: ADR-0014 replaces the fixed circuit pipeline with a durable,
   policy-enforced tool-calling loop and immutable Candidate revisions.
+- 2026-07-18: ADR-0015 defines bounded deterministic conversion across seven
+  circuit formats, explicit OpenQASM target recipes, and a no-fabrication
+  boundary for literature and operator records.

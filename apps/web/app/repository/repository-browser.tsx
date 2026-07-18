@@ -3,10 +3,12 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import {
   entryVerificationMethods,
+  getPublicRepositoryVariant,
   PUBLIC_REPOSITORY_CATEGORIES,
   PUBLIC_REPOSITORY_FRAMEWORKS,
   type PublicRepositoryCategory,
   type PublicRepositoryEntry,
+  type PublicRepositoryFramework,
 } from "../../lib/public-repository";
 import type { PublicLocale } from "../../lib/public-locale";
 import { VerificationTierBadge } from "../../components/repository-verification";
@@ -155,7 +157,7 @@ export function RepositoryBrowser({
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState<"all" | PublicRepositoryCategory>("all");
   const [family, setFamily] = useState<string>("");
-  const [framework, setFramework] = useState<string>("");
+  const [framework, setFramework] = useState<"" | PublicRepositoryFramework>("");
   const [starredSlugs, setStarredSlugs] = useState<Set<string>>(new Set());
   // Gate cards whose circuit is currently showing the basic-gate decomposition
   // instead of the single collapsed gate (gates category view only).
@@ -194,7 +196,7 @@ export function RepositoryBrowser({
       ].join(" ").toLowerCase().includes(normalizedQuery);
       const matchesCategory = category === "all" || entry.category === category;
       const matchesFamily = !family || entry.algorithmFamily === family;
-      const matchesFramework = !framework || entry.framework === framework;
+      const matchesFramework = !framework || getPublicRepositoryVariant(entry, framework).status !== "unsupported";
       return matchesQuery && matchesCategory && matchesFamily && matchesFramework;
     });
   }, [category, entries, family, framework, query]);
@@ -236,7 +238,7 @@ export function RepositoryBrowser({
         </label>
         <label>
           <span>{copy.framework}</span>
-          <select value={framework} onChange={(event) => setFramework(event.target.value)}>
+          <select value={framework} onChange={(event) => setFramework(event.target.value as "" | PublicRepositoryFramework)}>
             <option value="">{copy.allFrameworks}</option>
             {PUBLIC_REPOSITORY_FRAMEWORKS.map((option) => <option key={option}>{option}</option>)}
           </select>

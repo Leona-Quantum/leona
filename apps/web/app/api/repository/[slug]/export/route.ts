@@ -1,14 +1,15 @@
 import { NextResponse } from "next/server";
 import { getMajoranaAuth } from "../../../../../lib/auth";
+import { looksLikeOpenQasm3 } from "../../../../../lib/circuit-conversion";
 import {
   getPublicRepositoryEntry,
   getPublicRepositoryLibraryVariant,
   getPublicRepositoryVariant,
+  PUBLIC_REPOSITORY_FRAMEWORKS,
   type PublicRepositoryEntry,
 } from "../../../../../lib/public-repository";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
-const LIBRARY_FRAMEWORKS = new Set(["Qiskit", "PennyLane", "Cirq"]);
 
 export const dynamic = "force-dynamic";
 
@@ -54,8 +55,9 @@ function publicImportPayload(
 ) {
   const qasmVariant = getPublicRepositoryVariant(entry, "OpenQASM 3.0");
   const frameworkVariants = Object.fromEntries(
-    entry.codeVariants
-      .filter((variant) => LIBRARY_FRAMEWORKS.has(variant.framework) && variant.status === "native" && Boolean(variant.code))
+    PUBLIC_REPOSITORY_FRAMEWORKS
+      .map((framework) => getPublicRepositoryVariant(entry, framework))
+      .filter((variant) => variant.status !== "unsupported" && Boolean(variant.code))
       .map((variant) => [variant.framework, variant.code]),
   );
 
@@ -66,7 +68,7 @@ function publicImportPayload(
     framework: libraryVariant.framework.toLowerCase(),
     code: libraryVariant.code,
     code_lang: libraryVariant.language,
-    qasm: qasmVariant.status === "native" ? qasmVariant.code : null,
+    qasm: qasmVariant.status !== "unsupported" && looksLikeOpenQasm3(qasmVariant.code) ? qasmVariant.code : null,
     framework_variants: Object.keys(frameworkVariants).length ? frameworkVariants : null,
     resource_estimates: Object.fromEntries(entry.resources.map((resource) => [resource.label, resource.value])),
     export_status: exportStatus(entry.exportStatus),

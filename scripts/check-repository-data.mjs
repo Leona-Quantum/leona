@@ -35,6 +35,9 @@ const STATUSES = new Set(["verified", "verified_caveats", "community_review"]);
 const FRAMEWORKS = new Set(["Qiskit", "PennyLane", "Cirq", "CUDA-Q", "Amazon Braket", "OpenQASM 3.0", "PyQuil"]);
 const LANGUAGES = new Set(["python", "typescript", "openqasm", "text"]);
 const TONES = new Set(["accent", "ok", "warn", "neutral"]);
+const SINGLE_QUBIT_GATES = new Set(["H", "X", "Y", "Z", "S", "T", "RX", "RY", "RZ"]);
+const TWO_QUBIT_GATES = new Set(["CX", "CZ", "SWAP"]);
+const ROTATION_GATES = new Set(["RX", "RY", "RZ"]);
 
 const outDir = mkdtempSync(join(tmpdir(), "repo-data-"));
 const outFile = join(outDir, "public-repository.mjs");
@@ -60,6 +63,7 @@ let entries;
 let VERIFICATION_METHODS;
 let VERIFICATION_TIERS;
 let entryVerificationTier;
+let getPublicRepositoryVariant;
 if (ENTRY_FILE) {
   const arrays = Object.values(mod).filter(Array.isArray);
   if (arrays.length !== 1) {
@@ -91,7 +95,7 @@ if (ENTRY_FILE) {
     }
   }
 } else {
-  ({ PUBLIC_REPOSITORY_ENTRIES: entries, VERIFICATION_METHODS, VERIFICATION_TIERS, entryVerificationTier } = mod);
+  ({ PUBLIC_REPOSITORY_ENTRIES: entries, VERIFICATION_METHODS, VERIFICATION_TIERS, entryVerificationTier, getPublicRepositoryVariant } = mod);
 }
 const knownMethods = new Set(VERIFICATION_METHODS.map((m) => m.id));
 const errors = [];
@@ -103,6 +107,12 @@ function fail(slug, message) {
 }
 
 const nonEmpty = (value) => typeof value === "string" && value.trim().length > 0;
+const validRotationParameter = (value) => {
+  const normalized = typeof value === "string" ? value.trim().replaceAll(/\s+/g, "") : "";
+  if (!/^(?:(?:\d+(?:\.\d+)?\*)?pi(?:\/\d+(?:\.\d+)?)?|\d+(?:\.\d+)?)$/.test(normalized)) return false;
+  const denominator = /\/(\d+(?:\.\d+)?)$/.exec(normalized);
+  return !denominator || Number(denominator[1]) !== 0;
+};
 
 for (const entry of entries) {
   const slug = entry.slug ?? "<missing slug>";
@@ -154,6 +164,42 @@ for (const entry of entries) {
     if (!FRAMEWORKS.has(variant.framework)) fail(slug, `variant has unknown framework ${variant.framework}`);
     if (!LANGUAGES.has(variant.language)) fail(slug, `variant has unknown language ${variant.language}`);
     if (variant.status === "native" && !nonEmpty(variant.filename)) fail(slug, "native variant missing filename");
+  }
+
+  if (entry.portableCircuit) {
+    const portable = entry.portableCircuit;
+    if (!Number.isInteger(portable.qubitCount) || portable.qubitCount < 1) fail(slug, "portableCircuit has invalid qubitCount");
+    for (const [index, step] of (portable.steps ?? []).entries()) {
+      if (!["H", "X", "Y", "Z", "S", "T", "RX", "RY", "RZ", "CX", "CZ", "SWAP"].includes(step.gate)) {
+        fail(slug, `portableCircuit step ${index} has unsupported gate ${step.gate}`);
+      }
+      if (!Array.isArray(step.qubits)) {
+        fail(slug, `portableCircuit step ${index} has invalid qubits`);
+        continue;
+      }
+      if (SINGLE_QUBIT_GATES.has(step.gate) && step.qubits.length !== 1) {
+        fail(slug, `portableCircuit step ${index} gate ${step.gate} requires one qubit`);
+      }
+      if (TWO_QUBIT_GATES.has(step.gate) && (step.qubits.length !== 2 || step.qubits[0] === step.qubits[1])) {
+        fail(slug, `portableCircuit step ${index} gate ${step.gate} requires two distinct qubits`);
+      }
+      if (ROTATION_GATES.has(step.gate) && !validRotationParameter(step.param)) {
+        fail(slug, `portableCircuit step ${index} gate ${step.gate} has invalid rotation parameter`);
+      }
+      for (const qubit of step.qubits) {
+        if (!Number.isInteger(qubit) || qubit < 0 || qubit >= portable.qubitCount) {
+          fail(slug, `portableCircuit step ${index} references qubit ${qubit} outside width ${portable.qubitCount}`);
+        }
+      }
+    }
+    if (!ENTRY_FILE && getPublicRepositoryVariant) {
+      for (const framework of FRAMEWORKS) {
+        const generated = getPublicRepositoryVariant(entry, framework);
+        if (generated.status === "unsupported" || !nonEmpty(generated.code)) {
+          fail(slug, `portableCircuit did not generate ${framework} source`);
+        }
+      }
+    }
   }
   const seenVariantFrameworks = new Set();
   for (const variant of variants) {

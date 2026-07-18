@@ -11,6 +11,7 @@ import { GATE_ENTRIES_2 } from "./repository/entries-gates-2";
 import { ALGORITHM_ENTRIES } from "./repository/entries-algorithms";
 import { STATE_OPERATOR_ENTRIES } from "./repository/entries-states-operators";
 import { STATE_OPERATOR_ENTRIES_2 } from "./repository/entries-states-operators-2";
+import { LITERATURE_EXPANSION_ENTRIES } from "./repository/entries-literature-expansion";
 import type {
   PublicRepositoryCodeVariant,
   PublicRepositoryEntry,
@@ -18,6 +19,17 @@ import type {
 } from "./repository/types";
 import { strongestTier, type VerificationMethodId, type VerificationTier } from "./repository/verification";
 import { ENTRY_ENRICHMENT } from "./repository/enrichment";
+import {
+  circuitFramework,
+  type PortableCircuit,
+  type PortableCircuitGate,
+} from "./circuit-frameworks";
+import {
+  convertCircuitSource,
+  generatePortableCircuitCode,
+  looksLikeOpenQasm3,
+  parseCircuitSource,
+} from "./circuit-conversion";
 
 export type {
   PublicRepositoryCategory,
@@ -138,6 +150,7 @@ const ALL_RAW_ENTRIES: PublicRepositoryEntry[] = [
   ...ALGORITHM_ENTRIES,
   ...STATE_OPERATOR_ENTRIES,
   ...STATE_OPERATOR_ENTRIES_2,
+  ...LITERATURE_EXPANSION_ENTRIES,
 ];
 
 export const PUBLIC_REPOSITORY_ENTRIES: PublicRepositoryEntry[] = ALL_RAW_ENTRIES.map((raw) => {
@@ -163,16 +176,70 @@ export function getPublicRepositoryVariant(
   framework: PublicRepositoryFramework,
 ): PublicRepositoryCodeVariant {
   const nativeVariant = entry.codeVariants.find((variant) => variant.framework === framework);
-  if (nativeVariant) return nativeVariant;
+  if (nativeVariant?.code) return nativeVariant;
+
+  const target = circuitFramework(framework);
+  const portable = entry.portableCircuit ?? inferPortableCircuit(entry);
+  if (portable) {
+    const code = generatePortableCircuitCode(portable)[target.key];
+    return {
+      framework,
+      status: "conversion",
+      language: target.language,
+      filename: `${entry.slug}.${target.extension}`,
+      code,
+      note: "Deterministic Leona Quantum conversion from the bounded portable gate model. Gate order, parameters, qubit indices, and terminal all-qubit measurement are preserved; review target-SDK and hardware decomposition before execution.",
+    };
+  }
+
+  const qasmVariant = entry.codeVariants.find((variant) => (
+    variant.framework === "OpenQASM 3.0" && looksLikeOpenQasm3(variant.code)
+  ));
+  const sourceVariant = entry.codeVariants.find((variant) => variant.status === "native" && Boolean(variant.code));
+  if (sourceVariant && qasmVariant) {
+    const conversion = convertCircuitSource(
+      sourceVariant.code,
+      circuitFramework(sourceVariant.framework).key,
+      target.key,
+      qasmVariant.code,
+    );
+    if (conversion) {
+      return {
+        framework,
+        status: "conversion",
+        language: target.language,
+        filename: `${entry.slug}.${target.extension}`,
+        code: conversion.code,
+        note: conversion.note,
+      };
+    }
+  }
 
   return {
     framework,
-    status: "conversion",
+    status: "unsupported",
     language: framework === "OpenQASM 3.0" ? "openqasm" : "python",
-    filename: `${entry.slug}-conversion-request.txt`,
+    filename: `${entry.slug}-not-a-concrete-circuit.txt`,
     code: "",
-    note: `A ${framework} variant is not published for this record yet. The catalog keeps the requested framework visible so conversion work can be reviewed rather than implied.`,
+    note: `This record does not expose a concrete circuit in Leona Quantum's portable gate subset or stored OpenQASM 3, so a ${framework} circuit would be speculative. Operator and literature references remain explicit instead of being presented as converted circuits.`,
   };
+}
+
+function inferPortableCircuit(entry: PublicRepositoryEntry): PortableCircuit | null {
+  for (const variant of entry.codeVariants) {
+    if (variant.status !== "native" || !variant.code) continue;
+    const parsed = parseCircuitSource(variant.code, circuitFramework(variant.framework).key);
+    if (!parsed) continue;
+    return {
+      qubitCount: parsed.qubitCount,
+      steps: parsed.steps
+        .filter((step) => step.gate !== "M" && step.gate !== "CUSTOM")
+        .map((step) => ({ gate: step.gate as PortableCircuitGate, qubits: step.qubits, ...(step.param ? { param: step.param } : {}) })),
+      measure: parsed.steps.some((step) => step.gate === "M"),
+    };
+  }
+
+  return null;
 }
 
 const PERSONAL_LIBRARY_FRAMEWORKS: PublicRepositoryFramework[] = ["Qiskit", "PennyLane", "Cirq"];
@@ -188,5 +255,5 @@ export function getPublicRepositoryLibraryVariant(
   const candidates = [entry.framework, ...PERSONAL_LIBRARY_FRAMEWORKS];
   return candidates
     .map((framework) => getPublicRepositoryVariant(entry, framework))
-    .find((variant) => PERSONAL_LIBRARY_FRAMEWORKS.includes(variant.framework) && variant.status === "native" && Boolean(variant.code));
+    .find((variant) => PERSONAL_LIBRARY_FRAMEWORKS.includes(variant.framework) && variant.status !== "unsupported" && Boolean(variant.code));
 }

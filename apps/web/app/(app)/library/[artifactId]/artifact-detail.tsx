@@ -5,6 +5,8 @@ import { useRouter } from "next/navigation";
 import { CopyIcon, MoreIcon, StarIcon } from "../../../../components/icons";
 import { archiveArtifact, deleteArtifact, frameworkVariantsFromRemote, getLibraryArtifact, loadStarredLibraryArtifactIds, toggleLibraryArtifactStar, type LibraryArtifact } from "../../../../lib/library-data";
 import type { PublicLocale } from "../../../../lib/public-locale";
+import { CIRCUIT_FRAMEWORKS, circuitFramework, circuitFrameworkOrNull } from "../../../../lib/circuit-frameworks";
+import { convertCircuitSource, looksLikeOpenQasm3, parseCircuitSource } from "../../../../lib/circuit-conversion";
 
 type DetailTab = "overview" | "code" | "runs" | "verification" | "notes";
 
@@ -225,23 +227,32 @@ function CodeAndExport({ artifact, copied, onCopy, copy }: { artifact: LibraryAr
 }
 
 function frameworkCodeOptions(artifact: LibraryArtifact): Array<{ key: string; label: string; code: string }> {
-  const options = new Map<string, { key: string; label: string; code: string }>();
-  const primary = normalizeFramework(artifact.framework);
-  options.set(primary, { key: primary, label: frameworkLabel(primary), code: artifact.code });
+  const provided = new Map<string, string>();
   for (const [framework, code] of Object.entries(artifact.frameworkVariants ?? {})) {
-    options.set(normalizeFramework(framework), { key: normalizeFramework(framework), label: frameworkLabel(framework), code });
+    const normalized = normalizeFramework(framework);
+    if (normalized && code) provided.set(normalized, code);
   }
-  return [...options.values()];
+  const primary = normalizeFramework(artifact.framework);
+  if (primary && artifact.code) provided.set(primary, artifact.code);
+  if (artifact.qasm && looksLikeOpenQasm3(artifact.qasm)) provided.set("openqasm3", artifact.qasm);
+
+  const qasm = artifact.qasm && looksLikeOpenQasm3(artifact.qasm) ? artifact.qasm : null;
+  const candidates = [...provided.entries()]
+    .map(([framework, code]) => ({ framework, code }))
+  const source = candidates.find((candidate) => Boolean(parseCircuitSource(candidate.code, candidate.framework)))
+    ?? (qasm ? { framework: "openqasm3", code: qasm } : undefined);
+
+  return CIRCUIT_FRAMEWORKS.flatMap(({ key, label }) => {
+    const existing = provided.get(key);
+    if (existing) return [{ key, label, code: existing }];
+    if (!source) return [];
+    const conversion = convertCircuitSource(source.code, source.framework, key, qasm);
+    return conversion ? [{ key, label, code: conversion.code }] : [];
+  });
 }
 
-function normalizeFramework(value: string): string {
-  const normalized = value.toLowerCase();
-  return normalized === "pennylane" ? "pennylane" : normalized === "cirq" ? "cirq" : "qiskit";
-}
-
-function frameworkLabel(value: string): string {
-  const normalized = normalizeFramework(value);
-  return normalized === "pennylane" ? "PennyLane" : normalized === "cirq" ? "Cirq" : "Qiskit";
+function normalizeFramework(value: string): string | null {
+  return circuitFrameworkOrNull(value)?.key ?? null;
 }
 
 function Runs({ artifact, copy }: { artifact: LibraryArtifact; copy: ArtifactCopy }) {

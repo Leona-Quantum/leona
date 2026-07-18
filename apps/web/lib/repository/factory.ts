@@ -9,6 +9,7 @@ import type {
   PublicRepositoryStatus,
 } from "./types";
 import type { VerificationMethodId } from "./verification";
+import type { PortableCircuit } from "../circuit-frameworks";
 
 export type ReferenceEntryOptions = {
   slug: string;
@@ -47,6 +48,7 @@ export type ReferenceEntryOptions = {
   outcomes: Array<{ label: string; probability: number }>;
   /** Composite gates only: the expanded basic-gate circuit for the gates-browser toggle. */
   decomposition?: PublicRepositoryDecomposition;
+  portableCircuit?: PortableCircuit;
   code: string;
   filename: string;
   language: PublicRepositoryCodeVariant["language"];
@@ -104,6 +106,7 @@ export function makeReferenceEntry(options: ReferenceEntryOptions): PublicReposi
       outcomes: options.outcomes,
     },
     ...(options.decomposition ? { decomposition: options.decomposition } : {}),
+    ...(options.portableCircuit ? { portableCircuit: options.portableCircuit } : {}),
     codeVariants: [
       {
         framework: options.framework,

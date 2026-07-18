@@ -1,4 +1,5 @@
 import type { VerificationMethodId } from "./verification";
+import type { PortableCircuit } from "../circuit-frameworks";
 
 export type PublicRepositoryCategory = "gates" | "algorithms" | "operators" | "states";
 export type PublicRepositoryStatus = "verified" | "verified_caveats" | "community_review";
@@ -112,6 +113,12 @@ export interface PublicRepositoryEntry {
     outcomes: Array<{ label: string; probability: number }>;
   };
   decomposition?: PublicRepositoryDecomposition;
+  /**
+   * Framework-neutral representation for concrete circuits in Leona Quantum's
+   * bounded gate subset. Seven framework variants are generated lazily from
+   * this record; literature- and operator-only entries intentionally omit it.
+   */
+  portableCircuit?: PortableCircuit;
   codeVariants: PublicRepositoryCodeVariant[];
   relatedSlugs: string[];
   literature?: PublicRepositoryCitation[];

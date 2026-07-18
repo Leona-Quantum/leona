@@ -251,6 +251,63 @@ else:
 """
 
 
+class CirqAdapter(PythonFrameworkAdapter):
+    def trusted_observer(self, source: str, *, circuit_expected: bool) -> str:
+        if not circuit_expected:
+            return ""
+        base = super().trusted_observer(source, circuit_expected=circuit_expected)
+        return (
+            base
+            + """
+_majorana_final_circuit = _majorana_namespace.get("FINAL_CIRCUIT")
+if _majorana_final_circuit is not None:
+    try:
+        _majorana_to_qasm = _majorana_getattr(_majorana_final_circuit, "to_qasm", None)
+        if _majorana_to_qasm is not None:
+            _majorana_observation["interchange_qasm"] = _majorana_to_qasm(version="3.0")
+    except _majorana_exception as _majorana_interchange_exc:
+        _majorana_observation["interchange_error"] = _majorana_type(_majorana_interchange_exc).__name__
+"""
+        )
+
+
+class PennyLaneAdapter(PythonFrameworkAdapter):
+    def trusted_setup(self, *, circuit_expected: bool) -> str:
+        if not circuit_expected:
+            return ""
+        return """_majorana_interchange_dumps = None
+try:
+    from pennylane import to_openqasm as _majorana_interchange_dumps
+except Exception:
+    pass
+"""
+
+    def trusted_observer(self, source: str, *, circuit_expected: bool) -> str:
+        if not circuit_expected:
+            return ""
+        base = super().trusted_observer(source, circuit_expected=circuit_expected)
+        return (
+            base
+            + """
+_majorana_final_circuit = _majorana_namespace.get("FINAL_CIRCUIT")
+try:
+    _majorana_interchange_dumps
+except _majorana_exception:
+    _majorana_interchange_dumps = None
+if _majorana_final_circuit is not None and _majorana_interchange_dumps is not None:
+    try:
+        _majorana_tape = _majorana_getattr(_majorana_final_circuit, "tape", None)
+        if _majorana_tape is None:
+            _majorana_tape = _majorana_getattr(_majorana_final_circuit, "_tape", None)
+        if _majorana_tape is None:
+            _majorana_tape = _majorana_final_circuit
+        _majorana_observation["interchange_qasm"] = _majorana_interchange_dumps(_majorana_tape)
+    except _majorana_exception as _majorana_interchange_exc:
+        _majorana_observation["interchange_error"] = _majorana_type(_majorana_interchange_exc).__name__
+"""
+        )
+
+
 _ADAPTERS: dict[Framework, FrameworkAdapter] = {
     Framework.QISKIT: QiskitAdapter(
         framework=Framework.QISKIT,
@@ -279,7 +336,7 @@ _ADAPTERS: dict[Framework, FrameworkAdapter] = {
             }
         ),
     ),
-    Framework.CIRQ: PythonFrameworkAdapter(
+    Framework.CIRQ: CirqAdapter(
         framework=Framework.CIRQ,
         optimization_calls=frozenset({"cirq.optimize_for_target_gateset", "cirq.transformers"}),
         operation_calls=frozenset(
@@ -302,7 +359,7 @@ _ADAPTERS: dict[Framework, FrameworkAdapter] = {
             }
         ),
     ),
-    Framework.PENNYLANE: PythonFrameworkAdapter(
+    Framework.PENNYLANE: PennyLaneAdapter(
         framework=Framework.PENNYLANE,
         optimization_calls=frozenset({"qml.compile", "pennylane.compile"}),
         operation_calls=frozenset(
