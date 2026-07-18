@@ -27,7 +27,12 @@ class SuccessCriteria(_PlanBase):
         description="Key extracted from the run's result dict, e.g. ground_state_energy_Ha"
     )
     expected_range: dict[str, float] | None = Field(
-        default=None, description="Acceptable {min, max} range for primary_metric"
+        default=None,
+        description=(
+            "Flat map of bound-name to numeric threshold, e.g. "
+            '{"correlated_fraction_min": 0.99, "balance_abs_deviation_max": 0.15}. '
+            "Each value is a plain number — never a nested {min, max} object."
+        ),
     )
     additional_notes: list[str] | None = None
 
