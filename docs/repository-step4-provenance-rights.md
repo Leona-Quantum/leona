@@ -91,8 +91,13 @@ deleted after — no Neon branch created or touched):
   `python -m majorana_contracts.export --check`: `openapi.json` unchanged (no route or
   response-model field touched).
 
+## Neon gate
+
+A real Neon branch (`step3-4-catalog-provenance-20260718`) confirmed the same results
+against Postgres 17 — see `docs/repository-step3-4-neon-gate.md`.
+
 ## Required gate
 
 CODEOWNER review remains required before Step 5 for the migration, contracts, and
-repository-layer changes. `SYSTEM_CATALOG_ENABLED` stays `false`; no data was staged
-against Neon.
+repository-layer changes. `SYSTEM_CATALOG_ENABLED` stays `false`; no public catalog data
+exists.

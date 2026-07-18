@@ -70,8 +70,13 @@ stopped and deleted after) was used instead of a new Neon branch:
 - `python -m majorana_contracts.export --check`: `openapi.json` unchanged — Step 3 adds
   no route or response-model field, so no TypeScript regeneration was needed.
 
+## Neon gate
+
+A real Neon branch (`step3-4-catalog-provenance-20260718`) confirmed the same results
+against Postgres 17 — see `docs/repository-step3-4-neon-gate.md`.
+
 ## Required gate
 
 CODEOWNER review remains required before Step 4 for the migration, contracts, and
-repository-layer changes. `SYSTEM_CATALOG_ENABLED` stays `false`; no data was staged
-against Neon.
+repository-layer changes. `SYSTEM_CATALOG_ENABLED` stays `false`; no public catalog data
+exists.
