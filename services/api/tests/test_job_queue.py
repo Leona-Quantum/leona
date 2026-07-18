@@ -181,3 +181,26 @@ async def test_dead_letter_delivery_is_idempotently_marked():
     )
     sql = _sql(failed_callback.statements[0])
     assert "dead_letter_attempts" in sql and "run_after" in sql
+    assert "CASE WHEN" in sql and "dead_lettered_at" in sql
+
+
+async def test_dead_letter_retry_budget_is_bounded():
+    session = _Session(_Result(rowcount=1))
+    await system.mark_job_dead_lettered(
+        session,
+        job_id=uuid.uuid4(),
+        error="callback unavailable",
+        max_delivery_attempts=5,
+    )
+    sql = _sql(session.statements[0])
+    assert "dead_letter_attempts" in sql
+    assert "dead_lettered_at" in sql
+    assert "CASE WHEN" in sql
+
+    with pytest.raises(ValueError, match="max_delivery_attempts"):
+        await system.mark_job_dead_lettered(
+            _Session(),
+            job_id=uuid.uuid4(),
+            error="callback unavailable",
+            max_delivery_attempts=0,
+        )

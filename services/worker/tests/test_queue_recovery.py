@@ -23,6 +23,18 @@ def _factory():
     return _Context()
 
 
+async def test_dead_letters_are_delivered_one_per_poll_cycle(monkeypatch):
+    observed = {}
+
+    async def list_pending_dead_letters(_session, *, limit):
+        observed["limit"] = limit
+        return []
+
+    monkeypatch.setattr(system, "list_pending_dead_letters", list_pending_dead_letters)
+    await worker_main._deliver_pending_dead_letters(_factory)
+    assert observed["limit"] == 1
+
+
 async def test_handler_is_cancelled_when_heartbeat_io_hangs(monkeypatch):
     """A hanging (not failing) heartbeat write must still fail closed: if the
     renewal I/O never returns, the deadline check never runs, and the handler

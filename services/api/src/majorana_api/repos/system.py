@@ -17,7 +17,7 @@ from typing import Any
 from majorana_contracts.enums import Role
 from majorana_openqasm import fingerprint as qasm_fingerprint
 from majorana_openqasm import normalize
-from sqlalchemy import func, or_, select, update
+from sqlalchemy import case, func, or_, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -45,6 +45,7 @@ c[1] = measure q[1];
 
 DEFAULT_JOB_MAX_ATTEMPTS = 3
 MAX_JOB_MAX_ATTEMPTS = 20
+DEFAULT_DEAD_LETTER_MAX_ATTEMPTS = 5
 
 
 class JobLeaseLostError(RuntimeError):
@@ -684,19 +685,32 @@ async def mark_job_dead_lettered(
     job_id: Any,
     error: str | None = None,
     retry_delay_seconds: float = 30.0,
+    max_delivery_attempts: int = DEFAULT_DEAD_LETTER_MAX_ATTEMPTS,
 ) -> bool:
-    """Persist dead-letter delivery success or a retryable callback error."""
+    """Persist delivery success or stop retrying after a bounded error budget.
+
+    An exhausted callback keeps its final error and receives dead_lettered_at,
+    distinguishing "delivery abandoned" (error is not null) from successful
+    delivery while ensuring the poller cannot retry forever.
+    """
     if not 0 < retry_delay_seconds <= 3600:
         raise ValueError("dead-letter retry delay must be in (0, 3600]")
+    if not 1 <= max_delivery_attempts <= 20:
+        raise ValueError("max_delivery_attempts must be in [1, 20]")
+    attempts_after_update = Job.dead_letter_attempts + 1
     values: dict[str, Any] = {
         "dead_letter_error": _bounded_error(error) if error is not None else None,
-        "dead_letter_attempts": Job.dead_letter_attempts + 1,
+        "dead_letter_attempts": attempts_after_update,
         "updated_at": func.now(),
     }
     if error is None:
         values["dead_lettered_at"] = func.now()
     else:
         values["run_after"] = func.now() + dt.timedelta(seconds=retry_delay_seconds)
+        values["dead_lettered_at"] = case(
+            (attempts_after_update >= max_delivery_attempts, func.now()),
+            else_=Job.dead_lettered_at,
+        )
     result = await session.execute(
         update(Job)
         .where(

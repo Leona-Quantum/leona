@@ -146,7 +146,9 @@ async def _execute_with_heartbeat(
 
 async def _deliver_pending_dead_letters(factory) -> None:
     async with factory() as session:
-        pending = await system.list_pending_dead_letters(session, limit=10)
+        # One bounded callback per poll cycle prevents terminal notification
+        # work from monopolizing the worker when the main queue is busy.
+        pending = await system.list_pending_dead_letters(session, limit=1)
     for job in pending:
         callback = DEAD_LETTER_HANDLERS.get(job.kind)
         error: str | None = None
@@ -171,6 +173,12 @@ async def _deliver_pending_dead_letters(factory) -> None:
             await session.commit()
         if marked and error is None:
             log.info("job %s dead-letter callback completed", job.id)
+        elif (
+            marked
+            and error is not None
+            and int(job.dead_letter_attempts or 0) + 1 >= system.DEFAULT_DEAD_LETTER_MAX_ATTEMPTS
+        ):
+            log.error("job %s dead-letter callback abandoned after retry budget", job.id)
 
 
 async def _start_liveness() -> asyncio.AbstractServer:
@@ -214,10 +222,6 @@ async def run_forever() -> None:
                     log.error(
                         "dead-lettered %d jobs after lease exhaustion", len(recovery.dead_jobs)
                     )
-                await _deliver_pending_dead_letters(factory)
-
-                # Claim only after dead-letter callbacks complete. Otherwise the
-                # new lease would be ticking before its heartbeat task starts.
                 claimed: tuple[object, str, dict, object, int, float] | None = None
                 async with factory() as session:
                     job = await system.claim_job(
@@ -325,7 +329,13 @@ async def run_forever() -> None:
                                 log.exception(
                                     "job %s failed after its lease was reassigned", job_id
                                 )
-                    continue  # drain the queue before sleeping again
+                # Normal jobs always get first access to the worker. A single
+                # bounded dead-letter callback runs only after that job finishes
+                # (or immediately when the queue is idle), so no claimed lease
+                # ticks while callback delivery blocks.
+                await _deliver_pending_dead_letters(factory)
+                if claimed is not None:
+                    continue  # drain the main queue before sleeping again
             except Exception:
                 # Transient DB failure: log, back off, keep the worker alive.
                 log.exception("poll cycle failed; backing off %.0fs", ERROR_BACKOFF_S)
