@@ -139,27 +139,34 @@ export default async function Home() {
         </div>
       </section>
 
+      {/* Lioness showcase — electrons converge into the Leona Quantum lioness
+          silhouette. Owner Inbox 2026-07-19: lifted out from behind the Measure
+          widget into its own foreground spot, and retargeted from the Leo
+          constellation to the lioness. */}
       <Reveal>
-        <section
-          className="mj-company-section mj-measure-section"
-          aria-labelledby="measure-heading"
-        >
-          {/* Electrons converge into the Leo asterism behind the copy — the
-              constellation target reused as an ambient marketing field. */}
-          <ElectronField target="constellation" className="mj-measure-field" />
-          <div className="mj-measure-inner">
-            <Reveal>
-              <div className="mj-company-section-heading">
-                <p className="mj-section-label">{copy.measure.label}</p>
-                <h2 id="measure-heading">{copy.measure.title}</h2>
-                <p>{copy.measure.body}</p>
-              </div>
-            </Reveal>
-            <Reveal delay={90}>
-              <MeasurementLab />
-            </Reveal>
+        <section className="mj-company-section mj-lioness-section" aria-labelledby="lioness-heading">
+          <div className="mj-lioness-copy">
+            <p className="mj-section-label">{copy.lioness.label}</p>
+            <h2 id="lioness-heading">{copy.lioness.title}</h2>
+          </div>
+          <div className="mj-lioness-stage">
+            <ElectronField target="lioness" className="mj-lioness-field" />
           </div>
         </section>
+      </Reveal>
+
+      {/* Measure widget, demoted to a small aside (Owner Inbox 2026-07-19):
+          a fun little interactive, capped at 1000 shots, no longer its own
+          full-bleed section. */}
+      <Reveal>
+        <aside className="mj-measure-aside" aria-labelledby="measure-heading">
+          <div className="mj-measure-aside-head">
+            <p className="mj-section-label">{copy.measure.label}</p>
+            <h2 id="measure-heading">{copy.measure.title}</h2>
+            <p>{copy.measure.body}</p>
+          </div>
+          <MeasurementLab />
+        </aside>
       </Reveal>
 
       <Reveal>

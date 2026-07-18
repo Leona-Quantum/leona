@@ -3,19 +3,21 @@
 import { useEffect, useRef } from "react";
 
 /**
- * Electrons orbit a nucleus, then slowly converge (12s cycle) into either the
- * Leona Quantum ket mark or the Leo constellation, hold, and disperse again.
- * Reads --accent / --text-1 / --border-0 at runtime so it themes automatically,
- * and collapses to a single static frame under prefers-reduced-motion.
+ * Electrons orbit a nucleus, then slowly converge (12s cycle) into the Leona
+ * Quantum ket mark, the Leo constellation, or the lioness silhouette, hold, and
+ * disperse again. Reads --accent / --text-1 / --border-0 at runtime so it themes
+ * automatically, and collapses to a single static frame under
+ * prefers-reduced-motion.
  *
  * Use `target="logo"` for loaders / running states, `target="constellation"`
- * for hero backgrounds and empty states. Fills its positioned parent.
+ * for ambient backgrounds, and `target="lioness"` as a foreground showcase
+ * (Owner Inbox 2026-07-19). Fills its positioned parent.
  */
 export function ElectronField({
   target = "logo",
   className = "",
 }: {
-  target?: "logo" | "constellation";
+  target?: "logo" | "constellation" | "lioness";
   className?: string;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -31,7 +33,36 @@ export function ElectronField({
     // Target points in normalized [0,1] space.
     const targets: Array<[number, number]> = [];
     let isBright: (i: number) => boolean;
-    if (target === "constellation") {
+    if (target === "lioness") {
+      // Silhouette of a lioness in profile, walking, facing right — tail curling
+      // up at the rear-left, head lowered at the front-right. Traced by eye from
+      // the owner's reference in normalized [0,1] space (x: left→right). Outline
+      // points plus a little interior fill so the shape reads solid; the eye is
+      // the single bright point (its "Regulus").
+      const body: Array<[number, number]> = [
+        // head + face (right)
+        [0.95,0.42],[0.90,0.47],[0.86,0.48],[0.90,0.36],[0.85,0.30],[0.87,0.27],
+        // nape → back → rump (top line, right→left)
+        [0.80,0.33],[0.70,0.29],[0.55,0.29],[0.42,0.29],[0.28,0.28],[0.20,0.30],
+        // tail curling up at the rear-left
+        [0.16,0.34],[0.10,0.34],[0.06,0.30],[0.05,0.24],[0.09,0.22],
+        // hindquarter + thigh
+        [0.17,0.46],[0.20,0.56],
+        // hind legs (pair)
+        [0.24,0.66],[0.23,0.90],[0.34,0.70],[0.35,0.90],
+        // belly (rear→front)
+        [0.40,0.63],[0.52,0.64],[0.64,0.62],
+        // chest + throat
+        [0.76,0.56],[0.80,0.50],
+        // front legs (pair)
+        [0.72,0.66],[0.71,0.90],[0.80,0.68],[0.80,0.90],
+        // interior fill
+        [0.50,0.45],[0.62,0.45],[0.38,0.45],[0.70,0.42],
+      ];
+      body.forEach((p) => targets.push(p));
+      targets.push([0.86,0.40]); // eye — bright
+      isBright = (i) => i === targets.length - 1;
+    } else if (target === "constellation") {
       const s: Array<[number, number]> = [[0.18,0.78],[0.2,0.55],[0.27,0.38],[0.24,0.22],[0.14,0.15],[0.07,0.24],[0.52,0.5],[0.56,0.28],[0.82,0.35],[0.6,0.72]];
       const links: Array<[number, number]> = [[0,1],[1,2],[2,3],[3,4],[4,5],[5,2],[1,6],[6,7],[7,8],[8,9],[9,6],[0,6]];
       s.forEach((p) => targets.push([p[0], p[1] * 0.9 + 0.05]));
