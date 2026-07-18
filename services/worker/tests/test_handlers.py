@@ -116,3 +116,52 @@ you are uncertain."""
         {"role": "user", "content": "What is a Bell state?"}
     ]
     assert sink.events[-1][0] == "run.finished"
+
+
+def test_validated_fixtures_dir_refuses_when_root_unset(monkeypatch, tmp_path):
+    monkeypatch.delenv("MAJORANA_IMPORT_FIXTURES_ROOT", raising=False)
+
+    with pytest.raises(RuntimeError, match="MAJORANA_IMPORT_FIXTURES_ROOT is not set"):
+        handlers.validated_fixtures_dir({"fixtures_dir": str(tmp_path)})
+
+
+def test_validated_fixtures_dir_rejects_path_outside_root(monkeypatch, tmp_path):
+    root = tmp_path / "allowed"
+    root.mkdir()
+    outside = tmp_path / "elsewhere"
+    outside.mkdir()
+    monkeypatch.setenv("MAJORANA_IMPORT_FIXTURES_ROOT", str(root))
+
+    with pytest.raises(RuntimeError, match="escapes MAJORANA_IMPORT_FIXTURES_ROOT"):
+        handlers.validated_fixtures_dir({"fixtures_dir": str(outside)})
+
+
+def test_validated_fixtures_dir_rejects_dotdot_escape(monkeypatch, tmp_path):
+    root = tmp_path / "allowed"
+    root.mkdir()
+    monkeypatch.setenv("MAJORANA_IMPORT_FIXTURES_ROOT", str(root))
+
+    sneaky = root / ".." / "elsewhere"
+    with pytest.raises(RuntimeError, match="escapes MAJORANA_IMPORT_FIXTURES_ROOT"):
+        handlers.validated_fixtures_dir({"fixtures_dir": str(sneaky)})
+
+
+def test_validated_fixtures_dir_rejects_symlink_escape(monkeypatch, tmp_path):
+    root = tmp_path / "allowed"
+    root.mkdir()
+    outside = tmp_path / "secret"
+    outside.mkdir()
+    (root / "link").symlink_to(outside)
+    monkeypatch.setenv("MAJORANA_IMPORT_FIXTURES_ROOT", str(root))
+
+    with pytest.raises(RuntimeError, match="escapes MAJORANA_IMPORT_FIXTURES_ROOT"):
+        handlers.validated_fixtures_dir({"fixtures_dir": str(root / "link")})
+
+
+def test_validated_fixtures_dir_accepts_path_inside_root(monkeypatch, tmp_path):
+    root = tmp_path / "allowed"
+    nested = root / "batch-1"
+    nested.mkdir(parents=True)
+    monkeypatch.setenv("MAJORANA_IMPORT_FIXTURES_ROOT", str(root))
+
+    assert handlers.validated_fixtures_dir({"fixtures_dir": str(nested)}) == nested.resolve()

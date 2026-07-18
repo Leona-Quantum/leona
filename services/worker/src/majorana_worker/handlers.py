@@ -453,6 +453,29 @@ async def handle_run_dead_letter(
     await store.set_status(RunStatus.FAILED, finished_at_now=True)
 
 
+def validated_fixtures_dir(payload: dict[str, Any]) -> Path:
+    """Fail closed on the fixtures path carried in a job payload.
+
+    The payload travels through the database between enqueue and dispatch, so the
+    worker must not treat it as a trusted filesystem reference: the resolved path
+    (symlinks followed) has to sit inside the operator-pinned
+    MAJORANA_IMPORT_FIXTURES_ROOT, and catalog imports refuse to run at all while
+    that root is unset.
+    """
+    root = os.environ.get("MAJORANA_IMPORT_FIXTURES_ROOT", "").strip()
+    if not root:
+        raise RuntimeError(
+            "MAJORANA_IMPORT_FIXTURES_ROOT is not set; refusing to process catalog imports"
+        )
+    root_path = Path(root).resolve()
+    requested = Path(payload["fixtures_dir"]).resolve()
+    if not requested.is_relative_to(root_path):
+        raise RuntimeError(
+            f"fixtures_dir {requested} escapes MAJORANA_IMPORT_FIXTURES_ROOT {root_path}"
+        )
+    return requested
+
+
 async def handle_catalog_import(session: AsyncSession, payload: dict[str, Any]) -> None:
     """Advance one durable import batch by one pass over its non-terminal
     items (repos/catalog_import.py). Idempotent and crash-safe: re-running
@@ -461,8 +484,9 @@ async def handle_catalog_import(session: AsyncSession, payload: dict[str, Any]) 
 
     Step 5a scope only: the importer scope comes from server configuration
     (CatalogAuthority), never the payload, and fixtures_dir is a local path
-    the batch creator pinned — no network fetch happens here.
+    validated against the operator-pinned root — no network fetch happens here.
     """
+    fixtures_dir = validated_fixtures_dir(payload)
     authority = CatalogAuthority.from_env()
     scope = authority.importer_scope()
     import_job = await catalog_import_repo.get_import_job_by_idempotency_key(
@@ -473,7 +497,7 @@ async def handle_catalog_import(session: AsyncSession, payload: dict[str, Any]) 
         session,
         import_job.id,
         authority=authority,
-        fixtures_dir=Path(payload["fixtures_dir"]),
+        fixtures_dir=fixtures_dir,
     )
 
 
