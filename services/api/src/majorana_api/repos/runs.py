@@ -274,6 +274,60 @@ async def append_run_event(
     return event
 
 
+async def fail_run_from_dead_letter(
+    scope: Scope,
+    session: AsyncSession,
+    run_id: uuid.UUID,
+    *,
+    error_payload: dict[str, Any],
+    finished_payload: dict[str, Any],
+    error_event_id: uuid.UUID,
+    finished_event_id: uuid.UUID,
+) -> bool:
+    """Atomically close an active Run and append its terminal event sequence.
+
+    The scoped Run lock serializes cancellation and competing callbacks. A
+    terminal Run is left untouched; compatible deterministic event IDs make a
+    retry repair a partial sequence written by an older Worker.
+    """
+    require_write(scope)
+    run = await get_run(scope, session, run_id, for_update=True)
+    if RunStatus(run.status) not in {RunStatus.QUEUED, RunStatus.RUNNING}:
+        return False
+    await append_run_event(
+        scope,
+        session,
+        run_id,
+        type="run.error",
+        payload=error_payload,
+        event_id=error_event_id,
+    )
+    await append_run_event(
+        scope,
+        session,
+        run_id,
+        type="run.finished",
+        payload=finished_payload,
+        event_id=finished_event_id,
+    )
+    result = await session.execute(
+        update(Run)
+        .where(
+            Run.id == run_id,
+            Run.workspace_id == scope.workspace_id,
+            Run.status.in_((RunStatus.QUEUED, RunStatus.RUNNING)),
+        )
+        .values(
+            status=RunStatus.FAILED,
+            finished_at=func.now(),
+            updated_at=func.now(),
+        )
+    )
+    if result.rowcount != 1:
+        raise RuntimeError(f"run {run_id} changed while its row lock was held")
+    return True
+
+
 async def list_run_events(
     scope: Scope,
     session: AsyncSession,

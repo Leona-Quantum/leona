@@ -1,9 +1,39 @@
+import uuid
+
 import pytest
 from majorana_contracts.enums import Framework, RunMode, RunStatus
 from majorana_llm import LLMResponse
 from majorana_sandbox import LocalSubprocessSandbox
 from majorana_worker import handlers
 from majorana_worker.context import RunContext
+
+
+async def test_dead_letter_handler_commits_terminal_sequence_once(monkeypatch):
+    commits = 0
+    observed = {}
+
+    class Session:
+        async def commit(self):
+            nonlocal commits
+            commits += 1
+
+    async def fail_run(scope, session, run_id, **kwargs):
+        observed.update(scope=scope, session=session, run_id=run_id, **kwargs)
+        return True
+
+    monkeypatch.setattr(handlers.runs_repo, "fail_run_from_dead_letter", fail_run, raising=False)
+    run_id = uuid.uuid4()
+    payload = {
+        "run_id": str(run_id),
+        "user_id": str(uuid.uuid4()),
+        "workspace_id": str(uuid.uuid4()),
+    }
+
+    await handlers.handle_run_dead_letter(Session(), payload, "worker failed")
+
+    assert commits == 1
+    assert observed["run_id"] == run_id
+    assert observed["error_payload"]["code"] == "job_dead_letter"
 
 
 def _clear_deploy_markers(monkeypatch):

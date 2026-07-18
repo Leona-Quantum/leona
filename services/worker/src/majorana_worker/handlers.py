@@ -90,15 +90,7 @@ class RepoEventSink:
     async def emit(
         self, type: str, payload: dict[str, Any], *, event_id: uuid.UUID | None = None
     ) -> None:
-        candidate = {
-            "run_id": self._run_id,
-            "seq": 0,  # placeholder; the repo assigns the real seq under lock
-            "ts": "1970-01-01T00:00:00Z",
-            "type": type,
-            **payload,
-        }
-        validated = run_event_adapter.validate_python(candidate)
-        wire = validated.model_dump(mode="json", exclude={"run_id", "seq", "ts", "type"})
+        wire = _validated_event_payload(self._run_id, type, payload)
         await runs_repo.append_run_event(
             self._scope,
             self._session,
@@ -108,6 +100,20 @@ class RepoEventSink:
             event_id=event_id,
         )
         await self._session.commit()  # each event visible to SSE readers immediately
+
+
+def _validated_event_payload(
+    run_id: uuid.UUID, type: str, payload: dict[str, Any]
+) -> dict[str, Any]:
+    candidate = {
+        "run_id": run_id,
+        "seq": 0,  # placeholder; the repo assigns the real seq under lock
+        "ts": "1970-01-01T00:00:00Z",
+        "type": type,
+        **payload,
+    }
+    validated = run_event_adapter.validate_python(candidate)
+    return validated.model_dump(mode="json", exclude={"run_id", "seq", "ts", "type"})
 
 
 class RepoRunStateStore:
@@ -436,21 +442,26 @@ async def handle_run_dead_letter(
     """Close an active run when its durable execution job cannot continue."""
     scope = _scope_from_payload(payload)
     run_id = uuid.UUID(payload["run_id"])
-    store = RepoRunStateStore(scope, session, run_id)
-    if await store.current_status() not in {RunStatus.QUEUED, RunStatus.RUNNING}:
-        return
-    sink = RepoEventSink(scope, session, run_id)
-    await sink.emit(
+    error_payload = _validated_event_payload(
+        run_id,
         "run.error",
         {"stage": None, "code": "job_dead_letter", "message": reason[:2000]},
-        event_id=uuid.uuid5(run_id, "run.error.job_dead_letter"),
     )
-    await sink.emit(
+    finished_payload = _validated_event_payload(
+        run_id,
         "run.finished",
         {"status": RunStatus.FAILED},
-        event_id=uuid.uuid5(run_id, "run.finished"),
     )
-    await store.set_status(RunStatus.FAILED, finished_at_now=True)
+    await runs_repo.fail_run_from_dead_letter(
+        scope,
+        session,
+        run_id,
+        error_payload=error_payload,
+        finished_payload=finished_payload,
+        error_event_id=uuid.uuid5(run_id, "run.error.job_dead_letter"),
+        finished_event_id=uuid.uuid5(run_id, "run.finished"),
+    )
+    await session.commit()
 
 
 def validated_fixtures_dir(payload: dict[str, Any]) -> Path:
