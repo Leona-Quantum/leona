@@ -58,6 +58,7 @@ from ..orm import (
     Workspace,
 )
 from ._base import AuthzError, NotFoundError, RepoError
+from .audit import record_audit
 
 DEDUP_CONSTRAINT_NAME = "uq_artifact_versions_normalized_source_hash"
 
@@ -492,9 +493,23 @@ async def decide_review(
     artifact = await _get_catalog_artifact(
         session, workspace_id=workspace.id, artifact_id=artifact_id
     )
-    assert_review_transition(ReviewState(artifact.review_state), decision)
+    previous_state = ReviewState(artifact.review_state)
+    assert_review_transition(previous_state, decision)
     artifact.review_state = decision
-    await session.flush()
+    await record_audit(
+        scope,
+        session,
+        action=f"catalog.review.{decision.value}",
+        target_kind="artifact",
+        target_id=artifact.id,
+        meta={
+            "from": previous_state.value,
+            "to": decision.value,
+            "artifact_version_id": (
+                str(artifact.current_version_id) if artifact.current_version_id else None
+            ),
+        },
+    )
     return artifact
 
 

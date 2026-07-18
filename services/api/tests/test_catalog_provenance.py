@@ -13,7 +13,7 @@ import pytest
 from repo_test_helpers import Row, SequencedSession
 
 from majorana_api.catalog_authority import CatalogAuthority
-from majorana_api.orm import Artifact, ArtifactVersion, LicenseAssertion, Workspace
+from majorana_api.orm import AuditLog, Artifact, ArtifactVersion, LicenseAssertion, Workspace
 from majorana_api.repos import AuthzError, catalog
 from majorana_contracts import IllegalReviewTransition
 from majorana_contracts.enums import (
@@ -424,14 +424,22 @@ async def test_decide_review_accepts_from_pending_review():
     )
     artifact = _artifact(configured, review_state=ReviewState.PENDING_REVIEW)
     session = SequencedSession([Row(workspace), Row(artifact)])
+    reviewer_scope = _reviewer_scope(configured)
     result = await catalog.decide_review(
-        _reviewer_scope(configured),
+        reviewer_scope,
         session,
         artifact.id,
         authority=configured,
         decision=ReviewState.ACCEPTED,
     )
     assert result.review_state == ReviewState.ACCEPTED
+    audit_rows = [row for row in session.added if isinstance(row, AuditLog)]
+    assert len(audit_rows) == 1
+    assert audit_rows[0].workspace_id == configured.workspace_id
+    assert audit_rows[0].actor_user_id == reviewer_scope.user_id
+    assert audit_rows[0].action == "catalog.review.accepted"
+    assert audit_rows[0].target_kind == "artifact"
+    assert audit_rows[0].target_id == artifact.id
 
 
 # ---------------------------------------------------------------------------
