@@ -180,6 +180,7 @@ export function LiveRun({ taskId }: { taskId: string }) {
   const [attachments, setAttachments] = useState<Array<{ name: string; size: number; content: string }>>([]);
   const [existingChat, setExistingChat] = useState<ChatSummary | null>(null);
   const lastEventId = useRef<number | null>(null);
+  const loadSeq = useRef(0);
 
   useEffect(() => {
     setExistingChat(
@@ -199,15 +200,20 @@ export function LiveRun({ taskId }: { taskId: string }) {
     setStreamingText("");
     setReasoningText("");
     setError(null);
+    lastEventId.current = null;
 
     async function loadConversation() {
+      const seq = ++loadSeq.current;
       const response = await fetch(`/api/runs/${encodeURIComponent(taskId)}/conversation`, {
         cache: "no-store",
         signal: controller.signal,
       });
       if (!response.ok) throw new Error(`Conversation could not be loaded (${response.status})`);
       const payload = (await response.json()) as ConversationPayload;
-      if (!controller.signal.aborted) {
+      // Discard the response if a newer loadConversation() call has started since
+      // (e.g. the terminal reload racing the initial one) so a stale response can't
+      // overwrite fresher turns/pending state.
+      if (!controller.signal.aborted && seq === loadSeq.current) {
         setConversationId(payload.id);
         setTurns(turnsFromConversation(payload));
         setPending(payload.turns.some((turn) => turn.run.id === taskId && !answerFromEvents(turn.events)));
@@ -266,7 +272,11 @@ export function LiveRun({ taskId }: { taskId: string }) {
                 setPending(false);
                 setStreaming(false);
                 updateChat(taskId, { status: event.status === "succeeded" ? "draft" : "failed" });
-                void loadConversation().catch(() => undefined);
+                void loadConversation().catch((cause) => {
+                  if (!controller.signal.aborted) {
+                    setError(cause instanceof Error ? cause.message : "Conversation could not be reloaded");
+                  }
+                });
               }
             }
           }
