@@ -352,20 +352,24 @@ class EvidenceVerifier:
             }
         ]
         metrics = execution.observation.get("resource_metrics")
+        metrics_error = execution.observation.get("resource_metrics_error")
         observed_qubits = metrics.get("qubits") if isinstance(metrics, dict) else None
         resource_ok = not circuit_expected or (
             type(observed_qubits) is int
             and observed_qubits > 0
             and observed_qubits <= plan.qubits_estimate
         )
+        resource_details: dict[str, Any] = {
+            "planned_qubit_ceiling": plan.qubits_estimate,
+            "observed_qubits": observed_qubits,
+        }
+        if metrics_error is not None:
+            resource_details["reason"] = metrics_error
         checks.append(
             {
                 "method": "resource_contract",
                 "result": "pass" if resource_ok else "fail",
-                "details": {
-                    "planned_qubit_ceiling": plan.qubits_estimate,
-                    "observed_qubits": observed_qubits,
-                },
+                "details": resource_details,
             }
         )
         if plan.artifact_contract is not None:
@@ -382,14 +386,17 @@ class EvidenceVerifier:
                     and type(observed_qubits) is int
                     and measurement_count >= observed_qubits
                 )
+            measurement_details: dict[str, Any] = {
+                "policy": policy.value,
+                "measurement_count": measurement_count,
+            }
+            if metrics_error is not None:
+                measurement_details["reason"] = metrics_error
             checks.append(
                 {
                     "method": "measurement_policy",
                     "result": "pass" if measurement_ok else "fail",
-                    "details": {
-                        "policy": policy.value,
-                        "measurement_count": measurement_count,
-                    },
+                    "details": measurement_details,
                 }
             )
         expected_range = plan.success_criteria.expected_range
