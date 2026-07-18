@@ -4649,21 +4649,51 @@ div.mj-rail-row:hover {
   display: flex;
   flex-direction: column;
 }
-.mj-studio-code-editor {
+/* Colored code editor: the highlight <pre> and the <textarea> are stacked and
+   MUST share identical box metrics (font, size, line-height, padding, tab-size,
+   wrapping) so the caret lands on the glyph it appears to. Change one, change
+   both. */
+.mj-studio-code-editor-wrap {
+  position: relative;
   flex: 1 1 auto;
   min-height: 360px;
+  display: flex;
+  background: var(--bg-0);
+}
+.mj-studio-code-highlight,
+.mj-studio-code-editor {
+  margin: 0;
   width: 100%;
   box-sizing: border-box;
   padding: var(--sp-5);
-  resize: vertical;
-  border: 0;
-  outline: 0;
-  color: var(--text-0);
-  background: var(--bg-0);
   font-family: var(--font-mono);
   font-size: var(--fs-12);
   line-height: 1.6;
   tab-size: 2;
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+  word-break: break-word;
+}
+.mj-studio-code-highlight {
+  position: absolute;
+  inset: 0;
+  overflow: auto;
+  color: var(--text-0);
+  pointer-events: none;
+}
+.mj-studio-code-editor {
+  position: relative;
+  flex: 1 1 auto;
+  resize: vertical;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: transparent;
+  caret-color: var(--text-0);
+}
+.mj-studio-code-editor::selection {
+  /* Selection must show against the highlight layer behind the transparent text. */
+  background: color-mix(in srgb, var(--accent) 28%, transparent);
 }
 .mj-studio-editor-note {
   margin: 0;

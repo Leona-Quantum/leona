@@ -143,118 +143,41 @@ body {
   }
 }
 
-/* Studio — the moss lioness companion on the discovery search bar, and the
- * inspector pop-in. The lioness walks in leftward along the bar's top edge
- * (leg-swing + bob while .is-walking), then .is-lying folds her into a sphinx
- * pose via plain transitioned transforms so the hover paw animation can
- * compose on top of the folded leg. */
-.mj-studio-search--lioness {
+/* Run/LLM home hero: the electrons converge into the lioness silhouette here
+ * (Owner Inbox 2026-07-19), replacing the small Leo constellation mark. Compact
+ * and centered; brightens and lifts slightly while the composer is engaged. */
+.mj-run-hero-lioness {
+  position: relative;
+  display: block;
+  width: 152px;
+  height: 100px;
+  margin: 0 auto var(--sp-2);
+  opacity: 0.88;
+  transition: opacity 320ms ease, transform 320ms ease;
+}
+.mj-run-hero-lioness.is-engaged {
+  opacity: 1;
+  transform: translateY(-2px);
+}
+@media (prefers-reduced-motion: reduce) {
+  .mj-run-hero-lioness { transition: none; }
+}
+
+/* Studio — the superposition-dots companion on the discovery search bar, and
+ * the inspector pop-in. A thin strip of dots drifts along the bar's top edge and
+ * periodically collapses toward a random point (a measurement motif); hovering
+ * the bar makes them converge toward the pointer instead. All motion is in the
+ * canvas (studio-workspace.tsx) and honors prefers-reduced-motion there. */
+.mj-studio-search--dots {
   position: relative;
 }
-.mj-lioness {
+.mj-studio-dots {
   position: absolute;
   left: 0;
-  top: -28px;
-  color: var(--accent);
+  right: 0;
+  top: -26px;
+  height: 24px;
   pointer-events: none;
-}
-.mj-lioness.is-walking {
-  animation: mj-lioness-walk-in 2600ms ease-out both;
-}
-.mj-lioness-body,
-.mj-lioness-head circle,
-.mj-lioness-tail circle {
-  fill: currentColor;
-}
-.mj-lioness-muzzle,
-.mj-lioness-tail path {
-  stroke: currentColor;
-  stroke-width: 2;
-  stroke-linecap: round;
-  fill: none;
-}
-.mj-lioness-leg path {
-  stroke: currentColor;
-  stroke-width: 2.6;
-  stroke-linecap: round;
-}
-.mj-lioness-leg--front-far path,
-.mj-lioness-leg--rear-far path {
-  opacity: 0.55;
-}
-.mj-lioness-figure,
-.mj-lioness-head,
-.mj-lioness-leg {
-  transform-box: view-box;
-  transition: transform 600ms ease-out;
-}
-.mj-lioness-leg--front-near { transform-origin: 24px 20.5px; }
-.mj-lioness-leg--front-far { transform-origin: 27.5px 20.5px; }
-.mj-lioness-leg--rear-near { transform-origin: 46.5px 20.5px; }
-.mj-lioness-leg--rear-far { transform-origin: 43.5px 20.5px; }
-.mj-lioness-leg path {
-  transform-box: view-box;
-  transform-origin: inherit;
-}
-.mj-lioness-head { transform-origin: 16.2px 11.2px; }
-.mj-lioness-tail {
-  transform-box: view-box;
-  transform-origin: 47px 16.5px;
-  animation: mj-lioness-tail-sway 4200ms ease-in-out infinite;
-}
-/* Walk cycle: diagonal leg pairs swing in opposite phase; the figure bobs. */
-.mj-lioness.is-walking .mj-lioness-figure {
-  animation: mj-lioness-bob 430ms ease-in-out infinite alternate;
-}
-.mj-lioness.is-walking .mj-lioness-leg--front-near path,
-.mj-lioness.is-walking .mj-lioness-leg--rear-far path {
-  animation: mj-lioness-step 430ms ease-in-out infinite alternate;
-}
-.mj-lioness.is-walking .mj-lioness-leg--front-far path,
-.mj-lioness.is-walking .mj-lioness-leg--rear-near path {
-  animation: mj-lioness-step 430ms ease-in-out infinite alternate-reverse;
-}
-/* Sphinx pose: body settles toward the bar, front legs stretch forward over
- * the search icon, rear legs tuck, head dips. */
-.mj-lioness.is-lying .mj-lioness-figure {
-  transform: translateY(4.5px);
-}
-.mj-lioness.is-lying .mj-lioness-leg--front-near { transform: rotate(72deg); }
-.mj-lioness.is-lying .mj-lioness-leg--front-far { transform: rotate(64deg); }
-.mj-lioness.is-lying .mj-lioness-leg--rear-near { transform: rotate(78deg); }
-.mj-lioness.is-lying .mj-lioness-leg--rear-far { transform: rotate(70deg); }
-.mj-lioness.is-lying .mj-lioness-head { transform: translateY(2px) rotate(-4deg); }
-.mj-studio-search--lioness:hover .mj-lioness,
-.mj-studio-search--lioness:focus-within .mj-lioness {
-  color: var(--accent-press);
-}
-.mj-studio-search--lioness:hover .mj-lioness.is-lying .mj-lioness-leg--front-near path {
-  animation: mj-lioness-paw 800ms ease-in-out;
-}
-@keyframes mj-lioness-walk-in {
-  from { transform: translateX(150px); opacity: 0; }
-  12% { opacity: 1; }
-  to { transform: translateX(0); opacity: 1; }
-}
-@keyframes mj-lioness-bob {
-  from { transform: translateY(0); }
-  to { transform: translateY(-1.4px); }
-}
-@keyframes mj-lioness-step {
-  from { transform: rotate(-14deg); }
-  to { transform: rotate(14deg); }
-}
-/* Composes with the folded front leg (group rotate 72deg): the extra inner
- * rotation dips the paw down onto the search icon and back, twice. */
-@keyframes mj-lioness-paw {
-  0%, 100% { transform: rotate(0deg); }
-  30% { transform: rotate(24deg); }
-  55% { transform: rotate(6deg); }
-  75% { transform: rotate(20deg); }
-}
-@keyframes mj-lioness-tail-sway {
-  0%, 100% { transform: rotate(0deg); }
-  50% { transform: rotate(7deg); }
 }
 .mj-studio-inspector:not([hidden]) {
   animation: mj-inspector-pop 220ms ease-out;
@@ -267,18 +190,6 @@ body {
   to { opacity: 1; transform: translateX(0); }
 }
 @media (prefers-reduced-motion: reduce) {
-  .mj-lioness.is-walking,
-  .mj-lioness .mj-lioness-figure,
-  .mj-lioness .mj-lioness-tail,
-  .mj-lioness .mj-lioness-leg path,
-  .mj-studio-search--lioness:hover .mj-lioness.is-lying .mj-lioness-leg--front-near path {
-    animation: none;
-  }
-  .mj-lioness-figure,
-  .mj-lioness-head,
-  .mj-lioness-leg {
-    transition: none;
-  }
   .mj-studio-inspector:not([hidden]) {
     animation: none;
   }
@@ -488,33 +399,87 @@ body {
   .mj-measurement-lab { grid-template-columns: 1fr; }
 }
 
-/* Lioness showcase — electrons converge into the Leona Quantum lioness mark in
-   its own foreground spot (Owner Inbox 2026-07-19), on the shared reveal rhythm.
-   The stage owns a fixed aspect close to the silhouette so it isn't stretched;
-   ElectronField fills this positioned parent. */
-.mj-lioness-section { text-align: center; }
-.mj-lioness-copy { margin-bottom: var(--sp-4, 16px); }
-.mj-lioness-stage {
-  position: relative;
-  width: 100%;
-  max-width: 600px;
-  aspect-ratio: 5 / 3;
-  margin: 0 auto;
+/* Intro with the Measure widget folded in as a side accent (Owner Inbox
+   2026-07-19): copy on the left, the compact interactive on the right. Stacks
+   on narrow viewports. */
+.mj-company-intro--measure {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(300px, 460px);
+  gap: var(--sp-8, 32px);
+  align-items: start;
 }
-.mj-lioness-field { position: absolute; inset: 0; }
+.mj-company-intro-copy { display: flex; flex-direction: column; gap: var(--sp-3, 12px); }
+.mj-intro-measure {
+  background: var(--bg-1);
+  border: 1px solid var(--border-0);
+  border-radius: var(--radius-card, 10px);
+  padding: var(--sp-5, 20px);
+}
+.mj-intro-measure-head { margin-bottom: var(--sp-4, 16px); }
+.mj-intro-measure-head h3 {
+  margin: var(--sp-1, 4px) 0 0;
+  font-size: clamp(1.05rem, 0.95rem + 0.9vw, 1.35rem);
+}
+.mj-intro-measure-head p { margin: var(--sp-2, 8px) 0 0; color: var(--text-1); }
+/* The accent is already narrow — keep its inner lab single-column throughout. */
+.mj-intro-measure .mj-measurement-lab { grid-template-columns: 1fr; }
+@media (max-width: 900px) {
+  .mj-company-intro--measure { grid-template-columns: 1fr; }
+}
 
-/* Measure widget demoted to a small, centered aside (Owner Inbox 2026-07-19):
-   a fun little interactive, not a full-bleed section. */
-.mj-measure-aside {
-  max-width: 640px;
-  margin: 0 auto;
-  padding: var(--sp-6, 28px) var(--sp-4, 16px);
-  text-align: center;
+/* Single-user-lock sign-in page (Owner Inbox 2026-07-19): a centered card with
+ * a username/password form, themed from the design tokens so it reads like the
+ * rest of the marketing surface. */
+.mj-lock-shell {
+  display: flex;
+  justify-content: center;
+  padding: clamp(2rem, 6vw, 5rem) var(--sp-4);
 }
-.mj-measure-aside-head { margin-bottom: var(--sp-4, 16px); }
-.mj-measure-aside-head h2 { font-size: clamp(1.15rem, 1rem + 1.2vw, 1.6rem); }
-.mj-measure-aside-head p { margin: 0 auto; max-width: 52ch; }
-.mj-measure-aside .mj-measurement-lab { text-align: left; }
+.mj-lock-card {
+  width: 100%;
+  max-width: 400px;
+  background: var(--bg-1);
+  border: 1px solid var(--border-0);
+  border-radius: var(--radius-card);
+  padding: clamp(1.5rem, 3vw, 2.25rem);
+}
+.mj-lock-card-head {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: var(--sp-2);
+  margin-bottom: var(--sp-6);
+}
+.mj-lock-card-head h1 { margin: 0; font-size: clamp(1.4rem, 1.1rem + 1.2vw, 1.75rem); }
+.mj-lock-card-head p { margin: 0; color: var(--text-1); max-width: 34ch; }
+.mj-lock-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-4);
+}
+.mj-lock-form label {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  font-size: var(--fs-13);
+  color: var(--text-1);
+}
+.mj-lock-form input {
+  padding: 10px 12px;
+  border: 1px solid var(--border-0);
+  border-radius: var(--radius-control);
+  background: var(--bg-0);
+  color: var(--text-0);
+  font: inherit;
+}
+.mj-lock-form input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+  border-color: var(--accent);
+}
+.mj-lock-form .mj-primary-button { margin-top: var(--sp-2); width: 100%; }
+.mj-lock-form-error { margin: 0; color: var(--err); font-size: var(--fs-13); }
 
 @media (prefers-reduced-motion: reduce) {
   [class*="lq-"],

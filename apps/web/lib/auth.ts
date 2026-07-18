@@ -5,14 +5,16 @@ import {
   type NoUserInfo,
   type UserInfo,
 } from "@workos-inc/authkit-nextjs";
-import { headers } from "next/headers";
+import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { isWorkosAuthConfigured } from "./auth-config";
 import { isLocalDevAuthEnabled, LOCAL_DEV_ACCESS_TOKEN } from "./local-dev-auth";
 import {
   isSingleUserLockEnabled,
-  isValidLockAuthHeader,
+  isValidSessionCookie,
   LOCK_ACCESS_TOKEN,
+  LOCK_COOKIE,
+  LOCK_SIGN_IN_PATH,
 } from "./single-user-lock";
 
 const LOCAL_DEV_AUTH: UserInfo = {
@@ -59,13 +61,13 @@ const LOCK_AUTH: UserInfo = {
   accessToken: LOCK_ACCESS_TOKEN,
 };
 
-// True when the current request carries the correct Basic Auth credential. The
-// middleware already 401s non-public routes without it, so on the authed
-// surface this is effectively always true; we re-check to stay honest on public
-// pages (which decide "Sign in" vs "Open workspace" from the same seam).
+// True when the current request carries a valid lock session cookie. Because
+// the cookie rides every request (including on public pages), the "Sign in" vs
+// "Open workspace" decision stays correct even after navigating back to the
+// public site — the earlier Basic Auth check read as signed-out there.
 async function hasValidLockRequest(): Promise<boolean> {
-  const store = await headers();
-  return isValidLockAuthHeader(store.get("authorization"));
+  const store = await cookies();
+  return isValidSessionCookie(store.get(LOCK_COOKIE)?.value);
 }
 
 export function getMajoranaAuth(options: { ensureSignedIn: true }): Promise<UserInfo>;
@@ -76,11 +78,11 @@ export async function getMajoranaAuth(options?: { ensureSignedIn?: boolean }) {
   if (isLocalDevAuthEnabled()) return LOCAL_DEV_AUTH;
   if (isSingleUserLockEnabled()) {
     if (await hasValidLockRequest()) return LOCK_AUTH;
-    // Non-public routes never reach here (middleware 401s first). Defensively,
-    // if an authed page ever resolved without the credential, send it to the
-    // gated surface so the Basic Auth prompt fires rather than rendering with a
-    // null user. Public pages (ensureSignedIn falsy) just report signed-out.
-    if (options?.ensureSignedIn) redirect("/run");
+    // Non-public routes never reach here (middleware redirects first).
+    // Defensively, if an authed page ever resolved without a session, send it
+    // to the sign-in page rather than rendering with a null user. Public pages
+    // (ensureSignedIn falsy) just report signed-out.
+    if (options?.ensureSignedIn) redirect(LOCK_SIGN_IN_PATH);
     return { user: null } satisfies NoUserInfo;
   }
   if (!isWorkosAuthConfigured() && !options?.ensureSignedIn) {
@@ -92,9 +94,9 @@ export async function getMajoranaAuth(options?: { ensureSignedIn?: boolean }) {
 
 export async function getMajoranaSignInUrl(): Promise<string> {
   if (isLocalDevAuthEnabled()) return "/run";
-  // Lock mode has no WorkOS hosted login. Point "Sign in" at the authed surface
-  // so the browser's Basic Auth prompt (from middleware) does the gating.
-  if (isSingleUserLockEnabled()) return "/run";
+  // Lock mode has no WorkOS hosted login. Point "Sign in" at the dedicated
+  // username/password page, which sets the session cookie and returns to /run.
+  if (isSingleUserLockEnabled()) return `${LOCK_SIGN_IN_PATH}?returnTo=/run`;
   // Keep the post-AuthKit destination explicit at the call site as well as in
   // the callback route. This avoids falling back to a stale caller/default
   // pathname when a user starts sign-in from a public page.
@@ -103,14 +105,19 @@ export async function getMajoranaSignInUrl(): Promise<string> {
 
 export function isMajoranaAuthConfigured(): boolean {
   // Lock mode is a working auth configuration too, so "Sign in" affordances
-  // still render (they route to the Basic Auth prompt).
+  // still render (they route to the lock sign-in page).
   return isSingleUserLockEnabled() || isWorkosAuthConfigured();
 }
 
 export async function signOutMajorana(): Promise<void> {
-  // Basic Auth has no clean server-side logout — the browser caches the
-  // credential until it's closed — so lock mode just lands the user back on the
-  // public site. (WorkOS sign-out only runs in the normal auth path.)
-  if (isLocalDevAuthEnabled() || isSingleUserLockEnabled()) return;
+  if (isLocalDevAuthEnabled()) return;
+  // Lock mode: clear the session cookie so sign-out is real (unlike the old
+  // Basic Auth gate, which the browser held onto until fully closed). The
+  // /auth/sign-out route then lands the user back on the public site.
+  if (isSingleUserLockEnabled()) {
+    const store = await cookies();
+    store.delete(LOCK_COOKIE);
+    return;
+  }
   await signOut({ returnTo: "/" });
 }
