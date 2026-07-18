@@ -1,6 +1,7 @@
 # AGENTS.md — services/api
 
-FastAPI control plane. THE only process that talks to Postgres (role `app_rw`).
+FastAPI control plane. Owns the only Postgres repository layer; both the API and
+Worker use it with role `app_rw`. No other process may talk to Postgres.
 
 - Authz invariant: repository functions take `Scope` first-arg; no raw queries outside
   the repository layer (import-linter + CI grep enforce; authz suite is a required check).

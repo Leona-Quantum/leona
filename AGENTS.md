@@ -33,9 +33,10 @@ credentials/secrets without the required owner approval.
 ## What this repo is
 
 Majorana: a platform that turns LLM-generated quantum code into verified, reproducible,
-reusable artifacts. One control plane (FastAPI, `services/api`) owns all business logic
-and is the only DB caller; `apps/web` (Next.js) is a thin renderer; untrusted generated
-code runs only in ephemeral network-locked sandboxes (`packages/py/sandbox`).
+reusable artifacts. The API and Worker are the only DB-connected processes, and both use
+the repository layer owned by `services/api`; `apps/web` (Next.js) is a thin renderer;
+untrusted generated code runs only in ephemeral network-locked sandboxes
+(`packages/py/sandbox`).
 
 ## Layout
 
