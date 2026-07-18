@@ -7,6 +7,7 @@ import pytest
 from majorana_api.catalog_hashing import hash_source_blob
 from majorana_api.catalog_import_fixtures import (
     MAX_FIXTURE_BYTES,
+    MAX_FIXTURE_COUNT,
     FixtureTooLargeError,
     TooManyFixturesError,
     list_fixture_identities,
@@ -55,8 +56,6 @@ def test_duplicate_pair_fixtures_hash_identically():
 
 
 def test_too_many_fixtures_raises(tmp_path):
-    from majorana_api.catalog_import_fixtures import MAX_FIXTURE_COUNT
-
     for i in range(MAX_FIXTURE_COUNT + 1):
         (tmp_path / f"f{i}.py").write_text("x")
     with pytest.raises(TooManyFixturesError):

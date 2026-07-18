@@ -1,5 +1,6 @@
 import pytest
 from majorana_contracts import (
+    IMPORT_ITEM_TERMINAL_STATES,
     IllegalImportItemTransition,
     IllegalReviewTransition,
     IllegalTransition,
@@ -71,6 +72,6 @@ def test_import_item_cannot_skip_quarantine_or_parsing():
 
 
 def test_import_item_terminal_states_cannot_transition():
-    for state in (ImportItemState.STAGED, ImportItemState.REJECTED, ImportItemState.DEAD):
+    for state in IMPORT_ITEM_TERMINAL_STATES:
         with pytest.raises(IllegalImportItemTransition):
             assert_import_item_transition(state, ImportItemState.QUEUED)
