@@ -488,18 +488,33 @@ body {
   .mj-measurement-lab { grid-template-columns: 1fr; }
 }
 
-/* Public "measured, not asserted" section — an interactive explainer beneath
-   the landing fold, on the same reveal rhythm as the other public sections.
-   The constellation field sits behind the copy at low opacity. */
-.mj-measure-section { position: relative; }
-.mj-measure-field {
-  position: absolute;
-  inset: 0;
-  z-index: 0;
-  opacity: 0.4;
-  pointer-events: none;
+/* Lioness showcase — electrons converge into the Leona Quantum lioness mark in
+   its own foreground spot (Owner Inbox 2026-07-19), on the shared reveal rhythm.
+   The stage owns a fixed aspect close to the silhouette so it isn't stretched;
+   ElectronField fills this positioned parent. */
+.mj-lioness-section { text-align: center; }
+.mj-lioness-copy { margin-bottom: var(--sp-4, 16px); }
+.mj-lioness-stage {
+  position: relative;
+  width: 100%;
+  max-width: 600px;
+  aspect-ratio: 5 / 3;
+  margin: 0 auto;
 }
-.mj-measure-inner { position: relative; z-index: 1; }
+.mj-lioness-field { position: absolute; inset: 0; }
+
+/* Measure widget demoted to a small, centered aside (Owner Inbox 2026-07-19):
+   a fun little interactive, not a full-bleed section. */
+.mj-measure-aside {
+  max-width: 640px;
+  margin: 0 auto;
+  padding: var(--sp-6, 28px) var(--sp-4, 16px);
+  text-align: center;
+}
+.mj-measure-aside-head { margin-bottom: var(--sp-4, 16px); }
+.mj-measure-aside-head h2 { font-size: clamp(1.15rem, 1rem + 1.2vw, 1.6rem); }
+.mj-measure-aside-head p { margin: 0 auto; max-width: 52ch; }
+.mj-measure-aside .mj-measurement-lab { text-align: left; }
 
 @media (prefers-reduced-motion: reduce) {
   [class*="lq-"],

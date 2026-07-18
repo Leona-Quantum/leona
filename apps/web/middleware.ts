@@ -4,6 +4,11 @@ import { authkitMiddleware } from "@workos-inc/authkit-nextjs";
 import { NextResponse, type NextFetchEvent, type NextRequest } from "next/server";
 import { isWorkosAuthConfigured } from "./lib/auth-config";
 import { isLocalDevAuthEnabled } from "./lib/local-dev-auth";
+import {
+  isSingleUserLockEnabled,
+  isValidLockAuthHeader,
+  SINGLE_USER_LOCK_REALM,
+} from "./lib/single-user-lock";
 import { isPublicDemoEnabled } from "./lib/public-demo";
 import { PUBLIC_REPOSITORY_ENTRIES } from "./lib/public-repository";
 
@@ -38,6 +43,23 @@ const workosMiddleware = authkitMiddleware({
 });
 
 export default function middleware(request: NextRequest, event: NextFetchEvent) {
+  // Temporary single-user lock (Owner Inbox 2026-07-19). When enabled, the
+  // authenticated surface — everything not in PUBLIC_PATHS, including every
+  // /api/* route — is gated behind ONE username/password via HTTP Basic Auth,
+  // and WorkOS is bypassed entirely (no Google/GitHub sign-in). Public
+  // marketing pages stay open. Flip SINGLE_USER_LOCK=false to restore WorkOS.
+  if (isSingleUserLockEnabled()) {
+    if (isPublicPath(request.nextUrl.pathname)) return NextResponse.next();
+    if (isValidLockAuthHeader(request.headers.get("authorization"))) {
+      return NextResponse.next();
+    }
+    return new NextResponse("Authentication required.", {
+      status: 401,
+      headers: {
+        "WWW-Authenticate": `Basic realm="${SINGLE_USER_LOCK_REALM}", charset="UTF-8"`,
+      },
+    });
+  }
   if (isLocalDevAuthEnabled()) return NextResponse.next();
   if (!isWorkosAuthConfigured()) {
     const { pathname } = request.nextUrl;

@@ -11,6 +11,10 @@ import { useState } from "react";
  * All colors come from tokens.css custom properties; drop it on any surface.
  * Requires globals-additions.css for the `lq-sweep` measurement flash.
  */
+// Owner-requested ceiling (Owner Inbox 2026-07-19): a fun little aside, not an
+// unbounded counter — stop tallying at 1000 shots.
+const SHOT_LIMIT = 1000;
+
 export function MeasurementLab() {
   const [bias, setBias] = useState(50); // P(up), percent
   const [up, setUp] = useState(0);
@@ -19,18 +23,23 @@ export function MeasurementLab() {
   const [measuring, setMeasuring] = useState(false);
 
   const total = up + down;
+  const atLimit = total >= SHOT_LIMIT;
   const maxC = Math.max(up, down, 1);
-  const barH = (n: number) => Math.round((n / maxC) * 120);
+  const barH = (n: number) => Math.round((n / maxC) * 74);
 
   function measure() {
+    if (total >= SHOT_LIMIT) return;
     const o = Math.random() * 100 < bias ? "up" : "down";
     setMeasuring(true);
     if (o === "up") setUp((v) => v + 1); else setDown((v) => v + 1);
     window.setTimeout(() => { setOutcome(o); setMeasuring(false); }, 120);
   }
   function measure10() {
+    const remaining = SHOT_LIMIT - total;
+    if (remaining <= 0) return;
+    const shots = Math.min(10, remaining);
     let u = 0, d = 0, last: "up" | "down" = "up";
-    for (let i = 0; i < 10; i++) { if (Math.random() * 100 < bias) { u++; last = "up"; } else { d++; last = "down"; } }
+    for (let i = 0; i < shots; i++) { if (Math.random() * 100 < bias) { u++; last = "up"; } else { d++; last = "down"; } }
     setUp((v) => v + u); setDown((v) => v + d); setOutcome(last);
   }
   function reset() { setUp(0); setDown(0); setOutcome(null); setMeasuring(false); }
@@ -59,15 +68,15 @@ export function MeasurementLab() {
     // overridden by a media query.
     <div className="mj-measurement-lab" style={{ color: "var(--text-0)" }}>
       {/* stage + controls */}
-      <div style={{ ...panel, padding: 26, display: "flex", flexDirection: "column", gap: 18 }}>
-        <div style={{ position: "relative", height: 190, background: "var(--bg-0)", borderRadius: 10, overflow: "hidden", display: "grid", placeItems: "center" }}>
-          <svg viewBox="0 0 80 80" width="120" height="120" fill="none" style={stageSvg("up")}>
+      <div style={{ ...panel, padding: 16, display: "flex", flexDirection: "column", gap: 12 }}>
+        <div style={{ position: "relative", height: 130, background: "var(--bg-0)", borderRadius: 10, overflow: "hidden", display: "grid", placeItems: "center" }}>
+          <svg viewBox="0 0 80 80" width="88" height="88" fill="none" style={stageSvg("up")}>
             <path d="M20 16 V64" stroke="var(--text-0)" strokeWidth="3.6" strokeLinecap="round" /><path d="M50 16 L66 40 L50 64" stroke="var(--text-0)" strokeWidth="3.6" strokeLinecap="round" strokeLinejoin="round" />
             <path d="M33 50 L31 40 L35 32 L30 26" stroke="var(--accent)" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" opacity="0.5" />
             <circle cx="31" cy="40" r="1.8" fill="var(--text-0)" /><circle cx="35" cy="32" r="1.7" fill="var(--text-0)" /><circle cx="30" cy="26" r="1.5" fill="var(--text-0)" />
             <circle cx="33" cy="50" r="3.4" fill="var(--accent)" />
           </svg>
-          <svg viewBox="0 0 80 80" width="120" height="120" fill="none" style={stageSvg("down")}>
+          <svg viewBox="0 0 80 80" width="88" height="88" fill="none" style={stageSvg("down")}>
             <path d="M20 16 V64" stroke="var(--text-0)" strokeWidth="3.6" strokeLinecap="round" /><path d="M50 16 L66 40 L50 64" stroke="var(--text-0)" strokeWidth="3.6" strokeLinecap="round" strokeLinejoin="round" />
             <path d="M33 30 L31 40 L35 48 L30 54" stroke="var(--accent)" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" opacity="0.5" />
             <circle cx="31" cy="40" r="1.8" fill="var(--text-0)" /><circle cx="35" cy="48" r="1.7" fill="var(--text-0)" /><circle cx="30" cy="54" r="1.5" fill="var(--text-0)" />
@@ -83,23 +92,24 @@ export function MeasurementLab() {
           <input type="range" min={0} max={100} value={bias} onChange={(e) => setBias(Number(e.target.value))} style={{ width: "100%", accentColor: "var(--accent)" }} />
         </div>
         <div style={{ display: "flex", gap: 8 }}>
-          <button onClick={measure} style={{ flex: 1, fontFamily: mono, fontSize: 12, padding: 10, borderRadius: 6, border: "none", background: "var(--accent)", color: "var(--bg-0)", cursor: "pointer", fontWeight: 500 }}>Measure</button>
-          <button onClick={measure10} style={{ flex: 1, fontFamily: mono, fontSize: 12, padding: 10, borderRadius: 6, border: "1px solid var(--accent)", background: "transparent", color: "var(--accent)", cursor: "pointer" }}>Measure ×10</button>
-          <button onClick={reset} style={{ fontFamily: mono, fontSize: 12, padding: "10px 12px", borderRadius: 6, border: "1px solid var(--border-0)", background: "transparent", color: "var(--text-0)", cursor: "pointer" }}>Reset</button>
+          <button onClick={measure} disabled={atLimit} style={{ flex: 1, fontFamily: mono, fontSize: 12, padding: 9, borderRadius: 6, border: "none", background: "var(--accent)", color: "var(--bg-0)", cursor: atLimit ? "not-allowed" : "pointer", opacity: atLimit ? 0.45 : 1, fontWeight: 500 }}>Measure</button>
+          <button onClick={measure10} disabled={atLimit} style={{ flex: 1, fontFamily: mono, fontSize: 12, padding: 9, borderRadius: 6, border: "1px solid var(--accent)", background: "transparent", color: "var(--accent)", cursor: atLimit ? "not-allowed" : "pointer", opacity: atLimit ? 0.45 : 1 }}>Measure ×10</button>
+          <button onClick={reset} style={{ fontFamily: mono, fontSize: 12, padding: "9px 11px", borderRadius: 6, border: "1px solid var(--border-0)", background: "transparent", color: "var(--text-0)", cursor: "pointer" }}>Reset</button>
         </div>
+        {atLimit ? <div style={{ fontFamily: mono, fontSize: 11, color: "var(--text-2)", textAlign: "center" }}>1000-shot limit reached — Reset to run again.</div> : null}
       </div>
 
       {/* histogram */}
-      <div style={{ ...panel, padding: 26, display: "flex", flexDirection: "column" }}>
+      <div style={{ ...panel, padding: 16, display: "flex", flexDirection: "column" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
           <span style={{ fontFamily: mono, fontSize: 11, letterSpacing: "0.12em", color: "var(--text-2)" }}>OUTCOME HISTOGRAM</span>
           <span style={{ fontFamily: mono, fontSize: 12, color: "var(--text-1)" }}>N = {total}</span>
         </div>
-        <div style={{ flex: 1, display: "flex", alignItems: "flex-end", justifyContent: "center", gap: 34, padding: "22px 0 12px", minHeight: 170 }}>
+        <div style={{ flex: 1, display: "flex", alignItems: "flex-end", justifyContent: "center", gap: 24, padding: "16px 0 10px", minHeight: 108 }}>
           {([["up", up, "|↑⟩", "var(--accent)"], ["down", down, "|↓⟩", "var(--text-1)"]] as const).map(([k, n, sym, col]) => (
             <div key={k} style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 8, height: "100%", justifyContent: "flex-end" }}>
               <span style={{ fontFamily: mono, fontSize: 12, color: "var(--text-0)" }}>{n}</span>
-              <div style={{ width: 52, borderRadius: "6px 6px 0 0", background: col, height: barH(n), transition: "height .35s ease" }} />
+              <div style={{ width: 36, borderRadius: "6px 6px 0 0", background: col, height: barH(n), transition: "height .35s ease" }} />
               <span style={{ fontFamily: mono, fontSize: 13, color: "var(--text-1)" }}>{sym}</span>
               <span style={{ fontFamily: mono, fontSize: 11, color: "var(--text-2)" }}>{total ? Math.round((n / total) * 100) + "%" : "—"}</span>
             </div>

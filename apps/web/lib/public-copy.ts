@@ -51,6 +51,7 @@ export const HOME_COPY: Record<PublicLocale, {
     title: string;
     items: Array<{ title: string; body: string }>;
   };
+  lioness: { label: string; title: string };
   measure: { label: string; title: string; body: string };
   cta: { label: string; title: string; contact: string; pricing: string };
 }> = {
@@ -99,6 +100,10 @@ export const HOME_COPY: Record<PublicLocale, {
         { title: "Privacy by design", body: "Your work is yours—secure by default, always." },
         { title: "Interoperable", body: "Open formats and APIs keep knowledge portable." },
       ],
+    },
+    lioness: {
+      label: "The mark",
+      title: "She resolves from the noise.",
     },
     measure: {
       label: "How verification works",
@@ -157,6 +162,10 @@ export const HOME_COPY: Record<PublicLocale, {
         { title: "プライバシーを設計に", body: "あなたの成果はあなたのもの。常に非公開を基本にします。" },
         { title: "相互運用性", body: "オープンな形式とAPIで知識を持ち運べます。" },
       ],
+    },
+    lioness: {
+      label: "マーク",
+      title: "ノイズから、彼女が現れる。",
     },
     measure: {
       label: "検証の仕組み",
