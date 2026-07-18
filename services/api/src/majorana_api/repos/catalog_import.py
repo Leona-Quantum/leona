@@ -9,6 +9,14 @@ rolls back only that item's own uncommitted work, never a sibling item's
 already-committed outcome (plan §5.3: "one bad input cannot roll back or
 publish an entire batch"). This is why item processing issues its own
 commit/rollback per item instead of sharing one transaction for the batch.
+
+ImportJob intentionally has no workspace_id. Majorana has exactly one catalog
+authority per database, fixed by server configuration; create/process entry
+points first prove the importer Scope against that system workspace, while the
+only unscoped lookup is worker-internal resolution of a trusted queue payload.
+No HTTP caller can select a catalog workspace. If multiple catalogs are ever
+supported, adding an explicit workspace foreign key and scoped lookup is a
+prerequisite, not an optional follow-up.
 """
 
 import dataclasses

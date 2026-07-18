@@ -18,7 +18,9 @@ Catalog schema/import/data changes: none
 - Only `RetryableJobError` requests a retry. Unknown exceptions remain terminal
   `failed` outcomes rather than looping unexpectedly.
 - Unknown job kinds fail closed as `dead`.
-- Dead-letter callbacks are at-least-once and must be idempotent. The existing
+- Dead-letter callbacks are at-least-once and must be idempotent. Delivery is
+  attempted at most five times; an exhausted callback is terminally marked with
+  its final error so it cannot retry forever. The existing
   `run.execute` callback uses deterministic event IDs and closes an active Run as
   failed.
 - Historical terminal jobs are marked delivered by the migration so deployment
@@ -56,7 +58,9 @@ queued
 
 Terminal `failed` and `dead` rows remain inspectable. A separate idempotent callback
 closes related domain state and records `dead_lettered_at`; callback errors remain
-pending with a delayed retry so they cannot create a tight loop or starve new jobs.
+pending with a delayed retry until the five-attempt budget is exhausted. Normal jobs
+run first and only one dead-letter callback follows per poll cycle, so terminal
+notification cannot monopolize the Worker.
 
 ## 4. Configuration and telemetry
 
@@ -66,7 +70,7 @@ pending with a delayed retry so they cannot create a tight loop or starve new jo
 | `WORKER_JOB_HEARTBEAT_S` | 30 or lease/3 | positive and less than lease |
 | `WORKER_RETRY_BASE_S` | 5 | positive and not greater than max |
 | `WORKER_RETRY_MAX_S` | 300 | positive |
-| `WORKER_DEAD_LETTER_TIMEOUT_S` | 30 | positive; callback batch is capped at 10 |
+| `WORKER_DEAD_LETTER_TIMEOUT_S` | 30 | positive; one callback runs per poll cycle |
 
 OTLP telemetry records claims, queue age, attempt count, requeues by reason,
 terminal outcomes, and lease loss. With no OTLP endpoint the instruments remain

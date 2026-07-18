@@ -40,13 +40,17 @@ action.
     rejects the importer's and public-reader's user IDs even if some future
     misconfiguration ever granted either an ADMIN row. A real reviewer is provisioned by
     the importer's OWNER scope calling the existing `repos/workspaces.add_member` — no
-    new membership machinery was added.
+    new membership machinery was added. License decisions store `reviewer_user_id`;
+    artifact review decisions append an `audit_log` row with actor, transition, artifact,
+    and reviewed version in the same transaction as the state change.
   - `submit_for_review` — importer-only, `draft → pending_review` through
     `assert_review_transition`.
   - `get_publication_readiness` — read-only, importer or reviewer scope.
   - `stage_artifact_version` now resets `review_state` to `draft` whenever the artifact
     was `accepted`/`rejected` before the new version lands, so a new revision can never
-    inherit a stale acceptance made about different content.
+    inherit a stale acceptance made about different content. It also locks the artifact
+    row before computing `max(seq)+1`, serializing version allocation only within one
+    artifact while preserving cross-artifact concurrency.
 
 ## Deferred deliberately (later steps)
 

@@ -52,7 +52,9 @@ untrusted generated code runs only in ephemeral network-locked sandboxes
 1. **Blast-radius files** (see `.github/CODEOWNERS`) — migrations, contracts, sandbox,
    workflows, auth: never merged on subagent/Codex authority; orchestrator/owner reviews.
 2. **Authz invariant:** repository-layer functions take `Scope` as first arg and apply
-   workspace scoping themselves. No raw queries outside the repository layer.
+   workspace scoping themselves. The sole exception is `repos/system.py` for pre-Scope
+   identity bootstrap and workspace-neutral control-plane jobs; it may never expose
+   tenant data to request handlers. No raw queries outside the repository layer.
 3. **Sandbox invariant:** every sandbox creation applies deny-all egress explicitly.
    A sandbox that can reach the internet is a release-blocking bug.
 4. **No invented results:** benchmarks/evals report actual command output; a run that
