@@ -20,6 +20,9 @@ action.
   lowercase-hyphen vocabulary, `(artifact_id, tag)` primary key). All CHECK-constrained
   to closed enums; hash columns validated by the same sha256-hex format as migration
   `0014`.
+- Migration `0018` adds no catalog columns and does not edit frozen migration `0015`.
+  It installs a reversible PostgreSQL trigger that rejects UPDATE or DELETE on
+  `license_assertions`; every correction must remain a new superseding row.
 - `catalog_publication.py`: `evaluate_publication_readiness`, a pure function (no
   sqlalchemy import, so it can't violate the DB-access-only-in-repos boundary) that
   reports every missing precondition — review acceptance, a pinned source, an approved
@@ -102,6 +105,10 @@ against Postgres 17 — see `docs/repository-step3-4-neon-gate.md`.
 
 ## Required gate
 
-CODEOWNER review remains required before Step 5 for the migration, contracts, and
-repository-layer changes. `SYSTEM_CATALOG_ENABLED` stays `false`; no public catalog data
-exists.
+Step 5a was subsequently implemented on this branch. CODEOWNER review, merge, and
+deployment approval remain required for the migrations, contracts, and repository-layer
+changes. `SYSTEM_CATALOG_ENABLED` stays `false`; no public catalog data exists.
+
+The `0018` trigger's real UPDATE/DELETE rejection is covered by the repository database
+integrity CI step on a temporary Neon branch. It was collected but not executed in the
+local Phase 3 session because no `DATABASE_URL` was used.

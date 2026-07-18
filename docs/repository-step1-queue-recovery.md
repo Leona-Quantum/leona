@@ -69,6 +69,13 @@ token. Other Workers skip the reservation, while a crash makes it reclaimable af
 expiry. The ordinary job lease fields remain separate and retain their original
 running-job-only constraint.
 
+Ordinary job completion and retry now also require the matching lease to be unexpired
+according to PostgreSQL `now()` at the write. A late Worker loses the result even when
+no replacement has claimed it yet; stale recovery owns the durable outcome. Dead Letter
+Run closure is narrower than normal SSE delivery: it locks the scoped Run and commits
+`run.error`, `run.finished`, and `FAILED` together, so cancellation or another callback
+cannot expose a contradictory terminal sequence.
+
 ## 4. Configuration and telemetry
 
 | Environment variable | Default | Constraint |

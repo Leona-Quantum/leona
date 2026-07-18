@@ -29,25 +29,11 @@ Scope: PR #64 review fixes only; no Step 5b network importer or public catalog
   the unscoped idempotency lookup is Worker-internal. Multiple catalogs would require a
   new workspace FK, scoped queries, migration, and leakage matrix before support.
 
-## Deferred as separate reviewed slices
+## Formerly deferred reviewed slices
 
-These proposals are valid, but changing them inside this review-fix series would alter
-schema or transaction semantics beyond a safe patch:
-
-1. **DB-enforced append-only license ledger.** The repository only appends today, but
-   Postgres does not reject UPDATE/DELETE for `license_assertions`. Add a new reversible
-   migration and live role/grant/trigger tests; never edit frozen migration `0015`.
-2. **Fully atomic terminal event/state transition.** `RepoEventSink` intentionally commits
-   events individually for durable SSE progress. This needs an ADR covering visibility
-   versus atomicity, conditional terminal transitions, crash injection, and replay.
-3. **Reject finish after wall-clock lease expiry.** Fenced tokens already prevent a
-   replaced Worker from writing, and heartbeat now cancels before locally known expiry.
-   Adding an expiry predicate may reject a legitimate completion before recovery; settle
-   that availability/strictness trade-off in the queue ADR with live race tests.
-
-No deferred item changes the present release gates: publication remains disabled,
-imports remain private/staged, callback retries are bounded, and replacement Workers are
-fenced.
+The three transaction/schema proposals were implemented in Phase 3 after ADR-0020 and
+ADR-0021 fixed their safety and availability trade-offs. They remain CODEOWNER-gated
+and feature-disabled until the live CI database checks pass.
 
 ## Validation performed
 
@@ -102,3 +88,19 @@ Phase 2 DB-free validation: `313 passed, 31 skipped`; Ruff check/format passed
 over `162` files; Alembic reports a single `0017` head. The two new Postgres
 contention/reclaim tests were collected and skipped without `DATABASE_URL`; no local
 or Neon database was changed in this session.
+
+## Second review — Phase 3 disposition
+
+| Finding | Resolution | Commit |
+|---|---|---|
+| License history was append-only only by convention | Migration `0018` rejects UPDATE/DELETE with a PostgreSQL trigger; corrections insert a superseding row | `ddf6856` |
+| Matching tokens could finish or retry after expiry | Require `lease_expires_at > now()` in every terminal/retry predicate and check rowcount | `05d7e38` |
+| Dead Letter events and FAILED status committed separately | Lock the scoped Run and commit both deterministic events plus status once | `ccbfe30` |
+| New live integrity tests were not in the DB job | Run trigger, lease, reservation, and terminal-race tests on the temporary Neon CI branch | `92f6832` |
+
+ADR-0020 and ADR-0021 record the database-history and fencing/atomicity decisions in
+`c74bd31`. Phase 3 DB-free validation: `318 passed, 35 skipped`; Ruff check/format
+passed over `166` files; import boundaries are `3 kept, 0 broken`; raw-query and
+generated OpenAPI checks passed; Alembic reports one `0018` head; workflow YAML parsed.
+The live trigger/contention/rollback tests were added to CI but were not run locally.
+No local or Neon database, credential, or public-service state was changed.
