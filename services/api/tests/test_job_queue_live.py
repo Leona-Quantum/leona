@@ -19,8 +19,28 @@ requires_db = pytest.mark.skipif(
 @pytest.fixture
 async def factory():
     engine = engine_from_env()
+    factory = session_factory(engine)
+    # This suite shares the temporary CI database with pipeline tests that may
+    # intentionally leave terminal callbacks pending. Mark that prior fixture
+    # state delivered before testing one-row contention; otherwise the global
+    # production claim correctly selects an older unrelated terminal job.
+    async with factory() as session:
+        await session.execute(
+            update(Job)
+            .where(
+                Job.status.in_(("failed", "dead")),
+                Job.dead_lettered_at.is_(None),
+            )
+            .values(
+                dead_lettered_at=func.now(),
+                dead_letter_locked_by=None,
+                dead_letter_lease_token=None,
+                dead_letter_lease_expires_at=None,
+            )
+        )
+        await session.commit()
     try:
-        yield session_factory(engine)
+        yield factory
     finally:
         await engine.dispose()
 
