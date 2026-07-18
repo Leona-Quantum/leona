@@ -66,6 +66,9 @@ def _job(*, status="queued", attempts=0, max_attempts=3, lease_token=None):
         dead_lettered_at=None,
         dead_letter_error=None,
         dead_letter_attempts=0,
+        dead_letter_locked_by=None,
+        dead_letter_lease_token=None,
+        dead_letter_lease_expires_at=None,
     )
 
 
@@ -163,17 +166,29 @@ async def test_retry_uses_exponential_delay_then_dead_letters_at_limit():
 
 
 async def test_dead_letter_delivery_is_idempotently_marked():
+    delivery_token = uuid.uuid4()
     session = _Session(_Result(rowcount=1))
-    assert await system.mark_job_dead_lettered(session, job_id=uuid.uuid4()) is True
+    assert (
+        await system.mark_job_dead_lettered(
+            session, job_id=uuid.uuid4(), delivery_token=delivery_token
+        )
+        is True
+    )
 
     raced = _Session(_Result(rowcount=0))
-    assert await system.mark_job_dead_lettered(raced, job_id=uuid.uuid4()) is False
+    assert (
+        await system.mark_job_dead_lettered(
+            raced, job_id=uuid.uuid4(), delivery_token=delivery_token
+        )
+        is False
+    )
 
     failed_callback = _Session(_Result(rowcount=1))
     assert (
         await system.mark_job_dead_lettered(
             failed_callback,
             job_id=uuid.uuid4(),
+            delivery_token=delivery_token,
             error="callback unavailable",
             retry_delay_seconds=15,
         )
@@ -182,13 +197,34 @@ async def test_dead_letter_delivery_is_idempotently_marked():
     sql = _sql(failed_callback.statements[0])
     assert "dead_letter_attempts" in sql and "run_after" in sql
     assert "CASE WHEN" in sql and "dead_lettered_at" in sql
+    assert "dead_letter_lease_token" in sql and "dead_letter_lease_expires_at" in sql
+
+
+async def test_dead_letter_claim_is_skip_locked_and_fenced():
+    job = _job(status="dead", attempts=3, max_attempts=3)
+    session = _Session(_Result(rows=[job]), _Result(rowcount=1))
+
+    claimed = await system.claim_pending_dead_letter(
+        session, worker_id="worker-a", lease_seconds=45
+    )
+
+    assert claimed is job
+    assert job.dead_letter_locked_by == "worker-a"
+    assert job.dead_letter_lease_token is not None
+    claim_sql = _sql(session.statements[0])
+    assert "FOR UPDATE SKIP LOCKED" in claim_sql
+    assert "dead_letter_lease_expires_at" in claim_sql
+    update_sql = _sql(session.statements[1])
+    assert "dead_letter_lease_token" in update_sql
 
 
 async def test_dead_letter_retry_budget_is_bounded():
+    delivery_token = uuid.uuid4()
     session = _Session(_Result(rowcount=1))
     await system.mark_job_dead_lettered(
         session,
         job_id=uuid.uuid4(),
+        delivery_token=delivery_token,
         error="callback unavailable",
         max_delivery_attempts=5,
     )
@@ -201,6 +237,7 @@ async def test_dead_letter_retry_budget_is_bounded():
         await system.mark_job_dead_lettered(
             _Session(),
             job_id=uuid.uuid4(),
+            delivery_token=delivery_token,
             error="callback unavailable",
             max_delivery_attempts=0,
         )

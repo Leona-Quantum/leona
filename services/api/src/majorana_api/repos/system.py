@@ -662,27 +662,66 @@ async def retry_job(
     return ("dead" if terminal else "queued", delay_seconds)
 
 
-async def list_pending_dead_letters(session: AsyncSession, *, limit: int = 50) -> list[Job]:
-    """Return terminal jobs whose idempotent dead-letter callback is pending."""
-    if not 1 <= limit <= 500:
-        raise ValueError("dead-letter limit must be in [1, 500]")
+async def claim_pending_dead_letter(
+    session: AsyncSession,
+    *,
+    worker_id: str,
+    lease_seconds: float = 45.0,
+) -> Job | None:
+    """Atomically reserve one terminal callback with a fenced expiring token.
+
+    The row lock is held only until the caller commits the reservation. Callback
+    I/O happens afterward, so another Worker skips this row rather than waiting.
+    If the Worker crashes, the expiry predicate makes the row reclaimable.
+    """
+    lease_delta = _lease_delta(lease_seconds)
+    if not worker_id.strip():
+        raise ValueError("worker_id must not be empty")
     stmt = (
         select(Job)
         .where(
             Job.status.in_(("failed", "dead")),
             Job.dead_lettered_at.is_(None),
             Job.run_after <= func.now(),
+            or_(
+                Job.dead_letter_lease_token.is_(None),
+                Job.dead_letter_lease_expires_at <= func.now(),
+            ),
         )
         .order_by(Job.updated_at)
-        .limit(limit)
+        .limit(1)
+        .with_for_update(skip_locked=True)
     )
-    return list((await session.execute(stmt)).scalars().all())
+    job = (await session.execute(stmt)).scalars().first()
+    if job is None:
+        return None
+    delivery_token = uuid.uuid4()
+    result = await session.execute(
+        update(Job)
+        .where(
+            Job.id == job.id,
+            Job.status.in_(("failed", "dead")),
+            Job.dead_lettered_at.is_(None),
+        )
+        .values(
+            dead_letter_locked_by=worker_id,
+            dead_letter_lease_token=delivery_token,
+            dead_letter_lease_expires_at=func.now() + lease_delta,
+            updated_at=func.now(),
+        )
+    )
+    if result.rowcount != 1:
+        raise JobLeaseLostError(f"dead-letter reservation lost before commit: {job.id}")
+    job.dead_letter_locked_by = worker_id
+    job.dead_letter_lease_token = delivery_token
+    return job
 
 
 async def mark_job_dead_lettered(
     session: AsyncSession,
     *,
     job_id: Any,
+    delivery_token: uuid.UUID,
     error: str | None = None,
     retry_delay_seconds: float = 30.0,
     max_delivery_attempts: int = DEFAULT_DEAD_LETTER_MAX_ATTEMPTS,
@@ -701,6 +740,9 @@ async def mark_job_dead_lettered(
     values: dict[str, Any] = {
         "dead_letter_error": _bounded_error(error) if error is not None else None,
         "dead_letter_attempts": attempts_after_update,
+        "dead_letter_locked_by": None,
+        "dead_letter_lease_token": None,
+        "dead_letter_lease_expires_at": None,
         "updated_at": func.now(),
     }
     if error is None:
@@ -717,6 +759,8 @@ async def mark_job_dead_lettered(
             Job.id == job_id,
             Job.status.in_(("failed", "dead")),
             Job.dead_lettered_at.is_(None),
+            Job.dead_letter_lease_token == delivery_token,
+            Job.dead_letter_lease_expires_at > func.now(),
         )
         .values(**values)
     )

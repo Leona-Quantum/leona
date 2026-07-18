@@ -48,6 +48,11 @@ RETRY_MAX_S = _positive_env("WORKER_RETRY_MAX_S", 300.0)
 if RETRY_BASE_S > RETRY_MAX_S:
     raise ValueError("WORKER_RETRY_BASE_S must not exceed WORKER_RETRY_MAX_S")
 DEAD_LETTER_TIMEOUT_S = _positive_env("WORKER_DEAD_LETTER_TIMEOUT_S", 30.0)
+DEAD_LETTER_LEASE_S = _positive_env(
+    "WORKER_DEAD_LETTER_LEASE_S", max(45.0, DEAD_LETTER_TIMEOUT_S + 15.0)
+)
+if DEAD_LETTER_LEASE_S <= DEAD_LETTER_TIMEOUT_S:
+    raise ValueError("WORKER_DEAD_LETTER_LEASE_S must exceed WORKER_DEAD_LETTER_TIMEOUT_S")
 
 _meter = metrics.get_meter("majorana.worker.queue")
 _job_claims = _meter.create_counter("majorana.jobs.claimed")
@@ -144,41 +149,51 @@ async def _execute_with_heartbeat(
     await handler_task
 
 
-async def _deliver_pending_dead_letters(factory) -> None:
+async def _deliver_pending_dead_letters(factory, *, worker_id: str) -> None:
     async with factory() as session:
-        # One bounded callback per poll cycle prevents terminal notification
-        # work from monopolizing the worker when the main queue is busy.
-        pending = await system.list_pending_dead_letters(session, limit=1)
-    for job in pending:
-        callback = DEAD_LETTER_HANDLERS.get(job.kind)
-        error: str | None = None
-        if callback is None:
-            # Unknown kinds are intentionally terminal; there is no domain state
-            # callback that can be invoked safely.
-            error = None
-        else:
-            try:
+        job = await system.claim_pending_dead_letter(
+            session,
+            worker_id=worker_id,
+            lease_seconds=DEAD_LETTER_LEASE_S,
+        )
+        await session.commit()  # reservation is durable before callback I/O
+    if job is None:
+        return
+    delivery_token = job.dead_letter_lease_token
+    if delivery_token is None:
+        raise RuntimeError(f"claimed dead-letter job {job.id} has no delivery token")
+    callback = DEAD_LETTER_HANDLERS.get(job.kind)
+    error: str | None = None
+    if callback is None:
+        # Unknown kinds are intentionally terminal; there is no domain state
+        # callback that can be invoked safely.
+        error = None
+    else:
+        try:
+            async with asyncio.timeout(DEAD_LETTER_TIMEOUT_S):
                 async with factory() as session:
-                    async with asyncio.timeout(DEAD_LETTER_TIMEOUT_S):
-                        await callback(
-                            session,
-                            job.payload,
-                            job.last_error or f"job ended with status {job.status}",
-                        )
-            except Exception as exc:
-                error = (str(exc) or type(exc).__name__)[:2000]
-                log.exception("dead-letter callback failed for job %s", job.id)
-        async with factory() as session:
-            marked = await system.mark_job_dead_lettered(session, job_id=job.id, error=error)
-            await session.commit()
-        if marked and error is None:
-            log.info("job %s dead-letter callback completed", job.id)
-        elif (
-            marked
-            and error is not None
-            and int(job.dead_letter_attempts or 0) + 1 >= system.DEFAULT_DEAD_LETTER_MAX_ATTEMPTS
-        ):
-            log.error("job %s dead-letter callback abandoned after retry budget", job.id)
+                    await callback(
+                        session,
+                        job.payload,
+                        job.last_error or f"job ended with status {job.status}",
+                    )
+        except Exception as exc:
+            error = (str(exc) or type(exc).__name__)[:2000]
+            log.exception("dead-letter callback failed for job %s", job.id)
+    async with factory() as session:
+        marked = await system.mark_job_dead_lettered(
+            session,
+            job_id=job.id,
+            delivery_token=delivery_token,
+            error=error,
+        )
+        await session.commit()
+    if not marked:
+        log.warning("job %s lost its dead-letter delivery reservation", job.id)
+    elif error is None:
+        log.info("job %s dead-letter callback completed", job.id)
+    elif int(job.dead_letter_attempts or 0) + 1 >= system.DEFAULT_DEAD_LETTER_MAX_ATTEMPTS:
+        log.error("job %s dead-letter callback abandoned after retry budget", job.id)
 
 
 async def _start_liveness() -> asyncio.AbstractServer:
@@ -333,7 +348,7 @@ async def run_forever() -> None:
                 # bounded dead-letter callback runs only after that job finishes
                 # (or immediately when the queue is idle), so no claimed lease
                 # ticks while callback delivery blocks.
-                await _deliver_pending_dead_letters(factory)
+                await _deliver_pending_dead_letters(factory, worker_id=worker_id)
                 if claimed is not None:
                     continue  # drain the main queue before sleeping again
             except Exception:

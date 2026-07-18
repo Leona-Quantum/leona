@@ -1,4 +1,6 @@
 import asyncio
+import uuid
+from types import SimpleNamespace
 
 import pytest
 
@@ -26,13 +28,63 @@ def _factory():
 async def test_dead_letters_are_delivered_one_per_poll_cycle(monkeypatch):
     observed = {}
 
-    async def list_pending_dead_letters(_session, *, limit):
-        observed["limit"] = limit
-        return []
+    async def claim_pending_dead_letter(_session, *, worker_id, lease_seconds):
+        observed.update(worker_id=worker_id, lease_seconds=lease_seconds)
+        return None
 
-    monkeypatch.setattr(system, "list_pending_dead_letters", list_pending_dead_letters)
-    await worker_main._deliver_pending_dead_letters(_factory)
-    assert observed["limit"] == 1
+    monkeypatch.setattr(system, "claim_pending_dead_letter", claim_pending_dead_letter)
+    await worker_main._deliver_pending_dead_letters(_factory, worker_id="worker-a")
+    assert observed["worker_id"] == "worker-a"
+    assert observed["lease_seconds"] > worker_main.DEAD_LETTER_TIMEOUT_S
+
+
+async def test_dead_letter_reservation_commits_before_callback(monkeypatch):
+    events = []
+    token = uuid.uuid4()
+    job = SimpleNamespace(
+        id=uuid.uuid4(),
+        kind="test.dead-letter",
+        payload={"run_id": str(uuid.uuid4())},
+        status="dead",
+        last_error="failed",
+        dead_letter_attempts=0,
+        dead_letter_lease_token=token,
+    )
+
+    class Session:
+        async def commit(self):
+            events.append("commit")
+
+    class Context:
+        async def __aenter__(self):
+            return Session()
+
+        async def __aexit__(self, *_args):
+            return None
+
+    def factory():
+        return Context()
+
+    async def claim(_session, *, worker_id, lease_seconds):
+        events.append("claim")
+        return job
+
+    async def callback(_session, _payload, _error):
+        events.append("callback")
+
+    async def mark(_session, *, job_id, delivery_token, error):
+        assert job_id == job.id
+        assert delivery_token == token
+        events.append("mark")
+        return True
+
+    monkeypatch.setattr(system, "claim_pending_dead_letter", claim)
+    monkeypatch.setattr(system, "mark_job_dead_lettered", mark)
+    monkeypatch.setitem(worker_main.DEAD_LETTER_HANDLERS, job.kind, callback)
+
+    await worker_main._deliver_pending_dead_letters(factory, worker_id="worker-a")
+
+    assert events == ["claim", "commit", "callback", "mark", "commit"]
 
 
 async def test_handler_is_cancelled_when_heartbeat_io_hangs(monkeypatch):
