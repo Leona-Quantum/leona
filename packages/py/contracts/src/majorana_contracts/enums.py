@@ -155,6 +155,37 @@ class CitationRelation(StrEnum):
     IMPLEMENTATION_OF = "implementation_of"
 
 
+class ImportProvider(StrEnum):
+    """Closed allowlist (repository Step 5 plan §5.3/§7.1); grows only after a
+    new adapter's adversarial fixture tests pass."""
+
+    LOCAL_FIXTURE = "local_fixture"
+
+
+class ImportJobStatus(StrEnum):
+    QUEUED = "queued"
+    RUNNING = "running"
+    COMPLETED = "completed"
+    COMPLETED_WITH_REJECTIONS = "completed_with_rejections"
+    FAILED = "failed"
+    DEAD = "dead"
+
+
+class ImportItemState(StrEnum):
+    """`quarantined` means raw bytes safely stored awaiting parse (plan §6
+    step 4) — distinct from the catalog review_state quarantine (rights
+    hold, migrations 0014/0015)."""
+
+    QUEUED = "queued"
+    FETCHING = "fetching"
+    QUARANTINED = "quarantined"
+    PARSING = "parsing"
+    STAGED = "staged"
+    REJECTED = "rejected"
+    RETRY_WAIT = "retry_wait"
+    DEAD = "dead"
+
+
 class Role(StrEnum):
     OWNER = "owner"
     ADMIN = "admin"

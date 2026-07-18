@@ -1,6 +1,6 @@
 # Quantum Repository Platform - staged implementation plan
 
-Status: Steps 2-4 implemented and locally validated; CODEOWNER review pending before Step 5  
+Status: Steps 2-5a implemented and locally validated; CODEOWNER review pending before Step 5b  
 Owner lane: Rei / Neon catalog, FastAPI repository API, classification, and ingestion  
 Prepared: 2026-07-18  
 Target branch: `feature/repository`  
@@ -577,20 +577,44 @@ Rollback: feature flag off; records remain staged and non-public.
 
 ### Step 5 - durable importer skeleton and safe fetcher
 
+Split into two independently reviewable slices per decision 5 (§1): 5a has no network
+exposure; 5b is where the security surface actually grows.
+
+#### Step 5a - durable importer skeleton (local fixture provider only)
+
 Scope:
 
 - add import jobs/items and one controlled local/file fixture adapter;
-- add a deterministic 285-record bootstrap-manifest adapter pinned to an approved source commit;
-- implement idempotency, leases, item-level retry, quarantine, stable failure codes, and limits;
-- implement allowlisted MQT Bench and QASMBench adapters after malicious fixture tests pass;
-- parse only in deny-all sandboxes.
+- implement idempotency, item-level retry, quarantine, stable failure codes, and limits;
+- no network access anywhere in this slice.
 
 Done when:
 
 - retry creates no duplicate version;
-- SSRF, redirect, archive, path traversal, oversized, malformed, and timeout fixtures fail safely;
+- oversized, malformed, and empty fixtures fail safely with stable, distinguishable
+  failure codes;
 - a crashed import resumes from durable item state;
 - rejected items never create public artifacts.
+
+Status: implemented and locally validated against a throwaway local Postgres 14 — see
+`docs/repository-step5a-import-skeleton.md`.
+
+Rollback: disable import creation and drain/cancel active jobs; staged data remains non-public for
+audit or approved deletion.
+
+#### Step 5b - safe fetcher and real sources (not started; needs its own go-ahead)
+
+Scope:
+
+- add a deterministic 285-record bootstrap-manifest adapter pinned to an approved source commit;
+- implement allowlisted MQT Bench and QASMBench adapters after malicious fixture tests pass;
+- SSRF/redirect/archive/path-traversal/timeout hardening for real outbound fetches;
+- parse only in deny-all sandboxes.
+
+Done when:
+
+- SSRF, redirect, archive, path traversal, oversized, malformed, and timeout fixtures fail safely;
+- everything Step 5a's "done when" list already covers, against the real adapters.
 
 Rollback: disable import creation and drain/cancel active jobs; staged data remains non-public for
 audit or approved deletion.
@@ -797,25 +821,28 @@ Owner decisions required before the relevant phase:
 
 Step 2's temporary Neon gate passed and its CI output-name bug (`db_url_pooled` →
 `db_url_with_pooler`) is fixed. Step 3 (migration `0014`, `catalog_hashing.py`,
-`CatalogAuthority.is_importer_scope`, `repos/catalog.py` staging functions) and Step 4
+`CatalogAuthority.is_importer_scope`, `repos/catalog.py` staging functions), Step 4
 (migration `0015`, `catalog_publication.py`, `assert_review_transition`,
-`repos/catalog.py` provenance/rights/review functions) are implemented and validated
-against a throwaway local Postgres 14 — see `docs/repository-step3-catalog-schema.md`
-and `docs/repository-step4-provenance-rights.md`. Before Step 5:
+`repos/catalog.py` provenance/rights/review functions), and Step 5a (migration `0016`,
+`catalog_import_fixtures.py`, `repos/catalog_import.py`, the local-fixture-only import
+pipeline) are implemented and validated against a throwaway local Postgres 14 — see
+`docs/repository-step3-catalog-schema.md`, `docs/repository-step4-provenance-rights.md`,
+and `docs/repository-step5a-import-skeleton.md`. Before Step 5b:
 
-1. obtain CODEOWNER review for migrations `0013`-`0015`, the auth boundary, contracts,
+1. obtain CODEOWNER review for migrations `0013`-`0016`, the auth boundary, contracts,
    and workflows;
 2. retain `SYSTEM_CATALOG_ENABLED=false`;
-3. delete the disposable Step 2 Neon branch after review evidence is captured;
+3. run a real-Neon gate for Step 5a (its own temporary branch, per the established
+   pattern — Steps 3/4's gate branch is not reused);
 4. resolve the local uv workspace-discovery issue independently of repository work;
-5. scope Step 5 explicitly before implementation: it introduces real external network
-   fetching (SSRF/quarantine hardening, allowlisted connectors) — a materially larger
-   security surface than Steps 2-4, and per decision 5 (§1) it should land in its own
-   small reviewable slices with an explicit go-ahead, not be bundled into a prior step's
-   review.
+5. scope Step 5b explicitly before implementation: it introduces real external network
+   fetching (SSRF/quarantine hardening, allowlisted connectors, the 285-record bootstrap
+   manifest) — a materially larger security surface than Steps 2-5a, and per decision 5
+   (§1) it should land in its own small reviewable slices with an explicit go-ahead, not
+   be bundled into a prior step's review.
 
-Do not import or publish any of the 285 bootstrap records before the reviewed Step 4/5
-schema exists. Do not promote a temporary branch as a production database. Step 5
+Do not import or publish any of the 285 bootstrap records before Step 5b is reviewed and
+implemented. Do not promote a temporary branch as a production database. Step 5b
 introduces real external network fetching (SSRF/quarantine hardening, allowlisted
 connectors) and should get its own explicit scoping and review checkpoint before
-implementation starts, given its larger security surface relative to Steps 3-4.
+implementation starts, given its larger security surface relative to Steps 2-5a.

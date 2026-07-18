@@ -12,7 +12,18 @@ destructive/visibility operations need owner/admin (see _base.py).
 worker job loop run before/outside any workspace scope.
 """
 
-from . import agent, artifacts, audit, catalog, folders, runs, system, usage, workspaces
+from . import (
+    agent,
+    artifacts,
+    audit,
+    catalog,
+    catalog_import,
+    folders,
+    runs,
+    system,
+    usage,
+    workspaces,
+)
 from ._base import ADMIN_ROLES, WRITE_ROLES, AuthzError, NotFoundError, RepoError
 
 __all__ = [
@@ -25,6 +36,7 @@ __all__ = [
     "agent",
     "audit",
     "catalog",
+    "catalog_import",
     "folders",
     "runs",
     "system",

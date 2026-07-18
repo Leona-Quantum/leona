@@ -2,3 +2,4 @@
 One shared module so producer and consumer can't drift."""
 
 RUN_EXECUTE_JOB_KIND = "run.execute"
+CATALOG_IMPORT_JOB_KIND = "catalog.import"

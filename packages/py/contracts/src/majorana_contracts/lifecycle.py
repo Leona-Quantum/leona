@@ -1,7 +1,7 @@
-"""Legal top-level run status and catalog review-state transitions shared by
-API and worker."""
+"""Legal top-level run status, catalog review-state, and import-item
+transitions shared by API and worker."""
 
-from majorana_contracts.enums import ReviewState, RunStatus
+from majorana_contracts.enums import ImportItemState, ReviewState, RunStatus
 
 _LEGAL: dict[RunStatus, frozenset[RunStatus]] = {
     RunStatus.QUEUED: frozenset({RunStatus.RUNNING, RunStatus.CANCELLED}),
@@ -54,3 +54,40 @@ class IllegalReviewTransition(Exception):
 def assert_review_transition(current: ReviewState, new: ReviewState) -> None:
     if new not in _REVIEW_LEGAL[current]:
         raise IllegalReviewTransition(current, new)
+
+
+# Import item state (repository Step 5a plan §5.3): each item commits or
+# rejects independently, so one bad input can't roll back or publish an
+# entire batch. retry_wait always returns to queued (bounded retry); dead is
+# reached only after max_attempts is exhausted.
+_IMPORT_ITEM_LEGAL: dict[ImportItemState, frozenset[ImportItemState]] = {
+    ImportItemState.QUEUED: frozenset({ImportItemState.FETCHING}),
+    ImportItemState.FETCHING: frozenset(
+        {ImportItemState.QUARANTINED, ImportItemState.REJECTED, ImportItemState.RETRY_WAIT}
+    ),
+    ImportItemState.QUARANTINED: frozenset({ImportItemState.PARSING}),
+    ImportItemState.PARSING: frozenset(
+        {ImportItemState.STAGED, ImportItemState.REJECTED, ImportItemState.RETRY_WAIT}
+    ),
+    ImportItemState.RETRY_WAIT: frozenset({ImportItemState.QUEUED, ImportItemState.DEAD}),
+    ImportItemState.STAGED: frozenset(),
+    ImportItemState.REJECTED: frozenset(),
+    ImportItemState.DEAD: frozenset(),
+}
+
+
+class IllegalImportItemTransition(Exception):
+    def __init__(self, current: ImportItemState, new: ImportItemState) -> None:
+        super().__init__(f"illegal import item transition {current} -> {new}")
+        self.current = current
+        self.new = new
+
+
+def assert_import_item_transition(current: ImportItemState, new: ImportItemState) -> None:
+    if new not in _IMPORT_ITEM_LEGAL[current]:
+        raise IllegalImportItemTransition(current, new)
+
+
+IMPORT_ITEM_TERMINAL_STATES: frozenset[ImportItemState] = frozenset(
+    {ImportItemState.STAGED, ImportItemState.REJECTED, ImportItemState.DEAD}
+)

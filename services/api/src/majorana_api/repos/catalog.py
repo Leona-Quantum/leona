@@ -111,7 +111,7 @@ async def get_catalog_workspace(
     )
 
 
-async def _get_importer_workspace(
+async def get_importer_workspace(
     scope: Scope, session: AsyncSession, *, authority: CatalogAuthority
 ) -> Workspace:
     if not authority.enabled or not authority.is_importer_scope(scope):
@@ -197,7 +197,7 @@ async def stage_artifact(
     parent_artifact_id: uuid.UUID | None = None,
 ) -> Artifact:
     """Create an immutable-identity, non-public staged catalog artifact."""
-    workspace = await _get_importer_workspace(scope, session, authority=authority)
+    workspace = await get_importer_workspace(scope, session, authority=authority)
     if parent_artifact_id is not None:  # provenance edge must stay in-catalog
         await _get_catalog_artifact(
             session, workspace_id=workspace.id, artifact_id=parent_artifact_id
@@ -252,7 +252,7 @@ async def stage_artifact_version(
     (migration 0014) enforces rejection atomically — concurrent importers
     racing the same source cannot both win.
     """
-    workspace = await _get_importer_workspace(scope, session, authority=authority)
+    workspace = await get_importer_workspace(scope, session, authority=authority)
     artifact = await _get_catalog_artifact(
         session, workspace_id=workspace.id, artifact_id=artifact_id
     )
@@ -340,7 +340,7 @@ async def record_artifact_source(
     second call for the same version is a duplicate-source bug, not a
     correction — corrections stage a new version instead.
     """
-    workspace = await _get_importer_workspace(scope, session, authority=authority)
+    workspace = await get_importer_workspace(scope, session, authority=authority)
     await _get_catalog_version(
         session, workspace_id=workspace.id, artifact_version_id=artifact_version_id
     )
@@ -383,7 +383,7 @@ async def record_license_assertion(
     — repository Step 4 plan: "unknown/conflicting licenses fail closed
     into quarantine".
     """
-    workspace = await _get_importer_workspace(scope, session, authority=authority)
+    workspace = await get_importer_workspace(scope, session, authority=authority)
     artifact, version = await _get_catalog_version(
         session, workspace_id=workspace.id, artifact_version_id=artifact_version_id
     )
@@ -457,7 +457,7 @@ async def submit_for_review(
     authority: CatalogAuthority,
 ) -> Artifact:
     """Importer-only, one-way: 'draft' -> 'pending_review'."""
-    workspace = await _get_importer_workspace(scope, session, authority=authority)
+    workspace = await get_importer_workspace(scope, session, authority=authority)
     artifact = await _get_catalog_artifact(
         session, workspace_id=workspace.id, artifact_id=artifact_id
     )
@@ -504,7 +504,7 @@ async def record_citation(
     it is independent of license_assertions (repository Step 4 plan §5.2)."""
     if doi is None and arxiv_id is None and url is None and specification_ref is None:
         raise ValueError("citation needs at least one of doi/arxiv_id/url/specification_ref")
-    workspace = await _get_importer_workspace(scope, session, authority=authority)
+    workspace = await get_importer_workspace(scope, session, authority=authority)
     await _get_catalog_artifact(session, workspace_id=workspace.id, artifact_id=artifact_id)
     citation = ArtifactCitation(
         id=uuid7(),
@@ -531,7 +531,7 @@ async def tag_artifact(
     tag: str,
 ) -> None:
     """Importer-only; idempotent (unique artifact_id/tag pair)."""
-    workspace = await _get_importer_workspace(scope, session, authority=authority)
+    workspace = await get_importer_workspace(scope, session, authority=authority)
     await _get_catalog_artifact(session, workspace_id=workspace.id, artifact_id=artifact_id)
     session.add(ArtifactTag(artifact_id=artifact_id, tag=tag))
     await session.flush()
@@ -547,7 +547,7 @@ async def get_publication_readiness(
     """Read-only precondition check. Never mutates publication_state —
     publication itself is a later step's audited human action."""
     try:
-        workspace = await _get_importer_workspace(scope, session, authority=authority)
+        workspace = await get_importer_workspace(scope, session, authority=authority)
     except AuthzError:
         workspace = await _get_reviewer_workspace(scope, session, authority=authority)
     artifact = await _get_catalog_artifact(

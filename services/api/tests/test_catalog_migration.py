@@ -220,3 +220,29 @@ def test_catalog_provenance_migration_downgrade_fails_closed_with_data(monkeypat
         assert "provenance/rights/citation/tag rows exist" in str(exc)
     else:
         raise AssertionError("expected downgrade to fail closed while rows exist")
+
+
+def test_catalog_import_migration_is_linear_and_reversible(monkeypatch):
+    module = _module("0016", "0016_catalog_import.py")
+    recorded = _patch_table_ops(monkeypatch, module, staged_count=0)
+
+    module.upgrade()
+    module.downgrade()
+
+    assert module.down_revision == "0015"
+    assert set(recorded["created_tables"]) == {"import_jobs", "import_items"}
+    assert set(recorded["dropped_tables"]) == set(recorded["created_tables"])
+    assert len(recorded["dropped_indexes"]) == len(recorded["indexes"])
+
+
+def test_catalog_import_migration_downgrade_fails_closed_with_data(monkeypatch):
+    module = _module("0016", "0016_catalog_import.py")
+    _patch_table_ops(monkeypatch, module, staged_count=1)
+
+    module.upgrade()
+    try:
+        module.downgrade()
+    except RuntimeError as exc:
+        assert "import job/item rows exist" in str(exc)
+    else:
+        raise AssertionError("expected downgrade to fail closed while rows exist")

@@ -390,6 +390,50 @@ class CandidateConversion(Base):
     created_at: Mapped[dt.datetime | None] = mapped_column(server_default=func.now())
 
 
+class ImportJob(Base):
+    """Durable import batch tracking (migration 0016, Step 5a). Dispatched by
+    the existing Job lease/heartbeat/retry loop (job_id); item outcomes are
+    tracked independently in ImportItem so one bad input can't roll back or
+    publish an entire batch."""
+
+    __tablename__ = "import_jobs"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True)
+    job_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("jobs.id"), unique=True)
+    provider: Mapped[str]
+    upstream_ref: Mapped[str]
+    idempotency_key: Mapped[str] = mapped_column(unique=True)
+    status: Mapped[str] = mapped_column(server_default="queued")
+    item_count: Mapped[int] = mapped_column(Integer, server_default="0")
+    accepted_count: Mapped[int] = mapped_column(Integer, server_default="0")
+    rejected_count: Mapped[int] = mapped_column(Integer, server_default="0")
+    dead_count: Mapped[int] = mapped_column(Integer, server_default="0")
+    started_at: Mapped[dt.datetime | None]
+    finished_at: Mapped[dt.datetime | None]
+    created_at: Mapped[dt.datetime | None] = mapped_column(server_default=func.now())
+    updated_at: Mapped[dt.datetime | None] = mapped_column(server_default=func.now())
+
+
+class ImportItem(Base):
+    __tablename__ = "import_items"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True)
+    import_job_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("import_jobs.id"))
+    upstream_identity: Mapped[str]
+    state: Mapped[str] = mapped_column(server_default="queued")
+    failure_code: Mapped[str | None]
+    raw_metadata: Mapped[dict[str, Any] | None]
+    source_blob_sha256: Mapped[str | None]
+    resulting_artifact_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("artifacts.id"))
+    resulting_version_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("artifact_versions.id")
+    )
+    attempts: Mapped[int] = mapped_column(Integer, server_default="0")
+    max_attempts: Mapped[int] = mapped_column(Integer, server_default="3")
+    created_at: Mapped[dt.datetime | None] = mapped_column(server_default=func.now())
+    updated_at: Mapped[dt.datetime | None] = mapped_column(server_default=func.now())
+
+
 class Job(Base):
     __tablename__ = "jobs"
 

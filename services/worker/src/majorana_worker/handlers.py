@@ -24,8 +24,12 @@ from majorana_contracts.events import run_event_adapter
 from majorana_llm import LLMClient, LLMRequest, QUANTUM_AGENT_SYSTEM_PROMPT, default_llm, model_for
 from majorana_sandbox import LocalSubprocessSandbox, Sandbox, VercelSandbox
 
+from pathlib import Path
+
+from majorana_api.catalog_authority import CatalogAuthority
 from majorana_api.db import AsyncSession
-from majorana_api.jobs import RUN_EXECUTE_JOB_KIND
+from majorana_api.jobs import CATALOG_IMPORT_JOB_KIND, RUN_EXECUTE_JOB_KIND
+from majorana_api.repos import catalog_import as catalog_import_repo
 from majorana_api.repos import runs as runs_repo
 from majorana_api.repos import artifacts as artifacts_repo
 
@@ -449,8 +453,33 @@ async def handle_run_dead_letter(
     await store.set_status(RunStatus.FAILED, finished_at_now=True)
 
 
+async def handle_catalog_import(session: AsyncSession, payload: dict[str, Any]) -> None:
+    """Advance one durable import batch by one pass over its non-terminal
+    items (repos/catalog_import.py). Idempotent and crash-safe: re-running
+    the same batch (same idempotency_key) only touches items still short of
+    a terminal state.
+
+    Step 5a scope only: the importer scope comes from server configuration
+    (CatalogAuthority), never the payload, and fixtures_dir is a local path
+    the batch creator pinned — no network fetch happens here.
+    """
+    authority = CatalogAuthority.from_env()
+    scope = authority.importer_scope()
+    import_job = await catalog_import_repo.get_import_job_by_idempotency_key(
+        session, payload["idempotency_key"]
+    )
+    await catalog_import_repo.process_import_batch(
+        scope,
+        session,
+        import_job.id,
+        authority=authority,
+        fixtures_dir=Path(payload["fixtures_dir"]),
+    )
+
+
 HANDLERS: dict[str, JobHandler] = {
     RUN_EXECUTE_JOB_KIND: handle_run_execute,
+    CATALOG_IMPORT_JOB_KIND: handle_catalog_import,
 }
 
 DEAD_LETTER_HANDLERS: dict[str, DeadLetterHandler] = {
