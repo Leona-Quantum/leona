@@ -38,7 +38,7 @@ def _validate_application_url(url: str) -> None:
         "production",
         "staging",
     }
-    if is_neon and is_cloud_runtime and not os.environ.get("CI") and "-pooler." not in host:
+    if is_neon and is_cloud_runtime and "-pooler." not in host:
         raise RuntimeError("DATABASE_URL must use the Neon pooled endpoint")
 
 

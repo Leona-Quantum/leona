@@ -42,7 +42,7 @@ jobs:
         name: migrate + seed
         env:
           DATABASE_URL_DIRECT: ${{ steps.neon.outputs.db_url }}
-          DATABASE_URL: ${{ steps.neon.outputs.db_url }}
+          DATABASE_URL: ${{ steps.neon.outputs.db_url_with_pooler }}
         run: |
           uv run --package majorana-api alembic -c db/alembic.ini upgrade head
           uv run --package majorana-api python db/seeds/seed.py

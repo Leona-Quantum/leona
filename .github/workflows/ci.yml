@@ -85,7 +85,7 @@ jobs:
       - name: migrate up→down→up (B-D3 <60s) + seed
         env:
           DATABASE_URL_DIRECT: ${{ steps.neon.outputs.db_url }}
-          DATABASE_URL: ${{ steps.neon.outputs.db_url }}
+          DATABASE_URL: ${{ steps.neon.outputs.db_url_with_pooler }}
         run: |
           timeout 60 bash -c '
             set -e
