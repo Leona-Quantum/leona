@@ -141,13 +141,19 @@ async def _get_reviewer_workspace(
 
 
 async def _get_catalog_artifact(
-    session: AsyncSession, *, workspace_id: uuid.UUID, artifact_id: uuid.UUID
+    session: AsyncSession,
+    *,
+    workspace_id: uuid.UUID,
+    artifact_id: uuid.UUID,
+    for_update: bool = False,
 ) -> Artifact:
     stmt = select(Artifact).where(
         Artifact.id == artifact_id,
         Artifact.workspace_id == workspace_id,
         Artifact.deleted_at.is_(None),
     )
+    if for_update:
+        stmt = stmt.with_for_update()
     artifact = (await session.execute(stmt)).scalars().first()
     if artifact is None:
         raise NotFoundError("catalog artifact")
@@ -255,7 +261,10 @@ async def stage_artifact_version(
     """
     workspace = await get_importer_workspace(scope, session, authority=authority)
     artifact = await _get_catalog_artifact(
-        session, workspace_id=workspace.id, artifact_id=artifact_id
+        session,
+        workspace_id=workspace.id,
+        artifact_id=artifact_id,
+        for_update=True,
     )
 
     source_blob_sha256 = hash_source_blob(raw_source)

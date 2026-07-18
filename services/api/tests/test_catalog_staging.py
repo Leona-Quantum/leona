@@ -163,3 +163,5 @@ async def test_stage_artifact_version_computes_hashes_and_next_seq():
     assert version.qasm_version is None
     assert version.fingerprint == hash_normalized_source("normalized text")
     assert artifact.current_version_id == version.id
+    artifact_lookup_sql, _ = compiled(session.statements[1])
+    assert "FOR UPDATE" in artifact_lookup_sql
