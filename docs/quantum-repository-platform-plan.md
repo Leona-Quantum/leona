@@ -1,6 +1,6 @@
 # Quantum Repository Platform - staged implementation plan
 
-Status: Steps 2-5a implemented and locally validated; CODEOWNER review pending before Step 5b  
+Status: Steps 2-5a implemented, locally and Neon-gate validated; CODEOWNER review pending before Step 5b  
 Owner lane: Rei / Neon catalog, FastAPI repository API, classification, and ingestion  
 Prepared: 2026-07-18  
 Target branch: `feature/repository`  
@@ -596,8 +596,8 @@ Done when:
 - a crashed import resumes from durable item state;
 - rejected items never create public artifacts.
 
-Status: implemented and locally validated against a throwaway local Postgres 14 — see
-`docs/repository-step5a-import-skeleton.md`.
+Status: implemented, validated against a throwaway local Postgres 14, and Neon-gated —
+see `docs/repository-step5a-import-skeleton.md` and `docs/repository-step5a-neon-gate.md`.
 
 Rollback: disable import creation and drain/cancel active jobs; staged data remains non-public for
 audit or approved deletion.
@@ -832,8 +832,9 @@ and `docs/repository-step5a-import-skeleton.md`. Before Step 5b:
 1. obtain CODEOWNER review for migrations `0013`-`0016`, the auth boundary, contracts,
    and workflows;
 2. retain `SYSTEM_CATALOG_ENABLED=false`;
-3. run a real-Neon gate for Step 5a (its own temporary branch, per the established
-   pattern — Steps 3/4's gate branch is not reused);
+3. delete the temporary Neon branches used for gate validation
+   (`step3-4-catalog-provenance-20260718`, `step5a-catalog-import-20260718`) after
+   review evidence is captured;
 4. resolve the local uv workspace-discovery issue independently of repository work;
 5. scope Step 5b explicitly before implementation: it introduces real external network
    fetching (SSRF/quarantine hardening, allowlisted connectors, the 285-record bootstrap

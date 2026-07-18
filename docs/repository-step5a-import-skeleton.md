@@ -125,8 +125,8 @@ short-path unix socket, stopped and deleted after):
 
 ## Neon gate
 
-Not yet run for this step — pending a fresh temporary Neon branch (Steps 3/4's gate
-branch is not reused; each gate slice gets its own).
+A real Neon branch (`step5a-catalog-import-20260718`) confirmed the same results
+against Postgres 17 — see `docs/repository-step5a-neon-gate.md`.
 
 ## Required gate
 
