@@ -382,3 +382,42 @@ body {
     animation: none;
   }
 }
+
+/* Run process narrative — a one-line, ChatGPT-style "what the agent is doing"
+ * trace shown while a circuit-execution run is in progress. Only the most
+ * recent step is kept (the component remounts the element on each change),
+ * so the line fades in fresh instead of accumulating into a growing block. */
+.mj-run-process-text {
+  margin: 0 0 var(--sp-3);
+  width: fit-content;
+  background-image: linear-gradient(
+    90deg,
+    var(--text-2) 0%,
+    var(--text-2) 40%,
+    var(--text-0) 50%,
+    var(--text-2) 60%,
+    var(--text-2) 100%
+  );
+  background-size: 220% 100%;
+  background-clip: text;
+  -webkit-background-clip: text;
+  color: transparent;
+  font-size: var(--fs-12);
+  line-height: 1.6;
+  animation:
+    mj-run-process-fade-in 400ms ease-out,
+    mj-run-process-shimmer 1.8s linear infinite;
+}
+@keyframes mj-run-process-fade-in {
+  from { opacity: 0; transform: translateY(2px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes mj-run-process-shimmer {
+  from { background-position: 200% 0; }
+  to { background-position: -200% 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .mj-run-process-text {
+    animation: none;
+  }
+}
