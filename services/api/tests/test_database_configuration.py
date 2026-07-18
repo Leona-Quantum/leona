@@ -1,6 +1,8 @@
+from types import SimpleNamespace
+
 import pytest
 
-from majorana_api.db import _validate_application_url
+from majorana_api.db import _clear_query_timer, _validate_application_url
 
 
 def test_production_neon_application_url_must_be_pooled(monkeypatch):
@@ -28,3 +30,13 @@ def test_ci_neon_application_url_must_still_be_pooled(monkeypatch):
         _validate_application_url(
             "postgresql://app:secret@ep-example.us-east-2.aws.neon.tech/neondb"
         )
+
+
+def test_clear_query_timer_removes_one_matching_timer_without_raising():
+    connection = SimpleNamespace(info={"query_started_at": [1.0, 2.0]})
+
+    _clear_query_timer(connection)
+    _clear_query_timer(connection)
+    _clear_query_timer(connection)
+
+    assert connection.info["query_started_at"] == []

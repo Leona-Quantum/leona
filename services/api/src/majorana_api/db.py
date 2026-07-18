@@ -42,6 +42,16 @@ def _validate_application_url(url: str) -> None:
         raise RuntimeError("DATABASE_URL must use the Neon pooled endpoint")
 
 
+def _clear_query_timer(conn) -> float | None:
+    """Pop one statement timer, tolerating failures before timing began."""
+    if conn is None:
+        return None
+    timers = conn.info.get("query_started_at")
+    if not timers:
+        return None
+    return timers.pop()
+
+
 def _instrument_engine(engine: AsyncEngine) -> None:
     @event.listens_for(engine.sync_engine, "connect")
     def _connect(dbapi_connection, connection_record) -> None:
@@ -57,8 +67,16 @@ def _instrument_engine(engine: AsyncEngine) -> None:
 
     @event.listens_for(engine.sync_engine, "after_cursor_execute")
     def _after_cursor_execute(conn, cursor, statement, parameters, context, executemany) -> None:
-        started = conn.info.get("query_started_at", []).pop()
-        _query_duration.record(time.monotonic() - started)
+        started = _clear_query_timer(conn)
+        if started is not None:
+            _query_duration.record(time.monotonic() - started)
+
+    @event.listens_for(engine.sync_engine, "handle_error")
+    def _handle_error(exception_context) -> None:
+        # after_cursor_execute is not called for failed statements. Clear the
+        # timer here so a pooled connection cannot carry stale timing state
+        # into the next borrower.
+        _clear_query_timer(exception_context.connection)
 
 
 def engine_from_env() -> AsyncEngine:
