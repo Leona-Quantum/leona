@@ -1,6 +1,7 @@
 "use client";
 
 import type { FormEvent } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import type { RunEvent } from "@majorana/ui";
@@ -19,7 +20,78 @@ type WireEvent = {
   status?: string;
   verifier_decision?: string | null;
   interpretation?: string;
+  revision?: number;
+  exit_code?: number;
+  method?: string;
+  result?: string;
+  details?: Record<string, unknown>;
+  artifact_id?: string;
+  plan?: { problem_summary?: string };
 };
+
+const VERIFICATION_METHOD_LABEL: Record<string, string> = {
+  return_contract: "Checked the return contract",
+  statistical: "Cross-checked the measured distribution",
+  resource_contract: "Checked qubit/resource usage",
+  measurement_policy: "Checked measurement coverage",
+  success_criteria: "Checked the success threshold",
+  structural: "Checked circuit structure",
+  native_optimization_evidence: "Checked native optimization",
+};
+
+function processStepLabel(event: WireEvent): string | null {
+  switch (event.type) {
+    case "plan.produced":
+      return event.plan?.problem_summary ? `Planned approach: ${event.plan.problem_summary}` : "Planned an approach";
+    case "code.generated":
+      return `Wrote candidate circuit${event.revision ? ` (revision ${event.revision})` : ""}`;
+    case "sandbox.result":
+      return event.exit_code === 0 ? "Ran the circuit in the sandbox" : "Circuit failed in the sandbox — repairing";
+    case "verification.result": {
+      const label = (event.method && VERIFICATION_METHOD_LABEL[event.method]) || `Verification (${event.method ?? "?"})`;
+      return `${label}: ${event.result ?? "?"}`;
+    }
+    case "code.finalized":
+      return "Finalized the verified circuit";
+    case "artifact.saved":
+      return "Saved the verified circuit to your library";
+    case "run.error":
+      return event.message ? `Error: ${event.message}` : "Run error";
+    default:
+      return null;
+  }
+}
+
+function processLogFromEvents(events: WireEvent[]): string[] {
+  return events.map(processStepLabel).filter((label): label is string => Boolean(label));
+}
+
+function processNarrative(events: WireEvent[], recentOnly = false): string {
+  const steps = processLogFromEvents(events);
+  return (recentOnly ? steps.slice(-2) : steps).join(". ");
+}
+
+function resultSummaryFromEvents(events: WireEvent[]): string | null {
+  const successCheck = [...events]
+    .reverse()
+    .find((event) => event.type === "verification.result" && event.method === "success_criteria");
+  const metric = successCheck?.details?.metric;
+  const value = successCheck?.details?.value;
+  if (typeof metric === "string" && typeof value === "number") {
+    return `${metric.replaceAll("_", " ")} ≈ ${value.toFixed(4)}`;
+  }
+  return null;
+}
+
+function artifactIdFromEvents(events: WireEvent[]): string | null {
+  const saved = [...events].reverse().find((event) => event.type === "artifact.saved");
+  return saved?.artifact_id ?? null;
+}
+
+function planSummaryFromEvents(events: WireEvent[]): string | null {
+  const produced = events.find((event) => event.type === "plan.produced");
+  return produced?.plan?.problem_summary ?? null;
+}
 
 type ConversationPayload = {
   id: string;
@@ -33,6 +105,7 @@ type Turn = {
   id: string;
   prompt: string;
   answer: string | null;
+  events: WireEvent[];
 };
 
 function parseEvent(block: string): { id: number | null; data: string } | null {
@@ -52,7 +125,24 @@ function answerFromEvents(events: WireEvent[]): string | null {
   const completed = [...events].reverse().find((event) => event.type === "chat.completed" && event.text);
   if (completed?.text) return completed.text;
   const legacy = [...events].reverse().find((event) => event.type === "run.analysis" && event.interpretation);
-  return legacy?.interpretation ?? null;
+  if (legacy?.interpretation) return legacy.interpretation;
+  // Circuit-execution runs (mode=execute) never emit chat.completed/run.analysis —
+  // their "answer" is a verified artifact. Without this fallback the turn never
+  // gets marked answered, so `pending` flips back to true after every reload and
+  // the UI is stuck on "Live" forever even though the run finished.
+  const finished = [...events].reverse().find((event) => event.type === "run.finished");
+  if (!finished) return null;
+  if (finished.status !== "succeeded") {
+    return "The run did not complete successfully. Check the run's events for details.";
+  }
+  const saved = events.some((event) => event.type === "artifact.saved");
+  const problem = planSummaryFromEvents(events);
+  const metric = resultSummaryFromEvents(events);
+  const opening = problem ?? `Verified (${finished.verifier_decision ?? "pass"})`;
+  const sentences = [opening.endsWith(".") ? opening : `${opening}.`];
+  if (metric) sentences.push(`Result: ${metric}.`);
+  sentences.push(saved ? "Saved to your library." : "No artifact was saved.");
+  return sentences.join(" ");
 }
 
 function turnsFromConversation(payload: ConversationPayload): Turn[] {
@@ -60,6 +150,7 @@ function turnsFromConversation(payload: ConversationPayload): Turn[] {
     id: turn.run.id,
     prompt: turn.run.task_prompt,
     answer: answerFromEvents(turn.events),
+    events: turn.events,
   }));
 }
 
@@ -70,6 +161,7 @@ function fixtureTurns(events: RunEvent[]): Turn[] {
     id: queued?.run_id ?? "example",
     prompt: "Use QAOA to solve MaxCut on a 5-node ring and verify the cut value.",
     answer: answer?.type === "run.analysis" ? answer.interpretation : "This is an example run transcript.",
+    events: [],
   }];
 }
 
@@ -84,9 +176,11 @@ export function LiveRun({ taskId }: { taskId: string }) {
   const [error, setError] = useState<string | null>(null);
   const [prompt, setPrompt] = useState("");
   const [pending, setPending] = useState(false);
+  const [liveEvents, setLiveEvents] = useState<WireEvent[]>([]);
   const [attachments, setAttachments] = useState<Array<{ name: string; size: number; content: string }>>([]);
   const [existingChat, setExistingChat] = useState<ChatSummary | null>(null);
   const lastEventId = useRef<number | null>(null);
+  const loadSeq = useRef(0);
 
   useEffect(() => {
     setExistingChat(
@@ -102,15 +196,24 @@ export function LiveRun({ taskId }: { taskId: string }) {
     if (fixtureEvents) return;
     const controller = new AbortController();
     let reconnectTimer: ReturnType<typeof setTimeout> | undefined;
+    setLiveEvents([]);
+    setStreamingText("");
+    setReasoningText("");
+    setError(null);
+    lastEventId.current = null;
 
     async function loadConversation() {
+      const seq = ++loadSeq.current;
       const response = await fetch(`/api/runs/${encodeURIComponent(taskId)}/conversation`, {
         cache: "no-store",
         signal: controller.signal,
       });
       if (!response.ok) throw new Error(`Conversation could not be loaded (${response.status})`);
       const payload = (await response.json()) as ConversationPayload;
-      if (!controller.signal.aborted) {
+      // Discard the response if a newer loadConversation() call has started since
+      // (e.g. the terminal reload racing the initial one) so a stale response can't
+      // overwrite fresher turns/pending state.
+      if (!controller.signal.aborted && seq === loadSeq.current) {
         setConversationId(payload.id);
         setTurns(turnsFromConversation(payload));
         setPending(payload.turns.some((turn) => turn.run.id === taskId && !answerFromEvents(turn.events)));
@@ -149,6 +252,7 @@ export function LiveRun({ taskId }: { taskId: string }) {
               if (!parsed) continue;
               const event = JSON.parse(parsed.data) as WireEvent;
               if (parsed.id !== null) lastEventId.current = parsed.id;
+              setLiveEvents((current) => [...current, event]);
               if (event.type === "chat.delta" && event.text) {
                 setStreaming(true);
                 if (event.kind === "reasoning") setReasoningText((current) => `${current}${event.text}`);
@@ -168,7 +272,11 @@ export function LiveRun({ taskId }: { taskId: string }) {
                 setPending(false);
                 setStreaming(false);
                 updateChat(taskId, { status: event.status === "succeeded" ? "draft" : "failed" });
-                if (event.status === "succeeded") void loadConversation().catch(() => undefined);
+                void loadConversation().catch((cause) => {
+                  if (!controller.signal.aborted) {
+                    setError(cause instanceof Error ? cause.message : "Conversation could not be reloaded");
+                  }
+                });
               }
             }
           }
@@ -293,9 +401,10 @@ export function LiveRun({ taskId }: { taskId: string }) {
                 {turn.answer ? (
                   <div className="mj-chat-message mj-chat-message--assistant">
                     <ChatMarkdown source={turn.answer} />
+                    <ArtifactLink events={turn.events} />
                   </div>
-                ) : turn.id === taskId && (streamingText || reasoningText) ? (
-                  <AssistantMessage reasoning={reasoningText} text={streamingText} streaming={streaming} />
+                ) : turn.id === taskId && (streamingText || reasoningText || liveEvents.length > 0) ? (
+                  <AssistantMessage reasoning={reasoningText} text={streamingText} streaming={streaming} events={liveEvents} />
                 ) : turn.id === taskId && pending ? (
                   <AssistantLoading />
                 ) : null}
@@ -304,8 +413,8 @@ export function LiveRun({ taskId }: { taskId: string }) {
             {showActiveUser ? (
               <div className="mj-chat-turn">
                 <div className="mj-chat-message mj-chat-message--user"><ChatMarkdown source={activePrompt ?? ""} /></div>
-                {streamingText || reasoningText ? (
-                  <AssistantMessage reasoning={reasoningText} text={streamingText} streaming={streaming} />
+                {streamingText || reasoningText || liveEvents.length > 0 ? (
+                  <AssistantMessage reasoning={reasoningText} text={streamingText} streaming={streaming} events={liveEvents} />
                 ) : pending ? <AssistantLoading /> : null}
               </div>
             ) : null}
@@ -327,18 +436,58 @@ export function LiveRun({ taskId }: { taskId: string }) {
   );
 }
 
-function AssistantMessage({ reasoning, text, streaming }: { reasoning: string; text: string; streaming: boolean }) {
+function AssistantMessage({
+  reasoning,
+  text,
+  streaming,
+  events,
+}: {
+  reasoning: string;
+  text: string;
+  streaming: boolean;
+  events: WireEvent[];
+}) {
+  const narrative = processNarrative(events);
   return (
     <div className="mj-chat-message mj-chat-message--assistant">
+      {narrative ? <ProcessNarrative events={events} /> : null}
       {reasoning ? (
         <details className="mj-chat-thinking" open={streaming}>
           <summary>Thinking</summary>
           <ChatMarkdown source={reasoning} />
         </details>
       ) : null}
-      {text ? <ChatMarkdown source={text} /> : <AssistantLoading />}
-      {streaming ? <span className="mj-chat-caret" aria-label="Response is streaming" /> : null}
+      {text ? (
+        <ChatMarkdown source={text} />
+      ) : narrative ? null : (
+        <span className="mj-chat-message--loading">
+          <span className="mj-chat-loading-dot" />
+          <span className="mj-chat-loading-dot" />
+          <span className="mj-chat-loading-dot" />
+        </span>
+      )}
+      <ArtifactLink events={events} />
     </div>
+  );
+}
+
+function ProcessNarrative({ events }: { events: WireEvent[] }) {
+  const narrative = processNarrative(events, true);
+  if (!narrative) return null;
+  return (
+    <p className="mj-run-process-text" key={narrative}>
+      {narrative}
+    </p>
+  );
+}
+
+function ArtifactLink({ events }: { events: WireEvent[] }) {
+  const artifactId = artifactIdFromEvents(events);
+  if (!artifactId) return null;
+  return (
+    <Link className="mj-secondary-button" href={`/library/${artifactId}`}>
+      View in Library →
+    </Link>
   );
 }
 

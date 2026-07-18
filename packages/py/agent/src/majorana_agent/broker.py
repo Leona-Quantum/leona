@@ -98,6 +98,14 @@ class ToolBroker:
         return result
 
     async def _validate(self, run_id: UUID, state: AgentState, call: ToolCall) -> None:
+        # Step budget first: every dispatch attempt must count against it, even one
+        # that fails a later check (e.g. invalid_arguments), or a model stuck
+        # resubmitting a malformed call can loop until the run's wall-clock
+        # timeout instead of being bounded by max_steps (observed: 119 rejected
+        # simulate_qiskit attempts before run_timeout, budget never enforced).
+        results = await self._store.list_tool_results(run_id)
+        if len(results) >= self._policy.budget.max_steps:
+            raise ToolPolicyError("step_budget_exhausted", "agent step budget exhausted")
         if "__model_selection_error__" in call.arguments:
             raise ToolPolicyError(
                 "invalid_tool_selection", str(call.arguments["__model_selection_error__"])
@@ -117,9 +125,6 @@ class ToolBroker:
                 )
         self._validate_arguments(call)
 
-        results = await self._store.list_tool_results(run_id)
-        if len(results) >= self._policy.budget.max_steps:
-            raise ToolPolicyError("step_budget_exhausted", "agent step budget exhausted")
         candidates = await self._store.list_candidates(run_id)
         if (
             call.name in SIMULATION_TOOL_BY_FRAMEWORK.values()

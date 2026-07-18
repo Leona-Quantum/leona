@@ -2749,7 +2749,7 @@
               }
             ],
             "default": null,
-            "description": "Acceptable {min, max} range for primary_metric",
+            "description": "Bound on primary_metric's value, checked with the literal keys \"min\" and/or \"max\", e.g. {\"min\": 0.99} or {\"min\": 0.0, \"max\": 0.15}. Either key may be omitted to leave that side unbounded; any other key is ignored by the evaluator, so do not invent named bounds.",
             "title": "Expected Range"
           },
           "primary_metric": {

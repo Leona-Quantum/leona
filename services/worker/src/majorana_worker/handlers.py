@@ -115,13 +115,16 @@ class RepoRunStateStore:
         self._run_id = run_id
 
     async def set_status(self, new: RunStatus, **fields: Any) -> None:
+        set_started_at = bool(fields.pop("started_at_now", False))
+        set_finished_at = bool(fields.pop("finished_at_now", False))
         await runs_repo.update_run_status(
             self._scope,
             self._session,
             self._run_id,
             new,
-            set_started_at=bool(fields.pop("started_at_now", False)),
-            set_finished_at=bool(fields.pop("finished_at_now", False)),
+            set_started_at=set_started_at,
+            set_finished_at=set_finished_at,
+            **fields,
         )
         await self._session.commit()
 

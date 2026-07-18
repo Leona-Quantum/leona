@@ -217,7 +217,11 @@ except Exception:
         return f"""
 _majorana_observation["native_optimization"] = {{"applied": {optimized_literal}}}
 _majorana_final_circuit = _majorana_namespace.get("FINAL_CIRCUIT")
-if _majorana_final_circuit is not None:
+if _majorana_final_circuit is None:
+    _majorana_observation["resource_metrics_error"] = (
+        "FINAL_CIRCUIT was not set (missing or None) — bind it to the constructed circuit object"
+    )
+else:
     try:
         if _majorana_interchange_dumps is not None:
             _majorana_observation["interchange_qasm"] = _majorana_interchange_dumps(_majorana_final_circuit)
@@ -237,8 +241,13 @@ if _majorana_final_circuit is not None:
             "two_qubit_gate_count": _majorana_two_qubit_count,
             "measurement_count": _majorana_ops.get("measure", 0),
         }}
-    except _majorana_exception:
-        pass
+    except _majorana_exception as _majorana_metrics_exc:
+        _majorana_observation["resource_metrics_error"] = (
+            _majorana_type(_majorana_final_circuit).__name__
+            + " has no usable circuit interface ("
+            + _majorana_type(_majorana_metrics_exc).__name__
+            + ") — FINAL_CIRCUIT must be bound to the actual circuit object, not a copy or a result dict"
+        )
 """
 
 
