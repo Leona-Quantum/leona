@@ -85,3 +85,20 @@ pre-existing `packages/py/baselines` workspace member without a `pyproject.toml`
 The repeated-tag live Postgres test was added but not run locally; it remains part of
 the CI database job. Phase 1 did not connect to Neon or modify migrations, credentials,
 or public-service state.
+
+## Second review — Phase 2 disposition
+
+| Finding | Resolution | Commit |
+|---|---|---|
+| Multiple Workers could invoke one Dead Letter callback | Reserve one terminal row with `FOR UPDATE SKIP LOCKED` and a dedicated fenced delivery token before callback I/O | `e73ac1c`, `10c6173` |
+
+The reservation is committed before callback execution, expires after a bounded lease,
+and is required by the success/retry/abandon update. A crashed Worker therefore cannot
+hold delivery forever, and an old token cannot mark a replacement Worker's delivery.
+Migration `0017` is additive and reversible; it does not edit frozen migration `0012`
+or overload the running-job lease columns.
+
+Phase 2 DB-free validation: `313 passed, 31 skipped`; Ruff check/format passed
+over `162` files; Alembic reports a single `0017` head. The two new Postgres
+contention/reclaim tests were collected and skipped without `DATABASE_URL`; no local
+or Neon database was changed in this session.

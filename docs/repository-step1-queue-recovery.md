@@ -62,6 +62,13 @@ pending with a delayed retry until the five-attempt budget is exhausted. Normal 
 run first and only one dead-letter callback follows per poll cycle, so terminal
 notification cannot monopolize the Worker.
 
+Before callback I/O, a Worker now reserves one terminal row with
+`FOR UPDATE SKIP LOCKED`, stores a dedicated random delivery token and expiry, and
+commits that short transaction. Completion/retry updates require the same unexpired
+token. Other Workers skip the reservation, while a crash makes it reclaimable after
+expiry. The ordinary job lease fields remain separate and retain their original
+running-job-only constraint.
+
 ## 4. Configuration and telemetry
 
 | Environment variable | Default | Constraint |
@@ -71,6 +78,7 @@ notification cannot monopolize the Worker.
 | `WORKER_RETRY_BASE_S` | 5 | positive and not greater than max |
 | `WORKER_RETRY_MAX_S` | 300 | positive |
 | `WORKER_DEAD_LETTER_TIMEOUT_S` | 30 | positive; one callback runs per poll cycle |
+| `WORKER_DEAD_LETTER_LEASE_S` | max(45, timeout + 15) | positive and greater than callback timeout |
 
 OTLP telemetry records claims, queue age, attempt count, requeues by reason,
 terminal outcomes, and lease loss. With no OTLP endpoint the instruments remain
@@ -86,6 +94,10 @@ Deployment order:
 4. confirm heartbeat, queue-age, requeue, terminal, and lease-loss telemetry;
 5. inject one controlled Worker interruption and prove recovery before importer work.
 
+Migration `0017` adds only the dedicated Dead Letter delivery reservation columns,
+shape constraint, and pending-delivery index. Deploying it follows the same drain,
+direct-migration, paired API/Worker rollout, and recovery-injection sequence above.
+
 Rollback order:
 
 1. stop/drain Workers and stop new job creation;
@@ -93,6 +105,10 @@ Rollback order:
 3. downgrade 0012 only after no new Worker is using fenced lease fields;
 4. deploy the previous API/Worker revision together;
 5. verify queued Runs and jobs reconcile before reopening traffic.
+
+To roll back `0017` to `0016`, first drain all Workers and wait for or inspect every
+active Dead Letter reservation. Never remove the reservation columns while a callback
+from the newer Worker revision is still running.
 
 Do not run an old Worker concurrently with the new schema behavior during migration
 or rollback.
