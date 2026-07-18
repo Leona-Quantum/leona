@@ -104,3 +104,23 @@ passed over `166` files; import boundaries are `3 kept, 0 broken`; raw-query and
 generated OpenAPI checks passed; Alembic reports one `0018` head; workflow YAML parsed.
 The live trigger/contention/rollback tests were added to CI but were not run locally.
 No local or Neon database, credential, or public-service state was changed.
+
+## Phase 4 — full gates and review closure
+
+The complete local gate set passed before push: `318 passed, 35 skipped`; Ruff lint and
+format; all three import contracts; raw-query policy; generated OpenAPI; one Alembic
+`0018` head; workflow YAML; the 285-entry repository dataset; and all TypeScript lint,
+typecheck, and test tasks (`15` web tests).
+
+The first remote run (`29655265612`) passed migrations, authz, and pipeline E2E but
+exposed test-state coupling in the new shared temporary-Neon integrity step. Commit
+`ed26254` isolates Dead Letter fixtures without weakening production claim or database
+constraints. The replacement run (`29655425180`) passed every job, including migration
+up→down→up, repository concurrency/integrity tests, and temporary branch cleanup.
+
+CodeRabbit then identified one remaining representational risk: a caller could supply a
+`run.finished` payload inconsistent with the FAILED row transition. Commit `5cd27cc`
+removes that input and constructs `{"status": "failed"}` inside the repository's atomic
+terminal operation. Targeted API/Worker tests pass (`13 passed, 2 skipped` without a
+database), including an assertion on the repository-generated terminal payload. The
+final pushed head must pass the same required CI and review gates before merge.
