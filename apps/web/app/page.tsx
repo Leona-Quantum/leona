@@ -1,7 +1,9 @@
 import type { Metadata } from "next";
 import { CircuitBand } from "../components/circuit-band";
+import { ElectronField } from "../components/electron-field";
 import { BrandMark } from "../components/icons";
 import { LeoConstellation } from "../components/leo-constellation";
+import { MeasurementLab } from "../components/measurement-lab";
 import { PublicSite } from "../components/public-site";
 import { Reveal } from "../components/reveal";
 import { ScrollCue } from "../components/scroll-cue";
@@ -136,6 +138,29 @@ export default async function Home() {
           ))}
         </div>
       </section>
+
+      <Reveal>
+        <section
+          className="mj-company-section mj-measure-section"
+          aria-labelledby="measure-heading"
+        >
+          {/* Electrons converge into the Leo asterism behind the copy — the
+              constellation target reused as an ambient marketing field. */}
+          <ElectronField target="constellation" className="mj-measure-field" />
+          <div className="mj-measure-inner">
+            <Reveal>
+              <div className="mj-company-section-heading">
+                <p className="mj-section-label">{copy.measure.label}</p>
+                <h2 id="measure-heading">{copy.measure.title}</h2>
+                <p>{copy.measure.body}</p>
+              </div>
+            </Reveal>
+            <Reveal delay={90}>
+              <MeasurementLab />
+            </Reveal>
+          </div>
+        </section>
+      </Reveal>
 
       <Reveal>
         <section className="mj-company-final-cta" aria-labelledby="company-cta-heading">

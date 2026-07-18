@@ -460,3 +460,48 @@ body {
     animation: none;
   }
 }
+
+/* ── Brand-refresh (Leona Quantum handoff) ─────────────────────────────────
+   Keyframes for the handoff components (electron-field, measurement-lab,
+   brand-marks). Namespaced lq-* so they never collide with the mj-* set above;
+   the reduced-motion block at the very bottom collapses every one of them. */
+@keyframes lq-draw { from { stroke-dashoffset: 1; } to { stroke-dashoffset: 0; } }
+@keyframes lq-pop { 0% { opacity: 0; transform: scale(0.1); } 60% { opacity: 1; transform: scale(1.35); } 100% { opacity: 1; transform: scale(1); } }
+@keyframes lq-orbit { to { transform: rotate(360deg); } }
+@keyframes lq-orbit-rev { to { transform: rotate(-360deg); } }
+@keyframes lq-twinkle { 0%, 100% { opacity: 0.35; } 50% { opacity: 1; } }
+@keyframes lq-glow { 0%, 100% { opacity: 0.4; transform: scale(1); } 50% { opacity: 0.75; transform: scale(1.08); } }
+@keyframes lq-sweep { from { transform: translateX(-140%); } to { transform: translateX(240%); } }
+@keyframes lq-sway { 0%, 100% { transform: rotate(0deg); } 50% { transform: rotate(8deg); } }
+@keyframes lq-paw { 0%, 100% { transform: rotate(0deg); } 32% { transform: rotate(-28deg); } 58% { transform: rotate(7deg); } }
+@keyframes lq-ball { 0%, 100% { transform: translate(0, 0); } 32% { transform: translate(13px, -17px); } 58% { transform: translate(5px, -5px); } 82% { transform: translate(-3px, 3px); } }
+@keyframes lq-crouch { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-2.5px); } }
+
+/* MeasurementLab layout lives here (not inline) so it can collapse to one
+   column on narrow viewports — an inline grid-template can't be media-queried. */
+.mj-measurement-lab {
+  display: grid;
+  grid-template-columns: 1.1fr 0.9fr;
+  gap: var(--sp-5, 20px);
+}
+@media (max-width: 720px) {
+  .mj-measurement-lab { grid-template-columns: 1fr; }
+}
+
+/* Public "measured, not asserted" section — an interactive explainer beneath
+   the landing fold, on the same reveal rhythm as the other public sections.
+   The constellation field sits behind the copy at low opacity. */
+.mj-measure-section { position: relative; }
+.mj-measure-field {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  opacity: 0.4;
+  pointer-events: none;
+}
+.mj-measure-inner { position: relative; z-index: 1; }
+
+@media (prefers-reduced-motion: reduce) {
+  [class*="lq-"],
+  [style*="lq-"] { animation: none !important; }
+}
