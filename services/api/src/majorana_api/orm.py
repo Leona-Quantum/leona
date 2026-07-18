@@ -455,6 +455,9 @@ class Job(Base):
     dead_lettered_at: Mapped[dt.datetime | None]
     dead_letter_error: Mapped[str | None]
     dead_letter_attempts: Mapped[int | None] = mapped_column(Integer, server_default="0")
+    dead_letter_locked_by: Mapped[str | None]
+    dead_letter_lease_token: Mapped[uuid.UUID | None] = mapped_column(_UUID)
+    dead_letter_lease_expires_at: Mapped[dt.datetime | None]
     created_at: Mapped[dt.datetime | None] = mapped_column(server_default=func.now())
     updated_at: Mapped[dt.datetime | None] = mapped_column(server_default=func.now())
 
