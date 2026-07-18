@@ -101,7 +101,13 @@ from .lifecycle import (
     is_terminal,
 )
 
-CONTRACTS_VERSION = "1.0.0"
+# Versioning convention (see AGENTS.md "Versioning"): backward-compatible
+# additions (new enum values, new models, new optional fields) bump minor;
+# breaking changes bump major. Bump lands in the same PR as the change.
+# 1.1.0: Steps 2-5a additions — WorkspaceKind "system"; ArtifactKind /
+# ExecutionState / ReviewState / PublicationState; review + import-item
+# lifecycles; ImportProvider / ImportJobStatus / ImportItemState.
+CONTRACTS_VERSION = "1.1.0"
 
 __all__ = [
     "CONTRACTS_VERSION",
