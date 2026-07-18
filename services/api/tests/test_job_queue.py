@@ -123,6 +123,7 @@ async def test_finish_requires_current_lease_token():
             lease_token=uuid.uuid4(),
             status="done",
         )
+    assert "jobs.lease_expires_at > now()" in _sql(session.statements[0])
 
 
 async def test_stale_recovery_requeues_or_dead_letters_by_attempt_budget():
@@ -151,6 +152,8 @@ async def test_retry_uses_exponential_delay_then_dead_letters_at_limit():
         max_delay_seconds=60,
     )
     assert (status, delay) == ("queued", 10)
+    assert "jobs.lease_expires_at > now()" in _sql(session.statements[0])
+    assert "jobs.lease_expires_at > now()" in _sql(session.statements[1])
 
     exhausted_token = uuid.uuid4()
     exhausted = _job(status="running", attempts=3, max_attempts=3, lease_token=exhausted_token)
@@ -163,6 +166,19 @@ async def test_retry_uses_exponential_delay_then_dead_letters_at_limit():
         last_error_kind="retryable",
     )
     assert (status, delay) == ("dead", 0)
+
+
+async def test_retry_rejects_an_expired_matching_token():
+    session = _Session(_Result(rows=[]))
+    with pytest.raises(system.JobLeaseLostError):
+        await system.retry_job(
+            session,
+            job_id=uuid.uuid4(),
+            lease_token=uuid.uuid4(),
+            last_error="late",
+            last_error_kind="retryable",
+        )
+    assert "jobs.lease_expires_at > now()" in _sql(session.statements[0])
 
 
 async def test_dead_letter_delivery_is_idempotently_marked():

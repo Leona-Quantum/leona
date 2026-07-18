@@ -587,6 +587,7 @@ async def finish_job(
             Job.id == job_id,
             Job.status == "running",
             Job.lease_token == lease_token,
+            Job.lease_expires_at > func.now(),
         )
         .values(
             status=status,
@@ -625,6 +626,7 @@ async def retry_job(
                     Job.id == job_id,
                     Job.status == "running",
                     Job.lease_token == lease_token,
+                    Job.lease_expires_at > func.now(),
                 )
                 .with_for_update()
             )
@@ -643,9 +645,14 @@ async def retry_job(
         if terminal
         else min(base_delay_seconds * (2 ** max(attempts - 1, 0)), max_delay_seconds)
     )
-    await session.execute(
+    result = await session.execute(
         update(Job)
-        .where(Job.id == job_id, Job.lease_token == lease_token)
+        .where(
+            Job.id == job_id,
+            Job.status == "running",
+            Job.lease_token == lease_token,
+            Job.lease_expires_at > func.now(),
+        )
         .values(
             status="dead" if terminal else "queued",
             run_after=func.now() + dt.timedelta(seconds=delay_seconds),
@@ -659,6 +666,8 @@ async def retry_job(
             updated_at=func.now(),
         )
     )
+    if result.rowcount != 1:
+        raise JobLeaseLostError(f"job lease expired before retry update: {job_id}")
     return ("dead" if terminal else "queued", delay_seconds)
 
 

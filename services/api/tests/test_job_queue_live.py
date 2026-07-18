@@ -1,5 +1,6 @@
 """Postgres contention tests for fenced Dead Letter callback reservations."""
 
+import datetime as dt
 import os
 import uuid
 
@@ -30,6 +31,29 @@ async def _terminal_job(factory) -> uuid.UUID:
         job.status = "dead"
         await session.commit()
         return job.id
+
+
+async def _running_job(factory) -> tuple[uuid.UUID, uuid.UUID]:
+    job_id = uuid.uuid4()
+    lease_token = uuid.uuid4()
+    now = dt.datetime.now(dt.timezone.utc)
+    async with factory() as session:
+        session.add(
+            Job(
+                id=job_id,
+                kind="test.running",
+                payload={},
+                status="running",
+                attempts=1,
+                max_attempts=3,
+                locked_by="late-worker",
+                locked_at=now,
+                lease_token=lease_token,
+                lease_expires_at=now + dt.timedelta(seconds=45),
+            )
+        )
+        await session.commit()
+    return job_id, lease_token
 
 
 @requires_db
@@ -102,3 +126,38 @@ async def test_expired_dead_letter_reservation_is_reclaimable(factory):
             select(Job.dead_letter_lease_token).where(Job.id == job_id)
         )
         assert persisted_token == reclaimed.dead_letter_lease_token
+
+
+@requires_db
+async def test_expired_matching_job_token_cannot_finish_or_retry(factory):
+    job_id, lease_token = await _running_job(factory)
+    async with factory() as session:
+        await session.execute(
+            update(Job).where(Job.id == job_id).values(lease_expires_at=func.now())
+        )
+        await session.commit()
+
+    async with factory() as session:
+        with pytest.raises(system.JobLeaseLostError):
+            await system.finish_job(
+                session,
+                job_id=job_id,
+                lease_token=lease_token,
+                status="done",
+            )
+        with pytest.raises(system.JobLeaseLostError):
+            await system.retry_job(
+                session,
+                job_id=job_id,
+                lease_token=lease_token,
+                last_error="late",
+                last_error_kind="retryable",
+            )
+        persisted = await session.get(Job, job_id)
+        assert persisted is not None and persisted.status == "running"
+        await session.rollback()
+
+    async with factory() as session:
+        recovery = await system.recover_stale_jobs(session)
+        assert recovery.requeued == 1
+        await session.commit()
