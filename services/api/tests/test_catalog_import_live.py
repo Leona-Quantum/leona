@@ -127,6 +127,84 @@ async def test_create_import_job_is_idempotent(env):
 
 
 @requires_db
+async def test_reused_key_with_different_request_is_rejected(env):
+    """A reused idempotency key naming a different request must fail loudly,
+    not silently return the earlier batch."""
+    authority, factory = env
+    scope = authority.importer_scope()
+    key = f"idem-{uuid.uuid4()}"
+    async with factory() as session:
+        await catalog_import.create_import_job(
+            scope,
+            session,
+            authority=authority,
+            provider=ImportProvider.LOCAL_FIXTURE,
+            upstream_ref="valid_set",
+            idempotency_key=key,
+            fixtures_dir=FIXTURES_ROOT / "valid_set",
+        )
+        await session.commit()
+
+    async with factory() as session:
+        with pytest.raises(catalog_import.IdempotencyConflictError):
+            await catalog_import.create_import_job(
+                scope,
+                session,
+                authority=authority,
+                provider=ImportProvider.LOCAL_FIXTURE,
+                upstream_ref="duplicate_pair",  # different request, same key
+                idempotency_key=key,
+                fixtures_dir=FIXTURES_ROOT / "duplicate_pair",
+            )
+
+
+@requires_db
+async def test_concurrent_create_with_same_key_returns_winner(env, monkeypatch):
+    """Simulates losing the create race: the pre-insert lookup misses (as it
+    would when a concurrent creator commits between lookup and flush), the
+    unique constraint fires, and the loser recovers the winner's batch."""
+    authority, factory = env
+    scope = authority.importer_scope()
+    key = f"idem-{uuid.uuid4()}"
+    async with factory() as session:
+        winner = await catalog_import.create_import_job(
+            scope,
+            session,
+            authority=authority,
+            provider=ImportProvider.LOCAL_FIXTURE,
+            upstream_ref="valid_set",
+            idempotency_key=key,
+            fixtures_dir=FIXTURES_ROOT / "valid_set",
+        )
+        await session.commit()
+        winner_id = winner.id
+
+    real_find = catalog_import._find_import_job
+    calls = {"n": 0}
+
+    async def racing_find(session, idempotency_key):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            return None  # concurrent creator hasn't been observed yet
+        return await real_find(session, idempotency_key)
+
+    monkeypatch.setattr(catalog_import, "_find_import_job", racing_find)
+
+    async with factory() as session:
+        recovered = await catalog_import.create_import_job(
+            scope,
+            session,
+            authority=authority,
+            provider=ImportProvider.LOCAL_FIXTURE,
+            upstream_ref="valid_set",
+            idempotency_key=key,
+            fixtures_dir=FIXTURES_ROOT / "valid_set",
+        )
+    assert recovered.id == winner_id
+    assert calls["n"] == 2  # the recovery path actually ran
+
+
+@requires_db
 async def test_valid_fixtures_all_staged_and_stay_non_public(env, tmp_path):
     authority, factory = env
     scope = authority.importer_scope()

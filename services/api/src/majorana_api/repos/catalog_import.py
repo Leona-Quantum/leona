@@ -26,6 +26,7 @@ from majorana_contracts.enums import (
     ImportProvider,
 )
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..catalog_authority import CatalogAuthority
@@ -37,9 +38,9 @@ from ..catalog_import_fixtures import (
 )
 from ..ids import uuid7
 from ..jobs import CATALOG_IMPORT_JOB_KIND
-from ..orm import ImportItem, ImportJob
+from ..orm import ImportItem, ImportJob, Job
 from . import catalog, system
-from ._base import NotFoundError
+from ._base import NotFoundError, RepoError
 
 TERMINAL_ITEM_STATES = frozenset(
     {ImportItemState.STAGED, ImportItemState.REJECTED, ImportItemState.DEAD}
@@ -52,6 +53,15 @@ class _ItemRejected(Exception):
     def __init__(self, failure_code: str):
         super().__init__(failure_code)
         self.failure_code = failure_code
+
+
+class IdempotencyConflictError(RepoError):
+    """The idempotency key was reused for a materially different request.
+
+    Silently returning the earlier batch would make the caller believe their
+    (different) request was accepted; failing loudly forces them to pick a
+    fresh key or reconcile the difference.
+    """
 
 
 @dataclasses.dataclass(frozen=True)
@@ -75,6 +85,40 @@ class LocalFixtureStagingDefaults:
     metadata_schema_version: str = "1"
 
 
+async def _find_import_job(session: AsyncSession, idempotency_key: str) -> ImportJob | None:
+    return (
+        (
+            await session.execute(
+                select(ImportJob).where(ImportJob.idempotency_key == idempotency_key)
+            )
+        )
+        .scalars()
+        .first()
+    )
+
+
+async def _assert_request_equivalent(
+    session: AsyncSession,
+    existing: ImportJob,
+    *,
+    provider: ImportProvider,
+    upstream_ref: str,
+    fixtures_dir: Path,
+) -> None:
+    """A reused idempotency key must describe the same request it named before."""
+    queue_job = await session.get(Job, existing.job_id)
+    recorded_fixtures_dir = queue_job.payload.get("fixtures_dir") if queue_job is not None else None
+    if (
+        ImportProvider(existing.provider) != provider
+        or existing.upstream_ref != upstream_ref
+        or recorded_fixtures_dir != str(fixtures_dir)
+    ):
+        raise IdempotencyConflictError(
+            f"idempotency key {existing.idempotency_key!r} was already used "
+            "for a different import request"
+        )
+
+
 async def create_import_job(
     scope: Scope,
     session: AsyncSession,
@@ -87,21 +131,26 @@ async def create_import_job(
 ) -> ImportJob:
     """Idempotently create a batch and its items from a fixture directory.
 
-    Re-running with the same idempotency_key returns the existing batch
-    unchanged, so a crashed/retried import-creation request is safe.
+    Re-running with the same idempotency_key and the same request returns the
+    existing batch unchanged, so a crashed/retried import-creation request is
+    safe. Reusing a key for a *different* request (provider/upstream_ref/
+    fixtures_dir mismatch) raises IdempotencyConflictError instead of silently
+    returning the wrong batch. Two concurrent creators racing the same key are
+    serialized by the unique constraint: the loser rolls back this session's
+    uncommitted work (like stage_artifact_version's duplicate handling) and
+    returns the winner's batch.
     """
     await catalog.get_importer_workspace(scope, session, authority=authority)
 
-    existing = (
-        (
-            await session.execute(
-                select(ImportJob).where(ImportJob.idempotency_key == idempotency_key)
-            )
-        )
-        .scalars()
-        .first()
-    )
+    existing = await _find_import_job(session, idempotency_key)
     if existing is not None:
+        await _assert_request_equivalent(
+            session,
+            existing,
+            provider=provider,
+            upstream_ref=upstream_ref,
+            fixtures_dir=fixtures_dir,
+        )
         return existing
 
     identities = list_fixture_identities(fixtures_dir)
@@ -121,7 +170,24 @@ async def create_import_job(
         item_count=len(identities),
     )
     session.add(import_job)
-    await session.flush()
+    try:
+        await session.flush()
+    except IntegrityError:
+        # A concurrent creator committed the same key between our lookup and
+        # this flush. rollback() discards this session's uncommitted work and
+        # expires its ORM objects, so everything below re-reads from the DB.
+        await session.rollback()
+        winner = await _find_import_job(session, idempotency_key)
+        if winner is None:
+            raise
+        await _assert_request_equivalent(
+            session,
+            winner,
+            provider=provider,
+            upstream_ref=upstream_ref,
+            fixtures_dir=fixtures_dir,
+        )
+        return winner
 
     for identity in identities:
         session.add(
