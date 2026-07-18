@@ -28,11 +28,12 @@ from majorana_contracts.enums import (
     Role,
     SourceKind,
 )
-from sqlalchemy import select
+from sqlalchemy import delete, select, update
+from sqlalchemy.exc import DBAPIError
 
 from majorana_api.catalog_authority import CatalogAuthority
 from majorana_api.db import engine_from_env, session_factory
-from majorana_api.orm import Membership
+from majorana_api.orm import LicenseAssertion, Membership
 from majorana_api.repos import AuthzError, catalog, system, workspaces
 
 requires_db = pytest.mark.skipif(
@@ -197,6 +198,46 @@ async def test_provenance_and_rights_round_trip_with_identical_hashes(env):
     assert reloaded_source.content_hash == content_hash
     assert reloaded_assertion.evidence_hash == evidence_hash
     assert reloaded_assertion.spdx_id == "MIT"
+
+
+@requires_db
+async def test_license_assertion_rows_reject_update_and_delete(env):
+    configured, _reviewer_id, factory = env
+    async with factory() as session:
+        _artifact, version = await _stage_ready_version(
+            session, configured, source_text=f"append-only-{uuid.uuid4()}"
+        )
+        assertion = await catalog.record_license_assertion(
+            configured.importer_scope(),
+            session,
+            version.id,
+            authority=configured,
+            assertion_kind=LicenseAssertionKind.DECLARED,
+            license_scope=LicenseScope.WHOLE,
+            spdx_id="MIT",
+        )
+        await session.commit()
+        assertion_id = assertion.id
+
+    async with factory() as session:
+        with pytest.raises(DBAPIError, match="append-only"):
+            await session.execute(
+                update(LicenseAssertion)
+                .where(LicenseAssertion.id == assertion_id)
+                .values(spdx_id="Apache-2.0")
+            )
+            await session.commit()
+        await session.rollback()
+
+        with pytest.raises(DBAPIError, match="append-only"):
+            await session.execute(
+                delete(LicenseAssertion).where(LicenseAssertion.id == assertion_id)
+            )
+            await session.commit()
+        await session.rollback()
+
+        persisted = await session.get(LicenseAssertion, assertion_id)
+        assert persisted is not None and persisted.spdx_id == "MIT"
 
 
 @requires_db
