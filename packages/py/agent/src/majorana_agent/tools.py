@@ -201,7 +201,9 @@ class CircuitToolset:
                 "repair": {
                     "category": "execution_failed",
                     "evidence": [
-                        str(evidence.observation.get("evidence_error", "sandbox exit was non-zero")),
+                        str(
+                            evidence.observation.get("evidence_error", "sandbox exit was non-zero")
+                        ),
                         *(
                             [str(evidence.observation["sandbox_error"])[-2000:]]
                             if evidence.observation.get("sandbox_error")
