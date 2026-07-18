@@ -63,13 +63,13 @@ async def test_dead_letter_closure_appends_both_events_and_one_status_update(mon
         session,
         run.id,
         error_payload={"stage": None, "code": "job_dead_letter", "message": "failed"},
-        finished_payload={"status": RunStatus.FAILED},
         error_event_id=uuid.uuid4(),
         finished_event_id=uuid.uuid4(),
     )
 
     assert changed is True
     assert [event[1]["type"] for event in appended] == ["run.error", "run.finished"]
+    assert appended[1][1]["payload"] == {"status": RunStatus.FAILED.value}
     assert len(session.statements) == 2
 
 
@@ -88,7 +88,6 @@ async def test_dead_letter_closure_does_not_overwrite_cancelled_run(monkeypatch)
         session,
         run.id,
         error_payload={"stage": None, "code": "job_dead_letter", "message": "failed"},
-        finished_payload={"status": RunStatus.FAILED},
         error_event_id=uuid.uuid4(),
         finished_event_id=uuid.uuid4(),
     )

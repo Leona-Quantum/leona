@@ -63,7 +63,6 @@ async def _close(factory, scope, run_id) -> bool:
             session,
             run_id,
             error_payload={"stage": None, "code": "job_dead_letter", "message": "failed"},
-            finished_payload={"status": "failed"},
             error_event_id=error_id,
             finished_event_id=finished_id,
         )
@@ -112,7 +111,6 @@ async def test_terminal_event_conflict_rolls_back_status_and_second_event(env):
                 session,
                 run_id,
                 error_payload={"stage": None, "code": "job_dead_letter", "message": "failed"},
-                finished_payload={"status": "failed"},
                 error_event_id=error_id,
                 finished_event_id=finished_id,
             )

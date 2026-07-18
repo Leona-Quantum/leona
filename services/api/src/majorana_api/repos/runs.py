@@ -280,7 +280,6 @@ async def fail_run_from_dead_letter(
     run_id: uuid.UUID,
     *,
     error_payload: dict[str, Any],
-    finished_payload: dict[str, Any],
     error_event_id: uuid.UUID,
     finished_event_id: uuid.UUID,
 ) -> bool:
@@ -307,7 +306,7 @@ async def fail_run_from_dead_letter(
         session,
         run_id,
         type="run.finished",
-        payload=finished_payload,
+        payload={"status": RunStatus.FAILED.value},
         event_id=finished_event_id,
     )
     result = await session.execute(

@@ -34,6 +34,7 @@ async def test_dead_letter_handler_commits_terminal_sequence_once(monkeypatch):
     assert commits == 1
     assert observed["run_id"] == run_id
     assert observed["error_payload"]["code"] == "job_dead_letter"
+    assert "finished_payload" not in observed
 
 
 def _clear_deploy_markers(monkeypatch):

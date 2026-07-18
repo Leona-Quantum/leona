@@ -447,17 +447,11 @@ async def handle_run_dead_letter(
         "run.error",
         {"stage": None, "code": "job_dead_letter", "message": reason[:2000]},
     )
-    finished_payload = _validated_event_payload(
-        run_id,
-        "run.finished",
-        {"status": RunStatus.FAILED},
-    )
     await runs_repo.fail_run_from_dead_letter(
         scope,
         session,
         run_id,
         error_payload=error_payload,
-        finished_payload=finished_payload,
         error_event_id=uuid.uuid5(run_id, "run.error.job_dead_letter"),
         finished_event_id=uuid.uuid5(run_id, "run.finished"),
     )
