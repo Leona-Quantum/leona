@@ -66,9 +66,16 @@ stopped and deleted after) was used instead of a new Neon branch:
   - a normal authenticated user's scope was rejected from staging with no query issued.
 - full local suite: 149 passed / 1 skipped (DB present, live-LLM test skipped); 138
   passed / 12 skipped (no `DATABASE_URL`, matching a PR without a Neon branch);
-- Ruff check/format: passed; import-linter: 3 kept, 0 broken; raw-query gate: clean;
-- `python -m majorana_contracts.export --check`: `openapi.json` unchanged — Step 3 adds
+- fallback `.venv/bin/ruff check ...` and `.venv/bin/ruff format --check ...`
+  changed-file checks passed;
+  import-linter: 3 kept, 0 broken; raw-query gate: clean;
+- fallback `.venv/bin/python -m majorana_contracts.export --check`: `openapi.json` unchanged — Step 3 adds
   no route or response-model field, so no TypeScript regeneration was needed.
+
+The required `uv run pytest`, `uv run ruff check .`, and
+`uv run ruff format --check .` entry points were not executed in this historical
+session; the exact fallback commands above must not be reported as required-command
+successes.
 
 ## Neon gate
 
@@ -77,6 +84,6 @@ against Postgres 17 — see `docs/repository-step3-4-neon-gate.md`.
 
 ## Required gate
 
-CODEOWNER review remains required before Step 4 for the migration, contracts, and
-repository-layer changes. `SYSTEM_CATALOG_ENABLED` stays `false`; no public catalog data
-exists.
+Step 4 was subsequently implemented on this branch. CODEOWNER review, merge, and
+deployment approval remain required for the migration, contracts, and repository-layer
+changes. `SYSTEM_CATALOG_ENABLED` stays `false`; no public catalog data exists.

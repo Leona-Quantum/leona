@@ -11,9 +11,12 @@ create dual sources of truth and bypass the new acceptance contract.
 version, deterministic ordering, per-item source hashes, and a whole-manifest checksum.
 A dedicated local bootstrap connector submits it through the normal durable importer;
 every item receives provenance, rights, classification, deduplication, review, and
-evidence states. Fresh development and preview Neon branches run an explicit idempotent
-post-migration bootstrap command by default. Alembic and application startup never
-insert or publish catalog data. Production bootstrap/publication remains approval
+evidence states. Automatic bootstrap is deferred and is not enabled by this PR:
+`SYSTEM_CATALOG_ENABLED` remains false, and no bootstrap command or startup hook runs
+implicitly. A later reviewed step may let fresh development and preview Neon branches
+run an explicit idempotent post-migration bootstrap command behind a separate operator
+flag. Alembic and application startup never insert or publish catalog data. Production
+bootstrap/publication remains approval
 gated. All 285 items remain auditable even when an item is quarantined or rejected;
 only accepted/public records appear in anonymous reads. Existing `verified` labels,
 tiers, prose, and license descriptions are source claims, not passing run evidence or

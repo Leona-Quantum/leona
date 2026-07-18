@@ -21,7 +21,7 @@ The fixed product direction is accepted for planning:
 - publication, deployment, protected-branch actions, credentials, and paid QPU work
   remain approval-gated.
 
-The architecture details in ADR-0016 through ADR-0018 remain proposed until their
+The architecture details in ADR-0016 through ADR-0019 remain proposed until their
 listed owner/CODEOWNER/security reviews occur. No later implementation step may treat
 a proposed choice as approved.
 
@@ -64,7 +64,7 @@ Important interpretation:
 | `services/api/.../repos` | Rei lane with authz invariant | Catalog repository functions | Amber | New catalog modules/functions; keep Scope first and avoid unrelated artifact rewrites |
 | `services/api/.../routes/artifacts.py` | Existing Library API | Later accepted-version copy flow | Amber | Leave current legacy copy endpoint unchanged until replacement is proven |
 | `.github/workflows/**` | Shared/owner | Required catalog and migration gates | Red | Add gates only in a separate CI PR; do not rename required jobs |
-| `docs/adr/README.md` | Shared; changed on `origin/dev` | Index ADR-0016 to 0018 | Amber | Intentionally not edited now; append entries after integrating ADR-0015 from `origin/dev` |
+| `docs/adr/README.md` | Shared; changed on `origin/dev` | Index ADR-0016 to ADR-0019 | Amber | Updated with ADR-0016 through ADR-0019 after integrating ADR-0015; preserve index order during later integration |
 | `docs/quantum-repository-platform-plan.md` | Rei branch-only plan | Governing staged plan | Green locally, merge-sensitive | Preserve as branch-owned document and review when integrating latest `dev` |
 
 Red means prior coordination and dedicated review are mandatory. Amber means isolate
@@ -75,7 +75,7 @@ not remove normal review requirements.
 
 | Step | Intended files | Files explicitly excluded |
 |---|---|---|
-| 0 | repository plan, ADR-0016 to ADR-0018, this map | runtime, schema, workflows, legacy TS data |
+| 0 | repository plan, ADR-0016 to ADR-0019, ADR index, this map | runtime, schema, workflows, legacy TS data |
 | 1 | queue migration, job repository/Worker recovery, targeted tests | catalog schema, framework adapters, UI |
 | 2 | DB configuration, approved catalog principal/scope, leakage tests | importer, evidence, UI, legacy catalog |
 | 3 | one catalog identity migration, ORM/repository/contracts, tests | provenance/import/evidence tables, UI |
@@ -96,7 +96,7 @@ integration order are agreed.
 
 Before Step 1 implementation:
 
-1. obtain review of ADR-0016 through ADR-0018;
+1. obtain review of ADR-0016 through ADR-0019;
 2. re-check whether `origin/dev` advanced after the `fd34d3b` integrated baseline;
 3. preserve the accepted ADR-0015/framework changes and do not recreate them;
 4. run the existing tests on the integrated baseline before attributing failures to
@@ -132,6 +132,7 @@ implicit approval.
 - [x] Catalog authority/public-read proposal was recorded in ADR-0016.
 - [x] Ingestion trust boundaries and fail-closed behavior were recorded in ADR-0017.
 - [x] Hash, deduplication, and immutable evidence semantics were recorded in ADR-0018.
+- [x] Pinned bootstrap semantics and the explicit, deferred command were recorded in ADR-0019.
 - [x] Shared-file owners, conflict levels, and safe-edit rules were mapped.
 - [x] No runtime, schema, data, external publication, or legacy catalog change was made.
 - [ ] Owner/CODEOWNER/security approvals D-1 through D-5 are recorded before their gated phases.

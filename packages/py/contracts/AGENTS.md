@@ -17,5 +17,5 @@ Imports nothing internal. Every model documented; every enum closed.
 
 The bump lands in the same PR as the change it describes, with a one-line note in
 the comment above `CONTRACTS_VERSION`. Regenerate `openapi.json`
-(`python -m majorana_contracts.export`) in that same PR — the export embeds the
+(`uv run python -m majorana_contracts.export`) in that same PR — the export embeds the
 version, so the freshness gate fails until both move together.

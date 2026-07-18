@@ -12,12 +12,14 @@ source coordinates and creates a durable job; it never accepts an arbitrary shel
 command or fetches external content in the request lifecycle. Each connector builds
 its own URL from an allowlisted HTTPS host, port, operation, immutable ref, and path.
 Redirects and archive ingestion are rejected in the initial release. Every connection
-revalidates the resolved address and rejects loopback, private, link-local, multicast,
-metadata-service, and non-routable ranges. The fetcher has bounded egress but no Neon,
-cloud-provider, QPU, signing, or publication credential. It returns bounded bytes and
-a retrieval manifest to a private content-addressed quarantine store. The parser and
-all source execution run later in an ephemeral deny-all egress sandbox with read-only
-input and bounded CPU, memory, time, processes, files, disk, and output. MQT Bench and
+resolves and rejects loopback, private, link-local, multicast, metadata-service, and
+non-routable A/AAAA addresses, then connects through that already validated address (or
+equivalent resolver pinning). No second DNS lookup occurs before connection, so DNS
+rebinding cannot replace the validated destination. The fetcher has bounded egress but
+no Neon, cloud-provider, QPU, signing, or publication credential. It returns bounded
+bytes and a retrieval manifest to a private content-addressed quarantine store. The
+parser and all source execution run later in an ephemeral deny-all egress sandbox with
+read-only input and bounded CPU, memory, time, processes, files, disk, and output. MQT Bench and
 other generator dependencies are installed into a reviewed image from the lockfile;
 an import job never installs an upstream package dynamically. Publication fails
 closed on missing provenance, unknown rights, failed limits, or incomplete review.

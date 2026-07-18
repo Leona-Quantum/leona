@@ -11,7 +11,8 @@ Review and production authority: Eshaan / owner / applicable CODEOWNERS
 This plan supersedes the earlier catalog plan for `feature/repository`.
 
 1. Neon Postgres is the canonical catalog database.
-2. FastAPI is the only application boundary allowed to read or write Neon.
+2. API and Worker are the only application processes allowed to read or write Neon. Both use
+   the repository layer owned by `services/api`; Next.js and sandboxed code never connect.
 3. The 285 records validated on the pinned `origin/dev` baseline are the default bootstrap input
    for Neon. They pass through the same importer, hashing, rights, review, and evidence gates as
    every other source; their TypeScript status text is not trusted as execution evidence.
@@ -92,7 +93,7 @@ The implementation extends these existing components:
 
 | Existing component | Reuse rule |
 |---|---|
-| `services/api` | Remains the only database-facing application service |
+| `services/api` | Owns the only repository layer used by the database-facing API and Worker processes |
 | `services/api/src/majorana_api/repos` | All catalog SQL and ORM access stays here and takes scoped authority first |
 | `artifacts` | Stable identity in a dedicated system catalog workspace |
 | `artifact_versions` | Immutable framework-native source revisions |

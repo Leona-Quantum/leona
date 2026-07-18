@@ -99,7 +99,8 @@ or rollback.
 
 ## 6. Verification evidence
 
-Executed locally:
+Executed locally through the existing `.venv` fallback rather than the required `uv run`
+entry point:
 
 - Ruff formatting and checks over all changed Python files: passed;
 - queue repository and migration tests: 8 passed;
@@ -116,13 +117,14 @@ Not executed locally:
 - live database pipeline E2E and live LLM tests represented by the skipped tests;
 - contention benchmark B-Q3.
 
-These remain required CI/review gates. The normal `uv` workspace command is currently
-blocked before test startup because `packages/py/baselines` matches the workspace glob
-but has no `pyproject.toml`; local verification used the existing `.venv` and explicit
-package source paths without modifying that unrelated directory.
+These remained required CI/review gates at the time of this Step 1 report. The required
+`uv run pytest`, `uv run ruff check .`, and `uv run ruff format --check .` commands were
+not executed in that session: `packages/py/baselines` matched the workspace glob but had
+no `pyproject.toml`. The recorded results above came from the existing `.venv` with
+explicit package source paths and must not be read as successful `uv run` results.
 
 ## 7. Exit state
 
-Step 1 implementation is complete but not production-approved. Step 2 must not start
-until this shared queue change receives Ryu/Eshaan/CODEOWNER review and the live Neon
-migration plus pipeline checks pass.
+The former Step 2 prerequisite was subsequently satisfied for continued branch
+development. Production merge and deployment remain blocked on Ryu/Eshaan/CODEOWNER
+review and the required migration, pipeline, and operational checks.

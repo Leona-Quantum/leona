@@ -57,7 +57,7 @@ authorize paid/provider calls. Deployment remains blocked on CODEOWNER review.
 CODEOWNER review remains required for the migration, shared contract, auth boundary,
 and workflow changes. Keep the feature disabled and do not import catalog data.
 
-## Local validation
+## Local validation (fallback commands used in this historical session)
 
 - API, Worker, and contracts: 122 passed, 9 live-DB tests skipped;
 - Ruff check/format: passed;
@@ -66,9 +66,12 @@ and workflow changes. Keep the feature disabled and do not import catalog data.
 - workflow YAML parsed successfully;
 - existing TypeScript bootstrap validator: 285 records unchanged.
 
-The normal `uv run` entry point is blocked only in this working copy because an
+The required `uv run pytest`, `uv run ruff check .`, and
+`uv run ruff format --check .` commands were unavailable in this session. The normal
+`uv run` entry point was blocked only in this working copy because an
 untracked `packages/py/baselines/` directory matches `packages/py/*` without a
 `pyproject.toml`. Validation used the existing `.venv` and explicit package source
-paths. A clean CI checkout does not contain that untracked directory. Live Neon
+paths; the results above are fallback evidence, not successful required-command runs.
+A clean CI checkout does not contain that untracked directory. Live Neon
 up→down→up ran on the temporary Step 2 branch (see the gate result above); it was
 not attempted against the production branch.
