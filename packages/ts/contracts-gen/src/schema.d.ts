@@ -1341,7 +1341,7 @@ export interface components {
             additional_notes: string[] | null;
             /**
              * Expected Range
-             * @description Flat map of bound-name to numeric threshold, e.g. {"correlated_fraction_min": 0.99, "balance_abs_deviation_max": 0.15}. Each value is a plain number — never a nested {min, max} object.
+             * @description Bound on primary_metric's value, checked with the literal keys "min" and/or "max", e.g. {"min": 0.99} or {"min": 0.0, "max": 0.15}. Either key may be omitted to leave that side unbounded; any other key is ignored by the evaluator, so do not invent named bounds.
              * @default null
              */
             expected_range: {

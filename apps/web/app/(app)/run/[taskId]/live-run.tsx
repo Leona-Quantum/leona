@@ -138,7 +138,8 @@ function answerFromEvents(events: WireEvent[]): string | null {
   const saved = events.some((event) => event.type === "artifact.saved");
   const problem = planSummaryFromEvents(events);
   const metric = resultSummaryFromEvents(events);
-  const sentences = [problem ?? `Verified (${finished.verifier_decision ?? "pass"})`];
+  const opening = problem ?? `Verified (${finished.verifier_decision ?? "pass"})`;
+  const sentences = [opening.endsWith(".") ? opening : `${opening}.`];
   if (metric) sentences.push(`Result: ${metric}.`);
   sentences.push(saved ? "Saved to your library." : "No artifact was saved.");
   return sentences.join(" ");
@@ -195,6 +196,9 @@ export function LiveRun({ taskId }: { taskId: string }) {
     const controller = new AbortController();
     let reconnectTimer: ReturnType<typeof setTimeout> | undefined;
     setLiveEvents([]);
+    setStreamingText("");
+    setReasoningText("");
+    setError(null);
 
     async function loadConversation() {
       const response = await fetch(`/api/runs/${encodeURIComponent(taskId)}/conversation`, {
@@ -262,7 +266,7 @@ export function LiveRun({ taskId }: { taskId: string }) {
                 setPending(false);
                 setStreaming(false);
                 updateChat(taskId, { status: event.status === "succeeded" ? "draft" : "failed" });
-                if (event.status === "succeeded") void loadConversation().catch(() => undefined);
+                void loadConversation().catch(() => undefined);
               }
             }
           }
