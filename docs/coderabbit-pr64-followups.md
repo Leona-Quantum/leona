@@ -48,3 +48,15 @@ schema or transaction semantics beyond a safe patch:
 No deferred item changes the present release gates: publication remains disabled,
 imports remain private/staged, callback retries are bounded, and replacement Workers are
 fenced.
+
+## Validation performed
+
+- Python tests without a database: `196 passed, 27 skipped`
+- Ruff lint and format checks: passed (`159 files already formatted`)
+- Import boundaries: `3 kept, 0 broken`
+- Raw-query policy, generated OpenAPI, workflow YAML, and whitespace checks: passed
+- TypeScript lint, typecheck, and tests: passed (`5` Turbo tasks; `15` web tests)
+- Repository dataset validation: passed (`285` entries)
+
+Live Postgres/Neon integration tests were not run in this review-fix session. No branch
+was pushed and no database, credential, or public-service state was changed.
