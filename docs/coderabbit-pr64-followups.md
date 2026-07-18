@@ -60,3 +60,28 @@ fenced.
 
 Live Postgres/Neon integration tests were not run in this review-fix session. No branch
 was pushed and no database, credential, or public-service state was changed.
+
+## Second review — Phase 1 disposition
+
+| Finding | Resolution | Commit |
+|---|---|---|
+| Bootstrap wording implied automatic import | State that bootstrap is deferred, disabled, and operator-gated | `2ee903a` |
+| Direct database URL was described as non-secret | Apply the same storage, redaction, and rotation policy as the pooled credential | `2ee903a` |
+| DNS rebinding defense allowed an ambiguous second lookup | Require connection through the validated A/AAAA address or equivalent pinning | `2ee903a` |
+| ADR/conflict maps and phase gates were stale | Include ADR-0019 and distinguish historical fallback validation | `2ee903a` |
+| API-only database wording excluded the Worker | Name API + Worker as the only DB processes using one repository layer | `2ee903a` |
+| Failed SQL could leave a pooled query timer behind | Clear one timer from SQLAlchemy's `handle_error` event | `2db5ad2` |
+| Repeating an advertised-idempotent tag raised a conflict | Use atomic PostgreSQL `ON CONFLICT DO NOTHING` | `8e7105e` |
+| Tests duplicated or locally imported contract constants | Reuse the exported terminal-state/count constants | `3a6a432` |
+
+Phase 1 validation used the existing `.venv` because `uv run` remains blocked by the
+pre-existing `packages/py/baselines` workspace member without a `pyproject.toml`:
+
+- all DB-free Python tests: `310 passed, 29 skipped`;
+- Ruff check/format: passed (`159 files already formatted`);
+- import boundaries: `3 kept, 0 broken`;
+- raw-query and generated OpenAPI checks: passed.
+
+The repeated-tag live Postgres test was added but not run locally; it remains part of
+the CI database job. Phase 1 did not connect to Neon or modify migrations, credentials,
+or public-service state.
