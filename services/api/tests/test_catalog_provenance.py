@@ -10,7 +10,7 @@ import datetime as dt
 import uuid
 
 import pytest
-from repo_test_helpers import Row, SequencedSession
+from repo_test_helpers import Row, SequencedSession, compiled
 
 from majorana_api.catalog_authority import CatalogAuthority
 from majorana_api.orm import AuditLog, Artifact, ArtifactVersion, LicenseAssertion, Workspace
@@ -488,6 +488,25 @@ async def test_tag_artifact_requires_importer_scope():
             tag="benchmark",
         )
     assert session.statements == []
+
+
+async def test_tag_artifact_uses_atomic_conflict_ignore_insert():
+    configured = authority()
+    workspace = _importer_workspace(configured)
+    artifact = _artifact(configured)
+    session = SequencedSession([Row(workspace), Row(artifact), Row(None)])
+
+    await catalog.tag_artifact(
+        configured.importer_scope(),
+        session,
+        artifact.id,
+        authority=configured,
+        tag="benchmark",
+    )
+
+    sql, _params = compiled(session.statements[-1])
+    assert "ON CONFLICT" in sql
+    assert "DO NOTHING" in sql
 
 
 # ---------------------------------------------------------------------------

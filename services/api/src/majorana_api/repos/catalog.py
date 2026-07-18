@@ -40,6 +40,7 @@ from majorana_contracts.enums import (
 from majorana_openqasm import fingerprint as qasm_fingerprint
 from majorana_openqasm import normalize
 from sqlalchemy import func, select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -569,8 +570,11 @@ async def tag_artifact(
     """Importer-only; idempotent (unique artifact_id/tag pair)."""
     workspace = await get_importer_workspace(scope, session, authority=authority)
     await _get_catalog_artifact(session, workspace_id=workspace.id, artifact_id=artifact_id)
-    session.add(ArtifactTag(artifact_id=artifact_id, tag=tag))
-    await session.flush()
+    await session.execute(
+        pg_insert(ArtifactTag)
+        .values(artifact_id=artifact_id, tag=tag)
+        .on_conflict_do_nothing(index_elements=[ArtifactTag.artifact_id, ArtifactTag.tag])
+    )
 
 
 async def get_publication_readiness(

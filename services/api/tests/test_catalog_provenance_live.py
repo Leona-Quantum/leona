@@ -429,5 +429,12 @@ async def test_citation_and_tag_persist(env):
             authority=configured,
             tag="benchmark",
         )
+        await catalog.tag_artifact(
+            configured.importer_scope(),
+            session,
+            artifact.id,
+            authority=configured,
+            tag="benchmark",
+        )
         await session.commit()
     assert citation.doi == "10.1234/example"
