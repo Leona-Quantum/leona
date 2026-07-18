@@ -1,6 +1,5 @@
 import type { Metadata } from "next";
 import { CircuitBand } from "../components/circuit-band";
-import { ElectronField } from "../components/electron-field";
 import { BrandMark } from "../components/icons";
 import { LeoConstellation } from "../components/leo-constellation";
 import { MeasurementLab } from "../components/measurement-lab";
@@ -82,12 +81,23 @@ export default async function Home() {
       </section>
 
       <Reveal>
-        <section className="mj-company-section mj-company-intro" aria-labelledby="company-intro-heading">
-          <div>
+        {/* Intro, now with the Measure widget folded in as a small interactive
+            accent (Owner Inbox 2026-07-19) — it augments the section for fun
+            rather than owning a full section of its own. */}
+        <section className="mj-company-section mj-company-intro mj-company-intro--measure" aria-labelledby="company-intro-heading">
+          <div className="mj-company-intro-copy">
             <p className="mj-section-label">{copy.intro.label}</p>
             <h2 id="company-intro-heading">{copy.intro.title}</h2>
+            <p>{copy.intro.body}</p>
           </div>
-          <p>{copy.intro.body}</p>
+          <aside className="mj-intro-measure" aria-labelledby="measure-heading">
+            <div className="mj-intro-measure-head">
+              <p className="mj-section-label">{copy.measure.label}</p>
+              <h3 id="measure-heading">{copy.measure.title}</h3>
+              <p>{copy.measure.body}</p>
+            </div>
+            <MeasurementLab />
+          </aside>
         </section>
       </Reveal>
 
@@ -138,36 +148,6 @@ export default async function Home() {
           ))}
         </div>
       </section>
-
-      {/* Lioness showcase — electrons converge into the Leona Quantum lioness
-          silhouette. Owner Inbox 2026-07-19: lifted out from behind the Measure
-          widget into its own foreground spot, and retargeted from the Leo
-          constellation to the lioness. */}
-      <Reveal>
-        <section className="mj-company-section mj-lioness-section" aria-labelledby="lioness-heading">
-          <div className="mj-lioness-copy">
-            <p className="mj-section-label">{copy.lioness.label}</p>
-            <h2 id="lioness-heading">{copy.lioness.title}</h2>
-          </div>
-          <div className="mj-lioness-stage">
-            <ElectronField target="lioness" className="mj-lioness-field" />
-          </div>
-        </section>
-      </Reveal>
-
-      {/* Measure widget, demoted to a small aside (Owner Inbox 2026-07-19):
-          a fun little interactive, capped at 1000 shots, no longer its own
-          full-bleed section. */}
-      <Reveal>
-        <aside className="mj-measure-aside" aria-labelledby="measure-heading">
-          <div className="mj-measure-aside-head">
-            <p className="mj-section-label">{copy.measure.label}</p>
-            <h2 id="measure-heading">{copy.measure.title}</h2>
-            <p>{copy.measure.body}</p>
-          </div>
-          <MeasurementLab />
-        </aside>
-      </Reveal>
 
       <Reveal>
         <section className="mj-company-final-cta" aria-labelledby="company-cta-heading">

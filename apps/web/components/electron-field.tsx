@@ -34,33 +34,60 @@ export function ElectronField({
     const targets: Array<[number, number]> = [];
     let isBright: (i: number) => boolean;
     if (target === "lioness") {
-      // Silhouette of a lioness in profile, walking, facing right — tail curling
-      // up at the rear-left, head lowered at the front-right. Traced by eye from
-      // the owner's reference in normalized [0,1] space (x: left→right). Outline
-      // points plus a little interior fill so the shape reads solid; the eye is
-      // the single bright point (its "Regulus").
-      const body: Array<[number, number]> = [
-        // head + face (right)
-        [0.95,0.42],[0.90,0.47],[0.86,0.48],[0.90,0.36],[0.85,0.30],[0.87,0.27],
-        // nape → back → rump (top line, right→left)
-        [0.80,0.33],[0.70,0.29],[0.55,0.29],[0.42,0.29],[0.28,0.28],[0.20,0.30],
-        // tail curling up at the rear-left
-        [0.16,0.34],[0.10,0.34],[0.06,0.30],[0.05,0.24],[0.09,0.22],
-        // hindquarter + thigh
-        [0.17,0.46],[0.20,0.56],
-        // hind legs (pair)
-        [0.24,0.66],[0.23,0.90],[0.34,0.70],[0.35,0.90],
-        // belly (rear→front)
-        [0.40,0.63],[0.52,0.64],[0.64,0.62],
-        // chest + throat
-        [0.76,0.56],[0.80,0.50],
-        // front legs (pair)
-        [0.72,0.66],[0.71,0.90],[0.80,0.68],[0.80,0.90],
-        // interior fill
-        [0.50,0.45],[0.62,0.45],[0.38,0.45],[0.70,0.42],
-      ];
-      body.forEach((p) => targets.push(p));
-      targets.push([0.86,0.40]); // eye — bright
+      // Dense lioness silhouette in profile, walking, facing right (Owner Inbox
+      // 2026-07-19: "many many more dots so the lioness is well formed and not
+      // sparse"). Rather than hand-placing a sparse outline, the figure is
+      // composed from filled primitives — body, head, muzzle, ears, neck, tail,
+      // four legs — each sampled with an even golden-angle spiral (ellipses) or
+      // interpolation (capsules/curve). Their union reads as a solid animal, and
+      // every primitive is easy to nudge. Normalized [0,1], x left→right. The
+      // eye is the single bright point (the lioness's "Regulus").
+      const GOLDEN = 2.399963229728653; // golden angle, for even disc fill
+
+      const fillEllipse = (cx: number, cy: number, rx: number, ry: number, n: number) => {
+        for (let i = 0; i < n; i++) {
+          const frac = (i + 0.5) / n;
+          const rad = Math.sqrt(frac);
+          const ang = i * GOLDEN;
+          targets.push([cx + rx * rad * Math.cos(ang), cy + ry * rad * Math.sin(ang)]);
+        }
+      };
+      // Straight limb/neck as a short line of dots with a little width.
+      const fillCapsule = (x1: number, y1: number, x2: number, y2: number, w: number, n: number) => {
+        for (let i = 0; i < n; i++) {
+          const t = n === 1 ? 0.5 : i / (n - 1);
+          const off = (((i % 3) - 1) / 1) * w; // -w, 0, +w across three columns
+          const nx = -(y2 - y1), ny = x2 - x1;
+          const len = Math.hypot(nx, ny) || 1;
+          targets.push([x1 + (x2 - x1) * t + (nx / len) * off, y1 + (y2 - y1) * t + (ny / len) * off]);
+        }
+      };
+      // Quadratic Bézier sample, for the curling tail.
+      const fillCurve = (p0: [number, number], p1: [number, number], p2: [number, number], n: number) => {
+        for (let i = 0; i < n; i++) {
+          const t = i / (n - 1);
+          const u = 1 - t;
+          targets.push([
+            u * u * p0[0] + 2 * u * t * p1[0] + t * t * p2[0],
+            u * u * p0[1] + 2 * u * t * p1[1] + t * t * p2[1],
+          ]);
+        }
+      };
+
+      fillEllipse(0.46, 0.5, 0.265, 0.135, 96); // torso
+      fillEllipse(0.2, 0.5, 0.09, 0.12, 24); // hindquarter/thigh bulge
+      fillCapsule(0.66, 0.44, 0.79, 0.4, 0.03, 16); // neck
+      fillEllipse(0.82, 0.4, 0.088, 0.082, 34); // head
+      fillEllipse(0.9, 0.44, 0.06, 0.045, 16); // muzzle
+      fillCurve([0.78, 0.32], [0.79, 0.27], [0.82, 0.31], 6); // ear (front)
+      fillCurve([0.85, 0.31], [0.87, 0.26], [0.89, 0.31], 6); // ear (rear)
+      fillCurve([0.2, 0.5], [0.03, 0.44], [0.07, 0.22], 20); // tail curling up rear-left
+      fillEllipse(0.07, 0.21, 0.028, 0.03, 8); // tail tuft
+      fillCapsule(0.63, 0.6, 0.63, 0.87, 0.012, 11); // front leg (far)
+      fillCapsule(0.7, 0.6, 0.7, 0.88, 0.012, 11); // front leg (near)
+      fillCapsule(0.28, 0.58, 0.28, 0.87, 0.012, 11); // hind leg (far)
+      fillCapsule(0.35, 0.6, 0.35, 0.88, 0.012, 11); // hind leg (near)
+      targets.push([0.845, 0.375]); // eye — bright
       isBright = (i) => i === targets.length - 1;
     } else if (target === "constellation") {
       const s: Array<[number, number]> = [[0.18,0.78],[0.2,0.55],[0.27,0.38],[0.24,0.22],[0.14,0.15],[0.07,0.24],[0.52,0.5],[0.56,0.28],[0.82,0.35],[0.6,0.72]];
