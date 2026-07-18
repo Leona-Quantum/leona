@@ -309,11 +309,17 @@ async def stage_artifact_version(
         raise
 
     artifact.current_version_id = version.id
-    # A new revision cannot inherit a stale accept/reject decision made about
-    # different content (repository Step 4 plan: "a new source revision
-    # cannot reuse stale review/evidence"). Non-terminal states are left
-    # alone — there is no stale acceptance to leak from them.
-    if artifact.review_state in (ReviewState.ACCEPTED, ReviewState.REJECTED):
+    # A new revision cannot inherit a stale review outcome made about different
+    # content (repository Step 4 plan: "a new source revision cannot reuse
+    # stale review/evidence"). PENDING_REVIEW resets too: otherwise a reviewer
+    # could accept content staged after submission. QUARANTINED deliberately
+    # survives — it is a rights hold on the artifact, and staging new bytes
+    # must never lift a legal hold.
+    if artifact.review_state in (
+        ReviewState.PENDING_REVIEW,
+        ReviewState.ACCEPTED,
+        ReviewState.REJECTED,
+    ):
         artifact.review_state = ReviewState.DRAFT
     await session.flush()
     return version
@@ -432,10 +438,16 @@ async def decide_license_assertion(
     )
     if previous is None:
         raise NotFoundError("license assertion")
+    resolved_spdx_id = spdx_id if spdx_id is not None else previous.spdx_id
+    # Approval must name a concrete license: an APPROVED assertion with
+    # spdx_id=None would satisfy the publication-readiness check (it only
+    # looks at the decision) and make an unknown license publishable.
+    if decision == LicenseDecision.APPROVED and resolved_spdx_id is None:
+        raise ValueError("approving a license requires a resolved spdx_id")
     assertion = LicenseAssertion(
         id=uuid7(),
         artifact_version_id=artifact_version_id,
-        spdx_id=spdx_id if spdx_id is not None else previous.spdx_id,
+        spdx_id=resolved_spdx_id,
         assertion_kind=previous.assertion_kind,
         evidence_hash=evidence_hash if evidence_hash is not None else previous.evidence_hash,
         license_scope=previous.license_scope,

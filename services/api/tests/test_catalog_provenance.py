@@ -118,6 +118,32 @@ async def test_new_version_resets_stale_accepted_review_state():
     assert artifact.current_version_id == version.id
 
 
+async def test_new_version_resets_pending_review_so_review_matches_submitted_content():
+    """A reviewer must never be able to accept content that was staged after
+    submission: staging over PENDING_REVIEW returns the artifact to DRAFT so
+    the importer has to re-submit the new content explicitly."""
+    configured = authority()
+    scope = configured.importer_scope()
+    workspace = _importer_workspace(configured)
+    artifact = _artifact(configured, review_state=ReviewState.PENDING_REVIEW)
+    session = SequencedSession([Row(workspace), Row(artifact), Row(1)])
+    await catalog.stage_artifact_version(
+        scope,
+        session,
+        artifact.id,
+        authority=configured,
+        raw_source=b"x",
+        normalized_source="x",
+        code="x",
+        code_lang="python",
+        authoritative_framework=Framework.QISKIT,
+        authoritative_framework_version="1.0",
+        source_language="python",
+        metadata_schema_version="1",
+    )
+    assert artifact.review_state == ReviewState.DRAFT
+
+
 async def test_new_version_leaves_non_terminal_review_state_alone():
     configured = authority()
     scope = configured.importer_scope()
@@ -289,6 +315,37 @@ async def test_decide_license_assertion_rejects_pending_decision():
             uuid.uuid4(),
             authority=configured,
             decision=LicenseDecision.PENDING,
+        )
+
+
+async def test_decide_license_assertion_cannot_approve_without_resolved_spdx_id():
+    """Approving an unknown license without supplying an identifier would mint
+    an APPROVED assertion with spdx_id=None — and publication readiness only
+    checks the decision, so the unknown license would become publishable."""
+    configured = authority()
+    reviewer_scope = _reviewer_scope(configured)
+    workspace = Workspace(
+        id=configured.workspace_id, kind="system", name="catalog", owner_user_id=uuid.uuid4()
+    )
+    artifact = _artifact(configured)
+    version = _version(artifact.id)
+    previous = LicenseAssertion(
+        id=uuid.uuid4(),
+        artifact_version_id=version.id,
+        spdx_id=None,  # unknown license — nothing to inherit
+        assertion_kind=LicenseAssertionKind.DECLARED,
+        license_scope=LicenseScope.WHOLE,
+        reviewer_decision=LicenseDecision.QUARANTINED,
+    )
+    session = SequencedSession([Row(workspace), Row((artifact, version)), Row(previous)])
+    with pytest.raises(ValueError, match="spdx_id"):
+        await catalog.decide_license_assertion(
+            reviewer_scope,
+            session,
+            version.id,
+            authority=configured,
+            decision=LicenseDecision.APPROVED,
+            # no spdx_id supplied
         )
 
 
