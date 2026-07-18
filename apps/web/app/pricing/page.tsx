@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { PublicSite } from "../../components/public-site";
+import { Reveal } from "../../components/reveal";
 import { PRICING_COPY } from "../../lib/public-copy";
 import { getPublicLocale } from "../../lib/public-locale-server";
 import { isPublicDemoEnabled } from "../../lib/public-demo";
@@ -21,8 +22,9 @@ export default async function PricingPage() {
       </section>
 
       <section className="mj-pricing-grid" aria-label={locale === "ja" ? "Leona Quantumのプラン" : "Leona Quantum plans"}>
-        {copy.plans.map((plan) => (
-          <article className={`mj-pricing-card mj-pricing-card--${plan.tone}`} key={plan.name}>
+        {copy.plans.map((plan, index) => (
+          <Reveal delay={index * 90} key={plan.name}>
+            <article className={`mj-pricing-card mj-pricing-card--${plan.tone}`}>
             <div className="mj-pricing-card-head">
               <h2>{plan.name}</h2>
               {plan.tone === "featured" ? <span className="mj-pricing-mark">{locale === "ja" ? "おすすめ" : "Recommended"}</span> : null}
@@ -40,17 +42,20 @@ export default async function PricingPage() {
             >
               {plan.name === "Free" && !demoEnabled ? (locale === "ja" ? "お問い合わせ" : "Talk to us") : plan.action}
             </a>
-          </article>
+            </article>
+          </Reveal>
         ))}
       </section>
 
-      <section className="mj-pricing-note" aria-labelledby="pricing-note-heading">
-        <div>
-          <p className="mj-section-label">{copy.note.label}</p>
-          <h2 id="pricing-note-heading">{copy.note.title}</h2>
-        </div>
-        <p>{copy.note.body}</p>
-      </section>
+      <Reveal>
+        <section className="mj-pricing-note" aria-labelledby="pricing-note-heading">
+          <div>
+            <p className="mj-section-label">{copy.note.label}</p>
+            <h2 id="pricing-note-heading">{copy.note.title}</h2>
+          </div>
+          <p>{copy.note.body}</p>
+        </section>
+      </Reveal>
     </PublicSite>
   );
 }

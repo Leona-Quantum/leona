@@ -350,16 +350,43 @@ body {
     transform: none;
   }
 }
+/* Only the first viewport rises at mount. Below-fold sections animate via the
+   scroll Reveal instead — a mount animation there has already finished by the
+   time the visitor scrolls to it, which made the page feel static past the
+   fold (Owner ask 2026-07-18: nicer to scroll through). */
 .mj-company-hero-copy,
 .mj-company-pipeline-band,
-.mj-company-section,
-.mj-company-final-cta {
+.mj-company-scroll-cue {
   animation: mj-company-rise 600ms ease-out both;
 }
 .mj-company-pipeline-band { animation-delay: 100ms; }
-.mj-company-section:nth-of-type(3) { animation-delay: 160ms; }
-.mj-company-section:nth-of-type(4) { animation-delay: 220ms; }
-.mj-company-final-cta { animation-delay: 280ms; }
+.mj-company-scroll-cue { animation-delay: 220ms; }
+.mj-company-scroll-cue-chevron {
+  animation: mj-scroll-cue-bob 2.4s ease-in-out infinite;
+}
+@keyframes mj-scroll-cue-bob {
+  0%, 100% { transform: translateY(0); opacity: 0.7; }
+  50% { transform: translateY(4px); opacity: 1; }
+}
+/* Other public heroes get the same entrance rise as the landing hero so the
+   site opens as one voice. (Smooth scrolling for the cue is scoped to its
+   click handler — html-level scroll-behavior would animate App Router
+   navigation scroll resets.) */
+.mj-open-source-hero,
+.mj-public-page-hero,
+.mj-contact-hero {
+  animation: mj-company-rise 600ms ease-out both;
+}
+/* Card hover motion for the other public surfaces — same vocabulary as the
+   landing principle cards; statics stay in the vendored UI package. */
+.mj-pricing-card,
+.mj-open-source-card {
+  transition: transform 150ms ease-out, border-color 150ms ease-out;
+}
+.mj-pricing-card:hover,
+.mj-open-source-card:hover {
+  transform: translateY(-3px);
+}
 .mj-company-orbit-ring--two { animation: mj-company-orbit 18s linear infinite; }
 .mj-company-orbit-ring--one { animation: mj-company-orbit-reverse 24s linear infinite; }
 @keyframes mj-company-rise {
@@ -375,10 +402,22 @@ body {
 @media (prefers-reduced-motion: reduce) {
   .mj-company-hero-copy,
   .mj-company-pipeline-band,
-  .mj-company-section,
-  .mj-company-final-cta,
+  .mj-company-scroll-cue,
+  .mj-company-scroll-cue-chevron,
+  .mj-open-source-hero,
+  .mj-public-page-hero,
+  .mj-contact-hero,
   .mj-company-orbit-ring--one,
   .mj-company-orbit-ring--two {
     animation: none;
+  }
+  /* :hover-level selectors required: a plain element override loses
+     specificity to the .foo:hover transform rule. */
+  .mj-pricing-card,
+  .mj-pricing-card:hover,
+  .mj-open-source-card,
+  .mj-open-source-card:hover {
+    transition: none;
+    transform: none;
   }
 }
