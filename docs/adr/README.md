@@ -20,3 +20,7 @@ An architecture choice without an ADR did not happen.
   fingerprints with immutable version-bound evidence.
 - 2026-07-18: ADR-0019 accepts the pinned 285-record snapshot as an idempotent
   importer bootstrap for Neon, never as a migration or runtime data source.
+- 2026-07-19: ADR-0020 enforces append-only license assertion history in
+  PostgreSQL rather than relying on repository convention.
+- 2026-07-19: ADR-0021 requires database-clock lease fencing for terminal queue
+  writes and one transaction for Dead Letter Run closure.
