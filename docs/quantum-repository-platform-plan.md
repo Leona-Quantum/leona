@@ -602,7 +602,12 @@ see `docs/repository-step5a-import-skeleton.md` and `docs/repository-step5a-neon
 Rollback: disable import creation and drain/cancel active jobs; staged data remains non-public for
 audit or approved deletion.
 
-#### Step 5b - safe fetcher and real sources (not started; needs its own go-ahead)
+#### Step 5b - safe fetcher and real sources (in progress; ADR-0017 review pending)
+
+Owner go-ahead given 2026-07-18. Core infrastructure (SSRF-hardened bounded fetcher +
+credential-separated subprocess runner) is implemented on `feature/repository-step5b` —
+see `docs/repository-step5b-fetcher.md`. Real connectors and pipeline wiring remain
+blocked on the ADR-0017 security review and verified connector coordinates.
 
 Scope:
 
