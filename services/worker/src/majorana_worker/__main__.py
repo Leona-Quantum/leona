@@ -69,14 +69,25 @@ async def _heartbeat_loop(factory, *, job_id: Any, lease_token, stop: asyncio.Ev
         except TimeoutError:
             pass
         try:
-            async with factory() as session:
-                renewed = await system.heartbeat_job(
-                    session,
-                    job_id=job_id,
-                    lease_token=lease_token,
-                    lease_seconds=JOB_LEASE_S,
-                )
-                await session.commit()
+            # Bound the renewal I/O by the time actually available inside the
+            # lease, keeping the same one-heartbeat safety margin the failure
+            # path below uses. A *hanging* session/heartbeat/commit would
+            # otherwise never return, the deadline check would never run, and
+            # the handler would keep executing after another worker claimed
+            # the expired job. A zero/negative budget expires immediately and
+            # lands in the same fail-closed branch.
+            io_budget = max(
+                0.0, min(JOB_HEARTBEAT_S, local_deadline - loop.time() - JOB_HEARTBEAT_S)
+            )
+            async with asyncio.timeout(io_budget):
+                async with factory() as session:
+                    renewed = await system.heartbeat_job(
+                        session,
+                        job_id=job_id,
+                        lease_token=lease_token,
+                        lease_seconds=JOB_LEASE_S,
+                    )
+                    await session.commit()
         except Exception as exc:
             # A short database outage may recover within the existing lease. Do
             # not keep executing once the locally known expiry is too close.
