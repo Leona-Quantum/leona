@@ -430,26 +430,6 @@
         "title": "BaselineKind",
         "type": "string"
       },
-      "BaselinePlan": {
-        "additionalProperties": false,
-        "properties": {
-          "kind": {
-            "$ref": "#/components/schemas/BaselineKind"
-          },
-          "reason": {
-            "description": "Why this classical baseline applies, or why none does",
-            "minLength": 3,
-            "title": "Reason",
-            "type": "string"
-          }
-        },
-        "required": [
-          "kind",
-          "reason"
-        ],
-        "title": "BaselinePlan",
-        "type": "object"
-      },
       "BaselineResult": {
         "additionalProperties": false,
         "properties": {
@@ -1300,17 +1280,6 @@
             ],
             "default": null
           },
-          "baseline_plan": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/BaselinePlan"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null
-          },
           "domain": {
             "description": "Problem domain: chemistry, finance, ...",
             "minLength": 2,
@@ -1477,6 +1446,15 @@
         ],
         "title": "PlanProduced",
         "type": "object"
+      },
+      "PlannableVerificationMethod": {
+        "description": "The subset of VerificationMethod the worker can actually evaluate.\n\nThe planner's JSON schema is built from this enum, not from VerificationMethod,\nso a model doing schema-guided decoding cannot request a method that has no\ndispatch branch in the worker. The wider enum stays intact because stored runs\nand the 0001 check constraint still carry the retired values.",
+        "enum": [
+          "statistical",
+          "return_contract"
+        ],
+        "title": "PlannableVerificationMethod",
+        "type": "string"
       },
       "PublicCatalogEntry": {
         "additionalProperties": false,
@@ -2948,7 +2926,7 @@
           "methods": {
             "description": "Verification primitives to run against the generated code",
             "items": {
-              "$ref": "#/components/schemas/VerificationMethod"
+              "$ref": "#/components/schemas/PlannableVerificationMethod"
             },
             "minItems": 1,
             "title": "Methods",

@@ -62,6 +62,19 @@ class VerificationMethod(StrEnum):
     QASM_PARSE = "qasm_parse"
 
 
+class PlannableVerificationMethod(StrEnum):
+    """The subset of VerificationMethod the worker can actually evaluate.
+
+    The planner's JSON schema is built from this enum, not from VerificationMethod,
+    so a model doing schema-guided decoding cannot request a method that has no
+    dispatch branch in the worker. The wider enum stays intact because stored runs
+    and the 0001 check constraint still carry the retired values.
+    """
+
+    STATISTICAL = "statistical"
+    RETURN_CONTRACT = "return_contract"
+
+
 class VerificationResultKind(StrEnum):
     PASS = "pass"
     FAIL = "fail"

@@ -19,6 +19,7 @@ from .enums import (
     LicenseScope,
     MeasurementPolicy,
     Optimizer,
+    PlannableVerificationMethod,
     PublicationState,
     ReviewState,
     Role,
@@ -84,7 +85,6 @@ from .models import (
 )
 from .plan import (
     ArtifactContract,
-    BaselinePlan,
     Plan,
     PlanParameters,
     SuccessCriteria,
@@ -125,7 +125,6 @@ __all__ = [
     "ArtifactType",
     "ArtifactVersion",
     "BaselineKind",
-    "BaselinePlan",
     "BaselineResult",
     "CatalogProvenance",
     "CodeFinalized",
@@ -160,6 +159,7 @@ __all__ = [
     "PlanParameters",
     "PlanProduced",
     "PublicCatalogEntry",
+    "PlannableVerificationMethod",
     "PublicationState",
     "QasmEmission",
     "ResearchCitation",

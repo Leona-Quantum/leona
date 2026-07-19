@@ -6,7 +6,6 @@ from __future__ import annotations
 import json
 import re
 
-from majorana_contracts.enums import VerificationMethod
 from majorana_contracts.plan import Plan
 from majorana_llm.models import AnalysisOutput
 from pydantic import ValidationError
@@ -49,19 +48,11 @@ def parse_plan(text: str) -> Plan:
                 **success_criteria,
                 "additional_notes": [success_criteria["additional_notes"]],
             }
-        plan = Plan.model_validate(payload)
-        removed_methods = {
-            VerificationMethod.BRUTE_FORCE,
-            VerificationMethod.EXACT_DIAG,
-        }
-        if plan.baseline_plan is not None or (
-            plan.verification_plan and removed_methods.intersection(plan.verification_plan.methods)
-        ):
-            raise StageOutputError(
-                "planning output requested removed baseline verification; use deterministic "
-                "framework-native evidence and semantic critic verification"
-            )
-        return plan
+        # Retired verification methods and baseline_plan are normalized away by the
+        # Plan contract itself rather than rejected here. Rejecting them was the
+        # single largest source of permanently-failed runs, and nothing downstream
+        # ever read either one. See majorana_contracts.plan.
+        return Plan.model_validate(payload)
     except StageOutputError:
         raise
     except (ValidationError, json.JSONDecodeError, TypeError) as exc:

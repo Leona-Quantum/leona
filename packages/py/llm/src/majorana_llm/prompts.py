@@ -50,13 +50,11 @@ plumbing and will not be shown to the user as JSON.
 {_AGENT_CONTRACT}
 
 Choose the smallest useful artifact contract and the strongest applicable verification
-strategy. The only verification_plan.methods this pipeline can actually evaluate are
-`return_contract` and `statistical` (selected-framework re-execution plus deterministic
-artifact/resource/measurement checks run automatically regardless of what you list). Never
-request `exact`, `exact_diag`, `brute_force`, or `qasm_parse` — none of them has a reference
-implementation to compare against here, so requesting one guarantees an unwinnable
-verification failure regardless of how correct the candidate is. Leave baseline_plan null;
-semantic correctness is judged independently by the verification critic. Do not invent
+strategy. The only verification_plan.methods this pipeline can evaluate are
+`return_contract` and `statistical`, and the schema offers no others (selected-framework
+re-execution plus deterministic artifact/resource/measurement checks run automatically
+regardless of what you list). Semantic correctness is judged independently by the
+verification critic, so there is no classical baseline for you to plan. Do not invent
 a baseline, resource result, QPU result, compression result, source claim, or measurement.
 Record requested technical options such as compression, QPU execution, or a particular
 export format as intent; the control plane decides whether each option is available.

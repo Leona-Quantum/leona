@@ -3,7 +3,13 @@ import sys
 from types import SimpleNamespace
 
 import pytest
-from majorana_contracts.enums import Framework, RunMode, Stage
+from majorana_contracts.enums import (
+    Framework,
+    PlannableVerificationMethod,
+    RunMode,
+    Stage,
+)
+from majorana_contracts.plan import Plan
 from majorana_llm import (
     LLMRequest,
     StageOutputError,
@@ -230,11 +236,40 @@ def test_parse_plan_tolerates_fenced_json_and_prose():
     assert parse_plan(wrapped).algorithm == "Bell"
 
 
-def test_parse_plan_rejects_removed_baseline_verification_for_new_runs():
-    payload = PLAN_JSON | {"verification_plan": {"methods": ["brute_force"]}}
+def test_parse_plan_normalizes_retired_verification_methods_instead_of_failing():
+    payload = PLAN_JSON | {"verification_plan": {"methods": ["brute_force", "statistical"]}}
 
-    with pytest.raises(StageOutputError, match="removed baseline verification"):
-        parse_plan(json.dumps(payload))
+    plan = parse_plan(json.dumps(payload))
+
+    assert plan.verification_plan is not None
+    assert plan.verification_plan.methods == [PlannableVerificationMethod.STATISTICAL]
+
+
+def test_parse_plan_falls_back_to_return_contract_when_every_method_is_retired():
+    payload = PLAN_JSON | {"verification_plan": {"methods": ["brute_force", "exact_diag"]}}
+
+    plan = parse_plan(json.dumps(payload))
+
+    assert plan.verification_plan is not None
+    assert plan.verification_plan.methods == [PlannableVerificationMethod.RETURN_CONTRACT]
+
+
+def test_parse_plan_drops_a_retired_baseline_plan_instead_of_failing():
+    payload = PLAN_JSON | {
+        "baseline_plan": {"kind": "hamiltonian", "reason": "compare against exact diagonalization"}
+    }
+
+    plan = parse_plan(json.dumps(payload))
+
+    assert not hasattr(plan, "baseline_plan")
+
+
+def test_plan_schema_never_offers_a_method_the_worker_cannot_evaluate():
+    schema = json.dumps(Plan.model_json_schema())
+
+    assert "baseline_plan" not in schema
+    for retired in ("brute_force", "exact_diag", "qasm_parse"):
+        assert retired not in schema
 
 
 def test_parse_plan_normalizes_scalar_additional_notes_from_json_object_mode():

@@ -208,15 +208,6 @@ export interface components {
          * @enum {string}
          */
         BaselineKind: "maxcut" | "qubo" | "portfolio" | "hamiltonian" | "none";
-        /** BaselinePlan */
-        BaselinePlan: {
-            kind: components["schemas"]["BaselineKind"];
-            /**
-             * Reason
-             * @description Why this classical baseline applies, or why none does
-             */
-            reason: string;
-        };
         /** BaselineResult */
         BaselineResult: {
             kind: components["schemas"]["BaselineKind"];
@@ -671,8 +662,6 @@ export interface components {
             algorithm_rationale: string;
             /** @default null */
             artifact_contract: components["schemas"]["ArtifactContract"] | null;
-            /** @default null */
-            baseline_plan: components["schemas"]["BaselinePlan"] | null;
             /**
              * Domain
              * @description Problem domain: chemistry, finance, ...
@@ -745,6 +734,17 @@ export interface components {
              */
             type: "plan.produced";
         };
+        /**
+         * PlannableVerificationMethod
+         * @description The subset of VerificationMethod the worker can actually evaluate.
+         *
+         *     The planner's JSON schema is built from this enum, not from VerificationMethod,
+         *     so a model doing schema-guided decoding cannot request a method that has no
+         *     dispatch branch in the worker. The wider enum stays intact because stored runs
+         *     and the 0001 check constraint still carry the retired values.
+         * @enum {string}
+         */
+        PlannableVerificationMethod: "statistical" | "return_contract";
         /**
          * PublicCatalogEntry
          * @description A published catalog record served to anonymous readers (repository Step 6).
@@ -1461,7 +1461,7 @@ export interface components {
              * Methods
              * @description Verification primitives to run against the generated code
              */
-            methods: components["schemas"]["VerificationMethod"][];
+            methods: components["schemas"]["PlannableVerificationMethod"][];
             /**
              * Reference Method
              * @description Independent reference, e.g. exact diagonalization
