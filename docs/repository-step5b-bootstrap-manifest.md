@@ -2,19 +2,19 @@
 
 Date: 2026-07-19
 State: implementation + tests complete; local-only, no network, no DB, no TS source mutation
-Implements: [ADR-0019](adr/0019-pinned-catalog-bootstrap.md) (the pinned 285-record snapshot bootstraps
+Implements: [ADR-0019](adr/0019-pinned-catalog-bootstrap.md) (the pinned 283-record snapshot bootstraps
 Neon through the importer)
 
 ## User outcome
 
-The validated 285-record public catalog can now be captured as a deterministic, schema-versioned,
+The validated 283-record public catalog can now be captured as a deterministic, schema-versioned,
 integrity-checked **bootstrap manifest** — the auditable index a later local connector (Slice B) submits
 through the durable import pipeline so Neon becomes the catalog authority reproducibly. This slice touches
 no database and no network, and never modifies the TypeScript catalog source (ADR-0019).
 
 ## Why this is off the network critical path
 
-ADR-0019's bootstrap uses a **local, codebase-pinned** manifest, not an outbound fetch. So the 285-record
+ADR-0019's bootstrap uses a **local, codebase-pinned** manifest, not an outbound fetch. So the 283-record
 import does **not** depend on Step 5b's real network fetcher (MQT Bench / QASMBench / SSRF hardening) — that
 remains a separate, larger-surface slice for *future* sources. This slice only serializes records the repo
 already ships.
@@ -35,11 +35,11 @@ already ships.
   esbuild (same mechanism as `scripts/check-repository-data.mjs`; Node cannot import the `.ts` directly),
   reads `PUBLIC_REPOSITORY_ENTRIES`, and writes the manifest. `--check` regenerates in-memory and fails on
   any drift (CI). `--source-commit` defaults to `git rev-parse HEAD`.
-- `services/api/catalog_bootstrap/manifest.json` — the committed 285-item manifest (~2 MB; it is the pinned
+- `services/api/catalog_bootstrap/manifest.json` — the committed 283-item manifest (~2 MB; it is the pinned
   catalog snapshot with per-item provenance hashes). **Generated — do not hand-edit;** regenerate instead.
 - Tests (`node:test`): `manifest-core.test.mjs` (determinism, input-order independence, canonicalization,
   per-item sha256 parity, checksum tamper-detection, duplicate/empty-slug rejection) and
-  `manifest-committed.test.mjs` (the committed artifact self-verifies: 285 items, checksum, no hash drift,
+  `manifest-committed.test.mjs` (the committed artifact self-verifies: 283 items, checksum, no hash drift,
   unique + slug-ascending).
 - CI: the `ts` job runs the unit tests and `--check` drift guard.
 
@@ -48,7 +48,7 @@ already ships.
 Each item embeds its canonical `source_blob` string, and Slice B's Python connector reads **those exact
 bytes** rather than re-serializing the entry. This removes any JS-vs-Python JSON canonicalization drift: the
 sha256 the connector computes equals the recorded `source_blob_sha256` by construction. Verified: Python
-`hashlib.sha256(item["source_blob"].encode("utf-8")).hexdigest()` matches all 285 recorded hashes.
+`hashlib.sha256(item["source_blob"].encode("utf-8")).hexdigest()` matches all 283 recorded hashes.
 
 ## Regenerate
 
@@ -65,7 +65,7 @@ sparse-array holes (→ `null`) — so no future entry shape can silently produc
 ## Deliberately NOT in this slice
 
 - The **local bootstrap connector** (a new `ImportProvider` that submits the manifest through
-  `repos/catalog_import.py`) and the full 285-item reconciliation run — Slice B.
+  `repos/catalog_import.py`) and the full 283-item reconciliation run — Slice B.
 - Any public read route, review/publish transition, or `apps/web` cutover — Slices C/D.
 - All production Neon provisioning, migration, import, and the `SYSTEM_CATALOG_ENABLED` flip — owner-only
   credential operations (see `docs/runbooks/neon-system-catalog.md` and

@@ -59,7 +59,7 @@ async def _bootstrap_import() -> None:
     """Import the pinned bootstrap manifest (ADR-0019) into the provisioned
     system catalog via the durable importer.
 
-    Content-only: the 285 records land as private/draft staged artifacts (no
+    Content-only: the 283 records land as private/draft staged artifacts (no
     review/publish here — that is a later, human-gated step). Idempotent: the
     idempotency key is derived from the manifest checksum, so re-running resumes
     the same batch rather than duplicating it. Run `provision` first.

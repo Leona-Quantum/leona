@@ -6,8 +6,5 @@
   "license_scope": "whole",
   "source_kind": "literature",
   "include_source_kinds": ["curated_reference", "verified_run"],
-  "excluded_identities": {
-    "grover-4bit-search": "community_submission, and the manifest itself records reviewedBy='Pending second reviewer' - not a first-party work and not fully reviewed",
-    "simon-query-circuit": "community_submission derived from a third-party learning module - not a first-party work, so the owner grant does not reach it"
-  }
+  "excluded_identities": {}
 }

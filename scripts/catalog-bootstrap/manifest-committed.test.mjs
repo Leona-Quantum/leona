@@ -21,8 +21,8 @@ test("committed manifest has the expected shape and pinned count", () => {
   assert.equal(manifest.manifest_schema_version, 1);
   assert.equal(manifest.ordering, "slug-asc");
   assert.equal(manifest.item_count, manifest.items.length);
-  // The validated public catalog is 285 records (scripts/check-repository-data.mjs).
-  assert.equal(manifest.item_count, 285);
+  // The validated public catalog is 283 records (scripts/check-repository-data.mjs).
+  assert.equal(manifest.item_count, 283);
   assert.match(manifest.source_commit, /^[0-9a-f]{40}$/);
 });
 

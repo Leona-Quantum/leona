@@ -1212,7 +1212,7 @@ $$
         code: `import cirq\n\nq0, q1, q2 = cirq.LineQubit.range(3)\ncircuit = cirq.Circuit(cirq.X(q0), cirq.X(q1), cirq.X(q2), cirq.CCZ(q0, q1, q2))`,
       },
     ],
-    relatedSlugs: ["toffoli-ccx-gate", "controlled-z-gate", "controlled-phase-gate", "grover-4bit-search"],
+    relatedSlugs: ["toffoli-ccx-gate", "controlled-z-gate", "controlled-phase-gate"],
     literature: [NIELSEN_CHUANG, OPENQASM3_PAPER],
   }),
 

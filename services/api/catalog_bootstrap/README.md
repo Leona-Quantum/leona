@@ -1,7 +1,7 @@
 # catalog_bootstrap
 
 `manifest.json` is the **pinned bootstrap manifest** for the Neon system catalog (ADR-0019): a
-deterministic, schema-versioned, integrity-checked snapshot of the validated 285-record public catalog,
+deterministic, schema-versioned, integrity-checked snapshot of the validated 283-record public catalog,
 generated from `apps/web/lib/public-repository.ts`.
 
 **It is generated — do not hand-edit.** Regenerate with `source_commit` pinned to the `dev` baseline the

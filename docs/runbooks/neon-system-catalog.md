@@ -1,7 +1,7 @@
 # Neon system catalog authority — Step 2 operator runbook
 
 Purpose: validate the database connection split and create only the empty,
-server-owned catalog boundary. This procedure must not import the 285 bootstrap
+server-owned catalog boundary. This procedure must not import the 283 bootstrap
 records or publish a public endpoint.
 
 ## Safety invariants
@@ -106,7 +106,7 @@ use `DATABASE_URL` and are idempotent — a partial run is resumed by re-running
 .venv/bin/python -m majorana_api.catalog_admin publish-bootstrap --attested-by "<your user id>"
 ```
 
-`bootstrap-import` must report `accepted=285 rejected=0 dead=0`; anything else means the
+`bootstrap-import` must report `accepted=283 rejected=0 dead=0`; anything else means the
 pinned manifest and the database disagree, so stop rather than re-running.
 
 `--attested-by` is the **owner's own user id** — a real, already-provisioned human account.
@@ -127,8 +127,11 @@ exact sentence that was signed. It publishes nothing.
 The policy is **fail-closed**: a record it neither includes nor explicitly excludes aborts
 the run. If you regenerate the manifest and a record appears whose `source.kind` the policy
 never considered, that abort is correct — extend the policy deliberately rather than
-loosening it. Expect `attested=283 excluded=2`; the two exclusions are community
-submissions, which the first-party grant does not reach and which stay private.
+loosening it. Expect `attested=283 excluded=0`. The corpus previously carried two community
+submissions the first-party grant could not reach; they were removed from the corpus
+outright (owner decision, 2026-07-19), so the policy now carries no exclusions and the grant
+covers every record that exists. `excluded_identities` is also validated in the other
+direction — an exclusion naming a record the manifest no longer contains aborts the run.
 
 `publish-bootstrap` re-evaluates readiness per record and refuses any that is missing a
 binding, so an unattested record cannot ride along — it is reported as blocked and left
