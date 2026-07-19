@@ -6,9 +6,14 @@
 # perfectly healthy service. This workflow is the deterministic replacement for
 # the "remember to redeploy after a migration" rule in docs/runbooks/deploys.md.
 #
-# It is a no-op until the owner provisions Workload Identity Federation and sets
-# the two repo secrets (setup steps: docs/runbooks/deploys.md § Automated deploy).
-# Until then it logs why it skipped rather than failing every merge.
+# Workload Identity Federation and the two repo secrets were provisioned
+# 2026-07-19 (docs/runbooks/deploys.md § Automated deploy — how auth is wired).
+# The credential check below is kept as a guard: if the secrets are ever cleared
+# or the WIF pool is deleted, this logs why it skipped rather than failing every
+# merge with an opaque auth error.
+#
+# Auth is scoped to refs/heads/dev by the provider's attribute condition, so
+# workflow_dispatch works only from `dev`.
 name: deploy
 
 on:

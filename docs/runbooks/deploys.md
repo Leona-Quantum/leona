@@ -12,25 +12,44 @@ predates. It recurred the same day, 11:31–11:55 UTC, from the same cause. A gr
 CI run says nothing about what production is running.
 
 `.github/workflows/deploy.yml` now does this automatically on every merge to
-`dev`. **The manual procedure below is still the fallback** (and the only path
-until the one-time setup in the next section is done).
+`dev`. **The manual procedure below is still the fallback.**
 
-## Automated deploy — one-time owner setup
+## Automated deploy — how auth is wired
 
-The workflow skips with a warning, rather than failing, until two repo secrets
-exist. Both come from a Workload Identity Federation pool, so no service-account
-key is ever stored in GitHub:
+Provisioned 2026-07-19 in project `majorana-core`. No service-account key exists;
+GitHub authenticates by Workload Identity Federation and receives a short-lived
+token. Recorded here so it can be audited or rebuilt — you should not need to
+touch any of it again.
 
-| Secret | Value |
+| Resource | Value |
 |---|---|
-| `GCP_WORKLOAD_IDENTITY_PROVIDER` | full resource name of the WIF provider |
-| `GCP_DEPLOY_SERVICE_ACCOUNT` | the deploy SA's email |
+| Deploy SA | `majorana-deploy@majorana-core.iam.gserviceaccount.com` |
+| WIF pool | `github` (global) |
+| WIF provider | `github-dev` |
+| Repo secret `GCP_WORKLOAD_IDENTITY_PROVIDER` | `projects/639400385957/locations/global/workloadIdentityPools/github/providers/github-dev` |
+| Repo secret `GCP_DEPLOY_SERVICE_ACCOUNT` | the deploy SA above |
 
-The deploy SA needs `roles/run.admin`, `roles/cloudbuild.builds.editor`,
-`roles/artifactregistry.writer`, `roles/logging.viewer`, and
-`roles/iam.serviceAccountUser` on the runtime SA. Restrict the WIF principal to
-this repository and to the `dev` branch — a provider scoped only by repo lets any
-branch deploy production.
+The SA holds `roles/run.admin`, `roles/cloudbuild.builds.editor`,
+`roles/artifactregistry.writer` and `roles/logging.viewer` on the project, plus
+`roles/iam.serviceAccountUser` on the runtime SA
+(`639400385957-compute@developer.gserviceaccount.com`).
+
+**Branch scoping lives in the provider's attribute condition, not in the IAM
+binding:**
+
+```
+assertion.repository=='EshMis/majorana' && assertion.ref=='refs/heads/dev'
+```
+
+The `principalSet` binding can only filter on one attribute, so filtering there
+by repository alone would let *any* branch of this repo deploy production. The
+attribute condition is what enforces both, and it is evaluated at token exchange
+— a run from any other ref cannot obtain a token at all.
+
+The practical consequence: **`workflow_dispatch` only works from `dev`.**
+Dispatching the workflow from any other branch fails at the auth step, by design.
+If you ever need a deploy from another branch, change the condition rather than
+loosening the binding.
 
 What the workflow does, in order: build the image from the merge commit → deploy
 the API dark under `--tag verify` → smoke-test that tag URL (`/health` is 200,
