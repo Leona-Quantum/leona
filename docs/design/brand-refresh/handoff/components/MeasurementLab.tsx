@@ -77,7 +77,7 @@ export function MeasurementLab() {
           <div style={{ display: "flex", justifyContent: "space-between", fontFamily: mono, fontSize: 11, color: "var(--text-2)", marginBottom: 6 }}>
             <span>P(↑) = {bias}%</span><span>P(↓) = {100 - bias}%</span>
           </div>
-          <input type="range" min={0} max={100} value={bias} onChange={(e) => setBias(Number(e.target.value))} style={{ width: "100%", accentColor: "var(--accent)" }} />
+          <input type="range" aria-label="Probability of measuring spin up, in percent" min={0} max={100} value={bias} onChange={(e) => setBias(Number(e.target.value))} style={{ width: "100%", accentColor: "var(--accent)" }} />
         </div>
         <div style={{ display: "flex", gap: 8 }}>
           <button onClick={measure} style={{ flex: 1, fontFamily: mono, fontSize: 12, padding: 10, borderRadius: 6, border: "none", background: "var(--accent)", color: "var(--bg-0)", cursor: "pointer", fontWeight: 500 }}>Measure</button>

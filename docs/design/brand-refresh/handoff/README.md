@@ -1,5 +1,13 @@
 # Leona Quantum — brand refresh handoff
 
+> **Status: design reference, not shipped code.** This folder lives under `docs/`
+> deliberately. It was briefly under `apps/web/`, where it was picked up as
+> application source and reviewed against the `apps/web` rules (Tailwind v4,
+> vendored `packages/ts/ui` components) that these sketches do not follow and are
+> not meant to. Port a component *into* `apps/web` — rewriting its inline styles as
+> Tailwind and its native controls as vendored components — rather than importing
+> from here.
+
 Drop-in assets for the `apps/web` Next.js app. Everything here reuses the existing
 design tokens (`packages/ts/ui/tokens.css`) — no new colors. Accent is `--accent`
 (moss `#7ba05b` dark / `#48682e` light), neutrals are the warm-gray ramp, fonts are

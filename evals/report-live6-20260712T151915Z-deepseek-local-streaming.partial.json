@@ -1,7 +1,7 @@
 {
   "total": 6,
-  "passed": 5,
-  "pass_rate": 0.8333333333333334,
+  "passed": 4,
+  "pass_rate": 0.6666666666666666,
   "cases": [
     {
       "id": "bench-01",
@@ -100,12 +100,16 @@
     {
       "id": "bench-28",
       "category": "G — Transpilation/export honesty",
-      "passed": true,
+      "passed": false,
       "run_status": "running",
       "verifier_decision": "fail",
       "export_status": "unsupported",
       "saved": false,
-      "reasons": [],
+      "reasons": [
+        "verifier_decision 'fail' != expected 'pass'",
+        "export_status 'unsupported' != expected 'lossless'",
+        "expected a saved artifact, none was written"
+      ],
       "evidence": {
         "failed_stage": null,
         "error_code": null,
@@ -116,5 +120,5 @@
       }
     }
   ],
-  "note": "DeepSeek-only six-case live run; local subprocess sandbox. Report reconstructed from the six durable run/event logs after the harness wrapper reached terminal runs but did not write its summary."
+  "note": "DeepSeek-only six-case live run; local subprocess sandbox. Report reconstructed from the six durable run/event logs after the harness wrapper reached terminal runs but did not write its summary. Two corrections to the original reconstruction (2026-07-19): bench-28 was scored 'passed' by hand despite a verifier 'fail', an 'unsupported' export and no saved artifact, all three of which the corpus case expects to be pass/lossless/saved — it is a fail, so the run pass_rate is 4/6, not 5/6. Its run_status is left at 'running' because that is what the durable log says: bench-28 is one of the runs stranded by the orphaned-run leak, not a run whose terminal state is unknown."
 }

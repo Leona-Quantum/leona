@@ -51,11 +51,26 @@ export function ElectronField({
       sp: 0.5 + Math.random() * 0.6, r: 1.1 + Math.random() * 1.6,
     }));
 
+    // getComputedStyle forces a synchronous style recalc, so it must not run per frame.
+    // Cache it and drop the cache on the two things that can change these tokens:
+    // a resize (canvas re-parented / re-scaled) and a theme swap.
+    let cached: { accent: string; bright: string } | null = null;
+
     function colors() {
+      if (cached) return cached;
       const st = getComputedStyle(canvas!);
       const accent = st.getPropertyValue("--accent").trim() || "olivedrab";
-      return { accent, bright: st.getPropertyValue("--text-0").trim() || "honeydew" };
+      cached = { accent, bright: st.getPropertyValue("--text-0").trim() || "honeydew" };
+      return cached;
     }
+
+    const themeObserver = new MutationObserver(() => {
+      cached = null;
+    });
+    themeObserver.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ["data-theme", "class"],
+    });
 
     let frame = 0;
     let raf = 0;
@@ -64,6 +79,7 @@ export function ElectronField({
     function resize() {
       const parent = canvas!.parentElement;
       if (!parent) return;
+      cached = null;
       const dpr = Math.min(window.devicePixelRatio || 1, 2);
       canvas!.width = parent.clientWidth * dpr;
       canvas!.height = parent.clientHeight * dpr;
@@ -113,7 +129,7 @@ export function ElectronField({
     if (canvas.parentElement) ro.observe(canvas.parentElement);
     if (!reduceMotion) raf = window.requestAnimationFrame(tick);
 
-    return () => { window.cancelAnimationFrame(raf); ro.disconnect(); };
+    return () => { window.cancelAnimationFrame(raf); ro.disconnect(); themeObserver.disconnect(); };
   }, [target]);
 
   return <canvas ref={canvasRef} className={className} aria-hidden="true" style={{ width: "100%", height: "100%", display: "block" }} />;

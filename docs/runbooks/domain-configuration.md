@@ -47,7 +47,11 @@ Add the records (they match what I already put in the Vercel domain card):
 | Name | Type | Target | Proxy |
 | --- | --- | --- | --- |
 | `@` | `A` | `76.76.21.21` | DNS only while verifying |
-| `www` | `CNAME` | `cname.vercel-dns-0.com` or the exact Vercel target | DNS only while verifying |
+| `www` | `CNAME` | the exact target shown on the Vercel domain card | DNS only while verifying |
+
+The CNAME target is project-specific. Copy it from **Vercel → project → Settings →
+Domains**; do not assume it. It read `cname.vercel-dns-0.com` when this runbook was
+written, which is a common value but not a universal one.
 
 In Cloudflare, `@` means the root domain. Set the orange-cloud proxy to
 **DNS only** during Vercel verification. After Vercel reports the domains as
@@ -62,7 +66,13 @@ required for this Vercel setup. Do not change existing mail (`MX`) or verificati
 - If Cloudflare does not verify, confirm the record is in the authoritative
   Cloudflare zone and temporarily use **DNS only** rather than the orange-cloud
   proxy.
-- DNS caches can take up to 24–48 hours to clear after nameserver changes.
+- Propagation here is TTL-bound, not delegation-bound. This procedure only edits
+  records inside a zone Cloudflare already serves, so the change is usually live
+  within minutes — bounded by the record's TTL and by any cached negative answer.
+  Check the authoritative zone directly (`dig @<cloudflare-ns> www.leonaquantum.com`)
+  and Vercel's own verification state rather than waiting on a resolver you don't
+  control. The 24–48 hour figure applies to nameserver delegation changes, which
+  this runbook does not make.
 
 ## References
 - [Vercel: setting up a custom domain](https://vercel.com/docs/domains/set-up-custom-domain)
