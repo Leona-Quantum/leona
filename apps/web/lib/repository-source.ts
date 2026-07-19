@@ -27,15 +27,25 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 /** Revalidation window for the catalog fetch, in seconds. */
 const CATALOG_REVALIDATE_SECONDS = 300;
 
-/** Fetch + JSON-decode one catalog URL, or null with a loud log. */
-async function fetchCatalogPayload(url: string): Promise<unknown | null> {
+/**
+ * Fetch + JSON-decode one catalog URL, or null with a loud log.
+ *
+ * `expected404` is set by the per-slug lookup, where a 404 is the ordinary
+ * answer for a slug that does not exist rather than a fault. Without it every
+ * visit to an unknown /repository/<slug> would write an error line that reads
+ * like an API outage, which is exactly the noise that makes a real outage hard
+ * to spot. Every other status, on every caller, still logs.
+ */
+async function fetchCatalogPayload(url: string, expected404 = false): Promise<unknown | null> {
   try {
     const upstream = await fetch(url, {
       headers: { Accept: "application/json" },
       next: { revalidate: CATALOG_REVALIDATE_SECONDS, tags: ["public-catalog"] },
     });
     if (!upstream.ok) {
-      console.error(`[repository-source] catalog fetch failed: HTTP ${upstream.status} (${url})`);
+      if (!(expected404 && upstream.status === 404)) {
+        console.error(`[repository-source] catalog fetch failed: HTTP ${upstream.status} (${url})`);
+      }
       return null;
     }
     return await upstream.json();
@@ -122,10 +132,10 @@ export async function getRepositoryEntry(slug: string): Promise<PublicRepository
   if (!isPublicCatalogApiEnabled()) {
     return PUBLIC_REPOSITORY_ENTRIES.find((entry) => entry.slug === slug);
   }
-  const payload = await fetchCatalogPayload(`${API_URL}/v1/catalog/entries/${encodeURIComponent(slug)}`);
-  // A miss is an ordinary 404 for an unknown slug, which fetchCatalogPayload
-  // already logged; fall through to the static corpus so a transient API
-  // failure does not 404 a record that genuinely exists.
+  const payload = await fetchCatalogPayload(`${API_URL}/v1/catalog/entries/${encodeURIComponent(slug)}`, true);
+  // Fall through to the static corpus on a miss so a transient API failure does
+  // not 404 a record that genuinely exists; a slug in neither is undefined, and
+  // the caller turns that into a real notFound().
   const parsed = payload === null ? null : parseCatalogEntries([payload]).entries[0] ?? null;
   return parsed ?? PUBLIC_REPOSITORY_ENTRIES.find((entry) => entry.slug === slug);
 }
