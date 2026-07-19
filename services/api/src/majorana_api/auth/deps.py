@@ -67,6 +67,10 @@ async def get_identity(
     WorkOS JWT template must add it (docs/runbooks/auth-dev.md). Failing closed
     beats persisting a placeholder identity.
     """
+    if token.workos_user_id.startswith("system:"):
+        raise HTTPException(
+            401, "reserved service identity", headers={"WWW-Authenticate": "Bearer"}
+        )
     email = token.claims.get("email")
     if not email:
         raise HTTPException(

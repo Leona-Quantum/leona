@@ -1,7 +1,8 @@
-"""FastAPI control plane — the only process that talks to Postgres.
+"""FastAPI control plane — one of two Postgres clients (API + Worker).
 
 REST + SSE under /v1; errors are RFC 9457 problem+json; CORS pinned to the web
-origin (02-architecture.md §3, 05-security.md §1).
+origin (02-architecture.md §3, 05-security.md §1). Both clients use the
+repository layer owned by this service; no other process may access Postgres.
 """
 
 from contextlib import asynccontextmanager

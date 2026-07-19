@@ -3,16 +3,28 @@ Pydantic models → OpenAPI (openapi.json) → generated TS (packages/ts/contrac
 
 from .enums import (
     Algorithm,
+    ArtifactKind,
     ArtifactType,
     BaselineKind,
+    CitationRelation,
+    ExecutionState,
     ExportStatus,
     Framework,
+    ImportItemState,
+    ImportJobStatus,
+    ImportProvider,
     JobStatus,
+    LicenseAssertionKind,
+    LicenseDecision,
+    LicenseScope,
     MeasurementPolicy,
     Optimizer,
+    PublicationState,
+    ReviewState,
     Role,
     RunMode,
     RunStatus,
+    SourceKind,
     Stage,
     TopLevelExecution,
     UsageKind,
@@ -77,15 +89,32 @@ from .plan import (
     VerificationPlan,
 )
 from .scope import Scope
-from .lifecycle import IllegalTransition, TERMINAL_STATUSES, assert_transition, is_terminal
+from .lifecycle import (
+    IllegalImportItemTransition,
+    IllegalReviewTransition,
+    IllegalTransition,
+    IMPORT_ITEM_TERMINAL_STATES,
+    TERMINAL_STATUSES,
+    assert_import_item_transition,
+    assert_review_transition,
+    assert_transition,
+    is_terminal,
+)
 
-CONTRACTS_VERSION = "1.0.0"
+# Versioning convention (see AGENTS.md "Versioning"): backward-compatible
+# additions (new enum values, new models, new optional fields) bump minor;
+# breaking changes bump major. Bump lands in the same PR as the change.
+# 1.1.0: Steps 2-5a additions — WorkspaceKind "system"; ArtifactKind /
+# ExecutionState / ReviewState / PublicationState; review + import-item
+# lifecycles; ImportProvider / ImportJobStatus / ImportItemState.
+CONTRACTS_VERSION = "1.1.0"
 
 __all__ = [
     "CONTRACTS_VERSION",
     "Algorithm",
     "Artifact",
     "ArtifactContract",
+    "ArtifactKind",
     "ArtifactSaved",
     "ArtifactType",
     "ArtifactVersion",
@@ -99,11 +128,22 @@ __all__ = [
     "ChatCompleted",
     "ChatDelta",
     "ChatError",
+    "CitationRelation",
+    "ExecutionState",
     "ExportClassified",
     "ExportStatus",
     "Framework",
+    "ImportItemState",
+    "ImportJobStatus",
+    "ImportProvider",
+    "IMPORT_ITEM_TERMINAL_STATES",
     "JobStatus",
+    "IllegalImportItemTransition",
+    "IllegalReviewTransition",
     "IllegalTransition",
+    "LicenseAssertionKind",
+    "LicenseDecision",
+    "LicenseScope",
     "LlmCall",
     "LlmDelta",
     "MeasurementPolicy",
@@ -111,9 +151,11 @@ __all__ = [
     "Plan",
     "PlanParameters",
     "PlanProduced",
+    "PublicationState",
     "QasmEmission",
     "ResearchCitation",
     "ResearchCompleted",
+    "ReviewState",
     "Role",
     "Run",
     "RunErrorEvent",
@@ -131,6 +173,7 @@ __all__ = [
     "ResourceMetrics",
     "ScreenResult",
     "Scope",
+    "SourceKind",
     "Stage",
     "StageFinished",
     "StageStarted",
@@ -153,6 +196,8 @@ __all__ = [
     "WorkspaceOverview",
     "WorkspaceKind",
     "run_event_adapter",
+    "assert_import_item_transition",
+    "assert_review_transition",
     "assert_transition",
     "is_terminal",
 ]

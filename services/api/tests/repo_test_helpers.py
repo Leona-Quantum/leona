@@ -59,3 +59,41 @@ def compiled(stmt) -> tuple[str, dict]:
 
 def make_scope(role: Role = Role.MEMBER) -> Scope:
     return Scope(user_id=uuid.uuid4(), workspace_id=uuid.uuid4(), role=role)
+
+
+class Row:
+    """Wraps one value with the subset of the Result API repo code calls."""
+
+    def __init__(self, value):
+        self._value = value
+
+    def scalars(self):
+        return self
+
+    def first(self):
+        return self._value
+
+    def scalar_one(self):
+        return self._value
+
+
+class SequencedSession:
+    """Returns queued results in call order; records every statement/insert."""
+
+    def __init__(self, results):
+        self._results = list(results)
+        self.statements = []
+        self.added = []
+
+    async def execute(self, stmt, params=None):
+        self.statements.append(stmt)
+        return self._results.pop(0)
+
+    def add(self, obj):
+        self.added.append(obj)
+
+    async def flush(self):
+        pass
+
+    async def rollback(self):
+        pass

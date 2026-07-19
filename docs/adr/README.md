@@ -12,3 +12,15 @@ An architecture choice without an ADR did not happen.
 - 2026-07-18: ADR-0015 defines bounded deterministic conversion across seven
   circuit formats, explicit OpenQASM target recipes, and a no-fabrication
   boundary for literature and operator records.
+- 2026-07-18: ADR-0016 proposes an isolated system catalog authority and
+  anonymous-safe public read boundary.
+- 2026-07-18: ADR-0017 proposes allowlisted ingestion, content quarantine, and
+  deny-all offline parsing.
+- 2026-07-18: ADR-0018 proposes separate byte, normalized, and semantic
+  fingerprints with immutable version-bound evidence.
+- 2026-07-18: ADR-0019 accepts the pinned 285-record snapshot as an idempotent
+  importer bootstrap for Neon, never as a migration or runtime data source.
+- 2026-07-19: ADR-0020 enforces append-only license assertion history in
+  PostgreSQL rather than relying on repository convention.
+- 2026-07-19: ADR-0021 requires database-clock lease fencing for terminal queue
+  writes and one transaction for Dead Letter Run closure.
