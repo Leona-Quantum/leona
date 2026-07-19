@@ -100,6 +100,20 @@ catalog data endpoint; leaving it off is the correct steady state until later st
 Only after provisioning reports `artifacts=0` and the live gates pass. All four commands
 use `DATABASE_URL` and are idempotent — a partial run is resumed by re-running it.
 
+**These three commands need `SYSTEM_CATALOG_ENABLED=true` in their own shell.** The earlier
+steps run fine with the flag off — `provision` only calls `require_configured()` — but
+`bootstrap-import`, `attest-bootstrap`, and `publish-bootstrap` all go through the catalog
+scope checks, and `CatalogAuthority.is_importer_scope` returns false while the flag is off.
+With it off they fail immediately with `AuthzError: invalid catalog importer scope`, which
+looks like a permissions problem and is not one. Export it for the CLI process only:
+
+```bash
+export SYSTEM_CATALOG_ENABLED=true    # this shell only — not the deployed API/Worker config
+```
+
+The deployed services stay on `SYSTEM_CATALOG_ENABLED=false` until step 8. Setting it for a
+local admin command exposes nothing: there is no server reading this process's environment.
+
 ```bash
 .venv/bin/python -m majorana_api.catalog_admin bootstrap-import
 .venv/bin/python -m majorana_api.catalog_admin attest-bootstrap  --attested-by "<your user id>"
