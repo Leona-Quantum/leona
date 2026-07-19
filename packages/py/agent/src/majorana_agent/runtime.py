@@ -38,6 +38,11 @@ class AgentRuntime:
         self._model = model
         self._observer = observer
         self._cancel_requested = cancel_requested
+        # Why the loop gave up, for the caller to surface. run() returns only an
+        # AgentState, so without this a failed run reports "agent tool loop
+        # failed" with no indication of which wall it hit — the budget it
+        # exhausted is known here and was previously discarded.
+        self.failure_reason: str | None = None
 
     async def run(self, run_id: UUID) -> AgentState:
         """Resume from durable history until publication or a policy/tool failure."""
@@ -66,6 +71,7 @@ class AgentRuntime:
                 # The crash-recovery case was handled above before asking the
                 # model for another call. Any completed ID proposed here is a
                 # replay, even if its result belongs to an older state.
+                self.failure_reason = f"replayed tool call {call.name.value}"
                 await self._store.set_state(run_id, AgentState.FAILED)
                 return AgentState.FAILED
             if self._observer is not None:
@@ -75,6 +81,7 @@ class AgentRuntime:
                 await self._observer.tool_finished(run_id, result)
             if not result.ok:
                 if result.error_code and result.error_code.endswith("_budget_exhausted"):
+                    self.failure_reason = result.error_code
                     await self._store.set_state(run_id, AgentState.FAILED)
                     return AgentState.FAILED
                 # A rejected model-selected call is durable feedback, not an
