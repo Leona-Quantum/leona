@@ -8,6 +8,7 @@ from majorana_contracts.enums import (
     PlannableVerificationMethod,
     RunMode,
     Stage,
+    VerificationMethod,
 )
 from majorana_contracts.plan import Plan
 from majorana_llm import (
@@ -242,7 +243,7 @@ def test_parse_plan_normalizes_retired_verification_methods_instead_of_failing()
     plan = parse_plan(json.dumps(payload))
 
     assert plan.verification_plan is not None
-    assert plan.verification_plan.methods == [PlannableVerificationMethod.STATISTICAL]
+    assert plan.verification_plan.methods == [VerificationMethod.STATISTICAL]
 
 
 def test_parse_plan_falls_back_to_return_contract_when_every_method_is_retired():
@@ -251,7 +252,7 @@ def test_parse_plan_falls_back_to_return_contract_when_every_method_is_retired()
     plan = parse_plan(json.dumps(payload))
 
     assert plan.verification_plan is not None
-    assert plan.verification_plan.methods == [PlannableVerificationMethod.RETURN_CONTRACT]
+    assert plan.verification_plan.methods == [VerificationMethod.RETURN_CONTRACT]
 
 
 def test_parse_plan_drops_a_retired_baseline_plan_instead_of_failing():
@@ -262,6 +263,22 @@ def test_parse_plan_drops_a_retired_baseline_plan_instead_of_failing():
     plan = parse_plan(json.dumps(payload))
 
     assert not hasattr(plan, "baseline_plan")
+
+
+def test_parsed_methods_are_identical_to_the_members_the_worker_dispatches_on():
+    """The worker's dispatch loop compares with `is`, not `==`.
+
+    A PlannableVerificationMethod member has an equal *value* but is a different
+    object, so it would fail every identity check and report every result as
+    "required evidence unavailable" — i.e. fail verification for every run.
+    """
+    payload = PLAN_JSON | {"verification_plan": {"methods": ["statistical", "brute_force"]}}
+
+    methods = parse_plan(json.dumps(payload)).verification_plan.methods
+
+    assert all(isinstance(method, VerificationMethod) for method in methods)
+    assert methods[0] is VerificationMethod.STATISTICAL
+    assert PlannableVerificationMethod.STATISTICAL is not VerificationMethod.STATISTICAL
 
 
 def test_plan_schema_never_offers_a_method_the_worker_cannot_evaluate():

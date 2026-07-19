@@ -14,6 +14,7 @@ from .enums import (
     Optimizer,
     PlannableVerificationMethod,
     TopLevelExecution,
+    VerificationMethod,
 )
 
 
@@ -63,8 +64,17 @@ class ArtifactContract(_PlanBase):
 
 
 class VerificationPlan(_PlanBase):
-    methods: list[PlannableVerificationMethod] = Field(
-        min_length=1, description="Verification primitives to run against the generated code"
+    methods: list[VerificationMethod] = Field(
+        min_length=1,
+        description="Verification primitives to run against the generated code",
+        # Narrow the *schema* the planner decodes against without narrowing the
+        # runtime type: the worker's dispatch loop compares these with `is`
+        # against VerificationMethod members, and a member of a different enum —
+        # even one with an equal value — would fail every identity check and
+        # report every result as "required evidence unavailable".
+        json_schema_extra={
+            "items": {"enum": [method.value for method in PlannableVerificationMethod]}
+        },
     )
 
     expected_metrics: list[str] | None = Field(
@@ -100,14 +110,16 @@ class VerificationPlan(_PlanBase):
         if not isinstance(value, list):
             return value
         plannable = {method.value for method in PlannableVerificationMethod}
-        kept = [item for item in value if str(item) in plannable]
+        # Return VerificationMethod members, never PlannableVerificationMethod
+        # ones — see the json_schema_extra note above.
+        kept = [VerificationMethod(item) for item in value if str(item) in plannable]
         if kept or not value:
             # A genuinely empty list is still a contract violation; min_length
             # rejects it. Only a list emptied by normalization gets a fallback.
             return kept
         # Everything the planner asked for was retired; fall back to the contract
         # check that runs unconditionally anyway rather than emitting an empty list.
-        return [PlannableVerificationMethod.RETURN_CONTRACT]
+        return [VerificationMethod.RETURN_CONTRACT]
 
 
 class Plan(_PlanBase):
