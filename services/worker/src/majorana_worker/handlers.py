@@ -24,8 +24,12 @@ from majorana_contracts.events import run_event_adapter
 from majorana_llm import LLMClient, LLMRequest, QUANTUM_AGENT_SYSTEM_PROMPT, default_llm, model_for
 from majorana_sandbox import LocalSubprocessSandbox, Sandbox, VercelSandbox
 
+from pathlib import Path
+
+from majorana_api.catalog_authority import CatalogAuthority
 from majorana_api.db import AsyncSession
-from majorana_api.jobs import RUN_EXECUTE_JOB_KIND
+from majorana_api.jobs import CATALOG_IMPORT_JOB_KIND, RUN_EXECUTE_JOB_KIND
+from majorana_api.repos import catalog_import as catalog_import_repo
 from majorana_api.repos import runs as runs_repo
 from majorana_api.repos import artifacts as artifacts_repo
 
@@ -86,15 +90,7 @@ class RepoEventSink:
     async def emit(
         self, type: str, payload: dict[str, Any], *, event_id: uuid.UUID | None = None
     ) -> None:
-        candidate = {
-            "run_id": self._run_id,
-            "seq": 0,  # placeholder; the repo assigns the real seq under lock
-            "ts": "1970-01-01T00:00:00Z",
-            "type": type,
-            **payload,
-        }
-        validated = run_event_adapter.validate_python(candidate)
-        wire = validated.model_dump(mode="json", exclude={"run_id", "seq", "ts", "type"})
+        wire = _validated_event_payload(self._run_id, type, payload)
         await runs_repo.append_run_event(
             self._scope,
             self._session,
@@ -104,6 +100,20 @@ class RepoEventSink:
             event_id=event_id,
         )
         await self._session.commit()  # each event visible to SSE readers immediately
+
+
+def _validated_event_payload(
+    run_id: uuid.UUID, type: str, payload: dict[str, Any]
+) -> dict[str, Any]:
+    candidate = {
+        "run_id": run_id,
+        "seq": 0,  # placeholder; the repo assigns the real seq under lock
+        "ts": "1970-01-01T00:00:00Z",
+        "type": type,
+        **payload,
+    }
+    validated = run_event_adapter.validate_python(candidate)
+    return validated.model_dump(mode="json", exclude={"run_id", "seq", "ts", "type"})
 
 
 class RepoRunStateStore:
@@ -426,7 +436,84 @@ async def _handle_conversation(
 
 
 JobHandler = Callable[[AsyncSession, dict[str, Any]], Awaitable[None]]
+DeadLetterHandler = Callable[[AsyncSession, dict[str, Any], str], Awaitable[None]]
+
+
+async def handle_run_dead_letter(
+    session: AsyncSession, payload: dict[str, Any], reason: str
+) -> None:
+    """Close an active run when its durable execution job cannot continue."""
+    scope = _scope_from_payload(payload)
+    run_id = uuid.UUID(payload["run_id"])
+    error_payload = _validated_event_payload(
+        run_id,
+        "run.error",
+        {"stage": None, "code": "job_dead_letter", "message": reason[:2000]},
+    )
+    await runs_repo.fail_run_from_dead_letter(
+        scope,
+        session,
+        run_id,
+        error_payload=error_payload,
+        error_event_id=uuid.uuid5(run_id, "run.error.job_dead_letter"),
+        finished_event_id=uuid.uuid5(run_id, "run.finished"),
+    )
+    await session.commit()
+
+
+def validated_fixtures_dir(payload: dict[str, Any]) -> Path:
+    """Fail closed on the fixtures path carried in a job payload.
+
+    The payload travels through the database between enqueue and dispatch, so the
+    worker must not treat it as a trusted filesystem reference: the resolved path
+    (symlinks followed) has to sit inside the operator-pinned
+    MAJORANA_IMPORT_FIXTURES_ROOT, and catalog imports refuse to run at all while
+    that root is unset.
+    """
+    root = os.environ.get("MAJORANA_IMPORT_FIXTURES_ROOT", "").strip()
+    if not root:
+        raise RuntimeError(
+            "MAJORANA_IMPORT_FIXTURES_ROOT is not set; refusing to process catalog imports"
+        )
+    root_path = Path(root).resolve()
+    requested = Path(payload["fixtures_dir"]).resolve()
+    if not requested.is_relative_to(root_path):
+        raise RuntimeError(
+            f"fixtures_dir {requested} escapes MAJORANA_IMPORT_FIXTURES_ROOT {root_path}"
+        )
+    return requested
+
+
+async def handle_catalog_import(session: AsyncSession, payload: dict[str, Any]) -> None:
+    """Advance one durable import batch by one pass over its non-terminal
+    items (repos/catalog_import.py). Idempotent and crash-safe: re-running
+    the same batch (same idempotency_key) only touches items still short of
+    a terminal state.
+
+    Step 5a scope only: the importer scope comes from server configuration
+    (CatalogAuthority), never the payload, and fixtures_dir is a local path
+    validated against the operator-pinned root — no network fetch happens here.
+    """
+    fixtures_dir = validated_fixtures_dir(payload)
+    authority = CatalogAuthority.from_env()
+    scope = authority.importer_scope()
+    import_job = await catalog_import_repo.get_import_job_by_idempotency_key(
+        session, payload["idempotency_key"]
+    )
+    await catalog_import_repo.process_import_batch(
+        scope,
+        session,
+        import_job.id,
+        authority=authority,
+        fixtures_dir=fixtures_dir,
+    )
+
 
 HANDLERS: dict[str, JobHandler] = {
     RUN_EXECUTE_JOB_KIND: handle_run_execute,
+    CATALOG_IMPORT_JOB_KIND: handle_catalog_import,
+}
+
+DEAD_LETTER_HANDLERS: dict[str, DeadLetterHandler] = {
+    RUN_EXECUTE_JOB_KIND: handle_run_dead_letter,
 }

@@ -5,6 +5,7 @@
 | SNYK_TOKEN | GitHub Actions secret (repo) | security.yml Snyk job | 2026-07-09 (UTC) |
 | NEON_API_KEY | GitHub Actions secret (repo) | ci.yml db job (branch create/delete) — Neon org API key `gh-ci-majorana` | 2026-07-10 |
 | DATABASE_URL | GCP Secret Manager (majorana-core) | Cloud Run api+worker — Neon pooled URL, default branch | 2026-07-10 |
+| DATABASE_URL_DIRECT | approved migration environment only; not API/Worker/Vercel | Alembic — Neon direct URL; not used by runtime applications; store, redact, and rotate as a database credential under the same requirements as DATABASE_URL | pending owner setup |
 | WORKOS_CLIENT_ID / WORKOS_API_KEY / WORKOS_COOKIE_PASSWORD | apps/web/.env.local (dev) + Vercel env Sensitive (deploy) | AuthKit (web); the API needs WORKOS_CLIENT_ID only. Vercel preview holds PLACEHOLDERS until the owner sets real values (step 5 browser test) | 2026-07-10 |
 | SENTRY_DSN (per service) + NEXT_PUBLIC_SENTRY_DSN | local secrets store (dev); GCP Secret Manager + Vercel env at deploy (pending) | api/worker (Sentry project `python`), web (project `web`), org `majorana-ms` — DSNs are client keys, not strict secrets | 2026-07-11 |
 | OTEL_EXPORTER_OTLP_ENDPOINT / OTEL_EXPORTER_OTLP_HEADERS | local secrets store (dev); GCP Secret Manager + Vercel env at deploy (pending) | all services → Grafana Cloud OTLP gateway (stack `yellowwildebeest692`); the header embeds token `majorana-otlp` (otlp-write scope) — treat as secret | 2026-07-11 |

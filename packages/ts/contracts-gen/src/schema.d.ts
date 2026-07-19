@@ -1538,7 +1538,7 @@ export interface components {
          * WorkspaceKind
          * @enum {string}
          */
-        WorkspaceKind: "personal" | "team";
+        WorkspaceKind: "personal" | "team" | "system";
         /** WorkspaceMember */
         WorkspaceMember: {
             /**

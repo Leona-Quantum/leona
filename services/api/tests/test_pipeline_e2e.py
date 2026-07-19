@@ -111,7 +111,8 @@ async def _work_until_run_processed(factory, run_id: str, *, llm: LLMClient | No
         async with factory() as session:
             job = await system.claim_job(session, worker_id="e2e-test")
             assert job is not None, f"queue drained before run {run_id} was processed"
-            job_id, payload = job.id, job.payload
+            job_id, payload, lease_token = job.id, job.payload, job.lease_token
+            assert lease_token is not None
             await session.commit()
         try:
             async with factory() as session:
@@ -122,7 +123,13 @@ async def _work_until_run_processed(factory, run_id: str, *, llm: LLMClient | No
         except Exception:
             status = "failed"
         async with factory() as session:
-            await system.finish_job(session, job_id=job_id, status=status)
+            await system.finish_job(
+                session,
+                job_id=job_id,
+                lease_token=lease_token,
+                status=status,
+                last_error_kind="e2e_handler" if status == "failed" else None,
+            )
             await session.commit()
         if payload.get("run_id") == run_id:
             assert status == "done"

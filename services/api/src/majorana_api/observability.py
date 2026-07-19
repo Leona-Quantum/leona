@@ -27,11 +27,22 @@ def init_telemetry(service_name: str) -> TracerProvider | None:
         return None
 
     from opentelemetry import trace
+    from opentelemetry import metrics
     from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
+    from opentelemetry.exporter.otlp.proto.http.metric_exporter import OTLPMetricExporter
     from opentelemetry.sdk.resources import Resource
+    from opentelemetry.sdk.metrics import MeterProvider
+    from opentelemetry.sdk.metrics.export import PeriodicExportingMetricReader
     from opentelemetry.sdk.trace.export import BatchSpanProcessor
 
-    provider = TracerProvider(resource=Resource.create({"service.name": service_name}))
+    resource = Resource.create({"service.name": service_name})
+    provider = TracerProvider(resource=resource)
     provider.add_span_processor(BatchSpanProcessor(OTLPSpanExporter()))
     trace.set_tracer_provider(provider)
+    metrics.set_meter_provider(
+        MeterProvider(
+            resource=resource,
+            metric_readers=[PeriodicExportingMetricReader(OTLPMetricExporter())],
+        )
+    )
     return provider

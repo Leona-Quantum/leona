@@ -93,6 +93,12 @@ class Artifact(Base):
     visibility: Mapped[str | None] = mapped_column(server_default="private")
     parent_artifact_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("artifacts.id"))
     current_version_id: Mapped[uuid.UUID | None] = mapped_column(_UUID)
+    # Catalog classification (migration 0014): NULL for every artifact outside
+    # the Step 3 private staging path (repos/catalog.py).
+    artifact_kind: Mapped[str | None]
+    execution_state: Mapped[str | None]
+    review_state: Mapped[str | None]
+    publication_state: Mapped[str | None]
     deleted_at: Mapped[dt.datetime | None]
     created_at: Mapped[dt.datetime | None] = mapped_column(server_default=func.now())
     updated_at: Mapped[dt.datetime | None] = mapped_column(server_default=func.now())
@@ -115,6 +121,82 @@ class ArtifactVersion(Base):
     framework_variants: Mapped[dict[str, Any] | None]
     resource_estimates: Mapped[dict[str, Any] | None]
     limitations: Mapped[str | None]
+    # Catalog hash fields (migration 0014): NULL outside Step 3 staging. See
+    # catalog_hashing.py for source_blob_sha256/normalized_source_hash
+    # meanings; normalized_source_hash carries a global UNIQUE constraint.
+    metadata_schema_version: Mapped[str | None]
+    authoritative_framework: Mapped[str | None]
+    authoritative_framework_version: Mapped[str | None]
+    source_language: Mapped[str | None]
+    source_blob_sha256: Mapped[str | None]
+    normalized_source_hash: Mapped[str | None]
+    semantic_fingerprint: Mapped[str | None]
+    semantic_fingerprint_algorithm: Mapped[str | None]
+    toolchain_digest: Mapped[str | None]
+    created_at: Mapped[dt.datetime | None] = mapped_column(server_default=func.now())
+
+
+class ArtifactSource(Base):
+    """Provenance (migration 0015): one pinned source record per version."""
+
+    __tablename__ = "artifact_sources"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True)
+    artifact_version_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("artifact_versions.id"), unique=True
+    )
+    source_kind: Mapped[str]
+    repository: Mapped[str | None]
+    ref: Mapped[str | None]
+    path: Mapped[str | None]
+    package_version: Mapped[str | None]
+    retrieved_at: Mapped[dt.datetime]
+    retrieval_metadata: Mapped[dict[str, Any] | None]
+    content_hash: Mapped[str]
+    created_at: Mapped[dt.datetime | None] = mapped_column(server_default=func.now())
+
+
+class LicenseAssertion(Base):
+    """Append-only rights ledger (migration 0015): never UPDATEd; a
+    correction is a new row with supersedes_assertion_id set."""
+
+    __tablename__ = "license_assertions"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True)
+    artifact_version_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("artifact_versions.id"))
+    spdx_id: Mapped[str | None]
+    assertion_kind: Mapped[str]
+    evidence_hash: Mapped[str | None]
+    license_scope: Mapped[str]
+    confidence: Mapped[float | None] = mapped_column(Numeric)
+    reviewer_decision: Mapped[str] = mapped_column(server_default="pending")
+    reviewer_user_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id"))
+    supersedes_assertion_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("license_assertions.id")
+    )
+    created_at: Mapped[dt.datetime | None] = mapped_column(server_default=func.now())
+
+
+class ArtifactCitation(Base):
+    __tablename__ = "artifact_citations"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True)
+    artifact_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("artifacts.id"))
+    doi: Mapped[str | None]
+    arxiv_id: Mapped[str | None]
+    url: Mapped[str | None]
+    specification_ref: Mapped[str | None]
+    authors: Mapped[list[str] | None] = mapped_column(JSONB)
+    year: Mapped[int | None] = mapped_column(Integer)
+    relation: Mapped[str]
+    created_at: Mapped[dt.datetime | None] = mapped_column(server_default=func.now())
+
+
+class ArtifactTag(Base):
+    __tablename__ = "artifact_tags"
+
+    artifact_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("artifacts.id"), primary_key=True)
+    tag: Mapped[str] = mapped_column(primary_key=True)
     created_at: Mapped[dt.datetime | None] = mapped_column(server_default=func.now())
 
 
@@ -308,6 +390,50 @@ class CandidateConversion(Base):
     created_at: Mapped[dt.datetime | None] = mapped_column(server_default=func.now())
 
 
+class ImportJob(Base):
+    """Durable import batch tracking (migration 0016, Step 5a). Dispatched by
+    the existing Job lease/heartbeat/retry loop (job_id); item outcomes are
+    tracked independently in ImportItem so one bad input can't roll back or
+    publish an entire batch."""
+
+    __tablename__ = "import_jobs"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True)
+    job_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("jobs.id"), unique=True)
+    provider: Mapped[str]
+    upstream_ref: Mapped[str]
+    idempotency_key: Mapped[str] = mapped_column(unique=True)
+    status: Mapped[str] = mapped_column(server_default="queued")
+    item_count: Mapped[int] = mapped_column(Integer, server_default="0")
+    accepted_count: Mapped[int] = mapped_column(Integer, server_default="0")
+    rejected_count: Mapped[int] = mapped_column(Integer, server_default="0")
+    dead_count: Mapped[int] = mapped_column(Integer, server_default="0")
+    started_at: Mapped[dt.datetime | None]
+    finished_at: Mapped[dt.datetime | None]
+    created_at: Mapped[dt.datetime | None] = mapped_column(server_default=func.now())
+    updated_at: Mapped[dt.datetime | None] = mapped_column(server_default=func.now())
+
+
+class ImportItem(Base):
+    __tablename__ = "import_items"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True)
+    import_job_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("import_jobs.id"))
+    upstream_identity: Mapped[str]
+    state: Mapped[str] = mapped_column(server_default="queued")
+    failure_code: Mapped[str | None]
+    raw_metadata: Mapped[dict[str, Any] | None]
+    source_blob_sha256: Mapped[str | None]
+    resulting_artifact_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("artifacts.id"))
+    resulting_version_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("artifact_versions.id")
+    )
+    attempts: Mapped[int] = mapped_column(Integer, server_default="0")
+    max_attempts: Mapped[int] = mapped_column(Integer, server_default="3")
+    created_at: Mapped[dt.datetime | None] = mapped_column(server_default=func.now())
+    updated_at: Mapped[dt.datetime | None] = mapped_column(server_default=func.now())
+
+
 class Job(Base):
     __tablename__ = "jobs"
 
@@ -317,10 +443,21 @@ class Job(Base):
     status: Mapped[str | None] = mapped_column(server_default="queued")
     run_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("runs.id"))
     attempts: Mapped[int | None] = mapped_column(Integer, server_default="0")
+    max_attempts: Mapped[int | None] = mapped_column(Integer, server_default="3")
     locked_by: Mapped[str | None]
     locked_at: Mapped[dt.datetime | None]
+    lease_token: Mapped[uuid.UUID | None] = mapped_column(_UUID)
+    lease_expires_at: Mapped[dt.datetime | None]
+    last_heartbeat_at: Mapped[dt.datetime | None]
     run_after: Mapped[dt.datetime | None] = mapped_column(server_default=func.now())
     last_error: Mapped[str | None]
+    last_error_kind: Mapped[str | None]
+    dead_lettered_at: Mapped[dt.datetime | None]
+    dead_letter_error: Mapped[str | None]
+    dead_letter_attempts: Mapped[int | None] = mapped_column(Integer, server_default="0")
+    dead_letter_locked_by: Mapped[str | None]
+    dead_letter_lease_token: Mapped[uuid.UUID | None] = mapped_column(_UUID)
+    dead_letter_lease_expires_at: Mapped[dt.datetime | None]
     created_at: Mapped[dt.datetime | None] = mapped_column(server_default=func.now())
     updated_at: Mapped[dt.datetime | None] = mapped_column(server_default=func.now())
 

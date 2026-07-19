@@ -3,7 +3,8 @@
 import pytest
 from fastapi import HTTPException
 
-from majorana_api.auth.deps import get_verified_token
+from majorana_api.auth.deps import get_identity, get_verified_token
+from majorana_api.auth.jwt import VerifiedToken
 from majorana_api.settings import Settings
 
 
@@ -28,4 +29,15 @@ async def test_local_dev_token_returns_synthetic_identity(local_settings: Settin
 async def test_local_dev_token_still_fails_closed(local_settings: Settings):
     with pytest.raises(HTTPException) as exc:
         await get_verified_token(local_settings, "Bearer wrong-token")
+    assert exc.value.status_code == 401
+
+
+async def test_reserved_service_identity_cannot_enter_human_auth_flow():
+    token = VerifiedToken(
+        workos_user_id="system:catalog-public-reader",
+        session_id="attacker-session",
+        claims={"email": "attacker@example.com"},
+    )
+    with pytest.raises(HTTPException) as exc:
+        await get_identity(token, None)
     assert exc.value.status_code == 401

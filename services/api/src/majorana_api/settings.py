@@ -7,6 +7,8 @@ reads the environment (05-security.md §1 Secrets).
 import os
 from dataclasses import dataclass
 
+from .catalog_authority import CatalogAuthority
+
 
 @dataclass(frozen=True)
 class Settings:
@@ -22,6 +24,7 @@ class Settings:
     local_dev_user_id: str = "local-dev-user"
     local_dev_email: str = "local-dev@majorana.test"
     local_dev_display_name: str = "Local developer"
+    catalog_authority: CatalogAuthority = CatalogAuthority()
 
     def __post_init__(self) -> None:
         if self.local_dev_auth and self.environment != "development":
@@ -67,4 +70,5 @@ class Settings:
             local_dev_display_name=os.environ.get(
                 "MAJORANA_LOCAL_DEV_DISPLAY_NAME", "Local developer"
             ),
+            catalog_authority=CatalogAuthority.from_env(),
         )

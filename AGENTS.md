@@ -33,9 +33,10 @@ credentials/secrets without the required owner approval.
 ## What this repo is
 
 Majorana: a platform that turns LLM-generated quantum code into verified, reproducible,
-reusable artifacts. One control plane (FastAPI, `services/api`) owns all business logic
-and is the only DB caller; `apps/web` (Next.js) is a thin renderer; untrusted generated
-code runs only in ephemeral network-locked sandboxes (`packages/py/sandbox`).
+reusable artifacts. The API and Worker are the only DB-connected processes, and both use
+the repository layer owned by `services/api`; `apps/web` (Next.js) is a thin renderer;
+untrusted generated code runs only in ephemeral network-locked sandboxes
+(`packages/py/sandbox`).
 
 ## Layout
 
@@ -51,7 +52,9 @@ code runs only in ephemeral network-locked sandboxes (`packages/py/sandbox`).
 1. **Blast-radius files** (see `.github/CODEOWNERS`) — migrations, contracts, sandbox,
    workflows, auth: never merged on subagent/Codex authority; orchestrator/owner reviews.
 2. **Authz invariant:** repository-layer functions take `Scope` as first arg and apply
-   workspace scoping themselves. No raw queries outside the repository layer.
+   workspace scoping themselves. The sole exception is `repos/system.py` for pre-Scope
+   identity bootstrap and workspace-neutral control-plane jobs; it may never expose
+   tenant data to request handlers. No raw queries outside the repository layer.
 3. **Sandbox invariant:** every sandbox creation applies deny-all egress explicitly.
    A sandbox that can reach the internet is a release-blocking bug.
 4. **No invented results:** benchmarks/evals report actual command output; a run that

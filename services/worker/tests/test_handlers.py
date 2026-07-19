@@ -1,9 +1,40 @@
+import uuid
+
 import pytest
 from majorana_contracts.enums import Framework, RunMode, RunStatus
 from majorana_llm import LLMResponse
 from majorana_sandbox import LocalSubprocessSandbox
 from majorana_worker import handlers
 from majorana_worker.context import RunContext
+
+
+async def test_dead_letter_handler_commits_terminal_sequence_once(monkeypatch):
+    commits = 0
+    observed = {}
+
+    class Session:
+        async def commit(self):
+            nonlocal commits
+            commits += 1
+
+    async def fail_run(scope, session, run_id, **kwargs):
+        observed.update(scope=scope, session=session, run_id=run_id, **kwargs)
+        return True
+
+    monkeypatch.setattr(handlers.runs_repo, "fail_run_from_dead_letter", fail_run, raising=False)
+    run_id = uuid.uuid4()
+    payload = {
+        "run_id": str(run_id),
+        "user_id": str(uuid.uuid4()),
+        "workspace_id": str(uuid.uuid4()),
+    }
+
+    await handlers.handle_run_dead_letter(Session(), payload, "worker failed")
+
+    assert commits == 1
+    assert observed["run_id"] == run_id
+    assert observed["error_payload"]["code"] == "job_dead_letter"
+    assert "finished_payload" not in observed
 
 
 def _clear_deploy_markers(monkeypatch):
@@ -116,3 +147,52 @@ you are uncertain."""
         {"role": "user", "content": "What is a Bell state?"}
     ]
     assert sink.events[-1][0] == "run.finished"
+
+
+def test_validated_fixtures_dir_refuses_when_root_unset(monkeypatch, tmp_path):
+    monkeypatch.delenv("MAJORANA_IMPORT_FIXTURES_ROOT", raising=False)
+
+    with pytest.raises(RuntimeError, match="MAJORANA_IMPORT_FIXTURES_ROOT is not set"):
+        handlers.validated_fixtures_dir({"fixtures_dir": str(tmp_path)})
+
+
+def test_validated_fixtures_dir_rejects_path_outside_root(monkeypatch, tmp_path):
+    root = tmp_path / "allowed"
+    root.mkdir()
+    outside = tmp_path / "elsewhere"
+    outside.mkdir()
+    monkeypatch.setenv("MAJORANA_IMPORT_FIXTURES_ROOT", str(root))
+
+    with pytest.raises(RuntimeError, match="escapes MAJORANA_IMPORT_FIXTURES_ROOT"):
+        handlers.validated_fixtures_dir({"fixtures_dir": str(outside)})
+
+
+def test_validated_fixtures_dir_rejects_dotdot_escape(monkeypatch, tmp_path):
+    root = tmp_path / "allowed"
+    root.mkdir()
+    monkeypatch.setenv("MAJORANA_IMPORT_FIXTURES_ROOT", str(root))
+
+    sneaky = root / ".." / "elsewhere"
+    with pytest.raises(RuntimeError, match="escapes MAJORANA_IMPORT_FIXTURES_ROOT"):
+        handlers.validated_fixtures_dir({"fixtures_dir": str(sneaky)})
+
+
+def test_validated_fixtures_dir_rejects_symlink_escape(monkeypatch, tmp_path):
+    root = tmp_path / "allowed"
+    root.mkdir()
+    outside = tmp_path / "secret"
+    outside.mkdir()
+    (root / "link").symlink_to(outside)
+    monkeypatch.setenv("MAJORANA_IMPORT_FIXTURES_ROOT", str(root))
+
+    with pytest.raises(RuntimeError, match="escapes MAJORANA_IMPORT_FIXTURES_ROOT"):
+        handlers.validated_fixtures_dir({"fixtures_dir": str(root / "link")})
+
+
+def test_validated_fixtures_dir_accepts_path_inside_root(monkeypatch, tmp_path):
+    root = tmp_path / "allowed"
+    nested = root / "batch-1"
+    nested.mkdir(parents=True)
+    monkeypatch.setenv("MAJORANA_IMPORT_FIXTURES_ROOT", str(root))
+
+    assert handlers.validated_fixtures_dir({"fixtures_dir": str(nested)}) == nested.resolve()
