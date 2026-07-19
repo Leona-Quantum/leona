@@ -1,14 +1,17 @@
+import json
 from types import SimpleNamespace
 from uuid import uuid4
 
+import pytest
 from majorana_agent import CandidateRevision, ExecutionEvidence, VerificationEvidence
 from majorana_contracts.enums import Algorithm, Framework, VerificationMethod, VerifierDecision
 from majorana_contracts.plan import Plan
 from majorana_frameworks import FrameworkProgram
-from majorana_llm import LLMResponse
+from majorana_llm import LLMResponse, StageOutputError
 from majorana_sandbox import SandboxResult
 from majorana_worker.agent_ports import (
     EvidenceVerifier,
+    LLMPlanner,
     RepoArtifactPublisher,
     SandboxCandidateExecutor,
     TrustedOpenQASMConverter,
@@ -336,3 +339,72 @@ def test_verifier_respects_non_circuit_artifact_contract():
         next(check for check in checks if check["method"] == "resource_contract")["result"]
         == "pass"
     )
+
+
+class _ScriptedPlannerLLM:
+    """Returns each queued plan JSON in turn, recording the prompts it was given."""
+
+    def __init__(self, *payloads: str) -> None:
+        self._payloads = list(payloads)
+        self.prompts: list[str] = []
+
+    async def complete(self, request, *, on_delta=None):
+        self.prompts.append(request.user)
+        return LLMResponse(
+            text=self._payloads.pop(0),
+            model=request.model,
+            input_tokens=1,
+            output_tokens=1,
+        )
+
+
+def _plan_payload(*, output_keys, methods) -> str:
+    return json.dumps(
+        {
+            "domain": "optimization",
+            "framework": "qiskit",
+            "algorithm": Algorithm.QAOA.value,
+            "problem_summary": "MaxCut on a 5-node ring",
+            "algorithm_rationale": "QAOA is the standard choice for MaxCut",
+            "parameters": {"shots": 1024},
+            "qubits_estimate": 5,
+            "expected_runtime_sec": 60,
+            "success_criteria": {"primary_metric": output_keys[0]},
+            "expected_output_keys": output_keys,
+            "verification_plan": {"methods": methods},
+        }
+    )
+
+
+async def test_contradictory_plan_is_re_emitted_with_the_objection():
+    """A statistical check with no promised distribution costs one planner retry
+    rather than the whole candidate budget."""
+    contradictory = _plan_payload(
+        output_keys=["optimal_cut", "approximation_ratio"],
+        methods=["statistical", "return_contract"],
+    )
+    corrected = _plan_payload(
+        output_keys=["counts", "optimal_cut"], methods=["statistical", "return_contract"]
+    )
+    llm = _ScriptedPlannerLLM(contradictory, corrected)
+    planner = LLMPlanner(llm=llm, task_prompt="MaxCut on a ring", framework=Framework.QISKIT)
+
+    plan = await planner.create_plan(uuid4())
+
+    assert plan.expected_output_keys == ["counts", "optimal_cut"]
+    assert len(llm.prompts) == 2
+    # The retry must carry the actual objection, not just re-ask the same question.
+    assert "statistical" in llm.prompts[1]
+    assert "rejected by the plan contract" in llm.prompts[1]
+
+
+async def test_planner_gives_up_after_the_retry_rather_than_looping():
+    contradictory = _plan_payload(
+        output_keys=["optimal_cut"], methods=["statistical", "return_contract"]
+    )
+    llm = _ScriptedPlannerLLM(contradictory, contradictory)
+    planner = LLMPlanner(llm=llm, task_prompt="MaxCut on a ring", framework=Framework.QISKIT)
+
+    with pytest.raises(StageOutputError):
+        await planner.create_plan(uuid4())
+    assert len(llm.prompts) == 2

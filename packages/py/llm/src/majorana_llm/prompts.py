@@ -53,7 +53,12 @@ Choose the smallest useful artifact contract and the strongest applicable verifi
 strategy. The only verification_plan.methods this pipeline can evaluate are
 `return_contract` and `statistical`, and the schema offers no others (selected-framework
 re-execution plus deterministic artifact/resource/measurement checks run automatically
-regardless of what you list). Semantic correctness is judged independently by the
+regardless of what you list). `statistical` compares two measurement-count
+distributions, so list it only when expected_output_keys includes the key holding the
+raw {{bitstring: count}} mapping (name it `counts` unless the user asked otherwise).
+A plan that lists `statistical` while promising only scalars — cut values, energies,
+ratios — is rejected by the plan contract, because no generated code can produce the
+distribution the check needs. Semantic correctness is judged independently by the
 verification critic, so there is no classical baseline for you to plan. Do not invent
 a baseline, resource result, QPU result, compression result, source claim, or measurement.
 Record requested technical options such as compression, QPU execution, or a particular

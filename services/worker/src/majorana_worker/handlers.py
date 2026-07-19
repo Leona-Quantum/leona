@@ -16,6 +16,7 @@ from majorana_agent import (
     AgentPolicy,
     AgentRuntime,
     AgentState,
+    AgentStore,
     CircuitToolset,
     StructuredToolModel,
     ToolBroker,
@@ -221,6 +222,52 @@ async def handle_run_execute(
     log.info("run %s finished: %s", run_id, final)
 
 
+async def _agent_failure_message(
+    runtime: AgentRuntime,
+    agent_store: AgentStore,
+    run_id: uuid.UUID,
+) -> str:
+    """Explain why the agent loop gave up, in one line a user can act on.
+
+    Two facts are needed and neither was previously reachable from here: the
+    budget the runtime hit, and the verifier's actual objection. The critic's
+    verdict is the only failing signal in a run whose deterministic checks all
+    pass, and it is not emitted as an event — so without this, such a run shows
+    nothing but passing checks followed by a bare failure.
+    """
+    parts = ["agent tool loop failed"]
+    if runtime.failure_reason:
+        parts.append(f"({runtime.failure_reason})")
+
+    try:
+        candidate = await agent_store.latest_candidate(run_id)
+        verification = (
+            await agent_store.verification_for(run_id, candidate.candidate_id)
+            if candidate is not None
+            else None
+        )
+    except Exception:  # noqa: BLE001 - diagnostics must never mask the failure
+        verification = None
+
+    if verification is not None:
+        failed = [
+            str(check.get("method"))
+            for check in verification.deterministic_checks
+            if check.get("result") != "pass"
+        ]
+        if failed:
+            parts.append(f"failing checks: {', '.join(failed)}")
+        elif verification.critic:
+            # All deterministic checks passed, so the critic is what refused.
+            summary = verification.critic.get("summary") or verification.critic.get("decision")
+            severity = verification.critic.get("severity")
+            confidence = verification.critic.get("confidence")
+            parts.append(
+                f"verifier objection (severity={severity}, confidence={confidence}): {summary}"
+            )
+    return " — ".join(parts)
+
+
 async def _handle_agent_execution(
     ctx: RunContext,
     run_store: RepoRunStateStore,
@@ -334,9 +381,17 @@ async def _handle_agent_execution(
             verifier_decision="inconclusive",
         )
         return RunStatus.FAILED
+    # "agent tool loop failed" alone is undiagnosable: the run that exposed this
+    # showed four passing verification checks and then died, because the only
+    # failing signal — the semantic critic's verdict — is not emitted as an
+    # event and the exhausted budget was discarded by the runtime. Carry both.
     await ctx.sink.emit(
         "run.error",
-        {"stage": None, "code": "agent_failed", "message": "agent tool loop failed"},
+        {
+            "stage": None,
+            "code": "agent_failed",
+            "message": await _agent_failure_message(runtime, agent_store, ctx.run_id),
+        },
         event_id=uuid.uuid5(ctx.run_id, "run.error.agent_failed"),
     )
     await ctx.sink.emit(
