@@ -296,6 +296,64 @@ async def test_unknown_license_quarantine_then_reviewer_approves_and_accepts(env
 
 
 @requires_db
+async def test_reviewer_decision_supersedes_within_a_single_transaction(env):
+    """created_at is the transaction timestamp, so a declared assertion and the
+    reviewer decision superseding it can share one. The current assertion must
+    still resolve to the reviewer's decision (chain head), or publication
+    readiness would read a stale 'pending' and block a properly approved record.
+    """
+    configured, reviewer_id, factory = env
+    reviewer_scope = _reviewer_scope(configured, reviewer_id)
+    async with factory() as session:
+        artifact, version = await _stage_ready_version(
+            session, configured, source_text=f"same-txn-{uuid.uuid4()}"
+        )
+        await catalog.record_artifact_source(
+            configured.importer_scope(),
+            session,
+            version.id,
+            authority=configured,
+            source_kind=SourceKind.UPLOAD,
+            content_hash="e" * 64,
+            retrieved_at=dt.datetime.now(dt.timezone.utc),
+        )
+        # declared (pending) and the approval land in the SAME transaction
+        await catalog.record_license_assertion(
+            configured.importer_scope(),
+            session,
+            version.id,
+            authority=configured,
+            assertion_kind=LicenseAssertionKind.DECLARED,
+            license_scope=LicenseScope.WHOLE,
+            spdx_id="MIT",
+        )
+        await catalog.decide_license_assertion(
+            reviewer_scope,
+            session,
+            version.id,
+            authority=configured,
+            decision=LicenseDecision.APPROVED,
+        )
+        await catalog.submit_for_review(
+            configured.importer_scope(), session, artifact.id, authority=configured
+        )
+        await catalog.decide_review(
+            reviewer_scope,
+            session,
+            artifact.id,
+            authority=configured,
+            decision=ReviewState.ACCEPTED,
+        )
+        await session.commit()
+
+    async with factory() as session:
+        readiness = await catalog.get_publication_readiness(
+            reviewer_scope, session, artifact.id, authority=configured
+        )
+    assert readiness.ready, readiness.blockers
+
+
+@requires_db
 async def test_new_version_resets_stale_acceptance(env):
     configured, reviewer_id, factory = env
     reviewer_scope = _reviewer_scope(configured, reviewer_id)

@@ -1,7 +1,12 @@
-"""Legal top-level run status, catalog review-state, and import-item
-transitions shared by API and worker."""
+"""Legal top-level run status, catalog review-state, catalog publication-state,
+and import-item transitions shared by API and worker."""
 
-from majorana_contracts.enums import ImportItemState, ReviewState, RunStatus
+from majorana_contracts.enums import (
+    ImportItemState,
+    PublicationState,
+    ReviewState,
+    RunStatus,
+)
 
 _LEGAL: dict[RunStatus, frozenset[RunStatus]] = {
     RunStatus.QUEUED: frozenset({RunStatus.RUNNING, RunStatus.CANCELLED}),
@@ -54,6 +59,34 @@ class IllegalReviewTransition(Exception):
 def assert_review_transition(current: ReviewState, new: ReviewState) -> None:
     if new not in _REVIEW_LEGAL[current]:
         raise IllegalReviewTransition(current, new)
+
+
+# Catalog publication state (repository Step 6). Publication is an audited human
+# action that fails closed on publication-readiness (repos/catalog.py); this
+# table only fixes which state edges are structurally legal. `private` -> `public`
+# is the review->public transition. Retraction/deprecation are the takedown and
+# supersession edges; a retracted record does not silently republish — a fresh
+# accepted version is required. `staged` is reserved for a future two-phase
+# publish and currently only leads to `public`.
+_PUBLICATION_LEGAL: dict[PublicationState, frozenset[PublicationState]] = {
+    PublicationState.PRIVATE: frozenset({PublicationState.STAGED, PublicationState.PUBLIC}),
+    PublicationState.STAGED: frozenset({PublicationState.PUBLIC, PublicationState.PRIVATE}),
+    PublicationState.PUBLIC: frozenset({PublicationState.RETRACTED, PublicationState.DEPRECATED}),
+    PublicationState.DEPRECATED: frozenset({PublicationState.PUBLIC, PublicationState.RETRACTED}),
+    PublicationState.RETRACTED: frozenset(),
+}
+
+
+class IllegalPublicationTransition(Exception):
+    def __init__(self, current: PublicationState, new: PublicationState) -> None:
+        super().__init__(f"illegal publication transition {current} -> {new}")
+        self.current = current
+        self.new = new
+
+
+def assert_publication_transition(current: PublicationState, new: PublicationState) -> None:
+    if new not in _PUBLICATION_LEGAL[current]:
+        raise IllegalPublicationTransition(current, new)
 
 
 # Import item state (repository Step 5a plan §5.3): each item commits or

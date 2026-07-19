@@ -70,6 +70,8 @@ from .events import (
 from .models import (
     Artifact,
     ArtifactVersion,
+    CatalogProvenance,
+    PublicCatalogEntry,
     ResourceMetrics,
     Run,
     VerificationRecord,
@@ -91,11 +93,13 @@ from .plan import (
 from .scope import Scope
 from .lifecycle import (
     IllegalImportItemTransition,
+    IllegalPublicationTransition,
     IllegalReviewTransition,
     IllegalTransition,
     IMPORT_ITEM_TERMINAL_STATES,
     TERMINAL_STATUSES,
     assert_import_item_transition,
+    assert_publication_transition,
     assert_review_transition,
     assert_transition,
     is_terminal,
@@ -107,7 +111,9 @@ from .lifecycle import (
 # 1.1.0: Steps 2-5a additions — WorkspaceKind "system"; ArtifactKind /
 # ExecutionState / ReviewState / PublicationState; review + import-item
 # lifecycles; ImportProvider / ImportJobStatus / ImportItemState.
-CONTRACTS_VERSION = "1.1.0"
+# 1.2.0: Step 6 (Neon cutover Slice C) — PublicCatalogEntry / CatalogProvenance
+# response models; publication-state lifecycle (assert_publication_transition).
+CONTRACTS_VERSION = "1.2.0"
 
 __all__ = [
     "CONTRACTS_VERSION",
@@ -121,6 +127,7 @@ __all__ = [
     "BaselineKind",
     "BaselinePlan",
     "BaselineResult",
+    "CatalogProvenance",
     "CodeFinalized",
     "CodeVariant",
     "CodeGenerated",
@@ -139,6 +146,7 @@ __all__ = [
     "IMPORT_ITEM_TERMINAL_STATES",
     "JobStatus",
     "IllegalImportItemTransition",
+    "IllegalPublicationTransition",
     "IllegalReviewTransition",
     "IllegalTransition",
     "LicenseAssertionKind",
@@ -151,6 +159,7 @@ __all__ = [
     "Plan",
     "PlanParameters",
     "PlanProduced",
+    "PublicCatalogEntry",
     "PublicationState",
     "QasmEmission",
     "ResearchCitation",
@@ -197,6 +206,7 @@ __all__ = [
     "WorkspaceKind",
     "run_event_adapter",
     "assert_import_item_transition",
+    "assert_publication_transition",
     "assert_review_transition",
     "assert_transition",
     "is_terminal",

@@ -253,6 +253,40 @@ export interface components {
              */
             type: "baseline.result";
         };
+        /**
+         * CatalogProvenance
+         * @description How a published catalog entry entered the catalog (repository Step 6).
+         *
+         *     For the ADR-0019 bootstrap corpus this is the pinned-manifest identity: the
+         *     import provider, the manifest's pinned source commit, the per-item manifest
+         *     identity, and the content hash of the exact source bytes. It anchors the
+         *     entry to reproducible provenance without trusting any field inside `record`.
+         */
+        CatalogProvenance: {
+            /**
+             * Import Provider
+             * @default null
+             */
+            import_provider: string | null;
+            /**
+             * Source Blob Sha256
+             * @description sha256 of the exact stored source bytes
+             * @default null
+             */
+            source_blob_sha256: string | null;
+            /**
+             * Upstream Identity
+             * @description Per-item manifest identity; equals the public slug
+             * @default null
+             */
+            upstream_identity: string | null;
+            /**
+             * Upstream Ref
+             * @description Pinned upstream ref (e.g. the manifest source commit)
+             * @default null
+             */
+            upstream_ref: string | null;
+        };
         /** ChatCompleted */
         ChatCompleted: {
             /** Duration Ms */
@@ -710,6 +744,46 @@ export interface components {
              * @enum {string}
              */
             type: "plan.produced";
+        };
+        /**
+         * PublicCatalogEntry
+         * @description A published catalog record served to anonymous readers (repository Step 6).
+         *
+         *     The typed fields are database-authoritative facts: the stable public `slug`
+         *     (the pinned manifest identity), the honest `execution_state`, the update
+         *     timestamp, and reproducible `provenance`. `record` carries the pinned
+         *     catalog source blob verbatim — the rich presentation entry (algorithm
+         *     family, category, classical comparisons, verification prose, code variants,
+         *     localized copy). Everything in `record` is *asserted catalog metadata from
+         *     the pinned source*, NOT passing-run evidence or legal approval (ADR-0019);
+         *     clients must render it as a claim. Only accepted+public records are returned.
+         */
+        PublicCatalogEntry: {
+            /**
+             * Execution State
+             * @description Authoritative honest lifecycle state; the bootstrap corpus is template_only
+             */
+            execution_state: string;
+            /** @default null */
+            provenance: components["schemas"]["CatalogProvenance"] | null;
+            /**
+             * Record
+             * @description Pinned catalog source record (the rich presentation entry). A source claim from the pinned manifest, not execution evidence or legal approval.
+             * @default null
+             */
+            record: {
+                [key: string]: unknown;
+            } | null;
+            /**
+             * Slug
+             * @description Stable public identity (pinned manifest identity)
+             */
+            slug: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
         };
         /**
          * QasmEmission
