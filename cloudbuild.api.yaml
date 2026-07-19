@@ -1,0 +1,17 @@
+# Builds the single api+worker image (services/api/Dockerfile, repo-root context).
+# Usage: gcloud builds submit --config cloudbuild.api.yaml --substitutions=_TAG=<sha7>
+steps:
+  - name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - -f
+      - services/api/Dockerfile
+      - -t
+      - us-west1-docker.pkg.dev/majorana-core/majorana/api:${_TAG}
+      - .
+images:
+  - us-west1-docker.pkg.dev/majorana-core/majorana/api:${_TAG}
+options:
+  machineType: E2_HIGHCPU_8
+  logging: CLOUD_LOGGING_ONLY
+timeout: 1800s
