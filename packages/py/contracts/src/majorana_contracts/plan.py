@@ -22,6 +22,28 @@ class _PlanBase(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+# Key names that promise a measurement distribution in the result dict, and so
+# can satisfy a statistical check. The first four mirror
+# majorana_verification.methods._COUNTS_FALLBACK_KEYS — the names extract_counts
+# looks under after the plan's own keys. They are duplicated rather than imported
+# because verification depends on contracts, not the other way round;
+# packages/py/verification/tests pins the two lists against drift.
+_DISTRIBUTION_KEY_NAMES = frozenset({"counts", "measurement_counts", "results", "samples"})
+_DISTRIBUTION_KEY_TOKENS = ("counts", "distribution", "histogram", "probabilities")
+
+
+def _promises_distribution(key: str) -> bool:
+    """Whether an expected_output_key names a measurement distribution.
+
+    Name-based by necessity: at plan time there is no result dict to inspect, only
+    the keys the plan promises to print.
+    """
+    normalized = key.strip().lower()
+    if normalized in _DISTRIBUTION_KEY_NAMES:
+        return True
+    return any(token in normalized for token in _DISTRIBUTION_KEY_TOKENS)
+
+
 class SuccessCriteria(_PlanBase):
     primary_metric: str = Field(
         description="Key extracted from the run's result dict, e.g. ground_state_energy_Ha"
@@ -153,3 +175,37 @@ class Plan(_PlanBase):
         if isinstance(value, dict) and "baseline_plan" in value:
             value = {key: item for key, item in value.items() if key != "baseline_plan"}
         return value
+
+    @model_validator(mode="after")
+    def _statistical_needs_distribution_evidence(self) -> "Plan":
+        """Reject a plan that asks for a statistical check it cannot possibly satisfy.
+
+        The statistical method compares two measurement-count dicts pulled out of the
+        result by extract_counts. When expected_output_keys promises only scalars —
+        a 2026-07-20 production QAOA run promised optimal_cut/qaoa_cut/
+        approximation_ratio — there is no distribution to extract, so the check
+        reports "required evidence unavailable" and fails.
+
+        That failure is a property of the plan, not of the code, so it reproduces
+        identically on every regenerated candidate: the repair loop cannot converge
+        and the run dies with candidate_budget_exhausted after burning the whole
+        budget. Raising here costs one planner re-emit instead.
+
+        Deliberately a hard error rather than the silent normalization used above for
+        retired methods: those were dead fields nothing read, whereas dropping
+        statistical would quietly delete a verification the plan asked for, which is
+        exactly the fail-closed guarantee the verifier exists to make.
+        """
+        methods = self.verification_plan.methods if self.verification_plan else []
+        if VerificationMethod.STATISTICAL not in methods:
+            return self
+        if any(_promises_distribution(key) for key in self.expected_output_keys):
+            return self
+        raise ValueError(
+            "verification_plan.methods includes 'statistical', which compares two "
+            "measurement-count distributions, but expected_output_keys "
+            f"({', '.join(self.expected_output_keys)}) promises no distribution. "
+            "Either add the result key holding the raw {bitstring: count} mapping "
+            "(e.g. 'counts') to expected_output_keys, or drop 'statistical' and "
+            "verify the scalars some other way."
+        )
