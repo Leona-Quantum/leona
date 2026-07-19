@@ -168,3 +168,35 @@ def test_scalar_only_plan_without_statistical_is_still_fine():
         }
     )
     assert plan.expected_output_keys == ["optimal_cut", "approximation_ratio"]
+
+
+def test_exact_on_a_non_circuit_artifact_is_rejected():
+    """artifact_type 'other' gets no trusted observer, so no interchange QASM is
+    emitted and the exact check has nothing to compare — an unfixable failure on
+    every candidate, the same shape as the other three rules here."""
+    with pytest.raises(ValidationError) as exc:
+        Plan.model_validate(
+            _with_exact(
+                {"reference_source": "plan_declared", "reference_qasm": BELL_QASM},
+                artifact_contract={
+                    "artifact_type": "other",
+                    "measurement_policy": "none",
+                    "top_level_execution": "required",
+                },
+            )
+        )
+    assert "non-circuit artifact" in str(exc.value)
+
+
+def test_exact_on_a_circuit_artifact_is_still_allowed():
+    plan = Plan.model_validate(
+        _with_exact(
+            {"reference_source": "plan_declared", "reference_qasm": BELL_QASM},
+            artifact_contract={
+                "artifact_type": "QuantumCircuit",
+                "measurement_policy": "measure_all",
+                "top_level_execution": "required",
+            },
+        )
+    )
+    assert plan.artifact_contract is not None

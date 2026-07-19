@@ -214,8 +214,11 @@ class Plan(_PlanBase):
         every regenerated candidate, so the repair loop cannot converge and the run
         burns its whole budget before dying. One planner re-emit is cheaper.
 
-        Three ways a plan can ask for the impossible:
+        Four ways a plan can ask for the impossible:
 
+        - A non-circuit artifact. `artifact_type: other` means no trusted observer
+          runs, so no `interchange_qasm` is emitted and there is no circuit to
+          compare — the check would fail identically on every candidate.
         - No `reference_source`. `verify_exact` compares against something; without
           a nominated source there is nothing to compare against.
         - `plan_declared` with no `reference_qasm` (or `parent_artifact` with one —
@@ -232,6 +235,16 @@ class Plan(_PlanBase):
         plan = self.verification_plan
         if plan is None or VerificationMethod.EXACT not in plan.methods:
             return self
+        if (
+            self.artifact_contract is not None
+            and self.artifact_contract.artifact_type is ArtifactType.OTHER
+        ):
+            raise ValueError(
+                "verification_plan.methods includes 'exact', which compares the "
+                "circuit the run executed, but artifact_contract.artifact_type is "
+                "'other' — a non-circuit artifact gets no trusted observer and emits "
+                "no circuit to compare. Drop 'exact', or plan a circuit artifact."
+            )
         if plan.reference_source is None:
             raise ValueError(
                 "verification_plan.methods includes 'exact', which compares the "

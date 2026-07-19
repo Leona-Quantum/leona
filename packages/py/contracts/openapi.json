@@ -2081,7 +2081,7 @@
       },
       "RunBestEffort": {
         "additionalProperties": false,
-        "description": "The best candidate a run produced when it exhausted its budget without one\npassing verification.\n\nEmitted instead of nothing. The loop pays for up to four candidates, ranks them\nagainst each other nowhere, and used to end a spent budget with a bare failure \u2014\nthe worst possible output for a user who waited. This carries the code anyway,\nwith the evidence that stopped it.\n\nIt is deliberately NOT an artifact and never becomes one: `verified` is a literal\nFalse, publication still requires a verification PASS, and nothing here is\nwritten to the Vault. The event says \"this is the closest we got, and here is\nexactly what is wrong with it\", which is a different claim from \"this works\".",
+        "description": "The best candidate a run produced when it ended without one passing\nverification.\n\nEmitted instead of nothing. The loop pays for up to four candidates, ranks them\nagainst each other nowhere, and used to end a spent budget with a bare failure \u2014\nthe worst possible output for a user who waited. This carries the code anyway,\nwith the evidence that stopped it.\n\nBudget exhaustion is the case it was built for, but it is emitted on any agent\nfailure that left candidates behind: a run that died some other way still leaves\nthe user with the same nothing. `exhausted_budget` is therefore nullable and\ncarries whatever the runtime recorded, which is not always a budget.\n\nIt is deliberately NOT an artifact and never becomes one: `verified` is a literal\nFalse, publication still requires a verification PASS, and nothing here is\nwritten to the Vault. The event says \"this is the closest we got, and here is\nexactly what is wrong with it\", which is a different claim from \"this works\".",
         "properties": {
           "candidates_considered": {
             "minimum": 1,
@@ -2116,7 +2116,7 @@
               }
             ],
             "default": null,
-            "description": "The budget the loop ran out of, e.g. candidate_budget_exhausted",
+            "description": "Why the loop gave up, usually a budget, e.g. candidate_budget_exhausted. Null when the runtime recorded no reason.",
             "title": "Exhausted Budget"
           },
           "failed_checks": {

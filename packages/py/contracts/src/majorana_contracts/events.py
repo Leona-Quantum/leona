@@ -293,13 +293,18 @@ class RunRestarted(_EventBase):
 
 
 class RunBestEffort(_EventBase):
-    """The best candidate a run produced when it exhausted its budget without one
-    passing verification.
+    """The best candidate a run produced when it ended without one passing
+    verification.
 
     Emitted instead of nothing. The loop pays for up to four candidates, ranks them
     against each other nowhere, and used to end a spent budget with a bare failure —
     the worst possible output for a user who waited. This carries the code anyway,
     with the evidence that stopped it.
+
+    Budget exhaustion is the case it was built for, but it is emitted on any agent
+    failure that left candidates behind: a run that died some other way still leaves
+    the user with the same nothing. `exhausted_budget` is therefore nullable and
+    carries whatever the runtime recorded, which is not always a budget.
 
     It is deliberately NOT an artifact and never becomes one: `verified` is a literal
     False, publication still requires a verification PASS, and nothing here is
@@ -314,7 +319,11 @@ class RunBestEffort(_EventBase):
     revision: int = Field(ge=1)
     candidates_considered: int = Field(ge=1)
     exhausted_budget: str | None = Field(
-        default=None, description="The budget the loop ran out of, e.g. candidate_budget_exhausted"
+        default=None,
+        description=(
+            "Why the loop gave up, usually a budget, e.g. candidate_budget_exhausted. "
+            "Null when the runtime recorded no reason."
+        ),
     )
     failed_checks: list[str] = Field(default_factory=list, max_length=30)
     critic_summary: str | None = Field(default=None, max_length=2_000)
