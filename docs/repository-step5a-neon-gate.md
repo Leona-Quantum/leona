@@ -12,8 +12,7 @@ Local throwaway-Postgres-14 validation (recorded in
 `docs/repository-step5a-import-skeleton.md`) proved migration `0016` and the Step 5a
 import-pipeline logic on standard Postgres semantics, including the two rollback/state
 bugs found and fixed during that pass. This gate re-runs the same checks against real
-Neon (Postgres 17, pooled/direct endpoints, actual network latency) before requesting
-CODEOWNER review.
+Neon (Postgres 17, pooled/direct endpoints, actual network latency) before integration.
 
 ## Result
 
@@ -56,7 +55,6 @@ CODEOWNER review.
 
 ## Required next step
 
-CODEOWNER review remains required before Step 5b (real network fetcher, SSRF
-hardening — see `docs/quantum-repository-platform-plan.md` §14). After review evidence
-is captured, delete the temporary Neon branch `step5a-catalog-import-20260718` (owner
-action).
+Step 5b development may begin without a CODEOWNER review or PR (real network fetcher
+and SSRF hardening — see `docs/quantum-repository-platform-plan.md` §14). Delete the
+temporary Neon branch `step5a-catalog-import-20260718` only as an explicit owner action.
