@@ -31,6 +31,19 @@ export interface PublicRepositoryCitation {
   relevanceJa: string;
 }
 
+/**
+ * One row of the side-by-side classical/quantum comparison table (Owner Inbox
+ * 2026-07-19: comparisons should carry numbers, complexities, and impact — not
+ * just a prose read). `classical` and `quantum` are short cell values (a
+ * complexity like `O(N)`, a qubit/gate count, or a concrete figure).
+ */
+export interface PublicRepositoryComparisonMetric {
+  label: string;
+  labelJa: string;
+  classical: string;
+  quantum: string;
+}
+
 export interface PublicRepositoryClassicalComparison {
   baseline: string;
   baselineJa: string;
@@ -38,6 +51,12 @@ export interface PublicRepositoryClassicalComparison {
   quantumClaimJa: string;
   practicalRead: string;
   practicalReadJa: string;
+  /**
+   * Optional structured metrics rendered as a classical-vs-quantum table above
+   * the prose. Only populated where the figures are textbook-precise; entries
+   * without it fall back to the three prose fields alone.
+   */
+  metrics?: PublicRepositoryComparisonMetric[];
 }
 
 /**
