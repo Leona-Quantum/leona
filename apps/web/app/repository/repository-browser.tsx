@@ -114,12 +114,6 @@ function familyLabel(family: string, locale: PublicLocale): string {
  */
 const VARIANT_GROUPS: Array<{ key: string; label: string; labelJa: string; slugs: string[] }> = [
   {
-    key: "grover",
-    label: "Grover search",
-    labelJa: "Grover 探索",
-    slugs: ["grover-unstructured-search", "grover-4bit-search"],
-  },
-  {
     key: "qft",
     label: "Quantum Fourier transform",
     labelJa: "量子フーリエ変換",

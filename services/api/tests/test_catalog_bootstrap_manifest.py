@@ -1,9 +1,9 @@
 """Pure (no-DB) tests for the bootstrap-manifest import source (ADR-0019, Slice B).
 
-Covers the ADR-0019 "20-item proof" and full 285-item hash parity against the
+Covers the ADR-0019 "20-item proof" and full 283-item hash parity against the
 committed manifest, plus adversarial manifests (tampered blob, corrupted
 checksum, unsupported schema, duplicate identity) that must fail closed before
-any staging. The DB-backed 285-item reconciliation lives in
+any staging. The DB-backed 283-item reconciliation lives in
 test_catalog_bootstrap_import_live.py.
 """
 
@@ -67,7 +67,7 @@ def _write(tmp_path: Path, manifest: dict) -> Path:
     return path
 
 
-# --- committed manifest: real 285-entry corpus --------------------------------
+# --- committed manifest: real 283-entry corpus --------------------------------
 
 
 def test_committed_manifest_loads_and_verifies():
@@ -75,8 +75,8 @@ def test_committed_manifest_loads_and_verifies():
     assert isinstance(source, ImportSource)  # structural conformance
     assert source.provider == ImportProvider.CATALOG_BOOTSTRAP
     identities = source.identities()
-    assert len(identities) == 285
-    assert len(set(identities)) == 285
+    assert len(identities) == 283
+    assert len(set(identities)) == 283
     assert identities == sorted(identities)  # slug-asc ordering preserved
     assert source.idempotency_key == f"catalog-bootstrap-{source.manifest_checksum}"
     assert source.descriptor()["manifest_checksum"] == source.manifest_checksum
@@ -93,7 +93,7 @@ def test_twenty_item_proof():
         assert hash_source_blob(raw) == recorded[identity]
 
 
-def test_all_285_items_read_bytes_hash_parity():
+def test_all_283_items_read_bytes_hash_parity():
     source = BootstrapManifestSource(COMMITTED)
     manifest = json.loads(COMMITTED.read_text(encoding="utf-8"))
     recorded = {it["upstream_identity"]: it["source_blob_sha256"] for it in manifest["items"]}

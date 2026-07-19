@@ -1,6 +1,15 @@
 # ADR-0019: The pinned 285-record snapshot bootstraps Neon through the importer
 
 **Date:** 2026-07-18 · **Status:** accepted (user-requested)
+
+> **Amendment, 2026-07-19.** The corpus is now **283 records**, not 285. The owner removed
+> `grover-4bit-search` and `simon-query-circuit` — the two community submissions the
+> first-party license grant of ADR-0016 could not reach — from the source corpus outright,
+> rather than carrying them as permanently-private records. Nothing about the mechanism below
+> changes: the manifest is still generated from the assembled TypeScript entries at a pinned
+> commit, and the count is derived, never asserted. The category breakdown becomes 29 gates,
+> 60 operators, 13 states, and **181** algorithms — both removed records were `algorithms`.
+> The figures in the body are the numbers as of the original decision and are left as written.
 **Context:** The latest integrated `dev` baseline validates 285 TypeScript repository
 records: 29 gates, 60 operators, 13 states, and 183 algorithms. Neon must become the
 default catalog authority without losing this work, but copying rows in a migration,

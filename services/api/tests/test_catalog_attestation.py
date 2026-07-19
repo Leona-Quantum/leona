@@ -112,18 +112,16 @@ def test_audit_meta_carries_the_signed_sentence_and_checksum():
 
 
 def test_committed_policy_covers_the_real_corpus_exactly():
-    """The shipped policy must classify all 285 pinned records with nothing
-    left over — that total is what makes the 283/2 split a decision rather
-    than an accident of which records happened to match."""
+    """The shipped policy must classify all 283 pinned records with nothing
+    left over. The two community submissions the grant could not reach were
+    removed from the corpus outright, so the policy now needs no exclusions —
+    and an empty exclusion list must still mean full coverage, not a gap."""
     policy = AttestationPolicy.load()
     plan = _bootstrap_plan(BootstrapManifestSource(), policy)
     assert policy.spdx_id == "CC-BY-4.0"
-    assert len(plan.included) + len(plan.excluded) == 285
+    assert len(plan.included) + len(plan.excluded) == 283
     assert len(plan.included) == 283
-    assert sorted(r.upstream_identity for r in plan.excluded) == [
-        "grover-4bit-search",
-        "simon-query-circuit",
-    ]
+    assert plan.excluded == ()
 
 
 def test_committed_policy_excludes_every_non_first_party_record():

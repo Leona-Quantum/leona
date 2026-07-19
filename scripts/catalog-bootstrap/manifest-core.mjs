@@ -1,6 +1,6 @@
 // Pure core for the pinned catalog bootstrap manifest (ADR-0019, Slice A).
 //
-// Given the assembled 285 public repository entries at one pinned source
+// Given the assembled 283 public repository entries at one pinned source
 // commit, produce a deterministic, schema-versioned manifest: per-item
 // canonical source bytes, a per-item sha256 that matches the Python importer's
 // `catalog_hashing.hash_source_blob` (a plain sha256 of the exact bytes), a

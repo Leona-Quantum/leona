@@ -1241,7 +1241,7 @@ $$
         code: `import cirq\n\nq0, q1, q2 = cirq.LineQubit.range(3)\ncircuit = cirq.Circuit(\n    cirq.X(q0), cirq.X(q1),\n    cirq.TOFFOLI(q0, q1, q2),\n)`,
       },
     ],
-    relatedSlugs: ["controlled-x-gate", "fredkin-cswap-gate", "grover-4bit-search", "controlled-hadamard-gate"],
+    relatedSlugs: ["controlled-x-gate", "fredkin-cswap-gate", "controlled-hadamard-gate"],
     literature: [BARENCO_1995, NIELSEN_CHUANG],
   }),
 

@@ -138,7 +138,6 @@ const VERIFICATION_OVERRIDES: Record<string, VerificationMethodId[]> = {
   "swap-gate": ["truth_table", "textbook_citation"],
   "deutsch-jozsa-cirq": ["construction", "textbook_citation"],
   "bernstein-vazirani-qiskit": ["construction", "textbook_citation"],
-  "simon-query-circuit": ["community_submission", "construction", "textbook_citation"],
   "superdense-coding-circuit": ["construction", "textbook_citation"],
 };
 

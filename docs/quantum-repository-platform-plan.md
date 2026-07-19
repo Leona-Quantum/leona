@@ -6,6 +6,14 @@ Prepared: 2026-07-18
 Target branch: `feature/repository`  
 Development authority: Rei on a feature branch; production/public actions remain owner-controlled
 
+> **Amendment, 2026-07-19 — the corpus is 283 records, not 285.** The owner removed
+> `grover-4bit-search` and `simon-query-circuit` (the two community submissions the
+> first-party CC-BY-4.0 grant of Slice C.5 could not reach) from the source corpus rather
+> than carrying them as permanently-private records. Every "285" below should be read as
+> **283**, and the 29/60/13/183 category breakdown as 29/60/13/**181**. The counts were never
+> asserted by the pipeline — they are derived from the assembled entries — so this changes no
+> mechanism, only the figures. See `docs/adr/0019-pinned-catalog-bootstrap.md`.
+
 ## 1. Fixed decisions
 
 This plan supersedes the earlier catalog plan for `feature/repository`.
