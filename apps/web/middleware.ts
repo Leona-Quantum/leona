@@ -12,7 +12,6 @@ import {
   LOCK_SIGN_IN_PATH,
 } from "./lib/single-user-lock";
 import { isPublicDemoEnabled } from "./lib/public-demo";
-import { PUBLIC_REPOSITORY_ENTRIES } from "./lib/public-repository";
 
 const PUBLIC_PATHS = [
   "/",
@@ -25,7 +24,6 @@ const PUBLIC_PATHS = [
   "/lock-sign-in",
   "/pricing",
   "/repository",
-  ...PUBLIC_REPOSITORY_ENTRIES.map((entry) => `/repository/${entry.slug}`),
   "/workspace",
   "/open-source",
   "/contact",
@@ -38,12 +36,24 @@ function isPublicPath(pathname: string): boolean {
   return PUBLIC_PATHS.some((path) => path === "/" ? pathname === "/" : pathname === path || pathname.startsWith(`${path}/`));
 }
 
+// The two matchers have DIFFERENT syntaxes and must be kept in step deliberately.
+// isPublicPath() above treats each entry as an exact path plus its subtree, so
+// "/repository" already covers "/repository/<slug>". authkitMiddleware instead
+// uses Next.js matcher glob syntax, where "/repository" matches that path ONLY —
+// so the subtree has to be spelled out as a pattern.
+//
+// This previously enumerated all 283 entry paths by importing the static corpus,
+// which forced the entire repository dataset into the Edge bundle at cold start
+// and made the middleware a build-time consumer of data that Slice D moves behind
+// an async API call. The glob is equivalent and carries no data dependency.
+const WORKOS_UNAUTHENTICATED_PATHS = [...PUBLIC_PATHS, "/repository/:path*"];
+
 const workosMiddleware = authkitMiddleware({
   middlewareAuth: {
     enabled: true,
     // The callback handles the code exchange BEFORE a session exists — gating
     // it would break every login.
-    unauthenticatedPaths: PUBLIC_PATHS,
+    unauthenticatedPaths: WORKOS_UNAUTHENTICATED_PATHS,
   },
 });
 

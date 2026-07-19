@@ -2,12 +2,12 @@ import { NextResponse } from "next/server";
 import { getMajoranaAuth } from "../../../../../lib/auth";
 import { looksLikeOpenQasm3 } from "../../../../../lib/circuit-conversion";
 import {
-  getPublicRepositoryEntry,
   getPublicRepositoryLibraryVariant,
   getPublicRepositoryVariant,
   PUBLIC_REPOSITORY_FRAMEWORKS,
   type PublicRepositoryEntry,
 } from "../../../../../lib/public-repository";
+import { getRepositoryEntry } from "../../../../../lib/repository-source";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
@@ -18,7 +18,7 @@ export async function POST(
   { params }: { params: Promise<{ slug: string }> },
 ) {
   const { slug } = await params;
-  const entry = getPublicRepositoryEntry(slug);
+  const entry = await getRepositoryEntry(slug);
   if (!entry) return NextResponse.json({ error: "public entry not found" }, { status: 404 });
 
   const libraryVariant = getPublicRepositoryLibraryVariant(entry);
