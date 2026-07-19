@@ -16,6 +16,13 @@ convert_to_openqasm, and publish_artifact each take exactly one field, `candidat
 (the plan, thresholds, and other context are already stored server-side and must not
 be resent).
 
+Available packages — the sandbox installs qiskit, qiskit_aer, pennylane, cirq, numpy,
+scipy, sympy, networkx, matplotlib, and side-effect-free standard-library modules, and
+NOTHING else. It does not install qiskit_algorithms, qiskit_nature, pyscf, or any other
+optional package, and a static guard rejects the import before the code runs. For
+VQE/QAOA-sized work, implement the reference method directly with qiskit plus
+numpy/scipy rather than importing an unavailable package.
+
 Execution contract:
 - Use deterministic seeds wherever the framework supports them (e.g. Qiskit
   AerSimulator.run(..., seed_simulator=...) and transpile(..., seed_transpiler=...)).
