@@ -4920,6 +4920,22 @@ div.mj-rail-row:hover {
   font-size: var(--fs-13);
   margin: 0;
 }
+/* Untrusted program output: readable, bounded, and never styled to look like a
+   verified result panel. Wraps rather than overflowing the section. */
+.mj-result-output {
+  background: var(--bg-1);
+  border: 1px solid var(--border-0);
+  border-radius: 6px;
+  color: var(--text-1);
+  font-family: var(--font-mono);
+  font-size: var(--fs-12);
+  margin: var(--sp-2) 0 0;
+  max-height: 320px;
+  overflow: auto;
+  padding: var(--sp-3);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
 .mj-result-subh {
   color: var(--text-1);
   font-size: var(--fs-12);

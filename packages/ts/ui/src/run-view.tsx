@@ -156,7 +156,9 @@ export interface SimulationView {
   exitCode: number;
   memory: string | null;
   qasmAvailable: boolean;
-  rows: KeyNumber[];
+  // Raw captured program output. NOT result data — see buildSimulation.
+  output: string | null;
+  outputTruncated: boolean;
 }
 export interface SourceView {
   query: string;
@@ -678,29 +680,22 @@ function buildCompilation(ev: Schemas["CompilationResult"] | null): CompilationV
   };
 }
 
-function parseOutputObject(stdout: string): Record<string, unknown> | null {
-  for (const line of stdout.split("\n").reverse()) {
-    try {
-      const parsed: unknown = JSON.parse(line.trim());
-      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
-        return parsed as Record<string, unknown>;
-      }
-    } catch {
-      // The sandbox may also contain a marked QASM payload; it is not result JSON.
-    }
-  }
-  return null;
-}
-
+// stdout was formerly parsed as JSON and rendered as the run's result metrics. That
+// was inert only because the emitter hardcoded stdout to "" — as of 2026-07-20 it
+// carries real output from generated code, and promoting anything that code prints
+// into the "Final Simulation Results" panel would present untrusted text as verified
+// findings. The trusted result is RESULT, verified separately. Show the output as
+// what it is: a log.
 function buildSimulation(ev: Schemas["SandboxResult"]): SimulationView {
-  const output = parseOutputObject(ev.stdout);
+  const combined = [ev.stdout, ev.stderr].filter((part) => part.trim().length > 0).join("\n");
   return {
     ok: ev.exit_code === 0,
     duration: formatDuration(ev.duration_ms),
     exitCode: ev.exit_code,
     memory: ev.memory_mb === null ? null : `${ev.memory_mb} MB`,
     qasmAvailable: ev.qasm_emission?.available ?? false,
-    rows: dictToRows(output ?? {}),
+    output: combined.length > 0 ? combined : null,
+    outputTruncated: ev.truncated,
   };
 }
 
@@ -1064,14 +1059,18 @@ function ResultPanel({ result, animateText }: { result: ResultView; animateText:
                     : []),
                 ]}
               />
-              {result.finalSimulation.rows.length ? (
-                <KeyNumbers rows={result.finalSimulation.rows} />
+              {result.finalSimulation.output ? (
+                <>
+                  <p className="mj-result-note">
+                    Program output, exactly as the generated code printed it. It is not
+                    verified and no value here was checked
+                    {result.finalSimulation.outputTruncated ? "; the start was truncated" : ""}.
+                  </p>
+                  <pre className="mj-result-output">{result.finalSimulation.output}</pre>
+                </>
               ) : (
                 <p className="mj-result-note">
-                  <TypedText
-                    text="No scalar result fields were available to display."
-                    enabled={animateText}
-                  />
+                  <TypedText text="The program printed nothing." enabled={animateText} />
                 </p>
               )}
             </section>

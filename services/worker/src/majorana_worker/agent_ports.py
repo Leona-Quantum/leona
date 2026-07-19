@@ -39,7 +39,7 @@ from majorana_llm import (
     render_plan_prompt,
 )
 from majorana_openqasm import OpenQASMError, normalize
-from majorana_sandbox import ExecutionSpec, Sandbox
+from majorana_sandbox import ExecutionSpec, GuardRejection, Sandbox
 from majorana_sandbox import run as sandbox_run
 from majorana_verification import (
     extract_counts,
@@ -150,8 +150,30 @@ class SandboxCandidateExecutor:
                     "sandbox_runs": 0,
                 },
             )
-        result = await sandbox_run(self._sandbox, spec)
-        observation = result.protected_result or {}
+        # A guard rejection is a fixable property of the generated code, not an
+        # infrastructure fault. `sandbox_run` RAISES it, and until 2026-07-20 nothing
+        # here caught it — so the exception escaped the agent loop and dead-lettered
+        # the whole job. A live QAOA task died that way on `disallowed_import:
+        # qiskit_algorithms`, a package the agent can simply stop importing. Returning
+        # it as a failed execution hands the violation to the repair loop instead.
+        try:
+            result = await sandbox_run(self._sandbox, spec)
+        except GuardRejection as rejection:
+            return ExecutionOutput(
+                environment_fingerprint=self._environment_fingerprint(candidate, plan),
+                sandbox_provider=self._sandbox.provider,
+                exit_code=1,
+                failure_kind=ExecutionFailureKind.CODE_ERROR,
+                duration_ms=0,
+                result={},
+                observation={
+                    "evidence_error": "guard_rejected",
+                    "guard_violations": list(rejection.violations),
+                    "sandbox_error": str(rejection),
+                    "sandbox_runs": 0,
+                },
+            )
+        observation = (result.protected_result or {}) | self._captured_output(result)
         if not result.ok:
             failure_kind = self._classify_failure(result.exit_code, result.stderr)
             return ExecutionOutput(
@@ -231,6 +253,29 @@ class SandboxCandidateExecutor:
             result=structured_result if isinstance(structured_result, dict) else {},
             observation=observation,
         )
+
+    # Owner decision 2026-07-20: persist the program's output. Until then the
+    # sandbox.result event hardcoded stdout/stderr to "", so an empty stdout was an
+    # emitter artifact and never evidence about the program — which cost a diagnosis.
+    #
+    # It stays untrusted on both axes. It is capped so a runaway print loop cannot
+    # bloat a row; and it is NOT forwarded to the model (see ToolBroker's
+    # resource_evidence) or parsed for values, because generated code writing
+    # "ignore previous instructions" or a plausible-looking result dict into stdout
+    # must not be able to influence the loop that judges it. RESULT remains the only
+    # trusted data channel.
+    _OUTPUT_LIMIT = 4000
+
+    @classmethod
+    def _captured_output(cls, result: Any) -> dict[str, Any]:
+        stdout, stderr = result.stdout or "", result.stderr or ""
+        return {
+            "sandbox_stdout": stdout[-cls._OUTPUT_LIMIT :],
+            "sandbox_stderr": stderr[-cls._OUTPUT_LIMIT :],
+            "sandbox_output_truncated": (
+                len(stdout) > cls._OUTPUT_LIMIT or len(stderr) > cls._OUTPUT_LIMIT
+            ),
+        }
 
     @classmethod
     def _statevector_memory_mb(cls, qubits: int) -> int:
