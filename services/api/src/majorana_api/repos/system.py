@@ -14,7 +14,7 @@ import uuid
 from dataclasses import dataclass
 from typing import Any
 
-from majorana_contracts.enums import Role
+from majorana_contracts.enums import Role, RunStatus
 from majorana_openqasm import fingerprint as qasm_fingerprint
 from majorana_openqasm import normalize
 from sqlalchemy import case, func, or_, select, update
@@ -23,7 +23,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..ids import uuid7
-from ..orm import Artifact, ArtifactVersion, Job, Membership, User, Workspace
+from ..orm import Artifact, ArtifactVersion, Job, Membership, Run, User, Workspace
 
 STARTER_BELL_SLUG_PREFIX = "starter-bell-state"
 STARTER_BELL_CODE = """from qiskit import QuantumCircuit
@@ -46,6 +46,9 @@ c[1] = measure q[1];
 DEFAULT_JOB_MAX_ATTEMPTS = 3
 MAX_JOB_MAX_ATTEMPTS = 20
 DEFAULT_DEAD_LETTER_MAX_ATTEMPTS = 5
+# Comfortably past the dead-letter retry budget (5 attempts ~30s apart) so the
+# reaper only ever sees runs delivery has genuinely finished with.
+ORPHANED_RUN_GRACE_S = 900.0
 
 
 class JobLeaseLostError(RuntimeError):
@@ -56,6 +59,17 @@ class JobLeaseLostError(RuntimeError):
 class StaleJobRecovery:
     requeued: int
     dead_jobs: tuple[Job, ...]
+
+
+@dataclass(frozen=True)
+class OrphanedRun:
+    """An active run whose execution job is terminal and past dead-letter delivery."""
+
+    run_id: uuid.UUID
+    workspace_id: uuid.UUID
+    user_id: uuid.UUID
+    job_id: uuid.UUID
+    delivery_error: str | None
 
 
 @dataclass(frozen=True)
@@ -500,6 +514,52 @@ async def recover_stale_jobs(session: AsyncSession) -> StaleJobRecovery:
         )
     )
     return StaleJobRecovery(requeued=requeue_result.rowcount, dead_jobs=dead_jobs)
+
+
+async def list_orphaned_runs(
+    session: AsyncSession,
+    *,
+    grace_seconds: float = ORPHANED_RUN_GRACE_S,
+    limit: int = 10,
+) -> tuple[OrphanedRun, ...]:
+    """Runs still active whose execution job is terminal and past all delivery.
+
+    Dead-letter delivery is the only thing that closes a run whose job died, and
+    it is not guaranteed to succeed: `mark_job_dead_lettered` sets
+    `dead_lettered_at` after its retry budget is exhausted whether the callback
+    worked or not. When that happens the job leaves the delivery candidate set
+    and nothing ever revisits the run — it spins in `running` forever, which is
+    what stranded 12 production runs between 2026-07-16 and 07-19.
+
+    This is the reconciliation query behind the reaper. `dead_lettered_at` is
+    required so an in-flight delivery is never raced, and the grace period keeps
+    the reaper well clear of the retry budget (5 attempts, ~30s apart).
+    """
+    if grace_seconds < 0:
+        raise ValueError("grace_seconds must not be negative")
+    stmt = (
+        select(Run.id, Run.workspace_id, Run.user_id, Job.id, Job.dead_letter_error)
+        .join(Job, Job.run_id == Run.id)
+        .where(
+            Run.status.in_((RunStatus.QUEUED.value, RunStatus.RUNNING.value)),
+            Job.status.in_(("failed", "dead")),
+            Job.dead_lettered_at.is_not(None),
+            Job.dead_lettered_at <= func.now() - _lease_delta(grace_seconds),
+        )
+        .order_by(Job.dead_lettered_at)
+        .limit(limit)
+    )
+    rows = (await session.execute(stmt)).all()
+    return tuple(
+        OrphanedRun(
+            run_id=run_id,
+            workspace_id=workspace_id,
+            user_id=user_id,
+            job_id=job_id,
+            delivery_error=delivery_error,
+        )
+        for run_id, workspace_id, user_id, job_id, delivery_error in rows
+    )
 
 
 async def claim_job(

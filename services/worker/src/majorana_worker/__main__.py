@@ -22,7 +22,7 @@ from majorana_api.repos import system
 from opentelemetry import metrics
 
 from .errors import RetryableJobError
-from .handlers import DEAD_LETTER_HANDLERS, HANDLERS
+from .handlers import DEAD_LETTER_HANDLERS, HANDLERS, close_orphaned_run
 
 log = logging.getLogger("majorana_worker")
 
@@ -61,6 +61,7 @@ _job_terminals = _meter.create_counter("majorana.jobs.terminal")
 _job_lease_losses = _meter.create_counter("majorana.jobs.lease_lost")
 _job_attempts = _meter.create_histogram("majorana.jobs.attempts")
 _job_queue_age = _meter.create_histogram("majorana.jobs.queue_age_seconds")
+_runs_reaped = _meter.create_counter("majorana.runs.reaped")
 
 
 async def _heartbeat_loop(factory, *, job_id: Any, lease_token, stop: asyncio.Event) -> None:
@@ -194,6 +195,32 @@ async def _deliver_pending_dead_letters(factory, *, worker_id: str) -> None:
         log.info("job %s dead-letter callback completed", job.id)
     elif int(job.dead_letter_attempts or 0) + 1 >= system.DEFAULT_DEAD_LETTER_MAX_ATTEMPTS:
         log.error("job %s dead-letter callback abandoned after retry budget", job.id)
+
+
+async def _reap_orphaned_runs(factory) -> None:
+    """Reconcile runs left active by a job that is terminal and past delivery.
+
+    Dead-letter delivery is the only path that closes such a run, and it is not
+    guaranteed to happen — see close_orphaned_run. This is the safety net, so it
+    is deliberately forgiving: one capped batch per poll cycle, and a run that
+    fails to close is logged and retried next cycle rather than stopping the rest.
+    """
+    async with factory() as session:
+        orphans = await system.list_orphaned_runs(session)
+    for orphan in orphans:
+        try:
+            async with factory() as session:
+                closed = await close_orphaned_run(session, orphan)
+        except Exception:
+            log.exception("failed to reap orphaned run %s (job %s)", orphan.run_id, orphan.job_id)
+            continue
+        if closed:
+            _runs_reaped.add(1, {"reason": "orphaned"})
+            log.error(
+                "reaped orphaned run %s left active by terminal job %s",
+                orphan.run_id,
+                orphan.job_id,
+            )
 
 
 async def _start_liveness() -> asyncio.AbstractServer:
@@ -349,6 +376,8 @@ async def run_forever() -> None:
                 # (or immediately when the queue is idle), so no claimed lease
                 # ticks while callback delivery blocks.
                 await _deliver_pending_dead_letters(factory, worker_id=worker_id)
+                # Last line of defence, after delivery has had its full budget.
+                await _reap_orphaned_runs(factory)
                 if claimed is not None:
                     continue  # drain the main queue before sleeping again
             except Exception:
