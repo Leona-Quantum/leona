@@ -64,6 +64,7 @@ from ..orm import (
     ImportJob,
     LicenseAssertion,
     Membership,
+    User,
     Workspace,
 )
 from ._base import AuthzError, NotFoundError, RepoError
@@ -706,6 +707,202 @@ async def tag_artifact(
         .values(artifact_id=artifact_id, tag=tag)
         .on_conflict_do_nothing(index_elements=[ArtifactTag.artifact_id, ArtifactTag.tag])
     )
+
+
+async def record_bulk_attestation(
+    scope: Scope,
+    session: AsyncSession,
+    *,
+    authority: CatalogAuthority,
+    meta: dict[str, Any],
+) -> None:
+    """One corpus-level audit row for a bulk attestation run.
+
+    Reviewer-scoped so the run is attributed to the human who attested, not to
+    the importer that mechanically applied it. The per-record rows remain the
+    authority for what was bound; this row records the act itself — statement,
+    policy checksum, and which records were deliberately left out.
+    """
+    workspace = await _get_reviewer_workspace(scope, session, authority=authority)
+    await record_audit(
+        scope,
+        session,
+        action="catalog.license.bulk_attestation",
+        target_kind="workspace",
+        target_id=workspace.id,
+        meta=meta,
+    )
+
+
+async def attest_catalog_record(
+    importer_scope: Scope,
+    reviewer_scope: Scope,
+    session: AsyncSession,
+    artifact_id: uuid.UUID,
+    *,
+    authority: CatalogAuthority,
+    spdx_id: str,
+    assertion_kind: LicenseAssertionKind,
+    license_scope: LicenseScope,
+    source_kind: SourceKind,
+    evidence_hash: str,
+    repository: str | None,
+    ref: str | None,
+    path: str | None,
+    retrieval_metadata: dict[str, Any],
+    attestation_meta: dict[str, Any],
+) -> tuple[str, ...]:
+    """Bind provenance + an approved license onto one staged record (Slice C.5).
+
+    This is the mechanical half of an owner bulk attestation: the legal half —
+    which license, over which records, in whose words — lives in
+    catalog_attestation.AttestationPolicy and arrives here as plain values.
+
+    Both principals are required and stay distinct: the importer records the
+    source and the *declared* claim, the reviewer approves it and accepts the
+    review. Passing one scope for both is impossible — get_importer_workspace and
+    _get_reviewer_workspace each reject the other's identity — which is exactly
+    the ADR-0016 separation, preserved even in a bulk run.
+
+    Idempotent by construction so a partial run can simply be re-run: each step
+    is skipped when its effect is already present. Returns the steps actually
+    performed, so the caller can report real work instead of a fixed count.
+    """
+    workspace = await get_importer_workspace(importer_scope, session, authority=authority)
+    artifact = await _get_catalog_artifact(
+        session, workspace_id=workspace.id, artifact_id=artifact_id, for_update=True
+    )
+    version_id = artifact.current_version_id
+    if version_id is None:
+        raise RepoError(f"catalog artifact {artifact_id} has no current version to attest")
+    version = await session.get(ArtifactVersion, version_id)
+    if version is None or not version.source_blob_sha256:
+        raise RepoError(f"catalog version {version_id} has no pinned source hash")
+
+    performed: list[str] = []
+
+    existing_source = (
+        (
+            await session.execute(
+                select(ArtifactSource).where(ArtifactSource.artifact_version_id == version_id)
+            )
+        )
+        .scalars()
+        .first()
+    )
+    if existing_source is None:
+        await record_artifact_source(
+            importer_scope,
+            session,
+            version_id,
+            authority=authority,
+            source_kind=source_kind,
+            content_hash=version.source_blob_sha256,
+            # The bytes were pinned when the import staged them; the attestation
+            # is a later act and must not overwrite when the content was obtained.
+            retrieved_at=version.created_at or dt.datetime.now(dt.UTC),
+            repository=repository,
+            ref=ref,
+            path=path,
+            retrieval_metadata=retrieval_metadata,
+        )
+        performed.append("source")
+
+    current = await _get_current_license_assertion(session, artifact_version_id=version_id)
+    if current is None:
+        current = await record_license_assertion(
+            importer_scope,
+            session,
+            version_id,
+            authority=authority,
+            assertion_kind=assertion_kind,
+            license_scope=license_scope,
+            spdx_id=spdx_id,
+            evidence_hash=evidence_hash,
+        )
+        performed.append("declared")
+
+    if current.reviewer_decision != LicenseDecision.APPROVED:
+        await decide_license_assertion(
+            reviewer_scope,
+            session,
+            version_id,
+            authority=authority,
+            decision=LicenseDecision.APPROVED,
+            spdx_id=spdx_id,
+            evidence_hash=evidence_hash,
+        )
+        await record_audit(
+            reviewer_scope,
+            session,
+            action="catalog.license.attested",
+            target_kind="artifact",
+            target_id=artifact.id,
+            meta={**attestation_meta, "artifact_version_id": str(version_id)},
+        )
+        performed.append("approved")
+
+    # A record declared with an unknown/conflicting license lands in
+    # 'quarantined', which is a legal review transition to 'accepted' — the
+    # reviewer decision above is precisely the human act that resolves it.
+    if artifact.review_state == ReviewState.DRAFT:
+        await submit_for_review(importer_scope, session, artifact.id, authority=authority)
+        performed.append("submitted")
+    if artifact.review_state in {ReviewState.PENDING_REVIEW, ReviewState.QUARANTINED}:
+        await decide_review(
+            reviewer_scope,
+            session,
+            artifact.id,
+            authority=authority,
+            decision=ReviewState.ACCEPTED,
+        )
+        performed.append("accepted")
+
+    return tuple(performed)
+
+
+async def grant_catalog_reviewer(
+    scope: Scope,
+    session: AsyncSession,
+    *,
+    authority: CatalogAuthority,
+    user_id: uuid.UUID,
+) -> Membership:
+    """Importer-only: grant ADMIN on the system catalog to a real human account.
+
+    This is the one bridge into the reviewer role that _get_reviewer_workspace
+    accepts, and it is deliberately narrow. The grantee must already exist as a
+    provisioned user — a reviewer is an attributable person (ADR-0016), so this
+    never conjures an identity — and must be neither the importer nor the public
+    reader, which would collapse the importer/reviewer separation the whole
+    module is built on. Idempotent: re-granting an existing ADMIN is a no-op, and
+    an existing non-ADMIN membership raises rather than being silently upgraded.
+    """
+    await get_importer_workspace(scope, session, authority=authority)
+    if user_id in {authority.importer_user_id, authority.public_reader_user_id}:
+        raise AuthzError("catalog reviewer must not be a system catalog service identity")
+    if (await session.get(User, user_id)) is None:
+        raise NotFoundError("reviewer user")
+
+    existing = await session.get(Membership, (scope.workspace_id, user_id))
+    if existing is not None:
+        if existing.role != Role.ADMIN:
+            raise AuthzError(
+                f"user already holds catalog role {existing.role!r}; refusing to change it"
+            )
+        return existing
+
+    membership = Membership(workspace_id=scope.workspace_id, user_id=user_id, role=Role.ADMIN)
+    session.add(membership)
+    await record_audit(
+        scope,
+        session,
+        action="catalog.reviewer.granted",
+        target_kind="user",
+        target_id=user_id,
+        meta={"role": Role.ADMIN.value},
+    )
+    return membership
 
 
 async def get_publication_readiness(

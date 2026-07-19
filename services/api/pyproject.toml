@@ -35,3 +35,6 @@ packages = ["src/majorana_api"]
 # locate it (catalog_bootstrap_manifest.default_manifest_path prefers this copy).
 [tool.hatch.build.targets.wheel.force-include]
 "catalog_bootstrap/manifest.json" = "majorana_api/catalog_bootstrap/manifest.json"
+# Same for the owner attestation policy (Slice C.5): catalog_attestation.
+# default_policy_path prefers this copy, and attest-bootstrap cannot run without it.
+"catalog_bootstrap/attestation-policy.json" = "majorana_api/catalog_bootstrap/attestation-policy.json"

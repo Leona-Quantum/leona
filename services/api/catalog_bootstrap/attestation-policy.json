@@ -1,0 +1,13 @@
+{
+  "policy_version": 1,
+  "statement": "I attest, as owner of Leona Quantum / Majorana, that every catalog record covered by this policy is an original first-party work authored for this project - reference implementations, scaffolds, and explanatory metadata that cite third-party publications rather than reproducing them - and I grant those records to the public under CC-BY-4.0. Records listed under excluded_identities are not covered by this grant and remain unpublished.",
+  "spdx_id": "CC-BY-4.0",
+  "assertion_kind": "declared",
+  "license_scope": "whole",
+  "source_kind": "literature",
+  "include_source_kinds": ["curated_reference", "verified_run"],
+  "excluded_identities": {
+    "grover-4bit-search": "community_submission, and the manifest itself records reviewedBy='Pending second reviewer' - not a first-party work and not fully reviewed",
+    "simon-query-circuit": "community_submission derived from a third-party learning module - not a first-party work, so the owner grant does not reach it"
+  }
+}
