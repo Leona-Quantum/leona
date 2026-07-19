@@ -57,17 +57,17 @@ jobs:
         id: tag
         run: echo "tag=$(git rev-parse --short=7 HEAD)" >> "$GITHUB_OUTPUT"
 
-      # token_format: access_token is load-bearing, not a preference. Without it
-      # auth@v2 writes an external_account credential file, and gcloud attaches a
-      # quota project to every GCS call made through it. `builds submit` then fails
-      # its very first request — the source-staging bucket read — with "the user is
-      # forbidden from accessing the bucket [majorana-core_cloudbuild] ... check the
-      # serviceusage.services.use permission". The message points at IAM, but no
-      # grant on the deploy SA fixes it (serviceUsageConsumer, bucket objectAdmin
-      # and legacyBucketWriter were all tried, 2026-07-19); the quota-project path
-      # is the problem, not the roles. A plain OAuth access token for the
-      # impersonated SA skips that path. Impersonation itself was never at fault —
-      # GenerateAccessToken succeeded on every failed run.
+      # token_format: access_token was added 2026-07-19 to fix the "user is
+      # forbidden from accessing the bucket [majorana-core_cloudbuild]" failure.
+      # It did NOT fix it — the run after this change failed identically. The
+      # actual cause was an IAM gap: `gcloud builds submit` runs an anti-squatting
+      # ownership check that calls buckets.List at *project* scope, and the deploy
+      # SA held only bucket-scoped roles. Fixed by the custom project role
+      # `cloudbuildStagingLister` (storage.buckets.list), not by anything here.
+      #
+      # The line is kept because it is harmless and the deploy is green with it,
+      # but it is unproven, not load-bearing. If you are trimming this workflow,
+      # this is a safe thing to try removing — just watch the run.
       - uses: google-github-actions/auth@v2
         if: steps.creds.outputs.have == 'true'
         with:
@@ -98,9 +98,17 @@ jobs:
           gcloud run deploy majorana-api --project "$GCP_PROJECT" --region "$GCP_REGION" \
             --image "$IMAGE_REPO:${{ steps.tag.outputs.tag }}" \
             --no-traffic --tag verify
+          # --flatten + --filter, not .filter().extract(). The latter returns a
+          # Python list repr — ['https://...'] — and `tr -d '[]'` removed the
+          # brackets while leaving the single quotes, so the smoke test curled a
+          # URL with literal quotes in it and died with "URL rejected: Port number
+          # was not a decimal number" before issuing a request (2026-07-19, the
+          # workflow's first run to reach this step).
           url=$(gcloud run services describe majorana-api \
             --project "$GCP_PROJECT" --region "$GCP_REGION" \
-            --format="value(status.traffic.filter(tag:verify).extract(url))" | tr -d '[]')
+            --flatten="status.traffic[]" \
+            --filter="status.traffic.tag=verify" \
+            --format="value(status.traffic.url)")
           test -n "$url" || { echo "no verify tag URL"; exit 1; }
           echo "url=$url" >> "$GITHUB_OUTPUT"
 
