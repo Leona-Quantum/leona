@@ -15,6 +15,10 @@ from __future__ import annotations
 import dataclasses
 from pathlib import Path
 
+from majorana_contracts.enums import ImportProvider
+
+from .catalog_import_sources import SourceItemRejected
+
 MAX_FIXTURE_BYTES = 64 * 1024  # generous for source code, tiny for an archive bomb
 MAX_FIXTURE_COUNT = 200
 
@@ -70,3 +74,38 @@ def read_fixture_bytes(path: Path) -> bytes:
     if len(raw) > MAX_FIXTURE_BYTES:
         raise FixtureTooLargeError(path, len(raw))
     return raw
+
+
+class LocalFixtureSource:
+    """ImportSource over a codebase-pinned flat directory of fixture files.
+
+    The original (and only Step 5a) provider: proves the durable import state
+    machine with no network and no externally-controlled path. read_bytes maps
+    the fixture-reader's deterministic failures to the same stable failure
+    codes the importer has always recorded, so this refactor is behavior-
+    preserving for existing batches.
+    """
+
+    provider = ImportProvider.LOCAL_FIXTURE
+
+    def __init__(self, fixtures_dir: Path, *, upstream_ref: str):
+        self._dir = fixtures_dir
+        self._upstream_ref = upstream_ref
+
+    @property
+    def upstream_ref(self) -> str:
+        return self._upstream_ref
+
+    def identities(self) -> list[str]:
+        return [fi.upstream_identity for fi in list_fixture_identities(self._dir)]
+
+    def read_bytes(self, upstream_identity: str) -> bytes:
+        try:
+            return read_fixture_bytes(self._dir / upstream_identity)
+        except FixtureTooLargeError:
+            raise SourceItemRejected("oversized") from None
+        except (FileNotFoundError, OSError):
+            raise SourceItemRejected("unreadable") from None
+
+    def descriptor(self) -> dict[str, str]:
+        return {"fixtures_dir": str(self._dir)}

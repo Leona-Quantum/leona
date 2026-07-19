@@ -1,8 +1,11 @@
 """Durable catalog import pipeline (Step 5a): batch/item orchestration over
 the existing Job lease infrastructure (repos/system.py) and Step 3 staging
-(repos/catalog.py). Only the local/file fixture provider is wired here — a
-real network adapter is a separate, later slice (see
-catalog_import_fixtures.py's module docstring).
+(repos/catalog.py). This module is provider-agnostic: where items and their
+bytes come from is an injected ImportSource (catalog_import_sources.py) —
+either a codebase-pinned local fixture directory or the pinned bootstrap
+manifest (ADR-0019). A real *network* adapter is a separate, later slice that
+adds its own SSRF/quarantine hardening; adding it never touches this crash-safe
+core, only ships a new source.
 
 Each item commits independently: a failure in one item's stage attempt
 rolls back only that item's own uncommitted work, never a sibling item's
@@ -21,7 +24,6 @@ prerequisite, not an optional follow-up.
 
 import dataclasses
 import uuid
-from pathlib import Path
 
 from majorana_contracts import Scope, assert_import_item_transition
 from majorana_contracts.enums import (
@@ -39,11 +41,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..catalog_authority import CatalogAuthority
 from ..catalog_hashing import hash_source_blob
-from ..catalog_import_fixtures import (
-    FixtureTooLargeError,
-    list_fixture_identities,
-    read_fixture_bytes,
-)
+from ..catalog_import_sources import ImportSource, SourceItemRejected
 from ..ids import uuid7
 from ..jobs import CATALOG_IMPORT_JOB_KIND
 from ..orm import ImportItem, ImportJob, Job
@@ -105,21 +103,26 @@ async def _find_import_job(session: AsyncSession, idempotency_key: str) -> Impor
     )
 
 
+def _stored_descriptor(queue_job: Job | None) -> dict:
+    """The source descriptor persisted on the queue job (payload minus the
+    idempotency key), for comparing a reused key against a fresh request."""
+    if queue_job is None:
+        return {}
+    return {k: v for k, v in queue_job.payload.items() if k != "idempotency_key"}
+
+
 async def _assert_request_equivalent(
     session: AsyncSession,
     existing: ImportJob,
     *,
-    provider: ImportProvider,
-    upstream_ref: str,
-    fixtures_dir: Path,
+    source: ImportSource,
 ) -> None:
     """A reused idempotency key must describe the same request it named before."""
     queue_job = await session.get(Job, existing.job_id)
-    recorded_fixtures_dir = queue_job.payload.get("fixtures_dir") if queue_job is not None else None
     if (
-        ImportProvider(existing.provider) != provider
-        or existing.upstream_ref != upstream_ref
-        or recorded_fixtures_dir != str(fixtures_dir)
+        ImportProvider(existing.provider) != source.provider
+        or existing.upstream_ref != source.upstream_ref
+        or _stored_descriptor(queue_job) != source.descriptor()
     ):
         raise IdempotencyConflictError(
             f"idempotency key {existing.idempotency_key!r} was already used "
@@ -132,17 +135,15 @@ async def create_import_job(
     session: AsyncSession,
     *,
     authority: CatalogAuthority,
-    provider: ImportProvider,
-    upstream_ref: str,
+    source: ImportSource,
     idempotency_key: str,
-    fixtures_dir: Path,
 ) -> ImportJob:
-    """Idempotently create a batch and its items from a fixture directory.
+    """Idempotently create a batch and its items from an import source.
 
     Re-running with the same idempotency_key and the same request returns the
     existing batch unchanged, so a crashed/retried import-creation request is
     safe. Reusing a key for a *different* request (provider/upstream_ref/
-    fixtures_dir mismatch) raises IdempotencyConflictError instead of silently
+    descriptor mismatch) raises IdempotencyConflictError instead of silently
     returning the wrong batch. Two concurrent creators racing the same key are
     serialized by the unique constraint: the loser rolls back this session's
     uncommitted work (like stage_artifact_version's duplicate handling) and
@@ -152,27 +153,21 @@ async def create_import_job(
 
     existing = await _find_import_job(session, idempotency_key)
     if existing is not None:
-        await _assert_request_equivalent(
-            session,
-            existing,
-            provider=provider,
-            upstream_ref=upstream_ref,
-            fixtures_dir=fixtures_dir,
-        )
+        await _assert_request_equivalent(session, existing, source=source)
         return existing
 
-    identities = list_fixture_identities(fixtures_dir)
+    identities = source.identities()
 
     job = await system.enqueue_job(
         session,
         kind=CATALOG_IMPORT_JOB_KIND,
-        payload={"idempotency_key": idempotency_key, "fixtures_dir": str(fixtures_dir)},
+        payload={"idempotency_key": idempotency_key, **source.descriptor()},
     )
     import_job = ImportJob(
         id=uuid7(),
         job_id=job.id,
-        provider=provider,
-        upstream_ref=upstream_ref,
+        provider=source.provider,
+        upstream_ref=source.upstream_ref,
         idempotency_key=idempotency_key,
         status=ImportJobStatus.QUEUED,
         item_count=len(identities),
@@ -188,13 +183,7 @@ async def create_import_job(
         winner = await _find_import_job(session, idempotency_key)
         if winner is None:
             raise
-        await _assert_request_equivalent(
-            session,
-            winner,
-            provider=provider,
-            upstream_ref=upstream_ref,
-            fixtures_dir=fixtures_dir,
-        )
+        await _assert_request_equivalent(session, winner, source=source)
         return winner
 
     for identity in identities:
@@ -202,7 +191,7 @@ async def create_import_job(
             ImportItem(
                 id=uuid7(),
                 import_job_id=import_job.id,
-                upstream_identity=identity.upstream_identity,
+                upstream_identity=identity,
                 state=ImportItemState.QUEUED,
             )
         )
@@ -255,7 +244,7 @@ async def _advance_item(
     item: ImportItem,
     *,
     authority: CatalogAuthority,
-    fixtures_dir: Path,
+    source: ImportSource,
     staging: LocalFixtureStagingDefaults,
     slug_prefix: str,
 ) -> None:
@@ -274,11 +263,9 @@ async def _advance_item(
         await session.flush()
 
         try:
-            raw = read_fixture_bytes(fixtures_dir / item.upstream_identity)
-        except FixtureTooLargeError:
-            raise _ItemRejected("oversized") from None
-        except (FileNotFoundError, OSError):
-            raise _ItemRejected("unreadable") from None
+            raw = source.read_bytes(item.upstream_identity)
+        except SourceItemRejected as exc:
+            raise _ItemRejected(exc.failure_code) from None
 
         item.source_blob_sha256 = hash_source_blob(raw)
         assert_import_item_transition(reached, ImportItemState.QUARANTINED)
@@ -341,7 +328,7 @@ async def process_import_batch(
     import_job_id: uuid.UUID,
     *,
     authority: CatalogAuthority,
-    fixtures_dir: Path,
+    source: ImportSource,
     staging: LocalFixtureStagingDefaults | None = None,
 ) -> ImportJob:
     """Advance every non-terminal item of one batch by one attempt.
@@ -386,7 +373,7 @@ async def process_import_batch(
                 session,
                 item,
                 authority=authority,
-                fixtures_dir=fixtures_dir,
+                source=source,
                 staging=staging,
                 slug_prefix=f"import-{import_job_id.hex[:12]}",
             )

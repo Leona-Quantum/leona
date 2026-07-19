@@ -11,7 +11,7 @@ import uuid
 from typing import Any, Awaitable, Callable
 
 from majorana_contracts import Scope
-from majorana_contracts.enums import Framework, Role, RunMode, RunStatus
+from majorana_contracts.enums import Framework, ImportProvider, Role, RunMode, RunStatus
 from majorana_agent import (
     AgentPolicy,
     AgentRuntime,
@@ -27,8 +27,12 @@ from majorana_sandbox import LocalSubprocessSandbox, Sandbox, VercelSandbox
 from pathlib import Path
 
 from majorana_api.catalog_authority import CatalogAuthority
+from majorana_api.catalog_bootstrap_manifest import BootstrapManifestSource
+from majorana_api.catalog_import_fixtures import LocalFixtureSource
+from majorana_api.catalog_import_sources import ImportSource
 from majorana_api.db import AsyncSession
 from majorana_api.jobs import CATALOG_IMPORT_JOB_KIND, RUN_EXECUTE_JOB_KIND
+from majorana_api.orm import ImportJob
 from majorana_api.repos import catalog_import as catalog_import_repo
 from majorana_api.repos import runs as runs_repo
 from majorana_api.repos import artifacts as artifacts_repo
@@ -484,6 +488,31 @@ def validated_fixtures_dir(payload: dict[str, Any]) -> Path:
     return requested
 
 
+def _source_for_import(import_job: ImportJob, payload: dict[str, Any]) -> ImportSource:
+    """Rebuild the import source recorded on a queued batch, failing closed.
+
+    The provider is read from the durable ImportJob row (server-trusted), not
+    the payload. For local fixtures the payload's path is validated against the
+    operator-pinned root; for the pinned bootstrap manifest the loaded
+    manifest's checksum must still match the one captured at enqueue, or the
+    pinned manifest changed under a queued job and we refuse rather than import
+    drifted content. Either way, no network fetch happens here.
+    """
+    provider = ImportProvider(import_job.provider)
+    if provider is ImportProvider.LOCAL_FIXTURE:
+        return LocalFixtureSource(
+            validated_fixtures_dir(payload), upstream_ref=import_job.upstream_ref
+        )
+    if provider is ImportProvider.CATALOG_BOOTSTRAP:
+        source = BootstrapManifestSource()
+        if payload.get("manifest_checksum") != source.manifest_checksum:
+            raise RuntimeError(
+                "bootstrap manifest checksum drifted since this job was enqueued; refusing"
+            )
+        return source
+    raise RuntimeError(f"unsupported import provider {provider!r}")
+
+
 async def handle_catalog_import(session: AsyncSession, payload: dict[str, Any]) -> None:
     """Advance one durable import batch by one pass over its non-terminal
     items (repos/catalog_import.py). Idempotent and crash-safe: re-running
@@ -491,21 +520,21 @@ async def handle_catalog_import(session: AsyncSession, payload: dict[str, Any]) 
     a terminal state.
 
     Step 5a scope only: the importer scope comes from server configuration
-    (CatalogAuthority), never the payload, and fixtures_dir is a local path
-    validated against the operator-pinned root — no network fetch happens here.
+    (CatalogAuthority), never the payload, and the source is reconstructed from
+    the durable job row — no network fetch happens here.
     """
-    fixtures_dir = validated_fixtures_dir(payload)
     authority = CatalogAuthority.from_env()
     scope = authority.importer_scope()
     import_job = await catalog_import_repo.get_import_job_by_idempotency_key(
         session, payload["idempotency_key"]
     )
+    source = _source_for_import(import_job, payload)
     await catalog_import_repo.process_import_batch(
         scope,
         session,
         import_job.id,
         authority=authority,
-        fixtures_dir=fixtures_dir,
+        source=source,
     )
 
 

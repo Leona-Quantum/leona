@@ -14,13 +14,19 @@ import uuid
 from pathlib import Path
 
 import pytest
-from majorana_contracts.enums import ImportItemState, ImportJobStatus, ImportProvider
+from majorana_contracts.enums import ImportItemState, ImportJobStatus
 from sqlalchemy import func, select
 
 from majorana_api.catalog_authority import CatalogAuthority
+from majorana_api.catalog_import_fixtures import LocalFixtureSource
 from majorana_api.db import engine_from_env, session_factory
 from majorana_api.orm import Artifact, ArtifactVersion, ImportItem
 from majorana_api.repos import catalog_import, system
+
+
+def _fixture_source(fixtures_dir, upstream_ref: str) -> LocalFixtureSource:
+    return LocalFixtureSource(fixtures_dir, upstream_ref=upstream_ref)
+
 
 requires_db = pytest.mark.skipif(
     "DATABASE_URL" not in os.environ, reason="catalog import needs DATABASE_URL"
@@ -98,27 +104,16 @@ async def test_create_import_job_is_idempotent(env):
     authority, factory = env
     scope = authority.importer_scope()
     key = f"idem-{uuid.uuid4()}"
+    source = _fixture_source(FIXTURES_ROOT / "valid_set", "valid_set")
     async with factory() as session:
         first = await catalog_import.create_import_job(
-            scope,
-            session,
-            authority=authority,
-            provider=ImportProvider.LOCAL_FIXTURE,
-            upstream_ref="valid_set",
-            idempotency_key=key,
-            fixtures_dir=FIXTURES_ROOT / "valid_set",
+            scope, session, authority=authority, source=source, idempotency_key=key
         )
         await session.commit()
 
     async with factory() as session:
         second = await catalog_import.create_import_job(
-            scope,
-            session,
-            authority=authority,
-            provider=ImportProvider.LOCAL_FIXTURE,
-            upstream_ref="valid_set",
-            idempotency_key=key,
-            fixtures_dir=FIXTURES_ROOT / "valid_set",
+            scope, session, authority=authority, source=source, idempotency_key=key
         )
         await session.commit()
 
@@ -138,10 +133,8 @@ async def test_reused_key_with_different_request_is_rejected(env):
             scope,
             session,
             authority=authority,
-            provider=ImportProvider.LOCAL_FIXTURE,
-            upstream_ref="valid_set",
+            source=_fixture_source(FIXTURES_ROOT / "valid_set", "valid_set"),
             idempotency_key=key,
-            fixtures_dir=FIXTURES_ROOT / "valid_set",
         )
         await session.commit()
 
@@ -151,10 +144,9 @@ async def test_reused_key_with_different_request_is_rejected(env):
                 scope,
                 session,
                 authority=authority,
-                provider=ImportProvider.LOCAL_FIXTURE,
-                upstream_ref="duplicate_pair",  # different request, same key
+                # different request (provider dir + ref), same key
+                source=_fixture_source(FIXTURES_ROOT / "duplicate_pair", "duplicate_pair"),
                 idempotency_key=key,
-                fixtures_dir=FIXTURES_ROOT / "duplicate_pair",
             )
 
 
@@ -166,15 +158,10 @@ async def test_concurrent_create_with_same_key_returns_winner(env, monkeypatch):
     authority, factory = env
     scope = authority.importer_scope()
     key = f"idem-{uuid.uuid4()}"
+    source = _fixture_source(FIXTURES_ROOT / "valid_set", "valid_set")
     async with factory() as session:
         winner = await catalog_import.create_import_job(
-            scope,
-            session,
-            authority=authority,
-            provider=ImportProvider.LOCAL_FIXTURE,
-            upstream_ref="valid_set",
-            idempotency_key=key,
-            fixtures_dir=FIXTURES_ROOT / "valid_set",
+            scope, session, authority=authority, source=source, idempotency_key=key
         )
         await session.commit()
         winner_id = winner.id
@@ -192,13 +179,7 @@ async def test_concurrent_create_with_same_key_returns_winner(env, monkeypatch):
 
     async with factory() as session:
         recovered = await catalog_import.create_import_job(
-            scope,
-            session,
-            authority=authority,
-            provider=ImportProvider.LOCAL_FIXTURE,
-            upstream_ref="valid_set",
-            idempotency_key=key,
-            fixtures_dir=FIXTURES_ROOT / "valid_set",
+            scope, session, authority=authority, source=source, idempotency_key=key
         )
     assert recovered.id == winner_id
     assert calls["n"] == 2  # the recovery path actually ran
@@ -210,19 +191,14 @@ async def test_valid_fixtures_all_staged_and_stay_non_public(env, tmp_path):
     scope = authority.importer_scope()
     key = f"idem-{uuid.uuid4()}"
     fixtures_dir = _unique_copy(FIXTURES_ROOT / "valid_set", tmp_path)
+    source = _fixture_source(fixtures_dir, "valid_set")
     async with factory() as session:
         job = await catalog_import.create_import_job(
-            scope,
-            session,
-            authority=authority,
-            provider=ImportProvider.LOCAL_FIXTURE,
-            upstream_ref="valid_set",
-            idempotency_key=key,
-            fixtures_dir=fixtures_dir,
+            scope, session, authority=authority, source=source, idempotency_key=key
         )
         await session.commit()
         finished = await catalog_import.process_import_batch(
-            scope, session, job.id, authority=authority, fixtures_dir=fixtures_dir
+            scope, session, job.id, authority=authority, source=source
         )
 
     assert finished.status == ImportJobStatus.COMPLETED
@@ -245,19 +221,14 @@ async def test_duplicate_pair_one_staged_one_rejected(env, tmp_path):
     scope = authority.importer_scope()
     key = f"idem-{uuid.uuid4()}"
     fixtures_dir = _unique_copy(FIXTURES_ROOT / "duplicate_pair", tmp_path)
+    source = _fixture_source(fixtures_dir, "duplicate_pair")
     async with factory() as session:
         job = await catalog_import.create_import_job(
-            scope,
-            session,
-            authority=authority,
-            provider=ImportProvider.LOCAL_FIXTURE,
-            upstream_ref="duplicate_pair",
-            idempotency_key=key,
-            fixtures_dir=fixtures_dir,
+            scope, session, authority=authority, source=source, idempotency_key=key
         )
         await session.commit()
         finished = await catalog_import.process_import_batch(
-            scope, session, job.id, authority=authority, fixtures_dir=fixtures_dir
+            scope, session, job.id, authority=authority, source=source
         )
 
     assert finished.status == ImportJobStatus.COMPLETED_WITH_REJECTIONS
@@ -279,19 +250,14 @@ async def test_adversarial_fixtures_fail_safely(env):
     scope = authority.importer_scope()
     key = f"idem-{uuid.uuid4()}"
     fixtures_dir = FIXTURES_ROOT / "adversarial_set"
+    source = _fixture_source(fixtures_dir, "adversarial_set")
     async with factory() as session:
         job = await catalog_import.create_import_job(
-            scope,
-            session,
-            authority=authority,
-            provider=ImportProvider.LOCAL_FIXTURE,
-            upstream_ref="adversarial_set",
-            idempotency_key=key,
-            fixtures_dir=fixtures_dir,
+            scope, session, authority=authority, source=source, idempotency_key=key
         )
         await session.commit()
         finished = await catalog_import.process_import_batch(
-            scope, session, job.id, authority=authority, fixtures_dir=fixtures_dir
+            scope, session, job.id, authority=authority, source=source
         )
 
     assert finished.status == ImportJobStatus.COMPLETED_WITH_REJECTIONS
@@ -316,19 +282,14 @@ async def test_retry_creates_no_duplicate_version(env, tmp_path):
     scope = authority.importer_scope()
     key = f"idem-{uuid.uuid4()}"
     fixtures_dir = _unique_copy(FIXTURES_ROOT / "valid_set", tmp_path)
+    source = _fixture_source(fixtures_dir, "valid_set")
     async with factory() as session:
         job = await catalog_import.create_import_job(
-            scope,
-            session,
-            authority=authority,
-            provider=ImportProvider.LOCAL_FIXTURE,
-            upstream_ref="valid_set",
-            idempotency_key=key,
-            fixtures_dir=fixtures_dir,
+            scope, session, authority=authority, source=source, idempotency_key=key
         )
         await session.commit()
         await catalog_import.process_import_batch(
-            scope, session, job.id, authority=authority, fixtures_dir=fixtures_dir
+            scope, session, job.id, authority=authority, source=source
         )
 
     async with factory() as session:
@@ -345,7 +306,7 @@ async def test_retry_creates_no_duplicate_version(env, tmp_path):
     # Simulate a retry of the same batch (e.g. the worker re-claims the job).
     async with factory() as session:
         again = await catalog_import.process_import_batch(
-            scope, session, job.id, authority=authority, fixtures_dir=fixtures_dir
+            scope, session, job.id, authority=authority, source=source
         )
     assert again.status == ImportJobStatus.COMPLETED
     assert again.accepted_count == 2
@@ -376,15 +337,10 @@ async def test_crashed_import_resumes_from_durable_item_state(env, tmp_path):
     scope = authority.importer_scope()
     key = f"idem-{uuid.uuid4()}"
     fixtures_dir = _unique_copy(FIXTURES_ROOT / "valid_set", tmp_path)
+    source = _fixture_source(fixtures_dir, "valid_set")
     async with factory() as session:
         job = await catalog_import.create_import_job(
-            scope,
-            session,
-            authority=authority,
-            provider=ImportProvider.LOCAL_FIXTURE,
-            upstream_ref="valid_set",
-            idempotency_key=key,
-            fixtures_dir=fixtures_dir,
+            scope, session, authority=authority, source=source, idempotency_key=key
         )
         await session.commit()
 
@@ -399,7 +355,7 @@ async def test_crashed_import_resumes_from_durable_item_state(env, tmp_path):
             session,
             items[first_identity],
             authority=authority,
-            fixtures_dir=fixtures_dir,
+            source=source,
             staging=catalog_import.LocalFixtureStagingDefaults(),
             slug_prefix=f"import-{job.id.hex[:12]}-resume-test",
         )
@@ -415,7 +371,7 @@ async def test_crashed_import_resumes_from_durable_item_state(env, tmp_path):
     # "Resume" the crashed import with a normal batch call.
     async with factory() as session:
         finished = await catalog_import.process_import_batch(
-            scope, session, job.id, authority=authority, fixtures_dir=fixtures_dir
+            scope, session, job.id, authority=authority, source=source
         )
     assert finished.status == ImportJobStatus.COMPLETED
     assert finished.accepted_count == 2
