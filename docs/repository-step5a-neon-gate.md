@@ -56,7 +56,8 @@ CODEOWNER review.
 
 ## Required next step
 
-CODEOWNER review remains required before Step 5b (real network fetcher, SSRF
-hardening — see `docs/quantum-repository-platform-plan.md` §14). After review evidence
-is captured, delete the temporary Neon branch `step5a-catalog-import-20260718` (owner
-action).
+Step 5b scoping and ordinary implementation may begin without a separate CODEOWNER
+approval (real network fetcher and SSRF hardening — see
+`docs/quantum-repository-platform-plan.md` §14). Existing CODEOWNERS rules remain in
+force for blast-radius files. Delete the temporary Neon branch
+`step5a-catalog-import-20260718` only as an explicit owner action.

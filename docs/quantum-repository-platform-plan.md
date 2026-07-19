@@ -1,6 +1,6 @@
 # Quantum Repository Platform - staged implementation plan
 
-Status: Steps 2-5a implemented, locally and Neon-gate validated; CODEOWNER review pending before Step 5b  
+Status: Steps 2-5a implemented and validated; Step 5b scoping may begin without a separate CODEOWNER gate  
 Owner lane: Rei / Neon catalog, FastAPI repository API, classification, and ingestion  
 Prepared: 2026-07-18  
 Target branch: `feature/repository`  
@@ -603,7 +603,7 @@ see `docs/repository-step5a-import-skeleton.md` and `docs/repository-step5a-neon
 Rollback: disable import creation and drain/cancel active jobs; staged data remains non-public for
 audit or approved deletion.
 
-#### Step 5b - safe fetcher and real sources (not started; needs its own go-ahead)
+#### Step 5b - safe fetcher and real sources (not started; independently scoped)
 
 Scope:
 
@@ -828,23 +828,24 @@ Step 2's temporary Neon gate passed and its CI output-name bug (`db_url_pooled` 
 `catalog_import_fixtures.py`, `repos/catalog_import.py`, the local-fixture-only import
 pipeline) are implemented and validated against a throwaway local Postgres 14 — see
 `docs/repository-step3-catalog-schema.md`, `docs/repository-step4-provenance-rights.md`,
-and `docs/repository-step5a-import-skeleton.md`. Before Step 5b:
+and `docs/repository-step5a-import-skeleton.md`. Before Step 5b implementation:
 
-1. obtain CODEOWNER review for migrations `0013`-`0016`, the auth boundary, contracts,
-   and workflows;
-2. retain `SYSTEM_CATALOG_ENABLED=false`;
-3. delete the temporary Neon branches used for gate validation
+1. retain `SYSTEM_CATALOG_ENABLED=false`;
+2. delete the temporary Neon branches used for gate validation
    (`step3-4-catalog-provenance-20260718`, `step5a-catalog-import-20260718`) after
    review evidence is captured;
-4. resolve the local uv workspace-discovery issue independently of repository work;
-5. scope Step 5b explicitly before implementation: it introduces real external network
+3. resolve the local uv workspace-discovery issue independently of repository work;
+4. scope Step 5b explicitly before implementation: it introduces real external network
    fetching (SSRF/quarantine hardening, allowlisted connectors, the 285-record bootstrap
    manifest) — a materially larger security surface than Steps 2-5a, and per decision 5
-   (§1) it should land in its own small reviewable slices with an explicit go-ahead, not
-   be bundled into a prior step's review.
+   (§1) it should land in its own small reviewable slices rather than be bundled into a
+   prior step's review. Scoping and ordinary implementation do not require a separate
+   Step 5b CODEOWNER approval. Existing repository-wide CODEOWNERS rules still apply if
+   a slice changes or merges a blast-radius file.
 
-Do not import or publish any of the 285 bootstrap records before Step 5b is reviewed and
-implemented. Do not promote a temporary branch as a production database. Step 5b
+Do not import or publish any of the 285 bootstrap records before the relevant Step 5b
+fetching and quarantine controls are implemented and validated. Do not promote a
+temporary branch as a production database. Step 5b
 introduces real external network fetching (SSRF/quarantine hardening, allowlisted
-connectors) and should get its own explicit scoping and review checkpoint before
-implementation starts, given its larger security surface relative to Steps 2-5a.
+connectors) and therefore keeps an explicit scoping and validation checkpoint, but no
+additional CODEOWNER approval is required merely to begin Step 5b work.

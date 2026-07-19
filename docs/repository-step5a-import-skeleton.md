@@ -2,7 +2,7 @@
 
 Date: 2026-07-18
 Branch: `feature/repository`
-State: implementation and local up→down→up validation complete; CODEOWNER review pending
+State: implementation and local up→down→up validation complete
 
 ## User outcome
 
@@ -86,8 +86,9 @@ a real transactional rollback:
 - any public route, review/publish transition, or web surface (Step 6+).
 
 Step 5b has a materially larger security surface (outbound network access from a
-server-owned identity) than everything shipped so far in this plan and needs its own
-explicit go-ahead, not an implicit continuation of Step 5a.
+server-owned identity), so it remains independently scoped and validation-gated rather
+than an implicit continuation of Step 5a. It does not require a separate CODEOWNER
+approval merely to begin scoping or ordinary implementation.
 
 ## Local validation (no Neon touched)
 
@@ -128,8 +129,9 @@ short-path unix socket, stopped and deleted after):
 A real Neon branch (`step5a-catalog-import-20260718`) confirmed the same results
 against Postgres 17 — see `docs/repository-step5a-neon-gate.md`.
 
-## Required gate
+## Next-step gate
 
-CODEOWNER review remains required before any Step 5b scoping discussion for the
-migration, contracts, and repository-layer changes. `SYSTEM_CATALOG_ENABLED` stays
-`false`; no public catalog data exists; nothing in this step ever touches the network.
+Step 5b scoping may begin without a separate CODEOWNER approval. Keep
+`SYSTEM_CATALOG_ENABLED=false`, make no public catalog data available, and preserve the
+network/security validation gates. Repository-wide CODEOWNERS rules still apply to any
+blast-radius file that a Step 5b slice changes or merges.
