@@ -138,7 +138,7 @@ async def run_case(
     sandbox_event = _latest_sandbox_event(events)
     export_status = export_event.payload.get("status") if export_event else None
     saved = "artifact.saved" in types
-    qasm_emission = sandbox_event.payload.get("qasm_emission", {}) if sandbox_event else {}
+    qasm_emission = (sandbox_event.payload.get("qasm_emission") if sandbox_event else None) or {}
     evidence = CaseEvidence(
         failed_stage=error_event.payload.get("stage") if error_event else None,
         error_code=error_event.payload.get("code") if error_event else None,

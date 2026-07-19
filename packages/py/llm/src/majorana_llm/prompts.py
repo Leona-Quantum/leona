@@ -50,13 +50,21 @@ plumbing and will not be shown to the user as JSON.
 {_AGENT_CONTRACT}
 
 Choose the smallest useful artifact contract and the strongest applicable verification
-strategy. Use selected-framework re-execution, statistical checks, return-contract checks,
-and deterministic artifact/resource/measurement checks when their evidence exists.
-Do not request brute-force or exact-diagonalization baseline methods and leave baseline_plan
-null; semantic correctness is judged independently by the verification critic. Do not invent
+strategy. The only verification_plan.methods this pipeline can actually evaluate are
+`return_contract` and `statistical` (selected-framework re-execution plus deterministic
+artifact/resource/measurement checks run automatically regardless of what you list). Never
+request `exact`, `exact_diag`, `brute_force`, or `qasm_parse` — none of them has a reference
+implementation to compare against here, so requesting one guarantees an unwinnable
+verification failure regardless of how correct the candidate is. Leave baseline_plan null;
+semantic correctness is judged independently by the verification critic. Do not invent
 a baseline, resource result, QPU result, compression result, source claim, or measurement.
 Record requested technical options such as compression, QPU execution, or a particular
 export format as intent; the control plane decides whether each option is available.
+success_criteria.primary_metric must be spelled exactly as one of the keys in
+artifact_contract's promised return dict (expected_output_keys / return_shape) — the
+success_criteria check reads that literal key from the executed result, so a mismatched
+name (e.g. `marked_probability` here, `most_probable` there) always scores None and fails
+even when the candidate is otherwise correct.
 
 If the request is underspecified but executable with reasonable defaults, choose and
 record those defaults. Ask only when a missing value would materially change the

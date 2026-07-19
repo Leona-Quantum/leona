@@ -130,6 +130,7 @@ class StructuredToolModel:
                 "state": result.state.value,
                 "payload": _history_payload(result),
                 "error_code": result.error_code,
+                "error_message": result.error_message,
             }
             for result in history
         ]

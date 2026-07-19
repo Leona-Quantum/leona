@@ -13,7 +13,7 @@ import {
   type ArtifactFrameworkHydration,
 } from "../../../lib/framework-selection";
 import { RunComposer, type ComposerFramework } from "../../../components/run-composer";
-import { RunHeroMark } from "../../../components/run-hero-mark";
+import { ElectronField } from "../../../components/electron-field";
 
 interface PromptAttachment {
   name: string;
@@ -216,7 +216,9 @@ export function RunWorkspace({ demoMode = false, locale = "en" }: { demoMode?: b
       <div className="mj-run-home-scroll">
         <div className="mj-run-home-content mj-run-home-content--centered">
           <header className="mj-run-home-heading mj-run-home-hero">
-            <RunHeroMark engaged={composerEngaged} />
+            <span className={`mj-run-hero-lioness${composerEngaged ? " is-engaged" : ""}`} aria-hidden="true">
+              <ElectronField target="lioness" />
+            </span>
             <RunGreeting copy={copy} />
             {demoMode ? (
               <div className="mj-run-home-status" aria-label={locale === "ja" ? "モデルの状態" : "Model status"}>

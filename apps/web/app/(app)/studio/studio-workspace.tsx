@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useRef, useState, type KeyboardEvent, type MouseEvent } from "react";
+import { useEffect, useRef, useState, type KeyboardEvent, type MouseEvent, type UIEvent } from "react";
+import { SyntaxHighlightedCode } from "@majorana/ui";
 import { CheckIcon, CopyIcon, PanelRightIcon, SearchIcon } from "../../../components/icons";
 import { frameworkVariantsFromRemote, getLibraryArtifact, loadLibraryArtifacts, type LibraryArtifact } from "../../../lib/library-data";
 import type { PublicLocale } from "../../../lib/public-locale";
@@ -364,11 +365,11 @@ export function StudioWorkspace({ artifactId, newDraft = false, locale = "en" }:
               </div>
               <button className="mj-primary-button" type="button" onClick={() => applyArtifact(null)}>{copy.new}</button>
             </div>
-            <label className="mj-studio-search mj-studio-search--lioness">
+            <label className="mj-studio-search mj-studio-search--dots">
               <SearchIcon size={17} />
               <span className="sr-only">{copy.search}</span>
               <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={copy.searchPlaceholder} />
-              <StudioLioness />
+              <StudioDots />
             </label>
             {artifactSyncError ? <p className="mj-studio-empty" role="alert">{copy.remoteSyncUnavailable}</p> : null}
             <div className="mj-studio-discovery-list">
@@ -392,44 +393,141 @@ export function StudioWorkspace({ artifactId, newDraft = false, locale = "en" }:
 type StudioCopy = (typeof WORKSPACE_COPY)[PublicLocale]["studio"];
 
 /**
- * Decorative studio companion: a small moss-green lioness walks in along the
- * top edge of the discovery search bar, lies down sphinx-style above the
- * search icon, and paws at the icon while the bar is hovered. The walking →
- * lying stage flip lives here (a timer) so the lying pose is a plain CSS
- * transform that hover pawing can compose with; all motion is CSS
- * (globals.css) and reduced-motion skips straight to the lying pose.
+ * Decorative studio companion (Owner Inbox 2026-07-19, replacing the walking
+ * cat): a thin strip of superposition "dots" drifting along the top edge of the
+ * discovery search bar. They periodically COLLAPSE toward a random point and
+ * disperse again — a measurement motif — and while the bar is hovered/focused
+ * they converge toward the pointer instead, so it stays interactive. Canvas so
+ * many points stay cheap; reads --accent / --text-0 at runtime to theme with
+ * light/dark, and holds a single static frame under prefers-reduced-motion.
  */
-function StudioLioness() {
-  const [pose, setPose] = useState<"walking" | "lying">("walking");
+function StudioDots() {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+
   useEffect(() => {
-    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
-      setPose("lying");
-      return;
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+    const host = canvas.closest<HTMLElement>(".mj-studio-search--dots") ?? canvas.parentElement;
+    const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+    const N = 30;
+    const dots = Array.from({ length: N }, (_, i) => ({
+      bx: (i + 0.5) / N,
+      by: 0.28 + Math.random() * 0.44,
+      phase: Math.random() * Math.PI * 2,
+      speed: 0.5 + Math.random() * 0.7,
+      amp: 0.05 + Math.random() * 0.06,
+      r: 0.8 + Math.random() * 1.3,
+      bright: Math.random() < 0.16,
+    }));
+
+    // Collapse cycle: drift, then converge to a random x, hold, disperse.
+    let collapseX = 0.5;
+    let cycleStart = 0;
+    const CYCLE = 480; // frames (~8s at 60fps)
+
+    let pointer: number | null = null;
+    let hovering = false;
+    const onMove = (event: PointerEvent) => {
+      const rect = canvas.getBoundingClientRect();
+      pointer = rect.width ? (event.clientX - rect.left) / rect.width : null;
+    };
+    const onEnter = () => { hovering = true; };
+    const onLeave = () => { hovering = false; pointer = null; };
+    host?.addEventListener("pointermove", onMove);
+    host?.addEventListener("pointerenter", onEnter);
+    host?.addEventListener("pointerleave", onLeave);
+
+    function colors() {
+      const st = getComputedStyle(canvas!);
+      return {
+        accent: st.getPropertyValue("--accent").trim() || "olivedrab",
+        bright: st.getPropertyValue("--text-0").trim() || "black",
+      };
     }
-    const timer = window.setTimeout(() => setPose("lying"), 2600);
-    return () => window.clearTimeout(timer);
+
+    function resize() {
+      const w = canvas!.clientWidth, h = canvas!.clientHeight;
+      const dpr = Math.min(window.devicePixelRatio || 1, 2);
+      canvas!.width = Math.max(1, w * dpr);
+      canvas!.height = Math.max(1, h * dpr);
+      ctx!.setTransform(dpr, 0, 0, dpr, 0, 0);
+    }
+
+    const ease = (x: number) => (x < 0.5 ? 2 * x * x : 1 - Math.pow(-2 * x + 2, 2) / 2);
+    let frame = 0;
+    let raf = 0;
+
+    function draw() {
+      const W = canvas!.clientWidth, H = canvas!.clientHeight;
+      const { accent, bright } = colors();
+      ctx!.clearRect(0, 0, W, H);
+
+      // Collapse strength + target for this frame.
+      let conv = 0;
+      let targetX = collapseX;
+      let targetY = 0.5;
+      if (hovering && pointer != null) {
+        conv = 0.85;
+        targetX = pointer;
+      } else if (!reduceMotion) {
+        const p = (frame - cycleStart) / CYCLE;
+        if (p >= 1) { cycleStart = frame; collapseX = 0.18 + Math.random() * 0.64; }
+        // converge over first 25%, hold to 45%, disperse to 70%, drift after.
+        const q = (frame - cycleStart) / CYCLE;
+        if (q < 0.25) conv = ease(q / 0.25);
+        else if (q < 0.45) conv = 1;
+        else if (q < 0.7) conv = 1 - ease((q - 0.45) / 0.25);
+        else conv = 0;
+      } else {
+        conv = 0.4;
+      }
+
+      const t = frame / 60;
+      dots.forEach((d) => {
+        const dx = reduceMotion ? d.bx : d.bx + Math.sin(t * d.speed + d.phase) * d.amp;
+        const dy = reduceMotion ? d.by : d.by + Math.cos(t * d.speed * 0.8 + d.phase) * d.amp * 1.4;
+        const x = (dx + (targetX - dx) * conv) * W;
+        const y = (dy + (targetY - dy) * conv) * H;
+        if (conv > 0.15 && !reduceMotion) {
+          ctx!.globalAlpha = 0.12 * conv;
+          ctx!.strokeStyle = accent;
+          ctx!.beginPath();
+          ctx!.moveTo(targetX * W, targetY * H);
+          ctx!.lineTo(x, y);
+          ctx!.stroke();
+        }
+        ctx!.globalAlpha = 0.45 + 0.5 * conv;
+        ctx!.fillStyle = d.bright ? bright : accent;
+        ctx!.beginPath();
+        ctx!.arc(x, y, d.r + (d.bright ? 0.8 : 0), 0, Math.PI * 2);
+        ctx!.fill();
+      });
+      ctx!.globalAlpha = 1;
+    }
+
+    function tick() { frame += 1; draw(); raf = window.requestAnimationFrame(tick); }
+
+    resize();
+    draw();
+    const ro = new ResizeObserver(() => { resize(); draw(); });
+    ro.observe(canvas);
+    if (!reduceMotion) raf = window.requestAnimationFrame(tick);
+
+    return () => {
+      window.cancelAnimationFrame(raf);
+      ro.disconnect();
+      host?.removeEventListener("pointermove", onMove);
+      host?.removeEventListener("pointerenter", onEnter);
+      host?.removeEventListener("pointerleave", onLeave);
+    };
   }, []);
+
   return (
-    <span className={`mj-lioness is-${pose}`} aria-hidden="true">
-      <svg viewBox="0 0 72 34" width={72} height={34} fill="none">
-        <g className="mj-lioness-figure">
-          <g className="mj-lioness-tail">
-            <path d="M47 16.5c4.2-1.2 6.8-3.6 8.2-7.4" />
-            <circle cx="55.6" cy="8.4" r="1.9" />
-          </g>
-          <g className="mj-lioness-leg mj-lioness-leg--front-far"><path d="M27.5 20.5v9" /></g>
-          <g className="mj-lioness-leg mj-lioness-leg--rear-far"><path d="M43.5 20.5v9" /></g>
-          <ellipse className="mj-lioness-body" cx="35" cy="17.6" rx="13.6" ry="6" />
-          <g className="mj-lioness-leg mj-lioness-leg--rear-near"><path d="M46.5 20.5v9.4" /></g>
-          <g className="mj-lioness-leg mj-lioness-leg--front-near"><path d="M24 20.5v9.4" /></g>
-          <g className="mj-lioness-head">
-            <circle cx="16.2" cy="11.2" r="5.3" />
-            <circle className="mj-lioness-ear" cx="13" cy="7" r="1.8" />
-            <circle className="mj-lioness-ear" cx="19.4" cy="6.8" r="1.8" />
-            <path className="mj-lioness-muzzle" d="M11.4 12c-1.5.2-2.4.7-2.9 1.5" />
-          </g>
-        </g>
-      </svg>
+    <span className="mj-studio-dots" aria-hidden="true">
+      <canvas ref={canvasRef} style={{ width: "100%", height: "100%", display: "block" }} />
     </span>
   );
 }
@@ -741,10 +839,29 @@ function CircuitBuilder({ seed, framework, selectedGate, onSelectGate, onApply, 
 }
 
 function CodeEditor({ code, framework, onChange, onCopy, copied, copy }: { code: string; framework: StudioFramework; onChange: (code: string) => void; onCopy: () => void; copied: boolean; copy: StudioCopy }) {
+  // Colored editor (Owner Inbox 2026-07-19, "all code should be colored well"):
+  // a syntax-highlighted <pre> sits directly behind a transparent-text
+  // <textarea> that shares its exact typography and padding, so the caret and
+  // selection stay real while the visible glyphs are the colored tokens. A
+  // trailing newline keeps the highlight height in step with the textarea, and
+  // onScroll keeps the two layers aligned.
+  const highlightRef = useRef<HTMLPreElement>(null);
+  const syncScroll = (event: UIEvent<HTMLTextAreaElement>) => {
+    const el = event.currentTarget;
+    if (highlightRef.current) {
+      highlightRef.current.scrollTop = el.scrollTop;
+      highlightRef.current.scrollLeft = el.scrollLeft;
+    }
+  };
   return (
     <section className="mj-studio-surface mj-studio-code-panel" aria-label={copy.sourceEditor}>
       <div className="mj-studio-surface-head"><div><span className="mj-section-label">{copy.sourceEditor}</span><h2>{copy.implementation(frameworkLabel(framework))}</h2></div><button className="mj-secondary-button" type="button" onClick={onCopy} title={copied ? copy.copied : copy.copyCode}><CopyIcon size={14} />{copied ? copy.copied : copy.copyCode}</button></div>
-      <textarea className="mj-studio-code-editor" value={code} onChange={(event) => onChange(event.target.value)} spellCheck={false} aria-label={`${frameworkLabel(framework)} ${copy.sourceEditorInput}`} />
+      <div className="mj-studio-code-editor-wrap">
+        <pre className="mj-studio-code-highlight" aria-hidden="true" ref={highlightRef}>
+          <SyntaxHighlightedCode code={code + "\n"} language={framework} />
+        </pre>
+        <textarea className="mj-studio-code-editor" value={code} onChange={(event) => onChange(event.target.value)} onScroll={syncScroll} spellCheck={false} aria-label={`${frameworkLabel(framework)} ${copy.sourceEditorInput}`} />
+      </div>
       <p className="mj-studio-editor-note">{copy.editorNote}</p>
     </section>
   );

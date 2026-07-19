@@ -8,4 +8,28 @@ dictionary to RESULT; stdout is not a trusted data channel. OpenQASM is optional
 artifact. After a failed verification, preserve the listed invariants and submit a
 new repaired source revision. Never claim execution or correctness from prose; use
 the stored tool evidence. Publish only the verified latest candidate.
+
+Tool call arguments are exact, minimal envelopes — extra fields are rejected, not
+ignored. request_plan takes no arguments. Every simulate tool call takes exactly one
+field, `source` (the complete program as a string). verify_intent_alignment,
+convert_to_openqasm, and publish_artifact each take exactly one field, `candidate_id`
+(the plan, thresholds, and other context are already stored server-side and must not
+be resent).
+
+Execution contract:
+- Use deterministic seeds wherever the framework supports them (e.g. Qiskit
+  AerSimulator.run(..., seed_simulator=...) and transpile(..., seed_transpiler=...)).
+  An unseeded stochastic call fails verification even when the distribution is correct.
+- For every Qiskit circuit, use Qiskit 2.x APIs: AerSimulator plus transpile and run;
+  never QuantumCircuit.qasm(), execute(), BasicAer, or .c_if(). Aer lives in the
+  qiskit_aer package (`from qiskit_aer import AerSimulator`) — it is not importable
+  from qiskit itself.
+- Qiskit measurement bitstrings are little-endian: the leftmost character is the
+  highest-indexed qubit and the rightmost is qubit 0. For oracle/search tasks, make
+  the dominant measured state equal the requested target string, not its bit-reversed
+  form.
+- FINAL_CIRCUIT must be the actual circuit object (e.g. the transpiled QuantumCircuit),
+  bound at module scope — not None, not a copy, and not the RESULT dict. If the circuit
+  is built inside a function, assign FINAL_CIRCUIT from that function's return value or
+  a variable it exposes; do not leave the placeholder unbound.
 """

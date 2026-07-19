@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import { SyntaxHighlightedCode } from "@majorana/ui";
 import { CopyIcon, MoreIcon, StarIcon } from "../../../../components/icons";
 import { archiveArtifact, deleteArtifact, frameworkVariantsFromRemote, getLibraryArtifact, loadStarredLibraryArtifactIds, toggleLibraryArtifactStar, type LibraryArtifact } from "../../../../lib/library-data";
 import type { PublicLocale } from "../../../../lib/public-locale";
@@ -216,7 +217,7 @@ function CodeAndExport({ artifact, copied, onCopy, copy }: { artifact: LibraryAr
     <div className="mj-artifact-grid mj-artifact-grid--code">
       <section className="mj-artifact-panel mj-artifact-panel--wide">
         <div className="mj-panel-heading"><h2>{copy.sourceCode}</h2><div className="mj-artifact-code-actions">{options.length > 1 ? <label><span className="sr-only">{copy.framework}</span><select value={selected} onChange={(event) => setSelected(event.target.value)}>{options.map((option) => <option key={option.key} value={option.key}>{option.label}</option>)}</select></label> : null}<button className="mj-secondary-button" type="button" onClick={() => onCopy(selectedCode)} title={copied ? copy.copied : copy.copyCode}><CopyIcon size={14} />{copied ? copy.copied : copy.copyCode}</button></div></div>
-        <pre className="mj-artifact-code" tabIndex={0} role="region" aria-label={`${artifact.title} ${selected} ${copy.sourceCode}`}><code>{selectedCode || copy.noCode}</code></pre>
+        <pre className="mj-artifact-code" tabIndex={0} role="region" aria-label={`${artifact.title} ${selected} ${copy.sourceCode}`}>{selectedCode ? <SyntaxHighlightedCode code={selectedCode} language={selected} /> : <code>{copy.noCode}</code>}</pre>
       </section>
       <section className="mj-artifact-panel">
         <div className="mj-panel-heading"><h2>{copy.exportHeading}</h2><span className="mj-mono-muted">{copy.classified}</span></div>

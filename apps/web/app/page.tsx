@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { CircuitBand } from "../components/circuit-band";
 import { BrandMark } from "../components/icons";
 import { LeoConstellation } from "../components/leo-constellation";
+import { MeasurementLab } from "../components/measurement-lab";
 import { PublicSite } from "../components/public-site";
 import { Reveal } from "../components/reveal";
 import { ScrollCue } from "../components/scroll-cue";
@@ -80,12 +81,23 @@ export default async function Home() {
       </section>
 
       <Reveal>
-        <section className="mj-company-section mj-company-intro" aria-labelledby="company-intro-heading">
-          <div>
+        {/* Intro, now with the Measure widget folded in as a small interactive
+            accent (Owner Inbox 2026-07-19) — it augments the section for fun
+            rather than owning a full section of its own. */}
+        <section className="mj-company-section mj-company-intro mj-company-intro--measure" aria-labelledby="company-intro-heading">
+          <div className="mj-company-intro-copy">
             <p className="mj-section-label">{copy.intro.label}</p>
             <h2 id="company-intro-heading">{copy.intro.title}</h2>
+            <p>{copy.intro.body}</p>
           </div>
-          <p>{copy.intro.body}</p>
+          <aside className="mj-intro-measure" aria-labelledby="measure-heading">
+            <div className="mj-intro-measure-head">
+              <p className="mj-section-label">{copy.measure.label}</p>
+              <h3 id="measure-heading">{copy.measure.title}</h3>
+              <p>{copy.measure.body}</p>
+            </div>
+            <MeasurementLab />
+          </aside>
         </section>
       </Reveal>
 

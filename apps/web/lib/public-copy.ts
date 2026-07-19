@@ -51,6 +51,8 @@ export const HOME_COPY: Record<PublicLocale, {
     title: string;
     items: Array<{ title: string; body: string }>;
   };
+  lioness: { label: string; title: string };
+  measure: { label: string; title: string; body: string };
   cta: { label: string; title: string; contact: string; pricing: string };
 }> = {
   en: {
@@ -98,6 +100,15 @@ export const HOME_COPY: Record<PublicLocale, {
         { title: "Privacy by design", body: "Your work is yours—secure by default, always." },
         { title: "Interoperable", body: "Open formats and APIs keep knowledge portable." },
       ],
+    },
+    lioness: {
+      label: "The mark",
+      title: "She resolves from the noise.",
+    },
+    measure: {
+      label: "How verification works",
+      title: "Measured, not asserted.",
+      body: "Every result resolves to a distribution, not a claim. Bias the state, take a shot, and watch the tally settle toward |α|², |β|² — the same honesty we hold execution to.",
     },
     cta: {
       label: "Contact",
@@ -151,6 +162,15 @@ export const HOME_COPY: Record<PublicLocale, {
         { title: "プライバシーを設計に", body: "あなたの成果はあなたのもの。常に非公開を基本にします。" },
         { title: "相互運用性", body: "オープンな形式とAPIで知識を持ち運べます。" },
       ],
+    },
+    lioness: {
+      label: "マーク",
+      title: "ノイズから、彼女が現れる。",
+    },
+    measure: {
+      label: "検証の仕組み",
+      title: "主張ではなく、測定を。",
+      body: "すべての結果は、断定ではなく分布に帰着します。状態にバイアスをかけて測定すると、集計が|α|²、|β|²へ収束していきます。私たちが実行に求めるのと同じ誠実さです。",
     },
     cta: {
       label: "お問い合わせ",

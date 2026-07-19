@@ -27,7 +27,13 @@ class SuccessCriteria(_PlanBase):
         description="Key extracted from the run's result dict, e.g. ground_state_energy_Ha"
     )
     expected_range: dict[str, float] | None = Field(
-        default=None, description="Acceptable {min, max} range for primary_metric"
+        default=None,
+        description=(
+            "Bound on primary_metric's value, checked with the literal keys "
+            '"min" and/or "max", e.g. {"min": 0.99} or {"min": 0.0, "max": 0.15}. '
+            "Either key may be omitted to leave that side unbounded; any other "
+            "key is ignored by the evaluator, so do not invent named bounds."
+        ),
     )
     additional_notes: list[str] | None = None
 
