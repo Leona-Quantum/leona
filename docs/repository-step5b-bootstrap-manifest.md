@@ -53,10 +53,14 @@ sha256 the connector computes equals the recorded `source_blob_sha256` by constr
 ## Regenerate
 
 ```bash
-node scripts/generate-catalog-bootstrap-manifest.mjs         # write services/api/catalog_bootstrap/manifest.json
-node scripts/generate-catalog-bootstrap-manifest.mjs --check # CI drift guard
-node --test 'scripts/catalog-bootstrap/*.test.mjs'           # unit + committed-artifact tests
+# Pin source_commit to the dev baseline the data came from (stable, meaningful).
+node scripts/generate-catalog-bootstrap-manifest.mjs --source-commit "$(git rev-parse origin/dev)"
+node scripts/generate-catalog-bootstrap-manifest.mjs --check   # CI drift guard (ignores source_commit)
+node --test 'scripts/catalog-bootstrap/*.test.mjs'             # unit + committed-artifact tests
 ```
+
+`canonicalize` faithfully mirrors `JSON.stringify` — including the `toJSON` hook (e.g. `Date`) and
+sparse-array holes (→ `null`) — so no future entry shape can silently produce a divergent hash.
 
 ## Deliberately NOT in this slice
 

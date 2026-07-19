@@ -34,8 +34,16 @@ export function canonicalize(value) {
   if (value === null || typeof value !== "object") {
     return JSON.stringify(value);
   }
+  // Mirror JSON.stringify's toJSON hook (e.g. Date → ISO string) before any
+  // object/array handling, so such values never serialize as "{}".
+  if (typeof value.toJSON === "function") {
+    return canonicalize(value.toJSON());
+  }
   if (Array.isArray(value)) {
-    return "[" + value.map((v) => canonicalize(v === undefined ? null : v)).join(",") + "]";
+    // Spread so sparse-array holes materialize as undefined (→ null, as
+    // JSON.stringify does) instead of being skipped by .map, which would emit
+    // adjacent commas and invalid JSON.
+    return "[" + [...value].map((v) => canonicalize(v === undefined ? null : v)).join(",") + "]";
   }
   const keys = Object.keys(value)
     .filter((k) => value[k] !== undefined)

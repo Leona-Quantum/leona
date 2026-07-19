@@ -59,6 +59,17 @@ test("canonicalize sorts object keys at every depth but preserves array order", 
   assert.equal(canonicalize("α"), '"α"');
 });
 
+test("canonicalize mirrors JSON.stringify for toJSON objects and sparse arrays", () => {
+  // toJSON hook (Date) → serialized value, not "{}".
+  const d = new Date("2026-07-19T00:00:00.000Z");
+  assert.equal(canonicalize(d), JSON.stringify(d));
+  assert.equal(canonicalize({ at: d }), JSON.stringify({ at: d }));
+  // Sparse-array holes become null (as JSON.stringify does), not skipped.
+  const sparse = [1, , 2]; // eslint-disable-line no-sparse-arrays
+  assert.equal(canonicalize(sparse), JSON.stringify(sparse));
+  assert.equal(canonicalize(sparse), "[1,null,2]");
+});
+
 test("buildManifest is deterministic: same input → byte-identical output", () => {
   const a = buildManifest(sampleEntries(), OPTS);
   const b = buildManifest(sampleEntries(), OPTS);
