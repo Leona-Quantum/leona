@@ -22,6 +22,8 @@ export function LibraryStudio({ demoMode = false, locale = "en" }: { demoMode?: 
   const [framework, setFramework] = useState("all");
   const [status, setStatus] = useState<"all" | LibraryStatus>("all");
   const [deleteTarget, setDeleteTarget] = useState<LibraryArtifact | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState(false);
   const [starredIds, setStarredIds] = useState<Set<string>>(new Set());
 
   function refreshArtifacts() {
@@ -33,11 +35,26 @@ export function LibraryStudio({ demoMode = false, locale = "en" }: { demoMode?: 
     refreshArtifacts();
   }
 
-  function handleDelete() {
-    if (!deleteTarget) return;
-    deleteArtifact(deleteTarget.id);
-    setDeleteTarget(null);
-    refreshArtifacts();
+  async function handleDelete() {
+    if (!deleteTarget || deleting) return;
+    setDeleting(true);
+    setDeleteError(null);
+    try {
+      // Awaited: the dialog stays open and the row stays visible unless the
+      // server actually deleted it. Silently closing on failure is how the old
+      // localStorage-only delete pretended to work.
+      await deleteArtifact(deleteTarget.id);
+      setDeleteTarget(null);
+      refreshArtifacts();
+    } catch {
+      setDeleteError(
+        locale === "ja"
+          ? "削除できませんでした。もう一度お試しください。"
+          : "Could not delete this artifact. Please try again.",
+      );
+    } finally {
+      setDeleting(false);
+    }
   }
 
   function handleStar(id: string) {
@@ -182,9 +199,10 @@ export function LibraryStudio({ demoMode = false, locale = "en" }: { demoMode?: 
             <p className="mj-eyebrow">{copy.title}</p>
             <h2 id="mj-library-delete-title">{copy.deleteConfirmTitle}</h2>
             <p>{copy.deleteWarning(deleteTarget.title)}</p>
+            {deleteError ? <p role="alert" className="mj-delete-dialog-error">{deleteError}</p> : null}
             <div className="mj-delete-dialog-actions">
-              <button className="mj-secondary-button" type="button" onClick={() => setDeleteTarget(null)}>{locale === "ja" ? "キャンセル" : "Cancel"}</button>
-              <button className="mj-danger-button" type="button" onClick={handleDelete}>{copy.delete}</button>
+              <button className="mj-secondary-button" type="button" disabled={deleting} onClick={() => { setDeleteTarget(null); setDeleteError(null); }}>{locale === "ja" ? "キャンセル" : "Cancel"}</button>
+              <button className="mj-danger-button" type="button" disabled={deleting} onClick={() => void handleDelete()}>{copy.delete}</button>
             </div>
           </section>
         </div>

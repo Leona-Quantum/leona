@@ -200,6 +200,25 @@ async def get_artifact(
     return _to_artifact(await artifacts_repo.get_artifact(scope, session, artifact_id))
 
 
+@router.delete("/artifacts/{artifact_id}", status_code=204)
+async def delete_artifact(
+    artifact_id: uuid.UUID,
+    scope: CurrentScope,
+    session: DbSession,
+) -> None:
+    """Soft-delete an artifact from the caller's Library.
+
+    Until this existed the Library's Delete button only hid the row in one
+    browser's localStorage: the record stayed in Postgres and reappeared on any
+    other device, or after clearing site data. The repository primitive had
+    been written but was never wired to a route.
+
+    Soft, not hard: deleted_at already excludes the row from every read path,
+    and versions/run provenance stay referentially intact.
+    """
+    await artifacts_repo.soft_delete_artifact(scope, session, artifact_id)
+
+
 @router.get("/artifacts/{artifact_id}/versions/current", response_model=ArtifactVersionResource)
 async def get_current_version(
     artifact_id: uuid.UUID,
