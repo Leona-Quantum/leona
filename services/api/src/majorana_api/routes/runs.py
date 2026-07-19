@@ -35,7 +35,12 @@ class CreateRunRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     task_prompt: str = Field(min_length=1, max_length=20_000)
-    mode: RunMode = RunMode.CHAT
+    # AUTO by default: the worker decides from the message whether this is a task
+    # to run or a message to answer. The old default was CHAT, which meant every
+    # caller that wanted the pipeline had to say so — and the UI said "execute"
+    # unconditionally, sending greetings into plan/generate/verify. An explicit
+    # mode is still honoured exactly as given.
+    mode: RunMode = RunMode.AUTO
     # Qiskit is the product default. Once supplied, this choice is authoritative
     # throughout generation, verification, optimization, and artifact writeback.
     framework: Framework = Framework.QISKIT

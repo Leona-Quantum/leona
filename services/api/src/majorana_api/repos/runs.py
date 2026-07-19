@@ -217,6 +217,26 @@ async def update_run_status(
         raise NotFoundError("run")
 
 
+async def set_run_mode(
+    scope: Scope, session: AsyncSession, run_id: uuid.UUID, mode: RunMode
+) -> None:
+    """Record the mode a run actually dispatched in (worker intent routing).
+
+    Separate from `update_run_status` because this is not a status transition and
+    must not be reachable through its `**fields` allowlist: mode is settled once,
+    before the run starts, and nothing later in the lifecycle may rewrite it.
+    """
+    require_write(scope)
+    stmt = (
+        update(Run)
+        .where(Run.id == run_id, Run.workspace_id == scope.workspace_id)
+        .values(mode=mode, updated_at=func.now())
+    )
+    result = await session.execute(stmt)
+    if result.rowcount == 0:
+        raise NotFoundError("run")
+
+
 async def set_run_artifact_version(
     scope: Scope, session: AsyncSession, run_id: uuid.UUID, version_id: uuid.UUID
 ) -> None:

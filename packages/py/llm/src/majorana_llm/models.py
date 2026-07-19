@@ -30,6 +30,9 @@ class AnalysisOutput(BaseModel):
 _DEFAULTS: dict[str, dict[str, str]] = {
     "openai": {
         "chat": "deepseek-chat",
+        # Intent routing is one short classification in front of every run: it must
+        # be the cheapest and fastest tier available, never the judgment tier.
+        "route": "deepseek-chat",
         # Legacy nameko tiering: GPT for judgment, DeepSeek for volume work.
         "plan": "gpt-5.5",  # structured planning + judgment
         # Non-reasoning tier: v4-pro reproducibly burned its whole 8192 budget on
@@ -42,6 +45,7 @@ _DEFAULTS: dict[str, dict[str, str]] = {
     },
     "anthropic": {
         "chat": "claude-sonnet-5",
+        "route": "claude-haiku-4-5-20251001",
         "plan": "claude-opus-4-8",
         "generate": "claude-sonnet-5",
         "verify": "claude-opus-4-8",

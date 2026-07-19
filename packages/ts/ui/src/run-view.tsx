@@ -462,6 +462,12 @@ export function reduceRunEvents(events: readonly RunEvent[]): RunViewModel {
       case "run.started":
         status = "running";
         break;
+      case "run.mode_resolved":
+        // run.queued reports the mode that was *asked for*, which is "auto" for
+        // anything from the composer. Overwrite it with what the run is really
+        // doing, or the header labels every routed run "auto".
+        mode = ev.resolved;
+        break;
       case "run.restarted":
         clearFrom(ev.from_stage);
         status = "running";
