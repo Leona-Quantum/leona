@@ -115,14 +115,26 @@ jobs:
       # --command override must be preserved or the image starts the API instead.
       - name: deploy worker
         if: steps.creds.outputs.have == 'true'
+        id: worker
         run: |
           gcloud run deploy majorana-worker --project "$GCP_PROJECT" --region "$GCP_REGION" \
             --image "$IMAGE_REPO:${{ steps.tag.outputs.tag }}" \
             --command majorana-worker
+          rev=$(gcloud run services describe majorana-worker \
+            --project "$GCP_PROJECT" --region "$GCP_REGION" \
+            --format="value(status.latestCreatedRevisionName)")
+          test -n "$rev" || { echo "could not resolve the new worker revision"; exit 1; }
+          echo "revision=$rev" >> "$GITHUB_OUTPUT"
 
       # A crash-looping worker is the exact failure this workflow exists to stop,
       # and Cloud Run will not report it: the poll loop dies inside a container
       # that stays "healthy". Read the log directly and fail the deploy on errors.
+      #
+      # Scoped to the revision this run just created, not the service. A 2-minute
+      # window over the whole service also catches the *outgoing* revision, which
+      # is draining and — if it was crash-looping — is exactly what this deploy is
+      # replacing. Unscoped, the sicker the thing we just fixed was, the more
+      # certainly it fails the deploy that fixed it.
       - name: worker is actually running
         if: steps.creds.outputs.have == 'true'
         run: |
@@ -130,15 +142,16 @@ jobs:
           logs=$(gcloud logging read \
             'resource.type="cloud_run_revision"
              AND resource.labels.service_name="majorana-worker"
+             AND resource.labels.revision_name="${{ steps.worker.outputs.revision }}"
              AND severity>=ERROR' \
             --project "$GCP_PROJECT" --freshness=2m --limit 20 \
             --format="value(textPayload)")
           if [ -n "$logs" ]; then
-            echo "worker logged errors after deploy:"
+            echo "revision ${{ steps.worker.outputs.revision }} logged errors after deploy:"
             echo "$logs"
             exit 1
           fi
-          echo "worker clean for 45s after deploy"
+          echo "revision ${{ steps.worker.outputs.revision }} clean for 45s after deploy"
 
       - name: rollback api on failure
         if: failure() && steps.creds.outputs.have == 'true'
