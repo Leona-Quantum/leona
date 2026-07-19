@@ -8,9 +8,27 @@ every uncertain path must land there.
 """
 
 import pytest
-from majorana_contracts.enums import RunMode
+from majorana_contracts.enums import Framework, RunMode, RunStatus
 from majorana_llm import LLMResponse
+from majorana_worker import handlers
+from majorana_worker.context import RunContext
 from majorana_worker.intent import ModeDecision, heuristic_decision, resolve_mode
+
+
+class _RecordingSink:
+    def __init__(self):
+        self.events = []
+
+    async def emit(self, event_type, payload, *, event_id=None):
+        self.events.append((event_type, payload))
+
+
+class _FakeStore:
+    def __init__(self, status=RunStatus.QUEUED):
+        self.status = status
+
+    async def current_status(self):
+        return self.status
 
 
 class _ScriptedLLM:
@@ -170,6 +188,37 @@ async def test_the_router_sees_only_the_current_message():
 
     assert llm.request.messages in (None, [])
     assert "Build and run a 4-qubit GHZ state" in llm.request.user
+
+
+@pytest.mark.parametrize("status", [RunStatus.CANCELLED, RunStatus.SUCCEEDED, RunStatus.FAILED])
+async def test_a_run_that_is_already_over_is_not_routed(status):
+    """Routing is the first thing to touch a run, so it is the first thing that
+    can touch one the user already cancelled. Caught by the pipeline e2e suite:
+    a cancelled run must leave `run.queued` as its only event, and this was
+    appending `run.mode_resolved` to a finished stream — and paying for a model
+    call to decide how to run something that will never run."""
+    sink = _RecordingSink()
+    store = _FakeStore(status)
+    llm = _ScriptedLLM()
+    ctx = RunContext(
+        run_id="cancelled-run",
+        task_prompt="Run VQE on H2 at 0.735 angstroms",
+        mode=RunMode.AUTO,
+        framework=Framework.QISKIT,
+        seed=None,
+        shots=None,
+        tolerances=None,
+        timeout_s=None,
+        sink=sink,
+    )
+
+    result = await handlers._resolve_mode(
+        ctx, store, scope=None, session=None, llm=llm, has_source_code=False
+    )
+
+    assert result.mode is RunMode.AUTO
+    assert sink.events == []
+    assert llm.calls == 0
 
 
 async def test_the_event_payload_is_serialisable_strings():

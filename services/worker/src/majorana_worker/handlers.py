@@ -199,6 +199,7 @@ async def handle_run_execute(
             provider = llm or _default_llm()
             ctx = await _resolve_mode(
                 ctx,
+                store,
                 scope=scope,
                 session=session,
                 llm=provider,
@@ -233,6 +234,7 @@ async def handle_run_execute(
 
 async def _resolve_mode(
     ctx: RunContext,
+    store: RepoRunStateStore,
     *,
     scope: Scope,
     session: AsyncSession,
@@ -249,7 +251,16 @@ async def _resolve_mode(
     request. Everything downstream — the API resource, the Library, a later
     diagnosis of this run — reads that column, and a row saying `auto` after the
     fact would describe a mode nothing ever ran in.
+
+    Being first in the sequence means this is also now the first thing that can
+    touch a run the user already cancelled. Both dispatch handlers re-check the
+    status themselves, but they check it *after* this — so without the guard a
+    cancelled run would still rewrite its own mode, append an event to a
+    finished stream, and spend a model call deciding how to run something that
+    will never run.
     """
+    if await store.current_status() not in {RunStatus.QUEUED, RunStatus.RUNNING}:
+        return ctx
     decision = await resolve_mode(
         ctx.task_prompt,
         ctx.mode,
