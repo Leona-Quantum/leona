@@ -98,17 +98,18 @@ jobs:
           gcloud run deploy majorana-api --project "$GCP_PROJECT" --region "$GCP_REGION" \
             --image "$IMAGE_REPO:${{ steps.tag.outputs.tag }}" \
             --no-traffic --tag verify
-          # --flatten + --filter, not .filter().extract(). The latter returns a
-          # Python list repr — ['https://...'] — and `tr -d '[]'` removed the
-          # brackets while leaving the single quotes, so the smoke test curled a
-          # URL with literal quotes in it and died with "URL rejected: Port number
-          # was not a decimal number" before issuing a request (2026-07-19, the
-          # workflow's first run to reach this step).
+          # Parse the URL out with jq rather than a --format projection. Two
+          # earlier attempts failed here (2026-07-19):
+          #   .filter(tag:verify).extract(url) emits a Python list repr,
+          #     ['https://...'], and `tr -d '[]'` left the single quotes behind, so
+          #     curl got a quoted URL and rejected it without sending a request.
+          #   --filter is not accepted by `describe` at all — it is a list-command
+          #     flag, so the step died with "unrecognized arguments".
+          # jq on the JSON output returns a bare string and is checked by the
+          # `test -n` below. jq is already a dependency of the smoke-test step.
           url=$(gcloud run services describe majorana-api \
-            --project "$GCP_PROJECT" --region "$GCP_REGION" \
-            --flatten="status.traffic[]" \
-            --filter="status.traffic.tag=verify" \
-            --format="value(status.traffic.url)")
+            --project "$GCP_PROJECT" --region "$GCP_REGION" --format=json \
+            | jq -r '.status.traffic[] | select(.tag=="verify") | .url')
           test -n "$url" || { echo "no verify tag URL"; exit 1; }
           echo "url=$url" >> "$GITHUB_OUTPUT"
 
