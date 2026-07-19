@@ -604,7 +604,7 @@ see `docs/repository-step5a-import-skeleton.md` and `docs/repository-step5a-neon
 Rollback: disable import creation and drain/cancel active jobs; staged data remains non-public for
 audit or approved deletion.
 
-#### Step 5b - safe fetcher and real sources (not started; independently scoped)
+#### Step 5b - safe fetcher and real sources (in progress; independently scoped)
 
 Scope:
 
@@ -612,6 +612,12 @@ Scope:
 - implement allowlisted MQT Bench and QASMBench adapters after malicious fixture tests pass;
 - SSRF/redirect/archive/path-traversal/timeout hardening for real outbound fetches;
 - parse only in deny-all sandboxes.
+
+First slice status: the pinned QASMBench single-file HTTPS fetcher and adversarial
+policy tests are implemented; it performs DNS validation and connects through a
+validated global IP with the original TLS SNI. It is not yet wired into durable import
+jobs, and fetched bytes are not parsed, executed, staged, or published. See
+`docs/repository-step5b-safe-fetcher.md`.
 
 Done when:
 
