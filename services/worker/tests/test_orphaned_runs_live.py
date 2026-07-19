@@ -164,6 +164,26 @@ async def test_a_run_whose_job_is_still_working_is_never_reaped(env):
 
 
 @requires_db
+async def test_a_run_with_any_other_live_job_is_never_reaped(env):
+    """A terminal job alongside a working one must not condemn the run."""
+    factory, scope = env
+    run_id = await _orphan(factory, scope)
+
+    async with factory() as session:
+        assert run_id in _ids(await system.list_orphaned_runs(session))
+        await system.enqueue_job(
+            session,
+            kind=RUN_EXECUTE_JOB_KIND,
+            payload={"run_id": str(run_id)},
+            run_id=run_id,
+        )
+        await session.commit()
+
+    async with factory() as session:
+        assert run_id not in _ids(await system.list_orphaned_runs(session))
+
+
+@requires_db
 async def test_an_already_terminal_run_is_not_listed(env):
     factory, scope = env
     run_id = await _orphan(factory, scope, run_status=RunStatus.FAILED)

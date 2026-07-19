@@ -531,12 +531,16 @@ async def list_orphaned_runs(
     and nothing ever revisits the run — it spins in `running` forever, which is
     what stranded 12 production runs between 2026-07-16 and 07-19.
 
-    This is the reconciliation query behind the reaper. `dead_lettered_at` is
-    required so an in-flight delivery is never raced, and the grace period keeps
-    the reaper well clear of the retry budget (5 attempts, ~30s apart).
+    This is the reconciliation query behind the reaper, and every predicate here
+    exists to keep it from ever closing a live run — much the worse failure. The
+    job must be terminal, delivery must have finished with it (`dead_lettered_at`
+    is set), the grace period must have cleared the delivery retry budget (5
+    attempts ~30s apart), and — belt and braces against a future second
+    run-bearing job kind — the run must have no other job still working.
     """
     if grace_seconds < 0:
         raise ValueError("grace_seconds must not be negative")
+    live_job = Job.__table__.alias("live_job")
     stmt = (
         select(Run.id, Run.workspace_id, Run.user_id, Job.id, Job.dead_letter_error)
         .join(Job, Job.run_id == Run.id)
@@ -545,6 +549,12 @@ async def list_orphaned_runs(
             Job.status.in_(("failed", "dead")),
             Job.dead_lettered_at.is_not(None),
             Job.dead_lettered_at <= func.now() - _lease_delta(grace_seconds),
+            ~select(live_job.c.id)
+            .where(
+                live_job.c.run_id == Run.id,
+                live_job.c.status.not_in(("failed", "dead")),
+            )
+            .exists(),
         )
         .order_by(Job.dead_lettered_at)
         .limit(limit)
