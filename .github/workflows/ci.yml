@@ -143,10 +143,25 @@ jobs:
         env:
           DATABASE_URL: ${{ steps.neon.outputs.db_url_with_pooler }}
         run: uv run --all-extras pytest services/api/tests/test_pipeline_e2e.py -q
+      # Catalog-free database, on the throwaway Postgres rather than the Neon
+      # branch. These fixtures PROVISION the system catalog authority themselves,
+      # inserting the importer with a deterministic uuid and
+      # workos_user_id='system:catalog-importer'. Production now has that identity
+      # under a different uuid, so on a branch cut from `main` the insert's
+      # ON CONFLICT (id) misses and the users_workos_user_id_key UNIQUE fires
+      # instead — 9 errors. They need a database where the catalog does not
+      # already exist, which the Neon branch can no longer be. Separate DB from
+      # the migration gate's so the seed rows stay out of the queue tests.
+      # (authz and pipeline-e2e above do not touch the catalog authority, so they
+      # stay on Neon, where a real pooled endpoint is the point.)
+      - name: create the catalog-free live database
+        run: PGPASSWORD=pg psql -h localhost -U pg -d postgres -c 'CREATE DATABASE majorana_live'
       - name: repository concurrency and integrity
         env:
-          DATABASE_URL: ${{ steps.neon.outputs.db_url_with_pooler }}
+          DATABASE_URL_DIRECT: postgresql://pg:pg@localhost:5432/majorana_live
+          DATABASE_URL: postgresql://pg:pg@localhost:5432/majorana_live
         run: |
+          uv run --package majorana-api alembic -c db/alembic.ini upgrade head
           uv run --all-extras pytest \
             services/api/tests/test_catalog_provenance_live.py \
             services/api/tests/test_job_queue_live.py \
