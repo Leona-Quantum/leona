@@ -42,6 +42,9 @@ const COPY = {
     baseline: "Classical baseline",
     quantum: "Quantum claim",
     practical: "How to compare",
+    metricLabel: "Metric",
+    metricClassical: "Classical",
+    metricQuantum: "Quantum",
     industry: "Industry use cases",
     related: "Related entries",
     noCode: "No native snippet published yet.",
@@ -75,6 +78,9 @@ const COPY = {
     baseline: "古典ベースライン",
     quantum: "量子側の主張",
     practical: "比較の方法",
+    metricLabel: "指標",
+    metricClassical: "古典",
+    metricQuantum: "量子",
     industry: "産業ユースケース",
     related: "関連エントリ",
     noCode: "ネイティブスニペットはまだ公開されていません。",
@@ -350,9 +356,31 @@ function DetailSection({ title, defaultOpen, children }: { title: string; defaul
 function ClassicalComparison({ comparison, locale, copy }: { comparison: NonNullable<PublicRepositoryEntry["classicalComparison"]>; locale: PublicLocale; copy: RepositoryCopy }) {
   return (
     <div className="mj-repo-comparison">
-      <div><h3>{copy.baseline}</h3><p>{locale === "ja" ? comparison.baselineJa : comparison.baseline}</p></div>
-      <div><h3>{copy.quantum}</h3><p>{locale === "ja" ? comparison.quantumClaimJa : comparison.quantumClaim}</p></div>
-      <div><h3>{copy.practical}</h3><p>{locale === "ja" ? comparison.practicalReadJa : comparison.practicalRead}</p></div>
+      {comparison.metrics && comparison.metrics.length ? (
+        <table className="mj-repo-comparison-table">
+          <thead>
+            <tr>
+              <th scope="col">{copy.metricLabel}</th>
+              <th scope="col">{copy.metricClassical}</th>
+              <th scope="col">{copy.metricQuantum}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {comparison.metrics.map((metric) => (
+              <tr key={metric.label}>
+                <th scope="row">{locale === "ja" ? metric.labelJa : metric.label}</th>
+                <td>{metric.classical}</td>
+                <td>{metric.quantum}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      ) : null}
+      <div className="mj-repo-comparison-prose">
+        <div><h3>{copy.baseline}</h3><p>{locale === "ja" ? comparison.baselineJa : comparison.baseline}</p></div>
+        <div><h3>{copy.quantum}</h3><p>{locale === "ja" ? comparison.quantumClaimJa : comparison.quantumClaim}</p></div>
+        <div><h3>{copy.practical}</h3><p>{locale === "ja" ? comparison.practicalReadJa : comparison.practicalRead}</p></div>
+      </div>
     </div>
   );
 }

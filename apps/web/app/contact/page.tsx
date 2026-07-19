@@ -4,6 +4,7 @@ import { Reveal } from "../../components/reveal";
 import { CONTACT_COPY } from "../../lib/public-copy";
 import { getPublicLocale } from "../../lib/public-locale-server";
 import { ContactForm } from "./contact-form";
+import { MeasurementLab } from "../../components/measurement-lab";
 
 export const metadata: Metadata = {
   title: "Contact",
@@ -24,9 +25,17 @@ export default async function ContactPage() {
       </section>
 
       <Reveal>
-        <section className="mj-contact-form-section mj-contact-form-section--solo" aria-label={copy.overline}>
-          <ContactForm locale={locale} />
-          <p className="mj-contact-note">{copy.note}</p>
+        <section className="mj-contact-layout" aria-label={copy.overline}>
+          <div className="mj-contact-form-section mj-contact-form-section--solo">
+            <ContactForm locale={locale} />
+            <p className="mj-contact-note">{copy.note}</p>
+          </div>
+          {/* A small interactive aside (Owner Inbox 2026-07-19): compact, no
+              explanatory copy — just a qubit to measure while you're here. */}
+          <aside className="mj-contact-measure" aria-labelledby="contact-measure-heading">
+            <p className="mj-section-label" id="contact-measure-heading">{copy.measure.label}</p>
+            <MeasurementLab compact />
+          </aside>
         </section>
       </Reveal>
     </PublicSite>

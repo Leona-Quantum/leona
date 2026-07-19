@@ -1,4 +1,4 @@
-import type { PublicRepositoryCitation, PublicRepositoryEntry } from "./types";
+import type { PublicRepositoryCitation, PublicRepositoryComparisonMetric, PublicRepositoryEntry } from "./types";
 
 /**
  * Post-hoc enrichment for legacy records: long-form Markdown/TeX explanations,
@@ -17,7 +17,14 @@ export type EntryEnrichment = Partial<
     | "industryUseCasesJa"
     | "verificationMethods"
   >
->;
+> & {
+  /**
+   * Numeric classical-vs-quantum table merged INTO the entry's existing
+   * comparison (see the barrel). Only added where the figures are
+   * textbook-precise complexities, not heuristics.
+   */
+  comparisonMetrics?: PublicRepositoryComparisonMetric[];
+};
 
 // Shared literature entries for legacy records that predate the `literature`
 // field. Only attached to slugs whose raw entry in entries-legacy.ts has no
@@ -64,6 +71,21 @@ const BENNETT_WIESNER_1992: PublicRepositoryCitation = {
 };
 
 export const ENTRY_ENRICHMENT: Record<string, EntryEnrichment> = {
+  // Metrics-only enrichments: these slugs already carry prose comparisons in
+  // their raw data; the barrel merges the table in (Owner Inbox 2026-07-19).
+  "quantum-fourier-transform": {
+    comparisonMetrics: [
+      { label: "Operation count", labelJa: "演算数", classical: "O(N log N) — FFT", quantum: "O(n²) = O(log²N)" },
+      { label: "Register size", labelJa: "レジスタ規模", classical: "N complex values", quantum: "n = log₂N qubits" },
+      { label: "Output access", labelJa: "出力へのアクセス", classical: "full vector", quantum: "sampled amplitudes only" },
+    ],
+  },
+  "amplitude-amplification": {
+    comparisonMetrics: [
+      { label: "Query complexity (good-state prob. a)", labelJa: "クエリ計算量(良状態確率 a)", classical: "O(1/a)", quantum: "O(1/√a)" },
+      { label: "Asymptotic speedup", labelJa: "漸近的な高速化", classical: "baseline", quantum: "quadratic" },
+    ],
+  },
   "hadamard-gate": {
     explanationMd: String.raw`Hadamard is the single-qubit unitary $H = \frac{1}{\sqrt{2}}\begin{pmatrix}1 & 1\\ 1 & -1\end{pmatrix}$. It sends $|0\rangle \mapsto \frac{1}{\sqrt2}(|0\rangle+|1\rangle)$ and $|1\rangle \mapsto \frac{1}{\sqrt2}(|0\rangle-|1\rangle)$, so a computational-basis measurement always returns $0$ or $1$ with probability $1/2$ regardless of which state it acted on — the difference is the relative sign in front of $|1\rangle$, a phase that only becomes visible once another gate lets the two branches interfere. $H$ is both Hermitian and unitary, so $H^\dagger = H = H^{-1}$, and direct matrix multiplication gives $H^2 = I$, exactly the identity this record's matrix check confirms. Geometrically $H$ is a $\pi$ rotation of the Bloch sphere about the axis $(\hat x + \hat z)/\sqrt2$, exchanging the $Z$ and $X$ eigenbases. It is the standard way to open superposition-based circuits such as Bell states, GHZ states, Grover diffusion, and the QFT.`,
     explanationMdJa: String.raw`アダマールゲートは1量子ビットのユニタリ演算 $H = \frac{1}{\sqrt2}\begin{pmatrix}1&1\\1&-1\end{pmatrix}$ です。$|0\rangle \mapsto \frac{1}{\sqrt2}(|0\rangle+|1\rangle)$、$|1\rangle \mapsto \frac{1}{\sqrt2}(|0\rangle-|1\rangle)$ となるため、計算基底で測定すると入力によらず0と1がそれぞれ確率$1/2$で得られます。違いは$|1\rangle$の前の相対符号だけで、後続ゲートで2つの分岐が干渉して初めて意味を持ちます。$H$はエルミートかつユニタリで $H^\dagger = H = H^{-1}$、直接計算すると $H^2 = I$ となり、これがこのレコードの行列チェックが確認する恒等式です。ブロッホ球上では軸$(\hat x + \hat z)/\sqrt2$周りの$\pi$回転にあたり、$Z$基底と$X$基底を入れ替えます。ベル状態、GHZ状態、Groverの拡散演算子、QFTなど重ね合わせを使う回路の出発点として使われます。`,
@@ -132,14 +154,31 @@ export const ENTRY_ENRICHMENT: Record<string, EntryEnrichment> = {
     explanationMdJa: String.raw`Groverのアルゴリズムは、対象の振幅の符号を反転させるオラクル$U_f$($U_f|x\rangle=(-1)^{f(x)}|x\rangle$)と、一様重ね合わせ$|s\rangle$についての拡散演算子$U_s=2|s\rangle\langle s|-I$を交互に適用して、サイズ$N$の非構造化空間から対象を探します。それぞれは鏡映であり、その積は対象・非対象部分空間が張る平面内での角度$2\theta$の回転($\sin\theta=1/\sqrt N$)となるため、$k$回の反復後の対象振幅は$\sin\big((2k+1)\theta\big)$で、$k\approx\frac{\pi}{4}\sqrt N$付近で最大になります。この4状態($N=4$、2量子ビット)のトイ例では、オラクル構成と拡散層は標準的な参照回路に従っており、ここで構造レビューされています。このエントリ自身のステータスが示す通り、これは構成レコードであり、対象特化オラクルと再現可能な成功確率の測定はまだ未完了です。したがって回路は完成したベンチマーク結果としてではなく、構造として読むべきものです。`,
   },
   "grover-unstructured-search": {
+    comparisonMetrics: [
+      { label: "Query complexity", labelJa: "クエリ計算量", classical: "O(N)", quantum: "O(√N)" },
+      { label: "Queries (1 of N marked)", labelJa: "クエリ数(N中1件)", classical: "~N/2 avg", quantum: "⌊(π/4)√N⌋" },
+      { label: "Register (N = 2ⁿ)", labelJa: "レジスタ (N = 2ⁿ)", classical: "n bits", quantum: "n qubits" },
+      { label: "Asymptotic speedup", labelJa: "漸近的な高速化", classical: "baseline", quantum: "quadratic" },
+    ],
     explanationMd: String.raw`For an unstructured search space of size $N$ with a single marked item, Grover's algorithm reaches the marked state with high probability using $O(\sqrt N)$ oracle queries, versus $O(N)$ expected queries for classical exhaustive search — a quadratic query-complexity separation, not a claim about wall-clock time on any given hardware. The construction alternates an oracle $U_f$ that flips the sign of the marked amplitude with the diffusion operator $2|s\rangle\langle s|-I$; each pass rotates the state by $2\theta$ (where $\sin\theta=1/\sqrt N$) toward the marked subspace, and the success amplitude after $k$ iterations is $\sin\big((2k+1)\theta\big)$, so overshooting past the optimal $k\approx\frac{\pi}{4}\sqrt N$ actually reduces success probability. This record's two-qubit ($N=4$) toy oracle and diffusion layer are checked against the ideal circuit — small-instance evidence for the construction — while the $O(\sqrt N)$ asymptotic claim rests on the cited literature and assumes a coherent oracle where oracle calls, not classical readout, dominate cost.`,
     explanationMdJa: String.raw`サイズ$N$の非構造化探索空間に対象が1つあるとき、Groverのアルゴリズムは$O(\sqrt N)$回のオラクル呼び出しで高確率に対象状態に到達します。これは古典的な全探索の期待$O(N)$回に対する二次的なクエリ計算量の分離であり、特定ハードウェア上の実時間についての主張ではありません。構成はオラクル$U_f$(対象振幅の符号反転)と拡散演算子$2|s\rangle\langle s|-I$を交互に適用し、各回で状態を対象部分空間へ向けて角度$2\theta$($\sin\theta=1/\sqrt N$)回転させ、$k$回反復後の成功振幅は$\sin\big((2k+1)\theta\big)$になるため、最適な$k\approx\frac{\pi}{4}\sqrt N$を超えると成功確率はむしろ下がります。このレコードの2量子ビット($N=4$)トイオラクルと拡散層は理想回路と照合されており、構成についての小規模インスタンス証拠です。一方$O(\sqrt N)$という漸近的主張自体は引用文献に基づき、オラクル呼び出しが古典的読み出しではなくコストを支配するコヒーレントなオラクルアクセスを前提とします。`,
   },
   "shor-period-finding": {
+    comparisonMetrics: [
+      { label: "Time complexity", labelJa: "時間計算量", classical: "sub-exponential", quantum: "polynomial in log N" },
+      { label: "Scaling (b = log₂N)", labelJa: "スケーリング (b = log₂N)", classical: "exp(Õ(b^⅓))", quantum: "Õ(b³)" },
+      { label: "Logical qubits (2048-bit)", labelJa: "論理量子ビット(2048ビット)", classical: "—", quantum: "~few thousand" },
+      { label: "Impact", labelJa: "影響", classical: "RSA / ECC assumed hard", quantum: "breaks RSA / ECC" },
+    ],
     explanationMd: String.raw`Shor's algorithm reduces factoring $N$ to finding the period $r$ of $f(x)=a^x \bmod N$ for a random $a$ coprime to $N$: once $r$ is known, $\gcd(a^{r/2}\pm1, N)$ yields a nontrivial factor with good probability (when $r$ is even and $a^{r/2}\not\equiv -1$). The quantum step estimates $r$ via phase estimation: preparing a superposition over the exponent register, applying controlled modular exponentiation $U_a^{2^j}$, and reading out with an inverse QFT gives a phase close to $s/r$ for random integer $s$; a classical continued-fraction expansion then recovers $r$. This record documents that circuit motif — controlled-$U$ powers feeding an inverse QFT — and keeps the quantum (period-extraction) and classical (continued-fraction) halves visible as separate steps, consistent with its own status: a reviewable reference, not a resource-estimated fault-tolerant implementation, since a cryptographically relevant instance needs thousands of logical qubits and deep modular-arithmetic circuits.`,
     explanationMdJa: String.raw`Shorのアルゴリズムは、$N$と互いに素なランダムな$a$に対する $f(x)=a^x \bmod N$ の周期$r$を求める問題に因数分解を帰着させます。$r$が分かれば、$\gcd(a^{r/2}\pm1, N)$が(rが偶数で$a^{r/2}\not\equiv -1$のとき)高確率で非自明な因数を与えます。量子部分は位相推定で$r$を推定します。指数レジスタを重ね合わせにし、制御剰余べき乗$U_a^{2^j}$を適用し、逆QFTで読み出すとランダムな整数$s$に対して$s/r$に近い位相が得られ、古典的な連分数展開でその位相から$r$を復元します。このレコードは、制御$U$べき乗が逆QFTに入るというこの回路のモチーフを記録し、量子(周期抽出)部分と古典(連分数)部分を別のステップとして明示しており、これはこのレコード自身のステータス、すなわちレビュー可能な参照であってリソース見積り済みのフォールトトレラント実装ではないという位置づけと整合します。暗号的に意味のある規模には数千の論理量子ビットと深い剰余算術回路が必要だからです。`,
   },
   "amplitude-estimation": {
+    comparisonMetrics: [
+      { label: "Query complexity (error ε)", labelJa: "クエリ計算量(誤差 ε)", classical: "O(1/ε²)", quantum: "O(1/ε)" },
+      { label: "Cost model", labelJa: "コストモデル", classical: "Monte Carlo samples", quantum: "coherent oracle calls" },
+      { label: "Asymptotic speedup", labelJa: "漸近的な高速化", classical: "baseline", quantum: "quadratic" },
+    ],
     explanationMd: String.raw`Amplitude estimation extracts the amplitude $a$ hidden in a state $\mathcal A|0\rangle=\sqrt{1-a}\,|0\rangle|\phi_0\rangle+\sqrt a\,|1\rangle|\phi_1\rangle$ prepared by a state-preparation operator $\mathcal A$, where $a$ is typically a success probability or expectation of interest. The original construction runs phase estimation on the Grover-style operator $Q=-\mathcal A S_0 \mathcal A^\dagger S_\chi$ built from $\mathcal A$ and two reflections; $Q$'s eigenphases encode $a=\sin^2\theta$, so measuring $m$ phase-register qubits yields an estimate $\hat a$ with error scaling as $O(2^{-m})=O(1/\varepsilon)$ *queries* to $\mathcal A$, compared with $O(1/\varepsilon^2)$ independent classical samples needed for the same error via a Chernoff/Hoeffding bound — a quadratic query reduction assuming coherent access to $\mathcal A$. This record checks a small Bernoulli-amplitude toy circuit against repeated classical sampling; the query-count advantage, as the entry's caveat states, depends entirely on state-preparation and oracle-access costs a toy circuit cannot certify.`,
     explanationMdJa: String.raw`振幅推定は、状態準備演算子$\mathcal A$が用意する状態 $\mathcal A|0\rangle=\sqrt{1-a}\,|0\rangle|\phi_0\rangle+\sqrt a\,|1\rangle|\phi_1\rangle$ に埋め込まれた振幅$a$(典型的には興味のある成功確率や期待値)を抽出します。原構成は$\mathcal A$と2つの鏡映から作るGrover型演算子$Q=-\mathcal A S_0 \mathcal A^\dagger S_\chi$に対して位相推定を行い、$Q$の固有位相は$a=\sin^2\theta$を符号化するため、$m$個の位相レジスタ量子ビットを測定すると誤差が$O(2^{-m})=O(1/\varepsilon)$回の$\mathcal A$へのクエリでスケーリングする推定$\hat a$が得られます。これはChernoff/Hoeffding限界で同じ誤差に必要な$O(1/\varepsilon^2)$回の独立な古典サンプルと比較され、$\mathcal A$へのコヒーレントアクセスを前提とした二次的なクエリ削減です。このレコードは小さなベルヌーイ振幅のトイ回路を反復古典サンプリングと比較して確認しており、クエリ数の優位性自体は、このエントリの注記の通り、トイ回路では保証できない状態準備とオラクルアクセスのコストに完全に依存します。`,
   },
@@ -152,6 +191,12 @@ export const ENTRY_ENRICHMENT: Record<string, EntryEnrichment> = {
     explanationMdJa: String.raw`量子位相推定は、固有状態 $U|\psi\rangle=e^{2\pi i\varphi}|\psi\rangle$ を持つユニタリ$U$の固有値の位相$\varphi\in[0,1)$を抽出します。$m$個の位相レジスタ量子ビットを$|+\rangle^{\otimes m}$に用意し、$j=0,\dots,m-1$について制御べき乗$c\text{-}U^{2^j}$を適用してから逆QFTをかけると、位相レジスタの振幅は$\varphi$の$m$ビット2進展開付近に集中し、最近傍の$m$ビット推定に対する成功確率は$\ge4/\pi^2$、誤差は$O(2^{-m})$で縮小します。つまり精度は$U^{2^{m-1}}$を適用するのに必要な「コヒーレントな」回路深さにスケールします。このレコードは既知の固有状態を持つ1量子ビット位相回転を逆QFT読み出しと照合しており、$\varphi$が事前に分かっている制御された設定です。これはこのエントリの注記と一致します。未知のハミルトニアンの固有状態にQPEを適用するには、さらにその固有状態との重なりと、所望の精度に達するための十分なコヒーレント発展時間が必要です。`,
   },
   "hhl-linear-systems": {
+    comparisonMetrics: [
+      { label: "Dependence on N", labelJa: "N への依存", classical: "poly(N)", quantum: "O(log N)" },
+      { label: "Condition-number cost", labelJa: "条件数コスト", classical: "O(s κ)", quantum: "O(s κ² log(1/ε))" },
+      { label: "Output", labelJa: "出力", classical: "full solution x", quantum: "|x⟩ (observable only)" },
+      { label: "Impact", labelJa: "影響", classical: "baseline", quantum: "exp. in N (with caveats)" },
+    ],
     explanationMd: String.raw`HHL estimates an observable of the solution $|x\rangle\propto A^{-1}|b\rangle$ to a linear system $Ax=b$ for Hermitian, $s$-sparse $A$ (or made Hermitian via a standard block embedding). The circuit encodes $A$'s eigenvalues into a phase register via quantum phase estimation on $e^{iAt}$, applies a controlled rotation proportional to $\lambda^{-1}$ on an ancilla, and uncomputes the phase register, leaving $|x\rangle$ entangled with an ancilla flag. Under the coherent access model, circuit cost scales roughly as $O(s\,\kappa^2\log(1/\epsilon))$ where $\kappa=|\lambda_{\max}|/|\lambda_{\min}|$ is $A$'s condition number and $\epsilon$ the target precision — versus roughly $O(s\kappa)$ for classical conjugate gradient, so the advantage narrows as $\kappa$ grows. Crucially, $|x\rangle$ is a quantum state: reading out every component costs $O(N)$ measurements and erases any speedup, so — matching this record's caveat — HHL is only useful when a single scalar observable of $x$, not the full vector, is the actual goal.`,
     explanationMdJa: String.raw`HHLは、エルミートで$s$疎な$A$(あるいは標準的なブロック埋め込みでエルミート化した$A$)についての線形方程式$Ax=b$の解$|x\rangle\propto A^{-1}|b\rangle$のある観測量を推定します。回路は$e^{iAt}$に対する量子位相推定で$A$の固有値を位相レジスタに符号化し、補助量子ビットに$\lambda^{-1}$に比例した制御回転をかけ、位相レジスタを非計算化して、$|x\rangle$を補助フラグとエンタングルさせたまま残します。コヒーレントアクセスモデルの下では回路コストはおおよそ $O(s\,\kappa^2\log(1/\epsilon))$ でスケールします($\kappa=|\lambda_{\max}|/|\lambda_{\min}|$は$A$の条件数、$\epsilon$は目標精度)。これは古典共役勾配法のおよそ$O(s\kappa)$のコストと比較され、$\kappa$が大きくなるほど優位性は縮小します。重要なのは$|x\rangle$が量子状態であることで、全成分を読み出すには$O(N)$回の測定が必要になり優位性が消えるため、このレコードの注記の通り、HHLはベクトル全体ではなく$x$の単一のスカラー観測量が目的の場合にのみ有用です。`,
   },
