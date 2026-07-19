@@ -29,3 +29,9 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/majorana_api"]
+
+# The pinned catalog bootstrap manifest (ADR-0019) is the source of truth at the
+# repo path below; force-include it into the wheel so the deployed CLI/worker can
+# locate it (catalog_bootstrap_manifest.default_manifest_path prefers this copy).
+[tool.hatch.build.targets.wheel.force-include]
+"catalog_bootstrap/manifest.json" = "majorana_api/catalog_bootstrap/manifest.json"

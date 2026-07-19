@@ -160,6 +160,11 @@ class ImportProvider(StrEnum):
     new adapter's adversarial fixture tests pass."""
 
     LOCAL_FIXTURE = "local_fixture"
+    # Pinned in-repo bootstrap manifest (ADR-0019): source bytes are embedded
+    # and content-hashed at generation time, so this adapter reads no network
+    # and no externally-controlled path -- its adversarial tests live in
+    # tests/test_catalog_bootstrap_manifest.py.
+    CATALOG_BOOTSTRAP = "catalog_bootstrap"
 
 
 class ImportJobStatus(StrEnum):

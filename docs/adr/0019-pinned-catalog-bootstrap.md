@@ -31,3 +31,18 @@ bootstrap cannot partially publish: accepted state is per reviewed item, and the
 report accounts for every manifest item. Reversal trigger: once the TypeScript surface
 is retired, future bootstrap releases may be exported from Neon itself, but the pinned
 285-record manifest and its import evidence remain immutable historical provenance.
+
+**Implementation status.**
+- *Slice A (landed, PR #73):* deterministic manifest generator + committed
+  `services/api/catalog_bootstrap/manifest.json` (285 items, per-item + whole-manifest hashes).
+- *Slice B (this change):* the local bootstrap connector. The importer is now provider-agnostic
+  (`catalog_import_sources.ImportSource`); `catalog_bootstrap_manifest.BootstrapManifestSource`
+  loads the pinned manifest, re-verifies the whole-manifest checksum and every per-item sha256
+  fail-closed at construction, and submits the embedded bytes through the unchanged durable
+  importer. `ImportProvider.CATALOG_BOOTSTRAP` (DB CHECK extended in migration 0019) records the
+  distinct provenance. `catalog_admin bootstrap-import` runs it in-process (idempotent via a
+  checksum-derived key); a full 285-item reconciliation test asserts DB-stored hashes equal the
+  manifest's. Still inert to users: records stage `private`/`draft`, nothing publishes, and
+  `SYSTEM_CATALOG_ENABLED` stays false. Bootstrap records stage with `execution_state=template_only`
+  / framework version `unknown` (honest — the manifest is catalog metadata, not executed circuits);
+  mapping the manifest's richer fields into the read model is Slice C's concern.
