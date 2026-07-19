@@ -97,6 +97,19 @@ does not disturb secret-backed variables already on the service.
 | `SYSTEM_CATALOG_ENABLED` + the three `SYSTEM_CATALOG_*_ID`s | ✔ | ✔ |
 | `OPENAI_API_KEY`, `DEEPSEEK_API_KEY`, `VERCEL_TOKEN` (secrets) | — | ✔ |
 
-`DATABASE_URL` is the **pooled** Neon hostname. The direct hostname lives in the
-separate `DATABASE_URL_SECRET` entry and is for Alembic only — never wire it to
-a service.
+`DATABASE_URL` is the **pooled** Neon hostname, and it is the only database URL
+either service should ever get.
+
+The **direct** (non-pooled) hostname is for Alembic only. Two different names are
+involved and they are easy to confuse:
+
+- **`DATABASE_URL_DIRECT`** is the *environment variable* Alembic reads (see
+  `.env.example`). It exists only in a migration shell, never on a service.
+- **`DATABASE_URL_SECRET`** is the *GCP Secret Manager entry* that stores that
+  value in production. The name is unfortunate — it is not "the secret for
+  `DATABASE_URL`", it is the direct URL. Verified 2026-07-19: the `DATABASE_URL`
+  entry holds the `-pooler` hostname, `DATABASE_URL_SECRET` holds the same host
+  without `-pooler`.
+
+So a migration run reads the `DATABASE_URL_SECRET` entry into the
+`DATABASE_URL_DIRECT` variable. Never wire either to a Cloud Run service.
