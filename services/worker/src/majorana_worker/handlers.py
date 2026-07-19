@@ -36,6 +36,7 @@ from majorana_api.orm import ImportJob
 from majorana_api.repos import catalog_import as catalog_import_repo
 from majorana_api.repos import runs as runs_repo
 from majorana_api.repos import artifacts as artifacts_repo
+from majorana_api.repos import system
 
 from .agent_events import AgentEventObserver
 from .agent_llm import MeteredAgentLLM
@@ -463,6 +464,46 @@ async def handle_run_dead_letter(
         finished_event_id=uuid.uuid5(run_id, "run.finished"),
     )
     await session.commit()
+
+
+async def close_orphaned_run(session: AsyncSession, orphan: system.OrphanedRun) -> bool:
+    """Close a run whose execution job is terminal but which nothing ever finished.
+
+    Reconciles from the run side, because delivery from the job side is not
+    guaranteed to happen: `mark_job_dead_lettered` stamps `dead_lettered_at` once
+    its retry budget is spent whether or not the callback succeeded, after which
+    the job leaves the delivery candidate set for good. Twelve production runs
+    spun in `running` for days that way.
+
+    The event IDs are the same deterministic uuid5 values `handle_run_dead_letter`
+    uses, so this completes a partial sequence rather than writing a rival one,
+    and `fail_run_from_dead_letter` no-ops on an already-terminal run.
+    """
+    reason = (
+        "execution job ended without closing this run"
+        if orphan.delivery_error is None
+        else f"dead-letter delivery was abandoned: {orphan.delivery_error}"
+    )
+    scope = Scope(
+        user_id=orphan.user_id,
+        workspace_id=orphan.workspace_id,
+        role=Role.MEMBER,  # write, never admin — least authority that can close a run
+    )
+    error_payload = _validated_event_payload(
+        orphan.run_id,
+        "run.error",
+        {"stage": None, "code": "run_orphaned", "message": reason[:2000]},
+    )
+    closed = await runs_repo.fail_run_from_dead_letter(
+        scope,
+        session,
+        orphan.run_id,
+        error_payload=error_payload,
+        error_event_id=uuid.uuid5(orphan.run_id, "run.error.job_dead_letter"),
+        finished_event_id=uuid.uuid5(orphan.run_id, "run.finished"),
+    )
+    await session.commit()
+    return closed
 
 
 def validated_fixtures_dir(payload: dict[str, Any]) -> Path:

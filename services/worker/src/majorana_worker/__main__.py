@@ -22,7 +22,7 @@ from majorana_api.repos import system
 from opentelemetry import metrics
 
 from .errors import RetryableJobError
-from .handlers import DEAD_LETTER_HANDLERS, HANDLERS
+from .handlers import DEAD_LETTER_HANDLERS, HANDLERS, close_orphaned_run
 
 log = logging.getLogger("majorana_worker")
 
@@ -47,6 +47,15 @@ RETRY_BASE_S = _positive_env("WORKER_RETRY_BASE_S", 5.0)
 RETRY_MAX_S = _positive_env("WORKER_RETRY_MAX_S", 300.0)
 if RETRY_BASE_S > RETRY_MAX_S:
     raise ValueError("WORKER_RETRY_BASE_S must not exceed WORKER_RETRY_MAX_S")
+# The reaper is a safety net for runs already stranded for a 15-minute grace
+# period, so it has no reason to run on every poll cycle. It used to, including
+# on the no-sleep iterations that drain a busy queue — an extra join +
+# correlated subquery between every processed job and the next claim attempt,
+# on the exact path the <100ms p95 claim-latency budget is measured on. A
+# wall-clock interval keeps it off the hot path; nothing is reaped later than
+# it otherwise would be in any way that matters at a 15-minute grace.
+REAP_INTERVAL_S = _positive_env("WORKER_REAP_INTERVAL_S", 60.0)
+
 DEAD_LETTER_TIMEOUT_S = _positive_env("WORKER_DEAD_LETTER_TIMEOUT_S", 30.0)
 DEAD_LETTER_LEASE_S = _positive_env(
     "WORKER_DEAD_LETTER_LEASE_S", max(45.0, DEAD_LETTER_TIMEOUT_S + 15.0)
@@ -61,6 +70,7 @@ _job_terminals = _meter.create_counter("majorana.jobs.terminal")
 _job_lease_losses = _meter.create_counter("majorana.jobs.lease_lost")
 _job_attempts = _meter.create_histogram("majorana.jobs.attempts")
 _job_queue_age = _meter.create_histogram("majorana.jobs.queue_age_seconds")
+_runs_reaped = _meter.create_counter("majorana.runs.reaped")
 
 
 async def _heartbeat_loop(factory, *, job_id: Any, lease_token, stop: asyncio.Event) -> None:
@@ -196,6 +206,40 @@ async def _deliver_pending_dead_letters(factory, *, worker_id: str) -> None:
         log.error("job %s dead-letter callback abandoned after retry budget", job.id)
 
 
+async def _reap_orphaned_runs(factory) -> None:
+    """Reconcile runs left active by a job that is terminal and past delivery.
+
+    Dead-letter delivery is the only path that closes such a run, and it is not
+    guaranteed to happen — see close_orphaned_run. This is the safety net, so it
+    is deliberately forgiving: one capped batch per poll cycle, and a run that
+    fails to close is logged and retried next cycle rather than stopping the rest.
+    """
+    async with factory() as session:
+        orphans = await system.list_orphaned_runs(session)
+    for orphan in orphans:
+        try:
+            async with factory() as session:
+                closed = await close_orphaned_run(session, orphan)
+        except Exception:
+            log.exception("failed to reap orphaned run %s (job %s)", orphan.run_id, orphan.job_id)
+            continue
+        if closed:
+            _runs_reaped.add(1, {"reason": "orphaned"})
+            # WARNING, not ERROR: a completed reap is the system working, not
+            # failing. It must also stay below ERROR because the deploy workflow
+            # fails on any majorana-worker log at severity>=ERROR in the 45s
+            # after rollout — and the first deploy of this reaper sweeps the
+            # backlog of already-stranded runs, which would have failed that
+            # check on a deploy that had in fact succeeded. Genuine reap
+            # failures above still log at ERROR and still trip it, which is
+            # what that check is for.
+            log.warning(
+                "reaped orphaned run %s left active by terminal job %s",
+                orphan.run_id,
+                orphan.job_id,
+            )
+
+
 async def _start_liveness() -> asyncio.AbstractServer:
     """Static 200 responder on $PORT — the Cloud Run service model requires a
     listener (AD-7 runs the worker as a second service off the api image).
@@ -221,6 +265,7 @@ async def run_forever() -> None:
         loop.add_signal_handler(sig, stop.set)
     liveness = await _start_liveness() if os.environ.get("PORT") else None
     log.info("worker %s started (poll %.1fs)", worker_id, POLL_INTERVAL_S)
+    next_reap_at = 0.0  # sweep on the first cycle, then every REAP_INTERVAL_S
 
     try:
         while not stop.is_set():
@@ -349,6 +394,13 @@ async def run_forever() -> None:
                 # (or immediately when the queue is idle), so no claimed lease
                 # ticks while callback delivery blocks.
                 await _deliver_pending_dead_letters(factory, worker_id=worker_id)
+                # Last line of defence, after delivery has had its full budget.
+                # Rate-limited off the claim hot path (see REAP_INTERVAL_S); the
+                # first cycle reaps immediately so a restart still sweeps
+                # promptly.
+                if loop.time() >= next_reap_at:
+                    next_reap_at = loop.time() + REAP_INTERVAL_S
+                    await _reap_orphaned_runs(factory)
                 if claimed is not None:
                     continue  # drain the main queue before sleeping again
             except Exception:

@@ -1,0 +1,124 @@
+{
+  "total": 6,
+  "passed": 4,
+  "pass_rate": 0.6666666666666666,
+  "cases": [
+    {
+      "id": "bench-01",
+      "category": "A — Bell/GHZ state prep",
+      "passed": true,
+      "run_status": "succeeded",
+      "verifier_decision": "pass",
+      "export_status": "lossless",
+      "saved": true,
+      "reasons": [],
+      "evidence": {
+        "failed_stage": null,
+        "error_code": null,
+        "qasm_source": "sandbox_epilogue",
+        "qasm_epilogue_applied": true,
+        "qasm_available": true,
+        "qasm_epilogue_error": null
+      }
+    },
+    {
+      "id": "bench-03",
+      "category": "A — Bell/GHZ state prep",
+      "passed": true,
+      "run_status": "succeeded",
+      "verifier_decision": "pass",
+      "export_status": "lossless",
+      "saved": true,
+      "reasons": [],
+      "evidence": {
+        "failed_stage": null,
+        "error_code": null,
+        "qasm_source": "sandbox_epilogue",
+        "qasm_epilogue_applied": true,
+        "qasm_available": true,
+        "qasm_epilogue_error": null
+      }
+    },
+    {
+      "id": "bench-10",
+      "category": "C — QFT/QPE",
+      "passed": true,
+      "run_status": "succeeded",
+      "verifier_decision": "pass",
+      "export_status": "lossless",
+      "saved": true,
+      "reasons": [],
+      "evidence": {
+        "failed_stage": null,
+        "error_code": null,
+        "qasm_source": "sandbox_epilogue",
+        "qasm_epilogue_applied": true,
+        "qasm_available": true,
+        "qasm_epilogue_error": null
+      }
+    },
+    {
+      "id": "bench-14",
+      "category": "D — VQE H2",
+      "passed": false,
+      "run_status": "failed",
+      "verifier_decision": null,
+      "export_status": null,
+      "saved": false,
+      "reasons": [
+        "verifier_decision None != expected 'pass'",
+        "expected a saved artifact, none was written",
+        "result missing promised key 'ground_state_energy_Ha'"
+      ],
+      "evidence": {
+        "failed_stage": "plan",
+        "error_code": "plan_invalid",
+        "qasm_source": null,
+        "qasm_epilogue_applied": null,
+        "qasm_available": null,
+        "qasm_epilogue_error": null
+      }
+    },
+    {
+      "id": "bench-18",
+      "category": "E — QAOA MaxCut",
+      "passed": true,
+      "run_status": "succeeded",
+      "verifier_decision": "pass",
+      "export_status": "lossless",
+      "saved": true,
+      "reasons": [],
+      "evidence": {
+        "failed_stage": null,
+        "error_code": null,
+        "qasm_source": "sandbox_epilogue",
+        "qasm_epilogue_applied": true,
+        "qasm_available": true,
+        "qasm_epilogue_error": null
+      }
+    },
+    {
+      "id": "bench-28",
+      "category": "G — Transpilation/export honesty",
+      "passed": false,
+      "run_status": "running",
+      "verifier_decision": "fail",
+      "export_status": "unsupported",
+      "saved": false,
+      "reasons": [
+        "verifier_decision 'fail' != expected 'pass'",
+        "export_status 'unsupported' != expected 'lossless'",
+        "expected a saved artifact, none was written"
+      ],
+      "evidence": {
+        "failed_stage": null,
+        "error_code": null,
+        "qasm_source": "sandbox_epilogue",
+        "qasm_epilogue_applied": true,
+        "qasm_available": true,
+        "qasm_epilogue_error": null
+      }
+    }
+  ],
+  "note": "DeepSeek-only six-case live run; local subprocess sandbox. Report reconstructed from the six durable run/event logs after the harness wrapper reached terminal runs but did not write its summary. Two corrections to the original reconstruction (2026-07-19): bench-28 was scored 'passed' by hand despite a verifier 'fail', an 'unsupported' export and no saved artifact, all three of which the corpus case expects to be pass/lossless/saved — it is a fail, so the run pass_rate is 4/6, not 5/6. Its run_status is left at 'running' because that is what the durable log says: bench-28 is one of the runs stranded by the orphaned-run leak, not a run whose terminal state is unknown."
+}

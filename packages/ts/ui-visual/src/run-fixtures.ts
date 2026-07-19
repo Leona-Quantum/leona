@@ -43,7 +43,6 @@ const VERIFIED: RunEvent[] = [
       algorithm: "QAOA",
       algorithm_rationale: "QAOA at depth p=1 fits this small MaxCut instance.",
       artifact_contract: null,
-      baseline_plan: { kind: "maxcut", reason: "MaxCut has a standard classical baseline." },
       domain: "optimization",
       expected_output_keys: ["cut_value", "bitstring"],
       expected_runtime_sec: 5,

@@ -1,15 +1,68 @@
 # Runbook: deploying api + worker to Cloud Run
 
 Web deploys itself — Vercel builds every push to `dev` and aliases production
-(ADR-0011). **api and worker do not.** There is no deploy workflow for them; the
-Cloud Run services keep serving whatever image was last pushed by hand.
+(ADR-0011). **api and worker historically did not**, and the Cloud Run services
+kept serving whatever image was last pushed by hand.
 
-That gap caused a real outage on 2026-07-19: both services were still running
-`api:125044bb-amd64` (PR #65), twelve commits behind `dev`. The API therefore had
-no `/v1/catalog/entries` route at all, and the worker crash-looped every 10s
-against `ck_jobs_lease_shape` — a constraint added by migration 0012, which the
-old code predates. **After any migration, redeploy api and worker.** A green CI
-run says nothing about what production is running.
+That gap caused three incidents. On 2026-07-19 both services were still running
+`api:125044bb-amd64` (PR #65), twelve commits behind `dev`: the API had no
+`/v1/catalog/entries` route at all, and the worker crash-looped every 10s against
+`ck_jobs_lease_shape` — a constraint added by migration 0012, which the old code
+predates. It recurred the same day, 11:31–11:55 UTC, from the same cause. A green
+CI run says nothing about what production is running.
+
+`.github/workflows/deploy.yml` now does this automatically on every merge to
+`dev`. **The manual procedure below is still the fallback.**
+
+## Automated deploy — how auth is wired
+
+Provisioned 2026-07-19 in project `majorana-core`. No service-account key exists;
+GitHub authenticates by Workload Identity Federation and receives a short-lived
+token. Recorded here so it can be audited or rebuilt — you should not need to
+touch any of it again.
+
+| Resource | Value |
+|---|---|
+| Deploy SA | `majorana-deploy@majorana-core.iam.gserviceaccount.com` |
+| WIF pool | `github` (global) |
+| WIF provider | `github-dev` |
+| Repo secret `GCP_WORKLOAD_IDENTITY_PROVIDER` | `projects/639400385957/locations/global/workloadIdentityPools/github/providers/github-dev` |
+| Repo secret `GCP_DEPLOY_SERVICE_ACCOUNT` | the deploy SA above |
+
+The SA holds `roles/run.admin`, `roles/cloudbuild.builds.editor`,
+`roles/artifactregistry.writer` and `roles/logging.viewer` on the project, plus
+`roles/iam.serviceAccountUser` on the runtime SA
+(`639400385957-compute@developer.gserviceaccount.com`).
+
+**Branch scoping lives in the provider's attribute condition, not in the IAM
+binding:**
+
+```
+assertion.repository=='EshMis/majorana' && assertion.ref=='refs/heads/dev'
+```
+
+The `principalSet` binding can only filter on one attribute, so filtering there
+by repository alone would let *any* branch of this repo deploy production. The
+attribute condition is what enforces both, and it is evaluated at token exchange
+— a run from any other ref cannot obtain a token at all.
+
+The practical consequence: **`workflow_dispatch` only works from `dev`.**
+Dispatching the workflow from any other branch fails at the auth step, by design.
+If you ever need a deploy from another branch, change the condition rather than
+loosening the binding.
+
+What the workflow does, in order: build the image from the merge commit → deploy
+the API dark under `--tag verify` → smoke-test that tag URL (`/health` is 200,
+unauthenticated `/v1/me` is still 401, the catalog is non-empty) → shift traffic →
+deploy the worker with `--command majorana-worker` → **read the worker's error log
+for 45s and fail the deploy if anything appears**. That last step is the one that
+would have caught all three incidents; Cloud Run itself reports a crash-looping
+worker as healthy.
+
+It does not roll back automatically. On failure it prints the recent revisions and
+the `update-traffic --to-revisions` command to run.
+
+## Manual deploy (fallback)
 
 Check what is actually deployed before assuming:
 

@@ -1,0 +1,162 @@
+# Deploys the api + worker Cloud Run services on every merge to `dev`.
+#
+# Web self-deploys via Vercel (ADR-0011); api and worker did not, and the gap
+# caused three separate incidents — most recently a worker crash-looping against
+# a constraint from a migration its image predated, which Cloud Run reports as a
+# perfectly healthy service. This workflow is the deterministic replacement for
+# the "remember to redeploy after a migration" rule in docs/runbooks/deploys.md.
+#
+# Workload Identity Federation and the two repo secrets were provisioned
+# 2026-07-19 (docs/runbooks/deploys.md § Automated deploy — how auth is wired).
+# The credential check below is kept as a guard: if the secrets are ever cleared
+# or the WIF pool is deleted, this logs why it skipped rather than failing every
+# merge with an opaque auth error.
+#
+# Auth is scoped to refs/heads/dev by the provider's attribute condition, so
+# workflow_dispatch works only from `dev`.
+name: deploy
+
+on:
+  push:
+    branches: [dev]
+  workflow_dispatch:
+
+# One deploy at a time; a newer merge waits rather than racing an older image
+# into production. Never cancel in progress — a half-shifted traffic split is
+# worse than a queued deploy.
+concurrency:
+  group: deploy-cloud-run
+  cancel-in-progress: false
+
+env:
+  GCP_PROJECT: majorana-core
+  GCP_REGION: us-west1
+  IMAGE_REPO: us-west1-docker.pkg.dev/majorana-core/majorana/api
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write # Workload Identity Federation
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: check deploy credentials
+        id: creds
+        run: echo "have=${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER != '' && secrets.GCP_DEPLOY_SERVICE_ACCOUNT != '' }}" >> "$GITHUB_OUTPUT"
+
+      - if: steps.creds.outputs.have != 'true'
+        run: |
+          echo "::warning::GCP_WORKLOAD_IDENTITY_PROVIDER / GCP_DEPLOY_SERVICE_ACCOUNT not set —"
+          echo "::warning::api + worker were NOT deployed. Deploy by hand (docs/runbooks/deploys.md)"
+          echo "::warning::or complete the one-time setup in that runbook (owner action)."
+
+      - name: tag
+        if: steps.creds.outputs.have == 'true'
+        id: tag
+        run: echo "tag=$(git rev-parse --short=7 HEAD)" >> "$GITHUB_OUTPUT"
+
+      - uses: google-github-actions/auth@v2
+        if: steps.creds.outputs.have == 'true'
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_DEPLOY_SERVICE_ACCOUNT }}
+
+      - uses: google-github-actions/setup-gcloud@v2
+        if: steps.creds.outputs.have == 'true'
+
+      # One image serves both services; the entrypoint differs. .gcloudignore keeps
+      # the upload to what the Dockerfile actually copies (~4 MiB rather than 732 MB
+      # of apps/node_modules). The checkout is already a clean tree of this commit,
+      # so the runbook's git-worktree dance is unnecessary here.
+      - name: build image
+        if: steps.creds.outputs.have == 'true'
+        run: |
+          gcloud builds submit --config cloudbuild.api.yaml \
+            --substitutions=_TAG="${{ steps.tag.outputs.tag }}" \
+            --project "$GCP_PROJECT" --region "$GCP_REGION"
+
+      # Never point traffic at an unverified revision: deploy dark under a tag,
+      # smoke-test the tag URL, then shift.
+      - name: deploy api (no traffic)
+        if: steps.creds.outputs.have == 'true'
+        id: api
+        run: |
+          gcloud run deploy majorana-api --project "$GCP_PROJECT" --region "$GCP_REGION" \
+            --image "$IMAGE_REPO:${{ steps.tag.outputs.tag }}" \
+            --no-traffic --tag verify
+          url=$(gcloud run services describe majorana-api \
+            --project "$GCP_PROJECT" --region "$GCP_REGION" \
+            --format="value(status.traffic.filter(tag:verify).extract(url))" | tr -d '[]')
+          test -n "$url" || { echo "no verify tag URL"; exit 1; }
+          echo "url=$url" >> "$GITHUB_OUTPUT"
+
+      - name: smoke-test the dark revision
+        if: steps.creds.outputs.have == 'true'
+        run: |
+          url="${{ steps.api.outputs.url }}"
+          code=$(curl -sS -o /dev/null -w '%{http_code}' "$url/health")
+          test "$code" = "200" || { echo "health returned $code"; exit 1; }
+          # Auth must still be closed: an unauthenticated /v1/me is a 401, never a 200.
+          code=$(curl -sS -o /dev/null -w '%{http_code}' "$url/v1/me")
+          test "$code" = "401" || { echo "/v1/me returned $code, expected 401"; exit 1; }
+          count=$(curl -sS "$url/v1/catalog/entries?view=list" | jq 'length')
+          test "$count" -gt 0 || { echo "catalog returned $count entries"; exit 1; }
+          echo "dark revision healthy: $count catalog entries"
+
+      - name: shift api traffic
+        if: steps.creds.outputs.have == 'true'
+        run: |
+          gcloud run services update-traffic majorana-api \
+            --project "$GCP_PROJECT" --region "$GCP_REGION" --to-latest
+
+      # The worker takes no traffic, so there is no dark-revision step — but the
+      # --command override must be preserved or the image starts the API instead.
+      - name: deploy worker
+        if: steps.creds.outputs.have == 'true'
+        id: worker
+        run: |
+          gcloud run deploy majorana-worker --project "$GCP_PROJECT" --region "$GCP_REGION" \
+            --image "$IMAGE_REPO:${{ steps.tag.outputs.tag }}" \
+            --command majorana-worker
+          rev=$(gcloud run services describe majorana-worker \
+            --project "$GCP_PROJECT" --region "$GCP_REGION" \
+            --format="value(status.latestCreatedRevisionName)")
+          test -n "$rev" || { echo "could not resolve the new worker revision"; exit 1; }
+          echo "revision=$rev" >> "$GITHUB_OUTPUT"
+
+      # A crash-looping worker is the exact failure this workflow exists to stop,
+      # and Cloud Run will not report it: the poll loop dies inside a container
+      # that stays "healthy". Read the log directly and fail the deploy on errors.
+      #
+      # Scoped to the revision this run just created, not the service. A 2-minute
+      # window over the whole service also catches the *outgoing* revision, which
+      # is draining and — if it was crash-looping — is exactly what this deploy is
+      # replacing. Unscoped, the sicker the thing we just fixed was, the more
+      # certainly it fails the deploy that fixed it.
+      - name: worker is actually running
+        if: steps.creds.outputs.have == 'true'
+        run: |
+          sleep 45
+          logs=$(gcloud logging read \
+            'resource.type="cloud_run_revision"
+             AND resource.labels.service_name="majorana-worker"
+             AND resource.labels.revision_name="${{ steps.worker.outputs.revision }}"
+             AND severity>=ERROR' \
+            --project "$GCP_PROJECT" --freshness=2m --limit 20 \
+            --format="value(textPayload)")
+          if [ -n "$logs" ]; then
+            echo "revision ${{ steps.worker.outputs.revision }} logged errors after deploy:"
+            echo "$logs"
+            exit 1
+          fi
+          echo "revision ${{ steps.worker.outputs.revision }} clean for 45s after deploy"
+
+      - name: rollback api on failure
+        if: failure() && steps.creds.outputs.have == 'true'
+        run: |
+          echo "::error::deploy failed — check whether api traffic needs rolling back:"
+          echo "::error::gcloud run services update-traffic majorana-api --to-revisions <previous>=100"
+          gcloud run revisions list --service majorana-api \
+            --project "$GCP_PROJECT" --region "$GCP_REGION" --limit 5 || true

@@ -430,26 +430,6 @@
         "title": "BaselineKind",
         "type": "string"
       },
-      "BaselinePlan": {
-        "additionalProperties": false,
-        "properties": {
-          "kind": {
-            "$ref": "#/components/schemas/BaselineKind"
-          },
-          "reason": {
-            "description": "Why this classical baseline applies, or why none does",
-            "minLength": 3,
-            "title": "Reason",
-            "type": "string"
-          }
-        },
-        "required": [
-          "kind",
-          "reason"
-        ],
-        "title": "BaselinePlan",
-        "type": "object"
-      },
       "BaselineResult": {
         "additionalProperties": false,
         "properties": {
@@ -1293,17 +1273,6 @@
             "anyOf": [
               {
                 "$ref": "#/components/schemas/ArtifactContract"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null
-          },
-          "baseline_plan": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/BaselinePlan"
               },
               {
                 "type": "null"
@@ -2948,7 +2917,10 @@
           "methods": {
             "description": "Verification primitives to run against the generated code",
             "items": {
-              "$ref": "#/components/schemas/VerificationMethod"
+              "enum": [
+                "statistical",
+                "return_contract"
+              ]
             },
             "minItems": 1,
             "title": "Methods",

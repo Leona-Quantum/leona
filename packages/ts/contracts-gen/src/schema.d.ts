@@ -208,15 +208,6 @@ export interface components {
          * @enum {string}
          */
         BaselineKind: "maxcut" | "qubo" | "portfolio" | "hamiltonian" | "none";
-        /** BaselinePlan */
-        BaselinePlan: {
-            kind: components["schemas"]["BaselineKind"];
-            /**
-             * Reason
-             * @description Why this classical baseline applies, or why none does
-             */
-            reason: string;
-        };
         /** BaselineResult */
         BaselineResult: {
             kind: components["schemas"]["BaselineKind"];
@@ -671,8 +662,6 @@ export interface components {
             algorithm_rationale: string;
             /** @default null */
             artifact_contract: components["schemas"]["ArtifactContract"] | null;
-            /** @default null */
-            baseline_plan: components["schemas"]["BaselinePlan"] | null;
             /**
              * Domain
              * @description Problem domain: chemistry, finance, ...
@@ -1461,7 +1450,7 @@ export interface components {
              * Methods
              * @description Verification primitives to run against the generated code
              */
-            methods: components["schemas"]["VerificationMethod"][];
+            methods: ("statistical" | "return_contract")[];
             /**
              * Reference Method
              * @description Independent reference, e.g. exact diagonalization
