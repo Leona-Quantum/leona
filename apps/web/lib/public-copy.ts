@@ -213,6 +213,7 @@ export const CONTACT_COPY: Record<PublicLocale, {
   panelTitle: string;
   reasons: string[];
   note: string;
+  measure: { label: string };
   fields: { name: string; email: string; topic: string; message: string; placeholder: string; submit: string; status: string };
   topics: string[];
 }> = {
@@ -223,6 +224,7 @@ export const CONTACT_COPY: Record<PublicLocale, {
     panelTitle: "Good reasons to write",
     reasons: ["Research workflows and early product access", "Enterprise R&D and private-corpus conversations", "Public research contributions and technical feedback", "Press, partnerships, and speaking"],
     note: "Submitting opens a prepared email in your email app. The current queue is mailto-backed; server-side delivery and CRM routing will follow when the operating workflow is finalized.",
+    measure: { label: "Measure a qubit" },
     fields: { name: "Name", email: "Email", topic: "What is this about?", message: "Message", placeholder: "What are you building, and what evidence or access would help?", submit: "Prepare inquiry", status: "Your email app should open with the inquiry prepared. Send it to add the note to the queue." },
     topics: ["Product access", "Research workflow", "Enterprise R&D", "Public research contribution", "Other"],
   },
@@ -233,6 +235,7 @@ export const CONTACT_COPY: Record<PublicLocale, {
     panelTitle: "ご連絡いただける内容",
     reasons: ["研究ワークフローと早期アクセス", "企業R&Dと非公開コーパス", "公開研究への投稿と技術フィードバック", "取材、パートナーシップ、登壇"],
     note: "送信すると、メールアプリで内容を準備したメールが開きます。現在はmailto方式で、サーバー配信とCRM連携は運用が固まり次第対応します。",
+    measure: { label: "量子ビットを測定" },
     fields: { name: "お名前", email: "メールアドレス", topic: "内容", message: "メッセージ", placeholder: "何をつくり、どんな根拠やアクセスが必要ですか？", submit: "問い合わせを準備", status: "メールアプリに内容を準備したメールが開きます。送信するとキューに追加されます。" },
     topics: ["プロダクトへのアクセス", "研究ワークフロー", "企業R&D", "公開研究への投稿", "その他"],
   },

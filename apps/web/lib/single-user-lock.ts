@@ -47,30 +47,52 @@ function toBase64Url(buffer: ArrayBuffer): string {
   return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 }
 
-// The signed session token a correct sign-in produces, or null when the lock is
-// not fully configured. It is an HMAC over a stable message keyed by the secret
-// password, so the raw password never lives in the cookie and the token can be
-// verified statelessly (no session store). Rotating the password invalidates
-// every existing cookie for free.
-async function sessionToken(): Promise<string | null> {
-  const user = process.env.SINGLE_USER_LOCK_USERNAME;
-  const pass = process.env.SINGLE_USER_LOCK_PASSWORD;
-  if (!user || !pass) return null;
-  const encoder = new TextEncoder();
-  const key = await crypto.subtle.importKey(
+// Session lifetime baked into the signed token itself (not just the cookie's
+// maxAge, which a client controls). ~30 days.
+export const LOCK_SESSION_MAX_AGE_SECONDS = 60 * 60 * 24 * 30;
+
+// HMAC signing key. Prefers a dedicated high-entropy secret when the operator
+// sets SINGLE_USER_LOCK_SECRET, and otherwise falls back to the password so no
+// new prod config is required. Either way the raw secret never lives in the
+// cookie, and rotating the password (or the dedicated secret) invalidates every
+// existing cookie for free.
+async function signingKey(): Promise<CryptoKey | null> {
+  const secret = process.env.SINGLE_USER_LOCK_SECRET || process.env.SINGLE_USER_LOCK_PASSWORD;
+  if (!secret) return null;
+  return crypto.subtle.importKey(
     "raw",
-    encoder.encode(pass),
+    new TextEncoder().encode(secret),
     { name: "HMAC", hash: "SHA-256" },
     false,
     ["sign"],
   );
-  const signature = await crypto.subtle.sign("HMAC", key, encoder.encode(`mj-lock-v1|${user}`));
+}
+
+// HMAC over a message that binds the username and an absolute expiry, so a
+// replayed cookie stops working once the expiry passes (a leaked cookie is no
+// longer valid forever). Verified statelessly — no session store.
+async function signExpiry(exp: number): Promise<string | null> {
+  const user = process.env.SINGLE_USER_LOCK_USERNAME;
+  const key = await signingKey();
+  if (!user || !key) return null;
+  const signature = await crypto.subtle.sign(
+    "HMAC",
+    key,
+    new TextEncoder().encode(`mj-lock-v2|${user}|${exp}`),
+  );
   return toBase64Url(signature);
 }
 
-// Value to write into the session cookie after a successful sign-in.
+function nowSeconds(): number {
+  return Math.floor(Date.now() / 1000);
+}
+
+// Value to write into the session cookie after a successful sign-in:
+// "<exp>.<signature>", where exp is an absolute expiry (unix seconds).
 export async function issueSessionCookieValue(): Promise<string | null> {
-  return sessionToken();
+  const exp = nowSeconds() + LOCK_SESSION_MAX_AGE_SECONDS;
+  const sig = await signExpiry(exp);
+  return sig ? `${exp}.${sig}` : null;
 }
 
 // Length-independent comparison so a rejected value can't be distinguished by
@@ -83,11 +105,19 @@ function safeEqual(a: string, b: string): boolean {
   return diff === 0;
 }
 
-// True when the cookie carries a token that matches the current credentials.
+// True when the cookie carries an unexpired token signed by the current key.
+// Format: "<exp>.<signature>". Rejects malformed values, expired tokens, and
+// signatures that don't match a fresh signature over the same expiry.
 export async function isValidSessionCookie(value: string | null | undefined): Promise<boolean> {
-  const expected = await sessionToken();
-  if (!expected || !value) return false;
-  return safeEqual(value, expected);
+  if (!value) return false;
+  const dot = value.indexOf(".");
+  if (dot <= 0) return false;
+  const exp = Number(value.slice(0, dot));
+  const sig = value.slice(dot + 1);
+  if (!Number.isInteger(exp) || exp <= nowSeconds() || !sig) return false;
+  const expected = await signExpiry(exp);
+  if (!expected) return false;
+  return safeEqual(sig, expected);
 }
 
 // Validates a raw username/password pair from the sign-in form. Constant-time on
@@ -106,6 +136,16 @@ export function areLockCredentialsValid(username: string, password: string): boo
 // Same-origin relative path guard for post-sign-in redirects (prevents open
 // redirects via ?returnTo=). Falls back to /run.
 export function safeReturnTo(raw: string | null | undefined): string {
-  if (!raw || !raw.startsWith("/") || raw.startsWith("//")) return "/run";
-  return raw;
+  if (!raw) return "/run";
+  // Parse against a fixed dummy origin: a truly same-origin relative path keeps
+  // that origin. Backslashes (e.g. "/\evil.example") normalize to a network-path
+  // redirect whose origin differs, so they fall back to /run.
+  try {
+    const base = new URL("https://lock.invalid");
+    const target = new URL(raw, base);
+    if (target.origin !== base.origin) return "/run";
+    return `${target.pathname}${target.search}${target.hash}`;
+  } catch {
+    return "/run";
+  }
 }

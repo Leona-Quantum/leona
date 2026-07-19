@@ -15,17 +15,25 @@ import { useState } from "react";
 // unbounded counter — stop tallying at 1000 shots.
 const SHOT_LIMIT = 1000;
 
-export function MeasurementLab() {
+export function MeasurementLab({ compact = false }: { compact?: boolean } = {}) {
   const [bias, setBias] = useState(50); // P(up), percent
   const [up, setUp] = useState(0);
   const [down, setDown] = useState(0);
   const [outcome, setOutcome] = useState<null | "up" | "down">(null);
   const [measuring, setMeasuring] = useState(false);
 
+  // Compact mode (Owner Inbox 2026-07-19): a smaller, text-light version for the
+  // contact page — same interaction, tighter footprint, no explanatory caption.
+  const stageH = compact ? 96 : 130;
+  const svgSize = compact ? 66 : 88;
+  const histMin = compact ? 78 : 108;
+  const barMax = compact ? 52 : 74;
+  const pad = compact ? 12 : 16;
+
   const total = up + down;
   const atLimit = total >= SHOT_LIMIT;
   const maxC = Math.max(up, down, 1);
-  const barH = (n: number) => Math.round((n / maxC) * 74);
+  const barH = (n: number) => Math.round((n / maxC) * barMax);
 
   function measure() {
     if (total >= SHOT_LIMIT) return;
@@ -68,15 +76,15 @@ export function MeasurementLab() {
     // overridden by a media query.
     <div className="mj-measurement-lab" style={{ color: "var(--text-0)" }}>
       {/* stage + controls */}
-      <div style={{ ...panel, padding: 16, display: "flex", flexDirection: "column", gap: 12 }}>
-        <div style={{ position: "relative", height: 130, background: "var(--bg-0)", borderRadius: 10, overflow: "hidden", display: "grid", placeItems: "center" }}>
-          <svg viewBox="0 0 80 80" width="88" height="88" fill="none" style={stageSvg("up")}>
+      <div style={{ ...panel, padding: pad, display: "flex", flexDirection: "column", gap: 12 }}>
+        <div style={{ position: "relative", height: stageH, background: "var(--bg-0)", borderRadius: 10, overflow: "hidden", display: "grid", placeItems: "center" }}>
+          <svg viewBox="0 0 80 80" width={svgSize} height={svgSize} fill="none" style={stageSvg("up")}>
             <path d="M20 16 V64" stroke="var(--text-0)" strokeWidth="3.6" strokeLinecap="round" /><path d="M50 16 L66 40 L50 64" stroke="var(--text-0)" strokeWidth="3.6" strokeLinecap="round" strokeLinejoin="round" />
             <path d="M33 50 L31 40 L35 32 L30 26" stroke="var(--accent)" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" opacity="0.5" />
             <circle cx="31" cy="40" r="1.8" fill="var(--text-0)" /><circle cx="35" cy="32" r="1.7" fill="var(--text-0)" /><circle cx="30" cy="26" r="1.5" fill="var(--text-0)" />
             <circle cx="33" cy="50" r="3.4" fill="var(--accent)" />
           </svg>
-          <svg viewBox="0 0 80 80" width="88" height="88" fill="none" style={stageSvg("down")}>
+          <svg viewBox="0 0 80 80" width={svgSize} height={svgSize} fill="none" style={stageSvg("down")}>
             <path d="M20 16 V64" stroke="var(--text-0)" strokeWidth="3.6" strokeLinecap="round" /><path d="M50 16 L66 40 L50 64" stroke="var(--text-0)" strokeWidth="3.6" strokeLinecap="round" strokeLinejoin="round" />
             <path d="M33 30 L31 40 L35 48 L30 54" stroke="var(--accent)" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" opacity="0.5" />
             <circle cx="31" cy="40" r="1.8" fill="var(--text-0)" /><circle cx="35" cy="48" r="1.7" fill="var(--text-0)" /><circle cx="30" cy="54" r="1.5" fill="var(--text-0)" />
@@ -100,12 +108,12 @@ export function MeasurementLab() {
       </div>
 
       {/* histogram */}
-      <div style={{ ...panel, padding: 16, display: "flex", flexDirection: "column" }}>
+      <div style={{ ...panel, padding: pad, display: "flex", flexDirection: "column" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
           <span style={{ fontFamily: mono, fontSize: 11, letterSpacing: "0.12em", color: "var(--text-2)" }}>OUTCOME HISTOGRAM</span>
           <span style={{ fontFamily: mono, fontSize: 12, color: "var(--text-1)" }}>N = {total}</span>
         </div>
-        <div style={{ flex: 1, display: "flex", alignItems: "flex-end", justifyContent: "center", gap: 24, padding: "16px 0 10px", minHeight: 108 }}>
+        <div style={{ flex: 1, display: "flex", alignItems: "flex-end", justifyContent: "center", gap: 24, padding: "16px 0 10px", minHeight: histMin }}>
           {([["up", up, "|↑⟩", "var(--accent)"], ["down", down, "|↓⟩", "var(--text-1)"]] as const).map(([k, n, sym, col]) => (
             <div key={k} style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 8, height: "100%", justifyContent: "flex-end" }}>
               <span style={{ fontFamily: mono, fontSize: 12, color: "var(--text-0)" }}>{n}</span>
@@ -115,7 +123,9 @@ export function MeasurementLab() {
             </div>
           ))}
         </div>
-        <div style={{ fontSize: 12.5, color: "var(--text-2)", textAlign: "center", borderTop: "1px solid var(--border-0)", paddingTop: 14 }}>More shots → the tally approaches |α|², |β|².</div>
+        {!compact ? (
+          <div style={{ fontSize: 12.5, color: "var(--text-2)", textAlign: "center", borderTop: "1px solid var(--border-0)", paddingTop: 14 }}>More shots → the tally approaches |α|², |β|².</div>
+        ) : null}
       </div>
     </div>
   );

@@ -399,32 +399,25 @@ body {
   .mj-measurement-lab { grid-template-columns: 1fr; }
 }
 
-/* Intro with the Measure widget folded in as a side accent (Owner Inbox
-   2026-07-19): copy on the left, the compact interactive on the right. Stacks
-   on narrow viewports. */
-.mj-company-intro--measure {
+.mj-company-intro-copy { display: flex; flex-direction: column; gap: var(--sp-3, 12px); }
+
+/* Contact page: form on the left, a compact Measure widget as a small aside on
+   the right (Owner Inbox 2026-07-19). Stacks on narrow viewports. */
+.mj-contact-layout {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(300px, 460px);
+  grid-template-columns: minmax(0, 1fr) minmax(280px, 420px);
   gap: var(--sp-8, 32px);
   align-items: start;
 }
-.mj-company-intro-copy { display: flex; flex-direction: column; gap: var(--sp-3, 12px); }
-.mj-intro-measure {
-  background: var(--bg-1);
-  border: 1px solid var(--border-0);
-  border-radius: var(--radius-card, 10px);
-  padding: var(--sp-5, 20px);
+.mj-contact-measure {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3, 12px);
 }
-.mj-intro-measure-head { margin-bottom: var(--sp-4, 16px); }
-.mj-intro-measure-head h3 {
-  margin: var(--sp-1, 4px) 0 0;
-  font-size: clamp(1.05rem, 0.95rem + 0.9vw, 1.35rem);
-}
-.mj-intro-measure-head p { margin: var(--sp-2, 8px) 0 0; color: var(--text-1); }
-/* The accent is already narrow — keep its inner lab single-column throughout. */
-.mj-intro-measure .mj-measurement-lab { grid-template-columns: 1fr; }
+/* The aside is already narrow — keep its inner lab single-column. */
+.mj-contact-measure .mj-measurement-lab { grid-template-columns: 1fr; }
 @media (max-width: 900px) {
-  .mj-company-intro--measure { grid-template-columns: 1fr; }
+  .mj-contact-layout { grid-template-columns: 1fr; }
 }
 
 /* Single-user-lock sign-in page (Owner Inbox 2026-07-19): a centered card with
