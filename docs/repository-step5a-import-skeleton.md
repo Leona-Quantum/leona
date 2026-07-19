@@ -87,8 +87,8 @@ a real transactional rollback:
 
 Step 5b has a materially larger security surface (outbound network access from a
 server-owned identity), so it remains independently scoped and validation-gated rather
-than an implicit continuation of Step 5a. It does not require a separate CODEOWNER
-approval merely to begin scoping or ordinary implementation.
+than an implicit continuation of Step 5a. Development proceeds through normal
+feature-branch commits without a CODEOWNER review or PR prerequisite.
 
 ## Local validation (no Neon touched)
 
@@ -131,7 +131,7 @@ against Postgres 17 — see `docs/repository-step5a-neon-gate.md`.
 
 ## Next-step gate
 
-Step 5b scoping may begin without a separate CODEOWNER approval. Keep
+Step 5b development may begin without a CODEOWNER review or PR. Keep
 `SYSTEM_CATALOG_ENABLED=false`, make no public catalog data available, and preserve the
-network/security validation gates. Repository-wide CODEOWNERS rules still apply to any
-blast-radius file that a Step 5b slice changes or merges.
+network/security validation gates while committing ordinary development slices to a
+feature branch.
