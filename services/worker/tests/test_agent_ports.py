@@ -68,13 +68,18 @@ def _execution(candidate, *, result=None, observation=None):
             observation
             if observation is not None
             else {
+                # The trusted observer stamps this on every circuit run before it
+                # records anything else (majorana_frameworks.adapters), so a
+                # fixture without it is not a shape production can produce — and
+                # the verifier now fails closed when it is absent.
+                "native_optimization": {"applied": False},
                 "resource_metrics": {
                     "qubits": 2,
                     "depth": 2,
                     "gate_count": 2,
                     "two_qubit_gate_count": 1,
                     "measurement_count": 2,
-                }
+                },
             }
         ),
     )
@@ -413,6 +418,201 @@ async def test_planner_gives_up_after_the_retry_rather_than_looping():
     with pytest.raises(StageOutputError):
         await planner.create_plan(uuid4())
     assert len(llm.prompts) == 2
+
+
+# --- Checks that can actually fail (2026-07-20) ------------------------------
+#
+# Three deterministic checks were hardcoded or misdirected: native-optimization
+# evidence appended a literal "pass", the statistical check only compared a
+# candidate against itself, and the return contract recorded a type comparison it
+# never performed. These tests fail against the previous implementation.
+
+_BELL_QASM = (
+    'OPENQASM 2.0;\ninclude "qelib1.inc";\nqreg q[2];\ncreg c[2];\n'
+    "h q[0];\ncx q[0],q[1];\nmeasure q -> c;\n"
+)
+
+
+def _statistical_plan() -> Plan:
+    return Plan.model_validate(
+        {
+            "domain": "quantum information",
+            "framework": "qiskit",
+            "algorithm": Algorithm.BELL,
+            "problem_summary": "Build and verify a Bell circuit",
+            "algorithm_rationale": "Entanglement matches the request",
+            "parameters": {},
+            "qubits_estimate": 2,
+            "expected_runtime_sec": 1,
+            "success_criteria": {"primary_metric": "counts"},
+            "expected_output_keys": ["counts"],
+            "verification_plan": {"methods": ["statistical", "return_contract"]},
+        }
+    )
+
+
+def _statistical_observation(counts: dict[str, int]) -> dict:
+    return {
+        "native_optimization": {"applied": False},
+        "interchange_qasm": _BELL_QASM,
+        "verification_repeat_result": {"counts": counts},
+        "resource_metrics": {
+            "qubits": 2,
+            "depth": 2,
+            "gate_count": 2,
+            "two_qubit_gate_count": 1,
+            "measurement_count": 2,
+        },
+    }
+
+
+def _checks_by_method(output) -> dict[str, dict]:
+    return {check["method"]: check for check in output.deterministic_checks}
+
+
+async def test_native_optimization_evidence_fails_when_the_sandbox_reported_none():
+    candidate = _candidate()
+    output = await EvidenceVerifier(llm=MustNotRunLLM(), task_prompt="Bell state").verify(
+        candidate,
+        _execution(candidate, observation={"resource_metrics": {"qubits": 2}}),
+        _plan(),
+    )
+    check = _checks_by_method(output)["native_optimization_evidence"]
+    assert check["result"] == "fail"
+    assert output.decision is VerifierDecision.FAIL
+
+
+async def test_native_optimization_evidence_fails_when_it_contradicts_the_source():
+    # The source binds no transpile call, so a sandbox claim of applied=True is
+    # evidence about a program other than the one being judged.
+    candidate = _candidate()
+    output = await EvidenceVerifier(llm=MustNotRunLLM(), task_prompt="Bell state").verify(
+        candidate,
+        _execution(
+            candidate,
+            observation={
+                "native_optimization": {"applied": True},
+                "resource_metrics": {"qubits": 2},
+            },
+        ),
+        _plan(),
+    )
+    check = _checks_by_method(output)["native_optimization_evidence"]
+    assert check["result"] == "fail"
+    assert check["details"]["source_applied"] is False
+
+
+async def test_statistical_check_rejects_counts_that_are_reproducibly_wrong():
+    # "01"/"10" is a self-consistent Bell measurement that cannot happen: the pair
+    # check passes (the program agrees with itself) and the Born-distribution check
+    # must still fail. This is the case the old verifier let through.
+    wrong = {"01": 512, "10": 512}
+    candidate = _candidate()
+    output = await EvidenceVerifier(llm=MustNotRunLLM(), task_prompt="Bell state").verify(
+        candidate,
+        _execution(
+            candidate, result={"counts": wrong}, observation=_statistical_observation(wrong)
+        ),
+        _statistical_plan(),
+    )
+    checks = _checks_by_method(output)
+    assert checks["statistical_reproducibility"]["result"] == "pass"
+    assert checks["statistical"]["result"] == "fail"
+    assert output.decision is VerifierDecision.FAIL
+
+
+async def test_statistical_check_passes_on_counts_matching_the_born_distribution():
+    right = {"00": 512, "11": 512}
+    candidate = _candidate()
+    output = await EvidenceVerifier(llm=PassingCriticLLM(), task_prompt="Bell state").verify(
+        candidate,
+        _execution(
+            candidate, result={"counts": right}, observation=_statistical_observation(right)
+        ),
+        _statistical_plan(),
+    )
+    checks = _checks_by_method(output)
+    assert checks["statistical"]["result"] == "pass"
+    assert checks["statistical"]["details"]["evidence"] == "direct_simulation_vs_reported_counts"
+    assert output.decision is VerifierDecision.PASS
+
+
+async def test_statistical_check_survives_a_missing_repeat_execution():
+    # The Born check needs one counts dict, so losing the second execution is no
+    # longer fatal — it only costs the reproducibility evidence.
+    right = {"00": 512, "11": 512}
+    observation = _statistical_observation(right)
+    del observation["verification_repeat_result"]
+    candidate = _candidate()
+    output = await EvidenceVerifier(llm=PassingCriticLLM(), task_prompt="Bell state").verify(
+        candidate,
+        _execution(candidate, result={"counts": right}, observation=observation),
+        _statistical_plan(),
+    )
+    checks = _checks_by_method(output)
+    assert "statistical_reproducibility" not in checks
+    assert checks["statistical"]["result"] == "pass"
+    assert output.decision is VerifierDecision.PASS
+
+
+async def test_statistical_check_fails_when_no_evidence_is_available_at_all():
+    observation = _statistical_observation({"00": 1})
+    del observation["verification_repeat_result"]
+    del observation["interchange_qasm"]
+    candidate = _candidate()
+    output = await EvidenceVerifier(llm=MustNotRunLLM(), task_prompt="Bell state").verify(
+        candidate,
+        _execution(candidate, result={"counts": {"00": 1}}, observation=observation),
+        _statistical_plan(),
+    )
+    check = _checks_by_method(output)["statistical"]
+    assert check["result"] == "fail"
+    assert check["details"]["error"] == "required evidence unavailable"
+    assert check["details"]["interchange_qasm"] is False
+
+
+class _LowConfidenceMismatchCriticLLM:
+    async def complete(self, request, *, on_delta=None):
+        return LLMResponse(
+            text=json.dumps(
+                {
+                    "decision": "fail",
+                    "confidence": "low",
+                    "severity": "major",
+                    "summary": "The reported metric does not follow from the circuit.",
+                    "passed_checks": [],
+                    "failed_checks": ["intent"],
+                    "mismatches": [],
+                    "suggestions": [],
+                    "repair_plan": ["Recompute the metric from the measured counts."],
+                    "required_recheck": ["semantic_critic"],
+                    "residual_risks": [],
+                }
+            ),
+            model=request.model,
+            input_tokens=1,
+            output_tokens=1,
+        )
+
+
+async def test_repair_carries_the_critics_grading_not_just_its_prose():
+    candidate = _candidate()
+    output = await EvidenceVerifier(
+        llm=_LowConfidenceMismatchCriticLLM(), task_prompt="Bell state"
+    ).verify(candidate, _execution(candidate), _plan())
+    assert output.repair is not None
+    assert output.repair.severity == "major"
+    assert output.repair.confidence == "low"
+
+
+async def test_deterministic_failure_is_graded_blocking():
+    candidate = _candidate()
+    output = await EvidenceVerifier(llm=MustNotRunLLM(), task_prompt="Bell state").verify(
+        candidate, _execution(candidate, result={"wrong": True}), _plan()
+    )
+    assert output.repair is not None
+    assert output.repair.severity == "blocking"
+    assert output.repair.confidence == "high"
 
 
 # --- Execution evidence tells the truth (2026-07-20) -------------------------

@@ -162,6 +162,13 @@ class RepairInstruction(_Record):
     repairs: list[str] = Field(default_factory=list, max_length=20)
     preserve_invariants: list[str] = Field(default_factory=list, max_length=20)
     required_rechecks: list[str] = Field(default_factory=list, max_length=20)
+    # How bad, and how sure. The verifier's gate already turns on these two —
+    # a low-confidence pass and a blocking mismatch are both rejections — but
+    # until 2026-07-20 neither reached the repair, so every rejection arrived
+    # framed identically. They are optional because a deterministic failure has
+    # no confidence to report.
+    severity: Literal["none", "minor", "major", "blocking"] | None = None
+    confidence: Literal["high", "medium", "low"] | None = None
 
 
 class VerificationEvidence(_Record):
