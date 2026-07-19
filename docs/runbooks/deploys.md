@@ -1,15 +1,49 @@
 # Runbook: deploying api + worker to Cloud Run
 
 Web deploys itself — Vercel builds every push to `dev` and aliases production
-(ADR-0011). **api and worker do not.** There is no deploy workflow for them; the
-Cloud Run services keep serving whatever image was last pushed by hand.
+(ADR-0011). **api and worker historically did not**, and the Cloud Run services
+kept serving whatever image was last pushed by hand.
 
-That gap caused a real outage on 2026-07-19: both services were still running
-`api:125044bb-amd64` (PR #65), twelve commits behind `dev`. The API therefore had
-no `/v1/catalog/entries` route at all, and the worker crash-looped every 10s
-against `ck_jobs_lease_shape` — a constraint added by migration 0012, which the
-old code predates. **After any migration, redeploy api and worker.** A green CI
-run says nothing about what production is running.
+That gap caused three incidents. On 2026-07-19 both services were still running
+`api:125044bb-amd64` (PR #65), twelve commits behind `dev`: the API had no
+`/v1/catalog/entries` route at all, and the worker crash-looped every 10s against
+`ck_jobs_lease_shape` — a constraint added by migration 0012, which the old code
+predates. It recurred the same day, 11:31–11:55 UTC, from the same cause. A green
+CI run says nothing about what production is running.
+
+`.github/workflows/deploy.yml` now does this automatically on every merge to
+`dev`. **The manual procedure below is still the fallback** (and the only path
+until the one-time setup in the next section is done).
+
+## Automated deploy — one-time owner setup
+
+The workflow skips with a warning, rather than failing, until two repo secrets
+exist. Both come from a Workload Identity Federation pool, so no service-account
+key is ever stored in GitHub:
+
+| Secret | Value |
+|---|---|
+| `GCP_WORKLOAD_IDENTITY_PROVIDER` | full resource name of the WIF provider |
+| `GCP_DEPLOY_SERVICE_ACCOUNT` | the deploy SA's email |
+
+The deploy SA needs `roles/run.admin`, `roles/cloudbuild.builds.editor`,
+`roles/artifactregistry.writer`, `roles/logging.viewer`, and
+`roles/iam.serviceAccountUser` on the runtime SA. Restrict the WIF principal to
+this repository and to the `dev` branch — a provider scoped only by repo lets any
+branch deploy production.
+
+What the workflow does, in order: build the image from the merge commit → deploy
+the API dark under `--tag verify` → smoke-test that tag URL (`/health` is 200,
+unauthenticated `/v1/me` is still 401, the catalog is non-empty) → shift traffic →
+deploy the worker with `--command majorana-worker` → **read the worker's error log
+for 45s and fail the deploy if anything appears**. That last step is the one that
+would have caught all three incidents; Cloud Run itself reports a crash-looping
+worker as healthy.
+
+It does not roll back automatically. On failure it prints the recent revisions and
+the `update-traffic --to-revisions` command to run.
+
+## Manual deploy (fallback)
 
 Check what is actually deployed before assuming:
 
