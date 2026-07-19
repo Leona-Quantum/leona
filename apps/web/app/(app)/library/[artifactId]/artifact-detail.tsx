@@ -30,6 +30,9 @@ export function ArtifactDetail({ artifactId, locale = "en" }: { artifactId: stri
   const [tab, setTab] = useState<DetailTab>("overview");
   const [copied, setCopied] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [loadError, setLoadError] = useState(false);
   const [starred, setStarred] = useState(false);
 
   useEffect(() => {
@@ -84,7 +87,10 @@ export function ArtifactDetail({ artifactId, locale = "en" }: { artifactId: stri
           });
       })
       .catch(() => {
-        if (active && !local) setArtifact(fallbackArtifact(artifactId));
+        // Previously this substituted a generic placeholder artifact, so a real
+        // 404 (or a 401) rendered as a plausible-looking empty record titled
+        // "Artifact". Surface the failure instead of inventing data.
+        if (active && !local) setLoadError(true);
       });
     return () => {
       active = false;
@@ -104,10 +110,24 @@ export function ArtifactDetail({ artifactId, locale = "en" }: { artifactId: stri
     router.push("/library");
   }
 
-  function handleDelete() {
-    if (!artifact) return;
-    deleteArtifact(artifact.id);
-    router.push("/library");
+  async function handleDelete() {
+    if (!artifact || deleting) return;
+    setDeleting(true);
+    setDeleteError(null);
+    try {
+      // Only navigate away once the server confirms the delete. Navigating
+      // first would show the user a Library that "lost" an artifact still
+      // sitting in the database.
+      await deleteArtifact(artifact.id);
+      router.push("/library");
+    } catch {
+      setDeleteError(
+        locale === "ja"
+          ? "削除できませんでした。もう一度お試しください。"
+          : "Could not delete this artifact. Please try again.",
+      );
+      setDeleting(false);
+    }
   }
 
   function handleStar() {
@@ -116,6 +136,15 @@ export function ArtifactDetail({ artifactId, locale = "en" }: { artifactId: stri
   }
 
   if (!artifact) {
+    if (loadError) {
+      return (
+        <div className="mj-library-detail-loading" role="alert">
+          {locale === "ja"
+            ? "このアーティファクトを読み込めませんでした。"
+            : "Could not load this artifact. It may have been deleted, or you may not have access to it."}
+        </div>
+      );
+    }
     return <div className="mj-library-detail-loading">{copy.loading}</div>;
   }
 
@@ -172,9 +201,10 @@ export function ArtifactDetail({ artifactId, locale = "en" }: { artifactId: stri
             <p className="mj-eyebrow">{copy.type}</p>
             <h2 id="mj-artifact-delete-title">{copy.deleteConfirmTitle}</h2>
             <p>{copy.deleteWarning(artifact.title)}</p>
+            {deleteError ? <p role="alert" className="mj-delete-dialog-error">{deleteError}</p> : null}
             <div className="mj-delete-dialog-actions">
-              <button className="mj-secondary-button" type="button" onClick={() => setDeleteOpen(false)}>{copy.cancel}</button>
-              <button className="mj-danger-button" type="button" onClick={handleDelete}>{copy.delete}</button>
+              <button className="mj-secondary-button" type="button" disabled={deleting} onClick={() => { setDeleteOpen(false); setDeleteError(null); }}>{copy.cancel}</button>
+              <button className="mj-danger-button" type="button" disabled={deleting} onClick={() => void handleDelete()}>{copy.delete}</button>
             </div>
           </section>
         </div>

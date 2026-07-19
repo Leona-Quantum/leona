@@ -2172,6 +2172,11 @@
   gap: var(--sp-2);
   margin-top: var(--sp-6);
 }
+.mj-delete-dialog-error {
+  margin: var(--sp-3) 0 0;
+  color: var(--err);
+  font-size: var(--fs-13);
+}
 .mj-danger-button {
   display: inline-flex;
   align-items: center;

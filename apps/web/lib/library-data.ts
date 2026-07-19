@@ -246,7 +246,28 @@ export function restoreArtifact(id: string): LibraryArtifact[] {
   );
 }
 
-export function deleteArtifact(id: string): LibraryArtifact[] {
+/** Soft-delete server-side. Resolves when the row is really gone (or was never there). */
+async function deleteArtifactRemote(id: string): Promise<void> {
+  const response = await fetch(`/api/artifacts/${encodeURIComponent(id)}`, { method: "DELETE" });
+  // 404 is success for the user's intent: demo fixtures and artifacts that were
+  // never persisted have no server row to delete. Anything else is a real
+  // failure and must not be reported to the user as a deletion.
+  if (!response.ok && response.status !== 404) {
+    throw new Error(`artifact delete failed (${response.status})`);
+  }
+}
+
+/**
+ * Delete an artifact from the Library, server first.
+ *
+ * Previously this only added the id to a localStorage tombstone list, so the
+ * row stayed in Postgres and came back on any other device or after clearing
+ * site data. The server call now happens FIRST and is awaited: if it fails the
+ * local state is left untouched and the error propagates, so the UI can never
+ * show a deletion that did not actually happen.
+ */
+export async function deleteArtifact(id: string): Promise<LibraryArtifact[]> {
+  await deleteArtifactRemote(id);
   const deletedIds = loadDeletedIds();
   deletedIds.add(id);
   persistDeletedIds(deletedIds);
