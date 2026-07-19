@@ -154,7 +154,14 @@ const ALL_RAW_ENTRIES: PublicRepositoryEntry[] = [
 ];
 
 export const PUBLIC_REPOSITORY_ENTRIES: PublicRepositoryEntry[] = ALL_RAW_ENTRIES.map((raw) => {
-  const enriched = { ...raw, ...(ENTRY_ENRICHMENT[raw.slug] ?? {}) };
+  // `comparisonMetrics` is merged INTO the entry's classical comparison (deep,
+  // not replaced) so an enrichment can add a numeric table without restating the
+  // prose fields; everything else in the enrichment is a shallow overlay.
+  const { comparisonMetrics, ...patch } = ENTRY_ENRICHMENT[raw.slug] ?? {};
+  const enriched = { ...raw, ...patch };
+  if (comparisonMetrics && enriched.classicalComparison) {
+    enriched.classicalComparison = { ...enriched.classicalComparison, metrics: comparisonMetrics };
+  }
   const entry = normalizePublicRepositoryText(enriched) as PublicRepositoryEntry;
   return { ...entry, verificationMethods: deriveVerificationMethods(entry) };
 });
