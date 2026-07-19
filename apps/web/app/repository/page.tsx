@@ -1,8 +1,8 @@
 import type { Metadata } from "next";
 import { PublicSite } from "../../components/public-site";
 import { getMajoranaAuth, getMajoranaSignInUrl, isMajoranaAuthConfigured } from "../../lib/auth";
-import { PUBLIC_REPOSITORY_ENTRIES } from "../../lib/public-repository";
 import { getPublicLocale } from "../../lib/public-locale-server";
+import { getRepositoryEntries } from "../../lib/repository-source";
 import { VerificationLegend } from "../../components/repository-verification";
 import { RepositoryBrowser } from "./repository-browser";
 
@@ -16,6 +16,7 @@ export default async function RepositoryPage() {
   const { user } = await getMajoranaAuth();
   const signInHref = !user && isMajoranaAuthConfigured() ? await getMajoranaSignInUrl() : null;
   const isJapanese = locale === "ja";
+  const entries = await getRepositoryEntries();
 
   return (
     <PublicSite activePath="/repository" className="mj-repository-site" locale={locale} showLanguageToggle>
@@ -27,7 +28,7 @@ export default async function RepositoryPage() {
             : "Search circuits and algorithms, then inspect how they work, what simulation shows, which code is available, and where source, license, and verification boundaries begin."}
         </p>
         <RepositoryBrowser
-          entries={PUBLIC_REPOSITORY_ENTRIES}
+          entries={entries}
           locale={locale}
           isSignedIn={Boolean(user)}
           signInHref={signInHref}
