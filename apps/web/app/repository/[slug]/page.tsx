@@ -3,11 +3,11 @@ import { notFound } from "next/navigation";
 import { PublicSite } from "../../../components/public-site";
 import { getMajoranaAuth, getMajoranaSignInUrl, isMajoranaAuthConfigured } from "../../../lib/auth";
 import { getPublicLocale } from "../../../lib/public-locale-server";
-import { getRepositoryEntries, getRepositoryEntry } from "../../../lib/repository-source";
+import { getRepositoryEntry, getRepositoryListEntries } from "../../../lib/repository-source";
 import { RepositoryEntryView } from "./repository-entry-view";
 
 export async function generateStaticParams() {
-  const entries = await getRepositoryEntries();
+  const entries = await getRepositoryListEntries();
   return entries.map((entry) => ({ slug: entry.slug }));
 }
 
@@ -22,12 +22,13 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
 
 export default async function RepositoryEntryPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
-  // One fetch for both the entry and its related records — resolving each
-  // relatedSlug through getRepositoryEntry() would re-await the whole corpus
-  // per link.
-  const entries = await getRepositoryEntries();
-  const entry = entries.find((candidate) => candidate.slug === slug);
+  // The full record for this one slug, then the slim list for the related-links
+  // strip. Previously this pulled the ENTIRE corpus with full records (~2.37 MB)
+  // just to find one entry and read a few sibling titles; the list projection is
+  // ~0.91 MB and, unlike the full payload, is small enough for Next to cache.
+  const entry = await getRepositoryEntry(slug);
   if (!entry) notFound();
+  const entries = await getRepositoryListEntries();
   const locale = await getPublicLocale();
   const { user } = await getMajoranaAuth();
   const signInHref = !user && isMajoranaAuthConfigured() ? await getMajoranaSignInUrl() : null;

@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import datetime as dt
 import json
+from typing import Any
 
 from majorana_contracts import CatalogProvenance, PublicCatalogEntry
 
@@ -44,6 +45,63 @@ def parse_source_record(source_code: str | None) -> dict | None:
     except (ValueError, TypeError):
         return None
     return value if isinstance(value, dict) else None
+
+
+# The exact `record` keys the /repository browse list renders and filters on:
+# title/category/framework/status for the cards and filter chips, the
+# tags/resources/metadata/verification* summaries the list filters and badges
+# by, and portableCircuit, which getPublicRepositoryVariant() reads to
+# synthesise a converted framework variant when no native one exists (without
+# it the framework filter silently under-reports support). Everything else in
+# `record` — long-form prose, classical comparisons, citations, and other
+# detail-page-only content — is dropped here.
+#
+# This allowlist is Slice E's whole fix for the /v1/catalog/entries list
+# response exceeding Vercel's 2 MB Next.js data-cache ceiling (measured at
+# 2,367,578 bytes full vs 910,960 bytes projected against the real production
+# corpus). Adding a heavy field back to this set re-breaks that ceiling —
+# re-measure the real payload before adding anything here.
+LIST_VIEW_RECORD_FIELDS: frozenset[str] = frozenset(
+    {
+        "slug",
+        "title",
+        "titleJa",
+        "category",
+        "categoryLabel",
+        "categoryLabelJa",
+        "status",
+        "framework",
+        "algorithmFamily",
+        "description",
+        "descriptionJa",
+        "provenance",
+        "updatedAt",
+        "exportStatus",
+        "verification",
+        "tags",
+        "resources",
+        "metadata",
+        "verificationMethods",
+        "codeVariants",
+        "visualization",
+        "decomposition",
+        "portableCircuit",
+    }
+)
+
+
+def project_record_for_list_view(record: dict[str, Any] | None) -> dict[str, Any] | None:
+    """Project a rich `record` down to the browse-list allowlist (Slice E).
+
+    Projects by intersection, never by filling in defaults: a key absent from
+    the source record (e.g. `decomposition`, present in only a minority of
+    records) must stay absent from the output rather than appearing as
+    `None`. `record=None` (a non-manifest source, see `parse_source_record`)
+    survives unchanged.
+    """
+    if record is None:
+        return None
+    return {key: value for key, value in record.items() if key in LIST_VIEW_RECORD_FIELDS}
 
 
 def build_public_catalog_entry(

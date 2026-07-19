@@ -16,6 +16,7 @@ import type {
   PublicRepositoryCodeVariant,
   PublicRepositoryEntry,
   PublicRepositoryFramework,
+  PublicRepositoryListEntry,
 } from "./repository/types";
 import { strongestTier, type VerificationMethodId, type VerificationTier } from "./repository/verification";
 import { ENTRY_ENRICHMENT } from "./repository/enrichment";
@@ -38,6 +39,7 @@ export type {
   PublicRepositoryCodeVariant,
   PublicRepositoryEntry,
   PublicRepositoryFramework,
+  PublicRepositoryListEntry,
   PublicRepositoryStatus,
   PublicRepositoryVariantStatus,
 } from "./repository/types";
@@ -165,8 +167,24 @@ export const PUBLIC_REPOSITORY_ENTRIES: PublicRepositoryEntry[] = ALL_RAW_ENTRIE
   return { ...entry, verificationMethods: deriveVerificationMethods(entry) };
 });
 
-export function entryVerificationMethods(entry: PublicRepositoryEntry): VerificationMethodId[] {
-  return entry.verificationMethods ?? deriveVerificationMethods(entry);
+/**
+ * Accepts a list entry as well as a full one: the browse cards render the
+ * verification badge, and the list projection omits the verificationDetails and
+ * source fields deriveVerificationMethods() falls back to.
+ *
+ * That fallback is unreachable for list entries in practice — verificationMethods
+ * is derived for every record before the bootstrap manifest is generated, and all
+ * 283 published records carry it — so the narrowing below is a guard, not a code
+ * path with a behaviour to preserve. It is written as a type narrowing rather
+ * than a cast so that widening the projection later cannot silently reintroduce
+ * a call to derive on a record that lacks the fields it reads.
+ */
+export function entryVerificationMethods(
+  entry: PublicRepositoryEntry | PublicRepositoryListEntry,
+): VerificationMethodId[] {
+  if (entry.verificationMethods?.length) return entry.verificationMethods;
+  if (!("verificationDetails" in entry)) return [];
+  return deriveVerificationMethods(entry);
 }
 
 export function entryVerificationTier(entry: PublicRepositoryEntry): VerificationTier {
@@ -177,8 +195,10 @@ export function getPublicRepositoryEntry(slug: string): PublicRepositoryEntry | 
   return PUBLIC_REPOSITORY_ENTRIES.find((entry) => entry.slug === slug);
 }
 
+// Reads only codeVariants, portableCircuit, and slug, so the browse list's
+// framework filter can call it with a projected list entry.
 export function getPublicRepositoryVariant(
-  entry: PublicRepositoryEntry,
+  entry: PublicRepositoryEntry | PublicRepositoryListEntry,
   framework: PublicRepositoryFramework,
 ): PublicRepositoryCodeVariant {
   const nativeVariant = entry.codeVariants.find((variant) => variant.framework === framework);
@@ -231,7 +251,7 @@ export function getPublicRepositoryVariant(
   };
 }
 
-function inferPortableCircuit(entry: PublicRepositoryEntry): PortableCircuit | null {
+function inferPortableCircuit(entry: PublicRepositoryEntry | PublicRepositoryListEntry): PortableCircuit | null {
   for (const variant of entry.codeVariants) {
     if (variant.status !== "native" || !variant.code) continue;
     const parsed = parseCircuitSource(variant.code, circuitFramework(variant.framework).key);
