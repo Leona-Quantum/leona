@@ -216,6 +216,38 @@ async def get_import_job_by_idempotency_key(
     return job
 
 
+async def list_staged_targets(
+    scope: Scope,
+    session: AsyncSession,
+    *,
+    authority: CatalogAuthority,
+    idempotency_key: str,
+) -> dict[str, uuid.UUID]:
+    """upstream_identity -> staged artifact id for one import batch.
+
+    The import ledger is the only faithful identity mapping: staged slugs are
+    synthesized from the import item id (`import-<job>-<item>`), so nothing about
+    an artifact row recovers which upstream record produced it. Only STAGED items
+    are returned — rejected and dead items have no artifact to act on.
+    """
+    await catalog.get_importer_workspace(scope, session, authority=authority)
+    job = await get_import_job_by_idempotency_key(session, idempotency_key)
+    rows = (
+        (
+            await session.execute(
+                select(ImportItem).where(
+                    ImportItem.import_job_id == job.id,
+                    ImportItem.state == ImportItemState.STAGED,
+                    ImportItem.resulting_artifact_id.is_not(None),
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    return {row.upstream_identity: row.resulting_artifact_id for row in rows}
+
+
 async def _get_import_job(session: AsyncSession, import_job_id: uuid.UUID) -> ImportJob:
     job = await session.get(ImportJob, import_job_id)
     if job is None:

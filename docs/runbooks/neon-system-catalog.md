@@ -95,6 +95,48 @@ This is a local workspace discovery issue, not a Neon failure.
 Do not turn the feature flag on merely because provisioning succeeded. Step 2 adds no
 catalog data endpoint; leaving it off is the correct steady state until later steps.
 
+## Corpus import, attestation, and publication
+
+Only after provisioning reports `artifacts=0` and the live gates pass. All four commands
+use `DATABASE_URL` and are idempotent — a partial run is resumed by re-running it.
+
+```bash
+.venv/bin/python -m majorana_api.catalog_admin bootstrap-import
+.venv/bin/python -m majorana_api.catalog_admin attest-bootstrap  --attested-by "<your user id>"
+.venv/bin/python -m majorana_api.catalog_admin publish-bootstrap --attested-by "<your user id>"
+```
+
+`bootstrap-import` must report `accepted=285 rejected=0 dead=0`; anything else means the
+pinned manifest and the database disagree, so stop rather than re-running.
+
+`--attested-by` is the **owner's own user id** — a real, already-provisioned human account.
+It cannot be a service identity: `attest-bootstrap` grants that account ADMIN on the
+catalog workspace and then uses it as the reviewer, and both the CLI and the repository
+layer refuse the importer and public-reader identities. That separation is the point
+(ADR-0016) — the importer stages content, a named person approves it. Look the id up in
+Neon (`select id from users where email = '<you>'`); it is not a secret and is safe to
+paste into a shell.
+
+What `attest-bootstrap` does: applies the committed attestation policy
+(`services/api/catalog_bootstrap/attestation-policy.json`) to the staged corpus, writing a
+provenance row, a declared license carrying the policy's SPDX id, an approved reviewer
+decision, and review acceptance for each covered record. The policy's statement and
+checksum are recorded on every audited row, so any published record traces back to the
+exact sentence that was signed. It publishes nothing.
+
+The policy is **fail-closed**: a record it neither includes nor explicitly excludes aborts
+the run. If you regenerate the manifest and a record appears whose `source.kind` the policy
+never considered, that abort is correct — extend the policy deliberately rather than
+loosening it. Expect `attested=283 excluded=2`; the two exclusions are community
+submissions, which the first-party grant does not reach and which stay private.
+
+`publish-bootstrap` re-evaluates readiness per record and refuses any that is missing a
+binding, so an unattested record cannot ride along — it is reported as blocked and left
+private. Expect `published=283 blocked=0`.
+
+Changing the license, or attesting records the current policy excludes, is a policy-file
+edit plus a normal review — never a flag or a command-line override.
+
 ## Failure and rollback
 
 - If migration fails: stop, retain the temporary branch for diagnosis, and do not retry
