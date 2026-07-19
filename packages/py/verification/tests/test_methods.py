@@ -159,3 +159,20 @@ def test_qasm_parse_accepts_valid_post_measurement_gate():
         "measure q[0] -> c[0];\nx q[0];\n"
     )
     assert bad.passed
+
+
+def test_plan_contract_recognizes_every_counts_fallback_key():
+    """Pins the two lists that must agree across the package boundary.
+
+    The Plan contract rejects a statistical check whose plan promises no
+    distribution key; extract_counts decides at runtime which keys hold one. If a
+    name were added to the runtime fallbacks but not to the contract, plans naming
+    it would be rejected even though verification would have found the counts.
+    Contracts cannot import verification (the dependency runs the other way), so
+    the agreement is asserted here.
+    """
+    from majorana_contracts.plan import _promises_distribution
+    from majorana_verification.methods import _COUNTS_FALLBACK_KEYS
+
+    for key in _COUNTS_FALLBACK_KEYS:
+        assert _promises_distribution(key), key

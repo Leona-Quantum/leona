@@ -30,7 +30,14 @@ from majorana_contracts.enums import (
 )
 from majorana_contracts.plan import Plan
 from majorana_frameworks import FrameworkProgram, extract_interchange_qasm
-from majorana_llm import LLMClient, LLMRequest, model_for, parse_plan, render_plan_prompt
+from majorana_llm import (
+    LLMClient,
+    LLMRequest,
+    StageOutputError,
+    model_for,
+    parse_plan,
+    render_plan_prompt,
+)
 from majorana_openqasm import OpenQASMError, normalize
 from majorana_sandbox import ExecutionSpec, Sandbox
 from majorana_sandbox import run as sandbox_run
@@ -52,23 +59,44 @@ class LLMPlanner:
         self._task_prompt = task_prompt
         self._framework = framework
 
+    # One retry, not a loop: the plan contract rejects self-contradictory plans
+    # (see Plan._statistical_needs_distribution_evidence), and handing the planner
+    # its own objection fixes those in one pass. More attempts would spend the
+    # user's latency re-rolling the same temperature-0 output.
+    _PLAN_ATTEMPTS = 2
+
     async def create_plan(self, _run_id: UUID) -> Plan:
-        prompt = render_plan_prompt(self._task_prompt, requested_framework=self._framework)
-        response = await self._llm.complete(
-            LLMRequest(
-                model=model_for("plan"),
-                system=prompt.system,
-                user=prompt.user,
-                max_tokens=4096,
-                temperature=0.0,
-                response_schema=Plan.model_json_schema(),
-                schema_name="request_plan",
+        objection: str | None = None
+        for attempt in range(self._PLAN_ATTEMPTS):
+            prompt = render_plan_prompt(self._task_prompt, requested_framework=self._framework)
+            user = prompt.user
+            if objection is not None:
+                user = (
+                    f"{user}\n\nYour previous plan was rejected by the plan contract:\n"
+                    f"{objection}\n\nEmit a corrected plan that resolves this."
+                )
+            response = await self._llm.complete(
+                LLMRequest(
+                    model=model_for("plan"),
+                    system=prompt.system,
+                    user=user,
+                    max_tokens=4096,
+                    temperature=0.0,
+                    response_schema=Plan.model_json_schema(),
+                    schema_name="request_plan",
+                )
             )
-        )
-        plan = parse_plan(response.text)
-        if plan.framework is not self._framework:
-            raise ValueError("planner changed the user-selected framework")
-        return plan
+            try:
+                plan = parse_plan(response.text)
+            except StageOutputError as exc:
+                if attempt == self._PLAN_ATTEMPTS - 1:
+                    raise
+                objection = str(exc)
+                continue
+            if plan.framework is not self._framework:
+                raise ValueError("planner changed the user-selected framework")
+            return plan
+        raise AssertionError("unreachable: loop returns or raises on the final attempt")
 
 
 class SandboxCandidateExecutor:

@@ -51,3 +51,42 @@ def test_empty_verification_methods_rejected():
 def test_extra_fields_rejected():
     with pytest.raises(ValidationError):
         Plan.model_validate({**VALID, "vibes": "good"})
+
+
+def _with_statistical(output_keys: list[str]) -> dict:
+    return {
+        **VALID,
+        "expected_output_keys": output_keys,
+        "verification_plan": {"methods": ["statistical", "return_contract"]},
+    }
+
+
+def test_statistical_without_a_promised_distribution_is_rejected():
+    """The exact shape of the 2026-07-20 production QAOA failure: three scalars and a
+    statistical check, which fails "required evidence unavailable" on every candidate
+    until the budget is exhausted."""
+    with pytest.raises(ValidationError) as exc:
+        Plan.model_validate(_with_statistical(["optimal_cut", "qaoa_cut", "approximation_ratio"]))
+    assert "statistical" in str(exc.value)
+    assert "expected_output_keys" in str(exc.value)
+
+
+@pytest.mark.parametrize(
+    "key", ["counts", "measurement_counts", "results", "samples", "probability_distribution"]
+)
+def test_statistical_allowed_when_a_distribution_key_is_promised(key):
+    plan = Plan.model_validate(_with_statistical([key, "approximation_ratio"]))
+    assert plan.verification_plan is not None
+
+
+def test_scalar_only_plan_without_statistical_is_still_fine():
+    """The rule is scoped to the contradiction — it must not make scalar-output tasks
+    unplannable."""
+    plan = Plan.model_validate(
+        {
+            **VALID,
+            "expected_output_keys": ["optimal_cut", "approximation_ratio"],
+            "verification_plan": {"methods": ["return_contract"]},
+        }
+    )
+    assert plan.expected_output_keys == ["optimal_cut", "approximation_ratio"]
