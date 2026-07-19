@@ -8,6 +8,7 @@ import asyncio
 import logging
 import os
 import uuid
+from dataclasses import replace
 from typing import Any, Awaitable, Callable
 
 from majorana_contracts import Scope
@@ -50,6 +51,7 @@ from .agent_ports import (
 )
 from .agent_store import RepoAgentStore
 from .context import RunContext
+from .intent import resolve_mode
 
 log = logging.getLogger("majorana_worker")
 
@@ -195,6 +197,14 @@ async def handle_run_execute(
     try:
         async with asyncio.timeout(run.timeout_s or DEFAULT_RUN_TIMEOUT_S):
             provider = llm or _default_llm()
+            ctx = await _resolve_mode(
+                ctx,
+                store,
+                scope=scope,
+                session=session,
+                llm=provider,
+                has_source_code=bool(payload.get("source_code")),
+            )
             if ctx.mode is not RunMode.EXECUTE:
                 final = await _handle_conversation(ctx, store, provider)
             else:
@@ -220,6 +230,57 @@ async def handle_run_execute(
             await store.set_status(RunStatus.FAILED, finished_at_now=True)
         final = RunStatus.FAILED
     log.info("run %s finished: %s", run_id, final)
+
+
+async def _resolve_mode(
+    ctx: RunContext,
+    store: RepoRunStateStore,
+    *,
+    scope: Scope,
+    session: AsyncSession,
+    llm: LLMClient,
+    has_source_code: bool,
+) -> RunContext:
+    """Settle which mode this run dispatches in, before anything else happens.
+
+    Runs ahead of `run.started` on purpose: the resolved mode decides which
+    handler owns the run's whole lifecycle, so it has to be known before any
+    stage claims it.
+
+    The run row is rewritten to the resolved mode rather than left holding the
+    request. Everything downstream — the API resource, the Library, a later
+    diagnosis of this run — reads that column, and a row saying `auto` after the
+    fact would describe a mode nothing ever ran in.
+
+    Being first in the sequence means this is also now the first thing that can
+    touch a run the user already cancelled. Both dispatch handlers re-check the
+    status themselves, but they check it *after* this — so without the guard a
+    cancelled run would still rewrite its own mode, append an event to a
+    finished stream, and spend a model call deciding how to run something that
+    will never run.
+    """
+    if await store.current_status() not in {RunStatus.QUEUED, RunStatus.RUNNING}:
+        return ctx
+    decision = await resolve_mode(
+        ctx.task_prompt,
+        ctx.mode,
+        llm,
+        has_source_code=has_source_code,
+    )
+    if not decision.changed:
+        return ctx
+    await runs_repo.set_run_mode(scope, session, ctx.run_id, decision.resolved)
+    await session.commit()
+    await ctx.sink.emit("run.mode_resolved", decision.as_event_payload())
+    log.info(
+        "run %s mode %s -> %s (%s: %s)",
+        ctx.run_id,
+        decision.requested,
+        decision.resolved,
+        decision.source,
+        decision.reason,
+    )
+    return replace(ctx, mode=decision.resolved)
 
 
 async def _agent_failure_message(

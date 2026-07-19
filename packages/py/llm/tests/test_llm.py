@@ -28,6 +28,7 @@ from majorana_llm.prompts import (
     CRITIC_SYSTEM_PROMPT,
     GENERATE_SYSTEM_PROMPT,
     PLAN_SYSTEM_PROMPT,
+    QUANTUM_AGENT_SYSTEM_PROMPT,
     WRITEBACK_SYSTEM_PROMPT,
 )
 import majorana_llm.research as research_module
@@ -215,7 +216,10 @@ def test_conversation_prompt_is_provider_native_and_ignores_product_controls():
     assert "Selected mode" not in rendered.user
     assert "Selected framework" not in rendered.user
     assert "internal plans" not in rendered.system
-    assert "quantum algorithm assistant" in rendered.system
+    assert rendered.system is QUANTUM_AGENT_SYSTEM_PROMPT
+    # The chat turn cannot execute anything, so the persona must not let the
+    # model narrate results it did not produce.
+    assert "never report simulation output" in rendered.system
 
 
 def test_analysis_parser_accepts_the_internal_narrative_contract():

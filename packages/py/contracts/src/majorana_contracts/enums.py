@@ -11,6 +11,10 @@ class Framework(StrEnum):
 
 
 class RunMode(StrEnum):
+    # AUTO is a *request*, never an outcome: the worker resolves it to one of the
+    # modes below from the user's intent before dispatching, and rewrites the run
+    # row to the resolved value. No run should finish still holding it.
+    AUTO = "auto"
     CHAT = "chat"
     EXECUTE = "execute"
     IDEATE = "ideate"

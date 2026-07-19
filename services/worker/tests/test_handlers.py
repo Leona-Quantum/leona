@@ -2,7 +2,7 @@ import uuid
 
 import pytest
 from majorana_contracts.enums import Framework, RunMode, RunStatus
-from majorana_llm import LLMResponse
+from majorana_llm import QUANTUM_AGENT_SYSTEM_PROMPT, STAGE_PROMPTS, LLMResponse
 from majorana_sandbox import LocalSubprocessSandbox
 from majorana_worker import handlers
 from majorana_worker.context import RunContext
@@ -135,14 +135,11 @@ async def test_conversation_mode_answers_without_pipeline_or_sandbox():
     assert any(event_type == "chat.delta" for event_type, _ in sink.events)
     assert any(event_type == "chat.completed" for event_type, _ in sink.events)
     assert all(event_type != "llm.call" for event_type, _ in sink.events)
-    assert (
-        llm.request.system
-        == """You are a helpful quantum algorithm assistant.
-
-Answer the user's messages directly. Explain quantum computing and quantum algorithms,
-write or review code, and use Markdown and LaTeX when useful. Be accurate and say when
-you are uncertain."""
-    )
+    # Asserted by identity, not by literal text: pinning the prose meant every
+    # edit to the assistant's persona broke this test for no behavioural reason.
+    # What matters here is that chat uses the assistant prompt and not a stage one.
+    assert llm.request.system == QUANTUM_AGENT_SYSTEM_PROMPT
+    assert llm.request.system not in STAGE_PROMPTS.values()
     assert [message.model_dump() for message in llm.request.messages] == [
         {"role": "user", "content": "What is a Bell state?"}
     ]

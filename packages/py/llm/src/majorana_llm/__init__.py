@@ -17,6 +17,7 @@ from majorana_llm.prompts import (
     CONVERSATION_SYSTEM_PROMPT,
     FRAMEWORK_DIRECTIVE,
     GENERATE_SYSTEM_PROMPT,
+    INTENT_ROUTER_SYSTEM_PROMPT,
     PLAN_SYSTEM_PROMPT,
     QUANTUM_AGENT_SYSTEM_PROMPT,
     RenderedPrompt,
@@ -25,6 +26,7 @@ from majorana_llm.prompts import (
     render_analysis_prompt,
     render_conversation_prompt,
     render_generate_prompt,
+    render_intent_prompt,
     render_plan_prompt,
 )
 from majorana_llm.research import ResearchResult, ResearchSource, research_for_prompt
@@ -48,6 +50,7 @@ __all__ = [
     "PLAN_SYSTEM_PROMPT",
     "GENERATE_SYSTEM_PROMPT",
     "CRITIC_SYSTEM_PROMPT",
+    "INTENT_ROUTER_SYSTEM_PROMPT",
     "CONVERSATION_SYSTEM_PROMPT",
     "QUANTUM_AGENT_SYSTEM_PROMPT",
     "WRITEBACK_SYSTEM_PROMPT",
@@ -58,6 +61,7 @@ __all__ = [
     "render_generate_prompt",
     "render_analysis_prompt",
     "render_conversation_prompt",
+    "render_intent_prompt",
     "ResearchResult",
     "ResearchSource",
     "research_for_prompt",

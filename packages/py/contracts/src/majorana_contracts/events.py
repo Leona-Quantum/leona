@@ -45,6 +45,22 @@ class RunStarted(_EventBase):
     type: Literal["run.started"] = "run.started"
 
 
+class RunModeResolved(_EventBase):
+    """How a run's requested mode became the mode it actually ran in.
+
+    Emitted whenever the worker's intent router had a say — including when it
+    left the requested mode alone. Without this the resolution is invisible: a
+    "hi" that quietly answered as chat and a quantum task that quietly skipped
+    the pipeline look identical from the outside.
+    """
+
+    type: Literal["run.mode_resolved"] = "run.mode_resolved"
+    requested: RunMode
+    resolved: RunMode
+    source: Literal["passthrough", "heuristic", "classifier", "fallback"]
+    reason: str
+
+
 class StageStarted(_EventBase):
     type: Literal["stage.started"] = "stage.started"
     stage: Stage
@@ -293,6 +309,7 @@ class RunFinished(_EventBase):
 RunEvent = Annotated[
     RunQueued
     | RunStarted
+    | RunModeResolved
     | StageStarted
     | StageFinished
     | PlanProduced

@@ -2222,6 +2222,7 @@
             "run.diagnosed": "#/components/schemas/RunDiagnosed",
             "run.error": "#/components/schemas/RunErrorEvent",
             "run.finished": "#/components/schemas/RunFinished",
+            "run.mode_resolved": "#/components/schemas/RunModeResolved",
             "run.queued": "#/components/schemas/RunQueued",
             "run.restarted": "#/components/schemas/RunRestarted",
             "run.started": "#/components/schemas/RunStarted",
@@ -2239,6 +2240,9 @@
           },
           {
             "$ref": "#/components/schemas/RunStarted"
+          },
+          {
+            "$ref": "#/components/schemas/RunModeResolved"
           },
           {
             "$ref": "#/components/schemas/StageStarted"
@@ -2378,6 +2382,7 @@
       },
       "RunMode": {
         "enum": [
+          "auto",
           "chat",
           "execute",
           "ideate",
@@ -2385,6 +2390,65 @@
         ],
         "title": "RunMode",
         "type": "string"
+      },
+      "RunModeResolved": {
+        "additionalProperties": false,
+        "description": "How a run's requested mode became the mode it actually ran in.\n\nEmitted whenever the worker's intent router had a say \u2014 including when it\nleft the requested mode alone. Without this the resolution is invisible: a\n\"hi\" that quietly answered as chat and a quantum task that quietly skipped\nthe pipeline look identical from the outside.",
+        "properties": {
+          "reason": {
+            "title": "Reason",
+            "type": "string"
+          },
+          "requested": {
+            "$ref": "#/components/schemas/RunMode"
+          },
+          "resolved": {
+            "$ref": "#/components/schemas/RunMode"
+          },
+          "run_id": {
+            "format": "uuid",
+            "title": "Run Id",
+            "type": "string"
+          },
+          "seq": {
+            "description": "Unique per run; powers replay and SSE Last-Event-ID",
+            "minimum": 0,
+            "title": "Seq",
+            "type": "integer"
+          },
+          "source": {
+            "enum": [
+              "passthrough",
+              "heuristic",
+              "classifier",
+              "fallback"
+            ],
+            "title": "Source",
+            "type": "string"
+          },
+          "ts": {
+            "format": "date-time",
+            "title": "Ts",
+            "type": "string"
+          },
+          "type": {
+            "const": "run.mode_resolved",
+            "default": "run.mode_resolved",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "run_id",
+          "seq",
+          "ts",
+          "requested",
+          "resolved",
+          "source",
+          "reason"
+        ],
+        "title": "RunModeResolved",
+        "type": "object"
       },
       "RunQueued": {
         "additionalProperties": false,

@@ -186,7 +186,10 @@ export function RunWorkspace({ demoMode = false, locale = "en" }: { demoMode?: b
         },
         body: JSON.stringify({
           task_prompt: promptWithAttachments(taskPrompt),
-          mode: "execute",
+          // The composer is a chat box: what arrives here is as often a question
+          // or a greeting as a task. "auto" lets the worker route on intent —
+          // hardcoding "execute" is what sent "hi" through the whole pipeline.
+          mode: "auto",
           framework,
           ...(contextArtifact?.code ? { source_code: contextArtifact.code } : {}),
           ...(contextArtifact?.currentVersionId ? { artifact_version_id: contextArtifact.currentVersionId } : {}),
