@@ -131,6 +131,55 @@ class ArtifactVersion(_ResourceBase):
         return self
 
 
+class CatalogProvenance(_ResourceBase):
+    """How a published catalog entry entered the catalog (repository Step 6).
+
+    For the ADR-0019 bootstrap corpus this is the pinned-manifest identity: the
+    import provider, the manifest's pinned source commit, the per-item manifest
+    identity, and the content hash of the exact source bytes. It anchors the
+    entry to reproducible provenance without trusting any field inside `record`.
+    """
+
+    import_provider: str | None = None
+    upstream_ref: str | None = Field(
+        default=None, description="Pinned upstream ref (e.g. the manifest source commit)"
+    )
+    upstream_identity: str | None = Field(
+        default=None, description="Per-item manifest identity; equals the public slug"
+    )
+    source_blob_sha256: str | None = Field(
+        default=None, description="sha256 of the exact stored source bytes"
+    )
+
+
+class PublicCatalogEntry(_ResourceBase):
+    """A published catalog record served to anonymous readers (repository Step 6).
+
+    The typed fields are database-authoritative facts: the stable public `slug`
+    (the pinned manifest identity), the honest `execution_state`, the update
+    timestamp, and reproducible `provenance`. `record` carries the pinned
+    catalog source blob verbatim — the rich presentation entry (algorithm
+    family, category, classical comparisons, verification prose, code variants,
+    localized copy). Everything in `record` is *asserted catalog metadata from
+    the pinned source*, NOT passing-run evidence or legal approval (ADR-0019);
+    clients must render it as a claim. Only accepted+public records are returned.
+    """
+
+    slug: str = Field(description="Stable public identity (pinned manifest identity)")
+    execution_state: str = Field(
+        description="Authoritative honest lifecycle state; the bootstrap corpus is template_only"
+    )
+    updated_at: datetime
+    provenance: CatalogProvenance | None = None
+    record: dict[str, Any] | None = Field(
+        default=None,
+        description=(
+            "Pinned catalog source record (the rich presentation entry). A source "
+            "claim from the pinned manifest, not execution evidence or legal approval."
+        ),
+    )
+
+
 class ResourceMetrics(_ResourceBase):
     """Comparable circuit-resource measurements for selected-framework source."""
 
