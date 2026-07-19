@@ -57,11 +57,23 @@ jobs:
         id: tag
         run: echo "tag=$(git rev-parse --short=7 HEAD)" >> "$GITHUB_OUTPUT"
 
+      # token_format: access_token is load-bearing, not a preference. Without it
+      # auth@v2 writes an external_account credential file, and gcloud attaches a
+      # quota project to every GCS call made through it. `builds submit` then fails
+      # its very first request — the source-staging bucket read — with "the user is
+      # forbidden from accessing the bucket [majorana-core_cloudbuild] ... check the
+      # serviceusage.services.use permission". The message points at IAM, but no
+      # grant on the deploy SA fixes it (serviceUsageConsumer, bucket objectAdmin
+      # and legacyBucketWriter were all tried, 2026-07-19); the quota-project path
+      # is the problem, not the roles. A plain OAuth access token for the
+      # impersonated SA skips that path. Impersonation itself was never at fault —
+      # GenerateAccessToken succeeded on every failed run.
       - uses: google-github-actions/auth@v2
         if: steps.creds.outputs.have == 'true'
         with:
           workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
           service_account: ${{ secrets.GCP_DEPLOY_SERVICE_ACCOUNT }}
+          token_format: access_token
 
       - uses: google-github-actions/setup-gcloud@v2
         if: steps.creds.outputs.have == 'true'
