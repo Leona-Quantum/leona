@@ -34,6 +34,20 @@ The SA holds `roles/run.admin`, `roles/cloudbuild.builds.editor`,
 `roles/iam.serviceAccountUser` on the runtime SA
 (`639400385957-compute@developer.gserviceaccount.com`).
 
+It also needs to read one secret, so the workflow can migrate the database before
+it rolls anything out. Granted per-secret, never project-wide:
+
+```bash
+gcloud secrets add-iam-policy-binding DATABASE_URL_SECRET \
+  --project=majorana-core \
+  --member="serviceAccount:majorana-deploy@majorana-core.iam.gserviceaccount.com" \
+  --role="roles/secretmanager.secretAccessor"
+```
+
+Without it the `migrate database` step fails the deploy with that command in the
+error output. It fails rather than skips on purpose: a deploy that silently
+declines to migrate is the exact failure this workflow was added to prevent.
+
 **Branch scoping lives in the provider's attribute condition, not in the IAM
 binding:**
 
@@ -51,7 +65,8 @@ Dispatching the workflow from any other branch fails at the auth step, by design
 If you ever need a deploy from another branch, change the condition rather than
 loosening the binding.
 
-What the workflow does, in order: build the image from the merge commit → deploy
+What the workflow does, in order: **apply migrations to the production database**
+→ build the image from the merge commit → deploy
 the API dark under `--tag verify` → smoke-test that tag URL (`/health` is 200,
 unauthenticated `/v1/me` is still 401, the catalog is non-empty) → shift traffic →
 deploy the worker with `--command majorana-worker` → **read the worker's error log
@@ -165,4 +180,12 @@ involved and they are easy to confuse:
   without `-pooler`.
 
 So a migration run reads the `DATABASE_URL_SECRET` entry into the
-`DATABASE_URL_DIRECT` variable. Never wire either to a Cloud Run service.
+`DATABASE_URL_DIRECT` variable. Never wire either to a Cloud Run service. The
+`migrate database` step in `deploy.yml` does exactly this translation, and it is
+the only automated consumer of that secret.
+
+Because migrations run *before* the new image rolls out, every migration must
+remain readable by the revision still serving traffic for the length of the
+deploy: expand in one release, contract in a later one. Dropping or renaming
+something the live code still touches breaks production in the window between the
+migration and the traffic shift.
