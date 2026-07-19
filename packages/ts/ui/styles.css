@@ -4672,7 +4672,6 @@ div.mj-rail-row:hover {
   tab-size: 2;
   white-space: pre-wrap;
   overflow-wrap: break-word;
-  word-break: break-word;
 }
 .mj-studio-code-highlight {
   position: absolute;
