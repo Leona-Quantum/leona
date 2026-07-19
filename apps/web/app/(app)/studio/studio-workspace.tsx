@@ -909,7 +909,7 @@ function toLibraryArtifact(value: unknown): LibraryArtifact[] {
     framework: typeof remote.framework === "string" ? remote.framework : "Qiskit",
     status: existing?.status ?? "verified",
     updatedAt: typeof remote.updated_at === "string" ? remote.updated_at : new Date().toISOString(),
-    description: existing?.description ?? "Saved artifact in the workspace repository.",
+    description: existing?.description ?? "Saved artifact in the workspace vault.",
     tags: existing?.tags ?? ["artifact"],
     verification: existing?.verification ?? "Verification evidence is available after loading the current version.",
     code: existing?.code ?? "",

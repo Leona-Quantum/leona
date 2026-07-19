@@ -54,7 +54,7 @@ Build a quantum-artifact repository with:
 - GitHub-style stable identity, provenance, review, and immutable revisions;
 - Hugging Face-style searchable cards and deterministic dataset exports;
 - quantum-specific framework, conversion, verification, and later hardware evidence;
-- a Neon-backed FastAPI catalog that remains compatible with the current Majorana architecture.
+- a Neon-backed FastAPI catalog that remains compatible with the current Leona Quantum architecture.
 
 The 285-record bootstrap milestone is complete only when all of the following are true:
 
@@ -416,7 +416,7 @@ Bootstrap rules:
 - after successful import, treat Neon as the only editable catalog authority;
 - require a new manifest release and explicit import job for later source changes.
 
-MQT Bench, QASMBench, linked GitHub/Hugging Face projects, and new Majorana-native entries remain
+MQT Bench, QASMBench, linked GitHub/Hugging Face projects, and new Leona Quantum-native entries remain
 future additive sources after the 285-record bootstrap is stable. They use the same acceptance
 contract and cannot lower the rights or evidence bar.
 

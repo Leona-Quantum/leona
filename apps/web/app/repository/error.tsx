@@ -10,7 +10,7 @@ export default function RepositoryError({
     <main className="mj-public-site mj-repository-site">
       <div className="mj-public-frame">
         <section className="mj-public-page-hero" aria-labelledby="repository-error-heading" role="alert">
-          <p className="mj-section-label">Repository</p>
+          <p className="mj-section-label">Atlas</p>
           <h1 id="repository-error-heading">The public evidence set is unavailable right now.</h1>
           <p>Nothing was saved or changed. Try the catalog again, or return to the Leona Quantum home page.</p>
           <div className="mj-public-actions">

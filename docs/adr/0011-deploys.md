@@ -7,6 +7,6 @@ previews needed per PR for an agent-driven workflow.
 Run gen2 containers (same image, different entrypoints). Previews per PR: Vercel preview
 (web) + Neon branch (db) + Cloud Run revision tag (api).
 **Consequences:** Buys zero-ops deploys and full-stack preview envs. Costs/constraints:
-Vercel Hobby is non-commercial — the moment Majorana takes users or money, web moves to
+Vercel Hobby is non-commercial — the moment Leona Quantum takes users or money, web moves to
 Vercel Pro (~$20/mo; first recurring cost, owner-gated in Phase 4). Reversal trigger:
 none at this scale; Cloud Run→GKE only with infra headcount.

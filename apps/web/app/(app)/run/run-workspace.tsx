@@ -66,7 +66,7 @@ export function RunWorkspace({ demoMode = false, locale = "en" }: { demoMode?: b
           framework: typeof remote.framework === "string" ? remote.framework : "Qiskit",
           status: "verified",
           updatedAt: typeof remote.updated_at === "string" ? remote.updated_at : new Date().toISOString(),
-          description: "Saved artifact in the workspace repository.",
+          description: "Saved artifact in the workspace vault.",
           tags: [typeof remote.family === "string" ? remote.family.toLowerCase() : "artifact"],
           verification: "Verification evidence is retained with the saved run.",
           code: "",
@@ -98,7 +98,7 @@ export function RunWorkspace({ demoMode = false, locale = "en" }: { demoMode?: b
       frameworkCurrent.current = hydrated.framework;
       setFramework(hydrated.framework);
       setArtifactHydration("ready");
-      setPrompt(`Use the saved Library artifact “${artifact.title}” as context for my next question.`);
+      setPrompt(`Use the saved Vault artifact “${artifact.title}” as context for my next question.`);
     }
 
     void loadContext().catch(() => {

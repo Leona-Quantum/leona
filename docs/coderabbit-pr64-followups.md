@@ -42,7 +42,7 @@ and feature-disabled until the live CI database checks pass.
 - Import boundaries: `3 kept, 0 broken`
 - Raw-query policy, generated OpenAPI, workflow YAML, and whitespace checks: passed
 - TypeScript lint, typecheck, and tests: passed (`5` Turbo tasks; `15` web tests)
-- Repository dataset validation: passed (`285` entries)
+- Atlas dataset validation: passed (`285` entries)
 
 Live Postgres/Neon integration tests were not run in this review-fix session. No branch
 was pushed and no database, credential, or public-service state was changed.
@@ -109,7 +109,7 @@ No local or Neon database, credential, or public-service state was changed.
 
 The complete local gate set passed before push: `318 passed, 35 skipped`; Ruff lint and
 format; all three import contracts; raw-query policy; generated OpenAPI; one Alembic
-`0018` head; workflow YAML; the 285-entry repository dataset; and all TypeScript lint,
+`0018` head; workflow YAML; the 285-entry Atlas dataset; and all TypeScript lint,
 typecheck, and test tasks (`15` web tests).
 
 The first remote run (`29655265612`) passed migrations, authz, and pipeline E2E but

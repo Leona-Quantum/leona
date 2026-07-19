@@ -63,8 +63,8 @@ export {
 function replaceLegacyBrand(value: string): string {
   return value
     .replaceAll("Majorana", "Leona Quantum")
-    .replaceAll("Nameko", "Leona")
-    .replaceAll("Quepo", "Library");
+    .replaceAll("Nameko", "Nala")
+    .replaceAll("Quepo", "Atlas");
 }
 
 function normalizePublicRepositoryText(value: unknown): unknown {

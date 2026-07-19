@@ -10,7 +10,7 @@
 > commit, and the count is derived, never asserted. The category breakdown becomes 29 gates,
 > 60 operators, 13 states, and **181** algorithms — both removed records were `algorithms`.
 > The figures in the body are the numbers as of the original decision and are left as written.
-**Context:** The latest integrated `dev` baseline validates 285 TypeScript repository
+**Context:** The latest integrated `dev` baseline validates 285 TypeScript Atlas
 records: 29 gates, 60 operators, 13 states, and 183 algorithms. Neon must become the
 default catalog authority without losing this work, but copying rows in a migration,
 reading TypeScript at runtime, or trusting legacy verification/license strings would

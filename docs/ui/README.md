@@ -17,7 +17,7 @@ Domain home for the product surface (`apps/web` + `packages/ts/ui`), per
 | App shell + primary nav | `packages/ts/ui/src/app-shell.tsx`; labels ONLY in `src/nav-config.ts` |
 | Workspace sidebar/history | `apps/web/components/shell.tsx` + `apps/web/lib/chat-history.ts` |
 | Run composer | `apps/web/components/run-composer.tsx` (bottom dock; route owns submission) |
-| Library list/detail | `apps/web/app/(app)/library` + `apps/web/lib/library-data.ts` |
+| Vault list/detail | `apps/web/app/(app)/library` + `apps/web/lib/library-data.ts` |
 | Studio editor/circuit workspace | `apps/web/app/(app)/studio` + `docs/ui/studio.md` |
 | Pipeline stage rail (S3, the brand) | `packages/ts/ui/src/stage-rail.tsx` |
 | Verdict banner (S4) | `packages/ts/ui/src/verdict-banner.tsx` |
@@ -41,10 +41,10 @@ explicit `/demo` route; authenticated pages use the API and retain only a small 
 for a just-completed run while remote data settles.
 
 The public surface now includes a shared company shell/footer, a formal landing page, early-access
-pricing, contact, privacy, and terms routes, plus a searchable public Repository catalog that
+pricing, contact, privacy, and terms routes, plus a searchable public Atlas catalog that
 exposes classification, verification, export status, and provenance without mixing in private
-Library data. Public routes are explicitly allowed through the fail-closed middleware. The current
-catalog records are static reference data; save/publish actions and API-backed repository search
+Vault data. Public routes are explicitly allowed through the fail-closed middleware. The current
+catalog records are static reference data; save/publish actions and API-backed Atlas search
 remain follow-up work. Remaining work is the hosted verified-artifact acceptance run, fuller remote
 chat/history persistence, account meters and workspace selection, visual-diff automation, and the
 owner-controlled `dev` → Production promotion. Studio edits and framework variants now have a

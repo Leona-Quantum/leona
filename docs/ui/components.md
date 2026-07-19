@@ -72,7 +72,7 @@ Reducer rules worth knowing (all deterministic):
   never the plan's `primary_metric` (a different quantity).
 
 Result panel order is FIXED (spec §3): verdict banner → Generate evidence → Verify evidence →
-Analysis answer and sources → baseline/comparison → export badges → Library link. Answer is the
+Analysis answer and sources → baseline/comparison → export badges → Vault link. Answer is the
 natural-language interpretation from `run.analysis`, including comparison values and any
 residual-risk caveat. Plan reasoning and rationale stay in the live output surface rather than
 becoming a second schema-heavy card. Sources lists bounded public references from
@@ -100,14 +100,14 @@ P1: name the OpenQASM or verification operation that was actually checked.
 right slot, and an optional sidebar slot. In workspace mode the sidebar toggle is owned by
 the app wrapper, while `AppShell` supplies the landmark and accessible expanded state.
 `apps/web/components/shell.tsx` composes the product-specific sidebar: new chat, recent
-chat links, Run/Library navigation, Settings, and the local workspace identity. Chat
+chat links, Run/Vault navigation, Settings, and the local workspace identity. Chat
 summaries are persisted in `apps/web/lib/chat-history.ts`, so starting a new chat never
 removes older run links. Labels from `src/nav-config.ts` remain the only source for the
 shared primary surfaces; `aria-current="page"` is applied to active workspace links.
 
-The run and library routes deliberately keep data ownership outside shared UI components:
+The run and vault routes deliberately keep data ownership outside shared UI components:
 `RunComposer` is a presentational bottom dock, `/run` and `/run/[taskId]` own submission and
-SSE state, and Library owns artifact filtering/detail tabs while Studio owns editing. This keeps later UI/UX work
+SSE state, and Vault owns artifact filtering/detail tabs while Studio owns editing. This keeps later UI/UX work
 localized to the route shell and tokenized CSS rather than coupling data fetching to the
 renderers.
 
@@ -126,5 +126,5 @@ step 2; the screenshot visual-diff slice (b) reuses the same `dist/*.html`.
 ## EmptyState
 
 One sentence + one action (`action` is an all-or-nothing `{label, href}` object).
-Every list gets one (e.g. Library: "Nothing verified yet. Your first verified run
+Every list gets one (e.g. Vault: "Nothing verified yet. Your first verified run
 will appear here." + [Start a run]).

@@ -2,8 +2,8 @@
 
 **Status:** owner-directed implementation slice, 2026-07-14.
 
-Studio is the durable editing and verification workspace for a saved Library
-artifact. It is deliberately separate from Library: Library stores verified
+Studio is the durable editing and verification workspace for a saved Vault
+artifact. It is deliberately separate from Vault: Vault stores verified
 circuits and their evidence; Studio creates new versions, edits code, previews
 the circuit, runs safe simulations/checks, and saves the resulting evidence.
 
@@ -24,11 +24,11 @@ the circuit, runs safe simulations/checks, and saves the resulting evidence.
 - Qiskit is the default; explicit PennyLane or Cirq selection is preserved. A
   passing Execute run emits copyable native variants for every supported
   framework, with export status and caveats, and saves those variants on the
-  artifact version so Library and Studio reopen the same set.
+  artifact version so Vault and Studio reopen the same set.
 
 ## Screen spec
 
-The accepted Studio concept uses the existing Majorana dark-first warm-gray
+The accepted Studio concept uses the existing Leona Quantum dark-first warm-gray
 tokens: open layout, hairline dividers, JetBrains Mono for code and numerical
 evidence, moss-green focus, and no gradients, glow, or decorative dashboard
 metrics.

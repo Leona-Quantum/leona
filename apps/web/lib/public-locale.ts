@@ -22,7 +22,7 @@ export const PUBLIC_SHELL_COPY: Record<PublicLocale, {
   actions: { workspace: string; signIn: string; talk: string; signOut: string };
 }> = {
   en: {
-    nav: { product: "Product", pricing: "Pricing", repository: "Repository", workspace: "Workspace", contact: "Contact" },
+    nav: { product: "Product", pricing: "Pricing", repository: "Atlas", workspace: "Workspace", contact: "Contact" },
     footer: {
       promise: "Trustworthy quantum work, one verified artifact at a time.",
       explore: "Explore",
@@ -36,7 +36,7 @@ export const PUBLIC_SHELL_COPY: Record<PublicLocale, {
     actions: { workspace: "Open workspace", signIn: "Sign in", talk: "Talk to us", signOut: "Sign out" },
   },
   ja: {
-    nav: { product: "プロダクト", pricing: "料金", repository: "リポジトリ", workspace: "ワークスペース", contact: "連絡先" },
+    nav: { product: "プロダクト", pricing: "料金", repository: "Atlas", workspace: "ワークスペース", contact: "連絡先" },
     footer: {
       promise: "検証済みアーティファクトを通じて、信頼できる量子研究を支えます。",
       explore: "探索",

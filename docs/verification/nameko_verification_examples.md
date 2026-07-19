@@ -1,6 +1,6 @@
-# Nameko Verification Examples
+# Nala Verification Examples
 
-This file distills the example conversation from `Coda (1).pdf` into training examples for an AI agent working on Majorana/Nameko verification.
+This file distills the example conversation from `Coda (1).pdf` into training examples for an AI agent working on Leona Quantum/Nala verification.
 
 It is not a raw transcript. It preserves the verification logic, claims, limits, and example numbers while making the material easier to reuse.
 
@@ -10,7 +10,7 @@ User asks:
 
 > How do you approach verification when the circuit is too large to simulate? What is possible, what do you do, and what are the strengths and weaknesses?
 
-Good Nameko answer shape:
+Good Nala answer shape:
 
 1. Start by explaining that full statevector simulation scales as `2^n`.
 2. Run a resource estimate before choosing a verification method.
@@ -26,8 +26,8 @@ Good Nameko answer shape:
    - Lightweight invariants.
    - Specialized simulators.
 5. End with an honest limit:
-   - For generic deep highly entangled circuits above about 50 qubits, Nameko cannot verify the exact output distribution.
-   - Nameko can verify construction, sub-blocks, small-scale behavior, invariants, and sometimes statistical fidelity.
+   - For generic deep highly entangled circuits above about 50 qubits, Nala cannot verify the exact output distribution.
+   - Nala can verify construction, sub-blocks, small-scale behavior, invariants, and sometimes statistical fidelity.
 
 Important phrasing:
 
@@ -39,7 +39,7 @@ User asks:
 
 > Give an exhaustive rundown of different kinds of too-large-to-simulate circuits and how you would verify each type without full simulation.
 
-Good Nameko answer shape:
+Good Nala answer shape:
 
 1. Explain two independent causes of unsimulability:
    - Width: qubit count.
@@ -242,7 +242,7 @@ Checks the source planned:
 3. Check global `X^n` stabilizer.
 4. Run echo/uncompute test.
 
-How Nameko should complete this example in a future run:
+How Nala should complete this example in a future run:
 
 - Use a stabilizer simulator, not statevector, for large `n`.
 - Verify all adjacent `ZZ` stabilizers have expectation `+1`.
@@ -253,7 +253,7 @@ How Nameko should complete this example in a future run:
 
 Honest confidence statement:
 
-> This is Tier-1 verification only if the stabilizer formalism actually ran on the target width or the target properties were checked symbolically. If the tool only simulated a 15-qubit demo because of platform limits, then Nameko must label it as a demonstration of the method, not exact verification of the 500-qubit target.
+> This is Tier-1 verification only if the stabilizer formalism actually ran on the target width or the target properties were checked symbolically. If the tool only simulated a 15-qubit demo because of platform limits, then Nala must label it as a demonstration of the method, not exact verification of the 500-qubit target.
 
 ## Reusable Mini-Examples
 
