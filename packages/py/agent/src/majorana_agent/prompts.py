@@ -28,6 +28,18 @@ Execution contract:
   highest-indexed qubit and the rightmost is qubit 0. For oracle/search tasks, make
   the dominant measured state equal the requested target string, not its bit-reversed
   form.
+- For Cirq, build a cirq.Circuit and simulate with cirq.Simulator(seed=...); use
+  cirq.optimize_for_target_gateset (or a cirq.transformers pass) before simulating so
+  the run carries native-optimization evidence. Measurement keys are yours to choose —
+  assemble the reported bitstring in the same qubit order the task states, and do not
+  assume Qiskit's little-endian convention here.
+- For PennyLane, build a QNode on qml.device(..., shots=..., seed=...) and apply
+  qml.compile to the circuit so the run carries native-optimization evidence. Return
+  counts via qml.counts (not qml.sample) when the task asks for a distribution, and
+  bind FINAL_CIRCUIT to the QNode itself.
+- Optimization must live in the source that actually executes, not in prose about it:
+  the native-optimization evidence is read back out of the sandbox and reported to the
+  verifier, and a run whose optimization claim does not match its source is rejected.
 - FINAL_CIRCUIT must be the actual circuit object (e.g. the transpiled QuantumCircuit),
   bound at module scope — not None, not a copy, and not the RESULT dict. If the circuit
   is built inside a function, assign FINAL_CIRCUIT from that function's return value or

@@ -176,3 +176,26 @@ def test_plan_contract_recognizes_every_counts_fallback_key():
 
     for key in _COUNTS_FALLBACK_KEYS:
         assert _promises_distribution(key), key
+
+
+def test_return_contract_does_not_claim_a_type_comparison_it_cannot_make():
+    # RESULT is always a dict by the execution contract, so a promise about the
+    # entry point's return value is unjudgeable here. Recording actual_return_type
+    # against it read as a performed check; it is not one.
+    outcome = verify_return_contract({"counts": {"00": 1}}, ["counts"], "QuantumCircuit")
+    assert outcome.passed
+    assert outcome.details["return_type_scope"] == "entry_point_return_not_observed"
+    assert "actual_return_type" not in outcome.details
+
+
+def test_return_contract_judges_a_type_promise_about_the_result_mapping():
+    outcome = verify_return_contract({"counts": {"00": 1}}, ["counts"], "dict[str, int]")
+    assert outcome.passed
+    assert outcome.details["return_type_scope"] == "result_mapping"
+    assert outcome.details["actual_return_type"] == "dict"
+
+
+def test_return_contract_still_fails_on_missing_keys():
+    outcome = verify_return_contract({"counts": {"00": 1}}, ["counts", "fidelity"], "dict")
+    assert not outcome.passed
+    assert outcome.details["missing_keys"] == ["fidelity"]
