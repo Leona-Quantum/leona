@@ -1,0 +1,17 @@
+# Upload only what services/api/Dockerfile actually COPYs.
+# Without this, `gcloud builds submit` uploads apps/ (732M of node_modules/.next).
+/*
+!pyproject.toml
+!uv.lock
+!services/
+!packages/
+!db/
+!evals/
+!cloudbuild.api.yaml
+
+**/__pycache__/
+**/node_modules/
+**/.venv/
+**/.venv.nosync/
+**/.ruff_cache/
+**/.pytest_cache/
