@@ -32,6 +32,8 @@ EXPORTED = [
     models.WorkspaceOverview,
     models.Artifact,
     models.ArtifactVersion,
+    models.CatalogProvenance,
+    models.PublicCatalogEntry,
     models.Run,
     models.VerificationRecord,
 ]

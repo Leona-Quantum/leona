@@ -20,7 +20,12 @@ import datetime as dt
 import uuid
 from typing import Any
 
-from majorana_contracts import Scope, assert_review_transition
+from majorana_contracts import (
+    PublicCatalogEntry,
+    Scope,
+    assert_publication_transition,
+    assert_review_transition,
+)
 from majorana_contracts.enums import (
     Algorithm,
     ArtifactKind,
@@ -47,6 +52,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..catalog_authority import CatalogAuthority
 from ..catalog_hashing import hash_normalized_source, hash_source_blob
 from ..catalog_publication import PublicationReadiness, evaluate_publication_readiness
+from ..catalog_read_model import build_public_catalog_entry
 from ..ids import uuid7
 from ..orm import (
     Artifact,
@@ -54,6 +60,8 @@ from ..orm import (
     ArtifactSource,
     ArtifactTag,
     ArtifactVersion,
+    ImportItem,
+    ImportJob,
     LicenseAssertion,
     Membership,
     Workspace,
@@ -182,10 +190,28 @@ async def _get_catalog_version(
 async def _get_current_license_assertion(
     session: AsyncSession, *, artifact_version_id: uuid.UUID
 ) -> LicenseAssertion | None:
+    """The head of the append-only supersession chain.
+
+    Ordering by created_at alone is not sufficient to identify "current":
+    created_at defaults to now(), which in Postgres is the *transaction*
+    timestamp, so a declared assertion and the reviewer decision that supersedes
+    it share an identical timestamp whenever both are written in one
+    transaction. The tie then resolves arbitrarily and publication readiness can
+    read a stale 'pending' decision. The chain head — the row no other assertion
+    supersedes — is exact and independent of timestamps; created_at/id ordering
+    only breaks ties between independent (non-superseding) assertions.
+    """
+    superseded = select(LicenseAssertion.supersedes_assertion_id).where(
+        LicenseAssertion.artifact_version_id == artifact_version_id,
+        LicenseAssertion.supersedes_assertion_id.is_not(None),
+    )
     stmt = (
         select(LicenseAssertion)
-        .where(LicenseAssertion.artifact_version_id == artifact_version_id)
-        .order_by(LicenseAssertion.created_at.desc())
+        .where(
+            LicenseAssertion.artifact_version_id == artifact_version_id,
+            LicenseAssertion.id.not_in(superseded),
+        )
+        .order_by(LicenseAssertion.created_at.desc(), LicenseAssertion.id.desc())
         .limit(1)
     )
     return (await session.execute(stmt)).scalars().first()
@@ -523,6 +549,111 @@ async def decide_review(
     return artifact
 
 
+async def _artifact_publication_readiness(
+    session: AsyncSession, *, artifact: Artifact
+) -> PublicationReadiness:
+    """Load the version/source/license rows for one artifact and evaluate the
+    pure readiness contract. Shared by the read-only readiness check and the
+    publish action so both fail closed on exactly the same bindings."""
+    if artifact.current_version_id is None:
+        return evaluate_publication_readiness(
+            review_state=artifact.review_state or ReviewState.DRAFT,
+            has_source=False,
+            license_decision=None,
+            source_blob_sha256=None,
+            normalized_source_hash=None,
+            authoritative_framework=None,
+        )
+    version = (
+        (
+            await session.execute(
+                select(ArtifactVersion).where(ArtifactVersion.id == artifact.current_version_id)
+            )
+        )
+        .scalars()
+        .first()
+    )
+    source = (
+        (
+            await session.execute(
+                select(ArtifactSource).where(
+                    ArtifactSource.artifact_version_id == artifact.current_version_id
+                )
+            )
+        )
+        .scalars()
+        .first()
+    )
+    license_row = await _get_current_license_assertion(
+        session, artifact_version_id=artifact.current_version_id
+    )
+    return evaluate_publication_readiness(
+        review_state=artifact.review_state or ReviewState.DRAFT,
+        has_source=source is not None,
+        license_decision=license_row.reviewer_decision if license_row else None,
+        source_blob_sha256=version.source_blob_sha256 if version else None,
+        normalized_source_hash=version.normalized_source_hash if version else None,
+        authoritative_framework=version.authoritative_framework if version else None,
+    )
+
+
+class PublicationNotReadyError(RepoError):
+    """Publication was attempted while a required binding was missing.
+
+    Publication fails closed (repository Step 4/6): review acceptance, a pinned
+    source, an approved license, and the exact hash/framework binding must all be
+    present. The blockers list names every unmet condition.
+    """
+
+    def __init__(self, blockers: tuple[str, ...]):
+        super().__init__("catalog artifact is not ready to publish: " + "; ".join(blockers))
+        self.blockers = blockers
+
+
+async def publish_catalog_artifact(
+    scope: Scope,
+    session: AsyncSession,
+    artifact_id: uuid.UUID,
+    *,
+    authority: CatalogAuthority,
+) -> Artifact:
+    """Reviewer-only review->public transition (repository Step 6).
+
+    An attributable human ADMIN (never the importer identity — enforced by
+    _get_reviewer_workspace) flips publication_state private -> public, but only
+    after evaluate_publication_readiness passes: acceptance, pinned source,
+    approved license, and hash/framework binding. The transition itself is
+    validated against the publication lifecycle table and audited. A record that
+    is not ready raises PublicationNotReadyError and nothing is mutated, so a
+    buggy or premature caller can never expose unreviewed content.
+    """
+    workspace = await _get_reviewer_workspace(scope, session, authority=authority)
+    artifact = await _get_catalog_artifact(
+        session, workspace_id=workspace.id, artifact_id=artifact_id, for_update=True
+    )
+    readiness = await _artifact_publication_readiness(session, artifact=artifact)
+    if not readiness.ready:
+        raise PublicationNotReadyError(readiness.blockers)
+    previous_state = PublicationState(artifact.publication_state or PublicationState.PRIVATE)
+    assert_publication_transition(previous_state, PublicationState.PUBLIC)
+    artifact.publication_state = PublicationState.PUBLIC
+    await record_audit(
+        scope,
+        session,
+        action="catalog.publication.public",
+        target_kind="artifact",
+        target_id=artifact.id,
+        meta={
+            "from": previous_state.value,
+            "to": PublicationState.PUBLIC.value,
+            "artifact_version_id": (
+                str(artifact.current_version_id) if artifact.current_version_id else None
+            ),
+        },
+    )
+    return artifact
+
+
 async def record_citation(
     scope: Scope,
     session: AsyncSession,
@@ -593,43 +724,107 @@ async def get_publication_readiness(
     artifact = await _get_catalog_artifact(
         session, workspace_id=workspace.id, artifact_id=artifact_id
     )
-    if artifact.current_version_id is None:
-        return evaluate_publication_readiness(
-            review_state=artifact.review_state or ReviewState.DRAFT,
-            has_source=False,
-            license_decision=None,
-            source_blob_sha256=None,
-            normalized_source_hash=None,
-            authoritative_framework=None,
+    return await _artifact_publication_readiness(session, artifact=artifact)
+
+
+async def list_public_catalog_entries(
+    scope: Scope,
+    session: AsyncSession,
+    *,
+    authority: CatalogAuthority,
+) -> list[PublicCatalogEntry]:
+    """Anonymous-safe listing of accepted+public catalog records (Step 6).
+
+    The scope is validated against the server-owned public reader identity and
+    the persisted VIEWER membership (get_catalog_workspace), so no HTTP caller
+    can substitute a private workspace. Only artifacts that are simultaneously
+    review_state='accepted', publication_state='public', and not soft-deleted
+    are returned — the exact set a reviewer published. Provenance and the rich
+    presentation `record` come from the pinned import source at read time.
+    """
+    workspace = await get_catalog_workspace(scope, session, authority=authority)
+    stmt = (
+        select(
+            Artifact.slug,
+            Artifact.execution_state,
+            Artifact.updated_at,
+            ArtifactVersion.code,
+            ArtifactVersion.source_blob_sha256,
+            ImportItem.upstream_identity,
+            ImportJob.provider,
+            ImportJob.upstream_ref,
         )
-    version = (
-        (
-            await session.execute(
-                select(ArtifactVersion).where(ArtifactVersion.id == artifact.current_version_id)
-            )
+        .join(ArtifactVersion, ArtifactVersion.id == Artifact.current_version_id)
+        .outerjoin(ImportItem, ImportItem.resulting_artifact_id == Artifact.id)
+        .outerjoin(ImportJob, ImportJob.id == ImportItem.import_job_id)
+        .where(
+            Artifact.workspace_id == workspace.id,
+            Artifact.deleted_at.is_(None),
+            Artifact.review_state == ReviewState.ACCEPTED,
+            Artifact.publication_state == PublicationState.PUBLIC,
         )
-        .scalars()
-        .first()
+        .order_by(func.coalesce(ImportItem.upstream_identity, Artifact.slug))
     )
-    source = (
-        (
-            await session.execute(
-                select(ArtifactSource).where(
-                    ArtifactSource.artifact_version_id == artifact.current_version_id
-                )
-            )
+    rows = (await session.execute(stmt)).all()
+    return [
+        build_public_catalog_entry(
+            upstream_identity=row.upstream_identity or row.slug,
+            execution_state=row.execution_state,
+            updated_at=row.updated_at,
+            source_code=row.code,
+            source_blob_sha256=row.source_blob_sha256,
+            import_provider=row.provider,
+            upstream_ref=row.upstream_ref,
         )
-        .scalars()
-        .first()
+        for row in rows
+    ]
+
+
+async def get_public_catalog_entry(
+    scope: Scope,
+    session: AsyncSession,
+    slug: str,
+    *,
+    authority: CatalogAuthority,
+) -> PublicCatalogEntry:
+    """Single accepted+public entry by its stable public slug (manifest identity).
+
+    Same authority validation and the same accepted+public filter as the listing,
+    so an unpublished or draft record is a 404 to anonymous callers rather than
+    an authorization error that would confirm its existence.
+    """
+    workspace = await get_catalog_workspace(scope, session, authority=authority)
+    stmt = (
+        select(
+            Artifact.slug,
+            Artifact.execution_state,
+            Artifact.updated_at,
+            ArtifactVersion.code,
+            ArtifactVersion.source_blob_sha256,
+            ImportItem.upstream_identity,
+            ImportJob.provider,
+            ImportJob.upstream_ref,
+        )
+        .join(ArtifactVersion, ArtifactVersion.id == Artifact.current_version_id)
+        .outerjoin(ImportItem, ImportItem.resulting_artifact_id == Artifact.id)
+        .outerjoin(ImportJob, ImportJob.id == ImportItem.import_job_id)
+        .where(
+            Artifact.workspace_id == workspace.id,
+            Artifact.deleted_at.is_(None),
+            Artifact.review_state == ReviewState.ACCEPTED,
+            Artifact.publication_state == PublicationState.PUBLIC,
+            func.coalesce(ImportItem.upstream_identity, Artifact.slug) == slug,
+        )
     )
-    license_row = await _get_current_license_assertion(
-        session, artifact_version_id=artifact.current_version_id
-    )
-    return evaluate_publication_readiness(
-        review_state=artifact.review_state or ReviewState.DRAFT,
-        has_source=source is not None,
-        license_decision=license_row.reviewer_decision if license_row else None,
-        source_blob_sha256=version.source_blob_sha256 if version else None,
-        normalized_source_hash=version.normalized_source_hash if version else None,
-        authoritative_framework=version.authoritative_framework if version else None,
+    row = (await session.execute(stmt)).first()
+    if row is None:
+        raise NotFoundError("catalog entry")
+    return build_public_catalog_entry(
+        upstream_identity=row.upstream_identity or row.slug,
+        execution_state=row.execution_state,
+        updated_at=row.updated_at,
+        source_code=row.code,
+        source_blob_sha256=row.source_blob_sha256,
+        import_provider=row.provider,
+        upstream_ref=row.upstream_ref,
     )

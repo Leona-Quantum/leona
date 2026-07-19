@@ -2,14 +2,21 @@ import pytest
 from majorana_contracts import (
     IMPORT_ITEM_TERMINAL_STATES,
     IllegalImportItemTransition,
+    IllegalPublicationTransition,
     IllegalReviewTransition,
     IllegalTransition,
     assert_import_item_transition,
+    assert_publication_transition,
     assert_review_transition,
     assert_transition,
     is_terminal,
 )
-from majorana_contracts.enums import ImportItemState, ReviewState, RunStatus
+from majorana_contracts.enums import (
+    ImportItemState,
+    PublicationState,
+    ReviewState,
+    RunStatus,
+)
 
 
 def test_run_lifecycle_allows_execution_and_cancel_paths():
@@ -44,6 +51,34 @@ def test_terminal_review_states_cannot_transition():
     for state in (ReviewState.ACCEPTED, ReviewState.REJECTED):
         with pytest.raises(IllegalReviewTransition):
             assert_review_transition(state, ReviewState.PENDING_REVIEW)
+
+
+def test_publication_lifecycle_allows_review_to_public_and_takedown():
+    assert_publication_transition(PublicationState.PRIVATE, PublicationState.PUBLIC)
+    assert_publication_transition(PublicationState.PRIVATE, PublicationState.STAGED)
+    assert_publication_transition(PublicationState.STAGED, PublicationState.PUBLIC)
+    assert_publication_transition(PublicationState.PUBLIC, PublicationState.RETRACTED)
+    assert_publication_transition(PublicationState.PUBLIC, PublicationState.DEPRECATED)
+    assert_publication_transition(PublicationState.DEPRECATED, PublicationState.PUBLIC)
+
+
+def test_retracted_records_cannot_silently_republish():
+    """A takedown is final for that record: restoring it requires a fresh
+    accepted version, not a state flip."""
+    for target in (
+        PublicationState.PUBLIC,
+        PublicationState.STAGED,
+        PublicationState.PRIVATE,
+        PublicationState.DEPRECATED,
+    ):
+        with pytest.raises(IllegalPublicationTransition):
+            assert_publication_transition(PublicationState.RETRACTED, target)
+
+
+def test_public_records_cannot_regress_to_unpublished_states():
+    for target in (PublicationState.PRIVATE, PublicationState.STAGED):
+        with pytest.raises(IllegalPublicationTransition):
+            assert_publication_transition(PublicationState.PUBLIC, target)
 
 
 def test_import_item_lifecycle_allows_the_happy_path():
