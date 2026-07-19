@@ -261,12 +261,54 @@ const FAILED: RunEvent[] = [
   { type: "run.finished", run_id: RUN, seq: 19, ts: ts(25), status: "failed", verifier_decision: "fail", residual_risks: "Verification failed; no final execution was attempted." },
 ];
 
+// A run that spent its whole budget without a passing candidate. Before
+// run.best_effort the user's entire answer was "the run did not complete
+// successfully" — this fixture is how that path is inspected without paying for
+// four live model calls to reproduce it.
+const EXHAUSTED: RunEvent[] = [
+  ...FAILED.slice(0, FAILED.length - 1),
+  {
+    type: "run.best_effort",
+    run_id: RUN,
+    seq: 19,
+    ts: ts(26),
+    verified: false,
+    language: "qiskit",
+    code: SAMPLE_CODE,
+    revision: 3,
+    candidates_considered: 4,
+    exhausted_budget: "candidate_budget_exhausted",
+    failed_checks: ["statistical", "success_criteria"],
+    critic_summary: "The measured distribution does not match the requested Bell state.",
+    residual_risks: ["Qubit ordering was never confirmed against the plan."],
+  },
+  {
+    type: "run.error",
+    run_id: RUN,
+    seq: 20,
+    ts: ts(27),
+    stage: null,
+    code: "agent_failed",
+    message: "agent tool loop failed (candidate_budget_exhausted) — failing checks: statistical",
+  },
+  {
+    type: "run.finished",
+    run_id: RUN,
+    seq: 21,
+    ts: ts(28),
+    status: "failed",
+    verifier_decision: "fail",
+    residual_risks: null,
+  },
+];
+
 const MID_RUN: RunEvent[] = VERIFIED.slice(0, 16); // verification running; verifier pending
 const QUEUED: RunEvent[] = VERIFIED.slice(0, 2); // queued/started only
 
 export const RUN_FIXTURES: Record<string, RunEvent[]> = {
   "demo-verified": VERIFIED,
   "demo-failed": FAILED,
+  "demo-exhausted": EXHAUSTED,
   "demo-midrun": MID_RUN,
   "demo-queued": QUEUED,
 };
@@ -274,6 +316,7 @@ export const RUN_FIXTURES: Record<string, RunEvent[]> = {
 export const RUN_FIXTURE_META: { id: string; label: string }[] = [
   { id: "demo-verified", label: "Verified run (full pipeline)" },
   { id: "demo-failed", label: "Failed verification" },
+  { id: "demo-exhausted", label: "Budget exhausted (best effort)" },
   { id: "demo-midrun", label: "Mid-run (verify)" },
   { id: "demo-queued", label: "Queued (waiting)" },
 ];

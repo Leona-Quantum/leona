@@ -28,7 +28,7 @@ from majorana_contracts.enums import (
     VerificationMethod,
     VerifierDecision,
 )
-from majorana_contracts.plan import Plan
+from majorana_contracts.plan import EXACT_MAX_QUBITS, Plan
 from majorana_frameworks import FrameworkProgram, extract_interchange_qasm
 from majorana_llm import (
     LLMClient,
@@ -43,6 +43,7 @@ from majorana_sandbox import ExecutionSpec, GuardRejection, Sandbox
 from majorana_sandbox import run as sandbox_run
 from majorana_verification import (
     extract_counts,
+    verify_exact,
     verify_return_contract,
     verify_statistical_counts,
     verify_statistical_counts_pair,
@@ -55,10 +56,18 @@ from majorana_api.repos import runs as runs_repo
 
 
 class LLMPlanner:
-    def __init__(self, *, llm: LLMClient, task_prompt: str, framework: Framework) -> None:
+    def __init__(
+        self,
+        *,
+        llm: LLMClient,
+        task_prompt: str,
+        framework: Framework,
+        has_parent_artifact: bool = False,
+    ) -> None:
         self._llm = llm
         self._task_prompt = task_prompt
         self._framework = framework
+        self._has_parent_artifact = has_parent_artifact
 
     # One retry, not a loop: the plan contract rejects self-contradictory plans
     # (see Plan._statistical_needs_distribution_evidence), and handing the planner
@@ -69,7 +78,11 @@ class LLMPlanner:
     async def create_plan(self, _run_id: UUID) -> Plan:
         objection: str | None = None
         for attempt in range(self._PLAN_ATTEMPTS):
-            prompt = render_plan_prompt(self._task_prompt, requested_framework=self._framework)
+            prompt = render_plan_prompt(
+                self._task_prompt,
+                requested_framework=self._framework,
+                has_parent_artifact=self._has_parent_artifact,
+            )
             user = prompt.user
             if objection is not None:
                 user = (
@@ -342,9 +355,14 @@ class _CriticOutput(BaseModel):
 
 
 class EvidenceVerifier:
-    def __init__(self, *, llm: LLMClient, task_prompt: str) -> None:
+    def __init__(
+        self, *, llm: LLMClient, task_prompt: str, parent_artifact_qasm: str | None = None
+    ) -> None:
         self._llm = llm
         self._task_prompt = task_prompt
+        # Passed in rather than fetched: the verifier holds no session and no scope,
+        # and the parent version is already loaded by the run handler.
+        self._parent_artifact_qasm = parent_artifact_qasm
 
     async def verify(
         self, candidate: CandidateRevision, execution: ExecutionEvidence, plan: Plan
@@ -513,6 +531,9 @@ class EvidenceVerifier:
             if method is VerificationMethod.STATISTICAL:
                 checks.extend(self._statistical_checks(execution, plan))
                 continue
+            if method is VerificationMethod.EXACT:
+                checks.append(self._exact_check(execution, plan))
+                continue
             outcome = None
             if method is VerificationMethod.RETURN_CONTRACT:
                 expected_type = (
@@ -578,6 +599,74 @@ class EvidenceVerifier:
                 "mode": classified.mode,
                 "reason": classified.reason,
             },
+        }
+
+    def _exact_check(self, execution: ExecutionEvidence, plan: Plan) -> dict[str, Any]:
+        """Phase-aligned unitary equivalence against a reference circuit.
+
+        The strongest check the pipeline can run, and the only one that compares the
+        executed circuit against something other than itself. Until 2026-07-20
+        `verify_exact` was production code with no caller, because nothing decided
+        where the reference comes from.
+
+        It is framework-agnostic on the candidate side and only on that side. The
+        candidate arrives as `interchange_qasm`, which every adapter emits, so a Cirq
+        or PennyLane program is compared the same way a Qiskit one is. The reference
+        is always OpenQASM — declarative data we parse, never code we run. A
+        reference written as framework source would have to be executed in the
+        sandbox to mean anything, which would admit a second piece of model-authored
+        code as ground truth.
+
+        The two sources prove different things, so `reference_source` is recorded in
+        the evidence and the check never claims more than it earned:
+
+        - `plan_declared` — the planner wrote the reference before any code existed.
+          It catches code that implements a different circuit than the one intended.
+          It cannot catch a mis-specified plan: reference and candidate come from the
+          same model.
+        - `parent_artifact` — the circuit this run revises, which passed verification
+          on its own. Independent evidence, and the equivalence-checking case: the
+          revision must not change what the circuit computes.
+        """
+        verification_plan = plan.verification_plan
+        source = verification_plan.reference_source if verification_plan else None
+        details: dict[str, Any] = {"reference_source": source}
+        if source == "parent_artifact":
+            reference = self._parent_artifact_qasm
+            details["reference_available"] = reference is not None
+        else:
+            reference = verification_plan.reference_qasm if verification_plan else None
+        candidate_qasm = extract_interchange_qasm(execution.observation).qasm
+        if reference is None or candidate_qasm is None:
+            # Fail, never skip. A check that cannot run is missing evidence, and the
+            # plan contract already refuses the reference-less cases it can see — so
+            # arriving here means the run genuinely lacks what it promised.
+            return {
+                "method": VerificationMethod.EXACT.value,
+                "result": "fail",
+                "details": details
+                | {
+                    "error": "required evidence unavailable",
+                    "reference_qasm": reference is not None,
+                    "interchange_qasm": candidate_qasm is not None,
+                },
+            }
+        outcome = verify_exact(reference, candidate_qasm, max_qubits=EXACT_MAX_QUBITS)
+        merged = details | outcome.details
+        if source == "plan_declared":
+            merged["evidence_scope"] = (
+                "the executed circuit matches the reference the planner declared; "
+                "reference and implementation share an author"
+            )
+        else:
+            merged["evidence_scope"] = (
+                "the executed circuit is unitarily equivalent to the parent "
+                "artifact's independently verified circuit"
+            )
+        return {
+            "method": outcome.method.value,
+            "result": outcome.result.value,
+            "details": merged,
         }
 
     @staticmethod

@@ -50,6 +50,7 @@ from .agent_ports import (
     TrustedOpenQASMConverter,
 )
 from .agent_store import RepoAgentStore
+from .best_effort import choose_best_effort
 from .context import RunContext
 from .intent import resolve_mode
 
@@ -175,9 +176,15 @@ async def handle_run_execute(
     run_id = uuid.UUID(payload["run_id"])
     run = await runs_repo.get_run(scope, session, run_id)
     parent_artifact_id = None
+    parent_artifact_qasm = None
     if run.artifact_version_id is not None:
         version = await artifacts_repo.get_version(scope, session, run.artifact_version_id)
         parent_artifact_id = version.artifact_id
+        # The reference for an `exact` check when the plan asks to preserve this
+        # circuit's behaviour. Only a version that stored interchange QASM can serve
+        # as one; when it did not, the verifier reports the missing evidence rather
+        # than quietly falling back to a weaker check.
+        parent_artifact_qasm = version.qasm
     ctx = RunContext(
         run_id=run_id,
         task_prompt=run.task_prompt,
@@ -216,6 +223,7 @@ async def handle_run_execute(
                     llm=provider,
                     sandbox=sandbox or _default_sandbox(),
                     parent_artifact_id=parent_artifact_id,
+                    parent_artifact_qasm=parent_artifact_qasm,
                 )
     except TimeoutError:
         # The stage coroutine was cancelled mid-flight; reset the session and
@@ -329,6 +337,52 @@ async def _agent_failure_message(
     return " — ".join(parts)
 
 
+async def _emit_best_effort(
+    ctx: RunContext,
+    agent_store: AgentStore,
+    failure_reason: str | None,
+) -> None:
+    """Hand back the closest thing to an answer before reporting the failure.
+
+    A user who waited through four candidates and paid for four model calls used to
+    receive one line saying the run did not complete. The code existed the whole
+    time. This emits it with the evidence that stopped it, ordered by
+    best_effort.choose_best_effort.
+
+    Emitted before `run.error` so a reader of the event stream meets the attempt
+    before the epitaph, and wrapped so a diagnostic can never turn a failed run into
+    a crashed one — the failure path must stay the most reliable path in the system.
+    """
+    try:
+        candidates = await agent_store.list_candidates(ctx.run_id)
+        verifications = {
+            candidate.candidate_id: await agent_store.verification_for(
+                ctx.run_id, candidate.candidate_id
+            )
+            for candidate in candidates
+        }
+        best = choose_best_effort(candidates, verifications)
+    except Exception:  # noqa: BLE001 - never mask the failure being reported
+        log.exception("best-effort selection failed for run %s", ctx.run_id)
+        return
+    if best is None:
+        return
+    await ctx.sink.emit(
+        "run.best_effort",
+        {
+            "language": best.candidate.framework.value,
+            "code": best.candidate.source,
+            "revision": best.candidate.revision,
+            "candidates_considered": best.candidates_considered,
+            "exhausted_budget": failure_reason,
+            "failed_checks": best.failed_checks,
+            "critic_summary": best.critic_summary,
+            "residual_risks": best.residual_risks,
+        },
+        event_id=uuid.uuid5(ctx.run_id, "run.best_effort"),
+    )
+
+
 async def _handle_agent_execution(
     ctx: RunContext,
     run_store: RepoRunStateStore,
@@ -338,6 +392,7 @@ async def _handle_agent_execution(
     llm: LLMClient,
     sandbox: Sandbox,
     parent_artifact_id: uuid.UUID | None,
+    parent_artifact_qasm: str | None = None,
 ) -> RunStatus:
     status = await run_store.current_status()
     if status not in {RunStatus.QUEUED, RunStatus.RUNNING}:
@@ -363,9 +418,14 @@ async def _handle_agent_execution(
             llm=metered_llm,
             task_prompt=ctx.task_prompt,
             framework=ctx.framework,
+            has_parent_artifact=parent_artifact_id is not None,
         ),
         executor=SandboxCandidateExecutor(sandbox),
-        verifier=EvidenceVerifier(llm=metered_llm, task_prompt=ctx.task_prompt),
+        verifier=EvidenceVerifier(
+            llm=metered_llm,
+            task_prompt=ctx.task_prompt,
+            parent_artifact_qasm=parent_artifact_qasm,
+        ),
         converter=TrustedOpenQASMConverter(),
         publisher=RepoArtifactPublisher(
             scope=scope,
@@ -442,6 +502,7 @@ async def _handle_agent_execution(
             verifier_decision="inconclusive",
         )
         return RunStatus.FAILED
+    await _emit_best_effort(ctx, agent_store, runtime.failure_reason)
     # "agent tool loop failed" alone is undiagnosable: the run that exposed this
     # showed four passing verification checks and then died, because the only
     # failing signal — the semantic critic's verdict — is not emitted as an

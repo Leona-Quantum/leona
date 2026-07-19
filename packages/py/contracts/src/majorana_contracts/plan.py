@@ -2,7 +2,7 @@
 Modernized from the legacy nameko plan-schema (Archive); qubit ceiling is the
 27-qubit default sandbox lane (memory/DECISIONS.md 2026-07-09)."""
 
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -30,6 +30,14 @@ class _PlanBase(BaseModel):
 # packages/py/verification/tests pins the two lists against drift.
 _DISTRIBUTION_KEY_NAMES = frozenset({"counts", "measurement_counts", "results", "samples"})
 _DISTRIBUTION_KEY_TOKENS = ("counts", "distribution", "histogram", "probabilities")
+
+# Ceiling for the `exact` method, pinned here so a plan can never ask for a check
+# the verifier is forced to fail. The check materializes two 2**n x 2**n complex128
+# unitaries (16 * 4**n bytes each): 16 MB apiece at 10 qubits, 256 MB at 12. Ten is
+# the last comfortable value in the worker. packages/py/verification keeps its own
+# library default of 6; the worker's callsite passes this number explicitly, and
+# services/worker/tests pins the two together against drift.
+EXACT_MAX_QUBITS = 10
 
 
 def _promises_distribution(key: str) -> bool:
@@ -108,6 +116,27 @@ class VerificationPlan(_PlanBase):
     reference_method: str | None = Field(
         default=None, description="Independent reference, e.g. exact diagonalization"
     )
+    reference_source: Literal["plan_declared", "parent_artifact"] | None = Field(
+        default=None,
+        description=(
+            "Where the 'exact' check gets the circuit it compares against. "
+            "'plan_declared' means you supply reference_qasm below. "
+            "'parent_artifact' means the already-verified circuit this run revises "
+            "is the reference — choose it only when the request is to optimize, "
+            "transpile, or refactor that circuit WITHOUT changing what it computes, "
+            "and only when you were told this run has a parent artifact."
+        ),
+    )
+    reference_qasm: str | None = Field(
+        default=None,
+        max_length=20_000,
+        description=(
+            "OpenQASM 2 or 3 source for the circuit the generated code must match, "
+            "required when reference_source is 'plan_declared'. Write the canonical "
+            "textbook construction, not a copy of the code you expect. Measurements "
+            "are ignored: only the unitary is compared."
+        ),
+    )
     feedback_policy: str | None = Field(
         default=None, description="What to minimally fix and re-verify on failure"
     )
@@ -175,6 +204,63 @@ class Plan(_PlanBase):
         if isinstance(value, dict) and "baseline_plan" in value:
             value = {key: item for key, item in value.items() if key != "baseline_plan"}
         return value
+
+    @model_validator(mode="after")
+    def _exact_needs_a_reachable_reference(self) -> "Plan":
+        """Reject a plan asking for an `exact` check that cannot be run.
+
+        Same failure shape as the statistical rule below, and the same remedy: a
+        check whose precondition the plan itself violates fails identically on
+        every regenerated candidate, so the repair loop cannot converge and the run
+        burns its whole budget before dying. One planner re-emit is cheaper.
+
+        Three ways a plan can ask for the impossible:
+
+        - No `reference_source`. `verify_exact` compares against something; without
+          a nominated source there is nothing to compare against.
+        - `plan_declared` with no `reference_qasm` (or `parent_artifact` with one —
+          a reference that will be ignored is a lie about what was checked).
+        - More qubits than the check supports. `exact_equivalence` RAISES above its
+          ceiling and `verify_exact` turns that into a FAIL, so an 18-qubit plan
+          asking for `exact` fails a check no repair can fix.
+
+        The QASM is deliberately NOT parsed here. Contracts must not depend on the
+        OpenQASM package, and a parse failure is genuine evidence about the plan's
+        reference that belongs in the verification record, not a validation error
+        that silently re-rolls the planner.
+        """
+        plan = self.verification_plan
+        if plan is None or VerificationMethod.EXACT not in plan.methods:
+            return self
+        if plan.reference_source is None:
+            raise ValueError(
+                "verification_plan.methods includes 'exact', which compares the "
+                "executed circuit against a reference circuit, but no "
+                "reference_source was named. Set reference_source to "
+                "'plan_declared' and supply reference_qasm, set it to "
+                "'parent_artifact' when this run revises an existing verified "
+                "circuit and must preserve its behaviour, or drop 'exact'."
+            )
+        if plan.reference_source == "plan_declared" and not plan.reference_qasm:
+            raise ValueError(
+                "verification_plan.reference_source is 'plan_declared' but "
+                "reference_qasm is empty. Supply the OpenQASM source of the circuit "
+                "the generated code must match, or drop 'exact'."
+            )
+        if plan.reference_source == "parent_artifact" and plan.reference_qasm:
+            raise ValueError(
+                "verification_plan.reference_source is 'parent_artifact', so the "
+                "reference comes from the artifact this run revises; reference_qasm "
+                "would be ignored. Remove it, or switch to 'plan_declared'."
+            )
+        if self.qubits_estimate > EXACT_MAX_QUBITS:
+            raise ValueError(
+                f"verification_plan.methods includes 'exact', which supports at most "
+                f"{EXACT_MAX_QUBITS} qubits, but qubits_estimate is "
+                f"{self.qubits_estimate}. Drop 'exact' and verify this circuit "
+                "statistically, or plan a smaller instance."
+            )
+        return self
 
     @model_validator(mode="after")
     def _statistical_needs_distribution_evidence(self) -> "Plan":

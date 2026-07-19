@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from majorana_contracts.enums import Framework, RunMode
+from majorana_contracts.plan import EXACT_MAX_QUBITS
 
 
 _OPENQASM_CONTRACT = (
@@ -51,14 +52,34 @@ plumbing and will not be shown to the user as JSON.
 
 Choose the smallest useful artifact contract and the strongest applicable verification
 strategy. The only verification_plan.methods this pipeline can evaluate are
-`return_contract` and `statistical`, and the schema offers no others (selected-framework
-re-execution plus deterministic artifact/resource/measurement checks run automatically
-regardless of what you list). `statistical` compares two measurement-count
+`return_contract`, `statistical`, and `exact`, and the schema offers no others
+(selected-framework re-execution plus deterministic artifact/resource/measurement checks
+run automatically regardless of what you list). `statistical` compares two measurement-count
 distributions, so list it only when expected_output_keys includes the key holding the
 raw {{bitstring: count}} mapping (name it `counts` unless the user asked otherwise).
 A plan that lists `statistical` while promising only scalars — cut values, energies,
 ratios — is rejected by the plan contract, because no generated code can produce the
-distribution the check needs. Semantic correctness is judged independently by the
+distribution the check needs.
+
+`exact` is the strongest check available: it compares the unitary of the circuit that
+actually ran against a reference circuit, phase-aligned, to 1e-9. It needs a reference,
+so it also needs you to say where that reference comes from.
+
+- Set reference_source to `plan_declared` and write reference_qasm when the task has a
+  canonical construction you can state independently — Bell and GHZ states, QFT, a
+  specific oracle, a named gate decomposition. Write the textbook circuit in OpenQASM 3,
+  not a transcription of the code you expect back. Measurements are ignored; only the
+  unitary is compared, so leave them out.
+- Set reference_source to `parent_artifact` and omit reference_qasm ONLY when the user
+  request is to optimize, transpile, re-express, or clean up a circuit this run already
+  has as its parent, WITHOUT changing what it computes. This is the strongest evidence
+  the pipeline can produce, because the reference was verified on its own. If the
+  request legitimately changes the circuit's behaviour, do not list `exact` at all.
+- `exact` supports at most {EXACT_MAX_QUBITS} qubits and the plan contract rejects it
+  above that. For anything larger, verify statistically.
+- Listing `exact` without a usable reference is rejected. If the task has no canonical
+  reference you can write down honestly, leave it off rather than inventing one — a
+  reference copied from the implementation you are about to ask for proves nothing. Semantic correctness is judged independently by the
 verification critic, so there is no classical baseline for you to plan. Do not invent
 a baseline, resource result, QPU result, compression result, source claim, or measurement.
 Record requested technical options such as compression, QPU execution, or a particular
@@ -240,15 +261,35 @@ def _render(system: str, user: str) -> RenderedPrompt:
     return RenderedPrompt(system=system, user=user)
 
 
+# Whether this run revises an existing verified circuit is the one fact the planner
+# cannot infer from the request, and `exact` with reference_source=parent_artifact is
+# unusable without it. Stated in both directions on purpose: told only when a parent
+# exists, a planner reading no line at all has to guess, and the cheap guess is to
+# claim the parent it hopes is there.
+_PARENT_ARTIFACT_PRESENT = (
+    "This run revises an existing artifact that already passed verification. Its "
+    "circuit is available to the verifier as a reference, so verification_plan may "
+    "set reference_source to `parent_artifact` — but only if the request preserves "
+    "what that circuit computes."
+)
+_PARENT_ARTIFACT_ABSENT = (
+    "This run has no parent artifact. reference_source `parent_artifact` is "
+    "unavailable; there is nothing for it to point at."
+)
+
+
 def render_plan_prompt(
     task_prompt: str,
     research_context: str = "",
     requested_framework: Framework | None = None,
+    *,
+    has_parent_artifact: bool = False,
 ) -> RenderedPrompt:
     return _render(
         PLAN_SYSTEM_PROMPT,
         f"User request:\n{task_prompt}\n\n"
         f"Selected framework: {_framework_label(requested_framework)}\n\n"
+        f"{_PARENT_ARTIFACT_PRESENT if has_parent_artifact else _PARENT_ARTIFACT_ABSENT}\n\n"
         f"{research_context or 'No additional research context was available.'}",
     )
 

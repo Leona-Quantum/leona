@@ -27,11 +27,17 @@ type WireEvent = {
   details?: Record<string, unknown>;
   artifact_id?: string;
   plan?: { problem_summary?: string };
+  candidates_considered?: number;
+  failed_checks?: string[];
+  critic_summary?: string | null;
+  code?: string;
 };
 
 const VERIFICATION_METHOD_LABEL: Record<string, string> = {
   return_contract: "Checked the return contract",
   statistical: "Cross-checked the measured distribution",
+  exact: "Compared the circuit against a reference",
+  statistical_reproducibility: "Re-ran the circuit and compared",
   resource_contract: "Checked qubit/resource usage",
   measurement_policy: "Checked measurement coverage",
   success_criteria: "Checked the success threshold",
@@ -55,6 +61,8 @@ function processStepLabel(event: WireEvent): string | null {
       return "Finalized the verified circuit";
     case "artifact.saved":
       return "Saved the verified circuit to your vault";
+    case "run.best_effort":
+      return `Kept the closest attempt (revision ${event.revision}) — unverified`;
     case "run.error":
       return event.message ? `Error: ${event.message}` : "Run error";
     default:
@@ -133,6 +141,24 @@ function answerFromEvents(events: WireEvent[]): string | null {
   const finished = [...events].reverse().find((event) => event.type === "run.finished");
   if (!finished) return null;
   if (finished.status !== "succeeded") {
+    // A failed execute run used to end here, and this line was the entire answer —
+    // even when the loop had written four candidates and simply run out of budget.
+    // If one of them survives as best-effort evidence, say so and say what is wrong
+    // with it, without ever calling it verified.
+    const best = [...events].reverse().find((event) => event.type === "run.best_effort");
+    if (best) {
+      const blocker = best.critic_summary ?? best.failed_checks?.[0] ?? null;
+      // The code has to travel inside the answer text: this surface renders one
+      // markdown body and an artifact link, and an unverified candidate must never
+      // become an artifact. A fenced block is the only way it reaches the user here.
+      return [
+        `The run did not finish verification, but it got close. Revision ${best.revision} of ${best.candidates_considered} got the furthest — **unverified, and not saved to your Vault.**`,
+        blocker ? `\nWhat stopped it: ${blocker}` : "",
+        best.failed_checks?.length ? `\n\nFailing checks: ${best.failed_checks.join(", ")}.` : "",
+        best.code ? `\n\n\`\`\`python\n${best.code}\n\`\`\`` : "",
+        "\n\nTreat this as a starting point, not a result.",
+      ].join("");
+    }
     return "The run did not complete successfully. Check the run's events for details.";
   }
   const saved = events.some((event) => event.type === "artifact.saved");

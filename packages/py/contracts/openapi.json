@@ -2079,6 +2079,114 @@
         "title": "RunAnalysis",
         "type": "object"
       },
+      "RunBestEffort": {
+        "additionalProperties": false,
+        "description": "The best candidate a run produced when it exhausted its budget without one\npassing verification.\n\nEmitted instead of nothing. The loop pays for up to four candidates, ranks them\nagainst each other nowhere, and used to end a spent budget with a bare failure \u2014\nthe worst possible output for a user who waited. This carries the code anyway,\nwith the evidence that stopped it.\n\nIt is deliberately NOT an artifact and never becomes one: `verified` is a literal\nFalse, publication still requires a verification PASS, and nothing here is\nwritten to the Vault. The event says \"this is the closest we got, and here is\nexactly what is wrong with it\", which is a different claim from \"this works\".",
+        "properties": {
+          "candidates_considered": {
+            "minimum": 1,
+            "title": "Candidates Considered",
+            "type": "integer"
+          },
+          "code": {
+            "minLength": 1,
+            "title": "Code",
+            "type": "string"
+          },
+          "critic_summary": {
+            "anyOf": [
+              {
+                "maxLength": 2000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Critic Summary"
+          },
+          "exhausted_budget": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "The budget the loop ran out of, e.g. candidate_budget_exhausted",
+            "title": "Exhausted Budget"
+          },
+          "failed_checks": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 30,
+            "title": "Failed Checks",
+            "type": "array"
+          },
+          "language": {
+            "maxLength": 40,
+            "minLength": 1,
+            "title": "Language",
+            "type": "string"
+          },
+          "residual_risks": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 20,
+            "title": "Residual Risks",
+            "type": "array"
+          },
+          "revision": {
+            "minimum": 1,
+            "title": "Revision",
+            "type": "integer"
+          },
+          "run_id": {
+            "format": "uuid",
+            "title": "Run Id",
+            "type": "string"
+          },
+          "seq": {
+            "description": "Unique per run; powers replay and SSE Last-Event-ID",
+            "minimum": 0,
+            "title": "Seq",
+            "type": "integer"
+          },
+          "ts": {
+            "format": "date-time",
+            "title": "Ts",
+            "type": "string"
+          },
+          "type": {
+            "const": "run.best_effort",
+            "default": "run.best_effort",
+            "title": "Type",
+            "type": "string"
+          },
+          "verified": {
+            "const": false,
+            "default": false,
+            "title": "Verified",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "run_id",
+          "seq",
+          "ts",
+          "language",
+          "code",
+          "revision",
+          "candidates_considered"
+        ],
+        "title": "RunBestEffort",
+        "type": "object"
+      },
       "RunDiagnosed": {
         "additionalProperties": false,
         "properties": {
@@ -2219,6 +2327,7 @@
             "research.completed": "#/components/schemas/ResearchCompleted",
             "resource.estimate": "#/components/schemas/ResourceEstimateResult",
             "run.analysis": "#/components/schemas/RunAnalysis",
+            "run.best_effort": "#/components/schemas/RunBestEffort",
             "run.diagnosed": "#/components/schemas/RunDiagnosed",
             "run.error": "#/components/schemas/RunErrorEvent",
             "run.finished": "#/components/schemas/RunFinished",
@@ -2309,6 +2418,9 @@
           },
           {
             "$ref": "#/components/schemas/RunRestarted"
+          },
+          {
+            "$ref": "#/components/schemas/RunBestEffort"
           },
           {
             "$ref": "#/components/schemas/RunErrorEvent"
@@ -2982,6 +3094,7 @@
             "description": "Verification primitives to run against the generated code",
             "items": {
               "enum": [
+                "exact",
                 "statistical",
                 "return_contract"
               ]
@@ -3002,6 +3115,37 @@
             "default": null,
             "description": "Independent reference, e.g. exact diagonalization",
             "title": "Reference Method"
+          },
+          "reference_qasm": {
+            "anyOf": [
+              {
+                "maxLength": 20000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "OpenQASM 2 or 3 source for the circuit the generated code must match, required when reference_source is 'plan_declared'. Write the canonical textbook construction, not a copy of the code you expect. Measurements are ignored: only the unitary is compared.",
+            "title": "Reference Qasm"
+          },
+          "reference_source": {
+            "anyOf": [
+              {
+                "enum": [
+                  "plan_declared",
+                  "parent_artifact"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Where the 'exact' check gets the circuit it compares against. 'plan_declared' means you supply reference_qasm below. 'parent_artifact' means the already-verified circuit this run revises is the reference \u2014 choose it only when the request is to optimize, transpile, or refactor that circuit WITHOUT changing what it computes, and only when you were told this run has a parent artifact.",
+            "title": "Reference Source"
           },
           "required_invariants": {
             "anyOf": [

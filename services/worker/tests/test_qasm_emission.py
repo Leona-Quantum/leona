@@ -11,6 +11,7 @@ from majorana_contracts.enums import Framework
 from majorana_frameworks import FrameworkProgram, extract_interchange_qasm
 from majorana_sandbox.guard import check_python_code
 from majorana_sandbox.spec import ExecutionSpec, compose_execution
+from majorana_worker.agent_events import _qasm_emission
 
 
 def _install_fake_qiskit(monkeypatch, dumps) -> None:
@@ -125,3 +126,39 @@ RESULT = {"counts": {"0": 1}}
     extraction = extract_interchange_qasm(json.loads(result_path.read_text()))
     assert extraction.source == "sandbox_epilogue"
     assert extraction.qasm and extraction.qasm.startswith("OPENQASM 3.0;")
+
+
+def test_qasm_emission_reports_a_successful_epilogue():
+    """The event carried `null` here on every run until 2026-07-20, which read as a
+    contradiction against a later `lossless` export."""
+    emission = _qasm_emission(
+        {"native_optimization": {"applied": False}, "interchange_qasm": "OPENQASM 3.0;\n"}
+    )
+    assert emission == {
+        "epilogue_applied": True,
+        "source": "sandbox_epilogue",
+        "available": True,
+        "epilogue_error": None,
+    }
+
+
+def test_qasm_emission_reports_a_failed_epilogue_by_exception_type():
+    emission = _qasm_emission(
+        {"native_optimization": {"applied": True}, "interchange_error": "QASM3ExporterError"}
+    )
+    assert emission is not None
+    assert emission["available"] is False
+    assert emission["source"] == "missing"
+    assert emission["epilogue_error"] == "QASM3ExporterError"
+
+
+def test_qasm_emission_treats_an_empty_string_as_unavailable():
+    emission = _qasm_emission({"native_optimization": {"applied": False}, "interchange_qasm": "  "})
+    assert emission is not None
+    assert emission["available"] is False
+
+
+def test_qasm_emission_is_absent_when_no_observer_ran():
+    """A non-circuit artifact has no trusted observer; reporting "missing" there
+    would assert on evidence nobody was asked to produce."""
+    assert _qasm_emission({"result": {"value": 1}}) is None

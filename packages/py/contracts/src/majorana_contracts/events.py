@@ -292,6 +292,35 @@ class RunRestarted(_EventBase):
     reason: str
 
 
+class RunBestEffort(_EventBase):
+    """The best candidate a run produced when it exhausted its budget without one
+    passing verification.
+
+    Emitted instead of nothing. The loop pays for up to four candidates, ranks them
+    against each other nowhere, and used to end a spent budget with a bare failure —
+    the worst possible output for a user who waited. This carries the code anyway,
+    with the evidence that stopped it.
+
+    It is deliberately NOT an artifact and never becomes one: `verified` is a literal
+    False, publication still requires a verification PASS, and nothing here is
+    written to the Vault. The event says "this is the closest we got, and here is
+    exactly what is wrong with it", which is a different claim from "this works".
+    """
+
+    type: Literal["run.best_effort"] = "run.best_effort"
+    verified: Literal[False] = False
+    language: str = Field(min_length=1, max_length=40)
+    code: str = Field(min_length=1)
+    revision: int = Field(ge=1)
+    candidates_considered: int = Field(ge=1)
+    exhausted_budget: str | None = Field(
+        default=None, description="The budget the loop ran out of, e.g. candidate_budget_exhausted"
+    )
+    failed_checks: list[str] = Field(default_factory=list, max_length=30)
+    critic_summary: str | None = Field(default=None, max_length=2_000)
+    residual_risks: list[str] = Field(default_factory=list, max_length=20)
+
+
 class RunErrorEvent(_EventBase):
     type: Literal["run.error"] = "run.error"
     stage: Stage | None = None
@@ -332,6 +361,7 @@ RunEvent = Annotated[
     | RunAnalysis
     | RunDiagnosed
     | RunRestarted
+    | RunBestEffort
     | RunErrorEvent
     | RunFinished,
     Field(discriminator="type"),
