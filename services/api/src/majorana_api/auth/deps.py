@@ -5,6 +5,7 @@ login) → membership row → Scope(user, workspace, role). A workspace the call
 has no membership in yields 401/404 — indistinguishable from absence.
 """
 
+from hmac import compare_digest
 from typing import Annotated
 
 from fastapi import Depends, Header, HTTPException, Request
@@ -47,9 +48,27 @@ async def get_verified_token(
 
     if authorization is None or not authorization.startswith("Bearer "):
         raise HTTPException(401, "missing bearer token", headers=challenge)
+    presented = authorization.removeprefix("Bearer ")
+
+    # Single-operator lock: the API half of the web perimeter. While it is on,
+    # the lock token is the ONLY accepted credential — a WorkOS JWT must not
+    # also work, or any WorkOS account could walk past the username/password.
+    # Settings.__post_init__ has already refused a weak or placeholder token.
+    if settings.single_user_lock:
+        if not compare_digest(presented, settings.single_user_lock_token):
+            raise HTTPException(401, "invalid token", headers=challenge)
+        return VerifiedToken(
+            workos_user_id=settings.single_user_lock_user_id,
+            session_id="single-user-lock-session",
+            claims={
+                "email": settings.single_user_lock_email,
+                "name": settings.single_user_lock_display_name,
+            },
+        )
+
     try:
         return await verify_bearer_token(
-            authorization.removeprefix("Bearer "),
+            presented,
             jwks_url=settings.workos_jwks_url,
             issuer=settings.workos_jwt_issuer,
         )

@@ -12,7 +12,7 @@ import { isLocalDevAuthEnabled, LOCAL_DEV_ACCESS_TOKEN } from "./local-dev-auth"
 import {
   isSingleUserLockEnabled,
   isValidSessionCookie,
-  LOCK_ACCESS_TOKEN,
+  lockAccessToken,
   LOCK_COOKIE,
   LOCK_SIGN_IN_PATH,
 } from "./single-user-lock";
@@ -41,25 +41,30 @@ const LOCAL_DEV_AUTH: UserInfo = {
 // 2026-07-19). All of the one authorized operator's data lives under this
 // stable id while the lock is active; flip SINGLE_USER_LOCK=false to restore
 // WorkOS identities. Mirrors LOCAL_DEV_AUTH.
-const LOCK_AUTH: UserInfo = {
-  user: {
-    object: "user",
-    id: "single-user-lock",
-    email: "operator@leonaquantum.com",
-    emailVerified: true,
-    profilePictureUrl: null,
-    firstName: "Leona",
-    lastName: "Quantum",
-    lastSignInAt: null,
-    locale: "en-US",
-    createdAt: "2026-07-19T00:00:00.000Z",
-    updatedAt: "2026-07-19T00:00:00.000Z",
-    externalId: null,
-    metadata: {},
-  },
-  sessionId: "single-user-lock-session",
-  accessToken: LOCK_ACCESS_TOKEN,
-};
+// Built per call rather than at module load: the access token is a real secret
+// read from the environment, so it must not be frozen into a module constant
+// that an edge bundle could capture before the value is available.
+function lockAuth(): UserInfo {
+  return {
+    user: {
+      object: "user",
+      id: "single-user-lock",
+      email: "operator@leonaquantum.com",
+      emailVerified: true,
+      profilePictureUrl: null,
+      firstName: "Leona",
+      lastName: "Quantum",
+      lastSignInAt: null,
+      locale: "en-US",
+      createdAt: "2026-07-19T00:00:00.000Z",
+      updatedAt: "2026-07-19T00:00:00.000Z",
+      externalId: null,
+      metadata: {},
+    },
+    sessionId: "single-user-lock-session",
+    accessToken: lockAccessToken(),
+  };
+}
 
 // True when the current request carries a valid lock session cookie. Because
 // the cookie rides every request (including on public pages), the "Sign in" vs
@@ -77,7 +82,7 @@ export function getMajoranaAuth(
 export async function getMajoranaAuth(options?: { ensureSignedIn?: boolean }) {
   if (isLocalDevAuthEnabled()) return LOCAL_DEV_AUTH;
   if (isSingleUserLockEnabled()) {
-    if (await hasValidLockRequest()) return LOCK_AUTH;
+    if (await hasValidLockRequest()) return lockAuth();
     // Non-public routes never reach here (middleware redirects first).
     // Defensively, if an authed page ever resolved without a session, send it
     // to the sign-in page rather than rendering with a null user. Public pages
