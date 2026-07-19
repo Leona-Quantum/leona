@@ -540,6 +540,11 @@ async def list_orphaned_runs(
     """
     if grace_seconds < 0:
         raise ValueError("grace_seconds must not be negative")
+    # Deliberately not _lease_delta: that enforces a lease bound of (0, 3600],
+    # which is a different quantity with different valid values. Reusing it
+    # made grace_seconds=0 ("no grace") and any grace over an hour fail this
+    # function's own check with a misleading message about lease_seconds.
+    grace = dt.timedelta(seconds=grace_seconds)
     live_job = Job.__table__.alias("live_job")
     stmt = (
         select(Run.id, Run.workspace_id, Run.user_id, Job.id, Job.dead_letter_error)
@@ -548,7 +553,7 @@ async def list_orphaned_runs(
             Run.status.in_((RunStatus.QUEUED.value, RunStatus.RUNNING.value)),
             Job.status.in_(("failed", "dead")),
             Job.dead_lettered_at.is_not(None),
-            Job.dead_lettered_at <= func.now() - _lease_delta(grace_seconds),
+            Job.dead_lettered_at <= func.now() - grace,
             ~select(live_job.c.id)
             .where(
                 live_job.c.run_id == Run.id,
