@@ -10,7 +10,8 @@ from majorana_agent import (
     VerificationEvidence,
 )
 from majorana_contracts.enums import Algorithm, Framework, VerificationMethod, VerifierDecision
-from majorana_contracts.plan import Plan
+from majorana_contracts.plan import EXACT_MAX_QUBITS, Plan
+from majorana_worker import agent_ports
 from majorana_frameworks import FrameworkProgram
 from majorana_llm import LLMResponse, StageOutputError
 from majorana_sandbox import SandboxResult
@@ -569,6 +570,131 @@ async def test_statistical_check_fails_when_no_evidence_is_available_at_all():
     assert check["result"] == "fail"
     assert check["details"]["error"] == "required evidence unavailable"
     assert check["details"]["interchange_qasm"] is False
+
+
+_BELL_REFERENCE_QASM = 'OPENQASM 2.0;\ninclude "qelib1.inc";\nqreg q[2];\nh q[0];\ncx q[0],q[1];\n'
+# Same measured distribution as a Bell state, a different unitary. The statistical
+# check cannot tell these apart from counts alone in the |00>/|11> sense a sampled
+# run reports; the exact check compares unitaries and can.
+_WRONG_QASM = (
+    'OPENQASM 2.0;\ninclude "qelib1.inc";\nqreg q[2];\ncreg c[2];\n'
+    "h q[0];\ncx q[0],q[1];\nz q[0];\nmeasure q -> c;\n"
+)
+
+
+def _exact_plan(**verification) -> Plan:
+    return Plan.model_validate(
+        {
+            "domain": "quantum information",
+            "framework": "qiskit",
+            "algorithm": Algorithm.BELL,
+            "problem_summary": "Build and verify a Bell circuit",
+            "algorithm_rationale": "Entanglement matches the request",
+            "parameters": {},
+            "qubits_estimate": 2,
+            "expected_runtime_sec": 1,
+            "success_criteria": {"primary_metric": "counts"},
+            "expected_output_keys": ["counts"],
+            "verification_plan": {"methods": ["exact", "return_contract"], **verification},
+        }
+    )
+
+
+def _exact_observation(qasm: str) -> dict:
+    return {
+        "native_optimization": {"applied": False},
+        "interchange_qasm": qasm,
+        "resource_metrics": {
+            "qubits": 2,
+            "depth": 2,
+            "gate_count": 2,
+            "two_qubit_gate_count": 1,
+            "measurement_count": 2,
+        },
+    }
+
+
+async def test_exact_check_passes_when_the_executed_circuit_matches_the_reference():
+    candidate = _candidate()
+    output = await EvidenceVerifier(llm=PassingCriticLLM(), task_prompt="Bell state").verify(
+        candidate,
+        _execution(candidate, observation=_exact_observation(_BELL_QASM)),
+        _exact_plan(reference_source="plan_declared", reference_qasm=_BELL_REFERENCE_QASM),
+    )
+    check = _checks_by_method(output)["exact"]
+    assert check["result"] == "pass"
+    assert check["details"]["reference_source"] == "plan_declared"
+    assert check["details"]["scores"]["max_abs_distance"] < 1e-9
+    assert output.decision is VerifierDecision.PASS
+
+
+async def test_exact_check_fails_on_a_circuit_with_the_wrong_unitary():
+    """The reason for the check: a phase error survives a counts comparison and dies
+    against the reference unitary."""
+    candidate = _candidate()
+    output = await EvidenceVerifier(llm=MustNotRunLLM(), task_prompt="Bell state").verify(
+        candidate,
+        _execution(candidate, observation=_exact_observation(_WRONG_QASM)),
+        _exact_plan(reference_source="plan_declared", reference_qasm=_BELL_REFERENCE_QASM),
+    )
+    check = _checks_by_method(output)["exact"]
+    assert check["result"] == "fail"
+    assert check["details"]["scores"]["max_abs_distance"] > 1e-9
+    assert output.decision is VerifierDecision.FAIL
+
+
+async def test_exact_check_uses_the_parent_artifact_as_the_reference():
+    candidate = _candidate()
+    output = await EvidenceVerifier(
+        llm=PassingCriticLLM(),
+        task_prompt="Transpile this circuit without changing what it computes",
+        parent_artifact_qasm=_BELL_REFERENCE_QASM,
+    ).verify(
+        candidate,
+        _execution(candidate, observation=_exact_observation(_BELL_QASM)),
+        _exact_plan(reference_source="parent_artifact"),
+    )
+    check = _checks_by_method(output)["exact"]
+    assert check["result"] == "pass"
+    assert check["details"]["reference_source"] == "parent_artifact"
+    assert "independently verified" in check["details"]["evidence_scope"]
+
+
+async def test_exact_check_fails_when_the_parent_stored_no_qasm():
+    """A version saved without interchange QASM cannot serve as a reference. Missing
+    evidence fails; it never silently degrades to a weaker check."""
+    candidate = _candidate()
+    output = await EvidenceVerifier(
+        llm=MustNotRunLLM(), task_prompt="Preserve behaviour", parent_artifact_qasm=None
+    ).verify(
+        candidate,
+        _execution(candidate, observation=_exact_observation(_BELL_QASM)),
+        _exact_plan(reference_source="parent_artifact"),
+    )
+    check = _checks_by_method(output)["exact"]
+    assert check["result"] == "fail"
+    assert check["details"]["error"] == "required evidence unavailable"
+    assert check["details"]["reference_available"] is False
+
+
+async def test_exact_check_fails_when_the_run_emitted_no_interchange_qasm():
+    candidate = _candidate()
+    observation = _exact_observation(_BELL_QASM)
+    del observation["interchange_qasm"]
+    output = await EvidenceVerifier(llm=MustNotRunLLM(), task_prompt="Bell state").verify(
+        candidate,
+        _execution(candidate, observation=observation),
+        _exact_plan(reference_source="plan_declared", reference_qasm=_BELL_REFERENCE_QASM),
+    )
+    check = _checks_by_method(output)["exact"]
+    assert check["result"] == "fail"
+    assert check["details"]["interchange_qasm"] is False
+
+
+def test_the_worker_and_the_plan_contract_agree_on_the_exact_qubit_ceiling():
+    """Pinned against drift: if the callsite ceiling and the contract's ever diverge,
+    a plan can ask for a check the verifier is forced to fail."""
+    assert agent_ports.EXACT_MAX_QUBITS == EXACT_MAX_QUBITS
 
 
 class _LowConfidenceMismatchCriticLLM:

@@ -165,6 +165,16 @@ export interface SourceView {
   sources: Schemas["ResearchCitation"][];
   error: string | null;
 }
+/** The closest a budget-exhausted run got. Never an artifact: see RunBestEffort. */
+export interface BestEffortView {
+  code: CodeView;
+  revision: number;
+  candidatesConsidered: number;
+  exhaustedBudget: string | null;
+  failedChecks: string[];
+  criticSummary: string | null;
+  residualRisks: string[];
+}
 export interface ResultView {
   verdict: { verdict: Verdict; detail: string } | null;
   answer: AnswerView | null;
@@ -178,6 +188,7 @@ export interface ResultView {
   finalSimulation: SimulationView | null;
   sources: SourceView | null;
   keyNumbers: KeyNumber[];
+  bestEffort: BestEffortView | null;
   baseline: { title: string; rows: KeyNumber[]; notApplicable: string | null } | null;
   export: { label: string; tone: "ok" | "warn" | "err" | "neutral"; qasmAvailable: boolean } | null;
   libraryHref: string | null;
@@ -301,6 +312,10 @@ function filenameFor(language: string): string {
   const lang = language.toLowerCase();
   if (lang.startsWith("py")) return "circuit.py";
   if (lang.includes("qasm")) return "circuit.qasm";
+  // The framework names are what run.best_effort carries — it reports the
+  // candidate's Framework enum value, not the "python" that code.generated uses.
+  // All three frameworks are Python libraries, so they are Python files.
+  if (["qiskit", "cirq", "pennylane"].includes(lang)) return "circuit.py";
   return "circuit.txt";
 }
 
@@ -381,6 +396,9 @@ export function reduceRunEvents(events: readonly RunEvent[]): RunViewModel {
   let compilation: Schemas["CompilationResult"] | null = null;
   let finalizedCode: Schemas["CodeFinalized"] | null = null;
   let baseline: Schemas["BaselineResult"] | null = null;
+  // Deliberately not cleared by clearFrom(): a restart replays the pipeline, and
+  // the attempt a previous exhaustion produced is still the honest record of it.
+  let bestEffort: Schemas["RunBestEffort"] | null = null;
   let exportEv: Schemas["ExportClassified"] | null = null;
   let saved: Schemas["ArtifactSaved"] | null = null;
   let analysis: Schemas["RunAnalysis"] | null = null;
@@ -531,6 +549,9 @@ export function reduceRunEvents(events: readonly RunEvent[]): RunViewModel {
         modelActivity.set(key, { stage: ev.stage, kind, text });
         break;
       }
+      case "run.best_effort":
+        bestEffort = ev;
+        break;
       case "run.error":
         if (ev.stage) stageError.set(ev.stage, ev.message);
         break;
@@ -566,6 +587,7 @@ export function reduceRunEvents(events: readonly RunEvent[]): RunViewModel {
     finalSimulation: finalSimulation ? buildSimulation(finalSimulation) : null,
     sources: buildSources(research),
     keyNumbers: buildKeyNumbers(plan, verificationSandbox, finalSimulation, verifyResults),
+    bestEffort: buildBestEffort(bestEffort),
     baseline: buildBaseline(baseline),
     export: exportEv ? buildExportBadge(exportEv) : null,
     libraryHref: saved ? `/library/${saved.artifact_id}` : null,
@@ -586,6 +608,7 @@ export function reduceRunEvents(events: readonly RunEvent[]): RunViewModel {
     result.finalSimulation !== null ||
     result.sources !== null ||
     result.keyNumbers.length > 0 ||
+    result.bestEffort !== null ||
     result.baseline !== null ||
     result.export !== null ||
     result.libraryHref !== null;
@@ -806,6 +829,19 @@ function buildVerificationRows(results: Schemas["VerificationResult"][]): Verifi
   });
 }
 
+function buildBestEffort(ev: Schemas["RunBestEffort"] | null): BestEffortView | null {
+  if (!ev) return null;
+  return {
+    code: buildCodeView(ev.language, ev.code),
+    revision: ev.revision,
+    candidatesConsidered: ev.candidates_considered,
+    exhaustedBudget: str(ev.exhausted_budget),
+    failedChecks: ev.failed_checks ?? [],
+    criticSummary: str(ev.critic_summary),
+    residualRisks: ev.residual_risks ?? [],
+  };
+}
+
 function buildBaseline(baseline: Schemas["BaselineResult"] | null): ResultView["baseline"] {
   if (!baseline) return null;
   if (baseline.not_applicable_reason) {
@@ -981,6 +1017,46 @@ function ResultPanel({ result, animateText }: { result: ResultView; animateText:
               ))}
             </section>
           ))}
+        </section>
+      ) : null}
+
+      {result.bestEffort ? (
+        <section className="mj-result-section" id="mj-result-best-effort">
+          <h2 className="mj-result-h">Closest attempt — not verified</h2>
+          <p className="mj-result-note">
+            <TypedText
+              text={`This run tried ${result.bestEffort.candidatesConsidered} ${
+                result.bestEffort.candidatesConsidered === 1 ? "candidate" : "candidates"
+              } and ran out of budget before one passed verification. Revision ${
+                result.bestEffort.revision
+              } got the furthest. It has not been verified and was not saved to your vault — read it as a starting point, not a result.`}
+              enabled={animateText}
+            />
+          </p>
+          {result.bestEffort.criticSummary ? (
+            <p className="mj-result-note">
+              <TypedText text={result.bestEffort.criticSummary} enabled={animateText} />
+            </p>
+          ) : null}
+          {result.bestEffort.failedChecks.length ? (
+            <ul className="mj-evidence-list">
+              {result.bestEffort.failedChecks.map((check) => (
+                <li key={check}>
+                  <TypedText text={`Failed: ${check}`} enabled={animateText} />
+                </li>
+              ))}
+            </ul>
+          ) : null}
+          {result.bestEffort.residualRisks.length ? (
+            <ul className="mj-evidence-list">
+              {result.bestEffort.residualRisks.map((risk) => (
+                <li key={risk}>
+                  <TypedText text={risk} enabled={animateText} />
+                </li>
+              ))}
+            </ul>
+          ) : null}
+          <CodeBlock code={result.bestEffort.code} />
         </section>
       ) : null}
 

@@ -75,6 +75,7 @@ class PlannableVerificationMethod(StrEnum):
     and the 0001 check constraint still carry the retired values.
     """
 
+    EXACT = "exact"
     STATISTICAL = "statistical"
     RETURN_CONTRACT = "return_contract"
 

@@ -79,6 +79,16 @@ export function UiFixtures() {
 
       <section>
         <h2 style={{ fontSize: "var(--fs-16)", fontWeight: 500 }}>
+          Budget exhausted — best effort, unverified
+        </h2>
+        <RunView
+          events={RUN_FIXTURES["demo-exhausted"]}
+          emptyMessage="Waiting for the pipeline…"
+        />
+      </section>
+
+      <section>
+        <h2 style={{ fontSize: "var(--fs-16)", fontWeight: 500 }}>
           Live prose — typed reveal
         </h2>
         <RunView

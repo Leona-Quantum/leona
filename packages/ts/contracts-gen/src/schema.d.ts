@@ -1059,6 +1059,77 @@ export interface components {
              */
             type: "run.analysis";
         };
+        /**
+         * RunBestEffort
+         * @description The best candidate a run produced when it ended without one passing
+         *     verification.
+         *
+         *     Emitted instead of nothing. The loop pays for up to four candidates, ranks them
+         *     against each other nowhere, and used to end a spent budget with a bare failure —
+         *     the worst possible output for a user who waited. This carries the code anyway,
+         *     with the evidence that stopped it.
+         *
+         *     Budget exhaustion is the case it was built for, but it is emitted on any agent
+         *     failure that left candidates behind: a run that died some other way still leaves
+         *     the user with the same nothing. `exhausted_budget` is therefore nullable and
+         *     carries whatever the runtime recorded, which is not always a budget.
+         *
+         *     It is deliberately NOT an artifact and never becomes one: `verified` is a literal
+         *     False, publication still requires a verification PASS, and nothing here is
+         *     written to the Vault. The event says "this is the closest we got, and here is
+         *     exactly what is wrong with it", which is a different claim from "this works".
+         */
+        RunBestEffort: {
+            /** Candidates Considered */
+            candidates_considered: number;
+            /** Code */
+            code: string;
+            /**
+             * Critic Summary
+             * @default null
+             */
+            critic_summary: string | null;
+            /**
+             * Exhausted Budget
+             * @description Why the loop gave up, usually a budget, e.g. candidate_budget_exhausted. Null when the runtime recorded no reason.
+             * @default null
+             */
+            exhausted_budget: string | null;
+            /** Failed Checks */
+            failed_checks?: string[];
+            /** Language */
+            language: string;
+            /** Residual Risks */
+            residual_risks?: string[];
+            /** Revision */
+            revision: number;
+            /**
+             * Run Id
+             * Format: uuid
+             */
+            run_id: string;
+            /**
+             * Seq
+             * @description Unique per run; powers replay and SSE Last-Event-ID
+             */
+            seq: number;
+            /**
+             * Ts
+             * Format: date-time
+             */
+            ts: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "run.best_effort";
+            /**
+             * Verified
+             * @default false
+             * @constant
+             */
+            verified: false;
+        };
         /** RunDiagnosed */
         RunDiagnosed: {
             /** Attempt */
@@ -1127,7 +1198,7 @@ export interface components {
          * RunEvent
          * @description Discriminated union of all run event types (class name sets the schema id).
          */
-        RunEvent: components["schemas"]["RunQueued"] | components["schemas"]["RunStarted"] | components["schemas"]["RunModeResolved"] | components["schemas"]["StageStarted"] | components["schemas"]["StageFinished"] | components["schemas"]["PlanProduced"] | components["schemas"]["ResearchCompleted"] | components["schemas"]["LlmCall"] | components["schemas"]["LlmDelta"] | components["schemas"]["ChatDelta"] | components["schemas"]["ChatCompleted"] | components["schemas"]["ChatError"] | components["schemas"]["CodeGenerated"] | components["schemas"]["ScreenResult"] | components["schemas"]["ResourceEstimateResult"] | components["schemas"]["CompilationResult"] | components["schemas"]["CodeFinalized"] | components["schemas"]["SandboxResult"] | components["schemas"]["VerificationResult"] | components["schemas"]["BaselineResult"] | components["schemas"]["ExportClassified"] | components["schemas"]["ArtifactSaved"] | components["schemas"]["RunAnalysis"] | components["schemas"]["RunDiagnosed"] | components["schemas"]["RunRestarted"] | components["schemas"]["RunErrorEvent"] | components["schemas"]["RunFinished"];
+        RunEvent: components["schemas"]["RunQueued"] | components["schemas"]["RunStarted"] | components["schemas"]["RunModeResolved"] | components["schemas"]["StageStarted"] | components["schemas"]["StageFinished"] | components["schemas"]["PlanProduced"] | components["schemas"]["ResearchCompleted"] | components["schemas"]["LlmCall"] | components["schemas"]["LlmDelta"] | components["schemas"]["ChatDelta"] | components["schemas"]["ChatCompleted"] | components["schemas"]["ChatError"] | components["schemas"]["CodeGenerated"] | components["schemas"]["ScreenResult"] | components["schemas"]["ResourceEstimateResult"] | components["schemas"]["CompilationResult"] | components["schemas"]["CodeFinalized"] | components["schemas"]["SandboxResult"] | components["schemas"]["VerificationResult"] | components["schemas"]["BaselineResult"] | components["schemas"]["ExportClassified"] | components["schemas"]["ArtifactSaved"] | components["schemas"]["RunAnalysis"] | components["schemas"]["RunDiagnosed"] | components["schemas"]["RunRestarted"] | components["schemas"]["RunBestEffort"] | components["schemas"]["RunErrorEvent"] | components["schemas"]["RunFinished"];
         /** RunFinished */
         RunFinished: {
             /**
@@ -1490,13 +1561,25 @@ export interface components {
              * Methods
              * @description Verification primitives to run against the generated code
              */
-            methods: ("statistical" | "return_contract")[];
+            methods: ("exact" | "statistical" | "return_contract")[];
             /**
              * Reference Method
              * @description Independent reference, e.g. exact diagonalization
              * @default null
              */
             reference_method: string | null;
+            /**
+             * Reference Qasm
+             * @description OpenQASM 2 or 3 source for the circuit the generated code must match, required when reference_source is 'plan_declared'. Write the canonical textbook construction, not a copy of the code you expect. Measurements are ignored: only the unitary is compared.
+             * @default null
+             */
+            reference_qasm: string | null;
+            /**
+             * Reference Source
+             * @description Where the 'exact' check gets the circuit it compares against. 'plan_declared' means you supply reference_qasm below. 'parent_artifact' means the already-verified circuit this run revises is the reference — choose it only when the request is to optimize, transpile, or refactor that circuit WITHOUT changing what it computes, and only when you were told this run has a parent artifact.
+             * @default null
+             */
+            reference_source: ("plan_declared" | "parent_artifact") | null;
             /**
              * Required Invariants
              * @description Invariants that must survive any repair iteration

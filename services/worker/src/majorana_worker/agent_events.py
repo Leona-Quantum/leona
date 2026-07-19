@@ -10,6 +10,38 @@ from majorana_contracts.enums import ExportStatus, VerificationMethod
 from .agent_store import RepoAgentStore
 
 
+def _qasm_emission(observation: dict) -> dict | None:
+    """Provenance for the OpenQASM interchange the sandbox observer tried to emit.
+
+    Until 2026-07-20 this was `null` on every `sandbox.result` — the field existed,
+    nothing ever populated it, and a reader comparing it against a later `lossless`
+    export classification saw a contradiction that was not real. The conversion was
+    always fine; the event under-reported it.
+
+    Read entirely off the observation, so it describes what the sandbox actually
+    produced rather than what the emitter assumed:
+
+    - `native_optimization` is stamped unconditionally by the trusted observer for
+      every circuit-bearing run, so its presence is the honest signal that the
+      epilogue ran at all. A non-circuit artifact has no observer and gets None
+      here, not a fabricated "missing".
+    - `interchange_error` carries the exception *type* only; the field's contract
+      forbids raw sandbox exception text and the adapters already only store the
+      type name.
+    """
+    if "native_optimization" not in observation:
+        return None
+    qasm = observation.get("interchange_qasm")
+    available = isinstance(qasm, str) and bool(qasm.strip())
+    error = observation.get("interchange_error")
+    return {
+        "epilogue_applied": True,
+        "source": "sandbox_epilogue" if available else "missing",
+        "available": available,
+        "epilogue_error": str(error) if error else None,
+    }
+
+
 class AgentEventObserver:
     def __init__(self, *, store: RepoAgentStore, sink) -> None:
         self._store = store
@@ -88,6 +120,7 @@ class AgentEventObserver:
                         "truncated": bool(
                             execution.observation.get("sandbox_output_truncated", False)
                         ),
+                        "qasm_emission": _qasm_emission(execution.observation),
                     },
                 )
             return
