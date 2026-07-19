@@ -81,9 +81,13 @@ class AgentEventObserver:
                         "phase": "verification",
                         "exit_code": execution.exit_code,
                         "duration_ms": execution.duration_ms,
-                        "stdout": "",
-                        "stderr": "",
-                        "truncated": False,
+                        # Real program output as of 2026-07-20. Untrusted and capped
+                        # at the executor; render it as text, never parse it for values.
+                        "stdout": str(execution.observation.get("sandbox_stdout", "")),
+                        "stderr": str(execution.observation.get("sandbox_stderr", "")),
+                        "truncated": bool(
+                            execution.observation.get("sandbox_output_truncated", False)
+                        ),
                     },
                 )
             return
