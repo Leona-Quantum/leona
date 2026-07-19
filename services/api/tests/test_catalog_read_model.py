@@ -9,9 +9,11 @@ import datetime as dt
 import json
 
 from majorana_api.catalog_read_model import (
+    LIST_VIEW_RECORD_FIELDS,
     MAX_RECORD_BYTES,
     build_public_catalog_entry,
     parse_source_record,
+    project_record_for_list_view,
 )
 
 _ENTRY = {
@@ -68,6 +70,37 @@ def test_entry_maps_authoritative_fields_and_provenance():
     assert entry.provenance.upstream_identity == "amplitude-amplification"
     assert entry.provenance.source_blob_sha256 == "a" * 64
     assert entry.record["title"] == "Amplitude Amplification"
+
+
+def test_project_keeps_allowlisted_keys_and_drops_others():
+    record = {
+        "slug": "amplitude-amplification",
+        "title": "Amplitude Amplification",
+        "algorithmFamily": "Grover",
+        "portableCircuit": {"qasm": "OPENQASM 3.0;"},
+        # not on the allowlist: detail-page-only prose
+        "classicalComparison": {"baseline": "O(N)", "metrics": [{"label": "queries"}]},
+    }
+    projected = project_record_for_list_view(record)
+    assert projected["slug"] == "amplitude-amplification"
+    assert projected["title"] == "Amplitude Amplification"
+    assert projected["algorithmFamily"] == "Grover"
+    assert projected["portableCircuit"] == {"qasm": "OPENQASM 3.0;"}
+    assert "classicalComparison" not in projected
+
+
+def test_project_never_adds_a_key_absent_from_the_input():
+    """`decomposition` is present on only a minority of records; projecting by
+    intersection must not fabricate it (or any other allowlisted key) as None."""
+    record = {"slug": "some-slug", "title": "Some Title"}
+    projected = project_record_for_list_view(record)
+    assert "decomposition" not in projected
+    assert set(projected) == {"slug", "title"}
+    assert set(projected).issubset(LIST_VIEW_RECORD_FIELDS)
+
+
+def test_project_leaves_none_as_none():
+    assert project_record_for_list_view(None) is None
 
 
 def test_entry_survives_a_non_record_source():

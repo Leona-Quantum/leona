@@ -6337,7 +6337,10 @@ div.mj-rail-row:hover {
   letter-spacing: 0.04em;
   margin-right: var(--sp-1);
 }
-.mj-repo-variant-switch button {
+/* The pills are anchors (every folded variant needs a crawlable href), so the
+   link defaults — underline and link colour — have to be reset back to the pill
+   look they had as buttons. */
+.mj-repo-variant-switch a {
   padding: 2px var(--sp-2);
   border: 1px solid var(--border-0);
   border-radius: var(--radius-control);
@@ -6345,11 +6348,12 @@ div.mj-rail-row:hover {
   color: var(--text-1);
   font-family: var(--font-mono);
   font-size: var(--fs-12);
+  text-decoration: none;
   cursor: pointer;
   transition: background 120ms ease-out, color 120ms ease-out, border-color 120ms ease-out;
 }
-.mj-repo-variant-switch button:hover { color: var(--text-0); border-color: var(--text-2); }
-.mj-repo-variant-switch button.is-active {
+.mj-repo-variant-switch a:hover { color: var(--text-0); border-color: var(--text-2); text-decoration: none; }
+.mj-repo-variant-switch a.is-active {
   background: var(--accent);
   border-color: var(--accent);
   color: var(--bg-0);

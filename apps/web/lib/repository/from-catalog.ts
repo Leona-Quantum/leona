@@ -16,6 +16,7 @@ import type {
   PublicRepositoryCategory,
   PublicRepositoryEntry,
   PublicRepositoryFramework,
+  PublicRepositoryListEntry,
   PublicRepositoryStatus,
 } from "./types";
 
@@ -110,8 +111,66 @@ export function parseCatalogRecord(record: unknown): PublicRepositoryEntry | nul
   return record as unknown as PublicRepositoryEntry;
 }
 
+/**
+ * Narrow one `?view=list` record blob to a PublicRepositoryListEntry, or null.
+ *
+ * Deliberately a separate function from parseCatalogRecord rather than a
+ * relaxation of it: the list projection omits introduction/explanation/
+ * verificationDetails/source by design, and parseCatalogRecord REQUIRES those
+ * (they are what the detail page renders). Reusing it would reject all 283
+ * records and silently drop the site onto the static corpus. Keeping the two
+ * boundaries separate means each validates exactly what its own view reads.
+ */
+export function parseCatalogListRecord(record: unknown): PublicRepositoryListEntry | null {
+  if (!isRecord(record)) return null;
+
+  // Identity and routing.
+  if (!isNonEmptyString(record.slug)) return null;
+  if (!isNonEmptyString(record.title) || !isNonEmptyString(record.titleJa)) return null;
+
+  // Closed vocabularies — same reasoning as the full parse: a value this build
+  // does not know about means the API and the web disagree about the schema.
+  if (!CATEGORIES.includes(record.category as PublicRepositoryCategory)) return null;
+  if (!STATUSES.includes(record.status as PublicRepositoryStatus)) return null;
+  if (!FRAMEWORKS.includes(record.framework as PublicRepositoryFramework)) return null;
+
+  // Prose and labels the cards render directly.
+  for (const key of [
+    "categoryLabel",
+    "categoryLabelJa",
+    "algorithmFamily",
+    "verification",
+    "exportStatus",
+    "provenance",
+    "updatedAt",
+    "description",
+    "descriptionJa",
+  ]) {
+    if (typeof record[key] !== "string") return null;
+  }
+
+  // Structures iterated without a null check.
+  if (!isStringArray(record.tags)) return null;
+  if (!Array.isArray(record.resources) || !Array.isArray(record.metadata)) return null;
+  if (!Array.isArray(record.codeVariants)) return null;
+
+  if (!isRecord(record.visualization)) return null;
+  const { wires, operations, outcomes } = record.visualization;
+  if (!isStringArray(wires) || !Array.isArray(operations) || !Array.isArray(outcomes)) return null;
+
+  if (record.verificationMethods !== undefined && !isStringArray(record.verificationMethods)) return null;
+
+  return record as unknown as PublicRepositoryListEntry;
+}
+
 export interface CatalogParseResult {
   entries: PublicRepositoryEntry[];
+  /** Slugs (or positional markers) that failed validation, for logging. */
+  rejected: string[];
+}
+
+export interface CatalogListParseResult {
+  entries: PublicRepositoryListEntry[];
   /** Slugs (or positional markers) that failed validation, for logging. */
   rejected: string[];
 }
@@ -127,6 +186,23 @@ export function parseCatalogEntries(payload: unknown): CatalogParseResult {
   payload.forEach((row, index) => {
     const slug = isRecord(row) && isNonEmptyString(row.slug) ? row.slug : `index:${index}`;
     const parsed = parseCatalogRecord(isRecord(row) ? row.record : null);
+    if (parsed) entries.push(parsed);
+    else rejected.push(slug);
+  });
+  return { entries, rejected };
+}
+
+/**
+ * Map a `/v1/catalog/entries?view=list` payload to typed list entries, keeping
+ * the rejects so the caller can decide whether a partial corpus is acceptable.
+ */
+export function parseCatalogListEntries(payload: unknown): CatalogListParseResult {
+  if (!Array.isArray(payload)) return { entries: [], rejected: [] };
+  const entries: PublicRepositoryListEntry[] = [];
+  const rejected: string[] = [];
+  payload.forEach((row, index) => {
+    const slug = isRecord(row) && isNonEmptyString(row.slug) ? row.slug : `index:${index}`;
+    const parsed = parseCatalogListRecord(isRecord(row) ? row.record : null);
     if (parsed) entries.push(parsed);
     else rejected.push(slug);
   });

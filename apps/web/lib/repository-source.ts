@@ -18,31 +18,46 @@
 // client components take entries as props and keep importing the static barrel
 // for their synchronous variant/verification helpers.
 import { isPublicCatalogApiEnabled } from "./public-catalog";
-import { parseCatalogEntries } from "./repository/from-catalog";
+import { parseCatalogEntries, parseCatalogListEntries } from "./repository/from-catalog";
 import { PUBLIC_REPOSITORY_ENTRIES } from "./public-repository";
-import type { PublicRepositoryEntry } from "./repository/types";
+import type { PublicRepositoryEntry, PublicRepositoryListEntry } from "./repository/types";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
 /** Revalidation window for the catalog fetch, in seconds. */
 const CATALOG_REVALIDATE_SECONDS = 300;
 
-async function fetchCatalogEntries(): Promise<PublicRepositoryEntry[] | null> {
-  let payload: unknown;
+/**
+ * Fetch + JSON-decode one catalog URL, or null with a loud log.
+ *
+ * `expected404` is set by the per-slug lookup, where a 404 is the ordinary
+ * answer for a slug that does not exist rather than a fault. Without it every
+ * visit to an unknown /repository/<slug> would write an error line that reads
+ * like an API outage, which is exactly the noise that makes a real outage hard
+ * to spot. Every other status, on every caller, still logs.
+ */
+async function fetchCatalogPayload(url: string, expected404 = false): Promise<unknown | null> {
   try {
-    const upstream = await fetch(`${API_URL}/v1/catalog/entries`, {
+    const upstream = await fetch(url, {
       headers: { Accept: "application/json" },
       next: { revalidate: CATALOG_REVALIDATE_SECONDS, tags: ["public-catalog"] },
     });
     if (!upstream.ok) {
-      console.error(`[repository-source] catalog fetch failed: HTTP ${upstream.status}`);
+      if (!(expected404 && upstream.status === 404)) {
+        console.error(`[repository-source] catalog fetch failed: HTTP ${upstream.status} (${url})`);
+      }
       return null;
     }
-    payload = await upstream.json();
+    return await upstream.json();
   } catch (error) {
-    console.error("[repository-source] catalog fetch threw:", error);
+    console.error(`[repository-source] catalog fetch threw (${url}):`, error);
     return null;
   }
+}
+
+async function fetchCatalogEntries(): Promise<PublicRepositoryEntry[] | null> {
+  const payload = await fetchCatalogPayload(`${API_URL}/v1/catalog/entries`);
+  if (payload === null) return null;
 
   const { entries, rejected } = parseCatalogEntries(payload);
   if (rejected.length > 0) {
@@ -55,9 +70,28 @@ async function fetchCatalogEntries(): Promise<PublicRepositoryEntry[] | null> {
   return entries;
 }
 
+async function fetchCatalogListEntries(): Promise<PublicRepositoryListEntry[] | null> {
+  const payload = await fetchCatalogPayload(`${API_URL}/v1/catalog/entries?view=list`);
+  if (payload === null) return null;
+
+  const { entries, rejected } = parseCatalogListEntries(payload);
+  if (rejected.length > 0) {
+    console.error(`[repository-source] ${rejected.length} catalog list record(s) failed validation:`, rejected.slice(0, 20));
+  }
+  if (entries.length === 0) {
+    console.error("[repository-source] catalog list returned no usable entries");
+    return null;
+  }
+  return entries;
+}
+
 /**
- * Every entry backing /repository. Async by construction so the call sites do not
- * have to change again when the flag flips.
+ * Every entry backing /repository, with the FULL record. Async by construction
+ * so the call sites do not have to change again when the flag flips.
+ *
+ * Prefer getRepositoryListEntries() for anything that only renders the browse
+ * list — this response is ~2.37 MB and is over Vercel's data-cache ceiling, so
+ * it is refetched on every request.
  */
 export async function getRepositoryEntries(): Promise<PublicRepositoryEntry[]> {
   if (!isPublicCatalogApiEnabled()) return PUBLIC_REPOSITORY_ENTRIES;
@@ -69,8 +103,39 @@ export async function getRepositoryEntries(): Promise<PublicRepositoryEntry[]> {
   return entries;
 }
 
-/** One entry by slug, or undefined. */
+/**
+ * Every entry backing /repository, projected to the fields the browse list and
+ * the detail page's related-links strip actually read (Slice E).
+ *
+ * This is the cacheable path: ~0.91 MB against a 2 MB ceiling, so the
+ * revalidate window on the fetch is real rather than inert. The static corpus
+ * satisfies the narrower type directly (PublicRepositoryEntry is a superset),
+ * so the fallback needs no projection of its own.
+ */
+export async function getRepositoryListEntries(): Promise<PublicRepositoryListEntry[]> {
+  if (!isPublicCatalogApiEnabled()) return PUBLIC_REPOSITORY_ENTRIES;
+  const entries = await fetchCatalogListEntries();
+  if (!entries) {
+    console.error("[repository-source] falling back to the static corpus (list)");
+    return PUBLIC_REPOSITORY_ENTRIES;
+  }
+  return entries;
+}
+
+/**
+ * One entry by slug with its full record, or undefined.
+ *
+ * Goes straight to the per-slug endpoint when the API is on, so a detail page
+ * costs one small record rather than the whole corpus.
+ */
 export async function getRepositoryEntry(slug: string): Promise<PublicRepositoryEntry | undefined> {
-  const entries = await getRepositoryEntries();
-  return entries.find((entry) => entry.slug === slug);
+  if (!isPublicCatalogApiEnabled()) {
+    return PUBLIC_REPOSITORY_ENTRIES.find((entry) => entry.slug === slug);
+  }
+  const payload = await fetchCatalogPayload(`${API_URL}/v1/catalog/entries/${encodeURIComponent(slug)}`, true);
+  // Fall through to the static corpus on a miss so a transient API failure does
+  // not 404 a record that genuinely exists; a slug in neither is undefined, and
+  // the caller turns that into a real notFound().
+  const parsed = payload === null ? null : parseCatalogEntries([payload]).entries[0] ?? null;
+  return parsed ?? PUBLIC_REPOSITORY_ENTRIES.find((entry) => entry.slug === slug);
 }

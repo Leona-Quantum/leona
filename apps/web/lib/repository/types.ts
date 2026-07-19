@@ -146,6 +146,52 @@ export interface PublicRepositoryEntry {
   industryUseCasesJa?: string[];
 }
 
+/**
+ * The subset of a record the /repository browse list actually renders and
+ * filters on — and therefore the only fields the API's `?view=list` projection
+ * sends (Slice E).
+ *
+ * Why this exists: the full corpus serialises to ~2.37 MB, over Vercel's 2 MB
+ * data-cache ceiling, so the 5-minute revalidate on the catalog fetch was inert
+ * and every visitor refetched all 283 records. Projected to these fields the
+ * same corpus is ~0.91 MB and caches. Everything omitted here (the long-form
+ * explanation/introduction prose and its Markdown variants, literature,
+ * verificationDetails, source, classicalComparison, industryUseCases,
+ * relatedSlugs) is read only by the detail page, which fetches one full record
+ * by slug.
+ *
+ * `PublicRepositoryEntry` is a superset, so a full entry is assignable here and
+ * the static-corpus fallback keeps working unchanged. Adding a heavy field to
+ * this type means adding it to the API allowlist too — and re-checking the
+ * ceiling.
+ */
+export type PublicRepositoryListEntry = Pick<
+  PublicRepositoryEntry,
+  | "slug"
+  | "title"
+  | "titleJa"
+  | "category"
+  | "categoryLabel"
+  | "categoryLabelJa"
+  | "algorithmFamily"
+  | "framework"
+  | "status"
+  | "verificationMethods"
+  | "verification"
+  | "exportStatus"
+  | "provenance"
+  | "updatedAt"
+  | "description"
+  | "descriptionJa"
+  | "tags"
+  | "resources"
+  | "metadata"
+  | "visualization"
+  | "decomposition"
+  | "portableCircuit"
+  | "codeVariants"
+>;
+
 export const PUBLIC_REPOSITORY_CATEGORIES: Array<{
   value: "all" | PublicRepositoryCategory;
   label: string;

@@ -1,10 +1,10 @@
 import type { Metadata } from "next";
-import { PublicSite } from "../../components/public-site";
-import { getMajoranaAuth, getMajoranaSignInUrl, isMajoranaAuthConfigured } from "../../lib/auth";
-import { getPublicLocale } from "../../lib/public-locale-server";
-import { getRepositoryEntries } from "../../lib/repository-source";
-import { VerificationLegend } from "../../components/repository-verification";
-import { RepositoryBrowser } from "./repository-browser";
+import { PublicSite } from "../../../components/public-site";
+import { getMajoranaAuth, getMajoranaSignInUrl, isMajoranaAuthConfigured } from "../../../lib/auth";
+import { getPublicLocale } from "../../../lib/public-locale-server";
+import { getRepositoryListEntries } from "../../../lib/repository-source";
+import { VerificationLegend } from "../../../components/repository-verification";
+import { RepositoryBrowser } from "../repository-browser";
 
 export const metadata: Metadata = {
   title: "Repository",
@@ -16,7 +16,7 @@ export default async function RepositoryPage() {
   const { user } = await getMajoranaAuth();
   const signInHref = !user && isMajoranaAuthConfigured() ? await getMajoranaSignInUrl() : null;
   const isJapanese = locale === "ja";
-  const entries = await getRepositoryEntries();
+  const entries = await getRepositoryListEntries();
 
   return (
     <PublicSite activePath="/repository" className="mj-repository-site" locale={locale} showLanguageToggle>

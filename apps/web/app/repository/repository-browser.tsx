@@ -7,7 +7,7 @@ import {
   PUBLIC_REPOSITORY_CATEGORIES,
   PUBLIC_REPOSITORY_FRAMEWORKS,
   type PublicRepositoryCategory,
-  type PublicRepositoryEntry,
+  type PublicRepositoryListEntry,
   type PublicRepositoryFramework,
 } from "../../lib/public-repository";
 import type { PublicLocale } from "../../lib/public-locale";
@@ -133,15 +133,15 @@ for (const group of VARIANT_GROUPS) {
 }
 
 type FoldedRow =
-  | { kind: "single"; entry: PublicRepositoryEntry }
-  | { kind: "group"; group: (typeof VARIANT_GROUPS)[number]; members: PublicRepositoryEntry[] };
+  | { kind: "single"; entry: PublicRepositoryListEntry }
+  | { kind: "group"; group: (typeof VARIANT_GROUPS)[number]; members: PublicRepositoryListEntry[] };
 
 /**
  * Collapse curated variant clusters into a single row, preserving order by each
  * cluster's first appearance. A cluster with only one surviving member (after
  * filtering) renders as a plain entry — no pointless toggle.
  */
-function foldVariants(entries: PublicRepositoryEntry[]): FoldedRow[] {
+function foldVariants(entries: PublicRepositoryListEntry[]): FoldedRow[] {
   const rows: FoldedRow[] = [];
   const emitted = new Set<string>();
   for (const entry of entries) {
@@ -154,7 +154,7 @@ function foldVariants(entries: PublicRepositoryEntry[]): FoldedRow[] {
     emitted.add(group.key);
     const members = group.slugs
       .map((slug) => entries.find((candidate) => candidate.slug === slug))
-      .filter((candidate): candidate is PublicRepositoryEntry => Boolean(candidate));
+      .filter((candidate): candidate is PublicRepositoryListEntry => Boolean(candidate));
     if (members.length <= 1) rows.push({ kind: "single", entry: members[0] ?? entry });
     else rows.push({ kind: "group", group, members });
   }
@@ -212,7 +212,7 @@ export function RepositoryBrowser({
   signInHref,
   legend,
 }: {
-  entries: PublicRepositoryEntry[];
+  entries: PublicRepositoryListEntry[];
   locale: PublicLocale;
   isSignedIn: boolean;
   signInHref: string | null;
@@ -303,12 +303,12 @@ export function RepositoryBrowser({
     });
   }
 
-  function activeMember(row: Extract<FoldedRow, { kind: "group" }>): PublicRepositoryEntry {
+  function activeMember(row: Extract<FoldedRow, { kind: "group" }>): PublicRepositoryListEntry {
     const chosen = variantActive[row.group.key];
     return row.members.find((member) => member.slug === chosen) ?? row.members[0];
   }
 
-  function renderRepoCard(entry: PublicRepositoryEntry, extraHead?: ReactNode) {
+  function renderRepoCard(entry: PublicRepositoryListEntry, extraHead?: ReactNode) {
     const title = locale === "ja" ? entry.titleJa : entry.title;
     const description = locale === "ja" ? entry.descriptionJa : entry.description;
     const qubits = entry.resources.find((resource) => resource.label === "Qubits")?.value;
@@ -346,19 +346,33 @@ export function RepositoryBrowser({
     const active = activeMember(row);
     // A small variant switcher sits above the active member's card; picking a
     // pill swaps which sibling record the card shows.
+    //
+    // These are anchors rather than buttons on purpose. Folding a group emits ONE
+    // card, so only the active member got a real /repository/<slug> link — the
+    // inactive sibling had no crawlable entry point anywhere on the site (this is
+    // why the corpus looked like "281 of 283": 283 records, two folded pairs, 281
+    // rows — working as designed, but two slugs were unreachable by link). Giving
+    // every member an href restores that without changing the curated UX: a plain
+    // left-click still swaps in place, while crawlers, middle-click, and no-JS
+    // visitors follow the href to the record's own page.
     const switcher = (
       <div className="mj-repo-variant-switch" role="group" aria-label={locale === "ja" ? row.group.labelJa : row.group.label}>
         <span className="mj-repo-variant-label">{copy.variants}</span>
         {row.members.map((member) => (
-          <button
+          <a
             key={member.slug}
-            type="button"
+            href={`/repository/${member.slug}`}
             className={member.slug === active.slug ? "is-active" : ""}
-            aria-pressed={member.slug === active.slug}
-            onClick={() => setVariantActive((current) => ({ ...current, [row.group.key]: member.slug }))}
+            aria-current={member.slug === active.slug ? "true" : undefined}
+            onClick={(event) => {
+              // Let the browser handle modified clicks (new tab, download, etc.).
+              if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+              event.preventDefault();
+              setVariantActive((current) => ({ ...current, [row.group.key]: member.slug }));
+            }}
           >
             {locale === "ja" ? member.titleJa : member.title}
-          </button>
+          </a>
         ))}
       </div>
     );
@@ -369,7 +383,7 @@ export function RepositoryBrowser({
   // inside each group.
   const algorithmGroups = useMemo(() => {
     if (category !== "algorithms") return [];
-    const byFamily = new Map<string, PublicRepositoryEntry[]>();
+    const byFamily = new Map<string, PublicRepositoryListEntry[]>();
     for (const entry of filteredEntries) {
       const list = byFamily.get(entry.algorithmFamily) ?? [];
       list.push(entry);
