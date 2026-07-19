@@ -213,7 +213,8 @@ async def test_attestation_is_idempotent(env):
         sources = (
             (
                 await session.execute(
-                    select(ArtifactSource).join(
+                    select(ArtifactSource)
+                    .join(
                         catalog.ArtifactVersion,
                         catalog.ArtifactVersion.id == ArtifactSource.artifact_version_id,
                     )
@@ -245,7 +246,8 @@ async def test_attestation_records_the_claim_and_the_signed_statement(env):
         source = (
             (
                 await session.execute(
-                    select(ArtifactSource).join(
+                    select(ArtifactSource)
+                    .join(
                         catalog.ArtifactVersion,
                         catalog.ArtifactVersion.id == ArtifactSource.artifact_version_id,
                     )
