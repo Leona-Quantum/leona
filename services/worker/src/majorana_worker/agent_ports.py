@@ -44,6 +44,7 @@ from majorana_sandbox import run as sandbox_run
 from majorana_verification import (
     extract_counts,
     verify_return_contract,
+    verify_statistical_counts,
     verify_statistical_counts_pair,
 )
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
@@ -357,6 +358,9 @@ class EvidenceVerifier:
                 deterministic_checks=checks,
                 repair=RepairInstruction(
                     category="deterministic_verification_failed",
+                    # A failed deterministic check is not a matter of degree.
+                    severity="blocking",
+                    confidence="high",
                     evidence=evidence,
                     repairs=[
                         "Repair the failing deterministic checks without changing the framework."
@@ -394,6 +398,8 @@ class EvidenceVerifier:
             repair=(
                 RepairInstruction(
                     category="intent_alignment_failed",
+                    severity=critic.severity,
+                    confidence=critic.confidence,
                     evidence=[
                         critic.summary,
                         *critic.failed_checks,
@@ -492,18 +498,21 @@ class EvidenceVerifier:
                     },
                 }
             )
-        optimization = execution.observation.get("native_optimization")
-        checks.append(
-            {
-                "method": "native_optimization_evidence",
-                "result": "pass",
-                "details": optimization if isinstance(optimization, dict) else {"applied": False},
-            }
-        )
+        # Only meaningful when a circuit was expected: the trusted observer that
+        # records this evidence is empty for non-circuit artifacts, so appending
+        # the check there would be asserting on evidence nobody was asked to
+        # produce. When it IS expected, absent or malformed evidence fails —
+        # until 2026-07-20 this slot held a hardcoded "pass", which is worse than
+        # no check at all because it lends weight to the evidence list.
+        if circuit_expected:
+            checks.append(self._native_optimization_check(program, execution))
         methods = list(plan.verification_plan.methods) if plan.verification_plan else []
         if VerificationMethod.RETURN_CONTRACT not in methods:
             methods.append(VerificationMethod.RETURN_CONTRACT)
         for method in methods:
+            if method is VerificationMethod.STATISTICAL:
+                checks.extend(self._statistical_checks(execution, plan))
+                continue
             outcome = None
             if method is VerificationMethod.RETURN_CONTRACT:
                 expected_type = (
@@ -512,18 +521,6 @@ class EvidenceVerifier:
                 outcome = verify_return_contract(
                     execution.result, plan.expected_output_keys, expected_type
                 )
-            elif method is VerificationMethod.STATISTICAL:
-                first = extract_counts(execution.result, plan.expected_output_keys)
-                repeat_result = execution.observation.get("verification_repeat_result")
-                second = (
-                    extract_counts(repeat_result, plan.expected_output_keys)
-                    if isinstance(repeat_result, dict)
-                    else None
-                )
-                if first is not None and second is not None:
-                    thresholds = plan.verification_plan.thresholds or {}
-                    threshold = thresholds.get("tvd_max", thresholds.get("total_variation_max"))
-                    outcome = verify_statistical_counts_pair(first, second, threshold)
             if outcome is None:
                 checks.append(
                     {
@@ -540,6 +537,105 @@ class EvidenceVerifier:
                         "details": outcome.details,
                     }
                 )
+        return checks
+
+    @staticmethod
+    def _native_optimization_check(
+        program: FrameworkProgram, execution: ExecutionEvidence
+    ) -> dict[str, Any]:
+        observed = execution.observation.get("native_optimization")
+        if not isinstance(observed, dict) or type(observed.get("applied")) is not bool:
+            return {
+                "method": "native_optimization_evidence",
+                "result": "fail",
+                "details": {
+                    "error": "no native-optimization evidence in the sandbox observation",
+                    "observed": observed,
+                },
+            }
+        classified = program.native_optimization(execution.observation)
+        # The observer stamps its verdict from a static read of the source at
+        # spec-build time; this reclassifies the source we hold now. They can only
+        # disagree if the program that ran is not the program we are judging, which
+        # the fingerprint check upstream should already have caught — so a
+        # disagreement means one of the two is broken, and fail-closed is correct.
+        source_applied = program.native_optimization().applied
+        if source_applied is not observed["applied"]:
+            return {
+                "method": "native_optimization_evidence",
+                "result": "fail",
+                "details": {
+                    "error": "sandbox evidence disagrees with the executed source",
+                    "observed_applied": observed["applied"],
+                    "source_applied": source_applied,
+                },
+            }
+        return {
+            "method": "native_optimization_evidence",
+            "result": "pass",
+            "details": {
+                "applied": classified.applied,
+                "mode": classified.mode,
+                "reason": classified.reason,
+            },
+        }
+
+    @staticmethod
+    def _statistical_checks(execution: ExecutionEvidence, plan: Plan) -> list[dict[str, Any]]:
+        """Two independent things, reported separately because they prove
+        different claims.
+
+        `statistical` is correctness: the reported counts against the exact Born
+        distribution of the circuit that actually ran. `statistical_reproducibility`
+        is only that the program agrees with itself across two executions.
+
+        Until 2026-07-20 only the second one was wired in, so a candidate that was
+        consistently wrong passed the deterministic verifier and physical
+        correctness rested on unaided critic opinion. The stronger check has the
+        weaker precondition — one counts dict, no promised pair.
+        """
+        thresholds = (plan.verification_plan.thresholds if plan.verification_plan else None) or {}
+        threshold = thresholds.get("tvd_max", thresholds.get("total_variation_max"))
+        reported = extract_counts(execution.result, plan.expected_output_keys)
+        qasm = extract_interchange_qasm(execution.observation).qasm
+        checks: list[dict[str, Any]] = []
+        if reported is not None and qasm is not None:
+            outcome = verify_statistical_counts(qasm, reported, threshold)
+            checks.append(
+                {
+                    "method": outcome.method.value,
+                    "result": outcome.result.value,
+                    "details": outcome.details,
+                }
+            )
+        repeat_result = execution.observation.get("verification_repeat_result")
+        second = (
+            extract_counts(repeat_result, plan.expected_output_keys)
+            if isinstance(repeat_result, dict)
+            else None
+        )
+        if reported is not None and second is not None:
+            outcome = verify_statistical_counts_pair(reported, second, threshold)
+            checks.append(
+                {
+                    "method": "statistical_reproducibility",
+                    "result": outcome.result.value,
+                    "details": outcome.details,
+                }
+            )
+        if not checks:
+            checks.append(
+                {
+                    "method": VerificationMethod.STATISTICAL.value,
+                    "result": "fail",
+                    "details": {
+                        "error": "required evidence unavailable",
+                        "reported_counts": reported is not None,
+                        "interchange_qasm": qasm is not None,
+                        "repeat_execution": second is not None,
+                    },
+                }
+            )
         return checks
 
     async def _critic(

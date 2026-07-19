@@ -187,25 +187,47 @@ def extract_counts(
     return None
 
 
+def _base_type_name(declared: str) -> str:
+    """`dict[str, int]` -> `dict`; `qiskit.QuantumCircuit` -> `quantumcircuit`."""
+    return declared.split("[", 1)[0].strip().rsplit(".", 1)[-1].lower()
+
+
+# Names a planner uses when it is describing the RESULT mapping itself rather
+# than the entry point's return value.
+_RESULT_MAPPING_TYPES = frozenset({"dict", "mapping", "json", "object"})
+
+
 def verify_return_contract(
     result: dict[str, Any],
     expected_keys: list[str],
     expected_return_type: str | None = None,
 ) -> VerificationOutcome:
     """Structural check of the executed code's result dict against the plan's
-    artifact contract — the keys it promised to print, and (optionally) the
-    top-level return type. No numeric claim is trusted here; that's the other
-    methods' job."""
+    artifact contract: the keys it promised to publish.
+
+    `expected_return_type` is deliberately NOT part of the verdict when it names
+    something other than a mapping. The only object this function receives is
+    RESULT, which the execution contract already forces to be a dict — so
+    comparing `type(result).__name__` against a promise like `QuantumCircuit`
+    compares the wrong object and can never fail. The plan means the *entry
+    point's* return value there, and nothing observes that today. Rather than
+    report a comparison that did not happen, the outcome records the scope in
+    `return_type_scope` and leaves it unjudged.
+    """
     missing = [key for key in expected_keys if key not in result]
     details: dict[str, Any] = {"expected_keys": expected_keys, "missing_keys": missing}
+    type_ok = True
     if expected_return_type:
-        actual = type(result).__name__
         details["expected_return_type"] = expected_return_type
-        details["actual_return_type"] = actual
-    ok = not missing
+        if _base_type_name(expected_return_type) in _RESULT_MAPPING_TYPES:
+            details["actual_return_type"] = type(result).__name__
+            details["return_type_scope"] = "result_mapping"
+            type_ok = isinstance(result, dict)
+        else:
+            details["return_type_scope"] = "entry_point_return_not_observed"
     return VerificationOutcome(
         method=VerificationMethod.RETURN_CONTRACT,
-        result=PASS if ok else FAIL,
+        result=PASS if (not missing and type_ok) else FAIL,
         details=details,
     )
 
