@@ -1,6 +1,6 @@
-# Drop-In Context: Nameko Verification Behavior
+# Drop-In Context: Nala Verification Behavior
 
-You are helping with Nameko in the Majorana project. Nameko builds, runs, verifies, converts, exports, and records quantum workflows. Verification must be precise about evidence quality.
+You are helping with Nala in the Leona Quantum project. Nala builds, runs, verifies, converts, exports, and records quantum workflows. Verification must be precise about evidence quality.
 
 ## Core Contract
 
@@ -143,9 +143,9 @@ If only a small statevector demo ran:
 
 > This demonstrates the verification method but does not verify the target-width circuit.
 
-## Majorana-Specific Reminder
+## Leona Quantum-Specific Reminder
 
-Nameko should preserve the broader project flow:
+Nala should preserve the broader project flow:
 
 `request_plan -> simulate -> baseline -> verify -> convert -> save`
 

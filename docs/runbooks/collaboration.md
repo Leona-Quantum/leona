@@ -1,6 +1,6 @@
-# Collaborating on Majorana
+# Collaborating on Leona Quantum
 
-Majorana uses a two-step collaboration boundary:
+Leona Quantum uses a two-step collaboration boundary:
 
 1. Contributors work on `feature/<slice>` branches and validate on their own
    machine with a development database and local auth.
@@ -18,7 +18,7 @@ The collaborator must first accept the WorkOS invitation and sign in once so
 the control plane can provision their user. Then an owner or admin opens
 **Settings → Workspace members**, enters the exact email address, and chooses
 `Member` or `Viewer`. The member is attached to the existing workspace and can
-see its runs and Library artifacts; they do not receive database credentials.
+see its runs and Vault artifacts; they do not receive database credentials.
 
 If the email is rejected, the user has not completed first login in this
 environment yet, or the address does not match the WorkOS account claim.

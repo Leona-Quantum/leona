@@ -8,7 +8,7 @@ gets units and, where relevant, tolerance. Never render an unlabeled float.
   δ 0.05) · seed 42 · 4096 shots".
 - **Export statuses:** "Lossless" / "Lossy — <reason>" / "Download only" /
   "Not supported". Never overclaim (honesty taxonomy binds UI copy too).
-- **Buttons:** verb-first — "Run", "Save to Library", "Open in Run",
+- **Buttons:** verb-first — "Run", "Save to Vault", "Open in Run",
   "Retry from Verify".
 - **Modes:** user-facing labels are "Execute", "Learn", and "Explain". The
   internal compatibility value `ideate` is never rendered.
@@ -16,7 +16,7 @@ gets units and, where relevant, tolerance. Never render an unlabeled float.
   "Generate version". A draft is never labeled Verified.
 - **Errors:** what happened + what we did + one action. Never a bare stack trace
   outside collapsible details.
-- **Empty states:** one sentence + one action. Library: "Nothing verified yet. Your
+- **Empty states:** one sentence + one action. Vault: "Nothing verified yet. Your
   first verified run will appear here." + [Start a run].
 - **Vocabulary (P1):** describe the OpenQASM program or the concrete check performed
-  in framework terms. "Library stores, Studio/Run creates" (P2) shapes verbs.
+  in framework terms. "Vault stores, Studio/Run creates" (P2) shapes verbs.

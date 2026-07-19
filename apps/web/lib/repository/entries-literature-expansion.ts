@@ -289,7 +289,7 @@ function circuitEntry(spec: CircuitFamily, width: number): PublicRepositoryEntry
     updatedAt: "2026-07-18",
     description: spec.description,
     descriptionJa: spec.descriptionJa,
-    introduction: `${spec.description} This ${width}-qubit record gives the repository a concrete, inspectable circuit at a known width rather than only a family-level description.`,
+    introduction: `${spec.description} This ${width}-qubit record gives the Atlas a concrete, inspectable circuit at a known width rather than only a family-level description.`,
     introductionJa: `${spec.descriptionJa} この${width}量子ビット項目は、ファミリー説明だけでなく、幅が明確な検査可能な回路を提供します。`,
     explanation: `The circuit is stored once as a framework-neutral ordered gate graph and converted lazily when a framework is selected. The converter preserves gate order, numeric angle expressions, qubit indices, and terminal all-qubit measurement for its bounded gate set. It intentionally does not claim that downstream compiler decompositions or device behavior are identical. The cited MQT Bench work motivates scalable, cross-level benchmark families; this particular circuit is a Leona Quantum-authored scaffold and should be compared by width, operation count, transpiled depth, two-qubit count, and measured output behavior.`,
     explanationJa: `この回路はフレームワーク中立の順序付きゲートグラフとして一度だけ保存され、選択時に遅延変換されます。限定ゲート集合の範囲で、ゲート順、数値角度、量子ビット番号、末尾の全量子ビット測定を保持します。一方、各コンパイラの分解や実機挙動が同一であるとは主張しません。MQT Bench論文は規模可変・多層のベンチマーク方法論の根拠であり、この具体回路はLeona Quantum独自の足場です。幅、演算数、変換後深さ、2量子ビット演算数、測定結果で比較してください。`,

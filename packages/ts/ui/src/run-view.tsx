@@ -1177,7 +1177,7 @@ function ResultPanel({ result, animateText }: { result: ResultView; animateText:
       {result.libraryHref ? (
         <section className="mj-result-section" id="mj-result-library">
           <a className="mj-result-link" href={result.libraryHref}>
-            Open in Library -&gt;
+            Open in Vault -&gt;
           </a>
         </section>
       ) : null}

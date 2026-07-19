@@ -6,7 +6,7 @@ import { getPublicLocale } from "../../lib/public-locale-server";
 
 export const metadata: Metadata = {
   title: "Workspace",
-  description: "Leona Quantum's personal quantum workspace for guided development, Studio, and verified Library artifacts.",
+  description: "Leona Quantum's personal quantum workspace for guided development, Studio, and verified Vault artifacts.",
 };
 
 export default async function WorkspacePage() {

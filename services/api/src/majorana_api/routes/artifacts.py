@@ -1,4 +1,4 @@
-"""Workspace artifact reads for Quepo Studio.
+"""Workspace artifact reads for Studio.
 
 The web surface is a renderer; artifact ownership and workspace scoping stay in
 the control plane's repository layer.

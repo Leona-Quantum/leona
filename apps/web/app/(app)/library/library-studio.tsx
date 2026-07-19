@@ -267,7 +267,7 @@ function toLibraryArtifact(value: unknown): LibraryArtifact[] {
     framework: typeof artifact.framework === "string" ? artifact.framework : "Qiskit",
     status: existing?.status ?? (isPublicReference ? "verified_caveats" : "verified"),
     updatedAt: typeof artifact.updated_at === "string" ? artifact.updated_at : new Date().toISOString(),
-    description: existing?.description ?? "Saved artifact in the workspace repository.",
+    description: existing?.description ?? "Saved artifact in the workspace vault.",
     tags: existing?.tags ?? [typeof artifact.family === "string" ? artifact.family.toLowerCase() : "artifact"],
     verification: existing?.verification ?? "Verification record available in artifact detail.",
     code: existing?.code ?? "",

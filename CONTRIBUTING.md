@@ -1,4 +1,4 @@
-# Contributing to Majorana
+# Contributing to Leona Quantum
 
 Thanks for helping make quantum software easier to inspect. Keep changes small enough
 to review and preserve the product boundary: model output is a proposal, while measured

@@ -18,7 +18,7 @@ import { RepositoryExportAction } from "./repository-export";
 
 const COPY = {
   en: {
-    search: "Search the repository",
+    search: "Search the Atlas",
     placeholder: "Search algorithms, frameworks, or tags",
     family: "Algorithm family",
     framework: "Framework",
@@ -37,13 +37,13 @@ const COPY = {
     variantOf: "variants",
     star: "Star",
     unstar: "Unstar",
-    starNote: "Repository stars stay in this public list. Saving an entry to Library starts an unstarred private copy.",
+    starNote: "Atlas stars stay in this public list. Saving an entry to Vault starts an unstarred private copy.",
     emptyTitle: "No entries match those filters.",
     emptyBody: "Try a broader search or return to the full reference set.",
     clear: "Clear filters",
   },
   ja: {
-    search: "リポジトリを検索",
+    search: "Atlasを検索",
     placeholder: "アルゴリズム、フレームワーク、タグを検索",
     family: "アルゴリズム系統",
     framework: "フレームワーク",
@@ -62,7 +62,7 @@ const COPY = {
     variantOf: "バリアント",
     star: "スターを付ける",
     unstar: "スターを外す",
-    starNote: "公開リポジトリのスターはこの一覧に保存されます。Libraryに保存すると、非公開コピーは未スターで始まります。",
+    starNote: "公開Atlasのスターはこの一覧に保存されます。ボールトに保存すると、非公開コピーは未スターで始まります。",
     emptyTitle: "条件に一致するエントリがありません。",
     emptyBody: "検索範囲を広げるか、すべての参照セットに戻してください。",
     clear: "条件をクリア",

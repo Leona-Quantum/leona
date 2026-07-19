@@ -1,8 +1,8 @@
-# Majorana
+# Leona Quantum
 
-Majorana is an open quantum workbench that turns a natural-language question into
+Leona Quantum is an open quantum workbench that turns a natural-language question into
 copyable code, a measured result, and an evidence-backed artifact. Run owns the
-pipeline, Studio edits verified versions, and Library keeps the provenance.
+pipeline, Studio edits verified versions, and Vault keeps the provenance.
 
 Public product page: `https://web-majoranaq.vercel.app/open-source`
 

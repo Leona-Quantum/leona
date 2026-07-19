@@ -7,7 +7,7 @@ import { VerificationLegend } from "../../../components/repository-verification"
 import { RepositoryBrowser } from "../repository-browser";
 
 export const metadata: Metadata = {
-  title: "Repository",
+  title: "Atlas",
   description: "A public Leona Quantum research database for circuits and algorithms with evidence, sources, and export boundaries visible.",
 };
 

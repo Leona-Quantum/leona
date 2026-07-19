@@ -1,6 +1,6 @@
 # Verification domain docs
 
-The verification tier framework Nameko follows: classify the circuit, run the
+The verification tier framework Nala follows: classify the circuit, run the
 strongest feasible checks, state exactly what is and is not proven. Source: owner
 research pack (Coda conversation → `Codex/2026-07-11` distillation), adopted
 2026-07-11.
@@ -12,7 +12,7 @@ research pack (Coda conversation → `Codex/2026-07-11` distillation), adopted
   walkthrough, GHZ/stabilizer Tier-1 concept; the source PDF cut off before the
   GHZ results — do not invent them).
 - `nameko_verification_ai_context.md` — compact drop-in prompt for agents working
-  on Nameko verification behavior (feeds the Phase-3 chat-surface prompts).
+  on Nala verification behavior (feeds the Phase-3 chat-surface prompts).
 - `statistical-counts-check.md` — the framework-native re-execution contract behind
   the pipeline's headless `statistical` method.
 
@@ -30,4 +30,4 @@ Not yet built (Phase-3+ candidates from the playbook): stabilizer simulation,
 echo/inverse tests, sub-block verification, small-instance extrapolation,
 tensor-network/MPS, XEB. The confidence-language labels
 (`verified_by_direct_simulation`, `statistical_fidelity_evidence`, …) should reach
-the user-facing verification records when the Nameko chat surface lands.
+the user-facing verification records when the Nala chat surface lands.

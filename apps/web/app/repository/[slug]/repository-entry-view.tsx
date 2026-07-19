@@ -19,7 +19,7 @@ import { RepositoryExportAction } from "../repository-export";
 
 const COPY = {
   en: {
-    back: "← Repository",
+    back: "← Atlas",
     circuit: "Circuit & simulation",
     outcomes: "Expected outcomes",
     how: "How it works",
@@ -30,7 +30,7 @@ const COPY = {
     request: "Request a conversion",
     star: "Star",
     unstar: "Unstar",
-    starNote: "Repository stars stay in the public catalog. Saving this entry to Library starts an unstarred private copy.",
+    starNote: "Atlas stars stay in the public catalog. Saving this entry to Vault starts an unstarred private copy.",
     resources: "Facts",
     verification: "Verification",
     method: "Method",
@@ -55,7 +55,7 @@ const COPY = {
     license: "License",
   },
   ja: {
-    back: "← リポジトリ",
+    back: "← Atlas",
     circuit: "回路とシミュレーション",
     outcomes: "期待される出力",
     how: "仕組み",
@@ -66,7 +66,7 @@ const COPY = {
     request: "変換をリクエスト",
     star: "スターを付ける",
     unstar: "スターを外す",
-    starNote: "公開リポジトリのスターは公開カタログに保存されます。このエントリをLibraryに保存すると、非公開コピーは未スターで始まります。",
+    starNote: "公開Atlasのスターは公開カタログに保存されます。このエントリをボールトに保存すると、非公開コピーは未スターで始まります。",
     resources: "基本情報",
     verification: "検証",
     method: "方法",

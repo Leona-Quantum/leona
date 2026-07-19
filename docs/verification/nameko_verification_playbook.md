@@ -1,12 +1,12 @@
-# Nameko Verification Playbook
+# Nala Verification Playbook
 
 ## Purpose
 
-Nameko should not treat verification as a single yes/no action. For Majorana quantum workflows, verification must classify what kind of evidence is possible, run the strongest feasible checks, and clearly state what has and has not been proven.
+Nala should not treat verification as a single yes/no action. For Leona Quantum quantum workflows, verification must classify what kind of evidence is possible, run the strongest feasible checks, and clearly state what has and has not been proven.
 
 The core rule:
 
-> Never claim a full-scale output distribution was verified unless Nameko actually produced or checked that distribution. When exact simulation is impossible, say the circuit was verified by construction, by invariant checks, by small-instance evidence, or by statistical fidelity evidence.
+> Never claim a full-scale output distribution was verified unless Nala actually produced or checked that distribution. When exact simulation is impossible, say the circuit was verified by construction, by invariant checks, by small-instance evidence, or by statistical fidelity evidence.
 
 ## Default Verification Flow
 
@@ -76,12 +76,12 @@ Examples:
 - Low-entanglement circuits compatible with MPS/tensor-network simulation.
 - Circuits reducible to basis-state truth tables.
 
-What Nameko can claim:
+What Nala can claim:
 
 - "This structure can be verified exactly or near-exactly without full statevector simulation."
 - "The check validates the actual defining properties of the circuit class."
 
-What Nameko should not claim:
+What Nala should not claim:
 
 - "This proves arbitrary non-Clifford behavior" if the circuit includes non-Clifford components that were not separately verified.
 
@@ -99,13 +99,13 @@ Examples:
 - HHL.
 - Quantum walks.
 
-What Nameko can claim:
+What Nala can claim:
 
 - "The circuit is verified by construction and small-instance evidence."
 - "The same generator passed analytic checks at tractable sizes."
 - "Full-scale structural properties match the specification."
 
-What Nameko should not claim:
+What Nala should not claim:
 
 - "The 100-qubit output distribution was directly verified."
 
@@ -124,13 +124,13 @@ Examples:
 - Boson sampling.
 - Generic deep highly entangled circuits.
 
-What Nameko can claim:
+What Nala can claim:
 
 - "The evidence estimates fidelity or checks low-weight statistics."
 - "The circuit structure and schedule match the specification."
 - "Elided or patch circuits passed tractable checks."
 
-What Nameko should not claim:
+What Nala should not claim:
 
 - "The exact full output distribution was verified."
 
@@ -152,7 +152,7 @@ Record:
 
 Strength:
 
-- Prevents Nameko from guessing whether simulation is feasible.
+- Prevents Nala from guessing whether simulation is feasible.
 
 Weakness:
 
@@ -461,7 +461,7 @@ Risks:
 
 - Does not prove model generalization, useful kernels, or training success.
 
-## Nameko Response Template
+## Nala Response Template
 
 Use this structure when answering verification requests:
 
@@ -498,7 +498,7 @@ It does not establish ...
 - ...
 ```
 
-## Language Rules for Nameko
+## Language Rules for Nala
 
 Use:
 

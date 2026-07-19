@@ -1,7 +1,7 @@
 # ADR-0017: Catalog ingestion uses connector allowlists and offline quarantine
 
 **Date:** 2026-07-18 · **Status:** proposed (Ryu/Eshaan security review required)
-**Context:** Repository ingestion accepts content controlled outside Majorana. The
+**Context:** Atlas ingestion accepts content controlled outside Leona Quantum. The
 fetch phase can be abused for SSRF, DNS rebinding, redirect bypass, resource
 exhaustion, path traversal, dependency installation, and credential theft; the parse
 and execution phases can run malicious host-language code. Running discovery,
@@ -44,4 +44,4 @@ not a direct database seed. It bundles one pinned commit into a deterministic
 checksummed manifest and submits that manifest through the same quarantine,
 normalization, rights, deduplication, review, and publication states. Existing
 catalog labels and prose cannot be promoted to execution or license evidence
-merely because the source is maintained in Majorana.
+merely because the source is maintained in Leona Quantum.

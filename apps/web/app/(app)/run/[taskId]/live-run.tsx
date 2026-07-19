@@ -54,7 +54,7 @@ function processStepLabel(event: WireEvent): string | null {
     case "code.finalized":
       return "Finalized the verified circuit";
     case "artifact.saved":
-      return "Saved the verified circuit to your library";
+      return "Saved the verified circuit to your vault";
     case "run.error":
       return event.message ? `Error: ${event.message}` : "Run error";
     default:
@@ -141,7 +141,7 @@ function answerFromEvents(events: WireEvent[]): string | null {
   const opening = problem ?? `Verified (${finished.verifier_decision ?? "pass"})`;
   const sentences = [opening.endsWith(".") ? opening : `${opening}.`];
   if (metric) sentences.push(`Result: ${metric}.`);
-  sentences.push(saved ? "Saved to your library." : "No artifact was saved.");
+  sentences.push(saved ? "Saved to your vault." : "No artifact was saved.");
   return sentences.join(" ");
 }
 
@@ -486,7 +486,7 @@ function ArtifactLink({ events }: { events: WireEvent[] }) {
   if (!artifactId) return null;
   return (
     <Link className="mj-secondary-button" href={`/library/${artifactId}`}>
-      View in Library →
+      View in Vault →
     </Link>
   );
 }

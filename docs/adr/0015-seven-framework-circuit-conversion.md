@@ -1,7 +1,7 @@
 # ADR-0015: Seven-framework circuit conversion is bounded and explicit
 
 **Date:** 2026-07-18 · **Status:** accepted (owner-requested)
-**Context:** The public Repository and private Workspace exposed seven circuit
+**Context:** The public Atlas and private Workspace exposed seven circuit
 framework labels, but most records only carried one native snippet and missing
 variants appeared as pending placeholders. A universal source-to-source rewrite
 would be misleading: framework programs can contain host-language control flow,
@@ -21,7 +21,7 @@ edge), while PennyLane uses its official `from_qasm3` importer. Qiskit,
 PennyLane, and Cirq remain the executable sandbox targets; the other four are
 copy/export formats. Records without a concrete circuit are explicitly
 unsupported and never receive fabricated code.
-**Consequences:** New Studio-builder circuits and bounded Repository circuits can
+**Consequences:** New Studio-builder circuits and bounded Atlas circuits can
 switch among all seven formats immediately, while imported artifacts retain all
 available variants. Rich framework code remains authoritative under ADR-0013,
 and failed or unavailable interchange does not block execution or publication.
