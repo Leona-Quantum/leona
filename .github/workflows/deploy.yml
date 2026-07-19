@@ -6,6 +6,10 @@
 # perfectly healthy service. This workflow is the deterministic replacement for
 # the "remember to redeploy after a migration" rule in docs/runbooks/deploys.md.
 #
+# It also applies the migration itself (`migrate database`, below), added
+# 2026-07-20 after #91 shipped code to production against the previous schema.
+# Schema first, then rollout — so a migration that fails deploys nothing.
+#
 # Workload Identity Federation and the two repo secrets were provisioned
 # 2026-07-19 (docs/runbooks/deploys.md § Automated deploy — how auth is wired).
 # The credential check below is kept as a guard: if the secrets are ever cleared
@@ -77,6 +81,64 @@ jobs:
 
       - uses: google-github-actions/setup-gcloud@v2
         if: steps.creds.outputs.have == 'true'
+
+      # Python toolchain, needed only by the migrate step below. Mirrors ci.yml's
+      # `db` job so the two run alembic through an identical uv environment.
+      - uses: astral-sh/setup-uv@v6
+        if: steps.creds.outputs.have == 'true'
+        with:
+          python-version: "3.12"
+
+      - name: install python packages
+        if: steps.creds.outputs.have == 'true'
+        run: uv sync --all-packages --frozen
+
+      # Apply the schema BEFORE anything is built or rolled out.
+      #
+      # This step is why the workflow's uv toolchain exists. Until 2026-07-20
+      # nothing applied migrations to production — `alembic upgrade head` ran only
+      # in ci.yml and bench.yml, against throwaway databases — so merging a PR that
+      # carried a migration deployed the code and left the schema behind. #91 did
+      # exactly that: new code writing mode='auto' went live against revision 0019,
+      # whose ck_mode_enum rejects that value, and every run would have 500'd.
+      #
+      # Running first (before `build image`) means a migration failure costs a
+      # Cloud Build run of nothing and touches neither Cloud Run service. The
+      # rollback step below is irrelevant to this step for the same reason:
+      # at this point nothing has been deployed to roll back.
+      #
+      # Because the schema lands before the new image does, every migration must
+      # still be readable by the *currently running* revision for the length of the
+      # deploy — expand now, contract in a later release. A migration that drops or
+      # renames something the live code still uses will break production in the
+      # window between this step and the traffic shift.
+      #
+      # DATABASE_URL_SECRET is the Secret Manager entry name; DATABASE_URL_DIRECT is
+      # the env var alembic reads (db/migrations/env.py). It holds the Neon DIRECT
+      # (unpooled) endpoint — DDL through the pooler is not safe. The runner reaches
+      # Neon over the public endpoint, the same path ci.yml's `db` job uses on every
+      # PR today.
+      - name: migrate database
+        if: steps.creds.outputs.have == 'true'
+        run: |
+          # stderr goes to a file, not into db_url: a gcloud warning on the happy
+          # path would otherwise be concatenated into the connection string.
+          if ! db_url=$(gcloud secrets versions access latest \
+            --secret=DATABASE_URL_SECRET --project "$GCP_PROJECT" 2>/tmp/secret.err); then
+            echo "::error::could not read DATABASE_URL_SECRET: $(cat /tmp/secret.err)"
+            echo "::error::if this is a permission error, the deploy service account needs"
+            echo "::error::roles/secretmanager.secretAccessor on that secret — see"
+            echo "::error::docs/runbooks/deploys.md § Automated deploy for the exact grant."
+            exit 1
+          fi
+          test -n "$db_url" || { echo "::error::DATABASE_URL_SECRET is empty"; exit 1; }
+          echo "::add-mask::$db_url"
+          export DATABASE_URL_DIRECT="$db_url"
+          echo "schema before: $(uv run --package majorana-api \
+            alembic -c db/alembic.ini current 2>&1 | tail -1)"
+          uv run --package majorana-api alembic -c db/alembic.ini upgrade head
+          echo "schema after:  $(uv run --package majorana-api \
+            alembic -c db/alembic.ini current 2>&1 | tail -1)"
 
       # One image serves both services; the entrypoint differs. .gcloudignore keeps
       # the upload to what the Dockerfile actually copies (~4 MiB rather than 732 MB

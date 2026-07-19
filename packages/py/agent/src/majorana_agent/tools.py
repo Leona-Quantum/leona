@@ -31,6 +31,16 @@ from majorana_contracts.plan import Plan
 from majorana_frameworks import FrameworkProgram
 
 
+# The sandbox's captured stdout/stderr is persisted for humans, never shown to the
+# model. It is output the generated code chose to write, so anything in it that reads
+# like an instruction or like a result must not reach the loop that judges that code.
+_CAPTURED_OUTPUT_KEYS = ("sandbox_stdout", "sandbox_stderr", "sandbox_output_truncated")
+
+
+def _without_captured_output(observation: dict[str, Any]) -> dict[str, Any]:
+    return {key: value for key, value in observation.items() if key not in _CAPTURED_OUTPUT_KEYS}
+
+
 class Planner(Protocol):
     async def create_plan(self, run_id: UUID) -> Plan: ...
 
@@ -187,7 +197,7 @@ class CircuitToolset:
                     "resource_exhausted": True,
                     "failure_kind": evidence.failure_kind.value,
                     "sandbox_runs": evidence.observation.get("sandbox_runs", 0),
-                    "resource_evidence": evidence.observation,
+                    "resource_evidence": _without_captured_output(evidence.observation),
                 }
             return {
                 "candidate_id": str(candidate.candidate_id),
