@@ -18,10 +18,19 @@
 // the edge runtime). Uses Web Crypto (crypto.subtle), btoa, and constant-time
 // compare only — all available in both the edge and Node runtimes.
 
-// Synthetic identity used across the app while the lock is active. Mirrors the
-// LOCAL_DEV_AUTH shape in lib/auth.ts so the single authorized operator gets a
-// stable user id for all their real data.
-export const LOCK_ACCESS_TOKEN = "majorana-single-user-lock";
+// Bearer credential presented to the API while the lock is active. This is a
+// REAL shared secret (SINGLE_USER_LOCK_API_TOKEN), not a constant: the API is a
+// separate public host that the username/password page does not sit in front
+// of, so a well-known value here would let anyone bypass the perimeter by
+// calling the API directly. The API refuses weak or placeholder values
+// (services/api/src/majorana_api/settings.py::_validate_lock_token).
+//
+// Deliberately NOT part of isSingleUserLockEnabled(): if a missing token
+// disabled the lock, one unset env var would silently reopen the app to public
+// WorkOS signup. Missing here means API calls fail loudly instead.
+export function lockAccessToken(): string {
+  return process.env.SINGLE_USER_LOCK_API_TOKEN ?? "";
+}
 
 // Session cookie holding the signed lock token. httpOnly + SameSite=Lax so it
 // rides normal navigations (including returns from the public site) but is not

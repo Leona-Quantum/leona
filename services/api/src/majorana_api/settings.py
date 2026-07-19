@@ -9,6 +9,26 @@ from dataclasses import dataclass
 
 from .catalog_authority import CatalogAuthority
 
+# The placeholder the web app shipped before the API had a lock counterpart. It
+# is public in the repo, so accepting it would let anyone past the username/
+# password perimeter by calling the API host directly. Refuse it by name.
+_PUBLIC_PLACEHOLDER_LOCK_TOKEN = "majorana-single-user-lock"
+_MIN_LOCK_TOKEN_LENGTH = 32
+
+
+def _validate_lock_token(token: str) -> None:
+    """Fail closed on a lock token that would not actually protect anything."""
+    if not token:
+        raise RuntimeError("SINGLE_USER_LOCK requires SINGLE_USER_LOCK_API_TOKEN")
+    if token == _PUBLIC_PLACEHOLDER_LOCK_TOKEN:
+        raise RuntimeError(
+            "SINGLE_USER_LOCK_API_TOKEN is the public placeholder; generate a real secret"
+        )
+    if len(token) < _MIN_LOCK_TOKEN_LENGTH:
+        raise RuntimeError(
+            f"SINGLE_USER_LOCK_API_TOKEN must be at least {_MIN_LOCK_TOKEN_LENGTH} characters"
+        )
+
 
 @dataclass(frozen=True)
 class Settings:
@@ -24,11 +44,27 @@ class Settings:
     local_dev_user_id: str = "local-dev-user"
     local_dev_email: str = "local-dev@majorana.test"
     local_dev_display_name: str = "Local developer"
+    # Single-operator lock (Owner Inbox 2026-07-19). The API counterpart to the
+    # web-side gate in apps/web/lib/single-user-lock.ts. Unlike local dev auth
+    # this IS valid in production — it is the perimeter while the authenticated
+    # surface is still under development — so it is held to a real secret rather
+    # than a well-known constant.
+    single_user_lock: bool = False
+    single_user_lock_token: str = ""
+    single_user_lock_user_id: str = "single-user-lock"
+    single_user_lock_email: str = "operator@leonaquantum.com"
+    single_user_lock_display_name: str = "Leona Quantum"
     catalog_authority: CatalogAuthority = CatalogAuthority()
 
     def __post_init__(self) -> None:
         if self.local_dev_auth and self.environment != "development":
             raise RuntimeError("local dev auth is only valid when MAJORANA_ENV=development")
+        if self.single_user_lock:
+            _validate_lock_token(self.single_user_lock_token)
+        if self.single_user_lock and self.local_dev_auth:
+            raise RuntimeError(
+                "SINGLE_USER_LOCK and MAJORANA_LOCAL_DEV_AUTH are mutually exclusive"
+            )
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -49,8 +85,14 @@ class Settings:
                 "MAJORANA_LOCAL_DEV_AUTH requires MAJORANA_ENV=development and a local process"
             )
 
+        single_user_lock = os.environ.get("SINGLE_USER_LOCK", "").strip().lower() in {
+            "1",
+            "true",
+            "yes",
+        }
+
         client_id = os.environ.get("WORKOS_CLIENT_ID")
-        if not client_id and not local_dev_auth:
+        if not client_id and not (local_dev_auth or single_user_lock):
             raise RuntimeError("WORKOS_CLIENT_ID is required unless local dev auth is enabled")
         client_id = client_id or "local-dev"
         return cls(
@@ -69,6 +111,15 @@ class Settings:
             local_dev_email=os.environ.get("MAJORANA_LOCAL_DEV_EMAIL", "local-dev@majorana.test"),
             local_dev_display_name=os.environ.get(
                 "MAJORANA_LOCAL_DEV_DISPLAY_NAME", "Local developer"
+            ),
+            single_user_lock=single_user_lock,
+            single_user_lock_token=os.environ.get("SINGLE_USER_LOCK_API_TOKEN", "").strip(),
+            single_user_lock_user_id=os.environ.get("SINGLE_USER_LOCK_USER_ID", "single-user-lock"),
+            single_user_lock_email=os.environ.get(
+                "SINGLE_USER_LOCK_EMAIL", "operator@leonaquantum.com"
+            ),
+            single_user_lock_display_name=os.environ.get(
+                "SINGLE_USER_LOCK_DISPLAY_NAME", "Leona Quantum"
             ),
             catalog_authority=CatalogAuthority.from_env(),
         )
