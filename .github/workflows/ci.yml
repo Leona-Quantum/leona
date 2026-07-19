@@ -23,6 +23,10 @@ jobs:
         run: |
           pnpm --filter @majorana/contracts-gen gen
           git diff --exit-code packages/ts/contracts-gen
+      - name: catalog bootstrap manifest is valid and current
+        run: |
+          node --test 'scripts/catalog-bootstrap/*.test.mjs'
+          node scripts/generate-catalog-bootstrap-manifest.mjs --check
 
   # UI a11y gate (roadmap 04 §5 step 2, slice a): render the real @majorana/ui
   # components to static HTML from source and assert zero WCAG A/AA violations via
