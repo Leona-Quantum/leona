@@ -110,14 +110,27 @@ def exact_equivalence(
 ) -> EquivalenceReport:
     left = _load_circuit(reference)
     right = _load_circuit(candidate)
+    scores: dict
     if left.num_qubits != right.num_qubits:
-        distance = float("inf")
+        # JSON-safe on purpose: this used to record float("inf"), which Python's
+        # json emits as the bare token `Infinity` — and Postgres JSONB rejects
+        # that token, so persisting the evidence DEAD-LETTERED the whole job
+        # (production run 019f7ea0-8210, cirq). A width mismatch is a plain
+        # FAIL with its reason, never a crash.
+        distance = None
         passed = False
+        scores = {
+            "max_abs_distance": None,
+            "qubit_count_mismatch": True,
+            "reference_qubits": left.num_qubits,
+            "candidate_qubits": right.num_qubits,
+        }
     elif left.num_qubits > max_qubits:
         raise ValueError(f"exact protocol supports at most {max_qubits} qubits")
     else:
         distance = _phase_align_distance(unitary(reference), unitary(candidate))
         passed = distance <= tolerance
+        scores = {"max_abs_distance": distance}
     protocol = {"name": "exact", "tolerance": tolerance, "max_qubits": max_qubits}
     payload = {
         "reference": normalize(reference),
@@ -130,7 +143,7 @@ def exact_equivalence(
         protocol=protocol,
         fingerprint_hash=hashlib.sha256(json.dumps(payload, sort_keys=True).encode()).hexdigest(),
         passed=passed,
-        scores={"max_abs_distance": distance},
+        scores=scores,
     )
 
 

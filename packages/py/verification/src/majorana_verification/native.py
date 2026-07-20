@@ -159,12 +159,18 @@ def native_statevector_vs_reference(
     reference = simulate_statevector(reference_qasm)
     candidate, _mapping, qubits, _clbits = statevector_from_evidence(payload)
     candidate_vector = np.asarray(candidate.data)
+    scores: dict
     if len(reference) != len(candidate_vector):
-        distance = float("inf")
+        # JSON-safe (same rule as exact_equivalence): a non-finite float in the
+        # evidence dead-letters the job at the JSONB boundary. A width mismatch
+        # is a plain FAIL with its reason.
+        distance = None
         passed = False
+        scores = {"max_abs_distance": None, "qubit_count_mismatch": True}
     else:
         distance = _phase_align_distance(reference, candidate_vector)
         passed = distance <= tolerance
+        scores = {"max_abs_distance": distance}
     protocol = {
         "name": "exact_statevector",
         "tolerance": tolerance,
@@ -174,7 +180,7 @@ def native_statevector_vs_reference(
     payload_hash = {
         "reference": reference_qasm,
         "protocol": protocol,
-        "distance": distance if math.isfinite(distance) else "inf",
+        "distance": distance,
     }
     return EquivalenceReport(
         fingerprint_type="exact_unitary",
@@ -183,7 +189,7 @@ def native_statevector_vs_reference(
             json.dumps(payload_hash, sort_keys=True).encode()
         ).hexdigest(),
         passed=passed,
-        scores={"max_abs_distance": distance},
+        scores=scores,
     )
 
 
