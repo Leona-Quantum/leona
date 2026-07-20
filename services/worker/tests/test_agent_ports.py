@@ -1674,3 +1674,59 @@ def test_the_vqe_shape_that_died_now_passes_its_whole_panel():
     failed = [check for check in checks if check["result"] not in {"pass", "skipped"}]
     assert failed == [], failed
     assert evidence_strength_of(checks) is EvidenceStrength.PHYSICAL
+
+
+def _plan_with_declared_reference() -> Plan:
+    payload = _plan().model_dump(mode="json")
+    payload["verification_plan"] = {
+        "methods": ["exact", "return_contract"],
+        "reference_source": "plan_declared",
+        "reference_qasm": (
+            'OPENQASM 3;\ninclude "stdgates.inc";\nqubit[2] q;\nh q[0];\ncx q[0], q[1];'
+        ),
+    }
+    return Plan.model_validate(payload)
+
+
+def test_exact_failure_names_the_reference_when_self_checks_pass():
+    """Run 019f7f7b-ba33: a wrong plan-declared reference failed four correct
+    candidates identically while statistical_native and success_criteria passed.
+    The failure's details must name that split."""
+    checks = [
+        {"method": "success_criteria", "result": "pass", "details": {}},
+        {"method": "exact", "result": "fail", "details": {"scores": {"max_abs_distance": 1.0}}},
+        {"method": "statistical_native", "result": "pass", "details": {}},
+    ]
+    EvidenceVerifier._name_reference_disagreement(checks, _plan_with_declared_reference())
+    disagreement = checks[1]["details"]["disagreement"]
+    assert "statistical_native" in disagreement
+    assert "success_criteria" in disagreement
+    assert "reference" in disagreement
+    # The check itself must remain a failure — the diagnostic explains, never absolves.
+    assert checks[1]["result"] == "fail"
+
+
+def test_exact_failure_stays_bare_without_corroboration():
+    checks = [
+        {"method": "exact", "result": "fail", "details": {}},
+        {"method": "statistical_native", "result": "fail", "details": {}},
+    ]
+    EvidenceVerifier._name_reference_disagreement(checks, _plan_with_declared_reference())
+    assert "disagreement" not in checks[0]["details"]
+
+
+def test_exact_failure_stays_bare_for_parent_artifact_reference():
+    """A parent-artifact reference was verified independently; the diagnostic's
+    premise (reference shares an author with the plan) does not hold there."""
+    payload = _plan().model_dump(mode="json")
+    payload["verification_plan"] = {
+        "methods": ["exact", "return_contract"],
+        "reference_source": "parent_artifact",
+    }
+    plan = Plan.model_validate(payload)
+    checks = [
+        {"method": "success_criteria", "result": "pass", "details": {}},
+        {"method": "exact", "result": "fail", "details": {}},
+    ]
+    EvidenceVerifier._name_reference_disagreement(checks, plan)
+    assert "disagreement" not in checks[1]["details"]

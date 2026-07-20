@@ -69,7 +69,15 @@ so it also needs you to say where that reference comes from.
   canonical construction you can state independently — Bell and GHZ states, QFT, a
   specific oracle, a named gate decomposition. Write the textbook circuit in OpenQASM 3,
   not a transcription of the code you expect back. Measurements are ignored; only the
-  unitary is compared, so leave them out.
+  unitary is compared, so leave them out. Before declaring one, apply this self-check:
+  could you write this circuit's exact gate list on paper without deriving anything? A
+  single named subroutine passes that test; a multi-stage composition (controlled
+  powers feeding an inverse QFT, an ansatz inside an optimizer loop) usually does not
+  — and a reference you had to derive is as likely to be wrong as the code it will
+  judge. A wrong reference makes `exact` fail every correct candidate identically
+  while the run's other checks pass, and the run dies with nothing to repair. When
+  the self-check fails, leave `exact` off and rely on statistical evidence plus
+  success_criteria.
 - Set reference_source to `parent_artifact` and omit reference_qasm ONLY when the user
   request is to optimize, transpile, re-express, or clean up a circuit this run already
   has as its parent, WITHOUT changing what it computes. This is the strongest evidence

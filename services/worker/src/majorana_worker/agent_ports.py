@@ -718,7 +718,55 @@ class EvidenceVerifier:
                         "details": outcome.details,
                     }
                 )
+        self._name_reference_disagreement(checks, plan)
         return checks
+
+    @staticmethod
+    def _name_reference_disagreement(checks: list[dict[str, Any]], plan: Plan) -> None:
+        """When `exact` fails a candidate that every self-referential check passed,
+        say so in the failure's details.
+
+        Run 019f7f7b-ba33 (QPE): the planner declared `exact` with a hand-written
+        reference whose inverse-QFT rotations sat on the wrong qubit pairs. Four
+        candidates failed `exact` identically at distance ~1.0 while the SAME panel
+        proved each executed circuit right — statistical_native TVD 0.014 against a
+        trusted re-execution, success_criteria met exactly. `exact` and
+        success_criteria were jointly unsatisfiable, the repair loop had nowhere to
+        go, and the budget burned on correct code.
+
+        The check stays blocking — the reference may be right and the passing metric
+        coincidental, and un-failing a failed check is the direction that ships
+        false positives. But the failure's details are the repair loop's whole
+        input and the run record's only explanation, so they must name the split
+        rather than imply the code is definitely the wrong side. A diagnostic in a
+        failing check's details cannot fail correct code (standing lesson 12).
+        """
+        reference_source = (
+            plan.verification_plan.reference_source if plan.verification_plan else None
+        )
+        if getattr(reference_source, "value", reference_source) != "plan_declared":
+            return
+        by_method = {check["method"]: check for check in checks}
+        exact = by_method.get("exact")
+        if exact is None or exact["result"] != "fail":
+            return
+        corroborations = [
+            name
+            for name in ("statistical_native", "statistical", "success_criteria")
+            if by_method.get(name, {}).get("result") == "pass"
+        ]
+        if not corroborations:
+            return
+        exact["details"]["disagreement"] = (
+            "every check that judges the executed circuit against itself or the "
+            f"plan's own success criteria passed ({', '.join(corroborations)}); the "
+            "failing comparison is against a reference the planner wrote by hand, "
+            "which shares an author with the plan and is not ground truth. If this "
+            "check keeps failing identically across candidates while those keep "
+            "passing, the reference is the suspect side — the plan cannot be "
+            "repaired from here, so prefer matching the reference ONLY where doing "
+            "so does not break the passing checks."
+        )
 
     @staticmethod
     def _native_optimization_check(
