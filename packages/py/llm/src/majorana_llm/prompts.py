@@ -5,7 +5,11 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from majorana_contracts.enums import Framework
-from majorana_contracts.plan import EXACT_DIAG_MAX_QUBITS, EXACT_MAX_QUBITS
+from majorana_contracts.plan import (
+    BRUTE_FORCE_MAX_VARIABLES,
+    EXACT_DIAG_MAX_QUBITS,
+    EXACT_MAX_QUBITS,
+)
 
 
 _OPENQASM_CONTRACT = (
@@ -52,7 +56,7 @@ plumbing and will not be shown to the user as JSON.
 
 Choose the smallest useful artifact contract and the strongest applicable verification
 strategy. The only verification_plan.methods this pipeline can evaluate are
-`return_contract`, `statistical`, `exact`, and `exact_diag`, and the schema offers no others
+`return_contract`, `statistical`, `exact`, `exact_diag`, and `brute_force`, and the schema offers no others
 (selected-framework re-execution plus deterministic artifact/resource/measurement checks
 run automatically regardless of what you list). `statistical` compares two measurement-count
 distributions, so list it only when expected_output_keys includes the key holding the
@@ -101,7 +105,23 @@ The check diagonalizes it and compares the true minimum eigenvalue against the v
 your success_criteria.primary_metric names, so that key must be one of
 expected_output_keys. It supports at most {EXACT_DIAG_MAX_QUBITS} qubits. Write the
 Hamiltonian the task states, not one you back-derive from an expected answer — the
-whole value of the check is that it was written before the code.
+whole value of the check is that it was written before the code. `exact_diag` grades
+an ENERGY and nothing else: a cut weight is an affine transform of an Ising energy,
+not the energy, and pointing exact_diag at one is rejected as unsatisfiable.
+
+`brute_force` is the classical ground truth for a task whose answer is a COMBINATORIAL
+objective — a MaxCut cut weight, a QUBO objective value. List it whenever the request
+names a small optimization instance (QAOA on a graph, a QUBO), write the instance into
+reference_problem exactly as the task states it — for maxcut the weighted edge list
+({{"kind": "maxcut", "num_variables": 4, "terms": [{{"i": 0, "j": 1, "weight": 2.0}},
+...]}}, objective: MAXIMIZE the cut weight), for qubo the coefficients of
+sum(w_ij * x_i * x_j) with i == j declaring the linear term (objective: MINIMIZE) —
+and make success_criteria.primary_metric the result key holding that objective value
+(it must be one of expected_output_keys). The check enumerates every assignment, so it
+supports at most {BRUTE_FORCE_MAX_VARIABLES} variables. It passes only a value equal to
+the true optimum: there is no shot-noise slack on a cut's weight, so the code should
+report the best objective over ALL sampled assignments, and success_criteria's
+expected_range must contain the instance's true optimum.
 
 Semantic correctness is judged independently by the
 verification critic. Do not invent

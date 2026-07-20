@@ -377,3 +377,157 @@ def test_a_plan_without_exact_diag_needs_no_hamiltonian():
     plan = Plan.model_validate({**VALID, "verification_plan": {"methods": ["return_contract"]}})
     assert plan.verification_plan is not None
     assert plan.verification_plan.reference_hamiltonian is None
+
+
+_MAXCUT_PROBLEM = {
+    "kind": "maxcut",
+    "num_variables": 4,
+    "terms": [
+        {"i": 0, "j": 1, "weight": 1.0},
+        {"i": 1, "j": 2, "weight": 2.0},
+        {"i": 2, "j": 3, "weight": 1.0},
+        {"i": 0, "j": 3, "weight": 2.0},
+    ],
+}
+
+
+def _with_brute_force(**verification) -> dict:
+    return {
+        **VALID,
+        "expected_output_keys": ["best_cut_weight", "best_assignment"],
+        "success_criteria": {"primary_metric": "best_cut_weight"},
+        "verification_plan": {
+            "methods": ["brute_force", "return_contract"],
+            "reference_problem": _MAXCUT_PROBLEM,
+            **verification,
+        },
+    }
+
+
+def test_brute_force_is_plannable_at_last():
+    """`brute_force` sat in VerificationMethod and in the database allowlist from
+    migration 0001 with no implementation and no way for a plan to request it —
+    the same dormancy `exact_diag` came out of, for the metric family exact_diag
+    structurally cannot grade (production run 019f7f81-4a61)."""
+    plan = Plan.model_validate(_with_brute_force())
+    assert plan.verification_plan is not None
+    assert plan.verification_plan.reference_problem is not None
+    assert plan.verification_plan.reference_problem.kind == "maxcut"
+    assert len(plan.verification_plan.reference_problem.terms) == 4
+
+
+def test_brute_force_with_no_problem_at_all_normalizes_to_yesterdays_behaviour():
+    """`brute_force` parsed fine before it was plannable — _drop_unplannable_methods
+    normalized it away — and PlanRecord.plan re-validates every stored plan on
+    rehydration. Hard-failing this shape would kill runs resuming across the
+    deploy on plans that used to parse. Dropping the check is weaker, not wrong."""
+    plan = Plan.model_validate(
+        {
+            **_with_brute_force(),
+            "verification_plan": {"methods": ["brute_force", "return_contract"]},
+        }
+    )
+    assert plan.verification_plan is not None
+    assert plan.verification_plan.methods == [VerificationMethod.RETURN_CONTRACT]
+
+
+def test_brute_force_as_the_only_method_still_leaves_a_check_behind():
+    plan = Plan.model_validate(
+        {**_with_brute_force(), "verification_plan": {"methods": ["brute_force"]}}
+    )
+    assert plan.verification_plan is not None
+    assert plan.verification_plan.methods == [VerificationMethod.RETURN_CONTRACT]
+
+
+def test_a_term_outside_the_declared_variable_count_is_rejected():
+    """ProblemTerm's own bounds only see the global ceiling; the instance's own
+    width is a whole-plan fact."""
+    with pytest.raises(ValidationError) as exc:
+        Plan.model_validate(
+            _with_brute_force(
+                reference_problem={
+                    "kind": "maxcut",
+                    "num_variables": 3,
+                    "terms": [{"i": 0, "j": 3, "weight": 1.0}],
+                }
+            )
+        )
+    assert "outside 0..2" in str(exc.value)
+
+
+def test_a_maxcut_self_loop_is_rejected_with_the_reason():
+    with pytest.raises(ValidationError) as exc:
+        Plan.model_validate(
+            _with_brute_force(
+                reference_problem={
+                    "kind": "maxcut",
+                    "num_variables": 3,
+                    "terms": [{"i": 1, "j": 1, "weight": 1.0}],
+                }
+            )
+        )
+    assert "self-loop" in str(exc.value)
+
+
+def test_a_qubo_diagonal_term_is_not_a_self_loop():
+    """For qubo, i == j is how the linear coefficient is declared; rejecting it
+    would reject every instance with a linear part."""
+    plan = Plan.model_validate(
+        _with_brute_force(
+            reference_problem={
+                "kind": "qubo",
+                "num_variables": 2,
+                "terms": [
+                    {"i": 0, "j": 0, "weight": 1.0},
+                    {"i": 0, "j": 1, "weight": -2.0},
+                ],
+            }
+        )
+    )
+    assert plan.verification_plan is not None
+    assert plan.verification_plan.reference_problem is not None
+
+
+def test_an_instance_above_the_enumeration_ceiling_is_rejected_by_the_field():
+    from majorana_contracts.plan import BRUTE_FORCE_MAX_VARIABLES
+
+    with pytest.raises(ValidationError):
+        Plan.model_validate(
+            _with_brute_force(
+                reference_problem={
+                    "kind": "maxcut",
+                    "num_variables": BRUTE_FORCE_MAX_VARIABLES + 1,
+                    "terms": [{"i": 0, "j": 1, "weight": 1.0}],
+                }
+            )
+        )
+
+
+def test_a_non_finite_weight_is_rejected_by_the_field_itself():
+    with pytest.raises(ValidationError):
+        Plan.model_validate(
+            _with_brute_force(
+                reference_problem={
+                    "kind": "maxcut",
+                    "num_variables": 2,
+                    "terms": [{"i": 0, "j": 1, "weight": float("inf")}],
+                }
+            )
+        )
+
+
+def test_brute_force_whose_metric_is_not_a_promised_key_is_rejected():
+    """The check reads primary_metric out of the result dict. A metric the code
+    was never asked to print fails identically on every candidate."""
+    with pytest.raises(ValidationError) as exc:
+        Plan.model_validate(
+            {**_with_brute_force(), "success_criteria": {"primary_metric": "cut_value"}}
+        )
+    assert "does not promise that key" in str(exc.value)
+
+
+def test_a_plan_without_brute_force_needs_no_problem():
+    """Scoped to the contradiction, like every other rule here."""
+    plan = Plan.model_validate({**VALID, "verification_plan": {"methods": ["return_contract"]}})
+    assert plan.verification_plan is not None
+    assert plan.verification_plan.reference_problem is None

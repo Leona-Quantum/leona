@@ -16,6 +16,10 @@ from majorana_contracts.enums import VerificationMethod, VerificationResultKind
 from majorana_openqasm import OpenQASMError, normalize, resource_metrics
 from pydantic import BaseModel, Field
 
+from majorana_verification.baseline import (
+    BaselineProblemError,
+    objective_comparison,
+)
 from majorana_verification.hamiltonian import (
     HamiltonianError,
     energy_tolerance,
@@ -393,6 +397,66 @@ def verify_exact_diag(
         )
     return VerificationOutcome(
         method=VerificationMethod.EXACT_DIAG,
+        result=PASS if passed else FAIL,
+        details=details,
+    )
+
+
+def verify_brute_force(
+    kind: str,
+    num_variables: int,
+    terms: list[tuple[int, int, float]],
+    reported_value: Any,
+) -> VerificationOutcome:
+    """Reported objective value against the enumerated optimum of a declared instance.
+
+    The combinatorial sibling of `verify_exact_diag`: the check that speaks a cut
+    metric's own units, which an energy check structurally cannot (production run
+    019f7f81-4a61 declared a cut-weight range that could never contain the Ising
+    ground energy, and four correct candidates burned the budget).
+
+    Deliberately NO plan-declared tolerance, not even a tightening one: the bound
+    is floating-point headroom only, because a specific assignment's objective
+    value is exact — there is no shot-noise budget for a plan to honestly spend,
+    and a loosened bound would let a run that never solved the instance buy a
+    physical grade.
+    """
+    if not isinstance(reported_value, int | float) or isinstance(reported_value, bool):
+        return VerificationOutcome(
+            method=VerificationMethod.BRUTE_FORCE,
+            result=FAIL,
+            details={
+                "error": "required evidence unavailable",
+                "reason": (
+                    "the plan's primary_metric is not a real number in the result; "
+                    "brute-force enumeration has nothing to compare against"
+                ),
+                "reported_value": reported_value,
+            },
+        )
+    try:
+        passed, details = objective_comparison(
+            kind,  # type: ignore[arg-type]  # non-member kinds raise BaselineProblemError
+            num_variables,
+            terms,
+            float(reported_value),
+        )
+    except BaselineProblemError as exc:
+        # A malformed instance is a defect in the PLAN, not in the candidate. The
+        # plan contract rejects the shapes it can see before a candidate is ever
+        # written; anything arriving here is a claim about the reference, so the
+        # evidence says so rather than letting the model rewrite correct code.
+        return VerificationOutcome(
+            method=VerificationMethod.BRUTE_FORCE,
+            result=FAIL,
+            details={
+                "error": "reference_problem is not enumerable as declared",
+                "reason": str(exc),
+                "fault": "plan",
+            },
+        )
+    return VerificationOutcome(
+        method=VerificationMethod.BRUTE_FORCE,
         result=PASS if passed else FAIL,
         details=details,
     )

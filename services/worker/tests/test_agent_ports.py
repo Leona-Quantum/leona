@@ -1797,3 +1797,138 @@ async def test_the_range_gate_gives_up_after_one_retry_rather_than_looping():
     with pytest.raises(StageOutputError, match="unsatisfiable verification plan"):
         await planner.create_plan(uuid4())
     assert len(llm.prompts) == 2
+
+
+# The weighted-MaxCut ring from live run 019f7f81-4a61's family, planned the way
+# the pipeline can finally grade it: brute_force over the declared edge list
+# instead of exact_diag over an Ising energy the metric never was. Alternating
+# sides {0,2} vs {1,3} severs every edge, so the maximum cut weight is
+# 1 + 2 + 1 + 2 = 6.0; the achievable cut values are {0, 2, 3, 4, 6}.
+_MAXCUT_RING = {
+    "kind": "maxcut",
+    "num_variables": 4,
+    "terms": [
+        {"i": 0, "j": 1, "weight": 1.0},
+        {"i": 1, "j": 2, "weight": 2.0},
+        {"i": 2, "j": 3, "weight": 1.0},
+        {"i": 0, "j": 3, "weight": 2.0},
+    ],
+}
+
+
+def _qaoa_plan(**overrides) -> Plan:
+    return Plan.model_validate(
+        {
+            "domain": "optimization",
+            "framework": "qiskit",
+            "algorithm": Algorithm.QAOA.value,
+            "problem_summary": "Weighted MaxCut on a 4-node ring",
+            "algorithm_rationale": "QAOA over the declared weighted graph",
+            "parameters": {"shots": 2048, "seed": 1729},
+            "qubits_estimate": 4,
+            "expected_runtime_sec": 60,
+            "success_criteria": {
+                "primary_metric": "best_cut_weight",
+                "expected_range": {"min": 5.5, "max": 6.0},
+            },
+            "expected_output_keys": ["best_cut_weight", "best_assignment"],
+            "artifact_contract": {
+                "artifact_type": "script",
+                "measurement_policy": "specified",
+                "top_level_execution": "required",
+                "expected_return_type": "dict",
+            },
+            "verification_plan": {
+                "methods": ["brute_force", "return_contract"],
+                "reference_problem": _MAXCUT_RING,
+            },
+            **overrides,
+        }
+    )
+
+
+def _qaoa_execution(candidate, cut_weight):
+    return _execution(
+        candidate,
+        result={"best_cut_weight": cut_weight, "best_assignment": "0101"},
+        observation={
+            "native_optimization": {"applied": False},
+            "resource_metrics": {
+                "qubits": 4,
+                "depth": 6,
+                "gate_count": 16,
+                "two_qubit_gate_count": 4,
+                "measurement_count": 4,
+            },
+        },
+    )
+
+
+def test_a_qaoa_run_that_found_the_optimum_finally_earns_a_physical_grade():
+    """The affirmative half of what became PR 126: exact_diag REFUSES a cut-weight
+    metric as a category error, and until now nothing could grade it at all — a
+    correct QAOA run could only ever pass structurally."""
+    candidate = _candidate()
+    checks = EvidenceVerifier(llm=MustNotRunLLM(), task_prompt="MaxCut")._deterministic_checks(
+        candidate, _qaoa_execution(candidate, 6.0), _qaoa_plan()
+    )
+    check = next(item for item in checks if item["method"] == "brute_force")
+    assert check["result"] == "pass"
+    assert check["details"]["metric"] == "best_cut_weight"
+    assert evidence_strength_of(checks) is EvidenceStrength.PHYSICAL
+
+
+def test_a_suboptimal_cut_fails_with_the_search_named_not_the_scoring():
+    """4.0 is an achievable cut of the ring, so the evidence must say the search
+    fell short — the repair that helps — rather than a bare distance."""
+    candidate = _candidate()
+    checks = EvidenceVerifier(llm=MustNotRunLLM(), task_prompt="MaxCut")._deterministic_checks(
+        candidate, _qaoa_execution(candidate, 4.0), _qaoa_plan()
+    )
+    check = next(item for item in checks if item["method"] == "brute_force")
+    assert check["result"] == "fail"
+    assert "SUBOPTIMAL" in check["details"]["disagreement"]
+    assert evidence_strength_of(checks) is EvidenceStrength.STRUCTURAL
+
+
+def test_a_cut_no_partition_achieves_names_the_scoring_code():
+    """5.0 is not the weight of ANY cut of the ring: the number was computed
+    wrongly, which is a different bug with a different repair."""
+    candidate = _candidate()
+    checks = EvidenceVerifier(llm=MustNotRunLLM(), task_prompt="MaxCut")._deterministic_checks(
+        candidate, _qaoa_execution(candidate, 5.0), _qaoa_plan()
+    )
+    check = next(item for item in checks if item["method"] == "brute_force")
+    assert check["result"] == "fail"
+    assert "ANY assignment" in check["details"]["disagreement"]
+
+
+def _brute_force_plan_payload(*, range_min: float, range_max: float) -> str:
+    payload = _qaoa_plan().model_dump(mode="json")
+    payload["success_criteria"]["expected_range"] = {"min": range_min, "max": range_max}
+    return json.dumps(payload)
+
+
+async def test_a_range_that_cannot_contain_the_true_optimum_costs_one_planner_retry():
+    """The brute_force mirror of the exact_diag range gate: the ring's maximum
+    cut is 6.0, so a range of [7.0, 8.0] can never pass both checks, and both
+    numbers are plan-declared."""
+    contradictory = _brute_force_plan_payload(range_min=7.0, range_max=8.0)
+    corrected = _brute_force_plan_payload(range_min=5.5, range_max=6.0)
+    llm = _ScriptedPlannerLLM(contradictory, corrected)
+    planner = LLMPlanner(llm=llm, task_prompt="Weighted MaxCut", framework=Framework.QISKIT)
+
+    plan = await planner.create_plan(uuid4())
+
+    assert plan.success_criteria.expected_range == {"min": 5.5, "max": 6.0}
+    assert len(llm.prompts) == 2
+    assert "unsatisfiable verification plan" in llm.prompts[1]
+    assert "maximum cut weight" in llm.prompts[1]
+
+
+async def test_a_range_around_the_true_optimum_passes_without_a_retry():
+    llm = _ScriptedPlannerLLM(_brute_force_plan_payload(range_min=5.5, range_max=6.0))
+    planner = LLMPlanner(llm=llm, task_prompt="Weighted MaxCut", framework=Framework.QISKIT)
+    plan = await planner.create_plan(uuid4())
+    assert plan.verification_plan is not None
+    assert len(llm.prompts) == 1

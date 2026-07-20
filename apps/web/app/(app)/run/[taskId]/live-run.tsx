@@ -45,6 +45,7 @@ const VERIFICATION_METHOD_LABEL: Record<string, string> = {
   statistical_native: "Compared against a trusted re-run of the circuit",
   exact: "Compared the circuit against a reference",
   exact_diag: "Diagonalized the Hamiltonian and compared the energy",
+  brute_force: "Solved the instance classically and compared the objective",
   statistical_reproducibility: "Re-ran the circuit and compared",
   resource_contract: "Checked qubit/resource usage",
   measurement_policy: "Checked measurement coverage",

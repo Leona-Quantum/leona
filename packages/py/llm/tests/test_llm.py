@@ -212,7 +212,7 @@ def test_parse_plan_tolerates_fenced_json_and_prose():
 
 
 def test_parse_plan_normalizes_retired_verification_methods_instead_of_failing():
-    payload = PLAN_JSON | {"verification_plan": {"methods": ["brute_force", "statistical"]}}
+    payload = PLAN_JSON | {"verification_plan": {"methods": ["qasm_parse", "statistical"]}}
 
     plan = parse_plan(json.dumps(payload))
 
@@ -221,7 +221,12 @@ def test_parse_plan_normalizes_retired_verification_methods_instead_of_failing()
 
 
 def test_parse_plan_falls_back_to_return_contract_when_every_method_is_retired():
-    payload = PLAN_JSON | {"verification_plan": {"methods": ["brute_force", "exact_diag"]}}
+    # `qasm_parse` is genuinely retired; `exact_diag` and `brute_force` are
+    # plannable now but arrive with no reference at all, which normalizes to the
+    # pre-plannable behaviour (dropped) rather than failing stored plans.
+    payload = PLAN_JSON | {
+        "verification_plan": {"methods": ["qasm_parse", "exact_diag", "brute_force"]}
+    }
 
     plan = parse_plan(json.dumps(payload))
 
@@ -246,7 +251,7 @@ def test_parsed_methods_are_identical_to_the_members_the_worker_dispatches_on():
     object, so it would fail every identity check and report every result as
     "required evidence unavailable" — i.e. fail verification for every run.
     """
-    payload = PLAN_JSON | {"verification_plan": {"methods": ["statistical", "brute_force"]}}
+    payload = PLAN_JSON | {"verification_plan": {"methods": ["statistical", "qasm_parse"]}}
 
     methods = parse_plan(json.dumps(payload)).verification_plan.methods
 
@@ -259,14 +264,18 @@ def test_plan_schema_never_offers_a_method_the_worker_cannot_evaluate():
     schema = json.dumps(Plan.model_json_schema())
 
     assert "baseline_plan" not in schema
-    for retired in ("brute_force", "qasm_parse"):
-        assert retired not in schema
+    assert "qasm_parse" not in schema
     # `exact_diag` moved the other way on 2026-07-20: it now has a dispatch branch
     # (EvidenceVerifier._exact_diag_check) and a reference field, so withholding it
     # from the schema would be the same defect in reverse — a check the worker can
     # run that no plan can ask for. It was in that state since migration 0001.
     assert "exact_diag" in schema
     assert "reference_hamiltonian" in schema
+    # `brute_force` followed the same path out of dormancy on 2026-07-20:
+    # dispatch branch EvidenceVerifier._brute_force_check, reference field
+    # reference_problem.
+    assert "brute_force" in schema
+    assert "reference_problem" in schema
 
 
 def test_parse_plan_normalizes_scalar_additional_notes_from_json_object_mode():
