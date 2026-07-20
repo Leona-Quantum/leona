@@ -31,12 +31,29 @@ def _contract_event_types() -> set[str]:
     return {member.model_fields["type"].default for member in get_args(union)}
 
 
+def _rewrites_the_constraint(path: Path) -> bool:
+    """True when the migration actually installs an event-type allowlist.
+
+    Naming the constraint is not enough: a later migration that merely mentions
+    `ck_type_enum` in a comment or docstring would otherwise be selected as the
+    newest one and take an empty allowlist with it. Requiring a real
+    `create_check_constraint` call plus a module-level event-type tuple keeps the
+    selection tied to the thing being read.
+    """
+    source = path.read_text()
+    return (
+        "ck_type_enum" in source
+        and "create_check_constraint" in source
+        and bool(_event_type_tuples(ast.parse(source)))
+    )
+
+
 def _latest_allowlist_migration() -> Path:
     """The highest-numbered migration that rewrites the event-type constraint."""
     touching = [
-        path for path in sorted(MIGRATIONS.glob("[0-9]*.py")) if "ck_type_enum" in path.read_text()
+        path for path in sorted(MIGRATIONS.glob("[0-9]*.py")) if _rewrites_the_constraint(path)
     ]
-    assert touching, "no migration defines ck_type_enum"
+    assert touching, "no migration installs an event-type allowlist"
     return touching[-1]
 
 
@@ -54,7 +71,13 @@ def _allowlist_from(path: Path) -> set[str]:
     post-upgrade allowlist: a migration that adds a value always leaves the new
     set larger than the old one it also names.
     """
-    module = ast.parse(path.read_text())
+    named = _event_type_tuples(ast.parse(path.read_text()))
+    assert named, f"{path.name} names no event-type tuple"
+    return max(named.values(), key=len)
+
+
+def _event_type_tuples(module: ast.Module) -> dict[str, set[str]]:
+    """Module-level `*EVENT_TYPES*` tuples, with `*splat` references resolved."""
     named: dict[str, set[str]] = {}
     for node in module.body:
         if not isinstance(node, ast.Assign) or not isinstance(node.value, ast.Tuple):
@@ -70,8 +93,7 @@ def _allowlist_from(path: Path) -> set[str]:
                 values |= named.get(element.value.id, set())
         if values:
             named[target.id] = values
-    assert named, f"{path.name} names no event-type tuple"
-    return max(named.values(), key=len)
+    return named
 
 
 def test_every_contract_event_type_is_allowed_by_the_database():
@@ -107,3 +129,15 @@ def test_the_migration_reader_actually_found_a_constraint():
     path = _latest_allowlist_migration()
     assert re.search(r"ck_type_enum", path.read_text())
     assert len(_allowlist_from(path)) > 20
+
+
+def test_a_later_migration_merely_mentioning_the_constraint_is_not_selected(tmp_path):
+    """A migration that names ck_type_enum in prose must not shadow the one that
+    actually installs the allowlist (CodeRabbit, PR #97)."""
+    decoy = MIGRATIONS / "9999_decoy_for_test.py"
+    decoy.write_text('"""Adds an index. Does not touch ck_type_enum."""\nrevision = "9999"\n')
+    try:
+        assert _latest_allowlist_migration() != decoy
+        assert "run.best_effort" in _allowlist_from(_latest_allowlist_migration())
+    finally:
+        decoy.unlink()

@@ -153,6 +153,16 @@ class PythonFrameworkAdapter:
     def trusted_setup(self, *, circuit_expected: bool) -> str:
         return ""
 
+    # `measurement_count` counts measured QUBITS, not measurement operations. Qiskit
+    # makes those the same number — `qc.measure_all()` emits one instruction per
+    # qubit — but Cirq's `cirq.measure(q0, q1)` is a SINGLE operation covering both,
+    # and PennyLane's tape records one MeasurementProcess over several wires. Counting
+    # operations therefore reported 1 for a fully measured 2-qubit Cirq circuit, and
+    # the MEASURE_ALL policy check requires `measurement_count >= observed_qubits` —
+    # so until 2026-07-20 no Cirq circuit could satisfy it, on any candidate, and the
+    # run burned its whole budget on a check no repair could fix. Found by running a
+    # Cirq Bell task against production and reading which check the best-effort
+    # fallback named.
     def trusted_observer(self, source: str, *, circuit_expected: bool) -> str:
         if not circuit_expected:
             return ""
@@ -191,7 +201,11 @@ if _majorana_final_circuit is not None:
             "depth": _majorana_depth,
             "gate_count": _majorana_len(_majorana_gate_operations),
             "two_qubit_gate_count": _majorana_sum(_majorana_len(_majorana_getattr(op, "qubits", _majorana_getattr(op, "wires", []))) == 2 for op in _majorana_gate_operations),
-            "measurement_count": _majorana_len(_majorana_measurements),
+            "measurement_count": _majorana_sum(
+                _majorana_len(_majorana_getattr(op, "qubits", _majorana_getattr(op, "wires", [])))
+                or 1
+                for op in _majorana_measurements
+            ),
         }}
     except _majorana_exception:
         pass
