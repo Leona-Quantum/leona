@@ -102,6 +102,14 @@ qubits are deliberately left unmeasured, and reserve `measure_all` for circuits 
 entire register is the answer. Observed exhausting a budget on production run
 019f7db9-f00b, a 3-qubit Deutsch-Jozsa with one ancilla.
 
+A variational algorithm is the other end of the same mistake. VQE and QAOA publish the
+bare parameterized ansatz as FINAL_CIRCUIT and estimate expectation values from separate
+per-basis measured copies of it, so the published circuit carries NO measurement and the
+policy is `none`. Production run 019f7f2d-9504 planned `measure_all` for a VQE, and the
+candidate that bound the correct unmeasured ansatz was failed by the policy on every
+attempt until the budget ran out. The plan contract now rejects `measure_all` outright
+unless expected_output_keys promises a measurement distribution.
+
 If the request is underspecified but executable with reasonable defaults, choose and
 record those defaults. Ask only when a missing value would materially change the
 artifact. Preserve user-specified framework, algorithm, parameters, units, return

@@ -317,3 +317,55 @@ class Plan(_PlanBase):
             "(e.g. 'counts') to expected_output_keys, or drop 'statistical' and "
             "verify the scalars some other way."
         )
+
+    @model_validator(mode="after")
+    def _measure_all_needs_a_distribution_to_show_for_it(self) -> "Plan":
+        """Reject `measure_all` on a plan whose output holds no distribution.
+
+        Third member of the same family as the two rules above, and found the same
+        way — a live run that burned its whole budget on correct code.
+
+        `measurement_policy: measure_all` is checked against FINAL_CIRCUIT: the
+        verifier requires `measurement_count >= observed_qubits` on the published
+        circuit. For a variational algorithm that is the wrong circuit to ask. VQE
+        estimates an energy from SEPARATE per-basis measurement circuits and
+        publishes the bare parameterized ansatz, which carries no measurement at
+        all — so the check reads 0 measurements against 2 qubits and fails.
+
+        Production VQE run 019f7f2d-9504 died exactly that way. Its one candidate
+        that executed cleanly bound `FINAL_CIRCUIT = ansatz(optimal_params)` and
+        estimated the energy from two measured copies of the ansatz. That is the
+        textbook construction and the right artifact to publish; the plan's
+        `measure_all` failed it, and because the policy is fixed at plan time the
+        repair loop had nowhere to go but add measurements the algorithm does not
+        want. Every candidate after it failed too, and the run ended
+        `candidate_budget_exhausted`.
+
+        The rule is the honest generalization: if every qubit of the published
+        circuit is measured, the run's own output should have the resulting
+        distribution in it. A plan that measures everything and reports no
+        distribution has declared a policy nothing in its result reflects.
+
+        Deliberately narrow. It does not mention VQE or QAOA — a QAOA plan that
+        really does publish a measured circuit and report `counts` passes, and a
+        chemistry plan that reports only an energy is steered to a policy that fits.
+        The cost of being wrong here is one planner re-emit onto `specified`, which
+        the verifier accepts for any measurement count; the cost of the status quo
+        was a whole run.
+        """
+        contract = self.artifact_contract
+        if contract is None or contract.measurement_policy is not MeasurementPolicy.MEASURE_ALL:
+            return self
+        if any(_promises_distribution(key) for key in self.expected_output_keys):
+            return self
+        raise ValueError(
+            "artifact_contract.measurement_policy is 'measure_all', which asserts "
+            "that every qubit of the published FINAL_CIRCUIT is measured, but "
+            f"expected_output_keys ({', '.join(self.expected_output_keys)}) promises "
+            "no measurement distribution to show for it. If this run reports a "
+            "distribution, add the result key holding the raw {bitstring: count} "
+            "mapping (e.g. 'counts'). If the published artifact is a variational "
+            "ansatz whose expectation values are estimated from separate measurement "
+            "circuits, FINAL_CIRCUIT carries no measurement and the policy is 'none'. "
+            "If some qubits are measured and some are not, the policy is 'specified'."
+        )

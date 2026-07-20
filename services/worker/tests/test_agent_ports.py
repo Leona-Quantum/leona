@@ -13,6 +13,7 @@ from majorana_contracts.enums import (
     Algorithm,
     EvidenceStrength,
     Framework,
+    MeasurementPolicy,
     VerificationMethod,
     VerifierDecision,
     evidence_strength_of,
@@ -1406,3 +1407,118 @@ def test_every_check_the_panel_emits_is_an_event_the_stream_can_carry():
         "native_optimization_evidence",
         "statistical_reproducibility",
     } <= emitted
+
+
+def test_a_measurement_policy_failure_names_the_cause_not_the_count():
+    """Standing lesson 12, applied to the check that killed run 019f7f2d-9504.
+
+    `{"policy": "measure_all", "measurement_count": 0}` is a number, and a number
+    named nothing four VQE candidates could act on. The plan contract now refuses
+    that pairing before a candidate is written, so a failure here means the code
+    disagrees with a policy the plan was entitled to declare — and the sentence has
+    to say which edit closes the gap.
+    """
+    candidate = _candidate()
+    plan = Plan.model_validate(
+        _plan(expected_keys=["counts"]).model_dump(mode="json")
+        | {
+            "artifact_contract": {
+                "artifact_type": "script",
+                "measurement_policy": "measure_all",
+                "top_level_execution": "required",
+            }
+        }
+    )
+    execution = _execution(
+        candidate,
+        observation={
+            "native_optimization": {"applied": False},
+            "resource_metrics": {
+                "qubits": 2,
+                "depth": 2,
+                "gate_count": 2,
+                "two_qubit_gate_count": 1,
+                "measurement_count": 0,
+            },
+        },
+    )
+    checks = EvidenceVerifier(llm=MustNotRunLLM(), task_prompt="Bell state")._deterministic_checks(
+        candidate, execution, plan
+    )
+    check = next(item for item in checks if item["method"] == "measurement_policy")
+    assert check["result"] == "fail"
+    details = check["details"]
+    assert details["observed_qubits"] == 2, "the count it was compared against must be in evidence"
+    disagreement = details["disagreement"]
+    assert "no measurement at all" in disagreement
+    assert "FINAL_CIRCUIT" in disagreement
+
+
+def test_a_passing_measurement_policy_carries_no_disagreement_prose():
+    """Bounded and on failure only — the repair loop reads failures, and a passing
+    check that editorialises is context spent for nothing."""
+    candidate = _candidate()
+    plan = Plan.model_validate(
+        _plan(expected_keys=["counts"]).model_dump(mode="json")
+        | {
+            "artifact_contract": {
+                "artifact_type": "script",
+                "measurement_policy": "measure_all",
+                "top_level_execution": "required",
+            }
+        }
+    )
+    checks = EvidenceVerifier(llm=MustNotRunLLM(), task_prompt="Bell state")._deterministic_checks(
+        candidate, _execution(candidate), plan
+    )
+    check = next(item for item in checks if item["method"] == "measurement_policy")
+    assert check["result"] == "pass"
+    assert "disagreement" not in check["details"]
+
+
+async def test_the_vqe_measure_all_plan_is_re_emitted_with_the_objection():
+    """End to end through the seam that actually matters: a validator rejection is
+    only cheap if the planner recovers from it inside its two attempts.
+
+    This is production run 019f7f2d-9504's plan, then the plan it should have
+    written. Asserting on the objection text reaching the second prompt is the whole
+    point — a rule whose message never arrives is just a run that dies at plan time
+    instead of at candidate four.
+    """
+
+    def payload(policy: str) -> str:
+        return json.dumps(
+            {
+                "domain": "quantum_simulation",
+                "framework": "qiskit",
+                "algorithm": Algorithm.VQE.value,
+                "problem_summary": "VQE for a 2-qubit Hamiltonian",
+                "algorithm_rationale": "VQE minimizes an expectation value",
+                "parameters": {"shots": 4096, "seed": 1729, "optimizer": "COBYLA"},
+                "qubits_estimate": 2,
+                "expected_runtime_sec": 5,
+                "success_criteria": {
+                    "primary_metric": "ground_state_energy",
+                    "expected_range": {"min": -1.92883, "max": -1.82883},
+                },
+                "expected_output_keys": ["ground_state_energy", "optimal_params", "iterations"],
+                "artifact_contract": {
+                    "artifact_type": "script",
+                    "measurement_policy": policy,
+                    "top_level_execution": "required",
+                    "expected_return_type": "dict",
+                },
+                "verification_plan": {"methods": ["return_contract"]},
+            }
+        )
+
+    llm = _ScriptedPlannerLLM(payload("measure_all"), payload("none"))
+    plan = await LLMPlanner(
+        llm=llm, task_prompt="VQE for H = 0.5 Z0 + 1.2 Z1 + 0.8 X0X1", framework=Framework.QISKIT
+    ).create_plan(uuid4())
+
+    assert len(llm.prompts) == 2, "the contract rejection must cost a re-emit, not the run"
+    assert "measure_all" in llm.prompts[1]
+    assert "variational ansatz" in llm.prompts[1]
+    assert plan.artifact_contract is not None
+    assert plan.artifact_contract.measurement_policy is MeasurementPolicy.NONE
