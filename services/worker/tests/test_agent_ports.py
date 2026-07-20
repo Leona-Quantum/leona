@@ -834,3 +834,57 @@ def test_captured_output_is_never_forwarded_to_the_model():
     }
     forwarded = _without_captured_output(observation)
     assert forwarded == {"resource_metrics": {"qubits": 2}, "sandbox_runs": 1}
+
+
+class UnserializableResultSandbox:
+    """The epilogue's own behaviour when RESULT cannot be JSON-encoded: it records
+    `result_error` and omits `result`."""
+
+    provider = "unserializable"
+
+    async def _execute(self, spec):
+        return SandboxResult(
+            ok=True,
+            exit_code=0,
+            duration_ms=1,
+            stdout="",
+            stderr="",
+            provider=self.provider,
+            protected_result={
+                "source_fingerprint": spec.source_fingerprint,
+                "result_error": "not_json_serializable",
+            },
+        )
+
+
+class NoResultSandbox:
+    provider = "no-result"
+
+    async def _execute(self, spec):
+        return SandboxResult(
+            ok=True,
+            exit_code=0,
+            duration_ms=1,
+            stdout="",
+            stderr="",
+            provider=self.provider,
+            protected_result={"source_fingerprint": spec.source_fingerprint},
+        )
+
+
+async def test_an_unserializable_result_says_so_instead_of_reporting_it_missing():
+    """A live PennyLane run returned qml.counts() directly — numpy scalars, not
+    JSON — and rewrote the same unserializable dict on all four candidates, because
+    "RESULT_missing" describes a different bug than the one it had."""
+    output = await SandboxCandidateExecutor(UnserializableResultSandbox()).run_candidate(
+        _candidate(), _plan()
+    )
+    assert output.exit_code == 3
+    assert output.observation["evidence_error"] == "RESULT_not_json_serializable"
+    assert "not JSON-serializable" in output.observation["evidence_hint"]
+
+
+async def test_a_genuinely_absent_result_still_reports_it_missing():
+    output = await SandboxCandidateExecutor(NoResultSandbox()).run_candidate(_candidate(), _plan())
+    assert output.observation["evidence_error"] == "RESULT_missing"
+    assert "never assigned" in output.observation["evidence_hint"]

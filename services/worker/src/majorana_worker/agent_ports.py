@@ -215,6 +215,27 @@ class SandboxCandidateExecutor:
             )
         structured_result = observation.get("result")
         if result.ok and not isinstance(structured_result, dict):
+            # The epilogue distinguishes "RESULT was never assigned" from "RESULT
+            # was assigned and could not be serialized", and until 2026-07-20 both
+            # arrived here as the bare "RESULT_missing". That is the difference
+            # between a repair the model can make and one it cannot: a live
+            # PennyLane Bell run returned `qml.counts()` directly, whose numpy
+            # scalars are not JSON-serializable, and rewrote the same unserializable
+            # dict four times because nothing ever told it the value was the
+            # problem rather than its absence.
+            serialization_error = observation.get("result_error")
+            evidence_error = (
+                "RESULT_not_json_serializable"
+                if serialization_error is not None
+                else "RESULT_missing"
+            )
+            hint = (
+                "RESULT was assigned but is not JSON-serializable — convert framework "
+                "or numpy values to plain Python types (int(), float(), str()) before "
+                "assigning them, including inside nested dicts."
+                if serialization_error is not None
+                else "RESULT was never assigned at module scope."
+            )
             return ExecutionOutput(
                 environment_fingerprint=self._environment_fingerprint(candidate, plan),
                 sandbox_provider=result.provider,
@@ -222,7 +243,7 @@ class SandboxCandidateExecutor:
                 failure_kind=ExecutionFailureKind.CODE_ERROR,
                 duration_ms=result.duration_ms,
                 result={},
-                observation=observation | {"evidence_error": "RESULT_missing"},
+                observation=observation | {"evidence_error": evidence_error, "evidence_hint": hint},
             )
         if result.ok and self._needs_repeat(plan):
             repeated = await sandbox_run(self._sandbox, spec)

@@ -43,7 +43,10 @@ Execution contract:
 - For PennyLane, build a QNode on qml.device(..., shots=..., seed=...) and apply
   qml.compile to the circuit so the run carries native-optimization evidence. Return
   counts via qml.counts (not qml.sample) when the task asks for a distribution, and
-  bind FINAL_CIRCUIT to the QNode itself.
+  bind FINAL_CIRCUIT to the QNode itself. qml.counts returns numpy scalars, which are
+  NOT JSON-serializable: rebuild it as {str(k): int(v) for k, v in counts.items()}
+  before putting it in RESULT, and never assign the QNode's return value to RESULT
+  directly — RESULT is a dict keyed by the plan's promised output names.
 - Optimization must live in the source that actually executes, not in prose about it:
   the native-optimization evidence is read back out of the sandbox and reported to the
   verifier, and a run whose optimization claim does not match its source is rejected.
