@@ -183,3 +183,17 @@ def test_auto_threshold_uses_the_selected_orientations_bin_count():
     two_sample = verify_native_sampled_counts({"01": 1024}, sampled)
     assert two_sample.passed
     assert two_sample.details["protocol"]["bins"] == 1
+
+
+def test_exact_native_width_mismatch_is_strict_json_safe():
+    """Same rule as verify_exact: no non-finite floats in evidence (the JSONB
+    boundary rejects them and dead-letters the job)."""
+    import json as _json
+
+    three_qubit_ref = (
+        'OPENQASM 2.0;\ninclude "qelib1.inc";\nqreg q[3];\nh q[0];\ncx q[0],q[1];\ncx q[1],q[2];\n'
+    )
+    outcome = verify_exact_native(three_qubit_ref, _payload_lsb_bell())
+    assert outcome.result is VerificationResultKind.FAIL
+    assert outcome.details["scores"]["qubit_count_mismatch"] is True
+    _json.dumps(outcome.details, allow_nan=False)

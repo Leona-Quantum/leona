@@ -388,3 +388,18 @@ def test_malformed_counts_against_an_incapable_circuit_still_fail():
     # absolved by the circuit's incapacity.
     outcome = verify_statistical_counts(TELEPORTATION, {"2x": 100})
     assert outcome.result is VerificationResultKind.FAIL
+
+
+def test_width_mismatch_evidence_is_strict_json_safe():
+    """Production run 019f7ea0-8210 (cirq): `exact` on a width-mismatched pair
+    recorded max_abs_distance = Infinity, Python's json emitted the bare
+    `Infinity` token, Postgres JSONB rejected it, and the WHOLE JOB dead-lettered
+    — a check failure converted into infrastructure death. The evidence must
+    round-trip strict JSON (allow_nan=False) and still fail plainly."""
+    import json as _json
+
+    outcome = verify_exact(BELL, GHZ3)
+    assert outcome.result is VerificationResultKind.FAIL
+    assert outcome.details["scores"]["qubit_count_mismatch"] is True
+    assert outcome.details["scores"]["max_abs_distance"] is None
+    _json.dumps(outcome.details, allow_nan=False)  # raises on inf/nan
