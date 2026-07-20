@@ -171,8 +171,10 @@ function answerFromEvents(events: WireEvent[]): string | null {
   const sentences = [opening.endsWith(".") ? opening : `${opening}.`];
   if (metric) sentences.push(`Result: ${metric}.`);
   // Said in the answer text, not only in the evidence panel. The panel has listed the
-  // checks since #100 and a careful reader could already work this out; the top line
-  // was the part that overstated it.
+  // individual checks since PR 100, so a careful reader could already work this out;
+  // the top line was the part that overstated it.
+  // (Do not write a PR reference as a hash plus three digits here — the raw-hex style
+  // gate reads it as a colour literal and fails the ts job.)
   if (structuralOnly) {
     sentences.push(
       "Evidence is structural only — the result met the contract the plan asked for, but no check compared this circuit against the physics it is supposed to implement.",
