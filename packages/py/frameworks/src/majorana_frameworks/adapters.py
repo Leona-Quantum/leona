@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import ast
+import re
 from dataclasses import dataclass
 from typing import Any, Literal, Protocol
 
@@ -218,6 +219,30 @@ if _majorana_final_circuit is not None:
 
 
 class QiskitAdapter(PythonFrameworkAdapter):
+    # `.c_if()` was REMOVED in Qiskit 2.0. It is the only classical feed-forward API
+    # the model reliably knows, so every teleportation candidate reached for it and
+    # died on `AttributeError: 'InstructionSet' object has no attribute 'c_if'` —
+    # four identical failures, budget exhausted, twice (production runs 019f7dad-385b
+    # and 019f7dbf-d673). Forbidding it in the generate prompt did NOT work, and the
+    # second of those runs was the test of that fix: a ban with no substitute leaves
+    # the model nowhere to go, and even naming the substitute in a long prompt lost
+    # to whatever its training associates with teleportation.
+    #
+    # So this is a deterministic check rather than a request for compliance. It runs
+    # BEFORE the sandbox, costs no execution, and hands the repair loop the exact
+    # replacement instead of a traceback it has already proved it cannot learn from.
+    _REMOVED_APIS = ((r"\.c_if\s*\(", "c_if", "with circuit.if_test((creg, value)):"),)
+
+    def contract_diagnostics(self, source: str, *, circuit_expected: bool) -> list[str]:
+        diagnostics = super().contract_diagnostics(source, circuit_expected=circuit_expected)
+        for pattern, name, replacement in self._REMOVED_APIS:
+            if re.search(pattern, source):
+                diagnostics.append(
+                    f"contract:qiskit `{name}` was removed in Qiskit 2.0 and raises "
+                    f"AttributeError at runtime. Use `{replacement}` instead."
+                )
+        return diagnostics
+
     def trusted_setup(self, *, circuit_expected: bool) -> str:
         if not circuit_expected:
             return ""

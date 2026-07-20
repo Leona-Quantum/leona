@@ -755,48 +755,63 @@ class EvidenceVerifier:
         plan: Plan,
         checks: list[dict[str, Any]],
     ) -> _CriticOutput:
-        response = await self._llm.complete(
-            LLMRequest(
-                model=model_for("verify"),
-                system=(
-                    "Act as an independent, fail-closed quantum-program critic. Judge request-to-plan, "
-                    "plan-to-code, and success-criteria-to-result alignment using only supplied evidence. "
-                    "Check the artifact contract, selected framework, measurement policy, seeds, shots, "
-                    "tolerances, qubit ordering, forbidden operations, required invariants, and whether "
-                    "the evidence actually proves each claim. Deterministic checks already passed and "
-                    "cannot be overridden. Return pass only with medium/high confidence, no mismatch, "
-                    "and at most minor severity; otherwise give a concrete repair plan and rechecks."
-                ),
-                user=json.dumps(
-                    {
-                        "request": self._task_prompt,
-                        "plan": plan.model_dump(mode="json"),
-                        "framework": candidate.framework.value,
-                        "source": candidate.source,
-                        "result": execution.result,
-                        "checks": checks,
-                    },
-                    default=str,
-                ),
-                max_tokens=2048,
-                temperature=0.0,
-                response_schema=_CriticOutput.model_json_schema(),
-                schema_name="intent_alignment",
-            )
+        request = LLMRequest(
+            model=model_for("verify"),
+            system=(
+                "Act as an independent, fail-closed quantum-program critic. Judge request-to-plan, "
+                "plan-to-code, and success-criteria-to-result alignment using only supplied evidence. "
+                "Check the artifact contract, selected framework, measurement policy, seeds, shots, "
+                "tolerances, qubit ordering, forbidden operations, required invariants, and whether "
+                "the evidence actually proves each claim. Deterministic checks already passed and "
+                "cannot be overridden. Return pass only with medium/high confidence, no mismatch, "
+                "and at most minor severity; otherwise give a concrete repair plan and rechecks."
+            ),
+            user=json.dumps(
+                {
+                    "request": self._task_prompt,
+                    "plan": plan.model_dump(mode="json"),
+                    "framework": candidate.framework.value,
+                    "source": candidate.source,
+                    "result": execution.result,
+                    "checks": checks,
+                },
+                default=str,
+            ),
+            max_tokens=2048,
+            temperature=0.0,
+            response_schema=_CriticOutput.model_json_schema(),
+            schema_name="intent_alignment",
         )
-        try:
-            return _CriticOutput.model_validate_json(response.text)
-        except ValidationError as exc:
-            return _CriticOutput(
-                decision=VerifierDecision.FAIL,
-                confidence="low",
-                severity="blocking",
-                summary="Semantic critic returned invalid structured evidence.",
-                failed_checks=["critic_output_schema"],
-                repair_plan=["Re-run semantic verification with valid structured evidence."],
-                required_recheck=["semantic_critic"],
-                residual_risks=[str(exc)[:1000]],
-            )
+        # The critic is asked twice before its failure is allowed to count against the
+        # candidate. A malformed completion is the CRITIC's failure, not the code's, and
+        # the fabricated verdict below is indistinguishable from a real objection: it is
+        # blocking, it consumes a candidate, and its repair plan asks the agent to
+        # "re-run semantic verification", which the agent cannot do. So one unparseable
+        # response rejected a candidate the critic never actually judged, and four in a
+        # row exhausted the budget — a 3-qubit W state died exactly that way on
+        # production run 019f7db9-f25c. Temperature is already 0; the retry exists
+        # because the failure is in serialization, not in sampling.
+        last_error: ValidationError | None = None
+        for _ in range(2):
+            response = await self._llm.complete(request)
+            try:
+                return _CriticOutput.model_validate_json(response.text)
+            except ValidationError as exc:
+                last_error = exc
+        return _CriticOutput(
+            decision=VerifierDecision.FAIL,
+            confidence="low",
+            severity="blocking",
+            summary=(
+                "The semantic critic could not return valid structured evidence, twice. "
+                "This is a verifier failure, not a defect found in the candidate — the "
+                "code below was never actually judged."
+            ),
+            failed_checks=["critic_output_schema"],
+            repair_plan=["Retry the run; no change to the candidate is implied by this result."],
+            required_recheck=["semantic_critic"],
+            residual_risks=[str(last_error)[:1000] if last_error else "unknown"],
+        )
 
 
 class TrustedOpenQASMConverter:
