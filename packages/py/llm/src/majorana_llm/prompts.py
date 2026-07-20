@@ -127,6 +127,12 @@ Execution contract:
   never QuantumCircuit.qasm(), execute(), BasicAer, or .c_if(). If your own result
   explicitly needs a QASM string, use qiskit.qasm3.dumps(circuit), never a circuit
   method call. Do not emit QASM unless the user explicitly requested it.
+- Classical feed-forward — conditioning a gate on a mid-circuit measurement, as
+  teleportation and error correction require — is written with the if_test context
+  manager, `with circuit.if_test((creg, value)): circuit.x(q)`. The `.c_if()` method
+  it replaced was REMOVED in Qiskit 2.0 and raises AttributeError, so a repair loop
+  cannot recover by retrying it: every candidate dies the same way and the run
+  exhausts its budget. Observed doing exactly that on production run 019f7dad-385b.
 - Use deterministic seeds wherever the framework supports them. Do not add
   measurements unless the artifact contract requests them.
 - For chemistry at PoC scale, hard-code the Hamiltonian coefficients from the request,

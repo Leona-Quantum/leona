@@ -2,6 +2,12 @@ import type { RunEvent } from "@majorana/ui";
 
 export type LibraryStatus = "verified" | "verified_caveats" | "failed";
 
+/** One deterministic check as the verifier recorded it on the saved version. */
+export interface VerificationCheck {
+  method: string;
+  result: string;
+}
+
 export interface LibraryArtifact {
   id: string;
   slug: string;
@@ -21,6 +27,12 @@ export interface LibraryArtifact {
   runId?: string;
   archivedAt?: string;
   source: "demo" | "run" | "public";
+  // The checks the pipeline actually ran, read off the saved version's metadata.
+  // Until 2026-07-20 the Verification tab described these in a fixed paragraph
+  // that named checks generically and could not distinguish a run that proved a
+  // circuit's unitary from one that only confirmed its return keys.
+  checks?: VerificationCheck[];
+  criticSummary?: string;
 }
 
 const STORAGE_KEY = "majorana.library.v1";

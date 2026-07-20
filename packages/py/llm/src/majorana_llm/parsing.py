@@ -27,7 +27,16 @@ def _extract_json(text: str) -> str:
     start = text.find("{")
     end = text.rfind("}")
     if start == -1 or end <= start:
-        raise StageOutputError("no JSON object found in model output")
+        # Machine-safe metadata only — this flows into durable run events, so it must
+        # never carry raw model output. Without it the message was identical for an
+        # empty completion, a reasoning-only response, and prose with no JSON at all,
+        # and a dead-lettered run left nothing to tell them apart. `extract_code` has
+        # reported length and blankness since it hit the same wall; this is the other
+        # half. Seen on production run 019f7dad-3a24, which dead-lettered in planning.
+        raise StageOutputError(
+            f"no JSON object found in model output (len={len(text)}, "
+            f"blank={not text.strip()}, unclosed_brace={start != -1 and end <= start})"
+        )
     return text[start : end + 1]
 
 
