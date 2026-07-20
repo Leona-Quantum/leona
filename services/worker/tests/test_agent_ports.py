@@ -257,6 +257,34 @@ async def test_semantic_critic_fails_closed_on_low_confidence_pass():
     assert output.repair.required_rechecks == ["semantic_critic"]
 
 
+class RecheckDemandingPassCriticLLM:
+    """High-confidence PASS that nevertheless demands a recheck — self-contradictory."""
+
+    async def complete(self, request, *, on_delta=None):
+        return LLMResponse(
+            text=(
+                '{"decision":"pass","confidence":"high","severity":"none",'
+                '"summary":"Looks correct, but re-verify the statistical comparison.",'
+                '"passed_checks":[],"failed_checks":[],"mismatches":[],"suggestions":[],'
+                '"repair_plan":[],"required_recheck":["statistical"],"residual_risks":[]}'
+            ),
+            model=request.model,
+            input_tokens=1,
+            output_tokens=1,
+        )
+
+
+async def test_semantic_critic_fails_closed_on_pass_that_demands_rechecks():
+    candidate = _candidate()
+    output = await EvidenceVerifier(
+        llm=RecheckDemandingPassCriticLLM(), task_prompt="Bell state"
+    ).verify(candidate, _execution(candidate), _plan())
+
+    assert output.decision is VerifierDecision.FAIL
+    assert output.repair is not None
+    assert output.repair.required_rechecks == ["statistical"]
+
+
 async def test_publisher_keeps_compact_long_term_evidence_without_duplicate_variant(
     monkeypatch,
 ):

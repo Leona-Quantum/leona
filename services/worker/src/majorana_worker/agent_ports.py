@@ -517,6 +517,11 @@ class EvidenceVerifier:
             and critic.severity in {"none", "minor"}
             and not critic.failed_checks
             and not critic.mismatches
+            # A PASS that demands rechecks is self-contradictory: the critic is
+            # saying "correct" and "I need it looked at again" in one verdict.
+            # Fail closed and let the named rechecks drive the repair, exactly
+            # as a low-confidence pass does.
+            and not critic.required_recheck
         )
         if critic_passed:
             return VerificationOutput(
