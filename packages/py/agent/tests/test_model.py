@@ -52,3 +52,36 @@ async def test_model_turns_malformed_selection_into_broker_feedback_call():
     call = await model.next_tool(run_id=uuid4(), state=AgentState.PLANNED, history=[])
     assert call.name is ToolName.SIMULATE_QISKIT
     assert "__model_selection_error__" in call.arguments
+
+
+async def test_verified_exemplars_reach_the_generation_context_bounded():
+    """LLM work list item 4: retrieved code from our own verified corpus rides in
+    the per-run user payload. Bounded — oversized sources truncate, entries
+    without source drop, and at most two survive."""
+    llm = FakeLLM()
+    model = StructuredToolModel(
+        llm=llm,
+        task_prompt="Bell circuit",
+        framework=Framework.QISKIT,
+        model="test-model",
+        exemplars=[
+            {"title": "GHZ-4", "family": "GHZ", "source": "x" * 10_000},
+            {"title": "no-source", "family": "Bell", "source": ""},
+            {"title": "Bell", "family": "Bell", "source": "qc = QuantumCircuit(2)"},
+            {"title": "third", "family": "QFT", "source": "print(3)"},
+        ],
+    )
+    await model.next_tool(run_id=uuid4(), state=AgentState.PLANNED, history=[])
+    payload = json.loads(llm.request.user)
+    exemplars = payload["verified_exemplars"]
+    assert [item["title"] for item in exemplars] == ["GHZ-4", "Bell"]
+    assert len(exemplars[0]["source"]) == 4000
+
+
+async def test_no_exemplars_yields_an_empty_list_not_an_absent_field():
+    llm = FakeLLM()
+    model = StructuredToolModel(
+        llm=llm, task_prompt="Bell circuit", framework=Framework.QISKIT, model="test-model"
+    )
+    await model.next_tool(run_id=uuid4(), state=AgentState.PLANNED, history=[])
+    assert json.loads(llm.request.user)["verified_exemplars"] == []

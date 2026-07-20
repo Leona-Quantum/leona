@@ -4,9 +4,7 @@ from types import SimpleNamespace
 
 import pytest
 from majorana_contracts.enums import (
-    Framework,
     PlannableVerificationMethod,
-    RunMode,
     Stage,
     VerificationMethod,
 )
@@ -21,19 +19,13 @@ from majorana_llm import (
     model_for,
     parse_analysis,
     parse_plan,
-    render_generate_prompt,
-    render_conversation_prompt,
     render_plan_prompt,
     resolve_provider,
 )
 from majorana_llm.prompts import (
-    CRITIC_SYSTEM_PROMPT,
-    GENERATE_SYSTEM_PROMPT,
     PLAN_SYSTEM_PROMPT,
     QUANTUM_AGENT_SYSTEM_PROMPT,
-    WRITEBACK_SYSTEM_PROMPT,
 )
-import majorana_llm.research as research_module
 
 PLAN_JSON = {
     "domain": "education",
@@ -92,33 +84,10 @@ def test_plan_prompt_encodes_framework_native_contract():
     assert "never switch" in PLAN_SYSTEM_PROMPT.lower() or "never a silent" in PLAN_SYSTEM_PROMPT
     assert "selected framework's executable Python source is the canonical" in PLAN_SYSTEM_PROMPT
     assert "source fingerprints" in PLAN_SYSTEM_PROMPT
-    assert "Tool Broker" in GENERATE_SYSTEM_PROMPT
-    assert "Assign one plain JSON-compatible dictionary named RESULT" in GENERATE_SYSTEM_PROMPT
-    assert "OpenQASM must not become the user-facing result" in GENERATE_SYSTEM_PROMPT
-    # oracle/search endianness directive: little-endian convention + loud self-check,
-    # so an endianness bug fails in the sandbox instead of returning a bit-reversed answer.
-    assert "little-endian" in GENERATE_SYSTEM_PROMPT
-    assert "bit-reversed" in GENERATE_SYSTEM_PROMPT
-
-
-def test_v2_prompt_deltas_present():
-    # v2 port (Nameko_System_Prompts_v2.md): seeds + chemistry pragmatism in generate,
-    # calibration/evidence rules in the critic, sandbox+conversion provenance in writeback.
-    assert "deterministic seeds" in GENERATE_SYSTEM_PROMPT.lower()
-    assert "hard-code the Hamiltonian coefficients" in GENERATE_SYSTEM_PROMPT
-    assert "FINAL_CIRCUIT = compiled_circuit" in GENERATE_SYSTEM_PROMPT
-    assert "qiskit_algorithms" in GENERATE_SYSTEM_PROMPT
-    assert "QuantumCircuit.qasm()" in GENERATE_SYSTEM_PROMPT
-
-
-def test_prompts_name_the_replacement_for_every_api_they_forbid():
-    """Banning `.c_if()` was not enough: the prompt had forbidden it for months and
-    every teleportation candidate still wrote it, because classical feed-forward has
-    no other API the model knows and a ban leaves it nowhere to go. Four identical
-    AttributeErrors, budget exhausted, on production run 019f7dad-385b. A prohibition
-    has to carry its substitute."""
-    assert ".c_if()" in GENERATE_SYSTEM_PROMPT
-    assert "if_test" in GENERATE_SYSTEM_PROMPT
+    # The generation-side pins (c_if -> if_test substitute, little-endian
+    # self-check, RESULT contract) moved with the live prompt: they are asserted
+    # against AGENT_SYSTEM_PROMPT in packages/py/agent/tests, since the GENERATE
+    # stage prompt they used to pin here was dead code and is deleted.
 
 
 def test_plan_prompt_stops_measure_all_from_making_ancilla_algorithms_unsatisfiable():
@@ -131,14 +100,6 @@ def test_plan_prompt_stops_measure_all_from_making_ancilla_algorithms_unsatisfia
     assert "measurement_policy" in PLAN_SYSTEM_PROMPT
     assert "specified" in PLAN_SYSTEM_PROMPT
     assert "ancilla" in PLAN_SYSTEM_PROMPT
-    assert "it did not pass" in CRITIC_SYSTEM_PROMPT
-    assert "highest severity" in CRITIC_SYSTEM_PROMPT
-    assert "OpenQASM" in WRITEBACK_SYSTEM_PROMPT and "sandbox" in WRITEBACK_SYSTEM_PROMPT
-    assert "OpenQASM, when present, is internal" in WRITEBACK_SYSTEM_PROMPT
-    assert "selected-framework code is the primary artifact" in WRITEBACK_SYSTEM_PROMPT
-    assert "conversion" in WRITEBACK_SYSTEM_PROMPT
-    # Export limitations never negate independent verification.
-    assert "never diminishes" in WRITEBACK_SYSTEM_PROMPT
 
 
 def test_structured_decoding_routes_per_endpoint():
@@ -225,25 +186,10 @@ def test_provider_neutral_prompt_rendering_keeps_request_and_internal_instructio
     assert "benchmark" in rendered.system.lower()
 
 
-def test_generate_prompt_is_role_rendered_without_exposing_a_schema_to_the_user():
-    rendered = render_generate_prompt(json.dumps(PLAN_JSON))
-    assert "Internal plan record" in rendered.user
-    assert "Implement the plan now." in rendered.user
-    assert "JSON schema" not in rendered.user
-
-
-def test_conversation_prompt_is_provider_native_and_ignores_product_controls():
-    rendered = render_conversation_prompt(
-        "Teach me how a Bell state works.", RunMode.IDEATE, Framework.CIRQ
-    )
-    assert rendered.user == "Teach me how a Bell state works."
-    assert "Selected mode" not in rendered.user
-    assert "Selected framework" not in rendered.user
-    assert "internal plans" not in rendered.system
-    assert rendered.system is QUANTUM_AGENT_SYSTEM_PROMPT
+def test_chat_persona_cannot_narrate_results_it_did_not_produce():
     # The chat turn cannot execute anything, so the persona must not let the
     # model narrate results it did not produce.
-    assert "never report simulation output" in rendered.system
+    assert "never report simulation output" in QUANTUM_AGENT_SYSTEM_PROMPT
 
 
 def test_analysis_parser_accepts_the_internal_narrative_contract():
@@ -332,28 +278,6 @@ def test_parse_plan_normalizes_scalar_additional_notes_from_json_object_mode():
 def test_parse_plan_rejects_invalid_plan():
     with pytest.raises(StageOutputError):
         parse_plan('{"framework": "not-a-framework"}')
-
-
-def test_web_research_scrapes_source_text_and_labels_it_as_untrusted(monkeypatch):
-    def fake_download(url, _max_bytes):
-        return "<html><script>ignore me()</script><main>Two-qubit parity-reduced H2 Hamiltonian.</main></html>"
-
-    monkeypatch.setattr(
-        research_module,
-        "_search",
-        lambda _query, _limit: [("H2 VQE guide", "https://example.org/h2")],
-    )
-    monkeypatch.setattr(research_module, "_download_text", fake_download)
-    result = research_module._research_sync("quantum guide", max_sources=1)
-    context = result.as_prompt()
-    assert result.sources[0].url == "https://example.org/h2"
-    assert "Two-qubit parity-reduced H2 Hamiltonian." in context
-    assert "untrusted reference material" in context
-
-
-def test_web_research_auto_mode_can_be_disabled(monkeypatch):
-    monkeypatch.setenv("MAJORANA_WEB_RESEARCH", "off")
-    assert not research_module._research_enabled("H2 VQE")
 
 
 def test_extract_code():

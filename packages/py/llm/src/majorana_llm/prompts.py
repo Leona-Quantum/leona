@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from majorana_contracts.enums import Framework, RunMode
+from majorana_contracts.enums import Framework
 from majorana_contracts.plan import EXACT_MAX_QUBITS
 
 
@@ -118,74 +118,12 @@ Return one object that satisfies the supplied internal request_plan schema. The 
 exists to make execution reliable; never expose its field names or JSON framing in the
 user-facing answer."""
 
-GENERATE_SYSTEM_PROMPT = f"""You are Leona Quantum's framework-native circuit implementer.
-
-Implement the accepted internal plan faithfully. Generate code only for the selected
-framework and do not simplify the algorithm or circuit to make conversion easier.
-The protected RESULT record is internal machine plumbing; it is not user-facing JSON.
-
-Execution contract:
-- Assign one plain JSON-compatible dictionary named RESULT with the promised output
-  keys. Stdout is not a trusted result channel. Counts are a flat bitstring-to-count
-  mapping and every value is a plain Python type.
-- For every circuit-bearing program, define FINAL_CIRCUIT as the final circuit object
-  in the selected framework. This binding is an execution boundary, not a request to
-  print or return OpenQASM.
-- Apply optimization with the selected framework's native APIs when semantically safe:
-  Qiskit transpile with deterministic settings, Cirq target-gateset/transformer APIs,
-  or PennyLane compile/transforms. Bind FINAL_CIRCUIT after that native optimization.
-  If optimization would change requested behavior or is unsupported, retain the original.
-- For every Qiskit circuit, use Qiskit 2.x APIs: AerSimulator plus transpile and run;
-  never QuantumCircuit.qasm(), execute(), BasicAer, or .c_if(). If your own result
-  explicitly needs a QASM string, use qiskit.qasm3.dumps(circuit), never a circuit
-  method call. Do not emit QASM unless the user explicitly requested it.
-- Classical feed-forward — conditioning a gate on a mid-circuit measurement, as
-  teleportation and error correction require — is written with the if_test context
-  manager, `with circuit.if_test((creg, value)): circuit.x(q)`. The `.c_if()` method
-  it replaced was REMOVED in Qiskit 2.0 and raises AttributeError, so a repair loop
-  cannot recover by retrying it: every candidate dies the same way and the run
-  exhausts its budget. Observed doing exactly that on production run 019f7dad-385b.
-- Use deterministic seeds wherever the framework supports them. Do not add
-  measurements unless the artifact contract requests them.
-- For chemistry at PoC scale, hard-code the Hamiltonian coefficients from the request,
-  the plan, or a cited standard reference. Distinguish electronic and total energy.
-- During a repair, preserve required invariants such as a final binding assignment
-  immediately before the result record; a valid example is FINAL_CIRCUIT = compiled_circuit.
-- Qiskit measurement bitstrings are little-endian: the leftmost character is the
-  highest-indexed qubit and the rightmost is qubit 0. For oracle/search tasks, make
-  the dominant measured state equal the requested target string, not its bit-reversed
-  form, and assert that before printing so an endianness bug fails loudly.
-- No shell commands, dependency installation, network, filesystem, or OS access.
-
-{FRAMEWORK_DIRECTIVE}
-{_AGENT_CONTRACT}
-{_RUNTIME_LIMITS}
-{_OPENQASM_CONTRACT}"""
-
-CRITIC_SYSTEM_PROMPT = """You are Leona Quantum's independent verification critic.
-
-Judge whether the recorded request, plan, generated code, and measured result agree.
-The fact that code ran is never sufficient. If a check did not pass, treat it as a
-failure until concrete evidence says otherwise; if it did not pass, it is not certified.
-Prefer a false negative and another repair over certifying an unverified artifact.
-Every failed check must cite concrete evidence, and disagreements use the highest
-severity.
-
-Check request -> plan, plan -> code, success criteria -> result, and verification
-strength. Check seeds, shots, tolerances, qubit ordering, framework, measurement policy,
-and the distinction between a verified result and an export or QPU option. Never invent
-results or silently repair a mismatch. When evidence disagrees, use the highest severity
-for the finding."""
-
-ANALYZE_SYSTEM_PROMPT = """You are Leona Quantum's final analysis writer.
-
-Write a concise natural-language explanation of the recorded run for a technical user.
-Choose the useful emphasis yourself: explain the method, what the evidence establishes,
-what the comparison means, and what remains uncertain. Use only values and facts in the
-provided evidence. Never invent measurements, resource estimates, QPU execution,
-compression gains, sources, or advantages. If a check failed or was skipped, say so
-plainly. The response is parsed into an internal object and then rendered as prose; do
-not discuss JSON, schemas, or internal field names in the answer."""
+# The GENERATE / CRITIC / ANALYZE / WRITEBACK stage prompts that used to sit here
+# were dead code: the five-stage pipeline they addressed was replaced by the
+# budgeted tool-calling agent (packages/py/agent), whose generation prompt is
+# AGENT_SYSTEM_PROMPT and whose critic lives inline in the worker's
+# EvidenceVerifier. Deleted 2026-07-20 (LLM work list item 8) — anyone editing
+# them expecting to change pipeline behaviour was changing nothing.
 
 QUANTUM_AGENT_SYSTEM_PROMPT = """You are Nala, the assistant in Leona Quantum — a platform
 for turning quantum and quantum-adjacent algorithm work into verified, reusable
@@ -246,26 +184,6 @@ Reply with JSON only, no prose and no code fence:
 {"intent": "chat" | "execute", "confidence": <0.0-1.0>, "reason": "<one short clause>"}
 The reason must say what in the message decided it, in at most 12 words."""
 
-# Compatibility name for callers that still import the old conversation prompt.
-CONVERSATION_SYSTEM_PROMPT = QUANTUM_AGENT_SYSTEM_PROMPT
-
-WRITEBACK_SYSTEM_PROMPT = """You are Leona Quantum's Vault-writeback stage. Given a verified,
-saved run, write concise repository metadata and a human-readable explanation for reuse:
-what the artifact does, how it was verified, which selected framework and conversion
-statuses exist, and known limitations. State the sandbox boundary from the run record.
-The selected-framework code is the primary artifact. OpenQASM, when present, is internal
-interchange data and must not be presented as the product's primary format. An unsupported conversion
-never diminishes a verified run: report it as a transfer limitation, not a failure.
-Never mark an artifact verified unless verification passed."""
-
-STAGE_PROMPTS = {
-    "plan": PLAN_SYSTEM_PROMPT,
-    "generate": GENERATE_SYSTEM_PROMPT,
-    "verify": CRITIC_SYSTEM_PROMPT,
-    "analyze": ANALYZE_SYSTEM_PROMPT,
-    "writeback": WRITEBACK_SYSTEM_PROMPT,
-}
-
 
 @dataclass(frozen=True)
 class RenderedPrompt:
@@ -324,43 +242,6 @@ def render_plan_prompt(
     )
 
 
-def render_generate_prompt(
-    plan_json: str,
-    research_context: str = "",
-    feedback: str | None = None,
-    requested_framework: Framework | None = None,
-) -> RenderedPrompt:
-    return _render(
-        GENERATE_SYSTEM_PROMPT,
-        f"Requested framework: {_framework_label(requested_framework)}\n\n"
-        f"Internal plan record:\n{plan_json}\n\n"
-        f"{research_context or 'No additional research context was available.'}\n\n"
-        f"Repair feedback, if any:\n{feedback or 'No repair feedback: this is the first implementation attempt.'}\n\n"
-        "Implement the plan now.",
-    )
-
-
-def render_analysis_prompt(
-    *,
-    task_prompt: str,
-    plan_json: str,
-    verification_evidence: str,
-    final_result: str,
-    baseline: str,
-    compilation: str,
-) -> RenderedPrompt:
-    return _render(
-        ANALYZE_SYSTEM_PROMPT,
-        f"User request:\n{task_prompt}\n\n"
-        f"Internal plan record:\n{plan_json}\n\n"
-        f"Recorded verification evidence:\n{verification_evidence}\n\n"
-        f"Recorded final result:\n{final_result}\n\n"
-        f"Recorded baseline:\n{baseline}\n\n"
-        f"Recorded compilation evidence:\n{compilation}\n\n"
-        "Write the natural-language analysis.",
-    )
-
-
 def render_intent_prompt(task_prompt: str) -> RenderedPrompt:
     """Classify one message as a task to execute or a message to answer.
 
@@ -369,16 +250,6 @@ def render_intent_prompt(task_prompt: str) -> RenderedPrompt:
     "why did that work?") reads as part of the task and routes to execute.
     """
     return _render(INTENT_ROUTER_SYSTEM_PROMPT, f"User message:\n{task_prompt}")
-
-
-def render_conversation_prompt(
-    task_prompt: str,
-    mode: RunMode | None = None,
-    framework: Framework | None = None,
-) -> RenderedPrompt:
-    """Compatibility helper; direct chat ignores product mode/framework controls."""
-    del mode, framework
-    return _render(QUANTUM_AGENT_SYSTEM_PROMPT, task_prompt)
 
 
 def _framework_label(framework: Framework | None) -> str:
