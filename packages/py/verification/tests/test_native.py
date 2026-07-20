@@ -278,6 +278,43 @@ def test_a_malformed_registers_list_does_not_rescue_a_width_mismatch():
         assert not verify_native_sampled_counts({"0": 900, "1": 124}, payload).passed
 
 
+def test_a_failing_sampled_comparison_names_the_two_distributions():
+    """Production run 019f7ecf-a56c (teleportation). The check was RIGHT — the
+    model wrote `circuit.measure(2, 0)`, putting Bob's qubit into Alice's
+    register, so `c_bob` was never written and its trusted marginal is constant
+    zero — but all it told the model was "TVD 0.1255 > 0.0900". Three candidates
+    repeated the same mistake and the budget was gone. A number cannot teach; the
+    two distributions can, and here they show `c_bob` is stuck at 0 while the run
+    reported a 0.88/0.12 split, which names the bug."""
+    stuck = {
+        "counts": {"0 00": 512, "0 01": 512, "0 10": 512, "0 11": 512},
+        "shots": 2048,
+        "seed": 1234,
+        "registers": [{"name": "c_bob", "width": 1}, {"name": "c_alice", "width": 2}],
+    }
+    outcome = verify_native_sampled_counts({"0": 1806, "1": 242}, stuck)
+    assert outcome.result is VerificationResultKind.FAIL
+    scores = outcome.details["scores"]
+    assert scores["trusted_distribution"] == {"0": 1.0}
+    assert scores["reported_distribution"]["1"] == pytest.approx(242 / 2048)
+    # Passing evidence stays lean — the diagnostic is for the repair loop.
+    agreeing = verify_native_sampled_counts({"0": 900, "1": 124}, _teleport_sampled())
+    assert agreeing.passed
+    assert "trusted_distribution" not in agreeing.details["scores"]
+
+
+def test_the_failure_diagnostic_is_bounded():
+    """256 nonzero outcomes is the check's ceiling; the diagnostic must not put
+    all of them into the repair evidence."""
+    wide = {f"{index:08b}": 8 for index in range(256)}
+    outcome = verify_native_sampled_counts(
+        {"00000000": 2048}, {"counts": wide, "shots": 2048, "seed": 1234}
+    )
+    assert outcome.result is VerificationResultKind.FAIL
+    assert len(outcome.details["scores"]["trusted_distribution"]) == 16
+    assert outcome.details["scores"]["distributions_truncated"] is True
+
+
 def test_exact_native_removes_a_provably_idle_reference_wire():
     """The statevector twin of the OpenQASM reduction (run 019f7ead-ead6): a cirq
     candidate carries only its TOUCHED qubits, so a 3-qubit reference whose q1 no

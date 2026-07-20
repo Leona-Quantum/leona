@@ -199,6 +199,17 @@ def native_statevector_vs_reference(
     )
 
 
+# How many outcomes a failure diagnostic may carry into the repair evidence. The
+# check itself allows 256; the whole point of the diagnostic is to be READ.
+_DIAGNOSTIC_OUTCOMES = 16
+
+
+def _largest_outcomes(distribution: dict[str, float]) -> dict[str, float]:
+    """The heaviest outcomes, keyed for a human (and a model) to read."""
+    ranked = sorted(distribution.items(), key=lambda item: (-item[1], item[0]))
+    return {key: value for key, value in ranked[:_DIAGNOSTIC_OUTCOMES]}
+
+
 def _sampled_registers(payload: dict, sampled_width: int) -> list[tuple[str, int]]:
     """The (name, width) registers of the trusted sample, in key-reading order.
 
@@ -327,10 +338,27 @@ def sampled_counts_comparison(
         protocol["register_used"] = register_used[0]
         protocol["register_width"] = register_used[1]
     payload = {"protocol": protocol, "tvd": tvd, "sampled": sorted(normalized_sampled.items())}
+    passed = tvd <= threshold
+    scores: dict = {"total_variation_distance": tvd, "both_orientations": tvds}
+    if not passed:
+        # A number cannot teach. Production run 019f7ecf-a56c: the model wrote
+        # `measure(2, 0)`, putting Bob's qubit into Alice's register, so `c_bob`
+        # was never written — and all this check said was "TVD 0.1255 > 0.0900".
+        # Three candidates repeated the mistake and the budget was gone. The two
+        # distributions name it: `c_bob` stuck at 0 against a reported 0.88/0.12.
+        # Only on failure, and bounded, so passing evidence stays lean and the
+        # repair payload cannot balloon to the check's 256-outcome ceiling.
+        reported_distribution = {
+            key: count / reported_shots for key, count in normalized_reported.items() if count > 0
+        }
+        scores["trusted_distribution"] = _largest_outcomes(sampled_distribution)
+        scores["reported_distribution"] = _largest_outcomes(reported_distribution)
+        if max(len(sampled_distribution), len(reported_distribution)) > _DIAGNOSTIC_OUTCOMES:
+            scores["distributions_truncated"] = True
     return EquivalenceReport(
         fingerprint_type="statistical_distribution",
         protocol=protocol,
         fingerprint_hash=hashlib.sha256(json.dumps(payload, sort_keys=True).encode()).hexdigest(),
-        passed=tvd <= threshold,
-        scores={"total_variation_distance": tvd, "both_orientations": tvds},
+        passed=passed,
+        scores=scores,
     )
