@@ -44,7 +44,10 @@ from majorana_openqasm import OpenQASMError, normalize
 from majorana_sandbox import ExecutionSpec, GuardRejection, Sandbox
 from majorana_sandbox import run as sandbox_run
 from majorana_verification import (
+    HamiltonianError,
+    energy_tolerance,
     extract_counts,
+    ground_state_energy,
     verify_exact,
     verify_exact_diag,
     verify_exact_native,
@@ -149,8 +152,69 @@ class LLMPlanner:
                 plan.parameters.shots = self._requested_shots
             if self._requested_seed is not None:
                 plan.parameters.seed = self._requested_seed
+            # After the shots override, because the tolerance depends on the
+            # shots that will actually run.
+            contradiction = self._exact_diag_range_contradiction(plan)
+            if contradiction is not None:
+                if attempt == self._PLAN_ATTEMPTS - 1:
+                    raise StageOutputError(contradiction)
+                objection = contradiction
+                continue
             return plan
         raise AssertionError("unreachable: loop returns or raises on the final attempt")
+
+    @staticmethod
+    def _exact_diag_range_contradiction(plan: Plan) -> str | None:
+        """A plan whose success range cannot contain its own ground truth is
+        unsatisfiable before any code exists.
+
+        Live run 019f7f81-4a61 (weighted-MaxCut QAOA): the planner declared an
+        Ising Hamiltonian (ground energy -4.5) and success_criteria demanding
+        best_cut_weight in [5.5, 6.0]. exact_diag only passes a value within
+        tolerance of -4.5, so the two checks could never both pass — the model
+        reported the CORRECT max cut of 6.0 four times and burned the candidate
+        budget. A cut weight is an affine transform of the Ising energy, not the
+        energy; the planner pointed an energy check at a non-energy metric, and
+        no code can repair a plan. Both numbers are plan-declared, so the
+        contradiction is computable the moment the plan is parsed — one planner
+        retry instead of a dead run, the same trade #90 made for `statistical`.
+
+        Runs only here in the planner, never in the Plan model: a stored plan
+        that predates this gate must keep rehydrating (standing lesson 15).
+        """
+        verification_plan = plan.verification_plan
+        if verification_plan is None or VerificationMethod.EXACT_DIAG not in (
+            verification_plan.methods or []
+        ):
+            return None
+        terms = verification_plan.reference_hamiltonian
+        expected_range = plan.success_criteria.expected_range
+        if not terms or not expected_range:
+            return None
+        pairs = [(term.coefficient, term.pauli) for term in terms]
+        try:
+            exact = ground_state_energy(pairs)
+            tolerance = energy_tolerance(pairs, plan.parameters.shots)
+        except HamiltonianError:
+            # Malformed Hamiltonians are the plan contract's beat; the verifier
+            # also names them `fault: plan`. Not this gate's job.
+            return None
+        low = expected_range.get("min", float("-inf"))
+        high = expected_range.get("max", float("inf"))
+        if low <= exact + tolerance and exact - tolerance <= high:
+            return None
+        metric = plan.success_criteria.primary_metric
+        return (
+            f"unsatisfiable verification plan: exact_diag only passes a "
+            f"{metric} within {tolerance:.6f} of the declared Hamiltonian's "
+            f"ground-state energy {exact:.6f}, but success_criteria.expected_range "
+            f"[{low}, {high}] contains no such value, so the two checks can never "
+            "both pass. Either the promised metric is not the energy of the "
+            "declared operator (a cut WEIGHT is not an Ising energy — drop "
+            "exact_diag, or promise the energy itself as the primary metric and "
+            "set the range around the ground-state energy), or the Hamiltonian or "
+            "range is written wrong."
+        )
 
 
 class SandboxCandidateExecutor:
