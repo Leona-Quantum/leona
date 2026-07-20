@@ -4837,8 +4837,8 @@ div.mj-rail-row:hover {
   width: 100%;
   padding: var(--sp-1) var(--sp-2);
   border: 1px solid var(--border-0);
-  border-radius: var(--radius-1);
-  background: var(--surface-0);
+  border-radius: var(--radius-control);
+  background: var(--bg-1);
   color: var(--text-0);
   font-family: var(--font-mono);
   font-size: var(--fs-12);
