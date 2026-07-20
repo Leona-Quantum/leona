@@ -107,6 +107,28 @@ def test_v2_prompt_deltas_present():
     assert "FINAL_CIRCUIT = compiled_circuit" in GENERATE_SYSTEM_PROMPT
     assert "qiskit_algorithms" in GENERATE_SYSTEM_PROMPT
     assert "QuantumCircuit.qasm()" in GENERATE_SYSTEM_PROMPT
+
+
+def test_prompts_name_the_replacement_for_every_api_they_forbid():
+    """Banning `.c_if()` was not enough: the prompt had forbidden it for months and
+    every teleportation candidate still wrote it, because classical feed-forward has
+    no other API the model knows and a ban leaves it nowhere to go. Four identical
+    AttributeErrors, budget exhausted, on production run 019f7dad-385b. A prohibition
+    has to carry its substitute."""
+    assert ".c_if()" in GENERATE_SYSTEM_PROMPT
+    assert "if_test" in GENERATE_SYSTEM_PROMPT
+
+
+def test_plan_prompt_stops_measure_all_from_making_ancilla_algorithms_unsatisfiable():
+    """`measure_all` is checked literally against the circuit that ran, so any
+    algorithm holding an ancilla back — Deutsch-Jozsa, Bernstein-Vazirani, Simon,
+    kickback Grover — fails it with CORRECT code, identically on every candidate, and
+    burns the whole budget (production run 019f7db9-f00b). The planner had no guidance
+    on the field at all and reached for `measure_all` by habit; `specified` is the
+    policy that fits."""
+    assert "measurement_policy" in PLAN_SYSTEM_PROMPT
+    assert "specified" in PLAN_SYSTEM_PROMPT
+    assert "ancilla" in PLAN_SYSTEM_PROMPT
     assert "it did not pass" in CRITIC_SYSTEM_PROMPT
     assert "highest severity" in CRITIC_SYSTEM_PROMPT
     assert "OpenQASM" in WRITEBACK_SYSTEM_PROMPT and "sandbox" in WRITEBACK_SYSTEM_PROMPT
