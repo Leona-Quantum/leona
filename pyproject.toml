@@ -18,6 +18,7 @@ dev = [
     # was an importorskip against a package CI did not install. qiskit is already
     # present transitively via majorana-verification; this closes the other side.
     "cirq-core>=1.4",
+    "pennylane>=0.40",
 ]
 
 [tool.uv.workspace]
