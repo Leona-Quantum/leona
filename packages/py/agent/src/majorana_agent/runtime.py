@@ -66,11 +66,26 @@ class AgentRuntime:
                 await self._store.set_state(run_id, history[-1].state)
                 continue
             call = await self._model.next_tool(run_id=run_id, state=state, history=history)
+            # The model authors its own tool_call_id, and a stateless generator
+            # at temperature 0 reuses one sooner or later: live run
+            # 019f7f7c-5ac2 had publish_artifact rejected once for bad
+            # arguments, retried it under the same id, and the replay guard
+            # below executed a run whose candidate had already passed every
+            # check. Suffixing the step index makes uniqueness structural —
+            # every dispatch (rejected or not) grows the history, so no two
+            # steps share an effective id — while crash-replay determinism is
+            # preserved: a replayed next_tool sees the same history length and
+            # derives the same effective id, so the broker's completed-call
+            # cache still recognises it.
+            call = call.model_copy(
+                update={"tool_call_id": f"{call.tool_call_id[:80]}-s{len(history)}"}
+            )
             prior = next((item for item in history if item.tool_call_id == call.tool_call_id), None)
             if prior is not None:
                 # The crash-recovery case was handled above before asking the
-                # model for another call. Any completed ID proposed here is a
-                # replay, even if its result belongs to an older state.
+                # model for another call. With step-suffixed ids this is
+                # unreachable short of a store anomaly, and fail-closed is the
+                # right response to a store anomaly.
                 self.failure_reason = f"replayed tool call {call.name.value}"
                 await self._store.set_state(run_id, AgentState.FAILED)
                 return AgentState.FAILED

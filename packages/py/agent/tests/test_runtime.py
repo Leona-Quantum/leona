@@ -185,15 +185,20 @@ async def test_started_tool_call_resumes_after_infrastructure_failure():
 
     # Same durable tool_call_id is retried once; after completion the scripted
     # one-call model cannot continue, so inspect the recovered boundary directly.
+    # The runtime dispatched under the step-suffixed id, so resume with that.
     recovered = await broker.dispatch(
-        run_id, ToolCall(tool_call_id="stable-id", name=ToolName.REQUEST_PLAN)
+        run_id, ToolCall(tool_call_id="stable-id-s0", name=ToolName.REQUEST_PLAN)
     )
     assert recovered.ok
     assert recovered.state is AgentState.PLANNED
     assert attempts == 2
 
 
-async def test_runtime_fails_closed_when_model_repeats_applied_tool_call():
+async def test_model_stuck_on_one_call_exhausts_the_step_budget_not_the_replay_guard():
+    """Before step-suffixed ids this died instantly as `replayed tool call`.
+    Now the repeated proposal is dispatched each time as a distinct step, the
+    broker rejects the ones the state disallows, and the run ends on the step
+    budget — bounded feedback, not an infrastructure verdict."""
     store = MemoryAgentStore()
     run_id = uuid4()
 
@@ -210,6 +215,43 @@ async def test_runtime_fails_closed_when_model_repeats_applied_tool_call():
         model=OneCallModel(),
     )
     assert await runtime.run(run_id) is AgentState.FAILED
+    assert runtime.failure_reason == "step_budget_exhausted"
+
+
+class ConstantIdModel(RepairModel):
+    """The RepairModel's full happy path, but every proposal reuses one id."""
+
+    async def next_tool(self, *, state, history, **kwargs):
+        call = await super().next_tool(state=state, history=history, **kwargs)
+        return call.model_copy(update={"tool_call_id": "dup"})
+
+
+async def test_model_reusing_tool_call_ids_cannot_kill_a_run():
+    """Live run 019f7f7c-5ac2: publish_artifact was rejected once for bad
+    arguments, the model retried it under the same id, and the replay guard
+    failed a run whose candidate had passed every check. The id is the loop's
+    bookkeeping, not the model's — reuse must never end a run."""
+    store = MemoryAgentStore()
+    run_id = uuid4()
+    toolset = CircuitToolset(
+        store=store,
+        framework=Framework.QISKIT,
+        planner=Planner(),
+        executor=RepairingExecutor(),
+        verifier=Verifier(),
+        converter=Converter(),
+        publisher=Publisher(),
+    )
+    runtime = AgentRuntime(
+        store=store,
+        broker=ToolBroker(
+            store=store,
+            policy=AgentPolicy(framework=Framework.QISKIT),
+            handlers=toolset.handlers(),
+        ),
+        model=ConstantIdModel(),
+    )
+    assert await runtime.run(run_id) is AgentState.PUBLISHED
 
 
 async def test_runtime_rejects_completed_call_id_from_an_older_state():
