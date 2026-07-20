@@ -90,6 +90,18 @@ success_criteria check reads that literal key from the executed result, so a mis
 name (e.g. `marked_probability` here, `most_probable` there) always scores None and fails
 even when the candidate is otherwise correct.
 
+artifact_contract.measurement_policy is checked against the circuit that actually ran,
+so choose it from the algorithm rather than by habit. `measure_all` asserts that EVERY
+qubit is measured, and the check enforces that literally. Any algorithm that keeps an
+ancilla, work, or phase-kickback qubit — Deutsch-Jozsa, Bernstein-Vazirani, Simon,
+Grover with a kickback ancilla, phase estimation's eigenstate register — measures only
+its answer register, so `measure_all` makes the plan unsatisfiable: correct code fails
+the check, and it fails identically on every regenerated candidate, so the repair loop
+cannot converge and the run burns its whole budget. Use `specified` whenever some
+qubits are deliberately left unmeasured, and reserve `measure_all` for circuits whose
+entire register is the answer. Observed exhausting a budget on production run
+019f7db9-f00b, a 3-qubit Deutsch-Jozsa with one ancilla.
+
 If the request is underspecified but executable with reasonable defaults, choose and
 record those defaults. Ask only when a missing value would materially change the
 artifact. Preserve user-specified framework, algorithm, parameters, units, return
