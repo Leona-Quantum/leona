@@ -163,6 +163,11 @@ class PythonFrameworkAdapter:
     # run burned its whole budget on a check no repair could fix. Found by running a
     # Cirq Bell task against production and reading which check the best-effort
     # fallback named.
+    #
+    # An empty wire list means "all wires", not "no wires": `qml.counts()` with no
+    # arguments builds a CountsMP whose `.wires` is `[]` while measuring the entire
+    # tape. Falling back to 1 there fixed Cirq and left PennyLane failing the same
+    # policy check, which a second live run caught.
     def trusted_observer(self, source: str, *, circuit_expected: bool) -> str:
         if not circuit_expected:
             return ""
@@ -203,7 +208,7 @@ if _majorana_final_circuit is not None:
             "two_qubit_gate_count": _majorana_sum(_majorana_len(_majorana_getattr(op, "qubits", _majorana_getattr(op, "wires", []))) == 2 for op in _majorana_gate_operations),
             "measurement_count": _majorana_sum(
                 _majorana_len(_majorana_getattr(op, "qubits", _majorana_getattr(op, "wires", [])))
-                or 1
+                or _majorana_qubits
                 for op in _majorana_measurements
             ),
         }}

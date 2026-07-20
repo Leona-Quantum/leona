@@ -289,3 +289,47 @@ def test_cirq_observer_counts_measured_qubits_not_measurement_operations():
 
     assert metrics["qubits"] == 2
     assert metrics["measurement_count"] == 2, "counted operations instead of qubits"
+
+
+def test_pennylane_observer_treats_an_empty_wire_list_as_all_wires():
+    """`qml.counts()` with no arguments measures the whole tape but reports
+    `wires == []`. Counting that as one measured qubit left PennyLane failing
+    MEASURE_ALL exactly as Cirq had — caught by a second production run."""
+    pytest.importorskip("pennylane")
+    import json
+    import tempfile
+    from pathlib import Path
+
+    from majorana_sandbox.spec import ExecutionSpec, compose_execution
+
+    code = (
+        "import pennylane as qml\n"
+        "dev = qml.device('default.qubit', wires=2, shots=100)\n"
+        "@qml.qnode(dev)\n"
+        "def circuit():\n"
+        "    qml.Hadamard(0)\n"
+        "    qml.CNOT([0, 1])\n"
+        "    return qml.counts()\n"
+        "circuit()\n"
+        "FINAL_CIRCUIT = qml.workflow.construct_tape(circuit)()\n"
+        "RESULT = {'counts': {'00': 50, '11': 50}}\n"
+    )
+    program = FrameworkProgram(Framework.PENNYLANE, code)
+    with tempfile.TemporaryDirectory() as directory:
+        path = Path(directory) / "observation.json"
+        exec(  # noqa: S102 - the point of the test is to run the real epilogue
+            compose_execution(
+                ExecutionSpec(
+                    code=program.normalized_source,
+                    trusted_setup=program.trusted_setup(circuit_expected=True),
+                    trusted_observer=program.trusted_observer(circuit_expected=True),
+                    protected_result_path=str(path),
+                    source_fingerprint=program.fingerprint,
+                )
+            ),
+            {},
+        )
+        metrics = json.loads(path.read_text())["resource_metrics"]
+
+    assert metrics["qubits"] == 2
+    assert metrics["measurement_count"] >= metrics["qubits"], "MEASURE_ALL unsatisfiable"
