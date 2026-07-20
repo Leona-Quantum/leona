@@ -74,9 +74,7 @@ def statevector_from_evidence(payload: Any) -> tuple[Statevector, dict[int, int]
         or len(amplitudes) != expected_length
         or not all(isinstance(value, int | float) and math.isfinite(value) for value in amplitudes)
     ):
-        raise ValueError(
-            f"native statevector amplitudes must be {expected_length} finite floats"
-        )
+        raise ValueError(f"native statevector amplitudes must be {expected_length} finite floats")
     flat = np.asarray(amplitudes, dtype=float)
     vector = flat[0::2] + 1j * flat[1::2]
     norm = float(np.linalg.norm(vector))
@@ -258,9 +256,7 @@ def sampled_counts_comparison(
     return EquivalenceReport(
         fingerprint_type="statistical_distribution",
         protocol=protocol,
-        fingerprint_hash=hashlib.sha256(
-            json.dumps(payload, sort_keys=True).encode()
-        ).hexdigest(),
+        fingerprint_hash=hashlib.sha256(json.dumps(payload, sort_keys=True).encode()).hexdigest(),
         passed=tvd <= threshold,
         scores={"total_variation_distance": tvd, "both_orientations": tvds},
     )

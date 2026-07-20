@@ -417,7 +417,8 @@ except Exception:
             return ""
         optimized = any(name in self.optimization_calls for name in _calls(source))
         optimized_literal = "True" if optimized else "False"
-        return f"""
+        return (
+            f"""
 _majorana_observation["native_optimization"] = {{"applied": {optimized_literal}}}
 _majorana_final_circuit = _majorana_namespace.get("FINAL_CIRCUIT")
 if _majorana_final_circuit is None:
@@ -464,7 +465,9 @@ else:
             + _majorana_type(_majorana_metrics_exc).__name__
             + ") — FINAL_CIRCUIT must be bound to the actual circuit object, not a copy or a result dict"
         )
-""" + _NATIVE_OBSERVER_CALL
+"""
+            + _NATIVE_OBSERVER_CALL
+        )
 
 
 _CIRQ_NATIVE_SETUP = (

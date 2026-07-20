@@ -705,8 +705,10 @@ class EvidenceVerifier:
             reference = verification_plan.reference_qasm if verification_plan else None
         candidate_qasm = extract_interchange_qasm(execution.observation).qasm
         native_statevector = execution.observation.get("native_statevector")
-        if reference is not None and candidate_qasm is None and isinstance(
-            native_statevector, dict
+        if (
+            reference is not None
+            and candidate_qasm is None
+            and isinstance(native_statevector, dict)
         ):
             # A failed OpenQASM export downgrades the EXPORT, never the verdict
             # (plans/framework-native-verification.md): fall back to comparing the
