@@ -98,6 +98,12 @@ const METHOD_LABEL: Record<VerificationMethod, string> = {
   exact_diag: "exact diagonalization",
   return_contract: "return-contract",
   qasm_parse: "QASM-parse",
+  structural: "structural",
+  resource_contract: "resource-contract",
+  measurement_policy: "measurement-policy",
+  success_criteria: "success-criteria",
+  native_optimization_evidence: "native-optimization evidence",
+  statistical_reproducibility: "statistical reproducibility",
 };
 const NUMERIC_METHODS: ReadonlySet<VerificationMethod> = new Set<VerificationMethod>([
   "exact",

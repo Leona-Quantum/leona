@@ -3088,6 +3088,7 @@
         "type": "string"
       },
       "VerificationMethod": {
+        "description": "Every check name the verifier can emit \u2014 not only the plannable ones.\n\nThe list is exhaustive on purpose. `run_events` is the only channel a human or\nthe UI has into a run, and its `verification.result` event types `method` as\nthis enum, so the emitter drops any check whose name is not a member\n(`agent_events.py`). Until 2026-07-20 the six contract checks below were absent,\nand the emitter silently discarded six of the ten checks the panel actually\nruns. Production QPE run 019f7f2d-09c9 rejected its first candidate on one of\nthem: the critic was never invoked, so a deterministic check had failed, and the\nevent stream showed three passing checks and no failure at all. The run bought a\nsecond candidate and a second sandbox execution for a reason nothing recorded.\n\n**Adding a member here is half of a change.** The database allowlist\n(`ck_method_enum` on `verification_records`) is the other half and must widen in\nthe same deploy \u2014 see db/migrations/versions/0024. That pairing is enforced by\npackages/py/contracts/tests/test_method_allowlist.py rather than remembered.\nAlso decide which side of `PHYSICAL_VERIFICATION_METHODS` the new name falls on;\nall six added below are contract checks that police the shape of the answer, not\nits correctness, so none of them lifts a run's grade.",
         "enum": [
           "exact",
           "statistical",
@@ -3095,7 +3096,13 @@
           "brute_force",
           "exact_diag",
           "return_contract",
-          "qasm_parse"
+          "qasm_parse",
+          "structural",
+          "resource_contract",
+          "measurement_policy",
+          "success_criteria",
+          "native_optimization_evidence",
+          "statistical_reproducibility"
         ],
         "title": "VerificationMethod",
         "type": "string"

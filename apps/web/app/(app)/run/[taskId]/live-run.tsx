@@ -34,9 +34,15 @@ type WireEvent = {
   code?: string;
 };
 
+// Every method the verifier emits needs an entry; a miss falls through to the raw
+// enum value. Six of these were dead labels until 2026-07-20 — the emitter dropped
+// the checks before they reached the wire, so `resultSummaryFromEvents` below,
+// which reads the `success_criteria` event for a run's headline number, had never
+// once found one.
 const VERIFICATION_METHOD_LABEL: Record<string, string> = {
   return_contract: "Checked the return contract",
   statistical: "Cross-checked the measured distribution",
+  statistical_native: "Compared against a trusted re-run of the circuit",
   exact: "Compared the circuit against a reference",
   statistical_reproducibility: "Re-ran the circuit and compared",
   resource_contract: "Checked qubit/resource usage",

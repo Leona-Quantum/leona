@@ -1340,3 +1340,69 @@ async def test_a_critic_reply_with_an_unexpected_field_is_still_judged():
     )
     assert llm.calls == 1
     assert output.decision is VerifierDecision.PASS
+
+
+def test_every_check_the_panel_emits_is_an_event_the_stream_can_carry():
+    """The panel's method names and `VerificationMethod` are one list, not two.
+
+    `agent_events.py` resolves each check's `method` through `VerificationMethod`
+    and skips a miss, and `verification.result` types the field as that enum — so a
+    check whose name is not a member is not merely unlabelled, it never reaches
+    `run_events` at all. Six of the ten checks below were in that state until
+    2026-07-20; production QPE run 019f7f2d-09c9 rejected its first candidate on one
+    of them and the event stream recorded three passes and no failure.
+
+    Driving the real verifier rather than listing the names by hand is the point: a
+    seventh check added with a fresh string literal fails here on the day it is
+    written, not on the day someone tries to debug a run it silently governed.
+    """
+    candidate = _candidate()
+    plan = Plan.model_validate(
+        _plan(expected_keys=["counts"]).model_dump(mode="json")
+        | {
+            # Every optional branch of _deterministic_checks turned on at once, so
+            # the assertion covers the widest panel a run can produce.
+            "success_criteria": {"primary_metric": "fidelity", "expected_range": {"min": 0.9}},
+            "artifact_contract": {
+                "artifact_type": "script",
+                "measurement_policy": "measure_all",
+                "top_level_execution": "required",
+                "expected_return_type": "dict",
+            },
+            "verification_plan": {"methods": ["statistical", "return_contract"]},
+        }
+    )
+    execution = _execution(
+        candidate,
+        result={"counts": {"00": 512, "11": 512}, "fidelity": 0.99},
+        observation={
+            "native_optimization": {"applied": False},
+            "resource_metrics": {
+                "qubits": 2,
+                "depth": 2,
+                "gate_count": 2,
+                "two_qubit_gate_count": 1,
+                "measurement_count": 2,
+            },
+            "native_sampled": {"counts": {"00": 500, "11": 524}, "shots": 1024},
+            "verification_repeat_result": {"counts": {"00": 508, "11": 516}},
+        },
+    )
+    checks = EvidenceVerifier(llm=MustNotRunLLM(), task_prompt="Bell state")._deterministic_checks(
+        candidate, execution, plan
+    )
+    emitted = {str(check["method"]) for check in checks}
+    known = {method.value for method in VerificationMethod}
+    assert emitted - known == set(), (
+        f"{sorted(emitted - known)} would be dropped by the event emitter. Add them to "
+        "VerificationMethod and widen ck_method_enum in a new migration."
+    )
+    # Pin the breadth too: an assertion over an accidentally-empty panel passes.
+    assert {
+        "structural",
+        "resource_contract",
+        "measurement_policy",
+        "success_criteria",
+        "native_optimization_evidence",
+        "statistical_reproducibility",
+    } <= emitted

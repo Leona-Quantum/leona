@@ -1561,9 +1561,28 @@ export interface components {
         TopLevelExecution: "required" | "demo_only" | "forbidden";
         /**
          * VerificationMethod
+         * @description Every check name the verifier can emit — not only the plannable ones.
+         *
+         *     The list is exhaustive on purpose. `run_events` is the only channel a human or
+         *     the UI has into a run, and its `verification.result` event types `method` as
+         *     this enum, so the emitter drops any check whose name is not a member
+         *     (`agent_events.py`). Until 2026-07-20 the six contract checks below were absent,
+         *     and the emitter silently discarded six of the ten checks the panel actually
+         *     runs. Production QPE run 019f7f2d-09c9 rejected its first candidate on one of
+         *     them: the critic was never invoked, so a deterministic check had failed, and the
+         *     event stream showed three passing checks and no failure at all. The run bought a
+         *     second candidate and a second sandbox execution for a reason nothing recorded.
+         *
+         *     **Adding a member here is half of a change.** The database allowlist
+         *     (`ck_method_enum` on `verification_records`) is the other half and must widen in
+         *     the same deploy — see db/migrations/versions/0024. That pairing is enforced by
+         *     packages/py/contracts/tests/test_method_allowlist.py rather than remembered.
+         *     Also decide which side of `PHYSICAL_VERIFICATION_METHODS` the new name falls on;
+         *     all six added below are contract checks that police the shape of the answer, not
+         *     its correctness, so none of them lifts a run's grade.
          * @enum {string}
          */
-        VerificationMethod: "exact" | "statistical" | "statistical_native" | "brute_force" | "exact_diag" | "return_contract" | "qasm_parse";
+        VerificationMethod: "exact" | "statistical" | "statistical_native" | "brute_force" | "exact_diag" | "return_contract" | "qasm_parse" | "structural" | "resource_contract" | "measurement_policy" | "success_criteria" | "native_optimization_evidence" | "statistical_reproducibility";
         /** VerificationPlan */
         VerificationPlan: {
             /**
