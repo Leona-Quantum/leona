@@ -11,6 +11,7 @@ from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, model_validator
 
 from .enums import (
     BaselineKind,
+    EvidenceStrength,
     ExportStatus,
     Framework,
     RunMode,
@@ -341,6 +342,10 @@ class RunFinished(_EventBase):
     type: Literal["run.finished"] = "run.finished"
     status: RunStatus
     verifier_decision: VerifierDecision | None = None
+    # What the decision was proved by. `pass` alone does not distinguish a run
+    # compared against the physics from one whose only check read a dict key, and
+    # this event is the durable, replayable record the run page reads.
+    evidence_strength: EvidenceStrength | None = None
     residual_risks: str | None = None
 
 

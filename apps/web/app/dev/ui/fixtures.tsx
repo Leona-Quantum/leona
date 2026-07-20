@@ -55,6 +55,10 @@ export function UiFixtures() {
             detail="Verified — statistical (TVD 0.0088 ≤ δ 0.05) · seed 42 · 4096 shots"
           />
           <VerdictBanner
+            verdict="structural_only"
+            detail="return_contract only — no check compared this circuit against the expected physics"
+          />
+          <VerdictBanner
             verdict="verified_caveats"
             detail="Contract checks passed; statistical check skipped — statevector output"
           />

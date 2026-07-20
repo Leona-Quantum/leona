@@ -121,6 +121,7 @@ export function LibraryStudio({ demoMode = false, locale = "en" }: { demoMode?: 
   const statusOptions: Array<{ value: "all" | LibraryStatus; label: string }> = [
     { value: "all", label: copy.all },
     { value: "verified", label: copy.verified },
+    { value: "structural", label: copy.structural },
     { value: "verified_caveats", label: copy.caveats },
     { value: "failed", label: copy.failed },
   ];
@@ -242,7 +243,14 @@ function ArtifactRow({ artifact, demoMode, locale, starred, onToggleStar, onArch
 
 function StatusLabel({ status, locale }: { status: LibraryStatus; locale: PublicLocale }) {
   const copy = WORKSPACE_COPY[locale].library;
-  const label = status === "verified" ? copy.verified : status === "verified_caveats" ? copy.caveats : copy.failed;
+  const label =
+    status === "verified"
+      ? copy.verified
+      : status === "structural"
+        ? copy.structural
+        : status === "verified_caveats"
+          ? copy.caveats
+          : copy.failed;
   return <span className={`mj-library-status mj-library-status--${status}`}><span aria-hidden="true">{status === "failed" ? "×" : status === "verified" ? "✓" : "–"}</span>{label}</span>;
 }
 

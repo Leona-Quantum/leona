@@ -532,6 +532,21 @@ export interface components {
              */
             type: "compilation.result";
         };
+        /**
+         * EvidenceStrength
+         * @description What a passing run's verdict was actually proved by.
+         *
+         *     Deliberately *not* a fourth VerifierDecision value. A run whose only check was
+         *     `return_contract` — "does the result dict have a `counts` key?" — is a real pass:
+         *     nothing it claimed was contradicted. It is just not the same claim as a run whose
+         *     reported distribution was compared against the circuit's Born distribution to
+         *     1.8e-16, and until 2026-07-20 both printed the single word "Verified".
+         *
+         *     Every consumer compares `verifier_decision == "pass"`, the eval harness included,
+         *     so the decision stays `pass` and the strength rides alongside it.
+         * @enum {string}
+         */
+        EvidenceStrength: "physical" | "structural";
         /** ExportClassified */
         ExportClassified: {
             /** Qasm Available */
@@ -1201,6 +1216,8 @@ export interface components {
         RunEvent: components["schemas"]["RunQueued"] | components["schemas"]["RunStarted"] | components["schemas"]["RunModeResolved"] | components["schemas"]["StageStarted"] | components["schemas"]["StageFinished"] | components["schemas"]["PlanProduced"] | components["schemas"]["ResearchCompleted"] | components["schemas"]["LlmCall"] | components["schemas"]["LlmDelta"] | components["schemas"]["ChatDelta"] | components["schemas"]["ChatCompleted"] | components["schemas"]["ChatError"] | components["schemas"]["CodeGenerated"] | components["schemas"]["ScreenResult"] | components["schemas"]["ResourceEstimateResult"] | components["schemas"]["CompilationResult"] | components["schemas"]["CodeFinalized"] | components["schemas"]["SandboxResult"] | components["schemas"]["VerificationResult"] | components["schemas"]["BaselineResult"] | components["schemas"]["ExportClassified"] | components["schemas"]["ArtifactSaved"] | components["schemas"]["RunAnalysis"] | components["schemas"]["RunDiagnosed"] | components["schemas"]["RunRestarted"] | components["schemas"]["RunBestEffort"] | components["schemas"]["RunErrorEvent"] | components["schemas"]["RunFinished"];
         /** RunFinished */
         RunFinished: {
+            /** @default null */
+            evidence_strength: components["schemas"]["EvidenceStrength"] | null;
             /**
              * Residual Risks
              * @default null

@@ -19,6 +19,7 @@ type WireEvent = {
   message?: string;
   status?: string;
   verifier_decision?: string | null;
+  evidence_strength?: string | null;
   interpretation?: string;
   revision?: number;
   exit_code?: number;
@@ -164,9 +165,19 @@ function answerFromEvents(events: WireEvent[]): string | null {
   const saved = events.some((event) => event.type === "artifact.saved");
   const problem = planSummaryFromEvents(events);
   const metric = resultSummaryFromEvents(events);
-  const opening = problem ?? `Verified (${finished.verifier_decision ?? "pass"})`;
+  const structuralOnly = finished.evidence_strength === "structural";
+  const opening =
+    problem ?? (structuralOnly ? "Structurally verified" : `Verified (${finished.verifier_decision ?? "pass"})`);
   const sentences = [opening.endsWith(".") ? opening : `${opening}.`];
   if (metric) sentences.push(`Result: ${metric}.`);
+  // Said in the answer text, not only in the evidence panel. The panel has listed the
+  // checks since #100 and a careful reader could already work this out; the top line
+  // was the part that overstated it.
+  if (structuralOnly) {
+    sentences.push(
+      "Evidence is structural only — the result met the contract the plan asked for, but no check compared this circuit against the physics it is supposed to implement.",
+    );
+  }
   sentences.push(saved ? "Saved to your vault." : "No artifact was saved.");
   return sentences.join(" ");
 }

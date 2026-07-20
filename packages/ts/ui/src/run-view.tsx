@@ -748,9 +748,16 @@ function deriveVerdict(
   if (finishedRun.status === "failed" || decision === "fail") return "failed";
   if (decision === "inconclusive") return "not_verified";
   if (decision === "pass") {
+    // The worker grades this from the checks the published candidate actually
+    // passed, which is stricter than what the event stream shows: a verification.result
+    // can be emitted for a candidate that was later repaired and replaced. Scanning
+    // the stream is the fallback for runs finished before 2026-07-20.
+    if (finishedRun.evidence_strength) {
+      return finishedRun.evidence_strength === "physical" ? "verified" : "structural_only";
+    }
     return verifyResults.some((result) => NUMERIC_METHODS.has(result.method))
       ? "verified"
-      : "verified_caveats";
+      : "structural_only";
   }
   if (finishedRun.status === "succeeded") return "verified_caveats";
   return null;

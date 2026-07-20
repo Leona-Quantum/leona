@@ -111,6 +111,7 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
     all: string;
     verified: string;
     caveats: string;
+    structural: string;
     failed: string;
     artifacts: string;
     savedArtifacts: string;
@@ -349,6 +350,7 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
       all: "All",
       verified: "Verified",
       caveats: "Caveats",
+      structural: "Structurally verified",
       failed: "Failed",
       artifacts: "artifacts",
       savedArtifacts: "Saved artifacts",
@@ -601,6 +603,7 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
       all: "すべて",
       verified: "検証済み",
       caveats: "注意付き",
+      structural: "構造のみ検証",
       failed: "失敗",
       artifacts: "件",
       savedArtifacts: "保存したアーティファクト",

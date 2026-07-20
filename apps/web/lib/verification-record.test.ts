@@ -68,3 +68,29 @@ test("degrades to nothing recorded instead of throwing on absent or malformed da
     undefined,
   );
 });
+
+test("reads the grade the worker put on the pass", () => {
+  assert.equal(
+    verificationFromMetadata({ verification_summary: { evidence_strength: "structural" } })
+      .evidenceStrength,
+    "structural",
+  );
+  assert.equal(
+    verificationFromMetadata({ verification_summary: { evidence_strength: "physical" } })
+      .evidenceStrength,
+    "physical",
+  );
+});
+
+test("an ungraded or bogus grade is absent, never guessed at", () => {
+  // Versions saved before 2026-07-20 carry no grade. The Vault must not read that
+  // silence as "structural" and downgrade a run that was checked against the physics.
+  assert.equal(verificationFromMetadata(REAL_VERSION_METADATA).evidenceStrength, undefined);
+  for (const bogus of ["strong", "", 1, null, {}]) {
+    assert.equal(
+      verificationFromMetadata({ verification_summary: { evidence_strength: bogus } })
+        .evidenceStrength,
+      undefined,
+    );
+  }
+});

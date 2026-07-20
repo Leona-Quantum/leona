@@ -1,7 +1,9 @@
 """Closed enums shared across every boundary. Values match the DB CHECK constraints
 (plans/rebuild/04-database.md §2) — additive changes only within /v1."""
 
+from collections.abc import Iterable, Mapping
 from enum import StrEnum
+from typing import Any
 
 
 class Framework(StrEnum):
@@ -83,6 +85,59 @@ class PlannableVerificationMethod(StrEnum):
 class VerificationResultKind(StrEnum):
     PASS = "pass"
     FAIL = "fail"
+
+
+class EvidenceStrength(StrEnum):
+    """What a passing run's verdict was actually proved by.
+
+    Deliberately *not* a fourth VerifierDecision value. A run whose only check was
+    `return_contract` — "does the result dict have a `counts` key?" — is a real pass:
+    nothing it claimed was contradicted. It is just not the same claim as a run whose
+    reported distribution was compared against the circuit's Born distribution to
+    1.8e-16, and until 2026-07-20 both printed the single word "Verified".
+
+    Every consumer compares `verifier_decision == "pass"`, the eval harness included,
+    so the decision stays `pass` and the strength rides alongside it.
+    """
+
+    PHYSICAL = "physical"
+    STRUCTURAL = "structural"
+
+
+PHYSICAL_VERIFICATION_METHODS: frozenset[str] = frozenset(
+    {
+        VerificationMethod.EXACT,
+        VerificationMethod.STATISTICAL,
+        VerificationMethod.BRUTE_FORCE,
+        VerificationMethod.EXACT_DIAG,
+    }
+)
+"""Checks that compare a candidate against what the physics should do.
+
+`statistical_reproducibility` is excluded on purpose: it proves only that the program
+agrees with itself across two executions, which a consistently wrong program also does
+(see `agent_ports.py::_statistical_checks`). So are the contract checks — `structural`,
+`resource_contract`, `measurement_policy`, `success_criteria`,
+`native_optimization_evidence`, `return_contract`, `qasm_parse` — which police the
+shape of the answer, not its correctness.
+"""
+
+
+def evidence_strength_of(checks: Iterable[Mapping[str, Any]]) -> EvidenceStrength:
+    """Grade a verdict by the checks behind it.
+
+    Takes the worker's deterministic-check dicts (`{"method", "result", ...}`) and
+    answers PHYSICAL only if at least one check in PHYSICAL_VERIFICATION_METHODS both
+    ran and passed. A physical check that ran and *failed* proves nothing, so it does
+    not lift the grade — in practice a failed deterministic check already short-circuits
+    to VerifierDecision.FAIL, but this function is not entitled to assume its caller.
+    """
+    for check in checks:
+        method = check.get("method")
+        if isinstance(method, str) and method in PHYSICAL_VERIFICATION_METHODS:
+            if check.get("result") == VerificationResultKind.PASS:
+                return EvidenceStrength.PHYSICAL
+    return EvidenceStrength.STRUCTURAL
 
 
 class ExportStatus(StrEnum):

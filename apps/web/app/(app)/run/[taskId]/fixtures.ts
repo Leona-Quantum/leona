@@ -231,7 +231,7 @@ const VERIFIED: RunEvent[] = [
     ],
     error: null,
   },
-  { type: "run.finished", run_id: RUN, seq: 41, ts: ts(47), status: "succeeded", verifier_decision: "pass", residual_risks: "Simulation only; no QPU execution was requested." },
+  { type: "run.finished", run_id: RUN, seq: 41, ts: ts(47), status: "succeeded", verifier_decision: "pass", evidence_strength: "physical", residual_risks: "Simulation only; no QPU execution was requested." },
 ];
 
 // ---- a run that fails verification -------------------------------------------------------
@@ -258,7 +258,7 @@ const FAILED: RunEvent[] = [
     message: "Statistical mismatch exceeds tolerance; regenerate before retrying.",
     attempt: 1,
   },
-  { type: "run.finished", run_id: RUN, seq: 19, ts: ts(25), status: "failed", verifier_decision: "fail", residual_risks: "Verification failed; no final execution was attempted." },
+  { type: "run.finished", run_id: RUN, seq: 19, ts: ts(25), status: "failed", verifier_decision: "fail", evidence_strength: null, residual_risks: "Verification failed; no final execution was attempted." },
 ];
 
 // A run that spent its whole budget without a passing candidate. Before
@@ -298,6 +298,7 @@ const EXHAUSTED: RunEvent[] = [
     ts: ts(28),
     status: "failed",
     verifier_decision: "fail",
+    evidence_strength: null,
     residual_risks: null,
   },
 ];

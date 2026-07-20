@@ -315,6 +315,56 @@ async def test_publisher_keeps_compact_long_term_evidence_without_duplicate_vari
     assert summary["decision"] == "pass"
     assert summary["deterministic_checks"] == [{"method": "return_contract", "result": "pass"}]
     assert "repair_plan" not in summary["critic"]
+    # This candidate passed on return_contract alone — the teleportation shape. The
+    # artifact must say so beside the decision, not just in the check list.
+    assert summary["evidence_strength"] == "structural"
+
+
+async def test_publisher_records_physical_evidence_when_a_physical_check_ran(monkeypatch):
+    candidate = _candidate()
+    execution = _execution(candidate)
+    verification = VerificationEvidence(
+        verification_id=uuid4(),
+        candidate_id=candidate.candidate_id,
+        execution_id=execution.execution_id,
+        source_fingerprint=candidate.source_fingerprint,
+        decision=VerifierDecision.PASS,
+        deterministic_checks=[
+            {"method": "return_contract", "result": "pass", "details": {}},
+            {"method": "exact", "result": "pass", "details": {"distance": 1.8e-16}},
+        ],
+        critic={"confidence": "high", "severity": "none", "summary": "Aligned."},
+    )
+    captured = {}
+
+    async def create_artifact(*_args, **_kwargs):
+        return SimpleNamespace(id=uuid4())
+
+    async def create_version(*_args, **kwargs):
+        captured.update(kwargs)
+        return SimpleNamespace(id=uuid4(), seq=1)
+
+    async def set_run_artifact_version(*_args, **_kwargs):
+        return None
+
+    monkeypatch.setattr(
+        "majorana_worker.agent_ports.artifacts_repo.create_artifact", create_artifact
+    )
+    monkeypatch.setattr("majorana_worker.agent_ports.artifacts_repo.create_version", create_version)
+    monkeypatch.setattr(
+        "majorana_worker.agent_ports.runs_repo.set_run_artifact_version",
+        set_run_artifact_version,
+    )
+
+    await RepoArtifactPublisher(
+        scope=object(),
+        session=object(),
+        run_id=candidate.run_id,
+        parent_artifact_id=None,
+        title="Bell circuit",
+    ).publish(candidate, execution, verification, None, _plan())
+
+    assert captured["metadata"]["verification_summary"]["evidence_strength"] == "physical"
 
 
 def test_verifier_respects_non_circuit_artifact_contract():

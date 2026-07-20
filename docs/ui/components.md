@@ -64,10 +64,14 @@ Reducer rules worth knowing (all deterministic):
 - Stage rail derives from `stage.started`/`stage.finished`; a `baseline` that reports
   `not_applicable_reason` renders **skipped-with-reason**, not pass. `code.generated`
   keeps the highest `revision` (repairs supersede).
-- Verdict comes from `run.finished.verifier_decision`: `pass` with a numeric method
-  (exact/statistical/brute_force/exact_diag) → `verified`; `pass` with only structural
-  checks → `verified_caveats`; `fail`/failed status → `failed`; `inconclusive` →
-  `not_verified`.
+- Verdict comes from `run.finished`: `pass` with `evidence_strength: physical` →
+  `verified`; `pass` with `evidence_strength: structural` → `structural_only`
+  ("Structurally verified"); `fail`/failed status → `failed`; `inconclusive` →
+  `not_verified`. The worker grades the strength from the checks the *published*
+  candidate passed — physical means at least one of exact/statistical/brute_force/
+  exact_diag, never `statistical_reproducibility`, which only proves a program agrees
+  with itself. Runs finished before 2026-07-20 carry no grade, and the reducer falls
+  back to scanning `verification.result` methods in the stream.
 - Key numbers label the verification distance with its **own** metric name (e.g. TVD),
   never the plan's `primary_metric` (a different quantity).
 
