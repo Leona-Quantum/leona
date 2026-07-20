@@ -403,3 +403,56 @@ def test_width_mismatch_evidence_is_strict_json_safe():
     assert outcome.details["scores"]["qubit_count_mismatch"] is True
     assert outcome.details["scores"]["max_abs_distance"] is None
     _json.dumps(outcome.details, allow_nan=False)  # raises on inf/nan
+
+
+# Production run 019f7ead-ead6 (cirq). Task: "the 3-qubit state produced by
+# applying X to qubit 0 and H to qubit 2". The planner declared a 3-qubit
+# reference; cirq's all_qubits holds only TOUCHED qubits, so the correct
+# candidate exported 2 qubits with q2 relabelled to index 1, and `exact` failed
+# identically on every candidate. The reference's q1 is provably idle, so it
+# factors out of the unitary and the comparison is exact after removing it.
+IDLE_WIRE_REFERENCE = 'OPENQASM 2.0;\ninclude "qelib1.inc";\nqreg q[3];\nx q[0];\nh q[2];\n'
+IDLE_WIRE_CANDIDATE = 'OPENQASM 2.0;\ninclude "qelib1.inc";\nqreg q[2];\nx q[0];\nh q[1];\n'
+
+
+def test_a_provably_idle_reference_wire_is_removed_before_comparison():
+    outcome = verify_exact(IDLE_WIRE_REFERENCE, IDLE_WIRE_CANDIDATE)
+    assert outcome.passed
+    assert outcome.details["scores"]["max_abs_distance"] == 0
+    assert outcome.details["scores"]["reference_idle_qubits_removed"] == [1]
+
+
+def test_removing_an_idle_wire_does_not_absolve_a_wrong_candidate():
+    """The reduction changes which unitaries are COMPARABLE, never which agree:
+    the surviving wires keep their ascending order, so a candidate that puts the
+    gates on the wrong wires still fails."""
+    swapped = 'OPENQASM 2.0;\ninclude "qelib1.inc";\nqreg q[2];\nh q[0];\nx q[1];\n'
+    assert not verify_exact(IDLE_WIRE_REFERENCE, swapped).passed
+
+
+def test_a_narrower_candidate_with_no_idle_reference_wire_still_fails():
+    """GHZ-3 touches every wire, so a 2-qubit candidate is genuinely missing a
+    qubit and the width mismatch stands — the guard that keeps this fix from
+    becoming a blanket width amnesty."""
+    outcome = verify_exact(GHZ3, BELL)
+    assert outcome.result is VerificationResultKind.FAIL
+    assert outcome.details["scores"]["qubit_count_mismatch"] is True
+    assert "reference_idle_qubits_removed" not in outcome.details["scores"]
+
+
+def test_the_idle_count_must_account_for_the_whole_width_gap():
+    """One idle wire does not license a two-wire gap."""
+    single = 'OPENQASM 2.0;\ninclude "qelib1.inc";\nqreg q[1];\nx q[0];\n'
+    outcome = verify_exact(IDLE_WIRE_REFERENCE, single)
+    assert outcome.result is VerificationResultKind.FAIL
+    assert outcome.details["scores"]["qubit_count_mismatch"] is True
+
+
+def test_a_wider_candidate_is_never_reduced():
+    """Only the REFERENCE is reduced. A candidate that allocates a spare idle
+    qubit is a different claim about the program the user gets, and no live
+    reproduction has asked for it — it keeps failing plainly."""
+    wide = 'OPENQASM 2.0;\ninclude "qelib1.inc";\nqreg q[3];\nh q[0];\ncx q[0],q[1];\n'
+    outcome = verify_exact(BELL, wide)
+    assert outcome.result is VerificationResultKind.FAIL
+    assert outcome.details["scores"]["qubit_count_mismatch"] is True
