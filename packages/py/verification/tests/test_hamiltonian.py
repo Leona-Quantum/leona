@@ -210,3 +210,28 @@ def test_the_real_production_candidate_passes_comfortably():
     tolerance = outcome.details["protocol"]["tolerance"]
     assert error == pytest.approx(0.003, abs=1e-4)
     assert tolerance > 10 * error, "a bound this close to real output would fail correct code"
+
+
+def test_the_bound_only_separates_eigenvalues_further_apart_than_itself():
+    """The documented hole, asserted rather than left implicit (standing lesson 13).
+
+    The tolerance scales with the Hamiltonian, so "near-degenerate" has to mean
+    near-degenerate RELATIVE TO ITS OWN SCALE — my first attempt at this test used
+    two tiny coefficients and the bound shrank with them, which is the check
+    behaving correctly. `1.0*Z0 + 0.01*Z1` has a spectrum of +-1.01, +-0.99: the
+    two lowest sit 0.02 apart while the bound is about 0.083, so the first excited
+    state passes. More shots shrink the shot-noise term; the 2%-of-scale optimizer
+    allowance is a floor that does not.
+    """
+    near_degenerate = [(1.0, "ZI"), (0.01, "IZ")]
+    spectrum = sorted(np.linalg.eigvalsh(hamiltonian_matrix(near_degenerate)))
+    ground, excited = spectrum[0], spectrum[1]
+    assert ground == pytest.approx(-1.01, abs=1e-12)
+    assert excited - ground == pytest.approx(0.02, abs=1e-12)
+
+    tolerance = energy_tolerance(near_degenerate, 4096)
+    assert tolerance > excited - ground, "premise of this test: the gap is inside the bound"
+    outcome = verify_exact_diag(near_degenerate, excited, shots=4096)
+    assert outcome.result is VerificationResultKind.PASS, (
+        "documented limitation: a gap narrower than the bound is not resolvable"
+    )
