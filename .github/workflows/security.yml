@@ -27,6 +27,14 @@ jobs:
         run: echo "have=${{ secrets.SNYK_TOKEN != '' }}" >> "$GITHUB_OUTPUT"
       - if: steps.token.outputs.have == 'true'
         uses: snyk/actions/setup@master
+      # `snyk test --all-projects` shells out to the native tool for each lockfile
+      # it recognises. It began recognising uv.lock on 2026-07-20 — snyk/actions is
+      # pinned to @master, so the CLI moves under us — and reported "uv binary not
+      # found in PATH", failing 1 of 6 projects and the whole required check with
+      # zero vulnerabilities found. Installing uv scans the Python lockfile for
+      # real rather than narrowing the gate to make it green.
+      - if: steps.token.outputs.have == 'true'
+        uses: astral-sh/setup-uv@v6
       - if: steps.token.outputs.have == 'true'
         run: |
           snyk test --all-projects --severity-threshold=high
