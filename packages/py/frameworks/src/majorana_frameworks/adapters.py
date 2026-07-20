@@ -367,6 +367,11 @@ def _majorana_native_evidence(
                 "seed": _seed,
                 "bit_order": "little",
                 "registers": _registers,
+                # Which clbits a measurement actually writes. The verifier uses
+                # this to name a declared register the code never measures into
+                # — the `measure(2, 0)`-into-the-wrong-register bug that survived
+                # two prompt-level attempts.
+                "measured_clbits": _sorted(_mapping),
             }
     except _ex as _exc:
         _observation["native_sampled_error"] = _type(_exc).__name__

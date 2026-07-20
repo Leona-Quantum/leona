@@ -249,6 +249,47 @@ def _marginalize_onto_register(
     return marginal
 
 
+def _register_clbits(registers: list[tuple[str, int]], index: int) -> list[int]:
+    """The clbit indices register ``index`` owns.
+
+    The exported list reads left to right the way the counts key does, which is
+    Qiskit's LAST-declared register first — and clbit 0 belongs to the FIRST
+    declared. So the offsets accumulate from the end of the list backwards.
+    """
+    offset = sum(width for _name, width in registers[index + 1 :])
+    return list(range(offset, offset + registers[index][1]))
+
+
+def _unwritten_register(payload: dict, registers: list[tuple[str, int]], index: int) -> dict | None:
+    """Name the register no measurement writes to, when that is what went wrong.
+
+    Returns None unless the observer reported which clbits its measurements write
+    AND the matched register owns none of them. Accusing wrongly is worse than
+    staying quiet: it would send the repair loop after a bug that is not there,
+    so absent or malformed evidence produces silence, not a guess.
+    """
+    measured = payload.get("measured_clbits")
+    if not isinstance(measured, list) or not all(type(value) is int for value in measured):
+        return None
+    clbits = _register_clbits(registers, index)
+    if set(clbits) & set(measured):
+        return None
+    name = registers[index][0]
+    return {
+        "register": name,
+        "clbits": clbits,
+        "measured_clbits": sorted(measured),
+        "diagnosis": (
+            f"the reported counts were matched to register '{name}' (clbits "
+            f"{clbits}), but no measurement writes to it — every measurement in "
+            f"the circuit writes to clbits {sorted(measured)}. A measurement "
+            f"intended for '{name}' is landing in a different register: pass the "
+            f"register's own bit (e.g. measure(qubit, {name}[0])) rather than a "
+            f"bare clbit index."
+        ),
+    }
+
+
 def sampled_counts_comparison(
     reported: dict[str, int],
     sampled_payload: Any,
@@ -270,6 +311,7 @@ def sampled_counts_comparison(
     normalized_reported, reported_width = normalize_reported_counts(reported)
     normalized_sampled, sampled_width = normalize_reported_counts(sampled_counts)
     register_used: tuple[str, int] | None = None
+    unwritten_register: dict | None = None
     if reported_width != sampled_width:
         # Register-guided marginalization, never subset-scanning: reporting a
         # marginal over one classical register is a legitimate convention (the
@@ -288,6 +330,7 @@ def sampled_counts_comparison(
             )
         index = matches[0]
         register_used = registers[index]
+        unwritten_register = _unwritten_register(sampled_payload, registers, index)
         normalized_sampled = _marginalize_onto_register(normalized_sampled, registers, index)
     reported_shots = sum(normalized_reported.values())
     sampled_shots = sum(normalized_sampled.values())
@@ -355,6 +398,14 @@ def sampled_counts_comparison(
         scores["reported_distribution"] = _largest_outcomes(reported_distribution)
         if max(len(sampled_distribution), len(reported_distribution)) > _DIAGNOSTIC_OUTCOMES:
             scores["distributions_truncated"] = True
+        if unwritten_register is not None:
+            # Two prompt-level attempts is this codebase's limit; after that,
+            # mechanism. Seven candidates across runs 019f7ea0-8017,
+            # 019f7ecf-a56c and 019f7ed9-ac0c wrote `measure(2, 0)` into the
+            # wrong register — four of them AFTER the distributions above were
+            # added to the evidence. A distribution shows the symptom; this
+            # names the cause.
+            scores["register_never_measured"] = unwritten_register
     return EquivalenceReport(
         fingerprint_type="statistical_distribution",
         protocol=protocol,
