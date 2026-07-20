@@ -1094,13 +1094,6 @@ export interface components {
              */
             timeout_s: number | null;
             /**
-             * Tolerances
-             * @default null
-             */
-            tolerances: {
-                [key: string]: number;
-            } | null;
-            /**
              * User Id
              * Format: uuid
              */

@@ -47,7 +47,6 @@ class CreateRunRequest(BaseModel):
     artifact_version_id: uuid.UUID | None = None
     seed: int | None = None
     shots: int | None = Field(default=None, ge=1, le=1_000_000)
-    tolerances: dict[str, float] | None = None
     timeout_s: int | None = Field(default=None, ge=1, le=600)
     source_code: str | None = Field(default=None, max_length=100_000)
     conversation_id: uuid.UUID | None = None
@@ -73,7 +72,6 @@ def _to_resource(run: RunRow) -> RunResource:
         framework=Framework(run.framework),
         seed=run.seed,
         shots=run.shots,
-        tolerances=run.tolerances,
         timeout_s=run.timeout_s,
         sandbox_provider=run.sandbox_provider,
         sandbox_meta=run.sandbox_meta,
@@ -106,7 +104,6 @@ async def create_run(
         artifact_version_id=body.artifact_version_id,
         seed=body.seed,
         shots=body.shots,
-        tolerances=body.tolerances,
         timeout_s=body.timeout_s,
         idempotency_key=idempotency_key,
         conversation_id=body.conversation_id,

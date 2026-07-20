@@ -2103,21 +2103,6 @@
             "default": null,
             "title": "Timeout S"
           },
-          "tolerances": {
-            "anyOf": [
-              {
-                "additionalProperties": {
-                  "type": "number"
-                },
-                "type": "object"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null,
-            "title": "Tolerances"
-          },
           "user_id": {
             "format": "uuid",
             "title": "User Id",

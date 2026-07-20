@@ -1639,8 +1639,9 @@ def test_a_vqe_stuck_in_an_excited_state_is_caught_and_told_which_one():
 
 def test_a_plan_declared_energy_tolerance_may_only_tighten():
     """`thresholds` gets its first consumer beyond tvd_max here, and it gets the
-    safe direction only — memory/NEXT.md §2 refuses `tolerances` precisely because
-    a plan-supplied value that LOOSENS a bound can manufacture a physical grade."""
+    safe direction only — a plan-supplied value that LOOSENS a bound can
+    manufacture a physical grade. `Run.tolerances` was the unrestricted version
+    of this and was deleted in 2026-07 rather than given a direction."""
     candidate = _candidate()
     plan = _vqe_plan(
         verification_plan={

@@ -350,11 +350,12 @@ def verify_exact_diag(
     """Reported energy against the exact ground state of a declared Hamiltonian.
 
     The plan may TIGHTEN the tolerance and may not loosen it. That asymmetry is
-    the whole reason this accepts a declared value at all: `memory/NEXT.md` §2
-    refuses the `tolerances` field precisely because a plan-supplied number that
-    *relaxes* a verification bound can manufacture a physical grade. `min()` keeps
-    the useful direction and closes the dangerous one, and `tolerance_source`
-    records which one won.
+    the whole reason this accepts a declared value at all: a caller-supplied
+    number that *relaxes* a verification bound can manufacture a physical grade.
+    The `Run.tolerances` field was the general-purpose version of that idea and
+    was deleted in 2026-07 for exactly this reason — it had no safe consumer.
+    `min()` keeps the useful direction and closes the dangerous one, and
+    `tolerance_source` records which one won.
     """
     if not isinstance(reported_energy, int | float) or isinstance(reported_energy, bool):
         return VerificationOutcome(

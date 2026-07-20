@@ -218,7 +218,6 @@ class Run(Base):
     framework: Mapped[str]
     seed: Mapped[int | None] = mapped_column(BigInteger)
     shots: Mapped[int | None] = mapped_column(Integer)
-    tolerances: Mapped[dict[str, Any] | None]
     timeout_s: Mapped[int | None] = mapped_column(Integer)
     sandbox_provider: Mapped[str | None]
     sandbox_meta: Mapped[dict[str, Any] | None]

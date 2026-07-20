@@ -214,7 +214,6 @@ class Run(_ResourceBase):
     framework: Framework
     seed: int | None = None
     shots: int | None = None
-    tolerances: dict[str, float] | None = None
     timeout_s: int | None = None
     sandbox_provider: str | None = None
     sandbox_meta: dict[str, Any] | None = Field(

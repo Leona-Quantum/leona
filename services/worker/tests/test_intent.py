@@ -207,7 +207,6 @@ async def test_a_run_that_is_already_over_is_not_routed(status):
         framework=Framework.QISKIT,
         seed=None,
         shots=None,
-        tolerances=None,
         timeout_s=None,
         sink=sink,
     )
