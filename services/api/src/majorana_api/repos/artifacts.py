@@ -53,6 +53,40 @@ async def list_artifacts(
     ]
 
 
+async def list_verified_exemplars(
+    scope: Scope,
+    session: AsyncSession,
+    *,
+    framework: Framework,
+    family: Algorithm | None = None,
+    limit: int = 2,
+) -> list[tuple[Artifact, ArtifactVersion]]:
+    """Recent artifacts whose current version passed verification, for few-shot
+    retrieval into the generation context (LLM work list item 4).
+
+    Retrieval is from THIS workspace's verified corpus, not the open web — we
+    control its quality, and every row here already survived the deterministic
+    checks. The decision filter reads the version's verification_summary, the
+    same field the Vault list grade reads.
+    """
+    stmt = (
+        select(Artifact, ArtifactVersion)
+        .join(ArtifactVersion, Artifact.current_version_id == ArtifactVersion.id)
+        .where(
+            Artifact.workspace_id == scope.workspace_id,
+            Artifact.deleted_at.is_(None),
+            Artifact.framework == framework,
+            ArtifactVersion.artifact_metadata["verification_summary"]["decision"].astext
+            == "pass",
+        )
+        .order_by(Artifact.id.desc())
+        .limit(max(1, min(limit, 5)))
+    )
+    if family is not None:
+        stmt = stmt.where(Artifact.family == family)
+    return [(row[0], row[1]) for row in (await session.execute(stmt)).all()]
+
+
 async def get_artifact(
     scope: Scope, session: AsyncSession, artifact_id: uuid.UUID, *, for_update: bool = False
 ) -> Artifact:

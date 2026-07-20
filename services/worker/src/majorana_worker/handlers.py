@@ -455,6 +455,23 @@ async def _handle_agent_execution(
 
     observer = AgentEventObserver(store=agent_store, sink=ctx.sink)
     await observer.recover(ctx.run_id)
+    # Few-shot retrieval from our own verified corpus (LLM work list item 4):
+    # recent same-framework artifacts whose current version passed verification.
+    # Best-effort — an empty or failing retrieval must not cost the run.
+    exemplars: list[dict[str, str]] = []
+    try:
+        for exemplar_artifact, exemplar_version in await artifacts_repo.list_verified_exemplars(
+            scope, session, framework=ctx.framework
+        ):
+            exemplars.append(
+                {
+                    "title": exemplar_artifact.title,
+                    "family": str(exemplar_artifact.family),
+                    "source": exemplar_version.code,
+                }
+            )
+    except Exception:  # noqa: BLE001 - retrieval is an enhancement, never a dependency
+        exemplars = []
     runtime = AgentRuntime(
         store=agent_store,
         broker=broker,
@@ -463,6 +480,7 @@ async def _handle_agent_execution(
             task_prompt=ctx.task_prompt,
             framework=ctx.framework,
             initial_source=ctx.source_code,
+            exemplars=exemplars,
         ),
         observer=observer,
         cancel_requested=cancelled,

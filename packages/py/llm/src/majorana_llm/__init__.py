@@ -19,24 +19,19 @@ from majorana_llm.parsing import (
     parse_analysis,
     parse_plan,
 )
+# The dead stage prompts (GENERATE/CRITIC/ANALYZE/WRITEBACK, STAGE_PROMPTS, their
+# renderers) and the caller-less research module were deleted 2026-07-20 — LLM
+# work list items 7 and 8. The live prompts are the three below plus the agent
+# package's AGENT_SYSTEM_PROMPT and the worker's inline critic.
 from majorana_llm.prompts import (
-    CRITIC_SYSTEM_PROMPT,
-    CONVERSATION_SYSTEM_PROMPT,
     FRAMEWORK_DIRECTIVE,
-    GENERATE_SYSTEM_PROMPT,
     INTENT_ROUTER_SYSTEM_PROMPT,
     PLAN_SYSTEM_PROMPT,
     QUANTUM_AGENT_SYSTEM_PROMPT,
     RenderedPrompt,
-    STAGE_PROMPTS,
-    WRITEBACK_SYSTEM_PROMPT,
-    render_analysis_prompt,
-    render_conversation_prompt,
-    render_generate_prompt,
     render_intent_prompt,
     render_plan_prompt,
 )
-from majorana_llm.research import ResearchResult, ResearchSource, research_for_prompt
 
 __all__ = [
     "LLMClient",
@@ -57,21 +52,10 @@ __all__ = [
     "StageOutputError",
     "parse_analysis",
     "PLAN_SYSTEM_PROMPT",
-    "GENERATE_SYSTEM_PROMPT",
-    "CRITIC_SYSTEM_PROMPT",
     "INTENT_ROUTER_SYSTEM_PROMPT",
-    "CONVERSATION_SYSTEM_PROMPT",
     "QUANTUM_AGENT_SYSTEM_PROMPT",
-    "WRITEBACK_SYSTEM_PROMPT",
     "FRAMEWORK_DIRECTIVE",
-    "STAGE_PROMPTS",
     "RenderedPrompt",
     "render_plan_prompt",
-    "render_generate_prompt",
-    "render_analysis_prompt",
-    "render_conversation_prompt",
     "render_intent_prompt",
-    "ResearchResult",
-    "ResearchSource",
-    "research_for_prompt",
 ]

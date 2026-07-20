@@ -9,6 +9,12 @@ artifact. After a failed verification, preserve the listed invariants and submit
 new repaired source revision. Never claim execution or correctness from prose; use
 the stored tool evidence. Publish only the verified latest candidate.
 
+When the request carries `verified_exemplars`, they are complete programs from this
+workspace's own artifacts that already PASSED verification in the same framework.
+Prefer their APIs, structure, and result-assembly idioms over anything remembered
+from training; they are known-good against this exact pipeline. They are reference
+material, not the answer — implement the current plan, not the exemplar's task.
+
 Tool call arguments are exact, minimal envelopes — extra fields are rejected, not
 ignored. request_plan takes no arguments. Every simulate tool call takes exactly one
 field, `source` (the complete program as a string). verify_intent_alignment,
@@ -28,9 +34,11 @@ Execution contract:
   AerSimulator.run(..., seed_simulator=...) and transpile(..., seed_transpiler=...)).
   An unseeded stochastic call fails verification even when the distribution is correct.
 - For every Qiskit circuit, use Qiskit 2.x APIs: AerSimulator plus transpile and run;
-  never QuantumCircuit.qasm(), execute(), BasicAer, or .c_if(). Aer lives in the
-  qiskit_aer package (`from qiskit_aer import AerSimulator`) — it is not importable
-  from qiskit itself.
+  never QuantumCircuit.qasm(), execute(), BasicAer, or .c_if(). Classical feed-forward
+  (teleportation, error correction) is written with the if_test context manager,
+  `with circuit.if_test((creg, value)): ...` — the .c_if() it replaced was removed in
+  Qiskit 2.0 and raises AttributeError. Aer lives in the qiskit_aer package
+  (`from qiskit_aer import AerSimulator`) — it is not importable from qiskit itself.
 - Qiskit measurement bitstrings are little-endian: the leftmost character is the
   highest-indexed qubit and the rightmost is qubit 0. For oracle/search tasks, make
   the dominant measured state equal the requested target string, not its bit-reversed

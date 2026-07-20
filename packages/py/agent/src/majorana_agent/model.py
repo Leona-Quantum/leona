@@ -93,6 +93,10 @@ class StructuredToolModel:
     envelope.  The broker, not this prompt, remains authoritative for policy.
     """
 
+    # Bound per exemplar so two retrieved artifacts cannot crowd out the task
+    # and history in the model's context.
+    _EXEMPLAR_SOURCE_LIMIT = 4000
+
     def __init__(
         self,
         *,
@@ -101,12 +105,22 @@ class StructuredToolModel:
         framework: Framework,
         model: str | None = None,
         initial_source: str | None = None,
+        exemplars: list[dict[str, str]] | None = None,
     ) -> None:
         self._llm = llm
         self._task_prompt = task_prompt
         self._framework = framework
         self._model = model or model_for("generate")
         self._initial_source = initial_source
+        self._exemplars = [
+            {
+                "title": str(exemplar.get("title", ""))[:200],
+                "family": str(exemplar.get("family", ""))[:80],
+                "source": str(exemplar.get("source", ""))[: self._EXEMPLAR_SOURCE_LIMIT],
+            }
+            for exemplar in (exemplars or [])
+            if exemplar.get("source")
+        ][:2]
 
     async def next_tool(
         self, *, run_id: UUID, state: AgentState, history: list[ToolResult]
@@ -144,6 +158,10 @@ class StructuredToolModel:
                         "task": self._task_prompt,
                         "initial_framework_source": self._initial_source,
                         "selected_framework": self._framework.value,
+                        # Code from this workspace's own previously VERIFIED
+                        # artifacts, same framework (LLM work list item 4).
+                        # Retrieved from our corpus, never the open web.
+                        "verified_exemplars": self._exemplars,
                         "state": state.value,
                         "allowed_tools": [name.value for name in allowed],
                         "history": compact_history,
