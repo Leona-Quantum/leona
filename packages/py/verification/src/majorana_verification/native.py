@@ -218,7 +218,7 @@ def sampled_counts_comparison(
         key: count / sampled_shots for key, count in normalized_sampled.items() if count > 0
     }
     tvds: dict[str, float] = {}
-    bins = 0
+    bins_by_orientation: dict[str, int] = {}
     for orientation in ("as_is", "reversed"):
         observed = {
             (key if orientation == "as_is" else key[::-1]): count / reported_shots
@@ -230,10 +230,13 @@ def sampled_counts_comparison(
             raise ValueError(
                 f"statistical counts check supports at most {max_bins} nonzero outcomes"
             )
-        bins = len(support)
+        bins_by_orientation[orientation] = len(support)
         tvds[orientation] = _total_variation(sampled_distribution, observed)
     orientation_used = min(tvds, key=tvds.get)  # type: ignore[arg-type]
     tvd = tvds[orientation_used]
+    # Same rule as compare_counts_to_ideal: the bound uses the SELECTED
+    # orientation's support size, not whichever the loop saw last.
+    bins = bins_by_orientation[orientation_used]
     threshold_source = "plan" if threshold is not None else "two_sample_shot_noise_bound"
     if threshold is None:
 

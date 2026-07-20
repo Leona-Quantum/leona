@@ -158,3 +158,28 @@ def test_exact_native_skips_when_the_reference_has_no_statevector():
     outcome = verify_exact_native(TELEPORT_QASM, _payload_lsb_bell())
     assert outcome.result is VerificationResultKind.SKIPPED
     assert outcome.details["skip_reason"] == "statevector_incapable"
+
+
+def test_auto_threshold_uses_the_selected_orientations_bin_count():
+    """The two orientations can have different support overlaps; the shot-noise
+    bound must use the SELECTED orientation's bin count, not whichever the loop
+    computed last (review finding on PR 108 — the defect predated the refactor).
+    Ideal support {"01"}: as_is observes {"01"} (1 bin, TVD 0), reversed
+    observes {"10"} (2 bins). The selected orientation is as_is, so the recorded
+    bins must be 1."""
+    import math as _math
+
+    from majorana_verification import counts_vs_ideal
+
+    circuit = 'OPENQASM 2.0;\ninclude "qelib1.inc";\nqreg q[2];\nx q[0];\n'
+    report = counts_vs_ideal(circuit, {"01": 1024})
+    assert report.passed
+    assert report.protocol["orientation_used"] == "as_is"
+    assert report.protocol["bins"] == 1
+    expected = _math.sqrt((1 * _math.log(2) + _math.log(1 / 1e-3)) / (2 * 1024))
+    assert report.protocol["threshold"] == pytest.approx(expected)
+
+    sampled = {"counts": {"01": 2048}, "shots": 2048, "seed": 1234}
+    two_sample = verify_native_sampled_counts({"01": 1024}, sampled)
+    assert two_sample.passed
+    assert two_sample.details["protocol"]["bins"] == 1

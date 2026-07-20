@@ -325,7 +325,7 @@ def compare_counts_to_ideal(
         bit_order
     ]
     tvds: dict[str, float] = {}
-    coarse_bins = 0
+    bins_by_orientation: dict[str, int] = {}
     for orientation in orientations:
         observed = {
             (key if orientation == "as_is" else key[::-1]): count / shots
@@ -337,10 +337,15 @@ def compare_counts_to_ideal(
             raise ValueError(
                 f"statistical counts check supports at most {max_bins} nonzero outcomes"
             )
-        coarse_bins = len(support)
+        bins_by_orientation[orientation] = len(support)
         tvds[orientation] = _total_variation(ideal, observed)
     orientation_used = min(tvds, key=tvds.get)  # type: ignore[arg-type]
     tvd = tvds[orientation_used]
+    # The bound must use the SELECTED orientation's support size: the two
+    # orientations can have different overlaps with the ideal, and using
+    # whichever the loop saw last skewed the auto threshold (found in review
+    # of PR 108; the defect predates the refactor).
+    coarse_bins = bins_by_orientation[orientation_used]
     threshold_source = "plan" if threshold is not None else "shot_noise_bound"
     if threshold is None:
         threshold = math.sqrt((coarse_bins * math.log(2) + math.log(1 / delta)) / (2 * shots))
