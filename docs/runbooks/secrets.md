@@ -2,7 +2,7 @@
 
 | Name | Store | Consumer | Created |
 |---|---|---|---|
-| SNYK_TOKEN | GitHub Actions secret (repo) | security.yml Snyk job | 2026-07-09 (UTC) |
+| ~~SNYK_TOKEN~~ | — | **retired 2026-07-20**: the Snyk account ran out of quota permanently and the job 403'd on every PR. Replaced by the `osv` + `semgrep` jobs in security.yml, neither of which needs a token or an account. Delete the repo secret if it is still set | 2026-07-09 (UTC) |
 | NEON_API_KEY | GitHub Actions secret (repo) | ci.yml db job (branch create/delete) — Neon org API key `gh-ci-majorana` | 2026-07-10 |
 | DATABASE_URL | GCP Secret Manager (majorana-core) | Cloud Run api+worker — Neon pooled URL, default branch | 2026-07-10 |
 | DATABASE_URL_SECRET | GCP Secret Manager (majorana-core) | Alembic — Neon **direct** (unpooled) URL. Read by `deploy.yml`'s `migrate database` step into the env var `DATABASE_URL_DIRECT` (the entry name and the variable name differ — see docs/runbooks/deploys.md § Environment). Never wired to a Cloud Run service or Vercel; store, redact, and rotate as a database credential under the same requirements as DATABASE_URL. Readable by the deploy SA via a per-secret `roles/secretmanager.secretAccessor` grant | 2026-07-19 |
@@ -17,7 +17,7 @@
 | Neon | `majorana` (ID `twilight-wildflower-01313590`) | Postgres 17, aws-us-west-2, org `org-tiny-glade-89486766`, free tier |
 | GCP | `majorana-core` (number 639400385957) | Secret Manager + Cloud Run APIs enabled; billing linked |
 | WorkOS | `majorana` | AuthKit project, dashboard signup done 2026-07-10 (owner); API key + client ID pulled into env at Phase 1 step 5 |
-| Snyk | org `eshmis` | free plan; personal API token used as SNYK_TOKEN |
+| ~~Snyk~~ | org `eshmis` | **abandoned 2026-07-20** — free-plan quota exhausted, no longer used by CI. Nothing depends on this account |
 | Vercel | account `eshmis` (team `majoranaq`) | project `web`, linked from apps/web 2026-07-10 |
 | GCP Artifact Registry | `us-west1-docker.pkg.dev/majorana-core/majorana` | api/worker images; us-west1 = closest to Neon aws-us-west-2 |
 | Sentry | org `majorana-ms`, projects `python` + `web` | US region, free dev tier; errors only (AD-10) |
