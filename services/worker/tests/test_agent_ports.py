@@ -466,6 +466,48 @@ async def test_contradictory_plan_is_re_emitted_with_the_objection():
     assert "rejected by the plan contract" in llm.prompts[1]
 
 
+async def test_requested_shots_reach_the_plan_by_mechanism_not_compliance():
+    """Runs submitted with shots=4096 executed 1024: the value died in
+    RunContext. The prompt now states the request AND the parsed plan is
+    overridden, so a planner that ignores the instruction still cannot lose it."""
+    llm = _ScriptedPlannerLLM(
+        _plan_payload(output_keys=["counts"], methods=["statistical", "return_contract"])
+    )
+    planner = LLMPlanner(
+        llm=llm,
+        task_prompt="MaxCut on a ring",
+        framework=Framework.QISKIT,
+        requested_shots=4096,
+    )
+    plan = await planner.create_plan(uuid4())
+    assert plan.parameters.shots == 4096  # scripted plan said 1024
+    assert "4096 measurement shots" in llm.prompts[0]
+
+
+async def test_requested_shots_clamp_to_the_plan_schema_ceiling():
+    llm = _ScriptedPlannerLLM(
+        _plan_payload(output_keys=["counts"], methods=["statistical", "return_contract"])
+    )
+    planner = LLMPlanner(
+        llm=llm,
+        task_prompt="MaxCut on a ring",
+        framework=Framework.QISKIT,
+        requested_shots=1_000_000,
+    )
+    plan = await planner.create_plan(uuid4())
+    assert plan.parameters.shots == 20_000
+
+
+async def test_no_requested_shots_leaves_the_plan_alone():
+    llm = _ScriptedPlannerLLM(
+        _plan_payload(output_keys=["counts"], methods=["statistical", "return_contract"])
+    )
+    planner = LLMPlanner(llm=llm, task_prompt="MaxCut on a ring", framework=Framework.QISKIT)
+    plan = await planner.create_plan(uuid4())
+    assert plan.parameters.shots == 1024
+    assert "measurement shots" not in llm.prompts[0]
+
+
 async def test_planner_gives_up_after_the_retry_rather_than_looping():
     contradictory = _plan_payload(
         output_keys=["optimal_cut"], methods=["statistical", "return_contract"]

@@ -302,11 +302,23 @@ def render_plan_prompt(
     requested_framework: Framework | None = None,
     *,
     has_parent_artifact: bool = False,
+    requested_shots: int | None = None,
 ) -> RenderedPrompt:
+    # The prompt states the request AND the worker enforces it after parsing
+    # (LLMPlanner.create_plan): stated so the planner can budget runtime around
+    # the real shot count, enforced because prompt compliance is not a
+    # mechanism — runs submitted with shots=4096 were silently planned at 1024.
+    shots_line = (
+        f"The user requested {requested_shots} measurement shots; "
+        f"set parameters.shots to exactly {requested_shots}.\n\n"
+        if requested_shots is not None
+        else ""
+    )
     return _render(
         PLAN_SYSTEM_PROMPT,
         f"User request:\n{task_prompt}\n\n"
         f"Selected framework: {_framework_label(requested_framework)}\n\n"
+        f"{shots_line}"
         f"{_PARENT_ARTIFACT_PRESENT if has_parent_artifact else _PARENT_ARTIFACT_ABSENT}\n\n"
         f"{research_context or 'No additional research context was available.'}",
     )

@@ -61,6 +61,11 @@ from majorana_api.repos import runs as runs_repo
 
 
 class LLMPlanner:
+    # The Plan schema's own ceiling (PlanParameters.shots le=20000). The run API
+    # accepts up to 1e6; a larger request is clamped rather than rejected, and
+    # the clamp is visible in the plan the user gets back.
+    _PLAN_SHOTS_CEILING = 20_000
+
     def __init__(
         self,
         *,
@@ -68,11 +73,17 @@ class LLMPlanner:
         task_prompt: str,
         framework: Framework,
         has_parent_artifact: bool = False,
+        requested_shots: int | None = None,
     ) -> None:
         self._llm = llm
         self._task_prompt = task_prompt
         self._framework = framework
         self._has_parent_artifact = has_parent_artifact
+        self._requested_shots = (
+            min(requested_shots, self._PLAN_SHOTS_CEILING)
+            if requested_shots is not None and requested_shots >= 1
+            else None
+        )
 
     # One retry, not a loop: the plan contract rejects self-contradictory plans
     # (see Plan._statistical_needs_distribution_evidence), and handing the planner
@@ -87,6 +98,7 @@ class LLMPlanner:
                 self._task_prompt,
                 requested_framework=self._framework,
                 has_parent_artifact=self._has_parent_artifact,
+                requested_shots=self._requested_shots,
             )
             user = prompt.user
             if objection is not None:
@@ -114,6 +126,13 @@ class LLMPlanner:
                 continue
             if plan.framework is not self._framework:
                 raise ValueError("planner changed the user-selected framework")
+            if self._requested_shots is not None:
+                # Enforced, not requested: runs submitted with shots=4096 were
+                # silently planned at 1024 because nothing carried the value past
+                # the run row. The plan rides into the generation context, so the
+                # override reaches the emitted code; the statistical threshold is
+                # computed from the shots actually observed either way.
+                plan.parameters.shots = self._requested_shots
             return plan
         raise AssertionError("unreachable: loop returns or raises on the final attempt")
 

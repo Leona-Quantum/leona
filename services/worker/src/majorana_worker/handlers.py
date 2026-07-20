@@ -427,6 +427,7 @@ async def _handle_agent_execution(
             task_prompt=ctx.task_prompt,
             framework=ctx.framework,
             has_parent_artifact=parent_artifact_id is not None,
+            requested_shots=ctx.shots,
         ),
         executor=SandboxCandidateExecutor(sandbox),
         verifier=EvidenceVerifier(
