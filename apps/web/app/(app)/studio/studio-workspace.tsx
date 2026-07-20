@@ -11,6 +11,7 @@ import { parseCircuitSource, allCircuitConversions, looksLikeOpenQasm3 } from ".
 import { CIRCUIT_FRAMEWORKS, circuitFramework, circuitFrameworkOrNull, isExecutableCircuitFramework, type CircuitFrameworkKey } from "../../../lib/circuit-frameworks";
 import { WORKSPACE_COPY } from "../../../lib/workspace-locale";
 import { sampling } from "../../../lib/studio-run-request";
+import { verificationFromMetadata } from "../../../lib/verification-record";
 
 type StudioPanel = "canvas" | "code" | "versions";
 type StudioAction = "simulate" | "verify" | "save";
@@ -969,6 +970,13 @@ async function loadArtifact(id: string): Promise<LibraryArtifact | null> {
     artifact.qasm = typeof version.qasm === "string" ? version.qasm : artifact.qasm;
     artifact.currentVersionId = payload.current_version_id;
     artifact.resourceRows = resourceRowsFromRemote(version.resource_estimates);
+    // The Versions panel is only useful if the checks arrive with the artifact.
+    // Without this the panel could only ever show evidence for an artifact this
+    // browser had already opened in the Vault — i.e. almost never, which would
+    // make the whole panel look like it did not work.
+    const record = verificationFromMetadata(version.metadata);
+    artifact.checks = record.checks ?? artifact.checks;
+    artifact.criticSummary = record.criticSummary ?? artifact.criticSummary;
   }
   return artifact;
 }
