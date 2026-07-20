@@ -347,6 +347,19 @@ class RepoAgentStore:
         )
         await self._session.commit()
 
+    async def published_verification(self, run_id: UUID) -> VerificationEvidence | None:
+        """The evidence behind the candidate this run actually published.
+
+        The run handler knows the loop reached PUBLISHED but not what that publication
+        was proved by, and `latest_candidate` is not the answer — the published one is
+        whichever candidate passed, not whichever came last.
+        """
+        row = await agent_repo.get_or_create_agent_run(self._scope, self._session, run_id)
+        if row.publication is None:
+            return None
+        publication = PublishedArtifact.model_validate(row.publication)
+        return await self.verification_for(run_id, publication.candidate_id)
+
     async def publication_for(self, run_id: UUID, candidate_id: UUID) -> PublishedArtifact | None:
         row = await agent_repo.get_or_create_agent_run(self._scope, self._session, run_id)
         if row.publication is None:

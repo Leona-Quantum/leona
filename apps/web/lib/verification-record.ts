@@ -13,6 +13,10 @@ import type { VerificationCheck } from "./library-data";
 export interface VerificationRecord {
   checks?: VerificationCheck[];
   criticSummary?: string;
+  /** What the pass was proved by, as the worker graded it. Absent on versions
+   * saved before 2026-07-20, which is why the caller must not treat "not
+   * physical" and "no record" as the same thing. */
+  evidenceStrength?: "physical" | "structural";
 }
 
 export function verificationFromMetadata(value: unknown): VerificationRecord {
@@ -32,5 +36,8 @@ export function verificationFromMetadata(value: unknown): VerificationRecord {
     critic && typeof critic === "object" && typeof (critic as Record<string, unknown>).summary === "string"
       ? ((critic as Record<string, unknown>).summary as string)
       : undefined;
-  return { checks: checks.length ? checks : undefined, criticSummary };
+  const strength = record.evidence_strength;
+  const evidenceStrength =
+    strength === "physical" || strength === "structural" ? strength : undefined;
+  return { checks: checks.length ? checks : undefined, criticSummary, evidenceStrength };
 }

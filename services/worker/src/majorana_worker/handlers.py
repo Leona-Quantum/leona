@@ -12,7 +12,15 @@ from dataclasses import replace
 from typing import Any, Awaitable, Callable
 
 from majorana_contracts import Scope
-from majorana_contracts.enums import Framework, ImportProvider, Role, RunMode, RunStatus
+from majorana_contracts.enums import (
+    EvidenceStrength,
+    Framework,
+    ImportProvider,
+    Role,
+    RunMode,
+    RunStatus,
+    evidence_strength_of,
+)
 from majorana_agent import (
     AgentPolicy,
     AgentRuntime,
@@ -467,9 +475,22 @@ async def _handle_agent_execution(
         )
         return RunStatus.CANCELLED
     if final is AgentState.PUBLISHED:
+        # A pass says nothing was contradicted; the strength says what did the
+        # contradicting. Fails closed to STRUCTURAL — the weaker claim — when the
+        # evidence row cannot be read, because an unreadable grade is not a strong one.
+        published = await agent_store.published_verification(ctx.run_id)
+        strength = (
+            evidence_strength_of(published.deterministic_checks)
+            if published is not None
+            else EvidenceStrength.STRUCTURAL
+        )
         await ctx.sink.emit(
             "run.finished",
-            {"status": RunStatus.SUCCEEDED, "verifier_decision": "pass"},
+            {
+                "status": RunStatus.SUCCEEDED,
+                "verifier_decision": "pass",
+                "evidence_strength": strength.value,
+            },
             event_id=uuid.uuid5(ctx.run_id, "run.finished"),
         )
         await run_store.set_status(

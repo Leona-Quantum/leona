@@ -177,6 +177,10 @@ async def test_run_executes_end_to_end_with_real_agent_tools(env):
     assert "stage.finished" not in types
     assert [e["seq"] for e in events] == list(range(1, len(events) + 1))
     assert events[-1]["verifier_decision"] == "pass"
+    # A pass must say what it was proved by. Bell-state runs plan `statistical`, so
+    # the grade here should be the strong one — if this reads "structural" the run
+    # passed on contract checks alone and the plan quietly asked for no physics.
+    assert events[-1]["evidence_strength"] == "physical"
 
     # The durable tool loop exposes stable product events without legacy stages.
     for expected in (

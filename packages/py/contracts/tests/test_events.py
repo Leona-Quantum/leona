@@ -6,6 +6,7 @@ import pytest
 from pydantic import ValidationError
 
 from majorana_contracts import (
+    EvidenceStrength,
     ExportStatus,
     Framework,
     RunFinished,
@@ -56,6 +57,29 @@ def test_json_round_trip():
     wire = original.model_dump_json()
     revived = run_event_adapter.validate_json(wire)
     assert revived == original
+
+
+def test_run_finished_carries_what_the_verdict_was_proved_by():
+    """The worker emits this key on every published run; the sink validates against
+    this schema, so a missing field here means the emit raises in production."""
+    wire = RunFinished(
+        run_id=uuid4(),
+        seq=14,
+        ts=datetime.now(UTC),
+        status=RunStatus.SUCCEEDED,
+        verifier_decision="pass",
+        evidence_strength="structural",
+    ).model_dump_json()
+    revived = run_event_adapter.validate_json(wire)
+    assert revived.evidence_strength is EvidenceStrength.STRUCTURAL
+
+
+def test_run_finished_evidence_strength_is_optional_for_replayed_history():
+    """Runs finished before 2026-07-20 have no such key in the events table."""
+    revived = run_event_adapter.validate_python(
+        {**ENVELOPE, "type": "run.finished", "status": "succeeded", "verifier_decision": "pass"}
+    )
+    assert revived.evidence_strength is None
 
 
 def test_every_event_type_round_trips():

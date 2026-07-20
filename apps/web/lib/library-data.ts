@@ -1,6 +1,11 @@
 import type { RunEvent } from "@majorana/ui";
 
-export type LibraryStatus = "verified" | "verified_caveats" | "failed";
+/** `structural` is a pass whose evidence was contract checks only — the result dict
+ * had the promised keys, the qubit count was within the plan's ceiling — with nothing
+ * compared against what the physics should do. It is a real pass, and it is not the
+ * claim "verified" makes, so it gets its own word. See
+ * `plans/evidence-strength-labelling.md`. */
+export type LibraryStatus = "verified" | "structural" | "verified_caveats" | "failed";
 
 /** One deterministic check as the verifier recorded it on the saved version. */
 export interface VerificationCheck {
@@ -299,6 +304,20 @@ function isArtifactArchiveExpired(archivedAt: string): boolean {
   return daysUntilArtifactDeletion(archivedAt) <= 0;
 }
 
+/** The Vault's status for a run-saved artifact.
+ *
+ * `verifier_decision === "pass"` alone used to mean "verified" here. It does not:
+ * a plan whose verification_plan was ["return_contract"] passes on "the result dict
+ * has a `counts` key". The worker grades that as structural, and the Vault says so.
+ * A finished run with no grade at all is pre-2026-07-20 history, and absent evidence
+ * is not evidence of weakness — it keeps the old reading. */
+function statusFromFinished(finished: RunEvent | undefined): LibraryStatus {
+  if (finished?.type !== "run.finished" || finished.verifier_decision !== "pass") {
+    return "verified_caveats";
+  }
+  return finished.evidence_strength === "structural" ? "structural" : "verified";
+}
+
 export function rememberArtifactFromRun(events: readonly RunEvent[], prompt: string): LibraryArtifact | null {
   const saved = events.find((event) => event.type === "artifact.saved");
   if (!saved || saved.type !== "artifact.saved") return null;
@@ -325,7 +344,7 @@ export function rememberArtifactFromRun(events: readonly RunEvent[], prompt: str
     title,
     family,
     framework,
-    status: finished?.type === "run.finished" && finished.verifier_decision === "pass" ? "verified" : "verified_caveats",
+    status: statusFromFinished(finished),
     updatedAt,
     description: `Saved from the verified Leona Run for: ${prompt}`,
     tags: [String(family).toLowerCase(), String(framework).toLowerCase(), "run"],

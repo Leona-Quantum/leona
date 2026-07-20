@@ -143,7 +143,7 @@ const VERIFIED: RunEvent[] = [
     ],
     error: null,
   },
-  { type: "run.finished", run_id: RUN, seq: 27, ts: ts(36), status: "succeeded", verifier_decision: "pass", residual_risks: null },
+  { type: "run.finished", run_id: RUN, seq: 27, ts: ts(36), status: "succeeded", verifier_decision: "pass", evidence_strength: "physical", residual_risks: null },
 ];
 
 const FAILED: RunEvent[] = [
@@ -158,7 +158,7 @@ const FAILED: RunEvent[] = [
     details: { metric: "TVD", metric_value: 0.21, threshold: 0.05, seed: 42, shots: 4096 },
   },
   { type: "stage.finished", run_id: RUN, seq: 13, ts: ts(22), stage: "verify", ok: false, duration_ms: 1100 },
-  { type: "run.finished", run_id: RUN, seq: 14, ts: ts(23), status: "failed", verifier_decision: "fail", residual_risks: null },
+  { type: "run.finished", run_id: RUN, seq: 14, ts: ts(23), status: "failed", verifier_decision: "fail", evidence_strength: null, residual_risks: null },
 ];
 
 // Tail fragments exercise the organic plan output against the same replay reducer and

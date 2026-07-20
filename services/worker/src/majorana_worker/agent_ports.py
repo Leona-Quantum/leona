@@ -27,6 +27,7 @@ from majorana_contracts.enums import (
     MeasurementPolicy,
     VerificationMethod,
     VerifierDecision,
+    evidence_strength_of,
 )
 from majorana_contracts.plan import EXACT_MAX_QUBITS, Plan
 from majorana_frameworks import FrameworkProgram, extract_interchange_qasm
@@ -917,6 +918,12 @@ class RepoArtifactPublisher:
                 "openqasm_role": "interchange" if qasm else "unavailable",
                 "verification_summary": {
                     "decision": verification.decision.value,
+                    # Derived here rather than stored on the evidence row: the checks
+                    # are the fact, the grade is a reading of them, and a stored grade
+                    # would be free to drift from the list printed beside it.
+                    "evidence_strength": evidence_strength_of(
+                        verification.deterministic_checks
+                    ).value,
                     "deterministic_checks": [
                         {
                             "method": check.get("method"),

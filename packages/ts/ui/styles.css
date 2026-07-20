@@ -3375,7 +3375,8 @@
   border-color: var(--ok);
   color: var(--ok);
 }
-.mj-library-status--verified_caveats > span:first-child {
+.mj-library-status--verified_caveats > span:first-child,
+.mj-library-status--structural > span:first-child {
   border-color: var(--warn);
   color: var(--warn);
 }

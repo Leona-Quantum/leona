@@ -1048,6 +1048,15 @@
         "title": "CompilationResult",
         "type": "object"
       },
+      "EvidenceStrength": {
+        "description": "What a passing run's verdict was actually proved by.\n\nDeliberately *not* a fourth VerifierDecision value. A run whose only check was\n`return_contract` \u2014 \"does the result dict have a `counts` key?\" \u2014 is a real pass:\nnothing it claimed was contradicted. It is just not the same claim as a run whose\nreported distribution was compared against the circuit's Born distribution to\n1.8e-16, and until 2026-07-20 both printed the single word \"Verified\".\n\nEvery consumer compares `verifier_decision == \"pass\"`, the eval harness included,\nso the decision stays `pass` and the strength rides alongside it.",
+        "enum": [
+          "physical",
+          "structural"
+        ],
+        "title": "EvidenceStrength",
+        "type": "string"
+      },
       "ExportClassified": {
         "additionalProperties": false,
         "properties": {
@@ -2434,6 +2443,17 @@
       "RunFinished": {
         "additionalProperties": false,
         "properties": {
+          "evidence_strength": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/EvidenceStrength"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
           "residual_risks": {
             "anyOf": [
               {
