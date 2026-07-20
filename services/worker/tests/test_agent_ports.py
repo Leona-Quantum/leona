@@ -1730,3 +1730,70 @@ def test_exact_failure_stays_bare_for_parent_artifact_reference():
     ]
     EvidenceVerifier._name_reference_disagreement(checks, plan)
     assert "disagreement" not in checks[1]["details"]
+
+
+def _exact_diag_plan_payload(*, range_min: float, range_max: float) -> str:
+    """The weighted-MaxCut QAOA shape from live run 019f7f81-4a61: Ising
+    Hamiltonian with ground energy -4.5, promised metric `best_cut_weight`."""
+    return json.dumps(
+        {
+            "domain": "optimization",
+            "framework": "qiskit",
+            "algorithm": Algorithm.QAOA.value,
+            "problem_summary": "Weighted MaxCut on 4 nodes",
+            "algorithm_rationale": "QAOA with a declared Ising cost Hamiltonian",
+            "parameters": {"shots": 1024},
+            "qubits_estimate": 4,
+            "expected_runtime_sec": 60,
+            "success_criteria": {
+                "primary_metric": "best_cut_weight",
+                "expected_range": {"min": range_min, "max": range_max},
+            },
+            "expected_output_keys": ["best_cut_weight", "best_cut"],
+            "verification_plan": {
+                "methods": ["exact_diag", "return_contract"],
+                "reference_hamiltonian": [
+                    {"pauli": "ZZII", "coefficient": 1.0},
+                    {"pauli": "IZZI", "coefficient": 2.5},
+                    {"pauli": "IIZZ", "coefficient": 1.5},
+                    {"pauli": "ZIIZ", "coefficient": 0.5},
+                    {"pauli": "ZIZI", "coefficient": 2.0},
+                ],
+            },
+        }
+    )
+
+
+async def test_a_range_that_cannot_contain_the_ground_energy_costs_one_planner_retry():
+    """Live run 019f7f81-4a61: exact_diag only passes near -4.5 while
+    success_criteria demanded [5.5, 6.0] — jointly unsatisfiable, and the model
+    reported the CORRECT cut of 6.0 four times before the budget died. Both
+    numbers are plan-declared, so the contradiction is caught at plan time."""
+    contradictory = _exact_diag_plan_payload(range_min=5.5, range_max=6.0)
+    corrected = _exact_diag_plan_payload(range_min=-4.9, range_max=-4.1)
+    llm = _ScriptedPlannerLLM(contradictory, corrected)
+    planner = LLMPlanner(llm=llm, task_prompt="Weighted MaxCut", framework=Framework.QISKIT)
+
+    plan = await planner.create_plan(uuid4())
+
+    assert plan.success_criteria.expected_range == {"min": -4.9, "max": -4.1}
+    assert len(llm.prompts) == 2
+    assert "unsatisfiable verification plan" in llm.prompts[1]
+    assert "cut WEIGHT is not an Ising energy" in llm.prompts[1]
+
+
+async def test_a_range_around_the_ground_energy_passes_without_a_retry():
+    llm = _ScriptedPlannerLLM(_exact_diag_plan_payload(range_min=-4.9, range_max=-4.1))
+    planner = LLMPlanner(llm=llm, task_prompt="Weighted MaxCut", framework=Framework.QISKIT)
+    plan = await planner.create_plan(uuid4())
+    assert plan.verification_plan is not None
+    assert len(llm.prompts) == 1
+
+
+async def test_the_range_gate_gives_up_after_one_retry_rather_than_looping():
+    contradictory = _exact_diag_plan_payload(range_min=5.5, range_max=6.0)
+    llm = _ScriptedPlannerLLM(contradictory, contradictory)
+    planner = LLMPlanner(llm=llm, task_prompt="Weighted MaxCut", framework=Framework.QISKIT)
+    with pytest.raises(StageOutputError, match="unsatisfiable verification plan"):
+        await planner.create_plan(uuid4())
+    assert len(llm.prompts) == 2
