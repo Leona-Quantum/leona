@@ -949,4 +949,6 @@ async def test_a_critic_that_never_parses_still_fails_closed_but_blames_itself()
     # The message must not read as a defect found in the candidate, and the repair plan
     # must not ask the agent to fix the verifier.
     assert "verifier failure" in ((output.critic or {}).get("summary") or "").lower()
-    assert not any("semantic verification" in step for step in (output.repair.repairs if output.repair else []))
+    assert not any(
+        "semantic verification" in step for step in (output.repair.repairs if output.repair else [])
+    )
