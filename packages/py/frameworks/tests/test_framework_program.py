@@ -601,6 +601,29 @@ def test_qiskit_native_statevector_declares_incapacity_on_feed_forward():
     observation = _run_epilogue(Framework.QISKIT, code)
     assert "native_statevector" not in observation
     assert "not unitary up to final measurements" in observation["native_statevector_error"]
+    # The register structure the verifier marginalizes on (plans/sampled-counts-
+    # width-mismatch.md). Only present when Aer is installed — it is in the sandbox
+    # image, not in the dev/CI venv, which is why the ordering claim underneath it
+    # gets its own aer-free pin below.
+    if "native_sampled" in observation:
+        sampled = observation["native_sampled"]
+        assert sampled["registers"] == [{"name": "out", "width": 1}, {"name": "m", "width": 2}]
+        assert all(key.index(" ") == 1 for key in sampled["counts"])
+    else:
+        assert observation["native_sampled_error"] == "qiskit_aer unavailable"
+
+
+def test_qiskit_counts_keys_print_the_last_declared_register_leftmost():
+    """The ordering the observer's `registers` export encodes, pinned against
+    Qiskit's own key formatter. If this ever flips, the verifier would marginalize
+    off the wrong end of the key — a silent wrong-answer, so it gets a test that
+    runs without Aer."""
+    pytest.importorskip("qiskit")
+    from qiskit.result.postprocess import format_counts
+
+    header = {"creg_sizes": [["m", 2], ["out", 1]], "memory_slots": 3}
+    # 0x5 = 101: clbits 0 and 2 set, i.e. m = "01" and out = "1".
+    assert format_counts({"0x5": 10}, header) == {"1 01": 10}
 
 
 def test_cirq_native_statevector_and_sampled_counts():
