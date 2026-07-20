@@ -19,6 +19,7 @@ from majorana_llm.parsing import (
     parse_analysis,
     parse_plan,
 )
+
 # The dead stage prompts (GENERATE/CRITIC/ANALYZE/WRITEBACK, STAGE_PROMPTS, their
 # renderers) and the caller-less research module were deleted 2026-07-20 — LLM
 # work list items 7 and 8. The live prompts are the three below plus the agent

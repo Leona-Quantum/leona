@@ -76,8 +76,7 @@ async def list_verified_exemplars(
             Artifact.workspace_id == scope.workspace_id,
             Artifact.deleted_at.is_(None),
             Artifact.framework == framework,
-            ArtifactVersion.artifact_metadata["verification_summary"]["decision"].astext
-            == "pass",
+            ArtifactVersion.artifact_metadata["verification_summary"]["decision"].astext == "pass",
         )
         .order_by(Artifact.id.desc())
         .limit(max(1, min(limit, 5)))

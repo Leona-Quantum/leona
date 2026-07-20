@@ -184,6 +184,7 @@ Reply with JSON only, no prose and no code fence:
 {"intent": "chat" | "execute", "confidence": <0.0-1.0>, "reason": "<one short clause>"}
 The reason must say what in the message decided it, in at most 12 words."""
 
+
 @dataclass(frozen=True)
 class RenderedPrompt:
     """Provider-neutral system/user messages."""
