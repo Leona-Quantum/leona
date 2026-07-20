@@ -202,8 +202,16 @@ class ToolBroker:
                 )
             return
         if set(call.arguments) != {"candidate_id"}:
+            # Live run 019f7f7c-5ac2: the model called publish_artifact with {}
+            # and the old message ("accepts exactly candidate_id") named the
+            # parameter but not where its value lives, so the retry had nothing
+            # to act on. The failing message is the repair loop's whole input
+            # (standing lesson 11).
             raise ToolPolicyError(
-                "invalid_arguments", f"{call.name.value} accepts exactly candidate_id"
+                "invalid_arguments",
+                f"{call.name.value} accepts exactly one argument, candidate_id — "
+                "pass the candidate_id value from the simulation or verification "
+                "payload in your history",
             )
 
     async def _next_state(
