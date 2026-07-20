@@ -5,6 +5,14 @@ return-contract checks. Every primitive maps to the
 contracts VerificationMethod/VerificationResultKind taxonomy and fails rather than
 fabricates when it cannot run (plans/rebuild/08-phases.md §Phase 2 step 4)."""
 
+from majorana_verification.baseline import (
+    BRUTE_FORCE_MAX_VARIABLES,
+    BaselineProblemError,
+    objective_comparison,
+    objective_tolerance,
+    objective_values,
+    optimal_objective,
+)
 from majorana_verification.hamiltonian import (
     EXACT_DIAG_MAX_QUBITS,
     HamiltonianError,
@@ -16,6 +24,7 @@ from majorana_verification.hamiltonian import (
 from majorana_verification.methods import (
     VerificationOutcome,
     extract_counts,
+    verify_brute_force,
     verify_exact,
     verify_exact_diag,
     verify_exact_native,
@@ -45,8 +54,15 @@ from majorana_verification.statevector import (
 )
 
 __all__ = [
+    "BRUTE_FORCE_MAX_VARIABLES",
+    "BaselineProblemError",
     "EXACT_DIAG_MAX_QUBITS",
     "HamiltonianError",
+    "objective_comparison",
+    "objective_tolerance",
+    "objective_values",
+    "optimal_objective",
+    "verify_brute_force",
     "NATIVE_STATEVECTOR_MAX_QUBITS",
     "StatevectorIncapable",
     "VerificationOutcome",

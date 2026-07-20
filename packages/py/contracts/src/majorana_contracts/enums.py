@@ -123,6 +123,13 @@ class PlannableVerificationMethod(StrEnum):
     # 2026-07-20; `exact_diag` had been in VerificationMethod and in the database
     # allowlist since 0001 with no implementation and no way for a plan to ask.
     EXACT_DIAG = "exact_diag"
+    # The combinatorial sibling: enumerate a declared <=16-variable maxcut/QUBO
+    # instance and compare the reported objective against the true optimum — the
+    # check that speaks a CUT metric's own units, which exact_diag structurally
+    # cannot (production run 019f7f81-4a61 pointed an energy check at a cut
+    # weight and burned four correct candidates). Same 0001-era dormancy story:
+    # the name was in VerificationMethod and the database allowlist all along.
+    BRUTE_FORCE = "brute_force"
 
 
 class VerificationResultKind(StrEnum):

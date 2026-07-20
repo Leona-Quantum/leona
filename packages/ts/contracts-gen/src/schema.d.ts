@@ -781,6 +781,33 @@ export interface components {
             type: "plan.produced";
         };
         /**
+         * ProblemTerm
+         * @description One weighted term of a combinatorial instance, as data.
+         *
+         *     The reference for `brute_force` is declared, never executed — the rule
+         *     `reference_qasm` and `reference_hamiltonian` already follow, and for the same
+         *     reason: an instance written as framework code would have to run in the
+         *     sandbox to mean anything, making a second piece of model-authored code the
+         *     ground truth.
+         */
+        ProblemTerm: {
+            /**
+             * I
+             * @description First variable index, 0-based.
+             */
+            i: number;
+            /**
+             * J
+             * @description Second variable index, 0-based. For maxcut this must differ from i (an edge joins two distinct nodes); for qubo, i == j declares the linear coefficient of x_i.
+             */
+            j: number;
+            /**
+             * Weight
+             * @description Real weight of this edge (maxcut) or coefficient (qubo).
+             */
+            weight: number;
+        };
+        /**
          * PublicCatalogEntry
          * @description A published catalog record served to anonymous readers (repository Step 6).
          *
@@ -843,6 +870,27 @@ export interface components {
              * @enum {string}
              */
             source: "sandbox_epilogue" | "model_stdout" | "missing";
+        };
+        /**
+         * ReferenceProblem
+         * @description The combinatorial instance the `brute_force` check enumerates.
+         */
+        ReferenceProblem: {
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "maxcut" | "qubo";
+            /**
+             * Num Variables
+             * @description Number of binary variables (graph nodes for maxcut). The check enumerates all 2**n assignments, so at most 16.
+             */
+            num_variables: number;
+            /**
+             * Terms
+             * @description maxcut: the weighted edge list; the objective is the MAXIMUM total weight of edges whose endpoints fall on opposite sides. qubo: the coefficients of sum(w_ij * x_i * x_j); the objective is the MINIMUM. Duplicate index pairs add their weights.
+             */
+            terms: components["schemas"]["ProblemTerm"][];
         };
         /**
          * ResearchCitation
@@ -1628,7 +1676,7 @@ export interface components {
              * Methods
              * @description Verification primitives to run against the generated code
              */
-            methods: ("exact" | "statistical" | "return_contract" | "exact_diag")[];
+            methods: ("exact" | "statistical" | "return_contract" | "exact_diag" | "brute_force")[];
             /**
              * Reference Hamiltonian
              * @description The Hamiltonian the 'exact_diag' check diagonalizes, required when 'exact_diag' is listed. Write the operator the task actually names, in a real Pauli basis, one term per entry — not a transcription of the code you expect back. success_criteria.primary_metric must name the result key holding the energy the run reports.
@@ -1641,6 +1689,11 @@ export interface components {
              * @default null
              */
             reference_method: string | null;
+            /**
+             * @description The combinatorial instance the 'brute_force' check enumerates, required when 'brute_force' is listed. Write the instance the task actually names — the graph's weighted edges, the QUBO's coefficients — not a transcription of the code you expect back. success_criteria.primary_metric must name the result key holding the objective value the run reports.
+             * @default null
+             */
+            reference_problem: components["schemas"]["ReferenceProblem"] | null;
             /**
              * Reference Qasm
              * @description OpenQASM 2 or 3 source for the circuit the generated code must match, required when reference_source is 'plan_declared'. Write the canonical textbook construction, not a copy of the code you expect. Measurements are ignored: only the unitary is compared.

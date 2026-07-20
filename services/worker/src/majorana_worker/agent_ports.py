@@ -44,10 +44,14 @@ from majorana_openqasm import OpenQASMError, normalize
 from majorana_sandbox import ExecutionSpec, GuardRejection, Sandbox
 from majorana_sandbox import run as sandbox_run
 from majorana_verification import (
+    BaselineProblemError,
     HamiltonianError,
     energy_tolerance,
     extract_counts,
     ground_state_energy,
+    objective_tolerance,
+    optimal_objective,
+    verify_brute_force,
     verify_exact,
     verify_exact_diag,
     verify_exact_native,
@@ -154,7 +158,9 @@ class LLMPlanner:
                 plan.parameters.seed = self._requested_seed
             # After the shots override, because the tolerance depends on the
             # shots that will actually run.
-            contradiction = self._exact_diag_range_contradiction(plan)
+            contradiction = self._exact_diag_range_contradiction(
+                plan
+            ) or self._brute_force_range_contradiction(plan)
             if contradiction is not None:
                 if attempt == self._PLAN_ATTEMPTS - 1:
                     raise StageOutputError(contradiction)
@@ -214,6 +220,54 @@ class LLMPlanner:
             "exact_diag, or promise the energy itself as the primary metric and "
             "set the range around the ground-state energy), or the Hamiltonian or "
             "range is written wrong."
+        )
+
+    @staticmethod
+    def _brute_force_range_contradiction(plan: Plan) -> str | None:
+        """A plan whose success range cannot contain its instance's own optimum
+        is unsatisfiable before any code exists.
+
+        The combinatorial mirror of `_exact_diag_range_contradiction`, guarding
+        the same failure shape from the other direction: `brute_force` only
+        passes a value at the declared instance's true optimum, so an
+        expected_range that excludes the optimum makes the two checks jointly
+        unsatisfiable and the run burns its budget on correct code. Both numbers
+        are plan-declared, so the contradiction is computable the moment the
+        plan is parsed. Runs only here in the planner, never in the Plan model:
+        a stored plan that predates this gate must keep rehydrating (standing
+        lesson 15).
+        """
+        verification_plan = plan.verification_plan
+        if verification_plan is None or VerificationMethod.BRUTE_FORCE not in (
+            verification_plan.methods or []
+        ):
+            return None
+        problem = verification_plan.reference_problem
+        expected_range = plan.success_criteria.expected_range
+        if problem is None or not expected_range:
+            return None
+        terms = [(term.i, term.j, term.weight) for term in problem.terms]
+        try:
+            optimum = optimal_objective(problem.kind, problem.num_variables, terms)
+            tolerance = objective_tolerance(terms)
+        except BaselineProblemError:
+            # Malformed instances are the plan contract's beat; the verifier
+            # also names them `fault: plan`. Not this gate's job.
+            return None
+        low = expected_range.get("min", float("-inf"))
+        high = expected_range.get("max", float("inf"))
+        if low <= optimum + tolerance and optimum - tolerance <= high:
+            return None
+        metric = plan.success_criteria.primary_metric
+        objective_word = "maximum cut weight" if problem.kind == "maxcut" else "minimum QUBO value"
+        return (
+            f"unsatisfiable verification plan: brute_force only passes a {metric} "
+            f"at the declared instance's true optimum — its {objective_word} is "
+            f"{optimum:.6f} — but success_criteria.expected_range [{low}, {high}] "
+            "does not contain that value, so the two checks can never both pass. "
+            "Either the promised metric is not the objective of the declared "
+            "instance, or the instance or range is written wrong. Set the range "
+            "around the true optimum, fix the declared terms, or drop brute_force."
         )
 
 
@@ -733,6 +787,9 @@ class EvidenceVerifier:
             if method is VerificationMethod.EXACT_DIAG:
                 checks.append(self._exact_diag_check(execution, plan))
                 continue
+            if method is VerificationMethod.BRUTE_FORCE:
+                checks.append(self._brute_force_check(execution, plan))
+                continue
             outcome = None
             if method is VerificationMethod.RETURN_CONTRACT:
                 expected_type = (
@@ -1001,6 +1058,43 @@ class EvidenceVerifier:
             declared_tolerance=thresholds.get(
                 f"{metric}_error_max", thresholds.get("energy_error_max")
             ),
+        )
+        return {
+            "method": outcome.method.value,
+            "result": outcome.result.value,
+            "details": outcome.details | {"metric": metric},
+        }
+
+    @staticmethod
+    def _brute_force_check(execution: ExecutionEvidence, plan: Plan) -> dict[str, Any]:
+        """The reported combinatorial objective against enumerated ground truth.
+
+        The check that speaks a cut metric's own units — `exact_diag` grades
+        energies, and pointing it at a cut weight is the category error #126 now
+        refuses at plan time. The plan contract has already guaranteed the
+        instance exists, its indices fit its variable count, and that
+        primary_metric is a promised key — so the only thing that can be absent
+        here is the value the candidate was supposed to print, and that is
+        genuinely a fact about the candidate.
+        """
+        verification_plan = plan.verification_plan
+        problem = verification_plan.reference_problem if verification_plan else None
+        if problem is None:
+            return {
+                "method": VerificationMethod.BRUTE_FORCE.value,
+                "result": "fail",
+                "details": {
+                    "error": "required evidence unavailable",
+                    "reason": "the plan listed brute_force without a reference_problem",
+                    "fault": "plan",
+                },
+            }
+        metric = plan.success_criteria.primary_metric
+        outcome = verify_brute_force(
+            problem.kind,
+            problem.num_variables,
+            [(term.i, term.j, term.weight) for term in problem.terms],
+            execution.result.get(metric),
         )
         return {
             "method": outcome.method.value,

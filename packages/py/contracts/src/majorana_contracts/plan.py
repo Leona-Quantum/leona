@@ -45,6 +45,11 @@ EXACT_MAX_QUBITS = 10
 # way round — and packages/py/verification/tests pins the two against drift.
 EXACT_DIAG_MAX_QUBITS = 10
 
+# Ceiling for `brute_force`, mirroring majorana_verification.baseline's own
+# BRUTE_FORCE_MAX_VARIABLES. Same duplication story and the same drift pin in
+# packages/py/verification/tests.
+BRUTE_FORCE_MAX_VARIABLES = 16
+
 
 def _promises_distribution(key: str) -> bool:
     """Whether an expected_output_key names a measurement distribution.
@@ -133,6 +138,60 @@ class PauliTerm(_PlanBase):
     )
 
 
+class ProblemTerm(_PlanBase):
+    """One weighted term of a combinatorial instance, as data.
+
+    The reference for `brute_force` is declared, never executed — the rule
+    `reference_qasm` and `reference_hamiltonian` already follow, and for the same
+    reason: an instance written as framework code would have to run in the
+    sandbox to mean anything, making a second piece of model-authored code the
+    ground truth.
+    """
+
+    i: int = Field(
+        ge=0,
+        lt=BRUTE_FORCE_MAX_VARIABLES,
+        description="First variable index, 0-based.",
+    )
+    j: int = Field(
+        ge=0,
+        lt=BRUTE_FORCE_MAX_VARIABLES,
+        description=(
+            "Second variable index, 0-based. For maxcut this must differ from i "
+            "(an edge joins two distinct nodes); for qubo, i == j declares the "
+            "linear coefficient of x_i."
+        ),
+    )
+    weight: float = Field(
+        allow_inf_nan=False,
+        description="Real weight of this edge (maxcut) or coefficient (qubo).",
+    )
+
+
+class ReferenceProblem(_PlanBase):
+    """The combinatorial instance the `brute_force` check enumerates."""
+
+    kind: Literal["maxcut", "qubo"]
+    num_variables: int = Field(
+        ge=1,
+        le=BRUTE_FORCE_MAX_VARIABLES,
+        description=(
+            "Number of binary variables (graph nodes for maxcut). The check "
+            f"enumerates all 2**n assignments, so at most {BRUTE_FORCE_MAX_VARIABLES}."
+        ),
+    )
+    terms: list[ProblemTerm] = Field(
+        min_length=1,
+        max_length=512,
+        description=(
+            "maxcut: the weighted edge list; the objective is the MAXIMUM total "
+            "weight of edges whose endpoints fall on opposite sides. qubo: the "
+            "coefficients of sum(w_ij * x_i * x_j); the objective is the MINIMUM. "
+            "Duplicate index pairs add their weights."
+        ),
+    )
+
+
 class VerificationPlan(_PlanBase):
     methods: list[VerificationMethod] = Field(
         min_length=1,
@@ -188,6 +247,17 @@ class VerificationPlan(_PlanBase):
             "result key holding the energy the run reports."
         ),
     )
+    reference_problem: ReferenceProblem | None = Field(
+        default=None,
+        description=(
+            "The combinatorial instance the 'brute_force' check enumerates, "
+            "required when 'brute_force' is listed. Write the instance the task "
+            "actually names — the graph's weighted edges, the QUBO's coefficients "
+            "— not a transcription of the code you expect back. "
+            "success_criteria.primary_metric must name the result key holding the "
+            "objective value the run reports."
+        ),
+    )
     feedback_policy: str | None = Field(
         default=None, description="What to minimally fix and re-verify on failure"
     )
@@ -233,6 +303,39 @@ class VerificationPlan(_PlanBase):
         remaining = [item for item in methods if str(item) != VerificationMethod.EXACT_DIAG]
         # min_length=1 still rejects a genuinely empty list; only a list emptied by
         # this normalization gets the fallback the retired-method path also uses.
+        return {
+            **value,
+            "methods": remaining or [VerificationMethod.RETURN_CONTRACT.value],
+        }
+
+    @model_validator(mode="before")
+    @classmethod
+    def _drop_brute_force_with_no_problem_at_all(cls, value: Any) -> Any:
+        """Legacy shape, and only the legacy shape: `brute_force` with no instance.
+
+        The same rehydration hazard `_drop_exact_diag_with_no_reference_at_all`
+        exists for: `brute_force` was in VerificationMethod from migration 0001
+        but never plannable, so `_drop_unplannable_methods` normalized it away and
+        stored plans carrying it parsed fine. Making it plannable turns those rows
+        into hard validation errors, and `PlanRecord.plan` re-validates on every
+        rehydration — a run resuming across this deploy would die on a plan that
+        used to parse. The absent case normalizes to yesterday's behaviour: drop
+        the method, run without the check.
+
+        A payload that DOES carry `reference_problem` has clearly asked for the
+        check, and every way of getting it wrong from there stays a hard error
+        with a corrective objection the planner retry can act on.
+        """
+        if not isinstance(value, dict):
+            return value
+        if value.get("reference_problem") is not None:
+            return value
+        methods = value.get("methods")
+        if not isinstance(methods, list):
+            return value
+        if not any(str(item) == VerificationMethod.BRUTE_FORCE for item in methods):
+            return value
+        remaining = [item for item in methods if str(item) != VerificationMethod.BRUTE_FORCE]
         return {
             **value,
             "methods": remaining or [VerificationMethod.RETURN_CONTRACT.value],
@@ -447,6 +550,61 @@ class Plan(_PlanBase):
             raise ValueError(
                 "verification_plan.methods includes 'exact_diag', which reads the "
                 "reported energy out of the result under "
+                f"success_criteria.primary_metric ('{self.success_criteria.primary_metric}'), "
+                f"but expected_output_keys ({', '.join(self.expected_output_keys)}) "
+                "does not promise that key. Spell the metric exactly as one of the "
+                "keys the code will print."
+            )
+        return self
+
+    @model_validator(mode="after")
+    def _brute_force_needs_an_enumerable_instance(self) -> "Plan":
+        """Reject a `brute_force` plan the verifier would be forced to fail.
+
+        Same family as the rules above. `brute_force` enumerates a declared
+        instance and compares the reported objective against the true optimum, so
+        it needs things only the plan can guarantee: the instance, indices that
+        stay inside its variable count, maxcut edges that join two distinct
+        nodes, and a result key to read the value out of. Any of them missing
+        fails identically on every candidate — the signature that says the defect
+        is in the plan.
+
+        Index bounds against BRUTE_FORCE_MAX_VARIABLES and weight finiteness are
+        already enforced by ProblemTerm's own fields; what only the whole plan
+        can see is that the terms agree with num_variables and with the keys the
+        run promises to print.
+        """
+        plan = self.verification_plan
+        if plan is None or VerificationMethod.BRUTE_FORCE not in plan.methods:
+            return self
+        problem = plan.reference_problem
+        if problem is None:
+            raise ValueError(
+                "verification_plan.methods includes 'brute_force', which enumerates "
+                "a declared combinatorial instance and compares the reported "
+                "objective against its true optimum, but reference_problem is "
+                "missing. Declare the instance (e.g. {'kind': 'maxcut', "
+                "'num_variables': 4, 'terms': [{'i': 0, 'j': 1, 'weight': 2.0}]}), "
+                "or drop 'brute_force'."
+            )
+        for term in problem.terms:
+            if term.i >= problem.num_variables or term.j >= problem.num_variables:
+                raise ValueError(
+                    f"verification_plan.reference_problem term ({term.i}, {term.j}) "
+                    f"names a variable outside 0..{problem.num_variables - 1}; "
+                    "raise num_variables or fix the term's indices."
+                )
+            if problem.kind == "maxcut" and term.i == term.j:
+                raise ValueError(
+                    f"verification_plan.reference_problem term ({term.i}, {term.j}) "
+                    "is a self-loop, which no cut can sever. MaxCut edges join two "
+                    "distinct variables; if the instance really has a constant "
+                    "offset, fold it into the reported metric instead."
+                )
+        if self.success_criteria.primary_metric not in self.expected_output_keys:
+            raise ValueError(
+                "verification_plan.methods includes 'brute_force', which reads the "
+                "reported objective out of the result under "
                 f"success_criteria.primary_metric ('{self.success_criteria.primary_metric}'), "
                 f"but expected_output_keys ({', '.join(self.expected_output_keys)}) "
                 "does not promise that key. Spell the metric exactly as one of the "
