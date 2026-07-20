@@ -3,13 +3,15 @@
 import { useEffect, useRef, useState, type KeyboardEvent, type MouseEvent, type UIEvent } from "react";
 import { SyntaxHighlightedCode } from "@majorana/ui";
 import { CheckIcon, CopyIcon, PanelRightIcon, SearchIcon } from "../../../components/icons";
-import { frameworkVariantsFromRemote, getLibraryArtifact, loadLibraryArtifacts, type LibraryArtifact } from "../../../lib/library-data";
+import { artifactFromResource, frameworkVariantsFromRemote, getLibraryArtifact, loadLibraryArtifacts, type LibraryArtifact, type VerificationCheck } from "../../../lib/library-data";
 import type { PublicLocale } from "../../../lib/public-locale";
 import { BUILDER_GATES, builderStepLabel, createBuilderStepId, generateBuilderCode, ROTATION_GATES, TWO_QUBIT_GATES, type BuilderCodeVariants, type BuilderGate, type BuilderStep, type CustomGateDefinition } from "../../../lib/studio-builder";
 import { loadStoredCircuit, saveStoredCircuit } from "../../../lib/studio-circuits";
 import { parseCircuitSource, allCircuitConversions, looksLikeOpenQasm3 } from "../../../lib/circuit-conversion";
 import { CIRCUIT_FRAMEWORKS, circuitFramework, circuitFrameworkOrNull, isExecutableCircuitFramework, type CircuitFrameworkKey } from "../../../lib/circuit-frameworks";
 import { WORKSPACE_COPY } from "../../../lib/workspace-locale";
+import { sampling } from "../../../lib/studio-run-request";
+import { verificationFromMetadata } from "../../../lib/verification-record";
 
 type StudioPanel = "canvas" | "code" | "versions";
 type StudioAction = "simulate" | "verify" | "save";
@@ -57,6 +59,10 @@ export function StudioWorkspace({ artifactId, newDraft = false, locale = "en" }:
   const [runId, setRunId] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [inspectorOpen, setInspectorOpen] = useState(true);
+  // Strings, not numbers: an empty seed field means "let the planner choose" and
+  // a number state would have to encode that as 0, which is a valid seed.
+  const [shots, setShots] = useState("4096");
+  const [seed, setSeed] = useState("");
   const [artifactHydration, setArtifactHydration] = useState<ArtifactHydration>(() => artifactId && !newDraft ? "loading" : "ready");
   const [artifactSyncError, setArtifactSyncError] = useState(false);
   const [builderSeed, setBuilderSeed] = useState<BuilderSeed>({ key: "seed-0", ...EMPTY_SEED });
@@ -76,7 +82,7 @@ export function StudioWorkspace({ artifactId, newDraft = false, locale = "en" }:
       })
       .then((payload) => {
         if (!active || !Array.isArray(payload)) return;
-        const remote = payload.flatMap((value) => toLibraryArtifact(value));
+        const remote = payload.flatMap((value) => artifactFromResource(value));
         const byId = new Map([...loadLibraryArtifacts(), ...remote].map((item) => [item.id, item]));
         setArtifacts([...byId.values()].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)));
       })
@@ -231,6 +237,7 @@ export function StudioWorkspace({ artifactId, newDraft = false, locale = "en" }:
           mode: "execute",
           framework,
           source_code: code,
+          ...sampling(shots, seed),
           ...(artifact?.currentVersionId ? { artifact_version_id: artifact.currentVersionId } : {}),
         }),
       });
@@ -345,6 +352,34 @@ export function StudioWorkspace({ artifactId, newDraft = false, locale = "en" }:
                   <div><dt>{copy.source}</dt><dd>{artifact ? copy.existingVersion : copy.newDraftSource}</dd></div>
                   <div><dt>{copy.evidence}</dt><dd>{copy.sandboxVerifier}</dd></div>
                 </dl>
+                {/* `shots` has reached the plan since PR 110 and `seed` since PR 115,
+                    and the run API has accepted both all along — Studio just never
+                    sent them, so every circuit edited here ran at the planner's
+                    default shot count and with no reproducible seed. */}
+                <div className="mj-studio-sampling">
+                  <label htmlFor="studio-shots">{copy.shots}</label>
+                  <input
+                    id="studio-shots"
+                    type="number"
+                    min={1}
+                    max={20000}
+                    step={256}
+                    value={shots}
+                    onChange={(event) => setShots(event.target.value)}
+                    inputMode="numeric"
+                  />
+                  <label htmlFor="studio-seed">{copy.seed}</label>
+                  <input
+                    id="studio-seed"
+                    type="number"
+                    min={0}
+                    value={seed}
+                    placeholder={copy.seedAuto}
+                    onChange={(event) => setSeed(event.target.value)}
+                    inputMode="numeric"
+                  />
+                </div>
+                <p className="mj-studio-sampling-note">{copy.samplingNote}</p>
               </div>
               <div className="mj-studio-framework-note">
                 <CheckIcon size={14} />
@@ -867,21 +902,64 @@ function CodeEditor({ code, framework, onChange, onCopy, copied, copy }: { code:
   );
 }
 
+/** The evidence the saved version actually carries.
+ *
+ * `LibraryArtifact` has carried `checks` and `criticSummary` since the Vault
+ * detail page started rendering them, and this panel showed neither — a truncated
+ * version id and, if a run had just been submitted, a link out. So the tab named
+ * "Versions" in the surface whose whole job is producing verified artifacts was
+ * the one place in the product that could not tell you what was verified.
+ *
+ * `checks` is populated when a version has been opened in the Vault; absent is
+ * "not loaded here", not "nothing was checked", and the copy says so rather than
+ * implying an empty list means an empty panel.
+ */
 function VersionPanel({ artifact, runId, copy }: { artifact: LibraryArtifact | null; runId: string | null; copy: StudioCopy }) {
+  const checks: VerificationCheck[] = artifact?.checks ?? [];
   return (
     <section className="mj-studio-surface mj-studio-version-panel" aria-label={copy.versionHistory}>
       <div className="mj-studio-surface-head"><div><span className="mj-section-label">{copy.versionHistory}</span><h2>{artifact ? artifact.title : copy.newDraftSource}</h2></div><span className="mj-mono-muted">{copy.repositoryView}</span></div>
       <div className="mj-studio-version-row"><span className="mj-studio-version-dot" /><div><strong>{artifact?.currentVersionId ? copy.currentVersion(artifact.currentVersionId.slice(0, 12)) : copy.draftNotSaved}</strong><p>{artifact ? copy.currentVersionNote : copy.draftVersionNote}</p></div></div>
+      {artifact ? (
+        <div className="mj-studio-version-evidence">
+          <span className="mj-section-label">{copy.evidence}</span>
+          <p className="mj-studio-evidence-grade">{studioEvidenceLabel(artifact.status, copy)}</p>
+          {artifact.criticSummary ? <p className="mj-studio-evidence-summary">{artifact.criticSummary}</p> : null}
+          {checks.length ? (
+            <ul className="mj-verification-checks">
+              {checks.map((check) => (
+                <li key={check.method}>
+                  <span className={`mj-verification-check mj-verification-check--${check.result === "pass" ? "pass" : "fail"}`} aria-hidden="true">{check.result === "pass" ? "✓" : "✕"}</span>
+                  <code>{check.method}</code>
+                  <span className="mj-mono-muted">{check.result}</span>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="mj-mono-muted">{copy.evidenceNotLoaded}</p>
+          )}
+          {artifact.id ? <p><a href={`/library/${encodeURIComponent(artifact.id)}`}>{copy.openFullRecord}</a></p> : null}
+        </div>
+      ) : null}
       {runId ? <div className="mj-studio-version-row"><span className="mj-studio-version-dot is-pending" /><div><strong>{copy.verificationQueued}</strong><p><a href={`/run/${runId}`}>{runId.slice(0, 12)}</a> · {copy.verificationAttach(runId.slice(0, 12))}</p></div></div> : null}
     </section>
   );
+}
+
+/** Never the bare word "Verified" for a structural pass — that conflation is what
+ * the Vault list was fixed for, and Studio must not reintroduce it. */
+function studioEvidenceLabel(status: LibraryArtifact["status"], copy: StudioCopy): string {
+  if (status === "structural") return copy.evidenceStructural;
+  if (status === "failed") return copy.evidenceFailed;
+  if (status === "verified_caveats") return copy.evidenceCaveats;
+  return copy.evidencePhysical;
 }
 
 async function loadArtifact(id: string): Promise<LibraryArtifact | null> {
   const response = await fetch(`/api/artifacts/${encodeURIComponent(id)}`, { cache: "no-store" });
   if (!response.ok) return null;
   const payload = (await response.json()) as Record<string, unknown>;
-  const artifact = toLibraryArtifact(payload)[0];
+  const artifact = artifactFromResource(payload)[0];
   if (!artifact) return null;
   if (typeof payload.current_version_id === "string") {
     const versionResponse = await fetch(`/api/artifacts/${encodeURIComponent(id)}/versions/current`, { cache: "no-store" });
@@ -892,34 +970,17 @@ async function loadArtifact(id: string): Promise<LibraryArtifact | null> {
     artifact.qasm = typeof version.qasm === "string" ? version.qasm : artifact.qasm;
     artifact.currentVersionId = payload.current_version_id;
     artifact.resourceRows = resourceRowsFromRemote(version.resource_estimates);
+    // The Versions panel is only useful if the checks arrive with the artifact.
+    // Without this the panel could only ever show evidence for an artifact this
+    // browser had already opened in the Vault — i.e. almost never, which would
+    // make the whole panel look like it did not work.
+    const record = verificationFromMetadata(version.metadata);
+    artifact.checks = record.checks ?? artifact.checks;
+    artifact.criticSummary = record.criticSummary ?? artifact.criticSummary;
   }
   return artifact;
 }
 
-function toLibraryArtifact(value: unknown): LibraryArtifact[] {
-  if (!value || typeof value !== "object") return [];
-  const remote = value as Record<string, unknown>;
-  if (typeof remote.id !== "string" || typeof remote.title !== "string") return [];
-  const existing = getLibraryArtifact(remote.id);
-  return [{
-    id: remote.id,
-    slug: typeof remote.slug === "string" ? remote.slug : remote.id,
-    title: remote.title,
-    family: typeof remote.family === "string" ? remote.family : "Simulation",
-    framework: typeof remote.framework === "string" ? remote.framework : "Qiskit",
-    status: existing?.status ?? "verified",
-    updatedAt: typeof remote.updated_at === "string" ? remote.updated_at : new Date().toISOString(),
-    description: existing?.description ?? "Saved artifact in the workspace vault.",
-    tags: existing?.tags ?? ["artifact"],
-    verification: existing?.verification ?? "Verification evidence is available after loading the current version.",
-    code: existing?.code ?? "",
-    qasm: existing?.qasm ?? null,
-    currentVersionId: typeof remote.current_version_id === "string" ? remote.current_version_id : existing?.currentVersionId,
-    resourceRows: existing?.resourceRows ?? [],
-    runId: existing?.runId,
-    source: existing?.source ?? "run",
-  }];
-}
 
 function makeDrafts(artifact: LibraryArtifact | null): BuilderCodeVariants {
   if (!artifact) return { ...STARTER_CODES };

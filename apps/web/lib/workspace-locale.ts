@@ -160,6 +160,16 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
     mode: string;
     source: string;
     evidence: string;
+    evidencePhysical: string;
+    evidenceStructural: string;
+    evidenceCaveats: string;
+    evidenceFailed: string;
+    evidenceNotLoaded: string;
+    openFullRecord: string;
+    shots: string;
+    seed: string;
+    seedAuto: string;
+    samplingNote: string;
     execute: string;
     existingVersion: string;
     newDraftSource: string;
@@ -399,6 +409,16 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
       mode: "Mode",
       source: "Source",
       evidence: "Evidence",
+      evidencePhysical: "Physical evidence — compared against what the physics should do",
+      evidenceStructural: "Structural evidence — the shape of the answer was checked, not its physics",
+      evidenceCaveats: "Public reference — verified with caveats",
+      evidenceFailed: "Verification failed",
+      evidenceNotLoaded: "Open the full record to load this version's checks.",
+      openFullRecord: "Open the full verification record",
+      shots: "Shots",
+      seed: "Seed",
+      seedAuto: "auto",
+      samplingNote: "Shots and seed reach the plan and the generated code. Leave the seed blank to let the planner choose.",
       execute: "Execute",
       existingVersion: "Existing version",
       newDraftSource: "New draft",
@@ -649,6 +669,16 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
       liveDraft: "ライブ下書き",
       selectedGate: "選択中のゲート",
       runContract: "実行コントラクト",
+      evidencePhysical: "物理的根拠 — 物理が示すべき結果と照合済み",
+      evidenceStructural: "構造的根拠 — 回答の形式のみを確認、物理は未検証",
+      evidenceCaveats: "公開リファレンス — 留意事項つきで検証済み",
+      evidenceFailed: "検証に失敗しました",
+      evidenceNotLoaded: "このバージョンのチェック内容は完全な記録を開くと読み込まれます。",
+      openFullRecord: "検証記録の全体を開く",
+      shots: "ショット数",
+      seed: "シード",
+      seedAuto: "自動",
+      samplingNote: "ショット数とシードはプランと生成コードに反映されます。シードを空欄にするとプランナーが選びます。",
       mode: "モード",
       source: "ソース",
       evidence: "根拠",
