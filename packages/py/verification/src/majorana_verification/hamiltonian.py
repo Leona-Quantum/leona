@@ -121,6 +121,17 @@ def energy_tolerance(terms: list[tuple[float, str]], shots: int | None) -> float
     trying to catch a run that converged to an excited state or to nothing, which
     is the failure that actually happens. The number lands in the evidence so a
     reader can see how much slack was allowed.
+
+    **The honest limit that follows from being loose:** the check cannot separate
+    two eigenvalues closer together than this tolerance. The bound scales with the
+    Hamiltonian, so that means near-degenerate RELATIVE TO ITS OWN SCALE —
+    `1.0*Z0 + 0.01*Z1` has its two lowest eigenvalues 0.02 apart against a bound of
+    about 0.083, and its first excited state would pass. For the VQE that motivated
+    this check the gap is 0.816 against 0.145, so there is room to spare. The
+    remedy when it matters is more shots, which shrinks the first term, or a
+    plan-declared `energy_error_max`, which may only tighten (see
+    `verify_exact_diag`). Asserted by
+    `test_the_bound_only_separates_eigenvalues_further_apart_than_itself`.
     """
     sum_of_squares = sum(coefficient**2 for coefficient, _ in terms)
     scale = sum(abs(coefficient) for coefficient, _ in terms)
