@@ -65,6 +65,8 @@ class LLMPlanner:
     # accepts up to 1e6; a larger request is clamped rather than rejected, and
     # the clamp is visible in the plan the user gets back.
     _PLAN_SHOTS_CEILING = 20_000
+    # The Plan schema's own ceiling (PlanParameters.seed le=2**31-1).
+    _PLAN_SEED_CEILING = 2**31 - 1
 
     def __init__(
         self,
@@ -74,6 +76,7 @@ class LLMPlanner:
         framework: Framework,
         has_parent_artifact: bool = False,
         requested_shots: int | None = None,
+        requested_seed: int | None = None,
     ) -> None:
         self._llm = llm
         self._task_prompt = task_prompt
@@ -82,6 +85,15 @@ class LLMPlanner:
         self._requested_shots = (
             min(requested_shots, self._PLAN_SHOTS_CEILING)
             if requested_shots is not None and requested_shots >= 1
+            else None
+        )
+        # Out-of-range seeds are dropped rather than clamped: a clamped seed is a
+        # DIFFERENT seed silently presented as the user's, which is the opposite
+        # of what a seed is for. Shots clamp because 20000 shots still answers the
+        # question 1e6 shots asked; seed 5 does not answer what seed 2**40 asked.
+        self._requested_seed = (
+            requested_seed
+            if requested_seed is not None and 0 <= requested_seed <= self._PLAN_SEED_CEILING
             else None
         )
 
@@ -99,6 +111,7 @@ class LLMPlanner:
                 requested_framework=self._framework,
                 has_parent_artifact=self._has_parent_artifact,
                 requested_shots=self._requested_shots,
+                requested_seed=self._requested_seed,
             )
             user = prompt.user
             if objection is not None:
@@ -133,6 +146,8 @@ class LLMPlanner:
                 # override reaches the emitted code; the statistical threshold is
                 # computed from the shots actually observed either way.
                 plan.parameters.shots = self._requested_shots
+            if self._requested_seed is not None:
+                plan.parameters.seed = self._requested_seed
             return plan
         raise AssertionError("unreachable: loop returns or raises on the final attempt")
 

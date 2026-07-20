@@ -506,6 +506,44 @@ async def test_no_requested_shots_leaves_the_plan_alone():
     plan = await planner.create_plan(uuid4())
     assert plan.parameters.shots == 1024
     assert "measurement shots" not in llm.prompts[0]
+    assert plan.parameters.seed is None
+    assert "random seed" not in llm.prompts[0]
+
+
+async def test_requested_seed_reaches_the_plan_by_the_same_mechanism():
+    """`seed` died in RunContext exactly as `shots` did before PR 110, so a run
+    submitted with a seed was not reproducible. Stated in the prompt AND enforced
+    after parse, because prompt compliance is not a mechanism."""
+    llm = _ScriptedPlannerLLM(
+        _plan_payload(output_keys=["counts"], methods=["statistical", "return_contract"])
+    )
+    planner = LLMPlanner(
+        llm=llm,
+        task_prompt="MaxCut on a ring",
+        framework=Framework.QISKIT,
+        requested_seed=7,
+    )
+    plan = await planner.create_plan(uuid4())
+    assert plan.parameters.seed == 7  # the scripted plan declared no seed
+    assert "random seed 7" in llm.prompts[0]
+
+
+async def test_an_out_of_range_seed_is_dropped_rather_than_clamped():
+    """A clamped seed is a DIFFERENT seed presented as the user's, which defeats
+    the point of asking for one. Shots clamp because 20000 shots still answers
+    the question 1e6 shots asked; seed 5 does not answer what seed 2**40 asked."""
+    llm = _ScriptedPlannerLLM(
+        _plan_payload(output_keys=["counts"], methods=["statistical", "return_contract"])
+    )
+    planner = LLMPlanner(
+        llm=llm,
+        task_prompt="MaxCut on a ring",
+        framework=Framework.QISKIT,
+        requested_seed=2**40,
+    )
+    plan = await planner.create_plan(uuid4())
+    assert plan.parameters.seed is None
+    assert "random seed" not in llm.prompts[0]
 
 
 async def test_planner_gives_up_after_the_retry_rather_than_looping():

@@ -70,6 +70,15 @@ class SuccessCriteria(_PlanBase):
 
 class PlanParameters(_PlanBase):
     shots: int | None = Field(default=None, ge=1, le=20000)
+    seed: int | None = Field(
+        default=None,
+        ge=0,
+        le=2**31 - 1,
+        description=(
+            "Random seed for sampling. When present, the generated code must seed "
+            "the framework's sampler with exactly this value so the run reproduces."
+        ),
+    )
     optimizer: Optimizer | None = None
     max_iterations: int | None = Field(default=None, ge=1, le=500)
     custom: dict[str, Any] | None = Field(
