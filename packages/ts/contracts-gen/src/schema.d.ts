@@ -724,6 +724,12 @@ export interface components {
             /** @default null */
             optimizer: components["schemas"]["Optimizer"] | null;
             /**
+             * Seed
+             * @description Random seed for sampling. When present, the generated code must seed the framework's sampler with exactly this value so the run reproduces.
+             * @default null
+             */
+            seed: number | null;
+            /**
              * Shots
              * @default null
              */

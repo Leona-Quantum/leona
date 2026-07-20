@@ -221,6 +221,7 @@ def render_plan_prompt(
     *,
     has_parent_artifact: bool = False,
     requested_shots: int | None = None,
+    requested_seed: int | None = None,
 ) -> RenderedPrompt:
     # The prompt states the request AND the worker enforces it after parsing
     # (LLMPlanner.create_plan): stated so the planner can budget runtime around
@@ -232,11 +233,23 @@ def render_plan_prompt(
         if requested_shots is not None
         else ""
     )
+    # Same shape as shots, and for the same reason: `seed` reached RunContext and
+    # died there, so a run submitted with a seed was not reproducible. Stating it
+    # in the plan is what carries it into the generation context, where the code
+    # that seeds the sampler is written.
+    seed_line = (
+        f"The user requested random seed {requested_seed}; set parameters.seed to "
+        f"exactly {requested_seed}, and the generated code must seed the "
+        f"framework's sampler with it.\n\n"
+        if requested_seed is not None
+        else ""
+    )
     return _render(
         PLAN_SYSTEM_PROMPT,
         f"User request:\n{task_prompt}\n\n"
         f"Selected framework: {_framework_label(requested_framework)}\n\n"
         f"{shots_line}"
+        f"{seed_line}"
         f"{_PARENT_ARTIFACT_PRESENT if has_parent_artifact else _PARENT_ARTIFACT_ABSENT}\n\n"
         f"{research_context or 'No additional research context was available.'}",
     )

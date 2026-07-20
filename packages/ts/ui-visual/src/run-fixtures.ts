@@ -47,7 +47,7 @@ const VERIFIED: RunEvent[] = [
       expected_output_keys: ["cut_value", "bitstring"],
       expected_runtime_sec: 5,
       framework: "qiskit",
-      parameters: { custom: null, max_iterations: 50, optimizer: "COBYLA", shots: 4096 },
+      parameters: { custom: null, max_iterations: 50, optimizer: "COBYLA", seed: null, shots: 4096 },
       problem_summary: "MaxCut on a 5-node ring graph.",
       qubits_estimate: 5,
       success_criteria: { additional_notes: null, expected_range: null, primary_metric: "cut_value" },
