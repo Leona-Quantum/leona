@@ -47,6 +47,21 @@ def test_a_failed_physical_check_does_not_lift_the_grade() -> None:
     assert evidence_strength_of([check("exact", "fail")]) is EvidenceStrength.STRUCTURAL
 
 
+def test_a_skipped_physical_check_does_not_lift_the_grade() -> None:
+    """A check that declared itself incapable produced no evidence either way.
+
+    This is the run 019f7e46-d688 shape after the incapacity fix: the statistical
+    check skips on a mid-circuit-measurement circuit, the run passes on its
+    structural checks, and the grade must say no physics was checked.
+    """
+    checks = [
+        check("structural"),
+        check("return_contract"),
+        check("statistical", "skipped"),
+    ]
+    assert evidence_strength_of(checks) is EvidenceStrength.STRUCTURAL
+
+
 def test_reproducibility_is_not_physical_evidence() -> None:
     """A consistently wrong program also agrees with itself across two executions.
 

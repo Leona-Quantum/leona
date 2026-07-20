@@ -401,7 +401,13 @@ class EvidenceVerifier:
         self, candidate: CandidateRevision, execution: ExecutionEvidence, plan: Plan
     ) -> VerificationOutput:
         checks = self._deterministic_checks(candidate, execution, plan)
-        failures = [check for check in checks if check["result"] != "pass"]
+        # "skipped" is non-blocking by design: the check declared itself incapable
+        # of judging this circuit (mid-circuit measurement / classical control
+        # flow), so there is no criticism a repair could satisfy — failing here
+        # burned whole candidate budgets on correct teleportation code. Anything
+        # else that is not a pass stays blocking, including result values this
+        # code does not recognise: fail-closed for the unknown.
+        failures = [check for check in checks if check["result"] not in {"pass", "skipped"}]
         if failures:
             evidence = [json.dumps(check, sort_keys=True, default=str) for check in failures]
             return VerificationOutput(
@@ -774,8 +780,10 @@ class EvidenceVerifier:
                 "plan-to-code, and success-criteria-to-result alignment using only supplied evidence. "
                 "Check the artifact contract, selected framework, measurement policy, seeds, shots, "
                 "tolerances, qubit ordering, forbidden operations, required invariants, and whether "
-                "the evidence actually proves each claim. Deterministic checks already passed and "
-                "cannot be overridden. Return pass only with medium/high confidence, no mismatch, "
+                "the evidence actually proves each claim. Deterministic checks already passed — or "
+                "were skipped as structurally incapable of judging this circuit, which is not a "
+                "defect in the code — and cannot be overridden. Return pass only with medium/high "
+                "confidence, no mismatch, "
                 "and at most minor severity; otherwise give a concrete repair plan and rechecks."
             ),
             user=json.dumps(

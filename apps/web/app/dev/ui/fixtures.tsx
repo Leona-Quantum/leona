@@ -93,6 +93,16 @@ export function UiFixtures() {
 
       <section>
         <h2 style={{ fontSize: "var(--fs-16)", fontWeight: 500 }}>
+          Statistical check skipped — structural pass
+        </h2>
+        <RunView
+          events={RUN_FIXTURES["demo-skipped"]}
+          emptyMessage="Waiting for the pipeline…"
+        />
+      </section>
+
+      <section>
+        <h2 style={{ fontSize: "var(--fs-16)", fontWeight: 500 }}>
           Live prose — typed reveal
         </h2>
         <RunView

@@ -17,6 +17,7 @@ from majorana_verification.methods import (
 )
 from majorana_verification.statevector import (
     EquivalenceReport,
+    StatevectorIncapable,
     counts_vs_ideal,
     exact_equivalence,
     ideal_distribution,
@@ -26,6 +27,7 @@ from majorana_verification.statevector import (
 )
 
 __all__ = [
+    "StatevectorIncapable",
     "VerificationOutcome",
     "extract_counts",
     "verify_exact",

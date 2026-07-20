@@ -5399,6 +5399,11 @@ div.mj-rail-row:hover {
 .mj-verify-row[data-result="inconclusive"] {
   border-left-color: var(--warn);
 }
+/* A skipped check produced no evidence either way: warn tone, same as the
+   structural verdict tier it leads to — never the pass green. */
+.mj-verify-row[data-result="skipped"] {
+  border-left-color: var(--warn);
+}
 .mj-verify-method {
   font-weight: 500;
   font-size: var(--fs-13);
