@@ -343,6 +343,35 @@ def test_the_unwritten_register_diagnostic_does_not_fire_on_a_written_one():
     assert "register_never_measured" not in outcome.details["scores"]
 
 
+def test_a_report_that_matches_a_different_register_says_which_one():
+    """Production run 019f7ee3-6e7c, candidate 3. #117's diagnosis WORKED — the
+    model moved its measurement to `measure(2, cr_bob[0])`, exactly as the
+    sentence told it to — and then failed at TVD 0.376, because the paired
+    readout bug was still there: it slices `bitstring[-1]`, which is
+    `c_alice[0]`, not `c_bob`. Naming the register the report actually matches
+    turns that into one sentence.
+
+    This scans registers for an EXPLANATION, never for a verdict. The check still
+    fails; only the reason improves. Scanning for a pass is what #113 refused to
+    do and this must not become."""
+    # `out` is 0.88/0.12; `m` is uniform. The run reports `m`'s distribution
+    # while claiming the 1-bit width that matches `out`.
+    outcome = verify_native_sampled_counts({"0": 1024, "1": 1024}, _teleport_sampled())
+    assert outcome.result is VerificationResultKind.FAIL
+    matched = outcome.details["scores"]["report_matches_another_register"]
+    assert matched["register"] == "m"
+    assert matched["clbits"] == [0, 1]
+    assert "slice" in matched["diagnosis"]
+
+
+def test_the_other_register_diagnostic_stays_quiet_when_nothing_matches():
+    """A report that matches no register is a plain disagreement about the
+    physics, and inventing a register to blame would be worse than silence."""
+    outcome = verify_native_sampled_counts({"0": 100, "1": 1948}, _teleport_sampled())
+    assert outcome.result is VerificationResultKind.FAIL
+    assert "report_matches_another_register" not in outcome.details["scores"]
+
+
 def test_the_failure_diagnostic_is_bounded():
     """256 nonzero outcomes is the check's ceiling; the diagnostic must not put
     all of them into the repair evidence."""

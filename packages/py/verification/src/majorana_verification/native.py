@@ -290,6 +290,76 @@ def _unwritten_register(payload: dict, registers: list[tuple[str, int]], index: 
     }
 
 
+def _slice_owner(registers: list[tuple[str, int]], width: int, start: int, stop: int) -> int | None:
+    """The register index a key slice lies wholly inside, or None if it straddles.
+
+    Slices are positions in the counts key (leftmost character first); clbits run
+    the other way, so clbit index = width - 1 - position.
+    """
+    for index in range(len(registers)):
+        clbits = _register_clbits(registers, index)
+        positions = {width - 1 - clbit for clbit in clbits}
+        if set(range(start, stop)) <= positions:
+            return index
+    return None
+
+
+def _report_matches_another_register(
+    counts: dict[str, int],
+    registers: list[tuple[str, int]],
+    used_index: int,
+    reported: dict[str, float],
+    width: int,
+    reported_width: int,
+    threshold: float,
+) -> dict | None:
+    """Name the register the reported counts ACTUALLY match, when one does.
+
+    Scans the key's contiguous slices for an EXPLANATION, never for a verdict —
+    the check has already failed and this cannot change that. Scanning for a
+    passing interpretation is what the register marginalization deliberately
+    refuses to do; scanning for the reason it failed is free.
+
+    Silent unless every matching slice sits inside ONE register that is not the
+    one the width matched. Matches spread over several registers, or none at all,
+    mean there is nothing confident to say.
+    """
+    owners: set[int] = set()
+    clbits: set[int] = set()
+    for start in range(0, width - reported_width + 1):
+        owner = _slice_owner(registers, width, start, start + reported_width)
+        if owner is None or owner == used_index:
+            continue
+        marginal: dict[str, int] = {}
+        for key, count in counts.items():
+            bits = key[start : start + reported_width]
+            marginal[bits] = marginal.get(bits, 0) + count
+        shots = sum(marginal.values())
+        distribution = {key: count / shots for key, count in marginal.items() if count > 0}
+        best = min(
+            _total_variation(distribution, reported),
+            _total_variation(distribution, {key[::-1]: value for key, value in reported.items()}),
+        )
+        if best <= threshold:
+            owners.add(owner)
+            clbits.update(width - 1 - position for position in range(start, start + reported_width))
+    if len(owners) != 1:
+        return None
+    name = registers[owners.pop()][0]
+    return {
+        "register": name,
+        "clbits": sorted(clbits),
+        "diagnosis": (
+            f"the reported counts do not match the register they were width-matched "
+            f"to, but they DO match register '{name}' (clbits {sorted(clbits)}). The "
+            f"measurement is in the right place and the readout is not: check which "
+            f"characters of the counts key you slice — Qiskit separates registers "
+            f"with a space and prints the last-declared register first, so the "
+            f"last character is the FIRST-declared register's low bit."
+        ),
+    }
+
+
 def sampled_counts_comparison(
     reported: dict[str, int],
     sampled_payload: Any,
@@ -312,6 +382,7 @@ def sampled_counts_comparison(
     normalized_sampled, sampled_width = normalize_reported_counts(sampled_counts)
     register_used: tuple[str, int] | None = None
     unwritten_register: dict | None = None
+    full_width_sampled: tuple[dict[str, int], list[tuple[str, int]], int, int] | None = None
     if reported_width != sampled_width:
         # Register-guided marginalization, never subset-scanning: reporting a
         # marginal over one classical register is a legitimate convention (the
@@ -331,6 +402,7 @@ def sampled_counts_comparison(
         index = matches[0]
         register_used = registers[index]
         unwritten_register = _unwritten_register(sampled_payload, registers, index)
+        full_width_sampled = (normalized_sampled, registers, index, sampled_width)
         normalized_sampled = _marginalize_onto_register(normalized_sampled, registers, index)
     reported_shots = sum(normalized_reported.values())
     sampled_shots = sum(normalized_sampled.values())
@@ -406,6 +478,24 @@ def sampled_counts_comparison(
             # added to the evidence. A distribution shows the symptom; this
             # names the cause.
             scores["register_never_measured"] = unwritten_register
+        if full_width_sampled is not None:
+            # Run 019f7ee3-6e7c candidate 3: the model took #117's advice, moved
+            # its measurement into `c_bob` — and then failed anyway, because the
+            # paired readout bug slices `bitstring[-1]`, which is c_alice's low
+            # bit. The measurement was in the right place and the readout was
+            # not, and only naming the register the report DOES match says so.
+            counts, registers_seen, used, width = full_width_sampled
+            matched = _report_matches_another_register(
+                counts,
+                registers_seen,
+                used,
+                reported_distribution,
+                width,
+                reported_width,
+                threshold,
+            )
+            if matched is not None:
+                scores["report_matches_another_register"] = matched
     return EquivalenceReport(
         fingerprint_type="statistical_distribution",
         protocol=protocol,
