@@ -32,3 +32,24 @@ def test_delete_route_delegates_to_the_scoped_soft_delete():
     assert handler.__annotations__["scope"] is not None
     # The handler must take CurrentScope, not a caller-supplied workspace id.
     assert "workspace_id" not in handler.__annotations__
+
+
+def test_list_resource_reads_the_verification_grade_and_never_guesses():
+    """The Vault list fabricated "verified" for unopened artifacts because the
+    list resource carried no grade at all. It now reads the current version's
+    verification_summary — and absence or garbage maps to None (unknown), never
+    to a verdict."""
+    from majorana_contracts.enums import EvidenceStrength, VerifierDecision
+
+    fields = artifact_routes._verification_summary_fields
+
+    assert fields(None) == (None, None)
+    assert fields({}) == (None, None)
+    assert fields({"verification_summary": "corrupt"}) == (None, None)
+    assert fields({"verification_summary": {"decision": "certainly!"}}) == (None, None)
+    assert fields(
+        {"verification_summary": {"decision": "pass", "evidence_strength": "structural"}}
+    ) == (VerifierDecision.PASS, EvidenceStrength.STRUCTURAL)
+    assert fields(
+        {"verification_summary": {"decision": "pass", "evidence_strength": "physical"}}
+    ) == (VerifierDecision.PASS, EvidenceStrength.PHYSICAL)

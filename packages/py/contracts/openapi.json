@@ -56,6 +56,17 @@
             "default": null,
             "title": "Deleted At"
           },
+          "evidence_strength": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/EvidenceStrength"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
           "family": {
             "description": "Algorithm category",
             "title": "Family",
@@ -96,6 +107,17 @@
             "format": "date-time",
             "title": "Updated At",
             "type": "string"
+          },
+          "verifier_decision": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/VerifierDecision"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
           },
           "visibility": {
             "$ref": "#/components/schemas/Visibility"
@@ -3511,7 +3533,7 @@
   "info": {
     "description": "Cross-boundary types only; API paths are owned by services/api.",
     "title": "majorana-contracts",
-    "version": "1.4.0"
+    "version": "1.5.0"
   },
   "openapi": "3.1.0",
   "paths": {}

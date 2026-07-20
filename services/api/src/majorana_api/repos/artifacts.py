@@ -25,9 +25,20 @@ async def list_artifacts(
     family: Algorithm | None = None,
     cursor: uuid.UUID | None = None,
     limit: int = 50,
-) -> list[Artifact]:
+) -> list[tuple[Artifact, dict[str, Any] | None]]:
+    """Artifacts plus each one's current-version metadata (None when no version).
+
+    The metadata rides along so the list resource can carry the verification
+    grade — without it the web fabricated "verified" for every unopened
+    artifact. One outer join, not a per-row fetch.
+    """
     stmt = (
-        select(Artifact)
+        select(Artifact, ArtifactVersion.artifact_metadata)
+        .join(
+            ArtifactVersion,
+            Artifact.current_version_id == ArtifactVersion.id,
+            isouter=True,
+        )
         .where(Artifact.workspace_id == scope.workspace_id, Artifact.deleted_at.is_(None))
         .order_by(Artifact.id.desc())
         .limit(limit)
@@ -36,7 +47,10 @@ async def list_artifacts(
         stmt = stmt.where(Artifact.family == family)
     if cursor is not None:  # UUIDv7 PKs are time-ordered: id is the cursor
         stmt = stmt.where(Artifact.id < cursor)
-    return list((await session.execute(stmt)).scalars().all())
+    return [
+        (row[0], row[1] if isinstance(row[1], dict) else None)
+        for row in (await session.execute(stmt)).all()
+    ]
 
 
 async def get_artifact(

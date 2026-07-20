@@ -29,6 +29,8 @@ export interface components {
              * @default null
              */
             deleted_at: string | null;
+            /** @default null */
+            evidence_strength: components["schemas"]["EvidenceStrength"] | null;
             /**
              * Family
              * @description Algorithm category
@@ -58,6 +60,8 @@ export interface components {
              * Format: date-time
              */
             updated_at: string;
+            /** @default null */
+            verifier_decision: components["schemas"]["VerifierDecision"] | null;
             visibility: components["schemas"]["Visibility"];
             /**
              * Workspace Id

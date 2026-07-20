@@ -260,6 +260,21 @@ function formatDate(value: string, locale: PublicLocale, unknown: string): strin
   return date.toLocaleDateString(locale === "ja" ? "ja-JP" : "en-US", { month: "short", day: "numeric", year: "numeric" });
 }
 
+/** Map the list resource's server-side grade to a Vault status.
+ *
+ * The server reads the current version's verification_summary; until 2026-07-20
+ * the list carried no grade and this file fabricated "verified" as the default,
+ * so an unopened structurally-verified artifact over-claimed until its detail
+ * page corrected localStorage. A null return means the server does not know
+ * (pre-summary version) — only then do the old fallbacks apply.
+ */
+function statusFromResource(artifact: Record<string, unknown>): LibraryArtifact["status"] | null {
+  if (artifact.verifier_decision !== "pass") return null;
+  if (artifact.evidence_strength === "structural") return "structural";
+  if (artifact.evidence_strength === "physical") return "verified";
+  return null;
+}
+
 function toLibraryArtifact(value: unknown): LibraryArtifact[] {
   if (!value || typeof value !== "object") return [];
   const artifact = value as Record<string, unknown>;
@@ -273,7 +288,10 @@ function toLibraryArtifact(value: unknown): LibraryArtifact[] {
     title: artifact.title,
     family: typeof artifact.family === "string" ? artifact.family : "Simulation",
     framework: typeof artifact.framework === "string" ? artifact.framework : "Qiskit",
-    status: existing?.status ?? (isPublicReference ? "verified_caveats" : "verified"),
+    status:
+      statusFromResource(artifact) ??
+      existing?.status ??
+      (isPublicReference ? "verified_caveats" : "verified"),
     updatedAt: typeof artifact.updated_at === "string" ? artifact.updated_at : new Date().toISOString(),
     description: existing?.description ?? "Saved artifact in the workspace vault.",
     tags: existing?.tags ?? [typeof artifact.family === "string" ? artifact.family.toLowerCase() : "artifact"],

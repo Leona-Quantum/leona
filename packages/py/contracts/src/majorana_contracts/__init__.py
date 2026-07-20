@@ -124,7 +124,10 @@ from .lifecycle import (
 # 1.4.0: VerificationMethod gains "statistical_native" (physical) — reported
 # counts vs a trusted framework-native re-execution of the circuit object; the
 # mid-circuit-capable check (plans/framework-native-verification.md).
-CONTRACTS_VERSION = "1.4.0"
+# 1.5.0: Artifact (list resource) gains optional verifier_decision /
+# evidence_strength from the current version's verification_summary, so the
+# Vault list stops fabricating "verified" for unopened artifacts.
+CONTRACTS_VERSION = "1.5.0"
 
 __all__ = [
     "CONTRACTS_VERSION",
