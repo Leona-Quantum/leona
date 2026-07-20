@@ -93,6 +93,7 @@ const INTERNAL_STAGE_GROUPS: Record<RailStageId, readonly Stage[]> = {
 const METHOD_LABEL: Record<VerificationMethod, string> = {
   exact: "exact",
   statistical: "statistical",
+  statistical_native: "statistical (trusted re-execution)",
   brute_force: "brute-force",
   exact_diag: "exact diagonalization",
   return_contract: "return-contract",
@@ -101,6 +102,7 @@ const METHOD_LABEL: Record<VerificationMethod, string> = {
 const NUMERIC_METHODS: ReadonlySet<VerificationMethod> = new Set<VerificationMethod>([
   "exact",
   "statistical",
+  "statistical_native",
   "brute_force",
   "exact_diag",
 ]);

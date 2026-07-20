@@ -9,11 +9,20 @@ from majorana_verification.methods import (
     VerificationOutcome,
     extract_counts,
     verify_exact,
+    verify_exact_native,
+    verify_native_sampled_counts,
+    verify_native_statistical_counts,
     verify_qasm_parse,
     verify_return_contract,
     verify_statistical,
     verify_statistical_counts,
     verify_statistical_counts_pair,
+)
+from majorana_verification.native import (
+    NATIVE_STATEVECTOR_MAX_QUBITS,
+    native_counts_vs_ideal,
+    sampled_counts_comparison,
+    statevector_from_evidence,
 )
 from majorana_verification.statevector import (
     EquivalenceReport,
@@ -27,10 +36,17 @@ from majorana_verification.statevector import (
 )
 
 __all__ = [
+    "NATIVE_STATEVECTOR_MAX_QUBITS",
     "StatevectorIncapable",
     "VerificationOutcome",
     "extract_counts",
+    "native_counts_vs_ideal",
+    "sampled_counts_comparison",
+    "statevector_from_evidence",
     "verify_exact",
+    "verify_exact_native",
+    "verify_native_sampled_counts",
+    "verify_native_statistical_counts",
     "verify_statistical",
     "verify_statistical_counts",
     "verify_statistical_counts_pair",

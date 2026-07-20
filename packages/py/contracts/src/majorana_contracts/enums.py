@@ -62,6 +62,12 @@ class VerifierDecision(StrEnum):
 class VerificationMethod(StrEnum):
     EXACT = "exact"
     STATISTICAL = "statistical"
+    # Reported counts vs a trusted re-execution of the actual circuit object
+    # through the selected framework's own sampler (fixed seed). The
+    # mid-circuit-capable physical check: feed-forward circuits have no
+    # statevector but sample fine. Run opportunistically by the worker whenever
+    # the observer produced the evidence — not plannable.
+    STATISTICAL_NATIVE = "statistical_native"
     BRUTE_FORCE = "brute_force"
     EXACT_DIAG = "exact_diag"
     RETURN_CONTRACT = "return_contract"
@@ -117,11 +123,17 @@ PHYSICAL_VERIFICATION_METHODS: frozenset[str] = frozenset(
     {
         VerificationMethod.EXACT,
         VerificationMethod.STATISTICAL,
+        VerificationMethod.STATISTICAL_NATIVE,
         VerificationMethod.BRUTE_FORCE,
         VerificationMethod.EXACT_DIAG,
     }
 )
 """Checks that compare a candidate against what the physics should do.
+
+`statistical_native` is on the strong side deliberately: unlike the
+reproducibility pair, the trusted side re-executes the circuit OBJECT the
+observer held through the framework's own sampler — the user's result-assembly
+code is not in that loop, so fabricated or mis-assembled counts fail it.
 
 `statistical_reproducibility` is excluded on purpose: it proves only that the program
 agrees with itself across two executions, which a consistently wrong program also does

@@ -507,3 +507,179 @@ def test_qiskit_c_if_is_caught_before_execution_and_names_its_replacement():
         "RESULT = {'counts': {}}\n"
     )
     assert FrameworkProgram(Framework.QISKIT, ok).contract_diagnostics(circuit_expected=True) == []
+
+
+# --- Framework-native verification evidence ----------------------------------------
+#
+# plans/framework-native-verification.md: the observer computes the statevector and
+# a trusted sampled-counts re-execution with the framework's OWN simulator, so no
+# OpenQASM conversion sits in the trust path. Every statevector fixture here breaks
+# the qubit-permutation symmetry (the standing rule from PR 100): X on the lowest
+# qubit plus H on the highest, so a wire-relabelling or endianness defect changes
+# the state and cannot hide.
+
+
+def _run_epilogue(framework: Framework, code: str) -> dict:
+    import json
+    import tempfile
+    from pathlib import Path
+
+    from majorana_sandbox.spec import ExecutionSpec, compose_execution
+
+    program = FrameworkProgram(framework, code)
+    with tempfile.TemporaryDirectory() as directory:
+        path = Path(directory) / "observation.json"
+        exec(  # noqa: S102 - the point of these tests is to run the real epilogue
+            compose_execution(
+                ExecutionSpec(
+                    code=program.normalized_source,
+                    trusted_setup=program.trusted_setup(circuit_expected=True),
+                    trusted_observer=program.trusted_observer(circuit_expected=True),
+                    protected_result_path=str(path),
+                    source_fingerprint=program.fingerprint,
+                )
+            ),
+            {},
+        )
+        return json.loads(path.read_text())
+
+
+def _amplitude_support(payload: dict) -> list[int]:
+    amplitudes = payload["amplitudes"]
+    support = []
+    for index in range(len(amplitudes) // 2):
+        if abs(amplitudes[2 * index]) > 1e-9 or abs(amplitudes[2 * index + 1]) > 1e-9:
+            support.append(index)
+    return support
+
+
+def test_qiskit_native_statevector_breaks_permutation_symmetry():
+    pytest.importorskip("qiskit")
+    code = (
+        "from qiskit import QuantumCircuit\n"
+        "qc = QuantumCircuit(3, 2)\n"
+        "qc.x(0)\n"
+        "qc.h(2)\n"
+        "qc.measure(0, 0)\n"
+        "qc.measure(2, 1)\n"
+        "FINAL_CIRCUIT = qc\n"
+        "RESULT = {'counts': {'01': 1}}\n"
+    )
+    observation = _run_epilogue(Framework.QISKIT, code)
+    payload = observation["native_statevector"]
+    assert payload["endianness"] == "q0_lsb"
+    assert payload["qubits"] == 3
+    assert payload["clbits"] == 2
+    assert payload["measurement_map"] == {"0": 0, "1": 2}
+    # |001> and |101>: q0 flipped (LSB), q2 in superposition (bit 2). A relabelled
+    # or reversed export would move the support and fail here.
+    assert _amplitude_support(payload) == [1, 5]
+
+
+def test_qiskit_native_statevector_declares_incapacity_on_feed_forward():
+    pytest.importorskip("qiskit")
+    code = (
+        "from qiskit import QuantumCircuit, ClassicalRegister, QuantumRegister\n"
+        "q = QuantumRegister(3)\n"
+        "m = ClassicalRegister(2, 'm')\n"
+        "out = ClassicalRegister(1, 'out')\n"
+        "qc = QuantumCircuit(q, m, out)\n"
+        "qc.h(1)\n"
+        "qc.cx(1, 2)\n"
+        "qc.cx(0, 1)\n"
+        "qc.h(0)\n"
+        "qc.measure(0, 0)\n"
+        "qc.measure(1, 1)\n"
+        "with qc.if_test((m, 1)):\n"
+        "    qc.x(2)\n"
+        "with qc.if_test((m, 3)):\n"
+        "    qc.z(2)\n"
+        "qc.measure(2, 2)\n"
+        "FINAL_CIRCUIT = qc\n"
+        "RESULT = {'counts': {'000': 1}}\n"
+    )
+    observation = _run_epilogue(Framework.QISKIT, code)
+    assert "native_statevector" not in observation
+    assert "not unitary up to final measurements" in observation["native_statevector_error"]
+
+
+def test_cirq_native_statevector_and_sampled_counts():
+    pytest.importorskip("cirq")
+    code = (
+        "import cirq\n"
+        "q = [cirq.LineQubit(i) for i in range(3)]\n"
+        "c = cirq.Circuit([cirq.X(q[0]), cirq.H(q[2]),\n"
+        "                  cirq.measure(q[0], key='a'), cirq.measure(q[2], key='b')])\n"
+        "FINAL_CIRCUIT = c\n"
+        "RESULT = {'counts': {'10': 1, '11': 1}}\n"
+    )
+    observation = _run_epilogue(Framework.CIRQ, code)
+    payload = observation["native_statevector"]
+    assert payload["endianness"] == "q0_msb"
+    # all_qubits holds only the touched qubits: q0 and q2, canonical order sorted.
+    assert payload["qubits"] == 2
+    # q0 (canonical 0) is the MSB: X(q0) puts support at indices 2 and 3.
+    assert _amplitude_support(payload) == [2, 3]
+    sampled = observation["native_sampled"]
+    assert sampled["bit_order"] == "big"
+    assert sum(sampled["counts"].values()) == sampled["shots"]
+    # q0 measured as key 'a' is the leftmost sampled bit and is always 1.
+    assert all(key.startswith("1") for key in sampled["counts"])
+
+
+def test_cirq_feed_forward_samples_but_declares_statevector_incapacity():
+    pytest.importorskip("cirq")
+    code = (
+        "import cirq\n"
+        "q = [cirq.LineQubit(i) for i in range(2)]\n"
+        "c = cirq.Circuit([cirq.H(q[0]), cirq.measure(q[0], key='m'),\n"
+        "                  cirq.X(q[1]).with_classical_controls('m'),\n"
+        "                  cirq.measure(q[1], key='out')])\n"
+        "FINAL_CIRCUIT = c\n"
+        "RESULT = {'counts': {'00': 1, '11': 1}}\n"
+    )
+    observation = _run_epilogue(Framework.CIRQ, code)
+    assert "native_statevector" not in observation
+    assert "not unitary" in observation["native_statevector_error"]
+    sampled = observation["native_sampled"]
+    # The feed-forward correlation must hold in every trusted sample.
+    assert set(sampled["counts"]) == {"00", "11"}
+
+
+def test_pennylane_native_statevector_and_sampled_counts():
+    pytest.importorskip("pennylane")
+    code = (
+        "import pennylane as qml\n"
+        "dev = qml.device('default.qubit', wires=3, shots=128)\n"
+        "@qml.qnode(dev)\n"
+        "def circuit():\n"
+        "    qml.PauliX(wires=0)\n"
+        "    qml.Hadamard(wires=2)\n"
+        "    return qml.counts(wires=[0, 2])\n"
+        "counts = circuit()\n"
+        "FINAL_CIRCUIT = qml.workflow.construct_tape(circuit)()\n"
+        "RESULT = {'counts': {str(k): int(v) for k, v in counts.items()}}\n"
+    )
+    observation = _run_epilogue(Framework.PENNYLANE, code)
+    payload = observation["native_statevector"]
+    assert payload["endianness"] == "q0_msb"
+    assert payload["qubits"] == 2  # the tape touches wires 0 and 2 only
+    # wire 0 (canonical 0) is the MSB: X puts support at indices 2 and 3.
+    assert _amplitude_support(payload) == [2, 3]
+    sampled = observation["native_sampled"]
+    assert sampled["bit_order"] == "big"
+    assert all(key.startswith("1") for key in sampled["counts"])
+    assert all(type(value) is int for value in sampled["counts"].values())
+
+
+def test_native_statevector_limit_pins_the_verifier_ceiling():
+    """The observer's export limit must stay within what the verifier accepts,
+    or valid evidence would be rejected as malformed."""
+    import re
+
+    from majorana_frameworks import adapters
+    from majorana_verification import NATIVE_STATEVECTOR_MAX_QUBITS
+
+    match = re.search(r"_MAJORANA_NATIVE_SV_QUBITS = (\d+)", adapters._NATIVE_LIMITS)
+    assert match is not None
+    assert int(match.group(1)) <= NATIVE_STATEVECTOR_MAX_QUBITS

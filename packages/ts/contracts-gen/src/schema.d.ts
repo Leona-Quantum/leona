@@ -1553,7 +1553,7 @@ export interface components {
          * VerificationMethod
          * @enum {string}
          */
-        VerificationMethod: "exact" | "statistical" | "brute_force" | "exact_diag" | "return_contract" | "qasm_parse";
+        VerificationMethod: "exact" | "statistical" | "statistical_native" | "brute_force" | "exact_diag" | "return_contract" | "qasm_parse";
         /** VerificationPlan */
         VerificationPlan: {
             /**

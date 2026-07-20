@@ -162,6 +162,57 @@ def measurement_map(circuit: QuantumCircuit) -> dict[int, int]:
     return mapping
 
 
+def _keyed_marginal_distribution(
+    statevector: Statevector,
+    mapping: dict[int, int],
+    *,
+    num_qubits: int,
+    num_clbits: int,
+    width: int | None,
+) -> tuple[dict[str, float], dict]:
+    """Marginal Born distribution keyed the way counts strings read.
+
+    Shared between the OpenQASM path (measured_ideal_distribution) and the
+    framework-native path (native.py), so both interpret partial measurement,
+    clbit ordering, and register width identically — the family of defects fixed
+    in PR 104 must not be re-fixable per evidence source.
+    """
+    measured_clbits = sorted(mapping)
+    # Frameworks report either the whole classical register (unmeasured clbits read 0)
+    # or only the clbits that were written. Both are unambiguous once the width is known.
+    if width is not None and width == len(measured_clbits) != num_clbits:
+        positions = {clbit: index for index, clbit in enumerate(measured_clbits)}
+        key_width = len(measured_clbits)
+        keyed_by = "measured_clbits"
+    else:
+        positions = {clbit: clbit for clbit in measured_clbits}
+        key_width = num_clbits
+        keyed_by = "clbits"
+
+    qargs = [mapping[clbit] for clbit in measured_clbits]
+    # probabilities_dict keys put qargs[0] in the rightmost character, which is the
+    # same little-endian convention the counts strings use for clbit 0.
+    marginal = statevector.probabilities_dict(qargs=qargs)
+
+    distribution: dict[str, float] = {}
+    for key, value in marginal.items():
+        if value <= 0.0:
+            continue
+        bits = ["0"] * key_width
+        for index, clbit in enumerate(measured_clbits):
+            bits[key_width - 1 - positions[clbit]] = key[len(key) - 1 - index]
+        full = "".join(bits)
+        distribution[full] = distribution.get(full, 0.0) + float(value)
+    provenance = {
+        "keyed_by": keyed_by,
+        "width": key_width,
+        "measured_qubits": [mapping[clbit] for clbit in measured_clbits],
+        "clbit_to_qubit": {str(clbit): mapping[clbit] for clbit in measured_clbits},
+        "partial": len(set(qargs)) < num_qubits,
+    }
+    return distribution, provenance
+
+
 def measured_ideal_distribution(
     source: str, width: int | None = None
 ) -> tuple[dict[str, float], dict]:
@@ -184,47 +235,19 @@ def measured_ideal_distribution(
             "measured_qubits": list(range(circuit.num_qubits)),
         }
 
-    measured_clbits = sorted(mapping)
-    # Frameworks report either the whole classical register (unmeasured clbits read 0)
-    # or only the clbits that were written. Both are unambiguous once the width is known.
-    if width is not None and width == len(measured_clbits) != circuit.num_clbits:
-        positions = {clbit: index for index, clbit in enumerate(measured_clbits)}
-        key_width = len(measured_clbits)
-        keyed_by = "measured_clbits"
-    else:
-        positions = {clbit: clbit for clbit in measured_clbits}
-        key_width = circuit.num_clbits
-        keyed_by = "clbits"
-
-    qargs = [mapping[clbit] for clbit in measured_clbits]
-    # probabilities_dict keys put qargs[0] in the rightmost character, which is the
-    # same little-endian convention the counts strings use for clbit 0.
     try:
-        marginal = Statevector.from_instruction(_unitary_circuit(source)).probabilities_dict(
-            qargs=qargs
-        )
+        statevector = Statevector.from_instruction(_unitary_circuit(source))
     except StatevectorIncapable:
         raise
     except Exception as exc:  # pragma: no cover - mirrors simulate_statevector's contract
         raise ValueError(f"OpenQASM program is not statevector-compatible: {exc}") from exc
-
-    distribution: dict[str, float] = {}
-    for key, value in marginal.items():
-        if value <= 0.0:
-            continue
-        bits = ["0"] * key_width
-        for index, clbit in enumerate(measured_clbits):
-            bits[key_width - 1 - positions[clbit]] = key[len(key) - 1 - index]
-        full = "".join(bits)
-        distribution[full] = distribution.get(full, 0.0) + float(value)
-    provenance = {
-        "keyed_by": keyed_by,
-        "width": key_width,
-        "measured_qubits": [mapping[clbit] for clbit in measured_clbits],
-        "clbit_to_qubit": {str(clbit): mapping[clbit] for clbit in measured_clbits},
-        "partial": len(set(qargs)) < circuit.num_qubits,
-    }
-    return distribution, provenance
+    return _keyed_marginal_distribution(
+        statevector,
+        mapping,
+        num_qubits=circuit.num_qubits,
+        num_clbits=circuit.num_clbits,
+        width=width,
+    )
 
 
 def _sample_distribution(source: str, shots: int, seed: int) -> dict[str, float]:
@@ -243,22 +266,12 @@ def _total_variation(left: dict[str, float], right: dict[str, float]) -> float:
     return 0.5 * sum(abs(left.get(key, 0.0) - right.get(key, 0.0)) for key in keys)
 
 
-def counts_vs_ideal(
-    source: str,
-    counts: dict[str, int],
-    threshold: float | None = None,
-    delta: float = 1e-3,
-    max_bins: int = 256,
-    max_qubits: int = 20,
-    bit_order: Literal["big", "little", "auto"] = "auto",
-) -> EquivalenceReport:
-    circuit = _load_circuit(source)
-    if circuit.num_qubits > max_qubits:
-        raise ValueError(f"statistical counts check supports at most {max_qubits} qubits")
-    if max_bins < 1:
-        raise ValueError("max_bins must be >= 1")
-    if not 0 < delta < 1:
-        raise ValueError("delta must be in (0, 1)")
+def normalize_reported_counts(counts: dict[str, int]) -> tuple[dict[str, int], int]:
+    """Validate a reported counts dict; return (normalized counts, key width).
+
+    Raises ValueError for anything that is not a {bitstring: non-negative int}
+    mapping of consistent width — malformed evidence is a failure, never a skip.
+    """
     normalized_counts: dict[str, int] = {}
     observed_width: int | None = None
     for key, value in counts.items():
@@ -280,21 +293,39 @@ def counts_vs_ideal(
         ):
             raise ValueError(f"count for {key!r} is not a non-negative integer: {value!r}")
         normalized_counts[bits] = normalized_counts.get(bits, 0) + int(value)
-    shots = sum(normalized_counts.values())
-    if shots <= 0:
+    if sum(normalized_counts.values()) <= 0:
         raise ValueError("counts are empty")
+    assert observed_width is not None
+    return normalized_counts, observed_width
 
-    ideal, measurement = measured_ideal_distribution(source, width=observed_width)
-    if observed_width != measurement["width"]:
-        raise ValueError(
-            f"counts keys have {observed_width} bits; the circuit reports "
-            f"{measurement['width']} ({measurement['keyed_by']})"
-        )
+
+def compare_counts_to_ideal(
+    ideal: dict[str, float],
+    measurement: dict,
+    normalized_counts: dict[str, int],
+    *,
+    threshold: float | None,
+    delta: float,
+    max_bins: int,
+    bit_order: Literal["big", "little", "auto"],
+    protocol_name: str,
+    fingerprint_payload: str,
+) -> EquivalenceReport:
+    """Orientation-tolerant TVD of reported counts against an ideal distribution.
+
+    Shared by the OpenQASM path and the framework-native path so a bit-order or
+    threshold defect cannot exist in only one of them.
+    """
+    if max_bins < 1:
+        raise ValueError("max_bins must be >= 1")
+    if not 0 < delta < 1:
+        raise ValueError("delta must be in (0, 1)")
+    shots = sum(normalized_counts.values())
     orientations = {"little": ("as_is",), "big": ("reversed",), "auto": ("as_is", "reversed")}[
         bit_order
     ]
     tvds: dict[str, float] = {}
-    coarse_bins = 0
+    bins_by_orientation: dict[str, int] = {}
     for orientation in orientations:
         observed = {
             (key if orientation == "as_is" else key[::-1]): count / shots
@@ -306,15 +337,20 @@ def counts_vs_ideal(
             raise ValueError(
                 f"statistical counts check supports at most {max_bins} nonzero outcomes"
             )
-        coarse_bins = len(support)
+        bins_by_orientation[orientation] = len(support)
         tvds[orientation] = _total_variation(ideal, observed)
     orientation_used = min(tvds, key=tvds.get)  # type: ignore[arg-type]
     tvd = tvds[orientation_used]
+    # The bound must use the SELECTED orientation's support size: the two
+    # orientations can have different overlaps with the ideal, and using
+    # whichever the loop saw last skewed the auto threshold (found in review
+    # of PR 108; the defect predates the refactor).
+    coarse_bins = bins_by_orientation[orientation_used]
     threshold_source = "plan" if threshold is not None else "shot_noise_bound"
     if threshold is None:
         threshold = math.sqrt((coarse_bins * math.log(2) + math.log(1 / delta)) / (2 * shots))
     protocol = {
-        "name": "statistical_counts",
+        "name": protocol_name,
         "shots": shots,
         "threshold": threshold,
         "threshold_source": threshold_source,
@@ -324,13 +360,46 @@ def counts_vs_ideal(
         "orientation_used": orientation_used,
         "measurement": measurement,
     }
-    payload = {"candidate": fingerprint(source), "protocol": protocol, "tvd": tvd}
+    payload = {"candidate": fingerprint_payload, "protocol": protocol, "tvd": tvd}
     return EquivalenceReport(
         fingerprint_type="statistical_distribution",
         protocol=protocol,
         fingerprint_hash=hashlib.sha256(json.dumps(payload, sort_keys=True).encode()).hexdigest(),
         passed=tvd <= threshold,
         scores={"total_variation_distance": tvd, "both_orientations": tvds},
+    )
+
+
+def counts_vs_ideal(
+    source: str,
+    counts: dict[str, int],
+    threshold: float | None = None,
+    delta: float = 1e-3,
+    max_bins: int = 256,
+    max_qubits: int = 20,
+    bit_order: Literal["big", "little", "auto"] = "auto",
+) -> EquivalenceReport:
+    circuit = _load_circuit(source)
+    if circuit.num_qubits > max_qubits:
+        raise ValueError(f"statistical counts check supports at most {max_qubits} qubits")
+    normalized_counts, observed_width = normalize_reported_counts(counts)
+
+    ideal, measurement = measured_ideal_distribution(source, width=observed_width)
+    if observed_width != measurement["width"]:
+        raise ValueError(
+            f"counts keys have {observed_width} bits; the circuit reports "
+            f"{measurement['width']} ({measurement['keyed_by']})"
+        )
+    return compare_counts_to_ideal(
+        ideal,
+        measurement,
+        normalized_counts,
+        threshold=threshold,
+        delta=delta,
+        max_bins=max_bins,
+        bit_order=bit_order,
+        protocol_name="statistical_counts",
+        fingerprint_payload=fingerprint(source),
     )
 
 
