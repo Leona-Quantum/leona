@@ -7,11 +7,18 @@ from majorana_llm.client import (
     LLMRequest,
     LLMResponse,
     OpenAICompatibleLLM,
+    RetryingLLM,
     default_llm,
     endpoint_for,
 )
 from majorana_llm.models import AnalysisOutput, model_for, resolve_provider
-from majorana_llm.parsing import StageOutputError, extract_code, parse_analysis, parse_plan
+from majorana_llm.parsing import (
+    StageOutputError,
+    extract_code,
+    extract_json,
+    parse_analysis,
+    parse_plan,
+)
 from majorana_llm.prompts import (
     CRITIC_SYSTEM_PROMPT,
     CONVERSATION_SYSTEM_PROMPT,
@@ -38,6 +45,7 @@ __all__ = [
     "LLMResponse",
     "AnthropicLLM",
     "OpenAICompatibleLLM",
+    "RetryingLLM",
     "default_llm",
     "endpoint_for",
     "model_for",
@@ -45,6 +53,7 @@ __all__ = [
     "AnalysisOutput",
     "parse_plan",
     "extract_code",
+    "extract_json",
     "StageOutputError",
     "parse_analysis",
     "PLAN_SYSTEM_PROMPT",

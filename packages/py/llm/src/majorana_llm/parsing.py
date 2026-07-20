@@ -17,9 +17,10 @@ class StageOutputError(ValueError):
     """The model's output could not be parsed into the expected structured form."""
 
 
-def _extract_json(text: str) -> str:
+def extract_json(text: str) -> str:
     """Return the first JSON object in `text`, tolerating a ```json fence or prose
-    around it."""
+    around it. Public because every stage that asks for structured output needs the
+    same salvage; the critic failed runs for want of it."""
     for match in _FENCE_RE.finditer(text):
         body = match.group(1).strip()
         if body.startswith("{"):
@@ -42,7 +43,7 @@ def _extract_json(text: str) -> str:
 
 def parse_plan(text: str) -> Plan:
     """Parse and validate a Plan from the planning stage's output."""
-    raw = _extract_json(text)
+    raw = extract_json(text)
     try:
         payload = json.loads(raw)
         # DeepSeek's json_object mode has occasionally emitted the optional
@@ -70,7 +71,7 @@ def parse_plan(text: str) -> Plan:
 
 def parse_analysis(text: str) -> AnalysisOutput:
     """Parse the internal analysis record without exposing its JSON framing."""
-    raw = _extract_json(text)
+    raw = extract_json(text)
     try:
         return AnalysisOutput.model_validate(json.loads(raw))
     except (ValidationError, json.JSONDecodeError, TypeError) as exc:

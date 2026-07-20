@@ -173,13 +173,91 @@ class OpenAICompatibleLLM:
         )
 
 
+class RetryingLLM:
+    """Retries a completion that came back empty, or that failed in transport.
+
+    An empty completion is not a rare event: `deepseek-reasoner` returned one at the
+    planning stage on two production runs (019f7dad-3a24, 019f7de2-a45b), and both
+    dead-lettered before a line of code was written. Once the real verification
+    defects were fixed, the provider returning nothing became the single most common
+    reason a run dies — so the retry belongs here, at the one seam every stage passes
+    through, rather than being re-implemented per stage.
+
+    It only retries when nothing was delivered. A stream that emitted deltas has
+    already been observed by the caller, and replaying it would duplicate the run's
+    output; that response is returned as-is even if it is short.
+    """
+
+    def __init__(
+        self,
+        inner: "LLMClient",
+        *,
+        attempts: int = 3,
+        backoff_seconds: float = 1.0,
+        sleep: Callable[[float], Awaitable[None]] | None = None,
+    ) -> None:
+        if attempts < 1:
+            raise ValueError("attempts must be >= 1")
+        self._inner = inner
+        self._attempts = attempts
+        self._backoff = backoff_seconds
+        self._sleep = sleep
+
+    async def _wait(self, attempt: int) -> None:
+        delay = self._backoff * (2**attempt)
+        if self._sleep is not None:
+            await self._sleep(delay)
+            return
+        import asyncio
+
+        await asyncio.sleep(delay)
+
+    async def complete(
+        self, request: LLMRequest, *, on_delta: DeltaHandler | None = None
+    ) -> LLMResponse:
+        emitted = False
+
+        async def tracking_delta(text: str, channel: str) -> None:
+            nonlocal emitted
+            emitted = True
+            assert on_delta is not None
+            await on_delta(text, channel)
+
+        last_response: LLMResponse | None = None
+        last_error: Exception | None = None
+        for attempt in range(self._attempts):
+            emitted = False
+            try:
+                response = await self._inner.complete(
+                    request, on_delta=None if on_delta is None else tracking_delta
+                )
+            except Exception as exc:  # noqa: BLE001 - re-raised below if every attempt fails
+                last_error = exc
+                if emitted or attempt == self._attempts - 1:
+                    raise
+                await self._wait(attempt)
+                continue
+            if response.text.strip() or emitted:
+                return response
+            last_response = response
+            if attempt < self._attempts - 1:
+                await self._wait(attempt)
+        if last_response is not None:
+            # Returned, not raised: the caller's parser reports what was missing, and
+            # its message already distinguishes an empty completion from prose.
+            return last_response
+        raise last_error if last_error is not None else RuntimeError("no completion attempted")
+
+
 def default_llm() -> "LLMClient":
     """The production client for the active provider profile (models.resolve_provider):
     OpenAI-compatible when OPENAI/DEEPSEEK keys (or MAJORANA_LLM_PROVIDER=openai) are
-    set, Anthropic otherwise."""
+    set, Anthropic otherwise. Wrapped in RetryingLLM because the provider returning
+    nothing is now the most common way a run dies."""
     from majorana_llm.models import resolve_provider
 
-    return OpenAICompatibleLLM() if resolve_provider() == "openai" else AnthropicLLM()
+    inner = OpenAICompatibleLLM() if resolve_provider() == "openai" else AnthropicLLM()
+    return RetryingLLM(inner)
 
 
 class AnthropicLLM:

@@ -34,6 +34,7 @@ from majorana_llm import (
     LLMClient,
     LLMRequest,
     StageOutputError,
+    extract_json,
     model_for,
     parse_plan,
     render_plan_prompt,
@@ -349,30 +350,40 @@ class SandboxCandidateExecutor:
         return hashlib.sha256(manifest.encode()).hexdigest()
 
 
+# `extra="ignore"`, not "forbid". A stray field is not a reason to throw away a
+# judgement the critic did make: the fabricated fallback below is blocking, consumes a
+# candidate, and asks for a recheck the agent cannot perform. Forbidding extras turned
+# a cosmetic serialization slip into a rejection of code the critic never judged.
 class _CriticMismatch(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="ignore")
 
     area: str = Field(min_length=1, max_length=120)
-    expected: str = Field(min_length=1, max_length=1000)
-    observed: str = Field(min_length=1, max_length=1000)
-    evidence: str = Field(min_length=1, max_length=2000)
+    expected: str = Field(min_length=1, max_length=600)
+    observed: str = Field(min_length=1, max_length=600)
+    evidence: str = Field(min_length=1, max_length=1000)
     severity: Literal["minor", "major", "blocking"]
 
 
 class _CriticOutput(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    """Deliberately small. The whole schema is injected into DeepSeek's system prompt
+    (json_object mode has no json_schema support), and the reply has to fit the output
+    budget as well — a schema that invites thirty-item lists spends the budget it needs
+    to close its own braces. `passed_checks` is gone because nothing downstream ever
+    read it; every remaining field is consumed by the repair instruction, the run
+    record, or the best-effort artifact."""
+
+    model_config = ConfigDict(extra="ignore")
 
     decision: VerifierDecision
     confidence: Literal["high", "medium", "low"]
     severity: Literal["none", "minor", "major", "blocking"]
-    summary: str = Field(min_length=1, max_length=2000)
-    passed_checks: list[str] = Field(default_factory=list, max_length=30)
-    failed_checks: list[str] = Field(default_factory=list, max_length=30)
-    mismatches: list[_CriticMismatch] = Field(default_factory=list, max_length=20)
-    suggestions: list[str] = Field(default_factory=list, max_length=20)
-    repair_plan: list[str] = Field(default_factory=list, max_length=20)
-    required_recheck: list[str] = Field(default_factory=list, max_length=20)
-    residual_risks: list[str] = Field(default_factory=list, max_length=20)
+    summary: str = Field(min_length=1, max_length=600)
+    failed_checks: list[str] = Field(default_factory=list, max_length=8)
+    mismatches: list[_CriticMismatch] = Field(default_factory=list, max_length=5)
+    suggestions: list[str] = Field(default_factory=list, max_length=6)
+    repair_plan: list[str] = Field(default_factory=list, max_length=6)
+    required_recheck: list[str] = Field(default_factory=list, max_length=6)
+    residual_risks: list[str] = Field(default_factory=list, max_length=6)
 
 
 class EvidenceVerifier:
@@ -777,7 +788,10 @@ class EvidenceVerifier:
                 },
                 default=str,
             ),
-            max_tokens=2048,
+            # 2048 was not enough headroom for a reasoning model to close its own
+            # braces once the evidence blob got large; a truncated object is the same
+            # symptom as a refusal and was being read as one.
+            max_tokens=3072,
             temperature=0.0,
             response_schema=_CriticOutput.model_json_schema(),
             schema_name="intent_alignment",
@@ -791,12 +805,21 @@ class EvidenceVerifier:
         # row exhausted the budget — a 3-qubit W state died exactly that way on
         # production run 019f7db9-f25c. Temperature is already 0; the retry exists
         # because the failure is in serialization, not in sampling.
-        last_error: ValidationError | None = None
+        #
+        # The parse is tolerant before it is strict. `model_validate_json` needs the
+        # whole reply to be the object; a ```json fence or a sentence of preamble made
+        # it fail with the verdict sitting intact inside the response. `_extract_json`
+        # is the same salvage the plan stage has always had, and the critic never did.
+        last_error: Exception | None = None
         for _ in range(2):
             response = await self._llm.complete(request)
             try:
                 return _CriticOutput.model_validate_json(response.text)
             except ValidationError as exc:
+                last_error = exc
+            try:
+                return _CriticOutput.model_validate_json(extract_json(response.text))
+            except (ValidationError, StageOutputError) as exc:
                 last_error = exc
         return _CriticOutput(
             decision=VerifierDecision.FAIL,
