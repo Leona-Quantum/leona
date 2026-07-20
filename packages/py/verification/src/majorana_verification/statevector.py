@@ -78,6 +78,40 @@ def _unitary_circuit(source: str):
     return circuit
 
 
+def _idle_qubits(circuit: QuantumCircuit) -> list[int]:
+    """Indices no operation touches — provably idle, so they factor out.
+
+    Barriers are not operations on the state, so a barrier does not make a wire
+    active. Read off the parsed circuit, never from the declared register width.
+    """
+    touched: set[int] = set()
+    for instruction in circuit.data:
+        if instruction.operation.name == "barrier":
+            continue
+        for qubit in instruction.qubits:
+            touched.add(circuit.find_bit(qubit).index)
+    return [index for index in range(circuit.num_qubits) if index not in touched]
+
+
+def _without_qubits(circuit: QuantumCircuit, removed: list[int]) -> QuantumCircuit:
+    """The same circuit on the surviving wires, in ascending order.
+
+    Only valid for wires `_idle_qubits` reported: an idle wire stays |0> and the
+    unitary is `U_surviving` tensored with identity on it, so dropping it is an
+    exact rewrite, not an approximation.
+    """
+    dropped = set(removed)
+    keep = [index for index in range(circuit.num_qubits) if index not in dropped]
+    remap = {old: new for new, old in enumerate(keep)}
+    reduced = QuantumCircuit(len(keep))
+    for instruction in circuit.data:
+        if instruction.operation.name == "barrier":
+            continue
+        qubits = [reduced.qubits[remap[circuit.find_bit(q).index]] for q in instruction.qubits]
+        reduced.append(instruction.operation, qubits)
+    return reduced
+
+
 def simulate_statevector(source: str) -> np.ndarray:
     try:
         return np.asarray(Statevector.from_instruction(_unitary_circuit(source)).data)
@@ -87,13 +121,48 @@ def simulate_statevector(source: str) -> np.ndarray:
         raise ValueError(f"OpenQASM program is not statevector-compatible: {exc}") from exc
 
 
-def unitary(source: str) -> np.ndarray:
+def simulate_statevector_matching_width(
+    source: str, target_qubits: int
+) -> tuple[np.ndarray, list[int]]:
+    """`simulate_statevector`, with provably idle wires removed to meet a width.
+
+    The statevector twin of the reduction in `exact_equivalence`, for the
+    framework-native fallback: same guard (the idle wires must account for the
+    whole gap), same direction (only the reference is ever reduced), and the
+    removed indices come back so the evidence can name them.
+    """
+    circuit = _load_circuit(source).remove_final_measurements(inplace=False)
+    _reject_statevector_incapable(circuit)
+    removed: list[int] = []
+    if circuit.num_qubits > target_qubits:
+        idle = _idle_qubits(circuit)
+        if idle and circuit.num_qubits - len(idle) == target_qubits:
+            circuit = _without_qubits(circuit, idle)
+            removed = idle
     try:
-        return np.asarray(Operator(_unitary_circuit(source)).data)
+        return np.asarray(Statevector.from_instruction(circuit).data), removed
+    except Exception as exc:
+        raise ValueError(f"OpenQASM program is not statevector-compatible: {exc}") from exc
+
+
+def _operator(circuit: QuantumCircuit) -> np.ndarray:
+    """The unitary of an already measurement-stripped circuit.
+
+    Rejects incapable circuits here rather than at parse time, so a caller that
+    inspects widths first keeps seeing a width mismatch as a plain failure
+    instead of an incapacity skip.
+    """
+    _reject_statevector_incapable(circuit)
+    try:
+        return np.asarray(Operator(circuit).data)
     except StatevectorIncapable:
         raise
     except Exception as exc:
         raise ValueError(f"OpenQASM program is not unitary-compatible: {exc}") from exc
+
+
+def unitary(source: str) -> np.ndarray:
+    return _operator(_load_circuit(source).remove_final_measurements(inplace=False))
 
 
 def _phase_align_distance(left: np.ndarray, right: np.ndarray) -> float:
@@ -108,9 +177,27 @@ def exact_equivalence(
     tolerance: float = 1e-9,
     max_qubits: int = 6,
 ) -> EquivalenceReport:
-    left = _load_circuit(reference)
-    right = _load_circuit(candidate)
+    # Measurement-stripped, but NOT yet rejected for incapacity: the width
+    # comparison below must stay a plain failure rather than becoming a skip.
+    left = _load_circuit(reference).remove_final_measurements(inplace=False)
+    right = _load_circuit(candidate).remove_final_measurements(inplace=False)
     scores: dict
+    removed_idle: list[int] = []
+    if left.num_qubits > right.num_qubits:
+        # Production run 019f7ead-ead6 (cirq): the planner declared a 3-qubit
+        # reference for "X on qubit 0, H on qubit 2"; cirq's `all_qubits` holds
+        # only TOUCHED qubits, so the correct candidate exported 2 wires with q2
+        # relabelled to index 1 and `exact` failed identically on every
+        # candidate. A reference wire no operation touches stays |0> and factors
+        # out of the unitary, so removing it is an exact rewrite — and it is
+        # allowed only when the idle wires account for the ENTIRE width gap.
+        # The candidate is never reduced and never padded: a candidate that
+        # carries a spare wire is a different claim about the program the user
+        # gets, and it keeps failing plainly.
+        idle = _idle_qubits(left)
+        if idle and left.num_qubits - len(idle) == right.num_qubits:
+            left = _without_qubits(left, idle)
+            removed_idle = idle
     if left.num_qubits != right.num_qubits:
         # JSON-safe on purpose: this used to record float("inf"), which Python's
         # json emits as the bare token `Infinity` — and Postgres JSONB rejects
@@ -128,9 +215,11 @@ def exact_equivalence(
     elif left.num_qubits > max_qubits:
         raise ValueError(f"exact protocol supports at most {max_qubits} qubits")
     else:
-        distance = _phase_align_distance(unitary(reference), unitary(candidate))
+        distance = _phase_align_distance(_operator(left), _operator(right))
         passed = distance <= tolerance
         scores = {"max_abs_distance": distance}
+        if removed_idle:
+            scores["reference_idle_qubits_removed"] = removed_idle
     protocol = {"name": "exact", "tolerance": tolerance, "max_qubits": max_qubits}
     payload = {
         "reference": normalize(reference),

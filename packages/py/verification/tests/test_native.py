@@ -278,6 +278,35 @@ def test_a_malformed_registers_list_does_not_rescue_a_width_mismatch():
         assert not verify_native_sampled_counts({"0": 900, "1": 124}, payload).passed
 
 
+def test_exact_native_removes_a_provably_idle_reference_wire():
+    """The statevector twin of the OpenQASM reduction (run 019f7ead-ead6): a cirq
+    candidate carries only its TOUCHED qubits, so a 3-qubit reference whose q1 no
+    operation touches must be reduced to meet it — with the same guard, so a
+    reference that uses every wire keeps failing a narrower candidate."""
+    reference = 'OPENQASM 2.0;\ninclude "qelib1.inc";\nqreg q[3];\nx q[0];\nh q[2];\n'
+    amp = 1 / math.sqrt(2)
+    amplitudes = [0.0] * 8
+    amplitudes[2 * 1] = amp  # |01>: q0 flipped
+    amplitudes[2 * 3] = amp  # |11>: the surviving q2 in superposition
+    candidate = {
+        "amplitudes": amplitudes,
+        "qubits": 2,
+        "endianness": "q0_lsb",
+        "clbits": 2,
+        "measurement_map": {"0": 0, "1": 1},
+    }
+    outcome = verify_exact_native(reference, candidate)
+    assert outcome.passed
+    assert outcome.details["scores"]["reference_idle_qubits_removed"] == [1]
+
+    ghz3 = (
+        'OPENQASM 2.0;\ninclude "qelib1.inc";\nqreg q[3];\nh q[0];\ncx q[0],q[1];\ncx q[1],q[2];\n'
+    )
+    no_idle = verify_exact_native(ghz3, candidate)
+    assert no_idle.result is VerificationResultKind.FAIL
+    assert no_idle.details["scores"]["qubit_count_mismatch"] is True
+
+
 def test_exact_native_width_mismatch_is_strict_json_safe():
     """Same rule as verify_exact: no non-finite floats in evidence (the JSONB
     boundary rejects them and dead-letters the job)."""

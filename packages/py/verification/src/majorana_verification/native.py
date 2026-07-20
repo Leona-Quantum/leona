@@ -41,7 +41,7 @@ from majorana_verification.statevector import (
     _total_variation,
     compare_counts_to_ideal,
     normalize_reported_counts,
-    simulate_statevector,
+    simulate_statevector_matching_width,
 )
 
 # Mirrors the observers' _MAJORANA_NATIVE_SV_QUBITS; packages/py/frameworks tests
@@ -156,8 +156,12 @@ def native_statevector_vs_reference(
     Raises StatevectorIncapable when the REFERENCE has no statevector (the
     caller's skip case) and ValueError for everything else.
     """
-    reference = simulate_statevector(reference_qasm)
     candidate, _mapping, qubits, _clbits = statevector_from_evidence(payload)
+    # Provably idle reference wires are removed to meet the candidate's width —
+    # cirq's `all_qubits` holds only touched qubits, so a correct candidate can be
+    # narrower than the reference the planner declared (run 019f7ead-ead6). The
+    # guard lives in statevector.py and is shared with the OpenQASM `exact` path.
+    reference, removed_idle = simulate_statevector_matching_width(reference_qasm, qubits)
     candidate_vector = np.asarray(candidate.data)
     scores: dict
     if len(reference) != len(candidate_vector):
@@ -171,6 +175,8 @@ def native_statevector_vs_reference(
         distance = _phase_align_distance(reference, candidate_vector)
         passed = distance <= tolerance
         scores = {"max_abs_distance": distance}
+        if removed_idle:
+            scores["reference_idle_qubits_removed"] = removed_idle
     protocol = {
         "name": "exact_statevector",
         "tolerance": tolerance,
