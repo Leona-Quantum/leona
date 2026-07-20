@@ -1,5 +1,7 @@
 import builtins
 
+import pytest
+
 from majorana_contracts.enums import Framework
 from majorana_frameworks import FrameworkProgram, extract_interchange_qasm
 
@@ -241,3 +243,49 @@ def test_model_stdout_cannot_forge_interchange():
 
     assert extract_interchange_qasm(None).qasm is None
     assert "OPENQASM" in forged
+
+
+def test_cirq_observer_counts_measured_qubits_not_measurement_operations():
+    """`cirq.measure(q0, q1)` is ONE operation covering TWO qubits. Counting
+    operations reported 1 for a fully measured 2-qubit circuit, and the MEASURE_ALL
+    policy needs `measurement_count >= observed_qubits` — so no Cirq circuit could
+    ever satisfy it, on any candidate, and the run burned its whole budget on a
+    check no repair could fix. Observed on production 2026-07-20.
+
+    Runs the real observer against a real cirq circuit rather than asserting on the
+    generated source, because the bug was in what the source computed, not in
+    whether it was emitted.
+    """
+    pytest.importorskip("cirq")
+    import json
+    import tempfile
+    from pathlib import Path
+
+    from majorana_sandbox.spec import ExecutionSpec, compose_execution
+
+    code = (
+        "import cirq\n"
+        "q0, q1 = cirq.LineQubit.range(2)\n"
+        "FINAL_CIRCUIT = cirq.Circuit(cirq.H(q0), cirq.CNOT(q0, q1), "
+        "cirq.measure(q0, q1, key='r'))\n"
+        "RESULT = {'counts': {'00': 1024, '11': 1024}}\n"
+    )
+    program = FrameworkProgram(Framework.CIRQ, code)
+    with tempfile.TemporaryDirectory() as directory:
+        path = Path(directory) / "observation.json"
+        exec(  # noqa: S102 - the point of the test is to run the real epilogue
+            compose_execution(
+                ExecutionSpec(
+                    code=program.normalized_source,
+                    trusted_setup=program.trusted_setup(circuit_expected=True),
+                    trusted_observer=program.trusted_observer(circuit_expected=True),
+                    protected_result_path=str(path),
+                    source_fingerprint=program.fingerprint,
+                )
+            ),
+            {},
+        )
+        metrics = json.loads(path.read_text())["resource_metrics"]
+
+    assert metrics["qubits"] == 2
+    assert metrics["measurement_count"] == 2, "counted operations instead of qubits"
