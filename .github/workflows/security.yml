@@ -1,6 +1,18 @@
-# Phase 0 gates: gitleaks required from day one; Snyk activates once SNYK_TOKEN
-# is set (docs/runbooks/secrets.md). Dependency-review needs GHAS on private
-# repos — add it in Phase 1 if GHAS is enabled, else when the repo goes public.
+# Security gates. gitleaks has been required from day one.
+#
+# `snyk` lived here until 2026-07-20 and is gone: the account ran out of quota
+# permanently, the job failed 403 on every PR, and a required check that cannot
+# pass gets removed from branch protection — which is exactly what happened, so
+# for several sessions there was no dependency gate at all. Its replacements are
+# free, need no account, and are pinned by digest rather than tracking a moving
+# tag (`snyk/actions/setup@master` moving under us is what started that outage):
+#
+#   osv     — dependency SCA, replaces `snyk test --all-projects`
+#   semgrep — static analysis, replaces `snyk code test`
+#
+# Both are intended to be required checks on dev. Neither uploads SARIF: that
+# needs GitHub Code Security, which is a paid add-on on private repos, so the
+# gate is the job's exit code and the findings are in the job log.
 name: security
 permissions:
   contents: read
@@ -19,28 +31,48 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-  snyk:
+  osv:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - id: token
-        run: echo "have=${{ secrets.SNYK_TOKEN != '' }}" >> "$GITHUB_OUTPUT"
-      - if: steps.token.outputs.have == 'true'
-        uses: snyk/actions/setup@master
-      # `snyk test --all-projects` shells out to the native tool for each lockfile
-      # it recognises. It began recognising uv.lock on 2026-07-20 — snyk/actions is
-      # pinned to @master, so the CLI moves under us — and reported "uv binary not
-      # found in PATH", failing 1 of 6 projects and the whole required check with
-      # zero vulnerabilities found. Installing uv scans the Python lockfile for
-      # real rather than narrowing the gate to make it green.
-      - if: steps.token.outputs.have == 'true'
-        uses: astral-sh/setup-uv@v6
-      - if: steps.token.outputs.have == 'true'
-        run: |
-          snyk test --all-projects --severity-threshold=high
-          # exit 3 = no supported source files yet (scaffold); real once Phase 1 lands
-          snyk code test --severity-threshold=high || { ec=$?; [ "$ec" -eq 3 ] && echo "Snyk Code: no supported files yet — treated as pass" || exit "$ec"; }
+      # Downloaded and checksummed rather than run as a third-party action. The
+      # binary is what we actually trust, and pinning the hash means a
+      # compromised release cannot change what runs here without failing loudly
+      # (aquasecurity/trivy-action's March 2026 credential-stealer incident
+      # reached everyone tracking its tags).
+      - name: install osv-scanner
         env:
-          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
-      - if: steps.token.outputs.have != 'true'
-        run: echo "SNYK_TOKEN not set — Snyk skipped (owner action, docs/runbooks/secrets.md)"
+          OSV_VERSION: v2.4.0
+          OSV_SHA256: 15314940c10d26af9c6649f150b8a47c1262e8fc7e17b1d1029b0e479e8ed8a0
+        run: |
+          curl -fsSL -o osv-scanner \
+            "https://github.com/google/osv-scanner/releases/download/${OSV_VERSION}/osv-scanner_linux_amd64"
+          echo "${OSV_SHA256}  osv-scanner" | sha256sum -c -
+          chmod +x osv-scanner
+      # osv-scanner exits non-zero on any advisory at any severity, so the exit
+      # code is deliberately ignored here and the severity threshold is applied
+      # by the gate script (see its docstring for why the distinction matters).
+      - name: scan uv.lock and pnpm-lock.yaml
+        run: ./osv-scanner scan source --recursive --format json ./ > osv.json || true
+      - name: apply the high/critical threshold
+        run: python3 scripts/check_osv_report.py osv.json
+
+  semgrep:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      # Community Edition: no SEMGREP_APP_TOKEN, no account. `semgrep ci` is the
+      # command that wants one; `semgrep scan` does not. The registry ruleset is
+      # still fetched at scan time, so this needs egress to semgrep.dev.
+      - run: pip install semgrep==1.170.0
+      # ERROR severity only. WARNING/INFO on this repo is 36 findings of mostly
+      # style-adjacent advice, and a gate nobody can get to green is a gate that
+      # gets bypassed. db/ is excluded on the same grounds check_raw_queries.py
+      # excludes it: migrations are frozen history and must use raw SQL, which
+      # is 8 of the 9 ERROR findings and none of them a defect.
+      - name: semgrep (ERROR severity, excluding frozen migrations)
+        run: |
+          semgrep scan --config p/default --severity ERROR --error \
+            --metrics=off --exclude=db --exclude=node_modules --exclude=.next
