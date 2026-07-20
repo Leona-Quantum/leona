@@ -273,3 +273,61 @@ async def test_resource_exhaustion_is_terminal_without_candidate_repair():
     assert result.payload["resource_exhausted"] is True
     assert "repair" not in result.payload
     assert (await store.latest_candidate(run_id)).status is CandidateStatus.RESOURCE_EXHAUSTED
+
+
+class ContractRejectedExecutor:
+    """A candidate rejected by contract_diagnostics never reaches the sandbox, so it
+    has no stderr and no sandbox_error — the diagnostics are its only evidence."""
+
+    async def run_candidate(self, _candidate, _plan):
+        return ExecutionOutput(
+            environment_fingerprint="1" * 64,
+            sandbox_provider="test",
+            exit_code=2,
+            duration_ms=0,
+            result={},
+            observation={
+                "contract_diagnostics": [
+                    "contract:qiskit `c_if` was removed in Qiskit 2.0 and raises "
+                    "AttributeError at runtime. Use `with circuit.if_test((creg, value)):` instead."
+                ]
+            },
+            failure_kind=ExecutionFailureKind.CODE_ERROR,
+        )
+
+
+async def test_a_pre_sandbox_contract_rejection_tells_the_model_what_was_wrong():
+    """The diagnostics path bypasses the sandbox, so `evidence_error` and
+    `sandbox_error` are both absent and the repair used to read, in full, "sandbox exit
+    was non-zero" — strictly LESS than the traceback the code would have produced by
+    being allowed to run. Teleportation regressed exactly that way on production run
+    019f7dd4-c3c6: the Qiskit 2.0 `c_if` diagnostic fired correctly on all four
+    candidates and told the model nothing, so it rewrote the same broken call."""
+    store = MemoryAgentStore()
+    run_id = uuid4()
+    tools = CircuitToolset(
+        store=store,
+        framework=Framework.QISKIT,
+        planner=Planner(),
+        executor=ContractRejectedExecutor(),
+        verifier=Verifier(),
+        converter=Converter(),
+        publisher=Publisher(),
+    )
+    broker = ToolBroker(
+        store=store,
+        policy=AgentPolicy(framework=Framework.QISKIT),
+        handlers=tools.handlers(),
+    )
+    await broker.dispatch(run_id, ToolCall(tool_call_id="plan", name=ToolName.REQUEST_PLAN))
+    result = await broker.dispatch(
+        run_id,
+        ToolCall(
+            tool_call_id="simulate",
+            name=ToolName.SIMULATE_QISKIT,
+            arguments={"source": "qc.x(2).c_if(qc.clbits[0], 1)\nFINAL_CIRCUIT = qc\nRESULT = {}"},
+        ),
+    )
+
+    evidence = result.payload["repair"]["evidence"]
+    assert any("c_if" in item and "if_test" in item for item in evidence), evidence

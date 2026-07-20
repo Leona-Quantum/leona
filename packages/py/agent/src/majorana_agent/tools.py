@@ -210,7 +210,19 @@ class CircuitToolset:
                 "sandbox_runs": evidence.observation.get("sandbox_runs", 1),
                 "repair": {
                     "category": "execution_failed",
+                    # `contract_diagnostics` is the ONLY evidence a candidate rejected
+                    # before the sandbox has. That path never runs, so there is no
+                    # stderr and no sandbox_error, and omitting it left the model with
+                    # "sandbox exit was non-zero" and nothing else — less than the
+                    # traceback it would have got by being allowed to fail at runtime.
+                    # Teleportation regressed exactly that way on production run
+                    # 019f7dd4-c3c6: the Qiskit 2.0 `c_if` diagnostic fired on all four
+                    # candidates, correctly, and told the model nothing.
                     "evidence": [
+                        *(
+                            str(item)
+                            for item in evidence.observation.get("contract_diagnostics", [])
+                        ),
                         str(
                             evidence.observation.get("evidence_error", "sandbox exit was non-zero")
                         ),
