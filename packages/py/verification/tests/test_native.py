@@ -303,6 +303,46 @@ def test_a_failing_sampled_comparison_names_the_two_distributions():
     assert "trusted_distribution" not in agreeing.details["scores"]
 
 
+def test_a_register_no_measurement_writes_is_named_outright():
+    """Production runs 019f7ea0-8017 → 019f7ecf-a56c → 019f7ed9-ac0c. The model
+    wrote `circuit.measure(2, 0)` — clbit 0 belongs to `c_alice`, so the register
+    it declared as `c_bob` is never written. It repeated that line on SEVEN
+    candidates across two runs, including four AFTER the distributions were added
+    to the evidence. Two prompt-level attempts is the limit; this is the
+    mechanism. The observer reports which clbits a measurement writes, and a
+    failure against an unwritten register says so in words."""
+    stuck = {
+        "counts": {"0 00": 512, "0 01": 512, "0 10": 512, "0 11": 512},
+        "shots": 2048,
+        "seed": 1234,
+        # c_alice owns clbits 0-1, c_bob owns clbit 2; only Alice's are written.
+        "registers": [{"name": "c_bob", "width": 1}, {"name": "c_alice", "width": 2}],
+        "measured_clbits": [0, 1],
+    }
+    outcome = verify_native_sampled_counts({"0": 1806, "1": 242}, stuck)
+    assert outcome.result is VerificationResultKind.FAIL
+    diagnosis = outcome.details["scores"]["register_never_measured"]
+    assert diagnosis["register"] == "c_bob"
+    assert diagnosis["clbits"] == [2]
+    assert "no measurement writes" in diagnosis["diagnosis"]
+
+
+def test_the_unwritten_register_diagnostic_does_not_fire_on_a_written_one():
+    """It must accuse only when it is sure. A register the observer reports as
+    written is a plain disagreement — the run is wrong about the physics, not
+    about where it put its measurement — and a wrong accusation would send the
+    repair loop chasing a bug that is not there."""
+    written = {**_teleport_sampled(), "measured_clbits": [0, 1, 2]}
+    outcome = verify_native_sampled_counts({"0": 512, "1": 512}, written)
+    assert outcome.result is VerificationResultKind.FAIL
+    assert "register_never_measured" not in outcome.details["scores"]
+
+    # No `measured_clbits` at all (cirq/pennylane, or older evidence): silent.
+    outcome = verify_native_sampled_counts({"0": 512, "1": 512}, _teleport_sampled())
+    assert outcome.result is VerificationResultKind.FAIL
+    assert "register_never_measured" not in outcome.details["scores"]
+
+
 def test_the_failure_diagnostic_is_bounded():
     """256 nonzero outcomes is the check's ceiling; the diagnostic must not put
     all of them into the repair evidence."""

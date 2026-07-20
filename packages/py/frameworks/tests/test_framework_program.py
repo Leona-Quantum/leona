@@ -609,6 +609,9 @@ def test_qiskit_native_statevector_declares_incapacity_on_feed_forward():
         sampled = observation["native_sampled"]
         assert sampled["registers"] == [{"name": "out", "width": 1}, {"name": "m", "width": 2}]
         assert all(key.index(" ") == 1 for key in sampled["counts"])
+        # This fixture measures into clbits 0, 1 and 2, so every register is
+        # written; the verifier's unwritten-register diagnostic stays silent.
+        assert sampled["measured_clbits"] == [0, 1, 2]
     else:
         assert observation["native_sampled_error"] == "qiskit_aer unavailable"
 
