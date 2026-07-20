@@ -199,3 +199,88 @@ def test_return_contract_still_fails_on_missing_keys():
     outcome = verify_return_contract({"counts": {"00": 1}}, ["counts", "fidelity"], "dict")
     assert not outcome.passed
     assert outcome.details["missing_keys"] == ["fidelity"]
+
+
+# --- Partial measurement -------------------------------------------------------
+#
+# Every ancilla algorithm measures only its answer register, so the reported counts
+# are narrower than the circuit. Demanding full width failed correct code on every
+# candidate, identically, which the repair loop cannot converge on.
+#
+# These fixtures deliberately break the qubit-permutation symmetry: a circuit that
+# reads the same forwards and backwards cannot see a wire-relabelling defect, and
+# a marginalization bug is exactly that shape.
+
+# 3 qubits, only q0 and q2 measured, into c0 and c1. q2 is |1>, q0 is |0>,
+# so the only honest outcome is c0=1, c1=0 -> "01".
+PARTIAL_ASYMMETRIC = """
+OPENQASM 3.0;
+include "stdgates.inc";
+bit[2] c;
+qubit[3] q;
+x q[2];
+c[0] = measure q[2];
+c[1] = measure q[0];
+"""
+
+# QPE-shaped: 3 counting qubits measured, 1 eigenstate qubit left unmeasured.
+# The counting register is in uniform superposition, so all 8 outcomes are equally
+# likely and the eigenstate qubit never appears in the counts.
+QPE_SHAPED = """
+OPENQASM 3.0;
+include "stdgates.inc";
+bit[3] c;
+qubit[4] q;
+h q[0];
+h q[1];
+h q[2];
+x q[3];
+c[0] = measure q[0];
+c[1] = measure q[1];
+c[2] = measure q[2];
+"""
+
+
+def test_statistical_counts_accepts_counts_narrower_than_the_circuit():
+    # The blocker this fixes: 3 counts bits against a 4-qubit circuit used to raise.
+    counts = {format(index, "03b"): 512 for index in range(8)}
+    outcome = verify_statistical_counts(QPE_SHAPED, counts)
+    assert outcome.passed
+    measurement = outcome.details["protocol"]["measurement"]
+    assert measurement["partial"] is True
+    assert measurement["width"] == 3
+    assert measurement["measured_qubits"] == [0, 1, 2]
+
+
+def test_statistical_counts_marginalizes_over_the_measured_qubits():
+    # If the ideal distribution were not marginalized, the unmeasured |1> on q[3]
+    # would put all the ideal mass on keys this circuit can never report.
+    outcome = verify_statistical_counts(QPE_SHAPED, {"000": 4096})
+    assert not outcome.passed  # uniform ideal vs. a single outcome is a real failure
+    assert outcome.details["scores"]["total_variation_distance"] > 0.8
+
+
+def test_statistical_counts_reads_partial_measurement_in_clbit_order():
+    outcome = verify_statistical_counts(PARTIAL_ASYMMETRIC, {"01": 4096}, bit_order="little")
+    assert outcome.passed
+    assert outcome.details["scores"]["total_variation_distance"] == 0.0
+
+
+def test_statistical_counts_rejects_a_reversed_partial_measurement():
+    # "10" is the same two bits wired to the wrong clbits. Under an explicit
+    # little-endian read that is a wrong answer and must fail.
+    outcome = verify_statistical_counts(PARTIAL_ASYMMETRIC, {"10": 4096}, bit_order="little")
+    assert not outcome.passed
+    assert outcome.details["scores"]["total_variation_distance"] == 1.0
+
+
+def test_statistical_counts_still_rejects_inconsistent_key_widths():
+    outcome = verify_statistical_counts(QPE_SHAPED, {"000": 2048, "0000": 2048})
+    assert not outcome.passed
+    assert "bits" in outcome.details["error"]
+
+
+def test_statistical_counts_rejects_a_width_the_circuit_cannot_report():
+    outcome = verify_statistical_counts(QPE_SHAPED, {"00000": 4096})
+    assert not outcome.passed
+    assert "the circuit reports" in outcome.details["error"]
