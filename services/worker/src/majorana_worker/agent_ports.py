@@ -424,6 +424,44 @@ class _CriticOutput(BaseModel):
     residual_risks: list[str] = Field(default_factory=list, max_length=6)
 
 
+def _measurement_policy_disagreement(
+    policy: MeasurementPolicy, measurement_count: Any, observed_qubits: Any
+) -> str:
+    """One sentence naming what disagreed with the policy, and the edit that fixes it.
+
+    Every branch names a replacement, because a rule with no substitute is not
+    actionable (standing lesson 2).
+    """
+    if type(measurement_count) is not int:
+        return (
+            "the trusted observer recorded no measurement count for FINAL_CIRCUIT, so "
+            "the policy could not be checked at all; bind FINAL_CIRCUIT to the actual "
+            "circuit object at module scope"
+        )
+    if policy is MeasurementPolicy.NONE:
+        return (
+            f"the plan promises an unmeasured circuit but FINAL_CIRCUIT carries "
+            f"{measurement_count} measurement(s); publish the bare circuit and do any "
+            "sampling on a separate measured copy"
+        )
+    if policy is MeasurementPolicy.MEASURE_ALL:
+        if measurement_count == 0:
+            return (
+                "FINAL_CIRCUIT carries no measurement at all, but the plan promises "
+                f"every one of its {observed_qubits} qubits is measured; add "
+                "measure_all() to the circuit you bind to FINAL_CIRCUIT, or bind the "
+                "measured copy you actually sampled"
+            )
+        return (
+            f"FINAL_CIRCUIT measures {measurement_count} of its {observed_qubits} "
+            "qubits, but the plan promises all of them; measure the remaining qubits "
+            "in the circuit you bind to FINAL_CIRCUIT"
+        )
+    return (
+        f"FINAL_CIRCUIT's {measurement_count} measurement(s) do not satisfy policy {policy.value}"
+    )
+
+
 class EvidenceVerifier:
     def __init__(
         self, *, llm: LLMClient, task_prompt: str, parent_artifact_qasm: str | None = None
@@ -562,9 +600,21 @@ class EvidenceVerifier:
             measurement_details: dict[str, Any] = {
                 "policy": policy.value,
                 "measurement_count": measurement_count,
+                "observed_qubits": observed_qubits,
             }
             if metrics_error is not None:
                 measurement_details["reason"] = metrics_error
+            if not measurement_ok:
+                # Standing lesson 12: the number names the symptom, a sentence names
+                # the cause. "measurement_count: 0" against policy measure_all told
+                # four VQE candidates nothing they could act on, and the run died on
+                # candidate_budget_exhausted (019f7f2d-9504). The plan contract now
+                # refuses that pairing up front, so reaching here means the CODE, not
+                # the plan, disagrees with the policy — and the fix belongs in the
+                # code. Failure only, and bounded.
+                measurement_details["disagreement"] = _measurement_policy_disagreement(
+                    policy, measurement_count, observed_qubits
+                )
             checks.append(
                 {
                     "method": "measurement_policy",

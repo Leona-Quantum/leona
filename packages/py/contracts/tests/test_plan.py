@@ -194,9 +194,79 @@ def test_exact_on_a_circuit_artifact_is_still_allowed():
             {"reference_source": "plan_declared", "reference_qasm": BELL_QASM},
             artifact_contract={
                 "artifact_type": "QuantumCircuit",
-                "measurement_policy": "measure_all",
+                # `specified`, not `measure_all`: VALID promises two scalars and no
+                # distribution, so `measure_all` is now rejected in its own right
+                # (see _measure_all_needs_a_distribution_to_show_for_it below). The
+                # policy is incidental to what this test asserts, which is that
+                # artifact_type alone does not block `exact`.
+                "measurement_policy": "specified",
                 "top_level_execution": "required",
             },
         )
     )
     assert plan.artifact_contract is not None
+
+
+# The plan production VQE run 019f7f2d-9504 actually emitted, trimmed to the fields
+# the rule reads. Its `measure_all` failed the one candidate that bound the correct
+# unmeasured ansatz, on every attempt, until the candidate budget ran out.
+_VQE_019f7f2d = {
+    **VALID,
+    "expected_output_keys": ["ground_state_energy", "optimal_params", "iterations"],
+    "success_criteria": {
+        "primary_metric": "ground_state_energy",
+        "expected_range": {"min": -1.92883, "max": -1.82883},
+    },
+    "artifact_contract": {
+        "artifact_type": "script",
+        "measurement_policy": "measure_all",
+        "top_level_execution": "required",
+        "expected_return_type": "dict",
+    },
+    "verification_plan": {"methods": ["return_contract"]},
+}
+
+
+def test_measure_all_without_a_promised_distribution_is_rejected():
+    with pytest.raises(ValidationError) as exc:
+        Plan.model_validate(_VQE_019f7f2d)
+    message = str(exc.value)
+    assert "measure_all" in message
+    # The objection must name the substitute, not just the violation (lesson 2).
+    assert "'none'" in message and "'specified'" in message
+
+
+def test_measure_all_is_allowed_when_the_run_reports_the_distribution():
+    """A QAOA that really does publish a measured circuit and report counts is not
+    the shape this rule is aimed at, and must keep planning."""
+    plan = Plan.model_validate(
+        {
+            **_VQE_019f7f2d,
+            "expected_output_keys": ["counts", "approximation_ratio"],
+            "success_criteria": {"primary_metric": "approximation_ratio"},
+        }
+    )
+    assert plan.artifact_contract is not None
+    assert plan.artifact_contract.measurement_policy.value == "measure_all"
+
+
+@pytest.mark.parametrize("policy", ["none", "specified", "only_if_requested"])
+def test_the_variational_shape_plans_cleanly_under_every_other_policy(policy):
+    """The remedy the objection names has to actually work — otherwise the planner
+    re-emit lands on a second rejection and the run dies one step later."""
+    plan = Plan.model_validate(
+        {
+            **_VQE_019f7f2d,
+            "artifact_contract": {
+                **_VQE_019f7f2d["artifact_contract"],
+                "measurement_policy": policy,
+            },
+        }
+    )
+    assert plan.artifact_contract is not None
+    assert plan.artifact_contract.measurement_policy.value == policy
+
+
+def test_a_plan_with_no_artifact_contract_is_untouched_by_the_rule():
+    plan = Plan.model_validate({**VALID, "artifact_contract": None})
+    assert plan.artifact_contract is None
