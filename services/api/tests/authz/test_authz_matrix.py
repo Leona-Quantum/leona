@@ -87,7 +87,9 @@ async def test_lists_and_aggregates_scoped(db, dataset):
     a, b = dataset
     for role in ALL_ROLES:
         sa = scope_for(a, role)
-        assert {x.id for x in await artifacts.list_artifacts(sa, db, limit=1000)} == {
+        # list_artifacts returns (artifact, current-version metadata) pairs since
+        # the Vault list started carrying the evidence grade.
+        assert {x.id for x, _metadata in await artifacts.list_artifacts(sa, db, limit=1000)} == {
             a.starter_artifact_id,
             a.artifact_id,
         }
