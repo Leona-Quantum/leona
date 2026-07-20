@@ -1,4 +1,11 @@
-from majorana_openqasm import detect_version, fingerprint, normalize, resource_metrics
+import pytest
+from majorana_openqasm import (
+    OpenQASMError,
+    detect_version,
+    fingerprint,
+    normalize,
+    resource_metrics,
+)
 
 BELL_2 = """OPENQASM 2.0;
 include "qelib1.inc";
@@ -55,3 +62,41 @@ if (c == true) { x q; }
     canonical = normalize(source)
     assert "if (" in canonical
     assert normalize(canonical) == canonical
+
+
+# Byte-for-byte the header cirq 1.7.0 emits (reproduced locally 2026-07-20), and
+# the reason every Cirq run silently lost its exact and Born-distribution checks.
+CIRQ_HEADER_QASM = """// Generated from Cirq v1.7.0
+
+OPENQASM 2.0;
+include "qelib1.inc";
+
+
+// Qubits: [q(0), q(1)]
+qreg q[2];
+
+
+h q[0];
+cx q[0],q[1];
+"""
+
+
+def test_a_comment_header_before_the_declaration_is_accepted():
+    assert detect_version(CIRQ_HEADER_QASM) == "2.0"
+    assert normalize(CIRQ_HEADER_QASM).startswith("OPENQASM 3.0;")
+
+
+def test_a_block_comment_header_is_accepted():
+    source = '/* emitted by a tool\n   over two lines */\nOPENQASM 3.0;\ninclude "stdgates.inc";\nqubit[1] q;\nh q[0];\n'
+    assert detect_version(source) == "3.0"
+
+
+def test_a_program_with_no_declaration_at_all_is_still_rejected():
+    """The rule is scoped to comments — it must not start accepting arbitrary text."""
+    with pytest.raises(OpenQASMError):
+        detect_version('include "qelib1.inc";\nqreg q[2];\nh q[0];\n')
+
+
+def test_a_declaration_hidden_behind_real_code_is_rejected():
+    with pytest.raises(OpenQASMError):
+        detect_version("qreg q[2];\nOPENQASM 2.0;\n")

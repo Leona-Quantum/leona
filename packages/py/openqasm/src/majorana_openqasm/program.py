@@ -10,7 +10,21 @@ from majorana_contracts.models import ResourceMetrics
 from qiskit import QuantumCircuit
 from qiskit import qasm2, qasm3
 
-_VERSION_RE = re.compile(r"^\s*OPENQASM\s+(?P<version>[23](?:\.0)?)\s*;", re.IGNORECASE)
+# The declaration must be the first *statement*, but comments and blank lines may
+# precede it — the OpenQASM grammar allows a comment anywhere, and real emitters
+# put a provenance header there. Cirq is the case that forced this: every Cirq
+# circuit serializes as
+#
+#     // Generated from Cirq v1.7.0
+#
+#     OPENQASM 2.0;
+#
+# so with a start-anchored match, EVERY Cirq run's interchange QASM was rejected
+# as "missing OPENQASM 2.0 or 3.0 declaration". That silently cost Cirq both the
+# `exact` and the Born-distribution `statistical` check — a live 2026-07-20 Cirq
+# Bell run failed `exact` on all four candidates for this reason and nothing else.
+_COMMENT_PREFIX_RE = re.compile(r"\s*(?:(?://[^\n]*|/\*.*?\*/)\s*)*", re.DOTALL)
+_VERSION_RE = re.compile(r"OPENQASM\s+(?P<version>[23](?:\.0)?)\s*;", re.IGNORECASE)
 
 
 class OpenQASMError(ValueError):
@@ -18,8 +32,8 @@ class OpenQASMError(ValueError):
 
 
 def detect_version(source: str) -> Literal["2.0", "3.0"]:
-    """Return the declared supported OpenQASM version."""
-    match = _VERSION_RE.match(source)
+    """Return the declared supported OpenQASM version, skipping a comment header."""
+    match = _VERSION_RE.match(source, _COMMENT_PREFIX_RE.match(source).end())
     if match is None:
         raise OpenQASMError("missing OPENQASM 2.0 or 3.0 declaration")
     return "2.0" if match.group("version").startswith("2") else "3.0"
