@@ -120,7 +120,6 @@ async def test_conversation_mode_answers_without_pipeline_or_sandbox():
         framework=Framework.QISKIT,
         seed=None,
         shots=None,
-        tolerances=None,
         timeout_s=None,
         sink=sink,
     )

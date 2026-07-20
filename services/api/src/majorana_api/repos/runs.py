@@ -70,7 +70,6 @@ async def create_run(
     artifact_version_id: uuid.UUID | None = None,
     seed: int | None = None,
     shots: int | None = None,
-    tolerances: dict[str, Any] | None = None,
     timeout_s: int | None = None,
     idempotency_key: str | None = None,
     conversation_id: uuid.UUID | None = None,
@@ -89,7 +88,6 @@ async def create_run(
         framework=framework,
         seed=seed,
         shots=shots,
-        tolerances=tolerances,
         timeout_s=timeout_s,
     )
     session.add(run)

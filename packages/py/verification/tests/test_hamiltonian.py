@@ -124,9 +124,10 @@ def test_a_boolean_is_not_an_energy():
 
 
 def test_a_plan_declared_tolerance_may_tighten_but_never_loosen():
-    """The reason this accepts a plan-supplied number at all. memory/NEXT.md §2
-    refuses the `tolerances` field because a plan value that RELAXES a bound can
-    manufacture a physical grade; min() keeps the safe direction only."""
+    """The reason this accepts a plan-supplied number at all: a plan value that
+    RELAXES a bound can manufacture a physical grade, so min() keeps the safe
+    direction only. The unrestricted `Run.tolerances` field was deleted in
+    2026-07 rather than made directional — it never had a safe consumer."""
     loose = _plan_shaped(_VQE_GROUND + 0.9, declared_tolerance=5.0)
     assert loose.result is VerificationResultKind.FAIL, "a plan must not widen its own bar"
     assert loose.details["protocol"]["tolerance_source"] == "shot_noise_and_optimizer_allowance"

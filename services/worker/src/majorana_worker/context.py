@@ -22,7 +22,6 @@ class RunContext:
     framework: Framework
     seed: int | None
     shots: int | None
-    tolerances: dict[str, Any] | None
     timeout_s: int | None
     sink: EventSink
     conversation_id: Any | None = None

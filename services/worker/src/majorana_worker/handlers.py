@@ -200,7 +200,6 @@ async def handle_run_execute(
         framework=Framework(run.framework),
         seed=run.seed,
         shots=run.shots,
-        tolerances=run.tolerances,
         timeout_s=run.timeout_s,
         sink=RepoEventSink(scope, session, run_id),
         conversation_id=run.conversation_id,
