@@ -4822,6 +4822,48 @@ div.mj-rail-row:hover {
   font-size: var(--fs-12);
   line-height: 1.5;
 }
+.mj-studio-sampling {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: var(--sp-2) var(--sp-3);
+  align-items: center;
+  margin-top: var(--sp-3);
+}
+.mj-studio-sampling label {
+  color: var(--text-1);
+  font-size: var(--fs-12);
+}
+.mj-studio-sampling input {
+  width: 100%;
+  padding: var(--sp-1) var(--sp-2);
+  border: 1px solid var(--border-0);
+  border-radius: var(--radius-1);
+  background: var(--surface-0);
+  color: var(--text-0);
+  font-family: var(--font-mono);
+  font-size: var(--fs-12);
+}
+.mj-studio-sampling-note {
+  margin: var(--sp-2) 0 0;
+  color: var(--text-1);
+  font-size: var(--fs-12);
+}
+.mj-studio-version-evidence {
+  display: grid;
+  gap: var(--sp-2);
+  padding: var(--sp-3) 0 0;
+  border-top: 1px solid var(--border-0);
+}
+.mj-studio-evidence-grade {
+  margin: 0;
+  color: var(--text-0);
+  font-size: var(--fs-13);
+}
+.mj-studio-evidence-summary {
+  margin: 0;
+  color: var(--text-1);
+  font-size: var(--fs-12);
+}
 .mj-studio-contract {
   display: grid;
   gap: var(--sp-2);

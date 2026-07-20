@@ -403,3 +403,62 @@ function isLibraryArtifact(value: unknown): value is LibraryArtifact {
 function isDemoArtifact(artifact: LibraryArtifact): boolean {
   return artifact.source === "demo" || DEMO_ARTIFACT_IDS.has(artifact.id);
 }
+
+/** Map the artifact-list resource's server-side grade to a Vault status.
+ *
+ * The server reads the current version's verification_summary; until 2026-07-20
+ * the list carried no grade and the callers fabricated "verified" as the default,
+ * so an unopened structurally-verified artifact over-claimed until its detail page
+ * corrected localStorage. A null return means the server does not know
+ * (pre-summary version) — only then do the old fallbacks apply.
+ */
+export function statusFromResource(artifact: Record<string, unknown>): LibraryStatus | null {
+  if (artifact.verifier_decision !== "pass") return null;
+  if (artifact.evidence_strength === "structural") return "structural";
+  if (artifact.evidence_strength === "physical") return "verified";
+  return null;
+}
+
+/** The one mapper from `GET /v1/artifacts` to a LibraryArtifact.
+ *
+ * There were two, near-identical, in library-studio.tsx and studio-workspace.tsx.
+ * The Vault's copy was fixed to read the server's grade; Studio's was not, and
+ * kept `status: existing?.status ?? "verified"` — so any artifact not already in
+ * this browser's localStorage was shown as "Verified" in Studio's picker
+ * regardless of what the pipeline actually proved, including artifacts that only
+ * ever earned a structural pass. One function cannot drift from itself.
+ */
+export function artifactFromResource(value: unknown): LibraryArtifact[] {
+  if (!value || typeof value !== "object") return [];
+  const artifact = value as Record<string, unknown>;
+  if (typeof artifact.id !== "string" || typeof artifact.title !== "string") return [];
+  const existing = getLibraryArtifact(artifact.id);
+  const slug = typeof artifact.slug === "string" ? artifact.slug : artifact.id;
+  const isPublicReference = slug.startsWith("public-");
+  const family = typeof artifact.family === "string" ? artifact.family : "Simulation";
+  return [{
+    id: artifact.id,
+    slug,
+    title: artifact.title,
+    family,
+    framework: typeof artifact.framework === "string" ? artifact.framework : "Qiskit",
+    status:
+      statusFromResource(artifact) ??
+      existing?.status ??
+      (isPublicReference ? "verified_caveats" : "verified"),
+    updatedAt: typeof artifact.updated_at === "string" ? artifact.updated_at : new Date().toISOString(),
+    description: existing?.description ?? "Saved artifact in the workspace vault.",
+    tags: existing?.tags ?? [family.toLowerCase()],
+    verification: existing?.verification ?? "Verification record available in artifact detail.",
+    code: existing?.code ?? "",
+    qasm: existing?.qasm ?? null,
+    currentVersionId: typeof artifact.current_version_id === "string" ? artifact.current_version_id : existing?.currentVersionId,
+    resourceRows: existing?.resourceRows ?? [],
+    runId: existing?.runId,
+    // Carried through so Studio's Versions tab can show the checks the pipeline
+    // actually ran rather than a version id and nothing else.
+    checks: existing?.checks,
+    criticSummary: existing?.criticSummary,
+    source: existing?.source ?? (isPublicReference ? "public" : "run"),
+  }];
+}
