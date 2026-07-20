@@ -3677,6 +3677,29 @@
   color: var(--text-0);
   cursor: pointer;
 }
+.mj-verification-checks {
+  display: grid;
+  gap: var(--sp-2);
+  margin: var(--sp-3) 0 0;
+  padding: 0;
+  list-style: none;
+}
+.mj-verification-checks li {
+  display: flex;
+  gap: var(--sp-2);
+  align-items: baseline;
+}
+.mj-verification-checks code {
+  color: var(--text-0);
+  font-family: var(--font-mono);
+  font-size: var(--fs-13);
+}
+.mj-verification-check--pass {
+  color: var(--ok);
+}
+.mj-verification-check--fail {
+  color: var(--err);
+}
 .mj-library-detail-loading {
   padding: var(--sp-12);
   color: var(--text-1);

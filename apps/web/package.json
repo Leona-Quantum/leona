@@ -8,7 +8,7 @@
     "build": "next build",
     "start": "next start",
     "typecheck": "tsc --noEmit",
-    "test": "node --experimental-strip-types --test lib/framework-selection.test.ts lib/circuit-conversion.test.ts lib/studio-builder.test.ts lib/studio-parse.test.ts"
+    "test": "node --experimental-strip-types --test lib/framework-selection.test.ts lib/circuit-conversion.test.ts lib/studio-builder.test.ts lib/studio-parse.test.ts lib/verification-record.test.ts"
   },
   "dependencies": {
     "@majorana/contracts-gen": "workspace:*",

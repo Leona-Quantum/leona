@@ -30,8 +30,12 @@ def test_owned_qiskit_epilogue_returns_protected_final_circuit(monkeypatch, caps
     code = """import json
 import qiskit.qasm3
 qiskit.qasm3.dumps = lambda circuit: "FORGED"
+class Operation:
+    name = "custom_entangler"
+    _directive = False
 class Instruction:
     qubits = (0, 1)
+    operation = Operation()
 class Circuit:
     num_qubits = 2
     data = [Instruction()]

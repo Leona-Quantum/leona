@@ -248,15 +248,28 @@ else:
         _majorana_observation["interchange_error"] = _majorana_type(_majorana_interchange_exc).__name__
     try:
         _majorana_ops = {{_majorana_str(k): _majorana_int(v) for k, v in _majorana_final_circuit.count_ops().items()}}
-        _majorana_two_qubit_count = _majorana_sum(
-            1
+        # Compiler directives are not gates. `barrier` carries no physical action,
+        # but `qc.measure_all()` — the idiomatic call our own MEASURE_ALL policy
+        # pushes the agent toward — inserts a Barrier spanning every qubit. Counting
+        # it reported a rebased 2-qubit Bell circuit as 5 gates with 2 two-qubit
+        # gates instead of 4 and 1, and the two-qubit count is the headline
+        # hardware-cost number a customer reads and the resource contract checks.
+        _majorana_real_ops = [
+            instruction
             for instruction in _majorana_final_circuit.data
-            if _majorana_len(instruction.qubits) == 2
+            if not _majorana_getattr(instruction.operation, "_directive", False)
+        ]
+        _majorana_two_qubit_count = _majorana_sum(
+            1 for instruction in _majorana_real_ops if _majorana_len(instruction.qubits) == 2
         )
         _majorana_observation["resource_metrics"] = {{
             "qubits": _majorana_int(_majorana_final_circuit.num_qubits),
             "depth": _majorana_int(_majorana_final_circuit.depth()),
-            "gate_count": _majorana_sum(v for k, v in _majorana_ops.items() if k not in {{"measure"}}),
+            "gate_count": _majorana_sum(
+                1
+                for instruction in _majorana_real_ops
+                if _majorana_str(instruction.operation.name) != "measure"
+            ),
             "two_qubit_gate_count": _majorana_two_qubit_count,
             "measurement_count": _majorana_ops.get("measure", 0),
         }}
@@ -320,7 +333,28 @@ if _majorana_final_circuit is not None and _majorana_interchange_dumps is not No
             _majorana_tape = _majorana_getattr(_majorana_final_circuit, "_tape", None)
         if _majorana_tape is None:
             _majorana_tape = _majorana_final_circuit
-        _majorana_observation["interchange_qasm"] = _majorana_interchange_dumps(_majorana_tape)
+        # A tape orders its wires by FIRST APPEARANCE, and `to_openqasm` maps them to
+        # the QASM register POSITIONALLY. So `qml.QFT(wires=[2, 1, 0])` yields
+        # `tape.wires == [0, 2, 1]`, and the export silently renames wire 2 to q[1]
+        # and wire 1 to q[2] — a different labelled circuit. `exact` then compared a
+        # relabelled circuit against the reference and failed CORRECT code: a 3-qubit
+        # QFT burned its whole candidate budget at max_abs_distance 0.707 on
+        # production run 019f7dad-3be5 (2026-07-20). Every earlier PennyLane test
+        # touched wires in sorted order, where the two orders coincide, so a false
+        # negative in the verification layer stayed invisible. Sorting restores the
+        # wire-to-register identity; unsortable (mixed-type) wire labels keep the
+        # tape's own order rather than failing the export.
+        _majorana_tape_wires = _majorana_list(_majorana_getattr(_majorana_tape, "wires", []))
+        try:
+            _majorana_qasm_wires = _majorana_sorted(_majorana_tape_wires)
+        except _majorana_exception:
+            _majorana_qasm_wires = _majorana_tape_wires
+        if _majorana_qasm_wires:
+            _majorana_observation["interchange_qasm"] = _majorana_interchange_dumps(
+                _majorana_tape, wires=_majorana_qasm_wires
+            )
+        else:
+            _majorana_observation["interchange_qasm"] = _majorana_interchange_dumps(_majorana_tape)
     except _majorana_exception as _majorana_interchange_exc:
         _majorana_observation["interchange_error"] = _majorana_type(_majorana_interchange_exc).__name__
 """

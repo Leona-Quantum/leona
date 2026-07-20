@@ -102,6 +102,7 @@ def compose_execution(spec: ExecutionSpec) -> str:
     _majorana_int = _majorana_builtins.int
     _majorana_len = _majorana_builtins.len
     _majorana_list = _majorana_builtins.list
+    _majorana_sorted = _majorana_builtins.sorted
     _majorana_str = _majorana_builtins.str
     _majorana_sum = _majorana_builtins.sum
     _majorana_type = _majorana_builtins.type
