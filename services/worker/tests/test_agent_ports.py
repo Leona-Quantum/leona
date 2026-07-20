@@ -9,7 +9,14 @@ from majorana_agent import (
     ExecutionFailureKind,
     VerificationEvidence,
 )
-from majorana_contracts.enums import Algorithm, Framework, VerificationMethod, VerifierDecision
+from majorana_contracts.enums import (
+    Algorithm,
+    EvidenceStrength,
+    Framework,
+    VerificationMethod,
+    VerifierDecision,
+    evidence_strength_of,
+)
 from majorana_contracts.plan import EXACT_MAX_QUBITS, Plan
 from majorana_worker import agent_ports
 from majorana_frameworks import FrameworkProgram
@@ -604,6 +611,52 @@ async def test_statistical_check_survives_a_missing_repeat_execution():
     assert "statistical_reproducibility" not in checks
     assert checks["statistical"]["result"] == "pass"
     assert output.decision is VerifierDecision.PASS
+
+
+_TELEPORTATION_QASM = """
+OPENQASM 3.0;
+include "stdgates.inc";
+bit[2] m;
+bit[1] out;
+qubit[3] q;
+h q[1];
+cx q[1], q[2];
+cx q[0], q[1];
+h q[0];
+m[0] = measure q[0];
+m[1] = measure q[1];
+if (m == 1) { x q[2]; }
+if (m == 2) { z q[2]; }
+if (m == 3) { x q[2]; z q[2]; }
+out[0] = measure q[2];
+"""
+
+
+async def test_statistical_incapacity_skips_without_blocking_the_candidate():
+    """Production run 019f7e46-d688: correct if_test teleportation failed all four
+    candidates identically because "the statevector path cannot simulate this
+    circuit" was recorded as "the code is wrong". A skipped check must not block;
+    the pass it leaves behind must grade structural (no physics was checked)."""
+    counts = {"000": 256, "001": 256, "100": 256, "101": 256}
+    observation = _statistical_observation(counts)
+    observation["interchange_qasm"] = _TELEPORTATION_QASM
+    observation["resource_metrics"]["qubits"] = 3
+    observation["resource_metrics"]["measurement_count"] = 3
+    plan = _statistical_plan()
+    plan.qubits_estimate = 3
+    candidate = _candidate()
+    output = await EvidenceVerifier(llm=PassingCriticLLM(), task_prompt="teleportation").verify(
+        candidate,
+        _execution(candidate, result={"counts": counts}, observation=observation),
+        plan,
+    )
+    checks = _checks_by_method(output)
+    assert checks["statistical"]["result"] == "skipped"
+    assert checks["statistical"]["details"]["skip_reason"] == "statevector_incapable"
+    # The program still agrees with itself, which is real (weak) evidence and runs.
+    assert checks["statistical_reproducibility"]["result"] == "pass"
+    assert output.decision is VerifierDecision.PASS
+    assert evidence_strength_of(output.deterministic_checks) is EvidenceStrength.STRUCTURAL
 
 
 async def test_statistical_check_fails_when_no_evidence_is_available_at_all():

@@ -3301,9 +3301,11 @@
         "type": "object"
       },
       "VerificationResultKind": {
+        "description": "PASS and FAIL are judgements about the code. SKIPPED is not a judgement at\nall: the check was incapable of evaluating this circuit (e.g. the statistical\ncheck's statevector path against a circuit with mid-circuit measurement and\nclassical control flow \u2014 production run 019f7e46-d688), so it produced no\nevidence in either direction. A skipped check never blocks a candidate and\nnever lifts `evidence_strength_of` \u2014 a run whose only physical check was\nskipped passes as `structural`, which states exactly what was proved.",
         "enum": [
           "pass",
-          "fail"
+          "fail",
+          "skipped"
         ],
         "title": "VerificationResultKind",
         "type": "string"
@@ -3508,7 +3510,7 @@
   "info": {
     "description": "Cross-boundary types only; API paths are owned by services/api.",
     "title": "majorana-contracts",
-    "version": "1.2.0"
+    "version": "1.3.0"
   },
   "openapi": "3.1.0",
   "paths": {}

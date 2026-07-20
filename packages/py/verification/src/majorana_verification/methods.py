@@ -1,8 +1,11 @@
 """Verification primitives mapped to the contracts taxonomy
 (VerificationMethod × VerificationResultKind). Each returns a VerificationOutcome
 that a verify-stage handler turns into a verification.result event and a
-VerificationRecord row. None of these fabricate: a check that cannot run returns
-FAIL with the reason, never a silent PASS."""
+VerificationRecord row. None of these fabricate: a check whose evidence is
+missing or malformed returns FAIL with the reason, never a silent PASS. The one
+narrow exception is SKIPPED — the check was structurally incapable of judging
+this circuit at all (see StatevectorIncapable), which is a fact about the check,
+not the code, and is graded as no evidence rather than contrary evidence."""
 
 from __future__ import annotations
 
@@ -15,6 +18,7 @@ from pydantic import BaseModel, Field
 
 from majorana_verification.statevector import (
     EquivalenceReport,
+    StatevectorIncapable,
     counts_vs_ideal,
     exact_equivalence,
     statistical_equivalence,
@@ -22,6 +26,23 @@ from majorana_verification.statevector import (
 
 PASS = VerificationResultKind.PASS
 FAIL = VerificationResultKind.FAIL
+SKIPPED = VerificationResultKind.SKIPPED
+
+
+def _skipped(method: VerificationMethod, exc: StatevectorIncapable) -> VerificationOutcome:
+    """The check could not evaluate this circuit; that is not a verdict.
+
+    Reported as its own result kind because the two readings it replaces were both
+    lies: FAIL rejected correct code identically on every candidate (the repair
+    loop can never satisfy a criticism about the checker), and PASS would claim
+    physics that was never checked. Downstream, evidence_strength_of counts only
+    passes, so a run whose physical checks all skipped grades `structural`.
+    """
+    return VerificationOutcome(
+        method=method,
+        result=SKIPPED,
+        details={"skip_reason": "statevector_incapable", "error": str(exc)},
+    )
 
 
 class VerificationOutcome(BaseModel):
@@ -52,6 +73,8 @@ def verify_exact(
     """Exact unitary equivalence (phase-aligned) for small circuits."""
     try:
         report = exact_equivalence(reference, candidate, tolerance=tolerance, max_qubits=max_qubits)
+    except StatevectorIncapable as exc:
+        return _skipped(VerificationMethod.EXACT, exc)
     except ValueError as exc:
         return VerificationOutcome(
             method=VerificationMethod.EXACT, result=FAIL, details={"error": str(exc)}
@@ -92,6 +115,8 @@ def verify_statistical_counts(
     equivalence."""
     try:
         report = counts_vs_ideal(qasm, counts, threshold=threshold, bit_order=bit_order)  # type: ignore[arg-type]
+    except StatevectorIncapable as exc:
+        return _skipped(VerificationMethod.STATISTICAL, exc)
     except ValueError as exc:
         return VerificationOutcome(
             method=VerificationMethod.STATISTICAL, result=FAIL, details={"error": str(exc)}

@@ -1,4 +1,4 @@
-from majorana_contracts.enums import VerificationMethod
+from majorana_contracts.enums import VerificationMethod, VerificationResultKind
 
 from majorana_verification import (
     extract_counts,
@@ -284,3 +284,107 @@ def test_statistical_counts_rejects_a_width_the_circuit_cannot_report():
     outcome = verify_statistical_counts(QPE_SHAPED, {"00000": 4096})
     assert not outcome.passed
     assert "the circuit reports" in outcome.details["error"]
+
+
+# --- Incapacity is not disagreement --------------------------------------------
+#
+# Production run 019f7e46-d688 (teleportation): the statistical check simulates
+# the circuit to learn what the answer should be, and a circuit that measures
+# partway through and reacts to the result has no statevector to simulate. The
+# check could not run — and the pipeline recorded "could not run" as "the code is
+# wrong", failing correct, idiomatic if_test code identically on all four
+# candidates. Sixth defect of that family. Incapacity is now `skipped`, a third
+# outcome distinct from both verdicts, and it must stay narrow: every genuine
+# disagreement and every malformed input below keeps failing.
+
+# The production reproduction: teleportation with register-compare feed-forward,
+# the shape the qiskit exporter emits for if_test.
+TELEPORTATION = """
+OPENQASM 3.0;
+include "stdgates.inc";
+bit[2] m;
+bit[1] out;
+qubit[3] q;
+h q[1];
+cx q[1], q[2];
+cx q[0], q[1];
+h q[0];
+m[0] = measure q[0];
+m[1] = measure q[1];
+if (m == 1) {
+  x q[2];
+}
+if (m == 2) {
+  z q[2];
+}
+if (m == 3) {
+  x q[2];
+  z q[2];
+}
+out[0] = measure q[2];
+"""
+
+# Mid-circuit measurement with no control flow at all: the measure on q[0] is
+# followed by another gate on the same qubit, so stripping final measurements
+# leaves it behind and the circuit is still not a unitary.
+MID_CIRCUIT_MEASUREMENT = """
+OPENQASM 3.0;
+include "stdgates.inc";
+bit[2] c;
+qubit[1] q;
+h q[0];
+c[0] = measure q[0];
+h q[0];
+c[1] = measure q[0];
+"""
+
+
+def test_statistical_counts_skips_a_circuit_with_classical_control_flow():
+    outcome = verify_statistical_counts(TELEPORTATION, {"000": 512, "001": 512})
+    assert outcome.result is VerificationResultKind.SKIPPED
+    assert not outcome.passed  # skipped is never a pass
+    assert outcome.details["skip_reason"] == "statevector_incapable"
+    assert "control flow" in outcome.details["error"]
+
+
+def test_statistical_counts_skips_a_mid_circuit_measurement():
+    outcome = verify_statistical_counts(MID_CIRCUIT_MEASUREMENT, {"00": 256, "11": 256})
+    assert outcome.result is VerificationResultKind.SKIPPED
+
+
+GHZ3 = """
+OPENQASM 3.0;
+include "stdgates.inc";
+qubit[3] q;
+h q[0];
+cx q[0], q[1];
+cx q[1], q[2];
+"""
+
+
+def test_exact_skips_when_either_side_has_control_flow():
+    # Same width on both sides: a width mismatch is a genuine FAIL and must keep
+    # short-circuiting before incapacity is even considered.
+    assert verify_exact(GHZ3, TELEPORTATION).result is VerificationResultKind.SKIPPED
+    assert verify_exact(TELEPORTATION, GHZ3).result is VerificationResultKind.SKIPPED
+    assert verify_exact(BELL, TELEPORTATION).result is VerificationResultKind.FAIL
+
+
+def test_unparseable_qasm_still_fails_rather_than_skips():
+    outcome = verify_statistical_counts("OPENQASM 3.0;\nqubit[1e q;\n", {"0": 1024})
+    assert outcome.result is VerificationResultKind.FAIL
+
+
+def test_wrong_counts_still_fail_after_the_skip_path_exists():
+    """The test that matters (plans/statistical-cannot-judge-control-flow.md):
+    the skip must not silence genuine numerical disagreement. A Bell state never
+    yields |01>/|10>; a candidate reporting them must keep failing."""
+    outcome = verify_statistical_counts(BELL, {"01": 500, "10": 500, "00": 24})
+    assert outcome.result is VerificationResultKind.FAIL
+
+
+def test_malformed_counts_against_an_incapable_circuit_still_fail():
+    # Count validation happens before simulation, so garbage counts must not be
+    # absolved by the circuit's incapacity.
+    outcome = verify_statistical_counts(TELEPORTATION, {"2x": 100})
+    assert outcome.result is VerificationResultKind.FAIL

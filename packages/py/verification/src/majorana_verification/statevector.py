@@ -12,7 +12,51 @@ import numpy as np
 from majorana_openqasm import fingerprint, normalize
 from pydantic import BaseModel, Field
 from qiskit import QuantumCircuit, qasm3
+from qiskit.circuit import ControlFlowOp
 from qiskit.quantum_info import Operator, Statevector
+
+
+class StatevectorIncapable(ValueError):
+    """The statevector path cannot judge this circuit at all.
+
+    Raised only when the circuit, after its final measurements are stripped, still
+    contains classical control flow, a mid-circuit measurement, or a reset — i.e.
+    it is not a unitary and has no statevector, regardless of whether the code is
+    right. This is the check's incapacity, never evidence against the circuit:
+    production run 019f7e46-d688 burned its whole candidate budget on correct
+    teleportation code because this condition was reported as a plain failure.
+
+    Deliberately a subclass of ValueError so that callers which do not
+    distinguish it keep their existing fail-closed behaviour. It is raised from a
+    static read of the circuit's structure, never from a numerical comparison —
+    a genuine disagreement must not be able to arrive wearing this type.
+    """
+
+
+# Operation names that make a circuit non-unitary even after final measurements
+# are stripped. The control-flow names mirror Qiskit's ControlFlowOp subclasses;
+# the isinstance check below is the authority and these names are the fallback.
+_NONUNITARY_OP_NAMES = frozenset(
+    {"measure", "reset", "if_else", "while_loop", "for_loop", "switch_case"}
+)
+
+
+def _reject_statevector_incapable(circuit: QuantumCircuit) -> None:
+    """Raise StatevectorIncapable if the measurement-stripped circuit is not unitary.
+
+    Runs on static structure only, before any simulation, so the exception can
+    never absorb a numerical failure. Anything this function does not recognise
+    falls through to the simulator, whose errors keep their current (failing)
+    types — unknown incapacity stays a failure, known incapacity becomes a skip.
+    """
+    for instruction in circuit.data:
+        operation = instruction.operation
+        if isinstance(operation, ControlFlowOp) or operation.name in _NONUNITARY_OP_NAMES:
+            raise StatevectorIncapable(
+                "circuit is not unitary up to its final measurements: "
+                f"'{operation.name}' requires mid-circuit measurement or classical "
+                "control flow, which the statevector path cannot simulate"
+            )
 
 
 class EquivalenceReport(BaseModel):
@@ -29,13 +73,16 @@ def _load_circuit(source: str) -> QuantumCircuit:
 
 
 def _unitary_circuit(source: str):
-    circuit = _load_circuit(source)
-    return circuit.remove_final_measurements(inplace=False)
+    circuit = _load_circuit(source).remove_final_measurements(inplace=False)
+    _reject_statevector_incapable(circuit)
+    return circuit
 
 
 def simulate_statevector(source: str) -> np.ndarray:
     try:
         return np.asarray(Statevector.from_instruction(_unitary_circuit(source)).data)
+    except StatevectorIncapable:
+        raise
     except Exception as exc:
         raise ValueError(f"OpenQASM program is not statevector-compatible: {exc}") from exc
 
@@ -43,6 +90,8 @@ def simulate_statevector(source: str) -> np.ndarray:
 def unitary(source: str) -> np.ndarray:
     try:
         return np.asarray(Operator(_unitary_circuit(source)).data)
+    except StatevectorIncapable:
+        raise
     except Exception as exc:
         raise ValueError(f"OpenQASM program is not unitary-compatible: {exc}") from exc
 
@@ -154,6 +203,8 @@ def measured_ideal_distribution(
         marginal = Statevector.from_instruction(_unitary_circuit(source)).probabilities_dict(
             qargs=qargs
         )
+    except StatevectorIncapable:
+        raise
     except Exception as exc:  # pragma: no cover - mirrors simulate_statevector's contract
         raise ValueError(f"OpenQASM program is not statevector-compatible: {exc}") from exc
 

@@ -306,10 +306,52 @@ const EXHAUSTED: RunEvent[] = [
 const MID_RUN: RunEvent[] = VERIFIED.slice(0, 16); // verification running; verifier pending
 const QUEUED: RunEvent[] = VERIFIED.slice(0, 2); // queued/started only
 
+// The production-run-019f7e46-d688 shape after the incapacity fix: the statistical
+// check could not evaluate a feed-forward circuit, said so as `skipped`, and
+// stopped blocking. The run passes on structural evidence only, and the banner
+// says what was not checked.
+const STRUCTURAL_SKIP: RunEvent[] = [
+  ...VERIFIED.slice(0, 15),
+  {
+    type: "verification.result",
+    run_id: RUN,
+    seq: 16,
+    ts: ts(22),
+    method: "statistical",
+    result: "skipped",
+    details: {
+      skip_reason: "statevector_incapable",
+      error:
+        "circuit is not unitary up to its final measurements: 'if_else' requires mid-circuit measurement or classical control flow, which the statevector path cannot simulate",
+    },
+  },
+  {
+    type: "verification.result",
+    run_id: RUN,
+    seq: 17,
+    ts: ts(22),
+    method: "return_contract",
+    result: "pass",
+    details: { note: "result keys matched the plan contract" },
+  },
+  { type: "stage.finished", run_id: RUN, seq: 18, ts: ts(23), stage: "verify", ok: true, duration_ms: 900 },
+  {
+    type: "run.finished",
+    run_id: RUN,
+    seq: 19,
+    ts: ts(24),
+    status: "succeeded",
+    verifier_decision: "pass",
+    evidence_strength: "structural",
+    residual_risks: "The statistical check cannot simulate feed-forward circuits; no physical check ran.",
+  },
+];
+
 export const RUN_FIXTURES: Record<string, RunEvent[]> = {
   "demo-verified": VERIFIED,
   "demo-failed": FAILED,
   "demo-exhausted": EXHAUSTED,
+  "demo-skipped": STRUCTURAL_SKIP,
   "demo-midrun": MID_RUN,
   "demo-queued": QUEUED,
 };
@@ -318,6 +360,7 @@ export const RUN_FIXTURE_META: { id: string; label: string }[] = [
   { id: "demo-verified", label: "Verified run (full pipeline)" },
   { id: "demo-failed", label: "Failed verification" },
   { id: "demo-exhausted", label: "Budget exhausted (best effort)" },
+  { id: "demo-skipped", label: "Statistical check skipped (structural pass)" },
   { id: "demo-midrun", label: "Mid-run (verify)" },
   { id: "demo-queued", label: "Queued (waiting)" },
 ];

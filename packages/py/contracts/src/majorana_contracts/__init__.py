@@ -118,7 +118,10 @@ from .lifecycle import (
 # lifecycles; ImportProvider / ImportJobStatus / ImportItemState.
 # 1.2.0: Step 6 (Neon cutover Slice C) — PublicCatalogEntry / CatalogProvenance
 # response models; publication-state lifecycle (assert_publication_transition).
-CONTRACTS_VERSION = "1.2.0"
+# 1.3.0: VerificationResultKind gains "skipped" — a check that was incapable of
+# evaluating the circuit (vs. one that ran and disagreed). Never blocks, never
+# lifts evidence strength.
+CONTRACTS_VERSION = "1.3.0"
 
 __all__ = [
     "CONTRACTS_VERSION",

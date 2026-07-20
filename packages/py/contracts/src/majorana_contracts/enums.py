@@ -83,8 +83,17 @@ class PlannableVerificationMethod(StrEnum):
 
 
 class VerificationResultKind(StrEnum):
+    """PASS and FAIL are judgements about the code. SKIPPED is not a judgement at
+    all: the check was incapable of evaluating this circuit (e.g. the statistical
+    check's statevector path against a circuit with mid-circuit measurement and
+    classical control flow — production run 019f7e46-d688), so it produced no
+    evidence in either direction. A skipped check never blocks a candidate and
+    never lifts `evidence_strength_of` — a run whose only physical check was
+    skipped passes as `structural`, which states exactly what was proved."""
+
     PASS = "pass"
     FAIL = "fail"
+    SKIPPED = "skipped"
 
 
 class EvidenceStrength(StrEnum):

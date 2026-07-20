@@ -755,7 +755,9 @@ function deriveVerdict(
     if (finishedRun.evidence_strength) {
       return finishedRun.evidence_strength === "physical" ? "verified" : "structural_only";
     }
-    return verifyResults.some((result) => NUMERIC_METHODS.has(result.method))
+    return verifyResults.some(
+      (result) => NUMERIC_METHODS.has(result.method) && result.result === "pass",
+    )
       ? "verified"
       : "structural_only";
   }
@@ -825,7 +827,12 @@ function buildVerificationRows(results: Schemas["VerificationResult"][]): Verifi
     const tail =
       (seed !== null ? `, seed ${seed}` : "") + (shots !== null ? `, ${shots} shots` : "");
     let detail: string;
-    if (metric && value !== null && threshold !== null) {
+    if (result.result === "skipped") {
+      // Incapacity, not a verdict: the check could not evaluate this circuit
+      // (mid-circuit measurement / classical control flow). Saying "structural
+      // check" here would misdescribe a physical check that never ran.
+      detail = str(details.error) ?? "could not be evaluated for this circuit";
+    } else if (metric && value !== null && threshold !== null) {
       detail = `${metric} ${value} ${result.result === "fail" ? ">" : "<="} delta ${threshold}${tail}`;
     } else if (metric && value !== null) {
       detail = `${metric} ${value}${tail}`;
