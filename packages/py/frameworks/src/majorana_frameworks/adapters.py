@@ -233,10 +233,15 @@ if _majorana_final_circuit is not None:
 #       _MAJORANA_NATIVE_SV_QUBITS. The verifier normalizes endianness; the
 #       adapter reports the raw layout it actually produced. measurement_map is
 #       keyed the way counts keys read: clbit 0 is the RIGHTMOST character.
-#   native_sampled: {"counts": {...}, "shots", "seed", "bit_order"}
+#   native_sampled: {"counts": {...}, "shots", "seed", "bit_order",
+#                    "registers": [{"name", "width"}, ...] (qiskit only)}
 #     — a trusted re-execution of FINAL_CIRCUIT through the framework's own
 #       sampler with a fixed seed. This is the mid-circuit-capable evidence:
 #       feed-forward circuits (teleportation) have no statevector but sample fine.
+#       `registers` records the classical-register structure Qiskit's get_counts
+#       prints (space-separated, last-declared register leftmost) in the same
+#       left-to-right order the key reads, so the verifier can marginalize the
+#       trusted sample onto a register a run legitimately reported alone.
 #   native_statevector_error / native_sampled_error — why either is absent.
 #
 # The helpers snapshot every builtin and SDK entry point they use as default
@@ -287,6 +292,7 @@ def _majorana_native_evidence(
     _sorted=sorted,
     _list=list,
     _dict=dict,
+    _reversed=reversed,
     _type=type,
     _ex=Exception,
 ):
@@ -350,11 +356,17 @@ def _majorana_native_evidence(
             ).result().get_counts()
             if _isinstance(_counts, _list):
                 _counts = _counts[0]
+            # get_counts prints the LAST-declared register leftmost; export the
+            # structure in the order the key reads, so the verifier can slice it.
+            _registers = []
+            for _creg in _reversed(_list(_circuit.cregs)):
+                _registers.append({"name": _str(_creg.name), "width": _int(_creg.size)})
             _observation["native_sampled"] = {
                 "counts": {_str(_key): _int(_value) for _key, _value in _dict(_counts).items()},
                 "shots": _shots,
                 "seed": _seed,
                 "bit_order": "little",
+                "registers": _registers,
             }
     except _ex as _exc:
         _observation["native_sampled_error"] = _type(_exc).__name__

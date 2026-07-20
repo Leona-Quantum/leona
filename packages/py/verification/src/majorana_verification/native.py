@@ -193,6 +193,45 @@ def native_statevector_vs_reference(
     )
 
 
+def _sampled_registers(payload: dict, sampled_width: int) -> list[tuple[str, int]]:
+    """The (name, width) registers of the trusted sample, in key-reading order.
+
+    Qiskit's ``get_counts`` separates classical registers with spaces and prints
+    the last-declared register first, so the exported list reads left to right the
+    way the key does. Anything malformed — not a list, wrong shape, widths that do
+    not tile the sampled key — returns empty, which leaves the caller's width
+    mismatch a plain FAIL. Frameworks with no register concept export no list.
+    """
+    raw = payload.get("registers")
+    if not isinstance(raw, list) or not raw:
+        return []
+    registers: list[tuple[str, int]] = []
+    for entry in raw:
+        if not isinstance(entry, dict):
+            return []
+        name = entry.get("name")
+        width = entry.get("width")
+        if not isinstance(name, str) or not name or type(width) is not int or width <= 0:
+            return []
+        registers.append((name, width))
+    if sum(width for _name, width in registers) != sampled_width:
+        return []
+    return registers
+
+
+def _marginalize_onto_register(
+    counts: dict[str, int], registers: list[tuple[str, int]], index: int
+) -> dict[str, int]:
+    """Sum the trusted counts over every bit outside register ``index``."""
+    start = sum(width for _name, width in registers[:index])
+    stop = start + registers[index][1]
+    marginal: dict[str, int] = {}
+    for key, count in counts.items():
+        bits = key[start:stop]
+        marginal[bits] = marginal.get(bits, 0) + count
+    return marginal
+
+
 def sampled_counts_comparison(
     reported: dict[str, int],
     sampled_payload: Any,
@@ -213,11 +252,26 @@ def sampled_counts_comparison(
         raise ValueError("native sampled evidence carries no counts")
     normalized_reported, reported_width = normalize_reported_counts(reported)
     normalized_sampled, sampled_width = normalize_reported_counts(sampled_counts)
+    register_used: tuple[str, int] | None = None
     if reported_width != sampled_width:
-        raise ValueError(
-            f"reported counts have {reported_width}-bit keys; the trusted execution "
-            f"sampled {sampled_width}-bit keys"
-        )
+        # Register-guided marginalization, never subset-scanning: reporting a
+        # marginal over one classical register is a legitimate convention (the
+        # task asks for "the counts of the teleported qubit"), so when the
+        # reported width matches exactly ONE register the trusted counts are
+        # marginalized onto it. Zero or several matches stay a FAIL — ambiguity
+        # must not become absolution, and scanning bit subsets for one that
+        # agrees would manufacture passes.
+        registers = _sampled_registers(sampled_payload, sampled_width)
+        matches = [index for index, (_n, width) in enumerate(registers) if width == reported_width]
+        if len(matches) != 1:
+            detail = f"; it matches {len(matches)} registers" if len(matches) > 1 else ""
+            raise ValueError(
+                f"reported counts have {reported_width}-bit keys; the trusted execution "
+                f"sampled {sampled_width}-bit keys{detail}"
+            )
+        index = matches[0]
+        register_used = registers[index]
+        normalized_sampled = _marginalize_onto_register(normalized_sampled, registers, index)
     reported_shots = sum(normalized_reported.values())
     sampled_shots = sum(normalized_sampled.values())
     sampled_distribution = {
@@ -261,6 +315,11 @@ def sampled_counts_comparison(
         "bins": bins,
         "orientation_used": orientation_used,
     }
+    if register_used is not None:
+        # Only present when marginalization actually happened, so the fingerprint
+        # of a full-width comparison is unchanged by this fix.
+        protocol["register_used"] = register_used[0]
+        protocol["register_width"] = register_used[1]
     payload = {"protocol": protocol, "tvd": tvd, "sampled": sorted(normalized_sampled.items())}
     return EquivalenceReport(
         fingerprint_type="statistical_distribution",

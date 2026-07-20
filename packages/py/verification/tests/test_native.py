@@ -185,6 +185,99 @@ def test_auto_threshold_uses_the_selected_orientations_bin_count():
     assert two_sample.details["protocol"]["bins"] == 1
 
 
+# Teleportation as the trusted observer samples it: registers `out` (1 bit, the
+# teleported qubit) and `m` (2 bits, the Bell-basis measurement). Qiskit's
+# get_counts prints registers last-declared first, so the key reads "o mm" and
+# the exported `registers` list is in that same left-to-right order. `out` carries
+# the Ry(0.7) distribution (cos^2(0.35) = 0.8817); `m` is uniform over four.
+def _teleport_sampled() -> dict:
+    return {
+        "counts": {
+            "0 00": 452,
+            "0 01": 451,
+            "0 10": 451,
+            "0 11": 452,
+            "1 00": 60,
+            "1 01": 61,
+            "1 10": 61,
+            "1 11": 60,
+        },
+        "shots": 2048,
+        "seed": 1234,
+        "bit_order": "little",
+        "registers": [{"name": "out", "width": 1}, {"name": "m", "width": 2}],
+    }
+
+
+def test_sampled_counts_marginalize_onto_the_uniquely_matching_register():
+    """The defect this fixes (plans/sampled-counts-width-mismatch.md): the task
+    asked for "the counts of the teleported qubit", the model reported a 1-bit
+    marginal over the `out` register, and the width mismatch failed correct code
+    on every candidate."""
+    outcome = verify_native_sampled_counts({"0": 900, "1": 124}, _teleport_sampled())
+    assert outcome.passed
+    assert outcome.details["protocol"]["register_used"] == "out"
+    assert outcome.details["protocol"]["register_width"] == 1
+
+
+def test_a_fabricated_register_marginal_still_fails():
+    """The marginal is the circuit's true distribution for that register, so a
+    made-up report is caught exactly as a full-width one is. (A *constant* "0"
+    report happens to sit inside the two-sample bound against 0.88/0.12 at these
+    shot counts — that is the shot-noise bound being honest, not a hole; a uniform
+    invention is 0.38 away and fails plainly.)"""
+    outcome = verify_native_sampled_counts({"0": 512, "1": 512}, _teleport_sampled())
+    assert outcome.result is VerificationResultKind.FAIL
+
+
+def test_ambiguous_or_absent_register_matches_stay_failures():
+    """Ambiguity must not become absolution: with two registers of the same
+    width there is no single defensible marginal, so the width mismatch stands."""
+    two_singles = {
+        "counts": {"0 0": 1024, "1 1": 1024},
+        "shots": 2048,
+        "seed": 1234,
+        "registers": [{"name": "b", "width": 1}, {"name": "a", "width": 1}],
+    }
+    ambiguous = verify_native_sampled_counts({"0": 1024}, two_singles)
+    assert ambiguous.result is VerificationResultKind.FAIL
+    assert "matches 2 registers" in ambiguous.details["error"]
+
+    # No register matches the reported width at all.
+    assert not verify_native_sampled_counts({"00": 1024}, _teleport_sampled()).passed
+
+    # Cirq/PennyLane export one concatenated key and no `registers` list: the
+    # mismatch keeps failing with the plain width message.
+    no_registers = {"counts": {"000": 1024, "111": 1024}, "shots": 2048, "seed": 1234}
+    plain = verify_native_sampled_counts({"0": 1024}, no_registers)
+    assert plain.result is VerificationResultKind.FAIL
+    assert "sampled 3-bit keys" in plain.details["error"]
+
+
+def test_full_width_reports_are_unaffected_by_the_registers_list():
+    outcome = verify_native_sampled_counts(
+        {
+            "0 00": 226,
+            "0 01": 226,
+            "0 10": 225,
+            "0 11": 226,
+            "1 00": 30,
+            "1 01": 30,
+            "1 10": 31,
+            "1 11": 30,
+        },
+        _teleport_sampled(),
+    )
+    assert outcome.passed
+    assert "register_used" not in outcome.details["protocol"]
+
+
+def test_a_malformed_registers_list_does_not_rescue_a_width_mismatch():
+    for broken in ([], "out", [{"name": "out", "width": 2}], [{"width": 1}]):
+        payload = {**_teleport_sampled(), "registers": broken}
+        assert not verify_native_sampled_counts({"0": 900, "1": 124}, payload).passed
+
+
 def test_exact_native_width_mismatch_is_strict_json_safe():
     """Same rule as verify_exact: no non-finite floats in evidence (the JSONB
     boundary rejects them and dead-letters the job)."""
