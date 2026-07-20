@@ -13,6 +13,8 @@ from majorana_contracts.enums import (
 from majorana_contracts.plan import Plan
 from majorana_llm import (
     LLMRequest,
+    LLMResponse,
+    RetryingLLM,
     StageOutputError,
     endpoint_for,
     extract_code,
@@ -360,3 +362,96 @@ def test_extract_code():
         'OPENQASM 2.0;\ninclude "qelib1.inc";\nqreg q[2];\nh q[0];\ncx q[0],q[1];\n'
     )
     assert "QuantumCircuit" in extract_code(text)
+
+
+# --- RetryingLLM ---------------------------------------------------------------
+#
+# `deepseek-reasoner` returned a completely empty completion at the planning stage on
+# two production runs (019f7dad-3a24, 019f7de2-a45b) and both dead-lettered before a
+# line of code was written. Once the real verification defects were fixed, the provider
+# returning nothing became the most common reason a run dies.
+
+
+class _EmptyThenText:
+    def __init__(self, empties: int) -> None:
+        self.calls = 0
+        self._empties = empties
+
+    async def complete(self, request, *, on_delta=None):
+        self.calls += 1
+        text = "" if self.calls <= self._empties else '{"ok": true}'
+        return LLMResponse(text=text, model=request.model, input_tokens=1, output_tokens=1)
+
+
+async def _no_sleep(_delay: float) -> None:
+    return None
+
+
+def _request() -> LLMRequest:
+    return LLMRequest(model="deepseek-reasoner", system="s", user="u")
+
+
+async def test_an_empty_completion_is_retried():
+    inner = _EmptyThenText(empties=2)
+    response = await RetryingLLM(inner, sleep=_no_sleep).complete(_request())
+    assert inner.calls == 3
+    assert response.text == '{"ok": true}'
+
+
+async def test_retries_are_bounded_and_the_last_empty_reply_is_returned_not_raised():
+    """Returned, not raised: the caller's parser reports what was missing, and its
+    message already tells an empty completion apart from prose (`len=0, blank=True`)."""
+    inner = _EmptyThenText(empties=99)
+    response = await RetryingLLM(inner, attempts=3, sleep=_no_sleep).complete(_request())
+    assert inner.calls == 3
+    assert response.text == ""
+
+
+async def test_a_transport_failure_is_retried_then_re_raised():
+    class _AlwaysRaises:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        async def complete(self, request, *, on_delta=None):
+            self.calls += 1
+            raise TimeoutError("connection reset")
+
+    inner = _AlwaysRaises()
+    with pytest.raises(TimeoutError):
+        await RetryingLLM(inner, attempts=3, sleep=_no_sleep).complete(_request())
+    assert inner.calls == 3
+
+
+async def test_a_stream_that_already_emitted_is_never_replayed():
+    """Retrying after deltas reached the caller would duplicate the run's visible
+    output. A response that delivered something is delivered, however short."""
+
+    class _StreamsThenEmpty:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        async def complete(self, request, *, on_delta=None):
+            self.calls += 1
+            if on_delta is not None:
+                await on_delta("partial", "output")
+            return LLMResponse(text="", model=request.model, input_tokens=1, output_tokens=1)
+
+    inner = _StreamsThenEmpty()
+    seen: list[str] = []
+
+    async def collect(text: str, _channel: str) -> None:
+        seen.append(text)
+
+    await RetryingLLM(inner, sleep=_no_sleep).complete(_request(), on_delta=collect)
+    assert inner.calls == 1
+    assert seen == ["partial"]
+
+
+async def test_backoff_grows_between_attempts():
+    delays: list[float] = []
+
+    async def record(delay: float) -> None:
+        delays.append(delay)
+
+    await RetryingLLM(_EmptyThenText(empties=99), attempts=3, sleep=record).complete(_request())
+    assert delays == [1.0, 2.0]

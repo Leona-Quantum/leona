@@ -952,3 +952,67 @@ async def test_a_critic_that_never_parses_still_fails_closed_but_blames_itself()
     assert not any(
         "semantic verification" in step for step in (output.repair.repairs if output.repair else [])
     )
+
+
+class FencedCriticLLM:
+    """Returns a correct verdict wrapped in a ```json fence and a sentence of
+    preamble — the reply a chat-tuned model gives when asked for JSON."""
+
+    def __init__(self) -> None:
+        self.calls = 0
+
+    async def complete(self, request, *, on_delta=None):
+        self.calls += 1
+        text = (
+            "Here is my judgement.\n\n```json\n"
+            '{"decision":"pass","confidence":"high","severity":"none",'
+            '"summary":"Request, plan, code, and result align.",'
+            '"failed_checks":[],"mismatches":[],"suggestions":[],"repair_plan":[],'
+            '"required_recheck":[],"residual_risks":[]}\n```\n'
+        )
+        return LLMResponse(text=text, model=request.model, input_tokens=1, output_tokens=1)
+
+
+async def test_a_fenced_critic_verdict_is_salvaged_rather_than_costing_a_candidate():
+    """`model_validate_json` needs the whole reply to be the object, so a fence or a
+    line of preamble discarded a judgement that was sitting intact inside the
+    response — and the fabricated fallback that replaced it is blocking. The plan
+    stage has had this salvage since it was written; the critic never did."""
+    llm = FencedCriticLLM()
+    candidate = _candidate()
+    output = await EvidenceVerifier(llm=llm, task_prompt="W state").verify(
+        candidate, _execution(candidate), _plan()
+    )
+    assert llm.calls == 1, "spent a second call on a reply that was already parseable"
+    assert output.decision is VerifierDecision.PASS
+
+
+async def test_a_critic_reply_with_an_unexpected_field_is_still_judged():
+    """`extra="forbid"` turned a cosmetic serialization slip into the rejection of
+    code the critic never judged. A stray key is not an objection."""
+
+    class ExtraFieldCriticLLM:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        async def complete(self, request, *, on_delta=None):
+            self.calls += 1
+            return LLMResponse(
+                text=(
+                    '{"decision":"pass","confidence":"high","severity":"none",'
+                    '"summary":"Aligned.","failed_checks":[],"mismatches":[],'
+                    '"suggestions":[],"repair_plan":[],"required_recheck":[],'
+                    '"residual_risks":[],"notes":"an unrequested field"}'
+                ),
+                model=request.model,
+                input_tokens=1,
+                output_tokens=1,
+            )
+
+    llm = ExtraFieldCriticLLM()
+    candidate = _candidate()
+    output = await EvidenceVerifier(llm=llm, task_prompt="W state").verify(
+        candidate, _execution(candidate), _plan()
+    )
+    assert llm.calls == 1
+    assert output.decision is VerifierDecision.PASS
