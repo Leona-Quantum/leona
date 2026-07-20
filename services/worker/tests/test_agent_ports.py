@@ -659,6 +659,147 @@ async def test_statistical_incapacity_skips_without_blocking_the_candidate():
     assert evidence_strength_of(output.deterministic_checks) is EvidenceStrength.STRUCTURAL
 
 
+def _bell_native_statevector() -> dict:
+    amp = 1 / (2**0.5)
+    amplitudes = [0.0] * 8
+    amplitudes[0] = amp  # |00>
+    amplitudes[6] = amp  # |11>
+    return {
+        "amplitudes": amplitudes,
+        "qubits": 2,
+        "endianness": "q0_lsb",
+        "clbits": 2,
+        "measurement_map": {"0": 0, "1": 1},
+    }
+
+
+async def test_statistical_prefers_native_statevector_over_interchange_qasm():
+    """plans/framework-native-verification.md: the framework's own state is the
+    substrate. The interchange QASM here describes a DIFFERENT circuit (|11> via
+    x on both qubits); counts matching the native Bell state must pass, which
+    proves the conversion is out of the trust path when native evidence exists."""
+    counts = {"00": 512, "11": 512}
+    observation = _statistical_observation(counts)
+    observation["interchange_qasm"] = (
+        'OPENQASM 2.0;\ninclude "qelib1.inc";\nqreg q[2];\ncreg c[2];\n'
+        "x q[0];\nx q[1];\nmeasure q -> c;\n"
+    )
+    observation["native_statevector"] = _bell_native_statevector()
+    candidate = _candidate()
+    output = await EvidenceVerifier(llm=PassingCriticLLM(), task_prompt="Bell state").verify(
+        candidate,
+        _execution(candidate, result={"counts": counts}, observation=observation),
+        _statistical_plan(),
+    )
+    checks = _checks_by_method(output)
+    assert checks["statistical"]["result"] == "pass"
+    assert checks["statistical"]["details"]["evidence"] == "native_statevector_vs_reported_counts"
+    assert output.decision is VerifierDecision.PASS
+
+
+async def test_feed_forward_circuit_earns_a_physical_grade_via_native_sampling():
+    """The other half of the 019f7e46-d688 story: after the incapacity fix a
+    teleportation run merely stopped failing (structural). With the observer's
+    trusted sampled counts it earns `physical` — the reported counts agree with a
+    trusted re-execution of the actual circuit object."""
+    counts = {"00": 1030, "11": 1018}
+    observation = _statistical_observation(counts)
+    observation["interchange_qasm"] = _TELEPORTATION_QASM  # statistical: skipped
+    observation["resource_metrics"]["qubits"] = 3
+    observation["resource_metrics"]["measurement_count"] = 3
+    observation["native_sampled"] = {
+        "counts": {"00": 1005, "11": 1043},
+        "shots": 2048,
+        "seed": 1234,
+        "bit_order": "big",
+    }
+    plan = _statistical_plan()
+    plan.qubits_estimate = 3
+    candidate = _candidate()
+    output = await EvidenceVerifier(llm=PassingCriticLLM(), task_prompt="teleportation").verify(
+        candidate,
+        _execution(candidate, result={"counts": counts}, observation=observation),
+        plan,
+    )
+    checks = _checks_by_method(output)
+    assert checks["statistical"]["result"] == "skipped"
+    assert checks["statistical_native"]["result"] == "pass"
+    assert output.decision is VerifierDecision.PASS
+    assert evidence_strength_of(output.deterministic_checks) is EvidenceStrength.PHYSICAL
+
+
+async def test_native_sampling_rejects_counts_the_trusted_execution_contradicts():
+    counts = {"01": 1024, "10": 1024}  # fabricated: the circuit never yields these
+    observation = _statistical_observation(counts)
+    observation["native_sampled"] = {
+        "counts": {"00": 1024, "11": 1024},
+        "shots": 2048,
+        "seed": 1234,
+        "bit_order": "little",
+    }
+    candidate = _candidate()
+    output = await EvidenceVerifier(llm=MustNotRunLLM(), task_prompt="Bell state").verify(
+        candidate,
+        _execution(candidate, result={"counts": counts}, observation=observation),
+        _statistical_plan(),
+    )
+    assert _checks_by_method(output)["statistical_native"]["result"] == "fail"
+    assert output.decision is VerifierDecision.FAIL
+
+
+async def test_exact_falls_back_to_native_statevector_when_export_failed():
+    """A failed OpenQASM export downgrades the export, never the verdict: with no
+    interchange QASM but native evidence present, `exact` compares the framework's
+    own final state against the plan's declarative reference."""
+    counts = {"00": 512, "11": 512}
+    observation = _statistical_observation(counts)
+    del observation["interchange_qasm"]
+    del observation["verification_repeat_result"]
+    observation["native_statevector"] = _bell_native_statevector()
+    plan = _exact_plan(
+        reference_source="plan_declared",
+        reference_qasm=_BELL_REFERENCE_QASM,
+    )
+    candidate = _candidate()
+    output = await EvidenceVerifier(llm=PassingCriticLLM(), task_prompt="Bell state").verify(
+        candidate,
+        _execution(candidate, result={"counts": counts}, observation=observation),
+        plan,
+    )
+    check = _checks_by_method(output)["exact"]
+    assert check["result"] == "pass"
+    assert check["details"]["evidence"] == "native_statevector_vs_reference_qasm"
+    assert "all-zero state" in check["details"]["evidence_scope"]
+
+
+async def test_a_plan_without_statistical_still_gets_the_opportunistic_native_check():
+    """The QPE shape: verification_plan = ["return_contract"] graded structural.
+    When the observer produced trusted sampled counts and the run reported counts,
+    the comparison runs anyway and lifts the evidence to physical."""
+    counts = {"00": 512, "11": 512}
+    observation = _statistical_observation(counts)
+    del observation["verification_repeat_result"]
+    observation["native_sampled"] = {
+        "counts": {"00": 1005, "11": 1043},
+        "shots": 2048,
+        "seed": 1234,
+        "bit_order": "little",
+    }
+    plan = _statistical_plan()
+    plan.verification_plan.methods = [VerificationMethod.RETURN_CONTRACT]
+    candidate = _candidate()
+    output = await EvidenceVerifier(llm=PassingCriticLLM(), task_prompt="Bell state").verify(
+        candidate,
+        _execution(candidate, result={"counts": counts}, observation=observation),
+        plan,
+    )
+    checks = _checks_by_method(output)
+    assert "statistical" not in checks
+    assert checks["statistical_native"]["result"] == "pass"
+    assert output.decision is VerifierDecision.PASS
+    assert evidence_strength_of(output.deterministic_checks) is EvidenceStrength.PHYSICAL
+
+
 async def test_statistical_check_fails_when_no_evidence_is_available_at_all():
     observation = _statistical_observation({"00": 1})
     del observation["verification_repeat_result"]

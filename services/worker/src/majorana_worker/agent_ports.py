@@ -46,6 +46,9 @@ from majorana_sandbox import run as sandbox_run
 from majorana_verification import (
     extract_counts,
     verify_exact,
+    verify_exact_native,
+    verify_native_sampled_counts,
+    verify_native_statistical_counts,
     verify_return_contract,
     verify_statistical_counts,
     verify_statistical_counts_pair,
@@ -597,6 +600,31 @@ class EvidenceVerifier:
                         "details": outcome.details,
                     }
                 )
+        # Opportunistic physical evidence for plans that requested no statistical
+        # check at all (the QPE shape that graded `structural`): when the run
+        # reported counts AND the observer produced a trusted re-execution, the
+        # comparison is free and either upgrades the run's evidence to physical
+        # or catches counts the actual circuit contradicts. It cannot fire a
+        # false "required evidence unavailable" — absent evidence appends nothing.
+        if circuit_expected and VerificationMethod.STATISTICAL not in methods:
+            native_sampled = execution.observation.get("native_sampled")
+            reported = extract_counts(execution.result, plan.expected_output_keys)
+            if reported is not None and isinstance(native_sampled, dict):
+                thresholds = (
+                    plan.verification_plan.thresholds if plan.verification_plan else None
+                ) or {}
+                outcome = verify_native_sampled_counts(
+                    reported,
+                    native_sampled,
+                    thresholds.get("tvd_max", thresholds.get("total_variation_max")),
+                )
+                checks.append(
+                    {
+                        "method": outcome.method.value,
+                        "result": outcome.result.value,
+                        "details": outcome.details,
+                    }
+                )
         return checks
 
     @staticmethod
@@ -676,6 +704,26 @@ class EvidenceVerifier:
         else:
             reference = verification_plan.reference_qasm if verification_plan else None
         candidate_qasm = extract_interchange_qasm(execution.observation).qasm
+        native_statevector = execution.observation.get("native_statevector")
+        if reference is not None and candidate_qasm is None and isinstance(
+            native_statevector, dict
+        ):
+            # A failed OpenQASM export downgrades the EXPORT, never the verdict
+            # (plans/framework-native-verification.md): fall back to comparing the
+            # framework-native final state against the reference. Weaker than the
+            # unitary comparison — the outcome's evidence says so.
+            outcome = verify_exact_native(reference, native_statevector)
+            merged = details | outcome.details
+            merged["evidence_scope"] = (
+                "the framework-native final state matches the reference circuit's "
+                "(action on the all-zero state; the candidate's OpenQASM export "
+                "was unavailable)"
+            )
+            return {
+                "method": outcome.method.value,
+                "result": outcome.result.value,
+                "details": merged,
+            }
         if reference is None or candidate_qasm is None:
             # Fail, never skip. A check that cannot run is missing evidence, and the
             # plan contract already refuses the reference-less cases it can see — so
@@ -688,6 +736,7 @@ class EvidenceVerifier:
                     "error": "required evidence unavailable",
                     "reference_qasm": reference is not None,
                     "interchange_qasm": candidate_qasm is not None,
+                    "native_statevector": isinstance(native_statevector, dict),
                 },
             }
         outcome = verify_exact(reference, candidate_qasm, max_qubits=EXACT_MAX_QUBITS)
@@ -710,25 +759,51 @@ class EvidenceVerifier:
 
     @staticmethod
     def _statistical_checks(execution: ExecutionEvidence, plan: Plan) -> list[dict[str, Any]]:
-        """Two independent things, reported separately because they prove
-        different claims.
+        """Independent claims, reported separately.
 
-        `statistical` is correctness: the reported counts against the exact Born
-        distribution of the circuit that actually ran. `statistical_reproducibility`
-        is only that the program agrees with itself across two executions.
+        `statistical` is correctness: the reported counts against the Born
+        distribution of the circuit that actually ran. The distribution comes
+        from the framework's OWN simulator when the observer produced it
+        (`native_statevector` — plans/framework-native-verification.md: no
+        conversion in the trust path; three of the four defects in that family
+        were conversion defects), and from simulating the interchange QASM only
+        as the fallback for runs whose observer produced no native evidence.
 
-        Until 2026-07-20 only the second one was wired in, so a candidate that was
-        consistently wrong passed the deterministic verifier and physical
-        correctness rested on unaided critic opinion. The stronger check has the
-        weaker precondition — one counts dict, no promised pair.
+        `statistical_native` is the mid-circuit-capable physical check: reported
+        counts against a trusted re-execution of the circuit object through the
+        framework's own sampler. Feed-forward circuits have no statevector, so
+        this is the check that lets them earn a physical grade at all.
+
+        `statistical_reproducibility` is only that the program agrees with
+        itself across two executions.
         """
         thresholds = (plan.verification_plan.thresholds if plan.verification_plan else None) or {}
         threshold = thresholds.get("tvd_max", thresholds.get("total_variation_max"))
         reported = extract_counts(execution.result, plan.expected_output_keys)
+        native_statevector = execution.observation.get("native_statevector")
         qasm = extract_interchange_qasm(execution.observation).qasm
         checks: list[dict[str, Any]] = []
-        if reported is not None and qasm is not None:
+        if reported is not None and isinstance(native_statevector, dict):
+            outcome = verify_native_statistical_counts(native_statevector, reported, threshold)
+            checks.append(
+                {
+                    "method": outcome.method.value,
+                    "result": outcome.result.value,
+                    "details": outcome.details,
+                }
+            )
+        elif reported is not None and qasm is not None:
             outcome = verify_statistical_counts(qasm, reported, threshold)
+            checks.append(
+                {
+                    "method": outcome.method.value,
+                    "result": outcome.result.value,
+                    "details": outcome.details,
+                }
+            )
+        native_sampled = execution.observation.get("native_sampled")
+        if reported is not None and isinstance(native_sampled, dict):
+            outcome = verify_native_sampled_counts(reported, native_sampled, threshold)
             checks.append(
                 {
                     "method": outcome.method.value,
@@ -759,6 +834,8 @@ class EvidenceVerifier:
                     "details": {
                         "error": "required evidence unavailable",
                         "reported_counts": reported is not None,
+                        "native_statevector": isinstance(native_statevector, dict),
+                        "native_sampled": isinstance(native_sampled, dict),
                         "interchange_qasm": qasm is not None,
                         "repeat_execution": second is not None,
                     },
@@ -897,6 +974,13 @@ class RepoArtifactPublisher:
             )
             artifact_id = artifact.id
         qasm = conversion.qasm if conversion and conversion.status == "available" else None
+        # A failed export downgrades the EXPORT, never the verdict
+        # (plans/framework-native-verification.md). Until 2026-07-20 this row
+        # said `lossless` even when no QASM existed at all.
+        export_status = ExportStatus.LOSSLESS if qasm else ExportStatus.UNSUPPORTED
+        export_reason = (
+            None if qasm else (conversion.reason if conversion else "framework export unavailable")
+        )
         resource_metrics = execution.observation.get("resource_metrics")
         resource_estimates = resource_metrics if isinstance(resource_metrics, dict) else None
         critic = verification.critic if isinstance(verification.critic, dict) else {}
@@ -945,7 +1029,8 @@ class RepoArtifactPublisher:
             code=candidate.source,
             code_lang=candidate.framework.value,
             fingerprint=candidate.source_fingerprint,
-            export_status=ExportStatus.LOSSLESS,
+            export_status=export_status,
+            export_reason=export_reason,
             framework_variants=None,
             resource_estimates=resource_estimates,
             limitations=limitations,

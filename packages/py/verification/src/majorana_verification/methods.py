@@ -16,6 +16,11 @@ from majorana_contracts.enums import VerificationMethod, VerificationResultKind
 from majorana_openqasm import OpenQASMError, normalize, resource_metrics
 from pydantic import BaseModel, Field
 
+from majorana_verification.native import (
+    native_counts_vs_ideal,
+    native_statevector_vs_reference,
+    sampled_counts_comparison,
+)
 from majorana_verification.statevector import (
     EquivalenceReport,
     StatevectorIncapable,
@@ -123,6 +128,75 @@ def verify_statistical_counts(
         )
     outcome = _from_report(VerificationMethod.STATISTICAL, report)
     outcome.details["evidence"] = "direct_simulation_vs_reported_counts"
+    return outcome
+
+
+def verify_exact_native(
+    reference_qasm: str,
+    payload: Any,
+    tolerance: float = 1e-9,
+) -> VerificationOutcome:
+    """The `exact` check when the candidate's OpenQASM export is unavailable:
+    the plan's declarative reference, simulated in Qiskit, against the state the
+    selected framework's own simulator computed. Statevector-only — the evidence
+    says so — and skipped when the REFERENCE itself has no statevector."""
+    try:
+        report = native_statevector_vs_reference(reference_qasm, payload, tolerance=tolerance)
+    except StatevectorIncapable as exc:
+        return _skipped(VerificationMethod.EXACT, exc)
+    except ValueError as exc:
+        return VerificationOutcome(
+            method=VerificationMethod.EXACT, result=FAIL, details={"error": str(exc)}
+        )
+    outcome = _from_report(VerificationMethod.EXACT, report)
+    outcome.details["evidence"] = "native_statevector_vs_reference_qasm"
+    return outcome
+
+
+def verify_native_statistical_counts(
+    payload: Any,
+    counts: dict[str, int],
+    threshold: float | None = None,
+) -> VerificationOutcome:
+    """The `statistical` check on framework-native evidence: the run's reported
+    counts against the Born distribution of the statevector the selected
+    framework's OWN simulator computed inside the trusted observer. Same claim
+    as verify_statistical_counts, minus the OpenQASM conversion in the trust
+    path. Malformed evidence fails — the observer records incapacity as an error
+    key, so a payload that does not validate is a pipeline defect, not a limit."""
+    try:
+        report = native_counts_vs_ideal(payload, counts, threshold=threshold)
+    except ValueError as exc:
+        return VerificationOutcome(
+            method=VerificationMethod.STATISTICAL, result=FAIL, details={"error": str(exc)}
+        )
+    outcome = _from_report(VerificationMethod.STATISTICAL, report)
+    outcome.details["evidence"] = "native_statevector_vs_reported_counts"
+    return outcome
+
+
+def verify_native_sampled_counts(
+    reported: dict[str, int],
+    sampled_payload: Any,
+    threshold: float | None = None,
+) -> VerificationOutcome:
+    """The mid-circuit-capable physical check: reported counts against a trusted
+    re-execution of the actual circuit object through the framework's own sampler
+    with a fixed seed. Works for feed-forward circuits (teleportation) that have
+    no statevector. Stronger than statistical_reproducibility — the trusted side
+    executes the circuit the observer held, not the user's result-assembly code —
+    and weaker than the exact Born comparison, which is why it is a separate
+    method with its own name rather than an alias of `statistical`."""
+    try:
+        report = sampled_counts_comparison(reported, sampled_payload, threshold=threshold)
+    except ValueError as exc:
+        return VerificationOutcome(
+            method=VerificationMethod.STATISTICAL_NATIVE,
+            result=FAIL,
+            details={"error": str(exc)},
+        )
+    outcome = _from_report(VerificationMethod.STATISTICAL_NATIVE, report)
+    outcome.details["evidence"] = "native_trusted_reexecution_vs_reported_counts"
     return outcome
 
 

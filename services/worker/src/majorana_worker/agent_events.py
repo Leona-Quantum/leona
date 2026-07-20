@@ -156,6 +156,14 @@ class AgentEventObserver:
             candidate = await self._store.candidate(run_id, UUID(str(candidate_id)))
             conversion = await self._store.conversion_for(run_id, candidate.candidate_id)
             qasm_available = bool(conversion and conversion.status == "available")
+            # A failed export downgrades the EXPORT, never the verdict — and until
+            # 2026-07-20 this event said `lossless` even when no QASM existed.
+            export_status = ExportStatus.LOSSLESS if qasm_available else ExportStatus.UNSUPPORTED
+            export_reason = (
+                None
+                if qasm_available
+                else (conversion.reason if conversion else "framework export unavailable")
+            )
             await self._emit(
                 run_id,
                 result,
@@ -173,8 +181,8 @@ class AgentEventObserver:
                     "framework_variants": {},
                     "conversion_options": ["openqasm"] if qasm_available else [],
                     "execution_options": ["simulate"],
-                    "export_status": ExportStatus.LOSSLESS,
-                    "export_reason": None,
+                    "export_status": export_status,
+                    "export_reason": export_reason,
                     "finalization_reason": "latest candidate passed bound verification",
                 },
             )

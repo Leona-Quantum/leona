@@ -121,7 +121,10 @@ from .lifecycle import (
 # 1.3.0: VerificationResultKind gains "skipped" — a check that was incapable of
 # evaluating the circuit (vs. one that ran and disagreed). Never blocks, never
 # lifts evidence strength.
-CONTRACTS_VERSION = "1.3.0"
+# 1.4.0: VerificationMethod gains "statistical_native" (physical) — reported
+# counts vs a trusted framework-native re-execution of the circuit object; the
+# mid-circuit-capable check (plans/framework-native-verification.md).
+CONTRACTS_VERSION = "1.4.0"
 
 __all__ = [
     "CONTRACTS_VERSION",
