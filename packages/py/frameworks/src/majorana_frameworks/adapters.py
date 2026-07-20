@@ -169,6 +169,18 @@ class PythonFrameworkAdapter:
     # arguments builds a CountsMP whose `.wires` is `[]` while measuring the entire
     # tape. Falling back to 1 there fixed Cirq and left PennyLane failing the same
     # policy check, which a second live run caught.
+    #
+    # And an expectation is not a measurement in the policy's sense. PennyLane's
+    # `tape.measurements` holds EVERY terminal MeasurementProcess, including
+    # `qml.expval(H)` — the idiomatic ending of every VQE QNode. Counting those
+    # made `measurement_policy: none` unsatisfiable for idiomatic PennyLane
+    # variational code: live run 019f7f9e-6e4c burned four candidates on
+    # "FINAL_CIRCUIT carries 2 measurement(s)" where the two "measurements" were
+    # one expectation value. The policy is about per-shot readout of qubits —
+    # sample/counts/probs and mid-circuit measures — not about which estimator a
+    # QNode returns, so only those count. The same qiskit-shaped VQE passed the
+    # same day (019f7f7b-da6b) because a bare unmeasured QuantumCircuit is easy
+    # to bind there; the check must not punish PennyLane for its idiom.
     def trusted_observer(self, source: str, *, circuit_expected: bool) -> str:
         if not circuit_expected:
             return ""
@@ -198,7 +210,11 @@ if _majorana_final_circuit is not None:
             if _majorana_tape is None:
                 _majorana_tape = _majorana_final_circuit
             _majorana_operations = _majorana_list(_majorana_getattr(_majorana_tape, "operations", []))
-            _majorana_measurements = _majorana_list(_majorana_getattr(_majorana_tape, "measurements", []))
+            _majorana_measurements = [
+                op
+                for op in _majorana_getattr(_majorana_tape, "measurements", [])
+                if _majorana_type(op).__name__ in ("SampleMP", "CountsMP", "ProbabilityMP")
+            ]
             _majorana_gate_operations = _majorana_operations
             _majorana_qubits = _majorana_len(_majorana_getattr(_majorana_tape, "wires", []))
             _majorana_depth = None

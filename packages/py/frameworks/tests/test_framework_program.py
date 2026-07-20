@@ -212,12 +212,18 @@ def test_pennylane_measurements_are_not_counted_as_gates():
     class Operation:
         wires = (0, 1)
 
+    # Only per-shot readout processes count as measurements; an expectation
+    # value is an estimator directive (see the expval test below and the
+    # adapter comment naming live run 019f7f9e-6e4c).
+    class CountsMP:
+        wires = (0,)
+
     class ExpectationMP:
         wires = (0,)
 
     class Tape:
         operations = [Operation()]
-        measurements = [ExpectationMP()]
+        measurements = [CountsMP(), ExpectationMP()]
         wires = (0, 1)
 
         def __bool__(self):
@@ -709,3 +715,54 @@ def test_native_statevector_limit_pins_the_verifier_ceiling():
     match = re.search(r"_MAJORANA_NATIVE_SV_QUBITS = (\d+)", adapters._NATIVE_LIMITS)
     assert match is not None
     assert int(match.group(1)) <= NATIVE_STATEVECTOR_MAX_QUBITS
+
+
+def test_pennylane_expectation_is_not_a_measurement():
+    """`qml.expval(H)` is how every idiomatic PennyLane VQE ends, and it is an
+    estimator directive, not a per-shot readout of qubits. Counting it made
+    `measurement_policy: none` unsatisfiable for PennyLane variational code:
+    live run 019f7f9e-6e4c failed four candidates on "FINAL_CIRCUIT carries 2
+    measurement(s)" where both were one expectation value, while the identical
+    qiskit-shaped VQE passed the same day. Runs the real observer."""
+    pytest.importorskip("pennylane")
+    import json
+    import tempfile
+    from pathlib import Path
+
+    from majorana_sandbox.spec import ExecutionSpec, compose_execution
+
+    code = (
+        "import pennylane as qml\n"
+        "dev = qml.device('default.qubit', wires=2, shots=100)\n"
+        "H = 0.5 * qml.PauliZ(0) + 1.2 * qml.PauliZ(1) + 0.8 * qml.PauliX(0) @ qml.PauliX(1)\n"
+        "@qml.qnode(dev)\n"
+        "def circuit():\n"
+        "    qml.RY(0.3, wires=0)\n"
+        "    qml.CNOT([0, 1])\n"
+        "    return qml.expval(H)\n"
+        "circuit()\n"
+        "FINAL_CIRCUIT = qml.workflow.construct_tape(circuit)()\n"
+        "RESULT = {'ground_state_energy': -1.87}\n"
+    )
+    program = FrameworkProgram(Framework.PENNYLANE, code)
+    with tempfile.TemporaryDirectory() as directory:
+        path = Path(directory) / "observation.json"
+        exec(  # noqa: S102 - the point of the test is to run the real epilogue
+            compose_execution(
+                ExecutionSpec(
+                    code=program.normalized_source,
+                    trusted_setup=program.trusted_setup(circuit_expected=True),
+                    trusted_observer=program.trusted_observer(circuit_expected=True),
+                    protected_result_path=str(path),
+                    source_fingerprint=program.fingerprint,
+                )
+            ),
+            {},
+        )
+        metrics = json.loads(path.read_text())["resource_metrics"]
+
+    assert metrics["qubits"] == 2
+    assert metrics["measurement_count"] == 0, (
+        "an expectation value was counted as a per-shot measurement; "
+        "measurement_policy `none` is unsatisfiable for PennyLane VQEs again"
+    )
