@@ -186,3 +186,27 @@ def test_a_ten_qubit_hamiltonian_is_still_diagonalizable():
     energy = ground_state_energy(terms)
     # |sum of coefficients| bounds the spectrum: ||H|| <= sum|c| = 1.5.
     assert -1.5 <= energy <= 0.0
+
+
+def test_the_real_production_candidate_passes_comfortably():
+    """The false-negative guard, against real model output rather than a fixture.
+
+    Production VQE run 019f7f2d-9504 wrote a correct candidate — `FINAL_CIRCUIT`
+    bound to the unmeasured ansatz, energy estimated from separate per-basis
+    measured copies — and the run died anyway on a plan defect. That exact program
+    was re-executed with qiskit-aer outside CI and reported
+    **-1.875830078125** in 47 COBYLA evaluations.
+
+    A new check's first duty is not to fail correct code. This one passes that
+    candidate with roughly 48x margin, so the tolerance is not sitting on a knife
+    edge against the output a real model actually produces. The number is pinned
+    rather than recomputed because qiskit-aer is not in the dev/CI venv (only in
+    infra/sandbox/Dockerfile) — recomputing here would silently exercise nothing.
+    """
+    reported = -1.875830078125
+    outcome = verify_exact_diag(_VQE_TERMS, reported, shots=4096)
+    assert outcome.result is VerificationResultKind.PASS
+    error = outcome.details["scores"]["absolute_error"]
+    tolerance = outcome.details["protocol"]["tolerance"]
+    assert error == pytest.approx(0.003, abs=1e-4)
+    assert tolerance > 10 * error, "a bound this close to real output would fail correct code"
