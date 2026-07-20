@@ -888,3 +888,65 @@ async def test_a_genuinely_absent_result_still_reports_it_missing():
     output = await SandboxCandidateExecutor(NoResultSandbox()).run_candidate(_candidate(), _plan())
     assert output.observation["evidence_error"] == "RESULT_missing"
     assert "never assigned" in output.observation["evidence_hint"]
+
+
+class FlakyCriticLLM:
+    """Returns unparseable evidence once, then valid evidence — the shape of a
+    serialization slip rather than a judgement."""
+
+    def __init__(self) -> None:
+        self.calls = 0
+
+    async def complete(self, request, *, on_delta=None):
+        self.calls += 1
+        text = (
+            "I'll evaluate this circuit."
+            if self.calls == 1
+            else (
+                '{"decision":"pass","confidence":"high","severity":"none",'
+                '"summary":"Request, plan, code, and result align.","passed_checks":["intent"],'
+                '"failed_checks":[],"mismatches":[],"suggestions":[],"repair_plan":[],'
+                '"required_recheck":[],"residual_risks":[]}'
+            )
+        )
+        return LLMResponse(text=text, model=request.model, input_tokens=1, output_tokens=1)
+
+
+class BrokenCriticLLM:
+    def __init__(self) -> None:
+        self.calls = 0
+
+    async def complete(self, request, *, on_delta=None):
+        self.calls += 1
+        return LLMResponse(
+            text="no JSON here at all", model=request.model, input_tokens=1, output_tokens=1
+        )
+
+
+async def test_an_unparseable_critic_response_is_retried_before_it_costs_a_candidate():
+    """A malformed completion is the CRITIC's failure, not the code's, but the
+    fabricated verdict is blocking, consumes a candidate, and carries a repair plan
+    the agent cannot act on ("re-run semantic verification"). So the repair loop could
+    not converge and four in a row exhausted the budget — a 3-qubit W state died that
+    way on production run 019f7db9-f25c."""
+    llm = FlakyCriticLLM()
+    candidate = _candidate()
+    output = await EvidenceVerifier(llm=llm, task_prompt="W state").verify(
+        candidate, _execution(candidate), _plan()
+    )
+    assert llm.calls == 2, "did not retry the critic"
+    assert output.decision is VerifierDecision.PASS
+
+
+async def test_a_critic_that_never_parses_still_fails_closed_but_blames_itself():
+    llm = BrokenCriticLLM()
+    candidate = _candidate()
+    output = await EvidenceVerifier(llm=llm, task_prompt="W state").verify(
+        candidate, _execution(candidate), _plan()
+    )
+    assert llm.calls == 2, "retried more or fewer times than once"
+    assert output.decision is VerifierDecision.FAIL  # fail-closed is still the rule
+    # The message must not read as a defect found in the candidate, and the repair plan
+    # must not ask the agent to fix the verifier.
+    assert "verifier failure" in ((output.critic or {}).get("summary") or "").lower()
+    assert not any("semantic verification" in step for step in (output.repair.repairs if output.repair else []))
