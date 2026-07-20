@@ -44,6 +44,7 @@ const VERIFICATION_METHOD_LABEL: Record<string, string> = {
   statistical: "Cross-checked the measured distribution",
   statistical_native: "Compared against a trusted re-run of the circuit",
   exact: "Compared the circuit against a reference",
+  exact_diag: "Diagonalized the Hamiltonian and compared the energy",
   statistical_reproducibility: "Re-ran the circuit and compared",
   resource_contract: "Checked qubit/resource usage",
   measurement_policy: "Checked measurement coverage",

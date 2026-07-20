@@ -46,6 +46,7 @@ from majorana_sandbox import run as sandbox_run
 from majorana_verification import (
     extract_counts,
     verify_exact,
+    verify_exact_diag,
     verify_exact_native,
     verify_native_sampled_counts,
     verify_native_statistical_counts,
@@ -660,6 +661,9 @@ class EvidenceVerifier:
             if method is VerificationMethod.EXACT:
                 checks.append(self._exact_check(execution, plan))
                 continue
+            if method is VerificationMethod.EXACT_DIAG:
+                checks.append(self._exact_diag_check(execution, plan))
+                continue
             outcome = None
             if method is VerificationMethod.RETURN_CONTRACT:
                 expected_type = (
@@ -841,6 +845,50 @@ class EvidenceVerifier:
             "method": outcome.method.value,
             "result": outcome.result.value,
             "details": merged,
+        }
+
+    @staticmethod
+    def _exact_diag_check(execution: ExecutionEvidence, plan: Plan) -> dict[str, Any]:
+        """The reported energy against independent classical ground truth.
+
+        The only check in the panel whose reference is neither the candidate's own
+        circuit nor a re-execution of it, and therefore the only physical evidence
+        a variational run can earn at all: a VQE reports a scalar, so `statistical`
+        has no distribution and `exact` has no reference circuit.
+
+        The plan contract has already guaranteed the Hamiltonian exists, is
+        uniform, fits the diagonalizer, and that primary_metric is a promised key
+        — so the only thing that can be absent here is the value the candidate was
+        supposed to print, and that is genuinely a fact about the candidate.
+        """
+        verification_plan = plan.verification_plan
+        terms = verification_plan.reference_hamiltonian if verification_plan else None
+        if not terms:
+            return {
+                "method": VerificationMethod.EXACT_DIAG.value,
+                "result": "fail",
+                "details": {
+                    "error": "required evidence unavailable",
+                    "reason": "the plan listed exact_diag without a reference_hamiltonian",
+                    "fault": "plan",
+                },
+            }
+        thresholds = (verification_plan.thresholds if verification_plan else None) or {}
+        metric = plan.success_criteria.primary_metric
+        outcome = verify_exact_diag(
+            [(term.coefficient, term.pauli) for term in terms],
+            execution.result.get(metric),
+            shots=plan.parameters.shots,
+            # `thresholds` finally has a consumer beyond tvd_max. It may only
+            # TIGHTEN the computed bound — see verify_exact_diag.
+            declared_tolerance=thresholds.get(
+                f"{metric}_error_max", thresholds.get("energy_error_max")
+            ),
+        )
+        return {
+            "method": outcome.method.value,
+            "result": outcome.result.value,
+            "details": outcome.details | {"metric": metric},
         }
 
     @staticmethod

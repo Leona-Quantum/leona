@@ -39,6 +39,12 @@ _DISTRIBUTION_KEY_TOKENS = ("counts", "distribution", "histogram", "probabilitie
 # services/worker/tests pins the two together against drift.
 EXACT_MAX_QUBITS = 10
 
+# Ceiling for `exact_diag`, mirroring majorana_verification.hamiltonian's own
+# EXACT_DIAG_MAX_QUBITS. Duplicated rather than imported for the same reason as
+# _DISTRIBUTION_KEY_NAMES above — verification depends on contracts, not the other
+# way round — and packages/py/verification/tests pins the two against drift.
+EXACT_DIAG_MAX_QUBITS = 10
+
 
 def _promises_distribution(key: str) -> bool:
     """Whether an expected_output_key names a measurement distribution.
@@ -102,6 +108,31 @@ class ArtifactContract(_PlanBase):
     top_level_execution: TopLevelExecution
 
 
+class PauliTerm(_PlanBase):
+    """One `coefficient * PauliString` term of a Hamiltonian, as data.
+
+    The reference for `exact_diag` is declared, never executed — the same rule
+    `reference_qasm` follows. A Hamiltonian written as framework code would have to
+    run in the sandbox to mean anything, which would make a second piece of
+    model-authored code the ground truth.
+    """
+
+    coefficient: float = Field(
+        description="Real coefficient. Complex Hamiltonians are not supported; "
+        "express them in a real Pauli basis."
+    )
+    pauli: str = Field(
+        min_length=1,
+        max_length=EXACT_DIAG_MAX_QUBITS,
+        pattern="^[IXYZixyz]+$",
+        description=(
+            "Pauli string over I, X, Y, Z with one character per qubit, qubit 0 "
+            "leftmost. 'ZI' is Z on qubit 0; 'XX' is X on both. Every term in a "
+            "Hamiltonian must be the same length."
+        ),
+    )
+
+
 class VerificationPlan(_PlanBase):
     methods: list[VerificationMethod] = Field(
         min_length=1,
@@ -146,6 +177,17 @@ class VerificationPlan(_PlanBase):
             "are ignored: only the unitary is compared."
         ),
     )
+    reference_hamiltonian: list[PauliTerm] | None = Field(
+        default=None,
+        max_length=256,
+        description=(
+            "The Hamiltonian the 'exact_diag' check diagonalizes, required when "
+            "'exact_diag' is listed. Write the operator the task actually names, in "
+            "a real Pauli basis, one term per entry — not a transcription of the "
+            "code you expect back. success_criteria.primary_metric must name the "
+            "result key holding the energy the run reports."
+        ),
+    )
     feedback_policy: str | None = Field(
         default=None, description="What to minimally fix and re-verify on failure"
     )
@@ -155,6 +197,46 @@ class VerificationPlan(_PlanBase):
     required_invariants: list[str] | None = Field(
         default=None, description="Invariants that must survive any repair iteration"
     )
+
+    @model_validator(mode="before")
+    @classmethod
+    def _drop_exact_diag_with_no_reference_at_all(cls, value: Any) -> Any:
+        """Legacy shape, and only the legacy shape: `exact_diag` with no Hamiltonian.
+
+        `exact_diag` was in VerificationMethod from migration 0001 but never in the
+        planner's schema, so `_drop_unplannable_methods` below normalized it away
+        and stored plans carrying it were parsed fine. Making it plannable turns
+        those same rows into hard validation errors — and `PlanRecord.plan` is
+        typed `Plan`, so every rehydration of a stored plan re-validates it. A run
+        resuming across this deploy would die on a plan that used to parse.
+
+        So the absent case normalizes to yesterday's behaviour: drop the method,
+        run without the check. That is a weaker outcome, not a wrong one — the run
+        grades exactly as it would have before this feature existed.
+
+        A payload that DOES carry `reference_hamiltonian` has clearly asked for the
+        check, and every way of getting it wrong from there stays a hard error with
+        a corrective objection: ragged strings, too many qubits, a metric the code
+        never prints. That is where the planner retry can actually help, and where
+        silently deleting a verification the plan asked for would be the
+        `_statistical_needs_distribution_evidence` mistake.
+        """
+        if not isinstance(value, dict):
+            return value
+        if value.get("reference_hamiltonian") is not None:
+            return value
+        methods = value.get("methods")
+        if not isinstance(methods, list):
+            return value
+        if not any(str(item) == VerificationMethod.EXACT_DIAG for item in methods):
+            return value
+        remaining = [item for item in methods if str(item) != VerificationMethod.EXACT_DIAG]
+        # min_length=1 still rejects a genuinely empty list; only a list emptied by
+        # this normalization gets the fallback the retired-method path also uses.
+        return {
+            **value,
+            "methods": remaining or [VerificationMethod.RETURN_CONTRACT.value],
+        }
 
     @field_validator("methods", mode="before")
     @classmethod
@@ -317,6 +399,60 @@ class Plan(_PlanBase):
             "(e.g. 'counts') to expected_output_keys, or drop 'statistical' and "
             "verify the scalars some other way."
         )
+
+    @model_validator(mode="after")
+    def _exact_diag_needs_a_diagonalizable_hamiltonian(self) -> "Plan":
+        """Reject an `exact_diag` plan the verifier would be forced to fail.
+
+        Same family as the three rules above. `exact_diag` compares a reported
+        energy against the true minimum eigenvalue of a declared operator, so it
+        needs three things the plan alone can guarantee: the operator, a width the
+        diagonalizer can hold, and a result key to read the energy out of. Any of
+        them missing fails identically on every candidate, which is the signature
+        that says the defect is in the plan.
+
+        The Pauli alphabet and per-term length are already enforced by PauliTerm's
+        pattern; what only the whole plan can see is that the terms agree with each
+        other and with the keys the run promises to print.
+        """
+        plan = self.verification_plan
+        if plan is None or VerificationMethod.EXACT_DIAG not in plan.methods:
+            return self
+        terms = plan.reference_hamiltonian
+        if not terms:
+            raise ValueError(
+                "verification_plan.methods includes 'exact_diag', which diagonalizes "
+                "a Hamiltonian and compares its ground-state energy against the "
+                "reported one, but reference_hamiltonian is empty. Write the operator "
+                "as Pauli terms (e.g. [{'coefficient': 0.5, 'pauli': 'ZI'}, "
+                "{'coefficient': 0.8, 'pauli': 'XX'}]), or drop 'exact_diag'."
+            )
+        widths = {len(term.pauli) for term in terms}
+        if len(widths) > 1:
+            raise ValueError(
+                "verification_plan.reference_hamiltonian mixes Pauli strings of "
+                f"different lengths ({sorted(widths)}). Every term acts on the same "
+                "register, so pad the shorter ones with 'I' — a two-qubit Z on qubit "
+                "0 is 'ZI', not 'Z'."
+            )
+        width = widths.pop()
+        if width > EXACT_DIAG_MAX_QUBITS:
+            raise ValueError(
+                f"verification_plan.reference_hamiltonian acts on {width} qubits, and "
+                f"'exact_diag' supports at most {EXACT_DIAG_MAX_QUBITS} — the dense "
+                "matrix does not fit. Drop 'exact_diag' and verify this run another "
+                "way, or plan a smaller instance."
+            )
+        if self.success_criteria.primary_metric not in self.expected_output_keys:
+            raise ValueError(
+                "verification_plan.methods includes 'exact_diag', which reads the "
+                "reported energy out of the result under "
+                f"success_criteria.primary_metric ('{self.success_criteria.primary_metric}'), "
+                f"but expected_output_keys ({', '.join(self.expected_output_keys)}) "
+                "does not promise that key. Spell the metric exactly as one of the "
+                "keys the code will print."
+            )
+        return self
 
     @model_validator(mode="after")
     def _measure_all_needs_a_distribution_to_show_for_it(self) -> "Plan":

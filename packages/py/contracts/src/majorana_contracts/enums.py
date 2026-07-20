@@ -117,6 +117,12 @@ class PlannableVerificationMethod(StrEnum):
     EXACT = "exact"
     STATISTICAL = "statistical"
     RETURN_CONTRACT = "return_contract"
+    # The independent-ground-truth check, and the only physical evidence a
+    # variational run can earn: a VQE reports a scalar, so `statistical` has no
+    # distribution to judge and `exact` has no reference circuit to match. Added
+    # 2026-07-20; `exact_diag` had been in VerificationMethod and in the database
+    # allowlist since 0001 with no implementation and no way for a plan to ask.
+    EXACT_DIAG = "exact_diag"
 
 
 class VerificationResultKind(StrEnum):
