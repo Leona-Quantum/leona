@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from majorana_contracts.enums import Framework
-from majorana_contracts.plan import EXACT_MAX_QUBITS
+from majorana_contracts.plan import EXACT_DIAG_MAX_QUBITS, EXACT_MAX_QUBITS
 
 
 _OPENQASM_CONTRACT = (
@@ -52,7 +52,7 @@ plumbing and will not be shown to the user as JSON.
 
 Choose the smallest useful artifact contract and the strongest applicable verification
 strategy. The only verification_plan.methods this pipeline can evaluate are
-`return_contract`, `statistical`, and `exact`, and the schema offers no others
+`return_contract`, `statistical`, `exact`, and `exact_diag`, and the schema offers no others
 (selected-framework re-execution plus deterministic artifact/resource/measurement checks
 run automatically regardless of what you list). `statistical` compares two measurement-count
 distributions, so list it only when expected_output_keys includes the key holding the
@@ -79,9 +79,25 @@ so it also needs you to say where that reference comes from.
   above that. For anything larger, verify statistically.
 - Listing `exact` without a usable reference is rejected. If the task has no canonical
   reference you can write down honestly, leave it off rather than inventing one — a
-  reference copied from the implementation you are about to ask for proves nothing. Semantic correctness is judged independently by the
-verification critic, so there is no classical baseline for you to plan. Do not invent
-a baseline, resource result, QPU result, compression result, source claim, or measurement.
+  reference copied from the implementation you are about to ask for proves nothing.
+
+`exact_diag` is the classical ground truth for a task whose answer is an ENERGY, and it
+is the only physical evidence a variational run can earn: a VQE reports a scalar, so
+`statistical` has no distribution to compare and `exact` has no reference circuit to
+match. List it whenever the request names a Hamiltonian — VQE, ground-state chemistry,
+an Ising or QUBO energy — and write that operator into reference_hamiltonian as Pauli
+terms, one per entry, qubit 0 leftmost: H = 0.5*Z0 + 1.2*Z1 + 0.8*X0X1 becomes
+[{{"coefficient": 0.5, "pauli": "ZI"}}, {{"coefficient": 1.2, "pauli": "IZ"}},
+{{"coefficient": 0.8, "pauli": "XX"}}]. Every term must be the same length; pad with I.
+The check diagonalizes it and compares the true minimum eigenvalue against the value
+your success_criteria.primary_metric names, so that key must be one of
+expected_output_keys. It supports at most {EXACT_DIAG_MAX_QUBITS} qubits. Write the
+Hamiltonian the task states, not one you back-derive from an expected answer — the
+whole value of the check is that it was written before the code.
+
+Semantic correctness is judged independently by the
+verification critic. Do not invent
+a resource result, QPU result, compression result, source claim, or measurement.
 Record requested technical options such as compression, QPU execution, or a particular
 export format as intent; the control plane decides whether each option is available.
 success_criteria.primary_metric must be spelled exactly as one of the keys in

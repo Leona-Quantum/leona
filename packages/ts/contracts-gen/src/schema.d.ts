@@ -674,6 +674,27 @@ export interface components {
          * @enum {string}
          */
         Optimizer: "COBYLA" | "SPSA" | "L_BFGS_B";
+        /**
+         * PauliTerm
+         * @description One `coefficient * PauliString` term of a Hamiltonian, as data.
+         *
+         *     The reference for `exact_diag` is declared, never executed — the same rule
+         *     `reference_qasm` follows. A Hamiltonian written as framework code would have to
+         *     run in the sandbox to mean anything, which would make a second piece of
+         *     model-authored code the ground truth.
+         */
+        PauliTerm: {
+            /**
+             * Coefficient
+             * @description Real coefficient. Complex Hamiltonians are not supported; express them in a real Pauli basis.
+             */
+            coefficient: number;
+            /**
+             * Pauli
+             * @description Pauli string over I, X, Y, Z with one character per qubit, qubit 0 leftmost. 'ZI' is Z on qubit 0; 'XX' is X on both. Every term in a Hamiltonian must be the same length.
+             */
+            pauli: string;
+        };
         /** Plan */
         Plan: {
             algorithm: components["schemas"]["Algorithm"];
@@ -1607,7 +1628,13 @@ export interface components {
              * Methods
              * @description Verification primitives to run against the generated code
              */
-            methods: ("exact" | "statistical" | "return_contract")[];
+            methods: ("exact" | "statistical" | "return_contract" | "exact_diag")[];
+            /**
+             * Reference Hamiltonian
+             * @description The Hamiltonian the 'exact_diag' check diagonalizes, required when 'exact_diag' is listed. Write the operator the task actually names, in a real Pauli basis, one term per entry — not a transcription of the code you expect back. success_criteria.primary_metric must name the result key holding the energy the run reports.
+             * @default null
+             */
+            reference_hamiltonian: components["schemas"]["PauliTerm"][] | null;
             /**
              * Reference Method
              * @description Independent reference, e.g. exact diagonalization

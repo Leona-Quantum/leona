@@ -2,6 +2,7 @@ import pytest
 from pydantic import ValidationError
 
 from majorana_contracts import Plan
+from majorana_contracts.enums import VerificationMethod
 from majorana_contracts.plan import EXACT_MAX_QUBITS
 
 VALID = {
@@ -270,3 +271,109 @@ def test_the_variational_shape_plans_cleanly_under_every_other_policy(policy):
 def test_a_plan_with_no_artifact_contract_is_untouched_by_the_rule():
     plan = Plan.model_validate({**VALID, "artifact_contract": None})
     assert plan.artifact_contract is None
+
+
+_HAMILTONIAN = [
+    {"coefficient": 0.5, "pauli": "ZI"},
+    {"coefficient": 1.2, "pauli": "IZ"},
+    {"coefficient": 0.8, "pauli": "XX"},
+]
+
+
+def _with_exact_diag(**verification) -> dict:
+    return {
+        **VALID,
+        "expected_output_keys": ["ground_state_energy", "optimal_params"],
+        "success_criteria": {"primary_metric": "ground_state_energy"},
+        "verification_plan": {
+            "methods": ["exact_diag", "return_contract"],
+            "reference_hamiltonian": _HAMILTONIAN,
+            **verification,
+        },
+    }
+
+
+def test_exact_diag_is_plannable_at_last():
+    """`exact_diag` sat in VerificationMethod and in the database allowlist from
+    migration 0001 with no implementation and no way for a plan to request it, so
+    every VQE this product ran could only ever grade `structural`."""
+    plan = Plan.model_validate(_with_exact_diag())
+    assert plan.verification_plan is not None
+    assert plan.verification_plan.reference_hamiltonian is not None
+    assert len(plan.verification_plan.reference_hamiltonian) == 3
+    assert plan.verification_plan.reference_hamiltonian[0].pauli == "ZI"
+
+
+def test_exact_diag_with_no_reference_at_all_normalizes_to_yesterdays_behaviour():
+    """`exact_diag` parsed fine before it was plannable — _drop_unplannable_methods
+    normalized it away — and PlanRecord.plan re-validates every stored plan on
+    rehydration. Hard-failing this shape would kill runs resuming across the
+    deploy on plans that used to parse. Dropping the check is weaker, not wrong."""
+    plan = Plan.model_validate(
+        {
+            **_with_exact_diag(),
+            "verification_plan": {"methods": ["exact_diag", "return_contract"]},
+        }
+    )
+    assert plan.verification_plan is not None
+    assert plan.verification_plan.methods == [VerificationMethod.RETURN_CONTRACT]
+
+
+def test_exact_diag_as_the_only_method_still_leaves_a_check_behind():
+    plan = Plan.model_validate(
+        {**_with_exact_diag(), "verification_plan": {"methods": ["exact_diag"]}}
+    )
+    assert plan.verification_plan is not None
+    assert plan.verification_plan.methods == [VerificationMethod.RETURN_CONTRACT]
+
+
+def test_ragged_pauli_strings_are_rejected_with_the_padding_remedy():
+    with pytest.raises(ValidationError) as exc:
+        Plan.model_validate(
+            _with_exact_diag(
+                reference_hamiltonian=[
+                    {"coefficient": 0.5, "pauli": "ZI"},
+                    {"coefficient": 0.8, "pauli": "X"},
+                ]
+            )
+        )
+    assert "different lengths" in str(exc.value)
+    assert "pad the shorter ones" in str(exc.value)
+
+
+def test_a_hamiltonian_above_the_diagonalizer_ceiling_is_rejected():
+    from majorana_contracts.plan import EXACT_DIAG_MAX_QUBITS
+
+    with pytest.raises(ValidationError) as exc:
+        Plan.model_validate(
+            _with_exact_diag(
+                reference_hamiltonian=[
+                    {"coefficient": 1.0, "pauli": "Z" * (EXACT_DIAG_MAX_QUBITS + 1)}
+                ]
+            )
+        )
+    assert "at most" in str(exc.value)
+
+
+def test_a_non_pauli_character_is_rejected_by_the_field_itself():
+    with pytest.raises(ValidationError):
+        Plan.model_validate(
+            _with_exact_diag(reference_hamiltonian=[{"coefficient": 1.0, "pauli": "ZQ"}])
+        )
+
+
+def test_exact_diag_whose_metric_is_not_a_promised_key_is_rejected():
+    """The check reads primary_metric out of the result dict. A metric the code
+    was never asked to print fails identically on every candidate."""
+    with pytest.raises(ValidationError) as exc:
+        Plan.model_validate(
+            {**_with_exact_diag(), "success_criteria": {"primary_metric": "energy_Ha"}}
+        )
+    assert "does not promise that key" in str(exc.value)
+
+
+def test_a_plan_without_exact_diag_needs_no_hamiltonian():
+    """Scoped to the contradiction, like every other rule here."""
+    plan = Plan.model_validate({**VALID, "verification_plan": {"methods": ["return_contract"]}})
+    assert plan.verification_plan is not None
+    assert plan.verification_plan.reference_hamiltonian is None

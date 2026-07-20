@@ -16,6 +16,11 @@ from majorana_contracts.enums import VerificationMethod, VerificationResultKind
 from majorana_openqasm import OpenQASMError, normalize, resource_metrics
 from pydantic import BaseModel, Field
 
+from majorana_verification.hamiltonian import (
+    HamiltonianError,
+    energy_tolerance,
+    ground_state_comparison,
+)
 from majorana_verification.native import (
     native_counts_vs_ideal,
     native_statevector_vs_reference,
@@ -327,6 +332,68 @@ def verify_return_contract(
     return VerificationOutcome(
         method=VerificationMethod.RETURN_CONTRACT,
         result=PASS if (not missing and type_ok) else FAIL,
+        details=details,
+    )
+
+
+def verify_exact_diag(
+    terms: list[tuple[float, str]],
+    reported_energy: Any,
+    *,
+    shots: int | None = None,
+    declared_tolerance: float | None = None,
+) -> VerificationOutcome:
+    """Reported energy against the exact ground state of a declared Hamiltonian.
+
+    The plan may TIGHTEN the tolerance and may not loosen it. That asymmetry is
+    the whole reason this accepts a declared value at all: `memory/NEXT.md` §2
+    refuses the `tolerances` field precisely because a plan-supplied number that
+    *relaxes* a verification bound can manufacture a physical grade. `min()` keeps
+    the useful direction and closes the dangerous one, and `tolerance_source`
+    records which one won.
+    """
+    if not isinstance(reported_energy, int | float) or isinstance(reported_energy, bool):
+        return VerificationOutcome(
+            method=VerificationMethod.EXACT_DIAG,
+            result=FAIL,
+            details={
+                "error": "required evidence unavailable",
+                "reason": (
+                    "the plan's primary_metric is not a real number in the result; "
+                    "exact diagonalization has nothing to compare against"
+                ),
+                "reported_energy": reported_energy,
+            },
+        )
+    try:
+        computed = energy_tolerance(terms, shots)
+        tolerance, source = computed, "shot_noise_and_optimizer_allowance"
+        if declared_tolerance is not None and declared_tolerance > 0:
+            tolerance = min(computed, declared_tolerance)
+            source = "plan" if tolerance == declared_tolerance else source
+        passed, details = ground_state_comparison(
+            terms,
+            float(reported_energy),
+            tolerance=tolerance,
+            tolerance_source=source,
+        )
+    except HamiltonianError as exc:
+        # A malformed reference is a defect in the PLAN, not in the candidate. The
+        # plan contract rejects the shapes it can see before a candidate is ever
+        # written; anything arriving here is a claim about the reference, so the
+        # evidence says so rather than letting the model rewrite correct code.
+        return VerificationOutcome(
+            method=VerificationMethod.EXACT_DIAG,
+            result=FAIL,
+            details={
+                "error": "reference_hamiltonian is not diagonalizable as declared",
+                "reason": str(exc),
+                "fault": "plan",
+            },
+        )
+    return VerificationOutcome(
+        method=VerificationMethod.EXACT_DIAG,
+        result=PASS if passed else FAIL,
         details=details,
     )
 

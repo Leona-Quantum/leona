@@ -259,8 +259,14 @@ def test_plan_schema_never_offers_a_method_the_worker_cannot_evaluate():
     schema = json.dumps(Plan.model_json_schema())
 
     assert "baseline_plan" not in schema
-    for retired in ("brute_force", "exact_diag", "qasm_parse"):
+    for retired in ("brute_force", "qasm_parse"):
         assert retired not in schema
+    # `exact_diag` moved the other way on 2026-07-20: it now has a dispatch branch
+    # (EvidenceVerifier._exact_diag_check) and a reference field, so withholding it
+    # from the schema would be the same defect in reverse — a check the worker can
+    # run that no plan can ask for. It was in that state since migration 0001.
+    assert "exact_diag" in schema
+    assert "reference_hamiltonian" in schema
 
 
 def test_parse_plan_normalizes_scalar_additional_notes_from_json_object_mode():

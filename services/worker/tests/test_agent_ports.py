@@ -1522,3 +1522,127 @@ async def test_the_vqe_measure_all_plan_is_re_emitted_with_the_objection():
     assert "variational ansatz" in llm.prompts[1]
     assert plan.artifact_contract is not None
     assert plan.artifact_contract.measurement_policy is MeasurementPolicy.NONE
+
+
+def _vqe_plan(**overrides) -> Plan:
+    """Production run 019f7f2d-9504's task, planned the way it should have been."""
+    return Plan.model_validate(
+        {
+            "domain": "quantum_simulation",
+            "framework": "qiskit",
+            "algorithm": Algorithm.VQE.value,
+            "problem_summary": "VQE for H = 0.5 Z0 + 1.2 Z1 + 0.8 X0X1",
+            "algorithm_rationale": "VQE minimizes an expectation value",
+            "parameters": {"shots": 4096, "seed": 1729, "optimizer": "COBYLA"},
+            "qubits_estimate": 2,
+            "expected_runtime_sec": 5,
+            "success_criteria": {"primary_metric": "ground_state_energy"},
+            "expected_output_keys": ["ground_state_energy", "optimal_params"],
+            "artifact_contract": {
+                "artifact_type": "script",
+                # The ansatz is published unmeasured; the energy comes from
+                # separate per-basis copies of it.
+                "measurement_policy": "none",
+                "top_level_execution": "required",
+                "expected_return_type": "dict",
+            },
+            "verification_plan": {
+                "methods": ["exact_diag", "return_contract"],
+                "reference_hamiltonian": [
+                    {"coefficient": 0.5, "pauli": "ZI"},
+                    {"coefficient": 1.2, "pauli": "IZ"},
+                    {"coefficient": 0.8, "pauli": "XX"},
+                ],
+            },
+            **overrides,
+        }
+    )
+
+
+def _vqe_execution(candidate, energy):
+    return _execution(
+        candidate,
+        result={"ground_state_energy": energy, "optimal_params": [0.1, 0.2, 0.3, 0.4]},
+        observation={
+            "native_optimization": {"applied": False},
+            "resource_metrics": {
+                "qubits": 2,
+                "depth": 3,
+                "gate_count": 5,
+                "two_qubit_gate_count": 1,
+                "measurement_count": 0,
+            },
+        },
+    )
+
+
+def test_a_converged_vqe_finally_earns_a_physical_grade():
+    """Before 2026-07-20 every VQE this product ran graded `structural`: its
+    result is a scalar, so `statistical` had no distribution to judge and `exact`
+    had no reference circuit to match, and `exact_diag` — the one check that fits
+    — had no implementation and no way for a plan to request it.
+
+    -1.87883 is the closed-form ground state of this Hamiltonian; see
+    packages/py/verification/tests/test_hamiltonian.py for the derivation.
+    """
+    candidate = _candidate()
+    checks = EvidenceVerifier(llm=MustNotRunLLM(), task_prompt="VQE")._deterministic_checks(
+        candidate, _vqe_execution(candidate, -1.8751), _vqe_plan()
+    )
+    check = next(item for item in checks if item["method"] == "exact_diag")
+    assert check["result"] == "pass"
+    assert check["details"]["metric"] == "ground_state_energy"
+    assert evidence_strength_of(checks) is EvidenceStrength.PHYSICAL
+
+
+def test_a_vqe_stuck_in_an_excited_state_is_caught_and_told_which_one():
+    """The failure that actually happens to VQE, and the one no other check in the
+    panel can see: the code does exactly what the code says, and says the wrong
+    number. -1.06301 is this Hamiltonian's first excited eigenvalue."""
+    candidate = _candidate()
+    checks = EvidenceVerifier(llm=MustNotRunLLM(), task_prompt="VQE")._deterministic_checks(
+        candidate, _vqe_execution(candidate, -1.06301), _vqe_plan()
+    )
+    check = next(item for item in checks if item["method"] == "exact_diag")
+    assert check["result"] == "fail"
+    assert "EXCITED" in check["details"]["disagreement"]
+    assert evidence_strength_of(checks) is EvidenceStrength.STRUCTURAL
+
+
+def test_a_plan_declared_energy_tolerance_may_only_tighten():
+    """`thresholds` gets its first consumer beyond tvd_max here, and it gets the
+    safe direction only — memory/NEXT.md §2 refuses `tolerances` precisely because
+    a plan-supplied value that LOOSENS a bound can manufacture a physical grade."""
+    candidate = _candidate()
+    plan = _vqe_plan(
+        verification_plan={
+            "methods": ["exact_diag", "return_contract"],
+            "reference_hamiltonian": [
+                {"coefficient": 0.5, "pauli": "ZI"},
+                {"coefficient": 1.2, "pauli": "IZ"},
+                {"coefficient": 0.8, "pauli": "XX"},
+            ],
+            "thresholds": {"energy_error_max": 99.0},
+        }
+    )
+    checks = EvidenceVerifier(llm=MustNotRunLLM(), task_prompt="VQE")._deterministic_checks(
+        candidate, _vqe_execution(candidate, -1.06301), plan
+    )
+    check = next(item for item in checks if item["method"] == "exact_diag")
+    assert check["result"] == "fail", "a 99.0 tolerance must not buy a passing grade"
+    assert check["details"]["protocol"]["tolerance_source"] == (
+        "shot_noise_and_optimizer_allowance"
+    )
+
+
+def test_the_vqe_shape_that_died_now_passes_its_whole_panel():
+    """The regression this PR exists for, as one assertion: run 019f7f2d-9504's
+    task, planned correctly, with a converged energy — every check green and the
+    grade physical."""
+    candidate = _candidate()
+    checks = EvidenceVerifier(llm=MustNotRunLLM(), task_prompt="VQE")._deterministic_checks(
+        candidate, _vqe_execution(candidate, -1.8788), _vqe_plan()
+    )
+    failed = [check for check in checks if check["result"] not in {"pass", "skipped"}]
+    assert failed == [], failed
+    assert evidence_strength_of(checks) is EvidenceStrength.PHYSICAL
