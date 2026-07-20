@@ -95,6 +95,87 @@ def ideal_distribution(source: str) -> dict[str, float]:
     }
 
 
+def measurement_map(circuit: QuantumCircuit) -> dict[int, int]:
+    """Map clbit index -> measured qubit index, read off the circuit's measure ops.
+
+    A clbit written more than once keeps the last write, which is what the reported
+    counts show. Mid-circuit measurement is not modelled here: the statevector path
+    rejects it upstream, because a circuit that is not unitary up to its final
+    measurements has no statevector to compare against.
+    """
+    mapping: dict[int, int] = {}
+    for instruction in circuit.data:
+        if instruction.operation.name != "measure":
+            continue
+        mapping[circuit.find_bit(instruction.clbits[0]).index] = circuit.find_bit(
+            instruction.qubits[0]
+        ).index
+    return mapping
+
+
+def measured_ideal_distribution(
+    source: str, width: int | None = None
+) -> tuple[dict[str, float], dict]:
+    """Ideal distribution over the bits a run actually reports, not the whole register.
+
+    Every ancilla algorithm measures only its answer register, so the reported counts
+    are narrower than the circuit. Marginalizing the statevector over the measured
+    qubits is what lets those runs be checked at all; demanding full width failed
+    correct code.
+
+    Returns the distribution plus a provenance dict describing how the counts string
+    was interpreted, so the evidence can be read back later.
+    """
+    circuit = _load_circuit(source)
+    mapping = measurement_map(circuit)
+    if not mapping:
+        return ideal_distribution(source), {
+            "keyed_by": "qubits",
+            "width": circuit.num_qubits,
+            "measured_qubits": list(range(circuit.num_qubits)),
+        }
+
+    measured_clbits = sorted(mapping)
+    # Frameworks report either the whole classical register (unmeasured clbits read 0)
+    # or only the clbits that were written. Both are unambiguous once the width is known.
+    if width is not None and width == len(measured_clbits) != circuit.num_clbits:
+        positions = {clbit: index for index, clbit in enumerate(measured_clbits)}
+        key_width = len(measured_clbits)
+        keyed_by = "measured_clbits"
+    else:
+        positions = {clbit: clbit for clbit in measured_clbits}
+        key_width = circuit.num_clbits
+        keyed_by = "clbits"
+
+    qargs = [mapping[clbit] for clbit in measured_clbits]
+    # probabilities_dict keys put qargs[0] in the rightmost character, which is the
+    # same little-endian convention the counts strings use for clbit 0.
+    try:
+        marginal = Statevector.from_instruction(_unitary_circuit(source)).probabilities_dict(
+            qargs=qargs
+        )
+    except Exception as exc:  # pragma: no cover - mirrors simulate_statevector's contract
+        raise ValueError(f"OpenQASM program is not statevector-compatible: {exc}") from exc
+
+    distribution: dict[str, float] = {}
+    for key, value in marginal.items():
+        if value <= 0.0:
+            continue
+        bits = ["0"] * key_width
+        for index, clbit in enumerate(measured_clbits):
+            bits[key_width - 1 - positions[clbit]] = key[len(key) - 1 - index]
+        full = "".join(bits)
+        distribution[full] = distribution.get(full, 0.0) + float(value)
+    provenance = {
+        "keyed_by": keyed_by,
+        "width": key_width,
+        "measured_qubits": [mapping[clbit] for clbit in measured_clbits],
+        "clbit_to_qubit": {str(clbit): mapping[clbit] for clbit in measured_clbits},
+        "partial": len(set(qargs)) < circuit.num_qubits,
+    }
+    return distribution, provenance
+
+
 def _sample_distribution(source: str, shots: int, seed: int) -> dict[str, float]:
     if shots < 1:
         raise ValueError("shots must be >= 1")
@@ -128,13 +209,16 @@ def counts_vs_ideal(
     if not 0 < delta < 1:
         raise ValueError("delta must be in (0, 1)")
     normalized_counts: dict[str, int] = {}
+    observed_width: int | None = None
     for key, value in counts.items():
         bits = str(key).replace(" ", "")
         if not bits or set(bits) - {"0", "1"}:
             raise ValueError(f"counts key {key!r} is not a bitstring")
-        if len(bits) != circuit.num_qubits:
+        if observed_width is None:
+            observed_width = len(bits)
+        elif len(bits) != observed_width:
             raise ValueError(
-                f"counts key {key!r} has {len(bits)} bits; circuit has {circuit.num_qubits} qubits"
+                f"counts key {key!r} has {len(bits)} bits; other keys have {observed_width}"
             )
         if (
             isinstance(value, bool)
@@ -149,7 +233,12 @@ def counts_vs_ideal(
     if shots <= 0:
         raise ValueError("counts are empty")
 
-    ideal = ideal_distribution(source)
+    ideal, measurement = measured_ideal_distribution(source, width=observed_width)
+    if observed_width != measurement["width"]:
+        raise ValueError(
+            f"counts keys have {observed_width} bits; the circuit reports "
+            f"{measurement['width']} ({measurement['keyed_by']})"
+        )
     orientations = {"little": ("as_is",), "big": ("reversed",), "auto": ("as_is", "reversed")}[
         bit_order
     ]
@@ -182,6 +271,7 @@ def counts_vs_ideal(
         "bins": coarse_bins,
         "bit_order": bit_order,
         "orientation_used": orientation_used,
+        "measurement": measurement,
     }
     payload = {"candidate": fingerprint(source), "protocol": protocol, "tvd": tvd}
     return EquivalenceReport(
