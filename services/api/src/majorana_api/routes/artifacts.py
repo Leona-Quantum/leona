@@ -11,7 +11,14 @@ from typing import Any
 from fastapi import APIRouter, HTTPException
 from majorana_contracts import Artifact as ArtifactResource
 from majorana_contracts import ArtifactVersion as ArtifactVersionResource
-from majorana_contracts.enums import Algorithm, ExportStatus, Framework, Visibility
+from majorana_contracts.enums import (
+    Algorithm,
+    EvidenceStrength,
+    ExportStatus,
+    Framework,
+    VerifierDecision,
+    Visibility,
+)
 from majorana_openqasm import OpenQASMError, fingerprint, normalize
 from pydantic import AnyHttpUrl, BaseModel, ConfigDict, Field
 
@@ -77,7 +84,30 @@ def _canonical_public_qasm(source: str | None) -> tuple[str | None, str | None, 
     return canonical, "3.0", fingerprint(canonical)
 
 
-def _to_artifact(row: ArtifactRow) -> ArtifactResource:
+def _verification_summary_fields(
+    metadata: dict | None,
+) -> tuple[VerifierDecision | None, EvidenceStrength | None]:
+    """Read (decision, strength) out of a version's verification_summary.
+
+    Absence and malformed values both map to None — the resource must say
+    "unknown", never guess a verdict the metadata does not carry.
+    """
+    summary = metadata.get("verification_summary") if isinstance(metadata, dict) else None
+    if not isinstance(summary, dict):
+        return None, None
+    try:
+        decision = VerifierDecision(summary.get("decision"))
+    except ValueError:
+        decision = None
+    try:
+        strength = EvidenceStrength(summary.get("evidence_strength"))
+    except ValueError:
+        strength = None
+    return decision, strength
+
+
+def _to_artifact(row: ArtifactRow, version_metadata: dict | None = None) -> ArtifactResource:
+    decision, strength = _verification_summary_fields(version_metadata)
     return ArtifactResource(
         id=row.id,
         workspace_id=row.workspace_id,
@@ -88,6 +118,8 @@ def _to_artifact(row: ArtifactRow) -> ArtifactResource:
         visibility=Visibility(row.visibility or Visibility.PRIVATE),
         parent_artifact_id=row.parent_artifact_id,
         current_version_id=row.current_version_id,
+        verifier_decision=decision,
+        evidence_strength=strength,
         created_at=row.created_at,
         updated_at=row.updated_at,
         deleted_at=row.deleted_at,
@@ -129,7 +161,7 @@ async def list_artifacts(
         cursor=cursor,
         limit=min(max(limit, 1), 100),
     )
-    return [_to_artifact(row) for row in rows]
+    return [_to_artifact(row, metadata) for row, metadata in rows]
 
 
 @router.post("/artifacts/import-public", response_model=ArtifactResource, status_code=201)

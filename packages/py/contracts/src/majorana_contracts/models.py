@@ -8,6 +8,7 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from .enums import (
+    EvidenceStrength,
     ExportStatus,
     Framework,
     Role,
@@ -68,6 +69,15 @@ class Artifact(_ResourceBase):
     visibility: Visibility
     parent_artifact_id: UUID | None = Field(default=None, description="Provenance edge")
     current_version_id: UUID | None = None
+    # From the current version's verification_summary, carried on the LIST
+    # resource so the Vault list can say what each artifact's verdict was proved
+    # by without opening it. Until 2026-07-20 the list had no grade at all, so
+    # the web fabricated "verified" as the default and an unopened structurally-
+    # verified artifact over-claimed until its detail page corrected it. None
+    # means the version predates the summary (or there is no version) — absence,
+    # not a verdict.
+    verifier_decision: VerifierDecision | None = None
+    evidence_strength: EvidenceStrength | None = None
     created_at: datetime
     updated_at: datetime
     deleted_at: datetime | None = None
