@@ -470,3 +470,40 @@ def test_pennylane_interchange_preserves_wire_labels_when_tape_order_is_unsorted
     peak = np.unravel_index(np.argmax(np.abs(left)), left.shape)
     aligned = left * (right[peak] / left[peak])  # equivalence is up to global phase
     assert np.max(np.abs(aligned - right)) < 1e-9, "export relabelled the tape's wires"
+
+
+def test_qiskit_c_if_is_caught_before_execution_and_names_its_replacement():
+    """`.c_if()` was removed in Qiskit 2.0 and is the only classical feed-forward API
+    the model reliably knows, so every teleportation candidate wrote it and died on
+    AttributeError — four identical failures, budget exhausted, on production runs
+    019f7dad-385b and 019f7dbf-d673.
+
+    The second of those ran AFTER the generate prompt was changed to name `if_test`,
+    and used `.c_if()` anyway. That is why this is a deterministic diagnostic and not
+    a prompt rule: it fires before the sandbox and hands the repair loop the exact
+    replacement rather than a traceback the model has proved it cannot learn from.
+    """
+    source = (
+        "from qiskit import QuantumCircuit\n"
+        "qc = QuantumCircuit(3, 2)\n"
+        "qc.h(0)\n"
+        "qc.measure(0, 0)\n"
+        "qc.x(2).c_if(qc.clbits[0], 1)\n"
+        "FINAL_CIRCUIT = qc\n"
+        "RESULT = {'counts': {}}\n"
+    )
+    diagnostics = FrameworkProgram(Framework.QISKIT, source).contract_diagnostics(
+        circuit_expected=True
+    )
+    assert any("c_if" in d and "if_test" in d for d in diagnostics), diagnostics
+
+    ok = (
+        "from qiskit import QuantumCircuit\n"
+        "qc = QuantumCircuit(3, 2)\n"
+        "qc.measure(0, 0)\n"
+        "with qc.if_test((qc.clbits[0], 1)):\n"
+        "    qc.x(2)\n"
+        "FINAL_CIRCUIT = qc\n"
+        "RESULT = {'counts': {}}\n"
+    )
+    assert FrameworkProgram(Framework.QISKIT, ok).contract_diagnostics(circuit_expected=True) == []
