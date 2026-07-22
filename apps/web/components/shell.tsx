@@ -92,7 +92,9 @@ export function Shell({
     let active = true;
 
     async function refreshWorkspace() {
-      const localHistory = loadChatHistory({ includeDemo: demoMode, includeArchived: true });
+      const localHistory = collapseConversationChats(
+        loadChatHistory({ includeDemo: demoMode, includeArchived: true }),
+      );
       const localActiveChats = localHistory.filter((chat) => !chat.archivedAt);
       setChatFolders(loadChatFolders());
       setArtifactFolders(loadArtifactFolders());
