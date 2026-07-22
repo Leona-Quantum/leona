@@ -5,13 +5,29 @@ from pathlib import Path
 
 import sqlalchemy as sa
 
+from majorana_contracts.enums import (
+    RetryTarget,
+    SemanticReviewDecision,
+    VerificationFailureClass,
+    VerificationResultKind,
+    VerifierDecision,
+)
 
-def test_agent_migration_declares_each_column_once(monkeypatch):
-    path = Path(__file__).parents[3] / "db" / "migrations" / "versions" / "0010_agent_runtime.py"
-    spec = importlib.util.spec_from_file_location("migration_0010", path)
+
+_MIGRATIONS = Path(__file__).parents[3] / "db" / "migrations" / "versions"
+
+
+def _load_migration(name: str):
+    path = _MIGRATIONS / name
+    spec = importlib.util.spec_from_file_location(f"migration_{name[:4]}", path)
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
+    return module
+
+
+def test_agent_migration_declares_each_column_once(monkeypatch):
+    module = _load_migration("0010_agent_runtime.py")
 
     tables = {}
 
@@ -37,3 +53,90 @@ def test_agent_migration_declares_each_column_once(monkeypatch):
         "fk_candidate_verifications_execution_chain",
         "fk_candidate_conversions_candidate_fingerprint",
     } <= constraint_names
+
+
+class _EmptyResult:
+    def mappings(self):
+        return []
+
+
+class _EmptyBind:
+    def execute(self, *_args, **_kwargs):
+        return _EmptyResult()
+
+
+def test_verification_v2_migration_declares_evidence_constraints(monkeypatch):
+    module = _load_migration("0026_verification_v2_evidence.py")
+    tables = {}
+
+    def create_table(name, *items):
+        table = sa.Table(name, sa.MetaData(), *items)
+        tables[name] = table
+        return table
+
+    monkeypatch.setattr(module.op, "create_table", create_table)
+    monkeypatch.setattr(module.op, "create_index", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(module.op, "add_column", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(module.op, "create_foreign_key", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(module.op, "drop_constraint", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(module.op, "create_check_constraint", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(module.op, "execute", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(module.op, "get_bind", lambda: _EmptyBind())
+
+    module.upgrade()
+
+    assert set(tables) == {
+        "run_plans",
+        "candidate_semantic_reviews",
+        "candidate_verification_attempts",
+    }
+    constraint_names = {
+        constraint.name for table in tables.values() for constraint in table.constraints
+    }
+    assert {
+        "uq_run_plans_run_revision",
+        "fk_run_plans_parent_same_run",
+        "uq_semantic_reviews_attempt",
+        "fk_semantic_reviews_execution_binding",
+        "uq_verification_attempts_attempt",
+        "fk_verification_attempts_execution_binding",
+        "fk_verification_attempts_review_binding",
+        "ck_verification_attempts_inconclusive_no_defect",
+    } <= constraint_names
+
+
+def test_verification_v2_result_allowlist_matches_contract() -> None:
+    module = _load_migration("0026_verification_v2_evidence.py")
+    assert set(module._RESULTS_NEW) == {kind.value for kind in VerificationResultKind}
+    assert set(module._SEMANTIC_DECISIONS) == {
+        decision.value for decision in SemanticReviewDecision
+    }
+    assert set(module._FINAL_DECISIONS) == {decision.value for decision in VerifierDecision}
+    assert set(module._FAILURE_CLASSES) == {
+        failure_class.value for failure_class in VerificationFailureClass
+    }
+    assert set(module._RETRY_TARGETS) == {target.value for target in RetryTarget}
+
+
+def test_verification_v2_downgrade_fails_closed(monkeypatch):
+    module = _load_migration("0026_verification_v2_evidence.py")
+    statements = []
+
+    monkeypatch.setattr(module.op, "execute", statements.append)
+    monkeypatch.setattr(module.op, "drop_constraint", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(module.op, "create_check_constraint", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(module.op, "drop_index", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(module.op, "drop_table", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(module.op, "create_foreign_key", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(module.op, "drop_column", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(module.op, "get_bind", lambda: _EmptyBind())
+
+    module.downgrade()
+
+    guard = statements[0]
+    assert "semantic review evidence exists" in guard
+    assert "strict verification evidence exists" in guard
+    assert "new verification result values exist" in guard
+    assert "new agent state values exist" in guard
+    assert "non-legacy Plan revisions exist" in guard
+    assert "candidate uses a revised Plan" in guard

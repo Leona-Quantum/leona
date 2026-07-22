@@ -256,15 +256,45 @@ class VerificationRecord(Base):
 
 class AgentRun(Base):
     __tablename__ = "agent_runs"
-    __table_args__ = (UniqueConstraint("run_id", "plan_id"),)
+    __table_args__ = (
+        UniqueConstraint("run_id", "plan_id"),
+        ForeignKeyConstraint(
+            ["run_id", "current_plan_id"],
+            ["run_plans.run_id", "run_plans.id"],
+            name="fk_agent_runs_current_plan_same_run",
+        ),
+    )
 
     run_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("runs.id"), primary_key=True)
     state: Mapped[str] = mapped_column(server_default="new")
     plan_id: Mapped[uuid.UUID | None] = mapped_column(_UUID)
+    current_plan_id: Mapped[uuid.UUID | None] = mapped_column(_UUID)
     plan: Mapped[dict[str, Any] | None]
     publication: Mapped[dict[str, Any] | None]
     created_at: Mapped[dt.datetime | None] = mapped_column(server_default=func.now())
     updated_at: Mapped[dt.datetime | None] = mapped_column(server_default=func.now())
+
+
+class RunPlan(Base):
+    __tablename__ = "run_plans"
+    __table_args__ = (
+        UniqueConstraint("run_id", "revision", name="uq_run_plans_run_revision"),
+        UniqueConstraint("run_id", "id", name="uq_run_plans_run_id"),
+        ForeignKeyConstraint(
+            ["run_id", "parent_plan_id"],
+            ["run_plans.run_id", "run_plans.id"],
+            name="fk_run_plans_parent_same_run",
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True)
+    run_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("agent_runs.run_id"))
+    revision: Mapped[int] = mapped_column(Integer)
+    parent_plan_id: Mapped[uuid.UUID | None]
+    plan: Mapped[dict[str, Any]]
+    plan_fingerprint: Mapped[str]
+    replan_reason: Mapped[str | None]
+    created_at: Mapped[dt.datetime | None] = mapped_column(server_default=func.now())
 
 
 class AgentStep(Base):
@@ -306,7 +336,11 @@ class RunCandidate(Base):
         ForeignKeyConstraint(
             ["run_id", "parent_candidate_id"], ["run_candidates.run_id", "run_candidates.id"]
         ),
-        ForeignKeyConstraint(["run_id", "plan_id"], ["agent_runs.run_id", "agent_runs.plan_id"]),
+        ForeignKeyConstraint(
+            ["run_id", "plan_id"],
+            ["run_plans.run_id", "run_plans.id"],
+            name="fk_run_candidates_plan_same_run",
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True)
@@ -368,6 +402,87 @@ class CandidateVerification(Base):
     deterministic_checks: Mapped[list[dict[str, Any]]] = mapped_column(JSONB)
     critic: Mapped[dict[str, Any] | None]
     repair: Mapped[dict[str, Any] | None]
+    created_at: Mapped[dt.datetime | None] = mapped_column(server_default=func.now())
+
+
+class CandidateSemanticReview(Base):
+    __tablename__ = "candidate_semantic_reviews"
+    __table_args__ = (
+        UniqueConstraint("candidate_id", "attempt_seq", name="uq_semantic_reviews_attempt"),
+        UniqueConstraint(
+            "id",
+            "candidate_id",
+            "execution_id",
+            "source_fingerprint",
+            name="uq_semantic_reviews_binding",
+        ),
+        ForeignKeyConstraint(
+            ["execution_id", "candidate_id", "source_fingerprint"],
+            [
+                "candidate_executions.id",
+                "candidate_executions.candidate_id",
+                "candidate_executions.source_fingerprint",
+            ],
+            name="fk_semantic_reviews_execution_binding",
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True)
+    candidate_id: Mapped[uuid.UUID]
+    execution_id: Mapped[uuid.UUID]
+    source_fingerprint: Mapped[str]
+    attempt_seq: Mapped[int] = mapped_column(Integer)
+    decision: Mapped[str]
+    confidence: Mapped[str | None]
+    severity: Mapped[str | None]
+    reason_code: Mapped[str]
+    failure_class: Mapped[str | None]
+    retry_target: Mapped[str]
+    feedback: Mapped[dict[str, Any]]
+    created_at: Mapped[dt.datetime | None] = mapped_column(server_default=func.now())
+
+
+class CandidateVerificationAttempt(Base):
+    __tablename__ = "candidate_verification_attempts"
+    __table_args__ = (
+        UniqueConstraint("candidate_id", "attempt_seq", name="uq_verification_attempts_attempt"),
+        ForeignKeyConstraint(
+            ["execution_id", "candidate_id", "source_fingerprint"],
+            [
+                "candidate_executions.id",
+                "candidate_executions.candidate_id",
+                "candidate_executions.source_fingerprint",
+            ],
+            name="fk_verification_attempts_execution_binding",
+        ),
+        ForeignKeyConstraint(
+            ["semantic_review_id", "candidate_id", "execution_id", "source_fingerprint"],
+            [
+                "candidate_semantic_reviews.id",
+                "candidate_semantic_reviews.candidate_id",
+                "candidate_semantic_reviews.execution_id",
+                "candidate_semantic_reviews.source_fingerprint",
+            ],
+            name="fk_verification_attempts_review_binding",
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True)
+    candidate_id: Mapped[uuid.UUID]
+    execution_id: Mapped[uuid.UUID]
+    semantic_review_id: Mapped[uuid.UUID]
+    source_fingerprint: Mapped[str]
+    attempt_seq: Mapped[int] = mapped_column(Integer)
+    checks: Mapped[list[dict[str, Any]]] = mapped_column(JSONB)
+    decision: Mapped[str]
+    evidence_strength: Mapped[str | None]
+    claim_coverage: Mapped[list[dict[str, Any]]] = mapped_column(JSONB)
+    reason_code: Mapped[str]
+    candidate_defect_observed: Mapped[bool]
+    failure_class: Mapped[str | None]
+    retry_target: Mapped[str]
+    unverified_claims: Mapped[list[str]] = mapped_column(JSONB)
+    verifier_version: Mapped[str]
     created_at: Mapped[dt.datetime | None] = mapped_column(server_default=func.now())
 
 
