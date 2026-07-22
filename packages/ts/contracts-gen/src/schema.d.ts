@@ -550,8 +550,10 @@ export interface components {
          *     reported distribution was compared against the circuit's Born distribution to
          *     1.8e-16, and until 2026-07-20 both printed the single word "Verified".
          *
-         *     Every consumer compares `verifier_decision == "pass"`, the eval harness included,
-         *     so the decision stays `pass` and the strength rides alongside it.
+         *     This grades the checks, not final sufficiency. Verification v2 refuses a final
+         *     PASS when the check set is structural-only or lacks a dedicated property check;
+         *     a physical grade may likewise describe one limited passing claim while the final
+         *     decision remains INCONCLUSIVE because another required claim is unsupported.
          * @enum {string}
          */
         EvidenceStrength: "physical" | "structural";
@@ -1612,6 +1614,35 @@ export interface components {
              */
             type: "stage.started";
         };
+        /**
+         * StatePreparationClaim
+         * @description Typed Bell/GHZ target accepted by semantic review before strict checks.
+         *
+         *     The Plan records the requested relative phase as data; it is not correctness
+         *     authority by itself. The semantic reviewer owns request-to-Plan alignment,
+         *     then the fixed verifier compares native evidence with this bounded target.
+         */
+        StatePreparationClaim: {
+            /**
+             * Family
+             * @enum {string}
+             */
+            family: "bell" | "ghz";
+            /**
+             * Measurement Binding
+             * @default identity_when_present
+             * @constant
+             */
+            measurement_binding: "identity_when_present";
+            /** Qubits */
+            qubits: number;
+            /**
+             * Relative Phase Radians
+             * @description Relative phase phi in (|0...0> + exp(i*phi)|1...1>)/sqrt(2). Semantic review must confirm that phi reflects the user's request.
+             * @default 0
+             */
+            relative_phase_radians: number;
+        };
         /** SuccessCriteria */
         SuccessCriteria: {
             /**
@@ -1662,12 +1693,12 @@ export interface components {
          *     (`ck_method_enum` on `verification_records`) is the other half and must widen in
          *     the same deploy — see db/migrations/versions/0024. That pairing is enforced by
          *     packages/py/contracts/tests/test_method_allowlist.py rather than remembered.
-         *     Also decide which side of `PHYSICAL_VERIFICATION_METHODS` the new name falls on;
-         *     all six added below are contract checks that police the shape of the answer, not
-         *     its correctness, so none of them lifts a run's grade.
+         *     Also decide which side of `PHYSICAL_VERIFICATION_METHODS` the new name falls on.
+         *     The six historical contract checks police shape only; the Bell/GHZ property
+         *     methods added later prove fixed state-preparation claims.
          * @enum {string}
          */
-        VerificationMethod: "exact" | "statistical" | "statistical_native" | "brute_force" | "exact_diag" | "return_contract" | "qasm_parse" | "structural" | "resource_contract" | "measurement_policy" | "success_criteria" | "native_optimization_evidence" | "statistical_reproducibility";
+        VerificationMethod: "exact" | "statistical" | "statistical_native" | "brute_force" | "exact_diag" | "return_contract" | "qasm_parse" | "structural" | "resource_contract" | "measurement_policy" | "success_criteria" | "native_optimization_evidence" | "bell_state_property" | "ghz_state_property" | "statistical_reproducibility";
         /** VerificationPlan */
         VerificationPlan: {
             /**
@@ -1716,6 +1747,11 @@ export interface components {
              * @default null
              */
             required_invariants: string[] | null;
+            /**
+             * @description Explicit Bell/GHZ target for the fixed native-state property verifier. Omission means that state-preparation correctness is unsupported, not that the canonical positive-phase target may be inferred.
+             * @default null
+             */
+            state_preparation_claim: components["schemas"]["StatePreparationClaim"] | null;
             /**
              * Thresholds
              * @description Pass thresholds per metric, e.g. {fidelity_min: 0.999}

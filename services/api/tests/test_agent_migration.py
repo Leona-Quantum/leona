@@ -140,3 +140,29 @@ def test_verification_v2_downgrade_fails_closed(monkeypatch):
     assert "new agent state values exist" in guard
     assert "non-legacy Plan revisions exist" in guard
     assert "candidate uses a revised Plan" in guard
+
+
+def test_entangled_property_method_migration_is_additive_and_fails_closed(monkeypatch):
+    module = _load_migration("0027_entangled_state_property_methods.py")
+    created = []
+    statements = []
+
+    monkeypatch.setattr(module.op, "drop_constraint", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(
+        module.op,
+        "create_check_constraint",
+        lambda name, table, expression: created.append((name, table, expression)),
+    )
+    monkeypatch.setattr(module.op, "execute", statements.append)
+
+    module.upgrade()
+    assert "bell_state_property" in created[-1][2]
+    assert "ghz_state_property" in created[-1][2]
+    assert set(module._METHODS_NEW) - set(module._METHODS_OLD) == {
+        "bell_state_property",
+        "ghz_state_property",
+    }
+
+    module.downgrade()
+    assert "cannot downgrade 0027" in statements[-1]
+    assert "DELETE FROM verification_records" not in statements[-1]

@@ -97,6 +97,7 @@ from .plan import (
     Plan,
     PlanParameters,
     SuccessCriteria,
+    StatePreparationClaim,
     VerificationPlan,
 )
 from .scope import Scope
@@ -134,7 +135,9 @@ from .lifecycle import (
 # 2.0.0: VerificationPlan removes all reference-QASM fields and planner-selectable
 # exact; prior exact records remain readable. Adds three-state review/failure/retry
 # taxonomy, unavailable/error check results, and typed final summaries.
-CONTRACTS_VERSION = "2.0.0"
+# 2.1.0: VerificationMethod gains fixed-policy Bell/GHZ state-property checks;
+# VerificationPlan gains an optional typed relative-phase state target.
+CONTRACTS_VERSION = "2.1.0"
 
 __all__ = [
     "CONTRACTS_VERSION",
@@ -212,6 +215,7 @@ __all__ = [
     "Stage",
     "StageFinished",
     "StageStarted",
+    "StatePreparationClaim",
     "SuccessCriteria",
     "TopLevelExecution",
     "TERMINAL_STATUSES",

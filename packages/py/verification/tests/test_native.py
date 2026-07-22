@@ -118,15 +118,27 @@ def test_sampled_counts_reject_width_mismatch_and_empty_evidence():
     assert not verify_native_sampled_counts({"00": 1024}, None).passed
 
 
-def test_sampled_counts_respect_an_explicit_threshold():
+def test_sampled_counts_reject_a_plan_attempt_to_loosen_policy():
     sampled = {"counts": {"00": 1024, "11": 1024}, "shots": 2048, "seed": 1234}
     # 75/25 vs the sampled 50/50: TVD 0.25, outside the two-sample shot-noise
-    # bound (~0.11 at these shot counts) but inside a plan-declared 0.3.
+    # bound (~0.11 at these shot counts). A plan-declared 0.3 cannot loosen it.
     reported = {"00": 768, "11": 256}
     assert not verify_native_sampled_counts(reported, sampled).passed
     loose = verify_native_sampled_counts(reported, sampled, threshold=0.3)
-    assert loose.passed
-    assert loose.details["protocol"]["threshold_source"] == "plan"
+    assert not loose.passed
+    assert loose.details["protocol"]["threshold_source"] == ("two_sample_shot_noise_bound")
+    assert loose.details["protocol"]["declared_threshold"] == 0.3
+    assert loose.details["protocol"]["threshold"] < 0.3
+
+
+def test_sampled_counts_allow_a_plan_to_tighten_policy():
+    sampled = {"counts": {"00": 1024, "11": 1024}, "shots": 2048, "seed": 1234}
+    reported = {"00": 1126, "11": 922}
+    assert verify_native_sampled_counts(reported, sampled).passed
+    tightened = verify_native_sampled_counts(reported, sampled, threshold=0.01)
+    assert not tightened.passed
+    assert tightened.details["protocol"]["threshold_source"] == "plan_tightened"
+    assert tightened.details["protocol"]["threshold"] == 0.01
 
 
 BELL_QASM = 'OPENQASM 2.0;\ninclude "qelib1.inc";\nqreg q[2];\nh q[0];\ncx q[0],q[1];\n'

@@ -283,6 +283,7 @@ def test_plan_schema_never_offers_a_method_the_worker_cannot_evaluate():
     # reference_problem.
     assert "brute_force" in schema
     assert "reference_problem" in schema
+    assert "state_preparation_claim" in schema
 
 
 def test_parse_plan_normalizes_scalar_additional_notes_from_json_object_mode():

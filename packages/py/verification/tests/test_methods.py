@@ -105,15 +105,26 @@ def test_statistical_counts_rejects_malformed_counts():
     assert not verify_statistical_counts(circuit, {"2x": 100}).passed  # not a bitstring
 
 
-def test_statistical_counts_respects_explicit_threshold():
+def test_statistical_counts_rejects_a_plan_attempt_to_loosen_policy():
     circuit = BELL
     # 60/40 split has TVD 0.1 from ideal — fails the shot-noise bound at these
-    # shots, passes a plan-supplied looser threshold.
+    # shots. A plan-supplied looser threshold must not manufacture a pass.
     counts = {"00": 2458, "11": 1638}
     assert not verify_statistical_counts(circuit, counts).passed
     loose = verify_statistical_counts(circuit, counts, threshold=0.15)
-    assert loose.passed
-    assert loose.details["protocol"]["threshold_source"] == "plan"
+    assert not loose.passed
+    assert loose.details["protocol"]["threshold_source"] == "shot_noise_bound"
+    assert loose.details["protocol"]["declared_threshold"] == 0.15
+    assert loose.details["protocol"]["threshold"] < 0.15
+
+
+def test_statistical_counts_allows_a_plan_to_tighten_policy():
+    counts = {"00": 2129, "11": 1967}
+    assert verify_statistical_counts(BELL, counts).passed
+    tightened = verify_statistical_counts(BELL, counts, threshold=0.01)
+    assert not tightened.passed
+    assert tightened.details["protocol"]["threshold_source"] == "plan_tightened"
+    assert tightened.details["protocol"]["threshold"] == 0.01
 
 
 def test_extract_counts_finds_plan_key_then_conventions():

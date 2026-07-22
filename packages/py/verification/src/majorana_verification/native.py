@@ -48,6 +48,7 @@ from majorana_verification.statevector import (
 # pin the two against drift. 12 leaves headroom over the exporters' 10 so a limit
 # bump there fails the pin test rather than silently rejecting valid evidence.
 NATIVE_STATEVECTOR_MAX_QUBITS = 12
+ENTANGLED_STATE_TOLERANCE = 1e-9
 
 _ENDIANNESS = ("q0_lsb", "q0_msb")
 
@@ -100,6 +101,93 @@ def statevector_from_evidence(payload: Any) -> tuple[Statevector, dict[int, int]
             raise ValueError(f"measurement_map entry {key!r}: {value!r} is out of range")
         mapping[clbit] = value
     return Statevector(vector), mapping, qubits, clbits
+
+
+def entangled_state_property(
+    payload: Any,
+    *,
+    state_name: str,
+    expected_qubits: int,
+    relative_phase_radians: float = 0.0,
+) -> EquivalenceReport:
+    """Check an explicitly accepted Bell/GHZ phase target and readout ordering.
+
+    This fixed-policy check proves more than computational-basis counts: it
+    compares the full framework-native statevector with
+    ``(|0...0> + exp(i*phi)|1...1>) / sqrt(2)`` up to one global phase. The
+    caller obtains ``phi`` from a typed Plan claim that semantic review accepted;
+    this function never infers it from a broad algorithm label.
+
+    When measurements are present, the classical-to-quantum mapping must be the
+    canonical identity mapping. With no measurements the state-preparation claim
+    remains judgeable; result/count correctness is a separate statistical claim.
+    """
+    if state_name not in {"bell", "ghz"}:
+        raise ValueError(f"unsupported entangled state property: {state_name!r}")
+    if not math.isfinite(relative_phase_radians):
+        raise ValueError("entangled state relative phase must be finite")
+    statevector, mapping, qubits, clbits = statevector_from_evidence(payload)
+    expected_mapping = {index: index for index in range(expected_qubits)}
+    mapping_ok = (clbits == 0 and not mapping) or (
+        clbits == expected_qubits and mapping == expected_mapping
+    )
+    width_ok = qubits == expected_qubits
+
+    distance: float | None = None
+    relative_phase: float | None = None
+    endpoint_populations: dict[str, float] = {}
+    if width_ok:
+        target = np.zeros(1 << expected_qubits, dtype=complex)
+        target[0] = 1 / math.sqrt(2)
+        target[-1] = np.exp(1j * relative_phase_radians) / math.sqrt(2)
+        vector = np.asarray(statevector.data)
+        distance = _phase_align_distance(vector, target)
+        endpoint_populations = {
+            "zero": float(abs(vector[0]) ** 2),
+            "one": float(abs(vector[-1]) ** 2),
+            "outside": float(np.sum(np.abs(vector[1:-1]) ** 2)),
+        }
+        if abs(vector[0]) > ENTANGLED_STATE_TOLERANCE and abs(vector[-1]) > 0:
+            relative_phase = float(np.angle(vector[-1] / vector[0]))
+
+    protocol = {
+        "name": f"{state_name}_state_property",
+        "target": "typed_relative_phase_cat_state",
+        "relative_phase_radians": relative_phase_radians,
+        "tolerance": ENTANGLED_STATE_TOLERANCE,
+        "expected_qubits": expected_qubits,
+        "measurement_binding": "identity_when_present",
+    }
+    scores = {
+        "max_abs_distance": distance,
+        "relative_phase_radians": relative_phase,
+        "endpoint_populations": endpoint_populations,
+        "observed_qubits": qubits,
+        "measurement_map": {str(key): value for key, value in mapping.items()},
+        "measurement_order_ok": mapping_ok,
+    }
+    vector_payload = [
+        [float(value.real), float(value.imag)] for value in np.asarray(statevector.data)
+    ]
+    fingerprint_payload = {
+        "statevector": vector_payload,
+        "measurement_map": scores["measurement_map"],
+        "protocol": protocol,
+    }
+    return EquivalenceReport(
+        fingerprint_type="exact_unitary",
+        protocol=protocol,
+        fingerprint_hash=hashlib.sha256(
+            json.dumps(fingerprint_payload, sort_keys=True).encode()
+        ).hexdigest(),
+        passed=bool(
+            width_ok
+            and mapping_ok
+            and distance is not None
+            and distance <= ENTANGLED_STATE_TOLERANCE
+        ),
+        scores=scores,
+    )
 
 
 def native_counts_vs_ideal(
@@ -371,7 +459,7 @@ def sampled_counts_comparison(
 
     Two finite samples of (claimed) one distribution: the pass bound is the sum of
     each sample's concentration bound, so more shots on either side tighten it.
-    An explicit plan threshold overrides the bound, same as every other check.
+    An explicit Plan threshold may tighten the fixed bound but never loosen it.
     """
     if not isinstance(sampled_payload, dict):
         raise ValueError("native sampled evidence is not a mapping")
@@ -429,13 +517,22 @@ def sampled_counts_comparison(
     # Same rule as compare_counts_to_ideal: the bound uses the SELECTED
     # orientation's support size, not whichever the loop saw last.
     bins = bins_by_orientation[orientation_used]
-    threshold_source = "plan" if threshold is not None else "two_sample_shot_noise_bound"
-    if threshold is None:
 
-        def bound(shots: int) -> float:
-            return math.sqrt((bins * math.log(2) + math.log(1 / delta)) / (2 * shots))
+    def bound(shots: int) -> float:
+        return math.sqrt((bins * math.log(2) + math.log(1 / delta)) / (2 * shots))
 
-        threshold = bound(reported_shots) + bound(sampled_shots)
+    policy_threshold = bound(reported_shots) + bound(sampled_shots)
+    declared_threshold = threshold
+    threshold = (
+        policy_threshold
+        if declared_threshold is None
+        else min(policy_threshold, declared_threshold)
+    )
+    threshold_source = (
+        "plan_tightened"
+        if declared_threshold is not None and declared_threshold < policy_threshold
+        else "two_sample_shot_noise_bound"
+    )
     protocol = {
         "name": "native_sampled_counts",
         "reported_shots": reported_shots,
@@ -443,6 +540,8 @@ def sampled_counts_comparison(
         "sampled_seed": sampled_payload.get("seed"),
         "threshold": threshold,
         "threshold_source": threshold_source,
+        "declared_threshold": declared_threshold,
+        "policy_threshold": policy_threshold,
         "delta": delta,
         "bins": bins,
         "orientation_used": orientation_used,

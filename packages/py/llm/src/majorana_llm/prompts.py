@@ -64,6 +64,13 @@ A plan that lists `statistical` while promising only scalars — cut values, ene
 ratios — is rejected by the plan contract, because no generated code can produce the
 distribution the check needs.
 
+For Bell or GHZ state preparation, write an explicit `state_preparation_claim` in
+`verification_plan`: family, qubit count, and the relative phase phi in
+(|0...0> + exp(i*phi)|1...1>)/sqrt(2). Use phi=0 only when the request asks for the
+usual positive-phase state; preserve any requested non-canonical phase. The strict
+property verifier reads this typed target only after semantic review has checked it
+against the user's request. Never infer a canonical target merely from the algorithm name.
+
 `exact_diag` is the classical ground truth for a task whose answer is an ENERGY, and it
 is the only physical evidence a variational run can earn: a VQE reports a scalar, so
 `statistical` has no distribution to compare. List it whenever the request names a

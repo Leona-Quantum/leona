@@ -1,4 +1,5 @@
 import json
+import math
 from types import SimpleNamespace
 from uuid import uuid4
 
@@ -49,6 +50,14 @@ def _plan(*, expected_keys=None) -> Plan:
             "expected_runtime_sec": 1,
             "success_criteria": {"primary_metric": "counts"},
             "expected_output_keys": expected_keys or ["counts"],
+            "verification_plan": {
+                "methods": ["return_contract"],
+                "state_preparation_claim": {
+                    "family": "bell",
+                    "qubits": 2,
+                    "relative_phase_radians": 0.0,
+                },
+            },
         }
     )
 
@@ -133,8 +142,15 @@ class PassingCriticLLM:
 
 async def test_semantic_critic_runs_only_after_deterministic_pass():
     candidate = _candidate()
+    counts = {"00": 512, "11": 512}
     output = await EvidenceVerifier(llm=PassingCriticLLM(), task_prompt="Bell state").verify(
-        candidate, _execution(candidate), _plan()
+        candidate,
+        _execution(
+            candidate,
+            result={"counts": counts},
+            observation=_statistical_observation(counts),
+        ),
+        _plan(),
     )
     assert output.decision is VerifierDecision.PASS
     assert all(check["result"] == "pass" for check in output.deterministic_checks)
@@ -223,7 +239,11 @@ class MustNotCreateSandbox:
 
 
 async def test_executor_reports_resource_exhaustion_before_large_statevector_run():
-    plan = Plan.model_validate(_plan().model_dump(mode="json") | {"qubits_estimate": 27})
+    payload = _plan().model_dump(mode="json")
+    payload["algorithm"] = Algorithm.OTHER.value
+    payload["qubits_estimate"] = 27
+    payload["verification_plan"]["state_preparation_claim"] = None
+    plan = Plan.model_validate(payload)
     output = await SandboxCandidateExecutor(MustNotCreateSandbox()).run_candidate(
         _candidate(), plan
     )
@@ -739,7 +759,14 @@ def _statistical_plan() -> Plan:
             "expected_runtime_sec": 1,
             "success_criteria": {"primary_metric": "counts"},
             "expected_output_keys": ["counts"],
-            "verification_plan": {"methods": ["statistical", "return_contract"]},
+            "verification_plan": {
+                "methods": ["statistical", "return_contract"],
+                "state_preparation_claim": {
+                    "family": "bell",
+                    "qubits": 2,
+                    "relative_phase_radians": 0.0,
+                },
+            },
         }
     )
 
@@ -838,6 +865,95 @@ async def test_statistical_check_passes_on_counts_matching_the_born_distribution
     assert output.decision is VerifierDecision.PASS
 
 
+async def test_bell_property_rejects_wrong_relative_phase_despite_matching_counts():
+    counts = {"00": 512, "11": 512}
+    observation = _statistical_observation(counts)
+    observation["native_statevector"] = _bell_native_statevector()
+    observation["native_statevector"]["amplitudes"][6] *= -1
+    candidate = _candidate()
+
+    output = await EvidenceVerifier(llm=PassingCriticLLM(), task_prompt="Bell state").verify(
+        candidate,
+        _execution(candidate, result={"counts": counts}, observation=observation),
+        _statistical_plan(),
+    )
+
+    checks = _checks_by_method(output)
+    assert checks["statistical"]["result"] == "pass"
+    assert checks["bell_state_property"]["result"] == "fail"
+    assert output.decision is VerifierDecision.FAIL
+
+
+async def test_explicit_negative_phase_bell_request_is_not_blamed_as_candidate_defect():
+    counts = {"00": 512, "11": 512}
+    observation = _statistical_observation(counts)
+    observation["native_statevector"] = _bell_native_statevector()
+    observation["native_statevector"]["amplitudes"][6] *= -1
+    plan = _statistical_plan()
+    assert plan.verification_plan is not None
+    assert plan.verification_plan.state_preparation_claim is not None
+    plan.verification_plan.state_preparation_claim.relative_phase_radians = math.pi
+    candidate = _candidate()
+
+    output = await EvidenceVerifier(
+        llm=PassingCriticLLM(), task_prompt="Prepare (|00> - |11>)/sqrt(2)"
+    ).verify(
+        candidate,
+        _execution(candidate, result={"counts": counts}, observation=observation),
+        plan,
+    )
+
+    assert _checks_by_method(output)["bell_state_property"]["result"] == "pass"
+    assert output.decision is VerifierDecision.PASS
+    assert output.candidate_defect_observed is False
+
+
+async def test_bell_algorithm_without_typed_target_is_inconclusive_not_inferred():
+    counts = {"00": 512, "11": 512}
+    plan = _statistical_plan()
+    assert plan.verification_plan is not None
+    plan.verification_plan.state_preparation_claim = None
+    candidate = _candidate()
+
+    output = await EvidenceVerifier(llm=PassingCriticLLM(), task_prompt="Bell-like state").verify(
+        candidate,
+        _execution(
+            candidate,
+            result={"counts": counts},
+            observation=_statistical_observation(counts),
+        ),
+        plan,
+    )
+
+    check = _checks_by_method(output)["bell_state_property"]
+    assert check["result"] == "unavailable"
+    assert "typed state-preparation claim" in check["details"]["reason"]
+    assert output.decision is VerifierDecision.INCONCLUSIVE
+    assert output.candidate_defect_observed is False
+
+
+async def test_unaccepted_typed_phase_target_cannot_create_a_candidate_defect():
+    counts = {"00": 512, "11": 512}
+    observation = _statistical_observation(counts)
+    observation["native_statevector"] = _bell_native_statevector()
+    observation["native_statevector"]["amplitudes"][6] *= -1
+    candidate = _candidate()
+
+    output = await EvidenceVerifier(
+        llm=LowConfidenceCriticLLM(), task_prompt="Bell state with unclear phase"
+    ).verify(
+        candidate,
+        _execution(candidate, result={"counts": counts}, observation=observation),
+        _statistical_plan(),
+    )
+
+    check = _checks_by_method(output)["bell_state_property"]
+    assert check["result"] == "unavailable"
+    assert check["details"]["original_result"] == "fail"
+    assert output.decision is VerifierDecision.INCONCLUSIVE
+    assert output.candidate_defect_observed is False
+
+
 async def test_statistical_check_survives_a_missing_repeat_execution():
     # The Born check needs one counts dict, so losing the second execution is no
     # longer fatal — it only costs the reproducibility evidence.
@@ -916,6 +1032,48 @@ def _bell_native_statevector() -> dict:
     }
 
 
+def _ghz_native_statevector() -> dict:
+    amp = 1 / (2**0.5)
+    amplitudes = [0.0] * 16
+    amplitudes[0] = amp  # |000>
+    amplitudes[14] = amp  # |111>
+    return {
+        "amplitudes": amplitudes,
+        "qubits": 3,
+        "endianness": "q0_lsb",
+        "clbits": 3,
+        "measurement_map": {"0": 0, "1": 1, "2": 2},
+    }
+
+
+async def test_ghz_typed_property_is_enforced_by_the_full_verifier():
+    counts = {"000": 512, "111": 512}
+    plan_payload = _statistical_plan().model_dump(mode="json")
+    plan_payload["algorithm"] = Algorithm.GHZ.value
+    plan_payload["qubits_estimate"] = 3
+    plan_payload["verification_plan"]["state_preparation_claim"] = {
+        "family": "ghz",
+        "qubits": 3,
+        "relative_phase_radians": 0.0,
+        "measurement_binding": "identity_when_present",
+    }
+    plan = Plan.model_validate(plan_payload)
+    observation = _statistical_observation(counts)
+    observation["native_statevector"] = _ghz_native_statevector()
+    observation["resource_metrics"]["qubits"] = 3
+    observation["resource_metrics"]["measurement_count"] = 3
+    candidate = _candidate()
+
+    output = await EvidenceVerifier(llm=PassingCriticLLM(), task_prompt="GHZ state").verify(
+        candidate,
+        _execution(candidate, result={"counts": counts}, observation=observation),
+        plan,
+    )
+
+    assert _checks_by_method(output)["ghz_state_property"]["result"] == "pass"
+    assert output.decision is VerifierDecision.PASS
+
+
 async def test_statistical_prefers_native_statevector_over_interchange_qasm():
     """plans/framework-native-verification.md: the framework's own state is the
     substrate. The interchange QASM here describes a DIFFERENT circuit (|11> via
@@ -941,7 +1099,7 @@ async def test_statistical_prefers_native_statevector_over_interchange_qasm():
     assert output.decision is VerifierDecision.PASS
 
 
-async def test_feed_forward_circuit_earns_a_physical_grade_via_native_sampling():
+async def test_feed_forward_circuit_without_a_dedicated_property_is_inconclusive():
     """The other half of the 019f7e46-d688 story: after the incapacity fix a
     teleportation run merely stopped failing (structural). With the observer's
     trusted sampled counts it earns `physical` — the reported counts agree with a
@@ -959,6 +1117,7 @@ async def test_feed_forward_circuit_earns_a_physical_grade_via_native_sampling()
         "bit_order": "big",
     }
     plan = _statistical_plan()
+    plan.algorithm = Algorithm.OTHER
     plan.qubits_estimate = 3
     candidate = _candidate()
     output = await EvidenceVerifier(llm=PassingCriticLLM(), task_prompt="teleportation").verify(
@@ -969,7 +1128,8 @@ async def test_feed_forward_circuit_earns_a_physical_grade_via_native_sampling()
     checks = _checks_by_method(output)
     assert "statistical" not in checks
     assert checks["statistical_native"]["result"] == "pass"
-    assert output.decision is VerifierDecision.PASS
+    assert output.decision is VerifierDecision.INCONCLUSIVE
+    assert output.failure_class is VerificationFailureClass.CAPABILITY_LIMIT
     assert evidence_strength_of(output.deterministic_checks) is EvidenceStrength.PHYSICAL
 
 
@@ -1014,7 +1174,8 @@ async def test_a_plan_without_statistical_still_gets_the_opportunistic_native_ch
         plan,
     )
     checks = _checks_by_method(output)
-    assert "statistical" not in checks
+    assert checks["statistical"]["result"] == "pass"
+    assert checks["bell_state_property"]["result"] == "pass"
     assert checks["statistical_native"]["result"] == "pass"
     assert output.decision is VerifierDecision.PASS
     assert evidence_strength_of(output.deterministic_checks) is EvidenceStrength.PHYSICAL
@@ -1271,8 +1432,15 @@ async def test_an_unparseable_critic_response_is_retried_before_it_costs_a_candi
     way on production run 019f7db9-f25c."""
     llm = FlakyCriticLLM()
     candidate = _candidate()
+    counts = {"00": 512, "11": 512}
     output = await EvidenceVerifier(llm=llm, task_prompt="W state").verify(
-        candidate, _execution(candidate), _plan()
+        candidate,
+        _execution(
+            candidate,
+            result={"counts": counts},
+            observation=_statistical_observation(counts),
+        ),
+        _plan(),
     )
     assert llm.calls == 2, "did not retry the critic"
     assert output.decision is VerifierDecision.PASS
@@ -1319,8 +1487,15 @@ async def test_a_fenced_critic_verdict_is_salvaged_rather_than_costing_a_candida
     stage has had this salvage since it was written; the critic never did."""
     llm = FencedCriticLLM()
     candidate = _candidate()
+    counts = {"00": 512, "11": 512}
     output = await EvidenceVerifier(llm=llm, task_prompt="W state").verify(
-        candidate, _execution(candidate), _plan()
+        candidate,
+        _execution(
+            candidate,
+            result={"counts": counts},
+            observation=_statistical_observation(counts),
+        ),
+        _plan(),
     )
     assert llm.calls == 1, "spent a second call on a reply that was already parseable"
     assert output.decision is VerifierDecision.PASS
@@ -1350,8 +1525,15 @@ async def test_a_critic_reply_with_an_unexpected_field_is_still_judged():
 
     llm = ExtraFieldCriticLLM()
     candidate = _candidate()
+    counts = {"00": 512, "11": 512}
     output = await EvidenceVerifier(llm=llm, task_prompt="W state").verify(
-        candidate, _execution(candidate), _plan()
+        candidate,
+        _execution(
+            candidate,
+            result={"counts": counts},
+            observation=_statistical_observation(counts),
+        ),
+        _plan(),
     )
     assert llm.calls == 1
     assert output.decision is VerifierDecision.PASS
@@ -1601,6 +1783,46 @@ def test_a_converged_vqe_finally_earns_a_physical_grade():
     assert evidence_strength_of(checks) is EvidenceStrength.PHYSICAL
 
 
+@pytest.mark.parametrize("algorithm", [Algorithm.QFT, Algorithm.GROVER, Algorithm.OTHER])
+async def test_unrelated_exact_diag_cannot_verify_an_unsupported_algorithm(algorithm):
+    candidate = _candidate()
+    plan = _vqe_plan(
+        algorithm=algorithm.value,
+        problem_summary=f"Unsupported {algorithm.value} task with an unrelated Hamiltonian",
+        algorithm_rationale="Exercise the strict evidence sufficiency boundary",
+    )
+
+    output = await EvidenceVerifier(
+        llm=PassingCriticLLM(), task_prompt=plan.problem_summary
+    ).verify(
+        candidate,
+        _vqe_execution(candidate, -1.8751),
+        plan,
+    )
+
+    assert _checks_by_method(output)["exact_diag"]["result"] == "pass"
+    assert output.decision is VerifierDecision.INCONCLUSIVE
+    assert output.failure_class is VerificationFailureClass.CAPABILITY_LIMIT
+    assert output.reason_code == "strict_evidence_insufficient"
+
+
+async def test_unaccepted_hamiltonian_target_cannot_create_a_candidate_defect():
+    candidate = _candidate()
+    output = await EvidenceVerifier(
+        llm=LowConfidenceCriticLLM(), task_prompt="VQE with uncertain Hamiltonian provenance"
+    ).verify(
+        candidate,
+        _vqe_execution(candidate, -1.06301),
+        _vqe_plan(),
+    )
+
+    check = _checks_by_method(output)["exact_diag"]
+    assert check["result"] == "unavailable"
+    assert check["details"]["original_result"] == "fail"
+    assert output.decision is VerifierDecision.INCONCLUSIVE
+    assert output.candidate_defect_observed is False
+
+
 def test_a_vqe_stuck_in_an_excited_state_is_caught_and_told_which_one():
     """The failure that actually happens to VQE, and the one no other check in the
     panel can see: the code does exactly what the code says, and says the wrong
@@ -1791,6 +2013,27 @@ def test_a_qaoa_run_that_found_the_optimum_finally_earns_a_physical_grade():
     assert check["result"] == "pass"
     assert check["details"]["metric"] == "best_cut_weight"
     assert evidence_strength_of(checks) is EvidenceStrength.PHYSICAL
+
+
+async def test_unrelated_brute_force_cannot_verify_grover():
+    candidate = _candidate()
+    plan = _qaoa_plan(
+        algorithm=Algorithm.GROVER.value,
+        problem_summary="Grover search with an unrelated MaxCut objective",
+        algorithm_rationale="Exercise the dedicated-property requirement",
+    )
+
+    output = await EvidenceVerifier(
+        llm=PassingCriticLLM(), task_prompt=plan.problem_summary
+    ).verify(
+        candidate,
+        _qaoa_execution(candidate, 6.0),
+        plan,
+    )
+
+    assert _checks_by_method(output)["brute_force"]["result"] == "pass"
+    assert output.decision is VerifierDecision.INCONCLUSIVE
+    assert output.failure_class is VerificationFailureClass.CAPABILITY_LIMIT
 
 
 def test_a_suboptimal_cut_fails_with_the_search_named_not_the_scoring():

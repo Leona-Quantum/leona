@@ -54,6 +54,46 @@ def test_extra_fields_rejected():
         Plan.model_validate({**VALID, "vibes": "good"})
 
 
+def _with_state_claim(*, algorithm="Bell", family="bell", qubits=2, phase=0.0):
+    return {
+        **VALID,
+        "algorithm": algorithm,
+        "qubits_estimate": qubits,
+        "verification_plan": {
+            "methods": ["return_contract"],
+            "state_preparation_claim": {
+                "family": family,
+                "qubits": qubits,
+                "relative_phase_radians": phase,
+            },
+        },
+    }
+
+
+def test_state_preparation_claim_preserves_noncanonical_relative_phase():
+    plan = Plan.model_validate(_with_state_claim(phase=3.141592653589793))
+
+    assert plan.verification_plan is not None
+    assert plan.verification_plan.state_preparation_claim is not None
+    assert plan.verification_plan.state_preparation_claim.relative_phase_radians == pytest.approx(
+        3.141592653589793
+    )
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        _with_state_claim(algorithm="QFT"),
+        _with_state_claim(algorithm="Bell", family="ghz"),
+        _with_state_claim(algorithm="Bell", qubits=3),
+        _with_state_claim(algorithm="GHZ", family="ghz", qubits=2),
+    ],
+)
+def test_state_preparation_claim_must_match_algorithm_and_width(payload):
+    with pytest.raises(ValidationError):
+        Plan.model_validate(payload)
+
+
 def _with_statistical(output_keys: list[str]) -> dict:
     return {
         **VALID,

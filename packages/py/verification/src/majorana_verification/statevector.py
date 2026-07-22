@@ -448,14 +448,25 @@ def compare_counts_to_ideal(
     # whichever the loop saw last skewed the auto threshold (found in review
     # of PR 108; the defect predates the refactor).
     coarse_bins = bins_by_orientation[orientation_used]
-    threshold_source = "plan" if threshold is not None else "shot_noise_bound"
-    if threshold is None:
-        threshold = math.sqrt((coarse_bins * math.log(2) + math.log(1 / delta)) / (2 * shots))
+    policy_threshold = math.sqrt((coarse_bins * math.log(2) + math.log(1 / delta)) / (2 * shots))
+    declared_threshold = threshold
+    threshold = (
+        policy_threshold
+        if declared_threshold is None
+        else min(policy_threshold, declared_threshold)
+    )
+    threshold_source = (
+        "plan_tightened"
+        if declared_threshold is not None and declared_threshold < policy_threshold
+        else "shot_noise_bound"
+    )
     protocol = {
         "name": protocol_name,
         "shots": shots,
         "threshold": threshold,
         "threshold_source": threshold_source,
+        "declared_threshold": declared_threshold,
+        "policy_threshold": policy_threshold,
         "delta": delta,
         "bins": coarse_bins,
         "bit_order": bit_order,
@@ -515,7 +526,17 @@ def statistical_equivalence(
     left = _sample_distribution(reference, shots=shots, seed=seed)
     right = _sample_distribution(candidate, shots=shots, seed=seed)
     tvd = _total_variation(left, right)
-    protocol = {"name": "statistical", "shots": shots, "seed": seed, "threshold": threshold}
+    declared_threshold = threshold
+    threshold = min(0.05, declared_threshold)
+    protocol = {
+        "name": "statistical",
+        "shots": shots,
+        "seed": seed,
+        "threshold": threshold,
+        "policy_threshold": 0.05,
+        "declared_threshold": declared_threshold,
+        "threshold_source": "plan_tightened" if declared_threshold < 0.05 else "fixed_policy",
+    }
     payload = {
         "reference": fingerprint(reference),
         "candidate": fingerprint(candidate),

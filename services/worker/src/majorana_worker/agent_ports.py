@@ -21,6 +21,7 @@ from majorana_agent import (
 )
 from majorana_contracts import Scope
 from majorana_contracts.enums import (
+    Algorithm,
     ArtifactType,
     ExportStatus,
     Framework,
@@ -49,13 +50,16 @@ from majorana_sandbox import run as sandbox_run
 from majorana_verification import (
     BaselineProblemError,
     HamiltonianError,
+    assess_evidence_sufficiency,
     energy_tolerance,
     extract_counts,
     ground_state_energy,
     objective_tolerance,
     optimal_objective,
     verify_brute_force,
+    verify_bell_state_property,
     verify_exact_diag,
+    verify_ghz_state_property,
     verify_native_sampled_counts,
     verify_native_statistical_counts,
     verify_return_contract,
@@ -713,7 +717,7 @@ class _VerificationPrimitives:
 
     def strict_checks(self, execution: ExecutionEvidence, plan: Plan) -> list[dict[str, Any]]:
         methods = list(plan.verification_plan.methods) if plan.verification_plan else []
-        checks: list[dict[str, Any]] = []
+        checks: list[dict[str, Any]] = [*self._state_property_checks(execution, plan)]
         for method in methods:
             if method is VerificationMethod.RETURN_CONTRACT:
                 continue
@@ -747,16 +751,20 @@ class _VerificationPrimitives:
         # Plan did not request a statistical method. This never invokes QASM.
         if VerificationMethod.STATISTICAL not in methods:
             native_sampled = execution.observation.get("native_sampled")
+            native_statevector = execution.observation.get("native_statevector")
             reported = extract_counts(execution.result, plan.expected_output_keys)
-            if reported is not None and isinstance(native_sampled, dict):
-                thresholds = (
-                    plan.verification_plan.thresholds if plan.verification_plan else None
-                ) or {}
-                outcome = verify_native_sampled_counts(
+            thresholds = (
+                plan.verification_plan.thresholds if plan.verification_plan else None
+            ) or {}
+            threshold = thresholds.get("tvd_max", thresholds.get("total_variation_max"))
+            physical_check_ran = False
+            if reported is not None and isinstance(native_statevector, dict):
+                outcome = verify_native_statistical_counts(
+                    native_statevector,
                     reported,
-                    native_sampled,
-                    thresholds.get("tvd_max", thresholds.get("total_variation_max")),
+                    threshold,
                 )
+                physical_check_ran = True
                 checks.append(
                     {
                         "method": outcome.method.value,
@@ -764,7 +772,85 @@ class _VerificationPrimitives:
                         "details": outcome.details,
                     }
                 )
+            if reported is not None and isinstance(native_sampled, dict):
+                outcome = verify_native_sampled_counts(
+                    reported,
+                    native_sampled,
+                    threshold,
+                )
+                physical_check_ran = True
+                checks.append(
+                    {
+                        "method": outcome.method.value,
+                        "result": outcome.result.value,
+                        "details": outcome.details,
+                    }
+                )
+            if reported is not None and not physical_check_ran:
+                checks.append(
+                    {
+                        "method": VerificationMethod.STATISTICAL.value,
+                        "result": "unavailable",
+                        "details": {
+                            "reason": "reported counts lack trusted native comparison evidence",
+                            "claim": "reported counts agree with the executed circuit",
+                        },
+                    }
+                )
         return checks
+
+    @staticmethod
+    def _state_property_checks(execution: ExecutionEvidence, plan: Plan) -> list[dict[str, Any]]:
+        if plan.algorithm not in {Algorithm.BELL, Algorithm.GHZ}:
+            return []
+        claim = plan.verification_plan.state_preparation_claim if plan.verification_plan else None
+        method = (
+            VerificationMethod.BELL_STATE_PROPERTY
+            if plan.algorithm is Algorithm.BELL
+            else VerificationMethod.GHZ_STATE_PROPERTY
+        )
+        if claim is None:
+            return [
+                {
+                    "method": method.value,
+                    "result": "unavailable",
+                    "details": {
+                        "reason": "no semantically accepted typed state-preparation claim",
+                        "claim": f"{plan.algorithm.value} state preparation",
+                    },
+                }
+            ]
+        payload = execution.observation.get("native_statevector")
+        if not isinstance(payload, dict):
+            return [
+                {
+                    "method": method.value,
+                    "result": "unavailable",
+                    "details": {
+                        "reason": "framework-native statevector evidence is unavailable",
+                        "claim": (
+                            f"accepted {plan.algorithm.value} target with relative phase "
+                            f"{claim.relative_phase_radians} radians"
+                        ),
+                    },
+                }
+            ]
+        outcome = (
+            verify_bell_state_property(payload, claim.relative_phase_radians)
+            if plan.algorithm is Algorithm.BELL
+            else verify_ghz_state_property(
+                payload,
+                claim.qubits,
+                claim.relative_phase_radians,
+            )
+        )
+        return [
+            {
+                "method": outcome.method.value,
+                "result": outcome.result.value,
+                "details": outcome.details,
+            }
+        ]
 
     @staticmethod
     def _native_optimization_check(
@@ -897,8 +983,8 @@ class _VerificationPrimitives:
         from the framework's OWN simulator when the observer produced it
         (`native_statevector` — plans/framework-native-verification.md: no
         conversion in the trust path; three of the four defects in that family
-        were conversion defects), and from simulating the interchange QASM only
-        as the fallback for runs whose observer produced no native evidence.
+        were conversion defects). Without native evidence this check is
+        unavailable; interchange QASM is never a correctness fallback.
 
         `statistical_native` is the mid-circuit-capable physical check: reported
         counts against a trusted re-execution of the circuit object through the
@@ -1246,6 +1332,28 @@ class StrictEvidenceVerifier:
                     "details": {"error": type(exc).__name__, "reason": str(exc)[:1000]},
                 }
             ]
+        if semantic.decision is not SemanticReviewDecision.READY:
+            for check in strict_checks:
+                if (
+                    check.get("method")
+                    not in {
+                        VerificationMethod.BELL_STATE_PROPERTY.value,
+                        VerificationMethod.GHZ_STATE_PROPERTY.value,
+                        VerificationMethod.EXACT_DIAG.value,
+                        VerificationMethod.BRUTE_FORCE.value,
+                    }
+                    or check.get("result") != "fail"
+                ):
+                    continue
+                check["result"] = "unavailable"
+                check["details"] = {
+                    **check.get("details", {}),
+                    "reason": (
+                        "Plan-declared target was not accepted by semantic review; "
+                        "its mismatch cannot establish a candidate defect"
+                    ),
+                    "original_result": "fail",
+                }
         checks = [*prior_checks, *strict_checks]
         failures = [check for check in checks if check["result"] == "fail"]
         if failures:
@@ -1303,6 +1411,26 @@ class StrictEvidenceVerifier:
                 ),
                 candidate_defect_observed=False,
                 reason_code="strict_verifier_error" if errors else "insufficient_evidence",
+            )
+        sufficiency = assess_evidence_sufficiency(
+            plan.algorithm,
+            checks,
+            reported_counts=extract_counts(execution.result, plan.expected_output_keys) is not None,
+        )
+        if not sufficiency.sufficient:
+            return VerificationOutput(
+                decision=VerifierDecision.INCONCLUSIVE,
+                deterministic_checks=checks,
+                critic=semantic.critic,
+                semantic_review_decision=semantic.decision,
+                failure_class=(
+                    VerificationFailureClass.EVIDENCE_GAP
+                    if sufficiency.capability_supported
+                    else VerificationFailureClass.CAPABILITY_LIMIT
+                ),
+                retry_target=RetryTarget.NONE,
+                candidate_defect_observed=False,
+                reason_code="strict_evidence_insufficient",
             )
         return VerificationOutput(
             decision=VerifierDecision.PASS,

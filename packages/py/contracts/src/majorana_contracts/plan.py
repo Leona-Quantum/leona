@@ -185,6 +185,27 @@ class ReferenceProblem(_PlanBase):
     )
 
 
+class StatePreparationClaim(_PlanBase):
+    """Typed Bell/GHZ target accepted by semantic review before strict checks.
+
+    The Plan records the requested relative phase as data; it is not correctness
+    authority by itself. The semantic reviewer owns request-to-Plan alignment,
+    then the fixed verifier compares native evidence with this bounded target.
+    """
+
+    family: Literal["bell", "ghz"]
+    qubits: int = Field(ge=2, le=12)
+    relative_phase_radians: float = Field(
+        default=0.0,
+        allow_inf_nan=False,
+        description=(
+            "Relative phase phi in (|0...0> + exp(i*phi)|1...1>)/sqrt(2). "
+            "Semantic review must confirm that phi reflects the user's request."
+        ),
+    )
+    measurement_binding: Literal["identity_when_present"] = "identity_when_present"
+
+
 class VerificationPlan(_PlanBase):
     methods: list[VerificationMethod] = Field(
         min_length=1,
@@ -228,6 +249,14 @@ class VerificationPlan(_PlanBase):
             "— not a transcription of the code you expect back. "
             "success_criteria.primary_metric must name the result key holding the "
             "objective value the run reports."
+        ),
+    )
+    state_preparation_claim: StatePreparationClaim | None = Field(
+        default=None,
+        description=(
+            "Explicit Bell/GHZ target for the fixed native-state property verifier. "
+            "Omission means that state-preparation correctness is unsupported, not "
+            "that the canonical positive-phase target may be inferred."
         ),
     )
     feedback_policy: str | None = Field(
@@ -370,6 +399,33 @@ class Plan(_PlanBase):
         if isinstance(value, dict) and "baseline_plan" in value:
             value = {key: item for key, item in value.items() if key != "baseline_plan"}
         return value
+
+    @model_validator(mode="after")
+    def _state_preparation_claim_matches_plan(self) -> "Plan":
+        verification_plan = self.verification_plan
+        claim = verification_plan.state_preparation_claim if verification_plan else None
+        if claim is None:
+            return self
+        expected_family = {
+            Algorithm.BELL: "bell",
+            Algorithm.GHZ: "ghz",
+        }.get(self.algorithm)
+        if expected_family is None:
+            raise ValueError(
+                "state_preparation_claim is supported only when algorithm is Bell or GHZ"
+            )
+        if claim.family != expected_family:
+            raise ValueError(
+                f"state_preparation_claim.family must be {expected_family!r} for "
+                f"algorithm {self.algorithm.value}"
+            )
+        if claim.qubits != self.qubits_estimate:
+            raise ValueError("state_preparation_claim.qubits must equal Plan.qubits_estimate")
+        if claim.family == "bell" and claim.qubits != 2:
+            raise ValueError("a Bell state_preparation_claim requires exactly 2 qubits")
+        if claim.family == "ghz" and claim.qubits < 3:
+            raise ValueError("a GHZ state_preparation_claim requires at least 3 qubits")
+        return self
 
     @model_validator(mode="after")
     def _statistical_needs_distribution_evidence(self) -> "Plan":

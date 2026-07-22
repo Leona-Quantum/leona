@@ -1093,7 +1093,7 @@
         "type": "object"
       },
       "EvidenceStrength": {
-        "description": "What a passing run's verdict was actually proved by.\n\nDeliberately *not* a fourth VerifierDecision value. A run whose only check was\n`return_contract` \u2014 \"does the result dict have a `counts` key?\" \u2014 is a real pass:\nnothing it claimed was contradicted. It is just not the same claim as a run whose\nreported distribution was compared against the circuit's Born distribution to\n1.8e-16, and until 2026-07-20 both printed the single word \"Verified\".\n\nEvery consumer compares `verifier_decision == \"pass\"`, the eval harness included,\nso the decision stays `pass` and the strength rides alongside it.",
+        "description": "What a passing run's verdict was actually proved by.\n\nDeliberately *not* a fourth VerifierDecision value. A run whose only check was\n`return_contract` \u2014 \"does the result dict have a `counts` key?\" \u2014 is a real pass:\nnothing it claimed was contradicted. It is just not the same claim as a run whose\nreported distribution was compared against the circuit's Born distribution to\n1.8e-16, and until 2026-07-20 both printed the single word \"Verified\".\n\nThis grades the checks, not final sufficiency. Verification v2 refuses a final\nPASS when the check set is structural-only or lacks a dedicated property check;\na physical grade may likewise describe one limited passing claim while the final\ndecision remains INCONCLUSIVE because another required claim is unsupported.",
         "enum": [
           "physical",
           "structural"
@@ -3179,6 +3179,44 @@
         "title": "StageStarted",
         "type": "object"
       },
+      "StatePreparationClaim": {
+        "additionalProperties": false,
+        "description": "Typed Bell/GHZ target accepted by semantic review before strict checks.\n\nThe Plan records the requested relative phase as data; it is not correctness\nauthority by itself. The semantic reviewer owns request-to-Plan alignment,\nthen the fixed verifier compares native evidence with this bounded target.",
+        "properties": {
+          "family": {
+            "enum": [
+              "bell",
+              "ghz"
+            ],
+            "title": "Family",
+            "type": "string"
+          },
+          "measurement_binding": {
+            "const": "identity_when_present",
+            "default": "identity_when_present",
+            "title": "Measurement Binding",
+            "type": "string"
+          },
+          "qubits": {
+            "maximum": 12,
+            "minimum": 2,
+            "title": "Qubits",
+            "type": "integer"
+          },
+          "relative_phase_radians": {
+            "default": 0.0,
+            "description": "Relative phase phi in (|0...0> + exp(i*phi)|1...1>)/sqrt(2). Semantic review must confirm that phi reflects the user's request.",
+            "title": "Relative Phase Radians",
+            "type": "number"
+          }
+        },
+        "required": [
+          "family",
+          "qubits"
+        ],
+        "title": "StatePreparationClaim",
+        "type": "object"
+      },
       "SuccessCriteria": {
         "additionalProperties": false,
         "properties": {
@@ -3248,7 +3286,7 @@
         "type": "string"
       },
       "VerificationMethod": {
-        "description": "Every check name the verifier can emit \u2014 not only the plannable ones.\n\nThe list is exhaustive on purpose. `run_events` is the only channel a human or\nthe UI has into a run, and its `verification.result` event types `method` as\nthis enum, so the emitter drops any check whose name is not a member\n(`agent_events.py`). Until 2026-07-20 the six contract checks below were absent,\nand the emitter silently discarded six of the ten checks the panel actually\nruns. Production QPE run 019f7f2d-09c9 rejected its first candidate on one of\nthem: the critic was never invoked, so a deterministic check had failed, and the\nevent stream showed three passing checks and no failure at all. The run bought a\nsecond candidate and a second sandbox execution for a reason nothing recorded.\n\n**Adding a member here is half of a change.** The database allowlist\n(`ck_method_enum` on `verification_records`) is the other half and must widen in\nthe same deploy \u2014 see db/migrations/versions/0024. That pairing is enforced by\npackages/py/contracts/tests/test_method_allowlist.py rather than remembered.\nAlso decide which side of `PHYSICAL_VERIFICATION_METHODS` the new name falls on;\nall six added below are contract checks that police the shape of the answer, not\nits correctness, so none of them lifts a run's grade.",
+        "description": "Every check name the verifier can emit \u2014 not only the plannable ones.\n\nThe list is exhaustive on purpose. `run_events` is the only channel a human or\nthe UI has into a run, and its `verification.result` event types `method` as\nthis enum, so the emitter drops any check whose name is not a member\n(`agent_events.py`). Until 2026-07-20 the six contract checks below were absent,\nand the emitter silently discarded six of the ten checks the panel actually\nruns. Production QPE run 019f7f2d-09c9 rejected its first candidate on one of\nthem: the critic was never invoked, so a deterministic check had failed, and the\nevent stream showed three passing checks and no failure at all. The run bought a\nsecond candidate and a second sandbox execution for a reason nothing recorded.\n\n**Adding a member here is half of a change.** The database allowlist\n(`ck_method_enum` on `verification_records`) is the other half and must widen in\nthe same deploy \u2014 see db/migrations/versions/0024. That pairing is enforced by\npackages/py/contracts/tests/test_method_allowlist.py rather than remembered.\nAlso decide which side of `PHYSICAL_VERIFICATION_METHODS` the new name falls on.\nThe six historical contract checks police shape only; the Bell/GHZ property\nmethods added later prove fixed state-preparation claims.",
         "enum": [
           "exact",
           "statistical",
@@ -3262,6 +3300,8 @@
           "measurement_policy",
           "success_criteria",
           "native_optimization_evidence",
+          "bell_state_property",
+          "ghz_state_property",
           "statistical_reproducibility"
         ],
         "title": "VerificationMethod",
@@ -3386,6 +3426,18 @@
             "default": null,
             "description": "Invariants that must survive any repair iteration",
             "title": "Required Invariants"
+          },
+          "state_preparation_claim": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/StatePreparationClaim"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Explicit Bell/GHZ target for the fixed native-state property verifier. Omission means that state-preparation correctness is unsupported, not that the canonical positive-phase target may be inferred."
           },
           "thresholds": {
             "anyOf": [
@@ -3787,7 +3839,7 @@
   "info": {
     "description": "Cross-boundary types only; API paths are owned by services/api.",
     "title": "majorana-contracts",
-    "version": "2.0.0"
+    "version": "2.1.0"
   },
   "openapi": "3.1.0",
   "paths": {}

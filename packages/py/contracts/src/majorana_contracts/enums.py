@@ -106,9 +106,9 @@ class VerificationMethod(StrEnum):
     (`ck_method_enum` on `verification_records`) is the other half and must widen in
     the same deploy — see db/migrations/versions/0024. That pairing is enforced by
     packages/py/contracts/tests/test_method_allowlist.py rather than remembered.
-    Also decide which side of `PHYSICAL_VERIFICATION_METHODS` the new name falls on;
-    all six added below are contract checks that police the shape of the answer, not
-    its correctness, so none of them lifts a run's grade.
+    Also decide which side of `PHYSICAL_VERIFICATION_METHODS` the new name falls on.
+    The six historical contract checks police shape only; the Bell/GHZ property
+    methods added later prove fixed state-preparation claims.
     """
 
     # Legacy method: historical events and rows remain readable, but new Plans
@@ -133,6 +133,11 @@ class VerificationMethod(StrEnum):
     MEASUREMENT_POLICY = "measurement_policy"
     SUCCESS_CRITERIA = "success_criteria"
     NATIVE_OPTIMIZATION_EVIDENCE = "native_optimization_evidence"
+    # Fixed-policy state-preparation checks over framework-native statevectors.
+    # Unlike a counts-only comparison, these checks prove the explicitly accepted
+    # relative phase as well as the computational-basis support.
+    BELL_STATE_PROPERTY = "bell_state_property"
+    GHZ_STATE_PROPERTY = "ghz_state_property"
     # Two executions of the SAME candidate agreeing. Excluded from the physical
     # set deliberately: a consistently wrong program also agrees with itself.
     STATISTICAL_REPRODUCIBILITY = "statistical_reproducibility"
@@ -189,8 +194,10 @@ class EvidenceStrength(StrEnum):
     reported distribution was compared against the circuit's Born distribution to
     1.8e-16, and until 2026-07-20 both printed the single word "Verified".
 
-    Every consumer compares `verifier_decision == "pass"`, the eval harness included,
-    so the decision stays `pass` and the strength rides alongside it.
+    This grades the checks, not final sufficiency. Verification v2 refuses a final
+    PASS when the check set is structural-only or lacks a dedicated property check;
+    a physical grade may likewise describe one limited passing claim while the final
+    decision remains INCONCLUSIVE because another required claim is unsupported.
     """
 
     PHYSICAL = "physical"
@@ -204,6 +211,8 @@ PHYSICAL_VERIFICATION_METHODS: frozenset[str] = frozenset(
         VerificationMethod.STATISTICAL_NATIVE,
         VerificationMethod.BRUTE_FORCE,
         VerificationMethod.EXACT_DIAG,
+        VerificationMethod.BELL_STATE_PROPERTY,
+        VerificationMethod.GHZ_STATE_PROPERTY,
     }
 )
 """Checks that compare a candidate against what the physics should do.
@@ -212,6 +221,12 @@ PHYSICAL_VERIFICATION_METHODS: frozenset[str] = frozenset(
 reproducibility pair, the trusted side re-executes the circuit OBJECT the
 observer held through the framework's own sampler — the user's result-assembly
 code is not in that loop, so fabricated or mis-assembled counts fail it.
+
+Bell/GHZ property checks compare the complete framework-native statevector with
+an explicit typed relative-phase target accepted by semantic review. They prove
+that bounded state-preparation claim, while statistical methods prove only that
+reported counts agree with the executed circuit. Final sufficiency composes those
+scopes in majorana-verification.
 
 `statistical_reproducibility` is excluded on purpose: it proves only that the program
 agrees with itself across two executions, which a consistently wrong program also does
