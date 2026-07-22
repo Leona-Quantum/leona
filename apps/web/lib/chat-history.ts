@@ -326,6 +326,44 @@ export async function hydrateChatFolders(chats: ChatSummary[]): Promise<{
   return { folders, localIdMap };
 }
 
+/**
+ * The control plane stores one run per turn, while the workspace sidebar is a
+ * list of conversations. Keep one stable sidebar row per conversation: retain
+ * the first run as its navigation/archive identity, show the newest turn's
+ * status and recency, and never overwrite an owner-provided title or folder.
+ */
+export function collapseConversationChats(chats: ChatSummary[]): ChatSummary[] {
+  const groups = new Map<string, ChatSummary[]>();
+  for (const chat of chats) {
+    const key = chat.conversationId ?? chat.id;
+    const group = groups.get(key);
+    if (group) group.push(chat);
+    else groups.set(key, [chat]);
+  }
+
+  return [...groups.values()]
+    .map((group) => {
+      const chronological = [...group].sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+      const identity = chronological[0]!;
+      const newest = chronological[chronological.length - 1]!;
+      const renamed = chronological.find((chat) => chat.titleOverride) ?? identity;
+      const folderOwner = chronological.find((chat) => chat.folderId);
+      const archived = chronological.find((chat) => chat.archivedAt);
+
+      return {
+        ...newest,
+        id: identity.id,
+        conversationId: newest.conversationId ?? identity.conversationId,
+        title: renamed.titleOverride ?? identity.title,
+        ...(renamed.titleOverride ? { titleOverride: renamed.titleOverride } : {}),
+        prompt: identity.prompt,
+        folderId: newest.folderId ?? folderOwner?.folderId,
+        ...(archived?.archivedAt ? { archivedAt: archived.archivedAt } : {}),
+      };
+    })
+    .sort(sortNewestFirst);
+}
+
 function sortNewestFirst(a: ChatSummary, b: ChatSummary): number {
   return b.createdAt.localeCompare(a.createdAt);
 }

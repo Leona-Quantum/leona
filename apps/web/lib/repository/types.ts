@@ -11,7 +11,7 @@ export type PublicRepositoryFramework =
   | "Amazon Braket"
   | "OpenQASM 3.0"
   | "PyQuil";
-export type PublicRepositoryVariantStatus = "native" | "conversion" | "unsupported";
+export type PublicRepositoryVariantStatus = "native" | "conversion" | "source" | "unsupported";
 
 export interface PublicRepositoryCodeVariant {
   framework: PublicRepositoryFramework;

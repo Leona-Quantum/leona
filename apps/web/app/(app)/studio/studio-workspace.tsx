@@ -7,7 +7,7 @@ import { artifactFromResource, frameworkVariantsFromRemote, getLibraryArtifact, 
 import type { PublicLocale } from "../../../lib/public-locale";
 import { BUILDER_GATES, builderStepLabel, createBuilderStepId, generateBuilderCode, ROTATION_GATES, TWO_QUBIT_GATES, type BuilderCodeVariants, type BuilderGate, type BuilderStep, type CustomGateDefinition } from "../../../lib/studio-builder";
 import { loadStoredCircuit, saveStoredCircuit } from "../../../lib/studio-circuits";
-import { parseCircuitSource, allCircuitConversions, looksLikeOpenQasm3 } from "../../../lib/circuit-conversion";
+import { allCircuitConversionResults, parseCircuitSource, looksLikeOpenQasm3 } from "../../../lib/circuit-conversion";
 import { CIRCUIT_FRAMEWORKS, circuitFramework, circuitFrameworkOrNull, isExecutableCircuitFramework, type CircuitFrameworkKey } from "../../../lib/circuit-frameworks";
 import { WORKSPACE_COPY } from "../../../lib/workspace-locale";
 import { sampling } from "../../../lib/studio-run-request";
@@ -30,6 +30,11 @@ const EMPTY_SEED: Omit<BuilderSeed, "key"> = { artifactIdentity: null, qubitCoun
 
 type StudioFramework = CircuitFrameworkKey;
 
+type DraftBundle = {
+  codes: BuilderCodeVariants;
+  notes: Partial<Record<StudioFramework, string>>;
+};
+
 const FRAMEWORK_OPTIONS = CIRCUIT_FRAMEWORKS.map(({ key: value, label, executable }) => ({
   value,
   label: executable ? label : `${label} · export`,
@@ -50,7 +55,8 @@ export function StudioWorkspace({ artifactId, newDraft = false, locale = "en" }:
   const [query, setQuery] = useState("");
   const [title, setTitle] = useState("Untitled circuit");
   const [framework, setFramework] = useState<StudioFramework>("qiskit");
-  const [drafts, setDrafts] = useState<BuilderCodeVariants>(() => makeDrafts(null));
+  const [drafts, setDrafts] = useState<BuilderCodeVariants>(() => makeDraftBundle(null).codes);
+  const [draftNotes, setDraftNotes] = useState<Partial<Record<StudioFramework, string>>>(() => makeDraftBundle(null).notes);
   const [code, setCode] = useState(STARTER_CODES.qiskit);
   const [panel, setPanel] = useState<StudioPanel>("canvas");
   const [selectedGate, setSelectedGate] = useState("H");
@@ -148,11 +154,13 @@ export function StudioWorkspace({ artifactId, newDraft = false, locale = "en" }:
     setShowEditor(true);
     setArtifact(next);
     setTitle(next?.title ?? "Untitled circuit");
-    const nextDrafts = makeDrafts(next);
+    const nextBundle = makeDraftBundle(next);
+    const nextDrafts = nextBundle.codes;
     const nextFramework = normalizeFramework(next?.framework)
       ?? CIRCUIT_FRAMEWORKS.find(({ key }) => Boolean(nextDrafts[key]))?.key
       ?? "qiskit";
     setDrafts(nextDrafts);
+    setDraftNotes(nextBundle.notes);
     setFramework(nextFramework);
     setCode(nextDrafts[nextFramework]);
     setPanel("canvas");
@@ -195,12 +203,15 @@ export function StudioWorkspace({ artifactId, newDraft = false, locale = "en" }:
     setDrafts(nextDrafts);
     setFramework(next);
     setCode(nextDrafts[next]);
+    const conversionNote = draftNotes[next];
     setMessage(
       !nextDrafts[next]
         ? locale === "ja"
           ? `${frameworkLabel(next)} へ変換できる移植可能な回路またはOpenQASM 3が保存されていません。`
           : `No portable circuit or stored OpenQASM 3 is available for a ${frameworkLabel(next)} conversion.`
-        : isExecutableCircuitFramework(next)
+        : conversionNote
+          ? conversionNote
+          : isExecutableCircuitFramework(next)
         ? copy.editingDraft(frameworkLabel(next))
         : locale === "ja"
           ? `${frameworkLabel(next)} のエクスポートを編集中です。実行と検証は Qiskit、PennyLane、Cirq で利用できます。`
@@ -312,6 +323,7 @@ export function StudioWorkspace({ artifactId, newDraft = false, locale = "en" }:
                     }}
                     onApply={(codes) => {
                       setDrafts(codes);
+                      setDraftNotes({});
                       setCode(codes[framework]);
                       setMessage(copy.appliedToCode);
                     }}
@@ -982,8 +994,8 @@ async function loadArtifact(id: string): Promise<LibraryArtifact | null> {
 }
 
 
-function makeDrafts(artifact: LibraryArtifact | null): BuilderCodeVariants {
-  if (!artifact) return { ...STARTER_CODES };
+function makeDraftBundle(artifact: LibraryArtifact | null): DraftBundle {
+  if (!artifact) return { codes: { ...STARTER_CODES }, notes: {} };
   const active = normalizeFramework(artifact?.framework);
   const variants = artifact?.frameworkVariants ?? {};
   const provided: Partial<BuilderCodeVariants> = {};
@@ -999,11 +1011,21 @@ function makeDrafts(artifact: LibraryArtifact | null): BuilderCodeVariants {
   const source = candidates.find((candidate) => Boolean(parseCircuitSource(candidate.code, candidate.framework)))
     ?? (qasm ? { framework: "openqasm3" as const, code: qasm } : undefined);
   const converted = source
-    ? allCircuitConversions(source.code, source.framework, qasm)
+    ? allCircuitConversionResults(source.code, source.framework, qasm)
     : {};
-  return Object.fromEntries(
-    CIRCUIT_FRAMEWORKS.map(({ key }) => [key, provided[key] ?? converted[key] ?? ""]),
-  ) as BuilderCodeVariants;
+  const notes: Partial<Record<StudioFramework, string>> = {};
+  for (const { key } of CIRCUIT_FRAMEWORKS) {
+    const conversion = converted[key];
+    if (!provided[key] && conversion?.fidelity === "standard_gate_decomposition") {
+      notes[key] = conversion.note;
+    }
+  }
+  return {
+    codes: Object.fromEntries(
+      CIRCUIT_FRAMEWORKS.map(({ key }) => [key, provided[key] ?? converted[key]?.code ?? ""]),
+    ) as BuilderCodeVariants,
+    notes,
+  };
 }
 
 function normalizeFramework(value: string | undefined): StudioFramework | null {

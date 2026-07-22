@@ -228,6 +228,9 @@ export function LiveRun({ taskId }: { taskId: string }) {
   const [existingChat, setExistingChat] = useState<ChatSummary | null>(null);
   const lastEventId = useRef<number | null>(null);
   const loadSeq = useRef(0);
+  const conversationIdRef = useRef<string | null>(null);
+  const chatScrollRef = useRef<HTMLDivElement>(null);
+  const shouldAutoScrollRef = useRef(true);
 
   useEffect(() => {
     setExistingChat(
@@ -238,6 +241,17 @@ export function LiveRun({ taskId }: { taskId: string }) {
   }, [conversationId, taskId]);
 
   const title = existingChat?.title ?? turns[0]?.prompt ?? "Quantum chat";
+
+  useEffect(() => {
+    conversationIdRef.current = null;
+    shouldAutoScrollRef.current = true;
+  }, [taskId]);
+
+  useEffect(() => {
+    const scrollContainer = chatScrollRef.current;
+    if (!scrollContainer || !shouldAutoScrollRef.current) return;
+    scrollContainer.scrollTop = scrollContainer.scrollHeight;
+  }, [taskId, turns, streamingText, reasoningText, liveEvents.length, pending]);
 
   useEffect(() => {
     if (fixtureEvents) return;
@@ -261,6 +275,7 @@ export function LiveRun({ taskId }: { taskId: string }) {
       // (e.g. the terminal reload racing the initial one) so a stale response can't
       // overwrite fresher turns/pending state.
       if (!controller.signal.aborted && seq === loadSeq.current) {
+        conversationIdRef.current = payload.id;
         setConversationId(payload.id);
         setTurns(turnsFromConversation(payload));
         setPending(payload.turns.some((turn) => turn.run.id === taskId && !answerFromEvents(turn.events)));
@@ -318,7 +333,12 @@ export function LiveRun({ taskId }: { taskId: string }) {
                 terminal = true;
                 setPending(false);
                 setStreaming(false);
-                updateChat(taskId, { status: event.status === "succeeded" ? "draft" : "failed" });
+                const sidebarChat = loadChatHistory({ includeDemo: false, includeArchived: true }).find(
+                  (chat) => chat.id === taskId || chat.conversationId === conversationIdRef.current,
+                );
+                if (sidebarChat) {
+                  updateChat(sidebarChat.id, { status: event.status === "succeeded" ? "draft" : "failed" });
+                }
                 void loadConversation().catch((cause) => {
                   if (!controller.signal.aborted) {
                     setError(cause instanceof Error ? cause.message : "Conversation could not be reloaded");
@@ -384,6 +404,10 @@ export function LiveRun({ taskId }: { taskId: string }) {
     event.preventDefault();
     const taskPrompt = prompt.trim();
     if (!taskPrompt || pending) return;
+    if (!conversationId) {
+      setError("The conversation is still loading. Try again in a moment.");
+      return;
+    }
     setPending(true);
     setError(null);
     const attachmentBlocks = attachments.map((attachment) => `\n\n--- Attachment: ${attachment.name} ---\n${attachment.content}`).join("");
@@ -398,15 +422,24 @@ export function LiveRun({ taskId }: { taskId: string }) {
       });
       const payload = (await response.json()) as { id?: string; conversation_id?: string; detail?: string; error?: string };
       if (!response.ok || !payload.id) throw new Error(payload.detail ?? payload.error ?? `Message submission failed (${response.status})`);
-      rememberChat({
-        id: payload.id,
-        conversationId: payload.conversation_id ?? conversationId ?? undefined,
-        title: titleFromPrompt(taskPrompt),
-        prompt: taskPrompt,
-        createdAt: new Date().toISOString(),
-        status: "queued",
-      });
-      router.push(`/run/${payload.id}`);
+      const chatToContinue = existingChat ?? loadChatHistory({ includeDemo: false, includeArchived: true }).find(
+        (chat) => chat.id === taskId || chat.conversationId === conversationId,
+      );
+      if (chatToContinue) {
+        updateChat(chatToContinue.id, { status: "queued" });
+      } else {
+        // Preserve one local identity even if the sidebar had not hydrated before
+        // the user sent a follow-up. Later turns are grouped by conversation id.
+        rememberChat({
+          id: taskId,
+          conversationId: payload.conversation_id ?? conversationId,
+          title: titleFromPrompt(turns[0]?.prompt ?? taskPrompt),
+          prompt: turns[0]?.prompt ?? taskPrompt,
+          createdAt: new Date().toISOString(),
+          status: "queued",
+        });
+      }
+      router.replace(`/run/${payload.id}`, { scroll: false });
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Message submission failed");
       setPending(false);
@@ -418,7 +451,14 @@ export function LiveRun({ taskId }: { taskId: string }) {
 
   return (
     <div className="mj-run-task">
-      <div className="mj-run-task-scroll">
+      <div
+        className="mj-run-task-scroll"
+        ref={chatScrollRef}
+        onScroll={(event) => {
+          const { scrollHeight, scrollTop, clientHeight } = event.currentTarget;
+          shouldAutoScrollRef.current = scrollHeight - scrollTop - clientHeight < 48;
+        }}
+      >
         <div className="mj-chat-content">
           <header className="mj-chat-header">
             <div>

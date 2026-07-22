@@ -272,12 +272,14 @@ function Overview({ artifact, copy }: { artifact: LibraryArtifact; copy: Artifac
 function CodeAndExport({ artifact, copied, onCopy, copy }: { artifact: LibraryArtifact; copied: boolean; onCopy: (code?: string) => void; copy: ArtifactCopy }) {
   const options = frameworkCodeOptions(artifact);
   const [selected, setSelected] = useState(options[0]?.key ?? "qiskit");
-  const selectedCode = options.find((option) => option.key === selected)?.code ?? artifact.code;
+  const selectedOption = options.find((option) => option.key === selected);
+  const selectedCode = selectedOption?.code ?? artifact.code;
   return (
     <div className="mj-artifact-grid mj-artifact-grid--code">
       <section className="mj-artifact-panel mj-artifact-panel--wide">
         <div className="mj-panel-heading"><h2>{copy.sourceCode}</h2><div className="mj-artifact-code-actions">{options.length > 1 ? <label><span className="sr-only">{copy.framework}</span><select value={selected} onChange={(event) => setSelected(event.target.value)}>{options.map((option) => <option key={option.key} value={option.key}>{option.label}</option>)}</select></label> : null}<button className="mj-secondary-button" type="button" onClick={() => onCopy(selectedCode)} title={copied ? copy.copied : copy.copyCode}><CopyIcon size={14} />{copied ? copy.copied : copy.copyCode}</button></div></div>
         <pre className="mj-artifact-code" tabIndex={0} role="region" aria-label={`${artifact.title} ${selected} ${copy.sourceCode}`}>{selectedCode ? <SyntaxHighlightedCode code={selectedCode} language={selected} /> : <code>{copy.noCode}</code>}</pre>
+        {selectedOption?.note ? <p className="mj-artifact-copy">{selectedOption.note}</p> : null}
       </section>
       <section className="mj-artifact-panel">
         <div className="mj-panel-heading"><h2>{copy.exportHeading}</h2><span className="mj-mono-muted">{copy.classified}</span></div>
@@ -287,7 +289,7 @@ function CodeAndExport({ artifact, copied, onCopy, copy }: { artifact: LibraryAr
   );
 }
 
-function frameworkCodeOptions(artifact: LibraryArtifact): Array<{ key: string; label: string; code: string }> {
+function frameworkCodeOptions(artifact: LibraryArtifact): Array<{ key: string; label: string; code: string; note?: string }> {
   const provided = new Map<string, string>();
   for (const [framework, code] of Object.entries(artifact.frameworkVariants ?? {})) {
     const normalized = normalizeFramework(framework);
@@ -308,7 +310,12 @@ function frameworkCodeOptions(artifact: LibraryArtifact): Array<{ key: string; l
     if (existing) return [{ key, label, code: existing }];
     if (!source) return [];
     const conversion = convertCircuitSource(source.code, source.framework, key, qasm);
-    return conversion ? [{ key, label, code: conversion.code }] : [];
+    return conversion ? [{
+      key,
+      label,
+      code: conversion.code,
+      ...(conversion.fidelity === "standard_gate_decomposition" ? { note: conversion.note } : {}),
+    }] : [];
   });
 }
 

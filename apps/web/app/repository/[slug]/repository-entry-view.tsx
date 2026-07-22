@@ -93,14 +93,16 @@ const COPY = {
 } as const;
 type RepositoryCopy = (typeof COPY)[keyof typeof COPY];
 
-function variantLabel(status: "native" | "conversion" | "unsupported", locale: PublicLocale): string {
+function variantLabel(status: "native" | "conversion" | "source" | "unsupported", locale: PublicLocale): string {
   if (locale === "ja") {
     if (status === "native") return "ネイティブ";
     if (status === "conversion") return "変換済み";
+    if (status === "source") return "元ソース";
     return "未対応";
   }
   if (status === "native") return "Native";
   if (status === "conversion") return "Converted";
+  if (status === "source") return "Source reference";
   return "Unsupported";
 }
 
@@ -245,7 +247,7 @@ export function RepositoryEntryView({
                   {PUBLIC_REPOSITORY_FRAMEWORKS.map((option) => <option key={option} value={option}>{option}</option>)}
                 </select>
               </label>
-              <span className={`mj-repository-variant-status mj-repository-variant-status--${variant.status}`}>{variantLabel(variant.status, locale)}</span>
+              <span className={`mj-repository-variant-status mj-repository-variant-status--${variant.status === "source" ? "conversion" : variant.status}`}>{variantLabel(variant.status, locale)}</span>
             </div>
             {variant.code ? (
               <div className="mj-code">
