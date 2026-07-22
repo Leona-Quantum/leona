@@ -35,6 +35,7 @@ class AgentState(StrEnum):
     PLANNED = "planned"
     EXECUTED = "executed"
     REPAIR_REQUIRED = "repair_required"
+    REPLAN_REQUIRED = "replan_required"
     RESOURCE_EXHAUSTED = "resource_exhausted"
     VERIFIED = "verified"
     QASM_ATTEMPTED = "qasm_attempted"
@@ -62,6 +63,7 @@ class ExecutionFailureKind(StrEnum):
 
 class ToolName(StrEnum):
     REQUEST_PLAN = "request_plan"
+    REPLAN = "replan"
     SIMULATE_QISKIT = "simulate_qiskit"
     SIMULATE_CIRQ = "simulate_cirq"
     SIMULATE_PENNYLANE = "simulate_pennylane"
@@ -80,6 +82,8 @@ SIMULATION_TOOL_BY_FRAMEWORK: dict[Framework, ToolName] = {
 class AgentBudget(_Record):
     max_steps: int = Field(default=14, ge=1, le=64)
     max_candidates: int = Field(default=4, ge=1, le=12)
+    max_plan_attempts: int = Field(default=4, ge=1, le=12)
+    max_plan_revisions: int = Field(default=3, ge=1, le=8)
     max_sandbox_runs: int = Field(default=6, ge=1, le=20)
     max_verifications: int = Field(default=4, ge=1, le=12)
     max_conversions: int = Field(default=3, ge=0, le=8)
@@ -127,6 +131,10 @@ class PlanRevision(_Record):
             raise ValueError("first Plan revision cannot have a parent")
         if self.revision > 1 and self.parent_plan_id is None:
             raise ValueError("revised Plan must reference its parent")
+        if self.revision == 1 and self.replan_reason is not None:
+            raise ValueError("first Plan revision cannot have a replan reason")
+        if self.revision > 1 and self.replan_reason is None:
+            raise ValueError("revised Plan requires a replan reason")
         if self.plan_fingerprint != _plan_fingerprint(self.plan):
             raise ValueError("plan_fingerprint does not match Plan content")
         return self
@@ -276,6 +284,8 @@ class RepairInstruction(_Record):
     # no confidence to report.
     severity: Literal["none", "minor", "major", "blocking"] | None = None
     confidence: Literal["high", "medium", "low"] | None = None
+    failure_class: VerificationFailureClass | None = None
+    retry_target: RetryTarget | None = None
 
 
 class VerificationEvidence(_Record):

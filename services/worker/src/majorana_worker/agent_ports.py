@@ -114,6 +114,20 @@ class LLMPlanner:
     _PLAN_ATTEMPTS = 2
 
     async def create_plan(self, _run_id: UUID) -> Plan:
+        return await self._generate_plan()
+
+    async def revise_plan(self, _run_id: UUID, previous: Plan, plan_defect_feedback: str) -> Plan:
+        return await self._generate_plan(
+            previous=previous,
+            plan_defect_feedback=plan_defect_feedback,
+        )
+
+    async def _generate_plan(
+        self,
+        *,
+        previous: Plan | None = None,
+        plan_defect_feedback: str | None = None,
+    ) -> Plan:
         objection: str | None = None
         for attempt in range(self._PLAN_ATTEMPTS):
             prompt = render_plan_prompt(
@@ -123,6 +137,13 @@ class LLMPlanner:
                 requested_seed=self._requested_seed,
             )
             user = prompt.user
+            if previous is not None:
+                user = (
+                    f"{user}\n\nRevise this immutable prior Plan; do not edit it in place:\n"
+                    f"{json.dumps(previous.model_dump(mode='json'), sort_keys=True)}\n\n"
+                    f"Typed plan_defect feedback:\n{plan_defect_feedback}\n\n"
+                    "Emit the complete next Plan revision. Preserve framework, seed, and shots."
+                )
             if objection is not None:
                 user = (
                     f"{user}\n\nYour previous plan was rejected by the plan contract:\n"
@@ -155,8 +176,12 @@ class LLMPlanner:
                 # override reaches the emitted code; the statistical threshold is
                 # computed from the shots actually observed either way.
                 plan.parameters.shots = self._requested_shots
+            elif previous is not None:
+                plan.parameters.shots = previous.parameters.shots
             if self._requested_seed is not None:
                 plan.parameters.seed = self._requested_seed
+            elif previous is not None:
+                plan.parameters.seed = previous.parameters.seed
             # After the shots override, because the tolerance depends on the
             # shots that will actually run.
             contradiction = self._exact_diag_range_contradiction(

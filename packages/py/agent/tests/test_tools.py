@@ -1,13 +1,16 @@
 from uuid import UUID, uuid4
 
 from majorana_agent import (
+    AgentBudget,
     AgentState,
     AgentPolicy,
+    AgentRuntime,
     CircuitToolset,
     ExecutionOutput,
     ExecutionFailureKind,
     MemoryAgentStore,
     PublishedArtifact,
+    RepairInstruction,
     ToolBroker,
     ToolCall,
     ToolName,
@@ -17,6 +20,9 @@ from majorana_agent import (
 from majorana_contracts.enums import (
     Algorithm,
     Framework,
+    RetryTarget,
+    SemanticReviewDecision,
+    VerificationFailureClass,
     VerifierDecision,
     VerificationMethod,
 )
@@ -44,6 +50,11 @@ def _plan() -> Plan:
 class Planner:
     async def create_plan(self, _run_id):
         return _plan()
+
+    async def revise_plan(self, _run_id, previous, _plan_defect_feedback):
+        payload = previous.model_dump(mode="json")
+        payload["problem_summary"] = "Create and measure a corrected Bell state"
+        return Plan.model_validate(payload)
 
 
 class Executor:
@@ -331,3 +342,281 @@ async def test_a_pre_sandbox_contract_rejection_tells_the_model_what_was_wrong()
 
     evidence = result.payload["repair"]["evidence"]
     assert any("c_if" in item and "if_test" in item for item in evidence), evidence
+
+
+class ReplanningPlanner(Planner):
+    def __init__(self, *, change_shots: bool = False, fail: bool = False):
+        self.revisions = 0
+        self.change_shots = change_shots
+        self.fail = fail
+
+    async def create_plan(self, _run_id):
+        if self.fail:
+            raise RuntimeError("provider unavailable")
+        return _plan()
+
+    async def revise_plan(self, _run_id, previous, _plan_defect_feedback):
+        self.revisions += 1
+        if self.fail:
+            raise RuntimeError("provider unavailable")
+        payload = previous.model_dump(mode="json")
+        payload["problem_summary"] = f"Corrected Bell plan revision {self.revisions + 1}"
+        if self.change_shots:
+            payload["parameters"]["shots"] += 1
+        return Plan.model_validate(payload)
+
+
+class PlanDefectVerifier:
+    async def verify(self, _candidate, _execution, _plan):
+        return VerificationOutput(
+            decision=VerifierDecision.FAIL,
+            deterministic_checks=[],
+            semantic_review_decision=SemanticReviewDecision.REPLAN,
+            failure_class=VerificationFailureClass.PLAN_DEFECT,
+            retry_target=RetryTarget.PLANNING,
+            reason_code="semantic_plan_mismatch",
+            repair=RepairInstruction(
+                category="plan_defect",
+                evidence=["request-to-plan mismatch"],
+                repairs=["Revise the Plan."],
+            ),
+        )
+
+
+class CodeDefectVerifier:
+    async def verify(self, _candidate, _execution, _plan):
+        return VerificationOutput(
+            decision=VerifierDecision.FAIL,
+            deterministic_checks=[],
+            semantic_review_decision=SemanticReviewDecision.CODE_REPAIR,
+            failure_class=VerificationFailureClass.CANDIDATE_DEFECT,
+            retry_target=RetryTarget.CODE_GENERATION,
+            reason_code="semantic_code_mismatch",
+            repair=RepairInstruction(
+                category="candidate_defect",
+                evidence=["plan-to-code mismatch"],
+                repairs=["Repair the candidate."],
+            ),
+        )
+
+
+def _replan_stack(store, planner, verifier, *, budget=AgentBudget()):
+    tools = CircuitToolset(
+        store=store,
+        framework=Framework.QISKIT,
+        planner=planner,
+        executor=Executor(),
+        verifier=verifier,
+        converter=Converter(),
+        publisher=Publisher(),
+    )
+    broker = ToolBroker(
+        store=store,
+        policy=AgentPolicy(framework=Framework.QISKIT, budget=budget),
+        handlers=tools.handlers(),
+    )
+    return tools, broker
+
+
+async def _reach_replan_required(store, broker, run_id):
+    plan_result = await broker.dispatch(
+        run_id, ToolCall(tool_call_id="plan", name=ToolName.REQUEST_PLAN)
+    )
+    simulation = await broker.dispatch(
+        run_id,
+        ToolCall(
+            tool_call_id="candidate-1",
+            name=ToolName.SIMULATE_QISKIT,
+            arguments={"source": "FINAL_CIRCUIT = object()\nRESULT = {'counts': {'00': 1}}"},
+        ),
+    )
+    verification = await broker.dispatch(
+        run_id,
+        ToolCall(
+            tool_call_id="verify-1",
+            name=ToolName.VERIFY_INTENT_ALIGNMENT,
+            arguments={"candidate_id": simulation.payload["candidate_id"]},
+        ),
+    )
+    assert verification.state is AgentState.REPLAN_REQUIRED
+    assert verification.payload["failure_class"] == "plan_defect"
+    return plan_result, simulation
+
+
+async def test_plan_defect_creates_revision_two_and_new_candidate_binds_to_it():
+    store = MemoryAgentStore()
+    planner = ReplanningPlanner()
+    _tools, broker = _replan_stack(store, planner, PlanDefectVerifier())
+    run_id = uuid4()
+    first_plan, first_simulation = await _reach_replan_required(store, broker, run_id)
+
+    replanned = await broker.dispatch(
+        run_id, ToolCall(tool_call_id="replan-1", name=ToolName.REPLAN)
+    )
+    assert replanned.ok
+    assert replanned.payload["revision"] == 2
+    assert replanned.payload["parent_plan_id"] == first_plan.payload["plan_id"]
+
+    second_simulation = await broker.dispatch(
+        run_id,
+        ToolCall(
+            tool_call_id="candidate-2",
+            name=ToolName.SIMULATE_QISKIT,
+            arguments={"source": "FINAL_CIRCUIT = object()\nRESULT = {'counts': {'11': 1}}"},
+        ),
+    )
+    first_candidate = await store.candidate(run_id, UUID(first_simulation.payload["candidate_id"]))
+    second_candidate = await store.candidate(
+        run_id, UUID(second_simulation.payload["candidate_id"])
+    )
+    assert first_candidate.plan_id == UUID(first_plan.payload["plan_id"])
+    assert second_candidate.plan_id == UUID(replanned.payload["plan_id"])
+    assert (await store.plan(run_id, first_candidate.plan_id)).plan.problem_summary == (
+        "Create and measure a Bell state"
+    )
+    assert (await store.plan(run_id, second_candidate.plan_id)).plan.problem_summary.startswith(
+        "Corrected Bell plan"
+    )
+
+
+async def test_code_defect_cannot_trigger_replan():
+    store = MemoryAgentStore()
+    _tools, broker = _replan_stack(store, ReplanningPlanner(), CodeDefectVerifier())
+    run_id = uuid4()
+    await broker.dispatch(run_id, ToolCall(tool_call_id="plan", name=ToolName.REQUEST_PLAN))
+    simulation = await broker.dispatch(
+        run_id,
+        ToolCall(
+            tool_call_id="candidate",
+            name=ToolName.SIMULATE_QISKIT,
+            arguments={"source": "FINAL_CIRCUIT = object()\nRESULT = {'counts': {'00': 1}}"},
+        ),
+    )
+    verification = await broker.dispatch(
+        run_id,
+        ToolCall(
+            tool_call_id="verify",
+            name=ToolName.VERIFY_INTENT_ALIGNMENT,
+            arguments={"candidate_id": simulation.payload["candidate_id"]},
+        ),
+    )
+    assert verification.state is AgentState.REPAIR_REQUIRED
+    rejected = await broker.dispatch(
+        run_id, ToolCall(tool_call_id="illegal-replan", name=ToolName.REPLAN)
+    )
+    assert rejected.error_code == "invalid_transition"
+
+
+async def test_replan_requires_durable_typed_plan_defect_feedback():
+    store = MemoryAgentStore()
+    _tools, broker = _replan_stack(store, ReplanningPlanner(), PlanDefectVerifier())
+    run_id = uuid4()
+    await broker.dispatch(run_id, ToolCall(tool_call_id="plan", name=ToolName.REQUEST_PLAN))
+    await store.set_state(run_id, AgentState.REPLAN_REQUIRED)
+
+    rejected = await broker.dispatch(
+        run_id, ToolCall(tool_call_id="replan-without-evidence", name=ToolName.REPLAN)
+    )
+
+    assert rejected.error_code == "replan_not_authorized"
+
+
+async def test_replan_cannot_change_framework_seed_or_shots():
+    store = MemoryAgentStore()
+    _tools, broker = _replan_stack(
+        store, ReplanningPlanner(change_shots=True), PlanDefectVerifier()
+    )
+    run_id = uuid4()
+    await _reach_replan_required(store, broker, run_id)
+
+    rejected = await broker.dispatch(
+        run_id, ToolCall(tool_call_id="replan-changed-shots", name=ToolName.REPLAN)
+    )
+
+    assert rejected.error_code == "shots_mismatch"
+    assert (await store.current_plan_revision(run_id)).revision == 1
+
+
+async def test_plan_failures_exhaust_plan_attempts_without_consuming_candidates():
+    store = MemoryAgentStore()
+    _tools, broker = _replan_stack(
+        store,
+        ReplanningPlanner(fail=True),
+        PlanDefectVerifier(),
+        budget=AgentBudget(max_plan_attempts=2),
+    )
+    run_id = uuid4()
+
+    first = await broker.dispatch(
+        run_id, ToolCall(tool_call_id="plan-fail-1", name=ToolName.REQUEST_PLAN)
+    )
+    second = await broker.dispatch(
+        run_id, ToolCall(tool_call_id="plan-fail-2", name=ToolName.REQUEST_PLAN)
+    )
+    exhausted = await broker.dispatch(
+        run_id, ToolCall(tool_call_id="plan-fail-3", name=ToolName.REQUEST_PLAN)
+    )
+
+    assert first.error_code == second.error_code == "plan_attempt_failed"
+    assert exhausted.error_code == "plan_attempt_budget_exhausted"
+    assert await store.list_candidates(run_id) == []
+
+
+async def test_plan_revision_budget_exhaustion_is_explicit():
+    store = MemoryAgentStore()
+    _tools, broker = _replan_stack(
+        store,
+        ReplanningPlanner(),
+        PlanDefectVerifier(),
+        budget=AgentBudget(max_plan_revisions=1),
+    )
+    run_id = uuid4()
+    await _reach_replan_required(store, broker, run_id)
+
+    exhausted = await broker.dispatch(
+        run_id, ToolCall(tool_call_id="replan-over-budget", name=ToolName.REPLAN)
+    )
+
+    assert exhausted.error_code == "plan_revision_budget_exhausted"
+
+    class ReplanModel:
+        async def next_tool(self, **_kwargs):
+            return ToolCall(tool_call_id="runtime-replan", name=ToolName.REPLAN)
+
+    runtime = AgentRuntime(store=store, broker=broker, model=ReplanModel())
+    assert await runtime.run(run_id) is AgentState.FAILED
+    assert runtime.failure_reason == "plan_revision_budget_exhausted"
+
+
+class CrashAfterPlanSelectionStore(MemoryAgentStore):
+    def __init__(self):
+        super().__init__()
+        self.crash_once = True
+
+    async def select_current_plan(self, run_id, plan_id):
+        await super().select_current_plan(run_id, plan_id)
+        revision = await self.plan_revision(run_id, plan_id)
+        if revision.revision > 1 and self.crash_once:
+            self.crash_once = False
+            raise RuntimeError("worker crashed after Plan selection")
+
+
+async def test_replan_crash_replay_does_not_duplicate_plan_revision():
+    import pytest
+
+    store = CrashAfterPlanSelectionStore()
+    planner = ReplanningPlanner()
+    _tools, broker = _replan_stack(store, planner, PlanDefectVerifier())
+    run_id = uuid4()
+    await _reach_replan_required(store, broker, run_id)
+    call = ToolCall(tool_call_id="replan-crash", name=ToolName.REPLAN)
+
+    with pytest.raises(RuntimeError, match="Plan selection"):
+        await broker.dispatch(run_id, call)
+    resumed = await broker.dispatch(run_id, call)
+
+    assert resumed.ok
+    assert resumed.payload["revision"] == 2
+    assert planner.revisions == 1
+    current = await store.current_plan_revision(run_id)
+    assert current is not None and current.revision == 2

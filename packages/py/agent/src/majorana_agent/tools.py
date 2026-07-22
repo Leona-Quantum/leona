@@ -7,9 +7,10 @@ substitution between execution, verification, conversion, and publication.
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from typing import Any, Protocol
-from uuid import UUID, uuid4
+from uuid import UUID, uuid4, uuid5
 
 from majorana_agent.broker import ToolHandler, ToolPolicyError
 from majorana_agent.models import (
@@ -19,11 +20,14 @@ from majorana_agent.models import (
     ExecutionEvidence,
     ExecutionFailureKind,
     PlanRecord,
+    PlanRevision,
     PublishedArtifact,
     RepairInstruction,
     ToolCall,
     ToolName,
+    ToolResult,
     VerificationEvidence,
+    _plan_fingerprint,
 )
 from majorana_agent.store import AgentStore
 from majorana_contracts.enums import (
@@ -49,6 +53,10 @@ def _without_captured_output(observation: dict[str, Any]) -> dict[str, Any]:
 
 class Planner(Protocol):
     async def create_plan(self, run_id: UUID) -> Plan: ...
+
+    async def revise_plan(
+        self, run_id: UUID, previous: Plan, plan_defect_feedback: str
+    ) -> Plan: ...
 
 
 @dataclass(frozen=True)
@@ -125,6 +133,7 @@ class CircuitToolset:
     def handlers(self) -> dict[ToolName, ToolHandler]:
         return {
             ToolName.REQUEST_PLAN: self.request_plan,
+            ToolName.REPLAN: self.replan,
             ToolName.SIMULATE_QISKIT: self.simulate,
             ToolName.SIMULATE_CIRQ: self.simulate,
             ToolName.SIMULATE_PENNYLANE: self.simulate,
@@ -134,23 +143,116 @@ class CircuitToolset:
         }
 
     async def request_plan(self, run_id: UUID, _call: ToolCall) -> dict[str, Any]:
-        existing = await self._store.latest_plan(run_id)
+        existing = await self._store.current_plan_revision(run_id)
         if existing is not None:
-            return {"plan_id": str(existing.plan_id), "plan": existing.plan.model_dump(mode="json")}
-        plan = await self._planner.create_plan(run_id)
+            return {
+                "plan_id": str(existing.plan_id),
+                "revision": existing.revision,
+                "plan": existing.plan.model_dump(mode="json"),
+            }
+        try:
+            plan = await self._planner.create_plan(run_id)
+        except Exception as exc:
+            raise ToolPolicyError(
+                "plan_attempt_failed", f"planner failed: {type(exc).__name__}: {str(exc)[:1000]}"
+            ) from exc
         if plan.framework is not self._framework:
             raise ToolPolicyError(
                 "framework_mismatch", "planner changed the user-selected framework"
             )
         record = PlanRecord(plan_id=uuid4(), run_id=run_id, plan=plan)
         await self._store.add_plan(record)
-        return {"plan_id": str(record.plan_id), "plan": plan.model_dump(mode="json")}
+        return {
+            "plan_id": str(record.plan_id),
+            "revision": 1,
+            "plan": plan.model_dump(mode="json"),
+        }
+
+    async def replan(self, run_id: UUID, call: ToolCall) -> dict[str, Any]:
+        current = await self._store.current_plan_revision(run_id)
+        if current is None:
+            raise ToolPolicyError("plan_missing", "replan requires a current Plan revision")
+        feedback = self._plan_defect_feedback(await self._store.list_tool_results(run_id))
+        plan_id = uuid5(run_id, f"majorana:replan:{call.tool_call_id}")
+        try:
+            existing = await self._store.plan_revision(run_id, plan_id)
+        except KeyError:
+            existing = None
+        if existing is None:
+            try:
+                plan = await self._planner.revise_plan(run_id, current.plan, feedback)
+            except Exception as exc:
+                raise ToolPolicyError(
+                    "plan_attempt_failed",
+                    f"planner failed: {type(exc).__name__}: {str(exc)[:1000]}",
+                ) from exc
+            self._assert_replan_invariants(current.plan, plan)
+            existing = PlanRevision(
+                plan_id=plan_id,
+                run_id=run_id,
+                revision=current.revision + 1,
+                parent_plan_id=current.plan_id,
+                plan=plan,
+                plan_fingerprint=_plan_fingerprint(plan),
+                replan_reason=feedback,
+            )
+            await self._store.append_plan_revision(existing)
+        elif existing.plan_id == current.plan_id:
+            pass
+        elif existing.parent_plan_id != current.plan_id:
+            raise ToolPolicyError(
+                "stale_plan_replay", "replayed replan no longer extends the current Plan"
+            )
+        await self._store.select_current_plan(run_id, existing.plan_id)
+        return {
+            "plan_id": str(existing.plan_id),
+            "revision": existing.revision,
+            "parent_plan_id": str(existing.parent_plan_id),
+            "replan_reason": existing.replan_reason,
+            "plan": existing.plan.model_dump(mode="json"),
+        }
+
+    @staticmethod
+    def _plan_defect_feedback(results: list[ToolResult]) -> str:
+        result = next(
+            (
+                item
+                for item in reversed(results)
+                if item.ok
+                and item.name is ToolName.VERIFY_INTENT_ALIGNMENT
+                and item.payload.get("failure_class") == VerificationFailureClass.PLAN_DEFECT.value
+                and item.payload.get("retry_target") == RetryTarget.PLANNING.value
+            ),
+            None,
+        )
+        if result is None:
+            raise ToolPolicyError(
+                "replan_not_authorized", "replan requires typed plan_defect feedback"
+            )
+        reason = result.payload.get("reason_code") or "semantic_plan_defect"
+        repair = result.payload.get("repair")
+        return json.dumps(
+            {"reason_code": reason, "repair": repair},
+            default=str,
+            sort_keys=True,
+        )[:2000]
+
+    @staticmethod
+    def _assert_replan_invariants(previous: Plan, revised: Plan) -> None:
+        if revised.framework is not previous.framework:
+            raise ToolPolicyError(
+                "framework_mismatch", "replan changed the user-selected framework"
+            )
+        if revised.parameters.seed != previous.parameters.seed:
+            raise ToolPolicyError("seed_mismatch", "replan changed the requested seed")
+        if revised.parameters.shots != previous.parameters.shots:
+            raise ToolPolicyError("shots_mismatch", "replan changed the requested shots")
 
     async def simulate(self, run_id: UUID, call: ToolCall) -> dict[str, Any]:
         source = call.arguments.get("source")
         if not isinstance(source, str) or not source.strip():
             raise ToolPolicyError("invalid_arguments", "source must be non-empty framework code")
-        plan_record = await self._store.latest_plan(run_id)
+        plan_record = await self._store.current_plan_revision(run_id)
         if plan_record is None:
             raise ToolPolicyError("plan_missing", "simulation requires a stored plan")
         candidate = await self._store.candidate_for_tool_call(run_id, call.tool_call_id)
@@ -249,6 +351,7 @@ class CircuitToolset:
         return {
             "candidate_id": str(candidate.candidate_id),
             "revision": candidate.revision,
+            "plan_id": str(candidate.plan_id),
             "source_fingerprint": candidate.source_fingerprint,
             "execution_id": str(evidence.execution_id),
             "execution_ok": True,
@@ -263,10 +366,24 @@ class CircuitToolset:
             raise ToolPolicyError("execution_missing", "verification requires successful execution")
         if execution.source_fingerprint != candidate.source_fingerprint:
             raise ToolPolicyError("fingerprint_mismatch", "execution source differs from candidate")
+        semantic_review_decision: SemanticReviewDecision | None = None
+        reason_code: str | None = None
         evidence = await self._store.verification_for(run_id, candidate.candidate_id)
         if evidence is None:
             plan_record = await self._store.plan(run_id, candidate.plan_id)
             output = await self._verifier.verify(candidate, execution, plan_record.plan)
+            semantic_review_decision = output.semantic_review_decision
+            reason_code = output.reason_code
+            repair = output.repair
+            if repair is not None and (
+                output.failure_class is not None or output.retry_target is not None
+            ):
+                repair = repair.model_copy(
+                    update={
+                        "failure_class": output.failure_class,
+                        "retry_target": output.retry_target,
+                    }
+                )
             evidence = VerificationEvidence(
                 verification_id=uuid4(),
                 candidate_id=candidate.candidate_id,
@@ -275,7 +392,7 @@ class CircuitToolset:
                 decision=output.decision,
                 deterministic_checks=output.deterministic_checks,
                 critic=output.critic,
-                repair=output.repair,
+                repair=repair,
             )
             await self._store.add_verification(evidence)
         await self._store.set_candidate_status(
@@ -290,6 +407,20 @@ class CircuitToolset:
             "verification_id": str(evidence.verification_id),
             "decision": evidence.decision.value,
             "repair": evidence.repair.model_dump(mode="json") if evidence.repair else None,
+            "semantic_review_decision": (
+                semantic_review_decision.value if semantic_review_decision is not None else None
+            ),
+            "failure_class": (
+                evidence.repair.failure_class.value
+                if evidence.repair and evidence.repair.failure_class
+                else None
+            ),
+            "retry_target": (
+                evidence.repair.retry_target.value
+                if evidence.repair and evidence.repair.retry_target
+                else None
+            ),
+            "reason_code": reason_code,
         }
 
     async def convert(self, run_id: UUID, call: ToolCall) -> dict[str, Any]:

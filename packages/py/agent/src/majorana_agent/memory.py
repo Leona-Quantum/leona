@@ -92,14 +92,16 @@ class MemoryAgentStore:
         self._plans[record.run_id].append(record)
 
     async def plan(self, run_id: UUID, plan_id: UUID) -> PlanRecord:
-        for record in self._plans[run_id]:
-            if record.plan_id == plan_id:
-                return record
-        raise KeyError(plan_id)
+        revision = await self.plan_revision(run_id, plan_id)
+        return PlanRecord(plan_id=revision.plan_id, run_id=run_id, plan=revision.plan)
 
     async def latest_plan(self, run_id: UUID) -> PlanRecord | None:
-        records = self._plans[run_id]
-        return records[-1] if records else None
+        revision = await self.current_plan_revision(run_id)
+        return (
+            PlanRecord(plan_id=revision.plan_id, run_id=run_id, plan=revision.plan)
+            if revision is not None
+            else None
+        )
 
     async def append_plan_revision(self, record: PlanRevision) -> None:
         revisions = self._plan_revisions[record.run_id]

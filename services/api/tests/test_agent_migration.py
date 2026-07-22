@@ -166,3 +166,25 @@ def test_entangled_property_method_migration_is_additive_and_fails_closed(monkey
     module.downgrade()
     assert "cannot downgrade 0027" in statements[-1]
     assert "DELETE FROM verification_records" not in statements[-1]
+
+
+def test_replan_tool_migration_is_additive_and_fails_closed(monkeypatch):
+    module = _load_migration("0028_replan_tool.py")
+    created = []
+    statements = []
+
+    monkeypatch.setattr(module.op, "drop_constraint", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(
+        module.op,
+        "create_check_constraint",
+        lambda name, table, expression: created.append((name, table, expression)),
+    )
+    monkeypatch.setattr(module.op, "execute", statements.append)
+
+    module.upgrade()
+    assert set(module._NAMES_NEW) - set(module._NAMES_OLD) == {"replan"}
+    assert "replan" in created[-1][2]
+
+    module.downgrade()
+    assert "cannot downgrade 0028" in statements[-1]
+    assert "DELETE FROM agent_steps" not in statements[-1]

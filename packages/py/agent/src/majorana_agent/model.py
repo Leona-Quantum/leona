@@ -32,6 +32,7 @@ _TOOLS_BY_STATE: dict[AgentState, tuple[ToolName, ...]] = {
     AgentState.PLANNED: tuple(SIMULATION_TOOL_BY_FRAMEWORK.values()),
     AgentState.EXECUTED: (ToolName.VERIFY_INTENT_ALIGNMENT,),
     AgentState.REPAIR_REQUIRED: tuple(SIMULATION_TOOL_BY_FRAMEWORK.values()),
+    AgentState.REPLAN_REQUIRED: (ToolName.REPLAN,),
     AgentState.RESOURCE_EXHAUSTED: (),
     AgentState.VERIFIED: (ToolName.CONVERT_TO_OPENQASM, ToolName.PUBLISH_ARTIFACT),
     AgentState.QASM_ATTEMPTED: (ToolName.PUBLISH_ARTIFACT,),
@@ -54,6 +55,8 @@ def _history_payload(result: ToolResult) -> dict:
         if key
         in {
             "plan_id",
+            "parent_plan_id",
+            "replan_reason",
             "candidate_id",
             "revision",
             "source_fingerprint",
@@ -61,6 +64,9 @@ def _history_payload(result: ToolResult) -> dict:
             "execution_ok",
             "verification_id",
             "decision",
+            "failure_class",
+            "retry_target",
+            "reason_code",
             "repair",
             "status",
             "reason",

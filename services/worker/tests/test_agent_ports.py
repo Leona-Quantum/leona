@@ -703,6 +703,31 @@ async def test_requested_seed_reaches_the_plan_by_the_same_mechanism():
     assert "random seed 7" in llm.prompts[0]
 
 
+async def test_replan_preserves_prior_seed_and_shots_and_includes_typed_feedback():
+    previous_payload = json.loads(
+        _plan_payload(output_keys=["counts"], methods=["statistical", "return_contract"])
+    )
+    previous_payload["parameters"] = {"shots": 4096, "seed": 17}
+    previous = Plan.model_validate(previous_payload)
+    revised_payload = previous.model_dump(mode="json")
+    revised_payload["problem_summary"] = "Corrected MaxCut plan"
+    revised_payload["parameters"] = {"shots": 128, "seed": 99}
+    llm = _ScriptedPlannerLLM(json.dumps(revised_payload))
+    planner = LLMPlanner(llm=llm, task_prompt="MaxCut on a ring", framework=Framework.QISKIT)
+
+    revised = await planner.revise_plan(
+        uuid4(),
+        previous,
+        '{"reason_code":"semantic_plan_defect"}',
+    )
+
+    assert revised.problem_summary == "Corrected MaxCut plan"
+    assert revised.parameters.shots == 4096
+    assert revised.parameters.seed == 17
+    assert "immutable prior Plan" in llm.prompts[0]
+    assert "semantic_plan_defect" in llm.prompts[0]
+
+
 async def test_an_out_of_range_seed_is_dropped_rather_than_clamped():
     """A clamped seed is a DIFFERENT seed presented as the user's, which defeats
     the point of asking for one. Shots clamp because 20000 shots still answers

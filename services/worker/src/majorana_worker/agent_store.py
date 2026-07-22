@@ -124,16 +124,16 @@ class RepoAgentStore:
         await self._session.commit()
 
     async def plan(self, run_id: UUID, plan_id: UUID) -> PlanRecord:
-        row = await agent_repo.get_or_create_agent_run(self._scope, self._session, run_id)
-        if row.plan_id != plan_id or row.plan is None:
+        row = await agent_repo.get_plan_revision(self._scope, self._session, run_id, plan_id)
+        if row is None:
             raise KeyError(plan_id)
         return PlanRecord(plan_id=plan_id, run_id=run_id, plan=row.plan)
 
     async def latest_plan(self, run_id: UUID) -> PlanRecord | None:
-        row = await agent_repo.get_or_create_agent_run(self._scope, self._session, run_id)
-        if row.plan_id is None or row.plan is None:
+        row = await agent_repo.get_current_plan_revision(self._scope, self._session, run_id)
+        if row is None:
             return None
-        return PlanRecord(plan_id=row.plan_id, run_id=run_id, plan=row.plan)
+        return PlanRecord(plan_id=row.id, run_id=run_id, plan=row.plan)
 
     @staticmethod
     def _plan_revision(row) -> PlanRevision:

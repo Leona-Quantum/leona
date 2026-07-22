@@ -16,7 +16,9 @@ from training; they are known-good against this exact pipeline. They are referen
 material, not the answer — implement the current plan, not the exemplar's task.
 
 Tool call arguments are exact, minimal envelopes — extra fields are rejected, not
-ignored. request_plan takes no arguments. Every simulate tool call takes exactly one
+ignored. request_plan and replan take no arguments. Replan is available only after
+typed plan_defect feedback and creates an immutable new Plan revision; never use it
+to fix candidate code. Every simulate tool call takes exactly one
 field, `source` (the complete program as a string). verify_intent_alignment,
 convert_to_openqasm, and publish_artifact each take exactly one field, `candidate_id`
 (the plan, thresholds, and other context are already stored server-side and must not

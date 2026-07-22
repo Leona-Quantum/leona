@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import Any
-from uuid import UUID
+from uuid import UUID, uuid5
 
 from majorana_agent.models import (
     AgentBudget,
@@ -16,7 +16,12 @@ from majorana_agent.models import (
     ToolResult,
 )
 from majorana_agent.store import AgentStore
-from majorana_contracts.enums import Framework, VerifierDecision
+from majorana_contracts.enums import (
+    Framework,
+    RetryTarget,
+    VerificationFailureClass,
+    VerifierDecision,
+)
 
 ToolHandler = Callable[[UUID, ToolCall], Awaitable[dict[str, Any]]]
 
@@ -32,6 +37,7 @@ _ALLOWED: dict[AgentState, frozenset[ToolName]] = {
     AgentState.PLANNED: frozenset(SIMULATION_TOOL_BY_FRAMEWORK.values()),
     AgentState.EXECUTED: frozenset({ToolName.VERIFY_INTENT_ALIGNMENT}),
     AgentState.REPAIR_REQUIRED: frozenset(SIMULATION_TOOL_BY_FRAMEWORK.values()),
+    AgentState.REPLAN_REQUIRED: frozenset({ToolName.REPLAN}),
     AgentState.RESOURCE_EXHAUSTED: frozenset(),
     AgentState.VERIFIED: frozenset({ToolName.CONVERT_TO_OPENQASM, ToolName.PUBLISH_ARTIFACT}),
     AgentState.QASM_ATTEMPTED: frozenset({ToolName.PUBLISH_ARTIFACT}),
@@ -125,6 +131,32 @@ class ToolBroker:
                 )
         self._validate_arguments(call)
 
+        if call.name in {ToolName.REQUEST_PLAN, ToolName.REPLAN}:
+            plan_attempts = sum(
+                result.name in {ToolName.REQUEST_PLAN, ToolName.REPLAN} for result in results
+            )
+            if plan_attempts >= self._policy.budget.max_plan_attempts:
+                raise ToolPolicyError(
+                    "plan_attempt_budget_exhausted", "Plan attempt budget exhausted"
+                )
+
+        if call.name is ToolName.REPLAN:
+            await self._validate_replan_authority(run_id, results)
+            current = await self._store.current_plan_revision(run_id)
+            if current is None:
+                raise ToolPolicyError("plan_missing", "replan requires a current Plan revision")
+            replay_id = uuid5(run_id, f"majorana:replan:{call.tool_call_id}")
+            try:
+                replay = await self._store.plan_revision(run_id, replay_id)
+            except KeyError:
+                replay = None
+            if current.revision >= self._policy.budget.max_plan_revisions and (
+                replay is None or replay.plan_id != current.plan_id
+            ):
+                raise ToolPolicyError(
+                    "plan_revision_budget_exhausted", "Plan revision budget exhausted"
+                )
+
         candidates = await self._store.list_candidates(run_id)
         if (
             call.name in SIMULATION_TOOL_BY_FRAMEWORK.values()
@@ -186,9 +218,11 @@ class ToolBroker:
 
     @staticmethod
     def _validate_arguments(call: ToolCall) -> None:
-        if call.name is ToolName.REQUEST_PLAN:
+        if call.name in {ToolName.REQUEST_PLAN, ToolName.REPLAN}:
             if call.arguments:
-                raise ToolPolicyError("invalid_arguments", "request_plan accepts no arguments")
+                raise ToolPolicyError(
+                    "invalid_arguments", f"{call.name.value} accepts no arguments"
+                )
             return
         if call.name in SIMULATION_TOOL_BY_FRAMEWORK.values():
             if set(call.arguments) != {"source"}:
@@ -219,6 +253,8 @@ class ToolBroker:
     ) -> AgentState:
         if name is ToolName.REQUEST_PLAN:
             return AgentState.PLANNED
+        if name is ToolName.REPLAN:
+            return AgentState.PLANNED
         if name in SIMULATION_TOOL_BY_FRAMEWORK.values():
             if payload.get("resource_exhausted"):
                 return AgentState.RESOURCE_EXHAUSTED
@@ -229,6 +265,11 @@ class ToolBroker:
             )
         if name is ToolName.VERIFY_INTENT_ALIGNMENT:
             decision = VerifierDecision(payload.get("decision", VerifierDecision.INCONCLUSIVE))
+            if (
+                payload.get("failure_class") == VerificationFailureClass.PLAN_DEFECT.value
+                and payload.get("retry_target") == RetryTarget.PLANNING.value
+            ):
+                return AgentState.REPLAN_REQUIRED
             return (
                 AgentState.VERIFIED
                 if decision is VerifierDecision.PASS
@@ -239,3 +280,26 @@ class ToolBroker:
         if name is ToolName.PUBLISH_ARTIFACT:
             return AgentState.PUBLISHED
         raise ToolPolicyError("unknown_tool", name.value)
+
+    async def _validate_replan_authority(self, run_id: UUID, results: list[ToolResult]) -> None:
+        feedback = next(
+            (
+                result
+                for result in reversed(results)
+                if result.ok and result.name is ToolName.VERIFY_INTENT_ALIGNMENT
+            ),
+            None,
+        )
+        if feedback is None or not (
+            feedback.payload.get("failure_class") == VerificationFailureClass.PLAN_DEFECT.value
+            and feedback.payload.get("retry_target") == RetryTarget.PLANNING.value
+        ):
+            raise ToolPolicyError(
+                "replan_not_authorized", "replan requires typed plan_defect feedback"
+            )
+        candidate_id = self._candidate_id(feedback.payload)
+        latest = await self._store.latest_candidate(run_id)
+        if latest is None or latest.candidate_id != candidate_id:
+            raise ToolPolicyError(
+                "stale_plan_feedback", "replan feedback must belong to the latest candidate"
+            )
