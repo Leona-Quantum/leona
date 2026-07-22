@@ -8,7 +8,6 @@ from majorana_contracts.enums import Framework
 from majorana_contracts.plan import (
     BRUTE_FORCE_MAX_VARIABLES,
     EXACT_DIAG_MAX_QUBITS,
-    EXACT_MAX_QUBITS,
 )
 
 
@@ -56,7 +55,7 @@ plumbing and will not be shown to the user as JSON.
 
 Choose the smallest useful artifact contract and the strongest applicable verification
 strategy. The only verification_plan.methods this pipeline can evaluate are
-`return_contract`, `statistical`, `exact`, `exact_diag`, and `brute_force`, and the schema offers no others
+`return_contract`, `statistical`, `exact_diag`, and `brute_force`, and the schema offers no others
 (selected-framework re-execution plus deterministic artifact/resource/measurement checks
 run automatically regardless of what you list). `statistical` compares two measurement-count
 distributions, so list it only when expected_output_keys includes the key holding the
@@ -65,33 +64,10 @@ A plan that lists `statistical` while promising only scalars — cut values, ene
 ratios — is rejected by the plan contract, because no generated code can produce the
 distribution the check needs.
 
-`exact` is the strongest check available: it compares the unitary of the circuit that
-actually ran against a reference circuit, phase-aligned, to 1e-9. It needs a reference,
-so it also needs you to say where that reference comes from.
-
-- Set reference_source to `plan_declared` and write reference_qasm when the task has a
-  canonical construction you can state independently — Bell and GHZ states, QFT, a
-  specific oracle, a named gate decomposition. Write the textbook circuit in OpenQASM 3,
-  not a transcription of the code you expect back. Measurements are ignored; only the
-  unitary is compared, so leave them out. Before declaring one, apply this self-check:
-  could you write this circuit's exact gate list on paper without deriving anything? A
-  single named subroutine passes that test; a multi-stage composition (controlled
-  powers feeding an inverse QFT, an ansatz inside an optimizer loop) usually does not
-  — and a reference you had to derive is as likely to be wrong as the code it will
-  judge. A wrong reference makes `exact` fail every correct candidate identically
-  while the run's other checks pass, and the run dies with nothing to repair. When
-  the self-check fails, leave `exact` off and rely on statistical evidence plus
-  success_criteria.
-- `exact` supports at most {EXACT_MAX_QUBITS} qubits and the plan contract rejects it
-  above that. For anything larger, verify statistically.
-- Listing `exact` without a usable reference is rejected. If the task has no canonical
-  reference you can write down honestly, leave it off rather than inventing one — a
-  reference copied from the implementation you are about to ask for proves nothing.
-
 `exact_diag` is the classical ground truth for a task whose answer is an ENERGY, and it
 is the only physical evidence a variational run can earn: a VQE reports a scalar, so
-`statistical` has no distribution to compare and `exact` has no reference circuit to
-match. List it whenever the request names a Hamiltonian — VQE, ground-state chemistry,
+`statistical` has no distribution to compare. List it whenever the request names a
+Hamiltonian — VQE, ground-state chemistry,
 an Ising or QUBO energy — and write that operator into reference_hamiltonian as Pauli
 terms, one per entry, qubit 0 leftmost: H = 0.5*Z0 + 1.2*Z1 + 0.8*X0X1 becomes
 [{{"coefficient": 0.5, "pauli": "ZI"}}, {{"coefficient": 1.2, "pauli": "IZ"}},

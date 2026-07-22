@@ -26,11 +26,14 @@ from .enums import (
     Role,
     RunMode,
     RunStatus,
+    RetryTarget,
+    SemanticReviewDecision,
     SourceKind,
     Stage,
     TopLevelExecution,
     UsageKind,
     VerificationMethod,
+    VerificationFailureClass,
     VerificationResultKind,
     VerifierDecision,
     PHYSICAL_VERIFICATION_METHODS,
@@ -81,6 +84,7 @@ from .models import (
     ResourceMetrics,
     Run,
     VerificationRecord,
+    VerificationSummary,
     Workspace,
     Conversation,
     ConversationTurn,
@@ -127,8 +131,9 @@ from .lifecycle import (
 # 1.5.0: Artifact (list resource) gains optional verifier_decision /
 # evidence_strength from the current version's verification_summary, so the
 # Vault list stops fabricating "verified" for unopened artifacts.
-# 2.0.0: VerificationPlan no longer accepts parent_artifact as an exact-reference
-# source; prior artifact versions remain provenance only, never correctness oracles.
+# 2.0.0: VerificationPlan removes all reference-QASM fields and planner-selectable
+# exact; prior exact records remain readable. Adds three-state review/failure/retry
+# taxonomy, unavailable/error check results, and typed final summaries.
 CONTRACTS_VERSION = "2.0.0"
 
 __all__ = [
@@ -196,11 +201,13 @@ __all__ = [
     "RunRestarted",
     "RunStarted",
     "RunStatus",
+    "RetryTarget",
     "SandboxResult",
     "ResourceEstimateResult",
     "ResourceMetrics",
     "ScreenResult",
     "Scope",
+    "SemanticReviewDecision",
     "SourceKind",
     "Stage",
     "StageFinished",
@@ -210,8 +217,10 @@ __all__ = [
     "TERMINAL_STATUSES",
     "UsageKind",
     "VerificationMethod",
+    "VerificationFailureClass",
     "VerificationPlan",
     "VerificationRecord",
+    "VerificationSummary",
     "VerificationResult",
     "VerificationResultKind",
     "VerifierDecision",

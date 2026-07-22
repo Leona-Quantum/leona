@@ -14,6 +14,9 @@ from .enums import (
     Role,
     RunMode,
     RunStatus,
+    RetryTarget,
+    SemanticReviewDecision,
+    VerificationFailureClass,
     VerificationMethod,
     VerificationResultKind,
     VerifierDecision,
@@ -24,6 +27,29 @@ from .enums import (
 
 class _ResourceBase(BaseModel):
     model_config = ConfigDict(extra="forbid")
+
+
+class VerificationSummary(_ResourceBase):
+    """Typed final verification state shared by events and API resources.
+
+    The object is optional on legacy resources, but every newly written summary is
+    complete enough to explain the decision without inferring trust from absence.
+    """
+
+    decision: VerifierDecision
+    semantic_review_decision: SemanticReviewDecision | None = None
+    evidence_strength: EvidenceStrength | None = None
+    reason_code: str = Field(min_length=1, max_length=120)
+    candidate_defect_observed: bool
+    failure_class: VerificationFailureClass | None = None
+    retry_target: RetryTarget
+    unverified_claims: list[str] = Field(default_factory=list, max_length=50)
+
+    @model_validator(mode="after")
+    def inconclusive_never_blames_the_candidate(self) -> Self:
+        if self.decision is VerifierDecision.INCONCLUSIVE and self.candidate_defect_observed:
+            raise ValueError("inconclusive requires candidate_defect_observed=false")
+        return self
 
 
 class Workspace(_ResourceBase):
@@ -78,6 +104,7 @@ class Artifact(_ResourceBase):
     # not a verdict.
     verifier_decision: VerifierDecision | None = None
     evidence_strength: EvidenceStrength | None = None
+    verification_summary: VerificationSummary | None = None
     created_at: datetime
     updated_at: datetime
     deleted_at: datetime | None = None
@@ -129,6 +156,7 @@ class ArtifactVersion(_ResourceBase):
     framework_variants: dict[str, str] | None = None
     resource_estimates: dict[str, Any] | None = None
     limitations: str | None = None
+    verification_summary: VerificationSummary | None = None
     created_at: datetime
 
     @model_validator(mode="after")
@@ -220,6 +248,7 @@ class Run(_ResourceBase):
         default=None, description="Duration, memory, exit code as reported by the provider"
     )
     verifier_decision: VerifierDecision | None = None
+    verification_summary: VerificationSummary | None = None
     residual_risks: str | None = None
     baseline: dict[str, Any] | None = Field(
         default=None, description="Baseline result, or {not_applicable_reason}"

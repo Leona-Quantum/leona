@@ -21,7 +21,7 @@ from .enums import (
     VerificationResultKind,
     VerifierDecision,
 )
-from .models import ResourceMetrics
+from .models import ResourceMetrics, VerificationSummary
 from .plan import Plan
 
 
@@ -346,6 +346,7 @@ class RunFinished(_EventBase):
     # compared against the physics from one whose only check read a dict key, and
     # this event is the durable, replayable record the run page reads.
     evidence_strength: EvidenceStrength | None = None
+    verification_summary: VerificationSummary | None = None
     residual_risks: str | None = None
 
 

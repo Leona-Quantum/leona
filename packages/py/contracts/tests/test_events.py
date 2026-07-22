@@ -16,6 +16,7 @@ from majorana_contracts import (
     Stage,
     VerificationMethod,
     VerificationResultKind,
+    VerificationSummary,
     run_event_adapter,
 )
 
@@ -80,6 +81,54 @@ def test_run_finished_evidence_strength_is_optional_for_replayed_history():
         {**ENVELOPE, "type": "run.finished", "status": "succeeded", "verifier_decision": "pass"}
     )
     assert revived.evidence_strength is None
+
+
+def test_run_finished_typed_summary_round_trips():
+    summary = VerificationSummary(
+        decision="inconclusive",
+        evidence_strength="structural",
+        reason_code="required_check_unavailable",
+        candidate_defect_observed=False,
+        failure_class="capability_limit",
+        retry_target="none",
+        unverified_claims=["dynamic-circuit behavior"],
+    )
+    original = RunFinished(
+        run_id=uuid4(),
+        seq=15,
+        ts=datetime.now(UTC),
+        status="succeeded",
+        verifier_decision="inconclusive",
+        verification_summary=summary,
+    )
+    revived = run_event_adapter.validate_json(original.model_dump_json())
+    assert revived == original
+
+
+def test_historical_exact_event_remains_parseable():
+    event = run_event_adapter.validate_python(
+        {
+            **ENVELOPE,
+            "type": "verification.result",
+            "method": "exact",
+            "result": "pass",
+        }
+    )
+    assert event.method is VerificationMethod.EXACT
+
+
+@pytest.mark.parametrize("result", ["unavailable", "error"])
+def test_new_check_outcomes_round_trip(result):
+    event = run_event_adapter.validate_python(
+        {
+            **ENVELOPE,
+            "type": "verification.result",
+            "method": "statistical",
+            "result": result,
+        }
+    )
+    revived = run_event_adapter.validate_json(event.model_dump_json())
+    assert revived.result is VerificationResultKind(result)
 
 
 def test_every_event_type_round_trips():

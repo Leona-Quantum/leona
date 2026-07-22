@@ -61,6 +61,8 @@ export interface components {
              */
             updated_at: string;
             /** @default null */
+            verification_summary: components["schemas"]["VerificationSummary"] | null;
+            /** @default null */
             verifier_decision: components["schemas"]["VerifierDecision"] | null;
             visibility: components["schemas"]["Visibility"];
             /**
@@ -206,6 +208,8 @@ export interface components {
             } | null;
             /** Seq */
             seq: number;
+            /** @default null */
+            verification_summary: components["schemas"]["VerificationSummary"] | null;
         } & unknown;
         /**
          * BaselineKind
@@ -678,10 +682,9 @@ export interface components {
          * PauliTerm
          * @description One `coefficient * PauliString` term of a Hamiltonian, as data.
          *
-         *     The reference for `exact_diag` is declared, never executed — the same rule
-         *     `reference_qasm` follows. A Hamiltonian written as framework code would have to
-         *     run in the sandbox to mean anything, which would make a second piece of
-         *     model-authored code the ground truth.
+         *     The reference for `exact_diag` is declared data, never executable code. A
+         *     Hamiltonian written as framework code would have to run in the sandbox to mean
+         *     anything, which would make model-authored code the ground truth.
          */
         PauliTerm: {
             /**
@@ -784,11 +787,9 @@ export interface components {
          * ProblemTerm
          * @description One weighted term of a combinatorial instance, as data.
          *
-         *     The reference for `brute_force` is declared, never executed — the rule
-         *     `reference_qasm` and `reference_hamiltonian` already follow, and for the same
-         *     reason: an instance written as framework code would have to run in the
-         *     sandbox to mean anything, making a second piece of model-authored code the
-         *     ground truth.
+         *     The reference for `brute_force` is declared data, never executed. An instance
+         *     written as framework code would have to run in the sandbox to mean anything,
+         *     making model-authored code the ground truth.
          */
         ProblemTerm: {
             /**
@@ -1006,6 +1007,12 @@ export interface components {
             two_qubit_gate_count: number | null;
         };
         /**
+         * RetryTarget
+         * @description The component allowed to act on typed verification feedback.
+         * @enum {string}
+         */
+        RetryTarget: "code_generation" | "planning" | "simulation" | "verification" | "none";
+        /**
          * Role
          * @enum {string}
          */
@@ -1098,6 +1105,8 @@ export interface components {
              * Format: uuid
              */
             user_id: string;
+            /** @default null */
+            verification_summary: components["schemas"]["VerificationSummary"] | null;
             /** @default null */
             verifier_decision: components["schemas"]["VerifierDecision"] | null;
             /**
@@ -1316,6 +1325,8 @@ export interface components {
              * @enum {string}
              */
             type: "run.finished";
+            /** @default null */
+            verification_summary: components["schemas"]["VerificationSummary"] | null;
             /** @default null */
             verifier_decision: components["schemas"]["VerifierDecision"] | null;
         };
@@ -1538,6 +1549,12 @@ export interface components {
             typecheck_ok: boolean;
         };
         /**
+         * SemanticReviewDecision
+         * @description What the evidence-reading LLM recommends before the strict gate runs.
+         * @enum {string}
+         */
+        SemanticReviewDecision: "ready" | "code_repair" | "replan" | "inconclusive";
+        /**
          * Stage
          * @description Pipeline stages in execution order; the orchestrator owns transitions.
          * @enum {string}
@@ -1622,6 +1639,12 @@ export interface components {
          */
         TopLevelExecution: "required" | "demo_only" | "forbidden";
         /**
+         * VerificationFailureClass
+         * @description Why verification could not continue or reach PASS.
+         * @enum {string}
+         */
+        VerificationFailureClass: "candidate_defect" | "plan_defect" | "evidence_gap" | "capability_limit" | "verifier_failure" | "evidence_conflict";
+        /**
          * VerificationMethod
          * @description Every check name the verifier can emit — not only the plannable ones.
          *
@@ -1669,7 +1692,7 @@ export interface components {
              * Methods
              * @description Verification primitives to run against the generated code
              */
-            methods: ("exact" | "statistical" | "return_contract" | "exact_diag" | "brute_force")[];
+            methods: ("statistical" | "return_contract" | "exact_diag" | "brute_force")[];
             /**
              * Reference Hamiltonian
              * @description The Hamiltonian the 'exact_diag' check diagonalizes, required when 'exact_diag' is listed. Write the operator the task actually names, in a real Pauli basis, one term per entry — not a transcription of the code you expect back. success_criteria.primary_metric must name the result key holding the energy the run reports.
@@ -1687,18 +1710,6 @@ export interface components {
              * @default null
              */
             reference_problem: components["schemas"]["ReferenceProblem"] | null;
-            /**
-             * Reference Qasm
-             * @description OpenQASM 2 or 3 source for the circuit the generated code must match, required when reference_source is 'plan_declared'. Write the canonical textbook construction, not a copy of the code you expect. Measurements are ignored: only the unitary is compared.
-             * @default null
-             */
-            reference_qasm: string | null;
-            /**
-             * Reference Source
-             * @description Where the 'exact' check gets the circuit it compares against. 'plan_declared' means you supply reference_qasm below. 'parent_artifact' means the already-verified circuit this run revises is the reference — choose it only when the request is to optimize, transpile, or refactor that circuit WITHOUT changing what it computes, and only when you were told this run has a parent artifact.
-             * @default null
-             */
-            reference_source: ("plan_declared" | "parent_artifact") | null;
             /**
              * Required Invariants
              * @description Invariants that must survive any repair iteration
@@ -1773,16 +1784,38 @@ export interface components {
         };
         /**
          * VerificationResultKind
-         * @description PASS and FAIL are judgements about the code. SKIPPED is not a judgement at
-         *     all: the check was incapable of evaluating this circuit (e.g. the statistical
-         *     check's statevector path against a circuit with mid-circuit measurement and
-         *     classical control flow — production run 019f7e46-d688), so it produced no
-         *     evidence in either direction. A skipped check never blocks a candidate and
-         *     never lifts `evidence_strength_of` — a run whose only physical check was
-         *     skipped passes as `structural`, which states exactly what was proved.
+         * @description Non-overlapping outcomes for one verification check.
+         *
+         *     FAIL means a check ran and established a concrete mismatch. SKIPPED means the
+         *     check is not applicable by design. UNAVAILABLE means it is applicable but the
+         *     required capability or evidence is absent. ERROR means the verifier failed to
+         *     produce a judgement. The latter three never establish a candidate defect.
          * @enum {string}
          */
-        VerificationResultKind: "pass" | "fail" | "skipped";
+        VerificationResultKind: "pass" | "fail" | "skipped" | "unavailable" | "error";
+        /**
+         * VerificationSummary
+         * @description Typed final verification state shared by events and API resources.
+         *
+         *     The object is optional on legacy resources, but every newly written summary is
+         *     complete enough to explain the decision without inferring trust from absence.
+         */
+        VerificationSummary: {
+            /** Candidate Defect Observed */
+            candidate_defect_observed: boolean;
+            decision: components["schemas"]["VerifierDecision"];
+            /** @default null */
+            evidence_strength: components["schemas"]["EvidenceStrength"] | null;
+            /** @default null */
+            failure_class: components["schemas"]["VerificationFailureClass"] | null;
+            /** Reason Code */
+            reason_code: string;
+            retry_target: components["schemas"]["RetryTarget"];
+            /** @default null */
+            semantic_review_decision: components["schemas"]["SemanticReviewDecision"] | null;
+            /** Unverified Claims */
+            unverified_claims?: string[];
+        };
         /**
          * VerifierDecision
          * @enum {string}

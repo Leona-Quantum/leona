@@ -108,6 +108,17 @@
             "title": "Updated At",
             "type": "string"
           },
+          "verification_summary": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/VerificationSummary"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
           "verifier_decision": {
             "anyOf": [
               {
@@ -426,6 +437,17 @@
             "minimum": 1,
             "title": "Seq",
             "type": "integer"
+          },
+          "verification_summary": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/VerificationSummary"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
           }
         },
         "required": [
@@ -1291,7 +1313,7 @@
       },
       "PauliTerm": {
         "additionalProperties": false,
-        "description": "One `coefficient * PauliString` term of a Hamiltonian, as data.\n\nThe reference for `exact_diag` is declared, never executed \u2014 the same rule\n`reference_qasm` follows. A Hamiltonian written as framework code would have to\nrun in the sandbox to mean anything, which would make a second piece of\nmodel-authored code the ground truth.",
+        "description": "One `coefficient * PauliString` term of a Hamiltonian, as data.\n\nThe reference for `exact_diag` is declared data, never executable code. A\nHamiltonian written as framework code would have to run in the sandbox to mean\nanything, which would make model-authored code the ground truth.",
         "properties": {
           "coefficient": {
             "description": "Real coefficient. Complex Hamiltonians are not supported; express them in a real Pauli basis.",
@@ -1520,7 +1542,7 @@
       },
       "ProblemTerm": {
         "additionalProperties": false,
-        "description": "One weighted term of a combinatorial instance, as data.\n\nThe reference for `brute_force` is declared, never executed \u2014 the rule\n`reference_qasm` and `reference_hamiltonian` already follow, and for the same\nreason: an instance written as framework code would have to run in the\nsandbox to mean anything, making a second piece of model-authored code the\nground truth.",
+        "description": "One weighted term of a combinatorial instance, as data.\n\nThe reference for `brute_force` is declared data, never executed. An instance\nwritten as framework code would have to run in the sandbox to mean anything,\nmaking model-authored code the ground truth.",
         "properties": {
           "i": {
             "description": "First variable index, 0-based.",
@@ -1922,6 +1944,18 @@
         "title": "ResourceMetrics",
         "type": "object"
       },
+      "RetryTarget": {
+        "description": "The component allowed to act on typed verification feedback.",
+        "enum": [
+          "code_generation",
+          "planning",
+          "simulation",
+          "verification",
+          "none"
+        ],
+        "title": "RetryTarget",
+        "type": "string"
+      },
       "Role": {
         "enum": [
           "owner",
@@ -2107,6 +2141,17 @@
             "format": "uuid",
             "title": "User Id",
             "type": "string"
+          },
+          "verification_summary": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/VerificationSummary"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
           },
           "verifier_decision": {
             "anyOf": [
@@ -2608,6 +2653,17 @@
             "title": "Type",
             "type": "string"
           },
+          "verification_summary": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/VerificationSummary"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
           "verifier_decision": {
             "anyOf": [
               {
@@ -3004,6 +3060,17 @@
         "title": "ScreenResult",
         "type": "object"
       },
+      "SemanticReviewDecision": {
+        "description": "What the evidence-reading LLM recommends before the strict gate runs.",
+        "enum": [
+          "ready",
+          "code_repair",
+          "replan",
+          "inconclusive"
+        ],
+        "title": "SemanticReviewDecision",
+        "type": "string"
+      },
       "Stage": {
         "description": "Pipeline stages in execution order; the orchestrator owns transitions.",
         "enum": [
@@ -3167,6 +3234,19 @@
         "title": "TopLevelExecution",
         "type": "string"
       },
+      "VerificationFailureClass": {
+        "description": "Why verification could not continue or reach PASS.",
+        "enum": [
+          "candidate_defect",
+          "plan_defect",
+          "evidence_gap",
+          "capability_limit",
+          "verifier_failure",
+          "evidence_conflict"
+        ],
+        "title": "VerificationFailureClass",
+        "type": "string"
+      },
       "VerificationMethod": {
         "description": "Every check name the verifier can emit \u2014 not only the plannable ones.\n\nThe list is exhaustive on purpose. `run_events` is the only channel a human or\nthe UI has into a run, and its `verification.result` event types `method` as\nthis enum, so the emitter drops any check whose name is not a member\n(`agent_events.py`). Until 2026-07-20 the six contract checks below were absent,\nand the emitter silently discarded six of the ten checks the panel actually\nruns. Production QPE run 019f7f2d-09c9 rejected its first candidate on one of\nthem: the critic was never invoked, so a deterministic check had failed, and the\nevent stream showed three passing checks and no failure at all. The run bought a\nsecond candidate and a second sandbox execution for a reason nothing recorded.\n\n**Adding a member here is half of a change.** The database allowlist\n(`ck_method_enum` on `verification_records`) is the other half and must widen in\nthe same deploy \u2014 see db/migrations/versions/0024. That pairing is enforced by\npackages/py/contracts/tests/test_method_allowlist.py rather than remembered.\nAlso decide which side of `PHYSICAL_VERIFICATION_METHODS` the new name falls on;\nall six added below are contract checks that police the shape of the answer, not\nits correctness, so none of them lifts a run's grade.",
         "enum": [
@@ -3239,7 +3319,6 @@
             "description": "Verification primitives to run against the generated code",
             "items": {
               "enum": [
-                "exact",
                 "statistical",
                 "return_contract",
                 "exact_diag",
@@ -3291,34 +3370,6 @@
             ],
             "default": null,
             "description": "The combinatorial instance the 'brute_force' check enumerates, required when 'brute_force' is listed. Write the instance the task actually names \u2014 the graph's weighted edges, the QUBO's coefficients \u2014 not a transcription of the code you expect back. success_criteria.primary_metric must name the result key holding the objective value the run reports."
-          },
-          "reference_qasm": {
-            "anyOf": [
-              {
-                "maxLength": 20000,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null,
-            "description": "OpenQASM 2 or 3 source for the circuit the generated code must match, required when reference_source is 'plan_declared'. Write the canonical textbook construction, not a copy of the code you expect. Measurements are ignored: only the unitary is compared.",
-            "title": "Reference Qasm"
-          },
-          "reference_source": {
-            "anyOf": [
-              {
-                "const": "plan_declared",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null,
-            "description": "Where the 'exact' check gets the circuit it compares against. 'plan_declared' means you supply reference_qasm below. Existing artifact versions are never treated as correctness references.",
-            "title": "Reference Source"
           },
           "required_invariants": {
             "anyOf": [
@@ -3454,14 +3505,87 @@
         "type": "object"
       },
       "VerificationResultKind": {
-        "description": "PASS and FAIL are judgements about the code. SKIPPED is not a judgement at\nall: the check was incapable of evaluating this circuit (e.g. the statistical\ncheck's statevector path against a circuit with mid-circuit measurement and\nclassical control flow \u2014 production run 019f7e46-d688), so it produced no\nevidence in either direction. A skipped check never blocks a candidate and\nnever lifts `evidence_strength_of` \u2014 a run whose only physical check was\nskipped passes as `structural`, which states exactly what was proved.",
+        "description": "Non-overlapping outcomes for one verification check.\n\nFAIL means a check ran and established a concrete mismatch. SKIPPED means the\ncheck is not applicable by design. UNAVAILABLE means it is applicable but the\nrequired capability or evidence is absent. ERROR means the verifier failed to\nproduce a judgement. The latter three never establish a candidate defect.",
         "enum": [
           "pass",
           "fail",
-          "skipped"
+          "skipped",
+          "unavailable",
+          "error"
         ],
         "title": "VerificationResultKind",
         "type": "string"
+      },
+      "VerificationSummary": {
+        "additionalProperties": false,
+        "description": "Typed final verification state shared by events and API resources.\n\nThe object is optional on legacy resources, but every newly written summary is\ncomplete enough to explain the decision without inferring trust from absence.",
+        "properties": {
+          "candidate_defect_observed": {
+            "title": "Candidate Defect Observed",
+            "type": "boolean"
+          },
+          "decision": {
+            "$ref": "#/components/schemas/VerifierDecision"
+          },
+          "evidence_strength": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/EvidenceStrength"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "failure_class": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/VerificationFailureClass"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "reason_code": {
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Reason Code",
+            "type": "string"
+          },
+          "retry_target": {
+            "$ref": "#/components/schemas/RetryTarget"
+          },
+          "semantic_review_decision": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SemanticReviewDecision"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "unverified_claims": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 50,
+            "title": "Unverified Claims",
+            "type": "array"
+          }
+        },
+        "required": [
+          "decision",
+          "reason_code",
+          "candidate_defect_observed",
+          "retry_target"
+        ],
+        "title": "VerificationSummary",
+        "type": "object"
       },
       "VerifierDecision": {
         "enum": [

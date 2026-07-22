@@ -261,10 +261,17 @@ def test_parsed_methods_are_identical_to_the_members_the_worker_dispatches_on():
 
 
 def test_plan_schema_never_offers_a_method_the_worker_cannot_evaluate():
-    schema = json.dumps(Plan.model_json_schema())
+    raw_schema = Plan.model_json_schema()
+    schema = json.dumps(raw_schema)
+    method_choices = raw_schema["$defs"]["VerificationPlan"]["properties"]["methods"]["items"][
+        "enum"
+    ]
 
     assert "baseline_plan" not in schema
     assert "qasm_parse" not in schema
+    assert "reference_source" not in schema
+    assert "reference_qasm" not in schema
+    assert "exact" not in method_choices
     # `exact_diag` moved the other way on 2026-07-20: it now has a dispatch branch
     # (EvidenceVerifier._exact_diag_check) and a reference field, so withholding it
     # from the schema would be the same defect in reverse — a check the worker can

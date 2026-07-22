@@ -59,6 +59,36 @@ class VerifierDecision(StrEnum):
     INCONCLUSIVE = "inconclusive"
 
 
+class SemanticReviewDecision(StrEnum):
+    """What the evidence-reading LLM recommends before the strict gate runs."""
+
+    READY = "ready"
+    CODE_REPAIR = "code_repair"
+    REPLAN = "replan"
+    INCONCLUSIVE = "inconclusive"
+
+
+class VerificationFailureClass(StrEnum):
+    """Why verification could not continue or reach PASS."""
+
+    CANDIDATE_DEFECT = "candidate_defect"
+    PLAN_DEFECT = "plan_defect"
+    EVIDENCE_GAP = "evidence_gap"
+    CAPABILITY_LIMIT = "capability_limit"
+    VERIFIER_FAILURE = "verifier_failure"
+    EVIDENCE_CONFLICT = "evidence_conflict"
+
+
+class RetryTarget(StrEnum):
+    """The component allowed to act on typed verification feedback."""
+
+    CODE_GENERATION = "code_generation"
+    PLANNING = "planning"
+    SIMULATION = "simulation"
+    VERIFICATION = "verification"
+    NONE = "none"
+
+
 class VerificationMethod(StrEnum):
     """Every check name the verifier can emit — not only the plannable ones.
 
@@ -81,6 +111,9 @@ class VerificationMethod(StrEnum):
     its correctness, so none of them lifts a run's grade.
     """
 
+    # Legacy method: historical events and rows remain readable, but new Plans
+    # cannot select it because planner-authored reference circuits are not
+    # correctness authority.
     EXACT = "exact"
     STATISTICAL = "statistical"
     # Reported counts vs a trusted re-execution of the actual circuit object
@@ -114,7 +147,6 @@ class PlannableVerificationMethod(StrEnum):
     and the 0001 check constraint still carry the retired values.
     """
 
-    EXACT = "exact"
     STATISTICAL = "statistical"
     RETURN_CONTRACT = "return_contract"
     # The independent-ground-truth check, and the only physical evidence a
@@ -133,17 +165,19 @@ class PlannableVerificationMethod(StrEnum):
 
 
 class VerificationResultKind(StrEnum):
-    """PASS and FAIL are judgements about the code. SKIPPED is not a judgement at
-    all: the check was incapable of evaluating this circuit (e.g. the statistical
-    check's statevector path against a circuit with mid-circuit measurement and
-    classical control flow — production run 019f7e46-d688), so it produced no
-    evidence in either direction. A skipped check never blocks a candidate and
-    never lifts `evidence_strength_of` — a run whose only physical check was
-    skipped passes as `structural`, which states exactly what was proved."""
+    """Non-overlapping outcomes for one verification check.
+
+    FAIL means a check ran and established a concrete mismatch. SKIPPED means the
+    check is not applicable by design. UNAVAILABLE means it is applicable but the
+    required capability or evidence is absent. ERROR means the verifier failed to
+    produce a judgement. The latter three never establish a candidate defect.
+    """
 
     PASS = "pass"
     FAIL = "fail"
     SKIPPED = "skipped"
+    UNAVAILABLE = "unavailable"
+    ERROR = "error"
 
 
 class EvidenceStrength(StrEnum):
