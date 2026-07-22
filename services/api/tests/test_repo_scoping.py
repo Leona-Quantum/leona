@@ -3,6 +3,7 @@
 probes land with the step-4 authz suite."""
 
 import uuid
+from types import SimpleNamespace
 
 import pytest
 from repo_test_helpers import compiled
@@ -149,6 +150,199 @@ async def test_candidate_lookup_joins_runs_for_scope(scope, session):
     sql, _ = compiled(stmt)
     assert "JOIN runs" in sql
     assert_workspace_bound(stmt, scope)
+
+
+@pytest.mark.parametrize(
+    ("read", "sequence_column"),
+    [
+        (
+            lambda scope, session: agent.latest_plan_revision(scope, session, uuid.uuid4()),
+            "run_plans.revision DESC",
+        ),
+        (
+            lambda scope, session: agent.latest_semantic_review(
+                scope, session, uuid.uuid4(), uuid.uuid4()
+            ),
+            "candidate_semantic_reviews.attempt_seq DESC",
+        ),
+        (
+            lambda scope, session: agent.latest_strict_verification(
+                scope, session, uuid.uuid4(), uuid.uuid4()
+            ),
+            "candidate_verification_attempts.attempt_seq DESC",
+        ),
+    ],
+)
+async def test_new_latest_evidence_reads_are_scoped_and_sequence_ordered(
+    scope, session, read, sequence_column
+):
+    assert await read(scope, session) is None
+    stmt = session.statements[0]
+    sql, _ = compiled(stmt)
+    assert sequence_column in sql
+    assert "created_at DESC" not in sql
+    assert_workspace_bound(stmt, scope)
+
+
+async def test_current_plan_read_uses_explicit_current_plan_id(scope, session):
+    assert await agent.get_current_plan_revision(scope, session, uuid.uuid4()) is None
+    stmt = session.statements[0]
+    sql, _ = compiled(stmt)
+    assert "agent_runs.current_plan_id = run_plans.id" in sql
+    assert_workspace_bound(stmt, scope)
+
+
+async def test_semantic_review_write_rejects_stale_candidate_fingerprint(
+    scope, session, monkeypatch
+):
+    candidate_id = uuid.uuid4()
+    execution_id = uuid.uuid4()
+    candidate = SimpleNamespace(id=candidate_id, source_fingerprint="a" * 64)
+    execution = SimpleNamespace(
+        id=execution_id, candidate_id=candidate_id, source_fingerprint="a" * 64
+    )
+
+    async def get_candidate(*_args):
+        return candidate
+
+    async def get_execution(*_args):
+        return execution
+
+    monkeypatch.setattr(agent, "get_candidate", get_candidate)
+    monkeypatch.setattr(agent, "get_execution", get_execution)
+
+    with pytest.raises(ValueError, match="fingerprint mismatch"):
+        await agent.append_semantic_review(
+            scope,
+            session,
+            uuid.uuid4(),
+            {
+                "candidate_id": candidate_id,
+                "execution_id": execution_id,
+                "source_fingerprint": "b" * 64,
+                "attempt_seq": 1,
+            },
+        )
+    assert session.added == []
+
+
+async def test_duplicate_semantic_attempt_is_rejected_before_insert(scope, session, monkeypatch):
+    candidate_id = uuid.uuid4()
+    execution_id = uuid.uuid4()
+    candidate = SimpleNamespace(id=candidate_id, source_fingerprint="a" * 64)
+    execution = SimpleNamespace(
+        id=execution_id, candidate_id=candidate_id, source_fingerprint="a" * 64
+    )
+
+    async def get_candidate(*_args):
+        return candidate
+
+    async def get_execution(*_args):
+        return execution
+
+    async def latest_review(*_args):
+        return SimpleNamespace(attempt_seq=1)
+
+    monkeypatch.setattr(agent, "get_candidate", get_candidate)
+    monkeypatch.setattr(agent, "get_execution", get_execution)
+    monkeypatch.setattr(agent, "latest_semantic_review", latest_review)
+
+    with pytest.raises(ValueError, match="attempt must be 2"):
+        await agent.append_semantic_review(
+            scope,
+            session,
+            uuid.uuid4(),
+            {
+                "candidate_id": candidate_id,
+                "execution_id": execution_id,
+                "source_fingerprint": "a" * 64,
+                "attempt_seq": 1,
+            },
+        )
+    assert session.added == []
+
+
+def test_immutable_evidence_repositories_expose_no_update_method():
+    assert not hasattr(agent, "update_plan_revision")
+    assert not hasattr(agent, "update_semantic_review")
+    assert not hasattr(agent, "update_strict_verification")
+
+
+async def test_legacy_set_plan_dual_writes_and_selects_revision_one(scope, session, monkeypatch):
+    run_id = uuid.uuid4()
+    plan_id = uuid.uuid4()
+    row = SimpleNamespace(
+        run_id=run_id,
+        plan_id=None,
+        current_plan_id=None,
+        plan=None,
+        updated_at=None,
+    )
+    appended = []
+    selected = []
+
+    async def get_agent_run(*_args):
+        return row
+
+    async def get_revision(*_args):
+        return None
+
+    async def append_revision(_scope, _session, owner_run_id, values):
+        appended.append((owner_run_id, values))
+
+    async def select_plan(_scope, _session, owner_run_id, selected_plan_id):
+        selected.append((owner_run_id, selected_plan_id))
+
+    monkeypatch.setattr(agent, "get_or_create_agent_run", get_agent_run)
+    monkeypatch.setattr(agent, "get_plan_revision", get_revision)
+    monkeypatch.setattr(agent, "append_plan_revision", append_revision)
+    monkeypatch.setattr(agent, "select_current_plan", select_plan)
+
+    plan = {"framework": "qiskit", "steps": []}
+    await agent.set_plan(scope, session, run_id, plan_id=plan_id, plan=plan)
+
+    assert row.plan_id == plan_id
+    assert appended[0][0] == run_id
+    assert appended[0][1]["id"] == plan_id
+    assert appended[0][1]["revision"] == 1
+    assert appended[0][1]["plan_fingerprint"] == agent._fingerprint_plan(plan)
+    assert selected == [(run_id, plan_id)]
+
+
+async def test_candidate_uses_explicit_current_plan_and_rejects_stale_plan(
+    scope, session, monkeypatch
+):
+    run_id = uuid.uuid4()
+    legacy_plan_id = uuid.uuid4()
+    current_plan_id = uuid.uuid4()
+    agent_run = SimpleNamespace(
+        plan_id=legacy_plan_id,
+        current_plan_id=current_plan_id,
+    )
+
+    async def get_agent_run(*_args):
+        return agent_run
+
+    monkeypatch.setattr(agent, "get_or_create_agent_run", get_agent_run)
+    values = {
+        "id": uuid.uuid4(),
+        "tool_call_id": "simulate-1",
+        "revision": 1,
+        "parent_candidate_id": None,
+        "plan_id": current_plan_id,
+        "framework": "qiskit",
+        "source": "print(1)",
+        "source_fingerprint": "a" * 64,
+        "status": "created",
+    }
+
+    await agent.add_candidate(scope, session, run_id, values)
+    assert session.added[-1].plan_id == current_plan_id
+
+    with pytest.raises(ValueError, match="plan does not belong"):
+        await agent.add_candidate(
+            scope, session, run_id, values | {"id": uuid.uuid4(), "plan_id": legacy_plan_id}
+        )
 
 
 async def test_sum_usage(scope, session):

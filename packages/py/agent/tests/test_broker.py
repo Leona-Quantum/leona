@@ -6,17 +6,36 @@ from majorana_agent import (
     CandidateRevision,
     ExecutionEvidence,
     MemoryAgentStore,
+    PlanRecord,
     ToolBroker,
     ToolCall,
     ToolName,
     VerificationEvidence,
 )
-from majorana_contracts.enums import Framework, VerifierDecision
+from majorana_contracts.enums import Algorithm, Framework, VerifierDecision
+from majorana_contracts.plan import Plan
 from majorana_frameworks import FrameworkProgram
 
 
 async def _ok(_run_id: UUID, call: ToolCall):
     return call.arguments | {"decision": call.arguments.get("decision", "pass")}
+
+
+def _plan() -> Plan:
+    return Plan.model_validate(
+        {
+            "domain": "quantum information",
+            "framework": "qiskit",
+            "algorithm": Algorithm.BELL,
+            "problem_summary": "Build a Bell state",
+            "algorithm_rationale": "Entanglement matches the request",
+            "parameters": {},
+            "qubits_estimate": 2,
+            "expected_runtime_sec": 1,
+            "success_criteria": {"primary_metric": "counts"},
+            "expected_output_keys": ["counts"],
+        }
+    )
 
 
 def _broker(store, framework=Framework.QISKIT):
@@ -95,6 +114,7 @@ async def test_publish_requires_matching_verified_latest_candidate():
         source=source,
         source_fingerprint=fingerprint,
     )
+    await store.add_plan(PlanRecord(plan_id=plan_id, run_id=run_id, plan=_plan()))
     await store.add_candidate(candidate)
     execution = ExecutionEvidence(
         execution_id=uuid4(),
@@ -141,16 +161,17 @@ async def test_publish_requires_matching_verified_latest_candidate():
 
 async def test_memory_evidence_is_append_only():
     store = MemoryAgentStore()
-    run_id, candidate_id = uuid4(), uuid4()
+    run_id, plan_id, candidate_id = uuid4(), uuid4(), uuid4()
     source = "FINAL_CIRCUIT = object()\n"
     fingerprint = FrameworkProgram(Framework.QISKIT, source).fingerprint
+    await store.add_plan(PlanRecord(plan_id=plan_id, run_id=run_id, plan=_plan()))
     await store.add_candidate(
         CandidateRevision(
             candidate_id=candidate_id,
             run_id=run_id,
             tool_call_id="simulate",
             revision=1,
-            plan_id=uuid4(),
+            plan_id=plan_id,
             framework=Framework.QISKIT,
             source=source,
             source_fingerprint=fingerprint,

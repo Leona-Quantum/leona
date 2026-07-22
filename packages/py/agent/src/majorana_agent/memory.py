@@ -15,11 +15,15 @@ from majorana_agent.models import (
     CandidateRevision,
     ConversionEvidence,
     ExecutionEvidence,
+    PlanRevision,
     PlanRecord,
     PublishedArtifact,
+    SemanticReviewEvidence,
+    StrictVerificationAttempt,
     ToolCall,
     ToolResult,
     VerificationEvidence,
+    _plan_fingerprint,
 )
 
 
@@ -30,8 +34,16 @@ class MemoryAgentStore:
         self._results: dict[tuple[UUID, str], ToolResult] = {}
         self._candidates: dict[UUID, list[CandidateRevision]] = defaultdict(list)
         self._plans: dict[UUID, list[PlanRecord]] = defaultdict(list)
+        self._plan_revisions: dict[UUID, list[PlanRevision]] = defaultdict(list)
+        self._current_plan_ids: dict[UUID, UUID] = {}
         self._executions: dict[tuple[UUID, UUID], ExecutionEvidence] = {}
         self._verifications: dict[tuple[UUID, UUID], VerificationEvidence] = {}
+        self._semantic_reviews: dict[tuple[UUID, UUID], list[SemanticReviewEvidence]] = defaultdict(
+            list
+        )
+        self._strict_verifications: dict[tuple[UUID, UUID], list[StrictVerificationAttempt]] = (
+            defaultdict(list)
+        )
         self._conversions: dict[tuple[UUID, UUID], ConversionEvidence] = {}
         self.publications: list[PublishedArtifact] = []
         self._publication_owners: dict[UUID, UUID] = {}
@@ -68,6 +80,15 @@ class MemoryAgentStore:
     async def add_plan(self, record: PlanRecord) -> None:
         if record.run_id in self._plans and self._plans[record.run_id]:
             raise ValueError("a run already has a plan")
+        revision = PlanRevision(
+            plan_id=record.plan_id,
+            run_id=record.run_id,
+            revision=1,
+            plan=record.plan,
+            plan_fingerprint=_plan_fingerprint(record.plan),
+        )
+        await self.append_plan_revision(revision)
+        await self.select_current_plan(record.run_id, record.plan_id)
         self._plans[record.run_id].append(record)
 
     async def plan(self, run_id: UUID, plan_id: UUID) -> PlanRecord:
@@ -80,7 +101,37 @@ class MemoryAgentStore:
         records = self._plans[run_id]
         return records[-1] if records else None
 
+    async def append_plan_revision(self, record: PlanRevision) -> None:
+        revisions = self._plan_revisions[record.run_id]
+        if any(item.plan_id == record.plan_id for item in revisions):
+            raise ValueError("plan_id already exists")
+        if any(item.revision == record.revision for item in revisions):
+            raise ValueError("Plan revision sequence already exists")
+        expected_revision = len(revisions) + 1
+        if record.revision != expected_revision:
+            raise ValueError(f"Plan revision must be {expected_revision}")
+        expected_parent = revisions[-1].plan_id if revisions else None
+        if record.parent_plan_id != expected_parent:
+            raise ValueError("Plan parent must be the preceding revision in the same run")
+        revisions.append(record)
+
+    async def plan_revision(self, run_id: UUID, plan_id: UUID) -> PlanRevision:
+        for record in self._plan_revisions[run_id]:
+            if record.plan_id == plan_id:
+                return record
+        raise KeyError(plan_id)
+
+    async def current_plan_revision(self, run_id: UUID) -> PlanRevision | None:
+        plan_id = self._current_plan_ids.get(run_id)
+        return await self.plan_revision(run_id, plan_id) if plan_id is not None else None
+
+    async def select_current_plan(self, run_id: UUID, plan_id: UUID) -> None:
+        await self.plan_revision(run_id, plan_id)
+        self._current_plan_ids[run_id] = plan_id
+
     async def add_candidate(self, candidate: CandidateRevision) -> None:
+        if self._current_plan_ids.get(candidate.run_id) != candidate.plan_id:
+            raise ValueError("candidate plan is not the selected Plan revision")
         revisions = self._candidates[candidate.run_id]
         if any(existing.candidate_id == candidate.candidate_id for existing in revisions):
             raise ValueError("candidate_id already exists")
@@ -175,6 +226,66 @@ class MemoryAgentStore:
         self, run_id: UUID, candidate_id: UUID
     ) -> VerificationEvidence | None:
         return self._verifications.get((run_id, candidate_id))
+
+    async def append_semantic_review(self, evidence: SemanticReviewEvidence) -> None:
+        owner = next(
+            (
+                run
+                for (run, candidate_id) in self._executions
+                if candidate_id == evidence.candidate_id
+            ),
+            None,
+        )
+        if owner is None:
+            raise ValueError("candidate must be executed before semantic review")
+        candidate = await self.candidate(owner, evidence.candidate_id)
+        execution = self._executions[(owner, evidence.candidate_id)]
+        evidence.assert_binding(candidate, execution)
+        attempts = self._semantic_reviews[(owner, evidence.candidate_id)]
+        if any(item.attempt_seq == evidence.attempt_seq for item in attempts):
+            raise ValueError("semantic review attempt sequence already exists")
+        attempts.append(evidence)
+
+    async def latest_semantic_review(
+        self, run_id: UUID, candidate_id: UUID
+    ) -> SemanticReviewEvidence | None:
+        attempts = self._semantic_reviews[(run_id, candidate_id)]
+        return max(attempts, key=lambda item: item.attempt_seq) if attempts else None
+
+    async def append_strict_verification(self, attempt: StrictVerificationAttempt) -> None:
+        owner = next(
+            (
+                run
+                for (run, candidate_id) in self._executions
+                if candidate_id == attempt.candidate_id
+            ),
+            None,
+        )
+        if owner is None:
+            raise ValueError("candidate must be executed before strict verification")
+        candidate = await self.candidate(owner, attempt.candidate_id)
+        execution = self._executions[(owner, attempt.candidate_id)]
+        review = next(
+            (
+                item
+                for item in self._semantic_reviews[(owner, attempt.candidate_id)]
+                if item.review_id == attempt.semantic_review_id
+            ),
+            None,
+        )
+        if review is None:
+            raise ValueError("strict verification requires its semantic review")
+        attempt.assert_binding(candidate, execution, review)
+        attempts = self._strict_verifications[(owner, attempt.candidate_id)]
+        if any(item.attempt_seq == attempt.attempt_seq for item in attempts):
+            raise ValueError("strict verification attempt sequence already exists")
+        attempts.append(attempt)
+
+    async def latest_strict_verification(
+        self, run_id: UUID, candidate_id: UUID
+    ) -> StrictVerificationAttempt | None:
+        attempts = self._strict_verifications[(run_id, candidate_id)]
+        return max(attempts, key=lambda item: item.attempt_seq) if attempts else None
 
     async def add_conversion(self, evidence: ConversionEvidence) -> None:
         owner = next(

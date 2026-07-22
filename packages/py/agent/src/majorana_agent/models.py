@@ -7,11 +7,20 @@ fingerprint instead of accepting source or results resubmitted by the model.
 
 from __future__ import annotations
 
+import hashlib
+import json
 from enum import StrEnum
 from typing import Any, Literal
 from uuid import UUID
 
-from majorana_contracts.enums import Framework, VerifierDecision
+from majorana_contracts.enums import (
+    EvidenceStrength,
+    Framework,
+    RetryTarget,
+    SemanticReviewDecision,
+    VerificationFailureClass,
+    VerifierDecision,
+)
 from majorana_contracts.plan import Plan
 from majorana_frameworks import FrameworkProgram
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -98,6 +107,31 @@ class PlanRecord(_Record):
     plan: Plan
 
 
+def _plan_fingerprint(plan: Plan) -> str:
+    canonical = json.dumps(plan.model_dump(mode="json"), sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(canonical.encode()).hexdigest()
+
+
+class PlanRevision(_Record):
+    plan_id: UUID
+    run_id: UUID
+    revision: int = Field(ge=1)
+    parent_plan_id: UUID | None = None
+    plan: Plan
+    plan_fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
+    replan_reason: str | None = Field(default=None, min_length=1, max_length=2_000)
+
+    @model_validator(mode="after")
+    def revision_chain_and_fingerprint_are_valid(self) -> "PlanRevision":
+        if self.revision == 1 and self.parent_plan_id is not None:
+            raise ValueError("first Plan revision cannot have a parent")
+        if self.revision > 1 and self.parent_plan_id is None:
+            raise ValueError("revised Plan must reference its parent")
+        if self.plan_fingerprint != _plan_fingerprint(self.plan):
+            raise ValueError("plan_fingerprint does not match Plan content")
+        return self
+
+
 class CandidateRevision(_Record):
     candidate_id: UUID
     run_id: UUID
@@ -154,6 +188,79 @@ class ExecutionEvidence(_Record):
         if self.exit_code != 0 and self.failure_kind is None:
             raise ValueError("failed execution requires a failure_kind")
         return self
+
+
+class SemanticReviewEvidence(_Record):
+    review_id: UUID
+    candidate_id: UUID
+    execution_id: UUID
+    source_fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
+    attempt_seq: int = Field(ge=1)
+    decision: SemanticReviewDecision
+    confidence: Literal["high", "medium", "low"] | None = None
+    severity: Literal["none", "minor", "major", "blocking"] | None = None
+    reason_code: str = Field(min_length=1, max_length=120)
+    failure_class: VerificationFailureClass | None = None
+    retry_target: RetryTarget
+    feedback: dict[str, Any] = Field(default_factory=dict)
+
+    def assert_binding(self, candidate: "CandidateRevision", execution: ExecutionEvidence) -> None:
+        if self.candidate_id != candidate.candidate_id:
+            raise ValueError("semantic review references a different candidate")
+        if self.execution_id != execution.execution_id:
+            raise ValueError("semantic review references a different execution")
+        if execution.candidate_id != candidate.candidate_id:
+            raise ValueError("execution references a different candidate")
+        if not (
+            self.source_fingerprint == execution.source_fingerprint == candidate.source_fingerprint
+        ):
+            raise ValueError("semantic review evidence fingerprint mismatch")
+
+
+class StrictVerificationAttempt(_Record):
+    attempt_id: UUID
+    candidate_id: UUID
+    execution_id: UUID
+    semantic_review_id: UUID
+    source_fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
+    attempt_seq: int = Field(ge=1)
+    checks: list[dict[str, Any]] = Field(default_factory=list)
+    decision: VerifierDecision
+    evidence_strength: EvidenceStrength | None = None
+    claim_coverage: list[dict[str, Any]] = Field(default_factory=list)
+    reason_code: str = Field(min_length=1, max_length=120)
+    candidate_defect_observed: bool
+    failure_class: VerificationFailureClass | None = None
+    retry_target: RetryTarget
+    unverified_claims: list[str] = Field(default_factory=list, max_length=50)
+    verifier_version: str = Field(min_length=1, max_length=120)
+
+    @model_validator(mode="after")
+    def inconclusive_never_establishes_a_candidate_defect(self) -> "StrictVerificationAttempt":
+        if self.decision is VerifierDecision.INCONCLUSIVE and self.candidate_defect_observed:
+            raise ValueError("inconclusive verification cannot establish a candidate defect")
+        return self
+
+    def assert_binding(
+        self,
+        candidate: "CandidateRevision",
+        execution: ExecutionEvidence,
+        review: SemanticReviewEvidence,
+    ) -> None:
+        review.assert_binding(candidate, execution)
+        if self.candidate_id != candidate.candidate_id:
+            raise ValueError("strict verification references a different candidate")
+        if self.execution_id != execution.execution_id:
+            raise ValueError("strict verification references a different execution")
+        if self.semantic_review_id != review.review_id:
+            raise ValueError("strict verification references a different semantic review")
+        if not (
+            self.source_fingerprint
+            == review.source_fingerprint
+            == execution.source_fingerprint
+            == candidate.source_fingerprint
+        ):
+            raise ValueError("strict verification evidence fingerprint mismatch")
 
 
 class RepairInstruction(_Record):

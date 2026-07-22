@@ -10,8 +10,11 @@ from majorana_agent.models import (
     CandidateRevision,
     ConversionEvidence,
     ExecutionEvidence,
+    PlanRevision,
     PlanRecord,
     PublishedArtifact,
+    SemanticReviewEvidence,
+    StrictVerificationAttempt,
     ToolCall,
     ToolResult,
     VerificationEvidence,
@@ -39,6 +42,14 @@ class AgentStore(Protocol):
 
     async def latest_plan(self, run_id: UUID) -> PlanRecord | None: ...
 
+    async def append_plan_revision(self, record: PlanRevision) -> None: ...
+
+    async def plan_revision(self, run_id: UUID, plan_id: UUID) -> PlanRevision: ...
+
+    async def current_plan_revision(self, run_id: UUID) -> PlanRevision | None: ...
+
+    async def select_current_plan(self, run_id: UUID, plan_id: UUID) -> None: ...
+
     async def add_candidate(self, candidate: CandidateRevision) -> None: ...
 
     async def set_candidate_status(self, run_id: UUID, candidate_id: UUID, status: str) -> None: ...
@@ -62,6 +73,18 @@ class AgentStore(Protocol):
     async def verification_for(
         self, run_id: UUID, candidate_id: UUID
     ) -> VerificationEvidence | None: ...
+
+    async def append_semantic_review(self, evidence: SemanticReviewEvidence) -> None: ...
+
+    async def latest_semantic_review(
+        self, run_id: UUID, candidate_id: UUID
+    ) -> SemanticReviewEvidence | None: ...
+
+    async def append_strict_verification(self, attempt: StrictVerificationAttempt) -> None: ...
+
+    async def latest_strict_verification(
+        self, run_id: UUID, candidate_id: UUID
+    ) -> StrictVerificationAttempt | None: ...
 
     async def add_conversion(self, evidence: ConversionEvidence) -> None: ...
 
