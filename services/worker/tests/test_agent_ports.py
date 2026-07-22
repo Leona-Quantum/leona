@@ -403,6 +403,65 @@ async def test_publisher_records_physical_evidence_when_a_physical_check_ran(mon
     assert captured["metadata"]["verification_summary"]["evidence_strength"] == "physical"
 
 
+async def test_publisher_forks_changed_source_from_parent_artifact(monkeypatch):
+    """Editing a Vault version must not move its evidence onto the edit."""
+    candidate = _candidate()
+    execution = _execution(candidate)
+    verification = VerificationEvidence(
+        verification_id=uuid4(),
+        candidate_id=candidate.candidate_id,
+        execution_id=execution.execution_id,
+        source_fingerprint=candidate.source_fingerprint,
+        decision=VerifierDecision.PASS,
+        deterministic_checks=[{"method": "return_contract", "result": "pass"}],
+        critic={},
+    )
+    parent_artifact_id = uuid4()
+    parent_version_id = uuid4()
+    copied_artifact_id = uuid4()
+    captured = {}
+
+    async def create_artifact(*_args, **kwargs):
+        captured["artifact"] = kwargs
+        return SimpleNamespace(id=copied_artifact_id)
+
+    async def create_version(*args, **kwargs):
+        captured["artifact_id"] = args[2]
+        captured["version"] = kwargs
+        return SimpleNamespace(id=uuid4(), seq=1)
+
+    async def set_run_artifact_version(*_args, **_kwargs):
+        return None
+
+    monkeypatch.setattr(
+        "majorana_worker.agent_ports.artifacts_repo.create_artifact", create_artifact
+    )
+    monkeypatch.setattr("majorana_worker.agent_ports.artifacts_repo.create_version", create_version)
+    monkeypatch.setattr(
+        "majorana_worker.agent_ports.runs_repo.set_run_artifact_version",
+        set_run_artifact_version,
+    )
+
+    publication = await RepoArtifactPublisher(
+        scope=object(),
+        session=object(),
+        run_id=candidate.run_id,
+        parent_artifact_id=parent_artifact_id,
+        parent_artifact_version_id=parent_version_id,
+        parent_artifact_fingerprint="fingerprint-of-the-old-version",
+        title="Edited Bell circuit",
+    ).publish(candidate, execution, verification, None, _plan())
+
+    assert publication.artifact_id == copied_artifact_id
+    assert captured["artifact"]["parent_artifact_id"] == parent_artifact_id
+    assert captured["artifact_id"] == copied_artifact_id
+    assert captured["version"]["metadata"]["provenance"] == {
+        "kind": "save_as_copy",
+        "parent_artifact_id": str(parent_artifact_id),
+        "parent_artifact_version_id": str(parent_version_id),
+    }
+
+
 def test_verifier_respects_non_circuit_artifact_contract():
     source = "RESULT = {'value': 1}\n"
     candidate = CandidateRevision(

@@ -1292,12 +1292,16 @@ class RepoArtifactPublisher:
         run_id: UUID,
         parent_artifact_id: UUID | None,
         title: str,
+        parent_artifact_version_id: UUID | None = None,
+        parent_artifact_fingerprint: str | None = None,
     ) -> None:
         self._scope = scope
         self._session = session
         self._run_id = run_id
         self._parent_artifact_id = parent_artifact_id
         self._title = title
+        self._parent_artifact_version_id = parent_artifact_version_id
+        self._parent_artifact_fingerprint = parent_artifact_fingerprint
 
     async def publish(
         self,
@@ -1308,7 +1312,17 @@ class RepoArtifactPublisher:
         plan: Plan,
     ) -> PublishedArtifact:
         artifact_id = self._parent_artifact_id
-        if artifact_id is None:
+        # A run may use a saved Vault version as context while producing edited
+        # source. Appending that changed source to the same artifact would move
+        # the durable evidence boundary and make the parent simulation/grade
+        # appear to belong to the edit. Fork only when the candidate fingerprint
+        # differs from the exact version the run consumed; an unchanged rerun
+        # remains a new evidence version on the same artifact.
+        save_as_copy = (
+            self._parent_artifact_id is not None
+            and self._parent_artifact_fingerprint != candidate.source_fingerprint
+        )
+        if artifact_id is None or save_as_copy:
             artifact = await artifacts_repo.create_artifact(
                 self._scope,
                 self._session,
@@ -1316,6 +1330,7 @@ class RepoArtifactPublisher:
                 title=self._title[:200],
                 family=plan.algorithm,
                 framework=candidate.framework,
+                parent_artifact_id=self._parent_artifact_id if save_as_copy else None,
             )
             artifact_id = artifact.id
         qasm = conversion.qasm if conversion and conversion.status == "available" else None
@@ -1340,37 +1355,46 @@ class RepoArtifactPublisher:
             if isinstance(residual_risks, list) and residual_risks
             else None
         )
+        metadata = {
+            "source": "verified_agent_candidate",
+            "candidate_id": str(candidate.candidate_id),
+            "candidate_revision": candidate.revision,
+            "verification_id": str(verification.verification_id),
+            "canonical_representation": "framework_code",
+            "openqasm_role": "interchange" if qasm else "unavailable",
+            "verification_summary": {
+                "decision": verification.decision.value,
+                # Derived here rather than stored on the evidence row: the checks
+                # are the fact, the grade is a reading of them, and a stored grade
+                # would be free to drift from the list printed beside it.
+                "evidence_strength": evidence_strength_of(verification.deterministic_checks).value,
+                "deterministic_checks": [
+                    {
+                        "method": check.get("method"),
+                        "result": check.get("result"),
+                    }
+                    for check in verification.deterministic_checks
+                ],
+                "critic": critic_summary or None,
+            },
+        }
+        if save_as_copy:
+            metadata["provenance"] = {
+                "kind": "save_as_copy",
+                "parent_artifact_id": str(self._parent_artifact_id),
+                "parent_artifact_version_id": (
+                    str(self._parent_artifact_version_id)
+                    if self._parent_artifact_version_id is not None
+                    else None
+                ),
+            }
         version = await artifacts_repo.create_version(
             self._scope,
             self._session,
             artifact_id,
             qasm_version="3.0" if qasm else None,
             qasm=qasm,
-            metadata={
-                "source": "verified_agent_candidate",
-                "candidate_id": str(candidate.candidate_id),
-                "candidate_revision": candidate.revision,
-                "verification_id": str(verification.verification_id),
-                "canonical_representation": "framework_code",
-                "openqasm_role": "interchange" if qasm else "unavailable",
-                "verification_summary": {
-                    "decision": verification.decision.value,
-                    # Derived here rather than stored on the evidence row: the checks
-                    # are the fact, the grade is a reading of them, and a stored grade
-                    # would be free to drift from the list printed beside it.
-                    "evidence_strength": evidence_strength_of(
-                        verification.deterministic_checks
-                    ).value,
-                    "deterministic_checks": [
-                        {
-                            "method": check.get("method"),
-                            "result": check.get("result"),
-                        }
-                        for check in verification.deterministic_checks
-                    ],
-                    "critic": critic_summary or None,
-                },
-            },
+            metadata=metadata,
             code=candidate.source,
             code_lang=candidate.framework.value,
             fingerprint=candidate.source_fingerprint,

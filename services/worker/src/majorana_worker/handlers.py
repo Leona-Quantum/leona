@@ -184,10 +184,13 @@ async def handle_run_execute(
     run_id = uuid.UUID(payload["run_id"])
     run = await runs_repo.get_run(scope, session, run_id)
     parent_artifact_id = None
+    parent_artifact_version_id = run.artifact_version_id
+    parent_artifact_fingerprint = None
     parent_artifact_qasm = None
     if run.artifact_version_id is not None:
         version = await artifacts_repo.get_version(scope, session, run.artifact_version_id)
         parent_artifact_id = version.artifact_id
+        parent_artifact_fingerprint = version.fingerprint
         # The reference for an `exact` check when the plan asks to preserve this
         # circuit's behaviour. Only a version that stored interchange QASM can serve
         # as one; when it did not, the verifier reports the missing evidence rather
@@ -230,6 +233,8 @@ async def handle_run_execute(
                     llm=provider,
                     sandbox=sandbox or _default_sandbox(),
                     parent_artifact_id=parent_artifact_id,
+                    parent_artifact_version_id=parent_artifact_version_id,
+                    parent_artifact_fingerprint=parent_artifact_fingerprint,
                     parent_artifact_qasm=parent_artifact_qasm,
                 )
     except TimeoutError:
@@ -399,6 +404,8 @@ async def _handle_agent_execution(
     llm: LLMClient,
     sandbox: Sandbox,
     parent_artifact_id: uuid.UUID | None,
+    parent_artifact_version_id: uuid.UUID | None = None,
+    parent_artifact_fingerprint: str | None = None,
     parent_artifact_qasm: str | None = None,
 ) -> RunStatus:
     status = await run_store.current_status()
@@ -441,6 +448,8 @@ async def _handle_agent_execution(
             session=session,
             run_id=ctx.run_id,
             parent_artifact_id=parent_artifact_id,
+            parent_artifact_version_id=parent_artifact_version_id,
+            parent_artifact_fingerprint=parent_artifact_fingerprint,
             title=ctx.task_prompt,
         ),
     )
