@@ -145,6 +145,42 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
     copyCode: string;
     copied: string;
     simulate: string;
+    simulation: string;
+    cpuLane: string;
+    cpuEligible: string;
+    cpuUnavailable: (reason: string) => string;
+    openSimulation: string;
+    simulationArtifactRequired: string;
+    cpuInvalidShots: (maximum: number) => string;
+    cpuInvalidSeed: (maximum: number) => string;
+    simulationPersistenceUnavailable: string;
+    cpuSimulationRecorded: string;
+    simulationFailed: string;
+    simulationBoundary: string;
+    simulationArtifact: string;
+    sourceFingerprint: string;
+    interchangeFingerprint: string;
+    simulationModel: string;
+    directSourceModel: string;
+    standardDecompositionModel: string;
+    simulator: string;
+    browserCpu: string;
+    runCpuSimulation: string;
+    rerunCpuSimulation: string;
+    rerunPrompt: string;
+    confirmRerun: string;
+    cancel: string;
+    hardwareLanes: string;
+    gpuSimulation: string;
+    qpuExecution: string;
+    gpuUnavailable: string;
+    qpuUnavailable: string;
+    simulationResults: string;
+    simulationNoRecords: string;
+    simulationRecord: string;
+    artifactVersion: string;
+    operations: string;
+    resultCounts: string;
     verifySave: string;
     starting: string;
     view: string;
@@ -394,6 +430,49 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
       copyCode: "Copy code",
       copied: "Copied",
       simulate: "Simulate",
+      simulation: "Simulation",
+      cpuLane: "CPU lane",
+      cpuEligible: "CPU eligible",
+      cpuUnavailable: (reason) => ({
+        artifact_required: "Save this draft to Vault before creating an artifact-owned simulation record.",
+        framework_unavailable: "CPU execution is available only for Qiskit, PennyLane, and Cirq source.",
+        source_unavailable: "This source is outside the bounded CPU simulation model. No result will be invented.",
+        source_limit: "This source is too large for the bounded CPU simulation lane.",
+        qubit_limit: "This source exceeds the six-qubit CPU simulation limit.",
+        operation_limit: "This source exceeds the bounded CPU operation limit.",
+      }[reason] ?? "CPU simulation is unavailable for this source."),
+      openSimulation: "Open simulation",
+      simulationArtifactRequired: "Save this draft to Vault before creating an artifact-owned simulation record.",
+      cpuInvalidShots: (maximum) => `Shots must be a whole number from 1 to ${maximum.toLocaleString("en-US")}.`,
+      cpuInvalidSeed: (maximum) => `Seed must be a whole number from 0 to ${maximum.toLocaleString("en-US")}.`,
+      simulationPersistenceUnavailable: "The CPU result was not recorded because this browser cannot store local simulation records.",
+      cpuSimulationRecorded: "CPU simulation recorded in this browser. It did not start a Nala Run or verify this artifact.",
+      simulationFailed: "CPU simulation failed before a record could be created.",
+      simulationBoundary: "This bounded statevector runs in this browser from the parsed gate model. It records the exact draft fingerprint; unsaved edits do not update a Vault version. Its local record is not verification, a Nala Run, or hardware execution.",
+      simulationArtifact: "Artifact",
+      sourceFingerprint: "Source fingerprint",
+      interchangeFingerprint: "Interchange fingerprint",
+      simulationModel: "Execution model",
+      directSourceModel: "Direct parsed source",
+      standardDecompositionModel: "OpenQASM standard-gate decomposition · global-phase caveat",
+      simulator: "Simulator",
+      browserCpu: "Browser CPU",
+      runCpuSimulation: "Run CPU simulation",
+      rerunCpuSimulation: "Run CPU simulation again",
+      rerunPrompt: "This exact source already has a local simulation record. Confirm to create another record; it will not overwrite the earlier result.",
+      confirmRerun: "Confirm rerun",
+      cancel: "Cancel",
+      hardwareLanes: "Hardware lanes",
+      gpuSimulation: "GPU simulation",
+      qpuExecution: "QPU execution",
+      gpuUnavailable: "GPU simulation is planned. It remains unavailable until provider, cost, and security work are complete.",
+      qpuUnavailable: "QPU execution is planned. It remains unavailable until a provider, estimate, confirmation, and spend policy are in place.",
+      simulationResults: "Simulation records",
+      simulationNoRecords: "No CPU simulation record exists for this artifact in this browser.",
+      simulationRecord: "CPU simulation record",
+      artifactVersion: "Base Vault version",
+      operations: "Operations",
+      resultCounts: "Top sampled counts",
       verifySave: "Verify & save",
       starting: "Starting…",
       view: "Studio view",
@@ -405,7 +484,7 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
       inspector: "Circuit inspector",
       liveDraft: "live draft",
       selectedGate: "Selected gate",
-      runContract: "Run contract",
+      runContract: "Verification contract",
       mode: "Mode",
       source: "Source",
       evidence: "Evidence",
@@ -418,7 +497,7 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
       shots: "Shots",
       seed: "Seed",
       seedAuto: "auto",
-      samplingNote: "Shots and seed reach the plan and the generated code. Leave the seed blank to let the planner choose.",
+      samplingNote: "CPU simulation uses these inputs; Verify & save passes them through to the run planner. Leave seed blank to record a browser-chosen seed.",
       execute: "Execute",
       existingVersion: "Existing version",
       newDraftSource: "New draft",
@@ -657,6 +736,49 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
       copyCode: "コードをコピー",
       copied: "コピー済み",
       simulate: "シミュレーション",
+      simulation: "シミュレーション",
+      cpuLane: "CPUレーン",
+      cpuEligible: "CPUで実行可能",
+      cpuUnavailable: (reason) => ({
+        artifact_required: "アーティファクトに紐づくシミュレーション記録を作成する前に、この下書きをボールトへ保存してください。",
+        framework_unavailable: "CPU実行はQiskit、PennyLane、Cirqのソースでのみ利用できます。",
+        source_unavailable: "このソースは限定CPUシミュレーションモデルの対象外です。結果は生成しません。",
+        source_limit: "このソースは限定CPUシミュレーションレーンには大きすぎます。",
+        qubit_limit: "このソースは6量子ビットのCPUシミュレーション上限を超えています。",
+        operation_limit: "このソースは限定CPU操作数の上限を超えています。",
+      }[reason] ?? "このソースではCPUシミュレーションを利用できません。"),
+      openSimulation: "シミュレーションを開く",
+      simulationArtifactRequired: "アーティファクトに紐づくシミュレーション記録を作成する前に、この下書きをボールトへ保存してください。",
+      cpuInvalidShots: (maximum) => `ショット数は1から${maximum.toLocaleString("en-US")}までの整数にしてください。`,
+      cpuInvalidSeed: (maximum) => `シードは0から${maximum.toLocaleString("en-US")}までの整数にしてください。`,
+      simulationPersistenceUnavailable: "このブラウザにローカルのシミュレーション記録を保存できないため、CPU結果を記録しませんでした。",
+      cpuSimulationRecorded: "CPUシミュレーションをこのブラウザに記録しました。Nala実行の開始やアーティファクトの検証は行っていません。",
+      simulationFailed: "記録を作成する前にCPUシミュレーションが失敗しました。",
+      simulationBoundary: "解析済みの限定ゲートモデルから、このブラウザで状態ベクトルを実行します。正確な下書きフィンガープリントを記録しますが、未保存の編集はボールトバージョンを更新しません。ローカル記録は検証、Nala実行、ハードウェア実行ではありません。",
+      simulationArtifact: "アーティファクト",
+      sourceFingerprint: "ソースフィンガープリント",
+      interchangeFingerprint: "中間表現フィンガープリント",
+      simulationModel: "実行モデル",
+      directSourceModel: "直接解析したソース",
+      standardDecompositionModel: "OpenQASM標準ゲート分解 · グローバル位相の留意事項あり",
+      simulator: "シミュレータ",
+      browserCpu: "ブラウザCPU",
+      runCpuSimulation: "CPUシミュレーションを実行",
+      rerunCpuSimulation: "CPUシミュレーションをもう一度実行",
+      rerunPrompt: "この同一ソースにはすでにローカルのシミュレーション記録があります。確認すると、以前の結果を上書きせずに新しい記録を作成します。",
+      confirmRerun: "再実行を確認",
+      cancel: "キャンセル",
+      hardwareLanes: "ハードウェアレーン",
+      gpuSimulation: "GPUシミュレーション",
+      qpuExecution: "QPU実行",
+      gpuUnavailable: "GPUシミュレーションは計画中です。プロバイダー、コスト、セキュリティの作業が完了するまで利用できません。",
+      qpuUnavailable: "QPU実行は計画中です。プロバイダー、見積り、確認、利用ポリシーが整うまで利用できません。",
+      simulationResults: "シミュレーション記録",
+      simulationNoRecords: "このブラウザには、このアーティファクトのCPUシミュレーション記録がありません。",
+      simulationRecord: "CPUシミュレーション記録",
+      artifactVersion: "基準ボールトバージョン",
+      operations: "操作数",
+      resultCounts: "主なサンプル測定値",
       verifySave: "検証して保存",
       starting: "開始中…",
       view: "Studio表示",
@@ -668,7 +790,7 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
       inspector: "回路インスペクタ",
       liveDraft: "ライブ下書き",
       selectedGate: "選択中のゲート",
-      runContract: "実行コントラクト",
+      runContract: "検証コントラクト",
       evidencePhysical: "物理的根拠 — 物理が示すべき結果と照合済み",
       evidenceStructural: "構造的根拠 — 回答の形式のみを確認、物理は未検証",
       evidenceCaveats: "公開リファレンス — 留意事項つきで検証済み",
@@ -678,7 +800,7 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
       shots: "ショット数",
       seed: "シード",
       seedAuto: "自動",
-      samplingNote: "ショット数とシードはプランと生成コードに反映されます。シードを空欄にするとプランナーが選びます。",
+      samplingNote: "CPUシミュレーションはこれらの入力を使い、検証して保存は実行プランナーにそのまま渡します。シードを空欄にすると、ブラウザで選ばれたシードを記録します。",
       mode: "モード",
       source: "ソース",
       evidence: "根拠",

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, type KeyboardEvent, type MouseEvent, type UIEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type MouseEvent, type UIEvent } from "react";
 import { SyntaxHighlightedCode } from "@majorana/ui";
 import { CheckIcon, CopyIcon, PanelRightIcon, SearchIcon } from "../../../components/icons";
 import { artifactFromResource, frameworkVariantsFromRemote, getLibraryArtifact, loadLibraryArtifacts, type LibraryArtifact, type VerificationCheck } from "../../../lib/library-data";
@@ -9,12 +9,13 @@ import { BUILDER_GATES, builderStepLabel, createBuilderStepId, generateBuilderCo
 import { loadStoredCircuit, saveStoredCircuit } from "../../../lib/studio-circuits";
 import { allCircuitConversionResults, parseCircuitSource, looksLikeOpenQasm3 } from "../../../lib/circuit-conversion";
 import { CIRCUIT_FRAMEWORKS, circuitFramework, circuitFrameworkOrNull, isExecutableCircuitFramework, type CircuitFrameworkKey } from "../../../lib/circuit-frameworks";
+import { MAX_CPU_SEED, MAX_CPU_SHOTS, cpuSimulationEligibility, loadCpuSimulationRecords, runCpuSimulation, saveCpuSimulationRecord, type CpuSimulationEligibility, type CpuSimulationRecord } from "../../../lib/studio-simulation";
 import { WORKSPACE_COPY } from "../../../lib/workspace-locale";
 import { sampling } from "../../../lib/studio-run-request";
 import { verificationFromMetadata } from "../../../lib/verification-record";
 
-type StudioPanel = "canvas" | "code" | "versions";
-type StudioAction = "simulate" | "verify" | "save";
+type StudioPanel = "canvas" | "code" | "simulation" | "versions";
+type StudioAction = "simulation" | "save";
 
 type BuilderSeed = {
   key: string;
@@ -63,6 +64,8 @@ export function StudioWorkspace({ artifactId, newDraft = false, locale = "en" }:
   const [busy, setBusy] = useState<StudioAction | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [runId, setRunId] = useState<string | null>(null);
+  const [simulationRecords, setSimulationRecords] = useState<CpuSimulationRecord[]>([]);
+  const [rerunPending, setRerunPending] = useState(false);
   const [copied, setCopied] = useState(false);
   const [inspectorOpen, setInspectorOpen] = useState(true);
   // Strings, not numbers: an empty seed field means "let the planner choose" and
@@ -122,6 +125,22 @@ export function StudioWorkspace({ artifactId, newDraft = false, locale = "en" }:
       active = false;
     };
   }, [artifactId, copy]);
+
+  useEffect(() => {
+    setSimulationRecords(artifact ? loadCpuSimulationRecords(artifact.id) : []);
+    setRerunPending(false);
+  }, [artifact?.id]);
+
+  useEffect(() => {
+    setRerunPending(false);
+  }, [code, framework]);
+
+  const cpuEligibility = useMemo(() => cpuSimulationEligibility({
+    artifactId: artifact?.id ?? "",
+    code,
+    framework,
+    qasm: artifact?.code === code ? artifact.qasm : null,
+  }), [artifact?.id, artifact?.code, artifact?.qasm, code, framework]);
 
   function seedForArtifact(next: LibraryArtifact, activeDrafts: BuilderCodeVariants, activeFramework: StudioFramework): { seed: BuilderSeed; note: string | null } {
     seedCounter.current += 1;
@@ -230,12 +249,72 @@ export function StudioWorkspace({ artifactId, newDraft = false, locale = "en" }:
     }
   }
 
-  async function startRun(action: StudioAction) {
+  function openSimulation() {
+    setPanel("simulation");
+    setMessage(null);
+  }
+
+  function startCpuSimulation(confirmRerun = false) {
+    if (!artifact) {
+      setPanel("simulation");
+      setMessage(copy.simulationArtifactRequired);
+      return;
+    }
+    if (!cpuEligibility.eligible) {
+      setPanel("simulation");
+      setMessage(copy.cpuUnavailable(cpuEligibility.reason));
+      return;
+    }
+    const parsedShots = Number(shots.trim());
+    if (!Number.isInteger(parsedShots) || parsedShots < 1 || parsedShots > MAX_CPU_SHOTS) {
+      setMessage(copy.cpuInvalidShots(MAX_CPU_SHOTS));
+      return;
+    }
+    const parsedSeed = seed.trim() === "" ? undefined : Number(seed.trim());
+    if (parsedSeed !== undefined && (!Number.isInteger(parsedSeed) || parsedSeed < 0 || parsedSeed > MAX_CPU_SEED)) {
+      setMessage(copy.cpuInvalidSeed(MAX_CPU_SEED));
+      return;
+    }
+    const priorMatch = simulationRecords.some((record) => (
+      record.sourceFingerprint === cpuEligibility.sourceFingerprint
+      && record.interchangeFingerprint === cpuEligibility.interchangeFingerprint
+      && record.framework === framework
+    ));
+    if (priorMatch && !confirmRerun) {
+      setRerunPending(true);
+      return;
+    }
+
+    setBusy("simulation");
+    try {
+      const record = runCpuSimulation({
+        artifactId: artifact.id,
+        artifactVersionId: artifact.currentVersionId,
+        code,
+        framework,
+        qasm: artifact.code === code ? artifact.qasm : null,
+        shots: parsedShots,
+        seed: parsedSeed,
+      });
+      if (!saveCpuSimulationRecord(record)) {
+        setMessage(copy.simulationPersistenceUnavailable);
+        return;
+      }
+      setSimulationRecords((current) => [record, ...current.filter((item) => item.id !== record.id)]);
+      setRerunPending(false);
+      setMessage(copy.cpuSimulationRecorded);
+    } catch (cause) {
+      setMessage(cause instanceof Error ? cause.message : copy.simulationFailed);
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function startRun() {
     if (!code.trim() || busy || !isExecutableCircuitFramework(framework)) return;
-    setBusy(action);
+    setBusy("save");
     setMessage(null);
     setRunId(null);
-    const intent = action === "simulate" ? "simulate" : action === "verify" ? "verify" : "verify and save a new version of";
     try {
       const response = await fetch("/api/runs", {
         method: "POST",
@@ -244,7 +323,7 @@ export function StudioWorkspace({ artifactId, newDraft = false, locale = "en" }:
           "Idempotency-Key": crypto.randomUUID(),
         },
         body: JSON.stringify({
-          task_prompt: `Please ${intent} the edited quantum circuit “${title}” in ${frameworkLabel(framework)}. Preserve the supplied source code, report the evidence clearly, and do not silently change frameworks.`,
+          task_prompt: `Please verify and save a new version of the edited quantum circuit “${title}” in ${frameworkLabel(framework)}. Preserve the supplied source code, report the evidence clearly, and do not silently change frameworks.`,
           mode: "execute",
           framework,
           source_code: code,
@@ -257,7 +336,7 @@ export function StudioWorkspace({ artifactId, newDraft = false, locale = "en" }:
         throw new Error(payload.detail ?? payload.error ?? `Run submission failed (${response.status})`);
       }
       setRunId(payload.id);
-      setMessage(action === "save" ? copy.verificationStarted : copy.actionStarted(action === "simulate" ? (locale === "ja" ? "シミュレーション" : "Simulation") : (locale === "ja" ? "検証" : "Verification")));
+      setMessage(copy.verificationStarted);
     } catch (cause) {
       setMessage(cause instanceof Error ? cause.message : copy.submissionFailed);
     } finally {
@@ -289,15 +368,15 @@ export function StudioWorkspace({ artifactId, newDraft = false, locale = "en" }:
                     <PanelRightIcon size={15} open={inspectorOpen} />
                   </button>
                   <button className="mj-secondary-button" type="button" onClick={() => void copyCode()} title={copied ? copy.copied : copy.copyCode}><CopyIcon size={14} />{copied ? copy.copied : copy.copyCode}</button>
-                  <button className="mj-secondary-button" type="button" disabled={!code.trim() || busy !== null || !isExecutableCircuitFramework(framework)} onClick={() => void startRun("simulate")}>{busy === "simulate" ? copy.starting : copy.simulate}</button>
-                  <button className="mj-primary-button" type="button" disabled={!code.trim() || busy !== null || !isExecutableCircuitFramework(framework)} onClick={() => void startRun("save")}>{busy === "save" ? copy.starting : copy.verifySave}</button>
+                  <button className="mj-secondary-button" type="button" disabled={!code.trim()} onClick={openSimulation}>{copy.simulate}</button>
+                  <button className="mj-primary-button" type="button" disabled={!code.trim() || busy !== null || !isExecutableCircuitFramework(framework)} onClick={() => void startRun()}>{busy === "save" ? copy.starting : copy.verifySave}</button>
                 </div>
               </div>
 
               <nav className="mj-studio-tabs" aria-label={copy.view}>
-                {(["canvas", "code", "versions"] as StudioPanel[]).map((item) => (
+                {(["canvas", "code", "simulation", "versions"] as StudioPanel[]).map((item) => (
                   <button className={panel === item ? "is-active" : ""} type="button" key={item} onClick={() => setPanel(item)}>
-                    {item === "canvas" ? copy.circuit : item === "code" ? copy.code : copy.versions}
+                    {item === "canvas" ? copy.circuit : item === "code" ? copy.code : item === "simulation" ? copy.simulation : copy.versions}
                   </button>
                 ))}
               </nav>
@@ -329,6 +408,19 @@ export function StudioWorkspace({ artifactId, newDraft = false, locale = "en" }:
                     }}
                   />
                   {panel === "code" ? <CodeEditor code={code} framework={framework} onChange={setCode} onCopy={() => void copyCode()} copied={copied} copy={copy} /> : null}
+                  {panel === "simulation" ? (
+                    <SimulationPanel
+                      artifact={artifact}
+                      eligibility={cpuEligibility}
+                      records={simulationRecords}
+                      rerunPending={rerunPending}
+                      busy={busy === "simulation"}
+                      onRun={() => startCpuSimulation()}
+                      onConfirmRerun={() => startCpuSimulation(true)}
+                      onCancelRerun={() => setRerunPending(false)}
+                      copy={copy}
+                    />
+                  ) : null}
                   {panel === "versions" ? <VersionPanel artifact={artifact} runId={runId} copy={copy} /> : null}
                 </>
               )}
@@ -364,17 +456,15 @@ export function StudioWorkspace({ artifactId, newDraft = false, locale = "en" }:
                   <div><dt>{copy.source}</dt><dd>{artifact ? copy.existingVersion : copy.newDraftSource}</dd></div>
                   <div><dt>{copy.evidence}</dt><dd>{copy.sandboxVerifier}</dd></div>
                 </dl>
-                {/* `shots` has reached the plan since PR 110 and `seed` since PR 115,
-                    and the run API has accepted both all along — Studio just never
-                    sent them, so every circuit edited here ran at the planner's
-                    default shot count and with no reproducible seed. */}
+                {/* These inputs apply to the bounded CPU lane and are also passed
+                    through unchanged when the user explicitly starts Verify & save. */}
                 <div className="mj-studio-sampling">
                   <label htmlFor="studio-shots">{copy.shots}</label>
                   <input
                     id="studio-shots"
                     type="number"
                     min={1}
-                    max={20000}
+                    max={MAX_CPU_SHOTS}
                     step={256}
                     value={shots}
                     onChange={(event) => setShots(event.target.value)}
@@ -385,6 +475,7 @@ export function StudioWorkspace({ artifactId, newDraft = false, locale = "en" }:
                     id="studio-seed"
                     type="number"
                     min={0}
+                    max={MAX_CPU_SEED}
                     value={seed}
                     placeholder={copy.seedAuto}
                     onChange={(event) => setSeed(event.target.value)}
@@ -392,6 +483,11 @@ export function StudioWorkspace({ artifactId, newDraft = false, locale = "en" }:
                   />
                 </div>
                 <p className="mj-studio-sampling-note">{copy.samplingNote}</p>
+              </div>
+              <div className="mj-studio-inspector-card">
+                <span className="mj-section-label">{copy.cpuLane}</span>
+                <p>{cpuEligibility.eligible ? copy.cpuEligible : copy.cpuUnavailable(cpuEligibility.reason)}</p>
+                <button className="mj-secondary-button" type="button" onClick={openSimulation}>{copy.openSimulation}</button>
               </div>
               <div className="mj-studio-framework-note">
                 <CheckIcon size={14} />
@@ -926,6 +1022,107 @@ function CodeEditor({ code, framework, onChange, onCopy, copied, copy }: { code:
  * "not loaded here", not "nothing was checked", and the copy says so rather than
  * implying an empty list means an empty panel.
  */
+function SimulationPanel({
+  artifact,
+  eligibility,
+  records,
+  rerunPending,
+  busy,
+  onRun,
+  onConfirmRerun,
+  onCancelRerun,
+  copy,
+}: {
+  artifact: LibraryArtifact | null;
+  eligibility: CpuSimulationEligibility;
+  records: CpuSimulationRecord[];
+  rerunPending: boolean;
+  busy: boolean;
+  onRun: () => void;
+  onConfirmRerun: () => void;
+  onCancelRerun: () => void;
+  copy: StudioCopy;
+}) {
+  const currentRecords = eligibility.eligible
+    ? records.filter((record) => (
+      record.sourceFingerprint === eligibility.sourceFingerprint
+      && record.interchangeFingerprint === eligibility.interchangeFingerprint
+    ))
+    : [];
+  return (
+    <section className="mj-studio-surface mj-studio-simulation-panel" aria-label={copy.simulation}>
+      <div className="mj-studio-surface-head">
+        <div>
+          <span className="mj-section-label">{copy.cpuLane}</span>
+          <h2>{copy.simulation}</h2>
+        </div>
+        <span className="mj-mono-muted">{eligibility.eligible ? copy.cpuEligible : copy.cpuUnavailable(eligibility.reason)}</span>
+      </div>
+      <div className="mj-studio-simulation-body">
+        <p className="mj-studio-simulation-boundary">{copy.simulationBoundary}</p>
+        <dl className="mj-studio-contract">
+          <div><dt>{copy.simulationArtifact}</dt><dd>{artifact?.title ?? copy.newDraftSource}</dd></div>
+          <div><dt>{copy.sourceFingerprint}</dt><dd>{eligibility.sourceFingerprint}</dd></div>
+          {eligibility.eligible && eligibility.interchangeFingerprint ? <div><dt>{copy.interchangeFingerprint}</dt><dd>{eligibility.interchangeFingerprint}</dd></div> : null}
+          {eligibility.eligible ? <div><dt>{copy.simulationModel}</dt><dd>{simulationModelLabel(eligibility.model, copy)}</dd></div> : null}
+          <div><dt>{copy.simulator}</dt><dd>{copy.browserCpu}</dd></div>
+        </dl>
+
+        {eligibility.eligible ? (
+          rerunPending ? (
+            <div className="mj-studio-simulation-confirm" role="status">
+              <p>{copy.rerunPrompt}</p>
+              <div>
+                <button className="mj-primary-button" type="button" disabled={busy} onClick={onConfirmRerun}>{busy ? copy.starting : copy.confirmRerun}</button>
+                <button className="mj-secondary-button" type="button" disabled={busy} onClick={onCancelRerun}>{copy.cancel}</button>
+              </div>
+            </div>
+          ) : (
+            <button className="mj-primary-button" type="button" disabled={busy} onClick={onRun}>
+              {busy ? copy.starting : currentRecords.length ? copy.rerunCpuSimulation : copy.runCpuSimulation}
+            </button>
+          )
+        ) : <p className="mj-studio-simulation-unavailable" role="alert">{copy.cpuUnavailable(eligibility.reason)}</p>}
+
+        <section className="mj-studio-hardware-lanes" aria-label={copy.hardwareLanes}>
+          <span className="mj-section-label">{copy.hardwareLanes}</span>
+          <div><button className="mj-secondary-button" type="button" disabled title={copy.gpuUnavailable}>{copy.gpuSimulation}</button><p>{copy.gpuUnavailable}</p></div>
+          <div><button className="mj-secondary-button" type="button" disabled title={copy.qpuUnavailable}>{copy.qpuExecution}</button><p>{copy.qpuUnavailable}</p></div>
+        </section>
+
+        <section className="mj-studio-simulation-records" aria-label={copy.simulationResults}>
+          <div className="mj-studio-simulation-records-head"><span className="mj-section-label">{copy.simulationResults}</span><span className="mj-mono-muted">{records.length}</span></div>
+          {records.length ? records.map((record) => <SimulationRecordCard record={record} copy={copy} key={record.id} />) : <p className="mj-studio-empty">{copy.simulationNoRecords}</p>}
+        </section>
+      </div>
+    </section>
+  );
+}
+
+function SimulationRecordCard({ record, copy }: { record: CpuSimulationRecord; copy: StudioCopy }) {
+  const counts = Object.entries(record.counts).sort(([, left], [, right]) => right - left).slice(0, 8);
+  return (
+    <article className="mj-studio-simulation-record">
+      <div className="mj-studio-simulation-record-head"><strong>{copy.simulationRecord}</strong><span className="mj-mono-muted">{record.createdAt}</span></div>
+      <dl className="mj-studio-contract">
+        <div><dt>{copy.simulator}</dt><dd>{copy.browserCpu}</dd></div>
+        <div><dt>{copy.artifactVersion}</dt><dd>{record.artifactVersionId ? record.artifactVersionId.slice(0, 12) : copy.newDraftSource}</dd></div>
+        <div><dt>{copy.sourceFingerprint}</dt><dd>{record.sourceFingerprint}</dd></div>
+        {record.interchangeFingerprint ? <div><dt>{copy.interchangeFingerprint}</dt><dd>{record.interchangeFingerprint}</dd></div> : null}
+        <div><dt>{copy.simulationModel}</dt><dd>{simulationModelLabel(record.model, copy)}</dd></div>
+        <div><dt>{copy.shots}</dt><dd>{record.shots.toLocaleString("en-US")}</dd></div>
+        <div><dt>{copy.seed}</dt><dd>{record.seed}</dd></div>
+        <div><dt>{copy.operations}</dt><dd>{record.operationCount} · {record.qubitCount}q</dd></div>
+      </dl>
+      <div className="mj-studio-simulation-counts"><span className="mj-section-label">{copy.resultCounts}</span><code>{counts.map(([bitstring, count]) => `${bitstring}: ${count}`).join("\n")}</code></div>
+    </article>
+  );
+}
+
+function simulationModelLabel(model: CpuSimulationRecord["model"], copy: StudioCopy): string {
+  return model === "direct_source" ? copy.directSourceModel : copy.standardDecompositionModel;
+}
+
 function VersionPanel({ artifact, runId, copy }: { artifact: LibraryArtifact | null; runId: string | null; copy: StudioCopy }) {
   const checks: VerificationCheck[] = artifact?.checks ?? [];
   return (
