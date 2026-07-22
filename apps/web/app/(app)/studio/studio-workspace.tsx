@@ -101,25 +101,28 @@ export function StudioWorkspace({ artifactId, newDraft = false, locale = "en" }:
 
     if (artifactId) {
       const local = getLibraryArtifact(artifactId);
-      if (local?.code) {
-        applyArtifact(local);
-      } else {
-        if (local) applyArtifact(local);
-        void loadArtifact(artifactId)
-          .then((loaded) => {
-            if (active && loaded) applyArtifact(loaded);
-            else if (active) {
-              setArtifactHydration("error");
-              setMessage(copy.selectedUnavailable);
-            }
-          })
-          .catch(() => {
-            if (active) {
-              setArtifactHydration("error");
-              setMessage(copy.selectedUnavailable);
-            }
-          });
-      }
+      // Render the local cache immediately, but always hydrate the canonical
+      // version as well. The cache intentionally holds only a light artifact
+      // summary, while the current version supplies provenance such as stored
+      // OpenQASM that CPU simulation needs for its bounded fallback model.
+      if (local) applyArtifact(local);
+      void loadArtifact(artifactId)
+        .then((loaded) => {
+          if (!active) return;
+          if (loaded) applyArtifact(loaded);
+          else if (!local) {
+            setArtifactHydration("error");
+            setMessage(copy.selectedUnavailable);
+          }
+        })
+        .catch(() => {
+          // A cached artifact remains usable if the network is temporarily
+          // unavailable; only fail the selection when there is no local copy.
+          if (active && !local) {
+            setArtifactHydration("error");
+            setMessage(copy.selectedUnavailable);
+          }
+        });
     }
     return () => {
       active = false;
