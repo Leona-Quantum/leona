@@ -116,6 +116,11 @@ type StandardQasmParse = {
   usedDecomposition: boolean;
 };
 
+type QasmRegister = {
+  name: string;
+  size: number;
+};
+
 const DIRECT_STANDARD_GATES: Record<string, StandardGate> = {
   h: "H",
   x: "X",
@@ -150,8 +155,8 @@ function parseOpenQasm3StandardGates(code: string): StandardQasmParse | null {
     .map((line) => line.replace(/\/\/.*$/, "").trim())
     .filter(Boolean);
   const steps: BuilderStep[] = [];
-  let qubitCount: number | null = null;
-  let bitCount: number | null = null;
+  let qubitRegister: QasmRegister | null = null;
+  let bitRegister: QasmRegister | null = null;
   let headerSeen = false;
   let measured = false;
   let operationSeen = false;
@@ -171,44 +176,53 @@ function parseOpenQasm3StandardGates(code: string): StandardQasmParse | null {
 
     const register = /^qubit\[(\d+)\]\s+([A-Za-z_]\w*)\s*;$/.exec(line);
     if (register) {
-      if (register[2] !== "q" || Number(register[1]) < 1 || qubitCount !== null) return null;
-      qubitCount = Number(register[1]);
+      if (Number(register[1]) < 1 || qubitRegister !== null) return null;
+      qubitRegister = { name: register[2], size: Number(register[1]) };
       continue;
     }
     const scalarRegister = /^qubit\s+([A-Za-z_]\w*)\s*;$/.exec(line);
     if (scalarRegister) {
-      if (scalarRegister[1] !== "q" || qubitCount !== null) return null;
-      qubitCount = 1;
+      if (qubitRegister !== null) return null;
+      qubitRegister = { name: scalarRegister[1], size: 1 };
       continue;
     }
-    const bits = /^bit\[(\d+)\]\s+c\s*;$/.exec(line);
+    const bits = /^bit\[(\d+)\]\s+([A-Za-z_]\w*)\s*;$/.exec(line);
     if (bits) {
-      if (bitCount !== null) return null;
-      bitCount = Number(bits[1]);
+      if (Number(bits[1]) < 1 || bitRegister !== null) return null;
+      bitRegister = { name: bits[2], size: Number(bits[1]) };
       continue;
     }
-    if (/^bit\s+c\s*;$/.test(line)) {
-      if (bitCount !== null) return null;
-      bitCount = 1;
+    const scalarBits = /^bit\s+([A-Za-z_]\w*)\s*;$/.exec(line);
+    if (scalarBits) {
+      if (bitRegister !== null) return null;
+      bitRegister = { name: scalarBits[1], size: 1 };
       continue;
     }
     if (/^barrier\b.*;$/.test(line)) {
       usedDecomposition = true;
       continue;
     }
-    if (/^c\s*=\s*measure\s+q\s*;$/.test(line)) {
-      if (!qubitCount || (bitCount !== null && bitCount !== qubitCount)) return null;
+    const measurement = /^([A-Za-z_]\w*)\s*=\s*measure\s+([A-Za-z_]\w*)\s*;$/.exec(line);
+    if (measurement) {
+      if (
+        !qubitRegister
+        || !bitRegister
+        || measurement[1] !== bitRegister.name
+        || measurement[2] !== qubitRegister.name
+        || bitRegister.size !== qubitRegister.size
+      ) return null;
       measured = true;
       continue;
     }
-    if (measured || !qubitCount) return null;
+    const activeQubitRegister = qubitRegister;
+    if (measured || !activeQubitRegister) return null;
 
     const control = /^ctrl\s*@\s*(.+)$/.exec(line);
     const invocation = parseQasmInvocation(control?.[1] ?? line);
     if (!invocation) return null;
     const gateName = control ? controlledGateName(invocation.name) : invocation.name;
     if (!gateName) return null;
-    const operands = invocation.operands.map((operand) => resolveQasmOperand(operand, qubitCount!));
+    const operands = invocation.operands.map((operand) => resolveQasmOperand(operand, activeQubitRegister));
     if (operands.some((operand) => !operand)) return null;
     const applications = broadcastQasmOperands(operands as number[][]);
     if (!applications) return null;
@@ -223,15 +237,15 @@ function parseOpenQasm3StandardGates(code: string): StandardQasmParse | null {
     }
   }
 
-  if (!headerSeen || !qubitCount || !operationSeen) return null;
+  if (!headerSeen || !qubitRegister || !operationSeen) return null;
   if (measured) {
-    steps.push(...Array.from({ length: qubitCount }, (_, qubit) => ({
+    steps.push(...Array.from({ length: qubitRegister.size }, (_, qubit) => ({
       id: `interchange-measure-${qubit}`,
       gate: "M" as const,
       qubits: [qubit],
     })));
   }
-  return { circuit: { qubitCount, steps }, usedDecomposition };
+  return { circuit: { qubitCount: qubitRegister.size, steps }, usedDecomposition };
 }
 
 function parseQasmInvocation(line: string): { name: string; params: string[]; operands: string[] } | null {
@@ -252,12 +266,14 @@ function controlledGateName(name: string): string | null {
   return ({ x: "cx", y: "cy", z: "cz", h: "ch", p: "cp", rz: "crz" } as Record<string, string | undefined>)[name] ?? null;
 }
 
-function resolveQasmOperand(operand: string, qubitCount: number): number[] | null {
-  if (operand === "q") return Array.from({ length: qubitCount }, (_, qubit) => qubit);
-  const indexed = /^q\[(\d+)\]$/.exec(operand);
-  if (!indexed) return null;
-  const qubit = Number(indexed[1]);
-  return qubit >= 0 && qubit < qubitCount ? [qubit] : null;
+function resolveQasmOperand(operand: string, qubitRegister: QasmRegister): number[] | null {
+  if (operand === qubitRegister.name) {
+    return Array.from({ length: qubitRegister.size }, (_, qubit) => qubit);
+  }
+  const indexed = /^([A-Za-z_]\w*)\[(\d+)\]$/.exec(operand);
+  if (!indexed || indexed[1] !== qubitRegister.name) return null;
+  const qubit = Number(indexed[2]);
+  return qubit >= 0 && qubit < qubitRegister.size ? [qubit] : null;
 }
 
 function broadcastQasmOperands(operands: number[][]): number[][] | null {

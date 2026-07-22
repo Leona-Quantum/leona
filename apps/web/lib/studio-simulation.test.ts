@@ -63,10 +63,10 @@ test("stored OpenQASM can supply an explicit standard-gate model for otherwise u
   const qasm = [
     "OPENQASM 3.0;",
     'include "stdgates.inc";',
-    "qubit[1] q;",
-    "bit[1] c;",
-    "p(pi/4) q[0];",
-    "c = measure q;",
+    "qubit _qubit0;",
+    "bit _bit0;",
+    "p(pi/4) _qubit0;",
+    "_bit0 = measure _qubit0;",
   ].join("\n");
   const record = runCpuSimulation({
     artifactId: "artifact-p",
@@ -77,6 +77,36 @@ test("stored OpenQASM can supply an explicit standard-gate model for otherwise u
     seed: 9,
     now: new Date("2026-07-23T00:00:00.000Z"),
     id: "sim-p",
+  });
+
+  assert.equal(record.model, "openqasm_standard_decomposition");
+  assert.equal(record.interchangeFingerprint, sourceFingerprint(qasm));
+  assert.equal(record.measured, true);
+  assert.deepEqual(record.counts, { "0": 24 });
+});
+
+test("generated scalar OpenQASM provenance keeps a saved P-phase artifact CPU-simulable", () => {
+  const source = [
+    "from qiskit import QuantumCircuit",
+    "import numpy as np",
+    "qc = QuantumCircuit(1)",
+    "qc.p(np.pi / 4, 0)",
+  ].join("\n");
+  const qasm = [
+    "OPENQASM 3.0;",
+    'include "stdgates.inc";',
+    "qubit _qubit0;",
+    "p(pi/4) _qubit0;",
+  ].join("\n");
+  const record = runCpuSimulation({
+    artifactId: "artifact-p-scalar",
+    code: source,
+    framework: "qiskit",
+    qasm,
+    shots: 24,
+    seed: 9,
+    now: new Date("2026-07-23T00:00:00.000Z"),
+    id: "sim-p-scalar",
   });
 
   assert.equal(record.model, "openqasm_standard_decomposition");
