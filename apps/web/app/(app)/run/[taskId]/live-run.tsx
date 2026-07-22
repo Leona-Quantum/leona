@@ -245,6 +245,7 @@ export function LiveRun({ taskId }: { taskId: string }) {
   useEffect(() => {
     conversationIdRef.current = null;
     setConversationId(null);
+    setExistingChat(null);
     shouldAutoScrollRef.current = true;
   }, [taskId]);
 
