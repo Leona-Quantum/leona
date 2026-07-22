@@ -16,8 +16,18 @@ the circuit, runs safe simulations/checks, and saves the resulting evidence.
 - The editor is code-native and copyable. The circuit preview is a semantic
   SVG/HTML view, not a screenshot. Selecting a gate exposes its parameters in
   the inspector.
-- `Simulate` and `Verify` submit the edited code through the control plane's
-  deny-all sandbox. UI success is only shown after typed run evidence arrives.
+- `Simulate` opens an artifact-owned CPU surface. It executes only the parsed,
+  bounded gate model in the browser for saved artifacts, then records the
+  source fingerprint, inputs, and sampled result locally. It never starts
+  Nala, claims verification, updates the Vault version, or executes hardware.
+  Unsupported source, export-only frameworks, unsaved drafts, and out-of-bound
+  circuits fail closed with a visible reason. Re-runs require confirmation and
+  append a new local record.
+- `Verify & save` submits the edited code through the control plane's deny-all
+  sandbox. UI success is only shown after typed run evidence arrives.
+- GPU and QPU lanes can be shown as unavailable roadmap controls only. They
+  become actionable after their provider, cost, security, and confirmation
+  contracts exist.
 - `Save version` writes a new artifact version with a provenance edge to the
   parent artifact. Unsaved edits are marked as a draft and are never presented
   as verified.
@@ -35,11 +45,11 @@ metrics.
 
 | Region | Required behavior |
 |---|---|
-| Header | `Studio`, artifact breadcrumb, framework selector, `Simulate`, `Verify`, `Save version` |
+| Header | `Studio`, artifact breadcrumb, framework selector, `Simulate`, `Verify & save` |
 | Code pane | Editable source, copy action, framework/version tabs, dirty-state indicator |
 | Circuit pane | Qubit wires, semantic gates, selection, pan/zoom affordances, parameter selection |
 | Inspector | `Circuit`, `Resources`, `Verification` tabs; selected-gate details and evidence |
-| Output drawer | `Output`, `Simulation result`, `Verification log`; copyable result and honest status |
+| Simulation pane | CPU eligibility, inputs, artifact-owned local result records, rerun confirmation, and unavailable GPU/QPU lanes. A local CPU result is never styled as verification or hardware evidence. |
 | Responsive fallback | Stack code, circuit, inspector, and output in that order; no horizontal page overflow |
 
 ## Run modes
