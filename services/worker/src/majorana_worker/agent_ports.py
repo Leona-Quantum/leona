@@ -82,14 +82,12 @@ class LLMPlanner:
         llm: LLMClient,
         task_prompt: str,
         framework: Framework,
-        has_parent_artifact: bool = False,
         requested_shots: int | None = None,
         requested_seed: int | None = None,
     ) -> None:
         self._llm = llm
         self._task_prompt = task_prompt
         self._framework = framework
-        self._has_parent_artifact = has_parent_artifact
         self._requested_shots = (
             min(requested_shots, self._PLAN_SHOTS_CEILING)
             if requested_shots is not None and requested_shots >= 1
@@ -117,7 +115,6 @@ class LLMPlanner:
             prompt = render_plan_prompt(
                 self._task_prompt,
                 requested_framework=self._framework,
-                has_parent_artifact=self._has_parent_artifact,
                 requested_shots=self._requested_shots,
                 requested_seed=self._requested_seed,
             )
@@ -582,14 +579,9 @@ def _measurement_policy_disagreement(
 
 
 class EvidenceVerifier:
-    def __init__(
-        self, *, llm: LLMClient, task_prompt: str, parent_artifact_qasm: str | None = None
-    ) -> None:
+    def __init__(self, *, llm: LLMClient, task_prompt: str) -> None:
         self._llm = llm
         self._task_prompt = task_prompt
-        # Passed in rather than fetched: the verifier holds no session and no scope,
-        # and the parent version is already loaded by the run handler.
-        self._parent_artifact_qasm = parent_artifact_qasm
 
     async def verify(
         self, candidate: CandidateRevision, execution: ExecutionEvidence, plan: Plan
@@ -839,11 +831,11 @@ class EvidenceVerifier:
                         "details": outcome.details,
                     }
                 )
-        self._name_reference_disagreement(checks, plan)
+        self._name_reference_disagreement(checks)
         return checks
 
     @staticmethod
-    def _name_reference_disagreement(checks: list[dict[str, Any]], plan: Plan) -> None:
+    def _name_reference_disagreement(checks: list[dict[str, Any]]) -> None:
         """When `exact` fails a candidate that every self-referential check passed,
         say so in the failure's details.
 
@@ -862,11 +854,6 @@ class EvidenceVerifier:
         rather than imply the code is definitely the wrong side. A diagnostic in a
         failing check's details cannot fail correct code (standing lesson 12).
         """
-        reference_source = (
-            plan.verification_plan.reference_source if plan.verification_plan else None
-        )
-        if getattr(reference_source, "value", reference_source) != "plan_declared":
-            return
         by_method = {check["method"]: check for check in checks}
         exact = by_method.get("exact")
         if exact is None or exact["result"] != "fail":
@@ -946,25 +933,15 @@ class EvidenceVerifier:
         sandbox to mean anything, which would admit a second piece of model-authored
         code as ground truth.
 
-        The two sources prove different things, so `reference_source` is recorded in
-        the evidence and the check never claims more than it earned:
-
-        - `plan_declared` — the planner wrote the reference before any code existed.
-          It catches code that implements a different circuit than the one intended.
-          It cannot catch a mis-specified plan: reference and candidate come from the
-          same model.
-        - `parent_artifact` — the circuit this run revises, which passed verification
-          on its own. Independent evidence, and the equivalence-checking case: the
-          revision must not change what the circuit computes.
+        The planner writes the reference before any code exists. It catches code that
+        implements a different circuit than the one intended, but cannot catch a
+        mis-specified plan: reference and candidate share an author. Existing artifact
+        versions are provenance only and are never used as correctness references.
         """
         verification_plan = plan.verification_plan
         source = verification_plan.reference_source if verification_plan else None
         details: dict[str, Any] = {"reference_source": source}
-        if source == "parent_artifact":
-            reference = self._parent_artifact_qasm
-            details["reference_available"] = reference is not None
-        else:
-            reference = verification_plan.reference_qasm if verification_plan else None
+        reference = verification_plan.reference_qasm if verification_plan else None
         candidate_qasm = extract_interchange_qasm(execution.observation).qasm
         native_statevector = execution.observation.get("native_statevector")
         if (
@@ -1005,16 +982,10 @@ class EvidenceVerifier:
             }
         outcome = verify_exact(reference, candidate_qasm, max_qubits=EXACT_MAX_QUBITS)
         merged = details | outcome.details
-        if source == "plan_declared":
-            merged["evidence_scope"] = (
-                "the executed circuit matches the reference the planner declared; "
-                "reference and implementation share an author"
-            )
-        else:
-            merged["evidence_scope"] = (
-                "the executed circuit is unitarily equivalent to the parent "
-                "artifact's independently verified circuit"
-            )
+        merged["evidence_scope"] = (
+            "the executed circuit matches the reference the planner declared; "
+            "reference and implementation share an author"
+        )
         return {
             "method": outcome.method.value,
             "result": outcome.result.value,

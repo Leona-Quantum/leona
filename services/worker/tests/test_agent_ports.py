@@ -996,40 +996,6 @@ async def test_exact_check_fails_on_a_circuit_with_the_wrong_unitary():
     assert output.decision is VerifierDecision.FAIL
 
 
-async def test_exact_check_uses_the_parent_artifact_as_the_reference():
-    candidate = _candidate()
-    output = await EvidenceVerifier(
-        llm=PassingCriticLLM(),
-        task_prompt="Transpile this circuit without changing what it computes",
-        parent_artifact_qasm=_BELL_REFERENCE_QASM,
-    ).verify(
-        candidate,
-        _execution(candidate, observation=_exact_observation(_BELL_QASM)),
-        _exact_plan(reference_source="parent_artifact"),
-    )
-    check = _checks_by_method(output)["exact"]
-    assert check["result"] == "pass"
-    assert check["details"]["reference_source"] == "parent_artifact"
-    assert "independently verified" in check["details"]["evidence_scope"]
-
-
-async def test_exact_check_fails_when_the_parent_stored_no_qasm():
-    """A version saved without interchange QASM cannot serve as a reference. Missing
-    evidence fails; it never silently degrades to a weaker check."""
-    candidate = _candidate()
-    output = await EvidenceVerifier(
-        llm=MustNotRunLLM(), task_prompt="Preserve behaviour", parent_artifact_qasm=None
-    ).verify(
-        candidate,
-        _execution(candidate, observation=_exact_observation(_BELL_QASM)),
-        _exact_plan(reference_source="parent_artifact"),
-    )
-    check = _checks_by_method(output)["exact"]
-    assert check["result"] == "fail"
-    assert check["details"]["error"] == "required evidence unavailable"
-    assert check["details"]["reference_available"] is False
-
-
 async def test_exact_check_fails_when_the_run_emitted_no_interchange_qasm():
     candidate = _candidate()
     observation = _exact_observation(_BELL_QASM)
@@ -1677,18 +1643,6 @@ def test_the_vqe_shape_that_died_now_passes_its_whole_panel():
     assert evidence_strength_of(checks) is EvidenceStrength.PHYSICAL
 
 
-def _plan_with_declared_reference() -> Plan:
-    payload = _plan().model_dump(mode="json")
-    payload["verification_plan"] = {
-        "methods": ["exact", "return_contract"],
-        "reference_source": "plan_declared",
-        "reference_qasm": (
-            'OPENQASM 3;\ninclude "stdgates.inc";\nqubit[2] q;\nh q[0];\ncx q[0], q[1];'
-        ),
-    }
-    return Plan.model_validate(payload)
-
-
 def test_exact_failure_names_the_reference_when_self_checks_pass():
     """Run 019f7f7b-ba33: a wrong plan-declared reference failed four correct
     candidates identically while statistical_native and success_criteria passed.
@@ -1698,7 +1652,7 @@ def test_exact_failure_names_the_reference_when_self_checks_pass():
         {"method": "exact", "result": "fail", "details": {"scores": {"max_abs_distance": 1.0}}},
         {"method": "statistical_native", "result": "pass", "details": {}},
     ]
-    EvidenceVerifier._name_reference_disagreement(checks, _plan_with_declared_reference())
+    EvidenceVerifier._name_reference_disagreement(checks)
     disagreement = checks[1]["details"]["disagreement"]
     assert "statistical_native" in disagreement
     assert "success_criteria" in disagreement
@@ -1712,25 +1666,8 @@ def test_exact_failure_stays_bare_without_corroboration():
         {"method": "exact", "result": "fail", "details": {}},
         {"method": "statistical_native", "result": "fail", "details": {}},
     ]
-    EvidenceVerifier._name_reference_disagreement(checks, _plan_with_declared_reference())
+    EvidenceVerifier._name_reference_disagreement(checks)
     assert "disagreement" not in checks[0]["details"]
-
-
-def test_exact_failure_stays_bare_for_parent_artifact_reference():
-    """A parent-artifact reference was verified independently; the diagnostic's
-    premise (reference shares an author with the plan) does not hold there."""
-    payload = _plan().model_dump(mode="json")
-    payload["verification_plan"] = {
-        "methods": ["exact", "return_contract"],
-        "reference_source": "parent_artifact",
-    }
-    plan = Plan.model_validate(payload)
-    checks = [
-        {"method": "success_criteria", "result": "pass", "details": {}},
-        {"method": "exact", "result": "fail", "details": {}},
-    ]
-    EvidenceVerifier._name_reference_disagreement(checks, plan)
-    assert "disagreement" not in checks[1]["details"]
 
 
 def _exact_diag_plan_payload(*, range_min: float, range_max: float) -> str:

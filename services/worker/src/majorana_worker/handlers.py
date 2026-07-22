@@ -184,15 +184,9 @@ async def handle_run_execute(
     run_id = uuid.UUID(payload["run_id"])
     run = await runs_repo.get_run(scope, session, run_id)
     parent_artifact_id = None
-    parent_artifact_qasm = None
     if run.artifact_version_id is not None:
         version = await artifacts_repo.get_version(scope, session, run.artifact_version_id)
         parent_artifact_id = version.artifact_id
-        # The reference for an `exact` check when the plan asks to preserve this
-        # circuit's behaviour. Only a version that stored interchange QASM can serve
-        # as one; when it did not, the verifier reports the missing evidence rather
-        # than quietly falling back to a weaker check.
-        parent_artifact_qasm = version.qasm
     ctx = RunContext(
         run_id=run_id,
         task_prompt=run.task_prompt,
@@ -230,7 +224,6 @@ async def handle_run_execute(
                     llm=provider,
                     sandbox=sandbox or _default_sandbox(),
                     parent_artifact_id=parent_artifact_id,
-                    parent_artifact_qasm=parent_artifact_qasm,
                 )
     except TimeoutError:
         # The stage coroutine was cancelled mid-flight; reset the session and
@@ -399,7 +392,6 @@ async def _handle_agent_execution(
     llm: LLMClient,
     sandbox: Sandbox,
     parent_artifact_id: uuid.UUID | None,
-    parent_artifact_qasm: str | None = None,
 ) -> RunStatus:
     status = await run_store.current_status()
     if status not in {RunStatus.QUEUED, RunStatus.RUNNING}:
@@ -425,7 +417,6 @@ async def _handle_agent_execution(
             llm=metered_llm,
             task_prompt=ctx.task_prompt,
             framework=ctx.framework,
-            has_parent_artifact=parent_artifact_id is not None,
             requested_shots=ctx.shots,
             requested_seed=ctx.seed,
         ),
@@ -433,7 +424,6 @@ async def _handle_agent_execution(
         verifier=EvidenceVerifier(
             llm=metered_llm,
             task_prompt=ctx.task_prompt,
-            parent_artifact_qasm=parent_artifact_qasm,
         ),
         converter=TrustedOpenQASMConverter(),
         publisher=RepoArtifactPublisher(

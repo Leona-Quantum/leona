@@ -215,15 +215,12 @@ class VerificationPlan(_PlanBase):
     reference_method: str | None = Field(
         default=None, description="Independent reference, e.g. exact diagonalization"
     )
-    reference_source: Literal["plan_declared", "parent_artifact"] | None = Field(
+    reference_source: Literal["plan_declared"] | None = Field(
         default=None,
         description=(
             "Where the 'exact' check gets the circuit it compares against. "
-            "'plan_declared' means you supply reference_qasm below. "
-            "'parent_artifact' means the already-verified circuit this run revises "
-            "is the reference — choose it only when the request is to optimize, "
-            "transpile, or refactor that circuit WITHOUT changing what it computes, "
-            "and only when you were told this run has a parent artifact."
+            "'plan_declared' means you supply reference_qasm below. Existing artifact "
+            "versions are never treated as correctness references."
         ),
     )
     reference_qasm: str | None = Field(
@@ -415,8 +412,7 @@ class Plan(_PlanBase):
           compare — the check would fail identically on every candidate.
         - No `reference_source`. `verify_exact` compares against something; without
           a nominated source there is nothing to compare against.
-        - `plan_declared` with no `reference_qasm` (or `parent_artifact` with one —
-          a reference that will be ignored is a lie about what was checked).
+        - `plan_declared` with no `reference_qasm`.
         - More qubits than the check supports. `exact_equivalence` RAISES above its
           ceiling and `verify_exact` turns that into a FAIL, so an 18-qubit plan
           asking for `exact` fails a check no repair can fix.
@@ -444,21 +440,13 @@ class Plan(_PlanBase):
                 "verification_plan.methods includes 'exact', which compares the "
                 "executed circuit against a reference circuit, but no "
                 "reference_source was named. Set reference_source to "
-                "'plan_declared' and supply reference_qasm, set it to "
-                "'parent_artifact' when this run revises an existing verified "
-                "circuit and must preserve its behaviour, or drop 'exact'."
+                "'plan_declared' and supply reference_qasm, or drop 'exact'."
             )
         if plan.reference_source == "plan_declared" and not plan.reference_qasm:
             raise ValueError(
                 "verification_plan.reference_source is 'plan_declared' but "
                 "reference_qasm is empty. Supply the OpenQASM source of the circuit "
                 "the generated code must match, or drop 'exact'."
-            )
-        if plan.reference_source == "parent_artifact" and plan.reference_qasm:
-            raise ValueError(
-                "verification_plan.reference_source is 'parent_artifact', so the "
-                "reference comes from the artifact this run revises; reference_qasm "
-                "would be ignored. Remove it, or switch to 'plan_declared'."
             )
         if self.qubits_estimate > EXACT_MAX_QUBITS:
             raise ValueError(

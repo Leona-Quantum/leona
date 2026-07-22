@@ -3309,10 +3309,7 @@
           "reference_source": {
             "anyOf": [
               {
-                "enum": [
-                  "plan_declared",
-                  "parent_artifact"
-                ],
+                "const": "plan_declared",
                 "type": "string"
               },
               {
@@ -3320,7 +3317,7 @@
               }
             ],
             "default": null,
-            "description": "Where the 'exact' check gets the circuit it compares against. 'plan_declared' means you supply reference_qasm below. 'parent_artifact' means the already-verified circuit this run revises is the reference \u2014 choose it only when the request is to optimize, transpile, or refactor that circuit WITHOUT changing what it computes, and only when you were told this run has a parent artifact.",
+            "description": "Where the 'exact' check gets the circuit it compares against. 'plan_declared' means you supply reference_qasm below. Existing artifact versions are never treated as correctness references.",
             "title": "Reference Source"
           },
           "required_invariants": {
@@ -3666,7 +3663,7 @@
   "info": {
     "description": "Cross-boundary types only; API paths are owned by services/api.",
     "title": "majorana-contracts",
-    "version": "1.5.0"
+    "version": "2.0.0"
   },
   "openapi": "3.1.0",
   "paths": {}

@@ -82,11 +82,6 @@ so it also needs you to say where that reference comes from.
   while the run's other checks pass, and the run dies with nothing to repair. When
   the self-check fails, leave `exact` off and rely on statistical evidence plus
   success_criteria.
-- Set reference_source to `parent_artifact` and omit reference_qasm ONLY when the user
-  request is to optimize, transpile, re-express, or clean up a circuit this run already
-  has as its parent, WITHOUT changing what it computes. This is the strongest evidence
-  the pipeline can produce, because the reference was verified on its own. If the
-  request legitimately changes the circuit's behaviour, do not list `exact` at all.
 - `exact` supports at most {EXACT_MAX_QUBITS} qubits and the plan contract rejects it
   above that. For anything larger, verify statistically.
 - Listing `exact` without a usable reference is rejected. If the task has no canonical
@@ -249,29 +244,11 @@ def _render(system: str, user: str) -> RenderedPrompt:
     return RenderedPrompt(system=system, user=user)
 
 
-# Whether this run revises an existing verified circuit is the one fact the planner
-# cannot infer from the request, and `exact` with reference_source=parent_artifact is
-# unusable without it. Stated in both directions on purpose: told only when a parent
-# exists, a planner reading no line at all has to guess, and the cheap guess is to
-# claim the parent it hopes is there.
-_PARENT_ARTIFACT_PRESENT = (
-    "This run revises an existing artifact that already passed verification. Its "
-    "circuit is available to the verifier as a reference, so verification_plan may "
-    "set reference_source to `parent_artifact` — but only if the request preserves "
-    "what that circuit computes."
-)
-_PARENT_ARTIFACT_ABSENT = (
-    "This run has no parent artifact. reference_source `parent_artifact` is "
-    "unavailable; there is nothing for it to point at."
-)
-
-
 def render_plan_prompt(
     task_prompt: str,
     research_context: str = "",
     requested_framework: Framework | None = None,
     *,
-    has_parent_artifact: bool = False,
     requested_shots: int | None = None,
     requested_seed: int | None = None,
 ) -> RenderedPrompt:
@@ -302,7 +279,6 @@ def render_plan_prompt(
         f"Selected framework: {_framework_label(requested_framework)}\n\n"
         f"{shots_line}"
         f"{seed_line}"
-        f"{_PARENT_ARTIFACT_PRESENT if has_parent_artifact else _PARENT_ARTIFACT_ABSENT}\n\n"
         f"{research_context or 'No additional research context was available.'}",
     )
 

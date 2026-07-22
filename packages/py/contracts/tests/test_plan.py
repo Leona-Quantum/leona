@@ -107,10 +107,10 @@ def test_exact_is_plannable_with_a_declared_reference():
     assert plan.verification_plan.reference_qasm == BELL_QASM
 
 
-def test_exact_is_plannable_against_the_parent_artifact():
-    plan = Plan.model_validate(_with_exact({"reference_source": "parent_artifact"}))
-    assert plan.verification_plan is not None
-    assert plan.verification_plan.reference_source == "parent_artifact"
+def test_exact_rejects_parent_artifact_as_a_reference():
+    with pytest.raises(ValidationError) as exc:
+        Plan.model_validate(_with_exact({"reference_source": "parent_artifact"}))
+    assert "reference_source" in str(exc.value)
 
 
 def test_exact_without_a_reference_source_is_rejected():
@@ -123,15 +123,6 @@ def test_plan_declared_reference_without_qasm_is_rejected():
     with pytest.raises(ValidationError) as exc:
         Plan.model_validate(_with_exact({"reference_source": "plan_declared"}))
     assert "reference_qasm" in str(exc.value)
-
-
-def test_parent_reference_carrying_qasm_is_rejected():
-    """A reference the verifier will ignore misstates what was checked."""
-    with pytest.raises(ValidationError) as exc:
-        Plan.model_validate(
-            _with_exact({"reference_source": "parent_artifact", "reference_qasm": BELL_QASM})
-        )
-    assert "ignored" in str(exc.value)
 
 
 def test_exact_above_the_qubit_ceiling_is_rejected():

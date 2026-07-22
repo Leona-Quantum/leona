@@ -127,7 +127,9 @@ from .lifecycle import (
 # 1.5.0: Artifact (list resource) gains optional verifier_decision /
 # evidence_strength from the current version's verification_summary, so the
 # Vault list stops fabricating "verified" for unopened artifacts.
-CONTRACTS_VERSION = "1.5.0"
+# 2.0.0: VerificationPlan no longer accepts parent_artifact as an exact-reference
+# source; prior artifact versions remain provenance only, never correctness oracles.
+CONTRACTS_VERSION = "2.0.0"
 
 __all__ = [
     "CONTRACTS_VERSION",
