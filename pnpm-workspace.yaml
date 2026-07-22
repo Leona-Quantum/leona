@@ -1,6 +1,10 @@
 packages:
   - "apps/*"
   - "packages/ts/*"
+overrides:
+  fast-uri: 3.1.4
+  js-yaml: 4.3.0
+  sharp: 0.35.3
 # 05-security supply chain: build scripts stay blocked. sharp (next/image) is
 # explicitly denied - we do not use image optimization yet; revisit in Phase 3.
 allowBuilds:

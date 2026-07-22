@@ -370,7 +370,8 @@ circuit.append(cirq.H(q) for q in qubits)
 for i in range(4):
     circuit.append(cirq.CZ(qubits[i], qubits[(i + 1) % 4]))
 
-print(circuit)
+state = cirq.Simulator().simulate(circuit).final_state_vector
+print(state)
 `,
       },
     ],

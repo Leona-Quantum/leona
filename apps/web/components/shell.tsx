@@ -23,6 +23,7 @@ import {
   archiveChat,
   assignChatToRemoteFolder,
   assignChatToFolder,
+  collapseConversationChats,
   createChatFolder,
   createRemoteChatFolder,
   daysUntilArchiveDeletion,
@@ -91,7 +92,9 @@ export function Shell({
     let active = true;
 
     async function refreshWorkspace() {
-      const localHistory = loadChatHistory({ includeDemo: demoMode, includeArchived: true });
+      const localHistory = collapseConversationChats(
+        loadChatHistory({ includeDemo: demoMode, includeArchived: true }),
+      );
       const localActiveChats = localHistory.filter((chat) => !chat.archivedAt);
       setChatFolders(loadChatFolders());
       setArtifactFolders(loadArtifactFolders());
@@ -130,7 +133,7 @@ export function Shell({
               : local,
           );
         }
-        const mergedChats = [...byId.values()].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+        const mergedChats = collapseConversationChats([...byId.values()]);
         const remoteArtifacts = Array.isArray(artifactPayload) ? artifactPayload.flatMap(toLibraryArtifact).filter((artifact) => !isArtifactDeleted(artifact.id)) : [];
         const storedArtifacts = loadLibraryArtifacts({ includeArchived: true });
         const artifactById = new Map([...remoteArtifacts, ...storedArtifacts].map((artifact) => [artifact.id, artifact]));
@@ -922,6 +925,7 @@ function chatFromRun(value: unknown): ChatSummary[] {
     prompt: run.task_prompt,
     createdAt: typeof run.created_at === "string" ? run.created_at : new Date().toISOString(),
     status,
+    conversationId: typeof run.conversation_id === "string" ? run.conversation_id : undefined,
     framework: typeof run.framework === "string" ? run.framework.toUpperCase() : undefined,
     folderId: typeof run.folder_id === "string" ? run.folder_id : undefined,
   }];

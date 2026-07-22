@@ -241,13 +241,24 @@ export function getPublicRepositoryVariant(
     }
   }
 
+  if (sourceVariant?.code) {
+    return {
+      framework,
+      status: "source",
+      language: sourceVariant.language,
+      filename: sourceVariant.filename,
+      code: sourceVariant.code,
+      note: `No safe direct ${framework} conversion is available for this reference. Showing the stored ${sourceVariant.framework} source instead of an executable-looking conversion recipe.`,
+    };
+  }
+
   return {
     framework,
     status: "unsupported",
     language: framework === "OpenQASM 3.0" ? "openqasm" : "python",
     filename: `${entry.slug}-not-a-concrete-circuit.txt`,
     code: "",
-    note: `This record does not expose a concrete circuit in Leona Quantum's portable gate subset or stored OpenQASM 3, so a ${framework} circuit would be speculative. Operator and literature references remain explicit instead of being presented as converted circuits.`,
+    note: `This record does not expose source code, so a ${framework} circuit would be speculative.`,
   };
 }
 
@@ -281,5 +292,5 @@ export function getPublicRepositoryLibraryVariant(
   const candidates = [entry.framework, ...PERSONAL_LIBRARY_FRAMEWORKS];
   return candidates
     .map((framework) => getPublicRepositoryVariant(entry, framework))
-    .find((variant) => PERSONAL_LIBRARY_FRAMEWORKS.includes(variant.framework) && variant.status !== "unsupported" && Boolean(variant.code));
+    .find((variant) => PERSONAL_LIBRARY_FRAMEWORKS.includes(variant.framework) && (variant.status === "native" || variant.status === "conversion") && Boolean(variant.code));
 }

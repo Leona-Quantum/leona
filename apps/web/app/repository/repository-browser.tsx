@@ -264,7 +264,8 @@ export function RepositoryBrowser({
       ].join(" ").toLowerCase().includes(normalizedQuery);
       const matchesCategory = category === "all" || entry.category === category;
       const matchesFamily = !family || entry.algorithmFamily === family;
-      const matchesFramework = !framework || getPublicRepositoryVariant(entry, framework).status !== "unsupported";
+      const variant = framework ? getPublicRepositoryVariant(entry, framework) : null;
+      const matchesFramework = !framework || variant?.status === "native" || variant?.status === "conversion";
       return matchesQuery && matchesCategory && matchesFamily && matchesFramework;
     });
   }, [category, entries, family, framework, query]);
