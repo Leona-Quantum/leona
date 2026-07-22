@@ -14,20 +14,24 @@ from majorana_contracts.enums import (
     EvidenceStrength,
     Framework,
     MeasurementPolicy,
+    RetryTarget,
+    SemanticReviewDecision,
+    VerificationFailureClass,
     VerificationMethod,
     VerifierDecision,
     evidence_strength_of,
 )
-from majorana_contracts.plan import EXACT_MAX_QUBITS, Plan
-from majorana_worker import agent_ports
+from majorana_contracts.plan import Plan
 from majorana_frameworks import FrameworkProgram
 from majorana_llm import LLMResponse, StageOutputError
 from majorana_sandbox import SandboxResult
 from majorana_worker.agent_ports import (
     EvidenceVerifier,
+    FastCandidateChecker,
     LLMPlanner,
     RepoArtifactPublisher,
     SandboxCandidateExecutor,
+    StrictEvidenceVerifier,
     TrustedOpenQASMConverter,
 )
 
@@ -246,15 +250,55 @@ class LowConfidenceCriticLLM:
         )
 
 
-async def test_semantic_critic_fails_closed_on_low_confidence_pass():
+async def test_semantic_critic_is_inconclusive_on_low_confidence_pass():
     candidate = _candidate()
     output = await EvidenceVerifier(llm=LowConfidenceCriticLLM(), task_prompt="Bell state").verify(
         candidate, _execution(candidate), _plan()
     )
 
+    assert output.decision is VerifierDecision.INCONCLUSIVE
+    assert output.repair is None
+    assert output.failure_class is VerificationFailureClass.EVIDENCE_GAP
+    assert output.candidate_defect_observed is False
+
+
+async def test_strict_gate_can_confirm_a_defect_after_semantic_uncertainty():
+    candidate = _candidate()
+    wrong = {"01": 512, "10": 512}
+    output = await EvidenceVerifier(llm=LowConfidenceCriticLLM(), task_prompt="Bell state").verify(
+        candidate,
+        _execution(
+            candidate,
+            result={"counts": wrong},
+            observation=_statistical_observation(wrong),
+        ),
+        _statistical_plan(),
+    )
+
+    assert output.semantic_review_decision is SemanticReviewDecision.INCONCLUSIVE
     assert output.decision is VerifierDecision.FAIL
-    assert output.repair is not None
-    assert output.repair.required_rechecks == ["semantic_critic"]
+    assert output.failure_class is VerificationFailureClass.CANDIDATE_DEFECT
+    assert output.candidate_defect_observed is True
+
+
+async def test_strict_verifier_error_takes_precedence_over_unavailable_evidence(monkeypatch):
+    def raise_strict_error(self, execution, plan):
+        raise RuntimeError("trusted verifier failed")
+
+    monkeypatch.setattr(StrictEvidenceVerifier, "check", raise_strict_error)
+    candidate = _candidate()
+    output = await EvidenceVerifier(llm=PassingCriticLLM(), task_prompt="Bell state").verify(
+        candidate,
+        _execution(candidate, observation={"resource_metrics": {"qubits": 2}}),
+        _plan(),
+    )
+
+    assert any(check["result"] == "unavailable" for check in output.deterministic_checks)
+    assert any(check["result"] == "error" for check in output.deterministic_checks)
+    assert output.decision is VerifierDecision.INCONCLUSIVE
+    assert output.failure_class is VerificationFailureClass.VERIFIER_FAILURE
+    assert output.retry_target is RetryTarget.VERIFICATION
+    assert output.reason_code == "strict_verifier_error"
 
 
 class RecheckDemandingPassCriticLLM:
@@ -274,15 +318,97 @@ class RecheckDemandingPassCriticLLM:
         )
 
 
-async def test_semantic_critic_fails_closed_on_pass_that_demands_rechecks():
+async def test_semantic_pass_that_demands_rechecks_is_inconclusive():
     candidate = _candidate()
     output = await EvidenceVerifier(
         llm=RecheckDemandingPassCriticLLM(), task_prompt="Bell state"
     ).verify(candidate, _execution(candidate), _plan())
 
-    assert output.decision is VerifierDecision.FAIL
-    assert output.repair is not None
-    assert output.repair.required_rechecks == ["statistical"]
+    assert output.decision is VerifierDecision.INCONCLUSIVE
+    assert output.repair is None
+    assert output.failure_class is VerificationFailureClass.EVIDENCE_GAP
+
+
+class RoutingCriticLLM:
+    def __init__(self, area: str) -> None:
+        self.area = area
+
+    async def complete(self, request, *, on_delta=None):
+        return LLMResponse(
+            text=json.dumps(
+                {
+                    "decision": "fail",
+                    "confidence": "high",
+                    "severity": "blocking",
+                    "summary": "A clear semantic mismatch was found.",
+                    "failed_checks": [self.area],
+                    "mismatches": [
+                        {
+                            "area": self.area,
+                            "expected": "request and Plan agree",
+                            "observed": "they disagree",
+                            "evidence": "bounded fixture",
+                            "severity": "blocking",
+                        }
+                    ],
+                    "suggestions": [],
+                    "repair_plan": ["Correct the mismatched layer."],
+                    "required_recheck": ["semantic_review"],
+                    "residual_risks": [],
+                }
+            ),
+            model=request.model,
+            input_tokens=1,
+            output_tokens=1,
+        )
+
+
+async def test_semantic_request_plan_mismatch_routes_to_replan():
+    candidate = _candidate()
+    output = await EvidenceVerifier(
+        llm=RoutingCriticLLM("request-to-plan"), task_prompt="Bell state"
+    ).verify(candidate, _execution(candidate), _plan())
+
+    assert output.semantic_review_decision is SemanticReviewDecision.REPLAN
+    assert output.failure_class is VerificationFailureClass.PLAN_DEFECT
+    assert output.retry_target is RetryTarget.PLANNING
+    assert output.candidate_defect_observed is False
+
+
+async def test_semantic_plan_code_mismatch_routes_to_code_repair():
+    candidate = _candidate()
+    output = await EvidenceVerifier(
+        llm=RoutingCriticLLM("plan-to-code"), task_prompt="Bell state"
+    ).verify(candidate, _execution(candidate), _plan())
+
+    assert output.semantic_review_decision is SemanticReviewDecision.CODE_REPAIR
+    assert output.failure_class is VerificationFailureClass.CANDIDATE_DEFECT
+    assert output.retry_target is RetryTarget.CODE_GENERATION
+    assert output.candidate_defect_observed is True
+
+
+class TimingOutCriticLLM:
+    def __init__(self) -> None:
+        self.calls = 0
+
+    async def complete(self, *_args, **_kwargs):
+        self.calls += 1
+        raise TimeoutError("critic timed out")
+
+
+async def test_semantic_timeout_is_inconclusive_without_candidate_repair():
+    llm = TimingOutCriticLLM()
+    candidate = _candidate()
+    output = await EvidenceVerifier(llm=llm, task_prompt="Bell state").verify(
+        candidate, _execution(candidate), _plan()
+    )
+
+    assert llm.calls == 2
+    assert output.decision is VerifierDecision.INCONCLUSIVE
+    assert output.failure_class is VerificationFailureClass.VERIFIER_FAILURE
+    assert output.retry_target is RetryTarget.VERIFICATION
+    assert output.repair is None
+    assert output.candidate_defect_observed is False
 
 
 async def test_publisher_keeps_compact_long_term_evidence_without_duplicate_variant(
@@ -426,7 +552,7 @@ def test_verifier_respects_non_circuit_artifact_contract():
             },
         }
     )
-    checks = EvidenceVerifier(llm=MustNotRunLLM(), task_prompt="test")._deterministic_checks(
+    checks = _deterministic_checks(
         candidate,
         _execution(candidate, result={"value": 1}, observation={}),
         plan,
@@ -622,6 +748,7 @@ def _statistical_observation(counts: dict[str, int]) -> dict:
     return {
         "native_optimization": {"applied": False},
         "interchange_qasm": _BELL_QASM,
+        "native_statevector": _bell_native_statevector(),
         "verification_repeat_result": {"counts": counts},
         "resource_metrics": {
             "qubits": 2,
@@ -637,7 +764,14 @@ def _checks_by_method(output) -> dict[str, dict]:
     return {check["method"]: check for check in output.deterministic_checks}
 
 
-async def test_native_optimization_evidence_fails_when_the_sandbox_reported_none():
+def _deterministic_checks(candidate, execution, plan) -> list[dict]:
+    return [
+        *FastCandidateChecker().check(candidate, execution, plan),
+        *StrictEvidenceVerifier().check(execution, plan),
+    ]
+
+
+async def test_native_optimization_evidence_is_unavailable_when_observer_reported_none():
     candidate = _candidate()
     output = await EvidenceVerifier(llm=MustNotRunLLM(), task_prompt="Bell state").verify(
         candidate,
@@ -645,8 +779,8 @@ async def test_native_optimization_evidence_fails_when_the_sandbox_reported_none
         _plan(),
     )
     check = _checks_by_method(output)["native_optimization_evidence"]
-    assert check["result"] == "fail"
-    assert output.decision is VerifierDecision.FAIL
+    assert check["result"] == "unavailable"
+    assert output.decision is VerifierDecision.INCONCLUSIVE
 
 
 async def test_native_optimization_evidence_fails_when_it_contradicts_the_source():
@@ -700,7 +834,7 @@ async def test_statistical_check_passes_on_counts_matching_the_born_distribution
     )
     checks = _checks_by_method(output)
     assert checks["statistical"]["result"] == "pass"
-    assert checks["statistical"]["details"]["evidence"] == "direct_simulation_vs_reported_counts"
+    assert checks["statistical"]["details"]["evidence"] == "native_statevector_vs_reported_counts"
     assert output.decision is VerifierDecision.PASS
 
 
@@ -748,6 +882,7 @@ async def test_statistical_incapacity_skips_without_blocking_the_candidate():
     the pass it leaves behind must grade structural (no physics was checked)."""
     counts = {"000": 256, "001": 256, "100": 256, "101": 256}
     observation = _statistical_observation(counts)
+    del observation["native_statevector"]
     observation["interchange_qasm"] = _TELEPORTATION_QASM
     observation["resource_metrics"]["qubits"] = 3
     observation["resource_metrics"]["measurement_count"] = 3
@@ -760,11 +895,10 @@ async def test_statistical_incapacity_skips_without_blocking_the_candidate():
         plan,
     )
     checks = _checks_by_method(output)
-    assert checks["statistical"]["result"] == "skipped"
-    assert checks["statistical"]["details"]["skip_reason"] == "statevector_incapable"
+    assert checks["statistical"]["result"] == "unavailable"
     # The program still agrees with itself, which is real (weak) evidence and runs.
     assert checks["statistical_reproducibility"]["result"] == "pass"
-    assert output.decision is VerifierDecision.PASS
+    assert output.decision is VerifierDecision.INCONCLUSIVE
     assert evidence_strength_of(output.deterministic_checks) is EvidenceStrength.STRUCTURAL
 
 
@@ -789,6 +923,7 @@ async def test_statistical_prefers_native_statevector_over_interchange_qasm():
     proves the conversion is out of the trust path when native evidence exists."""
     counts = {"00": 512, "11": 512}
     observation = _statistical_observation(counts)
+    del observation["native_statevector"]
     observation["interchange_qasm"] = (
         'OPENQASM 2.0;\ninclude "qelib1.inc";\nqreg q[2];\ncreg c[2];\n'
         "x q[0];\nx q[1];\nmeasure q -> c;\n"
@@ -813,6 +948,7 @@ async def test_feed_forward_circuit_earns_a_physical_grade_via_native_sampling()
     trusted re-execution of the actual circuit object."""
     counts = {"00": 1030, "11": 1018}
     observation = _statistical_observation(counts)
+    del observation["native_statevector"]
     observation["interchange_qasm"] = _TELEPORTATION_QASM  # statistical: skipped
     observation["resource_metrics"]["qubits"] = 3
     observation["resource_metrics"]["measurement_count"] = 3
@@ -831,7 +967,7 @@ async def test_feed_forward_circuit_earns_a_physical_grade_via_native_sampling()
         plan,
     )
     checks = _checks_by_method(output)
-    assert checks["statistical"]["result"] == "skipped"
+    assert "statistical" not in checks
     assert checks["statistical_native"]["result"] == "pass"
     assert output.decision is VerifierDecision.PASS
     assert evidence_strength_of(output.deterministic_checks) is EvidenceStrength.PHYSICAL
@@ -854,31 +990,6 @@ async def test_native_sampling_rejects_counts_the_trusted_execution_contradicts(
     )
     assert _checks_by_method(output)["statistical_native"]["result"] == "fail"
     assert output.decision is VerifierDecision.FAIL
-
-
-async def test_exact_falls_back_to_native_statevector_when_export_failed():
-    """A failed OpenQASM export downgrades the export, never the verdict: with no
-    interchange QASM but native evidence present, `exact` compares the framework's
-    own final state against the plan's declarative reference."""
-    counts = {"00": 512, "11": 512}
-    observation = _statistical_observation(counts)
-    del observation["interchange_qasm"]
-    del observation["verification_repeat_result"]
-    observation["native_statevector"] = _bell_native_statevector()
-    plan = _exact_plan(
-        reference_source="plan_declared",
-        reference_qasm=_BELL_REFERENCE_QASM,
-    )
-    candidate = _candidate()
-    output = await EvidenceVerifier(llm=PassingCriticLLM(), task_prompt="Bell state").verify(
-        candidate,
-        _execution(candidate, result={"counts": counts}, observation=observation),
-        plan,
-    )
-    check = _checks_by_method(output)["exact"]
-    assert check["result"] == "pass"
-    assert check["details"]["evidence"] == "native_statevector_vs_reference_qasm"
-    assert "all-zero state" in check["details"]["evidence_scope"]
 
 
 async def test_a_plan_without_statistical_still_gets_the_opportunistic_native_check():
@@ -913,6 +1024,7 @@ async def test_statistical_check_fails_when_no_evidence_is_available_at_all():
     observation = _statistical_observation({"00": 1})
     del observation["verification_repeat_result"]
     del observation["interchange_qasm"]
+    del observation["native_statevector"]
     candidate = _candidate()
     output = await EvidenceVerifier(llm=MustNotRunLLM(), task_prompt="Bell state").verify(
         candidate,
@@ -920,100 +1032,9 @@ async def test_statistical_check_fails_when_no_evidence_is_available_at_all():
         _statistical_plan(),
     )
     check = _checks_by_method(output)["statistical"]
-    assert check["result"] == "fail"
+    assert check["result"] == "unavailable"
     assert check["details"]["error"] == "required evidence unavailable"
-    assert check["details"]["interchange_qasm"] is False
-
-
-_BELL_REFERENCE_QASM = 'OPENQASM 2.0;\ninclude "qelib1.inc";\nqreg q[2];\nh q[0];\ncx q[0],q[1];\n'
-# Same measured distribution as a Bell state, a different unitary. The statistical
-# check cannot tell these apart from counts alone in the |00>/|11> sense a sampled
-# run reports; the exact check compares unitaries and can.
-_WRONG_QASM = (
-    'OPENQASM 2.0;\ninclude "qelib1.inc";\nqreg q[2];\ncreg c[2];\n'
-    "h q[0];\ncx q[0],q[1];\nz q[0];\nmeasure q -> c;\n"
-)
-
-
-def _exact_plan(**verification) -> Plan:
-    return Plan.model_validate(
-        {
-            "domain": "quantum information",
-            "framework": "qiskit",
-            "algorithm": Algorithm.BELL,
-            "problem_summary": "Build and verify a Bell circuit",
-            "algorithm_rationale": "Entanglement matches the request",
-            "parameters": {},
-            "qubits_estimate": 2,
-            "expected_runtime_sec": 1,
-            "success_criteria": {"primary_metric": "counts"},
-            "expected_output_keys": ["counts"],
-            "verification_plan": {"methods": ["exact", "return_contract"], **verification},
-        }
-    )
-
-
-def _exact_observation(qasm: str) -> dict:
-    return {
-        "native_optimization": {"applied": False},
-        "interchange_qasm": qasm,
-        "resource_metrics": {
-            "qubits": 2,
-            "depth": 2,
-            "gate_count": 2,
-            "two_qubit_gate_count": 1,
-            "measurement_count": 2,
-        },
-    }
-
-
-async def test_exact_check_passes_when_the_executed_circuit_matches_the_reference():
-    candidate = _candidate()
-    output = await EvidenceVerifier(llm=PassingCriticLLM(), task_prompt="Bell state").verify(
-        candidate,
-        _execution(candidate, observation=_exact_observation(_BELL_QASM)),
-        _exact_plan(reference_source="plan_declared", reference_qasm=_BELL_REFERENCE_QASM),
-    )
-    check = _checks_by_method(output)["exact"]
-    assert check["result"] == "pass"
-    assert check["details"]["reference_source"] == "plan_declared"
-    assert check["details"]["scores"]["max_abs_distance"] < 1e-9
-    assert output.decision is VerifierDecision.PASS
-
-
-async def test_exact_check_fails_on_a_circuit_with_the_wrong_unitary():
-    """The reason for the check: a phase error survives a counts comparison and dies
-    against the reference unitary."""
-    candidate = _candidate()
-    output = await EvidenceVerifier(llm=MustNotRunLLM(), task_prompt="Bell state").verify(
-        candidate,
-        _execution(candidate, observation=_exact_observation(_WRONG_QASM)),
-        _exact_plan(reference_source="plan_declared", reference_qasm=_BELL_REFERENCE_QASM),
-    )
-    check = _checks_by_method(output)["exact"]
-    assert check["result"] == "fail"
-    assert check["details"]["scores"]["max_abs_distance"] > 1e-9
-    assert output.decision is VerifierDecision.FAIL
-
-
-async def test_exact_check_fails_when_the_run_emitted_no_interchange_qasm():
-    candidate = _candidate()
-    observation = _exact_observation(_BELL_QASM)
-    del observation["interchange_qasm"]
-    output = await EvidenceVerifier(llm=MustNotRunLLM(), task_prompt="Bell state").verify(
-        candidate,
-        _execution(candidate, observation=observation),
-        _exact_plan(reference_source="plan_declared", reference_qasm=_BELL_REFERENCE_QASM),
-    )
-    check = _checks_by_method(output)["exact"]
-    assert check["result"] == "fail"
-    assert check["details"]["interchange_qasm"] is False
-
-
-def test_the_worker_and_the_plan_contract_agree_on_the_exact_qubit_ceiling():
-    """Pinned against drift: if the callsite ceiling and the contract's ever diverge,
-    a plan can ask for a check the verifier is forced to fail."""
-    assert agent_ports.EXACT_MAX_QUBITS == EXACT_MAX_QUBITS
+    assert output.decision is VerifierDecision.INCONCLUSIVE
 
 
 class _LowConfidenceMismatchCriticLLM:
@@ -1040,14 +1061,14 @@ class _LowConfidenceMismatchCriticLLM:
         )
 
 
-async def test_repair_carries_the_critics_grading_not_just_its_prose():
+async def test_low_confidence_mismatch_does_not_blame_or_repair_candidate():
     candidate = _candidate()
     output = await EvidenceVerifier(
         llm=_LowConfidenceMismatchCriticLLM(), task_prompt="Bell state"
     ).verify(candidate, _execution(candidate), _plan())
-    assert output.repair is not None
-    assert output.repair.severity == "major"
-    assert output.repair.confidence == "low"
+    assert output.decision is VerifierDecision.INCONCLUSIVE
+    assert output.repair is None
+    assert output.candidate_defect_observed is False
 
 
 async def test_deterministic_failure_is_graded_blocking():
@@ -1257,20 +1278,19 @@ async def test_an_unparseable_critic_response_is_retried_before_it_costs_a_candi
     assert output.decision is VerifierDecision.PASS
 
 
-async def test_a_critic_that_never_parses_still_fails_closed_but_blames_itself():
+async def test_a_critic_that_never_parses_is_inconclusive_and_blames_itself():
     llm = BrokenCriticLLM()
     candidate = _candidate()
     output = await EvidenceVerifier(llm=llm, task_prompt="W state").verify(
         candidate, _execution(candidate), _plan()
     )
     assert llm.calls == 2, "retried more or fewer times than once"
-    assert output.decision is VerifierDecision.FAIL  # fail-closed is still the rule
+    assert output.decision is VerifierDecision.INCONCLUSIVE
     # The message must not read as a defect found in the candidate, and the repair plan
     # must not ask the agent to fix the verifier.
     assert "verifier failure" in ((output.critic or {}).get("summary") or "").lower()
-    assert not any(
-        "semantic verification" in step for step in (output.repair.repairs if output.repair else [])
-    )
+    assert output.repair is None
+    assert output.candidate_defect_observed is False
 
 
 class FencedCriticLLM:
@@ -1383,9 +1403,7 @@ def test_every_check_the_panel_emits_is_an_event_the_stream_can_carry():
             "verification_repeat_result": {"counts": {"00": 508, "11": 516}},
         },
     )
-    checks = EvidenceVerifier(llm=MustNotRunLLM(), task_prompt="Bell state")._deterministic_checks(
-        candidate, execution, plan
-    )
+    checks = _deterministic_checks(candidate, execution, plan)
     emitted = {str(check["method"]) for check in checks}
     known = {method.value for method in VerificationMethod}
     assert emitted - known == set(), (
@@ -1436,9 +1454,7 @@ def test_a_measurement_policy_failure_names_the_cause_not_the_count():
             },
         },
     )
-    checks = EvidenceVerifier(llm=MustNotRunLLM(), task_prompt="Bell state")._deterministic_checks(
-        candidate, execution, plan
-    )
+    checks = _deterministic_checks(candidate, execution, plan)
     check = next(item for item in checks if item["method"] == "measurement_policy")
     assert check["result"] == "fail"
     details = check["details"]
@@ -1462,9 +1478,7 @@ def test_a_passing_measurement_policy_carries_no_disagreement_prose():
             }
         }
     )
-    checks = EvidenceVerifier(llm=MustNotRunLLM(), task_prompt="Bell state")._deterministic_checks(
-        candidate, _execution(candidate), plan
-    )
+    checks = _deterministic_checks(candidate, _execution(candidate), plan)
     check = next(item for item in checks if item["method"] == "measurement_policy")
     assert check["result"] == "pass"
     assert "disagreement" not in check["details"]
@@ -1580,9 +1594,7 @@ def test_a_converged_vqe_finally_earns_a_physical_grade():
     packages/py/verification/tests/test_hamiltonian.py for the derivation.
     """
     candidate = _candidate()
-    checks = EvidenceVerifier(llm=MustNotRunLLM(), task_prompt="VQE")._deterministic_checks(
-        candidate, _vqe_execution(candidate, -1.8751), _vqe_plan()
-    )
+    checks = _deterministic_checks(candidate, _vqe_execution(candidate, -1.8751), _vqe_plan())
     check = next(item for item in checks if item["method"] == "exact_diag")
     assert check["result"] == "pass"
     assert check["details"]["metric"] == "ground_state_energy"
@@ -1594,9 +1606,7 @@ def test_a_vqe_stuck_in_an_excited_state_is_caught_and_told_which_one():
     panel can see: the code does exactly what the code says, and says the wrong
     number. -1.06301 is this Hamiltonian's first excited eigenvalue."""
     candidate = _candidate()
-    checks = EvidenceVerifier(llm=MustNotRunLLM(), task_prompt="VQE")._deterministic_checks(
-        candidate, _vqe_execution(candidate, -1.06301), _vqe_plan()
-    )
+    checks = _deterministic_checks(candidate, _vqe_execution(candidate, -1.06301), _vqe_plan())
     check = next(item for item in checks if item["method"] == "exact_diag")
     assert check["result"] == "fail"
     assert "EXCITED" in check["details"]["disagreement"]
@@ -1620,9 +1630,7 @@ def test_a_plan_declared_energy_tolerance_may_only_tighten():
             "thresholds": {"energy_error_max": 99.0},
         }
     )
-    checks = EvidenceVerifier(llm=MustNotRunLLM(), task_prompt="VQE")._deterministic_checks(
-        candidate, _vqe_execution(candidate, -1.06301), plan
-    )
+    checks = _deterministic_checks(candidate, _vqe_execution(candidate, -1.06301), plan)
     check = next(item for item in checks if item["method"] == "exact_diag")
     assert check["result"] == "fail", "a 99.0 tolerance must not buy a passing grade"
     assert check["details"]["protocol"]["tolerance_source"] == (
@@ -1635,39 +1643,10 @@ def test_the_vqe_shape_that_died_now_passes_its_whole_panel():
     task, planned correctly, with a converged energy — every check green and the
     grade physical."""
     candidate = _candidate()
-    checks = EvidenceVerifier(llm=MustNotRunLLM(), task_prompt="VQE")._deterministic_checks(
-        candidate, _vqe_execution(candidate, -1.8788), _vqe_plan()
-    )
+    checks = _deterministic_checks(candidate, _vqe_execution(candidate, -1.8788), _vqe_plan())
     failed = [check for check in checks if check["result"] not in {"pass", "skipped"}]
     assert failed == [], failed
     assert evidence_strength_of(checks) is EvidenceStrength.PHYSICAL
-
-
-def test_exact_failure_names_the_reference_when_self_checks_pass():
-    """Run 019f7f7b-ba33: a wrong plan-declared reference failed four correct
-    candidates identically while statistical_native and success_criteria passed.
-    The failure's details must name that split."""
-    checks = [
-        {"method": "success_criteria", "result": "pass", "details": {}},
-        {"method": "exact", "result": "fail", "details": {"scores": {"max_abs_distance": 1.0}}},
-        {"method": "statistical_native", "result": "pass", "details": {}},
-    ]
-    EvidenceVerifier._name_reference_disagreement(checks)
-    disagreement = checks[1]["details"]["disagreement"]
-    assert "statistical_native" in disagreement
-    assert "success_criteria" in disagreement
-    assert "reference" in disagreement
-    # The check itself must remain a failure — the diagnostic explains, never absolves.
-    assert checks[1]["result"] == "fail"
-
-
-def test_exact_failure_stays_bare_without_corroboration():
-    checks = [
-        {"method": "exact", "result": "fail", "details": {}},
-        {"method": "statistical_native", "result": "fail", "details": {}},
-    ]
-    EvidenceVerifier._name_reference_disagreement(checks)
-    assert "disagreement" not in checks[0]["details"]
 
 
 def _exact_diag_plan_payload(*, range_min: float, range_max: float) -> str:
@@ -1807,9 +1786,7 @@ def test_a_qaoa_run_that_found_the_optimum_finally_earns_a_physical_grade():
     metric as a category error, and until now nothing could grade it at all — a
     correct QAOA run could only ever pass structurally."""
     candidate = _candidate()
-    checks = EvidenceVerifier(llm=MustNotRunLLM(), task_prompt="MaxCut")._deterministic_checks(
-        candidate, _qaoa_execution(candidate, 6.0), _qaoa_plan()
-    )
+    checks = _deterministic_checks(candidate, _qaoa_execution(candidate, 6.0), _qaoa_plan())
     check = next(item for item in checks if item["method"] == "brute_force")
     assert check["result"] == "pass"
     assert check["details"]["metric"] == "best_cut_weight"
@@ -1820,9 +1797,7 @@ def test_a_suboptimal_cut_fails_with_the_search_named_not_the_scoring():
     """4.0 is an achievable cut of the ring, so the evidence must say the search
     fell short — the repair that helps — rather than a bare distance."""
     candidate = _candidate()
-    checks = EvidenceVerifier(llm=MustNotRunLLM(), task_prompt="MaxCut")._deterministic_checks(
-        candidate, _qaoa_execution(candidate, 4.0), _qaoa_plan()
-    )
+    checks = _deterministic_checks(candidate, _qaoa_execution(candidate, 4.0), _qaoa_plan())
     check = next(item for item in checks if item["method"] == "brute_force")
     assert check["result"] == "fail"
     assert "SUBOPTIMAL" in check["details"]["disagreement"]
@@ -1833,9 +1808,7 @@ def test_a_cut_no_partition_achieves_names_the_scoring_code():
     """5.0 is not the weight of ANY cut of the ring: the number was computed
     wrongly, which is a different bug with a different repair."""
     candidate = _candidate()
-    checks = EvidenceVerifier(llm=MustNotRunLLM(), task_prompt="MaxCut")._deterministic_checks(
-        candidate, _qaoa_execution(candidate, 5.0), _qaoa_plan()
-    )
+    checks = _deterministic_checks(candidate, _qaoa_execution(candidate, 5.0), _qaoa_plan())
     check = next(item for item in checks if item["method"] == "brute_force")
     assert check["result"] == "fail"
     assert "ANY assignment" in check["details"]["disagreement"]

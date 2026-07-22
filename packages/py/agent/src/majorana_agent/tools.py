@@ -26,7 +26,13 @@ from majorana_agent.models import (
     VerificationEvidence,
 )
 from majorana_agent.store import AgentStore
-from majorana_contracts.enums import Framework, VerifierDecision
+from majorana_contracts.enums import (
+    Framework,
+    RetryTarget,
+    SemanticReviewDecision,
+    VerificationFailureClass,
+    VerifierDecision,
+)
 from majorana_contracts.plan import Plan
 from majorana_frameworks import FrameworkProgram
 
@@ -66,6 +72,11 @@ class VerificationOutput:
     deterministic_checks: list[dict[str, Any]]
     critic: dict[str, Any] | None = None
     repair: RepairInstruction | None = None
+    semantic_review_decision: SemanticReviewDecision | None = None
+    failure_class: VerificationFailureClass | None = None
+    retry_target: RetryTarget | None = None
+    candidate_defect_observed: bool = False
+    reason_code: str | None = None
 
 
 class CandidateVerifier(Protocol):
