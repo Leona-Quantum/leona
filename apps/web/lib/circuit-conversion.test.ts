@@ -73,3 +73,20 @@ for uint i in [0:1] {
 }`;
   assert.equal(convertCircuitSource(qasm, "openqasm3", "cirq", qasm), null);
 });
+
+test("generated scalar OpenQASM registers convert through the bounded standard-gate path", () => {
+  const qasm = `OPENQASM 3.0;
+include "stdgates.inc";
+qubit _qubit0;
+p(pi/4) _qubit0;
+bit _bit0;
+_bit0 = measure _qubit0;`;
+
+  const conversion = convertCircuitSource("qc.p(np.pi / 4, 0)", "qiskit", "qiskit", qasm);
+
+  assert.ok(conversion);
+  assert.equal(conversion.fidelity, "standard_gate_decomposition");
+  assert.match(conversion.code, /qc\.rz/);
+  assert.match(conversion.code, /qc\.measure_all\(\)/);
+  assert.match(conversion.note, /global phase/i);
+});
