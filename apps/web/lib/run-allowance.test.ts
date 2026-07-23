@@ -49,6 +49,12 @@ describe("assessRunAllowance", () => {
     assert.equal(verdict.allowed, false);
     assert.equal(verdict.used, 0);
   });
+
+  it("a zero-run tier never advertises a reset, even with prior history", () => {
+    const verdict = assessRunAllowance(0, [runAt(1), runAt(2)], NOW);
+    assert.equal(verdict.allowed, false);
+    assert.equal(verdict.resetsAt, null);
+  });
 });
 
 describe("refusal payloads", () => {

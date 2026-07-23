@@ -46,9 +46,13 @@ export function assessRunAllowance(
   const used = counted.length;
   if (used < limit) return { allowed: true, used, limit, resetsAt: null };
   // The oldest run inside the window is the first to age out; the allowance
-  // frees one slot exactly a week after it was consumed. A zero-run tier has
-  // nothing to age out, so it has no reset to name.
-  const resetsAt = counted.length ? new Date(Math.min(...counted) + WEEK_MS).toISOString() : null;
+  // frees one slot exactly a week after it was consumed. A zero-run tier
+  // stays refused however old its history gets, so promising a reset there
+  // would be false.
+  const resetsAt =
+    limit > 0 && counted.length
+      ? new Date(Math.min(...counted) + WEEK_MS).toISOString()
+      : null;
   return { allowed: false, used, limit, resetsAt };
 }
 
@@ -61,10 +65,12 @@ export type AllowanceRefusal = {
 };
 
 export function runAllowanceRefusal(verdict: RunAllowanceVerdict): AllowanceRefusal {
+  // Pinned to UTC: the BFF host's timezone must not shift the named day.
   const resetDate = verdict.resetsAt
     ? new Date(verdict.resetsAt).toLocaleDateString("en-US", {
         month: "long",
         day: "numeric",
+        timeZone: "UTC",
       })
     : null;
   return {

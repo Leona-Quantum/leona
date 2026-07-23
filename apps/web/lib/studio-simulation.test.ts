@@ -202,6 +202,7 @@ test("browser simulation is paced per tier across the trailing ten minutes", () 
   const stored = new Map<string, string>([
     ["majorana.studio-simulations.v1", JSON.stringify({ "artifact-pace": recent })],
   ]);
+  const originalWindow = Object.getOwnPropertyDescriptor(globalThis, "window");
   (globalThis as { window?: unknown }).window = {
     localStorage: {
       getItem: (key: string) => stored.get(key) ?? null,
@@ -240,6 +241,7 @@ test("browser simulation is paced per tier across the trailing ten minutes", () 
     );
     assert.equal(record.id, "sim-pace-developer");
   } finally {
-    delete (globalThis as { window?: unknown }).window;
+    if (originalWindow) Object.defineProperty(globalThis, "window", originalWindow);
+    else delete (globalThis as { window?: unknown }).window;
   }
 });
