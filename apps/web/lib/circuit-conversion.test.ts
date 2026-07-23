@@ -6,6 +6,7 @@ import {
   allCircuitConversionResults,
   convertCircuitSource,
   generatePortableCircuitCode,
+  parseInterchangeCircuit,
 } from "./circuit-conversion.ts";
 
 test("portable circuits emit non-empty source for all seven framework targets", () => {
@@ -89,4 +90,83 @@ _bit0 = measure _qubit0;`;
   assert.match(conversion.code, /qc\.rz/);
   assert.match(conversion.code, /qc\.measure_all\(\)/);
   assert.match(conversion.note, /global phase/i);
+});
+
+test("interchange reconstruction reads the Qiskit qasm3 measure_all shape (meas register, per-qubit measure)", () => {
+  // This is what qiskit.qasm3.dumps emits for a QuantumCircuit built with
+  // measure_all(): a classical register literally named `meas` and per-qubit
+  // measurement with a barrier — the exact shape every LLM-run artifact stores
+  // and the strict editable parser rejects.
+  const qasm = `OPENQASM 3.0;
+include "stdgates.inc";
+bit[2] meas;
+qubit[2] q;
+h q[0];
+cx q[0], q[1];
+barrier q[0], q[1];
+meas[0] = measure q[0];
+meas[1] = measure q[1];`;
+  const circuit = parseInterchangeCircuit(qasm);
+  assert.ok(circuit, "a Bell pair from qiskit.qasm3.dumps must reconstruct");
+  assert.equal(circuit.qubitCount, 2);
+  assert.deepEqual(circuit.steps.map((step) => step.gate), ["H", "CX", "M", "M"]);
+  assert.deepEqual(circuit.steps.filter((step) => step.gate === "M").flatMap((step) => step.qubits), [0, 1]);
+});
+
+test("interchange reconstruction accepts permuted per-qubit measurement and the arrow form", () => {
+  const assignPermuted = `OPENQASM 3.0;
+include "stdgates.inc";
+bit[2] c;
+qubit[3] q;
+h q[0];
+cx q[0], q[2];
+c[0] = measure q[2];
+c[1] = measure q[0];`;
+  const assigned = parseInterchangeCircuit(assignPermuted);
+  assert.ok(assigned);
+  assert.equal(assigned.qubitCount, 3);
+  // Measured wires are q0 and q2 regardless of which classical bit they land in.
+  assert.deepEqual(assigned.steps.filter((s) => s.gate === "M").flatMap((s) => s.qubits), [0, 2]);
+
+  const arrow = `OPENQASM 3.0;
+include "stdgates.inc";
+bit[2] c;
+qubit[2] q;
+h q[0];
+cx q[0], q[1];
+measure q[0] -> c[0];
+measure q[1] -> c[1];`;
+  const arrowed = parseInterchangeCircuit(arrow);
+  assert.ok(arrowed);
+  assert.deepEqual(arrowed.steps.filter((s) => s.gate === "M").flatMap((s) => s.qubits), [0, 1]);
+});
+
+test("interchange reconstruction reaches beyond the six-wire editable builder", () => {
+  const wires = 10;
+  const lines = [
+    "OPENQASM 3.0;",
+    "include \"stdgates.inc\";",
+    `bit[${wires}] meas;`,
+    `qubit[${wires}] q;`,
+    "h q[0];",
+    ...Array.from({ length: wires - 1 }, (_, i) => `cx q[${i}], q[${i + 1}];`),
+    ...Array.from({ length: wires }, (_, i) => `meas[${i}] = measure q[${i}];`),
+  ];
+  const circuit = parseInterchangeCircuit(lines.join("\n"));
+  assert.ok(circuit, "a 10-qubit GHZ must reconstruct for read-only display");
+  assert.equal(circuit.qubitCount, 10);
+
+  // Above the parser ceiling it fails closed rather than drawing a partial circuit.
+  assert.equal(parseInterchangeCircuit(lines.join("\n"), 8), null);
+});
+
+test("interchange reconstruction rejects non-OpenQASM and malformed measurement", () => {
+  assert.equal(parseInterchangeCircuit("qc = QuantumCircuit(2)"), null);
+  const mixedIndex = `OPENQASM 3.0;
+include "stdgates.inc";
+bit[2] c;
+qubit[2] q;
+h q[0];
+c[0] = measure q;`;
+  assert.equal(parseInterchangeCircuit(mixedIndex), null);
 });

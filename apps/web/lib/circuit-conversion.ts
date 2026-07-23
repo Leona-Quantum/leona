@@ -9,7 +9,7 @@ import {
   type BuilderCodeVariants,
   type BuilderStep,
 } from "./studio-builder.ts";
-import { MAX_BUILDER_QUBITS, parseBuilderCircuit, type ParsedBuilderCircuit } from "./studio-parse.ts";
+import { MAX_BUILDER_QUBITS, MAX_PARSABLE_QUBITS, parseBuilderCircuit, type ParsedBuilderCircuit } from "./studio-parse.ts";
 
 export type CircuitConversionFidelity = "deterministic_subset" | "standard_gate_decomposition";
 
@@ -166,6 +166,7 @@ function parseOpenQasm3StandardGates(code: string): StandardQasmParse | null {
   let bitRegister: QasmRegister | null = null;
   let headerSeen = false;
   let measured = false;
+  const measuredQubits = new Set<number>();
   let operationSeen = false;
   let usedDecomposition = false;
   let stepIndex = 0;
@@ -209,15 +210,22 @@ function parseOpenQasm3StandardGates(code: string): StandardQasmParse | null {
       usedDecomposition = true;
       continue;
     }
-    const measurement = /^([A-Za-z_]\w*)\s*=\s*measure\s+([A-Za-z_]\w*)\s*;$/.exec(line);
+    // Qiskit's qasm3 exporter (how every LLM-run artifact's interchange QASM is
+    // produced) writes per-qubit measurement — `meas[0] = measure q[0];`, often
+    // with the classical register named `meas` and the wire order permuted — not
+    // the whole-register `c = measure q;` the builder emits. Accept every form
+    // and collect the measured qubits; a diagram shows M on the measured wires
+    // regardless of which classical bit each result lands in.
+    const measurement = parseQasmMeasurement(line);
     if (measurement) {
-      if (
-        !qubitRegister
-        || !bitRegister
-        || measurement[1] !== bitRegister.name
-        || measurement[2] !== qubitRegister.name
-        || bitRegister.size !== qubitRegister.size
-      ) return null;
+      if (!qubitRegister || !bitRegister || measurement.qubit !== qubitRegister.name || measurement.bit !== bitRegister.name) return null;
+      if (measurement.kind === "whole") {
+        if (bitRegister.size !== qubitRegister.size) return null;
+        for (let qubit = 0; qubit < qubitRegister.size; qubit += 1) measuredQubits.add(qubit);
+      } else {
+        if (measurement.qubitIndex >= qubitRegister.size || measurement.bitIndex >= bitRegister.size) return null;
+        measuredQubits.add(measurement.qubitIndex);
+      }
       measured = true;
       continue;
     }
@@ -245,14 +253,65 @@ function parseOpenQasm3StandardGates(code: string): StandardQasmParse | null {
   }
 
   if (!headerSeen || !qubitRegister || !operationSeen) return null;
-  if (measured) {
-    steps.push(...Array.from({ length: qubitRegister.size }, (_, qubit) => ({
+  if (measured && measuredQubits.size) {
+    steps.push(...[...measuredQubits].sort((a, b) => a - b).map((qubit) => ({
       id: `interchange-measure-${qubit}`,
       gate: "M" as const,
       qubits: [qubit],
     })));
   }
   return { circuit: { qubitCount: qubitRegister.size, steps }, usedDecomposition };
+}
+
+type QasmMeasurement =
+  | { kind: "whole"; bit: string; qubit: string }
+  | { kind: "indexed"; bit: string; bitIndex: number; qubit: string; qubitIndex: number };
+
+/**
+ * Recognize the measurement forms an OpenQASM 3 exporter can emit:
+ *   - assignment, whole register:  `c = measure q;`
+ *   - assignment, per bit/qubit:   `meas[0] = measure q[2];`
+ *   - legacy arrow, whole:         `measure q -> c;`
+ *   - legacy arrow, per bit/qubit: `measure q[2] -> meas[0];`
+ * A form that indexes one side but not the other is malformed and rejected.
+ */
+function parseQasmMeasurement(line: string): QasmMeasurement | null {
+  const assign = /^([A-Za-z_]\w*)(?:\[(\d+)\])?\s*=\s*measure\s+([A-Za-z_]\w*)(?:\[(\d+)\])?\s*;$/i.exec(line);
+  if (assign) return buildQasmMeasurement(assign[1], assign[2], assign[3], assign[4]);
+  const arrow = /^measure\s+([A-Za-z_]\w*)(?:\[(\d+)\])?\s*->\s*([A-Za-z_]\w*)(?:\[(\d+)\])?\s*;$/i.exec(line);
+  if (arrow) return buildQasmMeasurement(arrow[3], arrow[4], arrow[1], arrow[2]);
+  return null;
+}
+
+function buildQasmMeasurement(bit: string, bitIndex: string | undefined, qubit: string, qubitIndex: string | undefined): QasmMeasurement | null {
+  if (bitIndex === undefined && qubitIndex === undefined) return { kind: "whole", bit, qubit };
+  if (bitIndex !== undefined && qubitIndex !== undefined) {
+    return { kind: "indexed", bit, bitIndex: Number(bitIndex), qubit, qubitIndex: Number(qubitIndex) };
+  }
+  return null;
+}
+
+/**
+ * Reconstruct a circuit from stored OpenQASM 3 interchange for *display*, using
+ * the permissive standard-gate reader rather than the editable builder's strict
+ * parser. This is the seam that lets a diagram open for an LLM-run artifact: the
+ * Qiskit exporter that produces the stored QASM uses registers, gate names, and
+ * per-qubit measurement the editable parser deliberately rejects.
+ *
+ * The width ceiling is the parser's (`MAX_PARSABLE_QUBITS`), not the canvas's:
+ * circuits wider than the six-wire editable grid still reconstruct here so the
+ * Studio can show them read-only. Returns null above the ceiling, on malformed
+ * input, or on anything outside the standard-gate subset — the caller then
+ * falls back to an empty canvas rather than drawing a circuit that lies.
+ */
+export function parseInterchangeCircuit(
+  qasm: string,
+  maxQubits: number = MAX_PARSABLE_QUBITS,
+): ParsedBuilderCircuit | null {
+  if (!looksLikeOpenQasm3(qasm)) return null;
+  const parsed = parseOpenQasm3StandardGates(qasm);
+  if (!parsed || parsed.circuit.qubitCount > maxQubits) return null;
+  return parsed.circuit;
 }
 
 function parseQasmInvocation(line: string): { name: string; params: string[]; operands: string[] } | null {

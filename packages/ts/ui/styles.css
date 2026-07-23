@@ -1825,54 +1825,45 @@
   align-items: center;
   padding-inline: var(--sp-2);
   overflow: hidden;
+  gap: var(--sp-3);
 }
 .mj-shell[data-sidebar-collapsed="true"] .mj-sidebar-copy {
   display: none;
 }
+/* Owner request (2026-07-24): the collapsed rail keeps ONLY the run/studio
+   switch and the new-chat/new-artifact button — nothing else. Everything else
+   in the rail (brand row, library links, section headers, folders, chat and
+   artifact lists, archive, and the account footer) is hidden until expanded.
+   The scroll container stays so the "new" button keeps its place, but its
+   contents collapse to that single control. */
 .mj-shell[data-sidebar-collapsed="true"] .mj-sidebar-brand-row,
-.mj-shell[data-sidebar-collapsed="true"] .mj-sidebar-new,
-.mj-shell[data-sidebar-collapsed="true"] .mj-sidebar-nav-item,
-.mj-shell[data-sidebar-collapsed="true"] .mj-sidebar-user {
+.mj-shell[data-sidebar-collapsed="true"] .mj-sidebar-footer,
+.mj-shell[data-sidebar-collapsed="true"] .mj-sidebar-library-link,
+.mj-shell[data-sidebar-collapsed="true"] .mj-sidebar-section-heading,
+.mj-shell[data-sidebar-collapsed="true"] .mj-sidebar-folder-list,
+.mj-shell[data-sidebar-collapsed="true"] .mj-sidebar-folder-form,
+.mj-shell[data-sidebar-collapsed="true"] .mj-sidebar-chats,
+.mj-shell[data-sidebar-collapsed="true"] .mj-sidebar-archive {
+  display: none;
+}
+.mj-shell[data-sidebar-collapsed="true"] .mj-sidebar-scroll {
+  overflow: visible;
+  flex: 0 0 auto;
+}
+/* The switch stacks vertically at the 64px collapsed width — a two-column grid
+   is too tight for the icons to breathe. */
+.mj-shell[data-sidebar-collapsed="true"] .mj-sidebar-surface-switch {
+  grid-template-columns: minmax(0, 1fr);
+  width: 100%;
+}
+.mj-shell[data-sidebar-collapsed="true"] .mj-sidebar-surface-switch a {
+  justify-content: center;
+  padding-inline: 0;
+}
+.mj-shell[data-sidebar-collapsed="true"] .mj-sidebar-new {
   width: 100%;
   justify-content: center;
-}
-.mj-shell[data-sidebar-collapsed="true"] .mj-sidebar-brand-row {
-  justify-content: center;
-}
-.mj-shell[data-sidebar-collapsed="true"] .mj-sidebar-more {
-  display: none;
-}
-.mj-shell[data-sidebar-collapsed="true"] .mj-sidebar-view-all {
-  justify-content: center;
-}
-.mj-shell[data-sidebar-collapsed="true"] .mj-sidebar-section-label {
-  display: none;
-}
-.mj-shell[data-sidebar-collapsed="true"] .mj-sidebar-chat {
-  justify-content: center;
   padding-inline: 0;
-}
-.mj-shell[data-sidebar-collapsed="true"] .mj-sidebar-chat-row {
-  justify-content: center;
-}
-.mj-shell[data-sidebar-collapsed="true"] .mj-sidebar-chat-folder {
-  display: none;
-}
-.mj-shell[data-sidebar-collapsed="true"] .mj-sidebar-folder {
-  justify-content: center;
-  padding-inline: 0;
-}
-.mj-shell[data-sidebar-collapsed="true"] .mj-sidebar-folder-count {
-  display: none;
-}
-.mj-shell[data-sidebar-collapsed="true"] .mj-sidebar-nav-item {
-  padding-inline: 0;
-}
-.mj-shell[data-sidebar-collapsed="true"] .mj-sidebar-user {
-  padding-inline: 0;
-}
-.mj-shell[data-sidebar-collapsed="true"] .mj-sidebar-user-caret {
-  display: none;
 }
 
 /* ---------- quiet workspace navigation ---------- */
@@ -4707,6 +4698,22 @@ div.mj-rail-row:hover {
   max-width: 720px;
   height: auto;
   color: var(--text-1);
+}
+/* Read-only wide diagram: a circuit past the six-wire editable limit is drawn
+   at its natural size and scrolled inside the stage, top-left aligned, rather
+   than shrunk to fit (which would make a 20-wire circuit unreadable). */
+.mj-circuit-sync--readonly {
+  border-left-color: var(--accent);
+}
+.mj-circuit-stage--readonly {
+  place-items: start;
+  overflow: auto;
+  max-height: 60vh;
+  scrollbar-width: thin;
+}
+.mj-circuit-stage--readonly .mj-circuit-svg {
+  width: auto;
+  max-width: none;
 }
 .mj-circuit-wire {
   stroke: var(--border-0);
