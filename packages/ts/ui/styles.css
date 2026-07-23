@@ -1561,6 +1561,12 @@
 }
 .mj-sidebar-chats {
   display: grid;
+  /* Grid items default to min-width: auto, so a long chat or artifact title
+     sizes the track to the text and the whole row runs past the rail — the
+     ellipsis on .mj-sidebar-chat-title never fires because its box is as wide
+     as its content. minmax(0, 1fr) caps the track at the rail width so the
+     min-width: 0 chain below can actually do its job. */
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--sp-1);
 }
 .mj-sidebar-chat-row {
