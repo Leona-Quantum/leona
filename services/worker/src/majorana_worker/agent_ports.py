@@ -157,7 +157,6 @@ class LLMPlanner:
                     model=model_for("plan"),
                     system=prompt.system,
                     user=user,
-                    max_tokens=4096,
                     temperature=0.0,
                     response_schema=Plan.model_json_schema(),
                     schema_name="request_plan",
@@ -1110,15 +1109,58 @@ class _VerificationPrimitives:
         request = LLMRequest(
             model=model_for("verify"),
             system=(
-                "Act as an independent, fail-closed quantum-program critic. Judge request-to-plan, "
-                "plan-to-code, and success-criteria-to-result alignment using only supplied evidence. "
-                "Check the artifact contract, selected framework, measurement policy, seeds, shots, "
-                "tolerances, qubit ordering, forbidden operations, required invariants, and whether "
-                "the evidence actually proves each claim. A deterministic FAIL would have stopped "
-                "before this review and cannot be overridden. SKIPPED and UNAVAILABLE mean that a "
-                "check did not establish a defect. Return pass only with medium/high confidence, no "
-                "mismatch, and at most minor severity. Use inconclusive for uncertainty or missing "
-                "evidence; request repair or replan only for a clear semantic mismatch."
+                "Act as an independent, fail-closed quantum-program critic. A deterministic FAIL "
+                "would have stopped before this review and cannot be overridden here; SKIPPED and "
+                "UNAVAILABLE mean a check did not establish a defect, not that one exists. Read the "
+                "source, don't just trust that it ran.\n"
+                "\n"
+                "Judge three layers, request -> plan -> code -> result, each independently:\n"
+                "\n"
+                "1. request vs plan: do plan.parameters (seed, shots, optimizer, custom values the "
+                "user gave — bond lengths, node counts, k-values, graph edges) and plan.algorithm "
+                "actually match what the user asked for? A plausible but unrequested substitution "
+                "(e.g. a different algorithm family, a different problem instance, a default the "
+                "user did not ask for standing in for a value they gave) is a request-vs-plan defect, "
+                "not a code defect.\n"
+                "\n"
+                "2. plan vs code: do the literal values in plan.parameters (and plan.parameters.custom) "
+                "appear in the source as the actual coefficients/sizes/loop bounds used, not just "
+                "mentioned in a comment? If plan.artifact_contract is set, does the code honor "
+                "artifact_type, entry_point (the named function/class exists and is what a caller "
+                "would use), expected_return_type, return_shape, measurement_policy (no unrequested "
+                "measure/measure_all/classical register when policy is none), and top_level_execution "
+                "(no demo execution or side effects when execution is forbidden)? Does the framework "
+                "actually used match plan.framework?\n"
+                "\n"
+                "3. success criteria vs result: is plan.success_criteria.primary_metric present in the "
+                "observed result, and does its value fall inside expected_range or otherwise satisfy "
+                "the stated criteria? A value that is merely plausible-looking is not enough — check "
+                "the actual number in evidence.result against the actual range in the plan.\n"
+                "\n"
+                "Also check qubit ordering/endianness, forbidden operations, and required invariants "
+                "the plan calls out. 'It executed without raising' is not evidence of any of the "
+                "above — judge whether the evidence in front of you actually proves the claim, not "
+                "whether the claim sounds reasonable.\n"
+                "\n"
+                "Sanity-check the number, not just its presence: does the reported value make sense "
+                "for the stated physics/problem (e.g. a ground-state energy that is not below the "
+                "exact theoretical minimum, a probability that is not outside [0, 1], a qubit count "
+                "that matches what the problem actually needs)? If the code contains its own "
+                "independent check against a reference (exact diagonalization, brute force, a known "
+                "closed form, an Operator/Statevector equivalence), that self-check strengthens "
+                "confidence; a bare 'it printed a plausible-looking number' does not. Note this in "
+                "residual_risks even when severity stays none/minor — a passing candidate can still "
+                "carry a disclosed limitation.\n"
+                "\n"
+                "Where the user's request left something unstated (a default parameter, a specific "
+                "ansatz, a tie-breaking rule), a plan/implementation choice that is a defensible "
+                "reading of the request is not a mismatch — reserve mismatches for places the code "
+                "or plan contradicts something the user, or the plan itself, actually specified.\n"
+                "\n"
+                "Return pass only with medium/high confidence, no mismatch, and at most minor "
+                "severity. Use inconclusive for genuine uncertainty or missing evidence; request "
+                "repair or replan only for a mismatch you can point to concretely in the diff between "
+                "what was asked, planned, coded, and observed — not for a stylistic preference."
             ),
             user=json.dumps(
                 {
@@ -1151,10 +1193,11 @@ class _VerificationPrimitives:
                 },
                 default=str,
             ),
-            # 2048 was not enough headroom for a reasoning model to close its own
-            # braces once the evidence blob got large; a truncated object is the same
-            # symptom as a refusal and was being read as one.
-            max_tokens=3072,
+            # No max_tokens: 2048, then 3072, both proved not enough headroom for a
+            # reasoning model to close its own braces once the evidence blob got
+            # large — a truncated object reads as a refusal, and the actual fix was
+            # never the specific number, it was having a self-imposed number at all
+            # (LLMRequest omits the cap by default; see its docstring).
             temperature=0.0,
             response_schema=_CriticOutput.model_json_schema(),
             schema_name="intent_alignment",
@@ -1239,7 +1282,13 @@ class FastCandidateChecker:
 
 
 class SemanticCandidateReviewer:
-    """Evidence-reading LLM review. It cannot execute tools or produce final PASS."""
+    """Evidence-reading LLM review. It cannot execute tools or produce final PASS.
+
+    The semantic reviewer is useful for finding a concrete request/code mismatch,
+    but it is not an oracle.  In the standard product path, uncertainty and
+    minor review comments are advisory once trusted fast checks have passed.
+    Only a grounded major/blocking mismatch spends another candidate revision.
+    """
 
     def __init__(self, *, llm: LLMClient, task_prompt: str) -> None:
         self._primitives = _VerificationPrimitives(llm=llm, task_prompt=task_prompt)
@@ -1253,6 +1302,19 @@ class SemanticCandidateReviewer:
     ) -> SemanticReviewResult:
         critic = await self._primitives.critic(candidate, execution, plan, fast_checks)
         payload = critic.model_dump(mode="json")
+        if self._only_optional_entry_point_mismatch(critic, plan, fast_checks):
+            payload["advisory"] = {
+                "code": "optional_entry_point_missing",
+                "message": (
+                    "The Plan named an entry point, but the executed top-level RESULT already "
+                    "satisfies the return contract. This is advisory, not a candidate defect."
+                ),
+            }
+            return SemanticReviewResult(
+                decision=SemanticReviewDecision.READY,
+                critic=payload,
+                reason_code="semantic_ready_optional_entry_point",
+            )
         clean = (
             critic.decision is VerifierDecision.PASS
             and critic.confidence != "low"
@@ -1267,13 +1329,25 @@ class SemanticCandidateReviewer:
                 critic=payload,
                 reason_code="semantic_ready",
             )
+        if self._advisory_only(critic):
+            payload["advisory"] = {
+                "code": "semantic_review_non_blocking",
+                "message": (
+                    "The semantic reviewer raised uncertainty or a minor comment, but did "
+                    "not establish a major candidate or Plan mismatch. It is retained as "
+                    "advisory evidence and does not consume another candidate revision."
+                ),
+            }
+            return SemanticReviewResult(
+                decision=SemanticReviewDecision.READY,
+                critic=payload,
+                reason_code="semantic_ready_with_advisory",
+            )
         if critic.failed_checks == ["critic_output_schema"]:
             return SemanticReviewResult(
-                decision=SemanticReviewDecision.INCONCLUSIVE,
+                decision=SemanticReviewDecision.READY,
                 critic=payload,
-                failure_class=VerificationFailureClass.VERIFIER_FAILURE,
-                retry_target=RetryTarget.VERIFICATION,
-                reason_code="semantic_reviewer_failure",
+                reason_code="semantic_reviewer_unavailable_advisory",
             )
         if critic.confidence == "low":
             return SemanticReviewResult(
@@ -1343,6 +1417,36 @@ class SemanticCandidateReviewer:
             reason_code="semantic_plan_mismatch" if plan_defect else "semantic_code_mismatch",
             repair=repair,
         )
+
+    @staticmethod
+    def _only_optional_entry_point_mismatch(
+        critic: _CriticOutput, plan: Plan, fast_checks: list[dict[str, Any]]
+    ) -> bool:
+        contract = plan.artifact_contract
+        if contract is None or not contract.entry_point:
+            return False
+        if not any(
+            check.get("method") == VerificationMethod.RETURN_CONTRACT.value
+            and check.get("result") == "pass"
+            for check in fast_checks
+        ):
+            return False
+        signals = [*critic.failed_checks, *(item.area for item in critic.mismatches)]
+        return bool(signals) and all(
+            signal == "artifact_contract.entry_point" for signal in signals
+        )
+
+    @staticmethod
+    def _advisory_only(critic: _CriticOutput) -> bool:
+        """Return true when the LLM did not establish a blocking defect.
+
+        This deliberately mirrors the reference app's standard-mode behaviour:
+        a low-confidence opinion, a requested recheck, or a minor finding is a
+        report annotation.  It must not turn a successfully executed circuit
+        into a repair loop.  Major/blocking findings still use the typed repair
+        route below.
+        """
+        return critic.severity in {"none", "minor"}
 
     @staticmethod
     def _is_plan_defect(critic: _CriticOutput) -> bool:
@@ -1454,7 +1558,7 @@ class StrictEvidenceVerifier:
                     else semantic.failure_class or VerificationFailureClass.EVIDENCE_GAP
                 ),
                 retry_target=(
-                    RetryTarget.VERIFICATION
+                    RetryTarget.NONE
                     if errors
                     else RetryTarget.NONE
                     if capability_limited
@@ -1697,8 +1801,18 @@ class RepoArtifactMaterializer:
         plan: Plan,
     ) -> MaterializedArtifact:
         verification.assert_binding(candidate, execution, review)
-        if verification.decision is VerifierDecision.INCONCLUSIVE and not self._allow_inconclusive:
-            raise ValueError("INCONCLUSIVE materialization is disabled by rollout policy")
+        # strict_verify is a certification badge, not a gate (see broker.py /
+        # tools.py): a READY semantic review already authorized materialization
+        # regardless of the strict decision. INCONCLUSIVE and FAIL both reach
+        # here now — the same rollout flag still lets ops withhold anything
+        # short of a strict PASS if needed.
+        if (
+            verification.decision in {VerifierDecision.INCONCLUSIVE, VerifierDecision.FAIL}
+            and not self._allow_inconclusive
+        ):
+            raise ValueError(
+                f"{verification.decision.value.upper()} materialization is disabled by rollout policy"
+            )
         if conversion is not None and not (
             conversion.candidate_id == candidate.candidate_id
             and conversion.execution_id == execution.execution_id
@@ -1792,9 +1906,12 @@ class RepoArtifactMaterializer:
                 "export_manifest": {
                     "verification_decision": verification.decision.value,
                     "warning": (
-                        "This OpenQASM export cannot embed the artifact's INCONCLUSIVE "
-                        "verification state; retain this manifest with the exported file."
-                        if qasm and verification.decision is VerifierDecision.INCONCLUSIVE
+                        f"This OpenQASM export cannot embed the artifact's "
+                        f"{verification.decision.value.upper()} verification state; "
+                        "retain this manifest with the exported file."
+                        if qasm
+                        and verification.decision
+                        in {VerifierDecision.INCONCLUSIVE, VerifierDecision.FAIL}
                         else None
                     ),
                 },

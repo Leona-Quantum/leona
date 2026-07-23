@@ -1,10 +1,8 @@
 """Intent routing: which mode a run actually dispatches in.
 
-The bug this guards against is asymmetric, and so are these tests. Sending a real
-task to chat costs the user one extra turn. Sending "hi" to execute spends the
-whole candidate budget on an unimplementable plan and reports a failed run — that
-is the failure worth being paranoid about, so chat is the safe direction and
-every uncertain path must land there.
+Auto mode is execution-oriented: it leaves only obvious conversational messages in
+chat and lets the LLM infer execution from ordinary quantum-task statements. A
+deliberate mode selection still passes through unchanged.
 """
 
 import pytest
@@ -68,15 +66,15 @@ async def test_pleasantries_route_to_chat_without_spending_a_model_call(prompt):
     assert llm.calls == 0
 
 
-async def test_a_greeting_sent_as_execute_is_still_downgraded():
-    """The owner's requirement: a stray message must not break the run whatever
-    mode it arrives in. An explicit execute does not make "hi" implementable."""
+async def test_an_explicit_execute_is_authoritative_even_for_a_short_prompt():
     llm = _ScriptedLLM()
 
     decision = await resolve_mode("hi", RunMode.EXECUTE, llm)
 
-    assert decision.resolved is RunMode.CHAT
-    assert decision.changed
+    assert decision.resolved is RunMode.EXECUTE
+    assert decision.source == "passthrough"
+    assert not decision.changed
+    assert llm.calls == 0
 
 
 async def test_a_greeting_with_a_task_attached_is_not_a_greeting():
@@ -91,13 +89,9 @@ async def test_a_greeting_with_a_task_attached_is_not_a_greeting():
     assert llm.calls == 1
 
 
-async def test_the_heuristic_never_routes_towards_execute():
-    """It may only shortcut to chat. Deciding to spend the pipeline on keyword
-    evidence is exactly the cheap-plausible-story failure this system keeps
-    hitting — 'explain Grover's algorithm' names an algorithm and is not a task."""
-    for prompt in ["run grover", "qaoa maxcut", "hi", "", "vqe"]:
-        decision = heuristic_decision(prompt, RunMode.AUTO)
-        assert decision is None or decision.resolved is RunMode.CHAT
+@pytest.mark.parametrize("prompt", ["Bell state", "VQE", "QAOAでMaxCut", "run grover"])
+async def test_short_quantum_tasks_reach_the_llm_router(prompt):
+    assert heuristic_decision(prompt, RunMode.AUTO) is None
 
 
 async def test_classifier_verdict_of_chat_is_honoured():
@@ -124,36 +118,35 @@ async def test_verdict_wrapped_in_a_code_fence_still_parses():
     "text",
     ["not json at all", "{}", '{"intent": "maybe"}', '{"intent": "ideate"}', ""],
 )
-async def test_an_unreadable_verdict_falls_back_instead_of_guessing(text):
+async def test_an_unreadable_verdict_defaults_to_execute(text):
     """Including 'ideate': the router may only produce chat or execute, so a
     verdict naming a mode outside that set is unusable, not a third answer."""
     llm = _ScriptedLLM(text)
 
     decision = await resolve_mode("Some ambiguous request about circuits", RunMode.AUTO, llm)
 
-    assert decision.resolved is RunMode.CHAT
+    assert decision.resolved is RunMode.EXECUTE
     assert decision.source == "fallback"
 
 
-async def test_a_provider_outage_does_not_fail_the_run():
+async def test_a_provider_outage_defaults_to_execute_without_failing_the_run():
     llm = _BrokenLLM()
 
     decision = await resolve_mode("Some ambiguous request about circuits", RunMode.AUTO, llm)
 
-    assert decision.resolved is RunMode.CHAT
+    assert decision.resolved is RunMode.EXECUTE
     assert decision.source == "fallback"
 
 
-async def test_an_explicit_execute_survives_the_router_failing():
-    """The fallback direction flips here on purpose. Chat is the safe default for
-    an *undecided* run, but silently downgrading a stated execute because our own
-    classifier fell over would substitute our failure for the user's intent."""
+async def test_an_explicit_execute_never_calls_the_router():
     llm = _BrokenLLM()
 
     decision = await resolve_mode("Run VQE on H2 at 0.735 angstroms", RunMode.EXECUTE, llm)
 
     assert decision.resolved is RunMode.EXECUTE
+    assert decision.source == "passthrough"
     assert not decision.changed
+    assert llm.calls == 0
 
 
 async def test_studio_runs_carrying_source_code_are_never_reclassified():
@@ -168,7 +161,7 @@ async def test_studio_runs_carrying_source_code_are_never_reclassified():
     assert llm.calls == 0
 
 
-@pytest.mark.parametrize("mode", [RunMode.IDEATE, RunMode.EXPLAIN])
+@pytest.mark.parametrize("mode", [RunMode.CHAT, RunMode.EXECUTE, RunMode.IDEATE, RunMode.EXPLAIN])
 async def test_deliberately_selected_modes_pass_through_untouched(mode):
     llm = _ScriptedLLM()
 

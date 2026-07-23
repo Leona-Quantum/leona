@@ -89,7 +89,7 @@ def test_default_sandbox_rejects_unknown_provider(monkeypatch):
 
 @pytest.mark.parametrize(
     ("raw", "expected"),
-    [(None, False), ("1", True), ("true", True), ("0", False), ("off", False)],
+    [(None, True), ("1", True), ("true", True), ("0", False), ("off", False)],
 )
 def test_inconclusive_materialization_rollout_flag(monkeypatch, raw, expected):
     name = "MAJORANA_INCONCLUSIVE_MATERIALIZATION_ENABLED"
@@ -97,7 +97,7 @@ def test_inconclusive_materialization_rollout_flag(monkeypatch, raw, expected):
         monkeypatch.delenv(name, raising=False)
     else:
         monkeypatch.setenv(name, raw)
-    assert handlers._enabled(name, default=False) is expected
+    assert handlers._enabled(name, default=True) is expected
 
 
 def test_invalid_rollout_flag_fails_closed(monkeypatch):

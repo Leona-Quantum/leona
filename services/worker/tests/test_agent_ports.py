@@ -36,6 +36,7 @@ from majorana_worker.agent_ports import (
     LLMPlanner,
     RepoArtifactMaterializer,
     SandboxCandidateExecutor,
+    SemanticCandidateReviewer,
     StrictEvidenceVerifier,
     TrustedOpenQASMConverter,
 )
@@ -445,6 +446,31 @@ async def test_semantic_plan_code_mismatch_routes_to_code_repair():
     assert output.failure_class is VerificationFailureClass.CANDIDATE_DEFECT
     assert output.retry_target is RetryTarget.CODE_GENERATION
     assert output.candidate_defect_observed is True
+
+
+async def test_optional_entry_point_is_advisory_when_result_contract_already_passes():
+    payload = _plan().model_dump(mode="json")
+    payload["artifact_contract"] = {
+        "artifact_type": "script",
+        "entry_point": "run_bell",
+        "expected_return_type": "dict",
+        "measurement_policy": "measure_all",
+        "top_level_execution": "required",
+    }
+    plan = Plan.model_validate(payload)
+    candidate = _candidate()
+    review = await SemanticCandidateReviewer(
+        llm=RoutingCriticLLM("artifact_contract.entry_point"), task_prompt="Bell state"
+    ).review(
+        candidate,
+        _execution(candidate),
+        plan,
+        [{"method": "return_contract", "result": "pass"}],
+    )
+
+    assert review.decision is SemanticReviewDecision.READY
+    assert review.reason_code == "semantic_ready_optional_entry_point"
+    assert review.critic["advisory"]["code"] == "optional_entry_point_missing"
 
 
 class TimingOutCriticLLM:
