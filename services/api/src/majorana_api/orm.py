@@ -614,3 +614,35 @@ class AuditLog(Base):
     ts: Mapped[dt.datetime | None] = mapped_column(server_default=func.now())
     meta: Mapped[dict[str, Any] | None]
     created_at: Mapped[dt.datetime | None] = mapped_column(server_default=func.now())
+
+
+class QpuRun(Base):
+    """Durable provider-attested hardware run (migration 0034). Mirrors
+    majorana_contracts.QpuRunRecord; `qasm` is storage-only so the worker can
+    resubmit from the row rather than from request memory."""
+
+    __tablename__ = "qpu_runs"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True)
+    workspace_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("workspaces.id"))
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"))
+    artifact_version_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("artifact_versions.id")
+    )
+    provider: Mapped[str]
+    device_id: Mapped[str]
+    provider_job_id: Mapped[str | None]
+    shots: Mapped[int] = mapped_column(Integer)
+    status: Mapped[str] = mapped_column(server_default="queued")
+    source_fingerprint: Mapped[str]
+    qasm: Mapped[str]
+    estimate_basis: Mapped[str]
+    estimated_total_usd: Mapped[float | None] = mapped_column(Numeric)
+    rate_source: Mapped[str]
+    rate_confirmed_on: Mapped[str]
+    raw_counts: Mapped[dict[str, Any] | None]
+    error: Mapped[str | None]
+    submitted_at: Mapped[dt.datetime | None]
+    completed_at: Mapped[dt.datetime | None]
+    created_at: Mapped[dt.datetime | None] = mapped_column(server_default=func.now())
+    updated_at: Mapped[dt.datetime | None] = mapped_column(server_default=func.now())

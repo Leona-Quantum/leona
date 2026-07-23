@@ -10,7 +10,7 @@ dependencies = [
     "majorana-sandbox[vercel]",
     "majorana-frameworks",
     "majorana-openqasm",
-    "majorana-qpu",
+    "majorana-qpu[ibm]",
     "majorana-verification",
 ]
 

@@ -101,6 +101,10 @@ class QpuRunJobPayload(BaseModel):
 
     workspace_id: str
     user_id: str
+    # The durable qpu_runs row this job executes. The worker loads the program
+    # and every attested value from the row, so the payload stays a pointer
+    # plus the scope it resumes — never a second copy of the submission.
+    qpu_run_id: str
     artifact_version_id: str | None = None
     device_id: str
     shots: int = Field(ge=1)
@@ -119,7 +123,9 @@ class QpuJobRecord(BaseModel):
     device_id: str
     shots: int
     status: QpuJobStatus
-    submitted_at: str
+    # Set by submit(); a poll() view reports provider-side state only and
+    # does not re-attest the submission time it never observed.
+    submitted_at: str | None = None
     source_fingerprint: str
     raw_counts: dict[str, int] | None = None
     error: str | None = None

@@ -34,8 +34,21 @@ def test_blank_token_is_not_a_credential():
     assert submission_block_reason(env) is QpuSubmissionBlockReason.CREDENTIALS_UNCONFIGURED
 
 
-def test_missing_runtime_dependency_blocks_even_with_flag_and_token():
-    # qiskit-ibm-runtime is intentionally not installed in the dev/CI venv.
+def test_missing_runtime_dependency_blocks_even_with_flag_and_token(monkeypatch):
+    # qiskit-ibm-runtime IS installed now (worker depends on majorana-qpu[ibm]),
+    # so its absence has to be simulated: a deployment built without the extra
+    # must still report the typed reason rather than crash at submit time.
+    import builtins
+
+    real_import = builtins.__import__
+
+    def blocking_import(name, *args, **kwargs):
+        if name.startswith("qiskit_ibm_runtime"):
+            raise ImportError("simulated absence of qiskit-ibm-runtime")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.delitem(__import__("sys").modules, "qiskit_ibm_runtime", raising=False)
+    monkeypatch.setattr(builtins, "__import__", blocking_import)
     env = {"MAJORANA_QPU_SUBMIT_ENABLED": "true", "MAJORANA_QPU_IBM_TOKEN": "tok"}
     assert submission_block_reason(env) is QpuSubmissionBlockReason.PROVIDER_DEPENDENCY_MISSING
 

@@ -7,7 +7,6 @@ device or shot count outside the typed bounds.
 
 from majorana_api.routes import qpu as qpu_routes
 from majorana_api.routes.qpu import (
-    DURABLE_RECORD_UNAVAILABLE,
     MAX_ESTIMATE_SHOTS,
     QpuEstimateRequest,
     QpuSubmissionRequest,
@@ -92,7 +91,9 @@ async def test_submission_rejects_unknown_devices_with_404():
     from fastapi import HTTPException
 
     with pytest.raises(HTTPException) as excinfo:
-        await qpu_routes.qpu_submit(_submission("braket.acme.imaginary"), scope=object())
+        await qpu_routes.qpu_submit(
+            _submission("braket.acme.imaginary"), scope=object(), session=object()
+        )
     assert excinfo.value.status_code == 404
 
 
@@ -101,22 +102,66 @@ async def test_submission_refuses_with_the_gate_reason(monkeypatch):
 
     monkeypatch.delenv("MAJORANA_QPU_SUBMIT_ENABLED", raising=False)
     with pytest.raises(HTTPException) as excinfo:
-        await qpu_routes.qpu_submit(_submission(), scope=object())
+        await qpu_routes.qpu_submit(_submission(), scope=object(), session=object())
     assert excinfo.value.status_code == 409
     assert excinfo.value.detail == {"blocked_reason": "submission_disabled"}
 
 
-async def test_submission_fails_closed_even_with_every_provider_gate_open(monkeypatch):
-    """A hardware job with nowhere to attest its provider job id must not
-    start: until the qpu_run record migration lands, an all-gates-open
-    deployment still refuses with a reason the UI can show."""
-    from fastapi import HTTPException
+async def test_submission_with_open_gates_writes_the_record_and_enqueues(monkeypatch):
+    """The durable row and the qpu.run job are created together, and the
+    response is the attestation record — estimate snapshotted, status queued."""
+    import datetime as dt
+    import uuid as uuid_module
+    from types import SimpleNamespace
+
+    captured: dict[str, object] = {}
+    record_id = uuid_module.uuid4()
+    scope = SimpleNamespace(workspace_id=uuid_module.uuid4(), user_id=uuid_module.uuid4())
+
+    async def fake_create_record(scope_arg, session_arg, **kwargs):
+        captured["record"] = kwargs
+        return SimpleNamespace(
+            id=record_id,
+            workspace_id=scope.workspace_id,
+            user_id=scope.user_id,
+            artifact_version_id=None,
+            provider=kwargs["provider"],
+            device_id=kwargs["device_id"],
+            provider_job_id=None,
+            shots=kwargs["shots"],
+            status="queued",
+            source_fingerprint=kwargs["source_fingerprint"],
+            estimate_basis=kwargs["estimate_basis"],
+            estimated_total_usd=kwargs["estimated_total_usd"],
+            rate_source=kwargs["rate_source"],
+            rate_confirmed_on=kwargs["rate_confirmed_on"],
+            raw_counts=None,
+            error=None,
+            submitted_at=None,
+            completed_at=None,
+            created_at=dt.datetime.now(dt.UTC),
+        )
+
+    async def fake_enqueue_job(session_arg, *, kind, payload, **kwargs):
+        captured["job"] = {"kind": kind, "payload": payload}
 
     monkeypatch.setattr(qpu_routes, "submission_block_reason", lambda: None)
-    with pytest.raises(HTTPException) as excinfo:
-        await qpu_routes.qpu_submit(_submission(), scope=object())
-    assert excinfo.value.status_code == 409
-    assert excinfo.value.detail == {"blocked_reason": DURABLE_RECORD_UNAVAILABLE}
+    monkeypatch.setattr(qpu_routes.qpu_runs_repo, "create_record", fake_create_record)
+    monkeypatch.setattr(qpu_routes.system, "enqueue_job", fake_enqueue_job)
+
+    result = await qpu_routes.qpu_submit(_submission(), scope=scope, session=object())
+
+    assert result.status.value == "queued"
+    assert result.id == record_id
+    assert result.estimated_total_usd is not None
+    assert result.rate_source.startswith("https://")
+    record = captured["record"]
+    assert record["provider"] == "braket"
+    assert record["qasm"].startswith("OPENQASM 3.0")
+    job = captured["job"]
+    assert job["kind"] == "qpu.run"
+    assert job["payload"]["qpu_run_id"] == str(record_id)
+    assert job["payload"]["workspace_id"] == str(scope.workspace_id)
 
 
 def test_submission_request_bounds_inputs():

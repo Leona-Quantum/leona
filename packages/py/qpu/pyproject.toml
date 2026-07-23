@@ -7,9 +7,16 @@ dependencies = [
     "pydantic>=2.8",
 ]
 
-# qiskit-ibm-runtime is deliberately NOT a dependency: the IBM adapter imports
-# it lazily and fails closed when it (or credentials) are absent, so the
-# control plane can serve catalog/estimate surfaces without hardware deps.
+# qiskit-ibm-runtime is deliberately NOT a base dependency: the IBM adapter
+# imports it lazily and fails closed when it (or credentials) are absent, so
+# the control plane can serve catalog/estimate surfaces without hardware deps.
+# The `ibm` extra exists for deployments the owner has switched on — the
+# worker depends on it, which puts the package in the shared api+worker image
+# (the runtime gate still requires the flag AND the token to touch IBM).
+[project.optional-dependencies]
+ibm = [
+    "qiskit-ibm-runtime>=0.48,<1",
+]
 
 [build-system]
 requires = ["hatchling"]
