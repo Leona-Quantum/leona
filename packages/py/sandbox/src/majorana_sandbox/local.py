@@ -15,9 +15,9 @@ import hashlib
 import json
 import os
 import platform
-import resource
 import signal
 import sys
+import tempfile
 import time
 from pathlib import Path
 from importlib import metadata
@@ -35,20 +35,36 @@ from majorana_sandbox.spec import (
 _ENV_ALLOWLIST = ("PATH", "HOME", "LANG", "LC_ALL", "LC_CTYPE")
 
 
-def _limits(memory_mb: int, cpu_s: int):
-    def _apply() -> None:
-        # Best-effort: RLIMIT_AS is enforced on Linux (CI) but macOS reserves huge
-        # virtual space and rejects a finite cap, so a failure here must not abort
-        # the spawn. The authoritative memory cap is the provider microVM, not this
-        # double.
-        soft_bytes = memory_mb * 1024 * 1024
-        for res, limit in ((resource.RLIMIT_AS, soft_bytes), (resource.RLIMIT_CPU, cpu_s)):
-            try:
-                resource.setrlimit(res, (limit, limit))
-            except (ValueError, OSError):
-                pass
+def _rlimit_bootstrap(memory_mb: int, cpu_s: int) -> str:
+    """Source prepended to the child's own `-c` script, applying limits to
+    itself right after exec().
 
-    return _apply
+    This used to run via `preexec_fn`, which forces CPython's subprocess
+    machinery off the posix_spawn fast path and onto a plain fork() of the
+    *caller* — here, the long-running worker process, which already carries a
+    live asyncio loop, a DB connection pool, and OTel exporter threads.
+    Forking a multi-threaded process is unsafe on macOS (only the forking
+    thread survives into the child; anything the other threads held a lock on
+    — malloc arenas inside Accelerate/BLAS, Objective-C runtime state — can
+    wedge or crash the child before it ever reaches exec()). That surfaced as
+    every candidate in a run dying with exit_code 3 and empty stdout/stderr,
+    even though the same generated code ran cleanly through this same sandbox
+    in isolation. Setting the limits from inside the child's own script
+    instead runs after exec() has already replaced the process image, so
+    there is nothing left over from the parent to be unsafe about, and
+    asyncio.create_subprocess_exec can use posix_spawn again.
+    """
+    soft_bytes = memory_mb * 1024 * 1024
+    return (
+        "import resource as _majorana_resource\n"
+        "for _majorana_res, _majorana_limit in "
+        f"(( _majorana_resource.RLIMIT_AS, {soft_bytes}), "
+        f"(_majorana_resource.RLIMIT_CPU, {cpu_s})):\n"
+        "    try:\n"
+        "        _majorana_resource.setrlimit(_majorana_res, (_majorana_limit, _majorana_limit))\n"
+        "    except (ValueError, OSError):\n"
+        "        pass\n"
+    )
 
 
 class LocalSubprocessSandbox:
@@ -80,28 +96,56 @@ class LocalSubprocessSandbox:
         env = {key: os.environ[key] for key in _ENV_ALLOWLIST if key in os.environ}
         env["PYTHONUNBUFFERED"] = "1"
         started = time.monotonic()
-        proc = await asyncio.create_subprocess_exec(
-            sys.executable,
-            "-I",  # isolated mode: no user site, no PYTHON* env influence
-            "-c",
-            compose_execution(spec),
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-            env=env,
-            preexec_fn=_limits(spec.memory_mb, spec.timeout_s + 1),
-            start_new_session=True,  # own process group so we can kill children
-        )
-        timed_out = False
-        try:
-            stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=spec.timeout_s)
-        except TimeoutError:
-            timed_out = True
-            try:
-                os.killpg(proc.pid, signal.SIGKILL)
-            except ProcessLookupError:
-                pass
-            await proc.wait()
-            stdout, stderr = b"", b"timed out"
+        # No start_new_session/process-group kill here: that flag unconditionally
+        # forces CPython's subprocess machinery to fork() the caller instead of
+        # using posix_spawn (see subprocess.Popen._execute_child — start_new_session
+        # disqualifies the posix_spawn fast path independently of preexec_fn).
+        # Forking this worker process — which already carries a live asyncio loop,
+        # a DB connection pool, and OTel exporter threads — is unsafe on macOS and
+        # was the actual cause of every candidate dying with exit_code 3 and no
+        # output, even after preexec_fn was removed. A killpg'd process group was
+        # defense-in-depth for a generated child spawning its own children; the
+        # static guard (guard.py) already blocks subprocess/os.fork/os.spawn/os.exec
+        # before generated code runs, so a single proc.kill() is sufficient here.
+        # Captured to files, not PIPE. A handful of candidates in real (not
+        # isolated-repro) worker runs came back with exit_code 3 and BOTH
+        # stdout and stderr completely empty, even for code that later ran
+        # clean — including cases where the process plainly ran for close to
+        # a second before dying. A child that dies abruptly (killed, crashed
+        # in a native extension) can close its pipe before asyncio's
+        # kqueue-driven pipe protocol delivers the buffered bytes it already
+        # wrote, so `communicate()` returns nothing it never lost — it just
+        # never got it. Files have no such handoff: the child's writes land
+        # on disk directly, and the parent reads them only after the process
+        # has fully exited.
+        with tempfile.TemporaryDirectory(prefix="majorana-sandbox-") as capture_dir:
+            stdout_path = Path(capture_dir) / "stdout"
+            stderr_path = Path(capture_dir) / "stderr"
+            with stdout_path.open("wb") as stdout_file, stderr_path.open("wb") as stderr_file:
+                proc = await asyncio.create_subprocess_exec(
+                    sys.executable,
+                    "-I",  # isolated mode: no user site, no PYTHON* env influence
+                    "-c",
+                    _rlimit_bootstrap(spec.memory_mb, spec.timeout_s + 1) + compose_execution(spec),
+                    stdout=stdout_file,
+                    stderr=stderr_file,
+                    env=env,
+                )
+                timed_out = False
+                try:
+                    await asyncio.wait_for(proc.wait(), timeout=spec.timeout_s)
+                except TimeoutError:
+                    timed_out = True
+                    try:
+                        proc.kill()
+                    except ProcessLookupError:
+                        pass
+                    await proc.wait()
+            if timed_out:
+                stdout, stderr = b"", b"timed out"
+            else:
+                stdout = stdout_path.read_bytes()
+                stderr = stderr_path.read_bytes()
 
         duration_ms = int((time.monotonic() - started) * 1000)
         out, out_trunc = _truncate(stdout)
