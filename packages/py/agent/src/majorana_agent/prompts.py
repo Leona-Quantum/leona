@@ -7,7 +7,8 @@ the final circuit to FINAL_CIRCUIT. Assign the promised plain JSON-compatible ou
 dictionary to RESULT; stdout is not a trusted data channel. OpenQASM is optional interchange, never the main
 artifact. After a failed verification, preserve the listed invariants and submit a
 new repaired source revision. Never claim execution or correctness from prose; use
-the stored tool evidence. Materialize only the strictly verified latest candidate.
+the stored tool evidence. Materialize only the latest candidate after a terminal strict
+PASS or INCONCLUSIVE decision; INCONCLUSIVE remains explicitly unverified and private.
 
 When the request carries `verified_exemplars`, they are complete programs from this
 workspace's own artifacts that already PASSED verification in the same framework.

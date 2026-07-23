@@ -9,7 +9,7 @@ from majorana_agent import (
     ExecutionFailureKind,
     ExecutionOutput,
     MemoryAgentStore,
-    PublishedArtifact,
+    MaterializedArtifact,
     SemanticReviewOutput,
     ToolBroker,
     ToolCall,
@@ -90,8 +90,8 @@ class Converter:
 
 
 class Publisher:
-    async def publish(self, candidate, _execution, _verification, _conversion, _plan):
-        return PublishedArtifact(
+    async def materialize(self, candidate, *_args):
+        return MaterializedArtifact(
             artifact_id=uuid4(),
             version_id=uuid4(),
             version_seq=1,
@@ -149,7 +149,7 @@ class RepairModel:
         )
 
 
-async def test_runtime_repairs_with_new_candidate_revision_then_publishes():
+async def test_runtime_repairs_with_new_candidate_revision_then_materializes():
     store = MemoryAgentStore()
     run_id = uuid4()
     toolset = CircuitToolset(
@@ -160,7 +160,7 @@ async def test_runtime_repairs_with_new_candidate_revision_then_publishes():
         reviewer=Reviewer(),
         strict_verifier=StrictVerifier(),
         converter=Converter(),
-        publisher=Publisher(),
+        materializer=Publisher(),
     )
     runtime = AgentRuntime(
         store=store,
@@ -176,7 +176,7 @@ async def test_runtime_repairs_with_new_candidate_revision_then_publishes():
     candidates = await store.list_candidates(run_id)
     assert [candidate.revision for candidate in candidates] == [1, 2]
     assert candidates[1].parent_candidate_id == candidates[0].candidate_id
-    assert store.publications[0].candidate_id == candidates[1].candidate_id
+    assert store.materializations[0].candidate_id == candidates[1].candidate_id
 
 
 class OneCallModel:
@@ -263,7 +263,7 @@ async def test_model_reusing_tool_call_ids_cannot_kill_a_run():
         reviewer=Reviewer(),
         strict_verifier=StrictVerifier(),
         converter=Converter(),
-        publisher=Publisher(),
+        materializer=Publisher(),
     )
     runtime = AgentRuntime(
         store=store,

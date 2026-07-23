@@ -15,11 +15,11 @@ from majorana_agent import (
     ExecutionEvidence,
     ExecutionFailureKind,
     ExecutionOutput,
-    PublishedArtifact,
+    MaterializedArtifact,
     RepairInstruction,
     SemanticReviewEvidence,
     SemanticReviewOutput,
-    VerificationEvidence,
+    StrictVerificationAttempt,
     VerificationOutput,
 )
 from majorana_contracts import Scope
@@ -1644,7 +1644,7 @@ class TrustedOpenQASMConverter:
             return None, f"OpenQASM normalization failed: {type(exc).__name__}"
 
 
-class RepoArtifactPublisher:
+class RepoArtifactMaterializer:
     def __init__(
         self,
         *,
@@ -1660,14 +1660,16 @@ class RepoArtifactPublisher:
         self._parent_artifact_id = parent_artifact_id
         self._title = title
 
-    async def publish(
+    async def materialize(
         self,
         candidate: CandidateRevision,
         execution: ExecutionEvidence,
-        verification: VerificationEvidence,
+        verification: StrictVerificationAttempt,
+        review: SemanticReviewEvidence,
         conversion: ConversionEvidence | None,
         plan: Plan,
-    ) -> PublishedArtifact:
+    ) -> MaterializedArtifact:
+        verification.assert_binding(candidate, execution, review)
         artifact_id = self._parent_artifact_id
         if artifact_id is None:
             artifact = await artifacts_repo.create_artifact(
@@ -1689,18 +1691,29 @@ class RepoArtifactPublisher:
         )
         resource_metrics = execution.observation.get("resource_metrics")
         resource_estimates = resource_metrics if isinstance(resource_metrics, dict) else None
-        critic = verification.critic if isinstance(verification.critic, dict) else {}
-        critic_summary = {
-            key: critic[key]
-            for key in ("confidence", "severity", "summary", "residual_risks")
-            if key in critic
-        }
+        critic = review.feedback.get("critic")
+        critic = critic if isinstance(critic, dict) else {}
         residual_risks = critic.get("residual_risks")
-        limitations = (
-            "\n".join(str(item) for item in residual_risks)
-            if isinstance(residual_risks, list) and residual_risks
-            else None
+        residual_risks = (
+            [str(item)[:1000] for item in residual_risks][:20]
+            if isinstance(residual_risks, list)
+            else []
         )
+        limitations_list = list(dict.fromkeys([*residual_risks, *verification.unverified_claims]))
+        limitations = "\n".join(limitations_list) or None
+        strength = verification.evidence_strength or evidence_strength_of(verification.checks)
+        checks = [
+            {
+                "method": check.get("method"),
+                "result": check.get("result"),
+                "details": check.get("details", {}),
+            }
+            for check in verification.checks
+        ]
+        failed_checks = [check for check in checks if check["result"] == "fail"]
+        unavailable_checks = [
+            check for check in checks if check["result"] in {"skipped", "unavailable", "error"}
+        ]
         version = await artifacts_repo.create_version(
             self._scope,
             self._session,
@@ -1708,28 +1721,32 @@ class RepoArtifactPublisher:
             qasm_version="3.0" if qasm else None,
             qasm=qasm,
             metadata={
-                "source": "verified_agent_candidate",
+                "source": "agent_candidate",
                 "candidate_id": str(candidate.candidate_id),
                 "candidate_revision": candidate.revision,
-                "verification_id": str(verification.verification_id),
+                "source_fingerprint": candidate.source_fingerprint,
+                "execution_id": str(execution.execution_id),
+                "verification_attempt_id": str(verification.attempt_id),
+                "semantic_review_id": str(review.review_id),
                 "canonical_representation": "framework_code",
                 "openqasm_role": "interchange" if qasm else "unavailable",
                 "verification_summary": {
+                    "verified": verification.decision is VerifierDecision.PASS,
                     "decision": verification.decision.value,
-                    # Derived here rather than stored on the evidence row: the checks
-                    # are the fact, the grade is a reading of them, and a stored grade
-                    # would be free to drift from the list printed beside it.
-                    "evidence_strength": evidence_strength_of(
-                        verification.deterministic_checks
-                    ).value,
-                    "deterministic_checks": [
-                        {
-                            "method": check.get("method"),
-                            "result": check.get("result"),
-                        }
-                        for check in verification.deterministic_checks
-                    ],
-                    "critic": critic_summary or None,
+                    "evidence_strength": strength.value,
+                    "reason_code": verification.reason_code,
+                    "checks": checks,
+                    "failed_checks": failed_checks,
+                    "unavailable_checks": unavailable_checks,
+                    "semantic_review": {
+                        "decision": review.decision.value,
+                        "reason_code": review.reason_code,
+                        "confidence": review.confidence,
+                        "severity": review.severity,
+                        "summary": critic.get("summary"),
+                    },
+                    "residual_risks": residual_risks,
+                    "unverified_claims": verification.unverified_claims,
                 },
             },
             code=candidate.source,
@@ -1744,7 +1761,7 @@ class RepoArtifactPublisher:
         await runs_repo.set_run_artifact_version(
             self._scope, self._session, self._run_id, version.id
         )
-        return PublishedArtifact(
+        return MaterializedArtifact(
             artifact_id=artifact_id,
             version_id=version.id,
             version_seq=version.seq,

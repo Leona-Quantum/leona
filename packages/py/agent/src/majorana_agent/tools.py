@@ -19,6 +19,7 @@ from majorana_agent.models import (
     ConversionEvidence,
     ExecutionEvidence,
     ExecutionFailureKind,
+    MaterializedArtifact,
     PlanRecord,
     PlanRevision,
     PublishedArtifact,
@@ -143,6 +144,18 @@ class ArtifactPublisher(Protocol):
     ) -> PublishedArtifact: ...
 
 
+class ArtifactMaterializer(Protocol):
+    async def materialize(
+        self,
+        candidate: CandidateRevision,
+        execution: ExecutionEvidence,
+        verification: StrictVerificationAttempt,
+        review: SemanticReviewEvidence,
+        conversion: ConversionEvidence | None,
+        plan: Plan,
+    ) -> MaterializedArtifact: ...
+
+
 class CircuitToolset:
     def __init__(
         self,
@@ -155,7 +168,7 @@ class CircuitToolset:
         reviewer: CandidateReviewer | None = None,
         strict_verifier: StrictCandidateVerifier | None = None,
         converter: OpenQASMConverter,
-        publisher: ArtifactPublisher,
+        materializer: ArtifactMaterializer,
     ) -> None:
         self._store = store
         self._framework = framework
@@ -165,7 +178,7 @@ class CircuitToolset:
         self._reviewer = reviewer
         self._strict_verifier = strict_verifier
         self._converter = converter
-        self._publisher = publisher
+        self._materializer = materializer
 
     def handlers(self) -> dict[ToolName, ToolHandler]:
         return {
@@ -178,8 +191,7 @@ class CircuitToolset:
             ToolName.REVIEW_CANDIDATE: self.review_candidate,
             ToolName.STRICT_VERIFY: self.strict_verify,
             ToolName.CONVERT_TO_OPENQASM: self.convert,
-            ToolName.PUBLISH_ARTIFACT: self.publish,
-            ToolName.MATERIALIZE_ARTIFACT: self.publish,
+            ToolName.MATERIALIZE_ARTIFACT: self.materialize,
         }
 
     async def request_plan(self, run_id: UUID, _call: ToolCall) -> dict[str, Any]:
@@ -697,42 +709,57 @@ class CircuitToolset:
             await self._store.add_conversion(evidence)
         return evidence.model_dump(mode="json", exclude={"qasm"})
 
-    async def publish(self, run_id: UUID, call: ToolCall) -> dict[str, Any]:
+    async def materialize(self, run_id: UUID, call: ToolCall) -> dict[str, Any]:
         candidate = await self._bound_candidate(run_id, call.arguments)
-        verification = await self._store.verification_for(run_id, candidate.candidate_id)
-        if verification is None or verification.decision is not VerifierDecision.PASS:
-            raise ToolPolicyError("candidate_unverified", "publication requires verification PASS")
+        verification = await self._store.latest_strict_verification(run_id, candidate.candidate_id)
+        if verification is None or verification.decision not in {
+            VerifierDecision.PASS,
+            VerifierDecision.INCONCLUSIVE,
+        }:
+            raise ToolPolicyError(
+                "candidate_not_materializable",
+                "private materialization requires strict PASS or INCONCLUSIVE",
+            )
         if verification.source_fingerprint != candidate.source_fingerprint:
             raise ToolPolicyError("fingerprint_mismatch", "verified source differs from candidate")
-        publication = await self._store.publication_for(run_id, candidate.candidate_id)
-        if publication is None:
+        materialization = await self._store.materialization_for(run_id, candidate.candidate_id)
+        if materialization is None:
             execution = await self._store.execution_for(run_id, candidate.candidate_id)
             if execution is None or not execution.succeeded:
                 raise ToolPolicyError(
-                    "execution_missing", "publication requires successful execution evidence"
+                    "execution_missing", "materialization requires successful execution evidence"
                 )
             if execution.source_fingerprint != candidate.source_fingerprint:
                 raise ToolPolicyError(
                     "fingerprint_mismatch", "executed source differs from candidate"
                 )
+            review = await self._store.latest_semantic_review(run_id, candidate.candidate_id)
+            if review is None:
+                raise ToolPolicyError(
+                    "review_missing", "materialization requires semantic review evidence"
+                )
+            try:
+                verification.assert_binding(candidate, execution, review)
+            except ValueError as exc:
+                raise ToolPolicyError("fingerprint_mismatch", str(exc)) from exc
             conversion = await self._store.conversion_for(run_id, candidate.candidate_id)
             plan = (await self._store.plan(run_id, candidate.plan_id)).plan
-            publication = await self._publisher.publish(
-                candidate, execution, verification, conversion, plan
+            materialization = await self._materializer.materialize(
+                candidate, execution, verification, review, conversion, plan
             )
-            if publication.candidate_id != candidate.candidate_id:
+            if materialization.candidate_id != candidate.candidate_id:
                 raise ToolPolicyError(
-                    "publication_mismatch", "publisher returned a different candidate"
+                    "materialization_mismatch", "materializer returned a different candidate"
                 )
-            if publication.source_fingerprint != candidate.source_fingerprint:
+            if materialization.source_fingerprint != candidate.source_fingerprint:
                 raise ToolPolicyError(
-                    "fingerprint_mismatch", "published source differs from candidate"
+                    "fingerprint_mismatch", "materialized source differs from candidate"
                 )
-            await self._store.add_publication(publication)
+            await self._store.add_materialization(materialization)
         await self._store.set_candidate_status(
-            run_id, candidate.candidate_id, CandidateStatus.PUBLISHED.value
+            run_id, candidate.candidate_id, CandidateStatus.MATERIALIZED.value
         )
-        return publication.model_dump(mode="json")
+        return materialization.model_dump(mode="json")
 
     async def _bound_candidate(self, run_id: UUID, arguments: dict[str, Any]) -> CandidateRevision:
         try:

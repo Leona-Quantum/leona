@@ -270,6 +270,7 @@ class AgentRun(Base):
     plan_id: Mapped[uuid.UUID | None] = mapped_column(_UUID)
     current_plan_id: Mapped[uuid.UUID | None] = mapped_column(_UUID)
     plan: Mapped[dict[str, Any] | None]
+    materialization: Mapped[dict[str, Any] | None]
     publication: Mapped[dict[str, Any] | None]
     created_at: Mapped[dt.datetime | None] = mapped_column(server_default=func.now())
     updated_at: Mapped[dt.datetime | None] = mapped_column(server_default=func.now())

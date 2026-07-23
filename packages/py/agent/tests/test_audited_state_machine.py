@@ -9,7 +9,7 @@ from majorana_agent import (
     ConversionEvidence,
     ExecutionOutput,
     MemoryAgentStore,
-    PublishedArtifact,
+    MaterializedArtifact,
     SemanticReviewOutput,
     ToolBroker,
     ToolCall,
@@ -132,8 +132,8 @@ class Converter:
 
 
 class Publisher:
-    async def publish(self, candidate, *_args):
-        return PublishedArtifact(
+    async def materialize(self, candidate, *_args):
+        return MaterializedArtifact(
             artifact_id=uuid4(),
             version_id=uuid4(),
             version_seq=1,
@@ -155,7 +155,7 @@ def _stack(*, store=None, reviewer=None, strict=None, budget=None):
         reviewer=reviewer,
         strict_verifier=strict,
         converter=Converter(),
-        publisher=Publisher(),
+        materializer=Publisher(),
     )
     broker = ToolBroker(
         store=store,
@@ -192,6 +192,7 @@ def test_allowed_transition_table_is_exhaustive_and_legacy_tools_are_not_live():
         AgentState.VERIFIED: frozenset(
             {ToolName.CONVERT_TO_OPENQASM, ToolName.MATERIALIZE_ARTIFACT}
         ),
+        AgentState.INCONCLUSIVE: frozenset({ToolName.MATERIALIZE_ARTIFACT}),
         AgentState.QASM_ATTEMPTED: frozenset({ToolName.MATERIALIZE_ARTIFACT}),
     }
     for state in AgentState:
@@ -309,6 +310,48 @@ async def test_semantic_uncertainty_mechanically_prevents_strict_pass():
     assert await store.verification_for(run_id, UUID(candidate_id)) is None
 
 
+async def test_terminal_inconclusive_materializes_privately_without_becoming_verified():
+    store, broker, _, _ = _stack(
+        reviewer=UncertainReviewer(),
+        budget=AgentBudget(max_strict_attempts=1),
+    )
+    run_id = uuid4()
+    simulation = await _execute_one(store, broker, run_id)
+    candidate_id = simulation.payload["candidate_id"]
+    await broker.dispatch(
+        run_id,
+        ToolCall(
+            tool_call_id="uncertain-review",
+            name=ToolName.REVIEW_CANDIDATE,
+            arguments={"candidate_id": candidate_id},
+        ),
+    )
+    strict = await broker.dispatch(
+        run_id,
+        ToolCall(
+            tool_call_id="terminal-inconclusive",
+            name=ToolName.STRICT_VERIFY,
+            arguments={"candidate_id": candidate_id},
+        ),
+    )
+    assert strict.state is AgentState.INCONCLUSIVE
+    assert await store.verification_for(run_id, UUID(candidate_id)) is None
+
+    materialized = await broker.dispatch(
+        run_id,
+        ToolCall(
+            tool_call_id="private-materialization",
+            name=ToolName.MATERIALIZE_ARTIFACT,
+            arguments={"candidate_id": candidate_id},
+        ),
+    )
+
+    assert materialized.ok
+    assert materialized.state is AgentState.MATERIALIZED
+    assert store.materializations[0].candidate_id == UUID(candidate_id)
+    assert store.publications == []
+
+
 async def test_strict_plan_defect_authorizes_replan():
     store, broker, _, _ = _stack(strict=PlanDefectStrictVerifier())
     run_id = uuid4()
@@ -331,6 +374,16 @@ async def test_strict_plan_defect_authorizes_replan():
         ),
     )
     assert strict.state is AgentState.REPLAN_REQUIRED
+    rejected = await broker.dispatch(
+        run_id,
+        ToolCall(
+            tool_call_id="materialize-failed-verdict",
+            name=ToolName.MATERIALIZE_ARTIFACT,
+            arguments={"candidate_id": candidate_id},
+        ),
+    )
+    assert rejected.error_code == "invalid_transition"
+    assert store.materializations == []
     replanned = await broker.dispatch(run_id, ToolCall(tool_call_id="replan", name=ToolName.REPLAN))
     assert replanned.ok
     assert replanned.payload["revision"] == 2

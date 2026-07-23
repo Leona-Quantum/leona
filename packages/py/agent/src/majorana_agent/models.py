@@ -57,6 +57,7 @@ class CandidateStatus(StrEnum):
     RESOURCE_EXHAUSTED = "resource_exhausted"
     VERIFIED = "verified"
     INCONCLUSIVE = "inconclusive"
+    MATERIALIZED = "materialized"
     PUBLISHED = "published"
 
 
@@ -379,6 +380,17 @@ class ConversionEvidence(_Record):
 
 
 class PublishedArtifact(_Record):
+    artifact_id: UUID
+    version_id: UUID
+    version_seq: int = Field(ge=1)
+    candidate_id: UUID
+    framework: Framework
+    source_fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
+
+
+class MaterializedArtifact(_Record):
+    """A private immutable Studio version; it is not a publication claim."""
+
     artifact_id: UUID
     version_id: UUID
     version_seq: int = Field(ge=1)

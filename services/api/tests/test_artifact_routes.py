@@ -9,6 +9,11 @@ Repo-level tests cannot catch that, because the primitive itself was correct.
 These assert the HTTP surface actually exposes it.
 """
 
+import uuid
+from types import SimpleNamespace
+
+from majorana_contracts.enums import ExportStatus, Framework
+
 from majorana_api.routes import artifacts as artifact_routes
 
 
@@ -53,3 +58,51 @@ def test_list_resource_reads_the_verification_grade_and_never_guesses():
     assert fields(
         {"verification_summary": {"decision": "pass", "evidence_strength": "physical"}}
     ) == (VerifierDecision.PASS, EvidenceStrength.PHYSICAL)
+
+
+async def test_imported_public_reference_is_explicitly_not_fresh_verification(scope, monkeypatch):
+    artifact_id = uuid.uuid4()
+    captured = {}
+    body = artifact_routes.ImportPublicArtifactRequest(
+        source_slug="bell-reference",
+        title="Bell reference",
+        family="bell",
+        framework=Framework.QISKIT,
+        code="print('reference')",
+        code_lang="python",
+        source_url="https://example.test/reference",
+        source_title="Public reference",
+        source_license="Apache-2.0",
+        introduction="Introduction",
+        explanation="Explanation",
+        verification="Source description only",
+        export_status=ExportStatus.DOWNLOAD_ONLY,
+    )
+
+    async def get_by_slug(*_args):
+        return None
+
+    async def create_artifact(*_args, **_kwargs):
+        return SimpleNamespace(id=artifact_id)
+
+    async def create_version(_scope, _session, supplied_artifact_id, **values):
+        captured.update(values)
+        captured["artifact_id"] = supplied_artifact_id
+
+    monkeypatch.setattr(artifact_routes.artifacts_repo, "get_artifact_by_slug", get_by_slug)
+    monkeypatch.setattr(artifact_routes.artifacts_repo, "create_artifact", create_artifact)
+    monkeypatch.setattr(artifact_routes.artifacts_repo, "create_version", create_version)
+    monkeypatch.setattr(artifact_routes, "_to_artifact", lambda row: row.id)
+
+    result = await artifact_routes.import_public_artifact(body, scope, object())
+
+    assert result == artifact_id
+    assert captured["artifact_id"] == artifact_id
+    assert captured["metadata"]["source"]["kind"] == "public_repository"
+    assert captured["metadata"]["verification_summary"] == {
+        "verified": False,
+        "decision": None,
+        "reason_code": "imported_reference_not_verified",
+        "evidence_strength": None,
+    }
+    assert "verification_attempt_id" not in captured["metadata"]

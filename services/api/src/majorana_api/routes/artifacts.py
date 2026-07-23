@@ -207,6 +207,12 @@ async def import_public_artifact(
             "introduction": body.introduction,
             "explanation": body.explanation,
             "verification": body.verification,
+            "verification_summary": {
+                "verified": False,
+                "decision": None,
+                "reason_code": "imported_reference_not_verified",
+                "evidence_strength": None,
+            },
         },
         code=body.code,
         code_lang=body.code_lang,

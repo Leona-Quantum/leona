@@ -9,6 +9,7 @@ from majorana_agent import (
     CandidateRevision,
     ConversionEvidence,
     ExecutionEvidence,
+    MaterializedArtifact,
     PlanRevision,
     PlanRecord,
     PublishedArtifact,
@@ -515,6 +516,35 @@ class RepoAgentStore:
             qasm=row.qasm,
             reason=row.reason,
         )
+
+    async def add_materialization(self, materialization: MaterializedArtifact) -> None:
+        row = await agent_repo.get_candidate_by_id(
+            self._scope, self._session, materialization.candidate_id
+        )
+        if row is None:
+            raise KeyError(materialization.candidate_id)
+        candidate = self._candidate(row)
+        strict = await self.latest_strict_verification(candidate.run_id, candidate.candidate_id)
+        if strict is None or strict.decision.value not in {"pass", "inconclusive"}:
+            raise ValueError("materialization requires strict PASS or INCONCLUSIVE")
+        if candidate.source_fingerprint != materialization.source_fingerprint:
+            raise ValueError("materialization fingerprint does not match candidate")
+        await agent_repo.set_materialization(
+            self._scope,
+            self._session,
+            candidate.run_id,
+            materialization.model_dump(mode="json"),
+        )
+        await self._session.commit()
+
+    async def materialization_for(
+        self, run_id: UUID, candidate_id: UUID
+    ) -> MaterializedArtifact | None:
+        row = await agent_repo.get_or_create_agent_run(self._scope, self._session, run_id)
+        if row.materialization is None:
+            return None
+        materialization = MaterializedArtifact.model_validate(row.materialization)
+        return materialization if materialization.candidate_id == candidate_id else None
 
     async def add_publication(self, publication: PublishedArtifact) -> None:
         row = await agent_repo.get_candidate_by_id(

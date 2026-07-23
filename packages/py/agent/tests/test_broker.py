@@ -106,7 +106,7 @@ async def test_tool_call_id_cannot_be_reused_with_new_arguments():
         raise AssertionError("idempotency conflict was not rejected")
 
 
-async def test_publish_requires_matching_verified_latest_candidate():
+async def test_materialize_requires_terminal_strict_latest_candidate():
     store = MemoryAgentStore()
     run_id, plan_id, candidate_id = uuid4(), uuid4(), uuid4()
     source = "from qiskit import QuantumCircuit\nFINAL_CIRCUIT = QuantumCircuit(1)\n"
@@ -143,7 +143,7 @@ async def test_publish_requires_matching_verified_latest_candidate():
             arguments={"candidate_id": str(candidate_id)},
         ),
     )
-    assert unverified.error_code == "candidate_unverified"
+    assert unverified.error_code == "candidate_not_materializable"
 
     review = SemanticReviewEvidence(
         review_id=uuid4(),

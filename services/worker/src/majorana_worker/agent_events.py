@@ -236,6 +236,8 @@ class AgentEventObserver:
             if candidate_id is None:
                 return
             candidate = await self._store.candidate(run_id, UUID(str(candidate_id)))
+            strict = await self._store.latest_strict_verification(run_id, candidate.candidate_id)
+            decision = strict.decision.value if strict is not None else "unknown"
             conversion = await self._store.conversion_for(run_id, candidate.candidate_id)
             qasm_available = bool(conversion and conversion.status == "available")
             # A failed export downgrades the EXPORT, never the verdict — and until
@@ -265,7 +267,15 @@ class AgentEventObserver:
                     "execution_options": ["simulate"],
                     "export_status": export_status,
                     "export_reason": export_reason,
-                    "finalization_reason": "latest candidate passed bound verification",
+                    "finalization_reason": (
+                        "latest candidate passed bound verification"
+                        if decision == "pass"
+                        else (
+                            "private materialization with inconclusive verification"
+                            if decision == "inconclusive"
+                            else "private materialization without retrievable verification evidence"
+                        )
+                    ),
                 },
             )
             await self._emit(

@@ -55,7 +55,7 @@ from .agent_ports import (
     EvidenceReviewer,
     EvidenceStrictVerifier,
     LLMPlanner,
-    RepoArtifactPublisher,
+    RepoArtifactMaterializer,
     SandboxCandidateExecutor,
     TrustedOpenQASMConverter,
 )
@@ -566,7 +566,7 @@ async def _handle_agent_execution(
         ),
         strict_verifier=EvidenceStrictVerifier(),
         converter=TrustedOpenQASMConverter(),
-        publisher=RepoArtifactPublisher(
+        materializer=RepoArtifactMaterializer(
             scope=scope,
             session=session,
             run_id=ctx.run_id,

@@ -5,6 +5,7 @@ runs replay through the same code path, resumable via Last-Event-ID = seq.
 """
 
 import asyncio
+import hashlib
 import json
 import uuid
 from typing import Annotated, Any
@@ -15,12 +16,13 @@ from majorana_contracts import Conversation as ConversationResource
 from majorana_contracts import ConversationTurn
 from majorana_contracts import IllegalTransition, assert_transition, is_terminal
 from majorana_contracts import Run as RunResource
-from majorana_contracts.enums import Framework, RunMode, RunStatus
+from majorana_contracts.enums import ExportStatus, Framework, RunMode, RunStatus
 from pydantic import BaseModel, ConfigDict, Field
 
 from ..auth.deps import CurrentScope, DbSession
 from ..jobs import RUN_EXECUTE_JOB_KIND
 from ..orm import Run as RunRow
+from ..repos import artifacts as artifacts_repo
 from ..repos import folders as folders_repo
 from ..repos import runs as runs_repo
 from ..repos import system
@@ -56,6 +58,51 @@ class SetRunFolderRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     folder_id: uuid.UUID | None = None
+
+
+async def _create_stale_source_draft(
+    body: CreateRunRequest,
+    scope: CurrentScope,
+    session: DbSession,
+) -> uuid.UUID | None:
+    """Persist an edited Studio source as an explicitly unverified version.
+
+    The prior immutable version remains available, but its evidence is never
+    attached to edited bytes. A successful agent materialization creates the
+    next version and replaces this draft as the artifact's current version.
+    """
+    if body.source_code is None or body.artifact_version_id is None:
+        return body.artifact_version_id
+    base = await artifacts_repo.get_version(scope, session, body.artifact_version_id)
+    if body.source_code == base.code:
+        return body.artifact_version_id
+    source_fingerprint = hashlib.sha256(body.source_code.encode()).hexdigest()
+    draft = await artifacts_repo.create_version(
+        scope,
+        session,
+        base.artifact_id,
+        qasm_version=None,
+        qasm=None,
+        metadata={
+            "source": "studio_draft",
+            "based_on_version_id": str(base.id),
+            "source_fingerprint": source_fingerprint,
+            "verification_summary": {
+                "verified": False,
+                "decision": None,
+                "evidence_strength": None,
+                "reason_code": "source_changed_pending_verification",
+                "stale": True,
+            },
+        },
+        code=body.source_code,
+        code_lang=body.framework.value,
+        fingerprint=source_fingerprint,
+        export_status=ExportStatus.UNSUPPORTED,
+        export_reason="edited source requires fresh conversion",
+        limitations="Edited Studio draft; rerun before relying on verification evidence.",
+    )
+    return draft.id
 
 
 def _to_resource(run: RunRow) -> RunResource:
@@ -95,13 +142,14 @@ async def create_run(
         existing = await runs_repo.find_run_by_idempotency_key(scope, session, idempotency_key)
         if existing is not None:
             return _to_resource(existing)
+    artifact_version_id = await _create_stale_source_draft(body, scope, session)
     run = await runs_repo.create_run(
         scope,
         session,
         task_prompt=body.task_prompt,
         mode=body.mode,
         framework=body.framework,
-        artifact_version_id=body.artifact_version_id,
+        artifact_version_id=artifact_version_id,
         seed=body.seed,
         shots=body.shots,
         timeout_s=body.timeout_s,

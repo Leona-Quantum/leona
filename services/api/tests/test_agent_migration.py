@@ -242,3 +242,36 @@ def test_verification_audit_event_migration_is_additive_and_fails_closed(monkeyp
     module.downgrade()
     assert "cannot downgrade 0030" in statements[-1]
     assert "DELETE FROM" not in statements[-1]
+
+
+def test_private_materialization_migration_is_additive_and_fails_closed(monkeypatch):
+    module = _load_migration("0031_private_materialization.py")
+    created = []
+    statements = []
+    added = []
+    dropped = []
+
+    monkeypatch.setattr(
+        module.op, "add_column", lambda table, column: added.append((table, column))
+    )
+    monkeypatch.setattr(module.op, "drop_column", lambda *args: dropped.append(args))
+    monkeypatch.setattr(module.op, "drop_constraint", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(
+        module.op,
+        "create_check_constraint",
+        lambda name, table, expression: created.append((name, table, expression)),
+    )
+    monkeypatch.setattr(module.op, "execute", statements.append)
+
+    module.upgrade()
+    assert added[0][0] == "agent_runs"
+    assert added[0][1].name == "materialization"
+    assert set(module._CANDIDATE_STATUSES_NEW) - set(module._CANDIDATE_STATUSES_OLD) == {
+        "materialized"
+    }
+    assert "materialized" in created[-1][2]
+
+    module.downgrade()
+    assert "cannot downgrade 0031" in statements[-1]
+    assert "DELETE FROM" not in statements[-1]
+    assert dropped == [("agent_runs", "materialization")]

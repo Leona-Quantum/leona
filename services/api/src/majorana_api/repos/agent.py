@@ -718,3 +718,31 @@ async def set_publication(
     )
     if changed.rowcount == 0:
         raise NotFoundError("agent_run")
+
+
+async def set_materialization(
+    scope: Scope, session: AsyncSession, run_id: uuid.UUID, materialization: dict[str, Any]
+) -> None:
+    require_write(scope)
+    await _scoped_run(scope, session, run_id)
+    row = (
+        await session.execute(
+            select(AgentRun)
+            .join(Run, AgentRun.run_id == Run.id)
+            .where(AgentRun.run_id == run_id, Run.workspace_id == scope.workspace_id)
+            .with_for_update()
+        )
+    ).scalar_one_or_none()
+    if row is None:
+        raise NotFoundError("agent_run")
+    if row.materialization is not None:
+        if row.materialization != materialization:
+            raise ValueError("run materialization is immutable")
+        return
+    changed = await session.execute(
+        update(AgentRun)
+        .where(AgentRun.run_id == run_id, AgentRun.materialization.is_(None))
+        .values(materialization=materialization, updated_at=func.now())
+    )
+    if changed.rowcount == 0:
+        raise NotFoundError("agent_run")

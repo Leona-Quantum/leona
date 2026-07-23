@@ -10,6 +10,7 @@ from majorana_agent.models import (
     CandidateRevision,
     ConversionEvidence,
     ExecutionEvidence,
+    MaterializedArtifact,
     PlanRevision,
     PlanRecord,
     PublishedArtifact,
@@ -100,6 +101,13 @@ class AgentStore(Protocol):
         self, run_id: UUID, candidate_id: UUID
     ) -> ConversionEvidence | None: ...
 
+    async def add_materialization(self, materialization: MaterializedArtifact) -> None: ...
+
+    async def materialization_for(
+        self, run_id: UUID, candidate_id: UUID
+    ) -> MaterializedArtifact | None: ...
+
+    # Legacy publication records remain readable for historical replay.
     async def add_publication(self, publication: PublishedArtifact) -> None: ...
 
     async def publication_for(

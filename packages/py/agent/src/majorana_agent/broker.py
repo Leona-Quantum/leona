@@ -43,7 +43,7 @@ _ALLOWED: dict[AgentState, frozenset[ToolName]] = {
     AgentState.REPLAN_REQUIRED: frozenset({ToolName.REPLAN}),
     AgentState.RESOURCE_EXHAUSTED: frozenset(),
     AgentState.VERIFIED: frozenset({ToolName.CONVERT_TO_OPENQASM, ToolName.MATERIALIZE_ARTIFACT}),
-    AgentState.INCONCLUSIVE: frozenset(),
+    AgentState.INCONCLUSIVE: frozenset({ToolName.MATERIALIZE_ARTIFACT}),
     AgentState.QASM_ATTEMPTED: frozenset({ToolName.MATERIALIZE_ARTIFACT}),
     AgentState.PUBLISHED: frozenset(),
     AgentState.MATERIALIZED: frozenset(),
@@ -216,11 +216,25 @@ class ToolBroker:
                 raise ToolPolicyError("stale_candidate", "only the latest candidate may be used")
             if candidate.framework is not self._policy.framework:
                 raise ToolPolicyError("framework_mismatch", "candidate framework changed")
-            if call.name in {ToolName.PUBLISH_ARTIFACT, ToolName.MATERIALIZE_ARTIFACT}:
+            if call.name is ToolName.PUBLISH_ARTIFACT:
                 strict = await self._store.latest_strict_verification(run_id, candidate_id)
                 if strict is None or strict.decision is not VerifierDecision.PASS:
                     raise ToolPolicyError(
                         "candidate_unverified", "publication requires verification PASS"
+                    )
+                if strict.source_fingerprint != candidate.source_fingerprint:
+                    raise ToolPolicyError(
+                        "fingerprint_mismatch", "verified source differs from candidate"
+                    )
+            if call.name is ToolName.MATERIALIZE_ARTIFACT:
+                strict = await self._store.latest_strict_verification(run_id, candidate_id)
+                if strict is None or strict.decision not in {
+                    VerifierDecision.PASS,
+                    VerifierDecision.INCONCLUSIVE,
+                }:
+                    raise ToolPolicyError(
+                        "candidate_not_materializable",
+                        "private materialization requires strict PASS or INCONCLUSIVE",
                     )
                 if strict.source_fingerprint != candidate.source_fingerprint:
                     raise ToolPolicyError(

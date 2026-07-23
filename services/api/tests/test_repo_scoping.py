@@ -46,6 +46,17 @@ async def test_list_artifacts(scope, session):
     assert_workspace_bound(session.statements[0], scope)
 
 
+async def test_verified_exemplars_require_agent_candidate_verified_pass(scope, session):
+    await artifacts.list_verified_exemplars(scope, session, framework="qiskit")
+    stmt = session.statements[0]
+    sql, params = compiled(stmt)
+    assert "artifact_versions.metadata" in sql
+    assert "IS true" in sql
+    assert "agent_candidate" in params.values()
+    assert "pass" in params.values()
+    assert_workspace_bound(stmt, scope)
+
+
 async def test_get_artifact(scope, session):
     with pytest.raises(NotFoundError):
         await artifacts.get_artifact(scope, session, uuid.uuid4())

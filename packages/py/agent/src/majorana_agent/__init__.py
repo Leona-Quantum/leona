@@ -11,6 +11,7 @@ from majorana_agent.models import (
     ConversionEvidence,
     ExecutionEvidence,
     ExecutionFailureKind,
+    MaterializedArtifact,
     PlanRevision,
     PlanRecord,
     PublishedArtifact,
@@ -25,6 +26,7 @@ from majorana_agent.models import (
 from majorana_agent.runtime import AgentModel, AgentObserver, AgentRuntime
 from majorana_agent.store import AgentStore
 from majorana_agent.tools import (
+    ArtifactMaterializer,
     ArtifactPublisher,
     CandidateExecutor,
     CandidateVerifier,
@@ -46,6 +48,7 @@ __all__ = [
     "AgentRuntime",
     "AgentState",
     "AgentStore",
+    "ArtifactMaterializer",
     "ArtifactPublisher",
     "CandidateExecutor",
     "CandidateRevision",
@@ -58,6 +61,7 @@ __all__ = [
     "ExecutionFailureKind",
     "ExecutionOutput",
     "MemoryAgentStore",
+    "MaterializedArtifact",
     "OpenQASMConverter",
     "PlanRevision",
     "PlanRecord",

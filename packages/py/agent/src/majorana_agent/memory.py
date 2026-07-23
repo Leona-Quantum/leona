@@ -17,6 +17,7 @@ from majorana_agent.models import (
     ExecutionEvidence,
     PlanRevision,
     PlanRecord,
+    MaterializedArtifact,
     PublishedArtifact,
     SemanticReviewEvidence,
     StrictVerificationAttempt,
@@ -45,6 +46,8 @@ class MemoryAgentStore:
             defaultdict(list)
         )
         self._conversions: dict[tuple[UUID, UUID], ConversionEvidence] = {}
+        self.materializations: list[MaterializedArtifact] = []
+        self._materialization_owners: dict[UUID, UUID] = {}
         self.publications: list[PublishedArtifact] = []
         self._publication_owners: dict[UUID, UUID] = {}
 
@@ -326,6 +329,56 @@ class MemoryAgentStore:
 
     async def conversion_for(self, run_id: UUID, candidate_id: UUID) -> ConversionEvidence | None:
         return self._conversions.get((run_id, candidate_id))
+
+    async def add_materialization(self, materialization: MaterializedArtifact) -> None:
+        owner = next(
+            (
+                run_id
+                for run_id, candidates in self._candidates.items()
+                if any(c.candidate_id == materialization.candidate_id for c in candidates)
+            ),
+            None,
+        )
+        if owner is None:
+            raise KeyError(materialization.candidate_id)
+        candidate = next(
+            item
+            for item in self._candidates[owner]
+            if item.candidate_id == materialization.candidate_id
+        )
+        attempts = self._strict_verifications[(owner, materialization.candidate_id)]
+        strict = max(attempts, key=lambda item: item.attempt_seq) if attempts else None
+        if strict is None or strict.decision.value not in {"pass", "inconclusive"}:
+            raise ValueError("materialization requires strict PASS or INCONCLUSIVE")
+        if not (
+            candidate.source_fingerprint
+            == strict.source_fingerprint
+            == materialization.source_fingerprint
+        ):
+            raise ValueError("materialization fingerprint does not match strict evidence")
+        existing = next(
+            (
+                item
+                for item in self.materializations
+                if item.candidate_id == materialization.candidate_id
+            ),
+            None,
+        )
+        if existing is not None and existing != materialization:
+            raise ValueError("candidate materialization is immutable")
+        if existing is None:
+            self.materializations.append(materialization)
+        self._materialization_owners[materialization.candidate_id] = owner
+
+    async def materialization_for(
+        self, run_id: UUID, candidate_id: UUID
+    ) -> MaterializedArtifact | None:
+        if self._materialization_owners.get(candidate_id) != run_id:
+            return None
+        return next(
+            (item for item in self.materializations if item.candidate_id == candidate_id),
+            None,
+        )
 
     async def add_publication(self, publication: PublishedArtifact) -> None:
         owner = next(

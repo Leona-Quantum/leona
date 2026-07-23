@@ -9,7 +9,7 @@ from majorana_agent import (
     ExecutionOutput,
     ExecutionFailureKind,
     MemoryAgentStore,
-    PublishedArtifact,
+    MaterializedArtifact,
     SemanticReviewOutput,
     ToolBroker,
     ToolCall,
@@ -103,8 +103,8 @@ class Converter:
 
 
 class Publisher:
-    async def publish(self, candidate, _execution, _verification, _conversion, _plan):
-        return PublishedArtifact(
+    async def materialize(self, candidate, *_args):
+        return MaterializedArtifact(
             artifact_id=uuid4(),
             version_id=uuid4(),
             version_seq=1,
@@ -125,7 +125,7 @@ async def test_tools_bind_execution_verification_conversion_and_publish():
         reviewer=Reviewer(),
         strict_verifier=StrictVerifier(),
         converter=Converter(),
-        publisher=Publisher(),
+        materializer=Publisher(),
     )
     broker = ToolBroker(
         store=store,
@@ -204,7 +204,7 @@ async def test_simulate_resumes_same_candidate_after_partial_commit():
         executor=Executor(),
         verifier=Verifier(),
         converter=Converter(),
-        publisher=Publisher(),
+        materializer=Publisher(),
     )
     broker = ToolBroker(
         store=store,
@@ -248,7 +248,7 @@ async def test_simulate_retry_reconciles_status_after_evidence_commit():
         executor=Executor(),
         verifier=Verifier(),
         converter=Converter(),
-        publisher=Publisher(),
+        materializer=Publisher(),
     )
     broker = ToolBroker(
         store=store,
@@ -293,7 +293,7 @@ async def test_resource_exhaustion_is_terminal_without_candidate_repair():
         executor=ResourceExhaustedExecutor(),
         verifier=Verifier(),
         converter=Converter(),
-        publisher=Publisher(),
+        materializer=Publisher(),
     )
     broker = ToolBroker(
         store=store,
@@ -353,7 +353,7 @@ async def test_a_pre_sandbox_contract_rejection_tells_the_model_what_was_wrong()
         executor=ContractRejectedExecutor(),
         verifier=Verifier(),
         converter=Converter(),
-        publisher=Publisher(),
+        materializer=Publisher(),
     )
     broker = ToolBroker(
         store=store,
@@ -427,7 +427,7 @@ def _replan_stack(store, planner, verifier, *, budget=AgentBudget()):
         reviewer=verifier,
         strict_verifier=StrictVerifier(),
         converter=Converter(),
-        publisher=Publisher(),
+        materializer=Publisher(),
     )
     broker = ToolBroker(
         store=store,

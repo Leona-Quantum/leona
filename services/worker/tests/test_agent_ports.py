@@ -9,7 +9,7 @@ from majorana_agent import (
     ExecutionEvidence,
     ExecutionFailureKind,
     SemanticReviewEvidence,
-    VerificationEvidence,
+    StrictVerificationAttempt,
 )
 from majorana_contracts.enums import (
     Algorithm,
@@ -33,7 +33,7 @@ from majorana_worker.agent_ports import (
     EvidenceStrictVerifier,
     FastCandidateChecker,
     LLMPlanner,
-    RepoArtifactPublisher,
+    RepoArtifactMaterializer,
     SandboxCandidateExecutor,
     StrictEvidenceVerifier,
     TrustedOpenQASMConverter,
@@ -470,31 +470,49 @@ async def test_semantic_timeout_is_inconclusive_without_candidate_repair():
     assert output.candidate_defect_observed is False
 
 
-async def test_publisher_keeps_compact_long_term_evidence_without_duplicate_variant(
+async def test_materializer_persists_exact_bound_verification_metadata(
     monkeypatch,
 ):
     candidate = _candidate()
     execution = _execution(candidate)
-    verification = VerificationEvidence(
-        verification_id=uuid4(),
+    review = SemanticReviewEvidence(
+        review_id=uuid4(),
         candidate_id=candidate.candidate_id,
         execution_id=execution.execution_id,
         source_fingerprint=candidate.source_fingerprint,
+        attempt_seq=1,
+        decision=SemanticReviewDecision.READY,
+        reason_code="semantic_ready",
+        retry_target=RetryTarget.NONE,
+        feedback={
+            "critic": {
+                "confidence": "high",
+                "severity": "minor",
+                "summary": "The implementation aligns with the request.",
+                "residual_risks": ["Shot noise remains."],
+                "repair_plan": [],
+            }
+        },
+    )
+    verification = StrictVerificationAttempt(
+        attempt_id=uuid4(),
+        candidate_id=candidate.candidate_id,
+        execution_id=execution.execution_id,
+        semantic_review_id=review.review_id,
+        source_fingerprint=candidate.source_fingerprint,
+        attempt_seq=1,
         decision=VerifierDecision.PASS,
-        deterministic_checks=[
+        checks=[
             {
                 "method": "return_contract",
                 "result": "pass",
                 "details": {"large_transient_evidence": "not copied"},
             }
         ],
-        critic={
-            "confidence": "high",
-            "severity": "minor",
-            "summary": "The implementation aligns with the request.",
-            "residual_risks": ["Shot noise remains."],
-            "repair_plan": [],
-        },
+        reason_code="strict_pass",
+        candidate_defect_observed=False,
+        retry_target=RetryTarget.NONE,
+        verifier_version="test",
     )
     artifact_id = uuid4()
     version_id = uuid4()
@@ -519,42 +537,61 @@ async def test_publisher_keeps_compact_long_term_evidence_without_duplicate_vari
         set_run_artifact_version,
     )
 
-    publication = await RepoArtifactPublisher(
+    materialization = await RepoArtifactMaterializer(
         scope=object(),
         session=object(),
         run_id=candidate.run_id,
         parent_artifact_id=None,
         title="Bell circuit",
-    ).publish(candidate, execution, verification, None, _plan())
+    ).materialize(candidate, execution, verification, review, None, _plan())
 
-    assert publication.version_id == version_id
+    assert materialization.version_id == version_id
     assert captured["code"] == candidate.source
     assert captured["framework_variants"] is None
     assert captured["resource_estimates"] == execution.observation["resource_metrics"]
     assert captured["limitations"] == "Shot noise remains."
     summary = captured["metadata"]["verification_summary"]
+    assert summary["verified"] is True
     assert summary["decision"] == "pass"
-    assert summary["deterministic_checks"] == [{"method": "return_contract", "result": "pass"}]
-    assert "repair_plan" not in summary["critic"]
+    assert summary["reason_code"] == "strict_pass"
+    assert summary["checks"][0]["method"] == "return_contract"
+    assert summary["semantic_review"]["summary"] == ("The implementation aligns with the request.")
+    assert captured["metadata"]["execution_id"] == str(execution.execution_id)
+    assert captured["metadata"]["verification_attempt_id"] == str(verification.attempt_id)
     # This candidate passed on return_contract alone — the teleportation shape. The
     # artifact must say so beside the decision, not just in the check list.
     assert summary["evidence_strength"] == "structural"
 
 
-async def test_publisher_records_physical_evidence_when_a_physical_check_ran(monkeypatch):
+async def test_materializer_records_physical_evidence_when_a_physical_check_ran(monkeypatch):
     candidate = _candidate()
     execution = _execution(candidate)
-    verification = VerificationEvidence(
-        verification_id=uuid4(),
+    review = SemanticReviewEvidence(
+        review_id=uuid4(),
         candidate_id=candidate.candidate_id,
         execution_id=execution.execution_id,
         source_fingerprint=candidate.source_fingerprint,
+        attempt_seq=1,
+        decision=SemanticReviewDecision.READY,
+        reason_code="semantic_ready",
+        retry_target=RetryTarget.NONE,
+    )
+    verification = StrictVerificationAttempt(
+        attempt_id=uuid4(),
+        candidate_id=candidate.candidate_id,
+        execution_id=execution.execution_id,
+        semantic_review_id=review.review_id,
+        source_fingerprint=candidate.source_fingerprint,
+        attempt_seq=1,
         decision=VerifierDecision.PASS,
-        deterministic_checks=[
+        checks=[
             {"method": "return_contract", "result": "pass", "details": {}},
             {"method": "exact", "result": "pass", "details": {"distance": 1.8e-16}},
         ],
-        critic={"confidence": "high", "severity": "none", "summary": "Aligned."},
+        reason_code="strict_pass",
+        candidate_defect_observed=False,
+        retry_target=RetryTarget.NONE,
+        verifier_version="test",
     )
     captured = {}
 
@@ -577,15 +614,145 @@ async def test_publisher_records_physical_evidence_when_a_physical_check_ran(mon
         set_run_artifact_version,
     )
 
-    await RepoArtifactPublisher(
+    await RepoArtifactMaterializer(
         scope=object(),
         session=object(),
         run_id=candidate.run_id,
         parent_artifact_id=None,
         title="Bell circuit",
-    ).publish(candidate, execution, verification, None, _plan())
+    ).materialize(candidate, execution, verification, review, None, _plan())
 
     assert captured["metadata"]["verification_summary"]["evidence_strength"] == "physical"
+
+
+async def test_inconclusive_materializes_with_explicit_unverified_metadata(monkeypatch):
+    candidate = _candidate()
+    execution = _execution(candidate)
+    review = SemanticReviewEvidence(
+        review_id=uuid4(),
+        candidate_id=candidate.candidate_id,
+        execution_id=execution.execution_id,
+        source_fingerprint=candidate.source_fingerprint,
+        attempt_seq=1,
+        decision=SemanticReviewDecision.INCONCLUSIVE,
+        reason_code="semantic_evidence_gap",
+        failure_class=VerificationFailureClass.EVIDENCE_GAP,
+        retry_target=RetryTarget.NONE,
+        feedback={
+            "critic": {
+                "summary": "Phase intent could not be established.",
+                "residual_risks": ["Relative phase is unverified."],
+            }
+        },
+    )
+    verification = StrictVerificationAttempt(
+        attempt_id=uuid4(),
+        candidate_id=candidate.candidate_id,
+        execution_id=execution.execution_id,
+        semantic_review_id=review.review_id,
+        source_fingerprint=candidate.source_fingerprint,
+        attempt_seq=1,
+        checks=[
+            {"method": "structural", "result": "pass"},
+            {"method": "bell_state", "result": "unavailable"},
+            {"method": "success_criteria", "result": "fail"},
+        ],
+        decision=VerifierDecision.INCONCLUSIVE,
+        evidence_strength=EvidenceStrength.STRUCTURAL,
+        reason_code="required_check_unavailable",
+        candidate_defect_observed=False,
+        failure_class=VerificationFailureClass.CAPABILITY_LIMIT,
+        retry_target=RetryTarget.NONE,
+        unverified_claims=["Bell relative phase"],
+        verifier_version="test",
+    )
+    captured = {}
+
+    async def create_artifact(*_args, **_kwargs):
+        return SimpleNamespace(id=uuid4())
+
+    async def create_version(*_args, **kwargs):
+        captured.update(kwargs)
+        return SimpleNamespace(id=uuid4(), seq=1)
+
+    async def set_run_artifact_version(*_args, **_kwargs):
+        return None
+
+    monkeypatch.setattr(
+        "majorana_worker.agent_ports.artifacts_repo.create_artifact", create_artifact
+    )
+    monkeypatch.setattr("majorana_worker.agent_ports.artifacts_repo.create_version", create_version)
+    monkeypatch.setattr(
+        "majorana_worker.agent_ports.runs_repo.set_run_artifact_version",
+        set_run_artifact_version,
+    )
+
+    await RepoArtifactMaterializer(
+        scope=object(),
+        session=object(),
+        run_id=candidate.run_id,
+        parent_artifact_id=None,
+        title="Bell circuit",
+    ).materialize(candidate, execution, verification, review, None, _plan())
+
+    summary = captured["metadata"]["verification_summary"]
+    assert summary["verified"] is False
+    assert summary["decision"] == "inconclusive"
+    assert summary["reason_code"] == "required_check_unavailable"
+    assert [check["method"] for check in summary["failed_checks"]] == ["success_criteria"]
+    assert [check["method"] for check in summary["unavailable_checks"]] == ["bell_state"]
+    assert summary["semantic_review"]["summary"] == "Phase intent could not be established."
+    assert summary["residual_risks"] == ["Relative phase is unverified."]
+    assert captured["fingerprint"] == candidate.source_fingerprint
+    assert "Bell relative phase" in captured["limitations"]
+
+
+@pytest.mark.parametrize("decision", [VerifierDecision.PASS, VerifierDecision.INCONCLUSIVE])
+async def test_materializer_rejects_fingerprint_mismatch_for_both_decisions(decision):
+    candidate = _candidate()
+    execution = _execution(candidate).model_copy(update={"source_fingerprint": "b" * 64})
+    review = SemanticReviewEvidence(
+        review_id=uuid4(),
+        candidate_id=candidate.candidate_id,
+        execution_id=execution.execution_id,
+        source_fingerprint="b" * 64,
+        attempt_seq=1,
+        decision=(
+            SemanticReviewDecision.READY
+            if decision is VerifierDecision.PASS
+            else SemanticReviewDecision.INCONCLUSIVE
+        ),
+        reason_code="semantic_complete",
+        failure_class=(
+            None if decision is VerifierDecision.PASS else VerificationFailureClass.EVIDENCE_GAP
+        ),
+        retry_target=RetryTarget.NONE,
+    )
+    strict = StrictVerificationAttempt(
+        attempt_id=uuid4(),
+        candidate_id=candidate.candidate_id,
+        execution_id=execution.execution_id,
+        semantic_review_id=review.review_id,
+        source_fingerprint="b" * 64,
+        attempt_seq=1,
+        decision=decision,
+        reason_code="strict_complete",
+        candidate_defect_observed=False,
+        failure_class=(
+            None if decision is VerifierDecision.PASS else VerificationFailureClass.EVIDENCE_GAP
+        ),
+        retry_target=RetryTarget.NONE,
+        verifier_version="test",
+    )
+
+    with pytest.raises(ValueError, match="fingerprint mismatch"):
+        await RepoArtifactMaterializer(
+            scope=object(),
+            session=object(),
+            run_id=candidate.run_id,
+            parent_artifact_id=None,
+            title="Bell circuit",
+        ).materialize(candidate, execution, strict, review, None, _plan())
 
 
 def test_verifier_respects_non_circuit_artifact_contract():
