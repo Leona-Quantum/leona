@@ -1678,12 +1678,14 @@ class RepoArtifactMaterializer:
         run_id: UUID,
         parent_artifact_id: UUID | None,
         title: str,
+        allow_inconclusive: bool = False,
     ) -> None:
         self._scope = scope
         self._session = session
         self._run_id = run_id
         self._parent_artifact_id = parent_artifact_id
         self._title = title
+        self._allow_inconclusive = allow_inconclusive
 
     async def materialize(
         self,
@@ -1695,6 +1697,8 @@ class RepoArtifactMaterializer:
         plan: Plan,
     ) -> MaterializedArtifact:
         verification.assert_binding(candidate, execution, review)
+        if verification.decision is VerifierDecision.INCONCLUSIVE and not self._allow_inconclusive:
+            raise ValueError("INCONCLUSIVE materialization is disabled by rollout policy")
         if conversion is not None and not (
             conversion.candidate_id == candidate.candidate_id
             and conversion.execution_id == execution.execution_id

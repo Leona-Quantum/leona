@@ -695,12 +695,23 @@ async def test_inconclusive_materializes_with_explicit_unverified_metadata(monke
         status="available",
         qasm="OPENQASM 3.0;\nqubit q;",
     )
+    with pytest.raises(ValueError, match="disabled by rollout policy"):
+        await RepoArtifactMaterializer(
+            scope=object(),
+            session=object(),
+            run_id=candidate.run_id,
+            parent_artifact_id=None,
+            title="Bell circuit",
+        ).materialize(candidate, execution, verification, review, conversion, _plan())
+    assert captured == {}, "default-off rollout must stop before any artifact write"
+
     await RepoArtifactMaterializer(
         scope=object(),
         session=object(),
         run_id=candidate.run_id,
         parent_artifact_id=None,
         title="Bell circuit",
+        allow_inconclusive=True,
     ).materialize(candidate, execution, verification, review, conversion, _plan())
 
     summary = captured["metadata"]["verification_summary"]

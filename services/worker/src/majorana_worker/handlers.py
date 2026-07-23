@@ -36,6 +36,7 @@ from majorana_agent import (
 from majorana_contracts.events import run_event_adapter
 from majorana_llm import LLMClient, LLMRequest, QUANTUM_AGENT_SYSTEM_PROMPT, default_llm, model_for
 from majorana_sandbox import LocalSubprocessSandbox, Sandbox, VercelSandbox
+from opentelemetry import metrics
 
 from pathlib import Path
 
@@ -69,6 +70,66 @@ from .intent import resolve_mode
 log = logging.getLogger("majorana_worker")
 
 DEFAULT_RUN_TIMEOUT_S = 300.0
+
+_verification_meter = metrics.get_meter("majorana.worker.verification")
+_verification_decisions = _verification_meter.create_counter("majorana.verification.decisions")
+_verification_routes = _verification_meter.create_counter("majorana.verification.routes")
+_verification_errors = _verification_meter.create_counter("majorana.verification.errors")
+_fingerprint_mismatches = _verification_meter.create_counter(
+    "majorana.verification.fingerprint_mismatches"
+)
+_DECISIONS = frozenset(decision.value for decision in VerifierDecision)
+_FAILURE_CLASSES = frozenset(item.value for item in VerificationFailureClass)
+_ROUTE_BY_REASON = {
+    "strict_pass": "pass",
+    "legacy_verified": "legacy",
+    "resource_exhausted": "resource_exhausted",
+    "run_timeout": "timeout",
+}
+
+
+def _enabled(name: str, *, default: bool) -> bool:
+    raw = os.environ.get(name)
+    if raw is None:
+        return default
+    normalized = raw.strip().lower()
+    if normalized in {"1", "true", "yes", "on"}:
+        return True
+    if normalized in {"0", "false", "no", "off"}:
+        return False
+    raise RuntimeError(f"{name} must be a boolean feature flag")
+
+
+def _record_verification_summary(summary: dict[str, Any]) -> None:
+    raw_decision = summary.get("decision")
+    decision = raw_decision if raw_decision in _DECISIONS else "unknown"
+    raw_failure_class = summary.get("failure_class")
+    failure_class = (
+        raw_failure_class
+        if raw_failure_class in _FAILURE_CLASSES
+        else "none"
+        if raw_failure_class is None
+        else "other"
+    )
+    reason_code = summary.get("reason_code")
+    route = _ROUTE_BY_REASON.get(reason_code)
+    if route is None and failure_class in _FAILURE_CLASSES:
+        route = failure_class
+    if route is None:
+        route = "other"
+    attributes = {
+        "decision": decision,
+        "route": route,
+        "failure_class": failure_class,
+    }
+    _verification_decisions.add(1, {"decision": decision})
+    _verification_routes.add(1, attributes)
+    checks = summary.get("checks")
+    has_error_check = isinstance(checks, list) and any(
+        isinstance(check, dict) and check.get("result") == "error" for check in checks
+    )
+    if failure_class == VerificationFailureClass.VERIFIER_FAILURE.value or has_error_check:
+        _verification_errors.add(1, {"route": route})
 
 
 def _default_llm() -> LLMClient:
@@ -445,10 +506,12 @@ async def _finish_materialized_agent(ctx, run_store, agent_store) -> RunStatus:
     legacy = await agent_store.published_verification(ctx.run_id) if strict is None else None
     if strict is not None:
         if candidate.source_fingerprint != strict.source_fingerprint:
+            _fingerprint_mismatches.add(1, {"boundary": "candidate_to_strict"})
             raise RuntimeError("terminal strict verdict has a stale candidate fingerprint")
         if review is None or review.review_id != strict.semantic_review_id:
             raise RuntimeError("terminal strict verdict is not bound to the latest review")
         if review.source_fingerprint != strict.source_fingerprint:
+            _fingerprint_mismatches.add(1, {"boundary": "review_to_strict"})
             raise RuntimeError("terminal review and strict fingerprints differ")
     decision = strict.decision if strict is not None else legacy.decision if legacy else None
     if decision not in {VerifierDecision.PASS, VerifierDecision.INCONCLUSIVE}:
@@ -478,7 +541,7 @@ async def _finish_materialized_agent(ctx, run_store, agent_store) -> RunStatus:
         if strict is not None
         else None
     )
-    return await run_store.finish(
+    result = await run_store.finish(
         RunStatus.SUCCEEDED,
         {
             "status": RunStatus.SUCCEEDED,
@@ -490,6 +553,16 @@ async def _finish_materialized_agent(ctx, run_store, agent_store) -> RunStatus:
         verifier_decision=decision.value,
         verification_summary=summary,
     )
+    _record_verification_summary(
+        summary
+        or {
+            "decision": decision.value,
+            "reason_code": "legacy_verified",
+            "failure_class": None,
+            "checks": [],
+        }
+    )
+    return result
 
 
 async def _finish_resource_exhausted(ctx, run_store, agent_store, failure_reason) -> RunStatus:
@@ -506,35 +579,29 @@ async def _finish_resource_exhausted(ctx, run_store, agent_store, failure_reason
         },
         event_id=uuid.uuid5(ctx.run_id, "run.error.resource_exhausted"),
     )
-    return await run_store.finish(
+    summary = {
+        "decision": "inconclusive",
+        "evidence_strength": "structural",
+        "reason_code": "resource_exhausted",
+        "candidate_defect_observed": False,
+        "failure_class": "capability_limit",
+        "retry_target": "none",
+        "unverified_claims": ["candidate execution within configured resources"],
+        "checks": [],
+    }
+    result = await run_store.finish(
         RunStatus.FAILED,
         {
             "status": RunStatus.FAILED,
             "verifier_decision": "inconclusive",
             "reason_code": "resource_exhausted",
-            "verification_summary": {
-                "decision": "inconclusive",
-                "evidence_strength": "structural",
-                "reason_code": "resource_exhausted",
-                "candidate_defect_observed": False,
-                "failure_class": "capability_limit",
-                "retry_target": "none",
-                "unverified_claims": ["candidate execution within configured resources"],
-                "checks": [],
-            },
+            "verification_summary": summary,
         },
         verifier_decision="inconclusive",
-        verification_summary={
-            "decision": "inconclusive",
-            "evidence_strength": "structural",
-            "reason_code": "resource_exhausted",
-            "candidate_defect_observed": False,
-            "failure_class": "capability_limit",
-            "retry_target": "none",
-            "unverified_claims": ["candidate execution within configured resources"],
-            "checks": [],
-        },
+        verification_summary=summary,
     )
+    _record_verification_summary(summary)
+    return result
 
 
 async def _bound_latest_strict_summary(run_id, agent_store):
@@ -548,7 +615,11 @@ async def _bound_latest_strict_summary(run_id, agent_store):
     review = await agent_store.latest_semantic_review(run_id, candidate.candidate_id)
     if execution is None or review is None:
         raise RuntimeError("strict terminal evidence is missing its bound execution or review")
-    strict.assert_binding(candidate, execution, review)
+    try:
+        strict.assert_binding(candidate, execution, review)
+    except ValueError:
+        _fingerprint_mismatches.add(1, {"boundary": "terminal_evidence_chain"})
+        raise
     strength = strict.evidence_strength or evidence_strength_of(strict.checks)
     return strict, {
         "decision": strict.decision.value,
@@ -587,7 +658,10 @@ async def _finish_failed_agent(
             verifier_decision=strict.decision.value,
             verification_summary=summary,
         )
-    return await run_store.finish(RunStatus.FAILED, payload, **fields)
+    result = await run_store.finish(RunStatus.FAILED, payload, **fields)
+    if summary is not None:
+        _record_verification_summary(summary)
+    return result
 
 
 async def _finish_timed_out_run(ctx, run_store, agent_store) -> RunStatus:
@@ -611,7 +685,7 @@ async def _finish_timed_out_run(ctx, run_store, agent_store) -> RunStatus:
         }
     else:
         decision = strict.decision
-    return await run_store.finish(
+    result = await run_store.finish(
         RunStatus.FAILED,
         {
             "status": RunStatus.FAILED,
@@ -622,6 +696,8 @@ async def _finish_timed_out_run(ctx, run_store, agent_store) -> RunStatus:
         verifier_decision=decision.value,
         verification_summary=summary,
     )
+    _record_verification_summary(summary)
+    return result
 
 
 async def _handle_agent_execution(
@@ -674,6 +750,9 @@ async def _handle_agent_execution(
             run_id=ctx.run_id,
             parent_artifact_id=parent_artifact_id,
             title=ctx.task_prompt,
+            allow_inconclusive=_enabled(
+                "MAJORANA_INCONCLUSIVE_MATERIALIZATION_ENABLED", default=False
+            ),
         ),
     )
     broker = ToolBroker(

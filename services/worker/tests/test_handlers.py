@@ -87,6 +87,88 @@ def test_default_sandbox_rejects_unknown_provider(monkeypatch):
         handlers._default_sandbox()
 
 
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [(None, False), ("1", True), ("true", True), ("0", False), ("off", False)],
+)
+def test_inconclusive_materialization_rollout_flag(monkeypatch, raw, expected):
+    name = "MAJORANA_INCONCLUSIVE_MATERIALIZATION_ENABLED"
+    if raw is None:
+        monkeypatch.delenv(name, raising=False)
+    else:
+        monkeypatch.setenv(name, raw)
+    assert handlers._enabled(name, default=False) is expected
+
+
+def test_invalid_rollout_flag_fails_closed(monkeypatch):
+    name = "MAJORANA_INCONCLUSIVE_MATERIALIZATION_ENABLED"
+    monkeypatch.setenv(name, "sometimes")
+    with pytest.raises(RuntimeError, match="boolean feature flag"):
+        handlers._enabled(name, default=True)
+
+
+def test_verification_metrics_separate_decision_route_and_error(monkeypatch):
+    class Counter:
+        def __init__(self):
+            self.calls = []
+
+        def add(self, value, attributes):
+            self.calls.append((value, attributes))
+
+    decisions = Counter()
+    routes = Counter()
+    errors = Counter()
+    monkeypatch.setattr(handlers, "_verification_decisions", decisions)
+    monkeypatch.setattr(handlers, "_verification_routes", routes)
+    monkeypatch.setattr(handlers, "_verification_errors", errors)
+
+    handlers._record_verification_summary(
+        {
+            "decision": "inconclusive",
+            "reason_code": "strict_verifier_error",
+            "failure_class": "verifier_failure",
+            "checks": [{"method": "structural", "result": "error"}],
+        }
+    )
+
+    assert decisions.calls == [(1, {"decision": "inconclusive"})]
+    assert routes.calls[0][1]["route"] == "verifier_failure"
+    assert errors.calls == [(1, {"route": "verifier_failure"})]
+
+
+def test_verification_metrics_collapse_arbitrary_labels_to_closed_buckets(monkeypatch):
+    class Counter:
+        def __init__(self):
+            self.calls = []
+
+        def add(self, value, attributes):
+            self.calls.append((value, attributes))
+
+    decisions = Counter()
+    routes = Counter()
+    monkeypatch.setattr(handlers, "_verification_decisions", decisions)
+    monkeypatch.setattr(handlers, "_verification_routes", routes)
+
+    for suffix in ("first-user-shaped-value", "second-distinct-value"):
+        handlers._record_verification_summary(
+            {
+                "decision": f"unknown-{suffix}",
+                "reason_code": suffix,
+                "failure_class": f"unknown-{suffix}",
+                "checks": [],
+            }
+        )
+
+    assert decisions.calls == [
+        (1, {"decision": "unknown"}),
+        (1, {"decision": "unknown"}),
+    ]
+    assert routes.calls == [
+        (1, {"decision": "unknown", "route": "other", "failure_class": "other"}),
+        (1, {"decision": "unknown", "route": "other", "failure_class": "other"}),
+    ]
+
+
 class _RecordingSink:
     def __init__(self):
         self.events = []
@@ -185,8 +267,11 @@ async def test_materialized_inconclusive_finishes_successfully_without_best_effo
     assert fields["verification_summary"] == payload["verification_summary"]
 
 
-async def test_materialized_terminal_rejects_stale_candidate_fingerprint():
+async def test_materialized_terminal_rejects_stale_candidate_fingerprint(monkeypatch):
     candidate_id = uuid.uuid4()
+    calls = []
+    counter = SimpleNamespace(add=lambda value, attributes: calls.append((value, attributes)))
+    monkeypatch.setattr(handlers, "_fingerprint_mismatches", counter)
 
     class AgentStore:
         async def latest_candidate(self, _run_id):
@@ -218,6 +303,7 @@ async def test_materialized_terminal_rejects_stale_candidate_fingerprint():
 
     with pytest.raises(RuntimeError, match="stale candidate fingerprint"):
         await handlers._finish_materialized_agent(ctx, object(), AgentStore())
+    assert calls == [(1, {"boundary": "candidate_to_strict"})]
 
 
 async def test_materialized_terminal_rejects_mismatched_latest_review():
