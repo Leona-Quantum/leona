@@ -250,7 +250,10 @@ async def cancel_run(run_id: uuid.UUID, scope: CurrentScope, session: DbSession)
         event_payload={"status": RunStatus.CANCELLED.value},
         event_id=uuid.uuid5(run_id, "run.finished"),
     )
-    run.status = RunStatus.CANCELLED
+    # finish_run's ORM UPDATE expires the loaded row; touching an expired
+    # attribute on an AsyncSession raises MissingGreenlet, so re-read it
+    # explicitly (still inside our row lock) before serializing.
+    await session.refresh(run)
     return _to_resource(run)
 
 
