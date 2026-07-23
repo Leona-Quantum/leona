@@ -35,10 +35,16 @@ _DEFAULTS: dict[str, dict[str, str]] = {
         "route": "deepseek-chat",
         # Legacy nameko tiering: GPT for judgment, DeepSeek for volume work.
         "plan": "gpt-5.5",  # structured planning + judgment
-        # Non-reasoning tier: v4-pro reproducibly burned its whole 8192 budget on
-        # reasoning with zero content on VQE-scale tasks (bench-14, 2026-07-11);
-        # deepseek-chat produced real code in 1.5k tokens / 14s on the same case.
-        "generate": "deepseek-chat",
+        # v4-pro reproducibly burned its whole 8192 budget on reasoning with zero
+        # content on VQE-scale tasks (bench-14, 2026-07-11), so this was
+        # deepseek-chat (non-reasoning) until 2026-07-23. Re-benchmarked that day
+        # on a Grover task deepseek-chat could not converge on in 6 candidates
+        # (repeating the same qiskit compose() defect every time): v4-pro solved
+        # it in 2 candidates, 2744 output tokens, real code both times. The
+        # generate-stage max_tokens budget was raised alongside this switch (see
+        # model.py) specifically to give harder/VQE-scale tasks more headroom
+        # before hitting the exact failure bench-14 found.
+        "generate": "deepseek-v4-pro",
         "verify": "gpt-5.5",  # strict critic — high-stakes review
         "analyze": "gpt-5.5",  # evidence-grounded natural-language explanation
         "writeback": "deepseek-v4-pro",  # library metadata + explanations

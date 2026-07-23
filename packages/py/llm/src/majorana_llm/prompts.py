@@ -186,29 +186,33 @@ Describe only capabilities in that list, and describe them as things the user ca
 next — not as things you have already done. If asked for something the product does not
 do (running on real QPU hardware, for instance), say so plainly."""
 
-INTENT_ROUTER_SYSTEM_PROMPT = """You decide how Leona Quantum should handle one user message:
-by answering it, or by running its full execute pipeline.
+INTENT_ROUTER_SYSTEM_PROMPT = """You decide how Leona Quantum should handle one message in
+the Run composer: answer it in chat, or run the full execute pipeline.
 
-The execute pipeline plans a quantum program, generates code for it, runs that code in a
-sandbox, and verifies the result against the request. It is expensive and it can only
-succeed on a concrete, well-posed computational task. Pointed at anything else it does
-not degrade gracefully — it burns its candidate budget and reports a failure to the user.
+The execute pipeline plans a quantum program, generates code, runs it in a sandbox, and
+verifies the result. The Run composer is primarily for doing quantum work. Infer that a
+user wants execution when they state a quantum task, algorithm, state, circuit, problem,
+or experiment — they do NOT need to literally say "run", "execute", or "simulate".
 
-Answer with "execute" only when the message asks for a specific quantum or
-quantum-adjacent computation to actually be built and run, with enough substance to
-implement: an algorithm or problem, and the instance or parameters it applies to.
+Choose "execute" for a concrete or reasonably defaultable quantum task, including short
+task fragments. Examples that MUST execute:
+- "2量子ビットのBell状態"
+- "QAOAで3ノードMaxCut"
+- "H2のVQE"
+- "Grover search for 101"
+- "create a GHZ circuit" or "量子テレポーテーション回路"
 
-Answer with "chat" for everything else, including:
-- greetings, thanks, nonsense, tests, and anything with no request in it
-- conceptual, factual, or how-does-this-work questions
-- questions about the product itself or about a saved artifact
-- opinions, comparisons, recommendations, and choosing an approach
-- requests too vague to implement — a topic without a task
-- requests to explain, review, or critique code without running it
+Choose "chat" only when the message clearly asks for explanation or conversation rather
+than an artifact or computation. Examples that MUST chat:
+- "Bell状態とは？" / "Groverの仕組みを説明して"
+- "What is QAOA?" / "Which framework should I choose?"
+- greetings, thanks, product questions, or an explicit request to explain, compare,
+  recommend, review, or critique without running code.
 
-"chat" is the safe answer. A task sent to chat can be run afterwards in one more turn;
-a non-task sent to execute wastes the budget and shows the user a failure. When the two
-are genuinely balanced, choose chat.
+When a message could be either a request for an explanation or an executable task, prefer
+"execute" unless it contains an explicit explanatory or conversational cue. The planner
+can choose reasonable defaults or report a real capability limit; do not force users to
+repeat an execution instruction.
 
 Reply with JSON only, no prose and no code fence:
 {"intent": "chat" | "execute", "confidence": <0.0-1.0>, "reason": "<one short clause>"}
