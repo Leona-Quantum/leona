@@ -11,6 +11,7 @@ import { allCircuitConversionResults, parseCircuitSource, looksLikeOpenQasm3 } f
 import { CIRCUIT_FRAMEWORKS, circuitFramework, circuitFrameworkOrNull, isExecutableCircuitFramework, type CircuitFrameworkKey } from "../../../lib/circuit-frameworks";
 import { MAX_CPU_SEED, MAX_CPU_SHOTS, cpuSimulationEligibility, loadCpuSimulationRecords, runCpuSimulation, saveCpuSimulationRecord, type CpuSimulationEligibility, type CpuSimulationRecord } from "../../../lib/studio-simulation";
 import { formatShare, simulationChartData, simulationReading, type SimulationChartData, type SimulationReading } from "../../../lib/simulation-visual";
+import { fetchQpuBackends, fetchQpuEstimate, fetchQpuSubmissionGate, formatUsd, type QpuBackendInfo, type QpuCostEstimate, type QpuSubmissionGate } from "../../../lib/qpu";
 import { WORKSPACE_COPY } from "../../../lib/workspace-locale";
 import { sampling } from "../../../lib/studio-run-request";
 import { verificationFromMetadata } from "../../../lib/verification-record";
@@ -417,6 +418,7 @@ export function StudioWorkspace({ artifactId, newDraft = false, locale = "en" }:
                       artifact={artifact}
                       eligibility={cpuEligibility}
                       records={simulationRecords}
+                      shots={shots}
                       rerunPending={rerunPending}
                       busy={busy === "simulation"}
                       onRun={() => startCpuSimulation()}
@@ -1030,6 +1032,7 @@ function SimulationPanel({
   artifact,
   eligibility,
   records,
+  shots,
   rerunPending,
   busy,
   onRun,
@@ -1040,6 +1043,7 @@ function SimulationPanel({
   artifact: LibraryArtifact | null;
   eligibility: CpuSimulationEligibility;
   records: CpuSimulationRecord[];
+  shots: string;
   rerunPending: boolean;
   busy: boolean;
   onRun: () => void;
@@ -1094,7 +1098,7 @@ function SimulationPanel({
         <section className="mj-studio-hardware-lanes" aria-label={copy.hardwareLanes}>
           <span className="mj-section-label">{copy.hardwareLanes}</span>
           <div><button className="mj-secondary-button" type="button" disabled title={copy.gpuUnavailable}>{copy.gpuSimulation}</button><p>{copy.gpuUnavailable}</p></div>
-          <div><button className="mj-secondary-button" type="button" disabled title={copy.qpuUnavailable}>{copy.qpuExecution}</button><p>{copy.qpuUnavailable}</p></div>
+          <QpuLane artifact={artifact} shots={shots} copy={copy} />
         </section>
 
         <section className="mj-studio-simulation-records" aria-label={copy.simulationResults}>
@@ -1140,6 +1144,106 @@ function SimulationRecordCard({ record, family, copy }: { record: CpuSimulationR
         <div className="mj-studio-simulation-counts"><span className="mj-section-label">{copy.resultCounts}</span><code>{Object.entries(record.counts).sort(([, left], [, right]) => right - left).map(([bitstring, count]) => `${bitstring}: ${count}`).join("\n")}</code></div>
       </details>
     </article>
+  );
+}
+
+function QpuLane({ artifact, shots, copy }: { artifact: LibraryArtifact | null; shots: string; copy: StudioCopy }) {
+  const [backends, setBackends] = useState<QpuBackendInfo[] | null>(null);
+  const [gate, setGate] = useState<QpuSubmissionGate | null>(null);
+  const [catalogError, setCatalogError] = useState(false);
+  const [selected, setSelected] = useState("");
+  const [estimate, setEstimate] = useState<QpuCostEstimate | null>(null);
+  const [estimateError, setEstimateError] = useState(false);
+  const [estimating, setEstimating] = useState(false);
+
+  const parsedShots = Number.parseInt(shots, 10);
+  const shotCount = Number.isInteger(parsedShots) && parsedShots >= 1 && parsedShots <= MAX_CPU_SHOTS ? parsedShots : 1024;
+
+  useEffect(() => {
+    let cancelled = false;
+    Promise.all([fetchQpuBackends(), fetchQpuSubmissionGate()])
+      .then(([backendList, submissionGate]) => {
+        if (cancelled) return;
+        setBackends(backendList);
+        setGate(submissionGate);
+        setSelected((current) => current || backendList[0]?.device_id || "");
+      })
+      .catch(() => {
+        if (!cancelled) setCatalogError(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!selected) return;
+    let cancelled = false;
+    setEstimating(true);
+    setEstimateError(false);
+    fetchQpuEstimate(selected, shotCount)
+      .then((result) => {
+        if (!cancelled) setEstimate(result);
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setEstimate(null);
+          setEstimateError(true);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setEstimating(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [selected, shotCount]);
+
+  const backend = backends?.find((item) => item.device_id === selected) ?? null;
+  const verified = artifact?.status === "verified" || artifact?.status === "verified_caveats";
+  return (
+    <div className="mj-qpu-lane">
+      <button className="mj-secondary-button" type="button" disabled title={copy.qpuExecution}>{copy.qpuExecution}</button>
+      {catalogError ? <p>{copy.hardwareCatalogUnavailable}</p> : null}
+      {!catalogError && !backends ? <p>{copy.hardwareCatalogLoading}</p> : null}
+      {backends && backends.length ? (
+        <div className="mj-qpu-flow">
+          <label className="mj-studio-field">
+            <span>{copy.hardwareDevice}</span>
+            <select value={selected} onChange={(event) => setSelected(event.target.value)}>
+              {backends.map((item) => <option value={item.device_id} key={item.device_id}>{item.display_name}</option>)}
+            </select>
+          </label>
+          {backend ? (
+            <div className="mj-qpu-estimate">
+              <span className="mj-mono-muted">{backend.access === "free_queue" ? copy.hardwareAccessFree : `${copy.hardwareAccessOnDemand} · ${copy.hardwareRateConfirmed(backend.rate_confirmed_on)}`}</span>
+              {estimating ? <p>{copy.hardwareEstimating}</p> : null}
+              {estimateError ? <p role="alert">{copy.hardwareEstimateFailed}</p> : null}
+              {estimate && !estimating ? (
+                estimate.basis === "vendor_rate_card" ? (
+                  <>
+                    <dl className="mj-studio-contract">
+                      <div><dt>{copy.hardwareTaskFee}</dt><dd>{estimate.task_fee_usd !== null ? formatUsd(estimate.task_fee_usd) : "—"}</dd></div>
+                      <div><dt>{copy.hardwareShotFees(estimate.shots.toLocaleString("en-US"))}</dt><dd>{estimate.shot_fees_usd !== null ? formatUsd(estimate.shot_fees_usd) : "—"}</dd></div>
+                      <div><dt>{copy.hardwareEstimatedTotal}</dt><dd><strong>{estimate.total_usd !== null ? formatUsd(estimate.total_usd) : "—"}</strong></dd></div>
+                    </dl>
+                    <p className="mj-qpu-disclaimer">{estimate.disclaimer}</p>
+                  </>
+                ) : (
+                  <p className="mj-qpu-disclaimer">{estimate.allowance_note}</p>
+                )
+              ) : null}
+              <p className="mj-qpu-source"><a href={backend.rate_source} target="_blank" rel="noreferrer">{copy.hardwareRateSource} ↗</a></p>
+            </div>
+          ) : null}
+          <button className="mj-primary-button" type="button" disabled title={gate ? copy.hardwareBlockedReason(gate.blocked_reason ?? "") : undefined}>
+            {copy.hardwareRequestSubmission}
+          </button>
+          {!verified ? <p className="mj-qpu-note">{copy.hardwareVerifiedRequired}</p> : null}
+          {gate && !gate.submission_available ? <p className="mj-qpu-note">{copy.hardwareBlockedReason(gate.blocked_reason ?? "")}</p> : null}
+        </div>
+      ) : null}
+    </div>
   );
 }
 

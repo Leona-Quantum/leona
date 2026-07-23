@@ -19,6 +19,7 @@ members = [
     "majorana-frameworks",
     "majorana-llm",
     "majorana-openqasm",
+    "majorana-qpu",
     "majorana-sandbox",
     "majorana-verification",
     "majorana-worker",
@@ -1024,6 +1025,7 @@ dependencies = [
     { name = "fastapi" },
     { name = "majorana-contracts" },
     { name = "majorana-openqasm" },
+    { name = "majorana-qpu" },
     { name = "opentelemetry-exporter-otlp-proto-http" },
     { name = "opentelemetry-instrumentation-fastapi" },
     { name = "opentelemetry-sdk" },
@@ -1040,6 +1042,7 @@ requires-dist = [
     { name = "fastapi", specifier = ">=0.115" },
     { name = "majorana-contracts", editable = "packages/py/contracts" },
     { name = "majorana-openqasm", editable = "packages/py/openqasm" },
+    { name = "majorana-qpu", editable = "packages/py/qpu" },
     { name = "opentelemetry-exporter-otlp-proto-http", specifier = ">=1.27" },
     { name = "opentelemetry-instrumentation-fastapi", specifier = ">=0.48b0" },
     { name = "opentelemetry-sdk", specifier = ">=1.27" },
@@ -1139,6 +1142,17 @@ requires-dist = [
     { name = "qiskit", specifier = ">=2.4,<3" },
     { name = "qiskit-qasm3-import", specifier = ">=0.6,<0.7" },
 ]
+
+[[package]]
+name = "majorana-qpu"
+version = "0.1.0"
+source = { editable = "packages/py/qpu" }
+dependencies = [
+    { name = "pydantic" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "pydantic", specifier = ">=2.8" }]
 
 [[package]]
 name = "majorana-sandbox"

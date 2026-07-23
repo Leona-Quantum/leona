@@ -190,6 +190,21 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
     readingConcentrated: (state: string, share: string) => string;
     readingPaired: (first: string, second: string, share: string) => string;
     readingSpread: (states: number, state: string, share: string) => string;
+    hardwareCatalogLoading: string;
+    hardwareCatalogUnavailable: string;
+    hardwareDevice: string;
+    hardwareAccessFree: string;
+    hardwareAccessOnDemand: string;
+    hardwareTaskFee: string;
+    hardwareShotFees: (shots: string) => string;
+    hardwareEstimatedTotal: string;
+    hardwareRateConfirmed: (date: string) => string;
+    hardwareRateSource: string;
+    hardwareEstimating: string;
+    hardwareEstimateFailed: string;
+    hardwareRequestSubmission: string;
+    hardwareVerifiedRequired: string;
+    hardwareBlockedReason: (reason: string) => string;
     verifySave: string;
     starting: string;
     view: string;
@@ -491,6 +506,25 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
       readingConcentrated: (state, share) => `${share} of shots landed on |${state}⟩ — a single dominant outcome in this sample.`,
       readingPaired: (first, second, share) => `Shots concentrated on |${first}⟩ and |${second}⟩ (${share} combined) — the correlated-pair signature.`,
       readingSpread: (states, state, share) => `${states} distinct outcomes in this sample; the most frequent was |${state}⟩ at ${share}.`,
+      hardwareCatalogLoading: "Loading the device catalog…",
+      hardwareCatalogUnavailable: "The QPU device catalog is unavailable because the control plane could not be reached.",
+      hardwareDevice: "Device",
+      hardwareAccessFree: "Free queue",
+      hardwareAccessOnDemand: "On-demand billing",
+      hardwareTaskFee: "Per-task fee",
+      hardwareShotFees: (shots) => `Shot fees (${shots} shots)`,
+      hardwareEstimatedTotal: "Estimated total",
+      hardwareRateConfirmed: (date) => `Vendor rate card, confirmed ${date}`,
+      hardwareRateSource: "Rate source",
+      hardwareEstimating: "Estimating…",
+      hardwareEstimateFailed: "The estimate is unavailable because the control plane could not be reached.",
+      hardwareRequestSubmission: "Request hardware submission",
+      hardwareVerifiedRequired: "Hardware submission will require a verified Vault version of this circuit.",
+      hardwareBlockedReason: (reason) => ({
+        submission_disabled: "Hardware submission is switched off in this deployment by the owner. The device, rates, and estimate above are exactly what a real submission will use.",
+        credentials_unconfigured: "No provider credentials are configured in this deployment, so nothing can be submitted.",
+        provider_dependency_missing: "The provider SDK is not installed in this deployment, so nothing can be submitted.",
+      }[reason] ?? "Hardware submission is unavailable in this deployment."),
       verifySave: "Verify & save",
       starting: "Starting…",
       view: "Studio view",
@@ -806,6 +840,25 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
       readingConcentrated: (state, share) => `ショットの${share}が |${state}⟩ に集中しました — このサンプルでは単一の支配的な結果です。`,
       readingPaired: (first, second, share) => `ショットは |${first}⟩ と |${second}⟩ に集中（合計${share}）— 相関ペアの特徴です。`,
       readingSpread: (states, state, share) => `このサンプルでは${states}種類の結果が観測され、最頻は |${state}⟩（${share}）でした。`,
+      hardwareCatalogLoading: "デバイスカタログを読み込み中…",
+      hardwareCatalogUnavailable: "コントロールプレーンに接続できないため、QPUデバイスカタログを利用できません。",
+      hardwareDevice: "デバイス",
+      hardwareAccessFree: "無料キュー",
+      hardwareAccessOnDemand: "オンデマンド課金",
+      hardwareTaskFee: "タスク料金",
+      hardwareShotFees: (shots) => `ショット料金（${shots} ショット）`,
+      hardwareEstimatedTotal: "見積もり合計",
+      hardwareRateConfirmed: (date) => `ベンダー料金表 · ${date} 確認`,
+      hardwareRateSource: "料金の出典",
+      hardwareEstimating: "見積もり中…",
+      hardwareEstimateFailed: "コントロールプレーンに接続できないため、見積もりを利用できません。",
+      hardwareRequestSubmission: "ハードウェア実行をリクエスト",
+      hardwareVerifiedRequired: "ハードウェア実行には、この回路の検証済みボールトバージョンが必要になります。",
+      hardwareBlockedReason: (reason) => ({
+        submission_disabled: "このデプロイメントでは、オーナーによりハードウェア実行が無効化されています。上記のデバイス・料金・見積もりは、実際の実行時にそのまま使用されるものです。",
+        credentials_unconfigured: "このデプロイメントにはプロバイダーの認証情報が設定されていないため、実行できません。",
+        provider_dependency_missing: "このデプロイメントにはプロバイダーSDKがインストールされていないため、実行できません。",
+      }[reason] ?? "このデプロイメントではハードウェア実行を利用できません。"),
       verifySave: "検証して保存",
       starting: "開始中…",
       view: "Studio表示",
@@ -952,6 +1005,25 @@ export const ACCOUNT_COPY: Record<PublicLocale, {
   usageRunsValue: string;
   usageStorage: string;
   usageStorageValue: string;
+  billingTitle: string;
+  billingHelp: string;
+  billingPayments: string;
+  billingPaymentsDisabled: string;
+  billingBackend: string;
+  billingBackendConfigured: string;
+  billingBackendUnconfigured: string;
+  billingUnavailable: string;
+  billingPolicyTitle: string;
+  billingPolicyHelp: string;
+  billingPolicyFree: string;
+  billingPolicyFreeValue: string;
+  billingPolicyDemo: string;
+  billingPolicyDemoValue: string;
+  billingPolicyCpu: string;
+  billingPolicyCpuValue: string;
+  billingPolicyHardware: string;
+  billingPolicyHardwareValue: string;
+  billingEstimatesLink: string;
 }> = {
   en: {
     title: "Settings",
@@ -993,6 +1065,25 @@ export const ACCOUNT_COPY: Record<PublicLocale, {
     usageRunsValue: "Fair use — no hard cap during early access",
     usageStorage: "Vault storage",
     usageStorageValue: "Fair use — artifacts and versions retained",
+    billingTitle: "Billing & credits",
+    billingHelp: "How Leona Quantum will charge for agent runs and hardware. Shown for transparency — payments are not enabled.",
+    billingPayments: "Payments",
+    billingPaymentsDisabled: "Disabled. You can explore the full flow without adding a payment method — no card entry, checkout, or charge exists in this deployment.",
+    billingBackend: "Billing backend",
+    billingBackendConfigured: "Stripe is connected for future billing. It holds no payment methods and cannot charge anyone.",
+    billingBackendUnconfigured: "Stripe is not configured in this deployment.",
+    billingUnavailable: "Billing status is unavailable because the control plane could not be reached.",
+    billingPolicyTitle: "Provisional credit policy",
+    billingPolicyHelp: "Owner-ratified direction, shown for transparency. Not yet enforced — numbers may change before launch.",
+    billingPolicyFree: "Free plan",
+    billingPolicyFreeValue: "About 5 agent runs per week",
+    billingPolicyDemo: "Demo credit",
+    billingPolicyDemoValue: "About 15 agent runs, expiring about two weeks after first use",
+    billingPolicyCpu: "Browser CPU simulation",
+    billingPolicyCpuValue: "No charge — target of about 10 runs per 10 minutes",
+    billingPolicyHardware: "GPU / QPU hardware",
+    billingPolicyHardwareValue: "Owner-gated. Sourced cost estimates appear in Studio's hardware lane before any submission.",
+    billingEstimatesLink: "See hardware estimates in Studio",
   },
   ja: {
     title: "設定",
@@ -1034,5 +1125,24 @@ export const ACCOUNT_COPY: Record<PublicLocale, {
     usageRunsValue: "フェアユース — アーリーアクセス中は固定上限なし",
     usageStorage: "ボールト保存",
     usageStorageValue: "フェアユース — アーティファクトとバージョンを保持",
+    billingTitle: "請求とクレジット",
+    billingHelp: "Leona Quantum がエージェント実行とハードウェアに課金する仕組みです。透明性のために表示しており、支払いは有効化されていません。",
+    billingPayments: "支払い",
+    billingPaymentsDisabled: "無効です。支払い方法を追加せずに全フローを確認できます。このデプロイメントにはカード入力・チェックアウト・請求は存在しません。",
+    billingBackend: "請求バックエンド",
+    billingBackendConfigured: "Stripe は将来の請求のために接続済みです。支払い方法は保持せず、誰にも請求できません。",
+    billingBackendUnconfigured: "このデプロイメントでは Stripe は設定されていません。",
+    billingUnavailable: "コントロールプレーンに接続できないため、請求ステータスを利用できません。",
+    billingPolicyTitle: "暫定クレジットポリシー",
+    billingPolicyHelp: "オーナー承認の方針を透明性のために表示しています。まだ適用されておらず、提供開始前に変更される可能性があります。",
+    billingPolicyFree: "無料プラン",
+    billingPolicyFreeValue: "週あたり約5回のエージェント実行",
+    billingPolicyDemo: "デモクレジット",
+    billingPolicyDemoValue: "約15回のエージェント実行（初回使用から約2週間で失効）",
+    billingPolicyCpu: "ブラウザCPUシミュレーション",
+    billingPolicyCpuValue: "無料 — 10分あたり約10回を目安",
+    billingPolicyHardware: "GPU / QPU ハードウェア",
+    billingPolicyHardwareValue: "オーナー承認制。実行前に Studio のハードウェアレーンに出典付き見積もりが表示されます。",
+    billingEstimatesLink: "Studio でハードウェア見積もりを見る",
   },
 };

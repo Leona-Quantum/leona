@@ -4947,6 +4947,50 @@ div.mj-rail-row:hover {
 .mj-sim-details > summary:hover {
   color: var(--text-0);
 }
+/* ---------- QPU hardware lane ---------- */
+.mj-qpu-lane {
+  display: grid;
+  gap: var(--sp-3);
+}
+.mj-qpu-lane > button {
+  justify-self: start;
+}
+.mj-qpu-lane p {
+  margin: 0;
+  color: var(--text-1);
+  font-size: var(--fs-12);
+  line-height: 1.5;
+}
+.mj-qpu-flow {
+  display: grid;
+  gap: var(--sp-3);
+  padding: var(--sp-4);
+  border: 1px solid var(--border-0);
+  border-radius: var(--radius-card);
+  background: var(--bg-2);
+}
+.mj-qpu-estimate {
+  display: grid;
+  gap: var(--sp-2);
+}
+.mj-qpu-disclaimer,
+.mj-qpu-note {
+  margin: 0;
+  color: var(--text-1);
+  font-size: var(--fs-12);
+  line-height: 1.5;
+}
+.mj-qpu-source {
+  margin: 0;
+  font-size: var(--fs-12);
+}
+.mj-qpu-source a {
+  color: var(--accent);
+}
+.mj-qpu-flow > .mj-primary-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
 .mj-studio-version-panel {
   padding-bottom: var(--sp-5);
 }
