@@ -181,6 +181,15 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
     artifactVersion: string;
     operations: string;
     resultCounts: string;
+    simulationDistribution: string;
+    simulationPeak: string;
+    simulationOtherBar: (states: number) => string;
+    simulationRecordSummary: (shots: string, qubits: number) => string;
+    simulationDetails: string;
+    simulationContextDetails: string;
+    readingConcentrated: (state: string, share: string) => string;
+    readingPaired: (first: string, second: string, share: string) => string;
+    readingSpread: (states: number, state: string, share: string) => string;
     verifySave: string;
     starting: string;
     view: string;
@@ -472,7 +481,16 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
       simulationRecord: "CPU simulation record",
       artifactVersion: "Base Vault version",
       operations: "Operations",
-      resultCounts: "Top sampled counts",
+      resultCounts: "All sampled counts",
+      simulationDistribution: "Sampled distribution",
+      simulationPeak: "Peak state",
+      simulationOtherBar: (states) => `${states} more states`,
+      simulationRecordSummary: (shots, qubits) => `${shots} shots · ${qubits} qubits`,
+      simulationDetails: "Record details",
+      simulationContextDetails: "Provenance & eligibility details",
+      readingConcentrated: (state, share) => `${share} of shots landed on |${state}⟩ — a single dominant outcome in this sample.`,
+      readingPaired: (first, second, share) => `Shots concentrated on |${first}⟩ and |${second}⟩ (${share} combined) — the correlated-pair signature.`,
+      readingSpread: (states, state, share) => `${states} distinct outcomes in this sample; the most frequent was |${state}⟩ at ${share}.`,
       verifySave: "Verify & save",
       starting: "Starting…",
       view: "Studio view",
@@ -778,7 +796,16 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
       simulationRecord: "CPUシミュレーション記録",
       artifactVersion: "基準ボールトバージョン",
       operations: "操作数",
-      resultCounts: "主なサンプル測定値",
+      resultCounts: "全サンプル測定値",
+      simulationDistribution: "サンプル分布",
+      simulationPeak: "ピーク状態",
+      simulationOtherBar: (states) => `他 ${states} 状態`,
+      simulationRecordSummary: (shots, qubits) => `${shots} ショット · ${qubits} 量子ビット`,
+      simulationDetails: "記録の詳細",
+      simulationContextDetails: "来歴と実行条件の詳細",
+      readingConcentrated: (state, share) => `ショットの${share}が |${state}⟩ に集中しました — このサンプルでは単一の支配的な結果です。`,
+      readingPaired: (first, second, share) => `ショットは |${first}⟩ と |${second}⟩ に集中（合計${share}）— 相関ペアの特徴です。`,
+      readingSpread: (states, state, share) => `このサンプルでは${states}種類の結果が観測され、最頻は |${state}⟩（${share}）でした。`,
       verifySave: "検証して保存",
       starting: "開始中…",
       view: "Studio表示",

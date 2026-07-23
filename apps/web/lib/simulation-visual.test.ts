@@ -3,8 +3,8 @@ import test from "node:test";
 import { formatShare, simulationChartData, simulationReading } from "./simulation-visual.ts";
 
 test("chart data sorts by count, marks the peak, and aggregates the tail", () => {
-  const counts = Object.fromEntries(
-    Array.from({ length: 15 }, (_, index) => [index.toString(2).padStart(4, "0"), 5] as const),
+  const counts: Record<string, number> = Object.fromEntries(
+    Array.from({ length: 15 }, (_, index) => [index.toString(2).padStart(4, "0"), 5]),
   );
   counts["1100"] = 950; // index 12 sits inside the generated range; make it the peak
   counts["1111"] = 5; // keep 16 distinct states in play

@@ -10,6 +10,7 @@ import { loadStoredCircuit, saveStoredCircuit } from "../../../lib/studio-circui
 import { allCircuitConversionResults, parseCircuitSource, looksLikeOpenQasm3 } from "../../../lib/circuit-conversion";
 import { CIRCUIT_FRAMEWORKS, circuitFramework, circuitFrameworkOrNull, isExecutableCircuitFramework, type CircuitFrameworkKey } from "../../../lib/circuit-frameworks";
 import { MAX_CPU_SEED, MAX_CPU_SHOTS, cpuSimulationEligibility, loadCpuSimulationRecords, runCpuSimulation, saveCpuSimulationRecord, type CpuSimulationEligibility, type CpuSimulationRecord } from "../../../lib/studio-simulation";
+import { formatShare, simulationChartData, simulationReading, type SimulationChartData, type SimulationReading } from "../../../lib/simulation-visual";
 import { WORKSPACE_COPY } from "../../../lib/workspace-locale";
 import { sampling } from "../../../lib/studio-run-request";
 import { verificationFromMetadata } from "../../../lib/verification-record";
@@ -1063,13 +1064,16 @@ function SimulationPanel({
       </div>
       <div className="mj-studio-simulation-body">
         <p className="mj-studio-simulation-boundary">{copy.simulationBoundary}</p>
-        <dl className="mj-studio-contract">
-          <div><dt>{copy.simulationArtifact}</dt><dd>{artifact?.title ?? copy.newDraftSource}</dd></div>
-          <div><dt>{copy.sourceFingerprint}</dt><dd>{eligibility.sourceFingerprint}</dd></div>
-          {eligibility.eligible && eligibility.interchangeFingerprint ? <div><dt>{copy.interchangeFingerprint}</dt><dd>{eligibility.interchangeFingerprint}</dd></div> : null}
-          {eligibility.eligible ? <div><dt>{copy.simulationModel}</dt><dd>{simulationModelLabel(eligibility.model, copy)}</dd></div> : null}
-          <div><dt>{copy.simulator}</dt><dd>{copy.browserCpu}</dd></div>
-        </dl>
+        <details className="mj-sim-details">
+          <summary>{copy.simulationContextDetails}</summary>
+          <dl className="mj-studio-contract">
+            <div><dt>{copy.simulationArtifact}</dt><dd>{artifact?.title ?? copy.newDraftSource}</dd></div>
+            <div><dt>{copy.sourceFingerprint}</dt><dd>{eligibility.sourceFingerprint}</dd></div>
+            {eligibility.eligible && eligibility.interchangeFingerprint ? <div><dt>{copy.interchangeFingerprint}</dt><dd>{eligibility.interchangeFingerprint}</dd></div> : null}
+            {eligibility.eligible ? <div><dt>{copy.simulationModel}</dt><dd>{simulationModelLabel(eligibility.model, copy)}</dd></div> : null}
+            <div><dt>{copy.simulator}</dt><dd>{copy.browserCpu}</dd></div>
+          </dl>
+        </details>
 
         {eligibility.eligible ? (
           rerunPending ? (
@@ -1095,31 +1099,83 @@ function SimulationPanel({
 
         <section className="mj-studio-simulation-records" aria-label={copy.simulationResults}>
           <div className="mj-studio-simulation-records-head"><span className="mj-section-label">{copy.simulationResults}</span><span className="mj-mono-muted">{records.length}</span></div>
-          {records.length ? records.map((record) => <SimulationRecordCard record={record} copy={copy} key={record.id} />) : <p className="mj-studio-empty">{copy.simulationNoRecords}</p>}
+          {records.length ? records.map((record) => <SimulationRecordCard record={record} family={artifact?.family ?? null} copy={copy} key={record.id} />) : <p className="mj-studio-empty">{copy.simulationNoRecords}</p>}
         </section>
       </div>
     </section>
   );
 }
 
-function SimulationRecordCard({ record, copy }: { record: CpuSimulationRecord; copy: StudioCopy }) {
-  const counts = Object.entries(record.counts).sort(([, left], [, right]) => right - left).slice(0, 8);
+function SimulationRecordCard({ record, family, copy }: { record: CpuSimulationRecord; family: string | null; copy: StudioCopy }) {
+  const data = simulationChartData(record.counts, record.shots);
+  const reading = data ? simulationReading(family, data) : null;
   return (
     <article className="mj-studio-simulation-record">
       <div className="mj-studio-simulation-record-head"><strong>{copy.simulationRecord}</strong><span className="mj-mono-muted">{record.createdAt}</span></div>
-      <dl className="mj-studio-contract">
-        <div><dt>{copy.simulator}</dt><dd>{copy.browserCpu}</dd></div>
-        <div><dt>{copy.artifactVersion}</dt><dd>{record.artifactVersionId ? record.artifactVersionId.slice(0, 12) : copy.newDraftSource}</dd></div>
-        <div><dt>{copy.sourceFingerprint}</dt><dd>{record.sourceFingerprint}</dd></div>
-        {record.interchangeFingerprint ? <div><dt>{copy.interchangeFingerprint}</dt><dd>{record.interchangeFingerprint}</dd></div> : null}
-        <div><dt>{copy.simulationModel}</dt><dd>{simulationModelLabel(record.model, copy)}</dd></div>
-        <div><dt>{copy.shots}</dt><dd>{record.shots.toLocaleString("en-US")}</dd></div>
-        <div><dt>{copy.seed}</dt><dd>{record.seed}</dd></div>
-        <div><dt>{copy.operations}</dt><dd>{record.operationCount} · {record.qubitCount}q</dd></div>
-      </dl>
-      <div className="mj-studio-simulation-counts"><span className="mj-section-label">{copy.resultCounts}</span><code>{counts.map(([bitstring, count]) => `${bitstring}: ${count}`).join("\n")}</code></div>
+      {data ? (
+        <>
+          <div className="mj-sim-headline">
+            <div className="mj-sim-headline-stat">
+              <span className="mj-section-label">{copy.simulationPeak}</span>
+              <strong><code>|{data.peak.bitstring}⟩</code> · {formatShare(data.peak.share, "en-US")}</strong>
+            </div>
+            <span className="mj-mono-muted">{copy.simulationRecordSummary(record.shots.toLocaleString("en-US"), record.qubitCount)}</span>
+          </div>
+          {reading ? <p className="mj-sim-reading">{simulationReadingText(reading, copy)}</p> : null}
+          <SimulationDistribution data={data} copy={copy} />
+        </>
+      ) : null}
+      <details className="mj-sim-details">
+        <summary>{copy.simulationDetails}</summary>
+        <dl className="mj-studio-contract">
+          <div><dt>{copy.simulator}</dt><dd>{copy.browserCpu}</dd></div>
+          <div><dt>{copy.artifactVersion}</dt><dd>{record.artifactVersionId ? record.artifactVersionId.slice(0, 12) : copy.newDraftSource}</dd></div>
+          <div><dt>{copy.sourceFingerprint}</dt><dd>{record.sourceFingerprint}</dd></div>
+          {record.interchangeFingerprint ? <div><dt>{copy.interchangeFingerprint}</dt><dd>{record.interchangeFingerprint}</dd></div> : null}
+          <div><dt>{copy.simulationModel}</dt><dd>{simulationModelLabel(record.model, copy)}</dd></div>
+          <div><dt>{copy.shots}</dt><dd>{record.shots.toLocaleString("en-US")}</dd></div>
+          <div><dt>{copy.seed}</dt><dd>{record.seed}</dd></div>
+          <div><dt>{copy.operations}</dt><dd>{record.operationCount} · {record.qubitCount}q</dd></div>
+        </dl>
+        <div className="mj-studio-simulation-counts"><span className="mj-section-label">{copy.resultCounts}</span><code>{Object.entries(record.counts).sort(([, left], [, right]) => right - left).map(([bitstring, count]) => `${bitstring}: ${count}`).join("\n")}</code></div>
+      </details>
     </article>
   );
+}
+
+function SimulationDistribution({ data, copy }: { data: SimulationChartData; copy: StudioCopy }) {
+  const totalShots = data.bars.reduce((sum, bar) => sum + bar.count, 0) + data.otherShots;
+  return (
+    <div className="mj-sim-chart">
+      <span className="mj-section-label">{copy.simulationDistribution}</span>
+      <div className="mj-sim-chart-rows">
+        {data.bars.map((bar) => (
+          <div
+            className={bar.peak ? "mj-sim-chart-row is-peak" : "mj-sim-chart-row"}
+            title={`|${bar.bitstring}⟩ · ${bar.count.toLocaleString("en-US")} / ${totalShots.toLocaleString("en-US")} · ${formatShare(bar.share, "en-US")}`}
+            key={bar.bitstring}
+          >
+            <code>{bar.bitstring}</code>
+            <span className="mj-sim-chart-track"><span className="mj-sim-chart-fill" style={{ width: `${Math.max(bar.share * 100, 0.75)}%` }} /></span>
+            <span className="mj-sim-chart-value">{formatShare(bar.share, "en-US")}</span>
+          </div>
+        ))}
+        {data.otherStates ? (
+          <div className="mj-sim-chart-row is-other" title={`${copy.simulationOtherBar(data.otherStates)} · ${data.otherShots.toLocaleString("en-US")} / ${totalShots.toLocaleString("en-US")}`}>
+            <code>…</code>
+            <span className="mj-sim-chart-track"><span className="mj-sim-chart-fill" style={{ width: `${Math.max((data.otherShots / totalShots) * 100, 0.75)}%` }} /></span>
+            <span className="mj-sim-chart-value">{copy.simulationOtherBar(data.otherStates)}</span>
+          </div>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+function simulationReadingText(reading: SimulationReading, copy: StudioCopy): string {
+  if (reading.kind === "concentrated") return copy.readingConcentrated(reading.peak.bitstring, formatShare(reading.peak.share, "en-US"));
+  if (reading.kind === "paired") return copy.readingPaired(reading.first.bitstring, reading.second.bitstring, formatShare(reading.combinedShare, "en-US"));
+  return copy.readingSpread(reading.distinctStates, reading.peak.bitstring, formatShare(reading.peak.share, "en-US"));
 }
 
 function simulationModelLabel(model: CpuSimulationRecord["model"], copy: StudioCopy): string {
