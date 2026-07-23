@@ -53,6 +53,14 @@ def main() -> None:
     with psycopg.connect(url) as conn, conn.cursor() as cur:
         cur.execute("select count(*) from users")
         if cur.fetchone()[0]:
+            # A Neon branch cut from a live database arrives populated. The
+            # bench passes --skip-if-populated because its harness mints its
+            # own eval identities and only wants the fixture set on a FRESH
+            # branch; anything else still fails loudly rather than mixing
+            # fixture rows into real data.
+            if "--skip-if-populated" in sys.argv[1:]:
+                print("seed skipped: database already has users (--skip-if-populated)")
+                return
             sys.exit("seed refused: users table is not empty (seeds are fresh-DB only)")
 
         # --- users + workspaces + memberships -------------------------------
