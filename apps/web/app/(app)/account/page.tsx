@@ -1,5 +1,6 @@
 import { getMajoranaAuth } from "../../../lib/auth";
 import { AccountSettings } from "./account-settings";
+import { BillingPanel } from "./billing-panel";
 import { LanguageToggle } from "../../../components/language-toggle";
 import { getPublicLocale } from "../../../lib/public-locale-server";
 import { ACCOUNT_COPY } from "../../../lib/workspace-locale";
@@ -43,6 +44,7 @@ export default async function Account() {
               <div><dt>{copy.usageStorage}</dt><dd>{copy.usageStorageValue}</dd></div>
             </dl>
           </section>
+          <BillingPanel locale={locale} />
         </div>
       </div>
     </div>

@@ -7,6 +7,7 @@ requires-python = ">=3.12"
 dependencies = [
     "majorana-contracts",
     "majorana-openqasm",
+    "majorana-qpu",
     "alembic>=1.16",
     "sqlalchemy[asyncio]>=2.0",
     "psycopg[binary]>=3.2",
@@ -22,6 +23,7 @@ dependencies = [
 [tool.uv.sources]
 majorana-contracts = { workspace = true }
 majorana-openqasm = { workspace = true }
+majorana-qpu = { workspace = true }
 
 [build-system]
 requires = ["hatchling"]
