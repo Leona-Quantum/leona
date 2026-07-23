@@ -1,5 +1,8 @@
 node_modules/
 .next/
+# Alternate NEXT_DIST_DIR builds, so a second local dev server does not share
+# (and corrupt) the first one's cache.
+.next-*/
 dist/
 __pycache__/
 *.pyc

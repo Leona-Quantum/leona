@@ -10,6 +10,17 @@
         "MAJORANA_LOCAL_DEV_AUTH": "true",
         "MAJORANA_PUBLIC_DEMO": "true"
       }
+    },
+    {
+      "name": "web-agent",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": ["--filter", "@majorana/web", "dev", "--port", "3100"],
+      "port": 3100,
+      "env": {
+        "MAJORANA_LOCAL_DEV_AUTH": "true",
+        "MAJORANA_PUBLIC_DEMO": "true",
+        "NEXT_DIST_DIR": ".next-agent"
+      }
     }
   ]
 }

@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { cpuSimulationEligibility, runCpuSimulation, sourceFingerprint } from "./studio-simulation.ts";
+import { TIER_LIMITS } from "./account-tier.ts";
 
 const BELL_SOURCE = [
   "from qiskit import QuantumCircuit",
@@ -136,4 +137,45 @@ test("simulation refuses out-of-range input instead of silently changing it", ()
     shots: 0,
     seed: 1,
   }), /Shots must be a whole number/);
+});
+
+const ghzSource = (n: number) => [
+  "from qiskit import QuantumCircuit",
+  "",
+  `qc = QuantumCircuit(${n})`,
+  "qc.h(0)",
+  ...Array.from({ length: n - 1 }, (_, i) => `qc.cx(${i}, ${i + 1})`),
+  "qc.measure_all()",
+].join("\n");
+
+test("a circuit too wide for the canvas still simulates — drawing and executing are different limits", () => {
+  // Regression for a defect this lane hid: cpuSimulationEligibility reuses the
+  // canvas parser, whose six-wire grid limit silently became the *simulation*
+  // limit. Raising the simulation ceiling alone changed nothing, because a
+  // 10-qubit circuit never got past the parser.
+  const record = runCpuSimulation(
+    { artifactId: "artifact", code: ghzSource(10), framework: "qiskit", shots: 512, seed: 5 },
+    TIER_LIMITS.free,
+  );
+  assert.equal(record.qubitCount, 10);
+  // A GHZ state has exactly two outcomes. Anything else means the wider path
+  // reconstructed a different circuit rather than the same one.
+  assert.deepEqual(Object.keys(record.counts).sort(), ["0".repeat(10), "1".repeat(10)]);
+});
+
+test("an over-width circuit is refused as a plan limit, not as unreadable source", () => {
+  // 18 qubits parses fine; the free tier just does not cover it. Reporting
+  // `source_unavailable` there would blame the user's code for a plan boundary.
+  const free = cpuSimulationEligibility(
+    { artifactId: "artifact", code: ghzSource(18), framework: "qiskit" },
+    TIER_LIMITS.free,
+  );
+  assert.equal(free.eligible, false);
+  if (!free.eligible) assert.equal(free.reason, "qubit_limit");
+
+  const developer = cpuSimulationEligibility(
+    { artifactId: "artifact", code: ghzSource(18), framework: "qiskit" },
+    TIER_LIMITS.developer,
+  );
+  assert.equal(developer.eligible, true);
 });

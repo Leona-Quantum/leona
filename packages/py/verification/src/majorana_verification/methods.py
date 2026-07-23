@@ -32,6 +32,7 @@ from majorana_verification.native import (
 )
 from majorana_verification.statevector import (
     EquivalenceReport,
+    MethodCeilingExceeded,
     StatevectorIncapable,
     counts_vs_ideal,
     exact_equivalence,
@@ -52,11 +53,19 @@ def _skipped(method: VerificationMethod, exc: StatevectorIncapable) -> Verificat
     physics that was never checked. Downstream, evidence_strength_of counts only
     passes, so a run whose physical checks all skipped grades `structural`.
     """
-    return VerificationOutcome(
-        method=method,
-        result=SKIPPED,
-        details={"skip_reason": "statevector_incapable", "error": str(exc)},
-    )
+    details: dict[str, Any] = {"skip_reason": "statevector_incapable", "error": str(exc)}
+    if isinstance(exc, MethodCeilingExceeded):
+        # A distinct reason, not a shade of the same one: "this circuit has no
+        # statevector" and "this circuit has one but it is bigger than I can
+        # hold" need different words in the UI, and the two numbers are what
+        # make the second actionable.
+        details |= {
+            "skip_reason": "method_ceiling_exceeded",
+            "qubits": exc.qubits,
+            "max_qubits": exc.max_qubits,
+            "ceiling_of": exc.method,
+        }
+    return VerificationOutcome(method=method, result=SKIPPED, details=details)
 
 
 class VerificationOutcome(BaseModel):
@@ -108,6 +117,14 @@ def verify_statistical(
         report = statistical_equivalence(
             reference, candidate, shots=shots, seed=seed, threshold=threshold
         )
+    except StatevectorIncapable as exc:
+        # Had to precede the ValueError arm, which it subclasses. This check
+        # samples the Born distribution of a statevector, so it inherits both
+        # incapacities of that path — a feed-forward circuit that has no
+        # statevector, and one too wide to hold — and neither is evidence about
+        # the candidate. Without this arm `statistical` repeated the exact same
+        # mistake `exact` was already fixed for.
+        return _skipped(VerificationMethod.STATISTICAL, exc)
     except (OpenQASMError, ValueError) as exc:
         return VerificationOutcome(
             method=VerificationMethod.STATISTICAL, result=FAIL, details={"error": str(exc)}

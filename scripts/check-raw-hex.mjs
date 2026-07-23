@@ -11,6 +11,8 @@ const SCAN_ROOTS = ["apps/web", "packages/ts/ui"];
 const ALLOWED = new Set(["packages/ts/ui/tokens.css"]);
 const EXTENSIONS = new Set([".css", ".ts", ".tsx", ".js", ".jsx", ".mjs"]);
 const SKIP_DIRS = new Set(["node_modules", ".next", ".turbo", ".vercel", "dist"]);
+// Build output under an alternate NEXT_DIST_DIR (a second local dev server).
+const SKIP_DIR_PREFIX = ".next-";
 // 3/4/6/8-digit CSS hex colors; word boundary keeps ids/hashes out.
 const HEX_RE = /#(?:[0-9a-fA-F]{3,4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})\b/g;
 
@@ -34,7 +36,7 @@ function walk(dir) {
     const stats = statSync(full, { throwIfNoEntry: false });
     if (!stats) continue;
     if (stats.isDirectory()) {
-      if (!SKIP_DIRS.has(entry)) walk(full);
+      if (!SKIP_DIRS.has(entry) && !entry.startsWith(SKIP_DIR_PREFIX)) walk(full);
     } else if (EXTENSIONS.has(entry.slice(entry.lastIndexOf("."))) && !ALLOWED.has(rel)) {
       const text = readFileSync(full, "utf8");
       for (const [lineNo, line] of text.split("\n").entries()) {

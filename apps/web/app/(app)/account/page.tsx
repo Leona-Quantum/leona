@@ -1,4 +1,5 @@
 import { getMajoranaAuth } from "../../../lib/auth";
+import { getAccountTier } from "../../../lib/account-tier-server";
 import { AccountSettings } from "./account-settings";
 import { BillingPanel } from "./billing-panel";
 import { LanguageToggle } from "../../../components/language-toggle";
@@ -8,11 +9,21 @@ import { ACCOUNT_COPY } from "../../../lib/workspace-locale";
 export const metadata = { title: "Account — Leona Quantum" };
 
 export default async function Account() {
-  const [{ user }, locale] = await Promise.all([
+  const [{ user }, locale, { tier, limits }] = await Promise.all([
     getMajoranaAuth({ ensureSignedIn: true }),
     getPublicLocale(),
+    getAccountTier(),
   ]);
   const copy = ACCOUNT_COPY[locale];
+  // null means unlimited in TierLimits; the tier table is the single source for
+  // both the words and the numbers, so this panel cannot drift from what the
+  // product actually enforces.
+  const runs = limits.agentRunsPerWeek === null
+    ? copy.usageUnlimited
+    : copy.usageRunsPerWeek(limits.agentRunsPerWeek);
+  const storage = limits.privateArtifacts === null
+    ? copy.usageUnlimited
+    : copy.usageArtifacts(limits.privateArtifacts);
   return (
     <div className="mj-library-page">
       <div className="mj-library-scroll">
@@ -37,11 +48,12 @@ export default async function Account() {
           <AccountSettings initialEmail={user.email} locale={locale} />
           <section className="mj-artifact-panel" id="usage" aria-labelledby="usage-heading">
             <div className="mj-panel-heading"><h2 id="usage-heading">{copy.usageTitle}</h2></div>
-            <p className="mj-panel-help">{copy.usageHelp}</p>
+            <p className="mj-panel-help">{copy.usageUnenforced}</p>
             <dl className="mj-usage-list">
-              <div><dt>{copy.usagePlan}</dt><dd>{copy.usagePlanValue}</dd></div>
-              <div><dt>{copy.usageRuns}</dt><dd>{copy.usageRunsValue}</dd></div>
-              <div><dt>{copy.usageStorage}</dt><dd>{copy.usageStorageValue}</dd></div>
+              <div><dt>{copy.usagePlan}</dt><dd>{copy.tierNames[tier]}</dd></div>
+              <div><dt>{copy.usageRuns}</dt><dd>{runs}</dd></div>
+              <div><dt>{copy.usageStorage}</dt><dd>{storage}</dd></div>
+              <div><dt>{copy.usageSimulation}</dt><dd>{copy.usageQubits(limits.cpuSimQubits)}</dd></div>
             </dl>
           </section>
           <BillingPanel locale={locale} />

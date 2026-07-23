@@ -469,7 +469,7 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
         framework_unavailable: "CPU execution is available only for Qiskit, PennyLane, and Cirq source.",
         source_unavailable: "This source is outside the bounded CPU simulation model. No result will be invented.",
         source_limit: "This source is too large for the bounded CPU simulation lane.",
-        qubit_limit: "This source exceeds the six-qubit CPU simulation limit.",
+        qubit_limit: "This circuit is wider than the browser simulation lane can run on your plan.",
         operation_limit: "This source exceeds the bounded CPU operation limit.",
       }[reason] ?? "CPU simulation is unavailable for this source."),
       openSimulation: "Open simulation",
@@ -810,7 +810,7 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
         framework_unavailable: "CPU実行はQiskit、PennyLane、Cirqのソースでのみ利用できます。",
         source_unavailable: "このソースは限定CPUシミュレーションモデルの対象外です。結果は生成しません。",
         source_limit: "このソースは限定CPUシミュレーションレーンには大きすぎます。",
-        qubit_limit: "このソースは6量子ビットのCPUシミュレーション上限を超えています。",
+        qubit_limit: "この回路は、お使いのプランでブラウザシミュレーションを実行できる幅を超えています。",
         operation_limit: "このソースは限定CPU操作数の上限を超えています。",
       }[reason] ?? "このソースではCPUシミュレーションを利用できません。"),
       openSimulation: "シミュレーションを開く",
@@ -1026,6 +1026,13 @@ export const ACCOUNT_COPY: Record<PublicLocale, {
   usageRunsValue: string;
   usageStorage: string;
   usageStorageValue: string;
+  usageSimulation: string;
+  usageUnlimited: string;
+  usageRunsPerWeek: (count: number) => string;
+  usageArtifacts: (count: number) => string;
+  usageQubits: (count: number) => string;
+  tierNames: Record<"demo" | "free" | "developer", string>;
+  usageUnenforced: string;
   billingTitle: string;
   billingHelp: string;
   billingPayments: string;
@@ -1086,6 +1093,13 @@ export const ACCOUNT_COPY: Record<PublicLocale, {
     usageRunsValue: "Fair use — no hard cap during early access",
     usageStorage: "Vault storage",
     usageStorageValue: "Fair use — artifacts and versions retained",
+    usageSimulation: "Browser simulation",
+    usageUnlimited: "Unlimited",
+    usageRunsPerWeek: (count) => `${count} per week`,
+    usageArtifacts: (count) => `${count} artifacts`,
+    usageQubits: (count) => `Up to ${count} qubits`,
+    tierNames: { demo: "Preview", free: "Free", developer: "Developer" },
+    usageUnenforced: "Not metered yet. These are the boundaries the product will apply when metering is turned on.",
     billingTitle: "Billing & credits",
     billingHelp: "How Leona Quantum will charge for agent runs and hardware. Shown for transparency — payments are not enabled.",
     billingPayments: "Payments",
@@ -1146,6 +1160,13 @@ export const ACCOUNT_COPY: Record<PublicLocale, {
     usageRunsValue: "フェアユース — アーリーアクセス中は固定上限なし",
     usageStorage: "ボールト保存",
     usageStorageValue: "フェアユース — アーティファクトとバージョンを保持",
+    usageSimulation: "ブラウザ実行",
+    usageUnlimited: "無制限",
+    usageRunsPerWeek: (count) => `週${count}回`,
+    usageArtifacts: (count) => `${count}件`,
+    usageQubits: (count) => `${count}量子ビットまで`,
+    tierNames: { demo: "プレビュー", free: "Free", developer: "Developer" },
+    usageUnenforced: "現在は計測していません。計測を有効にしたときに適用される上限です。",
     billingTitle: "請求とクレジット",
     billingHelp: "Leona Quantum がエージェント実行とハードウェアに課金する仕組みです。透明性のために表示しており、支払いは有効化されていません。",
     billingPayments: "支払い",
