@@ -1,6 +1,7 @@
 import { circuitFramework, isExecutableCircuitFramework, type CircuitFrameworkKey, type ExecutableCircuitFrameworkKey } from "./circuit-frameworks.ts";
 import { allCircuitConversionResults, parseCircuitSource } from "./circuit-conversion.ts";
 import type { ParsedBuilderCircuit } from "./studio-parse.ts";
+import { TIER_LIMITS, type TierLimits } from "./account-tier.ts";
 
 /**
  * A deliberately small, in-browser execution lane for Studio. It never runs
@@ -11,9 +12,19 @@ import type { ParsedBuilderCircuit } from "./studio-parse.ts";
  * pipeline. A record says exactly what was sampled in this browser; it is not
  * a verification verdict, a sandbox run, or a hardware job.
  */
-export const MAX_CPU_QUBITS = 6;
-export const MAX_CPU_SHOTS = 65_536;
-export const MAX_CPU_OPERATIONS = 2_000;
+/**
+ * Baseline ceilings, which are the FREE tier's. A caller that knows the viewer's
+ * tier passes its own limits instead (see CpuSimulationLimits below).
+ *
+ * The qubit ceiling used to be a flat 6 for everyone. That was not a measurement
+ * — a sweep of this file's own kernel at ~1,000 gates runs 16 qubits in 78 ms
+ * and 20 in 1.2 s — and it meant no circuit at researcher scale could execute
+ * anywhere in the product. The numbers now live in account-tier.ts next to the
+ * measurements that justify them.
+ */
+export const MAX_CPU_QUBITS = TIER_LIMITS.free.cpuSimQubits;
+export const MAX_CPU_SHOTS = TIER_LIMITS.developer.cpuSimShots;
+export const MAX_CPU_OPERATIONS = TIER_LIMITS.free.cpuSimOperations;
 export const MAX_CPU_SOURCE_CHARS = 200_000;
 export const MAX_CPU_SEED = 2_147_483_647;
 
@@ -90,7 +101,16 @@ export function sourceFingerprint(source: string): string {
   return `fnv1a-${(hash >>> 0).toString(16).padStart(8, "0")}`;
 }
 
-export function cpuSimulationEligibility({ artifactId, code, framework, qasm }: Pick<CpuSimulationRequest, "artifactId" | "code" | "framework" | "qasm">): CpuSimulationEligibility {
+/** The subset of a tier's allowance this lane enforces. */
+export type CpuSimulationLimits = Pick<
+  TierLimits,
+  "cpuSimQubits" | "cpuSimOperations" | "cpuSimShots"
+>;
+
+export function cpuSimulationEligibility(
+  { artifactId, code, framework, qasm }: Pick<CpuSimulationRequest, "artifactId" | "code" | "framework" | "qasm">,
+  limits: CpuSimulationLimits = TIER_LIMITS.free,
+): CpuSimulationEligibility {
   const fingerprint = sourceFingerprint(code);
   if (!artifactId.trim()) return { eligible: false, sourceFingerprint: fingerprint, reason: "artifact_required" };
   if (!isExecutableCircuitFramework(framework)) return { eligible: false, sourceFingerprint: fingerprint, reason: "framework_unavailable" };
@@ -102,8 +122,8 @@ export function cpuSimulationEligibility({ artifactId, code, framework, qasm }: 
     : null;
   const circuit = direct ?? (decomposed ? parseCircuitSource(decomposed.code, "qiskit") : null);
   if (!circuit) return { eligible: false, sourceFingerprint: fingerprint, reason: "source_unavailable" };
-  if (circuit.qubitCount > MAX_CPU_QUBITS) return { eligible: false, sourceFingerprint: fingerprint, reason: "qubit_limit" };
-  if (circuit.steps.length > MAX_CPU_OPERATIONS) return { eligible: false, sourceFingerprint: fingerprint, reason: "operation_limit" };
+  if (circuit.qubitCount > limits.cpuSimQubits) return { eligible: false, sourceFingerprint: fingerprint, reason: "qubit_limit" };
+  if (circuit.steps.length > limits.cpuSimOperations) return { eligible: false, sourceFingerprint: fingerprint, reason: "operation_limit" };
   return {
     eligible: true,
     sourceFingerprint: fingerprint,
@@ -113,11 +133,14 @@ export function cpuSimulationEligibility({ artifactId, code, framework, qasm }: 
   };
 }
 
-export function runCpuSimulation(request: CpuSimulationRequest): CpuSimulationRecord {
-  const eligibility = cpuSimulationEligibility(request);
+export function runCpuSimulation(
+  request: CpuSimulationRequest,
+  limits: CpuSimulationLimits = TIER_LIMITS.free,
+): CpuSimulationRecord {
+  const eligibility = cpuSimulationEligibility(request, limits);
   if (!eligibility.eligible) throw new Error(`CPU simulation is unavailable: ${eligibility.reason}`);
-  if (!Number.isInteger(request.shots) || request.shots < 1 || request.shots > MAX_CPU_SHOTS) {
-    throw new Error(`Shots must be a whole number between 1 and ${MAX_CPU_SHOTS.toLocaleString("en-US")}.`);
+  if (!Number.isInteger(request.shots) || request.shots < 1 || request.shots > limits.cpuSimShots) {
+    throw new Error(`Shots must be a whole number between 1 and ${limits.cpuSimShots.toLocaleString("en-US")}.`);
   }
   const seed = request.seed ?? browserSeed();
   if (!Number.isInteger(seed) || seed < 0 || seed > MAX_CPU_SEED) {

@@ -43,7 +43,11 @@ from majorana_verification.native import (
     statevector_from_evidence,
 )
 from majorana_verification.statevector import (
+    IDEAL_DISTRIBUTION_MAX_QUBITS,
+    STATEVECTOR_MAX_QUBITS,
+    UNITARY_MAX_QUBITS,
     EquivalenceReport,
+    MethodCeilingExceeded,
     StatevectorIncapable,
     counts_vs_ideal,
     exact_equivalence,
@@ -85,6 +89,10 @@ __all__ = [
     "verify_return_contract",
     "verify_qasm_parse",
     "EquivalenceReport",
+    "IDEAL_DISTRIBUTION_MAX_QUBITS",
+    "MethodCeilingExceeded",
+    "STATEVECTOR_MAX_QUBITS",
+    "UNITARY_MAX_QUBITS",
     "counts_vs_ideal",
     "exact_equivalence",
     "ideal_distribution",
