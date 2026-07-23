@@ -293,6 +293,13 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
     showInspector: string;
     circuitRestored: string;
     circuitNotRebuildable: string;
+    canvasOutOfDate: string;
+    canvasBeyondBuilder: string;
+    rebuildFromCode: string;
+    rebuiltFromCode: string;
+    applyOverwritesEditedCode: string;
+    applyOverwritesUnrepresentableCode: string;
+    confirmApply: string;
   };
 }> = {
   en: {
@@ -627,6 +634,13 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
       showInspector: "Inspector",
       circuitRestored: "Circuit loaded from the saved artifact. Edits stay in this draft until you verify & save.",
       circuitNotRebuildable: "This artifact's code goes beyond the visual builder — edit it in the Code tab.",
+      canvasOutOfDate: "The Code tab has changed since this diagram was drawn, so the diagram no longer shows what will run.",
+      canvasBeyondBuilder: "The code in the Code tab is outside what this editor can draw, so the diagram below is not a picture of it. The code is what runs.",
+      rebuildFromCode: "Rebuild from code",
+      rebuiltFromCode: "Diagram rebuilt from the code in the Code tab.",
+      applyOverwritesEditedCode: "The Code tab has changed since this diagram was drawn. Applying replaces that code with the diagram. Continue?",
+      applyOverwritesUnrepresentableCode: "The Code tab holds source this editor cannot draw. Applying replaces it with the diagram, and the diagram cannot reproduce it. Continue?",
+      confirmApply: "Replace the code",
     },
   },
   ja: {
@@ -961,6 +975,13 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
       showInspector: "インスペクタ",
       circuitRestored: "保存済みアーティファクトから回路を読み込みました。検証して保存するまで、編集はこの下書きに留まります。",
       circuitNotRebuildable: "このアーティファクトのコードはビジュアルビルダーの範囲を超えています。コードタブで編集してください。",
+      canvasOutOfDate: "この図を描いたあとにコードタブが変更されました。図は実行される内容と一致していません。",
+      canvasBeyondBuilder: "コードタブのコードはこのエディタで描ける範囲を超えているため、下の図はその内容を表していません。実行されるのはコードです。",
+      rebuildFromCode: "コードから再構築",
+      rebuiltFromCode: "コードタブのコードから図を再構築しました。",
+      applyOverwritesEditedCode: "この図を描いたあとにコードタブが変更されています。適用するとそのコードは図の内容で置き換えられます。続行しますか？",
+      applyOverwritesUnrepresentableCode: "コードタブには、このエディタで描けないソースがあります。適用するとそのコードは図で置き換えられ、図から元に戻すことはできません。続行しますか？",
+      confirmApply: "コードを置き換える",
     },
   },
 };
