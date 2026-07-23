@@ -232,5 +232,6 @@ async def test_cancel_queued_run_prevents_execution(env):
     await _work_until_run_processed(factory, run["id"])
     final = (await client.get(f"/v1/runs/{run['id']}")).json()
     assert final["status"] == "cancelled"
-    types = [e["type"] for e in (await client.get(f"/v1/runs/{run['id']}/events")).json()]
-    assert types == ["run.queued"]  # nothing executed
+    events = (await client.get(f"/v1/runs/{run['id']}/events")).json()
+    assert [event["type"] for event in events] == ["run.queued", "run.finished"]
+    assert events[-1]["status"] == "cancelled"  # terminalized, but nothing executed

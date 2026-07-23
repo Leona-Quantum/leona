@@ -192,7 +192,14 @@ async def cancel_run(run_id: uuid.UUID, scope: CurrentScope, session: DbSession)
         assert_transition(current, RunStatus.CANCELLED)
     except IllegalTransition:
         raise HTTPException(409, f"run is {current}; cannot cancel") from None
-    await runs_repo.update_run_status(scope, session, run_id, RunStatus.CANCELLED)
+    await runs_repo.finish_run(
+        scope,
+        session,
+        run_id,
+        RunStatus.CANCELLED,
+        event_payload={"status": RunStatus.CANCELLED.value},
+        event_id=uuid.uuid5(run_id, "run.finished"),
+    )
     run.status = RunStatus.CANCELLED
     return _to_resource(run)
 

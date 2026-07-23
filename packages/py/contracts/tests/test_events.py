@@ -131,6 +131,72 @@ def test_new_check_outcomes_round_trip(result):
     assert revived.result is VerificationResultKind(result)
 
 
+def test_semantic_and_strict_audit_events_round_trip():
+    candidate_id = uuid4()
+    execution_id = uuid4()
+    review_id = uuid4()
+    semantic = run_event_adapter.validate_python(
+        {
+            **ENVELOPE,
+            "type": "verification.semantic_review",
+            "review_id": str(review_id),
+            "candidate_id": str(candidate_id),
+            "execution_id": str(execution_id),
+            "attempt_seq": 1,
+            "source_fingerprint": "a" * 64,
+            "decision": "inconclusive",
+            "reason_code": "semantic_evidence_gap",
+            "failure_class": "evidence_gap",
+            "retry_target": "verification",
+        }
+    )
+    strict = run_event_adapter.validate_python(
+        {
+            **ENVELOPE,
+            "type": "verification.strict_attempt",
+            "attempt_id": str(uuid4()),
+            "candidate_id": str(candidate_id),
+            "execution_id": str(execution_id),
+            "semantic_review_id": str(review_id),
+            "attempt_seq": 2,
+            "source_fingerprint": "a" * 64,
+            "decision": "inconclusive",
+            "evidence_strength": "structural",
+            "reason_code": "strict_verifier_error",
+            "candidate_defect_observed": False,
+            "failure_class": "verifier_failure",
+            "retry_target": "verification",
+            "verifier_version": "verification-v2",
+        }
+    )
+    assert run_event_adapter.validate_json(semantic.model_dump_json()) == semantic
+    assert run_event_adapter.validate_json(strict.model_dump_json()) == strict
+
+
+def test_unknown_verification_method_is_rejected_instead_of_dropped():
+    with pytest.raises(ValidationError):
+        run_event_adapter.validate_python(
+            {
+                **ENVELOPE,
+                "type": "verification.result",
+                "method": "unregistered_check",
+                "result": "error",
+            }
+        )
+
+
+def test_failed_terminal_event_carries_machine_readable_reason():
+    event = run_event_adapter.validate_python(
+        {
+            **ENVELOPE,
+            "type": "run.finished",
+            "status": "failed",
+            "reason_code": "candidate_budget_exhausted",
+        }
+    )
+    assert event.reason_code == "candidate_budget_exhausted"
+
+
 def test_every_event_type_round_trips():
     samples = [
         {"type": "run.queued", "mode": "execute", "framework": "qiskit"},

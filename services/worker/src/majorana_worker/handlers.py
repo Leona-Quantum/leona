@@ -19,6 +19,7 @@ from majorana_contracts.enums import (
     Role,
     RunMode,
     RunStatus,
+    VerifierDecision,
     evidence_strength_of,
 )
 from majorana_agent import (
@@ -156,6 +157,20 @@ class RepoRunStateStore:
         )
         await self._session.commit()
 
+    async def finish(self, status: RunStatus, payload: dict[str, Any], **fields: Any) -> RunStatus:
+        wire = _validated_event_payload(self._run_id, "run.finished", payload)
+        final = await runs_repo.finish_run(
+            self._scope,
+            self._session,
+            self._run_id,
+            status,
+            event_payload=wire,
+            event_id=uuid.uuid5(self._run_id, "run.finished"),
+            **fields,
+        )
+        await self._session.commit()
+        return final
+
     async def current_status(self) -> RunStatus:
         run = await runs_repo.get_run(self._scope, self._session, self._run_id)
         status = RunStatus(run.status)
@@ -235,8 +250,10 @@ async def handle_run_execute(
                 "run.error",
                 {"stage": None, "code": "run_timeout", "message": "run exceeded its time budget"},
             )
-            await ctx.sink.emit("run.finished", {"status": RunStatus.FAILED})
-            await store.set_status(RunStatus.FAILED, finished_at_now=True)
+            await store.finish(
+                RunStatus.FAILED,
+                {"status": RunStatus.FAILED, "reason_code": "run_timeout"},
+            )
         final = RunStatus.FAILED
     log.info("run %s finished: %s", run_id, final)
 
@@ -301,9 +318,9 @@ async def _agent_failure_message(
 
     Two facts are needed and neither was previously reachable from here: the
     budget the runtime hit, and the verifier's actual objection. The critic's
-    verdict is the only failing signal in a run whose deterministic checks all
-    pass, and it is not emitted as an event — so without this, such a run shows
-    nothing but passing checks followed by a bare failure.
+    verdict can be the only failing signal in a run whose deterministic checks all
+    pass. It is retained in semantic-review events as well as this terminal
+    diagnostic so live failures and later replay tell the same story.
     """
     parts = ["agent tool loop failed"]
     if runtime.failure_reason:
@@ -311,23 +328,38 @@ async def _agent_failure_message(
 
     try:
         candidate = await agent_store.latest_candidate(run_id)
-        verification = (
-            await agent_store.verification_for(run_id, candidate.candidate_id)
-            if candidate is not None
-            else None
-        )
     except Exception:  # noqa: BLE001 - diagnostics must never mask the failure
-        verification = None
+        candidate = None
 
-    if verification is not None:
-        failed = [
-            str(check.get("method"))
-            for check in verification.deterministic_checks
-            if check.get("result") != "pass"
-        ]
+    verification = None
+    strict = None
+    review = None
+    if candidate is not None:
+        try:
+            verification = await agent_store.verification_for(run_id, candidate.candidate_id)
+        except Exception:  # noqa: BLE001 - each evidence source is independently optional
+            pass
+        try:
+            strict = await agent_store.latest_strict_verification(run_id, candidate.candidate_id)
+        except Exception:  # noqa: BLE001 - preserve any readable legacy evidence
+            pass
+        try:
+            review = await agent_store.latest_semantic_review(run_id, candidate.candidate_id)
+        except Exception:  # noqa: BLE001 - preserve any readable strict evidence
+            pass
+
+    checks = (
+        verification.deterministic_checks
+        if verification is not None
+        else strict.checks
+        if strict
+        else []
+    )
+    if checks:
+        failed = [str(check.get("method")) for check in checks if check.get("result") != "pass"]
         if failed:
             parts.append(f"failing checks: {', '.join(failed)}")
-        elif verification.critic:
+        elif verification is not None and verification.critic:
             # All deterministic checks passed, so the critic is what refused.
             summary = verification.critic.get("summary") or verification.critic.get("decision")
             severity = verification.critic.get("severity")
@@ -335,7 +367,20 @@ async def _agent_failure_message(
             parts.append(
                 f"verifier objection (severity={severity}, confidence={confidence}): {summary}"
             )
+        elif review is not None and isinstance(review.feedback.get("critic"), dict):
+            critic = review.feedback["critic"]
+            summary = critic.get("summary") or review.reason_code
+            parts.append(f"semantic objection: {summary}")
     return " — ".join(parts)
+
+
+def _agent_failure_reason_code(runtime: AgentRuntime) -> str:
+    reason = runtime.failure_reason
+    if reason and reason.endswith("_budget_exhausted") and reason.replace("_", "").isalnum():
+        return reason
+    if reason and reason.startswith("replayed tool call "):
+        return "replayed_tool_call"
+    return "agent_failed"
 
 
 async def _emit_best_effort(
@@ -356,12 +401,13 @@ async def _emit_best_effort(
     """
     try:
         candidates = await agent_store.list_candidates(ctx.run_id)
-        verifications = {
-            candidate.candidate_id: await agent_store.verification_for(
-                ctx.run_id, candidate.candidate_id
+        verifications = {}
+        for candidate in candidates:
+            legacy = await agent_store.verification_for(ctx.run_id, candidate.candidate_id)
+            verifications[candidate.candidate_id] = (
+                legacy
+                or await agent_store.latest_strict_verification(ctx.run_id, candidate.candidate_id)
             )
-            for candidate in candidates
-        }
         best = choose_best_effort(candidates, verifications)
     except Exception:  # noqa: BLE001 - never mask the failure being reported
         log.exception("best-effort selection failed for run %s", ctx.run_id)
@@ -381,6 +427,98 @@ async def _emit_best_effort(
             "residual_risks": best.residual_risks,
         },
         event_id=uuid.uuid5(ctx.run_id, "run.best_effort"),
+    )
+
+
+async def _finish_materialized_agent(ctx, run_store, agent_store) -> RunStatus:
+    """Fence a terminal strict verdict into the event stream and Run row."""
+    candidate = await agent_store.latest_candidate(ctx.run_id)
+    strict = (
+        await agent_store.latest_strict_verification(ctx.run_id, candidate.candidate_id)
+        if candidate is not None
+        else None
+    )
+    review = (
+        await agent_store.latest_semantic_review(ctx.run_id, candidate.candidate_id)
+        if candidate is not None
+        else None
+    )
+    legacy = await agent_store.published_verification(ctx.run_id) if strict is None else None
+    if strict is not None:
+        if candidate.source_fingerprint != strict.source_fingerprint:
+            raise RuntimeError("terminal strict verdict has a stale candidate fingerprint")
+        if review is None or review.review_id != strict.semantic_review_id:
+            raise RuntimeError("terminal strict verdict is not bound to the latest review")
+        if review.source_fingerprint != strict.source_fingerprint:
+            raise RuntimeError("terminal review and strict fingerprints differ")
+    decision = strict.decision if strict is not None else legacy.decision if legacy else None
+    if decision not in {VerifierDecision.PASS, VerifierDecision.INCONCLUSIVE}:
+        raise RuntimeError("materialized run lacks a strict terminal verdict")
+    strength = (
+        strict.evidence_strength
+        if strict is not None and strict.evidence_strength is not None
+        else evidence_strength_of(legacy.deterministic_checks)
+        if legacy is not None
+        else EvidenceStrength.STRUCTURAL
+    )
+    summary = (
+        {
+            "decision": strict.decision.value,
+            "semantic_review_decision": review.decision.value if review else None,
+            "evidence_strength": strength.value,
+            "reason_code": strict.reason_code,
+            "candidate_defect_observed": strict.candidate_defect_observed,
+            "failure_class": strict.failure_class.value if strict.failure_class else None,
+            "retry_target": strict.retry_target.value,
+            "unverified_claims": strict.unverified_claims,
+        }
+        if strict is not None
+        else None
+    )
+    return await run_store.finish(
+        RunStatus.SUCCEEDED,
+        {
+            "status": RunStatus.SUCCEEDED,
+            "verifier_decision": decision.value,
+            "evidence_strength": strength.value,
+            "verification_summary": summary,
+            "reason_code": strict.reason_code if strict else "legacy_verified",
+        },
+        verifier_decision=decision.value,
+    )
+
+
+async def _finish_resource_exhausted(ctx, run_store, agent_store, failure_reason) -> RunStatus:
+    await _emit_best_effort(ctx, agent_store, failure_reason or "resource_exhausted")
+    await ctx.sink.emit(
+        "run.error",
+        {
+            "stage": None,
+            "code": "resource_exhausted",
+            "message": (
+                "The selected execution lane does not have enough memory or capacity "
+                "for this circuit. The candidate was not sent through code repair."
+            ),
+        },
+        event_id=uuid.uuid5(ctx.run_id, "run.error.resource_exhausted"),
+    )
+    return await run_store.finish(
+        RunStatus.FAILED,
+        {
+            "status": RunStatus.FAILED,
+            "verifier_decision": "inconclusive",
+            "reason_code": "resource_exhausted",
+            "verification_summary": {
+                "decision": "inconclusive",
+                "evidence_strength": "structural",
+                "reason_code": "resource_exhausted",
+                "candidate_defect_observed": False,
+                "failure_class": "capability_limit",
+                "retry_target": "none",
+                "unverified_claims": ["candidate execution within configured resources"],
+            },
+        },
+        verifier_decision="inconclusive",
     )
 
 
@@ -479,66 +617,23 @@ async def _handle_agent_execution(
     )
     final = await runtime.run(ctx.run_id)
     if final is AgentState.CANCELLED:
-        await ctx.sink.emit(
-            "run.finished",
+        return await run_store.finish(
+            RunStatus.CANCELLED,
             {"status": RunStatus.CANCELLED},
-            event_id=uuid.uuid5(ctx.run_id, "run.finished"),
         )
-        return RunStatus.CANCELLED
     if final in {AgentState.MATERIALIZED, AgentState.PUBLISHED}:
-        # A pass says nothing was contradicted; the strength says what did the
-        # contradicting. Fails closed to STRUCTURAL — the weaker claim — when the
-        # evidence row cannot be read, because an unreadable grade is not a strong one.
-        published = await agent_store.published_verification(ctx.run_id)
-        strength = (
-            evidence_strength_of(published.deterministic_checks)
-            if published is not None
-            else EvidenceStrength.STRUCTURAL
-        )
-        await ctx.sink.emit(
-            "run.finished",
-            {
-                "status": RunStatus.SUCCEEDED,
-                "verifier_decision": "pass",
-                "evidence_strength": strength.value,
-            },
-            event_id=uuid.uuid5(ctx.run_id, "run.finished"),
-        )
-        await run_store.set_status(
-            RunStatus.SUCCEEDED,
-            finished_at_now=True,
-            verifier_decision="pass",
-        )
-        return RunStatus.SUCCEEDED
+        return await _finish_materialized_agent(ctx, run_store, agent_store)
     if final is AgentState.RESOURCE_EXHAUSTED:
-        await ctx.sink.emit(
-            "run.error",
-            {
-                "stage": None,
-                "code": "resource_exhausted",
-                "message": (
-                    "The selected execution lane does not have enough memory or capacity "
-                    "for this circuit. The candidate was not sent through code repair."
-                ),
-            },
-            event_id=uuid.uuid5(ctx.run_id, "run.error.resource_exhausted"),
+        return await _finish_resource_exhausted(
+            ctx,
+            run_store,
+            agent_store,
+            runtime.failure_reason,
         )
-        await ctx.sink.emit(
-            "run.finished",
-            {"status": RunStatus.FAILED, "verifier_decision": "inconclusive"},
-            event_id=uuid.uuid5(ctx.run_id, "run.finished"),
-        )
-        await run_store.set_status(
-            RunStatus.FAILED,
-            finished_at_now=True,
-            verifier_decision="inconclusive",
-        )
-        return RunStatus.FAILED
     await _emit_best_effort(ctx, agent_store, runtime.failure_reason)
     # "agent tool loop failed" alone is undiagnosable: the run that exposed this
-    # showed four passing verification checks and then died, because the only
-    # failing signal — the semantic critic's verdict — is not emitted as an
-    # event and the exhausted budget was discarded by the runtime. Carry both.
+    # showed four passing verification checks and then died. Carry the exhausted
+    # budget here as well as the now-replayable semantic-review objection.
     await ctx.sink.emit(
         "run.error",
         {
@@ -548,13 +643,10 @@ async def _handle_agent_execution(
         },
         event_id=uuid.uuid5(ctx.run_id, "run.error.agent_failed"),
     )
-    await ctx.sink.emit(
-        "run.finished",
-        {"status": RunStatus.FAILED},
-        event_id=uuid.uuid5(ctx.run_id, "run.finished"),
+    return await run_store.finish(
+        RunStatus.FAILED,
+        {"status": RunStatus.FAILED, "reason_code": _agent_failure_reason_code(runtime)},
     )
-    await run_store.set_status(RunStatus.FAILED, finished_at_now=True)
-    return RunStatus.FAILED
 
 
 async def _handle_conversation(
@@ -623,9 +715,10 @@ async def _handle_conversation(
                 "message": "The assistant could not complete this response.",
             },
         )
-        await ctx.sink.emit("run.finished", {"status": RunStatus.FAILED})
-        await store.set_status(RunStatus.FAILED, finished_at_now=True)
-        return RunStatus.FAILED
+        return await store.finish(
+            RunStatus.FAILED,
+            {"status": RunStatus.FAILED, "reason_code": "provider_failed"},
+        )
 
     await flush_deltas()
     interpretation = response.text.strip() or "The assistant returned an empty response."
@@ -639,14 +732,12 @@ async def _handle_conversation(
             "duration_ms": int((asyncio.get_running_loop().time() - started) * 1000),
         },
     )
-    await ctx.sink.emit(
-        "run.finished",
+    return await store.finish(
+        RunStatus.SUCCEEDED,
         {
             "status": RunStatus.SUCCEEDED,
         },
     )
-    await store.set_status(RunStatus.SUCCEEDED, finished_at_now=True)
-    return RunStatus.SUCCEEDED
 
 
 JobHandler = Callable[[AsyncSession, dict[str, Any]], Awaitable[None]]

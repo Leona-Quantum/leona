@@ -94,7 +94,7 @@ class VerificationMethod(StrEnum):
 
     The list is exhaustive on purpose. `run_events` is the only channel a human or
     the UI has into a run, and its `verification.result` event types `method` as
-    this enum, so the emitter drops any check whose name is not a member
+    this enum. The emitter now fails loudly when a check is missing here
     (`agent_events.py`). Until 2026-07-20 the six contract checks below were absent,
     and the emitter silently discarded six of the ten checks the panel actually
     runs. Production QPE run 019f7f2d-09c9 rejected its first candidate on one of

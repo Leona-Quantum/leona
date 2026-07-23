@@ -69,10 +69,12 @@ from .events import (
     RunRestarted,
     RunStarted,
     SandboxResult,
+    SemanticReviewRecorded,
     ResourceEstimateResult,
     ScreenResult,
     StageFinished,
     StageStarted,
+    StrictVerificationRecorded,
     VerificationResult,
     run_event_adapter,
 )
@@ -137,7 +139,9 @@ from .lifecycle import (
 # taxonomy, unavailable/error check results, and typed final summaries.
 # 2.1.0: VerificationMethod gains fixed-policy Bell/GHZ state-property checks;
 # VerificationPlan gains an optional typed relative-phase state target.
-CONTRACTS_VERSION = "2.1.0"
+# 2.2.0: RunEvent gains immutable semantic/strict audit events, attempt bindings,
+# and optional machine-readable terminal reasons.
+CONTRACTS_VERSION = "2.2.0"
 
 __all__ = [
     "CONTRACTS_VERSION",
@@ -198,6 +202,7 @@ __all__ = [
     "RunAnalysis",
     "RunDiagnosed",
     "RunFinished",
+    "SemanticReviewRecorded",
     "RunMode",
     "RunModeResolved",
     "RunQueued",
@@ -226,6 +231,7 @@ __all__ = [
     "VerificationRecord",
     "VerificationSummary",
     "VerificationResult",
+    "StrictVerificationRecorded",
     "VerificationResultKind",
     "VerifierDecision",
     "Visibility",

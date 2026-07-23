@@ -582,9 +582,12 @@ class CircuitToolset:
                     decision=VerifierDecision.INCONCLUSIVE,
                     deterministic_checks=[
                         {
-                            "method": "strict_verifier",
+                            "method": "structural",
                             "result": "error",
-                            "details": {"error": f"{type(exc).__name__}: {str(exc)[:1000]}"},
+                            "details": {
+                                "check_kind": "strict_verifier",
+                                "error": f"{type(exc).__name__}: {str(exc)[:1000]}",
+                            },
                         }
                     ],
                     failure_class=VerificationFailureClass.VERIFIER_FAILURE,

@@ -7,7 +7,7 @@ from types import SimpleNamespace
 
 import pytest
 from repo_test_helpers import compiled
-from majorana_contracts.enums import RunMode, UsageKind, VerificationMethod
+from majorana_contracts.enums import RunMode, RunStatus, UsageKind, VerificationMethod
 
 from majorana_api.repos import (
     NotFoundError,
@@ -114,6 +114,27 @@ async def test_update_run_status(scope, session):
     assert_workspace_bound(session.statements[0], scope)
 
 
+async def test_finish_run_update_is_scoped(scope, session, monkeypatch):
+    async def get_run(*_args, **_kwargs):
+        return SimpleNamespace(status=RunStatus.RUNNING)
+
+    async def append_run_event(*_args, **_kwargs):
+        return None
+
+    monkeypatch.setattr(runs, "get_run", get_run)
+    monkeypatch.setattr(runs, "append_run_event", append_run_event)
+    with pytest.raises(RuntimeError, match="changed while its row lock was held"):
+        await runs.finish_run(
+            scope,
+            session,
+            uuid.uuid4(),
+            RunStatus.FAILED,
+            event_payload={"status": "failed", "reason_code": "agent_failed"},
+            event_id=uuid.uuid4(),
+        )
+    assert_workspace_bound(session.statements[0], scope)
+
+
 async def test_append_run_event_checks_run_scope(scope, session):
     with pytest.raises(NotFoundError):  # parent run resolved under scope first
         await runs.append_run_event(scope, session, uuid.uuid4(), type="run.started", payload={})
@@ -189,6 +210,24 @@ async def test_current_plan_read_uses_explicit_current_plan_id(scope, session):
     stmt = session.statements[0]
     sql, _ = compiled(stmt)
     assert "agent_runs.current_plan_id = run_plans.id" in sql
+    assert_workspace_bound(stmt, scope)
+
+
+async def test_exact_strict_verification_read_is_scoped(scope, session):
+    assert (
+        await agent.get_strict_verification(
+            scope,
+            session,
+            uuid.uuid4(),
+            uuid.uuid4(),
+            uuid.uuid4(),
+        )
+        is None
+    )
+    stmt = session.statements[0]
+    sql, _ = compiled(stmt)
+    assert "candidate_verification_attempts.id" in sql
+    assert "candidate_verification_attempts.candidate_id" in sql
     assert_workspace_bound(stmt, scope)
 
 

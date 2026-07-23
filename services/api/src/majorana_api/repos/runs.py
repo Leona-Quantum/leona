@@ -215,6 +215,60 @@ async def update_run_status(
         raise NotFoundError("run")
 
 
+async def finish_run(
+    scope: Scope,
+    session: AsyncSession,
+    run_id: uuid.UUID,
+    status: RunStatus,
+    *,
+    event_payload: dict[str, Any],
+    event_id: uuid.UUID,
+    **fields: Any,
+) -> RunStatus:
+    """Atomically append the terminal event and close an active Run.
+
+    The row lock fences API cancellation against Worker completion. The caller
+    commits once after this function returns, so neither the event nor the row
+    can become visible alone. A retry after another terminal writer returns the
+    winning status without appending a contradictory event.
+    """
+    require_write(scope)
+    if status not in {RunStatus.SUCCEEDED, RunStatus.FAILED, RunStatus.CANCELLED}:
+        raise ValueError("finish_run requires a terminal status")
+    if RunStatus(event_payload.get("status")) is not status:
+        raise ValueError("terminal event status must match the Run status")
+    if status is RunStatus.FAILED and not event_payload.get("reason_code"):
+        raise ValueError("failed terminal event requires a machine-readable reason_code")
+    if not _RUN_STATUS_FIELDS.issuperset(fields):
+        raise ValueError(f"not status-transition fields: {set(fields) - _RUN_STATUS_FIELDS}")
+
+    run = await get_run(scope, session, run_id, for_update=True)
+    current = RunStatus(run.status)
+    if current in {RunStatus.SUCCEEDED, RunStatus.FAILED, RunStatus.CANCELLED}:
+        return current
+
+    await append_run_event(
+        scope,
+        session,
+        run_id,
+        type="run.finished",
+        payload=event_payload,
+        event_id=event_id,
+    )
+    result = await session.execute(
+        update(Run)
+        .where(
+            Run.id == run_id,
+            Run.workspace_id == scope.workspace_id,
+            Run.status.in_((RunStatus.QUEUED, RunStatus.RUNNING)),
+        )
+        .values(status=status, finished_at=func.now(), updated_at=func.now(), **fields)
+    )
+    if result.rowcount != 1:
+        raise RuntimeError(f"run {run_id} changed while its row lock was held")
+    return status
+
+
 async def set_run_mode(
     scope: Scope, session: AsyncSession, run_id: uuid.UUID, mode: RunMode
 ) -> None:
@@ -324,7 +378,10 @@ async def fail_run_from_dead_letter(
         session,
         run_id,
         type="run.finished",
-        payload={"status": RunStatus.FAILED.value},
+        payload={
+            "status": RunStatus.FAILED.value,
+            "reason_code": str(error_payload.get("code") or "job_dead_letter")[:120],
+        },
         event_id=finished_event_id,
     )
     result = await session.execute(

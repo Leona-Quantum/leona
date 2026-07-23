@@ -11,7 +11,7 @@ import uuid
 from types import SimpleNamespace
 
 
-from majorana_worker.handlers import _agent_failure_message
+from majorana_worker.handlers import _agent_failure_message, _agent_failure_reason_code
 
 
 class _Store:
@@ -78,3 +78,16 @@ async def test_diagnostics_never_mask_the_underlying_failure():
     )
     assert "agent tool loop failed" in message
     assert "step_budget_exhausted" in message
+
+
+def test_terminal_reason_normalizes_replay_anomaly_prose():
+    assert _agent_failure_reason_code(_runtime("replayed tool call strict_verify")) == (
+        "replayed_tool_call"
+    )
+
+
+def test_terminal_reason_preserves_typed_budget_code():
+    assert (
+        _agent_failure_reason_code(_runtime("candidate_budget_exhausted"))
+        == "candidate_budget_exhausted"
+    )

@@ -254,6 +254,16 @@ class MemoryAgentStore:
         attempts = self._semantic_reviews[(run_id, candidate_id)]
         return max(attempts, key=lambda item: item.attempt_seq) if attempts else None
 
+    async def semantic_review(self, run_id, candidate_id, review_id):
+        return next(
+            (
+                item
+                for item in self._semantic_reviews[(run_id, candidate_id)]
+                if item.review_id == review_id
+            ),
+            None,
+        )
+
     async def append_strict_verification(self, attempt: StrictVerificationAttempt) -> None:
         owner = next(
             (
@@ -288,6 +298,16 @@ class MemoryAgentStore:
     ) -> StrictVerificationAttempt | None:
         attempts = self._strict_verifications[(run_id, candidate_id)]
         return max(attempts, key=lambda item: item.attempt_seq) if attempts else None
+
+    async def strict_verification(self, run_id, candidate_id, attempt_id):
+        return next(
+            (
+                item
+                for item in self._strict_verifications[(run_id, candidate_id)]
+                if item.attempt_id == attempt_id
+            ),
+            None,
+        )
 
     async def add_conversion(self, evidence: ConversionEvidence) -> None:
         owner = next(

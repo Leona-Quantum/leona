@@ -397,6 +397,12 @@ class RepoAgentStore:
         )
         return self._semantic_review(row) if row is not None else None
 
+    async def semantic_review(self, run_id, candidate_id, review_id):
+        row = await agent_repo.get_semantic_review(
+            self._scope, self._session, run_id, candidate_id, review_id
+        )
+        return self._semantic_review(row) if row is not None else None
+
     @staticmethod
     def _strict_verification(row) -> StrictVerificationAttempt:
         return StrictVerificationAttempt(
@@ -469,6 +475,12 @@ class RepoAgentStore:
     ) -> StrictVerificationAttempt | None:
         row = await agent_repo.latest_strict_verification(
             self._scope, self._session, run_id, candidate_id
+        )
+        return self._strict_verification(row) if row is not None else None
+
+    async def strict_verification(self, run_id, candidate_id, attempt_id):
+        row = await agent_repo.get_strict_verification(
+            self._scope, self._session, run_id, candidate_id, attempt_id
         )
         return self._strict_verification(row) if row is not None else None
 

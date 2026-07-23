@@ -217,3 +217,28 @@ def test_audited_state_machine_migration_is_additive_and_fails_closed(monkeypatc
     module.downgrade()
     assert "cannot downgrade 0029" in statements[-1]
     assert "DELETE FROM" not in statements[-1]
+
+
+def test_verification_audit_event_migration_is_additive_and_fails_closed(monkeypatch):
+    module = _load_migration("0030_verification_audit_events.py")
+    created = []
+    statements = []
+
+    monkeypatch.setattr(module.op, "drop_constraint", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(
+        module.op,
+        "create_check_constraint",
+        lambda name, table, expression: created.append((name, table, expression)),
+    )
+    monkeypatch.setattr(module.op, "execute", statements.append)
+
+    module.upgrade()
+    assert set(module._EVENT_TYPES_NEW) - set(module._EVENT_TYPES_OLD) == {
+        "verification.semantic_review",
+        "verification.strict_attempt",
+    }
+    assert all(event_type in created[-1][2] for event_type in module._EVENT_TYPES_NEW)
+
+    module.downgrade()
+    assert "cannot downgrade 0030" in statements[-1]
+    assert "DELETE FROM" not in statements[-1]

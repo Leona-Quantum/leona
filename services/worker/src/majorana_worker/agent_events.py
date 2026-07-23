@@ -71,15 +71,15 @@ class AgentEventObserver:
     async def tool_finished(self, run_id: UUID, result: ToolResult) -> None:
         if not result.ok:
             return
-        if result.name is ToolName.REQUEST_PLAN:
-            plan = await self._store.latest_plan(run_id)
-            if plan is not None:
+        if result.name in {ToolName.REQUEST_PLAN, ToolName.REPLAN}:
+            plan = result.payload.get("plan")
+            if isinstance(plan, dict):
                 await self._emit(
                     run_id,
                     result,
-                    "plan",
+                    f"plan:{result.payload.get('plan_id', result.tool_call_id)}",
                     "plan.produced",
-                    {"plan": plan.plan.model_dump(mode="json")},
+                    {"plan": plan},
                 )
             return
         if result.name in {
@@ -136,7 +136,7 @@ class AgentEventObserver:
             for index, check in enumerate(verification.deterministic_checks):
                 method = supported.get(str(check.get("method")))
                 if method is None:
-                    continue
+                    raise ValueError(f"unregistered verification method: {check.get('method')}")
                 await self._emit(
                     run_id,
                     result,
@@ -146,6 +146,88 @@ class AgentEventObserver:
                         "method": method,
                         "result": check.get("result", "fail"),
                         "details": check.get("details", {}),
+                    },
+                )
+            return
+        if result.name is ToolName.REVIEW_CANDIDATE:
+            candidate_id = UUID(str(result.payload["candidate_id"]))
+            review_id = UUID(str(result.payload["review_id"]))
+            review = await self._store.semantic_review(run_id, candidate_id, review_id)
+            if review is None:
+                raise RuntimeError("semantic review evidence missing during event replay")
+            await self._emit(
+                run_id,
+                result,
+                f"semantic:{review.review_id}",
+                "verification.semantic_review",
+                {
+                    "review_id": str(review.review_id),
+                    "candidate_id": str(review.candidate_id),
+                    "execution_id": str(review.execution_id),
+                    "attempt_seq": review.attempt_seq,
+                    "source_fingerprint": review.source_fingerprint,
+                    "decision": review.decision.value,
+                    "reason_code": review.reason_code,
+                    "failure_class": (review.failure_class.value if review.failure_class else None),
+                    "retry_target": review.retry_target.value,
+                    "confidence": review.confidence,
+                    "severity": review.severity,
+                    "feedback": review.feedback,
+                },
+            )
+            return
+        if result.name is ToolName.STRICT_VERIFY:
+            candidate_id = UUID(str(result.payload["candidate_id"]))
+            attempt_id = UUID(str(result.payload["attempt_id"]))
+            attempt = await self._store.strict_verification(run_id, candidate_id, attempt_id)
+            if attempt is None:
+                raise RuntimeError("strict verification evidence missing during event replay")
+            await self._emit(
+                run_id,
+                result,
+                f"strict:{attempt.attempt_id}",
+                "verification.strict_attempt",
+                {
+                    "attempt_id": str(attempt.attempt_id),
+                    "candidate_id": str(attempt.candidate_id),
+                    "execution_id": str(attempt.execution_id),
+                    "semantic_review_id": str(attempt.semantic_review_id),
+                    "attempt_seq": attempt.attempt_seq,
+                    "source_fingerprint": attempt.source_fingerprint,
+                    "decision": attempt.decision.value,
+                    "evidence_strength": (
+                        attempt.evidence_strength.value if attempt.evidence_strength else None
+                    ),
+                    "reason_code": attempt.reason_code,
+                    "candidate_defect_observed": attempt.candidate_defect_observed,
+                    "failure_class": (
+                        attempt.failure_class.value if attempt.failure_class else None
+                    ),
+                    "retry_target": attempt.retry_target.value,
+                    "claim_coverage": attempt.claim_coverage,
+                    "unverified_claims": attempt.unverified_claims,
+                    "verifier_version": attempt.verifier_version,
+                },
+            )
+            supported = {method.value: method for method in VerificationMethod}
+            for index, check in enumerate(attempt.checks):
+                method = supported.get(str(check.get("method")))
+                if method is None:
+                    raise ValueError(f"unregistered verification method: {check.get('method')}")
+                await self._emit(
+                    run_id,
+                    result,
+                    f"strict:{attempt.attempt_id}:check:{index}",
+                    "verification.result",
+                    {
+                        "method": method,
+                        "result": check.get("result", "error"),
+                        "details": check.get("details", {}),
+                        "attempt_id": str(attempt.attempt_id),
+                        "candidate_id": str(attempt.candidate_id),
+                        "source_fingerprint": attempt.source_fingerprint,
+                        "attempt_seq": attempt.attempt_seq,
+                        "check_index": index,
                     },
                 )
             return

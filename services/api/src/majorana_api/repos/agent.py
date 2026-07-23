@@ -608,6 +608,28 @@ async def latest_strict_verification(
     ).scalar_one_or_none()
 
 
+async def get_strict_verification(
+    scope: Scope,
+    session: AsyncSession,
+    run_id: uuid.UUID,
+    candidate_id: uuid.UUID,
+    attempt_id: uuid.UUID,
+) -> CandidateVerificationAttempt | None:
+    return (
+        await session.execute(
+            select(CandidateVerificationAttempt)
+            .join(RunCandidate, CandidateVerificationAttempt.candidate_id == RunCandidate.id)
+            .join(Run, RunCandidate.run_id == Run.id)
+            .where(
+                RunCandidate.run_id == run_id,
+                CandidateVerificationAttempt.candidate_id == candidate_id,
+                CandidateVerificationAttempt.id == attempt_id,
+                Run.workspace_id == scope.workspace_id,
+            )
+        )
+    ).scalar_one_or_none()
+
+
 async def append_strict_verification(
     scope: Scope, session: AsyncSession, run_id: uuid.UUID, values: dict[str, Any]
 ) -> CandidateVerificationAttempt:

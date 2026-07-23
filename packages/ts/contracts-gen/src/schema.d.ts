@@ -1296,11 +1296,17 @@ export interface components {
          * RunEvent
          * @description Discriminated union of all run event types (class name sets the schema id).
          */
-        RunEvent: components["schemas"]["RunQueued"] | components["schemas"]["RunStarted"] | components["schemas"]["RunModeResolved"] | components["schemas"]["StageStarted"] | components["schemas"]["StageFinished"] | components["schemas"]["PlanProduced"] | components["schemas"]["ResearchCompleted"] | components["schemas"]["LlmCall"] | components["schemas"]["LlmDelta"] | components["schemas"]["ChatDelta"] | components["schemas"]["ChatCompleted"] | components["schemas"]["ChatError"] | components["schemas"]["CodeGenerated"] | components["schemas"]["ScreenResult"] | components["schemas"]["ResourceEstimateResult"] | components["schemas"]["CompilationResult"] | components["schemas"]["CodeFinalized"] | components["schemas"]["SandboxResult"] | components["schemas"]["VerificationResult"] | components["schemas"]["BaselineResult"] | components["schemas"]["ExportClassified"] | components["schemas"]["ArtifactSaved"] | components["schemas"]["RunAnalysis"] | components["schemas"]["RunDiagnosed"] | components["schemas"]["RunRestarted"] | components["schemas"]["RunBestEffort"] | components["schemas"]["RunErrorEvent"] | components["schemas"]["RunFinished"];
+        RunEvent: components["schemas"]["RunQueued"] | components["schemas"]["RunStarted"] | components["schemas"]["RunModeResolved"] | components["schemas"]["StageStarted"] | components["schemas"]["StageFinished"] | components["schemas"]["PlanProduced"] | components["schemas"]["ResearchCompleted"] | components["schemas"]["LlmCall"] | components["schemas"]["LlmDelta"] | components["schemas"]["ChatDelta"] | components["schemas"]["ChatCompleted"] | components["schemas"]["ChatError"] | components["schemas"]["CodeGenerated"] | components["schemas"]["ScreenResult"] | components["schemas"]["ResourceEstimateResult"] | components["schemas"]["CompilationResult"] | components["schemas"]["CodeFinalized"] | components["schemas"]["SandboxResult"] | components["schemas"]["VerificationResult"] | components["schemas"]["SemanticReviewRecorded"] | components["schemas"]["StrictVerificationRecorded"] | components["schemas"]["BaselineResult"] | components["schemas"]["ExportClassified"] | components["schemas"]["ArtifactSaved"] | components["schemas"]["RunAnalysis"] | components["schemas"]["RunDiagnosed"] | components["schemas"]["RunRestarted"] | components["schemas"]["RunBestEffort"] | components["schemas"]["RunErrorEvent"] | components["schemas"]["RunFinished"];
         /** RunFinished */
         RunFinished: {
             /** @default null */
             evidence_strength: components["schemas"]["EvidenceStrength"] | null;
+            /**
+             * Reason Code
+             * @description Machine-readable terminal reason. Optional only for replaying historical events; current failed terminal writes require it at the repository boundary.
+             * @default null
+             */
+            reason_code: string | null;
             /**
              * Residual Risks
              * @default null
@@ -1556,6 +1562,68 @@ export interface components {
          * @enum {string}
          */
         SemanticReviewDecision: "ready" | "code_repair" | "replan" | "inconclusive";
+        /** SemanticReviewRecorded */
+        SemanticReviewRecorded: {
+            /** Attempt Seq */
+            attempt_seq: number;
+            /**
+             * Candidate Id
+             * Format: uuid
+             */
+            candidate_id: string;
+            /**
+             * Confidence
+             * @default null
+             */
+            confidence: ("high" | "medium" | "low") | null;
+            decision: components["schemas"]["SemanticReviewDecision"];
+            /**
+             * Execution Id
+             * Format: uuid
+             */
+            execution_id: string;
+            /** @default null */
+            failure_class: components["schemas"]["VerificationFailureClass"] | null;
+            /** Feedback */
+            feedback?: {
+                [key: string]: unknown;
+            };
+            /** Reason Code */
+            reason_code: string;
+            retry_target: components["schemas"]["RetryTarget"];
+            /**
+             * Review Id
+             * Format: uuid
+             */
+            review_id: string;
+            /**
+             * Run Id
+             * Format: uuid
+             */
+            run_id: string;
+            /**
+             * Seq
+             * @description Unique per run; powers replay and SSE Last-Event-ID
+             */
+            seq: number;
+            /**
+             * Severity
+             * @default null
+             */
+            severity: ("none" | "minor" | "major" | "blocking") | null;
+            /** Source Fingerprint */
+            source_fingerprint: string;
+            /**
+             * Ts
+             * Format: date-time
+             */
+            ts: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "verification.semantic_review";
+        };
         /**
          * Stage
          * @description Pipeline stages in execution order; the orchestrator owns transitions.
@@ -1643,6 +1711,71 @@ export interface components {
              */
             relative_phase_radians: number;
         };
+        /** StrictVerificationRecorded */
+        StrictVerificationRecorded: {
+            /**
+             * Attempt Id
+             * Format: uuid
+             */
+            attempt_id: string;
+            /** Attempt Seq */
+            attempt_seq: number;
+            /** Candidate Defect Observed */
+            candidate_defect_observed: boolean;
+            /**
+             * Candidate Id
+             * Format: uuid
+             */
+            candidate_id: string;
+            /** Claim Coverage */
+            claim_coverage?: {
+                [key: string]: unknown;
+            }[];
+            decision: components["schemas"]["VerifierDecision"];
+            /** @default null */
+            evidence_strength: components["schemas"]["EvidenceStrength"] | null;
+            /**
+             * Execution Id
+             * Format: uuid
+             */
+            execution_id: string;
+            /** @default null */
+            failure_class: components["schemas"]["VerificationFailureClass"] | null;
+            /** Reason Code */
+            reason_code: string;
+            retry_target: components["schemas"]["RetryTarget"];
+            /**
+             * Run Id
+             * Format: uuid
+             */
+            run_id: string;
+            /**
+             * Semantic Review Id
+             * Format: uuid
+             */
+            semantic_review_id: string;
+            /**
+             * Seq
+             * @description Unique per run; powers replay and SSE Last-Event-ID
+             */
+            seq: number;
+            /** Source Fingerprint */
+            source_fingerprint: string;
+            /**
+             * Ts
+             * Format: date-time
+             */
+            ts: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "verification.strict_attempt";
+            /** Unverified Claims */
+            unverified_claims?: string[];
+            /** Verifier Version */
+            verifier_version: string;
+        };
         /** SuccessCriteria */
         SuccessCriteria: {
             /**
@@ -1681,7 +1814,7 @@ export interface components {
          *
          *     The list is exhaustive on purpose. `run_events` is the only channel a human or
          *     the UI has into a run, and its `verification.result` event types `method` as
-         *     this enum, so the emitter drops any check whose name is not a member
+         *     this enum. The emitter now fails loudly when a check is missing here
          *     (`agent_events.py`). Until 2026-07-20 the six contract checks below were absent,
          *     and the emitter silently discarded six of the ten checks the panel actually
          *     runs. Production QPE run 019f7f2d-09c9 rejected its first candidate on one of
@@ -1791,6 +1924,26 @@ export interface components {
         };
         /** VerificationResult */
         VerificationResult: {
+            /**
+             * Attempt Id
+             * @default null
+             */
+            attempt_id: string | null;
+            /**
+             * Attempt Seq
+             * @default null
+             */
+            attempt_seq: number | null;
+            /**
+             * Candidate Id
+             * @default null
+             */
+            candidate_id: string | null;
+            /**
+             * Check Index
+             * @default null
+             */
+            check_index: number | null;
             /** Details */
             details?: {
                 [key: string]: unknown;
@@ -1807,6 +1960,11 @@ export interface components {
              * @description Unique per run; powers replay and SSE Last-Event-ID
              */
             seq: number;
+            /**
+             * Source Fingerprint
+             * @default null
+             */
+            source_fingerprint: string | null;
             /**
              * Ts
              * Format: date-time
