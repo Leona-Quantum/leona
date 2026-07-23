@@ -779,10 +779,11 @@ def test_validated_fixtures_dir_accepts_path_inside_root(monkeypatch, tmp_path):
     assert handlers.validated_fixtures_dir({"fixtures_dir": str(nested)}) == nested.resolve()
 
 
-def _qpu_payload() -> dict:
+def _qpu_payload(qpu_run_id: str | None = None) -> dict:
     return {
         "workspace_id": str(uuid.uuid4()),
         "user_id": str(uuid.uuid4()),
+        "qpu_run_id": qpu_run_id or str(uuid.uuid4()),
         "device_id": "braket.ionq.forte",
         "shots": 128,
         "qasm": 'OPENQASM 3.0; include "stdgates.inc"; qubit[1] q; bit[1] c; h q[0]; c[0] = measure q[0];',
@@ -790,9 +791,50 @@ def _qpu_payload() -> dict:
     }
 
 
-def test_qpu_run_kind_is_registered_so_it_can_never_dead_letter_as_unknown():
+class _FakeQpuSession:
+    def __init__(self) -> None:
+        self.commits = 0
+
+    async def commit(self) -> None:
+        self.commits += 1
+
+
+def _qpu_record(status: str, *, provider_job_id: str | None = None) -> SimpleNamespace:
+    return SimpleNamespace(
+        id=uuid.uuid4(),
+        status=status,
+        provider_job_id=provider_job_id,
+        device_id="braket.ionq.forte",
+        shots=128,
+        qasm="OPENQASM 3.0;",
+        source_fingerprint="fnv1a-deadbeef",
+        submitted_at=None,
+        created_at=None,
+    )
+
+
+def _patch_qpu_repo(monkeypatch, record: SimpleNamespace) -> dict:
+    captured: dict = {}
+
+    async def fake_get_record(scope, session, record_id):
+        return record
+
+    async def fake_transition(scope, session, record_id, status, **kwargs):
+        captured["transition"] = {"status": status, **kwargs}
+        return record
+
+    async def fake_enqueue(session, *, kind, payload, **kwargs):
+        captured["enqueued"] = {"kind": kind, "payload": payload, **kwargs}
+
+    monkeypatch.setattr(handlers.qpu_runs_repo, "get_record", fake_get_record)
+    monkeypatch.setattr(handlers.qpu_runs_repo, "transition", fake_transition)
+    monkeypatch.setattr(handlers.system, "enqueue_job", fake_enqueue)
+    return captured
+
+
+def test_qpu_run_kind_is_registered_with_its_dead_letter_closer():
     assert handlers.HANDLERS["qpu.run"] is handlers.handle_qpu_run
-    assert "qpu.run" not in handlers.DEAD_LETTER_HANDLERS
+    assert handlers.DEAD_LETTER_HANDLERS["qpu.run"] is handlers.handle_qpu_run_dead_letter
 
 
 async def test_qpu_run_rejects_malformed_payloads_permanently():
@@ -800,16 +842,89 @@ async def test_qpu_run_rejects_malformed_payloads_permanently():
         await handlers.handle_qpu_run(object(), {"device_id": "braket.ionq.forte"})
 
 
-async def test_qpu_run_fails_closed_behind_the_deployment_gates(monkeypatch):
+async def test_qpu_run_closes_the_record_when_the_gate_shut_after_enqueue(monkeypatch):
+    """A deployment that closed the gate between enqueue and execution must
+    close the record with the typed reason, never contact the provider."""
     monkeypatch.delenv("MAJORANA_QPU_SUBMIT_ENABLED", raising=False)
-    with pytest.raises(RuntimeError, match="submission_disabled"):
-        await handlers.handle_qpu_run(object(), _qpu_payload())
+    record = _qpu_record("queued")
+    captured = _patch_qpu_repo(monkeypatch, record)
+    session = _FakeQpuSession()
+
+    await handlers.handle_qpu_run(session, _qpu_payload(str(record.id)))
+
+    assert captured["transition"]["status"].value == "error"
+    assert "submission_disabled" in captured["transition"]["error"]
+    assert "enqueued" not in captured
+    assert session.commits == 1
 
 
-async def test_qpu_run_fails_closed_even_with_every_provider_gate_open(monkeypatch):
-    """Defense in depth: until the durable qpu_run record migration lands, a
-    job row of this kind fails with a typed reason instead of contacting a
-    provider — even if every deployment gate is open."""
+async def test_qpu_run_submits_a_queued_record_and_schedules_the_poll(monkeypatch):
+    from majorana_qpu import QpuJobRecord, QpuJobStatus, QpuProviderKey
+
     monkeypatch.setattr(handlers, "submission_block_reason", lambda: None)
-    with pytest.raises(RuntimeError, match="durable_record_unavailable"):
-        await handlers.handle_qpu_run(object(), _qpu_payload())
+    record = _qpu_record("queued")
+    captured = _patch_qpu_repo(monkeypatch, record)
+    session = _FakeQpuSession()
+
+    class FakeProvider:
+        def submit(self, request):
+            captured["submitted"] = request
+            return QpuJobRecord(
+                provider=QpuProviderKey.BRAKET,
+                provider_job_id="prov-123",
+                device_id=request.device_id,
+                shots=request.shots,
+                status=QpuJobStatus.QUEUED,
+                submitted_at="2026-07-23T00:00:00+00:00",
+                source_fingerprint=request.source_fingerprint,
+            )
+
+    await handlers.handle_qpu_run(session, _qpu_payload(str(record.id)), provider=FakeProvider())
+
+    assert captured["submitted"].qasm == record.qasm
+    assert captured["transition"]["status"].value == "running"
+    assert captured["transition"]["provider_job_id"] == "prov-123"
+    assert captured["enqueued"]["kind"] == "qpu.run"
+    assert captured["enqueued"]["run_after"] is not None
+    assert session.commits == 1
+
+
+async def test_qpu_run_poll_completes_the_record_with_raw_counts(monkeypatch):
+    from majorana_qpu import QpuJobRecord, QpuJobStatus, QpuProviderKey
+
+    monkeypatch.setattr(handlers, "submission_block_reason", lambda: None)
+    record = _qpu_record("running", provider_job_id="prov-123")
+    captured = _patch_qpu_repo(monkeypatch, record)
+    session = _FakeQpuSession()
+
+    class FakeProvider:
+        def poll(self, provider_job_id):
+            return QpuJobRecord(
+                provider=QpuProviderKey.BRAKET,
+                provider_job_id=provider_job_id,
+                device_id="braket.ionq.forte",
+                shots=0,
+                status=QpuJobStatus.DONE,
+                source_fingerprint="",
+                raw_counts={"0": 66, "1": 62},
+            )
+
+    await handlers.handle_qpu_run(session, _qpu_payload(str(record.id)), provider=FakeProvider())
+
+    assert captured["transition"]["status"].value == "done"
+    assert captured["transition"]["raw_counts"] == {"0": 66, "1": 62}
+    assert "enqueued" not in captured
+
+
+async def test_qpu_dead_letter_closes_an_open_record(monkeypatch):
+    record = _qpu_record("running", provider_job_id="prov-123")
+    captured = _patch_qpu_repo(monkeypatch, record)
+    session = _FakeQpuSession()
+
+    await handlers.handle_qpu_run_dead_letter(
+        session, _qpu_payload(str(record.id)), "job lease expired 3 times"
+    )
+
+    assert captured["transition"]["status"].value == "error"
+    assert "dead-lettered" in captured["transition"]["error"]
+    assert session.commits == 1

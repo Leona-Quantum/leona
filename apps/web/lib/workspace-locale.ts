@@ -208,6 +208,11 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
     hardwareEstimateFailed: string;
     hardwareRequestSubmission: string;
     hardwareVerifiedRequired: string;
+    hardwareInterchangeRequired: string;
+    hardwareJobStatus: string;
+    hardwareJobId: string;
+    hardwareJobError: string;
+    hardwareRawCounts: string;
     hardwareBlockedReason: (reason: string) => string;
     verifySave: string;
     starting: string;
@@ -535,6 +540,11 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
       hardwareEstimateFailed: "The estimate is unavailable because the control plane could not be reached.",
       hardwareRequestSubmission: "Request hardware submission",
       hardwareVerifiedRequired: "Hardware submission will require a verified Vault version of this circuit.",
+      hardwareInterchangeRequired: "This version stores no OpenQASM interchange export, which is what hardware runs. Rerun Verify & save to produce one.",
+      hardwareJobStatus: "Job status",
+      hardwareJobId: "Provider job",
+      hardwareJobError: "Provider error",
+      hardwareRawCounts: "Raw device counts",
       hardwareBlockedReason: (reason) => ({
         submission_disabled: "Hardware submission is switched off in this deployment by the owner. The device, rates, and estimate above are exactly what a real submission will use.",
         credentials_unconfigured: "No provider credentials are configured in this deployment, so nothing can be submitted.",
@@ -880,6 +890,11 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
       hardwareEstimateFailed: "コントロールプレーンに接続できないため、見積もりを利用できません。",
       hardwareRequestSubmission: "ハードウェア実行をリクエスト",
       hardwareVerifiedRequired: "ハードウェア実行には、この回路の検証済みボールトバージョンが必要になります。",
+      hardwareInterchangeRequired: "このバージョンにはハードウェア実行に使うOpenQASMエクスポートが保存されていません。「検証して保存」を再実行してください。",
+      hardwareJobStatus: "ジョブの状態",
+      hardwareJobId: "プロバイダーのジョブ",
+      hardwareJobError: "プロバイダーのエラー",
+      hardwareRawCounts: "デバイスの生カウント",
       hardwareBlockedReason: (reason) => ({
         submission_disabled: "このデプロイメントでは、オーナーによりハードウェア実行が無効化されています。上記のデバイス・料金・見積もりは、実際の実行時にそのまま使用されるものです。",
         credentials_unconfigured: "このデプロイメントにはプロバイダーの認証情報が設定されていないため、実行できません。",

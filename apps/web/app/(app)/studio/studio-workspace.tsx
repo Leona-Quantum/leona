@@ -10,10 +10,10 @@ import { loadStoredCircuit, saveStoredCircuit } from "../../../lib/studio-circui
 import { circuitSyncState, type CircuitSyncState } from "../../../lib/studio-sync";
 import { allCircuitConversionResults, parseCircuitSource, looksLikeOpenQasm3 } from "../../../lib/circuit-conversion";
 import { CIRCUIT_FRAMEWORKS, circuitFramework, circuitFrameworkOrNull, isExecutableCircuitFramework, type CircuitFrameworkKey } from "../../../lib/circuit-frameworks";
-import { MAX_CPU_SEED, MAX_CPU_SHOTS, cpuSimulationEligibility, loadCpuSimulationRecords, runCpuSimulation, saveCpuSimulationRecord, type CpuSimulationEligibility, type CpuSimulationLimits, type CpuSimulationRecord } from "../../../lib/studio-simulation";
+import { MAX_CPU_SEED, MAX_CPU_SHOTS, cpuSimulationEligibility, loadCpuSimulationRecords, runCpuSimulation, saveCpuSimulationRecord, sourceFingerprint, type CpuSimulationEligibility, type CpuSimulationLimits, type CpuSimulationRecord } from "../../../lib/studio-simulation";
 import { TIER_LIMITS } from "../../../lib/account-tier";
 import { formatShare, simulationChartData, simulationReading, type SimulationChartData, type SimulationReading } from "../../../lib/simulation-visual";
-import { fetchQpuBackends, fetchQpuEstimate, fetchQpuSubmissionGate, formatUsd, type QpuBackendInfo, type QpuCostEstimate, type QpuSubmissionGate } from "../../../lib/qpu";
+import { fetchQpuBackends, fetchQpuEstimate, fetchQpuRun, fetchQpuSubmissionGate, formatUsd, submitQpuRun, type QpuBackendInfo, type QpuCostEstimate, type QpuRunRecord, type QpuSubmissionGate } from "../../../lib/qpu";
 import { WORKSPACE_COPY } from "../../../lib/workspace-locale";
 import { sampling } from "../../../lib/studio-run-request";
 import { verificationFromMetadata, verificationFromResource, type VerificationCheck } from "../../../lib/verification-record";
@@ -1279,6 +1279,9 @@ function QpuLane({ artifact, shots, copy }: { artifact: LibraryArtifact | null; 
   const [estimate, setEstimate] = useState<QpuCostEstimate | null>(null);
   const [estimateError, setEstimateError] = useState(false);
   const [estimating, setEstimating] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
+  const [qpuRun, setQpuRun] = useState<QpuRunRecord | null>(null);
 
   const parsedShots = Number.parseInt(shots, 10);
   const shotCount = Number.isInteger(parsedShots) && parsedShots >= 1 && parsedShots <= MAX_CPU_SHOTS ? parsedShots : 1024;
@@ -1325,6 +1328,42 @@ function QpuLane({ artifact, shots, copy }: { artifact: LibraryArtifact | null; 
 
   const backend = backends?.find((item) => item.device_id === selected) ?? null;
   const verified = artifact?.status === "verified" || artifact?.status === "verified_caveats";
+  // Only a stored interchange program is submittable: the qasm field also
+  // carries human-readable availability notes for artifacts without one.
+  const submittableQasm = artifact?.qasm && looksLikeOpenQasm3(artifact.qasm) ? artifact.qasm : null;
+  const canSubmit = Boolean(
+    gate?.submission_available && verified && submittableQasm && selected && !submitting,
+  );
+
+  function startHardwareSubmission() {
+    if (!submittableQasm || !selected) return;
+    setSubmitting(true);
+    setSubmitError(null);
+    submitQpuRun({
+      device_id: selected,
+      shots: shotCount,
+      qasm: submittableQasm,
+      source_fingerprint: sourceFingerprint(submittableQasm),
+    })
+      .then(setQpuRun)
+      .catch((cause: unknown) => {
+        setSubmitError(cause instanceof Error ? cause.message : copy.hardwareEstimateFailed);
+      })
+      .finally(() => setSubmitting(false));
+  }
+
+  // A submitted job settles on the provider's schedule; poll the durable
+  // record until it reports a terminal state.
+  useEffect(() => {
+    if (!qpuRun || qpuRun.status === "done" || qpuRun.status === "error" || qpuRun.status === "cancelled") return;
+    const timer = window.setInterval(() => {
+      fetchQpuRun(qpuRun.id)
+        .then((next) => setQpuRun(next))
+        .catch(() => undefined);
+    }, 10_000);
+    return () => window.clearInterval(timer);
+  }, [qpuRun]);
+
   return (
     <div className="mj-qpu-lane">
       <button className="mj-secondary-button" type="button" disabled title={copy.qpuExecution}>{copy.qpuExecution}</button>
@@ -1360,11 +1399,34 @@ function QpuLane({ artifact, shots, copy }: { artifact: LibraryArtifact | null; 
               <p className="mj-qpu-source"><a href={backend.rate_source} target="_blank" rel="noreferrer">{copy.hardwareRateSource} ↗</a></p>
             </div>
           ) : null}
-          <button className="mj-primary-button" type="button" disabled title={gate ? copy.hardwareBlockedReason(gate.blocked_reason ?? "") : undefined}>
-            {copy.hardwareRequestSubmission}
+          <button
+            className="mj-primary-button"
+            type="button"
+            disabled={!canSubmit}
+            title={gate && !gate.submission_available ? copy.hardwareBlockedReason(gate.blocked_reason ?? "") : undefined}
+            onClick={startHardwareSubmission}
+          >
+            {submitting ? copy.starting : copy.hardwareRequestSubmission}
           </button>
           {!verified ? <p className="mj-qpu-note">{copy.hardwareVerifiedRequired}</p> : null}
+          {verified && !submittableQasm ? <p className="mj-qpu-note">{copy.hardwareInterchangeRequired}</p> : null}
           {gate && !gate.submission_available ? <p className="mj-qpu-note">{copy.hardwareBlockedReason(gate.blocked_reason ?? "")}</p> : null}
+          {submitError ? <p className="mj-qpu-note" role="alert">{submitError}</p> : null}
+          {qpuRun ? (
+            <div className="mj-qpu-record" role="status">
+              <dl className="mj-studio-contract">
+                <div><dt>{copy.hardwareJobStatus}</dt><dd>{qpuRun.status}</dd></div>
+                {qpuRun.provider_job_id ? <div><dt>{copy.hardwareJobId}</dt><dd>{qpuRun.provider_job_id}</dd></div> : null}
+                {qpuRun.error ? <div><dt>{copy.hardwareJobError}</dt><dd>{qpuRun.error}</dd></div> : null}
+              </dl>
+              {qpuRun.raw_counts ? (
+                <div className="mj-studio-simulation-counts">
+                  <span className="mj-section-label">{copy.hardwareRawCounts}</span>
+                  <code>{Object.entries(qpuRun.raw_counts).sort(([, left], [, right]) => right - left).map(([bitstring, count]) => `${bitstring}: ${count}`).join("\n")}</code>
+                </div>
+              ) : null}
+            </div>
+          ) : null}
         </div>
       ) : null}
     </div>

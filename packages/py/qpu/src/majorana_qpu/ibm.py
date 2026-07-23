@@ -100,14 +100,65 @@ class IbmRuntimeProvider:
             source_fingerprint=request.source_fingerprint,
         )
 
+    def _service(self):
+        from qiskit_ibm_runtime import QiskitRuntimeService
+
+        env = os.environ if self._environ is None else self._environ
+        return QiskitRuntimeService(
+            channel="ibm_quantum_platform",
+            token=env[TOKEN_ENV],
+        )
+
     def poll(self, provider_job_id: str) -> QpuJobRecord:
-        raise NotImplementedError(
-            "polling requires the durable qpu_run job seam; it lands with the "
-            "control-plane job table extension, not in the estimate slice"
+        """Current provider-side state of a submitted job; raw counts appear
+        exactly when the provider reports DONE. Counts are whatever the
+        primitive returned — never averaged, mitigated, or corrected here."""
+        reason = submission_block_reason(self._environ)
+        if reason is not None:
+            raise QpuDisabledError(reason)
+        job = self._service().job(provider_job_id)
+        status = _STATUS_MAP.get(str(job.status()), QpuJobStatus.RUNNING)
+        raw_counts: dict[str, int] | None = None
+        error: str | None = None
+        if status is QpuJobStatus.DONE:
+            raw_counts = _first_register_counts(job.result())
+            if raw_counts is None:
+                # A DONE job whose result carries no sampled register cannot be
+                # attested as a completed hardware run.
+                status = QpuJobStatus.ERROR
+                error = "provider result carried no sampled register counts"
+        elif status is QpuJobStatus.ERROR:
+            error = str(getattr(job, "error_message", lambda: None)() or "provider reported ERROR")
+        return QpuJobRecord(
+            provider=QpuProviderKey.IBM,
+            provider_job_id=provider_job_id,
+            device_id=str(getattr(job, "backend", lambda: None)() or "unknown"),
+            shots=0,
+            status=status,
+            raw_counts=raw_counts,
+            error=error,
+            source_fingerprint="",
         )
 
     def result(self, provider_job_id: str) -> QpuJobRecord:
-        raise NotImplementedError(
-            "result retrieval requires the durable qpu_run job seam; it lands "
-            "with the control-plane job table extension, not in the estimate slice"
-        )
+        return self.poll(provider_job_id)
+
+
+def _first_register_counts(result: object) -> dict[str, int] | None:
+    """Counts of the first sampled classical register in a SamplerV2 result.
+
+    The register name depends on how the circuit measured (`meas` for
+    measure_all, `c` for explicit registers), so this walks the DataBin
+    rather than assuming a name."""
+    try:
+        pub_result = result[0]  # type: ignore[index]
+        data = pub_result.data
+        for name in getattr(data, "__dict__", {}) or {}:
+            register = getattr(data, name)
+            get_counts = getattr(register, "get_counts", None)
+            if callable(get_counts):
+                counts = get_counts()
+                return {str(bits): int(count) for bits, count in counts.items()}
+    except Exception:  # noqa: BLE001 — attestation must fail closed, not guess
+        return None
+    return None

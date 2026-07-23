@@ -9,6 +9,7 @@ import logging
 import os
 import uuid
 from dataclasses import replace
+from datetime import UTC, datetime, timedelta
 from typing import Any, Awaitable, Callable
 
 from majorana_contracts import Scope
@@ -16,6 +17,7 @@ from majorana_contracts.enums import (
     EvidenceStrength,
     Framework,
     ImportProvider,
+    QpuRunStatus,
     RetryTarget,
     Role,
     RunMode,
@@ -35,7 +37,12 @@ from majorana_agent import (
 )
 from majorana_contracts.events import run_event_adapter
 from majorana_llm import LLMClient, LLMRequest, QUANTUM_AGENT_SYSTEM_PROMPT, default_llm, model_for
-from majorana_qpu import QpuRunJobPayload, submission_block_reason
+from majorana_qpu import (
+    QpuJobRequest,
+    QpuJobStatus,
+    QpuRunJobPayload,
+    submission_block_reason,
+)
 from pydantic import ValidationError
 from majorana_sandbox import LocalSubprocessSandbox, Sandbox, VercelSandbox
 from opentelemetry import metrics
@@ -52,6 +59,7 @@ from majorana_api.orm import ImportJob
 from majorana_api.repos import catalog_import as catalog_import_repo
 from majorana_api.repos import runs as runs_repo
 from majorana_api.repos import artifacts as artifacts_repo
+from majorana_api.repos import qpu_runs as qpu_runs_repo
 from majorana_api.repos import system
 
 from .agent_events import AgentEventObserver
@@ -1047,23 +1055,163 @@ async def handle_catalog_import(session: AsyncSession, payload: dict[str, Any]) 
     )
 
 
-async def handle_qpu_run(session: AsyncSession, payload: dict[str, Any]) -> None:
-    """Fail-closed half of the durable qpu_run seam (two-PR schema change).
+# A hardware queue can hold a job for hours; a lease cannot. So one handler
+# invocation performs exactly one provider interaction (submit, or one poll)
+# and re-enqueues itself with a delay — the durable qpu_runs row, not the job
+# chain, is the record of truth. Polling stops when the provider reports a
+# terminal state or the record has been in flight longer than the deadline.
+QPU_POLL_DELAY_S = 30
+QPU_POLL_DEADLINE_H = 24
 
-    No producer enqueues this kind yet — the submission endpoint refuses
-    before enqueue — so any row that reaches here fails permanently with a
-    typed reason instead of contacting a provider. The migration PR replaces
-    this body with submit/poll against the durable qpu_run record; the payload
-    validation and gate re-check (defense in depth — the API checked them too)
-    stay exactly as written."""
+
+def _default_qpu_provider() -> Any:
+    from majorana_qpu import IbmRuntimeProvider
+
+    return IbmRuntimeProvider()
+
+
+async def handle_qpu_run(
+    session: AsyncSession,
+    payload: dict[str, Any],
+    *,
+    provider: Any | None = None,
+) -> None:
+    """Submit-or-poll step against the durable qpu_run record (migration 0034).
+
+    The payload is a pointer plus the scope it resumes; every attested value
+    is read from and written to the row. The gate re-check is defense in
+    depth — the API checked it too, and a deployment that closed the gate
+    after enqueue must close the record rather than contact the provider."""
     try:
-        QpuRunJobPayload.model_validate(payload)
+        job = QpuRunJobPayload.model_validate(payload)
     except ValidationError as exc:
         raise RuntimeError(f"qpu.run payload malformed: {exc}") from exc
+    scope = _scope_from_payload(payload)
+    record = await qpu_runs_repo.get_record(scope, session, uuid.UUID(job.qpu_run_id))
+    status = QpuRunStatus(record.status)
+    if status in {QpuRunStatus.DONE, QpuRunStatus.ERROR, QpuRunStatus.CANCELLED}:
+        return
     reason = submission_block_reason()
     if reason is not None:
-        raise RuntimeError(f"qpu.run blocked: {reason.value}")
-    raise RuntimeError("qpu.run blocked: durable_record_unavailable")
+        await qpu_runs_repo.transition(
+            scope,
+            session,
+            record.id,
+            QpuRunStatus.ERROR,
+            error=f"submission gate closed after enqueue: {reason.value}",
+        )
+        await session.commit()
+        return
+    qpu = provider or _default_qpu_provider()
+
+    if status is QpuRunStatus.QUEUED:
+        submitted = await asyncio.to_thread(
+            qpu.submit,
+            QpuJobRequest(
+                device_id=record.device_id,
+                shots=record.shots,
+                qasm=record.qasm,
+                source_fingerprint=record.source_fingerprint,
+            ),
+        )
+        await qpu_runs_repo.transition(
+            scope,
+            session,
+            record.id,
+            QpuRunStatus.RUNNING,
+            provider_job_id=submitted.provider_job_id,
+            submitted_at=datetime.now(UTC),
+        )
+    else:  # RUNNING: one poll
+        if record.provider_job_id is None:
+            await qpu_runs_repo.transition(
+                scope,
+                session,
+                record.id,
+                QpuRunStatus.ERROR,
+                error="record is RUNNING with no provider job id; cannot poll",
+            )
+            await session.commit()
+            return
+        polled = await asyncio.to_thread(qpu.poll, record.provider_job_id)
+        if polled.status is QpuJobStatus.DONE:
+            await qpu_runs_repo.transition(
+                scope,
+                session,
+                record.id,
+                QpuRunStatus.DONE,
+                raw_counts=polled.raw_counts,
+            )
+            await session.commit()
+            return
+        if polled.status in {QpuJobStatus.ERROR, QpuJobStatus.CANCELLED}:
+            await qpu_runs_repo.transition(
+                scope,
+                session,
+                record.id,
+                QpuRunStatus.ERROR
+                if polled.status is QpuJobStatus.ERROR
+                else QpuRunStatus.CANCELLED,
+                error=polled.error,
+            )
+            await session.commit()
+            return
+        deadline_base = record.submitted_at or record.created_at
+        if deadline_base is not None and datetime.now(UTC) - deadline_base > timedelta(
+            hours=QPU_POLL_DEADLINE_H
+        ):
+            await qpu_runs_repo.transition(
+                scope,
+                session,
+                record.id,
+                QpuRunStatus.ERROR,
+                error=(
+                    f"provider did not reach a terminal state within "
+                    f"{QPU_POLL_DEADLINE_H}h; job {record.provider_job_id} may still "
+                    "complete provider-side — check the IBM dashboard"
+                ),
+            )
+            await session.commit()
+            return
+
+    await system.enqueue_job(
+        session,
+        kind=QPU_RUN_JOB_KIND,
+        payload=payload,
+        run_after=datetime.now(UTC) + timedelta(seconds=QPU_POLL_DELAY_S),
+    )
+    await session.commit()
+
+
+async def handle_qpu_run_dead_letter(
+    session: AsyncSession, payload: dict[str, Any], reason: str
+) -> None:
+    """Close the durable record when its job chain cannot continue, so a
+    hardware submission never sits QUEUED/RUNNING forever with nothing
+    scheduled to move it."""
+    try:
+        job = QpuRunJobPayload.model_validate(payload)
+    except ValidationError:
+        return  # nothing to close; the malformed payload is already dead-lettered
+    scope = _scope_from_payload(payload)
+    try:
+        record = await qpu_runs_repo.get_record(scope, session, uuid.UUID(job.qpu_run_id))
+    except LookupError:
+        return
+    if QpuRunStatus(record.status) in {
+        QpuRunStatus.DONE,
+        QpuRunStatus.ERROR,
+        QpuRunStatus.CANCELLED,
+    }:
+        return
+    await qpu_runs_repo.transition(
+        scope,
+        session,
+        record.id,
+        QpuRunStatus.ERROR,
+        error=f"job dead-lettered: {reason[:1900]}",
+    )
+    await session.commit()
 
 
 HANDLERS: dict[str, JobHandler] = {
@@ -1074,4 +1222,5 @@ HANDLERS: dict[str, JobHandler] = {
 
 DEAD_LETTER_HANDLERS: dict[str, DeadLetterHandler] = {
     RUN_EXECUTE_JOB_KIND: handle_run_dead_letter,
+    QPU_RUN_JOB_KIND: handle_qpu_run_dead_letter,
 }

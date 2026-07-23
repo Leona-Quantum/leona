@@ -75,3 +75,49 @@ export async function fetchQpuSubmissionGate(): Promise<QpuSubmissionGate> {
 export function formatUsd(value: number): string {
   return value.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: value < 1 ? 4 : 2 });
 }
+
+export type QpuRunRecord = {
+  id: string;
+  provider: "ibm" | "braket";
+  device_id: string;
+  provider_job_id: string | null;
+  shots: number;
+  status: "queued" | "running" | "done" | "error" | "cancelled";
+  source_fingerprint: string;
+  estimated_total_usd: number | null;
+  rate_source: string;
+  rate_confirmed_on: string;
+  raw_counts: Record<string, number> | null;
+  error: string | null;
+  submitted_at: string | null;
+  completed_at: string | null;
+  created_at: string;
+};
+
+export async function submitQpuRun(request: {
+  device_id: string;
+  shots: number;
+  qasm: string;
+  source_fingerprint: string;
+}): Promise<QpuRunRecord> {
+  const response = await fetch("/api/qpu/submissions", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(request),
+    cache: "no-store",
+  });
+  const payload = (await response.json()) as QpuRunRecord & {
+    detail?: { blocked_reason?: string } | string;
+  };
+  if (!response.ok) {
+    const detail = typeof payload.detail === "string" ? payload.detail : payload.detail?.blocked_reason;
+    throw new Error(detail ?? `qpu submission failed (${response.status})`);
+  }
+  return payload;
+}
+
+export async function fetchQpuRun(recordId: string): Promise<QpuRunRecord> {
+  const response = await fetch(`/api/qpu/runs/${recordId}`, { cache: "no-store" });
+  if (!response.ok) throw new Error(`qpu run unavailable (${response.status})`);
+  return (await response.json()) as QpuRunRecord;
+}

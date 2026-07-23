@@ -1,18 +1,22 @@
-"""QPU catalog, deterministic estimates, and the submission gate.
+"""QPU catalog, deterministic estimates, the submission gate, and submission.
 
-Stateless by design in this slice: the rate card is code (majorana_qpu), the
-estimate is arithmetic over it, and the submission endpoint reports exactly
-why hardware submission is blocked in this deployment instead of pretending a
-job was created. The durable `qpu_run` job row is a schema change and lands
-as its own two-PR migration (deploy migrates before rollout).
+The rate card is code (majorana_qpu) and the estimate is arithmetic over it.
+Submission is fail-closed behind the deployment gates; when every gate is
+open, POST /qpu/submissions writes the durable qpu_runs attestation row
+(migration 0034) and its qpu.run job in one transaction and returns the
+record. The worker owns every provider interaction after that.
 """
 
+import uuid
+
 from fastapi import APIRouter, HTTPException
+from majorana_contracts import QpuRunRecord
 from pydantic import BaseModel, ConfigDict, Field
 
 from majorana_qpu import (
     QpuBackendInfo,
     QpuCostEstimate,
+    QpuRunJobPayload,
     UnknownDeviceError,
     backend_info,
     estimate as rate_card_estimate,
@@ -20,7 +24,11 @@ from majorana_qpu import (
     submission_block_reason,
 )
 
-from ..auth.deps import CurrentScope
+from ..auth.deps import CurrentScope, DbSession
+from ..jobs import QPU_RUN_JOB_KIND
+from ..orm import QpuRun as QpuRunRow
+from ..repos import qpu_runs as qpu_runs_repo
+from ..repos import system
 
 router = APIRouter()
 
@@ -28,12 +36,6 @@ MAX_ESTIMATE_SHOTS = 1_000_000
 # Generous bound for a submitted OpenQASM program; the Studio surface caps far
 # lower — this only stops abuse of the raw endpoint.
 MAX_SUBMISSION_QASM_CHARS = 200_000
-
-# Blocked reason for the seam gap itself: every provider gate can be open and
-# submission still refuses until the durable qpu_run record storage exists
-# (two-PR schema change; the migration is the second half). A hardware job
-# with nowhere to attest its provider job id and raw counts must not start.
-DURABLE_RECORD_UNAVAILABLE = "durable_record_unavailable"
 
 
 class QpuBackendsResponse(BaseModel):
@@ -86,20 +88,85 @@ class QpuSubmissionRequest(BaseModel):
     source_fingerprint: str = Field(min_length=1, max_length=200)
 
 
-@router.post("/qpu/submissions")
-async def qpu_submit(body: QpuSubmissionRequest, scope: CurrentScope) -> None:
-    """Real submission flow up to the enqueue: device is validated, then every
-    deployment gate is consulted, and the refusal names its reason. In this
-    slice no path enqueues — even with all provider gates open the endpoint
-    refuses with DURABLE_RECORD_UNAVAILABLE until the qpu_run record migration
-    lands. The follow-up PR replaces only that terminal branch with
-    enqueue(QPU_RUN_JOB_KIND) + the attestation row; the success shape is
-    already contracted as majorana_contracts.QpuRunRecord."""
+def _to_qpu_run_resource(record: QpuRunRow) -> QpuRunRecord:
+    return QpuRunRecord(
+        id=record.id,
+        workspace_id=record.workspace_id,
+        user_id=record.user_id,
+        artifact_version_id=record.artifact_version_id,
+        provider=record.provider,
+        device_id=record.device_id,
+        provider_job_id=record.provider_job_id,
+        shots=record.shots,
+        status=record.status,
+        source_fingerprint=record.source_fingerprint,
+        estimate_basis=record.estimate_basis,
+        estimated_total_usd=(
+            float(record.estimated_total_usd) if record.estimated_total_usd is not None else None
+        ),
+        rate_source=record.rate_source,
+        rate_confirmed_on=record.rate_confirmed_on,
+        raw_counts=record.raw_counts,
+        error=record.error,
+        submitted_at=record.submitted_at,
+        completed_at=record.completed_at,
+        created_at=record.created_at,
+    )
+
+
+@router.post("/qpu/submissions", response_model=QpuRunRecord, status_code=201)
+async def qpu_submit(
+    body: QpuSubmissionRequest, scope: CurrentScope, session: DbSession
+) -> QpuRunRecord:
+    """Real submission: device validated, every deployment gate consulted, and
+    on an open path the durable qpu_run attestation row and the qpu.run job
+    are written in the same transaction — neither can become visible alone.
+    The estimate is snapshotted onto the row exactly as the rate card computes
+    it now, so the record proves what was agreed to at confirmation time."""
     try:
-        backend_info(body.device_id)
+        backend = backend_info(body.device_id)
     except UnknownDeviceError:
         raise HTTPException(status_code=404, detail="unknown QPU device") from None
     reason = submission_block_reason()
     if reason is not None:
         raise HTTPException(status_code=409, detail={"blocked_reason": reason.value})
-    raise HTTPException(status_code=409, detail={"blocked_reason": DURABLE_RECORD_UNAVAILABLE})
+    estimate = rate_card_estimate(body.device_id, body.shots)
+    record = await qpu_runs_repo.create_record(
+        scope,
+        session,
+        device_id=body.device_id,
+        provider=backend.provider.value,
+        shots=body.shots,
+        qasm=body.qasm,
+        source_fingerprint=body.source_fingerprint,
+        estimate_basis=estimate.basis.value,
+        estimated_total_usd=estimate.total_usd,
+        rate_source=estimate.rate_source,
+        rate_confirmed_on=estimate.rate_confirmed_on,
+    )
+    payload = QpuRunJobPayload(
+        workspace_id=str(scope.workspace_id),
+        user_id=str(scope.user_id),
+        qpu_run_id=str(record.id),
+        device_id=body.device_id,
+        shots=body.shots,
+        qasm=body.qasm,
+        source_fingerprint=body.source_fingerprint,
+    )
+    await system.enqueue_job(
+        session,
+        kind=QPU_RUN_JOB_KIND,
+        payload=payload.model_dump(mode="json"),
+    )
+    return _to_qpu_run_resource(record)
+
+
+@router.get("/qpu/runs/{record_id}", response_model=QpuRunRecord)
+async def qpu_run_record(
+    record_id: uuid.UUID, scope: CurrentScope, session: DbSession
+) -> QpuRunRecord:
+    try:
+        record = await qpu_runs_repo.get_record(scope, session, record_id)
+    except LookupError:
+        raise HTTPException(status_code=404, detail="unknown qpu_run") from None
+    return _to_qpu_run_resource(record)
