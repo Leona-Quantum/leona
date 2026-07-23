@@ -131,6 +131,11 @@ class Converter:
         return None, "unavailable"
 
 
+class AvailableConverter:
+    async def convert(self, *_args):
+        return "OPENQASM 3.0;\nqubit q;", None
+
+
 class Publisher:
     async def materialize(self, candidate, *_args):
         return MaterializedArtifact(
@@ -143,7 +148,7 @@ class Publisher:
         )
 
 
-def _stack(*, store=None, reviewer=None, strict=None, budget=None):
+def _stack(*, store=None, reviewer=None, strict=None, converter=None, budget=None):
     store = store or MemoryAgentStore()
     reviewer = reviewer or ReadyReviewer()
     strict = strict or FlakyStrictVerifier()
@@ -154,7 +159,7 @@ def _stack(*, store=None, reviewer=None, strict=None, budget=None):
         executor=Executor(),
         reviewer=reviewer,
         strict_verifier=strict,
-        converter=Converter(),
+        converter=converter or Converter(),
         materializer=Publisher(),
     )
     broker = ToolBroker(
@@ -192,7 +197,9 @@ def test_allowed_transition_table_is_exhaustive_and_legacy_tools_are_not_live():
         AgentState.VERIFIED: frozenset(
             {ToolName.CONVERT_TO_OPENQASM, ToolName.MATERIALIZE_ARTIFACT}
         ),
-        AgentState.INCONCLUSIVE: frozenset({ToolName.MATERIALIZE_ARTIFACT}),
+        AgentState.INCONCLUSIVE: frozenset(
+            {ToolName.CONVERT_TO_OPENQASM, ToolName.MATERIALIZE_ARTIFACT}
+        ),
         AgentState.QASM_ATTEMPTED: frozenset({ToolName.MATERIALIZE_ARTIFACT}),
     }
     for state in AgentState:
@@ -313,6 +320,7 @@ async def test_semantic_uncertainty_mechanically_prevents_strict_pass():
 async def test_terminal_inconclusive_materializes_privately_without_becoming_verified():
     store, broker, _, _ = _stack(
         reviewer=UncertainReviewer(),
+        converter=AvailableConverter(),
         budget=AgentBudget(max_strict_attempts=1),
     )
     run_id = uuid4()
@@ -337,6 +345,19 @@ async def test_terminal_inconclusive_materializes_privately_without_becoming_ver
     assert strict.state is AgentState.INCONCLUSIVE
     assert await store.verification_for(run_id, UUID(candidate_id)) is None
 
+    conversion = await broker.dispatch(
+        run_id,
+        ToolCall(
+            tool_call_id="inconclusive-conversion",
+            name=ToolName.CONVERT_TO_OPENQASM,
+            arguments={"candidate_id": candidate_id},
+        ),
+    )
+    assert conversion.ok
+    assert conversion.payload["status"] == "available"
+    latest_strict = await store.latest_strict_verification(run_id, UUID(candidate_id))
+    assert latest_strict.decision is VerifierDecision.INCONCLUSIVE
+
     materialized = await broker.dispatch(
         run_id,
         ToolCall(
@@ -350,6 +371,43 @@ async def test_terminal_inconclusive_materializes_privately_without_becoming_ver
     assert materialized.state is AgentState.MATERIALIZED
     assert store.materializations[0].candidate_id == UUID(candidate_id)
     assert store.publications == []
+
+
+async def test_unavailable_conversion_does_not_change_pass_verdict():
+    store, broker, _, _ = _stack()
+    run_id = uuid4()
+    simulation = await _execute_one(store, broker, run_id)
+    candidate_id = simulation.payload["candidate_id"]
+    await broker.dispatch(
+        run_id,
+        ToolCall(
+            tool_call_id="review",
+            name=ToolName.REVIEW_CANDIDATE,
+            arguments={"candidate_id": candidate_id},
+        ),
+    )
+    strict = await broker.dispatch(
+        run_id,
+        ToolCall(
+            tool_call_id="strict",
+            name=ToolName.STRICT_VERIFY,
+            arguments={"candidate_id": candidate_id},
+        ),
+    )
+    assert strict.payload["decision"] == "pass"
+
+    conversion = await broker.dispatch(
+        run_id,
+        ToolCall(
+            tool_call_id="unavailable-conversion",
+            name=ToolName.CONVERT_TO_OPENQASM,
+            arguments={"candidate_id": candidate_id},
+        ),
+    )
+
+    assert conversion.payload["status"] == "unavailable"
+    latest_strict = await store.latest_strict_verification(run_id, UUID(candidate_id))
+    assert latest_strict.decision is VerifierDecision.PASS
 
 
 async def test_strict_plan_defect_authorizes_replan():
@@ -449,6 +507,7 @@ async def test_conversion_rejects_a_stale_source_fingerprint():
         await store.add_conversion(
             ConversionEvidence(
                 candidate_id=UUID(candidate_id),
+                execution_id=uuid4(),
                 source_fingerprint="f" * 64,
                 status="unavailable",
                 reason="test",

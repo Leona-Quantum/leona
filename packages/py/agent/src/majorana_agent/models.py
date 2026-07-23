@@ -365,6 +365,7 @@ class VerificationEvidence(_Record):
 
 class ConversionEvidence(_Record):
     candidate_id: UUID
+    execution_id: UUID
     source_fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
     status: Literal["available", "unavailable"]
     qasm: str | None = None

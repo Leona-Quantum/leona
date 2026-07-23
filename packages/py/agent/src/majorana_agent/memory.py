@@ -9,6 +9,8 @@ from __future__ import annotations
 from collections import defaultdict
 from uuid import UUID
 
+from majorana_contracts.enums import VerifierDecision
+
 from majorana_agent.models import (
     AgentState,
     CandidateStatus,
@@ -314,13 +316,29 @@ class MemoryAgentStore:
 
     async def add_conversion(self, evidence: ConversionEvidence) -> None:
         owner = next(
-            (run for (run, cid) in self._verifications if cid == evidence.candidate_id), None
+            (
+                run_id
+                for run_id, candidates in self._candidates.items()
+                if any(candidate.candidate_id == evidence.candidate_id for candidate in candidates)
+            ),
+            None,
         )
         if owner is None:
-            raise ValueError("candidate must be verified before conversion")
-        verification = self._verifications[(owner, evidence.candidate_id)]
-        if verification.source_fingerprint != evidence.source_fingerprint:
-            raise ValueError("conversion fingerprint does not match verification")
+            raise KeyError(evidence.candidate_id)
+        strict = await self.latest_strict_verification(owner, evidence.candidate_id)
+        execution = self._executions.get((owner, evidence.candidate_id))
+        if strict is None or strict.decision not in {
+            VerifierDecision.PASS,
+            VerifierDecision.INCONCLUSIVE,
+        }:
+            raise ValueError("conversion requires strict PASS or INCONCLUSIVE")
+        if execution is None or not (
+            strict.execution_id == evidence.execution_id == execution.execution_id
+            and strict.source_fingerprint
+            == evidence.source_fingerprint
+            == execution.source_fingerprint
+        ):
+            raise ValueError("conversion fingerprint/execution binding mismatch")
         evidence_key = (owner, evidence.candidate_id)
         existing = self._conversions.get(evidence_key)
         if existing is not None and existing != evidence:

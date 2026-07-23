@@ -1670,6 +1670,12 @@ class RepoArtifactMaterializer:
         plan: Plan,
     ) -> MaterializedArtifact:
         verification.assert_binding(candidate, execution, review)
+        if conversion is not None and not (
+            conversion.candidate_id == candidate.candidate_id
+            and conversion.execution_id == execution.execution_id
+            and conversion.source_fingerprint == candidate.source_fingerprint
+        ):
+            raise ValueError("conversion fingerprint/execution binding mismatch")
         artifact_id = self._parent_artifact_id
         if artifact_id is None:
             artifact = await artifacts_repo.create_artifact(
@@ -1747,6 +1753,15 @@ class RepoArtifactMaterializer:
                     },
                     "residual_risks": residual_risks,
                     "unverified_claims": verification.unverified_claims,
+                },
+                "export_manifest": {
+                    "verification_decision": verification.decision.value,
+                    "warning": (
+                        "This OpenQASM export cannot embed the artifact's INCONCLUSIVE "
+                        "verification state; retain this manifest with the exported file."
+                        if qasm and verification.decision is VerifierDecision.INCONCLUSIVE
+                        else None
+                    ),
                 },
             },
             code=candidate.source,

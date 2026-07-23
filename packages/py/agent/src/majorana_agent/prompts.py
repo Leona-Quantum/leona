@@ -9,6 +9,7 @@ artifact. After a failed verification, preserve the listed invariants and submit
 new repaired source revision. Never claim execution or correctness from prose; use
 the stored tool evidence. Materialize only the latest candidate after a terminal strict
 PASS or INCONCLUSIVE decision; INCONCLUSIVE remains explicitly unverified and private.
+Optional OpenQASM conversion may follow either terminal decision and never changes it.
 
 When the request carries `verified_exemplars`, they are complete programs from this
 workspace's own artifacts that already PASSED verification in the same framework.

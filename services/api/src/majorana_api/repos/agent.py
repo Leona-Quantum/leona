@@ -674,15 +674,20 @@ async def add_conversion(
     candidate = await get_candidate(scope, session, run_id, values["candidate_id"])
     if candidate is None:
         raise NotFoundError("candidate")
-    verification = await get_verification(scope, session, run_id, candidate.id)
-    if verification is None:
-        raise NotFoundError("candidate_verification")
+    verification = await latest_strict_verification(scope, session, run_id, candidate.id)
+    execution = await get_execution(scope, session, run_id, candidate.id)
+    if verification is None or verification.decision not in {"pass", "inconclusive"}:
+        raise NotFoundError("terminal_strict_verification")
+    if execution is None:
+        raise NotFoundError("candidate_execution")
     if not (
         candidate.source_fingerprint
         == verification.source_fingerprint
+        == execution.source_fingerprint
         == values.get("source_fingerprint")
+        and verification.execution_id == execution.id == values.get("execution_id")
     ):
-        raise ValueError("conversion evidence fingerprint mismatch")
+        raise ValueError("conversion evidence execution binding mismatch")
     row = CandidateConversion(**values)
     session.add(row)
     await session.flush()

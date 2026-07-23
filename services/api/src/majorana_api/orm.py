@@ -495,9 +495,19 @@ class CandidateConversion(Base):
             ["run_candidates.id", "run_candidates.source_fingerprint"],
             ondelete="CASCADE",
         ),
+        ForeignKeyConstraint(
+            ["execution_id", "candidate_id", "source_fingerprint"],
+            [
+                "candidate_executions.id",
+                "candidate_executions.candidate_id",
+                "candidate_executions.source_fingerprint",
+            ],
+            name="fk_candidate_conversions_execution_binding",
+        ),
     )
 
     candidate_id: Mapped[uuid.UUID] = mapped_column(primary_key=True)
+    execution_id: Mapped[uuid.UUID]
     source_fingerprint: Mapped[str]
     status: Mapped[str]
     qasm: Mapped[str | None]

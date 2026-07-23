@@ -43,7 +43,9 @@ _ALLOWED: dict[AgentState, frozenset[ToolName]] = {
     AgentState.REPLAN_REQUIRED: frozenset({ToolName.REPLAN}),
     AgentState.RESOURCE_EXHAUSTED: frozenset(),
     AgentState.VERIFIED: frozenset({ToolName.CONVERT_TO_OPENQASM, ToolName.MATERIALIZE_ARTIFACT}),
-    AgentState.INCONCLUSIVE: frozenset({ToolName.MATERIALIZE_ARTIFACT}),
+    AgentState.INCONCLUSIVE: frozenset(
+        {ToolName.CONVERT_TO_OPENQASM, ToolName.MATERIALIZE_ARTIFACT}
+    ),
     AgentState.QASM_ATTEMPTED: frozenset({ToolName.MATERIALIZE_ARTIFACT}),
     AgentState.PUBLISHED: frozenset(),
     AgentState.MATERIALIZED: frozenset(),

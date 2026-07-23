@@ -275,3 +275,39 @@ def test_private_materialization_migration_is_additive_and_fails_closed(monkeypa
     assert "cannot downgrade 0031" in statements[-1]
     assert "DELETE FROM" not in statements[-1]
     assert dropped == [("agent_runs", "materialization")]
+
+
+def test_conversion_execution_binding_migration_backfills_and_fails_closed(monkeypatch):
+    module = _load_migration("0032_bind_conversion_execution.py")
+    statements = []
+    added = []
+    altered = []
+    foreign_keys = []
+    dropped = []
+
+    monkeypatch.setattr(
+        module.op, "add_column", lambda table, column: added.append((table, column))
+    )
+    monkeypatch.setattr(module.op, "execute", statements.append)
+    monkeypatch.setattr(
+        module.op, "alter_column", lambda table, column, **kw: altered.append((table, column, kw))
+    )
+    monkeypatch.setattr(
+        module.op, "create_foreign_key", lambda *args, **kwargs: foreign_keys.append((args, kwargs))
+    )
+    monkeypatch.setattr(
+        module.op, "drop_constraint", lambda *args, **kwargs: dropped.append((args, kwargs))
+    )
+    monkeypatch.setattr(module.op, "drop_column", lambda *args: dropped.append((args, {})))
+
+    module.upgrade()
+    assert added[0][0] == "candidate_conversions"
+    assert added[0][1].name == "execution_id"
+    assert "UPDATE candidate_conversions" in statements[0]
+    assert altered == [("candidate_conversions", "execution_id", {"nullable": False})]
+    assert foreign_keys[0][0][0] == module._FK
+
+    module.downgrade()
+    assert "cannot downgrade 0032" in statements[-1]
+    assert "DELETE FROM" not in statements[-1]
+    assert dropped[-1][0] == ("candidate_conversions", "execution_id")

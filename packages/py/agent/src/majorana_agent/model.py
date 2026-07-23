@@ -37,7 +37,7 @@ _TOOLS_BY_STATE: dict[AgentState, tuple[ToolName, ...]] = {
     AgentState.REPLAN_REQUIRED: (ToolName.REPLAN,),
     AgentState.RESOURCE_EXHAUSTED: (),
     AgentState.VERIFIED: (ToolName.CONVERT_TO_OPENQASM, ToolName.MATERIALIZE_ARTIFACT),
-    AgentState.INCONCLUSIVE: (ToolName.MATERIALIZE_ARTIFACT,),
+    AgentState.INCONCLUSIVE: (ToolName.CONVERT_TO_OPENQASM, ToolName.MATERIALIZE_ARTIFACT),
     AgentState.QASM_ATTEMPTED: (ToolName.MATERIALIZE_ARTIFACT,),
     AgentState.PUBLISHED: (),
     AgentState.MATERIALIZED: (),

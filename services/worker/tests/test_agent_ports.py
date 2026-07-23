@@ -6,6 +6,7 @@ from uuid import uuid4
 import pytest
 from majorana_agent import (
     CandidateRevision,
+    ConversionEvidence,
     ExecutionEvidence,
     ExecutionFailureKind,
     SemanticReviewEvidence,
@@ -687,13 +688,20 @@ async def test_inconclusive_materializes_with_explicit_unverified_metadata(monke
         set_run_artifact_version,
     )
 
+    conversion = ConversionEvidence(
+        candidate_id=candidate.candidate_id,
+        execution_id=execution.execution_id,
+        source_fingerprint=candidate.source_fingerprint,
+        status="available",
+        qasm="OPENQASM 3.0;\nqubit q;",
+    )
     await RepoArtifactMaterializer(
         scope=object(),
         session=object(),
         run_id=candidate.run_id,
         parent_artifact_id=None,
         title="Bell circuit",
-    ).materialize(candidate, execution, verification, review, None, _plan())
+    ).materialize(candidate, execution, verification, review, conversion, _plan())
 
     summary = captured["metadata"]["verification_summary"]
     assert summary["verified"] is False
@@ -705,6 +713,7 @@ async def test_inconclusive_materializes_with_explicit_unverified_metadata(monke
     assert summary["residual_risks"] == ["Relative phase is unverified."]
     assert captured["fingerprint"] == candidate.source_fingerprint
     assert "Bell relative phase" in captured["limitations"]
+    assert "INCONCLUSIVE" in captured["metadata"]["export_manifest"]["warning"]
 
 
 @pytest.mark.parametrize("decision", [VerifierDecision.PASS, VerifierDecision.INCONCLUSIVE])

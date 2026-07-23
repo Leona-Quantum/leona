@@ -690,23 +690,46 @@ class CircuitToolset:
 
     async def convert(self, run_id: UUID, call: ToolCall) -> dict[str, Any]:
         candidate = await self._bound_candidate(run_id, call.arguments)
-        verification = await self._store.verification_for(run_id, candidate.candidate_id)
-        if verification is None or verification.decision is not VerifierDecision.PASS:
-            raise ToolPolicyError("candidate_unverified", "conversion requires verification PASS")
+        verification = await self._store.latest_strict_verification(run_id, candidate.candidate_id)
+        if verification is None or verification.decision not in {
+            VerifierDecision.PASS,
+            VerifierDecision.INCONCLUSIVE,
+        }:
+            raise ToolPolicyError(
+                "candidate_not_convertible",
+                "conversion requires terminal strict PASS or INCONCLUSIVE",
+            )
         execution = await self._store.execution_for(run_id, candidate.candidate_id)
         if execution is None:
             raise ToolPolicyError("execution_missing", "conversion requires execution evidence")
+        if not (
+            verification.execution_id == execution.execution_id
+            and verification.source_fingerprint
+            == execution.source_fingerprint
+            == candidate.source_fingerprint
+        ):
+            raise ToolPolicyError(
+                "fingerprint_mismatch", "conversion evidence is not bound to this execution"
+            )
         evidence = await self._store.conversion_for(run_id, candidate.candidate_id)
         if evidence is None:
             qasm, reason = await self._converter.convert(candidate, execution)
             evidence = ConversionEvidence(
                 candidate_id=candidate.candidate_id,
+                execution_id=execution.execution_id,
                 source_fingerprint=candidate.source_fingerprint,
                 status="available" if qasm else "unavailable",
                 qasm=qasm,
                 reason=reason,
             )
             await self._store.add_conversion(evidence)
+        elif not (
+            evidence.execution_id == execution.execution_id
+            and evidence.source_fingerprint == candidate.source_fingerprint
+        ):
+            raise ToolPolicyError(
+                "fingerprint_mismatch", "stored conversion is bound to stale evidence"
+            )
         return evidence.model_dump(mode="json", exclude={"qasm"})
 
     async def materialize(self, run_id: UUID, call: ToolCall) -> dict[str, Any]:
@@ -743,6 +766,13 @@ class CircuitToolset:
             except ValueError as exc:
                 raise ToolPolicyError("fingerprint_mismatch", str(exc)) from exc
             conversion = await self._store.conversion_for(run_id, candidate.candidate_id)
+            if conversion is not None and not (
+                conversion.execution_id == execution.execution_id
+                and conversion.source_fingerprint == candidate.source_fingerprint
+            ):
+                raise ToolPolicyError(
+                    "fingerprint_mismatch", "conversion is bound to stale evidence"
+                )
             plan = (await self._store.plan(run_id, candidate.plan_id)).plan
             materialization = await self._materializer.materialize(
                 candidate, execution, verification, review, conversion, plan

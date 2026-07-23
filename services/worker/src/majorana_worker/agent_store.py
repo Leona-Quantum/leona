@@ -492,11 +492,20 @@ class RepoAgentStore:
         if row is None:
             raise KeyError(evidence.candidate_id)
         candidate = self._candidate(row)
-        verification = await self.verification_for(candidate.run_id, candidate.candidate_id)
-        if verification is None:
-            raise ValueError("candidate must be verified before conversion")
-        if candidate.source_fingerprint != evidence.source_fingerprint:
-            raise ValueError("conversion fingerprint does not match candidate")
+        verification = await self.latest_strict_verification(
+            candidate.run_id, candidate.candidate_id
+        )
+        execution = await self.execution_for(candidate.run_id, candidate.candidate_id)
+        if verification is None or verification.decision.value not in {"pass", "inconclusive"}:
+            raise ValueError("conversion requires strict PASS or INCONCLUSIVE")
+        if execution is None or not (
+            verification.execution_id == evidence.execution_id == execution.execution_id
+            and candidate.source_fingerprint
+            == verification.source_fingerprint
+            == evidence.source_fingerprint
+            == execution.source_fingerprint
+        ):
+            raise ValueError("conversion fingerprint/execution binding mismatch")
         await agent_repo.add_conversion(
             self._scope,
             self._session,
@@ -511,6 +520,7 @@ class RepoAgentStore:
             return None
         return ConversionEvidence(
             candidate_id=row.candidate_id,
+            execution_id=row.execution_id,
             source_fingerprint=row.source_fingerprint,
             status=row.status,
             qasm=row.qasm,
