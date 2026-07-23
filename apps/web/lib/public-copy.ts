@@ -58,7 +58,7 @@ export const HOME_COPY: Record<PublicLocale, {
   en: {
     hero: {
       title: "Evidence for quantum work.",
-      lede: "Leona Quantum brings public research, a private workspace, and verified execution into one calm place.",
+      lede: "Public research, a private workspace, and execution that shows its working — in one place.",
       primary: "Explore the Atlas",
       secondary: "Open the workspace",
       contact: "Get in touch",
@@ -80,11 +80,11 @@ export const HOME_COPY: Record<PublicLocale, {
     intro: {
       label: "The company",
       title: "Quantum work needs somewhere for evidence to live.",
-      body: "The next generation of quantum software will be built from research that can be inspected, experiments that can be repeated, and results whose assumptions stay visible. Leona Quantum is building that connective layer.",
+      body: "Quantum results are easy to produce and hard to trust. Papers are not runnable, notebooks go stale, and the assumptions behind a number rarely travel with it. Leona Quantum keeps the research, the code, the run, and the check in one record.",
     },
     product: {
       label: "Our product",
-      title: "Two experiences. One standard of truth.",
+      title: "Three parts, one standard of evidence.",
       items: [
         { index: "01", title: "Public research", body: "Explore circuits and algorithms with classification, source context, verification boundaries, classical comparisons, and framework-aware code.", action: "Browse the Atlas" },
         { index: "02", title: "Personal workspace", body: "Turn a natural-language question into a visible plan, implementation, simulation, verification, and saved Vault record.", action: "Open the workspace" },
@@ -93,12 +93,12 @@ export const HOME_COPY: Record<PublicLocale, {
     },
     principles: {
       label: "Our principles",
-      title: "Built on principles that compound.",
+      title: "What we won't trade away.",
       items: [
-        { title: "Evidence first", body: "We value results you can inspect and reproduce." },
-        { title: "Open by default", body: "Public research accelerates private discovery." },
-        { title: "Privacy by design", body: "Your work is yours—secure by default, always." },
-        { title: "Interoperable", body: "Open formats and APIs keep knowledge portable." },
+        { title: "Evidence first", body: "A result you cannot inspect is a claim. The check ships with the answer, including when the check could not run." },
+        { title: "Open by default", body: "The Atlas is public because shared groundwork makes private work faster." },
+        { title: "Privacy by design", body: "Vault content is yours. Nothing you build there feeds anything public." },
+        { title: "Interoperable", body: "Open formats and APIs, so the record outlives the tool that made it." },
       ],
     },
     lioness: {
@@ -112,7 +112,7 @@ export const HOME_COPY: Record<PublicLocale, {
     },
     cta: {
       label: "Contact",
-      title: "Let’s build what’s next.",
+      title: "Tell us what you’re working on.",
       contact: "Get in touch",
       pricing: "See early-access plans",
     },
@@ -120,7 +120,7 @@ export const HOME_COPY: Record<PublicLocale, {
   ja: {
     hero: {
       title: "量子研究に、検証できる根拠を。",
-      lede: "Leona Quantumは、公開研究、個人ワークスペース、検証済みの実行をひとつの場所につなぎます。",
+      lede: "公開研究、個人ワークスペース、そして過程まで見える実行を、ひとつの場所に。",
       primary: "Atlasを見る",
       secondary: "ワークスペースを開く",
       contact: "お問い合わせ",
@@ -142,11 +142,11 @@ export const HOME_COPY: Record<PublicLocale, {
     intro: {
       label: "会社情報",
       title: "量子研究には、根拠を置いておける場所が必要です。",
-      body: "これからの量子ソフトウェアは、確認できる研究、繰り返せる実験、前提が見える結果から生まれます。Leona Quantumは、その間をつなぐ層をつくっています。",
+      body: "量子計算の結果を出すのは簡単でも、信頼するのは難しいことです。論文はそのまま実行できず、ノートブックは古くなり、数値の前提は一緒に伝わりません。Leona Quantumは、研究、コード、実行、検証をひとつの記録にまとめます。",
     },
     product: {
       label: "プロダクト",
-      title: "二つの体験。ひとつの基準。",
+      title: "三つの構成、ひとつの基準。",
       items: [
         { index: "01", title: "公開研究", body: "分類、出典、検証の境界、古典比較、フレームワーク別コードを確認しながら回路とアルゴリズムを探索できます。", action: "Atlasを見る" },
         { index: "02", title: "個人ワークスペース", body: "自然言語の問いを、計画、実装、シミュレーション、検証、保存できるボールトの記録へ変えます。", action: "ワークスペースを開く" },
@@ -155,12 +155,12 @@ export const HOME_COPY: Record<PublicLocale, {
     },
     principles: {
       label: "原則",
-      title: "積み重なる原則からつくる。",
+      title: "譲らないこと。",
       items: [
-        { title: "根拠を先に", body: "確認と再現ができる結果を大切にします。" },
-        { title: "まず開く", body: "公開研究が非公開の発見を加速します。" },
-        { title: "プライバシーを設計に", body: "あなたの成果はあなたのもの。常に非公開を基本にします。" },
-        { title: "相互運用性", body: "オープンな形式とAPIで知識を持ち運べます。" },
+        { title: "根拠を先に", body: "確認できない結果は、主張にすぎません。検証は答えと一緒に示します。検証できなかった場合も、そのまま伝えます。" },
+        { title: "まず開く", body: "共有された土台があるほど、非公開の研究は速く進みます。だからAtlasは公開しています。" },
+        { title: "プライバシーを設計に", body: "ボールトの内容はあなたのものです。そこでの作業が公開側に流れることはありません。" },
+        { title: "相互運用性", body: "オープンな形式とAPIで、記録がツールより長く残るように。" },
       ],
     },
     lioness: {
@@ -174,7 +174,7 @@ export const HOME_COPY: Record<PublicLocale, {
     },
     cta: {
       label: "お問い合わせ",
-      title: "次の一歩を一緒につくりましょう。",
+      title: "いま取り組んでいることを、聞かせてください。",
       contact: "お問い合わせ",
       pricing: "早期アクセスのプランを見る",
     },
@@ -189,7 +189,7 @@ export const PRICING_COPY: Record<PublicLocale, {
   en: {
     hero: { title: "A clear path from first run to team work.", body: "Start free, keep private work in your Vault, and move up when you need more verification capacity, export tooling, or shared R&D controls." },
     plans: [
-      { name: "Free", price: "$0", cadence: "while early access is open", description: "A low-friction way to browse public evidence and try the workbench.", features: ["Public Atlas access", "Small verified-run allowance", "Private Vault", "Limited Studio access"], action: "Try the preview", tone: "quiet" },
+      { name: "Free", price: "$0", cadence: "while early access is open", description: "Enough to browse the public evidence and put the workbench through a real problem.", features: ["The full public Atlas", "5 agent runs a week", "25 private Vault artifacts", "Browser simulation up to 16 qubits"], action: "Try the preview", tone: "quiet" },
       { name: "Pro", price: "Early access", cadence: "for individual researchers", description: "More room for private research, stronger model tiers, and export-aware workflows.", features: ["Higher run limits", "Private artifacts and versions", "Baselines and export matrix", "Priority access to new capabilities"], action: "Join early access", tone: "featured" },
       { name: "Team", price: "Let’s talk", cadence: "for shared R&D and governance", description: "Shared workspaces, private corpora, auditability, and evaluation support as the product matures.", features: ["Team workspaces and roles", "Private corpus boundary", "Audit and governance workflows", "Design-partner conversations"], action: "Contact us", tone: "quiet" },
     ],
@@ -198,7 +198,7 @@ export const PRICING_COPY: Record<PublicLocale, {
   ja: {
     hero: { title: "最初の実行からチームの研究まで、明確な道筋を。", body: "無料で始め、非公開の研究はボールトに保存できます。検証量、エクスポート、共同R&Dの管理が必要になったら次の段階へ進めます。" },
     plans: [
-      { name: "Free", price: "$0", cadence: "早期アクセス期間中", description: "公開された根拠を見ながら、ワークベンチを試すための入口です。", features: ["公開Atlas", "少量の検証実行", "非公開ボールト", "Studioの一部機能"], action: "プレビューを試す", tone: "quiet" },
+      { name: "Free", price: "$0", cadence: "早期アクセス期間中", description: "公開された根拠を見て、実際の課題でワークベンチを試すのに十分な範囲です。", features: ["公開Atlasのすべて", "週5回のエージェント実行", "非公開アーティファクト25件", "16量子ビットまでのブラウザ実行"], action: "プレビューを試す", tone: "quiet" },
       { name: "Pro", price: "早期アクセス", cadence: "個人研究者向け", description: "非公開研究、モデルの選択肢、エクスポートを意識したワークフローを広げます。", features: ["実行上限の拡張", "非公開アーティファクトと版管理", "ベースラインとエクスポート表", "新機能への優先アクセス"], action: "早期アクセスに参加", tone: "featured" },
       { name: "Team", price: "ご相談ください", cadence: "共同R&Dとガバナンス向け", description: "共有ワークスペース、非公開コーパス、監査性、評価支援を段階的に提供します。", features: ["チームと権限", "非公開コーパスの境界", "監査とガバナンス", "デザインパートナー対話"], action: "お問い合わせ", tone: "quiet" },
     ],

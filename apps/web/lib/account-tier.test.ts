@@ -84,6 +84,20 @@ test("the browser lane stays inside the measured responsiveness budget", () => {
   }
 });
 
+test("the public Free plan quotes the numbers the free tier actually enforces", async () => {
+  // The pricing page states allowances as prose, so nothing but a pin stops it
+  // drifting from TIER_LIMITS. A plan that overstates the allowance is a
+  // promise the product then breaks.
+  const { PRICING_COPY } = await import("./public-copy.ts");
+  const free = PRICING_COPY.en.plans.find((plan) => plan.name === "Free");
+  assert.ok(free, "the Free plan disappeared from the pricing page");
+  const features = free.features.join(" | ");
+  const limits = TIER_LIMITS.free;
+  assert.match(features, new RegExp(`\\b${limits.agentRunsPerWeek}\\b.*week`, "i"));
+  assert.match(features, new RegExp(`\\b${limits.privateArtifacts}\\b`));
+  assert.match(features, new RegExp(`\\b${limits.cpuSimQubits}\\b.*qubit`, "i"));
+});
+
 test("no tier grants QPU submission", () => {
   // "Unlimited" is a product allowance, never a safety gate. Real hardware
   // submission stays fail-closed behind the three deployment decisions.
