@@ -10,7 +10,8 @@ import { loadStoredCircuit, saveStoredCircuit } from "../../../lib/studio-circui
 import { circuitSyncState, type CircuitSyncState } from "../../../lib/studio-sync";
 import { allCircuitConversionResults, parseCircuitSource, looksLikeOpenQasm3 } from "../../../lib/circuit-conversion";
 import { CIRCUIT_FRAMEWORKS, circuitFramework, circuitFrameworkOrNull, isExecutableCircuitFramework, type CircuitFrameworkKey } from "../../../lib/circuit-frameworks";
-import { MAX_CPU_SEED, MAX_CPU_SHOTS, cpuSimulationEligibility, loadCpuSimulationRecords, runCpuSimulation, saveCpuSimulationRecord, type CpuSimulationEligibility, type CpuSimulationRecord } from "../../../lib/studio-simulation";
+import { MAX_CPU_SEED, MAX_CPU_SHOTS, cpuSimulationEligibility, loadCpuSimulationRecords, runCpuSimulation, saveCpuSimulationRecord, type CpuSimulationEligibility, type CpuSimulationLimits, type CpuSimulationRecord } from "../../../lib/studio-simulation";
+import { TIER_LIMITS } from "../../../lib/account-tier";
 import { formatShare, simulationChartData, simulationReading, type SimulationChartData, type SimulationReading } from "../../../lib/simulation-visual";
 import { fetchQpuBackends, fetchQpuEstimate, fetchQpuSubmissionGate, formatUsd, type QpuBackendInfo, type QpuCostEstimate, type QpuSubmissionGate } from "../../../lib/qpu";
 import { WORKSPACE_COPY } from "../../../lib/workspace-locale";
@@ -65,7 +66,7 @@ const STARTER_CODES: BuilderCodeVariants = generateBuilderCode(STARTER_STEPS, 2)
  */
 const STARTER_SEED: Omit<BuilderSeed, "key"> = { artifactIdentity: null, qubitCount: 2, steps: STARTER_STEPS, customGates: [] };
 
-export function StudioWorkspace({ artifactId, newDraft = false, locale = "en" }: { artifactId?: string; newDraft?: boolean; locale?: PublicLocale }) {
+export function StudioWorkspace({ artifactId, newDraft = false, locale = "en", limits = TIER_LIMITS.free }: { artifactId?: string; newDraft?: boolean; locale?: PublicLocale; limits?: CpuSimulationLimits }) {
   const copy = WORKSPACE_COPY[locale].studio;
   const [artifacts, setArtifacts] = useState<LibraryArtifact[]>([]);
   const [artifact, setArtifact] = useState<LibraryArtifact | null>(null);
@@ -177,7 +178,7 @@ export function StudioWorkspace({ artifactId, newDraft = false, locale = "en" }:
     code,
     framework,
     qasm: artifact?.code === code ? artifact.qasm : null,
-  }), [artifact?.id, artifact?.code, artifact?.qasm, code, framework]);
+  }, limits), [artifact?.id, artifact?.code, artifact?.qasm, code, framework, limits]);
 
   function seedForArtifact(next: LibraryArtifact, activeDrafts: BuilderCodeVariants, activeFramework: StudioFramework): { seed: BuilderSeed; note: string | null } {
     seedCounter.current += 1;
@@ -353,7 +354,7 @@ export function StudioWorkspace({ artifactId, newDraft = false, locale = "en" }:
         qasm: artifact.code === code ? artifact.qasm : null,
         shots: parsedShots,
         seed: parsedSeed,
-      });
+      }, limits);
       if (!saveCpuSimulationRecord(record)) {
         setMessage(copy.simulationPersistenceUnavailable);
         return;

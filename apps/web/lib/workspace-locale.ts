@@ -1026,6 +1026,13 @@ export const ACCOUNT_COPY: Record<PublicLocale, {
   usageRunsValue: string;
   usageStorage: string;
   usageStorageValue: string;
+  usageSimulation: string;
+  usageUnlimited: string;
+  usageRunsPerWeek: (count: number) => string;
+  usageArtifacts: (count: number) => string;
+  usageQubits: (count: number) => string;
+  tierNames: Record<"demo" | "free" | "developer", string>;
+  usageUnenforced: string;
   billingTitle: string;
   billingHelp: string;
   billingPayments: string;
@@ -1086,6 +1093,13 @@ export const ACCOUNT_COPY: Record<PublicLocale, {
     usageRunsValue: "Fair use — no hard cap during early access",
     usageStorage: "Vault storage",
     usageStorageValue: "Fair use — artifacts and versions retained",
+    usageSimulation: "Browser simulation",
+    usageUnlimited: "Unlimited",
+    usageRunsPerWeek: (count) => `${count} per week`,
+    usageArtifacts: (count) => `${count} artifacts`,
+    usageQubits: (count) => `Up to ${count} qubits`,
+    tierNames: { demo: "Preview", free: "Free", developer: "Developer" },
+    usageUnenforced: "Not metered yet. These are the boundaries the product will apply when metering is turned on.",
     billingTitle: "Billing & credits",
     billingHelp: "How Leona Quantum will charge for agent runs and hardware. Shown for transparency — payments are not enabled.",
     billingPayments: "Payments",
@@ -1146,6 +1160,13 @@ export const ACCOUNT_COPY: Record<PublicLocale, {
     usageRunsValue: "フェアユース — アーリーアクセス中は固定上限なし",
     usageStorage: "ボールト保存",
     usageStorageValue: "フェアユース — アーティファクトとバージョンを保持",
+    usageSimulation: "ブラウザ実行",
+    usageUnlimited: "無制限",
+    usageRunsPerWeek: (count) => `週${count}回`,
+    usageArtifacts: (count) => `${count}件`,
+    usageQubits: (count) => `${count}量子ビットまで`,
+    tierNames: { demo: "プレビュー", free: "Free", developer: "Developer" },
+    usageUnenforced: "現在は計測していません。計測を有効にしたときに適用される上限です。",
     billingTitle: "請求とクレジット",
     billingHelp: "Leona Quantum がエージェント実行とハードウェアに課金する仕組みです。透明性のために表示しており、支払いは有効化されていません。",
     billingPayments: "支払い",
