@@ -4608,6 +4608,31 @@ div.mj-rail-row:hover {
   font-size: var(--fs-14);
   font-weight: 500;
 }
+/* Says when the diagram no longer describes the code in the Code tab. Sits
+   directly above the stage so the caveat and the drawing are read together. */
+.mj-circuit-sync {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  flex-wrap: wrap;
+  margin: 0;
+  padding: var(--sp-3) var(--sp-4);
+  border-top: 1px solid var(--border-0);
+  border-bottom: 1px solid var(--border-0);
+  border-left: 2px solid var(--warn);
+  background: var(--bg-2);
+  color: var(--text-0);
+  font-size: var(--fs-13);
+  line-height: 1.45;
+}
+.mj-circuit-sync span {
+  flex: 1 1 260px;
+  min-width: 0;
+}
+.mj-circuit-sync button {
+  flex: 0 0 auto;
+}
 .mj-circuit-stage {
   min-height: 310px;
   display: grid;

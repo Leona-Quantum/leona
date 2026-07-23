@@ -7,6 +7,7 @@ import { artifactFromResource, frameworkVariantsFromRemote, getLibraryArtifact, 
 import type { PublicLocale } from "../../../lib/public-locale";
 import { BUILDER_GATES, builderStepLabel, createBuilderStepId, generateBuilderCode, ROTATION_GATES, TWO_QUBIT_GATES, type BuilderCodeVariants, type BuilderGate, type BuilderStep, type CustomGateDefinition } from "../../../lib/studio-builder";
 import { loadStoredCircuit, saveStoredCircuit } from "../../../lib/studio-circuits";
+import { circuitSyncState, type CircuitSyncState } from "../../../lib/studio-sync";
 import { allCircuitConversionResults, parseCircuitSource, looksLikeOpenQasm3 } from "../../../lib/circuit-conversion";
 import { CIRCUIT_FRAMEWORKS, circuitFramework, circuitFrameworkOrNull, isExecutableCircuitFramework, type CircuitFrameworkKey } from "../../../lib/circuit-frameworks";
 import { MAX_CPU_SEED, MAX_CPU_SHOTS, cpuSimulationEligibility, loadCpuSimulationRecords, runCpuSimulation, saveCpuSimulationRecord, type CpuSimulationEligibility, type CpuSimulationRecord } from "../../../lib/studio-simulation";
@@ -43,12 +44,26 @@ const FRAMEWORK_OPTIONS = CIRCUIT_FRAMEWORKS.map(({ key: value, label, executabl
   label: executable ? label : `${label} · export`,
 }));
 
-const STARTER_CODES: BuilderCodeVariants = generateBuilderCode([
+const STARTER_STEPS: BuilderStep[] = [
   { id: "starter-h", gate: "H", qubits: [0] },
   { id: "starter-cx", gate: "CX", qubits: [0, 1] },
   { id: "starter-m0", gate: "M", qubits: [0] },
   { id: "starter-m1", gate: "M", qubits: [1] },
-], 2);
+];
+
+const STARTER_CODES: BuilderCodeVariants = generateBuilderCode(STARTER_STEPS, 2);
+
+/**
+ * A new draft opens with the starter source already in the Code tab, so the
+ * canvas is seeded from the same steps. An empty canvas beside a Bell pair in
+ * the editor is the exact mismatch this surface is supposed to make visible —
+ * it should not ship that mismatch as its own first impression.
+ *
+ * Distinct from EMPTY_SEED, which stays empty: it is the fallback for an
+ * artifact whose code the builder cannot represent, and drawing a Bell pair
+ * for an unrelated circuit would be a far worse lie than drawing nothing.
+ */
+const STARTER_SEED: Omit<BuilderSeed, "key"> = { artifactIdentity: null, qubitCount: 2, steps: STARTER_STEPS, customGates: [] };
 
 export function StudioWorkspace({ artifactId, newDraft = false, locale = "en" }: { artifactId?: string; newDraft?: boolean; locale?: PublicLocale }) {
   const copy = WORKSPACE_COPY[locale].studio;
@@ -76,8 +91,16 @@ export function StudioWorkspace({ artifactId, newDraft = false, locale = "en" }:
   const [seed, setSeed] = useState("");
   const [artifactHydration, setArtifactHydration] = useState<ArtifactHydration>(() => artifactId && !newDraft ? "loading" : "ready");
   const [artifactSyncError, setArtifactSyncError] = useState(false);
-  const [builderSeed, setBuilderSeed] = useState<BuilderSeed>({ key: "seed-0", ...EMPTY_SEED });
+  // Matches the starter source `code` is initialised with, so the first paint
+  // is already self-consistent.
+  const [builderSeed, setBuilderSeed] = useState<BuilderSeed>({ key: "seed-0", ...STARTER_SEED });
   const seedCounter = useRef(0);
+  // What the canvas currently draws. The builder owns the editing state; this
+  // mirror exists so the page can tell whether the diagram still matches the
+  // code, which only the page can see. Seeding resets it; user edits update it.
+  const [canvasCircuit, setCanvasCircuit] = useState<{ qubitCount: number; steps: BuilderStep[]; customGates: CustomGateDefinition[] }>(
+    () => ({ qubitCount: STARTER_SEED.qubitCount, steps: STARTER_SEED.steps, customGates: STARTER_SEED.customGates }),
+  );
 
   // Local storage is read only after mount so the server and client render
   // the same initial markup; the artifact then hydrates through applyArtifact.
@@ -140,6 +163,15 @@ export function StudioWorkspace({ artifactId, newDraft = false, locale = "en" }:
     setRerunPending(false);
   }, [code, framework]);
 
+  // The diagram is only trustworthy while it still describes the code that
+  // will actually run. Compare structurally rather than textually: generated
+  // and hand-written source differ in imports and spacing while meaning the
+  // same circuit, and a warning that fires constantly gets ignored.
+  const canvasSync: CircuitSyncState = useMemo(
+    () => circuitSyncState(parseCircuitSource(code, framework), canvasCircuit),
+    [code, framework, canvasCircuit],
+  );
+
   const cpuEligibility = useMemo(() => cpuSimulationEligibility({
     artifactId: artifact?.id ?? "",
     code,
@@ -191,13 +223,34 @@ export function StudioWorkspace({ artifactId, newDraft = false, locale = "en" }:
     setRunId(null);
     if (!next) {
       seedCounter.current += 1;
-      setBuilderSeed({ key: `draft-${seedCounter.current}`, ...EMPTY_SEED });
+      seedBuilder({ key: `draft-${seedCounter.current}`, ...STARTER_SEED });
       setMessage(null);
       return;
     }
     const { seed, note } = seedForArtifact(next, nextDrafts, nextFramework);
-    setBuilderSeed(seed);
+    seedBuilder(seed);
     setMessage(note);
+  }
+
+  /** Reseed the canvas and the mirror together — they must never disagree. */
+  function seedBuilder(seed: BuilderSeed) {
+    setBuilderSeed(seed);
+    setCanvasCircuit({ qubitCount: seed.qubitCount, steps: seed.steps, customGates: seed.customGates });
+  }
+
+  /** Redraw the canvas from whatever the Code tab currently holds. */
+  function rebuildCanvasFromCode() {
+    const parsed = parseCircuitSource(code, framework);
+    if (!parsed) return;
+    seedCounter.current += 1;
+    seedBuilder({
+      key: `rebuild-${seedCounter.current}`,
+      artifactIdentity: builderSeed.artifactIdentity,
+      qubitCount: parsed.qubitCount,
+      steps: parsed.steps,
+      customGates: [],
+    });
+    setMessage(copy.rebuiltFromCode);
   }
 
   const filteredArtifacts = artifacts.filter((item) => {
@@ -400,7 +453,10 @@ export function StudioWorkspace({ artifactId, newDraft = false, locale = "en" }:
                     onSelectGate={setSelectedGate}
                     hidden={panel !== "canvas"}
                     copy={copy}
+                    syncState={canvasSync}
+                    onRebuildFromCode={rebuildCanvasFromCode}
                     onCircuitChange={(circuit) => {
+                      setCanvasCircuit(circuit);
                       if (!artifact) return;
                       const persisted = saveStoredCircuit(artifact.id, { artifactIdentity: studioArtifactIdentity(artifact), ...circuit });
                       if (!persisted) setMessage(copy.persistenceUnavailable);
@@ -683,7 +739,7 @@ function StudioDots() {
 
 const ANGLE_OPTIONS = ["pi/8", "pi/4", "pi/2", "pi", "3*pi/2", "2*pi"];
 
-function CircuitBuilder({ seed, framework, selectedGate, onSelectGate, onApply, onCircuitChange, hidden, copy }: { seed: BuilderSeed; framework: StudioFramework; selectedGate: string; onSelectGate: (gate: string) => void; onApply: (codes: BuilderCodeVariants) => void; onCircuitChange?: (circuit: { qubitCount: number; steps: BuilderStep[]; customGates: CustomGateDefinition[] }) => void; hidden: boolean; copy: StudioCopy }) {
+function CircuitBuilder({ seed, framework, selectedGate, onSelectGate, onApply, onCircuitChange, hidden, copy, syncState, onRebuildFromCode }: { seed: BuilderSeed; framework: StudioFramework; selectedGate: string; onSelectGate: (gate: string) => void; onApply: (codes: BuilderCodeVariants) => void; onCircuitChange?: (circuit: { qubitCount: number; steps: BuilderStep[]; customGates: CustomGateDefinition[] }) => void; hidden: boolean; copy: StudioCopy; syncState: CircuitSyncState; onRebuildFromCode: () => void }) {
   const [qubitCount, setQubitCount] = useState(seed.qubitCount);
   const [steps, setSteps] = useState<BuilderStep[]>(seed.steps);
   const [pendingQubits, setPendingQubits] = useState<number[]>([]);
@@ -693,6 +749,14 @@ function CircuitBuilder({ seed, framework, selectedGate, onSelectGate, onApply, 
   const [showCustomGateForm, setShowCustomGateForm] = useState(false);
   const [customGateName, setCustomGateName] = useState("");
   const [builderMessage, setBuilderMessage] = useState<string | null>(null);
+  const [applyConfirmPending, setApplyConfirmPending] = useState(false);
+
+  // A pending confirmation describes one specific divergence. Once the code
+  // and the diagram agree again, the warning is stale — drop it rather than
+  // leaving a primed "Replace the code" button behind.
+  useEffect(() => {
+    if (syncState.kind !== "diverged") setApplyConfirmPending(false);
+  }, [syncState.kind]);
 
   const onCircuitChangeRef = useRef(onCircuitChange);
   onCircuitChangeRef.current = onCircuitChange;
@@ -869,6 +933,15 @@ function CircuitBuilder({ seed, framework, selectedGate, onSelectGate, onApply, 
         </div>
       ) : null}
 
+      {syncState.kind === "in_sync" ? null : (
+        <div className={`mj-circuit-sync mj-circuit-sync--${syncState.kind}`} role="status">
+          <span>{syncState.kind === "diverged" ? copy.canvasOutOfDate : copy.canvasBeyondBuilder}</span>
+          {syncState.kind === "diverged" ? (
+            <button className="mj-secondary-button" type="button" onClick={onRebuildFromCode}>{copy.rebuildFromCode}</button>
+          ) : null}
+        </div>
+      )}
+
       <div className="mj-circuit-stage">
         <svg className="mj-circuit-svg" viewBox={`0 0 ${width} ${height}`} role="img" aria-label={copy.circuitAria(frameworkLabel(framework))} style={{ maxWidth: "100%" }}>
           {Array.from({ length: qubitCount }, (_, q) => {
@@ -965,7 +1038,28 @@ function CircuitBuilder({ seed, framework, selectedGate, onSelectGate, onApply, 
         <button className="mj-secondary-button" type="button" onClick={() => { setSteps([]); setSelectedStepIds([]); setPendingQubits([]); setBuilderMessage(null); }} disabled={!steps.length}>{copy.clearAll}</button>
         <button className="mj-secondary-button" type="button" onClick={deleteSelected} disabled={!selectedStepIds.length}>{copy.deleteSelected}</button>
         {selectedStepIds.length >= 2 ? <button className="mj-secondary-button" type="button" onClick={() => setShowCustomGateForm(true)}>{copy.groupSelected}</button> : null}
-        <button className="mj-primary-button" type="button" onClick={() => onApply(generateBuilderCode(steps, qubitCount, customGates))} disabled={!steps.length}>{copy.applyToCode}</button>
+        <button
+          className="mj-primary-button"
+          type="button"
+          onClick={() => {
+            // Applying replaces the Code tab. When the source has moved on
+            // since this diagram was drawn, that discards edits the user can
+            // still see — so name what is about to be lost first.
+            if (syncState.kind === "diverged" && !applyConfirmPending) {
+              setApplyConfirmPending(true);
+              setBuilderMessage(copy.applyOverwritesEditedCode);
+              return;
+            }
+            setApplyConfirmPending(false);
+            onApply(generateBuilderCode(steps, qubitCount, customGates));
+          }}
+          disabled={!steps.length}
+        >
+          {applyConfirmPending ? copy.confirmApply : copy.applyToCode}
+        </button>
+        {applyConfirmPending ? (
+          <button className="mj-secondary-button" type="button" onClick={() => { setApplyConfirmPending(false); setBuilderMessage(null); }}>{copy.cancel}</button>
+        ) : null}
       </div>
 
       {showCustomGateForm ? (
