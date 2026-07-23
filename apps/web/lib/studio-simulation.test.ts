@@ -179,3 +179,69 @@ test("an over-width circuit is refused as a plan limit, not as unreadable source
   );
   assert.equal(developer.eligible, true);
 });
+
+test("browser simulation is paced per tier across the trailing ten minutes", () => {
+  const now = new Date("2026-07-23T00:00:00.000Z");
+  const recent = Array.from({ length: TIER_LIMITS.free.cpuSimRunsPer10Min }, (_, index) => ({
+    id: `sim-pace-${index}`,
+    artifactId: "artifact-pace",
+    artifactVersionId: null,
+    createdAt: new Date(now.getTime() - (index + 1) * 30_000).toISOString(),
+    sourceFingerprint: "f".repeat(16),
+    interchangeFingerprint: null,
+    framework: "qiskit",
+    model: "direct_source",
+    simulator: "Leona bounded browser statevector",
+    qubitCount: 2,
+    operationCount: 2,
+    measured: true,
+    shots: 128,
+    seed: 1,
+    counts: { "00": 128 },
+  }));
+  const stored = new Map<string, string>([
+    ["majorana.studio-simulations.v1", JSON.stringify({ "artifact-pace": recent })],
+  ]);
+  const originalWindow = Object.getOwnPropertyDescriptor(globalThis, "window");
+  (globalThis as { window?: unknown }).window = {
+    localStorage: {
+      getItem: (key: string) => stored.get(key) ?? null,
+      setItem: (key: string, value: string) => void stored.set(key, value),
+      removeItem: (key: string) => void stored.delete(key),
+    },
+  };
+  try {
+    assert.throws(
+      () =>
+        runCpuSimulation({
+          artifactId: "artifact-pace",
+          artifactVersionId: null,
+          code: BELL_SOURCE,
+          framework: "qiskit",
+          shots: 128,
+          seed: 1729,
+          now,
+          id: "sim-pace-blocked",
+        }),
+      /paces browser simulation/,
+    );
+    // Ten records but a 30-per-10-min ceiling: the developer tier still runs.
+    const record = runCpuSimulation(
+      {
+        artifactId: "artifact-pace",
+        artifactVersionId: null,
+        code: BELL_SOURCE,
+        framework: "qiskit",
+        shots: 128,
+        seed: 1729,
+        now,
+        id: "sim-pace-developer",
+      },
+      TIER_LIMITS.developer,
+    );
+    assert.equal(record.id, "sim-pace-developer");
+  } finally {
+    if (originalWindow) Object.defineProperty(globalThis, "window", originalWindow);
+    else delete (globalThis as { window?: unknown }).window;
+  }
+});

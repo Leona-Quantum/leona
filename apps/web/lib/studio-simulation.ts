@@ -104,8 +104,26 @@ export function sourceFingerprint(source: string): string {
 /** The subset of a tier's allowance this lane enforces. */
 export type CpuSimulationLimits = Pick<
   TierLimits,
-  "cpuSimQubits" | "cpuSimOperations" | "cpuSimShots"
+  "cpuSimQubits" | "cpuSimOperations" | "cpuSimShots" | "cpuSimRunsPer10Min"
 >;
+
+const PACE_WINDOW_MS = 10 * 60 * 1000;
+
+/**
+ * Simulations started in the trailing ten minutes, across every artifact in
+ * this browser. Stored records are trimmed per artifact, so a burst can be
+ * undercounted — the pacing limit is a product boundary, not a security one,
+ * and erring toward allowing a run is the right direction for it.
+ */
+export function recentSimulationCount(now: Date): number {
+  const windowStart = now.getTime() - PACE_WINDOW_MS;
+  return Object.values(loadAllRecords())
+    .flat()
+    .filter((record) => {
+      const at = Date.parse(record.createdAt);
+      return Number.isFinite(at) && at > windowStart && at <= now.getTime();
+    }).length;
+}
 
 export function cpuSimulationEligibility(
   { artifactId, code, framework, qasm }: Pick<CpuSimulationRequest, "artifactId" | "code" | "framework" | "qasm">,
@@ -146,6 +164,12 @@ export function runCpuSimulation(
   if (!eligibility.eligible) throw new Error(`CPU simulation is unavailable: ${eligibility.reason}`);
   if (!Number.isInteger(request.shots) || request.shots < 1 || request.shots > limits.cpuSimShots) {
     throw new Error(`Shots must be a whole number between 1 and ${limits.cpuSimShots.toLocaleString("en-US")}.`);
+  }
+  if (recentSimulationCount(request.now ?? new Date()) >= limits.cpuSimRunsPer10Min) {
+    throw new Error(
+      `Your plan paces browser simulation at ${limits.cpuSimRunsPer10Min} runs per 10 minutes. ` +
+        "Give it a few minutes and run again — nothing is lost.",
+    );
   }
   const seed = request.seed ?? browserSeed();
   if (!Number.isInteger(seed) || seed < 0 || seed > MAX_CPU_SEED) {
