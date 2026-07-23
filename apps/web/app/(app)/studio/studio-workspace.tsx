@@ -455,6 +455,7 @@ export function StudioWorkspace({ artifactId, newDraft = false, locale = "en" }:
                     copy={copy}
                     syncState={canvasSync}
                     onRebuildFromCode={rebuildCanvasFromCode}
+                    sourceCode={code}
                     onCircuitChange={(circuit) => {
                       setCanvasCircuit(circuit);
                       if (!artifact) return;
@@ -739,7 +740,7 @@ function StudioDots() {
 
 const ANGLE_OPTIONS = ["pi/8", "pi/4", "pi/2", "pi", "3*pi/2", "2*pi"];
 
-function CircuitBuilder({ seed, framework, selectedGate, onSelectGate, onApply, onCircuitChange, hidden, copy, syncState, onRebuildFromCode }: { seed: BuilderSeed; framework: StudioFramework; selectedGate: string; onSelectGate: (gate: string) => void; onApply: (codes: BuilderCodeVariants) => void; onCircuitChange?: (circuit: { qubitCount: number; steps: BuilderStep[]; customGates: CustomGateDefinition[] }) => void; hidden: boolean; copy: StudioCopy; syncState: CircuitSyncState; onRebuildFromCode: () => void }) {
+function CircuitBuilder({ seed, framework, selectedGate, onSelectGate, onApply, onCircuitChange, hidden, copy, syncState, onRebuildFromCode, sourceCode }: { seed: BuilderSeed; framework: StudioFramework; selectedGate: string; onSelectGate: (gate: string) => void; onApply: (codes: BuilderCodeVariants) => void; onCircuitChange?: (circuit: { qubitCount: number; steps: BuilderStep[]; customGates: CustomGateDefinition[] }) => void; hidden: boolean; copy: StudioCopy; syncState: CircuitSyncState; onRebuildFromCode: () => void; sourceCode: string }) {
   const [qubitCount, setQubitCount] = useState(seed.qubitCount);
   const [steps, setSteps] = useState<BuilderStep[]>(seed.steps);
   const [pendingQubits, setPendingQubits] = useState<number[]>([]);
@@ -751,12 +752,13 @@ function CircuitBuilder({ seed, framework, selectedGate, onSelectGate, onApply, 
   const [builderMessage, setBuilderMessage] = useState<string | null>(null);
   const [applyConfirmPending, setApplyConfirmPending] = useState(false);
 
-  // A pending confirmation describes one specific divergence. Once the code
-  // and the diagram agree again, the warning is stale — drop it rather than
-  // leaving a primed "Replace the code" button behind.
+  // A pending confirmation describes one specific pair of a diagram and a
+  // source. If either side moves — the code is edited again, the canvas is
+  // changed, or the two come back into agreement — the armed button would be
+  // consenting to something the user was never shown, so disarm it.
   useEffect(() => {
-    if (syncState.kind !== "diverged") setApplyConfirmPending(false);
-  }, [syncState.kind]);
+    setApplyConfirmPending(false);
+  }, [syncState.kind, sourceCode, steps, qubitCount, customGates]);
 
   const onCircuitChangeRef = useRef(onCircuitChange);
   onCircuitChangeRef.current = onCircuitChange;
@@ -1042,12 +1044,15 @@ function CircuitBuilder({ seed, framework, selectedGate, onSelectGate, onApply, 
           className="mj-primary-button"
           type="button"
           onClick={() => {
-            // Applying replaces the Code tab. When the source has moved on
-            // since this diagram was drawn, that discards edits the user can
-            // still see — so name what is about to be lost first.
-            if (syncState.kind === "diverged" && !applyConfirmPending) {
+            // Applying replaces the Code tab. Confirm whenever the source is
+            // not already this diagram — both when it has moved on since the
+            // diagram was drawn, and when it is source the builder cannot
+            // draw at all. The second case is the more destructive of the
+            // two: unrepresentable code is by definition code no diagram can
+            // reproduce, so overwriting it cannot be undone from the canvas.
+            if (syncState.kind !== "in_sync" && !applyConfirmPending) {
               setApplyConfirmPending(true);
-              setBuilderMessage(copy.applyOverwritesEditedCode);
+              setBuilderMessage(syncState.kind === "diverged" ? copy.applyOverwritesEditedCode : copy.applyOverwritesUnrepresentableCode);
               return;
             }
             setApplyConfirmPending(false);

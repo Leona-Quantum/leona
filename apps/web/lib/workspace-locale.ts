@@ -298,6 +298,7 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
     rebuildFromCode: string;
     rebuiltFromCode: string;
     applyOverwritesEditedCode: string;
+    applyOverwritesUnrepresentableCode: string;
     confirmApply: string;
   };
 }> = {
@@ -638,6 +639,7 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
       rebuildFromCode: "Rebuild from code",
       rebuiltFromCode: "Diagram rebuilt from the code in the Code tab.",
       applyOverwritesEditedCode: "The Code tab has changed since this diagram was drawn. Applying replaces that code with the diagram. Continue?",
+      applyOverwritesUnrepresentableCode: "The Code tab holds source this editor cannot draw. Applying replaces it with the diagram, and the diagram cannot reproduce it. Continue?",
       confirmApply: "Replace the code",
     },
   },
@@ -978,6 +980,7 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
       rebuildFromCode: "コードから再構築",
       rebuiltFromCode: "コードタブのコードから図を再構築しました。",
       applyOverwritesEditedCode: "この図を描いたあとにコードタブが変更されています。適用するとそのコードは図の内容で置き換えられます。続行しますか？",
+      applyOverwritesUnrepresentableCode: "コードタブには、このエディタで描けないソースがあります。適用するとそのコードは図で置き換えられ、図から元に戻すことはできません。続行しますか？",
       confirmApply: "コードを置き換える",
     },
   },

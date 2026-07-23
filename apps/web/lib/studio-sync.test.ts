@@ -59,6 +59,25 @@ test("partial measurement does not by itself report divergence", () => {
   assert.deepEqual(circuitSyncState(parsed, { qubitCount: 2, steps: measureFirstOnly }), { kind: "in_sync" });
 });
 
+test("measurement position is preserved — measuring before a gate is not measuring after it", () => {
+  // Only a *trailing* measurement run normalizes. Collapsing every M into one
+  // flag would call these two circuits identical, and they give different
+  // results. The builder cannot express mid-circuit measurement at all, so the
+  // diagram genuinely disagrees with any code generated from it.
+  const measureThenX: BuilderStep[] = [
+    { id: "a", gate: "M", qubits: [0] },
+    { id: "b", gate: "X", qubits: [0] },
+  ];
+  const xThenMeasure: BuilderStep[] = [
+    { id: "c", gate: "X", qubits: [0] },
+    { id: "d", gate: "M", qubits: [0] },
+  ];
+  assert.notEqual(
+    circuitSignature({ qubitCount: 1, steps: measureThenX }),
+    circuitSignature({ qubitCount: 1, steps: xThenMeasure }),
+  );
+});
+
 test("a measured circuit and an unmeasured one are not in sync", () => {
   const unmeasured = bell.filter((step) => step.gate !== "M");
   const parsed = parseBuilderCircuit(generateBuilderCode(unmeasured, 2)["qiskit"], "qiskit");

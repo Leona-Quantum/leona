@@ -28,24 +28,34 @@ export interface ComparableCircuit {
 }
 
 /**
- * A canonical string for a circuit's meaning: qubit width, the ordered
- * sequence of non-measurement operations, and whether the circuit measures.
+ * A canonical string for a circuit's meaning: qubit width and the ordered
+ * sequence of operations, with one normalization.
  *
- * Measurement is reduced to a single flag on purpose. `generateBuilderCode`
- * emits one whole-register `measure_all()` for any measured circuit, so a
- * canvas that measures only q0 and the code it generates genuinely disagree
- * about which wires are read. That is a limitation of the generator, not a
- * stale canvas, and folding it into this signal would fire the divergence
- * warning on circuits the user never edited.
+ * A *trailing* run of measurements collapses to a single `MEASURE` token,
+ * whatever wires it covers. `generateBuilderCode` emits one whole-register
+ * `measure_all()` for any measured circuit, so a canvas that measures only q0
+ * round-trips back as measurement on every wire. That widening is a limitation
+ * of the generator, not a stale canvas, and letting it drive the warning would
+ * fire on circuits nobody edited.
+ *
+ * Measurements anywhere *else* keep their position and their wire. Collapsing
+ * those too would call `M(q0) → X(q0)` and `X(q0) → M(q0)` identical, and they
+ * are not — measuring before a gate and after it give different results. The
+ * builder cannot express mid-circuit measurement at all (generateBuilderCode
+ * strips every M and appends measure_all), so a diagram containing one really
+ * does disagree with any code generated from it, and saying so is the honest
+ * outcome rather than a false positive.
  */
 export function circuitSignature(circuit: ComparableCircuit): string {
   const flattened = flattenBuilderSteps(circuit.steps, circuit.customGates ?? []);
-  const operations = flattened.filter((step) => step.gate !== "M");
-  const measured = flattened.some((step) => step.gate === "M");
-  const body = operations
+  let end = flattened.length;
+  while (end > 0 && flattened[end - 1].gate === "M") end -= 1;
+  const body = flattened
+    .slice(0, end)
     .map((step) => `${step.gate}(${step.qubits.join(",")}${step.param ? `;${normalizeAngle(step.param)}` : ""})`)
     .join(" ");
-  return `q${circuit.qubitCount}|${measured ? "m" : "-"}|${body}`;
+  const trailingMeasure = end < flattened.length ? " MEASURE" : "";
+  return `q${circuit.qubitCount}|${body}${trailingMeasure}`;
 }
 
 /** `pi/2`, `1*pi/2` and `PI / 2` all describe the same rotation. */
