@@ -29,10 +29,12 @@ def assess_evidence_sufficiency(
     """Apply the fixed evidence policy; Plan/LLM output cannot loosen it.
 
     Bell and GHZ require their phase-aware native-state property. VQE and QAOA
-    require independent bounded classical ground truth. Other algorithms remain
-    unsupported even if a Plan attaches an unrelated objective check. If counts
-    are reported, they additionally have to agree with trusted framework-native
-    evidence; reproducibility alone never suffices.
+    require independent bounded classical ground truth. Algorithms without a
+    dedicated property verifier (for example Grover and QFT) may still pass the
+    standard gate when their reported counts agree with trusted framework-native
+    evidence. Missing a specialised verifier is a limitation to disclose, not a
+    candidate defect. If counts are reported, they additionally have to agree
+    with trusted framework-native evidence; reproducibility alone never suffices.
     """
     results: dict[str, set[str]] = {}
     for check in checks:
@@ -61,7 +63,13 @@ def assess_evidence_sufficiency(
     elif algorithm is Algorithm.QAOA:
         required.append(("bounded combinatorial objective", frozenset({"brute_force"})))
 
-    capability_supported = bool(required)
+    # A dedicated property verifier gives us an algorithm-specific claim.  For
+    # algorithms that do not have one yet, a successful trusted count comparison
+    # is still affirmative evidence about the executed circuit.  Treating every
+    # such algorithm as unsupported made correct Grover/QFT runs permanently
+    # INCONCLUSIVE despite structural, contract, semantic, statistical, and
+    # trusted re-execution checks all passing.
+    capability_supported = bool(required) or reported_counts
     if reported_counts:
         required.append(
             (
@@ -83,7 +91,13 @@ def assess_evidence_sufficiency(
         else:
             missing.append(claim)
     if not capability_supported:
-        missing.insert(0, f"no dedicated property verifier for {algorithm.value}")
+        missing.insert(
+            0,
+            (
+                f"no dedicated property verifier or trusted count evidence for "
+                f"{algorithm.value}"
+            ),
+        )
 
     return EvidenceSufficiency(
         sufficient=capability_supported and not missing,

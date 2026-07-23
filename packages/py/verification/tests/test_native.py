@@ -100,6 +100,20 @@ def test_malformed_native_evidence_fails_rather_than_skips():
         assert outcome.result is VerificationResultKind.FAIL, broken
 
 
+def test_unmeasured_final_circuit_skips_rather_than_fails():
+    # A measurement_policy=none artifact (VQE/QAOA ansatz) has FINAL_CIRCUIT
+    # deliberately unmeasured, so the native_statevector snapshot captured from
+    # it has an empty measurement_map even when RESULT separately reports
+    # counts sampled from another, explicitly measured circuit variant. That is
+    # a capability gap, not malformed pipeline evidence — unlike the cases in
+    # test_malformed_native_evidence_fails_rather_than_skips, this one must not
+    # read as a candidate defect (observed live: an independently brute-force-
+    # verified QAOA MaxCut answer was still marked defective by this check alone).
+    unmeasured = {**_payload_lsb_bell(), "measurement_map": {}}
+    outcome = verify_native_statistical_counts(unmeasured, {"00": 512, "11": 512})
+    assert outcome.result is VerificationResultKind.SKIPPED
+
+
 def test_sampled_counts_agree_and_disagree():
     sampled = {"counts": {"00": 1030, "11": 1018}, "shots": 2048, "seed": 1234}
     agreeing = verify_native_sampled_counts({"00": 500, "11": 524}, sampled)

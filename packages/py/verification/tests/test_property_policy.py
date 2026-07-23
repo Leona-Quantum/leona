@@ -157,7 +157,7 @@ def test_bell_property_and_native_count_check_satisfy_both_claims():
 
 
 @pytest.mark.parametrize("algorithm", [Algorithm.QFT, Algorithm.GROVER, Algorithm.OTHER])
-def test_algorithms_without_dedicated_property_verifiers_remain_unsupported(algorithm):
+def test_algorithms_without_dedicated_property_verifiers_pass_with_trusted_counts(algorithm):
     sufficiency = assess_evidence_sufficiency(
         algorithm,
         [
@@ -167,6 +167,16 @@ def test_algorithms_without_dedicated_property_verifiers_remain_unsupported(algo
         ],
         reported_counts=True,
     )
+
+    assert sufficiency.sufficient is True
+    assert sufficiency.capability_supported is True
+
+
+@pytest.mark.parametrize("algorithm", [Algorithm.QFT, Algorithm.GROVER, Algorithm.OTHER])
+def test_algorithms_without_dedicated_property_verifiers_remain_inconclusive_without_evidence(
+    algorithm,
+):
+    sufficiency = assess_evidence_sufficiency(algorithm, [], reported_counts=False)
 
     assert sufficiency.sufficient is False
     assert sufficiency.capability_supported is False

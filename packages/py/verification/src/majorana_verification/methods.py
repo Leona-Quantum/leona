@@ -26,6 +26,7 @@ from majorana_verification.hamiltonian import (
     ground_state_comparison,
 )
 from majorana_verification.native import (
+    NoNativeMeasurementEvidence,
     entangled_state_property,
     native_counts_vs_ideal,
     native_statevector_vs_reference,
@@ -174,9 +175,21 @@ def verify_native_statistical_counts(
     framework's OWN simulator computed inside the trusted observer. Same claim
     as verify_statistical_counts, minus the OpenQASM conversion in the trust
     path. Malformed evidence fails — the observer records incapacity as an error
-    key, so a payload that does not validate is a pipeline defect, not a limit."""
+    key, so a payload that does not validate is a pipeline defect, not a limit.
+    The one exception is NoNativeMeasurementEvidence: an unmeasured FINAL_CIRCUIT
+    (measurement_policy=none, e.g. VQE/QAOA ansatz artifacts) legitimately has no
+    native measurement to compare reported counts against, even when RESULT
+    separately reports counts from an explicitly measured sampling variant —
+    that is a capability gap, not malformed evidence, and must not fail a
+    candidate whose own artifact contract forbids measuring this circuit
+    (observed live: brute_force independently verified the reported answer was
+    correct, and this check alone still failed the candidate)."""
     try:
         report = native_counts_vs_ideal(payload, counts, threshold=threshold)
+    except NoNativeMeasurementEvidence as exc:
+        return VerificationOutcome(
+            method=VerificationMethod.STATISTICAL, result=SKIPPED, details={"reason": str(exc)}
+        )
     except ValueError as exc:
         return VerificationOutcome(
             method=VerificationMethod.STATISTICAL, result=FAIL, details={"error": str(exc)}

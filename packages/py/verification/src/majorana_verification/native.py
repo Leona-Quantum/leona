@@ -21,7 +21,15 @@ Two kinds of evidence:
 
 Malformed evidence is a FAIL, never a skip: the observer writes an error key
 instead of a malformed payload, so a payload that does not validate here is
-evidence about the pipeline, and the verifier fails closed on it.
+evidence about the pipeline, and the verifier fails closed on it. The one
+exception is an empty measurement map on the native statevector snapshot: an
+artifact whose measurement_policy is `none` (VQE/QAOA-style — the published
+FINAL_CIRCUIT is deliberately the unmeasured ansatz) legitimately has zero
+measurements on the circuit this evidence was captured from, even when RESULT
+separately reports `counts` sampled from a different, explicitly measured
+circuit variant the plan allows for reporting purposes. That is not malformed
+evidence about the pipeline; it is evidence that this particular check cannot
+apply to a circuit that was never measured. See NoNativeMeasurementEvidence.
 """
 
 from __future__ import annotations
@@ -51,6 +59,17 @@ NATIVE_STATEVECTOR_MAX_QUBITS = 12
 ENTANGLED_STATE_TOLERANCE = 1e-9
 
 _ENDIANNESS = ("q0_lsb", "q0_msb")
+
+
+class NoNativeMeasurementEvidence(ValueError):
+    """The native statevector snapshot has zero measurements to compare against.
+
+    Distinct from other malformed-evidence ValueErrors here (still a FAIL): this
+    one fires exactly when the circuit this evidence was captured from was never
+    measured at all, which is the correct, intended shape for a measurement_policy
+    `none` artifact (see module docstring). The caller should read this as
+    SKIPPED/UNAVAILABLE — a capability gap, not a candidate defect — never FAIL.
+    """
 
 
 def statevector_from_evidence(payload: Any) -> tuple[Statevector, dict[int, int], int, int]:
@@ -201,7 +220,9 @@ def native_counts_vs_ideal(
     statevector, mapping, qubits, clbits = statevector_from_evidence(payload)
     normalized_counts, observed_width = normalize_reported_counts(counts)
     if not mapping:
-        raise ValueError("native statevector evidence records no measurements to compare")
+        raise NoNativeMeasurementEvidence(
+            "native statevector evidence records no measurements to compare"
+        )
     ideal, measurement = _keyed_marginal_distribution(
         statevector,
         mapping,
