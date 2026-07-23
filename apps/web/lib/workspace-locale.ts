@@ -112,6 +112,9 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
     verified: string;
     caveats: string;
     structural: string;
+    inconclusive: string;
+    legacyUnknown: string;
+    stale: string;
     failed: string;
     artifacts: string;
     savedArtifacts: string;
@@ -144,6 +147,7 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
     newDraft: string;
     copyCode: string;
     copied: string;
+    downloadExport: string;
     simulate: string;
     simulation: string;
     cpuLane: string;
@@ -428,6 +432,9 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
       verified: "Verified",
       caveats: "Caveats",
       structural: "Structurally verified",
+      inconclusive: "Verification unavailable",
+      legacyUnknown: "Legacy evidence unknown",
+      stale: "Verification stale",
       failed: "Failed",
       artifacts: "artifacts",
       savedArtifacts: "Saved artifacts",
@@ -460,6 +467,7 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
       newDraft: "A clean draft for exploring a circuit before it enters Vault.",
       copyCode: "Copy code",
       copied: "Copied",
+      downloadExport: "Download export",
       simulate: "Simulate",
       simulation: "Simulation",
       cpuLane: "CPU lane",
@@ -769,6 +777,9 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
       verified: "検証済み",
       caveats: "注意付き",
       structural: "構造のみ検証",
+      inconclusive: "検証不能",
+      legacyUnknown: "旧データ・根拠不明",
+      stale: "検証期限切れ",
       failed: "失敗",
       artifacts: "件",
       savedArtifacts: "保存したアーティファクト",
@@ -801,6 +812,7 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
       newDraft: "ボールトに入れる前の回路を試すための新しい下書きです。",
       copyCode: "コードをコピー",
       copied: "コピー済み",
+      downloadExport: "エクスポートをダウンロード",
       simulate: "シミュレーション",
       simulation: "シミュレーション",
       cpuLane: "CPUレーン",

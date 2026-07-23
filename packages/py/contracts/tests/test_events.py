@@ -16,6 +16,7 @@ from majorana_contracts import (
     Stage,
     VerificationMethod,
     VerificationResultKind,
+    VerificationSummary,
     run_event_adapter,
 )
 
@@ -80,6 +81,120 @@ def test_run_finished_evidence_strength_is_optional_for_replayed_history():
         {**ENVELOPE, "type": "run.finished", "status": "succeeded", "verifier_decision": "pass"}
     )
     assert revived.evidence_strength is None
+
+
+def test_run_finished_typed_summary_round_trips():
+    summary = VerificationSummary(
+        decision="inconclusive",
+        evidence_strength="structural",
+        reason_code="required_check_unavailable",
+        candidate_defect_observed=False,
+        failure_class="capability_limit",
+        retry_target="none",
+        unverified_claims=["dynamic-circuit behavior"],
+    )
+    original = RunFinished(
+        run_id=uuid4(),
+        seq=15,
+        ts=datetime.now(UTC),
+        status="succeeded",
+        verifier_decision="inconclusive",
+        verification_summary=summary,
+    )
+    revived = run_event_adapter.validate_json(original.model_dump_json())
+    assert revived == original
+
+
+def test_historical_exact_event_remains_parseable():
+    event = run_event_adapter.validate_python(
+        {
+            **ENVELOPE,
+            "type": "verification.result",
+            "method": "exact",
+            "result": "pass",
+        }
+    )
+    assert event.method is VerificationMethod.EXACT
+
+
+@pytest.mark.parametrize("result", ["unavailable", "error"])
+def test_new_check_outcomes_round_trip(result):
+    event = run_event_adapter.validate_python(
+        {
+            **ENVELOPE,
+            "type": "verification.result",
+            "method": "statistical",
+            "result": result,
+        }
+    )
+    revived = run_event_adapter.validate_json(event.model_dump_json())
+    assert revived.result is VerificationResultKind(result)
+
+
+def test_semantic_and_strict_audit_events_round_trip():
+    candidate_id = uuid4()
+    execution_id = uuid4()
+    review_id = uuid4()
+    semantic = run_event_adapter.validate_python(
+        {
+            **ENVELOPE,
+            "type": "verification.semantic_review",
+            "review_id": str(review_id),
+            "candidate_id": str(candidate_id),
+            "execution_id": str(execution_id),
+            "attempt_seq": 1,
+            "source_fingerprint": "a" * 64,
+            "decision": "inconclusive",
+            "reason_code": "semantic_evidence_gap",
+            "failure_class": "evidence_gap",
+            "retry_target": "verification",
+        }
+    )
+    strict = run_event_adapter.validate_python(
+        {
+            **ENVELOPE,
+            "type": "verification.strict_attempt",
+            "attempt_id": str(uuid4()),
+            "candidate_id": str(candidate_id),
+            "execution_id": str(execution_id),
+            "semantic_review_id": str(review_id),
+            "attempt_seq": 2,
+            "source_fingerprint": "a" * 64,
+            "decision": "inconclusive",
+            "evidence_strength": "structural",
+            "reason_code": "strict_verifier_error",
+            "candidate_defect_observed": False,
+            "failure_class": "verifier_failure",
+            "retry_target": "verification",
+            "verifier_version": "verification-v2",
+        }
+    )
+    assert run_event_adapter.validate_json(semantic.model_dump_json()) == semantic
+    assert run_event_adapter.validate_json(strict.model_dump_json()) == strict
+
+
+def test_unknown_verification_method_is_rejected_instead_of_dropped():
+    with pytest.raises(ValidationError):
+        run_event_adapter.validate_python(
+            {
+                **ENVELOPE,
+                "type": "verification.result",
+                "method": "unregistered_check",
+                "result": "error",
+            }
+        )
+
+
+def test_failed_terminal_event_carries_machine_readable_reason():
+    event = run_event_adapter.validate_python(
+        {
+            **ENVELOPE,
+            "type": "run.finished",
+            "status": "failed",
+            "reason_code": "candidate_budget_exhausted",
+        }
+    )
+    assert event.reason_code == "candidate_budget_exhausted"
 
 
 def test_every_event_type_round_trips():

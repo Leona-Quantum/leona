@@ -7,6 +7,7 @@ from hashlib import sha256
 from uuid import UUID
 
 from majorana_agent.models import (
+    ALLOWED_TOOLS_BY_STATE,
     AgentState,
     SIMULATION_TOOL_BY_FRAMEWORK,
     ToolCall,
@@ -14,6 +15,7 @@ from majorana_agent.models import (
     ToolResult,
 )
 from majorana_agent.prompts import AGENT_SYSTEM_PROMPT
+from majorana_agent.templates import REFERENCE_TEMPLATES
 from majorana_contracts.enums import Framework
 from majorana_llm import LLMClient, LLMRequest, model_for
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
@@ -27,19 +29,9 @@ class _SelectedTool(BaseModel):
     arguments: dict = Field(default_factory=dict)
 
 
-_TOOLS_BY_STATE: dict[AgentState, tuple[ToolName, ...]] = {
-    AgentState.NEW: (ToolName.REQUEST_PLAN,),
-    AgentState.PLANNED: tuple(SIMULATION_TOOL_BY_FRAMEWORK.values()),
-    AgentState.EXECUTED: (ToolName.VERIFY_INTENT_ALIGNMENT,),
-    AgentState.REPAIR_REQUIRED: tuple(SIMULATION_TOOL_BY_FRAMEWORK.values()),
-    AgentState.RESOURCE_EXHAUSTED: (),
-    AgentState.VERIFIED: (ToolName.CONVERT_TO_OPENQASM, ToolName.PUBLISH_ARTIFACT),
-    AgentState.QASM_ATTEMPTED: (ToolName.PUBLISH_ARTIFACT,),
-    AgentState.PUBLISHED: (),
-    AgentState.COMPLETED: (),
-    AgentState.FAILED: (),
-    AgentState.CANCELLED: (),
-}
+# Kept as a module-level alias for the shared table in models.py — see the
+# comment on ALLOWED_TOOLS_BY_STATE for why this must not be a second copy.
+_TOOLS_BY_STATE = ALLOWED_TOOLS_BY_STATE
 
 
 def _history_payload(result: ToolResult) -> dict:
@@ -54,13 +46,23 @@ def _history_payload(result: ToolResult) -> dict:
         if key
         in {
             "plan_id",
+            "parent_plan_id",
+            "replan_reason",
             "candidate_id",
             "revision",
             "source_fingerprint",
             "execution_id",
             "execution_ok",
+            "review_id",
+            "attempt_id",
+            "attempt_seq",
             "verification_id",
+            "semantic_review_decision",
             "decision",
+            "failure_class",
+            "retry_target",
+            "reason_code",
+            "check_summaries",
             "repair",
             "status",
             "reason",
@@ -93,10 +95,6 @@ class StructuredToolModel:
     envelope.  The broker, not this prompt, remains authoritative for policy.
     """
 
-    # Bound per exemplar so two retrieved artifacts cannot crowd out the task
-    # and history in the model's context.
-    _EXEMPLAR_SOURCE_LIMIT = 4000
-
     def __init__(
         self,
         *,
@@ -105,22 +103,12 @@ class StructuredToolModel:
         framework: Framework,
         model: str | None = None,
         initial_source: str | None = None,
-        exemplars: list[dict[str, str]] | None = None,
     ) -> None:
         self._llm = llm
         self._task_prompt = task_prompt
         self._framework = framework
         self._model = model or model_for("generate")
         self._initial_source = initial_source
-        self._exemplars = [
-            {
-                "title": str(exemplar.get("title", ""))[:200],
-                "family": str(exemplar.get("family", ""))[:80],
-                "source": str(exemplar.get("source", ""))[: self._EXEMPLAR_SOURCE_LIMIT],
-            }
-            for exemplar in (exemplars or [])
-            if exemplar.get("source")
-        ][:2]
 
     async def next_tool(
         self, *, run_id: UUID, state: AgentState, history: list[ToolResult]
@@ -158,17 +146,28 @@ class StructuredToolModel:
                         "task": self._task_prompt,
                         "initial_framework_source": self._initial_source,
                         "selected_framework": self._framework.value,
-                        # Code from this workspace's own previously VERIFIED
-                        # artifacts, same framework (LLM work list item 4).
-                        # Retrieved from our corpus, never the open web.
-                        "verified_exemplars": self._exemplars,
+                        # A static, sandbox-executed (not pipeline-verified) reference
+                        # for this framework's baseline FINAL_CIRCUIT/RESULT contract
+                        # and API conventions — see templates.py.
+                        **(
+                            {"reference_template": REFERENCE_TEMPLATES[self._framework]}
+                            if self._framework in REFERENCE_TEMPLATES
+                            else {}
+                        ),
                         "state": state.value,
                         "allowed_tools": [name.value for name in allowed],
                         "history": compact_history,
                     },
                     default=str,
                 ),
-                max_tokens=8192,
+                # No max_tokens: deepseek-v4-pro (models.py) is a reasoning model,
+                # and every next_tool() call — not just the ones that write source —
+                # pays its reasoning-token cost against whatever cap is set here.
+                # bench-14 (2026-07-11) found an 8192 self-imposed ceiling consumed
+                # entirely by reasoning on VQE-scale tasks, zero code out; doubling
+                # it to 16384 only moved where the same wall was. Omitting the cap
+                # (LLMRequest default) lets the provider's own ceiling apply instead
+                # of one we picked — the same choice namekoQ makes throughout.
                 temperature=0.0,
                 response_schema=schema,
                 schema_name="agent_tool_call",

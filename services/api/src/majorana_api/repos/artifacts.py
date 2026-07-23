@@ -53,39 +53,6 @@ async def list_artifacts(
     ]
 
 
-async def list_verified_exemplars(
-    scope: Scope,
-    session: AsyncSession,
-    *,
-    framework: Framework,
-    family: Algorithm | None = None,
-    limit: int = 2,
-) -> list[tuple[Artifact, ArtifactVersion]]:
-    """Recent artifacts whose current version passed verification, for few-shot
-    retrieval into the generation context (LLM work list item 4).
-
-    Retrieval is from THIS workspace's verified corpus, not the open web — we
-    control its quality, and every row here already survived the deterministic
-    checks. The decision filter reads the version's verification_summary, the
-    same field the Vault list grade reads.
-    """
-    stmt = (
-        select(Artifact, ArtifactVersion)
-        .join(ArtifactVersion, Artifact.current_version_id == ArtifactVersion.id)
-        .where(
-            Artifact.workspace_id == scope.workspace_id,
-            Artifact.deleted_at.is_(None),
-            Artifact.framework == framework,
-            ArtifactVersion.artifact_metadata["verification_summary"]["decision"].astext == "pass",
-        )
-        .order_by(Artifact.id.desc())
-        .limit(max(1, min(limit, 5)))
-    )
-    if family is not None:
-        stmt = stmt.where(Artifact.family == family)
-    return [(row[0], row[1]) for row in (await session.execute(stmt)).all()]
-
-
 async def get_artifact(
     scope: Scope, session: AsyncSession, artifact_id: uuid.UUID, *, for_update: bool = False
 ) -> Artifact:
@@ -144,6 +111,23 @@ async def set_visibility(
     scope: Scope, session: AsyncSession, artifact_id: uuid.UUID, visibility: Visibility
 ) -> None:
     require_admin(scope)
+    visibility = Visibility(visibility)
+    if visibility is Visibility.PUBLIC:
+        artifact = await get_artifact(scope, session, artifact_id, for_update=True)
+        if artifact.current_version_id is None:
+            raise ValueError("public artifact requires a current version")
+        version = await get_version(scope, session, artifact.current_version_id)
+        metadata = version.artifact_metadata if isinstance(version.artifact_metadata, dict) else {}
+        summary = metadata.get("verification_summary")
+        summary = summary if isinstance(summary, dict) else {}
+        if not (
+            metadata.get("source") == "agent_candidate"
+            and metadata.get("source_fingerprint") == version.fingerprint
+            and summary.get("verified") is True
+            and summary.get("decision") == "pass"
+            and summary.get("evidence_strength") == "physical"
+        ):
+            raise ValueError("public artifact requires verified physical PASS evidence")
     stmt = (
         update(Artifact)
         .where(
@@ -195,6 +179,16 @@ async def create_version(
     # Lock the artifact row: serializes concurrent version creation so
     # max(seq)+1 can't collide (uq_artifact_versions_seq rejects the loser).
     artifact = await get_artifact(scope, session, artifact_id, for_update=True)
+    if any(
+        value is not None
+        for value in (
+            artifact.artifact_kind,
+            artifact.execution_state,
+            artifact.review_state,
+            artifact.publication_state,
+        )
+    ):
+        raise ValueError("catalog artifacts require the catalog repository lifecycle")
     next_seq = (
         await session.execute(
             select(func.coalesce(func.max(ArtifactVersion.seq), 0) + 1).where(
@@ -223,12 +217,17 @@ async def create_version(
     await session.execute(
         update(Artifact)
         .where(Artifact.id == artifact.id, Artifact.workspace_id == scope.workspace_id)
-        .values(current_version_id=version.id, updated_at=func.now())
+        .values(
+            current_version_id=version.id,
+            visibility=Visibility.PRIVATE,
+            updated_at=func.now(),
+        )
     )
     # The SQL expression above can expire ORM attributes under AsyncSession;
     # keep the just-written object safe for callers that serialize it in the
     # same request without triggering implicit IO.
     artifact.current_version_id = version.id
+    artifact.visibility = Visibility.PRIVATE
     artifact.updated_at = dt.datetime.now(dt.timezone.utc)
     return version
 

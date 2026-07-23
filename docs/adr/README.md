@@ -24,3 +24,5 @@ An architecture choice without an ADR did not happen.
   PostgreSQL rather than relying on repository convention.
 - 2026-07-19: ADR-0021 requires database-clock lease fencing for terminal queue
   writes and one transaction for Dead Letter Run closure.
+- 2026-07-23: ADR-0022 proposes three-state verification, evidence-bound retry
+  routing, and private unverified Studio materialization with PASS-only Verified/public gates.

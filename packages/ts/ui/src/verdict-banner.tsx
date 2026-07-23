@@ -5,7 +5,7 @@
 // "Verified — statistical (TVD 0.0088 ≤ δ) · seed 42 · 4096 shots".
 import type { ReactNode } from "react";
 
-export type Verdict = "verified" | "structural_only" | "verified_caveats" | "not_verified" | "failed";
+export type Verdict = "verified" | "structural_only" | "verified_caveats" | "not_verified" | "failed" | "legacy_unknown";
 
 const VERDICT_COPY: Record<Verdict, { label: string; tone: "ok" | "warn" | "err" }> = {
   verified: { label: "Verified", tone: "ok" },
@@ -17,6 +17,7 @@ const VERDICT_COPY: Record<Verdict, { label: string; tone: "ok" | "warn" | "err"
   verified_caveats: { label: "Verified with caveats", tone: "warn" },
   not_verified: { label: "Not verified", tone: "warn" },
   failed: { label: "Failed", tone: "err" },
+  legacy_unknown: { label: "Legacy evidence unknown", tone: "warn" },
 };
 
 export function VerdictBanner({

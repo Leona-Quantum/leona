@@ -50,12 +50,31 @@ class AgentRuntime:
             state = await self._store.state(run_id)
             if state in {
                 AgentState.PUBLISHED,
+                AgentState.MATERIALIZED,
                 AgentState.COMPLETED,
                 AgentState.FAILED,
                 AgentState.CANCELLED,
                 AgentState.RESOURCE_EXHAUSTED,
             }:
                 return state
+            # INCONCLUSIVE is deliberately absent from the terminal set above.
+            # broker._ALLOWED and model._TOOLS_BY_STATE both permit
+            # convert_to_openqasm/materialize_artifact from AgentState.INCONCLUSIVE
+            # (a strict_verify run that found no dedicated property verifier for
+            # the algorithm, e.g. QFT, is still namekoQ-style materializable off a
+            # READY semantic review) — but stopping here before ever asking the
+            # model for another tool call made that permission dead code. The
+            # loop returned immediately, handlers.py's final-state switch treats
+            # anything but {CANCELLED, MATERIALIZED, PUBLISHED, RESOURCE_EXHAUSTED}
+            # as failed, and — because nothing had actually failed —
+            # _agent_failure_message fell back to quoting the (passing) semantic
+            # review's summary as if it were the objection that killed the run
+            # (observed live, run 019f8dd5: a clean READY QFT review reported
+            # back as "semantic objection: The artifact aligns with the request
+            # and plan..."). Falling through here lets the model actually call
+            # materialize_artifact/convert_to_openqasm; if it does neither, the
+            # existing step/strict-attempt budgets end the run with an honest
+            # exhaustion reason instead.
             if self._cancel_requested is not None and await self._cancel_requested():
                 await self._store.set_state(run_id, AgentState.CANCELLED)
                 return AgentState.CANCELLED

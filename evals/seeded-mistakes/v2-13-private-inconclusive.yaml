@@ -1,0 +1,12 @@
+id: v2-13-private-inconclusive
+category: publication-gate
+description: INCONCLUSIVE materializes privately but is never public eligible.
+expected:
+  decision: inconclusive
+  semantic_review_decision: inconclusive
+  failure_class: evidence_gap
+  retry_target: none
+  candidate_revisions_consumed: 1
+  evidence_strength: structural
+  materialized: true
+  public_eligible: false

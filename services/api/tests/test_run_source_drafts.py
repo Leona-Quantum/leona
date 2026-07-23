@@ -1,0 +1,102 @@
+import uuid
+from types import SimpleNamespace
+
+from majorana_contracts.enums import ExportStatus, Framework
+
+from majorana_api.routes import runs
+
+
+def _request(*, version_id: uuid.UUID, source: str) -> runs.CreateRunRequest:
+    return runs.CreateRunRequest(
+        task_prompt="Revise this circuit",
+        framework=Framework.QISKIT,
+        artifact_version_id=version_id,
+        source_code=source,
+    )
+
+
+async def test_edited_source_creates_explicitly_unverified_immutable_draft(scope, monkeypatch):
+    base_id = uuid.uuid4()
+    artifact_id = uuid.uuid4()
+    draft_id = uuid.uuid4()
+    captured = {}
+
+    async def get_version(*_args):
+        return SimpleNamespace(id=base_id, artifact_id=artifact_id, code="old source")
+
+    async def create_version(_scope, _session, supplied_artifact_id, **values):
+        captured.update(values)
+        captured["artifact_id"] = supplied_artifact_id
+        return SimpleNamespace(id=draft_id)
+
+    monkeypatch.setattr(runs.artifacts_repo, "get_version", get_version)
+    monkeypatch.setattr(runs.artifacts_repo, "create_version", create_version)
+
+    result = await runs._create_stale_source_draft(
+        _request(version_id=base_id, source="edited source"), scope, object()
+    )
+
+    assert result == draft_id
+    assert captured["artifact_id"] == artifact_id
+    assert captured["qasm"] is None
+    assert captured["export_status"] is ExportStatus.UNSUPPORTED
+    assert captured["metadata"]["based_on_version_id"] == str(base_id)
+    assert captured["metadata"]["verification_summary"] == {
+        "verified": False,
+        "decision": None,
+        "evidence_strength": None,
+        "reason_code": "source_changed_pending_verification",
+        "stale": True,
+    }
+
+
+async def test_unchanged_source_reuses_the_existing_version_without_a_draft(scope, monkeypatch):
+    base_id = uuid.uuid4()
+
+    async def get_version(*_args):
+        return SimpleNamespace(id=base_id, artifact_id=uuid.uuid4(), code="same source")
+
+    async def unexpected_create(*_args, **_kwargs):
+        raise AssertionError("unchanged source must not create a draft")
+
+    monkeypatch.setattr(runs.artifacts_repo, "get_version", get_version)
+    monkeypatch.setattr(runs.artifacts_repo, "create_version", unexpected_create)
+
+    result = await runs._create_stale_source_draft(
+        _request(version_id=base_id, source="same source"), scope, object()
+    )
+
+    assert result == base_id
+
+
+async def test_run_and_job_are_bound_to_the_new_draft_version(scope, monkeypatch):
+    base_id = uuid.uuid4()
+    draft_id = uuid.uuid4()
+    run_id = uuid.uuid4()
+    captured = {}
+    body = _request(version_id=base_id, source="edited source")
+
+    async def create_draft(*_args):
+        return draft_id
+
+    async def create_run(_scope, _session, **values):
+        captured["run"] = values
+        return SimpleNamespace(id=run_id)
+
+    async def append_event(*_args, **_kwargs):
+        return None
+
+    async def enqueue_job(_session, **values):
+        captured["job"] = values
+
+    monkeypatch.setattr(runs, "_create_stale_source_draft", create_draft)
+    monkeypatch.setattr(runs.runs_repo, "create_run", create_run)
+    monkeypatch.setattr(runs.runs_repo, "append_run_event", append_event)
+    monkeypatch.setattr(runs.system, "enqueue_job", enqueue_job)
+    monkeypatch.setattr(runs, "_to_resource", lambda row: row.id)
+
+    result = await runs.create_run(body, scope, object())
+
+    assert result == run_id
+    assert captured["run"]["artifact_version_id"] == draft_id
+    assert captured["job"]["payload"]["source_code"] == "edited source"

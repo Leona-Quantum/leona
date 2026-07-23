@@ -2,8 +2,18 @@
 
 from uuid import UUID, uuid4
 
-from majorana_agent import CandidateRevision, RepairInstruction, VerificationEvidence
-from majorana_contracts.enums import Framework, VerifierDecision
+from majorana_agent import (
+    CandidateRevision,
+    RepairInstruction,
+    StrictVerificationAttempt,
+    VerificationEvidence,
+)
+from majorana_contracts.enums import (
+    Framework,
+    RetryTarget,
+    VerificationFailureClass,
+    VerifierDecision,
+)
 from majorana_frameworks import FrameworkProgram
 from majorana_worker.best_effort import choose_best_effort
 
@@ -59,8 +69,8 @@ def _verification(
 
 
 def _by_id(
-    pairs: list[tuple[CandidateRevision, VerificationEvidence | None]],
-) -> dict[UUID, VerificationEvidence | None]:
+    pairs: list[tuple[CandidateRevision, VerificationEvidence | StrictVerificationAttempt | None]],
+) -> dict[UUID, VerificationEvidence | StrictVerificationAttempt | None]:
     return {candidate.candidate_id: verification for candidate, verification in pairs}
 
 
@@ -130,3 +140,31 @@ def test_the_evidence_carried_forward_names_the_failing_checks():
     assert best.failed_checks == ["check_0", "check_1"]
     assert best.critic_summary == "severity minor"
     assert best.residual_risks == ["the measured distribution was not reproduced"]
+
+
+def test_strict_attempt_checks_can_rank_a_failed_candidate():
+    candidate = _candidate(1)
+    attempt = StrictVerificationAttempt(
+        attempt_id=uuid4(),
+        candidate_id=candidate.candidate_id,
+        execution_id=uuid4(),
+        semantic_review_id=uuid4(),
+        source_fingerprint=candidate.source_fingerprint,
+        attempt_seq=1,
+        checks=[
+            {"method": "structural", "result": "pass"},
+            {"method": "schema", "result": "fail"},
+        ],
+        decision=VerifierDecision.FAIL,
+        reason_code="strict_check_failed",
+        candidate_defect_observed=True,
+        failure_class=VerificationFailureClass.CANDIDATE_DEFECT,
+        retry_target=RetryTarget.CODE_GENERATION,
+        verifier_version="verification-v2",
+    )
+
+    best = choose_best_effort([candidate], _by_id([(candidate, attempt)]))
+
+    assert best is not None
+    assert best.failed_checks == ["schema"]
+    assert best.critic_summary is None

@@ -17,7 +17,9 @@ from dataclasses import dataclass
 from typing import Any
 from uuid import UUID
 
-from majorana_agent import CandidateRevision, VerificationEvidence
+from majorana_agent import CandidateRevision, StrictVerificationAttempt, VerificationEvidence
+
+VerificationAssessment = VerificationEvidence | StrictVerificationAttempt
 
 # Ordered worst-last. A candidate whose critic never rendered a verdict sorts
 # below one that did: absent evidence is not mild evidence.
@@ -28,7 +30,7 @@ _UNKNOWN_SEVERITY = len(_SEVERITY_RANK)
 @dataclass(frozen=True)
 class BestEffort:
     candidate: CandidateRevision
-    verification: VerificationEvidence | None
+    verification: VerificationAssessment | None
     candidates_considered: int
 
     @property
@@ -37,7 +39,7 @@ class BestEffort:
             return []
         return [
             str(check.get("method"))
-            for check in self.verification.deterministic_checks
+            for check in _checks(self.verification)
             if check.get("result") != "pass"
         ]
 
@@ -55,13 +57,23 @@ class BestEffort:
 
     @property
     def _critic(self) -> dict[str, Any] | None:
-        if self.verification is None or not isinstance(self.verification.critic, dict):
+        if not isinstance(self.verification, VerificationEvidence) or not isinstance(
+            self.verification.critic, dict
+        ):
             return None
         return self.verification.critic
 
 
+def _checks(verification: VerificationAssessment) -> list[dict[str, Any]]:
+    return (
+        verification.deterministic_checks
+        if isinstance(verification, VerificationEvidence)
+        else verification.checks
+    )
+
+
 def _rank(
-    candidate: CandidateRevision, verification: VerificationEvidence | None
+    candidate: CandidateRevision, verification: VerificationAssessment | None
 ) -> tuple[int, int, int, int]:
     """Sort key, ascending — lowest is best.
 
@@ -78,15 +90,19 @@ def _rank(
     """
     if verification is None:
         return (1, 0, _UNKNOWN_SEVERITY, -candidate.revision)
-    failures = sum(check.get("result") != "pass" for check in verification.deterministic_checks)
-    critic = verification.critic if isinstance(verification.critic, dict) else {}
+    failures = sum(check.get("result") != "pass" for check in _checks(verification))
+    critic = (
+        verification.critic
+        if isinstance(verification, VerificationEvidence) and isinstance(verification.critic, dict)
+        else {}
+    )
     severity = _SEVERITY_RANK.get(str(critic.get("severity")), _UNKNOWN_SEVERITY)
     return (0, failures, severity, -candidate.revision)
 
 
 def choose_best_effort(
     candidates: list[CandidateRevision],
-    verifications: dict[UUID, VerificationEvidence | None],
+    verifications: dict[UUID, VerificationAssessment | None],
 ) -> BestEffort | None:
     """The closest thing to a working answer this run produced, or None if it
     never produced a candidate at all (e.g. the budget died during planning)."""

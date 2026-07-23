@@ -1,0 +1,12 @@
+id: v2-03-fabricated-counts
+category: execution-honesty
+description: Reported counts that disagree with trusted re-execution fail verification.
+expected:
+  decision: fail
+  semantic_review_decision: code_repair
+  failure_class: candidate_defect
+  retry_target: code_generation
+  candidate_revisions_consumed: 1
+  evidence_strength: structural
+  materialized: false
+  public_eligible: false

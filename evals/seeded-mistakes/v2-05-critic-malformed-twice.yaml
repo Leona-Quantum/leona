@@ -1,0 +1,12 @@
+id: v2-05-critic-malformed-twice
+category: verifier-failure
+description: Two malformed critic responses retain the same candidate and stay inconclusive.
+expected:
+  decision: inconclusive
+  semantic_review_decision: inconclusive
+  failure_class: verifier_failure
+  retry_target: verification
+  candidate_revisions_consumed: 1
+  evidence_strength: structural
+  materialized: true
+  public_eligible: false

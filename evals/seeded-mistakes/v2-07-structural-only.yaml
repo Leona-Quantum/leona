@@ -1,0 +1,12 @@
+id: v2-07-structural-only
+category: evidence-strength
+description: A physical claim with structural-only checks remains inconclusive.
+expected:
+  decision: inconclusive
+  semantic_review_decision: ready
+  failure_class: evidence_gap
+  retry_target: none
+  candidate_revisions_consumed: 1
+  evidence_strength: structural
+  materialized: true
+  public_eligible: false

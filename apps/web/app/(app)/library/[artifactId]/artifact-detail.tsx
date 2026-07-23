@@ -2,13 +2,14 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { SyntaxHighlightedCode } from "@majorana/ui";
+import { SyntaxHighlightedCode, VerificationSummaryPanel } from "@majorana/ui";
 import { CopyIcon, MoreIcon, StarIcon } from "../../../../components/icons";
-import { archiveArtifact, deleteArtifact, frameworkVariantsFromRemote, getLibraryArtifact, rememberArtifact, loadStarredLibraryArtifactIds, toggleLibraryArtifactStar, type LibraryArtifact } from "../../../../lib/library-data";
-import { verificationFromMetadata } from "../../../../lib/verification-record";
+import { archiveArtifact, artifactFromResource, deleteArtifact, frameworkVariantsFromRemote, getLibraryArtifact, loadStarredLibraryArtifactIds, statusFromVerificationSummary, toggleLibraryArtifactStar, type LibraryArtifact } from "../../../../lib/library-data";
+import { verificationFromMetadata, verificationFromResource } from "../../../../lib/verification-record";
 import type { PublicLocale } from "../../../../lib/public-locale";
 import { CIRCUIT_FRAMEWORKS, circuitFramework, circuitFrameworkOrNull } from "../../../../lib/circuit-frameworks";
 import { convertCircuitSource, looksLikeOpenQasm3, parseCircuitSource } from "../../../../lib/circuit-conversion";
+import { artifactExportManifest } from "../../../../lib/artifact-export";
 
 type DetailTab = "overview" | "code" | "runs" | "verification" | "notes";
 
@@ -33,7 +34,11 @@ type ArtifactCopy = (typeof DETAIL_COPY)[PublicLocale];
 function verdictChip(artifact: LibraryArtifact, copy: ArtifactCopy): { label: string; glyph: string } {
   if (artifact.source === "public") return { label: copy.reference, glyph: "–" };
   if (artifact.status === "structural") return { label: copy.structural, glyph: "–" };
-  return { label: copy.verified, glyph: "✓" };
+  if (artifact.status === "verified") return { label: copy.verified, glyph: "✓" };
+  if (artifact.status === "failed") return { label: "Failed", glyph: "×" };
+  if (artifact.status === "inconclusive") return { label: "Verification unavailable", glyph: "–" };
+  if (artifact.status === "stale") return { label: "Verification stale", glyph: "–" };
+  return { label: "Legacy evidence unknown", glyph: "–" };
 }
 
 export function ArtifactDetail({ artifactId, locale = "en" }: { artifactId: string; locale?: PublicLocale }) {
@@ -55,7 +60,7 @@ export function ArtifactDetail({ artifactId, locale = "en" }: { artifactId: stri
   useEffect(() => {
     let active = true;
     const local = getLibraryArtifact(artifactId);
-    if (local) setArtifact(local);
+    if (local) setArtifact({ ...local, status: "legacy_unknown", verificationSummary: null });
     void fetch(`/api/artifacts/${encodeURIComponent(artifactId)}`, { cache: "no-store" })
       .then(async (response) => {
         if (!response.ok) throw new Error("Artifact detail unavailable");
@@ -65,6 +70,8 @@ export function ArtifactDetail({ artifactId, locale = "en" }: { artifactId: stri
         const remoteId = remote.id;
         const remoteTitle = remote.title;
         if (!active || typeof remoteId !== "string" || typeof remoteTitle !== "string") return;
+        const mapped = artifactFromResource(remote)[0];
+        if (!mapped) return;
         const remoteSlug = typeof remote.slug === "string" ? remote.slug : artifactId;
         const isPublicReference = remoteSlug.startsWith("public-");
         setArtifact((current) => ({
@@ -76,7 +83,8 @@ export function ArtifactDetail({ artifactId, locale = "en" }: { artifactId: stri
           framework: typeof remote.framework === "string" ? remote.framework : current?.framework ?? "Qiskit",
           updatedAt: typeof remote.updated_at === "string" ? remote.updated_at : current?.updatedAt ?? new Date().toISOString(),
           currentVersionId: typeof remote.current_version_id === "string" ? remote.current_version_id : current?.currentVersionId,
-          status: current?.status ?? (isPublicReference ? "verified_caveats" : "verified"),
+          status: mapped.status,
+          verificationSummary: mapped.verificationSummary,
           source: current?.source ?? (isPublicReference ? "public" : "run"),
         }));
         if (typeof remote.current_version_id !== "string") return;
@@ -89,24 +97,13 @@ export function ArtifactDetail({ artifactId, locale = "en" }: { artifactId: stri
             if (!active) return;
             const publicMetadata = metadataFromIr(version.ir);
             const recorded = verificationFromMetadata(version.metadata);
-            // The Vault list has no version metadata to read, so it defaults every
-            // run-saved artifact to "verified". Write the grade back once we know it,
-            // or the list and this page would disagree about the same artifact.
-            if (recorded.evidenceStrength === "structural") {
-              const stored = getLibraryArtifact(artifactId);
-              if (stored && stored.status !== "structural") {
-                rememberArtifact({ ...stored, status: "structural" });
-              }
-            }
+            const versionSummary = verificationFromResource(version);
             setArtifact((current) => ({
               ...(current ?? fallbackArtifact(artifactId)),
               checks: recorded.checks ?? current?.checks,
               criticSummary: recorded.criticSummary ?? current?.criticSummary,
-              // Only downgrade on a grade we actually read. Versions saved before
-              // 2026-07-20 carry no `evidence_strength`, and absent evidence must
-              // not be presented as evidence of weakness.
-              status:
-                recorded.evidenceStrength === "structural" ? "structural" : current?.status ?? "verified",
+              status: statusFromVerificationSummary(versionSummary ?? current?.verificationSummary ?? null),
+              verificationSummary: versionSummary ?? current?.verificationSummary ?? null,
               description: publicMetadata.introduction ?? current?.description ?? "Saved artifact in the workspace vault.",
               verification: publicMetadata.verification ?? current?.verification ?? "Verification record available in the control plane.",
               code: typeof version.code === "string" ? version.code : current?.code ?? "",
@@ -251,7 +248,7 @@ function Overview({ artifact, copy }: { artifact: LibraryArtifact; copy: Artifac
         <p className="mj-artifact-copy">{artifact.description}</p>
         <div className="mj-tag-list">{artifact.tags.map((tag) => <span key={tag}>{tag}</span>)}</div>
         <h3>{copy.verificationSummary}</h3>
-        <div className={`mj-verification-summary${artifact.source === "public" ? " mj-verification-summary--reference" : ""}`}><span aria-hidden="true">{verdictChip(artifact, copy).glyph}</span><div><strong>{artifact.source === "public" ? copy.publicReference : verdictChip(artifact, copy).label}</strong><p>{artifact.source === "public" ? `${artifact.verification} ${copy.publicRunBody}` : artifact.verification}</p></div></div>
+        <VerificationSummaryPanel summary={artifact.verificationSummary ?? null} />
       </section>
       <section className="mj-artifact-panel">
         <div className="mj-panel-heading"><h2>{copy.resources}</h2><span className="mj-mono-muted">{copy.currentVersion}</span></div>
@@ -274,6 +271,15 @@ function CodeAndExport({ artifact, copied, onCopy, copy }: { artifact: LibraryAr
   const [selected, setSelected] = useState(options[0]?.key ?? "qiskit");
   const selectedOption = options.find((option) => option.key === selected);
   const selectedCode = selectedOption?.code ?? artifact.code;
+  function downloadExport() {
+    const body = JSON.stringify(artifactExportManifest(artifact, { framework: selected, code: selectedCode }), null, 2);
+    const url = URL.createObjectURL(new Blob([body], { type: "application/json" }));
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = `${artifact.slug || artifact.id}.majorana.json`;
+    anchor.click();
+    URL.revokeObjectURL(url);
+  }
   return (
     <div className="mj-artifact-grid mj-artifact-grid--code">
       <section className="mj-artifact-panel mj-artifact-panel--wide">
@@ -282,7 +288,7 @@ function CodeAndExport({ artifact, copied, onCopy, copy }: { artifact: LibraryAr
         {selectedOption?.note ? <p className="mj-artifact-copy">{selectedOption.note}</p> : null}
       </section>
       <section className="mj-artifact-panel">
-        <div className="mj-panel-heading"><h2>{copy.exportHeading}</h2><span className="mj-mono-muted">{copy.classified}</span></div>
+        <div className="mj-panel-heading"><h2>{copy.exportHeading}</h2><button className="mj-secondary-button" type="button" onClick={downloadExport}>Download with verification metadata</button></div>
         <div className="mj-export-state"><span className="mj-library-status mj-library-status--verified"><span aria-hidden="true">✓</span>{artifact.qasm ? copy.lossless : copy.frameworkOnly}</span><p>{artifact.qasm ?? copy.noNative}</p></div>
       </section>
     </div>
@@ -325,13 +331,13 @@ function normalizeFramework(value: string): string | null {
 
 function Runs({ artifact, copy }: { artifact: LibraryArtifact; copy: ArtifactCopy }) {
   const isPublicReference = artifact.source === "public";
-  return <section className="mj-artifact-panel"><div className="mj-panel-heading"><h2>{copy.runRecords}</h2><span className="mj-mono-muted">{artifact.runId ?? (isPublicReference ? copy.publicReference : copy.example)}</span></div><div className="mj-run-record"><span className="mj-chat-status mj-chat-status--verified">{isPublicReference ? "–" : "✓"}</span><div><strong>{artifact.source === "run" ? copy.verifiedRun : isPublicReference ? copy.publicReference : copy.referenceRun}</strong><p>{isPublicReference ? copy.publicRunBody : copy.runBody}</p></div><span className={`mj-library-status mj-library-status--${artifact.status}`}><span aria-hidden="true">{verdictChip(artifact, copy).glyph}</span>{verdictChip(artifact, copy).label}</span></div></section>;
+  return <section className="mj-artifact-panel"><div className="mj-panel-heading"><h2>{copy.runRecords}</h2><span className="mj-mono-muted">{artifact.runId ?? (isPublicReference ? copy.publicReference : copy.example)}</span></div><div className="mj-run-record"><span className="mj-chat-status">{isPublicReference ? "–" : verdictChip(artifact, copy).glyph}</span><div><strong>{isPublicReference ? copy.publicReference : verdictChip(artifact, copy).label}</strong><p>{isPublicReference ? copy.publicRunBody : copy.runBody}</p></div><span className={`mj-library-status mj-library-status--${artifact.status}`}><span aria-hidden="true">{verdictChip(artifact, copy).glyph}</span>{verdictChip(artifact, copy).label}</span></div></section>;
 }
 
 function Verification({ artifact, copy }: { artifact: LibraryArtifact; copy: ArtifactCopy }) {
   const isPublicReference = artifact.source === "public";
   const checks = artifact.checks ?? [];
-  return <section className="mj-artifact-panel"><div className="mj-panel-heading"><h2>{copy.verificationEvidence}</h2><span className="mj-mono-muted">{copy.auditSurface}</span></div><div className="mj-verification-detail"><div className={`mj-verification-summary${isPublicReference ? " mj-verification-summary--reference" : ""}`}><span aria-hidden="true">{verdictChip(artifact, copy).glyph}</span><div><strong>{isPublicReference ? copy.publicReference : verdictChip(artifact, copy).label}</strong><p>{artifact.criticSummary ?? artifact.verification}</p></div></div><details><summary>{copy.whatChecked}</summary>{checks.length ? <ul className="mj-verification-checks">{checks.map((check) => <li key={check.method}><span className={`mj-verification-check mj-verification-check--${check.result === "pass" ? "pass" : "fail"}`} aria-hidden="true">{check.result === "pass" ? "✓" : "✕"}</span><code>{check.method}</code><span className="mj-mono-muted">{check.result}</span></li>)}</ul> : <p>{isPublicReference ? copy.publicChecked : copy.verifiedChecked}</p>}</details></div></section>;
+  return <section className="mj-artifact-panel"><div className="mj-panel-heading"><h2>{copy.verificationEvidence}</h2><span className="mj-mono-muted">{copy.auditSurface}</span></div><div className="mj-verification-detail"><VerificationSummaryPanel summary={artifact.verificationSummary ?? null} />{!artifact.verificationSummary ? <details><summary>{copy.whatChecked}</summary>{checks.length ? <ul className="mj-verification-checks">{checks.map((check) => <li key={check.method}><span className={`mj-verification-check mj-verification-check--${check.result === "pass" ? "pass" : "fail"}`} aria-hidden="true">{check.result === "pass" ? "✓" : "✕"}</span><code>{check.method}</code><span className="mj-mono-muted">{check.result}</span></li>)}</ul> : <p>{isPublicReference ? copy.publicChecked : copy.verifiedChecked}</p>}</details> : null}</div></section>;
 }
 
 function Notes({ artifact, copy }: { artifact: LibraryArtifact; copy: ArtifactCopy }) {
@@ -343,7 +349,7 @@ function Meta({ label, value }: { label: string; value: string }) {
 }
 
 function fallbackArtifact(id: string): LibraryArtifact {
-  return { id, slug: id, title: "Artifact", family: "Simulation", framework: "Qiskit", status: "verified_caveats", updatedAt: new Date().toISOString(), description: "Saved artifact in the workspace vault.", tags: ["artifact"], verification: "Verification record available in the control plane.", code: "", qasm: null, resourceRows: [], source: "run" };
+  return { id, slug: id, title: "Artifact", family: "Simulation", framework: "Qiskit", status: "legacy_unknown", updatedAt: new Date().toISOString(), description: "Saved artifact in the workspace vault.", tags: ["artifact"], verification: "Verification evidence has not been loaded.", code: "", qasm: null, resourceRows: [], verificationSummary: null, source: "run" };
 }
 
 function metadataFromIr(value: unknown): { introduction?: string; verification?: string } {

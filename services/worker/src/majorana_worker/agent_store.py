@@ -9,8 +9,12 @@ from majorana_agent import (
     CandidateRevision,
     ConversionEvidence,
     ExecutionEvidence,
+    MaterializedArtifact,
+    PlanRevision,
     PlanRecord,
     PublishedArtifact,
+    SemanticReviewEvidence,
+    StrictVerificationAttempt,
     ToolCall,
     ToolResult,
     VerificationEvidence,
@@ -121,16 +125,58 @@ class RepoAgentStore:
         await self._session.commit()
 
     async def plan(self, run_id: UUID, plan_id: UUID) -> PlanRecord:
-        row = await agent_repo.get_or_create_agent_run(self._scope, self._session, run_id)
-        if row.plan_id != plan_id or row.plan is None:
+        row = await agent_repo.get_plan_revision(self._scope, self._session, run_id, plan_id)
+        if row is None:
             raise KeyError(plan_id)
         return PlanRecord(plan_id=plan_id, run_id=run_id, plan=row.plan)
 
     async def latest_plan(self, run_id: UUID) -> PlanRecord | None:
-        row = await agent_repo.get_or_create_agent_run(self._scope, self._session, run_id)
-        if row.plan_id is None or row.plan is None:
+        row = await agent_repo.get_current_plan_revision(self._scope, self._session, run_id)
+        if row is None:
             return None
-        return PlanRecord(plan_id=row.plan_id, run_id=run_id, plan=row.plan)
+        return PlanRecord(plan_id=row.id, run_id=run_id, plan=row.plan)
+
+    @staticmethod
+    def _plan_revision(row) -> PlanRevision:
+        return PlanRevision(
+            plan_id=row.id,
+            run_id=row.run_id,
+            revision=row.revision,
+            parent_plan_id=row.parent_plan_id,
+            plan=row.plan,
+            plan_fingerprint=row.plan_fingerprint,
+            replan_reason=row.replan_reason,
+        )
+
+    async def append_plan_revision(self, record: PlanRevision) -> None:
+        await agent_repo.append_plan_revision(
+            self._scope,
+            self._session,
+            record.run_id,
+            {
+                "id": record.plan_id,
+                "revision": record.revision,
+                "parent_plan_id": record.parent_plan_id,
+                "plan": record.plan.model_dump(mode="json"),
+                "plan_fingerprint": record.plan_fingerprint,
+                "replan_reason": record.replan_reason,
+            },
+        )
+        await self._session.commit()
+
+    async def plan_revision(self, run_id: UUID, plan_id: UUID) -> PlanRevision:
+        row = await agent_repo.get_plan_revision(self._scope, self._session, run_id, plan_id)
+        if row is None:
+            raise KeyError(plan_id)
+        return self._plan_revision(row)
+
+    async def current_plan_revision(self, run_id: UUID) -> PlanRevision | None:
+        row = await agent_repo.get_current_plan_revision(self._scope, self._session, run_id)
+        return self._plan_revision(row) if row is not None else None
+
+    async def select_current_plan(self, run_id: UUID, plan_id: UUID) -> None:
+        await agent_repo.select_current_plan(self._scope, self._session, run_id, plan_id)
+        await self._session.commit()
 
     @staticmethod
     def _candidate(row) -> CandidateRevision:
@@ -295,6 +341,150 @@ class RepoAgentStore:
             repair=row.repair,
         )
 
+    @staticmethod
+    def _semantic_review(row) -> SemanticReviewEvidence:
+        return SemanticReviewEvidence(
+            review_id=row.id,
+            candidate_id=row.candidate_id,
+            execution_id=row.execution_id,
+            source_fingerprint=row.source_fingerprint,
+            attempt_seq=row.attempt_seq,
+            decision=row.decision,
+            confidence=row.confidence,
+            severity=row.severity,
+            reason_code=row.reason_code,
+            failure_class=row.failure_class,
+            retry_target=row.retry_target,
+            feedback=row.feedback,
+        )
+
+    async def append_semantic_review(self, evidence: SemanticReviewEvidence) -> None:
+        row = await agent_repo.get_candidate_by_id(
+            self._scope, self._session, evidence.candidate_id
+        )
+        if row is None:
+            raise KeyError(evidence.candidate_id)
+        candidate = self._candidate(row)
+        execution = await self.execution_for(candidate.run_id, candidate.candidate_id)
+        if execution is None:
+            raise ValueError("candidate must be executed before semantic review")
+        evidence.assert_binding(candidate, execution)
+        await agent_repo.append_semantic_review(
+            self._scope,
+            self._session,
+            candidate.run_id,
+            {
+                "id": evidence.review_id,
+                "candidate_id": evidence.candidate_id,
+                "execution_id": evidence.execution_id,
+                "source_fingerprint": evidence.source_fingerprint,
+                "attempt_seq": evidence.attempt_seq,
+                "decision": evidence.decision.value,
+                "confidence": evidence.confidence,
+                "severity": evidence.severity,
+                "reason_code": evidence.reason_code,
+                "failure_class": (evidence.failure_class.value if evidence.failure_class else None),
+                "retry_target": evidence.retry_target.value,
+                "feedback": evidence.feedback,
+            },
+        )
+        await self._session.commit()
+
+    async def latest_semantic_review(
+        self, run_id: UUID, candidate_id: UUID
+    ) -> SemanticReviewEvidence | None:
+        row = await agent_repo.latest_semantic_review(
+            self._scope, self._session, run_id, candidate_id
+        )
+        return self._semantic_review(row) if row is not None else None
+
+    async def semantic_review(self, run_id, candidate_id, review_id):
+        row = await agent_repo.get_semantic_review(
+            self._scope, self._session, run_id, candidate_id, review_id
+        )
+        return self._semantic_review(row) if row is not None else None
+
+    @staticmethod
+    def _strict_verification(row) -> StrictVerificationAttempt:
+        return StrictVerificationAttempt(
+            attempt_id=row.id,
+            candidate_id=row.candidate_id,
+            execution_id=row.execution_id,
+            semantic_review_id=row.semantic_review_id,
+            source_fingerprint=row.source_fingerprint,
+            attempt_seq=row.attempt_seq,
+            checks=row.checks,
+            decision=row.decision,
+            evidence_strength=row.evidence_strength,
+            claim_coverage=row.claim_coverage,
+            reason_code=row.reason_code,
+            candidate_defect_observed=row.candidate_defect_observed,
+            failure_class=row.failure_class,
+            retry_target=row.retry_target,
+            unverified_claims=row.unverified_claims,
+            verifier_version=row.verifier_version,
+        )
+
+    async def append_strict_verification(self, attempt: StrictVerificationAttempt) -> None:
+        row = await agent_repo.get_candidate_by_id(self._scope, self._session, attempt.candidate_id)
+        if row is None:
+            raise KeyError(attempt.candidate_id)
+        candidate = self._candidate(row)
+        execution = await self.execution_for(candidate.run_id, candidate.candidate_id)
+        if execution is None:
+            raise ValueError("candidate must be executed before strict verification")
+        review_row = await agent_repo.get_semantic_review(
+            self._scope,
+            self._session,
+            candidate.run_id,
+            candidate.candidate_id,
+            attempt.semantic_review_id,
+        )
+        if review_row is None:
+            raise ValueError("strict verification requires its semantic review")
+        review = self._semantic_review(review_row)
+        attempt.assert_binding(candidate, execution, review)
+        await agent_repo.append_strict_verification(
+            self._scope,
+            self._session,
+            candidate.run_id,
+            {
+                "id": attempt.attempt_id,
+                "candidate_id": attempt.candidate_id,
+                "execution_id": attempt.execution_id,
+                "semantic_review_id": attempt.semantic_review_id,
+                "source_fingerprint": attempt.source_fingerprint,
+                "attempt_seq": attempt.attempt_seq,
+                "checks": attempt.checks,
+                "decision": attempt.decision.value,
+                "evidence_strength": (
+                    attempt.evidence_strength.value if attempt.evidence_strength else None
+                ),
+                "claim_coverage": attempt.claim_coverage,
+                "reason_code": attempt.reason_code,
+                "candidate_defect_observed": attempt.candidate_defect_observed,
+                "failure_class": (attempt.failure_class.value if attempt.failure_class else None),
+                "retry_target": attempt.retry_target.value,
+                "unverified_claims": attempt.unverified_claims,
+                "verifier_version": attempt.verifier_version,
+            },
+        )
+        await self._session.commit()
+
+    async def latest_strict_verification(
+        self, run_id: UUID, candidate_id: UUID
+    ) -> StrictVerificationAttempt | None:
+        row = await agent_repo.latest_strict_verification(
+            self._scope, self._session, run_id, candidate_id
+        )
+        return self._strict_verification(row) if row is not None else None
+
+    async def strict_verification(self, run_id, candidate_id, attempt_id):
+        row = await agent_repo.get_strict_verification(
+            self._scope, self._session, run_id, candidate_id, attempt_id
+        )
+        return self._strict_verification(row) if row is not None else None
+
     async def add_conversion(self, evidence: ConversionEvidence) -> None:
         row = await agent_repo.get_candidate_by_id(
             self._scope, self._session, evidence.candidate_id
@@ -302,11 +492,20 @@ class RepoAgentStore:
         if row is None:
             raise KeyError(evidence.candidate_id)
         candidate = self._candidate(row)
-        verification = await self.verification_for(candidate.run_id, candidate.candidate_id)
-        if verification is None:
-            raise ValueError("candidate must be verified before conversion")
-        if candidate.source_fingerprint != evidence.source_fingerprint:
-            raise ValueError("conversion fingerprint does not match candidate")
+        verification = await self.latest_strict_verification(
+            candidate.run_id, candidate.candidate_id
+        )
+        execution = await self.execution_for(candidate.run_id, candidate.candidate_id)
+        if verification is None or verification.decision.value not in {"pass", "inconclusive"}:
+            raise ValueError("conversion requires strict PASS or INCONCLUSIVE")
+        if execution is None or not (
+            verification.execution_id == evidence.execution_id == execution.execution_id
+            and candidate.source_fingerprint
+            == verification.source_fingerprint
+            == evidence.source_fingerprint
+            == execution.source_fingerprint
+        ):
+            raise ValueError("conversion fingerprint/execution binding mismatch")
         await agent_repo.add_conversion(
             self._scope,
             self._session,
@@ -321,11 +520,41 @@ class RepoAgentStore:
             return None
         return ConversionEvidence(
             candidate_id=row.candidate_id,
+            execution_id=row.execution_id,
             source_fingerprint=row.source_fingerprint,
             status=row.status,
             qasm=row.qasm,
             reason=row.reason,
         )
+
+    async def add_materialization(self, materialization: MaterializedArtifact) -> None:
+        row = await agent_repo.get_candidate_by_id(
+            self._scope, self._session, materialization.candidate_id
+        )
+        if row is None:
+            raise KeyError(materialization.candidate_id)
+        candidate = self._candidate(row)
+        strict = await self.latest_strict_verification(candidate.run_id, candidate.candidate_id)
+        if strict is None or strict.decision.value not in {"pass", "inconclusive"}:
+            raise ValueError("materialization requires strict PASS or INCONCLUSIVE")
+        if candidate.source_fingerprint != materialization.source_fingerprint:
+            raise ValueError("materialization fingerprint does not match candidate")
+        await agent_repo.set_materialization(
+            self._scope,
+            self._session,
+            candidate.run_id,
+            materialization.model_dump(mode="json"),
+        )
+        await self._session.commit()
+
+    async def materialization_for(
+        self, run_id: UUID, candidate_id: UUID
+    ) -> MaterializedArtifact | None:
+        row = await agent_repo.get_or_create_agent_run(self._scope, self._session, run_id)
+        if row.materialization is None:
+            return None
+        materialization = MaterializedArtifact.model_validate(row.materialization)
+        return materialization if materialization.candidate_id == candidate_id else None
 
     async def add_publication(self, publication: PublishedArtifact) -> None:
         row = await agent_repo.get_candidate_by_id(

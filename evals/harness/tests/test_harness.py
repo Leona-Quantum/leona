@@ -7,7 +7,7 @@ from types import SimpleNamespace
 
 import pytest
 from majorana_contracts import Scope
-from majorana_contracts.enums import Role
+from majorana_contracts.enums import Role, VerifierDecision
 from majorana_llm import default_llm
 from majorana_sandbox import LocalSubprocessSandbox
 
@@ -17,9 +17,12 @@ from majorana_api.repos import system
 from majorana_evals import (
     CorpusCase,
     Expect,
+    RoutingOutcome,
     load_corpus,
+    load_seeded_corpus,
     run_case,
     run_corpus,
+    score_seeded_corpus,
     top_measured_bitstring,
 )
 from majorana_evals.runner import _last_json_object, _latest_sandbox_event
@@ -120,6 +123,88 @@ def test_corpus_loads_from_yaml():
     assert any(c.id == "bench-01" for c in corpus)
     # every case pins an honest expectation
     assert all(c.expect.verifier_decision for c in corpus)
+
+
+def _seeded_corpus():
+    from pathlib import Path
+
+    return load_seeded_corpus(Path(__file__).parents[3] / "evals" / "seeded-mistakes")
+
+
+def test_seeded_corpus_covers_every_verification_v2_regression():
+    corpus = _seeded_corpus()
+    assert len(corpus) == 16
+    assert {case.id for case in corpus} == {
+        "v2-01-bell-ghz-pass",
+        "v2-02-wrong-relative-phase",
+        "v2-03-fabricated-counts",
+        "v2-04-plan-mismatch",
+        "v2-05-critic-malformed-twice",
+        "v2-06-dynamic-unsupported",
+        "v2-07-structural-only",
+        "v2-08-resource-exhaustion",
+        "v2-09-maxcut-pass",
+        "v2-10-maxcut-objective-fail",
+        "v2-11a-vqe-energy-pass",
+        "v2-11b-vqe-energy-fail",
+        "v2-12-qasm-conversion-neutral",
+        "v2-13-private-inconclusive",
+        "v2-14-source-mutation-stale",
+        "v2-15-historical-replay",
+    }
+    assert all(
+        not case.expected.public_eligible or case.expected.decision == "pass" for case in corpus
+    )
+    assert all(
+        case.expected.decision != "inconclusive" or case.expected.candidate_revisions_consumed == 1
+        for case in corpus
+    )
+
+
+def test_seeded_scorer_reports_each_required_metric_without_inventing_observations():
+    corpus = _seeded_corpus()
+    report = score_seeded_corpus(corpus, {})
+    assert report.passed == 0
+    assert report.pass_rate == 0
+    assert report.missing_observations == [case.id for case in corpus]
+    assert report.metrics.decision_accuracy == 0
+    assert report.metrics.inconclusive_calibration == 0
+
+    observations = {
+        case.id: RoutingOutcome.model_validate(case.expected.model_dump()) for case in corpus
+    }
+    report = score_seeded_corpus(corpus, observations)
+    assert report.passed == report.total == 16
+    assert report.pass_rate == 1
+    assert report.metrics.decision_accuracy == 1
+    assert report.metrics.failure_class_accuracy == 1
+    assert report.metrics.retry_target_accuracy == 1
+    assert report.metrics.candidate_revision_accuracy == 1
+    assert report.metrics.candidate_revisions_consumed == 15
+    assert report.metrics.false_negative_rate == 0
+    assert report.metrics.false_positive_rate == 0
+    assert report.metrics.inconclusive_calibration == 1
+    assert report.metrics.evidence_strength_honesty == 1
+    assert report.metrics.materialization_behavior_accuracy == 1
+    assert report.metrics.publication_behavior_accuracy == 1
+
+
+def test_seeded_scorer_separates_false_positive_and_false_negative_rates():
+    corpus = _seeded_corpus()
+    observations = {
+        case.id: RoutingOutcome.model_validate(case.expected.model_dump()) for case in corpus
+    }
+    observations["v2-01-bell-ghz-pass"] = observations["v2-01-bell-ghz-pass"].model_copy(
+        update={"decision": VerifierDecision.INCONCLUSIVE}
+    )
+    observations["v2-02-wrong-relative-phase"] = observations[
+        "v2-02-wrong-relative-phase"
+    ].model_copy(update={"decision": VerifierDecision.PASS})
+
+    report = score_seeded_corpus(corpus, observations)
+    assert report.passed == 14
+    assert report.metrics.false_negative_rate == pytest.approx(1 / 4)
+    assert report.metrics.false_positive_rate == pytest.approx(1 / 12)
 
 
 @requires_db

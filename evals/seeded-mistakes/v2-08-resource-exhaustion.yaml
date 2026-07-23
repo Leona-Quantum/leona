@@ -1,0 +1,11 @@
+id: v2-08-resource-exhaustion
+category: capability-limit
+description: Sandbox resource exhaustion is inconclusive and does not trigger code repair.
+expected:
+  decision: inconclusive
+  failure_class: capability_limit
+  retry_target: none
+  candidate_revisions_consumed: 1
+  evidence_strength: structural
+  materialized: false
+  public_eligible: false

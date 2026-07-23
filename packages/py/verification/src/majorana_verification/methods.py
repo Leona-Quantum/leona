@@ -26,6 +26,8 @@ from majorana_verification.hamiltonian import (
     ground_state_comparison,
 )
 from majorana_verification.native import (
+    NoNativeMeasurementEvidence,
+    entangled_state_property,
     native_counts_vs_ideal,
     native_statevector_vs_reference,
     sampled_counts_comparison,
@@ -42,6 +44,7 @@ from majorana_verification.statevector import (
 PASS = VerificationResultKind.PASS
 FAIL = VerificationResultKind.FAIL
 SKIPPED = VerificationResultKind.SKIPPED
+ERROR = VerificationResultKind.ERROR
 
 
 def _skipped(method: VerificationMethod, exc: StatevectorIncapable) -> VerificationOutcome:
@@ -189,9 +192,21 @@ def verify_native_statistical_counts(
     framework's OWN simulator computed inside the trusted observer. Same claim
     as verify_statistical_counts, minus the OpenQASM conversion in the trust
     path. Malformed evidence fails — the observer records incapacity as an error
-    key, so a payload that does not validate is a pipeline defect, not a limit."""
+    key, so a payload that does not validate is a pipeline defect, not a limit.
+    The one exception is NoNativeMeasurementEvidence: an unmeasured FINAL_CIRCUIT
+    (measurement_policy=none, e.g. VQE/QAOA ansatz artifacts) legitimately has no
+    native measurement to compare reported counts against, even when RESULT
+    separately reports counts from an explicitly measured sampling variant —
+    that is a capability gap, not malformed evidence, and must not fail a
+    candidate whose own artifact contract forbids measuring this circuit
+    (observed live: brute_force independently verified the reported answer was
+    correct, and this check alone still failed the candidate)."""
     try:
         report = native_counts_vs_ideal(payload, counts, threshold=threshold)
+    except NoNativeMeasurementEvidence as exc:
+        return VerificationOutcome(
+            method=VerificationMethod.STATISTICAL, result=SKIPPED, details={"reason": str(exc)}
+        )
     except ValueError as exc:
         return VerificationOutcome(
             method=VerificationMethod.STATISTICAL, result=FAIL, details={"error": str(exc)}
@@ -224,6 +239,82 @@ def verify_native_sampled_counts(
     outcome = _from_report(VerificationMethod.STATISTICAL_NATIVE, report)
     outcome.details["evidence"] = "native_trusted_reexecution_vs_reported_counts"
     return outcome
+
+
+def _verify_entangled_state_property(
+    payload: Any,
+    *,
+    method: VerificationMethod,
+    state_name: str,
+    expected_qubits: int,
+    relative_phase_radians: float,
+) -> VerificationOutcome:
+    """Judge a fixed canonical state-preparation claim from native evidence.
+
+    Invalid observer payload is a verifier/evidence error, not proof that the
+    candidate is wrong. A valid statevector that disagrees with the fixed target
+    is a concrete FAIL.
+    """
+    try:
+        report = entangled_state_property(
+            payload,
+            state_name=state_name,
+            expected_qubits=expected_qubits,
+            relative_phase_radians=relative_phase_radians,
+        )
+    except ValueError as exc:
+        return VerificationOutcome(
+            method=method,
+            result=ERROR,
+            details={
+                "error": str(exc),
+                "claim": (
+                    f"framework-native statevector matches the accepted relative-phase "
+                    f"{state_name.upper()} target"
+                ),
+                "fault": "verifier_evidence",
+            },
+        )
+    outcome = _from_report(method, report)
+    outcome.details.update(
+        {
+            "evidence": "framework_native_statevector",
+            "claim": (
+                f"framework-native statevector matches the accepted relative-phase "
+                f"{state_name.upper()} target with canonical readout ordering"
+            ),
+            "does_not_prove": "reported counts or request-to-plan interpretation",
+        }
+    )
+    return outcome
+
+
+def verify_bell_state_property(
+    payload: Any, relative_phase_radians: float = 0.0
+) -> VerificationOutcome:
+    """Prove the typed Bell target including its requested relative phase."""
+    return _verify_entangled_state_property(
+        payload,
+        method=VerificationMethod.BELL_STATE_PROPERTY,
+        state_name="bell",
+        expected_qubits=2,
+        relative_phase_radians=relative_phase_radians,
+    )
+
+
+def verify_ghz_state_property(
+    payload: Any,
+    expected_qubits: int,
+    relative_phase_radians: float = 0.0,
+) -> VerificationOutcome:
+    """Prove the typed ``expected_qubits``-wire GHZ phase target."""
+    return _verify_entangled_state_property(
+        payload,
+        method=VerificationMethod.GHZ_STATE_PROPERTY,
+        state_name="ghz",
+        expected_qubits=expected_qubits,
+        relative_phase_radians=relative_phase_radians,
+    )
 
 
 def verify_statistical_counts_pair(
@@ -260,7 +351,8 @@ def verify_statistical_counts_pair(
     tvd = 0.5 * sum(
         abs(first.get(key, 0) / first_total - second.get(key, 0) / second_total) for key in keys
     )
-    limit = 0.05 if threshold is None else threshold
+    policy_limit = 0.05
+    limit = policy_limit if threshold is None else min(policy_limit, threshold)
     return VerificationOutcome(
         method=VerificationMethod.STATISTICAL,
         result=PASS if tvd <= limit else FAIL,
@@ -268,6 +360,13 @@ def verify_statistical_counts_pair(
             "evidence": "selected_framework_reexecution",
             "total_variation_distance": tvd,
             "threshold": limit,
+            "policy_threshold": policy_limit,
+            "declared_threshold": threshold,
+            "threshold_source": (
+                "plan_tightened"
+                if threshold is not None and threshold < policy_limit
+                else "fixed_policy"
+            ),
             "first_shots": first_total,
             "second_shots": second_total,
         },

@@ -1,0 +1,12 @@
+id: v2-02-wrong-relative-phase
+category: physical-correctness
+description: A wrong relative phase is a candidate defect, not uncertainty.
+expected:
+  decision: fail
+  semantic_review_decision: code_repair
+  failure_class: candidate_defect
+  retry_target: code_generation
+  candidate_revisions_consumed: 1
+  evidence_strength: structural
+  materialized: false
+  public_eligible: false

@@ -1,9 +1,9 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type MouseEvent, type UIEvent } from "react";
-import { SyntaxHighlightedCode } from "@majorana/ui";
+import { SyntaxHighlightedCode, VerificationSummaryPanel } from "@majorana/ui";
 import { CheckIcon, CopyIcon, PanelRightIcon, SearchIcon } from "../../../components/icons";
-import { artifactFromResource, frameworkVariantsFromRemote, getLibraryArtifact, loadLibraryArtifacts, type LibraryArtifact, type VerificationCheck } from "../../../lib/library-data";
+import { artifactFromResource, frameworkVariantsFromRemote, getLibraryArtifact, loadLibraryArtifacts, statusFromVerificationSummary, type LibraryArtifact } from "../../../lib/library-data";
 import type { PublicLocale } from "../../../lib/public-locale";
 import { BUILDER_GATES, builderStepLabel, createBuilderStepId, generateBuilderCode, ROTATION_GATES, TWO_QUBIT_GATES, type BuilderCodeVariants, type BuilderGate, type BuilderStep, type CustomGateDefinition } from "../../../lib/studio-builder";
 import { loadStoredCircuit, saveStoredCircuit } from "../../../lib/studio-circuits";
@@ -16,7 +16,9 @@ import { formatShare, simulationChartData, simulationReading, type SimulationCha
 import { fetchQpuBackends, fetchQpuEstimate, fetchQpuSubmissionGate, formatUsd, type QpuBackendInfo, type QpuCostEstimate, type QpuSubmissionGate } from "../../../lib/qpu";
 import { WORKSPACE_COPY } from "../../../lib/workspace-locale";
 import { sampling } from "../../../lib/studio-run-request";
-import { verificationFromMetadata } from "../../../lib/verification-record";
+import { verificationFromMetadata, verificationFromResource, type VerificationCheck } from "../../../lib/verification-record";
+import { artifactExportManifest } from "../../../lib/artifact-export";
+import { studioVerificationDisplayState } from "../../../lib/verification-display";
 
 type StudioPanel = "canvas" | "code" | "simulation" | "versions";
 type StudioAction = "simulation" | "save";
@@ -92,6 +94,7 @@ export function StudioWorkspace({ artifactId, newDraft = false, locale = "en", l
   const [seed, setSeed] = useState("");
   const [artifactHydration, setArtifactHydration] = useState<ArtifactHydration>(() => artifactId && !newDraft ? "loading" : "ready");
   const [artifactSyncError, setArtifactSyncError] = useState(false);
+  const [verificationStale, setVerificationStale] = useState(false);
   // Matches the starter source `code` is initialised with, so the first paint
   // is already self-consistent.
   const [builderSeed, setBuilderSeed] = useState<BuilderSeed>({ key: "seed-0", ...STARTER_SEED });
@@ -222,6 +225,7 @@ export function StudioWorkspace({ artifactId, newDraft = false, locale = "en", l
     setCode(nextDrafts[nextFramework]);
     setPanel("canvas");
     setRunId(null);
+    setVerificationStale(false);
     if (!next) {
       seedCounter.current += 1;
       seedBuilder({ key: `draft-${seedCounter.current}`, ...STARTER_SEED });
@@ -261,11 +265,6 @@ export function StudioWorkspace({ artifactId, newDraft = false, locale = "en", l
 
   async function selectArtifact(id: string) {
     setMessage(null);
-    const local = getLibraryArtifact(id);
-    if (local?.code) {
-      applyArtifact(local);
-      return;
-    }
     try {
       const loaded = await loadArtifact(id);
       if (loaded) applyArtifact(loaded);
@@ -306,6 +305,20 @@ export function StudioWorkspace({ artifactId, newDraft = false, locale = "en", l
     } catch {
       setMessage(copy.copyUnavailable);
     }
+  }
+
+  function downloadDraft() {
+    if (!artifact) return;
+    const exportArtifact = verificationStale
+      ? { ...artifact, status: "stale" as const, verificationSummary: null }
+      : artifact;
+    const body = JSON.stringify(artifactExportManifest(exportArtifact, { framework, code }), null, 2);
+    const url = URL.createObjectURL(new Blob([body], { type: "application/json" }));
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = `${artifact.slug || artifact.id}.majorana.json`;
+    anchor.click();
+    URL.revokeObjectURL(url);
   }
 
   function openSimulation() {
@@ -427,10 +440,20 @@ export function StudioWorkspace({ artifactId, newDraft = false, locale = "en", l
                     <PanelRightIcon size={15} open={inspectorOpen} />
                   </button>
                   <button className="mj-secondary-button" type="button" onClick={() => void copyCode()} title={copied ? copy.copied : copy.copyCode}><CopyIcon size={14} />{copied ? copy.copied : copy.copyCode}</button>
+                  {artifact ? <button className="mj-secondary-button" type="button" onClick={downloadDraft}>{copy.downloadExport}</button> : null}
                   <button className="mj-secondary-button" type="button" disabled={!code.trim()} onClick={openSimulation}>{copy.simulate}</button>
                   <button className="mj-primary-button" type="button" disabled={!code.trim() || busy !== null || !isExecutableCircuitFramework(framework)} onClick={() => void startRun()}>{busy === "save" ? copy.starting : copy.verifySave}</button>
                 </div>
               </div>
+
+              <VerificationSummaryPanel
+                summary={artifact?.verificationSummary ?? null}
+                state={studioVerificationDisplayState({
+                  hydration: artifactHydration,
+                  hasArtifact: Boolean(artifact),
+                  stale: verificationStale,
+                })}
+              />
 
               <nav className="mj-studio-tabs" aria-label={copy.view}>
                 {(["canvas", "code", "simulation", "versions"] as StudioPanel[]).map((item) => (
@@ -467,10 +490,11 @@ export function StudioWorkspace({ artifactId, newDraft = false, locale = "en", l
                       setDrafts(codes);
                       setDraftNotes({});
                       setCode(codes[framework]);
+                      setVerificationStale(Boolean(artifact));
                       setMessage(copy.appliedToCode);
                     }}
                   />
-                  {panel === "code" ? <CodeEditor code={code} framework={framework} onChange={setCode} onCopy={() => void copyCode()} copied={copied} copy={copy} /> : null}
+                  {panel === "code" ? <CodeEditor code={code} framework={framework} onChange={(next) => { setCode(next); setVerificationStale(Boolean(artifact)); }} onCopy={() => void copyCode()} copied={copied} copy={copy} /> : null}
                   {panel === "simulation" ? (
                     <SimulationPanel
                       artifact={artifact}
@@ -485,7 +509,7 @@ export function StudioWorkspace({ artifactId, newDraft = false, locale = "en", l
                       copy={copy}
                     />
                   ) : null}
-                  {panel === "versions" ? <VersionPanel artifact={artifact} runId={runId} copy={copy} /> : null}
+                  {panel === "versions" ? <VersionPanel artifact={artifact} runId={runId} stale={verificationStale} copy={copy} /> : null}
                 </>
               )}
 
@@ -583,7 +607,7 @@ export function StudioWorkspace({ artifactId, newDraft = false, locale = "en", l
               {filteredArtifacts.length ? filteredArtifacts.map((item) => (
                 <article className="mj-studio-discovery-card" key={item.id}>
                   <button type="button" onClick={() => void selectArtifact(item.id)}>
-                    <span className="mj-studio-artifact-mark" aria-hidden="true">{item.status === "verified" ? "✓" : "–"}</span>
+                    <span className="mj-studio-artifact-mark" aria-hidden="true">{item.status === "verified" ? "✓" : "–"}</span><span className="sr-only">{item.status.replaceAll("_", " ")}</span>
                     <span><strong>{item.title}</strong><small>{item.framework} · {item.family} · {formatDiscoveryDate(item.updatedAt, locale)}</small><em>{item.description}</em></span>
                   </button>
                   <a className="mj-secondary-button" href={`/run?artifact=${encodeURIComponent(item.id)}`}>{copy.openRun}</a>
@@ -1386,7 +1410,7 @@ function simulationModelLabel(model: CpuSimulationRecord["model"], copy: StudioC
   return model === "direct_source" ? copy.directSourceModel : copy.standardDecompositionModel;
 }
 
-function VersionPanel({ artifact, runId, copy }: { artifact: LibraryArtifact | null; runId: string | null; copy: StudioCopy }) {
+function VersionPanel({ artifact, runId, stale, copy }: { artifact: LibraryArtifact | null; runId: string | null; stale: boolean; copy: StudioCopy }) {
   const checks: VerificationCheck[] = artifact?.checks ?? [];
   return (
     <section className="mj-studio-surface mj-studio-version-panel" aria-label={copy.versionHistory}>
@@ -1395,7 +1419,7 @@ function VersionPanel({ artifact, runId, copy }: { artifact: LibraryArtifact | n
       {artifact ? (
         <div className="mj-studio-version-evidence">
           <span className="mj-section-label">{copy.evidence}</span>
-          <p className="mj-studio-evidence-grade">{studioEvidenceLabel(artifact.status, copy)}</p>
+          <VerificationSummaryPanel summary={artifact.verificationSummary ?? null} state={stale ? "stale" : undefined} />
           {artifact.criticSummary ? <p className="mj-studio-evidence-summary">{artifact.criticSummary}</p> : null}
           {checks.length ? (
             <ul className="mj-verification-checks">
@@ -1420,13 +1444,6 @@ function VersionPanel({ artifact, runId, copy }: { artifact: LibraryArtifact | n
 
 /** Never the bare word "Verified" for a structural pass — that conflation is what
  * the Vault list was fixed for, and Studio must not reintroduce it. */
-function studioEvidenceLabel(status: LibraryArtifact["status"], copy: StudioCopy): string {
-  if (status === "structural") return copy.evidenceStructural;
-  if (status === "failed") return copy.evidenceFailed;
-  if (status === "verified_caveats") return copy.evidenceCaveats;
-  return copy.evidencePhysical;
-}
-
 async function loadArtifact(id: string): Promise<LibraryArtifact | null> {
   const response = await fetch(`/api/artifacts/${encodeURIComponent(id)}`, { cache: "no-store" });
   if (!response.ok) return null;
@@ -1449,6 +1466,8 @@ async function loadArtifact(id: string): Promise<LibraryArtifact | null> {
     const record = verificationFromMetadata(version.metadata);
     artifact.checks = record.checks ?? artifact.checks;
     artifact.criticSummary = record.criticSummary ?? artifact.criticSummary;
+    artifact.verificationSummary = verificationFromResource(version) ?? artifact.verificationSummary ?? null;
+    artifact.status = statusFromVerificationSummary(artifact.verificationSummary);
   }
   return artifact;
 }

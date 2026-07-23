@@ -70,6 +70,20 @@ async def _close(factory, scope, run_id) -> bool:
         return changed
 
 
+async def _finish(factory, scope, run_id, status: RunStatus) -> RunStatus:
+    async with factory() as session:
+        result = await runs.finish_run(
+            scope,
+            session,
+            run_id,
+            status,
+            event_payload={"status": status.value},
+            event_id=uuid.uuid5(run_id, "run.finished"),
+        )
+        await session.commit()
+        return result
+
+
 @requires_db
 async def test_competing_dead_letter_callbacks_create_one_terminal_sequence(env):
     factory, scope = env
@@ -121,3 +135,23 @@ async def test_terminal_event_conflict_rolls_back_status_and_second_event(env):
         events = await runs.list_run_events(scope, session, run_id)
         assert RunStatus(run.status) is RunStatus.RUNNING
         assert [event.type for event in events] == ["run.error"]
+
+
+@requires_db
+async def test_completion_and_cancellation_race_leave_one_matching_terminal_event(env):
+    factory, scope = env
+    run_id = await _run(factory, scope)
+
+    outcomes = await asyncio.gather(
+        _finish(factory, scope, run_id, RunStatus.SUCCEEDED),
+        _finish(factory, scope, run_id, RunStatus.CANCELLED),
+    )
+
+    async with factory() as session:
+        run = await runs.get_run(scope, session, run_id)
+        events = await runs.list_run_events(scope, session, run_id)
+    terminal = RunStatus(run.status)
+    assert outcomes == [terminal, terminal]
+    assert len(events) == 1
+    assert events[0].type == "run.finished"
+    assert RunStatus(events[0].payload["status"]) is terminal

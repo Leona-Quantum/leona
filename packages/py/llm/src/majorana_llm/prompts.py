@@ -8,7 +8,6 @@ from majorana_contracts.enums import Framework
 from majorana_contracts.plan import (
     BRUTE_FORCE_MAX_VARIABLES,
     EXACT_DIAG_MAX_QUBITS,
-    EXACT_MAX_QUBITS,
 )
 
 
@@ -56,7 +55,7 @@ plumbing and will not be shown to the user as JSON.
 
 Choose the smallest useful artifact contract and the strongest applicable verification
 strategy. The only verification_plan.methods this pipeline can evaluate are
-`return_contract`, `statistical`, `exact`, `exact_diag`, and `brute_force`, and the schema offers no others
+`return_contract`, `statistical`, `exact_diag`, and `brute_force`, and the schema offers no others
 (selected-framework re-execution plus deterministic artifact/resource/measurement checks
 run automatically regardless of what you list). `statistical` compares two measurement-count
 distributions, so list it only when expected_output_keys includes the key holding the
@@ -65,38 +64,17 @@ A plan that lists `statistical` while promising only scalars — cut values, ene
 ratios — is rejected by the plan contract, because no generated code can produce the
 distribution the check needs.
 
-`exact` is the strongest check available: it compares the unitary of the circuit that
-actually ran against a reference circuit, phase-aligned, to 1e-9. It needs a reference,
-so it also needs you to say where that reference comes from.
-
-- Set reference_source to `plan_declared` and write reference_qasm when the task has a
-  canonical construction you can state independently — Bell and GHZ states, QFT, a
-  specific oracle, a named gate decomposition. Write the textbook circuit in OpenQASM 3,
-  not a transcription of the code you expect back. Measurements are ignored; only the
-  unitary is compared, so leave them out. Before declaring one, apply this self-check:
-  could you write this circuit's exact gate list on paper without deriving anything? A
-  single named subroutine passes that test; a multi-stage composition (controlled
-  powers feeding an inverse QFT, an ansatz inside an optimizer loop) usually does not
-  — and a reference you had to derive is as likely to be wrong as the code it will
-  judge. A wrong reference makes `exact` fail every correct candidate identically
-  while the run's other checks pass, and the run dies with nothing to repair. When
-  the self-check fails, leave `exact` off and rely on statistical evidence plus
-  success_criteria.
-- Set reference_source to `parent_artifact` and omit reference_qasm ONLY when the user
-  request is to optimize, transpile, re-express, or clean up a circuit this run already
-  has as its parent, WITHOUT changing what it computes. This is the strongest evidence
-  the pipeline can produce, because the reference was verified on its own. If the
-  request legitimately changes the circuit's behaviour, do not list `exact` at all.
-- `exact` supports at most {EXACT_MAX_QUBITS} qubits and the plan contract rejects it
-  above that. For anything larger, verify statistically.
-- Listing `exact` without a usable reference is rejected. If the task has no canonical
-  reference you can write down honestly, leave it off rather than inventing one — a
-  reference copied from the implementation you are about to ask for proves nothing.
+For Bell or GHZ state preparation, write an explicit `state_preparation_claim` in
+`verification_plan`: family, qubit count, and the relative phase phi in
+(|0...0> + exp(i*phi)|1...1>)/sqrt(2). Use phi=0 only when the request asks for the
+usual positive-phase state; preserve any requested non-canonical phase. The strict
+property verifier reads this typed target only after semantic review has checked it
+against the user's request. Never infer a canonical target merely from the algorithm name.
 
 `exact_diag` is the classical ground truth for a task whose answer is an ENERGY, and it
 is the only physical evidence a variational run can earn: a VQE reports a scalar, so
-`statistical` has no distribution to compare and `exact` has no reference circuit to
-match. List it whenever the request names a Hamiltonian — VQE, ground-state chemistry,
+`statistical` has no distribution to compare. List it whenever the request names a
+Hamiltonian — VQE, ground-state chemistry,
 an Ising or QUBO energy — and write that operator into reference_hamiltonian as Pauli
 terms, one per entry, qubit 0 leftmost: H = 0.5*Z0 + 1.2*Z1 + 0.8*X0X1 becomes
 [{{"coefficient": 0.5, "pauli": "ZI"}}, {{"coefficient": 1.2, "pauli": "IZ"}},
@@ -208,29 +186,33 @@ Describe only capabilities in that list, and describe them as things the user ca
 next — not as things you have already done. If asked for something the product does not
 do (running on real QPU hardware, for instance), say so plainly."""
 
-INTENT_ROUTER_SYSTEM_PROMPT = """You decide how Leona Quantum should handle one user message:
-by answering it, or by running its full execute pipeline.
+INTENT_ROUTER_SYSTEM_PROMPT = """You decide how Leona Quantum should handle one message in
+the Run composer: answer it in chat, or run the full execute pipeline.
 
-The execute pipeline plans a quantum program, generates code for it, runs that code in a
-sandbox, and verifies the result against the request. It is expensive and it can only
-succeed on a concrete, well-posed computational task. Pointed at anything else it does
-not degrade gracefully — it burns its candidate budget and reports a failure to the user.
+The execute pipeline plans a quantum program, generates code, runs it in a sandbox, and
+verifies the result. The Run composer is primarily for doing quantum work. Infer that a
+user wants execution when they state a quantum task, algorithm, state, circuit, problem,
+or experiment — they do NOT need to literally say "run", "execute", or "simulate".
 
-Answer with "execute" only when the message asks for a specific quantum or
-quantum-adjacent computation to actually be built and run, with enough substance to
-implement: an algorithm or problem, and the instance or parameters it applies to.
+Choose "execute" for a concrete or reasonably defaultable quantum task, including short
+task fragments. Examples that MUST execute:
+- "2量子ビットのBell状態"
+- "QAOAで3ノードMaxCut"
+- "H2のVQE"
+- "Grover search for 101"
+- "create a GHZ circuit" or "量子テレポーテーション回路"
 
-Answer with "chat" for everything else, including:
-- greetings, thanks, nonsense, tests, and anything with no request in it
-- conceptual, factual, or how-does-this-work questions
-- questions about the product itself or about a saved artifact
-- opinions, comparisons, recommendations, and choosing an approach
-- requests too vague to implement — a topic without a task
-- requests to explain, review, or critique code without running it
+Choose "chat" only when the message clearly asks for explanation or conversation rather
+than an artifact or computation. Examples that MUST chat:
+- "Bell状態とは？" / "Groverの仕組みを説明して"
+- "What is QAOA?" / "Which framework should I choose?"
+- greetings, thanks, product questions, or an explicit request to explain, compare,
+  recommend, review, or critique without running code.
 
-"chat" is the safe answer. A task sent to chat can be run afterwards in one more turn;
-a non-task sent to execute wastes the budget and shows the user a failure. When the two
-are genuinely balanced, choose chat.
+When a message could be either a request for an explanation or an executable task, prefer
+"execute" unless it contains an explicit explanatory or conversational cue. The planner
+can choose reasonable defaults or report a real capability limit; do not force users to
+repeat an execution instruction.
 
 Reply with JSON only, no prose and no code fence:
 {"intent": "chat" | "execute", "confidence": <0.0-1.0>, "reason": "<one short clause>"}
@@ -249,29 +231,11 @@ def _render(system: str, user: str) -> RenderedPrompt:
     return RenderedPrompt(system=system, user=user)
 
 
-# Whether this run revises an existing verified circuit is the one fact the planner
-# cannot infer from the request, and `exact` with reference_source=parent_artifact is
-# unusable without it. Stated in both directions on purpose: told only when a parent
-# exists, a planner reading no line at all has to guess, and the cheap guess is to
-# claim the parent it hopes is there.
-_PARENT_ARTIFACT_PRESENT = (
-    "This run revises an existing artifact that already passed verification. Its "
-    "circuit is available to the verifier as a reference, so verification_plan may "
-    "set reference_source to `parent_artifact` — but only if the request preserves "
-    "what that circuit computes."
-)
-_PARENT_ARTIFACT_ABSENT = (
-    "This run has no parent artifact. reference_source `parent_artifact` is "
-    "unavailable; there is nothing for it to point at."
-)
-
-
 def render_plan_prompt(
     task_prompt: str,
     research_context: str = "",
     requested_framework: Framework | None = None,
     *,
-    has_parent_artifact: bool = False,
     requested_shots: int | None = None,
     requested_seed: int | None = None,
 ) -> RenderedPrompt:
@@ -302,7 +266,6 @@ def render_plan_prompt(
         f"Selected framework: {_framework_label(requested_framework)}\n\n"
         f"{shots_line}"
         f"{seed_line}"
-        f"{_PARENT_ARTIFACT_PRESENT if has_parent_artifact else _PARENT_ARTIFACT_ABSENT}\n\n"
         f"{research_context or 'No additional research context was available.'}",
     )
 

@@ -20,7 +20,15 @@ class LLMRequest(BaseModel):
     system: str
     user: str = ""
     messages: list["LLMMessage"] | None = None
-    max_tokens: int = Field(default=4096, ge=1)
+    # No default cap: an OpenAI-compatible call with max_tokens omitted lets the
+    # provider use its own ceiling instead of an arbitrary one we picked (namekoQ
+    # never sets this either). A self-imposed cap is what turned reasoning-token
+    # consumption into an outage: bench-14 (2026-07-11) found deepseek-v4-pro
+    # burning an 8192 budget entirely on reasoning, zero code out, on VQE-scale
+    # tasks — the ceiling was the failure, not something reasoning merely bumped
+    # into. Anthropic's Messages API requires a numeric value; AnthropicLLM
+    # supplies one only there (see _ANTHROPIC_DEFAULT_MAX_TOKENS).
+    max_tokens: int | None = Field(default=None, ge=1)
     temperature: float = Field(default=0.0, ge=0.0, le=2.0)
     # Structured decoding: a JSON Schema the reply must satisfy. On OpenAI-compatible
     # endpoints this becomes response_format json_schema (the durable fix for
@@ -79,9 +87,13 @@ def decode_params(request: LLMRequest, key_env: str) -> tuple[dict[str, Any], st
     unavailable now", verified live 2026-07-11), so it gets json_object (guarantees
     syntactically valid JSON) plus the schema injected into the system message to pin
     field names/enums. Module-level so the routing is testable without the SDK."""
-    params: dict[str, Any] = {"max_completion_tokens": request.max_tokens}
+    params: dict[str, Any] = {}
+    if request.max_tokens is not None:
+        params["max_completion_tokens"] = request.max_tokens
     if key_env == "DEEPSEEK_API_KEY":
-        params = {"max_tokens": request.max_tokens, "temperature": request.temperature}
+        params = {"temperature": request.temperature}
+        if request.max_tokens is not None:
+            params["max_tokens"] = request.max_tokens
     system = request.system
     if request.response_schema is not None:
         if key_env == "DEEPSEEK_API_KEY":
@@ -260,6 +272,14 @@ def default_llm() -> "LLMClient":
     return RetryingLLM(inner)
 
 
+# Unlike the OpenAI-compatible chat completions API, Anthropic's Messages API
+# requires a numeric max_tokens on every call — there is no "omit for provider
+# default" option. This is the fallback only when a caller left LLMRequest's
+# max_tokens unset; it is deliberately generous rather than a tight guess, for
+# the same reason the OpenAI-compatible path omits the cap entirely now.
+_ANTHROPIC_DEFAULT_MAX_TOKENS = 16384
+
+
 class AnthropicLLM:
     """Real Anthropic provider client with lazy SDK loading."""
 
@@ -284,12 +304,13 @@ class AnthropicLLM:
                 f"against this JSON Schema:\n{json.dumps(request.response_schema)}"
             )
 
+        max_tokens = request.max_tokens or _ANTHROPIC_DEFAULT_MAX_TOKENS
         client = AsyncAnthropic(api_key=self._api_key)  # picks up ANTHROPIC_API_KEY
         messages = request_messages(request)
         if on_delta is None:
             message = await client.messages.create(
                 model=request.model,
-                max_tokens=request.max_tokens,
+                max_tokens=max_tokens,
                 temperature=request.temperature,
                 system=system,
                 messages=messages,
@@ -299,7 +320,7 @@ class AnthropicLLM:
             text_parts: list[str] = []
             async with client.messages.stream(
                 model=request.model,
-                max_tokens=request.max_tokens,
+                max_tokens=max_tokens,
                 temperature=request.temperature,
                 system=system,
                 messages=messages,

@@ -59,12 +59,42 @@ class VerifierDecision(StrEnum):
     INCONCLUSIVE = "inconclusive"
 
 
+class SemanticReviewDecision(StrEnum):
+    """What the evidence-reading LLM recommends before the strict gate runs."""
+
+    READY = "ready"
+    CODE_REPAIR = "code_repair"
+    REPLAN = "replan"
+    INCONCLUSIVE = "inconclusive"
+
+
+class VerificationFailureClass(StrEnum):
+    """Why verification could not continue or reach PASS."""
+
+    CANDIDATE_DEFECT = "candidate_defect"
+    PLAN_DEFECT = "plan_defect"
+    EVIDENCE_GAP = "evidence_gap"
+    CAPABILITY_LIMIT = "capability_limit"
+    VERIFIER_FAILURE = "verifier_failure"
+    EVIDENCE_CONFLICT = "evidence_conflict"
+
+
+class RetryTarget(StrEnum):
+    """The component allowed to act on typed verification feedback."""
+
+    CODE_GENERATION = "code_generation"
+    PLANNING = "planning"
+    SIMULATION = "simulation"
+    VERIFICATION = "verification"
+    NONE = "none"
+
+
 class VerificationMethod(StrEnum):
     """Every check name the verifier can emit — not only the plannable ones.
 
     The list is exhaustive on purpose. `run_events` is the only channel a human or
     the UI has into a run, and its `verification.result` event types `method` as
-    this enum, so the emitter drops any check whose name is not a member
+    this enum. The emitter now fails loudly when a check is missing here
     (`agent_events.py`). Until 2026-07-20 the six contract checks below were absent,
     and the emitter silently discarded six of the ten checks the panel actually
     runs. Production QPE run 019f7f2d-09c9 rejected its first candidate on one of
@@ -76,11 +106,14 @@ class VerificationMethod(StrEnum):
     (`ck_method_enum` on `verification_records`) is the other half and must widen in
     the same deploy — see db/migrations/versions/0024. That pairing is enforced by
     packages/py/contracts/tests/test_method_allowlist.py rather than remembered.
-    Also decide which side of `PHYSICAL_VERIFICATION_METHODS` the new name falls on;
-    all six added below are contract checks that police the shape of the answer, not
-    its correctness, so none of them lifts a run's grade.
+    Also decide which side of `PHYSICAL_VERIFICATION_METHODS` the new name falls on.
+    The six historical contract checks police shape only; the Bell/GHZ property
+    methods added later prove fixed state-preparation claims.
     """
 
+    # Legacy method: historical events and rows remain readable, but new Plans
+    # cannot select it because planner-authored reference circuits are not
+    # correctness authority.
     EXACT = "exact"
     STATISTICAL = "statistical"
     # Reported counts vs a trusted re-execution of the actual circuit object
@@ -100,6 +133,11 @@ class VerificationMethod(StrEnum):
     MEASUREMENT_POLICY = "measurement_policy"
     SUCCESS_CRITERIA = "success_criteria"
     NATIVE_OPTIMIZATION_EVIDENCE = "native_optimization_evidence"
+    # Fixed-policy state-preparation checks over framework-native statevectors.
+    # Unlike a counts-only comparison, these checks prove the explicitly accepted
+    # relative phase as well as the computational-basis support.
+    BELL_STATE_PROPERTY = "bell_state_property"
+    GHZ_STATE_PROPERTY = "ghz_state_property"
     # Two executions of the SAME candidate agreeing. Excluded from the physical
     # set deliberately: a consistently wrong program also agrees with itself.
     STATISTICAL_REPRODUCIBILITY = "statistical_reproducibility"
@@ -114,7 +152,6 @@ class PlannableVerificationMethod(StrEnum):
     and the 0001 check constraint still carry the retired values.
     """
 
-    EXACT = "exact"
     STATISTICAL = "statistical"
     RETURN_CONTRACT = "return_contract"
     # The independent-ground-truth check, and the only physical evidence a
@@ -133,17 +170,19 @@ class PlannableVerificationMethod(StrEnum):
 
 
 class VerificationResultKind(StrEnum):
-    """PASS and FAIL are judgements about the code. SKIPPED is not a judgement at
-    all: the check was incapable of evaluating this circuit (e.g. the statistical
-    check's statevector path against a circuit with mid-circuit measurement and
-    classical control flow — production run 019f7e46-d688), so it produced no
-    evidence in either direction. A skipped check never blocks a candidate and
-    never lifts `evidence_strength_of` — a run whose only physical check was
-    skipped passes as `structural`, which states exactly what was proved."""
+    """Non-overlapping outcomes for one verification check.
+
+    FAIL means a check ran and established a concrete mismatch. SKIPPED means the
+    check is not applicable by design. UNAVAILABLE means it is applicable but the
+    required capability or evidence is absent. ERROR means the verifier failed to
+    produce a judgement. The latter three never establish a candidate defect.
+    """
 
     PASS = "pass"
     FAIL = "fail"
     SKIPPED = "skipped"
+    UNAVAILABLE = "unavailable"
+    ERROR = "error"
 
 
 class EvidenceStrength(StrEnum):
@@ -155,8 +194,10 @@ class EvidenceStrength(StrEnum):
     reported distribution was compared against the circuit's Born distribution to
     1.8e-16, and until 2026-07-20 both printed the single word "Verified".
 
-    Every consumer compares `verifier_decision == "pass"`, the eval harness included,
-    so the decision stays `pass` and the strength rides alongside it.
+    This grades the checks, not final sufficiency. Verification v2 refuses a final
+    PASS when the check set is structural-only or lacks a dedicated property check;
+    a physical grade may likewise describe one limited passing claim while the final
+    decision remains INCONCLUSIVE because another required claim is unsupported.
     """
 
     PHYSICAL = "physical"
@@ -170,6 +211,8 @@ PHYSICAL_VERIFICATION_METHODS: frozenset[str] = frozenset(
         VerificationMethod.STATISTICAL_NATIVE,
         VerificationMethod.BRUTE_FORCE,
         VerificationMethod.EXACT_DIAG,
+        VerificationMethod.BELL_STATE_PROPERTY,
+        VerificationMethod.GHZ_STATE_PROPERTY,
     }
 )
 """Checks that compare a candidate against what the physics should do.
@@ -178,6 +221,12 @@ PHYSICAL_VERIFICATION_METHODS: frozenset[str] = frozenset(
 reproducibility pair, the trusted side re-executes the circuit OBJECT the
 observer held through the framework's own sampler — the user's result-assembly
 code is not in that loop, so fabricated or mis-assembled counts fail it.
+
+Bell/GHZ property checks compare the complete framework-native statevector with
+an explicit typed relative-phase target accepted by semantic review. They prove
+that bounded state-preparation claim, while statistical methods prove only that
+reported counts agree with the executed circuit. Final sufficiency composes those
+scopes in majorana-verification.
 
 `statistical_reproducibility` is excluded on purpose: it proves only that the program
 agrees with itself across two executions, which a consistently wrong program also does

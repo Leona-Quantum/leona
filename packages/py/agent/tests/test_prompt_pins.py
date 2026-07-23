@@ -22,10 +22,10 @@ def test_endianness_and_result_contract_are_stated():
     assert "FINAL_CIRCUIT" in AGENT_SYSTEM_PROMPT
 
 
-def test_exemplars_are_framed_as_reference_not_answer():
-    """LLM work list item 4: retrieved exemplars are known-good against this
-    pipeline, but the model must implement the current plan, not the exemplar."""
-    assert "verified_exemplars" in AGENT_SYSTEM_PROMPT
+def test_reference_template_is_framed_as_reference_not_answer():
+    """The static per-framework template is reference material for syntax, not
+    a claim of pipeline verification, and not the answer to the current plan."""
+    assert "reference_template" in AGENT_SYSTEM_PROMPT
     assert "not the answer" in AGENT_SYSTEM_PROMPT
 
 

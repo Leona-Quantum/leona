@@ -61,6 +61,8 @@ export interface components {
              */
             updated_at: string;
             /** @default null */
+            verification_summary: components["schemas"]["VerificationSummary"] | null;
+            /** @default null */
             verifier_decision: components["schemas"]["VerifierDecision"] | null;
             visibility: components["schemas"]["Visibility"];
             /**
@@ -206,6 +208,8 @@ export interface components {
             } | null;
             /** Seq */
             seq: number;
+            /** @default null */
+            verification_summary: components["schemas"]["VerificationSummary"] | null;
         } & unknown;
         /**
          * BaselineKind
@@ -546,8 +550,10 @@ export interface components {
          *     reported distribution was compared against the circuit's Born distribution to
          *     1.8e-16, and until 2026-07-20 both printed the single word "Verified".
          *
-         *     Every consumer compares `verifier_decision == "pass"`, the eval harness included,
-         *     so the decision stays `pass` and the strength rides alongside it.
+         *     This grades the checks, not final sufficiency. Verification v2 refuses a final
+         *     PASS when the check set is structural-only or lacks a dedicated property check;
+         *     a physical grade may likewise describe one limited passing claim while the final
+         *     decision remains INCONCLUSIVE because another required claim is unsupported.
          * @enum {string}
          */
         EvidenceStrength: "physical" | "structural";
@@ -678,10 +684,9 @@ export interface components {
          * PauliTerm
          * @description One `coefficient * PauliString` term of a Hamiltonian, as data.
          *
-         *     The reference for `exact_diag` is declared, never executed — the same rule
-         *     `reference_qasm` follows. A Hamiltonian written as framework code would have to
-         *     run in the sandbox to mean anything, which would make a second piece of
-         *     model-authored code the ground truth.
+         *     The reference for `exact_diag` is declared data, never executable code. A
+         *     Hamiltonian written as framework code would have to run in the sandbox to mean
+         *     anything, which would make model-authored code the ground truth.
          */
         PauliTerm: {
             /**
@@ -784,11 +789,9 @@ export interface components {
          * ProblemTerm
          * @description One weighted term of a combinatorial instance, as data.
          *
-         *     The reference for `brute_force` is declared, never executed — the rule
-         *     `reference_qasm` and `reference_hamiltonian` already follow, and for the same
-         *     reason: an instance written as framework code would have to run in the
-         *     sandbox to mean anything, making a second piece of model-authored code the
-         *     ground truth.
+         *     The reference for `brute_force` is declared data, never executed. An instance
+         *     written as framework code would have to run in the sandbox to mean anything,
+         *     making model-authored code the ground truth.
          */
         ProblemTerm: {
             /**
@@ -1108,6 +1111,12 @@ export interface components {
             two_qubit_gate_count: number | null;
         };
         /**
+         * RetryTarget
+         * @description The component allowed to act on typed verification feedback.
+         * @enum {string}
+         */
+        RetryTarget: "code_generation" | "planning" | "simulation" | "verification" | "none";
+        /**
          * Role
          * @enum {string}
          */
@@ -1200,6 +1209,8 @@ export interface components {
              * Format: uuid
              */
             user_id: string;
+            /** @default null */
+            verification_summary: components["schemas"]["VerificationSummary"] | null;
             /** @default null */
             verifier_decision: components["schemas"]["VerifierDecision"] | null;
             /**
@@ -1387,11 +1398,17 @@ export interface components {
          * RunEvent
          * @description Discriminated union of all run event types (class name sets the schema id).
          */
-        RunEvent: components["schemas"]["RunQueued"] | components["schemas"]["RunStarted"] | components["schemas"]["RunModeResolved"] | components["schemas"]["StageStarted"] | components["schemas"]["StageFinished"] | components["schemas"]["PlanProduced"] | components["schemas"]["ResearchCompleted"] | components["schemas"]["LlmCall"] | components["schemas"]["LlmDelta"] | components["schemas"]["ChatDelta"] | components["schemas"]["ChatCompleted"] | components["schemas"]["ChatError"] | components["schemas"]["CodeGenerated"] | components["schemas"]["ScreenResult"] | components["schemas"]["ResourceEstimateResult"] | components["schemas"]["CompilationResult"] | components["schemas"]["CodeFinalized"] | components["schemas"]["SandboxResult"] | components["schemas"]["VerificationResult"] | components["schemas"]["BaselineResult"] | components["schemas"]["ExportClassified"] | components["schemas"]["ArtifactSaved"] | components["schemas"]["RunAnalysis"] | components["schemas"]["RunDiagnosed"] | components["schemas"]["RunRestarted"] | components["schemas"]["RunBestEffort"] | components["schemas"]["RunErrorEvent"] | components["schemas"]["RunFinished"];
+        RunEvent: components["schemas"]["RunQueued"] | components["schemas"]["RunStarted"] | components["schemas"]["RunModeResolved"] | components["schemas"]["StageStarted"] | components["schemas"]["StageFinished"] | components["schemas"]["PlanProduced"] | components["schemas"]["ResearchCompleted"] | components["schemas"]["LlmCall"] | components["schemas"]["LlmDelta"] | components["schemas"]["ChatDelta"] | components["schemas"]["ChatCompleted"] | components["schemas"]["ChatError"] | components["schemas"]["CodeGenerated"] | components["schemas"]["ScreenResult"] | components["schemas"]["ResourceEstimateResult"] | components["schemas"]["CompilationResult"] | components["schemas"]["CodeFinalized"] | components["schemas"]["SandboxResult"] | components["schemas"]["VerificationResult"] | components["schemas"]["SemanticReviewRecorded"] | components["schemas"]["StrictVerificationRecorded"] | components["schemas"]["BaselineResult"] | components["schemas"]["ExportClassified"] | components["schemas"]["ArtifactSaved"] | components["schemas"]["RunAnalysis"] | components["schemas"]["RunDiagnosed"] | components["schemas"]["RunRestarted"] | components["schemas"]["RunBestEffort"] | components["schemas"]["RunErrorEvent"] | components["schemas"]["RunFinished"];
         /** RunFinished */
         RunFinished: {
             /** @default null */
             evidence_strength: components["schemas"]["EvidenceStrength"] | null;
+            /**
+             * Reason Code
+             * @description Machine-readable terminal reason. Optional only for replaying historical events; current failed terminal writes require it at the repository boundary.
+             * @default null
+             */
+            reason_code: string | null;
             /**
              * Residual Risks
              * @default null
@@ -1418,6 +1435,8 @@ export interface components {
              * @enum {string}
              */
             type: "run.finished";
+            /** @default null */
+            verification_summary: components["schemas"]["VerificationSummary"] | null;
             /** @default null */
             verifier_decision: components["schemas"]["VerifierDecision"] | null;
         };
@@ -1640,6 +1659,74 @@ export interface components {
             typecheck_ok: boolean;
         };
         /**
+         * SemanticReviewDecision
+         * @description What the evidence-reading LLM recommends before the strict gate runs.
+         * @enum {string}
+         */
+        SemanticReviewDecision: "ready" | "code_repair" | "replan" | "inconclusive";
+        /** SemanticReviewRecorded */
+        SemanticReviewRecorded: {
+            /** Attempt Seq */
+            attempt_seq: number;
+            /**
+             * Candidate Id
+             * Format: uuid
+             */
+            candidate_id: string;
+            /**
+             * Confidence
+             * @default null
+             */
+            confidence: ("high" | "medium" | "low") | null;
+            decision: components["schemas"]["SemanticReviewDecision"];
+            /**
+             * Execution Id
+             * Format: uuid
+             */
+            execution_id: string;
+            /** @default null */
+            failure_class: components["schemas"]["VerificationFailureClass"] | null;
+            /** Feedback */
+            feedback?: {
+                [key: string]: unknown;
+            };
+            /** Reason Code */
+            reason_code: string;
+            retry_target: components["schemas"]["RetryTarget"];
+            /**
+             * Review Id
+             * Format: uuid
+             */
+            review_id: string;
+            /**
+             * Run Id
+             * Format: uuid
+             */
+            run_id: string;
+            /**
+             * Seq
+             * @description Unique per run; powers replay and SSE Last-Event-ID
+             */
+            seq: number;
+            /**
+             * Severity
+             * @default null
+             */
+            severity: ("none" | "minor" | "major" | "blocking") | null;
+            /** Source Fingerprint */
+            source_fingerprint: string;
+            /**
+             * Ts
+             * Format: date-time
+             */
+            ts: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "verification.semantic_review";
+        };
+        /**
          * Stage
          * @description Pipeline stages in execution order; the orchestrator owns transitions.
          * @enum {string}
@@ -1697,6 +1784,100 @@ export interface components {
              */
             type: "stage.started";
         };
+        /**
+         * StatePreparationClaim
+         * @description Typed Bell/GHZ target accepted by semantic review before strict checks.
+         *
+         *     The Plan records the requested relative phase as data; it is not correctness
+         *     authority by itself. The semantic reviewer owns request-to-Plan alignment,
+         *     then the fixed verifier compares native evidence with this bounded target.
+         */
+        StatePreparationClaim: {
+            /**
+             * Family
+             * @enum {string}
+             */
+            family: "bell" | "ghz";
+            /**
+             * Measurement Binding
+             * @default identity_when_present
+             * @constant
+             */
+            measurement_binding: "identity_when_present";
+            /** Qubits */
+            qubits: number;
+            /**
+             * Relative Phase Radians
+             * @description Relative phase phi in (|0...0> + exp(i*phi)|1...1>)/sqrt(2). Semantic review must confirm that phi reflects the user's request.
+             * @default 0
+             */
+            relative_phase_radians: number;
+        };
+        /** StrictVerificationRecorded */
+        StrictVerificationRecorded: {
+            /**
+             * Attempt Id
+             * Format: uuid
+             */
+            attempt_id: string;
+            /** Attempt Seq */
+            attempt_seq: number;
+            /** Candidate Defect Observed */
+            candidate_defect_observed: boolean;
+            /**
+             * Candidate Id
+             * Format: uuid
+             */
+            candidate_id: string;
+            /** Claim Coverage */
+            claim_coverage?: {
+                [key: string]: unknown;
+            }[];
+            decision: components["schemas"]["VerifierDecision"];
+            /** @default null */
+            evidence_strength: components["schemas"]["EvidenceStrength"] | null;
+            /**
+             * Execution Id
+             * Format: uuid
+             */
+            execution_id: string;
+            /** @default null */
+            failure_class: components["schemas"]["VerificationFailureClass"] | null;
+            /** Reason Code */
+            reason_code: string;
+            retry_target: components["schemas"]["RetryTarget"];
+            /**
+             * Run Id
+             * Format: uuid
+             */
+            run_id: string;
+            /**
+             * Semantic Review Id
+             * Format: uuid
+             */
+            semantic_review_id: string;
+            /**
+             * Seq
+             * @description Unique per run; powers replay and SSE Last-Event-ID
+             */
+            seq: number;
+            /** Source Fingerprint */
+            source_fingerprint: string;
+            /**
+             * Ts
+             * Format: date-time
+             */
+            ts: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "verification.strict_attempt";
+            /** Unverified Claims */
+            unverified_claims?: string[];
+            /** Verifier Version */
+            verifier_version: string;
+        };
         /** SuccessCriteria */
         SuccessCriteria: {
             /**
@@ -1724,12 +1905,26 @@ export interface components {
          */
         TopLevelExecution: "required" | "demo_only" | "forbidden";
         /**
+         * VerificationCheckSummary
+         * @description Bounded public projection of one trusted verification check.
+         */
+        VerificationCheckSummary: {
+            method: components["schemas"]["VerificationMethod"];
+            result: components["schemas"]["VerificationResultKind"];
+        };
+        /**
+         * VerificationFailureClass
+         * @description Why verification could not continue or reach PASS.
+         * @enum {string}
+         */
+        VerificationFailureClass: "candidate_defect" | "plan_defect" | "evidence_gap" | "capability_limit" | "verifier_failure" | "evidence_conflict";
+        /**
          * VerificationMethod
          * @description Every check name the verifier can emit — not only the plannable ones.
          *
          *     The list is exhaustive on purpose. `run_events` is the only channel a human or
          *     the UI has into a run, and its `verification.result` event types `method` as
-         *     this enum, so the emitter drops any check whose name is not a member
+         *     this enum. The emitter now fails loudly when a check is missing here
          *     (`agent_events.py`). Until 2026-07-20 the six contract checks below were absent,
          *     and the emitter silently discarded six of the ten checks the panel actually
          *     runs. Production QPE run 019f7f2d-09c9 rejected its first candidate on one of
@@ -1741,12 +1936,12 @@ export interface components {
          *     (`ck_method_enum` on `verification_records`) is the other half and must widen in
          *     the same deploy — see db/migrations/versions/0024. That pairing is enforced by
          *     packages/py/contracts/tests/test_method_allowlist.py rather than remembered.
-         *     Also decide which side of `PHYSICAL_VERIFICATION_METHODS` the new name falls on;
-         *     all six added below are contract checks that police the shape of the answer, not
-         *     its correctness, so none of them lifts a run's grade.
+         *     Also decide which side of `PHYSICAL_VERIFICATION_METHODS` the new name falls on.
+         *     The six historical contract checks police shape only; the Bell/GHZ property
+         *     methods added later prove fixed state-preparation claims.
          * @enum {string}
          */
-        VerificationMethod: "exact" | "statistical" | "statistical_native" | "brute_force" | "exact_diag" | "return_contract" | "qasm_parse" | "structural" | "resource_contract" | "measurement_policy" | "success_criteria" | "native_optimization_evidence" | "statistical_reproducibility";
+        VerificationMethod: "exact" | "statistical" | "statistical_native" | "brute_force" | "exact_diag" | "return_contract" | "qasm_parse" | "structural" | "resource_contract" | "measurement_policy" | "success_criteria" | "native_optimization_evidence" | "bell_state_property" | "ghz_state_property" | "statistical_reproducibility";
         /** VerificationPlan */
         VerificationPlan: {
             /**
@@ -1771,7 +1966,7 @@ export interface components {
              * Methods
              * @description Verification primitives to run against the generated code
              */
-            methods: ("exact" | "statistical" | "return_contract" | "exact_diag" | "brute_force")[];
+            methods: ("statistical" | "return_contract" | "exact_diag" | "brute_force")[];
             /**
              * Reference Hamiltonian
              * @description The Hamiltonian the 'exact_diag' check diagonalizes, required when 'exact_diag' is listed. Write the operator the task actually names, in a real Pauli basis, one term per entry — not a transcription of the code you expect back. success_criteria.primary_metric must name the result key holding the energy the run reports.
@@ -1790,23 +1985,16 @@ export interface components {
              */
             reference_problem: components["schemas"]["ReferenceProblem"] | null;
             /**
-             * Reference Qasm
-             * @description OpenQASM 2 or 3 source for the circuit the generated code must match, required when reference_source is 'plan_declared'. Write the canonical textbook construction, not a copy of the code you expect. Measurements are ignored: only the unitary is compared.
-             * @default null
-             */
-            reference_qasm: string | null;
-            /**
-             * Reference Source
-             * @description Where the 'exact' check gets the circuit it compares against. 'plan_declared' means you supply reference_qasm below. 'parent_artifact' means the already-verified circuit this run revises is the reference — choose it only when the request is to optimize, transpile, or refactor that circuit WITHOUT changing what it computes, and only when you were told this run has a parent artifact.
-             * @default null
-             */
-            reference_source: ("plan_declared" | "parent_artifact") | null;
-            /**
              * Required Invariants
              * @description Invariants that must survive any repair iteration
              * @default null
              */
             required_invariants: string[] | null;
+            /**
+             * @description Explicit Bell/GHZ target for the fixed native-state property verifier. Omission means that state-preparation correctness is unsupported, not that the canonical positive-phase target may be inferred.
+             * @default null
+             */
+            state_preparation_claim: components["schemas"]["StatePreparationClaim"] | null;
             /**
              * Thresholds
              * @description Pass thresholds per metric, e.g. {fidelity_min: 0.999}
@@ -1846,6 +2034,26 @@ export interface components {
         };
         /** VerificationResult */
         VerificationResult: {
+            /**
+             * Attempt Id
+             * @default null
+             */
+            attempt_id: string | null;
+            /**
+             * Attempt Seq
+             * @default null
+             */
+            attempt_seq: number | null;
+            /**
+             * Candidate Id
+             * @default null
+             */
+            candidate_id: string | null;
+            /**
+             * Check Index
+             * @default null
+             */
+            check_index: number | null;
             /** Details */
             details?: {
                 [key: string]: unknown;
@@ -1863,6 +2071,11 @@ export interface components {
              */
             seq: number;
             /**
+             * Source Fingerprint
+             * @default null
+             */
+            source_fingerprint: string | null;
+            /**
              * Ts
              * Format: date-time
              */
@@ -1875,16 +2088,40 @@ export interface components {
         };
         /**
          * VerificationResultKind
-         * @description PASS and FAIL are judgements about the code. SKIPPED is not a judgement at
-         *     all: the check was incapable of evaluating this circuit (e.g. the statistical
-         *     check's statevector path against a circuit with mid-circuit measurement and
-         *     classical control flow — production run 019f7e46-d688), so it produced no
-         *     evidence in either direction. A skipped check never blocks a candidate and
-         *     never lifts `evidence_strength_of` — a run whose only physical check was
-         *     skipped passes as `structural`, which states exactly what was proved.
+         * @description Non-overlapping outcomes for one verification check.
+         *
+         *     FAIL means a check ran and established a concrete mismatch. SKIPPED means the
+         *     check is not applicable by design. UNAVAILABLE means it is applicable but the
+         *     required capability or evidence is absent. ERROR means the verifier failed to
+         *     produce a judgement. The latter three never establish a candidate defect.
          * @enum {string}
          */
-        VerificationResultKind: "pass" | "fail" | "skipped";
+        VerificationResultKind: "pass" | "fail" | "skipped" | "unavailable" | "error";
+        /**
+         * VerificationSummary
+         * @description Typed final verification state shared by events and API resources.
+         *
+         *     The object is optional on legacy resources, but every newly written summary is
+         *     complete enough to explain the decision without inferring trust from absence.
+         */
+        VerificationSummary: {
+            /** Candidate Defect Observed */
+            candidate_defect_observed: boolean;
+            /** Checks */
+            checks?: components["schemas"]["VerificationCheckSummary"][];
+            decision: components["schemas"]["VerifierDecision"];
+            /** @default null */
+            evidence_strength: components["schemas"]["EvidenceStrength"] | null;
+            /** @default null */
+            failure_class: components["schemas"]["VerificationFailureClass"] | null;
+            /** Reason Code */
+            reason_code: string;
+            retry_target: components["schemas"]["RetryTarget"];
+            /** @default null */
+            semantic_review_decision: components["schemas"]["SemanticReviewDecision"] | null;
+            /** Unverified Claims */
+            unverified_claims?: string[];
+        };
         /**
          * VerifierDecision
          * @enum {string}

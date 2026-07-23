@@ -1,9 +1,8 @@
 import pytest
 from pydantic import ValidationError
 
-from majorana_contracts import Plan
+from majorana_contracts import Plan, PlannableVerificationMethod
 from majorana_contracts.enums import VerificationMethod
-from majorana_contracts.plan import EXACT_MAX_QUBITS
 
 VALID = {
     "domain": "chemistry",
@@ -55,6 +54,46 @@ def test_extra_fields_rejected():
         Plan.model_validate({**VALID, "vibes": "good"})
 
 
+def _with_state_claim(*, algorithm="Bell", family="bell", qubits=2, phase=0.0):
+    return {
+        **VALID,
+        "algorithm": algorithm,
+        "qubits_estimate": qubits,
+        "verification_plan": {
+            "methods": ["return_contract"],
+            "state_preparation_claim": {
+                "family": family,
+                "qubits": qubits,
+                "relative_phase_radians": phase,
+            },
+        },
+    }
+
+
+def test_state_preparation_claim_preserves_noncanonical_relative_phase():
+    plan = Plan.model_validate(_with_state_claim(phase=3.141592653589793))
+
+    assert plan.verification_plan is not None
+    assert plan.verification_plan.state_preparation_claim is not None
+    assert plan.verification_plan.state_preparation_claim.relative_phase_radians == pytest.approx(
+        3.141592653589793
+    )
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        _with_state_claim(algorithm="QFT"),
+        _with_state_claim(algorithm="Bell", family="ghz"),
+        _with_state_claim(algorithm="Bell", qubits=3),
+        _with_state_claim(algorithm="GHZ", family="ghz", qubits=2),
+    ],
+)
+def test_state_preparation_claim_must_match_algorithm_and_width(payload):
+    with pytest.raises(ValidationError):
+        Plan.model_validate(payload)
+
+
 def _with_statistical(output_keys: list[str]) -> dict:
     return {
         **VALID,
@@ -81,81 +120,37 @@ def test_statistical_allowed_when_a_distribution_key_is_promised(key):
     assert plan.verification_plan is not None
 
 
-BELL_QASM = """OPENQASM 3.0;
-include "stdgates.inc";
-qubit[2] q;
-h q[0];
-cx q[0], q[1];
-"""
-
-
-def _with_exact(verification: dict, **plan_fields) -> dict:
-    return {
+@pytest.mark.parametrize("removed_field", ["reference_source", "reference_qasm"])
+def test_removed_reference_qasm_fields_are_rejected(removed_field):
+    payload = {
         **VALID,
-        **plan_fields,
-        "verification_plan": {"methods": ["exact", "return_contract"], **verification},
+        "verification_plan": {
+            "methods": ["return_contract"],
+            removed_field: "plan-authored reference",
+        },
     }
+    with pytest.raises(ValidationError) as exc:
+        Plan.model_validate(payload)
+    assert removed_field in str(exc.value)
 
 
-def test_exact_is_plannable_with_a_declared_reference():
-    """`exact` was in VerificationMethod but not in the planner's schema, so no plan
-    could ever request it and verify_exact had no caller."""
-    plan = Plan.model_validate(
-        _with_exact({"reference_source": "plan_declared", "reference_qasm": BELL_QASM})
-    )
+def test_exact_cannot_be_selected_by_a_new_plan():
+    payload = {
+        **VALID,
+        "verification_plan": {"methods": ["exact", "return_contract"]},
+    }
+    plan = Plan.model_validate(payload)
     assert plan.verification_plan is not None
-    assert plan.verification_plan.reference_qasm == BELL_QASM
+    assert plan.verification_plan.methods == [VerificationMethod.RETURN_CONTRACT]
+    assert "exact" not in {method.value for method in PlannableVerificationMethod}
 
 
-def test_exact_is_plannable_against_the_parent_artifact():
-    plan = Plan.model_validate(_with_exact({"reference_source": "parent_artifact"}))
-    assert plan.verification_plan is not None
-    assert plan.verification_plan.reference_source == "parent_artifact"
-
-
-def test_exact_without_a_reference_source_is_rejected():
-    with pytest.raises(ValidationError) as exc:
-        Plan.model_validate(_with_exact({}))
-    assert "reference_source" in str(exc.value)
-
-
-def test_plan_declared_reference_without_qasm_is_rejected():
-    with pytest.raises(ValidationError) as exc:
-        Plan.model_validate(_with_exact({"reference_source": "plan_declared"}))
-    assert "reference_qasm" in str(exc.value)
-
-
-def test_parent_reference_carrying_qasm_is_rejected():
-    """A reference the verifier will ignore misstates what was checked."""
-    with pytest.raises(ValidationError) as exc:
-        Plan.model_validate(
-            _with_exact({"reference_source": "parent_artifact", "reference_qasm": BELL_QASM})
-        )
-    assert "ignored" in str(exc.value)
-
-
-def test_exact_above_the_qubit_ceiling_is_rejected():
-    """exact_equivalence raises above its ceiling and verify_exact turns that into a
-    FAIL — a check no repair can fix, which is the #90 failure shape."""
-    reference = {"reference_source": "plan_declared", "reference_qasm": BELL_QASM}
-    with pytest.raises(ValidationError) as exc:
-        Plan.model_validate(_with_exact(reference, qubits_estimate=EXACT_MAX_QUBITS + 1))
-    assert "at most" in str(exc.value)
-    assert (
-        Plan.model_validate(
-            _with_exact(reference, qubits_estimate=EXACT_MAX_QUBITS)
-        ).qubits_estimate
-        == EXACT_MAX_QUBITS
-    )
-
-
-def test_a_plan_without_exact_may_still_omit_a_reference():
-    """The rule is scoped to the contradiction: nothing else needs a reference."""
-    plan = Plan.model_validate(
-        {**VALID, "qubits_estimate": 24, "verification_plan": {"methods": ["return_contract"]}}
-    )
-    assert plan.verification_plan is not None
-    assert plan.verification_plan.reference_source is None
+def test_plan_schema_contains_no_reference_qasm_fields_or_exact_choice():
+    schema = Plan.model_json_schema()
+    verification = schema["$defs"]["VerificationPlan"]
+    assert "reference_source" not in verification["properties"]
+    assert "reference_qasm" not in verification["properties"]
+    assert "exact" not in verification["properties"]["methods"]["items"]["enum"]
 
 
 def test_scalar_only_plan_without_statistical_is_still_fine():
@@ -169,43 +164,6 @@ def test_scalar_only_plan_without_statistical_is_still_fine():
         }
     )
     assert plan.expected_output_keys == ["optimal_cut", "approximation_ratio"]
-
-
-def test_exact_on_a_non_circuit_artifact_is_rejected():
-    """artifact_type 'other' gets no trusted observer, so no interchange QASM is
-    emitted and the exact check has nothing to compare — an unfixable failure on
-    every candidate, the same shape as the other three rules here."""
-    with pytest.raises(ValidationError) as exc:
-        Plan.model_validate(
-            _with_exact(
-                {"reference_source": "plan_declared", "reference_qasm": BELL_QASM},
-                artifact_contract={
-                    "artifact_type": "other",
-                    "measurement_policy": "none",
-                    "top_level_execution": "required",
-                },
-            )
-        )
-    assert "non-circuit artifact" in str(exc.value)
-
-
-def test_exact_on_a_circuit_artifact_is_still_allowed():
-    plan = Plan.model_validate(
-        _with_exact(
-            {"reference_source": "plan_declared", "reference_qasm": BELL_QASM},
-            artifact_contract={
-                "artifact_type": "QuantumCircuit",
-                # `specified`, not `measure_all`: VALID promises two scalars and no
-                # distribution, so `measure_all` is now rejected in its own right
-                # (see _measure_all_needs_a_distribution_to_show_for_it below). The
-                # policy is incidental to what this test asserts, which is that
-                # artifact_type alone does not block `exact`.
-                "measurement_policy": "specified",
-                "top_level_execution": "required",
-            },
-        )
-    )
-    assert plan.artifact_contract is not None
 
 
 # The plan production VQE run 019f7f2d-9504 actually emitted, trimmed to the fields

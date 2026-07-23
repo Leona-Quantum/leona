@@ -42,6 +42,42 @@ const QASM = {
   available: true,
   epilogue_error: null,
 };
+const PASS_SUMMARY = {
+  decision: "pass" as const,
+  evidence_strength: "physical" as const,
+  reason_code: "all_required_checks_passed",
+  candidate_defect_observed: false,
+  failure_class: null,
+  retry_target: "none" as const,
+  semantic_review_decision: "ready" as const,
+  checks: [{ method: "statistical" as const, result: "pass" as const }],
+  unverified_claims: [],
+};
+const FAIL_SUMMARY = {
+  decision: "fail" as const,
+  evidence_strength: null,
+  reason_code: "statistical_mismatch",
+  candidate_defect_observed: true,
+  failure_class: "candidate_defect" as const,
+  retry_target: "code_generation" as const,
+  semantic_review_decision: "code_repair" as const,
+  checks: [{ method: "statistical" as const, result: "fail" as const }],
+  unverified_claims: [],
+};
+const INCONCLUSIVE_SUMMARY = {
+  decision: "inconclusive" as const,
+  evidence_strength: null,
+  reason_code: "required_check_unavailable",
+  candidate_defect_observed: false,
+  failure_class: "capability_limit" as const,
+  retry_target: "none" as const,
+  semantic_review_decision: "ready" as const,
+  checks: [
+    { method: "return_contract" as const, result: "pass" as const },
+    { method: "statistical" as const, result: "unavailable" as const },
+  ],
+  unverified_claims: ["Expected physical distribution"],
+};
 
 // ---- canonical successful run -----------------------------------------------------------
 const VERIFIED: RunEvent[] = [
@@ -114,6 +150,7 @@ const VERIFIED: RunEvent[] = [
     ts: ts(22),
     method: "statistical",
     result: "pass",
+    attempt_id: null, attempt_seq: null, candidate_id: null, check_index: null, source_fingerprint: null,
     details: { metric: "TVD", metric_value: 0.0088, threshold: 0.05, seed: 42, shots: 4096 },
   },
   { type: "stage.finished", run_id: RUN, seq: 17, ts: ts(23), stage: "verify", ok: true, duration_ms: 5620 },
@@ -231,7 +268,7 @@ const VERIFIED: RunEvent[] = [
     ],
     error: null,
   },
-  { type: "run.finished", run_id: RUN, seq: 41, ts: ts(47), status: "succeeded", verifier_decision: "pass", evidence_strength: "physical", residual_risks: "Simulation only; no QPU execution was requested." },
+  { type: "run.finished", run_id: RUN, seq: 41, ts: ts(47), status: "succeeded", verifier_decision: "pass", evidence_strength: "physical", reason_code: "all_required_checks_passed", residual_risks: "Simulation only; no QPU execution was requested.", verification_summary: PASS_SUMMARY },
 ];
 
 // ---- a run that fails verification -------------------------------------------------------
@@ -244,6 +281,7 @@ const FAILED: RunEvent[] = [
     ts: ts(22),
     method: "statistical",
     result: "fail",
+    attempt_id: null, attempt_seq: null, candidate_id: null, check_index: null, source_fingerprint: null,
     details: { metric: "TVD", metric_value: 0.21, threshold: 0.05, seed: 42, shots: 4096 },
   },
   { type: "stage.finished", run_id: RUN, seq: 17, ts: ts(23), stage: "verify", ok: false, duration_ms: 1100 },
@@ -258,7 +296,7 @@ const FAILED: RunEvent[] = [
     message: "Statistical mismatch exceeds tolerance; regenerate before retrying.",
     attempt: 1,
   },
-  { type: "run.finished", run_id: RUN, seq: 19, ts: ts(25), status: "failed", verifier_decision: "fail", evidence_strength: null, residual_risks: "Verification failed; no final execution was attempted." },
+  { type: "run.finished", run_id: RUN, seq: 19, ts: ts(25), status: "failed", verifier_decision: "fail", evidence_strength: null, reason_code: "statistical_mismatch", residual_risks: "Verification failed; no final execution was attempted.", verification_summary: FAIL_SUMMARY },
 ];
 
 // A run that spent its whole budget without a passing candidate. Before
@@ -299,7 +337,9 @@ const EXHAUSTED: RunEvent[] = [
     status: "failed",
     verifier_decision: "fail",
     evidence_strength: null,
+    reason_code: "candidate_budget_exhausted",
     residual_risks: null,
+    verification_summary: FAIL_SUMMARY,
   },
 ];
 
@@ -319,6 +359,7 @@ const STRUCTURAL_SKIP: RunEvent[] = [
     ts: ts(22),
     method: "statistical",
     result: "skipped",
+    attempt_id: null, attempt_seq: null, candidate_id: null, check_index: null, source_fingerprint: null,
     details: {
       skip_reason: "statevector_incapable",
       error:
@@ -332,6 +373,7 @@ const STRUCTURAL_SKIP: RunEvent[] = [
     ts: ts(22),
     method: "return_contract",
     result: "pass",
+    attempt_id: null, attempt_seq: null, candidate_id: null, check_index: null, source_fingerprint: null,
     details: { note: "result keys matched the plan contract" },
   },
   { type: "stage.finished", run_id: RUN, seq: 18, ts: ts(23), stage: "verify", ok: true, duration_ms: 900 },
@@ -343,8 +385,18 @@ const STRUCTURAL_SKIP: RunEvent[] = [
     status: "succeeded",
     verifier_decision: "pass",
     evidence_strength: "structural",
+    reason_code: "structural_claims_only",
     residual_risks: "The statistical check cannot simulate feed-forward circuits; no physical check ran.",
+    verification_summary: { ...PASS_SUMMARY, evidence_strength: "structural", reason_code: "structural_claims_only", checks: [{ method: "return_contract", result: "pass" }] },
   },
+];
+
+const INCONCLUSIVE: RunEvent[] = [
+  ...VERIFIED.slice(0, 15),
+  { type: "verification.result", run_id: RUN, seq: 16, ts: ts(22), method: "statistical", result: "unavailable", attempt_id: null, attempt_seq: null, candidate_id: null, check_index: null, source_fingerprint: null, details: { note: "dynamic circuit unsupported" } },
+  { type: "stage.finished", run_id: RUN, seq: 17, ts: ts(23), stage: "verify", ok: true, duration_ms: 900 },
+  { type: "artifact.saved", run_id: RUN, seq: 18, ts: ts(24), artifact_id: ART, version_id: `${ART}-v2`, version_seq: 2 },
+  { type: "run.finished", run_id: RUN, seq: 19, ts: ts(25), status: "succeeded", verifier_decision: "inconclusive", evidence_strength: null, reason_code: "required_check_unavailable", residual_risks: "Expected physical distribution was not verified.", verification_summary: INCONCLUSIVE_SUMMARY },
 ];
 
 export const RUN_FIXTURES: Record<string, RunEvent[]> = {
@@ -352,6 +404,7 @@ export const RUN_FIXTURES: Record<string, RunEvent[]> = {
   "demo-failed": FAILED,
   "demo-exhausted": EXHAUSTED,
   "demo-skipped": STRUCTURAL_SKIP,
+  "demo-inconclusive": INCONCLUSIVE,
   "demo-midrun": MID_RUN,
   "demo-queued": QUEUED,
 };
@@ -361,6 +414,7 @@ export const RUN_FIXTURE_META: { id: string; label: string }[] = [
   { id: "demo-failed", label: "Failed verification" },
   { id: "demo-exhausted", label: "Budget exhausted (best effort)" },
   { id: "demo-skipped", label: "Statistical check skipped (structural pass)" },
+  { id: "demo-inconclusive", label: "Verification unavailable (private artifact)" },
   { id: "demo-midrun", label: "Mid-run (verify)" },
   { id: "demo-queued", label: "Queued (waiting)" },
 ];

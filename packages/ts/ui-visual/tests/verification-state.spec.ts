@@ -1,0 +1,40 @@
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { expect, test, type Page } from "@playwright/test";
+
+const distDir = join(dirname(fileURLToPath(import.meta.url)), "..", "dist");
+
+async function loadStory(page: Page, name: string) {
+  const html = readFileSync(join(distDir, `${name}.html`), "utf8");
+  await page.setContent(html, { waitUntil: "load" });
+}
+
+test("INCONCLUSIVE warning is persistent and exposes all audit fields", async ({ page }) => {
+  await loadStory(page, "studio-verification-inconclusive");
+  await expect(page.getByText("Verification unavailable — correctness has not been confirmed.")).toBeVisible();
+  await expect(page.getByText("required_check_unavailable")).toBeVisible();
+  await expect(page.getByText("Unavailable or errored checks")).toBeVisible();
+  await expect(page.getByText("Unverified claims")).toBeVisible();
+  await expect(page.getByText("Recommended next action")).toBeVisible();
+});
+
+test("edited PASS evidence is replaced by stale state", async ({ page }) => {
+  await loadStory(page, "studio-verification-stale");
+  await expect(page.getByText("Verification stale")).toBeVisible();
+  await expect(page.getByText("Verified", { exact: true })).toHaveCount(0);
+});
+
+test("legacy evidence never displays Verified", async ({ page }) => {
+  await loadStory(page, "studio-verification-legacy");
+  await expect(page.getByText("Legacy evidence unknown")).toBeVisible();
+  await expect(page.getByText("Verified", { exact: true })).toHaveCount(0);
+});
+
+test("mobile INCONCLUSIVE warning remains visible without horizontal overflow", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await loadStory(page, "studio-verification-inconclusive");
+  await expect(page.getByText("Verification unavailable — correctness has not been confirmed.")).toBeVisible();
+  const sizes = await page.evaluate(() => ({ scroll: document.documentElement.scrollWidth, client: document.documentElement.clientWidth }));
+  expect(sizes.scroll).toBeLessThanOrEqual(sizes.client);
+});

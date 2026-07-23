@@ -1,0 +1,10 @@
+id: v2-04-plan-mismatch
+category: routing
+description: A clear request and Plan mismatch routes to a Plan revision.
+expected:
+  semantic_review_decision: replan
+  failure_class: plan_defect
+  retry_target: planning
+  candidate_revisions_consumed: 1
+  materialized: false
+  public_eligible: false

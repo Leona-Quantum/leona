@@ -9,13 +9,20 @@ from majorana_agent import (
     ExecutionFailureKind,
     ExecutionOutput,
     MemoryAgentStore,
-    PublishedArtifact,
+    MaterializedArtifact,
+    SemanticReviewOutput,
     ToolBroker,
     ToolCall,
     ToolName,
     VerificationOutput,
 )
-from majorana_contracts.enums import Algorithm, Framework, VerifierDecision
+from majorana_contracts.enums import (
+    Algorithm,
+    Framework,
+    RetryTarget,
+    SemanticReviewDecision,
+    VerifierDecision,
+)
 from majorana_contracts.plan import Plan
 
 
@@ -59,11 +66,34 @@ class RepairingExecutor:
         )
 
 
-class Verifier:
-    async def verify(self, _candidate, _execution, _plan):
+class Reviewer:
+    async def review(self, _candidate, _execution, _plan):
+        return SemanticReviewOutput(
+            decision=SemanticReviewDecision.READY,
+            feedback={},
+            reason_code="semantic_ready",
+            retry_target=RetryTarget.NONE,
+        )
+
+
+class StrictVerifier:
+    async def verify_strict(self, _candidate, _execution, _plan, _review):
         return VerificationOutput(
             decision=VerifierDecision.PASS,
             deterministic_checks=[{"method": "return_contract", "result": "pass"}],
+        )
+
+
+class InconclusiveStrictVerifier:
+    """No dedicated property verifier for this algorithm (e.g. QFT) — evidence
+    insufficiency, not a defect."""
+
+    async def verify_strict(self, _candidate, _execution, _plan, _review):
+        return VerificationOutput(
+            decision=VerifierDecision.INCONCLUSIVE,
+            deterministic_checks=[{"method": "return_contract", "result": "pass"}],
+            reason_code="strict_evidence_insufficient",
+            retry_target=RetryTarget.NONE,
         )
 
 
@@ -73,8 +103,8 @@ class Converter:
 
 
 class Publisher:
-    async def publish(self, candidate, _execution, _verification, _conversion, _plan):
-        return PublishedArtifact(
+    async def materialize(self, candidate, *_args):
+        return MaterializedArtifact(
             artifact_id=uuid4(),
             version_id=uuid4(),
             version_seq=1,
@@ -114,8 +144,12 @@ class RepairModel:
         if state is AgentState.EXECUTED:
             return ToolCall(
                 tool_call_id=str(number),
-                name=ToolName.VERIFY_INTENT_ALIGNMENT,
+                name=ToolName.REVIEW_CANDIDATE,
                 arguments=arguments,
+            )
+        if state is AgentState.READY_FOR_STRICT_VERIFICATION:
+            return ToolCall(
+                tool_call_id=str(number), name=ToolName.STRICT_VERIFY, arguments=arguments
             )
         if state is AgentState.VERIFIED:
             return ToolCall(
@@ -124,11 +158,11 @@ class RepairModel:
                 arguments=arguments,
             )
         return ToolCall(
-            tool_call_id=str(number), name=ToolName.PUBLISH_ARTIFACT, arguments=arguments
+            tool_call_id=str(number), name=ToolName.MATERIALIZE_ARTIFACT, arguments=arguments
         )
 
 
-async def test_runtime_repairs_with_new_candidate_revision_then_publishes():
+async def test_runtime_repairs_with_new_candidate_revision_then_materializes():
     store = MemoryAgentStore()
     run_id = uuid4()
     toolset = CircuitToolset(
@@ -136,9 +170,10 @@ async def test_runtime_repairs_with_new_candidate_revision_then_publishes():
         framework=Framework.QISKIT,
         planner=Planner(),
         executor=RepairingExecutor(),
-        verifier=Verifier(),
+        reviewer=Reviewer(),
+        strict_verifier=StrictVerifier(),
         converter=Converter(),
-        publisher=Publisher(),
+        materializer=Publisher(),
     )
     runtime = AgentRuntime(
         store=store,
@@ -150,11 +185,77 @@ async def test_runtime_repairs_with_new_candidate_revision_then_publishes():
         model=RepairModel(),
     )
 
-    assert await runtime.run(run_id) is AgentState.PUBLISHED
+    assert await runtime.run(run_id) is AgentState.MATERIALIZED
     candidates = await store.list_candidates(run_id)
     assert [candidate.revision for candidate in candidates] == [1, 2]
     assert candidates[1].parent_candidate_id == candidates[0].candidate_id
-    assert store.publications[0].candidate_id == candidates[1].candidate_id
+    assert store.materializations[0].candidate_id == candidates[1].candidate_id
+
+
+class MaterializeFromInconclusiveModel:
+    async def next_tool(self, *, state, history, **_kwargs):
+        number = len(history) + 1
+        if state is AgentState.NEW:
+            return ToolCall(tool_call_id=str(number), name=ToolName.REQUEST_PLAN)
+        if state is AgentState.PLANNED:
+            return ToolCall(
+                tool_call_id=str(number),
+                name=ToolName.SIMULATE_QISKIT,
+                arguments={"source": "FINAL_CIRCUIT = object()\nRESULT = {'counts': {}}\n"},
+            )
+        candidate_id = next(
+            item.payload["candidate_id"]
+            for item in reversed(history)
+            if "candidate_id" in item.payload
+        )
+        arguments = {"candidate_id": candidate_id}
+        if state is AgentState.EXECUTED:
+            return ToolCall(
+                tool_call_id=str(number), name=ToolName.REVIEW_CANDIDATE, arguments=arguments
+            )
+        if state is AgentState.READY_FOR_STRICT_VERIFICATION:
+            return ToolCall(
+                tool_call_id=str(number), name=ToolName.STRICT_VERIFY, arguments=arguments
+            )
+        # state is AgentState.INCONCLUSIVE: no dedicated property verifier for
+        # this algorithm, not a defect — materialize off the READY review.
+        return ToolCall(
+            tool_call_id=str(number), name=ToolName.MATERIALIZE_ARTIFACT, arguments=arguments
+        )
+
+
+async def test_runtime_keeps_going_past_inconclusive_so_the_model_can_materialize():
+    # Regression for live run 019f8dd5: AgentRuntime.run() treated
+    # AgentState.INCONCLUSIVE as an immediate terminal stop, even though
+    # broker._ALLOWED and model._TOOLS_BY_STATE both permit
+    # materialize_artifact/convert_to_openqasm from that state. The loop
+    # returned before ever asking the model for another tool call, so a clean
+    # READY review with a strict_verify that merely lacked a dedicated
+    # property verifier (e.g. QFT) was reported as a failed run.
+    store = MemoryAgentStore()
+    run_id = uuid4()
+    toolset = CircuitToolset(
+        store=store,
+        framework=Framework.QISKIT,
+        planner=Planner(),
+        executor=RepairingExecutor(),
+        reviewer=Reviewer(),
+        strict_verifier=InconclusiveStrictVerifier(),
+        converter=Converter(),
+        materializer=Publisher(),
+    )
+    runtime = AgentRuntime(
+        store=store,
+        broker=ToolBroker(
+            store=store,
+            policy=AgentPolicy(framework=Framework.QISKIT),
+            handlers=toolset.handlers(),
+        ),
+        model=MaterializeFromInconclusiveModel(),
+    )
+
+    assert await runtime.run(run_id) is AgentState.MATERIALIZED
+    assert store.materializations != []
 
 
 class OneCallModel:
@@ -238,9 +339,10 @@ async def test_model_reusing_tool_call_ids_cannot_kill_a_run():
         framework=Framework.QISKIT,
         planner=Planner(),
         executor=RepairingExecutor(),
-        verifier=Verifier(),
+        reviewer=Reviewer(),
+        strict_verifier=StrictVerifier(),
         converter=Converter(),
-        publisher=Publisher(),
+        materializer=Publisher(),
     )
     runtime = AgentRuntime(
         store=store,
@@ -251,7 +353,7 @@ async def test_model_reusing_tool_call_ids_cannot_kill_a_run():
         ),
         model=ConstantIdModel(),
     )
-    assert await runtime.run(run_id) is AgentState.PUBLISHED
+    assert await runtime.run(run_id) is AgentState.MATERIALIZED
 
 
 async def test_runtime_rejects_completed_call_id_from_an_older_state():

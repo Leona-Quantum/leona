@@ -1,0 +1,9 @@
+id: v2-14-source-mutation-stale
+category: fingerprint-binding
+description: A source mutation invalidates prior verification and blocks publication.
+expected:
+  retry_target: none
+  candidate_revisions_consumed: 1
+  materialized: true
+  public_eligible: false
+  readable: true

@@ -1,0 +1,11 @@
+id: v2-09-maxcut-pass
+category: deterministic-oracle
+description: A correct small MaxCut/QUBO result passes against brute force.
+expected:
+  decision: pass
+  semantic_review_decision: ready
+  retry_target: none
+  candidate_revisions_consumed: 1
+  evidence_strength: physical
+  materialized: true
+  public_eligible: true

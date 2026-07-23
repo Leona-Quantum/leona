@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import signal
+from dataclasses import replace
 from typing import Any, Literal
 from uuid import UUID, uuid4
 
@@ -14,22 +15,28 @@ from majorana_agent import (
     ExecutionEvidence,
     ExecutionFailureKind,
     ExecutionOutput,
-    PublishedArtifact,
+    MaterializedArtifact,
     RepairInstruction,
-    VerificationEvidence,
+    SemanticReviewEvidence,
+    SemanticReviewOutput,
+    StrictVerificationAttempt,
     VerificationOutput,
 )
 from majorana_contracts import Scope
 from majorana_contracts.enums import (
+    Algorithm,
     ArtifactType,
     ExportStatus,
     Framework,
     MeasurementPolicy,
+    RetryTarget,
+    SemanticReviewDecision,
+    VerificationFailureClass,
     VerificationMethod,
     VerifierDecision,
     evidence_strength_of,
 )
-from majorana_contracts.plan import EXACT_MAX_QUBITS, Plan
+from majorana_contracts.plan import Plan
 from majorana_frameworks import FrameworkProgram, extract_interchange_qasm
 from majorana_llm import (
     LLMClient,
@@ -46,19 +53,19 @@ from majorana_sandbox import run as sandbox_run
 from majorana_verification import (
     BaselineProblemError,
     HamiltonianError,
+    assess_evidence_sufficiency,
     energy_tolerance,
     extract_counts,
     ground_state_energy,
     objective_tolerance,
     optimal_objective,
     verify_brute_force,
-    verify_exact,
+    verify_bell_state_property,
     verify_exact_diag,
-    verify_exact_native,
+    verify_ghz_state_property,
     verify_native_sampled_counts,
     verify_native_statistical_counts,
     verify_return_contract,
-    verify_statistical_counts,
     verify_statistical_counts_pair,
 )
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
@@ -82,14 +89,12 @@ class LLMPlanner:
         llm: LLMClient,
         task_prompt: str,
         framework: Framework,
-        has_parent_artifact: bool = False,
         requested_shots: int | None = None,
         requested_seed: int | None = None,
     ) -> None:
         self._llm = llm
         self._task_prompt = task_prompt
         self._framework = framework
-        self._has_parent_artifact = has_parent_artifact
         self._requested_shots = (
             min(requested_shots, self._PLAN_SHOTS_CEILING)
             if requested_shots is not None and requested_shots >= 1
@@ -112,16 +117,36 @@ class LLMPlanner:
     _PLAN_ATTEMPTS = 2
 
     async def create_plan(self, _run_id: UUID) -> Plan:
+        return await self._generate_plan()
+
+    async def revise_plan(self, _run_id: UUID, previous: Plan, plan_defect_feedback: str) -> Plan:
+        return await self._generate_plan(
+            previous=previous,
+            plan_defect_feedback=plan_defect_feedback,
+        )
+
+    async def _generate_plan(
+        self,
+        *,
+        previous: Plan | None = None,
+        plan_defect_feedback: str | None = None,
+    ) -> Plan:
         objection: str | None = None
         for attempt in range(self._PLAN_ATTEMPTS):
             prompt = render_plan_prompt(
                 self._task_prompt,
                 requested_framework=self._framework,
-                has_parent_artifact=self._has_parent_artifact,
                 requested_shots=self._requested_shots,
                 requested_seed=self._requested_seed,
             )
             user = prompt.user
+            if previous is not None:
+                user = (
+                    f"{user}\n\nRevise this immutable prior Plan; do not edit it in place:\n"
+                    f"{json.dumps(previous.model_dump(mode='json'), sort_keys=True)}\n\n"
+                    f"Typed plan_defect feedback:\n{plan_defect_feedback}\n\n"
+                    "Emit the complete next Plan revision. Preserve framework, seed, and shots."
+                )
             if objection is not None:
                 user = (
                     f"{user}\n\nYour previous plan was rejected by the plan contract:\n"
@@ -132,7 +157,6 @@ class LLMPlanner:
                     model=model_for("plan"),
                     system=prompt.system,
                     user=user,
-                    max_tokens=4096,
                     temperature=0.0,
                     response_schema=Plan.model_json_schema(),
                     schema_name="request_plan",
@@ -154,8 +178,12 @@ class LLMPlanner:
                 # override reaches the emitted code; the statistical threshold is
                 # computed from the shots actually observed either way.
                 plan.parameters.shots = self._requested_shots
+            elif previous is not None:
+                plan.parameters.shots = previous.parameters.shots
             if self._requested_seed is not None:
                 plan.parameters.seed = self._requested_seed
+            elif previous is not None:
+                plan.parameters.seed = previous.parameters.seed
             # After the shots override, because the tolerance depends on the
             # shots that will actually run.
             contradiction = self._exact_diag_range_contradiction(
@@ -581,96 +609,12 @@ def _measurement_policy_disagreement(
     )
 
 
-class EvidenceVerifier:
-    def __init__(
-        self, *, llm: LLMClient, task_prompt: str, parent_artifact_qasm: str | None = None
-    ) -> None:
+class _VerificationPrimitives:
+    def __init__(self, *, llm: LLMClient | None, task_prompt: str) -> None:
         self._llm = llm
         self._task_prompt = task_prompt
-        # Passed in rather than fetched: the verifier holds no session and no scope,
-        # and the parent version is already loaded by the run handler.
-        self._parent_artifact_qasm = parent_artifact_qasm
 
-    async def verify(
-        self, candidate: CandidateRevision, execution: ExecutionEvidence, plan: Plan
-    ) -> VerificationOutput:
-        checks = self._deterministic_checks(candidate, execution, plan)
-        # "skipped" is non-blocking by design: the check declared itself incapable
-        # of judging this circuit (mid-circuit measurement / classical control
-        # flow), so there is no criticism a repair could satisfy — failing here
-        # burned whole candidate budgets on correct teleportation code. Anything
-        # else that is not a pass stays blocking, including result values this
-        # code does not recognise: fail-closed for the unknown.
-        failures = [check for check in checks if check["result"] not in {"pass", "skipped"}]
-        if failures:
-            evidence = [json.dumps(check, sort_keys=True, default=str) for check in failures]
-            return VerificationOutput(
-                decision=VerifierDecision.FAIL,
-                deterministic_checks=checks,
-                repair=RepairInstruction(
-                    category="deterministic_verification_failed",
-                    # A failed deterministic check is not a matter of degree.
-                    severity="blocking",
-                    confidence="high",
-                    evidence=evidence,
-                    repairs=[
-                        "Repair the failing deterministic checks without changing the framework."
-                    ],
-                    preserve_invariants=(
-                        plan.verification_plan.required_invariants
-                        if plan.verification_plan and plan.verification_plan.required_invariants
-                        else [
-                            f"framework={candidate.framework.value}",
-                            "bind FINAL_CIRCUIT",
-                            "assign RESULT",
-                        ]
-                    ),
-                    required_rechecks=[check["method"] for check in failures],
-                ),
-            )
-        critic = await self._critic(candidate, execution, plan, checks)
-        critic_passed = (
-            critic.decision is VerifierDecision.PASS
-            and critic.confidence != "low"
-            and critic.severity in {"none", "minor"}
-            and not critic.failed_checks
-            and not critic.mismatches
-            # A PASS that demands rechecks is self-contradictory: the critic is
-            # saying "correct" and "I need it looked at again" in one verdict.
-            # Fail closed and let the named rechecks drive the repair, exactly
-            # as a low-confidence pass does.
-            and not critic.required_recheck
-        )
-        if critic_passed:
-            return VerificationOutput(
-                decision=VerifierDecision.PASS,
-                deterministic_checks=checks,
-                critic=critic.model_dump(mode="json"),
-            )
-        return VerificationOutput(
-            decision=VerifierDecision.FAIL,
-            deterministic_checks=checks,
-            critic=critic.model_dump(mode="json"),
-            repair=(
-                RepairInstruction(
-                    category="intent_alignment_failed",
-                    severity=critic.severity,
-                    confidence=critic.confidence,
-                    evidence=[
-                        critic.summary,
-                        *critic.failed_checks,
-                        *(item.model_dump_json() for item in critic.mismatches),
-                    ],
-                    repairs=critic.repair_plan
-                    or critic.suggestions
-                    or ["Align the implementation with the accepted plan."],
-                    preserve_invariants=[f"framework={candidate.framework.value}", "assign RESULT"],
-                    required_rechecks=critic.required_recheck or ["all"],
-                )
-            ),
-        )
-
-    def _deterministic_checks(
+    def fast_checks(
         self, candidate: CandidateRevision, execution: ExecutionEvidence, plan: Plan
     ) -> list[dict[str, Any]]:
         program = FrameworkProgram(candidate.framework, candidate.source)
@@ -689,6 +633,9 @@ class EvidenceVerifier:
         metrics = execution.observation.get("resource_metrics")
         metrics_error = execution.observation.get("resource_metrics_error")
         observed_qubits = metrics.get("qubits") if isinstance(metrics, dict) else None
+        resource_available = not circuit_expected or (
+            isinstance(metrics, dict) and type(observed_qubits) is int
+        )
         resource_ok = not circuit_expected or (
             type(observed_qubits) is int
             and observed_qubits > 0
@@ -703,7 +650,9 @@ class EvidenceVerifier:
         checks.append(
             {
                 "method": "resource_contract",
-                "result": "pass" if resource_ok else "fail",
+                "result": (
+                    "pass" if resource_ok else "fail" if resource_available else "unavailable"
+                ),
                 "details": resource_details,
             }
         )
@@ -742,7 +691,13 @@ class EvidenceVerifier:
             checks.append(
                 {
                     "method": "measurement_policy",
-                    "result": "pass" if measurement_ok else "fail",
+                    "result": (
+                        "pass"
+                        if measurement_ok
+                        else "unavailable"
+                        if type(measurement_count) is not int
+                        else "fail"
+                    ),
                     "details": measurement_details,
                 }
             )
@@ -774,15 +729,36 @@ class EvidenceVerifier:
         # no check at all because it lends weight to the evidence list.
         if circuit_expected:
             checks.append(self._native_optimization_check(program, execution))
+        expected_type = (
+            plan.artifact_contract.expected_return_type if plan.artifact_contract else None
+        )
+        outcome = verify_return_contract(execution.result, plan.expected_output_keys, expected_type)
+        checks.append(
+            {
+                "method": outcome.method.value,
+                "result": outcome.result.value,
+                "details": outcome.details,
+            }
+        )
+        return checks
+
+    def strict_checks(self, execution: ExecutionEvidence, plan: Plan) -> list[dict[str, Any]]:
         methods = list(plan.verification_plan.methods) if plan.verification_plan else []
-        if VerificationMethod.RETURN_CONTRACT not in methods:
-            methods.append(VerificationMethod.RETURN_CONTRACT)
+        checks: list[dict[str, Any]] = [*self._state_property_checks(execution, plan)]
         for method in methods:
-            if method is VerificationMethod.STATISTICAL:
-                checks.extend(self._statistical_checks(execution, plan))
+            if method is VerificationMethod.RETURN_CONTRACT:
                 continue
             if method is VerificationMethod.EXACT:
-                checks.append(self._exact_check(execution, plan))
+                checks.append(
+                    {
+                        "method": method.value,
+                        "result": "unavailable",
+                        "details": {"reason": "Plan-authored QASM exact verification is retired"},
+                    }
+                )
+                continue
+            if method is VerificationMethod.STATISTICAL:
+                checks.extend(self._statistical_checks(execution, plan))
                 continue
             if method is VerificationMethod.EXACT_DIAG:
                 checks.append(self._exact_diag_check(execution, plan))
@@ -790,23 +766,32 @@ class EvidenceVerifier:
             if method is VerificationMethod.BRUTE_FORCE:
                 checks.append(self._brute_force_check(execution, plan))
                 continue
-            outcome = None
-            if method is VerificationMethod.RETURN_CONTRACT:
-                expected_type = (
-                    plan.artifact_contract.expected_return_type if plan.artifact_contract else None
+            checks.append(
+                {
+                    "method": method.value,
+                    "result": "unavailable",
+                    "details": {"reason": "no trusted strict verifier is registered"},
+                }
+            )
+
+        # Fixed policy may collect free framework-native evidence even when the
+        # Plan did not request a statistical method. This never invokes QASM.
+        if VerificationMethod.STATISTICAL not in methods:
+            native_sampled = execution.observation.get("native_sampled")
+            native_statevector = execution.observation.get("native_statevector")
+            reported = extract_counts(execution.result, plan.expected_output_keys)
+            thresholds = (
+                plan.verification_plan.thresholds if plan.verification_plan else None
+            ) or {}
+            threshold = thresholds.get("tvd_max", thresholds.get("total_variation_max"))
+            physical_check_ran = False
+            if reported is not None and isinstance(native_statevector, dict):
+                outcome = verify_native_statistical_counts(
+                    native_statevector,
+                    reported,
+                    threshold,
                 )
-                outcome = verify_return_contract(
-                    execution.result, plan.expected_output_keys, expected_type
-                )
-            if outcome is None:
-                checks.append(
-                    {
-                        "method": method.value,
-                        "result": "fail",
-                        "details": {"error": "required evidence unavailable"},
-                    }
-                )
-            else:
+                physical_check_ran = True
                 checks.append(
                     {
                         "method": outcome.method.value,
@@ -814,24 +799,13 @@ class EvidenceVerifier:
                         "details": outcome.details,
                     }
                 )
-        # Opportunistic physical evidence for plans that requested no statistical
-        # check at all (the QPE shape that graded `structural`): when the run
-        # reported counts AND the observer produced a trusted re-execution, the
-        # comparison is free and either upgrades the run's evidence to physical
-        # or catches counts the actual circuit contradicts. It cannot fire a
-        # false "required evidence unavailable" — absent evidence appends nothing.
-        if circuit_expected and VerificationMethod.STATISTICAL not in methods:
-            native_sampled = execution.observation.get("native_sampled")
-            reported = extract_counts(execution.result, plan.expected_output_keys)
             if reported is not None and isinstance(native_sampled, dict):
-                thresholds = (
-                    plan.verification_plan.thresholds if plan.verification_plan else None
-                ) or {}
                 outcome = verify_native_sampled_counts(
                     reported,
                     native_sampled,
-                    thresholds.get("tvd_max", thresholds.get("total_variation_max")),
+                    threshold,
                 )
+                physical_check_ran = True
                 checks.append(
                     {
                         "method": outcome.method.value,
@@ -839,55 +813,71 @@ class EvidenceVerifier:
                         "details": outcome.details,
                     }
                 )
-        self._name_reference_disagreement(checks, plan)
+            if reported is not None and not physical_check_ran:
+                checks.append(
+                    {
+                        "method": VerificationMethod.STATISTICAL.value,
+                        "result": "unavailable",
+                        "details": {
+                            "reason": "reported counts lack trusted native comparison evidence",
+                            "claim": "reported counts agree with the executed circuit",
+                        },
+                    }
+                )
         return checks
 
     @staticmethod
-    def _name_reference_disagreement(checks: list[dict[str, Any]], plan: Plan) -> None:
-        """When `exact` fails a candidate that every self-referential check passed,
-        say so in the failure's details.
-
-        Run 019f7f7b-ba33 (QPE): the planner declared `exact` with a hand-written
-        reference whose inverse-QFT rotations sat on the wrong qubit pairs. Four
-        candidates failed `exact` identically at distance ~1.0 while the SAME panel
-        proved each executed circuit right — statistical_native TVD 0.014 against a
-        trusted re-execution, success_criteria met exactly. `exact` and
-        success_criteria were jointly unsatisfiable, the repair loop had nowhere to
-        go, and the budget burned on correct code.
-
-        The check stays blocking — the reference may be right and the passing metric
-        coincidental, and un-failing a failed check is the direction that ships
-        false positives. But the failure's details are the repair loop's whole
-        input and the run record's only explanation, so they must name the split
-        rather than imply the code is definitely the wrong side. A diagnostic in a
-        failing check's details cannot fail correct code (standing lesson 12).
-        """
-        reference_source = (
-            plan.verification_plan.reference_source if plan.verification_plan else None
+    def _state_property_checks(execution: ExecutionEvidence, plan: Plan) -> list[dict[str, Any]]:
+        if plan.algorithm not in {Algorithm.BELL, Algorithm.GHZ}:
+            return []
+        claim = plan.verification_plan.state_preparation_claim if plan.verification_plan else None
+        method = (
+            VerificationMethod.BELL_STATE_PROPERTY
+            if plan.algorithm is Algorithm.BELL
+            else VerificationMethod.GHZ_STATE_PROPERTY
         )
-        if getattr(reference_source, "value", reference_source) != "plan_declared":
-            return
-        by_method = {check["method"]: check for check in checks}
-        exact = by_method.get("exact")
-        if exact is None or exact["result"] != "fail":
-            return
-        corroborations = [
-            name
-            for name in ("statistical_native", "statistical", "success_criteria")
-            if by_method.get(name, {}).get("result") == "pass"
+        if claim is None:
+            return [
+                {
+                    "method": method.value,
+                    "result": "unavailable",
+                    "details": {
+                        "reason": "no semantically accepted typed state-preparation claim",
+                        "claim": f"{plan.algorithm.value} state preparation",
+                    },
+                }
+            ]
+        payload = execution.observation.get("native_statevector")
+        if not isinstance(payload, dict):
+            return [
+                {
+                    "method": method.value,
+                    "result": "unavailable",
+                    "details": {
+                        "reason": "framework-native statevector evidence is unavailable",
+                        "claim": (
+                            f"accepted {plan.algorithm.value} target with relative phase "
+                            f"{claim.relative_phase_radians} radians"
+                        ),
+                    },
+                }
+            ]
+        outcome = (
+            verify_bell_state_property(payload, claim.relative_phase_radians)
+            if plan.algorithm is Algorithm.BELL
+            else verify_ghz_state_property(
+                payload,
+                claim.qubits,
+                claim.relative_phase_radians,
+            )
+        )
+        return [
+            {
+                "method": outcome.method.value,
+                "result": outcome.result.value,
+                "details": outcome.details,
+            }
         ]
-        if not corroborations:
-            return
-        exact["details"]["disagreement"] = (
-            "every check that judges the executed circuit against itself or the "
-            f"plan's own success criteria passed ({', '.join(corroborations)}); the "
-            "failing comparison is against a reference the planner wrote by hand, "
-            "which shares an author with the plan and is not ground truth. If this "
-            "check keeps failing identically across candidates while those keep "
-            "passing, the reference is the suspect side — the plan cannot be "
-            "repaired from here, so prefer matching the reference ONLY where doing "
-            "so does not break the passing checks."
-        )
 
     @staticmethod
     def _native_optimization_check(
@@ -897,7 +887,7 @@ class EvidenceVerifier:
         if not isinstance(observed, dict) or type(observed.get("applied")) is not bool:
             return {
                 "method": "native_optimization_evidence",
-                "result": "fail",
+                "result": "unavailable",
                 "details": {
                     "error": "no native-optimization evidence in the sandbox observation",
                     "observed": observed,
@@ -928,97 +918,6 @@ class EvidenceVerifier:
                 "mode": classified.mode,
                 "reason": classified.reason,
             },
-        }
-
-    def _exact_check(self, execution: ExecutionEvidence, plan: Plan) -> dict[str, Any]:
-        """Phase-aligned unitary equivalence against a reference circuit.
-
-        The strongest check the pipeline can run, and the only one that compares the
-        executed circuit against something other than itself. Until 2026-07-20
-        `verify_exact` was production code with no caller, because nothing decided
-        where the reference comes from.
-
-        It is framework-agnostic on the candidate side and only on that side. The
-        candidate arrives as `interchange_qasm`, which every adapter emits, so a Cirq
-        or PennyLane program is compared the same way a Qiskit one is. The reference
-        is always OpenQASM — declarative data we parse, never code we run. A
-        reference written as framework source would have to be executed in the
-        sandbox to mean anything, which would admit a second piece of model-authored
-        code as ground truth.
-
-        The two sources prove different things, so `reference_source` is recorded in
-        the evidence and the check never claims more than it earned:
-
-        - `plan_declared` — the planner wrote the reference before any code existed.
-          It catches code that implements a different circuit than the one intended.
-          It cannot catch a mis-specified plan: reference and candidate come from the
-          same model.
-        - `parent_artifact` — the circuit this run revises, which passed verification
-          on its own. Independent evidence, and the equivalence-checking case: the
-          revision must not change what the circuit computes.
-        """
-        verification_plan = plan.verification_plan
-        source = verification_plan.reference_source if verification_plan else None
-        details: dict[str, Any] = {"reference_source": source}
-        if source == "parent_artifact":
-            reference = self._parent_artifact_qasm
-            details["reference_available"] = reference is not None
-        else:
-            reference = verification_plan.reference_qasm if verification_plan else None
-        candidate_qasm = extract_interchange_qasm(execution.observation).qasm
-        native_statevector = execution.observation.get("native_statevector")
-        if (
-            reference is not None
-            and candidate_qasm is None
-            and isinstance(native_statevector, dict)
-        ):
-            # A failed OpenQASM export downgrades the EXPORT, never the verdict
-            # (plans/framework-native-verification.md): fall back to comparing the
-            # framework-native final state against the reference. Weaker than the
-            # unitary comparison — the outcome's evidence says so.
-            outcome = verify_exact_native(reference, native_statevector)
-            merged = details | outcome.details
-            merged["evidence_scope"] = (
-                "the framework-native final state matches the reference circuit's "
-                "(action on the all-zero state; the candidate's OpenQASM export "
-                "was unavailable)"
-            )
-            return {
-                "method": outcome.method.value,
-                "result": outcome.result.value,
-                "details": merged,
-            }
-        if reference is None or candidate_qasm is None:
-            # Fail, never skip. A check that cannot run is missing evidence, and the
-            # plan contract already refuses the reference-less cases it can see — so
-            # arriving here means the run genuinely lacks what it promised.
-            return {
-                "method": VerificationMethod.EXACT.value,
-                "result": "fail",
-                "details": details
-                | {
-                    "error": "required evidence unavailable",
-                    "reference_qasm": reference is not None,
-                    "interchange_qasm": candidate_qasm is not None,
-                    "native_statevector": isinstance(native_statevector, dict),
-                },
-            }
-        outcome = verify_exact(reference, candidate_qasm, max_qubits=EXACT_MAX_QUBITS)
-        merged = details | outcome.details
-        if source == "plan_declared":
-            merged["evidence_scope"] = (
-                "the executed circuit matches the reference the planner declared; "
-                "reference and implementation share an author"
-            )
-        else:
-            merged["evidence_scope"] = (
-                "the executed circuit is unitarily equivalent to the parent "
-                "artifact's independently verified circuit"
-            )
-        return {
-            "method": outcome.method.value,
-            "result": outcome.result.value,
-            "details": merged,
         }
 
     @staticmethod
@@ -1111,8 +1010,8 @@ class EvidenceVerifier:
         from the framework's OWN simulator when the observer produced it
         (`native_statevector` — plans/framework-native-verification.md: no
         conversion in the trust path; three of the four defects in that family
-        were conversion defects), and from simulating the interchange QASM only
-        as the fallback for runs whose observer produced no native evidence.
+        were conversion defects). Without native evidence this check is
+        unavailable; interchange QASM is never a correctness fallback.
 
         `statistical_native` is the mid-circuit-capable physical check: reported
         counts against a trusted re-execution of the circuit object through the
@@ -1126,19 +1025,11 @@ class EvidenceVerifier:
         threshold = thresholds.get("tvd_max", thresholds.get("total_variation_max"))
         reported = extract_counts(execution.result, plan.expected_output_keys)
         native_statevector = execution.observation.get("native_statevector")
-        qasm = extract_interchange_qasm(execution.observation).qasm
         checks: list[dict[str, Any]] = []
+        physical_check_ran = False
         if reported is not None and isinstance(native_statevector, dict):
             outcome = verify_native_statistical_counts(native_statevector, reported, threshold)
-            checks.append(
-                {
-                    "method": outcome.method.value,
-                    "result": outcome.result.value,
-                    "details": outcome.details,
-                }
-            )
-        elif reported is not None and qasm is not None:
-            outcome = verify_statistical_counts(qasm, reported, threshold)
+            physical_check_ran = True
             checks.append(
                 {
                     "method": outcome.method.value,
@@ -1149,6 +1040,7 @@ class EvidenceVerifier:
         native_sampled = execution.observation.get("native_sampled")
         if reported is not None and isinstance(native_sampled, dict):
             outcome = verify_native_sampled_counts(reported, native_sampled, threshold)
+            physical_check_ran = True
             checks.append(
                 {
                     "method": outcome.method.value,
@@ -1171,42 +1063,104 @@ class EvidenceVerifier:
                     "details": outcome.details,
                 }
             )
-        if not checks:
+        if not physical_check_ran:
+            statevector_error = execution.observation.get("native_statevector_error")
+            sampled_error = execution.observation.get("native_sampled_error")
+            statevector_reason = str(statevector_error or "").lower()
+            sampled_reason = str(sampled_error or "").lower()
+            dynamic_sampler_unsupported = (
+                any(
+                    marker in statevector_reason
+                    for marker in (
+                        "not unitary up to final measurements",
+                        "mid-circuit",
+                        "classical control",
+                    )
+                )
+                and sampled_reason == "qiskit_aer unavailable"
+            )
             checks.append(
                 {
                     "method": VerificationMethod.STATISTICAL.value,
-                    "result": "fail",
+                    "result": "unavailable",
                     "details": {
                         "error": "required evidence unavailable",
                         "reported_counts": reported is not None,
                         "native_statevector": isinstance(native_statevector, dict),
                         "native_sampled": isinstance(native_sampled, dict),
-                        "interchange_qasm": qasm is not None,
                         "repeat_execution": second is not None,
+                        "native_statevector_error": statevector_error,
+                        "native_sampled_error": sampled_error,
+                        "capability_limited": dynamic_sampler_unsupported,
                     },
                 }
             )
         return checks
 
-    async def _critic(
+    async def critic(
         self,
         candidate: CandidateRevision,
         execution: ExecutionEvidence,
         plan: Plan,
         checks: list[dict[str, Any]],
     ) -> _CriticOutput:
+        if self._llm is None:
+            raise RuntimeError("semantic reviewer requires an LLM client")
         request = LLMRequest(
             model=model_for("verify"),
             system=(
-                "Act as an independent, fail-closed quantum-program critic. Judge request-to-plan, "
-                "plan-to-code, and success-criteria-to-result alignment using only supplied evidence. "
-                "Check the artifact contract, selected framework, measurement policy, seeds, shots, "
-                "tolerances, qubit ordering, forbidden operations, required invariants, and whether "
-                "the evidence actually proves each claim. Deterministic checks already passed — or "
-                "were skipped as structurally incapable of judging this circuit, which is not a "
-                "defect in the code — and cannot be overridden. Return pass only with medium/high "
-                "confidence, no mismatch, "
-                "and at most minor severity; otherwise give a concrete repair plan and rechecks."
+                "Act as an independent, fail-closed quantum-program critic. A deterministic FAIL "
+                "would have stopped before this review and cannot be overridden here; SKIPPED and "
+                "UNAVAILABLE mean a check did not establish a defect, not that one exists. Read the "
+                "source, don't just trust that it ran.\n"
+                "\n"
+                "Judge three layers, request -> plan -> code -> result, each independently:\n"
+                "\n"
+                "1. request vs plan: do plan.parameters (seed, shots, optimizer, custom values the "
+                "user gave — bond lengths, node counts, k-values, graph edges) and plan.algorithm "
+                "actually match what the user asked for? A plausible but unrequested substitution "
+                "(e.g. a different algorithm family, a different problem instance, a default the "
+                "user did not ask for standing in for a value they gave) is a request-vs-plan defect, "
+                "not a code defect.\n"
+                "\n"
+                "2. plan vs code: do the literal values in plan.parameters (and plan.parameters.custom) "
+                "appear in the source as the actual coefficients/sizes/loop bounds used, not just "
+                "mentioned in a comment? If plan.artifact_contract is set, does the code honor "
+                "artifact_type, entry_point (the named function/class exists and is what a caller "
+                "would use), expected_return_type, return_shape, measurement_policy (no unrequested "
+                "measure/measure_all/classical register when policy is none), and top_level_execution "
+                "(no demo execution or side effects when execution is forbidden)? Does the framework "
+                "actually used match plan.framework?\n"
+                "\n"
+                "3. success criteria vs result: is plan.success_criteria.primary_metric present in the "
+                "observed result, and does its value fall inside expected_range or otherwise satisfy "
+                "the stated criteria? A value that is merely plausible-looking is not enough — check "
+                "the actual number in evidence.result against the actual range in the plan.\n"
+                "\n"
+                "Also check qubit ordering/endianness, forbidden operations, and required invariants "
+                "the plan calls out. 'It executed without raising' is not evidence of any of the "
+                "above — judge whether the evidence in front of you actually proves the claim, not "
+                "whether the claim sounds reasonable.\n"
+                "\n"
+                "Sanity-check the number, not just its presence: does the reported value make sense "
+                "for the stated physics/problem (e.g. a ground-state energy that is not below the "
+                "exact theoretical minimum, a probability that is not outside [0, 1], a qubit count "
+                "that matches what the problem actually needs)? If the code contains its own "
+                "independent check against a reference (exact diagonalization, brute force, a known "
+                "closed form, an Operator/Statevector equivalence), that self-check strengthens "
+                "confidence; a bare 'it printed a plausible-looking number' does not. Note this in "
+                "residual_risks even when severity stays none/minor — a passing candidate can still "
+                "carry a disclosed limitation.\n"
+                "\n"
+                "Where the user's request left something unstated (a default parameter, a specific "
+                "ansatz, a tie-breaking rule), a plan/implementation choice that is a defensible "
+                "reading of the request is not a mismatch — reserve mismatches for places the code "
+                "or plan contradicts something the user, or the plan itself, actually specified.\n"
+                "\n"
+                "Return pass only with medium/high confidence, no mismatch, and at most minor "
+                "severity. Use inconclusive for genuine uncertainty or missing evidence; request "
+                "repair or replan only for a mismatch you can point to concretely in the diff between "
+                "what was asked, planned, coded, and observed — not for a stylistic preference."
             ),
             user=json.dumps(
                 {
@@ -1214,15 +1168,36 @@ class EvidenceVerifier:
                     "plan": plan.model_dump(mode="json"),
                     "framework": candidate.framework.value,
                     "source": candidate.source,
-                    "result": execution.result,
+                    "execution": {
+                        "execution_id": str(execution.execution_id),
+                        "source_fingerprint": execution.source_fingerprint,
+                        "environment_fingerprint": execution.environment_fingerprint,
+                        "sandbox_provider": execution.sandbox_provider,
+                        "exit_code": execution.exit_code,
+                        "duration_ms": execution.duration_ms,
+                        "result": execution.result,
+                        "observation": {
+                            key: execution.observation[key]
+                            for key in (
+                                "resource_metrics",
+                                "native_optimization",
+                                "evidence_error",
+                                "contract_diagnostics",
+                                "native_sampled",
+                                "verification_repeat_result",
+                            )
+                            if key in execution.observation
+                        },
+                    },
                     "checks": checks,
                 },
                 default=str,
             ),
-            # 2048 was not enough headroom for a reasoning model to close its own
-            # braces once the evidence blob got large; a truncated object is the same
-            # symptom as a refusal and was being read as one.
-            max_tokens=3072,
+            # No max_tokens: 2048, then 3072, both proved not enough headroom for a
+            # reasoning model to close its own braces once the evidence blob got
+            # large — a truncated object reads as a refusal, and the actual fix was
+            # never the specific number, it was having a self-imposed number at all
+            # (LLMRequest omits the cap by default; see its docstring).
             temperature=0.0,
             response_schema=_CriticOutput.model_json_schema(),
             schema_name="intent_alignment",
@@ -1243,7 +1218,11 @@ class EvidenceVerifier:
         # is the same salvage the plan stage has always had, and the critic never did.
         last_error: Exception | None = None
         for _ in range(2):
-            response = await self._llm.complete(request)
+            try:
+                response = await self._llm.complete(request)
+            except Exception as exc:
+                last_error = exc
+                continue
             try:
                 return _CriticOutput.model_validate_json(response.text)
             except ValidationError as exc:
@@ -1268,6 +1247,531 @@ class EvidenceVerifier:
         )
 
 
+class SemanticReviewResult(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    decision: SemanticReviewDecision
+    critic: dict[str, Any]
+    failure_class: VerificationFailureClass | None = None
+    retry_target: RetryTarget = RetryTarget.NONE
+    reason_code: str
+    repair: RepairInstruction | None = None
+
+
+class FastCandidateChecker:
+    """Trusted structural checks that never call an LLM or launch a simulation."""
+
+    def __init__(self) -> None:
+        self._primitives = _VerificationPrimitives(llm=None, task_prompt="")
+
+    def check(
+        self, candidate: CandidateRevision, execution: ExecutionEvidence, plan: Plan
+    ) -> list[dict[str, Any]]:
+        if not (
+            candidate.candidate_id == execution.candidate_id
+            and candidate.source_fingerprint == execution.source_fingerprint
+        ):
+            return [
+                {
+                    "method": "structural",
+                    "result": "fail",
+                    "details": {"error": "candidate/execution fingerprint binding mismatch"},
+                }
+            ]
+        return self._primitives.fast_checks(candidate, execution, plan)
+
+
+class SemanticCandidateReviewer:
+    """Evidence-reading LLM review. It cannot execute tools or produce final PASS.
+
+    The semantic reviewer is useful for finding a concrete request/code mismatch,
+    but it is not an oracle.  In the standard product path, uncertainty and
+    minor review comments are advisory once trusted fast checks have passed.
+    Only a grounded major/blocking mismatch spends another candidate revision.
+    """
+
+    def __init__(self, *, llm: LLMClient, task_prompt: str) -> None:
+        self._primitives = _VerificationPrimitives(llm=llm, task_prompt=task_prompt)
+
+    async def review(
+        self,
+        candidate: CandidateRevision,
+        execution: ExecutionEvidence,
+        plan: Plan,
+        fast_checks: list[dict[str, Any]],
+    ) -> SemanticReviewResult:
+        critic = await self._primitives.critic(candidate, execution, plan, fast_checks)
+        payload = critic.model_dump(mode="json")
+        if self._only_optional_entry_point_mismatch(critic, plan, fast_checks):
+            payload["advisory"] = {
+                "code": "optional_entry_point_missing",
+                "message": (
+                    "The Plan named an entry point, but the executed top-level RESULT already "
+                    "satisfies the return contract. This is advisory, not a candidate defect."
+                ),
+            }
+            return SemanticReviewResult(
+                decision=SemanticReviewDecision.READY,
+                critic=payload,
+                reason_code="semantic_ready_optional_entry_point",
+            )
+        clean = (
+            critic.decision is VerifierDecision.PASS
+            and critic.confidence != "low"
+            and critic.severity in {"none", "minor"}
+            and not critic.failed_checks
+            and not critic.mismatches
+            and not critic.required_recheck
+        )
+        if clean:
+            return SemanticReviewResult(
+                decision=SemanticReviewDecision.READY,
+                critic=payload,
+                reason_code="semantic_ready",
+            )
+        if self._advisory_only(critic):
+            payload["advisory"] = {
+                "code": "semantic_review_non_blocking",
+                "message": (
+                    "The semantic reviewer raised uncertainty or a minor comment, but did "
+                    "not establish a major candidate or Plan mismatch. It is retained as "
+                    "advisory evidence and does not consume another candidate revision."
+                ),
+            }
+            return SemanticReviewResult(
+                decision=SemanticReviewDecision.READY,
+                critic=payload,
+                reason_code="semantic_ready_with_advisory",
+            )
+        if critic.failed_checks == ["critic_output_schema"]:
+            # The critic never actually judged this candidate (twice-malformed
+            # output — see the fabricated verdict in _primitives.critic). That is
+            # a verifier failure, never READY: the seeded-mistakes matrix pins
+            # v2-05 to exactly this shape.
+            return SemanticReviewResult(
+                decision=SemanticReviewDecision.INCONCLUSIVE,
+                critic=payload,
+                failure_class=VerificationFailureClass.VERIFIER_FAILURE,
+                retry_target=RetryTarget.VERIFICATION,
+                reason_code="semantic_reviewer_malformed",
+            )
+        if critic.confidence == "low":
+            return SemanticReviewResult(
+                decision=SemanticReviewDecision.INCONCLUSIVE,
+                critic=payload,
+                failure_class=VerificationFailureClass.EVIDENCE_GAP,
+                retry_target=RetryTarget.VERIFICATION,
+                reason_code="semantic_review_inconclusive",
+            )
+        if critic.decision is VerifierDecision.INCONCLUSIVE:
+            return SemanticReviewResult(
+                decision=SemanticReviewDecision.INCONCLUSIVE,
+                critic=payload,
+                failure_class=VerificationFailureClass.EVIDENCE_GAP,
+                retry_target=RetryTarget.VERIFICATION,
+                reason_code="semantic_evidence_gap",
+            )
+        if critic.decision is VerifierDecision.PASS:
+            return SemanticReviewResult(
+                decision=SemanticReviewDecision.INCONCLUSIVE,
+                critic=payload,
+                failure_class=VerificationFailureClass.EVIDENCE_GAP,
+                retry_target=RetryTarget.VERIFICATION,
+                reason_code="semantic_pass_requires_recheck",
+            )
+        if not critic.failed_checks and not critic.mismatches:
+            return SemanticReviewResult(
+                decision=SemanticReviewDecision.INCONCLUSIVE,
+                critic=payload,
+                failure_class=VerificationFailureClass.EVIDENCE_GAP,
+                retry_target=RetryTarget.VERIFICATION,
+                reason_code="semantic_mismatch_not_grounded",
+            )
+
+        plan_defect = self._is_plan_defect(critic)
+        decision = (
+            SemanticReviewDecision.REPLAN if plan_defect else SemanticReviewDecision.CODE_REPAIR
+        )
+        repair = RepairInstruction(
+            category="plan_defect" if plan_defect else "intent_alignment_failed",
+            severity=critic.severity,
+            confidence=critic.confidence,
+            evidence=[
+                critic.summary,
+                *critic.failed_checks,
+                *(item.model_dump_json() for item in critic.mismatches),
+            ],
+            repairs=critic.repair_plan
+            or critic.suggestions
+            or [
+                "Revise the Plan to match the request."
+                if plan_defect
+                else "Align the implementation with the accepted Plan."
+            ],
+            preserve_invariants=[f"framework={candidate.framework.value}", "assign RESULT"],
+            required_rechecks=critic.required_recheck or ["all"],
+        )
+        return SemanticReviewResult(
+            decision=decision,
+            critic=payload,
+            failure_class=(
+                VerificationFailureClass.PLAN_DEFECT
+                if plan_defect
+                else VerificationFailureClass.CANDIDATE_DEFECT
+            ),
+            retry_target=RetryTarget.PLANNING if plan_defect else RetryTarget.CODE_GENERATION,
+            reason_code="semantic_plan_mismatch" if plan_defect else "semantic_code_mismatch",
+            repair=repair,
+        )
+
+    @staticmethod
+    def _only_optional_entry_point_mismatch(
+        critic: _CriticOutput, plan: Plan, fast_checks: list[dict[str, Any]]
+    ) -> bool:
+        contract = plan.artifact_contract
+        if contract is None or not contract.entry_point:
+            return False
+        if not any(
+            check.get("method") == VerificationMethod.RETURN_CONTRACT.value
+            and check.get("result") == "pass"
+            for check in fast_checks
+        ):
+            return False
+        signals = [*critic.failed_checks, *(item.area for item in critic.mismatches)]
+        return bool(signals) and all(
+            signal == "artifact_contract.entry_point" for signal in signals
+        )
+
+    @staticmethod
+    def _advisory_only(critic: _CriticOutput) -> bool:
+        """Return true when the LLM did not establish a blocking defect.
+
+        A minor finding held with real confidence is a report annotation; it
+        must not turn a successfully executed circuit into a repair loop.
+        But a review the critic itself marked low-confidence, or one that asks
+        for a recheck, has not established anything — treating it as advisory
+        would mint READY from admitted uncertainty, so those fall through to
+        the INCONCLUSIVE arms below (retry_target=verification, never a code
+        repair).  Major/blocking findings still use the typed repair route.
+        """
+        return (
+            critic.severity in {"none", "minor"}
+            and critic.confidence != "low"
+            and not critic.required_recheck
+        )
+
+    @staticmethod
+    def _is_plan_defect(critic: _CriticOutput) -> bool:
+        signals = [*critic.failed_checks, *(item.area for item in critic.mismatches)]
+        normalized = " ".join(signals).lower().replace("_", "-")
+        return "request-to-plan" in normalized or ("request" in normalized and "plan" in normalized)
+
+
+class StrictEvidenceVerifier:
+    """Trusted physical/problem-specific checks and final three-state aggregation."""
+
+    def __init__(self) -> None:
+        self._primitives = _VerificationPrimitives(llm=None, task_prompt="")
+
+    def check(self, execution: ExecutionEvidence, plan: Plan) -> list[dict[str, Any]]:
+        return self._primitives.strict_checks(execution, plan)
+
+    def verify(
+        self,
+        candidate: CandidateRevision,
+        execution: ExecutionEvidence,
+        plan: Plan,
+        semantic: SemanticReviewResult,
+        prior_checks: list[dict[str, Any]],
+    ) -> VerificationOutput:
+        try:
+            strict_checks = self.check(execution, plan)
+        except Exception as exc:
+            strict_checks = [
+                {
+                    "method": "structural",
+                    "result": "error",
+                    "details": {"error": type(exc).__name__, "reason": str(exc)[:1000]},
+                }
+            ]
+        if semantic.decision is not SemanticReviewDecision.READY:
+            for check in strict_checks:
+                if (
+                    check.get("method")
+                    not in {
+                        VerificationMethod.BELL_STATE_PROPERTY.value,
+                        VerificationMethod.GHZ_STATE_PROPERTY.value,
+                        VerificationMethod.EXACT_DIAG.value,
+                        VerificationMethod.BRUTE_FORCE.value,
+                    }
+                    or check.get("result") != "fail"
+                ):
+                    continue
+                check["result"] = "unavailable"
+                check["details"] = {
+                    **check.get("details", {}),
+                    "reason": (
+                        "Plan-declared target was not accepted by semantic review; "
+                        "its mismatch cannot establish a candidate defect"
+                    ),
+                    "original_result": "fail",
+                }
+        checks = [*prior_checks, *strict_checks]
+        failures = [check for check in checks if check["result"] == "fail"]
+        if failures:
+            plan_defect = all(check.get("details", {}).get("fault") == "plan" for check in failures)
+            failure_class = (
+                VerificationFailureClass.PLAN_DEFECT
+                if plan_defect
+                else VerificationFailureClass.CANDIDATE_DEFECT
+            )
+            retry_target = RetryTarget.PLANNING if plan_defect else RetryTarget.CODE_GENERATION
+            return VerificationOutput(
+                decision=VerifierDecision.FAIL,
+                deterministic_checks=checks,
+                critic=semantic.critic,
+                repair=RepairInstruction(
+                    category=(
+                        "plan_defect" if plan_defect else "deterministic_verification_failed"
+                    ),
+                    severity="blocking",
+                    confidence="high",
+                    evidence=[json.dumps(check, sort_keys=True, default=str) for check in failures],
+                    repairs=[
+                        "Revise the accepted Plan."
+                        if plan_defect
+                        else "Repair the failing checks without changing the framework."
+                    ],
+                    preserve_invariants=[f"framework={candidate.framework.value}", "assign RESULT"],
+                    required_rechecks=[check["method"] for check in failures],
+                ),
+                semantic_review_decision=semantic.decision,
+                failure_class=failure_class,
+                retry_target=retry_target,
+                candidate_defect_observed=not plan_defect,
+                reason_code="strict_plan_defect" if plan_defect else "strict_candidate_defect",
+            )
+        errors = [check for check in checks if check["result"] == "error"]
+        unavailable = [check for check in checks if check["result"] == "unavailable"]
+        if errors or unavailable or semantic.decision is SemanticReviewDecision.INCONCLUSIVE:
+            capability_limited = any(
+                check.get("details", {}).get("capability_limited") is True for check in unavailable
+            )
+            return VerificationOutput(
+                decision=VerifierDecision.INCONCLUSIVE,
+                deterministic_checks=checks,
+                critic=semantic.critic,
+                semantic_review_decision=semantic.decision,
+                failure_class=(
+                    VerificationFailureClass.VERIFIER_FAILURE
+                    if errors
+                    else VerificationFailureClass.CAPABILITY_LIMIT
+                    if capability_limited
+                    else semantic.failure_class or VerificationFailureClass.EVIDENCE_GAP
+                ),
+                retry_target=(
+                    # A verifier crash is the one INCONCLUSIVE cause a retry of
+                    # verification itself can cure; a capability limit is not.
+                    RetryTarget.VERIFICATION
+                    if errors
+                    else RetryTarget.NONE
+                    if capability_limited
+                    else semantic.retry_target
+                    if semantic.decision is SemanticReviewDecision.INCONCLUSIVE
+                    else RetryTarget.VERIFICATION
+                ),
+                candidate_defect_observed=False,
+                reason_code="strict_verifier_error" if errors else "insufficient_evidence",
+            )
+        sufficiency = assess_evidence_sufficiency(
+            plan.algorithm,
+            checks,
+            reported_counts=extract_counts(execution.result, plan.expected_output_keys) is not None,
+        )
+        if not sufficiency.sufficient:
+            return VerificationOutput(
+                decision=VerifierDecision.INCONCLUSIVE,
+                deterministic_checks=checks,
+                critic=semantic.critic,
+                semantic_review_decision=semantic.decision,
+                failure_class=(
+                    VerificationFailureClass.EVIDENCE_GAP
+                    if sufficiency.capability_supported
+                    else VerificationFailureClass.CAPABILITY_LIMIT
+                ),
+                retry_target=RetryTarget.NONE,
+                candidate_defect_observed=False,
+                reason_code="strict_evidence_insufficient",
+            )
+        return VerificationOutput(
+            decision=VerifierDecision.PASS,
+            deterministic_checks=checks,
+            critic=semantic.critic,
+            semantic_review_decision=semantic.decision,
+            retry_target=RetryTarget.NONE,
+            candidate_defect_observed=False,
+            reason_code="strict_pass",
+        )
+
+
+class EvidenceVerifier:
+    """Compatibility facade; the state-machine split lands in a later step."""
+
+    def __init__(self, *, llm: LLMClient, task_prompt: str) -> None:
+        self._fast = FastCandidateChecker()
+        self._semantic = SemanticCandidateReviewer(llm=llm, task_prompt=task_prompt)
+        self._strict = StrictEvidenceVerifier()
+
+    async def verify(
+        self, candidate: CandidateRevision, execution: ExecutionEvidence, plan: Plan
+    ) -> VerificationOutput:
+        fast_checks = self._fast.check(candidate, execution, plan)
+        failures = [check for check in fast_checks if check["result"] == "fail"]
+        if failures:
+            return VerificationOutput(
+                decision=VerifierDecision.FAIL,
+                deterministic_checks=fast_checks,
+                repair=RepairInstruction(
+                    category="deterministic_verification_failed",
+                    severity="blocking",
+                    confidence="high",
+                    evidence=[json.dumps(check, sort_keys=True, default=str) for check in failures],
+                    repairs=["Repair the failing checks without changing the framework."],
+                    preserve_invariants=[f"framework={candidate.framework.value}", "assign RESULT"],
+                    required_rechecks=[check["method"] for check in failures],
+                ),
+                failure_class=VerificationFailureClass.CANDIDATE_DEFECT,
+                retry_target=RetryTarget.CODE_GENERATION,
+                candidate_defect_observed=True,
+                reason_code="fast_candidate_defect",
+            )
+        semantic = await self._semantic.review(candidate, execution, plan, fast_checks)
+        if semantic.decision in {
+            SemanticReviewDecision.CODE_REPAIR,
+            SemanticReviewDecision.REPLAN,
+        }:
+            return VerificationOutput(
+                decision=VerifierDecision.FAIL,
+                deterministic_checks=fast_checks,
+                critic=semantic.critic,
+                repair=semantic.repair,
+                semantic_review_decision=semantic.decision,
+                failure_class=semantic.failure_class,
+                retry_target=semantic.retry_target,
+                candidate_defect_observed=(semantic.decision is SemanticReviewDecision.CODE_REPAIR),
+                reason_code=semantic.reason_code,
+            )
+        output = self._strict.verify(candidate, execution, plan, semantic, fast_checks)
+        sufficiency = assess_evidence_sufficiency(
+            plan.algorithm,
+            output.deterministic_checks,
+            reported_counts=extract_counts(execution.result, plan.expected_output_keys) is not None,
+        )
+        satisfied = set(sufficiency.satisfied_claims)
+        return replace(
+            output,
+            claim_coverage=[
+                {"claim": claim, "status": "verified" if claim in satisfied else "unverified"}
+                for claim in sufficiency.required_claims
+            ],
+            unverified_claims=list(sufficiency.missing_claims),
+        )
+
+
+class EvidenceReviewer:
+    """Semantic-review port used by the audited state machine."""
+
+    def __init__(self, *, llm: LLMClient, task_prompt: str) -> None:
+        self._fast = FastCandidateChecker()
+        self._semantic = SemanticCandidateReviewer(llm=llm, task_prompt=task_prompt)
+
+    async def review(
+        self, candidate: CandidateRevision, execution: ExecutionEvidence, plan: Plan
+    ) -> SemanticReviewOutput:
+        fast_checks = self._fast.check(candidate, execution, plan)
+        failures = [check for check in fast_checks if check["result"] == "fail"]
+        if failures:
+            repair = RepairInstruction(
+                category="deterministic_verification_failed",
+                severity="blocking",
+                confidence="high",
+                evidence=[json.dumps(check, sort_keys=True, default=str) for check in failures],
+                repairs=["Repair the failing checks without changing the framework."],
+                preserve_invariants=[f"framework={candidate.framework.value}", "assign RESULT"],
+                required_rechecks=[check["method"] for check in failures],
+            )
+            return SemanticReviewOutput(
+                decision=SemanticReviewDecision.CODE_REPAIR,
+                feedback={
+                    "fast_checks": fast_checks,
+                    "repair": repair.model_dump(mode="json"),
+                },
+                reason_code="fast_candidate_defect",
+                failure_class=VerificationFailureClass.CANDIDATE_DEFECT,
+                retry_target=RetryTarget.CODE_GENERATION,
+                confidence="high",
+                severity="blocking",
+            )
+        semantic = await self._semantic.review(candidate, execution, plan, fast_checks)
+        return SemanticReviewOutput(
+            decision=semantic.decision,
+            feedback={
+                "fast_checks": fast_checks,
+                "critic": semantic.critic,
+                "repair": semantic.repair.model_dump(mode="json") if semantic.repair else None,
+            },
+            reason_code=semantic.reason_code,
+            failure_class=semantic.failure_class,
+            retry_target=semantic.retry_target,
+            confidence=(semantic.critic.get("confidence") if semantic.critic else None),
+            severity=(semantic.critic.get("severity") if semantic.critic else None),
+        )
+
+
+class EvidenceStrictVerifier:
+    """Strict deterministic port consuming immutable semantic-review evidence."""
+
+    def __init__(self) -> None:
+        self._fast = FastCandidateChecker()
+        self._strict = StrictEvidenceVerifier()
+
+    async def verify_strict(
+        self,
+        candidate: CandidateRevision,
+        execution: ExecutionEvidence,
+        plan: Plan,
+        review: SemanticReviewEvidence,
+    ) -> VerificationOutput:
+        semantic = SemanticReviewResult(
+            decision=review.decision,
+            critic=review.feedback.get("critic") or {},
+            failure_class=review.failure_class,
+            retry_target=review.retry_target,
+            reason_code=review.reason_code,
+            repair=(
+                RepairInstruction.model_validate(review.feedback["repair"])
+                if review.feedback.get("repair")
+                else None
+            ),
+        )
+        fast_checks = self._fast.check(candidate, execution, plan)
+        output = self._strict.verify(candidate, execution, plan, semantic, fast_checks)
+        sufficiency = assess_evidence_sufficiency(
+            plan.algorithm,
+            output.deterministic_checks,
+            reported_counts=extract_counts(execution.result, plan.expected_output_keys) is not None,
+        )
+        satisfied = set(sufficiency.satisfied_claims)
+        return replace(
+            output,
+            claim_coverage=[
+                {"claim": claim, "status": "verified" if claim in satisfied else "unverified"}
+                for claim in sufficiency.required_claims
+            ],
+            unverified_claims=list(sufficiency.missing_claims),
+        )
+
+
 class TrustedOpenQASMConverter:
     async def convert(
         self, candidate: CandidateRevision, execution: ExecutionEvidence
@@ -1283,7 +1787,7 @@ class TrustedOpenQASMConverter:
             return None, f"OpenQASM normalization failed: {type(exc).__name__}"
 
 
-class RepoArtifactPublisher:
+class RepoArtifactMaterializer:
     def __init__(
         self,
         *,
@@ -1292,6 +1796,7 @@ class RepoArtifactPublisher:
         run_id: UUID,
         parent_artifact_id: UUID | None,
         title: str,
+        allow_inconclusive: bool = False,
         parent_artifact_version_id: UUID | None = None,
         parent_artifact_fingerprint: str | None = None,
     ) -> None:
@@ -1300,17 +1805,38 @@ class RepoArtifactPublisher:
         self._run_id = run_id
         self._parent_artifact_id = parent_artifact_id
         self._title = title
+        self._allow_inconclusive = allow_inconclusive
         self._parent_artifact_version_id = parent_artifact_version_id
         self._parent_artifact_fingerprint = parent_artifact_fingerprint
 
-    async def publish(
+    async def materialize(
         self,
         candidate: CandidateRevision,
         execution: ExecutionEvidence,
-        verification: VerificationEvidence,
+        verification: StrictVerificationAttempt,
+        review: SemanticReviewEvidence,
         conversion: ConversionEvidence | None,
         plan: Plan,
-    ) -> PublishedArtifact:
+    ) -> MaterializedArtifact:
+        verification.assert_binding(candidate, execution, review)
+        # strict_verify is a certification badge, not a gate (see broker.py /
+        # tools.py): a READY semantic review already authorized materialization
+        # regardless of the strict decision. INCONCLUSIVE and FAIL both reach
+        # here now — the same rollout flag still lets ops withhold anything
+        # short of a strict PASS if needed.
+        if (
+            verification.decision in {VerifierDecision.INCONCLUSIVE, VerifierDecision.FAIL}
+            and not self._allow_inconclusive
+        ):
+            raise ValueError(
+                f"{verification.decision.value.upper()} materialization is disabled by rollout policy"
+            )
+        if conversion is not None and not (
+            conversion.candidate_id == candidate.candidate_id
+            and conversion.execution_id == execution.execution_id
+            and conversion.source_fingerprint == candidate.source_fingerprint
+        ):
+            raise ValueError("conversion fingerprint/execution binding mismatch")
         artifact_id = self._parent_artifact_id
         # A run may use a saved Vault version as context while producing edited
         # source. Appending that changed source to the same artifact would move
@@ -1343,39 +1869,74 @@ class RepoArtifactPublisher:
         )
         resource_metrics = execution.observation.get("resource_metrics")
         resource_estimates = resource_metrics if isinstance(resource_metrics, dict) else None
-        critic = verification.critic if isinstance(verification.critic, dict) else {}
-        critic_summary = {
-            key: critic[key]
-            for key in ("confidence", "severity", "summary", "residual_risks")
-            if key in critic
-        }
+        critic = review.feedback.get("critic")
+        critic = critic if isinstance(critic, dict) else {}
         residual_risks = critic.get("residual_risks")
-        limitations = (
-            "\n".join(str(item) for item in residual_risks)
-            if isinstance(residual_risks, list) and residual_risks
-            else None
+        residual_risks = (
+            [str(item)[:1000] for item in residual_risks][:20]
+            if isinstance(residual_risks, list)
+            else []
         )
-        metadata = {
-            "source": "verified_agent_candidate",
+        limitations_list = list(dict.fromkeys([*residual_risks, *verification.unverified_claims]))
+        limitations = "\n".join(limitations_list) or None
+        strength = verification.evidence_strength or evidence_strength_of(verification.checks)
+        checks = [
+            {
+                "method": check.get("method"),
+                "result": check.get("result"),
+                "details": check.get("details", {}),
+            }
+            for check in verification.checks
+        ]
+        failed_checks = [check for check in checks if check["result"] == "fail"]
+        unavailable_checks = [
+            check for check in checks if check["result"] in {"skipped", "unavailable", "error"}
+        ]
+        metadata: dict[str, object] = {
+            "source": "agent_candidate",
             "candidate_id": str(candidate.candidate_id),
             "candidate_revision": candidate.revision,
-            "verification_id": str(verification.verification_id),
+            "source_fingerprint": candidate.source_fingerprint,
+            "execution_id": str(execution.execution_id),
+            "verification_attempt_id": str(verification.attempt_id),
+            "semantic_review_id": str(review.review_id),
             "canonical_representation": "framework_code",
             "openqasm_role": "interchange" if qasm else "unavailable",
             "verification_summary": {
+                "verified": verification.decision is VerifierDecision.PASS,
                 "decision": verification.decision.value,
-                # Derived here rather than stored on the evidence row: the checks
-                # are the fact, the grade is a reading of them, and a stored grade
-                # would be free to drift from the list printed beside it.
-                "evidence_strength": evidence_strength_of(verification.deterministic_checks).value,
-                "deterministic_checks": [
-                    {
-                        "method": check.get("method"),
-                        "result": check.get("result"),
-                    }
-                    for check in verification.deterministic_checks
-                ],
-                "critic": critic_summary or None,
+                "evidence_strength": strength.value,
+                "reason_code": verification.reason_code,
+                "semantic_review_decision": review.decision.value,
+                "candidate_defect_observed": verification.candidate_defect_observed,
+                "failure_class": (
+                    verification.failure_class.value if verification.failure_class else None
+                ),
+                "retry_target": verification.retry_target.value,
+                "checks": checks,
+                "failed_checks": failed_checks,
+                "unavailable_checks": unavailable_checks,
+                "semantic_review": {
+                    "decision": review.decision.value,
+                    "reason_code": review.reason_code,
+                    "confidence": review.confidence,
+                    "severity": review.severity,
+                    "summary": critic.get("summary"),
+                },
+                "residual_risks": residual_risks,
+                "unverified_claims": verification.unverified_claims,
+            },
+            "export_manifest": {
+                "verification_decision": verification.decision.value,
+                "warning": (
+                    f"This OpenQASM export cannot embed the artifact's "
+                    f"{verification.decision.value.upper()} verification state; "
+                    "retain this manifest with the exported file."
+                    if qasm
+                    and verification.decision
+                    in {VerifierDecision.INCONCLUSIVE, VerifierDecision.FAIL}
+                    else None
+                ),
             },
         }
         if save_as_copy:
@@ -1407,7 +1968,7 @@ class RepoArtifactPublisher:
         await runs_repo.set_run_artifact_version(
             self._scope, self._session, self._run_id, version.id
         )
-        return PublishedArtifact(
+        return MaterializedArtifact(
             artifact_id=artifact_id,
             version_id=version.id,
             version_seq=version.seq,

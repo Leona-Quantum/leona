@@ -5,7 +5,7 @@ import uuid
 
 import pytest
 from repo_test_helpers import make_scope
-from majorana_contracts.enums import Role, RunMode, UsageKind, VerificationMethod
+from majorana_contracts.enums import Role, RunMode, RunStatus, UsageKind, VerificationMethod
 
 from majorana_api.repos import (
     AuthzError,
@@ -37,6 +37,14 @@ VIEWER_BLOCKED_WRITES = [
     lambda s, db: folders.create_folder(s, db, name="folder"),
     lambda s, db: folders.set_run_folder(s, db, uuid.uuid4(), uuid.uuid4()),
     lambda s, db: runs.update_run_status(s, db, uuid.uuid4(), "running"),
+    lambda s, db: runs.finish_run(
+        s,
+        db,
+        uuid.uuid4(),
+        RunStatus.FAILED,
+        event_payload={"status": "failed", "reason_code": "agent_failed"},
+        event_id=uuid.uuid4(),
+    ),
     lambda s, db: runs.append_run_event(s, db, uuid.uuid4(), type="run.started", payload={}),
     lambda s, db: runs.add_verification_record(
         s, db, uuid.uuid4(), method=VerificationMethod.EXACT, result="pass"

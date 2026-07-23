@@ -6,17 +6,43 @@ from majorana_agent import (
     CandidateRevision,
     ExecutionEvidence,
     MemoryAgentStore,
+    PlanRecord,
+    SemanticReviewEvidence,
+    StrictVerificationAttempt,
     ToolBroker,
     ToolCall,
     ToolName,
-    VerificationEvidence,
 )
-from majorana_contracts.enums import Framework, VerifierDecision
+from majorana_contracts.enums import (
+    Algorithm,
+    Framework,
+    RetryTarget,
+    SemanticReviewDecision,
+    VerifierDecision,
+)
+from majorana_contracts.plan import Plan
 from majorana_frameworks import FrameworkProgram
 
 
 async def _ok(_run_id: UUID, call: ToolCall):
     return call.arguments | {"decision": call.arguments.get("decision", "pass")}
+
+
+def _plan() -> Plan:
+    return Plan.model_validate(
+        {
+            "domain": "quantum information",
+            "framework": "qiskit",
+            "algorithm": Algorithm.BELL,
+            "problem_summary": "Build a Bell state",
+            "algorithm_rationale": "Entanglement matches the request",
+            "parameters": {},
+            "qubits_estimate": 2,
+            "expected_runtime_sec": 1,
+            "success_criteria": {"primary_metric": "counts"},
+            "expected_output_keys": ["counts"],
+        }
+    )
 
 
 def _broker(store, framework=Framework.QISKIT):
@@ -80,7 +106,7 @@ async def test_tool_call_id_cannot_be_reused_with_new_arguments():
         raise AssertionError("idempotency conflict was not rejected")
 
 
-async def test_publish_requires_matching_verified_latest_candidate():
+async def test_materialize_requires_terminal_strict_latest_candidate():
     store = MemoryAgentStore()
     run_id, plan_id, candidate_id = uuid4(), uuid4(), uuid4()
     source = "from qiskit import QuantumCircuit\nFINAL_CIRCUIT = QuantumCircuit(1)\n"
@@ -95,6 +121,7 @@ async def test_publish_requires_matching_verified_latest_candidate():
         source=source,
         source_fingerprint=fingerprint,
     )
+    await store.add_plan(PlanRecord(plan_id=plan_id, run_id=run_id, plan=_plan()))
     await store.add_candidate(candidate)
     execution = ExecutionEvidence(
         execution_id=uuid4(),
@@ -112,45 +139,63 @@ async def test_publish_requires_matching_verified_latest_candidate():
         run_id,
         ToolCall(
             tool_call_id="publish-early",
-            name=ToolName.PUBLISH_ARTIFACT,
+            name=ToolName.MATERIALIZE_ARTIFACT,
             arguments={"candidate_id": str(candidate_id)},
         ),
     )
-    assert unverified.error_code == "candidate_unverified"
+    assert unverified.error_code == "candidate_not_materializable"
 
-    await store.add_verification(
-        VerificationEvidence(
-            verification_id=uuid4(),
+    review = SemanticReviewEvidence(
+        review_id=uuid4(),
+        candidate_id=candidate_id,
+        execution_id=execution.execution_id,
+        source_fingerprint=fingerprint,
+        attempt_seq=1,
+        decision=SemanticReviewDecision.READY,
+        reason_code="semantic_ready",
+        retry_target=RetryTarget.NONE,
+    )
+    await store.append_semantic_review(review)
+    await store.append_strict_verification(
+        StrictVerificationAttempt(
+            attempt_id=uuid4(),
             candidate_id=candidate_id,
             execution_id=execution.execution_id,
+            semantic_review_id=review.review_id,
             source_fingerprint=fingerprint,
+            attempt_seq=1,
             decision=VerifierDecision.PASS,
+            reason_code="strict_pass",
+            candidate_defect_observed=False,
+            retry_target=RetryTarget.NONE,
+            verifier_version="test",
         )
     )
     published = await _broker(store).dispatch(
         run_id,
         ToolCall(
             tool_call_id="publish",
-            name=ToolName.PUBLISH_ARTIFACT,
+            name=ToolName.MATERIALIZE_ARTIFACT,
             arguments={"candidate_id": str(candidate_id)},
         ),
     )
     assert published.ok
-    assert published.state is AgentState.PUBLISHED
+    assert published.state is AgentState.MATERIALIZED
 
 
 async def test_memory_evidence_is_append_only():
     store = MemoryAgentStore()
-    run_id, candidate_id = uuid4(), uuid4()
+    run_id, plan_id, candidate_id = uuid4(), uuid4(), uuid4()
     source = "FINAL_CIRCUIT = object()\n"
     fingerprint = FrameworkProgram(Framework.QISKIT, source).fingerprint
+    await store.add_plan(PlanRecord(plan_id=plan_id, run_id=run_id, plan=_plan()))
     await store.add_candidate(
         CandidateRevision(
             candidate_id=candidate_id,
             run_id=run_id,
             tool_call_id="simulate",
             revision=1,
-            plan_id=uuid4(),
+            plan_id=plan_id,
             framework=Framework.QISKIT,
             source=source,
             source_fingerprint=fingerprint,

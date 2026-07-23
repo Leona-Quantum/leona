@@ -1,33 +1,43 @@
 import json
+import math
 from types import SimpleNamespace
 from uuid import uuid4
 
 import pytest
 from majorana_agent import (
     CandidateRevision,
+    ConversionEvidence,
     ExecutionEvidence,
     ExecutionFailureKind,
-    VerificationEvidence,
+    SemanticReviewEvidence,
+    StrictVerificationAttempt,
 )
 from majorana_contracts.enums import (
     Algorithm,
     EvidenceStrength,
     Framework,
     MeasurementPolicy,
+    RetryTarget,
+    SemanticReviewDecision,
+    VerificationFailureClass,
     VerificationMethod,
     VerifierDecision,
     evidence_strength_of,
 )
-from majorana_contracts.plan import EXACT_MAX_QUBITS, Plan
-from majorana_worker import agent_ports
+from majorana_contracts.plan import Plan
 from majorana_frameworks import FrameworkProgram
 from majorana_llm import LLMResponse, StageOutputError
 from majorana_sandbox import SandboxResult
 from majorana_worker.agent_ports import (
     EvidenceVerifier,
+    EvidenceReviewer,
+    EvidenceStrictVerifier,
+    FastCandidateChecker,
     LLMPlanner,
-    RepoArtifactPublisher,
+    RepoArtifactMaterializer,
     SandboxCandidateExecutor,
+    SemanticCandidateReviewer,
+    StrictEvidenceVerifier,
     TrustedOpenQASMConverter,
 )
 
@@ -45,6 +55,14 @@ def _plan(*, expected_keys=None) -> Plan:
             "expected_runtime_sec": 1,
             "success_criteria": {"primary_metric": "counts"},
             "expected_output_keys": expected_keys or ["counts"],
+            "verification_plan": {
+                "methods": ["return_contract"],
+                "state_preparation_claim": {
+                    "family": "bell",
+                    "qubits": 2,
+                    "relative_phase_radians": 0.0,
+                },
+            },
         }
     )
 
@@ -129,8 +147,15 @@ class PassingCriticLLM:
 
 async def test_semantic_critic_runs_only_after_deterministic_pass():
     candidate = _candidate()
+    counts = {"00": 512, "11": 512}
     output = await EvidenceVerifier(llm=PassingCriticLLM(), task_prompt="Bell state").verify(
-        candidate, _execution(candidate), _plan()
+        candidate,
+        _execution(
+            candidate,
+            result={"counts": counts},
+            observation=_statistical_observation(counts),
+        ),
+        _plan(),
     )
     assert output.decision is VerifierDecision.PASS
     assert all(check["result"] == "pass" for check in output.deterministic_checks)
@@ -219,7 +244,11 @@ class MustNotCreateSandbox:
 
 
 async def test_executor_reports_resource_exhaustion_before_large_statevector_run():
-    plan = Plan.model_validate(_plan().model_dump(mode="json") | {"qubits_estimate": 27})
+    payload = _plan().model_dump(mode="json")
+    payload["algorithm"] = Algorithm.OTHER.value
+    payload["qubits_estimate"] = 27
+    payload["verification_plan"]["state_preparation_claim"] = None
+    plan = Plan.model_validate(payload)
     output = await SandboxCandidateExecutor(MustNotCreateSandbox()).run_candidate(
         _candidate(), plan
     )
@@ -246,15 +275,91 @@ class LowConfidenceCriticLLM:
         )
 
 
-async def test_semantic_critic_fails_closed_on_low_confidence_pass():
+async def test_semantic_critic_is_inconclusive_on_low_confidence_pass():
     candidate = _candidate()
     output = await EvidenceVerifier(llm=LowConfidenceCriticLLM(), task_prompt="Bell state").verify(
         candidate, _execution(candidate), _plan()
     )
 
+    assert output.decision is VerifierDecision.INCONCLUSIVE
+    assert output.repair is None
+    assert output.failure_class is VerificationFailureClass.EVIDENCE_GAP
+    assert output.candidate_defect_observed is False
+
+
+async def test_strict_gate_can_confirm_a_defect_after_semantic_uncertainty():
+    candidate = _candidate()
+    wrong = {"01": 512, "10": 512}
+    output = await EvidenceVerifier(llm=LowConfidenceCriticLLM(), task_prompt="Bell state").verify(
+        candidate,
+        _execution(
+            candidate,
+            result={"counts": wrong},
+            observation=_statistical_observation(wrong),
+        ),
+        _statistical_plan(),
+    )
+
+    assert output.semantic_review_decision is SemanticReviewDecision.INCONCLUSIVE
     assert output.decision is VerifierDecision.FAIL
-    assert output.repair is not None
-    assert output.repair.required_rechecks == ["semantic_critic"]
+    assert output.failure_class is VerificationFailureClass.CANDIDATE_DEFECT
+    assert output.candidate_defect_observed is True
+
+
+async def test_split_review_and_strict_ports_preserve_uncertainty_fail_closed_behavior():
+    candidate = _candidate()
+    wrong = {"01": 512, "10": 512}
+    execution = _execution(
+        candidate,
+        result={"counts": wrong},
+        observation=_statistical_observation(wrong),
+    )
+    plan = _statistical_plan()
+    reviewed = await EvidenceReviewer(
+        llm=LowConfidenceCriticLLM(), task_prompt="Bell state"
+    ).review(candidate, execution, plan)
+    review = SemanticReviewEvidence(
+        review_id=uuid4(),
+        candidate_id=candidate.candidate_id,
+        execution_id=execution.execution_id,
+        source_fingerprint=candidate.source_fingerprint,
+        attempt_seq=1,
+        decision=reviewed.decision,
+        confidence=reviewed.confidence,
+        severity=reviewed.severity,
+        reason_code=reviewed.reason_code,
+        failure_class=reviewed.failure_class,
+        retry_target=reviewed.retry_target,
+        feedback=reviewed.feedback,
+    )
+
+    output = await EvidenceStrictVerifier().verify_strict(candidate, execution, plan, review)
+
+    assert reviewed.decision is SemanticReviewDecision.INCONCLUSIVE
+    assert output.decision is VerifierDecision.FAIL
+    assert output.failure_class is VerificationFailureClass.CANDIDATE_DEFECT
+    assert output.candidate_defect_observed is True
+    assert output.claim_coverage is not None
+
+
+async def test_strict_verifier_error_takes_precedence_over_unavailable_evidence(monkeypatch):
+    def raise_strict_error(self, execution, plan):
+        raise RuntimeError("trusted verifier failed")
+
+    monkeypatch.setattr(StrictEvidenceVerifier, "check", raise_strict_error)
+    candidate = _candidate()
+    output = await EvidenceVerifier(llm=PassingCriticLLM(), task_prompt="Bell state").verify(
+        candidate,
+        _execution(candidate, observation={"resource_metrics": {"qubits": 2}}),
+        _plan(),
+    )
+
+    assert any(check["result"] == "unavailable" for check in output.deterministic_checks)
+    assert any(check["result"] == "error" for check in output.deterministic_checks)
+    assert output.decision is VerifierDecision.INCONCLUSIVE
+    assert output.failure_class is VerificationFailureClass.VERIFIER_FAILURE
+    assert output.retry_target is RetryTarget.VERIFICATION
+    assert output.reason_code == "strict_verifier_error"
 
 
 class RecheckDemandingPassCriticLLM:
@@ -274,42 +379,167 @@ class RecheckDemandingPassCriticLLM:
         )
 
 
-async def test_semantic_critic_fails_closed_on_pass_that_demands_rechecks():
+async def test_semantic_pass_that_demands_rechecks_is_inconclusive():
     candidate = _candidate()
     output = await EvidenceVerifier(
         llm=RecheckDemandingPassCriticLLM(), task_prompt="Bell state"
     ).verify(candidate, _execution(candidate), _plan())
 
-    assert output.decision is VerifierDecision.FAIL
-    assert output.repair is not None
-    assert output.repair.required_rechecks == ["statistical"]
+    assert output.decision is VerifierDecision.INCONCLUSIVE
+    assert output.repair is None
+    assert output.failure_class is VerificationFailureClass.EVIDENCE_GAP
 
 
-async def test_publisher_keeps_compact_long_term_evidence_without_duplicate_variant(
+class RoutingCriticLLM:
+    def __init__(self, area: str) -> None:
+        self.area = area
+
+    async def complete(self, request, *, on_delta=None):
+        return LLMResponse(
+            text=json.dumps(
+                {
+                    "decision": "fail",
+                    "confidence": "high",
+                    "severity": "blocking",
+                    "summary": "A clear semantic mismatch was found.",
+                    "failed_checks": [self.area],
+                    "mismatches": [
+                        {
+                            "area": self.area,
+                            "expected": "request and Plan agree",
+                            "observed": "they disagree",
+                            "evidence": "bounded fixture",
+                            "severity": "blocking",
+                        }
+                    ],
+                    "suggestions": [],
+                    "repair_plan": ["Correct the mismatched layer."],
+                    "required_recheck": ["semantic_review"],
+                    "residual_risks": [],
+                }
+            ),
+            model=request.model,
+            input_tokens=1,
+            output_tokens=1,
+        )
+
+
+async def test_semantic_request_plan_mismatch_routes_to_replan():
+    candidate = _candidate()
+    output = await EvidenceVerifier(
+        llm=RoutingCriticLLM("request-to-plan"), task_prompt="Bell state"
+    ).verify(candidate, _execution(candidate), _plan())
+
+    assert output.semantic_review_decision is SemanticReviewDecision.REPLAN
+    assert output.failure_class is VerificationFailureClass.PLAN_DEFECT
+    assert output.retry_target is RetryTarget.PLANNING
+    assert output.candidate_defect_observed is False
+
+
+async def test_semantic_plan_code_mismatch_routes_to_code_repair():
+    candidate = _candidate()
+    output = await EvidenceVerifier(
+        llm=RoutingCriticLLM("plan-to-code"), task_prompt="Bell state"
+    ).verify(candidate, _execution(candidate), _plan())
+
+    assert output.semantic_review_decision is SemanticReviewDecision.CODE_REPAIR
+    assert output.failure_class is VerificationFailureClass.CANDIDATE_DEFECT
+    assert output.retry_target is RetryTarget.CODE_GENERATION
+    assert output.candidate_defect_observed is True
+
+
+async def test_optional_entry_point_is_advisory_when_result_contract_already_passes():
+    payload = _plan().model_dump(mode="json")
+    payload["artifact_contract"] = {
+        "artifact_type": "script",
+        "entry_point": "run_bell",
+        "expected_return_type": "dict",
+        "measurement_policy": "measure_all",
+        "top_level_execution": "required",
+    }
+    plan = Plan.model_validate(payload)
+    candidate = _candidate()
+    review = await SemanticCandidateReviewer(
+        llm=RoutingCriticLLM("artifact_contract.entry_point"), task_prompt="Bell state"
+    ).review(
+        candidate,
+        _execution(candidate),
+        plan,
+        [{"method": "return_contract", "result": "pass"}],
+    )
+
+    assert review.decision is SemanticReviewDecision.READY
+    assert review.reason_code == "semantic_ready_optional_entry_point"
+    assert review.critic["advisory"]["code"] == "optional_entry_point_missing"
+
+
+class TimingOutCriticLLM:
+    def __init__(self) -> None:
+        self.calls = 0
+
+    async def complete(self, *_args, **_kwargs):
+        self.calls += 1
+        raise TimeoutError("critic timed out")
+
+
+async def test_semantic_timeout_is_inconclusive_without_candidate_repair():
+    llm = TimingOutCriticLLM()
+    candidate = _candidate()
+    output = await EvidenceVerifier(llm=llm, task_prompt="Bell state").verify(
+        candidate, _execution(candidate), _plan()
+    )
+
+    assert llm.calls == 2
+    assert output.decision is VerifierDecision.INCONCLUSIVE
+    assert output.failure_class is VerificationFailureClass.VERIFIER_FAILURE
+    assert output.retry_target is RetryTarget.VERIFICATION
+    assert output.repair is None
+    assert output.candidate_defect_observed is False
+
+
+async def test_materializer_persists_exact_bound_verification_metadata(
     monkeypatch,
 ):
     candidate = _candidate()
     execution = _execution(candidate)
-    verification = VerificationEvidence(
-        verification_id=uuid4(),
+    review = SemanticReviewEvidence(
+        review_id=uuid4(),
         candidate_id=candidate.candidate_id,
         execution_id=execution.execution_id,
         source_fingerprint=candidate.source_fingerprint,
+        attempt_seq=1,
+        decision=SemanticReviewDecision.READY,
+        reason_code="semantic_ready",
+        retry_target=RetryTarget.NONE,
+        feedback={
+            "critic": {
+                "confidence": "high",
+                "severity": "minor",
+                "summary": "The implementation aligns with the request.",
+                "residual_risks": ["Shot noise remains."],
+                "repair_plan": [],
+            }
+        },
+    )
+    verification = StrictVerificationAttempt(
+        attempt_id=uuid4(),
+        candidate_id=candidate.candidate_id,
+        execution_id=execution.execution_id,
+        semantic_review_id=review.review_id,
+        source_fingerprint=candidate.source_fingerprint,
+        attempt_seq=1,
         decision=VerifierDecision.PASS,
-        deterministic_checks=[
+        checks=[
             {
                 "method": "return_contract",
                 "result": "pass",
                 "details": {"large_transient_evidence": "not copied"},
             }
         ],
-        critic={
-            "confidence": "high",
-            "severity": "minor",
-            "summary": "The implementation aligns with the request.",
-            "residual_risks": ["Shot noise remains."],
-            "repair_plan": [],
-        },
+        reason_code="strict_pass",
+        candidate_defect_observed=False,
+        retry_target=RetryTarget.NONE,
+        verifier_version="test",
     )
     artifact_id = uuid4()
     version_id = uuid4()
@@ -334,42 +564,61 @@ async def test_publisher_keeps_compact_long_term_evidence_without_duplicate_vari
         set_run_artifact_version,
     )
 
-    publication = await RepoArtifactPublisher(
+    materialization = await RepoArtifactMaterializer(
         scope=object(),
         session=object(),
         run_id=candidate.run_id,
         parent_artifact_id=None,
         title="Bell circuit",
-    ).publish(candidate, execution, verification, None, _plan())
+    ).materialize(candidate, execution, verification, review, None, _plan())
 
-    assert publication.version_id == version_id
+    assert materialization.version_id == version_id
     assert captured["code"] == candidate.source
     assert captured["framework_variants"] is None
     assert captured["resource_estimates"] == execution.observation["resource_metrics"]
     assert captured["limitations"] == "Shot noise remains."
     summary = captured["metadata"]["verification_summary"]
+    assert summary["verified"] is True
     assert summary["decision"] == "pass"
-    assert summary["deterministic_checks"] == [{"method": "return_contract", "result": "pass"}]
-    assert "repair_plan" not in summary["critic"]
+    assert summary["reason_code"] == "strict_pass"
+    assert summary["checks"][0]["method"] == "return_contract"
+    assert summary["semantic_review"]["summary"] == ("The implementation aligns with the request.")
+    assert captured["metadata"]["execution_id"] == str(execution.execution_id)
+    assert captured["metadata"]["verification_attempt_id"] == str(verification.attempt_id)
     # This candidate passed on return_contract alone — the teleportation shape. The
     # artifact must say so beside the decision, not just in the check list.
     assert summary["evidence_strength"] == "structural"
 
 
-async def test_publisher_records_physical_evidence_when_a_physical_check_ran(monkeypatch):
+async def test_materializer_records_physical_evidence_when_a_physical_check_ran(monkeypatch):
     candidate = _candidate()
     execution = _execution(candidate)
-    verification = VerificationEvidence(
-        verification_id=uuid4(),
+    review = SemanticReviewEvidence(
+        review_id=uuid4(),
         candidate_id=candidate.candidate_id,
         execution_id=execution.execution_id,
         source_fingerprint=candidate.source_fingerprint,
+        attempt_seq=1,
+        decision=SemanticReviewDecision.READY,
+        reason_code="semantic_ready",
+        retry_target=RetryTarget.NONE,
+    )
+    verification = StrictVerificationAttempt(
+        attempt_id=uuid4(),
+        candidate_id=candidate.candidate_id,
+        execution_id=execution.execution_id,
+        semantic_review_id=review.review_id,
+        source_fingerprint=candidate.source_fingerprint,
+        attempt_seq=1,
         decision=VerifierDecision.PASS,
-        deterministic_checks=[
+        checks=[
             {"method": "return_contract", "result": "pass", "details": {}},
             {"method": "exact", "result": "pass", "details": {"distance": 1.8e-16}},
         ],
-        critic={"confidence": "high", "severity": "none", "summary": "Aligned."},
+        reason_code="strict_pass",
+        candidate_defect_observed=False,
+        retry_target=RetryTarget.NONE,
+        verifier_version="test",
     )
     captured = {}
 
@@ -392,29 +641,193 @@ async def test_publisher_records_physical_evidence_when_a_physical_check_ran(mon
         set_run_artifact_version,
     )
 
-    await RepoArtifactPublisher(
+    await RepoArtifactMaterializer(
         scope=object(),
         session=object(),
         run_id=candidate.run_id,
         parent_artifact_id=None,
         title="Bell circuit",
-    ).publish(candidate, execution, verification, None, _plan())
+    ).materialize(candidate, execution, verification, review, None, _plan())
 
     assert captured["metadata"]["verification_summary"]["evidence_strength"] == "physical"
 
 
-async def test_publisher_forks_changed_source_from_parent_artifact(monkeypatch):
-    """Editing a Vault version must not move its evidence onto the edit."""
+async def test_inconclusive_materializes_with_explicit_unverified_metadata(monkeypatch):
     candidate = _candidate()
     execution = _execution(candidate)
-    verification = VerificationEvidence(
-        verification_id=uuid4(),
+    review = SemanticReviewEvidence(
+        review_id=uuid4(),
         candidate_id=candidate.candidate_id,
         execution_id=execution.execution_id,
         source_fingerprint=candidate.source_fingerprint,
+        attempt_seq=1,
+        decision=SemanticReviewDecision.INCONCLUSIVE,
+        reason_code="semantic_evidence_gap",
+        failure_class=VerificationFailureClass.EVIDENCE_GAP,
+        retry_target=RetryTarget.NONE,
+        feedback={
+            "critic": {
+                "summary": "Phase intent could not be established.",
+                "residual_risks": ["Relative phase is unverified."],
+            }
+        },
+    )
+    verification = StrictVerificationAttempt(
+        attempt_id=uuid4(),
+        candidate_id=candidate.candidate_id,
+        execution_id=execution.execution_id,
+        semantic_review_id=review.review_id,
+        source_fingerprint=candidate.source_fingerprint,
+        attempt_seq=1,
+        checks=[
+            {"method": "structural", "result": "pass"},
+            {"method": "bell_state", "result": "unavailable"},
+            {"method": "success_criteria", "result": "fail"},
+        ],
+        decision=VerifierDecision.INCONCLUSIVE,
+        evidence_strength=EvidenceStrength.STRUCTURAL,
+        reason_code="required_check_unavailable",
+        candidate_defect_observed=False,
+        failure_class=VerificationFailureClass.CAPABILITY_LIMIT,
+        retry_target=RetryTarget.NONE,
+        unverified_claims=["Bell relative phase"],
+        verifier_version="test",
+    )
+    captured = {}
+
+    async def create_artifact(*_args, **_kwargs):
+        return SimpleNamespace(id=uuid4())
+
+    async def create_version(*_args, **kwargs):
+        captured.update(kwargs)
+        return SimpleNamespace(id=uuid4(), seq=1)
+
+    async def set_run_artifact_version(*_args, **_kwargs):
+        return None
+
+    monkeypatch.setattr(
+        "majorana_worker.agent_ports.artifacts_repo.create_artifact", create_artifact
+    )
+    monkeypatch.setattr("majorana_worker.agent_ports.artifacts_repo.create_version", create_version)
+    monkeypatch.setattr(
+        "majorana_worker.agent_ports.runs_repo.set_run_artifact_version",
+        set_run_artifact_version,
+    )
+
+    conversion = ConversionEvidence(
+        candidate_id=candidate.candidate_id,
+        execution_id=execution.execution_id,
+        source_fingerprint=candidate.source_fingerprint,
+        status="available",
+        qasm="OPENQASM 3.0;\nqubit q;",
+    )
+    with pytest.raises(ValueError, match="disabled by rollout policy"):
+        await RepoArtifactMaterializer(
+            scope=object(),
+            session=object(),
+            run_id=candidate.run_id,
+            parent_artifact_id=None,
+            title="Bell circuit",
+        ).materialize(candidate, execution, verification, review, conversion, _plan())
+    assert captured == {}, "default-off rollout must stop before any artifact write"
+
+    await RepoArtifactMaterializer(
+        scope=object(),
+        session=object(),
+        run_id=candidate.run_id,
+        parent_artifact_id=None,
+        title="Bell circuit",
+        allow_inconclusive=True,
+    ).materialize(candidate, execution, verification, review, conversion, _plan())
+
+    summary = captured["metadata"]["verification_summary"]
+    assert summary["verified"] is False
+    assert summary["decision"] == "inconclusive"
+    assert summary["reason_code"] == "required_check_unavailable"
+    assert [check["method"] for check in summary["failed_checks"]] == ["success_criteria"]
+    assert [check["method"] for check in summary["unavailable_checks"]] == ["bell_state"]
+    assert summary["semantic_review"]["summary"] == "Phase intent could not be established."
+    assert summary["residual_risks"] == ["Relative phase is unverified."]
+    assert captured["fingerprint"] == candidate.source_fingerprint
+    assert "Bell relative phase" in captured["limitations"]
+    assert "INCONCLUSIVE" in captured["metadata"]["export_manifest"]["warning"]
+
+
+@pytest.mark.parametrize("decision", [VerifierDecision.PASS, VerifierDecision.INCONCLUSIVE])
+async def test_materializer_rejects_fingerprint_mismatch_for_both_decisions(decision):
+    candidate = _candidate()
+    execution = _execution(candidate).model_copy(update={"source_fingerprint": "b" * 64})
+    review = SemanticReviewEvidence(
+        review_id=uuid4(),
+        candidate_id=candidate.candidate_id,
+        execution_id=execution.execution_id,
+        source_fingerprint="b" * 64,
+        attempt_seq=1,
+        decision=(
+            SemanticReviewDecision.READY
+            if decision is VerifierDecision.PASS
+            else SemanticReviewDecision.INCONCLUSIVE
+        ),
+        reason_code="semantic_complete",
+        failure_class=(
+            None if decision is VerifierDecision.PASS else VerificationFailureClass.EVIDENCE_GAP
+        ),
+        retry_target=RetryTarget.NONE,
+    )
+    strict = StrictVerificationAttempt(
+        attempt_id=uuid4(),
+        candidate_id=candidate.candidate_id,
+        execution_id=execution.execution_id,
+        semantic_review_id=review.review_id,
+        source_fingerprint="b" * 64,
+        attempt_seq=1,
+        decision=decision,
+        reason_code="strict_complete",
+        candidate_defect_observed=False,
+        failure_class=(
+            None if decision is VerifierDecision.PASS else VerificationFailureClass.EVIDENCE_GAP
+        ),
+        retry_target=RetryTarget.NONE,
+        verifier_version="test",
+    )
+
+    with pytest.raises(ValueError, match="fingerprint mismatch"):
+        await RepoArtifactMaterializer(
+            scope=object(),
+            session=object(),
+            run_id=candidate.run_id,
+            parent_artifact_id=None,
+            title="Bell circuit",
+        ).materialize(candidate, execution, strict, review, None, _plan())
+
+
+async def test_materializer_forks_changed_source_from_parent_artifact(monkeypatch):
+    """Editing a Vault version must not move its evidence onto the edit."""
+    candidate = _candidate()
+    execution = _execution(candidate)
+    review = SemanticReviewEvidence(
+        review_id=uuid4(),
+        candidate_id=candidate.candidate_id,
+        execution_id=execution.execution_id,
+        source_fingerprint=candidate.source_fingerprint,
+        attempt_seq=1,
+        decision=SemanticReviewDecision.READY,
+        reason_code="semantic_complete",
+        retry_target=RetryTarget.NONE,
+    )
+    verification = StrictVerificationAttempt(
+        attempt_id=uuid4(),
+        candidate_id=candidate.candidate_id,
+        execution_id=execution.execution_id,
+        semantic_review_id=review.review_id,
+        source_fingerprint=candidate.source_fingerprint,
+        attempt_seq=1,
+        checks=[{"method": "return_contract", "result": "pass"}],
         decision=VerifierDecision.PASS,
-        deterministic_checks=[{"method": "return_contract", "result": "pass"}],
-        critic={},
+        reason_code="strict_complete",
+        candidate_defect_observed=False,
+        retry_target=RetryTarget.NONE,
+        verifier_version="test",
     )
     parent_artifact_id = uuid4()
     parent_version_id = uuid4()
@@ -442,7 +855,7 @@ async def test_publisher_forks_changed_source_from_parent_artifact(monkeypatch):
         set_run_artifact_version,
     )
 
-    publication = await RepoArtifactPublisher(
+    materialized = await RepoArtifactMaterializer(
         scope=object(),
         session=object(),
         run_id=candidate.run_id,
@@ -450,9 +863,9 @@ async def test_publisher_forks_changed_source_from_parent_artifact(monkeypatch):
         parent_artifact_version_id=parent_version_id,
         parent_artifact_fingerprint="fingerprint-of-the-old-version",
         title="Edited Bell circuit",
-    ).publish(candidate, execution, verification, None, _plan())
+    ).materialize(candidate, execution, verification, review, None, _plan())
 
-    assert publication.artifact_id == copied_artifact_id
+    assert materialized.artifact_id == copied_artifact_id
     assert captured["artifact"]["parent_artifact_id"] == parent_artifact_id
     assert captured["artifact_id"] == copied_artifact_id
     assert captured["version"]["metadata"]["provenance"] == {
@@ -485,7 +898,7 @@ def test_verifier_respects_non_circuit_artifact_contract():
             },
         }
     )
-    checks = EvidenceVerifier(llm=MustNotRunLLM(), task_prompt="test")._deterministic_checks(
+    checks = _deterministic_checks(
         candidate,
         _execution(candidate, result={"value": 1}, observation={}),
         plan,
@@ -616,6 +1029,31 @@ async def test_requested_seed_reaches_the_plan_by_the_same_mechanism():
     assert "random seed 7" in llm.prompts[0]
 
 
+async def test_replan_preserves_prior_seed_and_shots_and_includes_typed_feedback():
+    previous_payload = json.loads(
+        _plan_payload(output_keys=["counts"], methods=["statistical", "return_contract"])
+    )
+    previous_payload["parameters"] = {"shots": 4096, "seed": 17}
+    previous = Plan.model_validate(previous_payload)
+    revised_payload = previous.model_dump(mode="json")
+    revised_payload["problem_summary"] = "Corrected MaxCut plan"
+    revised_payload["parameters"] = {"shots": 128, "seed": 99}
+    llm = _ScriptedPlannerLLM(json.dumps(revised_payload))
+    planner = LLMPlanner(llm=llm, task_prompt="MaxCut on a ring", framework=Framework.QISKIT)
+
+    revised = await planner.revise_plan(
+        uuid4(),
+        previous,
+        '{"reason_code":"semantic_plan_defect"}',
+    )
+
+    assert revised.problem_summary == "Corrected MaxCut plan"
+    assert revised.parameters.shots == 4096
+    assert revised.parameters.seed == 17
+    assert "immutable prior Plan" in llm.prompts[0]
+    assert "semantic_plan_defect" in llm.prompts[0]
+
+
 async def test_an_out_of_range_seed_is_dropped_rather_than_clamped():
     """A clamped seed is a DIFFERENT seed presented as the user's, which defeats
     the point of asking for one. Shots clamp because 20000 shots still answers
@@ -672,7 +1110,14 @@ def _statistical_plan() -> Plan:
             "expected_runtime_sec": 1,
             "success_criteria": {"primary_metric": "counts"},
             "expected_output_keys": ["counts"],
-            "verification_plan": {"methods": ["statistical", "return_contract"]},
+            "verification_plan": {
+                "methods": ["statistical", "return_contract"],
+                "state_preparation_claim": {
+                    "family": "bell",
+                    "qubits": 2,
+                    "relative_phase_radians": 0.0,
+                },
+            },
         }
     )
 
@@ -681,6 +1126,7 @@ def _statistical_observation(counts: dict[str, int]) -> dict:
     return {
         "native_optimization": {"applied": False},
         "interchange_qasm": _BELL_QASM,
+        "native_statevector": _bell_native_statevector(),
         "verification_repeat_result": {"counts": counts},
         "resource_metrics": {
             "qubits": 2,
@@ -696,7 +1142,14 @@ def _checks_by_method(output) -> dict[str, dict]:
     return {check["method"]: check for check in output.deterministic_checks}
 
 
-async def test_native_optimization_evidence_fails_when_the_sandbox_reported_none():
+def _deterministic_checks(candidate, execution, plan) -> list[dict]:
+    return [
+        *FastCandidateChecker().check(candidate, execution, plan),
+        *StrictEvidenceVerifier().check(execution, plan),
+    ]
+
+
+async def test_native_optimization_evidence_is_unavailable_when_observer_reported_none():
     candidate = _candidate()
     output = await EvidenceVerifier(llm=MustNotRunLLM(), task_prompt="Bell state").verify(
         candidate,
@@ -704,8 +1157,8 @@ async def test_native_optimization_evidence_fails_when_the_sandbox_reported_none
         _plan(),
     )
     check = _checks_by_method(output)["native_optimization_evidence"]
-    assert check["result"] == "fail"
-    assert output.decision is VerifierDecision.FAIL
+    assert check["result"] == "unavailable"
+    assert output.decision is VerifierDecision.INCONCLUSIVE
 
 
 async def test_native_optimization_evidence_fails_when_it_contradicts_the_source():
@@ -759,8 +1212,97 @@ async def test_statistical_check_passes_on_counts_matching_the_born_distribution
     )
     checks = _checks_by_method(output)
     assert checks["statistical"]["result"] == "pass"
-    assert checks["statistical"]["details"]["evidence"] == "direct_simulation_vs_reported_counts"
+    assert checks["statistical"]["details"]["evidence"] == "native_statevector_vs_reported_counts"
     assert output.decision is VerifierDecision.PASS
+
+
+async def test_bell_property_rejects_wrong_relative_phase_despite_matching_counts():
+    counts = {"00": 512, "11": 512}
+    observation = _statistical_observation(counts)
+    observation["native_statevector"] = _bell_native_statevector()
+    observation["native_statevector"]["amplitudes"][6] *= -1
+    candidate = _candidate()
+
+    output = await EvidenceVerifier(llm=PassingCriticLLM(), task_prompt="Bell state").verify(
+        candidate,
+        _execution(candidate, result={"counts": counts}, observation=observation),
+        _statistical_plan(),
+    )
+
+    checks = _checks_by_method(output)
+    assert checks["statistical"]["result"] == "pass"
+    assert checks["bell_state_property"]["result"] == "fail"
+    assert output.decision is VerifierDecision.FAIL
+
+
+async def test_explicit_negative_phase_bell_request_is_not_blamed_as_candidate_defect():
+    counts = {"00": 512, "11": 512}
+    observation = _statistical_observation(counts)
+    observation["native_statevector"] = _bell_native_statevector()
+    observation["native_statevector"]["amplitudes"][6] *= -1
+    plan = _statistical_plan()
+    assert plan.verification_plan is not None
+    assert plan.verification_plan.state_preparation_claim is not None
+    plan.verification_plan.state_preparation_claim.relative_phase_radians = math.pi
+    candidate = _candidate()
+
+    output = await EvidenceVerifier(
+        llm=PassingCriticLLM(), task_prompt="Prepare (|00> - |11>)/sqrt(2)"
+    ).verify(
+        candidate,
+        _execution(candidate, result={"counts": counts}, observation=observation),
+        plan,
+    )
+
+    assert _checks_by_method(output)["bell_state_property"]["result"] == "pass"
+    assert output.decision is VerifierDecision.PASS
+    assert output.candidate_defect_observed is False
+
+
+async def test_bell_algorithm_without_typed_target_is_inconclusive_not_inferred():
+    counts = {"00": 512, "11": 512}
+    plan = _statistical_plan()
+    assert plan.verification_plan is not None
+    plan.verification_plan.state_preparation_claim = None
+    candidate = _candidate()
+
+    output = await EvidenceVerifier(llm=PassingCriticLLM(), task_prompt="Bell-like state").verify(
+        candidate,
+        _execution(
+            candidate,
+            result={"counts": counts},
+            observation=_statistical_observation(counts),
+        ),
+        plan,
+    )
+
+    check = _checks_by_method(output)["bell_state_property"]
+    assert check["result"] == "unavailable"
+    assert "typed state-preparation claim" in check["details"]["reason"]
+    assert output.decision is VerifierDecision.INCONCLUSIVE
+    assert output.candidate_defect_observed is False
+
+
+async def test_unaccepted_typed_phase_target_cannot_create_a_candidate_defect():
+    counts = {"00": 512, "11": 512}
+    observation = _statistical_observation(counts)
+    observation["native_statevector"] = _bell_native_statevector()
+    observation["native_statevector"]["amplitudes"][6] *= -1
+    candidate = _candidate()
+
+    output = await EvidenceVerifier(
+        llm=LowConfidenceCriticLLM(), task_prompt="Bell state with unclear phase"
+    ).verify(
+        candidate,
+        _execution(candidate, result={"counts": counts}, observation=observation),
+        _statistical_plan(),
+    )
+
+    check = _checks_by_method(output)["bell_state_property"]
+    assert check["result"] == "unavailable"
+    assert check["details"]["original_result"] == "fail"
+    assert output.decision is VerifierDecision.INCONCLUSIVE
+    assert output.candidate_defect_observed is False
 
 
 async def test_statistical_check_survives_a_missing_repeat_execution():
@@ -807,6 +1349,7 @@ async def test_statistical_incapacity_skips_without_blocking_the_candidate():
     the pass it leaves behind must grade structural (no physics was checked)."""
     counts = {"000": 256, "001": 256, "100": 256, "101": 256}
     observation = _statistical_observation(counts)
+    del observation["native_statevector"]
     observation["interchange_qasm"] = _TELEPORTATION_QASM
     observation["resource_metrics"]["qubits"] = 3
     observation["resource_metrics"]["measurement_count"] = 3
@@ -819,11 +1362,10 @@ async def test_statistical_incapacity_skips_without_blocking_the_candidate():
         plan,
     )
     checks = _checks_by_method(output)
-    assert checks["statistical"]["result"] == "skipped"
-    assert checks["statistical"]["details"]["skip_reason"] == "statevector_incapable"
+    assert checks["statistical"]["result"] == "unavailable"
     # The program still agrees with itself, which is real (weak) evidence and runs.
     assert checks["statistical_reproducibility"]["result"] == "pass"
-    assert output.decision is VerifierDecision.PASS
+    assert output.decision is VerifierDecision.INCONCLUSIVE
     assert evidence_strength_of(output.deterministic_checks) is EvidenceStrength.STRUCTURAL
 
 
@@ -841,6 +1383,48 @@ def _bell_native_statevector() -> dict:
     }
 
 
+def _ghz_native_statevector() -> dict:
+    amp = 1 / (2**0.5)
+    amplitudes = [0.0] * 16
+    amplitudes[0] = amp  # |000>
+    amplitudes[14] = amp  # |111>
+    return {
+        "amplitudes": amplitudes,
+        "qubits": 3,
+        "endianness": "q0_lsb",
+        "clbits": 3,
+        "measurement_map": {"0": 0, "1": 1, "2": 2},
+    }
+
+
+async def test_ghz_typed_property_is_enforced_by_the_full_verifier():
+    counts = {"000": 512, "111": 512}
+    plan_payload = _statistical_plan().model_dump(mode="json")
+    plan_payload["algorithm"] = Algorithm.GHZ.value
+    plan_payload["qubits_estimate"] = 3
+    plan_payload["verification_plan"]["state_preparation_claim"] = {
+        "family": "ghz",
+        "qubits": 3,
+        "relative_phase_radians": 0.0,
+        "measurement_binding": "identity_when_present",
+    }
+    plan = Plan.model_validate(plan_payload)
+    observation = _statistical_observation(counts)
+    observation["native_statevector"] = _ghz_native_statevector()
+    observation["resource_metrics"]["qubits"] = 3
+    observation["resource_metrics"]["measurement_count"] = 3
+    candidate = _candidate()
+
+    output = await EvidenceVerifier(llm=PassingCriticLLM(), task_prompt="GHZ state").verify(
+        candidate,
+        _execution(candidate, result={"counts": counts}, observation=observation),
+        plan,
+    )
+
+    assert _checks_by_method(output)["ghz_state_property"]["result"] == "pass"
+    assert output.decision is VerifierDecision.PASS
+
+
 async def test_statistical_prefers_native_statevector_over_interchange_qasm():
     """plans/framework-native-verification.md: the framework's own state is the
     substrate. The interchange QASM here describes a DIFFERENT circuit (|11> via
@@ -848,6 +1432,7 @@ async def test_statistical_prefers_native_statevector_over_interchange_qasm():
     proves the conversion is out of the trust path when native evidence exists."""
     counts = {"00": 512, "11": 512}
     observation = _statistical_observation(counts)
+    del observation["native_statevector"]
     observation["interchange_qasm"] = (
         'OPENQASM 2.0;\ninclude "qelib1.inc";\nqreg q[2];\ncreg c[2];\n'
         "x q[0];\nx q[1];\nmeasure q -> c;\n"
@@ -865,13 +1450,14 @@ async def test_statistical_prefers_native_statevector_over_interchange_qasm():
     assert output.decision is VerifierDecision.PASS
 
 
-async def test_feed_forward_circuit_earns_a_physical_grade_via_native_sampling():
+async def test_feed_forward_circuit_without_a_dedicated_property_is_inconclusive():
     """The other half of the 019f7e46-d688 story: after the incapacity fix a
     teleportation run merely stopped failing (structural). With the observer's
     trusted sampled counts it earns `physical` — the reported counts agree with a
     trusted re-execution of the actual circuit object."""
     counts = {"00": 1030, "11": 1018}
     observation = _statistical_observation(counts)
+    del observation["native_statevector"]
     observation["interchange_qasm"] = _TELEPORTATION_QASM  # statistical: skipped
     observation["resource_metrics"]["qubits"] = 3
     observation["resource_metrics"]["measurement_count"] = 3
@@ -882,6 +1468,7 @@ async def test_feed_forward_circuit_earns_a_physical_grade_via_native_sampling()
         "bit_order": "big",
     }
     plan = _statistical_plan()
+    plan.algorithm = Algorithm.OTHER
     plan.qubits_estimate = 3
     candidate = _candidate()
     output = await EvidenceVerifier(llm=PassingCriticLLM(), task_prompt="teleportation").verify(
@@ -890,9 +1477,10 @@ async def test_feed_forward_circuit_earns_a_physical_grade_via_native_sampling()
         plan,
     )
     checks = _checks_by_method(output)
-    assert checks["statistical"]["result"] == "skipped"
+    assert "statistical" not in checks
     assert checks["statistical_native"]["result"] == "pass"
-    assert output.decision is VerifierDecision.PASS
+    assert output.decision is VerifierDecision.INCONCLUSIVE
+    assert output.failure_class is VerificationFailureClass.CAPABILITY_LIMIT
     assert evidence_strength_of(output.deterministic_checks) is EvidenceStrength.PHYSICAL
 
 
@@ -913,31 +1501,6 @@ async def test_native_sampling_rejects_counts_the_trusted_execution_contradicts(
     )
     assert _checks_by_method(output)["statistical_native"]["result"] == "fail"
     assert output.decision is VerifierDecision.FAIL
-
-
-async def test_exact_falls_back_to_native_statevector_when_export_failed():
-    """A failed OpenQASM export downgrades the export, never the verdict: with no
-    interchange QASM but native evidence present, `exact` compares the framework's
-    own final state against the plan's declarative reference."""
-    counts = {"00": 512, "11": 512}
-    observation = _statistical_observation(counts)
-    del observation["interchange_qasm"]
-    del observation["verification_repeat_result"]
-    observation["native_statevector"] = _bell_native_statevector()
-    plan = _exact_plan(
-        reference_source="plan_declared",
-        reference_qasm=_BELL_REFERENCE_QASM,
-    )
-    candidate = _candidate()
-    output = await EvidenceVerifier(llm=PassingCriticLLM(), task_prompt="Bell state").verify(
-        candidate,
-        _execution(candidate, result={"counts": counts}, observation=observation),
-        plan,
-    )
-    check = _checks_by_method(output)["exact"]
-    assert check["result"] == "pass"
-    assert check["details"]["evidence"] == "native_statevector_vs_reference_qasm"
-    assert "all-zero state" in check["details"]["evidence_scope"]
 
 
 async def test_a_plan_without_statistical_still_gets_the_opportunistic_native_check():
@@ -962,7 +1525,8 @@ async def test_a_plan_without_statistical_still_gets_the_opportunistic_native_ch
         plan,
     )
     checks = _checks_by_method(output)
-    assert "statistical" not in checks
+    assert checks["statistical"]["result"] == "pass"
+    assert checks["bell_state_property"]["result"] == "pass"
     assert checks["statistical_native"]["result"] == "pass"
     assert output.decision is VerifierDecision.PASS
     assert evidence_strength_of(output.deterministic_checks) is EvidenceStrength.PHYSICAL
@@ -972,6 +1536,7 @@ async def test_statistical_check_fails_when_no_evidence_is_available_at_all():
     observation = _statistical_observation({"00": 1})
     del observation["verification_repeat_result"]
     del observation["interchange_qasm"]
+    del observation["native_statevector"]
     candidate = _candidate()
     output = await EvidenceVerifier(llm=MustNotRunLLM(), task_prompt="Bell state").verify(
         candidate,
@@ -979,134 +1544,9 @@ async def test_statistical_check_fails_when_no_evidence_is_available_at_all():
         _statistical_plan(),
     )
     check = _checks_by_method(output)["statistical"]
-    assert check["result"] == "fail"
+    assert check["result"] == "unavailable"
     assert check["details"]["error"] == "required evidence unavailable"
-    assert check["details"]["interchange_qasm"] is False
-
-
-_BELL_REFERENCE_QASM = 'OPENQASM 2.0;\ninclude "qelib1.inc";\nqreg q[2];\nh q[0];\ncx q[0],q[1];\n'
-# Same measured distribution as a Bell state, a different unitary. The statistical
-# check cannot tell these apart from counts alone in the |00>/|11> sense a sampled
-# run reports; the exact check compares unitaries and can.
-_WRONG_QASM = (
-    'OPENQASM 2.0;\ninclude "qelib1.inc";\nqreg q[2];\ncreg c[2];\n'
-    "h q[0];\ncx q[0],q[1];\nz q[0];\nmeasure q -> c;\n"
-)
-
-
-def _exact_plan(**verification) -> Plan:
-    return Plan.model_validate(
-        {
-            "domain": "quantum information",
-            "framework": "qiskit",
-            "algorithm": Algorithm.BELL,
-            "problem_summary": "Build and verify a Bell circuit",
-            "algorithm_rationale": "Entanglement matches the request",
-            "parameters": {},
-            "qubits_estimate": 2,
-            "expected_runtime_sec": 1,
-            "success_criteria": {"primary_metric": "counts"},
-            "expected_output_keys": ["counts"],
-            "verification_plan": {"methods": ["exact", "return_contract"], **verification},
-        }
-    )
-
-
-def _exact_observation(qasm: str) -> dict:
-    return {
-        "native_optimization": {"applied": False},
-        "interchange_qasm": qasm,
-        "resource_metrics": {
-            "qubits": 2,
-            "depth": 2,
-            "gate_count": 2,
-            "two_qubit_gate_count": 1,
-            "measurement_count": 2,
-        },
-    }
-
-
-async def test_exact_check_passes_when_the_executed_circuit_matches_the_reference():
-    candidate = _candidate()
-    output = await EvidenceVerifier(llm=PassingCriticLLM(), task_prompt="Bell state").verify(
-        candidate,
-        _execution(candidate, observation=_exact_observation(_BELL_QASM)),
-        _exact_plan(reference_source="plan_declared", reference_qasm=_BELL_REFERENCE_QASM),
-    )
-    check = _checks_by_method(output)["exact"]
-    assert check["result"] == "pass"
-    assert check["details"]["reference_source"] == "plan_declared"
-    assert check["details"]["scores"]["max_abs_distance"] < 1e-9
-    assert output.decision is VerifierDecision.PASS
-
-
-async def test_exact_check_fails_on_a_circuit_with_the_wrong_unitary():
-    """The reason for the check: a phase error survives a counts comparison and dies
-    against the reference unitary."""
-    candidate = _candidate()
-    output = await EvidenceVerifier(llm=MustNotRunLLM(), task_prompt="Bell state").verify(
-        candidate,
-        _execution(candidate, observation=_exact_observation(_WRONG_QASM)),
-        _exact_plan(reference_source="plan_declared", reference_qasm=_BELL_REFERENCE_QASM),
-    )
-    check = _checks_by_method(output)["exact"]
-    assert check["result"] == "fail"
-    assert check["details"]["scores"]["max_abs_distance"] > 1e-9
-    assert output.decision is VerifierDecision.FAIL
-
-
-async def test_exact_check_uses_the_parent_artifact_as_the_reference():
-    candidate = _candidate()
-    output = await EvidenceVerifier(
-        llm=PassingCriticLLM(),
-        task_prompt="Transpile this circuit without changing what it computes",
-        parent_artifact_qasm=_BELL_REFERENCE_QASM,
-    ).verify(
-        candidate,
-        _execution(candidate, observation=_exact_observation(_BELL_QASM)),
-        _exact_plan(reference_source="parent_artifact"),
-    )
-    check = _checks_by_method(output)["exact"]
-    assert check["result"] == "pass"
-    assert check["details"]["reference_source"] == "parent_artifact"
-    assert "independently verified" in check["details"]["evidence_scope"]
-
-
-async def test_exact_check_fails_when_the_parent_stored_no_qasm():
-    """A version saved without interchange QASM cannot serve as a reference. Missing
-    evidence fails; it never silently degrades to a weaker check."""
-    candidate = _candidate()
-    output = await EvidenceVerifier(
-        llm=MustNotRunLLM(), task_prompt="Preserve behaviour", parent_artifact_qasm=None
-    ).verify(
-        candidate,
-        _execution(candidate, observation=_exact_observation(_BELL_QASM)),
-        _exact_plan(reference_source="parent_artifact"),
-    )
-    check = _checks_by_method(output)["exact"]
-    assert check["result"] == "fail"
-    assert check["details"]["error"] == "required evidence unavailable"
-    assert check["details"]["reference_available"] is False
-
-
-async def test_exact_check_fails_when_the_run_emitted_no_interchange_qasm():
-    candidate = _candidate()
-    observation = _exact_observation(_BELL_QASM)
-    del observation["interchange_qasm"]
-    output = await EvidenceVerifier(llm=MustNotRunLLM(), task_prompt="Bell state").verify(
-        candidate,
-        _execution(candidate, observation=observation),
-        _exact_plan(reference_source="plan_declared", reference_qasm=_BELL_REFERENCE_QASM),
-    )
-    check = _checks_by_method(output)["exact"]
-    assert check["result"] == "fail"
-    assert check["details"]["interchange_qasm"] is False
-
-
-def test_the_worker_and_the_plan_contract_agree_on_the_exact_qubit_ceiling():
-    """Pinned against drift: if the callsite ceiling and the contract's ever diverge,
-    a plan can ask for a check the verifier is forced to fail."""
-    assert agent_ports.EXACT_MAX_QUBITS == EXACT_MAX_QUBITS
+    assert output.decision is VerifierDecision.INCONCLUSIVE
 
 
 class _LowConfidenceMismatchCriticLLM:
@@ -1133,14 +1573,14 @@ class _LowConfidenceMismatchCriticLLM:
         )
 
 
-async def test_repair_carries_the_critics_grading_not_just_its_prose():
+async def test_low_confidence_mismatch_does_not_blame_or_repair_candidate():
     candidate = _candidate()
     output = await EvidenceVerifier(
         llm=_LowConfidenceMismatchCriticLLM(), task_prompt="Bell state"
     ).verify(candidate, _execution(candidate), _plan())
-    assert output.repair is not None
-    assert output.repair.severity == "major"
-    assert output.repair.confidence == "low"
+    assert output.decision is VerifierDecision.INCONCLUSIVE
+    assert output.repair is None
+    assert output.candidate_defect_observed is False
 
 
 async def test_deterministic_failure_is_graded_blocking():
@@ -1343,27 +1783,33 @@ async def test_an_unparseable_critic_response_is_retried_before_it_costs_a_candi
     way on production run 019f7db9-f25c."""
     llm = FlakyCriticLLM()
     candidate = _candidate()
+    counts = {"00": 512, "11": 512}
     output = await EvidenceVerifier(llm=llm, task_prompt="W state").verify(
-        candidate, _execution(candidate), _plan()
+        candidate,
+        _execution(
+            candidate,
+            result={"counts": counts},
+            observation=_statistical_observation(counts),
+        ),
+        _plan(),
     )
     assert llm.calls == 2, "did not retry the critic"
     assert output.decision is VerifierDecision.PASS
 
 
-async def test_a_critic_that_never_parses_still_fails_closed_but_blames_itself():
+async def test_a_critic_that_never_parses_is_inconclusive_and_blames_itself():
     llm = BrokenCriticLLM()
     candidate = _candidate()
     output = await EvidenceVerifier(llm=llm, task_prompt="W state").verify(
         candidate, _execution(candidate), _plan()
     )
     assert llm.calls == 2, "retried more or fewer times than once"
-    assert output.decision is VerifierDecision.FAIL  # fail-closed is still the rule
+    assert output.decision is VerifierDecision.INCONCLUSIVE
     # The message must not read as a defect found in the candidate, and the repair plan
     # must not ask the agent to fix the verifier.
     assert "verifier failure" in ((output.critic or {}).get("summary") or "").lower()
-    assert not any(
-        "semantic verification" in step for step in (output.repair.repairs if output.repair else [])
-    )
+    assert output.repair is None
+    assert output.candidate_defect_observed is False
 
 
 class FencedCriticLLM:
@@ -1392,8 +1838,15 @@ async def test_a_fenced_critic_verdict_is_salvaged_rather_than_costing_a_candida
     stage has had this salvage since it was written; the critic never did."""
     llm = FencedCriticLLM()
     candidate = _candidate()
+    counts = {"00": 512, "11": 512}
     output = await EvidenceVerifier(llm=llm, task_prompt="W state").verify(
-        candidate, _execution(candidate), _plan()
+        candidate,
+        _execution(
+            candidate,
+            result={"counts": counts},
+            observation=_statistical_observation(counts),
+        ),
+        _plan(),
     )
     assert llm.calls == 1, "spent a second call on a reply that was already parseable"
     assert output.decision is VerifierDecision.PASS
@@ -1423,8 +1876,15 @@ async def test_a_critic_reply_with_an_unexpected_field_is_still_judged():
 
     llm = ExtraFieldCriticLLM()
     candidate = _candidate()
+    counts = {"00": 512, "11": 512}
     output = await EvidenceVerifier(llm=llm, task_prompt="W state").verify(
-        candidate, _execution(candidate), _plan()
+        candidate,
+        _execution(
+            candidate,
+            result={"counts": counts},
+            observation=_statistical_observation(counts),
+        ),
+        _plan(),
     )
     assert llm.calls == 1
     assert output.decision is VerifierDecision.PASS
@@ -1476,9 +1936,7 @@ def test_every_check_the_panel_emits_is_an_event_the_stream_can_carry():
             "verification_repeat_result": {"counts": {"00": 508, "11": 516}},
         },
     )
-    checks = EvidenceVerifier(llm=MustNotRunLLM(), task_prompt="Bell state")._deterministic_checks(
-        candidate, execution, plan
-    )
+    checks = _deterministic_checks(candidate, execution, plan)
     emitted = {str(check["method"]) for check in checks}
     known = {method.value for method in VerificationMethod}
     assert emitted - known == set(), (
@@ -1529,9 +1987,7 @@ def test_a_measurement_policy_failure_names_the_cause_not_the_count():
             },
         },
     )
-    checks = EvidenceVerifier(llm=MustNotRunLLM(), task_prompt="Bell state")._deterministic_checks(
-        candidate, execution, plan
-    )
+    checks = _deterministic_checks(candidate, execution, plan)
     check = next(item for item in checks if item["method"] == "measurement_policy")
     assert check["result"] == "fail"
     details = check["details"]
@@ -1555,9 +2011,7 @@ def test_a_passing_measurement_policy_carries_no_disagreement_prose():
             }
         }
     )
-    checks = EvidenceVerifier(llm=MustNotRunLLM(), task_prompt="Bell state")._deterministic_checks(
-        candidate, _execution(candidate), plan
-    )
+    checks = _deterministic_checks(candidate, _execution(candidate), plan)
     check = next(item for item in checks if item["method"] == "measurement_policy")
     assert check["result"] == "pass"
     assert "disagreement" not in check["details"]
@@ -1673,13 +2127,51 @@ def test_a_converged_vqe_finally_earns_a_physical_grade():
     packages/py/verification/tests/test_hamiltonian.py for the derivation.
     """
     candidate = _candidate()
-    checks = EvidenceVerifier(llm=MustNotRunLLM(), task_prompt="VQE")._deterministic_checks(
-        candidate, _vqe_execution(candidate, -1.8751), _vqe_plan()
-    )
+    checks = _deterministic_checks(candidate, _vqe_execution(candidate, -1.8751), _vqe_plan())
     check = next(item for item in checks if item["method"] == "exact_diag")
     assert check["result"] == "pass"
     assert check["details"]["metric"] == "ground_state_energy"
     assert evidence_strength_of(checks) is EvidenceStrength.PHYSICAL
+
+
+@pytest.mark.parametrize("algorithm", [Algorithm.QFT, Algorithm.GROVER, Algorithm.OTHER])
+async def test_unrelated_exact_diag_cannot_verify_an_unsupported_algorithm(algorithm):
+    candidate = _candidate()
+    plan = _vqe_plan(
+        algorithm=algorithm.value,
+        problem_summary=f"Unsupported {algorithm.value} task with an unrelated Hamiltonian",
+        algorithm_rationale="Exercise the strict evidence sufficiency boundary",
+    )
+
+    output = await EvidenceVerifier(
+        llm=PassingCriticLLM(), task_prompt=plan.problem_summary
+    ).verify(
+        candidate,
+        _vqe_execution(candidate, -1.8751),
+        plan,
+    )
+
+    assert _checks_by_method(output)["exact_diag"]["result"] == "pass"
+    assert output.decision is VerifierDecision.INCONCLUSIVE
+    assert output.failure_class is VerificationFailureClass.CAPABILITY_LIMIT
+    assert output.reason_code == "strict_evidence_insufficient"
+
+
+async def test_unaccepted_hamiltonian_target_cannot_create_a_candidate_defect():
+    candidate = _candidate()
+    output = await EvidenceVerifier(
+        llm=LowConfidenceCriticLLM(), task_prompt="VQE with uncertain Hamiltonian provenance"
+    ).verify(
+        candidate,
+        _vqe_execution(candidate, -1.06301),
+        _vqe_plan(),
+    )
+
+    check = _checks_by_method(output)["exact_diag"]
+    assert check["result"] == "unavailable"
+    assert check["details"]["original_result"] == "fail"
+    assert output.decision is VerifierDecision.INCONCLUSIVE
+    assert output.candidate_defect_observed is False
 
 
 def test_a_vqe_stuck_in_an_excited_state_is_caught_and_told_which_one():
@@ -1687,9 +2179,7 @@ def test_a_vqe_stuck_in_an_excited_state_is_caught_and_told_which_one():
     panel can see: the code does exactly what the code says, and says the wrong
     number. -1.06301 is this Hamiltonian's first excited eigenvalue."""
     candidate = _candidate()
-    checks = EvidenceVerifier(llm=MustNotRunLLM(), task_prompt="VQE")._deterministic_checks(
-        candidate, _vqe_execution(candidate, -1.06301), _vqe_plan()
-    )
+    checks = _deterministic_checks(candidate, _vqe_execution(candidate, -1.06301), _vqe_plan())
     check = next(item for item in checks if item["method"] == "exact_diag")
     assert check["result"] == "fail"
     assert "EXCITED" in check["details"]["disagreement"]
@@ -1713,9 +2203,7 @@ def test_a_plan_declared_energy_tolerance_may_only_tighten():
             "thresholds": {"energy_error_max": 99.0},
         }
     )
-    checks = EvidenceVerifier(llm=MustNotRunLLM(), task_prompt="VQE")._deterministic_checks(
-        candidate, _vqe_execution(candidate, -1.06301), plan
-    )
+    checks = _deterministic_checks(candidate, _vqe_execution(candidate, -1.06301), plan)
     check = next(item for item in checks if item["method"] == "exact_diag")
     assert check["result"] == "fail", "a 99.0 tolerance must not buy a passing grade"
     assert check["details"]["protocol"]["tolerance_source"] == (
@@ -1728,68 +2216,10 @@ def test_the_vqe_shape_that_died_now_passes_its_whole_panel():
     task, planned correctly, with a converged energy — every check green and the
     grade physical."""
     candidate = _candidate()
-    checks = EvidenceVerifier(llm=MustNotRunLLM(), task_prompt="VQE")._deterministic_checks(
-        candidate, _vqe_execution(candidate, -1.8788), _vqe_plan()
-    )
+    checks = _deterministic_checks(candidate, _vqe_execution(candidate, -1.8788), _vqe_plan())
     failed = [check for check in checks if check["result"] not in {"pass", "skipped"}]
     assert failed == [], failed
     assert evidence_strength_of(checks) is EvidenceStrength.PHYSICAL
-
-
-def _plan_with_declared_reference() -> Plan:
-    payload = _plan().model_dump(mode="json")
-    payload["verification_plan"] = {
-        "methods": ["exact", "return_contract"],
-        "reference_source": "plan_declared",
-        "reference_qasm": (
-            'OPENQASM 3;\ninclude "stdgates.inc";\nqubit[2] q;\nh q[0];\ncx q[0], q[1];'
-        ),
-    }
-    return Plan.model_validate(payload)
-
-
-def test_exact_failure_names_the_reference_when_self_checks_pass():
-    """Run 019f7f7b-ba33: a wrong plan-declared reference failed four correct
-    candidates identically while statistical_native and success_criteria passed.
-    The failure's details must name that split."""
-    checks = [
-        {"method": "success_criteria", "result": "pass", "details": {}},
-        {"method": "exact", "result": "fail", "details": {"scores": {"max_abs_distance": 1.0}}},
-        {"method": "statistical_native", "result": "pass", "details": {}},
-    ]
-    EvidenceVerifier._name_reference_disagreement(checks, _plan_with_declared_reference())
-    disagreement = checks[1]["details"]["disagreement"]
-    assert "statistical_native" in disagreement
-    assert "success_criteria" in disagreement
-    assert "reference" in disagreement
-    # The check itself must remain a failure — the diagnostic explains, never absolves.
-    assert checks[1]["result"] == "fail"
-
-
-def test_exact_failure_stays_bare_without_corroboration():
-    checks = [
-        {"method": "exact", "result": "fail", "details": {}},
-        {"method": "statistical_native", "result": "fail", "details": {}},
-    ]
-    EvidenceVerifier._name_reference_disagreement(checks, _plan_with_declared_reference())
-    assert "disagreement" not in checks[0]["details"]
-
-
-def test_exact_failure_stays_bare_for_parent_artifact_reference():
-    """A parent-artifact reference was verified independently; the diagnostic's
-    premise (reference shares an author with the plan) does not hold there."""
-    payload = _plan().model_dump(mode="json")
-    payload["verification_plan"] = {
-        "methods": ["exact", "return_contract"],
-        "reference_source": "parent_artifact",
-    }
-    plan = Plan.model_validate(payload)
-    checks = [
-        {"method": "success_criteria", "result": "pass", "details": {}},
-        {"method": "exact", "result": "fail", "details": {}},
-    ]
-    EvidenceVerifier._name_reference_disagreement(checks, plan)
-    assert "disagreement" not in checks[1]["details"]
 
 
 def _exact_diag_plan_payload(*, range_min: float, range_max: float) -> str:
@@ -1929,22 +2359,39 @@ def test_a_qaoa_run_that_found_the_optimum_finally_earns_a_physical_grade():
     metric as a category error, and until now nothing could grade it at all — a
     correct QAOA run could only ever pass structurally."""
     candidate = _candidate()
-    checks = EvidenceVerifier(llm=MustNotRunLLM(), task_prompt="MaxCut")._deterministic_checks(
-        candidate, _qaoa_execution(candidate, 6.0), _qaoa_plan()
-    )
+    checks = _deterministic_checks(candidate, _qaoa_execution(candidate, 6.0), _qaoa_plan())
     check = next(item for item in checks if item["method"] == "brute_force")
     assert check["result"] == "pass"
     assert check["details"]["metric"] == "best_cut_weight"
     assert evidence_strength_of(checks) is EvidenceStrength.PHYSICAL
 
 
+async def test_unrelated_brute_force_cannot_verify_grover():
+    candidate = _candidate()
+    plan = _qaoa_plan(
+        algorithm=Algorithm.GROVER.value,
+        problem_summary="Grover search with an unrelated MaxCut objective",
+        algorithm_rationale="Exercise the dedicated-property requirement",
+    )
+
+    output = await EvidenceVerifier(
+        llm=PassingCriticLLM(), task_prompt=plan.problem_summary
+    ).verify(
+        candidate,
+        _qaoa_execution(candidate, 6.0),
+        plan,
+    )
+
+    assert _checks_by_method(output)["brute_force"]["result"] == "pass"
+    assert output.decision is VerifierDecision.INCONCLUSIVE
+    assert output.failure_class is VerificationFailureClass.CAPABILITY_LIMIT
+
+
 def test_a_suboptimal_cut_fails_with_the_search_named_not_the_scoring():
     """4.0 is an achievable cut of the ring, so the evidence must say the search
     fell short — the repair that helps — rather than a bare distance."""
     candidate = _candidate()
-    checks = EvidenceVerifier(llm=MustNotRunLLM(), task_prompt="MaxCut")._deterministic_checks(
-        candidate, _qaoa_execution(candidate, 4.0), _qaoa_plan()
-    )
+    checks = _deterministic_checks(candidate, _qaoa_execution(candidate, 4.0), _qaoa_plan())
     check = next(item for item in checks if item["method"] == "brute_force")
     assert check["result"] == "fail"
     assert "SUBOPTIMAL" in check["details"]["disagreement"]
@@ -1955,9 +2402,7 @@ def test_a_cut_no_partition_achieves_names_the_scoring_code():
     """5.0 is not the weight of ANY cut of the ring: the number was computed
     wrongly, which is a different bug with a different repair."""
     candidate = _candidate()
-    checks = EvidenceVerifier(llm=MustNotRunLLM(), task_prompt="MaxCut")._deterministic_checks(
-        candidate, _qaoa_execution(candidate, 5.0), _qaoa_plan()
-    )
+    checks = _deterministic_checks(candidate, _qaoa_execution(candidate, 5.0), _qaoa_plan())
     check = next(item for item in checks if item["method"] == "brute_force")
     assert check["result"] == "fail"
     assert "ANY assignment" in check["details"]["disagreement"]

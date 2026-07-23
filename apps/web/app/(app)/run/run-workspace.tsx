@@ -4,7 +4,7 @@ import type { FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { rememberChat } from "../../../lib/chat-history";
-import { getLibraryArtifact, type LibraryArtifact } from "../../../lib/library-data";
+import { artifactFromResource, type LibraryArtifact } from "../../../lib/library-data";
 import type { PublicLocale } from "../../../lib/public-locale";
 import { WORKSPACE_COPY } from "../../../lib/workspace-locale";
 import {
@@ -12,6 +12,7 @@ import {
   hydrateArtifactFramework,
   type ArtifactFrameworkHydration,
 } from "../../../lib/framework-selection";
+import type { ComposerMode } from "../../../lib/run-mode";
 import { RunComposer, type ComposerFramework } from "../../../components/run-composer";
 import { ElectronField } from "../../../components/electron-field";
 
@@ -29,6 +30,7 @@ export function RunWorkspace({ demoMode = false, locale = "en" }: { demoMode?: b
   const copy = WORKSPACE_COPY[locale].run;
   const router = useRouter();
   const [prompt, setPrompt] = useState("");
+  const [mode, setMode] = useState<ComposerMode>("auto");
   const [framework, setFramework] = useState<ComposerFramework>("qiskit");
   const [artifactHydration, setArtifactHydration] =
     useState<ArtifactFrameworkHydration>("checking");
@@ -52,30 +54,11 @@ export function RunWorkspace({ demoMode = false, locale = "en" }: { demoMode?: b
     const selectedArtifactId = artifactId;
 
     async function loadContext() {
-      let artifact = getLibraryArtifact(selectedArtifactId);
-      if (!artifact) {
-        const response = await fetch(`/api/artifacts/${encodeURIComponent(selectedArtifactId)}`, { cache: "no-store" });
-        if (!response.ok) throw new Error("Artifact context unavailable");
-        const remote = (await response.json()) as Record<string, unknown>;
-        if (typeof remote.id !== "string" || typeof remote.title !== "string") throw new Error("Artifact context unavailable");
-        artifact = {
-          id: remote.id,
-          slug: typeof remote.slug === "string" ? remote.slug : remote.id,
-          title: remote.title,
-          family: typeof remote.family === "string" ? remote.family : "Simulation",
-          framework: typeof remote.framework === "string" ? remote.framework : "Qiskit",
-          status: "verified",
-          updatedAt: typeof remote.updated_at === "string" ? remote.updated_at : new Date().toISOString(),
-          description: "Saved artifact in the workspace vault.",
-          tags: [typeof remote.family === "string" ? remote.family.toLowerCase() : "artifact"],
-          verification: "Verification evidence is retained with the saved run.",
-          code: "",
-          qasm: null,
-          currentVersionId: typeof remote.current_version_id === "string" ? remote.current_version_id : undefined,
-          resourceRows: [],
-          source: "run",
-        };
-      }
+      const response = await fetch(`/api/artifacts/${encodeURIComponent(selectedArtifactId)}`, { cache: "no-store" });
+      if (!response.ok) throw new Error("Artifact context unavailable");
+      const remote = (await response.json()) as Record<string, unknown>;
+      let artifact = artifactFromResource(remote)[0];
+      if (!artifact) throw new Error("Artifact context unavailable");
       if (artifact.currentVersionId && !artifact.code) {
         const versionResponse = await fetch(`/api/artifacts/${encodeURIComponent(artifact.id)}/versions/current`, { cache: "no-store" });
         if (versionResponse.ok) {
@@ -186,10 +169,9 @@ export function RunWorkspace({ demoMode = false, locale = "en" }: { demoMode?: b
         },
         body: JSON.stringify({
           task_prompt: promptWithAttachments(taskPrompt),
-          // The composer is a chat box: what arrives here is as often a question
-          // or a greeting as a task. "auto" lets the worker route on intent —
-          // hardcoding "execute" is what sent "hi" through the whole pipeline.
-          mode: "auto",
+          // Auto remains the safe default, while a deliberate user selection is
+          // authoritative and bypasses intent reclassification in the worker.
+          mode,
           framework,
           ...(contextArtifact?.code ? { source_code: contextArtifact.code } : {}),
           ...(contextArtifact?.currentVersionId ? { artifact_version_id: contextArtifact.currentVersionId } : {}),
@@ -243,6 +225,8 @@ export function RunWorkspace({ demoMode = false, locale = "en" }: { demoMode?: b
               pending={pending}
               error={error}
               onChange={setPrompt}
+              mode={mode}
+              onModeChange={setMode}
               framework={framework}
               onFrameworkChange={(value) => {
                 frameworkTouched.current = true;

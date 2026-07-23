@@ -16,9 +16,12 @@ from majorana_contracts.enums import (
     EvidenceStrength,
     Framework,
     ImportProvider,
+    RetryTarget,
     Role,
     RunMode,
     RunStatus,
+    VerificationFailureClass,
+    VerifierDecision,
     evidence_strength_of,
 )
 from majorana_agent import (
@@ -35,6 +38,7 @@ from majorana_llm import LLMClient, LLMRequest, QUANTUM_AGENT_SYSTEM_PROMPT, def
 from majorana_qpu import QpuRunJobPayload, submission_block_reason
 from pydantic import ValidationError
 from majorana_sandbox import LocalSubprocessSandbox, Sandbox, VercelSandbox
+from opentelemetry import metrics
 
 from pathlib import Path
 
@@ -53,9 +57,10 @@ from majorana_api.repos import system
 from .agent_events import AgentEventObserver
 from .agent_llm import MeteredAgentLLM
 from .agent_ports import (
-    EvidenceVerifier,
+    EvidenceReviewer,
+    EvidenceStrictVerifier,
     LLMPlanner,
-    RepoArtifactPublisher,
+    RepoArtifactMaterializer,
     SandboxCandidateExecutor,
     TrustedOpenQASMConverter,
 )
@@ -67,6 +72,66 @@ from .intent import resolve_mode
 log = logging.getLogger("majorana_worker")
 
 DEFAULT_RUN_TIMEOUT_S = 300.0
+
+_verification_meter = metrics.get_meter("majorana.worker.verification")
+_verification_decisions = _verification_meter.create_counter("majorana.verification.decisions")
+_verification_routes = _verification_meter.create_counter("majorana.verification.routes")
+_verification_errors = _verification_meter.create_counter("majorana.verification.errors")
+_fingerprint_mismatches = _verification_meter.create_counter(
+    "majorana.verification.fingerprint_mismatches"
+)
+_DECISIONS = frozenset(decision.value for decision in VerifierDecision)
+_FAILURE_CLASSES = frozenset(item.value for item in VerificationFailureClass)
+_ROUTE_BY_REASON = {
+    "strict_pass": "pass",
+    "legacy_verified": "legacy",
+    "resource_exhausted": "resource_exhausted",
+    "run_timeout": "timeout",
+}
+
+
+def _enabled(name: str, *, default: bool) -> bool:
+    raw = os.environ.get(name)
+    if raw is None:
+        return default
+    normalized = raw.strip().lower()
+    if normalized in {"1", "true", "yes", "on"}:
+        return True
+    if normalized in {"0", "false", "no", "off"}:
+        return False
+    raise RuntimeError(f"{name} must be a boolean feature flag")
+
+
+def _record_verification_summary(summary: dict[str, Any]) -> None:
+    raw_decision = summary.get("decision")
+    decision = raw_decision if raw_decision in _DECISIONS else "unknown"
+    raw_failure_class = summary.get("failure_class")
+    failure_class = (
+        raw_failure_class
+        if raw_failure_class in _FAILURE_CLASSES
+        else "none"
+        if raw_failure_class is None
+        else "other"
+    )
+    reason_code = summary.get("reason_code")
+    route = _ROUTE_BY_REASON.get(reason_code)
+    if route is None and failure_class in _FAILURE_CLASSES:
+        route = failure_class
+    if route is None:
+        route = "other"
+    attributes = {
+        "decision": decision,
+        "route": route,
+        "failure_class": failure_class,
+    }
+    _verification_decisions.add(1, {"decision": decision})
+    _verification_routes.add(1, attributes)
+    checks = summary.get("checks")
+    has_error_check = isinstance(checks, list) and any(
+        isinstance(check, dict) and check.get("result") == "error" for check in checks
+    )
+    if failure_class == VerificationFailureClass.VERIFIER_FAILURE.value or has_error_check:
+        _verification_errors.add(1, {"route": route})
 
 
 def _default_llm() -> LLMClient:
@@ -157,6 +222,20 @@ class RepoRunStateStore:
         )
         await self._session.commit()
 
+    async def finish(self, status: RunStatus, payload: dict[str, Any], **fields: Any) -> RunStatus:
+        wire = _validated_event_payload(self._run_id, "run.finished", payload)
+        final = await runs_repo.finish_run(
+            self._scope,
+            self._session,
+            self._run_id,
+            status,
+            event_payload=wire,
+            event_id=uuid.uuid5(self._run_id, "run.finished"),
+            **fields,
+        )
+        await self._session.commit()
+        return final
+
     async def current_status(self) -> RunStatus:
         run = await runs_repo.get_run(self._scope, self._session, self._run_id)
         status = RunStatus(run.status)
@@ -188,16 +267,12 @@ async def handle_run_execute(
     parent_artifact_id = None
     parent_artifact_version_id = run.artifact_version_id
     parent_artifact_fingerprint = None
-    parent_artifact_qasm = None
     if run.artifact_version_id is not None:
         version = await artifacts_repo.get_version(scope, session, run.artifact_version_id)
         parent_artifact_id = version.artifact_id
+        # Provenance only — contracts 2.0.0 forbids treating a prior artifact
+        # version as a correctness reference; the fingerprint decides forking.
         parent_artifact_fingerprint = version.fingerprint
-        # The reference for an `exact` check when the plan asks to preserve this
-        # circuit's behaviour. Only a version that stored interchange QASM can serve
-        # as one; when it did not, the verifier reports the missing evidence rather
-        # than quietly falling back to a weaker check.
-        parent_artifact_qasm = version.qasm
     ctx = RunContext(
         run_id=run_id,
         task_prompt=run.task_prompt,
@@ -237,19 +312,17 @@ async def handle_run_execute(
                     parent_artifact_id=parent_artifact_id,
                     parent_artifact_version_id=parent_artifact_version_id,
                     parent_artifact_fingerprint=parent_artifact_fingerprint,
-                    parent_artifact_qasm=parent_artifact_qasm,
                 )
     except TimeoutError:
         # The stage coroutine was cancelled mid-flight; reset the session and
         # record the failure so the event log never ends mid-run.
         await session.rollback()
         if await store.current_status() is RunStatus.RUNNING:
-            await ctx.sink.emit(
-                "run.error",
-                {"stage": None, "code": "run_timeout", "message": "run exceeded its time budget"},
+            await _finish_timed_out_run(
+                ctx,
+                store,
+                RepoAgentStore(scope, session),
             )
-            await ctx.sink.emit("run.finished", {"status": RunStatus.FAILED})
-            await store.set_status(RunStatus.FAILED, finished_at_now=True)
         final = RunStatus.FAILED
     log.info("run %s finished: %s", run_id, final)
 
@@ -314,9 +387,9 @@ async def _agent_failure_message(
 
     Two facts are needed and neither was previously reachable from here: the
     budget the runtime hit, and the verifier's actual objection. The critic's
-    verdict is the only failing signal in a run whose deterministic checks all
-    pass, and it is not emitted as an event — so without this, such a run shows
-    nothing but passing checks followed by a bare failure.
+    verdict can be the only failing signal in a run whose deterministic checks all
+    pass. It is retained in semantic-review events as well as this terminal
+    diagnostic so live failures and later replay tell the same story.
     """
     parts = ["agent tool loop failed"]
     if runtime.failure_reason:
@@ -324,23 +397,38 @@ async def _agent_failure_message(
 
     try:
         candidate = await agent_store.latest_candidate(run_id)
-        verification = (
-            await agent_store.verification_for(run_id, candidate.candidate_id)
-            if candidate is not None
-            else None
-        )
     except Exception:  # noqa: BLE001 - diagnostics must never mask the failure
-        verification = None
+        candidate = None
 
-    if verification is not None:
-        failed = [
-            str(check.get("method"))
-            for check in verification.deterministic_checks
-            if check.get("result") != "pass"
-        ]
+    verification = None
+    strict = None
+    review = None
+    if candidate is not None:
+        try:
+            verification = await agent_store.verification_for(run_id, candidate.candidate_id)
+        except Exception:  # noqa: BLE001 - each evidence source is independently optional
+            pass
+        try:
+            strict = await agent_store.latest_strict_verification(run_id, candidate.candidate_id)
+        except Exception:  # noqa: BLE001 - preserve any readable legacy evidence
+            pass
+        try:
+            review = await agent_store.latest_semantic_review(run_id, candidate.candidate_id)
+        except Exception:  # noqa: BLE001 - preserve any readable strict evidence
+            pass
+
+    checks = (
+        verification.deterministic_checks
+        if verification is not None
+        else strict.checks
+        if strict
+        else []
+    )
+    if checks:
+        failed = [str(check.get("method")) for check in checks if check.get("result") != "pass"]
         if failed:
             parts.append(f"failing checks: {', '.join(failed)}")
-        elif verification.critic:
+        elif verification is not None and verification.critic:
             # All deterministic checks passed, so the critic is what refused.
             summary = verification.critic.get("summary") or verification.critic.get("decision")
             severity = verification.critic.get("severity")
@@ -348,7 +436,20 @@ async def _agent_failure_message(
             parts.append(
                 f"verifier objection (severity={severity}, confidence={confidence}): {summary}"
             )
+        elif review is not None and isinstance(review.feedback.get("critic"), dict):
+            critic = review.feedback["critic"]
+            summary = critic.get("summary") or review.reason_code
+            parts.append(f"semantic objection: {summary}")
     return " — ".join(parts)
+
+
+def _agent_failure_reason_code(runtime: AgentRuntime) -> str:
+    reason = runtime.failure_reason
+    if reason and reason.endswith("_budget_exhausted") and reason.replace("_", "").isalnum():
+        return reason
+    if reason and reason.startswith("replayed tool call "):
+        return "replayed_tool_call"
+    return "agent_failed"
 
 
 async def _emit_best_effort(
@@ -369,12 +470,13 @@ async def _emit_best_effort(
     """
     try:
         candidates = await agent_store.list_candidates(ctx.run_id)
-        verifications = {
-            candidate.candidate_id: await agent_store.verification_for(
-                ctx.run_id, candidate.candidate_id
+        verifications = {}
+        for candidate in candidates:
+            legacy = await agent_store.verification_for(ctx.run_id, candidate.candidate_id)
+            verifications[candidate.candidate_id] = (
+                legacy
+                or await agent_store.latest_strict_verification(ctx.run_id, candidate.candidate_id)
             )
-            for candidate in candidates
-        }
         best = choose_best_effort(candidates, verifications)
     except Exception:  # noqa: BLE001 - never mask the failure being reported
         log.exception("best-effort selection failed for run %s", ctx.run_id)
@@ -397,6 +499,216 @@ async def _emit_best_effort(
     )
 
 
+async def _finish_materialized_agent(ctx, run_store, agent_store) -> RunStatus:
+    """Fence a terminal strict verdict into the event stream and Run row."""
+    candidate = await agent_store.latest_candidate(ctx.run_id)
+    strict = (
+        await agent_store.latest_strict_verification(ctx.run_id, candidate.candidate_id)
+        if candidate is not None
+        else None
+    )
+    review = (
+        await agent_store.latest_semantic_review(ctx.run_id, candidate.candidate_id)
+        if candidate is not None
+        else None
+    )
+    legacy = await agent_store.published_verification(ctx.run_id) if strict is None else None
+    if strict is not None:
+        if candidate.source_fingerprint != strict.source_fingerprint:
+            _fingerprint_mismatches.add(1, {"boundary": "candidate_to_strict"})
+            raise RuntimeError("terminal strict verdict has a stale candidate fingerprint")
+        if review is None or review.review_id != strict.semantic_review_id:
+            raise RuntimeError("terminal strict verdict is not bound to the latest review")
+        if review.source_fingerprint != strict.source_fingerprint:
+            _fingerprint_mismatches.add(1, {"boundary": "review_to_strict"})
+            raise RuntimeError("terminal review and strict fingerprints differ")
+    decision = strict.decision if strict is not None else legacy.decision if legacy else None
+    if decision not in {VerifierDecision.PASS, VerifierDecision.INCONCLUSIVE}:
+        raise RuntimeError("materialized run lacks a strict terminal verdict")
+    strength = (
+        strict.evidence_strength
+        if strict is not None and strict.evidence_strength is not None
+        else evidence_strength_of(legacy.deterministic_checks)
+        if legacy is not None
+        else EvidenceStrength.STRUCTURAL
+    )
+    summary = (
+        {
+            "decision": strict.decision.value,
+            "semantic_review_decision": review.decision.value if review else None,
+            "evidence_strength": strength.value,
+            "reason_code": strict.reason_code,
+            "candidate_defect_observed": strict.candidate_defect_observed,
+            "failure_class": strict.failure_class.value if strict.failure_class else None,
+            "retry_target": strict.retry_target.value,
+            "unverified_claims": strict.unverified_claims,
+            "checks": [
+                {"method": check.get("method"), "result": check.get("result")}
+                for check in strict.checks[:50]
+            ],
+        }
+        if strict is not None
+        else None
+    )
+    result = await run_store.finish(
+        RunStatus.SUCCEEDED,
+        {
+            "status": RunStatus.SUCCEEDED,
+            "verifier_decision": decision.value,
+            "evidence_strength": strength.value,
+            "verification_summary": summary,
+            "reason_code": strict.reason_code if strict else "legacy_verified",
+        },
+        verifier_decision=decision.value,
+        verification_summary=summary,
+    )
+    _record_verification_summary(
+        summary
+        or {
+            "decision": decision.value,
+            "reason_code": "legacy_verified",
+            "failure_class": None,
+            "checks": [],
+        }
+    )
+    return result
+
+
+async def _finish_resource_exhausted(ctx, run_store, agent_store, failure_reason) -> RunStatus:
+    await _emit_best_effort(ctx, agent_store, failure_reason or "resource_exhausted")
+    await ctx.sink.emit(
+        "run.error",
+        {
+            "stage": None,
+            "code": "resource_exhausted",
+            "message": (
+                "The selected execution lane does not have enough memory or capacity "
+                "for this circuit. The candidate was not sent through code repair."
+            ),
+        },
+        event_id=uuid.uuid5(ctx.run_id, "run.error.resource_exhausted"),
+    )
+    summary = {
+        "decision": "inconclusive",
+        "evidence_strength": "structural",
+        "reason_code": "resource_exhausted",
+        "candidate_defect_observed": False,
+        "failure_class": "capability_limit",
+        "retry_target": "none",
+        "unverified_claims": ["candidate execution within configured resources"],
+        "checks": [],
+    }
+    result = await run_store.finish(
+        RunStatus.FAILED,
+        {
+            "status": RunStatus.FAILED,
+            "verifier_decision": "inconclusive",
+            "reason_code": "resource_exhausted",
+            "verification_summary": summary,
+        },
+        verifier_decision="inconclusive",
+        verification_summary=summary,
+    )
+    _record_verification_summary(summary)
+    return result
+
+
+async def _bound_latest_strict_summary(run_id, agent_store):
+    candidate = await agent_store.latest_candidate(run_id)
+    if candidate is None:
+        return None, None
+    strict = await agent_store.latest_strict_verification(run_id, candidate.candidate_id)
+    if strict is None:
+        return None, None
+    execution = await agent_store.execution_for(run_id, candidate.candidate_id)
+    review = await agent_store.latest_semantic_review(run_id, candidate.candidate_id)
+    if execution is None or review is None:
+        raise RuntimeError("strict terminal evidence is missing its bound execution or review")
+    try:
+        strict.assert_binding(candidate, execution, review)
+    except ValueError:
+        _fingerprint_mismatches.add(1, {"boundary": "terminal_evidence_chain"})
+        raise
+    strength = strict.evidence_strength or evidence_strength_of(strict.checks)
+    return strict, {
+        "decision": strict.decision.value,
+        "semantic_review_decision": review.decision.value,
+        "evidence_strength": strength.value,
+        "reason_code": strict.reason_code,
+        "candidate_defect_observed": strict.candidate_defect_observed,
+        "failure_class": strict.failure_class.value if strict.failure_class else None,
+        "retry_target": strict.retry_target.value,
+        "unverified_claims": strict.unverified_claims,
+        "checks": [
+            {"method": check.get("method"), "result": check.get("result")}
+            for check in strict.checks[:50]
+        ],
+    }
+
+
+async def _finish_failed_agent(
+    ctx, run_store, agent_store, *, failure_reason: str, failure_message: str
+) -> RunStatus:
+    await _emit_best_effort(ctx, agent_store, failure_reason)
+    await ctx.sink.emit(
+        "run.error",
+        {"stage": None, "code": "agent_failed", "message": failure_message},
+        event_id=uuid.uuid5(ctx.run_id, "run.error.agent_failed"),
+    )
+    strict, summary = await _bound_latest_strict_summary(ctx.run_id, agent_store)
+    payload = {"status": RunStatus.FAILED, "reason_code": failure_reason}
+    fields = {}
+    if strict is not None and summary is not None:
+        payload.update(
+            verifier_decision=strict.decision.value,
+            verification_summary=summary,
+        )
+        fields.update(
+            verifier_decision=strict.decision.value,
+            verification_summary=summary,
+        )
+    result = await run_store.finish(RunStatus.FAILED, payload, **fields)
+    if summary is not None:
+        _record_verification_summary(summary)
+    return result
+
+
+async def _finish_timed_out_run(ctx, run_store, agent_store) -> RunStatus:
+    await ctx.sink.emit(
+        "run.error",
+        {"stage": None, "code": "run_timeout", "message": "run exceeded its time budget"},
+    )
+    strict, summary = await _bound_latest_strict_summary(ctx.run_id, agent_store)
+    if strict is None or summary is None:
+        decision = VerifierDecision.INCONCLUSIVE
+        summary = {
+            "decision": decision.value,
+            "semantic_review_decision": None,
+            "evidence_strength": None,
+            "reason_code": "run_timeout",
+            "candidate_defect_observed": False,
+            "failure_class": VerificationFailureClass.VERIFIER_FAILURE.value,
+            "retry_target": RetryTarget.VERIFICATION.value,
+            "unverified_claims": ["verification completion"],
+            "checks": [],
+        }
+    else:
+        decision = strict.decision
+    result = await run_store.finish(
+        RunStatus.FAILED,
+        {
+            "status": RunStatus.FAILED,
+            "reason_code": "run_timeout",
+            "verifier_decision": decision.value,
+            "verification_summary": summary,
+        },
+        verifier_decision=decision.value,
+        verification_summary=summary,
+    )
+    _record_verification_summary(summary)
+    return result
+
+
 async def _handle_agent_execution(
     ctx: RunContext,
     run_store: RepoRunStateStore,
@@ -408,7 +720,6 @@ async def _handle_agent_execution(
     parent_artifact_id: uuid.UUID | None,
     parent_artifact_version_id: uuid.UUID | None = None,
     parent_artifact_fingerprint: str | None = None,
-    parent_artifact_qasm: str | None = None,
 ) -> RunStatus:
     status = await run_store.current_status()
     if status not in {RunStatus.QUEUED, RunStatus.RUNNING}:
@@ -434,18 +745,17 @@ async def _handle_agent_execution(
             llm=metered_llm,
             task_prompt=ctx.task_prompt,
             framework=ctx.framework,
-            has_parent_artifact=parent_artifact_id is not None,
             requested_shots=ctx.shots,
             requested_seed=ctx.seed,
         ),
         executor=SandboxCandidateExecutor(sandbox),
-        verifier=EvidenceVerifier(
+        reviewer=EvidenceReviewer(
             llm=metered_llm,
             task_prompt=ctx.task_prompt,
-            parent_artifact_qasm=parent_artifact_qasm,
         ),
+        strict_verifier=EvidenceStrictVerifier(),
         converter=TrustedOpenQASMConverter(),
-        publisher=RepoArtifactPublisher(
+        materializer=RepoArtifactMaterializer(
             scope=scope,
             session=session,
             run_id=ctx.run_id,
@@ -453,6 +763,9 @@ async def _handle_agent_execution(
             parent_artifact_version_id=parent_artifact_version_id,
             parent_artifact_fingerprint=parent_artifact_fingerprint,
             title=ctx.task_prompt,
+            allow_inconclusive=_enabled(
+                "MAJORANA_INCONCLUSIVE_MATERIALIZATION_ENABLED", default=True
+            ),
         ),
     )
     broker = ToolBroker(
@@ -466,23 +779,6 @@ async def _handle_agent_execution(
 
     observer = AgentEventObserver(store=agent_store, sink=ctx.sink)
     await observer.recover(ctx.run_id)
-    # Few-shot retrieval from our own verified corpus (LLM work list item 4):
-    # recent same-framework artifacts whose current version passed verification.
-    # Best-effort — an empty or failing retrieval must not cost the run.
-    exemplars: list[dict[str, str]] = []
-    try:
-        for exemplar_artifact, exemplar_version in await artifacts_repo.list_verified_exemplars(
-            scope, session, framework=ctx.framework
-        ):
-            exemplars.append(
-                {
-                    "title": exemplar_artifact.title,
-                    "family": str(exemplar_artifact.family),
-                    "source": exemplar_version.code,
-                }
-            )
-    except Exception:  # noqa: BLE001 - retrieval is an enhancement, never a dependency
-        exemplars = []
     runtime = AgentRuntime(
         store=agent_store,
         broker=broker,
@@ -491,89 +787,35 @@ async def _handle_agent_execution(
             task_prompt=ctx.task_prompt,
             framework=ctx.framework,
             initial_source=ctx.source_code,
-            exemplars=exemplars,
         ),
         observer=observer,
         cancel_requested=cancelled,
     )
     final = await runtime.run(ctx.run_id)
     if final is AgentState.CANCELLED:
-        await ctx.sink.emit(
-            "run.finished",
+        return await run_store.finish(
+            RunStatus.CANCELLED,
             {"status": RunStatus.CANCELLED},
-            event_id=uuid.uuid5(ctx.run_id, "run.finished"),
         )
-        return RunStatus.CANCELLED
-    if final is AgentState.PUBLISHED:
-        # A pass says nothing was contradicted; the strength says what did the
-        # contradicting. Fails closed to STRUCTURAL — the weaker claim — when the
-        # evidence row cannot be read, because an unreadable grade is not a strong one.
-        published = await agent_store.published_verification(ctx.run_id)
-        strength = (
-            evidence_strength_of(published.deterministic_checks)
-            if published is not None
-            else EvidenceStrength.STRUCTURAL
-        )
-        await ctx.sink.emit(
-            "run.finished",
-            {
-                "status": RunStatus.SUCCEEDED,
-                "verifier_decision": "pass",
-                "evidence_strength": strength.value,
-            },
-            event_id=uuid.uuid5(ctx.run_id, "run.finished"),
-        )
-        await run_store.set_status(
-            RunStatus.SUCCEEDED,
-            finished_at_now=True,
-            verifier_decision="pass",
-        )
-        return RunStatus.SUCCEEDED
+    if final in {AgentState.MATERIALIZED, AgentState.PUBLISHED}:
+        return await _finish_materialized_agent(ctx, run_store, agent_store)
     if final is AgentState.RESOURCE_EXHAUSTED:
-        await ctx.sink.emit(
-            "run.error",
-            {
-                "stage": None,
-                "code": "resource_exhausted",
-                "message": (
-                    "The selected execution lane does not have enough memory or capacity "
-                    "for this circuit. The candidate was not sent through code repair."
-                ),
-            },
-            event_id=uuid.uuid5(ctx.run_id, "run.error.resource_exhausted"),
+        return await _finish_resource_exhausted(
+            ctx,
+            run_store,
+            agent_store,
+            runtime.failure_reason,
         )
-        await ctx.sink.emit(
-            "run.finished",
-            {"status": RunStatus.FAILED, "verifier_decision": "inconclusive"},
-            event_id=uuid.uuid5(ctx.run_id, "run.finished"),
-        )
-        await run_store.set_status(
-            RunStatus.FAILED,
-            finished_at_now=True,
-            verifier_decision="inconclusive",
-        )
-        return RunStatus.FAILED
-    await _emit_best_effort(ctx, agent_store, runtime.failure_reason)
     # "agent tool loop failed" alone is undiagnosable: the run that exposed this
-    # showed four passing verification checks and then died, because the only
-    # failing signal — the semantic critic's verdict — is not emitted as an
-    # event and the exhausted budget was discarded by the runtime. Carry both.
-    await ctx.sink.emit(
-        "run.error",
-        {
-            "stage": None,
-            "code": "agent_failed",
-            "message": await _agent_failure_message(runtime, agent_store, ctx.run_id),
-        },
-        event_id=uuid.uuid5(ctx.run_id, "run.error.agent_failed"),
+    # showed four passing verification checks and then died. Carry the exhausted
+    # budget here as well as the now-replayable semantic-review objection.
+    return await _finish_failed_agent(
+        ctx,
+        run_store,
+        agent_store,
+        failure_reason=_agent_failure_reason_code(runtime),
+        failure_message=await _agent_failure_message(runtime, agent_store, ctx.run_id),
     )
-    await ctx.sink.emit(
-        "run.finished",
-        {"status": RunStatus.FAILED},
-        event_id=uuid.uuid5(ctx.run_id, "run.finished"),
-    )
-    await run_store.set_status(RunStatus.FAILED, finished_at_now=True)
-    return RunStatus.FAILED
 
 
 async def _handle_conversation(
@@ -627,7 +869,6 @@ async def _handle_conversation(
                 system=QUANTUM_AGENT_SYSTEM_PROMPT,
                 user=ctx.task_prompt,
                 messages=[*history, {"role": "user", "content": ctx.task_prompt}],
-                max_tokens=8192,
                 temperature=0.7,
             ),
             on_delta=on_delta,
@@ -642,9 +883,10 @@ async def _handle_conversation(
                 "message": "The assistant could not complete this response.",
             },
         )
-        await ctx.sink.emit("run.finished", {"status": RunStatus.FAILED})
-        await store.set_status(RunStatus.FAILED, finished_at_now=True)
-        return RunStatus.FAILED
+        return await store.finish(
+            RunStatus.FAILED,
+            {"status": RunStatus.FAILED, "reason_code": "provider_failed"},
+        )
 
     await flush_deltas()
     interpretation = response.text.strip() or "The assistant returned an empty response."
@@ -658,14 +900,12 @@ async def _handle_conversation(
             "duration_ms": int((asyncio.get_running_loop().time() - started) * 1000),
         },
     )
-    await ctx.sink.emit(
-        "run.finished",
+    return await store.finish(
+        RunStatus.SUCCEEDED,
         {
             "status": RunStatus.SUCCEEDED,
         },
     )
-    await store.set_status(RunStatus.SUCCEEDED, finished_at_now=True)
-    return RunStatus.SUCCEEDED
 
 
 JobHandler = Callable[[AsyncSession, dict[str, Any]], Awaitable[None]]

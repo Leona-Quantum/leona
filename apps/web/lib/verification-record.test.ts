@@ -1,96 +1,83 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { verificationFromMetadata } from "./verification-record.ts";
+import {
+  recommendedVerificationAction,
+  verificationFromMetadata,
+  verificationFromResource,
+  verificationSummaryFromValue,
+} from "./verification-record.ts";
 
-// Trimmed verbatim from GET /v1/artifacts/{id}/versions/current in production on
-// 2026-07-20 (the qiskit Bell artifact). Pinned to the real payload because the
-// failure this guards against is not a crash — it is reading the wrong key and
-// silently rendering "nothing recorded" for artifacts that have a full check list.
-const REAL_VERSION_METADATA = {
-  source: "verified_agent_candidate",
-  openqasm_role: "interchange",
-  candidate_revision: 1,
-  verification_summary: {
-    critic: {
-      summary: "All checks pass. The implementation exactly matches the plan.",
-      severity: "none",
-      confidence: "high",
-      residual_risks: [],
-    },
-    decision: "pass",
-    deterministic_checks: [
-      { method: "structural", result: "pass" },
-      { method: "resource_contract", result: "pass" },
-      { method: "measurement_policy", result: "pass" },
-      { method: "native_optimization_evidence", result: "pass" },
-      { method: "return_contract", result: "pass" },
-      { method: "exact", result: "pass" },
-      { method: "statistical", result: "pass" },
-      { method: "statistical_reproducibility", result: "pass" },
-    ],
-  },
-  canonical_representation: "framework_code",
+const SUMMARY = {
+  decision: "inconclusive",
+  evidence_strength: null,
+  reason_code: "required_check_unavailable",
+  candidate_defect_observed: false,
+  failure_class: "capability_limit",
+  retry_target: "verification",
+  semantic_review_decision: "ready",
+  checks: [
+    { method: "return_contract", result: "pass" },
+    { method: "statistical", result: "unavailable" },
+    { method: "statistical_reproducibility", result: "error" },
+  ],
+  unverified_claims: ["Expected physical distribution"],
 };
 
-test("reads every check the verifier recorded on a real saved version", () => {
-  const record = verificationFromMetadata(REAL_VERSION_METADATA);
-  assert.equal(record.checks?.length, 8);
-  assert.deepEqual(record.checks?.[5], { method: "exact", result: "pass" });
-  assert.match(record.criticSummary ?? "", /All checks pass/);
+test("reads the complete typed API summary without inferring a verdict", () => {
+  const summary = verificationFromResource({ verification_summary: SUMMARY });
+  assert.equal(summary?.decision, "inconclusive");
+  assert.deepEqual(summary?.checks, SUMMARY.checks);
+  assert.deepEqual(summary?.unverified_claims, SUMMARY.unverified_claims);
+  assert.match(recommendedVerificationAction(summary!), /same candidate revision/);
 });
 
-test("keeps a failing check rather than reporting only the passes", () => {
+test("rejects malformed, partial, and dishonest inconclusive summaries", () => {
+  for (const value of [
+    null,
+    {},
+    { decision: "pass" },
+    { ...SUMMARY, reason_code: "" },
+    { ...SUMMARY, candidate_defect_observed: true },
+    { ...SUMMARY, retry_target: "generate_more" },
+  ]) {
+    assert.equal(verificationSummaryFromValue(value), null);
+  }
+});
+
+test("keeps bounded recognized checks and claims", () => {
+  const summary = verificationSummaryFromValue({
+    ...SUMMARY,
+    checks: [...Array.from({ length: 60 }, () => ({ method: "return_contract", result: "pass" })), { method: 1, result: "pass" }],
+    unverified_claims: Array.from({ length: 60 }, (_, index) => `claim-${index}`),
+  });
+  assert.equal(summary?.checks?.length, 50);
+  assert.equal(summary?.unverified_claims?.length, 50);
+});
+
+test("legacy metadata remains displayable but never becomes a typed PASS", () => {
   const record = verificationFromMetadata({
     verification_summary: {
+      decision: "pass",
       deterministic_checks: [
         { method: "return_contract", result: "pass" },
         { method: "exact", result: "fail" },
       ],
+      critic: { summary: "Historical critic text" },
+      evidence_strength: "physical",
     },
   });
+  assert.equal(record.summary, null);
   assert.deepEqual(record.checks, [
     { method: "return_contract", result: "pass" },
     { method: "exact", result: "fail" },
   ]);
+  assert.equal(record.criticSummary, "Historical critic text");
+  assert.equal(record.evidenceStrength, "physical");
 });
 
-test("degrades to nothing recorded instead of throwing on absent or malformed data", () => {
+test("absent or malformed metadata degrades to unknown", () => {
   for (const value of [null, undefined, "", 7, {}, { verification_summary: null }]) {
-    assert.deepEqual(verificationFromMetadata(value), {});
-  }
-  // Older versions predate the stored check list; the tab must fall back to prose
-  // rather than render an empty list that reads as "no checks ran".
-  assert.equal(verificationFromMetadata({ verification_summary: {} }).checks, undefined);
-  assert.equal(
-    verificationFromMetadata({ verification_summary: { deterministic_checks: [{ method: 1 }] } })
-      .checks,
-    undefined,
-  );
-});
-
-test("reads the grade the worker put on the pass", () => {
-  assert.equal(
-    verificationFromMetadata({ verification_summary: { evidence_strength: "structural" } })
-      .evidenceStrength,
-    "structural",
-  );
-  assert.equal(
-    verificationFromMetadata({ verification_summary: { evidence_strength: "physical" } })
-      .evidenceStrength,
-    "physical",
-  );
-});
-
-test("an ungraded or bogus grade is absent, never guessed at", () => {
-  // Versions saved before 2026-07-20 carry no grade. The Vault must not read that
-  // silence as "structural" and downgrade a run that was checked against the physics.
-  assert.equal(verificationFromMetadata(REAL_VERSION_METADATA).evidenceStrength, undefined);
-  for (const bogus of ["strong", "", 1, null, {}]) {
-    assert.equal(
-      verificationFromMetadata({ verification_summary: { evidence_strength: bogus } })
-        .evidenceStrength,
-      undefined,
-    );
+    assert.deepEqual(verificationFromMetadata(value), { summary: null });
   }
 });

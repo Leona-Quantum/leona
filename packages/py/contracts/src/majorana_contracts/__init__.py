@@ -29,11 +29,14 @@ from .enums import (
     Role,
     RunMode,
     RunStatus,
+    RetryTarget,
+    SemanticReviewDecision,
     SourceKind,
     Stage,
     TopLevelExecution,
     UsageKind,
     VerificationMethod,
+    VerificationFailureClass,
     VerificationResultKind,
     VerifierDecision,
     PHYSICAL_VERIFICATION_METHODS,
@@ -69,10 +72,12 @@ from .events import (
     RunRestarted,
     RunStarted,
     SandboxResult,
+    SemanticReviewRecorded,
     ResourceEstimateResult,
     ScreenResult,
     StageFinished,
     StageStarted,
+    StrictVerificationRecorded,
     VerificationResult,
     run_event_adapter,
 )
@@ -85,6 +90,8 @@ from .models import (
     ResourceMetrics,
     Run,
     VerificationRecord,
+    VerificationCheckSummary,
+    VerificationSummary,
     Workspace,
     Conversation,
     ConversationTurn,
@@ -97,6 +104,7 @@ from .plan import (
     Plan,
     PlanParameters,
     SuccessCriteria,
+    StatePreparationClaim,
     VerificationPlan,
 )
 from .scope import Scope
@@ -131,7 +139,16 @@ from .lifecycle import (
 # 1.5.0: Artifact (list resource) gains optional verifier_decision /
 # evidence_strength from the current version's verification_summary, so the
 # Vault list stops fabricating "verified" for unopened artifacts.
-CONTRACTS_VERSION = "1.5.0"
+# 2.0.0: VerificationPlan removes all reference-QASM fields and planner-selectable
+# exact; prior exact records remain readable. Adds three-state review/failure/retry
+# taxonomy, unavailable/error check results, and typed final summaries.
+# 2.1.0: VerificationMethod gains fixed-policy Bell/GHZ state-property checks;
+# VerificationPlan gains an optional typed relative-phase state target.
+# 2.2.0: RunEvent gains immutable semantic/strict audit events, attempt bindings,
+# and optional machine-readable terminal reasons.
+# 2.3.0: Artifact, ArtifactVersion, and Run expose typed bounded verification
+# summaries so clients never infer trust from arbitrary metadata.
+CONTRACTS_VERSION = "2.3.0"
 
 __all__ = [
     "CONTRACTS_VERSION",
@@ -196,29 +213,37 @@ __all__ = [
     "RunAnalysis",
     "RunDiagnosed",
     "RunFinished",
+    "SemanticReviewRecorded",
     "RunMode",
     "RunModeResolved",
     "RunQueued",
     "RunRestarted",
     "RunStarted",
     "RunStatus",
+    "RetryTarget",
     "SandboxResult",
     "ResourceEstimateResult",
     "ResourceMetrics",
     "ScreenResult",
     "Scope",
+    "SemanticReviewDecision",
     "SourceKind",
     "Stage",
     "StageFinished",
     "StageStarted",
+    "StatePreparationClaim",
     "SuccessCriteria",
     "TopLevelExecution",
     "TERMINAL_STATUSES",
     "UsageKind",
     "VerificationMethod",
+    "VerificationFailureClass",
     "VerificationPlan",
     "VerificationRecord",
+    "VerificationSummary",
+    "VerificationCheckSummary",
     "VerificationResult",
+    "StrictVerificationRecorded",
     "VerificationResultKind",
     "VerifierDecision",
     "Visibility",

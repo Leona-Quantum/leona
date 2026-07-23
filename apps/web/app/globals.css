@@ -333,12 +333,22 @@ body {
   }
 }
 
-/* Run process narrative — a one-line, ChatGPT-style "what the agent is doing"
- * trace shown while a circuit-execution run is in progress. Only the most
- * recent step is kept (the component remounts the element on each change),
- * so the line fades in fresh instead of accumulating into a growing block. */
-.mj-run-process-text {
+/* Run process narrative — a step-by-step, ChatGPT-style "what the agent is
+ * doing" trace shown while a circuit-execution run is in progress. Every step
+ * the run has completed so far stays visible (the full history is genuinely
+ * useful for a multi-minute plan/execute/review/verify loop, not just its
+ * latest line) — only the newest step keeps the shimmering "in progress"
+ * treatment; earlier ones settle into a plain, muted, completed style. */
+.mj-run-process-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
   margin: 0 0 var(--sp-3);
+  padding: 0;
+  list-style: none;
+}
+.mj-run-process-text {
+  margin: 0;
   width: fit-content;
   background-image: linear-gradient(
     90deg,
@@ -358,6 +368,13 @@ body {
     mj-run-process-fade-in 400ms ease-out,
     mj-run-process-shimmer 1.8s linear infinite;
 }
+.mj-run-process-text--done {
+  background-image: none;
+  -webkit-background-clip: initial;
+  background-clip: initial;
+  color: var(--text-2);
+  animation: mj-run-process-fade-in 400ms ease-out;
+}
 @keyframes mj-run-process-fade-in {
   from { opacity: 0; transform: translateY(2px); }
   to { opacity: 1; transform: translateY(0); }
@@ -367,9 +384,62 @@ body {
   to { background-position: -200% 0; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .mj-run-process-text {
+  .mj-run-process-text,
+  .mj-run-process-text--done {
     animation: none;
   }
+}
+
+/* Pull tabs on steps that have something underneath their summary line — the
+ * plan, the code a simulate tool ran, why review/strict verification decided
+ * what it decided. <summary> keeps the native disclosure marker/keyboard
+ * behavior; only its color comes from .mj-run-process-text(--done) above. */
+.mj-run-process-detail > summary {
+  cursor: pointer;
+  list-style-position: outside;
+}
+.mj-run-process-detail-body {
+  margin: var(--sp-1) 0 0 var(--sp-4);
+  padding: var(--sp-2) var(--sp-3);
+  border: 1px solid var(--border-0);
+  border-radius: var(--radius-control);
+  background: var(--bg-1);
+  max-height: 260px;
+  overflow: auto;
+}
+.mj-run-process-detail-pre {
+  margin: 0;
+  font-family: var(--font-mono, monospace);
+  font-size: var(--fs-12);
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--text-1);
+}
+.mj-run-process-detail-text {
+  font-size: var(--fs-12);
+  color: var(--text-1);
+}
+.mj-run-process-detail-text p {
+  margin: 0 0 var(--sp-1);
+}
+.mj-run-process-detail-text ul {
+  margin: 0 0 var(--sp-1);
+  padding-left: var(--sp-4);
+}
+.mj-run-process-detail-fields {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: var(--sp-1) var(--sp-2);
+  margin: 0;
+  font-size: var(--fs-12);
+}
+.mj-run-process-detail-fields dt {
+  color: var(--text-2);
+  font-weight: 500;
+}
+.mj-run-process-detail-fields dd {
+  margin: 0;
+  color: var(--text-1);
 }
 
 /* ── Brand-refresh (Leona Quantum handoff) ─────────────────────────────────

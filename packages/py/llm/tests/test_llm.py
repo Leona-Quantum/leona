@@ -125,6 +125,25 @@ def test_request_schema_is_optional_on_the_request_model():
     assert LLMRequest(model="m", system="s", user="u").response_schema is None
 
 
+def test_max_tokens_defaults_to_unset_and_stays_out_of_the_wire_params():
+    """No self-imposed cap unless a caller opts in: bench-14 (2026-07-11) found a
+    reasoning model burning a fixed max_tokens budget entirely on reasoning, zero
+    code out — the cap itself was the failure. Omitted here, the provider's own
+    ceiling applies instead (the same choice namekoQ makes throughout)."""
+    from majorana_llm.client import decode_params
+
+    req = LLMRequest(model="m", system="sys", user="u")
+    assert req.max_tokens is None
+    openai_params, _ = decode_params(req, "OPENAI_API_KEY")
+    assert "max_completion_tokens" not in openai_params
+    deepseek_params, _ = decode_params(req, "DEEPSEEK_API_KEY")
+    assert "max_tokens" not in deepseek_params
+
+    capped = LLMRequest(model="m", system="sys", user="u", max_tokens=2048)
+    assert decode_params(capped, "OPENAI_API_KEY")[0]["max_completion_tokens"] == 2048
+    assert decode_params(capped, "DEEPSEEK_API_KEY")[0]["max_tokens"] == 2048
+
+
 async def test_openai_compatible_llm_streams_reasoning_and_output(monkeypatch):
     calls: list[dict] = []
 
@@ -261,10 +280,17 @@ def test_parsed_methods_are_identical_to_the_members_the_worker_dispatches_on():
 
 
 def test_plan_schema_never_offers_a_method_the_worker_cannot_evaluate():
-    schema = json.dumps(Plan.model_json_schema())
+    raw_schema = Plan.model_json_schema()
+    schema = json.dumps(raw_schema)
+    method_choices = raw_schema["$defs"]["VerificationPlan"]["properties"]["methods"]["items"][
+        "enum"
+    ]
 
     assert "baseline_plan" not in schema
     assert "qasm_parse" not in schema
+    assert "reference_source" not in schema
+    assert "reference_qasm" not in schema
+    assert "exact" not in method_choices
     # `exact_diag` moved the other way on 2026-07-20: it now has a dispatch branch
     # (EvidenceVerifier._exact_diag_check) and a reference field, so withholding it
     # from the schema would be the same defect in reverse — a check the worker can
@@ -276,6 +302,7 @@ def test_plan_schema_never_offers_a_method_the_worker_cannot_evaluate():
     # reference_problem.
     assert "brute_force" in schema
     assert "reference_problem" in schema
+    assert "state_preparation_claim" in schema
 
 
 def test_parse_plan_normalizes_scalar_additional_notes_from_json_object_mode():

@@ -1,0 +1,11 @@
+id: v2-11a-vqe-energy-pass
+category: deterministic-oracle
+description: Correct VQE energy passes exact diagonalization.
+expected:
+  decision: pass
+  semantic_review_decision: ready
+  retry_target: none
+  candidate_revisions_consumed: 1
+  evidence_strength: physical
+  materialized: true
+  public_eligible: true

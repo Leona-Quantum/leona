@@ -16,12 +16,15 @@ from .enums import (
     Framework,
     RunMode,
     RunStatus,
+    RetryTarget,
+    SemanticReviewDecision,
     Stage,
     VerificationMethod,
+    VerificationFailureClass,
     VerificationResultKind,
     VerifierDecision,
 )
-from .models import ResourceMetrics
+from .models import ResourceMetrics, VerificationSummary
 from .plan import Plan
 
 
@@ -237,6 +240,46 @@ class VerificationResult(_EventBase):
     method: VerificationMethod
     result: VerificationResultKind
     details: dict[str, Any] = Field(default_factory=dict)
+    attempt_id: UUID | None = None
+    candidate_id: UUID | None = None
+    source_fingerprint: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+    attempt_seq: int | None = Field(default=None, ge=1)
+    check_index: int | None = Field(default=None, ge=0)
+
+
+class SemanticReviewRecorded(_EventBase):
+    type: Literal["verification.semantic_review"] = "verification.semantic_review"
+    review_id: UUID
+    candidate_id: UUID
+    execution_id: UUID
+    attempt_seq: int = Field(ge=1)
+    source_fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
+    decision: SemanticReviewDecision
+    reason_code: str = Field(min_length=1, max_length=120)
+    failure_class: VerificationFailureClass | None = None
+    retry_target: RetryTarget
+    confidence: Literal["high", "medium", "low"] | None = None
+    severity: Literal["none", "minor", "major", "blocking"] | None = None
+    feedback: dict[str, Any] = Field(default_factory=dict)
+
+
+class StrictVerificationRecorded(_EventBase):
+    type: Literal["verification.strict_attempt"] = "verification.strict_attempt"
+    attempt_id: UUID
+    candidate_id: UUID
+    execution_id: UUID
+    semantic_review_id: UUID
+    attempt_seq: int = Field(ge=1)
+    source_fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
+    decision: VerifierDecision
+    evidence_strength: EvidenceStrength | None = None
+    reason_code: str = Field(min_length=1, max_length=120)
+    candidate_defect_observed: bool
+    failure_class: VerificationFailureClass | None = None
+    retry_target: RetryTarget
+    claim_coverage: list[dict[str, Any]] = Field(default_factory=list)
+    unverified_claims: list[str] = Field(default_factory=list, max_length=50)
+    verifier_version: str = Field(min_length=1, max_length=120)
 
 
 class BaselineResult(_EventBase):
@@ -346,7 +389,17 @@ class RunFinished(_EventBase):
     # compared against the physics from one whose only check read a dict key, and
     # this event is the durable, replayable record the run page reads.
     evidence_strength: EvidenceStrength | None = None
+    verification_summary: VerificationSummary | None = None
     residual_risks: str | None = None
+    reason_code: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=120,
+        description=(
+            "Machine-readable terminal reason. Optional only for replaying historical events; "
+            "current failed terminal writes require it at the repository boundary."
+        ),
+    )
 
 
 RunEvent = Annotated[
@@ -369,6 +422,8 @@ RunEvent = Annotated[
     | CodeFinalized
     | SandboxResult
     | VerificationResult
+    | SemanticReviewRecorded
+    | StrictVerificationRecorded
     | BaselineResult
     | ExportClassified
     | ArtifactSaved

@@ -31,12 +31,8 @@ class _PlanBase(BaseModel):
 _DISTRIBUTION_KEY_NAMES = frozenset({"counts", "measurement_counts", "results", "samples"})
 _DISTRIBUTION_KEY_TOKENS = ("counts", "distribution", "histogram", "probabilities")
 
-# Ceiling for the `exact` method, pinned here so a plan can never ask for a check
-# the verifier is forced to fail. The check materializes two 2**n x 2**n complex128
-# unitaries (16 * 4**n bytes each): 16 MB apiece at 10 qubits, 256 MB at 12. Ten is
-# the last comfortable value in the worker. packages/py/verification keeps its own
-# library default of 6; the worker's callsite passes this number explicitly, and
-# services/worker/tests pins the two together against drift.
+# Legacy exact-verifier ceiling, retained while the worker's historical exact helper
+# still imports it. New Plans cannot select exact and no Plan field uses this value.
 EXACT_MAX_QUBITS = 10
 
 # Ceiling for `exact_diag`, mirroring majorana_verification.hamiltonian's own
@@ -116,10 +112,9 @@ class ArtifactContract(_PlanBase):
 class PauliTerm(_PlanBase):
     """One `coefficient * PauliString` term of a Hamiltonian, as data.
 
-    The reference for `exact_diag` is declared, never executed — the same rule
-    `reference_qasm` follows. A Hamiltonian written as framework code would have to
-    run in the sandbox to mean anything, which would make a second piece of
-    model-authored code the ground truth.
+    The reference for `exact_diag` is declared data, never executable code. A
+    Hamiltonian written as framework code would have to run in the sandbox to mean
+    anything, which would make model-authored code the ground truth.
     """
 
     coefficient: float = Field(
@@ -141,11 +136,9 @@ class PauliTerm(_PlanBase):
 class ProblemTerm(_PlanBase):
     """One weighted term of a combinatorial instance, as data.
 
-    The reference for `brute_force` is declared, never executed — the rule
-    `reference_qasm` and `reference_hamiltonian` already follow, and for the same
-    reason: an instance written as framework code would have to run in the
-    sandbox to mean anything, making a second piece of model-authored code the
-    ground truth.
+    The reference for `brute_force` is declared data, never executed. An instance
+    written as framework code would have to run in the sandbox to mean anything,
+    making model-authored code the ground truth.
     """
 
     i: int = Field(
@@ -192,6 +185,27 @@ class ReferenceProblem(_PlanBase):
     )
 
 
+class StatePreparationClaim(_PlanBase):
+    """Typed Bell/GHZ target accepted by semantic review before strict checks.
+
+    The Plan records the requested relative phase as data; it is not correctness
+    authority by itself. The semantic reviewer owns request-to-Plan alignment,
+    then the fixed verifier compares native evidence with this bounded target.
+    """
+
+    family: Literal["bell", "ghz"]
+    qubits: int = Field(ge=2, le=12)
+    relative_phase_radians: float = Field(
+        default=0.0,
+        allow_inf_nan=False,
+        description=(
+            "Relative phase phi in (|0...0> + exp(i*phi)|1...1>)/sqrt(2). "
+            "Semantic review must confirm that phi reflects the user's request."
+        ),
+    )
+    measurement_binding: Literal["identity_when_present"] = "identity_when_present"
+
+
 class VerificationPlan(_PlanBase):
     methods: list[VerificationMethod] = Field(
         min_length=1,
@@ -215,27 +229,6 @@ class VerificationPlan(_PlanBase):
     reference_method: str | None = Field(
         default=None, description="Independent reference, e.g. exact diagonalization"
     )
-    reference_source: Literal["plan_declared", "parent_artifact"] | None = Field(
-        default=None,
-        description=(
-            "Where the 'exact' check gets the circuit it compares against. "
-            "'plan_declared' means you supply reference_qasm below. "
-            "'parent_artifact' means the already-verified circuit this run revises "
-            "is the reference — choose it only when the request is to optimize, "
-            "transpile, or refactor that circuit WITHOUT changing what it computes, "
-            "and only when you were told this run has a parent artifact."
-        ),
-    )
-    reference_qasm: str | None = Field(
-        default=None,
-        max_length=20_000,
-        description=(
-            "OpenQASM 2 or 3 source for the circuit the generated code must match, "
-            "required when reference_source is 'plan_declared'. Write the canonical "
-            "textbook construction, not a copy of the code you expect. Measurements "
-            "are ignored: only the unitary is compared."
-        ),
-    )
     reference_hamiltonian: list[PauliTerm] | None = Field(
         default=None,
         max_length=256,
@@ -256,6 +249,14 @@ class VerificationPlan(_PlanBase):
             "— not a transcription of the code you expect back. "
             "success_criteria.primary_metric must name the result key holding the "
             "objective value the run reports."
+        ),
+    )
+    state_preparation_claim: StatePreparationClaim | None = Field(
+        default=None,
+        description=(
+            "Explicit Bell/GHZ target for the fixed native-state property verifier. "
+            "Omission means that state-preparation correctness is unsupported, not "
+            "that the canonical positive-phase target may be inferred."
         ),
     )
     feedback_policy: str | None = Field(
@@ -400,73 +401,30 @@ class Plan(_PlanBase):
         return value
 
     @model_validator(mode="after")
-    def _exact_needs_a_reachable_reference(self) -> "Plan":
-        """Reject a plan asking for an `exact` check that cannot be run.
-
-        Same failure shape as the statistical rule below, and the same remedy: a
-        check whose precondition the plan itself violates fails identically on
-        every regenerated candidate, so the repair loop cannot converge and the run
-        burns its whole budget before dying. One planner re-emit is cheaper.
-
-        Four ways a plan can ask for the impossible:
-
-        - A non-circuit artifact. `artifact_type: other` means no trusted observer
-          runs, so no `interchange_qasm` is emitted and there is no circuit to
-          compare — the check would fail identically on every candidate.
-        - No `reference_source`. `verify_exact` compares against something; without
-          a nominated source there is nothing to compare against.
-        - `plan_declared` with no `reference_qasm` (or `parent_artifact` with one —
-          a reference that will be ignored is a lie about what was checked).
-        - More qubits than the check supports. `exact_equivalence` RAISES above its
-          ceiling and `verify_exact` turns that into a FAIL, so an 18-qubit plan
-          asking for `exact` fails a check no repair can fix.
-
-        The QASM is deliberately NOT parsed here. Contracts must not depend on the
-        OpenQASM package, and a parse failure is genuine evidence about the plan's
-        reference that belongs in the verification record, not a validation error
-        that silently re-rolls the planner.
-        """
-        plan = self.verification_plan
-        if plan is None or VerificationMethod.EXACT not in plan.methods:
+    def _state_preparation_claim_matches_plan(self) -> "Plan":
+        verification_plan = self.verification_plan
+        claim = verification_plan.state_preparation_claim if verification_plan else None
+        if claim is None:
             return self
-        if (
-            self.artifact_contract is not None
-            and self.artifact_contract.artifact_type is ArtifactType.OTHER
-        ):
+        expected_family = {
+            Algorithm.BELL: "bell",
+            Algorithm.GHZ: "ghz",
+        }.get(self.algorithm)
+        if expected_family is None:
             raise ValueError(
-                "verification_plan.methods includes 'exact', which compares the "
-                "circuit the run executed, but artifact_contract.artifact_type is "
-                "'other' — a non-circuit artifact gets no trusted observer and emits "
-                "no circuit to compare. Drop 'exact', or plan a circuit artifact."
+                "state_preparation_claim is supported only when algorithm is Bell or GHZ"
             )
-        if plan.reference_source is None:
+        if claim.family != expected_family:
             raise ValueError(
-                "verification_plan.methods includes 'exact', which compares the "
-                "executed circuit against a reference circuit, but no "
-                "reference_source was named. Set reference_source to "
-                "'plan_declared' and supply reference_qasm, set it to "
-                "'parent_artifact' when this run revises an existing verified "
-                "circuit and must preserve its behaviour, or drop 'exact'."
+                f"state_preparation_claim.family must be {expected_family!r} for "
+                f"algorithm {self.algorithm.value}"
             )
-        if plan.reference_source == "plan_declared" and not plan.reference_qasm:
-            raise ValueError(
-                "verification_plan.reference_source is 'plan_declared' but "
-                "reference_qasm is empty. Supply the OpenQASM source of the circuit "
-                "the generated code must match, or drop 'exact'."
-            )
-        if plan.reference_source == "parent_artifact" and plan.reference_qasm:
-            raise ValueError(
-                "verification_plan.reference_source is 'parent_artifact', so the "
-                "reference comes from the artifact this run revises; reference_qasm "
-                "would be ignored. Remove it, or switch to 'plan_declared'."
-            )
-        if self.qubits_estimate > EXACT_MAX_QUBITS:
-            raise ValueError(
-                f"verification_plan.methods includes 'exact', which supports at most "
-                f"{EXACT_MAX_QUBITS} qubits, but qubits_estimate is "
-                f"{self.qubits_estimate}. Drop 'exact' and verify this circuit "
-                "statistically, or plan a smaller instance."
-            )
+        if claim.qubits != self.qubits_estimate:
+            raise ValueError("state_preparation_claim.qubits must equal Plan.qubits_estimate")
+        if claim.family == "bell" and claim.qubits != 2:
+            raise ValueError("a Bell state_preparation_claim requires exactly 2 qubits")
+        if claim.family == "ghz" and claim.qubits < 3:
+            raise ValueError("a GHZ state_preparation_claim requires at least 3 qubits")
         return self
 
     @model_validator(mode="after")

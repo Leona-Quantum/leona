@@ -1,17 +1,13 @@
 import type { RunEvent } from "@majorana/ui";
+import type { VerificationCheck, VerificationSummary } from "./verification-record.ts";
+import { verificationFromResource, verificationSummaryFromValue } from "./verification-record.ts";
 
 /** `structural` is a pass whose evidence was contract checks only — the result dict
  * had the promised keys, the qubit count was within the plan's ceiling — with nothing
  * compared against what the physics should do. It is a real pass, and it is not the
  * claim "verified" makes, so it gets its own word. See
  * `plans/evidence-strength-labelling.md`. */
-export type LibraryStatus = "verified" | "structural" | "verified_caveats" | "failed";
-
-/** One deterministic check as the verifier recorded it on the saved version. */
-export interface VerificationCheck {
-  method: string;
-  result: string;
-}
+export type LibraryStatus = "verified" | "structural" | "verified_caveats" | "inconclusive" | "failed" | "legacy_unknown" | "stale";
 
 export interface LibraryArtifact {
   id: string;
@@ -38,6 +34,7 @@ export interface LibraryArtifact {
   // circuit's unitary from one that only confirmed its return keys.
   checks?: VerificationCheck[];
   criticSummary?: string;
+  verificationSummary?: VerificationSummary | null;
 }
 
 const STORAGE_KEY = "majorana.library.v1";
@@ -215,6 +212,9 @@ export function loadLibraryArtifacts({ includeDemo = false, includeArchived = fa
     const deletedIds = loadDeletedIds();
     const valid = parsed
       .filter(isLibraryArtifact)
+      // localStorage may restore presentation data while the API settles, but it
+      // is never a trust source. Only the typed API resource can promote this row.
+      .map((artifact) => isDemoArtifact(artifact) ? artifact : { ...artifact, status: "legacy_unknown" as const, verificationSummary: null })
       .filter((artifact) => !deletedIds.has(artifact.id))
       .filter((artifact) => includeDemo || !isDemoArtifact(artifact))
       .sort(sortNewestFirst);
@@ -304,18 +304,11 @@ function isArtifactArchiveExpired(archivedAt: string): boolean {
   return daysUntilArtifactDeletion(archivedAt) <= 0;
 }
 
-/** The Vault's status for a run-saved artifact.
- *
- * `verifier_decision === "pass"` alone used to mean "verified" here. It does not:
- * a plan whose verification_plan was ["return_contract"] passes on "the result dict
- * has a `counts` key". The worker grades that as structural, and the Vault says so.
- * A finished run with no grade at all is pre-2026-07-20 history, and absent evidence
- * is not evidence of weakness — it keeps the old reading. */
+/** A just-finished run still uses the typed summary carried by its terminal event.
+ * RunStatus and the legacy top-level decision are workflow fields, not trust evidence. */
 function statusFromFinished(finished: RunEvent | undefined): LibraryStatus {
-  if (finished?.type !== "run.finished" || finished.verifier_decision !== "pass") {
-    return "verified_caveats";
-  }
-  return finished.evidence_strength === "structural" ? "structural" : "verified";
+  if (finished?.type !== "run.finished") return "legacy_unknown";
+  return statusFromVerificationSummary(verificationSummaryFromValue(finished.verification_summary));
 }
 
 export function rememberArtifactFromRun(events: readonly RunEvent[], prompt: string): LibraryArtifact | null {
@@ -355,6 +348,9 @@ export function rememberArtifactFromRun(events: readonly RunEvent[], prompt: str
     currentVersionId: saved.version_id,
     resourceRows,
     runId: saved.run_id,
+    verificationSummary: finished?.type === "run.finished"
+      ? verificationSummaryFromValue(finished.verification_summary)
+      : null,
     source: "run",
   };
   rememberArtifact(artifact);
@@ -404,19 +400,16 @@ function isDemoArtifact(artifact: LibraryArtifact): boolean {
   return artifact.source === "demo" || DEMO_ARTIFACT_IDS.has(artifact.id);
 }
 
-/** Map the artifact-list resource's server-side grade to a Vault status.
- *
- * The server reads the current version's verification_summary; until 2026-07-20
- * the list carried no grade and the callers fabricated "verified" as the default,
- * so an unopened structurally-verified artifact over-claimed until its detail page
- * corrected localStorage. A null return means the server does not know
- * (pre-summary version) — only then do the old fallbacks apply.
- */
-export function statusFromResource(artifact: Record<string, unknown>): LibraryStatus | null {
-  if (artifact.verifier_decision !== "pass") return null;
-  if (artifact.evidence_strength === "structural") return "structural";
-  if (artifact.evidence_strength === "physical") return "verified";
-  return null;
+/** Map only the API's typed summary to a Vault status. Absence remains unknown. */
+export function statusFromVerificationSummary(summary: VerificationSummary | null): LibraryStatus {
+  if (!summary) return "legacy_unknown";
+  if (summary.decision === "fail") return "failed";
+  if (summary.decision === "inconclusive") return "inconclusive";
+  return summary.evidence_strength === "physical" ? "verified" : "structural";
+}
+
+export function statusFromResource(artifact: Record<string, unknown>): LibraryStatus {
+  return statusFromVerificationSummary(verificationFromResource(artifact));
 }
 
 /** The one mapper from `GET /v1/artifacts` to a LibraryArtifact.
@@ -436,16 +429,14 @@ export function artifactFromResource(value: unknown): LibraryArtifact[] {
   const slug = typeof artifact.slug === "string" ? artifact.slug : artifact.id;
   const isPublicReference = slug.startsWith("public-");
   const family = typeof artifact.family === "string" ? artifact.family : "Simulation";
+  const verificationSummary = verificationFromResource(artifact);
   return [{
     id: artifact.id,
     slug,
     title: artifact.title,
     family,
     framework: typeof artifact.framework === "string" ? artifact.framework : "Qiskit",
-    status:
-      statusFromResource(artifact) ??
-      existing?.status ??
-      (isPublicReference ? "verified_caveats" : "verified"),
+    status: statusFromVerificationSummary(verificationSummary),
     updatedAt: typeof artifact.updated_at === "string" ? artifact.updated_at : new Date().toISOString(),
     description: existing?.description ?? "Saved artifact in the workspace vault.",
     tags: existing?.tags ?? [family.toLowerCase()],
@@ -459,6 +450,7 @@ export function artifactFromResource(value: unknown): LibraryArtifact[] {
     // actually ran rather than a version id and nothing else.
     checks: existing?.checks,
     criticSummary: existing?.criticSummary,
+    verificationSummary,
     source: existing?.source ?? (isPublicReference ? "public" : "run"),
   }];
 }
