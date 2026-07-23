@@ -26,6 +26,7 @@ from ..repos import artifacts as artifacts_repo
 from ..repos import folders as folders_repo
 from ..repos import runs as runs_repo
 from ..repos import system
+from ..verification_summary import parse_verification_summary
 
 router = APIRouter()
 
@@ -123,6 +124,7 @@ def _to_resource(run: RunRow) -> RunResource:
         sandbox_provider=run.sandbox_provider,
         sandbox_meta=run.sandbox_meta,
         verifier_decision=run.verifier_decision,
+        verification_summary=parse_verification_summary(getattr(run, "verification_summary", None)),
         residual_risks=run.residual_risks,
         baseline=run.baseline,
         created_at=run.created_at,

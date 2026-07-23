@@ -222,6 +222,7 @@ class Run(Base):
     sandbox_provider: Mapped[str | None]
     sandbox_meta: Mapped[dict[str, Any] | None]
     verifier_decision: Mapped[str | None]
+    verification_summary: Mapped[dict[str, Any] | None]
     residual_risks: Mapped[str | None]
     baseline: Mapped[dict[str, Any] | None]
     started_at: Mapped[dt.datetime | None]

@@ -311,3 +311,24 @@ def test_conversion_execution_binding_migration_backfills_and_fails_closed(monke
     assert "cannot downgrade 0032" in statements[-1]
     assert "DELETE FROM" not in statements[-1]
     assert dropped[-1][0] == ("candidate_conversions", "execution_id")
+
+
+def test_run_verification_summary_migration_is_additive_and_fails_closed(monkeypatch):
+    module = _load_migration("0033_run_verification_summary.py")
+    added = []
+    statements = []
+    dropped = []
+    monkeypatch.setattr(
+        module.op, "add_column", lambda table, column: added.append((table, column))
+    )
+    monkeypatch.setattr(module.op, "execute", statements.append)
+    monkeypatch.setattr(module.op, "drop_column", lambda *args: dropped.append(args))
+
+    module.upgrade()
+    assert added[0][0] == "runs"
+    assert added[0][1].name == "verification_summary"
+
+    module.downgrade()
+    assert "cannot downgrade 0033" in statements[-1]
+    assert "DELETE FROM" not in statements[-1]
+    assert dropped == [("runs", "verification_summary")]

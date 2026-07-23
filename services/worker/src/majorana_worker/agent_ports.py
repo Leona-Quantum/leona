@@ -1741,6 +1741,12 @@ class RepoArtifactMaterializer:
                     "decision": verification.decision.value,
                     "evidence_strength": strength.value,
                     "reason_code": verification.reason_code,
+                    "semantic_review_decision": review.decision.value,
+                    "candidate_defect_observed": verification.candidate_defect_observed,
+                    "failure_class": (
+                        verification.failure_class.value if verification.failure_class else None
+                    ),
+                    "retry_target": verification.retry_target.value,
                     "checks": checks,
                     "failed_checks": failed_checks,
                     "unavailable_checks": unavailable_checks,

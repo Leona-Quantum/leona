@@ -1803,6 +1803,14 @@ export interface components {
          */
         TopLevelExecution: "required" | "demo_only" | "forbidden";
         /**
+         * VerificationCheckSummary
+         * @description Bounded public projection of one trusted verification check.
+         */
+        VerificationCheckSummary: {
+            method: components["schemas"]["VerificationMethod"];
+            result: components["schemas"]["VerificationResultKind"];
+        };
+        /**
          * VerificationFailureClass
          * @description Why verification could not continue or reach PASS.
          * @enum {string}
@@ -1997,6 +2005,8 @@ export interface components {
         VerificationSummary: {
             /** Candidate Defect Observed */
             candidate_defect_observed: boolean;
+            /** Checks */
+            checks?: components["schemas"]["VerificationCheckSummary"][];
             decision: components["schemas"]["VerifierDecision"];
             /** @default null */
             evidence_strength: components["schemas"]["EvidenceStrength"] | null;

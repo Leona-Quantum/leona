@@ -44,12 +44,20 @@ class VerificationSummary(_ResourceBase):
     failure_class: VerificationFailureClass | None = None
     retry_target: RetryTarget
     unverified_claims: list[str] = Field(default_factory=list, max_length=50)
+    checks: list["VerificationCheckSummary"] = Field(default_factory=list, max_length=50)
 
     @model_validator(mode="after")
     def inconclusive_never_blames_the_candidate(self) -> Self:
         if self.decision is VerifierDecision.INCONCLUSIVE and self.candidate_defect_observed:
             raise ValueError("inconclusive requires candidate_defect_observed=false")
         return self
+
+
+class VerificationCheckSummary(_ResourceBase):
+    """Bounded public projection of one trusted verification check."""
+
+    method: VerificationMethod
+    result: VerificationResultKind
 
 
 class Workspace(_ResourceBase):

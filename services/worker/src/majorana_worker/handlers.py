@@ -16,9 +16,11 @@ from majorana_contracts.enums import (
     EvidenceStrength,
     Framework,
     ImportProvider,
+    RetryTarget,
     Role,
     RunMode,
     RunStatus,
+    VerificationFailureClass,
     VerifierDecision,
     evidence_strength_of,
 )
@@ -246,13 +248,10 @@ async def handle_run_execute(
         # record the failure so the event log never ends mid-run.
         await session.rollback()
         if await store.current_status() is RunStatus.RUNNING:
-            await ctx.sink.emit(
-                "run.error",
-                {"stage": None, "code": "run_timeout", "message": "run exceeded its time budget"},
-            )
-            await store.finish(
-                RunStatus.FAILED,
-                {"status": RunStatus.FAILED, "reason_code": "run_timeout"},
+            await _finish_timed_out_run(
+                ctx,
+                store,
+                RepoAgentStore(scope, session),
             )
         final = RunStatus.FAILED
     log.info("run %s finished: %s", run_id, final)
@@ -471,6 +470,10 @@ async def _finish_materialized_agent(ctx, run_store, agent_store) -> RunStatus:
             "failure_class": strict.failure_class.value if strict.failure_class else None,
             "retry_target": strict.retry_target.value,
             "unverified_claims": strict.unverified_claims,
+            "checks": [
+                {"method": check.get("method"), "result": check.get("result")}
+                for check in strict.checks[:50]
+            ],
         }
         if strict is not None
         else None
@@ -485,6 +488,7 @@ async def _finish_materialized_agent(ctx, run_store, agent_store) -> RunStatus:
             "reason_code": strict.reason_code if strict else "legacy_verified",
         },
         verifier_decision=decision.value,
+        verification_summary=summary,
     )
 
 
@@ -516,9 +520,107 @@ async def _finish_resource_exhausted(ctx, run_store, agent_store, failure_reason
                 "failure_class": "capability_limit",
                 "retry_target": "none",
                 "unverified_claims": ["candidate execution within configured resources"],
+                "checks": [],
             },
         },
         verifier_decision="inconclusive",
+        verification_summary={
+            "decision": "inconclusive",
+            "evidence_strength": "structural",
+            "reason_code": "resource_exhausted",
+            "candidate_defect_observed": False,
+            "failure_class": "capability_limit",
+            "retry_target": "none",
+            "unverified_claims": ["candidate execution within configured resources"],
+            "checks": [],
+        },
+    )
+
+
+async def _bound_latest_strict_summary(run_id, agent_store):
+    candidate = await agent_store.latest_candidate(run_id)
+    if candidate is None:
+        return None, None
+    strict = await agent_store.latest_strict_verification(run_id, candidate.candidate_id)
+    if strict is None:
+        return None, None
+    execution = await agent_store.execution_for(run_id, candidate.candidate_id)
+    review = await agent_store.latest_semantic_review(run_id, candidate.candidate_id)
+    if execution is None or review is None:
+        raise RuntimeError("strict terminal evidence is missing its bound execution or review")
+    strict.assert_binding(candidate, execution, review)
+    strength = strict.evidence_strength or evidence_strength_of(strict.checks)
+    return strict, {
+        "decision": strict.decision.value,
+        "semantic_review_decision": review.decision.value,
+        "evidence_strength": strength.value,
+        "reason_code": strict.reason_code,
+        "candidate_defect_observed": strict.candidate_defect_observed,
+        "failure_class": strict.failure_class.value if strict.failure_class else None,
+        "retry_target": strict.retry_target.value,
+        "unverified_claims": strict.unverified_claims,
+        "checks": [
+            {"method": check.get("method"), "result": check.get("result")}
+            for check in strict.checks[:50]
+        ],
+    }
+
+
+async def _finish_failed_agent(
+    ctx, run_store, agent_store, *, failure_reason: str, failure_message: str
+) -> RunStatus:
+    await _emit_best_effort(ctx, agent_store, failure_reason)
+    await ctx.sink.emit(
+        "run.error",
+        {"stage": None, "code": "agent_failed", "message": failure_message},
+        event_id=uuid.uuid5(ctx.run_id, "run.error.agent_failed"),
+    )
+    strict, summary = await _bound_latest_strict_summary(ctx.run_id, agent_store)
+    payload = {"status": RunStatus.FAILED, "reason_code": failure_reason}
+    fields = {}
+    if strict is not None and summary is not None:
+        payload.update(
+            verifier_decision=strict.decision.value,
+            verification_summary=summary,
+        )
+        fields.update(
+            verifier_decision=strict.decision.value,
+            verification_summary=summary,
+        )
+    return await run_store.finish(RunStatus.FAILED, payload, **fields)
+
+
+async def _finish_timed_out_run(ctx, run_store, agent_store) -> RunStatus:
+    await ctx.sink.emit(
+        "run.error",
+        {"stage": None, "code": "run_timeout", "message": "run exceeded its time budget"},
+    )
+    strict, summary = await _bound_latest_strict_summary(ctx.run_id, agent_store)
+    if strict is None or summary is None:
+        decision = VerifierDecision.INCONCLUSIVE
+        summary = {
+            "decision": decision.value,
+            "semantic_review_decision": None,
+            "evidence_strength": None,
+            "reason_code": "run_timeout",
+            "candidate_defect_observed": False,
+            "failure_class": VerificationFailureClass.VERIFIER_FAILURE.value,
+            "retry_target": RetryTarget.VERIFICATION.value,
+            "unverified_claims": ["verification completion"],
+            "checks": [],
+        }
+    else:
+        decision = strict.decision
+    return await run_store.finish(
+        RunStatus.FAILED,
+        {
+            "status": RunStatus.FAILED,
+            "reason_code": "run_timeout",
+            "verifier_decision": decision.value,
+            "verification_summary": summary,
+        },
+        verifier_decision=decision.value,
+        verification_summary=summary,
     )
 
 
@@ -630,22 +732,15 @@ async def _handle_agent_execution(
             agent_store,
             runtime.failure_reason,
         )
-    await _emit_best_effort(ctx, agent_store, runtime.failure_reason)
     # "agent tool loop failed" alone is undiagnosable: the run that exposed this
     # showed four passing verification checks and then died. Carry the exhausted
     # budget here as well as the now-replayable semantic-review objection.
-    await ctx.sink.emit(
-        "run.error",
-        {
-            "stage": None,
-            "code": "agent_failed",
-            "message": await _agent_failure_message(runtime, agent_store, ctx.run_id),
-        },
-        event_id=uuid.uuid5(ctx.run_id, "run.error.agent_failed"),
-    )
-    return await run_store.finish(
-        RunStatus.FAILED,
-        {"status": RunStatus.FAILED, "reason_code": _agent_failure_reason_code(runtime)},
+    return await _finish_failed_agent(
+        ctx,
+        run_store,
+        agent_store,
+        failure_reason=_agent_failure_reason_code(runtime),
+        failure_message=await _agent_failure_message(runtime, agent_store, ctx.run_id),
     )
 
 

@@ -26,6 +26,7 @@ from ..auth.deps import CurrentScope, DbSession
 from ..repos import artifacts as artifacts_repo
 from ..orm import Artifact as ArtifactRow
 from ..orm import ArtifactVersion as ArtifactVersionRow
+from ..verification_summary import parse_verification_summary
 
 router = APIRouter()
 
@@ -92,22 +93,16 @@ def _verification_summary_fields(
     Absence and malformed values both map to None — the resource must say
     "unknown", never guess a verdict the metadata does not carry.
     """
-    summary = metadata.get("verification_summary") if isinstance(metadata, dict) else None
-    if not isinstance(summary, dict):
-        return None, None
-    try:
-        decision = VerifierDecision(summary.get("decision"))
-    except ValueError:
-        decision = None
-    try:
-        strength = EvidenceStrength(summary.get("evidence_strength"))
-    except ValueError:
-        strength = None
-    return decision, strength
+    raw = metadata.get("verification_summary") if isinstance(metadata, dict) else None
+    summary = parse_verification_summary(raw)
+    return (summary.decision, summary.evidence_strength) if summary is not None else (None, None)
 
 
 def _to_artifact(row: ArtifactRow, version_metadata: dict | None = None) -> ArtifactResource:
     decision, strength = _verification_summary_fields(version_metadata)
+    raw = (
+        version_metadata.get("verification_summary") if isinstance(version_metadata, dict) else None
+    )
     return ArtifactResource(
         id=row.id,
         workspace_id=row.workspace_id,
@@ -120,6 +115,7 @@ def _to_artifact(row: ArtifactRow, version_metadata: dict | None = None) -> Arti
         current_version_id=row.current_version_id,
         verifier_decision=decision,
         evidence_strength=strength,
+        verification_summary=parse_verification_summary(raw),
         created_at=row.created_at,
         updated_at=row.updated_at,
         deleted_at=row.deleted_at,
@@ -127,6 +123,11 @@ def _to_artifact(row: ArtifactRow, version_metadata: dict | None = None) -> Arti
 
 
 def _to_version(row: ArtifactVersionRow) -> ArtifactVersionResource:
+    raw = (
+        row.artifact_metadata.get("verification_summary")
+        if isinstance(row.artifact_metadata, dict)
+        else None
+    )
     return ArtifactVersionResource(
         id=row.id,
         artifact_id=row.artifact_id,
@@ -142,6 +143,7 @@ def _to_version(row: ArtifactVersionRow) -> ArtifactVersionResource:
         framework_variants=row.framework_variants,
         resource_estimates=row.resource_estimates,
         limitations=row.limitations,
+        verification_summary=parse_verification_summary(raw),
         created_at=row.created_at,
     )
 
@@ -235,7 +237,12 @@ async def get_artifact(
     scope: CurrentScope,
     session: DbSession,
 ) -> ArtifactResource:
-    return _to_artifact(await artifacts_repo.get_artifact(scope, session, artifact_id))
+    artifact = await artifacts_repo.get_artifact(scope, session, artifact_id)
+    metadata = None
+    if artifact.current_version_id is not None:
+        version = await artifacts_repo.get_version(scope, session, artifact.current_version_id)
+        metadata = version.artifact_metadata
+    return _to_artifact(artifact, metadata)
 
 
 @router.delete("/artifacts/{artifact_id}", status_code=204)

@@ -1,4 +1,5 @@
 import uuid
+from types import SimpleNamespace
 
 import pytest
 from majorana_agent import SemanticReviewEvidence, StrictVerificationAttempt
@@ -180,7 +181,8 @@ async def test_materialized_inconclusive_finishes_successfully_without_best_effo
     assert payload["status"] is RunStatus.SUCCEEDED
     assert payload["verifier_decision"] == "inconclusive"
     assert payload["verification_summary"]["candidate_defect_observed"] is False
-    assert fields == {"verifier_decision": "inconclusive"}
+    assert fields["verifier_decision"] == "inconclusive"
+    assert fields["verification_summary"] == payload["verification_summary"]
 
 
 async def test_materialized_terminal_rejects_stale_candidate_fingerprint():
@@ -347,7 +349,231 @@ async def test_resource_exhaustion_emits_best_effort_and_typed_terminal(monkeypa
     assert status is RunStatus.FAILED
     assert payload["reason_code"] == "resource_exhausted"
     assert payload["verification_summary"]["candidate_defect_observed"] is False
-    assert fields == {"verifier_decision": "inconclusive"}
+    assert fields["verifier_decision"] == "inconclusive"
+    assert fields["verification_summary"] == payload["verification_summary"]
+
+
+@pytest.mark.parametrize(
+    ("failure_class", "retry_target", "candidate_defect_observed"),
+    [
+        (VerificationFailureClass.CANDIDATE_DEFECT, RetryTarget.CODE_GENERATION, True),
+        (VerificationFailureClass.PLAN_DEFECT, RetryTarget.PLANNING, False),
+    ],
+)
+async def test_failed_agent_persists_bound_strict_fail_summary(
+    monkeypatch, failure_class, retry_target, candidate_defect_observed
+):
+    run_id = uuid.uuid4()
+    candidate_id = uuid.uuid4()
+    execution_id = uuid.uuid4()
+    fingerprint = "a" * 64
+    candidate = SimpleNamespace(
+        candidate_id=candidate_id,
+        source_fingerprint=fingerprint,
+    )
+    execution = SimpleNamespace(
+        execution_id=execution_id,
+        candidate_id=candidate_id,
+        source_fingerprint=fingerprint,
+    )
+    review = SemanticReviewEvidence(
+        review_id=uuid.uuid4(),
+        candidate_id=candidate_id,
+        execution_id=execution_id,
+        source_fingerprint=fingerprint,
+        attempt_seq=1,
+        decision=SemanticReviewDecision.READY,
+        reason_code="semantic_ready",
+        retry_target=RetryTarget.NONE,
+    )
+    strict = StrictVerificationAttempt(
+        attempt_id=uuid.uuid4(),
+        candidate_id=candidate_id,
+        execution_id=execution_id,
+        semantic_review_id=review.review_id,
+        source_fingerprint=fingerprint,
+        attempt_seq=1,
+        checks=[{"method": "success_criteria", "result": "fail"}],
+        decision=VerifierDecision.FAIL,
+        evidence_strength=EvidenceStrength.STRUCTURAL,
+        reason_code="strict_candidate_defect",
+        candidate_defect_observed=candidate_defect_observed,
+        failure_class=failure_class,
+        retry_target=retry_target,
+        verifier_version="verification-v2",
+    )
+
+    class AgentStore:
+        async def latest_candidate(self, _run_id):
+            return candidate
+
+        async def latest_strict_verification(self, _run_id, _candidate_id):
+            return strict
+
+        async def execution_for(self, _run_id, _candidate_id):
+            return execution
+
+        async def latest_semantic_review(self, _run_id, _candidate_id):
+            return review
+
+    class Sink:
+        async def emit(self, *_args, **_kwargs):
+            return None
+
+    class RunStore:
+        async def finish(self, status, payload, **fields):
+            self.terminal = status, payload, fields
+            return status
+
+    async def no_best_effort(*_args):
+        return None
+
+    monkeypatch.setattr(handlers, "_emit_best_effort", no_best_effort)
+    ctx = RunContext(
+        run_id=run_id,
+        task_prompt="failing candidate",
+        mode=RunMode.EXECUTE,
+        framework=Framework.QISKIT,
+        seed=None,
+        shots=None,
+        timeout_s=None,
+        sink=Sink(),
+    )
+    run_store = RunStore()
+
+    result = await handlers._finish_failed_agent(
+        ctx,
+        run_store,
+        AgentStore(),
+        failure_reason="candidate_budget_exhausted",
+        failure_message="agent failed",
+    )
+
+    assert result is RunStatus.FAILED
+    _, payload, fields = run_store.terminal
+    assert payload["verification_summary"]["decision"] == "fail"
+    assert payload["verification_summary"]["failure_class"] == failure_class.value
+    assert fields["verification_summary"] == payload["verification_summary"]
+    assert fields["verifier_decision"] == "fail"
+
+
+async def test_timeout_preserves_already_durable_bound_strict_verdict():
+    run_id = uuid.uuid4()
+    candidate_id = uuid.uuid4()
+    execution_id = uuid.uuid4()
+    fingerprint = "b" * 64
+    candidate = SimpleNamespace(
+        candidate_id=candidate_id,
+        source_fingerprint=fingerprint,
+    )
+    execution = SimpleNamespace(
+        execution_id=execution_id,
+        candidate_id=candidate_id,
+        source_fingerprint=fingerprint,
+    )
+    review = SemanticReviewEvidence(
+        review_id=uuid.uuid4(),
+        candidate_id=candidate_id,
+        execution_id=execution_id,
+        source_fingerprint=fingerprint,
+        attempt_seq=1,
+        decision=SemanticReviewDecision.READY,
+        reason_code="semantic_ready",
+        retry_target=RetryTarget.NONE,
+    )
+    strict = StrictVerificationAttempt(
+        attempt_id=uuid.uuid4(),
+        candidate_id=candidate_id,
+        execution_id=execution_id,
+        semantic_review_id=review.review_id,
+        source_fingerprint=fingerprint,
+        attempt_seq=1,
+        checks=[{"method": "success_criteria", "result": "fail"}],
+        decision=VerifierDecision.FAIL,
+        evidence_strength=EvidenceStrength.STRUCTURAL,
+        reason_code="strict_plan_defect",
+        candidate_defect_observed=False,
+        failure_class=VerificationFailureClass.PLAN_DEFECT,
+        retry_target=RetryTarget.PLANNING,
+        verifier_version="verification-v2",
+    )
+
+    class AgentStore:
+        async def latest_candidate(self, _run_id):
+            return candidate
+
+        async def latest_strict_verification(self, _run_id, _candidate_id):
+            return strict
+
+        async def execution_for(self, _run_id, _candidate_id):
+            return execution
+
+        async def latest_semantic_review(self, _run_id, _candidate_id):
+            return review
+
+    class Sink:
+        async def emit(self, *_args, **_kwargs):
+            return None
+
+    class RunStore:
+        async def finish(self, status, payload, **fields):
+            self.terminal = status, payload, fields
+            return status
+
+    ctx = RunContext(
+        run_id=run_id,
+        task_prompt="timeout after strict",
+        mode=RunMode.EXECUTE,
+        framework=Framework.QISKIT,
+        seed=None,
+        shots=None,
+        timeout_s=1,
+        sink=Sink(),
+    )
+    run_store = RunStore()
+
+    result = await handlers._finish_timed_out_run(ctx, run_store, AgentStore())
+
+    assert result is RunStatus.FAILED
+    _, payload, fields = run_store.terminal
+    assert payload["reason_code"] == "run_timeout"
+    assert payload["verification_summary"]["decision"] == "fail"
+    assert fields["verification_summary"] == payload["verification_summary"]
+    assert fields["verifier_decision"] == "fail"
+
+
+async def test_timeout_without_strict_evidence_is_explicitly_inconclusive():
+    class AgentStore:
+        async def latest_candidate(self, _run_id):
+            return None
+
+    class Sink:
+        async def emit(self, *_args, **_kwargs):
+            return None
+
+    class RunStore:
+        async def finish(self, status, payload, **fields):
+            self.terminal = status, payload, fields
+            return status
+
+    ctx = RunContext(
+        run_id=uuid.uuid4(),
+        task_prompt="timeout before strict",
+        mode=RunMode.EXECUTE,
+        framework=Framework.QISKIT,
+        seed=None,
+        shots=None,
+        timeout_s=1,
+        sink=Sink(),
+    )
+    run_store = RunStore()
+
+    await handlers._finish_timed_out_run(ctx, run_store, AgentStore())
+
+    _, payload, fields = run_store.terminal
+    assert payload["verification_summary"]["decision"] == "inconclusive"
+    assert payload["verification_summary"]["reason_code"] == "run_timeout"
+    assert fields["verification_summary"] == payload["verification_summary"]
 
 
 class _FakeStore:

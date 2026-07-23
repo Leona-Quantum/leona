@@ -3560,6 +3560,24 @@
         "title": "TopLevelExecution",
         "type": "string"
       },
+      "VerificationCheckSummary": {
+        "additionalProperties": false,
+        "description": "Bounded public projection of one trusted verification check.",
+        "properties": {
+          "method": {
+            "$ref": "#/components/schemas/VerificationMethod"
+          },
+          "result": {
+            "$ref": "#/components/schemas/VerificationResultKind"
+          }
+        },
+        "required": [
+          "method",
+          "result"
+        ],
+        "title": "VerificationCheckSummary",
+        "type": "object"
+      },
       "VerificationFailureClass": {
         "description": "Why verification could not continue or reach PASS.",
         "enum": [
@@ -3929,6 +3947,14 @@
             "title": "Candidate Defect Observed",
             "type": "boolean"
           },
+          "checks": {
+            "items": {
+              "$ref": "#/components/schemas/VerificationCheckSummary"
+            },
+            "maxItems": 50,
+            "title": "Checks",
+            "type": "array"
+          },
           "decision": {
             "$ref": "#/components/schemas/VerifierDecision"
           },
@@ -4192,7 +4218,7 @@
   "info": {
     "description": "Cross-boundary types only; API paths are owned by services/api.",
     "title": "majorana-contracts",
-    "version": "2.2.0"
+    "version": "2.3.0"
   },
   "openapi": "3.1.0",
   "paths": {}

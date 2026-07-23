@@ -664,6 +664,36 @@ async def append_strict_verification(
     row = CandidateVerificationAttempt(**values)
     session.add(row)
     await session.flush()
+    checks = values.get("checks")
+    checks = checks if isinstance(checks, list) else []
+    unverified_claims = values.get("unverified_claims")
+    unverified_claims = unverified_claims if isinstance(unverified_claims, list) else []
+    summary = {
+        "decision": values["decision"],
+        "semantic_review_decision": review.decision,
+        "evidence_strength": values.get("evidence_strength"),
+        "reason_code": values["reason_code"],
+        "candidate_defect_observed": values["candidate_defect_observed"],
+        "failure_class": values.get("failure_class"),
+        "retry_target": values["retry_target"],
+        "unverified_claims": unverified_claims[:50],
+        "checks": [
+            {"method": check.get("method"), "result": check.get("result")}
+            for check in checks[:50]
+            if isinstance(check, dict)
+        ],
+    }
+    updated = await session.execute(
+        update(Run)
+        .where(Run.id == run_id, Run.workspace_id == scope.workspace_id)
+        .values(
+            verifier_decision=values["decision"],
+            verification_summary=summary,
+            updated_at=func.now(),
+        )
+    )
+    if updated.rowcount != 1:
+        raise NotFoundError("run")
     return row
 
 

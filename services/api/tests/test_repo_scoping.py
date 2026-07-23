@@ -242,6 +242,91 @@ async def test_exact_strict_verification_read_is_scoped(scope, session):
     assert_workspace_bound(stmt, scope)
 
 
+async def test_strict_append_atomically_projects_typed_summary_to_run(scope, monkeypatch):
+    run_id = uuid.uuid4()
+    candidate_id = uuid.uuid4()
+    execution_id = uuid.uuid4()
+    review_id = uuid.uuid4()
+    fingerprint = "a" * 64
+    candidate = SimpleNamespace(id=candidate_id, source_fingerprint=fingerprint)
+    execution = SimpleNamespace(
+        id=execution_id,
+        source_fingerprint=fingerprint,
+    )
+    review = SimpleNamespace(
+        id=review_id,
+        execution_id=execution_id,
+        source_fingerprint=fingerprint,
+        decision="ready",
+    )
+
+    async def get_candidate(*_args):
+        return candidate
+
+    async def get_execution(*_args):
+        return execution
+
+    async def get_review(*_args):
+        return review
+
+    async def latest(*_args):
+        return None
+
+    monkeypatch.setattr(agent, "get_candidate", get_candidate)
+    monkeypatch.setattr(agent, "get_execution", get_execution)
+    monkeypatch.setattr(agent, "get_semantic_review", get_review)
+    monkeypatch.setattr(agent, "latest_strict_verification", latest)
+
+    class Result:
+        rowcount = 1
+
+    class Session:
+        def __init__(self):
+            self.statements = []
+
+        def add(self, _row):
+            return None
+
+        async def flush(self):
+            return None
+
+        async def execute(self, statement):
+            self.statements.append(statement)
+            return Result()
+
+    session = Session()
+    await agent.append_strict_verification(
+        scope,
+        session,
+        run_id,
+        {
+            "id": uuid.uuid4(),
+            "candidate_id": candidate_id,
+            "execution_id": execution_id,
+            "semantic_review_id": review_id,
+            "source_fingerprint": fingerprint,
+            "attempt_seq": 1,
+            "checks": [{"method": "success_criteria", "result": "fail"}],
+            "decision": "fail",
+            "evidence_strength": "structural",
+            "claim_coverage": [],
+            "reason_code": "strict_plan_defect",
+            "candidate_defect_observed": False,
+            "failure_class": "plan_defect",
+            "retry_target": "planning",
+            "unverified_claims": ["plan success criterion"],
+            "verifier_version": "verification-v2",
+        },
+    )
+
+    stmt = session.statements[-1]
+    _, params = compiled(stmt)
+    summary = next(value for value in params.values() if isinstance(value, dict))
+    assert summary["decision"] == "fail"
+    assert summary["checks"] == [{"method": "success_criteria", "result": "fail"}]
+    assert_workspace_bound(stmt, scope)
+
+
 async def test_semantic_review_write_rejects_stale_candidate_fingerprint(
     scope, session, monkeypatch
 ):

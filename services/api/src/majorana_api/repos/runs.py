@@ -180,6 +180,7 @@ _RUN_STATUS_FIELDS = frozenset(
         "sandbox_provider",
         "sandbox_meta",
         "verifier_decision",
+        "verification_summary",
         "residual_risks",
         "baseline",
     }

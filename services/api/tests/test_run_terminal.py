@@ -1,6 +1,7 @@
 """DB-free checks for atomic conditional Run terminal closure."""
 
 import uuid
+from datetime import UTC, datetime
 
 import pytest
 from majorana_contracts import Scope
@@ -8,6 +9,7 @@ from majorana_contracts.enums import Framework, Role, RunMode, RunStatus
 
 from majorana_api.orm import Run
 from majorana_api.repos import runs
+from majorana_api.routes import runs as run_routes
 
 
 class _Result:
@@ -46,7 +48,32 @@ def _run(scope: Scope, status: RunStatus) -> Run:
         mode=RunMode.EXECUTE,
         status=status,
         framework=Framework.QISKIT,
+        created_at=datetime.now(UTC),
     )
+
+
+def test_run_resource_exposes_typed_summary_and_preserves_legacy_none():
+    scope = _scope()
+    row = _run(scope, RunStatus.SUCCEEDED)
+    row.verifier_decision = "inconclusive"
+    row.verification_summary = {
+        "decision": "inconclusive",
+        "semantic_review_decision": "inconclusive",
+        "evidence_strength": "structural",
+        "reason_code": "required_check_unavailable",
+        "candidate_defect_observed": False,
+        "failure_class": "capability_limit",
+        "retry_target": "none",
+        "unverified_claims": ["phase"],
+        "checks": [{"method": "return_contract", "result": "pass"}],
+    }
+
+    resource = run_routes._to_resource(row)
+    assert resource.verification_summary.reason_code == "required_check_unavailable"
+    assert resource.verification_summary.checks[0].method.value == "return_contract"
+
+    row.verification_summary = None
+    assert run_routes._to_resource(row).verification_summary is None
 
 
 async def test_dead_letter_closure_appends_both_events_and_one_status_update(monkeypatch):

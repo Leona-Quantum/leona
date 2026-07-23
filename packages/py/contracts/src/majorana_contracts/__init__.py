@@ -86,6 +86,7 @@ from .models import (
     ResourceMetrics,
     Run,
     VerificationRecord,
+    VerificationCheckSummary,
     VerificationSummary,
     Workspace,
     Conversation,
@@ -141,7 +142,9 @@ from .lifecycle import (
 # VerificationPlan gains an optional typed relative-phase state target.
 # 2.2.0: RunEvent gains immutable semantic/strict audit events, attempt bindings,
 # and optional machine-readable terminal reasons.
-CONTRACTS_VERSION = "2.2.0"
+# 2.3.0: Artifact, ArtifactVersion, and Run expose typed bounded verification
+# summaries so clients never infer trust from arbitrary metadata.
+CONTRACTS_VERSION = "2.3.0"
 
 __all__ = [
     "CONTRACTS_VERSION",
@@ -230,6 +233,7 @@ __all__ = [
     "VerificationPlan",
     "VerificationRecord",
     "VerificationSummary",
+    "VerificationCheckSummary",
     "VerificationResult",
     "StrictVerificationRecorded",
     "VerificationResultKind",

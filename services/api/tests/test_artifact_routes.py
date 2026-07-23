@@ -48,16 +48,57 @@ def test_list_resource_reads_the_verification_grade_and_never_guesses():
 
     fields = artifact_routes._verification_summary_fields
 
+    def summary(decision="pass", strength="structural"):
+        return {
+            "decision": decision,
+            "semantic_review_decision": "ready",
+            "evidence_strength": strength,
+            "reason_code": "strict_complete",
+            "candidate_defect_observed": False,
+            "failure_class": None,
+            "retry_target": "none",
+            "unverified_claims": [],
+            "checks": [{"method": "return_contract", "result": "pass"}],
+        }
+
     assert fields(None) == (None, None)
     assert fields({}) == (None, None)
     assert fields({"verification_summary": "corrupt"}) == (None, None)
     assert fields({"verification_summary": {"decision": "certainly!"}}) == (None, None)
-    assert fields(
-        {"verification_summary": {"decision": "pass", "evidence_strength": "structural"}}
-    ) == (VerifierDecision.PASS, EvidenceStrength.STRUCTURAL)
-    assert fields(
-        {"verification_summary": {"decision": "pass", "evidence_strength": "physical"}}
-    ) == (VerifierDecision.PASS, EvidenceStrength.PHYSICAL)
+    assert fields({"verification_summary": summary()}) == (
+        VerifierDecision.PASS,
+        EvidenceStrength.STRUCTURAL,
+    )
+    assert fields({"verification_summary": summary(strength="physical")}) == (
+        VerifierDecision.PASS,
+        EvidenceStrength.PHYSICAL,
+    )
+
+
+def test_typed_summary_is_bounded_and_legacy_absence_stays_none():
+    from majorana_api.verification_summary import parse_verification_summary
+
+    assert parse_verification_summary(None) is None
+    assert parse_verification_summary({}) is None
+    raw = {
+        "decision": "inconclusive",
+        "semantic_review_decision": "inconclusive",
+        "evidence_strength": "structural",
+        "reason_code": "required_check_unavailable",
+        "candidate_defect_observed": False,
+        "failure_class": "capability_limit",
+        "retry_target": "none",
+        "unverified_claims": ["phase"],
+        "checks": [{"method": "return_contract", "result": "pass", "details": {"secret": "drop"}}]
+        * 60,
+    }
+    summary = parse_verification_summary(raw)
+    assert summary.decision.value == "inconclusive"
+    assert len(summary.checks) == 50
+    assert summary.checks[0].model_dump(mode="json") == {
+        "method": "return_contract",
+        "result": "pass",
+    }
 
 
 async def test_imported_public_reference_is_explicitly_not_fresh_verification(scope, monkeypatch):
