@@ -540,7 +540,7 @@ function WorkspaceSidebar({
             {standaloneArtifacts.length ? standaloneArtifacts.map((artifact) => <ArtifactRow key={artifact.id} artifact={artifact} currentPath={currentPath} folders={artifactFolders} onAssignFolder={assignArtifact} onArchive={onArchiveArtifact} onDelete={(item) => setDeleteTarget({ kind: "artifact", item })} onRename={onRenameArtifact} locale={locale} />) : <span className="mj-sidebar-empty mj-sidebar-copy">{copy.emptyArtifacts}</span>}
           </nav>
           <ArtifactArchiveSection artifacts={archivedArtifacts} locale={locale} onRestore={onRestoreArtifact} onDelete={onDeleteArtifact} />
-          <a className="mj-sidebar-library-link mj-sidebar-library-link--bottom" href={demoMode ? "/demo?view=library" : "/library"}>
+          <a className="mj-sidebar-library-link mj-sidebar-library-link--bottom" href={demoMode ? "/demo?view=library" : "/library"} aria-label={copy.viewLibrary} title={copy.viewLibrary}>
             <LibraryIcon size={16} />
             <span className="mj-sidebar-copy">{copy.viewLibrary}</span>
           </a>
