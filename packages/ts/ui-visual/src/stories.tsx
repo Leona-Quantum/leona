@@ -10,6 +10,7 @@ import {
   RunView,
   StageRail,
   VerdictBanner,
+  VerificationSummaryPanel,
   type RailStage,
 } from "@majorana/ui";
 import { RUN_FIXTURES } from "./run-fixtures";
@@ -52,7 +53,43 @@ const ALL_STATES: RailStage[] = [
   { id: "analyze", name: "Analysis", state: "skipped", skipReason: "waiting for verification" },
 ];
 
+const PASS_SUMMARY = {
+  decision: "pass" as const, evidence_strength: "physical" as const,
+  reason_code: "all_required_checks_passed", candidate_defect_observed: false,
+  failure_class: null, retry_target: "none" as const, semantic_review_decision: "ready" as const,
+  checks: [{ method: "bell_state_property" as const, result: "pass" as const }], unverified_claims: [],
+};
+const FAIL_SUMMARY = {
+  decision: "fail" as const, evidence_strength: null, reason_code: "physical_property_mismatch",
+  candidate_defect_observed: true, failure_class: "candidate_defect" as const,
+  retry_target: "code_generation" as const, semantic_review_decision: "code_repair" as const,
+  checks: [{ method: "bell_state_property" as const, result: "fail" as const }], unverified_claims: [],
+};
+const INCONCLUSIVE_SUMMARY = {
+  decision: "inconclusive" as const, evidence_strength: null, reason_code: "required_check_unavailable",
+  candidate_defect_observed: false, failure_class: "capability_limit" as const,
+  retry_target: "none" as const, semantic_review_decision: "ready" as const,
+  checks: [
+    { method: "return_contract" as const, result: "pass" as const },
+    { method: "statistical" as const, result: "unavailable" as const },
+    { method: "statistical_reproducibility" as const, result: "error" as const },
+  ],
+  unverified_claims: ["Expected Bell-state distribution", "Relative phase"],
+};
+
+function StudioEvidenceFixture({ title, children }: { title: string; children: ReactNode }) {
+  return <section className="mj-studio-surface mj-studio-version-panel" style={{ maxWidth: "760px" }}><div className="mj-studio-surface-head"><div><span className="mj-section-label">Version history</span><h2>{title}</h2></div><span className="mj-mono-muted">Studio</span></div><div className="mj-studio-version-evidence" style={{ margin: "var(--sp-4)" }}>{children}</div></section>;
+}
+
 export const STORIES: Story[] = [
+  { name: "studio-verification-pass", title: "Studio — PASS artifact", node: <StudioEvidenceFixture title="Bell state"><VerificationSummaryPanel summary={PASS_SUMMARY} /></StudioEvidenceFixture> },
+  { name: "studio-verification-fail", title: "Studio — FAIL evidence", node: <StudioEvidenceFixture title="Bell state candidate"><VerificationSummaryPanel summary={FAIL_SUMMARY} /></StudioEvidenceFixture> },
+  { name: "studio-verification-inconclusive", title: "Studio — INCONCLUSIVE artifact", node: <StudioEvidenceFixture title="Dynamic circuit"><VerificationSummaryPanel summary={INCONCLUSIVE_SUMMARY} /></StudioEvidenceFixture> },
+  { name: "studio-verification-legacy", title: "Studio — legacy evidence unknown", node: <StudioEvidenceFixture title="Historical artifact"><VerificationSummaryPanel summary={null} state="legacy" /></StudioEvidenceFixture> },
+  { name: "studio-verification-stale", title: "Studio — edited formerly-PASS artifact", node: <StudioEvidenceFixture title="Bell state draft"><VerificationSummaryPanel summary={PASS_SUMMARY} state="stale" /></StudioEvidenceFixture> },
+  { name: "studio-verification-loading", title: "Studio — verification loading", node: <StudioEvidenceFixture title="Loading artifact"><VerificationSummaryPanel summary={null} state="loading" /></StudioEvidenceFixture> },
+  { name: "studio-verification-empty", title: "Studio — no verification record", node: <StudioEvidenceFixture title="New draft"><VerificationSummaryPanel summary={null} state="empty" /></StudioEvidenceFixture> },
+  { name: "studio-verification-error", title: "Studio — verification load error", node: <StudioEvidenceFixture title="Unavailable artifact"><VerificationSummaryPanel summary={null} state="error" /></StudioEvidenceFixture> },
   // ---- StageRail (6): all states × interactive/non-interactive ----
   {
     name: "rail-mid-run",

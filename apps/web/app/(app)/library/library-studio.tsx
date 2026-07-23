@@ -124,6 +124,9 @@ export function LibraryStudio({ demoMode = false, locale = "en" }: { demoMode?: 
     { value: "verified", label: copy.verified },
     { value: "structural", label: copy.structural },
     { value: "verified_caveats", label: copy.caveats },
+    { value: "inconclusive", label: copy.inconclusive },
+    { value: "legacy_unknown", label: copy.legacyUnknown },
+    { value: "stale", label: copy.stale },
     { value: "failed", label: copy.failed },
   ];
 
@@ -251,7 +254,13 @@ function StatusLabel({ status, locale }: { status: LibraryStatus; locale: Public
         ? copy.structural
         : status === "verified_caveats"
           ? copy.caveats
-          : copy.failed;
+          : status === "inconclusive"
+            ? copy.inconclusive
+            : status === "legacy_unknown"
+              ? copy.legacyUnknown
+              : status === "stale"
+                ? copy.stale
+                : copy.failed;
   return <span className={`mj-library-status mj-library-status--${status}`}><span aria-hidden="true">{status === "failed" ? "×" : status === "verified" ? "✓" : "–"}</span>{label}</span>;
 }
 
@@ -260,4 +269,3 @@ function formatDate(value: string, locale: PublicLocale, unknown: string): strin
   if (Number.isNaN(date.valueOf())) return unknown;
   return date.toLocaleDateString(locale === "ja" ? "ja-JP" : "en-US", { month: "short", day: "numeric", year: "numeric" });
 }
-

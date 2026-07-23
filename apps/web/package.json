@@ -7,8 +7,9 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
+    "lint": "node ../../scripts/check-raw-hex.mjs && node ../../scripts/check-token-vars.mjs",
     "typecheck": "tsc --noEmit",
-    "test": "node --experimental-strip-types --test lib/framework-selection.test.ts lib/circuit-conversion.test.ts lib/studio-builder.test.ts lib/studio-parse.test.ts lib/verification-record.test.ts lib/artifact-resource.test.ts lib/studio-sampling.test.ts"
+    "test": "node --experimental-strip-types --test lib/framework-selection.test.ts lib/circuit-conversion.test.ts lib/studio-builder.test.ts lib/studio-parse.test.ts lib/verification-record.test.ts lib/verification-display.test.ts lib/artifact-resource.test.ts lib/artifact-export.test.ts lib/studio-sampling.test.ts"
   },
   "dependencies": {
     "@majorana/contracts-gen": "workspace:*",

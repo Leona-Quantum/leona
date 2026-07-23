@@ -90,6 +90,7 @@ const VERIFIED: RunEvent[] = [
     ts: ts(21),
     method: "statistical",
     result: "pass",
+    attempt_id: null, attempt_seq: null, candidate_id: null, check_index: null, source_fingerprint: null,
     details: { metric: "TVD", metric_value: 0.0088, threshold: 0.05, seed: 42, shots: 4096 },
   },
   { type: "stage.finished", run_id: RUN, seq: 13, ts: ts(22), stage: "verify", ok: true, duration_ms: 1100 },
@@ -143,7 +144,7 @@ const VERIFIED: RunEvent[] = [
     ],
     error: null,
   },
-  { type: "run.finished", run_id: RUN, seq: 27, ts: ts(36), status: "succeeded", verifier_decision: "pass", evidence_strength: "physical", residual_risks: null },
+  { type: "run.finished", run_id: RUN, seq: 27, ts: ts(36), status: "succeeded", verifier_decision: "pass", evidence_strength: "physical", reason_code: "all_required_checks_passed", residual_risks: null, verification_summary: { decision: "pass", evidence_strength: "physical", reason_code: "all_required_checks_passed", candidate_defect_observed: false, failure_class: null, retry_target: "none", semantic_review_decision: "ready", checks: [{ method: "statistical", result: "pass" }], unverified_claims: [] } },
 ];
 
 const FAILED: RunEvent[] = [
@@ -155,10 +156,11 @@ const FAILED: RunEvent[] = [
     ts: ts(21),
     method: "statistical",
     result: "fail",
+    attempt_id: null, attempt_seq: null, candidate_id: null, check_index: null, source_fingerprint: null,
     details: { metric: "TVD", metric_value: 0.21, threshold: 0.05, seed: 42, shots: 4096 },
   },
   { type: "stage.finished", run_id: RUN, seq: 13, ts: ts(22), stage: "verify", ok: false, duration_ms: 1100 },
-  { type: "run.finished", run_id: RUN, seq: 14, ts: ts(23), status: "failed", verifier_decision: "fail", evidence_strength: null, residual_risks: null },
+  { type: "run.finished", run_id: RUN, seq: 14, ts: ts(23), status: "failed", verifier_decision: "fail", evidence_strength: null, reason_code: "statistical_mismatch", residual_risks: null, verification_summary: { decision: "fail", evidence_strength: null, reason_code: "statistical_mismatch", candidate_defect_observed: true, failure_class: "candidate_defect", retry_target: "code_generation", semantic_review_decision: "code_repair", checks: [{ method: "statistical", result: "fail" }], unverified_claims: [] } },
 ];
 
 // Tail fragments exercise the organic plan output against the same replay reducer and

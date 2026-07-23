@@ -44,7 +44,8 @@ import {
   loadArtifactFolders,
   type ArtifactFolder,
 } from "../lib/artifact-folders";
-import { archiveArtifact, daysUntilArtifactDeletion, deleteArtifact, getLibraryArtifact, isArtifactDeleted, loadLibraryArtifacts, rememberArtifact, restoreArtifact, type LibraryArtifact } from "../lib/library-data";
+import { archiveArtifact, artifactFromResource, daysUntilArtifactDeletion, deleteArtifact, isArtifactDeleted, loadLibraryArtifacts, rememberArtifact, restoreArtifact, type LibraryArtifact } from "../lib/library-data";
+import { verificationFromResource } from "../lib/verification-record";
 import { WORKSPACE_PINS_EVENT, isPinned, setPinned, togglePinned } from "../lib/workspace-pins";
 import { ThemeToggle } from "./theme-toggle";
 import type { PublicLocale } from "../lib/public-locale";
@@ -131,7 +132,7 @@ export function Shell({
           );
         }
         const mergedChats = [...byId.values()].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
-        const remoteArtifacts = Array.isArray(artifactPayload) ? artifactPayload.flatMap(toLibraryArtifact).filter((artifact) => !isArtifactDeleted(artifact.id)) : [];
+        const remoteArtifacts = Array.isArray(artifactPayload) ? artifactPayload.flatMap(artifactFromResource).filter((artifact) => !isArtifactDeleted(artifact.id)) : [];
         const storedArtifacts = loadLibraryArtifacts({ includeArchived: true });
         const artifactById = new Map([...remoteArtifacts, ...storedArtifacts].map((artifact) => [artifact.id, artifact]));
         if (active) {
@@ -909,13 +910,16 @@ function chatFromRun(value: unknown): ChatSummary[] {
   if (!value || typeof value !== "object") return [];
   const run = value as Record<string, unknown>;
   if (typeof run.id !== "string" || typeof run.task_prompt !== "string") return [];
+  const summary = verificationFromResource(run);
   const status = run.status === "failed"
     ? "failed"
-    : run.status === "succeeded" && run.verifier_decision === "pass"
+    : run.status === "succeeded" && summary?.decision === "pass" && summary.evidence_strength === "physical"
       ? "verified"
       : run.status === "running"
         ? "running"
-        : "queued";
+        : run.status === "succeeded"
+          ? "draft"
+          : "queued";
   return [{
     id: run.id,
     title: titleFromPrompt(run.task_prompt),
@@ -924,32 +928,6 @@ function chatFromRun(value: unknown): ChatSummary[] {
     status,
     framework: typeof run.framework === "string" ? run.framework.toUpperCase() : undefined,
     folderId: typeof run.folder_id === "string" ? run.folder_id : undefined,
-  }];
-}
-
-function toLibraryArtifact(value: unknown): LibraryArtifact[] {
-  if (!value || typeof value !== "object") return [];
-  const remote = value as Record<string, unknown>;
-  if (typeof remote.id !== "string" || typeof remote.title !== "string") return [];
-  const existing = getLibraryArtifact(remote.id);
-  const slug = typeof remote.slug === "string" ? remote.slug : remote.id;
-  return [{
-    id: remote.id,
-    slug,
-    title: remote.title,
-    family: typeof remote.family === "string" ? remote.family : "Simulation",
-    framework: typeof remote.framework === "string" ? remote.framework : "Qiskit",
-    status: existing?.status ?? (slug.startsWith("public-") ? "verified_caveats" : "verified"),
-    updatedAt: typeof remote.updated_at === "string" ? remote.updated_at : new Date().toISOString(),
-    description: existing?.description ?? "Saved artifact in the workspace vault.",
-    tags: existing?.tags ?? [typeof remote.family === "string" ? remote.family.toLowerCase() : "artifact"],
-    verification: existing?.verification ?? "Verification evidence is available after loading the current version.",
-    code: existing?.code ?? "",
-    qasm: existing?.qasm ?? null,
-    currentVersionId: typeof remote.current_version_id === "string" ? remote.current_version_id : existing?.currentVersionId,
-    resourceRows: existing?.resourceRows ?? [],
-    runId: existing?.runId,
-    source: existing?.source ?? (slug.startsWith("public-") ? "public" : "run"),
   }];
 }
 

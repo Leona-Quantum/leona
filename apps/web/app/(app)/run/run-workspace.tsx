@@ -4,7 +4,7 @@ import type { FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { rememberChat } from "../../../lib/chat-history";
-import { getLibraryArtifact, type LibraryArtifact } from "../../../lib/library-data";
+import { artifactFromResource, type LibraryArtifact } from "../../../lib/library-data";
 import type { PublicLocale } from "../../../lib/public-locale";
 import { WORKSPACE_COPY } from "../../../lib/workspace-locale";
 import {
@@ -52,30 +52,11 @@ export function RunWorkspace({ demoMode = false, locale = "en" }: { demoMode?: b
     const selectedArtifactId = artifactId;
 
     async function loadContext() {
-      let artifact = getLibraryArtifact(selectedArtifactId);
-      if (!artifact) {
-        const response = await fetch(`/api/artifacts/${encodeURIComponent(selectedArtifactId)}`, { cache: "no-store" });
-        if (!response.ok) throw new Error("Artifact context unavailable");
-        const remote = (await response.json()) as Record<string, unknown>;
-        if (typeof remote.id !== "string" || typeof remote.title !== "string") throw new Error("Artifact context unavailable");
-        artifact = {
-          id: remote.id,
-          slug: typeof remote.slug === "string" ? remote.slug : remote.id,
-          title: remote.title,
-          family: typeof remote.family === "string" ? remote.family : "Simulation",
-          framework: typeof remote.framework === "string" ? remote.framework : "Qiskit",
-          status: "verified",
-          updatedAt: typeof remote.updated_at === "string" ? remote.updated_at : new Date().toISOString(),
-          description: "Saved artifact in the workspace vault.",
-          tags: [typeof remote.family === "string" ? remote.family.toLowerCase() : "artifact"],
-          verification: "Verification evidence is retained with the saved run.",
-          code: "",
-          qasm: null,
-          currentVersionId: typeof remote.current_version_id === "string" ? remote.current_version_id : undefined,
-          resourceRows: [],
-          source: "run",
-        };
-      }
+      const response = await fetch(`/api/artifacts/${encodeURIComponent(selectedArtifactId)}`, { cache: "no-store" });
+      if (!response.ok) throw new Error("Artifact context unavailable");
+      const remote = (await response.json()) as Record<string, unknown>;
+      let artifact = artifactFromResource(remote)[0];
+      if (!artifact) throw new Error("Artifact context unavailable");
       if (artifact.currentVersionId && !artifact.code) {
         const versionResponse = await fetch(`/api/artifacts/${encodeURIComponent(artifact.id)}/versions/current`, { cache: "no-store" });
         if (versionResponse.ok) {

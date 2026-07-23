@@ -9,6 +9,7 @@ export {
   type StageState,
 } from "./stage-rail";
 export { VerdictBanner, type Verdict } from "./verdict-banner";
+export { VerificationSummaryPanel } from "./verification-summary";
 export {
   RunView,
   reduceRunEvents,

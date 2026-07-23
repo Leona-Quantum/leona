@@ -12,6 +12,7 @@ import type { components } from "@majorana/contracts-gen";
 import { SyntaxHighlightedCode } from "./code-block";
 import { StageRail, type RailStage } from "./stage-rail";
 import { VerdictBanner, type Verdict } from "./verdict-banner";
+import { VerificationSummaryPanel } from "./verification-summary";
 
 type Schemas = components["schemas"];
 export type RunEvent = Schemas["RunEvent"];
@@ -103,16 +104,10 @@ const METHOD_LABEL: Record<VerificationMethod, string> = {
   measurement_policy: "measurement-policy",
   success_criteria: "success-criteria",
   native_optimization_evidence: "native-optimization evidence",
+  bell_state_property: "Bell-state property",
+  ghz_state_property: "GHZ-state property",
   statistical_reproducibility: "statistical reproducibility",
 };
-const NUMERIC_METHODS: ReadonlySet<VerificationMethod> = new Set<VerificationMethod>([
-  "exact",
-  "statistical",
-  "statistical_native",
-  "brute_force",
-  "exact_diag",
-]);
-
 export interface KeyNumber {
   label: string;
   value: string;
@@ -185,6 +180,8 @@ export interface BestEffortView {
 }
 export interface ResultView {
   verdict: { verdict: Verdict; detail: string } | null;
+  verificationSummary: Schemas["VerificationSummary"] | null;
+  verificationState: "ready" | "legacy" | null;
   answer: AnswerView | null;
   generatedCode: CodeView | null;
   codeQuality: CodeQualityView | null;
@@ -361,8 +358,11 @@ function formatVerdictDetail(
   primary: Schemas["VerificationResult"] | null,
 ): string {
   if (verdict === "not_verified" || !primary) {
-    return "No verification method applies to this task class";
+    return verdict === "not_verified"
+      ? "Verification unavailable — correctness has not been confirmed."
+      : "No typed verification evidence is available";
   }
+  if (verdict === "legacy_unknown") return "This run predates typed verification summaries and is not treated as Verified";
   const details = (primary.details ?? {}) as Record<string, unknown>;
   const method = METHOD_LABEL[primary.method];
   const metric = str(details.metric) ?? str(details.metric_label);
@@ -576,10 +576,13 @@ export function reduceRunEvents(events: readonly RunEvent[]): RunViewModel {
 
   const stages = buildRailStages(started, finished, stageError, verifyResults, lastTs);
   const verdict = deriveVerdict(finishedRun, verifyResults);
+  const verificationSummary = finishedRun?.verification_summary ?? null;
   const result: ResultView = {
     verdict: verdict
       ? { verdict, detail: formatVerdictDetail(verdict, primaryVerify(verifyResults, verdict)) }
       : null,
+    verificationSummary,
+    verificationState: finishedRun ? (verificationSummary ? "ready" : "legacy") : null,
     answer: buildAnswer(analysis, finishedRun),
     generatedCode: generatedCode ? buildCodeView(generatedCode.language, generatedCode.code) : null,
     codeQuality: buildCodeQuality(screen),
@@ -749,27 +752,17 @@ function primaryVerify(
 
 function deriveVerdict(
   finishedRun: Schemas["RunFinished"] | null,
-  verifyResults: Schemas["VerificationResult"][],
+  _verifyResults: Schemas["VerificationResult"][],
 ): Verdict | null {
   if (!finishedRun) return null;
-  const decision = finishedRun.verifier_decision;
-  if (finishedRun.status === "failed" || decision === "fail") return "failed";
+  const summary = finishedRun.verification_summary;
+  if (!summary) return "legacy_unknown";
+  const decision = summary.decision;
+  if (decision === "fail") return "failed";
   if (decision === "inconclusive") return "not_verified";
   if (decision === "pass") {
-    // The worker grades this from the checks the published candidate actually
-    // passed, which is stricter than what the event stream shows: a verification.result
-    // can be emitted for a candidate that was later repaired and replaced. Scanning
-    // the stream is the fallback for runs finished before 2026-07-20.
-    if (finishedRun.evidence_strength) {
-      return finishedRun.evidence_strength === "physical" ? "verified" : "structural_only";
-    }
-    return verifyResults.some(
-      (result) => NUMERIC_METHODS.has(result.method) && result.result === "pass",
-    )
-      ? "verified"
-      : "structural_only";
+    return summary.evidence_strength === "physical" ? "verified" : "structural_only";
   }
-  if (finishedRun.status === "succeeded") return "verified_caveats";
   return null;
 }
 
@@ -1179,6 +1172,7 @@ function ResultPanel({ result, animateText }: { result: ResultView; animateText:
       {result.verdict ? (
         <section className="mj-result-section" id="mj-result-verdict">
           <VerdictBanner verdict={result.verdict.verdict} detail={result.verdict.detail} />
+          {result.verificationState ? <VerificationSummaryPanel summary={result.verificationSummary} state={result.verificationState} /> : null}
         </section>
       ) : null}
 

@@ -112,6 +112,9 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
     verified: string;
     caveats: string;
     structural: string;
+    inconclusive: string;
+    legacyUnknown: string;
+    stale: string;
     failed: string;
     artifacts: string;
     savedArtifacts: string;
@@ -361,6 +364,9 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
       verified: "Verified",
       caveats: "Caveats",
       structural: "Structurally verified",
+      inconclusive: "Verification unavailable",
+      legacyUnknown: "Legacy evidence unknown",
+      stale: "Verification stale",
       failed: "Failed",
       artifacts: "artifacts",
       savedArtifacts: "Saved artifacts",
@@ -624,6 +630,9 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
       verified: "検証済み",
       caveats: "注意付き",
       structural: "構造のみ検証",
+      inconclusive: "検証不能",
+      legacyUnknown: "旧データ・根拠不明",
+      stale: "検証期限切れ",
       failed: "失敗",
       artifacts: "件",
       savedArtifacts: "保存したアーティファクト",

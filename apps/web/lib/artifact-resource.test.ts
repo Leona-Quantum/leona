@@ -16,14 +16,21 @@ const PHYSICAL = {
   current_version_id: "019f7f2f-4840-7f69-b70a-01f2fbd0785c",
   verifier_decision: "pass",
   evidence_strength: "physical",
+  verification_summary: {
+    decision: "pass", evidence_strength: "physical", reason_code: "all_required_checks_passed",
+    candidate_defect_observed: false, failure_class: null, retry_target: "none",
+    semantic_review_decision: "ready", checks: [{ method: "bell_state_property", result: "pass" }],
+    unverified_claims: [],
+  },
 };
 
-const STRUCTURAL = { ...PHYSICAL, id: "structural-1", evidence_strength: "structural" };
-const FAILED = { ...PHYSICAL, id: "failed-1", verifier_decision: "fail", evidence_strength: null };
+const STRUCTURAL = { ...PHYSICAL, id: "structural-1", evidence_strength: "structural", verification_summary: { ...PHYSICAL.verification_summary, evidence_strength: "structural" } };
+const FAILED = { ...PHYSICAL, id: "failed-1", verifier_decision: "fail", evidence_strength: null, verification_summary: { ...PHYSICAL.verification_summary, decision: "fail", evidence_strength: null, reason_code: "candidate_mismatch", candidate_defect_observed: true, failure_class: "candidate_defect", retry_target: "code_generation", semantic_review_decision: "code_repair", checks: [{ method: "bell_state_property", result: "fail" }] } };
 const UNGRADED = (() => {
-  const { verifier_decision, evidence_strength, ...rest } = PHYSICAL;
+  const { verifier_decision, evidence_strength, verification_summary, ...rest } = PHYSICAL;
   void verifier_decision;
   void evidence_strength;
+  void verification_summary;
   return { ...rest, id: "ungraded-1" };
 })();
 
@@ -41,20 +48,20 @@ test("a structural pass is not called verified", () => {
 });
 
 test("a failed artifact does not inherit a grade from the server", () => {
-  assert.equal(statusFromResource(FAILED), null);
+  assert.equal(statusFromResource(FAILED), "failed");
 });
 
-test("an artifact the server cannot grade still falls back", () => {
+test("an artifact the server cannot grade is legacy unknown", () => {
   // A version saved before verification_summary existed. Null means "unknown",
   // not "failed", so the old fallback still applies — but only here.
-  assert.equal(statusFromResource(UNGRADED), null);
-  assert.equal(artifactFromResource(UNGRADED)[0].status, "verified");
+  assert.equal(statusFromResource(UNGRADED), "legacy_unknown");
+  assert.equal(artifactFromResource(UNGRADED)[0].status, "legacy_unknown");
 });
 
-test("a public reference keeps its caveat status", () => {
+test("a public reference without typed evidence is not promoted", () => {
   const publicReference = { ...UNGRADED, id: "public-1", slug: "public-grover-3" };
   const artifact = artifactFromResource(publicReference)[0];
-  assert.equal(artifact.status, "verified_caveats");
+  assert.equal(artifact.status, "legacy_unknown");
   assert.equal(artifact.source, "public");
 });
 

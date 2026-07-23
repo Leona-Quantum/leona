@@ -4,11 +4,12 @@ import type { FormEvent } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
-import type { RunEvent } from "@majorana/ui";
+import { VerificationSummaryPanel, type RunEvent } from "@majorana/ui";
 import { ChatMarkdown } from "../../../../components/chat-markdown";
 import { archiveChat, deleteChat, loadChatHistory, rememberChat, updateChat, type ChatSummary } from "../../../../lib/chat-history";
 import { RunComposer } from "../../../../components/run-composer";
 import { RUN_FIXTURES } from "./fixtures";
+import { verificationSummaryFromValue, type VerificationSummary } from "../../../../lib/verification-record";
 
 type WireEvent = {
   run_id: string;
@@ -32,6 +33,7 @@ type WireEvent = {
   failed_checks?: string[];
   critic_summary?: string | null;
   code?: string;
+  verification_summary?: unknown;
 };
 
 // Every method the verifier emits needs an entry; a miss falls through to the raw
@@ -67,9 +69,9 @@ function processStepLabel(event: WireEvent): string | null {
       return `${label}: ${event.result ?? "?"}`;
     }
     case "code.finalized":
-      return "Finalized the verified circuit";
+      return "Finalized the candidate circuit";
     case "artifact.saved":
-      return "Saved the verified circuit to your vault";
+      return "Saved the circuit and its verification state to your vault";
     case "run.best_effort":
       return `Kept the closest attempt (revision ${event.revision}) — unverified`;
     case "run.error":
@@ -113,7 +115,7 @@ function planSummaryFromEvents(events: WireEvent[]): string | null {
 type ConversationPayload = {
   id: string;
   turns: Array<{
-    run: { id: string; task_prompt: string; conversation_id: string };
+    run: { id: string; task_prompt: string; conversation_id: string; verification_summary?: unknown; finished_at?: string | null };
     events: WireEvent[];
   }>;
 };
@@ -123,6 +125,8 @@ type Turn = {
   prompt: string;
   answer: string | null;
   events: WireEvent[];
+  verificationSummary: VerificationSummary | null;
+  terminal: boolean;
 };
 
 function parseEvent(block: string): { id: number | null; data: string } | null {
@@ -173,9 +177,23 @@ function answerFromEvents(events: WireEvent[]): string | null {
   const saved = events.some((event) => event.type === "artifact.saved");
   const problem = planSummaryFromEvents(events);
   const metric = resultSummaryFromEvents(events);
-  const structuralOnly = finished.evidence_strength === "structural";
+  const summary = verificationSummaryFromValue(finished.verification_summary);
+  if (!summary) {
+    return "The workflow completed, but no typed verification summary is available. Treat this legacy result as unknown, not Verified.";
+  }
+  if (summary.decision === "inconclusive") {
+    return [
+      "Verification unavailable — correctness has not been confirmed.",
+      problem ? ` ${problem}.` : "",
+      saved ? " The artifact was saved privately with an unverified label." : " No artifact was saved.",
+    ].join("");
+  }
+  if (summary.decision === "fail") {
+    return `Verification failed (${summary.reason_code}). No Verified artifact was created.`;
+  }
+  const structuralOnly = summary.evidence_strength !== "physical";
   const opening =
-    problem ?? (structuralOnly ? "Structurally verified" : `Verified (${finished.verifier_decision ?? "pass"})`);
+    problem ?? (structuralOnly ? "Structurally verified" : "Verified");
   const sentences = [opening.endsWith(".") ? opening : `${opening}.`];
   if (metric) sentences.push(`Result: ${metric}.`);
   // Said in the answer text, not only in the evidence panel. The panel has listed the
@@ -198,6 +216,8 @@ function turnsFromConversation(payload: ConversationPayload): Turn[] {
     prompt: turn.run.task_prompt,
     answer: answerFromEvents(turn.events),
     events: turn.events,
+    verificationSummary: verificationSummaryFromValue(turn.run.verification_summary),
+    terminal: Boolean(turn.run.finished_at),
   }));
 }
 
@@ -209,6 +229,8 @@ function fixtureTurns(events: RunEvent[]): Turn[] {
     prompt: "Use QAOA to solve MaxCut on a 5-node ring and verify the cut value.",
     answer: answer?.type === "run.analysis" ? answer.interpretation : "This is an example run transcript.",
     events: [],
+    verificationSummary: verificationSummaryFromValue(events.find((event) => event.type === "run.finished")?.verification_summary),
+    terminal: events.some((event) => event.type === "run.finished"),
   }];
 }
 
@@ -448,6 +470,7 @@ export function LiveRun({ taskId }: { taskId: string }) {
                 {turn.answer ? (
                   <div className="mj-chat-message mj-chat-message--assistant">
                     <ChatMarkdown source={turn.answer} />
+                    {turn.terminal ? <VerificationSummaryPanel summary={turn.verificationSummary} /> : null}
                     <ArtifactLink events={turn.events} />
                   </div>
                 ) : turn.id === taskId && (streamingText || reasoningText || liveEvents.length > 0) ? (
@@ -514,6 +537,9 @@ function AssistantMessage({
         </span>
       )}
       <ArtifactLink events={events} />
+      {events.some((event) => event.type === "run.finished") ? (
+        <VerificationSummaryPanel summary={verificationSummaryFromValue([...events].reverse().find((event) => event.type === "run.finished")?.verification_summary)} />
+      ) : null}
     </div>
   );
 }
