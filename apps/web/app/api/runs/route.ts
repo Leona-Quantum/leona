@@ -1,5 +1,11 @@
 import { NextResponse } from "next/server";
 import { getMajoranaAuth } from "../../../lib/auth";
+import { getAccountTier } from "../../../lib/account-tier-server";
+import {
+  artifactAllowanceRefusal,
+  assessRunAllowance,
+  runAllowanceRefusal,
+} from "../../../lib/run-allowance";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
@@ -27,10 +33,69 @@ export async function GET(request: Request) {
   }
 }
 
+async function fetchJsonArray(path: string, accessToken: string): Promise<unknown[] | null> {
+  try {
+    const upstream = await fetch(new URL(path, API_URL), {
+      headers: { Authorization: `Bearer ${accessToken}` },
+      cache: "no-store",
+    });
+    if (!upstream.ok) return null;
+    const payload = (await upstream.json()) as unknown;
+    return Array.isArray(payload) ? payload : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The weekly run allowance and the Vault artifact cap, enforced where the
+ * submission enters the product. Metered tiers pay one or two upstream list
+ * reads per submission; unmetered tiers skip them entirely. If the usage read
+ * itself fails the submission proceeds — a metering outage must degrade to
+ * the pre-metering behaviour, not lock paying users out.
+ */
 export async function POST(request: Request) {
   const { accessToken } = await getMajoranaAuth({ ensureSignedIn: true });
   const body = await request.text();
   const idempotencyKey = request.headers.get("Idempotency-Key");
+
+  let submission: { mode?: string; artifact_version_id?: string | null } = {};
+  try {
+    submission = JSON.parse(body) as typeof submission;
+  } catch {
+    // The control plane validates the body; enforcement only reads two fields.
+  }
+
+  if (submission.mode === "execute") {
+    const { limits } = await getAccountTier();
+    if (limits.agentRunsPerWeek !== null) {
+      const runs = await fetchJsonArray("/v1/runs?limit=100", accessToken);
+      if (runs) {
+        const verdict = assessRunAllowance(
+          limits.agentRunsPerWeek,
+          runs as Array<{ mode?: string | null; created_at?: string | null }>,
+        );
+        if (!verdict.allowed) {
+          return NextResponse.json(runAllowanceRefusal(verdict), { status: 429 });
+        }
+      }
+    }
+    // A run without a parent artifact version materializes a new Vault
+    // artifact on success; refuse it at the cap. Reruns against an existing
+    // version append evidence and stay allowed.
+    if (limits.privateArtifacts !== null && !submission.artifact_version_id) {
+      const artifacts = await fetchJsonArray(
+        `/v1/artifacts?limit=${limits.privateArtifacts + 1}`,
+        accessToken,
+      );
+      if (artifacts && artifacts.length >= limits.privateArtifacts) {
+        return NextResponse.json(
+          artifactAllowanceRefusal(artifacts.length, limits.privateArtifacts),
+          { status: 429 },
+        );
+      }
+    }
+  }
 
   try {
     const upstream = await fetch(`${API_URL}/v1/runs`, {

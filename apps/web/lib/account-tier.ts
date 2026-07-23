@@ -25,6 +25,11 @@ export type TierLimits = {
   cpuSimQubits: number;
   cpuSimOperations: number;
   cpuSimShots: number;
+  /**
+   * Browser CPU simulations allowed per trailing 10 minutes. The lane runs on
+   * the user's own hardware, so this is a pacing boundary, not a cost one.
+   */
+  cpuSimRunsPer10Min: number;
   /** Whether the tier may read QPU cost/resource estimates at all. */
   qpuEstimates: boolean;
   /** Whether saved artifacts persist beyond the browser session. */
@@ -55,6 +60,7 @@ export const TIER_LIMITS: Record<AccountTier, TierLimits> = {
     cpuSimQubits: 16,
     cpuSimOperations: 2_000,
     cpuSimShots: 8_192,
+    cpuSimRunsPer10Min: 10,
     qpuEstimates: true,
     persistentVault: false,
   },
@@ -64,6 +70,7 @@ export const TIER_LIMITS: Record<AccountTier, TierLimits> = {
     cpuSimQubits: 16,
     cpuSimOperations: 2_000,
     cpuSimShots: 16_384,
+    cpuSimRunsPer10Min: 10,
     qpuEstimates: true,
     persistentVault: true,
   },
@@ -75,6 +82,7 @@ export const TIER_LIMITS: Record<AccountTier, TierLimits> = {
     cpuSimQubits: 20,
     cpuSimOperations: 4_000,
     cpuSimShots: 65_536,
+    cpuSimRunsPer10Min: 30,
     qpuEstimates: true,
     persistentVault: true,
   },
