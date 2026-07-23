@@ -149,7 +149,7 @@ class AgentEventObserver:
                     },
                 )
             return
-        if result.name is ToolName.PUBLISH_ARTIFACT:
+        if result.name in {ToolName.PUBLISH_ARTIFACT, ToolName.MATERIALIZE_ARTIFACT}:
             candidate_id = result.payload.get("candidate_id")
             if candidate_id is None:
                 return

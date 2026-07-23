@@ -32,6 +32,9 @@ from majorana_agent.tools import (
     ExecutionOutput,
     OpenQASMConverter,
     Planner,
+    SemanticReviewOutput,
+    CandidateReviewer,
+    StrictCandidateVerifier,
     VerificationOutput,
 )
 
@@ -48,6 +51,7 @@ __all__ = [
     "CandidateRevision",
     "CandidateStatus",
     "CandidateVerifier",
+    "CandidateReviewer",
     "CircuitToolset",
     "ConversionEvidence",
     "ExecutionEvidence",
@@ -60,8 +64,10 @@ __all__ = [
     "Planner",
     "PublishedArtifact",
     "RepairInstruction",
+    "SemanticReviewOutput",
     "SemanticReviewEvidence",
     "StrictVerificationAttempt",
+    "StrictCandidateVerifier",
     "ToolBroker",
     "ToolCall",
     "ToolName",

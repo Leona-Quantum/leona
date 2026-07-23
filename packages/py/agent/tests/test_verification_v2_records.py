@@ -16,6 +16,7 @@ from majorana_contracts.enums import (
     Framework,
     RetryTarget,
     SemanticReviewDecision,
+    VerificationFailureClass,
     VerifierDecision,
 )
 from majorana_contracts.plan import Plan
@@ -202,5 +203,34 @@ def test_inconclusive_strict_attempt_cannot_claim_a_candidate_defect() -> None:
             reason_code="insufficient_evidence",
             candidate_defect_observed=True,
             retry_target=RetryTarget.NONE,
+            verifier_version="test-v1",
+        )
+
+
+@pytest.mark.parametrize(
+    ("failure_class", "retry_target", "observed"),
+    [
+        (VerificationFailureClass.PLAN_DEFECT, RetryTarget.CODE_GENERATION, False),
+        (VerificationFailureClass.CANDIDATE_DEFECT, RetryTarget.PLANNING, True),
+        (VerificationFailureClass.CANDIDATE_DEFECT, RetryTarget.CODE_GENERATION, False),
+        (VerificationFailureClass.VERIFIER_FAILURE, RetryTarget.VERIFICATION, False),
+    ],
+)
+def test_strict_fail_rejects_inconsistent_typed_routing(
+    failure_class, retry_target, observed
+) -> None:
+    with pytest.raises(ValidationError, match="inconsistent typed routing"):
+        StrictVerificationAttempt(
+            attempt_id=uuid4(),
+            candidate_id=uuid4(),
+            execution_id=uuid4(),
+            semantic_review_id=uuid4(),
+            source_fingerprint="a" * 64,
+            attempt_seq=1,
+            decision=VerifierDecision.FAIL,
+            reason_code="strict_failure",
+            candidate_defect_observed=observed,
+            failure_class=failure_class,
+            retry_target=retry_target,
             verifier_version="test-v1",
         )

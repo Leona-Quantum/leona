@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import signal
+from dataclasses import replace
 from typing import Any, Literal
 from uuid import UUID, uuid4
 
@@ -16,6 +17,8 @@ from majorana_agent import (
     ExecutionOutput,
     PublishedArtifact,
     RepairInstruction,
+    SemanticReviewEvidence,
+    SemanticReviewOutput,
     VerificationEvidence,
     VerificationOutput,
 )
@@ -1515,7 +1518,115 @@ class EvidenceVerifier:
                 candidate_defect_observed=(semantic.decision is SemanticReviewDecision.CODE_REPAIR),
                 reason_code=semantic.reason_code,
             )
-        return self._strict.verify(candidate, execution, plan, semantic, fast_checks)
+        output = self._strict.verify(candidate, execution, plan, semantic, fast_checks)
+        sufficiency = assess_evidence_sufficiency(
+            plan.algorithm,
+            output.deterministic_checks,
+            reported_counts=extract_counts(execution.result, plan.expected_output_keys) is not None,
+        )
+        satisfied = set(sufficiency.satisfied_claims)
+        return replace(
+            output,
+            claim_coverage=[
+                {"claim": claim, "status": "verified" if claim in satisfied else "unverified"}
+                for claim in sufficiency.required_claims
+            ],
+            unverified_claims=list(sufficiency.missing_claims),
+        )
+
+
+class EvidenceReviewer:
+    """Semantic-review port used by the audited state machine."""
+
+    def __init__(self, *, llm: LLMClient, task_prompt: str) -> None:
+        self._fast = FastCandidateChecker()
+        self._semantic = SemanticCandidateReviewer(llm=llm, task_prompt=task_prompt)
+
+    async def review(
+        self, candidate: CandidateRevision, execution: ExecutionEvidence, plan: Plan
+    ) -> SemanticReviewOutput:
+        fast_checks = self._fast.check(candidate, execution, plan)
+        failures = [check for check in fast_checks if check["result"] == "fail"]
+        if failures:
+            repair = RepairInstruction(
+                category="deterministic_verification_failed",
+                severity="blocking",
+                confidence="high",
+                evidence=[json.dumps(check, sort_keys=True, default=str) for check in failures],
+                repairs=["Repair the failing checks without changing the framework."],
+                preserve_invariants=[f"framework={candidate.framework.value}", "assign RESULT"],
+                required_rechecks=[check["method"] for check in failures],
+            )
+            return SemanticReviewOutput(
+                decision=SemanticReviewDecision.CODE_REPAIR,
+                feedback={
+                    "fast_checks": fast_checks,
+                    "repair": repair.model_dump(mode="json"),
+                },
+                reason_code="fast_candidate_defect",
+                failure_class=VerificationFailureClass.CANDIDATE_DEFECT,
+                retry_target=RetryTarget.CODE_GENERATION,
+                confidence="high",
+                severity="blocking",
+            )
+        semantic = await self._semantic.review(candidate, execution, plan, fast_checks)
+        return SemanticReviewOutput(
+            decision=semantic.decision,
+            feedback={
+                "fast_checks": fast_checks,
+                "critic": semantic.critic,
+                "repair": semantic.repair.model_dump(mode="json") if semantic.repair else None,
+            },
+            reason_code=semantic.reason_code,
+            failure_class=semantic.failure_class,
+            retry_target=semantic.retry_target,
+            confidence=(semantic.critic.get("confidence") if semantic.critic else None),
+            severity=(semantic.critic.get("severity") if semantic.critic else None),
+        )
+
+
+class EvidenceStrictVerifier:
+    """Strict deterministic port consuming immutable semantic-review evidence."""
+
+    def __init__(self) -> None:
+        self._fast = FastCandidateChecker()
+        self._strict = StrictEvidenceVerifier()
+
+    async def verify_strict(
+        self,
+        candidate: CandidateRevision,
+        execution: ExecutionEvidence,
+        plan: Plan,
+        review: SemanticReviewEvidence,
+    ) -> VerificationOutput:
+        semantic = SemanticReviewResult(
+            decision=review.decision,
+            critic=review.feedback.get("critic") or {},
+            failure_class=review.failure_class,
+            retry_target=review.retry_target,
+            reason_code=review.reason_code,
+            repair=(
+                RepairInstruction.model_validate(review.feedback["repair"])
+                if review.feedback.get("repair")
+                else None
+            ),
+        )
+        fast_checks = self._fast.check(candidate, execution, plan)
+        output = self._strict.verify(candidate, execution, plan, semantic, fast_checks)
+        sufficiency = assess_evidence_sufficiency(
+            plan.algorithm,
+            output.deterministic_checks,
+            reported_counts=extract_counts(execution.result, plan.expected_output_keys) is not None,
+        )
+        satisfied = set(sufficiency.satisfied_claims)
+        return replace(
+            output,
+            claim_coverage=[
+                {"claim": claim, "status": "verified" if claim in satisfied else "unverified"}
+                for claim in sufficiency.required_claims
+            ],
+            unverified_claims=list(sufficiency.missing_claims),
+        )
 
 
 class TrustedOpenQASMConverter:

@@ -19,6 +19,7 @@ from majorana_agent.store import AgentStore
 from majorana_contracts.enums import (
     Framework,
     RetryTarget,
+    SemanticReviewDecision,
     VerificationFailureClass,
     VerifierDecision,
 )
@@ -35,13 +36,17 @@ class AgentPolicy:
 _ALLOWED: dict[AgentState, frozenset[ToolName]] = {
     AgentState.NEW: frozenset({ToolName.REQUEST_PLAN}),
     AgentState.PLANNED: frozenset(SIMULATION_TOOL_BY_FRAMEWORK.values()),
-    AgentState.EXECUTED: frozenset({ToolName.VERIFY_INTENT_ALIGNMENT}),
+    AgentState.EXECUTED: frozenset({ToolName.REVIEW_CANDIDATE}),
+    AgentState.REVIEWED: frozenset({ToolName.REVIEW_CANDIDATE, ToolName.STRICT_VERIFY}),
+    AgentState.READY_FOR_STRICT_VERIFICATION: frozenset({ToolName.STRICT_VERIFY}),
     AgentState.REPAIR_REQUIRED: frozenset(SIMULATION_TOOL_BY_FRAMEWORK.values()),
     AgentState.REPLAN_REQUIRED: frozenset({ToolName.REPLAN}),
     AgentState.RESOURCE_EXHAUSTED: frozenset(),
-    AgentState.VERIFIED: frozenset({ToolName.CONVERT_TO_OPENQASM, ToolName.PUBLISH_ARTIFACT}),
-    AgentState.QASM_ATTEMPTED: frozenset({ToolName.PUBLISH_ARTIFACT}),
+    AgentState.VERIFIED: frozenset({ToolName.CONVERT_TO_OPENQASM, ToolName.MATERIALIZE_ARTIFACT}),
+    AgentState.INCONCLUSIVE: frozenset(),
+    AgentState.QASM_ATTEMPTED: frozenset({ToolName.MATERIALIZE_ARTIFACT}),
     AgentState.PUBLISHED: frozenset(),
+    AgentState.MATERIALIZED: frozenset(),
     AgentState.COMPLETED: frozenset(),
     AgentState.FAILED: frozenset(),
     AgentState.CANCELLED: frozenset(),
@@ -173,12 +178,22 @@ class ToolBroker:
             and sandbox_runs >= self._policy.budget.max_sandbox_runs
         ):
             raise ToolPolicyError("sandbox_budget_exhausted", "sandbox budget exhausted")
-        verifications = sum(r.name is ToolName.VERIFY_INTENT_ALIGNMENT and r.ok for r in results)
+        reviews = sum(r.name is ToolName.REVIEW_CANDIDATE and r.ok for r in results)
         if (
-            call.name is ToolName.VERIFY_INTENT_ALIGNMENT
-            and verifications >= self._policy.budget.max_verifications
+            call.name is ToolName.REVIEW_CANDIDATE
+            and reviews >= self._policy.budget.max_semantic_review_attempts
         ):
-            raise ToolPolicyError("verification_budget_exhausted", "verification budget exhausted")
+            raise ToolPolicyError(
+                "semantic_review_budget_exhausted", "semantic-review budget exhausted"
+            )
+        strict_attempts = sum(r.name is ToolName.STRICT_VERIFY and r.ok for r in results)
+        if (
+            call.name is ToolName.STRICT_VERIFY
+            and strict_attempts >= self._policy.budget.max_strict_attempts
+        ):
+            raise ToolPolicyError(
+                "strict_attempt_budget_exhausted", "strict-attempt budget exhausted"
+            )
         conversions = sum(r.name is ToolName.CONVERT_TO_OPENQASM and r.ok for r in results)
         if (
             call.name is ToolName.CONVERT_TO_OPENQASM
@@ -188,8 +203,11 @@ class ToolBroker:
 
         if call.name in {
             ToolName.VERIFY_INTENT_ALIGNMENT,
+            ToolName.REVIEW_CANDIDATE,
+            ToolName.STRICT_VERIFY,
             ToolName.CONVERT_TO_OPENQASM,
             ToolName.PUBLISH_ARTIFACT,
+            ToolName.MATERIALIZE_ARTIFACT,
         }:
             candidate_id = self._candidate_id(call.arguments)
             candidate = await self._store.candidate(run_id, candidate_id)
@@ -198,13 +216,13 @@ class ToolBroker:
                 raise ToolPolicyError("stale_candidate", "only the latest candidate may be used")
             if candidate.framework is not self._policy.framework:
                 raise ToolPolicyError("framework_mismatch", "candidate framework changed")
-            if call.name is ToolName.PUBLISH_ARTIFACT:
-                verification = await self._store.verification_for(run_id, candidate_id)
-                if verification is None or verification.decision is not VerifierDecision.PASS:
+            if call.name in {ToolName.PUBLISH_ARTIFACT, ToolName.MATERIALIZE_ARTIFACT}:
+                strict = await self._store.latest_strict_verification(run_id, candidate_id)
+                if strict is None or strict.decision is not VerifierDecision.PASS:
                     raise ToolPolicyError(
                         "candidate_unverified", "publication requires verification PASS"
                     )
-                if verification.source_fingerprint != candidate.source_fingerprint:
+                if strict.source_fingerprint != candidate.source_fingerprint:
                     raise ToolPolicyError(
                         "fingerprint_mismatch", "verified source differs from candidate"
                     )
@@ -263,6 +281,34 @@ class ToolBroker:
                 if payload.get("execution_ok", True)
                 else AgentState.REPAIR_REQUIRED
             )
+        if name is ToolName.REVIEW_CANDIDATE:
+            decision = SemanticReviewDecision(payload["decision"])
+            if decision is SemanticReviewDecision.REPLAN:
+                return AgentState.REPLAN_REQUIRED
+            if decision is SemanticReviewDecision.CODE_REPAIR:
+                return AgentState.REPAIR_REQUIRED
+            if decision is SemanticReviewDecision.READY:
+                return AgentState.READY_FOR_STRICT_VERIFICATION
+            return AgentState.REVIEWED
+        if name is ToolName.STRICT_VERIFY:
+            decision = VerifierDecision(payload["decision"])
+            if decision is VerifierDecision.PASS:
+                return AgentState.VERIFIED
+            if decision is VerifierDecision.INCONCLUSIVE:
+                if payload.get("retry_target") == RetryTarget.VERIFICATION.value:
+                    prior = await self._store.list_tool_results(run_id)
+                    completed = sum(
+                        item.name is ToolName.STRICT_VERIFY and item.ok for item in prior
+                    )
+                    if completed + 1 < self._policy.budget.max_strict_attempts:
+                        return AgentState.REVIEWED
+                return AgentState.INCONCLUSIVE
+            retry_target = RetryTarget(payload.get("retry_target", RetryTarget.NONE))
+            if retry_target is RetryTarget.PLANNING:
+                return AgentState.REPLAN_REQUIRED
+            if retry_target is RetryTarget.CODE_GENERATION:
+                return AgentState.REPAIR_REQUIRED
+            return AgentState.REVIEWED
         if name is ToolName.VERIFY_INTENT_ALIGNMENT:
             decision = VerifierDecision(payload.get("decision", VerifierDecision.INCONCLUSIVE))
             if (
@@ -279,6 +325,8 @@ class ToolBroker:
             return AgentState.QASM_ATTEMPTED
         if name is ToolName.PUBLISH_ARTIFACT:
             return AgentState.PUBLISHED
+        if name is ToolName.MATERIALIZE_ARTIFACT:
+            return AgentState.MATERIALIZED
         raise ToolPolicyError("unknown_tool", name.value)
 
     async def _validate_replan_authority(self, run_id: UUID, results: list[ToolResult]) -> None:
@@ -286,7 +334,13 @@ class ToolBroker:
             (
                 result
                 for result in reversed(results)
-                if result.ok and result.name is ToolName.VERIFY_INTENT_ALIGNMENT
+                if result.ok
+                and result.name
+                in {
+                    ToolName.REVIEW_CANDIDATE,
+                    ToolName.STRICT_VERIFY,
+                    ToolName.VERIFY_INTENT_ALIGNMENT,
+                }
             ),
             None,
         )

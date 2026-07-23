@@ -10,7 +10,7 @@ from majorana_agent import (
     ExecutionFailureKind,
     MemoryAgentStore,
     PublishedArtifact,
-    RepairInstruction,
+    SemanticReviewOutput,
     ToolBroker,
     ToolCall,
     ToolName,
@@ -77,6 +77,26 @@ class Verifier:
         )
 
 
+class Reviewer:
+    async def review(self, _candidate, _execution, _plan):
+        return SemanticReviewOutput(
+            decision=SemanticReviewDecision.READY,
+            feedback={},
+            reason_code="semantic_ready",
+            retry_target=RetryTarget.NONE,
+        )
+
+
+class StrictVerifier:
+    async def verify_strict(self, _candidate, _execution, _plan, _review):
+        return VerificationOutput(
+            decision=VerifierDecision.PASS,
+            deterministic_checks=[{"method": "return_contract", "result": "pass"}],
+            reason_code="strict_pass",
+            retry_target=RetryTarget.NONE,
+        )
+
+
 class Converter:
     async def convert(self, _candidate, execution):
         return execution.observation.get("interchange_qasm"), None
@@ -102,7 +122,8 @@ async def test_tools_bind_execution_verification_conversion_and_publish():
         framework=Framework.QISKIT,
         planner=Planner(),
         executor=Executor(),
-        verifier=Verifier(),
+        reviewer=Reviewer(),
+        strict_verifier=StrictVerifier(),
         converter=Converter(),
         publisher=Publisher(),
     )
@@ -121,11 +142,20 @@ async def test_tools_bind_execution_verification_conversion_and_publish():
     candidate_id = simulation.payload["candidate_id"]
     assert simulation.payload["result_keys"] == ["counts"]
     assert "result" not in simulation.payload
-    verification = await broker.dispatch(
+    review = await broker.dispatch(
         run_id,
         ToolCall(
             tool_call_id="3",
-            name=ToolName.VERIFY_INTENT_ALIGNMENT,
+            name=ToolName.REVIEW_CANDIDATE,
+            arguments={"candidate_id": candidate_id},
+        ),
+    )
+    assert review.payload["decision"] == "ready"
+    verification = await broker.dispatch(
+        run_id,
+        ToolCall(
+            tool_call_id="4",
+            name=ToolName.STRICT_VERIFY,
             arguments={"candidate_id": candidate_id},
         ),
     )
@@ -134,7 +164,7 @@ async def test_tools_bind_execution_verification_conversion_and_publish():
     conversion = await broker.dispatch(
         run_id,
         ToolCall(
-            tool_call_id="4",
+            tool_call_id="5",
             name=ToolName.CONVERT_TO_OPENQASM,
             arguments={"candidate_id": candidate_id},
         ),
@@ -143,8 +173,8 @@ async def test_tools_bind_execution_verification_conversion_and_publish():
     published = await broker.dispatch(
         run_id,
         ToolCall(
-            tool_call_id="5",
-            name=ToolName.PUBLISH_ARTIFACT,
+            tool_call_id="6",
+            name=ToolName.MATERIALIZE_ARTIFACT,
             arguments={"candidate_id": candidate_id},
         ),
     )
@@ -367,36 +397,24 @@ class ReplanningPlanner(Planner):
 
 
 class PlanDefectVerifier:
-    async def verify(self, _candidate, _execution, _plan):
-        return VerificationOutput(
-            decision=VerifierDecision.FAIL,
-            deterministic_checks=[],
-            semantic_review_decision=SemanticReviewDecision.REPLAN,
+    async def review(self, _candidate, _execution, _plan):
+        return SemanticReviewOutput(
+            decision=SemanticReviewDecision.REPLAN,
+            feedback={"repair": {"category": "plan_defect"}},
             failure_class=VerificationFailureClass.PLAN_DEFECT,
             retry_target=RetryTarget.PLANNING,
             reason_code="semantic_plan_mismatch",
-            repair=RepairInstruction(
-                category="plan_defect",
-                evidence=["request-to-plan mismatch"],
-                repairs=["Revise the Plan."],
-            ),
         )
 
 
 class CodeDefectVerifier:
-    async def verify(self, _candidate, _execution, _plan):
-        return VerificationOutput(
-            decision=VerifierDecision.FAIL,
-            deterministic_checks=[],
-            semantic_review_decision=SemanticReviewDecision.CODE_REPAIR,
+    async def review(self, _candidate, _execution, _plan):
+        return SemanticReviewOutput(
+            decision=SemanticReviewDecision.CODE_REPAIR,
+            feedback={"repair": {"category": "candidate_defect"}},
             failure_class=VerificationFailureClass.CANDIDATE_DEFECT,
             retry_target=RetryTarget.CODE_GENERATION,
             reason_code="semantic_code_mismatch",
-            repair=RepairInstruction(
-                category="candidate_defect",
-                evidence=["plan-to-code mismatch"],
-                repairs=["Repair the candidate."],
-            ),
         )
 
 
@@ -406,7 +424,8 @@ def _replan_stack(store, planner, verifier, *, budget=AgentBudget()):
         framework=Framework.QISKIT,
         planner=planner,
         executor=Executor(),
-        verifier=verifier,
+        reviewer=verifier,
+        strict_verifier=StrictVerifier(),
         converter=Converter(),
         publisher=Publisher(),
     )
@@ -434,7 +453,7 @@ async def _reach_replan_required(store, broker, run_id):
         run_id,
         ToolCall(
             tool_call_id="verify-1",
-            name=ToolName.VERIFY_INTENT_ALIGNMENT,
+            name=ToolName.REVIEW_CANDIDATE,
             arguments={"candidate_id": simulation.payload["candidate_id"]},
         ),
     )
@@ -496,7 +515,7 @@ async def test_code_defect_cannot_trigger_replan():
         run_id,
         ToolCall(
             tool_call_id="verify",
-            name=ToolName.VERIFY_INTENT_ALIGNMENT,
+            name=ToolName.REVIEW_CANDIDATE,
             arguments={"candidate_id": simulation.payload["candidate_id"]},
         ),
     )

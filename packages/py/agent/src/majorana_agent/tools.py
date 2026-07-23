@@ -23,6 +23,8 @@ from majorana_agent.models import (
     PlanRevision,
     PublishedArtifact,
     RepairInstruction,
+    SemanticReviewEvidence,
+    StrictVerificationAttempt,
     ToolCall,
     ToolName,
     ToolResult,
@@ -36,6 +38,7 @@ from majorana_contracts.enums import (
     SemanticReviewDecision,
     VerificationFailureClass,
     VerifierDecision,
+    evidence_strength_of,
 )
 from majorana_contracts.plan import Plan
 from majorana_frameworks import FrameworkProgram
@@ -85,11 +88,41 @@ class VerificationOutput:
     retry_target: RetryTarget | None = None
     candidate_defect_observed: bool = False
     reason_code: str | None = None
+    claim_coverage: list[dict[str, Any]] | None = None
+    unverified_claims: list[str] | None = None
+    verifier_version: str = "verification-v2"
+
+
+@dataclass(frozen=True)
+class SemanticReviewOutput:
+    decision: SemanticReviewDecision
+    feedback: dict[str, Any]
+    reason_code: str
+    retry_target: RetryTarget
+    failure_class: VerificationFailureClass | None = None
+    confidence: str | None = None
+    severity: str | None = None
 
 
 class CandidateVerifier(Protocol):
     async def verify(
         self, candidate: CandidateRevision, execution: ExecutionEvidence, plan: Plan
+    ) -> VerificationOutput: ...
+
+
+class CandidateReviewer(Protocol):
+    async def review(
+        self, candidate: CandidateRevision, execution: ExecutionEvidence, plan: Plan
+    ) -> SemanticReviewOutput: ...
+
+
+class StrictCandidateVerifier(Protocol):
+    async def verify_strict(
+        self,
+        candidate: CandidateRevision,
+        execution: ExecutionEvidence,
+        plan: Plan,
+        review: SemanticReviewEvidence,
     ) -> VerificationOutput: ...
 
 
@@ -118,7 +151,9 @@ class CircuitToolset:
         framework: Framework,
         planner: Planner,
         executor: CandidateExecutor,
-        verifier: CandidateVerifier,
+        verifier: CandidateVerifier | None = None,
+        reviewer: CandidateReviewer | None = None,
+        strict_verifier: StrictCandidateVerifier | None = None,
         converter: OpenQASMConverter,
         publisher: ArtifactPublisher,
     ) -> None:
@@ -127,6 +162,8 @@ class CircuitToolset:
         self._planner = planner
         self._executor = executor
         self._verifier = verifier
+        self._reviewer = reviewer
+        self._strict_verifier = strict_verifier
         self._converter = converter
         self._publisher = publisher
 
@@ -138,8 +175,11 @@ class CircuitToolset:
             ToolName.SIMULATE_CIRQ: self.simulate,
             ToolName.SIMULATE_PENNYLANE: self.simulate,
             ToolName.VERIFY_INTENT_ALIGNMENT: self.verify,
+            ToolName.REVIEW_CANDIDATE: self.review_candidate,
+            ToolName.STRICT_VERIFY: self.strict_verify,
             ToolName.CONVERT_TO_OPENQASM: self.convert,
             ToolName.PUBLISH_ARTIFACT: self.publish,
+            ToolName.MATERIALIZE_ARTIFACT: self.publish,
         }
 
     async def request_plan(self, run_id: UUID, _call: ToolCall) -> dict[str, Any]:
@@ -219,7 +259,12 @@ class CircuitToolset:
                 item
                 for item in reversed(results)
                 if item.ok
-                and item.name is ToolName.VERIFY_INTENT_ALIGNMENT
+                and item.name
+                in {
+                    ToolName.REVIEW_CANDIDATE,
+                    ToolName.STRICT_VERIFY,
+                    ToolName.VERIFY_INTENT_ALIGNMENT,
+                }
                 and item.payload.get("failure_class") == VerificationFailureClass.PLAN_DEFECT.value
                 and item.payload.get("retry_target") == RetryTarget.PLANNING.value
             ),
@@ -231,6 +276,8 @@ class CircuitToolset:
             )
         reason = result.payload.get("reason_code") or "semantic_plan_defect"
         repair = result.payload.get("repair")
+        if repair is None and isinstance(result.payload.get("feedback"), dict):
+            repair = result.payload["feedback"].get("repair")
         return json.dumps(
             {"reason_code": reason, "repair": repair},
             default=str,
@@ -360,6 +407,10 @@ class CircuitToolset:
         }
 
     async def verify(self, run_id: UUID, call: ToolCall) -> dict[str, Any]:
+        if self._verifier is None:
+            raise ToolPolicyError(
+                "legacy_tool_unavailable", "use review_candidate then strict_verify"
+            )
         candidate = await self._bound_candidate(run_id, call.arguments)
         execution = await self._store.execution_for(run_id, candidate.candidate_id)
         if execution is None or not execution.succeeded:
@@ -421,6 +472,205 @@ class CircuitToolset:
                 else None
             ),
             "reason_code": reason_code,
+        }
+
+    async def review_candidate(self, run_id: UUID, call: ToolCall) -> dict[str, Any]:
+        if self._reviewer is None:
+            raise ToolPolicyError("reviewer_unavailable", "semantic reviewer is unavailable")
+        candidate = await self._bound_candidate(run_id, call.arguments)
+        execution = await self._store.execution_for(run_id, candidate.candidate_id)
+        if execution is None or not execution.succeeded:
+            raise ToolPolicyError("execution_missing", "semantic review requires execution")
+        if execution.source_fingerprint != candidate.source_fingerprint:
+            raise ToolPolicyError("fingerprint_mismatch", "execution source differs from candidate")
+        attempt_id = uuid5(run_id, f"majorana:semantic-review:{call.tool_call_id}")
+        latest = await self._store.latest_semantic_review(run_id, candidate.candidate_id)
+        if latest is not None and latest.review_id == attempt_id:
+            evidence = latest
+        else:
+            plan = await self._store.plan(run_id, candidate.plan_id)
+            try:
+                output = await self._reviewer.review(candidate, execution, plan.plan)
+            except Exception as exc:
+                output = SemanticReviewOutput(
+                    decision=SemanticReviewDecision.INCONCLUSIVE,
+                    feedback={"error": f"{type(exc).__name__}: {str(exc)[:1000]}"},
+                    reason_code="semantic_reviewer_failure",
+                    failure_class=VerificationFailureClass.VERIFIER_FAILURE,
+                    retry_target=RetryTarget.VERIFICATION,
+                )
+            evidence = SemanticReviewEvidence(
+                review_id=attempt_id,
+                candidate_id=candidate.candidate_id,
+                execution_id=execution.execution_id,
+                source_fingerprint=candidate.source_fingerprint,
+                attempt_seq=1 if latest is None else latest.attempt_seq + 1,
+                decision=output.decision,
+                confidence=output.confidence,
+                severity=output.severity,
+                reason_code=output.reason_code,
+                failure_class=output.failure_class,
+                retry_target=output.retry_target,
+                feedback=output.feedback,
+            )
+            await self._store.append_semantic_review(evidence)
+        status = (
+            CandidateStatus.REPAIR_REQUIRED
+            if evidence.decision
+            in {SemanticReviewDecision.CODE_REPAIR, SemanticReviewDecision.REPLAN}
+            else CandidateStatus.REVIEWED
+        )
+        await self._store.set_candidate_status(run_id, candidate.candidate_id, status.value)
+        return {
+            "candidate_id": str(candidate.candidate_id),
+            "execution_id": str(execution.execution_id),
+            "review_id": str(evidence.review_id),
+            "attempt_seq": evidence.attempt_seq,
+            "source_fingerprint": evidence.source_fingerprint,
+            "decision": evidence.decision.value,
+            "reason_code": evidence.reason_code,
+            "failure_class": evidence.failure_class.value if evidence.failure_class else None,
+            "retry_target": evidence.retry_target.value,
+            "feedback": evidence.feedback,
+        }
+
+    async def strict_verify(self, run_id: UUID, call: ToolCall) -> dict[str, Any]:
+        if self._strict_verifier is None:
+            raise ToolPolicyError("strict_verifier_unavailable", "strict verifier is unavailable")
+        candidate = await self._bound_candidate(run_id, call.arguments)
+        execution = await self._store.execution_for(run_id, candidate.candidate_id)
+        review = await self._store.latest_semantic_review(run_id, candidate.candidate_id)
+        if execution is None or review is None:
+            raise ToolPolicyError(
+                "review_missing", "strict verification requires execution and semantic review"
+            )
+        review.assert_binding(candidate, execution)
+        attempt_id = uuid5(run_id, f"majorana:strict-verification:{call.tool_call_id}")
+        latest = await self._store.latest_strict_verification(run_id, candidate.candidate_id)
+        if latest is not None and latest.attempt_id == attempt_id:
+            attempt = latest
+        else:
+            plan = await self._store.plan(run_id, candidate.plan_id)
+            try:
+                output = await self._strict_verifier.verify_strict(
+                    candidate, execution, plan.plan, review
+                )
+                if (
+                    review.decision is SemanticReviewDecision.INCONCLUSIVE
+                    and output.decision is VerifierDecision.PASS
+                ):
+                    output = VerificationOutput(
+                        decision=VerifierDecision.INCONCLUSIVE,
+                        deterministic_checks=output.deterministic_checks,
+                        critic=output.critic,
+                        semantic_review_decision=review.decision,
+                        failure_class=(
+                            review.failure_class or VerificationFailureClass.EVIDENCE_GAP
+                        ),
+                        retry_target=(
+                            review.retry_target
+                            if review.retry_target is not RetryTarget.NONE
+                            else RetryTarget.VERIFICATION
+                        ),
+                        reason_code="semantic_uncertainty_prevents_pass",
+                        claim_coverage=output.claim_coverage,
+                        unverified_claims=output.unverified_claims,
+                        verifier_version=output.verifier_version,
+                    )
+            except Exception as exc:
+                output = VerificationOutput(
+                    decision=VerifierDecision.INCONCLUSIVE,
+                    deterministic_checks=[
+                        {
+                            "method": "strict_verifier",
+                            "result": "error",
+                            "details": {"error": f"{type(exc).__name__}: {str(exc)[:1000]}"},
+                        }
+                    ],
+                    failure_class=VerificationFailureClass.VERIFIER_FAILURE,
+                    retry_target=RetryTarget.VERIFICATION,
+                    reason_code="strict_verifier_error",
+                )
+            attempt = StrictVerificationAttempt(
+                attempt_id=attempt_id,
+                candidate_id=candidate.candidate_id,
+                execution_id=execution.execution_id,
+                semantic_review_id=review.review_id,
+                source_fingerprint=candidate.source_fingerprint,
+                attempt_seq=1 if latest is None else latest.attempt_seq + 1,
+                checks=output.deterministic_checks,
+                decision=output.decision,
+                evidence_strength=evidence_strength_of(output.deterministic_checks),
+                claim_coverage=output.claim_coverage or [],
+                reason_code=output.reason_code or "strict_verification_complete",
+                candidate_defect_observed=output.candidate_defect_observed,
+                failure_class=output.failure_class,
+                retry_target=output.retry_target or RetryTarget.NONE,
+                unverified_claims=output.unverified_claims or [],
+                verifier_version=output.verifier_version,
+            )
+            await self._store.append_strict_verification(attempt)
+        if attempt.decision is VerifierDecision.PASS:
+            legacy = await self._store.verification_for(run_id, candidate.candidate_id)
+            if legacy is None:
+                await self._store.add_verification(
+                    VerificationEvidence(
+                        verification_id=attempt.attempt_id,
+                        candidate_id=candidate.candidate_id,
+                        execution_id=execution.execution_id,
+                        source_fingerprint=candidate.source_fingerprint,
+                        decision=VerifierDecision.PASS,
+                        deterministic_checks=attempt.checks,
+                    )
+                )
+            await self._store.set_candidate_status(
+                run_id, candidate.candidate_id, CandidateStatus.VERIFIED.value
+            )
+        elif attempt.decision is VerifierDecision.INCONCLUSIVE:
+            await self._store.set_candidate_status(
+                run_id, candidate.candidate_id, CandidateStatus.INCONCLUSIVE.value
+            )
+        elif attempt.retry_target in {RetryTarget.CODE_GENERATION, RetryTarget.PLANNING}:
+            await self._store.set_candidate_status(
+                run_id, candidate.candidate_id, CandidateStatus.REPAIR_REQUIRED.value
+            )
+        actionable_checks = [
+            check
+            for check in attempt.checks
+            if check.get("result") in {"fail", "unavailable", "error"}
+        ][:50]
+        return {
+            "candidate_id": str(candidate.candidate_id),
+            "execution_id": str(execution.execution_id),
+            "review_id": str(review.review_id),
+            "attempt_id": str(attempt.attempt_id),
+            "attempt_seq": attempt.attempt_seq,
+            "source_fingerprint": attempt.source_fingerprint,
+            "decision": attempt.decision.value,
+            "evidence_strength": (
+                attempt.evidence_strength.value if attempt.evidence_strength else None
+            ),
+            "reason_code": attempt.reason_code,
+            "failure_class": attempt.failure_class.value if attempt.failure_class else None,
+            "retry_target": attempt.retry_target.value,
+            "candidate_defect_observed": attempt.candidate_defect_observed,
+            "check_summaries": actionable_checks,
+            "repair": (
+                {
+                    "category": attempt.failure_class.value,
+                    "evidence": [
+                        json.dumps(check, sort_keys=True, default=str)[:2000]
+                        for check in actionable_checks
+                    ],
+                    "repairs": [
+                        "Revise the Plan."
+                        if attempt.retry_target is RetryTarget.PLANNING
+                        else "Repair the candidate and submit a new source revision."
+                    ],
+                }
+                if attempt.decision is VerifierDecision.FAIL
+                else None
+            ),
         }
 
     async def convert(self, run_id: UUID, call: ToolCall) -> dict[str, Any]:

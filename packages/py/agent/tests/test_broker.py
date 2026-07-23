@@ -7,12 +7,19 @@ from majorana_agent import (
     ExecutionEvidence,
     MemoryAgentStore,
     PlanRecord,
+    SemanticReviewEvidence,
+    StrictVerificationAttempt,
     ToolBroker,
     ToolCall,
     ToolName,
-    VerificationEvidence,
 )
-from majorana_contracts.enums import Algorithm, Framework, VerifierDecision
+from majorana_contracts.enums import (
+    Algorithm,
+    Framework,
+    RetryTarget,
+    SemanticReviewDecision,
+    VerifierDecision,
+)
 from majorana_contracts.plan import Plan
 from majorana_frameworks import FrameworkProgram
 
@@ -132,31 +139,48 @@ async def test_publish_requires_matching_verified_latest_candidate():
         run_id,
         ToolCall(
             tool_call_id="publish-early",
-            name=ToolName.PUBLISH_ARTIFACT,
+            name=ToolName.MATERIALIZE_ARTIFACT,
             arguments={"candidate_id": str(candidate_id)},
         ),
     )
     assert unverified.error_code == "candidate_unverified"
 
-    await store.add_verification(
-        VerificationEvidence(
-            verification_id=uuid4(),
+    review = SemanticReviewEvidence(
+        review_id=uuid4(),
+        candidate_id=candidate_id,
+        execution_id=execution.execution_id,
+        source_fingerprint=fingerprint,
+        attempt_seq=1,
+        decision=SemanticReviewDecision.READY,
+        reason_code="semantic_ready",
+        retry_target=RetryTarget.NONE,
+    )
+    await store.append_semantic_review(review)
+    await store.append_strict_verification(
+        StrictVerificationAttempt(
+            attempt_id=uuid4(),
             candidate_id=candidate_id,
             execution_id=execution.execution_id,
+            semantic_review_id=review.review_id,
             source_fingerprint=fingerprint,
+            attempt_seq=1,
             decision=VerifierDecision.PASS,
+            reason_code="strict_pass",
+            candidate_defect_observed=False,
+            retry_target=RetryTarget.NONE,
+            verifier_version="test",
         )
     )
     published = await _broker(store).dispatch(
         run_id,
         ToolCall(
             tool_call_id="publish",
-            name=ToolName.PUBLISH_ARTIFACT,
+            name=ToolName.MATERIALIZE_ARTIFACT,
             arguments={"candidate_id": str(candidate_id)},
         ),
     )
     assert published.ok
-    assert published.state is AgentState.PUBLISHED
+    assert published.state is AgentState.MATERIALIZED
 
 
 async def test_memory_evidence_is_append_only():

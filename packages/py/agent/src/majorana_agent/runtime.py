@@ -50,6 +50,8 @@ class AgentRuntime:
             state = await self._store.state(run_id)
             if state in {
                 AgentState.PUBLISHED,
+                AgentState.MATERIALIZED,
+                AgentState.INCONCLUSIVE,
                 AgentState.COMPLETED,
                 AgentState.FAILED,
                 AgentState.CANCELLED,

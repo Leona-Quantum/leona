@@ -51,7 +51,8 @@ from majorana_api.repos import system
 from .agent_events import AgentEventObserver
 from .agent_llm import MeteredAgentLLM
 from .agent_ports import (
-    EvidenceVerifier,
+    EvidenceReviewer,
+    EvidenceStrictVerifier,
     LLMPlanner,
     RepoArtifactPublisher,
     SandboxCandidateExecutor,
@@ -421,10 +422,11 @@ async def _handle_agent_execution(
             requested_seed=ctx.seed,
         ),
         executor=SandboxCandidateExecutor(sandbox),
-        verifier=EvidenceVerifier(
+        reviewer=EvidenceReviewer(
             llm=metered_llm,
             task_prompt=ctx.task_prompt,
         ),
+        strict_verifier=EvidenceStrictVerifier(),
         converter=TrustedOpenQASMConverter(),
         publisher=RepoArtifactPublisher(
             scope=scope,
@@ -483,7 +485,7 @@ async def _handle_agent_execution(
             event_id=uuid.uuid5(ctx.run_id, "run.finished"),
         )
         return RunStatus.CANCELLED
-    if final is AgentState.PUBLISHED:
+    if final in {AgentState.MATERIALIZED, AgentState.PUBLISHED}:
         # A pass says nothing was contradicted; the strength says what did the
         # contradicting. Fails closed to STRUCTURAL — the weaker claim — when the
         # evidence row cannot be read, because an unreadable grade is not a strong one.

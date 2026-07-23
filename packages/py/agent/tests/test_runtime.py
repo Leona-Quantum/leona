@@ -10,12 +10,19 @@ from majorana_agent import (
     ExecutionOutput,
     MemoryAgentStore,
     PublishedArtifact,
+    SemanticReviewOutput,
     ToolBroker,
     ToolCall,
     ToolName,
     VerificationOutput,
 )
-from majorana_contracts.enums import Algorithm, Framework, VerifierDecision
+from majorana_contracts.enums import (
+    Algorithm,
+    Framework,
+    RetryTarget,
+    SemanticReviewDecision,
+    VerifierDecision,
+)
 from majorana_contracts.plan import Plan
 
 
@@ -59,8 +66,18 @@ class RepairingExecutor:
         )
 
 
-class Verifier:
-    async def verify(self, _candidate, _execution, _plan):
+class Reviewer:
+    async def review(self, _candidate, _execution, _plan):
+        return SemanticReviewOutput(
+            decision=SemanticReviewDecision.READY,
+            feedback={},
+            reason_code="semantic_ready",
+            retry_target=RetryTarget.NONE,
+        )
+
+
+class StrictVerifier:
+    async def verify_strict(self, _candidate, _execution, _plan, _review):
         return VerificationOutput(
             decision=VerifierDecision.PASS,
             deterministic_checks=[{"method": "return_contract", "result": "pass"}],
@@ -114,8 +131,12 @@ class RepairModel:
         if state is AgentState.EXECUTED:
             return ToolCall(
                 tool_call_id=str(number),
-                name=ToolName.VERIFY_INTENT_ALIGNMENT,
+                name=ToolName.REVIEW_CANDIDATE,
                 arguments=arguments,
+            )
+        if state is AgentState.READY_FOR_STRICT_VERIFICATION:
+            return ToolCall(
+                tool_call_id=str(number), name=ToolName.STRICT_VERIFY, arguments=arguments
             )
         if state is AgentState.VERIFIED:
             return ToolCall(
@@ -124,7 +145,7 @@ class RepairModel:
                 arguments=arguments,
             )
         return ToolCall(
-            tool_call_id=str(number), name=ToolName.PUBLISH_ARTIFACT, arguments=arguments
+            tool_call_id=str(number), name=ToolName.MATERIALIZE_ARTIFACT, arguments=arguments
         )
 
 
@@ -136,7 +157,8 @@ async def test_runtime_repairs_with_new_candidate_revision_then_publishes():
         framework=Framework.QISKIT,
         planner=Planner(),
         executor=RepairingExecutor(),
-        verifier=Verifier(),
+        reviewer=Reviewer(),
+        strict_verifier=StrictVerifier(),
         converter=Converter(),
         publisher=Publisher(),
     )
@@ -150,7 +172,7 @@ async def test_runtime_repairs_with_new_candidate_revision_then_publishes():
         model=RepairModel(),
     )
 
-    assert await runtime.run(run_id) is AgentState.PUBLISHED
+    assert await runtime.run(run_id) is AgentState.MATERIALIZED
     candidates = await store.list_candidates(run_id)
     assert [candidate.revision for candidate in candidates] == [1, 2]
     assert candidates[1].parent_candidate_id == candidates[0].candidate_id
@@ -238,7 +260,8 @@ async def test_model_reusing_tool_call_ids_cannot_kill_a_run():
         framework=Framework.QISKIT,
         planner=Planner(),
         executor=RepairingExecutor(),
-        verifier=Verifier(),
+        reviewer=Reviewer(),
+        strict_verifier=StrictVerifier(),
         converter=Converter(),
         publisher=Publisher(),
     )
@@ -251,7 +274,7 @@ async def test_model_reusing_tool_call_ids_cannot_kill_a_run():
         ),
         model=ConstantIdModel(),
     )
-    assert await runtime.run(run_id) is AgentState.PUBLISHED
+    assert await runtime.run(run_id) is AgentState.MATERIALIZED
 
 
 async def test_runtime_rejects_completed_call_id_from_an_older_state():

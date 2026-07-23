@@ -8,6 +8,7 @@ from majorana_agent import (
     CandidateRevision,
     ExecutionEvidence,
     ExecutionFailureKind,
+    SemanticReviewEvidence,
     VerificationEvidence,
 )
 from majorana_contracts.enums import (
@@ -28,6 +29,8 @@ from majorana_llm import LLMResponse, StageOutputError
 from majorana_sandbox import SandboxResult
 from majorana_worker.agent_ports import (
     EvidenceVerifier,
+    EvidenceReviewer,
+    EvidenceStrictVerifier,
     FastCandidateChecker,
     LLMPlanner,
     RepoArtifactPublisher,
@@ -299,6 +302,42 @@ async def test_strict_gate_can_confirm_a_defect_after_semantic_uncertainty():
     assert output.decision is VerifierDecision.FAIL
     assert output.failure_class is VerificationFailureClass.CANDIDATE_DEFECT
     assert output.candidate_defect_observed is True
+
+
+async def test_split_review_and_strict_ports_preserve_uncertainty_fail_closed_behavior():
+    candidate = _candidate()
+    wrong = {"01": 512, "10": 512}
+    execution = _execution(
+        candidate,
+        result={"counts": wrong},
+        observation=_statistical_observation(wrong),
+    )
+    plan = _statistical_plan()
+    reviewed = await EvidenceReviewer(
+        llm=LowConfidenceCriticLLM(), task_prompt="Bell state"
+    ).review(candidate, execution, plan)
+    review = SemanticReviewEvidence(
+        review_id=uuid4(),
+        candidate_id=candidate.candidate_id,
+        execution_id=execution.execution_id,
+        source_fingerprint=candidate.source_fingerprint,
+        attempt_seq=1,
+        decision=reviewed.decision,
+        confidence=reviewed.confidence,
+        severity=reviewed.severity,
+        reason_code=reviewed.reason_code,
+        failure_class=reviewed.failure_class,
+        retry_target=reviewed.retry_target,
+        feedback=reviewed.feedback,
+    )
+
+    output = await EvidenceStrictVerifier().verify_strict(candidate, execution, plan, review)
+
+    assert reviewed.decision is SemanticReviewDecision.INCONCLUSIVE
+    assert output.decision is VerifierDecision.FAIL
+    assert output.failure_class is VerificationFailureClass.CANDIDATE_DEFECT
+    assert output.candidate_defect_observed is True
+    assert output.claim_coverage is not None
 
 
 async def test_strict_verifier_error_takes_precedence_over_unavailable_evidence(monkeypatch):

@@ -34,12 +34,16 @@ class AgentState(StrEnum):
     NEW = "new"
     PLANNED = "planned"
     EXECUTED = "executed"
+    REVIEWED = "reviewed"
+    READY_FOR_STRICT_VERIFICATION = "ready_for_strict_verification"
     REPAIR_REQUIRED = "repair_required"
     REPLAN_REQUIRED = "replan_required"
     RESOURCE_EXHAUSTED = "resource_exhausted"
     VERIFIED = "verified"
+    INCONCLUSIVE = "inconclusive"
     QASM_ATTEMPTED = "qasm_attempted"
     PUBLISHED = "published"
+    MATERIALIZED = "materialized"
     COMPLETED = "completed"
     FAILED = "failed"
     CANCELLED = "cancelled"
@@ -48,9 +52,11 @@ class AgentState(StrEnum):
 class CandidateStatus(StrEnum):
     CREATED = "created"
     EXECUTED = "executed"
+    REVIEWED = "reviewed"
     REPAIR_REQUIRED = "repair_required"
     RESOURCE_EXHAUSTED = "resource_exhausted"
     VERIFIED = "verified"
+    INCONCLUSIVE = "inconclusive"
     PUBLISHED = "published"
 
 
@@ -68,8 +74,11 @@ class ToolName(StrEnum):
     SIMULATE_CIRQ = "simulate_cirq"
     SIMULATE_PENNYLANE = "simulate_pennylane"
     VERIFY_INTENT_ALIGNMENT = "verify_intent_alignment"
+    REVIEW_CANDIDATE = "review_candidate"
+    STRICT_VERIFY = "strict_verify"
     CONVERT_TO_OPENQASM = "convert_to_openqasm"
     PUBLISH_ARTIFACT = "publish_artifact"
+    MATERIALIZE_ARTIFACT = "materialize_artifact"
 
 
 SIMULATION_TOOL_BY_FRAMEWORK: dict[Framework, ToolName] = {
@@ -80,12 +89,15 @@ SIMULATION_TOOL_BY_FRAMEWORK: dict[Framework, ToolName] = {
 
 
 class AgentBudget(_Record):
-    max_steps: int = Field(default=14, ge=1, le=64)
+    # Overall circuit breaker. It must sit above the sum of useful per-lane
+    # attempts now that review and strict verification are distinct durable steps.
+    max_steps: int = Field(default=32, ge=1, le=64)
     max_candidates: int = Field(default=4, ge=1, le=12)
     max_plan_attempts: int = Field(default=4, ge=1, le=12)
     max_plan_revisions: int = Field(default=3, ge=1, le=8)
     max_sandbox_runs: int = Field(default=6, ge=1, le=20)
-    max_verifications: int = Field(default=4, ge=1, le=12)
+    max_semantic_review_attempts: int = Field(default=8, ge=1, le=12)
+    max_strict_attempts: int = Field(default=8, ge=1, le=12)
     max_conversions: int = Field(default=3, ge=0, le=8)
 
 
@@ -212,6 +224,28 @@ class SemanticReviewEvidence(_Record):
     retry_target: RetryTarget
     feedback: dict[str, Any] = Field(default_factory=dict)
 
+    @model_validator(mode="after")
+    def routing_is_typed(self) -> "SemanticReviewEvidence":
+        expected = {
+            SemanticReviewDecision.READY: (None, RetryTarget.NONE),
+            SemanticReviewDecision.CODE_REPAIR: (
+                VerificationFailureClass.CANDIDATE_DEFECT,
+                RetryTarget.CODE_GENERATION,
+            ),
+            SemanticReviewDecision.REPLAN: (
+                VerificationFailureClass.PLAN_DEFECT,
+                RetryTarget.PLANNING,
+            ),
+        }.get(self.decision)
+        if expected is not None and (self.failure_class, self.retry_target) != expected:
+            raise ValueError("semantic review decision has inconsistent typed routing")
+        if (
+            self.decision is SemanticReviewDecision.INCONCLUSIVE
+            and self.failure_class is VerificationFailureClass.CANDIDATE_DEFECT
+        ):
+            raise ValueError("inconclusive semantic review cannot blame the candidate")
+        return self
+
     def assert_binding(self, candidate: "CandidateRevision", execution: ExecutionEvidence) -> None:
         if self.candidate_id != candidate.candidate_id:
             raise ValueError("semantic review references a different candidate")
@@ -247,6 +281,27 @@ class StrictVerificationAttempt(_Record):
     def inconclusive_never_establishes_a_candidate_defect(self) -> "StrictVerificationAttempt":
         if self.decision is VerifierDecision.INCONCLUSIVE and self.candidate_defect_observed:
             raise ValueError("inconclusive verification cannot establish a candidate defect")
+        if (
+            self.decision is VerifierDecision.INCONCLUSIVE
+            and self.failure_class is VerificationFailureClass.CANDIDATE_DEFECT
+        ):
+            raise ValueError("inconclusive verification cannot classify a candidate defect")
+        if self.decision is VerifierDecision.PASS and (
+            self.failure_class is not None
+            or self.retry_target is not RetryTarget.NONE
+            or self.candidate_defect_observed
+        ):
+            raise ValueError("passing verification cannot carry failure routing")
+        if self.decision is VerifierDecision.FAIL:
+            expected = {
+                VerificationFailureClass.CANDIDATE_DEFECT: (
+                    RetryTarget.CODE_GENERATION,
+                    True,
+                ),
+                VerificationFailureClass.PLAN_DEFECT: (RetryTarget.PLANNING, False),
+            }.get(self.failure_class)
+            if expected is None or (self.retry_target, self.candidate_defect_observed) != expected:
+                raise ValueError("failed verification has inconsistent typed routing")
         return self
 
     def assert_binding(
