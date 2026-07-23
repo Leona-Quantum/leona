@@ -582,7 +582,13 @@ export function reduceRunEvents(events: readonly RunEvent[]): RunViewModel {
       ? { verdict, detail: formatVerdictDetail(verdict, primaryVerify(verifyResults, verdict)) }
       : null,
     verificationSummary,
-    verificationState: finishedRun ? (verificationSummary ? "ready" : "legacy") : null,
+    verificationState: finishedRun
+      ? verificationSummary
+        ? "ready"
+        : finishedRun.status === "succeeded"
+          ? "legacy"
+          : null
+      : null,
     answer: buildAnswer(analysis, finishedRun),
     generatedCode: generatedCode ? buildCodeView(generatedCode.language, generatedCode.code) : null,
     codeQuality: buildCodeQuality(screen),
@@ -756,7 +762,11 @@ function deriveVerdict(
 ): Verdict | null {
   if (!finishedRun) return null;
   const summary = finishedRun.verification_summary;
-  if (!summary) return "legacy_unknown";
+  // Only a SUCCEEDED run with no summary is a legacy record. A failed or
+  // cancelled run simply never completed verification — calling that
+  // "predates typed verification summaries" mislabels a fresh failure as
+  // historical data (observed live on run 019f8ed4, plan budget exhausted).
+  if (!summary) return finishedRun.status === "succeeded" ? "legacy_unknown" : null;
   const decision = summary.decision;
   if (decision === "fail") return "failed";
   if (decision === "inconclusive") return "not_verified";

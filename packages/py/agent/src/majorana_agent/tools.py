@@ -809,6 +809,22 @@ class CircuitToolset:
                 raise ToolPolicyError(
                     "fingerprint_mismatch", "conversion is bound to stale evidence"
                 )
+            if conversion is None:
+                # Conversion is a mechanical export, not a judgment call — an
+                # artifact must never lose its interchange QASM because the
+                # model skipped the convert tool. Observed live on run
+                # 019f8eca-af7c: a verified Bell artifact stored "framework
+                # only" while its observation held the emitted QASM all along.
+                qasm, reason = await self._converter.convert(candidate, execution)
+                conversion = ConversionEvidence(
+                    candidate_id=candidate.candidate_id,
+                    execution_id=execution.execution_id,
+                    source_fingerprint=candidate.source_fingerprint,
+                    status="available" if qasm else "unavailable",
+                    qasm=qasm,
+                    reason=reason,
+                )
+                await self._store.add_conversion(conversion)
             plan = (await self._store.plan(run_id, candidate.plan_id)).plan
             materialization = await self._materializer.materialize(
                 candidate, execution, verification, review, conversion, plan

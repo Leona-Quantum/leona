@@ -692,3 +692,55 @@ async def test_replan_crash_replay_does_not_duplicate_plan_revision():
     assert planner.revisions == 1
     current = await store.current_plan_revision(run_id)
     assert current is not None and current.revision == 2
+
+
+async def test_materialize_attempts_conversion_when_the_model_skipped_it():
+    """Conversion is mechanical: skipping the convert tool must not cost the
+    artifact its interchange QASM (live run 019f8eca-af7c stored a verified
+    Bell artifact as "framework only" exactly this way)."""
+    store = MemoryAgentStore()
+    run_id = uuid4()
+    tools = CircuitToolset(
+        store=store,
+        framework=Framework.QISKIT,
+        planner=Planner(),
+        executor=Executor(),
+        reviewer=Reviewer(),
+        strict_verifier=StrictVerifier(),
+        converter=Converter(),
+        materializer=Publisher(),
+    )
+    broker = ToolBroker(
+        store=store,
+        policy=AgentPolicy(framework=Framework.QISKIT),
+        handlers=tools.handlers(),
+    )
+    await broker.dispatch(run_id, ToolCall(tool_call_id="1", name=ToolName.REQUEST_PLAN))
+    source = "from qiskit import QuantumCircuit\nFINAL_CIRCUIT = QuantumCircuit(2)\n"
+    simulation = await broker.dispatch(
+        run_id,
+        ToolCall(tool_call_id="2", name=ToolName.SIMULATE_QISKIT, arguments={"source": source}),
+    )
+    candidate_id = simulation.payload["candidate_id"]
+    await broker.dispatch(
+        run_id,
+        ToolCall(
+            tool_call_id="3",
+            name=ToolName.REVIEW_CANDIDATE,
+            arguments={"candidate_id": candidate_id},
+        ),
+    )
+    # No CONVERT_TO_OPENQASM call: materialize goes straight from review.
+    published = await broker.dispatch(
+        run_id,
+        ToolCall(
+            tool_call_id="4",
+            name=ToolName.MATERIALIZE_ARTIFACT,
+            arguments={"candidate_id": candidate_id},
+        ),
+    )
+    assert published.ok
+    conversion = await store.conversion_for(run_id, UUID(candidate_id))
+    assert conversion is not None
+    assert conversion.status == "available"
+    assert conversion.qasm == "OPENQASM 3.0;\nqubit[2] q;"
