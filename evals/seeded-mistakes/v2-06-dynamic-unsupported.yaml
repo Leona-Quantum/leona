@@ -1,0 +1,12 @@
+id: v2-06-dynamic-unsupported
+category: capability-limit
+description: An unsupported required dynamic-circuit check cannot produce PASS or blame code.
+expected:
+  decision: inconclusive
+  semantic_review_decision: ready
+  failure_class: capability_limit
+  retry_target: none
+  candidate_revisions_consumed: 1
+  evidence_strength: structural
+  materialized: true
+  public_eligible: false

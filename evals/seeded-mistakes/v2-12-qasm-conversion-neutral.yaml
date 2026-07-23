@@ -1,0 +1,12 @@
+id: v2-12-qasm-conversion-neutral
+category: conversion-neutrality
+description: Optional QASM conversion failure leaves the source verdict unchanged.
+expected:
+  decision: pass
+  semantic_review_decision: ready
+  retry_target: none
+  candidate_revisions_consumed: 1
+  evidence_strength: physical
+  materialized: true
+  public_eligible: true
+  verdict_preserved: true

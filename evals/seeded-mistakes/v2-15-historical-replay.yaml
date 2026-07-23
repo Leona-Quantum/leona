@@ -1,0 +1,9 @@
+id: v2-15-historical-replay
+category: legacy-replay
+description: Historical records remain readable and missing evidence never defaults to PASS.
+expected:
+  retry_target: none
+  candidate_revisions_consumed: 0
+  materialized: true
+  public_eligible: false
+  readable: true

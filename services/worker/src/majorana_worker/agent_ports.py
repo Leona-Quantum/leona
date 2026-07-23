@@ -1065,6 +1065,21 @@ class _VerificationPrimitives:
                 }
             )
         if not physical_check_ran:
+            statevector_error = execution.observation.get("native_statevector_error")
+            sampled_error = execution.observation.get("native_sampled_error")
+            statevector_reason = str(statevector_error or "").lower()
+            sampled_reason = str(sampled_error or "").lower()
+            dynamic_sampler_unsupported = (
+                any(
+                    marker in statevector_reason
+                    for marker in (
+                        "not unitary up to final measurements",
+                        "mid-circuit",
+                        "classical control",
+                    )
+                )
+                and sampled_reason == "qiskit_aer unavailable"
+            )
             checks.append(
                 {
                     "method": VerificationMethod.STATISTICAL.value,
@@ -1075,6 +1090,9 @@ class _VerificationPrimitives:
                         "native_statevector": isinstance(native_statevector, dict),
                         "native_sampled": isinstance(native_sampled, dict),
                         "repeat_execution": second is not None,
+                        "native_statevector_error": statevector_error,
+                        "native_sampled_error": sampled_error,
+                        "capability_limited": dynamic_sampler_unsupported,
                     },
                 }
             )
@@ -1420,6 +1438,9 @@ class StrictEvidenceVerifier:
         errors = [check for check in checks if check["result"] == "error"]
         unavailable = [check for check in checks if check["result"] == "unavailable"]
         if errors or unavailable or semantic.decision is SemanticReviewDecision.INCONCLUSIVE:
+            capability_limited = any(
+                check.get("details", {}).get("capability_limited") is True for check in unavailable
+            )
             return VerificationOutput(
                 decision=VerifierDecision.INCONCLUSIVE,
                 deterministic_checks=checks,
@@ -1428,11 +1449,15 @@ class StrictEvidenceVerifier:
                 failure_class=(
                     VerificationFailureClass.VERIFIER_FAILURE
                     if errors
+                    else VerificationFailureClass.CAPABILITY_LIMIT
+                    if capability_limited
                     else semantic.failure_class or VerificationFailureClass.EVIDENCE_GAP
                 ),
                 retry_target=(
                     RetryTarget.VERIFICATION
                     if errors
+                    else RetryTarget.NONE
+                    if capability_limited
                     else semantic.retry_target
                     if semantic.decision is SemanticReviewDecision.INCONCLUSIVE
                     else RetryTarget.VERIFICATION

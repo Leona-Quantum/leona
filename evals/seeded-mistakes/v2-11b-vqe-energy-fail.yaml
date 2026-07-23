@@ -1,0 +1,12 @@
+id: v2-11b-vqe-energy-fail
+category: deterministic-oracle
+description: Incorrect VQE energy fails exact diagonalization.
+expected:
+  decision: fail
+  semantic_review_decision: code_repair
+  failure_class: candidate_defect
+  retry_target: code_generation
+  candidate_revisions_consumed: 1
+  evidence_strength: structural
+  materialized: false
+  public_eligible: false

@@ -1,8 +1,10 @@
 import uuid
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
 from majorana_contracts.enums import ExportStatus, Visibility
+from majorana_evals import load_seeded_corpus
 from repo_test_helpers import compiled
 
 from majorana_api.repos import artifacts
@@ -88,6 +90,51 @@ async def test_verified_physical_pass_can_be_made_public(scope, monkeypatch):
     await artifacts.set_visibility(admin, session, uuid.uuid4(), Visibility.PUBLIC)
 
     assert len(session.statements) == 1
+
+
+@pytest.mark.parametrize(
+    "case",
+    load_seeded_corpus(Path(__file__).parents[3] / "evals" / "seeded-mistakes"),
+    ids=lambda case: case.id,
+)
+async def test_seeded_verification_v2_publication_matrix(scope, monkeypatch, case):
+    """Every Step 13 seed crosses the real API public gate, not a copied predicate."""
+
+    version_id = uuid.uuid4()
+    fingerprint = "a" * 64
+    expected = case.expected
+    summary = {
+        "verified": expected.decision == "pass" and expected.evidence_strength == "physical",
+        "decision": expected.decision.value if expected.decision else None,
+        "evidence_strength": (
+            expected.evidence_strength.value if expected.evidence_strength else None
+        ),
+    }
+
+    async def get_artifact(*_args, **_kwargs):
+        return SimpleNamespace(current_version_id=version_id)
+
+    async def get_version(*_args, **_kwargs):
+        return SimpleNamespace(
+            fingerprint=fingerprint,
+            artifact_metadata={
+                "source": "agent_candidate",
+                "source_fingerprint": fingerprint,
+                "verification_summary": summary,
+            },
+        )
+
+    monkeypatch.setattr(artifacts, "get_artifact", get_artifact)
+    monkeypatch.setattr(artifacts, "get_version", get_version)
+    session = _WriteSession()
+    admin = scope.model_copy(update={"role": "admin"})
+
+    if expected.public_eligible:
+        await artifacts.set_visibility(admin, session, uuid.uuid4(), Visibility.PUBLIC)
+        assert len(session.statements) == 1
+    else:
+        with pytest.raises(ValueError, match="verified physical PASS"):
+            await artifacts.set_visibility(admin, session, uuid.uuid4(), Visibility.PUBLIC)
 
 
 @pytest.mark.parametrize(

@@ -1,0 +1,11 @@
+id: v2-01-bell-ghz-pass
+category: physical-correctness
+description: Correct Bell/GHZ preparation has trusted physical evidence.
+expected:
+  decision: pass
+  semantic_review_decision: ready
+  retry_target: none
+  candidate_revisions_consumed: 1
+  evidence_strength: physical
+  materialized: true
+  public_eligible: true
