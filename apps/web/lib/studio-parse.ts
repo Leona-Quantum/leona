@@ -5,7 +5,27 @@ export interface ParsedBuilderCircuit {
   steps: BuilderStep[];
 }
 
-const MAX_BUILDER_QUBITS = 6;
+/**
+ * How wide a circuit the *editable canvas* renders. A UI number: the builder
+ * grid draws one wire per qubit and stops being usable well before the
+ * simulator does.
+ */
+export const MAX_BUILDER_QUBITS = 6;
+
+/**
+ * How wide a circuit the parser will reconstruct at all.
+ *
+ * Separate from MAX_BUILDER_QUBITS because conflating them was a real bug:
+ * cpuSimulationEligibility reuses this parser, so the canvas's 6-wire drawing
+ * limit silently became the *simulation* limit too, and raising the simulation
+ * ceiling alone unlocked nothing — a 10-qubit circuit still came back
+ * `source_unavailable`. "I cannot draw this on a six-wire grid" and "I cannot
+ * execute this" are different claims and now have different numbers.
+ *
+ * The ceiling is still real, and still fail-closed: above it the parser returns
+ * null rather than a partial circuit, exactly as before.
+ */
+export const MAX_PARSABLE_QUBITS = 24;
 
 const QISKIT_GATE_METHODS: Record<string, BuiltinBuilderGate> = {
   h: "H", x: "X", y: "Y", z: "Z", s: "S", t: "T",
@@ -34,7 +54,13 @@ const CIRQ_ROTATIONS: Record<string, BuiltinBuilderGate> = { rx: "RX", ry: "RY",
  * registers — returns null so callers fall back to an empty canvas instead
  * of rendering a circuit that lies about the code.
  */
-export function parseBuilderCircuit(code: string, framework: "qiskit" | "pennylane" | "cirq" | "openqasm3"): ParsedBuilderCircuit | null {
+export function parseBuilderCircuit(
+  code: string,
+  framework: "qiskit" | "pennylane" | "cirq" | "openqasm3",
+  // Defaults to the CANVAS width, so anything that does not deliberately ask
+  // for more keeps the old, narrower behaviour. Widening is opt-in.
+  maxQubits: number = MAX_BUILDER_QUBITS,
+): ParsedBuilderCircuit | null {
   const lines = code
     .replace(/\/\*[\s\S]*?\*\//g, "")
     .split(/\r?\n/)
@@ -50,7 +76,7 @@ export function parseBuilderCircuit(code: string, framework: "qiskit" | "pennyla
   if (!parsed) return null;
   const usedQubits = parsed.steps.flatMap((step) => step.qubits);
   const qubitCount = Math.max(parsed.qubitCount, ...usedQubits.map((qubit) => qubit + 1), 1);
-  if (qubitCount > MAX_BUILDER_QUBITS) return null;
+  if (qubitCount > maxQubits) return null;
   if (usedQubits.some((qubit) => qubit < 0)) return null;
   return { qubitCount, steps: parsed.steps };
 }

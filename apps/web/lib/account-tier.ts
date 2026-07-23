@@ -68,7 +68,7 @@ export const TIER_LIMITS: Record<AccountTier, TierLimits> = {
     persistentVault: true,
   },
   // Collaborators and the owner. "Unlimited" here means unlimited *product*
-  // allowances. It is NOT a security tier: see assertNoSafetyBypass below.
+  // allowances. It is NOT a security tier: see grantsQpuSubmission below.
   developer: {
     agentRunsPerWeek: null,
     privateArtifacts: null,

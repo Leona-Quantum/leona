@@ -1,6 +1,6 @@
 import { circuitFramework, isExecutableCircuitFramework, type CircuitFrameworkKey, type ExecutableCircuitFrameworkKey } from "./circuit-frameworks.ts";
 import { allCircuitConversionResults, parseCircuitSource } from "./circuit-conversion.ts";
-import type { ParsedBuilderCircuit } from "./studio-parse.ts";
+import { MAX_PARSABLE_QUBITS, type ParsedBuilderCircuit } from "./studio-parse.ts";
 import { TIER_LIMITS, type TierLimits } from "./account-tier.ts";
 
 /**
@@ -115,12 +115,17 @@ export function cpuSimulationEligibility(
   if (!artifactId.trim()) return { eligible: false, sourceFingerprint: fingerprint, reason: "artifact_required" };
   if (!isExecutableCircuitFramework(framework)) return { eligible: false, sourceFingerprint: fingerprint, reason: "framework_unavailable" };
   if (code.length > MAX_CPU_SOURCE_CHARS) return { eligible: false, sourceFingerprint: fingerprint, reason: "source_limit" };
-  const direct = parseCircuitSource(code, framework);
+  // Parse up to the PARSER's width, not the tier's, so that a circuit the
+  // parser understands but the tier may not run reaches the explicit
+  // `qubit_limit` check below. Parsing at the tier width instead made an
+  // over-width circuit fail as `source_unavailable` — "I could not read this",
+  // when the truth was "I read it fine and your plan does not cover it".
+  const direct = parseCircuitSource(code, framework, MAX_PARSABLE_QUBITS);
   const qasmSource = typeof qasm === "string" && qasm.trim() ? qasm : null;
   const decomposed = qasmSource
     ? allCircuitConversionResults(code, framework, qasmSource).qiskit
     : null;
-  const circuit = direct ?? (decomposed ? parseCircuitSource(decomposed.code, "qiskit") : null);
+  const circuit = direct ?? (decomposed ? parseCircuitSource(decomposed.code, "qiskit", MAX_PARSABLE_QUBITS) : null);
   if (!circuit) return { eligible: false, sourceFingerprint: fingerprint, reason: "source_unavailable" };
   if (circuit.qubitCount > limits.cpuSimQubits) return { eligible: false, sourceFingerprint: fingerprint, reason: "qubit_limit" };
   if (circuit.steps.length > limits.cpuSimOperations) return { eligible: false, sourceFingerprint: fingerprint, reason: "operation_limit" };

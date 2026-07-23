@@ -9,7 +9,7 @@ import {
   type BuilderCodeVariants,
   type BuilderStep,
 } from "./studio-builder.ts";
-import { parseBuilderCircuit, type ParsedBuilderCircuit } from "./studio-parse.ts";
+import { MAX_BUILDER_QUBITS, parseBuilderCircuit, type ParsedBuilderCircuit } from "./studio-parse.ts";
 
 export type CircuitConversionFidelity = "deterministic_subset" | "standard_gate_decomposition";
 
@@ -39,13 +39,20 @@ export function generatePortableCircuitCode(portable: PortableCircuit): BuilderC
   return generateBuilderCode(circuit.steps, circuit.qubitCount);
 }
 
+/**
+ * Defaults to the canvas's width, NOT the parser's, so every existing caller
+ * (canvas sync, artifact detail, corpus rendering) keeps drawing only what the
+ * six-wire grid can honestly show. The simulation lane passes its own, wider
+ * limit — executing a circuit and drawing it are different capabilities.
+ */
 export function parseCircuitSource(
   code: string,
   framework: CircuitFrameworkKey | string,
+  maxQubits: number = MAX_BUILDER_QUBITS,
 ): ParsedBuilderCircuit | null {
   const key = circuitFramework(framework).key;
   if (key !== "qiskit" && key !== "pennylane" && key !== "cirq" && key !== "openqasm3") return null;
-  return parseBuilderCircuit(code, key);
+  return parseBuilderCircuit(code, key, maxQubits);
 }
 
 export function convertCircuitSource(
