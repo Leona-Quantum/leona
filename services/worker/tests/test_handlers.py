@@ -777,3 +777,39 @@ def test_validated_fixtures_dir_accepts_path_inside_root(monkeypatch, tmp_path):
     monkeypatch.setenv("MAJORANA_IMPORT_FIXTURES_ROOT", str(root))
 
     assert handlers.validated_fixtures_dir({"fixtures_dir": str(nested)}) == nested.resolve()
+
+
+def _qpu_payload() -> dict:
+    return {
+        "workspace_id": str(uuid.uuid4()),
+        "user_id": str(uuid.uuid4()),
+        "device_id": "braket.ionq.forte",
+        "shots": 128,
+        "qasm": 'OPENQASM 3.0; include "stdgates.inc"; qubit[1] q; bit[1] c; h q[0]; c[0] = measure q[0];',
+        "source_fingerprint": "fnv1a-deadbeef",
+    }
+
+
+def test_qpu_run_kind_is_registered_so_it_can_never_dead_letter_as_unknown():
+    assert handlers.HANDLERS["qpu.run"] is handlers.handle_qpu_run
+    assert "qpu.run" not in handlers.DEAD_LETTER_HANDLERS
+
+
+async def test_qpu_run_rejects_malformed_payloads_permanently():
+    with pytest.raises(RuntimeError, match="payload malformed"):
+        await handlers.handle_qpu_run(object(), {"device_id": "braket.ionq.forte"})
+
+
+async def test_qpu_run_fails_closed_behind_the_deployment_gates(monkeypatch):
+    monkeypatch.delenv("MAJORANA_QPU_SUBMIT_ENABLED", raising=False)
+    with pytest.raises(RuntimeError, match="submission_disabled"):
+        await handlers.handle_qpu_run(object(), _qpu_payload())
+
+
+async def test_qpu_run_fails_closed_even_with_every_provider_gate_open(monkeypatch):
+    """Defense in depth: until the durable qpu_run record migration lands, a
+    job row of this kind fails with a typed reason instead of contacting a
+    provider — even if every deployment gate is open."""
+    monkeypatch.setattr(handlers, "submission_block_reason", lambda: None)
+    with pytest.raises(RuntimeError, match="durable_record_unavailable"):
+        await handlers.handle_qpu_run(object(), _qpu_payload())

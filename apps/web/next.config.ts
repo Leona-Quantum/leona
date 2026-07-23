@@ -3,6 +3,11 @@ import type { NextConfig } from "next";
 const nextConfig: NextConfig = {
   // @majorana/ui ships TS/TSX source (vendored components) — Next transpiles it.
   transpilePackages: ["@majorana/ui"],
+  // Two dev servers in one worktree otherwise share `.next` and corrupt each
+  // other's build cache, which surfaces as stale-resolve errors that survive a
+  // restart. Unset everywhere except a second local server, so CI and Vercel
+  // build to the usual directory.
+  distDir: process.env.NEXT_DIST_DIR || ".next",
   // Security headers baseline (05-security.md §1 platform+edge); CSP tightens in Phase 3
   // when the real asset/style surface exists.
   async headers() {

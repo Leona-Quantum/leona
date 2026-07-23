@@ -1668,6 +1668,198 @@
         "title": "QasmEmission",
         "type": "object"
       },
+      "QpuEstimateBasis": {
+        "description": "Where a pre-run cost figure came from. Mirrors majorana_qpu.EstimateBasis\n(parity pinned by the same services/api test as the other QPU enums).",
+        "enum": [
+          "vendor_rate_card",
+          "free_tier_allowance"
+        ],
+        "title": "QpuEstimateBasis",
+        "type": "string"
+      },
+      "QpuProvider": {
+        "description": "Hardware access route, not the device vendor (IonQ via Braket is `braket`).",
+        "enum": [
+          "ibm",
+          "braket"
+        ],
+        "title": "QpuProvider",
+        "type": "string"
+      },
+      "QpuRunRecord": {
+        "additionalProperties": false,
+        "description": "Provider-attested hardware run \u2014 the /v1 shape for the durable qpu_run\nseam. Its storage lands in the follow-up migration PR (deploys migrate\nbefore rollout, so the contract ships first); until that lands no endpoint\nreturns it. `raw_counts` is exactly what the provider returned \u2014 raw,\nnever averaged or corrected in place.",
+        "properties": {
+          "artifact_version_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Artifact Version Id"
+          },
+          "completed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Completed At"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "device_id": {
+            "title": "Device Id",
+            "type": "string"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Error"
+          },
+          "estimate_basis": {
+            "$ref": "#/components/schemas/QpuEstimateBasis"
+          },
+          "estimated_total_usd": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Estimated Total Usd"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "provider": {
+            "$ref": "#/components/schemas/QpuProvider"
+          },
+          "provider_job_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Provider Job Id"
+          },
+          "rate_confirmed_on": {
+            "title": "Rate Confirmed On",
+            "type": "string"
+          },
+          "rate_source": {
+            "title": "Rate Source",
+            "type": "string"
+          },
+          "raw_counts": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "type": "integer"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Raw Counts"
+          },
+          "shots": {
+            "minimum": 1,
+            "title": "Shots",
+            "type": "integer"
+          },
+          "source_fingerprint": {
+            "title": "Source Fingerprint",
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/QpuRunStatus"
+          },
+          "submitted_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Submitted At"
+          },
+          "user_id": {
+            "format": "uuid",
+            "title": "User Id",
+            "type": "string"
+          },
+          "workspace_id": {
+            "format": "uuid",
+            "title": "Workspace Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "workspace_id",
+          "user_id",
+          "provider",
+          "device_id",
+          "shots",
+          "status",
+          "source_fingerprint",
+          "estimate_basis",
+          "rate_source",
+          "rate_confirmed_on",
+          "created_at"
+        ],
+        "title": "QpuRunRecord",
+        "type": "object"
+      },
+      "QpuRunStatus": {
+        "description": "Lifecycle of a durable qpu_run record. Values mirror the provider-side\nmajorana_qpu.QpuJobStatus (parity is pinned by a test in services/api) and\nwill match the qpu_run storage CHECK constraint in the follow-up migration\nPR \u2014 the contract ships first because deploys migrate before rollout.",
+        "enum": [
+          "queued",
+          "running",
+          "done",
+          "error",
+          "cancelled"
+        ],
+        "title": "QpuRunStatus",
+        "type": "string"
+      },
       "ReferenceProblem": {
         "additionalProperties": false,
         "description": "The combinatorial instance the `brute_force` check enumerates.",

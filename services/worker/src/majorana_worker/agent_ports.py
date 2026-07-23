@@ -1344,10 +1344,16 @@ class SemanticCandidateReviewer:
                 reason_code="semantic_ready_with_advisory",
             )
         if critic.failed_checks == ["critic_output_schema"]:
+            # The critic never actually judged this candidate (twice-malformed
+            # output — see the fabricated verdict in _primitives.critic). That is
+            # a verifier failure, never READY: the seeded-mistakes matrix pins
+            # v2-05 to exactly this shape.
             return SemanticReviewResult(
-                decision=SemanticReviewDecision.READY,
+                decision=SemanticReviewDecision.INCONCLUSIVE,
                 critic=payload,
-                reason_code="semantic_reviewer_unavailable_advisory",
+                failure_class=VerificationFailureClass.VERIFIER_FAILURE,
+                retry_target=RetryTarget.VERIFICATION,
+                reason_code="semantic_reviewer_malformed",
             )
         if critic.confidence == "low":
             return SemanticReviewResult(
@@ -1440,13 +1446,19 @@ class SemanticCandidateReviewer:
     def _advisory_only(critic: _CriticOutput) -> bool:
         """Return true when the LLM did not establish a blocking defect.
 
-        This deliberately mirrors the reference app's standard-mode behaviour:
-        a low-confidence opinion, a requested recheck, or a minor finding is a
-        report annotation.  It must not turn a successfully executed circuit
-        into a repair loop.  Major/blocking findings still use the typed repair
-        route below.
+        A minor finding held with real confidence is a report annotation; it
+        must not turn a successfully executed circuit into a repair loop.
+        But a review the critic itself marked low-confidence, or one that asks
+        for a recheck, has not established anything — treating it as advisory
+        would mint READY from admitted uncertainty, so those fall through to
+        the INCONCLUSIVE arms below (retry_target=verification, never a code
+        repair).  Major/blocking findings still use the typed repair route.
         """
-        return critic.severity in {"none", "minor"}
+        return (
+            critic.severity in {"none", "minor"}
+            and critic.confidence != "low"
+            and not critic.required_recheck
+        )
 
     @staticmethod
     def _is_plan_defect(critic: _CriticOutput) -> bool:
@@ -1558,7 +1570,9 @@ class StrictEvidenceVerifier:
                     else semantic.failure_class or VerificationFailureClass.EVIDENCE_GAP
                 ),
                 retry_target=(
-                    RetryTarget.NONE
+                    # A verifier crash is the one INCONCLUSIVE cause a retry of
+                    # verification itself can cure; a capability limit is not.
+                    RetryTarget.VERIFICATION
                     if errors
                     else RetryTarget.NONE
                     if capability_limited
@@ -1783,6 +1797,8 @@ class RepoArtifactMaterializer:
         parent_artifact_id: UUID | None,
         title: str,
         allow_inconclusive: bool = False,
+        parent_artifact_version_id: UUID | None = None,
+        parent_artifact_fingerprint: str | None = None,
     ) -> None:
         self._scope = scope
         self._session = session
@@ -1790,6 +1806,8 @@ class RepoArtifactMaterializer:
         self._parent_artifact_id = parent_artifact_id
         self._title = title
         self._allow_inconclusive = allow_inconclusive
+        self._parent_artifact_version_id = parent_artifact_version_id
+        self._parent_artifact_fingerprint = parent_artifact_fingerprint
 
     async def materialize(
         self,
@@ -1820,7 +1838,17 @@ class RepoArtifactMaterializer:
         ):
             raise ValueError("conversion fingerprint/execution binding mismatch")
         artifact_id = self._parent_artifact_id
-        if artifact_id is None:
+        # A run may use a saved Vault version as context while producing edited
+        # source. Appending that changed source to the same artifact would move
+        # the durable evidence boundary and make the parent simulation/grade
+        # appear to belong to the edit. Fork only when the candidate fingerprint
+        # differs from the exact version the run consumed; an unchanged rerun
+        # remains a new evidence version on the same artifact.
+        save_as_copy = (
+            self._parent_artifact_id is not None
+            and self._parent_artifact_fingerprint != candidate.source_fingerprint
+        )
+        if artifact_id is None or save_as_copy:
             artifact = await artifacts_repo.create_artifact(
                 self._scope,
                 self._session,
@@ -1828,6 +1856,7 @@ class RepoArtifactMaterializer:
                 title=self._title[:200],
                 family=plan.algorithm,
                 framework=candidate.framework,
+                parent_artifact_id=self._parent_artifact_id if save_as_copy else None,
             )
             artifact_id = artifact.id
         qasm = conversion.qasm if conversion and conversion.status == "available" else None
@@ -1863,59 +1892,70 @@ class RepoArtifactMaterializer:
         unavailable_checks = [
             check for check in checks if check["result"] in {"skipped", "unavailable", "error"}
         ]
+        metadata: dict[str, object] = {
+            "source": "agent_candidate",
+            "candidate_id": str(candidate.candidate_id),
+            "candidate_revision": candidate.revision,
+            "source_fingerprint": candidate.source_fingerprint,
+            "execution_id": str(execution.execution_id),
+            "verification_attempt_id": str(verification.attempt_id),
+            "semantic_review_id": str(review.review_id),
+            "canonical_representation": "framework_code",
+            "openqasm_role": "interchange" if qasm else "unavailable",
+            "verification_summary": {
+                "verified": verification.decision is VerifierDecision.PASS,
+                "decision": verification.decision.value,
+                "evidence_strength": strength.value,
+                "reason_code": verification.reason_code,
+                "semantic_review_decision": review.decision.value,
+                "candidate_defect_observed": verification.candidate_defect_observed,
+                "failure_class": (
+                    verification.failure_class.value if verification.failure_class else None
+                ),
+                "retry_target": verification.retry_target.value,
+                "checks": checks,
+                "failed_checks": failed_checks,
+                "unavailable_checks": unavailable_checks,
+                "semantic_review": {
+                    "decision": review.decision.value,
+                    "reason_code": review.reason_code,
+                    "confidence": review.confidence,
+                    "severity": review.severity,
+                    "summary": critic.get("summary"),
+                },
+                "residual_risks": residual_risks,
+                "unverified_claims": verification.unverified_claims,
+            },
+            "export_manifest": {
+                "verification_decision": verification.decision.value,
+                "warning": (
+                    f"This OpenQASM export cannot embed the artifact's "
+                    f"{verification.decision.value.upper()} verification state; "
+                    "retain this manifest with the exported file."
+                    if qasm
+                    and verification.decision
+                    in {VerifierDecision.INCONCLUSIVE, VerifierDecision.FAIL}
+                    else None
+                ),
+            },
+        }
+        if save_as_copy:
+            metadata["provenance"] = {
+                "kind": "save_as_copy",
+                "parent_artifact_id": str(self._parent_artifact_id),
+                "parent_artifact_version_id": (
+                    str(self._parent_artifact_version_id)
+                    if self._parent_artifact_version_id is not None
+                    else None
+                ),
+            }
         version = await artifacts_repo.create_version(
             self._scope,
             self._session,
             artifact_id,
             qasm_version="3.0" if qasm else None,
             qasm=qasm,
-            metadata={
-                "source": "agent_candidate",
-                "candidate_id": str(candidate.candidate_id),
-                "candidate_revision": candidate.revision,
-                "source_fingerprint": candidate.source_fingerprint,
-                "execution_id": str(execution.execution_id),
-                "verification_attempt_id": str(verification.attempt_id),
-                "semantic_review_id": str(review.review_id),
-                "canonical_representation": "framework_code",
-                "openqasm_role": "interchange" if qasm else "unavailable",
-                "verification_summary": {
-                    "verified": verification.decision is VerifierDecision.PASS,
-                    "decision": verification.decision.value,
-                    "evidence_strength": strength.value,
-                    "reason_code": verification.reason_code,
-                    "semantic_review_decision": review.decision.value,
-                    "candidate_defect_observed": verification.candidate_defect_observed,
-                    "failure_class": (
-                        verification.failure_class.value if verification.failure_class else None
-                    ),
-                    "retry_target": verification.retry_target.value,
-                    "checks": checks,
-                    "failed_checks": failed_checks,
-                    "unavailable_checks": unavailable_checks,
-                    "semantic_review": {
-                        "decision": review.decision.value,
-                        "reason_code": review.reason_code,
-                        "confidence": review.confidence,
-                        "severity": review.severity,
-                        "summary": critic.get("summary"),
-                    },
-                    "residual_risks": residual_risks,
-                    "unverified_claims": verification.unverified_claims,
-                },
-                "export_manifest": {
-                    "verification_decision": verification.decision.value,
-                    "warning": (
-                        f"This OpenQASM export cannot embed the artifact's "
-                        f"{verification.decision.value.upper()} verification state; "
-                        "retain this manifest with the exported file."
-                        if qasm
-                        and verification.decision
-                        in {VerifierDecision.INCONCLUSIVE, VerifierDecision.FAIL}
-                        else None
-                    ),
-                },
-            },
+            metadata=metadata,
             code=candidate.source,
             code_lang=candidate.framework.value,
             fingerprint=candidate.source_fingerprint,

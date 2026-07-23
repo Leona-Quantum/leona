@@ -35,6 +35,8 @@ from majorana_agent import (
 )
 from majorana_contracts.events import run_event_adapter
 from majorana_llm import LLMClient, LLMRequest, QUANTUM_AGENT_SYSTEM_PROMPT, default_llm, model_for
+from majorana_qpu import QpuRunJobPayload, submission_block_reason
+from pydantic import ValidationError
 from majorana_sandbox import LocalSubprocessSandbox, Sandbox, VercelSandbox
 from opentelemetry import metrics
 
@@ -45,7 +47,7 @@ from majorana_api.catalog_bootstrap_manifest import BootstrapManifestSource
 from majorana_api.catalog_import_fixtures import LocalFixtureSource
 from majorana_api.catalog_import_sources import ImportSource
 from majorana_api.db import AsyncSession
-from majorana_api.jobs import CATALOG_IMPORT_JOB_KIND, RUN_EXECUTE_JOB_KIND
+from majorana_api.jobs import CATALOG_IMPORT_JOB_KIND, QPU_RUN_JOB_KIND, RUN_EXECUTE_JOB_KIND
 from majorana_api.orm import ImportJob
 from majorana_api.repos import catalog_import as catalog_import_repo
 from majorana_api.repos import runs as runs_repo
@@ -263,9 +265,14 @@ async def handle_run_execute(
     run_id = uuid.UUID(payload["run_id"])
     run = await runs_repo.get_run(scope, session, run_id)
     parent_artifact_id = None
+    parent_artifact_version_id = run.artifact_version_id
+    parent_artifact_fingerprint = None
     if run.artifact_version_id is not None:
         version = await artifacts_repo.get_version(scope, session, run.artifact_version_id)
         parent_artifact_id = version.artifact_id
+        # Provenance only — contracts 2.0.0 forbids treating a prior artifact
+        # version as a correctness reference; the fingerprint decides forking.
+        parent_artifact_fingerprint = version.fingerprint
     ctx = RunContext(
         run_id=run_id,
         task_prompt=run.task_prompt,
@@ -303,6 +310,8 @@ async def handle_run_execute(
                     llm=provider,
                     sandbox=sandbox or _default_sandbox(),
                     parent_artifact_id=parent_artifact_id,
+                    parent_artifact_version_id=parent_artifact_version_id,
+                    parent_artifact_fingerprint=parent_artifact_fingerprint,
                 )
     except TimeoutError:
         # The stage coroutine was cancelled mid-flight; reset the session and
@@ -709,6 +718,8 @@ async def _handle_agent_execution(
     llm: LLMClient,
     sandbox: Sandbox,
     parent_artifact_id: uuid.UUID | None,
+    parent_artifact_version_id: uuid.UUID | None = None,
+    parent_artifact_fingerprint: str | None = None,
 ) -> RunStatus:
     status = await run_store.current_status()
     if status not in {RunStatus.QUEUED, RunStatus.RUNNING}:
@@ -749,6 +760,8 @@ async def _handle_agent_execution(
             session=session,
             run_id=ctx.run_id,
             parent_artifact_id=parent_artifact_id,
+            parent_artifact_version_id=parent_artifact_version_id,
+            parent_artifact_fingerprint=parent_artifact_fingerprint,
             title=ctx.task_prompt,
             allow_inconclusive=_enabled(
                 "MAJORANA_INCONCLUSIVE_MATERIALIZATION_ENABLED", default=True
@@ -1034,9 +1047,29 @@ async def handle_catalog_import(session: AsyncSession, payload: dict[str, Any]) 
     )
 
 
+async def handle_qpu_run(session: AsyncSession, payload: dict[str, Any]) -> None:
+    """Fail-closed half of the durable qpu_run seam (two-PR schema change).
+
+    No producer enqueues this kind yet — the submission endpoint refuses
+    before enqueue — so any row that reaches here fails permanently with a
+    typed reason instead of contacting a provider. The migration PR replaces
+    this body with submit/poll against the durable qpu_run record; the payload
+    validation and gate re-check (defense in depth — the API checked them too)
+    stay exactly as written."""
+    try:
+        QpuRunJobPayload.model_validate(payload)
+    except ValidationError as exc:
+        raise RuntimeError(f"qpu.run payload malformed: {exc}") from exc
+    reason = submission_block_reason()
+    if reason is not None:
+        raise RuntimeError(f"qpu.run blocked: {reason.value}")
+    raise RuntimeError("qpu.run blocked: durable_record_unavailable")
+
+
 HANDLERS: dict[str, JobHandler] = {
     RUN_EXECUTE_JOB_KIND: handle_run_execute,
     CATALOG_IMPORT_JOB_KIND: handle_catalog_import,
+    QPU_RUN_JOB_KIND: handle_qpu_run,
 }
 
 DEAD_LETTER_HANDLERS: dict[str, DeadLetterHandler] = {

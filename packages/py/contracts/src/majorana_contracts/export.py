@@ -36,6 +36,7 @@ EXPORTED = [
     models.PublicCatalogEntry,
     models.Run,
     models.VerificationRecord,
+    models.QpuRunRecord,
 ]
 
 

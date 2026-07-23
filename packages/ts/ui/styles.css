@@ -1561,6 +1561,12 @@
 }
 .mj-sidebar-chats {
   display: grid;
+  /* Grid items default to min-width: auto, so a long chat or artifact title
+     sizes the track to the text and the whole row runs past the rail — the
+     ellipsis on .mj-sidebar-chat-title never fires because its box is as wide
+     as its content. minmax(0, 1fr) caps the track at the rail width so the
+     min-width: 0 chain below can actually do its job. */
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--sp-1);
 }
 .mj-sidebar-chat-row {
@@ -4663,6 +4669,31 @@ div.mj-rail-row:hover {
   font-size: var(--fs-14);
   font-weight: 500;
 }
+/* Says when the diagram no longer describes the code in the Code tab. Sits
+   directly above the stage so the caveat and the drawing are read together. */
+.mj-circuit-sync {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  flex-wrap: wrap;
+  margin: 0;
+  padding: var(--sp-3) var(--sp-4);
+  border-top: 1px solid var(--border-0);
+  border-bottom: 1px solid var(--border-0);
+  border-left: 2px solid var(--warn);
+  background: var(--bg-2);
+  color: var(--text-0);
+  font-size: var(--fs-13);
+  line-height: 1.45;
+}
+.mj-circuit-sync span {
+  flex: 1 1 260px;
+  min-width: 0;
+}
+.mj-circuit-sync button {
+  flex: 0 0 auto;
+}
 .mj-circuit-stage {
   min-height: 310px;
   display: grid;
@@ -4784,6 +4815,267 @@ div.mj-rail-row:hover {
   border-top: 1px solid var(--border-0);
   color: var(--text-1);
   font-size: var(--fs-12);
+}
+.mj-studio-simulation-panel {
+  padding-bottom: var(--sp-5);
+}
+.mj-studio-simulation-panel .mj-studio-surface-head {
+  flex-wrap: wrap;
+}
+.mj-studio-simulation-panel .mj-studio-surface-head > .mj-mono-muted {
+  max-width: 100%;
+  margin-left: auto;
+  overflow-wrap: anywhere;
+  text-align: right;
+}
+.mj-studio-simulation-body {
+  display: grid;
+  gap: var(--sp-5);
+  padding: var(--sp-5);
+}
+.mj-studio-simulation-boundary,
+.mj-studio-simulation-unavailable {
+  margin: 0;
+  color: var(--text-1);
+  font-size: var(--fs-12);
+  line-height: 1.5;
+}
+.mj-studio-simulation-unavailable {
+  padding: var(--sp-3);
+  border: 1px solid var(--warn);
+  border-radius: var(--radius-control);
+  background: var(--bg-2);
+}
+.mj-studio-simulation-confirm {
+  display: grid;
+  gap: var(--sp-3);
+  padding: var(--sp-4);
+  border: 1px solid var(--border-0);
+  border-radius: var(--radius-card);
+  background: var(--bg-2);
+}
+.mj-studio-simulation-confirm p {
+  margin: 0;
+  color: var(--text-1);
+  font-size: var(--fs-12);
+  line-height: 1.5;
+}
+.mj-studio-simulation-confirm > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+}
+.mj-studio-hardware-lanes,
+.mj-studio-simulation-records {
+  display: grid;
+  gap: var(--sp-3);
+  padding-top: var(--sp-4);
+  border-top: 1px solid var(--border-0);
+}
+.mj-studio-hardware-lanes > .mj-section-label,
+.mj-studio-simulation-records-head .mj-section-label {
+  margin: 0;
+}
+.mj-studio-hardware-lanes > div {
+  display: grid;
+  gap: var(--sp-2);
+}
+.mj-studio-hardware-lanes button {
+  justify-self: start;
+}
+.mj-studio-hardware-lanes p {
+  margin: 0;
+  color: var(--text-1);
+  font-size: var(--fs-12);
+  line-height: 1.5;
+}
+.mj-studio-simulation-records-head,
+.mj-studio-simulation-record-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--sp-3);
+}
+.mj-studio-simulation-record {
+  display: grid;
+  gap: var(--sp-4);
+  padding: var(--sp-4);
+  border: 1px solid var(--border-0);
+  border-radius: var(--radius-card);
+  background: var(--bg-2);
+}
+.mj-studio-simulation-record-head strong {
+  color: var(--text-0);
+  font-size: var(--fs-13);
+  font-weight: 500;
+}
+.mj-studio-simulation-record-head .mj-mono-muted {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mj-studio-simulation-counts {
+  display: grid;
+  gap: var(--sp-2);
+}
+.mj-studio-simulation-counts .mj-section-label {
+  margin: 0;
+}
+.mj-studio-simulation-counts code {
+  display: block;
+  max-height: 160px;
+  overflow: auto;
+  padding: var(--sp-3);
+  border: 1px solid var(--border-0);
+  border-radius: var(--radius-control);
+  color: var(--text-0);
+  background: var(--bg-0);
+  font-family: var(--font-mono);
+  font-size: var(--fs-12);
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+/* ---------- simulation result visuals ---------- */
+.mj-sim-headline {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--sp-3);
+}
+.mj-sim-headline-stat {
+  display: grid;
+  gap: var(--sp-1);
+}
+.mj-sim-headline-stat .mj-section-label {
+  margin: 0;
+}
+.mj-sim-headline-stat strong {
+  color: var(--text-0);
+  font-size: var(--fs-20);
+  font-weight: 500;
+}
+.mj-sim-headline-stat strong code {
+  font-family: var(--font-mono);
+}
+.mj-sim-reading {
+  margin: 0;
+  color: var(--text-1);
+  font-size: var(--fs-12);
+  line-height: 1.5;
+}
+.mj-sim-chart {
+  display: grid;
+  gap: var(--sp-2);
+}
+.mj-sim-chart .mj-section-label {
+  margin: 0;
+}
+.mj-sim-chart-rows {
+  display: grid;
+  gap: 2px;
+}
+.mj-sim-chart-row {
+  display: grid;
+  grid-template-columns: minmax(4ch, auto) 1fr minmax(6ch, auto);
+  align-items: center;
+  gap: var(--sp-3);
+  min-height: 16px;
+}
+.mj-sim-chart-row code {
+  color: var(--text-1);
+  font-family: var(--font-mono);
+  font-size: var(--fs-12);
+}
+.mj-sim-chart-row.is-peak code,
+.mj-sim-chart-row.is-peak .mj-sim-chart-value {
+  color: var(--text-0);
+  font-weight: 500;
+}
+.mj-sim-chart-track {
+  position: relative;
+  overflow: hidden;
+  height: 10px;
+  border: 1px solid var(--border-0);
+  border-radius: 4px;
+  background: var(--bg-0);
+}
+.mj-sim-chart-fill {
+  display: block;
+  height: 100%;
+  border-radius: 3px;
+  background: var(--mono-tint);
+}
+.mj-sim-chart-row.is-peak .mj-sim-chart-fill {
+  background: var(--accent);
+}
+.mj-sim-chart-row.is-other .mj-sim-chart-fill {
+  background: var(--border-0);
+}
+.mj-sim-chart-value {
+  color: var(--text-1);
+  font-size: var(--fs-12);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  white-space: nowrap;
+}
+.mj-sim-details {
+  display: grid;
+  gap: var(--sp-3);
+}
+.mj-sim-details > summary {
+  width: fit-content;
+  cursor: pointer;
+  color: var(--text-1);
+  font-size: var(--fs-12);
+  user-select: none;
+}
+.mj-sim-details > summary:hover {
+  color: var(--text-0);
+}
+/* ---------- QPU hardware lane ---------- */
+.mj-qpu-lane {
+  display: grid;
+  gap: var(--sp-3);
+}
+.mj-qpu-lane > button {
+  justify-self: start;
+}
+.mj-qpu-lane p {
+  margin: 0;
+  color: var(--text-1);
+  font-size: var(--fs-12);
+  line-height: 1.5;
+}
+.mj-qpu-flow {
+  display: grid;
+  gap: var(--sp-3);
+  padding: var(--sp-4);
+  border: 1px solid var(--border-0);
+  border-radius: var(--radius-card);
+  background: var(--bg-2);
+}
+.mj-qpu-estimate {
+  display: grid;
+  gap: var(--sp-2);
+}
+.mj-qpu-disclaimer,
+.mj-qpu-note {
+  margin: 0;
+  color: var(--text-1);
+  font-size: var(--fs-12);
+  line-height: 1.5;
+}
+.mj-qpu-source {
+  margin: 0;
+  font-size: var(--fs-12);
+}
+.mj-qpu-source a {
+  color: var(--accent);
+}
+.mj-qpu-flow > .mj-primary-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
 }
 .mj-studio-version-panel {
   padding-bottom: var(--sp-5);

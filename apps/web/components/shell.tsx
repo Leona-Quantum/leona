@@ -23,6 +23,7 @@ import {
   archiveChat,
   assignChatToRemoteFolder,
   assignChatToFolder,
+  collapseConversationChats,
   createChatFolder,
   createRemoteChatFolder,
   daysUntilArchiveDeletion,
@@ -92,7 +93,9 @@ export function Shell({
     let active = true;
 
     async function refreshWorkspace() {
-      const localHistory = loadChatHistory({ includeDemo: demoMode, includeArchived: true });
+      const localHistory = collapseConversationChats(
+        loadChatHistory({ includeDemo: demoMode, includeArchived: true }),
+      );
       const localActiveChats = localHistory.filter((chat) => !chat.archivedAt);
       setChatFolders(loadChatFolders());
       setArtifactFolders(loadArtifactFolders());
@@ -131,7 +134,7 @@ export function Shell({
               : local,
           );
         }
-        const mergedChats = [...byId.values()].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+        const mergedChats = collapseConversationChats([...byId.values()]);
         const remoteArtifacts = Array.isArray(artifactPayload) ? artifactPayload.flatMap(artifactFromResource).filter((artifact) => !isArtifactDeleted(artifact.id)) : [];
         const storedArtifacts = loadLibraryArtifacts({ includeArchived: true });
         const artifactById = new Map([...remoteArtifacts, ...storedArtifacts].map((artifact) => [artifact.id, artifact]));
@@ -418,11 +421,11 @@ function WorkspaceSidebar({
       </div>
 
       <nav className="mj-sidebar-surface-switch" aria-label={copy.surfaceSwitch}>
-        <a className={surface === "run" ? "is-active" : ""} href={runHref} aria-current={surface === "run" ? "page" : undefined}>
+        <a className={surface === "run" ? "is-active" : ""} href={runHref} aria-current={surface === "run" ? "page" : undefined} aria-label={copy.run} title={copy.run}>
           <PlayIcon size={15} />
           <span className="mj-sidebar-copy">{copy.run}</span>
         </a>
-        <a className={surface === "studio" ? "is-active" : ""} href={studioHref} aria-current={surface === "studio" ? "page" : undefined}>
+        <a className={surface === "studio" ? "is-active" : ""} href={studioHref} aria-current={surface === "studio" ? "page" : undefined} aria-label={copy.studio} title={copy.studio}>
           <StudioIcon size={15} />
           <span className="mj-sidebar-copy">{copy.studio}</span>
         </a>
@@ -430,11 +433,11 @@ function WorkspaceSidebar({
 
       {surface === "run" ? (
         <div className="mj-sidebar-scroll">
-          <a className="mj-sidebar-new" href={runHref}>
+          <a className="mj-sidebar-new" href={runHref} aria-label={copy.newChat} title={copy.newChat}>
             <PlusIcon size={16} />
             <span className="mj-sidebar-copy">{copy.newChat}</span>
           </a>
-          <a className="mj-sidebar-library-link" href={demoMode ? "/demo?view=library" : "/library"}>
+          <a className="mj-sidebar-library-link" href={demoMode ? "/demo?view=library" : "/library"} aria-label={copy.library} title={copy.library}>
             <LibraryIcon size={16} />
             <span className="mj-sidebar-copy">{copy.library}</span>
           </a>
@@ -469,7 +472,7 @@ function WorkspaceSidebar({
                   </button>
                   {openFolders.has(folder.id) ? (
                     <div className="mj-sidebar-disclosure-items">
-                      {folderChats.length ? folderChats.map((chat) => <ChatRow key={chat.id} chat={chat} currentPath={currentPath} demoMode={demoMode} locale={locale} onArchive={onArchive} onDelete={(item) => setDeleteTarget({ kind: "chat", item })} onAssignFolder={assignFolder} onRename={onRenameChat} folders={folders} />) : <span className="mj-sidebar-empty">{copy.emptyProject}</span>}
+                      {folderChats.length ? folderChats.map((chat) => <ChatRow key={chat.id} chat={chat} currentPath={currentPath} demoMode={demoMode} locale={locale} onArchive={onArchive} onDelete={(item) => setDeleteTarget({ kind: "chat", item })} onAssignFolder={assignFolder} onRename={onRenameChat} folders={folders} />) : <span className="mj-sidebar-empty mj-sidebar-copy">{copy.emptyProject}</span>}
                     </div>
                   ) : null}
                 </div>
@@ -479,18 +482,18 @@ function WorkspaceSidebar({
 
           <SidebarSectionHeader label={copy.chats} />
           <nav className="mj-sidebar-chats" aria-label={copy.recentChats} {...dropProps("chat", "chat-standalone", undefined)}>
-            {standaloneChats.length ? standaloneChats.map((chat) => <ChatRow key={chat.id} chat={chat} currentPath={currentPath} demoMode={demoMode} locale={locale} onArchive={onArchive} onDelete={(item) => setDeleteTarget({ kind: "chat", item })} onAssignFolder={assignFolder} onRename={onRenameChat} folders={folders} />) : <span className="mj-sidebar-empty">{copy.emptyChats}</span>}
+            {standaloneChats.length ? standaloneChats.map((chat) => <ChatRow key={chat.id} chat={chat} currentPath={currentPath} demoMode={demoMode} locale={locale} onArchive={onArchive} onDelete={(item) => setDeleteTarget({ kind: "chat", item })} onAssignFolder={assignFolder} onRename={onRenameChat} folders={folders} />) : <span className="mj-sidebar-empty mj-sidebar-copy">{copy.emptyChats}</span>}
           </nav>
 
           <ArchiveSection chats={archivedChats} currentPath={currentPath} locale={locale} demoMode={demoMode} onRestore={onRestore} onDelete={onDeleteChat} />
         </div>
       ) : (
         <div className="mj-sidebar-scroll">
-          <a className="mj-sidebar-new" href={demoMode ? studioHref : "/studio?new=1"}>
+          <a className="mj-sidebar-new" href={demoMode ? studioHref : "/studio?new=1"} aria-label={copy.newArtifact} title={copy.newArtifact}>
             <PlusIcon size={16} />
             <span className="mj-sidebar-copy">{copy.newArtifact}</span>
           </a>
-          <a className="mj-sidebar-library-link" href={demoMode ? "/demo?view=library" : "/library"}>
+          <a className="mj-sidebar-library-link" href={demoMode ? "/demo?view=library" : "/library"} aria-label={copy.library} title={copy.library}>
             <LibraryIcon size={16} />
             <span className="mj-sidebar-copy">{copy.library}</span>
           </a>
@@ -525,7 +528,7 @@ function WorkspaceSidebar({
                   </button>
                   {openFolders.has(folder.id) ? (
                     <div className="mj-sidebar-disclosure-items">
-                      {folderArtifacts.length ? folderArtifacts.map((artifact) => <ArtifactRow key={artifact.id} artifact={artifact} currentPath={currentPath} folders={artifactFolders} onAssignFolder={assignArtifact} onArchive={onArchiveArtifact} onDelete={(item) => setDeleteTarget({ kind: "artifact", item })} onRename={onRenameArtifact} locale={locale} />) : <span className="mj-sidebar-empty">{copy.emptyProject}</span>}
+                      {folderArtifacts.length ? folderArtifacts.map((artifact) => <ArtifactRow key={artifact.id} artifact={artifact} currentPath={currentPath} folders={artifactFolders} onAssignFolder={assignArtifact} onArchive={onArchiveArtifact} onDelete={(item) => setDeleteTarget({ kind: "artifact", item })} onRename={onRenameArtifact} locale={locale} />) : <span className="mj-sidebar-empty mj-sidebar-copy">{copy.emptyProject}</span>}
                     </div>
                   ) : null}
                 </div>
@@ -535,10 +538,10 @@ function WorkspaceSidebar({
 
           <SidebarSectionHeader label={copy.artifacts} />
           <nav className="mj-sidebar-chats" aria-label={copy.artifacts} {...dropProps("artifact", "artifact-standalone", undefined)}>
-            {standaloneArtifacts.length ? standaloneArtifacts.map((artifact) => <ArtifactRow key={artifact.id} artifact={artifact} currentPath={currentPath} folders={artifactFolders} onAssignFolder={assignArtifact} onArchive={onArchiveArtifact} onDelete={(item) => setDeleteTarget({ kind: "artifact", item })} onRename={onRenameArtifact} locale={locale} />) : <span className="mj-sidebar-empty">{copy.emptyArtifacts}</span>}
+            {standaloneArtifacts.length ? standaloneArtifacts.map((artifact) => <ArtifactRow key={artifact.id} artifact={artifact} currentPath={currentPath} folders={artifactFolders} onAssignFolder={assignArtifact} onArchive={onArchiveArtifact} onDelete={(item) => setDeleteTarget({ kind: "artifact", item })} onRename={onRenameArtifact} locale={locale} />) : <span className="mj-sidebar-empty mj-sidebar-copy">{copy.emptyArtifacts}</span>}
           </nav>
           <ArtifactArchiveSection artifacts={archivedArtifacts} locale={locale} onRestore={onRestoreArtifact} onDelete={onDeleteArtifact} />
-          <a className="mj-sidebar-library-link mj-sidebar-library-link--bottom" href={demoMode ? "/demo?view=library" : "/library"}>
+          <a className="mj-sidebar-library-link mj-sidebar-library-link--bottom" href={demoMode ? "/demo?view=library" : "/library"} aria-label={copy.viewLibrary} title={copy.viewLibrary}>
             <LibraryIcon size={16} />
             <span className="mj-sidebar-copy">{copy.viewLibrary}</span>
           </a>
@@ -926,6 +929,7 @@ function chatFromRun(value: unknown): ChatSummary[] {
     prompt: run.task_prompt,
     createdAt: typeof run.created_at === "string" ? run.created_at : new Date().toISOString(),
     status,
+    conversationId: typeof run.conversation_id === "string" ? run.conversation_id : undefined,
     framework: typeof run.framework === "string" ? run.framework.toUpperCase() : undefined,
     folderId: typeof run.folder_id === "string" ? run.folder_id : undefined,
   }];

@@ -69,7 +69,16 @@ def assess_evidence_sufficiency(
     # such algorithm as unsupported made correct Grover/QFT runs permanently
     # INCONCLUSIVE despite structural, contract, semantic, statistical, and
     # trusted re-execution checks all passing.
-    capability_supported = bool(required) or reported_counts
+    #
+    # The distinction that matters: `statistical` compares reported counts to the
+    # ideal distribution — theory.  `statistical_native` compares them to a
+    # trusted re-execution of the same circuit — self-consistency.  When the
+    # theory check is incapacitated (feed-forward, over-ceiling widths), native
+    # agreement alone proves the counts were not fabricated, not that the
+    # circuit computes what was asked; that is a capability limit to disclose,
+    # never a PASS.
+    theory_backed = "pass" in results.get(VerificationMethod.STATISTICAL.value, set())
+    capability_supported = bool(required) or (reported_counts and theory_backed)
     if reported_counts:
         required.append(
             (
@@ -93,10 +102,7 @@ def assess_evidence_sufficiency(
     if not capability_supported:
         missing.insert(
             0,
-            (
-                f"no dedicated property verifier or trusted count evidence for "
-                f"{algorithm.value}"
-            ),
+            (f"no dedicated property verifier or trusted count evidence for {algorithm.value}"),
         )
 
     return EvidenceSufficiency(

@@ -457,3 +457,31 @@ class UsageKind(StrEnum):
     RUN = "run"
     LLM_TOKENS = "llm_tokens"
     SANDBOX_SECONDS = "sandbox_seconds"
+
+
+class QpuProvider(StrEnum):
+    """Hardware access route, not the device vendor (IonQ via Braket is `braket`)."""
+
+    IBM = "ibm"
+    BRAKET = "braket"
+
+
+class QpuEstimateBasis(StrEnum):
+    """Where a pre-run cost figure came from. Mirrors majorana_qpu.EstimateBasis
+    (parity pinned by the same services/api test as the other QPU enums)."""
+
+    VENDOR_RATE_CARD = "vendor_rate_card"
+    FREE_TIER_ALLOWANCE = "free_tier_allowance"
+
+
+class QpuRunStatus(StrEnum):
+    """Lifecycle of a durable qpu_run record. Values mirror the provider-side
+    majorana_qpu.QpuJobStatus (parity is pinned by a test in services/api) and
+    will match the qpu_run storage CHECK constraint in the follow-up migration
+    PR — the contract ships first because deploys migrate before rollout."""
+
+    QUEUED = "queued"
+    RUNNING = "running"
+    DONE = "done"
+    ERROR = "error"
+    CANCELLED = "cancelled"

@@ -147,7 +147,68 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
     newDraft: string;
     copyCode: string;
     copied: string;
+    downloadExport: string;
     simulate: string;
+    simulation: string;
+    cpuLane: string;
+    cpuEligible: string;
+    cpuUnavailable: (reason: string) => string;
+    openSimulation: string;
+    simulationArtifactRequired: string;
+    cpuInvalidShots: (maximum: number) => string;
+    cpuInvalidSeed: (maximum: number) => string;
+    simulationPersistenceUnavailable: string;
+    cpuSimulationRecorded: string;
+    simulationFailed: string;
+    simulationBoundary: string;
+    simulationArtifact: string;
+    sourceFingerprint: string;
+    interchangeFingerprint: string;
+    simulationModel: string;
+    directSourceModel: string;
+    standardDecompositionModel: string;
+    simulator: string;
+    browserCpu: string;
+    runCpuSimulation: string;
+    rerunCpuSimulation: string;
+    rerunPrompt: string;
+    confirmRerun: string;
+    cancel: string;
+    hardwareLanes: string;
+    gpuSimulation: string;
+    qpuExecution: string;
+    gpuUnavailable: string;
+    qpuUnavailable: string;
+    simulationResults: string;
+    simulationNoRecords: string;
+    simulationRecord: string;
+    artifactVersion: string;
+    operations: string;
+    resultCounts: string;
+    simulationDistribution: string;
+    simulationPeak: string;
+    simulationOtherBar: (states: number) => string;
+    simulationRecordSummary: (shots: string, qubits: number) => string;
+    simulationDetails: string;
+    simulationContextDetails: string;
+    readingConcentrated: (state: string, share: string) => string;
+    readingPaired: (first: string, second: string, share: string) => string;
+    readingSpread: (states: number, state: string, share: string) => string;
+    hardwareCatalogLoading: string;
+    hardwareCatalogUnavailable: string;
+    hardwareDevice: string;
+    hardwareAccessFree: string;
+    hardwareAccessOnDemand: string;
+    hardwareTaskFee: string;
+    hardwareShotFees: (shots: string) => string;
+    hardwareEstimatedTotal: string;
+    hardwareRateConfirmed: (date: string) => string;
+    hardwareRateSource: string;
+    hardwareEstimating: string;
+    hardwareEstimateFailed: string;
+    hardwareRequestSubmission: string;
+    hardwareVerifiedRequired: string;
+    hardwareBlockedReason: (reason: string) => string;
     verifySave: string;
     starting: string;
     view: string;
@@ -236,6 +297,13 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
     showInspector: string;
     circuitRestored: string;
     circuitNotRebuildable: string;
+    canvasOutOfDate: string;
+    canvasBeyondBuilder: string;
+    rebuildFromCode: string;
+    rebuiltFromCode: string;
+    applyOverwritesEditedCode: string;
+    applyOverwritesUnrepresentableCode: string;
+    confirmApply: string;
   };
 }> = {
   en: {
@@ -399,7 +467,79 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
       newDraft: "A clean draft for exploring a circuit before it enters Vault.",
       copyCode: "Copy code",
       copied: "Copied",
+      downloadExport: "Download export",
       simulate: "Simulate",
+      simulation: "Simulation",
+      cpuLane: "CPU lane",
+      cpuEligible: "CPU eligible",
+      cpuUnavailable: (reason) => ({
+        artifact_required: "Save this draft to Vault before creating an artifact-owned simulation record.",
+        framework_unavailable: "CPU execution is available only for Qiskit, PennyLane, and Cirq source.",
+        source_unavailable: "This source is outside the bounded CPU simulation model. No result will be invented.",
+        source_limit: "This source is too large for the bounded CPU simulation lane.",
+        qubit_limit: "This circuit is wider than the browser simulation lane can run on your plan.",
+        operation_limit: "This source exceeds the bounded CPU operation limit.",
+      }[reason] ?? "CPU simulation is unavailable for this source."),
+      openSimulation: "Open simulation",
+      simulationArtifactRequired: "Save this draft to Vault before creating an artifact-owned simulation record.",
+      cpuInvalidShots: (maximum) => `Shots must be a whole number from 1 to ${maximum.toLocaleString("en-US")}.`,
+      cpuInvalidSeed: (maximum) => `Seed must be a whole number from 0 to ${maximum.toLocaleString("en-US")}.`,
+      simulationPersistenceUnavailable: "The CPU result was not recorded because this browser cannot store local simulation records.",
+      cpuSimulationRecorded: "CPU simulation recorded in this browser. It did not start a Nala Run or verify this artifact.",
+      simulationFailed: "CPU simulation failed before a record could be created.",
+      simulationBoundary: "This bounded statevector runs in this browser from the parsed gate model. It records the exact draft fingerprint; unsaved edits do not update a Vault version. Its local record is not verification, a Nala Run, or hardware execution.",
+      simulationArtifact: "Artifact",
+      sourceFingerprint: "Source fingerprint",
+      interchangeFingerprint: "Interchange fingerprint",
+      simulationModel: "Execution model",
+      directSourceModel: "Direct parsed source",
+      standardDecompositionModel: "OpenQASM standard-gate decomposition · global-phase caveat",
+      simulator: "Simulator",
+      browserCpu: "Browser CPU",
+      runCpuSimulation: "Run CPU simulation",
+      rerunCpuSimulation: "Run CPU simulation again",
+      rerunPrompt: "This exact source already has a local simulation record. Confirm to create another record; it will not overwrite the earlier result.",
+      confirmRerun: "Confirm rerun",
+      cancel: "Cancel",
+      hardwareLanes: "Hardware lanes",
+      gpuSimulation: "GPU simulation",
+      qpuExecution: "QPU execution",
+      gpuUnavailable: "GPU simulation is planned. It remains unavailable until provider, cost, and security work are complete.",
+      qpuUnavailable: "QPU execution is planned. It remains unavailable until a provider, estimate, confirmation, and spend policy are in place.",
+      simulationResults: "Simulation records",
+      simulationNoRecords: "No CPU simulation record exists for this artifact in this browser.",
+      simulationRecord: "CPU simulation record",
+      artifactVersion: "Base Vault version",
+      operations: "Operations",
+      resultCounts: "All sampled counts",
+      simulationDistribution: "Sampled distribution",
+      simulationPeak: "Peak state",
+      simulationOtherBar: (states) => `${states} more states`,
+      simulationRecordSummary: (shots, qubits) => `${shots} shots · ${qubits} qubits`,
+      simulationDetails: "Record details",
+      simulationContextDetails: "Provenance & eligibility details",
+      readingConcentrated: (state, share) => `${share} of shots landed on |${state}⟩ — a single dominant outcome in this sample.`,
+      readingPaired: (first, second, share) => `Shots concentrated on |${first}⟩ and |${second}⟩ (${share} combined) — the correlated-pair signature.`,
+      readingSpread: (states, state, share) => `${states} distinct outcomes in this sample; the most frequent was |${state}⟩ at ${share}.`,
+      hardwareCatalogLoading: "Loading the device catalog…",
+      hardwareCatalogUnavailable: "The QPU device catalog is unavailable because the control plane could not be reached.",
+      hardwareDevice: "Device",
+      hardwareAccessFree: "Free queue",
+      hardwareAccessOnDemand: "On-demand billing",
+      hardwareTaskFee: "Per-task fee",
+      hardwareShotFees: (shots) => `Shot fees (${shots} shots)`,
+      hardwareEstimatedTotal: "Estimated total",
+      hardwareRateConfirmed: (date) => `Vendor rate card, confirmed ${date}`,
+      hardwareRateSource: "Rate source",
+      hardwareEstimating: "Estimating…",
+      hardwareEstimateFailed: "The estimate is unavailable because the control plane could not be reached.",
+      hardwareRequestSubmission: "Request hardware submission",
+      hardwareVerifiedRequired: "Hardware submission will require a verified Vault version of this circuit.",
+      hardwareBlockedReason: (reason) => ({
+        submission_disabled: "Hardware submission is switched off in this deployment by the owner. The device, rates, and estimate above are exactly what a real submission will use.",
+        credentials_unconfigured: "No provider credentials are configured in this deployment, so nothing can be submitted.",
+        provider_dependency_missing: "The provider SDK is not installed in this deployment, so nothing can be submitted.",
+      }[reason] ?? "Hardware submission is unavailable in this deployment."),
       verifySave: "Verify & save",
       starting: "Starting…",
       view: "Studio view",
@@ -411,7 +551,7 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
       inspector: "Circuit inspector",
       liveDraft: "live draft",
       selectedGate: "Selected gate",
-      runContract: "Run contract",
+      runContract: "Verification contract",
       mode: "Mode",
       source: "Source",
       evidence: "Evidence",
@@ -424,7 +564,7 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
       shots: "Shots",
       seed: "Seed",
       seedAuto: "auto",
-      samplingNote: "Shots and seed reach the plan and the generated code. Leave the seed blank to let the planner choose.",
+      samplingNote: "CPU simulation uses these inputs; Verify & save passes them through to the run planner. Leave seed blank to record a browser-chosen seed.",
       execute: "Execute",
       existingVersion: "Existing version",
       newDraftSource: "New draft",
@@ -502,6 +642,13 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
       showInspector: "Inspector",
       circuitRestored: "Circuit loaded from the saved artifact. Edits stay in this draft until you verify & save.",
       circuitNotRebuildable: "This artifact's code goes beyond the visual builder — edit it in the Code tab.",
+      canvasOutOfDate: "The Code tab has changed since this diagram was drawn, so the diagram no longer shows what will run.",
+      canvasBeyondBuilder: "The code in the Code tab is outside what this editor can draw, so the diagram below is not a picture of it. The code is what runs.",
+      rebuildFromCode: "Rebuild from code",
+      rebuiltFromCode: "Diagram rebuilt from the code in the Code tab.",
+      applyOverwritesEditedCode: "The Code tab has changed since this diagram was drawn. Applying replaces that code with the diagram. Continue?",
+      applyOverwritesUnrepresentableCode: "The Code tab holds source this editor cannot draw. Applying replaces it with the diagram, and the diagram cannot reproduce it. Continue?",
+      confirmApply: "Replace the code",
     },
   },
   ja: {
@@ -665,7 +812,79 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
       newDraft: "ボールトに入れる前の回路を試すための新しい下書きです。",
       copyCode: "コードをコピー",
       copied: "コピー済み",
+      downloadExport: "エクスポートをダウンロード",
       simulate: "シミュレーション",
+      simulation: "シミュレーション",
+      cpuLane: "CPUレーン",
+      cpuEligible: "CPUで実行可能",
+      cpuUnavailable: (reason) => ({
+        artifact_required: "アーティファクトに紐づくシミュレーション記録を作成する前に、この下書きをボールトへ保存してください。",
+        framework_unavailable: "CPU実行はQiskit、PennyLane、Cirqのソースでのみ利用できます。",
+        source_unavailable: "このソースは限定CPUシミュレーションモデルの対象外です。結果は生成しません。",
+        source_limit: "このソースは限定CPUシミュレーションレーンには大きすぎます。",
+        qubit_limit: "この回路は、お使いのプランでブラウザシミュレーションを実行できる幅を超えています。",
+        operation_limit: "このソースは限定CPU操作数の上限を超えています。",
+      }[reason] ?? "このソースではCPUシミュレーションを利用できません。"),
+      openSimulation: "シミュレーションを開く",
+      simulationArtifactRequired: "アーティファクトに紐づくシミュレーション記録を作成する前に、この下書きをボールトへ保存してください。",
+      cpuInvalidShots: (maximum) => `ショット数は1から${maximum.toLocaleString("en-US")}までの整数にしてください。`,
+      cpuInvalidSeed: (maximum) => `シードは0から${maximum.toLocaleString("en-US")}までの整数にしてください。`,
+      simulationPersistenceUnavailable: "このブラウザにローカルのシミュレーション記録を保存できないため、CPU結果を記録しませんでした。",
+      cpuSimulationRecorded: "CPUシミュレーションをこのブラウザに記録しました。Nala実行の開始やアーティファクトの検証は行っていません。",
+      simulationFailed: "記録を作成する前にCPUシミュレーションが失敗しました。",
+      simulationBoundary: "解析済みの限定ゲートモデルから、このブラウザで状態ベクトルを実行します。正確な下書きフィンガープリントを記録しますが、未保存の編集はボールトバージョンを更新しません。ローカル記録は検証、Nala実行、ハードウェア実行ではありません。",
+      simulationArtifact: "アーティファクト",
+      sourceFingerprint: "ソースフィンガープリント",
+      interchangeFingerprint: "中間表現フィンガープリント",
+      simulationModel: "実行モデル",
+      directSourceModel: "直接解析したソース",
+      standardDecompositionModel: "OpenQASM標準ゲート分解 · グローバル位相の留意事項あり",
+      simulator: "シミュレータ",
+      browserCpu: "ブラウザCPU",
+      runCpuSimulation: "CPUシミュレーションを実行",
+      rerunCpuSimulation: "CPUシミュレーションをもう一度実行",
+      rerunPrompt: "この同一ソースにはすでにローカルのシミュレーション記録があります。確認すると、以前の結果を上書きせずに新しい記録を作成します。",
+      confirmRerun: "再実行を確認",
+      cancel: "キャンセル",
+      hardwareLanes: "ハードウェアレーン",
+      gpuSimulation: "GPUシミュレーション",
+      qpuExecution: "QPU実行",
+      gpuUnavailable: "GPUシミュレーションは計画中です。プロバイダー、コスト、セキュリティの作業が完了するまで利用できません。",
+      qpuUnavailable: "QPU実行は計画中です。プロバイダー、見積り、確認、利用ポリシーが整うまで利用できません。",
+      simulationResults: "シミュレーション記録",
+      simulationNoRecords: "このブラウザには、このアーティファクトのCPUシミュレーション記録がありません。",
+      simulationRecord: "CPUシミュレーション記録",
+      artifactVersion: "基準ボールトバージョン",
+      operations: "操作数",
+      resultCounts: "全サンプル測定値",
+      simulationDistribution: "サンプル分布",
+      simulationPeak: "ピーク状態",
+      simulationOtherBar: (states) => `他 ${states} 状態`,
+      simulationRecordSummary: (shots, qubits) => `${shots} ショット · ${qubits} 量子ビット`,
+      simulationDetails: "記録の詳細",
+      simulationContextDetails: "来歴と実行条件の詳細",
+      readingConcentrated: (state, share) => `ショットの${share}が |${state}⟩ に集中しました — このサンプルでは単一の支配的な結果です。`,
+      readingPaired: (first, second, share) => `ショットは |${first}⟩ と |${second}⟩ に集中（合計${share}）— 相関ペアの特徴です。`,
+      readingSpread: (states, state, share) => `このサンプルでは${states}種類の結果が観測され、最頻は |${state}⟩（${share}）でした。`,
+      hardwareCatalogLoading: "デバイスカタログを読み込み中…",
+      hardwareCatalogUnavailable: "コントロールプレーンに接続できないため、QPUデバイスカタログを利用できません。",
+      hardwareDevice: "デバイス",
+      hardwareAccessFree: "無料キュー",
+      hardwareAccessOnDemand: "オンデマンド課金",
+      hardwareTaskFee: "タスク料金",
+      hardwareShotFees: (shots) => `ショット料金（${shots} ショット）`,
+      hardwareEstimatedTotal: "見積もり合計",
+      hardwareRateConfirmed: (date) => `ベンダー料金表 · ${date} 確認`,
+      hardwareRateSource: "料金の出典",
+      hardwareEstimating: "見積もり中…",
+      hardwareEstimateFailed: "コントロールプレーンに接続できないため、見積もりを利用できません。",
+      hardwareRequestSubmission: "ハードウェア実行をリクエスト",
+      hardwareVerifiedRequired: "ハードウェア実行には、この回路の検証済みボールトバージョンが必要になります。",
+      hardwareBlockedReason: (reason) => ({
+        submission_disabled: "このデプロイメントでは、オーナーによりハードウェア実行が無効化されています。上記のデバイス・料金・見積もりは、実際の実行時にそのまま使用されるものです。",
+        credentials_unconfigured: "このデプロイメントにはプロバイダーの認証情報が設定されていないため、実行できません。",
+        provider_dependency_missing: "このデプロイメントにはプロバイダーSDKがインストールされていないため、実行できません。",
+      }[reason] ?? "このデプロイメントではハードウェア実行を利用できません。"),
       verifySave: "検証して保存",
       starting: "開始中…",
       view: "Studio表示",
@@ -677,7 +896,7 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
       inspector: "回路インスペクタ",
       liveDraft: "ライブ下書き",
       selectedGate: "選択中のゲート",
-      runContract: "実行コントラクト",
+      runContract: "検証コントラクト",
       evidencePhysical: "物理的根拠 — 物理が示すべき結果と照合済み",
       evidenceStructural: "構造的根拠 — 回答の形式のみを確認、物理は未検証",
       evidenceCaveats: "公開リファレンス — 留意事項つきで検証済み",
@@ -687,7 +906,7 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
       shots: "ショット数",
       seed: "シード",
       seedAuto: "自動",
-      samplingNote: "ショット数とシードはプランと生成コードに反映されます。シードを空欄にするとプランナーが選びます。",
+      samplingNote: "CPUシミュレーションはこれらの入力を使い、検証して保存は実行プランナーにそのまま渡します。シードを空欄にすると、ブラウザで選ばれたシードを記録します。",
       mode: "モード",
       source: "ソース",
       evidence: "根拠",
@@ -768,6 +987,13 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
       showInspector: "インスペクタ",
       circuitRestored: "保存済みアーティファクトから回路を読み込みました。検証して保存するまで、編集はこの下書きに留まります。",
       circuitNotRebuildable: "このアーティファクトのコードはビジュアルビルダーの範囲を超えています。コードタブで編集してください。",
+      canvasOutOfDate: "この図を描いたあとにコードタブが変更されました。図は実行される内容と一致していません。",
+      canvasBeyondBuilder: "コードタブのコードはこのエディタで描ける範囲を超えているため、下の図はその内容を表していません。実行されるのはコードです。",
+      rebuildFromCode: "コードから再構築",
+      rebuiltFromCode: "コードタブのコードから図を再構築しました。",
+      applyOverwritesEditedCode: "この図を描いたあとにコードタブが変更されています。適用するとそのコードは図の内容で置き換えられます。続行しますか？",
+      applyOverwritesUnrepresentableCode: "コードタブには、このエディタで描けないソースがあります。適用するとそのコードは図で置き換えられ、図から元に戻すことはできません。続行しますか？",
+      confirmApply: "コードを置き換える",
     },
   },
 };
@@ -812,6 +1038,32 @@ export const ACCOUNT_COPY: Record<PublicLocale, {
   usageRunsValue: string;
   usageStorage: string;
   usageStorageValue: string;
+  usageSimulation: string;
+  usageUnlimited: string;
+  usageRunsPerWeek: (count: number) => string;
+  usageArtifacts: (count: number) => string;
+  usageQubits: (count: number) => string;
+  tierNames: Record<"demo" | "free" | "developer", string>;
+  usageUnenforced: string;
+  billingTitle: string;
+  billingHelp: string;
+  billingPayments: string;
+  billingPaymentsDisabled: string;
+  billingBackend: string;
+  billingBackendConfigured: string;
+  billingBackendUnconfigured: string;
+  billingUnavailable: string;
+  billingPolicyTitle: string;
+  billingPolicyHelp: string;
+  billingPolicyFree: string;
+  billingPolicyFreeValue: string;
+  billingPolicyDemo: string;
+  billingPolicyDemoValue: string;
+  billingPolicyCpu: string;
+  billingPolicyCpuValue: string;
+  billingPolicyHardware: string;
+  billingPolicyHardwareValue: string;
+  billingEstimatesLink: string;
 }> = {
   en: {
     title: "Settings",
@@ -853,6 +1105,32 @@ export const ACCOUNT_COPY: Record<PublicLocale, {
     usageRunsValue: "Fair use — no hard cap during early access",
     usageStorage: "Vault storage",
     usageStorageValue: "Fair use — artifacts and versions retained",
+    usageSimulation: "Browser simulation",
+    usageUnlimited: "Unlimited",
+    usageRunsPerWeek: (count) => `${count} per week`,
+    usageArtifacts: (count) => `${count} artifacts`,
+    usageQubits: (count) => `Up to ${count} qubits`,
+    tierNames: { demo: "Preview", free: "Free", developer: "Developer" },
+    usageUnenforced: "Not metered yet. These are the boundaries the product will apply when metering is turned on.",
+    billingTitle: "Billing & credits",
+    billingHelp: "How Leona Quantum will charge for agent runs and hardware. Shown for transparency — payments are not enabled.",
+    billingPayments: "Payments",
+    billingPaymentsDisabled: "Disabled. You can explore the full flow without adding a payment method — no card entry, checkout, or charge exists in this deployment.",
+    billingBackend: "Billing backend",
+    billingBackendConfigured: "Stripe is connected for future billing. It holds no payment methods and cannot charge anyone.",
+    billingBackendUnconfigured: "Stripe is not configured in this deployment.",
+    billingUnavailable: "Billing status is unavailable because the control plane could not be reached.",
+    billingPolicyTitle: "Provisional credit policy",
+    billingPolicyHelp: "Owner-ratified direction, shown for transparency. Not yet enforced — numbers may change before launch.",
+    billingPolicyFree: "Free plan",
+    billingPolicyFreeValue: "About 5 agent runs per week",
+    billingPolicyDemo: "Demo credit",
+    billingPolicyDemoValue: "About 15 agent runs, expiring about two weeks after first use",
+    billingPolicyCpu: "Browser CPU simulation",
+    billingPolicyCpuValue: "No charge — target of about 10 runs per 10 minutes",
+    billingPolicyHardware: "GPU / QPU hardware",
+    billingPolicyHardwareValue: "Owner-gated. Sourced cost estimates appear in Studio's hardware lane before any submission.",
+    billingEstimatesLink: "See hardware estimates in Studio",
   },
   ja: {
     title: "設定",
@@ -894,5 +1172,31 @@ export const ACCOUNT_COPY: Record<PublicLocale, {
     usageRunsValue: "フェアユース — アーリーアクセス中は固定上限なし",
     usageStorage: "ボールト保存",
     usageStorageValue: "フェアユース — アーティファクトとバージョンを保持",
+    usageSimulation: "ブラウザ実行",
+    usageUnlimited: "無制限",
+    usageRunsPerWeek: (count) => `週${count}回`,
+    usageArtifacts: (count) => `${count}件`,
+    usageQubits: (count) => `${count}量子ビットまで`,
+    tierNames: { demo: "プレビュー", free: "Free", developer: "Developer" },
+    usageUnenforced: "現在は計測していません。計測を有効にしたときに適用される上限です。",
+    billingTitle: "請求とクレジット",
+    billingHelp: "Leona Quantum がエージェント実行とハードウェアに課金する仕組みです。透明性のために表示しており、支払いは有効化されていません。",
+    billingPayments: "支払い",
+    billingPaymentsDisabled: "無効です。支払い方法を追加せずに全フローを確認できます。このデプロイメントにはカード入力・チェックアウト・請求は存在しません。",
+    billingBackend: "請求バックエンド",
+    billingBackendConfigured: "Stripe は将来の請求のために接続済みです。支払い方法は保持せず、誰にも請求できません。",
+    billingBackendUnconfigured: "このデプロイメントでは Stripe は設定されていません。",
+    billingUnavailable: "コントロールプレーンに接続できないため、請求ステータスを利用できません。",
+    billingPolicyTitle: "暫定クレジットポリシー",
+    billingPolicyHelp: "オーナー承認の方針を透明性のために表示しています。まだ適用されておらず、提供開始前に変更される可能性があります。",
+    billingPolicyFree: "無料プラン",
+    billingPolicyFreeValue: "週あたり約5回のエージェント実行",
+    billingPolicyDemo: "デモクレジット",
+    billingPolicyDemoValue: "約15回のエージェント実行（初回使用から約2週間で失効）",
+    billingPolicyCpu: "ブラウザCPUシミュレーション",
+    billingPolicyCpuValue: "無料 — 10分あたり約10回を目安",
+    billingPolicyHardware: "GPU / QPU ハードウェア",
+    billingPolicyHardwareValue: "オーナー承認制。実行前に Studio のハードウェアレーンに出典付き見積もりが表示されます。",
+    billingEstimatesLink: "Studio でハードウェア見積もりを見る",
   },
 };

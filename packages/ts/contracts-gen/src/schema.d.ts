@@ -875,6 +875,108 @@ export interface components {
             source: "sandbox_epilogue" | "model_stdout" | "missing";
         };
         /**
+         * QpuEstimateBasis
+         * @description Where a pre-run cost figure came from. Mirrors majorana_qpu.EstimateBasis
+         *     (parity pinned by the same services/api test as the other QPU enums).
+         * @enum {string}
+         */
+        QpuEstimateBasis: "vendor_rate_card" | "free_tier_allowance";
+        /**
+         * QpuProvider
+         * @description Hardware access route, not the device vendor (IonQ via Braket is `braket`).
+         * @enum {string}
+         */
+        QpuProvider: "ibm" | "braket";
+        /**
+         * QpuRunRecord
+         * @description Provider-attested hardware run — the /v1 shape for the durable qpu_run
+         *     seam. Its storage lands in the follow-up migration PR (deploys migrate
+         *     before rollout, so the contract ships first); until that lands no endpoint
+         *     returns it. `raw_counts` is exactly what the provider returned — raw,
+         *     never averaged or corrected in place.
+         */
+        QpuRunRecord: {
+            /**
+             * Artifact Version Id
+             * @default null
+             */
+            artifact_version_id: string | null;
+            /**
+             * Completed At
+             * @default null
+             */
+            completed_at: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Device Id */
+            device_id: string;
+            /**
+             * Error
+             * @default null
+             */
+            error: string | null;
+            estimate_basis: components["schemas"]["QpuEstimateBasis"];
+            /**
+             * Estimated Total Usd
+             * @default null
+             */
+            estimated_total_usd: number | null;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            provider: components["schemas"]["QpuProvider"];
+            /**
+             * Provider Job Id
+             * @default null
+             */
+            provider_job_id: string | null;
+            /** Rate Confirmed On */
+            rate_confirmed_on: string;
+            /** Rate Source */
+            rate_source: string;
+            /**
+             * Raw Counts
+             * @default null
+             */
+            raw_counts: {
+                [key: string]: number;
+            } | null;
+            /** Shots */
+            shots: number;
+            /** Source Fingerprint */
+            source_fingerprint: string;
+            status: components["schemas"]["QpuRunStatus"];
+            /**
+             * Submitted At
+             * @default null
+             */
+            submitted_at: string | null;
+            /**
+             * User Id
+             * Format: uuid
+             */
+            user_id: string;
+            /**
+             * Workspace Id
+             * Format: uuid
+             */
+            workspace_id: string;
+        };
+        /**
+         * QpuRunStatus
+         * @description Lifecycle of a durable qpu_run record. Values mirror the provider-side
+         *     majorana_qpu.QpuJobStatus (parity is pinned by a test in services/api) and
+         *     will match the qpu_run storage CHECK constraint in the follow-up migration
+         *     PR — the contract ships first because deploys migrate before rollout.
+         * @enum {string}
+         */
+        QpuRunStatus: "queued" | "running" | "done" | "error" | "cancelled";
+        /**
          * ReferenceProblem
          * @description The combinatorial instance the `brute_force` check enumerates.
          */

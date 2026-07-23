@@ -15,6 +15,10 @@ const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const SCAN_ROOTS = ["apps/web", "packages/ts/ui"];
 const EXTENSIONS = new Set([".css", ".ts", ".tsx", ".js", ".jsx", ".mjs"]);
 const SKIP_DIRS = new Set(["node_modules", ".next", ".turbo", ".vercel", "dist"]);
+// Build output under an alternate NEXT_DIST_DIR (a second local dev server).
+// Same generated code as `.next`, so scanning it reports Next's own devtools
+// bundle as if it were our source.
+const SKIP_DIR_PREFIX = ".next-";
 
 // next/font generates these at build time and injects them via the `variable`
 // className, so no source file declares them. Keep in sync with app/layout.tsx.
@@ -45,7 +49,7 @@ function walk(dir) {
     const stats = statSync(full, { throwIfNoEntry: false });
     if (!stats) continue;
     if (stats.isDirectory()) {
-      if (!SKIP_DIRS.has(entry)) walk(full);
+      if (!SKIP_DIRS.has(entry) && !entry.startsWith(SKIP_DIR_PREFIX)) walk(full);
     } else if (EXTENSIONS.has(entry.slice(entry.lastIndexOf(".")))) {
       files.push(full);
     }

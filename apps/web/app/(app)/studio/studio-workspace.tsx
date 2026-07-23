@@ -1,22 +1,27 @@
 "use client";
 
-import { useEffect, useRef, useState, type KeyboardEvent, type MouseEvent, type UIEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type MouseEvent, type UIEvent } from "react";
 import { SyntaxHighlightedCode, VerificationSummaryPanel } from "@majorana/ui";
 import { CheckIcon, CopyIcon, PanelRightIcon, SearchIcon } from "../../../components/icons";
-import { artifactFromResource, frameworkVariantsFromRemote, loadLibraryArtifacts, statusFromVerificationSummary, type LibraryArtifact } from "../../../lib/library-data";
+import { artifactFromResource, frameworkVariantsFromRemote, getLibraryArtifact, loadLibraryArtifacts, statusFromVerificationSummary, type LibraryArtifact } from "../../../lib/library-data";
 import type { PublicLocale } from "../../../lib/public-locale";
 import { BUILDER_GATES, builderStepLabel, createBuilderStepId, generateBuilderCode, ROTATION_GATES, TWO_QUBIT_GATES, type BuilderCodeVariants, type BuilderGate, type BuilderStep, type CustomGateDefinition } from "../../../lib/studio-builder";
 import { loadStoredCircuit, saveStoredCircuit } from "../../../lib/studio-circuits";
-import { parseCircuitSource, allCircuitConversions, looksLikeOpenQasm3 } from "../../../lib/circuit-conversion";
+import { circuitSyncState, type CircuitSyncState } from "../../../lib/studio-sync";
+import { allCircuitConversionResults, parseCircuitSource, looksLikeOpenQasm3 } from "../../../lib/circuit-conversion";
 import { CIRCUIT_FRAMEWORKS, circuitFramework, circuitFrameworkOrNull, isExecutableCircuitFramework, type CircuitFrameworkKey } from "../../../lib/circuit-frameworks";
+import { MAX_CPU_SEED, MAX_CPU_SHOTS, cpuSimulationEligibility, loadCpuSimulationRecords, runCpuSimulation, saveCpuSimulationRecord, type CpuSimulationEligibility, type CpuSimulationLimits, type CpuSimulationRecord } from "../../../lib/studio-simulation";
+import { TIER_LIMITS } from "../../../lib/account-tier";
+import { formatShare, simulationChartData, simulationReading, type SimulationChartData, type SimulationReading } from "../../../lib/simulation-visual";
+import { fetchQpuBackends, fetchQpuEstimate, fetchQpuSubmissionGate, formatUsd, type QpuBackendInfo, type QpuCostEstimate, type QpuSubmissionGate } from "../../../lib/qpu";
 import { WORKSPACE_COPY } from "../../../lib/workspace-locale";
 import { sampling } from "../../../lib/studio-run-request";
 import { verificationFromMetadata, verificationFromResource, type VerificationCheck } from "../../../lib/verification-record";
 import { artifactExportManifest } from "../../../lib/artifact-export";
 import { studioVerificationDisplayState } from "../../../lib/verification-display";
 
-type StudioPanel = "canvas" | "code" | "versions";
-type StudioAction = "simulate" | "verify" | "save";
+type StudioPanel = "canvas" | "code" | "simulation" | "versions";
+type StudioAction = "simulation" | "save";
 
 type BuilderSeed = {
   key: string;
@@ -32,19 +37,38 @@ const EMPTY_SEED: Omit<BuilderSeed, "key"> = { artifactIdentity: null, qubitCoun
 
 type StudioFramework = CircuitFrameworkKey;
 
+type DraftBundle = {
+  codes: BuilderCodeVariants;
+  notes: Partial<Record<StudioFramework, string>>;
+};
+
 const FRAMEWORK_OPTIONS = CIRCUIT_FRAMEWORKS.map(({ key: value, label, executable }) => ({
   value,
   label: executable ? label : `${label} · export`,
 }));
 
-const STARTER_CODES: BuilderCodeVariants = generateBuilderCode([
+const STARTER_STEPS: BuilderStep[] = [
   { id: "starter-h", gate: "H", qubits: [0] },
   { id: "starter-cx", gate: "CX", qubits: [0, 1] },
   { id: "starter-m0", gate: "M", qubits: [0] },
   { id: "starter-m1", gate: "M", qubits: [1] },
-], 2);
+];
 
-export function StudioWorkspace({ artifactId, newDraft = false, locale = "en" }: { artifactId?: string; newDraft?: boolean; locale?: PublicLocale }) {
+const STARTER_CODES: BuilderCodeVariants = generateBuilderCode(STARTER_STEPS, 2);
+
+/**
+ * A new draft opens with the starter source already in the Code tab, so the
+ * canvas is seeded from the same steps. An empty canvas beside a Bell pair in
+ * the editor is the exact mismatch this surface is supposed to make visible —
+ * it should not ship that mismatch as its own first impression.
+ *
+ * Distinct from EMPTY_SEED, which stays empty: it is the fallback for an
+ * artifact whose code the builder cannot represent, and drawing a Bell pair
+ * for an unrelated circuit would be a far worse lie than drawing nothing.
+ */
+const STARTER_SEED: Omit<BuilderSeed, "key"> = { artifactIdentity: null, qubitCount: 2, steps: STARTER_STEPS, customGates: [] };
+
+export function StudioWorkspace({ artifactId, newDraft = false, locale = "en", limits = TIER_LIMITS.free }: { artifactId?: string; newDraft?: boolean; locale?: PublicLocale; limits?: CpuSimulationLimits }) {
   const copy = WORKSPACE_COPY[locale].studio;
   const [artifacts, setArtifacts] = useState<LibraryArtifact[]>([]);
   const [artifact, setArtifact] = useState<LibraryArtifact | null>(null);
@@ -52,13 +76,16 @@ export function StudioWorkspace({ artifactId, newDraft = false, locale = "en" }:
   const [query, setQuery] = useState("");
   const [title, setTitle] = useState("Untitled circuit");
   const [framework, setFramework] = useState<StudioFramework>("qiskit");
-  const [drafts, setDrafts] = useState<BuilderCodeVariants>(() => makeDrafts(null));
+  const [drafts, setDrafts] = useState<BuilderCodeVariants>(() => makeDraftBundle(null).codes);
+  const [draftNotes, setDraftNotes] = useState<Partial<Record<StudioFramework, string>>>(() => makeDraftBundle(null).notes);
   const [code, setCode] = useState(STARTER_CODES.qiskit);
   const [panel, setPanel] = useState<StudioPanel>("canvas");
   const [selectedGate, setSelectedGate] = useState("H");
   const [busy, setBusy] = useState<StudioAction | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [runId, setRunId] = useState<string | null>(null);
+  const [simulationRecords, setSimulationRecords] = useState<CpuSimulationRecord[]>([]);
+  const [rerunPending, setRerunPending] = useState(false);
   const [copied, setCopied] = useState(false);
   const [inspectorOpen, setInspectorOpen] = useState(true);
   // Strings, not numbers: an empty seed field means "let the planner choose" and
@@ -68,8 +95,16 @@ export function StudioWorkspace({ artifactId, newDraft = false, locale = "en" }:
   const [artifactHydration, setArtifactHydration] = useState<ArtifactHydration>(() => artifactId && !newDraft ? "loading" : "ready");
   const [artifactSyncError, setArtifactSyncError] = useState(false);
   const [verificationStale, setVerificationStale] = useState(false);
-  const [builderSeed, setBuilderSeed] = useState<BuilderSeed>({ key: "seed-0", ...EMPTY_SEED });
+  // Matches the starter source `code` is initialised with, so the first paint
+  // is already self-consistent.
+  const [builderSeed, setBuilderSeed] = useState<BuilderSeed>({ key: "seed-0", ...STARTER_SEED });
   const seedCounter = useRef(0);
+  // What the canvas currently draws. The builder owns the editing state; this
+  // mirror exists so the page can tell whether the diagram still matches the
+  // code, which only the page can see. Seeding resets it; user edits update it.
+  const [canvasCircuit, setCanvasCircuit] = useState<{ qubitCount: number; steps: BuilderStep[]; customGates: CustomGateDefinition[] }>(
+    () => ({ qubitCount: STARTER_SEED.qubitCount, steps: STARTER_SEED.steps, customGates: STARTER_SEED.customGates }),
+  );
 
   // Local storage is read only after mount so the server and client render
   // the same initial markup; the artifact then hydrates through applyArtifact.
@@ -94,16 +129,25 @@ export function StudioWorkspace({ artifactId, newDraft = false, locale = "en" }:
       });
 
     if (artifactId) {
+      const local = getLibraryArtifact(artifactId);
+      // Render the local cache immediately, but always hydrate the canonical
+      // version as well. The cache intentionally holds only a light artifact
+      // summary, while the current version supplies provenance such as stored
+      // OpenQASM that CPU simulation needs for its bounded fallback model.
+      if (local) applyArtifact(local);
       void loadArtifact(artifactId)
         .then((loaded) => {
-          if (active && loaded) applyArtifact(loaded);
-          else if (active) {
+          if (!active) return;
+          if (loaded) applyArtifact(loaded);
+          else if (!local) {
             setArtifactHydration("error");
             setMessage(copy.selectedUnavailable);
           }
         })
         .catch(() => {
-          if (active) {
+          // A cached artifact remains usable if the network is temporarily
+          // unavailable; only fail the selection when there is no local copy.
+          if (active && !local) {
             setArtifactHydration("error");
             setMessage(copy.selectedUnavailable);
           }
@@ -113,6 +157,31 @@ export function StudioWorkspace({ artifactId, newDraft = false, locale = "en" }:
       active = false;
     };
   }, [artifactId, copy]);
+
+  useEffect(() => {
+    setSimulationRecords(artifact ? loadCpuSimulationRecords(artifact.id) : []);
+    setRerunPending(false);
+  }, [artifact?.id]);
+
+  useEffect(() => {
+    setRerunPending(false);
+  }, [code, framework]);
+
+  // The diagram is only trustworthy while it still describes the code that
+  // will actually run. Compare structurally rather than textually: generated
+  // and hand-written source differ in imports and spacing while meaning the
+  // same circuit, and a warning that fires constantly gets ignored.
+  const canvasSync: CircuitSyncState = useMemo(
+    () => circuitSyncState(parseCircuitSource(code, framework), canvasCircuit),
+    [code, framework, canvasCircuit],
+  );
+
+  const cpuEligibility = useMemo(() => cpuSimulationEligibility({
+    artifactId: artifact?.id ?? "",
+    code,
+    framework,
+    qasm: artifact?.code === code ? artifact.qasm : null,
+  }, limits), [artifact?.id, artifact?.code, artifact?.qasm, code, framework, limits]);
 
   function seedForArtifact(next: LibraryArtifact, activeDrafts: BuilderCodeVariants, activeFramework: StudioFramework): { seed: BuilderSeed; note: string | null } {
     seedCounter.current += 1;
@@ -145,11 +214,13 @@ export function StudioWorkspace({ artifactId, newDraft = false, locale = "en" }:
     setShowEditor(true);
     setArtifact(next);
     setTitle(next?.title ?? "Untitled circuit");
-    const nextDrafts = makeDrafts(next);
+    const nextBundle = makeDraftBundle(next);
+    const nextDrafts = nextBundle.codes;
     const nextFramework = normalizeFramework(next?.framework)
       ?? CIRCUIT_FRAMEWORKS.find(({ key }) => Boolean(nextDrafts[key]))?.key
       ?? "qiskit";
     setDrafts(nextDrafts);
+    setDraftNotes(nextBundle.notes);
     setFramework(nextFramework);
     setCode(nextDrafts[nextFramework]);
     setPanel("canvas");
@@ -157,13 +228,34 @@ export function StudioWorkspace({ artifactId, newDraft = false, locale = "en" }:
     setVerificationStale(false);
     if (!next) {
       seedCounter.current += 1;
-      setBuilderSeed({ key: `draft-${seedCounter.current}`, ...EMPTY_SEED });
+      seedBuilder({ key: `draft-${seedCounter.current}`, ...STARTER_SEED });
       setMessage(null);
       return;
     }
     const { seed, note } = seedForArtifact(next, nextDrafts, nextFramework);
-    setBuilderSeed(seed);
+    seedBuilder(seed);
     setMessage(note);
+  }
+
+  /** Reseed the canvas and the mirror together — they must never disagree. */
+  function seedBuilder(seed: BuilderSeed) {
+    setBuilderSeed(seed);
+    setCanvasCircuit({ qubitCount: seed.qubitCount, steps: seed.steps, customGates: seed.customGates });
+  }
+
+  /** Redraw the canvas from whatever the Code tab currently holds. */
+  function rebuildCanvasFromCode() {
+    const parsed = parseCircuitSource(code, framework);
+    if (!parsed) return;
+    seedCounter.current += 1;
+    seedBuilder({
+      key: `rebuild-${seedCounter.current}`,
+      artifactIdentity: builderSeed.artifactIdentity,
+      qubitCount: parsed.qubitCount,
+      steps: parsed.steps,
+      customGates: [],
+    });
+    setMessage(copy.rebuiltFromCode);
   }
 
   const filteredArtifacts = artifacts.filter((item) => {
@@ -188,12 +280,15 @@ export function StudioWorkspace({ artifactId, newDraft = false, locale = "en" }:
     setDrafts(nextDrafts);
     setFramework(next);
     setCode(nextDrafts[next]);
+    const conversionNote = draftNotes[next];
     setMessage(
       !nextDrafts[next]
         ? locale === "ja"
           ? `${frameworkLabel(next)} へ変換できる移植可能な回路またはOpenQASM 3が保存されていません。`
           : `No portable circuit or stored OpenQASM 3 is available for a ${frameworkLabel(next)} conversion.`
-        : isExecutableCircuitFramework(next)
+        : conversionNote
+          ? conversionNote
+          : isExecutableCircuitFramework(next)
         ? copy.editingDraft(frameworkLabel(next))
         : locale === "ja"
           ? `${frameworkLabel(next)} のエクスポートを編集中です。実行と検証は Qiskit、PennyLane、Cirq で利用できます。`
@@ -226,12 +321,72 @@ export function StudioWorkspace({ artifactId, newDraft = false, locale = "en" }:
     URL.revokeObjectURL(url);
   }
 
-  async function startRun(action: StudioAction) {
+  function openSimulation() {
+    setPanel("simulation");
+    setMessage(null);
+  }
+
+  function startCpuSimulation(confirmRerun = false) {
+    if (!artifact) {
+      setPanel("simulation");
+      setMessage(copy.simulationArtifactRequired);
+      return;
+    }
+    if (!cpuEligibility.eligible) {
+      setPanel("simulation");
+      setMessage(copy.cpuUnavailable(cpuEligibility.reason));
+      return;
+    }
+    const parsedShots = Number(shots.trim());
+    if (!Number.isInteger(parsedShots) || parsedShots < 1 || parsedShots > MAX_CPU_SHOTS) {
+      setMessage(copy.cpuInvalidShots(MAX_CPU_SHOTS));
+      return;
+    }
+    const parsedSeed = seed.trim() === "" ? undefined : Number(seed.trim());
+    if (parsedSeed !== undefined && (!Number.isInteger(parsedSeed) || parsedSeed < 0 || parsedSeed > MAX_CPU_SEED)) {
+      setMessage(copy.cpuInvalidSeed(MAX_CPU_SEED));
+      return;
+    }
+    const priorMatch = simulationRecords.some((record) => (
+      record.sourceFingerprint === cpuEligibility.sourceFingerprint
+      && record.interchangeFingerprint === cpuEligibility.interchangeFingerprint
+      && record.framework === framework
+    ));
+    if (priorMatch && !confirmRerun) {
+      setRerunPending(true);
+      return;
+    }
+
+    setBusy("simulation");
+    try {
+      const record = runCpuSimulation({
+        artifactId: artifact.id,
+        artifactVersionId: artifact.currentVersionId,
+        code,
+        framework,
+        qasm: artifact.code === code ? artifact.qasm : null,
+        shots: parsedShots,
+        seed: parsedSeed,
+      }, limits);
+      if (!saveCpuSimulationRecord(record)) {
+        setMessage(copy.simulationPersistenceUnavailable);
+        return;
+      }
+      setSimulationRecords((current) => [record, ...current.filter((item) => item.id !== record.id)]);
+      setRerunPending(false);
+      setMessage(copy.cpuSimulationRecorded);
+    } catch (cause) {
+      setMessage(cause instanceof Error ? cause.message : copy.simulationFailed);
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function startRun() {
     if (!code.trim() || busy || !isExecutableCircuitFramework(framework)) return;
-    setBusy(action);
+    setBusy("save");
     setMessage(null);
     setRunId(null);
-    const intent = action === "simulate" ? "simulate" : action === "verify" ? "verify" : "verify and save a new version of";
     try {
       const response = await fetch("/api/runs", {
         method: "POST",
@@ -240,7 +395,7 @@ export function StudioWorkspace({ artifactId, newDraft = false, locale = "en" }:
           "Idempotency-Key": crypto.randomUUID(),
         },
         body: JSON.stringify({
-          task_prompt: `Please ${intent} the edited quantum circuit “${title}” in ${frameworkLabel(framework)}. Preserve the supplied source code, report the evidence clearly, and do not silently change frameworks.`,
+          task_prompt: `Please verify and save a new version of the edited quantum circuit “${title}” in ${frameworkLabel(framework)}. Preserve the supplied source code, report the evidence clearly, and do not silently change frameworks.`,
           mode: "execute",
           framework,
           source_code: code,
@@ -253,7 +408,7 @@ export function StudioWorkspace({ artifactId, newDraft = false, locale = "en" }:
         throw new Error(payload.detail ?? payload.error ?? `Run submission failed (${response.status})`);
       }
       setRunId(payload.id);
-      setMessage(action === "save" ? copy.verificationStarted : copy.actionStarted(action === "simulate" ? (locale === "ja" ? "シミュレーション" : "Simulation") : (locale === "ja" ? "検証" : "Verification")));
+      setMessage(copy.verificationStarted);
     } catch (cause) {
       setMessage(cause instanceof Error ? cause.message : copy.submissionFailed);
     } finally {
@@ -285,9 +440,9 @@ export function StudioWorkspace({ artifactId, newDraft = false, locale = "en" }:
                     <PanelRightIcon size={15} open={inspectorOpen} />
                   </button>
                   <button className="mj-secondary-button" type="button" onClick={() => void copyCode()} title={copied ? copy.copied : copy.copyCode}><CopyIcon size={14} />{copied ? copy.copied : copy.copyCode}</button>
-                  {artifact ? <button className="mj-secondary-button" type="button" onClick={downloadDraft}>Download export</button> : null}
-                  <button className="mj-secondary-button" type="button" disabled={!code.trim() || busy !== null || !isExecutableCircuitFramework(framework)} onClick={() => void startRun("simulate")}>{busy === "simulate" ? copy.starting : copy.simulate}</button>
-                  <button className="mj-primary-button" type="button" disabled={!code.trim() || busy !== null || !isExecutableCircuitFramework(framework)} onClick={() => void startRun("save")}>{busy === "save" ? copy.starting : copy.verifySave}</button>
+                  {artifact ? <button className="mj-secondary-button" type="button" onClick={downloadDraft}>{copy.downloadExport}</button> : null}
+                  <button className="mj-secondary-button" type="button" disabled={!code.trim()} onClick={openSimulation}>{copy.simulate}</button>
+                  <button className="mj-primary-button" type="button" disabled={!code.trim() || busy !== null || !isExecutableCircuitFramework(framework)} onClick={() => void startRun()}>{busy === "save" ? copy.starting : copy.verifySave}</button>
                 </div>
               </div>
 
@@ -301,9 +456,9 @@ export function StudioWorkspace({ artifactId, newDraft = false, locale = "en" }:
               />
 
               <nav className="mj-studio-tabs" aria-label={copy.view}>
-                {(["canvas", "code", "versions"] as StudioPanel[]).map((item) => (
+                {(["canvas", "code", "simulation", "versions"] as StudioPanel[]).map((item) => (
                   <button className={panel === item ? "is-active" : ""} type="button" key={item} onClick={() => setPanel(item)}>
-                    {item === "canvas" ? copy.circuit : item === "code" ? copy.code : copy.versions}
+                    {item === "canvas" ? copy.circuit : item === "code" ? copy.code : item === "simulation" ? copy.simulation : copy.versions}
                   </button>
                 ))}
               </nav>
@@ -322,19 +477,38 @@ export function StudioWorkspace({ artifactId, newDraft = false, locale = "en" }:
                     onSelectGate={setSelectedGate}
                     hidden={panel !== "canvas"}
                     copy={copy}
+                    syncState={canvasSync}
+                    onRebuildFromCode={rebuildCanvasFromCode}
+                    sourceCode={code}
                     onCircuitChange={(circuit) => {
+                      setCanvasCircuit(circuit);
                       if (!artifact) return;
                       const persisted = saveStoredCircuit(artifact.id, { artifactIdentity: studioArtifactIdentity(artifact), ...circuit });
                       if (!persisted) setMessage(copy.persistenceUnavailable);
                     }}
                     onApply={(codes) => {
                       setDrafts(codes);
+                      setDraftNotes({});
                       setCode(codes[framework]);
                       setVerificationStale(Boolean(artifact));
                       setMessage(copy.appliedToCode);
                     }}
                   />
                   {panel === "code" ? <CodeEditor code={code} framework={framework} onChange={(next) => { setCode(next); setVerificationStale(Boolean(artifact)); }} onCopy={() => void copyCode()} copied={copied} copy={copy} /> : null}
+                  {panel === "simulation" ? (
+                    <SimulationPanel
+                      artifact={artifact}
+                      eligibility={cpuEligibility}
+                      records={simulationRecords}
+                      shots={shots}
+                      rerunPending={rerunPending}
+                      busy={busy === "simulation"}
+                      onRun={() => startCpuSimulation()}
+                      onConfirmRerun={() => startCpuSimulation(true)}
+                      onCancelRerun={() => setRerunPending(false)}
+                      copy={copy}
+                    />
+                  ) : null}
                   {panel === "versions" ? <VersionPanel artifact={artifact} runId={runId} stale={verificationStale} copy={copy} /> : null}
                 </>
               )}
@@ -370,17 +544,15 @@ export function StudioWorkspace({ artifactId, newDraft = false, locale = "en" }:
                   <div><dt>{copy.source}</dt><dd>{artifact ? copy.existingVersion : copy.newDraftSource}</dd></div>
                   <div><dt>{copy.evidence}</dt><dd>{copy.sandboxVerifier}</dd></div>
                 </dl>
-                {/* `shots` has reached the plan since PR 110 and `seed` since PR 115,
-                    and the run API has accepted both all along — Studio just never
-                    sent them, so every circuit edited here ran at the planner's
-                    default shot count and with no reproducible seed. */}
+                {/* These inputs apply to the bounded CPU lane and are also passed
+                    through unchanged when the user explicitly starts Verify & save. */}
                 <div className="mj-studio-sampling">
                   <label htmlFor="studio-shots">{copy.shots}</label>
                   <input
                     id="studio-shots"
                     type="number"
                     min={1}
-                    max={20000}
+                    max={MAX_CPU_SHOTS}
                     step={256}
                     value={shots}
                     onChange={(event) => setShots(event.target.value)}
@@ -391,6 +563,7 @@ export function StudioWorkspace({ artifactId, newDraft = false, locale = "en" }:
                     id="studio-seed"
                     type="number"
                     min={0}
+                    max={MAX_CPU_SEED}
                     value={seed}
                     placeholder={copy.seedAuto}
                     onChange={(event) => setSeed(event.target.value)}
@@ -398,6 +571,11 @@ export function StudioWorkspace({ artifactId, newDraft = false, locale = "en" }:
                   />
                 </div>
                 <p className="mj-studio-sampling-note">{copy.samplingNote}</p>
+              </div>
+              <div className="mj-studio-inspector-card">
+                <span className="mj-section-label">{copy.cpuLane}</span>
+                <p>{cpuEligibility.eligible ? copy.cpuEligible : copy.cpuUnavailable(cpuEligibility.reason)}</p>
+                <button className="mj-secondary-button" type="button" onClick={openSimulation}>{copy.openSimulation}</button>
               </div>
               <div className="mj-studio-framework-note">
                 <CheckIcon size={14} />
@@ -587,7 +765,7 @@ function StudioDots() {
 
 const ANGLE_OPTIONS = ["pi/8", "pi/4", "pi/2", "pi", "3*pi/2", "2*pi"];
 
-function CircuitBuilder({ seed, framework, selectedGate, onSelectGate, onApply, onCircuitChange, hidden, copy }: { seed: BuilderSeed; framework: StudioFramework; selectedGate: string; onSelectGate: (gate: string) => void; onApply: (codes: BuilderCodeVariants) => void; onCircuitChange?: (circuit: { qubitCount: number; steps: BuilderStep[]; customGates: CustomGateDefinition[] }) => void; hidden: boolean; copy: StudioCopy }) {
+function CircuitBuilder({ seed, framework, selectedGate, onSelectGate, onApply, onCircuitChange, hidden, copy, syncState, onRebuildFromCode, sourceCode }: { seed: BuilderSeed; framework: StudioFramework; selectedGate: string; onSelectGate: (gate: string) => void; onApply: (codes: BuilderCodeVariants) => void; onCircuitChange?: (circuit: { qubitCount: number; steps: BuilderStep[]; customGates: CustomGateDefinition[] }) => void; hidden: boolean; copy: StudioCopy; syncState: CircuitSyncState; onRebuildFromCode: () => void; sourceCode: string }) {
   const [qubitCount, setQubitCount] = useState(seed.qubitCount);
   const [steps, setSteps] = useState<BuilderStep[]>(seed.steps);
   const [pendingQubits, setPendingQubits] = useState<number[]>([]);
@@ -597,6 +775,15 @@ function CircuitBuilder({ seed, framework, selectedGate, onSelectGate, onApply, 
   const [showCustomGateForm, setShowCustomGateForm] = useState(false);
   const [customGateName, setCustomGateName] = useState("");
   const [builderMessage, setBuilderMessage] = useState<string | null>(null);
+  const [applyConfirmPending, setApplyConfirmPending] = useState(false);
+
+  // A pending confirmation describes one specific pair of a diagram and a
+  // source. If either side moves — the code is edited again, the canvas is
+  // changed, or the two come back into agreement — the armed button would be
+  // consenting to something the user was never shown, so disarm it.
+  useEffect(() => {
+    setApplyConfirmPending(false);
+  }, [syncState.kind, sourceCode, steps, qubitCount, customGates]);
 
   const onCircuitChangeRef = useRef(onCircuitChange);
   onCircuitChangeRef.current = onCircuitChange;
@@ -773,6 +960,15 @@ function CircuitBuilder({ seed, framework, selectedGate, onSelectGate, onApply, 
         </div>
       ) : null}
 
+      {syncState.kind === "in_sync" ? null : (
+        <div className={`mj-circuit-sync mj-circuit-sync--${syncState.kind}`} role="status">
+          <span>{syncState.kind === "diverged" ? copy.canvasOutOfDate : copy.canvasBeyondBuilder}</span>
+          {syncState.kind === "diverged" ? (
+            <button className="mj-secondary-button" type="button" onClick={onRebuildFromCode}>{copy.rebuildFromCode}</button>
+          ) : null}
+        </div>
+      )}
+
       <div className="mj-circuit-stage">
         <svg className="mj-circuit-svg" viewBox={`0 0 ${width} ${height}`} role="img" aria-label={copy.circuitAria(frameworkLabel(framework))} style={{ maxWidth: "100%" }}>
           {Array.from({ length: qubitCount }, (_, q) => {
@@ -869,7 +1065,31 @@ function CircuitBuilder({ seed, framework, selectedGate, onSelectGate, onApply, 
         <button className="mj-secondary-button" type="button" onClick={() => { setSteps([]); setSelectedStepIds([]); setPendingQubits([]); setBuilderMessage(null); }} disabled={!steps.length}>{copy.clearAll}</button>
         <button className="mj-secondary-button" type="button" onClick={deleteSelected} disabled={!selectedStepIds.length}>{copy.deleteSelected}</button>
         {selectedStepIds.length >= 2 ? <button className="mj-secondary-button" type="button" onClick={() => setShowCustomGateForm(true)}>{copy.groupSelected}</button> : null}
-        <button className="mj-primary-button" type="button" onClick={() => onApply(generateBuilderCode(steps, qubitCount, customGates))} disabled={!steps.length}>{copy.applyToCode}</button>
+        <button
+          className="mj-primary-button"
+          type="button"
+          onClick={() => {
+            // Applying replaces the Code tab. Confirm whenever the source is
+            // not already this diagram — both when it has moved on since the
+            // diagram was drawn, and when it is source the builder cannot
+            // draw at all. The second case is the more destructive of the
+            // two: unrepresentable code is by definition code no diagram can
+            // reproduce, so overwriting it cannot be undone from the canvas.
+            if (syncState.kind !== "in_sync" && !applyConfirmPending) {
+              setApplyConfirmPending(true);
+              setBuilderMessage(syncState.kind === "diverged" ? copy.applyOverwritesEditedCode : copy.applyOverwritesUnrepresentableCode);
+              return;
+            }
+            setApplyConfirmPending(false);
+            onApply(generateBuilderCode(steps, qubitCount, customGates));
+          }}
+          disabled={!steps.length}
+        >
+          {applyConfirmPending ? copy.confirmApply : copy.applyToCode}
+        </button>
+        {applyConfirmPending ? (
+          <button className="mj-secondary-button" type="button" onClick={() => { setApplyConfirmPending(false); setBuilderMessage(null); }}>{copy.cancel}</button>
+        ) : null}
       </div>
 
       {showCustomGateForm ? (
@@ -932,6 +1152,264 @@ function CodeEditor({ code, framework, onChange, onCopy, copied, copy }: { code:
  * "not loaded here", not "nothing was checked", and the copy says so rather than
  * implying an empty list means an empty panel.
  */
+function SimulationPanel({
+  artifact,
+  eligibility,
+  records,
+  shots,
+  rerunPending,
+  busy,
+  onRun,
+  onConfirmRerun,
+  onCancelRerun,
+  copy,
+}: {
+  artifact: LibraryArtifact | null;
+  eligibility: CpuSimulationEligibility;
+  records: CpuSimulationRecord[];
+  shots: string;
+  rerunPending: boolean;
+  busy: boolean;
+  onRun: () => void;
+  onConfirmRerun: () => void;
+  onCancelRerun: () => void;
+  copy: StudioCopy;
+}) {
+  const currentRecords = eligibility.eligible
+    ? records.filter((record) => (
+      record.sourceFingerprint === eligibility.sourceFingerprint
+      && record.interchangeFingerprint === eligibility.interchangeFingerprint
+    ))
+    : [];
+  return (
+    <section className="mj-studio-surface mj-studio-simulation-panel" aria-label={copy.simulation}>
+      <div className="mj-studio-surface-head">
+        <div>
+          <span className="mj-section-label">{copy.cpuLane}</span>
+          <h2>{copy.simulation}</h2>
+        </div>
+        <span className="mj-mono-muted">{eligibility.eligible ? copy.cpuEligible : copy.cpuUnavailable(eligibility.reason)}</span>
+      </div>
+      <div className="mj-studio-simulation-body">
+        <p className="mj-studio-simulation-boundary">{copy.simulationBoundary}</p>
+        <details className="mj-sim-details">
+          <summary>{copy.simulationContextDetails}</summary>
+          <dl className="mj-studio-contract">
+            <div><dt>{copy.simulationArtifact}</dt><dd>{artifact?.title ?? copy.newDraftSource}</dd></div>
+            <div><dt>{copy.sourceFingerprint}</dt><dd>{eligibility.sourceFingerprint}</dd></div>
+            {eligibility.eligible && eligibility.interchangeFingerprint ? <div><dt>{copy.interchangeFingerprint}</dt><dd>{eligibility.interchangeFingerprint}</dd></div> : null}
+            {eligibility.eligible ? <div><dt>{copy.simulationModel}</dt><dd>{simulationModelLabel(eligibility.model, copy)}</dd></div> : null}
+            <div><dt>{copy.simulator}</dt><dd>{copy.browserCpu}</dd></div>
+          </dl>
+        </details>
+
+        {eligibility.eligible ? (
+          rerunPending ? (
+            <div className="mj-studio-simulation-confirm" role="status">
+              <p>{copy.rerunPrompt}</p>
+              <div>
+                <button className="mj-primary-button" type="button" disabled={busy} onClick={onConfirmRerun}>{busy ? copy.starting : copy.confirmRerun}</button>
+                <button className="mj-secondary-button" type="button" disabled={busy} onClick={onCancelRerun}>{copy.cancel}</button>
+              </div>
+            </div>
+          ) : (
+            <button className="mj-primary-button" type="button" disabled={busy} onClick={onRun}>
+              {busy ? copy.starting : currentRecords.length ? copy.rerunCpuSimulation : copy.runCpuSimulation}
+            </button>
+          )
+        ) : <p className="mj-studio-simulation-unavailable" role="alert">{copy.cpuUnavailable(eligibility.reason)}</p>}
+
+        <section className="mj-studio-hardware-lanes" aria-label={copy.hardwareLanes}>
+          <span className="mj-section-label">{copy.hardwareLanes}</span>
+          <div><button className="mj-secondary-button" type="button" disabled title={copy.gpuUnavailable}>{copy.gpuSimulation}</button><p>{copy.gpuUnavailable}</p></div>
+          <QpuLane artifact={artifact} shots={shots} copy={copy} />
+        </section>
+
+        <section className="mj-studio-simulation-records" aria-label={copy.simulationResults}>
+          <div className="mj-studio-simulation-records-head"><span className="mj-section-label">{copy.simulationResults}</span><span className="mj-mono-muted">{records.length}</span></div>
+          {records.length ? records.map((record) => <SimulationRecordCard record={record} family={artifact?.family ?? null} copy={copy} key={record.id} />) : <p className="mj-studio-empty">{copy.simulationNoRecords}</p>}
+        </section>
+      </div>
+    </section>
+  );
+}
+
+function SimulationRecordCard({ record, family, copy }: { record: CpuSimulationRecord; family: string | null; copy: StudioCopy }) {
+  const data = simulationChartData(record.counts, record.shots);
+  const reading = data ? simulationReading(family, data) : null;
+  return (
+    <article className="mj-studio-simulation-record">
+      <div className="mj-studio-simulation-record-head"><strong>{copy.simulationRecord}</strong><span className="mj-mono-muted">{record.createdAt}</span></div>
+      {data ? (
+        <>
+          <div className="mj-sim-headline">
+            <div className="mj-sim-headline-stat">
+              <span className="mj-section-label">{copy.simulationPeak}</span>
+              <strong><code>|{data.peak.bitstring}⟩</code> · {formatShare(data.peak.share, "en-US")}</strong>
+            </div>
+            <span className="mj-mono-muted">{copy.simulationRecordSummary(record.shots.toLocaleString("en-US"), record.qubitCount)}</span>
+          </div>
+          {reading ? <p className="mj-sim-reading">{simulationReadingText(reading, copy)}</p> : null}
+          <SimulationDistribution data={data} copy={copy} />
+        </>
+      ) : null}
+      <details className="mj-sim-details">
+        <summary>{copy.simulationDetails}</summary>
+        <dl className="mj-studio-contract">
+          <div><dt>{copy.simulator}</dt><dd>{copy.browserCpu}</dd></div>
+          <div><dt>{copy.artifactVersion}</dt><dd>{record.artifactVersionId ? record.artifactVersionId.slice(0, 12) : copy.newDraftSource}</dd></div>
+          <div><dt>{copy.sourceFingerprint}</dt><dd>{record.sourceFingerprint}</dd></div>
+          {record.interchangeFingerprint ? <div><dt>{copy.interchangeFingerprint}</dt><dd>{record.interchangeFingerprint}</dd></div> : null}
+          <div><dt>{copy.simulationModel}</dt><dd>{simulationModelLabel(record.model, copy)}</dd></div>
+          <div><dt>{copy.shots}</dt><dd>{record.shots.toLocaleString("en-US")}</dd></div>
+          <div><dt>{copy.seed}</dt><dd>{record.seed}</dd></div>
+          <div><dt>{copy.operations}</dt><dd>{record.operationCount} · {record.qubitCount}q</dd></div>
+        </dl>
+        <div className="mj-studio-simulation-counts"><span className="mj-section-label">{copy.resultCounts}</span><code>{Object.entries(record.counts).sort(([, left], [, right]) => right - left).map(([bitstring, count]) => `${bitstring}: ${count}`).join("\n")}</code></div>
+      </details>
+    </article>
+  );
+}
+
+function QpuLane({ artifact, shots, copy }: { artifact: LibraryArtifact | null; shots: string; copy: StudioCopy }) {
+  const [backends, setBackends] = useState<QpuBackendInfo[] | null>(null);
+  const [gate, setGate] = useState<QpuSubmissionGate | null>(null);
+  const [catalogError, setCatalogError] = useState(false);
+  const [selected, setSelected] = useState("");
+  const [estimate, setEstimate] = useState<QpuCostEstimate | null>(null);
+  const [estimateError, setEstimateError] = useState(false);
+  const [estimating, setEstimating] = useState(false);
+
+  const parsedShots = Number.parseInt(shots, 10);
+  const shotCount = Number.isInteger(parsedShots) && parsedShots >= 1 && parsedShots <= MAX_CPU_SHOTS ? parsedShots : 1024;
+
+  useEffect(() => {
+    let cancelled = false;
+    Promise.all([fetchQpuBackends(), fetchQpuSubmissionGate()])
+      .then(([backendList, submissionGate]) => {
+        if (cancelled) return;
+        setBackends(backendList);
+        setGate(submissionGate);
+        setSelected((current) => current || backendList[0]?.device_id || "");
+      })
+      .catch(() => {
+        if (!cancelled) setCatalogError(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!selected) return;
+    let cancelled = false;
+    setEstimating(true);
+    setEstimateError(false);
+    fetchQpuEstimate(selected, shotCount)
+      .then((result) => {
+        if (!cancelled) setEstimate(result);
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setEstimate(null);
+          setEstimateError(true);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setEstimating(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [selected, shotCount]);
+
+  const backend = backends?.find((item) => item.device_id === selected) ?? null;
+  const verified = artifact?.status === "verified" || artifact?.status === "verified_caveats";
+  return (
+    <div className="mj-qpu-lane">
+      <button className="mj-secondary-button" type="button" disabled title={copy.qpuExecution}>{copy.qpuExecution}</button>
+      {catalogError ? <p>{copy.hardwareCatalogUnavailable}</p> : null}
+      {!catalogError && !backends ? <p>{copy.hardwareCatalogLoading}</p> : null}
+      {backends && backends.length ? (
+        <div className="mj-qpu-flow">
+          <label className="mj-studio-field">
+            <span>{copy.hardwareDevice}</span>
+            <select value={selected} onChange={(event) => setSelected(event.target.value)}>
+              {backends.map((item) => <option value={item.device_id} key={item.device_id}>{item.display_name}</option>)}
+            </select>
+          </label>
+          {backend ? (
+            <div className="mj-qpu-estimate">
+              <span className="mj-mono-muted">{backend.access === "free_queue" ? copy.hardwareAccessFree : `${copy.hardwareAccessOnDemand} · ${copy.hardwareRateConfirmed(backend.rate_confirmed_on)}`}</span>
+              {estimating ? <p>{copy.hardwareEstimating}</p> : null}
+              {estimateError ? <p role="alert">{copy.hardwareEstimateFailed}</p> : null}
+              {estimate && !estimating ? (
+                estimate.basis === "vendor_rate_card" ? (
+                  <>
+                    <dl className="mj-studio-contract">
+                      <div><dt>{copy.hardwareTaskFee}</dt><dd>{estimate.task_fee_usd !== null ? formatUsd(estimate.task_fee_usd) : "—"}</dd></div>
+                      <div><dt>{copy.hardwareShotFees(estimate.shots.toLocaleString("en-US"))}</dt><dd>{estimate.shot_fees_usd !== null ? formatUsd(estimate.shot_fees_usd) : "—"}</dd></div>
+                      <div><dt>{copy.hardwareEstimatedTotal}</dt><dd><strong>{estimate.total_usd !== null ? formatUsd(estimate.total_usd) : "—"}</strong></dd></div>
+                    </dl>
+                    <p className="mj-qpu-disclaimer">{estimate.disclaimer}</p>
+                  </>
+                ) : (
+                  <p className="mj-qpu-disclaimer">{estimate.allowance_note}</p>
+                )
+              ) : null}
+              <p className="mj-qpu-source"><a href={backend.rate_source} target="_blank" rel="noreferrer">{copy.hardwareRateSource} ↗</a></p>
+            </div>
+          ) : null}
+          <button className="mj-primary-button" type="button" disabled title={gate ? copy.hardwareBlockedReason(gate.blocked_reason ?? "") : undefined}>
+            {copy.hardwareRequestSubmission}
+          </button>
+          {!verified ? <p className="mj-qpu-note">{copy.hardwareVerifiedRequired}</p> : null}
+          {gate && !gate.submission_available ? <p className="mj-qpu-note">{copy.hardwareBlockedReason(gate.blocked_reason ?? "")}</p> : null}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function SimulationDistribution({ data, copy }: { data: SimulationChartData; copy: StudioCopy }) {
+  const totalShots = data.bars.reduce((sum, bar) => sum + bar.count, 0) + data.otherShots;
+  return (
+    <div className="mj-sim-chart">
+      <span className="mj-section-label">{copy.simulationDistribution}</span>
+      <div className="mj-sim-chart-rows">
+        {data.bars.map((bar) => (
+          <div
+            className={bar.peak ? "mj-sim-chart-row is-peak" : "mj-sim-chart-row"}
+            title={`|${bar.bitstring}⟩ · ${bar.count.toLocaleString("en-US")} / ${totalShots.toLocaleString("en-US")} · ${formatShare(bar.share, "en-US")}`}
+            key={bar.bitstring}
+          >
+            <code>{bar.bitstring}</code>
+            <span className="mj-sim-chart-track"><span className="mj-sim-chart-fill" style={{ width: `${Math.max(bar.share * 100, 0.75)}%` }} /></span>
+            <span className="mj-sim-chart-value">{formatShare(bar.share, "en-US")}</span>
+          </div>
+        ))}
+        {data.otherStates ? (
+          <div className="mj-sim-chart-row is-other" title={`${copy.simulationOtherBar(data.otherStates)} · ${data.otherShots.toLocaleString("en-US")} / ${totalShots.toLocaleString("en-US")}`}>
+            <code>…</code>
+            <span className="mj-sim-chart-track"><span className="mj-sim-chart-fill" style={{ width: `${Math.max((data.otherShots / totalShots) * 100, 0.75)}%` }} /></span>
+            <span className="mj-sim-chart-value">{copy.simulationOtherBar(data.otherStates)}</span>
+          </div>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+function simulationReadingText(reading: SimulationReading, copy: StudioCopy): string {
+  if (reading.kind === "concentrated") return copy.readingConcentrated(reading.peak.bitstring, formatShare(reading.peak.share, "en-US"));
+  if (reading.kind === "paired") return copy.readingPaired(reading.first.bitstring, reading.second.bitstring, formatShare(reading.combinedShare, "en-US"));
+  return copy.readingSpread(reading.distinctStates, reading.peak.bitstring, formatShare(reading.peak.share, "en-US"));
+}
+
+function simulationModelLabel(model: CpuSimulationRecord["model"], copy: StudioCopy): string {
+  return model === "direct_source" ? copy.directSourceModel : copy.standardDecompositionModel;
+}
+
 function VersionPanel({ artifact, runId, stale, copy }: { artifact: LibraryArtifact | null; runId: string | null; stale: boolean; copy: StudioCopy }) {
   const checks: VerificationCheck[] = artifact?.checks ?? [];
   return (
@@ -995,8 +1473,8 @@ async function loadArtifact(id: string): Promise<LibraryArtifact | null> {
 }
 
 
-function makeDrafts(artifact: LibraryArtifact | null): BuilderCodeVariants {
-  if (!artifact) return { ...STARTER_CODES };
+function makeDraftBundle(artifact: LibraryArtifact | null): DraftBundle {
+  if (!artifact) return { codes: { ...STARTER_CODES }, notes: {} };
   const active = normalizeFramework(artifact?.framework);
   const variants = artifact?.frameworkVariants ?? {};
   const provided: Partial<BuilderCodeVariants> = {};
@@ -1012,11 +1490,21 @@ function makeDrafts(artifact: LibraryArtifact | null): BuilderCodeVariants {
   const source = candidates.find((candidate) => Boolean(parseCircuitSource(candidate.code, candidate.framework)))
     ?? (qasm ? { framework: "openqasm3" as const, code: qasm } : undefined);
   const converted = source
-    ? allCircuitConversions(source.code, source.framework, qasm)
+    ? allCircuitConversionResults(source.code, source.framework, qasm)
     : {};
-  return Object.fromEntries(
-    CIRCUIT_FRAMEWORKS.map(({ key }) => [key, provided[key] ?? converted[key] ?? ""]),
-  ) as BuilderCodeVariants;
+  const notes: Partial<Record<StudioFramework, string>> = {};
+  for (const { key } of CIRCUIT_FRAMEWORKS) {
+    const conversion = converted[key];
+    if (!provided[key] && conversion?.fidelity === "standard_gate_decomposition") {
+      notes[key] = conversion.note;
+    }
+  }
+  return {
+    codes: Object.fromEntries(
+      CIRCUIT_FRAMEWORKS.map(({ key }) => [key, provided[key] ?? converted[key]?.code ?? ""]),
+    ) as BuilderCodeVariants,
+    notes,
+  };
 }
 
 function normalizeFramework(value: string | undefined): StudioFramework | null {

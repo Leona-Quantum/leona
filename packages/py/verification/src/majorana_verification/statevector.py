@@ -15,6 +15,23 @@ from qiskit import QuantumCircuit, qasm3
 from qiskit.circuit import ControlFlowOp
 from qiskit.quantum_info import Operator, Statevector
 
+# Width ceilings for the dense paths. Every one of these was MEASURED on the
+# worker's own hardware (2026-07-23 stress run) rather than reasoned about,
+# because the two costs scale differently and intuition gets them backwards: a
+# statevector is 16 * 2**n bytes, a unitary is 16 * 4**n.
+#
+#   unitary()               12 q -> 2.9 s | 14 q -> 73 s | 20 q -> SIGKILL
+#   simulate_statevector()  24 q -> 3.5 s | 26 q -> 15 s | 28 q -> >90 s
+#   statistical (2x above)  24 q -> 7.3 s | 26 q -> 31 s | 28 q -> 259 s
+#   ideal_distribution()    20 q -> 2.1 s (1 M entries) | 24 q -> 62 s (16.7 M)
+#
+# Before these existed the three functions had NO ceiling at all, so an oversized
+# circuit did not produce a verdict — it hung the worker or was OOM-killed, which
+# downstream is an orphaned run rather than an answer.
+UNITARY_MAX_QUBITS = 12
+STATEVECTOR_MAX_QUBITS = 24
+IDEAL_DISTRIBUTION_MAX_QUBITS = 20
+
 
 class StatevectorIncapable(ValueError):
     """The statevector path cannot judge this circuit at all.
@@ -31,6 +48,39 @@ class StatevectorIncapable(ValueError):
     static read of the circuit's structure, never from a numerical comparison —
     a genuine disagreement must not be able to arrive wearing this type.
     """
+
+
+class MethodCeilingExceeded(StatevectorIncapable):
+    """The circuit is correct-shaped but wider than this check can simulate.
+
+    The second instance of the bug its parent documents. A dense check that runs
+    out of width is stating a fact about ITSELF, yet `exact` raised a bare
+    ValueError for it and `verify_exact` maps ValueError to FAIL — so a GHZ-20
+    compared against ITSELF, which is tautologically correct, was recorded as
+    contrary evidence (measured 2026-07-23: 11, 14 and 20 qubits all `fail`).
+    Every candidate then fails identically for a reason no rewrite can address,
+    exactly as run 019f7e46-d688 did for the control-flow case.
+
+    A subclass of StatevectorIncapable so every existing `except
+    StatevectorIncapable` site routes it to SKIPPED with no change, and so the
+    fail-closed ValueError fallback still holds for callers that catch neither.
+    Carries the two numbers because "too wide" without them is unactionable: the
+    user needs to know how far over the line they are.
+    """
+
+    def __init__(self, method: str, qubits: int, max_qubits: int) -> None:
+        self.method = method
+        self.qubits = qubits
+        self.max_qubits = max_qubits
+        super().__init__(
+            f"the '{method}' check simulates at most {max_qubits} qubits and this "
+            f"circuit has {qubits}; no evidence was produced either way"
+        )
+
+
+def _reject_over_ceiling(method: str, qubits: int, max_qubits: int) -> None:
+    if qubits > max_qubits:
+        raise MethodCeilingExceeded(method, qubits, max_qubits)
 
 
 # Operation names that make a circuit non-unitary even after final measurements
@@ -113,8 +163,10 @@ def _without_qubits(circuit: QuantumCircuit, removed: list[int]) -> QuantumCircu
 
 
 def simulate_statevector(source: str) -> np.ndarray:
+    circuit = _unitary_circuit(source)
+    _reject_over_ceiling("statevector", circuit.num_qubits, STATEVECTOR_MAX_QUBITS)
     try:
-        return np.asarray(Statevector.from_instruction(_unitary_circuit(source)).data)
+        return np.asarray(Statevector.from_instruction(circuit).data)
     except StatevectorIncapable:
         raise
     except Exception as exc:
@@ -153,6 +205,9 @@ def _operator(circuit: QuantumCircuit) -> np.ndarray:
     instead of an incapacity skip.
     """
     _reject_statevector_incapable(circuit)
+    # 16 * 4**n bytes: 20 qubits is 16 TB and took the whole process out with a
+    # SIGKILL rather than an exception, so this guard has to precede the call.
+    _reject_over_ceiling("unitary", circuit.num_qubits, UNITARY_MAX_QUBITS)
     try:
         return np.asarray(Operator(circuit).data)
     except StatevectorIncapable:
@@ -213,7 +268,11 @@ def exact_equivalence(
             "candidate_qubits": right.num_qubits,
         }
     elif left.num_qubits > max_qubits:
-        raise ValueError(f"exact protocol supports at most {max_qubits} qubits")
+        # NOT a plain ValueError, and deliberately distinct from the width
+        # MISMATCH branch above: a mismatch is a real disagreement about the
+        # program and stays a FAIL, whereas running out of width is the check
+        # describing its own reach and must not read as evidence.
+        raise MethodCeilingExceeded("exact", left.num_qubits, max_qubits)
     else:
         distance = _phase_align_distance(_operator(left), _operator(right))
         passed = distance <= tolerance
@@ -238,6 +297,10 @@ def exact_equivalence(
 
 def ideal_distribution(source: str) -> dict[str, float]:
     circuit = _load_circuit(source)
+    # Tighter than STATEVECTOR_MAX_QUBITS because the dict, not the array, is the
+    # cost here: one Python str key per non-zero amplitude. 24 qubits built 16.7 M
+    # entries in 62 s, and that dict then has to be JSON-serialized into evidence.
+    _reject_over_ceiling("ideal_distribution", circuit.num_qubits, IDEAL_DISTRIBUTION_MAX_QUBITS)
     probabilities = np.abs(simulate_statevector(source)) ** 2
     return {
         format(index, f"0{circuit.num_qubits}b"): float(value)

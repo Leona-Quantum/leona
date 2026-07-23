@@ -11,6 +11,9 @@ from .enums import (
     EvidenceStrength,
     ExportStatus,
     Framework,
+    QpuEstimateBasis,
+    QpuProvider,
+    QpuRunStatus,
     Role,
     RunMode,
     RunStatus,
@@ -284,4 +287,34 @@ class VerificationRecord(_ResourceBase):
     params: dict[str, Any]
     result: VerificationResultKind
     details: dict[str, Any]
+    created_at: datetime
+
+
+class QpuRunRecord(_ResourceBase):
+    """Provider-attested hardware run — the /v1 shape for the durable qpu_run
+    seam. Its storage lands in the follow-up migration PR (deploys migrate
+    before rollout, so the contract ships first); until that lands no endpoint
+    returns it. `raw_counts` is exactly what the provider returned — raw,
+    never averaged or corrected in place."""
+
+    id: UUID
+    workspace_id: UUID
+    user_id: UUID
+    artifact_version_id: UUID | None = None
+    provider: QpuProvider
+    device_id: str
+    provider_job_id: str | None = None
+    shots: int = Field(ge=1)
+    status: QpuRunStatus
+    source_fingerprint: str
+    # Snapshot of the estimate exactly as shown at confirmation time, so the
+    # record proves what the user agreed to — not what the rate card says now.
+    estimate_basis: QpuEstimateBasis
+    estimated_total_usd: float | None = None
+    rate_source: str
+    rate_confirmed_on: str
+    raw_counts: dict[str, int] | None = None
+    error: str | None = None
+    submitted_at: datetime | None = None
+    completed_at: datetime | None = None
     created_at: datetime

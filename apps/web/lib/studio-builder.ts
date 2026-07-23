@@ -154,7 +154,7 @@ function cirqDefinition(gate: CustomGateDefinition, customGates: CustomGateDefin
   ];
 }
 
-function flattenBuilderSteps(
+export function flattenBuilderSteps(
   steps: BuilderStep[],
   customGates: CustomGateDefinition[],
 ): BuilderStep[] {

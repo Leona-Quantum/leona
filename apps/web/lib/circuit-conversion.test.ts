@@ -2,7 +2,11 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { CIRCUIT_FRAMEWORKS } from "./circuit-frameworks.ts";
-import { convertCircuitSource, generatePortableCircuitCode } from "./circuit-conversion.ts";
+import {
+  allCircuitConversionResults,
+  convertCircuitSource,
+  generatePortableCircuitCode,
+} from "./circuit-conversion.ts";
 
 test("portable circuits emit non-empty source for all seven framework targets", () => {
   const generated = generatePortableCircuitCode({
@@ -24,23 +28,65 @@ test("portable circuits emit non-empty source for all seven framework targets", 
   assert.match(generated.pyquil, /MEASURE/);
 });
 
-test("arbitrary OpenQASM receives target-specific recipes outside the bounded subset", () => {
+test("OpenQASM standard gates emit direct target source instead of a runtime recipe", () => {
   const qasm = `OPENQASM 3.0;
 include "stdgates.inc";
-qubit[2] q;
+qubit[3] q;
+p(pi/4) q[0];
+U(pi/2, 0, pi) q[1];
+sx q[2];
+cp(pi/2) q[0], q[1];
+ch q[0], q[1];
+ccx q[0], q[1], q[2];
+cswap q[0], q[1], q[2];
+iswap q[0], q[1];
+id q[0];
+sdg q[1];
+tdg q[2];
+cy q[0], q[1];
+crz(pi/2) q[0], q[1];
+rzz(pi/2) q[0], q[1];
+rxx(pi/2) q[0], q[1];
+ecr q[0], q[1];
+ccz q[0], q[1], q[2];
 ctrl @ x q[0], q[1];`;
-  const cudaq = convertCircuitSource(qasm, "openqasm3", "cudaq", qasm);
-  const pennylane = convertCircuitSource(qasm, "openqasm3", "pennylane", qasm);
-  const pyquil = convertCircuitSource(qasm, "openqasm3", "pyquil", qasm);
+  const conversions = allCircuitConversionResults(qasm, "openqasm3", qasm);
 
-  assert.ok(cudaq);
-  assert.equal(cudaq.fidelity, "interchange_recipe");
-  assert.match(cudaq.code, /openqasm3_to_cudaq/);
-  assert.match(cudaq.code, /qbraid\[cudaq\]/);
-  assert.ok(pennylane);
-  assert.match(pennylane.code, /qml\.from_qasm3/);
-  assert.doesNotMatch(pennylane.code, /from qbraid/);
-  assert.ok(pyquil);
-  assert.match(pyquil.code, /openqasm3_to_pyquil/);
-  assert.match(pyquil.code, /pip install --pre/);
+  for (const framework of CIRCUIT_FRAMEWORKS) {
+    const conversion = conversions[framework.key];
+    assert.ok(conversion, framework.label);
+    assert.equal(conversion.fidelity, "standard_gate_decomposition", framework.label);
+    assert.doesNotMatch(conversion.code, /print\(circuit\)|qbraid|from_qasm3/i, framework.label);
+  }
+  assert.match(conversions.qiskit!.code, /qc\.rz/);
+  assert.match(conversions.pennylane!.code, /qml\.RZ/);
+  assert.match(conversions.cirq!.code, /cirq\.rz/);
+  assert.match(conversions.openqasm3!.code, /OPENQASM 3\.0/);
+});
+
+test("OpenQASM outside the standard-gate subset is not presented as a converted circuit", () => {
+  const qasm = `OPENQASM 3.0;
+include "stdgates.inc";
+qubit[2] data;
+for uint i in [0:1] {
+  h data[i];
+}`;
+  assert.equal(convertCircuitSource(qasm, "openqasm3", "cirq", qasm), null);
+});
+
+test("generated scalar OpenQASM registers convert through the bounded standard-gate path", () => {
+  const qasm = `OPENQASM 3.0;
+include "stdgates.inc";
+qubit _qubit0;
+p(pi/4) _qubit0;
+bit _bit0;
+_bit0 = measure _qubit0;`;
+
+  const conversion = convertCircuitSource("qc.p(np.pi / 4, 0)", "qiskit", "qiskit", qasm);
+
+  assert.ok(conversion);
+  assert.equal(conversion.fidelity, "standard_gate_decomposition");
+  assert.match(conversion.code, /qc\.rz/);
+  assert.match(conversion.code, /qc\.measure_all\(\)/);
+  assert.match(conversion.note, /global phase/i);
 });

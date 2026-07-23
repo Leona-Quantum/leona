@@ -508,6 +508,28 @@ async def test_created_rows_carry_scope_workspace(scope, session):
     assert row.actor_user_id == scope.user_id
 
 
+async def test_create_run_rejects_an_artifact_version_outside_scope(scope, session):
+    """A bad Vault context must fail before a queued Run is inserted.
+
+    The worker also resolves the version under scope, but waiting until claim
+    time would leave an apparently valid queued run and an orphaned job. The
+    submission repository is the first boundary and must reject the reference
+    there.
+    """
+    with pytest.raises(NotFoundError):
+        await runs.create_run(
+            scope,
+            session,
+            task_prompt="use this artifact",
+            mode=RunMode.EXECUTE,
+            framework="qiskit",
+            artifact_version_id=uuid.uuid4(),
+        )
+
+    assert_workspace_bound(session.statements[0], scope)
+    assert session.added == []
+
+
 async def test_verification_record_requires_in_scope_run(scope, session):
     with pytest.raises(NotFoundError):
         await runs.add_verification_record(
