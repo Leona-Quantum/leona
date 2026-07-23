@@ -1,6 +1,6 @@
 "use client";
 
-import type { FormEvent } from "react";
+import type { FormEvent, ReactNode } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
@@ -22,18 +22,40 @@ type WireEvent = {
   verifier_decision?: string | null;
   evidence_strength?: string | null;
   interpretation?: string;
+  decision?: string;
+  reason_code?: string | null;
   revision?: number;
   exit_code?: number;
   method?: string;
   result?: string;
   details?: Record<string, unknown>;
   artifact_id?: string;
-  plan?: { problem_summary?: string };
+  plan?: {
+    problem_summary?: string;
+    domain?: string;
+    algorithm?: string;
+    framework?: string;
+    qubits_estimate?: number;
+    success_criteria?: { primary_metric?: string; expected_range?: Record<string, number> };
+    [key: string]: unknown;
+  };
   candidates_considered?: number;
   failed_checks?: string[];
   critic_summary?: string | null;
   code?: string;
   verification_summary?: unknown;
+  stdout?: string;
+  stderr?: string;
+  unverified_claims?: string[];
+  feedback?: {
+    critic?: {
+      summary?: string;
+      severity?: string;
+      confidence?: string;
+      mismatches?: Array<{ aspect?: string; expected?: string; actual?: string }>;
+      suggestions?: string[];
+    };
+  };
 };
 
 // Every method the verifier emits needs an entry; a miss falls through to the raw
@@ -64,6 +86,30 @@ function processStepLabel(event: WireEvent): string | null {
       return `Wrote candidate circuit${event.revision ? ` (revision ${event.revision})` : ""}`;
     case "sandbox.result":
       return event.exit_code === 0 ? "Ran the circuit in the sandbox" : "Circuit failed in the sandbox — repairing";
+    case "verification.semantic_review":
+      switch (event.decision) {
+        case "ready":
+          return "Reviewed the candidate — looks aligned with the request";
+        case "code_repair":
+          return "Reviewed the candidate — found an issue, repairing the code";
+        case "replan":
+          return "Reviewed the candidate — the plan itself needs revising";
+        case "inconclusive":
+          return "Reviewed the candidate — inconclusive, gathering more evidence";
+        default:
+          return "Reviewed the candidate";
+      }
+    case "verification.strict_attempt":
+      switch (event.decision) {
+        case "pass":
+          return "Strict verification passed — added a verified badge";
+        case "inconclusive":
+          return "Strict verification inconclusive — no dedicated check available for this case";
+        case "fail":
+          return "Strict verification found an issue — recorded as a disclosed limitation";
+        default:
+          return "Ran strict verification";
+      }
     case "verification.result": {
       const label = (event.method && VERIFICATION_METHOD_LABEL[event.method]) || `Verification (${event.method ?? "?"})`;
       return `${label}: ${event.result ?? "?"}`;
@@ -85,9 +131,108 @@ function processLogFromEvents(events: WireEvent[]): string[] {
   return events.map(processStepLabel).filter((label): label is string => Boolean(label));
 }
 
-function processNarrative(events: WireEvent[], recentOnly = false): string {
-  const steps = processLogFromEvents(events);
-  return (recentOnly ? steps.slice(-2) : steps).join(". ");
+function processNarrative(events: WireEvent[]): string {
+  return processLogFromEvents(events).join(". ");
+}
+
+type ProcessStep = { key: string; label: string; event: WireEvent };
+
+function processSteps(events: WireEvent[]): ProcessStep[] {
+  const steps: ProcessStep[] = [];
+  events.forEach((event, index) => {
+    const label = processStepLabel(event);
+    if (label) steps.push({ key: `${index}-${event.type}`, label, event });
+  });
+  return steps;
+}
+
+/** The expandable body under a step's summary line — the plan namekoQ shows in
+ * request_plan's payload, the code a simulate tool ran, why review/strict
+ * verification decided what it decided. Returns null for steps that have
+ * nothing more to show than their one-line label. */
+function processStepDetail(event: WireEvent): ReactNode {
+  switch (event.type) {
+    case "plan.produced": {
+      const plan = event.plan;
+      if (!plan) return null;
+      const range = plan.success_criteria?.expected_range;
+      return (
+        <dl className="mj-run-process-detail-fields">
+          {plan.algorithm ? (
+            <>
+              <dt>Algorithm</dt>
+              <dd>{plan.algorithm}</dd>
+            </>
+          ) : null}
+          {plan.framework ? (
+            <>
+              <dt>Framework</dt>
+              <dd>{plan.framework}</dd>
+            </>
+          ) : null}
+          {plan.qubits_estimate !== undefined ? (
+            <>
+              <dt>Qubits</dt>
+              <dd>{plan.qubits_estimate}</dd>
+            </>
+          ) : null}
+          {plan.success_criteria?.primary_metric ? (
+            <>
+              <dt>Success metric</dt>
+              <dd>
+                {plan.success_criteria.primary_metric}
+                {range ? ` (${Object.entries(range).map(([bound, value]) => `${bound}: ${value}`).join(", ")})` : ""}
+              </dd>
+            </>
+          ) : null}
+        </dl>
+      );
+    }
+    case "code.generated":
+      return event.code ? <ChatMarkdown source={`\`\`\`python\n${event.code}\n\`\`\``} /> : null;
+    case "sandbox.result":
+      return event.stderr ? <pre className="mj-run-process-detail-pre">{event.stderr}</pre> : null;
+    case "verification.semantic_review": {
+      const critic = event.feedback?.critic;
+      if (!critic?.summary) return null;
+      return (
+        <div className="mj-run-process-detail-text">
+          <p>{critic.summary}</p>
+          {critic.mismatches?.length ? (
+            <ul>
+              {critic.mismatches.map((mismatch, index) => (
+                <li key={index}>
+                  {mismatch.aspect ?? "mismatch"}: expected {mismatch.expected ?? "?"}, got {mismatch.actual ?? "?"}
+                </li>
+              ))}
+            </ul>
+          ) : null}
+          {critic.suggestions?.length ? (
+            <ul>
+              {critic.suggestions.map((suggestion, index) => (
+                <li key={index}>{suggestion}</li>
+              ))}
+            </ul>
+          ) : null}
+        </div>
+      );
+    }
+    case "verification.strict_attempt":
+      return event.reason_code || event.unverified_claims?.length ? (
+        <div className="mj-run-process-detail-text">
+          {event.reason_code ? <p>{event.reason_code}</p> : null}
+          {event.unverified_claims?.length ? (
+            <ul>
+              {event.unverified_claims.map((claim, index) => (
+                <li key={index}>{claim}</li>
+              ))}
+            </ul>
+          ) : null}
+        </div>
+      ) : null;
+    default:
+      return null;
+  }
 }
 
 function resultSummaryFromEvents(events: WireEvent[]): string | null {
@@ -545,12 +690,37 @@ function AssistantMessage({
 }
 
 function ProcessNarrative({ events }: { events: WireEvent[] }) {
-  const narrative = processNarrative(events, true);
-  if (!narrative) return null;
+  const steps = processSteps(events);
+  if (steps.length === 0) return null;
+  const lastIndex = steps.length - 1;
   return (
-    <p className="mj-run-process-text" key={narrative}>
-      {narrative}
-    </p>
+    <ul className="mj-run-process-list">
+      {steps.map((step, index) => {
+        const labelClassName =
+          index === lastIndex ? "mj-run-process-text" : "mj-run-process-text mj-run-process-text--done";
+        const detail = processStepDetail(step.event);
+        // Only steps with something to show underneath become an expandable pull
+        // tab (the plan, the code a simulate tool ran, why review/strict
+        // verification decided what it decided) — a step with nothing more to say
+        // than its own summary line stays a plain, unclickable list item, so it
+        // never shows a disclosure triangle that opens onto nothing.
+        if (!detail) {
+          return (
+            <li key={step.key} className={labelClassName}>
+              {step.label}
+            </li>
+          );
+        }
+        return (
+          <li key={step.key}>
+            <details className="mj-run-process-detail">
+              <summary className={labelClassName}>{step.label}</summary>
+              <div className="mj-run-process-detail-body">{detail}</div>
+            </details>
+          </li>
+        );
+      })}
+    </ul>
   );
 }
 

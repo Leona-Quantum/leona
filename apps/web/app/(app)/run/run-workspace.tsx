@@ -12,6 +12,7 @@ import {
   hydrateArtifactFramework,
   type ArtifactFrameworkHydration,
 } from "../../../lib/framework-selection";
+import type { ComposerMode } from "../../../lib/run-mode";
 import { RunComposer, type ComposerFramework } from "../../../components/run-composer";
 import { ElectronField } from "../../../components/electron-field";
 
@@ -29,6 +30,7 @@ export function RunWorkspace({ demoMode = false, locale = "en" }: { demoMode?: b
   const copy = WORKSPACE_COPY[locale].run;
   const router = useRouter();
   const [prompt, setPrompt] = useState("");
+  const [mode, setMode] = useState<ComposerMode>("auto");
   const [framework, setFramework] = useState<ComposerFramework>("qiskit");
   const [artifactHydration, setArtifactHydration] =
     useState<ArtifactFrameworkHydration>("checking");
@@ -167,10 +169,9 @@ export function RunWorkspace({ demoMode = false, locale = "en" }: { demoMode?: b
         },
         body: JSON.stringify({
           task_prompt: promptWithAttachments(taskPrompt),
-          // The composer is a chat box: what arrives here is as often a question
-          // or a greeting as a task. "auto" lets the worker route on intent —
-          // hardcoding "execute" is what sent "hi" through the whole pipeline.
-          mode: "auto",
+          // Auto remains the safe default, while a deliberate user selection is
+          // authoritative and bypasses intent reclassification in the worker.
+          mode,
           framework,
           ...(contextArtifact?.code ? { source_code: contextArtifact.code } : {}),
           ...(contextArtifact?.currentVersionId ? { artifact_version_id: contextArtifact.currentVersionId } : {}),
@@ -224,6 +225,8 @@ export function RunWorkspace({ demoMode = false, locale = "en" }: { demoMode?: b
               pending={pending}
               error={error}
               onChange={setPrompt}
+              mode={mode}
+              onModeChange={setMode}
               framework={framework}
               onFrameworkChange={(value) => {
                 frameworkTouched.current = true;

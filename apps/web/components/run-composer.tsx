@@ -3,8 +3,8 @@
 import { useRef, type FormEvent } from "react";
 import { ChevronIcon, PaperclipIcon } from "./icons";
 import type { PublicLocale } from "../lib/public-locale";
+import { COMPOSER_MODES, type ComposerMode } from "../lib/run-mode";
 
-export type ComposerMode = "execute" | "ideate" | "explain";
 export type ComposerFramework = "qiskit" | "pennylane" | "cirq";
 
 export interface ComposerAttachment {
@@ -26,6 +26,8 @@ export function RunComposer({
   onRemoveAttachment,
   contextArtifact,
   onClearContext,
+  mode,
+  onModeChange,
   framework,
   onFrameworkChange,
   centered = false,
@@ -42,6 +44,8 @@ export function RunComposer({
   onRemoveAttachment?: (name: string) => void;
   contextArtifact?: { title: string; framework: string; codeAvailable: boolean } | null;
   onClearContext?: () => void;
+  mode?: ComposerMode;
+  onModeChange?: (mode: ComposerMode) => void;
   framework?: ComposerFramework;
   onFrameworkChange?: (framework: ComposerFramework) => void;
   centered?: boolean;
@@ -58,6 +62,11 @@ export function RunComposer({
         codeAttached: "コードを添付済み",
         removeContext: "コンテキストを外す",
         hint: "Markdown · LaTeX",
+        mode: "応答モード",
+        modeAuto: "自動",
+        modeExecute: "実行",
+        modeIdeate: "アイデア",
+        modeExplain: "解説",
         framework: "回路フレームワーク",
       }
     : {
@@ -69,6 +78,11 @@ export function RunComposer({
         codeAttached: "code attached",
         removeContext: "Remove context",
         hint: "Markdown · LaTeX",
+        mode: "Response mode",
+        modeAuto: "Auto",
+        modeExecute: "Execute",
+        modeIdeate: "Ideate",
+        modeExplain: "Explain",
         framework: "Circuit framework",
       };
 
@@ -145,6 +159,30 @@ export function RunComposer({
                   event.target.value = "";
                 }}
               />
+            ) : null}
+            {mode && onModeChange ? (
+              <label className="mj-composer-select">
+                <span className="sr-only">{labels.mode}</span>
+                <select
+                  aria-label={labels.mode}
+                  value={mode}
+                  disabled={pending}
+                  onChange={(event) => onModeChange(event.target.value as ComposerMode)}
+                >
+                  {COMPOSER_MODES.map((option) => (
+                    <option key={option} value={option}>
+                      {option === "auto"
+                        ? labels.modeAuto
+                        : option === "execute"
+                          ? labels.modeExecute
+                          : option === "ideate"
+                            ? labels.modeIdeate
+                            : labels.modeExplain}
+                    </option>
+                  ))}
+                </select>
+                <ChevronIcon size={12} />
+              </label>
             ) : null}
             {framework && onFrameworkChange ? (
               <label className="mj-composer-select">
