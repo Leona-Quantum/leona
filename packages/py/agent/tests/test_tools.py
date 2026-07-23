@@ -283,7 +283,23 @@ class ResourceExhaustedExecutor:
         )
 
 
-async def test_resource_exhaustion_is_terminal_without_candidate_repair():
+class TimeoutExecutor:
+    async def run_candidate(self, _candidate, _plan):
+        return ExecutionOutput(
+            environment_fingerprint="1" * 64,
+            sandbox_provider="test",
+            exit_code=-9,
+            duration_ms=30_000,
+            result={},
+            observation={
+                "evidence_error": "timeout",
+                "sandbox_error": "killed: exceeded 30s timeout",
+            },
+            failure_kind=ExecutionFailureKind.TIMEOUT,
+        )
+
+
+async def test_resource_exhaustion_requests_a_plan_revision_with_bounded_feedback():
     store = MemoryAgentStore()
     run_id = uuid4()
     tools = CircuitToolset(
@@ -310,10 +326,47 @@ async def test_resource_exhaustion_is_terminal_without_candidate_repair():
         ),
     )
 
-    assert result.state is AgentState.RESOURCE_EXHAUSTED
+    assert result.state is AgentState.REPLAN_REQUIRED
     assert result.payload["resource_exhausted"] is True
-    assert "repair" not in result.payload
+    assert result.payload["retry_target"] == RetryTarget.PLANNING.value
+    assert result.payload["repair"]["category"] == "execution_resource_limit"
+    assert "estimated_memory_mb=4096" in result.payload["repair"]["evidence"]
     assert (await store.latest_candidate(run_id)).status is CandidateStatus.RESOURCE_EXHAUSTED
+
+
+async def test_timeout_returns_actionable_code_repair_feedback():
+    store = MemoryAgentStore()
+    run_id = uuid4()
+    tools = CircuitToolset(
+        store=store,
+        framework=Framework.QISKIT,
+        planner=Planner(),
+        executor=TimeoutExecutor(),
+        verifier=Verifier(),
+        converter=Converter(),
+        materializer=Publisher(),
+    )
+    broker = ToolBroker(
+        store=store,
+        policy=AgentPolicy(framework=Framework.QISKIT),
+        handlers=tools.handlers(),
+    )
+    await broker.dispatch(run_id, ToolCall(tool_call_id="plan", name=ToolName.REQUEST_PLAN))
+
+    result = await broker.dispatch(
+        run_id,
+        ToolCall(
+            tool_call_id="simulate",
+            name=ToolName.SIMULATE_QISKIT,
+            arguments={"source": "FINAL_CIRCUIT = object()\nRESULT = {}"},
+        ),
+    )
+
+    assert result.state is AgentState.REPAIR_REQUIRED
+    assert result.payload["retry_target"] == RetryTarget.CODE_GENERATION.value
+    assert result.payload["repair"]["category"] == "execution_timeout"
+    assert "sandbox_duration_ms=30000" in result.payload["repair"]["evidence"]
+    assert "exceeded 30s timeout" in result.payload["repair"]["evidence"][-1]
 
 
 class ContractRejectedExecutor:

@@ -7,6 +7,7 @@ from majorana_agent import (
     AgentState,
     CircuitToolset,
     ConversionEvidence,
+    ExecutionFailureKind,
     ExecutionOutput,
     MemoryAgentStore,
     MaterializedArtifact,
@@ -68,6 +69,21 @@ class Executor:
         )
 
 
+class ResourceLimitExecutor:
+    """A plan whose estimate does not fit the sandbox lane, rejected pre-flight."""
+
+    async def run_candidate(self, _candidate, _plan):
+        return ExecutionOutput(
+            environment_fingerprint="1" * 64,
+            sandbox_provider="test",
+            exit_code=75,
+            duration_ms=0,
+            result={},
+            observation={},
+            failure_kind=ExecutionFailureKind.RESOURCE_LIMIT,
+        )
+
+
 class ReadyReviewer:
     calls = 0
 
@@ -106,6 +122,16 @@ class FlakyStrictVerifier:
             deterministic_checks=[{"method": "bell_state_property", "result": "pass"}],
             reason_code="strict_pass",
             retry_target=RetryTarget.NONE,
+        )
+
+
+class InconclusiveStrictVerifier:
+    async def verify_strict(self, _candidate, _execution, _plan, _review):
+        return VerificationOutput(
+            decision=VerifierDecision.INCONCLUSIVE,
+            deterministic_checks=[{"method": "statistical", "result": "unavailable"}],
+            reason_code="strict_inconclusive",
+            retry_target=RetryTarget.VERIFICATION,
         )
 
 
@@ -148,7 +174,7 @@ class Publisher:
         )
 
 
-def _stack(*, store=None, reviewer=None, strict=None, converter=None, budget=None):
+def _stack(*, store=None, reviewer=None, strict=None, converter=None, budget=None, executor=None):
     store = store or MemoryAgentStore()
     reviewer = reviewer or ReadyReviewer()
     strict = strict or FlakyStrictVerifier()
@@ -156,7 +182,7 @@ def _stack(*, store=None, reviewer=None, strict=None, converter=None, budget=Non
         store=store,
         framework=Framework.QISKIT,
         planner=Planner(),
-        executor=Executor(),
+        executor=executor or Executor(),
         reviewer=reviewer,
         strict_verifier=strict,
         converter=converter or Converter(),
@@ -186,21 +212,23 @@ def test_allowed_transition_table_is_exhaustive_and_legacy_tools_are_not_live():
     simulation = frozenset(
         {ToolName.SIMULATE_QISKIT, ToolName.SIMULATE_CIRQ, ToolName.SIMULATE_PENNYLANE}
     )
+    # Every state reachable after a READY semantic review offers the same three
+    # "finishing" choices (strict_verify/convert/materialize) and lets the model
+    # pick freely among them, repeatedly — see ALLOWED_TOOLS_BY_STATE's comment.
+    finishing = frozenset(
+        {ToolName.STRICT_VERIFY, ToolName.CONVERT_TO_OPENQASM, ToolName.MATERIALIZE_ARTIFACT}
+    )
     expected = {
         AgentState.NEW: frozenset({ToolName.REQUEST_PLAN}),
         AgentState.PLANNED: simulation,
         AgentState.EXECUTED: frozenset({ToolName.REVIEW_CANDIDATE}),
         AgentState.REVIEWED: frozenset({ToolName.REVIEW_CANDIDATE, ToolName.STRICT_VERIFY}),
-        AgentState.READY_FOR_STRICT_VERIFICATION: frozenset({ToolName.STRICT_VERIFY}),
+        AgentState.READY_FOR_STRICT_VERIFICATION: finishing,
         AgentState.REPAIR_REQUIRED: simulation,
         AgentState.REPLAN_REQUIRED: frozenset({ToolName.REPLAN}),
-        AgentState.VERIFIED: frozenset(
-            {ToolName.CONVERT_TO_OPENQASM, ToolName.MATERIALIZE_ARTIFACT}
-        ),
-        AgentState.INCONCLUSIVE: frozenset(
-            {ToolName.CONVERT_TO_OPENQASM, ToolName.MATERIALIZE_ARTIFACT}
-        ),
-        AgentState.QASM_ATTEMPTED: frozenset({ToolName.MATERIALIZE_ARTIFACT}),
+        AgentState.VERIFIED: finishing,
+        AgentState.INCONCLUSIVE: finishing,
+        AgentState.QASM_ATTEMPTED: finishing,
     }
     for state in AgentState:
         assert _ALLOWED[state] == expected.get(state, frozenset())
@@ -318,8 +346,13 @@ async def test_semantic_uncertainty_mechanically_prevents_strict_pass():
 
 
 async def test_terminal_inconclusive_materializes_privately_without_becoming_verified():
+    # strict_verify is a certification badge, not a gate: materialization now
+    # authorizes off a READY semantic review alone, so this exercises a READY
+    # review paired with a strict verifier that independently lands terminal
+    # INCONCLUSIVE (not via the review-uncertainty downgrade path).
     store, broker, _, _ = _stack(
-        reviewer=UncertainReviewer(),
+        reviewer=ReadyReviewer(),
+        strict=InconclusiveStrictVerifier(),
         converter=AvailableConverter(),
         budget=AgentBudget(max_strict_attempts=1),
     )
@@ -329,7 +362,7 @@ async def test_terminal_inconclusive_materializes_privately_without_becoming_ver
     await broker.dispatch(
         run_id,
         ToolCall(
-            tool_call_id="uncertain-review",
+            tool_call_id="ready-review",
             name=ToolName.REVIEW_CANDIDATE,
             arguments={"candidate_id": candidate_id},
         ),
@@ -410,7 +443,12 @@ async def test_unavailable_conversion_does_not_change_pass_verdict():
     assert latest_strict.decision is VerifierDecision.PASS
 
 
-async def test_strict_plan_defect_authorizes_replan():
+async def test_strict_fail_is_a_badge_not_a_gate_even_for_a_plan_defect():
+    # strict_verify no longer drives control flow, including for a PLAN_DEFECT
+    # finding: review_candidate already decided (READY) that this candidate is
+    # good enough to hand back, so a strict FAIL stays in
+    # READY_FOR_STRICT_VERIFICATION — materialize remains reachable, and REPLAN
+    # (which required landing in REPLAN_REQUIRED) is no longer authorized.
     store, broker, _, _ = _stack(strict=PlanDefectStrictVerifier())
     run_id = uuid4()
     simulation = await _execute_one(store, broker, run_id)
@@ -431,8 +469,8 @@ async def test_strict_plan_defect_authorizes_replan():
             arguments={"candidate_id": candidate_id},
         ),
     )
-    assert strict.state is AgentState.REPLAN_REQUIRED
-    rejected = await broker.dispatch(
+    assert strict.state is AgentState.READY_FOR_STRICT_VERIFICATION
+    materialized = await broker.dispatch(
         run_id,
         ToolCall(
             tool_call_id="materialize-failed-verdict",
@@ -440,8 +478,39 @@ async def test_strict_plan_defect_authorizes_replan():
             arguments={"candidate_id": candidate_id},
         ),
     )
-    assert rejected.error_code == "invalid_transition"
-    assert store.materializations == []
+    assert materialized.ok
+    assert store.materializations != []
+    rejected_replan = await broker.dispatch(
+        run_id, ToolCall(tool_call_id="replan", name=ToolName.REPLAN)
+    )
+    assert rejected_replan.error_code == "invalid_transition"
+
+
+async def test_execution_resource_limit_authorizes_replan():
+    # Live run 019f8dd0: a plan whose qubit/memory estimate did not fit the
+    # sandbox lane was correctly rejected pre-flight (exit_code 75, no sandbox
+    # invoked) and correctly routed to REPLAN_REQUIRED — but replan itself
+    # rejected every attempt with replan_not_authorized, because the
+    # authorization check only recognized plan-defect feedback shaped like a
+    # review_candidate/strict_verify result (failure_class=PLAN_DEFECT). A
+    # simulate_* execution failure never sets failure_class — that key belongs
+    # to verification, not raw execution — so a resource-limit rejection could
+    # never satisfy it. The run burned its entire plan-attempt budget on
+    # rejected replan calls and died with plan_attempt_budget_exhausted
+    # without ever getting a second chance at a smaller plan.
+    store, broker, _, _ = _stack(executor=ResourceLimitExecutor())
+    run_id = uuid4()
+    await broker.dispatch(run_id, ToolCall(tool_call_id="plan", name=ToolName.REQUEST_PLAN))
+    rejected_execution = await broker.dispatch(
+        run_id,
+        ToolCall(
+            tool_call_id="oversized-candidate",
+            name=ToolName.SIMULATE_QISKIT,
+            arguments={"source": "FINAL_CIRCUIT = object()\nRESULT = {'counts': {}}"},
+        ),
+    )
+    assert rejected_execution.ok
+    assert rejected_execution.state is AgentState.REPLAN_REQUIRED
     replanned = await broker.dispatch(run_id, ToolCall(tool_call_id="replan", name=ToolName.REPLAN))
     assert replanned.ok
     assert replanned.payload["revision"] == 2

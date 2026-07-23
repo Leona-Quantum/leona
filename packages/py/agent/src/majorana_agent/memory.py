@@ -9,8 +9,6 @@ from __future__ import annotations
 from collections import defaultdict
 from uuid import UUID
 
-from majorana_contracts.enums import VerifierDecision
-
 from majorana_agent.models import (
     AgentState,
     CandidateStatus,
@@ -325,16 +323,15 @@ class MemoryAgentStore:
         )
         if owner is None:
             raise KeyError(evidence.candidate_id)
-        strict = await self.latest_strict_verification(owner, evidence.candidate_id)
+        # strict_verify is a certification badge, not a gate: conversion only
+        # needs a READY semantic review (see tools.py.convert).
+        review = await self.latest_semantic_review(owner, evidence.candidate_id)
         execution = self._executions.get((owner, evidence.candidate_id))
-        if strict is None or strict.decision not in {
-            VerifierDecision.PASS,
-            VerifierDecision.INCONCLUSIVE,
-        }:
-            raise ValueError("conversion requires strict PASS or INCONCLUSIVE")
+        if review is None or review.decision.value != "ready":
+            raise ValueError("conversion requires a READY semantic review")
         if execution is None or not (
-            strict.execution_id == evidence.execution_id == execution.execution_id
-            and strict.source_fingerprint
+            review.execution_id == evidence.execution_id == execution.execution_id
+            and review.source_fingerprint
             == evidence.source_fingerprint
             == execution.source_fingerprint
         ):
@@ -364,15 +361,18 @@ class MemoryAgentStore:
             for item in self._candidates[owner]
             if item.candidate_id == materialization.candidate_id
         )
+        # strict_verify is a certification badge, not a gate: materialization is
+        # authorized by a READY semantic review alone (see broker.py/tools.py),
+        # regardless of whether strict_verify ran, or what it found.
+        reviews = self._semantic_reviews[(owner, materialization.candidate_id)]
+        review = max(reviews, key=lambda item: item.attempt_seq) if reviews else None
+        if review is None or review.decision.value != "ready":
+            raise ValueError("materialization requires a READY semantic review")
+        if candidate.source_fingerprint != materialization.source_fingerprint:
+            raise ValueError("materialization fingerprint does not match candidate")
         attempts = self._strict_verifications[(owner, materialization.candidate_id)]
         strict = max(attempts, key=lambda item: item.attempt_seq) if attempts else None
-        if strict is None or strict.decision.value not in {"pass", "inconclusive"}:
-            raise ValueError("materialization requires strict PASS or INCONCLUSIVE")
-        if not (
-            candidate.source_fingerprint
-            == strict.source_fingerprint
-            == materialization.source_fingerprint
-        ):
+        if strict is not None and strict.source_fingerprint != materialization.source_fingerprint:
             raise ValueError("materialization fingerprint does not match strict evidence")
         existing = next(
             (

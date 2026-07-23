@@ -89,14 +89,58 @@ SIMULATION_TOOL_BY_FRAMEWORK: dict[Framework, ToolName] = {
 }
 
 
+# Single source of truth for which tools are callable from each state. Both
+# the model (StructuredToolModel, which constrains what the LLM is even
+# offered) and the broker (ToolBroker, which enforces what it actually
+# accepts) must agree, or the two can drift — as happened live: broker._ALLOWED
+# was updated to let READY_FOR_STRICT_VERIFICATION reach materialize_artifact,
+# but the model's separate copy of this table was not, so the LLM was never
+# offered that choice even though the broker would have accepted it. Defined
+# here, not in broker.py, so nothing needs a second copy.
+# A READY semantic review is namekoQ-style sufficient evidence to hand the
+# circuit back to the user (see broker.py/tools.py). Every state reachable
+# after that point — whether or not strict_verify has run yet, and whatever
+# it found — offers the same three "finishing" choices and lets the model
+# freely pick among them, repeatedly, within the existing per-tool budgets:
+# attempt/re-attempt strict_verify for a stronger badge, export OpenQASM, or
+# materialize now. Each handler independently re-validates its own
+# preconditions from stored evidence (fingerprints, execution/review
+# existence) regardless of which of these states the model called it from, so
+# this table's job is only to bound the choice set, not to enforce a fixed
+# order among them the way it must for the earlier plan -> execute -> review
+# spine.
+_FINISHING_TOOLS = frozenset(
+    {ToolName.STRICT_VERIFY, ToolName.CONVERT_TO_OPENQASM, ToolName.MATERIALIZE_ARTIFACT}
+)
+
+ALLOWED_TOOLS_BY_STATE: dict[AgentState, frozenset[ToolName]] = {
+    AgentState.NEW: frozenset({ToolName.REQUEST_PLAN}),
+    AgentState.PLANNED: frozenset(SIMULATION_TOOL_BY_FRAMEWORK.values()),
+    AgentState.EXECUTED: frozenset({ToolName.REVIEW_CANDIDATE}),
+    AgentState.REVIEWED: frozenset({ToolName.REVIEW_CANDIDATE, ToolName.STRICT_VERIFY}),
+    AgentState.READY_FOR_STRICT_VERIFICATION: _FINISHING_TOOLS,
+    AgentState.REPAIR_REQUIRED: frozenset(SIMULATION_TOOL_BY_FRAMEWORK.values()),
+    AgentState.REPLAN_REQUIRED: frozenset({ToolName.REPLAN}),
+    AgentState.RESOURCE_EXHAUSTED: frozenset(),
+    AgentState.VERIFIED: _FINISHING_TOOLS,
+    AgentState.INCONCLUSIVE: _FINISHING_TOOLS,
+    AgentState.QASM_ATTEMPTED: _FINISHING_TOOLS,
+    AgentState.PUBLISHED: frozenset(),
+    AgentState.MATERIALIZED: frozenset(),
+    AgentState.COMPLETED: frozenset(),
+    AgentState.FAILED: frozenset(),
+    AgentState.CANCELLED: frozenset(),
+}
+
+
 class AgentBudget(_Record):
     # Overall circuit breaker. It must sit above the sum of useful per-lane
     # attempts now that review and strict verification are distinct durable steps.
     max_steps: int = Field(default=32, ge=1, le=64)
-    max_candidates: int = Field(default=4, ge=1, le=12)
+    max_candidates: int = Field(default=6, ge=1, le=12)
     max_plan_attempts: int = Field(default=4, ge=1, le=12)
     max_plan_revisions: int = Field(default=3, ge=1, le=8)
-    max_sandbox_runs: int = Field(default=6, ge=1, le=20)
+    max_sandbox_runs: int = Field(default=10, ge=1, le=20)
     max_semantic_review_attempts: int = Field(default=8, ge=1, le=12)
     max_strict_attempts: int = Field(default=8, ge=1, le=12)
     max_conversions: int = Field(default=3, ge=0, le=8)
@@ -116,6 +160,39 @@ class ToolResult(_Record):
     payload: dict[str, Any] = Field(default_factory=dict)
     error_code: str | None = None
     error_message: str | None = None
+
+
+_PLAN_DEFECT_REVIEW_SOURCES = frozenset(
+    {ToolName.REVIEW_CANDIDATE, ToolName.STRICT_VERIFY, ToolName.VERIFY_INTENT_ALIGNMENT}
+)
+
+
+def authorizes_replan(result: ToolResult) -> bool:
+    """Whether a completed tool result is typed, replan-authorizing plan-defect
+    feedback.
+
+    Two distinct shapes carry retry_target=PLANNING, and only one of them ever
+    sets failure_class: review_candidate/strict_verify/verify_intent_alignment
+    flag a *verification-time* plan defect via failure_class=PLAN_DEFECT. A
+    simulate_* tool's execution-time RESOURCE_LIMIT rejection (the plan's
+    qubit/memory estimate does not fit the sandbox lane, caught before the
+    sandbox even runs) also sets retry_target=PLANNING, but has no
+    failure_class to set — that concept belongs to verification, not raw
+    execution. Requiring failure_class unconditionally left that second shape
+    permanently unauthorized: _next_state correctly routes it to
+    REPLAN_REQUIRED, but replan itself always rejected it, burning the whole
+    plan-attempt budget on rejected calls (observed live, run 019f8dd0).
+    """
+    if not result.ok:
+        return False
+    if result.name in SIMULATION_TOOL_BY_FRAMEWORK.values():
+        return result.payload.get("retry_target") == RetryTarget.PLANNING.value
+    if result.name in _PLAN_DEFECT_REVIEW_SOURCES:
+        return (
+            result.payload.get("failure_class") == VerificationFailureClass.PLAN_DEFECT.value
+            and result.payload.get("retry_target") == RetryTarget.PLANNING.value
+        )
+    return False
 
 
 class PlanRecord(_Record):

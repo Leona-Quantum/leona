@@ -54,34 +54,16 @@ async def test_model_turns_malformed_selection_into_broker_feedback_call():
     assert "__model_selection_error__" in call.arguments
 
 
-async def test_verified_exemplars_reach_the_generation_context_bounded():
-    """LLM work list item 4: retrieved code from our own verified corpus rides in
-    the per-run user payload. Bounded — oversized sources truncate, entries
-    without source drop, and at most two survive."""
+async def test_reference_template_is_always_present_for_a_known_framework():
+    """No dynamic few-shot exemplar retrieval (removed: it selected by recency
+    within a framework only, with no way to filter by relevance to the current
+    plan's algorithm — see templates.py). Every run gets the same static,
+    sandbox-executed baseline for its framework's FINAL_CIRCUIT/RESULT contract."""
     llm = FakeLLM()
     model = StructuredToolModel(
-        llm=llm,
-        task_prompt="Bell circuit",
-        framework=Framework.QISKIT,
-        model="test-model",
-        exemplars=[
-            {"title": "GHZ-4", "family": "GHZ", "source": "x" * 10_000},
-            {"title": "no-source", "family": "Bell", "source": ""},
-            {"title": "Bell", "family": "Bell", "source": "qc = QuantumCircuit(2)"},
-            {"title": "third", "family": "QFT", "source": "print(3)"},
-        ],
+        llm=llm, task_prompt="Bell circuit", framework=Framework.CIRQ, model="test-model"
     )
     await model.next_tool(run_id=uuid4(), state=AgentState.PLANNED, history=[])
     payload = json.loads(llm.request.user)
-    exemplars = payload["verified_exemplars"]
-    assert [item["title"] for item in exemplars] == ["GHZ-4", "Bell"]
-    assert len(exemplars[0]["source"]) == 4000
-
-
-async def test_no_exemplars_yields_an_empty_list_not_an_absent_field():
-    llm = FakeLLM()
-    model = StructuredToolModel(
-        llm=llm, task_prompt="Bell circuit", framework=Framework.QISKIT, model="test-model"
-    )
-    await model.next_tool(run_id=uuid4(), state=AgentState.PLANNED, history=[])
-    assert json.loads(llm.request.user)["verified_exemplars"] == []
+    assert "cirq" in payload["reference_template"]
+    assert "FINAL_CIRCUIT" in payload["reference_template"]

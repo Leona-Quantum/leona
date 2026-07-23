@@ -8,12 +8,14 @@ from typing import Any
 from uuid import UUID, uuid5
 
 from majorana_agent.models import (
+    ALLOWED_TOOLS_BY_STATE,
     AgentBudget,
     AgentState,
     SIMULATION_TOOL_BY_FRAMEWORK,
     ToolCall,
     ToolName,
     ToolResult,
+    authorizes_replan,
 )
 from majorana_agent.store import AgentStore
 from majorana_contracts.enums import (
@@ -33,26 +35,11 @@ class AgentPolicy:
     budget: AgentBudget = AgentBudget()
 
 
-_ALLOWED: dict[AgentState, frozenset[ToolName]] = {
-    AgentState.NEW: frozenset({ToolName.REQUEST_PLAN}),
-    AgentState.PLANNED: frozenset(SIMULATION_TOOL_BY_FRAMEWORK.values()),
-    AgentState.EXECUTED: frozenset({ToolName.REVIEW_CANDIDATE}),
-    AgentState.REVIEWED: frozenset({ToolName.REVIEW_CANDIDATE, ToolName.STRICT_VERIFY}),
-    AgentState.READY_FOR_STRICT_VERIFICATION: frozenset({ToolName.STRICT_VERIFY}),
-    AgentState.REPAIR_REQUIRED: frozenset(SIMULATION_TOOL_BY_FRAMEWORK.values()),
-    AgentState.REPLAN_REQUIRED: frozenset({ToolName.REPLAN}),
-    AgentState.RESOURCE_EXHAUSTED: frozenset(),
-    AgentState.VERIFIED: frozenset({ToolName.CONVERT_TO_OPENQASM, ToolName.MATERIALIZE_ARTIFACT}),
-    AgentState.INCONCLUSIVE: frozenset(
-        {ToolName.CONVERT_TO_OPENQASM, ToolName.MATERIALIZE_ARTIFACT}
-    ),
-    AgentState.QASM_ATTEMPTED: frozenset({ToolName.MATERIALIZE_ARTIFACT}),
-    AgentState.PUBLISHED: frozenset(),
-    AgentState.MATERIALIZED: frozenset(),
-    AgentState.COMPLETED: frozenset(),
-    AgentState.FAILED: frozenset(),
-    AgentState.CANCELLED: frozenset(),
-}
+# Kept as a module-level alias: broker.py historically owned this table and
+# tests still reference it as `_ALLOWED`. The table itself now lives in
+# models.py (ALLOWED_TOOLS_BY_STATE) as the single source of truth shared with
+# model.py — see the comment there.
+_ALLOWED = ALLOWED_TOOLS_BY_STATE
 
 
 class ToolPolicyError(ValueError):
@@ -229,18 +216,23 @@ class ToolBroker:
                         "fingerprint_mismatch", "verified source differs from candidate"
                     )
             if call.name is ToolName.MATERIALIZE_ARTIFACT:
-                strict = await self._store.latest_strict_verification(run_id, candidate_id)
-                if strict is None or strict.decision not in {
-                    VerifierDecision.PASS,
-                    VerifierDecision.INCONCLUSIVE,
-                }:
+                # strict_verify is a certification badge on top of an already-
+                # materializable candidate, never a gate: review_candidate (the
+                # LLM judgment, namekoQ-style) is the sole authority on whether
+                # the circuit goes back to the user. A READY semantic review is
+                # sufficient regardless of whether strict_verify ran at all, or
+                # what it found — PASS strengthens the badge, INCONCLUSIVE/FAIL
+                # are disclosed as such. Only publish_artifact (the public claim,
+                # above) still requires a strict PASS.
+                review = await self._store.latest_semantic_review(run_id, candidate_id)
+                if review is None or review.decision is not SemanticReviewDecision.READY:
                     raise ToolPolicyError(
                         "candidate_not_materializable",
-                        "private materialization requires strict PASS or INCONCLUSIVE",
+                        "private materialization requires a READY semantic review",
                     )
-                if strict.source_fingerprint != candidate.source_fingerprint:
+                if review.source_fingerprint != candidate.source_fingerprint:
                     raise ToolPolicyError(
-                        "fingerprint_mismatch", "verified source differs from candidate"
+                        "fingerprint_mismatch", "reviewed source differs from candidate"
                     )
 
     @staticmethod
@@ -290,13 +282,14 @@ class ToolBroker:
         if name is ToolName.REPLAN:
             return AgentState.PLANNED
         if name in SIMULATION_TOOL_BY_FRAMEWORK.values():
-            if payload.get("resource_exhausted"):
-                return AgentState.RESOURCE_EXHAUSTED
-            return (
-                AgentState.EXECUTED
-                if payload.get("execution_ok", True)
-                else AgentState.REPAIR_REQUIRED
-            )
+            if payload.get("execution_ok", True):
+                return AgentState.EXECUTED
+            retry_target = RetryTarget(payload.get("retry_target", RetryTarget.CODE_GENERATION))
+            if retry_target is RetryTarget.PLANNING:
+                return AgentState.REPLAN_REQUIRED
+            if retry_target is RetryTarget.CODE_GENERATION:
+                return AgentState.REPAIR_REQUIRED
+            return AgentState.RESOURCE_EXHAUSTED
         if name is ToolName.REVIEW_CANDIDATE:
             decision = SemanticReviewDecision(payload["decision"])
             if decision is SemanticReviewDecision.REPLAN:
@@ -319,12 +312,20 @@ class ToolBroker:
                     if completed + 1 < self._policy.budget.max_strict_attempts:
                         return AgentState.REVIEWED
                 return AgentState.INCONCLUSIVE
-            retry_target = RetryTarget(payload.get("retry_target", RetryTarget.NONE))
-            if retry_target is RetryTarget.PLANNING:
-                return AgentState.REPLAN_REQUIRED
-            if retry_target is RetryTarget.CODE_GENERATION:
-                return AgentState.REPAIR_REQUIRED
-            return AgentState.REVIEWED
+            # decision is FAIL. strict_verify is a certification badge on an
+            # already-materializable candidate, not a gate: review_candidate
+            # already decided (READY) that this circuit is good enough to hand
+            # back to the user. Routing a strict FAIL into REPAIR_REQUIRED/
+            # REPLAN_REQUIRED would let strict_verify override that judgment
+            # and strand a candidate whose independent algorithm-specific
+            # evidence (e.g. brute_force for QAOA) may already have passed —
+            # observed live: brute_force PASS, only the generic statistical
+            # count-matching check failed, and the candidate was never
+            # materialized. Stay in READY_FOR_STRICT_VERIFICATION so
+            # materialize/convert remain reachable and the model may still
+            # retry strict_verify if it has budget left; it no longer forces a
+            # repair loop.
+            return AgentState.READY_FOR_STRICT_VERIFICATION
         if name is ToolName.VERIFY_INTENT_ALIGNMENT:
             decision = VerifierDecision(payload.get("decision", VerifierDecision.INCONCLUSIVE))
             if (
@@ -347,23 +348,10 @@ class ToolBroker:
 
     async def _validate_replan_authority(self, run_id: UUID, results: list[ToolResult]) -> None:
         feedback = next(
-            (
-                result
-                for result in reversed(results)
-                if result.ok
-                and result.name
-                in {
-                    ToolName.REVIEW_CANDIDATE,
-                    ToolName.STRICT_VERIFY,
-                    ToolName.VERIFY_INTENT_ALIGNMENT,
-                }
-            ),
+            (result for result in reversed(results) if authorizes_replan(result)),
             None,
         )
-        if feedback is None or not (
-            feedback.payload.get("failure_class") == VerificationFailureClass.PLAN_DEFECT.value
-            and feedback.payload.get("retry_target") == RetryTarget.PLANNING.value
-        ):
+        if feedback is None:
             raise ToolPolicyError(
                 "replan_not_authorized", "replan requires typed plan_defect feedback"
             )

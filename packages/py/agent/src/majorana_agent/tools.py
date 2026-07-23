@@ -31,6 +31,7 @@ from majorana_agent.models import (
     ToolResult,
     VerificationEvidence,
     _plan_fingerprint,
+    authorizes_replan,
 )
 from majorana_agent.store import AgentStore
 from majorana_contracts.enums import (
@@ -53,6 +54,58 @@ _CAPTURED_OUTPUT_KEYS = ("sandbox_stdout", "sandbox_stderr", "sandbox_output_tru
 
 def _without_captured_output(observation: dict[str, Any]) -> dict[str, Any]:
     return {key: value for key, value in observation.items() if key not in _CAPTURED_OUTPUT_KEYS}
+
+
+def _execution_failure_repair(evidence: ExecutionEvidence) -> tuple[dict[str, Any], RetryTarget]:
+    """Turn a sandbox failure into bounded, actionable repair feedback."""
+    kind = evidence.failure_kind or ExecutionFailureKind.CODE_ERROR
+    observation = evidence.observation
+    retry_target = (
+        RetryTarget.PLANNING
+        if kind is ExecutionFailureKind.RESOURCE_LIMIT
+        else RetryTarget.CODE_GENERATION
+    )
+    repairs = {
+        ExecutionFailureKind.TIMEOUT: [
+            "Reduce repeated simulation, transpilation, or optimizer work so the program finishes within the sandbox timeout.",
+            "Do not move an expensive simulator or transpile call into an objective evaluated repeatedly.",
+        ],
+        ExecutionFailureKind.MEMORY_EXHAUSTED: [
+            "Reduce statevector, circuit, or intermediate-memory usage before submitting the next candidate.",
+            "Avoid materializing unnecessary matrices or simulator results inside repeated evaluations.",
+        ],
+        ExecutionFailureKind.RESOURCE_LIMIT: [
+            "Revise the Plan's resource requirements; the requested execution exceeds the sandbox lane before code can run.",
+        ],
+        ExecutionFailureKind.CODE_ERROR: [
+            "Repair the framework code and submit a new candidate revision.",
+        ],
+    }[kind]
+    evidence_items = [
+        f"execution_failure_kind={kind.value}",
+        f"sandbox_exit_code={evidence.exit_code}",
+        f"sandbox_duration_ms={evidence.duration_ms}",
+        *(str(item) for item in observation.get("contract_diagnostics", [])),
+        str(observation.get("evidence_error", kind.value)),
+        *([str(observation["sandbox_error"])[-2000:]] if observation.get("sandbox_error") else []),
+        *(
+            [
+                f"estimated_memory_mb={observation['estimated_memory_mb']}",
+                f"memory_limit_mb={observation['memory_limit_mb']}",
+            ]
+            if "estimated_memory_mb" in observation and "memory_limit_mb" in observation
+            else []
+        ),
+    ]
+    return (
+        {
+            "category": f"execution_{kind.value}",
+            "evidence": evidence_items,
+            "repairs": repairs,
+            "retry_target": retry_target.value,
+        },
+        retry_target,
+    )
 
 
 class Planner(Protocol):
@@ -267,26 +320,16 @@ class CircuitToolset:
     @staticmethod
     def _plan_defect_feedback(results: list[ToolResult]) -> str:
         result = next(
-            (
-                item
-                for item in reversed(results)
-                if item.ok
-                and item.name
-                in {
-                    ToolName.REVIEW_CANDIDATE,
-                    ToolName.STRICT_VERIFY,
-                    ToolName.VERIFY_INTENT_ALIGNMENT,
-                }
-                and item.payload.get("failure_class") == VerificationFailureClass.PLAN_DEFECT.value
-                and item.payload.get("retry_target") == RetryTarget.PLANNING.value
-            ),
+            (item for item in reversed(results) if authorizes_replan(item)),
             None,
         )
         if result is None:
             raise ToolPolicyError(
                 "replan_not_authorized", "replan requires typed plan_defect feedback"
             )
-        reason = result.payload.get("reason_code") or "semantic_plan_defect"
+        reason = result.payload.get("reason_code") or result.payload.get(
+            "failure_kind", "semantic_plan_defect"
+        )
         repair = result.payload.get("repair")
         if repair is None and isinstance(result.payload.get("feedback"), dict):
             repair = result.payload["feedback"].get("repair")
@@ -359,53 +402,18 @@ class CircuitToolset:
             status.value,
         )
         if not evidence.succeeded:
-            if evidence.resource_exhausted:
-                return {
-                    "candidate_id": str(candidate.candidate_id),
-                    "revision": candidate.revision,
-                    "source_fingerprint": candidate.source_fingerprint,
-                    "execution_id": str(evidence.execution_id),
-                    "execution_ok": False,
-                    "resource_exhausted": True,
-                    "failure_kind": evidence.failure_kind.value,
-                    "sandbox_runs": evidence.observation.get("sandbox_runs", 0),
-                    "resource_evidence": _without_captured_output(evidence.observation),
-                }
+            repair, retry_target = _execution_failure_repair(evidence)
             return {
                 "candidate_id": str(candidate.candidate_id),
                 "revision": candidate.revision,
                 "source_fingerprint": candidate.source_fingerprint,
                 "execution_id": str(evidence.execution_id),
                 "execution_ok": False,
-                "resource_exhausted": False,
+                "resource_exhausted": evidence.resource_exhausted,
                 "failure_kind": evidence.failure_kind.value,
                 "sandbox_runs": evidence.observation.get("sandbox_runs", 1),
-                "repair": {
-                    "category": "execution_failed",
-                    # `contract_diagnostics` is the ONLY evidence a candidate rejected
-                    # before the sandbox has. That path never runs, so there is no
-                    # stderr and no sandbox_error, and omitting it left the model with
-                    # "sandbox exit was non-zero" and nothing else — less than the
-                    # traceback it would have got by being allowed to fail at runtime.
-                    # Teleportation regressed exactly that way on production run
-                    # 019f7dd4-c3c6: the Qiskit 2.0 `c_if` diagnostic fired on all four
-                    # candidates, correctly, and told the model nothing.
-                    "evidence": [
-                        *(
-                            str(item)
-                            for item in evidence.observation.get("contract_diagnostics", [])
-                        ),
-                        str(
-                            evidence.observation.get("evidence_error", "sandbox exit was non-zero")
-                        ),
-                        *(
-                            [str(evidence.observation["sandbox_error"])[-2000:]]
-                            if evidence.observation.get("sandbox_error")
-                            else []
-                        ),
-                    ],
-                    "repairs": ["Repair the framework code and submit a new candidate revision."],
-                },
+                "retry_target": retry_target.value,
+                "repair": repair,
             }
         return {
             "candidate_id": str(candidate.candidate_id),
@@ -690,23 +698,23 @@ class CircuitToolset:
 
     async def convert(self, run_id: UUID, call: ToolCall) -> dict[str, Any]:
         candidate = await self._bound_candidate(run_id, call.arguments)
-        verification = await self._store.latest_strict_verification(run_id, candidate.candidate_id)
-        if verification is None or verification.decision not in {
-            VerifierDecision.PASS,
-            VerifierDecision.INCONCLUSIVE,
-        }:
+        # strict_verify is a certification badge, never a gate — conversion is a
+        # mechanical export, not a correctness claim, so it only needs the LLM's
+        # READY semantic review regardless of what (if anything) strict_verify found.
+        review = await self._store.latest_semantic_review(run_id, candidate.candidate_id)
+        if review is None or review.decision is not SemanticReviewDecision.READY:
             raise ToolPolicyError(
                 "candidate_not_convertible",
-                "conversion requires terminal strict PASS or INCONCLUSIVE",
+                "conversion requires a READY semantic review",
             )
+        expected_execution_id = review.execution_id
+        expected_fingerprint = review.source_fingerprint
         execution = await self._store.execution_for(run_id, candidate.candidate_id)
         if execution is None:
             raise ToolPolicyError("execution_missing", "conversion requires execution evidence")
         if not (
-            verification.execution_id == execution.execution_id
-            and verification.source_fingerprint
-            == execution.source_fingerprint
-            == candidate.source_fingerprint
+            expected_execution_id == execution.execution_id
+            and expected_fingerprint == execution.source_fingerprint == candidate.source_fingerprint
         ):
             raise ToolPolicyError(
                 "fingerprint_mismatch", "conversion evidence is not bound to this execution"
@@ -734,17 +742,12 @@ class CircuitToolset:
 
     async def materialize(self, run_id: UUID, call: ToolCall) -> dict[str, Any]:
         candidate = await self._bound_candidate(run_id, call.arguments)
+        # strict_verify is a certification badge on an already-materializable
+        # candidate, not a gate — review_candidate (the LLM, namekoQ-style) is
+        # the sole authority on whether this goes back to the user. Whatever
+        # strict_verify found (PASS/INCONCLUSIVE/FAIL/never attempted) rides
+        # along as the badge below; none of those outcomes block materialization.
         verification = await self._store.latest_strict_verification(run_id, candidate.candidate_id)
-        if verification is None or verification.decision not in {
-            VerifierDecision.PASS,
-            VerifierDecision.INCONCLUSIVE,
-        }:
-            raise ToolPolicyError(
-                "candidate_not_materializable",
-                "private materialization requires strict PASS or INCONCLUSIVE",
-            )
-        if verification.source_fingerprint != candidate.source_fingerprint:
-            raise ToolPolicyError("fingerprint_mismatch", "verified source differs from candidate")
         materialization = await self._store.materialization_for(run_id, candidate.candidate_id)
         if materialization is None:
             execution = await self._store.execution_for(run_id, candidate.candidate_id)
@@ -760,6 +763,39 @@ class CircuitToolset:
             if review is None:
                 raise ToolPolicyError(
                     "review_missing", "materialization requires semantic review evidence"
+                )
+            if verification is None:
+                if review.decision is not SemanticReviewDecision.READY:
+                    raise ToolPolicyError(
+                        "candidate_not_materializable",
+                        "private materialization requires a READY semantic review "
+                        "or a strict PASS/INCONCLUSIVE verification",
+                    )
+                # namekoQ-style path: a READY semantic review is enough to hand
+                # the circuit back to the user. Record that explicitly as an
+                # unattempted (not failed) strict verification rather than
+                # inventing evidence that was never gathered — the artifact is
+                # stored exactly like today's INCONCLUSIVE materialization: usable,
+                # editable, simulatable, and disclosed as not strictly verified.
+                verification = StrictVerificationAttempt(
+                    attempt_id=uuid5(
+                        run_id, f"majorana:strict-verification-unattempted:{candidate.candidate_id}"
+                    ),
+                    candidate_id=candidate.candidate_id,
+                    execution_id=execution.execution_id,
+                    semantic_review_id=review.review_id,
+                    source_fingerprint=candidate.source_fingerprint,
+                    attempt_seq=1,
+                    checks=[],
+                    decision=VerifierDecision.INCONCLUSIVE,
+                    evidence_strength=None,
+                    claim_coverage=[],
+                    reason_code="strict_verification_not_attempted",
+                    candidate_defect_observed=False,
+                    failure_class=None,
+                    retry_target=RetryTarget.NONE,
+                    unverified_claims=[],
+                    verifier_version="unattempted",
                 )
             try:
                 verification.assert_binding(candidate, execution, review)

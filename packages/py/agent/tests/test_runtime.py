@@ -84,6 +84,19 @@ class StrictVerifier:
         )
 
 
+class InconclusiveStrictVerifier:
+    """No dedicated property verifier for this algorithm (e.g. QFT) — evidence
+    insufficiency, not a defect."""
+
+    async def verify_strict(self, _candidate, _execution, _plan, _review):
+        return VerificationOutput(
+            decision=VerifierDecision.INCONCLUSIVE,
+            deterministic_checks=[{"method": "return_contract", "result": "pass"}],
+            reason_code="strict_evidence_insufficient",
+            retry_target=RetryTarget.NONE,
+        )
+
+
 class Converter:
     async def convert(self, _candidate, execution):
         return execution.observation["interchange_qasm"], None
@@ -177,6 +190,72 @@ async def test_runtime_repairs_with_new_candidate_revision_then_materializes():
     assert [candidate.revision for candidate in candidates] == [1, 2]
     assert candidates[1].parent_candidate_id == candidates[0].candidate_id
     assert store.materializations[0].candidate_id == candidates[1].candidate_id
+
+
+class MaterializeFromInconclusiveModel:
+    async def next_tool(self, *, state, history, **_kwargs):
+        number = len(history) + 1
+        if state is AgentState.NEW:
+            return ToolCall(tool_call_id=str(number), name=ToolName.REQUEST_PLAN)
+        if state is AgentState.PLANNED:
+            return ToolCall(
+                tool_call_id=str(number),
+                name=ToolName.SIMULATE_QISKIT,
+                arguments={"source": "FINAL_CIRCUIT = object()\nRESULT = {'counts': {}}\n"},
+            )
+        candidate_id = next(
+            item.payload["candidate_id"]
+            for item in reversed(history)
+            if "candidate_id" in item.payload
+        )
+        arguments = {"candidate_id": candidate_id}
+        if state is AgentState.EXECUTED:
+            return ToolCall(
+                tool_call_id=str(number), name=ToolName.REVIEW_CANDIDATE, arguments=arguments
+            )
+        if state is AgentState.READY_FOR_STRICT_VERIFICATION:
+            return ToolCall(
+                tool_call_id=str(number), name=ToolName.STRICT_VERIFY, arguments=arguments
+            )
+        # state is AgentState.INCONCLUSIVE: no dedicated property verifier for
+        # this algorithm, not a defect — materialize off the READY review.
+        return ToolCall(
+            tool_call_id=str(number), name=ToolName.MATERIALIZE_ARTIFACT, arguments=arguments
+        )
+
+
+async def test_runtime_keeps_going_past_inconclusive_so_the_model_can_materialize():
+    # Regression for live run 019f8dd5: AgentRuntime.run() treated
+    # AgentState.INCONCLUSIVE as an immediate terminal stop, even though
+    # broker._ALLOWED and model._TOOLS_BY_STATE both permit
+    # materialize_artifact/convert_to_openqasm from that state. The loop
+    # returned before ever asking the model for another tool call, so a clean
+    # READY review with a strict_verify that merely lacked a dedicated
+    # property verifier (e.g. QFT) was reported as a failed run.
+    store = MemoryAgentStore()
+    run_id = uuid4()
+    toolset = CircuitToolset(
+        store=store,
+        framework=Framework.QISKIT,
+        planner=Planner(),
+        executor=RepairingExecutor(),
+        reviewer=Reviewer(),
+        strict_verifier=InconclusiveStrictVerifier(),
+        converter=Converter(),
+        materializer=Publisher(),
+    )
+    runtime = AgentRuntime(
+        store=store,
+        broker=ToolBroker(
+            store=store,
+            policy=AgentPolicy(framework=Framework.QISKIT),
+            handlers=toolset.handlers(),
+        ),
+        model=MaterializeFromInconclusiveModel(),
+    )
+
+    assert await runtime.run(run_id) is AgentState.MATERIALIZED
+    assert store.materializations != []
 
 
 class OneCallModel:
