@@ -7,6 +7,7 @@ from .models import (
     QpuJobRequest,
     QpuJobStatus,
     QpuProviderKey,
+    QpuRunJobPayload,
     QpuSubmissionBlockReason,
 )
 from .pricing import (
@@ -33,6 +34,7 @@ __all__ = [
     "QpuJobStatus",
     "QpuProvider",
     "QpuProviderKey",
+    "QpuRunJobPayload",
     "QpuSubmissionBlockReason",
     "UnknownDeviceError",
     "backend_info",
