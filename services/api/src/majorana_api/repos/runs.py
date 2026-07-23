@@ -14,6 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..ids import uuid7
 from ..orm import Run, RunEvent, VerificationRecord
+from . import artifacts as artifacts_repo
 from ._base import NotFoundError, require_write
 
 
@@ -74,7 +75,17 @@ async def create_run(
     idempotency_key: str | None = None,
     conversation_id: uuid.UUID | None = None,
 ) -> Run:
+    """Create a queued run with an optional, already-saved Vault context.
+
+    A run may carry a specific artifact version as context, but that version is
+    only meaningful inside the caller's workspace. Resolve it through the
+    scoped artifact repository before inserting the run so an invalid or
+    cross-workspace reference fails at submission time instead of creating a
+    queued job that can only fail later in the worker.
+    """
     require_write(scope)
+    if artifact_version_id is not None:
+        await artifacts_repo.get_version(scope, session, artifact_version_id)
     run = Run(
         idempotency_key=idempotency_key,
         id=uuid7(),
