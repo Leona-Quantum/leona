@@ -8,7 +8,8 @@ import type { PublicLocale } from "../../../lib/public-locale";
 import { BUILDER_GATES, builderStepLabel, createBuilderStepId, generateBuilderCode, ROTATION_GATES, TWO_QUBIT_GATES, type BuilderCodeVariants, type BuilderGate, type BuilderStep, type CustomGateDefinition } from "../../../lib/studio-builder";
 import { loadStoredCircuit, saveStoredCircuit } from "../../../lib/studio-circuits";
 import { circuitSyncState, type CircuitSyncState } from "../../../lib/studio-sync";
-import { allCircuitConversionResults, parseCircuitSource, looksLikeOpenQasm3 } from "../../../lib/circuit-conversion";
+import { allCircuitConversionResults, parseCircuitSource, parseInterchangeCircuit, looksLikeOpenQasm3 } from "../../../lib/circuit-conversion";
+import { MAX_BUILDER_QUBITS, MAX_PARSABLE_QUBITS } from "../../../lib/studio-parse";
 import { CIRCUIT_FRAMEWORKS, circuitFramework, circuitFrameworkOrNull, isExecutableCircuitFramework, type CircuitFrameworkKey } from "../../../lib/circuit-frameworks";
 import { MAX_CPU_SEED, MAX_CPU_SHOTS, cpuSimulationEligibility, loadCpuSimulationRecords, runCpuSimulation, saveCpuSimulationRecord, sourceFingerprint, type CpuSimulationEligibility, type CpuSimulationLimits, type CpuSimulationRecord } from "../../../lib/studio-simulation";
 import { TIER_LIMITS } from "../../../lib/account-tier";
@@ -171,10 +172,19 @@ export function StudioWorkspace({ artifactId, newDraft = false, locale = "en", l
   // will actually run. Compare structurally rather than textually: generated
   // and hand-written source differ in imports and spacing while meaning the
   // same circuit, and a warning that fires constantly gets ignored.
-  const canvasSync: CircuitSyncState = useMemo(
-    () => circuitSyncState(parseCircuitSource(code, framework), canvasCircuit),
-    [code, framework, canvasCircuit],
-  );
+  const canvasSync: CircuitSyncState = useMemo(() => {
+    const fromCode = parseCircuitSource(code, framework);
+    if (fromCode) return circuitSyncState(fromCode, canvasCircuit);
+    // The active code is outside the builder's subset — an LLM run's Python with
+    // transpile/AerSimulator boilerplate is the common case. If the canvas was
+    // reconstructed from the artifact's stored interchange QASM, the diagram is
+    // still a faithful picture of what runs, so compare against that rather than
+    // calling it unrepresentable. The `artifact.code === code` guard drops this
+    // the moment the source is edited away from the saved artifact, so an edit
+    // honestly falls back to "the diagram no longer matches the code".
+    const fromQasm = artifact?.code === code && artifact.qasm ? parseInterchangeCircuit(artifact.qasm) : null;
+    return circuitSyncState(fromQasm, canvasCircuit);
+  }, [code, framework, canvasCircuit, artifact?.code, artifact?.qasm]);
 
   const cpuEligibility = useMemo(() => cpuSimulationEligibility({
     artifactId: artifact?.id ?? "",
@@ -200,11 +210,28 @@ export function StudioWorkspace({ artifactId, newDraft = false, locale = "en", l
       }),
       ...(next.qasm ? [{ framework: "openqasm3" as const, code: next.qasm }] : []),
     ];
+    // First choice: an editable circuit the six-wire builder can reconstruct.
     const parsed = hasOwnCode
       ? candidates.map((candidate) => parseCircuitSource(candidate.code, candidate.framework)).find(Boolean) ?? null
       : null;
     if (parsed) {
       return { seed: { key, artifactIdentity, qubitCount: parsed.qubitCount, steps: parsed.steps, customGates: [] }, note: copy.circuitRestored };
+    }
+    // Fallback: reconstruct a read-only diagram from the stored interchange QASM
+    // (or wider builder-shaped source). LLM-run artifacts store Qiskit qasm3
+    // output — richer gates, a `meas` register, per-qubit measurement, and often
+    // more than six qubits — which the editable parser rejects, so before this
+    // fallback those artifacts opened to an empty canvas and showed no circuit
+    // at all. `parseInterchangeCircuit` reads the standard-gate subset up to the
+    // parser ceiling; anything above six qubits opens read-only (below, editable).
+    const reconstructed = hasOwnCode
+      ? (next.qasm ? parseInterchangeCircuit(next.qasm) : null)
+        ?? candidates.map((candidate) => parseCircuitSource(candidate.code, candidate.framework, MAX_PARSABLE_QUBITS)).find(Boolean)
+        ?? null
+      : null;
+    if (reconstructed) {
+      const note = reconstructed.qubitCount > MAX_BUILDER_QUBITS ? copy.circuitViewerReadonly : copy.circuitRestored;
+      return { seed: { key, artifactIdentity, qubitCount: reconstructed.qubitCount, steps: reconstructed.steps, customGates: [] }, note };
     }
     return { seed: { key, ...EMPTY_SEED, artifactIdentity }, note: hasOwnCode ? copy.circuitNotRebuildable : null };
   }
@@ -777,6 +804,12 @@ function CircuitBuilder({ seed, framework, selectedGate, onSelectGate, onApply, 
   const [builderMessage, setBuilderMessage] = useState<string | null>(null);
   const [applyConfirmPending, setApplyConfirmPending] = useState(false);
 
+  // A circuit wider than the six-wire editable grid opens as a read-only
+  // diagram: the drag-and-drop builder, its palette, and its edit controls all
+  // assume ≤6 wires, so for a reconstructed 10- or 20-qubit circuit we show the
+  // diagram (so it renders at all) but hide every affordance that would edit it.
+  const readOnly = qubitCount > MAX_BUILDER_QUBITS;
+
   // A pending confirmation describes one specific pair of a diagram and a
   // source. If either side moves — the code is edited again, the canvas is
   // changed, or the two come back into agreement — the armed button would be
@@ -927,6 +960,13 @@ function CircuitBuilder({ seed, framework, selectedGate, onSelectGate, onApply, 
         <span className="mj-mono-muted">{frameworkLabel(framework)} · {qubitCount}q · {steps.length} ops</span>
       </div>
 
+      {readOnly ? (
+        <div className="mj-circuit-sync mj-circuit-sync--readonly" role="status">
+          <span>{copy.readonlyDiagram(qubitCount)}</span>
+        </div>
+      ) : null}
+
+      {readOnly ? null : (
       <div className="mj-builder-palette" role="toolbar" aria-label={copy.palette}>
         {BUILDER_GATES.map((gate) => (
           <button key={gate} type="button" className={`mj-builder-gate${armed === gate ? " is-active" : ""}`} aria-pressed={armed === gate} onClick={() => { onSelectGate(gate); setPendingQubits([]); setBuilderMessage(null); }}>
@@ -942,8 +982,9 @@ function CircuitBuilder({ seed, framework, selectedGate, onSelectGate, onApply, 
           </label>
         ) : null}
       </div>
+      )}
 
-      {customGates.length ? (
+      {!readOnly && customGates.length ? (
         <div className="mj-builder-custom-gates" aria-label={copy.customGates}>
           <span className="mj-section-label">{copy.customGates}</span>
           {customGates.map((gate) => {
@@ -960,7 +1001,7 @@ function CircuitBuilder({ seed, framework, selectedGate, onSelectGate, onApply, 
         </div>
       ) : null}
 
-      {syncState.kind === "in_sync" ? null : (
+      {readOnly || syncState.kind === "in_sync" ? null : (
         <div className={`mj-circuit-sync mj-circuit-sync--${syncState.kind}`} role="status">
           <span>{syncState.kind === "diverged" ? copy.canvasOutOfDate : copy.canvasBeyondBuilder}</span>
           {syncState.kind === "diverged" ? (
@@ -969,14 +1010,15 @@ function CircuitBuilder({ seed, framework, selectedGate, onSelectGate, onApply, 
         </div>
       )}
 
-      <div className="mj-circuit-stage">
-        <svg className="mj-circuit-svg" viewBox={`0 0 ${width} ${height}`} role="img" aria-label={copy.circuitAria(frameworkLabel(framework))} style={{ maxWidth: "100%" }}>
+      <div className={`mj-circuit-stage${readOnly ? " mj-circuit-stage--readonly" : ""}`}>
+        <svg className="mj-circuit-svg" viewBox={`0 0 ${width} ${height}`} role="img" aria-label={copy.circuitAria(frameworkLabel(framework))} style={readOnly ? { width, height, maxWidth: "none" } : { maxWidth: "100%" }}>
           {Array.from({ length: qubitCount }, (_, q) => {
             const y = topPad + q * rowHeight;
             return (
               <g key={q}>
                 <text className="mj-circuit-label" x="18" y={y + 5}>q{q}</text>
                 <line className="mj-circuit-wire" x1={leftPad - 16} y1={y} x2={width - 24} y2={y} />
+                {readOnly ? null : (
                 <g
                   className={`mj-circuit-gate mj-builder-slot${pendingQubits.includes(q) ? " is-selected" : ""}`}
                   role="button"
@@ -988,15 +1030,16 @@ function CircuitBuilder({ seed, framework, selectedGate, onSelectGate, onApply, 
                   <rect x={leftPad + steps.length * columnWidth - 17} y={y - 17} width="34" height="34" rx="7" strokeDasharray="4 3" fill="transparent" />
                   <text x={leftPad + steps.length * columnWidth} y={y + 5}>+</text>
                 </g>
+                )}
               </g>
             );
           })}
           {steps.map((step, index) => {
             const x = leftPad + index * columnWidth;
             const yFor = (q: number) => topPad + q * rowHeight;
-            const selected = selectedStepIds.includes(step.id);
+            const selected = !readOnly && selectedStepIds.includes(step.id);
             const label = builderStepLabel(step, customGates);
-            const selectProps = {
+            const selectProps = readOnly ? ({} as Record<string, never>) : {
               role: "button" as const,
               tabIndex: 0,
               "aria-label": `${label} on ${step.qubits.map((qubit) => `q${qubit}`).join(", ")}`,
@@ -1058,6 +1101,7 @@ function CircuitBuilder({ seed, framework, selectedGate, onSelectGate, onApply, 
         </svg>
       </div>
 
+      {readOnly ? null : (
       <div className="mj-builder-controls">
         <button className="mj-secondary-button" type="button" onClick={() => changeQubitCount(1)} disabled={qubitCount >= 6}>{copy.addQubit}</button>
         <button className="mj-secondary-button" type="button" onClick={() => changeQubitCount(-1)} disabled={qubitCount <= 1}>{copy.removeQubit}</button>
@@ -1091,8 +1135,9 @@ function CircuitBuilder({ seed, framework, selectedGate, onSelectGate, onApply, 
           <button className="mj-secondary-button" type="button" onClick={() => { setApplyConfirmPending(false); setBuilderMessage(null); }}>{copy.cancel}</button>
         ) : null}
       </div>
+      )}
 
-      {showCustomGateForm ? (
+      {!readOnly && showCustomGateForm ? (
         <form className="mj-builder-custom-form" onSubmit={(event) => { event.preventDefault(); createCustomGate(); }}>
           <label>
             <span>{copy.customGates}</span>
@@ -1104,7 +1149,7 @@ function CircuitBuilder({ seed, framework, selectedGate, onSelectGate, onApply, 
       ) : null}
 
       <div className="mj-studio-canvas-footer" aria-live="polite">
-        <span>{builderMessage ?? (pendingQubits.length ? copy.pickTarget : selectedStepIds.length ? copy.selectedCount(selectedStepIds.length) : steps.length ? copy.builderHint : copy.builderEmpty)}</span>
+        <span>{readOnly ? copy.readonlyDiagramHint : (builderMessage ?? (pendingQubits.length ? copy.pickTarget : selectedStepIds.length ? copy.selectedCount(selectedStepIds.length) : steps.length ? copy.builderHint : copy.builderEmpty))}</span>
         <span className="mj-mono-muted">{steps.length ? steps.map((step) => builderStepLabel(step, customGates)).join(" → ") : "—"}</span>
       </div>
     </section>

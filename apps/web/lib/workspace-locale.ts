@@ -302,6 +302,9 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
     showInspector: string;
     circuitRestored: string;
     circuitNotRebuildable: string;
+    circuitViewerReadonly: string;
+    readonlyDiagram: (qubits: number) => string;
+    readonlyDiagramHint: string;
     canvasOutOfDate: string;
     canvasBeyondBuilder: string;
     rebuildFromCode: string;
@@ -652,6 +655,9 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
       showInspector: "Inspector",
       circuitRestored: "Circuit loaded from the saved artifact. Edits stay in this draft until you verify & save.",
       circuitNotRebuildable: "This artifact's code goes beyond the visual builder — edit it in the Code tab.",
+      circuitViewerReadonly: "This circuit is wider than the editable builder, so it opens as a read-only diagram. Edit the circuit in the Code tab.",
+      readonlyDiagram: (qubits: number) => `Read-only diagram · ${qubits} qubits. Wider than the drag-and-drop builder (max 6) — reconstructed from the saved circuit so you can see it. The Code tab holds the source to edit and run.`,
+      readonlyDiagramHint: "Read-only view — reconstructed from the saved circuit. Edit the source in the Code tab.",
       canvasOutOfDate: "The Code tab has changed since this diagram was drawn, so the diagram no longer shows what will run.",
       canvasBeyondBuilder: "The code in the Code tab is outside what this editor can draw, so the diagram below is not a picture of it. The code is what runs.",
       rebuildFromCode: "Rebuild from code",
@@ -1002,6 +1008,9 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
       showInspector: "インスペクタ",
       circuitRestored: "保存済みアーティファクトから回路を読み込みました。検証して保存するまで、編集はこの下書きに留まります。",
       circuitNotRebuildable: "このアーティファクトのコードはビジュアルビルダーの範囲を超えています。コードタブで編集してください。",
+      circuitViewerReadonly: "この回路は編集可能なビルダーより幅が広いため、読み取り専用の図として開きます。回路の編集はコードタブで行ってください。",
+      readonlyDiagram: (qubits: number) => `読み取り専用の回路図 · ${qubits} 量子ビット。ドラッグ&ドロップのビルダー（最大6）より広いため、保存された回路から再構成して表示しています。編集・実行するソースはコードタブにあります。`,
+      readonlyDiagramHint: "読み取り専用の表示 — 保存された回路から再構成しています。ソースの編集はコードタブで行ってください。",
       canvasOutOfDate: "この図を描いたあとにコードタブが変更されました。図は実行される内容と一致していません。",
       canvasBeyondBuilder: "コードタブのコードはこのエディタで描ける範囲を超えているため、下の図はその内容を表していません。実行されるのはコードです。",
       rebuildFromCode: "コードから再構築",
