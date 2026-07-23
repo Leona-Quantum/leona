@@ -89,6 +89,25 @@ class QpuJobRequest(BaseModel):
     source_fingerprint: str
 
 
+class QpuRunJobPayload(BaseModel):
+    """jobs.payload contract for kind "qpu.run" — the API is the only producer
+    and the worker the only consumer, so the shape lives here where both sides
+    already depend. UUIDs travel as strings like every other job payload, and
+    the worker resumes exactly this scope, never a broader one. No producer
+    exists until the durable qpu_run record storage lands (two-PR schema
+    change); the type ships first so both sides agree before the migration."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    workspace_id: str
+    user_id: str
+    artifact_version_id: str | None = None
+    device_id: str
+    shots: int = Field(ge=1)
+    qasm: str
+    source_fingerprint: str
+
+
 class QpuJobRecord(BaseModel):
     """Attestation-first job record: provider job id, device, shots, and the
     raw counts exactly as returned — never averaged or corrected in place."""

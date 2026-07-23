@@ -32,6 +32,8 @@ from majorana_agent import (
 )
 from majorana_contracts.events import run_event_adapter
 from majorana_llm import LLMClient, LLMRequest, QUANTUM_AGENT_SYSTEM_PROMPT, default_llm, model_for
+from majorana_qpu import QpuRunJobPayload, submission_block_reason
+from pydantic import ValidationError
 from majorana_sandbox import LocalSubprocessSandbox, Sandbox, VercelSandbox
 
 from pathlib import Path
@@ -41,7 +43,7 @@ from majorana_api.catalog_bootstrap_manifest import BootstrapManifestSource
 from majorana_api.catalog_import_fixtures import LocalFixtureSource
 from majorana_api.catalog_import_sources import ImportSource
 from majorana_api.db import AsyncSession
-from majorana_api.jobs import CATALOG_IMPORT_JOB_KIND, RUN_EXECUTE_JOB_KIND
+from majorana_api.jobs import CATALOG_IMPORT_JOB_KIND, QPU_RUN_JOB_KIND, RUN_EXECUTE_JOB_KIND
 from majorana_api.orm import ImportJob
 from majorana_api.repos import catalog_import as catalog_import_repo
 from majorana_api.repos import runs as runs_repo
@@ -805,9 +807,29 @@ async def handle_catalog_import(session: AsyncSession, payload: dict[str, Any]) 
     )
 
 
+async def handle_qpu_run(session: AsyncSession, payload: dict[str, Any]) -> None:
+    """Fail-closed half of the durable qpu_run seam (two-PR schema change).
+
+    No producer enqueues this kind yet — the submission endpoint refuses
+    before enqueue — so any row that reaches here fails permanently with a
+    typed reason instead of contacting a provider. The migration PR replaces
+    this body with submit/poll against the durable qpu_run record; the payload
+    validation and gate re-check (defense in depth — the API checked them too)
+    stay exactly as written."""
+    try:
+        QpuRunJobPayload.model_validate(payload)
+    except ValidationError as exc:
+        raise RuntimeError(f"qpu.run payload malformed: {exc}") from exc
+    reason = submission_block_reason()
+    if reason is not None:
+        raise RuntimeError(f"qpu.run blocked: {reason.value}")
+    raise RuntimeError("qpu.run blocked: durable_record_unavailable")
+
+
 HANDLERS: dict[str, JobHandler] = {
     RUN_EXECUTE_JOB_KIND: handle_run_execute,
     CATALOG_IMPORT_JOB_KIND: handle_catalog_import,
+    QPU_RUN_JOB_KIND: handle_qpu_run,
 }
 
 DEAD_LETTER_HANDLERS: dict[str, DeadLetterHandler] = {

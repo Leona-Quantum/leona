@@ -1205,6 +1205,7 @@ dependencies = [
     { name = "majorana-frameworks" },
     { name = "majorana-llm" },
     { name = "majorana-openqasm" },
+    { name = "majorana-qpu" },
     { name = "majorana-sandbox", extra = ["vercel"] },
     { name = "majorana-verification" },
 ]
@@ -1216,6 +1217,7 @@ requires-dist = [
     { name = "majorana-frameworks", editable = "packages/py/frameworks" },
     { name = "majorana-llm", editable = "packages/py/llm" },
     { name = "majorana-openqasm", editable = "packages/py/openqasm" },
+    { name = "majorana-qpu", editable = "packages/py/qpu" },
     { name = "majorana-sandbox", extras = ["vercel"], editable = "packages/py/sandbox" },
     { name = "majorana-verification", editable = "packages/py/verification" },
 ]
