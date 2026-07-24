@@ -1,0 +1,154 @@
+{
+  "fixture_id": "h2_sto3g_r0.735A_singlet_jw_no_frozen_core",
+  "fixture_generator_version": "0.1.0",
+  "generated_at_utc": "2026-07-24T02:25:44Z",
+  "generator_git_commit": "51cf35fee292fa1dd8fe11eee95ec53eeb3b5faf",
+  "geometry": {
+    "atom_string": "H 0 0 0; H 0 0 0.735",
+    "unit": "angstrom",
+    "basis": "sto-3g",
+    "charge": 0,
+    "spin_2s": 0
+  },
+  "nuclear_repulsion_ha": 0.7199689944489797,
+  "electron_orbital_qubit_counts": {
+    "n_electrons": 2,
+    "n_spatial_orbitals": 2,
+    "n_qubits": 4
+  },
+  "independent_direct_fci_reference_ha": -1.1373060357534004,
+  "independent_fci_cross_runtime_agreement_ha": 0.0,
+  "canonical_hamiltonian": {
+    "convention": "Qiskit-candidate qubit0-first ordering (arbitrary choice, fixed as the fixture canonical form)",
+    "nuclear_repulsion_convention": "ELECTRONIC-ONLY: nuclear_repulsion_ha (top-level field) is NOT included in the IIII coefficient below and must be added separately to recover a total energy. This matches Qiskit-nature's native qubit_op output; PennyLane's molecular_hamiltonian bakes nuclear repulsion into its identity term natively and was corrected by subtracting nuclear_repulsion_ha before comparison, purely for this fixture's canonical form.",
+    "coefficient_rounding_decimals": 12,
+    "terms": [
+      {
+        "pauli_qubit0_first": "IIII",
+        "coeff_re": -0.810547980537,
+        "coeff_im": 0.0
+      },
+      {
+        "pauli_qubit0_first": "IIIZ",
+        "coeff_re": -0.225753492224,
+        "coeff_im": 0.0
+      },
+      {
+        "pauli_qubit0_first": "IIZI",
+        "coeff_re": 0.172183932619,
+        "coeff_im": 0.0
+      },
+      {
+        "pauli_qubit0_first": "IIZZ",
+        "coeff_re": 0.120912632618,
+        "coeff_im": 0.0
+      },
+      {
+        "pauli_qubit0_first": "IZII",
+        "coeff_re": -0.225753492224,
+        "coeff_im": 0.0
+      },
+      {
+        "pauli_qubit0_first": "IZIZ",
+        "coeff_re": 0.174643430683,
+        "coeff_im": 0.0
+      },
+      {
+        "pauli_qubit0_first": "IZZI",
+        "coeff_re": 0.166145432564,
+        "coeff_im": 0.0
+      },
+      {
+        "pauli_qubit0_first": "XXXX",
+        "coeff_re": 0.045232799946,
+        "coeff_im": 0.0
+      },
+      {
+        "pauli_qubit0_first": "XXYY",
+        "coeff_re": 0.045232799946,
+        "coeff_im": 0.0
+      },
+      {
+        "pauli_qubit0_first": "YYXX",
+        "coeff_re": 0.045232799946,
+        "coeff_im": 0.0
+      },
+      {
+        "pauli_qubit0_first": "YYYY",
+        "coeff_re": 0.045232799946,
+        "coeff_im": 0.0
+      },
+      {
+        "pauli_qubit0_first": "ZIII",
+        "coeff_re": 0.172183932619,
+        "coeff_im": 0.0
+      },
+      {
+        "pauli_qubit0_first": "ZIIZ",
+        "coeff_re": 0.166145432564,
+        "coeff_im": 0.0
+      },
+      {
+        "pauli_qubit0_first": "ZIZI",
+        "coeff_re": 0.168927538701,
+        "coeff_im": 0.0
+      },
+      {
+        "pauli_qubit0_first": "ZZII",
+        "coeff_re": 0.120912632618,
+        "coeff_im": 0.0
+      }
+    ],
+    "term_count": 15
+  },
+  "hamiltonian_digest_sha256": "d9dd24eb30011e8ea091759e6f0e25d76d0ccc0661e47748afb85e5f13654d79",
+  "spectrum_cross_check": {
+    "max_abs_eigenvalue_diff_ha": 1.1965576030004144e-09,
+    "num_eigenvalues": 16
+  },
+  "cross_framework_equivalence": {
+    "kind": "permutation_and_local_pauli_frame_equivalent",
+    "qubit_permutation_pennylane_to_qiskit": [
+      0,
+      2,
+      1,
+      3
+    ],
+    "local_pauli_frame_pennylane": [
+      "id",
+      "id",
+      "s",
+      "sdag"
+    ],
+    "max_abs_coefficient_diff_ha": 6.522102857786649e-10,
+    "note": "perm[new_position] = old_position. Each PennyLane wire (indexed by its OLD position, before permutation) is first transformed by its listed local_pauli_frame_pennylane entry (id/z/s/sdag -- see LOCAL_PAULI_FRAME_TRANSFORMS), then relabeled per perm; the result equals Qiskit's electronic-only canonical string term-for-term. The single-Z and Z*Z terms alone already fix this permutation uniquely with no gauge freedom needed (they are gauge-invariant); the local Pauli-frame choice is needed only for the double-excitation (weight-4 X/Y) terms, and reflects a per-qubit complex-phase convention difference in how each library defines the Jordan-Wigner ladder operator -- confirmed benign by an independent full 16-eigenvalue spectrum match (see spectrum_cross_check below) before this search ran. Discovered by exhaustive search, not assumed from either library's documentation."
+  },
+  "hartree_fock_bitstrings": {
+    "qiskit_current": "1010",
+    "pennylane_current": "1100",
+    "note": "Each in its own runtime's native wire order; NOT directly comparable without applying cross_framework_equivalence.qubit_permutation_pennylane_to_qiskit."
+  },
+  "exact_diagonalization_results_ha": {
+    "qiskit_current": -1.1373060357533977,
+    "pennylane_current": -1.1373060357532858,
+    "qiskit_vs_direct_fci_abs_error_ha": 2.6645352591003757e-15,
+    "pennylane_vs_direct_fci_abs_error_ha": 1.1457501614131615e-13
+  },
+  "acceptance_tolerances": {
+    "exact_diagonalization_cross_check_ha": 1e-10,
+    "vqe_accepted_result_ha": 1e-05,
+    "source": "docs/atlas/atlas_vqe_mvp_execution_plan_ja.md Part III \u00a713 (initial target values; this fixture run only exercised the exact-diagonalization tolerance, not the VQE-accepted tolerance -- no optimizer loop ran in Phase 0)"
+  },
+  "ansatz_and_initial_point": {
+    "status": "not_defined",
+    "note": "Deliberately deferred to Phase 1/5 component schema and owner review. Phase 0 acceptance only requires the exact energy and canonical Hamiltonian, not an approved ansatz or initial point -- fabricating one here would misrepresent it as reviewed when it is not."
+  },
+  "review_record": {
+    "automated_cross_validation": "PASS -- see cross_framework_equivalence and exact_diagonalization_results_ha above",
+    "human_or_owner_review": "PENDING -- not yet performed. Do not treat this fixture as the reviewed golden fixture (plan \u00a712) until an owner has signed off."
+  },
+  "source_spike_reports": {
+    "qiskit_current": "docs/atlas/fixtures/h2_sto3g/raw/qiskit_current.json",
+    "pennylane_current": "docs/atlas/fixtures/h2_sto3g/raw/pennylane_current.json"
+  }
+}

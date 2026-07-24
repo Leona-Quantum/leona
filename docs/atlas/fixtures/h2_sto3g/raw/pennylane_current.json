@@ -1,0 +1,116 @@
+{
+  "status": "ok",
+  "runtime_candidate": "pennylane-current",
+  "generated_at_utc": "2026-07-24T02:24:00Z",
+  "python_version": "3.12.12 (main, Oct 28 2025, 11:52:25) [Clang 20.1.4 ]",
+  "platform": "macOS-26.0.1-arm64-arm-64bit",
+  "package_versions": {
+    "pennylane": "0.45.1",
+    "pyscf": "2.14.0",
+    "numpy": "2.5.1"
+  },
+  "geometry": {
+    "atom_string": "H 0 0 0; H 0 0 0.735",
+    "unit": "angstrom",
+    "basis": "sto-3g",
+    "charge": 0,
+    "mult": 1
+  },
+  "independent_direct_fci_reference": {
+    "method": "pyscf.fci.FCI(pyscf.scf.RHF(mol)) -- direct, no qubit mapping involved",
+    "hf_energy_ha": -1.1169989967540044,
+    "fci_energy_ha": -1.1373060357534004,
+    "nuclear_repulsion_ha": 0.7199689944489797,
+    "n_electrons": 2,
+    "n_ao": 2,
+    "wall_time_s": 0.1432779169990681
+  },
+  "qubit_hamiltonian_exact_diagonalization": {
+    "num_qubits": 4,
+    "num_particles_active_electrons": 2,
+    "num_spatial_orbitals": 2,
+    "hartree_fock_bitstring_qubit0_first": "1100",
+    "qubit_convention": "PennyLane wire index i -> canonical string position i (see _term_to_canonical_label). PennyLane's own molecular_hamiltonian orbital-to-wire assignment is its library default, NOT independently chosen here.",
+    "ground_state_total_energy_ha": -1.1373060357532858,
+    "wall_time_s": 0.0005606669583357871,
+    "canonical_pauli_terms": [
+      {
+        "pauli_qubit0_first": "IIII",
+        "coeff_re": -0.090578986740559,
+        "coeff_im": 0.0
+      },
+      {
+        "pauli_qubit0_first": "IIIZ",
+        "coeff_re": -0.225753491991193,
+        "coeff_im": 0.0
+      },
+      {
+        "pauli_qubit0_first": "IIZI",
+        "coeff_re": -0.22575349199119304,
+        "coeff_im": 0.0
+      },
+      {
+        "pauli_qubit0_first": "IIZZ",
+        "coeff_re": 0.17464343065997895,
+        "coeff_im": 0.0
+      },
+      {
+        "pauli_qubit0_first": "IZII",
+        "coeff_re": 0.1721839325420239,
+        "coeff_im": 0.0
+      },
+      {
+        "pauli_qubit0_first": "IZIZ",
+        "coeff_re": 0.12091263258908899,
+        "coeff_im": 0.0
+      },
+      {
+        "pauli_qubit0_first": "IZZI",
+        "coeff_re": 0.16614543254209857,
+        "coeff_im": 0.0
+      },
+      {
+        "pauli_qubit0_first": "XXYY",
+        "coeff_re": -0.045232799953009585,
+        "coeff_im": 0.0
+      },
+      {
+        "pauli_qubit0_first": "XYYX",
+        "coeff_re": 0.045232799953009585,
+        "coeff_im": 0.0
+      },
+      {
+        "pauli_qubit0_first": "YXXY",
+        "coeff_re": 0.045232799953009585,
+        "coeff_im": 0.0
+      },
+      {
+        "pauli_qubit0_first": "YYXX",
+        "coeff_re": -0.045232799953009585,
+        "coeff_im": 0.0
+      },
+      {
+        "pauli_qubit0_first": "ZIII",
+        "coeff_re": 0.1721839325420239,
+        "coeff_im": 0.0
+      },
+      {
+        "pauli_qubit0_first": "ZIIZ",
+        "coeff_re": 0.16614543254209857,
+        "coeff_im": 0.0
+      },
+      {
+        "pauli_qubit0_first": "ZIZI",
+        "coeff_re": 0.12091263258908899,
+        "coeff_im": 0.0
+      },
+      {
+        "pauli_qubit0_first": "ZZII",
+        "coeff_re": 0.16892753867708726,
+        "coeff_im": 0.0
+      }
+    ],
+    "term_count": 15
+  },
+  "absolute_error_vs_direct_fci_ha": 1.1457501614131615e-13
+}
