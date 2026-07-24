@@ -50,7 +50,13 @@ asyncio_mode = "auto"
 # importable only by the repository layer + db/orm modules. Second gate:
 # scripts/check_raw_queries.py (both run in CI's py job).
 [tool.importlinter]
-root_packages = ["majorana_api", "majorana_agent", "majorana_contracts", "majorana_worker"]
+root_packages = [
+    "majorana_api",
+    "majorana_agent",
+    "majorana_contracts",
+    "majorana_worker",
+    "majorana_vqe",
+]
 include_external_packages = true
 
 [[tool.importlinter.contracts]]
@@ -75,3 +81,17 @@ name = "agent core stays outside control plane and worker"
 type = "forbidden"
 source_modules = ["majorana_agent"]
 forbidden_modules = ["majorana_api", "majorana_worker", "fastapi", "sqlalchemy", "psycopg"]
+
+[[tool.importlinter.contracts]]
+name = "VQE domain package stays framework- and control-plane-free (ADR-0023/0024/0025, packages/py/vqe/AGENTS.md)"
+type = "forbidden"
+source_modules = ["majorana_vqe"]
+forbidden_modules = [
+    "qiskit",
+    "pennylane",
+    "fastapi",
+    "sqlalchemy",
+    "psycopg",
+    "majorana_api",
+    "majorana_worker",
+]

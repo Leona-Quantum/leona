@@ -22,6 +22,7 @@ members = [
     "majorana-qpu",
     "majorana-sandbox",
     "majorana-verification",
+    "majorana-vqe",
     "majorana-worker",
     "majorana-workspace",
 ]
@@ -1245,6 +1246,17 @@ requires-dist = [
     { name = "numpy", specifier = ">=1.26" },
     { name = "pydantic", specifier = ">=2.8" },
 ]
+
+[[package]]
+name = "majorana-vqe"
+version = "0.1.0"
+source = { editable = "packages/py/vqe" }
+dependencies = [
+    { name = "pydantic" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "pydantic", specifier = ">=2.8" }]
 
 [[package]]
 name = "majorana-worker"
