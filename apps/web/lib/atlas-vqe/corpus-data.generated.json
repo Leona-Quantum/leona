@@ -1,0 +1,2227 @@
+{
+  "schema_version": "0.2.0",
+  "papers": [
+    {
+      "paper_id": "anastasiou2024",
+      "annotation_schema_version": "0.2.0",
+      "title": "TETRIS-ADAPT-VQE: An adaptive algorithm that yields shallower, denser circuit ansatze",
+      "authors": [
+        "Panagiotis G. Anastasiou",
+        "et al."
+      ],
+      "year": 2024,
+      "venue": "Physical Review Research",
+      "volume": "6",
+      "pages_or_article_number": "013254",
+      "doi": "10.1103/PhysRevResearch.6.013254",
+      "arxiv_id": "2209.10562",
+      "method_family": [
+        "tetris_adapt",
+        "adapt_vqe"
+      ],
+      "problem_summary": "Modifies ADAPT-VQE's one-operator-at-a-time growth rule to allow adding multiple operators with disjoint qubit supports per iteration ('tiling'), yielding denser but significantly shallower circuits without increasing CNOT count or parameter count, and reducing how often the expensive per-candidate gradient measurement step runs.",
+      "sources_verified": [
+        "https://arxiv.org/abs/2209.10562",
+        "https://link.aps.org/doi/10.1103/PhysRevResearch.6.013254"
+      ],
+      "components": [
+        {
+          "component_type": "growth_batching",
+          "family_or_name": "TETRIS tiling: multiple disjoint-support operators added per iteration",
+          "notes": "The paper's core departure from standard ADAPT-VQE's strictly one-operator-per-iteration rule.",
+          "evidence_locator": "title; abstract"
+        },
+        {
+          "component_type": "ansatz",
+          "family_or_name": "TETRIS-ADAPT-VQE (denser, shallower adaptively grown ansatz)",
+          "notes": null,
+          "evidence_locator": "abstract"
+        }
+      ],
+      "workflow_composition_notes": "Same ADAPT-VQE gradient-based selection loop, but the growth step tiles multiple qubit-disjoint operators into a single layer instead of appending one operator at a time.",
+      "unknown_or_ambiguous_fields": [
+        "full_author_list: only first author confirmed in this search-level pass ('et al.' in search snippet)",
+        "benchmark_molecules: not confirmed in this search-level pass"
+      ],
+      "conflicting_fields": [],
+      "negative_results_or_missing_implementation": null,
+      "implementation_ref": "goodchemistryco_tangelo",
+      "validation_state": {
+        "state": "machine_validated",
+        "validator_version": "0.1.0",
+        "validated_at": "2026-07-24T07:03:59Z",
+        "validation_errors": [],
+        "validation_warnings": []
+      }
+    },
+    {
+      "paper_id": "cao2019",
+      "annotation_schema_version": "0.2.0",
+      "title": "Quantum Chemistry in the Age of Quantum Computing",
+      "authors": [
+        "Yudong Cao",
+        "Jonathan Romero",
+        "Jonathan P. Olson",
+        "Matthias Degroote",
+        "Peter D. Johnson",
+        "Maria Kieferova",
+        "Ian D. Kivlichan",
+        "Tim Menke",
+        "Borja Peropadre",
+        "Nicolas P. D. Sawaya",
+        "Sukin Sim",
+        "Libor Veis",
+        "Alan Aspuru-Guzik"
+      ],
+      "year": 2019,
+      "venue": "Chemical Reviews",
+      "volume": "119",
+      "pages_or_article_number": "10856-10915",
+      "doi": "10.1021/acs.chemrev.8b00803",
+      "arxiv_id": null,
+      "method_family": [
+        "vqe_uccsd"
+      ],
+      "problem_summary": "Broad review of quantum computing for quantum chemistry, including VQE, UCC-family ansatze, and the algorithmic/hardware landscape as of publication -- a cross-cutting reference rather than a single-method proposal.",
+      "sources_verified": [
+        "https://pubs.acs.org/doi/10.1021/acs.chemrev.8b00803"
+      ],
+      "components": [
+        {
+          "component_type": "evaluation_protocol",
+          "family_or_name": "review of quantum-computational quantum chemistry methods including VQE/UCC",
+          "notes": "Review paper; included for corpus-wide method-family and terminology cross-referencing, as with tilly2022.",
+          "evidence_locator": "abstract"
+        }
+      ],
+      "workflow_composition_notes": "Review paper; surveys rather than proposes a specific workflow.",
+      "unknown_or_ambiguous_fields": [
+        "arxiv_id: search results indicate no arXiv preprint exists for this review (published directly to Chemical Reviews)"
+      ],
+      "conflicting_fields": [],
+      "negative_results_or_missing_implementation": null,
+      "implementation_ref": null,
+      "validation_state": {
+        "state": "machine_validated",
+        "validator_version": "0.1.0",
+        "validated_at": "2026-07-24T07:03:59Z",
+        "validation_errors": [],
+        "validation_warnings": []
+      }
+    },
+    {
+      "paper_id": "feniou2023",
+      "annotation_schema_version": "0.2.0",
+      "title": "Overlap-ADAPT-VQE: Practical Quantum Chemistry on Quantum Computers via Overlap-Guided Compact Ansatze",
+      "authors": [
+        "Cesar Feniou",
+        "Muhammad Hassan",
+        "Diata Traore",
+        "Emmanuel Giner",
+        "Yvon Maday",
+        "et al."
+      ],
+      "year": 2023,
+      "venue": "Communications Physics",
+      "volume": "6",
+      "pages_or_article_number": "192",
+      "doi": null,
+      "arxiv_id": "2301.10196",
+      "method_family": [
+        "adapt_vqe"
+      ],
+      "problem_summary": "Grows the ADAPT-VQE ansatz by maximizing overlap with an intermediate target wavefunction that already captures some electronic correlation (rather than the standard energy-gradient selection criterion alone), producing ultra-compact ansatze -- reported especially advantageous, with large circuit-depth savings, for strongly correlated systems.",
+      "sources_verified": [
+        "https://arxiv.org/abs/2301.10196",
+        "https://www.nature.com/articles/s42005-023-01312-y"
+      ],
+      "components": [
+        {
+          "component_type": "search_selection",
+          "family_or_name": "overlap-guided operator selection (vs. standard energy-gradient selection)",
+          "notes": "Selection criterion maximizes overlap with an intermediate correlated target wavefunction.",
+          "evidence_locator": "title; abstract"
+        },
+        {
+          "component_type": "ansatz",
+          "family_or_name": "Overlap-ADAPT-VQE (ultra-compact adaptively grown ansatz)",
+          "notes": null,
+          "evidence_locator": "abstract"
+        }
+      ],
+      "workflow_composition_notes": "Same adaptive-growth VQE loop as ADAPT-VQE, with the operator-selection criterion replaced by overlap-maximization against a target correlated wavefunction rather than pure energy-gradient magnitude.",
+      "unknown_or_ambiguous_fields": [
+        "full_author_list: only first five authors confirmed in this search-level pass ('et al.' in source)",
+        "doi: not confirmed in this search-level pass"
+      ],
+      "conflicting_fields": [],
+      "negative_results_or_missing_implementation": null,
+      "implementation_ref": null,
+      "validation_state": {
+        "state": "machine_validated",
+        "validator_version": "0.1.0",
+        "validated_at": "2026-07-24T07:03:59Z",
+        "validation_errors": [],
+        "validation_warnings": []
+      }
+    },
+    {
+      "paper_id": "google2020",
+      "annotation_schema_version": "0.2.0",
+      "title": "Hartree-Fock on a superconducting qubit quantum computer",
+      "authors": [
+        "Frank Arute",
+        "Kunal Arya",
+        "Ryan Babbush",
+        "Dave Bacon",
+        "Joseph C. Bardin",
+        "et al. (Google AI Quantum and Collaborators)"
+      ],
+      "year": 2020,
+      "venue": "Science",
+      "volume": "369",
+      "pages_or_article_number": "1084-1089",
+      "doi": "10.1126/science.abb9811",
+      "arxiv_id": "2004.04174",
+      "method_family": [
+        "vqe_uccsd"
+      ],
+      "problem_summary": "Performs the largest chemical simulation on a quantum computer to date at publication (up to a dozen qubits), including modeling the isomerization mechanism of diazene, using a Givens-rotation-based ansatz variationally optimized to prepare the Hartree-Fock wavefunction.",
+      "sources_verified": [
+        "https://arxiv.org/pdf/2004.04174",
+        "https://www.science.org/doi/10.1126/science.abb9811"
+      ],
+      "components": [
+        {
+          "component_type": "problem",
+          "family_or_name": "diazene isomerization mechanism (up to ~12 qubits)",
+          "notes": null,
+          "evidence_locator": "abstract"
+        },
+        {
+          "component_type": "ansatz",
+          "family_or_name": "Givens-rotation noninteracting-fermion-evolution ansatz (variationally optimized to prepare the Hartree-Fock state)",
+          "notes": "Classically tractable to simulate yet generates highly entangled computational-basis states.",
+          "evidence_locator": "abstract"
+        },
+        {
+          "component_type": "compilation_backend",
+          "family_or_name": "superconducting qubits (Google processor)",
+          "notes": null,
+          "evidence_locator": "author affiliations; venue"
+        }
+      ],
+      "workflow_composition_notes": "Givens-rotation ansatz variationally optimized within a VQE-style loop specifically to reproduce the Hartree-Fock reference state, as a scalable primitive rather than a full correlated-energy calculation.",
+      "unknown_or_ambiguous_fields": [
+        "full_author_list: Google AI Quantum collaboration has a very large author list; only first few names confirmed in this search-level pass"
+      ],
+      "conflicting_fields": [],
+      "negative_results_or_missing_implementation": null,
+      "implementation_ref": "quantumlib_recirq",
+      "validation_state": {
+        "state": "machine_validated",
+        "validator_version": "0.1.0",
+        "validated_at": "2026-07-24T07:03:59Z",
+        "validation_errors": [],
+        "validation_warnings": []
+      }
+    },
+    {
+      "paper_id": "grimsley2019",
+      "annotation_schema_version": "0.2.0",
+      "title": "An adaptive variational algorithm for exact molecular simulations on a quantum computer",
+      "authors": [
+        "Harper R. Grimsley",
+        "Sophia E. Economou",
+        "Edwin Barnes",
+        "Nicholas J. Mayhall"
+      ],
+      "year": 2019,
+      "venue": "Nature Communications",
+      "volume": "10",
+      "pages_or_article_number": "3007",
+      "doi": "10.1038/s41467-019-10988-2",
+      "arxiv_id": "1812.11173",
+      "method_family": [
+        "adapt_vqe"
+      ],
+      "problem_summary": "Introduces ADAPT-VQE: instead of a fixed ansatz, the circuit is grown one fermionic operator at a time from an operator pool, chosen adaptively to the molecule being simulated, producing shallower circuits with fewer parameters than a fixed UCCSD ansatz.",
+      "sources_verified": [
+        "https://www.nature.com/articles/s41467-019-10988-2",
+        "https://arxiv.org/abs/1812.11173"
+      ],
+      "components": [
+        {
+          "component_type": "problem",
+          "family_or_name": "molecular electronic structure (method paper, demonstrated via classical simulation)",
+          "notes": "Method paper; specific benchmark molecules not confirmed in this search-level pass without full-text read.",
+          "evidence_locator": "abstract"
+        },
+        {
+          "component_type": "ansatz",
+          "family_or_name": "ADAPT-VQE (adaptively grown, one fermionic operator at a time)",
+          "notes": "Ansatz is not fixed upfront; grown dynamically -- this is the paper's core contribution.",
+          "evidence_locator": "title; abstract"
+        },
+        {
+          "component_type": "operator_pool",
+          "family_or_name": "fermionic operator pool",
+          "notes": "Pool from which the next operator to append is selected each iteration.",
+          "evidence_locator": "abstract"
+        },
+        {
+          "component_type": "search_selection",
+          "family_or_name": "gradient-based operator selection",
+          "notes": "Next operator chosen via a gradient criterion (paper's adaptive growth mechanism).",
+          "evidence_locator": "abstract"
+        },
+        {
+          "component_type": "growth_batching",
+          "family_or_name": "one-operator-at-a-time growth",
+          "notes": null,
+          "evidence_locator": "abstract"
+        }
+      ],
+      "workflow_composition_notes": "Iterative loop: evaluate gradients for every operator in the pool, append the highest-gradient operator to the ansatz, re-optimize all parameters via VQE, repeat until a convergence criterion is met.",
+      "unknown_or_ambiguous_fields": [
+        "benchmark_molecules: specific molecules simulated not confirmed in this search-level pass",
+        "stopping_criterion_threshold: not confirmed without full-text read"
+      ],
+      "conflicting_fields": [],
+      "negative_results_or_missing_implementation": null,
+      "implementation_ref": "mayhallgroup_adapt-vqe",
+      "validation_state": {
+        "state": "machine_validated",
+        "validator_version": "0.1.0",
+        "validated_at": "2026-07-24T07:03:59Z",
+        "validation_errors": [],
+        "validation_warnings": []
+      }
+    },
+    {
+      "paper_id": "grimsley2023",
+      "annotation_schema_version": "0.2.0",
+      "title": "Adaptive, problem-tailored variational quantum eigensolver mitigates rough parameter landscapes and barren plateaus",
+      "authors": [
+        "Harper R. Grimsley",
+        "George S. Barron",
+        "Edwin Barnes",
+        "Sophia E. Economou",
+        "Nicholas J. Mayhall"
+      ],
+      "year": 2023,
+      "venue": "npj Quantum Information",
+      "volume": "9",
+      "pages_or_article_number": "19",
+      "doi": "10.1038/s41534-023-00681-0",
+      "arxiv_id": null,
+      "method_family": [
+        "adapt_vqe"
+      ],
+      "problem_summary": "Argues and demonstrates that ADAPT-VQE's problem-tailored, adaptively-grown ansatz mitigates both rough parameter landscapes and barren plateaus better than fixed-ansatz VQE, connecting the ADAPT-VQE family directly to the trainability concerns raised in mcclean2018.",
+      "sources_verified": [
+        "https://www.nature.com/articles/s41534-023-00681-0",
+        "https://www.osti.gov/pages/biblio/1959246"
+      ],
+      "components": [
+        {
+          "component_type": "ansatz",
+          "family_or_name": "ADAPT-VQE (problem-tailored, adaptively grown -- analyzed here specifically for trainability properties)",
+          "notes": "Same ansatz family as grimsley2019, this paper's contribution is the trainability/barren-plateau analysis rather than a new growth mechanism.",
+          "evidence_locator": "title; abstract"
+        },
+        {
+          "component_type": "evaluation_protocol",
+          "family_or_name": "parameter-landscape roughness / barren-plateau mitigation analysis",
+          "notes": "Directly follows up on the trainability concern raised in mcclean2018.",
+          "evidence_locator": "title"
+        }
+      ],
+      "workflow_composition_notes": "Standard ADAPT-VQE adaptive-growth loop; paper's contribution is analytical/empirical evidence about the resulting optimization landscape's trainability rather than a new algorithmic component.",
+      "unknown_or_ambiguous_fields": [
+        "arxiv_id: not confirmed in this search-level pass"
+      ],
+      "conflicting_fields": [],
+      "negative_results_or_missing_implementation": null,
+      "implementation_ref": "mayhallgroup_adapt-vqe",
+      "validation_state": {
+        "state": "machine_validated",
+        "validator_version": "0.1.0",
+        "validated_at": "2026-07-24T07:03:59Z",
+        "validation_errors": [],
+        "validation_warnings": []
+      }
+    },
+    {
+      "paper_id": "kandala2017",
+      "annotation_schema_version": "0.2.0",
+      "title": "Hardware-efficient variational quantum eigensolver for small molecules and quantum magnets",
+      "authors": [
+        "Abhinav Kandala",
+        "Antonio Mezzacapo",
+        "Kristan Temme",
+        "Maika Takita",
+        "Markus Brink",
+        "Jerry M. Chow",
+        "Jay M. Gambetta"
+      ],
+      "year": 2017,
+      "venue": "Nature",
+      "volume": "549",
+      "pages_or_article_number": "242-246",
+      "doi": "10.1038/nature23879",
+      "arxiv_id": null,
+      "method_family": [
+        "vqe_uccsd"
+      ],
+      "problem_summary": "Introduces the hardware-efficient ansatz for VQE, computing LiH and BeH2 ground-state energies on a 6-qubit superconducting processor and separately an energy-minimization procedure on a 4-qubit Heisenberg model.",
+      "sources_verified": [
+        "https://www.nature.com/articles/nature23879"
+      ],
+      "components": [
+        {
+          "component_type": "problem",
+          "family_or_name": "LiH and BeH2 ground-state energies; 4-qubit Heisenberg model",
+          "notes": "Two distinct problem classes: molecular chemistry and a condensed-matter spin model.",
+          "evidence_locator": "abstract"
+        },
+        {
+          "component_type": "ansatz",
+          "family_or_name": "hardware-efficient ansatz",
+          "notes": "Ansatz built from the device's native gate set rather than a UCC-derived circuit -- the paper's key methodological contribution.",
+          "evidence_locator": "title; abstract"
+        },
+        {
+          "component_type": "compilation_backend",
+          "family_or_name": "superconducting qubits (6-qubit processor)",
+          "notes": null,
+          "evidence_locator": "abstract"
+        }
+      ],
+      "workflow_composition_notes": "Hardware-efficient ansatz parameters optimized in a VQE loop; same ansatz family reused across both the molecular and spin-model problem instances.",
+      "unknown_or_ambiguous_fields": [
+        "arxiv_id: not confirmed in this search pass (Nature page found; arXiv preprint not independently verified)",
+        "optimizer_algorithm_name: 'classical VQE outer-loop optimizer' stated generically; specific algorithm not confirmed without full-text read"
+      ],
+      "conflicting_fields": [],
+      "negative_results_or_missing_implementation": null,
+      "implementation_ref": null,
+      "validation_state": {
+        "state": "machine_validated",
+        "validator_version": "0.1.0",
+        "validated_at": "2026-07-24T07:03:59Z",
+        "validation_errors": [],
+        "validation_warnings": []
+      }
+    },
+    {
+      "paper_id": "kandala2019",
+      "annotation_schema_version": "0.2.0",
+      "title": "Error mitigation extends the computational reach of a noisy quantum processor",
+      "authors": [
+        "Abhinav Kandala",
+        "Kristan Temme",
+        "Antonio D. Corcoles",
+        "Antonio Mezzacapo",
+        "Jerry M. Chow",
+        "Jay M. Gambetta"
+      ],
+      "year": 2019,
+      "venue": "Nature",
+      "volume": "567",
+      "pages_or_article_number": "491-495",
+      "doi": "10.1038/s41586-019-1040-7",
+      "arxiv_id": null,
+      "method_family": [
+        "vqe_uccsd"
+      ],
+      "problem_summary": "Extends VQE accuracy on noisy superconducting hardware via error mitigation: extrapolating results from a series of experiments run at deliberately varied noise levels, without requiring additional hardware, demonstrated on a hardware-efficient-ansatz VQE.",
+      "sources_verified": [
+        "https://www.nature.com/articles/s41586-019-1040-7"
+      ],
+      "components": [
+        {
+          "component_type": "error_mitigation",
+          "family_or_name": "zero-noise extrapolation across a series of deliberately-varied-noise experiments",
+          "notes": null,
+          "evidence_locator": "abstract"
+        },
+        {
+          "component_type": "ansatz",
+          "family_or_name": "hardware-efficient ansatz (same family as kandala2017)",
+          "notes": "Same research group and ansatz family as kandala2017, extended here with error mitigation.",
+          "evidence_locator": "abstract; author overlap with kandala2017"
+        }
+      ],
+      "workflow_composition_notes": "Standard hardware-efficient-ansatz VQE loop augmented with a post-processing error-mitigation stage that extrapolates the noise-free result from multiple noise-scaled experiments.",
+      "unknown_or_ambiguous_fields": [
+        "arxiv_id: not confirmed in this search-level pass"
+      ],
+      "conflicting_fields": [],
+      "negative_results_or_missing_implementation": null,
+      "implementation_ref": null,
+      "validation_state": {
+        "state": "machine_validated",
+        "validator_version": "0.1.0",
+        "validated_at": "2026-07-24T07:03:59Z",
+        "validation_errors": [],
+        "validation_warnings": []
+      }
+    },
+    {
+      "paper_id": "kulshrestha2024",
+      "annotation_schema_version": "0.2.0",
+      "title": "QAdaPrune: Adaptive Parameter Pruning For Training Variational Quantum Circuits",
+      "authors": [
+        "Ankit Kulshrestha",
+        "Xiaoyuan Liu",
+        "Hayato Ushijima-Mwesigwa",
+        "Bao Bach",
+        "Ilya Safro"
+      ],
+      "year": 2024,
+      "venue": "QCE24 (IEEE International Conference on Quantum Computing and Engineering)",
+      "volume": null,
+      "pages_or_article_number": "120-125",
+      "doi": null,
+      "arxiv_id": "2408.13352",
+      "method_family": [
+        "pruning_compression"
+      ],
+      "problem_summary": "Adaptive algorithm that automatically determines a pruning threshold and prunes redundant/non-performing parameters during variational quantum circuit training, reducing gate complexity and circuit depth while addressing barren plateaus; reports pruned circuits perform comparably to unpruned ones and can sometimes improve trainability.",
+      "sources_verified": [
+        "https://arxiv.org/abs/2408.13352"
+      ],
+      "components": [
+        {
+          "component_type": "compression",
+          "family_or_name": "QAdaPrune: adaptive threshold-based parameter pruning during training",
+          "notes": "Automatically determines its own pruning threshold rather than requiring a hand-tuned hyperparameter.",
+          "evidence_locator": "abstract"
+        }
+      ],
+      "workflow_composition_notes": "Pruning is applied during the classical optimization loop of a variational quantum circuit's training, dynamically removing parameters as training proceeds.",
+      "unknown_or_ambiguous_fields": [
+        "doi: not confirmed in this search-level pass (IEEE Xplore listing found, DOI string not captured)",
+        "benchmark_problems: not confirmed to be VQE-chemistry-specific vs. general variational circuits in this search-level pass"
+      ],
+      "conflicting_fields": [],
+      "negative_results_or_missing_implementation": null,
+      "implementation_ref": "aicaffeinelife_qadaprune",
+      "validation_state": {
+        "state": "machine_validated",
+        "validator_version": "0.1.0",
+        "validated_at": "2026-07-24T07:03:59Z",
+        "validation_errors": [],
+        "validation_warnings": []
+      }
+    },
+    {
+      "paper_id": "lee2018",
+      "annotation_schema_version": "0.2.0",
+      "title": "Generalized Unitary Coupled Cluster Wave functions for Quantum Computation",
+      "authors": [
+        "Joonho Lee",
+        "William J. Huggins",
+        "Martin Head-Gordon",
+        "K. Birgitta Whaley"
+      ],
+      "year": 2018,
+      "venue": "Journal of Chemical Theory and Computation",
+      "volume": null,
+      "pages_or_article_number": null,
+      "doi": "10.1021/acs.jctc.8b01004",
+      "arxiv_id": "1810.02327",
+      "method_family": [
+        "vqe_uccsd"
+      ],
+      "problem_summary": "Introduces k-UpCCGSD, a unitary coupled-cluster ansatz built from a family of sparse generalized paired-doubles operators, offering an affordable, systematically improvable alternative to full UCCSD suitable for near-term quantum hardware.",
+      "sources_verified": [
+        "https://arxiv.org/abs/1810.02327",
+        "https://pubs.acs.org/doi/10.1021/acs.jctc.8b01004"
+      ],
+      "components": [
+        {
+          "component_type": "ansatz",
+          "family_or_name": "k-UpCCGSD (k-fold unitary paired-coupled-cluster generalized singles and doubles)",
+          "notes": "Sparse generalized-doubles operator family, systematically improvable by increasing k.",
+          "evidence_locator": "title; abstract"
+        }
+      ],
+      "workflow_composition_notes": "k-UpCCGSD is a drop-in ansatz replacement for standard UCCSD within the ordinary VQE loop, trading a tunable k parameter for accuracy vs. circuit depth.",
+      "unknown_or_ambiguous_fields": [
+        "benchmark_molecules: not confirmed in this search-level pass",
+        "volume_pages: not confirmed in this search-level pass"
+      ],
+      "conflicting_fields": [],
+      "negative_results_or_missing_implementation": null,
+      "implementation_ref": null,
+      "validation_state": {
+        "state": "machine_validated",
+        "validator_version": "0.1.0",
+        "validated_at": "2026-07-24T07:03:59Z",
+        "validation_errors": [],
+        "validation_warnings": []
+      }
+    },
+    {
+      "paper_id": "mcclean2016",
+      "annotation_schema_version": "0.2.0",
+      "title": "The theory of variational hybrid quantum-classical algorithms",
+      "authors": [
+        "Jarrod R. McClean",
+        "Jonathan Romero",
+        "Ryan Babbush",
+        "Alan Aspuru-Guzik"
+      ],
+      "year": 2016,
+      "venue": "New Journal of Physics",
+      "volume": "18",
+      "pages_or_article_number": "023023",
+      "doi": "10.1088/1367-2630/18/2/023023",
+      "arxiv_id": "1509.04279",
+      "method_family": [
+        "vqe_uccsd"
+      ],
+      "problem_summary": "Extends the general theory of the VQE hybrid quantum-classical optimization scheme, develops a variational adiabatic ansatz, and explores unitary coupled cluster within that theoretical framework, suggesting algorithmic improvements for practical implementation.",
+      "sources_verified": [
+        "https://iopscience.iop.org/article/10.1088/1367-2630/18/2/023023",
+        "https://arxiv.org/abs/1509.04279"
+      ],
+      "components": [
+        {
+          "component_type": "ansatz",
+          "family_or_name": "variational adiabatic ansatz (theoretical framework paper)",
+          "notes": null,
+          "evidence_locator": "abstract"
+        },
+        {
+          "component_type": "evaluation_protocol",
+          "family_or_name": "general theory of hybrid quantum-classical variational optimization",
+          "notes": "Foundational theory paper extending the original VQE proposal's formal framework, not a single-system experimental demonstration.",
+          "evidence_locator": "abstract"
+        }
+      ],
+      "workflow_composition_notes": "Theoretical/methodological paper; formalizes the variational hybrid loop structure that subsequent experimental VQE papers (e.g. omalley2016, kandala2017) build on.",
+      "unknown_or_ambiguous_fields": [
+        "specific_numerical_demonstrations: not confirmed without full-text read"
+      ],
+      "conflicting_fields": [],
+      "negative_results_or_missing_implementation": null,
+      "implementation_ref": null,
+      "validation_state": {
+        "state": "machine_validated",
+        "validator_version": "0.1.0",
+        "validated_at": "2026-07-24T07:03:59Z",
+        "validation_errors": [],
+        "validation_warnings": []
+      }
+    },
+    {
+      "paper_id": "mcclean2018",
+      "annotation_schema_version": "0.2.0",
+      "title": "Barren plateaus in quantum neural network training landscapes",
+      "authors": [
+        "Jarrod R. McClean",
+        "Sergio Boixo",
+        "Vadim N. Smelyanskiy",
+        "Ryan Babbush",
+        "Hartmut Neven"
+      ],
+      "year": 2018,
+      "venue": "Nature Communications",
+      "volume": "9",
+      "pages_or_article_number": "4812",
+      "doi": "10.1038/s41467-018-07090-4",
+      "arxiv_id": null,
+      "method_family": [
+        "vqe_uccsd"
+      ],
+      "problem_summary": "Shows that for a broad class of reasonably expressive parameterized quantum circuits (including VQE ansatze), the variance of the cost-function gradient vanishes exponentially with system size, so gradients become exponentially small ('barren plateaus') almost everywhere in a randomly-initialized parameter landscape -- a foundational trainability-limitation result that motivates several other corpus entries (e.g. ostaszewski2021, kulshrestha2024, grimsley2023).",
+      "sources_verified": [
+        "https://www.nature.com/articles/s41467-018-07090-4"
+      ],
+      "components": [
+        {
+          "component_type": "evaluation_protocol",
+          "family_or_name": "gradient-variance scaling analysis for random circuit initialization",
+          "notes": "Theoretical result, not a proposed ansatz/optimizer itself -- establishes a trainability constraint that other corpus papers explicitly try to mitigate.",
+          "evidence_locator": "abstract"
+        }
+      ],
+      "workflow_composition_notes": "Not a VQE workflow paper itself; a foundational analysis of why randomly-initialized, sufficiently-expressive VQE-style ansatze become untrainable at scale, motivating adaptive-growth (ADAPT-VQE family) and RL-guided (ostaszewski2021) alternatives to random initialization.",
+      "unknown_or_ambiguous_fields": [
+        "re-verified 2026-07-24 against the primary Nature Communications page directly (https://www.nature.com/articles/s41467-018-07090-4), which confirmed title/authors/venue/volume(9)/article-number(4812)/year(2018) -- the record's earlier sources_verified entry (a prose description of secondary corroboration, not a URL) was a schema violation caught during audit and has been replaced with this direct primary-source URL"
+      ],
+      "conflicting_fields": [],
+      "negative_results_or_missing_implementation": null,
+      "implementation_ref": null,
+      "validation_state": {
+        "state": "machine_validated",
+        "validator_version": "0.1.0",
+        "validated_at": "2026-07-24T07:03:59Z",
+        "validation_errors": [],
+        "validation_warnings": []
+      }
+    },
+    {
+      "paper_id": "moll2018",
+      "annotation_schema_version": "0.2.0",
+      "title": "Quantum optimization using variational algorithms on near-term quantum devices",
+      "authors": [
+        "Nikolaj Moll",
+        "Panagiotis Barkoutsos",
+        "Lev S. Bishop",
+        "Jerry M. Chow",
+        "Andrew Cross",
+        "Daniel J. Egger",
+        "Stefan Filipp",
+        "Andreas Fuhrer",
+        "Jay M. Gambetta",
+        "Marc Ganzhorn",
+        "Abhinav Kandala",
+        "Antonio Mezzacapo",
+        "Peter Muller",
+        "Walter Riess",
+        "Gian Salis",
+        "John Smolin",
+        "Ivano Tavernelli",
+        "Kristan Temme"
+      ],
+      "year": 2018,
+      "venue": "Quantum Science and Technology",
+      "volume": "3",
+      "pages_or_article_number": "030503",
+      "doi": null,
+      "arxiv_id": "1710.01022",
+      "method_family": [
+        "vqe_uccsd"
+      ],
+      "problem_summary": "Practitioner-oriented overview (IBM) of running variational quantum algorithms including VQE on near-term superconducting devices, covering ansatz choice, error sources, and optimization practicalities for the hardware generation available at publication.",
+      "sources_verified": [
+        "https://arxiv.org/abs/1710.01022"
+      ],
+      "components": [
+        {
+          "component_type": "evaluation_protocol",
+          "family_or_name": "practical guidance on near-term VQE deployment (ansatz/error/optimization tradeoffs)",
+          "notes": "Perspective/methodology paper rather than a single new algorithm proposal.",
+          "evidence_locator": "abstract"
+        }
+      ],
+      "workflow_composition_notes": "Perspective paper; surveys practical VQE deployment considerations on IBM superconducting hardware of the era rather than describing one fixed workflow.",
+      "unknown_or_ambiguous_fields": [
+        "doi: not independently confirmed by opening the publisher page directly in this search-level pass (a pattern-matched candidate DOI was found but deliberately NOT recorded as verified, per this corpus's own rule against guessed values -- must be confirmed before promotion out of draft state)"
+      ],
+      "conflicting_fields": [],
+      "negative_results_or_missing_implementation": null,
+      "implementation_ref": null,
+      "validation_state": {
+        "state": "machine_validated",
+        "validator_version": "0.1.0",
+        "validated_at": "2026-07-24T07:03:59Z",
+        "validation_errors": [],
+        "validation_warnings": []
+      }
+    },
+    {
+      "paper_id": "omalley2016",
+      "annotation_schema_version": "0.2.0",
+      "title": "Scalable Quantum Simulation of Molecular Energies",
+      "authors": [
+        "P. J. J. O'Malley",
+        "et al."
+      ],
+      "year": 2016,
+      "venue": "Physical Review X",
+      "volume": "6",
+      "pages_or_article_number": "031007",
+      "doi": "10.1103/PhysRevX.6.031007",
+      "arxiv_id": "1512.06860",
+      "method_family": [
+        "vqe_uccsd"
+      ],
+      "problem_summary": "First electronic structure calculation on a quantum computer without exponentially costly precompilation; computes the H2 (molecular hydrogen) dissociation energy surface using superconducting qubits, comparing VQE-with-UCC against Trotterized quantum phase estimation.",
+      "sources_verified": [
+        "https://link.aps.org/doi/10.1103/PhysRevX.6.031007",
+        "https://arxiv.org/pdf/1512.06860"
+      ],
+      "components": [
+        {
+          "component_type": "problem",
+          "family_or_name": "H2 dissociation energy surface",
+          "notes": "Energy computed across a range of bond lengths, not just equilibrium.",
+          "evidence_locator": "abstract"
+        },
+        {
+          "component_type": "ansatz",
+          "family_or_name": "unitary coupled cluster (UCC)",
+          "notes": "Efficient UCC circuit implementation is the paper's key VQE contribution.",
+          "evidence_locator": "abstract"
+        },
+        {
+          "component_type": "compilation_backend",
+          "family_or_name": "superconducting qubits",
+          "notes": "Google/UCSB/collaborators superconducting processor.",
+          "evidence_locator": "abstract; author affiliations"
+        },
+        {
+          "component_type": "evaluation_protocol",
+          "family_or_name": "VQE vs. Trotterized quantum phase estimation (comparison)",
+          "notes": "Paper explicitly runs and compares two distinct quantum algorithms on the same hardware/problem.",
+          "evidence_locator": "abstract"
+        }
+      ],
+      "workflow_composition_notes": "UCC ansatz optimized variationally (VQE) is reported to reach chemical accuracy on the dissociation curve; separately, Trotterization + QPE is run as the canonical (non-variational) comparison algorithm on the same hardware.",
+      "unknown_or_ambiguous_fields": [
+        "exact_optimizer_algorithm: 'VQE classical optimizer' stated generically in search-level review; specific optimizer name not confirmed without full-text read"
+      ],
+      "conflicting_fields": [],
+      "negative_results_or_missing_implementation": null,
+      "implementation_ref": null,
+      "validation_state": {
+        "state": "machine_validated",
+        "validator_version": "0.1.0",
+        "validated_at": "2026-07-24T07:03:59Z",
+        "validation_errors": [],
+        "validation_warnings": []
+      }
+    },
+    {
+      "paper_id": "ostaszewski2021",
+      "annotation_schema_version": "0.2.0",
+      "title": "Reinforcement learning for optimization of variational quantum circuit architectures",
+      "authors": [
+        "Mateusz Ostaszewski",
+        "Lea M. Trenkwalder",
+        "Wojciech Masarczyk",
+        "Eleanor Scerri",
+        "Vedran Dunjko"
+      ],
+      "year": 2021,
+      "venue": "Advances in Neural Information Processing Systems (NeurIPS 34)",
+      "volume": "34",
+      "pages_or_article_number": "18182-18194",
+      "doi": "10.5555/3540261.3541652",
+      "arxiv_id": "2103.16089",
+      "method_family": [
+        "learning_guided_vqe"
+      ],
+      "problem_summary": "Uses a reinforcement-learning agent to autonomously search the space of possible VQE ansatze, balancing circuit depth against expressivity, demonstrated on estimating the LiH ground-state energy.",
+      "sources_verified": [
+        "https://arxiv.org/abs/2103.16089",
+        "https://proceedings.neurips.cc/paper/2021/hash/9724412729185d53a2e3e7f889d9f057-Abstract.html"
+      ],
+      "components": [
+        {
+          "component_type": "search_selection",
+          "family_or_name": "reinforcement-learning-driven ansatz architecture search",
+          "notes": "Intrinsically motivated RL agent incrementally improves accuracy while minimizing circuit depth.",
+          "evidence_locator": "abstract"
+        },
+        {
+          "component_type": "problem",
+          "family_or_name": "LiH ground-state energy",
+          "notes": null,
+          "evidence_locator": "abstract"
+        },
+        {
+          "component_type": "learning_training",
+          "family_or_name": "RL agent training loop over candidate ansatz architectures",
+          "notes": null,
+          "evidence_locator": "abstract"
+        }
+      ],
+      "workflow_composition_notes": "RL agent proposes ansatz architecture modifications; each candidate is evaluated via a VQE energy estimate, and the RL reward balances accuracy against circuit depth, closing an outer learning loop around the standard VQE inner loop.",
+      "unknown_or_ambiguous_fields": [
+        "reward_function_exact_form: not confirmed without full-text read"
+      ],
+      "conflicting_fields": [],
+      "negative_results_or_missing_implementation": null,
+      "implementation_ref": null,
+      "validation_state": {
+        "state": "machine_validated",
+        "validator_version": "0.1.0",
+        "validated_at": "2026-07-24T07:03:59Z",
+        "validation_errors": [],
+        "validation_warnings": []
+      }
+    },
+    {
+      "paper_id": "peruzzo2014",
+      "annotation_schema_version": "0.2.0",
+      "title": "A variational eigenvalue solver on a photonic quantum processor",
+      "authors": [
+        "Alberto Peruzzo",
+        "Jarrod McClean",
+        "Peter Shadbolt",
+        "Man-Hong Yung",
+        "Xiao-Qi Zhou",
+        "Peter J. Love",
+        "Alan Aspuru-Guzik",
+        "Jeremy L. O'Brien"
+      ],
+      "year": 2014,
+      "venue": "Nature Communications",
+      "volume": "5",
+      "pages_or_article_number": "4213",
+      "doi": "10.1038/ncomms5213",
+      "arxiv_id": "1304.3061",
+      "method_family": [
+        "vqe_uccsd"
+      ],
+      "problem_summary": "Introduces the VQE algorithm itself: state preparation via a small parameterized ansatz plus classical outer-loop optimization, replacing deep coherent evolution. Demonstrated on the HeH+ (helium hydride cation) ground-state energy.",
+      "sources_verified": [
+        "https://www.nature.com/articles/ncomms5213",
+        "https://arxiv.org/abs/1304.3061"
+      ],
+      "components": [
+        {
+          "component_type": "problem",
+          "family_or_name": "HeH+ ground-state electronic energy",
+          "notes": "Smallest nontrivial molecular test case for the original VQE demonstration.",
+          "evidence_locator": "abstract"
+        },
+        {
+          "component_type": "ansatz",
+          "family_or_name": "small parameterized variational ansatz (pre-UCC-standardization VQE proposal)",
+          "notes": "The paper proposes the VQE method itself; the specific ansatz used is small and photonic-hardware-native rather than a later-standardized UCCSD circuit.",
+          "evidence_locator": "abstract; main text"
+        },
+        {
+          "component_type": "parameter_optimizer",
+          "family_or_name": "Nelder-Mead simplex",
+          "notes": "Classical outer-loop optimizer for the variational parameters.",
+          "evidence_locator": "main text"
+        },
+        {
+          "component_type": "compilation_backend",
+          "family_or_name": "photonic quantum processor",
+          "notes": "Physical platform is photonic, not superconducting/trapped-ion -- notable for cross-hardware comparison.",
+          "evidence_locator": "title; abstract"
+        }
+      ],
+      "workflow_composition_notes": "Original VQE loop: prepare a parameterized trial state on the photonic processor, measure the energy expectation value, classically update parameters via Nelder-Mead, repeat to convergence.",
+      "unknown_or_ambiguous_fields": [
+        "exact_ansatz_circuit_depth: not extracted from abstract-level review; would need full-text figure inspection",
+        "qubit_mapping: not confirmed (photonic encoding differs from standard qubit JW/parity mapping conventions used by later superconducting-hardware VQE papers)"
+      ],
+      "conflicting_fields": [],
+      "negative_results_or_missing_implementation": null,
+      "implementation_ref": null,
+      "validation_state": {
+        "state": "machine_validated",
+        "validator_version": "0.1.0",
+        "validated_at": "2026-07-24T07:03:59Z",
+        "validation_errors": [],
+        "validation_warnings": []
+      }
+    },
+    {
+      "paper_id": "ramoa2025",
+      "annotation_schema_version": "0.2.0",
+      "title": "Reducing the Resources Required by ADAPT-VQE Using Coupled Exchange Operators and Improved Subroutines",
+      "authors": [
+        "Mafalda Ramoa",
+        "Panagiotis G. Anastasiou",
+        "Luis Paulo Santos",
+        "Nicholas J. Mayhall",
+        "Edwin Barnes",
+        "Sophia E. Economou"
+      ],
+      "year": 2025,
+      "venue": "npj Quantum Information",
+      "volume": "11",
+      "pages_or_article_number": "86",
+      "doi": "10.1038/s41534-025-01039-4",
+      "arxiv_id": "2407.08696",
+      "method_family": [
+        "ceo_adapt",
+        "adapt_vqe"
+      ],
+      "problem_summary": "Introduces the Coupled Exchange Operator (CEO) pool: linear combinations of excitation operators acting on the same spin-orbitals, capable of simultaneously realizing exchanges between multiple Slater-determinant pairs (unlike standard single-pair excitation operators). Reports over 50% parameter-count reduction vs UCCSD-VQE on LiH/BeH2 with improved accuracy, plus large measurement-cost reductions.",
+      "sources_verified": [
+        "https://arxiv.org/abs/2407.08696",
+        "https://www.nature.com/articles/s41534-025-01039-4"
+      ],
+      "components": [
+        {
+          "component_type": "operator_pool",
+          "family_or_name": "Coupled Exchange Operator (CEO) pool -- OVP-CEO (one shared variational parameter) and MVP-CEO (independently parameterized) variants",
+          "notes": "Each CEO operator can realize exchanges between multiple Slater-determinant pairs simultaneously.",
+          "evidence_locator": "abstract"
+        },
+        {
+          "component_type": "problem",
+          "family_or_name": "LiH and BeH2 ground-state energies",
+          "notes": "Benchmark systems used to report the parameter-count and measurement-cost reductions.",
+          "evidence_locator": "abstract"
+        },
+        {
+          "component_type": "compression",
+          "family_or_name": "parameter-count reduction via CEO pooling (>50% average reduction vs UCCSD-VQE on LiH/BeH2)",
+          "notes": null,
+          "evidence_locator": "abstract"
+        }
+      ],
+      "workflow_composition_notes": "ADAPT-VQE-style adaptive growth loop, with the operator pool restricted to Coupled Exchange Operators instead of individual fermionic excitations, plus 'improved subroutines' (paper title) for measurement/circuit-depth reduction.",
+      "unknown_or_ambiguous_fields": [
+        "specific_improved_subroutines_details: not confirmed without full-text read"
+      ],
+      "conflicting_fields": [],
+      "negative_results_or_missing_implementation": null,
+      "implementation_ref": "mafaldaramoa_ceo-adapt-vqe",
+      "validation_state": {
+        "state": "machine_validated",
+        "validator_version": "0.1.0",
+        "validated_at": "2026-07-24T07:03:59Z",
+        "validation_errors": [],
+        "validation_warnings": []
+      }
+    },
+    {
+      "paper_id": "romero2018",
+      "annotation_schema_version": "0.2.0",
+      "title": "Strategies for quantum computing molecular energies using the unitary coupled cluster ansatz",
+      "authors": [
+        "Jonathan Romero",
+        "Ryan Babbush",
+        "Jarrod R. McClean",
+        "Cornelius Hempel",
+        "Peter J. Love",
+        "Alan Aspuru-Guzik"
+      ],
+      "year": 2018,
+      "venue": "Quantum Science and Technology",
+      "volume": "4",
+      "pages_or_article_number": "014008",
+      "doi": "10.1088/2058-9565/aad3e4",
+      "arxiv_id": "1701.02691",
+      "method_family": [
+        "vqe_uccsd"
+      ],
+      "problem_summary": "Studies VQE with the unitary coupled cluster (UCC) ansatz, introduces circuit-depth-reduction strategies for UCC implementation, and proposes an analytical energy-gradient method that reduces gradient-estimation sampling cost by orders of magnitude versus numerical gradients.",
+      "sources_verified": [
+        "https://arxiv.org/abs/1701.02691",
+        "https://iopscience.iop.org/article/10.1088/2058-9565/aad3e4"
+      ],
+      "components": [
+        {
+          "component_type": "ansatz",
+          "family_or_name": "unitary coupled cluster (UCC), with proposed circuit-depth-reduction strategies",
+          "notes": null,
+          "evidence_locator": "title; abstract"
+        },
+        {
+          "component_type": "parameter_optimizer",
+          "family_or_name": "analytical energy-gradient VQE optimization",
+          "notes": "Analytical gradient method reduces sampling cost for gradient estimation by orders of magnitude vs. numerical gradients.",
+          "evidence_locator": "abstract"
+        }
+      ],
+      "workflow_composition_notes": "UCC ansatz combined with an analytical-gradient-based classical optimizer, aimed at reducing both circuit depth and optimization sampling cost relative to a naive UCC-VQE implementation.",
+      "unknown_or_ambiguous_fields": [
+        "benchmark_molecules: not confirmed in this search-level pass"
+      ],
+      "conflicting_fields": [],
+      "negative_results_or_missing_implementation": null,
+      "implementation_ref": null,
+      "validation_state": {
+        "state": "machine_validated",
+        "validator_version": "0.1.0",
+        "validated_at": "2026-07-24T07:03:59Z",
+        "validation_errors": [],
+        "validation_warnings": []
+      }
+    },
+    {
+      "paper_id": "ryabinkin2018",
+      "annotation_schema_version": "0.2.0",
+      "title": "Qubit Coupled Cluster Method: A Systematic Approach to Quantum Chemistry on a Quantum Computer",
+      "authors": [
+        "Ilya G. Ryabinkin",
+        "Tzu-Ching Yen",
+        "Scott N. Genin",
+        "Artur F. Izmaylov"
+      ],
+      "year": 2018,
+      "venue": "Journal of Chemical Theory and Computation",
+      "volume": "14",
+      "pages_or_article_number": "6317-6326",
+      "doi": "10.1021/acs.jctc.8b00932",
+      "arxiv_id": null,
+      "method_family": [
+        "vqe_uccsd"
+      ],
+      "problem_summary": "Introduces the Qubit Coupled Cluster (QCC) method: an ansatz constructed directly in qubit space (rather than lifted from a fermionic coupled-cluster expansion) via a systematic, energy-gradient-screened selection of Pauli-word entangling generators.",
+      "sources_verified": [
+        "https://pubs.acs.org/doi/10.1021/acs.jctc.8b00932"
+      ],
+      "components": [
+        {
+          "component_type": "ansatz",
+          "family_or_name": "Qubit Coupled Cluster (QCC): qubit-space ansatz built from screened Pauli-word generators",
+          "notes": "Constructed directly in qubit space rather than by mapping a fermionic UCC expansion.",
+          "evidence_locator": "title; abstract"
+        },
+        {
+          "component_type": "search_selection",
+          "family_or_name": "energy-gradient screening of candidate Pauli-word generators",
+          "notes": null,
+          "evidence_locator": "abstract"
+        }
+      ],
+      "workflow_composition_notes": "Generators are screened and selected by gradient magnitude directly in qubit space, then variationally optimized -- methodologically a precursor in spirit to the later ADAPT-VQE family (grimsley2019 et seq.), though qubit-space-native rather than fermionic-operator-based from the start.",
+      "unknown_or_ambiguous_fields": [
+        "arxiv_id: not confirmed in this search-level pass",
+        "benchmark_molecules: not confirmed in this search-level pass"
+      ],
+      "conflicting_fields": [],
+      "negative_results_or_missing_implementation": null,
+      "implementation_ref": null,
+      "validation_state": {
+        "state": "machine_validated",
+        "validator_version": "0.1.0",
+        "validated_at": "2026-07-24T07:03:59Z",
+        "validation_errors": [],
+        "validation_warnings": []
+      }
+    },
+    {
+      "paper_id": "shen2017",
+      "annotation_schema_version": "0.2.0",
+      "title": "Quantum implementation of the unitary coupled cluster for simulating molecular electronic structure",
+      "authors": [
+        "Yangchao Shen",
+        "Xiang Zhang",
+        "Shuaining Zhang",
+        "Jing-Ning Zhang",
+        "Man-Hong Yung",
+        "Kihwan Kim"
+      ],
+      "year": 2017,
+      "venue": "Physical Review A",
+      "volume": "95",
+      "pages_or_article_number": "020501",
+      "doi": "10.1103/PhysRevA.95.020501",
+      "arxiv_id": "1506.00443",
+      "method_family": [
+        "vqe_uccsd"
+      ],
+      "problem_summary": "First experimental demonstration of the unitary coupled cluster VQE ansatz on a trapped-ion system, probing the HeH+ ground-state energy surface, studying excited-state energies, and simulating non-perturbative bond dissociation -- notable as a cross-hardware (trapped-ion, vs. photonic in peruzzo2014 and superconducting in omalley2016/kandala2017) reproduction of the same HeH+ problem class.",
+      "sources_verified": [
+        "https://arxiv.org/abs/1506.00443",
+        "https://link.aps.org/doi/10.1103/PhysRevA.95.020501"
+      ],
+      "components": [
+        {
+          "component_type": "problem",
+          "family_or_name": "HeH+ ground-state and excited-state energies; bond dissociation",
+          "notes": "Same molecule as the original VQE paper (peruzzo2014), on different hardware -- useful cross-hardware comparison anchor.",
+          "evidence_locator": "abstract"
+        },
+        {
+          "component_type": "ansatz",
+          "family_or_name": "unitary coupled cluster (UCC)",
+          "notes": null,
+          "evidence_locator": "title"
+        },
+        {
+          "component_type": "compilation_backend",
+          "family_or_name": "trapped-ion quantum processor",
+          "notes": null,
+          "evidence_locator": "title; author affiliations"
+        }
+      ],
+      "workflow_composition_notes": "UCC ansatz implemented and variationally optimized on trapped-ion hardware for the same HeH+ problem class as the original photonic VQE demonstration (peruzzo2014), enabling a same-molecule, different-hardware comparison within this corpus.",
+      "unknown_or_ambiguous_fields": [],
+      "conflicting_fields": [],
+      "negative_results_or_missing_implementation": null,
+      "implementation_ref": null,
+      "validation_state": {
+        "state": "machine_validated",
+        "validator_version": "0.1.0",
+        "validated_at": "2026-07-24T07:03:59Z",
+        "validation_errors": [],
+        "validation_warnings": []
+      }
+    },
+    {
+      "paper_id": "tang2021",
+      "annotation_schema_version": "0.2.0",
+      "title": "Qubit-ADAPT-VQE: An Adaptive Algorithm for Constructing Hardware-Efficient Ansatze on a Quantum Processor",
+      "authors": [
+        "Ho Lun Tang",
+        "V. O. Shkolnikov",
+        "George S. Barron",
+        "Harper R. Grimsley",
+        "Nicholas J. Mayhall",
+        "Edwin Barnes",
+        "Sophia E. Economou"
+      ],
+      "year": 2021,
+      "venue": "PRX Quantum",
+      "volume": "2",
+      "pages_or_article_number": "020310",
+      "doi": "10.1103/PRXQuantum.2.020310",
+      "arxiv_id": "1911.10205",
+      "method_family": [
+        "qubit_adapt",
+        "adapt_vqe"
+      ],
+      "problem_summary": "Extends ADAPT-VQE with a qubit-excitation-based operator pool (rather than fermionic), drastically reducing circuit depth; proves a minimal pool size scaling linearly with qubit count still guarantees the ability to construct exact ansatze.",
+      "sources_verified": [
+        "https://link.aps.org/doi/10.1103/PRXQuantum.2.020310",
+        "https://arxiv.org/abs/1911.10205"
+      ],
+      "components": [
+        {
+          "component_type": "problem",
+          "family_or_name": "molecular electronic structure (method paper, demonstrated via classical simulation)",
+          "notes": "Method paper extending ADAPT-VQE; specific benchmark molecules not confirmed in this search-level pass.",
+          "evidence_locator": "abstract"
+        },
+        {
+          "component_type": "ansatz",
+          "family_or_name": "qubit-ADAPT-VQE (adaptively grown from a qubit-excitation pool)",
+          "notes": "Distinguishes from grimsley2019's fermionic-operator ADAPT-VQE by using qubit-excitation operators, yielding shallower circuits.",
+          "evidence_locator": "title; abstract"
+        },
+        {
+          "component_type": "operator_pool",
+          "family_or_name": "qubit-excitation operator pool, minimal pool scaling linearly with qubit count",
+          "notes": "Key theoretical result: a pool of this minimal size is proven sufficient for exact ansatz construction.",
+          "evidence_locator": "abstract"
+        },
+        {
+          "component_type": "search_selection",
+          "family_or_name": "gradient-based operator selection (ADAPT-style)",
+          "notes": null,
+          "evidence_locator": "abstract"
+        }
+      ],
+      "workflow_composition_notes": "Same adaptive growth loop as ADAPT-VQE (grimsley2019), but drawing operators from a qubit-excitation pool instead of a fermionic pool, which is reported to reduce circuit depth relative to standard ADAPT-VQE.",
+      "unknown_or_ambiguous_fields": [
+        "benchmark_molecules: specific molecules simulated not confirmed in this search-level pass",
+        "quantitative_depth_reduction_vs_grimsley2019: not confirmed without full-text read"
+      ],
+      "conflicting_fields": [],
+      "negative_results_or_missing_implementation": null,
+      "implementation_ref": "mafaldaramoa_vqe",
+      "validation_state": {
+        "state": "machine_validated",
+        "validator_version": "0.1.0",
+        "validated_at": "2026-07-24T07:03:59Z",
+        "validation_errors": [],
+        "validation_warnings": []
+      }
+    },
+    {
+      "paper_id": "tilly2022",
+      "annotation_schema_version": "0.2.0",
+      "title": "The Variational Quantum Eigensolver: a review of methods and best practices",
+      "authors": [
+        "Jules Tilly",
+        "Hongxiang Chen",
+        "Shuxiang Cao",
+        "Dario Picozzi",
+        "Kanav Setia",
+        "Ying Li",
+        "Edward Grant",
+        "Leonard Wossnig",
+        "Ivan Rungger",
+        "George H. Booth",
+        "Jonathan Tennyson"
+      ],
+      "year": 2022,
+      "venue": "Physics Reports",
+      "volume": "986",
+      "pages_or_article_number": "1-128",
+      "doi": "10.1016/j.physrep.2022.08.003",
+      "arxiv_id": "2111.05176",
+      "method_family": [
+        "vqe_uccsd",
+        "adapt_vqe",
+        "measurement_reduction"
+      ],
+      "problem_summary": "Comprehensive review of VQE methodology: ansatz design (chemistry-inspired and hardware-efficient), classical optimizers, measurement strategies, and error mitigation, surveying best practices across the field rather than proposing a single new method.",
+      "sources_verified": [
+        "https://arxiv.org/abs/2111.05176"
+      ],
+      "components": [
+        {
+          "component_type": "evaluation_protocol",
+          "family_or_name": "review/survey of VQE ansatz, optimizer, and measurement best practices",
+          "notes": "Not a single-method paper -- included in this corpus as a cross-cutting reference for the component taxonomy and method-family boundaries used elsewhere in this corpus.",
+          "evidence_locator": "abstract"
+        }
+      ],
+      "workflow_composition_notes": "Review paper; surveys the component space (ansatz/optimizer/measurement/error-mitigation choices) this corpus's own taxonomy is built to represent, rather than describing one specific workflow.",
+      "unknown_or_ambiguous_fields": [],
+      "conflicting_fields": [],
+      "negative_results_or_missing_implementation": null,
+      "implementation_ref": null,
+      "validation_state": {
+        "state": "machine_validated",
+        "validator_version": "0.1.0",
+        "validated_at": "2026-07-24T07:03:59Z",
+        "validation_errors": [],
+        "validation_warnings": []
+      }
+    },
+    {
+      "paper_id": "verteletskyi2020",
+      "annotation_schema_version": "0.2.0",
+      "title": "Measurement Optimization in the Variational Quantum Eigensolver Using a Minimum Clique Cover",
+      "authors": [
+        "Vladyslav Verteletskyi",
+        "Tzu-Ching Yen",
+        "Artur F. Izmaylov"
+      ],
+      "year": 2020,
+      "venue": "The Journal of Chemical Physics",
+      "volume": "152",
+      "pages_or_article_number": "124114",
+      "doi": null,
+      "arxiv_id": "1907.03358",
+      "method_family": [
+        "measurement_reduction"
+      ],
+      "problem_summary": "Groups qubit-wise commuting Hamiltonian terms via a graph-coloring formulation (minimum clique cover, NP-hard but solved with polynomial heuristics), reducing the number of separately-measured operator groups by roughly a factor of 3 on average across tested Hamiltonians.",
+      "sources_verified": [
+        "https://arxiv.org/abs/1907.03358",
+        "https://pubs.aip.org/aip/jcp/article/152/12/124114/954934/Measurement-optimization-in-the-variational"
+      ],
+      "components": [
+        {
+          "component_type": "measurement",
+          "family_or_name": "qubit-wise-commuting term grouping via minimum clique cover",
+          "notes": "Average ~3x reduction in the number of measured operator groups vs. individual-term measurement.",
+          "evidence_locator": "abstract"
+        }
+      ],
+      "workflow_composition_notes": "Measurement-grouping preprocessing step applied to the Hamiltonian before the VQE measurement stage; independent of ansatz/optimizer choice.",
+      "unknown_or_ambiguous_fields": [
+        "doi: not confirmed in this search-level pass (AIP journal page found but explicit DOI string not captured)",
+        "benchmark_molecules: not confirmed in this search-level pass"
+      ],
+      "conflicting_fields": [],
+      "negative_results_or_missing_implementation": null,
+      "implementation_ref": null,
+      "validation_state": {
+        "state": "machine_validated",
+        "validator_version": "0.1.0",
+        "validated_at": "2026-07-24T07:03:59Z",
+        "validation_errors": [],
+        "validation_warnings": []
+      }
+    },
+    {
+      "paper_id": "yordanov2021",
+      "annotation_schema_version": "0.2.0",
+      "title": "Qubit-excitation-based adaptive variational quantum eigensolver",
+      "authors": [
+        "Yordan S. Yordanov",
+        "V. Armaos",
+        "Crispin H. W. Barnes",
+        "David R. M. Arvidsson-Shukur"
+      ],
+      "year": 2021,
+      "venue": "Communications Physics",
+      "volume": "4",
+      "pages_or_article_number": "228",
+      "doi": "10.1038/s42005-021-00730-0",
+      "arxiv_id": "2011.10540",
+      "method_family": [
+        "qeb_adapt",
+        "adapt_vqe"
+      ],
+      "problem_summary": "Introduces QEB-ADAPT-VQE: constructs ansatze from qubit-excitation evolutions (which obey qubit commutation relations, unlike fermionic excitation evolutions) grown adaptively, reported to outperform qubit-ADAPT-VQE in circuit efficiency and convergence speed while requiring asymptotically fewer gates.",
+      "sources_verified": [
+        "https://www.nature.com/articles/s42005-021-00730-0",
+        "https://arxiv.org/abs/2011.10540"
+      ],
+      "components": [
+        {
+          "component_type": "ansatz",
+          "family_or_name": "QEB-ADAPT-VQE (qubit-excitation-based adaptive ansatz)",
+          "notes": "Qubit-excitation evolutions obey qubit commutation relations, distinguishing this pool from fermionic-excitation-based ADAPT-VQE.",
+          "evidence_locator": "abstract"
+        },
+        {
+          "component_type": "operator_pool",
+          "family_or_name": "qubit excitation operator pool",
+          "notes": null,
+          "evidence_locator": "abstract"
+        }
+      ],
+      "workflow_composition_notes": "Same adaptive-growth VQE loop pattern as ADAPT-VQE, with the operator pool restricted to qubit-excitation evolutions rather than fermionic excitations.",
+      "unknown_or_ambiguous_fields": [
+        "benchmark_molecules: not confirmed in this search-level pass"
+      ],
+      "conflicting_fields": [],
+      "negative_results_or_missing_implementation": null,
+      "implementation_ref": null,
+      "validation_state": {
+        "state": "machine_validated",
+        "validator_version": "0.1.0",
+        "validated_at": "2026-07-24T07:03:59Z",
+        "validation_errors": [],
+        "validation_warnings": []
+      }
+    },
+    {
+      "paper_id": "zhang2022",
+      "annotation_schema_version": "0.2.0",
+      "title": "Variational quantum eigensolver with reduced circuit complexity",
+      "authors": [
+        "Yu Zhang",
+        "Lukasz Cincio",
+        "Christian F. A. Negre",
+        "Piotr Czarnik",
+        "Patrick J. Coles",
+        "Petr M. Anisimov",
+        "Susan M. Mniszewski",
+        "Sergei Tretiak",
+        "Pavel A. Dub"
+      ],
+      "year": 2022,
+      "venue": "npj Quantum Information",
+      "volume": "8",
+      "pages_or_article_number": "96",
+      "doi": "10.1038/s41534-022-00599-z",
+      "arxiv_id": "2106.07619",
+      "method_family": [
+        "pruning_compression"
+      ],
+      "problem_summary": "Introduces ClusterVQE: splits the qubit space into entanglement-informed clusters distributed across shallower individual circuits, with inter-cluster entanglement captured via a 'dressed' effective Hamiltonian, trading additional classical resources for reduced circuit depth/qubit count per subcircuit.",
+      "sources_verified": [
+        "https://arxiv.org/abs/2106.07619",
+        "https://www.nature.com/articles/s41534-022-00599-z"
+      ],
+      "components": [
+        {
+          "component_type": "compression",
+          "family_or_name": "ClusterVQE: mutual-information-based qubit clustering into shallower sub-circuits",
+          "notes": "Clusters chosen based on quantum mutual information reflecting maximal intra-cluster entanglement.",
+          "evidence_locator": "abstract"
+        },
+        {
+          "component_type": "representation",
+          "family_or_name": "'dressed' effective Hamiltonian capturing inter-cluster entanglement",
+          "notes": null,
+          "evidence_locator": "abstract"
+        }
+      ],
+      "workflow_composition_notes": "Preprocessing step (clustering + dressed Hamiltonian construction) applied before a standard VQE loop runs on each shallower sub-circuit; trades classical preprocessing cost for reduced quantum circuit complexity.",
+      "unknown_or_ambiguous_fields": [
+        "benchmark_molecules: not confirmed in this search-level pass"
+      ],
+      "conflicting_fields": [],
+      "negative_results_or_missing_implementation": null,
+      "implementation_ref": null,
+      "validation_state": {
+        "state": "machine_validated",
+        "validator_version": "0.1.0",
+        "validated_at": "2026-07-24T07:03:59Z",
+        "validation_errors": [],
+        "validation_warnings": []
+      }
+    },
+    {
+      "paper_id": "zhao2020",
+      "annotation_schema_version": "0.2.0",
+      "title": "Measurement reduction in variational quantum algorithms",
+      "authors": [
+        "Andrew Zhao",
+        "Andrew Tranter",
+        "William M. Kirby",
+        "Shu Fay Ung",
+        "Akimasa Miyake",
+        "Peter J. Love"
+      ],
+      "year": 2020,
+      "venue": "Physical Review A",
+      "volume": "101",
+      "pages_or_article_number": "062322",
+      "doi": "10.1103/PhysRevA.101.062322",
+      "arxiv_id": "1908.08067",
+      "method_family": [
+        "measurement_reduction"
+      ],
+      "problem_summary": "Uses unitary partitioning -- appending additional unitary operations to the ansatz preparation -- to reduce the number of Hamiltonian terms that must be separately measured. Proves linear term reduction (in orbital count) is always achievable for electronic structure Hamiltonians, and finds roughly an order-of-magnitude reduction in term count for 10-30 qubit systems.",
+      "sources_verified": [
+        "https://arxiv.org/abs/1908.08067",
+        "https://link.aps.org/doi/10.1103/PhysRevA.101.062322"
+      ],
+      "components": [
+        {
+          "component_type": "measurement",
+          "family_or_name": "unitary partitioning for measurement-term reduction",
+          "notes": "Additional unitary operations appended to ansatz state preparation reduce the number of separately-measured Hamiltonian terms.",
+          "evidence_locator": "abstract"
+        },
+        {
+          "component_type": "compilation_backend",
+          "family_or_name": "asymmetric qubitization (for implementing the added unitary operations at lower circuit depth)",
+          "notes": null,
+          "evidence_locator": "abstract"
+        }
+      ],
+      "workflow_composition_notes": "Measurement-reduction technique layered on top of a standard VQE loop's measurement stage; not a full ansatz/optimizer proposal in itself.",
+      "unknown_or_ambiguous_fields": [
+        "benchmark_molecules: not confirmed in this search-level pass"
+      ],
+      "conflicting_fields": [],
+      "negative_results_or_missing_implementation": null,
+      "implementation_ref": null,
+      "validation_state": {
+        "state": "machine_validated",
+        "validator_version": "0.1.0",
+        "validated_at": "2026-07-24T07:03:59Z",
+        "validation_errors": [],
+        "validation_warnings": []
+      }
+    }
+  ],
+  "repositories": [
+    {
+      "repo_id": "aicaffeinelife_qadaprune",
+      "annotation_schema_version": "0.2.0",
+      "repository_url": "https://github.com/aicaffeinelife/QAdaPrune",
+      "relation": "official",
+      "associated_paper_ids": [
+        "kulshrestha2024"
+      ],
+      "paper_associated_commit": null,
+      "license_state": "unknown",
+      "environment_completeness": "unknown",
+      "evidence_locators": [
+        "paper (arXiv:2408.13352) states: 'The source code and data are available at https://github.com/aicaffeinelife/QAdaPrune.git'"
+      ],
+      "sources_verified": [
+        "https://arxiv.org/abs/2408.13352"
+      ],
+      "unknown_or_ambiguous_fields": [
+        "license_state: not confirmed in this search-level pass",
+        "repository_url itself was not independently opened in this pass -- taken directly from the paper's own code-availability statement"
+      ],
+      "validation_state": {
+        "state": "machine_validated",
+        "validator_version": "0.1.0",
+        "validated_at": "2026-07-24T07:03:59Z",
+        "validation_errors": [],
+        "validation_warnings": []
+      }
+    },
+    {
+      "repo_id": "aspuru-guzik-group_tequila",
+      "annotation_schema_version": "0.2.0",
+      "repository_url": "https://github.com/aspuru-guzik-group/tequila",
+      "relation": "general_framework_library",
+      "associated_paper_ids": [
+        "peruzzo2014",
+        "romero2018",
+        "mcclean2016",
+        "cao2019"
+      ],
+      "paper_associated_commit": null,
+      "license_state": "unknown",
+      "environment_completeness": "unknown",
+      "evidence_locators": [
+        "https://github.com/aspuru-guzik-group/tequila/blob/master/README.md"
+      ],
+      "sources_verified": [
+        "https://github.com/aspuru-guzik-group/tequila"
+      ],
+      "unknown_or_ambiguous_fields": [
+        "license_state: not confirmed in this search-level pass",
+        "general VQE/UCC abstraction framework led by the Aspuru-Guzik group (overlapping authorship with several corpus papers), not a paper-specific release for any single associated paper"
+      ],
+      "validation_state": {
+        "state": "machine_validated",
+        "validator_version": "0.1.0",
+        "validated_at": "2026-07-24T07:03:59Z",
+        "validation_errors": [],
+        "validation_warnings": []
+      }
+    },
+    {
+      "repo_id": "goodchemistryco_tangelo",
+      "annotation_schema_version": "0.2.0",
+      "repository_url": "https://github.com/goodchemistryco/Tangelo",
+      "relation": "general_framework_library",
+      "associated_paper_ids": [
+        "anastasiou2024"
+      ],
+      "paper_associated_commit": null,
+      "license_state": "unknown",
+      "environment_completeness": "unknown",
+      "evidence_locators": [
+        "https://github.com/goodchemistryco/Tangelo/blob/main/tangelo/algorithms/variational/tetris_adapt_vqe_solver.py"
+      ],
+      "sources_verified": [
+        "https://github.com/goodchemistryco/Tangelo/blob/main/tangelo/algorithms/variational/tetris_adapt_vqe_solver.py"
+      ],
+      "unknown_or_ambiguous_fields": [
+        "license_state: not confirmed in this search-level pass",
+        "this is a general open-source chemistry package by SandboxAQ/Good Chemistry Company implementing TETRIS-ADAPT-VQE as one of many solvers, not a paper-specific release -- relation classified as third_party_reference_implementation rather than official for that reason"
+      ],
+      "validation_state": {
+        "state": "machine_validated",
+        "validator_version": "0.1.0",
+        "validated_at": "2026-07-24T07:03:59Z",
+        "validation_errors": [],
+        "validation_warnings": []
+      }
+    },
+    {
+      "repo_id": "mafaldaramoa_ceo-adapt-vqe",
+      "annotation_schema_version": "0.2.0",
+      "repository_url": "https://github.com/mafaldaramoa/ceo-adapt-vqe",
+      "relation": "author",
+      "associated_paper_ids": [
+        "ramoa2025",
+        "anastasiou2024"
+      ],
+      "paper_associated_commit": null,
+      "license_state": "unknown",
+      "environment_completeness": "unknown",
+      "evidence_locators": [
+        "https://github.com/mafaldaramoa/ceo-adapt-vqe (description: 'Simulation code for ADAPT-VQE with CEO pools and Hessian recycling', also confirmed to support TETRIS and orbital optimization)"
+      ],
+      "sources_verified": [
+        "https://github.com/mafaldaramoa/ceo-adapt-vqe"
+      ],
+      "unknown_or_ambiguous_fields": [
+        "license_state: not confirmed in this search-level pass",
+        "whether TETRIS support in this repo corresponds exactly to anastasiou2024's published algorithm or a later variant: not confirmed without reading the code",
+        "relation=author applies confidently to ramoa2025 (this is Mafalda Ramoa's own repository, and she is ramoa2025's first author). Her authorship status on anastasiou2024 specifically was NOT independently confirmed in this search-level pass (Panagiotis G. Anastasiou co-authors both ramoa2025 and anastasiou2024, but that does not establish Ramoa is an anastasiou2024 author too) -- the anastasiou2024 association here should be treated as weaker than 'author', closer to a relevant cross-reference, until that is checked"
+      ],
+      "validation_state": {
+        "state": "machine_validated",
+        "validator_version": "0.1.0",
+        "validated_at": "2026-07-24T07:03:59Z",
+        "validation_errors": [],
+        "validation_warnings": []
+      }
+    },
+    {
+      "repo_id": "mafaldaramoa_vqe",
+      "annotation_schema_version": "0.2.0",
+      "repository_url": "https://github.com/mafaldaramoa/VQE",
+      "relation": "third_party_reference_implementation",
+      "associated_paper_ids": [
+        "tang2021"
+      ],
+      "paper_associated_commit": null,
+      "license_state": "unknown",
+      "environment_completeness": "unknown",
+      "evidence_locators": [
+        "https://github.com/mafaldaramoa/VQE (description: 'VQE Dissertation Project', implements ADAPT-VQE variants including qubit-ADAPT using Cirq, OpenFermion, and PySCF)"
+      ],
+      "sources_verified": [
+        "https://github.com/mafaldaramoa/VQE"
+      ],
+      "unknown_or_ambiguous_fields": [
+        "license_state: not confirmed in this search-level pass",
+        "not authored by tang2021's own authors -- an independent reproduction, not the official implementation"
+      ],
+      "validation_state": {
+        "state": "machine_validated",
+        "validator_version": "0.1.0",
+        "validated_at": "2026-07-24T07:03:59Z",
+        "validation_errors": [],
+        "validation_warnings": []
+      }
+    },
+    {
+      "repo_id": "mayhallgroup_adapt-vqe",
+      "annotation_schema_version": "0.2.0",
+      "repository_url": "https://github.com/mayhallgroup/adapt-vqe",
+      "relation": "author",
+      "associated_paper_ids": [
+        "grimsley2019",
+        "grimsley2023"
+      ],
+      "paper_associated_commit": null,
+      "license_state": "unknown",
+      "environment_completeness": "unknown",
+      "evidence_locators": [
+        "https://github.com/mayhallgroup/adapt-vqe"
+      ],
+      "sources_verified": [
+        "https://github.com/mayhallgroup/adapt-vqe",
+        "https://github.com/mayhallgroup"
+      ],
+      "unknown_or_ambiguous_fields": [
+        "license_state: not confirmed in this search-level pass (repo page found, license file contents not opened)",
+        "paper_associated_commit: not confirmed; repository has evolved beyond the original 2019 paper and likely also carries grimsley2023's work",
+        "relation=author (not official): this is the Mayhall group's own lab GitHub org, clearly maintained by grimsley2019/grimsley2023's own authors, but no direct citation from the papers' own text/supplementary linking this exact URL was independently confirmed in this search-level pass -- see ANNOTATION_GUIDELINE.md §4.1 for the official-vs-author distinction"
+      ],
+      "validation_state": {
+        "state": "machine_validated",
+        "validator_version": "0.1.0",
+        "validated_at": "2026-07-24T07:03:59Z",
+        "validation_errors": [],
+        "validation_warnings": []
+      }
+    },
+    {
+      "repo_id": "mcmahon-lab_error_mitigation_vqe",
+      "annotation_schema_version": "0.2.0",
+      "repository_url": "https://github.com/mcmahon-lab/error_mitigation_vqe",
+      "relation": "third_party_reference_implementation",
+      "associated_paper_ids": [
+        "kandala2019"
+      ],
+      "paper_associated_commit": null,
+      "license_state": "unknown",
+      "environment_completeness": "unknown",
+      "evidence_locators": [
+        "https://github.com/mcmahon-lab/error_mitigation_vqe"
+      ],
+      "sources_verified": [
+        "https://github.com/mcmahon-lab/error_mitigation_vqe"
+      ],
+      "unknown_or_ambiguous_fields": [
+        "IMPORTANT: this is NOT kandala2019's own repository -- it implements a related but distinct error-mitigation-for-VQE technique (Rosenberg et al. 2021, linear-rescaling-based error mitigation), by a different author group, for the same general error_mitigation component type. Recorded here as a real, related reference implementation, not as kandala2019's official code -- do not conflate the two when this record is reviewed",
+        "license_state: not confirmed in this search-level pass"
+      ],
+      "validation_state": {
+        "state": "machine_validated",
+        "validator_version": "0.1.0",
+        "validated_at": "2026-07-24T07:03:59Z",
+        "validation_errors": [],
+        "validation_warnings": []
+      }
+    },
+    {
+      "repo_id": "pennylaneai_pennylane",
+      "annotation_schema_version": "0.2.0",
+      "repository_url": "https://github.com/PennyLaneAI/pennylane",
+      "relation": "general_framework_library",
+      "associated_paper_ids": [],
+      "paper_associated_commit": null,
+      "license_state": "unknown",
+      "environment_completeness": "unknown",
+      "evidence_locators": [
+        "https://github.com/PennyLaneAI/pennylane"
+      ],
+      "sources_verified": [
+        "https://github.com/PennyLaneAI/pennylane"
+      ],
+      "unknown_or_ambiguous_fields": [
+        "license_state: not confirmed in this search-level pass",
+        "associated_paper_ids intentionally empty: none of this corpus's 26 papers specifically used PennyLane; included because it is one of this project's own two Phase 0 runtime candidates (runtimes/vqe/pennylane-current/) and a broad, real, verifiable VQE-capable framework worth having in the corpus's repository set for later cross-referencing"
+      ],
+      "validation_state": {
+        "state": "machine_validated",
+        "validator_version": "0.1.0",
+        "validated_at": "2026-07-24T07:03:59Z",
+        "validation_errors": [],
+        "validation_warnings": []
+      }
+    },
+    {
+      "repo_id": "qiskit_qiskit",
+      "annotation_schema_version": "0.2.0",
+      "repository_url": "https://github.com/Qiskit/qiskit",
+      "relation": "general_framework_library",
+      "associated_paper_ids": [
+        "kandala2017",
+        "kandala2019"
+      ],
+      "paper_associated_commit": null,
+      "license_state": "Apache-2.0",
+      "environment_completeness": "unknown",
+      "evidence_locators": [
+        "https://github.com/Qiskit/qiskit/blob/main/LICENSE.txt"
+      ],
+      "sources_verified": [
+        "https://github.com/Qiskit/qiskit/blob/main/LICENSE.txt"
+      ],
+      "unknown_or_ambiguous_fields": [
+        "base platform underlying IBM's kandala2017/kandala2019 superconducting-hardware VQE experiments, but not code released specifically alongside either paper"
+      ],
+      "validation_state": {
+        "state": "machine_validated",
+        "validator_version": "0.1.0",
+        "validated_at": "2026-07-24T07:03:59Z",
+        "validation_errors": [],
+        "validation_warnings": []
+      }
+    },
+    {
+      "repo_id": "qiskit-community_qiskit-algorithms",
+      "annotation_schema_version": "0.2.0",
+      "repository_url": "https://github.com/qiskit-community/qiskit-algorithms",
+      "relation": "general_framework_library",
+      "associated_paper_ids": [
+        "grimsley2019",
+        "kandala2017",
+        "kandala2019"
+      ],
+      "paper_associated_commit": null,
+      "license_state": "Apache-2.0",
+      "environment_completeness": "unknown",
+      "evidence_locators": [
+        "https://qiskit-community.github.io/qiskit-algorithms/stubs/qiskit_algorithms.AdaptVQE.html",
+        "https://github.com/qiskit-community/qiskit-algorithms"
+      ],
+      "sources_verified": [
+        "https://github.com/qiskit-community/qiskit-algorithms",
+        "https://qiskit-community.github.io/qiskit-algorithms/stubs/qiskit_algorithms.AdaptVQE.html"
+      ],
+      "unknown_or_ambiguous_fields": [
+        "third-party framework implementation of the ADAPT-VQE method (grimsley2019), not the original authors' own code -- also the actual qiskit_algorithms package this project's own Phase 0 qiskit-current spike depends on (runtimes/vqe/qiskit-current/pyproject.toml)"
+      ],
+      "validation_state": {
+        "state": "machine_validated",
+        "validator_version": "0.1.0",
+        "validated_at": "2026-07-24T07:03:59Z",
+        "validation_errors": [],
+        "validation_warnings": []
+      }
+    },
+    {
+      "repo_id": "qiskit-community_qiskit-nature",
+      "annotation_schema_version": "0.2.0",
+      "repository_url": "https://github.com/qiskit-community/qiskit-nature",
+      "relation": "general_framework_library",
+      "associated_paper_ids": [
+        "omalley2016",
+        "kandala2017",
+        "romero2018",
+        "lee2018"
+      ],
+      "paper_associated_commit": null,
+      "license_state": "unknown",
+      "environment_completeness": "unknown",
+      "evidence_locators": [
+        "https://github.com/qiskit-community/qiskit-nature"
+      ],
+      "sources_verified": [
+        "https://github.com/qiskit-community/qiskit-nature",
+        "https://qiskit-community.github.io/qiskit-nature/getting_started.html"
+      ],
+      "unknown_or_ambiguous_fields": [
+        "license_state: not confirmed in this search-level pass",
+        "general open-source electronic-structure framework, not a paper-specific release -- this is also the actual library used by this project's own runtimes/vqe/qiskit-current Phase 0 spike"
+      ],
+      "validation_state": {
+        "state": "machine_validated",
+        "validator_version": "0.1.0",
+        "validated_at": "2026-07-24T07:03:59Z",
+        "validation_errors": [],
+        "validation_warnings": []
+      }
+    },
+    {
+      "repo_id": "quantumlib_cirq",
+      "annotation_schema_version": "0.2.0",
+      "repository_url": "https://github.com/quantumlib/Cirq",
+      "relation": "general_framework_library",
+      "associated_paper_ids": [
+        "tang2021",
+        "google2020"
+      ],
+      "paper_associated_commit": null,
+      "license_state": "unknown",
+      "environment_completeness": "unknown",
+      "evidence_locators": [
+        "https://github.com/quantumlib/Cirq",
+        "mafaldaramoa/VQE repository description confirms Cirq is used for its qubit-ADAPT-VQE (tang2021) reproduction"
+      ],
+      "sources_verified": [
+        "https://github.com/quantumlib/Cirq",
+        "https://github.com/mafaldaramoa/VQE"
+      ],
+      "unknown_or_ambiguous_fields": [
+        "license_state: not confirmed in this search-level pass",
+        "general NISQ circuit framework, not a paper-specific release"
+      ],
+      "validation_state": {
+        "state": "machine_validated",
+        "validator_version": "0.1.0",
+        "validated_at": "2026-07-24T07:03:59Z",
+        "validation_errors": [],
+        "validation_warnings": []
+      }
+    },
+    {
+      "repo_id": "quantumlib_openfermion",
+      "annotation_schema_version": "0.2.0",
+      "repository_url": "https://github.com/quantumlib/OpenFermion",
+      "relation": "general_framework_library",
+      "associated_paper_ids": [
+        "mcclean2016",
+        "omalley2016",
+        "google2020"
+      ],
+      "paper_associated_commit": null,
+      "license_state": "Apache-2.0",
+      "environment_completeness": "unknown",
+      "evidence_locators": [
+        "https://github.com/quantumlib/OpenFermion",
+        "https://opensource.googleblog.com/2017/10/announcing-openfermion-open-source.html"
+      ],
+      "sources_verified": [
+        "https://github.com/quantumlib/OpenFermion",
+        "https://research.google/blog/announcing-openfermion-the-open-source-chemistry-package-for-quantum-computers/"
+      ],
+      "unknown_or_ambiguous_fields": [
+        "not a paper-specific release -- a general electronic-structure package by Google (with multi-institution contributors) underlying the broader research program these papers belong to, not code released alongside any single one of them"
+      ],
+      "validation_state": {
+        "state": "machine_validated",
+        "validator_version": "0.1.0",
+        "validated_at": "2026-07-24T07:03:59Z",
+        "validation_errors": [],
+        "validation_warnings": []
+      }
+    },
+    {
+      "repo_id": "quantumlib_openfermion-pyscf",
+      "annotation_schema_version": "0.2.0",
+      "repository_url": "https://github.com/quantumlib/OpenFermion-PySCF",
+      "relation": "general_framework_library",
+      "associated_paper_ids": [
+        "mcclean2016",
+        "omalley2016",
+        "google2020",
+        "lee2018"
+      ],
+      "paper_associated_commit": null,
+      "license_state": "Apache-2.0 (OpenFermion core); BSD-2-Clause (PySCF plugin layer, per search-level summary)",
+      "environment_completeness": "unknown",
+      "evidence_locators": [
+        "https://github.com/quantumlib/OpenFermion-PySCF"
+      ],
+      "sources_verified": [
+        "https://github.com/quantumlib/OpenFermion-PySCF"
+      ],
+      "unknown_or_ambiguous_fields": [
+        "license_state: split-license summary taken from a secondary description, not independently confirmed by opening the LICENSE files directly in this pass",
+        "PySCF electronic-structure integral backend used by this project's own Phase 0 spike (runtimes/vqe/qiskit-current, runtimes/vqe/pennylane-current) too, though via the plain pyscf package rather than this OpenFermion plugin specifically"
+      ],
+      "validation_state": {
+        "state": "machine_validated",
+        "validator_version": "0.1.0",
+        "validated_at": "2026-07-24T07:03:59Z",
+        "validation_errors": [],
+        "validation_warnings": []
+      }
+    },
+    {
+      "repo_id": "quantumlib_recirq",
+      "annotation_schema_version": "0.2.0",
+      "repository_url": "https://github.com/quantumlib/ReCirq",
+      "relation": "official",
+      "associated_paper_ids": [
+        "google2020"
+      ],
+      "paper_associated_commit": null,
+      "license_state": "unknown",
+      "environment_completeness": "recirq.hfvqe submodule confirmed present, with a documented quickstart tutorial",
+      "evidence_locators": [
+        "https://github.com/quantumlib/ReCirq/blob/main/docs/hfvqe/quickstart.ipynb",
+        "https://quantumai.google/cirq/experiments/hfvqe"
+      ],
+      "sources_verified": [
+        "https://github.com/quantumlib/ReCirq",
+        "https://github.com/quantumlib/ReCirq/blob/main/docs/hfvqe/quickstart.ipynb",
+        "https://quantumai.google/cirq/experiments/hfvqe"
+      ],
+      "unknown_or_ambiguous_fields": [
+        "license_state: not confirmed in this search-level pass",
+        "relation=official applies specifically to the recirq.hfvqe submodule within this repository (Google's own research.google/pubs page and quantumai.google/cirq/experiments/hfvqe both describe this submodule as the code for the google2020 experiment) -- ReCirq as a whole is a broad multi-experiment repository, not written solely for this paper. Treat 'official' here as scoped to that submodule, not the full repository, per ANNOTATION_GUIDELINE.md §4.1"
+      ],
+      "validation_state": {
+        "state": "machine_validated",
+        "validator_version": "0.1.0",
+        "validated_at": "2026-07-24T07:03:59Z",
+        "validation_errors": [],
+        "validation_warnings": []
+      }
+    }
+  ],
+  "comparisons": [
+    {
+      "comparison_id": "grimsley2019_vs_tang2021",
+      "annotation_schema_version": "0.2.0",
+      "generation_method": "majorana_vqe.comparison.classify_comparison (literature-level, pre-execution)",
+      "generator_version": "0.1.0",
+      "source_record_ids": [
+        "grimsley2019",
+        "tang2021"
+      ],
+      "generated_at": "2026-07-24T07:06:06Z",
+      "dimensions": [
+        {
+          "name": "ansatz_semantic_definition",
+          "status": "changed",
+          "detail": "grimsley2019 grows the ansatz from a fermionic operator pool; tang2021 grows it from a qubit-excitation operator pool (qubit-ADAPT-VQE) -- both are ADAPT-style adaptive growth, but the operator basis differs, per both records' own component notes.",
+          "evidence_locator": "docs/atlas/corpus/papers/grimsley2019.json#components[1-2], docs/atlas/corpus/papers/tang2021.json#components[1-2]"
+        },
+        {
+          "name": "estimator",
+          "status": "unknown",
+          "detail": null,
+          "evidence_locator": null
+        },
+        {
+          "name": "hamiltonian_digest_or_equivalence",
+          "status": "unknown",
+          "detail": null,
+          "evidence_locator": null
+        },
+        {
+          "name": "initial_point",
+          "status": "unknown",
+          "detail": null,
+          "evidence_locator": null
+        },
+        {
+          "name": "mapping",
+          "status": "unknown",
+          "detail": null,
+          "evidence_locator": null
+        },
+        {
+          "name": "metric_stage",
+          "status": "unknown",
+          "detail": null,
+          "evidence_locator": null
+        },
+        {
+          "name": "optimizer_configuration",
+          "status": "unknown",
+          "detail": null,
+          "evidence_locator": null
+        },
+        {
+          "name": "problem_digest",
+          "status": "unknown",
+          "detail": null,
+          "evidence_locator": null
+        },
+        {
+          "name": "qubit_wire_order",
+          "status": "unknown",
+          "detail": null,
+          "evidence_locator": null
+        },
+        {
+          "name": "reference_state",
+          "status": "unknown",
+          "detail": null,
+          "evidence_locator": null
+        },
+        {
+          "name": "seed",
+          "status": "unknown",
+          "detail": null,
+          "evidence_locator": null
+        },
+        {
+          "name": "stopping_rule",
+          "status": "unknown",
+          "detail": null,
+          "evidence_locator": null
+        }
+      ],
+      "classification": "partial",
+      "unresolved_conflicts": [
+        "Both use gradient-based adaptive operator selection (same general search_selection strategy), but this corpus's fixed dimension list has no slot for 'operator pool basis' specifically -- recorded as a change under ANSATZ_SEMANTIC_DEFINITION instead, which is the closest fit."
+      ],
+      "validation_warnings": [],
+      "is_manual_gold": false,
+      "human_validated": false
+    },
+    {
+      "comparison_id": "omalley2016_vs_kandala2017",
+      "annotation_schema_version": "0.2.0",
+      "generation_method": "majorana_vqe.comparison.classify_comparison (literature-level, pre-execution)",
+      "generator_version": "0.1.0",
+      "source_record_ids": [
+        "omalley2016",
+        "kandala2017"
+      ],
+      "generated_at": "2026-07-24T07:06:06Z",
+      "dimensions": [
+        {
+          "name": "ansatz_semantic_definition",
+          "status": "changed",
+          "detail": "omalley2016 uses a unitary coupled cluster ansatz; kandala2017 uses a hardware-efficient ansatz -- different ansatz families, per both records' component notes.",
+          "evidence_locator": "docs/atlas/corpus/papers/omalley2016.json#components[1], docs/atlas/corpus/papers/kandala2017.json#components[1]"
+        },
+        {
+          "name": "estimator",
+          "status": "unknown",
+          "detail": null,
+          "evidence_locator": null
+        },
+        {
+          "name": "hamiltonian_digest_or_equivalence",
+          "status": "unknown",
+          "detail": null,
+          "evidence_locator": null
+        },
+        {
+          "name": "initial_point",
+          "status": "unknown",
+          "detail": null,
+          "evidence_locator": null
+        },
+        {
+          "name": "mapping",
+          "status": "unknown",
+          "detail": null,
+          "evidence_locator": null
+        },
+        {
+          "name": "metric_stage",
+          "status": "unknown",
+          "detail": null,
+          "evidence_locator": null
+        },
+        {
+          "name": "optimizer_configuration",
+          "status": "unknown",
+          "detail": null,
+          "evidence_locator": null
+        },
+        {
+          "name": "problem_digest",
+          "status": "changed",
+          "detail": "omalley2016 studies H2 (molecular hydrogen); kandala2017 studies LiH and BeH2 -- different molecular systems, confirmed by both records' own problem_summary fields. No computed digest exists, but the underlying physical systems are evidenced to differ, which is sufficient to mark this CHANGED (blocking) rather than merely unknown.",
+          "evidence_locator": "docs/atlas/corpus/papers/omalley2016.json#problem_summary, docs/atlas/corpus/papers/kandala2017.json#problem_summary"
+        },
+        {
+          "name": "qubit_wire_order",
+          "status": "unknown",
+          "detail": null,
+          "evidence_locator": null
+        },
+        {
+          "name": "reference_state",
+          "status": "unknown",
+          "detail": null,
+          "evidence_locator": null
+        },
+        {
+          "name": "seed",
+          "status": "unknown",
+          "detail": null,
+          "evidence_locator": null
+        },
+        {
+          "name": "stopping_rule",
+          "status": "unknown",
+          "detail": null,
+          "evidence_locator": null
+        }
+      ],
+      "classification": "invalid",
+      "unresolved_conflicts": [
+        "Different problem systems make this comparison invalid regardless of any other dimension -- recorded here as a genuine example of the schema's INVALID classification, not a defect in the comparison."
+      ],
+      "validation_warnings": [],
+      "is_manual_gold": false,
+      "human_validated": false
+    },
+    {
+      "comparison_id": "peruzzo2014_vs_shen2017",
+      "annotation_schema_version": "0.2.0",
+      "generation_method": "majorana_vqe.comparison.classify_comparison (literature-level, pre-execution)",
+      "generator_version": "0.1.0",
+      "source_record_ids": [
+        "peruzzo2014",
+        "shen2017"
+      ],
+      "generated_at": "2026-07-24T07:06:06Z",
+      "dimensions": [
+        {
+          "name": "ansatz_semantic_definition",
+          "status": "fixed",
+          "detail": "Both records describe a unitary-coupled-cluster-family variational ansatz for the same HeH+ system (peruzzo2014: 'small parameterized variational ansatz, original VQE proposal'; shen2017: explicit UCC).",
+          "evidence_locator": "docs/atlas/corpus/papers/peruzzo2014.json#components[1], docs/atlas/corpus/papers/shen2017.json#components[1]"
+        },
+        {
+          "name": "estimator",
+          "status": "unknown",
+          "detail": null,
+          "evidence_locator": null
+        },
+        {
+          "name": "hamiltonian_digest_or_equivalence",
+          "status": "unknown",
+          "detail": null,
+          "evidence_locator": null
+        },
+        {
+          "name": "initial_point",
+          "status": "unknown",
+          "detail": null,
+          "evidence_locator": null
+        },
+        {
+          "name": "mapping",
+          "status": "unknown",
+          "detail": null,
+          "evidence_locator": null
+        },
+        {
+          "name": "metric_stage",
+          "status": "unknown",
+          "detail": null,
+          "evidence_locator": null
+        },
+        {
+          "name": "optimizer_configuration",
+          "status": "unknown",
+          "detail": null,
+          "evidence_locator": null
+        },
+        {
+          "name": "problem_digest",
+          "status": "unknown",
+          "detail": null,
+          "evidence_locator": null
+        },
+        {
+          "name": "qubit_wire_order",
+          "status": "unknown",
+          "detail": null,
+          "evidence_locator": null
+        },
+        {
+          "name": "reference_state",
+          "status": "unknown",
+          "detail": null,
+          "evidence_locator": null
+        },
+        {
+          "name": "seed",
+          "status": "unknown",
+          "detail": null,
+          "evidence_locator": null
+        },
+        {
+          "name": "stopping_rule",
+          "status": "unknown",
+          "detail": null,
+          "evidence_locator": null
+        }
+      ],
+      "classification": "partial",
+      "unresolved_conflicts": [
+        "Both papers study HeH+, but no computed problem/Hamiltonian digest exists in this corpus to confirm identical geometry/basis -- PROBLEM_DIGEST and HAMILTONIAN_DIGEST_OR_EQUIVALENCE are left unknown rather than assumed from the shared molecule name alone."
+      ],
+      "validation_warnings": [],
+      "is_manual_gold": false,
+      "human_validated": false
+    }
+  ]
+}

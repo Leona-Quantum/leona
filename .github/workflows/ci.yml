@@ -27,6 +27,8 @@ jobs:
         run: |
           node --test 'scripts/catalog-bootstrap/*.test.mjs'
           node scripts/generate-catalog-bootstrap-manifest.mjs --check
+      - name: atlas VQE corpus bundle is current (ADR-0027)
+        run: node scripts/generate-atlas-vqe-corpus.mjs --check
 
   # UI a11y gate (roadmap 04 §5 step 2, slice a): render the real @majorana/ui
   # components to static HTML from source and assert zero WCAG A/AA violations via
