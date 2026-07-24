@@ -8,8 +8,8 @@ import type { PublicLocale } from "../../../lib/public-locale";
 import { BUILDER_GATES, builderStepLabel, createBuilderStepId, generateBuilderCode, ROTATION_GATES, TWO_QUBIT_GATES, type BuilderCodeVariants, type BuilderGate, type BuilderStep, type CustomGateDefinition } from "../../../lib/studio-builder";
 import { loadStoredCircuit, saveStoredCircuit } from "../../../lib/studio-circuits";
 import { circuitSyncState, type CircuitSyncState } from "../../../lib/studio-sync";
-import { allCircuitConversionResults, parseCircuitSource, parseInterchangeCircuit, looksLikeOpenQasm3 } from "../../../lib/circuit-conversion";
-import { MAX_BUILDER_QUBITS, MAX_PARSABLE_QUBITS } from "../../../lib/studio-parse";
+import { allCircuitConversionResults, parseCircuitSource, parseInterchangeCircuit, reconstructInterchangeCircuit, looksLikeOpenQasm3 } from "../../../lib/circuit-conversion";
+import { MAX_BUILDER_QUBITS, MAX_VIEWABLE_QUBITS, MAX_VIEWABLE_STEPS } from "../../../lib/studio-parse";
 import { CIRCUIT_FRAMEWORKS, circuitFramework, circuitFrameworkOrNull, isExecutableCircuitFramework, type CircuitFrameworkKey } from "../../../lib/circuit-frameworks";
 import { MAX_CPU_SEED, MAX_CPU_SHOTS, cpuSimulationEligibility, loadCpuSimulationRecords, runCpuSimulation, saveCpuSimulationRecord, sourceFingerprint, type CpuSimulationEligibility, type CpuSimulationLimits, type CpuSimulationRecord } from "../../../lib/studio-simulation";
 import { TIER_LIMITS } from "../../../lib/account-tier";
@@ -198,7 +198,17 @@ export function StudioWorkspace({ artifactId, newDraft = false, locale = "en", l
     const key = `${next.id}:${seedCounter.current}`;
     const stored = loadStoredCircuit(next.id);
     const artifactIdentity = studioArtifactIdentity(next);
-    if (stored?.artifactIdentity === artifactIdentity) {
+    // A cached seed is trusted only if it is still drawable. An editable draft
+    // (<= the builder's width) is the user's own work and always kept whatever
+    // its depth. A wider cached seed is a persisted read-only reconstruction —
+    // and one persisted before this change had no step guard, so it can exceed
+    // the current bounds and would render the pathological SVG the guard exists
+    // to prevent. When it does, drop the cache and fall through to fresh
+    // reconstruction, which re-applies the guard (and surfaces too_large).
+    const cachedIsDrawable = stored
+      && (stored.qubitCount <= MAX_BUILDER_QUBITS
+        || (stored.qubitCount <= MAX_VIEWABLE_QUBITS && stored.steps.length <= MAX_VIEWABLE_STEPS));
+    if (stored?.artifactIdentity === artifactIdentity && cachedIsDrawable) {
       return { seed: { key, artifactIdentity, qubitCount: stored.qubitCount, steps: stored.steps, customGates: stored.customGates }, note: copy.circuitRestored };
     }
     const hasOwnCode = Boolean(next.code || next.frameworkVariants || next.qasm);
@@ -222,18 +232,30 @@ export function StudioWorkspace({ artifactId, newDraft = false, locale = "en", l
     // output — richer gates, a `meas` register, per-qubit measurement, and often
     // more than six qubits — which the editable parser rejects, so before this
     // fallback those artifacts opened to an empty canvas and showed no circuit
-    // at all. `parseInterchangeCircuit` reads the standard-gate subset up to the
-    // parser ceiling; anything above six qubits opens read-only (below, editable).
-    const reconstructed = hasOwnCode
-      ? (next.qasm ? parseInterchangeCircuit(next.qasm) : null)
-        ?? candidates.map((candidate) => parseCircuitSource(candidate.code, candidate.framework, MAX_PARSABLE_QUBITS)).find(Boolean)
-        ?? null
-      : null;
+    // at all. The interchange reader draws the standard-gate subset up to the
+    // *viewing* ceiling (higher than the simulation ceiling — looking costs only
+    // SVG); anything above six qubits opens read-only (below, editable). It can
+    // also decline as too_large — a decomposed gate set that would draw a
+    // pathological diagram — which we surface honestly rather than as an empty
+    // canvas that looks like a bug.
+    const interchange = hasOwnCode && next.qasm ? reconstructInterchangeCircuit(next.qasm) : null;
+    // Only reach for the builder-shaped fallback if the interchange QASM path
+    // didn't already produce a drawable circuit — parsing every candidate is
+    // wasted work once the primary path succeeds.
+    const fallback = interchange?.kind === "ok" || !hasOwnCode
+      ? null
+      : candidates.map((candidate) => parseCircuitSource(candidate.code, candidate.framework, MAX_VIEWABLE_QUBITS)).find(Boolean) ?? null;
+    const reconstructed = interchange?.kind === "ok"
+      ? interchange.circuit
+      : fallback && fallback.steps.length <= MAX_VIEWABLE_STEPS
+        ? fallback
+        : null;
     if (reconstructed) {
       const note = reconstructed.qubitCount > MAX_BUILDER_QUBITS ? copy.circuitViewerReadonly : copy.circuitRestored;
       return { seed: { key, artifactIdentity, qubitCount: reconstructed.qubitCount, steps: reconstructed.steps, customGates: [] }, note };
     }
-    return { seed: { key, ...EMPTY_SEED, artifactIdentity }, note: hasOwnCode ? copy.circuitNotRebuildable : null };
+    const tooLargeToDraw = interchange?.kind === "too_large" || (fallback !== null && fallback.steps.length > MAX_VIEWABLE_STEPS);
+    return { seed: { key, ...EMPTY_SEED, artifactIdentity }, note: hasOwnCode ? (tooLargeToDraw ? copy.circuitTooLargeToDraw : copy.circuitNotRebuildable) : null };
   }
 
   function applyArtifact(next: LibraryArtifact | null) {
