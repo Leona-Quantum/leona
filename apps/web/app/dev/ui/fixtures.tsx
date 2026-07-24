@@ -5,6 +5,8 @@
 // axe-core / visual-diff checks when Playwright lands.
 import { EmptyState, RunView, StageRail, VerdictBanner, type RailStage } from "@majorana/ui";
 import { RUN_FIXTURES } from "../../(app)/run/[taskId]/fixtures";
+import { getVqeComparisons, getVqePapers, getVqeRepositories } from "../../../lib/atlas-vqe/source";
+import { VqeMethodsBrowser } from "../../repository/vqe/vqe-methods-browser";
 
 const MID_RUN: RailStage[] = [
   { id: "plan", name: "Plan", state: "pass", elapsed: "2.1 s" },
@@ -110,6 +112,43 @@ export function UiFixtures() {
           animateText
           emptyMessage="Waiting for the pipeline…"
         />
+      </section>
+
+      <section>
+        <h2 style={{ fontSize: "var(--fs-16)", fontWeight: 500 }}>
+          Atlas VQE — real corpus data (26 papers / 15 repositories / 3 comparisons)
+        </h2>
+        <VqeMethodsBrowser
+          papers={getVqePapers()}
+          repositories={getVqeRepositories()}
+          comparisons={getVqeComparisons()}
+          locale="en"
+        />
+      </section>
+
+      <section>
+        <h2 style={{ fontSize: "var(--fs-16)", fontWeight: 500 }}>Atlas VQE — empty (all filters excluded)</h2>
+        <VqeMethodsBrowser papers={[]} repositories={[]} comparisons={[]} locale="en" />
+      </section>
+
+      <section>
+        <h2 style={{ fontSize: "var(--fs-16)", fontWeight: 500 }}>Atlas VQE — loading skeleton</h2>
+        <main className="mj-loading-screen" aria-busy="true" aria-label="Atlas VQE" style={{ minHeight: "220px" }}>
+          <span className="sr-only" role="status" aria-live="polite">Loading…</span>
+          <span className="mj-skeleton mj-skeleton--eyebrow" />
+          <span className="mj-skeleton mj-skeleton--title" />
+          <span className="mj-skeleton mj-skeleton--copy" />
+          <span className="mj-skeleton mj-skeleton--panel" />
+        </main>
+      </section>
+
+      <section>
+        <h2 style={{ fontSize: "var(--fs-16)", fontWeight: 500 }}>Atlas VQE — failure (mirrors app/repository/error.tsx)</h2>
+        <section className="mj-public-page-hero" role="alert" style={{ padding: "var(--sp-4)" }}>
+          <p className="mj-section-label">Atlas</p>
+          <h1>The public evidence set is unavailable right now.</h1>
+          <p>Nothing was saved or changed. Try the catalog again, or return to the Leona Quantum home page.</p>
+        </section>
       </section>
     </div>
   );
