@@ -33,8 +33,10 @@ override both.
 - Git baseline: `4ade53faf37443c90980f7515bbbb83b836240db`
 - Development branch: `feature/vqe`
 - Baseline Alembic head: `0034`
-- MVP priority: VQE framework + visible and usable UI
-- GitHub Wrapper: staged after the VQE MVP, metadata-only first
+- MVP priority: curated VQE Component Registry + Browse/Compare UI + proof execution
+- MVP corpus: 25 papers / 15 implementation repositories / 50+ components
+- Proof execution: identical ScientificExperimentSpec on Qiskit and PennyLane
+- GitHub Wrapper: staged after curated Registry validation, metadata-only first
 - Main/production Neon: never used for feature migration tests
 
 ## Status vocabulary
@@ -54,4 +56,3 @@ complete
 
 Do not mark a phase `complete` when only code exists. Its acceptance gates,
 tests, rollback evidence, and required review must also be complete.
-

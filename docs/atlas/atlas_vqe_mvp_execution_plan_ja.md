@@ -1,6 +1,6 @@
 # Atlas VQE MVP 実行計画
 
-**文書version:** 1.0  
+**文書version:** 1.1  
 **作成日:** 2026-07-24 JST  
 **対象Repository:** `EshMis/majorana`  
 **基準commit:** `4ade53faf37443c90980f7515bbbb83b836240db`  
@@ -16,14 +16,15 @@
 この文書は、長期マスタープランを一度に実装せず、研究者が実際に使える
 VQE MVPを先に完成させるための実行計画である。
 
-MVPの優先順位は次のとおり。
+MVPの優先順位は次のとおり。実行機能はAtlasの中心ではなく、Registryに
+保存された科学metadataから同一実験を再構成できることを示す証拠である。
 
 ```text
-VQEの共通科学仕様
-→ Qiskit/PennyLaneで確実に実行
-→ 同じ条件で結果を比較
-→ UIから作成・実行・閲覧
-→ Artifactとして保存・再利用
+VQE Component Schema
+→ 手動review済みCurated Registry
+→ Browse / Compare UI
+→ ScientificExperimentSpecからの再構成
+→ Qiskit/PennyLaneによる検証証拠
 → GitHub Wrapperをmetadata-onlyで追加
 → 外部Repository実行は十分な隔離後
 ```
@@ -36,14 +37,15 @@ GPU、QPU、古い論文環境の実行へ進んではならない。
 | Phase | Outcome | DB | UI | Current status |
 |---|---|---:|---:|---|
 | 0 | ADR + H2/Qiskit/PennyLane executable spike | no | no | next |
-| 1 | Pure VQE spec、canonical Hamiltonian、result contract | no | no | not_started |
-| 2 | Two isolated, locked, deny-network runtimes | no | no | not_started |
-| 3 | Durable API、job、Neon persistence | yes | contract only | not_started |
-| 4 | Studio→Run→Artifact user flow | existing APIs + Phase 3 | yes | not_started |
-| 5 | Security/scientific/E2E hardening and MVP Go/No-Go | test only | test | not_started |
-| 6 | GitHub metadata-only wrapper | later | minimal | later |
-| 7–8 | Deterministic extraction and reviewed materialization | later | later | later |
-| 9 | Isolated external Repository execution | separate milestone | later | prohibited in MVP |
+| 1 | Component/Workflow/Scientific Experiment schema | no | no | not_started |
+| 2 | 25 papers / 15 repositories / 50+ components curated corpus | no | no | not_started |
+| 3 | Component Registry + experiment evidence in Neon | yes | contract only | not_started |
+| 4 | Atlas Browse / Compare UI | Phase 3 | yes | not_started |
+| 5 | Qiskit/PennyLane runtime + Studio proof execution | Phase 3 | yes | not_started |
+| 6 | Security/scientific/E2E hardening and MVP Go/No-Go | test only | test | not_started |
+| 7 | Manual GitHub metadata import | later | minimal | later |
+| 8–9 | Deterministic/LLM extraction and reviewed materialization | later | later | later |
+| 10 | Isolated external Repository execution | separate milestone | later | prohibited in MVP |
 
 **Active pickup:** Phase 0A ADR boundary、続いてPhase 0B scientific spike。  
 一つのphaseのacceptanceを満たす前に次phaseのproduction wiringへ進まない。
@@ -54,34 +56,37 @@ GPU、QPU、古い論文環境の実行へ進んではならない。
 
 ## 1. MVPの一文
 
-> 研究者がH2の小規模VQE実験を、同一のversioned ExperimentSpecから
-> QiskitまたはPennyLaneで実行し、energy・exact referenceとの差・
-> circuit resources・runtime evidenceをUIで確認し、再利用可能なArtifact
-> として保存できる。
+> 研究者がVQE論文・実装をversioned component単位で検索・比較し、条件の
+> 一致・不一致・不明点と再現性evidenceを確認でき、少なくとも一つの標準
+> ScientificExperimentSpecをQiskitとPennyLaneで再実行して検証証拠まで
+> 確認できる。
 
 ## 2. MVPで必ず実現するもの
 
-1. Framework非依存の`VQEExperimentSpec v0.1`。
-2. Canonical Hamiltonian表現とdigest。
-3. Qiskit CPU runtime profile。
-4. PennyLane CPU runtime profile。
-5. H2の独立承認済みgolden fixture。
-6. exact/statevector execution。
-7. deterministic seed、固定initial point、固定tolerance。
-8. 実行結果、resource metrics、environment digestの永続化。
-9. APIからのidempotentな実験作成。
-10. durable jobによる実行と再起動後の継続。
-11. Studio UIからの作成・実行。
-12. Run detail UIでの結果・失敗理由表示。
-13. Library/Artifact detailでのVQE metadata表示。
-14. Qiskit/PennyLane間の比較report。
-15. deny-all network、credentialなし、resource cap付きruntime。
+1. Framework非依存の`ScientificExperimentSpec v0.1`。
+2. `ExecutionBinding`を科学specから分離。
+3. versioned VQE Component/Workflow schema。
+4. 25本以上の論文、15件以上の実装Repository、50件以上のcomponent。
+5. curated corpusの80%以上を人間review。
+6. 3組以上のcurated comparison report。
+7. Atlas Browse / Compare UI。
+8. 不明・矛盾・比較不能理由の明示。
+9. Canonical Hamiltonian表現とdigest。
+10. Qiskit/PennyLane CPU runtime profile。
+11. H2の独立承認済みgolden fixture。
+12. exact/statevector execution。
+13. 実行結果、metric semantics、environment digestの永続化。
+14. durable job、retry、append-only observation。
+15. Studio UIからのproof executionとArtifact化。
+16. deny-all network、credentialなし、resource cap付きruntime。
+17. schema、annotation guideline、curated corpusのmachine-readable保存。
 
 ## 3. MVPに含めないもの
 
 - 任意GitHub Repository codeの実行
 - GitHub App installation
 - 自動論文検索
+- 自動GitHub Repository discovery
 - LLM metadata extraction
 - PySCFによる任意分子生成
 - geometry optimization
@@ -98,20 +103,35 @@ GPU、QPU、古い論文環境の実行へ進んではならない。
 
 ## 4. 研究者向けMVP user flow
 
+### Pillar 1 — Browse
+
 ```text
-Studioを開く
-→ VQE modeを選ぶ
-→ Problem: H2 / approved fixtureを選ぶ
-→ Framework: QiskitまたはPennyLaneを選ぶ
-→ exact executionを選ぶ
-→ seed/optimizer budgetを確認する
-→ 実行する
-→ energy trajectoryと最終energyを見る
-→ exact referenceとの差を見る
-→ qubits/depth/gates/parameters/runtimeを見る
-→ environment/profile/evidenceを見る
-→ Artifactとして保存する
-→ 他frameworkの同条件結果と比較する
+Atlasを開く
+→ Method / Component / Problem / Evidenceで絞り込む
+→ 論文・Repository・paper-associated commitを見る
+→ Ansatz / Pool / Optimizer / Measurement等の構成を見る
+→ unknown / conflicting / not_reportedを見る
+```
+
+### Pillar 2 — Compare
+
+```text
+二つ以上のWorkflow/論文を選ぶ
+→ fixed / changed / unknown条件を見る
+→ strict / controlled / partial / invalidを見る
+→ 比較不能理由とmetric definition差を見る
+```
+
+### Pillar 3 — Verify
+
+```text
+標準H2 Workflowを選ぶ
+→ 同じScientificExperimentSpecを確認する
+→ QiskitまたはPennyLane executionを要求する
+→ serverがapproved ExecutionBindingを解決する
+→ energy / exact error / resource metricsを見る
+→ runtime/profile/evidenceを見る
+→ Artifactとして保存・比較する
 ```
 
 エラー時にはspinnerを続けず、次のいずれかを表示する。
@@ -185,8 +205,10 @@ root `uv` workspaceへ無条件追加しない。各runtimeを独立lockする�
 
 ### API/Worker integration
 
-APIはspecを検証・保存・enqueueする。Workerはprofileを選び、credentialなしの
-runtimeへ実行bundleを渡す。科学runtimeはNeonへ接続しない。
+APIはscientific specを検証・保存し、requested capabilityをserver-side support
+matrixでapproved runtimeへ解決する。requestの`runtime_profile_key`、digest、
+arbitrary provider versionを信用してはならない。Workerはcredentialなしのruntimeへ
+execution bundleを渡す。科学runtimeはNeonへ接続しない。
 
 ```text
 Web
@@ -202,12 +224,69 @@ Web
 → Web
 ```
 
-## 7. 最小DB extension
+## 7. VQE Component model
 
-MVPでは2 tableを上限候補とする。実装時ADRで、既存tableだけで安全に表現
-できるならさらに減らす。
+一つの「VQE algorithm」は、versioned componentを組み合わせたWorkflowと定義する。
+MVP schemaは最低限、次のcomponent typeを区別する。
+
+```text
+problem
+problem_preparation
+representation
+reference_state
+ansatz
+operator_pool
+search_selection
+growth_batching
+parameter_optimizer
+compression
+measurement
+error_mitigation
+compilation_backend
+learning_training
+evaluation_protocol
+workflow
+```
+
+Componentはstring labelではなく、既存`Artifact` / immutable `ArtifactVersion`を
+identityとして再利用する。例えば`ansatz="uccsd"`だけでなく、
+`ansatz_artifact_version_id`でversion、source、license、evidenceへ到達できるようにする。
+
+## 8. MVP DB responsibilities
+
+table数の少なさを目標にしない。既存tableとの重複を避けつつ、検索・比較に必要な
+relationをJSONBだけへ隠さない。最終table構成はPhase 2 corpusで検証後にADRで固定する。
+
+### `vqe_component_specs`
+
+既存ArtifactVersionへtyped component metadataを付与する。
+
+```text
+artifact_version_id PRIMARY KEY
+schema_version
+component_type
+spec_json
+normalized_spec_sha256
+annotation_state
+created_at
+```
+
+### `vqe_workflow_components`
+
+Workflow ArtifactVersionとcomponent ArtifactVersionを結ぶ。
+
+```text
+workflow_artifact_version_id
+component_role
+component_artifact_version_id
+ordinal
+binding_metadata
+created_at
+```
 
 ### `vqe_experiments`
+
+immutable scientific specのみを保持する。実行statusは既存`runs` / `jobs`がauthority。
 
 ```text
 id
@@ -215,30 +294,38 @@ run_id UNIQUE
 workspace_id
 user_id
 schema_version
-spec_json
-spec_sha256
-runtime_profile_key
-status
+workflow_artifact_version_id
+scientific_spec_json
+scientific_spec_sha256
+protocol_version
 created_at
-updated_at
 ```
+
+`status`、framework、runtime profileをここへ重複保存しない。
 
 ### `vqe_observations`
 
-append-only:
+append-only execution evidence。
 
 ```text
 id
 experiment_id
 attempt
 framework
-runtime_profile_key
+provider_versions
+runtime_profile_id
 runtime_image_digest
-adapter_version
-input_spec_sha256
+adapter_release_id
+architecture
+dataset_snapshot_id
+protocol_version
+scientific_spec_sha256
 hamiltonian_digest
 status
-result_json
+summary_json
+detail_object_uri
+detail_sha256
+detail_size_bytes
 evidence_json
 failure_code
 created_at
@@ -248,62 +335,124 @@ created_at
 
 - repository functionsは`Scope`を第一引数とする。
 - workspace/userはrequest bodyから信用しない。
+- execution statusは`runs` / `jobs`をauthorityとする。
 - observationをUPDATEして結果を書き換えない。
 - retryは新しいattemptを追加する。
+- component correctionは新しいArtifactVersionを作る。
 - public Artifact化は成功後の明示処理。
+- trajectory/detailが上限を超える場合、Neonにはsummary、object URI、hash、size、
+  schema versionだけを保存する。
 - migrationは実装開始時の実headから採番する。`0035`を本文だけで予約しない。
 
-## 8. `VQEExperimentSpec v0.1`
+## 9. Scientific specとExecution bindingの分離
+
+### `ScientificExperimentSpec v0.1`
+
+「何を科学的に計算するか」を表し、framework/runtimeを含めない。
 
 最低field:
 
 ```text
 schema_version
-problem_fixture_id
-problem_digest
-hamiltonian_digest
-framework
-runtime_profile_key
-mapping
-qubit_order
-reference_state
-ansatz
-ansatz_options
-optimizer
-optimizer_options
-initial_point
+problem_version_id
+dataset_snapshot_id
+representation_version_id
+reference_state_version_id
+ansatz_version_id
+operator_pool_version_id
+selection_version_id
+growth_version_id
+optimizer_version_id
+compression_version_id
+measurement_protocol_version_id
+evaluation_protocol_version_id
+initial_parameters
 seed
-estimator
-shots
-max_iterations
-energy_tolerance_ha
-resource_limits
+stopping_protocol_version_id
 ```
 
-MVPで許可する値はclosed allowlistとする。
+同じ科学実験をQiskit/PennyLaneで実行するとき、
+`scientific_spec_sha256`は同一でなければならない。
+
+### `ExecutionRequest`
+
+userが指定できるのはcapabilityと、UIで許可されたframework preferenceまで。
 
 ```text
-problem_fixture_id: h2-sto3g-v1
-framework: qiskit | pennylane
-mapping: jordan_wigner
-reference_state: hartree_fock
-ansatz: approved_ucc_style_fixture_v1
-estimator: exact
-shots: null
+experiment_id
+requested_capability
+preferred_framework
 ```
 
-任意Python code、任意module名、任意filesystem pathをspecに入れない。
+### `ExecutionBinding`
 
-## 9. Result contract
+APIがsupport matrixから解決したauthority。
+
+```text
+framework
+provider_versions
+runtime_profile_id
+adapter_release_id
+container_digest
+architecture
+dataset_snapshot_id
+protocol_version
+```
+
+user supplied `problem_digest` / `hamiltonian_digest`をauthorityにしない。APIは
+versioned Problem/Componentからexpected digestを解決し、runtime観測値と照合する。
+任意Python code、module名、filesystem pathは全contractで禁止する。
+
+### Idempotency identity
+
+最低限、次を含むserver-generated identityとする。
+
+```text
+scientific_spec_sha256
+runtime_profile_id
+adapter_release_id
+dataset_snapshot_id
+protocol_version
+```
+
+## 10. Version model
+
+MVPから次のidentityを混同しない。
+
+1. Scientific method version
+2. Component ArtifactVersion
+3. Source revision / commit SHA
+4. Provider release
+5. Adapter release
+6. Runtime profile / image digest / lock digest
+7. Dataset/problem snapshot
+8. Evaluation/stopping/resource protocol version
+
+### Version lanes
+
+```text
+frozen_reproduction
+  paper/reviewed Artifact時点のsourceとenvironment
+
+current_compatibility
+  Atlasが現在supportするprovider/runtime
+```
+
+`latest_observed`は後続GitHub Wrapperで追加し、verifiedを自動付与しない。
+
+## 11. Result contract
 
 最低field:
 
 ```text
-spec_sha256
+scientific_spec_sha256
 framework
-runtime_profile_key
+provider_versions
+runtime_profile_id
 runtime_image_digest
-adapter_version
+adapter_release_id
+dataset_snapshot_id
+protocol_version
 hamiltonian_digest
 status
 best_energy_ha
@@ -317,6 +466,15 @@ qubits
 depth
 gate_count
 two_qubit_gate_count
+metric_stage
+logical_or_compiled
+basis_gates
+compiler
+compiler_version
+optimization_level
+layout
+routing
+compiler_seed
 wall_time_ms
 energy_trajectory
 warnings
@@ -324,13 +482,14 @@ failure_code
 ```
 
 raw runtime stdoutをresult contractとして保存しない。stdout/stderrはbounded log
-として別扱いにし、秘密値scanを通す。
+として別扱いにし、秘密値scanを通す。`energy_trajectory`はMVPのbounded summary
+までとし、上限超過時はcontent-addressed objectへ保存する。
 
 ---
 
 # Part III. Scientific correctness
 
-## 10. Golden fixture
+## 12. Golden fixture
 
 最初のfixtureはH2/STO-3Gの小規模問題だけに固定する。
 
@@ -357,7 +516,7 @@ review record
 golden energyはこの計画書に手入力しない。独立exact calculation、cross-provider
 comparison、人間reviewを通したfixture fileだけをauthorityとする。
 
-## 11. MVP numerical gates
+## 13. MVP numerical gates
 
 exact estimator:
 
@@ -379,7 +538,7 @@ VQE accepted result: <= 1e-5 Ha
 
 finite shotsはMVP UIで無効または`experimental`表示とし、MVP合格条件にしない。
 
-## 12. Cross-framework comparison
+## 14. Cross-framework comparison
 
 比較は次を固定してから行う。
 
@@ -439,6 +598,9 @@ docs/adr/<next>-vqe-scientific-evidence.md
 決定:
 
 - ExperimentとArtifactの関係
+- Component/WorkflowとArtifactVersionの関係
+- ScientificExperimentSpecとExecutionBindingの分離
+- frozen/current version lane
 - runtime/profileのtrust boundary
 - canonical Hamiltonian
 - exact/finite-shot evidenceの違い
@@ -470,7 +632,7 @@ docs、fixture、独立runtime candidateだけを削除可能。DB/API影響な�
 
 ---
 
-## Phase 1 — Pure VQE core
+## Phase 1 — VQE Component and Scientific Schema
 
 **Status:** not_started  
 **DB change:** none  
@@ -478,7 +640,12 @@ docs、fixture、独立runtime candidateだけを削除可能。DB/API影響な�
 
 ### Deliverables
 
-- `VQEExperimentSpec v0.1`
+- `ComponentSpec v0.1`
+- `WorkflowSpec v0.1`
+- `ScientificExperimentSpec v0.1`
+- `ExecutionRequest` / `ExecutionBinding`
+- `EvaluationProtocol v0.1`
+- component version reference
 - canonical Hamiltonian model
 - digest/canonicalization
 - result contract
@@ -495,74 +662,95 @@ docs、fixture、独立runtime candidateだけを削除可能。DB/API影響な�
 - invalid/unknown field rejection
 - arbitrary path/module/code rejection
 - Qiskit/PennyLane fixture parity
+- scientific spec hash unchanged across framework bindings
+- component ArtifactVersion reference validation
 
 ### Acceptance
 
-Framework packageなしで全core testが通る。
+Framework packageなしで全core testが通り、少なくとも5件の実論文annotationを
+lossなく表現できる。
 
 ---
 
-## Phase 2 — Isolated Qiskit and PennyLane runtimes
+## Phase 2 — Curated VQE Registry
 
 **Status:** not_started  
 **DB change:** none  
 **UI:** none
 
-### 2A. Qiskit candidate
+### Goal
 
-候補versionはマスタープラン記載値からresolverで再確認し、lock/test前は
-`CANDIDATE_UNVERIFIED`とする。
+GitHub WrapperやDB schemaを先に作らず、実論文でcomponent ontologyとannotation
+guidelineを検証する。
 
-最初のcapability:
+### Corpus targets
 
 ```text
-h2-sto3g-v1
-jordan_wigner
-approved ansatz v1
-exact estimator
-deterministic optimizer configuration
-resource observation
+VQE papers: >= 25
+official/author implementation repositories: >= 15
+component records: >= 50
+human-reviewed records: >= 80%
+curated comparison reports: >= 3
 ```
 
-### 2B. PennyLane candidate
+候補method family:
 
-同じExperimentSpecとResult contractを使用する。
+```text
+VQE / UCCSD
+ADAPT-VQE
+Qubit-ADAPT
+QEB-ADAPT
+TETRIS-ADAPT
+CEO-ADAPT
+Param-ADAPT
+pruning / compression
+measurement reduction
+learning-guided VQE
+```
 
-### Runtime requirements
+### Machine-readable corpus
 
-- prebuilt image
-- base image digest pin
-- package lock
-- SBOM
-- non-root
-- read-only root
-- deny-all network
-- no credentials
-- no package install at execution
-- CPU/memory/pids/time/output cap
-- immutable input
-- ephemeral output
+保存対象:
+
+- paper DOI/arXiv and bibliographic facts
+- implementation relation
+- immutable paper-associated commit when known
+- license state
+- environment completeness
+- versioned components
+- workflow composition
+- evidence locators
+- unknown / ambiguous / conflicting fields
+- reviewer decision and annotation schema version
+- negative result / missing implementation
+
+著作権のあるREADME本文やsource codeをcorpusへ転載しない。
 
 ### Acceptance
 
-- Tier A: build/import/SBOM/security scan
-- Tier B: H2 scientific golden
-- egress canary fails to connect
-- filesystem escape test fails
-- timeout/OOM/output cap are named failures
-- runtime image digestがresultに残る
+- annotation guidelineがversioned。
+- 25/15/50 targetを満たす。
+- 80%以上が人間review済み。
+- 同じ論文を別reviewerがannotationしたagreementを測定。
+- schemaで表せないfieldと曖昧さを記録。
+- 3組以上のcomparison reportを手動goldとして作る。
 
 ---
 
-## Phase 3 — Durable API and Neon persistence
+## Phase 3 — Neon Component Registry and Experiment Persistence
 
 **Status:** not_started  
-**DB change:** expected, maximum two new tables  
+**DB change:** expected; responsibilities are fixed after Phase 2  
 **UI:** API contract only
 
 ### API candidate
 
 ```text
+GET  /v1/atlas/components
+GET  /v1/atlas/components/{id}
+GET  /v1/atlas/workflows
+GET  /v1/atlas/workflows/{id}
+GET  /v1/atlas/comparisons/{id}
 GET  /v1/vqe/capabilities
 POST /v1/vqe/experiments
 GET  /v1/vqe/experiments/{id}
@@ -575,7 +763,10 @@ POST /v1/vqe/experiments/{id}/materialize
 
 - `POST`はIdempotency-Key必須。
 - APIがScopeからworkspace/userを決定。
-- APIはclosed allowlistでspecを検証。
+- Registry importはexplicit、idempotent、reviewed corpus限定。
+- APIはcomponent ArtifactVersionを解決してscientific specを構築。
+- requested capabilityをapproved ExecutionBindingへserver-side解決。
+- user supplied runtime/digestをauthorityにしない。
 - Worker job payloadはexperiment IDとScope pointer中心。
 - runtimeはDB credentialを持たない。
 - materializeは成功済みobservationのみ。
@@ -586,6 +777,8 @@ POST /v1/vqe/experiments/{id}/materialize
 - temporary Neon child branch。
 - migration up。
 - live authz matrix。
+- curated corpus import count/reconciliation。
+- component/workflow relation invariant。
 - job retry/reclaim。
 - observation append-only。
 - downgrade。
@@ -595,7 +788,7 @@ POST /v1/vqe/experiments/{id}/materialize
 
 ---
 
-## Phase 4 — Usable UI MVP
+## Phase 4 — Atlas Browse and Compare UI
 
 **Status:** not_started  
 **Primary UI owner:** Claude Code / designated UI owner  
@@ -603,109 +796,180 @@ POST /v1/vqe/experiments/{id}/materialize
 
 ### UI placement
 
-最初から新しい巨大Atlas navigationを作らない。
+Registryと比較をMVPの主画面にする。既存`/repository`とのidentity/search重複を
+ADRで解決し、Atlasが別の孤立Catalogにならないようにする。
 
-1. `/studio`へ`VQE` modeを追加。
-2. 既存Run detailへVQE result panelを追加。
-3. 既存Library artifact detailへVQE metadata panelを追加。
-4. 需要確認後に専用`/atlas` navigationを検討。
-
-### Studio fields
+最小情報architecture:
 
 ```text
-Problem
-Framework
-Estimator
-Seed
-Iteration budget
-Runtime profile
-Capability/limitations
-Expected cost: local CPU / no QPU charge
+Atlas
+├── Methods / Workflows
+├── Components
+├── Problems
+└── Comparisons
 ```
 
-MVPではadvanced fieldを自由入力にしない。
-
-### Result panel
+### Browse requirements
 
 ```text
-status
-best energy
-exact reference
-absolute error
-convergence
-energy trajectory
-framework/profile
-Hamiltonian digest
-qubits/depth/gates/parameters
-wall time
-evidence level
-warnings/failure reason
+method family
+component type
+problem/molecule
+basis/mapping
+ansatz/operator pool
+optimizer/compression
+measurement
+evidence/review state
+license/environment completeness
 ```
 
-### UI safety and UX
+### Detail requirements
 
-- unsupported optionを選択不能にする。
-- failureを成功badgeへ変換しない。
-- exact resultとfinite-shot resultを混同しない。
-- runtime/profile/versionを折りたたみで確認可能にする。
+```text
+paper and implementation relation
+paper-associated commit
+component graph
+scientific conditions
+known missing/conflicting fields
+reproducibility evidence
+version/source/license
+```
+
+### Compare requirements
+
+```text
+fixed dimensions
+changed dimensions
+unknown dimensions
+blocking mismatches
+strict / controlled / partial / invalid
+metric definition differences
+```
+
+最初の3 comparisonはcurated gold reportでよい。自動判定を装ってはならない。
+
+### UI acceptance
+
+- 25 papers / 50 componentsをfilterできる。
+- componentから関連Workflow/論文へ遷移できる。
+- 3 comparison reportを表示できる。
+- unknown/conflictを空欄に変換しない。
+- clientへ全raw corpusを無制限送信しない。
 - keyboard、responsive、dark/light、reduced motionを確認。
-- loading、empty、failure、cancelledをfixtureで確認。
-
-### MVP end-to-end acceptance
-
-1. Local userがStudioからH2/Qiskitを作成。
-2. APIが201を返す。
-3. Workerがdurably処理。
-4. exact resultがpass。
-5. UIが結果を表示。
-6. Artifactへmaterialize。
-7. Libraryで再閲覧。
-8. PennyLaneで同じ操作。
-9. comparisonがstrictまたはcontrolledを根拠付き表示。
-10. service restart後も結果が残る。
+- loading、empty、failureをfixtureで確認。
 
 ---
 
-## Phase 5 — MVP hardening and release decision
+## Phase 5 — Qiskit/PennyLane Proof Execution
+
+**Status:** not_started  
+**DB change:** Phase 3 tablesを利用  
+**UI:** Studio / Run / Library integration
+
+### 5A. Isolated runtimes
+
+Qiskit/PennyLaneを別profileにし、候補versionはresolver、lock、golden test、
+human promotion前は`CANDIDATE_UNVERIFIED`とする。
+
+Runtime requirements:
+
+- prebuilt digest-pinned image
+- independent package lock and SBOM
+- non-root / read-only root
+- deny-all network
+- no credentials / DB access / runtime install
+- CPU/memory/pids/time/output cap
+- immutable input / ephemeral output
+
+### 5B. Studio proof flow
+
+```text
+curated H2 Workflowを開く
+→ ScientificExperimentSpecを確認
+→ preferred frameworkを選ぶ
+→ APIがapproved ExecutionBindingを解決
+→ durable run
+→ result/evidenceを表示
+→ Artifactへmaterialize
+→ other framework observationと比較
+```
+
+Runtime profileをuserの自由文字列として選択させない。
+
+### Execution acceptance
+
+1. 同じscientific spec SHAでQiskit/PennyLaneを実行。
+2. APIが201/idempotent response。
+3. Workerがdurably処理。
+4. Hamiltonian equivalenceとenergy gateがpass。
+5. runtime/adapter/image/protocol identityを保存。
+6. resource metric stage/compiler semanticsを保存。
+7. retryは新observation。
+8. service restart後も結果が残る。
+9. Run/Library UIで証拠を再閲覧。
+10. named failureをhonest terminal stateで表示。
+
+---
+
+## Phase 6 — MVP hardening and release decision
 
 **Status:** not_started
 
 ### Required gates
 
-- Python lint/typecheck/tests
-- TS lint/typecheck/tests
-- generated contract drift check
+- Python/TS lint、typecheck、tests
+- generated contract drift
+- curated corpus schema/reconciliation
 - migration up/down/up
-- authz tests
-- sandbox hostile tests
-- egress live gate on approved provider
-- H2 repeated golden runs
-- Qiskit/PennyLane comparison
-- UI browser test
+- authz and job retry/reclaim
+- sandbox hostile and live egress gate
+- repeated H2 golden runs
+- cross-framework comparison
+- Browse/Compare/Studio browser tests
 - accessibility smoke
 - resource/cost measurement
 - rollback rehearsal
-- threat review
+- threat and rights review
 
 ### MVP Go criteria
 
-- 10 consecutive exact H2 runs per framework without infrastructure failure。
-- 100% spec/result contract validation。
-- numerical gate pass。
-- no network egress。
-- no credentials in runtime。
-- no DB access outside repository layer。
-- failed run leaves honest terminal state。
-- p95 local H2 completion targetを実測し、目標値を設定。
-- user can complete create→run→inspect→save without shell。
+Registry:
+
+- papers >= 25
+- implementation repositories >= 15
+- components >= 50
+- human-reviewed >= 80%
+- unknown/conflict表示
+
+Compare:
+
+- curated reports >= 3
+- strict/controlled/partial/invalid表示
+- component、dataset、optimizer、resource metric定義差を表示
+
+Execution:
+
+- 10 consecutive exact H2 runs per framework without infrastructure failure
+- identical scientific spec SHA across framework bindings
+- numerical/equivalence gates pass
+- no network/credentials/DB in runtime
+- failure/retry/rollback evidence
+
+Academic:
+
+- versioned schema and annotation guideline
+- machine-readable curated corpus
+- gold labels usable for later extraction/comparison evaluation
+- negative/unknown evidence preserved
 
 ---
 
 # Part V. Staged GitHub Wrapper
 
-GitHub WrapperはVQE UI MVP完了後に追加する。ただし設計spikeは並行してよい。
+GitHub Wrapperはcurated RegistryのschemaとUIを実データで検証した後に追加する。
+最初は手動URL入力のmetadata-only importであり、code executionを行わない。
 
-## Phase 6 — Read-only metadata wrapper
+## Phase 7 — Manual read-only GitHub metadata import
 
 **Execution:** prohibited  
 **Publication:** prohibited by default
@@ -728,9 +992,7 @@ optional DOI/arXiv
 - unknown/conflicts
 - extraction candidates
 
-### Start with 20 repositories
-
-DB schemaを増やす前に、20件をfixture corpusとしてread-only取得・annotationする。
+Phase 2 corpusをground truthにして、同じRepositoryの取得結果を照合する。
 
 ### Minimal provider permissions
 
@@ -741,7 +1003,7 @@ Contents: read
 
 private Repository、webhook、author claimは別phase。
 
-## Phase 7 — Deterministic structured extraction
+## Phase 8 — Deterministic structured extraction
 
 - CITATION.cff
 - pyproject.toml
@@ -751,13 +1013,21 @@ private Repository、webhook、author claimは別phase。
 - Python AST
 - sanitized notebook
 
-LLM extractionはdeterministic baselineのprecision/recall測定後。
+deterministic baselineのprecision/recall/evidence locator accuracyを測定する。
 
-## Phase 8 — Reviewed materialization
+## Phase 9 — LLM-assisted extraction and reviewed materialization
+
+LLMはdeterministic baseline後にのみ追加する。
+
+- no tools/network/secrets
+- schema constrained
+- evidence locator required
+- source textはuntrusted data
+- publish authorityなし
+- model/prompt/schema version保存
 
 一Repositoryから複数candidateを生成可能にする。
 
-- method
 - implementation
 - component
 - problem
@@ -766,7 +1036,7 @@ LLM extractionはdeterministic baselineのprecision/recall測定後。
 
 自動publishしない。人間review後にArtifactへmaterializeする。
 
-## Phase 9 — External execution
+## Phase 10 — External execution
 
 MVPとは別のsecurity milestone。
 
@@ -1078,10 +1348,17 @@ authorityそのものとはみなさない。
 
 MVPは以下が全部成立したときだけcomplete。
 
-- VQE spec v0.1がversioned。
+- Component/Workflow/Scientific Experiment schema v0.1がversioned。
+- Scientific specとExecutionBindingが分離。
+- 25 papers / 15 repositories / 50 componentsを収録。
+- 80%以上のrecordが人間review済み。
+- 3組以上のcurated comparison report。
+- unknown/conflict/negative evidenceを表示。
+- Atlas Browse / Compare UIが利用可能。
 - H2 fixtureがreview済み。
 - Qiskit profileがdigest-pinned。
 - PennyLane profileがdigest-pinned。
+- 両frameworkでscientific spec SHAが同一。
 - 両frameworkのnumerical gateがpass。
 - canonical comparisonがpass。
 - API creationがidempotent。
@@ -1093,6 +1370,7 @@ MVPは以下が全部成立したときだけcomplete。
 - UIから作成・実行・閲覧・保存可能。
 - empty/loading/failure/cancelled UIが確認済み。
 - Artifact exportにVQE evidenceが含まれる。
+- schema、annotation guideline、curated corpusがmachine-readable。
 - rollback手順を実行済み。
 - 実際に行っていないtest/resultを記載していない。
 - ownerがMVP user flowを確認。
@@ -1103,18 +1381,21 @@ MVPは以下が全部成立したときだけcomplete。
 
 順序:
 
-1. このplanを`feature/vqe`へ保存・Push。
+1. 改定planを`feature/vqe`へ保存・Push。
 2. owner/Claude/CodexでPhase 0 ADR boundaryをreview。
-3. H2 golden fixture spike。
-4. Qiskit/PennyLane isolated resolver spike。
-5. pure VQE core。
-6. isolated runtimes。
-7. DB/API persistence。
-8. Studio UI。
-9. end-to-end hardening。
-10. MVP Go/No-Go。
-11. 20 Repository GitHub metadata spike。
-12. deterministic GitHub Wrapper。
+3. H2 golden fixtureとQiskit/PennyLane resolver spike。
+4. Component/Workflow/Scientific Experiment schema。
+5. 5論文pilot annotation。
+6. schema修正後、25 papers / 15 repositories / 50 componentsへ拡張。
+7. 3 curated comparison reports。
+8. Neon Component Registryとexplicit corpus import。
+9. Atlas Browse / Compare UI。
+10. Qiskit/PennyLane isolated runtimes。
+11. durable API / Studio proof execution / Artifact化。
+12. MVP hardeningとGo/No-Go。
+13. manual GitHub metadata import。
+14. deterministic extraction。
+15. LLM-assisted extraction/review。
 
 最初の実装commitはDB migrationではなく、Phase 0のADRとscientific spikeにする。
 
@@ -1131,6 +1412,8 @@ MVPは以下が全部成立したときだけcomplete。
 7. Qiskit/PennyLaneで科学条件を揃えてから比較する。
 8. exact、finite-shot、QPU evidenceを混同しない。
 9. failureとunknownを隠さない。
-10. GitHub Wrapperはmetadata-onlyから開始する。
+10. Registryはversioned Artifact componentをidentityにする。
 11. 外部Repository code executionをMVPへ入れない。
-12. 登録件数より研究者の時間短縮を優先する。
+12. GitHub Wrapperはmetadata-onlyから開始する。
+13. scientific specとexecution bindingを混同しない。
+14. 登録件数だけでなく研究者の検索・比較時間短縮を測る。
