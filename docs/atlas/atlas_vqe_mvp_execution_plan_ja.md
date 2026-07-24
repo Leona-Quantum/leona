@@ -36,8 +36,8 @@ GPU、QPU、古い論文環境の実行へ進んではならない。
 
 | Phase | Outcome | DB | UI | Current status |
 |---|---|---:|---:|---|
-| 0 | ADR + H2/Qiskit/PennyLane executable spike | no | no | next |
-| 1 | Component/Workflow/Scientific Experiment schema | no | no | not_started |
+| 0 | ADR + H2/Qiskit/PennyLane executable spike | no | no | verified_local |
+| 1 | Component/Workflow/Scientific Experiment schema | no | no | next |
 | 2 | 25 papers / 15 repositories / 50+ components curated corpus | no | no | not_started |
 | 3 | Component Registry + experiment evidence in Neon | yes | contract only | not_started |
 | 4 | Atlas Browse / Compare UI | Phase 3 | yes | not_started |
@@ -47,8 +47,10 @@ GPU、QPU、古い論文環境の実行へ進んではならない。
 | 8–9 | Deterministic/LLM extraction and reviewed materialization | later | later | later |
 | 10 | Isolated external Repository execution | separate milestone | later | prohibited in MVP |
 
-**Active pickup:** Phase 0A ADR boundary、続いてPhase 0B scientific spike。  
-一つのphaseのacceptanceを満たす前に次phaseのproduction wiringへ進まない。
+**Active pickup:** Phase 1 (Component/Workflow/Scientific Experiment schema)。
+Phase 0はADR-0023/0024/0025 (proposed, owner review未完了) と
+`docs/atlas/fixtures/h2_sto3g/` の自動cross-validation PASS (owner review未完了)
+まで完了。一つのphaseのacceptanceを満たす前に次phaseのproduction wiringへ進まない。
 
 ---
 
@@ -574,7 +576,8 @@ unknown fieldがある場合は`strict`にしない。
 
 ## Phase 0 — Plan freeze and executable spike
 
-**Status:** not_started  
+**Status:** verified_local (0A: ADR-0023/0024/0025 proposed, owner review pending;
+0B: `docs/atlas/fixtures/h2_sto3g/` automated cross-validation PASS, owner review pending)  
 **DB change:** none  
 **Network:** none  
 **UI:** none
@@ -625,6 +628,27 @@ tracked product codeへ入れる前に、fixture/test harnessで以下を確認�
 - exact resultがapproved tolerance内。
 - failureを正しくnon-zero exitとJSON failure contractで返す。
 - 実測結果を記録し、推測値を書かない。
+
+### Result (2026-07-24, arm64 macOS, `uv run` isolated candidates)
+
+実測値。全て `docs/atlas/fixtures/h2_sto3g/` の生成物 (manifest.json 及び raw/*.json) から。
+
+- 独立FCI基準 (PySCF, qubit mapping不使用): -1.1373060357534004 Ha。
+- Qiskit-current (qiskit 1.4.6 / qiskit-nature 0.8.0 / pyscf 2.14.0):
+  qubit Hamiltonian厳密対角化 -1.1373060357533982 Ha (FCI比誤差 2.2e-15 Ha)。
+- PennyLane-current (pennylane 0.45.1 / pyscf 2.14.0):
+  qubit Hamiltonian厳密対角化 -1.1373060357532858 Ha (FCI比誤差 1.1e-13 Ha)。
+- 両candidateのcanonical HamiltonianはNOT byte-identical (PennyLaneはnuclear
+  repulsionをidentity項に含める、spin-orbital→qubit割当がblock対PennyLaneの
+  interleavedで異なる、2 qubit分でJordan-Wigner位相規約が異なる)。全て網羅的
+  探索でqubit permutation + per-qubit local Pauli-frame対応として明示的に解決
+  済み (推測ではない)。独立した16固有値スペクトル全体の一致 (diff <= 1.2e-9 Ha)
+  で解決前に物理的に同一の演算子であることを確認済み。
+- 失敗時JSON contract (`status: execution_failed`, non-zero exit) を実際に
+  invalid basisで発火させ動作確認済み。
+
+詳細・再現手順は `docs/atlas/fixtures/h2_sto3g/README.md`。owner/human reviewは
+未実施 (`manifest.json.review_record`)。
 
 ### Rollback
 
