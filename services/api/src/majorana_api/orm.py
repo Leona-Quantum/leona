@@ -646,3 +646,100 @@ class QpuRun(Base):
     completed_at: Mapped[dt.datetime | None]
     created_at: Mapped[dt.datetime | None] = mapped_column(server_default=func.now())
     updated_at: Mapped[dt.datetime | None] = mapped_column(server_default=func.now())
+
+
+class VqeComponentSpec(Base):
+    """Typed VQE metadata attached to an existing ArtifactVersion (migration
+    0035, ADR-0023). Component identity IS the ArtifactVersion — this table
+    adds VQE-specific typed fields without a second identity/provenance/
+    license system alongside the one artifacts/artifact_versions already own."""
+
+    __tablename__ = "vqe_component_specs"
+
+    artifact_version_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("artifact_versions.id"), primary_key=True
+    )
+    schema_version: Mapped[str]
+    component_type: Mapped[str]
+    spec_json: Mapped[dict[str, Any]]
+    normalized_spec_sha256: Mapped[str | None]
+    annotation_state: Mapped[str] = mapped_column(server_default="draft")
+    created_at: Mapped[dt.datetime | None] = mapped_column(server_default=func.now())
+
+
+class VqeWorkflowComponent(Base):
+    """Links a Workflow ArtifactVersion to one of its component
+    ArtifactVersions with an explicit role and ordinal (migration 0035,
+    ADR-0023)."""
+
+    __tablename__ = "vqe_workflow_components"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True)
+    workflow_artifact_version_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("artifact_versions.id")
+    )
+    component_role: Mapped[str]
+    component_artifact_version_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("artifact_versions.id")
+    )
+    ordinal: Mapped[int] = mapped_column(Integer)
+    binding_metadata: Mapped[dict[str, Any] | None]
+    created_at: Mapped[dt.datetime | None] = mapped_column(server_default=func.now())
+
+
+class VqeExperiment(Base):
+    """Immutable scientific spec only (migration 0035, ADR-0023) — execution
+    status is `runs`/`jobs`' authority, never duplicated here. `run_id` is
+    nullable: Phase 3 persists the spec but does not create a `runs` row,
+    because there is no approved ExecutionBinding to resolve a framework to
+    until Phase 5 ships real runtime profiles (ADR-0024) — see the Phase 3
+    handoff report for the full rationale. `idempotency_key` is the standard
+    HTTP-level retry-safety key (mirrors `runs.idempotency_key`), distinct
+    from the server-generated execution idempotency identity in ADR-0023
+    §9, which does not exist until an ExecutionBinding is resolved."""
+
+    __tablename__ = "vqe_experiments"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True)
+    run_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("runs.id"), unique=True)
+    workspace_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("workspaces.id"))
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"))
+    schema_version: Mapped[str]
+    workflow_artifact_version_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("artifact_versions.id")
+    )
+    scientific_spec_json: Mapped[dict[str, Any]]
+    scientific_spec_sha256: Mapped[str]
+    protocol_version: Mapped[str]
+    idempotency_key: Mapped[str | None]
+    created_at: Mapped[dt.datetime | None] = mapped_column(server_default=func.now())
+
+
+class VqeObservation(Base):
+    """Append-only execution evidence (migration 0035, ADR-0025) — never
+    UPDATEd; a retry is a new row with an incremented `attempt`, never a
+    mutation of a prior row."""
+
+    __tablename__ = "vqe_observations"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True)
+    experiment_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("vqe_experiments.id"))
+    attempt: Mapped[int] = mapped_column(Integer)
+    framework: Mapped[str]
+    provider_versions: Mapped[dict[str, Any] | None]
+    runtime_profile_id: Mapped[str]
+    runtime_image_digest: Mapped[str]
+    adapter_release_id: Mapped[str]
+    architecture: Mapped[str]
+    dataset_snapshot_id: Mapped[str | None]
+    protocol_version: Mapped[str]
+    scientific_spec_sha256: Mapped[str]
+    hamiltonian_digest: Mapped[str | None]
+    status: Mapped[str]
+    summary_json: Mapped[dict[str, Any] | None]
+    detail_object_uri: Mapped[str | None]
+    detail_sha256: Mapped[str | None]
+    detail_size_bytes: Mapped[int | None] = mapped_column(BigInteger)
+    evidence_json: Mapped[dict[str, Any] | None]
+    failure_code: Mapped[str | None]
+    created_at: Mapped[dt.datetime | None] = mapped_column(server_default=func.now())
