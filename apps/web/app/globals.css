@@ -333,12 +333,9 @@ body {
   }
 }
 
-/* Run process narrative — a step-by-step, ChatGPT-style "what the agent is
- * doing" trace shown while a circuit-execution run is in progress. Every step
- * the run has completed so far stays visible (the full history is genuinely
- * useful for a multi-minute plan/execute/review/verify loop, not just its
- * latest line) — only the newest step keeps the shimmering "in progress"
- * treatment; earlier ones settle into a plain, muted, completed style. */
+/* Technical event details under the compact five-stage progress card. The
+ * disclosure is collapsed by default, so raw orchestration stays available
+ * without competing with the product-level status. */
 .mj-run-process-list {
   display: flex;
   flex-direction: column;
@@ -350,44 +347,12 @@ body {
 .mj-run-process-text {
   margin: 0;
   width: fit-content;
-  background-image: linear-gradient(
-    90deg,
-    var(--text-2) 0%,
-    var(--text-2) 40%,
-    var(--text-0) 50%,
-    var(--text-2) 60%,
-    var(--text-2) 100%
-  );
-  background-size: 220% 100%;
-  background-clip: text;
-  -webkit-background-clip: text;
-  color: transparent;
+  color: var(--text-2);
   font-size: var(--fs-12);
   line-height: 1.6;
-  animation:
-    mj-run-process-fade-in 400ms ease-out,
-    mj-run-process-shimmer 1.8s linear infinite;
 }
 .mj-run-process-text--done {
-  background-image: none;
-  -webkit-background-clip: initial;
-  background-clip: initial;
   color: var(--text-2);
-  animation: mj-run-process-fade-in 400ms ease-out;
-}
-@keyframes mj-run-process-fade-in {
-  from { opacity: 0; transform: translateY(2px); }
-  to { opacity: 1; transform: translateY(0); }
-}
-@keyframes mj-run-process-shimmer {
-  from { background-position: 200% 0; }
-  to { background-position: -200% 0; }
-}
-@media (prefers-reduced-motion: reduce) {
-  .mj-run-process-text,
-  .mj-run-process-text--done {
-    animation: none;
-  }
 }
 
 /* Pull tabs on steps that have something underneath their summary line — the
@@ -440,6 +405,182 @@ body {
 .mj-run-process-detail-fields dd {
   margin: 0;
   color: var(--text-1);
+}
+
+/* Replay-safe stage evidence. Each card appears only after its durable event
+ * arrives; the newest card opens while completed cards remain one click away. */
+.mj-run-live-stages {
+  display: grid;
+  gap: var(--sp-2);
+  padding: 0 var(--sp-4) var(--sp-4);
+}
+.mj-run-live-stage {
+  min-width: 0;
+  border: 1px solid var(--border-0);
+  border-radius: var(--radius-control);
+  background: var(--bg-0);
+  overflow: hidden;
+}
+.mj-run-live-stage > summary {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: var(--sp-3);
+  cursor: pointer;
+  list-style: none;
+}
+.mj-run-live-stage > summary::-webkit-details-marker {
+  display: none;
+}
+.mj-run-live-stage-index {
+  display: grid;
+  width: var(--sp-5);
+  height: var(--sp-5);
+  place-items: center;
+  border: 1px solid var(--border-0);
+  border-radius: 50%;
+  color: var(--text-1);
+  font-family: var(--font-mono);
+  font-size: var(--fs-12);
+}
+.mj-run-live-stage[open] .mj-run-live-stage-index {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.mj-run-live-stage-heading {
+  display: grid;
+  min-width: 0;
+  gap: var(--sp-1);
+}
+.mj-run-live-stage-heading > span {
+  color: var(--text-2);
+  font-family: var(--font-mono);
+  font-size: var(--fs-12);
+  text-transform: uppercase;
+}
+.mj-run-live-stage-heading > strong {
+  overflow: hidden;
+  color: var(--text-0);
+  font-size: var(--fs-13);
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mj-run-live-stage-meta {
+  color: var(--text-2);
+  font-family: var(--font-mono);
+  font-size: var(--fs-12);
+  text-align: right;
+}
+.mj-run-live-stage-body {
+  padding: var(--sp-4);
+  border-top: 1px solid var(--border-0);
+  background: var(--bg-1);
+}
+.mj-run-live-plan {
+  display: grid;
+  gap: var(--sp-3);
+}
+.mj-run-live-plan > p,
+.mj-run-live-empty-result {
+  margin: 0;
+  color: var(--text-1);
+  font-size: var(--fs-13);
+  line-height: 1.6;
+}
+.mj-run-live-facts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+  gap: var(--sp-2);
+  margin: 0;
+}
+.mj-run-live-facts > div {
+  display: grid;
+  gap: var(--sp-1);
+  padding: var(--sp-2) var(--sp-3);
+  border: 1px solid var(--border-0);
+  border-radius: var(--radius-control);
+  background: var(--bg-0);
+}
+.mj-run-live-facts dt {
+  color: var(--text-2);
+  font-size: var(--fs-12);
+  text-transform: capitalize;
+}
+.mj-run-live-facts dd {
+  margin: 0;
+  color: var(--text-0);
+  font-family: var(--font-mono);
+  font-size: var(--fs-12);
+  overflow-wrap: anywhere;
+}
+.mj-run-live-code,
+.mj-run-live-result-json {
+  max-height: 360px;
+  margin: 0;
+  overflow: auto;
+  color: var(--text-1);
+  font-family: var(--font-mono);
+  font-size: var(--fs-12);
+  line-height: 1.65;
+  white-space: pre;
+}
+.mj-run-live-simulation {
+  display: grid;
+  gap: var(--sp-4);
+}
+.mj-run-live-chart {
+  display: grid;
+  gap: var(--sp-2);
+}
+.mj-run-live-bar {
+  display: grid;
+  grid-template-columns: minmax(32px, auto) minmax(100px, 1fr) auto;
+  align-items: center;
+  gap: var(--sp-3);
+  color: var(--text-1);
+  font-family: var(--font-mono);
+  font-size: var(--fs-12);
+}
+.mj-run-live-bar-track {
+  height: var(--sp-2);
+  border-radius: var(--radius-control);
+  background: var(--bg-0);
+  overflow: hidden;
+}
+.mj-run-live-bar-track > span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--accent);
+}
+.mj-run-live-bar > span:last-child {
+  display: flex;
+  min-width: 92px;
+  justify-content: flex-end;
+  gap: var(--sp-2);
+}
+.mj-run-live-bar small {
+  color: var(--text-2);
+  font: inherit;
+}
+
+@media (max-width: 640px) {
+  .mj-run-live-stage > summary {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+  .mj-run-live-stage-meta {
+    grid-column: 2;
+    text-align: left;
+  }
+  .mj-run-live-bar {
+    grid-template-columns: minmax(28px, auto) 1fr;
+  }
+  .mj-run-live-bar > span:last-child {
+    grid-column: 2;
+    justify-content: flex-start;
+  }
 }
 
 /* ── Brand-refresh (Leona Quantum handoff) ─────────────────────────────────

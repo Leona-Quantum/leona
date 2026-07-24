@@ -3151,6 +3151,12 @@
             ],
             "default": null
           },
+          "result": {
+            "additionalProperties": true,
+            "description": "Bounded JSON result captured from the protected sandbox sidecar.",
+            "title": "Result",
+            "type": "object"
+          },
           "run_id": {
             "format": "uuid",
             "title": "Run Id",
@@ -4410,7 +4416,7 @@
   "info": {
     "description": "Cross-boundary types only; API paths are owned by services/api.",
     "title": "majorana-contracts",
-    "version": "2.3.0"
+    "version": "2.4.0"
   },
   "openapi": "3.1.0",
   "paths": {}

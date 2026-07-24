@@ -1,6 +1,12 @@
 # ADR-0014: Durable tool loop for circuit generation
 
-**Date:** 2026-07-16 · **Status:** accepted (owner-confirmed)
+**Date:** 2026-07-16 · **Status:** superseded by ADR-0023
+
+This ADR describes the removed model-directed tool loop. New runs use the fixed
+nameko-style pipeline in [ADR-0023](0023-fixed-nameko-style-circuit-pipeline.md);
+the old broker, runtime, model selector, and strict-verification execution path no
+longer ship in `majorana_agent` or the Worker.
+
 **Context:** The fixed twelve-stage executor duplicated generation, execution, and
 finalization state across a mutable dictionary and a large worker handler. Repair meant
 rewinding stages, so stale evidence could survive and the architecture could not prove

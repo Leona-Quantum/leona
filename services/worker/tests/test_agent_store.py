@@ -5,6 +5,7 @@ from uuid import uuid4
 
 from majorana_contracts.enums import Algorithm
 from majorana_contracts.plan import Plan
+from majorana_worker import agent_store
 from majorana_worker.agent_store import RepoAgentStore
 
 
@@ -49,7 +50,7 @@ def test_repo_store_maps_plan_revision_without_legacy_inference() -> None:
     assert record.plan_fingerprint == fingerprint
 
 
-def test_repo_store_maps_typed_semantic_and_strict_attempts() -> None:
+def test_repo_store_maps_typed_semantic_review() -> None:
     candidate_id = uuid4()
     execution_id = uuid4()
     review_id = uuid4()
@@ -68,30 +69,66 @@ def test_repo_store_maps_typed_semantic_and_strict_attempts() -> None:
         retry_target="none",
         feedback={"summary": "aligned"},
     )
-    strict_row = SimpleNamespace(
-        id=uuid4(),
-        candidate_id=candidate_id,
-        execution_id=execution_id,
-        semantic_review_id=review_id,
-        source_fingerprint=fingerprint,
-        attempt_seq=3,
-        checks=[{"method": "structural", "result": "pass"}],
-        decision="inconclusive",
-        evidence_strength="structural",
-        claim_coverage=[],
-        reason_code="physical_check_unavailable",
-        candidate_defect_observed=False,
-        failure_class="capability_limit",
-        retry_target="none",
-        unverified_claims=["Bell phase"],
-        verifier_version="test-v1",
-    )
-
     review = RepoAgentStore._semantic_review(review_row)
-    strict = RepoAgentStore._strict_verification(strict_row)
 
     assert review.decision.value == "ready"
     assert review.retry_target.value == "none"
-    assert strict.semantic_review_id == review.review_id
-    assert strict.decision.value == "inconclusive"
-    assert strict.failure_class.value == "capability_limit"
+
+
+async def test_repo_store_detects_only_non_simple_progress_as_legacy(monkeypatch) -> None:
+    store = RepoAgentStore(object(), object())
+
+    async def simple_steps(*_args):
+        return [SimpleNamespace(tool_call_id="simple:plan:1")]
+
+    monkeypatch.setattr(agent_store.agent_repo, "list_steps", simple_steps)
+    assert await store.has_legacy_progress(uuid4()) is False
+
+    async def legacy_steps(*_args):
+        return [SimpleNamespace(tool_call_id="model-selected-step")]
+
+    monkeypatch.setattr(agent_store.agent_repo, "list_steps", legacy_steps)
+    assert await store.has_legacy_progress(uuid4()) is True
+
+
+async def test_repo_store_detects_step_less_historical_plan(monkeypatch) -> None:
+    store = RepoAgentStore(object(), object())
+
+    async def no_steps(*_args):
+        return []
+
+    async def historical_plan(*_args):
+        return SimpleNamespace(id=uuid4())
+
+    async def no_candidates(*_args):
+        return []
+
+    monkeypatch.setattr(agent_store.agent_repo, "list_steps", no_steps)
+    monkeypatch.setattr(agent_store.agent_repo, "latest_plan_revision", historical_plan)
+    monkeypatch.setattr(agent_store.agent_repo, "list_candidates", no_candidates)
+
+    assert await store.has_legacy_progress(uuid4()) is True
+
+
+async def test_repo_store_can_decode_historical_strict_step(monkeypatch) -> None:
+    store = RepoAgentStore(object(), object())
+    row = SimpleNamespace(
+        tool_call_id="legacy-strict-1",
+        name="strict_verify",
+        status="completed",
+        state="verified",
+        result={"decision": "pass"},
+        error_code=None,
+        error_message=None,
+    )
+
+    async def historical_step(*_args):
+        return row
+
+    monkeypatch.setattr(agent_store.agent_repo, "get_step", historical_step)
+
+    result = await store.completed_tool_call(uuid4(), row.tool_call_id)
+
+    assert result is not None
+    assert result.name.value == "strict_verify"
+    assert result.state.value == "verified"

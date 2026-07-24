@@ -7,6 +7,8 @@
 import type { ReactNode } from "react";
 import {
   EmptyState,
+  RunOutcome,
+  RunProgress,
   RunView,
   StageRail,
   VerdictBanner,
@@ -38,6 +40,14 @@ const ALL_PASS: RailStage[] = MID_RUN.map((s) => ({
 }));
 
 const ALL_PENDING: RailStage[] = MID_RUN.map((s) => ({ id: s.id, name: s.name, state: "pending" }));
+
+const RUN_PROGRESS_ITEMS = [
+  { id: "plan", title: "Plan", detail: "Bell · qiskit · 2 qubits", state: "done" as const },
+  { id: "generate", title: "Generate", detail: "Revision 1 ready", state: "done" as const },
+  { id: "execute", title: "Execute", detail: "Sandbox completed in 1.2 s", state: "done" as const },
+  { id: "review", title: "Review", detail: "Check request, code, and result alignment", state: "active" as const },
+  { id: "save", title: "Save", detail: "Package the private artifact and optional OpenQASM", state: "waiting" as const },
+];
 
 // One rail exercising every state at once (pass / running / skipped / fail / pending).
 const ALL_STATES: RailStage[] = [
@@ -82,6 +92,85 @@ function StudioEvidenceFixture({ title, children }: { title: string; children: R
 }
 
 export const STORIES: Story[] = [
+  {
+    name: "run-outcome-reviewed",
+    title: "RunOutcome — AI-reviewed saved result",
+    node: (
+      <RunOutcome
+        outcome={{
+          tone: "warn",
+          eyebrow: "AI-reviewed result",
+          title: "The circuit executed and matched the request",
+          description: "Bell state preparation with Qiskit.",
+          badges: [
+            { label: "AI reviewed", tone: "warn" },
+            { label: "Saved to Vault", tone: "neutral" },
+          ],
+          facts: [
+            { label: "Algorithm", value: "Bell" },
+            { label: "Framework", value: "qiskit" },
+            { label: "Revision", value: "1" },
+          ],
+          callout: {
+            title: "Strict verification was not run",
+            body: "Not established: quantum correctness, physical fidelity, optimality.",
+          },
+          checks: [
+            { label: "Structural", state: "pass" },
+            { label: "Return Contract", state: "pass" },
+            { label: "Success Criteria", state: "pass" },
+          ],
+          code: {
+            label: "Generated code · revision 1",
+            language: "python",
+            source: "from qiskit import QuantumCircuit\n\nqc = QuantumCircuit(2)\nqc.h(0)\nqc.cx(0, 1)",
+          },
+        }}
+      />
+    ),
+  },
+  {
+    name: "run-outcome-failed",
+    title: "RunOutcome — failed with best candidate",
+    node: (
+      <RunOutcome
+        outcome={{
+          tone: "err",
+          eyebrow: "Run incomplete",
+          title: "No accepted result was produced",
+          description: "The closest candidate is available for inspection, but it did not complete the workflow.",
+          badges: [
+            { label: "Unverified", tone: "err" },
+            { label: "Not saved", tone: "warn" },
+          ],
+          facts: [
+            { label: "Framework", value: "qiskit" },
+            { label: "Revision", value: "3" },
+          ],
+          callout: {
+            title: "Starting point only",
+            body: "The measured distribution does not match the requested Bell state.",
+          },
+          checks: [{ label: "Statistical", state: "fail" }],
+        }}
+      />
+    ),
+  },
+  {
+    name: "run-progress-active",
+    title: "RunProgress — review active",
+    node: <RunProgress progress={{ label: "Run in progress", headline: "Check request, code, and result alignment", items: RUN_PROGRESS_ITEMS }} />,
+  },
+  {
+    name: "run-progress-complete",
+    title: "RunProgress — complete",
+    node: <RunProgress progress={{ label: "Run complete", headline: "Circuit generated, executed, reviewed, and saved", items: RUN_PROGRESS_ITEMS.map((item) => ({ ...item, state: "done" as const })) }} />,
+  },
+  {
+    name: "run-progress-error",
+    title: "RunProgress — generation error",
+    node: <RunProgress progress={{ label: "Run needs attention", headline: "Generation provider unavailable", items: RUN_PROGRESS_ITEMS.map((item) => item.id === "generate" ? { ...item, detail: "Provider rate limit reached", state: "error" as const } : item.id === "plan" ? item : { ...item, state: "waiting" as const }) }} />,
+  },
   { name: "studio-verification-pass", title: "Studio — PASS artifact", node: <StudioEvidenceFixture title="Bell state"><VerificationSummaryPanel summary={PASS_SUMMARY} /></StudioEvidenceFixture> },
   { name: "studio-verification-fail", title: "Studio — FAIL evidence", node: <StudioEvidenceFixture title="Bell state candidate"><VerificationSummaryPanel summary={FAIL_SUMMARY} /></StudioEvidenceFixture> },
   { name: "studio-verification-inconclusive", title: "Studio — INCONCLUSIVE artifact", node: <StudioEvidenceFixture title="Dynamic circuit"><VerificationSummaryPanel summary={INCONCLUSIVE_SUMMARY} /></StudioEvidenceFixture> },

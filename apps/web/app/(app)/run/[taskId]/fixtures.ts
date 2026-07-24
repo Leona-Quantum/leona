@@ -5,6 +5,9 @@ import type { RunEvent } from "@majorana/ui";
 
 const RUN = "1f8e2a10-0000-4000-8000-000000000001";
 const ART = "a7c1b0d2-0000-4000-8000-0000000000aa";
+const CANDIDATE = "c7c1b0d2-0000-4000-8000-0000000000cc";
+const EXECUTION = "e7c1b0d2-0000-4000-8000-0000000000ee";
+const REVIEW = "b7c1b0d2-0000-4000-8000-0000000000bb";
 
 function ts(sec: number): string {
   return new Date(Date.UTC(2026, 6, 12, 12, 0, sec)).toISOString();
@@ -78,6 +81,21 @@ const INCONCLUSIVE_SUMMARY = {
   ],
   unverified_claims: ["Expected physical distribution"],
 };
+const AI_REVIEWED_SUMMARY = {
+  decision: "inconclusive" as const,
+  evidence_strength: "structural" as const,
+  reason_code: "ai_review_aligned",
+  candidate_defect_observed: false,
+  failure_class: "evidence_gap" as const,
+  retry_target: "none" as const,
+  semantic_review_decision: "ready" as const,
+  checks: [
+    { method: "structural" as const, result: "pass" as const },
+    { method: "return_contract" as const, result: "pass" as const },
+    { method: "success_criteria" as const, result: "pass" as const },
+  ],
+  unverified_claims: ["quantum correctness", "physical fidelity", "optimality"],
+};
 
 // ---- canonical successful run -----------------------------------------------------------
 const VERIFIED: RunEvent[] = [
@@ -138,6 +156,11 @@ const VERIFIED: RunEvent[] = [
     duration_ms: 4520,
     exit_code: 0,
     memory_mb: 128,
+    result: {
+      counts: { "01010": 2184, "10101": 1912 },
+      cut_value: 4,
+      bitstring: "01010",
+    },
     stderr: "",
     stdout: '{"cut_value": 4, "bitstring": "01010"}',
     truncated: false,
@@ -217,6 +240,11 @@ const VERIFIED: RunEvent[] = [
     duration_ms: 4480,
     exit_code: 0,
     memory_mb: 128,
+    result: {
+      counts: { "01010": 2184, "10101": 1912 },
+      cut_value: 4,
+      bitstring: "01010",
+    },
     stderr: "",
     stdout: '{"cut_value": 4, "bitstring": "01010"}',
     truncated: false,
@@ -346,6 +374,106 @@ const EXHAUSTED: RunEvent[] = [
 const MID_RUN: RunEvent[] = VERIFIED.slice(0, 16); // verification running; verifier pending
 const QUEUED: RunEvent[] = VERIFIED.slice(0, 2); // queued/started only
 
+const PROVIDER_FAILURE: RunEvent[] = [
+  { type: "run.queued", run_id: RUN, seq: 0, ts: ts(0), framework: "qiskit", mode: "execute" },
+  { type: "run.started", run_id: RUN, seq: 1, ts: ts(1) },
+  { type: "stage.started", run_id: RUN, seq: 2, ts: ts(2), stage: "plan" },
+  {
+    type: "run.error",
+    run_id: RUN,
+    seq: 3,
+    ts: ts(3),
+    stage: "plan",
+    code: "provider_rate_limited",
+    message: "planner provider call failed (deepseek:rate_limited, HTTP 429)",
+  },
+  {
+    type: "run.finished",
+    run_id: RUN,
+    seq: 4,
+    ts: ts(4),
+    status: "failed",
+    verifier_decision: null,
+    evidence_strength: null,
+    reason_code: "provider_rate_limited",
+    residual_risks: null,
+    verification_summary: null,
+  },
+];
+
+const AI_REVIEWED: RunEvent[] = [
+  ...VERIFIED.slice(0, 16),
+  {
+    type: "verification.result",
+    run_id: RUN,
+    seq: 16,
+    ts: ts(22),
+    method: "structural",
+    result: "pass",
+    attempt_id: null,
+    attempt_seq: null,
+    candidate_id: CANDIDATE,
+    check_index: 0,
+    source_fingerprint: "sha256:source",
+    details: { note: "framework-native circuit and RESULT contract are present" },
+  },
+  {
+    type: "verification.result",
+    run_id: RUN,
+    seq: 17,
+    ts: ts(23),
+    method: "return_contract",
+    result: "pass",
+    attempt_id: null,
+    attempt_seq: null,
+    candidate_id: CANDIDATE,
+    check_index: 1,
+    source_fingerprint: "sha256:source",
+    details: { note: "expected output keys were returned" },
+  },
+  {
+    type: "verification.semantic_review",
+    run_id: RUN,
+    seq: 18,
+    ts: ts(24),
+    review_id: REVIEW,
+    candidate_id: CANDIDATE,
+    execution_id: EXECUTION,
+    attempt_seq: 1,
+    source_fingerprint: "sha256:source",
+    decision: "ready",
+    reason_code: "intent_aligned",
+    failure_class: null,
+    retry_target: "none",
+    confidence: "high",
+    severity: "none",
+    feedback: {
+      critic: {
+        decision: "ready",
+        confidence: "high",
+        severity: "none",
+        summary: "The generated circuit, execution result, and request are aligned.",
+        mismatches: [],
+        repair_instructions: [],
+        residual_risks: ["AI intent review is advisory; strict physical verification was not run."],
+      },
+    },
+  },
+  { type: "artifact.saved", run_id: RUN, seq: 19, ts: ts(25), artifact_id: ART, version_id: `${ART}-v3`, version_seq: 3 },
+  {
+    type: "run.finished",
+    run_id: RUN,
+    seq: 20,
+    ts: ts(26),
+    status: "succeeded",
+    verifier_decision: "inconclusive",
+    evidence_strength: "structural",
+    reason_code: "ai_review_aligned",
+    residual_risks: "AI intent review is advisory; strict physical verification was not run.",
+    verification_summary: AI_REVIEWED_SUMMARY,
+  },
+];
+
 // The production-run-019f7e46-d688 shape after the incapacity fix: the statistical
 // check could not evaluate a feed-forward circuit, said so as `skipped`, and
 // stopped blocking. The run passes on structural evidence only, and the banner
@@ -407,6 +535,8 @@ export const RUN_FIXTURES: Record<string, RunEvent[]> = {
   "demo-inconclusive": INCONCLUSIVE,
   "demo-midrun": MID_RUN,
   "demo-queued": QUEUED,
+  "demo-provider-error": PROVIDER_FAILURE,
+  "demo-reviewed": AI_REVIEWED,
 };
 
 export const RUN_FIXTURE_META: { id: string; label: string }[] = [
@@ -417,4 +547,6 @@ export const RUN_FIXTURE_META: { id: string; label: string }[] = [
   { id: "demo-inconclusive", label: "Verification unavailable (private artifact)" },
   { id: "demo-midrun", label: "Mid-run (verify)" },
   { id: "demo-queued", label: "Queued (waiting)" },
+  { id: "demo-provider-error", label: "Provider failure (normalized)" },
+  { id: "demo-reviewed", label: "AI-reviewed simple pipeline" },
 ];

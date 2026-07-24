@@ -1,18 +1,8 @@
-"""Static reference templates, one per framework.
+"""Minimal framework-native examples for the generation prompt.
 
-A minimal Bell-state program per framework, following the exact FINAL_CIRCUIT/RESULT
-contract and current API conventions AGENT_SYSTEM_PROMPT requires (Qiskit 2.x
-AerSimulator, cirq.optimize_for_target_gateset, PennyLane qml.set_shots/qml.compile).
-Each was run through majorana_sandbox.LocalSubprocessSandbox by hand and confirmed
-exit_code 0 with no warnings before being pinned here — that is a sandbox-execution
-check, not a claim of pipeline verification, and the prompt must say so: never call
-these "verified".
-
-A workspace's own past verified artifacts were tried as dynamic few-shot exemplars
-here (LLM work list item 4) but were removed: retrieval selected by recency within a
-framework only, with no relevance filter to the current plan's algorithm (and no way
-to add one — the plan doesn't exist yet when retrieval runs, before request_plan). An
-unrelated "known-good" example is worse than a plain, honest baseline template.
+Each example follows the fixed pipeline's protected ``FINAL_CIRCUIT``/``RESULT``
+contract and current simulator APIs. They are syntax/runtime references only, never
+verification evidence.
 """
 
 from __future__ import annotations

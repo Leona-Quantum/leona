@@ -1,7 +1,7 @@
-"""Corpus + report schema. A corpus case is a prompt plus the honest expectations
-a correct run must meet — never a fabricated golden number, but structural facts:
-did verification pass, was the export classified as claimed, were the promised
-keys present. Mirrors evals/benchmark-suite-v0.md categories."""
+"""Corpus + report schema. A corpus case is a prompt plus honest expectations:
+did the terminal review/verifier decision match, was export classified as claimed,
+were promised keys present in protected RESULT evidence, and was an artifact saved.
+Mirrors evals/benchmark-suite-v0.md categories."""
 
 from __future__ import annotations
 
@@ -13,6 +13,7 @@ from majorana_contracts.enums import (
     ExportStatus,
     Framework,
     RetryTarget,
+    RunStatus,
     SemanticReviewDecision,
     VerificationFailureClass,
     VerifierDecision,
@@ -23,7 +24,9 @@ from pydantic import BaseModel, ConfigDict, Field
 class Expect(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    verifier_decision: VerifierDecision = VerifierDecision.PASS
+    run_status: RunStatus = RunStatus.SUCCEEDED
+    terminal_reason: str | None = "ai_review_aligned"
+    verifier_decision: VerifierDecision | None = None
     export_status: ExportStatus | None = None
     output_keys: list[str] = Field(default_factory=list)
     saves_artifact: bool = True
@@ -62,6 +65,10 @@ class CaseEvidence(BaseModel):
     qasm_epilogue_applied: bool | None = None
     qasm_available: bool | None = None
     qasm_epilogue_error: str | None = None
+    trusted_result_available: bool = False
+    candidate_id: str | None = None
+    execution_id: str | None = None
+    result_evidence_error: str | None = None
 
 
 class CaseResult(BaseModel):
@@ -69,6 +76,7 @@ class CaseResult(BaseModel):
     category: str
     passed: bool
     run_status: str
+    terminal_reason: str | None = None
     verifier_decision: str | None = None
     export_status: str | None = None
     saved: bool = False

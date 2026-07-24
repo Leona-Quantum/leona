@@ -264,7 +264,7 @@ def test_exact_diag_is_plannable_at_last():
 
 def test_exact_diag_with_no_reference_at_all_normalizes_to_yesterdays_behaviour():
     """`exact_diag` parsed fine before it was plannable — _drop_unplannable_methods
-    normalized it away — and PlanRecord.plan re-validates every stored plan on
+    normalized it away — and durable plan revisions re-validate every stored plan on
     rehydration. Hard-failing this shape would kill runs resuming across the
     deploy on plans that used to parse. Dropping the check is weaker, not wrong."""
     plan = Plan.model_validate(
@@ -376,7 +376,7 @@ def test_brute_force_is_plannable_at_last():
 
 def test_brute_force_with_no_problem_at_all_normalizes_to_yesterdays_behaviour():
     """`brute_force` parsed fine before it was plannable — _drop_unplannable_methods
-    normalized it away — and PlanRecord.plan re-validates every stored plan on
+    normalized it away — and durable plan revisions re-validate every stored plan on
     rehydration. Hard-failing this shape would kill runs resuming across the
     deploy on plans that used to parse. Dropping the check is weaker, not wrong."""
     plan = Plan.model_validate(

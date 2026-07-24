@@ -87,6 +87,37 @@ its data exists; rail rows scroll to the matching card via `STAGE_TO_ANCHOR`. Th
 horizontally, so its `<pre>` is keyboard-focusable (`tabIndex=0`, `role="region"`,
 `aria-label`) — a scrollable region with no keyboard access is a WCAG 2.1.1 failure.
 
+## RunProgress (live chat route)
+
+The conversation-style live route projects circuit events into exactly five stable
+rows: Plan → Generate → Execute → Review → Save. It shows one current headline and a
+completed count plus a bounded percentage meter; retries update the owning row instead
+of appending another visible step. Numbered waiting rows become explicit
+Complete/Running/Needs attention states as evidence arrives. A sandbox or review repair
+returns Generate to active, while `run.error` marks its owning row immediately without
+waiting for the terminal event.
+
+`apps/web/lib/run-progress.ts` owns the pure event reduction and
+`packages/ts/ui/src/run-progress.tsx` remains a fetch-free renderer. Ordinary chat
+events return no progress model. The complete event history, code, stderr, and review
+details remain available in a collapsed “Technical details” footer inside the same
+activity surface. This preserves replay and debugging without turning the primary
+conversation into an orchestration log.
+
+## RunOutcome (live chat route)
+
+Terminal circuit runs render one structured result card instead of assembling a
+markdown answer and a second verification card. The card has a stable hierarchy:
+status/title and trust badges in one header, non-duplicated Plan facts, one actionable
+callout, consistent collapsed evidence/code rows, and the Vault action.
+
+`apps/web/lib/run-outcome.ts` is the only event-to-outcome projection. It distinguishes
+successful legacy records from fresh failures: only a successful run without a typed
+summary is legacy. Failed or cancelled runs without a summary state that verification
+did not complete. Provider errors are normalized for the primary UI while their raw
+messages remain in Technical details. `packages/ts/ui/src/run-outcome.tsx` is the pure
+renderer and never derives trust from absent data.
+
 ## VerdictBanner (S4)
 
 Full-width strip, never truncated; first element of the result panel. Tones map

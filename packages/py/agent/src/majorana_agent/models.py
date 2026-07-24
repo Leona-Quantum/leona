@@ -9,17 +9,16 @@ from __future__ import annotations
 
 import hashlib
 import json
+from dataclasses import dataclass
 from enum import StrEnum
 from typing import Any, Literal
 from uuid import UUID
 
 from majorana_contracts.enums import (
-    EvidenceStrength,
     Framework,
     RetryTarget,
     SemanticReviewDecision,
     VerificationFailureClass,
-    VerifierDecision,
 )
 from majorana_contracts.plan import Plan
 from majorana_frameworks import FrameworkProgram
@@ -31,6 +30,13 @@ class _Record(BaseModel):
 
 
 class AgentState(StrEnum):
+    """Persisted step states.
+
+    New runs emit only the fixed-pipeline subset. Historical values remain so
+    repository readers can decode old completed steps without reviving their
+    orchestration engine.
+    """
+
     NEW = "new"
     PLANNED = "planned"
     EXECUTED = "executed"
@@ -50,6 +56,8 @@ class AgentState(StrEnum):
 
 
 class CandidateStatus(StrEnum):
+    """Persisted candidate statuses, including read-only historical values."""
+
     CREATED = "created"
     EXECUTED = "executed"
     REVIEWED = "reviewed"
@@ -69,6 +77,8 @@ class ExecutionFailureKind(StrEnum):
 
 
 class ToolName(StrEnum):
+    """Persisted step names, including read-only historical values."""
+
     REQUEST_PLAN = "request_plan"
     REPLAN = "replan"
     SIMULATE_QISKIT = "simulate_qiskit"
@@ -80,70 +90,6 @@ class ToolName(StrEnum):
     CONVERT_TO_OPENQASM = "convert_to_openqasm"
     PUBLISH_ARTIFACT = "publish_artifact"
     MATERIALIZE_ARTIFACT = "materialize_artifact"
-
-
-SIMULATION_TOOL_BY_FRAMEWORK: dict[Framework, ToolName] = {
-    Framework.QISKIT: ToolName.SIMULATE_QISKIT,
-    Framework.CIRQ: ToolName.SIMULATE_CIRQ,
-    Framework.PENNYLANE: ToolName.SIMULATE_PENNYLANE,
-}
-
-
-# Single source of truth for which tools are callable from each state. Both
-# the model (StructuredToolModel, which constrains what the LLM is even
-# offered) and the broker (ToolBroker, which enforces what it actually
-# accepts) must agree, or the two can drift — as happened live: broker._ALLOWED
-# was updated to let READY_FOR_STRICT_VERIFICATION reach materialize_artifact,
-# but the model's separate copy of this table was not, so the LLM was never
-# offered that choice even though the broker would have accepted it. Defined
-# here, not in broker.py, so nothing needs a second copy.
-# A READY semantic review is namekoQ-style sufficient evidence to hand the
-# circuit back to the user (see broker.py/tools.py). Every state reachable
-# after that point — whether or not strict_verify has run yet, and whatever
-# it found — offers the same three "finishing" choices and lets the model
-# freely pick among them, repeatedly, within the existing per-tool budgets:
-# attempt/re-attempt strict_verify for a stronger badge, export OpenQASM, or
-# materialize now. Each handler independently re-validates its own
-# preconditions from stored evidence (fingerprints, execution/review
-# existence) regardless of which of these states the model called it from, so
-# this table's job is only to bound the choice set, not to enforce a fixed
-# order among them the way it must for the earlier plan -> execute -> review
-# spine.
-_FINISHING_TOOLS = frozenset(
-    {ToolName.STRICT_VERIFY, ToolName.CONVERT_TO_OPENQASM, ToolName.MATERIALIZE_ARTIFACT}
-)
-
-ALLOWED_TOOLS_BY_STATE: dict[AgentState, frozenset[ToolName]] = {
-    AgentState.NEW: frozenset({ToolName.REQUEST_PLAN}),
-    AgentState.PLANNED: frozenset(SIMULATION_TOOL_BY_FRAMEWORK.values()),
-    AgentState.EXECUTED: frozenset({ToolName.REVIEW_CANDIDATE}),
-    AgentState.REVIEWED: frozenset({ToolName.REVIEW_CANDIDATE, ToolName.STRICT_VERIFY}),
-    AgentState.READY_FOR_STRICT_VERIFICATION: _FINISHING_TOOLS,
-    AgentState.REPAIR_REQUIRED: frozenset(SIMULATION_TOOL_BY_FRAMEWORK.values()),
-    AgentState.REPLAN_REQUIRED: frozenset({ToolName.REPLAN}),
-    AgentState.RESOURCE_EXHAUSTED: frozenset(),
-    AgentState.VERIFIED: _FINISHING_TOOLS,
-    AgentState.INCONCLUSIVE: _FINISHING_TOOLS,
-    AgentState.QASM_ATTEMPTED: _FINISHING_TOOLS,
-    AgentState.PUBLISHED: frozenset(),
-    AgentState.MATERIALIZED: frozenset(),
-    AgentState.COMPLETED: frozenset(),
-    AgentState.FAILED: frozenset(),
-    AgentState.CANCELLED: frozenset(),
-}
-
-
-class AgentBudget(_Record):
-    # Overall circuit breaker. It must sit above the sum of useful per-lane
-    # attempts now that review and strict verification are distinct durable steps.
-    max_steps: int = Field(default=32, ge=1, le=64)
-    max_candidates: int = Field(default=6, ge=1, le=12)
-    max_plan_attempts: int = Field(default=4, ge=1, le=12)
-    max_plan_revisions: int = Field(default=3, ge=1, le=8)
-    max_sandbox_runs: int = Field(default=10, ge=1, le=20)
-    max_semantic_review_attempts: int = Field(default=8, ge=1, le=12)
-    max_strict_attempts: int = Field(default=8, ge=1, le=12)
-    max_conversions: int = Field(default=3, ge=0, le=8)
 
 
 class ToolCall(_Record):
@@ -160,45 +106,6 @@ class ToolResult(_Record):
     payload: dict[str, Any] = Field(default_factory=dict)
     error_code: str | None = None
     error_message: str | None = None
-
-
-_PLAN_DEFECT_REVIEW_SOURCES = frozenset(
-    {ToolName.REVIEW_CANDIDATE, ToolName.STRICT_VERIFY, ToolName.VERIFY_INTENT_ALIGNMENT}
-)
-
-
-def authorizes_replan(result: ToolResult) -> bool:
-    """Whether a completed tool result is typed, replan-authorizing plan-defect
-    feedback.
-
-    Two distinct shapes carry retry_target=PLANNING, and only one of them ever
-    sets failure_class: review_candidate/strict_verify/verify_intent_alignment
-    flag a *verification-time* plan defect via failure_class=PLAN_DEFECT. A
-    simulate_* tool's execution-time RESOURCE_LIMIT rejection (the plan's
-    qubit/memory estimate does not fit the sandbox lane, caught before the
-    sandbox even runs) also sets retry_target=PLANNING, but has no
-    failure_class to set — that concept belongs to verification, not raw
-    execution. Requiring failure_class unconditionally left that second shape
-    permanently unauthorized: _next_state correctly routes it to
-    REPLAN_REQUIRED, but replan itself always rejected it, burning the whole
-    plan-attempt budget on rejected calls (observed live, run 019f8dd0).
-    """
-    if not result.ok:
-        return False
-    if result.name in SIMULATION_TOOL_BY_FRAMEWORK.values():
-        return result.payload.get("retry_target") == RetryTarget.PLANNING.value
-    if result.name in _PLAN_DEFECT_REVIEW_SOURCES:
-        return (
-            result.payload.get("failure_class") == VerificationFailureClass.PLAN_DEFECT.value
-            and result.payload.get("retry_target") == RetryTarget.PLANNING.value
-        )
-    return False
-
-
-class PlanRecord(_Record):
-    plan_id: UUID
-    run_id: UUID
-    plan: Plan
 
 
 def _plan_fingerprint(plan: Plan) -> str:
@@ -241,8 +148,6 @@ class CandidateRevision(_Record):
     source: str = Field(min_length=1, max_length=200_000)
     source_fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
     status: CandidateStatus = CandidateStatus.CREATED
-    execution_id: UUID | None = None
-    verification_id: UUID | None = None
 
     @model_validator(mode="after")
     def fingerprint_matches_source(self) -> "CandidateRevision":
@@ -286,6 +191,19 @@ class ExecutionEvidence(_Record):
         if self.exit_code != 0 and self.failure_kind is None:
             raise ValueError("failed execution requires a failure_kind")
         return self
+
+
+@dataclass(frozen=True)
+class ExecutionOutput:
+    """Raw output returned by the single sandbox execution adapter."""
+
+    environment_fingerprint: str
+    sandbox_provider: str
+    exit_code: int
+    duration_ms: int
+    result: dict[str, Any]
+    observation: dict[str, Any]
+    failure_kind: ExecutionFailureKind | None = None
 
 
 class SemanticReviewEvidence(_Record):
@@ -337,109 +255,6 @@ class SemanticReviewEvidence(_Record):
             raise ValueError("semantic review evidence fingerprint mismatch")
 
 
-class StrictVerificationAttempt(_Record):
-    attempt_id: UUID
-    candidate_id: UUID
-    execution_id: UUID
-    semantic_review_id: UUID
-    source_fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
-    attempt_seq: int = Field(ge=1)
-    checks: list[dict[str, Any]] = Field(default_factory=list)
-    decision: VerifierDecision
-    evidence_strength: EvidenceStrength | None = None
-    claim_coverage: list[dict[str, Any]] = Field(default_factory=list)
-    reason_code: str = Field(min_length=1, max_length=120)
-    candidate_defect_observed: bool
-    failure_class: VerificationFailureClass | None = None
-    retry_target: RetryTarget
-    unverified_claims: list[str] = Field(default_factory=list, max_length=50)
-    verifier_version: str = Field(min_length=1, max_length=120)
-
-    @model_validator(mode="after")
-    def inconclusive_never_establishes_a_candidate_defect(self) -> "StrictVerificationAttempt":
-        if self.decision is VerifierDecision.INCONCLUSIVE and self.candidate_defect_observed:
-            raise ValueError("inconclusive verification cannot establish a candidate defect")
-        if (
-            self.decision is VerifierDecision.INCONCLUSIVE
-            and self.failure_class is VerificationFailureClass.CANDIDATE_DEFECT
-        ):
-            raise ValueError("inconclusive verification cannot classify a candidate defect")
-        if self.decision is VerifierDecision.PASS and (
-            self.failure_class is not None
-            or self.retry_target is not RetryTarget.NONE
-            or self.candidate_defect_observed
-        ):
-            raise ValueError("passing verification cannot carry failure routing")
-        if self.decision is VerifierDecision.FAIL:
-            expected = {
-                VerificationFailureClass.CANDIDATE_DEFECT: (
-                    RetryTarget.CODE_GENERATION,
-                    True,
-                ),
-                VerificationFailureClass.PLAN_DEFECT: (RetryTarget.PLANNING, False),
-            }.get(self.failure_class)
-            if expected is None or (self.retry_target, self.candidate_defect_observed) != expected:
-                raise ValueError("failed verification has inconsistent typed routing")
-        return self
-
-    def assert_binding(
-        self,
-        candidate: "CandidateRevision",
-        execution: ExecutionEvidence,
-        review: SemanticReviewEvidence,
-    ) -> None:
-        review.assert_binding(candidate, execution)
-        if self.candidate_id != candidate.candidate_id:
-            raise ValueError("strict verification references a different candidate")
-        if self.execution_id != execution.execution_id:
-            raise ValueError("strict verification references a different execution")
-        if self.semantic_review_id != review.review_id:
-            raise ValueError("strict verification references a different semantic review")
-        if not (
-            self.source_fingerprint
-            == review.source_fingerprint
-            == execution.source_fingerprint
-            == candidate.source_fingerprint
-        ):
-            raise ValueError("strict verification evidence fingerprint mismatch")
-
-
-class RepairInstruction(_Record):
-    category: str = Field(min_length=1, max_length=120)
-    evidence: list[str] = Field(default_factory=list, max_length=20)
-    repairs: list[str] = Field(default_factory=list, max_length=20)
-    preserve_invariants: list[str] = Field(default_factory=list, max_length=20)
-    required_rechecks: list[str] = Field(default_factory=list, max_length=20)
-    # How bad, and how sure. The verifier's gate already turns on these two —
-    # a low-confidence pass and a blocking mismatch are both rejections — but
-    # until 2026-07-20 neither reached the repair, so every rejection arrived
-    # framed identically. They are optional because a deterministic failure has
-    # no confidence to report.
-    severity: Literal["none", "minor", "major", "blocking"] | None = None
-    confidence: Literal["high", "medium", "low"] | None = None
-    failure_class: VerificationFailureClass | None = None
-    retry_target: RetryTarget | None = None
-
-
-class VerificationEvidence(_Record):
-    verification_id: UUID
-    candidate_id: UUID
-    execution_id: UUID
-    source_fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
-    decision: VerifierDecision
-    deterministic_checks: list[dict[str, Any]] = Field(default_factory=list)
-    critic: dict[str, Any] | None = None
-    repair: RepairInstruction | None = None
-
-    @model_validator(mode="after")
-    def failure_requires_repair(self) -> "VerificationEvidence":
-        if self.decision is VerifierDecision.FAIL and self.repair is None:
-            raise ValueError("failed verification requires a repair instruction")
-        if self.decision is VerifierDecision.PASS and self.repair is not None:
-            raise ValueError("passed verification cannot request repair")
-        return self
-
-
 class ConversionEvidence(_Record):
     candidate_id: UUID
     execution_id: UUID
@@ -455,15 +270,6 @@ class ConversionEvidence(_Record):
         if self.status == "unavailable" and self.qasm is not None:
             raise ValueError("unavailable conversion cannot contain OpenQASM")
         return self
-
-
-class PublishedArtifact(_Record):
-    artifact_id: UUID
-    version_id: UUID
-    version_seq: int = Field(ge=1)
-    candidate_id: UUID
-    framework: Framework
-    source_fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
 
 
 class MaterializedArtifact(_Record):
