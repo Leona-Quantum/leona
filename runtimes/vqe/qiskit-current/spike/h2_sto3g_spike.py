@@ -41,13 +41,17 @@ OUTPUT_PATH = (
 )
 
 
-def independent_direct_fci_reference() -> dict:
+def independent_direct_fci_reference(*, basis: str = BASIS) -> dict:
     """Ground truth computed directly from PySCF integrals, bypassing any qubit
     mapping entirely. This is the cross-check baseline both qubit-Hamiltonian
-    exact-diagonalization results below must agree with."""
+    exact-diagonalization results below must agree with.
+
+    `basis` is parameterized (default: the real BASIS constant) purely so
+    test_failure_contract.py can pass an invalid basis and exercise the same
+    failure path `main()` uses, without mutating module state."""
     mol = gto.M(
         atom=GEOMETRY_ATOM_STRING,
-        basis=BASIS,
+        basis=basis,
         charge=CHARGE,
         spin=SPIN,
         unit=GEOMETRY_UNIT,
@@ -70,10 +74,10 @@ def independent_direct_fci_reference() -> dict:
     }
 
 
-def qiskit_qubit_hamiltonian_exact() -> dict:
+def qiskit_qubit_hamiltonian_exact(*, basis: str = BASIS) -> dict:
     driver = PySCFDriver(
         atom=GEOMETRY_ATOM_STRING,
-        basis=BASIS,
+        basis=basis,
         charge=CHARGE,
         spin=SPIN,
         unit=qiskit_nature_unit(),
@@ -154,10 +158,15 @@ def _canonicalize_sparse_pauli_op(op: SparsePauliOp, *, num_qubits: int) -> list
     return terms
 
 
-def main() -> int:
+def run_spike(*, basis: str = BASIS, output_path: Path = OUTPUT_PATH) -> int:
+    """Full spike: compute, write the JSON report to `output_path`, return the
+    process exit code. Parameterized over `basis`/`output_path` (rather than
+    reading OUTPUT_PATH/BASIS directly) so test_failure_contract.py can drive
+    the real failure path -- an actually-invalid basis, not a mocked
+    exception -- against a throwaway path instead of the real fixture input."""
     try:
-        fci_reference = independent_direct_fci_reference()
-        qubit_result = qiskit_qubit_hamiltonian_exact()
+        fci_reference = independent_direct_fci_reference(basis=basis)
+        qubit_result = qiskit_qubit_hamiltonian_exact(basis=basis)
     except Exception as exc:  # spike harness: report failure honestly, do not swallow
         report = {
             "status": "execution_failed",
@@ -165,8 +174,8 @@ def main() -> int:
             "error_type": type(exc).__name__,
             "error_message": str(exc),
         }
-        OUTPUT_PATH.parent.mkdir(parents=True, exist_ok=True)
-        OUTPUT_PATH.write_text(json.dumps(report, indent=2))
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_path.write_text(json.dumps(report, indent=2))
         print(f"FAILED: {exc}", file=sys.stderr)
         return 1
 
@@ -190,7 +199,7 @@ def main() -> int:
         "geometry": {
             "atom_string": GEOMETRY_ATOM_STRING,
             "unit": GEOMETRY_UNIT,
-            "basis": BASIS,
+            "basis": basis,
             "charge": CHARGE,
             "spin_2s": SPIN,
         },
@@ -199,10 +208,14 @@ def main() -> int:
         "absolute_error_vs_direct_fci_ha": absolute_error_vs_direct_fci_ha,
     }
 
-    OUTPUT_PATH.parent.mkdir(parents=True, exist_ok=True)
-    OUTPUT_PATH.write_text(json.dumps(report, indent=2))
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.write_text(json.dumps(report, indent=2))
     print(json.dumps(report, indent=2))
     return 0
+
+
+def main() -> int:
+    return run_spike()
 
 
 if __name__ == "__main__":

@@ -7,3 +7,16 @@ dependencies = [
     "pennylane>=0.40",
     "pyscf>=2.5",
 ]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+]
+
+[tool.pytest.ini_options]
+# Without this, pytest walks up past this standalone project (which has no
+# [tool.pytest.ini_options] of its own) and picks up the outer majorana repo's
+# root pyproject.toml as its configfile/rootdir instead -- harmless in this
+# case but confusing (spurious "Unknown config option: asyncio_mode" warning)
+# and fragile if the root config's testpaths/markers ever diverge from what
+# this isolated candidate needs.
