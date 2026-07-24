@@ -34,16 +34,34 @@ MANIFEST_PATH = HERE / "manifest.json"
 EXACT_CROSS_CHECK_TOLERANCE_HA = 1e-10
 # Separate, looser tolerance for comparing the TWO INDEPENDENTLY SCF-derived
 # Hamiltonians (Qiskit-nature's PySCFDriver vs PennyLane's own pyscf-backend
-# call) to each other, before either is frozen as canonical. Both use PySCF's
-# library-default RHF conv_tol=1e-9 (qiskit-nature passes it explicitly;
-# PennyLane's qchem.openfermion_pyscf._pyscf_integrals does not expose a
-# conv_tol override, so it also falls back to PySCF's own default) via
-# independent SCF solves -- so their derived MO coefficients, and hence the
-# assembled Hamiltonians, agree only to that same ~1e-9-1e-10 scale, not to
-# machine precision. This is expected numerical noise from two independent
-# SCF convergences, not a methodology error; the observed 1.2e-9 Ha spectrum
-# gap is consistent with it.
-CROSS_LIBRARY_SCF_AGREEMENT_TOLERANCE_HA = 1e-6
+# call) to each other, before either is frozen as canonical. This is a
+# NUMERICAL tolerance on coefficient/eigenvalue agreement, kept strictly
+# separate from the STRUCTURAL correspondence (which qubit permutation + which
+# local Pauli-frame per qubit) found by find_qubit_equivalence() below -- that
+# correspondence is an exact discrete match-or-no-match, not something a
+# tolerance loosens.
+#
+# Both candidates use PySCF's own library-default RHF conv_tol=1e-9 Ha
+# (verified 2026-07-24 by reading `pyscf.scf.hf.SCF.conv_tol` directly off the
+# installed pyscf==2.14.0 package, not assumed from documentation; qiskit-nature
+# also passes this same 1e-9 explicitly, PennyLane's
+# qchem.openfermion_pyscf._pyscf_integrals does not override it and falls back
+# to the same default) via two INDEPENDENT SCF solves -- so their derived MO
+# coefficients, and hence the assembled Hamiltonians, are only expected to
+# agree to that same ~1e-9 Ha scale, not to machine precision. The actually
+# observed gap after the 2026-07-24 spike run was max_abs_coefficient_diff_ha
+# = 6.52e-10 Ha (per-term) and max_abs_eigenvalue_diff_ha = 1.20e-9 Ha
+# (full 16-eigenvalue spectrum) -- both within a small constant factor of the
+# 1e-9 Ha conv_tol itself, consistent with ordinary SCF convergence noise, not
+# with a methodology error. The tolerance below is set to ~2 orders of
+# magnitude above conv_tol (and above both observed values), so it has real
+# margin against run-to-run SCF jitter without being so loose it could mask a
+# future regression; it remains 2 orders of magnitude tighter than
+# VQE_ACCEPTED_TOLERANCE_HA below. An earlier version of this script used 1e-6
+# here (3 orders of magnitude above the observed gap) with no stated
+# derivation -- that was too loose to serve as a real regression gate and has
+# been tightened.
+CROSS_LIBRARY_SCF_AGREEMENT_TOLERANCE_HA = 1e-7
 # VQE-accepted-result tolerance from the same section. Not exercised by this
 # spike (no optimizer loop runs in Phase 0) -- recorded here only so the
 # fixture states where it came from, not so this script claims to have used it.
@@ -91,16 +109,29 @@ def terms_to_dict(terms: list[dict], *, identity_shift: float = 0.0) -> dict[str
 #   sdag: X->-Y, Y->X                          (conjugation by S^-1)
 # These are the only four operations that (a) fix I and Z and (b) map
 # {X, Y} to {X, Y} up to sign -- i.e. exactly the local gauge freedom two
-# independently-implemented Jordan-Wigner mappings can legitimately differ
-# by without representing different physics. This was discovered necessary
+# independently-implemented Jordan-Wigner mappings can legitimately differ by
+# for the SAME underlying physical operator. This was discovered necessary
 # empirically: the two candidates' single-Z and Z*Z terms fix a unique qubit
-# permutation on their own (no gauge freedom needed there), but their
-# double-excitation (weight-4 X/Y) terms did not match under that permutation
-# with a plain sign flip alone -- only after allowing per-qubit S-conjugation
-# on two of the four qubits. The full 16-eigenvalue spectra of both operators
-# were independently verified identical to 1.2e-9 Ha before this search ran,
-# confirming both sides represent the same physical operator and this is a
-# labeling/gauge question, not a physics discrepancy.
+# permutation on their own EXACTLY (no gauge freedom needed there -- those
+# terms are gauge-invariant), but their double-excitation (weight-4 X/Y)
+# terms did not match under that permutation with a plain sign flip alone --
+# only after allowing per-qubit S-conjugation on two of the four qubits.
+#
+# Two separate claims are being made here, and they must not be conflated:
+#   (1) STRUCTURAL: perm + frame_choice is an exact discrete correspondence
+#       (either found or not -- see find_qubit_equivalence below).
+#   (2) NUMERICAL: once that correspondence is applied, the corresponding
+#       coefficients agree only to within CROSS_LIBRARY_SCF_AGREEMENT_TOLERANCE_HA
+#       (observed: max_abs_coefficient_diff_ha = 6.52e-10 Ha), because the two
+#       candidates ran independent SCF solves (see that constant's comment).
+# Before this discrete search ran, the two operators' full 16-eigenvalue
+# spectra were independently compared and found to agree to 1.20e-9 Ha (see
+# spectrum_cross_check) -- evidence consistent with the same underlying
+# physical Hamiltonian expressed in two different qubit/phase conventions,
+# not a bit-exact proof of identity (no two independent floating-point SCF
+# solves can produce that). That evidence is what justified widening the
+# discrete search to include per-qubit local Pauli-frame gauges rather than
+# concluding the two Hamiltonians were simply unrelated.
 def _id(c: str) -> tuple[str, int]:
     return (c, 1)
 
@@ -177,15 +208,19 @@ def build_dense_matrix(terms: dict[str, complex], num_qubits: int) -> np.ndarray
 def spectrum_cross_check(
     q_terms: dict[str, complex], p_terms: dict[str, complex], num_qubits: int
 ) -> dict:
-    """Independent, convention-agnostic confirmation that both electronic
-    Hamiltonians are the same physical operator: the full eigenvalue spectrum
-    of a Hermitian operator is invariant under any relabeling/local-basis
-    change of its tensor factors, so if the spectra match, both sides
-    represent the same operator regardless of whether a discrete
-    permutation+gauge correspondence between their Pauli terms has been
-    found yet. This runs BEFORE the discrete equivalence search and is what
-    justified widening that search to include local Pauli-frame gauges
-    instead of concluding the two Hamiltonians were simply different."""
+    """Independent, convention-agnostic evidence for whether both electronic
+    Hamiltonians represent the same physical operator: the full eigenvalue
+    spectrum of a Hermitian operator is invariant under any relabeling/
+    local-basis change of its tensor factors, so a matching spectrum (within
+    tolerance -- two independent floating-point SCF solves will never match
+    to machine precision) is consistent with the same underlying operator,
+    regardless of whether a discrete permutation+gauge correspondence between
+    their Pauli terms has been found yet. This is evidence, not proof: a
+    spectrum match cannot by itself rule out every possible non-equivalent
+    operator with a coincidentally similar spectrum. This runs BEFORE the
+    discrete equivalence search and is what justified widening that search to
+    include local Pauli-frame gauges instead of concluding the two
+    Hamiltonians were simply different."""
     q_spectrum = np.sort(np.linalg.eigvalsh(build_dense_matrix(q_terms, num_qubits)).real)
     p_spectrum = np.sort(np.linalg.eigvalsh(build_dense_matrix(p_terms, num_qubits)).real)
     max_diff = float(np.max(np.abs(q_spectrum - p_spectrum)))
@@ -283,19 +318,34 @@ def main() -> int:
             "kind": "permutation_and_local_pauli_frame_equivalent",
             "qubit_permutation_pennylane_to_qiskit": list(perm),
             "local_pauli_frame_pennylane": [LOCAL_PAULI_FRAME_NAMES[c] for c in frame_choice],
+            "structural_correspondence": (
+                "EXACT and discrete: perm[new_position] = old_position, each PennyLane wire "
+                "(indexed by its OLD position, before permutation) transformed by its listed "
+                "local_pauli_frame_pennylane entry (id/z/s/sdag -- see LOCAL_PAULI_FRAME_TRANSFORMS), "
+                "then relabeled per perm, produces the SAME SET of Pauli-string labels as Qiskit's "
+                "electronic-only canonical form. This label-level correspondence is a yes/no discrete "
+                "match found by exhaustive search over all permutations and per-qubit gauges (not "
+                "assumed from either library's documentation) -- it is not subject to numerical "
+                "tolerance."
+            ),
+            "numerical_agreement": (
+                f"Once that correspondence is applied, the corresponding coefficients agree to within "
+                f"max_abs_coefficient_diff_ha={max_diff:.3e} Ha, i.e. within "
+                f"CROSS_LIBRARY_SCF_AGREEMENT_TOLERANCE_HA ({CROSS_LIBRARY_SCF_AGREEMENT_TOLERANCE_HA:.0e} "
+                f"Ha), NOT to machine precision -- see that constant's comment for why (two independent "
+                f"SCF solves at PySCF's own conv_tol=1e-9 Ha default)."
+            ),
             "max_abs_coefficient_diff_ha": max_diff,
             "note": (
-                "perm[new_position] = old_position. Each PennyLane wire (indexed by its OLD position, "
-                "before permutation) is first transformed by its listed local_pauli_frame_pennylane "
-                "entry (id/z/s/sdag -- see LOCAL_PAULI_FRAME_TRANSFORMS), then relabeled per perm; the "
-                "result equals Qiskit's electronic-only canonical string term-for-term. The single-Z "
-                "and Z*Z terms alone already fix this permutation uniquely with no gauge freedom "
-                "needed (they are gauge-invariant); the local Pauli-frame choice is needed only for "
-                "the double-excitation (weight-4 X/Y) terms, and reflects a per-qubit complex-phase "
-                "convention difference in how each library defines the Jordan-Wigner ladder operator "
-                "-- confirmed benign by an independent full 16-eigenvalue spectrum match (see "
-                "spectrum_cross_check below) before this search ran. Discovered by exhaustive search, "
-                "not assumed from either library's documentation."
+                "The single-Z and Z*Z terms alone already fix the qubit permutation uniquely with no "
+                "gauge freedom needed (they are gauge-invariant under local Pauli-frame changes); the "
+                "local Pauli-frame choice is needed only for the double-excitation (weight-4 X/Y) "
+                "terms, and reflects a per-qubit complex-phase convention difference in how each "
+                "library defines the Jordan-Wigner ladder operator. An independent full 16-eigenvalue "
+                "spectrum match (see spectrum_cross_check below, run BEFORE this discrete search) found "
+                "the two operators' spectra consistent to 1.20e-9 Ha -- evidence consistent with the "
+                "same underlying physical Hamiltonian in two conventions, not proof of bit-exact "
+                "identity."
             ),
         }
 
@@ -358,9 +408,25 @@ def main() -> int:
             "pennylane_vs_direct_fci_abs_error_ha": p_err,
         },
         "acceptance_tolerances": {
-            "exact_diagonalization_cross_check_ha": EXACT_CROSS_CHECK_TOLERANCE_HA,
-            "vqe_accepted_result_ha": VQE_ACCEPTED_TOLERANCE_HA,
-            "source": "docs/atlas/atlas_vqe_mvp_execution_plan_ja.md Part III §13 (initial target values; this fixture run only exercised the exact-diagonalization tolerance, not the VQE-accepted tolerance -- no optimizer loop ran in Phase 0)",
+            "exact_diagonalization_cross_check_ha": {
+                "value": EXACT_CROSS_CHECK_TOLERANCE_HA,
+                "meaning": "one pipeline's eigensolver vs its OWN FCI reference (within-pipeline). Source: MVP execution plan Part III §13.",
+                "observed": {"qiskit_current": q_err, "pennylane_current": p_err},
+            },
+            "cross_library_scf_agreement_ha": {
+                "value": CROSS_LIBRARY_SCF_AGREEMENT_TOLERANCE_HA,
+                "meaning": "Qiskit-candidate vs PennyLane-candidate independently-SCF-derived Hamiltonians (cross-pipeline). NOT the same tolerance as exact_diagonalization_cross_check_ha -- see this constant's comment in generate_fixture.py for derivation from PySCF's verified conv_tol=1e-9 default.",
+                "observed": {
+                    "max_abs_coefficient_diff_ha": (
+                        equivalence.get("max_abs_coefficient_diff_ha", 0.0)
+                    ),
+                    "max_abs_eigenvalue_diff_ha": spectrum_check["max_abs_eigenvalue_diff_ha"],
+                },
+            },
+            "vqe_accepted_result_ha": {
+                "value": VQE_ACCEPTED_TOLERANCE_HA,
+                "meaning": "target for a full VQE optimizer loop vs exact reference. NOT exercised by this spike -- no optimizer loop ran in Phase 0. Source: MVP execution plan Part III §13.",
+            },
         },
         "ansatz_and_initial_point": {
             "status": "not_defined",

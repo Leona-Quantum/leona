@@ -1,7 +1,7 @@
 {
   "status": "ok",
   "runtime_candidate": "qiskit-current",
-  "generated_at_utc": "2026-07-24T02:25:43Z",
+  "generated_at_utc": "2026-07-24T02:46:57Z",
   "python_version": "3.12.12 (main, Oct 28 2025, 11:52:25) [Clang 20.1.4 ]",
   "platform": "macOS-26.0.1-arm64-arm-64bit",
   "package_versions": {
@@ -25,7 +25,7 @@
     "nuclear_repulsion_ha": 0.7199689944489797,
     "n_electrons": 2,
     "n_ao": 2,
-    "wall_time_s": 0.1366219999617897
+    "wall_time_s": 0.13919087505200878
   },
   "qubit_hamiltonian_exact_diagonalization": {
     "num_qubits": 4,
@@ -37,22 +37,22 @@
     "nuclear_repulsion_ha": 0.7199689944489797,
     "hartree_fock_bitstring_qubit0_first": "1010",
     "qubit_convention": "Qiskit SparsePauliOp label reversed so canonical string index i == qubit i (see _canonicalize_sparse_pauli_op)",
-    "ground_state_total_energy_ha": -1.1373060357533977,
-    "wall_time_s": 0.018611875013448298,
+    "ground_state_total_energy_ha": -1.137306035753399,
+    "wall_time_s": 0.01900008402299136,
     "canonical_pauli_terms": [
       {
         "pauli_qubit0_first": "IIII",
-        "coeff_re": -0.8105479805373283,
+        "coeff_re": -0.8105479805373281,
         "coeff_im": 0.0
       },
       {
         "pauli_qubit0_first": "IIIZ",
-        "coeff_re": -0.2257534922240235,
+        "coeff_re": -0.22575349222402347,
         "coeff_im": 0.0
       },
       {
         "pauli_qubit0_first": "IIZI",
-        "coeff_re": 0.17218393261915557,
+        "coeff_re": 0.17218393261915566,
         "coeff_im": 0.0
       },
       {
@@ -62,7 +62,7 @@
       },
       {
         "pauli_qubit0_first": "IZII",
-        "coeff_re": -0.22575349222402352,
+        "coeff_re": -0.22575349222402347,
         "coeff_im": 0.0
       },
       {
@@ -97,7 +97,7 @@
       },
       {
         "pauli_qubit0_first": "ZIII",
-        "coeff_re": 0.17218393261915557,
+        "coeff_re": 0.17218393261915543,
         "coeff_im": 0.0
       },
       {
@@ -118,5 +118,5 @@
     ],
     "term_count": 15
   },
-  "absolute_error_vs_direct_fci_ha": 2.6645352591003757e-15
+  "absolute_error_vs_direct_fci_ha": 1.3322676295501878e-15
 }

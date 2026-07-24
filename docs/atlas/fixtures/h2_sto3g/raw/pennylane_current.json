@@ -1,7 +1,7 @@
 {
   "status": "ok",
   "runtime_candidate": "pennylane-current",
-  "generated_at_utc": "2026-07-24T02:24:00Z",
+  "generated_at_utc": "2026-07-24T02:46:58Z",
   "python_version": "3.12.12 (main, Oct 28 2025, 11:52:25) [Clang 20.1.4 ]",
   "platform": "macOS-26.0.1-arm64-arm-64bit",
   "package_versions": {
@@ -23,7 +23,7 @@
     "nuclear_repulsion_ha": 0.7199689944489797,
     "n_electrons": 2,
     "n_ao": 2,
-    "wall_time_s": 0.1432779169990681
+    "wall_time_s": 0.129886583017651
   },
   "qubit_hamiltonian_exact_diagonalization": {
     "num_qubits": 4,
@@ -32,7 +32,7 @@
     "hartree_fock_bitstring_qubit0_first": "1100",
     "qubit_convention": "PennyLane wire index i -> canonical string position i (see _term_to_canonical_label). PennyLane's own molecular_hamiltonian orbital-to-wire assignment is its library default, NOT independently chosen here.",
     "ground_state_total_energy_ha": -1.1373060357532858,
-    "wall_time_s": 0.0005606669583357871,
+    "wall_time_s": 0.0006488330545835197,
     "canonical_pauli_terms": [
       {
         "pauli_qubit0_first": "IIII",

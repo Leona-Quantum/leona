@@ -31,21 +31,32 @@ DB/API/UI work begins.
 
 - Geometry: H–H, 0.735 Å, STO-3G, singlet, no frozen core, Jordan-Wigner, 4 qubits.
 - Independent direct FCI reference: **-1.1373060357534004 Ha**.
-- Qiskit-current qubit-Hamiltonian exact diagonalization: -1.1373060357533982 Ha
-  (error vs. FCI: 2.2e-15 Ha).
+- Qiskit-current qubit-Hamiltonian exact diagonalization: -1.1373060357533977 Ha
+  (error vs. FCI: 2.7e-15 Ha).
 - PennyLane-current qubit-Hamiltonian exact diagonalization: -1.1373060357532858 Ha
   (error vs. FCI: 1.1e-13 Ha).
 - The two candidates' canonical Hamiltonians are **not** byte-identical out of
   the box: PennyLane bakes nuclear repulsion into its identity coefficient
   (Qiskit does not), and the two libraries assign spin-orbitals to qubits
   differently (block vs. interleaved) with a per-qubit Jordan-Wigner
-  phase-convention difference on 2 of the 4 qubits. Both are accounted for
-  explicitly and reconciled by an exhaustive search (not assumed) —
-  see `cross_framework_equivalence` in `manifest.json`. An independent
-  full 16-eigenvalue spectrum match (`spectrum_cross_check`) confirmed the
-  two operators are physically identical *before* that reconciliation was
-  attempted, so the search was known to be looking for a real correspondence,
-  not chasing a coincidence.
+  phase-convention difference on 2 of the 4 qubits. Two separate claims,
+  kept separate in `manifest.json.cross_framework_equivalence`:
+  - **Structural correspondence (exact, discrete):** a specific qubit
+    permutation + per-qubit local Pauli-frame choice found by exhaustive
+    search (not assumed from either library's docs) makes the two term sets
+    label-for-label identical.
+  - **Numerical agreement (bounded, not exact):** once that correspondence is
+    applied, the corresponding coefficients agree to
+    **6.52e-10 Ha** (`max_abs_coefficient_diff_ha`), and an independent full
+    16-eigenvalue spectrum comparison — run *before* the discrete search, to
+    justify widening it rather than concluding the two Hamiltonians were
+    unrelated — agreed to **1.20e-9 Ha** (`spectrum_cross_check`). Both are
+    consistent with two independent SCF solves at PySCF's own default
+    `conv_tol=1e-9` Ha (verified by reading it off the installed package, not
+    assumed), not with a methodology error. This is evidence the two
+    operators represent the same physical Hamiltonian in different
+    conventions — not a claim of bit-exact identity, which two independent
+    floating-point SCF solves can never produce.
 
 ## Deliberately NOT in this fixture yet
 

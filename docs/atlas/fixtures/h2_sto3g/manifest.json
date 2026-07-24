@@ -1,8 +1,8 @@
 {
   "fixture_id": "h2_sto3g_r0.735A_singlet_jw_no_frozen_core",
   "fixture_generator_version": "0.1.0",
-  "generated_at_utc": "2026-07-24T02:25:44Z",
-  "generator_git_commit": "51cf35fee292fa1dd8fe11eee95ec53eeb3b5faf",
+  "generated_at_utc": "2026-07-24T02:46:59Z",
+  "generator_git_commit": "69ad1d5349dd1b54dfd0e5289830a93b292a34f1",
   "geometry": {
     "atom_string": "H 0 0 0; H 0 0 0.735",
     "unit": "angstrom",
@@ -103,7 +103,7 @@
   },
   "hamiltonian_digest_sha256": "d9dd24eb30011e8ea091759e6f0e25d76d0ccc0661e47748afb85e5f13654d79",
   "spectrum_cross_check": {
-    "max_abs_eigenvalue_diff_ha": 1.1965576030004144e-09,
+    "max_abs_eigenvalue_diff_ha": 1.1965576585115656e-09,
     "num_eigenvalues": 16
   },
   "cross_framework_equivalence": {
@@ -120,8 +120,10 @@
       "s",
       "sdag"
     ],
-    "max_abs_coefficient_diff_ha": 6.522102857786649e-10,
-    "note": "perm[new_position] = old_position. Each PennyLane wire (indexed by its OLD position, before permutation) is first transformed by its listed local_pauli_frame_pennylane entry (id/z/s/sdag -- see LOCAL_PAULI_FRAME_TRANSFORMS), then relabeled per perm; the result equals Qiskit's electronic-only canonical string term-for-term. The single-Z and Z*Z terms alone already fix this permutation uniquely with no gauge freedom needed (they are gauge-invariant); the local Pauli-frame choice is needed only for the double-excitation (weight-4 X/Y) terms, and reflects a per-qubit complex-phase convention difference in how each library defines the Jordan-Wigner ladder operator -- confirmed benign by an independent full 16-eigenvalue spectrum match (see spectrum_cross_check below) before this search ran. Discovered by exhaustive search, not assumed from either library's documentation."
+    "structural_correspondence": "EXACT and discrete: perm[new_position] = old_position, each PennyLane wire (indexed by its OLD position, before permutation) transformed by its listed local_pauli_frame_pennylane entry (id/z/s/sdag -- see LOCAL_PAULI_FRAME_TRANSFORMS), then relabeled per perm, produces the SAME SET of Pauli-string labels as Qiskit's electronic-only canonical form. This label-level correspondence is a yes/no discrete match found by exhaustive search over all permutations and per-qubit gauges (not assumed from either library's documentation) -- it is not subject to numerical tolerance.",
+    "numerical_agreement": "Once that correspondence is applied, the corresponding coefficients agree to within max_abs_coefficient_diff_ha=6.522e-10 Ha, i.e. within CROSS_LIBRARY_SCF_AGREEMENT_TOLERANCE_HA (1e-07 Ha), NOT to machine precision -- see that constant's comment for why (two independent SCF solves at PySCF's own conv_tol=1e-9 Ha default).",
+    "max_abs_coefficient_diff_ha": 6.522105078232698e-10,
+    "note": "The single-Z and Z*Z terms alone already fix the qubit permutation uniquely with no gauge freedom needed (they are gauge-invariant under local Pauli-frame changes); the local Pauli-frame choice is needed only for the double-excitation (weight-4 X/Y) terms, and reflects a per-qubit complex-phase convention difference in how each library defines the Jordan-Wigner ladder operator. An independent full 16-eigenvalue spectrum match (see spectrum_cross_check below, run BEFORE this discrete search) found the two operators' spectra consistent to 1.20e-9 Ha -- evidence consistent with the same underlying physical Hamiltonian in two conventions, not proof of bit-exact identity."
   },
   "hartree_fock_bitstrings": {
     "qiskit_current": "1010",
@@ -129,15 +131,32 @@
     "note": "Each in its own runtime's native wire order; NOT directly comparable without applying cross_framework_equivalence.qubit_permutation_pennylane_to_qiskit."
   },
   "exact_diagonalization_results_ha": {
-    "qiskit_current": -1.1373060357533977,
+    "qiskit_current": -1.137306035753399,
     "pennylane_current": -1.1373060357532858,
-    "qiskit_vs_direct_fci_abs_error_ha": 2.6645352591003757e-15,
+    "qiskit_vs_direct_fci_abs_error_ha": 1.3322676295501878e-15,
     "pennylane_vs_direct_fci_abs_error_ha": 1.1457501614131615e-13
   },
   "acceptance_tolerances": {
-    "exact_diagonalization_cross_check_ha": 1e-10,
-    "vqe_accepted_result_ha": 1e-05,
-    "source": "docs/atlas/atlas_vqe_mvp_execution_plan_ja.md Part III \u00a713 (initial target values; this fixture run only exercised the exact-diagonalization tolerance, not the VQE-accepted tolerance -- no optimizer loop ran in Phase 0)"
+    "exact_diagonalization_cross_check_ha": {
+      "value": 1e-10,
+      "meaning": "one pipeline's eigensolver vs its OWN FCI reference (within-pipeline). Source: MVP execution plan Part III \u00a713.",
+      "observed": {
+        "qiskit_current": 1.3322676295501878e-15,
+        "pennylane_current": 1.1457501614131615e-13
+      }
+    },
+    "cross_library_scf_agreement_ha": {
+      "value": 1e-07,
+      "meaning": "Qiskit-candidate vs PennyLane-candidate independently-SCF-derived Hamiltonians (cross-pipeline). NOT the same tolerance as exact_diagonalization_cross_check_ha -- see this constant's comment in generate_fixture.py for derivation from PySCF's verified conv_tol=1e-9 default.",
+      "observed": {
+        "max_abs_coefficient_diff_ha": 6.522105078232698e-10,
+        "max_abs_eigenvalue_diff_ha": 1.1965576585115656e-09
+      }
+    },
+    "vqe_accepted_result_ha": {
+      "value": 1e-05,
+      "meaning": "target for a full VQE optimizer loop vs exact reference. NOT exercised by this spike -- no optimizer loop ran in Phase 0. Source: MVP execution plan Part III \u00a713."
+    }
   },
   "ansatz_and_initial_point": {
     "status": "not_defined",
