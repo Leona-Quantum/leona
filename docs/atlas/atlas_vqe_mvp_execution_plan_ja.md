@@ -37,8 +37,8 @@ GPU、QPU、古い論文環境の実行へ進んではならない。
 | Phase | Outcome | DB | UI | Current status |
 |---|---|---:|---:|---|
 | 0 | ADR + H2/Qiskit/PennyLane executable spike | no | no | complete |
-| 1 | Component/Workflow/Scientific Experiment schema | no | no | next |
-| 2 | 25 papers / 15 repositories / 50+ components curated corpus | no | no | not_started |
+| 1 | Component/Workflow/Scientific Experiment schema | no | no | complete |
+| 2 | 25 papers / 15 repositories / 50+ components curated corpus | no | no | next (blocked_owner partway: human-reviewed determination) |
 | 3 | Component Registry + experiment evidence in Neon | yes | contract only | not_started |
 | 4 | Atlas Browse / Compare UI | Phase 3 | yes | not_started |
 | 5 | Qiskit/PennyLane runtime + Studio proof execution | Phase 3 | yes | not_started |
@@ -47,8 +47,11 @@ GPU、QPU、古い論文環境の実行へ進んではならない。
 | 8–9 | Deterministic/LLM extraction and reviewed materialization | later | later | later |
 | 10 | Isolated external Repository execution | separate milestone | later | prohibited in MVP |
 
-**Active pickup:** Phase 1 (Component/Workflow/Scientific Experiment schema)。
-Phase 0はowner-approved (2026-07-24, `docs/atlas/PHASE0_OWNER_REVIEW.md`)。
+**Active pickup:** Phase 2 (curated VQE corpus)。Phase 0/1はowner-approved/
+complete (2026-07-24, `docs/atlas/PHASE0_OWNER_REVIEW.md`、Phase 1 Result
+セクション参照)。Phase 2は owner指示により「human-reviewed判定はClaude自身を
+人間reviewerとして数えない」ため、corpus収集・annotation自体は進められても
+80%人間reviewの達成宣言・Phase 2完了はowner stopで止まる。
 一つのphaseのacceptanceを満たす前に次phaseのproduction wiringへ進まない。
 
 ---
@@ -666,7 +669,7 @@ docs、fixture、独立runtime candidateだけを削除可能。DB/API影響な�
 
 ## Phase 1 — VQE Component and Scientific Schema
 
-**Status:** not_started  
+**Status:** complete (2026-07-24; `packages/py/vqe/`, 80 tests, no DB/UI touched)  
 **DB change:** none  
 **UI:** none
 
@@ -701,6 +704,37 @@ docs、fixture、独立runtime candidateだけを削除可能。DB/API影響な�
 
 Framework packageなしで全core testが通り、少なくとも5件の実論文annotationを
 lossなく表現できる。
+
+### Result (2026-07-24)
+
+- `packages/py/vqe/src/majorana_vqe/`: `models.py` (ComponentSpec/WorkflowSpec/
+  ScientificExperimentSpec/ExecutionRequest/ExecutionBinding/ResultContract/
+  capability allowlist/path-module-code rejection)、`canonical.py`
+  (CanonicalHamiltonian/digest/idempotency key/H2 fixture loader)、
+  `comparison.py` (comparison dimension model、classify_comparisonはMVP
+  heuristicと明記)、`protocol.py` (EvaluationProtocol/StoppingProtocol)。
+- `uv run pytest packages/py/vqe -q` → **80 passed**、`ruff check`/`format --check`
+  → clean。実測: 実論文5本 (Peruzzo 2014 doi:10.1038/ncomms5213、
+  O'Malley 2016 doi:10.1103/PhysRevX.6.031007、Kandala 2017
+  doi:10.1038/nature23879、Grimsley 2019 (ADAPT-VQE)
+  doi:10.1038/s41467-019-10988-2、Tang 2021 (Qubit-ADAPT-VQE)
+  doi:10.1103/PRXQuantum.2.020310) をWebSearchで書誌情報を検証した上で
+  ComponentSpecとしてannotationし、round-trip・classification distinctness
+  をtest済み (`tests/test_five_papers_lossless.py`)。
+- `[tool.importlinter]`に`majorana_vqe`のforbidden-import contractを追加し、
+  qiskit/pennylane/fastapi/sqlalchemy/majorana_api/majorana_workerの
+  import不能を自動enforce (`uv run lint-imports` → 4 kept, 0 broken)。
+- 実装中に発見した不具合1件: path/module/code拒否のsafe-labelパターンが
+  DOI (`10.1038/ncomms5213`)や実論文のdescription (セミコロン含む) を
+  誤って拒否していた。allowlistを`/`と一般的な文章記号
+  (`;:'?!"`)へ拡張し、path traversal/絶対pathの拒否は別の、より特異的な
+  patternが引き続き担当することを確認した上で修正 (regression test追加)。
+- 未解決の設計上の疑問 (silently resolvedにしない): `stopping_protocol_version_id`
+  に対応する`ComponentType`がplanの16種リストに存在しない
+  (`protocol.py`のコメント参照) — Phase 3でのrepository実装前にowner/ADR
+  判断が必要。
+- `uv run pytest` (repo全体、DATABASE_URL未設定) → 967 passed, 0 failed,
+  67 skipped (DB-gated tests) — 既存機能への影響なし確認済み。
 
 ---
 
