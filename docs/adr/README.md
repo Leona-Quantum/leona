@@ -35,3 +35,6 @@ An architecture choice without an ADR did not happen.
 - 2026-07-24: ADR-0025 proposes append-only VQE observations keyed to a
   canonical Hamiltonian digest, with exact/finite-shot evidence never conflated
   and golden-fixture energies never hand-typed.
+- 2026-07-24: ADR-0026 redefines VQE MVP corpus acceptance as machine-validated
+  only; human curation review, inter-annotator agreement, and manual-gold
+  comparison authoring are explicit post-MVP work, not silently satisfied.

@@ -38,7 +38,7 @@ GPU、QPU、古い論文環境の実行へ進んではならない。
 |---|---|---:|---:|---|
 | 0 | ADR + H2/Qiskit/PennyLane executable spike | no | no | complete |
 | 1 | Component/Workflow/Scientific Experiment schema | no | no | complete |
-| 2 | 25 papers / 15 repositories / 50+ components curated corpus | no | no | blocked_owner (mechanics done: 26/15/59; human-review not started) |
+| 2 | 25 papers / 15 verified implementation repositories / 50+ components curated corpus (ADR-0026: machine-validated, no Human Review in MVP) | no | no | in_progress (ADR-0026 revision underway) |
 | 3 | Component Registry + experiment evidence in Neon | yes | contract only | not_started |
 | 4 | Atlas Browse / Compare UI | Phase 3 | yes | not_started |
 | 5 | Qiskit/PennyLane runtime + Studio proof execution | Phase 3 | yes | not_started |
@@ -47,14 +47,17 @@ GPU、QPU、古い論文環境の実行へ進んではならない。
 | 8–9 | Deterministic/LLM extraction and reviewed materialization | later | later | later |
 | 10 | Isolated external Repository execution | separate milestone | later | prohibited in MVP |
 
-**Active pickup:** owner review of Phase 2 corpus (`docs/atlas/corpus/`,
-`docs/atlas/PHASE2_PROGRESS.md`)。Phase 0/1はowner-approved/complete
-(2026-07-24)。Phase 2は corpus mechanics (26 papers / 15 repositories / 59
-components) まで完了したところでowner stopに到達 — human-reviewed判定
-(Claude自身を人間reviewerとして数えない)、inter-annotator agreement、3件の
-manual-gold comparison reportはowner/human actionが必要なため未着手。
-Phase 3のNeon Component Registryは、Phase 2の80%人間review宣言と
-comparison reportsが揃うまで開始しない。
+**Active pickup:** ADR-0026の適用 (Phase 2からHuman Review関連要件を明示的に
+除外する計画改訂)。Phase 0/1はowner-approved/complete (2026-07-24)。owner指示
+により、Phase 2 MVP acceptanceから「80%人間review」「owner stopとしての
+human review待ち」「inter-annotator agreement」「human-authored manual-gold
+comparison」を削除し、machine-validationベースの受入条件へ再定義中
+(ADR-0026、`docs/adr/0026-vqe-mvp-machine-only-corpus-validation.md`)。
+これは要件を黙って満たしたことにする変更ではなく、理由・影響・変更前後を
+明示的に文書化する計画改訂である。人間によるcuration、inter-annotator
+agreement、manual-gold評価はpost-MVPへ延期し、MVPのcorpusデータは
+human-validatedとは主張しない。改訂完了まではPhase 3へ進まない
+(§9 完了報告を参照)。
 
 ---
 
@@ -73,8 +76,10 @@ comparison reportsが揃うまで開始しない。
 2. `ExecutionBinding`を科学specから分離。
 3. versioned VQE Component/Workflow schema。
 4. 25本以上の論文、15件以上の実装Repository、50件以上のcomponent。
-5. curated corpusの80%以上を人間review。
-6. 3組以上のcurated comparison report。
+5. curated corpus全recordがmachine validation (schema/enum/reference整合性)
+   を通過。人間reviewはMVP必須要件ではない (ADR-0026、post-MVPへ延期)。
+6. 3組以上のmachine-generated curated comparison report
+   (`is_manual_gold: false` / `human_validated: false` を明示、ADR-0026)。
 7. Atlas Browse / Compare UI。
 8. 不明・矛盾・比較不能理由の明示。
 9. Canonical Hamiltonian表現とdigest。
@@ -742,10 +747,11 @@ lossなく表現できる。
 
 ## Phase 2 — Curated VQE Registry
 
-**Status:** blocked_owner (corpus mechanics done 2026-07-24: 26 papers, 15
-repositories, 59 components, all `annotation_state: draft`; stopped before
-claiming human-reviewed%, inter-annotator agreement, or the 3 manual-gold
-comparison reports — see `docs/atlas/PHASE2_PROGRESS.md`)  
+**Status:** in_progress (ADR-0026適用中。corpus mechanicsは2026-07-24完了:
+26 papers, 15 verified implementation repositories, 59 components。
+Human Review関連要件はADR-0026によりMVP acceptanceから明示的に除外 —
+`docs/adr/0026-vqe-mvp-machine-only-corpus-validation.md`、
+`docs/atlas/PHASE2_PROGRESS.md`参照)  
 **DB change:** none  
 **UI:** none
 
@@ -757,12 +763,23 @@ guidelineを検証する。
 ### Corpus targets
 
 ```text
-VQE papers: >= 25
-official/author implementation repositories: >= 15
+VQE papers: >= 25 (verified: source recorded + machine schema check pass)
+verified implementation repositories: >= 15
+  (official/author/general_framework_library/third_party_reference_implementation
+   の内訳を必ず併記する。third-partyをofficial/authorへ合算しない)
 component records: >= 50
-human-reviewed records: >= 80%
-curated comparison reports: >= 3
+machine-generated curated comparison reports: >= 3
+  (is_manual_gold: false / human_validated: false を明示)
 ```
+
+**ADR-0026 (2026-07-24):** 当初計画は「human-reviewed records >= 80%」
+「inter-annotator agreement測定」「comparison reportを手動goldとして作成」を
+Phase 2 acceptanceに含んでいたが、owner指示によりMVPスコープから明示的に
+除外した。理由: MVPでは自動検証可能なデータパイプラインの成立を優先し、
+人間によるcuration、inter-annotator agreement、manual-gold評価はpost-MVPへ
+延期する。MVPのデータはhuman-validatedとは主張しない。この変更は要件を
+黙って満たしたことにするものではなく、削除した要件・理由・影響を
+ADR-0026とこの文書に明示的に記録する。
 
 候補method family:
 
@@ -784,7 +801,9 @@ learning-guided VQE
 保存対象:
 
 - paper DOI/arXiv and bibliographic facts
-- implementation relation
+- implementation relation (official / author / general_framework_library /
+  third_party_reference_implementation の4区分。定義は
+  `docs/atlas/corpus/ANNOTATION_GUIDELINE.md`)
 - immutable paper-associated commit when known
 - license state
 - environment completeness
@@ -792,19 +811,35 @@ learning-guided VQE
 - workflow composition
 - evidence locators
 - unknown / ambiguous / conflicting fields
-- reviewer decision and annotation schema version
+- **validation state** (machine-checked: draft / machine_validated /
+  validation_failed / conflicting、validator_version、validated_at) と
+  annotation schema version。旧`reviewer_decision` (human review専用) は
+  ADR-0026によりこのフィールドへ置換した
 - negative result / missing implementation
 
 著作権のあるREADME本文やsource codeをcorpusへ転載しない。
 
-### Acceptance
+### Acceptance (ADR-0026後、Human Review非依存)
 
-- annotation guidelineがversioned。
-- 25/15/50 targetを満たす。
-- 80%以上が人間review済み。
-- 同じ論文を別reviewerがannotationしたagreementを測定。
-- schemaで表せないfieldと曖昧さを記録。
-- 3組以上のcomparison reportを手動goldとして作る。
+- versioned annotation guidelineが存在する。
+- verified paper records >= 25。
+- verified implementation repository records >= 15
+  (official/author/general_framework_library/third_party_reference_implementationの
+  内訳を常に併記)。
+- component records >= 50。
+- corpus validatorが全recordを検査する (schema/enum/reference整合性、offline)。
+- schema/enum/reference validation errorが0件。
+- unresolved warningとunknownが隠されず記録されている。
+- machine-generated comparison reports >= 3
+  (`is_manual_gold: false` / `human_validated: false`を明示)。
+- comparisonをmanual gold・human validatedと主張していない。
+- 全テスト、lint、format、Git diff checkが成功する。
+- Phase 3へ渡すschemaと未解決事項が記録されている。
+
+ここでの「verified」は「人間が内容の正しさを保証した」ではなく、
+「出典が記録され、機械的なschema/consistency検査を通過した」ことのみを
+意味する。人間によるcuration、inter-annotator agreement、manual-gold
+comparisonはpost-MVPへ延期する (ADR-0026)。
 
 ---
 
@@ -917,7 +952,9 @@ strict / controlled / partial / invalid
 metric definition differences
 ```
 
-最初の3 comparisonはcurated gold reportでよい。自動判定を装ってはならない。
+MVPの3 comparisonはmachine-generatedであり (ADR-0026)、UIは
+`is_manual_gold: false` / `human_validated: false`を明示し、自動判定結果を
+human-curated gold reportであるかのように装ってはならない。
 
 ### UI acceptance
 
@@ -1007,14 +1044,17 @@ Runtime profileをuserの自由文字列として選択させない。
 Registry:
 
 - papers >= 25
-- implementation repositories >= 15
+- verified implementation repositories >= 15
+  (official/author/general_framework_library/third_party_reference_implementationの
+  内訳を記録。ADR-0026によりhuman-reviewed比率はMVP Go criteriaではない)
 - components >= 50
-- human-reviewed >= 80%
 - unknown/conflict表示
+- corpus validatorのschema/enum/reference validation errorが0件
 
 Compare:
 
-- curated reports >= 3
+- machine-generated comparison reports >= 3
+  (`is_manual_gold: false` / `human_validated: false`を明示、ADR-0026)
 - strict/controlled/partial/invalid表示
 - component、dataset、optimizer、resource metric定義差を表示
 
@@ -1029,9 +1069,11 @@ Execution:
 Academic:
 
 - versioned schema and annotation guideline
-- machine-readable curated corpus
-- gold labels usable for later extraction/comparison evaluation
+- machine-readable curated corpus, machine-validated (not human-validated;
+  see ADR-0026)
 - negative/unknown evidence preserved
+- (post-MVP) human-reviewed gold labels for later extraction/comparison
+  evaluation -- explicitly deferred, not an MVP Go criterion (ADR-0026)
 
 ---
 
@@ -1421,9 +1463,14 @@ MVPは以下が全部成立したときだけcomplete。
 
 - Component/Workflow/Scientific Experiment schema v0.1がversioned。
 - Scientific specとExecutionBindingが分離。
-- 25 papers / 15 repositories / 50 componentsを収録。
-- 80%以上のrecordが人間review済み。
-- 3組以上のcurated comparison report。
+- 25 papers / 15 verified implementation repositories (official/author/
+  general_framework_library/third_party_reference_implementationの内訳を記録) /
+  50 componentsを収録。
+- 全recordがcorpus validatorのmachine validationを通過 (schema/enum/reference
+  整合性、errorが0件)。human-reviewed比率はMVP DoDの対象外 (ADR-0026、
+  post-MVPへ延期)。
+- 3組以上のmachine-generated comparison report
+  (`is_manual_gold: false` / `human_validated: false`を明示、手動goldではない)。
 - unknown/conflict/negative evidenceを表示。
 - Atlas Browse / Compare UIが利用可能。
 - H2 fixtureがreview済み。
@@ -1488,3 +1535,51 @@ MVPは以下が全部成立したときだけcomplete。
 12. GitHub Wrapperはmetadata-onlyから開始する。
 13. scientific specとexecution bindingを混同しない。
 14. 登録件数だけでなく研究者の検索・比較時間短縮を測る。
+
+---
+
+# Part XI. データ完全性・報告に関する常時遵守事項 (ADR-0026)
+
+Phase 2でのHuman Review除外・repository分類誤り・sources_verified不備の
+是正を経て、Phase 3以降の全Phaseで常に守る事項として明文化する
+(ADR-0026、`docs/atlas/PHASE2_PROGRESS.md`参照)。
+
+1. 実測値と目標値を混同しない。「目標を満たした」と「目標に向けて作業した」を
+   明確に区別して報告する。
+2. 未達を達成と表示しない。0%を80%と書かない、draftをmachine_validatedや
+   human_reviewedと書かない。
+3. third-party (third_party_reference_implementation) や
+   general_framework_library を official/author として数えない。分類の
+   内訳は常に総数と併記する (§Phase 2、ANNOTATION_GUIDELINE.md §4.1)。
+4. unknownを推測で埋めない。パターンマッチで「それらしい」値
+   (例: DOI) を作らない — 実際に検証できた場合のみ確定値として記録する。
+5. source URLと、そのsourceが実際に証明するclaimを区別する。URLが存在する
+   ことと、record全体の主張が裏付けられたことは別である。
+6. 自動生成した結果をhuman-reviewedやground truthと呼ばない。
+   `is_manual_gold` / `human_validated` を常に明示する
+   (`majorana_vqe.comparison`、corpus comparison schema)。
+7. acceptance criteriaの変更を結果確認後に黙って行わない。要件変更は
+   理由・影響・変更前後をADRまたは計画文書に明示的に記録する
+   (本ADR-0026がその模範例)。
+8. DB migration前にschemaとrollbackを検証する (既存Part VI §15の手順を
+   Phase 3以降も継続する)。
+9. 外部入力、Repository、論文由来データを信頼済みとして扱わない —
+   corpus validatorのようなoffline検証を経てから利用する。
+10. 通常CIを外部ネットワーク依存にしない。online到達性チェックは
+    別ジョブ・手動監査として分離する (`docs/atlas/corpus/validator/README.md`
+    が模範)。
+11. 生成時刻、tool/validator version、source、入力digestを保存する
+    (`validation_state.validator_version`/`validated_at` パターンを
+    Phase 3以降の生成物にも適用する)。
+12. 既存dataを上書きせず、必要ならversionを上げる
+    (`annotation_schema_version`のbreaking change時は0.1.0→0.2.0のように
+    明示的に上げ、混在させない)。
+13. エラーを握りつぶさない。validation failure時はfail closedにする
+    (corpus validatorはerrorがあれば`validation_failed`を記録し、
+    黙って`machine_validated`にしない)。
+14. 既存テストの成功だけで新しいdata/corpusが検査済みとは判断しない。
+    新しいdataには専用のvalidator/testを追加する。
+15. 各Phase終了時に、未達・warning・unknown・skipped testsを報告する。
+    成功した項目だけを選んで報告しない。
+16. 推測が必要な重要事項は決定せず、根拠を調査して記録する。owner判断が
+    必要な場合はstop conditionとして明示する (Part VIII §24)。
