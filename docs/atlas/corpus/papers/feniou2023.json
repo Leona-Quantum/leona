@@ -1,0 +1,41 @@
+{
+  "paper_id": "feniou2023",
+  "annotation_schema_version": "0.1.0",
+  "title": "Overlap-ADAPT-VQE: Practical Quantum Chemistry on Quantum Computers via Overlap-Guided Compact Ansatze",
+  "authors": ["Cesar Feniou", "Muhammad Hassan", "Diata Traore", "Emmanuel Giner", "Yvon Maday", "et al."],
+  "year": 2023,
+  "venue": "Communications Physics",
+  "volume": "6",
+  "pages_or_article_number": "192",
+  "doi": null,
+  "arxiv_id": "2301.10196",
+  "method_family": ["adapt_vqe"],
+  "problem_summary": "Grows the ADAPT-VQE ansatz by maximizing overlap with an intermediate target wavefunction that already captures some electronic correlation (rather than the standard energy-gradient selection criterion alone), producing ultra-compact ansatze -- reported especially advantageous, with large circuit-depth savings, for strongly correlated systems.",
+  "sources_verified": [
+    "https://arxiv.org/abs/2301.10196",
+    "https://www.nature.com/articles/s42005-023-01312-y"
+  ],
+  "components": [
+    {
+      "component_type": "search_selection",
+      "family_or_name": "overlap-guided operator selection (vs. standard energy-gradient selection)",
+      "notes": "Selection criterion maximizes overlap with an intermediate correlated target wavefunction.",
+      "evidence_locator": "title; abstract"
+    },
+    {
+      "component_type": "ansatz",
+      "family_or_name": "Overlap-ADAPT-VQE (ultra-compact adaptively grown ansatz)",
+      "notes": null,
+      "evidence_locator": "abstract"
+    }
+  ],
+  "workflow_composition_notes": "Same adaptive-growth VQE loop as ADAPT-VQE, with the operator-selection criterion replaced by overlap-maximization against a target correlated wavefunction rather than pure energy-gradient magnitude.",
+  "unknown_or_ambiguous_fields": [
+    "full_author_list: only first five authors confirmed in this search-level pass ('et al.' in source)",
+    "doi: not confirmed in this search-level pass"
+  ],
+  "conflicting_fields": [],
+  "negative_results_or_missing_implementation": null,
+  "implementation_ref": null,
+  "reviewer_decision": {"annotation_state": "draft", "reviewer": null, "reviewed_at": null}
+}

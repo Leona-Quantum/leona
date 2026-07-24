@@ -1,0 +1,43 @@
+{
+  "paper_id": "zhang2022",
+  "annotation_schema_version": "0.1.0",
+  "title": "Variational quantum eigensolver with reduced circuit complexity",
+  "authors": [
+    "Yu Zhang", "Lukasz Cincio", "Christian F. A. Negre", "Piotr Czarnik", "Patrick J. Coles",
+    "Petr M. Anisimov", "Susan M. Mniszewski", "Sergei Tretiak", "Pavel A. Dub"
+  ],
+  "year": 2022,
+  "venue": "npj Quantum Information",
+  "volume": "8",
+  "pages_or_article_number": "96",
+  "doi": "10.1038/s41534-022-00599-z",
+  "arxiv_id": "2106.07619",
+  "method_family": ["pruning_compression"],
+  "problem_summary": "Introduces ClusterVQE: splits the qubit space into entanglement-informed clusters distributed across shallower individual circuits, with inter-cluster entanglement captured via a 'dressed' effective Hamiltonian, trading additional classical resources for reduced circuit depth/qubit count per subcircuit.",
+  "sources_verified": [
+    "https://arxiv.org/abs/2106.07619",
+    "https://www.nature.com/articles/s41534-022-00599-z"
+  ],
+  "components": [
+    {
+      "component_type": "compression",
+      "family_or_name": "ClusterVQE: mutual-information-based qubit clustering into shallower sub-circuits",
+      "notes": "Clusters chosen based on quantum mutual information reflecting maximal intra-cluster entanglement.",
+      "evidence_locator": "abstract"
+    },
+    {
+      "component_type": "representation",
+      "family_or_name": "'dressed' effective Hamiltonian capturing inter-cluster entanglement",
+      "notes": null,
+      "evidence_locator": "abstract"
+    }
+  ],
+  "workflow_composition_notes": "Preprocessing step (clustering + dressed Hamiltonian construction) applied before a standard VQE loop runs on each shallower sub-circuit; trades classical preprocessing cost for reduced quantum circuit complexity.",
+  "unknown_or_ambiguous_fields": [
+    "benchmark_molecules: not confirmed in this search-level pass"
+  ],
+  "conflicting_fields": [],
+  "negative_results_or_missing_implementation": null,
+  "implementation_ref": null,
+  "reviewer_decision": {"annotation_state": "draft", "reviewer": null, "reviewed_at": null}
+}

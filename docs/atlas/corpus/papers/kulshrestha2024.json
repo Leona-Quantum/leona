@@ -1,0 +1,32 @@
+{
+  "paper_id": "kulshrestha2024",
+  "annotation_schema_version": "0.1.0",
+  "title": "QAdaPrune: Adaptive Parameter Pruning For Training Variational Quantum Circuits",
+  "authors": ["Ankit Kulshrestha", "Xiaoyuan Liu", "Hayato Ushijima-Mwesigwa", "Bao Bach", "Ilya Safro"],
+  "year": 2024,
+  "venue": "QCE24 (IEEE International Conference on Quantum Computing and Engineering)",
+  "volume": null,
+  "pages_or_article_number": "120-125",
+  "doi": null,
+  "arxiv_id": "2408.13352",
+  "method_family": ["pruning_compression"],
+  "problem_summary": "Adaptive algorithm that automatically determines a pruning threshold and prunes redundant/non-performing parameters during variational quantum circuit training, reducing gate complexity and circuit depth while addressing barren plateaus; reports pruned circuits perform comparably to unpruned ones and can sometimes improve trainability.",
+  "sources_verified": ["https://arxiv.org/abs/2408.13352"],
+  "components": [
+    {
+      "component_type": "compression",
+      "family_or_name": "QAdaPrune: adaptive threshold-based parameter pruning during training",
+      "notes": "Automatically determines its own pruning threshold rather than requiring a hand-tuned hyperparameter.",
+      "evidence_locator": "abstract"
+    }
+  ],
+  "workflow_composition_notes": "Pruning is applied during the classical optimization loop of a variational quantum circuit's training, dynamically removing parameters as training proceeds.",
+  "unknown_or_ambiguous_fields": [
+    "doi: not confirmed in this search-level pass (IEEE Xplore listing found, DOI string not captured)",
+    "benchmark_problems: not confirmed to be VQE-chemistry-specific vs. general variational circuits in this search-level pass"
+  ],
+  "conflicting_fields": [],
+  "negative_results_or_missing_implementation": null,
+  "implementation_ref": "aicaffeinelife_qadaprune",
+  "reviewer_decision": {"annotation_state": "draft", "reviewer": null, "reviewed_at": null}
+}

@@ -1,0 +1,40 @@
+{
+  "paper_id": "yordanov2021",
+  "annotation_schema_version": "0.1.0",
+  "title": "Qubit-excitation-based adaptive variational quantum eigensolver",
+  "authors": ["Yordan S. Yordanov", "V. Armaos", "Crispin H. W. Barnes", "David R. M. Arvidsson-Shukur"],
+  "year": 2021,
+  "venue": "Communications Physics",
+  "volume": "4",
+  "pages_or_article_number": "228",
+  "doi": "10.1038/s42005-021-00730-0",
+  "arxiv_id": "2011.10540",
+  "method_family": ["qeb_adapt", "adapt_vqe"],
+  "problem_summary": "Introduces QEB-ADAPT-VQE: constructs ansatze from qubit-excitation evolutions (which obey qubit commutation relations, unlike fermionic excitation evolutions) grown adaptively, reported to outperform qubit-ADAPT-VQE in circuit efficiency and convergence speed while requiring asymptotically fewer gates.",
+  "sources_verified": [
+    "https://www.nature.com/articles/s42005-021-00730-0",
+    "https://arxiv.org/abs/2011.10540"
+  ],
+  "components": [
+    {
+      "component_type": "ansatz",
+      "family_or_name": "QEB-ADAPT-VQE (qubit-excitation-based adaptive ansatz)",
+      "notes": "Qubit-excitation evolutions obey qubit commutation relations, distinguishing this pool from fermionic-excitation-based ADAPT-VQE.",
+      "evidence_locator": "abstract"
+    },
+    {
+      "component_type": "operator_pool",
+      "family_or_name": "qubit excitation operator pool",
+      "notes": null,
+      "evidence_locator": "abstract"
+    }
+  ],
+  "workflow_composition_notes": "Same adaptive-growth VQE loop pattern as ADAPT-VQE, with the operator pool restricted to qubit-excitation evolutions rather than fermionic excitations.",
+  "unknown_or_ambiguous_fields": [
+    "benchmark_molecules: not confirmed in this search-level pass"
+  ],
+  "conflicting_fields": [],
+  "negative_results_or_missing_implementation": null,
+  "implementation_ref": null,
+  "reviewer_decision": {"annotation_state": "draft", "reviewer": null, "reviewed_at": null}
+}

@@ -1,0 +1,56 @@
+{
+  "paper_id": "omalley2016",
+  "annotation_schema_version": "0.1.0",
+  "title": "Scalable Quantum Simulation of Molecular Energies",
+  "authors": ["P. J. J. O'Malley", "et al."],
+  "year": 2016,
+  "venue": "Physical Review X",
+  "volume": "6",
+  "pages_or_article_number": "031007",
+  "doi": "10.1103/PhysRevX.6.031007",
+  "arxiv_id": "1512.06860",
+  "method_family": ["vqe_uccsd"],
+  "problem_summary": "First electronic structure calculation on a quantum computer without exponentially costly precompilation; computes the H2 (molecular hydrogen) dissociation energy surface using superconducting qubits, comparing VQE-with-UCC against Trotterized quantum phase estimation.",
+  "sources_verified": [
+    "https://link.aps.org/doi/10.1103/PhysRevX.6.031007",
+    "https://arxiv.org/pdf/1512.06860"
+  ],
+  "components": [
+    {
+      "component_type": "problem",
+      "family_or_name": "H2 dissociation energy surface",
+      "notes": "Energy computed across a range of bond lengths, not just equilibrium.",
+      "evidence_locator": "abstract"
+    },
+    {
+      "component_type": "ansatz",
+      "family_or_name": "unitary coupled cluster (UCC)",
+      "notes": "Efficient UCC circuit implementation is the paper's key VQE contribution.",
+      "evidence_locator": "abstract"
+    },
+    {
+      "component_type": "compilation_backend",
+      "family_or_name": "superconducting qubits",
+      "notes": "Google/UCSB/collaborators superconducting processor.",
+      "evidence_locator": "abstract; author affiliations"
+    },
+    {
+      "component_type": "evaluation_protocol",
+      "family_or_name": "VQE vs. Trotterized quantum phase estimation (comparison)",
+      "notes": "Paper explicitly runs and compares two distinct quantum algorithms on the same hardware/problem.",
+      "evidence_locator": "abstract"
+    }
+  ],
+  "workflow_composition_notes": "UCC ansatz optimized variationally (VQE) is reported to reach chemical accuracy on the dissociation curve; separately, Trotterization + QPE is run as the canonical (non-variational) comparison algorithm on the same hardware.",
+  "unknown_or_ambiguous_fields": [
+    "exact_optimizer_algorithm: 'VQE classical optimizer' stated generically in search-level review; specific optimizer name not confirmed without full-text read"
+  ],
+  "conflicting_fields": [],
+  "negative_results_or_missing_implementation": null,
+  "implementation_ref": null,
+  "reviewer_decision": {
+    "annotation_state": "draft",
+    "reviewer": null,
+    "reviewed_at": null
+  }
+}

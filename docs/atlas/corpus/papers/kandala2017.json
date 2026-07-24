@@ -1,0 +1,56 @@
+{
+  "paper_id": "kandala2017",
+  "annotation_schema_version": "0.1.0",
+  "title": "Hardware-efficient variational quantum eigensolver for small molecules and quantum magnets",
+  "authors": [
+    "Abhinav Kandala",
+    "Antonio Mezzacapo",
+    "Kristan Temme",
+    "Maika Takita",
+    "Markus Brink",
+    "Jerry M. Chow",
+    "Jay M. Gambetta"
+  ],
+  "year": 2017,
+  "venue": "Nature",
+  "volume": "549",
+  "pages_or_article_number": "242-246",
+  "doi": "10.1038/nature23879",
+  "arxiv_id": null,
+  "method_family": ["vqe_uccsd"],
+  "problem_summary": "Introduces the hardware-efficient ansatz for VQE, computing LiH and BeH2 ground-state energies on a 6-qubit superconducting processor and separately an energy-minimization procedure on a 4-qubit Heisenberg model.",
+  "sources_verified": ["https://www.nature.com/articles/nature23879"],
+  "components": [
+    {
+      "component_type": "problem",
+      "family_or_name": "LiH and BeH2 ground-state energies; 4-qubit Heisenberg model",
+      "notes": "Two distinct problem classes: molecular chemistry and a condensed-matter spin model.",
+      "evidence_locator": "abstract"
+    },
+    {
+      "component_type": "ansatz",
+      "family_or_name": "hardware-efficient ansatz",
+      "notes": "Ansatz built from the device's native gate set rather than a UCC-derived circuit -- the paper's key methodological contribution.",
+      "evidence_locator": "title; abstract"
+    },
+    {
+      "component_type": "compilation_backend",
+      "family_or_name": "superconducting qubits (6-qubit processor)",
+      "notes": null,
+      "evidence_locator": "abstract"
+    }
+  ],
+  "workflow_composition_notes": "Hardware-efficient ansatz parameters optimized in a VQE loop; same ansatz family reused across both the molecular and spin-model problem instances.",
+  "unknown_or_ambiguous_fields": [
+    "arxiv_id: not confirmed in this search pass (Nature page found; arXiv preprint not independently verified)",
+    "optimizer_algorithm_name: 'classical VQE outer-loop optimizer' stated generically; specific algorithm not confirmed without full-text read"
+  ],
+  "conflicting_fields": [],
+  "negative_results_or_missing_implementation": null,
+  "implementation_ref": null,
+  "reviewer_decision": {
+    "annotation_state": "draft",
+    "reviewer": null,
+    "reviewed_at": null
+  }
+}

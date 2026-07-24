@@ -1,0 +1,38 @@
+{
+  "paper_id": "ryabinkin2018",
+  "annotation_schema_version": "0.1.0",
+  "title": "Qubit Coupled Cluster Method: A Systematic Approach to Quantum Chemistry on a Quantum Computer",
+  "authors": ["Ilya G. Ryabinkin", "Tzu-Ching Yen", "Scott N. Genin", "Artur F. Izmaylov"],
+  "year": 2018,
+  "venue": "Journal of Chemical Theory and Computation",
+  "volume": "14",
+  "pages_or_article_number": "6317-6326",
+  "doi": "10.1021/acs.jctc.8b00932",
+  "arxiv_id": null,
+  "method_family": ["vqe_uccsd"],
+  "problem_summary": "Introduces the Qubit Coupled Cluster (QCC) method: an ansatz constructed directly in qubit space (rather than lifted from a fermionic coupled-cluster expansion) via a systematic, energy-gradient-screened selection of Pauli-word entangling generators.",
+  "sources_verified": ["https://pubs.acs.org/doi/10.1021/acs.jctc.8b00932"],
+  "components": [
+    {
+      "component_type": "ansatz",
+      "family_or_name": "Qubit Coupled Cluster (QCC): qubit-space ansatz built from screened Pauli-word generators",
+      "notes": "Constructed directly in qubit space rather than by mapping a fermionic UCC expansion.",
+      "evidence_locator": "title; abstract"
+    },
+    {
+      "component_type": "search_selection",
+      "family_or_name": "energy-gradient screening of candidate Pauli-word generators",
+      "notes": null,
+      "evidence_locator": "abstract"
+    }
+  ],
+  "workflow_composition_notes": "Generators are screened and selected by gradient magnitude directly in qubit space, then variationally optimized -- methodologically a precursor in spirit to the later ADAPT-VQE family (grimsley2019 et seq.), though qubit-space-native rather than fermionic-operator-based from the start.",
+  "unknown_or_ambiguous_fields": [
+    "arxiv_id: not confirmed in this search-level pass",
+    "benchmark_molecules: not confirmed in this search-level pass"
+  ],
+  "conflicting_fields": [],
+  "negative_results_or_missing_implementation": null,
+  "implementation_ref": null,
+  "reviewer_decision": {"annotation_state": "draft", "reviewer": null, "reviewed_at": null}
+}

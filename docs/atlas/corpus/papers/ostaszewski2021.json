@@ -1,0 +1,46 @@
+{
+  "paper_id": "ostaszewski2021",
+  "annotation_schema_version": "0.1.0",
+  "title": "Reinforcement learning for optimization of variational quantum circuit architectures",
+  "authors": ["Mateusz Ostaszewski", "Lea M. Trenkwalder", "Wojciech Masarczyk", "Eleanor Scerri", "Vedran Dunjko"],
+  "year": 2021,
+  "venue": "Advances in Neural Information Processing Systems (NeurIPS 34)",
+  "volume": "34",
+  "pages_or_article_number": "18182-18194",
+  "doi": "10.5555/3540261.3541652",
+  "arxiv_id": "2103.16089",
+  "method_family": ["learning_guided_vqe"],
+  "problem_summary": "Uses a reinforcement-learning agent to autonomously search the space of possible VQE ansatze, balancing circuit depth against expressivity, demonstrated on estimating the LiH ground-state energy.",
+  "sources_verified": [
+    "https://arxiv.org/abs/2103.16089",
+    "https://proceedings.neurips.cc/paper/2021/hash/9724412729185d53a2e3e7f889d9f057-Abstract.html"
+  ],
+  "components": [
+    {
+      "component_type": "search_selection",
+      "family_or_name": "reinforcement-learning-driven ansatz architecture search",
+      "notes": "Intrinsically motivated RL agent incrementally improves accuracy while minimizing circuit depth.",
+      "evidence_locator": "abstract"
+    },
+    {
+      "component_type": "problem",
+      "family_or_name": "LiH ground-state energy",
+      "notes": null,
+      "evidence_locator": "abstract"
+    },
+    {
+      "component_type": "learning_training",
+      "family_or_name": "RL agent training loop over candidate ansatz architectures",
+      "notes": null,
+      "evidence_locator": "abstract"
+    }
+  ],
+  "workflow_composition_notes": "RL agent proposes ansatz architecture modifications; each candidate is evaluated via a VQE energy estimate, and the RL reward balances accuracy against circuit depth, closing an outer learning loop around the standard VQE inner loop.",
+  "unknown_or_ambiguous_fields": [
+    "reward_function_exact_form: not confirmed without full-text read"
+  ],
+  "conflicting_fields": [],
+  "negative_results_or_missing_implementation": null,
+  "implementation_ref": null,
+  "reviewer_decision": {"annotation_state": "draft", "reviewer": null, "reviewed_at": null}
+}

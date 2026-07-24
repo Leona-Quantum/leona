@@ -1,0 +1,41 @@
+{
+  "paper_id": "anastasiou2024",
+  "annotation_schema_version": "0.1.0",
+  "title": "TETRIS-ADAPT-VQE: An adaptive algorithm that yields shallower, denser circuit ansatze",
+  "authors": ["Panagiotis G. Anastasiou", "et al."],
+  "year": 2024,
+  "venue": "Physical Review Research",
+  "volume": "6",
+  "pages_or_article_number": "013254",
+  "doi": "10.1103/PhysRevResearch.6.013254",
+  "arxiv_id": "2209.10562",
+  "method_family": ["tetris_adapt", "adapt_vqe"],
+  "problem_summary": "Modifies ADAPT-VQE's one-operator-at-a-time growth rule to allow adding multiple operators with disjoint qubit supports per iteration ('tiling'), yielding denser but significantly shallower circuits without increasing CNOT count or parameter count, and reducing how often the expensive per-candidate gradient measurement step runs.",
+  "sources_verified": [
+    "https://arxiv.org/abs/2209.10562",
+    "https://link.aps.org/doi/10.1103/PhysRevResearch.6.013254"
+  ],
+  "components": [
+    {
+      "component_type": "growth_batching",
+      "family_or_name": "TETRIS tiling: multiple disjoint-support operators added per iteration",
+      "notes": "The paper's core departure from standard ADAPT-VQE's strictly one-operator-per-iteration rule.",
+      "evidence_locator": "title; abstract"
+    },
+    {
+      "component_type": "ansatz",
+      "family_or_name": "TETRIS-ADAPT-VQE (denser, shallower adaptively grown ansatz)",
+      "notes": null,
+      "evidence_locator": "abstract"
+    }
+  ],
+  "workflow_composition_notes": "Same ADAPT-VQE gradient-based selection loop, but the growth step tiles multiple qubit-disjoint operators into a single layer instead of appending one operator at a time.",
+  "unknown_or_ambiguous_fields": [
+    "full_author_list: only first author confirmed in this search-level pass ('et al.' in search snippet)",
+    "benchmark_molecules: not confirmed in this search-level pass"
+  ],
+  "conflicting_fields": [],
+  "negative_results_or_missing_implementation": null,
+  "implementation_ref": "goodchemistryco_tangelo",
+  "reviewer_decision": {"annotation_state": "draft", "reviewer": null, "reviewed_at": null}
+}

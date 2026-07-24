@@ -1,0 +1,65 @@
+{
+  "paper_id": "tang2021",
+  "annotation_schema_version": "0.1.0",
+  "title": "Qubit-ADAPT-VQE: An Adaptive Algorithm for Constructing Hardware-Efficient Ansatze on a Quantum Processor",
+  "authors": [
+    "Ho Lun Tang",
+    "V. O. Shkolnikov",
+    "George S. Barron",
+    "Harper R. Grimsley",
+    "Nicholas J. Mayhall",
+    "Edwin Barnes",
+    "Sophia E. Economou"
+  ],
+  "year": 2021,
+  "venue": "PRX Quantum",
+  "volume": "2",
+  "pages_or_article_number": "020310",
+  "doi": "10.1103/PRXQuantum.2.020310",
+  "arxiv_id": "1911.10205",
+  "method_family": ["qubit_adapt", "adapt_vqe"],
+  "problem_summary": "Extends ADAPT-VQE with a qubit-excitation-based operator pool (rather than fermionic), drastically reducing circuit depth; proves a minimal pool size scaling linearly with qubit count still guarantees the ability to construct exact ansatze.",
+  "sources_verified": [
+    "https://link.aps.org/doi/10.1103/PRXQuantum.2.020310",
+    "https://arxiv.org/abs/1911.10205"
+  ],
+  "components": [
+    {
+      "component_type": "problem",
+      "family_or_name": "molecular electronic structure (method paper, demonstrated via classical simulation)",
+      "notes": "Method paper extending ADAPT-VQE; specific benchmark molecules not confirmed in this search-level pass.",
+      "evidence_locator": "abstract"
+    },
+    {
+      "component_type": "ansatz",
+      "family_or_name": "qubit-ADAPT-VQE (adaptively grown from a qubit-excitation pool)",
+      "notes": "Distinguishes from grimsley2019's fermionic-operator ADAPT-VQE by using qubit-excitation operators, yielding shallower circuits.",
+      "evidence_locator": "title; abstract"
+    },
+    {
+      "component_type": "operator_pool",
+      "family_or_name": "qubit-excitation operator pool, minimal pool scaling linearly with qubit count",
+      "notes": "Key theoretical result: a pool of this minimal size is proven sufficient for exact ansatz construction.",
+      "evidence_locator": "abstract"
+    },
+    {
+      "component_type": "search_selection",
+      "family_or_name": "gradient-based operator selection (ADAPT-style)",
+      "notes": null,
+      "evidence_locator": "abstract"
+    }
+  ],
+  "workflow_composition_notes": "Same adaptive growth loop as ADAPT-VQE (grimsley2019), but drawing operators from a qubit-excitation pool instead of a fermionic pool, which is reported to reduce circuit depth relative to standard ADAPT-VQE.",
+  "unknown_or_ambiguous_fields": [
+    "benchmark_molecules: specific molecules simulated not confirmed in this search-level pass",
+    "quantitative_depth_reduction_vs_grimsley2019: not confirmed without full-text read"
+  ],
+  "conflicting_fields": [],
+  "negative_results_or_missing_implementation": null,
+  "implementation_ref": "mafaldaramoa_vqe",
+  "reviewer_decision": {
+    "annotation_state": "draft",
+    "reviewer": null,
+    "reviewed_at": null
+  }
+}

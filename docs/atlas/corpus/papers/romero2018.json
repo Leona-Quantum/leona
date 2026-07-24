@@ -1,0 +1,40 @@
+{
+  "paper_id": "romero2018",
+  "annotation_schema_version": "0.1.0",
+  "title": "Strategies for quantum computing molecular energies using the unitary coupled cluster ansatz",
+  "authors": ["Jonathan Romero", "Ryan Babbush", "Jarrod R. McClean", "Cornelius Hempel", "Peter J. Love", "Alan Aspuru-Guzik"],
+  "year": 2018,
+  "venue": "Quantum Science and Technology",
+  "volume": "4",
+  "pages_or_article_number": "014008",
+  "doi": "10.1088/2058-9565/aad3e4",
+  "arxiv_id": "1701.02691",
+  "method_family": ["vqe_uccsd"],
+  "problem_summary": "Studies VQE with the unitary coupled cluster (UCC) ansatz, introduces circuit-depth-reduction strategies for UCC implementation, and proposes an analytical energy-gradient method that reduces gradient-estimation sampling cost by orders of magnitude versus numerical gradients.",
+  "sources_verified": [
+    "https://arxiv.org/abs/1701.02691",
+    "https://iopscience.iop.org/article/10.1088/2058-9565/aad3e4"
+  ],
+  "components": [
+    {
+      "component_type": "ansatz",
+      "family_or_name": "unitary coupled cluster (UCC), with proposed circuit-depth-reduction strategies",
+      "notes": null,
+      "evidence_locator": "title; abstract"
+    },
+    {
+      "component_type": "parameter_optimizer",
+      "family_or_name": "analytical energy-gradient VQE optimization",
+      "notes": "Analytical gradient method reduces sampling cost for gradient estimation by orders of magnitude vs. numerical gradients.",
+      "evidence_locator": "abstract"
+    }
+  ],
+  "workflow_composition_notes": "UCC ansatz combined with an analytical-gradient-based classical optimizer, aimed at reducing both circuit depth and optimization sampling cost relative to a naive UCC-VQE implementation.",
+  "unknown_or_ambiguous_fields": [
+    "benchmark_molecules: not confirmed in this search-level pass"
+  ],
+  "conflicting_fields": [],
+  "negative_results_or_missing_implementation": null,
+  "implementation_ref": null,
+  "reviewer_decision": {"annotation_state": "draft", "reviewer": null, "reviewed_at": null}
+}

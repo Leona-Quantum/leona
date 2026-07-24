@@ -1,0 +1,63 @@
+{
+  "paper_id": "grimsley2019",
+  "annotation_schema_version": "0.1.0",
+  "title": "An adaptive variational algorithm for exact molecular simulations on a quantum computer",
+  "authors": ["Harper R. Grimsley", "Sophia E. Economou", "Edwin Barnes", "Nicholas J. Mayhall"],
+  "year": 2019,
+  "venue": "Nature Communications",
+  "volume": "10",
+  "pages_or_article_number": "3007",
+  "doi": "10.1038/s41467-019-10988-2",
+  "arxiv_id": "1812.11173",
+  "method_family": ["adapt_vqe"],
+  "problem_summary": "Introduces ADAPT-VQE: instead of a fixed ansatz, the circuit is grown one fermionic operator at a time from an operator pool, chosen adaptively to the molecule being simulated, producing shallower circuits with fewer parameters than a fixed UCCSD ansatz.",
+  "sources_verified": [
+    "https://www.nature.com/articles/s41467-019-10988-2",
+    "https://arxiv.org/abs/1812.11173"
+  ],
+  "components": [
+    {
+      "component_type": "problem",
+      "family_or_name": "molecular electronic structure (method paper, demonstrated via classical simulation)",
+      "notes": "Method paper; specific benchmark molecules not confirmed in this search-level pass without full-text read.",
+      "evidence_locator": "abstract"
+    },
+    {
+      "component_type": "ansatz",
+      "family_or_name": "ADAPT-VQE (adaptively grown, one fermionic operator at a time)",
+      "notes": "Ansatz is not fixed upfront; grown dynamically -- this is the paper's core contribution.",
+      "evidence_locator": "title; abstract"
+    },
+    {
+      "component_type": "operator_pool",
+      "family_or_name": "fermionic operator pool",
+      "notes": "Pool from which the next operator to append is selected each iteration.",
+      "evidence_locator": "abstract"
+    },
+    {
+      "component_type": "search_selection",
+      "family_or_name": "gradient-based operator selection",
+      "notes": "Next operator chosen via a gradient criterion (paper's adaptive growth mechanism).",
+      "evidence_locator": "abstract"
+    },
+    {
+      "component_type": "growth_batching",
+      "family_or_name": "one-operator-at-a-time growth",
+      "notes": null,
+      "evidence_locator": "abstract"
+    }
+  ],
+  "workflow_composition_notes": "Iterative loop: evaluate gradients for every operator in the pool, append the highest-gradient operator to the ansatz, re-optimize all parameters via VQE, repeat until a convergence criterion is met.",
+  "unknown_or_ambiguous_fields": [
+    "benchmark_molecules: specific molecules simulated not confirmed in this search-level pass",
+    "stopping_criterion_threshold: not confirmed without full-text read"
+  ],
+  "conflicting_fields": [],
+  "negative_results_or_missing_implementation": null,
+  "implementation_ref": "mayhallgroup_adapt-vqe",
+  "reviewer_decision": {
+    "annotation_state": "draft",
+    "reviewer": null,
+    "reviewed_at": null
+  }
+}

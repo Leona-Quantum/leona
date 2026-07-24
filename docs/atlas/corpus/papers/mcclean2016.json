@@ -1,0 +1,40 @@
+{
+  "paper_id": "mcclean2016",
+  "annotation_schema_version": "0.1.0",
+  "title": "The theory of variational hybrid quantum-classical algorithms",
+  "authors": ["Jarrod R. McClean", "Jonathan Romero", "Ryan Babbush", "Alan Aspuru-Guzik"],
+  "year": 2016,
+  "venue": "New Journal of Physics",
+  "volume": "18",
+  "pages_or_article_number": "023023",
+  "doi": "10.1088/1367-2630/18/2/023023",
+  "arxiv_id": "1509.04279",
+  "method_family": ["vqe_uccsd"],
+  "problem_summary": "Extends the general theory of the VQE hybrid quantum-classical optimization scheme, develops a variational adiabatic ansatz, and explores unitary coupled cluster within that theoretical framework, suggesting algorithmic improvements for practical implementation.",
+  "sources_verified": [
+    "https://iopscience.iop.org/article/10.1088/1367-2630/18/2/023023",
+    "https://arxiv.org/abs/1509.04279"
+  ],
+  "components": [
+    {
+      "component_type": "ansatz",
+      "family_or_name": "variational adiabatic ansatz (theoretical framework paper)",
+      "notes": null,
+      "evidence_locator": "abstract"
+    },
+    {
+      "component_type": "evaluation_protocol",
+      "family_or_name": "general theory of hybrid quantum-classical variational optimization",
+      "notes": "Foundational theory paper extending the original VQE proposal's formal framework, not a single-system experimental demonstration.",
+      "evidence_locator": "abstract"
+    }
+  ],
+  "workflow_composition_notes": "Theoretical/methodological paper; formalizes the variational hybrid loop structure that subsequent experimental VQE papers (e.g. omalley2016, kandala2017) build on.",
+  "unknown_or_ambiguous_fields": [
+    "specific_numerical_demonstrations: not confirmed without full-text read"
+  ],
+  "conflicting_fields": [],
+  "negative_results_or_missing_implementation": null,
+  "implementation_ref": null,
+  "reviewer_decision": {"annotation_state": "draft", "reviewer": null, "reviewed_at": null}
+}

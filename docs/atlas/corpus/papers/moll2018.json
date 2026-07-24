@@ -1,0 +1,36 @@
+{
+  "paper_id": "moll2018",
+  "annotation_schema_version": "0.1.0",
+  "title": "Quantum optimization using variational algorithms on near-term quantum devices",
+  "authors": [
+    "Nikolaj Moll", "Panagiotis Barkoutsos", "Lev S. Bishop", "Jerry M. Chow", "Andrew Cross",
+    "Daniel J. Egger", "Stefan Filipp", "Andreas Fuhrer", "Jay M. Gambetta", "Marc Ganzhorn",
+    "Abhinav Kandala", "Antonio Mezzacapo", "Peter Muller", "Walter Riess", "Gian Salis",
+    "John Smolin", "Ivano Tavernelli", "Kristan Temme"
+  ],
+  "year": 2018,
+  "venue": "Quantum Science and Technology",
+  "volume": "3",
+  "pages_or_article_number": "030503",
+  "doi": null,
+  "arxiv_id": "1710.01022",
+  "method_family": ["vqe_uccsd"],
+  "problem_summary": "Practitioner-oriented overview (IBM) of running variational quantum algorithms including VQE on near-term superconducting devices, covering ansatz choice, error sources, and optimization practicalities for the hardware generation available at publication.",
+  "sources_verified": ["https://arxiv.org/abs/1710.01022"],
+  "components": [
+    {
+      "component_type": "evaluation_protocol",
+      "family_or_name": "practical guidance on near-term VQE deployment (ansatz/error/optimization tradeoffs)",
+      "notes": "Perspective/methodology paper rather than a single new algorithm proposal.",
+      "evidence_locator": "abstract"
+    }
+  ],
+  "workflow_composition_notes": "Perspective paper; surveys practical VQE deployment considerations on IBM superconducting hardware of the era rather than describing one fixed workflow.",
+  "unknown_or_ambiguous_fields": [
+    "doi: not independently confirmed by opening the publisher page directly in this search-level pass (a pattern-matched candidate DOI was found but deliberately NOT recorded as verified, per this corpus's own rule against guessed values -- must be confirmed before promotion out of draft state)"
+  ],
+  "conflicting_fields": [],
+  "negative_results_or_missing_implementation": null,
+  "implementation_ref": null,
+  "reviewer_decision": {"annotation_state": "draft", "reviewer": null, "reviewed_at": null}
+}

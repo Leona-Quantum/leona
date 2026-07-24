@@ -1,0 +1,66 @@
+{
+  "paper_id": "peruzzo2014",
+  "annotation_schema_version": "0.1.0",
+  "title": "A variational eigenvalue solver on a photonic quantum processor",
+  "authors": [
+    "Alberto Peruzzo",
+    "Jarrod McClean",
+    "Peter Shadbolt",
+    "Man-Hong Yung",
+    "Xiao-Qi Zhou",
+    "Peter J. Love",
+    "Alan Aspuru-Guzik",
+    "Jeremy L. O'Brien"
+  ],
+  "year": 2014,
+  "venue": "Nature Communications",
+  "volume": "5",
+  "pages_or_article_number": "4213",
+  "doi": "10.1038/ncomms5213",
+  "arxiv_id": "1304.3061",
+  "method_family": ["vqe_uccsd"],
+  "problem_summary": "Introduces the VQE algorithm itself: state preparation via a small parameterized ansatz plus classical outer-loop optimization, replacing deep coherent evolution. Demonstrated on the HeH+ (helium hydride cation) ground-state energy.",
+  "sources_verified": [
+    "https://www.nature.com/articles/ncomms5213",
+    "https://arxiv.org/abs/1304.3061"
+  ],
+  "components": [
+    {
+      "component_type": "problem",
+      "family_or_name": "HeH+ ground-state electronic energy",
+      "notes": "Smallest nontrivial molecular test case for the original VQE demonstration.",
+      "evidence_locator": "abstract"
+    },
+    {
+      "component_type": "ansatz",
+      "family_or_name": "small parameterized variational ansatz (pre-UCC-standardization VQE proposal)",
+      "notes": "The paper proposes the VQE method itself; the specific ansatz used is small and photonic-hardware-native rather than a later-standardized UCCSD circuit.",
+      "evidence_locator": "abstract; main text"
+    },
+    {
+      "component_type": "parameter_optimizer",
+      "family_or_name": "Nelder-Mead simplex",
+      "notes": "Classical outer-loop optimizer for the variational parameters.",
+      "evidence_locator": "main text"
+    },
+    {
+      "component_type": "compilation_backend",
+      "family_or_name": "photonic quantum processor",
+      "notes": "Physical platform is photonic, not superconducting/trapped-ion -- notable for cross-hardware comparison.",
+      "evidence_locator": "title; abstract"
+    }
+  ],
+  "workflow_composition_notes": "Original VQE loop: prepare a parameterized trial state on the photonic processor, measure the energy expectation value, classically update parameters via Nelder-Mead, repeat to convergence.",
+  "unknown_or_ambiguous_fields": [
+    "exact_ansatz_circuit_depth: not extracted from abstract-level review; would need full-text figure inspection",
+    "qubit_mapping: not confirmed (photonic encoding differs from standard qubit JW/parity mapping conventions used by later superconducting-hardware VQE papers)"
+  ],
+  "conflicting_fields": [],
+  "negative_results_or_missing_implementation": null,
+  "implementation_ref": null,
+  "reviewer_decision": {
+    "annotation_state": "draft",
+    "reviewer": null,
+    "reviewed_at": null
+  }
+}

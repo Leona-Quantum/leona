@@ -1,0 +1,46 @@
+{
+  "paper_id": "google2020",
+  "annotation_schema_version": "0.1.0",
+  "title": "Hartree-Fock on a superconducting qubit quantum computer",
+  "authors": ["Frank Arute", "Kunal Arya", "Ryan Babbush", "Dave Bacon", "Joseph C. Bardin", "et al. (Google AI Quantum and Collaborators)"],
+  "year": 2020,
+  "venue": "Science",
+  "volume": "369",
+  "pages_or_article_number": "1084-1089",
+  "doi": "10.1126/science.abb9811",
+  "arxiv_id": "2004.04174",
+  "method_family": ["vqe_uccsd"],
+  "problem_summary": "Performs the largest chemical simulation on a quantum computer to date at publication (up to a dozen qubits), including modeling the isomerization mechanism of diazene, using a Givens-rotation-based ansatz variationally optimized to prepare the Hartree-Fock wavefunction.",
+  "sources_verified": [
+    "https://arxiv.org/pdf/2004.04174",
+    "https://www.science.org/doi/10.1126/science.abb9811"
+  ],
+  "components": [
+    {
+      "component_type": "problem",
+      "family_or_name": "diazene isomerization mechanism (up to ~12 qubits)",
+      "notes": null,
+      "evidence_locator": "abstract"
+    },
+    {
+      "component_type": "ansatz",
+      "family_or_name": "Givens-rotation noninteracting-fermion-evolution ansatz (variationally optimized to prepare the Hartree-Fock state)",
+      "notes": "Classically tractable to simulate yet generates highly entangled computational-basis states.",
+      "evidence_locator": "abstract"
+    },
+    {
+      "component_type": "compilation_backend",
+      "family_or_name": "superconducting qubits (Google processor)",
+      "notes": null,
+      "evidence_locator": "author affiliations; venue"
+    }
+  ],
+  "workflow_composition_notes": "Givens-rotation ansatz variationally optimized within a VQE-style loop specifically to reproduce the Hartree-Fock reference state, as a scalable primitive rather than a full correlated-energy calculation.",
+  "unknown_or_ambiguous_fields": [
+    "full_author_list: Google AI Quantum collaboration has a very large author list; only first few names confirmed in this search-level pass"
+  ],
+  "conflicting_fields": [],
+  "negative_results_or_missing_implementation": null,
+  "implementation_ref": "quantumlib_recirq",
+  "reviewer_decision": {"annotation_state": "draft", "reviewer": null, "reviewed_at": null}
+}

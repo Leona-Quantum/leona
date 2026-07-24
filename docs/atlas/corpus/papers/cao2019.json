@@ -1,0 +1,35 @@
+{
+  "paper_id": "cao2019",
+  "annotation_schema_version": "0.1.0",
+  "title": "Quantum Chemistry in the Age of Quantum Computing",
+  "authors": [
+    "Yudong Cao", "Jonathan Romero", "Jonathan P. Olson", "Matthias Degroote", "Peter D. Johnson",
+    "Maria Kieferova", "Ian D. Kivlichan", "Tim Menke", "Borja Peropadre", "Nicolas P. D. Sawaya",
+    "Sukin Sim", "Libor Veis", "Alan Aspuru-Guzik"
+  ],
+  "year": 2019,
+  "venue": "Chemical Reviews",
+  "volume": "119",
+  "pages_or_article_number": "10856-10915",
+  "doi": "10.1021/acs.chemrev.8b00803",
+  "arxiv_id": null,
+  "method_family": ["vqe_uccsd"],
+  "problem_summary": "Broad review of quantum computing for quantum chemistry, including VQE, UCC-family ansatze, and the algorithmic/hardware landscape as of publication -- a cross-cutting reference rather than a single-method proposal.",
+  "sources_verified": ["https://pubs.acs.org/doi/10.1021/acs.chemrev.8b00803"],
+  "components": [
+    {
+      "component_type": "evaluation_protocol",
+      "family_or_name": "review of quantum-computational quantum chemistry methods including VQE/UCC",
+      "notes": "Review paper; included for corpus-wide method-family and terminology cross-referencing, as with tilly2022.",
+      "evidence_locator": "abstract"
+    }
+  ],
+  "workflow_composition_notes": "Review paper; surveys rather than proposes a specific workflow.",
+  "unknown_or_ambiguous_fields": [
+    "arxiv_id: search results indicate no arXiv preprint exists for this review (published directly to Chemical Reviews)"
+  ],
+  "conflicting_fields": [],
+  "negative_results_or_missing_implementation": null,
+  "implementation_ref": null,
+  "reviewer_decision": {"annotation_state": "draft", "reviewer": null, "reviewed_at": null}
+}

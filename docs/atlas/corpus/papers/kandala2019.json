@@ -1,0 +1,37 @@
+{
+  "paper_id": "kandala2019",
+  "annotation_schema_version": "0.1.0",
+  "title": "Error mitigation extends the computational reach of a noisy quantum processor",
+  "authors": ["Abhinav Kandala", "Kristan Temme", "Antonio D. Corcoles", "Antonio Mezzacapo", "Jerry M. Chow", "Jay M. Gambetta"],
+  "year": 2019,
+  "venue": "Nature",
+  "volume": "567",
+  "pages_or_article_number": "491-495",
+  "doi": "10.1038/s41586-019-1040-7",
+  "arxiv_id": null,
+  "method_family": ["vqe_uccsd"],
+  "problem_summary": "Extends VQE accuracy on noisy superconducting hardware via error mitigation: extrapolating results from a series of experiments run at deliberately varied noise levels, without requiring additional hardware, demonstrated on a hardware-efficient-ansatz VQE.",
+  "sources_verified": ["https://www.nature.com/articles/s41586-019-1040-7"],
+  "components": [
+    {
+      "component_type": "error_mitigation",
+      "family_or_name": "zero-noise extrapolation across a series of deliberately-varied-noise experiments",
+      "notes": null,
+      "evidence_locator": "abstract"
+    },
+    {
+      "component_type": "ansatz",
+      "family_or_name": "hardware-efficient ansatz (same family as kandala2017)",
+      "notes": "Same research group and ansatz family as kandala2017, extended here with error mitigation.",
+      "evidence_locator": "abstract; author overlap with kandala2017"
+    }
+  ],
+  "workflow_composition_notes": "Standard hardware-efficient-ansatz VQE loop augmented with a post-processing error-mitigation stage that extrapolates the noise-free result from multiple noise-scaled experiments.",
+  "unknown_or_ambiguous_fields": [
+    "arxiv_id: not confirmed in this search-level pass"
+  ],
+  "conflicting_fields": [],
+  "negative_results_or_missing_implementation": null,
+  "implementation_ref": null,
+  "reviewer_decision": {"annotation_state": "draft", "reviewer": null, "reviewed_at": null}
+}

@@ -1,0 +1,40 @@
+{
+  "paper_id": "grimsley2023",
+  "annotation_schema_version": "0.1.0",
+  "title": "Adaptive, problem-tailored variational quantum eigensolver mitigates rough parameter landscapes and barren plateaus",
+  "authors": ["Harper R. Grimsley", "George S. Barron", "Edwin Barnes", "Sophia E. Economou", "Nicholas J. Mayhall"],
+  "year": 2023,
+  "venue": "npj Quantum Information",
+  "volume": "9",
+  "pages_or_article_number": "19",
+  "doi": "10.1038/s41534-023-00681-0",
+  "arxiv_id": null,
+  "method_family": ["adapt_vqe"],
+  "problem_summary": "Argues and demonstrates that ADAPT-VQE's problem-tailored, adaptively-grown ansatz mitigates both rough parameter landscapes and barren plateaus better than fixed-ansatz VQE, connecting the ADAPT-VQE family directly to the trainability concerns raised in mcclean2018.",
+  "sources_verified": [
+    "https://www.nature.com/articles/s41534-023-00681-0",
+    "https://www.osti.gov/pages/biblio/1959246"
+  ],
+  "components": [
+    {
+      "component_type": "ansatz",
+      "family_or_name": "ADAPT-VQE (problem-tailored, adaptively grown -- analyzed here specifically for trainability properties)",
+      "notes": "Same ansatz family as grimsley2019, this paper's contribution is the trainability/barren-plateau analysis rather than a new growth mechanism.",
+      "evidence_locator": "title; abstract"
+    },
+    {
+      "component_type": "evaluation_protocol",
+      "family_or_name": "parameter-landscape roughness / barren-plateau mitigation analysis",
+      "notes": "Directly follows up on the trainability concern raised in mcclean2018.",
+      "evidence_locator": "title"
+    }
+  ],
+  "workflow_composition_notes": "Standard ADAPT-VQE adaptive-growth loop; paper's contribution is analytical/empirical evidence about the resulting optimization landscape's trainability rather than a new algorithmic component.",
+  "unknown_or_ambiguous_fields": [
+    "arxiv_id: not confirmed in this search-level pass"
+  ],
+  "conflicting_fields": [],
+  "negative_results_or_missing_implementation": null,
+  "implementation_ref": "mayhallgroup_adapt-vqe",
+  "reviewer_decision": {"annotation_state": "draft", "reviewer": null, "reviewed_at": null}
+}

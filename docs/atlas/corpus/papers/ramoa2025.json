@@ -1,0 +1,53 @@
+{
+  "paper_id": "ramoa2025",
+  "annotation_schema_version": "0.1.0",
+  "title": "Reducing the Resources Required by ADAPT-VQE Using Coupled Exchange Operators and Improved Subroutines",
+  "authors": [
+    "Mafalda Ramoa",
+    "Panagiotis G. Anastasiou",
+    "Luis Paulo Santos",
+    "Nicholas J. Mayhall",
+    "Edwin Barnes",
+    "Sophia E. Economou"
+  ],
+  "year": 2025,
+  "venue": "npj Quantum Information",
+  "volume": "11",
+  "pages_or_article_number": "86",
+  "doi": "10.1038/s41534-025-01039-4",
+  "arxiv_id": "2407.08696",
+  "method_family": ["ceo_adapt", "adapt_vqe"],
+  "problem_summary": "Introduces the Coupled Exchange Operator (CEO) pool: linear combinations of excitation operators acting on the same spin-orbitals, capable of simultaneously realizing exchanges between multiple Slater-determinant pairs (unlike standard single-pair excitation operators). Reports over 50% parameter-count reduction vs UCCSD-VQE on LiH/BeH2 with improved accuracy, plus large measurement-cost reductions.",
+  "sources_verified": [
+    "https://arxiv.org/abs/2407.08696",
+    "https://www.nature.com/articles/s41534-025-01039-4"
+  ],
+  "components": [
+    {
+      "component_type": "operator_pool",
+      "family_or_name": "Coupled Exchange Operator (CEO) pool -- OVP-CEO (one shared variational parameter) and MVP-CEO (independently parameterized) variants",
+      "notes": "Each CEO operator can realize exchanges between multiple Slater-determinant pairs simultaneously.",
+      "evidence_locator": "abstract"
+    },
+    {
+      "component_type": "problem",
+      "family_or_name": "LiH and BeH2 ground-state energies",
+      "notes": "Benchmark systems used to report the parameter-count and measurement-cost reductions.",
+      "evidence_locator": "abstract"
+    },
+    {
+      "component_type": "compression",
+      "family_or_name": "parameter-count reduction via CEO pooling (>50% average reduction vs UCCSD-VQE on LiH/BeH2)",
+      "notes": null,
+      "evidence_locator": "abstract"
+    }
+  ],
+  "workflow_composition_notes": "ADAPT-VQE-style adaptive growth loop, with the operator pool restricted to Coupled Exchange Operators instead of individual fermionic excitations, plus 'improved subroutines' (paper title) for measurement/circuit-depth reduction.",
+  "unknown_or_ambiguous_fields": [
+    "specific_improved_subroutines_details: not confirmed without full-text read"
+  ],
+  "conflicting_fields": [],
+  "negative_results_or_missing_implementation": null,
+  "implementation_ref": "mafaldaramoa_ceo-adapt-vqe",
+  "reviewer_decision": {"annotation_state": "draft", "reviewer": null, "reviewed_at": null}
+}
