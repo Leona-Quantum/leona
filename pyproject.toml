@@ -23,6 +23,11 @@ dev = [
 
 [tool.uv.workspace]
 members = ["services/api", "services/worker", "packages/py/*", "evals/harness"]
+# runtimes/vqe/* are independently locked, digest-pinned VQE execution runtimes
+# (ADR-0024). They must never join the root workspace/lock: they carry heavy
+# native scientific dependencies (PySCF, qiskit-nature) that are irrelevant to
+# the control plane and must be promotable/rollback-able one profile at a time.
+exclude = ["runtimes/*"]
 
 [tool.uv]
 # This repo lives under iCloud-synced ~/Documents; iCloud flags venv .pth files

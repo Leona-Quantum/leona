@@ -1,0 +1,10 @@
+[project]
+name = "majorana-vqe-runtime-qiskit-current"
+version = "0.1.0"
+requires-python = ">=3.12"
+dependencies = [
+    "numpy>=1.26",
+    "pyscf>=2.5",
+    "qiskit>=1.4,<2",
+    "qiskit-nature>=0.7",
+]
