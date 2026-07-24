@@ -38,7 +38,7 @@ GPU、QPU、古い論文環境の実行へ進んではならない。
 |---|---|---:|---:|---|
 | 0 | ADR + H2/Qiskit/PennyLane executable spike | no | no | complete |
 | 1 | Component/Workflow/Scientific Experiment schema | no | no | complete |
-| 2 | 25 papers / 15 repositories / 50+ components curated corpus | no | no | next (blocked_owner partway: human-reviewed determination) |
+| 2 | 25 papers / 15 repositories / 50+ components curated corpus | no | no | blocked_owner (mechanics done: 26/15/59; human-review not started) |
 | 3 | Component Registry + experiment evidence in Neon | yes | contract only | not_started |
 | 4 | Atlas Browse / Compare UI | Phase 3 | yes | not_started |
 | 5 | Qiskit/PennyLane runtime + Studio proof execution | Phase 3 | yes | not_started |
@@ -47,12 +47,14 @@ GPU、QPU、古い論文環境の実行へ進んではならない。
 | 8–9 | Deterministic/LLM extraction and reviewed materialization | later | later | later |
 | 10 | Isolated external Repository execution | separate milestone | later | prohibited in MVP |
 
-**Active pickup:** Phase 2 (curated VQE corpus)。Phase 0/1はowner-approved/
-complete (2026-07-24, `docs/atlas/PHASE0_OWNER_REVIEW.md`、Phase 1 Result
-セクション参照)。Phase 2は owner指示により「human-reviewed判定はClaude自身を
-人間reviewerとして数えない」ため、corpus収集・annotation自体は進められても
-80%人間reviewの達成宣言・Phase 2完了はowner stopで止まる。
-一つのphaseのacceptanceを満たす前に次phaseのproduction wiringへ進まない。
+**Active pickup:** owner review of Phase 2 corpus (`docs/atlas/corpus/`,
+`docs/atlas/PHASE2_PROGRESS.md`)。Phase 0/1はowner-approved/complete
+(2026-07-24)。Phase 2は corpus mechanics (26 papers / 15 repositories / 59
+components) まで完了したところでowner stopに到達 — human-reviewed判定
+(Claude自身を人間reviewerとして数えない)、inter-annotator agreement、3件の
+manual-gold comparison reportはowner/human actionが必要なため未着手。
+Phase 3のNeon Component Registryは、Phase 2の80%人間review宣言と
+comparison reportsが揃うまで開始しない。
 
 ---
 
@@ -740,7 +742,10 @@ lossなく表現できる。
 
 ## Phase 2 — Curated VQE Registry
 
-**Status:** not_started  
+**Status:** blocked_owner (corpus mechanics done 2026-07-24: 26 papers, 15
+repositories, 59 components, all `annotation_state: draft`; stopped before
+claiming human-reviewed%, inter-annotator agreement, or the 3 manual-gold
+comparison reports — see `docs/atlas/PHASE2_PROGRESS.md`)  
 **DB change:** none  
 **UI:** none
 
