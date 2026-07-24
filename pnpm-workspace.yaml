@@ -5,10 +5,13 @@ overrides:
   fast-uri: 3.1.4
   js-yaml: 4.3.0
   sharp: 0.35.3
-  # Next 16 pins postcss@8.4.31, which GHSA-6g55-p6wh-862q (CVSS 7.5) now flags.
-  # Dedupe onto 8.5.16 — already in the tree via @tailwindcss/postcss and not
-  # flagged by osv. A minor, backward-compatible bump within postcss 8.x.
-  postcss@8.4.31: 8.5.16
+  # postcss advisories keep landing on the version Next/Tailwind pull in:
+  # GHSA-6g55-p6wh-862q flagged 8.4.31, then GHSA-r28c-9q8g-f849 (CVSS 7.5,
+  # source-map path traversal) flagged everything <= 8.5.17. A targeted
+  # `8.4.31: x` override can't catch the copy @tailwindcss/postcss resolves by
+  # range, so dedupe the whole tree onto the first patched release. All postcss
+  # here is 8.x; 8.5.18 is a backward-compatible patch bump.
+  postcss: 8.5.18
 # 05-security supply chain: build scripts stay blocked. sharp (next/image) is
 # explicitly denied - we do not use image optimization yet; revisit in Phase 3.
 allowBuilds:
