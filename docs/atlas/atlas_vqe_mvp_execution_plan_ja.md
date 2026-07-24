@@ -899,7 +899,11 @@ POST /v1/vqe/experiments/{id}/materialize
 
 ## Phase 4 — Atlas Browse and Compare UI
 
-**Status:** not_started  
+**Status:** implemented (2026-07-24。既存`/repository`へ統合 (ADR-0027)。
+static fixture corpus (26 papers / 15 repositories / 3 comparisons) に対して
+build/typecheck/lint/既存89 testが通過、`next build`成功、dev serverでの
+実HTTPスモークテスト実施済み。実ブラウザでの目視確認は未実施。詳細:
+`docs/atlas/PHASE4_PROGRESS.md`)  
 **Primary UI owner:** Claude Code / designated UI owner  
 **Codex lane:** contracts、API evidence、test fixture、non-UI review
 
