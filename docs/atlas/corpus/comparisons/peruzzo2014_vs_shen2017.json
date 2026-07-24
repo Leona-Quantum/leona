@@ -1,0 +1,92 @@
+{
+  "comparison_id": "peruzzo2014_vs_shen2017",
+  "annotation_schema_version": "0.2.0",
+  "generation_method": "majorana_vqe.comparison.classify_comparison (literature-level, pre-execution)",
+  "generator_version": "0.1.0",
+  "source_record_ids": [
+    "peruzzo2014",
+    "shen2017"
+  ],
+  "generated_at": "2026-07-24T07:06:06Z",
+  "dimensions": [
+    {
+      "name": "ansatz_semantic_definition",
+      "status": "fixed",
+      "detail": "Both records describe a unitary-coupled-cluster-family variational ansatz for the same HeH+ system (peruzzo2014: 'small parameterized variational ansatz, original VQE proposal'; shen2017: explicit UCC).",
+      "evidence_locator": "docs/atlas/corpus/papers/peruzzo2014.json#components[1], docs/atlas/corpus/papers/shen2017.json#components[1]"
+    },
+    {
+      "name": "estimator",
+      "status": "unknown",
+      "detail": null,
+      "evidence_locator": null
+    },
+    {
+      "name": "hamiltonian_digest_or_equivalence",
+      "status": "unknown",
+      "detail": null,
+      "evidence_locator": null
+    },
+    {
+      "name": "initial_point",
+      "status": "unknown",
+      "detail": null,
+      "evidence_locator": null
+    },
+    {
+      "name": "mapping",
+      "status": "unknown",
+      "detail": null,
+      "evidence_locator": null
+    },
+    {
+      "name": "metric_stage",
+      "status": "unknown",
+      "detail": null,
+      "evidence_locator": null
+    },
+    {
+      "name": "optimizer_configuration",
+      "status": "unknown",
+      "detail": null,
+      "evidence_locator": null
+    },
+    {
+      "name": "problem_digest",
+      "status": "unknown",
+      "detail": null,
+      "evidence_locator": null
+    },
+    {
+      "name": "qubit_wire_order",
+      "status": "unknown",
+      "detail": null,
+      "evidence_locator": null
+    },
+    {
+      "name": "reference_state",
+      "status": "unknown",
+      "detail": null,
+      "evidence_locator": null
+    },
+    {
+      "name": "seed",
+      "status": "unknown",
+      "detail": null,
+      "evidence_locator": null
+    },
+    {
+      "name": "stopping_rule",
+      "status": "unknown",
+      "detail": null,
+      "evidence_locator": null
+    }
+  ],
+  "classification": "partial",
+  "unresolved_conflicts": [
+    "Both papers study HeH+, but no computed problem/Hamiltonian digest exists in this corpus to confirm identical geometry/basis -- PROBLEM_DIGEST and HAMILTONIAN_DIGEST_OR_EQUIVALENCE are left unknown rather than assumed from the shared molecule name alone."
+  ],
+  "validation_warnings": [],
+  "is_manual_gold": false,
+  "human_validated": false
+}

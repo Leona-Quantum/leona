@@ -1,0 +1,92 @@
+{
+  "comparison_id": "omalley2016_vs_kandala2017",
+  "annotation_schema_version": "0.2.0",
+  "generation_method": "majorana_vqe.comparison.classify_comparison (literature-level, pre-execution)",
+  "generator_version": "0.1.0",
+  "source_record_ids": [
+    "omalley2016",
+    "kandala2017"
+  ],
+  "generated_at": "2026-07-24T07:06:06Z",
+  "dimensions": [
+    {
+      "name": "ansatz_semantic_definition",
+      "status": "changed",
+      "detail": "omalley2016 uses a unitary coupled cluster ansatz; kandala2017 uses a hardware-efficient ansatz -- different ansatz families, per both records' component notes.",
+      "evidence_locator": "docs/atlas/corpus/papers/omalley2016.json#components[1], docs/atlas/corpus/papers/kandala2017.json#components[1]"
+    },
+    {
+      "name": "estimator",
+      "status": "unknown",
+      "detail": null,
+      "evidence_locator": null
+    },
+    {
+      "name": "hamiltonian_digest_or_equivalence",
+      "status": "unknown",
+      "detail": null,
+      "evidence_locator": null
+    },
+    {
+      "name": "initial_point",
+      "status": "unknown",
+      "detail": null,
+      "evidence_locator": null
+    },
+    {
+      "name": "mapping",
+      "status": "unknown",
+      "detail": null,
+      "evidence_locator": null
+    },
+    {
+      "name": "metric_stage",
+      "status": "unknown",
+      "detail": null,
+      "evidence_locator": null
+    },
+    {
+      "name": "optimizer_configuration",
+      "status": "unknown",
+      "detail": null,
+      "evidence_locator": null
+    },
+    {
+      "name": "problem_digest",
+      "status": "changed",
+      "detail": "omalley2016 studies H2 (molecular hydrogen); kandala2017 studies LiH and BeH2 -- different molecular systems, confirmed by both records' own problem_summary fields. No computed digest exists, but the underlying physical systems are evidenced to differ, which is sufficient to mark this CHANGED (blocking) rather than merely unknown.",
+      "evidence_locator": "docs/atlas/corpus/papers/omalley2016.json#problem_summary, docs/atlas/corpus/papers/kandala2017.json#problem_summary"
+    },
+    {
+      "name": "qubit_wire_order",
+      "status": "unknown",
+      "detail": null,
+      "evidence_locator": null
+    },
+    {
+      "name": "reference_state",
+      "status": "unknown",
+      "detail": null,
+      "evidence_locator": null
+    },
+    {
+      "name": "seed",
+      "status": "unknown",
+      "detail": null,
+      "evidence_locator": null
+    },
+    {
+      "name": "stopping_rule",
+      "status": "unknown",
+      "detail": null,
+      "evidence_locator": null
+    }
+  ],
+  "classification": "invalid",
+  "unresolved_conflicts": [
+    "Different problem systems make this comparison invalid regardless of any other dimension -- recorded here as a genuine example of the schema's INVALID classification, not a defect in the comparison."
+  ],
+  "validation_warnings": [],
+  "is_manual_gold": false,
+  "human_validated": false
+}
