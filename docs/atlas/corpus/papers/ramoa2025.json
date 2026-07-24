@@ -1,6 +1,6 @@
 {
   "paper_id": "ramoa2025",
-  "annotation_schema_version": "0.1.0",
+  "annotation_schema_version": "0.2.0",
   "title": "Reducing the Resources Required by ADAPT-VQE Using Coupled Exchange Operators and Improved Subroutines",
   "authors": [
     "Mafalda Ramoa",
@@ -16,7 +16,10 @@
   "pages_or_article_number": "86",
   "doi": "10.1038/s41534-025-01039-4",
   "arxiv_id": "2407.08696",
-  "method_family": ["ceo_adapt", "adapt_vqe"],
+  "method_family": [
+    "ceo_adapt",
+    "adapt_vqe"
+  ],
   "problem_summary": "Introduces the Coupled Exchange Operator (CEO) pool: linear combinations of excitation operators acting on the same spin-orbitals, capable of simultaneously realizing exchanges between multiple Slater-determinant pairs (unlike standard single-pair excitation operators). Reports over 50% parameter-count reduction vs UCCSD-VQE on LiH/BeH2 with improved accuracy, plus large measurement-cost reductions.",
   "sources_verified": [
     "https://arxiv.org/abs/2407.08696",
@@ -49,5 +52,11 @@
   "conflicting_fields": [],
   "negative_results_or_missing_implementation": null,
   "implementation_ref": "mafaldaramoa_ceo-adapt-vqe",
-  "reviewer_decision": {"annotation_state": "draft", "reviewer": null, "reviewed_at": null}
+  "validation_state": {
+    "state": "machine_validated",
+    "validator_version": "0.1.0",
+    "validated_at": "2026-07-24T07:03:59Z",
+    "validation_errors": [],
+    "validation_warnings": []
+  }
 }

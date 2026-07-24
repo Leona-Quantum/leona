@@ -1,15 +1,24 @@
 {
   "paper_id": "zhao2020",
-  "annotation_schema_version": "0.1.0",
+  "annotation_schema_version": "0.2.0",
   "title": "Measurement reduction in variational quantum algorithms",
-  "authors": ["Andrew Zhao", "Andrew Tranter", "William M. Kirby", "Shu Fay Ung", "Akimasa Miyake", "Peter J. Love"],
+  "authors": [
+    "Andrew Zhao",
+    "Andrew Tranter",
+    "William M. Kirby",
+    "Shu Fay Ung",
+    "Akimasa Miyake",
+    "Peter J. Love"
+  ],
   "year": 2020,
   "venue": "Physical Review A",
   "volume": "101",
   "pages_or_article_number": "062322",
   "doi": "10.1103/PhysRevA.101.062322",
   "arxiv_id": "1908.08067",
-  "method_family": ["measurement_reduction"],
+  "method_family": [
+    "measurement_reduction"
+  ],
   "problem_summary": "Uses unitary partitioning -- appending additional unitary operations to the ansatz preparation -- to reduce the number of Hamiltonian terms that must be separately measured. Proves linear term reduction (in orbital count) is always achievable for electronic structure Hamiltonians, and finds roughly an order-of-magnitude reduction in term count for 10-30 qubit systems.",
   "sources_verified": [
     "https://arxiv.org/abs/1908.08067",
@@ -36,5 +45,11 @@
   "conflicting_fields": [],
   "negative_results_or_missing_implementation": null,
   "implementation_ref": null,
-  "reviewer_decision": {"annotation_state": "draft", "reviewer": null, "reviewed_at": null}
+  "validation_state": {
+    "state": "machine_validated",
+    "validator_version": "0.1.0",
+    "validated_at": "2026-07-24T07:03:59Z",
+    "validation_errors": [],
+    "validation_warnings": []
+  }
 }

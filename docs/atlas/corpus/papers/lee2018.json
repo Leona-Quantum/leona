@@ -1,15 +1,22 @@
 {
   "paper_id": "lee2018",
-  "annotation_schema_version": "0.1.0",
+  "annotation_schema_version": "0.2.0",
   "title": "Generalized Unitary Coupled Cluster Wave functions for Quantum Computation",
-  "authors": ["Joonho Lee", "William J. Huggins", "Martin Head-Gordon", "K. Birgitta Whaley"],
+  "authors": [
+    "Joonho Lee",
+    "William J. Huggins",
+    "Martin Head-Gordon",
+    "K. Birgitta Whaley"
+  ],
   "year": 2018,
   "venue": "Journal of Chemical Theory and Computation",
   "volume": null,
   "pages_or_article_number": null,
   "doi": "10.1021/acs.jctc.8b01004",
   "arxiv_id": "1810.02327",
-  "method_family": ["vqe_uccsd"],
+  "method_family": [
+    "vqe_uccsd"
+  ],
   "problem_summary": "Introduces k-UpCCGSD, a unitary coupled-cluster ansatz built from a family of sparse generalized paired-doubles operators, offering an affordable, systematically improvable alternative to full UCCSD suitable for near-term quantum hardware.",
   "sources_verified": [
     "https://arxiv.org/abs/1810.02327",
@@ -31,5 +38,11 @@
   "conflicting_fields": [],
   "negative_results_or_missing_implementation": null,
   "implementation_ref": null,
-  "reviewer_decision": {"annotation_state": "draft", "reviewer": null, "reviewed_at": null}
+  "validation_state": {
+    "state": "machine_validated",
+    "validator_version": "0.1.0",
+    "validated_at": "2026-07-24T07:03:59Z",
+    "validation_errors": [],
+    "validation_warnings": []
+  }
 }

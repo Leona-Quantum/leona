@@ -1,19 +1,31 @@
 {
   "repo_id": "mafaldaramoa_ceo-adapt-vqe",
-  "annotation_schema_version": "0.1.0",
+  "annotation_schema_version": "0.2.0",
   "repository_url": "https://github.com/mafaldaramoa/ceo-adapt-vqe",
-  "relation": "official",
-  "associated_paper_ids": ["ramoa2025", "anastasiou2024"],
+  "relation": "author",
+  "associated_paper_ids": [
+    "ramoa2025",
+    "anastasiou2024"
+  ],
   "paper_associated_commit": null,
   "license_state": "unknown",
   "environment_completeness": "unknown",
   "evidence_locators": [
     "https://github.com/mafaldaramoa/ceo-adapt-vqe (description: 'Simulation code for ADAPT-VQE with CEO pools and Hessian recycling', also confirmed to support TETRIS and orbital optimization)"
   ],
-  "sources_verified": ["https://github.com/mafaldaramoa/ceo-adapt-vqe"],
+  "sources_verified": [
+    "https://github.com/mafaldaramoa/ceo-adapt-vqe"
+  ],
   "unknown_or_ambiguous_fields": [
     "license_state: not confirmed in this search-level pass",
-    "whether TETRIS support in this repo corresponds exactly to anastasiou2024's published algorithm or a later variant: not confirmed without reading the code"
+    "whether TETRIS support in this repo corresponds exactly to anastasiou2024's published algorithm or a later variant: not confirmed without reading the code",
+    "relation=author applies confidently to ramoa2025 (this is Mafalda Ramoa's own repository, and she is ramoa2025's first author). Her authorship status on anastasiou2024 specifically was NOT independently confirmed in this search-level pass (Panagiotis G. Anastasiou co-authors both ramoa2025 and anastasiou2024, but that does not establish Ramoa is an anastasiou2024 author too) -- the anastasiou2024 association here should be treated as weaker than 'author', closer to a relevant cross-reference, until that is checked"
   ],
-  "reviewer_decision": {"annotation_state": "draft", "reviewer": null, "reviewed_at": null}
+  "validation_state": {
+    "state": "machine_validated",
+    "validator_version": "0.1.0",
+    "validated_at": "2026-07-24T07:03:59Z",
+    "validation_errors": [],
+    "validation_warnings": []
+  }
 }

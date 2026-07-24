@@ -1,6 +1,6 @@
 {
   "paper_id": "peruzzo2014",
-  "annotation_schema_version": "0.1.0",
+  "annotation_schema_version": "0.2.0",
   "title": "A variational eigenvalue solver on a photonic quantum processor",
   "authors": [
     "Alberto Peruzzo",
@@ -18,7 +18,9 @@
   "pages_or_article_number": "4213",
   "doi": "10.1038/ncomms5213",
   "arxiv_id": "1304.3061",
-  "method_family": ["vqe_uccsd"],
+  "method_family": [
+    "vqe_uccsd"
+  ],
   "problem_summary": "Introduces the VQE algorithm itself: state preparation via a small parameterized ansatz plus classical outer-loop optimization, replacing deep coherent evolution. Demonstrated on the HeH+ (helium hydride cation) ground-state energy.",
   "sources_verified": [
     "https://www.nature.com/articles/ncomms5213",
@@ -58,9 +60,11 @@
   "conflicting_fields": [],
   "negative_results_or_missing_implementation": null,
   "implementation_ref": null,
-  "reviewer_decision": {
-    "annotation_state": "draft",
-    "reviewer": null,
-    "reviewed_at": null
+  "validation_state": {
+    "state": "machine_validated",
+    "validator_version": "0.1.0",
+    "validated_at": "2026-07-24T07:03:59Z",
+    "validation_errors": [],
+    "validation_warnings": []
   }
 }

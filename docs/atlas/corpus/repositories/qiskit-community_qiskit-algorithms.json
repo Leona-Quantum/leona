@@ -1,9 +1,13 @@
 {
   "repo_id": "qiskit-community_qiskit-algorithms",
-  "annotation_schema_version": "0.1.0",
+  "annotation_schema_version": "0.2.0",
   "repository_url": "https://github.com/qiskit-community/qiskit-algorithms",
-  "relation": "third_party_reference_implementation",
-  "associated_paper_ids": ["grimsley2019", "kandala2017", "kandala2019"],
+  "relation": "general_framework_library",
+  "associated_paper_ids": [
+    "grimsley2019",
+    "kandala2017",
+    "kandala2019"
+  ],
   "paper_associated_commit": null,
   "license_state": "Apache-2.0",
   "environment_completeness": "unknown",
@@ -18,5 +22,11 @@
   "unknown_or_ambiguous_fields": [
     "third-party framework implementation of the ADAPT-VQE method (grimsley2019), not the original authors' own code -- also the actual qiskit_algorithms package this project's own Phase 0 qiskit-current spike depends on (runtimes/vqe/qiskit-current/pyproject.toml)"
   ],
-  "reviewer_decision": {"annotation_state": "draft", "reviewer": null, "reviewed_at": null}
+  "validation_state": {
+    "state": "machine_validated",
+    "validator_version": "0.1.0",
+    "validated_at": "2026-07-24T07:03:59Z",
+    "validation_errors": [],
+    "validation_warnings": []
+  }
 }

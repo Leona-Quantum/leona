@@ -1,15 +1,22 @@
 {
   "paper_id": "grimsley2019",
-  "annotation_schema_version": "0.1.0",
+  "annotation_schema_version": "0.2.0",
   "title": "An adaptive variational algorithm for exact molecular simulations on a quantum computer",
-  "authors": ["Harper R. Grimsley", "Sophia E. Economou", "Edwin Barnes", "Nicholas J. Mayhall"],
+  "authors": [
+    "Harper R. Grimsley",
+    "Sophia E. Economou",
+    "Edwin Barnes",
+    "Nicholas J. Mayhall"
+  ],
   "year": 2019,
   "venue": "Nature Communications",
   "volume": "10",
   "pages_or_article_number": "3007",
   "doi": "10.1038/s41467-019-10988-2",
   "arxiv_id": "1812.11173",
-  "method_family": ["adapt_vqe"],
+  "method_family": [
+    "adapt_vqe"
+  ],
   "problem_summary": "Introduces ADAPT-VQE: instead of a fixed ansatz, the circuit is grown one fermionic operator at a time from an operator pool, chosen adaptively to the molecule being simulated, producing shallower circuits with fewer parameters than a fixed UCCSD ansatz.",
   "sources_verified": [
     "https://www.nature.com/articles/s41467-019-10988-2",
@@ -55,9 +62,11 @@
   "conflicting_fields": [],
   "negative_results_or_missing_implementation": null,
   "implementation_ref": "mayhallgroup_adapt-vqe",
-  "reviewer_decision": {
-    "annotation_state": "draft",
-    "reviewer": null,
-    "reviewed_at": null
+  "validation_state": {
+    "state": "machine_validated",
+    "validator_version": "0.1.0",
+    "validated_at": "2026-07-24T07:03:59Z",
+    "validation_errors": [],
+    "validation_warnings": []
   }
 }

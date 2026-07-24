@@ -1,6 +1,6 @@
 {
   "paper_id": "tang2021",
-  "annotation_schema_version": "0.1.0",
+  "annotation_schema_version": "0.2.0",
   "title": "Qubit-ADAPT-VQE: An Adaptive Algorithm for Constructing Hardware-Efficient Ansatze on a Quantum Processor",
   "authors": [
     "Ho Lun Tang",
@@ -17,7 +17,10 @@
   "pages_or_article_number": "020310",
   "doi": "10.1103/PRXQuantum.2.020310",
   "arxiv_id": "1911.10205",
-  "method_family": ["qubit_adapt", "adapt_vqe"],
+  "method_family": [
+    "qubit_adapt",
+    "adapt_vqe"
+  ],
   "problem_summary": "Extends ADAPT-VQE with a qubit-excitation-based operator pool (rather than fermionic), drastically reducing circuit depth; proves a minimal pool size scaling linearly with qubit count still guarantees the ability to construct exact ansatze.",
   "sources_verified": [
     "https://link.aps.org/doi/10.1103/PRXQuantum.2.020310",
@@ -57,9 +60,11 @@
   "conflicting_fields": [],
   "negative_results_or_missing_implementation": null,
   "implementation_ref": "mafaldaramoa_vqe",
-  "reviewer_decision": {
-    "annotation_state": "draft",
-    "reviewer": null,
-    "reviewed_at": null
+  "validation_state": {
+    "state": "machine_validated",
+    "validator_version": "0.1.0",
+    "validated_at": "2026-07-24T07:03:59Z",
+    "validation_errors": [],
+    "validation_warnings": []
   }
 }

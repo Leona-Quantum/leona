@@ -1,17 +1,26 @@
 {
   "paper_id": "ryabinkin2018",
-  "annotation_schema_version": "0.1.0",
+  "annotation_schema_version": "0.2.0",
   "title": "Qubit Coupled Cluster Method: A Systematic Approach to Quantum Chemistry on a Quantum Computer",
-  "authors": ["Ilya G. Ryabinkin", "Tzu-Ching Yen", "Scott N. Genin", "Artur F. Izmaylov"],
+  "authors": [
+    "Ilya G. Ryabinkin",
+    "Tzu-Ching Yen",
+    "Scott N. Genin",
+    "Artur F. Izmaylov"
+  ],
   "year": 2018,
   "venue": "Journal of Chemical Theory and Computation",
   "volume": "14",
   "pages_or_article_number": "6317-6326",
   "doi": "10.1021/acs.jctc.8b00932",
   "arxiv_id": null,
-  "method_family": ["vqe_uccsd"],
+  "method_family": [
+    "vqe_uccsd"
+  ],
   "problem_summary": "Introduces the Qubit Coupled Cluster (QCC) method: an ansatz constructed directly in qubit space (rather than lifted from a fermionic coupled-cluster expansion) via a systematic, energy-gradient-screened selection of Pauli-word entangling generators.",
-  "sources_verified": ["https://pubs.acs.org/doi/10.1021/acs.jctc.8b00932"],
+  "sources_verified": [
+    "https://pubs.acs.org/doi/10.1021/acs.jctc.8b00932"
+  ],
   "components": [
     {
       "component_type": "ansatz",
@@ -34,5 +43,11 @@
   "conflicting_fields": [],
   "negative_results_or_missing_implementation": null,
   "implementation_ref": null,
-  "reviewer_decision": {"annotation_state": "draft", "reviewer": null, "reviewed_at": null}
+  "validation_state": {
+    "state": "machine_validated",
+    "validator_version": "0.1.0",
+    "validated_at": "2026-07-24T07:03:59Z",
+    "validation_errors": [],
+    "validation_warnings": []
+  }
 }

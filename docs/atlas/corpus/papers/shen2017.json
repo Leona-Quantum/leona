@@ -1,15 +1,24 @@
 {
   "paper_id": "shen2017",
-  "annotation_schema_version": "0.1.0",
+  "annotation_schema_version": "0.2.0",
   "title": "Quantum implementation of the unitary coupled cluster for simulating molecular electronic structure",
-  "authors": ["Yangchao Shen", "Xiang Zhang", "Shuaining Zhang", "Jing-Ning Zhang", "Man-Hong Yung", "Kihwan Kim"],
+  "authors": [
+    "Yangchao Shen",
+    "Xiang Zhang",
+    "Shuaining Zhang",
+    "Jing-Ning Zhang",
+    "Man-Hong Yung",
+    "Kihwan Kim"
+  ],
   "year": 2017,
   "venue": "Physical Review A",
   "volume": "95",
   "pages_or_article_number": "020501",
   "doi": "10.1103/PhysRevA.95.020501",
   "arxiv_id": "1506.00443",
-  "method_family": ["vqe_uccsd"],
+  "method_family": [
+    "vqe_uccsd"
+  ],
   "problem_summary": "First experimental demonstration of the unitary coupled cluster VQE ansatz on a trapped-ion system, probing the HeH+ ground-state energy surface, studying excited-state energies, and simulating non-perturbative bond dissociation -- notable as a cross-hardware (trapped-ion, vs. photonic in peruzzo2014 and superconducting in omalley2016/kandala2017) reproduction of the same HeH+ problem class.",
   "sources_verified": [
     "https://arxiv.org/abs/1506.00443",
@@ -40,5 +49,11 @@
   "conflicting_fields": [],
   "negative_results_or_missing_implementation": null,
   "implementation_ref": null,
-  "reviewer_decision": {"annotation_state": "draft", "reviewer": null, "reviewed_at": null}
+  "validation_state": {
+    "state": "machine_validated",
+    "validator_version": "0.1.0",
+    "validated_at": "2026-07-24T07:03:59Z",
+    "validation_errors": [],
+    "validation_warnings": []
+  }
 }

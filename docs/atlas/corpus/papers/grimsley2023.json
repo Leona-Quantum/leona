@@ -1,15 +1,23 @@
 {
   "paper_id": "grimsley2023",
-  "annotation_schema_version": "0.1.0",
+  "annotation_schema_version": "0.2.0",
   "title": "Adaptive, problem-tailored variational quantum eigensolver mitigates rough parameter landscapes and barren plateaus",
-  "authors": ["Harper R. Grimsley", "George S. Barron", "Edwin Barnes", "Sophia E. Economou", "Nicholas J. Mayhall"],
+  "authors": [
+    "Harper R. Grimsley",
+    "George S. Barron",
+    "Edwin Barnes",
+    "Sophia E. Economou",
+    "Nicholas J. Mayhall"
+  ],
   "year": 2023,
   "venue": "npj Quantum Information",
   "volume": "9",
   "pages_or_article_number": "19",
   "doi": "10.1038/s41534-023-00681-0",
   "arxiv_id": null,
-  "method_family": ["adapt_vqe"],
+  "method_family": [
+    "adapt_vqe"
+  ],
   "problem_summary": "Argues and demonstrates that ADAPT-VQE's problem-tailored, adaptively-grown ansatz mitigates both rough parameter landscapes and barren plateaus better than fixed-ansatz VQE, connecting the ADAPT-VQE family directly to the trainability concerns raised in mcclean2018.",
   "sources_verified": [
     "https://www.nature.com/articles/s41534-023-00681-0",
@@ -36,5 +44,11 @@
   "conflicting_fields": [],
   "negative_results_or_missing_implementation": null,
   "implementation_ref": "mayhallgroup_adapt-vqe",
-  "reviewer_decision": {"annotation_state": "draft", "reviewer": null, "reviewed_at": null}
+  "validation_state": {
+    "state": "machine_validated",
+    "validator_version": "0.1.0",
+    "validated_at": "2026-07-24T07:03:59Z",
+    "validation_errors": [],
+    "validation_warnings": []
+  }
 }

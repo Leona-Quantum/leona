@@ -1,17 +1,32 @@
 {
   "repo_id": "quantumlib_openfermion-pyscf",
-  "annotation_schema_version": "0.1.0",
+  "annotation_schema_version": "0.2.0",
   "repository_url": "https://github.com/quantumlib/OpenFermion-PySCF",
-  "relation": "third_party_reference_implementation",
-  "associated_paper_ids": ["mcclean2016", "omalley2016", "google2020", "lee2018"],
+  "relation": "general_framework_library",
+  "associated_paper_ids": [
+    "mcclean2016",
+    "omalley2016",
+    "google2020",
+    "lee2018"
+  ],
   "paper_associated_commit": null,
   "license_state": "Apache-2.0 (OpenFermion core); BSD-2-Clause (PySCF plugin layer, per search-level summary)",
   "environment_completeness": "unknown",
-  "evidence_locators": ["https://github.com/quantumlib/OpenFermion-PySCF"],
-  "sources_verified": ["https://github.com/quantumlib/OpenFermion-PySCF"],
+  "evidence_locators": [
+    "https://github.com/quantumlib/OpenFermion-PySCF"
+  ],
+  "sources_verified": [
+    "https://github.com/quantumlib/OpenFermion-PySCF"
+  ],
   "unknown_or_ambiguous_fields": [
     "license_state: split-license summary taken from a secondary description, not independently confirmed by opening the LICENSE files directly in this pass",
     "PySCF electronic-structure integral backend used by this project's own Phase 0 spike (runtimes/vqe/qiskit-current, runtimes/vqe/pennylane-current) too, though via the plain pyscf package rather than this OpenFermion plugin specifically"
   ],
-  "reviewer_decision": {"annotation_state": "draft", "reviewer": null, "reviewed_at": null}
+  "validation_state": {
+    "state": "machine_validated",
+    "validator_version": "0.1.0",
+    "validated_at": "2026-07-24T07:03:59Z",
+    "validation_errors": [],
+    "validation_warnings": []
+  }
 }

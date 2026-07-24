@@ -1,15 +1,24 @@
 {
   "paper_id": "feniou2023",
-  "annotation_schema_version": "0.1.0",
+  "annotation_schema_version": "0.2.0",
   "title": "Overlap-ADAPT-VQE: Practical Quantum Chemistry on Quantum Computers via Overlap-Guided Compact Ansatze",
-  "authors": ["Cesar Feniou", "Muhammad Hassan", "Diata Traore", "Emmanuel Giner", "Yvon Maday", "et al."],
+  "authors": [
+    "Cesar Feniou",
+    "Muhammad Hassan",
+    "Diata Traore",
+    "Emmanuel Giner",
+    "Yvon Maday",
+    "et al."
+  ],
   "year": 2023,
   "venue": "Communications Physics",
   "volume": "6",
   "pages_or_article_number": "192",
   "doi": null,
   "arxiv_id": "2301.10196",
-  "method_family": ["adapt_vqe"],
+  "method_family": [
+    "adapt_vqe"
+  ],
   "problem_summary": "Grows the ADAPT-VQE ansatz by maximizing overlap with an intermediate target wavefunction that already captures some electronic correlation (rather than the standard energy-gradient selection criterion alone), producing ultra-compact ansatze -- reported especially advantageous, with large circuit-depth savings, for strongly correlated systems.",
   "sources_verified": [
     "https://arxiv.org/abs/2301.10196",
@@ -37,5 +46,11 @@
   "conflicting_fields": [],
   "negative_results_or_missing_implementation": null,
   "implementation_ref": null,
-  "reviewer_decision": {"annotation_state": "draft", "reviewer": null, "reviewed_at": null}
+  "validation_state": {
+    "state": "machine_validated",
+    "validator_version": "0.1.0",
+    "validated_at": "2026-07-24T07:03:59Z",
+    "validation_errors": [],
+    "validation_warnings": []
+  }
 }

@@ -1,19 +1,29 @@
 {
   "repo_id": "mafaldaramoa_vqe",
-  "annotation_schema_version": "0.1.0",
+  "annotation_schema_version": "0.2.0",
   "repository_url": "https://github.com/mafaldaramoa/VQE",
   "relation": "third_party_reference_implementation",
-  "associated_paper_ids": ["tang2021"],
+  "associated_paper_ids": [
+    "tang2021"
+  ],
   "paper_associated_commit": null,
   "license_state": "unknown",
   "environment_completeness": "unknown",
   "evidence_locators": [
     "https://github.com/mafaldaramoa/VQE (description: 'VQE Dissertation Project', implements ADAPT-VQE variants including qubit-ADAPT using Cirq, OpenFermion, and PySCF)"
   ],
-  "sources_verified": ["https://github.com/mafaldaramoa/VQE"],
+  "sources_verified": [
+    "https://github.com/mafaldaramoa/VQE"
+  ],
   "unknown_or_ambiguous_fields": [
     "license_state: not confirmed in this search-level pass",
     "not authored by tang2021's own authors -- an independent reproduction, not the official implementation"
   ],
-  "reviewer_decision": {"annotation_state": "draft", "reviewer": null, "reviewed_at": null}
+  "validation_state": {
+    "state": "machine_validated",
+    "validator_version": "0.1.0",
+    "validated_at": "2026-07-24T07:03:59Z",
+    "validation_errors": [],
+    "validation_warnings": []
+  }
 }

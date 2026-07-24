@@ -1,15 +1,20 @@
 {
   "paper_id": "omalley2016",
-  "annotation_schema_version": "0.1.0",
+  "annotation_schema_version": "0.2.0",
   "title": "Scalable Quantum Simulation of Molecular Energies",
-  "authors": ["P. J. J. O'Malley", "et al."],
+  "authors": [
+    "P. J. J. O'Malley",
+    "et al."
+  ],
   "year": 2016,
   "venue": "Physical Review X",
   "volume": "6",
   "pages_or_article_number": "031007",
   "doi": "10.1103/PhysRevX.6.031007",
   "arxiv_id": "1512.06860",
-  "method_family": ["vqe_uccsd"],
+  "method_family": [
+    "vqe_uccsd"
+  ],
   "problem_summary": "First electronic structure calculation on a quantum computer without exponentially costly precompilation; computes the H2 (molecular hydrogen) dissociation energy surface using superconducting qubits, comparing VQE-with-UCC against Trotterized quantum phase estimation.",
   "sources_verified": [
     "https://link.aps.org/doi/10.1103/PhysRevX.6.031007",
@@ -48,9 +53,11 @@
   "conflicting_fields": [],
   "negative_results_or_missing_implementation": null,
   "implementation_ref": null,
-  "reviewer_decision": {
-    "annotation_state": "draft",
-    "reviewer": null,
-    "reviewed_at": null
+  "validation_state": {
+    "state": "machine_validated",
+    "validator_version": "0.1.0",
+    "validated_at": "2026-07-24T07:03:59Z",
+    "validation_errors": [],
+    "validation_warnings": []
   }
 }

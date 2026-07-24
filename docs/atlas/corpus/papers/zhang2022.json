@@ -1,10 +1,17 @@
 {
   "paper_id": "zhang2022",
-  "annotation_schema_version": "0.1.0",
+  "annotation_schema_version": "0.2.0",
   "title": "Variational quantum eigensolver with reduced circuit complexity",
   "authors": [
-    "Yu Zhang", "Lukasz Cincio", "Christian F. A. Negre", "Piotr Czarnik", "Patrick J. Coles",
-    "Petr M. Anisimov", "Susan M. Mniszewski", "Sergei Tretiak", "Pavel A. Dub"
+    "Yu Zhang",
+    "Lukasz Cincio",
+    "Christian F. A. Negre",
+    "Piotr Czarnik",
+    "Patrick J. Coles",
+    "Petr M. Anisimov",
+    "Susan M. Mniszewski",
+    "Sergei Tretiak",
+    "Pavel A. Dub"
   ],
   "year": 2022,
   "venue": "npj Quantum Information",
@@ -12,7 +19,9 @@
   "pages_or_article_number": "96",
   "doi": "10.1038/s41534-022-00599-z",
   "arxiv_id": "2106.07619",
-  "method_family": ["pruning_compression"],
+  "method_family": [
+    "pruning_compression"
+  ],
   "problem_summary": "Introduces ClusterVQE: splits the qubit space into entanglement-informed clusters distributed across shallower individual circuits, with inter-cluster entanglement captured via a 'dressed' effective Hamiltonian, trading additional classical resources for reduced circuit depth/qubit count per subcircuit.",
   "sources_verified": [
     "https://arxiv.org/abs/2106.07619",
@@ -39,5 +48,11 @@
   "conflicting_fields": [],
   "negative_results_or_missing_implementation": null,
   "implementation_ref": null,
-  "reviewer_decision": {"annotation_state": "draft", "reviewer": null, "reviewed_at": null}
+  "validation_state": {
+    "state": "machine_validated",
+    "validator_version": "0.1.0",
+    "validated_at": "2026-07-24T07:03:59Z",
+    "validation_errors": [],
+    "validation_warnings": []
+  }
 }

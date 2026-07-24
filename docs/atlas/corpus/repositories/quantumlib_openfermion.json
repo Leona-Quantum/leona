@@ -1,9 +1,13 @@
 {
   "repo_id": "quantumlib_openfermion",
-  "annotation_schema_version": "0.1.0",
+  "annotation_schema_version": "0.2.0",
   "repository_url": "https://github.com/quantumlib/OpenFermion",
-  "relation": "official",
-  "associated_paper_ids": ["mcclean2016", "omalley2016", "google2020"],
+  "relation": "general_framework_library",
+  "associated_paper_ids": [
+    "mcclean2016",
+    "omalley2016",
+    "google2020"
+  ],
   "paper_associated_commit": null,
   "license_state": "Apache-2.0",
   "environment_completeness": "unknown",
@@ -18,5 +22,11 @@
   "unknown_or_ambiguous_fields": [
     "not a paper-specific release -- a general electronic-structure package by Google (with multi-institution contributors) underlying the broader research program these papers belong to, not code released alongside any single one of them"
   ],
-  "reviewer_decision": {"annotation_state": "draft", "reviewer": null, "reviewed_at": null}
+  "validation_state": {
+    "state": "machine_validated",
+    "validator_version": "0.1.0",
+    "validated_at": "2026-07-24T07:03:59Z",
+    "validation_errors": [],
+    "validation_warnings": []
+  }
 }

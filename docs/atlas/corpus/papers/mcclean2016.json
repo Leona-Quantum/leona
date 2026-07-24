@@ -1,15 +1,22 @@
 {
   "paper_id": "mcclean2016",
-  "annotation_schema_version": "0.1.0",
+  "annotation_schema_version": "0.2.0",
   "title": "The theory of variational hybrid quantum-classical algorithms",
-  "authors": ["Jarrod R. McClean", "Jonathan Romero", "Ryan Babbush", "Alan Aspuru-Guzik"],
+  "authors": [
+    "Jarrod R. McClean",
+    "Jonathan Romero",
+    "Ryan Babbush",
+    "Alan Aspuru-Guzik"
+  ],
   "year": 2016,
   "venue": "New Journal of Physics",
   "volume": "18",
   "pages_or_article_number": "023023",
   "doi": "10.1088/1367-2630/18/2/023023",
   "arxiv_id": "1509.04279",
-  "method_family": ["vqe_uccsd"],
+  "method_family": [
+    "vqe_uccsd"
+  ],
   "problem_summary": "Extends the general theory of the VQE hybrid quantum-classical optimization scheme, develops a variational adiabatic ansatz, and explores unitary coupled cluster within that theoretical framework, suggesting algorithmic improvements for practical implementation.",
   "sources_verified": [
     "https://iopscience.iop.org/article/10.1088/1367-2630/18/2/023023",
@@ -36,5 +43,11 @@
   "conflicting_fields": [],
   "negative_results_or_missing_implementation": null,
   "implementation_ref": null,
-  "reviewer_decision": {"annotation_state": "draft", "reviewer": null, "reviewed_at": null}
+  "validation_state": {
+    "state": "machine_validated",
+    "validator_version": "0.1.0",
+    "validated_at": "2026-07-24T07:03:59Z",
+    "validation_errors": [],
+    "validation_warnings": []
+  }
 }

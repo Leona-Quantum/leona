@@ -1,12 +1,26 @@
 {
   "paper_id": "moll2018",
-  "annotation_schema_version": "0.1.0",
+  "annotation_schema_version": "0.2.0",
   "title": "Quantum optimization using variational algorithms on near-term quantum devices",
   "authors": [
-    "Nikolaj Moll", "Panagiotis Barkoutsos", "Lev S. Bishop", "Jerry M. Chow", "Andrew Cross",
-    "Daniel J. Egger", "Stefan Filipp", "Andreas Fuhrer", "Jay M. Gambetta", "Marc Ganzhorn",
-    "Abhinav Kandala", "Antonio Mezzacapo", "Peter Muller", "Walter Riess", "Gian Salis",
-    "John Smolin", "Ivano Tavernelli", "Kristan Temme"
+    "Nikolaj Moll",
+    "Panagiotis Barkoutsos",
+    "Lev S. Bishop",
+    "Jerry M. Chow",
+    "Andrew Cross",
+    "Daniel J. Egger",
+    "Stefan Filipp",
+    "Andreas Fuhrer",
+    "Jay M. Gambetta",
+    "Marc Ganzhorn",
+    "Abhinav Kandala",
+    "Antonio Mezzacapo",
+    "Peter Muller",
+    "Walter Riess",
+    "Gian Salis",
+    "John Smolin",
+    "Ivano Tavernelli",
+    "Kristan Temme"
   ],
   "year": 2018,
   "venue": "Quantum Science and Technology",
@@ -14,9 +28,13 @@
   "pages_or_article_number": "030503",
   "doi": null,
   "arxiv_id": "1710.01022",
-  "method_family": ["vqe_uccsd"],
+  "method_family": [
+    "vqe_uccsd"
+  ],
   "problem_summary": "Practitioner-oriented overview (IBM) of running variational quantum algorithms including VQE on near-term superconducting devices, covering ansatz choice, error sources, and optimization practicalities for the hardware generation available at publication.",
-  "sources_verified": ["https://arxiv.org/abs/1710.01022"],
+  "sources_verified": [
+    "https://arxiv.org/abs/1710.01022"
+  ],
   "components": [
     {
       "component_type": "evaluation_protocol",
@@ -32,5 +50,11 @@
   "conflicting_fields": [],
   "negative_results_or_missing_implementation": null,
   "implementation_ref": null,
-  "reviewer_decision": {"annotation_state": "draft", "reviewer": null, "reviewed_at": null}
+  "validation_state": {
+    "state": "machine_validated",
+    "validator_version": "0.1.0",
+    "validated_at": "2026-07-24T07:03:59Z",
+    "validation_errors": [],
+    "validation_warnings": []
+  }
 }

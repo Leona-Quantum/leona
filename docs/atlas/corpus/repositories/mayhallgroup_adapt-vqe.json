@@ -1,17 +1,32 @@
 {
   "repo_id": "mayhallgroup_adapt-vqe",
-  "annotation_schema_version": "0.1.0",
+  "annotation_schema_version": "0.2.0",
   "repository_url": "https://github.com/mayhallgroup/adapt-vqe",
-  "relation": "official",
-  "associated_paper_ids": ["grimsley2019", "grimsley2023"],
+  "relation": "author",
+  "associated_paper_ids": [
+    "grimsley2019",
+    "grimsley2023"
+  ],
   "paper_associated_commit": null,
   "license_state": "unknown",
   "environment_completeness": "unknown",
-  "evidence_locators": ["https://github.com/mayhallgroup/adapt-vqe"],
-  "sources_verified": ["https://github.com/mayhallgroup/adapt-vqe", "https://github.com/mayhallgroup"],
+  "evidence_locators": [
+    "https://github.com/mayhallgroup/adapt-vqe"
+  ],
+  "sources_verified": [
+    "https://github.com/mayhallgroup/adapt-vqe",
+    "https://github.com/mayhallgroup"
+  ],
   "unknown_or_ambiguous_fields": [
     "license_state: not confirmed in this search-level pass (repo page found, license file contents not opened)",
-    "paper_associated_commit: not confirmed; repository has evolved beyond the original 2019 paper and likely also carries grimsley2023's work"
+    "paper_associated_commit: not confirmed; repository has evolved beyond the original 2019 paper and likely also carries grimsley2023's work",
+    "relation=author (not official): this is the Mayhall group's own lab GitHub org, clearly maintained by grimsley2019/grimsley2023's own authors, but no direct citation from the papers' own text/supplementary linking this exact URL was independently confirmed in this search-level pass -- see ANNOTATION_GUIDELINE.md \u00a74.1 for the official-vs-author distinction"
   ],
-  "reviewer_decision": {"annotation_state": "draft", "reviewer": null, "reviewed_at": null}
+  "validation_state": {
+    "state": "machine_validated",
+    "validator_version": "0.1.0",
+    "validated_at": "2026-07-24T07:03:59Z",
+    "validation_errors": [],
+    "validation_warnings": []
+  }
 }

@@ -1,17 +1,28 @@
 {
   "paper_id": "kandala2019",
-  "annotation_schema_version": "0.1.0",
+  "annotation_schema_version": "0.2.0",
   "title": "Error mitigation extends the computational reach of a noisy quantum processor",
-  "authors": ["Abhinav Kandala", "Kristan Temme", "Antonio D. Corcoles", "Antonio Mezzacapo", "Jerry M. Chow", "Jay M. Gambetta"],
+  "authors": [
+    "Abhinav Kandala",
+    "Kristan Temme",
+    "Antonio D. Corcoles",
+    "Antonio Mezzacapo",
+    "Jerry M. Chow",
+    "Jay M. Gambetta"
+  ],
   "year": 2019,
   "venue": "Nature",
   "volume": "567",
   "pages_or_article_number": "491-495",
   "doi": "10.1038/s41586-019-1040-7",
   "arxiv_id": null,
-  "method_family": ["vqe_uccsd"],
+  "method_family": [
+    "vqe_uccsd"
+  ],
   "problem_summary": "Extends VQE accuracy on noisy superconducting hardware via error mitigation: extrapolating results from a series of experiments run at deliberately varied noise levels, without requiring additional hardware, demonstrated on a hardware-efficient-ansatz VQE.",
-  "sources_verified": ["https://www.nature.com/articles/s41586-019-1040-7"],
+  "sources_verified": [
+    "https://www.nature.com/articles/s41586-019-1040-7"
+  ],
   "components": [
     {
       "component_type": "error_mitigation",
@@ -33,5 +44,11 @@
   "conflicting_fields": [],
   "negative_results_or_missing_implementation": null,
   "implementation_ref": null,
-  "reviewer_decision": {"annotation_state": "draft", "reviewer": null, "reviewed_at": null}
+  "validation_state": {
+    "state": "machine_validated",
+    "validator_version": "0.1.0",
+    "validated_at": "2026-07-24T07:03:59Z",
+    "validation_errors": [],
+    "validation_warnings": []
+  }
 }

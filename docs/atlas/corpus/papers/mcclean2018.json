@@ -1,17 +1,27 @@
 {
   "paper_id": "mcclean2018",
-  "annotation_schema_version": "0.1.0",
+  "annotation_schema_version": "0.2.0",
   "title": "Barren plateaus in quantum neural network training landscapes",
-  "authors": ["Jarrod R. McClean", "Sergio Boixo", "Vadim N. Smelyanskiy", "Ryan Babbush", "Hartmut Neven"],
+  "authors": [
+    "Jarrod R. McClean",
+    "Sergio Boixo",
+    "Vadim N. Smelyanskiy",
+    "Ryan Babbush",
+    "Hartmut Neven"
+  ],
   "year": 2018,
   "venue": "Nature Communications",
   "volume": "9",
   "pages_or_article_number": "4812",
   "doi": "10.1038/s41467-018-07090-4",
   "arxiv_id": null,
-  "method_family": ["vqe_uccsd"],
+  "method_family": [
+    "vqe_uccsd"
+  ],
   "problem_summary": "Shows that for a broad class of reasonably expressive parameterized quantum circuits (including VQE ansatze), the variance of the cost-function gradient vanishes exponentially with system size, so gradients become exponentially small ('barren plateaus') almost everywhere in a randomly-initialized parameter landscape -- a foundational trainability-limitation result that motivates several other corpus entries (e.g. ostaszewski2021, kulshrestha2024, grimsley2023).",
-  "sources_verified": ["referenced via multiple corroborating secondary sources in this search pass; DOI/venue/article-number independently corroborated across them"],
+  "sources_verified": [
+    "https://www.nature.com/articles/s41467-018-07090-4"
+  ],
   "components": [
     {
       "component_type": "evaluation_protocol",
@@ -22,10 +32,16 @@
   ],
   "workflow_composition_notes": "Not a VQE workflow paper itself; a foundational analysis of why randomly-initialized, sufficiently-expressive VQE-style ansatze become untrainable at scale, motivating adaptive-growth (ADAPT-VQE family) and RL-guided (ostaszewski2021) alternatives to random initialization.",
   "unknown_or_ambiguous_fields": [
-    "sources_verified: this record's bibliographic facts were corroborated only via secondary citing sources found in this search pass, not by directly opening the Nature Communications page itself -- flagged as lower-confidence than this corpus's other records and should be independently re-verified before promotion out of draft state"
+    "re-verified 2026-07-24 against the primary Nature Communications page directly (https://www.nature.com/articles/s41467-018-07090-4), which confirmed title/authors/venue/volume(9)/article-number(4812)/year(2018) -- the record's earlier sources_verified entry (a prose description of secondary corroboration, not a URL) was a schema violation caught during audit and has been replaced with this direct primary-source URL"
   ],
   "conflicting_fields": [],
   "negative_results_or_missing_implementation": null,
   "implementation_ref": null,
-  "reviewer_decision": {"annotation_state": "draft", "reviewer": null, "reviewed_at": null}
+  "validation_state": {
+    "state": "machine_validated",
+    "validator_version": "0.1.0",
+    "validated_at": "2026-07-24T07:03:59Z",
+    "validation_errors": [],
+    "validation_warnings": []
+  }
 }

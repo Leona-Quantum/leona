@@ -1,15 +1,23 @@
 {
   "paper_id": "yordanov2021",
-  "annotation_schema_version": "0.1.0",
+  "annotation_schema_version": "0.2.0",
   "title": "Qubit-excitation-based adaptive variational quantum eigensolver",
-  "authors": ["Yordan S. Yordanov", "V. Armaos", "Crispin H. W. Barnes", "David R. M. Arvidsson-Shukur"],
+  "authors": [
+    "Yordan S. Yordanov",
+    "V. Armaos",
+    "Crispin H. W. Barnes",
+    "David R. M. Arvidsson-Shukur"
+  ],
   "year": 2021,
   "venue": "Communications Physics",
   "volume": "4",
   "pages_or_article_number": "228",
   "doi": "10.1038/s42005-021-00730-0",
   "arxiv_id": "2011.10540",
-  "method_family": ["qeb_adapt", "adapt_vqe"],
+  "method_family": [
+    "qeb_adapt",
+    "adapt_vqe"
+  ],
   "problem_summary": "Introduces QEB-ADAPT-VQE: constructs ansatze from qubit-excitation evolutions (which obey qubit commutation relations, unlike fermionic excitation evolutions) grown adaptively, reported to outperform qubit-ADAPT-VQE in circuit efficiency and convergence speed while requiring asymptotically fewer gates.",
   "sources_verified": [
     "https://www.nature.com/articles/s42005-021-00730-0",
@@ -36,5 +44,11 @@
   "conflicting_fields": [],
   "negative_results_or_missing_implementation": null,
   "implementation_ref": null,
-  "reviewer_decision": {"annotation_state": "draft", "reviewer": null, "reviewed_at": null}
+  "validation_state": {
+    "state": "machine_validated",
+    "validator_version": "0.1.0",
+    "validated_at": "2026-07-24T07:03:59Z",
+    "validation_errors": [],
+    "validation_warnings": []
+  }
 }

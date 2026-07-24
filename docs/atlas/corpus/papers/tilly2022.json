@@ -1,10 +1,19 @@
 {
   "paper_id": "tilly2022",
-  "annotation_schema_version": "0.1.0",
+  "annotation_schema_version": "0.2.0",
   "title": "The Variational Quantum Eigensolver: a review of methods and best practices",
   "authors": [
-    "Jules Tilly", "Hongxiang Chen", "Shuxiang Cao", "Dario Picozzi", "Kanav Setia", "Ying Li",
-    "Edward Grant", "Leonard Wossnig", "Ivan Rungger", "George H. Booth", "Jonathan Tennyson"
+    "Jules Tilly",
+    "Hongxiang Chen",
+    "Shuxiang Cao",
+    "Dario Picozzi",
+    "Kanav Setia",
+    "Ying Li",
+    "Edward Grant",
+    "Leonard Wossnig",
+    "Ivan Rungger",
+    "George H. Booth",
+    "Jonathan Tennyson"
   ],
   "year": 2022,
   "venue": "Physics Reports",
@@ -12,9 +21,15 @@
   "pages_or_article_number": "1-128",
   "doi": "10.1016/j.physrep.2022.08.003",
   "arxiv_id": "2111.05176",
-  "method_family": ["vqe_uccsd", "adapt_vqe", "measurement_reduction"],
+  "method_family": [
+    "vqe_uccsd",
+    "adapt_vqe",
+    "measurement_reduction"
+  ],
   "problem_summary": "Comprehensive review of VQE methodology: ansatz design (chemistry-inspired and hardware-efficient), classical optimizers, measurement strategies, and error mitigation, surveying best practices across the field rather than proposing a single new method.",
-  "sources_verified": ["https://arxiv.org/abs/2111.05176"],
+  "sources_verified": [
+    "https://arxiv.org/abs/2111.05176"
+  ],
   "components": [
     {
       "component_type": "evaluation_protocol",
@@ -28,5 +43,11 @@
   "conflicting_fields": [],
   "negative_results_or_missing_implementation": null,
   "implementation_ref": null,
-  "reviewer_decision": {"annotation_state": "draft", "reviewer": null, "reviewed_at": null}
+  "validation_state": {
+    "state": "machine_validated",
+    "validator_version": "0.1.0",
+    "validated_at": "2026-07-24T07:03:59Z",
+    "validation_errors": [],
+    "validation_warnings": []
+  }
 }

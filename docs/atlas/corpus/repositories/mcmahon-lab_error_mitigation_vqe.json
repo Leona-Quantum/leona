@@ -1,17 +1,29 @@
 {
   "repo_id": "mcmahon-lab_error_mitigation_vqe",
-  "annotation_schema_version": "0.1.0",
+  "annotation_schema_version": "0.2.0",
   "repository_url": "https://github.com/mcmahon-lab/error_mitigation_vqe",
   "relation": "third_party_reference_implementation",
-  "associated_paper_ids": ["kandala2019"],
+  "associated_paper_ids": [
+    "kandala2019"
+  ],
   "paper_associated_commit": null,
   "license_state": "unknown",
   "environment_completeness": "unknown",
-  "evidence_locators": ["https://github.com/mcmahon-lab/error_mitigation_vqe"],
-  "sources_verified": ["https://github.com/mcmahon-lab/error_mitigation_vqe"],
+  "evidence_locators": [
+    "https://github.com/mcmahon-lab/error_mitigation_vqe"
+  ],
+  "sources_verified": [
+    "https://github.com/mcmahon-lab/error_mitigation_vqe"
+  ],
   "unknown_or_ambiguous_fields": [
     "IMPORTANT: this is NOT kandala2019's own repository -- it implements a related but distinct error-mitigation-for-VQE technique (Rosenberg et al. 2021, linear-rescaling-based error mitigation), by a different author group, for the same general error_mitigation component type. Recorded here as a real, related reference implementation, not as kandala2019's official code -- do not conflate the two when this record is reviewed",
     "license_state: not confirmed in this search-level pass"
   ],
-  "reviewer_decision": {"annotation_state": "draft", "reviewer": null, "reviewed_at": null}
+  "validation_state": {
+    "state": "machine_validated",
+    "validator_version": "0.1.0",
+    "validated_at": "2026-07-24T07:03:59Z",
+    "validation_errors": [],
+    "validation_warnings": []
+  }
 }

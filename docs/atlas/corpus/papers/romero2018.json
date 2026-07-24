@@ -1,15 +1,24 @@
 {
   "paper_id": "romero2018",
-  "annotation_schema_version": "0.1.0",
+  "annotation_schema_version": "0.2.0",
   "title": "Strategies for quantum computing molecular energies using the unitary coupled cluster ansatz",
-  "authors": ["Jonathan Romero", "Ryan Babbush", "Jarrod R. McClean", "Cornelius Hempel", "Peter J. Love", "Alan Aspuru-Guzik"],
+  "authors": [
+    "Jonathan Romero",
+    "Ryan Babbush",
+    "Jarrod R. McClean",
+    "Cornelius Hempel",
+    "Peter J. Love",
+    "Alan Aspuru-Guzik"
+  ],
   "year": 2018,
   "venue": "Quantum Science and Technology",
   "volume": "4",
   "pages_or_article_number": "014008",
   "doi": "10.1088/2058-9565/aad3e4",
   "arxiv_id": "1701.02691",
-  "method_family": ["vqe_uccsd"],
+  "method_family": [
+    "vqe_uccsd"
+  ],
   "problem_summary": "Studies VQE with the unitary coupled cluster (UCC) ansatz, introduces circuit-depth-reduction strategies for UCC implementation, and proposes an analytical energy-gradient method that reduces gradient-estimation sampling cost by orders of magnitude versus numerical gradients.",
   "sources_verified": [
     "https://arxiv.org/abs/1701.02691",
@@ -36,5 +45,11 @@
   "conflicting_fields": [],
   "negative_results_or_missing_implementation": null,
   "implementation_ref": null,
-  "reviewer_decision": {"annotation_state": "draft", "reviewer": null, "reviewed_at": null}
+  "validation_state": {
+    "state": "machine_validated",
+    "validator_version": "0.1.0",
+    "validated_at": "2026-07-24T07:03:59Z",
+    "validation_errors": [],
+    "validation_warnings": []
+  }
 }

@@ -1,6 +1,6 @@
 {
   "paper_id": "kandala2017",
-  "annotation_schema_version": "0.1.0",
+  "annotation_schema_version": "0.2.0",
   "title": "Hardware-efficient variational quantum eigensolver for small molecules and quantum magnets",
   "authors": [
     "Abhinav Kandala",
@@ -17,9 +17,13 @@
   "pages_or_article_number": "242-246",
   "doi": "10.1038/nature23879",
   "arxiv_id": null,
-  "method_family": ["vqe_uccsd"],
+  "method_family": [
+    "vqe_uccsd"
+  ],
   "problem_summary": "Introduces the hardware-efficient ansatz for VQE, computing LiH and BeH2 ground-state energies on a 6-qubit superconducting processor and separately an energy-minimization procedure on a 4-qubit Heisenberg model.",
-  "sources_verified": ["https://www.nature.com/articles/nature23879"],
+  "sources_verified": [
+    "https://www.nature.com/articles/nature23879"
+  ],
   "components": [
     {
       "component_type": "problem",
@@ -48,9 +52,11 @@
   "conflicting_fields": [],
   "negative_results_or_missing_implementation": null,
   "implementation_ref": null,
-  "reviewer_decision": {
-    "annotation_state": "draft",
-    "reviewer": null,
-    "reviewed_at": null
+  "validation_state": {
+    "state": "machine_validated",
+    "validator_version": "0.1.0",
+    "validated_at": "2026-07-24T07:03:59Z",
+    "validation_errors": [],
+    "validation_warnings": []
   }
 }

@@ -1,9 +1,11 @@
 {
   "repo_id": "quantumlib_recirq",
-  "annotation_schema_version": "0.1.0",
+  "annotation_schema_version": "0.2.0",
   "repository_url": "https://github.com/quantumlib/ReCirq",
   "relation": "official",
-  "associated_paper_ids": ["google2020"],
+  "associated_paper_ids": [
+    "google2020"
+  ],
   "paper_associated_commit": null,
   "license_state": "unknown",
   "environment_completeness": "recirq.hfvqe submodule confirmed present, with a documented quickstart tutorial",
@@ -17,7 +19,14 @@
     "https://quantumai.google/cirq/experiments/hfvqe"
   ],
   "unknown_or_ambiguous_fields": [
-    "license_state: not confirmed in this search-level pass"
+    "license_state: not confirmed in this search-level pass",
+    "relation=official applies specifically to the recirq.hfvqe submodule within this repository (Google's own research.google/pubs page and quantumai.google/cirq/experiments/hfvqe both describe this submodule as the code for the google2020 experiment) -- ReCirq as a whole is a broad multi-experiment repository, not written solely for this paper. Treat 'official' here as scoped to that submodule, not the full repository, per ANNOTATION_GUIDELINE.md \u00a74.1"
   ],
-  "reviewer_decision": {"annotation_state": "draft", "reviewer": null, "reviewed_at": null}
+  "validation_state": {
+    "state": "machine_validated",
+    "validator_version": "0.1.0",
+    "validated_at": "2026-07-24T07:03:59Z",
+    "validation_errors": [],
+    "validation_warnings": []
+  }
 }

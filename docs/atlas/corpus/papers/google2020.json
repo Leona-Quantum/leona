@@ -1,15 +1,24 @@
 {
   "paper_id": "google2020",
-  "annotation_schema_version": "0.1.0",
+  "annotation_schema_version": "0.2.0",
   "title": "Hartree-Fock on a superconducting qubit quantum computer",
-  "authors": ["Frank Arute", "Kunal Arya", "Ryan Babbush", "Dave Bacon", "Joseph C. Bardin", "et al. (Google AI Quantum and Collaborators)"],
+  "authors": [
+    "Frank Arute",
+    "Kunal Arya",
+    "Ryan Babbush",
+    "Dave Bacon",
+    "Joseph C. Bardin",
+    "et al. (Google AI Quantum and Collaborators)"
+  ],
   "year": 2020,
   "venue": "Science",
   "volume": "369",
   "pages_or_article_number": "1084-1089",
   "doi": "10.1126/science.abb9811",
   "arxiv_id": "2004.04174",
-  "method_family": ["vqe_uccsd"],
+  "method_family": [
+    "vqe_uccsd"
+  ],
   "problem_summary": "Performs the largest chemical simulation on a quantum computer to date at publication (up to a dozen qubits), including modeling the isomerization mechanism of diazene, using a Givens-rotation-based ansatz variationally optimized to prepare the Hartree-Fock wavefunction.",
   "sources_verified": [
     "https://arxiv.org/pdf/2004.04174",
@@ -42,5 +51,11 @@
   "conflicting_fields": [],
   "negative_results_or_missing_implementation": null,
   "implementation_ref": "quantumlib_recirq",
-  "reviewer_decision": {"annotation_state": "draft", "reviewer": null, "reviewed_at": null}
+  "validation_state": {
+    "state": "machine_validated",
+    "validator_version": "0.1.0",
+    "validated_at": "2026-07-24T07:03:59Z",
+    "validation_errors": [],
+    "validation_warnings": []
+  }
 }

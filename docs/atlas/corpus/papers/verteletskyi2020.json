@@ -1,15 +1,21 @@
 {
   "paper_id": "verteletskyi2020",
-  "annotation_schema_version": "0.1.0",
+  "annotation_schema_version": "0.2.0",
   "title": "Measurement Optimization in the Variational Quantum Eigensolver Using a Minimum Clique Cover",
-  "authors": ["Vladyslav Verteletskyi", "Tzu-Ching Yen", "Artur F. Izmaylov"],
+  "authors": [
+    "Vladyslav Verteletskyi",
+    "Tzu-Ching Yen",
+    "Artur F. Izmaylov"
+  ],
   "year": 2020,
   "venue": "The Journal of Chemical Physics",
   "volume": "152",
   "pages_or_article_number": "124114",
   "doi": null,
   "arxiv_id": "1907.03358",
-  "method_family": ["measurement_reduction"],
+  "method_family": [
+    "measurement_reduction"
+  ],
   "problem_summary": "Groups qubit-wise commuting Hamiltonian terms via a graph-coloring formulation (minimum clique cover, NP-hard but solved with polynomial heuristics), reducing the number of separately-measured operator groups by roughly a factor of 3 on average across tested Hamiltonians.",
   "sources_verified": [
     "https://arxiv.org/abs/1907.03358",
@@ -31,5 +37,11 @@
   "conflicting_fields": [],
   "negative_results_or_missing_implementation": null,
   "implementation_ref": null,
-  "reviewer_decision": {"annotation_state": "draft", "reviewer": null, "reviewed_at": null}
+  "validation_state": {
+    "state": "machine_validated",
+    "validator_version": "0.1.0",
+    "validated_at": "2026-07-24T07:03:59Z",
+    "validation_errors": [],
+    "validation_warnings": []
+  }
 }
