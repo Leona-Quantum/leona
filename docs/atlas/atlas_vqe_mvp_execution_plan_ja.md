@@ -36,7 +36,7 @@ GPU、QPU、古い論文環境の実行へ進んではならない。
 
 | Phase | Outcome | DB | UI | Current status |
 |---|---|---:|---:|---|
-| 0 | ADR + H2/Qiskit/PennyLane executable spike | no | no | verified_local |
+| 0 | ADR + H2/Qiskit/PennyLane executable spike | no | no | complete |
 | 1 | Component/Workflow/Scientific Experiment schema | no | no | next |
 | 2 | 25 papers / 15 repositories / 50+ components curated corpus | no | no | not_started |
 | 3 | Component Registry + experiment evidence in Neon | yes | contract only | not_started |
@@ -48,9 +48,8 @@ GPU、QPU、古い論文環境の実行へ進んではならない。
 | 10 | Isolated external Repository execution | separate milestone | later | prohibited in MVP |
 
 **Active pickup:** Phase 1 (Component/Workflow/Scientific Experiment schema)。
-Phase 0はADR-0023/0024/0025 (proposed, owner review未完了) と
-`docs/atlas/fixtures/h2_sto3g/` の自動cross-validation PASS (owner review未完了)
-まで完了。一つのphaseのacceptanceを満たす前に次phaseのproduction wiringへ進まない。
+Phase 0はowner-approved (2026-07-24, `docs/atlas/PHASE0_OWNER_REVIEW.md`)。
+一つのphaseのacceptanceを満たす前に次phaseのproduction wiringへ進まない。
 
 ---
 
@@ -576,8 +575,10 @@ unknown fieldがある場合は`strict`にしない。
 
 ## Phase 0 — Plan freeze and executable spike
 
-**Status:** verified_local (0A: ADR-0023/0024/0025 proposed, owner review pending;
-0B: `docs/atlas/fixtures/h2_sto3g/` automated cross-validation PASS, owner review pending)  
+**Status:** complete (owner-approved 2026-07-24; see
+`docs/atlas/PHASE0_OWNER_REVIEW.md` for the review bundle, corrections made
+before approval, and what remains open but non-blocking: ADR text formally
+flipped to `accepted`, deeper domain-scientist review of the H2 fixture)  
 **DB change:** none  
 **Network:** none  
 **UI:** none
@@ -635,20 +636,27 @@ tracked product codeへ入れる前に、fixture/test harnessで以下を確認�
 
 - 独立FCI基準 (PySCF, qubit mapping不使用): -1.1373060357534004 Ha。
 - Qiskit-current (qiskit 1.4.6 / qiskit-nature 0.8.0 / pyscf 2.14.0):
-  qubit Hamiltonian厳密対角化 -1.1373060357533982 Ha (FCI比誤差 2.2e-15 Ha)。
+  qubit Hamiltonian厳密対角化 -1.137306035753399 Ha (FCI比誤差 1.3e-15 Ha)。
 - PennyLane-current (pennylane 0.45.1 / pyscf 2.14.0):
   qubit Hamiltonian厳密対角化 -1.1373060357532858 Ha (FCI比誤差 1.1e-13 Ha)。
 - 両candidateのcanonical HamiltonianはNOT byte-identical (PennyLaneはnuclear
   repulsionをidentity項に含める、spin-orbital→qubit割当がblock対PennyLaneの
-  interleavedで異なる、2 qubit分でJordan-Wigner位相規約が異なる)。全て網羅的
-  探索でqubit permutation + per-qubit local Pauli-frame対応として明示的に解決
-  済み (推測ではない)。独立した16固有値スペクトル全体の一致 (diff <= 1.2e-9 Ha)
-  で解決前に物理的に同一の演算子であることを確認済み。
+  interleavedで異なる、2 qubit分でJordan-Wigner位相規約が異なる)。二つの主張を
+  混同しない: (1) 構造的対応 — qubit permutation `[0,2,1,3]` + per-qubit local
+  Pauli-frame `[id,id,s,sdag]` による厳密・離散的な対応 (網羅的探索で発見、
+  文献からの推測ではない)。(2) 数値的一致 — 対応適用後の係数差は最大
+  6.52e-10 Ha、独立した16固有値スペクトル全体差は1.20e-9 Ha
+  (PySCFのconv_tol=1e-9 Ha default、インストール済みpackageから直接確認、を
+  出典とする2回の独立SCF収束に整合)。これは「同一物理演算子であるという証拠」
+  であり「byte-exactに同一である証明」ではない — 2回の独立浮動小数点SCF計算が
+  machine precisionまで一致することはない。
 - 失敗時JSON contract (`status: execution_failed`, non-zero exit) を実際に
-  invalid basisで発火させ動作確認済み。
+  invalid basisで発火させ動作確認済み。当初は一回限りの手動sed編集で検証したが、
+  owner reviewの指摘を受けて`spike/test_failure_contract.py`という再実行可能な
+  pytestへ格上げ済み (両runtimeでpytest実行、2 passed)。
 
-詳細・再現手順は `docs/atlas/fixtures/h2_sto3g/README.md`。owner/human reviewは
-未実施 (`manifest.json.review_record`)。
+詳細・再現手順は `docs/atlas/fixtures/h2_sto3g/README.md`。owner-approved review
+bundleは `docs/atlas/PHASE0_OWNER_REVIEW.md` (2026-07-24)。
 
 ### Rollback
 
