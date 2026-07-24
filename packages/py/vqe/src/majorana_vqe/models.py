@@ -53,7 +53,16 @@ type JSONValue = str | int | float | bool | None | list[JSONValue] | dict[str, J
 # below runs first and independently rejects anything starting with "/",
 # "./", "~", a Windows drive letter, or containing a "../" traversal
 # sequence anywhere -- none of the newly-allowed punctuation defeats that.
-_SAFE_LABEL_PATTERN = re.compile(r"""^[\w][\w \-./,+()%;:'?!"]{0,199}$""")
+#
+# Deliberately unbounded length here (no {0,N} cap): this pattern validates
+# CHARSET safety only. Length is each field's own concern via its Pydantic
+# Field(max_length=...) -- baking a second, different length limit into this
+# shared regex caused a real bug (found while generating Phase 2 comparison
+# reports): ComparisonDimension.detail declared max_length=500 but this
+# pattern silently capped content at 200 chars regardless, rejecting valid
+# input under its own declared limit. One limit per constraint, enforced in
+# one place.
+_SAFE_LABEL_PATTERN = re.compile(r"""^[\w][\w \-./,+()%;:'?!"]*$""")
 _PATH_LIKE_PATTERN = re.compile(r"(^[./~]|\.\./|^[A-Za-z]:\\|\x00)")
 _CODE_OR_MODULE_LIKE_PATTERN = re.compile(
     r"(__\w+__|\beval\s*\(|\bexec\s*\(|\bimport\s+\w|\bos\.\w|\bsubprocess\.\w"
@@ -73,8 +82,9 @@ def reject_path_module_or_code(value: str, *, field_path: str) -> str:
         )
     if not _SAFE_LABEL_PATTERN.match(value):
         raise ValueError(
-            f"{field_path}: must be a plain bounded label "
-            "(word characters, spaces, and -.,+()% only, 1-200 chars)"
+            f"{field_path}: must be a plain label "
+            "(word characters, spaces, and -./,+()%;:'?!\" only; length is "
+            "enforced separately by the field's own max_length)"
         )
     return value
 
