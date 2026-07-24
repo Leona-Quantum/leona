@@ -26,3 +26,12 @@ An architecture choice without an ADR did not happen.
   writes and one transaction for Dead Letter Run closure.
 - 2026-07-23: ADR-0022 proposes three-state verification, evidence-bound retry
   routing, and private unverified Studio materialization with PASS-only Verified/public gates.
+- 2026-07-24: ADR-0023 proposes VQE experiments identified through reused
+  Artifact/Run identity, with ScientificExperimentSpec separated from
+  ExecutionBinding and a server-generated idempotency identity.
+- 2026-07-24: ADR-0024 proposes server-authoritative VQE runtime capability
+  resolution, independently locked digest-pinned runtime profiles, and
+  frozen/current version lanes with a CANDIDATE_UNVERIFIED promotion gate.
+- 2026-07-24: ADR-0025 proposes append-only VQE observations keyed to a
+  canonical Hamiltonian digest, with exact/finite-shot evidence never conflated
+  and golden-fixture energies never hand-typed.
