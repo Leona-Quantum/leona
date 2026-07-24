@@ -1,0 +1,20 @@
+{
+  "repo_id": "qiskit-community_qiskit-nature",
+  "annotation_schema_version": "0.1.0",
+  "repository_url": "https://github.com/qiskit-community/qiskit-nature",
+  "relation": "third_party_reference_implementation",
+  "associated_paper_ids": ["omalley2016", "kandala2017", "romero2018", "lee2018"],
+  "paper_associated_commit": null,
+  "license_state": "unknown",
+  "environment_completeness": "unknown",
+  "evidence_locators": ["https://github.com/qiskit-community/qiskit-nature"],
+  "sources_verified": [
+    "https://github.com/qiskit-community/qiskit-nature",
+    "https://qiskit-community.github.io/qiskit-nature/getting_started.html"
+  ],
+  "unknown_or_ambiguous_fields": [
+    "license_state: not confirmed in this search-level pass",
+    "general open-source electronic-structure framework, not a paper-specific release -- this is also the actual library used by this project's own runtimes/vqe/qiskit-current Phase 0 spike"
+  ],
+  "reviewer_decision": {"annotation_state": "draft", "reviewer": null, "reviewed_at": null}
+}

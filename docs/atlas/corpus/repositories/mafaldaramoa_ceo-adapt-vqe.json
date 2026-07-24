@@ -1,0 +1,19 @@
+{
+  "repo_id": "mafaldaramoa_ceo-adapt-vqe",
+  "annotation_schema_version": "0.1.0",
+  "repository_url": "https://github.com/mafaldaramoa/ceo-adapt-vqe",
+  "relation": "official",
+  "associated_paper_ids": ["ramoa2025", "anastasiou2024"],
+  "paper_associated_commit": null,
+  "license_state": "unknown",
+  "environment_completeness": "unknown",
+  "evidence_locators": [
+    "https://github.com/mafaldaramoa/ceo-adapt-vqe (description: 'Simulation code for ADAPT-VQE with CEO pools and Hessian recycling', also confirmed to support TETRIS and orbital optimization)"
+  ],
+  "sources_verified": ["https://github.com/mafaldaramoa/ceo-adapt-vqe"],
+  "unknown_or_ambiguous_fields": [
+    "license_state: not confirmed in this search-level pass",
+    "whether TETRIS support in this repo corresponds exactly to anastasiou2024's published algorithm or a later variant: not confirmed without reading the code"
+  ],
+  "reviewer_decision": {"annotation_state": "draft", "reviewer": null, "reviewed_at": null}
+}

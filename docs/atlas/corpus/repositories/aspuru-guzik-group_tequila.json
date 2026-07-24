@@ -1,0 +1,17 @@
+{
+  "repo_id": "aspuru-guzik-group_tequila",
+  "annotation_schema_version": "0.1.0",
+  "repository_url": "https://github.com/aspuru-guzik-group/tequila",
+  "relation": "third_party_reference_implementation",
+  "associated_paper_ids": ["peruzzo2014", "romero2018", "mcclean2016", "cao2019"],
+  "paper_associated_commit": null,
+  "license_state": "unknown",
+  "environment_completeness": "unknown",
+  "evidence_locators": ["https://github.com/aspuru-guzik-group/tequila/blob/master/README.md"],
+  "sources_verified": ["https://github.com/aspuru-guzik-group/tequila"],
+  "unknown_or_ambiguous_fields": [
+    "license_state: not confirmed in this search-level pass",
+    "general VQE/UCC abstraction framework led by the Aspuru-Guzik group (overlapping authorship with several corpus papers), not a paper-specific release for any single associated paper"
+  ],
+  "reviewer_decision": {"annotation_state": "draft", "reviewer": null, "reviewed_at": null}
+}

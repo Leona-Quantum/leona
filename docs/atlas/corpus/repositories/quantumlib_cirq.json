@@ -1,0 +1,20 @@
+{
+  "repo_id": "quantumlib_cirq",
+  "annotation_schema_version": "0.1.0",
+  "repository_url": "https://github.com/quantumlib/Cirq",
+  "relation": "third_party_reference_implementation",
+  "associated_paper_ids": ["tang2021", "google2020"],
+  "paper_associated_commit": null,
+  "license_state": "unknown",
+  "environment_completeness": "unknown",
+  "evidence_locators": [
+    "https://github.com/quantumlib/Cirq",
+    "mafaldaramoa/VQE repository description confirms Cirq is used for its qubit-ADAPT-VQE (tang2021) reproduction"
+  ],
+  "sources_verified": ["https://github.com/quantumlib/Cirq", "https://github.com/mafaldaramoa/VQE"],
+  "unknown_or_ambiguous_fields": [
+    "license_state: not confirmed in this search-level pass",
+    "general NISQ circuit framework, not a paper-specific release"
+  ],
+  "reviewer_decision": {"annotation_state": "draft", "reviewer": null, "reviewed_at": null}
+}

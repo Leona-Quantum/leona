@@ -1,0 +1,23 @@
+{
+  "repo_id": "quantumlib_recirq",
+  "annotation_schema_version": "0.1.0",
+  "repository_url": "https://github.com/quantumlib/ReCirq",
+  "relation": "official",
+  "associated_paper_ids": ["google2020"],
+  "paper_associated_commit": null,
+  "license_state": "unknown",
+  "environment_completeness": "recirq.hfvqe submodule confirmed present, with a documented quickstart tutorial",
+  "evidence_locators": [
+    "https://github.com/quantumlib/ReCirq/blob/main/docs/hfvqe/quickstart.ipynb",
+    "https://quantumai.google/cirq/experiments/hfvqe"
+  ],
+  "sources_verified": [
+    "https://github.com/quantumlib/ReCirq",
+    "https://github.com/quantumlib/ReCirq/blob/main/docs/hfvqe/quickstart.ipynb",
+    "https://quantumai.google/cirq/experiments/hfvqe"
+  ],
+  "unknown_or_ambiguous_fields": [
+    "license_state: not confirmed in this search-level pass"
+  ],
+  "reviewer_decision": {"annotation_state": "draft", "reviewer": null, "reviewed_at": null}
+}

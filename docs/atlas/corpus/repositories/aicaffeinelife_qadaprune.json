@@ -1,0 +1,19 @@
+{
+  "repo_id": "aicaffeinelife_qadaprune",
+  "annotation_schema_version": "0.1.0",
+  "repository_url": "https://github.com/aicaffeinelife/QAdaPrune",
+  "relation": "official",
+  "associated_paper_ids": ["kulshrestha2024"],
+  "paper_associated_commit": null,
+  "license_state": "unknown",
+  "environment_completeness": "unknown",
+  "evidence_locators": [
+    "paper (arXiv:2408.13352) states: 'The source code and data are available at https://github.com/aicaffeinelife/QAdaPrune.git'"
+  ],
+  "sources_verified": ["https://arxiv.org/abs/2408.13352"],
+  "unknown_or_ambiguous_fields": [
+    "license_state: not confirmed in this search-level pass",
+    "repository_url itself was not independently opened in this pass -- taken directly from the paper's own code-availability statement"
+  ],
+  "reviewer_decision": {"annotation_state": "draft", "reviewer": null, "reviewed_at": null}
+}

@@ -1,0 +1,16 @@
+{
+  "repo_id": "qiskit_qiskit",
+  "annotation_schema_version": "0.1.0",
+  "repository_url": "https://github.com/Qiskit/qiskit",
+  "relation": "third_party_reference_implementation",
+  "associated_paper_ids": ["kandala2017", "kandala2019"],
+  "paper_associated_commit": null,
+  "license_state": "Apache-2.0",
+  "environment_completeness": "unknown",
+  "evidence_locators": ["https://github.com/Qiskit/qiskit/blob/main/LICENSE.txt"],
+  "sources_verified": ["https://github.com/Qiskit/qiskit/blob/main/LICENSE.txt"],
+  "unknown_or_ambiguous_fields": [
+    "base platform underlying IBM's kandala2017/kandala2019 superconducting-hardware VQE experiments, but not code released specifically alongside either paper"
+  ],
+  "reviewer_decision": {"annotation_state": "draft", "reviewer": null, "reviewed_at": null}
+}

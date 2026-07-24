@@ -1,0 +1,21 @@
+{
+  "repo_id": "goodchemistryco_tangelo",
+  "annotation_schema_version": "0.1.0",
+  "repository_url": "https://github.com/goodchemistryco/Tangelo",
+  "relation": "third_party_reference_implementation",
+  "associated_paper_ids": ["anastasiou2024"],
+  "paper_associated_commit": null,
+  "license_state": "unknown",
+  "environment_completeness": "unknown",
+  "evidence_locators": [
+    "https://github.com/goodchemistryco/Tangelo/blob/main/tangelo/algorithms/variational/tetris_adapt_vqe_solver.py"
+  ],
+  "sources_verified": [
+    "https://github.com/goodchemistryco/Tangelo/blob/main/tangelo/algorithms/variational/tetris_adapt_vqe_solver.py"
+  ],
+  "unknown_or_ambiguous_fields": [
+    "license_state: not confirmed in this search-level pass",
+    "this is a general open-source chemistry package by SandboxAQ/Good Chemistry Company implementing TETRIS-ADAPT-VQE as one of many solvers, not a paper-specific release -- relation classified as third_party_reference_implementation rather than official for that reason"
+  ],
+  "reviewer_decision": {"annotation_state": "draft", "reviewer": null, "reviewed_at": null}
+}

@@ -1,0 +1,17 @@
+{
+  "repo_id": "mayhallgroup_adapt-vqe",
+  "annotation_schema_version": "0.1.0",
+  "repository_url": "https://github.com/mayhallgroup/adapt-vqe",
+  "relation": "official",
+  "associated_paper_ids": ["grimsley2019", "grimsley2023"],
+  "paper_associated_commit": null,
+  "license_state": "unknown",
+  "environment_completeness": "unknown",
+  "evidence_locators": ["https://github.com/mayhallgroup/adapt-vqe"],
+  "sources_verified": ["https://github.com/mayhallgroup/adapt-vqe", "https://github.com/mayhallgroup"],
+  "unknown_or_ambiguous_fields": [
+    "license_state: not confirmed in this search-level pass (repo page found, license file contents not opened)",
+    "paper_associated_commit: not confirmed; repository has evolved beyond the original 2019 paper and likely also carries grimsley2023's work"
+  ],
+  "reviewer_decision": {"annotation_state": "draft", "reviewer": null, "reviewed_at": null}
+}

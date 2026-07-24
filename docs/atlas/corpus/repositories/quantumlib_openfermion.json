@@ -1,0 +1,22 @@
+{
+  "repo_id": "quantumlib_openfermion",
+  "annotation_schema_version": "0.1.0",
+  "repository_url": "https://github.com/quantumlib/OpenFermion",
+  "relation": "official",
+  "associated_paper_ids": ["mcclean2016", "omalley2016", "google2020"],
+  "paper_associated_commit": null,
+  "license_state": "Apache-2.0",
+  "environment_completeness": "unknown",
+  "evidence_locators": [
+    "https://github.com/quantumlib/OpenFermion",
+    "https://opensource.googleblog.com/2017/10/announcing-openfermion-open-source.html"
+  ],
+  "sources_verified": [
+    "https://github.com/quantumlib/OpenFermion",
+    "https://research.google/blog/announcing-openfermion-the-open-source-chemistry-package-for-quantum-computers/"
+  ],
+  "unknown_or_ambiguous_fields": [
+    "not a paper-specific release -- a general electronic-structure package by Google (with multi-institution contributors) underlying the broader research program these papers belong to, not code released alongside any single one of them"
+  ],
+  "reviewer_decision": {"annotation_state": "draft", "reviewer": null, "reviewed_at": null}
+}
