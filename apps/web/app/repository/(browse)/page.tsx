@@ -3,8 +3,9 @@ import { PublicSite } from "../../../components/public-site";
 import { getMajoranaAuth, getMajoranaSignInUrl, isMajoranaAuthConfigured } from "../../../lib/auth";
 import { getPublicLocale } from "../../../lib/public-locale-server";
 import { getRepositoryListEntries } from "../../../lib/repository-source";
+import { getVqeComparisons, getVqePapers, getVqeRepositories } from "../../../lib/atlas-vqe/source";
 import { VerificationLegend } from "../../../components/repository-verification";
-import { RepositoryBrowser } from "../repository-browser";
+import { AtlasContentSwitch } from "../atlas-content-switch";
 
 export const metadata: Metadata = {
   title: "Atlas",
@@ -17,6 +18,9 @@ export default async function RepositoryPage() {
   const signInHref = !user && isMajoranaAuthConfigured() ? await getMajoranaSignInUrl() : null;
   const isJapanese = locale === "ja";
   const entries = await getRepositoryListEntries();
+  const vqePapers = getVqePapers();
+  const vqeRepositories = getVqeRepositories();
+  const vqeComparisons = getVqeComparisons();
 
   return (
     <PublicSite activePath="/repository" className="mj-repository-site" locale={locale} showLanguageToggle>
@@ -27,8 +31,11 @@ export default async function RepositoryPage() {
             ? "回路とアルゴリズムを検索し、仕組み、シミュレーション、コード、出典、ライセンス、検証の境界を確認できます。"
             : "Search circuits and algorithms, then inspect how they work, what simulation shows, which code is available, and where source, license, and verification boundaries begin."}
         </p>
-        <RepositoryBrowser
+        <AtlasContentSwitch
           entries={entries}
+          papers={vqePapers}
+          repositories={vqeRepositories}
+          comparisons={vqeComparisons}
           locale={locale}
           isSignedIn={Boolean(user)}
           signInHref={signInHref}

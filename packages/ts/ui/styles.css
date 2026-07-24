@@ -7148,3 +7148,89 @@ div.mj-rail-row:hover {
 .mj-builder-slot text {
   fill: var(--text-2);
 }
+
+/* ---------- Atlas VQE section (ADR-0027): merged into /repository, not a
+   separate page -- see AtlasContentSwitch. ---------- */
+.mj-atlas-switch-wrap {
+  display: grid;
+  gap: var(--sp-3);
+}
+.mj-atlas-switch {
+  display: inline-flex;
+  gap: var(--sp-1);
+  padding: 3px;
+  border: 1px solid var(--border-0);
+  border-radius: var(--radius-control);
+  background: var(--bg-1);
+  width: fit-content;
+}
+.mj-atlas-switch button {
+  min-height: 30px;
+  padding: 0 var(--sp-3);
+  border: none;
+  border-radius: calc(var(--radius-control) - 2px);
+  color: var(--text-1);
+  background: transparent;
+  font: inherit;
+  font-size: var(--fs-13);
+  font-weight: 500;
+  cursor: pointer;
+}
+.mj-atlas-switch button.is-active {
+  color: var(--text-0);
+  background: var(--bg-2);
+}
+
+.mj-vqe-relation-breakdown {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-3);
+  margin: 0 0 var(--sp-3);
+  padding: var(--sp-2) var(--sp-3);
+  border: 1px solid var(--border-0);
+  border-radius: var(--radius-control);
+  background: var(--bg-1);
+  color: var(--text-1);
+  font-size: var(--fs-12);
+}
+.mj-vqe-relation-breakdown strong { color: var(--text-0); }
+
+/* A 4th, neutral tone `.mj-verdict` doesn't have (ok/warn/err only) --
+   VQE dimension/relation/classification states are frequently and honestly
+   "unknown", which is informational, not a warning. */
+.mj-vqe-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px var(--sp-2);
+  border: 1px solid var(--border-0);
+  border-radius: var(--radius-control);
+  color: var(--text-1);
+  background: var(--bg-1);
+  font-family: var(--font-mono);
+  font-size: var(--fs-12);
+  white-space: nowrap;
+}
+.mj-vqe-badge[data-tone="ok"] { border-color: var(--ok); color: var(--ok); }
+.mj-vqe-badge[data-tone="warn"] { border-color: var(--warn); color: var(--warn); }
+.mj-vqe-badge[data-tone="neutral"] { color: var(--text-2); }
+
+.mj-vqe-validation-note {
+  margin: var(--sp-1) 0 0;
+  color: var(--text-2);
+  font-size: var(--fs-12);
+}
+
+.mj-vqe-plain-list {
+  display: grid;
+  gap: var(--sp-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  color: var(--text-1);
+  font-size: var(--fs-13);
+}
+.mj-vqe-plain-list li {
+  padding: var(--sp-1) 0;
+  border-bottom: 1px solid var(--border-hairline);
+}
+.mj-vqe-plain-list li:last-child { border-bottom: none; }
