@@ -198,7 +198,17 @@ export function StudioWorkspace({ artifactId, newDraft = false, locale = "en", l
     const key = `${next.id}:${seedCounter.current}`;
     const stored = loadStoredCircuit(next.id);
     const artifactIdentity = studioArtifactIdentity(next);
-    if (stored?.artifactIdentity === artifactIdentity) {
+    // A cached seed is trusted only if it is still drawable. An editable draft
+    // (<= the builder's width) is the user's own work and always kept whatever
+    // its depth. A wider cached seed is a persisted read-only reconstruction —
+    // and one persisted before this change had no step guard, so it can exceed
+    // the current bounds and would render the pathological SVG the guard exists
+    // to prevent. When it does, drop the cache and fall through to fresh
+    // reconstruction, which re-applies the guard (and surfaces too_large).
+    const cachedIsDrawable = stored
+      && (stored.qubitCount <= MAX_BUILDER_QUBITS
+        || (stored.qubitCount <= MAX_VIEWABLE_QUBITS && stored.steps.length <= MAX_VIEWABLE_STEPS));
+    if (stored?.artifactIdentity === artifactIdentity && cachedIsDrawable) {
       return { seed: { key, artifactIdentity, qubitCount: stored.qubitCount, steps: stored.steps, customGates: stored.customGates }, note: copy.circuitRestored };
     }
     const hasOwnCode = Boolean(next.code || next.frameworkVariants || next.qasm);
