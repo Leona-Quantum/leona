@@ -38,3 +38,7 @@ An architecture choice without an ADR did not happen.
 - 2026-07-24: ADR-0026 redefines VQE MVP corpus acceptance as machine-validated
   only; human curation review, inter-annotator agreement, and manual-gold
   comparison authoring are explicit post-MVP work, not silently satisfied.
+- 2026-07-24: ADR-0027 merges the Atlas VQE Registry/Compare UI into the
+  existing `/repository` page instead of a new top-level section, resolving a
+  real "Atlas" branding collision without coercing literature-only VQE
+  records into the circuit-execution-shaped `PublicRepositoryEntry` type.
