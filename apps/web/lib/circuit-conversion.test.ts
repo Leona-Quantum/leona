@@ -7,7 +7,9 @@ import {
   convertCircuitSource,
   generatePortableCircuitCode,
   parseInterchangeCircuit,
+  reconstructInterchangeCircuit,
 } from "./circuit-conversion.ts";
+import { MAX_VIEWABLE_QUBITS, MAX_VIEWABLE_STEPS } from "./studio-parse.ts";
 
 test("portable circuits emit non-empty source for all seven framework targets", () => {
   const generated = generatePortableCircuitCode({
@@ -169,4 +171,61 @@ qubit[2] q;
 h q[0];
 c[0] = measure q;`;
   assert.equal(parseInterchangeCircuit(mixedIndex), null);
+});
+
+function ghzQasm(wires: number): string {
+  return [
+    "OPENQASM 3.0;",
+    "include \"stdgates.inc\";",
+    `bit[${wires}] meas;`,
+    `qubit[${wires}] q;`,
+    "h q[0];",
+    ...Array.from({ length: wires - 1 }, (_, i) => `cx q[${i}], q[${i + 1}];`),
+    ...Array.from({ length: wires }, (_, i) => `meas[${i}] = measure q[${i}];`),
+  ].join("\n");
+}
+
+test("a 26-qubit GHZ reconstructs read-only past the 24-qubit simulation ceiling", () => {
+  // 26q GHZ is the canonical "fails honestly for execution but should be
+  // viewable" circuit — the viewing ceiling is higher than the sim ceiling.
+  const result = reconstructInterchangeCircuit(ghzQasm(26));
+  assert.equal(result.kind, "ok");
+  assert.ok(result.kind === "ok");
+  assert.equal(result.circuit.qubitCount, 26);
+  // parseInterchangeCircuit is the thin wrapper: it draws it too.
+  assert.ok(parseInterchangeCircuit(ghzQasm(26)));
+});
+
+test("a circuit wider than the viewing ceiling reports too_large, not a partial draw", () => {
+  const wide = ghzQasm(MAX_VIEWABLE_QUBITS + 1);
+  const result = reconstructInterchangeCircuit(wide);
+  assert.equal(result.kind, "too_large");
+  assert.ok(result.kind === "too_large");
+  assert.equal(result.qubitCount, MAX_VIEWABLE_QUBITS + 1);
+  // The boolean wrapper still fails closed above the ceiling.
+  assert.equal(parseInterchangeCircuit(wide), null);
+});
+
+test("a decomposed gate set past the step guard reports too_large even when narrow", () => {
+  // Each ccx decomposes into ~15 primitive columns; enough of them exceed the
+  // step guard on only three wires — the guard is about draw cost, not width.
+  const toffoliCount = 40;
+  const deep = [
+    "OPENQASM 3.0;",
+    "include \"stdgates.inc\";",
+    "qubit[3] q;",
+    ...Array.from({ length: toffoliCount }, () => "ccx q[0], q[1], q[2];"),
+  ].join("\n");
+  const result = reconstructInterchangeCircuit(deep);
+  assert.equal(result.kind, "too_large");
+  assert.ok(result.kind === "too_large");
+  assert.ok(result.stepCount > MAX_VIEWABLE_STEPS, `expected > ${MAX_VIEWABLE_STEPS} steps, got ${result.stepCount}`);
+  assert.equal(parseInterchangeCircuit(deep), null);
+});
+
+test("an explicit maxQubits override still narrows the viewer below the default ceiling", () => {
+  // The seed passes no override and gets the wide default; a caller that wants
+  // the old 24-wire behavior can still ask for it.
+  assert.equal(reconstructInterchangeCircuit(ghzQasm(26), { maxQubits: 24 }).kind, "too_large");
+  assert.equal(parseInterchangeCircuit(ghzQasm(26), 24), null);
 });
