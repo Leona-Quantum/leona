@@ -23,3 +23,10 @@ Hamiltonians, comparison. Authority: `docs/adr/0023-vqe-experiment-identity.md`,
 - Component identity is an `ArtifactVersion` UUID reference, never a string label
   (ADR-0023). This package validates the UUID's shape only; existence/Scope checks are
   the repository layer's job in a later phase.
+- `corpus_validation.py` validates the Phase 2 curated corpus (`docs/atlas/corpus/`,
+  outside this package) offline — it lives here because it needs `ComponentType` for
+  enum checks. Per ADR-0026, its `validation_state` is machine-only: there is no
+  `human_reviewed` value anywhere in that state machine, and nothing here may claim
+  a corpus record has been human-validated. The online URL-reachability audit is a
+  separate, explicitly-online script (`docs/atlas/corpus/validator/online_url_audit.py`)
+  that never runs as part of this package's own test suite.
