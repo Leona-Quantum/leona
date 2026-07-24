@@ -747,11 +747,11 @@ lossなく表現できる。
 
 ## Phase 2 — Curated VQE Registry
 
-**Status:** in_progress (ADR-0026適用中。corpus mechanicsは2026-07-24完了:
-26 papers, 15 verified implementation repositories, 59 components。
-Human Review関連要件はADR-0026によりMVP acceptanceから明示的に除外 —
+**Status:** complete (2026-07-24。corpus mechanics: 26 papers, 15 verified
+implementation repositories, 59 components, machine-generated comparison
+report 3件。Human Review関連要件はADR-0026によりMVP acceptanceから明示的に除外 —
 `docs/adr/0026-vqe-mvp-machine-only-corpus-validation.md`、
-`docs/atlas/PHASE2_PROGRESS.md`参照)  
+`docs/atlas/PHASE2_PROGRESS.md`参照。改訂後の11 acceptance criteria全て達成)  
 **DB change:** none  
 **UI:** none
 
@@ -845,8 +845,11 @@ comparisonはpost-MVPへ延期する (ADR-0026)。
 
 ## Phase 3 — Neon Component Registry and Experiment Persistence
 
-**Status:** not_started  
-**DB change:** expected; responsibilities are fixed after Phase 2  
+**Status:** verified_local (2026-07-24。migration 0035、repository層、API
+candidate 11 endpoint全て実装しlocal throwaway Postgresでtest済み。Neon branch
+へは未接続 — owner go-ahead待ち。詳細: `docs/atlas/PHASE3_PROGRESS.md`)  
+**DB change:** migration 0035 (`vqe_component_specs` / `vqe_workflow_components`
+/ `vqe_experiments` / `vqe_observations`, 全てadditive)  
 **UI:** API contract only
 
 ### API candidate
