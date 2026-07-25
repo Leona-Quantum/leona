@@ -38,6 +38,8 @@ override both.
 - Proof execution: identical ScientificExperimentSpec on Qiskit and PennyLane
 - GitHub Wrapper: staged after curated Registry validation, metadata-only first
 - Main/production Neon: never used for feature migration tests
+- Phase 5 record: `PHASE5_PROGRESS.md`
+- Phase 6 decision: `PHASE6_GO_NO_GO.md`
 
 ## Status vocabulary
 

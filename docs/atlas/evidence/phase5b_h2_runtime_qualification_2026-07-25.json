@@ -1,0 +1,485 @@
+{
+  "candidates": [
+    {
+      "acceptance": {
+        "all_runs_succeeded": true,
+        "common_basis_resources_stable": true,
+        "max_absolute_error_ha": 1.8207657603852567e-14,
+        "min_final_state_fidelity": 0.9999999999999896
+      },
+      "binding": {
+        "adapter_release_id": "majorana-h2-qiskit-adapter-0.2.0",
+        "architecture": "linux-x86_64",
+        "container_digest": "sha256:1e6552f240a6a79555ee84da0460934900bfa62086467b5866954b96b871ea1c",
+        "dataset_snapshot_id": "h2-sto3g-fixture-6424713c69c2b734172db47329b7deb62b67a743c80fd792f48173fdaa4e3edc",
+        "framework": "qiskit",
+        "isolation_policy": {
+          "credential_policy": "none",
+          "database_url_policy": "omit",
+          "dynamic_package_installation": "forbidden",
+          "network_policy": "deny_all",
+          "output_filesystem": "bounded_ephemeral_only",
+          "root_filesystem": "read_only",
+          "run_as": "non_root",
+          "schema_version": "0.1.0"
+        },
+        "production_runtime_status": "unqualified",
+        "protocol_version": "0.2.0",
+        "provider_versions": {
+          "numpy": "2.5.1",
+          "qiskit": "1.4.6",
+          "scipy": "1.18.0"
+        },
+        "runtime_profile_id": "h2-qiskit-linux-x86_64-candidate-v1"
+      },
+      "framework": "qiskit",
+      "image": {
+        "architecture": "amd64",
+        "digest": "sha256:1e6552f240a6a79555ee84da0460934900bfa62086467b5866954b96b871ea1c",
+        "os": "linux"
+      },
+      "isolation": {
+        "exception_class": "OSError",
+        "network_mode": "none",
+        "outbound_connection_blocked": true
+      },
+      "lock_sha256": "b7b33fde49f1250cf78141cc6fe1042b4e78620f5cce124a84316465a0296007",
+      "runs": [
+        {
+          "absolute_error_ha": 1.8207657603852567e-14,
+          "best_energy_ha": -1.1373060357533555,
+          "common_basis_compiled": {
+            "depth": 83,
+            "gate_count": 152,
+            "parameter_count": 1,
+            "two_qubit_gate_count": 48
+          },
+          "final_state_fidelity": 0.9999999999999896,
+          "iterations": 13,
+          "optimizer_work": {
+            "energy_evaluations": 13,
+            "gradient_evaluations": 0,
+            "hessian_evaluations": 0,
+            "iterations": 13
+          },
+          "repetition": 1
+        },
+        {
+          "absolute_error_ha": 1.8207657603852567e-14,
+          "best_energy_ha": -1.1373060357533555,
+          "common_basis_compiled": {
+            "depth": 83,
+            "gate_count": 152,
+            "parameter_count": 1,
+            "two_qubit_gate_count": 48
+          },
+          "final_state_fidelity": 0.9999999999999896,
+          "iterations": 13,
+          "optimizer_work": {
+            "energy_evaluations": 13,
+            "gradient_evaluations": 0,
+            "hessian_evaluations": 0,
+            "iterations": 13
+          },
+          "repetition": 2
+        },
+        {
+          "absolute_error_ha": 1.8207657603852567e-14,
+          "best_energy_ha": -1.1373060357533555,
+          "common_basis_compiled": {
+            "depth": 83,
+            "gate_count": 152,
+            "parameter_count": 1,
+            "two_qubit_gate_count": 48
+          },
+          "final_state_fidelity": 0.9999999999999896,
+          "iterations": 13,
+          "optimizer_work": {
+            "energy_evaluations": 13,
+            "gradient_evaluations": 0,
+            "hessian_evaluations": 0,
+            "iterations": 13
+          },
+          "repetition": 3
+        },
+        {
+          "absolute_error_ha": 1.8207657603852567e-14,
+          "best_energy_ha": -1.1373060357533555,
+          "common_basis_compiled": {
+            "depth": 83,
+            "gate_count": 152,
+            "parameter_count": 1,
+            "two_qubit_gate_count": 48
+          },
+          "final_state_fidelity": 0.9999999999999896,
+          "iterations": 13,
+          "optimizer_work": {
+            "energy_evaluations": 13,
+            "gradient_evaluations": 0,
+            "hessian_evaluations": 0,
+            "iterations": 13
+          },
+          "repetition": 4
+        },
+        {
+          "absolute_error_ha": 1.8207657603852567e-14,
+          "best_energy_ha": -1.1373060357533555,
+          "common_basis_compiled": {
+            "depth": 83,
+            "gate_count": 152,
+            "parameter_count": 1,
+            "two_qubit_gate_count": 48
+          },
+          "final_state_fidelity": 0.9999999999999896,
+          "iterations": 13,
+          "optimizer_work": {
+            "energy_evaluations": 13,
+            "gradient_evaluations": 0,
+            "hessian_evaluations": 0,
+            "iterations": 13
+          },
+          "repetition": 5
+        },
+        {
+          "absolute_error_ha": 1.8207657603852567e-14,
+          "best_energy_ha": -1.1373060357533555,
+          "common_basis_compiled": {
+            "depth": 83,
+            "gate_count": 152,
+            "parameter_count": 1,
+            "two_qubit_gate_count": 48
+          },
+          "final_state_fidelity": 0.9999999999999896,
+          "iterations": 13,
+          "optimizer_work": {
+            "energy_evaluations": 13,
+            "gradient_evaluations": 0,
+            "hessian_evaluations": 0,
+            "iterations": 13
+          },
+          "repetition": 6
+        },
+        {
+          "absolute_error_ha": 1.8207657603852567e-14,
+          "best_energy_ha": -1.1373060357533555,
+          "common_basis_compiled": {
+            "depth": 83,
+            "gate_count": 152,
+            "parameter_count": 1,
+            "two_qubit_gate_count": 48
+          },
+          "final_state_fidelity": 0.9999999999999896,
+          "iterations": 13,
+          "optimizer_work": {
+            "energy_evaluations": 13,
+            "gradient_evaluations": 0,
+            "hessian_evaluations": 0,
+            "iterations": 13
+          },
+          "repetition": 7
+        },
+        {
+          "absolute_error_ha": 1.8207657603852567e-14,
+          "best_energy_ha": -1.1373060357533555,
+          "common_basis_compiled": {
+            "depth": 83,
+            "gate_count": 152,
+            "parameter_count": 1,
+            "two_qubit_gate_count": 48
+          },
+          "final_state_fidelity": 0.9999999999999896,
+          "iterations": 13,
+          "optimizer_work": {
+            "energy_evaluations": 13,
+            "gradient_evaluations": 0,
+            "hessian_evaluations": 0,
+            "iterations": 13
+          },
+          "repetition": 8
+        },
+        {
+          "absolute_error_ha": 1.8207657603852567e-14,
+          "best_energy_ha": -1.1373060357533555,
+          "common_basis_compiled": {
+            "depth": 83,
+            "gate_count": 152,
+            "parameter_count": 1,
+            "two_qubit_gate_count": 48
+          },
+          "final_state_fidelity": 0.9999999999999896,
+          "iterations": 13,
+          "optimizer_work": {
+            "energy_evaluations": 13,
+            "gradient_evaluations": 0,
+            "hessian_evaluations": 0,
+            "iterations": 13
+          },
+          "repetition": 9
+        },
+        {
+          "absolute_error_ha": 1.8207657603852567e-14,
+          "best_energy_ha": -1.1373060357533555,
+          "common_basis_compiled": {
+            "depth": 83,
+            "gate_count": 152,
+            "parameter_count": 1,
+            "two_qubit_gate_count": 48
+          },
+          "final_state_fidelity": 0.9999999999999896,
+          "iterations": 13,
+          "optimizer_work": {
+            "energy_evaluations": 13,
+            "gradient_evaluations": 0,
+            "hessian_evaluations": 0,
+            "iterations": 13
+          },
+          "repetition": 10
+        }
+      ]
+    },
+    {
+      "acceptance": {
+        "all_runs_succeeded": true,
+        "common_basis_resources_stable": true,
+        "max_absolute_error_ha": 1.7319479184152442e-14,
+        "min_final_state_fidelity": 0.9999999999999902
+      },
+      "binding": {
+        "adapter_release_id": "majorana-h2-pennylane-adapter-0.2.0",
+        "architecture": "linux-x86_64",
+        "container_digest": "sha256:34214c9f8ed7ea581a324eb6ebb464f001b75e00570da86e190876e57fe34e59",
+        "dataset_snapshot_id": "h2-sto3g-fixture-6424713c69c2b734172db47329b7deb62b67a743c80fd792f48173fdaa4e3edc",
+        "framework": "pennylane",
+        "isolation_policy": {
+          "credential_policy": "none",
+          "database_url_policy": "omit",
+          "dynamic_package_installation": "forbidden",
+          "network_policy": "deny_all",
+          "output_filesystem": "bounded_ephemeral_only",
+          "root_filesystem": "read_only",
+          "run_as": "non_root",
+          "schema_version": "0.1.0"
+        },
+        "production_runtime_status": "unqualified",
+        "protocol_version": "0.2.0",
+        "provider_versions": {
+          "numpy": "2.5.1",
+          "pennylane": "0.45.1",
+          "scipy": "1.18.0"
+        },
+        "runtime_profile_id": "h2-pennylane-linux-x86_64-candidate-v1"
+      },
+      "framework": "pennylane",
+      "image": {
+        "architecture": "amd64",
+        "digest": "sha256:34214c9f8ed7ea581a324eb6ebb464f001b75e00570da86e190876e57fe34e59",
+        "os": "linux"
+      },
+      "isolation": {
+        "exception_class": "OSError",
+        "network_mode": "none",
+        "outbound_connection_blocked": true
+      },
+      "lock_sha256": "2e6f0baa2f04f87973f18f0fe3bc21ed9020c8cdde5cbddd3b728f68272f8f00",
+      "runs": [
+        {
+          "absolute_error_ha": 1.7319479184152442e-14,
+          "best_energy_ha": -1.1373060357533564,
+          "common_basis_compiled": {
+            "depth": 83,
+            "gate_count": 152,
+            "parameter_count": 1,
+            "two_qubit_gate_count": 48
+          },
+          "final_state_fidelity": 0.9999999999999902,
+          "iterations": 14,
+          "optimizer_work": {
+            "energy_evaluations": 14,
+            "gradient_evaluations": 0,
+            "hessian_evaluations": 0,
+            "iterations": 14
+          },
+          "repetition": 1
+        },
+        {
+          "absolute_error_ha": 1.7319479184152442e-14,
+          "best_energy_ha": -1.1373060357533564,
+          "common_basis_compiled": {
+            "depth": 83,
+            "gate_count": 152,
+            "parameter_count": 1,
+            "two_qubit_gate_count": 48
+          },
+          "final_state_fidelity": 0.9999999999999902,
+          "iterations": 14,
+          "optimizer_work": {
+            "energy_evaluations": 14,
+            "gradient_evaluations": 0,
+            "hessian_evaluations": 0,
+            "iterations": 14
+          },
+          "repetition": 2
+        },
+        {
+          "absolute_error_ha": 1.7319479184152442e-14,
+          "best_energy_ha": -1.1373060357533564,
+          "common_basis_compiled": {
+            "depth": 83,
+            "gate_count": 152,
+            "parameter_count": 1,
+            "two_qubit_gate_count": 48
+          },
+          "final_state_fidelity": 0.9999999999999902,
+          "iterations": 14,
+          "optimizer_work": {
+            "energy_evaluations": 14,
+            "gradient_evaluations": 0,
+            "hessian_evaluations": 0,
+            "iterations": 14
+          },
+          "repetition": 3
+        },
+        {
+          "absolute_error_ha": 1.7319479184152442e-14,
+          "best_energy_ha": -1.1373060357533564,
+          "common_basis_compiled": {
+            "depth": 83,
+            "gate_count": 152,
+            "parameter_count": 1,
+            "two_qubit_gate_count": 48
+          },
+          "final_state_fidelity": 0.9999999999999902,
+          "iterations": 14,
+          "optimizer_work": {
+            "energy_evaluations": 14,
+            "gradient_evaluations": 0,
+            "hessian_evaluations": 0,
+            "iterations": 14
+          },
+          "repetition": 4
+        },
+        {
+          "absolute_error_ha": 1.7319479184152442e-14,
+          "best_energy_ha": -1.1373060357533564,
+          "common_basis_compiled": {
+            "depth": 83,
+            "gate_count": 152,
+            "parameter_count": 1,
+            "two_qubit_gate_count": 48
+          },
+          "final_state_fidelity": 0.9999999999999902,
+          "iterations": 14,
+          "optimizer_work": {
+            "energy_evaluations": 14,
+            "gradient_evaluations": 0,
+            "hessian_evaluations": 0,
+            "iterations": 14
+          },
+          "repetition": 5
+        },
+        {
+          "absolute_error_ha": 1.7319479184152442e-14,
+          "best_energy_ha": -1.1373060357533564,
+          "common_basis_compiled": {
+            "depth": 83,
+            "gate_count": 152,
+            "parameter_count": 1,
+            "two_qubit_gate_count": 48
+          },
+          "final_state_fidelity": 0.9999999999999902,
+          "iterations": 14,
+          "optimizer_work": {
+            "energy_evaluations": 14,
+            "gradient_evaluations": 0,
+            "hessian_evaluations": 0,
+            "iterations": 14
+          },
+          "repetition": 6
+        },
+        {
+          "absolute_error_ha": 1.7319479184152442e-14,
+          "best_energy_ha": -1.1373060357533564,
+          "common_basis_compiled": {
+            "depth": 83,
+            "gate_count": 152,
+            "parameter_count": 1,
+            "two_qubit_gate_count": 48
+          },
+          "final_state_fidelity": 0.9999999999999902,
+          "iterations": 14,
+          "optimizer_work": {
+            "energy_evaluations": 14,
+            "gradient_evaluations": 0,
+            "hessian_evaluations": 0,
+            "iterations": 14
+          },
+          "repetition": 7
+        },
+        {
+          "absolute_error_ha": 1.7319479184152442e-14,
+          "best_energy_ha": -1.1373060357533564,
+          "common_basis_compiled": {
+            "depth": 83,
+            "gate_count": 152,
+            "parameter_count": 1,
+            "two_qubit_gate_count": 48
+          },
+          "final_state_fidelity": 0.9999999999999902,
+          "iterations": 14,
+          "optimizer_work": {
+            "energy_evaluations": 14,
+            "gradient_evaluations": 0,
+            "hessian_evaluations": 0,
+            "iterations": 14
+          },
+          "repetition": 8
+        },
+        {
+          "absolute_error_ha": 1.7319479184152442e-14,
+          "best_energy_ha": -1.1373060357533564,
+          "common_basis_compiled": {
+            "depth": 83,
+            "gate_count": 152,
+            "parameter_count": 1,
+            "two_qubit_gate_count": 48
+          },
+          "final_state_fidelity": 0.9999999999999902,
+          "iterations": 14,
+          "optimizer_work": {
+            "energy_evaluations": 14,
+            "gradient_evaluations": 0,
+            "hessian_evaluations": 0,
+            "iterations": 14
+          },
+          "repetition": 9
+        },
+        {
+          "absolute_error_ha": 1.7319479184152442e-14,
+          "best_energy_ha": -1.1373060357533564,
+          "common_basis_compiled": {
+            "depth": 83,
+            "gate_count": 152,
+            "parameter_count": 1,
+            "two_qubit_gate_count": 48
+          },
+          "final_state_fidelity": 0.9999999999999902,
+          "iterations": 14,
+          "optimizer_work": {
+            "energy_evaluations": 14,
+            "gradient_evaluations": 0,
+            "hessian_evaluations": 0,
+            "iterations": 14
+          },
+          "repetition": 10
+        }
+      ]
+    }
+  ],
+  "generated_at": "2026-07-25T14:53:05.951962+00:00",
+  "human_review_state": "unreviewed",
+  "production_runtime_status": "unqualified",
+  "promotion_performed": false,
+  "public_execution": "blocked",
+  "qualification_scope": "local_linux_x86_64_candidate",
+  "schema_version": "0.1.0"
+}

@@ -7,7 +7,9 @@
 **作業branch:** `feature/vqe`  
 **基準Alembic head:** `0034`  
 **状態:** implementation in progress; Phase 0–4.5 complete,
-Phase 5A authorized, Phase 5B–6 remain open (2026-07-25 owner decision)  
+Phase 5A implemented/verified, Phase 5B technical candidate qualification
+complete but human review/promotion blocked, Phase 6 automated hardening
+complete with public MVP NO-GO (2026-07-25)
 **長期構想:** `atlas_vqe_github_wrapper_master_plan_ja.md`
 
 ---
@@ -42,9 +44,9 @@ GPU、QPU、古い論文環境の実行へ進んではならない。
 | 2 | 25 papers / 15 verified implementation repositories / 50+ components curated corpus (ADR-0026: machine-validated, no Human Review in MVP) | no | no | complete_machine_validated |
 | 3 | Component Registry + experiment evidence in Neon | yes | contract only | verified_local; Neon/import pending |
 | 4 | Atlas Browse / Compare UI | Phase 3 | yes | implemented_and_browser_verified |
-| 5A | Durable non-public execution product integration | Phase 3 | yes | authorized |
-| 5B | Scientific/runtime production qualification | Phase 3 | yes | blocked_on_external_gates |
-| 6 | Security/scientific/E2E hardening and MVP Go/No-Go | test only | test | not_started |
+| 5A | Durable non-public execution product integration | Phase 3 | yes | implemented_and_verified |
+| 5B | Scientific/runtime production qualification | Phase 3 | yes | candidate_qualified; blocked_on_human_review_and_promotion |
+| 6 | Security/scientific/E2E hardening and MVP Go/No-Go | test only | test | automated_gates_complete; public_release_no_go |
 | 7 | Manual GitHub metadata import | later | minimal | later |
 | 8–9 | Deterministic/LLM extraction and reviewed materialization | later | later | later |
 | 10 | Isolated external Repository execution | separate milestone | later | prohibited in MVP |
@@ -986,7 +988,8 @@ human-curated gold reportであるかのように装ってはならない。
 
 ## Phase 5 — Qiskit/PennyLane Proof Execution
 
-**Status:** Phase 5A authorized; Phase 5B blocked  
+**Status:** Phase 5A implemented/verified; Phase 5B candidate evidence complete,
+independent review and public promotion blocked
 **DB change:** Phase 3 tablesを利用  
 **UI:** Studio / Run / Library integration
 
@@ -1093,7 +1096,8 @@ Runtime profileをuserの自由文字列として選択させない。
 
 ## Phase 6 — MVP hardening and release decision
 
-**Status:** not_started
+**Status:** automated hardening complete; public MVP release NO-GO pending
+independent H2 review and owner user-flow confirmation
 
 ### Required gates
 
