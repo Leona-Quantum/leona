@@ -91,16 +91,19 @@ def canonicalize_hamiltonian(hamiltonian: CanonicalHamiltonian) -> CanonicalHami
 
 
 def hamiltonian_digest(hamiltonian: CanonicalHamiltonian) -> str:
-    """SHA-256 of the canonicalized form's deterministic JSON serialization.
-    Callers should pass a Hamiltonian through canonicalize_hamiltonian()
-    first if it did not already come from one -- this function does not
-    canonicalize implicitly, so a caller can also digest a deliberately
-    non-canonical form to detect that fact (e.g. in a round-trip test)."""
+    """SHA-256 of the deterministic canonical Hamiltonian representation.
+
+    Canonicalization is intentionally performed here rather than delegated
+    to callers. The digest is a scientific identity, so two equivalent term
+    lists must not receive different identities merely because one caller
+    forgot to sort/round first.
+    """
+    canonical = canonicalize_hamiltonian(hamiltonian)
     payload = [
         {"pauli_qubit0_first": t.pauli_qubit0_first, "coeff_re": t.coeff_re, "coeff_im": t.coeff_im}
-        for t in hamiltonian.terms
+        for t in canonical.terms
     ]
-    encoded = json.dumps(payload, sort_keys=True).encode("utf-8")
+    encoded = json.dumps(payload, sort_keys=True, allow_nan=False).encode("utf-8")
     return hashlib.sha256(encoded).hexdigest()
 
 

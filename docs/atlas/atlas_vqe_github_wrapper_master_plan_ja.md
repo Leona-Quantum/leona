@@ -8,6 +8,12 @@
 **文書の用途:** 人間の設計レビュー、AI coding agentによる段階実装、研究者向けプロダクト検証、学術研究計画  
 **重要:** 本文中の外部package versionは、調査基準日に公式documentation・PyPIで確認した「候補」であり、Majoranaが対応を保証したversionではない。対応保証は、lock解決、container build、conformance test、scientific golden test、人間reviewの完了後にのみ付与する。
 
+**実装状況注記 (2026-07-25):** この文書は長期のnormative master planであり、
+現在の実装完了を意味しない。Phase 1–4のlocal remediation状況、未達gate、
+Go/No-Goは`docs/atlas/INTEGRITY_REMEDIATION_2026-07-25.md`を参照する。
+特にGitHub Wrapper、外部Repository import/execution、claim reproductionは
+未実装であり、Atlas全体または学術的再現基盤の完成を主張しない。
+
 ---
 
 ## 0. この文書が統合する二つの構想

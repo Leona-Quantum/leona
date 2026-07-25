@@ -3,7 +3,12 @@ import { PublicSite } from "../../../components/public-site";
 import { getMajoranaAuth, getMajoranaSignInUrl, isMajoranaAuthConfigured } from "../../../lib/auth";
 import { getPublicLocale } from "../../../lib/public-locale-server";
 import { getRepositoryListEntries } from "../../../lib/repository-source";
-import { getVqeComparisons, getVqePapers, getVqeRepositories } from "../../../lib/atlas-vqe/source";
+import {
+  getVqeComparisonListEntries,
+  getVqeComponentListEntries,
+  getVqePaperListEntries,
+  getVqeRepositoryListEntries,
+} from "../../../lib/atlas-vqe/source";
 import { VerificationLegend } from "../../../components/repository-verification";
 import { AtlasContentSwitch } from "../atlas-content-switch";
 
@@ -18,9 +23,10 @@ export default async function RepositoryPage() {
   const signInHref = !user && isMajoranaAuthConfigured() ? await getMajoranaSignInUrl() : null;
   const isJapanese = locale === "ja";
   const entries = await getRepositoryListEntries();
-  const vqePapers = getVqePapers();
-  const vqeRepositories = getVqeRepositories();
-  const vqeComparisons = getVqeComparisons();
+  const vqePapers = getVqePaperListEntries();
+  const vqeComponents = getVqeComponentListEntries();
+  const vqeRepositories = getVqeRepositoryListEntries();
+  const vqeComparisons = getVqeComparisonListEntries();
 
   return (
     <PublicSite activePath="/repository" className="mj-repository-site" locale={locale} showLanguageToggle>
@@ -34,6 +40,7 @@ export default async function RepositoryPage() {
         <AtlasContentSwitch
           entries={entries}
           papers={vqePapers}
+          components={vqeComponents}
           repositories={vqeRepositories}
           comparisons={vqeComparisons}
           locale={locale}

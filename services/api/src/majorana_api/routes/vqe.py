@@ -25,7 +25,7 @@ from typing import Annotated, Any
 from fastapi import APIRouter, Header, HTTPException, Query
 from fastapi import Path as PathParam
 from majorana_vqe.canonical import scientific_experiment_spec_digest
-from majorana_vqe.models import Capability, ComponentType, ScientificExperimentSpec
+from majorana_vqe.models import Capability, ComponentType
 from pydantic import BaseModel, ConfigDict, Field
 
 from ..auth.deps import CurrentScope, DbSession
@@ -100,7 +100,9 @@ class CreateExperimentRequest(BaseModel):
 
     workflow_artifact_version_id: uuid.UUID
     protocol_version: str = Field(min_length=1, max_length=50)
-    scientific_spec: ScientificExperimentSpec
+    dataset_snapshot_id: str | None = Field(default=None, max_length=200)
+    initial_parameters: list[float] = Field(default_factory=list, max_length=256)
+    seed: int = Field(ge=0)
 
 
 class ExperimentResource(BaseModel):
@@ -113,7 +115,7 @@ class ExperimentResource(BaseModel):
     scientific_spec_json: dict[str, Any]
     scientific_spec_sha256: str
     protocol_version: str
-    idempotency_key: str | None
+    request_idempotency_key: str | None
     created_at: dt.datetime | None
 
 
@@ -152,7 +154,7 @@ def _to_experiment_resource(row: VqeExperimentRow) -> ExperimentResource:
         scientific_spec_json=row.scientific_spec_json,
         scientific_spec_sha256=row.scientific_spec_sha256,
         protocol_version=row.protocol_version,
-        idempotency_key=row.idempotency_key,
+        request_idempotency_key=row.request_idempotency_key,
         created_at=row.created_at,
     )
 
@@ -228,17 +230,36 @@ async def get_workflow(
 # --- comparisons (bundled corpus fixtures, not a DB table) -----------------
 
 
-def _comparisons_dir() -> Path:
-    """Locate docs/atlas/corpus/comparisons/ from the source tree.
+def _load_comparison(comparison_id: str) -> dict[str, Any] | None:
+    """Load immutable comparison data from the packaged generated artifact.
 
-    Resolves correctly in dev/CI/tests, which is everything this Phase 3
-    pass runs in. Not yet force-included into the built wheel (see the other
-    bundled-data precedent: catalog_bootstrap_manifest.default_manifest_path
-    + services/api/pyproject.toml force-include) — packaging this corpus for
-    a real deployment is an explicitly open item, not silently assumed done;
-    see the Phase 3 handoff report.
+    A source-tree fallback keeps direct editable installs usable before a
+    wheel is built. Both representations are generated from the same Phase 2
+    corpus and checked by the same CI generator command.
     """
-    return Path(__file__).resolve().parents[5] / "docs" / "atlas" / "corpus" / "comparisons"
+    packaged = Path(__file__).resolve().parents[1] / "atlas_vqe_comparisons.generated.json"
+    if packaged.exists():
+        bundle = json.loads(packaged.read_text())
+        return next(
+            (
+                comparison
+                for comparison in bundle["comparisons"]
+                if comparison["comparison_id"] == comparison_id
+            ),
+            None,
+        )
+    source_path = (
+        Path(__file__).resolve().parents[5]
+        / "docs"
+        / "atlas"
+        / "corpus"
+        / "comparisons"
+        / f"{comparison_id}.json"
+    )
+    try:
+        return json.loads(source_path.read_text())
+    except FileNotFoundError:
+        return None
 
 
 @router.get("/atlas/comparisons/{comparison_id}")
@@ -246,12 +267,10 @@ async def get_comparison(
     comparison_id: Annotated[str, PathParam(pattern=_COMPARISON_ID_PATTERN, max_length=200)],
     scope: CurrentScope,
 ) -> dict[str, Any]:
-    path = _comparisons_dir() / f"{comparison_id}.json"
-    try:
-        raw = path.read_text()
-    except FileNotFoundError:
+    comparison = _load_comparison(comparison_id)
+    if comparison is None:
         raise HTTPException(status_code=404, detail="unknown comparison report") from None
-    return json.loads(raw)
+    return comparison
 
 
 # --- capabilities ------------------------------------------------------
@@ -288,20 +307,32 @@ async def create_experiment(
     body: CreateExperimentRequest,
     scope: CurrentScope,
     session: DbSession,
-    idempotency_key: Annotated[str, Header(alias="Idempotency-Key", min_length=1, max_length=200)],
+    request_idempotency_key: Annotated[
+        str, Header(alias="Idempotency-Key", min_length=1, max_length=200)
+    ],
 ) -> ExperimentResource:
-    digest = scientific_experiment_spec_digest(body.scientific_spec)
     try:
+        scientific_spec = await vqe_repo.resolve_scientific_experiment_spec(
+            scope,
+            session,
+            body.workflow_artifact_version_id,
+            dataset_snapshot_id=body.dataset_snapshot_id,
+            initial_parameters=body.initial_parameters,
+            seed=body.seed,
+        )
+        digest = scientific_experiment_spec_digest(scientific_spec)
         experiment = await vqe_repo.create_experiment(
             scope,
             session,
             workflow_artifact_version_id=body.workflow_artifact_version_id,
-            schema_version=body.scientific_spec.schema_version,
-            scientific_spec_json=body.scientific_spec.model_dump(mode="json"),
+            schema_version=scientific_spec.schema_version,
+            scientific_spec_json=scientific_spec.model_dump(mode="json"),
             scientific_spec_sha256=digest,
             protocol_version=body.protocol_version,
-            idempotency_key=idempotency_key,
+            request_idempotency_key=request_idempotency_key,
         )
+    except vqe_repo.InvalidWorkflowCompositionError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from None
     except vqe_repo.IdempotencyConflictError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from None
     return _to_experiment_resource(experiment)

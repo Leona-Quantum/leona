@@ -1,6 +1,6 @@
 # Atlas VQE MVP — Phase 3 progress record
 
-**Date:** 2026-07-24
+**Date:** 2026-07-24; integrity remediation 2026-07-25
 **Status:** implemented and verified against a local throwaway Postgres 14
 instance (migration reversibility, constraint enforcement, workspace
 isolation, idempotency, and append-only invariants all exercised with real
@@ -36,13 +36,14 @@ models (`VqeComponentSpec`, `VqeWorkflowComponent`, `VqeExperiment`,
 layer: `create_component_spec`/`get_component_spec`/`list_component_specs`,
 `create_workflow_component`/`list_workflow_components`,
 `create_experiment`/`get_experiment`/`list_experiments`/
-`find_experiment_by_idempotency_key`, `append_observation`/
+`find_experiment_by_request_idempotency_key`,
+`resolve_scientific_experiment_spec`, `append_observation`/
 `list_observations`. Every read that touches `vqe_component_specs`/
 `vqe_workflow_components` joins through `artifact_versions -> artifacts` to
 apply the workspace predicate (those tables carry no `workspace_id` of
-their own — identity is the ArtifactVersion). `vqe_experiments`/
-`vqe_observations` are workspace-owned data and carry `workspace_id`
-directly.
+their own — identity is the ArtifactVersion). `vqe_experiments` carries
+`workspace_id`; observations are scoped through their parent experiment and
+do not duplicate it.
 
 `services/api/src/majorana_api/routes/vqe.py` — all 11 endpoints from the
 plan's Part IV "API candidate" list, wired into `app.py`:
@@ -104,30 +105,33 @@ POST /v1/vqe/experiments/{experiment_id}/materialize
    this deliberately diverges from `POST /v1/runs`'s own convention, where
    the same header is optional. The divergence is the plan's own
    instruction, not an inconsistency to fix.
+   ADR-0029 names its persisted value `request_idempotency_key`: it is HTTP
+   replay safety, not ADR-0023's server-generated Phase 5 execution identity.
 6. **`create_experiment`'s idempotent-retry logic mirrors
    `catalog_import.create_import_job` byte-for-byte**: look up by
-   `(workspace_id, idempotency_key)` first; on a flush-time
+   `(workspace_id, request_idempotency_key)` first; on a flush-time
    `IntegrityError` (a concurrent creator won the race), roll back and
    re-read the winner; a reused key naming a different
    `workflow_artifact_version_id` or `scientific_spec_sha256` raises
    `IdempotencyConflictError` (409) instead of silently returning the
    wrong experiment.
-7. **`scientific_spec_sha256` is computed in the route layer**
-   (`majorana_vqe.canonical.scientific_experiment_spec_digest`), not
-   inside the repository. The repo layer receives and trusts an
-   already-computed digest, keeping it free of a `majorana_vqe.canonical`
-   dependency and matching the existing convention that repos take
-   primitives, not domain-package objects — request-body validation
-   (`ScientificExperimentSpec`'s own Pydantic validators) already lives in
-   the route layer for every other endpoint.
-8. **`append_observation` enforces two invariants in Python before the DB
+7. **The server constructs the scientific spec (ADR-0029).** The client
+   supplies a Workflow ArtifactVersion plus dataset/initial-parameter/seed
+   inputs, never component UUIDs. The repository resolves all 12 required
+   ordinal-zero links under Scope, checks every `ComponentType`, and rejects
+   missing, duplicate, wrong-type, cross-scope, or v0.1-unrepresentable
+   composition. The route hashes only that resolved model.
+8. **`append_observation` enforces evidence invariants in Python before the DB
    ever sees the row**: the observation's `scientific_spec_sha256` must
    match its parent experiment's (an observation for the wrong spec is
    rejected, not silently recorded), and `status`/`failure_code` must be
    consistent (mirrors the DB CHECK
    `ck_vqe_observations_status_failure_code_consistency`, which mirrors
    `majorana_vqe.models.ResultContract`'s own Pydantic validator — three
-   layers agreeing on one rule, by design).
+   layers agreeing on one rule, by design). A succeeded result also requires
+   a Hamiltonian digest, and external detail URI/hash/size are all-or-none.
+   PostgreSQL independently enforces these checks and uses a trigger plus
+   revoked app-role privileges to reject observation UPDATE/DELETE.
 
 ## 3. What was tested, and how (real numbers, not claims)
 
@@ -231,23 +235,15 @@ principle against hiding a result that didn't fit the narrative.
   recovering via rollback + re-read) was **not** independently exercised
   by an automated test — it is byte-for-byte the same pattern as
   `catalog_import.create_import_job`, and the underlying DB constraint it
-  depends on (`ix_vqe_experiments_workspace_idempotency`, a partial unique
+  depends on (`ix_vqe_experiments_workspace_request_idempotency`, a partial unique
   index) was manually verified earlier in this phase via direct `psql`
   inserts. Simulating genuine concurrent sessions in an automated test was
   judged not worth the harness complexity for this pass; flagged here
   rather than silently assumed proven.
-- **No production packaging for the comparisons corpus.**
-  `routes/vqe.py:_comparisons_dir()` locates
-  `docs/atlas/corpus/comparisons/` via a source-tree-relative path, which
-  resolves correctly in dev/CI/tests (everything this phase runs in) but
-  is not force-included into the built wheel the way
-  `catalog_bootstrap/manifest.json` is (see
-  `services/api/pyproject.toml`'s `force-include` section and
-  `catalog_bootstrap_manifest.default_manifest_path`'s dual-path fallback,
-  which this phase's helper deliberately mirrors in structure but not yet
-  in completeness). Whoever does the real deployment work needs to add the
-  equivalent force-include entry — recorded here so it isn't discovered
-  the hard way in production.
+- **Comparison corpus production packaging was fixed on 2026-07-25.**
+  `services/api/pyproject.toml` force-includes the immutable reports in the
+  wheel and `_comparisons_dir()` prefers that packaged copy with a
+  source-checkout fallback.
 - **No UI work in this document** — Phase 4 is tracked separately (see
   the sibling work described alongside this report).
 
@@ -259,10 +255,8 @@ principle against hiding a result that didn't fit the narrative.
 - Registry import is explicit, idempotent, reviewed-corpus-only — not yet
   exercised (§4; no import has run against this phase's code yet).
 - API resolves component ArtifactVersions to build the scientific spec —
-  `create_experiment` resolves `workflow_artifact_version_id` through the
-  scoped artifact repo before persisting; the full per-role resolution (11
-  `*_version_id` fields) is validated by `ScientificExperimentSpec`'s own
-  Pydantic model at the route layer, not re-validated in the repo.
+  done in the repository under Scope for all 12 required component roles;
+  client-supplied component UUIDs are rejected (ADR-0028/0029).
 - Requested capability resolves server-side to an approved
   ExecutionBinding — `GET /v1/vqe/capabilities` reports the one known
   capability (`h2_sto3g_exact_energy`) as `available: false` with an
@@ -282,11 +276,36 @@ principle against hiding a result that didn't fit the narrative.
 
 ## 6. What this document is asking for
 
-Everything above is implemented, committed to `feature/vqe`, and verified
-against a local, throwaway, non-Neon Postgres instance — migration
+The original Phase 3 implementation above was committed to `feature/vqe`.
+The 2026-07-25 integrity remediation is isolated on
+`fix/vqe-mvp-integrity` and verified against a local, throwaway, non-Neon
+Postgres instance — migration
 reversibility, every declared constraint, workspace isolation, and the
 full existing test suite as a regression check. Per the original Phase 0-6
 kickoff instructions, **Phase 3's actual Neon branch creation/connection
 requires explicit owner go-ahead before proceeding** — this document is
 that stop-and-report. Nothing in `feature/vqe` has touched Neon, `dev`, or
 `prod` in this phase.
+
+## 7. 2026-07-25 integrity remediation
+
+The follow-up audit found that the original implementation did not yet make
+all of its strongest integrity claims true. The remediation:
+
+- adds the independent `stopping_protocol` component;
+- constructs `ScientificExperimentSpec` server-side from 12 typed workflow
+  links and rejects missing/duplicate/wrong-type/unsupported composition;
+- rejects non-finite scientific values and canonicalizes Hamiltonians inside
+  the digest function;
+- enforces observation append-only behavior with PostgreSQL privileges and a
+  trigger, not repository convention alone;
+- requires Hamiltonian digest on success and all-or-none external detail
+  references;
+- packages generated comparison reports in the API wheel;
+- distinguishes HTTP replay identity (`request_idempotency_key`) from the
+  later Phase 5 execution identity.
+
+A fresh throwaway PostgreSQL 14 run passed 11/11 live repository/migration
+tests. Neon remains untouched and corpus import remains open. Full commands,
+the one disclosed test-invocation error, and the project-level Go/No-Go are
+recorded in `docs/atlas/INTEGRITY_REMEDIATION_2026-07-25.md`.

@@ -6,7 +6,8 @@
 **基準commit:** `4ade53faf37443c90980f7515bbbb83b836240db`  
 **作業branch:** `feature/vqe`  
 **基準Alembic head:** `0034`  
-**状態:** approved for phased planning; implementation not started  
+**状態:** implementation in progress; Phase 0–4 local implementation complete,
+Phase 3 Neon verification and Phase 5–6 remain open (2026-07-25 integrity remediation)  
 **長期構想:** `atlas_vqe_github_wrapper_master_plan_ja.md`
 
 ---
@@ -38,26 +39,21 @@ GPU、QPU、古い論文環境の実行へ進んではならない。
 |---|---|---:|---:|---|
 | 0 | ADR + H2/Qiskit/PennyLane executable spike | no | no | complete |
 | 1 | Component/Workflow/Scientific Experiment schema | no | no | complete |
-| 2 | 25 papers / 15 verified implementation repositories / 50+ components curated corpus (ADR-0026: machine-validated, no Human Review in MVP) | no | no | in_progress (ADR-0026 revision underway) |
-| 3 | Component Registry + experiment evidence in Neon | yes | contract only | not_started |
-| 4 | Atlas Browse / Compare UI | Phase 3 | yes | not_started |
+| 2 | 25 papers / 15 verified implementation repositories / 50+ components curated corpus (ADR-0026: machine-validated, no Human Review in MVP) | no | no | complete_machine_validated |
+| 3 | Component Registry + experiment evidence in Neon | yes | contract only | verified_local; Neon/import pending |
+| 4 | Atlas Browse / Compare UI | Phase 3 | yes | implemented_and_browser_verified |
 | 5 | Qiskit/PennyLane runtime + Studio proof execution | Phase 3 | yes | not_started |
 | 6 | Security/scientific/E2E hardening and MVP Go/No-Go | test only | test | not_started |
 | 7 | Manual GitHub metadata import | later | minimal | later |
 | 8–9 | Deterministic/LLM extraction and reviewed materialization | later | later | later |
 | 10 | Isolated external Repository execution | separate milestone | later | prohibited in MVP |
 
-**Active pickup:** ADR-0026の適用 (Phase 2からHuman Review関連要件を明示的に
-除外する計画改訂)。Phase 0/1はowner-approved/complete (2026-07-24)。owner指示
-により、Phase 2 MVP acceptanceから「80%人間review」「owner stopとしての
-human review待ち」「inter-annotator agreement」「human-authored manual-gold
-comparison」を削除し、machine-validationベースの受入条件へ再定義中
-(ADR-0026、`docs/adr/0026-vqe-mvp-machine-only-corpus-validation.md`)。
-これは要件を黙って満たしたことにする変更ではなく、理由・影響・変更前後を
-明示的に文書化する計画改訂である。人間によるcuration、inter-annotator
-agreement、manual-gold評価はpost-MVPへ延期し、MVPのcorpusデータは
-human-validatedとは主張しない。改訂完了まではPhase 3へ進まない
-(§9 完了報告を参照)。
+**Active pickup:** 2026-07-25 integrity remediation後のPhase 3 Neon child
+branch検証・curated corpus import判断。Phase 2はADR-0026に従うmachine-only
+acceptanceとして完了したが、human curation、inter-annotator agreement、
+manual-gold評価はpost-MVPのままである。Phase 3のschema/APIはlocal
+PostgreSQLで検証済みだが、Neon接続と実corpus importはowner承認前に完了扱い
+しない。詳細は`docs/atlas/INTEGRITY_REMEDIATION_2026-07-25.md`。
 
 ---
 
@@ -256,6 +252,7 @@ error_mitigation
 compilation_backend
 learning_training
 evaluation_protocol
+stopping_protocol
 workflow
 ```
 
@@ -736,10 +733,11 @@ lossなく表現できる。
   誤って拒否していた。allowlistを`/`と一般的な文章記号
   (`;:'?!"`)へ拡張し、path traversal/絶対pathの拒否は別の、より特異的な
   patternが引き続き担当することを確認した上で修正 (regression test追加)。
-- 未解決の設計上の疑問 (silently resolvedにしない): `stopping_protocol_version_id`
-  に対応する`ComponentType`がplanの16種リストに存在しない
-  (`protocol.py`のコメント参照) — Phase 3でのrepository実装前にowner/ADR
-  判断が必要。
+- 2026-07-25 remediation: `stopping_protocol_version_id`を独立して比較可能な
+  immutable componentとして維持するため、ADR-0028で
+  `ComponentType.STOPPING_PROTOCOL`を追加した。gradient threshold、energy
+  tolerance、iteration capはaccuracy/resource costを変えるため、
+  evaluation protocolへ暗黙に内包しない。
 - `uv run pytest` (repo全体、DATABASE_URL未設定) → 967 passed, 0 failed,
   67 skipped (DB-gated tests) — 既存機能への影響なし確認済み。
 
@@ -881,6 +879,15 @@ POST /v1/vqe/experiments/{id}/materialize
 - materializeは成功済みobservationのみ。
 - public publicationは行わない。
 
+**2026-07-25 remediation clarification (ADR-0029):**
+
+- clientは完全な`ScientificExperimentSpec`やcomponent UUIDを提出しない。
+- API/repositoryが選択Workflowのtyped component linksをScope付きで解決し、
+  `ScientificExperimentSpec v0.1`を構築する。
+- HTTP `Idempotency-Key`は`request_idempotency_key`としてrequest replayだけに
+  使用する。approved ExecutionBinding確定後のserver-generated execution
+  identityとは別物である。
+
 ### Neon acceptance
 
 - temporary Neon child branch。
@@ -899,10 +906,11 @@ POST /v1/vqe/experiments/{id}/materialize
 
 ## Phase 4 — Atlas Browse and Compare UI
 
-**Status:** implemented (2026-07-24。既存`/repository`へ統合 (ADR-0027)。
-static fixture corpus (26 papers / 15 repositories / 3 comparisons) に対して
-build/typecheck/lint/既存89 testが通過、`next build`成功、dev serverでの
-実HTTPスモークテスト実施済み。実ブラウザでの目視確認は未実施。詳細:
+**Status:** implemented_and_browser_verified (2026-07-25 remediation。
+既存`/repository`へ統合 (ADR-0027)。static corpus
+(26 papers / 59 paper-annotated components / 15 repositories /
+3 comparisons) に対してbuild/typecheck/lint/92 testsが通過。
+実ブラウザでcomponent検索・filterと390×844px表示を検証済み。詳細:
 `docs/atlas/PHASE4_PROGRESS.md`)  
 **Primary UI owner:** Claude Code / designated UI owner  
 **Codex lane:** contracts、API evidence、test fixture、non-UI review

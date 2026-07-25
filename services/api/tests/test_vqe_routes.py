@@ -59,11 +59,11 @@ def test_every_route_requires_a_scope():
         assert "scope" in handler.__annotations__
 
 
-def test_create_experiment_requires_an_idempotency_key_with_no_default():
+def test_create_experiment_requires_a_request_idempotency_key_with_no_default():
     import inspect
 
     sig = inspect.signature(vqe_routes.create_experiment)
-    assert sig.parameters["idempotency_key"].default is inspect.Parameter.empty
+    assert sig.parameters["request_idempotency_key"].default is inspect.Parameter.empty
 
 
 async def test_capabilities_reports_the_h2_capability_as_unavailable():
@@ -189,18 +189,36 @@ async def test_create_experiment_translates_idempotency_conflict_to_409(monkeypa
     body = vqe_routes.CreateExperimentRequest(
         workflow_artifact_version_id=uuid.uuid4(),
         protocol_version="0.1.0",
-        scientific_spec=spec,
+        seed=0,
     )
+
+    async def fake_resolve_scientific_experiment_spec(*args, **kwargs):
+        return spec
 
     async def fake_create_experiment(*args, **kwargs):
         raise vqe_repo.IdempotencyConflictError("reused for a different experiment")
 
+    monkeypatch.setattr(
+        vqe_repo, "resolve_scientific_experiment_spec", fake_resolve_scientific_experiment_spec
+    )
     monkeypatch.setattr(vqe_repo, "create_experiment", fake_create_experiment)
     with pytest.raises(HTTPException) as excinfo:
         await vqe_routes.create_experiment(
-            body, scope=object(), session=object(), idempotency_key="dup-key"
+            body, scope=object(), session=object(), request_idempotency_key="dup-key"
         )
     assert excinfo.value.status_code == 409
+
+
+def test_create_experiment_request_rejects_client_supplied_component_ids():
+    from pydantic import ValidationError
+
+    with pytest.raises(ValidationError):
+        vqe_routes.CreateExperimentRequest(
+            workflow_artifact_version_id=uuid.uuid4(),
+            protocol_version="0.1.0",
+            seed=0,
+            ansatz_version_id=uuid.uuid4(),
+        )
 
 
 async def _fake_experiment(experiment_id: uuid.UUID) -> SimpleNamespace:
@@ -214,7 +232,7 @@ async def _fake_experiment(experiment_id: uuid.UUID) -> SimpleNamespace:
         scientific_spec_json={},
         scientific_spec_sha256="a" * 64,
         protocol_version="0.1.0",
-        idempotency_key="k",
+        request_idempotency_key="k",
         created_at=dt.datetime.now(dt.UTC),
     )
 

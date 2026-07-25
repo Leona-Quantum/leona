@@ -72,8 +72,8 @@ class TestKeyOrderIndependentDigest:
         ]
         terms_b = list(reversed(terms_a))
 
-        h_a = canonicalize_hamiltonian(CanonicalHamiltonian(num_qubits=2, terms=terms_a))
-        h_b = canonicalize_hamiltonian(CanonicalHamiltonian(num_qubits=2, terms=terms_b))
+        h_a = CanonicalHamiltonian(num_qubits=2, terms=terms_a)
+        h_b = CanonicalHamiltonian(num_qubits=2, terms=terms_b)
 
         assert hamiltonian_digest(h_a) == hamiltonian_digest(h_b)
 
@@ -91,6 +91,11 @@ class TestKeyOrderIndependentDigest:
 
 
 class TestCoefficientNormalization:
+    @pytest.mark.parametrize("invalid", [float("nan"), float("inf"), float("-inf")])
+    def test_hamiltonian_rejects_non_finite_coefficients(self, invalid):
+        with pytest.raises(Exception):  # noqa: B017 -- pydantic ValidationError
+            PauliTerm(pauli_qubit0_first="Z", coeff_re=invalid)
+
     def test_canonicalization_rounds_to_configured_precision(self):
         h = CanonicalHamiltonian(
             num_qubits=1,

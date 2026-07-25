@@ -82,8 +82,8 @@ async def test_list_experiments_is_workspace_bound(scope, session):
     assert_workspace_bound(session.statements[0], scope)
 
 
-async def test_find_experiment_by_idempotency_key_is_workspace_bound(scope, session):
-    result = await vqe.find_experiment_by_idempotency_key(scope, session, "some-key")
+async def test_find_experiment_by_request_idempotency_key_is_workspace_bound(scope, session):
+    result = await vqe.find_experiment_by_request_idempotency_key(scope, session, "some-key")
     assert result is None
     assert_workspace_bound(session.statements[0], scope)
 

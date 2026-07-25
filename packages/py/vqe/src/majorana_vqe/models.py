@@ -107,7 +107,13 @@ class VqeBaseModel(BaseModel):
     an unrecognized field is a bug in the caller, not something to silently
     drop (plan Part IV Phase 1 Tests: "invalid/unknown field rejection")."""
 
-    model_config = ConfigDict(frozen=True, extra="forbid")
+    # Scientific identities and evidence must never carry IEEE-754 sentinels.
+    # NaN/Infinity are not stable JSON values (Pydantic serializes them as
+    # null, while other serializers may emit NaN/Infinity), so accepting them
+    # would let the validated object, persisted JSON, and content digest
+    # disagree. Numerical failures are represented by ResultContract.status /
+    # failure_code instead.
+    model_config = ConfigDict(frozen=True, extra="forbid", allow_inf_nan=False)
 
 
 class SpecJsonMixin(VqeBaseModel):
@@ -124,7 +130,7 @@ class SpecJsonMixin(VqeBaseModel):
 
 
 class ComponentType(str, Enum):
-    """The 16 component types MVP schema distinguishes (plan Part II §7)."""
+    """The 17 component types MVP schema distinguishes (ADR-0028)."""
 
     PROBLEM = "problem"
     PROBLEM_PREPARATION = "problem_preparation"
@@ -141,7 +147,31 @@ class ComponentType(str, Enum):
     COMPILATION_BACKEND = "compilation_backend"
     LEARNING_TRAINING = "learning_training"
     EVALUATION_PROTOCOL = "evaluation_protocol"
+    STOPPING_PROTOCOL = "stopping_protocol"
     WORKFLOW = "workflow"
+
+
+# Executable MVP workflows use the component type itself as the link role.
+# The mapping is the single source of truth for constructing a
+# ScientificExperimentSpec from immutable workflow links in the server
+# repository layer. Component kinds absent here remain browsable registry
+# metadata but cannot be silently omitted from an executable scientific
+# identity; the resolver rejects such a workflow until a versioned spec adds
+# an explicit field for them.
+SCIENTIFIC_SPEC_ROLE_BINDINGS: dict[ComponentType, str] = {
+    ComponentType.PROBLEM: "problem_version_id",
+    ComponentType.REPRESENTATION: "representation_version_id",
+    ComponentType.REFERENCE_STATE: "reference_state_version_id",
+    ComponentType.ANSATZ: "ansatz_version_id",
+    ComponentType.OPERATOR_POOL: "operator_pool_version_id",
+    ComponentType.SEARCH_SELECTION: "selection_version_id",
+    ComponentType.GROWTH_BATCHING: "growth_version_id",
+    ComponentType.PARAMETER_OPTIMIZER: "optimizer_version_id",
+    ComponentType.COMPRESSION: "compression_version_id",
+    ComponentType.MEASUREMENT: "measurement_protocol_version_id",
+    ComponentType.EVALUATION_PROTOCOL: "evaluation_protocol_version_id",
+    ComponentType.STOPPING_PROTOCOL: "stopping_protocol_version_id",
+}
 
 
 class AnnotationState(str, Enum):

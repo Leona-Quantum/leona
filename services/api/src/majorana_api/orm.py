@@ -693,8 +693,8 @@ class VqeExperiment(Base):
     nullable: Phase 3 persists the spec but does not create a `runs` row,
     because there is no approved ExecutionBinding to resolve a framework to
     until Phase 5 ships real runtime profiles (ADR-0024) — see the Phase 3
-    handoff report for the full rationale. `idempotency_key` is the standard
-    HTTP-level retry-safety key (mirrors `runs.idempotency_key`), distinct
+    handoff report for the full rationale. `request_idempotency_key` is the
+    HTTP-level retry-safety key, distinct
     from the server-generated execution idempotency identity in ADR-0023
     §9, which does not exist until an ExecutionBinding is resolved."""
 
@@ -711,7 +711,7 @@ class VqeExperiment(Base):
     scientific_spec_json: Mapped[dict[str, Any]]
     scientific_spec_sha256: Mapped[str]
     protocol_version: Mapped[str]
-    idempotency_key: Mapped[str | None]
+    request_idempotency_key: Mapped[str | None]
     created_at: Mapped[dt.datetime | None] = mapped_column(server_default=func.now())
 
 

@@ -6407,6 +6407,19 @@ div.mj-rail-row:hover {
   display: grid;
   gap: var(--sp-4);
 }
+.mj-repo-table-scroll {
+  width: 100%;
+  max-width: 100%;
+  overflow-x: auto;
+  overscroll-behavior-inline: contain;
+}
+.mj-repo-table-scroll:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: var(--sp-1);
+}
+.mj-repo-table-scroll .mj-repo-comparison-table {
+  min-width: 680px;
+}
 /* Numeric classical-vs-quantum table (Owner Inbox 2026-07-19): concrete
    figures/complexities sit above the prose read. */
 .mj-repo-comparison-table {

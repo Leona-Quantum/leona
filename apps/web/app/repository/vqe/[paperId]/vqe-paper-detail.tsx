@@ -101,26 +101,33 @@ export function VqePaperDetail({
         <p className="mj-repo-detail-lede">{paper.problem_summary}</p>
 
         <Section title={copy.components}>
-          <table className="mj-repo-comparison-table">
-            <thead>
-              <tr>
-                <th>{locale === "ja" ? "種別" : "Type"}</th>
-                <th>{locale === "ja" ? "名称/系統" : "Family / name"}</th>
-                <th>{locale === "ja" ? "注記" : "Notes"}</th>
-                <th>{locale === "ja" ? "根拠箇所" : "Evidence locator"}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {paper.components.map((component, index) => (
-                <tr key={`${component.component_type}-${index}`}>
-                  <td>{component.component_type}</td>
-                  <td>{component.family_or_name}</td>
-                  <td>{component.notes}</td>
-                  <td>{component.evidence_locator}</td>
+          <div
+            className="mj-repo-table-scroll"
+            role="region"
+            aria-label={copy.components}
+            tabIndex={0}
+          >
+            <table className="mj-repo-comparison-table">
+              <thead>
+                <tr>
+                  <th>{locale === "ja" ? "種別" : "Type"}</th>
+                  <th>{locale === "ja" ? "名称/系統" : "Family / name"}</th>
+                  <th>{locale === "ja" ? "注記" : "Notes"}</th>
+                  <th>{locale === "ja" ? "根拠箇所" : "Evidence locator"}</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {paper.components.map((component, index) => (
+                  <tr key={`${component.component_type}-${index}`}>
+                    <td>{component.component_type}</td>
+                    <td>{component.family_or_name}</td>
+                    <td>{component.notes ?? copy.unknown}</td>
+                    <td>{component.evidence_locator}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
           {paper.workflow_composition_notes ? (
             <p className="mj-repo-detail-lede">{paper.workflow_composition_notes}</p>
           ) : null}

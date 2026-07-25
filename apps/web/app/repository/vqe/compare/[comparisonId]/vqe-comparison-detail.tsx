@@ -80,30 +80,37 @@ export function VqeComparisonDetail({
       </section>
 
       <div className="mj-repository-detail-main">
-        <table className="mj-repo-comparison-table">
-          <thead>
-            <tr>
-              <th>{copy.dimension}</th>
-              <th>{copy.status}</th>
-              <th>{copy.detail}</th>
-              <th>{copy.evidence}</th>
-            </tr>
-          </thead>
-          <tbody>
-            {comparison.dimensions.map((dimension) => (
-              <tr key={dimension.name}>
-                <td>{dimension.name}</td>
-                <td>
-                  <span className="mj-vqe-badge" data-tone={statusTone(dimension.status)}>
-                    {dimension.status === "unknown" ? copy.unknown : dimension.status}
-                  </span>
-                </td>
-                <td>{dimension.detail ?? copy.unknown}</td>
-                <td>{dimension.evidence_locator ?? copy.unknown}</td>
+        <div
+          className="mj-repo-table-scroll"
+          role="region"
+          aria-label={locale === "ja" ? "比較軸の詳細" : "Comparison dimensions"}
+          tabIndex={0}
+        >
+          <table className="mj-repo-comparison-table">
+            <thead>
+              <tr>
+                <th>{copy.dimension}</th>
+                <th>{copy.status}</th>
+                <th>{copy.detail}</th>
+                <th>{copy.evidence}</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {comparison.dimensions.map((dimension) => (
+                <tr key={dimension.name}>
+                  <td>{dimension.name}</td>
+                  <td>
+                    <span className="mj-vqe-badge" data-tone={statusTone(dimension.status)}>
+                      {dimension.status === "unknown" ? copy.unknown : dimension.status}
+                    </span>
+                  </td>
+                  <td>{dimension.detail ?? copy.unknown}</td>
+                  <td>{dimension.evidence_locator ?? copy.unknown}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
 
         <details className="mj-repo-section" open>
           <summary>{copy.unresolvedConflicts}</summary>

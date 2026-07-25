@@ -93,6 +93,46 @@ class TestModelsAreImmutable:
             spec.component_type = ComponentType.PARAMETER_OPTIMIZER
 
 
+class TestScientificNumbersAreFinite:
+    @pytest.mark.parametrize("invalid", [float("nan"), float("inf"), float("-inf")])
+    def test_initial_parameters_reject_non_finite_values(self, invalid):
+        with pytest.raises(ValidationError):
+            ScientificExperimentSpec(**_spec_kwargs(initial_parameters=[invalid]))
+
+    @pytest.mark.parametrize("field", ["best_energy_ha", "exact_energy_ha", "wall_time_ms"])
+    @pytest.mark.parametrize("invalid", [float("nan"), float("inf"), float("-inf")])
+    def test_result_contract_rejects_non_finite_scalars(self, field, invalid):
+        with pytest.raises(ValidationError):
+            ResultContract(
+                scientific_spec_sha256="0" * 64,
+                framework=Framework.QISKIT,
+                runtime_profile_id="qiskit-current-v1",
+                runtime_image_digest="sha256:" + "0" * 64,
+                adapter_release_id="adapter-2026-07-24",
+                protocol_version="0.1.0",
+                hamiltonian_digest="a" * 64,
+                status=ExecutionStatus.SUCCEEDED,
+                seed=0,
+                **{field: invalid},
+            )
+
+    @pytest.mark.parametrize("invalid", [float("nan"), float("inf"), float("-inf")])
+    def test_result_contract_rejects_non_finite_trajectory(self, invalid):
+        with pytest.raises(ValidationError):
+            ResultContract(
+                scientific_spec_sha256="0" * 64,
+                framework=Framework.QISKIT,
+                runtime_profile_id="qiskit-current-v1",
+                runtime_image_digest="sha256:" + "0" * 64,
+                adapter_release_id="adapter-2026-07-24",
+                protocol_version="0.1.0",
+                hamiltonian_digest="a" * 64,
+                status=ExecutionStatus.SUCCEEDED,
+                seed=0,
+                energy_trajectory=[invalid],
+            )
+
+
 class TestArbitraryPathModuleOrCodeRejection:
     @pytest.mark.parametrize(
         "malicious_value",

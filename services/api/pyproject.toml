@@ -42,3 +42,8 @@ packages = ["src/majorana_api"]
 # Same for the owner attestation policy (Slice C.5): catalog_attestation.
 # default_policy_path prefers this copy, and attest-bootstrap cannot run without it.
 "catalog_bootstrap/attestation-policy.json" = "majorana_api/catalog_bootstrap/attestation-policy.json"
+# Generated from the Phase 2 immutable comparison corpus by
+# scripts/generate-atlas-vqe-corpus.mjs. Keeping the build input inside this
+# package makes both wheel and sdist rebuilds independent of monorepo-relative
+# paths.
+"src/majorana_api/atlas_vqe_comparisons.generated.json" = "majorana_api/atlas_vqe_comparisons.generated.json"

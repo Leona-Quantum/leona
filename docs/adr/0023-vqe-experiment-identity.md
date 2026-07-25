@@ -28,7 +28,11 @@ protocol-version authority, see ADR-0024): the same scientific spec, hashed as
 PennyLane binding. Idempotency identity for experiment creation is the
 server-generated tuple `scientific_spec_sha256` + `runtime_profile_id` +
 `adapter_release_id` + `dataset_snapshot_id` + `protocol_version`, never a
-client-chosen key. All new repository functions (`vqe_component_specs`,
+client-chosen key. **ADR-0029 clarification:** this binding-dependent tuple is
+the Phase 5 execution identity. The standard HTTP `Idempotency-Key` accepted
+while persisting a pre-binding Phase 3 request is a separate replay-safety
+value stored as `request_idempotency_key`; it is never scientific or execution
+identity. All new repository functions (`vqe_component_specs`,
 `vqe_workflow_components`, `vqe_experiments`, `vqe_observations`) take `Scope` as
 their first argument and enforce workspace scoping themselves, per the repo-wide
 authz invariant; none of them are exempted the way `repos/system.py` is for

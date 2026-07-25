@@ -13,8 +13,8 @@
 
 export interface VqeValidationState {
   state: "draft" | "machine_validated" | "validation_failed" | "conflicting";
-  validator_version: string;
-  validated_at: string;
+  validator_version: string | null;
+  validated_at: string | null;
   validation_errors: string[];
   validation_warnings: string[];
 }
@@ -22,7 +22,7 @@ export interface VqeValidationState {
 export interface VqePaperComponent {
   component_type: string;
   family_or_name: string;
-  notes: string;
+  notes: string | null;
   evidence_locator: string;
 }
 
@@ -33,8 +33,8 @@ export interface VqePaperRecord {
   authors: string[];
   year: number;
   venue: string;
-  volume: string;
-  pages_or_article_number: string;
+  volume: string | null;
+  pages_or_article_number: string | null;
   doi: string | null;
   arxiv_id: string | null;
   method_family: string[];
@@ -104,3 +104,51 @@ export interface VqeCorpusBundle {
   repositories: VqeRepositoryRecord[];
   comparisons: VqeComparisonRecord[];
 }
+
+/** Bounded public browse projections. Detail-only evidence stays server-side
+ * until a user opens the corresponding route. */
+export type VqePaperListEntry = Pick<
+  VqePaperRecord,
+  | "paper_id"
+  | "title"
+  | "authors"
+  | "year"
+  | "venue"
+  | "method_family"
+  | "problem_summary"
+  | "implementation_ref"
+  | "validation_state"
+>;
+
+/**
+ * A browse-only observation of a component annotated inside one paper.
+ * `observation_key` is a UI key, not a canonical component identity: Phase 3
+ * ArtifactVersions remain the only durable component identity.
+ */
+export interface VqeComponentListEntry {
+  observation_key: string;
+  paper_id: string;
+  paper_title: string;
+  component_type: string;
+  family_or_name: string;
+  notes: string | null;
+}
+
+export type VqeRepositoryListEntry = Pick<
+  VqeRepositoryRecord,
+  | "repo_id"
+  | "repository_url"
+  | "relation"
+  | "associated_paper_ids"
+  | "license_state"
+  | "environment_completeness"
+>;
+
+export type VqeComparisonListEntry = Pick<
+  VqeComparisonRecord,
+  | "comparison_id"
+  | "source_record_ids"
+  | "classification"
+  | "is_manual_gold"
+  | "human_validated"
+>;

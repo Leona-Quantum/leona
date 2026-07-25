@@ -12,38 +12,84 @@
 import corpusBundleJson from "./corpus-data.generated.json";
 import type {
   VqeComparisonRecord,
+  VqeComparisonListEntry,
+  VqeComponentListEntry,
   VqeCorpusBundle,
+  VqePaperListEntry,
   VqePaperRecord,
+  VqeRepositoryListEntry,
   VqeRepositoryRecord,
   VqeRepositoryRelation,
 } from "./types";
+import { validateVqeCorpusBundle } from "./validation";
 
-/**
- * Structural sanity check on the imported bundle, logged loudly rather than
- * thrown — a malformed bundle should degrade the VQE section to empty, not
- * crash the whole /repository page the existing 283 circuit records still
- * need to render on.
- */
-function validateBundle(value: unknown): VqeCorpusBundle {
-  const empty: VqeCorpusBundle = { schema_version: "unknown", papers: [], repositories: [], comparisons: [] };
-  if (typeof value !== "object" || value === null) {
-    console.error("[atlas-vqe/source] corpus-data.generated.json is not an object");
-    return empty;
+// The bundle is a committed, CI-validated build artifact. Fail closed if its
+// runtime shape drifts: silently returning an empty corpus would make
+// scientific evidence look absent rather than corrupted.
+const BUNDLE: VqeCorpusBundle = validateVqeCorpusBundle(corpusBundleJson);
+const PUBLIC_LIST_LIMIT = 100;
+
+function requireBoundedList(recordType: string, count: number): void {
+  if (count > PUBLIC_LIST_LIMIT) {
+    throw new Error(
+      `[atlas-vqe/source] ${recordType} count ${count} exceeds the static public list ` +
+        `limit ${PUBLIC_LIST_LIMIT}; move this collection to server-side pagination`,
+    );
   }
-  const bundle = value as Partial<VqeCorpusBundle>;
-  if (!Array.isArray(bundle.papers) || !Array.isArray(bundle.repositories) || !Array.isArray(bundle.comparisons)) {
-    console.error("[atlas-vqe/source] corpus-data.generated.json is missing papers/repositories/comparisons arrays");
-    return empty;
-  }
-  return {
-    schema_version: typeof bundle.schema_version === "string" ? bundle.schema_version : "unknown",
-    papers: bundle.papers as VqePaperRecord[],
-    repositories: bundle.repositories as VqeRepositoryRecord[],
-    comparisons: bundle.comparisons as VqeComparisonRecord[],
-  };
 }
 
-const BUNDLE = validateBundle(corpusBundleJson);
+export function getVqePaperListEntries(): VqePaperListEntry[] {
+  requireBoundedList("paper", BUNDLE.papers.length);
+  return BUNDLE.papers.map((paper) => ({
+    paper_id: paper.paper_id,
+    title: paper.title,
+    authors: paper.authors,
+    year: paper.year,
+    venue: paper.venue,
+    method_family: paper.method_family,
+    problem_summary: paper.problem_summary,
+    implementation_ref: paper.implementation_ref,
+    validation_state: paper.validation_state,
+  }));
+}
+
+export function getVqeComponentListEntries(): VqeComponentListEntry[] {
+  const count = BUNDLE.papers.reduce((total, paper) => total + paper.components.length, 0);
+  requireBoundedList("paper component observation", count);
+  return BUNDLE.papers.flatMap((paper) =>
+    paper.components.map((component, index) => ({
+      observation_key: `${paper.paper_id}:${index}`,
+      paper_id: paper.paper_id,
+      paper_title: paper.title,
+      component_type: component.component_type,
+      family_or_name: component.family_or_name,
+      notes: component.notes,
+    })),
+  );
+}
+
+export function getVqeRepositoryListEntries(): VqeRepositoryListEntry[] {
+  requireBoundedList("repository", BUNDLE.repositories.length);
+  return BUNDLE.repositories.map((repository) => ({
+    repo_id: repository.repo_id,
+    repository_url: repository.repository_url,
+    relation: repository.relation,
+    associated_paper_ids: repository.associated_paper_ids,
+    license_state: repository.license_state,
+    environment_completeness: repository.environment_completeness,
+  }));
+}
+
+export function getVqeComparisonListEntries(): VqeComparisonListEntry[] {
+  requireBoundedList("comparison", BUNDLE.comparisons.length);
+  return BUNDLE.comparisons.map((comparison) => ({
+    comparison_id: comparison.comparison_id,
+    source_record_ids: comparison.source_record_ids,
+    classification: comparison.classification,
+    is_manual_gold: comparison.is_manual_gold,
+    human_validated: comparison.human_validated,
+  }));
+}
 
 export function getVqePapers(): VqePaperRecord[] {
   return BUNDLE.papers;

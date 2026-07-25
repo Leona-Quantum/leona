@@ -4,9 +4,9 @@ vqe_component_specs and vqe_workflow_components carry no workspace_id of
 their own — identity is the referenced ArtifactVersion (ADR-0023), so every
 read joins through artifact_versions -> artifacts to apply the workspace
 predicate, the same pattern verification_records/run_events use through
-runs. vqe_experiments and vqe_observations DO carry workspace_id directly
-(an experiment is workspace-owned data, not just annotation on someone
-else's artifact).
+runs. vqe_experiments carries workspace_id directly. vqe_observations is
+scoped through its parent experiment and deliberately does not duplicate
+workspace_id.
 
 Enum-typed parameters here (ComponentType, AnnotationState, Framework,
 ExecutionStatus, FailureCode) come from majorana_vqe.models, not
@@ -29,11 +29,13 @@ from typing import Any
 
 from majorana_contracts import Scope
 from majorana_vqe.models import (
+    SCIENTIFIC_SPEC_ROLE_BINDINGS,
     AnnotationState,
     ComponentType,
     ExecutionStatus,
     FailureCode,
     Framework,
+    ScientificExperimentSpec,
 )
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
@@ -50,12 +52,16 @@ from ._base import NotFoundError, RepoError, require_write
 
 
 class IdempotencyConflictError(RepoError):
-    """idempotency_key was reused for a materially different experiment.
+    """The HTTP request replay key was reused for a different experiment.
 
     Silently returning the earlier experiment would make the caller believe
     their (different) request was accepted; failing loudly forces a fresh
     key or reconciliation instead.
     """
+
+
+class InvalidWorkflowCompositionError(RepoError):
+    """A workflow cannot be represented losslessly as ScientificExperimentSpec v0.1."""
 
 
 # --- component specs ---------------------------------------------------
@@ -154,15 +160,23 @@ async def create_workflow_component(
 ) -> VqeWorkflowComponentRow:
     """Link a component into a workflow's composition.
 
-    Both ArtifactVersions are resolved through the scoped artifact repo
-    first, so an invalid or cross-workspace reference fails here instead of
-    creating a link only a later read would discover is broken. A duplicate
-    (workflow, role, ordinal) surfaces as the
+    Both VQE component specs are resolved through the scoped repo first, so
+    an invalid/cross-workspace reference, non-workflow parent, or role/type
+    mismatch fails before a row is created. A duplicate (workflow, role, ordinal) surfaces as the
     uq_vqe_workflow_components_role_ordinal IntegrityError.
     """
     require_write(scope)
-    await artifacts_repo.get_version(scope, session, workflow_artifact_version_id)
-    await artifacts_repo.get_version(scope, session, component_artifact_version_id)
+    workflow = await get_component_spec(scope, session, workflow_artifact_version_id)
+    if workflow.component_type != ComponentType.WORKFLOW.value:
+        raise InvalidWorkflowCompositionError("workflow_artifact_version_id is not a workflow")
+    component = await get_component_spec(scope, session, component_artifact_version_id)
+    if component.component_type == ComponentType.WORKFLOW.value:
+        raise InvalidWorkflowCompositionError("a workflow cannot be linked as a leaf component")
+    if component_role != component.component_type:
+        raise InvalidWorkflowCompositionError(
+            f"component_role={component_role!r} does not match "
+            f"component_type={component.component_type!r}"
+        )
     link = VqeWorkflowComponentRow(
         id=uuid7(),
         workflow_artifact_version_id=workflow_artifact_version_id,
@@ -189,6 +203,72 @@ async def list_workflow_components(
     return list((await session.execute(stmt)).scalars().all())
 
 
+async def resolve_scientific_experiment_spec(
+    scope: Scope,
+    session: AsyncSession,
+    workflow_artifact_version_id: uuid.UUID,
+    *,
+    dataset_snapshot_id: str | None,
+    initial_parameters: list[float],
+    seed: int,
+) -> ScientificExperimentSpec:
+    """Build the immutable scientific identity from scoped workflow links.
+
+    The client never supplies component UUIDs. Every UUID is loaded from the
+    selected Workflow ArtifactVersion and checked against its declared
+    ComponentType. ScientificExperimentSpec v0.1 has one slot per required
+    role, so duplicate ordinals and component kinds with no v0.1 field fail
+    closed instead of disappearing from the digest.
+    """
+    workflow = await get_component_spec(scope, session, workflow_artifact_version_id)
+    if workflow.component_type != ComponentType.WORKFLOW.value:
+        raise InvalidWorkflowCompositionError("artifact version is not a VQE workflow")
+
+    links = await list_workflow_components(scope, session, workflow_artifact_version_id)
+    resolved_fields: dict[str, uuid.UUID] = {}
+    seen_roles: set[ComponentType] = set()
+    for link in links:
+        try:
+            role_type = ComponentType(link.component_role)
+        except ValueError as exc:
+            raise InvalidWorkflowCompositionError(
+                f"unknown workflow component role {link.component_role!r}"
+            ) from exc
+        field_name = SCIENTIFIC_SPEC_ROLE_BINDINGS.get(role_type)
+        if field_name is None:
+            raise InvalidWorkflowCompositionError(
+                f"ScientificExperimentSpec v0.1 cannot represent component role "
+                f"{role_type.value!r}; add a versioned spec field before execution"
+            )
+        if link.ordinal != 0 or role_type in seen_roles:
+            raise InvalidWorkflowCompositionError(
+                f"ScientificExperimentSpec v0.1 requires exactly one ordinal=0 "
+                f"component for role {role_type.value!r}"
+            )
+        component = await get_component_spec(scope, session, link.component_artifact_version_id)
+        if component.component_type != role_type.value:
+            raise InvalidWorkflowCompositionError(
+                f"workflow role {role_type.value!r} references component_type "
+                f"{component.component_type!r}"
+            )
+        seen_roles.add(role_type)
+        resolved_fields[field_name] = component.artifact_version_id
+
+    missing = set(SCIENTIFIC_SPEC_ROLE_BINDINGS) - seen_roles
+    if missing:
+        raise InvalidWorkflowCompositionError(
+            "workflow is missing required scientific component roles: "
+            + ", ".join(sorted(role.value for role in missing))
+        )
+
+    return ScientificExperimentSpec(
+        **resolved_fields,
+        dataset_snapshot_id=dataset_snapshot_id,
+        initial_parameters=initial_parameters,
+        seed=seed,
+    )
+
+
 # --- experiments -----------------------------------------------------------
 
 
@@ -204,12 +284,12 @@ def _experiment_matches(
     )
 
 
-async def find_experiment_by_idempotency_key(
-    scope: Scope, session: AsyncSession, idempotency_key: str
+async def find_experiment_by_request_idempotency_key(
+    scope: Scope, session: AsyncSession, request_idempotency_key: str
 ) -> VqeExperimentRow | None:
     stmt = select(VqeExperimentRow).where(
         VqeExperimentRow.workspace_id == scope.workspace_id,
-        VqeExperimentRow.idempotency_key == idempotency_key,
+        VqeExperimentRow.request_idempotency_key == request_idempotency_key,
     )
     return (await session.execute(stmt)).scalars().first()
 
@@ -223,7 +303,7 @@ async def create_experiment(
     scientific_spec_json: dict[str, Any],
     scientific_spec_sha256: str,
     protocol_version: str,
-    idempotency_key: str | None = None,
+    request_idempotency_key: str | None = None,
 ) -> VqeExperimentRow:
     """Persist an immutable ScientificExperimentSpec (ADR-0023 spec/binding
     separation). Deliberately does not create a `runs` row or enqueue a job:
@@ -237,18 +317,22 @@ async def create_experiment(
     persists it, it does not recompute it, keeping this module free of a
     majorana_vqe.canonical dependency.
 
-    Reusing idempotency_key for a request naming a different workflow or
+    Reusing request_idempotency_key for a request naming a different workflow or
     spec digest raises IdempotencyConflictError instead of silently
     returning the earlier experiment. A concurrent creator racing the same
     key is resolved by the partial unique index
-    (ix_vqe_experiments_workspace_idempotency): the loser rolls back and
+    (ix_vqe_experiments_workspace_request_idempotency): the loser rolls back and
     re-reads the winner.
     """
     require_write(scope)
-    await artifacts_repo.get_version(scope, session, workflow_artifact_version_id)
+    workflow = await get_component_spec(scope, session, workflow_artifact_version_id)
+    if workflow.component_type != ComponentType.WORKFLOW.value:
+        raise InvalidWorkflowCompositionError("workflow_artifact_version_id is not a workflow")
 
-    if idempotency_key is not None:
-        existing = await find_experiment_by_idempotency_key(scope, session, idempotency_key)
+    if request_idempotency_key is not None:
+        existing = await find_experiment_by_request_idempotency_key(
+            scope, session, request_idempotency_key
+        )
         if existing is not None:
             if not _experiment_matches(
                 existing,
@@ -256,7 +340,8 @@ async def create_experiment(
                 scientific_spec_sha256=scientific_spec_sha256,
             ):
                 raise IdempotencyConflictError(
-                    f"idempotency key {idempotency_key!r} was already used for a different experiment"
+                    f"request idempotency key {request_idempotency_key!r} "
+                    "was already used for a different experiment"
                 )
             return existing
 
@@ -270,19 +355,21 @@ async def create_experiment(
         scientific_spec_json=scientific_spec_json,
         scientific_spec_sha256=scientific_spec_sha256,
         protocol_version=protocol_version,
-        idempotency_key=idempotency_key,
+        request_idempotency_key=request_idempotency_key,
     )
     session.add(experiment)
     try:
         await session.flush()
     except IntegrityError:
-        if idempotency_key is None:
+        if request_idempotency_key is None:
             raise
         # A concurrent creator committed the same key between our lookup and
         # this flush; rollback discards this session's uncommitted insert
         # and expires its ORM objects so the re-read below is fresh.
         await session.rollback()
-        winner = await find_experiment_by_idempotency_key(scope, session, idempotency_key)
+        winner = await find_experiment_by_request_idempotency_key(
+            scope, session, request_idempotency_key
+        )
         if winner is None:
             raise
         if not _experiment_matches(
@@ -291,7 +378,8 @@ async def create_experiment(
             scientific_spec_sha256=scientific_spec_sha256,
         ):
             raise IdempotencyConflictError(
-                f"idempotency key {idempotency_key!r} was already used for a different experiment"
+                f"request idempotency key {request_idempotency_key!r} "
+                "was already used for a different experiment"
             ) from None
         return winner
     await session.refresh(experiment)
@@ -358,7 +446,8 @@ async def append_observation(
 ) -> VqeObservationRow:
     """Append one execution-evidence row. Never call this to correct a prior
     attempt — a retry is `attempt + 1`, matching ADR-0025's append-only
-    contract; the DB has no UPDATE grant for app_rw on this table.
+    contract. PostgreSQL also revokes UPDATE/DELETE from app_rw and rejects
+    either mutation through a trigger (migration 0035).
     """
     require_write(scope)
     experiment = await get_experiment(scope, session, experiment_id)
@@ -368,6 +457,13 @@ async def append_observation(
         )
     if (status is ExecutionStatus.FAILED) != (failure_code is not None):
         raise ValueError("failed status requires a failure_code; succeeded status forbids one")
+    if status is ExecutionStatus.SUCCEEDED and hamiltonian_digest is None:
+        raise ValueError("succeeded status requires a canonical hamiltonian_digest")
+    detail_values = (detail_object_uri, detail_sha256, detail_size_bytes)
+    if any(value is not None for value in detail_values) and not all(
+        value is not None for value in detail_values
+    ):
+        raise ValueError("detail_object_uri/detail_sha256/detail_size_bytes are all-or-none")
     observation = VqeObservationRow(
         id=uuid7(),
         experiment_id=experiment.id,

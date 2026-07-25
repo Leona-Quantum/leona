@@ -13,9 +13,10 @@
 import { useMemo, useState } from "react";
 import type { PublicLocale } from "../../../lib/public-locale";
 import type {
-  VqeComparisonRecord,
-  VqePaperRecord,
-  VqeRepositoryRecord,
+  VqeComparisonListEntry,
+  VqeComponentListEntry,
+  VqePaperListEntry,
+  VqeRepositoryListEntry,
   VqeRepositoryRelation,
 } from "../../../lib/atlas-vqe/types";
 
@@ -23,9 +24,16 @@ const COPY = {
   en: {
     search: "Search papers, methods, or repositories",
     placeholder: "Title, author, method family, or venue",
-    tabs: { papers: "Papers", repositories: "Repositories", comparisons: "Comparisons" },
+    tabs: {
+      papers: "Papers",
+      components: "Components",
+      repositories: "Repositories",
+      comparisons: "Comparisons",
+    },
     methodFamily: "Method family",
     allFamilies: "All method families",
+    componentType: "Component type",
+    allComponentTypes: "All component types",
     relation: "Relation",
     allRelations: "All relations",
     resultCount: (n: number) => `${n} ${n === 1 ? "record" : "records"}`,
@@ -52,9 +60,16 @@ const COPY = {
   ja: {
     search: "論文・手法・実装リポジトリを検索",
     placeholder: "タイトル、著者、手法系統、掲載誌",
-    tabs: { papers: "論文", repositories: "実装リポジトリ", comparisons: "比較" },
+    tabs: {
+      papers: "論文",
+      components: "構成要素",
+      repositories: "実装リポジトリ",
+      comparisons: "比較",
+    },
     methodFamily: "手法系統",
     allFamilies: "すべての手法系統",
+    componentType: "構成要素の種類",
+    allComponentTypes: "すべての種類",
     relation: "関係",
     allRelations: "すべての関係",
     resultCount: (n: number) => `${n}件`,
@@ -97,20 +112,25 @@ function Badge({ tone, children }: { tone: "ok" | "warn" | "neutral"; children: 
 
 export function VqeMethodsBrowser({
   papers,
+  components,
   repositories,
   comparisons,
   locale,
 }: {
-  papers: VqePaperRecord[];
-  repositories: VqeRepositoryRecord[];
-  comparisons: VqeComparisonRecord[];
+  papers: VqePaperListEntry[];
+  components: VqeComponentListEntry[];
+  repositories: VqeRepositoryListEntry[];
+  comparisons: VqeComparisonListEntry[];
   locale: PublicLocale;
 }) {
   const copy = COPY[locale];
-  const [tab, setTab] = useState<"papers" | "repositories" | "comparisons">("papers");
+  const [tab, setTab] = useState<
+    "papers" | "components" | "repositories" | "comparisons"
+  >("papers");
   const [query, setQuery] = useState("");
   const [methodFamily, setMethodFamily] = useState("");
   const [relation, setRelation] = useState<"" | VqeRepositoryRelation>("");
+  const [componentType, setComponentType] = useState("");
 
   const methodFamilies = useMemo(
     () => Array.from(new Set(papers.flatMap((paper) => paper.method_family))).sort(),
@@ -140,6 +160,30 @@ export function VqeMethodsBrowser({
     });
   }, [repositories, query, relation]);
 
+  const componentTypes = useMemo(
+    () => Array.from(new Set(components.map((component) => component.component_type))).sort(),
+    [components],
+  );
+
+  const filteredComponents = useMemo(() => {
+    const normalized = query.trim().toLowerCase();
+    return components.filter((component) => {
+      const matchesQuery =
+        !normalized ||
+        [
+          component.component_type,
+          component.family_or_name,
+          component.notes ?? "",
+          component.paper_title,
+        ]
+          .join(" ")
+          .toLowerCase()
+          .includes(normalized);
+      const matchesType = !componentType || component.component_type === componentType;
+      return matchesQuery && matchesType;
+    });
+  }, [components, componentType, query]);
+
   const relationBreakdown = useMemo(() => {
     const counts: Record<VqeRepositoryRelation, number> = {
       official: 0,
@@ -155,6 +199,7 @@ export function VqeMethodsBrowser({
     setQuery("");
     setMethodFamily("");
     setRelation("");
+    setComponentType("");
   }
 
   const paperTitleById = useMemo(() => new Map(papers.map((paper) => [paper.paper_id, paper.title])), [papers]);
@@ -191,6 +236,21 @@ export function VqeMethodsBrowser({
                 ))}
               </select>
             </label>
+          ) : tab === "components" ? (
+            <label>
+              <span>{copy.componentType}</span>
+              <select
+                value={componentType}
+                onChange={(event) => setComponentType(event.target.value)}
+              >
+                <option value="">{copy.allComponentTypes}</option>
+                {componentTypes.map((option) => (
+                  <option key={option} value={option}>
+                    {option}
+                  </option>
+                ))}
+              </select>
+            </label>
           ) : (
             <label>
               <span>{copy.relation}</span>
@@ -213,6 +273,46 @@ export function VqeMethodsBrowser({
             </span>
           ))}
         </div>
+      ) : null}
+
+      {tab === "components" ? (
+        <>
+          <p className="mj-repository-result-count" aria-live="polite">
+            {copy.resultCount(filteredComponents.length)}
+          </p>
+          {!filteredComponents.length ? (
+            <div className="mj-repository-empty">
+              <h3>{copy.emptyTitle}</h3>
+              <p>{copy.emptyBody}</p>
+              <button type="button" onClick={clearFilters}>
+                {copy.clear}
+              </button>
+            </div>
+          ) : (
+            <div className="mj-repo-list">
+              {filteredComponents.map((component) => (
+                <article className="mj-repo-card" key={component.observation_key}>
+                  <div className="mj-repo-card-top">
+                    <Badge tone="neutral">{component.component_type}</Badge>
+                    <span>
+                      {locale === "ja" ? "論文注釈" : "paper annotation"}
+                    </span>
+                  </div>
+                  <h3>{component.family_or_name}</h3>
+                  <p>{component.notes ?? copy.unknown}</p>
+                  <div className="mj-repo-card-foot">
+                    <a
+                      className="mj-text-link"
+                      href={`/repository/vqe/${component.paper_id}`}
+                    >
+                      {component.paper_title} ↗
+                    </a>
+                  </div>
+                </article>
+              ))}
+            </div>
+          )}
+        </>
       ) : null}
 
       {tab === "papers" ? (

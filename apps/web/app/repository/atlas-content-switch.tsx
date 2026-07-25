@@ -12,7 +12,12 @@ import type { PublicLocale } from "../../lib/public-locale";
 import type { PublicRepositoryListEntry } from "../../lib/public-repository";
 import { RepositoryBrowser } from "./repository-browser";
 import { VqeMethodsBrowser } from "./vqe/vqe-methods-browser";
-import type { VqeComparisonRecord, VqePaperRecord, VqeRepositoryRecord } from "../../lib/atlas-vqe/types";
+import type {
+  VqeComparisonListEntry,
+  VqeComponentListEntry,
+  VqePaperListEntry,
+  VqeRepositoryListEntry,
+} from "../../lib/atlas-vqe/types";
 
 const COPY = {
   en: { circuits: "Circuits", vqeMethods: "VQE Methods" },
@@ -22,6 +27,7 @@ const COPY = {
 export function AtlasContentSwitch({
   entries,
   papers,
+  components,
   repositories,
   comparisons,
   locale,
@@ -30,9 +36,10 @@ export function AtlasContentSwitch({
   legend,
 }: {
   entries: PublicRepositoryListEntry[];
-  papers: VqePaperRecord[];
-  repositories: VqeRepositoryRecord[];
-  comparisons: VqeComparisonRecord[];
+  papers: VqePaperListEntry[];
+  components: VqeComponentListEntry[];
+  repositories: VqeRepositoryListEntry[];
+  comparisons: VqeComparisonListEntry[];
   locale: PublicLocale;
   isSignedIn: boolean;
   signInHref: string | null;
@@ -65,7 +72,13 @@ export function AtlasContentSwitch({
       {contentType === "circuits" ? (
         <RepositoryBrowser entries={entries} locale={locale} isSignedIn={isSignedIn} signInHref={signInHref} legend={legend} />
       ) : (
-        <VqeMethodsBrowser papers={papers} repositories={repositories} comparisons={comparisons} locale={locale} />
+        <VqeMethodsBrowser
+          papers={papers}
+          components={components}
+          repositories={repositories}
+          comparisons={comparisons}
+          locale={locale}
+        />
       )}
     </div>
   );

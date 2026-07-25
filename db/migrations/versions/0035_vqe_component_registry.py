@@ -14,10 +14,9 @@ the immutable scientific spec, but does not create a `runs` row, because
 there is no approved ExecutionBinding to resolve a framework to until
 Phase 5 ships real, promoted runtime profiles (ADR-0024) — see the Phase 3
 handoff report for the full rationale. vqe_observations is strictly
-append-only at the application layer (ADR-0025); this migration does not
-attempt a DB-level trigger enforcing that (Group D item, explicitly
-deferred per the original CodeRabbit-fix plan's precedent for this kind of
-heavier DB-level invariant).
+append-only (ADR-0025): PostgreSQL rejects UPDATE/DELETE through both role
+privileges and a trigger, so evidence immutability does not depend on every
+application caller remembering a repository convention.
 """
 
 from __future__ import annotations
@@ -50,6 +49,7 @@ _COMPONENT_TYPES = (
     "compilation_backend",
     "learning_training",
     "evaluation_protocol",
+    "stopping_protocol",
     "workflow",
 )
 _ANNOTATION_STATES = ("draft", "human_reviewed", "unknown", "conflicting")
@@ -65,6 +65,9 @@ _FAILURE_CODES = (
     "numerical_mismatch",
     "inconclusive",
 )
+_FRAMEWORKS = ("qiskit", "pennylane")
+_OBSERVATION_APPEND_ONLY_FUNCTION = "majorana_reject_vqe_observation_mutation"
+_OBSERVATION_APPEND_ONLY_TRIGGER = "trg_vqe_observations_append_only"
 
 
 def _in(column: str, values: tuple[str, ...]) -> str:
@@ -72,13 +75,15 @@ def _in(column: str, values: tuple[str, ...]) -> str:
     return f"{column} in ({quoted})"
 
 
-def _grant(table: str) -> None:
+def _grant(table: str, *, allow_update: bool = True) -> None:
+    privileges = "select, insert, update" if allow_update else "select, insert"
+    revoked = "delete" if allow_update else "update, delete"
     op.execute(
         f"""
         do $$ begin
             if exists (select 1 from pg_roles where rolname = 'app_rw') then
-                grant select, insert, update on {table} to app_rw;
-                revoke delete on {table} from app_rw;
+                grant {privileges} on {table} to app_rw;
+                revoke {revoked} on {table} from app_rw;
             end if;
         end $$;
         """
@@ -178,7 +183,10 @@ def upgrade() -> None:
         sa.Column("scientific_spec_json", _JSON, nullable=False),
         sa.Column("scientific_spec_sha256", sa.Text(), nullable=False),
         sa.Column("protocol_version", sa.Text(), nullable=False),
-        sa.Column("idempotency_key", sa.Text()),
+        # HTTP request replay key. This is deliberately distinct from the
+        # server-generated execution identity defined by ADR-0023, which can
+        # only be computed after an ExecutionBinding exists.
+        sa.Column("request_idempotency_key", sa.Text()),
         sa.Column(
             "created_at", sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.func.now()
         ),
@@ -190,15 +198,14 @@ def upgrade() -> None:
     op.create_index(
         "ix_vqe_experiments_workspace_created", "vqe_experiments", ["workspace_id", "created_at"]
     )
-    # Idempotency-Key is workspace-scoped, matching runs.idempotency_key's own
-    # (unindexed-but-queried) convention -- indexed here since experiment
-    # lookup-by-key is this table's primary create-time query.
+    # The HTTP Idempotency-Key is workspace-scoped and used only for safe
+    # request replay; it is not the scientific execution identity.
     op.create_index(
-        "ix_vqe_experiments_workspace_idempotency",
+        "ix_vqe_experiments_workspace_request_idempotency",
         "vqe_experiments",
-        ["workspace_id", "idempotency_key"],
+        ["workspace_id", "request_idempotency_key"],
         unique=True,
-        postgresql_where=sa.text("idempotency_key is not null"),
+        postgresql_where=sa.text("request_idempotency_key is not null"),
     )
     _grant("vqe_experiments")
 
@@ -233,6 +240,7 @@ def upgrade() -> None:
             "created_at", sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.func.now()
         ),
         sa.CheckConstraint("attempt >= 1", name="ck_vqe_observations_attempt"),
+        sa.CheckConstraint(_in("framework", _FRAMEWORKS), name="ck_vqe_observations_framework"),
         sa.CheckConstraint(_in("status", _EXECUTION_STATUSES), name="ck_vqe_observations_status"),
         sa.CheckConstraint(
             "failure_code is null or " + _in("failure_code", _FAILURE_CODES),
@@ -254,12 +262,51 @@ def upgrade() -> None:
             "hamiltonian_digest is null or hamiltonian_digest ~ '^[0-9a-f]{64}$'",
             name="ck_vqe_observations_hamiltonian_digest_shape",
         ),
+        sa.CheckConstraint(
+            "runtime_image_digest ~ '^sha256:[0-9a-f]{64}$'",
+            name="ck_vqe_observations_runtime_image_digest_shape",
+        ),
+        sa.CheckConstraint(
+            "(status = 'failed') or hamiltonian_digest is not null",
+            name="ck_vqe_observations_succeeded_hamiltonian_digest",
+        ),
+        sa.CheckConstraint(
+            "(detail_object_uri is null and detail_sha256 is null and detail_size_bytes is null) "
+            "or (detail_object_uri is not null and detail_sha256 ~ '^[0-9a-f]{64}$' "
+            "and detail_size_bytes >= 0)",
+            name="ck_vqe_observations_detail_ref_consistency",
+        ),
         sa.UniqueConstraint(
             "experiment_id", "attempt", name="uq_vqe_observations_experiment_attempt"
         ),
     )
     op.create_index("ix_vqe_observations_experiment", "vqe_observations", ["experiment_id"])
-    _grant("vqe_observations")
+    _grant("vqe_observations", allow_update=False)
+    op.execute(
+        sa.text(
+            f"""
+            CREATE FUNCTION {_OBSERVATION_APPEND_ONLY_FUNCTION}()
+            RETURNS trigger
+            LANGUAGE plpgsql
+            AS $$
+            BEGIN
+                RAISE EXCEPTION
+                    'vqe_observations is append-only; insert a new attempt'
+                    USING ERRCODE = '55000';
+            END;
+            $$
+            """
+        )
+    )
+    op.execute(
+        sa.text(
+            f"""
+            CREATE TRIGGER {_OBSERVATION_APPEND_ONLY_TRIGGER}
+            BEFORE UPDATE OR DELETE ON vqe_observations
+            FOR EACH ROW EXECUTE FUNCTION {_OBSERVATION_APPEND_ONLY_FUNCTION}()
+            """
+        )
+    )
 
 
 def downgrade() -> None:
@@ -274,6 +321,10 @@ def downgrade() -> None:
         END $$
         """
     )
+    op.execute(
+        sa.text(f"DROP TRIGGER IF EXISTS {_OBSERVATION_APPEND_ONLY_TRIGGER} ON vqe_observations")
+    )
+    op.execute(sa.text(f"DROP FUNCTION IF EXISTS {_OBSERVATION_APPEND_ONLY_FUNCTION}()"))
     op.drop_table("vqe_observations")
     op.drop_table("vqe_experiments")
     op.drop_table("vqe_workflow_components")

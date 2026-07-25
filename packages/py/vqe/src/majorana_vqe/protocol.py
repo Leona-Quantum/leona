@@ -1,6 +1,6 @@
 """EvaluationProtocol v0.1 and StoppingProtocol -- typed content models for
-the `spec_json` payload of a ComponentSpec whose `component_type` is
-`evaluation_protocol` (or a stopping-protocol role within it). Kept
+the `spec_json` payload of ComponentSpecs whose `component_type` is
+`evaluation_protocol` or `stopping_protocol`. Kept
 separate from the generic, storage-shaped ComponentSpec.spec_json
 (`dict[str, JSONValue]`) in models.py so callers that care about evaluation-
 protocol semantics get real typed validation instead of hand-rolled dict
@@ -37,19 +37,6 @@ class EvaluationProtocol(VqeBaseModel):
         if self.estimator is EvidenceStage.EXACT and self.shots is not None:
             raise ValueError("shots is only meaningful for the finite_shot estimator")
         return self
-
-
-# NOTE (open question, not silently resolved): ScientificExperimentSpec has a
-# separate `stopping_protocol_version_id`, but the plan's 16-member
-# ComponentType list (models.py) has no matching "stopping_protocol" entry --
-# unlike EvaluationProtocol, there is no ComponentType to validate a
-# StoppingProtocol's parent ComponentSpec against, so no
-# parse_stopping_protocol() guard function exists below (parse_evaluation_
-# protocol's ComponentTypeMismatchError check has nothing to mirror it with).
-# Either the component-type list needs a 17th member, or stopping protocol is
-# meant to nest inside the evaluation_protocol component's spec_json instead
-# of being independently versioned -- this needs an owner/ADR decision before
-# Phase 3 wires stopping_protocol_version_id to a real repository lookup.
 
 
 class StoppingCriterion(str, Enum):
@@ -91,3 +78,18 @@ def parse_evaluation_protocol(component: ComponentSpec) -> EvaluationProtocol:
             f"expected component_type=evaluation_protocol, got {component.component_type.value}"
         )
     return EvaluationProtocol.model_validate(component.spec_json)
+
+
+def parse_stopping_protocol(component: ComponentSpec) -> StoppingProtocol:
+    """Parse an independently versioned stopping rule (ADR-0028).
+
+    Stopping rules are comparison-critical: changing a gradient threshold or
+    iteration cap can change both accuracy and resource cost. Keeping them as
+    their own ArtifactVersion prevents an evaluation/measurement protocol
+    revision from silently changing convergence semantics.
+    """
+    if component.component_type is not ComponentType.STOPPING_PROTOCOL:
+        raise ComponentTypeMismatchError(
+            f"expected component_type=stopping_protocol, got {component.component_type.value}"
+        )
+    return StoppingProtocol.model_validate(component.spec_json)

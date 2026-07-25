@@ -42,3 +42,9 @@ An architecture choice without an ADR did not happen.
   existing `/repository` page instead of a new top-level section, resolving a
   real "Atlas" branding collision without coercing literature-only VQE
   records into the circuit-execution-shaped `PublicRepositoryEntry` type.
+- 2026-07-25: ADR-0028 makes stopping rules independently versioned VQE
+  components, rejects non-finite scientific values, and makes Hamiltonian
+  identity canonicalize at the digest boundary.
+- 2026-07-25: ADR-0029 requires the server to construct scientific specs from
+  scoped, typed Workflow ArtifactVersion links and separates HTTP request
+  replay keys from Phase 5 execution identity.

@@ -1,6 +1,6 @@
 # Atlas VQE MVP — Phase 4 progress record
 
-**Date:** 2026-07-24
+**Date:** 2026-07-24; integrity remediation 2026-07-25
 **Status:** implemented against static fixture data, build/typecheck/lint/
 existing-test-suite all pass, exercised over real HTTP against a running dev
 server. **Not** visually verified in an actual browser (no browser/screenshot
@@ -42,21 +42,25 @@ not the TypeScript shape.
 - **`apps/web/lib/atlas-vqe/types.ts`**: hand-written types
   (`VqePaperRecord`, `VqeRepositoryRecord`, `VqeComparisonRecord`, etc.)
   mirroring the corpus JSON field-for-field, including every
-  `unknown`/`null`/`machine_validated` marker already in the corpus.
+  `unknown`/`null`/`machine_validated` marker already in the corpus. The
+  2026-07-25 remediation corrected nullable `notes`, volume/pages, and
+  validation metadata and added fail-closed runtime validation with tests.
 - **`apps/web/lib/atlas-vqe/source.ts`**: reads the static bundle (import,
   not a network/DB fetch), with accessors (`getVqePapers`, `getVqePaper`,
   `getVqeRepositories`, `getVqeComparisons`, `getRepositoriesForPaper`,
   `getComparisonsForPaper`, `getRepositoryRelationBreakdown`) and a light
-  structural validation pass on the imported bundle (logs and degrades to
-  empty rather than crashing the whole `/repository` page the other 283
-  circuit records still need to render).
+  runtime validation pass on the imported bundle. Shape drift throws with a
+  field path instead of silently converting corrupted scientific data into
+  an empty corpus.
 - **`apps/web/app/repository/atlas-content-switch.tsx`**: the one new piece
   of UI on the existing browse page — a "Circuits" / "VQE Methods" toggle.
   The existing `RepositoryBrowser` (552 lines, the mature circuit browser)
   is untouched; VQE gets its own sibling component instead of a forced
   merge into that component's card/filter shape.
 - **`apps/web/app/repository/vqe/vqe-methods-browser.tsx`**: Papers /
-  Repositories / Comparisons sub-tabs, search + method-family filter for
+  Components / Repositories / Comparisons sub-tabs. Components are explicitly
+  labelled paper annotations and use `paper_id:index` only as a browse key,
+  never as fabricated durable identity. Search + method-family filter for
   papers, search + relation filter for repositories (with the 4-way
   relation breakdown — official/author/general_framework_library/
   third_party_reference_implementation — always shown together, per the
@@ -104,35 +108,23 @@ not the TypeScript shape.
    this UI's data source can swap to a live fetch the same way
    `repository-source.ts` already swaps between its static fallback and the
    live catalog API.
-2. **Components/Problems are not separate top-level browsable entities.**
-   The plan's IA sketch lists `Methods/Workflows, Components, Problems,
-   Comparisons` as four sibling sections. The actual corpus data doesn't
-   support that: at Phase 2's literature-review annotation depth, a
-   paper's `components[]` are inline notes on that paper (component_type,
-   family_or_name, notes, evidence_locator) with no independent identity —
-   they only gain a real, separately-addressable identity once imported as
-   ArtifactVersions (an explicitly deferred, not-yet-done step). Presenting
-   them as an independently browsable top-level list would either fabricate
-   identity they don't have or silently duplicate every paper's components
-   into a flat list with no useful cross-paper filtering. This UI instead
-   surfaces components within each paper's detail page, which is where the
-   corpus actually carries the information — a scope decision, not an
-   oversight.
-3. **The "don't send the unlimited raw corpus to the client" acceptance
-   criterion is not enforced by a size-bounded list/detail split**, unlike
-   `/repository`'s own `PublicRepositoryListEntry`/`PublicRepositoryEntry`
-   projection (built because that corpus's full payload is ~2.37 MB,
-   over Vercel's 2 MB data-cache ceiling). The full generated VQE bundle is
-   96 KB — about 25x under the threshold that motivated that split — and
-   the browse view's card rendering already needs most of the paper-level
-   fields (method_family, problem_summary) for search to work. Building an
-   equivalent list/detail projection system for a 96 KB payload was judged
-   not worth the added surface area right now. This is a real, honest gap
-   against the letter of the acceptance criterion, not a silent pass:
-   flagged here so it isn't rediscovered as a surprise if the corpus grows
-   an order of magnitude (e.g. after a real DB import brings in many more
-   papers/components) — at that point this needs the same projection
-   `/repository` already has, not a bigger unbounded payload.
+2. **Components are browsable observations, not invented entities.**
+   The first implementation only exposed inline components on paper detail
+   pages, which did not satisfy the plan's explicit “50 components filterable”
+   acceptance criterion. The remediation adds a 59-record Components view
+   filterable by component type and searchable by family/name/paper. Its
+   `paper_id:index` key is documented as a UI observation key only. Durable
+   identity still begins only after Phase 3 ArtifactVersion import. Problems
+   remain unstructured `problem_summary` values and are searchable through
+   Papers; a canonical Problem entity would be a post-MVP schema change, not
+   something this UI may infer.
+3. **The public browse payload is bounded after the 2026-07-25
+   remediation.** The server maps full paper/repository/comparison records to
+   explicit list projections before crossing the client-component boundary;
+   components, evidence locators, source lists, unknown/conflict detail, and
+   comparison dimensions remain on detail routes. A hard 100-record static
+   list limit fails closed and requires server-side pagination before corpus
+   growth can turn into an unbounded client payload.
 4. **No new interactivity needed a reduced-motion or custom-keyboard
    affordance.** Every new interactive element (the tab switch, the
    sub-tab buttons, the `<details>` disclosure sections) is a plain native
@@ -149,9 +141,8 @@ not the TypeScript shape.
 - **`corepack pnpm run lint`** in `apps/web` (`check-raw-hex.mjs` +
   `check-token-vars.mjs`, the same scripts `packages/ts/ui`'s own `lint`
   script runs) — both OK.
-- **`corepack pnpm run test`** in `apps/web` — the existing 89 tests all
-  pass, unmodified and unaffected (nothing in this phase touched
-  `lib/*.test.ts` territory).
+- **`corepack pnpm run test`** in `apps/web` — 92 tests pass, including
+  fail-closed corpus runtime-validation tests.
 - **`corepack pnpm run build`** (`next build`, production build, Turbopack)
   — compiled successfully, all 336 routes generated including the two new
   ones (`/repository/vqe/[paperId]`, `/repository/vqe/compare/[comparisonId]`),
@@ -168,21 +159,25 @@ not the TypeScript shape.
   requests.
 - **`node scripts/generate-atlas-vqe-corpus.mjs --check`** passes against
   the committed bundle.
-- **Not done, and worth being explicit about:** no actual browser was
-  opened, no screenshot was taken, no manual visual check of dark/light
-  theme switching, responsive breakpoints, or keyboard-only navigation was
-  performed — this session has no browser/screenshot tool available. What
-  was verified is that the markup renders correct real content over real
-  HTTP and that the code compiles/lints/builds cleanly; visual/interaction
-  QA in an actual browser is a real gap, not a silent claim of "verified
-  responsive/keyboard/dark-light" that didn't happen.
+- **2026-07-25 actual-browser remediation:** at a 390×844 viewport, both
+  detail tables kept the document width at 390px while the table alone
+  scrolled horizontally (`324→680px` and `358→960px`); both scroll regions
+  had `tabIndex=0`; blank table cells were 0. The Components tab rendered
+  all 59 annotations, and selecting `compression` produced exactly 3 cards.
+  Browser console error count was 0. Dark/light visual-regression screenshots
+  remain a Phase 6 task; they are not claimed complete here.
+
+**2026-07-25 remediation browser result:** the prior audit found mobile
+horizontal overflow and a blank null note. Detail tables are now contained in
+keyboard-focusable horizontal-scroll regions and null notes render as explicit
+unknown. Automated corpus runtime-validation tests were added; final browser
+re-verification is recorded in the remediation report.
 
 ## 5. Acceptance against the plan's own Phase 4 rules
 
-- 25 papers / 50 components filterable — 26 papers are searchable/filterable
-  by method family in the Papers tab; components are viewable per-paper
-  (59 total across the corpus) rather than independently filterable — see
-  §3 item 2 for why.
+- 25 papers / 50 components filterable — done: 26 papers are searchable and
+  filterable by method family; 59 paper-annotated components are independently
+  searchable/filterable without claiming canonical component identity (§3.2).
 - Navigate component → related workflow/paper — repositories link back to
   their associated papers and vice versa; components are shown in the
   context of the paper that documents them (their only real identity at
@@ -191,14 +186,14 @@ not the TypeScript shape.
 - Never convert unknown/conflict to blank — done: every `null`/`"unknown"`
   value renders as an explicit "unknown" badge or a `?? copy.unknown`
   fallback string, never an empty cell.
-- Don't send the full raw corpus to the client without limit — not enforced
-  by a hard technical limit; see §3 item 3 for the honest reasoning.
+- Don't send the full raw corpus to the client without limit — enforced by
+  list/detail projections and a 100-record static-list ceiling (§3 item 3).
 - Keyboard, responsive, dark/light, reduced motion — dark/light is
   automatic (every new style uses existing theme-aware tokens, no raw hex);
   keyboard works because every control is a native interactive element;
-  responsive behavior comes from reusing already-responsive existing
-  classes; reduced motion has nothing to disable (§3 item 4). None of this
-  was checked in an actual browser (§4).
+  responsive tables and keyboard focus were checked in an actual browser
+  (§4); reduced motion has nothing to disable (§3 item 4). Dark/light
+  screenshot regression remains open for Phase 6.
 - Loading, empty, failure via fixtures — added to `apps/web/app/dev/ui/fixtures.tsx`:
   a live `VqeMethodsBrowser` rendered with the real corpus, the same
   component rendered with empty arrays (its real empty state, not a mock),
@@ -212,7 +207,8 @@ connection did — the plan names Claude Code as the primary UI owner for
 this phase, and the one genuine product-identity decision this phase
 surfaced (the `/repository` "Atlas" naming collision) was already taken
 back to the owner before any UI code was written (§1). This document
-records what shipped, honestly marks the two real gaps (no size-bounded
-payload projection, no actual browser/visual QA), and is not a request to
+records what shipped. The earlier size-bound and actual-browser gaps were
+remediated on 2026-07-25; dark/light screenshot regression and the canonical
+Problem entity remain explicitly deferred, and this is not a request to
 stop — it's the same kind of stop-and-report discipline used for Phase 0/2/3,
 applied here because this phase, like those, changed real product surface.

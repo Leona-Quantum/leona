@@ -12,6 +12,7 @@ from majorana_vqe.protocol import (
     StoppingCriterion,
     StoppingProtocol,
     parse_evaluation_protocol,
+    parse_stopping_protocol,
 )
 
 
@@ -65,3 +66,23 @@ class TestParseEvaluationProtocol:
         )
         protocol = parse_evaluation_protocol(component)
         assert protocol.estimator.value == "exact"
+
+
+class TestParseStoppingProtocol:
+    def test_rejects_component_of_wrong_type(self):
+        component = ComponentSpec(
+            artifact_version_id=uuid4(),
+            component_type=ComponentType.EVALUATION_PROTOCOL,
+            spec_json={"criterion": "max_iterations", "max_iterations": 100},
+        )
+        with pytest.raises(ComponentTypeMismatchError):
+            parse_stopping_protocol(component)
+
+    def test_parses_a_correctly_typed_component(self):
+        component = ComponentSpec(
+            artifact_version_id=uuid4(),
+            component_type=ComponentType.STOPPING_PROTOCOL,
+            spec_json={"criterion": "gradient_norm", "gradient_norm_tolerance": 1e-3},
+        )
+        protocol = parse_stopping_protocol(component)
+        assert protocol.criterion is StoppingCriterion.GRADIENT_NORM

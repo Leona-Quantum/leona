@@ -25,6 +25,10 @@ import { fileURLToPath } from "node:url";
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const CORPUS_ROOT = join(root, "docs/atlas/corpus");
 const DEFAULT_OUT = join(root, "apps/web/lib/atlas-vqe/corpus-data.generated.json");
+const API_COMPARISONS_OUT = join(
+  root,
+  "services/api/src/majorana_api/atlas_vqe_comparisons.generated.json",
+);
 
 const args = process.argv.slice(2);
 const CHECK = args.includes("--check");
@@ -55,22 +59,31 @@ function serialize(bundle) {
   return `${JSON.stringify(bundle, null, 2)}\n`;
 }
 
+function assertCurrent(path, expected) {
+  let existing;
+  try {
+    existing = readFileSync(path, "utf8");
+  } catch {
+    console.error(`atlas-vqe-corpus: ${path} does not exist -- run without --check to generate it`);
+    process.exit(1);
+  }
+  if (existing !== expected) {
+    console.error(`atlas-vqe-corpus: ${path} is stale -- run 'node scripts/generate-atlas-vqe-corpus.mjs'`);
+    process.exit(1);
+  }
+}
+
 function main() {
   const bundle = buildBundle();
   const serialized = serialize(bundle);
+  const apiComparisonsSerialized = serialize({
+    schema_version: bundle.schema_version,
+    comparisons: bundle.comparisons,
+  });
 
   if (CHECK) {
-    let existing;
-    try {
-      existing = readFileSync(OUT, "utf8");
-    } catch {
-      console.error(`atlas-vqe-corpus: ${OUT} does not exist -- run without --check to generate it`);
-      process.exit(1);
-    }
-    if (existing !== serialized) {
-      console.error(`atlas-vqe-corpus: ${OUT} is stale -- run 'node scripts/generate-atlas-vqe-corpus.mjs'`);
-      process.exit(1);
-    }
+    assertCurrent(OUT, serialized);
+    if (!flag("--out")) assertCurrent(API_COMPARISONS_OUT, apiComparisonsSerialized);
     console.log(
       `atlas-vqe-corpus: OK (${bundle.papers.length} papers, ${bundle.repositories.length} repositories, ${bundle.comparisons.length} comparisons)`
     );
@@ -78,6 +91,7 @@ function main() {
   }
 
   writeFileSync(OUT, serialized);
+  if (!flag("--out")) writeFileSync(API_COMPARISONS_OUT, apiComparisonsSerialized);
   console.log(
     `atlas-vqe-corpus: wrote ${OUT} (${bundle.papers.length} papers, ${bundle.repositories.length} repositories, ${bundle.comparisons.length} comparisons)`
   );
