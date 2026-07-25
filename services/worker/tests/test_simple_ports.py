@@ -20,6 +20,7 @@ from majorana_agent import (
     SimpleRetryTarget,
 )
 from majorana_contracts.enums import (
+    Algorithm,
     Framework,
     RetryTarget,
     SemanticReviewDecision,
@@ -359,6 +360,38 @@ async def test_transient_provider_failure_at_review_is_retryable_within_its_own_
     assert reviewed.failure.retryable is True
     assert reviewed.failure.retry_target is SimpleRetryTarget.REVIEW
     assert reviewed.failure.code == "review_provider_upstream_unavailable"
+
+
+async def test_generate_injects_the_known_reference_hamiltonian_for_vqe():
+    """A live H2 VQE run (019f9763, 2026-07-25) fabricated Hamiltonian coefficients
+    that were internally self-consistent but not physically real. The generate
+    prompt now carries the verified reference so the model has no reason to
+    reconstruct it from memory."""
+    ports, llm, *_ = _ports()
+    run_id = uuid4()
+    planned = await ports.plan(run_id, None, None)
+    vqe_plan = planned.value.model_copy(
+        update={"plan": planned.value.plan.model_copy(update={"algorithm": Algorithm.VQE})}
+    )
+
+    await ports.generate(run_id, vqe_plan, None, None)
+
+    sent = json.loads(llm.requests[-1].user)
+    assert sent["known_reference"] is not None
+    assert "-1.0523732" in sent["known_reference"]
+
+
+async def test_generate_omits_known_reference_for_algorithms_without_one():
+    ports, llm, *_ = _ports()
+    run_id = uuid4()
+    planned = await ports.plan(run_id, None, None)
+    assert planned.value.plan.algorithm is Algorithm.BELL
+
+    generated = await ports.generate(run_id, planned.value, None, None)
+    assert generated.value is not None
+
+    sent = json.loads(llm.requests[-1].user)
+    assert sent["known_reference"] is None
 
 
 async def test_transient_provider_failure_recovers_within_the_pipeline_retry_budget():

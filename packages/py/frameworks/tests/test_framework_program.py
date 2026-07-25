@@ -515,6 +515,61 @@ def test_qiskit_c_if_is_caught_before_execution_and_names_its_replacement():
     assert FrameworkProgram(Framework.QISKIT, ok).contract_diagnostics(circuit_expected=True) == []
 
 
+def test_qiskit_get_statevector_without_save_is_caught_before_execution():
+    """AerSimulator.run(...).result().get_statevector(...) raises QiskitError unless
+    the circuit calls .save_statevector() first — production run 019f9759-4fd1
+    burned all 4 generation attempts on this exact KeyError/QiskitError for a VQE
+    energy calculation before this deterministic check existed."""
+
+    source = (
+        "from qiskit import QuantumCircuit\n"
+        "from qiskit_aer import AerSimulator\n"
+        "qc = QuantumCircuit(2)\n"
+        "qc.h(0)\n"
+        "sim = AerSimulator(method='statevector')\n"
+        "result = sim.run(qc, shots=None).result()\n"
+        "sv = result.get_statevector(qc)\n"
+        "FINAL_CIRCUIT = qc\n"
+        "RESULT = {'energy': 0.0}\n"
+    )
+    diagnostics = FrameworkProgram(Framework.QISKIT, source).contract_diagnostics(
+        circuit_expected=True
+    )
+    assert any("get_statevector" in d and "save_statevector" in d for d in diagnostics), diagnostics
+
+    saved = (
+        "from qiskit import QuantumCircuit\n"
+        "from qiskit_aer import AerSimulator\n"
+        "qc = QuantumCircuit(2)\n"
+        "qc.h(0)\n"
+        "qc.save_statevector()\n"
+        "sim = AerSimulator(method='statevector')\n"
+        "result = sim.run(qc, shots=None).result()\n"
+        "sv = result.get_statevector(qc)\n"
+        "FINAL_CIRCUIT = qc\n"
+        "RESULT = {'energy': 0.0}\n"
+    )
+    assert (
+        FrameworkProgram(Framework.QISKIT, saved).contract_diagnostics(circuit_expected=True) == []
+    )
+
+    via_statevector_class = (
+        "from qiskit import QuantumCircuit\n"
+        "from qiskit.quantum_info import Statevector\n"
+        "qc = QuantumCircuit(2)\n"
+        "qc.h(0)\n"
+        "sv = Statevector(qc)\n"
+        "FINAL_CIRCUIT = qc\n"
+        "RESULT = {'energy': 0.0}\n"
+    )
+    assert (
+        FrameworkProgram(Framework.QISKIT, via_statevector_class).contract_diagnostics(
+            circuit_expected=True
+        )
+        == []
+    )
+
+
 # --- Framework-native verification evidence ----------------------------------------
 #
 # plans/framework-native-verification.md: the observer computes the statevector and

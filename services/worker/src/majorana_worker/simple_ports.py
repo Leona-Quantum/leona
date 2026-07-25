@@ -32,7 +32,7 @@ from majorana_agent import (
     ToolResult,
     parse_simple_plan,
 )
-from majorana_agent.templates import REFERENCE_TEMPLATES
+from majorana_agent.templates import KNOWN_REFERENCE_CONSTANTS, REFERENCE_TEMPLATES
 from majorana_contracts import Scope, VerificationSummary
 from majorana_contracts.enums import (
     ArtifactType,
@@ -259,6 +259,7 @@ class SimpleIntentReviewer:
                             "resource_metrics": execution.observation.get("resource_metrics"),
                         },
                         "basic_checks": basic_checks,
+                        "known_reference": KNOWN_REFERENCE_CONSTANTS.get(plan.algorithm),
                     },
                     default=str,
                     sort_keys=True,
@@ -956,6 +957,7 @@ class ProductionSimplePipelinePorts:
                 "previous_source": previous.source[-100_000:] if previous else None,
                 "repair_feedback": asdict(feedback) if feedback else None,
                 "reference_template": REFERENCE_TEMPLATES.get(self._framework),
+                "known_reference": KNOWN_REFERENCE_CONSTANTS.get(plan.plan.algorithm),
             }
             try:
                 response = await self._llm.complete(

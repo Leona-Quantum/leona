@@ -422,6 +422,19 @@ class QiskitAdapter(PythonFrameworkAdapter):
     # replacement instead of a traceback it has already proved it cannot learn from.
     _REMOVED_APIS = ((r"\.c_if\s*\(", "c_if", "with circuit.if_test((creg, value)):"),)
 
+    # AerSimulator.run(...).result().get_statevector(...) raises
+    # `QiskitError: 'Data for experiment "..." could not be found.'` unless the
+    # circuit itself calls `.save_statevector()` first — a legacy `Aer.get_backend
+    # ("statevector_simulator")` idiom that no longer applies to AerSimulator. VQE/
+    # energy-estimation candidates reach for get_statevector without it by default,
+    # and the traceback alone did not teach the repair loop the fix: four identical
+    # candidates burned the whole generation budget on this exact KeyError before a
+    # deterministic check existed, the same failure mode `.c_if()` above already
+    # named the fix for. `Statevector(circuit)` needs no simulator run at all and is
+    # the simpler, preferred replacement for a pure-statevector calculation.
+    _STATEVECTOR_WITHOUT_SAVE = re.compile(r"\.get_statevector\s*\(")
+    _SAVE_STATEVECTOR_CALL = re.compile(r"\.save_statevector\s*\(")
+
     def contract_diagnostics(self, source: str, *, circuit_expected: bool) -> list[str]:
         diagnostics = super().contract_diagnostics(source, circuit_expected=circuit_expected)
         for pattern, name, replacement in self._REMOVED_APIS:
@@ -430,6 +443,17 @@ class QiskitAdapter(PythonFrameworkAdapter):
                     f"contract:qiskit `{name}` was removed in Qiskit 2.0 and raises "
                     f"AttributeError at runtime. Use `{replacement}` instead."
                 )
+        if self._STATEVECTOR_WITHOUT_SAVE.search(source) and not self._SAVE_STATEVECTOR_CALL.search(
+            source
+        ):
+            diagnostics.append(
+                "contract:qiskit `result.get_statevector(...)` after AerSimulator.run(...) "
+                'raises QiskitError ("Data for experiment ... could not be found") unless '
+                "the circuit calls `qc.save_statevector()` before running it. For a pure "
+                "statevector/energy calculation, prefer "
+                "`from qiskit.quantum_info import Statevector; "
+                "sv = Statevector(qc)` instead — it needs no simulator run."
+            )
         return diagnostics
 
     def trusted_setup(self, *, circuit_expected: bool) -> str:
