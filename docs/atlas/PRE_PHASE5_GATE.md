@@ -15,10 +15,9 @@ Current decision: **NO-GO**
 | Digest-pinned Linux runtime images | not promoted | **blocked** |
 | Deny-all runtime egress | not demonstrated for promoted images | **blocked** |
 | Comparable CNOT/depth protocol | generic-unitary native metrics excluded | **blocked** |
-| Disposable Neon child up/down/up | not run; local PostgreSQL only | **blocked** |
+| Temporary Neon branch up/down/up | PostgreSQL 17 migration + six live tests | pass |
 | Public publication | intentionally not authorized | **blocked** |
 
 Phase 5 may start only after the owner explicitly authorizes the relevant
 external/credential-bearing steps.  Passing local numerical tests does not
 grant runtime support or publication authority.
-

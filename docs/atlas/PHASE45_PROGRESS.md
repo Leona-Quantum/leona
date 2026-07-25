@@ -140,9 +140,15 @@ Completed locally:
   - migration `upgrade → downgrade 0034 → upgrade`: passed;
   - six live VQE repository tests: passed;
   - populated downgrade: refused with the expected fail-closed error.
+- temporary Neon PostgreSQL 17 branch:
+  - migration `0034 → 0035 → 0034 → 0035`: passed;
+  - six live VQE repository tests: passed;
+  - populated downgrade: refused and remained transactionally at `0035`;
+  - full evidence: `docs/atlas/PHASE45_NEON_GATE.md`.
 
-No Neon branch, production database, credential, QPU, or public state was
-modified by Phase 4.5.
+No production database, credential, QPU, or public publication state was
+modified by Phase 4.5. Only the owner-confirmed temporary Neon validation
+branch received migration and test-fixture writes.
 
 ## 8. Phase 5 readiness: NO-GO
 
@@ -154,8 +160,7 @@ The following are real blockers, not test skips to reinterpret as success:
    Linux/x86_64 profiles with SBOMs and deny-all egress evidence.
 3. The current spike ran on macOS arm64.
 4. Comparable decomposed-circuit CNOT/depth evidence is absent.
-5. A disposable Neon child has not run the Phase 4.5 migration/live gate.
-6. Durable job execution, UI execution states, cancellation/events, and
+5. Durable job execution, UI execution states, cancellation/events, and
    Artifact materialization remain Phase 5 work.
 
 Therefore `/v1/vqe/capabilities` correctly remains unavailable and the
