@@ -1,43 +1,53 @@
-"""VQE Component Registry and Experiment persistence (Phase 3, ADR-0023/0025).
+"""VQE registry, portable experiments, executions, and evidence (Phase 4.5).
 
 vqe_component_specs and vqe_workflow_components carry no workspace_id of
 their own — identity is the referenced ArtifactVersion (ADR-0023), so every
 read joins through artifact_versions -> artifacts to apply the workspace
 predicate, the same pattern verification_records/run_events use through
-runs. vqe_experiments carries workspace_id directly. vqe_observations is
-scoped through its parent experiment and deliberately does not duplicate
-workspace_id.
+runs. vqe_experiments carries workspace_id directly. vqe_executions and
+vqe_observations are scoped through their parent experiment and deliberately
+do not duplicate workspace_id.
 
-Enum-typed parameters here (ComponentType, AnnotationState, Framework,
-ExecutionStatus, FailureCode) come from majorana_vqe.models, not
-majorana_contracts.enums — the VQE domain package's own closed vocabularies
-are the source of truth these columns are CHECK-constrained against
-(migration 0035), not the general product enums. Full ScientificExperimentSpec
-validation (business-rule validators, safe-label checks) stays in the route
-layer, which already owns request-body validation for everything else; this
-module receives already-validated primitives, exactly like every other repo.
+Enum-typed parameters here come from majorana_vqe, not majorana_contracts.enums.
+Portable identity, typed composition, and capability-specific result
+validation are recomputed in this repository boundary; callers cannot supply
+an authoritative hash independently from its content.
 
 append_observation is strictly append-only (ADR-0025): a retry is a new row
-with an incremented attempt, never a mutation of a prior one. A duplicate
-attempt number is a genuine caller bug and is left to surface as the
-uq_vqe_observations_experiment_attempt IntegrityError rather than silently
-resolved here.
+with an incremented attempt, never a mutation of a prior one.
 """
 
+import hashlib
+import json
 import uuid
 from typing import Any
 
 from majorana_contracts import Scope
 from majorana_vqe.models import (
-    SCIENTIFIC_SPEC_ROLE_BINDINGS,
-    AnnotationState,
     ComponentType,
-    ExecutionStatus,
-    FailureCode,
-    Framework,
-    ScientificExperimentSpec,
+    ExecutionBinding,
+    MachineValidationState,
+    ReviewState,
 )
-from sqlalchemy import select
+from majorana_vqe.executable import (
+    parse_executable_component,
+    validate_h2_executable_composition,
+)
+from majorana_vqe.portable import (
+    PORTABLE_SCIENTIFIC_ROLES,
+    ComponentSemanticBinding,
+    ParameterSlotValue,
+    PortableScientificExperimentSpec,
+    RegistryComponentResolution,
+    RegistryResolution,
+    ResolvedPortableExperiment,
+    normalized_component_spec_digest,
+    portable_scientific_spec_digest,
+    registry_resolution_digest,
+    workflow_semantic_digest,
+)
+from majorana_vqe.result import EXECUTION_EVIDENCE_ADAPTER, ExecutionEvidence
+from sqlalchemy import or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -45,6 +55,7 @@ from ..ids import uuid7
 from ..orm import Artifact, ArtifactVersion
 from ..orm import VqeComponentSpec as VqeComponentSpecRow
 from ..orm import VqeExperiment as VqeExperimentRow
+from ..orm import VqeExecution as VqeExecutionRow
 from ..orm import VqeObservation as VqeObservationRow
 from ..orm import VqeWorkflowComponent as VqeWorkflowComponentRow
 from . import artifacts as artifacts_repo
@@ -61,7 +72,7 @@ class IdempotencyConflictError(RepoError):
 
 
 class InvalidWorkflowCompositionError(RepoError):
-    """A workflow cannot be represented losslessly as ScientificExperimentSpec v0.1."""
+    """A workflow cannot be represented losslessly as portable schema v0.2."""
 
 
 # --- component specs ---------------------------------------------------
@@ -74,9 +85,11 @@ async def create_component_spec(
     artifact_version_id: uuid.UUID,
     schema_version: str,
     component_type: ComponentType,
+    semantic_key: str | None = None,
     spec_json: dict[str, Any] | None = None,
     normalized_spec_sha256: str | None = None,
-    annotation_state: AnnotationState = AnnotationState.DRAFT,
+    machine_validation_state: MachineValidationState = MachineValidationState.UNVALIDATED,
+    review_state: ReviewState = ReviewState.UNREVIEWED,
 ) -> VqeComponentSpecRow:
     """Attach typed VQE metadata to an existing, in-scope ArtifactVersion.
 
@@ -88,14 +101,56 @@ async def create_component_spec(
     a primary-key IntegrityError rather than silently overwriting.
     """
     require_write(scope)
-    await artifacts_repo.get_version(scope, session, artifact_version_id)
+    version = await artifacts_repo.get_version(scope, session, artifact_version_id)
+    artifact = (
+        (
+            await session.execute(
+                select(Artifact).where(
+                    Artifact.id == version.artifact_id,
+                    Artifact.workspace_id == scope.workspace_id,
+                    Artifact.deleted_at.is_(None),
+                )
+            )
+        )
+        .scalars()
+        .one()
+    )
+    payload = spec_json if spec_json is not None else {}
+    if machine_validation_state is MachineValidationState.MACHINE_VALIDATED:
+        if component_type in PORTABLE_SCIENTIFIC_ROLES:
+            # "machine_validated" is an observed validator outcome, never a
+            # caller assertion.  Parsing here means no import path can promote
+            # arbitrary JSON by setting an enum value.
+            parse_executable_component(component_type, payload)
+        elif component_type is ComponentType.WORKFLOW:
+            if payload.get("schema_version") != "0.2.0" or not payload.get("kind"):
+                raise ValueError("machine-validated workflow requires typed v0.2 metadata")
+        else:
+            raise ValueError(
+                f"no executable validator exists for {component_type.value!r}; "
+                "leave machine_validation_state=unvalidated"
+            )
+    if review_state in {ReviewState.HUMAN_REVIEWED, ReviewState.AUTHOR_CONFIRMED}:
+        if artifact.review_state != "accepted":
+            raise ValueError(
+                "scientific review cannot be promoted unless the owning Artifact "
+                "has an accepted human review decision"
+            )
+    computed_digest = normalized_component_spec_digest(
+        component_type=component_type,
+        spec_json=payload,
+    )
+    if normalized_spec_sha256 is not None and normalized_spec_sha256 != computed_digest:
+        raise ValueError("normalized_spec_sha256 does not match canonical component content")
     spec = VqeComponentSpecRow(
         artifact_version_id=artifact_version_id,
         schema_version=schema_version,
         component_type=component_type.value,
-        spec_json=spec_json if spec_json is not None else {},
-        normalized_spec_sha256=normalized_spec_sha256,
-        annotation_state=annotation_state.value,
+        semantic_key=semantic_key or artifact.slug,
+        spec_json=payload,
+        normalized_spec_sha256=computed_digest,
+        machine_validation_state=machine_validation_state.value,
+        review_state=review_state.value,
     )
     session.add(spec)
     await session.flush()
@@ -103,8 +158,28 @@ async def create_component_spec(
     return spec
 
 
+def _readable_artifact_predicate(
+    scope: Scope,
+    *,
+    catalog_workspace_id: uuid.UUID | None,
+):
+    own = Artifact.workspace_id == scope.workspace_id
+    if catalog_workspace_id is None:
+        return own
+    published_system = (
+        (Artifact.workspace_id == catalog_workspace_id)
+        & (Artifact.review_state == "accepted")
+        & (Artifact.publication_state == "public")
+    )
+    return or_(own, published_system)
+
+
 async def get_component_spec(
-    scope: Scope, session: AsyncSession, artifact_version_id: uuid.UUID
+    scope: Scope,
+    session: AsyncSession,
+    artifact_version_id: uuid.UUID,
+    *,
+    catalog_workspace_id: uuid.UUID | None = None,
 ) -> VqeComponentSpecRow:
     stmt = (
         select(VqeComponentSpecRow)
@@ -112,7 +187,10 @@ async def get_component_spec(
         .join(Artifact, ArtifactVersion.artifact_id == Artifact.id)
         .where(
             VqeComponentSpecRow.artifact_version_id == artifact_version_id,
-            Artifact.workspace_id == scope.workspace_id,
+            _readable_artifact_predicate(
+                scope,
+                catalog_workspace_id=catalog_workspace_id,
+            ),
             Artifact.deleted_at.is_(None),
         )
     )
@@ -129,12 +207,19 @@ async def list_component_specs(
     component_type: ComponentType | None = None,
     cursor: uuid.UUID | None = None,
     limit: int = 50,
+    catalog_workspace_id: uuid.UUID | None = None,
 ) -> list[VqeComponentSpecRow]:
     stmt = (
         select(VqeComponentSpecRow)
         .join(ArtifactVersion, VqeComponentSpecRow.artifact_version_id == ArtifactVersion.id)
         .join(Artifact, ArtifactVersion.artifact_id == Artifact.id)
-        .where(Artifact.workspace_id == scope.workspace_id, Artifact.deleted_at.is_(None))
+        .where(
+            _readable_artifact_predicate(
+                scope,
+                catalog_workspace_id=catalog_workspace_id,
+            ),
+            Artifact.deleted_at.is_(None),
+        )
         .order_by(VqeComponentSpecRow.artifact_version_id.desc())
         .limit(limit)
     )
@@ -157,6 +242,7 @@ async def create_workflow_component(
     component_artifact_version_id: uuid.UUID,
     ordinal: int,
     binding_metadata: dict[str, Any] | None = None,
+    catalog_workspace_id: uuid.UUID | None = None,
 ) -> VqeWorkflowComponentRow:
     """Link a component into a workflow's composition.
 
@@ -169,7 +255,12 @@ async def create_workflow_component(
     workflow = await get_component_spec(scope, session, workflow_artifact_version_id)
     if workflow.component_type != ComponentType.WORKFLOW.value:
         raise InvalidWorkflowCompositionError("workflow_artifact_version_id is not a workflow")
-    component = await get_component_spec(scope, session, component_artifact_version_id)
+    component = await get_component_spec(
+        scope,
+        session,
+        component_artifact_version_id,
+        catalog_workspace_id=catalog_workspace_id,
+    )
     if component.component_type == ComponentType.WORKFLOW.value:
         raise InvalidWorkflowCompositionError("a workflow cannot be linked as a leaf component")
     if component_role != component.component_type:
@@ -192,9 +283,18 @@ async def create_workflow_component(
 
 
 async def list_workflow_components(
-    scope: Scope, session: AsyncSession, workflow_artifact_version_id: uuid.UUID
+    scope: Scope,
+    session: AsyncSession,
+    workflow_artifact_version_id: uuid.UUID,
+    *,
+    catalog_workspace_id: uuid.UUID | None = None,
 ) -> list[VqeWorkflowComponentRow]:
-    await artifacts_repo.get_version(scope, session, workflow_artifact_version_id)  # scope check
+    await get_component_spec(
+        scope,
+        session,
+        workflow_artifact_version_id,
+        catalog_workspace_id=catalog_workspace_id,
+    )
     stmt = (
         select(VqeWorkflowComponentRow)
         .where(VqeWorkflowComponentRow.workflow_artifact_version_id == workflow_artifact_version_id)
@@ -208,24 +308,40 @@ async def resolve_scientific_experiment_spec(
     session: AsyncSession,
     workflow_artifact_version_id: uuid.UUID,
     *,
-    dataset_snapshot_id: str | None,
-    initial_parameters: list[float],
-    seed: int,
-) -> ScientificExperimentSpec:
-    """Build the immutable scientific identity from scoped workflow links.
+    catalog_workspace_id: uuid.UUID | None = None,
+    approved_seed: int = 0,
+) -> ResolvedPortableExperiment:
+    """Build portable schema v0.2 and a separate registry-resolution proof.
 
-    The client never supplies component UUIDs. Every UUID is loaded from the
-    selected Workflow ArtifactVersion and checked against its declared
-    ComponentType. ScientificExperimentSpec v0.1 has one slot per required
-    role, so duplicate ordinals and component kinds with no v0.1 field fail
-    closed instead of disappearing from the digest.
+    Client input selects only a Workflow. Component semantic keys, normalized
+    content digests, dataset snapshot, parameter slots, and seed are all
+    server-resolved from reviewed typed components or server policy.
     """
-    workflow = await get_component_spec(scope, session, workflow_artifact_version_id)
+    workflow = await get_component_spec(
+        scope,
+        session,
+        workflow_artifact_version_id,
+        catalog_workspace_id=catalog_workspace_id,
+    )
     if workflow.component_type != ComponentType.WORKFLOW.value:
         raise InvalidWorkflowCompositionError("artifact version is not a VQE workflow")
+    if workflow.machine_validation_state != MachineValidationState.MACHINE_VALIDATED.value:
+        raise InvalidWorkflowCompositionError("workflow is not machine validated")
+    if workflow.review_state not in {
+        ReviewState.HUMAN_REVIEWED.value,
+        ReviewState.AUTHOR_CONFIRMED.value,
+    }:
+        raise InvalidWorkflowCompositionError("workflow is not scientifically reviewed")
 
-    links = await list_workflow_components(scope, session, workflow_artifact_version_id)
-    resolved_fields: dict[str, uuid.UUID] = {}
+    links = await list_workflow_components(
+        scope,
+        session,
+        workflow_artifact_version_id,
+        catalog_workspace_id=catalog_workspace_id,
+    )
+    semantic_bindings: list[ComponentSemanticBinding] = []
+    registry_components: list[RegistryComponentResolution] = []
+    typed_specs: dict[ComponentType, dict[str, object]] = {}
     seen_roles: set[ComponentType] = set()
     for link in links:
         try:
@@ -234,38 +350,98 @@ async def resolve_scientific_experiment_spec(
             raise InvalidWorkflowCompositionError(
                 f"unknown workflow component role {link.component_role!r}"
             ) from exc
-        field_name = SCIENTIFIC_SPEC_ROLE_BINDINGS.get(role_type)
-        if field_name is None:
+        if role_type not in PORTABLE_SCIENTIFIC_ROLES:
             raise InvalidWorkflowCompositionError(
-                f"ScientificExperimentSpec v0.1 cannot represent component role "
+                f"PortableScientificExperimentSpec v0.2 cannot represent component role "
                 f"{role_type.value!r}; add a versioned spec field before execution"
             )
         if link.ordinal != 0 or role_type in seen_roles:
             raise InvalidWorkflowCompositionError(
-                f"ScientificExperimentSpec v0.1 requires exactly one ordinal=0 "
+                f"PortableScientificExperimentSpec v0.2 requires exactly one ordinal=0 "
                 f"component for role {role_type.value!r}"
             )
-        component = await get_component_spec(scope, session, link.component_artifact_version_id)
+        component = await get_component_spec(
+            scope,
+            session,
+            link.component_artifact_version_id,
+            catalog_workspace_id=catalog_workspace_id,
+        )
         if component.component_type != role_type.value:
             raise InvalidWorkflowCompositionError(
                 f"workflow role {role_type.value!r} references component_type "
                 f"{component.component_type!r}"
             )
+        computed_digest = normalized_component_spec_digest(
+            component_type=role_type,
+            spec_json=component.spec_json,
+        )
+        if computed_digest != component.normalized_spec_sha256:
+            raise InvalidWorkflowCompositionError(
+                f"component {component.artifact_version_id} normalized digest mismatch"
+            )
+        if component.machine_validation_state != MachineValidationState.MACHINE_VALIDATED.value:
+            raise InvalidWorkflowCompositionError(
+                f"component {component.semantic_key!r} is not machine validated"
+            )
+        if component.review_state not in {
+            ReviewState.HUMAN_REVIEWED.value,
+            ReviewState.AUTHOR_CONFIRMED.value,
+        }:
+            raise InvalidWorkflowCompositionError(
+                f"component {component.semantic_key!r} is not scientifically reviewed"
+            )
+        semantic_bindings.append(
+            ComponentSemanticBinding(
+                role=role_type,
+                component_type=role_type,
+                component_semantic_key=component.semantic_key,
+                component_spec_sha256=computed_digest,
+            )
+        )
+        registry_components.append(
+            RegistryComponentResolution(
+                role=role_type,
+                artifact_version_id=component.artifact_version_id,
+                component_semantic_key=component.semantic_key,
+                component_spec_sha256=computed_digest,
+            )
+        )
+        typed_specs[role_type] = component.spec_json
         seen_roles.add(role_type)
-        resolved_fields[field_name] = component.artifact_version_id
 
-    missing = set(SCIENTIFIC_SPEC_ROLE_BINDINGS) - seen_roles
+    missing = set(PORTABLE_SCIENTIFIC_ROLES) - seen_roles
     if missing:
         raise InvalidWorkflowCompositionError(
             "workflow is missing required scientific component roles: "
             + ", ".join(sorted(role.value for role in missing))
         )
 
-    return ScientificExperimentSpec(
-        **resolved_fields,
-        dataset_snapshot_id=dataset_snapshot_id,
-        initial_parameters=initial_parameters,
-        seed=seed,
+    try:
+        executable = validate_h2_executable_composition(typed_specs)
+    except ValueError as exc:
+        raise InvalidWorkflowCompositionError(str(exc)) from exc
+
+    initial_slots = [
+        ParameterSlotValue(
+            slot_id=slot.slot_id,
+            float64_hex=slot.initial_float64_hex,
+        )
+        for slot in executable.ansatz.parameter_slots
+    ]
+    scientific_spec = PortableScientificExperimentSpec(
+        workflow_semantic_digest=workflow_semantic_digest(semantic_bindings),
+        component_bindings=semantic_bindings,
+        dataset_snapshot_sha256=executable.problem.dataset_snapshot_sha256,
+        initial_parameter_slots=initial_slots,
+        seed=approved_seed,
+    )
+    registry_resolution = RegistryResolution(
+        workflow_artifact_version_id=workflow_artifact_version_id,
+        components=registry_components,
+    )
+    return ResolvedPortableExperiment(
+        scientific_spec=scientific_spec,
+        registry_resolution=registry_resolution,
     )
 
 
@@ -299,11 +475,9 @@ async def create_experiment(
     session: AsyncSession,
     *,
     workflow_artifact_version_id: uuid.UUID,
-    schema_version: str,
-    scientific_spec_json: dict[str, Any],
-    scientific_spec_sha256: str,
-    protocol_version: str,
+    resolved: ResolvedPortableExperiment,
     request_idempotency_key: str | None = None,
+    catalog_workspace_id: uuid.UUID | None = None,
 ) -> VqeExperimentRow:
     """Persist an immutable ScientificExperimentSpec (ADR-0023 spec/binding
     separation). Deliberately does not create a `runs` row or enqueue a job:
@@ -311,11 +485,8 @@ async def create_experiment(
     against until Phase 5 ships real, promoted runtime profiles (ADR-0024) —
     run_id stays null here.
 
-    scientific_spec_sha256 is the caller's already-computed canonical digest
-    (majorana_vqe.canonical.scientific_experiment_spec_digest, called from
-    the route layer where the spec is validated) — this layer trusts it and
-    persists it, it does not recompute it, keeping this module free of a
-    majorana_vqe.canonical dependency.
+    Both digests are recomputed here from validated models. Route callers
+    cannot supply a digest independently from its JSON payload.
 
     Reusing request_idempotency_key for a request naming a different workflow or
     spec digest raises IdempotencyConflictError instead of silently
@@ -325,9 +496,18 @@ async def create_experiment(
     re-reads the winner.
     """
     require_write(scope)
-    workflow = await get_component_spec(scope, session, workflow_artifact_version_id)
+    workflow = await get_component_spec(
+        scope,
+        session,
+        workflow_artifact_version_id,
+        catalog_workspace_id=catalog_workspace_id,
+    )
     if workflow.component_type != ComponentType.WORKFLOW.value:
         raise InvalidWorkflowCompositionError("workflow_artifact_version_id is not a workflow")
+    if resolved.registry_resolution.workflow_artifact_version_id != workflow_artifact_version_id:
+        raise InvalidWorkflowCompositionError("registry resolution names a different workflow")
+    scientific_spec_sha256 = portable_scientific_spec_digest(resolved.scientific_spec)
+    resolution_sha256 = registry_resolution_digest(resolved.registry_resolution)
 
     if request_idempotency_key is not None:
         existing = await find_experiment_by_request_idempotency_key(
@@ -347,14 +527,14 @@ async def create_experiment(
 
     experiment = VqeExperimentRow(
         id=uuid7(),
-        run_id=None,
         workspace_id=scope.workspace_id,
         user_id=scope.user_id,
-        schema_version=schema_version,
+        schema_version=resolved.scientific_spec.schema_version,
         workflow_artifact_version_id=workflow_artifact_version_id,
-        scientific_spec_json=scientific_spec_json,
+        scientific_spec_json=resolved.scientific_spec.model_dump(mode="json"),
         scientific_spec_sha256=scientific_spec_sha256,
-        protocol_version=protocol_version,
+        registry_resolution_json=resolved.registry_resolution.model_dump(mode="json"),
+        registry_resolution_sha256=resolution_sha256,
         request_idempotency_key=request_idempotency_key,
     )
     session.add(experiment)
@@ -417,32 +597,114 @@ async def list_experiments(
     return list((await session.execute(stmt)).scalars().all())
 
 
-# --- observations (append-only, ADR-0025) -----------------------------------
+# --- executions and observations -------------------------------------------
+
+
+def _execution_identity(
+    *,
+    scientific_spec_sha256: str,
+    binding: ExecutionBinding,
+) -> str:
+    payload = {
+        "protocol": "majorana-vqe-execution-identity-v1",
+        "scientific_spec_sha256": scientific_spec_sha256,
+        "binding": binding.model_dump(mode="json"),
+    }
+    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
+    return hashlib.sha256(encoded).hexdigest()
+
+
+async def create_execution(
+    scope: Scope,
+    session: AsyncSession,
+    experiment_id: uuid.UUID,
+    *,
+    binding: ExecutionBinding,
+) -> VqeExecutionRow:
+    """Bind one portable experiment to one server-approved runtime profile."""
+    require_write(scope)
+    experiment = await get_experiment(scope, session, experiment_id)
+    identity = _execution_identity(
+        scientific_spec_sha256=experiment.scientific_spec_sha256,
+        binding=binding,
+    )
+    existing = (
+        (
+            await session.execute(
+                select(VqeExecutionRow).where(
+                    VqeExecutionRow.experiment_id == experiment.id,
+                    VqeExecutionRow.execution_identity_sha256 == identity,
+                )
+            )
+        )
+        .scalars()
+        .first()
+    )
+    if existing is not None:
+        return existing
+    execution = VqeExecutionRow(
+        id=uuid7(),
+        experiment_id=experiment.id,
+        run_id=None,
+        framework=binding.framework.value,
+        provider_versions=binding.provider_versions,
+        runtime_profile_id=binding.runtime_profile_id,
+        runtime_image_digest=binding.container_digest,
+        adapter_release_id=binding.adapter_release_id,
+        execution_binding_json=binding.model_dump(mode="json"),
+        execution_identity_sha256=identity,
+        status="planned",
+    )
+    session.add(execution)
+    await session.flush()
+    await session.refresh(execution)
+    return execution
+
+
+async def get_execution(
+    scope: Scope,
+    session: AsyncSession,
+    execution_id: uuid.UUID,
+) -> VqeExecutionRow:
+    stmt = (
+        select(VqeExecutionRow)
+        .join(VqeExperimentRow, VqeExecutionRow.experiment_id == VqeExperimentRow.id)
+        .where(
+            VqeExecutionRow.id == execution_id,
+            VqeExperimentRow.workspace_id == scope.workspace_id,
+        )
+    )
+    execution = (await session.execute(stmt)).scalars().first()
+    if execution is None:
+        raise NotFoundError("vqe execution")
+    return execution
+
+
+async def list_executions(
+    scope: Scope,
+    session: AsyncSession,
+    experiment_id: uuid.UUID,
+) -> list[VqeExecutionRow]:
+    await get_experiment(scope, session, experiment_id)
+    stmt = (
+        select(VqeExecutionRow)
+        .where(VqeExecutionRow.experiment_id == experiment_id)
+        .order_by(VqeExecutionRow.id)
+    )
+    return list((await session.execute(stmt)).scalars().all())
 
 
 async def append_observation(
     scope: Scope,
     session: AsyncSession,
-    experiment_id: uuid.UUID,
+    execution_id: uuid.UUID,
     *,
     attempt: int,
-    framework: Framework,
-    runtime_profile_id: str,
-    runtime_image_digest: str,
-    adapter_release_id: str,
-    architecture: str,
-    protocol_version: str,
-    scientific_spec_sha256: str,
-    status: ExecutionStatus,
-    provider_versions: dict[str, str] | None = None,
-    dataset_snapshot_id: str | None = None,
-    hamiltonian_digest: str | None = None,
-    summary_json: dict[str, Any] | None = None,
+    evidence: ExecutionEvidence | dict[str, Any],
     detail_object_uri: str | None = None,
     detail_sha256: str | None = None,
     detail_size_bytes: int | None = None,
     evidence_json: dict[str, Any] | None = None,
-    failure_code: FailureCode | None = None,
 ) -> VqeObservationRow:
     """Append one execution-evidence row. Never call this to correct a prior
     attempt — a retry is `attempt + 1`, matching ADR-0025's append-only
@@ -450,36 +712,43 @@ async def append_observation(
     either mutation through a trigger (migration 0035).
     """
     require_write(scope)
-    experiment = await get_experiment(scope, session, experiment_id)
-    if scientific_spec_sha256 != experiment.scientific_spec_sha256:
+    execution = await get_execution(scope, session, execution_id)
+    experiment = await get_experiment(scope, session, execution.experiment_id)
+    persisted_binding = ExecutionBinding.model_validate(execution.execution_binding_json)
+    validated = EXECUTION_EVIDENCE_ADAPTER.validate_python(evidence)
+    if validated.scientific_spec_sha256 != experiment.scientific_spec_sha256:
         raise ValueError(
             "observation scientific_spec_sha256 does not match the experiment it is evidence for"
         )
-    if (status is ExecutionStatus.FAILED) != (failure_code is not None):
-        raise ValueError("failed status requires a failure_code; succeeded status forbids one")
-    if status is ExecutionStatus.SUCCEEDED and hamiltonian_digest is None:
-        raise ValueError("succeeded status requires a canonical hamiltonian_digest")
+    if validated.registry_resolution_sha256 != experiment.registry_resolution_sha256:
+        raise ValueError("observation registry resolution does not match its experiment")
+    if validated.framework is not persisted_binding.framework:
+        raise ValueError("observation framework does not match its execution binding")
+    if validated.runtime_profile_id != persisted_binding.runtime_profile_id:
+        raise ValueError("observation runtime profile does not match its execution binding")
+    if validated.runtime_image_digest != persisted_binding.container_digest:
+        raise ValueError("observation image digest does not match its execution binding")
+    if validated.adapter_release_id != persisted_binding.adapter_release_id:
+        raise ValueError("observation adapter release does not match its execution binding")
+    if validated.provider_versions != persisted_binding.provider_versions:
+        raise ValueError("observation provider versions do not match its execution binding")
     detail_values = (detail_object_uri, detail_sha256, detail_size_bytes)
     if any(value is not None for value in detail_values) and not all(
         value is not None for value in detail_values
     ):
         raise ValueError("detail_object_uri/detail_sha256/detail_size_bytes are all-or-none")
+    result_json = validated.model_dump(mode="json")
+    result_sha256 = hashlib.sha256(
+        json.dumps(result_json, sort_keys=True, separators=(",", ":")).encode()
+    ).hexdigest()
+    failure_code = getattr(validated, "failure_code", None)
     observation = VqeObservationRow(
         id=uuid7(),
-        experiment_id=experiment.id,
+        execution_id=execution.id,
         attempt=attempt,
-        framework=framework.value,
-        provider_versions=provider_versions,
-        runtime_profile_id=runtime_profile_id,
-        runtime_image_digest=runtime_image_digest,
-        adapter_release_id=adapter_release_id,
-        architecture=architecture,
-        dataset_snapshot_id=dataset_snapshot_id,
-        protocol_version=protocol_version,
-        scientific_spec_sha256=scientific_spec_sha256,
-        hamiltonian_digest=hamiltonian_digest,
-        status=status.value,
-        summary_json=summary_json,
+        status=validated.status,
+        result_contract_json=result_json,
+        result_contract_sha256=result_sha256,
         detail_object_uri=detail_object_uri,
         detail_sha256=detail_sha256,
         detail_size_bytes=detail_size_bytes,
@@ -493,12 +762,12 @@ async def append_observation(
 
 
 async def list_observations(
-    scope: Scope, session: AsyncSession, experiment_id: uuid.UUID
+    scope: Scope, session: AsyncSession, execution_id: uuid.UUID
 ) -> list[VqeObservationRow]:
-    await get_experiment(scope, session, experiment_id)  # scope check
+    await get_execution(scope, session, execution_id)
     stmt = (
         select(VqeObservationRow)
-        .where(VqeObservationRow.experiment_id == experiment_id)
+        .where(VqeObservationRow.execution_id == execution_id)
         .order_by(VqeObservationRow.attempt)
     )
     return list((await session.execute(stmt)).scalars().all())

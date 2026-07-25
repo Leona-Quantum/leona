@@ -1,0 +1,108 @@
+{
+  "schema_version": "0.2.0",
+  "status": "succeeded",
+  "capability": "h2_sto3g_actual_vqe_v1",
+  "framework": "qiskit",
+  "provider_versions": {
+    "qiskit": "1.4.6",
+    "scipy": "1.18.0",
+    "numpy": "2.5.1"
+  },
+  "platform": "macOS-26.0.1-arm64-arm-64bit",
+  "python_version": "3.12.12 (main, Oct 28 2025, 11:52:25) [Clang 20.1.4 ]",
+  "canonical_input": {
+    "manifest_sha256": "6424713c69c2b734172db47329b7deb62b67a743c80fd792f48173fdaa4e3edc",
+    "hamiltonian_digest_legacy": "d9dd24eb30011e8ea091759e6f0e25d76d0ccc0661e47748afb85e5f13654d79",
+    "reference_bitstring_qubit0_first": "1010",
+    "excited_bitstring_qubit0_first": "0101",
+    "parameter_slot_id": "theta.double.occ0_occ2.to.virt1_virt3",
+    "parameter_orientation": "exp_theta_over_2_generator"
+  },
+  "optimization": {
+    "algorithm": "scipy_minimize_scalar_bounded",
+    "success": true,
+    "message": "Solution found.",
+    "iterations": 13,
+    "function_evaluations": 13,
+    "final_parameter": -0.22353700287768571,
+    "best_energy_ha": -1.1373060357533742,
+    "exact_energy_ha": -1.1373060357533737,
+    "absolute_error_ha": 4.440892098500626e-16,
+    "final_state_fidelity": 0.9999999999999998,
+    "trajectory": [
+      {
+        "theta": -0.7416294238611401,
+        "energy_ha": -1.030194761454922
+      },
+      {
+        "theta": 0.7416294238611396,
+        "energy_ha": -0.7857602226885537
+      },
+      {
+        "theta": -1.6583338058675134,
+        "energy_ha": -0.43178263316396903
+      },
+      {
+        "theta": -0.24187384428243475,
+        "energy_ha": -1.1371688231309314
+      },
+      {
+        "theta": -0.21390750290514032,
+        "energy_ha": -1.1372681949229468
+      },
+      {
+        "theta": -0.22343665994741768,
+        "energy_ha": -1.1373060316448038
+      },
+      {
+        "theta": -0.22353706264363343,
+        "energy_ha": -1.1373060357533724
+      },
+      {
+        "theta": -0.22353699867208984,
+        "energy_ha": -1.1373060357533742
+      },
+      {
+        "theta": -0.223536995356167,
+        "energy_ha": -1.1373060357533733
+      },
+      {
+        "theta": -0.22353702749767274,
+        "energy_ha": -1.1373060357533733
+      },
+      {
+        "theta": -0.22353700968248277,
+        "energy_ha": -1.1373060357533733
+      },
+      {
+        "theta": -0.22353700287768571,
+        "energy_ha": -1.1373060357533742
+      },
+      {
+        "theta": -0.2235370061936086,
+        "energy_ha": -1.1373060357533733
+      }
+    ]
+  },
+  "resources": {
+    "logical": {
+      "qubits": 4,
+      "parameters": 1,
+      "canonical_double_excitation_blocks": 1
+    },
+    "provider_native_compiled": {
+      "depth": 714,
+      "gate_count": 1122,
+      "two_qubit_gate_count": 100,
+      "basis_gates": [
+        "rz",
+        "sx",
+        "x",
+        "cx"
+      ],
+      "optimization_level": 0,
+      "compiler_seed": 0
+    }
+  },
+  "wall_time_s": 0.06339829199714586
+}

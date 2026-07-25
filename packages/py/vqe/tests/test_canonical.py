@@ -5,6 +5,7 @@ fixture parity, scientific spec hash unchanged across framework bindings."""
 from __future__ import annotations
 
 import json
+import math
 from uuid import uuid4
 
 import pytest
@@ -12,11 +13,13 @@ import pytest
 from majorana_vqe.canonical import (
     CanonicalHamiltonian,
     H2Sto3gFixture,
+    HamiltonianIdentityContext,
     PauliTerm,
     RepoFixtureNotFoundError,
     canonicalize_hamiltonian,
     compute_idempotency_key,
     hamiltonian_digest,
+    hamiltonian_exact_content_digest,
     load_h2_sto3g_fixture,
     scientific_experiment_spec_digest,
 )
@@ -76,6 +79,39 @@ class TestKeyOrderIndependentDigest:
         h_b = CanonicalHamiltonian(num_qubits=2, terms=terms_b)
 
         assert hamiltonian_digest(h_a) == hamiltonian_digest(h_b)
+
+    def test_exact_digest_includes_conventions_and_binary64_content(self):
+        hamiltonian = CanonicalHamiltonian(
+            num_qubits=1,
+            terms=[PauliTerm(pauli_qubit0_first="Z", coeff_re=0.1)],
+        )
+        context = HamiltonianIdentityContext(
+            mapping_convention="jordan_wigner",
+            qubit_order_convention="canonical_qubit0_first_alpha_then_beta",
+            identity_offset_convention="electronic_only_nuclear_repulsion_separate",
+            zero_threshold_float64_hex="0000000000000000",
+        )
+
+        baseline = hamiltonian_exact_content_digest(hamiltonian, context=context)
+        mapping_changed = hamiltonian_exact_content_digest(
+            hamiltonian,
+            context=context.model_copy(update={"mapping_convention": "parity"}),
+        )
+        adjacent_float = hamiltonian_exact_content_digest(
+            CanonicalHamiltonian(
+                num_qubits=1,
+                terms=[
+                    PauliTerm(
+                        pauli_qubit0_first="Z",
+                        coeff_re=math.nextafter(0.1, math.inf),
+                    )
+                ],
+            ),
+            context=context,
+        )
+
+        assert baseline != mapping_changed
+        assert baseline != adjacent_float
 
     def test_scientific_spec_digest_is_independent_of_json_key_order(self):
         spec = _make_spec()

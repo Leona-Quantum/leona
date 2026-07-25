@@ -1,5 +1,4 @@
-"""Atlas VQE Component Registry, Workflows, Comparisons, and Experiments
-(Phase 3, plan Part IV "API candidate", ADR-0023/0024/0025).
+"""Atlas VQE registry, comparisons, and portable experiments (Phase 4.5).
 
 GET /v1/atlas/comparisons/{id} reads directly from the bundled
 docs/atlas/corpus/comparisons/*.json files rather than a DB table: the
@@ -8,12 +7,9 @@ Phase 2's comparison reports are versioned, machine-generated corpus data
 (ADR-0026), not per-workspace mutable state.
 
 POST /v1/vqe/experiments/{id}/cancel, GET .../events, and POST
-.../materialize are honest stubs, not fake success: vqe_experiments never
-creates a `runs` row in Phase 3 (no approved ExecutionBinding exists until
-Phase 5 resolves one against a runtime promoted out of CANDIDATE_UNVERIFIED,
-ADR-0024), so there is nothing to cancel, no events to stream, and no
-succeeded observation to materialize yet. Each returns a contract-shaped 409
-instead of a silent no-op or an invented 200.
+.../materialize remain honest stubs: Phase 4.5 can persist planned execution
+bindings, but no runtime is promoted under ADR-0024 and no durable run/job is
+started. Each returns a contract-shaped 409 instead of invented success.
 """
 
 import datetime as dt
@@ -22,17 +18,17 @@ import uuid
 from pathlib import Path
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Header, HTTPException, Query
+from fastapi import APIRouter, Depends, Header, HTTPException, Query
 from fastapi import Path as PathParam
-from majorana_vqe.canonical import scientific_experiment_spec_digest
 from majorana_vqe.models import Capability, ComponentType
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict
 
-from ..auth.deps import CurrentScope, DbSession
+from ..auth.deps import CurrentScope, DbSession, get_settings
 from ..orm import VqeComponentSpec as VqeComponentSpecRow
 from ..orm import VqeExperiment as VqeExperimentRow
 from ..orm import VqeWorkflowComponent as VqeWorkflowComponentRow
 from ..repos import vqe as vqe_repo
+from ..settings import Settings
 
 router = APIRouter()
 
@@ -41,12 +37,23 @@ _COMPARISON_ID_PATTERN = r"^[a-zA-Z0-9_]+$"
 _NO_EXECUTION_DETAIL = {
     "code": "no_execution_started",
     "message": (
-        "Phase 3 persists only the immutable scientific spec; no run or "
-        "ExecutionBinding exists for this experiment yet. Execution begins in "
+        "This experiment has no promoted runtime execution or run yet. "
+        "Execution begins in "
         "Phase 5 once a runtime profile is promoted out of CANDIDATE_UNVERIFIED "
         "(ADR-0024)."
     ),
 }
+
+
+def _catalog_workspace_id(settings: Settings) -> uuid.UUID | None:
+    """Return only the server-owned catalog workspace identifier.
+
+    A request body or query parameter must never be able to choose the
+    authority against which public registry entries are resolved.
+    """
+    return (
+        settings.catalog_authority.workspace_id if settings.catalog_authority.configured else None
+    )
 
 
 # --- resource shapes ---------------------------------------------------
@@ -56,9 +63,11 @@ class ComponentSpecResource(BaseModel):
     artifact_version_id: uuid.UUID
     schema_version: str
     component_type: str
+    semantic_key: str
     spec_json: dict[str, Any]
-    normalized_spec_sha256: str | None
-    annotation_state: str
+    normalized_spec_sha256: str
+    machine_validation_state: str
+    review_state: str
     created_at: dt.datetime | None
 
 
@@ -81,7 +90,8 @@ class WorkflowResource(BaseModel):
     workflow_artifact_version_id: uuid.UUID
     schema_version: str
     spec_json: dict[str, Any]
-    annotation_state: str
+    machine_validation_state: str
+    review_state: str
     components: list[WorkflowComponentResource]
 
 
@@ -99,22 +109,18 @@ class CreateExperimentRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     workflow_artifact_version_id: uuid.UUID
-    protocol_version: str = Field(min_length=1, max_length=50)
-    dataset_snapshot_id: str | None = Field(default=None, max_length=200)
-    initial_parameters: list[float] = Field(default_factory=list, max_length=256)
-    seed: int = Field(ge=0)
 
 
 class ExperimentResource(BaseModel):
     id: uuid.UUID
-    run_id: uuid.UUID | None
     workspace_id: uuid.UUID
     user_id: uuid.UUID
     schema_version: str
     workflow_artifact_version_id: uuid.UUID
     scientific_spec_json: dict[str, Any]
     scientific_spec_sha256: str
-    protocol_version: str
+    registry_resolution_json: dict[str, Any]
+    registry_resolution_sha256: str
     request_idempotency_key: str | None
     created_at: dt.datetime | None
 
@@ -124,9 +130,11 @@ def _to_component_spec_resource(row: VqeComponentSpecRow) -> ComponentSpecResour
         artifact_version_id=row.artifact_version_id,
         schema_version=row.schema_version,
         component_type=row.component_type,
+        semantic_key=row.semantic_key,
         spec_json=row.spec_json,
         normalized_spec_sha256=row.normalized_spec_sha256,
-        annotation_state=row.annotation_state,
+        machine_validation_state=row.machine_validation_state,
+        review_state=row.review_state,
         created_at=row.created_at,
     )
 
@@ -146,14 +154,14 @@ def _to_workflow_component_resource(row: VqeWorkflowComponentRow) -> WorkflowCom
 def _to_experiment_resource(row: VqeExperimentRow) -> ExperimentResource:
     return ExperimentResource(
         id=row.id,
-        run_id=row.run_id,
         workspace_id=row.workspace_id,
         user_id=row.user_id,
         schema_version=row.schema_version,
         workflow_artifact_version_id=row.workflow_artifact_version_id,
         scientific_spec_json=row.scientific_spec_json,
         scientific_spec_sha256=row.scientific_spec_sha256,
-        protocol_version=row.protocol_version,
+        registry_resolution_json=row.registry_resolution_json,
+        registry_resolution_sha256=row.registry_resolution_sha256,
         request_idempotency_key=row.request_idempotency_key,
         created_at=row.created_at,
     )
@@ -166,12 +174,18 @@ def _to_experiment_resource(row: VqeExperimentRow) -> ExperimentResource:
 async def list_components(
     scope: CurrentScope,
     session: DbSession,
+    settings: Annotated[Settings, Depends(get_settings)],
     component_type: ComponentType | None = None,
     cursor: uuid.UUID | None = None,
     limit: Annotated[int, Query(ge=1, le=200)] = 50,
 ) -> ComponentSpecListResponse:
     rows = await vqe_repo.list_component_specs(
-        scope, session, component_type=component_type, cursor=cursor, limit=limit
+        scope,
+        session,
+        component_type=component_type,
+        cursor=cursor,
+        limit=limit,
+        catalog_workspace_id=_catalog_workspace_id(settings),
     )
     next_cursor = rows[-1].artifact_version_id if len(rows) == limit else None
     return ComponentSpecListResponse(
@@ -182,9 +196,17 @@ async def list_components(
 
 @router.get("/atlas/components/{artifact_version_id}", response_model=ComponentSpecResource)
 async def get_component(
-    artifact_version_id: uuid.UUID, scope: CurrentScope, session: DbSession
+    artifact_version_id: uuid.UUID,
+    scope: CurrentScope,
+    session: DbSession,
+    settings: Annotated[Settings, Depends(get_settings)],
 ) -> ComponentSpecResource:
-    row = await vqe_repo.get_component_spec(scope, session, artifact_version_id)
+    row = await vqe_repo.get_component_spec(
+        scope,
+        session,
+        artifact_version_id,
+        catalog_workspace_id=_catalog_workspace_id(settings),
+    )
     return _to_component_spec_resource(row)
 
 
@@ -195,11 +217,17 @@ async def get_component(
 async def list_workflows(
     scope: CurrentScope,
     session: DbSession,
+    settings: Annotated[Settings, Depends(get_settings)],
     cursor: uuid.UUID | None = None,
     limit: Annotated[int, Query(ge=1, le=200)] = 50,
 ) -> ComponentSpecListResponse:
     rows = await vqe_repo.list_component_specs(
-        scope, session, component_type=ComponentType.WORKFLOW, cursor=cursor, limit=limit
+        scope,
+        session,
+        component_type=ComponentType.WORKFLOW,
+        cursor=cursor,
+        limit=limit,
+        catalog_workspace_id=_catalog_workspace_id(settings),
     )
     next_cursor = rows[-1].artifact_version_id if len(rows) == limit else None
     return ComponentSpecListResponse(
@@ -210,19 +238,32 @@ async def list_workflows(
 
 @router.get("/atlas/workflows/{workflow_artifact_version_id}", response_model=WorkflowResource)
 async def get_workflow(
-    workflow_artifact_version_id: uuid.UUID, scope: CurrentScope, session: DbSession
+    workflow_artifact_version_id: uuid.UUID,
+    scope: CurrentScope,
+    session: DbSession,
+    settings: Annotated[Settings, Depends(get_settings)],
 ) -> WorkflowResource:
-    spec = await vqe_repo.get_component_spec(scope, session, workflow_artifact_version_id)
+    catalog_workspace_id = _catalog_workspace_id(settings)
+    spec = await vqe_repo.get_component_spec(
+        scope,
+        session,
+        workflow_artifact_version_id,
+        catalog_workspace_id=catalog_workspace_id,
+    )
     if spec.component_type != ComponentType.WORKFLOW.value:
         raise HTTPException(status_code=404, detail="artifact version is not a workflow")
     components = await vqe_repo.list_workflow_components(
-        scope, session, workflow_artifact_version_id
+        scope,
+        session,
+        workflow_artifact_version_id,
+        catalog_workspace_id=catalog_workspace_id,
     )
     return WorkflowResource(
         workflow_artifact_version_id=spec.artifact_version_id,
         schema_version=spec.schema_version,
         spec_json=spec.spec_json,
-        annotation_state=spec.annotation_state,
+        machine_validation_state=spec.machine_validation_state,
+        review_state=spec.review_state,
         components=[_to_workflow_component_resource(c) for c in components],
     )
 
@@ -307,29 +348,26 @@ async def create_experiment(
     body: CreateExperimentRequest,
     scope: CurrentScope,
     session: DbSession,
+    settings: Annotated[Settings, Depends(get_settings)],
     request_idempotency_key: Annotated[
         str, Header(alias="Idempotency-Key", min_length=1, max_length=200)
     ],
 ) -> ExperimentResource:
     try:
-        scientific_spec = await vqe_repo.resolve_scientific_experiment_spec(
+        catalog_workspace_id = _catalog_workspace_id(settings)
+        resolved = await vqe_repo.resolve_scientific_experiment_spec(
             scope,
             session,
             body.workflow_artifact_version_id,
-            dataset_snapshot_id=body.dataset_snapshot_id,
-            initial_parameters=body.initial_parameters,
-            seed=body.seed,
+            catalog_workspace_id=catalog_workspace_id,
         )
-        digest = scientific_experiment_spec_digest(scientific_spec)
         experiment = await vqe_repo.create_experiment(
             scope,
             session,
             workflow_artifact_version_id=body.workflow_artifact_version_id,
-            schema_version=scientific_spec.schema_version,
-            scientific_spec_json=scientific_spec.model_dump(mode="json"),
-            scientific_spec_sha256=digest,
-            protocol_version=body.protocol_version,
+            resolved=resolved,
             request_idempotency_key=request_idempotency_key,
+            catalog_workspace_id=catalog_workspace_id,
         )
     except vqe_repo.InvalidWorkflowCompositionError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from None

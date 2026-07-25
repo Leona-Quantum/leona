@@ -1,8 +1,9 @@
-"""VQE Component/Workflow/Scientific Experiment schema v0.1.
+"""VQE registry metadata and legacy schema v0.1 contracts.
 
 Pure Pydantic models per ADR-0023 (identity), ADR-0024 (runtime trust
 boundary), ADR-0025 (evidence). No Qiskit/PennyLane/FastAPI/SQLAlchemy
-imports -- see AGENTS.md.
+imports -- see AGENTS.md. Portable scientific identity v0.2 lives in
+``portable.py`` and capability-specific evidence lives in ``result.py``.
 """
 
 from __future__ import annotations
@@ -175,12 +176,25 @@ SCIENTIFIC_SPEC_ROLE_BINDINGS: dict[ComponentType, str] = {
 
 
 class AnnotationState(str, Enum):
-    """Review state of a curated corpus record (plan Part IV Phase 2:
-    "unknown / ambiguous / conflicting fields", "reviewer decision")."""
+    """Deprecated v0.1 combined state; retained only for reading old bundles."""
 
     DRAFT = "draft"
     HUMAN_REVIEWED = "human_reviewed"
     UNKNOWN = "unknown"
+    CONFLICTING = "conflicting"
+
+
+class MachineValidationState(str, Enum):
+    UNVALIDATED = "unvalidated"
+    MACHINE_VALIDATED = "machine_validated"
+    VALIDATION_FAILED = "validation_failed"
+
+
+class ReviewState(str, Enum):
+    UNREVIEWED = "unreviewed"
+    HUMAN_REVIEWED = "human_reviewed"
+    AUTHOR_CONFIRMED = "author_confirmed"
+    REVIEW_REJECTED = "review_rejected"
     CONFLICTING = "conflicting"
 
 
@@ -203,8 +217,16 @@ class ComponentSpec(SpecJsonMixin):
     artifact_version_id: UUID
     component_type: ComponentType
     spec_json: dict[str, JSONValue] = Field(default_factory=dict)
+    semantic_key: str | None = Field(default=None, min_length=1, max_length=200)
     normalized_spec_sha256: str | None = Field(default=None, pattern=SHA256_HEX_PATTERN)
-    annotation_state: AnnotationState = AnnotationState.DRAFT
+    machine_validation_state: MachineValidationState = MachineValidationState.UNVALIDATED
+    review_state: ReviewState = ReviewState.UNREVIEWED
+
+    @model_validator(mode="after")
+    def _semantic_key_is_safe(self) -> Self:
+        if self.semantic_key is not None:
+            reject_path_module_or_code(self.semantic_key, field_path="semantic_key")
+        return self
 
 
 class WorkflowComponentRef(SpecJsonMixin):

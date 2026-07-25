@@ -1,24 +1,60 @@
-"""DB-free semantic tests for server-constructed VQE scientific specs."""
+"""DB-free tests for server-resolved portable VQE experiment identity v0.2."""
 
+import json
 import uuid
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
-from majorana_vqe.models import SCIENTIFIC_SPEC_ROLE_BINDINGS, ComponentType
+from majorana_vqe.models import (
+    ComponentType,
+    MachineValidationState,
+    ReviewState,
+)
+from majorana_vqe.portable import (
+    PORTABLE_SCIENTIFIC_ROLES,
+    normalized_component_spec_digest,
+    portable_scientific_spec_digest,
+)
 
 from majorana_api.repos import vqe
 
+_FIXTURE = (
+    Path(__file__).resolve().parents[3]
+    / "docs"
+    / "atlas"
+    / "fixtures"
+    / "h2_sto3g"
+    / "executable_components_v0.2.json"
+)
 
-def _component(component_type: ComponentType, component_id: uuid.UUID | None = None):
+
+def _component(
+    component_type: ComponentType,
+    spec_json: dict,
+    component_id: uuid.UUID | None = None,
+):
     return SimpleNamespace(
         artifact_version_id=component_id or uuid.uuid4(),
         component_type=component_type.value,
+        semantic_key=f"h2.v0_2.{component_type.value}",
+        spec_json=spec_json,
+        normalized_spec_sha256=normalized_component_spec_digest(
+            component_type=component_type,
+            spec_json=spec_json,
+        ),
+        machine_validation_state=MachineValidationState.MACHINE_VALIDATED.value,
+        review_state=ReviewState.HUMAN_REVIEWED.value,
     )
 
 
 def _complete_workflow():
-    workflow = _component(ComponentType.WORKFLOW)
-    components = {role: _component(role) for role in SCIENTIFIC_SPEC_ROLE_BINDINGS}
+    payload = json.loads(_FIXTURE.read_text())
+    workflow = _component(
+        ComponentType.WORKFLOW,
+        {"schema_version": "0.2.0", "kind": "h2_executable_workflow"},
+    )
+    components = {role: _component(role, payload[role.value]) for role in PORTABLE_SCIENTIFIC_ROLES}
     links = [
         SimpleNamespace(
             component_role=role.value,
@@ -30,14 +66,14 @@ def _complete_workflow():
     return workflow, components, links
 
 
-async def _install_repo_fakes(monkeypatch, workflow, components, links):
+def _install_repo_fakes(monkeypatch, workflow, components, links):
     by_id = {workflow.artifact_version_id: workflow}
     by_id.update({component.artifact_version_id: component for component in components.values()})
 
-    async def fake_get_component_spec(scope, session, artifact_version_id):
+    async def fake_get_component_spec(scope, session, artifact_version_id, **kwargs):
         return by_id[artifact_version_id]
 
-    async def fake_list_workflow_components(scope, session, workflow_artifact_version_id):
+    async def fake_list_workflow_components(scope, session, workflow_artifact_version_id, **kwargs):
         assert workflow_artifact_version_id == workflow.artifact_version_id
         return links
 
@@ -45,61 +81,79 @@ async def _install_repo_fakes(monkeypatch, workflow, components, links):
     monkeypatch.setattr(vqe, "list_workflow_components", fake_list_workflow_components)
 
 
-async def test_resolver_builds_every_component_id_from_workflow(monkeypatch):
+async def test_resolver_builds_portable_identity_and_separate_registry_resolution(
+    monkeypatch,
+):
     workflow, components, links = _complete_workflow()
-    await _install_repo_fakes(monkeypatch, workflow, components, links)
+    _install_repo_fakes(monkeypatch, workflow, components, links)
 
-    spec = await vqe.resolve_scientific_experiment_spec(
+    resolved = await vqe.resolve_scientific_experiment_spec(
         object(),
         object(),
         workflow.artifact_version_id,
-        dataset_snapshot_id="h2-sto3g-v1",
-        initial_parameters=[0.0, 0.1],
-        seed=7,
+        approved_seed=7,
     )
 
-    for role, field_name in SCIENTIFIC_SPEC_ROLE_BINDINGS.items():
-        assert getattr(spec, field_name) == components[role].artifact_version_id
-    assert spec.dataset_snapshot_id == "h2-sto3g-v1"
-    assert spec.initial_parameters == [0.0, 0.1]
-    assert spec.seed == 7
+    assert {binding.role for binding in resolved.scientific_spec.component_bindings} == set(
+        PORTABLE_SCIENTIFIC_ROLES
+    )
+    assert resolved.scientific_spec.seed == 7
+    assert resolved.registry_resolution.workflow_artifact_version_id == (
+        workflow.artifact_version_id
+    )
+    assert portable_scientific_spec_digest(resolved.scientific_spec)
 
 
 async def test_resolver_rejects_missing_required_role(monkeypatch):
     workflow, components, links = _complete_workflow()
     links = [link for link in links if link.component_role != ComponentType.OPERATOR_POOL.value]
-    await _install_repo_fakes(monkeypatch, workflow, components, links)
+    _install_repo_fakes(monkeypatch, workflow, components, links)
 
     with pytest.raises(vqe.InvalidWorkflowCompositionError, match="operator_pool"):
         await vqe.resolve_scientific_experiment_spec(
-            object(),
-            object(),
-            workflow.artifact_version_id,
-            dataset_snapshot_id=None,
-            initial_parameters=[],
-            seed=0,
+            object(), object(), workflow.artifact_version_id
         )
 
 
 async def test_resolver_rejects_role_component_type_mismatch(monkeypatch):
     workflow, components, links = _complete_workflow()
     components[ComponentType.ANSATZ].component_type = ComponentType.OPERATOR_POOL.value
-    await _install_repo_fakes(monkeypatch, workflow, components, links)
+    _install_repo_fakes(monkeypatch, workflow, components, links)
 
     with pytest.raises(vqe.InvalidWorkflowCompositionError, match="references component_type"):
         await vqe.resolve_scientific_experiment_spec(
-            object(),
-            object(),
-            workflow.artifact_version_id,
-            dataset_snapshot_id=None,
-            initial_parameters=[],
-            seed=0,
+            object(), object(), workflow.artifact_version_id
         )
 
 
-async def test_resolver_rejects_component_not_representable_in_spec_v01(monkeypatch):
+async def test_resolver_rejects_unreviewed_component(monkeypatch):
     workflow, components, links = _complete_workflow()
-    extra = _component(ComponentType.ERROR_MITIGATION)
+    components[ComponentType.ANSATZ].review_state = ReviewState.UNREVIEWED.value
+    _install_repo_fakes(monkeypatch, workflow, components, links)
+
+    with pytest.raises(vqe.InvalidWorkflowCompositionError, match="not scientifically reviewed"):
+        await vqe.resolve_scientific_experiment_spec(
+            object(), object(), workflow.artifact_version_id
+        )
+
+
+async def test_resolver_rejects_unreviewed_workflow(monkeypatch):
+    workflow, components, links = _complete_workflow()
+    workflow.review_state = ReviewState.UNREVIEWED.value
+    _install_repo_fakes(monkeypatch, workflow, components, links)
+
+    with pytest.raises(vqe.InvalidWorkflowCompositionError, match="workflow is not"):
+        await vqe.resolve_scientific_experiment_spec(
+            object(), object(), workflow.artifact_version_id
+        )
+
+
+async def test_resolver_rejects_component_not_representable_in_spec_v02(monkeypatch):
+    workflow, components, links = _complete_workflow()
+    extra = _component(
+        ComponentType.ERROR_MITIGATION,
+        {"schema_version": "0.2.0", "kind": "none"},
+    )
     components[ComponentType.ERROR_MITIGATION] = extra
     links.append(
         SimpleNamespace(
@@ -108,14 +162,9 @@ async def test_resolver_rejects_component_not_representable_in_spec_v01(monkeypa
             ordinal=0,
         )
     )
-    await _install_repo_fakes(monkeypatch, workflow, components, links)
+    _install_repo_fakes(monkeypatch, workflow, components, links)
 
     with pytest.raises(vqe.InvalidWorkflowCompositionError, match="cannot represent"):
         await vqe.resolve_scientific_experiment_spec(
-            object(),
-            object(),
-            workflow.artifact_version_id,
-            dataset_snapshot_id=None,
-            initial_parameters=[],
-            seed=0,
+            object(), object(), workflow.artifact_version_id
         )

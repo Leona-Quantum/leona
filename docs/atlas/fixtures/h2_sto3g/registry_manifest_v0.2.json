@@ -1,0 +1,323 @@
+{
+  "components": [
+    {
+      "component_type": "problem",
+      "human_review_state": "unreviewed",
+      "machine_validation_state": "machine_validated",
+      "normalized_spec_sha256": "9a181b65719dbc3e682e1b2ceea942b24a304e019e2285e284d07106a3671383",
+      "role": "problem",
+      "semantic_key": "h2.sto3g.actual_vqe.v0_2.problem",
+      "spec_json": {
+        "active_electrons": 2,
+        "basis": "sto-3g",
+        "charge": 0,
+        "dataset_snapshot_sha256": "6424713c69c2b734172db47329b7deb62b67a743c80fd792f48173fdaa4e3edc",
+        "frozen_core": false,
+        "geometry": [
+          {
+            "element": "H",
+            "schema_version": "0.2.0",
+            "x_angstrom": 0.0,
+            "y_angstrom": 0.0,
+            "z_angstrom": 0.0
+          },
+          {
+            "element": "H",
+            "schema_version": "0.2.0",
+            "x_angstrom": 0.0,
+            "y_angstrom": 0.0,
+            "z_angstrom": 0.735
+          }
+        ],
+        "kind": "electronic_structure_problem",
+        "molecule": "H2",
+        "multiplicity": 1,
+        "schema_version": "0.2.0",
+        "spin_orbitals": 4
+      }
+    },
+    {
+      "component_type": "problem_preparation",
+      "human_review_state": "unreviewed",
+      "machine_validation_state": "machine_validated",
+      "normalized_spec_sha256": "4467b23578a290e4d5b50955cfe5217cc1b9eb5cb809975b133cbe1c46ef7b22",
+      "role": "problem_preparation",
+      "semantic_key": "h2.sto3g.actual_vqe.v0_2.problem_preparation",
+      "spec_json": {
+        "integral_zero_threshold_float64_hex": "3d06849b86a12b9b",
+        "kind": "electronic_structure_preparation",
+        "mean_field": "rhf",
+        "nuclear_repulsion_convention": "stored_separately_added_to_total_energy",
+        "orbital_convention": "canonical_rhf_spin_orbitals_alpha_then_beta",
+        "provider": "pyscf",
+        "provider_version": "2.14.0",
+        "scf_convergence_tolerance_float64_hex": "3d719799812dea11",
+        "scf_max_cycles": 100,
+        "schema_version": "0.2.0",
+        "symmetry": "off"
+      }
+    },
+    {
+      "component_type": "representation",
+      "human_review_state": "unreviewed",
+      "machine_validation_state": "machine_validated",
+      "normalized_spec_sha256": "7f33e5b92e8e1fb6c85c50e8dee1a47c753277de3fda69df2db310f9e47e4182",
+      "role": "representation",
+      "semantic_key": "h2.sto3g.actual_vqe.v0_2.representation",
+      "spec_json": {
+        "kind": "qubit_representation",
+        "mapping": "jordan_wigner",
+        "num_qubits": 4,
+        "qubit_order": "canonical_qubit0_first_alpha_then_beta",
+        "schema_version": "0.2.0",
+        "tapering": false
+      }
+    },
+    {
+      "component_type": "reference_state",
+      "human_review_state": "unreviewed",
+      "machine_validation_state": "machine_validated",
+      "normalized_spec_sha256": "1f324b201bf07ea597905441af96f0432e70f32be3101b65f063279fd7a04b72",
+      "role": "reference_state",
+      "semantic_key": "h2.sto3g.actual_vqe.v0_2.reference_state",
+      "spec_json": {
+        "bitstring_qubit0_first": "1010",
+        "kind": "reference_state",
+        "num_qubits": 4,
+        "schema_version": "0.2.0",
+        "state": "hartree_fock"
+      }
+    },
+    {
+      "component_type": "ansatz",
+      "human_review_state": "unreviewed",
+      "machine_validation_state": "machine_validated",
+      "normalized_spec_sha256": "109ae17781c351e7a1ee946de1b20a500f491e664e3ffd29232e92a7b66b14bf",
+      "role": "ansatz",
+      "semantic_key": "h2.sto3g.actual_vqe.v0_2.ansatz",
+      "spec_json": {
+        "expected_parameter_count": 1,
+        "generator_convention": "antihermitian_tau_minus_tau_dagger",
+        "generator_definition": "fermionic_double_excitation_0_2_to_1_3",
+        "generator_id": "double.occ0_occ2.to.virt1_virt3",
+        "generator_order": [
+          "double.occ0_occ2.to.virt1_virt3"
+        ],
+        "kind": "ansatz_definition",
+        "name": "h2_canonical_single_double_excitation",
+        "num_qubits": 4,
+        "parameter_orientation": "exp_theta_over_2_generator",
+        "parameter_sharing": "none",
+        "parameter_slots": [
+          {
+            "generator_id": "double.occ0_occ2.to.virt1_virt3",
+            "initial_float64_hex": "0000000000000000",
+            "schema_version": "0.2.0",
+            "slot_id": "theta.double.occ0_occ2.to.virt1_virt3"
+          }
+        ],
+        "schema_version": "0.2.0",
+        "trotter_order": 1,
+        "trotter_steps": 1
+      }
+    },
+    {
+      "component_type": "operator_pool",
+      "human_review_state": "unreviewed",
+      "machine_validation_state": "machine_validated",
+      "normalized_spec_sha256": "2b139d98a07f75cad5c0e17f442cea2d106f2959d82096ab8a2a5839f433fc3e",
+      "role": "operator_pool",
+      "semantic_key": "h2.sto3g.actual_vqe.v0_2.operator_pool",
+      "spec_json": {
+        "generator_ids": [
+          "double.occ0_occ2.to.virt1_virt3"
+        ],
+        "kind": "operator_pool",
+        "name": "h2_singleton_double_pool",
+        "ordering": "canonical_generator_id",
+        "schema_version": "0.2.0"
+      }
+    },
+    {
+      "component_type": "search_selection",
+      "human_review_state": "unreviewed",
+      "machine_validation_state": "machine_validated",
+      "normalized_spec_sha256": "befa413b07f4e44e87b2ff961cf1ffa86f9908d96c0e1645498676ae76732c7a",
+      "role": "search_selection",
+      "semantic_key": "h2.sto3g.actual_vqe.v0_2.search_selection",
+      "spec_json": {
+        "kind": "selection_protocol",
+        "mode": "fixed_singleton",
+        "schema_version": "0.2.0",
+        "scoring": "not_applicable"
+      }
+    },
+    {
+      "component_type": "growth_batching",
+      "human_review_state": "unreviewed",
+      "machine_validation_state": "machine_validated",
+      "normalized_spec_sha256": "c931caa04b98540f1b3c9c31eb032959a546a9abdc29df8d8600930850696f6f",
+      "role": "growth_batching",
+      "semantic_key": "h2.sto3g.actual_vqe.v0_2.growth_batching",
+      "spec_json": {
+        "batch_size": 1,
+        "kind": "growth_protocol",
+        "mode": "fixed_ansatz",
+        "schema_version": "0.2.0"
+      }
+    },
+    {
+      "component_type": "parameter_optimizer",
+      "human_review_state": "unreviewed",
+      "machine_validation_state": "machine_validated",
+      "normalized_spec_sha256": "dabb6c8ff883eb2e5c969a988a7a416a7415025e6cfa163e98a29ba262e5645c",
+      "role": "parameter_optimizer",
+      "semantic_key": "h2.sto3g.actual_vqe.v0_2.parameter_optimizer",
+      "spec_json": {
+        "algorithm": "scipy_minimize_scalar_bounded",
+        "deterministic": true,
+        "energy_tolerance_float64_hex": "3d719799812dea11",
+        "initial_point_policy": "component_parameter_slot_defaults",
+        "kind": "optimizer",
+        "lower_bound_float64_hex": "c00921fb54442d18",
+        "max_function_evaluations": 256,
+        "provider": "scipy",
+        "provider_version": "1.18.0",
+        "schema_version": "0.2.0",
+        "upper_bound_float64_hex": "400921fb54442d18"
+      }
+    },
+    {
+      "component_type": "compression",
+      "human_review_state": "unreviewed",
+      "machine_validation_state": "machine_validated",
+      "normalized_spec_sha256": "3faeb7da38d044e8caa3bb91d53286c65de172461033dacdb843da35ff964c92",
+      "role": "compression",
+      "semantic_key": "h2.sto3g.actual_vqe.v0_2.compression",
+      "spec_json": {
+        "kind": "compression_protocol",
+        "mode": "none",
+        "schema_version": "0.2.0"
+      }
+    },
+    {
+      "component_type": "measurement",
+      "human_review_state": "unreviewed",
+      "machine_validation_state": "machine_validated",
+      "normalized_spec_sha256": "a15178e50893101c3c2b576b9c0b119c2ae7da90ae37fdc16a70f874ed641c18",
+      "role": "measurement",
+      "semantic_key": "h2.sto3g.actual_vqe.v0_2.measurement",
+      "spec_json": {
+        "estimator": "exact_statevector",
+        "grouping": "none_exact_expectation",
+        "kind": "measurement_protocol",
+        "observable_num_qubits": 4,
+        "schema_version": "0.2.0",
+        "shots": null
+      }
+    },
+    {
+      "component_type": "compilation_backend",
+      "human_review_state": "unreviewed",
+      "machine_validation_state": "machine_validated",
+      "normalized_spec_sha256": "012f4742289f3d5be1fd35ad0ecebe10fe94ee14b7e051f1037b869856e7c811",
+      "role": "compilation_backend",
+      "semantic_key": "h2.sto3g.actual_vqe.v0_2.compilation_backend",
+      "spec_json": {
+        "basis_gates": [],
+        "compiler_seed": 0,
+        "kind": "compilation_metric_protocol",
+        "logical_block_definition": "canonical_double_excitation_block",
+        "optimization_level": 0,
+        "primary_resource_stage": "logical",
+        "routing": "none_four_qubit_all_to_all",
+        "schema_version": "0.2.0",
+        "secondary_resource_stage": "provider_native_compiled"
+      }
+    },
+    {
+      "component_type": "evaluation_protocol",
+      "human_review_state": "unreviewed",
+      "machine_validation_state": "machine_validated",
+      "normalized_spec_sha256": "1f948a7020dcb18fdeddc26d814b42895bed74c211ea6530bcb1c192937592d0",
+      "role": "evaluation_protocol",
+      "semantic_key": "h2.sto3g.actual_vqe.v0_2.evaluation_protocol",
+      "spec_json": {
+        "accepted_absolute_error_tolerance_float64_hex": "3e45798ee2308c3a",
+        "fidelity_tolerance_float64_hex": "3e45798ee2308c3a",
+        "kind": "evaluation_protocol",
+        "reference": "fci_total_energy_offline_acceptance_only",
+        "reference_energy_float64_hex": "bff23267d051ab0e",
+        "schema_version": "0.2.0"
+      }
+    },
+    {
+      "component_type": "stopping_protocol",
+      "human_review_state": "unreviewed",
+      "machine_validation_state": "machine_validated",
+      "normalized_spec_sha256": "1a328664ba8119040f92ac3cc36223527cecc4e667ecb6b9e2c2c5dd3bc9cc26",
+      "role": "stopping_protocol",
+      "semantic_key": "h2.sto3g.actual_vqe.v0_2.stopping_protocol",
+      "spec_json": {
+        "criterion": "optimizer_bounded_convergence",
+        "energy_tolerance_float64_hex": "3d719799812dea11",
+        "kind": "stopping_protocol",
+        "max_function_evaluations": 256,
+        "schema_version": "0.2.0"
+      }
+    }
+  ],
+  "manifest_kind": "vqe_review_candidate",
+  "publication_state": "blocked_pending_human_review",
+  "review_gate": {
+    "decision": null,
+    "note": "Generated machine evidence is not human review. Do not import as executable/public until an independent reviewer approves the scientific definitions and evidence.",
+    "required": true,
+    "reviewed_at": null,
+    "reviewer_identity": null
+  },
+  "runtime_spike_evidence": [
+    {
+      "absolute_error_ha": 4.440892098500626e-16,
+      "best_energy_ha": -1.1373060357533742,
+      "exact_energy_ha": -1.1373060357533737,
+      "final_parameter": -0.22353700287768571,
+      "framework": "qiskit",
+      "path": "docs/atlas/fixtures/h2_sto3g/raw/qiskit_vqe_v0.2.json",
+      "sha256": "5c1d90c1e405822ca6513acc01f740411f073916af1d1c16cfa50f474c6aa693"
+    },
+    {
+      "absolute_error_ha": 4.440892098500626e-16,
+      "best_energy_ha": -1.1373060357533742,
+      "exact_energy_ha": -1.1373060357533737,
+      "final_parameter": -0.22353701635917084,
+      "framework": "pennylane",
+      "path": "docs/atlas/fixtures/h2_sto3g/raw/pennylane_vqe_v0.2.json",
+      "sha256": "403af9992bdaf0544869bf1582f5b0b4de59f3d998a4a9bb1d00d9c9073e1a79"
+    }
+  ],
+  "schema_version": "0.2.0",
+  "scientific_claim_scope": "H2 STO-3G noiseless actual-VQE semantic parity; provider-native compiled resource metrics excluded",
+  "workflow": {
+    "human_review_state": "unreviewed",
+    "machine_validation_state": "machine_validated",
+    "required_roles": [
+      "problem",
+      "problem_preparation",
+      "representation",
+      "reference_state",
+      "ansatz",
+      "operator_pool",
+      "search_selection",
+      "growth_batching",
+      "parameter_optimizer",
+      "compression",
+      "measurement",
+      "compilation_backend",
+      "evaluation_protocol",
+      "stopping_protocol"
+    ],
+    "semantic_digest": "9d91fc2e7ca128d4ab9517446e16b3f1d236df45a5039a55c926fb00f0dd2b96",
+    "semantic_key": "h2.sto3g.actual_vqe.workflow.v0_2"
+  }
+}

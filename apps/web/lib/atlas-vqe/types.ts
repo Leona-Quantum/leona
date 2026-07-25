@@ -72,7 +72,11 @@ export interface VqeRepositoryRecord {
   validation_state: VqeValidationState;
 }
 
-export type VqeComparisonDimensionStatus = "fixed" | "changed" | "unknown";
+export type VqeComparisonDimensionStatus =
+  | "fixed"
+  | "changed"
+  | "unknown"
+  | "not_applicable";
 export type VqeComparisonClassification = "strict" | "controlled" | "partial" | "invalid";
 
 export interface VqeComparisonDimension {

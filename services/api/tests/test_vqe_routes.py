@@ -17,6 +17,10 @@ from majorana_api.repos import vqe as vqe_repo
 from majorana_api.routes import vqe as vqe_routes
 
 
+def _settings():
+    return SimpleNamespace(catalog_authority=SimpleNamespace(configured=False, workspace_id=None))
+
+
 def _routes() -> set[tuple[str, str]]:
     return {
         (route.path, method)
@@ -80,18 +84,23 @@ async def test_get_component_converts_the_row(monkeypatch):
         artifact_version_id=uuid.uuid4(),
         schema_version="0.1.0",
         component_type="ansatz",
+        semantic_key="ansatz.h2",
         spec_json={"k": "v"},
-        normalized_spec_sha256=None,
-        annotation_state="draft",
+        normalized_spec_sha256="a" * 64,
+        machine_validation_state="machine_validated",
+        review_state="human_reviewed",
         created_at=dt.datetime.now(dt.UTC),
     )
 
-    async def fake_get_component_spec(scope, session, artifact_version_id):
+    async def fake_get_component_spec(scope, session, artifact_version_id, **kwargs):
         return row
 
     monkeypatch.setattr(vqe_repo, "get_component_spec", fake_get_component_spec)
     result = await vqe_routes.get_component(
-        row.artifact_version_id, scope=object(), session=object()
+        row.artifact_version_id,
+        scope=object(),
+        session=object(),
+        settings=_settings(),
     )
     assert result.artifact_version_id == row.artifact_version_id
     assert result.component_type == "ansatz"
@@ -103,18 +112,25 @@ async def test_get_workflow_rejects_a_non_workflow_component(monkeypatch):
         artifact_version_id=uuid.uuid4(),
         schema_version="0.1.0",
         component_type="ansatz",  # not "workflow"
+        semantic_key="ansatz.h2",
         spec_json={},
-        normalized_spec_sha256=None,
-        annotation_state="draft",
+        normalized_spec_sha256="a" * 64,
+        machine_validation_state="machine_validated",
+        review_state="human_reviewed",
         created_at=None,
     )
 
-    async def fake_get_component_spec(scope, session, artifact_version_id):
+    async def fake_get_component_spec(scope, session, artifact_version_id, **kwargs):
         return row
 
     monkeypatch.setattr(vqe_repo, "get_component_spec", fake_get_component_spec)
     with pytest.raises(HTTPException) as excinfo:
-        await vqe_routes.get_workflow(row.artifact_version_id, scope=object(), session=object())
+        await vqe_routes.get_workflow(
+            row.artifact_version_id,
+            scope=object(),
+            session=object(),
+            settings=_settings(),
+        )
     assert excinfo.value.status_code == 404
 
 
@@ -124,9 +140,11 @@ async def test_get_workflow_returns_its_components(monkeypatch):
         artifact_version_id=workflow_id,
         schema_version="0.1.0",
         component_type="workflow",
+        semantic_key="workflow.h2",
         spec_json={},
-        normalized_spec_sha256=None,
-        annotation_state="draft",
+        normalized_spec_sha256="a" * 64,
+        machine_validation_state="machine_validated",
+        review_state="human_reviewed",
         created_at=None,
     )
     component_row = SimpleNamespace(
@@ -139,15 +157,20 @@ async def test_get_workflow_returns_its_components(monkeypatch):
         created_at=None,
     )
 
-    async def fake_get_component_spec(scope, session, artifact_version_id):
+    async def fake_get_component_spec(scope, session, artifact_version_id, **kwargs):
         return spec_row
 
-    async def fake_list_workflow_components(scope, session, workflow_artifact_version_id):
+    async def fake_list_workflow_components(scope, session, workflow_artifact_version_id, **kwargs):
         return [component_row]
 
     monkeypatch.setattr(vqe_repo, "get_component_spec", fake_get_component_spec)
     monkeypatch.setattr(vqe_repo, "list_workflow_components", fake_list_workflow_components)
-    result = await vqe_routes.get_workflow(workflow_id, scope=object(), session=object())
+    result = await vqe_routes.get_workflow(
+        workflow_id,
+        scope=object(),
+        session=object(),
+        settings=_settings(),
+    )
     assert result.workflow_artifact_version_id == workflow_id
     assert len(result.components) == 1
     assert result.components[0].component_role == "ansatz"
@@ -169,31 +192,12 @@ async def test_get_comparison_404s_for_an_unknown_report():
 
 
 async def test_create_experiment_translates_idempotency_conflict_to_409(monkeypatch):
-    from majorana_vqe.models import ScientificExperimentSpec
-
-    spec = ScientificExperimentSpec(
-        problem_version_id=uuid.uuid4(),
-        representation_version_id=uuid.uuid4(),
-        reference_state_version_id=uuid.uuid4(),
-        ansatz_version_id=uuid.uuid4(),
-        operator_pool_version_id=uuid.uuid4(),
-        selection_version_id=uuid.uuid4(),
-        growth_version_id=uuid.uuid4(),
-        optimizer_version_id=uuid.uuid4(),
-        compression_version_id=uuid.uuid4(),
-        measurement_protocol_version_id=uuid.uuid4(),
-        evaluation_protocol_version_id=uuid.uuid4(),
-        stopping_protocol_version_id=uuid.uuid4(),
-        seed=0,
-    )
     body = vqe_routes.CreateExperimentRequest(
         workflow_artifact_version_id=uuid.uuid4(),
-        protocol_version="0.1.0",
-        seed=0,
     )
 
     async def fake_resolve_scientific_experiment_spec(*args, **kwargs):
-        return spec
+        return object()
 
     async def fake_create_experiment(*args, **kwargs):
         raise vqe_repo.IdempotencyConflictError("reused for a different experiment")
@@ -204,7 +208,11 @@ async def test_create_experiment_translates_idempotency_conflict_to_409(monkeypa
     monkeypatch.setattr(vqe_repo, "create_experiment", fake_create_experiment)
     with pytest.raises(HTTPException) as excinfo:
         await vqe_routes.create_experiment(
-            body, scope=object(), session=object(), request_idempotency_key="dup-key"
+            body,
+            scope=object(),
+            session=object(),
+            settings=_settings(),
+            request_idempotency_key="dup-key",
         )
     assert excinfo.value.status_code == 409
 
@@ -215,8 +223,6 @@ def test_create_experiment_request_rejects_client_supplied_component_ids():
     with pytest.raises(ValidationError):
         vqe_routes.CreateExperimentRequest(
             workflow_artifact_version_id=uuid.uuid4(),
-            protocol_version="0.1.0",
-            seed=0,
             ansatz_version_id=uuid.uuid4(),
         )
 
@@ -224,14 +230,14 @@ def test_create_experiment_request_rejects_client_supplied_component_ids():
 async def _fake_experiment(experiment_id: uuid.UUID) -> SimpleNamespace:
     return SimpleNamespace(
         id=experiment_id,
-        run_id=None,
         workspace_id=uuid.uuid4(),
         user_id=uuid.uuid4(),
         schema_version="0.1.0",
         workflow_artifact_version_id=uuid.uuid4(),
         scientific_spec_json={},
         scientific_spec_sha256="a" * 64,
-        protocol_version="0.1.0",
+        registry_resolution_json={},
+        registry_resolution_sha256="b" * 64,
         request_idempotency_key="k",
         created_at=dt.datetime.now(dt.UTC),
     )

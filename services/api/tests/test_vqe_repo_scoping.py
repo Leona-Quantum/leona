@@ -94,10 +94,7 @@ async def test_create_experiment_checks_workflow_version_first(scope, session):
             scope,
             session,
             workflow_artifact_version_id=uuid.uuid4(),
-            schema_version="0.1.0",
-            scientific_spec_json={},
-            scientific_spec_sha256="a" * 64,
-            protocol_version="0.1.0",
+            resolved=object(),
         )
     assert_workspace_bound(session.statements[0], scope)
     assert session.added == []
@@ -110,22 +107,13 @@ async def test_list_observations_checks_experiment_first(scope, session):
 
 
 async def test_append_observation_checks_experiment_first(scope, session):
-    from majorana_vqe.models import ExecutionStatus, Framework
-
     with pytest.raises(NotFoundError):
         await vqe.append_observation(
             scope,
             session,
             uuid.uuid4(),
             attempt=1,
-            framework=Framework.QISKIT,
-            runtime_profile_id="qiskit-current-v1",
-            runtime_image_digest="sha256:" + "0" * 64,
-            adapter_release_id="adapter1",
-            architecture="arm64",
-            protocol_version="0.1.0",
-            scientific_spec_sha256="a" * 64,
-            status=ExecutionStatus.SUCCEEDED,
+            evidence={},
         )
     assert_workspace_bound(session.statements[0], scope)
     assert session.added == []

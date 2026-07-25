@@ -1,13 +1,12 @@
-"""Live-DB test in the authz-suite mold: skipped without DATABASE_URL.
+"""Live PostgreSQL invariants for the Phase 4.5 VQE registry.
 
-Proves the Phase 3 VQE Component Registry / Experiment repos end-to-end
-against real Postgres: constraint enforcement the ORM/migration only declare
-(PK/UNIQUE/FK/CHECK), workspace isolation across two independently
-provisioned scopes, and the idempotent-create semantics for
-vqe_experiments. Each test provisions its own fresh user/workspace so it is
-safe to run repeatedly against the same throwaway database.
+Skipped without DATABASE_URL.  These tests deliberately exercise properties
+that mocks cannot prove: foreign keys, uniqueness, immutable-row triggers,
+workspace isolation, and one portable experiment resolving to multiple
+framework executions.
 """
 
+import hashlib
 import os
 import uuid
 
@@ -16,19 +15,27 @@ from majorana_contracts import Scope
 from majorana_contracts.enums import Algorithm, ExportStatus
 from majorana_contracts.enums import Framework as ContractFramework
 from majorana_contracts.enums import Role
-from majorana_vqe.models import (
-    SCIENTIFIC_SPEC_ROLE_BINDINGS,
-    AnnotationState,
-    ComponentType,
-    ExecutionStatus,
-    FailureCode,
-    Framework,
+from majorana_vqe.models import ComponentType, ExecutionBinding, Framework
+from majorana_vqe.portable import (
+    PORTABLE_SCIENTIFIC_ROLES,
+    ComponentSemanticBinding,
+    PortableScientificExperimentSpec,
+    RegistryComponentResolution,
+    RegistryResolution,
+    ResolvedPortableExperiment,
+    workflow_semantic_digest,
+)
+from majorana_vqe.result import (
+    OptimizerWork,
+    ParameterValue,
+    ResourceObservation,
+    VqeOptimizationSuccessResult,
 )
 from sqlalchemy import delete, update
 from sqlalchemy.exc import DBAPIError, IntegrityError
 
 from majorana_api.db import engine_from_env, session_factory
-from majorana_api.orm import ArtifactVersion, VqeObservation
+from majorana_api.orm import VqeComponentSpec, VqeObservation
 from majorana_api.repos import NotFoundError, artifacts as artifacts_repo, system, vqe
 
 requires_db = pytest.mark.skipif(
@@ -47,16 +54,16 @@ async def db():
 
 
 async def _new_scope(session, *, role: Role = Role.OWNER) -> Scope:
-    user, ws = await system.get_or_provision_user(
+    user, workspace = await system.get_or_provision_user(
         session,
         workos_user_id=f"vqe-live-{uuid.uuid4()}",
         email=f"vqe-{uuid.uuid4().hex[:8]}@live.test",
     )
     await session.flush()
-    return Scope(user_id=user.id, workspace_id=ws.id, role=role)
+    return Scope(user_id=user.id, workspace_id=workspace.id, role=role)
 
 
-async def _make_artifact_version(scope, session, *, slug: str) -> ArtifactVersion:
+async def _make_artifact_version(scope, session, *, slug: str):
     artifact = await artifacts_repo.create_artifact(
         scope,
         session,
@@ -78,416 +85,276 @@ async def _make_artifact_version(scope, session, *, slug: str) -> ArtifactVersio
     )
 
 
-async def _make_component_version(
-    scope,
-    session,
-    *,
-    slug: str,
-    component_type: ComponentType,
-) -> ArtifactVersion:
+async def _make_component(scope, session, component_type: ComponentType):
+    slug = f"{component_type.value}-{uuid.uuid4()}"
     version = await _make_artifact_version(scope, session, slug=slug)
-    await vqe.create_component_spec(
+    spec = await vqe.create_component_spec(
         scope,
         session,
         artifact_version_id=version.id,
-        schema_version="0.1.0",
+        schema_version="0.2.0",
         component_type=component_type,
+        semantic_key=slug,
+        spec_json={"schema_version": "0.2.0", "kind": component_type.value},
     )
-    return version
+    return version, spec
+
+
+def _digest(label: str) -> str:
+    return hashlib.sha256(label.encode()).hexdigest()
+
+
+def _resolved(workflow_id: uuid.UUID, *, variant: str = "base") -> ResolvedPortableExperiment:
+    bindings = [
+        ComponentSemanticBinding(
+            role=role,
+            component_type=role,
+            component_semantic_key=f"h2.{variant}.{role.value}",
+            component_spec_sha256=_digest(f"{variant}:{role.value}"),
+        )
+        for role in PORTABLE_SCIENTIFIC_ROLES
+    ]
+    scientific = PortableScientificExperimentSpec(
+        workflow_semantic_digest=workflow_semantic_digest(bindings),
+        component_bindings=bindings,
+        dataset_snapshot_sha256=_digest("h2-sto3g-dataset"),
+        seed=0,
+    )
+    resolution = RegistryResolution(
+        workflow_artifact_version_id=workflow_id,
+        components=[
+            RegistryComponentResolution(
+                role=binding.role,
+                artifact_version_id=uuid.uuid4(),
+                component_semantic_key=binding.component_semantic_key,
+                component_spec_sha256=binding.component_spec_sha256,
+            )
+            for binding in bindings
+        ],
+    )
+    return ResolvedPortableExperiment(
+        scientific_spec=scientific,
+        registry_resolution=resolution,
+    )
+
+
+def _binding(framework: Framework) -> ExecutionBinding:
+    return ExecutionBinding(
+        framework=framework,
+        provider_versions={framework.value: "test-version"},
+        runtime_profile_id=f"{framework.value}-test-profile",
+        adapter_release_id=f"{framework.value}-adapter-0.1.0",
+        container_digest="sha256:" + ("1" if framework is Framework.QISKIT else "2") * 64,
+        architecture="linux-x86_64",
+        protocol_version="0.2.0",
+    )
+
+
+def _success(experiment, execution) -> VqeOptimizationSuccessResult:
+    return VqeOptimizationSuccessResult(
+        scientific_spec_sha256=experiment.scientific_spec_sha256,
+        registry_resolution_sha256=experiment.registry_resolution_sha256,
+        framework=execution.framework,
+        runtime_profile_id=execution.runtime_profile_id,
+        runtime_image_digest=execution.runtime_image_digest,
+        adapter_release_id=execution.adapter_release_id,
+        provider_versions=execution.provider_versions,
+        hamiltonian_exact_digest=_digest("h2-hamiltonian"),
+        seed=0,
+        status="succeeded",
+        capability="h2_sto3g_actual_vqe_v1",
+        best_energy_ha=-1.1373060357534,
+        reference_energy_ha=-1.1373060357534,
+        absolute_error_ha=0.0,
+        final_state_fidelity=1.0,
+        converged=True,
+        optimizer_work=OptimizerWork(
+            iterations=1,
+            energy_evaluations=2,
+            gradient_evaluations=0,
+            hessian_evaluations=0,
+        ),
+        initial_parameters=[ParameterValue(slot_id="theta.0", float64_hex="0000000000000000")],
+        final_parameters=[ParameterValue(slot_id="theta.0", float64_hex="bfcc9d4f00000000")],
+        initial_parameters_sha256=_digest("initial"),
+        final_parameters_sha256=_digest("final"),
+        ansatz_semantic_digest=_digest("ansatz"),
+        energy_trajectory=[-1.0, -1.1373060357534],
+        resources=[
+            ResourceObservation(
+                stage="logical",
+                metric_protocol_sha256=_digest("logical-metric-protocol"),
+                qubits=4,
+                parameter_count=1,
+            )
+        ],
+    )
 
 
 @requires_db
-async def test_component_spec_create_get_list_round_trip(db):
+async def test_component_round_trip_and_workspace_isolation(db):
     async with db() as session:
-        scope = await _new_scope(session)
-        version = await _make_artifact_version(scope, session, slug=f"ansatz-{uuid.uuid4()}")
-        created = await vqe.create_component_spec(
-            scope,
-            session,
-            artifact_version_id=version.id,
-            schema_version="0.1.0",
-            component_type=ComponentType.ANSATZ,
-            spec_json={"kind": "uccsd"},
-            annotation_state=AnnotationState.DRAFT,
-        )
+        owner = await _new_scope(session)
+        intruder = await _new_scope(session)
+        version, created = await _make_component(owner, session, ComponentType.ANSATZ)
         await session.commit()
 
     async with db() as session:
-        fetched = await vqe.get_component_spec(scope, session, version.id)
-        assert fetched.artifact_version_id == created.artifact_version_id
-        assert fetched.spec_json == {"kind": "uccsd"}
-
-        listed = await vqe.list_component_specs(scope, session, component_type=ComponentType.ANSATZ)
-        assert any(c.artifact_version_id == version.id for c in listed)
-
-        listed_wrong_type = await vqe.list_component_specs(
-            scope, session, component_type=ComponentType.MEASUREMENT
-        )
-        assert all(c.artifact_version_id != version.id for c in listed_wrong_type)
+        fetched = await vqe.get_component_spec(owner, session, version.id)
+        assert fetched.normalized_spec_sha256 == created.normalized_spec_sha256
+        with pytest.raises(NotFoundError):
+            await vqe.get_component_spec(intruder, session, version.id)
 
 
 @requires_db
-async def test_component_spec_pk_rejects_a_second_create_for_the_same_version(db):
+async def test_same_scientific_content_is_allowed_in_distinct_workspaces(db):
+    """A public mirror must not block a private provenance record."""
     async with db() as session:
-        scope = await _new_scope(session)
-        version = await _make_artifact_version(scope, session, slug=f"pk-{uuid.uuid4()}")
-        await vqe.create_component_spec(
-            scope,
-            session,
-            artifact_version_id=version.id,
-            schema_version="0.1.0",
-            component_type=ComponentType.ANSATZ,
-        )
-        await session.commit()
-
-    async with db() as session:
-        with pytest.raises(IntegrityError):
+        first = await _new_scope(session)
+        second = await _new_scope(session)
+        for scope in (first, second):
+            version = await _make_artifact_version(
+                scope, session, slug=f"shared-content-{uuid.uuid4()}"
+            )
             await vqe.create_component_spec(
                 scope,
                 session,
                 artifact_version_id=version.id,
-                schema_version="0.1.0",
+                schema_version="0.2.0",
                 component_type=ComponentType.ANSATZ,
+                semantic_key="h2.shared.ansatz",
+                spec_json={"schema_version": "0.2.0", "kind": "shared"},
             )
+        await session.commit()
 
 
 @requires_db
-async def test_workflow_components_create_list_and_reject_duplicate_role_ordinal(db):
+async def test_workflow_link_is_immutable_and_duplicate_role_is_rejected(db):
     async with db() as session:
         scope = await _new_scope(session)
-        workflow = await _make_component_version(
-            scope,
-            session,
-            component_type=ComponentType.WORKFLOW,
-            slug=f"workflow-{uuid.uuid4()}",
-        )
-        ansatz = await _make_component_version(
-            scope,
-            session,
-            component_type=ComponentType.ANSATZ,
-            slug=f"ansatz-{uuid.uuid4()}",
-        )
-        await vqe.create_workflow_component(
+        workflow, _ = await _make_component(scope, session, ComponentType.WORKFLOW)
+        ansatz, _ = await _make_component(scope, session, ComponentType.ANSATZ)
+        link = await vqe.create_workflow_component(
             scope,
             session,
             workflow_artifact_version_id=workflow.id,
-            component_role="ansatz",
+            component_role=ComponentType.ANSATZ.value,
             component_artifact_version_id=ansatz.id,
             ordinal=0,
         )
         await session.commit()
-
-    async with db() as session:
-        components = await vqe.list_workflow_components(scope, session, workflow.id)
-        assert len(components) == 1
-        assert components[0].component_role == "ansatz"
+        link_id = link.id
 
     async with db() as session:
         with pytest.raises(IntegrityError):
-            await vqe.create_workflow_component(
-                scope,
-                session,
-                workflow_artifact_version_id=workflow.id,
-                component_role="ansatz",
-                component_artifact_version_id=ansatz.id,
-                ordinal=0,  # same (workflow, role, ordinal) as above
-            )
-
-
-@requires_db
-async def test_workflow_component_rejects_role_type_mismatch(db):
-    async with db() as session:
-        scope = await _new_scope(session)
-        workflow = await _make_component_version(
-            scope,
-            session,
-            component_type=ComponentType.WORKFLOW,
-            slug=f"workflow-mismatch-{uuid.uuid4()}",
-        )
-        measurement = await _make_component_version(
-            scope,
-            session,
-            component_type=ComponentType.MEASUREMENT,
-            slug=f"measurement-{uuid.uuid4()}",
-        )
-        with pytest.raises(vqe.InvalidWorkflowCompositionError, match="does not match"):
             await vqe.create_workflow_component(
                 scope,
                 session,
                 workflow_artifact_version_id=workflow.id,
                 component_role=ComponentType.ANSATZ.value,
-                component_artifact_version_id=measurement.id,
+                component_artifact_version_id=ansatz.id,
                 ordinal=0,
             )
 
+    async with db() as session:
+        with pytest.raises(DBAPIError, match="immutable"):
+            await session.execute(
+                update(VqeComponentSpec)
+                .where(VqeComponentSpec.artifact_version_id == workflow.id)
+                .values(schema_version="tampered")
+            )
+            await session.commit()
+        await session.rollback()
+        assert link_id
+
 
 @requires_db
-async def test_scientific_spec_is_resolved_from_complete_workflow(db):
+async def test_experiment_idempotency_and_resolution_are_immutable(db):
     async with db() as session:
         scope = await _new_scope(session)
-        workflow = await _make_component_version(
-            scope,
-            session,
-            component_type=ComponentType.WORKFLOW,
-            slug=f"workflow-resolve-{uuid.uuid4()}",
-        )
-        expected: dict[ComponentType, uuid.UUID] = {}
-        for role in SCIENTIFIC_SPEC_ROLE_BINDINGS:
-            component = await _make_component_version(
-                scope,
-                session,
-                component_type=role,
-                slug=f"{role.value}-{uuid.uuid4()}",
-            )
-            expected[role] = component.id
-            await vqe.create_workflow_component(
-                scope,
-                session,
-                workflow_artifact_version_id=workflow.id,
-                component_role=role.value,
-                component_artifact_version_id=component.id,
-                ordinal=0,
-            )
-        await session.commit()
-
-    async with db() as session:
-        spec = await vqe.resolve_scientific_experiment_spec(
-            scope,
-            session,
-            workflow.id,
-            dataset_snapshot_id="h2-sto3g-v1",
-            initial_parameters=[0.0],
-            seed=11,
-        )
-        for role, field_name in SCIENTIFIC_SPEC_ROLE_BINDINGS.items():
-            assert getattr(spec, field_name) == expected[role]
-        assert spec.seed == 11
-
-
-@requires_db
-async def test_component_spec_is_invisible_outside_its_workspace(db):
-    async with db() as session:
-        owner_scope = await _new_scope(session)
-        version = await _make_artifact_version(owner_scope, session, slug=f"iso-{uuid.uuid4()}")
-        await vqe.create_component_spec(
-            owner_scope,
-            session,
-            artifact_version_id=version.id,
-            schema_version="0.1.0",
-            component_type=ComponentType.ANSATZ,
-        )
-        intruder_scope = await _new_scope(session)
-        await session.commit()
-
-    async with db() as session:
-        with pytest.raises(NotFoundError):
-            await vqe.get_component_spec(intruder_scope, session, version.id)
-        # the owning workspace can still see it
-        found = await vqe.get_component_spec(owner_scope, session, version.id)
-        assert found.artifact_version_id == version.id
-
-
-def _spec_kwargs(workflow_id: uuid.UUID, *, sha256: str, request_idempotency_key: str | None):
-    return dict(
-        workflow_artifact_version_id=workflow_id,
-        schema_version="0.1.0",
-        scientific_spec_json={"problem_version_id": str(uuid.uuid4())},
-        scientific_spec_sha256=sha256,
-        protocol_version="0.1.0",
-        request_idempotency_key=request_idempotency_key,
-    )
-
-
-@requires_db
-async def test_create_experiment_never_sets_run_id_and_is_idempotent(db):
-    async with db() as session:
-        scope = await _new_scope(session)
-        workflow = await _make_component_version(
-            scope,
-            session,
-            slug=f"exp-workflow-{uuid.uuid4()}",
-            component_type=ComponentType.WORKFLOW,
-        )
-        await session.commit()
-
-    key = f"idem-{uuid.uuid4()}"
-    sha = "b" * 64
-
-    async with db() as session:
+        workflow, _ = await _make_component(scope, session, ComponentType.WORKFLOW)
+        resolved = _resolved(workflow.id)
         first = await vqe.create_experiment(
             scope,
             session,
-            **_spec_kwargs(workflow.id, sha256=sha, request_idempotency_key=key),
+            workflow_artifact_version_id=workflow.id,
+            resolved=resolved,
+            request_idempotency_key="same-request",
         )
         await session.commit()
-
-    assert first.run_id is None  # Phase 3 scope decision: spec only, no runs row yet
+        first_id = first.id
 
     async with db() as session:
-        # same key, same request -> returns the existing row, not a duplicate
-        second = await vqe.create_experiment(
+        replay = await vqe.create_experiment(
             scope,
             session,
-            **_spec_kwargs(workflow.id, sha256=sha, request_idempotency_key=key),
+            workflow_artifact_version_id=workflow.id,
+            resolved=resolved,
+            request_idempotency_key="same-request",
         )
-        assert second.id == first.id
-
-        # same key, different spec digest -> conflict, not a silent overwrite
+        assert replay.id == first_id
         with pytest.raises(vqe.IdempotencyConflictError):
             await vqe.create_experiment(
                 scope,
                 session,
-                **_spec_kwargs(workflow.id, sha256="c" * 64, request_idempotency_key=key),
+                workflow_artifact_version_id=workflow.id,
+                resolved=_resolved(workflow.id, variant="different"),
+                request_idempotency_key="same-request",
             )
 
-    async with db() as session:
-        fetched = await vqe.get_experiment(scope, session, first.id)
-        assert fetched.scientific_spec_sha256 == sha
-
 
 @requires_db
-async def test_experiment_is_invisible_outside_its_workspace(db):
-    async with db() as session:
-        owner_scope = await _new_scope(session)
-        workflow = await _make_component_version(
-            owner_scope,
-            session,
-            slug=f"exp-iso-{uuid.uuid4()}",
-            component_type=ComponentType.WORKFLOW,
-        )
-        experiment = await vqe.create_experiment(
-            owner_scope,
-            session,
-            **_spec_kwargs(workflow.id, sha256="d" * 64, request_idempotency_key=None),
-        )
-        intruder_scope = await _new_scope(session)
-        await session.commit()
-
-    async with db() as session:
-        with pytest.raises(NotFoundError):
-            await vqe.get_experiment(intruder_scope, session, experiment.id)
-
-
-@requires_db
-async def test_append_observation_enforces_all_its_invariants(db):
+async def test_one_experiment_has_independent_qiskit_and_pennylane_executions(db):
     async with db() as session:
         scope = await _new_scope(session)
-        workflow = await _make_component_version(
-            scope,
-            session,
-            slug=f"obs-{uuid.uuid4()}",
-            component_type=ComponentType.WORKFLOW,
-        )
+        workflow, _ = await _make_component(scope, session, ComponentType.WORKFLOW)
         experiment = await vqe.create_experiment(
             scope,
             session,
-            **_spec_kwargs(workflow.id, sha256="e" * 64, request_idempotency_key=None),
+            workflow_artifact_version_id=workflow.id,
+            resolved=_resolved(workflow.id),
         )
-        await session.commit()
-
-    def _obs_kwargs(**overrides):
-        kwargs = dict(
-            attempt=1,
-            framework=Framework.QISKIT,
-            runtime_profile_id="qiskit-current-v1",
-            runtime_image_digest="sha256:" + "0" * 64,
-            adapter_release_id="adapter1",
-            architecture="arm64",
-            protocol_version="0.1.0",
-            scientific_spec_sha256="e" * 64,
-            hamiltonian_digest="a" * 64,
-            status=ExecutionStatus.SUCCEEDED,
+        qiskit = await vqe.create_execution(
+            scope, session, experiment.id, binding=_binding(Framework.QISKIT)
         )
-        kwargs.update(overrides)
-        return kwargs
-
-    async with db() as session:
-        # wrong spec digest: must be rejected before it ever reaches the DB
-        with pytest.raises(ValueError):
-            await vqe.append_observation(
-                scope, session, experiment.id, **_obs_kwargs(scientific_spec_sha256="f" * 64)
-            )
-
-    async with db() as session:
-        # succeeded status must not carry a failure_code
-        with pytest.raises(ValueError):
-            await vqe.append_observation(
-                scope,
-                session,
-                experiment.id,
-                **_obs_kwargs(
-                    status=ExecutionStatus.SUCCEEDED, failure_code=FailureCode.RUNTIME_TIMEOUT
-                ),
-            )
-
-    async with db() as session:
-        # failed status requires a failure_code
-        with pytest.raises(ValueError):
-            await vqe.append_observation(
-                scope, session, experiment.id, **_obs_kwargs(status=ExecutionStatus.FAILED)
-            )
-
-    async with db() as session:
-        first = await vqe.append_observation(
-            scope, session, experiment.id, **_obs_kwargs(attempt=1)
+        pennylane = await vqe.create_execution(
+            scope, session, experiment.id, binding=_binding(Framework.PENNYLANE)
         )
-        await session.commit()
-    assert first.status == ExecutionStatus.SUCCEEDED.value
-
-    async with db() as session:
-        # a retry is attempt + 1, never a mutation of attempt 1 (ADR-0025)
-        with pytest.raises(IntegrityError):
-            await vqe.append_observation(scope, session, experiment.id, **_obs_kwargs(attempt=1))
-
-    async with db() as session:
+        await vqe.append_observation(
+            scope, session, qiskit.id, attempt=1, evidence=_success(experiment, qiskit)
+        )
         await vqe.append_observation(
             scope,
             session,
-            experiment.id,
-            **_obs_kwargs(
-                attempt=2,
-                status=ExecutionStatus.FAILED,
-                failure_code=FailureCode.RUNTIME_TIMEOUT,
-            ),
+            pennylane.id,
+            attempt=1,
+            evidence=_success(experiment, pennylane),
         )
         await session.commit()
 
     async with db() as session:
-        observations = await vqe.list_observations(scope, session, experiment.id)
-        assert [o.attempt for o in observations] == [1, 2]
-        assert observations[1].failure_code == FailureCode.RUNTIME_TIMEOUT.value
+        executions = await vqe.list_executions(scope, session, experiment.id)
+        assert {row.framework for row in executions} == {"qiskit", "pennylane"}
+        assert len(await vqe.list_observations(scope, session, qiskit.id)) == 1
+        assert len(await vqe.list_observations(scope, session, pennylane.id)) == 1
 
 
 @requires_db
 async def test_observation_rows_reject_update_and_delete(db):
-    """The append-only claim is a PostgreSQL invariant, not just API style."""
     async with db() as session:
         scope = await _new_scope(session)
-        workflow = await _make_component_version(
-            scope,
-            session,
-            slug=f"obs-immutable-{uuid.uuid4()}",
-            component_type=ComponentType.WORKFLOW,
-        )
+        workflow, _ = await _make_component(scope, session, ComponentType.WORKFLOW)
         experiment = await vqe.create_experiment(
             scope,
             session,
-            **_spec_kwargs(workflow.id, sha256="9" * 64, request_idempotency_key=None),
+            workflow_artifact_version_id=workflow.id,
+            resolved=_resolved(workflow.id),
+        )
+        execution = await vqe.create_execution(
+            scope, session, experiment.id, binding=_binding(Framework.QISKIT)
         )
         observation = await vqe.append_observation(
-            scope,
-            session,
-            experiment.id,
-            attempt=1,
-            framework=Framework.QISKIT,
-            runtime_profile_id="qiskit-current-v1",
-            runtime_image_digest="sha256:" + "0" * 64,
-            adapter_release_id="adapter1",
-            architecture="arm64",
-            protocol_version="0.1.0",
-            scientific_spec_sha256="9" * 64,
-            hamiltonian_digest="8" * 64,
-            status=ExecutionStatus.SUCCEEDED,
+            scope, session, execution.id, attempt=1, evidence=_success(experiment, execution)
         )
         await session.commit()
         observation_id = observation.id
@@ -497,7 +364,7 @@ async def test_observation_rows_reject_update_and_delete(db):
             await session.execute(
                 update(VqeObservation)
                 .where(VqeObservation.id == observation_id)
-                .values(runtime_profile_id="tampered")
+                .values(status="failed")
             )
             await session.commit()
         await session.rollback()
@@ -505,8 +372,3 @@ async def test_observation_rows_reject_update_and_delete(db):
         with pytest.raises(DBAPIError, match="append-only"):
             await session.execute(delete(VqeObservation).where(VqeObservation.id == observation_id))
             await session.commit()
-        await session.rollback()
-
-        persisted = await session.get(VqeObservation, observation_id)
-        assert persisted is not None
-        assert persisted.runtime_profile_id == "qiskit-current-v1"

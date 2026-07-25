@@ -19,7 +19,12 @@ const VALIDATION_STATES = new Set<VqeValidationState["state"]>([
   "validation_failed",
   "conflicting",
 ]);
-const DIMENSION_STATUSES = new Set(["fixed", "changed", "unknown"]);
+const DIMENSION_STATUSES = new Set([
+  "fixed",
+  "changed",
+  "unknown",
+  "not_applicable",
+]);
 const CLASSIFICATIONS = new Set(["strict", "controlled", "partial", "invalid"]);
 
 function record(value: unknown, path: string): Record<string, unknown> {

@@ -6,7 +6,7 @@ import uuid
 import pytest
 from repo_test_helpers import make_scope
 from majorana_contracts.enums import Role
-from majorana_vqe.models import AnnotationState, ComponentType, ExecutionStatus, Framework
+from majorana_vqe.models import ComponentType
 
 from majorana_api.repos import AuthzError, vqe
 
@@ -17,7 +17,6 @@ VIEWER_BLOCKED_WRITES = [
         artifact_version_id=uuid.uuid4(),
         schema_version="0.1.0",
         component_type=ComponentType.ANSATZ,
-        annotation_state=AnnotationState.DRAFT,
     ),
     lambda s, db: vqe.create_workflow_component(
         s,
@@ -31,24 +30,14 @@ VIEWER_BLOCKED_WRITES = [
         s,
         db,
         workflow_artifact_version_id=uuid.uuid4(),
-        schema_version="0.1.0",
-        scientific_spec_json={},
-        scientific_spec_sha256="a" * 64,
-        protocol_version="0.1.0",
+        resolved=object(),
     ),
     lambda s, db: vqe.append_observation(
         s,
         db,
         uuid.uuid4(),
         attempt=1,
-        framework=Framework.QISKIT,
-        runtime_profile_id="qiskit-current-v1",
-        runtime_image_digest="sha256:" + "0" * 64,
-        adapter_release_id="adapter1",
-        architecture="arm64",
-        protocol_version="0.1.0",
-        scientific_spec_sha256="a" * 64,
-        status=ExecutionStatus.SUCCEEDED,
+        evidence={},
     ),
 ]
 

@@ -1553,6 +1553,25 @@ MVPは以下が全部成立したときだけcomplete。
 
 ---
 
+## 2026-07-25 Phase 4.5 amendment
+
+ADR-0030により、以下のv0.1記述を置換する。
+
+- Scientific Experimentの科学的identityにArtifactVersion UUIDを含めない。
+  UUID解決結果は`RegistryResolution`として別digestへ保存する。
+- 1 Experiment = 1 Runではなく、1 immutable Experiment = 0..N
+  framework/runtime Executionsとする。
+- clientはWorkflowだけを選択し、dataset digest、parameter slot、seedを
+  serverがreview済みtyped componentから解決する。
+- machine validationとhuman scientific reviewを独立状態として記録する。
+- MVP literature corpusのmachine-only posture (ADR-0026)は維持する一方、
+  executable H2 registry promotionには両軸の通過を必須とする。
+
+Phase 4.5の実装証拠・残課題・Phase 5 NO-GO判定は
+`docs/atlas/PHASE45_PROGRESS.md`と`docs/atlas/PRE_PHASE5_GATE.md`を正とする。
+
+---
+
 # Part XI. データ完全性・報告に関する常時遵守事項 (ADR-0026)
 
 Phase 2でのHuman Review除外・repository分類誤り・sources_verified不備の

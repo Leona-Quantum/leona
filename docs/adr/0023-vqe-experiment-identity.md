@@ -1,6 +1,11 @@
 # ADR-0023: VQE experiments reuse Artifact/Run identity instead of a parallel object model
 
-**Date:** 2026-07-24 · **Status:** proposed (owner review required before Phase 1 schema work)
+**Date:** 2026-07-24 · **Status:** superseded in part by ADR-0030
+
+> **Supersession notice:** retain this document as the v0.1 decision history.
+> ADR-0030 replaces UUID-bearing scientific identity, the one-experiment/one-run
+> cardinality, and binding-dependent experiment identity. ArtifactVersion remains
+> the registry/provenance identity.
 **Context:** Atlas VQE needs versioned components (ansatz, operator pool, optimizer,
 measurement protocol, ...), workflows composed from components, and scientific
 experiments run against them, without duplicating the identity, versioning,
@@ -10,7 +15,7 @@ Modeling a component as a free-text label, or an experiment as a fully independe
 entity with its own status field, would fragment provenance, let an unreviewed
 component evade license/authorship tracking, and create a second source of truth for
 execution lifecycle that can drift from `runs`/`jobs`.
-**Decision:** A VQE component is identified by an existing immutable `ArtifactVersion`,
+**Decision (historical v0.1):** A VQE component is identified by an existing immutable `ArtifactVersion`,
 never a string label; `vqe_component_specs` attaches typed metadata
 (`component_type`, `spec_json`, `normalized_spec_sha256`) keyed on
 `artifact_version_id`. A Workflow is likewise an ArtifactVersion; `vqe_workflow_components`

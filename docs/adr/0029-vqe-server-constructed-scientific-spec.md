@@ -1,6 +1,10 @@
 # ADR-0029: VQE scientific specs are constructed from workflow components server-side
 
-**Date:** 2026-07-25 · **Status:** accepted for MVP remediation
+**Date:** 2026-07-25 · **Status:** superseded by portable schema v0.2 in ADR-0030
+
+> **Supersession notice:** the server-constructed/fail-closed principle remains,
+> but v0.2 no longer accepts dataset, parameters, seed, or protocol from the
+> client and no longer places component UUIDs in scientific identity.
 
 ## Context
 

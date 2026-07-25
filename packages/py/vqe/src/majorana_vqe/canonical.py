@@ -19,7 +19,8 @@ from typing import Self
 
 from pydantic import Field, model_validator
 
-from .models import SCHEMA_VERSION, ScientificExperimentSpec, VqeBaseModel
+from .models import SHA256_HEX_PATTERN, SCHEMA_VERSION, ScientificExperimentSpec, VqeBaseModel
+from .portable import FLOAT64_HEX_PATTERN, float_to_ieee754_hex
 
 PAULI_STRING_PATTERN = re.compile(r"^[IXYZ]+$")
 
@@ -105,6 +106,75 @@ def hamiltonian_digest(hamiltonian: CanonicalHamiltonian) -> str:
     ]
     encoded = json.dumps(payload, sort_keys=True, allow_nan=False).encode("utf-8")
     return hashlib.sha256(encoded).hexdigest()
+
+
+class HamiltonianIdentityContext(VqeBaseModel):
+    """Conventions that term coefficients alone cannot identify."""
+
+    schema_version: str = Field(default="0.2.0", pattern=r"^\d+\.\d+\.\d+$")
+    mapping_convention: str = Field(min_length=1, max_length=100)
+    qubit_order_convention: str = Field(min_length=1, max_length=200)
+    identity_offset_convention: str = Field(min_length=1, max_length=200)
+    zero_threshold_float64_hex: str = Field(pattern=FLOAT64_HEX_PATTERN)
+    coefficient_format: str = Field(default="ieee754_binary64_big_endian", frozen=True)
+    pauli_label_convention: str = Field(default="qubit0_first", frozen=True)
+
+
+def hamiltonian_exact_content_digest(
+    hamiltonian: CanonicalHamiltonian,
+    *,
+    context: HamiltonianIdentityContext,
+) -> str:
+    """Exact v2 content identity without tolerance rounding.
+
+    This intentionally does not call ``canonicalize_hamiltonian``: rounding is
+    a semantic-comparison policy, not exact content identity. Terms are sorted
+    for order independence while each binary64 coefficient is encoded exactly.
+    """
+    terms = sorted(hamiltonian.terms, key=lambda term: term.pauli_qubit0_first)
+    payload = {
+        "digest_protocol": "majorana-vqe-hamiltonian-exact-v2",
+        "schema_version": context.schema_version,
+        "num_qubits": hamiltonian.num_qubits,
+        "mapping_convention": context.mapping_convention,
+        "qubit_order_convention": context.qubit_order_convention,
+        "identity_offset_convention": context.identity_offset_convention,
+        "zero_threshold_float64_hex": context.zero_threshold_float64_hex,
+        "coefficient_format": context.coefficient_format,
+        "pauli_label_convention": context.pauli_label_convention,
+        "terms": [
+            {
+                "pauli_qubit0_first": term.pauli_qubit0_first,
+                "coeff_re_float64_hex": float_to_ieee754_hex(term.coeff_re),
+                "coeff_im_float64_hex": float_to_ieee754_hex(term.coeff_im),
+            }
+            for term in terms
+        ],
+    }
+    encoded = json.dumps(
+        payload,
+        sort_keys=True,
+        separators=(",", ":"),
+        allow_nan=False,
+    ).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
+class HamiltonianEquivalenceRecord(VqeBaseModel):
+    """Evidence that two non-identical inputs are physically comparable.
+
+    The model records a verified witness; it is not a general equivalence
+    search engine. The Phase 4.5 H2 permutation/local-frame search remains
+    explicitly H2-specific.
+    """
+
+    schema_version: str = Field(default="0.1.0", pattern=r"^\d+\.\d+\.\d+$")
+    left_exact_digest: str = Field(pattern=SHA256_HEX_PATTERN)
+    right_exact_digest: str = Field(pattern=SHA256_HEX_PATTERN)
+    method: str = Field(min_length=1, max_length=100)
+    comparison_tolerance_float64_hex: str = Field(pattern=FLOAT64_HEX_PATTERN)
+    witness_sha256: str = Field(pattern=SHA256_HEX_PATTERN)
+    verified: bool
 
 
 def scientific_experiment_spec_digest(spec: ScientificExperimentSpec) -> str:

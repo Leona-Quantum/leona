@@ -1,0 +1,156 @@
+{
+  "problem": {
+    "schema_version": "0.2.0",
+    "kind": "electronic_structure_problem",
+    "molecule": "H2",
+    "geometry": [
+      {
+        "schema_version": "0.2.0",
+        "element": "H",
+        "x_angstrom": 0.0,
+        "y_angstrom": 0.0,
+        "z_angstrom": 0.0
+      },
+      {
+        "schema_version": "0.2.0",
+        "element": "H",
+        "x_angstrom": 0.0,
+        "y_angstrom": 0.0,
+        "z_angstrom": 0.735
+      }
+    ],
+    "charge": 0,
+    "multiplicity": 1,
+    "basis": "sto-3g",
+    "active_electrons": 2,
+    "spin_orbitals": 4,
+    "frozen_core": false,
+    "dataset_snapshot_sha256": "6424713c69c2b734172db47329b7deb62b67a743c80fd792f48173fdaa4e3edc"
+  },
+  "problem_preparation": {
+    "schema_version": "0.2.0",
+    "kind": "electronic_structure_preparation",
+    "provider": "pyscf",
+    "provider_version": "2.14.0",
+    "mean_field": "rhf",
+    "scf_convergence_tolerance_float64_hex": "3d719799812dea11",
+    "scf_max_cycles": 100,
+    "symmetry": "off",
+    "orbital_convention": "canonical_rhf_spin_orbitals_alpha_then_beta",
+    "nuclear_repulsion_convention": "stored_separately_added_to_total_energy",
+    "integral_zero_threshold_float64_hex": "3d06849b86a12b9b"
+  },
+  "representation": {
+    "schema_version": "0.2.0",
+    "kind": "qubit_representation",
+    "mapping": "jordan_wigner",
+    "num_qubits": 4,
+    "qubit_order": "canonical_qubit0_first_alpha_then_beta",
+    "tapering": false
+  },
+  "reference_state": {
+    "schema_version": "0.2.0",
+    "kind": "reference_state",
+    "state": "hartree_fock",
+    "num_qubits": 4,
+    "bitstring_qubit0_first": "1010"
+  },
+  "ansatz": {
+    "schema_version": "0.2.0",
+    "kind": "ansatz_definition",
+    "name": "h2_canonical_single_double_excitation",
+    "num_qubits": 4,
+    "generator_id": "double.occ0_occ2.to.virt1_virt3",
+    "generator_definition": "fermionic_double_excitation_0_2_to_1_3",
+    "generator_convention": "antihermitian_tau_minus_tau_dagger",
+    "parameter_orientation": "exp_theta_over_2_generator",
+    "generator_order": [
+      "double.occ0_occ2.to.virt1_virt3"
+    ],
+    "trotter_order": 1,
+    "trotter_steps": 1,
+    "parameter_sharing": "none",
+    "parameter_slots": [
+      {
+        "schema_version": "0.2.0",
+        "slot_id": "theta.double.occ0_occ2.to.virt1_virt3",
+        "generator_id": "double.occ0_occ2.to.virt1_virt3",
+        "initial_float64_hex": "0000000000000000"
+      }
+    ],
+    "expected_parameter_count": 1
+  },
+  "operator_pool": {
+    "schema_version": "0.2.0",
+    "kind": "operator_pool",
+    "name": "h2_singleton_double_pool",
+    "generator_ids": [
+      "double.occ0_occ2.to.virt1_virt3"
+    ],
+    "ordering": "canonical_generator_id"
+  },
+  "search_selection": {
+    "schema_version": "0.2.0",
+    "kind": "selection_protocol",
+    "mode": "fixed_singleton",
+    "scoring": "not_applicable"
+  },
+  "growth_batching": {
+    "schema_version": "0.2.0",
+    "kind": "growth_protocol",
+    "mode": "fixed_ansatz",
+    "batch_size": 1
+  },
+  "parameter_optimizer": {
+    "schema_version": "0.2.0",
+    "kind": "optimizer",
+    "algorithm": "scipy_minimize_scalar_bounded",
+    "provider": "scipy",
+    "provider_version": "1.18.0",
+    "initial_point_policy": "component_parameter_slot_defaults",
+    "lower_bound_float64_hex": "c00921fb54442d18",
+    "upper_bound_float64_hex": "400921fb54442d18",
+    "energy_tolerance_float64_hex": "3d719799812dea11",
+    "max_function_evaluations": 256,
+    "deterministic": true
+  },
+  "compression": {
+    "schema_version": "0.2.0",
+    "kind": "compression_protocol",
+    "mode": "none"
+  },
+  "measurement": {
+    "schema_version": "0.2.0",
+    "kind": "measurement_protocol",
+    "estimator": "exact_statevector",
+    "shots": null,
+    "grouping": "none_exact_expectation",
+    "observable_num_qubits": 4
+  },
+  "compilation_backend": {
+    "schema_version": "0.2.0",
+    "kind": "compilation_metric_protocol",
+    "primary_resource_stage": "logical",
+    "secondary_resource_stage": "provider_native_compiled",
+    "logical_block_definition": "canonical_double_excitation_block",
+    "basis_gates": [],
+    "optimization_level": 0,
+    "routing": "none_four_qubit_all_to_all",
+    "compiler_seed": 0
+  },
+  "evaluation_protocol": {
+    "schema_version": "0.2.0",
+    "kind": "evaluation_protocol",
+    "reference": "fci_total_energy_offline_acceptance_only",
+    "reference_energy_float64_hex": "bff23267d051ab0e",
+    "accepted_absolute_error_tolerance_float64_hex": "3e45798ee2308c3a",
+    "fidelity_tolerance_float64_hex": "3e45798ee2308c3a"
+  },
+  "stopping_protocol": {
+    "schema_version": "0.2.0",
+    "kind": "stopping_protocol",
+    "criterion": "optimizer_bounded_convergence",
+    "max_function_evaluations": 256,
+    "energy_tolerance_float64_hex": "3d719799812dea11"
+  }
+}

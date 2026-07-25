@@ -20,9 +20,11 @@ Hamiltonians, comparison. Authority: `docs/adr/0023-vqe-experiment-identity.md`,
 - Canonicalization (`canonical.py`) must stay deterministic: same logical Hamiltonian in,
   same digest out, regardless of input dict/list ordering or which of two runtime
   candidates produced it (post-permutation/local-gauge normalization).
-- Component identity is an `ArtifactVersion` UUID reference, never a string label
-  (ADR-0023). This package validates the UUID's shape only; existence/Scope checks are
-  the repository layer's job in a later phase.
+- Registry/provenance identity is an `ArtifactVersion` UUID (ADR-0023), while portable
+  scientific identity uses a bounded semantic key plus normalized content digest
+  (ADR-0030). Never put a registry UUID into `PortableScientificExperimentSpec`, and
+  never resolve a semantic key without a content digest and repository-level Scope
+  check.
 - `corpus_validation.py` validates the Phase 2 curated corpus (`docs/atlas/corpus/`,
   outside this package) offline — it lives here because it needs `ComponentType` for
   enum checks. Per ADR-0026, its `validation_state` is machine-only: there is no

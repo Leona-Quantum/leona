@@ -1,6 +1,6 @@
 # ADR-0025: VQE observations are append-only evidence keyed to a canonical, digested Hamiltonian
 
-**Date:** 2026-07-24 · **Status:** proposed (owner review required before Phase 3 persistence work)
+**Date:** 2026-07-24 · **Status:** accepted for Phase 4.5 persistence; cardinality clarified by ADR-0030
 **Context:** A VQE result is only useful as evidence if a reader can trust that two
 runs claiming to compute "the same thing" actually used the same qubit Hamiltonian,
 not just the same molecule name, and that a retried or re-run experiment cannot
@@ -17,7 +17,7 @@ before hashing; `hamiltonian_digest` is computed from that canonical form, and t
 Hamiltonians that differ only by a documented qubit permutation are recorded as
 permutation-equivalent, never silently treated as identical without that record.
 `vqe_observations` is strictly append-only: a retry adds a new row with an
-incremented `attempt` under the same `experiment_id`, nothing about a prior
+incremented `attempt` under the same `execution_id`, nothing about a prior
 observation is ever UPDATEd, and a correction to a component's definition produces a
 new `ArtifactVersion` (ADR-0023), never a mutation of an existing one. The MVP golden
 fixture is H2/STO-3G only, and its authoritative energy values are never hand-typed

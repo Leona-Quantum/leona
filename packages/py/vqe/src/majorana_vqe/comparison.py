@@ -28,17 +28,34 @@ class ComparisonDimensionName(str, Enum):
     not a reason to add an ad hoc dimension."""
 
     PROBLEM_DIGEST = "problem_digest"
+    PROBLEM_PREPARATION = "problem_preparation"
+    BASIS_ACTIVE_SPACE = "basis_active_space"
     HAMILTONIAN_DIGEST_OR_EQUIVALENCE = "hamiltonian_digest_or_equivalence"
     MAPPING = "mapping"
     QUBIT_WIRE_ORDER = "qubit_wire_order"
     REFERENCE_STATE = "reference_state"
     ANSATZ_SEMANTIC_DEFINITION = "ansatz_semantic_definition"
+    OPERATOR_POOL = "operator_pool"
+    OPERATOR_POOL_ORDERING = "operator_pool_ordering"
+    SEARCH_SCORING = "search_scoring"
+    SELECTION_RULE = "selection_rule"
+    GROWTH_BATCHING = "growth_batching"
+    COMPRESSION = "compression"
     INITIAL_POINT = "initial_point"
     OPTIMIZER_CONFIGURATION = "optimizer_configuration"
+    GRADIENT_ESTIMATOR = "gradient_estimator"
     SEED = "seed"
     ESTIMATOR = "estimator"
+    MEASUREMENT_GROUPING = "measurement_grouping"
+    SHOT_ALLOCATION = "shot_allocation"
+    MEASUREMENT_COST_MODEL = "measurement_cost_model"
     STOPPING_RULE = "stopping_rule"
     METRIC_STAGE = "metric_stage"
+    COMPILATION_PROTOCOL = "compilation_protocol"
+    BACKEND_NOISE = "backend_noise"
+    DATASET = "dataset"
+    TRAINING_SPLIT = "training_split"
+    LEARNED_MODEL_CHECKPOINT = "learned_model_checkpoint"
 
 
 # Dimensions whose mismatch makes a comparison INVALID outright (the two
@@ -56,6 +73,7 @@ class ComparisonDimensionStatus(str, Enum):
     FIXED = "fixed"
     CHANGED = "changed"
     UNKNOWN = "unknown"
+    NOT_APPLICABLE = "not_applicable"
 
 
 class ComparisonClassification(str, Enum):
@@ -116,6 +134,9 @@ def classify_comparison(dimensions: list[ComparisonDimension]) -> ComparisonClas
     statuses = [d.status for d in dimensions]
     if any(s is ComparisonDimensionStatus.UNKNOWN for s in statuses):
         return ComparisonClassification.PARTIAL
-    if all(s is ComparisonDimensionStatus.FIXED for s in statuses):
+    if all(
+        s in (ComparisonDimensionStatus.FIXED, ComparisonDimensionStatus.NOT_APPLICABLE)
+        for s in statuses
+    ):
         return ComparisonClassification.STRICT
     return ComparisonClassification.CONTROLLED

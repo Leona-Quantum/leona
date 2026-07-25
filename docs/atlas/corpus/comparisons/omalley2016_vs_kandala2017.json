@@ -7,7 +7,7 @@
     "omalley2016",
     "kandala2017"
   ],
-  "generated_at": "2026-07-24T07:06:06Z",
+  "generated_at": "2026-07-25T11:39:11Z",
   "dimensions": [
     {
       "name": "ansatz_semantic_definition",
@@ -16,7 +16,49 @@
       "evidence_locator": "docs/atlas/corpus/papers/omalley2016.json#components[1], docs/atlas/corpus/papers/kandala2017.json#components[1]"
     },
     {
+      "name": "backend_noise",
+      "status": "unknown",
+      "detail": null,
+      "evidence_locator": null
+    },
+    {
+      "name": "basis_active_space",
+      "status": "unknown",
+      "detail": null,
+      "evidence_locator": null
+    },
+    {
+      "name": "compilation_protocol",
+      "status": "unknown",
+      "detail": null,
+      "evidence_locator": null
+    },
+    {
+      "name": "compression",
+      "status": "unknown",
+      "detail": null,
+      "evidence_locator": null
+    },
+    {
+      "name": "dataset",
+      "status": "unknown",
+      "detail": null,
+      "evidence_locator": null
+    },
+    {
       "name": "estimator",
+      "status": "unknown",
+      "detail": null,
+      "evidence_locator": null
+    },
+    {
+      "name": "gradient_estimator",
+      "status": "unknown",
+      "detail": null,
+      "evidence_locator": null
+    },
+    {
+      "name": "growth_batching",
       "status": "unknown",
       "detail": null,
       "evidence_locator": null
@@ -34,13 +76,43 @@
       "evidence_locator": null
     },
     {
+      "name": "learned_model_checkpoint",
+      "status": "unknown",
+      "detail": null,
+      "evidence_locator": null
+    },
+    {
       "name": "mapping",
       "status": "unknown",
       "detail": null,
       "evidence_locator": null
     },
     {
+      "name": "measurement_cost_model",
+      "status": "unknown",
+      "detail": null,
+      "evidence_locator": null
+    },
+    {
+      "name": "measurement_grouping",
+      "status": "unknown",
+      "detail": null,
+      "evidence_locator": null
+    },
+    {
       "name": "metric_stage",
+      "status": "unknown",
+      "detail": null,
+      "evidence_locator": null
+    },
+    {
+      "name": "operator_pool",
+      "status": "unknown",
+      "detail": null,
+      "evidence_locator": null
+    },
+    {
+      "name": "operator_pool_ordering",
       "status": "unknown",
       "detail": null,
       "evidence_locator": null
@@ -58,6 +130,12 @@
       "evidence_locator": "docs/atlas/corpus/papers/omalley2016.json#problem_summary, docs/atlas/corpus/papers/kandala2017.json#problem_summary"
     },
     {
+      "name": "problem_preparation",
+      "status": "unknown",
+      "detail": null,
+      "evidence_locator": null
+    },
+    {
       "name": "qubit_wire_order",
       "status": "unknown",
       "detail": null,
@@ -70,13 +148,37 @@
       "evidence_locator": null
     },
     {
+      "name": "search_scoring",
+      "status": "unknown",
+      "detail": null,
+      "evidence_locator": null
+    },
+    {
       "name": "seed",
       "status": "unknown",
       "detail": null,
       "evidence_locator": null
     },
     {
+      "name": "selection_rule",
+      "status": "unknown",
+      "detail": null,
+      "evidence_locator": null
+    },
+    {
+      "name": "shot_allocation",
+      "status": "unknown",
+      "detail": null,
+      "evidence_locator": null
+    },
+    {
       "name": "stopping_rule",
+      "status": "unknown",
+      "detail": null,
+      "evidence_locator": null
+    },
+    {
+      "name": "training_split",
       "status": "unknown",
       "detail": null,
       "evidence_locator": null

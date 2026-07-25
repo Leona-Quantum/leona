@@ -61,6 +61,8 @@ jobs:
       - run: uv run ruff check .
       - run: uv run ruff format --check .
       - run: uv run pytest -q
+      - name: H2 VQE registry review manifest is current (ADR-0030)
+        run: uv run python scripts/generate-h2-vqe-registry-manifest.py --check
       - name: openapi.json is current
         run: uv run python -m majorana_contracts.export --check
       # Authz invariant (02-architecture §4): DB access only via the repository layer
@@ -168,6 +170,7 @@ jobs:
             services/api/tests/test_catalog_provenance_live.py \
             services/api/tests/test_job_queue_live.py \
             services/api/tests/test_run_terminal_live.py \
+            services/api/tests/test_vqe_repo_live.py \
             -q
       - uses: neondatabase/delete-branch-action@v3
         if: always()

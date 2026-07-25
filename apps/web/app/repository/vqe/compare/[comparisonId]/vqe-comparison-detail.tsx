@@ -16,6 +16,7 @@ const COPY = {
     unresolvedConflicts: "Unresolved conflicts",
     none: "none recorded",
     unknown: "unknown",
+    notApplicable: "not applicable",
     sourcePapers: "Comparing",
   },
   ja: {
@@ -32,6 +33,7 @@ const COPY = {
     unresolvedConflicts: "未解決の対立点",
     none: "記録なし",
     unknown: "不明",
+    notApplicable: "該当なし",
     sourcePapers: "比較対象",
   },
 } as const;
@@ -101,7 +103,11 @@ export function VqeComparisonDetail({
                   <td>{dimension.name}</td>
                   <td>
                     <span className="mj-vqe-badge" data-tone={statusTone(dimension.status)}>
-                      {dimension.status === "unknown" ? copy.unknown : dimension.status}
+                      {dimension.status === "unknown"
+                        ? copy.unknown
+                        : dimension.status === "not_applicable"
+                          ? copy.notApplicable
+                          : dimension.status}
                     </span>
                   </td>
                   <td>{dimension.detail ?? copy.unknown}</td>

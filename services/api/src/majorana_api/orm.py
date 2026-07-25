@@ -661,9 +661,11 @@ class VqeComponentSpec(Base):
     )
     schema_version: Mapped[str]
     component_type: Mapped[str]
+    semantic_key: Mapped[str]
     spec_json: Mapped[dict[str, Any]]
-    normalized_spec_sha256: Mapped[str | None]
-    annotation_state: Mapped[str] = mapped_column(server_default="draft")
+    normalized_spec_sha256: Mapped[str]
+    machine_validation_state: Mapped[str] = mapped_column(server_default="unvalidated")
+    review_state: Mapped[str] = mapped_column(server_default="unreviewed")
     created_at: Mapped[dt.datetime | None] = mapped_column(server_default=func.now())
 
 
@@ -688,20 +690,11 @@ class VqeWorkflowComponent(Base):
 
 
 class VqeExperiment(Base):
-    """Immutable scientific spec only (migration 0035, ADR-0023) — execution
-    status is `runs`/`jobs`' authority, never duplicated here. `run_id` is
-    nullable: Phase 3 persists the spec but does not create a `runs` row,
-    because there is no approved ExecutionBinding to resolve a framework to
-    until Phase 5 ships real runtime profiles (ADR-0024) — see the Phase 3
-    handoff report for the full rationale. `request_idempotency_key` is the
-    HTTP-level retry-safety key, distinct
-    from the server-generated execution idempotency identity in ADR-0023
-    §9, which does not exist until an ExecutionBinding is resolved."""
+    """One portable scientific identity plus its registry-resolution proof."""
 
     __tablename__ = "vqe_experiments"
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True)
-    run_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("runs.id"), unique=True)
     workspace_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("workspaces.id"))
     user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"))
     schema_version: Mapped[str]
@@ -710,9 +703,30 @@ class VqeExperiment(Base):
     )
     scientific_spec_json: Mapped[dict[str, Any]]
     scientific_spec_sha256: Mapped[str]
-    protocol_version: Mapped[str]
+    registry_resolution_json: Mapped[dict[str, Any]]
+    registry_resolution_sha256: Mapped[str]
     request_idempotency_key: Mapped[str | None]
     created_at: Mapped[dt.datetime | None] = mapped_column(server_default=func.now())
+
+
+class VqeExecution(Base):
+    """One framework/runtime binding of a portable VQE experiment."""
+
+    __tablename__ = "vqe_executions"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True)
+    experiment_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("vqe_experiments.id"))
+    run_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("runs.id"), unique=True)
+    framework: Mapped[str]
+    provider_versions: Mapped[dict[str, Any]]
+    runtime_profile_id: Mapped[str]
+    runtime_image_digest: Mapped[str]
+    adapter_release_id: Mapped[str]
+    execution_binding_json: Mapped[dict[str, Any]]
+    execution_identity_sha256: Mapped[str]
+    status: Mapped[str] = mapped_column(server_default="planned")
+    created_at: Mapped[dt.datetime | None] = mapped_column(server_default=func.now())
+    updated_at: Mapped[dt.datetime | None] = mapped_column(server_default=func.now())
 
 
 class VqeObservation(Base):
@@ -723,20 +737,11 @@ class VqeObservation(Base):
     __tablename__ = "vqe_observations"
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True)
-    experiment_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("vqe_experiments.id"))
+    execution_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("vqe_executions.id"))
     attempt: Mapped[int] = mapped_column(Integer)
-    framework: Mapped[str]
-    provider_versions: Mapped[dict[str, Any] | None]
-    runtime_profile_id: Mapped[str]
-    runtime_image_digest: Mapped[str]
-    adapter_release_id: Mapped[str]
-    architecture: Mapped[str]
-    dataset_snapshot_id: Mapped[str | None]
-    protocol_version: Mapped[str]
-    scientific_spec_sha256: Mapped[str]
-    hamiltonian_digest: Mapped[str | None]
     status: Mapped[str]
-    summary_json: Mapped[dict[str, Any] | None]
+    result_contract_json: Mapped[dict[str, Any]]
+    result_contract_sha256: Mapped[str]
     detail_object_uri: Mapped[str | None]
     detail_sha256: Mapped[str | None]
     detail_size_bytes: Mapped[int | None] = mapped_column(BigInteger)

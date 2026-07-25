@@ -148,17 +148,17 @@ def main() -> int:
             "grimsley2019",
             "tang2021",
             {
-                ComparisonDimensionName.ANSATZ_SEMANTIC_DEFINITION: (
+                ComparisonDimensionName.OPERATOR_POOL: (
                     ComparisonDimension(
-                        name=ComparisonDimensionName.ANSATZ_SEMANTIC_DEFINITION,
+                        name=ComparisonDimensionName.OPERATOR_POOL,
                         status=ComparisonDimensionStatus.CHANGED,
-                        detail="grimsley2019 grows the ansatz from a fermionic operator pool; tang2021 grows it from a qubit-excitation operator pool (qubit-ADAPT-VQE) -- both are ADAPT-style adaptive growth, but the operator basis differs, per both records' own component notes.",
+                        detail="grimsley2019 uses a fermionic operator pool; tang2021 uses a qubit-excitation operator pool (qubit-ADAPT-VQE), per both records' component notes.",
                     ),
                     "docs/atlas/corpus/papers/grimsley2019.json#components[1-2], docs/atlas/corpus/papers/tang2021.json#components[1-2]",
                 ),
             },
             unresolved_conflicts=[
-                "Both use gradient-based adaptive operator selection (same general search_selection strategy), but this corpus's fixed dimension list has no slot for 'operator pool basis' specifically -- recorded as a change under ANSATZ_SEMANTIC_DEFINITION instead, which is the closest fit.",
+                "Both use gradient-based adaptive operator selection, but the literature-level records do not provide enough normalized detail to mark search scoring or stopping conditions fixed.",
             ],
         )
     )

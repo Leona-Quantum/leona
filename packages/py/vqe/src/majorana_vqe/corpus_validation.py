@@ -49,7 +49,7 @@ VALID_VALIDATION_STATES = frozenset(
 
 VALID_COMPONENT_TYPES = frozenset(t.value for t in ComponentType)
 
-VALID_COMPARISON_DIMENSION_STATUSES = frozenset({"fixed", "changed", "unknown"})
+VALID_COMPARISON_DIMENSION_STATUSES = frozenset({"fixed", "changed", "unknown", "not_applicable"})
 VALID_COMPARISON_CLASSIFICATIONS = frozenset({"strict", "controlled", "partial", "invalid"})
 
 REQUIRED_PAPER_FIELDS = frozenset(
