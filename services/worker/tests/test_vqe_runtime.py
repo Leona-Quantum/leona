@@ -17,6 +17,13 @@ from majorana_worker.vqe_runtime import (
 
 ROOT = Path(__file__).resolve().parents[3]
 RAW = ROOT / "docs" / "atlas" / "fixtures" / "h2_sto3g" / "raw"
+_CLOUD_MARKERS = ("K_SERVICE", "K_REVISION", "K_CONFIGURATION", "VERCEL", "CI")
+
+
+def _enable_local_candidate(monkeypatch):
+    monkeypatch.setenv("MAJORANA_ENV", "development")
+    for name in _CLOUD_MARKERS:
+        monkeypatch.delenv(name, raising=False)
 
 
 @pytest.mark.parametrize(
@@ -143,7 +150,7 @@ async def test_launcher_uses_exact_digest_and_does_not_inherit_environment(monke
         captured["kwargs"] = kwargs
         return _SuccessfulProcess(report)
 
-    monkeypatch.setenv("MAJORANA_ENV", "development")
+    _enable_local_candidate(monkeypatch)
     monkeypatch.setenv("DATABASE_URL", "must-not-reach-child")
     monkeypatch.setattr("majorana_worker.vqe_runtime._docker_binary", lambda: "/docker")
     monkeypatch.setattr("majorana_worker.vqe_runtime.asyncio.create_subprocess_exec", create)
@@ -160,7 +167,7 @@ async def test_launcher_uses_exact_digest_and_does_not_inherit_environment(monke
 
 
 async def test_candidate_transport_rejects_cloud_markers(monkeypatch):
-    monkeypatch.setenv("MAJORANA_ENV", "development")
+    _enable_local_candidate(monkeypatch)
     monkeypatch.setenv("CI", "true")
     with pytest.raises(VqeRuntimeError, match="development-only"):
         await run_candidate_container(candidate_runtime_profile(Framework.QISKIT).binding)
@@ -175,7 +182,7 @@ async def _executor_with_process(monkeypatch, process):
     async def remove(docker, name):
         removed.append(name)
 
-    monkeypatch.setenv("MAJORANA_ENV", "development")
+    _enable_local_candidate(monkeypatch)
     monkeypatch.setattr("majorana_worker.vqe_runtime._docker_binary", lambda: "/docker")
     monkeypatch.setattr("majorana_worker.vqe_runtime.asyncio.create_subprocess_exec", create)
     monkeypatch.setattr("majorana_worker.vqe_runtime._force_remove_container", remove)
