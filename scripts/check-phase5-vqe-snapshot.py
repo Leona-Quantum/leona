@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from pathlib import Path
 from typing import Any
 
@@ -52,6 +53,13 @@ def main() -> None:
         or snapshot.get("oci_manifest_digest") is not None
     ):
         raise RuntimeError("Phase 5 snapshot claim boundary was widened")
+    closure_ci = snapshot.get("closure_remote_ci", {})
+    if (
+        not re.fullmatch(r"[0-9a-f]{40}", str(closure_ci.get("closure_head", "")))
+        or not closure_ci.get("jobs")
+        or any(not str(result).startswith("passed") for result in closure_ci["jobs"].values())
+    ):
+        raise RuntimeError("Phase 5 closure CI record is incomplete")
 
     for key in ("qualification", "sbom_manifest"):
         reference = snapshot[key]

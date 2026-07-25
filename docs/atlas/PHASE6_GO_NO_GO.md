@@ -25,7 +25,7 @@ production-runtime design**
 | Web tests/typecheck | 95 tests; typecheck passed | pass |
 | Migration 0036 rollback | local PostgreSQL up→down→up | pass |
 | Studio create→run→inspect→save code path | launcher/BFF/panel implemented | pass_static |
-| Remote `feature/vqe` CI | run 30165157403, audited head a49b6d5, py/ts/db/ui-visual | pass |
+| Remote `feature/vqe` CI | implementation run 30165157403 at a49b6d5 and closure run 30171168974 at 6d8a054; py/ts/db/ui-visual | pass |
 | Authenticated browser contract E2E | local identity + real Next BFF + deterministic mock API; success/failure | pass_limited |
 | Production browser E2E | WorkOS + Neon + production runtime | incomplete |
 | Independent H₂ scientific review | reviewer not supplied | deferred_external |

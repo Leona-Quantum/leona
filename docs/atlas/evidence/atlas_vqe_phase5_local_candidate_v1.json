@@ -2,6 +2,17 @@
   "artifact_kind": "internal-audit-snapshot",
   "audited_implementation_head": "a49b6d5de7bf3167fd8cb0fd6cee26579386eb06",
   "closure_change_commit": "3bbef8a6c817661571a5614d8e13af0541929b22",
+  "closure_remote_ci": {
+    "closure_head": "6d8a054c55bab7755170bdcdac4b2778c4683441",
+    "jobs": {
+      "db": "passed",
+      "py": "passed",
+      "ts": "passed_with_next_production_build",
+      "ui_visual": "passed_with_authenticated_vqe_browser_contracts"
+    },
+    "run_id": 30171168974,
+    "url": "https://github.com/EshMis/majorana/actions/runs/30171168974"
+  },
   "human_scientific_review": "unreviewed",
   "oci_manifest_digest": null,
   "production_runtime_status": "unqualified",

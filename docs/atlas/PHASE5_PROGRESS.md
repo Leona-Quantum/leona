@@ -173,9 +173,12 @@ Remote `feature/vqe` CI passed at audited implementation head
 `a49b6d5de7bf3167fd8cb0fd6cee26579386eb06`, run
 [`30165157403`](https://github.com/EshMis/majorana/actions/runs/30165157403):
 `py`, `ts`, `db`, and `ui-visual` all passed. The later closure change adds
-the production Next build and authenticated-browser contracts to remote CI;
-their final remote result is recorded separately rather than retroactively
-attributed to run `30165157403`.
+the production Next build, authenticated-browser contracts, and frozen
+snapshot checker. Those additions passed at closure head
+`6d8a054c55bab7755170bdcdac4b2778c4683441`, run
+[`30171168974`](https://github.com/EshMis/majorana/actions/runs/30171168974);
+all four jobs passed again. This later result is not retroactively attributed
+to run `30165157403`.
 
 ## 8. Deliberately open gates
 
