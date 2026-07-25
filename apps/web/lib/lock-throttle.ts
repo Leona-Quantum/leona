@@ -79,11 +79,21 @@ export function throttleKeyFromHeaders(headers: ThrottleHeaders): string {
 }
 
 export interface LockThrottle {
-  /** True when this key (or the global backstop) is currently over threshold. */
-  isRateLimited(key: string, now?: number): boolean;
-  recordFailure(key: string, now?: number): void;
-  /** Called on a successful sign-in so earlier typos don't linger. */
-  clearFailures(key: string): void;
+  /** Charge one attempt up front; false means refuse it.
+   *
+   * Admission is reserve-then-settle rather than check-then-record because the
+   * credential comparison is `await`ed. With a check up front and the failure
+   * recorded only afterwards, a concurrent burst all passes the check before
+   * any of them has recorded anything — the counters move only after every
+   * request is already inside. Charging the attempt *before* the await closes
+   * that: this function has no await in it, and the runtime is single-threaded,
+   * so the read and the increment cannot interleave.
+   *
+   * The cost is that a successful sign-in must give its reservation back, which
+   * is what `release` is for. */
+  reserve(key: string, now?: number): boolean;
+  /** Settle a reservation as a success: refund it and clear earlier typos. */
+  release(key: string): void;
 }
 
 export function createLockThrottle(): LockThrottle {
@@ -98,49 +108,51 @@ export function createLockThrottle(): LockThrottle {
   }
 
   return {
-    isRateLimited(key: string, now: number = Date.now()): boolean {
-      if (now > globalResetAt) {
-        globalCount = 0;
-      } else if (globalCount >= MAX_GLOBAL_FAILURES) {
-        return true;
-      }
+    reserve(key: string, now: number = Date.now()): boolean {
+      // --- read phase: decide admission ---------------------------------
+      const globalWindowExpired = now > globalResetAt;
+      if (!globalWindowExpired && globalCount >= MAX_GLOBAL_FAILURES) return false;
 
       const entry = failures.get(key);
-      if (!entry) return false;
-      if (now > entry.resetAt) {
-        failures.delete(key);
-        return false;
-      }
-      return entry.count >= MAX_FAILURES;
-    },
+      const entryLive = entry !== undefined && now <= entry.resetAt;
+      if (entryLive && entry.count >= MAX_FAILURES) return false;
 
-    recordFailure(key: string, now: number = Date.now()): void {
-      if (now > globalResetAt) {
+      // --- write phase: charge the attempt ------------------------------
+      // No await separates this from the read above, so the pair is atomic
+      // with respect to other requests on this instance.
+      if (globalWindowExpired) {
         globalCount = 1;
         globalResetAt = now + FAILURE_WINDOW_MS;
       } else {
         globalCount += 1;
       }
 
-      const entry = failures.get(key);
-      if (!entry || now > entry.resetAt) {
-        // Only sweep when we are about to add a key, and only then consider the
-        // hard cap — a rotating caller is the sole way to reach it.
-        if (failures.size >= MAX_TRACKED_KEYS) {
-          sweep(now);
-          // Everything is live and the map is still full: stop tracking new
-          // keys rather than grow without bound. The global counter above is
-          // already throttling this caller, so dropping the per-key record
-          // costs nothing it was protecting.
-          if (failures.size >= MAX_TRACKED_KEYS) return;
-        }
-        failures.set(key, { count: 1, resetAt: now + FAILURE_WINDOW_MS });
-        return;
+      if (entryLive) {
+        entry.count += 1;
+        return true;
       }
-      entry.count += 1;
+
+      // Only sweep when about to add a key, and only then consider the hard
+      // cap — a rotating caller is the sole way to reach it.
+      if (failures.size >= MAX_TRACKED_KEYS) {
+        sweep(now);
+        // Everything is live and the map is still full: stop tracking new keys
+        // rather than grow without bound. The global counter is already
+        // throttling this caller, so dropping the per-key record costs nothing
+        // it was protecting. The attempt is still admitted — it has been
+        // charged globally, which is the bound that matters here.
+        if (failures.size >= MAX_TRACKED_KEYS) return true;
+      }
+      failures.set(key, { count: 1, resetAt: now + FAILURE_WINDOW_MS });
+      return true;
     },
 
-    clearFailures(key: string): void {
+    release(key: string): void {
+      // Refund the global charge as well as the per-key one. Without this a
+      // successful sign-in would permanently consume shared budget, and enough
+      // ordinary logins would exhaust the backstop with no attack at all.
+      const entry = failures.get(key);
+      if (entry) globalCount = Math.max(0, globalCount - entry.count);
       failures.delete(key);
     },
   };

@@ -22,8 +22,11 @@ export async function POST(request: NextRequest): Promise<Response> {
     return NextResponse.json({ error: "not_enabled" }, { status: 404 });
   }
 
+  // Charge the attempt before any `await`. Checking here and recording the
+  // failure after credential validation would let a concurrent burst all pass
+  // this line before any of them moved a counter.
   const throttleKey = throttleKeyFromHeaders(request.headers);
-  if (throttle.isRateLimited(throttleKey)) {
+  if (!throttle.reserve(throttleKey)) {
     return NextResponse.json({ error: "too_many_attempts" }, { status: 429 });
   }
 
@@ -41,13 +44,13 @@ export async function POST(request: NextRequest): Promise<Response> {
   }
 
   if (!areLockCredentialsValid(username, password)) {
-    throttle.recordFailure(throttleKey);
+    // The reservation stands as the recorded failure; nothing more to do.
     return NextResponse.json({ error: "invalid_credentials" }, { status: 401 });
   }
 
-  // Clear the failure counter on success so a legitimate operator isn't locked
-  // out by earlier typos.
-  throttle.clearFailures(throttleKey);
+  // Settle the reservation as a success: refund it and clear earlier typos so a
+  // legitimate operator isn't locked out by their own fat fingers.
+  throttle.release(throttleKey);
 
   const token = await issueSessionCookieValue();
   if (!token) {

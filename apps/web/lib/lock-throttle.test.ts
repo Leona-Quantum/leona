@@ -16,6 +16,25 @@ function headers(values: Record<string, string>) {
   return { get: (name: string) => values[name.toLowerCase()] ?? null };
 }
 
+/** Spend `n` attempts, returning how many were admitted.
+ *
+ * `reserve` is consuming by design, so there is no free "would this be
+ * refused?" probe — every question costs an attempt, exactly as a real request
+ * does. Tests count admissions instead of peeking.
+ */
+function spend(
+  throttle: ReturnType<typeof createLockThrottle>,
+  key: string | ((i: number) => string),
+  n: number,
+  now: number = NOW,
+): number {
+  let admitted = 0;
+  for (let i = 0; i < n; i += 1) {
+    if (throttle.reserve(typeof key === "string" ? key : key(i), now)) admitted += 1;
+  }
+  return admitted;
+}
+
 describe("throttle key resolution", () => {
   it("ignores the client-written left end of x-forwarded-for", () => {
     // The regression this whole module exists for. In the conventional
@@ -51,61 +70,75 @@ describe("throttle key resolution", () => {
 });
 
 describe("per-key throttling", () => {
-  it("allows up to the limit, then refuses", () => {
+  it("admits exactly the limit, then refuses", () => {
     const throttle = createLockThrottle();
-    for (let i = 0; i < MAX_FAILURES; i += 1) {
-      assert.equal(throttle.isRateLimited("a", NOW), false, `attempt ${i} should be allowed`);
-      throttle.recordFailure("a", NOW);
-    }
-    assert.equal(throttle.isRateLimited("a", NOW), true);
+    assert.equal(spend(throttle, "a", MAX_FAILURES), MAX_FAILURES);
+    assert.equal(throttle.reserve("a", NOW), false);
   });
 
-  it("does not leak one key's failures into another", () => {
+  it("does not leak one key's attempts into another", () => {
     const throttle = createLockThrottle();
-    for (let i = 0; i < MAX_FAILURES; i += 1) throttle.recordFailure("a", NOW);
-    assert.equal(throttle.isRateLimited("a", NOW), true);
-    assert.equal(throttle.isRateLimited("b", NOW), false);
+    spend(throttle, "a", MAX_FAILURES);
+    assert.equal(throttle.reserve("a", NOW), false);
+    assert.equal(throttle.reserve("b", NOW), true);
   });
 
   it("forgets a key once its window has passed", () => {
     const throttle = createLockThrottle();
-    for (let i = 0; i < MAX_FAILURES; i += 1) throttle.recordFailure("a", NOW);
-    assert.equal(throttle.isRateLimited("a", NOW), true);
-    assert.equal(throttle.isRateLimited("a", NOW + FAILURE_WINDOW_MS + 1), false);
+    spend(throttle, "a", MAX_FAILURES);
+    assert.equal(throttle.reserve("a", NOW), false);
+    assert.equal(throttle.reserve("a", NOW + FAILURE_WINDOW_MS + 1), true);
   });
 
-  it("clears a key on success so an operator's typos do not lock them out", () => {
+  it("releases a key on success so an operator's typos do not lock them out", () => {
     const throttle = createLockThrottle();
-    for (let i = 0; i < MAX_FAILURES; i += 1) throttle.recordFailure("a", NOW);
-    assert.equal(throttle.isRateLimited("a", NOW), true);
-    throttle.clearFailures("a");
-    assert.equal(throttle.isRateLimited("a", NOW), false);
+    spend(throttle, "a", MAX_FAILURES);
+    assert.equal(throttle.reserve("a", NOW), false);
+    throttle.release("a");
+    assert.equal(throttle.reserve("a", NOW), true);
+  });
+});
+
+describe("admission is atomic", () => {
+  it("charges the attempt up front, so a concurrent burst cannot all pass", () => {
+    // The bug this guards: the route checks the limit, then `await`s the
+    // credential comparison, and only then records a failure. If the check did
+    // not itself consume, every request in a burst would pass the check before
+    // any of them recorded anything. Reserving up front means the Nth caller
+    // sees the first N-1 charges even though none has finished validating.
+    const throttle = createLockThrottle();
+    const burst = Array.from({ length: MAX_FAILURES + 25 }, () => throttle.reserve("a", NOW));
+    assert.equal(burst.filter(Boolean).length, MAX_FAILURES);
+  });
+
+  it("refunds the shared budget on a successful sign-in", () => {
+    // Without a refund, ordinary successful logins would permanently consume
+    // global budget and exhaust the backstop with no attack at all.
+    const throttle = createLockThrottle();
+    for (let i = 0; i < 20; i += 1) {
+      assert.equal(throttle.reserve(`operator-${i}`, NOW), true);
+      throttle.release(`operator-${i}`);
+    }
+    // 20 successful sign-ins have cost the shared ceiling nothing.
+    assert.equal(spend(throttle, (i) => `spoofed-${i}`, MAX_GLOBAL_FAILURES), MAX_GLOBAL_FAILURES);
   });
 });
 
 describe("the global backstop", () => {
   it("stops a caller who rotates the key on every attempt", () => {
-    // This is the attack the per-key limit alone cannot see: every guess
-    // arrives under a fresh spoofed address, so no single bucket ever fills.
-    // Without the shared ceiling this loop would never be refused.
+    // The attack the per-key limit alone cannot see: every guess arrives under
+    // a fresh spoofed address, so no single bucket ever fills. Without the
+    // shared ceiling every one of these would be admitted.
     const throttle = createLockThrottle();
-    let refusedAfter = -1;
-    for (let i = 0; i < MAX_GLOBAL_FAILURES * 2; i += 1) {
-      const key = `spoofed-${i}`;
-      if (throttle.isRateLimited(key, NOW)) {
-        refusedAfter = i;
-        break;
-      }
-      throttle.recordFailure(key, NOW);
-    }
-    assert.equal(refusedAfter, MAX_GLOBAL_FAILURES);
+    const admitted = spend(throttle, (i) => `spoofed-${i}`, MAX_GLOBAL_FAILURES * 2);
+    assert.equal(admitted, MAX_GLOBAL_FAILURES);
   });
 
   it("releases the backstop after the window", () => {
     const throttle = createLockThrottle();
-    for (let i = 0; i < MAX_GLOBAL_FAILURES; i += 1) throttle.recordFailure(`spoofed-${i}`, NOW);
-    assert.equal(throttle.isRateLimited("fresh", NOW), true);
-    assert.equal(throttle.isRateLimited("fresh", NOW + FAILURE_WINDOW_MS + 1), false);
+    spend(throttle, (i) => `spoofed-${i}`, MAX_GLOBAL_FAILURES);
+    assert.equal(throttle.reserve("fresh", NOW), false);
+    assert.equal(throttle.reserve("fresh", NOW + FAILURE_WINDOW_MS + 1), true);
   });
 
   it("keeps the global ceiling clear of a lone operator's mistyping", () => {
@@ -113,9 +146,9 @@ describe("the global backstop", () => {
     // meant for a spoofing attacker.
     assert.ok(MAX_GLOBAL_FAILURES > MAX_FAILURES);
     const throttle = createLockThrottle();
-    for (let i = 0; i < MAX_FAILURES; i += 1) throttle.recordFailure("operator", NOW);
+    spend(throttle, "operator", MAX_FAILURES);
     // Their own key is limited, but they have not exhausted everyone's budget.
-    assert.equal(throttle.isRateLimited("someone-else", NOW), false);
+    assert.equal(throttle.reserve("someone-else", NOW), true);
   });
 });
 
@@ -124,22 +157,19 @@ describe("memory bounds", () => {
     // Each distinct spoofed value used to create an entry that lived for the
     // full window, so the counter map was itself a memory-exhaustion vector.
     const throttle = createLockThrottle();
-    for (let i = 0; i < MAX_TRACKED_KEYS * 3; i += 1) {
-      throttle.recordFailure(`spoofed-${i}`, NOW);
-    }
-    // Nothing to assert on the Map directly (it is private), so assert the
-    // observable contract instead: the throttle is still refusing, and still
-    // answering, after far more keys than it will track.
-    assert.equal(throttle.isRateLimited("anything", NOW), true);
+    spend(throttle, (i) => `spoofed-${i}`, MAX_TRACKED_KEYS * 3);
+    // The Map is private, so assert the observable contract: still bounded,
+    // still answering, after far more keys than it will ever track.
+    assert.equal(throttle.reserve("anything", NOW), false);
   });
 
   it("reclaims tracked keys once their windows expire", () => {
     const throttle = createLockThrottle();
-    for (let i = 0; i < MAX_TRACKED_KEYS; i += 1) throttle.recordFailure(`old-${i}`, NOW);
+    spend(throttle, (i) => `old-${i}`, MAX_TRACKED_KEYS);
     const later = NOW + FAILURE_WINDOW_MS + 1;
     // The expired keys are swept, so a new key is tracked normally again and
     // reaches its own per-key limit rather than being silently dropped.
-    for (let i = 0; i < MAX_FAILURES; i += 1) throttle.recordFailure("new", later);
-    assert.equal(throttle.isRateLimited("new", later), true);
+    assert.equal(spend(throttle, "new", MAX_FAILURES, later), MAX_FAILURES);
+    assert.equal(throttle.reserve("new", later), false);
   });
 });

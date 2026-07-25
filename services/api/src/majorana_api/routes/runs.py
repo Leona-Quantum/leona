@@ -157,9 +157,39 @@ def _to_resource(run: RunRow) -> RunResource:
 #
 # Promotion trigger: when multi-user signup ships, this ceiling stops being
 # sufficient and real per-tier enforcement has to move server-side. Recorded in
-# DECISIONS.md (2026-07-26) and NEXT.md.
+# the 2026-07-26 DECISIONS.md entry and NEXT.md.
+#
+# TWO ceilings, not one, because AUTO is the DEFAULT mode on CreateRunRequest.
+# A first cut gated only `mode == EXECUTE`, which a caller defeated simply by
+# omitting `mode`: those rows are AUTO at admission, the worker rewrites them to
+# their resolved mode only afterwards, and a gate that runs at admission cannot
+# read a value written later. So AUTO has to be bounded too. It is bounded
+# separately and much more loosely because AUTO is also what ordinary
+# conversational traffic arrives as, and metering chat against the strict
+# execute ceiling would refuse legitimate users — which is the one thing a
+# backstop must never do.
 EXECUTE_BACKSTOP_WINDOW = dt.timedelta(days=7)
+#: Explicit `mode="execute"` submissions.
 EXECUTE_BACKSTOP_LIMIT = 200
+#: EXECUTE + AUTO together — the bound that closes the default-mode bypass.
+SUBMISSION_BACKSTOP_LIMIT = 1000
+
+
+def _backstop_refusal(reason: str, used: int, limit: int) -> HTTPException:
+    return HTTPException(
+        status_code=429,
+        detail={
+            "error": (
+                "This workspace has reached the platform ceiling on runs for a "
+                "rolling seven-day window. This is an abuse backstop, not your "
+                "plan allowance — if you are seeing it in normal use, contact "
+                "support."
+            ),
+            "reason": reason,
+            "used": used,
+            "limit": limit,
+        },
+    )
 
 
 async def _enforce_execute_backstop(
@@ -167,26 +197,19 @@ async def _enforce_execute_backstop(
     scope: CurrentScope,
     session: DbSession,
 ) -> None:
-    if body.mode != RunMode.EXECUTE:
+    if body.mode not in (RunMode.EXECUTE, RunMode.AUTO):
         return
     since = dt.datetime.now(dt.timezone.utc) - EXECUTE_BACKSTOP_WINDOW
-    used = await runs_repo.count_execute_runs_since(scope, session, since)
-    if used < EXECUTE_BACKSTOP_LIMIT:
-        return
-    raise HTTPException(
-        status_code=429,
-        detail={
-            "error": (
-                "This workspace has reached the platform ceiling on execute runs "
-                "for a rolling seven-day window. This is an abuse backstop, not "
-                "your plan allowance — if you are seeing it in normal use, "
-                "contact support."
-            ),
-            "reason": "execute_backstop_exhausted",
-            "used": used,
-            "limit": EXECUTE_BACKSTOP_LIMIT,
-        },
-    )
+    counts = await runs_repo.count_runs_by_mode_since(scope, session, since)
+    executed = counts.get(RunMode.EXECUTE.value, 0)
+    submitted = executed + counts.get(RunMode.AUTO.value, 0)
+
+    if body.mode == RunMode.EXECUTE and executed >= EXECUTE_BACKSTOP_LIMIT:
+        raise _backstop_refusal("execute_backstop_exhausted", executed, EXECUTE_BACKSTOP_LIMIT)
+    if submitted >= SUBMISSION_BACKSTOP_LIMIT:
+        raise _backstop_refusal(
+            "submission_backstop_exhausted", submitted, SUBMISSION_BACKSTOP_LIMIT
+        )
 
 
 @router.post("/runs", response_model=RunResource, status_code=201)
