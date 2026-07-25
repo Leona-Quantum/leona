@@ -1,12 +1,22 @@
 name: publish-vqe-runtime
 
 on:
+  push:
+    branches:
+      - feature/vqe
+    paths:
+      - .github/workflows/publish-vqe-runtime.yml
+      - runtimes/vqe/**
+      - docs/atlas/fixtures/h2_sto3g/**
   workflow_dispatch:
     inputs:
       source_commit:
         description: Full commit SHA containing the qualified runtime payload
         required: true
         type: string
+
+env:
+  QUALIFIED_RUNTIME_PAYLOAD_COMMIT: 99e95a9a2589a3ca0ac01c3e44499046fabbce89
 
 permissions:
   contents: read
@@ -26,10 +36,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ inputs.source_commit }}
+          ref: ${{ inputs.source_commit || env.QUALIFIED_RUNTIME_PAYLOAD_COMMIT }}
       - id: commit
         env:
-          REQUESTED_COMMIT: ${{ inputs.source_commit }}
+          REQUESTED_COMMIT: ${{ inputs.source_commit || env.QUALIFIED_RUNTIME_PAYLOAD_COMMIT }}
         run: |
           set -euo pipefail
           case "$REQUESTED_COMMIT" in
