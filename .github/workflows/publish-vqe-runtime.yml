@@ -42,10 +42,10 @@ jobs:
           REQUESTED_COMMIT: ${{ inputs.source_commit || env.QUALIFIED_RUNTIME_PAYLOAD_COMMIT }}
         run: |
           set -euo pipefail
-          case "$REQUESTED_COMMIT" in
-            [0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]) ;;
-            *) echo "::error::source_commit must be a full lowercase commit SHA"; exit 1 ;;
-          esac
+          if [[ ! "$REQUESTED_COMMIT" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error::source_commit must be a full lowercase commit SHA"
+            exit 1
+          fi
           test "$(git rev-parse HEAD)" = "$REQUESTED_COMMIT"
           echo "source_commit=$REQUESTED_COMMIT" >> "$GITHUB_OUTPUT"
 
