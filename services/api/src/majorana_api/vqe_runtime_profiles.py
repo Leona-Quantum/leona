@@ -92,7 +92,7 @@ _PROFILES = {
         qualification_script_sha256=(
             "f23dad6356e71bc3a3b34ac3a4d2229e60e7c35317033ea3faca881251d1578b"
         ),
-        source_git_commit="61101676ab8aa79cb351ed2331fab8a91c7a9d47",
+        source_git_commit="99e95a9a2589a3ca0ac01c3e44499046fabbce89",
         sbom_sha256="337a9d45772b37f2b48dd52b55b95326480e55e0e29b7eaf801a8da6724a6b64",
         build_attestation_sha256=(
             "df9fe2ac62e2719003a900fdb62717028aace09c636b29e9a79978407291474f"
@@ -141,7 +141,7 @@ _PROFILES = {
         qualification_script_sha256=(
             "f23dad6356e71bc3a3b34ac3a4d2229e60e7c35317033ea3faca881251d1578b"
         ),
-        source_git_commit="61101676ab8aa79cb351ed2331fab8a91c7a9d47",
+        source_git_commit="99e95a9a2589a3ca0ac01c3e44499046fabbce89",
         sbom_sha256="b11a25ac4a88ac296725b661264ce77b475d6044a440e1a53de354f6cdc1b3fb",
         build_attestation_sha256=(
             "c39ebac05684271254e4689a06da2008ce62d0c5cd0bebedcee500774df991e2"

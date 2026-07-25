@@ -15,7 +15,7 @@ import pytest
 from majorana_contracts import Scope
 from majorana_contracts.enums import Algorithm, ExportStatus, Role, RunMode
 from majorana_contracts.enums import Framework as ContractFramework
-from majorana_vqe.models import ComponentType, Framework
+from majorana_vqe.models import ComponentType, FailureCode, Framework
 from majorana_vqe.portable import (
     PORTABLE_SCIENTIFIC_ROLES,
     ComponentSemanticBinding,
@@ -167,7 +167,7 @@ async def test_worker_persists_success_and_terminal_events(db, monkeypatch):
 
         raw = json.loads((RAW / "qiskit_vqe_v0.2.json").read_text())
 
-        async def frozen_runtime(_profile):
+        async def frozen_runtime(_profile, **_kwargs):
             return VqeRuntimeOutput(payload=raw, bounded_stderr="")
 
         monkeypatch.setattr(handlers, "execute_candidate_image", frozen_runtime)
@@ -228,8 +228,12 @@ async def test_retry_is_append_only_and_does_not_claim_terminal_failure(db, monk
         await vqe.bind_execution_run(scope, session, execution.id, run_id=run.id)
         await session.commit()
 
-        async def unavailable(_profile):
-            raise VqeRuntimeError("temporary local image outage", retryable=True)
+        async def unavailable(_profile, **_kwargs):
+            raise VqeRuntimeError(
+                "temporary local image outage",
+                failure_code=FailureCode.RUNTIME_UNAVAILABLE,
+                retryable=True,
+            )
 
         monkeypatch.setattr(handlers, "execute_candidate_image", unavailable)
         with pytest.raises(RetryableJobError, match="temporary local image outage"):

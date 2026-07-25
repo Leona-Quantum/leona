@@ -21,7 +21,7 @@ design**
 | Runtime provenance | source/lock/script/fixture/protocol/SBOM/attestation hashes | pass for local candidates |
 | Local Linux/x86_64 repeated H₂ | 10/10 per framework | pass |
 | Local deny-all egress | outbound TCP blocked in both strict images | pass |
-| Python suite | 1117 passed, 77 skipped | pass |
+| Python suite | 1119 passed, 79 skipped | pass |
 | Web tests/typecheck | 95 tests; typecheck passed | pass |
 | Migration 0036 rollback | local PostgreSQL up→down→up | pass |
 | Studio create→run→inspect→save code path | launcher/BFF/panel implemented | pass_static |

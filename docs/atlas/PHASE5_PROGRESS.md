@@ -2,7 +2,7 @@
 
 Date: 2026-07-26  
 Branch: `feature/vqe`  
-Source runtime commit: `61101676ab8aa79cb351ed2331fab8a91c7a9d47`  
+Source runtime commit: `99e95a9a2589a3ca0ac01c3e44499046fabbce89`  
 State: **local Phase 5 candidate implemented and technically requalified;
 independent human review, authenticated browser E2E, production runtime, and
 public promotion remain blocked**
@@ -145,11 +145,12 @@ authenticated Playwright journey has not yet been run and is not claimed.
 
 ## 7. Verification performed
 
-- full Python suite: `1117 passed, 77 skipped`;
+- full Python suite: `1119 passed, 79 skipped`;
 - local PostgreSQL migration `upgrade 0036 → downgrade 0035 → upgrade 0036`:
   passed;
 - VQE live PostgreSQL tests, including concurrent create/bind/attempt:
   `10 passed`;
+- durable Worker/observation live PostgreSQL tests: `2 passed`;
 - web tests: `95 passed`;
 - TypeScript typecheck and targeted Ruff: passed;
 - generated canonical circuit and Registry manifest checks: passed;

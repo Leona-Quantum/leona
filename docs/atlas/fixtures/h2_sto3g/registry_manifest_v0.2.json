@@ -317,7 +317,7 @@
       "final_parameter": -0.22353701675516133,
       "framework": "qiskit",
       "path": "docs/atlas/fixtures/h2_sto3g/raw/qiskit_vqe_v0.2.json",
-      "sha256": "bc689a38897ea8e730712b27d9647e5d68293605dfe3b2ac6ec4b6b4c8ab2739"
+      "sha256": "a417a2c836c6194c97c86fc2114fd3dcb2e4476021eefe7cc3e367ff967edfce"
     },
     {
       "absolute_error_ha": 1.7319479184152442e-14,
@@ -326,7 +326,7 @@
       "final_parameter": -0.22353703567397756,
       "framework": "pennylane",
       "path": "docs/atlas/fixtures/h2_sto3g/raw/pennylane_vqe_v0.2.json",
-      "sha256": "1aaaa37e89295b69ff2aa3ed742776445494e3e7c2823e9b149887522971f88c"
+      "sha256": "dddd63ec2b5bfe6471720aaf49067a7d8ee38c2260e0655f366df2a3532c5829"
     }
   ],
   "schema_version": "0.2.0",
