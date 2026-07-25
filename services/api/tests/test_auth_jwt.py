@@ -9,8 +9,9 @@ from cryptography.hazmat.primitives.asymmetric import rsa
 
 from majorana_api.auth import jwt as auth_jwt
 
-ISSUER = "https://api.workos.com/user_management/client_test"
+ISSUER = "https://api.workos.com"
 JWKS_URL = "https://api.workos.com/sso/jwks/client_test"
+CLIENT_ID = "client_test"
 
 
 class _FakeKey:
@@ -43,6 +44,7 @@ def mint(private, **overrides):
         "iss": ISSUER,
         "sub": f"user_{uuid.uuid4().hex[:8]}",
         "sid": f"session_{uuid.uuid4().hex[:8]}",
+        "client_id": CLIENT_ID,
         "iat": now,
         "exp": now + dt.timedelta(minutes=5),
         "email": "e@example.test",
@@ -54,7 +56,9 @@ def mint(private, **overrides):
 
 async def test_valid_token_verifies(keypair):
     token = mint(keypair[0], sub="user_abc")
-    verified = await auth_jwt.verify_bearer_token(token, jwks_url=JWKS_URL, issuer=ISSUER)
+    verified = await auth_jwt.verify_bearer_token(
+        token, jwks_url=JWKS_URL, issuer=ISSUER, client_id=CLIENT_ID
+    )
     assert verified.workos_user_id == "user_abc"
     assert verified.session_id.startswith("session_")
     assert verified.claims["email"] == "e@example.test"
@@ -63,28 +67,44 @@ async def test_valid_token_verifies(keypair):
 async def test_wrong_issuer_rejected(keypair):
     token = mint(keypair[0], iss="https://evil.example.com")
     with pytest.raises(auth_jwt.TokenError):
-        await auth_jwt.verify_bearer_token(token, jwks_url=JWKS_URL, issuer=ISSUER)
+        await auth_jwt.verify_bearer_token(
+            token, jwks_url=JWKS_URL, issuer=ISSUER, client_id=CLIENT_ID
+        )
 
 
 async def test_expired_beyond_leeway_rejected(keypair):
     past = dt.datetime.now(dt.timezone.utc) - dt.timedelta(seconds=auth_jwt.LEEWAY_S + 60)
     token = mint(keypair[0], exp=past)
     with pytest.raises(auth_jwt.TokenError):
-        await auth_jwt.verify_bearer_token(token, jwks_url=JWKS_URL, issuer=ISSUER)
+        await auth_jwt.verify_bearer_token(
+            token, jwks_url=JWKS_URL, issuer=ISSUER, client_id=CLIENT_ID
+        )
 
 
 async def test_expired_within_leeway_accepted(keypair):
     """±60 s clock skew tolerance (05-security.md §1)."""
     just_past = dt.datetime.now(dt.timezone.utc) - dt.timedelta(seconds=auth_jwt.LEEWAY_S - 30)
     token = mint(keypair[0], exp=just_past)
-    verified = await auth_jwt.verify_bearer_token(token, jwks_url=JWKS_URL, issuer=ISSUER)
+    verified = await auth_jwt.verify_bearer_token(
+        token, jwks_url=JWKS_URL, issuer=ISSUER, client_id=CLIENT_ID
+    )
     assert verified.session_id
 
 
 async def test_missing_sid_rejected(keypair):
     token = mint(keypair[0], sid=None)
     with pytest.raises(auth_jwt.TokenError):
-        await auth_jwt.verify_bearer_token(token, jwks_url=JWKS_URL, issuer=ISSUER)
+        await auth_jwt.verify_bearer_token(
+            token, jwks_url=JWKS_URL, issuer=ISSUER, client_id=CLIENT_ID
+        )
+
+
+async def test_wrong_client_id_rejected(keypair):
+    token = mint(keypair[0], client_id="client_other")
+    with pytest.raises(auth_jwt.TokenError, match="client_id"):
+        await auth_jwt.verify_bearer_token(
+            token, jwks_url=JWKS_URL, issuer=ISSUER, client_id=CLIENT_ID
+        )
 
 
 async def test_unsigned_alg_rejected(keypair):
@@ -93,9 +113,12 @@ async def test_unsigned_alg_rejected(keypair):
         "iss": ISSUER,
         "sub": "u",
         "sid": "s",
+        "client_id": CLIENT_ID,
         "iat": now,
         "exp": now + dt.timedelta(minutes=5),
     }
     token = pyjwt.encode(claims, key=None, algorithm="none")
     with pytest.raises(auth_jwt.TokenError):
-        await auth_jwt.verify_bearer_token(token, jwks_url=JWKS_URL, issuer=ISSUER)
+        await auth_jwt.verify_bearer_token(
+            token, jwks_url=JWKS_URL, issuer=ISSUER, client_id=CLIENT_ID
+        )

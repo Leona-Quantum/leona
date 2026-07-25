@@ -66,5 +66,6 @@ Browser test: `http://localhost:3000` → Sign in → AuthKit hosted flow →
 
 If `/v1/me` is 401 with a valid session: check the API log — an issuer
 mismatch means the token's `iss` differs from the pinned default
-(`https://api.workos.com/user_management/<client_id>`); set `WORKOS_JWT_ISSUER`
-(and `WORKOS_JWKS_URL` if on a custom auth domain) to the actual values.
+(`https://api.workos.com`). The verifier also requires the token's
+`client_id` to equal `WORKOS_CLIENT_ID`. Set `WORKOS_JWT_ISSUER` (and
+`WORKOS_JWKS_URL` if on a custom auth domain) to the actual values.
