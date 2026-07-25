@@ -31,7 +31,12 @@ test("a fresh failed run without a summary is not mislabeled as legacy", () => {
       code: "print('best effort')",
       language: "python",
     },
-    { type: "run.error", stage: "review", message: "candidate_budget_exhausted" },
+    {
+      type: "run.error",
+      stage: "verify",
+      code: "candidate_budget_exhausted",
+      message: "intent review did not align the candidate",
+    },
     { type: "run.finished", status: "failed" },
   ]);
 
@@ -108,7 +113,10 @@ test("only successful records without a typed summary are legacy", () => {
   assert.equal(outcome?.title, "Verification evidence is unavailable");
 });
 
-test("the simple pipeline is presented as AI-reviewed and explicitly unverified", () => {
+// Naming the reviewer invites the reader to discount the result on the strength of
+// the reviewer rather than the evidence. The limits stay stated; the badge reports
+// what the run did, not who checked it.
+test("the simple pipeline is presented as executed and explicitly unverified", () => {
   const outcome = runOutcomeFromEvents([
     queued,
     {
@@ -140,7 +148,8 @@ test("the simple pipeline is presented as AI-reviewed and explicitly unverified"
     },
   ]);
 
-  assert.equal(outcome?.eyebrow, "AI-reviewed result");
+  assert.equal(outcome?.eyebrow, "Executed result");
+  assert.doesNotMatch(JSON.stringify(outcome), /AI[- ]reviewed/i);
   assert.equal(outcome?.tone, "warn");
   assert.equal(outcome?.callout?.title, "Strict verification was not run");
   assert.match(outcome?.callout?.body ?? "", /Quantum Correctness/);
@@ -177,4 +186,72 @@ test("ordinary chat does not gain a run outcome card", () => {
     ]),
     null,
   );
+});
+
+// Payloads below are exactly what services/worker emits: `run.error` carries a
+// machine-readable `code`, a prose `message` that does NOT contain that code, and a
+// contracts `Stage` value. The previous fixture used {stage: "review", message:
+// "candidate_budget_exhausted"} — a shape the worker cannot produce — which let every
+// code-based mapping rot while the suite stayed green.
+const failingRun = (error: OutcomeEvent): OutcomeEvent[] => [
+  queued,
+  { type: "plan.produced", plan: { problem_summary: "H2 ground state", framework: "qiskit" } },
+  { type: "code.generated", revision: 1, code: "print('candidate')" },
+  {
+    type: "run.best_effort",
+    revision: 4,
+    candidates_considered: 4,
+    failed_checks: ["success_criteria"],
+    code: "print('best effort')",
+    language: "python",
+  },
+  error,
+  { type: "run.finished", status: "failed" },
+];
+
+test("real worker failure codes reach the user as an actionable reason", () => {
+  const cases: Array<[OutcomeEvent, RegExp]> = [
+    [
+      { type: "run.error", stage: "verify", code: "candidate_budget_exhausted", message: "intent review did not align the candidate" },
+      /repair attempts were used/i,
+    ],
+    [
+      { type: "run.error", stage: "verify", code: "plan_budget_exhausted", message: "intent review did not align the candidate" },
+      /replan budget ran out/i,
+    ],
+    [
+      { type: "run.error", stage: "final_execute", code: "sandbox_provider_failed", message: "sandbox execution failed" },
+      /sandbox could not run/i,
+    ],
+    [
+      { type: "run.error", stage: "screen", code: "basic_contract_failed", message: "generated source did not satisfy the basic execution contract" },
+      /result keys the plan promised/i,
+    ],
+    [
+      { type: "run.error", stage: null, code: "run_timeout", message: "run exceeded its time budget" },
+      /exceeded its time budget/i,
+    ],
+    [
+      { type: "run.error", stage: "export", code: "export_persistence_failed", message: "could not persist the conversion" },
+      /could not be recorded/i,
+    ],
+  ];
+
+  for (const [error, expected] of cases) {
+    const outcome = runOutcomeFromEvents(failingRun(error));
+    assert.match(outcome?.callout?.body ?? "", expected, `code ${error.code}`);
+    assert.doesNotMatch(
+      outcome?.callout?.body ?? "",
+      /stopped before the step completed/,
+      `code ${error.code} fell through to the generic wording`,
+    );
+  }
+});
+
+test("an unmapped code still names the stage it stopped in", () => {
+  const outcome = runOutcomeFromEvents(
+    failingRun({ type: "run.error", stage: "verify", code: "some_future_code", message: "unknown" }),
+  );
+
+  assert.match(outcome?.callout?.body ?? "", /Review stopped before the step completed/);
 });

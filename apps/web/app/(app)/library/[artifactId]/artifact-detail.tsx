@@ -40,7 +40,7 @@ function verdictChip(artifact: LibraryArtifact, copy: ArtifactCopy): { label: st
     artifact.status === "inconclusive"
     && artifact.verificationSummary?.reason_code === "ai_review_aligned"
   ) {
-    return { label: "Executed + AI-reviewed", glyph: "–" };
+    return { label: "Executed", glyph: "–" };
   }
   if (artifact.status === "inconclusive") {
     return { label: "Verification unavailable", glyph: "–" };

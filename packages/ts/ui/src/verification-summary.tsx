@@ -14,7 +14,7 @@ const NEXT_ACTION: Record<VerificationSummary["retry_target"], string> = {
 
 function titleFor(summary: VerificationSummary): string {
   if (summary.decision === "fail") return "Failed";
-  if (summary.reason_code === "ai_review_aligned") return "Executed and AI-reviewed";
+  if (summary.reason_code === "ai_review_aligned") return "Executed";
   if (summary.decision === "inconclusive") return "Verification unavailable";
   return summary.evidence_strength === "physical" ? "Verified" : "Structurally verified";
 }
@@ -60,12 +60,12 @@ export function VerificationSummaryPanel({
   const claims = summary.unverified_claims ?? [];
   const advisoryOutcome = summary.reason_code === "ai_review_aligned";
   const warning = advisoryOutcome
-    ? "The generated code ran, its basic result contract passed, and the AI intent review aligned. Strict quantum correctness was not verified."
+    ? "The generated code ran and its basic result contract passed. Strict quantum correctness was not verified."
     : summary.decision === "inconclusive"
       ? "Verification unavailable — correctness has not been confirmed."
       : null;
   const action = advisoryOutcome
-    ? "Treat this private artifact as AI-reviewed but unverified."
+    ? "Treat this private artifact as unverified."
     : summary.retry_target === "none" && summary.decision === "pass"
       ? "No verification action is required."
       : NEXT_ACTION[summary.retry_target];

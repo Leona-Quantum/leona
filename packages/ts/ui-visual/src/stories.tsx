@@ -94,16 +94,16 @@ function StudioEvidenceFixture({ title, children }: { title: string; children: R
 export const STORIES: Story[] = [
   {
     name: "run-outcome-reviewed",
-    title: "RunOutcome — AI-reviewed saved result",
+    title: "RunOutcome — executed saved result",
     node: (
       <RunOutcome
         outcome={{
           tone: "warn",
-          eyebrow: "AI-reviewed result",
+          eyebrow: "Executed result",
           title: "The circuit executed and matched the request",
           description: "Bell state preparation with Qiskit.",
           badges: [
-            { label: "AI reviewed", tone: "warn" },
+            { label: "Executed", tone: "warn" },
             { label: "Saved to Vault", tone: "neutral" },
           ],
           facts: [

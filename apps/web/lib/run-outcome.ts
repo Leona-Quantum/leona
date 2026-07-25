@@ -34,6 +34,7 @@ export interface OutcomeEvent {
     problem_summary?: string;
     algorithm?: string;
     framework?: string;
+    expected_output_keys?: string[];
   };
 }
 
@@ -67,7 +68,71 @@ function humanize(value: string): string {
     .replace(/\b\w/g, (character) => character.toUpperCase());
 }
 
-function friendlyFailure(message: string | undefined, stage: string | null | undefined): string {
+// `run.error` carries a machine-readable `code` (contracts events.RunError). Match on
+// that first: the worker's `message` is prose written for the failure, not a carrier
+// for the code, so substring-matching it silently missed every pipeline outcome —
+// `candidate_budget_exhausted` arrives with the message "intent review did not align
+// the candidate", which contains none of the strings the prose branches look for.
+const failureByCode: Record<string, string> = {
+  // Bounded-budget outcomes: the run worked, and stopped honestly.
+  candidate_budget_exhausted:
+    "The available repair attempts were used without producing a candidate that passed every check.",
+  plan_budget_exhausted:
+    "The review kept sending the plan back, and the replan budget ran out. Try rephrasing the request, or narrowing it to one clearly-stated goal.",
+  review_feedback_budget_exhausted:
+    "The review asked for more changes than this run's budget allows.",
+  run_time_budget_exhausted:
+    "The run stopped before starting another attempt it had no time to finish. The closest candidate is included.",
+  run_timeout:
+    "The run exceeded its time budget before finishing. Simpler circuits and fewer shots finish well inside it.",
+  run_cancelled: "The run was cancelled.",
+
+  // The model produced something the pipeline could not use.
+  plan_output_invalid: "The planner returned a plan that could not be read.",
+  plan_framework_mismatch: "The planner changed the requested framework.",
+  replan_parameters_changed: "The replan changed the requested shots or seed.",
+  generation_output_invalid: "The generated response could not be read as a program.",
+  generated_source_invalid: "The generated program was not valid Python for the selected framework.",
+  review_output_invalid: "The reviewer response could not be read. New runs retry this case automatically.",
+  repeated_review_output_invalid: "The reviewer response could not be read on any attempt.",
+
+  // Execution and its contract.
+  basic_contract_failed:
+    "The generated program ran but did not produce the result keys the plan promised.",
+  sandbox_provider_failed: "The sandbox could not run the generated program.",
+
+  // Operational.
+  legacy_run_requires_restart:
+    "This unfinished run uses the retired pipeline. Start a new run to use the current workflow.",
+  job_dead_letter: "The run could not be completed after repeated attempts.",
+  run_orphaned: "The run was interrupted and could not be resumed.",
+  simple_save_not_enabled: "Saving is not enabled for this workspace.",
+};
+
+// Whole families share one cause and one user action; spelling out every member would
+// go stale the next time a stage is added.
+function failureByCodeFamily(code: string): string | null {
+  if (code.endsWith("_persistence_failed") || code.endsWith("_step_begin_failed")) {
+    return "The run could not be recorded. Nothing was lost; try running it again.";
+  }
+  if (code.startsWith("export_") || code === "openqasm_export_failed") {
+    return "The OpenQASM export could not be produced. The framework-native program is unaffected.";
+  }
+  if (code.endsWith("_lookup_failed") || code.endsWith("_binding_mismatch")) {
+    return "The run's stored evidence could not be read back consistently.";
+  }
+  return null;
+}
+
+function friendlyFailure(
+  message: string | undefined,
+  stage: string | null | undefined,
+  code?: string | undefined,
+): string {
+  if (code) {
+    const known = failureByCode[code] ?? failureByCodeFamily(code);
+    if (known) return known;
+  }
   const normalized = message?.toLowerCase() ?? "";
   if (normalized.includes("rate_limit") || normalized.includes("rate limit") || normalized.includes("429")) {
     return "The model provider is temporarily rate-limited. Retry in a moment.";
@@ -97,12 +162,19 @@ function friendlyFailure(message: string | undefined, stage: string | null | und
   if (normalized.includes("candidate_budget_exhausted") || normalized.includes("repair budget")) {
     return "The available repair attempts were used without producing an acceptable candidate.";
   }
+  // Keys are contracts `Stage` values, which is what run.error actually carries after
+  // the worker projects SimplePipelineStage through _SIMPLE_EVENT_STAGE. `execute` and
+  // `review` were never emitted — the worker sends `final_execute` and `verify` — so
+  // every execution and screening failure fell through to the bare "The run" wording.
   const stageLabel: Record<string, string> = {
     plan: "Planning",
     generate: "Code generation",
+    screen: "Contract checking",
+    final_execute: "Execution",
     execute: "Execution",
-    review: "Review",
     verify: "Review",
+    review: "Review",
+    export: "Export",
     save: "Saving",
   };
   return `${stageLabel[stage ?? ""] ?? "The run"} stopped before the step completed.`;
@@ -233,7 +305,7 @@ export function runOutcomeFromEvents(
   }
 
   if (finished.status !== "succeeded") {
-    const failureDescription = friendlyFailure(failure?.message, failure?.stage);
+    const failureDescription = friendlyFailure(failure?.message, failure?.stage, failure?.code);
     const checks = checksFrom(summary, best?.failed_checks);
     if (best) {
       return {
@@ -325,12 +397,12 @@ export function runOutcomeFromEvents(
     const claims = summary.unverified_claims ?? [];
     return {
       tone: "warn",
-      eyebrow: advisory ? "AI-reviewed result" : "Verification unavailable",
+      eyebrow: advisory ? "Executed result" : "Verification unavailable",
       title: advisory
         ? "The circuit executed and matched the request"
         : "The circuit ran, but correctness is unconfirmed",
       description,
-      badges: badgesFor("warn", advisory ? "AI reviewed" : "Not verified", saved),
+      badges: badgesFor("warn", advisory ? "Executed" : "Not verified", saved),
       facts,
       callout: {
         title: advisory ? "Strict verification was not run" : "Evidence is incomplete",

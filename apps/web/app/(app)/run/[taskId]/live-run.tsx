@@ -1,12 +1,11 @@
 "use client";
 
-import type { FormEvent, ReactNode } from "react";
+import type { FormEvent } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import {
   RunOutcome,
-  RunProgress,
   SyntaxHighlightedCode,
   type RunEvent,
 } from "@majorana/ui";
@@ -16,6 +15,8 @@ import { RunComposer } from "../../../../components/run-composer";
 import { RUN_FIXTURES } from "./fixtures";
 import { verificationSummaryFromValue, type VerificationSummary } from "../../../../lib/verification-record";
 import { runOutcomeFromEvents } from "../../../../lib/run-outcome";
+import { runResultFromEvents } from "../../../../lib/run-result";
+import { RunResult } from "../../../../components/run-result";
 import { runProgressFromEvents } from "../../../../lib/run-progress";
 
 type WireEvent = {
@@ -42,6 +43,16 @@ type WireEvent = {
   method?: string;
   result?: unknown;
   details?: Record<string, unknown>;
+  lint_ok?: boolean;
+  typecheck_ok?: boolean;
+  diagnostics?: string[];
+  accepted?: boolean;
+  phase?: string;
+  reason?: string;
+  metrics?: Record<string, unknown>;
+  before?: Record<string, unknown> | null;
+  after?: Record<string, unknown> | null;
+  compatibility?: Record<string, unknown>;
   artifact_id?: string;
   plan?: {
     problem_summary?: string;
@@ -103,163 +114,56 @@ const VERIFICATION_METHOD_LABEL: Record<string, string> = {
   native_optimization_evidence: "Checked native optimization",
 };
 
-function processStepLabel(event: WireEvent): string | null {
-  switch (event.type) {
-    case "plan.produced":
-      return event.plan?.problem_summary ? `Planned approach: ${event.plan.problem_summary}` : "Planned an approach";
-    case "code.generated":
-      return `Wrote candidate circuit${event.revision ? ` (revision ${event.revision})` : ""}`;
-    case "sandbox.result":
-      return event.exit_code === 0 ? "Ran the circuit in the sandbox" : "Circuit failed in the sandbox — repairing";
-    case "verification.semantic_review":
-      switch (event.decision) {
-        case "ready":
-          return "Reviewed the candidate — looks aligned with the request";
-        case "code_repair":
-          return "Reviewed the candidate — found an issue, repairing the code";
-        case "replan":
-          return "Reviewed the candidate — the plan itself needs revising";
-        case "inconclusive":
-          return "Reviewed the candidate — inconclusive, gathering more evidence";
-        default:
-          return "Reviewed the candidate";
-      }
-    case "verification.strict_attempt":
-      switch (event.decision) {
-        case "pass":
-          return "Strict verification passed — added a verified badge";
-        case "inconclusive":
-          return "Strict verification inconclusive — no dedicated check available for this case";
-        case "fail":
-          return "Strict verification found an issue — recorded as a disclosed limitation";
-        default:
-          return "Ran strict verification";
-      }
-    case "verification.result": {
-      const label = (event.method && VERIFICATION_METHOD_LABEL[event.method]) || `Verification (${event.method ?? "?"})`;
-      return `${label}: ${String(event.result ?? "?")}`;
-    }
-    case "code.finalized":
-      return "Finalized the candidate circuit";
-    case "artifact.saved":
-      return "Saved the circuit and its verification state to your vault";
-    case "run.best_effort":
-      return `Kept the closest attempt (revision ${event.revision}) — unverified`;
-    case "run.error":
-      return event.message ? `Error: ${event.message}` : "Run error";
-    default:
-      return null;
-  }
+function ReviewStage({ event }: { event: WireEvent }) {
+  const critic = event.feedback?.critic;
+  if (!critic?.summary) return null;
+  const suggestions = critic.suggestions ?? critic.repair_instructions;
+  return (
+    <div className="mj-run-process-detail-text">
+      <p>{critic.summary}</p>
+      {critic.mismatches?.length ? (
+        <ul>
+          {critic.mismatches.map((mismatch, index) => (
+            <li key={index}>
+              {typeof mismatch === "string"
+                ? mismatch
+                : `${mismatch.aspect ?? "mismatch"}: expected ${mismatch.expected ?? "?"}, got ${mismatch.actual ?? "?"}`}
+            </li>
+          ))}
+        </ul>
+      ) : null}
+      {suggestions?.length ? (
+        <ul>
+          {suggestions.map((suggestion, index) => (
+            <li key={index}>{suggestion}</li>
+          ))}
+        </ul>
+      ) : null}
+      {critic.residual_risks?.length ? (
+        <ul>
+          {critic.residual_risks.map((risk, index) => (
+            <li key={index}>{risk}</li>
+          ))}
+        </ul>
+      ) : null}
+    </div>
+  );
 }
 
-type ProcessStep = { key: string; label: string; event: WireEvent };
-
-function processSteps(events: WireEvent[]): ProcessStep[] {
-  const steps: ProcessStep[] = [];
-  events.forEach((event, index) => {
-    const label = processStepLabel(event);
-    if (label) steps.push({ key: `${index}-${event.type}`, label, event });
-  });
-  return steps;
-}
-
-/** The expandable body under a step's summary line — the plan namekoQ shows in
- * request_plan's payload, the code a simulate tool ran, why review/strict
- * verification decided what it decided. Returns null for steps that have
- * nothing more to show than their one-line label. */
-function processStepDetail(event: WireEvent): ReactNode {
-  switch (event.type) {
-    case "plan.produced": {
-      const plan = event.plan;
-      if (!plan) return null;
-      const range = plan.success_criteria?.expected_range;
-      return (
-        <dl className="mj-run-process-detail-fields">
-          {plan.algorithm ? (
-            <>
-              <dt>Algorithm</dt>
-              <dd>{plan.algorithm}</dd>
-            </>
-          ) : null}
-          {plan.framework ? (
-            <>
-              <dt>Framework</dt>
-              <dd>{plan.framework}</dd>
-            </>
-          ) : null}
-          {plan.qubits_estimate !== undefined ? (
-            <>
-              <dt>Qubits</dt>
-              <dd>{plan.qubits_estimate}</dd>
-            </>
-          ) : null}
-          {plan.success_criteria?.primary_metric ? (
-            <>
-              <dt>Success metric</dt>
-              <dd>
-                {plan.success_criteria.primary_metric}
-                {range ? ` (${Object.entries(range).map(([bound, value]) => `${bound}: ${value}`).join(", ")})` : ""}
-              </dd>
-            </>
-          ) : null}
-        </dl>
-      );
-    }
-    case "code.generated":
-      return event.code ? <ChatMarkdown source={`\`\`\`python\n${event.code}\n\`\`\``} /> : null;
-    case "sandbox.result":
-      return event.stderr ? <pre className="mj-run-process-detail-pre">{event.stderr}</pre> : null;
-    case "verification.semantic_review": {
-      const critic = event.feedback?.critic;
-      if (!critic?.summary) return null;
-      const suggestions = critic.suggestions ?? critic.repair_instructions;
-      return (
-        <div className="mj-run-process-detail-text">
-          <p>{critic.summary}</p>
-          {critic.mismatches?.length ? (
-            <ul>
-              {critic.mismatches.map((mismatch, index) => (
-                <li key={index}>
-                  {typeof mismatch === "string"
-                    ? mismatch
-                    : `${mismatch.aspect ?? "mismatch"}: expected ${mismatch.expected ?? "?"}, got ${mismatch.actual ?? "?"}`}
-                </li>
-              ))}
-            </ul>
-          ) : null}
-          {suggestions?.length ? (
-            <ul>
-              {suggestions.map((suggestion, index) => (
-                <li key={index}>{suggestion}</li>
-              ))}
-            </ul>
-          ) : null}
-          {critic.residual_risks?.length ? (
-            <ul>
-              {critic.residual_risks.map((risk, index) => (
-                <li key={index}>{risk}</li>
-              ))}
-            </ul>
-          ) : null}
-        </div>
-      );
-    }
-    case "verification.strict_attempt":
-      return event.reason_code || event.unverified_claims?.length ? (
-        <div className="mj-run-process-detail-text">
-          {event.reason_code ? <p>{event.reason_code}</p> : null}
-          {event.unverified_claims?.length ? (
-            <ul>
-              {event.unverified_claims.map((claim, index) => (
-                <li key={index}>{claim}</li>
-              ))}
-            </ul>
-          ) : null}
-        </div>
-      ) : null;
-    default:
-      return null;
-  }
+function StrictVerificationStage({ event }: { event: WireEvent }) {
+  if (!event.reason_code && !event.unverified_claims?.length) return null;
+  return (
+    <div className="mj-run-process-detail-text">
+      {event.reason_code ? <p>{event.reason_code}</p> : null}
+      {event.unverified_claims?.length ? (
+        <ul>
+          {event.unverified_claims.map((claim, index) => (
+            <li key={index}>{claim}</li>
+          ))}
+        </ul>
+      ) : null}
+    </div>
+  );
 }
 
 function artifactIdFromEvents(events: WireEvent[]): string | null {
@@ -324,15 +228,26 @@ function hasFinished(events: WireEvent[]): boolean {
   return events.some((event) => event.type === "run.finished");
 }
 
+function retainRunEvent(event: WireEvent): boolean {
+  // Token deltas can number in the hundreds for one candidate. Their durable final
+  // call/code events carry everything this surface renders, while retaining every
+  // delta makes each SSE update re-project an ever-growing array. Chat text has its
+  // own streaming state and final chat.completed event.
+  return event.type !== "llm.delta" && event.type !== "chat.delta";
+}
+
 function turnsFromConversation(payload: ConversationPayload): Turn[] {
-  return payload.turns.map((turn) => ({
-    id: turn.run.id,
-    prompt: turn.run.task_prompt,
-    answer: answerFromEvents(turn.events),
-    events: turn.events,
-    verificationSummary: verificationSummaryFromValue(turn.run.verification_summary),
-    terminal: Boolean(turn.run.finished_at) || hasFinished(turn.events),
-  }));
+  return payload.turns.map((turn) => {
+    const events = turn.events.filter(retainRunEvent);
+    return {
+      id: turn.run.id,
+      prompt: turn.run.task_prompt,
+      answer: answerFromEvents(events),
+      events,
+      verificationSummary: verificationSummaryFromValue(turn.run.verification_summary),
+      terminal: Boolean(turn.run.finished_at) || hasFinished(events),
+    };
+  });
 }
 
 function fixtureTurns(events: RunEvent[], fixtureId?: string): Turn[] {
@@ -463,7 +378,9 @@ export function LiveRun({ taskId }: { taskId: string }) {
               if (!parsed) continue;
               const event = JSON.parse(parsed.data) as WireEvent;
               if (parsed.id !== null) lastEventId.current = parsed.id;
-              setLiveEvents((current) => [...current, event]);
+              if (retainRunEvent(event)) {
+                setLiveEvents((current) => [...current, event]);
+              }
               if (event.type === "chat.delta" && event.text) {
                 setStreaming(true);
                 if (event.kind === "reasoning") setReasoningText((current) => `${current}${event.text}`);
@@ -676,12 +593,23 @@ export function LiveRun({ taskId }: { taskId: string }) {
 }
 
 function CompletedAssistant({ turn }: { turn: Turn }) {
+  // Failure context and the best produced output are separate concerns. A rejected
+  // candidate still remains inspectable after the reason it was rejected.
+  const result = runResultFromEvents(turn.events, turn.verificationSummary);
   const outcome = runOutcomeFromEvents(turn.events, turn.verificationSummary);
+  const outcomeWithoutDuplicateCode = outcome && result
+    ? { ...outcome, code: undefined }
+    : outcome;
   return (
-    <div className={`mj-chat-message mj-chat-message--assistant${outcome ? " mj-chat-message--run" : ""}`}>
+    <div className={`mj-chat-message mj-chat-message--assistant${result || outcome ? " mj-chat-message--run" : ""}`}>
       <RunProgressBlock events={turn.events} running={false} />
-      {outcome ? (
-        <RunOutcome outcome={outcome} action={<ArtifactLink events={turn.events} />} />
+      {outcomeWithoutDuplicateCode && turn.events.some((event) => event.type === "run.finished" && event.status !== "succeeded") ? (
+        <RunOutcome outcome={outcomeWithoutDuplicateCode} />
+      ) : null}
+      {result ? (
+        <FinalOutput result={result} events={turn.events} />
+      ) : outcomeWithoutDuplicateCode ? (
+        <RunOutcome outcome={outcomeWithoutDuplicateCode} action={<ArtifactLink events={turn.events} />} />
       ) : (
         <>
           {turn.answer ? (
@@ -708,7 +636,11 @@ function AssistantMessage({
   events: WireEvent[];
 }) {
   const progress = runProgressFromEvents(events, streaming);
+  const result = runResultFromEvents(events);
   const outcome = runOutcomeFromEvents(events);
+  const outcomeWithoutDuplicateCode = outcome && result
+    ? { ...outcome, code: undefined }
+    : outcome;
   return (
     <div className={`mj-chat-message mj-chat-message--assistant${progress ? " mj-chat-message--run" : ""}`}>
       {progress ? <RunProgressBlock events={events} running={streaming} /> : null}
@@ -718,8 +650,13 @@ function AssistantMessage({
           <ChatMarkdown source={reasoning} />
         </details>
       ) : null}
-      {outcome ? (
-        <RunOutcome outcome={outcome} action={<ArtifactLink events={events} />} />
+      {outcomeWithoutDuplicateCode && events.some((event) => event.type === "run.finished" && event.status !== "succeeded") ? (
+        <RunOutcome outcome={outcomeWithoutDuplicateCode} />
+      ) : null}
+      {result ? (
+        <FinalOutput result={result} events={events} />
+      ) : outcomeWithoutDuplicateCode ? (
+        <RunOutcome outcome={outcomeWithoutDuplicateCode} action={<ArtifactLink events={events} />} />
       ) : text ? (
         <ChatMarkdown source={text} />
       ) : progress ? null : (
@@ -729,8 +666,35 @@ function AssistantMessage({
           <span className="mj-chat-loading-dot" />
         </span>
       )}
-      {!outcome ? <ArtifactLink events={events} /> : null}
+      {!result && !outcomeWithoutDuplicateCode ? <ArtifactLink events={events} /> : null}
     </div>
+  );
+}
+
+function FinalOutput({
+  result,
+  events,
+}: {
+  result: NonNullable<ReturnType<typeof runResultFromEvents>>;
+  events: WireEvent[];
+}) {
+  return (
+    <section className="mj-run-final-output" aria-label="Final Output">
+      <header className="mj-run-final-output-heading">
+        <span
+          className="mj-run-final-output-marker"
+          data-tone={result.trust.tone}
+          aria-hidden="true"
+        >
+          {result.trust.tone === "ok" ? "✓" : "–"}
+        </span>
+        <div>
+          <span>Deliverable</span>
+          <h2>Final Output</h2>
+        </div>
+      </header>
+      <RunResult result={result} action={<ArtifactLink events={events} />} />
+    </section>
   );
 }
 
@@ -741,8 +705,12 @@ function lastEvent(events: WireEvent[], type: string): WireEvent | null {
   return null;
 }
 
-function llmCallFor(events: WireEvent[], ...stages: string[]): WireEvent | null {
-  for (let index = events.length - 1; index >= 0; index -= 1) {
+function llmCallBefore(
+  events: WireEvent[],
+  beforeIndex: number,
+  ...stages: string[]
+): WireEvent | null {
+  for (let index = beforeIndex - 1; index >= 0; index -= 1) {
     const event = events[index];
     if (event.type === "llm.call" && event.stage && stages.includes(event.stage)) {
       return event;
@@ -841,66 +809,392 @@ function SimulationResult({ event }: { event: WireEvent }) {
           This replay predates structured simulation values. Runtime diagnostics remain below.
         </p>
       )}
-      {event.stderr ? <pre className="mj-run-process-detail-pre">{event.stderr}</pre> : null}
+      {event.stdout || event.stderr ? (
+        <details className="mj-run-live-logs">
+          <summary>Runtime logs</summary>
+          {event.stdout ? (
+            <div>
+              <span>stdout</span>
+              <pre className="mj-run-process-detail-pre">{event.stdout}</pre>
+            </div>
+          ) : null}
+          {event.stderr ? (
+            <div>
+              <span>stderr</span>
+              <pre className="mj-run-process-detail-pre">{event.stderr}</pre>
+            </div>
+          ) : null}
+        </details>
+      ) : null}
     </div>
   );
 }
 
+type LiveStageKind =
+  | "plan"
+  | "generate"
+  | "screen"
+  | "simulation"
+  | "verification"
+  | "review"
+  | "compilation"
+  | "finalize"
+  | "save"
+  | "best_effort"
+  | "pending";
+
+type LiveStageState = "active" | "done" | "warn" | "error";
+
 type LiveStageCard = {
-  id: "plan" | "generate" | "simulation" | "review";
+  key: string;
+  kind: LiveStageKind;
   title: string;
   eyebrow: string;
-  event: WireEvent;
+  state: LiveStageState;
+  status: string;
+  event: WireEvent | null;
   call: WireEvent | null;
 };
 
+const ACTIVITY_GLYPH: Record<LiveStageState, string> = {
+  active: "•",
+  done: "✓",
+  warn: "–",
+  error: "×",
+};
+
+function pendingActivity(events: WireEvent[], running: boolean): LiveStageCard | null {
+  if (!running || lastEvent(events, "run.finished")) return null;
+  const progress = runProgressFromEvents(events, true);
+  const active = progress?.items.find((item) => item.state === "active");
+  if (!active) return null;
+  const revision = (lastEvent(events, "code.generated")?.revision ?? 0) + (
+    active.id === "generate" ? 1 : 0
+  );
+  const copy: Record<string, { eyebrow: string; title: string }> = {
+    plan: {
+      eyebrow: "Thinking",
+      title: "Understanding the request and choosing an approach",
+    },
+    generate: {
+      eyebrow: "Generating code",
+      title: `Writing candidate revision ${Math.max(1, revision)}`,
+    },
+    execute: {
+      eyebrow: "Running & testing",
+      title: `Running candidate revision ${Math.max(1, revision)}`,
+    },
+    review: {
+      eyebrow: "Quality check",
+      title: `Reviewing candidate revision ${Math.max(1, revision)}`,
+    },
+    save: {
+      eyebrow: "Finalizing",
+      title: "Preparing the final output",
+    },
+  };
+  const current = copy[active.id] ?? copy.plan;
+  return {
+    key: `pending-${active.id}-${revision}`,
+    kind: "pending",
+    title: current.title,
+    eyebrow: current.eyebrow,
+    state: "active",
+    status: "Running",
+    event: null,
+    call: null,
+  };
+}
+
+function activityCards(events: WireEvent[], running: boolean): LiveStageCard[] {
+  const cards: LiveStageCard[] = [];
+  let planCount = 0;
+  let currentRevision = 0;
+
+  events.forEach((event, index) => {
+    const key = `${event.seq ?? index}-${event.type}`;
+    switch (event.type) {
+      case "plan.produced":
+        planCount += 1;
+        cards.push({
+          key,
+          kind: "plan",
+          title: event.plan?.problem_summary ?? "Circuit plan",
+          eyebrow: planCount === 1 ? "Plan" : `Revised plan ${planCount}`,
+          state: "done",
+          status: "Complete",
+          event,
+          call: llmCallBefore(events, index, "plan"),
+        });
+        break;
+      case "code.generated":
+        currentRevision = event.revision ?? currentRevision + 1;
+        cards.push({
+          key,
+          kind: "generate",
+          title: `Candidate revision ${currentRevision}`,
+          eyebrow: "Generated code",
+          state: "done",
+          status: "Complete",
+          event,
+          call: llmCallBefore(events, index, "generate"),
+        });
+        break;
+      case "screen.result": {
+        const passed = event.lint_ok !== false && event.typecheck_ok !== false;
+        cards.push({
+          key,
+          kind: "screen",
+          title: passed ? "Static checks passed" : "Static checks found an issue",
+          eyebrow: "Code checks",
+          state: passed ? "done" : "error",
+          status: passed ? "Passed" : "Failed",
+          event,
+          call: null,
+        });
+        break;
+      }
+      case "sandbox.result": {
+        const passed = event.exit_code === 0;
+        cards.push({
+          key,
+          kind: "simulation",
+          title: passed
+            ? `Candidate revision ${Math.max(1, currentRevision)} executed`
+            : `Candidate revision ${Math.max(1, currentRevision)} needs repair`,
+          eyebrow: "Run & test",
+          state: passed ? "done" : "error",
+          status: passed ? "Passed" : "Failed",
+          event,
+          call: null,
+        });
+        break;
+      }
+      case "verification.result": {
+        const result = String(event.result ?? "unavailable");
+        const state: LiveStageState = result === "pass"
+          ? "done"
+          : result === "fail" || result === "error"
+            ? "error"
+            : "warn";
+        cards.push({
+          key,
+          kind: "verification",
+          title: (event.method && VERIFICATION_METHOD_LABEL[event.method])
+            || `Verification: ${event.method ?? "check"}`,
+          eyebrow: "Test result",
+          state,
+          status: result === "pass" ? "Passed" : result === "fail" ? "Failed" : "Unavailable",
+          event,
+          call: null,
+        });
+        break;
+      }
+      case "verification.semantic_review": {
+        const ready = event.decision === "ready";
+        cards.push({
+          key,
+          kind: "review",
+          title: ready
+            ? `Candidate revision ${Math.max(1, currentRevision)} aligned`
+            : event.decision === "replan"
+              ? "Quality check requested a revised plan"
+              : "Quality check requested a code repair",
+          eyebrow: "Quality check",
+          state: ready ? "done" : "warn",
+          status: ready ? "Passed" : "Needs revision",
+          event,
+          call: llmCallBefore(events, index, "verify", "review"),
+        });
+        break;
+      }
+      case "verification.strict_attempt": {
+        const passed = event.decision === "pass";
+        const failed = event.decision === "fail";
+        cards.push({
+          key,
+          kind: "verification",
+          title: passed
+            ? "Strict verification passed"
+            : failed
+              ? "Strict verification found an issue"
+              : "Strict verification was inconclusive",
+          eyebrow: "Verification",
+          state: passed ? "done" : failed ? "error" : "warn",
+          status: passed ? "Passed" : failed ? "Failed" : "Inconclusive",
+          event,
+          call: null,
+        });
+        break;
+      }
+      case "compilation.result":
+        cards.push({
+          key,
+          kind: "compilation",
+          title: event.accepted === false
+            ? "Compilation kept the original circuit"
+            : "Circuit compilation completed",
+          eyebrow: "Compilation",
+          state: event.accepted === false ? "warn" : "done",
+          status: event.accepted === false ? "Unchanged" : "Complete",
+          event,
+          call: null,
+        });
+        break;
+      case "code.finalized":
+        cards.push({
+          key,
+          kind: "finalize",
+          title: `Finalized candidate revision ${event.revision ?? Math.max(1, currentRevision)}`,
+          eyebrow: "Finalizing",
+          state: "done",
+          status: "Complete",
+          event,
+          call: null,
+        });
+        break;
+      case "artifact.saved":
+        cards.push({
+          key,
+          kind: "save",
+          title: "Saved the artifact to Vault",
+          eyebrow: "Save",
+          state: "done",
+          status: "Complete",
+          event,
+          call: null,
+        });
+        break;
+      case "run.best_effort":
+        cards.push({
+          key,
+          kind: "best_effort",
+          title: `Selected revision ${event.revision ?? Math.max(1, currentRevision)} as the best available candidate`,
+          eyebrow: "Finalizing",
+          state: "warn",
+          status: "Not accepted",
+          event,
+          call: null,
+        });
+        break;
+      default:
+        break;
+    }
+  });
+
+  const pending = pendingActivity(events, running);
+  if (pending) cards.push(pending);
+  return cards;
+}
+
+function EventRecord({ value }: { value: unknown }) {
+  if (value === undefined || value === null) return null;
+  return (
+    <pre className="mj-run-live-result-json">
+      {JSON.stringify(value, null, 2)}
+    </pre>
+  );
+}
+
+function ScreenStage({ event }: { event: WireEvent }) {
+  return (
+    <div className="mj-run-live-simulation">
+      <dl className="mj-run-live-facts">
+        <div>
+          <dt>Lint</dt>
+          <dd>{event.lint_ok === false ? "Failed" : "Passed"}</dd>
+        </div>
+        <div>
+          <dt>Type check</dt>
+          <dd>{event.typecheck_ok === false ? "Failed" : "Passed"}</dd>
+        </div>
+      </dl>
+      {event.diagnostics?.length ? (
+        <pre className="mj-run-process-detail-pre">{event.diagnostics.join("\n")}</pre>
+      ) : null}
+    </div>
+  );
+}
+
+function CompilationStage({ event }: { event: WireEvent }) {
+  return (
+    <div className="mj-run-live-simulation">
+      {event.reason ? <p className="mj-run-live-empty-result">{event.reason}</p> : null}
+      {event.before || event.after || event.compatibility ? (
+        <EventRecord value={{
+          before: event.before,
+          after: event.after,
+          compatibility: event.compatibility,
+        }} />
+      ) : null}
+    </div>
+  );
+}
+
+function ActivityDetail({ card }: { card: LiveStageCard }) {
+  if (!card.event) {
+    return (
+      <div className="mj-run-live-active-copy">
+        <span className="mj-run-live-pulse" aria-hidden="true" />
+        Work is continuing. New evidence will appear here as soon as it is recorded.
+      </div>
+    );
+  }
+  switch (card.kind) {
+    case "plan":
+      return <PlanStage event={card.event} />;
+    case "generate":
+    case "finalize":
+      return <CodeStage event={card.event} />;
+    case "screen":
+      return <ScreenStage event={card.event} />;
+    case "simulation":
+      return <SimulationResult event={card.event} />;
+    case "review":
+      return <ReviewStage event={card.event} />;
+    case "verification":
+      return card.event.type === "verification.strict_attempt"
+        ? <StrictVerificationStage event={card.event} />
+        : <EventRecord value={card.event.details ?? card.event.result} />;
+    case "compilation":
+      return <CompilationStage event={card.event} />;
+    case "save":
+      return <p className="mj-run-live-empty-result">The private artifact is available in Vault.</p>;
+    case "best_effort":
+      return (
+        <div className="mj-run-process-detail-text">
+          {card.event.critic_summary ? <p>{card.event.critic_summary}</p> : null}
+          {card.event.failed_checks?.length ? (
+            <ul>{card.event.failed_checks.map((check) => <li key={check}>{check}</li>)}</ul>
+          ) : null}
+        </div>
+      );
+    default:
+      return null;
+  }
+}
+
 function RunEvidenceFeed({ events, running }: { events: WireEvent[]; running: boolean }) {
-  const plan = lastEvent(events, "plan.produced");
-  const code = lastEvent(events, "code.generated");
-  const simulation = lastEvent(events, "sandbox.result");
-  const review = lastEvent(events, "verification.semantic_review");
-  const cards: LiveStageCard[] = [
-    plan ? {
-      id: "plan",
-      title: plan.plan?.problem_summary ?? "Circuit plan",
-      eyebrow: "01 · Plan",
-      event: plan,
-      call: llmCallFor(events, "plan"),
-    } : null,
-    code ? {
-      id: "generate",
-      title: `Candidate revision ${code.revision ?? 1}`,
-      eyebrow: "02 · Generated code",
-      event: code,
-      call: llmCallFor(events, "generate"),
-    } : null,
-    simulation ? {
-      id: "simulation",
-      title: simulation.exit_code === 0 ? "Simulation completed" : "Simulation needs repair",
-      eyebrow: "03 · Simulation",
-      event: simulation,
-      call: null,
-    } : null,
-    review ? {
-      id: "review",
-      title: review.decision === "ready" ? "Aligned with the request" : "Review feedback",
-      eyebrow: "04 · Review",
-      event: review,
-      call: llmCallFor(events, "verify", "review"),
-    } : null,
-  ].filter((card): card is LiveStageCard => card !== null);
+  const cards = activityCards(events, running);
 
   if (!cards.length) return null;
-  const currentId = cards[cards.length - 1].id;
+  const currentKey = cards[cards.length - 1].key;
   return (
-    <div className="mj-run-live-stages" aria-label="Live run details">
-      {cards.map((card) => {
-        const current = card.id === currentId;
+    <div className="mj-run-live-stages" aria-label="Agent activity">
+      {cards.map((card, index) => {
+        const current = card.key === currentKey;
         return (
-          <details className="mj-run-live-stage" key={card.id} open={current}>
+          <details
+            className="mj-run-live-stage"
+            data-state={card.state}
+            key={card.key}
+            open={current}
+          >
             <summary>
               <span className="mj-run-live-stage-index" aria-hidden="true">
-                {current && running ? "–" : "✓"}
+                {card.state === "active"
+                  ? ACTIVITY_GLYPH.active
+                  : ACTIVITY_GLYPH[card.state] || String(index + 1).padStart(2, "0")}
               </span>
               <span className="mj-run-live-stage-heading">
                 <span>{card.eyebrow}</span>
@@ -908,13 +1202,11 @@ function RunEvidenceFeed({ events, running }: { events: WireEvent[]; running: bo
               </span>
               <span className="mj-run-live-stage-meta">
                 <ModelCallMeta event={card.call} />
+                <strong>{card.status}</strong>
               </span>
             </summary>
             <div className="mj-run-live-stage-body">
-              {card.id === "plan" ? <PlanStage event={card.event} /> : null}
-              {card.id === "generate" ? <CodeStage event={card.event} /> : null}
-              {card.id === "simulation" ? <SimulationResult event={card.event} /> : null}
-              {card.id === "review" ? processStepDetail(card.event) : null}
+              <ActivityDetail card={card} />
             </div>
           </details>
         );
@@ -974,56 +1266,25 @@ function RunProgressBlock({
   running: boolean;
 }) {
   const progress = runProgressFromEvents(events, running);
-  const steps = processSteps(events);
   if (!progress) return null;
+  const completed = progress.items.filter((item) => item.state === "done").length;
+  const active = progress.items.some((item) => item.state === "active");
   return (
     <section className="mj-run-workflow" aria-label="Run activity">
-      <RunProgress progress={progress} />
+      <header className="mj-run-agent-head">
+        <div>
+          <span className="mj-run-agent-label">
+            {active ? <span className="mj-run-progress-live-dot" aria-hidden="true" /> : null}
+            {progress.label}
+          </span>
+          <strong>{progress.headline}</strong>
+        </div>
+        <span className="mj-run-agent-count">
+          {completed}/{progress.items.length} stages
+        </span>
+      </header>
       <RunEvidenceFeed events={events} running={running} />
-      {steps.length ? (
-        <details className="mj-run-progress-technical">
-          <summary>
-            <span>Technical details</span>
-            <span>{steps.length} events</span>
-          </summary>
-          <div className="mj-run-progress-technical-body">
-            <ProcessEventDetails steps={steps} />
-          </div>
-        </details>
-      ) : null}
     </section>
-  );
-}
-
-function ProcessEventDetails({ steps }: { steps: ProcessStep[] }) {
-  if (steps.length === 0) return null;
-  return (
-    <ul className="mj-run-process-list">
-      {steps.map((step) => {
-        const labelClassName = "mj-run-process-text mj-run-process-text--done";
-        const detail = processStepDetail(step.event);
-        // Only steps with something to show underneath become an expandable pull
-        // tab (the plan, the code a simulate tool ran, why review/strict
-        // verification decided what it decided) — a step with nothing more to say
-        // than its own summary line stays a plain, unclickable list item, so it
-        // never shows a disclosure triangle that opens onto nothing.
-        if (!detail) {
-          return (
-            <li key={step.key} className={labelClassName}>
-              {step.label}
-            </li>
-          );
-        }
-        return (
-          <li key={step.key}>
-            <details className="mj-run-process-detail">
-              <summary className={labelClassName}>{step.label}</summary>
-              <div className="mj-run-process-detail-body">{detail}</div>
-            </details>
-          </li>
-        );
-      })}
-    </ul>
   );
 }
 

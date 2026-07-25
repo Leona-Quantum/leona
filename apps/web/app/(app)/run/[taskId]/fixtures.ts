@@ -548,5 +548,5 @@ export const RUN_FIXTURE_META: { id: string; label: string }[] = [
   { id: "demo-midrun", label: "Mid-run (verify)" },
   { id: "demo-queued", label: "Queued (waiting)" },
   { id: "demo-provider-error", label: "Provider failure (normalized)" },
-  { id: "demo-reviewed", label: "AI-reviewed simple pipeline" },
+  { id: "demo-reviewed", label: "Executed simple pipeline" },
 ];
