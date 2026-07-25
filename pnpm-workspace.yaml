@@ -12,6 +12,13 @@ overrides:
   # range, so dedupe the whole tree onto the first patched release. All postcss
   # here is 8.x; 8.5.18 is a backward-compatible patch bump.
   postcss: 8.5.18
+  # GHSA-mh99-v99m-4gvg (high): unbounded brace expansion OOMs the process.
+  # Only the 5.x line is reachable here (minimatch@10 -> brace-expansion@5.0.7,
+  # via @sentry/bundler-plugin-core's glob and openapi-typescript's @redocly).
+  # Scoped to ^5 on purpose: minimatch@5 still resolves 2.1.2 and a blanket
+  # override would jump it three majors for no advisory.
+  brace-expansion@^5.0.0: 5.0.8
+  minimatch@^5.0.0: 10.2.5
 # 05-security supply chain: build scripts stay blocked. sharp (next/image) is
 # explicitly denied - we do not use image optimization yet; revisit in Phase 3.
 allowBuilds:
