@@ -102,7 +102,9 @@ constitute a production sandbox service.
 
 Machine-readable evidence:
 
+- `evidence/atlas_vqe_phase5_local_candidate_v1.json`
 - `evidence/phase5b_h2_runtime_qualification_2026-07-26.json`
+- `evidence/phase5b_runtime_sbom_manifest_v1.json`
 - `evidence/phase5b_qiskit_runtime_sbom.spdx.json`
 - `evidence/phase5b_pennylane_runtime_sbom.spdx.json`
 

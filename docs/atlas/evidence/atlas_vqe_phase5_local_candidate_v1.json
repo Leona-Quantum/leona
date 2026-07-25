@@ -1,0 +1,35 @@
+{
+  "artifact_kind": "internal-audit-snapshot",
+  "audited_implementation_head": "a49b6d5de7bf3167fd8cb0fd6cee26579386eb06",
+  "closure_change_commit": "3bbef8a6c817661571a5614d8e13af0541929b22",
+  "human_scientific_review": "unreviewed",
+  "oci_manifest_digest": null,
+  "production_runtime_status": "unqualified",
+  "public_execution": "blocked",
+  "qualification": {
+    "artifact": "docs/atlas/evidence/phase5b_h2_runtime_qualification_2026-07-26.json",
+    "artifact_sha256": "e4fade4782e5f1e786713ce24572ea52df647011046cf42f5a4aa022890b410d",
+    "pennylane_repetitions": 10,
+    "qiskit_repetitions": 10,
+    "scope": "local_linux_x86_64_candidate"
+  },
+  "remote_ci": {
+    "audited_branch_head": "a49b6d5de7bf3167fd8cb0fd6cee26579386eb06",
+    "jobs": {
+      "db": "passed",
+      "py": "passed",
+      "ts": "passed",
+      "ui_visual": "passed"
+    },
+    "run_id": 30165157403,
+    "url": "https://github.com/EshMis/majorana/actions/runs/30165157403"
+  },
+  "runtime_digest_kind": "local_docker_image_id",
+  "sbom_manifest": {
+    "artifact": "docs/atlas/evidence/phase5b_runtime_sbom_manifest_v1.json",
+    "artifact_sha256": "eb39964181e518fff684056180e4afa37858eca5ce197abeb3d5ba4218bb02bc"
+  },
+  "schema_version": "1.0.0",
+  "snapshot_id": "atlas-vqe-phase5-local-candidate-v1",
+  "snapshot_kind": "non-release"
+}
