@@ -12,6 +12,13 @@ from majorana_contracts.models import ResourceMetrics
 
 _TWO_QUBIT_OPERATIONS = {"cx", "cz", "swap", "cp", "CNOT", "CZ", "SWAP"}
 _MEASUREMENT_OPERATIONS = {"measure", "measure_all"}
+_FRAMEWORK_MODULES = {
+    "qiskit": Framework.QISKIT,
+    "qiskit_aer": Framework.QISKIT,
+    "cirq": Framework.CIRQ,
+    "pennylane": Framework.PENNYLANE,
+    "pennylane_lightning": Framework.PENNYLANE,
+}
 
 
 @dataclass(frozen=True)
@@ -41,9 +48,17 @@ class FrameworkAdapter(Protocol):
         observation: dict[str, Any] | None = None,
     ) -> ResourceMetrics: ...
 
-    def trusted_setup(self, *, circuit_expected: bool) -> str: ...
+    def trusted_setup(
+        self, *, circuit_expected: bool, collect_native_evidence: bool = True
+    ) -> str: ...
 
-    def trusted_observer(self, source: str, *, circuit_expected: bool) -> str: ...
+    def trusted_observer(
+        self,
+        source: str,
+        *,
+        circuit_expected: bool,
+        collect_native_evidence: bool = True,
+    ) -> str: ...
 
 
 def _syntax(source: str) -> ast.Module | None:
@@ -89,6 +104,25 @@ def _binds_final_circuit(source: str) -> bool:
     return False
 
 
+def _foreign_framework_imports(source: str, selected: Framework) -> list[str]:
+    tree = _syntax(source)
+    if tree is None:
+        return []
+    modules: list[str] = []
+    for node in ast.walk(tree):
+        names: list[str] = []
+        if isinstance(node, ast.Import):
+            names = [alias.name for alias in node.names]
+        elif isinstance(node, ast.ImportFrom) and node.module:
+            names = [node.module]
+        for name in names:
+            top_level = name.split(".", 1)[0]
+            framework = _FRAMEWORK_MODULES.get(top_level)
+            if framework is not None and framework is not selected:
+                modules.append(top_level)
+    return list(dict.fromkeys(modules))
+
+
 @dataclass(frozen=True)
 class PythonFrameworkAdapter:
     framework: Framework
@@ -96,9 +130,17 @@ class PythonFrameworkAdapter:
     operation_calls: frozenset[str]
 
     def contract_diagnostics(self, source: str, *, circuit_expected: bool) -> list[str]:
-        if not circuit_expected or _binds_final_circuit(source):
-            return []
-        return [f"contract:{self.framework.value} circuit code must bind FINAL_CIRCUIT"]
+        if _syntax(source) is None:
+            return ["contract:generated source must be valid Python"]
+        diagnostics = [
+            (f"contract:{self.framework.value} source imports foreign quantum framework `{module}`")
+            for module in _foreign_framework_imports(source, self.framework)
+        ]
+        if circuit_expected and not _binds_final_circuit(source):
+            diagnostics.append(
+                f"contract:{self.framework.value} circuit code must bind FINAL_CIRCUIT"
+            )
+        return diagnostics
 
     def native_optimization(
         self, source: str, observation: dict[str, Any] | None = None
@@ -151,7 +193,7 @@ class PythonFrameworkAdapter:
             estimated_runtime_ms=expected_runtime_sec * 1000,
         )
 
-    def trusted_setup(self, *, circuit_expected: bool) -> str:
+    def trusted_setup(self, *, circuit_expected: bool, collect_native_evidence: bool = True) -> str:
         return ""
 
     # `measurement_count` counts measured QUBITS, not measurement operations. Qiskit
@@ -181,7 +223,13 @@ class PythonFrameworkAdapter:
     # QNode returns, so only those count. The same qiskit-shaped VQE passed the
     # same day (019f7f7b-da6b) because a bare unmeasured QuantumCircuit is easy
     # to bind there; the check must not punish PennyLane for its idiom.
-    def trusted_observer(self, source: str, *, circuit_expected: bool) -> str:
+    def trusted_observer(
+        self,
+        source: str,
+        *,
+        circuit_expected: bool,
+        collect_native_evidence: bool = True,
+    ) -> str:
         if not circuit_expected:
             return ""
         optimized = any(name in self.optimization_calls for name in _calls(source))
@@ -456,26 +504,28 @@ class QiskitAdapter(PythonFrameworkAdapter):
             )
         return diagnostics
 
-    def trusted_setup(self, *, circuit_expected: bool) -> str:
+    def trusted_setup(self, *, circuit_expected: bool, collect_native_evidence: bool = True) -> str:
         if not circuit_expected:
             return ""
-        return (
-            """_majorana_interchange_dumps = None
+        return """_majorana_interchange_dumps = None
 try:
     from qiskit.qasm3 import dumps as _majorana_interchange_dumps
 except Exception:
     pass
-"""
-            + _QISKIT_NATIVE_SETUP
-        )
+""" + (_QISKIT_NATIVE_SETUP if collect_native_evidence else "")
 
-    def trusted_observer(self, source: str, *, circuit_expected: bool) -> str:
+    def trusted_observer(
+        self,
+        source: str,
+        *,
+        circuit_expected: bool,
+        collect_native_evidence: bool = True,
+    ) -> str:
         if not circuit_expected:
             return ""
         optimized = any(name in self.optimization_calls for name in _calls(source))
         optimized_literal = "True" if optimized else "False"
-        return (
-            f"""
+        return f"""
 _majorana_observation["native_optimization"] = {{"applied": {optimized_literal}}}
 _majorana_final_circuit = _majorana_namespace.get("FINAL_CIRCUIT")
 if _majorana_final_circuit is None:
@@ -522,9 +572,7 @@ else:
             + _majorana_type(_majorana_metrics_exc).__name__
             + ") — FINAL_CIRCUIT must be bound to the actual circuit object, not a copy or a result dict"
         )
-"""
-            + _NATIVE_OBSERVER_CALL
-        )
+""" + (_NATIVE_OBSERVER_CALL if collect_native_evidence else "")
 
 
 _CIRQ_NATIVE_SETUP = (
@@ -658,15 +706,25 @@ def _majorana_native_evidence(
 
 
 class CirqAdapter(PythonFrameworkAdapter):
-    def trusted_setup(self, *, circuit_expected: bool) -> str:
+    def trusted_setup(self, *, circuit_expected: bool, collect_native_evidence: bool = True) -> str:
         if not circuit_expected:
             return ""
-        return _CIRQ_NATIVE_SETUP
+        return _CIRQ_NATIVE_SETUP if collect_native_evidence else ""
 
-    def trusted_observer(self, source: str, *, circuit_expected: bool) -> str:
+    def trusted_observer(
+        self,
+        source: str,
+        *,
+        circuit_expected: bool,
+        collect_native_evidence: bool = True,
+    ) -> str:
         if not circuit_expected:
             return ""
-        base = super().trusted_observer(source, circuit_expected=circuit_expected)
+        base = super().trusted_observer(
+            source,
+            circuit_expected=circuit_expected,
+            collect_native_evidence=collect_native_evidence,
+        )
         return (
             base
             + """
@@ -679,7 +737,7 @@ if _majorana_final_circuit is not None:
     except _majorana_exception as _majorana_interchange_exc:
         _majorana_observation["interchange_error"] = _majorana_type(_majorana_interchange_exc).__name__
 """
-            + _NATIVE_OBSERVER_CALL
+            + (_NATIVE_OBSERVER_CALL if collect_native_evidence else "")
         )
 
 
@@ -808,23 +866,30 @@ def _majorana_native_evidence(
 
 
 class PennyLaneAdapter(PythonFrameworkAdapter):
-    def trusted_setup(self, *, circuit_expected: bool) -> str:
+    def trusted_setup(self, *, circuit_expected: bool, collect_native_evidence: bool = True) -> str:
         if not circuit_expected:
             return ""
-        return (
-            """_majorana_interchange_dumps = None
+        return """_majorana_interchange_dumps = None
 try:
     from pennylane import to_openqasm as _majorana_interchange_dumps
 except Exception:
     pass
-"""
-            + _PENNYLANE_NATIVE_SETUP
-        )
+""" + (_PENNYLANE_NATIVE_SETUP if collect_native_evidence else "")
 
-    def trusted_observer(self, source: str, *, circuit_expected: bool) -> str:
+    def trusted_observer(
+        self,
+        source: str,
+        *,
+        circuit_expected: bool,
+        collect_native_evidence: bool = True,
+    ) -> str:
         if not circuit_expected:
             return ""
-        base = super().trusted_observer(source, circuit_expected=circuit_expected)
+        base = super().trusted_observer(
+            source,
+            circuit_expected=circuit_expected,
+            collect_native_evidence=collect_native_evidence,
+        )
         return (
             base
             + """
@@ -865,7 +930,7 @@ if _majorana_final_circuit is not None and _majorana_interchange_dumps is not No
     except _majorana_exception as _majorana_interchange_exc:
         _majorana_observation["interchange_error"] = _majorana_type(_majorana_interchange_exc).__name__
 """
-            + _NATIVE_OBSERVER_CALL
+            + (_NATIVE_OBSERVER_CALL if collect_native_evidence else "")
         )
 
 

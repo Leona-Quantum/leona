@@ -1,4 +1,5 @@
 from uuid import uuid4
+import signal
 
 from majorana_agent import CandidateRevision, ExecutionEvidence, ExecutionFailureKind
 from majorana_contracts.enums import Algorithm, Framework
@@ -56,9 +57,11 @@ class RecordingSandbox:
         self.stdout = stdout
         self.stderr = stderr
         self.calls = 0
+        self.last_spec = None
 
     async def _execute(self, spec):
         self.calls += 1
+        self.last_spec = spec
         protected = {"source_fingerprint": self.fingerprint or spec.source_fingerprint}
         if self.result is not ...:
             protected["result"] = self.result
@@ -86,6 +89,16 @@ async def test_executor_runs_once_and_returns_protected_result():
     assert output.observation["sandbox_stdout"] == "hello"
     assert output.observation["sandbox_stderr"] == "warning"
     assert output.observation["sandbox_runs"] == 1
+    assert "_majorana_native_evidence" not in sandbox.last_spec.trusted_setup
+    assert "_majorana_native_evidence" not in sandbox.last_spec.trusted_observer
+    assert "resource_metrics" in sandbox.last_spec.trusted_observer
+
+
+def test_sigxcpu_is_a_timeout_not_a_code_regeneration_signal():
+    assert (
+        SandboxCandidateExecutor._classify_failure(-signal.SIGXCPU, "")
+        is ExecutionFailureKind.TIMEOUT
+    )
 
 
 async def test_executor_rejects_a_result_bound_to_different_source():

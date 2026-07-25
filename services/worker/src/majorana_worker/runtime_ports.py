@@ -51,8 +51,14 @@ class SandboxCandidateExecutor:
             code=program.normalized_source,
             timeout_s=min(plan.expected_runtime_sec + 30, 120),
             qubits_estimate=plan.qubits_estimate,
-            trusted_setup=program.trusted_setup(circuit_expected=circuit_expected),
-            trusted_observer=program.trusted_observer(circuit_expected=circuit_expected),
+            trusted_setup=program.trusted_setup(
+                circuit_expected=circuit_expected,
+                collect_native_evidence=False,
+            ),
+            trusted_observer=program.trusted_observer(
+                circuit_expected=circuit_expected,
+                collect_native_evidence=False,
+            ),
             protected_result_path=f"/tmp/majorana-result-{uuid4().hex}.json",
             source_fingerprint=candidate.source_fingerprint,
         )
@@ -193,6 +199,13 @@ class SandboxCandidateExecutor:
     def _classify_failure(exit_code: int, stderr: str) -> ExecutionFailureKind:
         message = stderr.lower()
         if "timeout" in message or "timed out" in message:
+            return ExecutionFailureKind.TIMEOUT
+        # LocalSubprocessSandbox applies RLIMIT_CPU. On macOS a NumPy/BLAS-heavy
+        # VQE can exhaust aggregate CPU time well before the wall clock and exits
+        # via SIGXCPU with no stderr. Treating that as a code error regenerated the
+        # same expensive program until the candidate budget was gone; timeout
+        # correctly routes it to a cheaper Plan.
+        if exit_code in {-signal.SIGXCPU, 128 + signal.SIGXCPU}:
             return ExecutionFailureKind.TIMEOUT
         if any(
             marker in message

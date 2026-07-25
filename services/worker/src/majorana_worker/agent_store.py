@@ -319,8 +319,8 @@ class RepoAgentStore:
         candidate = self._candidate(row)
         execution = await self.execution_for(candidate.run_id, candidate.candidate_id)
         review = await self.latest_semantic_review(candidate.run_id, candidate.candidate_id)
-        if review is None or review.decision.value != "ready":
-            raise ValueError("conversion requires a READY semantic review")
+        if review is None or not review.is_deliverable():
+            raise ValueError("conversion requires a review whose evidence is deliverable")
         if execution is None or not (
             review.execution_id == evidence.execution_id == execution.execution_id
             and candidate.source_fingerprint
@@ -361,8 +361,8 @@ class RepoAgentStore:
         review = await self.latest_semantic_review(candidate.run_id, candidate.candidate_id)
         if execution is None or not execution.succeeded:
             raise ValueError("materialization requires successful execution")
-        if review is None or review.decision.value != "ready":
-            raise ValueError("materialization requires a READY semantic review")
+        if review is None or not review.is_deliverable():
+            raise ValueError("materialization requires a review whose evidence is deliverable")
         review.assert_binding(candidate, execution)
         if candidate.source_fingerprint != materialization.source_fingerprint:
             raise ValueError("materialization fingerprint does not match candidate")

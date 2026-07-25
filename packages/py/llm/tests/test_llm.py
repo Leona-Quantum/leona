@@ -9,6 +9,7 @@ from majorana_llm import (
     LLMRequest,
     LLMResponse,
     RetryingLLM,
+    SIMPLE_GENERATION_SYSTEM_PROMPT,
     SIMPLE_PLAN_SYSTEM_PROMPT,
     SIMPLE_REVIEW_SYSTEM_PROMPT,
     StageOutputError,
@@ -18,6 +19,21 @@ from majorana_llm import (
     model_for,
     resolve_provider,
 )
+
+
+def test_generation_prompt_always_embeds_nameko_style_reference_implementations():
+    prompt = SIMPLE_GENERATION_SYSTEM_PROMPT
+
+    assert "Reference implementations (always available)" in prompt
+    assert "Example 1 — Qiskit Bell state" in prompt
+    assert "Example 2 — Qiskit H2 VQE" in prompt
+    assert "Example 3 — Qiskit portfolio QAOA" in prompt
+    assert '("II", -0.3324043)' in prompt
+    assert "TOTAL energies near -1.137 Ha" in prompt
+    assert "DEMO DATA ONLY" in prompt
+    assert "The request and known_reference override every example." in prompt
+    assert prompt.count("FINAL_CIRCUIT =") >= 3
+    assert prompt.count("RESULT =") >= 3
 
 
 def test_model_constants_use_v4_pro_for_all_product_stages_and_are_env_overridable(monkeypatch):
@@ -410,3 +426,92 @@ async def test_backoff_grows_between_attempts():
 
     await RetryingLLM(_EmptyThenText(empties=99), attempts=3, sleep=record).complete(_request())
     assert delays == [1.0, 2.0]
+
+
+async def test_response_records_the_model_the_provider_says_it_served(monkeypatch):
+    """The stored llm.call is the only durable record of which model ran a stage.
+
+    Echoing the requested name back would make an alias or a silent substitution
+    invisible, so "is this really running deepseek-v4-pro?" could never be answered
+    from the run's own evidence.
+    """
+
+    class RecordingCompletions:
+        async def create(self, **_kwargs):
+            return SimpleNamespace(
+                choices=[SimpleNamespace(message=SimpleNamespace(content="ok"))],
+                usage=SimpleNamespace(prompt_tokens=1, completion_tokens=1),
+                model="deepseek-v4-pro-2026-07-01",
+            )
+
+    class RecordingAsyncOpenAI:
+        def __init__(self, **_kwargs):
+            self.chat = SimpleNamespace(completions=RecordingCompletions())
+
+    monkeypatch.setitem(sys.modules, "openai", SimpleNamespace(AsyncOpenAI=RecordingAsyncOpenAI))
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "test-key")
+
+    from majorana_llm.client import OpenAICompatibleLLM
+
+    response = await OpenAICompatibleLLM().complete(
+        LLMRequest(model="deepseek-v4-pro", system="system", user="user")
+    )
+
+    assert response.model == "deepseek-v4-pro-2026-07-01"
+
+
+async def test_response_falls_back_to_the_requested_model_when_none_is_reported(monkeypatch):
+    class RecordingCompletions:
+        async def create(self, **_kwargs):
+            return SimpleNamespace(
+                choices=[SimpleNamespace(message=SimpleNamespace(content="ok"))],
+                usage=SimpleNamespace(prompt_tokens=1, completion_tokens=1),
+                model=None,
+            )
+
+    class RecordingAsyncOpenAI:
+        def __init__(self, **_kwargs):
+            self.chat = SimpleNamespace(completions=RecordingCompletions())
+
+    monkeypatch.setitem(sys.modules, "openai", SimpleNamespace(AsyncOpenAI=RecordingAsyncOpenAI))
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "test-key")
+
+    from majorana_llm.client import OpenAICompatibleLLM
+
+    response = await OpenAICompatibleLLM().complete(
+        LLMRequest(model="deepseek-v4-pro", system="system", user="user")
+    )
+
+    assert response.model == "deepseek-v4-pro"
+
+
+async def test_streamed_response_also_records_the_served_model(monkeypatch):
+    async def provider_stream():
+        yield SimpleNamespace(
+            choices=[SimpleNamespace(delta=SimpleNamespace(reasoning_content=None, content="a"))],
+            usage=SimpleNamespace(prompt_tokens=1, completion_tokens=1),
+            model="deepseek-v4-pro-2026-07-01",
+        )
+
+    class RecordingCompletions:
+        async def create(self, **_kwargs):
+            return provider_stream()
+
+    class RecordingAsyncOpenAI:
+        def __init__(self, **_kwargs):
+            self.chat = SimpleNamespace(completions=RecordingCompletions())
+
+    monkeypatch.setitem(sys.modules, "openai", SimpleNamespace(AsyncOpenAI=RecordingAsyncOpenAI))
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "test-key")
+
+    from majorana_llm.client import OpenAICompatibleLLM
+
+    async def on_delta(_text: str, _kind: str) -> None:
+        return None
+
+    response = await OpenAICompatibleLLM().complete(
+        LLMRequest(model="deepseek-v4-pro", system="system", user="user"),
+        on_delta=on_delta,
+    )
+
+    assert response.model == "deepseek-v4-pro-2026-07-01"

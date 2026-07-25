@@ -242,6 +242,36 @@ class SemanticReviewEvidence(_Record):
             raise ValueError("inconclusive semantic review cannot blame the candidate")
         return self
 
+    def evidence_is_complete(self) -> bool:
+        """Is this candidate's TRUSTED evidence complete, whatever the reviewer decided?
+
+        Only evidence the model cannot author counts: every deterministic check
+        recorded against the candidate passed, and the reviewer found no blocking or
+        major defect. The reviewer's `decision` is deliberately excluded — a reviewer
+        that keeps requesting improvements is expressing a preference, not
+        contradicting the evidence.
+
+        Lives on the record rather than in the pipeline because the durable stores
+        enforce the same rule before they will write a conversion or a
+        materialization. Keeping one definition is what stops the store's fail-closed
+        guard from encoding a policy the orchestrator has since changed — which is
+        exactly what happened when the guard still demanded READY.
+        """
+
+        if self.severity in {"major", "blocking"}:
+            return False
+        checks = self.feedback.get("basic_checks")
+        if not isinstance(checks, list) or not checks:
+            return False
+        return all(isinstance(check, dict) and check.get("result") == "pass" for check in checks)
+
+    def is_deliverable(self) -> bool:
+        """May this review's candidate be exported and saved?"""
+        # READY is advisory model output, not a substitute for trusted checks.
+        # Production review construction records the checks before this boundary;
+        # missing or failed evidence must therefore fail closed for every decision.
+        return self.evidence_is_complete()
+
     def assert_binding(self, candidate: "CandidateRevision", execution: ExecutionEvidence) -> None:
         if self.candidate_id != candidate.candidate_id:
             raise ValueError("semantic review references a different candidate")

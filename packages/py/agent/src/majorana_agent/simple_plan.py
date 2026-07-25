@@ -9,10 +9,27 @@ does not use.  This module is the intentionally smaller translation boundary.
 from __future__ import annotations
 
 import json
-from typing import Any
+from typing import Any, Literal
 
-from majorana_contracts.enums import Algorithm, Framework, Optimizer
-from majorana_contracts.plan import Plan, PlanParameters, SuccessCriteria
+from majorana_contracts.enums import (
+    Algorithm,
+    ArtifactType,
+    Framework,
+    MeasurementPolicy,
+    Optimizer,
+    TopLevelExecution,
+    VerificationMethod,
+)
+from majorana_contracts.plan import (
+    ArtifactContract,
+    PauliTerm,
+    Plan,
+    PlanParameters,
+    ProblemTerm,
+    ReferenceProblem,
+    SuccessCriteria,
+    VerificationPlan,
+)
 from majorana_llm import StageOutputError, extract_json
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -43,6 +60,126 @@ class SimplePlanParameters(_SimplePlanModel):
     custom: dict[str, Any] | None = None
 
 
+class SimpleArtifactContract(_SimplePlanModel):
+    """The artifact shape generation and trusted observation must preserve."""
+
+    artifact_type: ArtifactType = ArtifactType.QUANTUM_CIRCUIT
+    entry_point: str | None = None
+    expected_return_type: str | None = None
+    return_shape: str | None = None
+    measurement_policy: MeasurementPolicy = MeasurementPolicy.ONLY_IF_REQUESTED
+    top_level_execution: TopLevelExecution = TopLevelExecution.REQUIRED
+
+    def to_durable(self) -> ArtifactContract:
+        return ArtifactContract.model_validate(self.model_dump(mode="python"))
+
+
+# The two checks that compare a reported number against a reference computed from
+# data the Plan itself declares. Everything else in VerificationMethod either needs
+# evidence this pipeline does not collect or duplicates the basic contract check.
+_SUPPORTED_REFERENCE_METHODS = ("exact_diag", "brute_force")
+
+
+class SimplePauliTerm(_SimplePlanModel):
+    coefficient: float
+    pauli: str = Field(min_length=1)
+
+
+class SimpleProblemTerm(_SimplePlanModel):
+    i: int = Field(ge=0)
+    j: int = Field(ge=0)
+    weight: float
+
+
+class SimpleReferenceProblem(_SimplePlanModel):
+    kind: Literal["maxcut", "qubo"]
+    num_variables: int = Field(ge=1)
+    terms: list[SimpleProblemTerm] = Field(min_length=1)
+
+
+class SimpleVerificationPlan(_SimplePlanModel):
+    """An independent ground truth the planner writes out, not a policy it selects.
+
+    Deliberately only the two checks that compare the run's own reported number
+    against a reference computed from data the *plan* declares: `exact_diag`
+    diagonalizes a stated Hamiltonian, `brute_force` enumerates a stated
+    combinatorial instance.  Neither reads the candidate source, so neither can be
+    satisfied by a program that merely agrees with itself.
+
+    This is what `success_criteria.expected_range` alone cannot do.  A range the
+    planner guessed and a result the generator produced can both come from the
+    same model and the same misconception — live H2 VQE run 019f9763 (2026-07-25)
+    reported -1.419 Ha against a range derived from its own fabricated
+    Hamiltonian, and every structural check passed.  A declared operator is
+    checkable evidence; a declared range is not.
+    """
+
+    # Typed as plain strings so an unsupported value normalizes away below instead of
+    # killing the run, while json_schema_extra still narrows what schema-guided
+    # decoding can emit. Same split, and the same reason, as
+    # majorana_contracts.plan.VerificationPlan.methods.
+    methods: list[str] = Field(
+        default_factory=list,
+        json_schema_extra={"items": {"enum": list(_SUPPORTED_REFERENCE_METHODS)}},
+    )
+    reference_hamiltonian: list[SimplePauliTerm] | None = None
+    reference_problem: SimpleReferenceProblem | None = None
+    tolerance: float | None = Field(default=None, gt=0)
+
+    def to_durable_verification_plan(self, *, primary_metric: str) -> VerificationPlan | None:
+        """Emit a durable VerificationPlan, or None when nothing checkable remains.
+
+        Drops a method whose reference the planner did not actually supply rather
+        than emitting a plan the verifier could only fail. The fixed pipeline has no
+        stage that can repair a missing reference — every candidate would fail
+        identically — so the honest outcome is the weaker grade, which is exactly
+        what the contract's own legacy-shape normalizers settle on.
+        """
+
+        methods = [
+            method
+            for method in dict.fromkeys(self.methods)
+            if method in _SUPPORTED_REFERENCE_METHODS
+        ]
+        if "exact_diag" in methods and not self.reference_hamiltonian:
+            methods.remove("exact_diag")
+        if "brute_force" in methods and self.reference_problem is None:
+            methods.remove("brute_force")
+        if not methods:
+            return None
+        return VerificationPlan(
+            methods=[VerificationMethod(method) for method in methods],
+            reference_hamiltonian=(
+                [
+                    PauliTerm(coefficient=term.coefficient, pauli=term.pauli)
+                    for term in self.reference_hamiltonian
+                ]
+                if "exact_diag" in methods and self.reference_hamiltonian
+                else None
+            ),
+            reference_problem=(
+                ReferenceProblem(
+                    kind=self.reference_problem.kind,
+                    num_variables=self.reference_problem.num_variables,
+                    terms=[
+                        ProblemTerm(i=term.i, j=term.j, weight=term.weight)
+                        for term in self.reference_problem.terms
+                    ],
+                )
+                if "brute_force" in methods and self.reference_problem is not None
+                else None
+            ),
+            # The worker reads the declared tolerance under the metric-specific key
+            # first, so keep the historical `<metric>_error_max` spelling rather than
+            # inventing a second convention for the same number.
+            thresholds=(
+                {f"{primary_metric}_error_max": self.tolerance}
+                if self.tolerance is not None
+                else None
+            ),
+        )
+
+
 class SimplePlan(_SimplePlanModel):
     """Only the information generation and bounded execution actually consume."""
 
@@ -53,9 +190,13 @@ class SimplePlan(_SimplePlanModel):
     algorithm_rationale: str = Field(min_length=5)
     parameters: SimplePlanParameters = Field(default_factory=SimplePlanParameters)
     qubits_estimate: int = Field(ge=1, le=27)
-    expected_runtime_sec: int = Field(ge=1, le=300)
+    # The default sandbox has a hard 120 s ceiling. Reserving 30 s for provider
+    # setup/observation makes every Plan executable under the runtime it declares.
+    expected_runtime_sec: int = Field(ge=1, le=90)
     success_criteria: SimpleSuccessCriteria
     expected_output_keys: list[str] = Field(min_length=1)
+    artifact_contract: SimpleArtifactContract = Field(default_factory=SimpleArtifactContract)
+    verification_plan: SimpleVerificationPlan | None = None
 
     def to_durable_plan(
         self,
@@ -83,6 +224,26 @@ class SimplePlan(_SimplePlanModel):
             if self.success_criteria.expected_range is not None
             else None
         )
+        artifact_contract = self.artifact_contract.to_durable()
+        promises_distribution = any(
+            key.strip().lower() in {"counts", "measurement_counts", "results", "samples"}
+            or any(
+                token in key.strip().lower()
+                for token in ("counts", "distribution", "histogram", "probabilities")
+            )
+            for key in keys
+        )
+        if (
+            artifact_contract.measurement_policy is MeasurementPolicy.MEASURE_ALL
+            and not promises_distribution
+        ):
+            # A common planner mistake is to demand measurements on a VQE/QAOA
+            # ansatz while promising only an expectation value. Retrying the same
+            # schema often repeats it and used to consume the whole run. Keep the
+            # useful shape contract, but remove the unsupported all-qubit assertion.
+            artifact_contract = artifact_contract.model_copy(
+                update={"measurement_policy": MeasurementPolicy.ONLY_IF_REQUESTED}
+            )
         return Plan(
             domain=self.domain,
             framework=selected_framework,
@@ -98,8 +259,12 @@ class SimplePlan(_SimplePlanModel):
                 additional_notes=self.success_criteria.additional_notes,
             ),
             expected_output_keys=keys,
-            artifact_contract=None,
-            verification_plan=None,
+            artifact_contract=artifact_contract,
+            verification_plan=(
+                self.verification_plan.to_durable_verification_plan(primary_metric=metric)
+                if self.verification_plan is not None
+                else None
+            ),
         )
 
 

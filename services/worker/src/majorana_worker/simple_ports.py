@@ -7,7 +7,7 @@ import json
 import logging
 import math
 from dataclasses import asdict
-from typing import Any, Awaitable, Callable, Literal, Protocol
+from typing import Any, Awaitable, Callable, Literal, Protocol, Sequence
 from uuid import UUID, uuid5
 
 from majorana_agent import (
@@ -32,9 +32,10 @@ from majorana_agent import (
     ToolResult,
     parse_simple_plan,
 )
-from majorana_agent.templates import KNOWN_REFERENCE_CONSTANTS, REFERENCE_TEMPLATES
+from majorana_agent.templates import known_reference_for_task, trusted_hamiltonian_for_task
 from majorana_contracts import Scope, VerificationSummary
 from majorana_contracts.enums import (
+    Algorithm,
     ArtifactType,
     EvidenceStrength,
     ExportStatus,
@@ -46,7 +47,8 @@ from majorana_contracts.enums import (
     VerificationResultKind,
     VerifierDecision,
 )
-from majorana_contracts.plan import Plan
+from majorana_contracts.plan import PauliTerm, Plan, VerificationPlan
+from majorana_verification import verify_brute_force, verify_exact_diag
 from majorana_frameworks import FrameworkProgram
 from majorana_llm import (
     LLMClient,
@@ -59,6 +61,7 @@ from majorana_llm import (
     extract_json,
     model_for,
 )
+from majorana_sandbox import DEFAULT_QUBIT_CEILING
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
 from majorana_api.db import AsyncSession
@@ -68,6 +71,14 @@ from majorana_api.repos import runs as runs_repo
 from .runtime_ports import SandboxCandidateExecutor, TrustedOpenQASMConverter
 
 log = logging.getLogger("majorana_worker.simple_ports")
+
+# First generation stays deterministic; a REPAIR samples. At temperature 0 a repair
+# whose prompt changed only slightly reproduces nearly the same program, so a run
+# could spend its whole budget re-deriving one defect — the failure mode namekoQ
+# avoids by accident, since it never pins temperature at all. Replay determinism is
+# unaffected: every candidate is stored as its own immutable revision, and the
+# durable LLM-call inbox replays the recorded response rather than re-sampling.
+_REPAIR_TEMPERATURE = 0.4
 
 
 class SimpleStepObserver(Protocol):
@@ -180,10 +191,73 @@ class IntentReviewer(Protocol):
     ) -> SimpleIntentReviewResult: ...
 
 
+_REVIEWABLE_DECISIONS = (
+    SemanticReviewDecision.READY,
+    SemanticReviewDecision.CODE_REPAIR,
+    SemanticReviewDecision.REPLAN,
+)
+
+_REVIEW_ROUTING: dict[
+    SemanticReviewDecision, tuple[VerificationFailureClass | None, RetryTarget]
+] = {
+    SemanticReviewDecision.READY: (None, RetryTarget.NONE),
+    SemanticReviewDecision.CODE_REPAIR: (
+        VerificationFailureClass.CANDIDATE_DEFECT,
+        RetryTarget.CODE_GENERATION,
+    ),
+    SemanticReviewDecision.REPLAN: (
+        VerificationFailureClass.PLAN_DEFECT,
+        RetryTarget.PLANNING,
+    ),
+}
+
+
+def _decide(
+    output: "_IntentReviewOutput",
+    deterministic_failed: list[str],
+) -> SemanticReviewDecision:
+    """Turn one advisory review into an actionable next step. Never a dead end.
+
+    The controller — not the reviewer — owns transitions, so this only has to
+    answer "accept, or fix which layer?". Two rules:
+
+    * accept only an unhedged acceptance backed by every deterministic check;
+    * otherwise take the layer the reviewer named, defaulting to the candidate.
+
+    Deliberately no fourth "cannot tell" outcome. That state named no next step,
+    so the controller regenerated identical evidence until the candidate budget
+    ran out — and because the Plan escalation in SimpleCircuitPipeline._next_action
+    keys on CONSECUTIVE code repairs, a run stuck this way never spent its replan
+    budget at all. Repairing the candidate is a strictly better fallback: it is
+    bounded by the same budget, it feeds the reviewer's own findings back to the
+    generator, and two consecutive repairs now escalate to a replan on their own.
+
+    A blocked review therefore costs one candidate revision instead of the whole run.
+    """
+
+    blocked = (
+        bool(deterministic_failed)
+        or output.confidence == "low"
+        or output.severity in {"major", "blocking"}
+    )
+    if output.decision is SemanticReviewDecision.READY and not blocked:
+        return SemanticReviewDecision.READY
+    if output.decision is SemanticReviewDecision.REPLAN:
+        return SemanticReviewDecision.REPLAN
+    return SemanticReviewDecision.CODE_REPAIR
+
+
 class _IntentReviewOutput(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
-    decision: SemanticReviewDecision
+    # The reviewer picks between three ACTIONABLE outcomes. `inconclusive` stays in
+    # SemanticReviewDecision so stored reviews from the tool-loop era still decode,
+    # but schema-guided decoding must not be able to ask for it: it named no next
+    # step, so the controller could only regenerate the same evidence until the
+    # candidate budget ran out. See _decide() below.
+    decision: SemanticReviewDecision = Field(
+        json_schema_extra={"enum": [decision.value for decision in _REVIEWABLE_DECISIONS]}
+    )
     confidence: Literal["high", "medium", "low"]
     severity: Literal["none", "minor", "major", "blocking"]
     # Review prose is advisory evidence, not a machine-control field. DeepSeek
@@ -259,7 +333,7 @@ class SimpleIntentReviewer:
                             "resource_metrics": execution.observation.get("resource_metrics"),
                         },
                         "basic_checks": basic_checks,
-                        "known_reference": KNOWN_REFERENCE_CONSTANTS.get(plan.algorithm),
+                        "known_reference": known_reference_for_task(self._task_prompt),
                     },
                     default=str,
                     sort_keys=True,
@@ -291,40 +365,8 @@ class SimpleIntentReviewer:
             }
         )
 
-        decision = output.decision
-        concrete_repair = bool(output.mismatches and output.repair_instructions)
-        if decision is SemanticReviewDecision.READY and (
-            output.confidence == "low"
-            or output.severity in {"major", "blocking"}
-            or output.failed_checks
-            or output.mismatches
-        ):
-            decision = SemanticReviewDecision.INCONCLUSIVE
-        elif decision in {
-            SemanticReviewDecision.CODE_REPAIR,
-            SemanticReviewDecision.REPLAN,
-        } and (
-            output.confidence == "low"
-            or output.severity not in {"major", "blocking"}
-            or not concrete_repair
-        ):
-            decision = SemanticReviewDecision.INCONCLUSIVE
-
-        failure_class, retry_target = {
-            SemanticReviewDecision.READY: (None, RetryTarget.NONE),
-            SemanticReviewDecision.CODE_REPAIR: (
-                VerificationFailureClass.CANDIDATE_DEFECT,
-                RetryTarget.CODE_GENERATION,
-            ),
-            SemanticReviewDecision.REPLAN: (
-                VerificationFailureClass.PLAN_DEFECT,
-                RetryTarget.PLANNING,
-            ),
-            SemanticReviewDecision.INCONCLUSIVE: (
-                VerificationFailureClass.EVIDENCE_GAP,
-                RetryTarget.VERIFICATION,
-            ),
-        }[decision]
+        decision = _decide(output, deterministic_failed)
+        failure_class, retry_target = _REVIEW_ROUTING[decision]
         return SimpleIntentReviewResult(
             decision=decision,
             critic=output.model_dump(mode="json"),
@@ -334,48 +376,79 @@ class SimpleIntentReviewer:
                 SemanticReviewDecision.READY: "intent_aligned",
                 SemanticReviewDecision.CODE_REPAIR: "intent_code_mismatch",
                 SemanticReviewDecision.REPLAN: "intent_plan_mismatch",
-                SemanticReviewDecision.INCONCLUSIVE: "intent_review_inconclusive",
             }[decision],
         )
 
 
-def simple_pipeline_verification_summary() -> dict[str, object]:
+def simple_pipeline_verification_summary(
+    reference_methods: Sequence[VerificationMethod] = (),
+    semantic_review_decision: SemanticReviewDecision = SemanticReviewDecision.READY,
+) -> dict[str, object]:
     """Return the single typed trust projection for a successful simple run.
 
     A successful simple pipeline proves that the generated program executed and
-    satisfied its basic structural/result contract. The AI review is advisory,
-    so the final verification decision remains explicitly inconclusive.
+    satisfied its basic structural/result contract. The AI review is advisory, so
+    the final verification decision stays explicitly inconclusive.
+
+    Plan-declared reference checks that actually ran and passed are recorded here
+    and raise evidence_strength to PHYSICAL — the grade EvidenceStrength was split
+    out to express: one limited claim really was compared against what the physics
+    should do, while the overall decision remains INCONCLUSIVE because the other
+    claims still are not supported. It never becomes a PASS or a "verified" label.
     """
+
+    checks: list[dict[str, object]] = [
+        {
+            "method": VerificationMethod.STRUCTURAL,
+            "result": VerificationResultKind.PASS,
+        },
+        {
+            "method": VerificationMethod.RETURN_CONTRACT,
+            "result": VerificationResultKind.PASS,
+        },
+        {
+            "method": VerificationMethod.SUCCESS_CRITERIA,
+            "result": VerificationResultKind.PASS,
+        },
+    ]
+    unverified = ["physical fidelity", "optimality"]
+    if not reference_methods:
+        unverified.insert(0, "quantum correctness")
+    else:
+        # The declared references established this one number; the rest of the run's
+        # quantum behaviour is still unexamined, so only that claim is withdrawn.
+        checks.extend(
+            {"method": method, "result": VerificationResultKind.PASS}
+            for method in reference_methods
+        )
+    if semantic_review_decision is not SemanticReviewDecision.READY:
+        # Delivered on trusted evidence alone. Say so rather than letting a reader
+        # infer that the reviewer signed off on intent.
+        unverified.append("intent alignment")
 
     summary = VerificationSummary(
         decision=VerifierDecision.INCONCLUSIVE,
-        semantic_review_decision=SemanticReviewDecision.READY,
-        evidence_strength=EvidenceStrength.STRUCTURAL,
-        reason_code="ai_review_aligned",
+        semantic_review_decision=semantic_review_decision,
+        evidence_strength=(
+            EvidenceStrength.PHYSICAL if reference_methods else EvidenceStrength.STRUCTURAL
+        ),
+        reason_code=_summary_reason_code(reference_methods, semantic_review_decision),
         candidate_defect_observed=False,
         failure_class=VerificationFailureClass.EVIDENCE_GAP,
         retry_target=RetryTarget.NONE,
-        unverified_claims=[
-            "quantum correctness",
-            "physical fidelity",
-            "optimality",
-        ],
-        checks=[
-            {
-                "method": VerificationMethod.STRUCTURAL,
-                "result": VerificationResultKind.PASS,
-            },
-            {
-                "method": VerificationMethod.RETURN_CONTRACT,
-                "result": VerificationResultKind.PASS,
-            },
-            {
-                "method": VerificationMethod.SUCCESS_CRITERIA,
-                "result": VerificationResultKind.PASS,
-            },
-        ],
+        unverified_claims=unverified,
+        checks=checks,
     )
     return summary.model_dump(mode="json")
+
+
+def _summary_reason_code(
+    reference_methods: Sequence[VerificationMethod],
+    semantic_review_decision: SemanticReviewDecision,
+) -> str:
+    if semantic_review_decision is not SemanticReviewDecision.READY:
+        return "trusted_evidence_without_review_acceptance"
+    return "ai_review_aligned_with_reference_check" if reference_methods else "ai_review_aligned"
 
 
 class RepoReviewArtifactSaver:
@@ -411,8 +484,8 @@ class RepoReviewArtifactSaver:
         if not execution.succeeded:
             raise ValueError("artifact save requires successful execution")
         review.assert_binding(candidate, execution)
-        if review.decision is not SemanticReviewDecision.READY:
-            raise ValueError("artifact save requires an aligned intent review")
+        if not review.is_deliverable():
+            raise ValueError("artifact save requires complete trusted evidence")
         if conversion is not None and not (
             conversion.candidate_id == candidate.candidate_id
             and conversion.execution_id == execution.execution_id
@@ -456,10 +529,34 @@ class RepoReviewArtifactSaver:
             if isinstance(residual_risks, list)
             else []
         )
+        review_status = (
+            "aligned" if review.decision is SemanticReviewDecision.READY else "not_accepted"
+        )
+        reference_methods = passed_reference_methods(review)
         advisory = (
             "AI intent review is advisory; strict quantum correctness and optimality "
             "were not evaluated."
         )
+        if review.decision is not SemanticReviewDecision.READY:
+            advisory = (
+                "The AI intent review did not accept this candidate within the run's "
+                "budget. It is delivered on its trusted evidence alone: it executed, "
+                "satisfied the basic result contract"
+                + (
+                    f", and matched the Plan's declared reference "
+                    f"({', '.join(m.value for m in reference_methods)})."
+                    if reference_methods
+                    else "."
+                )
+                + " Intent alignment was not established."
+            )
+        elif reference_methods:
+            advisory = (
+                "AI intent review is advisory. The reported "
+                f"{plan.success_criteria.primary_metric} was checked against the Plan's "
+                f"declared reference ({', '.join(m.value for m in reference_methods)}); "
+                "no other quantum property, and no claim of optimality, was evaluated."
+            )
         limitations = "\n".join(dict.fromkeys([*residual_risks, advisory]))
         metadata: dict[str, object] = {
             "source": "simple_pipeline_candidate",
@@ -471,7 +568,7 @@ class RepoReviewArtifactSaver:
             "canonical_representation": "framework_code",
             "openqasm_role": "interchange" if qasm else "unavailable",
             "review_summary": {
-                "status": "aligned",
+                "status": review_status,
                 "decision": review.decision.value,
                 "reason_code": review.reason_code,
                 "confidence": review.confidence,
@@ -479,9 +576,11 @@ class RepoReviewArtifactSaver:
                 "summary": critic.get("summary"),
                 "residual_risks": residual_risks,
             },
-            "verification_summary": simple_pipeline_verification_summary(),
+            "verification_summary": simple_pipeline_verification_summary(
+                reference_methods, review.decision
+            ),
             "export_manifest": {
-                "review_status": "aligned",
+                "review_status": review_status,
                 "warning": (
                     "OpenQASM does not carry AI-review context; retain this manifest "
                     "with the exported file."
@@ -548,6 +647,31 @@ def _plan_fingerprint(plan: Plan) -> str:
     return hashlib.sha256(payload.encode()).hexdigest()
 
 
+def _apply_trusted_task_reference(plan: Plan, task_prompt: str) -> Plan:
+    """Replace model-authored H2 coefficients with the server-owned reference.
+
+    The model still chooses the result key and implementation, but it cannot earn a
+    physical evidence grade by making the Plan and generated code agree on the same
+    fabricated Hamiltonian. Preserve only a tightening tolerance from the Plan.
+    """
+
+    terms = trusted_hamiltonian_for_task(task_prompt)
+    if terms is None or plan.algorithm is not Algorithm.VQE:
+        return plan
+    thresholds = plan.verification_plan.thresholds if plan.verification_plan is not None else None
+    return plan.model_copy(
+        update={
+            "verification_plan": VerificationPlan(
+                methods=[VerificationMethod.EXACT_DIAG],
+                reference_hamiltonian=[
+                    PauliTerm(coefficient=coefficient, pauli=pauli) for coefficient, pauli in terms
+                ],
+                thresholds=thresholds,
+            )
+        }
+    )
+
+
 def _feedback_digest(feedback: SimpleRepairFeedback | None) -> str:
     if feedback is None:
         return "initial"
@@ -608,6 +732,128 @@ def _success_criteria_check(
             )
         },
     }
+
+
+def _reference_checks(
+    plan: Plan,
+    execution: ExecutionEvidence,
+) -> list[dict[str, Any]]:
+    """Run every reference the Plan declared as data against the reported metric.
+
+    The only checks in the fixed pipeline that can disagree with a program which is
+    internally consistent but physically wrong. Both verifiers read the protected
+    ``RESULT`` and the Plan's own declared operator/instance — never the candidate
+    source, never stdout — so nothing the generator writes can satisfy them by
+    construction.
+
+    Every declared method runs. A Plan may name more than one, and quietly checking
+    only the first would put a method in the evidence that nothing ever evaluated —
+    the precise failure this feature exists to make impossible.
+
+    Returns an empty list when the Plan declared no usable reference; that is an
+    honest weaker grade, not a pass, and the run is graded exactly as it was before
+    these checks existed.
+    """
+
+    verification_plan = plan.verification_plan
+    if verification_plan is None:
+        return []
+    metric = plan.success_criteria.primary_metric
+    reported = execution.result.get(metric)
+    thresholds = verification_plan.thresholds or {}
+    outcomes = []
+
+    if VerificationMethod.EXACT_DIAG in verification_plan.methods:
+        terms = verification_plan.reference_hamiltonian
+        # The Plan contract already refuses `exact_diag` without an operator; skipping
+        # rather than diagonalizing an empty one keeps a stored plan that predates that
+        # rule from being reported as a check that ran.
+        if terms:
+            outcomes.append(
+                verify_exact_diag(
+                    [(term.coefficient, term.pauli) for term in terms],
+                    reported,
+                    shots=plan.parameters.shots,
+                    # A declared tolerance may only TIGHTEN the computed bound;
+                    # verify_exact_diag applies the min() itself, so pass it through
+                    # rather than pre-selecting a winner here.
+                    declared_tolerance=thresholds.get(
+                        f"{metric}_error_max", thresholds.get("energy_error_max")
+                    ),
+                )
+            )
+
+    if VerificationMethod.BRUTE_FORCE in verification_plan.methods:
+        problem = verification_plan.reference_problem
+        if problem is not None:
+            outcomes.append(
+                verify_brute_force(
+                    problem.kind,
+                    problem.num_variables,
+                    [(term.i, term.j, term.weight) for term in problem.terms],
+                    reported,
+                )
+            )
+
+    return [
+        {
+            "method": outcome.method.value,
+            "result": "pass" if outcome.result is VerificationResultKind.PASS else "fail",
+            "details": dict(outcome.details) | {"primary_metric": metric, "reported": reported},
+        }
+        for outcome in outcomes
+    ]
+
+
+_REFERENCE_METHODS = frozenset({VerificationMethod.EXACT_DIAG, VerificationMethod.BRUTE_FORCE})
+
+
+def _reference_check_routing(
+    checks: list[dict[str, Any]],
+) -> tuple[SemanticReviewDecision, str] | None:
+    """Route a failed reference check deterministically, without asking the model.
+
+    namekoQ hands an equivalent verdict to its critic as prose and lets the model
+    decide what to do with it. Here the check already established a concrete mismatch
+    against declared data, so the routing is a fact, not a judgement: a reference the
+    verifier could not use at all is a Plan defect (``fault: plan``), and a reference
+    it used to contradict the reported number is a candidate defect.
+
+    A Plan defect outranks a candidate defect when both appear. Rewriting the source
+    against a reference that is itself unusable cannot converge, and the run has a
+    separate, larger budget for exactly that escalation.
+    """
+
+    failed = [check for check in checks if check.get("result") != "pass"]
+    if not failed:
+        return None
+    if any((check.get("details") or {}).get("fault") == "plan" for check in failed):
+        return SemanticReviewDecision.REPLAN, "reference_declaration_unusable"
+    return SemanticReviewDecision.CODE_REPAIR, "reference_check_failed"
+
+
+def passed_reference_methods(review: SemanticReviewEvidence) -> tuple[VerificationMethod, ...]:
+    """Read the reference checks back off the stored review, not off the Plan.
+
+    The artifact records what was actually checked for this candidate, so the summary
+    is derived from the durable evidence rather than re-deriving a claim from a Plan
+    that may have been revised since.
+    """
+
+    checks = review.feedback.get("basic_checks")
+    if not isinstance(checks, list):
+        return ()
+    found: list[VerificationMethod] = []
+    for check in checks:
+        if not isinstance(check, dict) or check.get("result") != "pass":
+            continue
+        try:
+            method = VerificationMethod(str(check.get("method")))
+        except ValueError:
+            continue
+        if method in _REFERENCE_METHODS and method not in found:
+            found.append(method)
+    return tuple(found)
 
 
 def _failure(
@@ -810,6 +1056,7 @@ class ProductionSimplePipelinePorts:
             "selected_framework": self._framework.value,
             "requested_shots": self._requested_shots,
             "requested_seed": self._requested_seed,
+            "known_reference": known_reference_for_task(self._task_prompt),
             "previous_plan": previous.plan.model_dump(mode="json") if previous else None,
             "repair_feedback": asdict(feedback) if feedback else None,
         }
@@ -825,10 +1072,13 @@ class ProductionSimplePipelinePorts:
                 )
             )
             draft = parse_simple_plan(response.text)
-            plan = draft.to_durable_plan(
-                selected_framework=self._framework,
-                requested_shots=self._requested_shots,
-                requested_seed=self._requested_seed,
+            plan = _apply_trusted_task_reference(
+                draft.to_durable_plan(
+                    selected_framework=self._framework,
+                    requested_shots=self._requested_shots,
+                    requested_seed=self._requested_seed,
+                ),
+                self._task_prompt,
             )
         except (StageOutputError, ValidationError) as exc:
             return _failure(
@@ -875,13 +1125,7 @@ class ProductionSimplePipelinePorts:
                 ),
             }
         )
-        plan = plan.model_copy(
-            update={
-                "parameters": parameters,
-                "artifact_contract": None,
-                "verification_plan": None,
-            }
-        )
+        plan = plan.model_copy(update={"parameters": parameters})
         if previous is not None and (
             plan.parameters.shots != previous.plan.parameters.shots
             or plan.parameters.seed != previous.plan.parameters.seed
@@ -954,10 +1198,13 @@ class ProductionSimplePipelinePorts:
                 "task": self._task_prompt,
                 "selected_framework": self._framework.value,
                 "plan": plan.plan.model_dump(mode="json"),
-                "previous_source": previous.source[-100_000:] if previous else None,
+                # CandidateRevision already enforces the source-size ceiling. Repairs
+                # need the complete program: keeping only the tail can remove imports,
+                # helper definitions, and the exact code a traceback references.
+                "previous_source": previous.source if previous else None,
+                "previous_execution": await self._previous_execution(run_id, previous),
                 "repair_feedback": asdict(feedback) if feedback else None,
-                "reference_template": REFERENCE_TEMPLATES.get(self._framework),
-                "known_reference": KNOWN_REFERENCE_CONSTANTS.get(plan.plan.algorithm),
+                "known_reference": known_reference_for_task(self._task_prompt),
             }
             try:
                 response = await self._llm.complete(
@@ -965,7 +1212,7 @@ class ProductionSimplePipelinePorts:
                         model=model_for("generate"),
                         system=SIMPLE_GENERATION_SYSTEM_PROMPT,
                         user=json.dumps(user, default=str, sort_keys=True),
-                        temperature=0.0,
+                        temperature=_REPAIR_TEMPERATURE if feedback is not None else 0.0,
                         response_schema=_GeneratedSource.model_json_schema(),
                         schema_name="generate_circuit",
                     )
@@ -1124,6 +1371,44 @@ class ProductionSimplePipelinePorts:
             )
         return SimplePortResult.success(evidence)
 
+    async def _previous_execution(
+        self,
+        run_id: UUID,
+        previous: CandidateRevision | None,
+    ) -> dict[str, Any] | None:
+        """What the previous candidate actually produced when it ran.
+
+        Without this a repair is blind to its own output: the reviewer says the
+        reported number is wrong and the generator rewrites the program having never
+        seen the number. namekoQ's model gets this for free — every simulate call's
+        parsed result and stderr stay in its conversation history — and it is most of
+        what "reasoning about the run" means.
+
+        Store-loaded and fingerprint-bound rather than passed down the loop, so what
+        the model sees is the durable evidence for THIS candidate. stdout/stderr go in
+        as diagnostics only; the graded evidence remains the protected RESULT, which is
+        the one the trusted observer wrote.
+        """
+
+        if previous is None:
+            return None
+        try:
+            execution = await self._store.execution_for(run_id, previous.candidate_id)
+        except Exception:
+            log.warning("could not load previous execution for repair context", exc_info=True)
+            return None
+        if execution is None or execution.source_fingerprint != previous.source_fingerprint:
+            return None
+        observation = execution.observation or {}
+        stderr = observation.get("sandbox_error") or observation.get("sandbox_stderr") or ""
+        return {
+            "exit_code": execution.exit_code,
+            "failure_kind": execution.failure_kind.value if execution.failure_kind else None,
+            "result": execution.result,
+            "resource_metrics": observation.get("resource_metrics"),
+            "diagnostics_stderr_tail": str(stderr)[-4_000:] or None,
+        }
+
     async def check_contract(
         self,
         _run_id: UUID,
@@ -1139,10 +1424,25 @@ class ProductionSimplePipelinePorts:
         ]
         diagnostics.extend(f"RESULT missing key {key!r}" for key in missing_keys)
         if self._circuit_expected(plan.plan):
+            metrics = execution.observation.get("resource_metrics")
             if execution.observation.get("resource_metrics_error"):
                 diagnostics.append("FINAL_CIRCUIT could not be observed as a circuit")
-            elif not isinstance(execution.observation.get("resource_metrics"), dict):
+            elif not isinstance(metrics, dict):
                 diagnostics.append("FINAL_CIRCUIT resource observation is missing")
+            else:
+                observed_qubits = metrics.get("qubits")
+                if type(observed_qubits) is int and observed_qubits > DEFAULT_QUBIT_CEILING:
+                    diagnostics.append(
+                        "FINAL_CIRCUIT uses "
+                        f"{observed_qubits} qubits, exceeding the "
+                        f"{DEFAULT_QUBIT_CEILING}-qubit lane ceiling"
+                    )
+                if type(observed_qubits) is int and observed_qubits > plan.plan.qubits_estimate:
+                    diagnostics.append(
+                        "FINAL_CIRCUIT uses "
+                        f"{observed_qubits} qubits but the Plan declared "
+                        f"{plan.plan.qubits_estimate}"
+                    )
         return SimplePortResult.success(
             BasicContractResult(
                 passed=not diagnostics,
@@ -1205,6 +1505,8 @@ class ProductionSimplePipelinePorts:
             },
             _success_criteria_check(plan.plan, execution),
         ]
+        reference_checks = _reference_checks(plan.plan, execution)
+        fast_checks.extend(reference_checks)
         try:
             output = await self._reviewer.review(
                 candidate,
@@ -1229,6 +1531,28 @@ class ProductionSimplePipelinePorts:
                 stage=stage,
                 role="review",
                 exception=exc,
+            )
+        routing = _reference_check_routing(reference_checks)
+        if routing is not None:
+            # The advisory reviewer never gets to overturn a check that already
+            # established a concrete mismatch against declared reference data. It can
+            # only add prose; the decision, failure class, and retry target come from
+            # the check. This also separates the two faults the generic gate cannot
+            # tell apart: a reference the verifier could not use at all is the Plan's
+            # defect, so it replans instead of rewriting correct code.
+            decision, reason_code = routing
+            failure_class, retry_target = (
+                (VerificationFailureClass.PLAN_DEFECT, RetryTarget.PLANNING)
+                if decision is SemanticReviewDecision.REPLAN
+                else (VerificationFailureClass.CANDIDATE_DEFECT, RetryTarget.CODE_GENERATION)
+            )
+            output = output.model_copy(
+                update={
+                    "decision": decision,
+                    "reason_code": reason_code,
+                    "failure_class": failure_class,
+                    "retry_target": retry_target,
+                }
             )
         evidence = SemanticReviewEvidence(
             review_id=review_id,

@@ -255,6 +255,7 @@ class OpenAICompatibleLLM:
                 )
                 text = completion.choices[0].message.content or ""
                 usage = completion.usage
+                served_model = getattr(completion, "model", None)
             else:
                 stream = await client.chat.completions.create(
                     model=request.model,
@@ -264,7 +265,9 @@ class OpenAICompatibleLLM:
                 )
                 text_parts: list[str] = []
                 usage = None
+                served_model = None
                 async for chunk in stream:
+                    served_model = getattr(chunk, "model", None) or served_model
                     if getattr(chunk, "usage", None) is not None:
                         usage = chunk.usage
                     for choice in getattr(chunk, "choices", []) or []:
@@ -292,7 +295,11 @@ class OpenAICompatibleLLM:
         )
         return LLMResponse(
             text=text,
-            model=request.model,
+            # What the PROVIDER says it served, not what we asked for. An alias or a
+            # silent substitution is invisible when the request is echoed back, and
+            # this value is what the llm.call event and the stored response row carry —
+            # the only durable record of which model actually produced a run.
+            model=str(served_model or request.model),
             input_tokens=(
                 int(usage.prompt_tokens)
                 if usage and getattr(usage, "prompt_tokens", None) is not None
@@ -482,7 +489,8 @@ class AnthropicLLM:
             ) from exc
         return LLMResponse(
             text=text,
-            model=request.model,
+            # Provider-reported, for the same reason as the OpenAI-compatible path.
+            model=str(getattr(message, "model", None) or request.model),
             input_tokens=message.usage.input_tokens,
             output_tokens=message.usage.output_tokens,
         )

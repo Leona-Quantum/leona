@@ -8,6 +8,8 @@ from uuid import uuid4
 
 import pytest
 from majorana_agent import (
+    SimplePipelineStage,
+    SimpleRepairFeedback,
     CandidateRevision,
     ConversionEvidence,
     ExecutionEvidence,
@@ -21,12 +23,15 @@ from majorana_agent import (
 )
 from majorana_contracts.enums import (
     Algorithm,
+    EvidenceStrength,
     Framework,
     RetryTarget,
     SemanticReviewDecision,
     VerificationFailureClass,
+    VerificationMethod,
+    VerifierDecision,
 )
-from majorana_contracts.plan import Plan
+from majorana_contracts.plan import Plan, ProblemTerm, ReferenceProblem
 from majorana_frameworks import FrameworkProgram
 from majorana_llm import LLMProviderError, LLMResponse
 
@@ -36,6 +41,10 @@ from majorana_worker.simple_ports import (
     RepoReviewArtifactSaver,
     SimpleIntentReviewer,
     SimpleIntentReviewResult,
+    _reference_checks,
+    _reference_check_routing,
+    passed_reference_methods,
+    simple_pipeline_verification_summary,
 )
 
 
@@ -214,8 +223,8 @@ async def test_production_ports_complete_fixed_flow_without_strict_verification(
     assert outcome.execution.result == {"counts": {"00": 50, "11": 50}}
     assert len(llm.requests) == 2
     assert llm.requests[0].schema_name == "request_plan"
-    assert "artifact_contract" not in llm.requests[0].response_schema["properties"]
-    assert "verification_plan" not in llm.requests[0].response_schema["properties"]
+    assert "artifact_contract" in llm.requests[0].response_schema["properties"]
+    assert "verification_plan" in llm.requests[0].response_schema["properties"]
     assert llm.requests[1].schema_name == "generate_circuit"
     assert executor.calls == reviewer.calls == converter.calls == saver.calls == 1
     assert all(result.tool_call_id.startswith("simple:") for result in observer.results)
@@ -223,7 +232,7 @@ async def test_production_ports_complete_fixed_flow_without_strict_verification(
     assert all(result.state.value != "ready_for_strict_verification" for result in observer.results)
 
 
-async def test_simple_plan_ignores_legacy_measurement_contract_that_killed_vqe():
+async def test_simple_plan_normalizes_measurement_contract_that_killed_vqe():
     ports, llm, *_ = _ports()
     payload = _plan_payload()
     payload["algorithm"] = "VQE"
@@ -239,7 +248,8 @@ async def test_simple_plan_ignores_legacy_measurement_contract_that_killed_vqe()
     planned = await ports.plan(uuid4(), None, None)
 
     assert planned.value is not None
-    assert planned.value.plan.artifact_contract is None
+    assert planned.value.plan.artifact_contract is not None
+    assert planned.value.plan.artifact_contract.measurement_policy.value == "only_if_requested"
     assert planned.value.plan.verification_plan is None
 
 
@@ -362,32 +372,47 @@ async def test_transient_provider_failure_at_review_is_retryable_within_its_own_
     assert reviewed.failure.code == "review_provider_upstream_unavailable"
 
 
-async def test_generate_injects_the_known_reference_hamiltonian_for_vqe():
+async def test_plan_and_generate_share_the_exact_task_reference():
     """A live H2 VQE run (019f9763, 2026-07-25) fabricated Hamiltonian coefficients
-    that were internally self-consistent but not physically real. The generate
-    prompt now carries the verified reference so the model has no reason to
-    reconstruct it from memory."""
+    that were internally self-consistent but not physically real. The planner and
+    generator now receive the same task-matched reference."""
     ports, llm, *_ = _ports()
+    # The product's common request omits a bond length. In that case the standard
+    # molecular ground-state interpretation is equilibrium geometry; an explicit
+    # different bond length is still excluded by known_reference_for_task.
+    ports._task_prompt = "Estimate the H2 molecular ground-state energy with VQE"
+    payload = _plan_payload()
+    payload["algorithm"] = "VQE"
+    payload["success_criteria"] = {"primary_metric": "ground_state_energy_Ha"}
+    payload["expected_output_keys"] = ["ground_state_energy_Ha"]
+    llm.texts[0] = json.dumps(payload)
+    run_id = uuid4()
+    planned = await ports.plan(run_id, None, None)
+    assert planned.value is not None
+    assert planned.value.plan.verification_plan is not None
+    terms = planned.value.plan.verification_plan.reference_hamiltonian
+    assert terms is not None
+    assert terms[0].coefficient == pytest.approx(-0.3324043)
+
+    plan_request = json.loads(llm.requests[-1].user)
+    await ports.generate(run_id, planned.value, None, None)
+
+    generation_request = json.loads(llm.requests[-1].user)
+    assert plan_request["known_reference"] == generation_request["known_reference"]
+    assert "-1.0523732" in generation_request["known_reference"]
+    assert "reference_template" not in generation_request
+
+
+async def test_generate_omits_known_reference_for_an_unmatched_vqe_task():
+    ports, llm, *_ = _ports()
+    ports._task_prompt = "Estimate LiH at bond length 1.6 Angstrom with VQE"
     run_id = uuid4()
     planned = await ports.plan(run_id, None, None)
     vqe_plan = planned.value.model_copy(
         update={"plan": planned.value.plan.model_copy(update={"algorithm": Algorithm.VQE})}
     )
 
-    await ports.generate(run_id, vqe_plan, None, None)
-
-    sent = json.loads(llm.requests[-1].user)
-    assert sent["known_reference"] is not None
-    assert "-1.0523732" in sent["known_reference"]
-
-
-async def test_generate_omits_known_reference_for_algorithms_without_one():
-    ports, llm, *_ = _ports()
-    run_id = uuid4()
-    planned = await ports.plan(run_id, None, None)
-    assert planned.value.plan.algorithm is Algorithm.BELL
-
-    generated = await ports.generate(run_id, planned.value, None, None)
+    generated = await ports.generate(run_id, vqe_plan, None, None)
     assert generated.value is not None
 
     sent = json.loads(llm.requests[-1].user)
@@ -533,6 +558,37 @@ async def test_basic_contract_reads_protected_result_not_sandbox_stdout():
     assert executed.value.observation["sandbox_stdout"]
 
 
+async def test_basic_contract_rejects_observed_qubits_above_plan_and_lane():
+    ports, *_ = _ports()
+    run_id = uuid4()
+    planned = await ports.plan(run_id, None, None)
+    assert planned.value is not None
+    generated = await ports.generate(run_id, planned.value, None, None)
+    assert generated.value is not None
+    executed = await ports.run_execution(run_id, planned.value, generated.value)
+    assert executed.value is not None
+    oversized = executed.value.model_copy(
+        update={
+            "observation": {
+                **executed.value.observation,
+                "resource_metrics": {"qubits": 28},
+            }
+        }
+    )
+
+    checked = await ports.check_contract(
+        run_id,
+        planned.value,
+        generated.value,
+        oversized,
+    )
+
+    assert checked.value is not None
+    assert checked.value.passed is False
+    assert any("27-qubit lane ceiling" in item for item in checked.value.diagnostics)
+    assert any("Plan declared 2" in item for item in checked.value.diagnostics)
+
+
 async def test_simple_intent_reviewer_is_one_advisory_call_over_trusted_evidence():
     ports, *_ = _ports()
     run_id = uuid4()
@@ -616,8 +672,8 @@ async def test_ready_review_with_failed_nameko_check_is_not_accepted():
         1,
     )
 
-    assert result.decision is SemanticReviewDecision.INCONCLUSIVE
-    assert result.reason_code == "intent_review_inconclusive"
+    assert result.decision is SemanticReviewDecision.CODE_REPAIR
+    assert result.reason_code == "intent_code_mismatch"
 
 
 def test_success_criteria_check_compares_trusted_numeric_result_to_plan_range():
@@ -727,14 +783,7 @@ async def test_second_intent_review_attempt_has_a_distinct_metering_request():
     ports, *_ = _ports()
     review_llm = QueueLLM(
         [
-            json.dumps(
-                {
-                    "decision": "inconclusive",
-                    "confidence": "low",
-                    "severity": "none",
-                    "summary": "insufficient evidence",
-                }
-            ),
+            "not a review object at all",
             json.dumps(
                 {
                     "decision": "ready",
@@ -759,28 +808,18 @@ async def test_second_intent_review_attempt_has_a_distinct_metering_request():
     assert review_llm.requests[0].user != review_llm.requests[1].user
 
 
-async def test_production_ports_regenerate_after_repeated_inconclusive_review():
+async def test_production_ports_regenerate_after_a_blocked_review():
     ports, generation_llm, *_ = _ports()
     generation_llm.texts.append(json.dumps({"source": _SOURCE}))
     review_llm = QueueLLM(
         [
             json.dumps(
                 {
-                    "decision": "inconclusive",
-                    "confidence": "low",
-                    "severity": "none",
-                    "summary": "the result does not expose enough evidence",
-                    "failed_checks": ["success_criteria"],
-                    "residual_risks": ["primary metric interpretation is unclear"],
-                }
-            ),
-            json.dumps(
-                {
-                    "decision": "inconclusive",
-                    "confidence": "low",
-                    "severity": "none",
-                    "summary": "a clearer candidate is required",
-                    "failed_checks": ["success_criteria"],
+                    "decision": "code_repair",
+                    "confidence": "high",
+                    "severity": "minor",
+                    "summary": "the result does not expose the Plan primary metric",
+                    "mismatches": ["RESULT omits the planned metric"],
                     "repair_instructions": ["Expose the Plan primary metric in RESULT"],
                 }
             ),
@@ -809,12 +848,16 @@ async def test_production_ports_regenerate_after_repeated_inconclusive_review():
 
     assert outcome.status is SimplePipelineStatus.SUCCEEDED
     assert outcome.candidate is not None and outcome.candidate.revision == 2
-    assert len(review_llm.requests) == 3
+    # One review call per candidate, not two: the retired retry re-sent identical
+    # evidence at temperature 0 and doubled the latency of every blocked run.
+    assert len(review_llm.requests) == 2
     assert len(generation_llm.requests) == 3
     repair_request = json.loads(generation_llm.requests[2].user)
     assert repair_request["previous_source"]
-    assert repair_request["repair_feedback"]["code"] == "intent_review_inconclusive"
-    assert "expose the missing evidence" in repair_request["repair_feedback"]["message"]
+    assert repair_request["repair_feedback"]["code"] == "intent_code_mismatch"
+    assert "code repair" in repair_request["repair_feedback"]["message"]
+    critic = repair_request["repair_feedback"]["details"]["critic"]
+    assert critic["repair_instructions"] == ["Expose the Plan primary metric in RESULT"]
 
 
 async def test_save_failure_rolls_back_before_a_bounded_retry():
@@ -874,7 +917,14 @@ async def test_save_failure_rolls_back_before_a_bounded_retry():
     assert second.value is not None
 
 
-async def test_repo_review_saver_marks_artifact_private_and_not_verified(monkeypatch):
+@pytest.mark.parametrize(
+    "decision",
+    [SemanticReviewDecision.READY, SemanticReviewDecision.CODE_REPAIR],
+)
+async def test_repo_review_saver_persists_every_deliverable_artifact_without_verifying(
+    monkeypatch,
+    decision,
+):
     run_id = uuid4()
     candidate_id = uuid4()
     execution_id = uuid4()
@@ -906,16 +956,36 @@ async def test_repo_review_saver_marks_artifact_private_and_not_verified(monkeyp
         execution_id=execution_id,
         source_fingerprint=program.fingerprint,
         attempt_seq=1,
-        decision=SemanticReviewDecision.READY,
+        decision=decision,
         confidence="high",
         severity="none",
-        reason_code="semantic_ready",
-        retry_target=RetryTarget.NONE,
+        reason_code=(
+            "semantic_ready" if decision is SemanticReviewDecision.READY else "intent_code_mismatch"
+        ),
+        failure_class=(
+            None
+            if decision is SemanticReviewDecision.READY
+            else VerificationFailureClass.CANDIDATE_DEFECT
+        ),
+        retry_target=(
+            RetryTarget.NONE
+            if decision is SemanticReviewDecision.READY
+            else RetryTarget.CODE_GENERATION
+        ),
         feedback={
             "critic": {
-                "summary": "aligned",
+                "summary": (
+                    "aligned"
+                    if decision is SemanticReviewDecision.READY
+                    else "minor improvement requested"
+                ),
                 "residual_risks": ["AI review may miss a semantic defect"],
-            }
+            },
+            "basic_checks": [
+                {"method": "structural", "result": "pass"},
+                {"method": "return_contract", "result": "pass"},
+                {"method": "success_criteria", "result": "pass"},
+            ],
         },
     )
     conversion = ConversionEvidence(
@@ -963,12 +1033,17 @@ async def test_repo_review_saver_marks_artifact_private_and_not_verified(monkeyp
 
     assert saved.version_id == version_id
     metadata = captured["version"]["metadata"]
-    assert metadata["review_summary"]["status"] == "aligned"
+    expected_status = "aligned" if decision is SemanticReviewDecision.READY else "not_accepted"
+    assert metadata["review_summary"]["status"] == expected_status
     summary = metadata["verification_summary"]
     assert summary["decision"] == "inconclusive"
-    assert summary["semantic_review_decision"] == "ready"
+    assert summary["semantic_review_decision"] == decision.value
     assert summary["evidence_strength"] == "structural"
-    assert summary["reason_code"] == "ai_review_aligned"
+    assert summary["reason_code"] == (
+        "ai_review_aligned"
+        if decision is SemanticReviewDecision.READY
+        else "trusted_evidence_without_review_acceptance"
+    )
     assert summary["candidate_defect_observed"] is False
     assert summary["failure_class"] == "evidence_gap"
     assert summary["retry_target"] == "none"
@@ -978,11 +1053,14 @@ async def test_repo_review_saver_marks_artifact_private_and_not_verified(monkeyp
         {"method": "success_criteria", "result": "pass"},
     ]
     assert "verification_attempt_id" not in metadata
-    assert "strict quantum correctness" in captured["version"]["limitations"]
+    if decision is SemanticReviewDecision.READY:
+        assert "strict quantum correctness" in captured["version"]["limitations"]
+    else:
+        assert "Intent alignment was not established" in captured["version"]["limitations"]
     assert captured["run_binding"] == (run_id, version_id)
 
 
-async def test_repo_review_saver_rejects_non_aligned_review():
+async def test_repo_review_saver_rejects_review_without_complete_evidence():
     ports, *_ = _ports()
     run_id = uuid4()
     planned = await ports.plan(run_id, None, None)
@@ -1010,7 +1088,7 @@ async def test_repo_review_saver_rejects_non_aligned_review():
         title="Bell state",
     )
 
-    with pytest.raises(ValueError, match="aligned intent review"):
+    with pytest.raises(ValueError, match="complete trusted evidence"):
         await saver.save(
             candidate,
             execution,
@@ -1018,3 +1096,517 @@ async def test_repo_review_saver_rejects_non_aligned_review():
             None,
             planned.value.plan,
         )
+
+
+# --- Plan-declared reference checks (ADR-0023 §"basic contract checks") ---------
+#
+# The only check in the fixed pipeline that can contradict a program which is
+# internally consistent but physically wrong. Live H2 VQE run 019f9763 reported
+# -1.419 Ha against a range derived from its own fabricated Hamiltonian and passed
+# every structural check; these tests pin the path that catches that shape.
+
+# Total-energy convention: the electronic identity coefficient -1.0523732 plus the
+# nuclear repulsion constant 0.7199689, so diagonalizing these five terms alone
+# yields the -1.1373061 Ha the run reports. Declaring the electronic operator while
+# reporting the total energy is off by exactly that constant, which is why the
+# planner prompt spells the convention out.
+_H2_HAMILTONIAN = [
+    {"coefficient": -0.3324043, "pauli": "II"},
+    {"coefficient": 0.39793742, "pauli": "IZ"},
+    {"coefficient": -0.39793742, "pauli": "ZI"},
+    {"coefficient": -0.0112801, "pauli": "ZZ"},
+    {"coefficient": 0.18093119, "pauli": "XX"},
+]
+
+
+def _vqe_plan(reported: float, *, hamiltonian=None, tolerance=None) -> tuple[Plan, object]:
+    verification_plan = {
+        "methods": ["exact_diag"],
+        "reference_hamiltonian": _H2_HAMILTONIAN if hamiltonian is None else hamiltonian,
+    }
+    if tolerance is not None:
+        verification_plan["thresholds"] = {"energy_Ha_error_max": tolerance}
+    plan = Plan.model_validate(
+        {
+            "domain": "chemistry",
+            "framework": "qiskit",
+            "algorithm": "VQE",
+            "problem_summary": "Estimate the H2 ground-state energy",
+            "algorithm_rationale": "VQE targets the requested minimum eigenvalue",
+            "parameters": {"shots": 1024},
+            "qubits_estimate": 2,
+            "expected_runtime_sec": 60,
+            "success_criteria": {
+                "primary_metric": "energy_Ha",
+                # Deliberately wide enough to admit the fabricated answer too: the
+                # point is that the range cannot be the thing that catches it.
+                "expected_range": {"min": -1.6, "max": -1.0},
+            },
+            "expected_output_keys": ["energy_Ha"],
+            "verification_plan": verification_plan,
+        }
+    )
+    execution = ExecutionEvidence(
+        execution_id=uuid4(),
+        candidate_id=uuid4(),
+        source_fingerprint="a" * 64,
+        environment_fingerprint="e" * 64,
+        sandbox_provider="test",
+        exit_code=0,
+        duration_ms=1,
+        result={"energy_Ha": reported},
+        observation={},
+    )
+    return plan, execution
+
+
+def test_reference_check_passes_the_true_h2_ground_state_energy():
+    plan, execution = _vqe_plan(-1.1373061)
+
+    checks = _reference_checks(plan, execution)
+    check = checks[0] if checks else None
+
+    assert check is not None
+    assert check["method"] == "exact_diag"
+    assert check["result"] == "pass"
+
+
+def test_reference_check_catches_the_energy_the_plans_own_range_admitted():
+    """The regression this whole path exists for.
+
+    -1.419 Ha sits inside the Plan's expected_range and inside every structural
+    contract; only diagonalizing the declared operator contradicts it.
+    """
+
+    plan, execution = _vqe_plan(-1.419)
+    assert plan.success_criteria.expected_range == {"min": -1.6, "max": -1.0}
+
+    checks = _reference_checks(plan, execution)
+    check = checks[0] if checks else None
+
+    assert check is not None
+    assert check["result"] == "fail"
+    assert check["details"]["reported"] == -1.419
+
+
+def test_failed_reference_check_routes_to_code_repair_not_inconclusive():
+    """A concrete contradiction earns a repaired candidate, not a spent review.
+
+    INCONCLUSIVE routes to RetryTarget.VERIFICATION, which burns review attempts
+    without ever regenerating the source that produced the wrong number.
+    """
+
+    plan, execution = _vqe_plan(-1.419)
+
+    routing = _reference_check_routing(_reference_checks(plan, execution))
+
+    assert routing == (SemanticReviewDecision.CODE_REPAIR, "reference_check_failed")
+
+
+def test_unusable_reference_declaration_is_blamed_on_the_plan():
+    """A reference the verifier cannot use fails identically on every candidate.
+
+    Routed off the verifier's own `fault` marker rather than reconstructed here: the
+    Plan contract rejects every malformed shape it can see, so this arrives only
+    from inside the verifier and must not be charged to the candidate.
+    """
+
+    unusable = {
+        "method": "exact_diag",
+        "result": "fail",
+        "details": {
+            "error": "reference_hamiltonian is not diagonalizable as declared",
+            "fault": "plan",
+        },
+    }
+
+    assert _reference_check_routing([unusable]) == (
+        SemanticReviewDecision.REPLAN,
+        "reference_declaration_unusable",
+    )
+    # A Plan defect outranks a candidate defect: rewriting source against a reference
+    # that is itself unusable cannot converge, whichever order the checks ran in.
+    contradicted = {"method": "brute_force", "result": "fail", "details": {}}
+    assert _reference_check_routing([contradicted, unusable]) == (
+        SemanticReviewDecision.REPLAN,
+        "reference_declaration_unusable",
+    )
+
+
+def test_non_numeric_metric_fails_rather_than_skipping_the_check():
+    plan, execution = _vqe_plan(-1.1373061)
+    execution = execution.model_copy(update={"result": {"energy_Ha": "minus one point one"}})
+
+    checks = _reference_checks(plan, execution)
+    check = checks[0] if checks else None
+
+    assert check is not None and check["result"] == "fail"
+
+
+def test_plan_without_a_declared_reference_runs_the_check_not_at_all():
+    plan, execution = _vqe_plan(-1.1373061)
+    plan = plan.model_copy(update={"verification_plan": None})
+
+    assert _reference_checks(plan, execution) == []
+    assert _reference_check_routing([]) is None
+
+
+def _review_with_checks(checks) -> SemanticReviewEvidence:
+    return SemanticReviewEvidence(
+        review_id=uuid4(),
+        candidate_id=uuid4(),
+        execution_id=uuid4(),
+        source_fingerprint="a" * 64,
+        attempt_seq=1,
+        decision=SemanticReviewDecision.READY,
+        reason_code="intent_aligned",
+        retry_target=RetryTarget.NONE,
+        feedback={"basic_checks": checks},
+    )
+
+
+def test_summary_reports_a_physical_grade_without_ever_claiming_a_pass():
+    """EvidenceStrength exists to say this: one real claim, still not a verdict."""
+
+    review = _review_with_checks(
+        [
+            {"method": "success_criteria", "result": "pass"},
+            {"method": "exact_diag", "result": "pass"},
+        ]
+    )
+    methods = passed_reference_methods(review)
+    assert methods == (VerificationMethod.EXACT_DIAG,)
+
+    summary = simple_pipeline_verification_summary(methods)
+
+    assert summary["evidence_strength"] == EvidenceStrength.PHYSICAL.value
+    assert summary["decision"] == VerifierDecision.INCONCLUSIVE.value
+    assert "quantum correctness" not in summary["unverified_claims"]
+    assert "optimality" in summary["unverified_claims"]
+    assert {"method": "exact_diag", "result": "pass"} in summary["checks"]
+
+
+def test_summary_stays_structural_when_no_reference_check_ran():
+    review = _review_with_checks([{"method": "success_criteria", "result": "pass"}])
+    assert passed_reference_methods(review) == ()
+
+    summary = simple_pipeline_verification_summary()
+
+    assert summary["evidence_strength"] == EvidenceStrength.STRUCTURAL.value
+    assert summary["decision"] == VerifierDecision.INCONCLUSIVE.value
+    assert "quantum correctness" in summary["unverified_claims"]
+
+
+def test_a_failed_reference_check_never_counts_as_evidence_in_the_summary():
+    review = _review_with_checks([{"method": "exact_diag", "result": "fail"}])
+
+    assert passed_reference_methods(review) == ()
+
+
+# --- Every review names a next step -------------------------------------------
+#
+# The retired fourth outcome ("cannot tell") named none, so the controller could
+# only regenerate identical evidence until the candidate budget ran out — and the
+# Plan escalation, which keys on consecutive CODE_REPAIR decisions, never fired.
+
+
+def _critic(**overrides) -> str:
+    payload = {
+        "decision": "ready",
+        "confidence": "high",
+        "severity": "none",
+        "summary": "request, Plan, source, and RESULT align",
+        "passed_checks": ["plan_to_source"],
+        "failed_checks": [],
+        "mismatches": [],
+        "repair_instructions": [],
+        "residual_risks": [],
+    }
+    return json.dumps({**payload, **overrides})
+
+
+async def _decide(payload: str, checks=None) -> SimpleIntentReviewResult:
+    ports, *_ = _ports()
+    run_id = uuid4()
+    planned = await ports.plan(run_id, None, None)
+    generated = await ports.generate(run_id, planned.value, None, None)
+    executed = await ports.run_execution(run_id, planned.value, generated.value)
+    reviewer = SimpleIntentReviewer(llm=QueueLLM([payload]), task_prompt="bell state")
+    return await reviewer.review(
+        generated.value,
+        executed.value,
+        planned.value.plan,
+        checks if checks is not None else [{"method": "structural", "result": "pass"}],
+        1,
+    )
+
+
+@pytest.mark.parametrize(
+    "payload,expected",
+    [
+        (_critic(), SemanticReviewDecision.READY),
+        # An honest nit no longer overturns the reviewer's own acceptance. It used to,
+        # which meant the more carefully a reviewer worked the more likely it was to
+        # send a good candidate back around the loop.
+        (_critic(mismatches=["shots 100 vs 1024 requested"]), SemanticReviewDecision.READY),
+        (_critic(residual_risks=["shot noise"]), SemanticReviewDecision.READY),
+        # A correctly diagnosed small bug is repairable as a repair.
+        (
+            _critic(decision="code_repair", severity="minor", repair_instructions=["add cx"]),
+            SemanticReviewDecision.CODE_REPAIR,
+        ),
+        # An unhedged blocker is still a blocker, whatever the model called it.
+        (_critic(severity="blocking"), SemanticReviewDecision.CODE_REPAIR),
+        (_critic(confidence="low"), SemanticReviewDecision.CODE_REPAIR),
+        (_critic(decision="replan", severity="major"), SemanticReviewDecision.REPLAN),
+        # A model that answers "cannot tell" anyway is routed, not parked.
+        (_critic(decision="inconclusive", confidence="low"), SemanticReviewDecision.CODE_REPAIR),
+    ],
+)
+async def test_every_review_outcome_names_an_actionable_next_step(payload, expected):
+    result = await _decide(payload)
+
+    assert result.decision is expected
+    assert result.decision is not SemanticReviewDecision.INCONCLUSIVE
+    assert result.retry_target is not RetryTarget.VERIFICATION
+
+
+async def test_a_failed_deterministic_check_outranks_a_claimed_acceptance():
+    result = await _decide(_critic(), [{"method": "success_criteria", "result": "fail"}])
+
+    assert result.decision is SemanticReviewDecision.CODE_REPAIR
+    assert "success_criteria" in result.critic["failed_checks"]
+
+
+def test_the_reviewer_schema_cannot_ask_for_the_retired_outcome():
+    """Schema-guided decoding must not be able to emit a decision with no next step."""
+
+    schema = simple_ports_module._IntentReviewOutput.model_json_schema()
+
+    assert schema["properties"]["decision"]["enum"] == ["ready", "code_repair", "replan"]
+
+
+def test_every_declared_reference_method_actually_runs():
+    """A Plan may name more than one; checking only the first would put a method in
+    the evidence that nothing evaluated."""
+
+    plan, execution = _vqe_plan(-1.1373061)
+    plan = plan.model_copy(
+        update={
+            "expected_output_keys": ["energy_Ha"],
+            "verification_plan": plan.verification_plan.model_copy(
+                update={
+                    "methods": [
+                        VerificationMethod.EXACT_DIAG,
+                        VerificationMethod.BRUTE_FORCE,
+                    ],
+                    "reference_problem": ReferenceProblem(
+                        kind="maxcut",
+                        num_variables=3,
+                        terms=[ProblemTerm(i=0, j=1, weight=1.0)],
+                    ),
+                }
+            ),
+        }
+    )
+
+    checks = _reference_checks(plan, execution)
+
+    assert [check["method"] for check in checks] == ["exact_diag", "brute_force"]
+    # The energy satisfies the Hamiltonian but is not this instance's cut weight, so
+    # the second check must be the one that objects.
+    assert checks[0]["result"] == "pass"
+    assert checks[1]["result"] == "fail"
+    assert _reference_check_routing(checks) == (
+        SemanticReviewDecision.CODE_REPAIR,
+        "reference_check_failed",
+    )
+
+
+async def test_reference_failure_replans_through_the_real_review_port():
+    """End-to-end wiring: a Plan-declared reference that the RESULT contradicts must
+    reach the durable review as a typed routing decision, not as reviewer prose."""
+
+    ports, _llm, _executor, *_ = _ports()
+    run_id = uuid4()
+    plan_payload = _plan_payload()
+    plan_payload["expected_output_keys"] = ["energy_Ha"]
+    plan_payload["success_criteria"] = {"primary_metric": "energy_Ha"}
+    plan_payload["algorithm"] = "VQE"
+    plan_payload["verification_plan"] = {
+        "methods": ["exact_diag"],
+        "reference_hamiltonian": _H2_HAMILTONIAN,
+    }
+    # Enough shots that the shot-noise allowance is narrower than the error under
+    # test; see test_exact_diag_allowance_widens_with_low_shot_counts.
+    plan_payload["parameters"] = {"shots": 4096, "seed": 7}
+    planned = await ports.plan(run_id, None, None)
+    assert planned.value is not None
+    plan = planned.value.model_copy(
+        update={"plan": Plan.model_validate({**plan_payload, "framework": "qiskit"})}
+    )
+    plan = plan.model_copy(
+        update={"plan_fingerprint": simple_ports_module._plan_fingerprint(plan.plan)}
+    )
+    generated = await ports.generate(run_id, plan, None, None)
+    assert generated.value is not None
+    executed = await ports.run_execution(run_id, plan, generated.value)
+    assert executed.value is not None
+    # The fabricated-energy shape: self-consistent, inside any plausible range, and
+    # contradicted only by diagonalizing the operator the Plan declared.
+    execution = executed.value.model_copy(update={"result": {"energy_Ha": -1.419}})
+
+    # A reviewer that would have accepted it outright.
+    ports._reviewer = SimpleIntentReviewer(llm=QueueLLM([_critic()]), task_prompt="h2 vqe")
+    reviewed = await ports.review(run_id, plan, generated.value, execution, 1)
+
+    assert reviewed.value is not None
+    assert reviewed.value.decision is SemanticReviewDecision.CODE_REPAIR
+    assert reviewed.value.reason_code == "reference_check_failed"
+    assert reviewed.value.retry_target is RetryTarget.CODE_GENERATION
+    stored = [
+        check
+        for check in reviewed.value.feedback["basic_checks"]
+        if check["method"] == "exact_diag"
+    ]
+    assert stored and stored[0]["result"] == "fail"
+    assert passed_reference_methods(reviewed.value) == ()
+
+
+def test_exact_diag_allowance_widens_with_low_shot_counts():
+    """A documented limit of the check, pinned so it cannot surprise anyone twice.
+
+    `exact_diag` grants a shot-noise allowance derived from the declared shot count,
+    so a low-shot plan cannot distinguish a wrong energy from a noisy one: the same
+    0.28 Ha fabrication that fails at 4096 shots passes at 100. That is honest
+    physics rather than a defect — with 100 samples the run genuinely has not
+    measured the difference — but it means a Plan that wants this check to bite must
+    either plan enough shots or declare a tighter tolerance, which is what the
+    planner directive now says.
+    """
+
+    loose, execution = _vqe_plan(-1.419)
+    loose = loose.model_copy(
+        update={"parameters": loose.parameters.model_copy(update={"shots": 100})}
+    )
+    tight = loose.model_copy(
+        update={"parameters": loose.parameters.model_copy(update={"shots": 4096})}
+    )
+
+    assert _reference_checks(loose, execution)[0]["result"] == "pass"
+    assert _reference_checks(tight, execution)[0]["result"] == "fail"
+
+
+def test_a_plan_declared_tolerance_can_tighten_a_loose_shot_allowance():
+    loose, execution = _vqe_plan(-1.419)
+    loose = loose.model_copy(
+        update={"parameters": loose.parameters.model_copy(update={"shots": 100})}
+    )
+    tightened = loose.model_copy(
+        update={
+            "verification_plan": loose.verification_plan.model_copy(
+                update={"thresholds": {"energy_Ha_error_max": 0.01}}
+            )
+        }
+    )
+
+    assert _reference_checks(loose, execution)[0]["result"] == "pass"
+    assert _reference_checks(tightened, execution)[0]["result"] == "fail"
+
+
+def test_summary_marks_intent_alignment_unverified_when_review_did_not_accept():
+    summary = simple_pipeline_verification_summary(
+        (VerificationMethod.EXACT_DIAG,), SemanticReviewDecision.CODE_REPAIR
+    )
+
+    assert summary["reason_code"] == "trusted_evidence_without_review_acceptance"
+    assert summary["semantic_review_decision"] == SemanticReviewDecision.CODE_REPAIR.value
+    assert "intent alignment" in summary["unverified_claims"]
+    # The reference check still ran, so that claim stays withdrawn from the list.
+    assert "quantum correctness" not in summary["unverified_claims"]
+    assert summary["evidence_strength"] == EvidenceStrength.PHYSICAL.value
+    assert summary["decision"] == VerifierDecision.INCONCLUSIVE.value
+
+
+def test_summary_without_reference_or_acceptance_withdraws_nothing():
+    summary = simple_pipeline_verification_summary((), SemanticReviewDecision.CODE_REPAIR)
+
+    assert summary["evidence_strength"] == EvidenceStrength.STRUCTURAL.value
+    for claim in ("quantum correctness", "physical fidelity", "optimality", "intent alignment"):
+        assert claim in summary["unverified_claims"]
+
+
+async def test_first_generation_is_deterministic_and_a_repair_samples():
+    """At temperature 0 a repair whose prompt barely changed reproduces nearly the
+    same program, so a run could spend its whole budget re-deriving one defect."""
+
+    ports, llm, *_ = _ports()
+    run_id = uuid4()
+    planned = await ports.plan(run_id, None, None)
+    assert planned.value is not None
+
+    llm.texts.append(json.dumps({"source": _SOURCE}))
+    first = await ports.generate(run_id, planned.value, None, None)
+    assert first.value is not None
+    assert llm.requests[-1].temperature == 0.0
+
+    llm.texts.append(json.dumps({"source": _SOURCE.replace("h(0)", "h(1)")}))
+    await ports.generate(
+        run_id,
+        planned.value,
+        first.value,
+        SimpleRepairFeedback(
+            stage=SimplePipelineStage.REVIEWING,
+            code="intent_code_mismatch",
+            message="repair",
+            details={"prior_attempts": [{"revision": 1, "rejected_because": "x"}]},
+        ),
+    )
+    assert llm.requests[-1].temperature > 0.0
+    # The history the pipeline accumulated has to reach the model, not just the store.
+    assert "prior_attempts" in llm.requests[-1].user
+
+
+async def test_a_repair_can_see_what_the_previous_revision_actually_produced():
+    """Without this a repair is blind to its own output: the review calls the reported
+    number wrong and the generator rewrites the program having never seen the number."""
+
+    ports, llm, executor, *_ = _ports()
+    run_id = uuid4()
+    planned = await ports.plan(run_id, None, None)
+    assert planned.value is not None
+    llm.texts.append(json.dumps({"source": _SOURCE}))
+    first = await ports.generate(run_id, planned.value, None, None)
+    assert first.value is not None
+    await ports.run_execution(run_id, planned.value, first.value)
+
+    llm.texts.append(json.dumps({"source": _SOURCE.replace("h(0)", "h(1)")}))
+    await ports.generate(
+        run_id,
+        planned.value,
+        first.value,
+        SimpleRepairFeedback(
+            stage=SimplePipelineStage.REVIEWING,
+            code="intent_code_mismatch",
+            message="the reported counts are not a Bell distribution",
+            details={},
+        ),
+    )
+
+    payload = json.loads(llm.requests[-1].user)
+    previous = payload["previous_execution"]
+    assert previous["exit_code"] == 0
+    assert previous["result"] == {"counts": {"00": 50, "11": 50}}
+    assert previous["resource_metrics"]["qubits"] == 2
+
+
+async def test_the_first_generation_has_no_previous_execution():
+    ports, llm, *_ = _ports()
+    run_id = uuid4()
+    planned = await ports.plan(run_id, None, None)
+    assert planned.value is not None
+
+    llm.texts.append(json.dumps({"source": _SOURCE}))
+    await ports.generate(run_id, planned.value, None, None)
+
+    assert json.loads(llm.requests[-1].user)["previous_execution"] is None

@@ -21,7 +21,6 @@ from majorana_contracts.enums import (
     Role,
     RunMode,
     RunStatus,
-    SemanticReviewDecision,
     Stage,
     VerificationFailureClass,
     VerifierDecision,
@@ -69,6 +68,7 @@ from .simple_ports import (
     ProductionSimplePipelinePorts,
     RepoReviewArtifactSaver,
     SimpleIntentReviewer,
+    passed_reference_methods,
     simple_pipeline_verification_summary,
 )
 
@@ -280,8 +280,10 @@ async def handle_run_execute(
         parent_artifact_id=parent_artifact_id,
     )
     store = RepoRunStateStore(scope, session, run_id)
+    timeout_s = float(run.timeout_s or DEFAULT_RUN_TIMEOUT_S)
+    run_deadline = asyncio.get_running_loop().time() + timeout_s
     try:
-        async with asyncio.timeout(run.timeout_s or DEFAULT_RUN_TIMEOUT_S):
+        async with asyncio.timeout(timeout_s):
             provider = llm or _default_llm()
             ctx = await _resolve_mode(
                 ctx,
@@ -304,6 +306,7 @@ async def handle_run_execute(
                     parent_artifact_id=parent_artifact_id,
                     parent_artifact_version_id=parent_artifact_version_id,
                     parent_artifact_fingerprint=parent_artifact_fingerprint,
+                    run_deadline=run_deadline,
                 )
     except TimeoutError:
         # The stage coroutine was cancelled mid-flight; reset the session and
@@ -417,6 +420,7 @@ async def _handle_agent_execution(
     llm: LLMClient,
     sandbox: Sandbox,
     parent_artifact_id: uuid.UUID | None,
+    run_deadline: float,
     parent_artifact_version_id: uuid.UUID | None = None,
     parent_artifact_fingerprint: str | None = None,
 ) -> RunStatus:
@@ -474,6 +478,8 @@ async def _handle_agent_execution(
     outcome = await SimpleCircuitPipeline(
         ports=ports,
         cancel_requested=cancelled,
+        remaining_time_s=lambda: run_deadline - asyncio.get_running_loop().time(),
+        monotonic=asyncio.get_running_loop().time,
     ).run(ctx.run_id)
     if ports.projection_dirty:
         # Durable records are authoritative. Do not terminalize until their
@@ -563,8 +569,6 @@ async def _finish_simple_pipeline(
         if candidate is None or execution is None or review is None or artifact is None:
             raise RuntimeError("simple pipeline succeeded without its durable evidence chain")
         review.assert_binding(candidate, execution)
-        if review.decision is not SemanticReviewDecision.READY:
-            raise RuntimeError("simple pipeline succeeded without an aligned intent review")
         if (
             artifact.candidate_id != candidate.candidate_id
             or artifact.source_fingerprint != candidate.source_fingerprint
@@ -575,14 +579,17 @@ async def _finish_simple_pipeline(
         residual_risks = (
             "\n".join(str(item)[:1000] for item in risks[:20]) if isinstance(risks, list) else None
         )
-        summary = simple_pipeline_verification_summary()
+        reference_methods = passed_reference_methods(review)
+        summary = simple_pipeline_verification_summary(reference_methods, review.decision)
         final = await run_store.finish(
             RunStatus.SUCCEEDED,
             {
                 "status": RunStatus.SUCCEEDED,
                 "verifier_decision": VerifierDecision.INCONCLUSIVE,
-                "evidence_strength": EvidenceStrength.STRUCTURAL,
-                "reason_code": "ai_review_aligned",
+                "evidence_strength": (
+                    EvidenceStrength.PHYSICAL if reference_methods else EvidenceStrength.STRUCTURAL
+                ),
+                "reason_code": summary["reason_code"],
                 "residual_risks": residual_risks,
                 "verification_summary": summary,
             },

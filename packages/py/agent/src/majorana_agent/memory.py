@@ -40,9 +40,6 @@ class MemoryAgentStore:
     async def completed_tool_call(self, run_id: UUID, tool_call_id: str) -> ToolResult | None:
         return self._results.get((run_id, tool_call_id))
 
-    async def tool_call(self, run_id: UUID, tool_call_id: str) -> ToolCall | None:
-        return self._started.get((run_id, tool_call_id))
-
     async def begin_tool_call(self, run_id: UUID, call: ToolCall) -> None:
         key = (run_id, call.tool_call_id)
         previous = self._started.get(key)
@@ -79,10 +76,6 @@ class MemoryAgentStore:
             if record.plan_id == plan_id:
                 return record
         raise KeyError(plan_id)
-
-    async def current_plan_revision(self, run_id: UUID) -> PlanRevision | None:
-        plan_id = self._current_plan_ids.get(run_id)
-        return await self.plan_revision(run_id, plan_id) if plan_id is not None else None
 
     async def select_current_plan(self, run_id: UUID, plan_id: UUID) -> None:
         await self.plan_revision(run_id, plan_id)
@@ -207,8 +200,8 @@ class MemoryAgentStore:
             raise KeyError(evidence.candidate_id)
         review = await self.latest_semantic_review(owner, evidence.candidate_id)
         execution = self._executions.get((owner, evidence.candidate_id))
-        if review is None or review.decision.value != "ready":
-            raise ValueError("conversion requires a READY semantic review")
+        if review is None or not review.is_deliverable():
+            raise ValueError("conversion requires a review whose evidence is deliverable")
         if execution is None or not (
             review.execution_id == evidence.execution_id == execution.execution_id
             and review.source_fingerprint
@@ -243,8 +236,8 @@ class MemoryAgentStore:
         )
         reviews = self._semantic_reviews[(owner, materialization.candidate_id)]
         review = max(reviews, key=lambda item: item.attempt_seq) if reviews else None
-        if review is None or review.decision.value != "ready":
-            raise ValueError("materialization requires a READY semantic review")
+        if review is None or not review.is_deliverable():
+            raise ValueError("materialization requires a review whose evidence is deliverable")
         if candidate.source_fingerprint != materialization.source_fingerprint:
             raise ValueError("materialization fingerprint does not match candidate")
         existing = next(

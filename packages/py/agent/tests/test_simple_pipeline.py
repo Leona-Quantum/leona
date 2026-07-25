@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
 from uuid import UUID, uuid4
@@ -83,9 +84,14 @@ class FakePorts:
         fail_first_execution: bool = False,
         export_failure: SimplePipelineFailure | None = None,
         save_failures: int = 0,
+        review_feedback: dict | None = None,
+        review_severity: str | None = None,
     ) -> None:
         self.calls: list[str] = []
         self.review_decisions = list(reviews or [SemanticReviewDecision.READY])
+        self._last_review = SemanticReviewDecision.READY
+        self.review_feedback = review_feedback
+        self.review_severity = review_severity
         self.fail_first_execution = fail_first_execution
         self.export_failure = export_failure
         self.save_failures = save_failures
@@ -162,11 +168,11 @@ class FakePorts:
 
     async def review(self, _run_id, _plan, candidate, execution, attempt):
         self.calls.append("review")
-        decision = (
-            self.review_decisions.pop(0)
-            if self.review_decisions
-            else (SemanticReviewDecision.READY)
-        )
+        # Repeat the last scripted decision once the script runs out, so a test that
+        # means "a reviewer that never accepts" stays true regardless of the budget.
+        if self.review_decisions:
+            self._last_review = self.review_decisions.pop(0)
+        decision = self._last_review
         failure_class = None
         retry_target = RetryTarget.NONE
         if decision is SemanticReviewDecision.CODE_REPAIR:
@@ -189,7 +195,10 @@ class FakePorts:
                 reason_code=f"review_{decision.value}",
                 failure_class=failure_class,
                 retry_target=retry_target,
-                feedback={"decision": decision.value},
+                severity=self.review_severity,
+                feedback=self.review_feedback
+                if self.review_feedback is not None
+                else {"decision": decision.value},
             )
         )
 
@@ -444,11 +453,10 @@ async def test_repeated_code_repair_remains_finite_without_replan_budget():
     assert "save" not in ports.calls
 
 
-async def test_inconclusive_review_repairs_candidate_and_continues_autonomously():
+async def test_blocked_review_repairs_candidate_and_continues_autonomously():
     ports = FakePorts(
         reviews=[
-            SemanticReviewDecision.INCONCLUSIVE,
-            SemanticReviewDecision.INCONCLUSIVE,
+            SemanticReviewDecision.CODE_REPAIR,
             SemanticReviewDecision.READY,
         ]
     )
@@ -456,27 +464,46 @@ async def test_inconclusive_review_repairs_candidate_and_continues_autonomously(
 
     assert outcome.status is SimplePipelineStatus.SUCCEEDED
     assert outcome.candidate is not None and outcome.candidate.revision == 2
-    assert outcome.counters.review_attempts == 3
+    # One review call per candidate. A review that parsed always names a next step,
+    # so re-asking it the identical question was pure latency.
+    assert outcome.counters.review_attempts == 2
     feedback = ports.generation_feedback[1]
     assert feedback is not None
-    assert feedback.code == "review_inconclusive"
-    assert "expose the missing evidence" in feedback.message
+    assert "code repair" in feedback.message
 
 
-async def test_repeated_inconclusive_review_stops_at_candidate_budget_without_certifying():
-    ports = FakePorts(
-        reviews=[SemanticReviewDecision.INCONCLUSIVE] * 4,
-    )
+async def test_repeated_code_repair_escalates_to_replan_before_spending_the_budget():
+    """The escalation that a never-accepting review used to make unreachable.
+
+    Two consecutive code repairs mean one code-only remedy already failed, so the
+    remaining uncertainty includes the Plan. This branch keys on CONSECUTIVE
+    CODE_REPAIR decisions, which is why the retired fourth "cannot tell" outcome
+    could burn every candidate revision without the replan budget ever being touched.
+    """
+
+    ports = FakePorts(reviews=[SemanticReviewDecision.CODE_REPAIR])
+    outcome = await SimpleCircuitPipeline(ports=ports).run(uuid4())
+
+    assert outcome.status is SimplePipelineStatus.FAILED
+    assert outcome.counters.plan_attempts == SimplePipelineBudget().max_plan_attempts
+    assert ports.plan_feedback[1] is not None
+    assert "revise the Plan" in ports.plan_feedback[1].message
+    assert "export" not in ports.calls
+    assert "save" not in ports.calls
+
+
+async def test_never_accepted_review_stops_at_candidate_budget_without_certifying():
+    ports = FakePorts(reviews=[SemanticReviewDecision.CODE_REPAIR])
     outcome = await SimpleCircuitPipeline(
         ports=ports,
-        budget=SimplePipelineBudget(max_generation_attempts=2),
+        budget=SimplePipelineBudget(max_generation_attempts=2, max_plan_attempts=1),
     ).run(uuid4())
 
     assert outcome.status is SimplePipelineStatus.FAILED
     assert outcome.failure is not None
-    assert outcome.failure.code == "intent_review_inconclusive"
+    assert outcome.failure.code == "candidate_budget_exhausted"
     assert outcome.counters.generation_attempts == 2
-    assert outcome.counters.review_attempts == 4
+    assert outcome.counters.review_attempts == 2
     assert "export" not in ports.calls
     assert "save" not in ports.calls
 
@@ -658,3 +685,514 @@ def test_port_result_and_budget_reject_ambiguous_or_unbounded_shapes():
         SimplePortResult(value="value", failure=failure)
     with pytest.raises(ValueError, match="at least 1"):
         SimplePipelineBudget(max_plan_attempts=0)
+
+
+# --- An advisory review cannot destroy a sound run ------------------------------
+#
+# namekoQ has no acceptance gate at all: its loop ends on a step count and whatever
+# the model last said is the deliverable. Majorana made the reviewer's READY a
+# precondition for producing anything, so an advisory opinion — ADR-0023's own word
+# for it — was the strongest gate in the pipeline. These pin the fallback.
+
+
+def _sound_review_feedback() -> dict:
+    return {"basic_checks": [{"method": "success_criteria", "result": "pass"}]}
+
+
+async def test_sound_candidate_is_delivered_when_review_never_accepts():
+    ports = FakePorts(
+        reviews=[SemanticReviewDecision.CODE_REPAIR],
+        review_feedback=_sound_review_feedback(),
+        review_severity="minor",
+    )
+
+    outcome = await SimpleCircuitPipeline(ports=ports).run(uuid4())
+
+    assert outcome.status is SimplePipelineStatus.SUCCEEDED
+    assert outcome.artifact is not None
+    # Delivered, but nothing pretends the reviewer accepted it.
+    assert outcome.review is not None
+    assert outcome.review.decision is SemanticReviewDecision.CODE_REPAIR
+    assert "save" in ports.calls
+
+
+async def test_a_blocking_defect_is_never_delivered_as_a_fallback():
+    ports = FakePorts(
+        reviews=[SemanticReviewDecision.CODE_REPAIR],
+        review_feedback=_sound_review_feedback(),
+        review_severity="blocking",
+    )
+
+    outcome = await SimpleCircuitPipeline(ports=ports).run(uuid4())
+
+    assert outcome.status is SimplePipelineStatus.FAILED
+    assert "save" not in ports.calls
+
+
+async def test_a_failed_deterministic_check_is_never_delivered_as_a_fallback():
+    """The fallback rests on trusted evidence, so a failed check disqualifies it —
+    including a Plan-declared reference the reported number contradicted."""
+
+    ports = FakePorts(
+        reviews=[SemanticReviewDecision.CODE_REPAIR],
+        review_feedback={
+            "basic_checks": [
+                {"method": "success_criteria", "result": "pass"},
+                {"method": "exact_diag", "result": "fail"},
+            ]
+        },
+        review_severity="minor",
+    )
+
+    outcome = await SimpleCircuitPipeline(ports=ports).run(uuid4())
+
+    assert outcome.status is SimplePipelineStatus.FAILED
+    assert "save" not in ports.calls
+
+
+async def test_an_accepted_review_still_takes_the_normal_path():
+    ports = FakePorts(reviews=[SemanticReviewDecision.READY])
+
+    outcome = await SimpleCircuitPipeline(ports=ports).run(uuid4())
+
+    assert outcome.status is SimplePipelineStatus.SUCCEEDED
+    assert outcome.review is not None
+    assert outcome.review.decision is SemanticReviewDecision.READY
+    assert outcome.counters.generation_attempts == 1
+
+
+# --- Repair history --------------------------------------------------------------
+#
+# The generation port only ever receives the immediately preceding candidate, so
+# without an accumulated record the model can re-make a mistake it made two
+# revisions ago — and at temperature 0 it reliably does. namekoQ gets this free from
+# its single-conversation message history.
+
+
+async def test_repair_feedback_accumulates_every_earlier_rejection():
+    ports = FakePorts(
+        reviews=[SemanticReviewDecision.CODE_REPAIR],
+        review_feedback={
+            "critic": {
+                "summary": "the entangling gate is still missing",
+                "mismatches": ["no CNOT between the qubits"],
+                "repair_instructions": ["add qc.cx(0, 1)"],
+            }
+        },
+        review_severity="minor",
+    )
+
+    await SimpleCircuitPipeline(ports=ports).run(uuid4())
+
+    # Feedback for the 2nd candidate knows about 1 rejection; the 3rd knows about 2.
+    second = ports.generation_feedback[1]
+    third = ports.generation_feedback[2]
+    assert second is not None and third is not None
+    assert [entry["revision"] for entry in second.details["prior_attempts"]] == [1]
+    assert [entry["revision"] for entry in third.details["prior_attempts"]] == [1, 2]
+    # The fix that was already prescribed and did not work travels with it.
+    assert third.details["prior_attempts"][0]["repair_instructions"] == ["add qc.cx(0, 1)"]
+    assert third.details["prior_attempts"][0]["rejected_because"]
+
+
+async def test_execution_failures_are_recorded_in_the_history_too():
+    ports = FakePorts(fail_first_execution=True)
+
+    outcome = await SimpleCircuitPipeline(ports=ports).run(uuid4())
+
+    assert outcome.status is SimplePipelineStatus.SUCCEEDED
+    second = ports.generation_feedback[1]
+    assert second is not None
+    prior = second.details["prior_attempts"]
+    assert [entry["revision"] for entry in prior] == [1]
+    assert prior[0]["rejected_because"]
+
+
+async def test_the_first_generation_carries_no_history():
+    ports = FakePorts()
+
+    await SimpleCircuitPipeline(ports=ports).run(uuid4())
+
+    assert ports.generation_feedback[0] is None
+
+
+async def test_defect_history_survives_a_replan():
+    """A replan clears the plan's critique — which is right — but the code defects it
+    collected are facts about the code, so dropping them let the first candidate under
+    a new plan re-make the exact defects that forced the replan."""
+
+    ports = FakePorts(
+        reviews=[SemanticReviewDecision.CODE_REPAIR],
+        review_feedback={"critic": {"repair_instructions": ["add qc.cx(0, 1)"]}},
+        review_severity="minor",
+    )
+
+    await SimpleCircuitPipeline(ports=ports).run(uuid4())
+
+    # The 3rd generation is the first under the revised plan (2 consecutive code
+    # repairs escalate), so its feedback is the carried-over history, not a critique.
+    third = ports.generation_feedback[2]
+    assert third is not None
+    assert third.code == "prior_attempts_only"
+    assert [entry["revision"] for entry in third.details["prior_attempts"]] == [1, 2]
+
+
+async def test_running_out_of_time_delivers_the_sound_candidate_instead_of_nothing():
+    """The worker's asyncio.timeout cancels mid-stage and yields nothing at all, which
+    is strictly worse than budget exhaustion. The pipeline stops one candidate early."""
+
+    ports = FakePorts(
+        reviews=[SemanticReviewDecision.CODE_REPAIR],
+        review_feedback={"basic_checks": [{"method": "success_criteria", "result": "pass"}]},
+        review_severity="minor",
+    )
+    clock = {"expired": False}
+
+    async def run():
+        return await SimpleCircuitPipeline(
+            ports=ports,
+            out_of_time=lambda: clock["expired"],
+        ).run(uuid4())
+
+    # Time runs out after the first candidate has been reviewed.
+    original = ports.review
+
+    async def review_then_expire(*args, **kwargs):
+        result = await original(*args, **kwargs)
+        clock["expired"] = True
+        return result
+
+    ports.review = review_then_expire
+    outcome = await run()
+
+    assert outcome.status is SimplePipelineStatus.SUCCEEDED
+    assert outcome.artifact is not None
+    assert outcome.counters.generation_attempts == 1
+    assert "save" in ports.calls
+
+
+async def test_running_out_of_time_without_a_sound_candidate_is_a_typed_failure():
+    ports = FakePorts(
+        reviews=[SemanticReviewDecision.CODE_REPAIR],
+        review_feedback={"basic_checks": [{"method": "success_criteria", "result": "fail"}]},
+        review_severity="minor",
+    )
+
+    outcome = await SimpleCircuitPipeline(ports=ports, out_of_time=lambda: True).run(uuid4())
+
+    assert outcome.status is SimplePipelineStatus.FAILED
+    assert outcome.failure is not None
+    assert outcome.failure.code == "run_time_budget_exhausted"
+    assert "save" not in ports.calls
+
+
+class _FakeMonotonic:
+    def __init__(self) -> None:
+        self.now = 0.0
+
+    def __call__(self) -> float:
+        return self.now
+
+    def advance(self, seconds: float) -> None:
+        self.now += seconds
+
+
+class _ClockedPorts(FakePorts):
+    def __init__(self, clock: _FakeMonotonic, *, slow: bool) -> None:
+        super().__init__(
+            reviews=[SemanticReviewDecision.CODE_REPAIR],
+            review_feedback=_sound_review_feedback(),
+            review_severity="minor",
+        )
+        self.clock = clock
+        self.slow = slow
+
+    async def plan(self, *args):
+        result = await super().plan(*args)
+        self.clock.advance(1)
+        return result
+
+    async def generate(self, *args):
+        result = await super().generate(*args)
+        self.clock.advance(20 if self.slow else 2)
+        return result
+
+    async def run_execution(self, *args):
+        result = await super().run_execution(*args)
+        self.clock.advance(20 if self.slow else 2)
+        return result
+
+    async def check_contract(self, *args):
+        result = await super().check_contract(*args)
+        self.clock.advance(1)
+        return result
+
+    async def review(self, *args):
+        result = await super().review(*args)
+        self.clock.advance(20 if self.slow else 2)
+        return result
+
+    async def export(self, *args):
+        result = await super().export(*args)
+        self.clock.advance(1)
+        return result
+
+    async def save(self, *args):
+        result = await super().save(*args)
+        self.clock.advance(1)
+        return result
+
+
+async def test_adaptive_time_budget_uses_candidate_budget_when_stages_are_fast():
+    clock = _FakeMonotonic()
+    ports = _ClockedPorts(clock, slow=False)
+
+    outcome = await SimpleCircuitPipeline(
+        ports=ports,
+        budget=SimplePipelineBudget(max_generation_attempts=4),
+        remaining_time_s=lambda: 100 - clock(),
+        monotonic=clock,
+    ).run(uuid4())
+
+    assert outcome.status is SimplePipelineStatus.SUCCEEDED
+    assert outcome.counters.generation_attempts == 4
+    assert outcome.candidate is not None and outcome.candidate.revision == 4
+
+
+async def test_adaptive_time_budget_stops_slow_loop_and_saves_sound_candidate():
+    clock = _FakeMonotonic()
+    ports = _ClockedPorts(clock, slow=True)
+
+    outcome = await SimpleCircuitPipeline(
+        ports=ports,
+        remaining_time_s=lambda: 100 - clock(),
+        monotonic=clock,
+    ).run(uuid4())
+
+    assert outcome.status is SimplePipelineStatus.SUCCEEDED
+    assert outcome.counters.generation_attempts == 1
+    assert outcome.candidate is not None and outcome.candidate.revision == 1
+    assert clock() < 100
+
+
+async def test_slow_stage_is_cut_off_before_it_can_consume_finalization_time():
+    class HangingSecondGenerationPorts(FakePorts):
+        async def generate(self, run_id, plan, previous, feedback):
+            if previous is not None:
+                await asyncio.sleep(1)
+                raise AssertionError("the stage deadline should cancel this operation")
+            return await super().generate(run_id, plan, previous, feedback)
+
+    ports = HangingSecondGenerationPorts(
+        reviews=[SemanticReviewDecision.CODE_REPAIR],
+        review_feedback=_sound_review_feedback(),
+        review_severity="minor",
+    )
+
+    remaining_checks = {"count": 0}
+
+    def remaining() -> float:
+        remaining_checks["count"] += 1
+        # Calls 1-5 bound plan and the first candidate; call 6 admits candidate
+        # two; its generation-stage call then sees only 0.1 s beyond the 25 s
+        # finalization reserve.
+        return 25.1 if remaining_checks["count"] >= 7 else 100.0
+
+    outcome = await SimpleCircuitPipeline(
+        ports=ports,
+        remaining_time_s=remaining,
+    ).run(uuid4())
+
+    assert outcome.status is SimplePipelineStatus.SUCCEEDED
+    assert outcome.candidate is not None and outcome.candidate.revision == 1
+    assert outcome.counters.generation_attempts == 2
+    assert outcome.warnings[-1].code == "stage_time_budget_exhausted"
+
+
+async def test_slow_optional_export_is_cut_off_so_artifact_can_still_save():
+    class HangingExportPorts(FakePorts):
+        async def export(self, *_args):
+            await asyncio.sleep(1)
+            raise AssertionError("the export deadline should cancel this operation")
+
+    ports = HangingExportPorts()
+    outcome = await SimpleCircuitPipeline(
+        ports=ports,
+        remaining_time_s=lambda: 17.1,
+    ).run(uuid4())
+
+    assert outcome.status is SimplePipelineStatus.SUCCEEDED
+    assert outcome.conversion is None
+    assert outcome.warnings[-1].code == "stage_time_budget_exhausted"
+    assert ports.calls[-1] == "save"
+
+
+async def test_export_persistence_failure_does_not_discard_the_artifact():
+    """Export is optional interchange data; failing to record it is not a reason to
+    throw away the framework-native program the run exists to produce."""
+
+    failure = SimplePipelineFailure(
+        kind=SimpleFailureKind.PERSISTENCE,
+        stage=SimplePipelineStage.EXPORTING,
+        code="export_persistence_failed",
+        message="could not persist export evidence",
+    )
+    ports = FakePorts(export_failure=failure)
+
+    outcome = await SimpleCircuitPipeline(ports=ports).run(uuid4())
+
+    assert outcome.status is SimplePipelineStatus.SUCCEEDED
+    assert outcome.artifact is not None
+    assert outcome.warnings == (failure,)
+
+
+async def test_export_integrity_failure_is_still_fatal():
+    """A binding violation is fail-closed: the save it guards must not proceed."""
+
+    failure = SimplePipelineFailure(
+        kind=SimpleFailureKind.INTEGRITY,
+        stage=SimplePipelineStage.EXPORTING,
+        code="export_binding_failed",
+        message="export evidence binding failed",
+    )
+    ports = FakePorts(export_failure=failure)
+
+    outcome = await SimpleCircuitPipeline(ports=ports).run(uuid4())
+
+    assert outcome.status is SimplePipelineStatus.FAILED
+    assert "save" not in ports.calls
+
+
+async def test_prior_attempts_carry_what_each_revision_reported():
+    """ "You already tried X and it produced Y" is the comparison that converges."""
+
+    ports = FakePorts(
+        reviews=[SemanticReviewDecision.CODE_REPAIR],
+        review_feedback={"critic": {"repair_instructions": ["use the right ansatz"]}},
+        review_severity="minor",
+    )
+
+    await SimpleCircuitPipeline(ports=ports).run(uuid4())
+
+    second = ports.generation_feedback[1]
+    assert second is not None
+    assert second.details["prior_attempts"][0]["reported"] == {"counts": {"00": 50, "11": 50}}
+
+
+async def test_repeated_execution_defect_escalates_to_replan_and_recovers():
+    class RepeatedExecutionFailurePorts(FakePorts):
+        async def run_execution(self, run_id, plan, candidate):
+            if candidate.revision > 2:
+                return await super().run_execution(run_id, plan, candidate)
+            self.calls.append("execute")
+            return SimplePortResult.success(
+                ExecutionEvidence(
+                    execution_id=uuid4(),
+                    candidate_id=candidate.candidate_id,
+                    source_fingerprint=candidate.source_fingerprint,
+                    environment_fingerprint="e" * 64,
+                    sandbox_provider="test",
+                    exit_code=1,
+                    failure_kind=ExecutionFailureKind.CODE_ERROR,
+                    duration_ms=3,
+                    result={},
+                    observation={
+                        "evidence_error": "code_error",
+                        "sandbox_error": "NameError: same_broken_api",
+                    },
+                )
+            )
+
+    ports = RepeatedExecutionFailurePorts()
+    outcome = await SimpleCircuitPipeline(ports=ports).run(uuid4())
+
+    assert outcome.status is SimplePipelineStatus.SUCCEEDED
+    assert outcome.plan is not None and outcome.plan.revision == 2
+    assert outcome.candidate is not None and outcome.candidate.revision == 3
+    feedback = ports.plan_feedback[1]
+    assert feedback is not None
+    assert feedback.code == "repeated_execution_failure"
+    assert feedback.details["controller"]["reason"] == "same_execution_failure_repeated"
+    assert (
+        "sandbox_error: NameError: same_broken_api"
+        in feedback.details["prior_attempts"][0]["diagnostics"]
+    )
+
+
+async def test_late_generation_provider_failure_delivers_trusted_candidate():
+    class LateProviderFailurePorts(FakePorts):
+        async def generate(self, run_id, plan, previous, feedback):
+            if previous is not None:
+                self.calls.append("generate")
+                self.generation_feedback.append(feedback)
+                return SimplePortResult.failed(
+                    SimplePipelineFailure(
+                        kind=SimpleFailureKind.PROVIDER,
+                        stage=SimplePipelineStage.GENERATING,
+                        code="generation_provider_unavailable",
+                        message="generation provider unavailable",
+                    )
+                )
+            return await super().generate(run_id, plan, previous, feedback)
+
+    ports = LateProviderFailurePorts(
+        reviews=[SemanticReviewDecision.CODE_REPAIR],
+        review_feedback=_sound_review_feedback(),
+        review_severity="minor",
+    )
+    outcome = await SimpleCircuitPipeline(ports=ports).run(uuid4())
+
+    assert outcome.status is SimplePipelineStatus.SUCCEEDED
+    assert outcome.candidate is not None and outcome.candidate.revision == 1
+    assert outcome.warnings
+    assert outcome.warnings[-1].code == "generation_provider_unavailable"
+    assert "save" in ports.calls
+
+
+async def test_best_sound_candidate_replaces_weaker_earlier_fallback():
+    class RankedFallbackPorts(FakePorts):
+        async def generate(self, run_id, plan, previous, feedback):
+            if previous is not None and previous.revision == 2:
+                self.calls.append("generate")
+                self.generation_feedback.append(feedback)
+                return SimplePortResult.failed(
+                    SimplePipelineFailure(
+                        kind=SimpleFailureKind.PROVIDER,
+                        stage=SimplePipelineStage.GENERATING,
+                        code="generation_provider_unavailable",
+                        message="generation provider unavailable",
+                    )
+                )
+            return await super().generate(run_id, plan, previous, feedback)
+
+        async def review(self, run_id, plan, candidate, execution, attempt):
+            result = await super().review(run_id, plan, candidate, execution, attempt)
+            assert result.value is not None
+            severity = "minor" if candidate.revision == 1 else "none"
+            return SimplePortResult.success(result.value.model_copy(update={"severity": severity}))
+
+    ports = RankedFallbackPorts(
+        reviews=[SemanticReviewDecision.CODE_REPAIR],
+        review_feedback=_sound_review_feedback(),
+    )
+    outcome = await SimpleCircuitPipeline(ports=ports).run(uuid4())
+
+    assert outcome.status is SimplePipelineStatus.SUCCEEDED
+    assert outcome.candidate is not None and outcome.candidate.revision == 2
+    assert outcome.review is not None and outcome.review.severity == "none"
+
+
+async def test_export_provider_failure_is_best_effort():
+    failure = SimplePipelineFailure(
+        kind=SimpleFailureKind.PROVIDER,
+        stage=SimplePipelineStage.EXPORTING,
+        code="export_provider_unavailable",
+        message="export provider unavailable",
+    )
+    ports = FakePorts(export_failure=failure)
+
+    outcome = await SimpleCircuitPipeline(ports=ports).run(uuid4())
+
+    assert outcome.status is SimplePipelineStatus.SUCCEEDED
+    assert outcome.conversion is None
+    assert outcome.warnings == (failure,)

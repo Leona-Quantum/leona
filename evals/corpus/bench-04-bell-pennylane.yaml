@@ -1,0 +1,8 @@
+id: bench-04
+category: "A — Bell/GHZ state prep"
+prompt: "Prepare a Bell state on two qubits with PennyLane and measure both."
+framework: pennylane
+expect:
+  terminal_reason: ai_review_aligned
+  output_keys: ["counts"]
+  saves_artifact: true
