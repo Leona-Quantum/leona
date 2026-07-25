@@ -1,0 +1,100 @@
+name: publish-vqe-runtime
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_commit:
+        description: Full commit SHA containing the qualified runtime payload
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  packages: write
+  id-token: write
+  attestations: write
+
+concurrency:
+  group: publish-vqe-runtime-${{ inputs.source_commit }}
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    outputs:
+      source_commit: ${{ steps.commit.outputs.source_commit }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.source_commit }}
+      - id: commit
+        env:
+          REQUESTED_COMMIT: ${{ inputs.source_commit }}
+        run: |
+          set -euo pipefail
+          case "$REQUESTED_COMMIT" in
+            [0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]) ;;
+            *) echo "::error::source_commit must be a full lowercase commit SHA"; exit 1 ;;
+          esac
+          test "$(git rev-parse HEAD)" = "$REQUESTED_COMMIT"
+          echo "source_commit=$REQUESTED_COMMIT" >> "$GITHUB_OUTPUT"
+
+  publish:
+    needs: validate
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - framework: qiskit
+            profile_dir: runtimes/vqe/qiskit-current
+          - framework: pennylane
+            profile_dir: runtimes/vqe/pennylane-current
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.validate.outputs.source_commit }}
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: runtimes/vqe/Dockerfile
+          build-args: PROFILE_DIR=${{ matrix.profile_dir }}
+          build-contexts: fixture=docs/atlas/fixtures/h2_sto3g
+          platforms: linux/amd64
+          outputs: type=image,name=ghcr.io/eshmis/majorana-vqe-${{ matrix.framework }}:source-${{ needs.validate.outputs.source_commit }},push=true,oci-mediatypes=true,compression=zstd,compression-level=3,force-compression=true
+          provenance: mode=max
+          sbom: true
+      - name: write immutable digest evidence
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+          FRAMEWORK: ${{ matrix.framework }}
+          SOURCE_COMMIT: ${{ needs.validate.outputs.source_commit }}
+        run: |
+          mkdir -p runtime-digests
+          jq -n \
+            --arg framework "$FRAMEWORK" \
+            --arg source_commit "$SOURCE_COMMIT" \
+            --arg image "ghcr.io/eshmis/majorana-vqe-$FRAMEWORK@$DIGEST" \
+            --arg manifest_digest "$DIGEST" \
+            '{
+              schema_version: "1.0.0",
+              framework: $framework,
+              source_commit: $source_commit,
+              image: $image,
+              manifest_digest: $manifest_digest,
+              digest_kind: "oci_registry_manifest_digest",
+              platform: "linux/amd64"
+            }' > "runtime-digests/$FRAMEWORK.json"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: vqe-runtime-${{ matrix.framework }}-digest
+          path: runtime-digests/${{ matrix.framework }}.json
+          if-no-files-found: error
+          retention-days: 90
