@@ -19,8 +19,10 @@ Scope: Atlas VQE Phase 5 candidate execution and Phase 6 release gate
 | Scientific input silently changes | exact component and workflow digests; deferred mode accepts only the frozen H2 semantic keys | controlled |
 | Provider-native metrics presented as comparable | only canonical/common stages are comparison-eligible | controlled |
 | Unreviewed result appears public or verified | capability unavailable; UI/API labels; private materialization; publication blocked | controlled |
-| Compromised local Docker daemon | Docker socket remains a privileged host boundary | accepted for local candidate only; blocks production promotion |
-| Registry tag or digest substitution | execution uses digest, never tag | local proof complete; registry publication pending |
+| Compromised dedicated Docker daemon | Dedicated host and Docker socket remain a privileged boundary | accepted for private runtime; host hardening/monitoring remains operational work |
+| Registry tag or digest substitution | server profile uses an exact OCI index digest; preflight verifies local RepoDigest; execution uses `--pull=never` | controlled |
+| Runtime-time registry/network dependency | images are provisioned before execution and containers use `--network none` | controlled |
+| Scientific waiver mislabeled as review | API/evidence use `owner_waived`, never `human_reviewed`; public/scientific release remains blocked | controlled |
 
 ## Rights and provenance review
 
@@ -39,6 +41,8 @@ Scope: Atlas VQE Phase 5 candidate execution and Phase 6 release gate
 
 ## Release conclusion
 
-No new technical high-severity issue was found after remediation. Residual
-Docker-daemon trust, independent scientific review, registry publication, and
-human license approval mean public release remains blocked.
+No new technical high-severity issue was found after remediation. GHCR
+publication and the private disposable-Neon system E2E are complete. Residual
+Docker-host trust, owner-waived independent scientific review, live WorkOS
+tenant validation, deployment operations, and human license approval mean
+public release remains blocked.

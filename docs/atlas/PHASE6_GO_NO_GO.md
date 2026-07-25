@@ -27,10 +27,11 @@ production-runtime design**
 | Studio create→run→inspect→save code path | launcher/BFF/panel implemented | pass_static |
 | Remote `feature/vqe` CI | implementation run 30165157403 at a49b6d5 and closure run 30171168974 at 6d8a054; py/ts/db/ui-visual | pass |
 | Authenticated browser contract E2E | local identity + real Next BFF + deterministic mock API; success/failure | pass_limited |
-| Production browser E2E | WorkOS + Neon + production runtime | incomplete |
-| Independent H₂ scientific review | reviewer not supplied | deferred_external |
-| Production runtime provider | local Docker executor only | not_implemented |
-| OCI Registry manifest digest | image not pushed | not_implemented |
+| Private production system E2E | WorkOS-shaped JWT verification + disposable Neon + durable worker + real OCI runtime | pass for Qiskit and PennyLane |
+| Live WorkOS tenant/browser E2E | owner-managed tenant credentials unavailable; Vercel excluded by owner | not_run |
+| Independent H₂ scientific review | explicitly waived by owner; not relabeled as review | owner_waived |
+| Production runtime provider | pre-provisioned dedicated Docker host, exact digest, `--pull=never` | implemented_private |
+| OCI Registry manifest digest | GHCR Linux/amd64 indexes with SBOM/provenance attestations | pass |
 | GitHub metadata Wrapper | master-plan work has not resumed | not_implemented |
 | Public capability/promotion | expressly unauthorized | blocked_owner |
 
@@ -56,9 +57,13 @@ observation, provenance, database races, polling semantics, branch CI
 configuration, minimal runtime dependencies, and deterministic thread
 settings.
 
-This is not the same as production readiness. No cloud sandbox executor,
-Registry-pullable OCI digest, production WorkOS/Neon/runtime browser E2E,
-deployment monitoring, or incident-response evidence exists.
+The private production path now has Registry-pullable OCI digests and a
+dedicated-host executor. Run `30172634273` passed a disposable-Neon system E2E
+for both frameworks through the real JWT verifier, API, durable queue/worker,
+real OCI image, and persisted evidence. The issuer was an ephemeral
+WorkOS-shaped JWKS service, not a live WorkOS tenant. Vercel was explicitly
+excluded by the owner. Deployment monitoring and incident-response evidence
+remain absent.
 
 ## Release decision
 
@@ -69,7 +74,9 @@ CI and the limited authenticated browser contract are closed; production
 runtime, OCI promotion, production browser E2E, independent scientific
 review, and owner authorization remain explicit gates.
 
-Remote CI passed. Development priority now returns to the original
+Remote CI passed at `6cceb1255a57973b9bf388ada3c615407bc991e2`
+(CI run `30172634255`; production-system E2E run `30172634273`, two tests in
+22.03 s). Development priority now returns to the original
 master-plan objective:
 
 1. manual GitHub URL import;
