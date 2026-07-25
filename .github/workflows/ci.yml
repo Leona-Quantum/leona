@@ -24,6 +24,8 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm turbo run lint typecheck test
+      - name: Next.js production build
+        run: pnpm --filter @majorana/web build
       - name: contracts-gen is current
         run: |
           pnpm --filter @majorana/contracts-gen gen
@@ -54,6 +56,8 @@ jobs:
         run: pnpm --filter @majorana/ui-visual exec playwright install --with-deps chromium
       - name: axe (WCAG A/AA over rendered @majorana/ui stories)
         run: pnpm --filter @majorana/ui-visual run a11y
+      - name: authenticated Atlas VQE happy/failure browser contracts
+        run: pnpm --filter @majorana/web run e2e:vqe
 
   py:
     runs-on: ubuntu-latest

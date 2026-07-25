@@ -2,9 +2,9 @@
 
 Date: 2026-07-26  
 Branch: `feature/vqe`  
-Decision: **NO-GO for public MVP release; GO for remote branch CI,
-authenticated E2E, independent scientific review, and production-runtime
-design**
+Decision: **NO-GO for public MVP release; GO for GitHub metadata Wrapper,
+claim/metric source modeling, independent scientific review, and
+production-runtime design**
 
 ## Gate matrix
 
@@ -25,8 +25,9 @@ design**
 | Web tests/typecheck | 95 tests; typecheck passed | pass |
 | Migration 0036 rollback | local PostgreSQL up→down→up | pass |
 | Studio create→run→inspect→save code path | launcher/BFF/panel implemented | pass_static |
-| Remote `feature/vqe` CI | push trigger configured | pending_push_result |
-| Authenticated browser E2E | not executed | incomplete |
+| Remote `feature/vqe` CI | run 30165157403, audited head a49b6d5, py/ts/db/ui-visual | pass |
+| Authenticated browser contract E2E | local identity + real Next BFF + deterministic mock API; success/failure | pass_limited |
+| Production browser E2E | WorkOS + Neon + production runtime | incomplete |
 | Independent H₂ scientific review | reviewer not supplied | deferred_external |
 | Production runtime provider | local Docker executor only | not_implemented |
 | OCI Registry manifest digest | image not pushed | not_implemented |
@@ -56,19 +57,20 @@ configuration, minimal runtime dependencies, and deterministic thread
 settings.
 
 This is not the same as production readiness. No cloud sandbox executor,
-Registry-pullable OCI digest, authenticated browser E2E, deployment
-monitoring, or incident-response evidence exists.
+Registry-pullable OCI digest, production WorkOS/Neon/runtime browser E2E,
+deployment monitoring, or incident-response evidence exists.
 
 ## Release decision
 
 Public MVP release remains **NO-GO**. The earlier statement that all technical
 hardening except human/owner decisions was complete was incorrect and has
-been withdrawn. Local P0 hardening is now substantially closed, but remote
-CI, authenticated E2E, production runtime, OCI promotion, independent
-scientific review, and owner authorization remain explicit gates.
+been withdrawn. Local P0 hardening is now substantially closed. Remote branch
+CI and the limited authenticated browser contract are closed; production
+runtime, OCI promotion, production browser E2E, independent scientific
+review, and owner authorization remain explicit gates.
 
-After the remote CI result is recorded, the implementation priority returns
-to the original master-plan objective:
+Remote CI passed. Development priority now returns to the original
+master-plan objective:
 
 1. manual GitHub URL import;
 2. immutable commit, license, citation, and dependency capture;

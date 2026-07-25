@@ -28,7 +28,10 @@ class CandidateRuntimeProfile:
     compilation_protocol_sha256: str
     common_basis_operation_sequence_sha256: str
     qualification_script_sha256: str
-    source_git_commit: str | None = None
+    # Commit containing the exact Dockerfile, lock, entrypoint, and canonical
+    # scientific fixtures used to build this local candidate image. This is
+    # deliberately not the qualification-tool or branch-audit commit.
+    runtime_payload_source_commit: str | None = None
     sbom_sha256: str | None = None
     build_attestation_sha256: str | None = None
     entrypoint_kind: str = "frozen_h2_actual_vqe_stdout_v1"
@@ -37,7 +40,7 @@ class CandidateRuntimeProfile:
     def provenance_complete(self) -> bool:
         return all(
             (
-                self.source_git_commit,
+                self.runtime_payload_source_commit,
                 self.sbom_sha256,
                 self.build_attestation_sha256,
             )
@@ -90,9 +93,9 @@ _PROFILES = {
             "e0eaae576a3570dde47dcc5d5489dd758ee1311f911d0686cc87d5e2bd3f4cbd"
         ),
         qualification_script_sha256=(
-            "f23dad6356e71bc3a3b34ac3a4d2229e60e7c35317033ea3faca881251d1578b"
+            "7f74f0447c1747d080062839e8fa2f9d4225000c78ad9e1a8f75a556fd85b69a"
         ),
-        source_git_commit="99e95a9a2589a3ca0ac01c3e44499046fabbce89",
+        runtime_payload_source_commit="99e95a9a2589a3ca0ac01c3e44499046fabbce89",
         sbom_sha256="337a9d45772b37f2b48dd52b55b95326480e55e0e29b7eaf801a8da6724a6b64",
         build_attestation_sha256=(
             "df9fe2ac62e2719003a900fdb62717028aace09c636b29e9a79978407291474f"
@@ -139,9 +142,9 @@ _PROFILES = {
             "e0eaae576a3570dde47dcc5d5489dd758ee1311f911d0686cc87d5e2bd3f4cbd"
         ),
         qualification_script_sha256=(
-            "f23dad6356e71bc3a3b34ac3a4d2229e60e7c35317033ea3faca881251d1578b"
+            "7f74f0447c1747d080062839e8fa2f9d4225000c78ad9e1a8f75a556fd85b69a"
         ),
-        source_git_commit="99e95a9a2589a3ca0ac01c3e44499046fabbce89",
+        runtime_payload_source_commit="99e95a9a2589a3ca0ac01c3e44499046fabbce89",
         sbom_sha256="b11a25ac4a88ac296725b661264ce77b475d6044a440e1a53de354f6cdc1b3fb",
         build_attestation_sha256=(
             "c39ebac05684271254e4689a06da2008ce62d0c5cd0bebedcee500774df991e2"

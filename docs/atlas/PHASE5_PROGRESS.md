@@ -111,11 +111,14 @@ Machine-readable evidence:
 | Qiskit 1.4.6 | `sha256:820b4fb9c9fa59160abb37062b6f71d43fedcb0a9a955bfcabe1c294889cfd6c` | 10 | 0 | 1.821e-14 | 0.9999999999999896 |
 | PennyLane 0.45.1 | `sha256:82d5cc74bd8f5083b64541cf5b7b30633c5c19b9340127b5c02aea41cfebf7a4` | 10 | 0 | 1.732e-14 | 0.9999999999999902 |
 
-The profile and qualification artifact bind source commit, Dockerfile,
-frozen lock, entrypoint, fixture manifest, canonical circuit file and
-semantic digests, compilation protocol, operation sequence, SBOM, and build
-attestation manifest. Runtime output is compared with the server-owned
-expected scientific digests before evidence is accepted.
+The profile and qualification artifact bind the runtime-payload source
+commit, Dockerfile, frozen lock, entrypoint, fixture manifest, canonical
+circuit file and semantic digests, compilation protocol, operation sequence,
+SBOM, and build-attestation manifest. The qualification report separately
+records the qualification-tool commit, evidence-generation basis commit, and
+audited branch head; those four commit responsibilities must not be collapsed
+into one ambiguous `source_git_commit`. Runtime output is compared with the
+server-owned expected scientific digests before evidence is accepted.
 
 `container_digest_kind=local_docker_image_id` is explicit.
 `oci_manifest_digest` remains `null` because these candidates have not been
@@ -140,8 +143,13 @@ The BFF allowlists bare experiment creation and workflow listing. Polling now
 uses `GET /experiments/{id}/executions`; the legacy `/events` alias is marked
 deprecated because it is not an event stream.
 
-This flow passes typecheck, build, and non-browser tests. A real
-authenticated Playwright journey has not yet been run and is not claimed.
+This flow passes typecheck, production build, and non-browser tests. A
+minimal authenticated-browser contract suite also passes through the
+development-only local identity, the real Next BFF, and a deterministic mock
+control plane. It covers create → Qiskit success → result display → private
+materialization and a PennyLane runtime-failure path that remains failed and
+cannot be materialized. It does not test WorkOS, Neon, or a scientific
+runtime, and is not described as a full-stack production E2E.
 
 ## 7. Verification performed
 
@@ -157,15 +165,20 @@ authenticated Playwright journey has not yet been run and is not claimed.
 - strict Linux/x86_64 candidate runs: `10/10` per framework;
 - deny-all outbound TCP checks: passed for both images;
 - SPDX JSON SBOM generation and provenance hashing: passed.
+- authenticated Next/BFF browser contracts: `2 passed`.
 
-The branch CI now runs on pushes to `feature/vqe`. Its first remote result
-must be recorded after this correction is pushed; configuration is not
-equivalent to a successful remote run.
+Remote `feature/vqe` CI passed at audited implementation head
+`a49b6d5de7bf3167fd8cb0fd6cee26579386eb06`, run
+[`30165157403`](https://github.com/EshMis/majorana/actions/runs/30165157403):
+`py`, `ts`, `db`, and `ui-visual` all passed. The later closure change adds
+the production Next build and authenticated-browser contracts to remote CI;
+their final remote result is recorded separately rather than retroactively
+attributed to run `30165157403`.
 
 ## 8. Deliberately open gates
 
 - independent human scientific review of the H₂ definitions and evidence;
-- authenticated browser E2E and owner UX confirmation;
+- production WorkOS/Neon/runtime browser E2E and owner UX confirmation;
 - a production `VqeRuntimeExecutor` implementation and staging
   qualification;
 - OCI Registry push and manifest-digest pinning;

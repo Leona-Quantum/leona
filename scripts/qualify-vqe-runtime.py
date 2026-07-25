@@ -14,6 +14,7 @@ import asyncio
 import hashlib
 import json
 import os
+import re
 import subprocess
 from datetime import UTC, datetime
 from pathlib import Path
@@ -30,6 +31,7 @@ _EXPECTED_COMMON = {
     "parameter_count": 1,
 }
 _ROOT = Path(__file__).resolve().parents[1]
+_COMMIT_RE = re.compile(r"^[0-9a-f]{40}$")
 
 
 def _inspect_image(digest: str) -> dict[str, Any]:
@@ -131,12 +133,25 @@ def _git_file_bytes(commit: str, path: str) -> bytes:
     return completed.stdout
 
 
+def _validate_commit(commit: str, *, label: str) -> str:
+    if not _COMMIT_RE.fullmatch(commit):
+        raise RuntimeError(f"{label} must be a full lowercase 40-character commit SHA")
+    subprocess.run(
+        ["git", "cat-file", "-e", f"{commit}^{{commit}}"],
+        cwd=_ROOT,
+        check=True,
+        capture_output=True,
+        env={"PATH": "/usr/local/bin:/usr/bin:/bin"},
+    )
+    return commit
+
+
 def _verified_provenance_files(
     framework: Framework,
     profile: Any,
 ) -> dict[str, str]:
-    if profile.source_git_commit is None:
-        raise RuntimeError("runtime profile has no source commit")
+    if profile.runtime_payload_source_commit is None:
+        raise RuntimeError("runtime profile has no payload source commit")
     profile_dir = f"runtimes/vqe/{framework.value}-current"
     source_files = {
         "dockerfile_sha256": ("runtimes/vqe/Dockerfile", profile.dockerfile_sha256),
@@ -156,7 +171,9 @@ def _verified_provenance_files(
     }
     observed: dict[str, str] = {}
     for field, (path, expected) in source_files.items():
-        digest = hashlib.sha256(_git_file_bytes(profile.source_git_commit, path)).hexdigest()
+        digest = hashlib.sha256(
+            _git_file_bytes(profile.runtime_payload_source_commit, path)
+        ).hexdigest()
         if digest != expected:
             raise RuntimeError(f"{field} differs from source commit")
         observed[field] = digest
@@ -225,7 +242,7 @@ async def _qualify_framework(
         "binding": profile.binding.model_dump(mode="json"),
         "lock_sha256": profile.lock_sha256,
         "runtime_provenance": {
-            "source_git_commit": profile.source_git_commit,
+            "runtime_payload_source_commit": profile.runtime_payload_source_commit,
             "dockerfile_sha256": profile.dockerfile_sha256,
             "entrypoint_sha256": profile.entrypoint_sha256,
             "fixture_manifest_sha256": profile.fixture_manifest_sha256,
@@ -262,6 +279,21 @@ async def main() -> None:
     parser.add_argument("--repetitions", type=int, default=10)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument(
+        "--qualification-tool-commit",
+        required=True,
+        help="full commit SHA containing the exact qualification script being executed",
+    )
+    parser.add_argument(
+        "--evidence-generated-at-commit",
+        required=True,
+        help="full clean-tree commit SHA used as the evidence-generation basis",
+    )
+    parser.add_argument(
+        "--audited-branch-head",
+        required=True,
+        help="full branch-head commit whose implementation/CI result is under audit",
+    )
+    parser.add_argument(
         "--refresh-raw-fixtures",
         action="store_true",
         help="replace the two raw candidate reports with the first qualified Linux run",
@@ -271,6 +303,24 @@ async def main() -> None:
         parser.error("--repetitions must be between 1 and 100")
     if os.environ.get("MAJORANA_ENV") != "development":
         raise RuntimeError("qualification requires MAJORANA_ENV=development")
+    qualification_tool_commit = _validate_commit(
+        args.qualification_tool_commit,
+        label="qualification_tool_commit",
+    )
+    evidence_generated_at_commit = _validate_commit(
+        args.evidence_generated_at_commit,
+        label="evidence_generated_at_commit",
+    )
+    audited_branch_head = _validate_commit(
+        args.audited_branch_head,
+        label="audited_branch_head",
+    )
+    committed_script_digest = hashlib.sha256(
+        _git_file_bytes(qualification_tool_commit, "scripts/qualify-vqe-runtime.py")
+    ).hexdigest()
+    working_script_digest = hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
+    if committed_script_digest != working_script_digest:
+        raise RuntimeError("qualification tool bytes do not match qualification_tool_commit")
     qualified = [
         await _qualify_framework(framework, args.repetitions)
         for framework in (Framework.QISKIT, Framework.PENNYLANE)
@@ -284,6 +334,17 @@ async def main() -> None:
         "production_runtime_status": "unqualified",
         "public_execution": "blocked",
         "promotion_performed": False,
+        "provenance_commits": {
+            "runtime_payload_source_commit": sorted(
+                {
+                    candidate["runtime_provenance"]["runtime_payload_source_commit"]
+                    for candidate in candidates
+                }
+            ),
+            "qualification_tool_commit": qualification_tool_commit,
+            "evidence_generated_at_commit": evidence_generated_at_commit,
+            "audited_branch_head": audited_branch_head,
+        },
         "candidates": candidates,
     }
     args.output.parent.mkdir(parents=True, exist_ok=True)

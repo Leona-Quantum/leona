@@ -1,0 +1,43 @@
+{
+  "artifact_kind": "runtime-sbom-compact-manifest",
+  "exception_policy": "phase5_one_time_git_snapshot",
+  "policy": "docs/atlas/SBOM_STORAGE_POLICY.md",
+  "runtime_payload_source_commit": "99e95a9a2589a3ca0ac01c3e44499046fabbce89",
+  "schema_version": "1.0.0",
+  "sboms": [
+    {
+      "byte_count": 1342719,
+      "format": "spdx-json",
+      "framework": "qiskit",
+      "object_locator": "git:docs/atlas/evidence/phase5b_qiskit_runtime_sbom.spdx.json",
+      "runtime_profile_id": "h2-qiskit-linux-x86_64-candidate-v1",
+      "sha256": "337a9d45772b37f2b48dd52b55b95326480e55e0e29b7eaf801a8da6724a6b64"
+    },
+    {
+      "byte_count": 1397757,
+      "format": "spdx-json",
+      "framework": "pennylane",
+      "object_locator": "git:docs/atlas/evidence/phase5b_pennylane_runtime_sbom.spdx.json",
+      "runtime_profile_id": "h2-pennylane-linux-x86_64-candidate-v1",
+      "sha256": "b11a25ac4a88ac296725b661264ce77b475d6044a440e1a53de354f6cdc1b3fb"
+    },
+    {
+      "byte_count": 1461075,
+      "format": "cyclonedx-json",
+      "framework": "qiskit",
+      "object_locator": "git:docs/atlas/evidence/qiskit_h2_candidate_1e6552f.sbom.cdx.json",
+      "runtime_profile_id": "h2-qiskit-linux-x86_64-candidate-prequalification",
+      "sha256": "b400b3a55347facd48bf4a83aba6b1565b9e4dccdda17dc97e9841839a3a458b"
+    },
+    {
+      "byte_count": 1476718,
+      "format": "cyclonedx-json",
+      "framework": "pennylane",
+      "object_locator": "git:docs/atlas/evidence/pennylane_h2_candidate_34214c9f.sbom.cdx.json",
+      "runtime_profile_id": "h2-pennylane-linux-x86_64-candidate-prequalification",
+      "sha256": "2fabc42980ef93ac68490d5a51f6e200e40ffb1d5dca3b41e1da982f93ff250e"
+    }
+  ],
+  "storage_classification": "repository_internal_audit_snapshot",
+  "subject": "Atlas VQE Phase 5 local candidate runtimes"
+}
