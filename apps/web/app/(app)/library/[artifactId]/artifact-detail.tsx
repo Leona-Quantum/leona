@@ -9,6 +9,7 @@ import { verificationFromMetadata, verificationFromResource } from "../../../../
 import type { PublicLocale } from "../../../../lib/public-locale";
 import { CIRCUIT_FRAMEWORKS, circuitFramework, circuitFrameworkOrNull } from "../../../../lib/circuit-frameworks";
 import { convertCircuitSource, looksLikeOpenQasm3, parseCircuitSource, reconstructInterchangeCircuit } from "../../../../lib/circuit-conversion";
+import { MAX_VIEWABLE_QUBITS, MAX_VIEWABLE_STEPS } from "../../../../lib/studio-parse";
 import { CircuitDiagram } from "../../../../components/circuit-diagram";
 import { artifactExportFilename, artifactExportManifest, artifactExportSource } from "../../../../lib/artifact-export";
 
@@ -333,8 +334,35 @@ function CodeAndExport({ artifact, copied, onCopy, copy }: { artifact: LibraryAr
  * color literal.) */
 function CircuitDiagramPanel({ artifact, copy }: { artifact: LibraryArtifact; copy: ArtifactCopy }) {
   const reconstruction = useMemo(
-    () => (artifact.qasm ? reconstructInterchangeCircuit(artifact.qasm) : null),
-    [artifact.qasm],
+    () => {
+      if (artifact.qasm) return reconstructInterchangeCircuit(artifact.qasm);
+      // No stored QASM is the *common* case for anything saved before PR 148,
+      // not an edge case, and those are exactly the artifacts someone is most
+      // likely to open. Their framework source is sitting right here, so try
+      // it rather than going straight to "re-verify to mint one".
+      //
+      // This recovers a subset, not everything, and that was measured rather
+      // than assumed: `parseCircuitSource` accepts only the canonical builder
+      // shape (`QuantumCircuit(n)` + `measure_all()`), so freely-written
+      // model output using `QuantumCircuit(n, n)` or explicit `qc.measure(...)`
+      // still returns null and correctly falls through to the honest
+      // "no export to draw from" note. Worth having anyway — it costs one
+      // parse attempt and strictly increases how many artifacts draw.
+      //
+      // The viewing ceiling is passed explicitly because this parser defaults
+      // to the six-wire *editable* bound, which is not the bound that applies
+      // to a read-only drawing: a canonical 10q circuit parses with the
+      // ceiling passed and returns null without it.
+      const parsed = artifact.code
+        ? parseCircuitSource(artifact.code, artifact.framework, MAX_VIEWABLE_QUBITS)
+        : null;
+      if (!parsed) return null;
+      if (parsed.steps.length > MAX_VIEWABLE_STEPS) {
+        return { kind: "too_large" as const, qubitCount: parsed.qubitCount, stepCount: parsed.steps.length };
+      }
+      return { kind: "ok" as const, circuit: parsed };
+    },
+    [artifact.qasm, artifact.code, artifact.framework],
   );
 
   const body = !reconstruction || reconstruction.kind === "unparsable"

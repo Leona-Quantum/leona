@@ -29,6 +29,16 @@
  * backstop against a spoofing attacker, not the everyday limit, and it should be
  * effectively unreachable by a lone operator mistyping a password.
  *
+ * KNOWN TRADE-OFF, accepted deliberately: a shared ceiling means an attacker
+ * who burns it can also lock the real operator out for the rest of the window.
+ * That is a denial of service, and it is the better of the two failure modes —
+ * a 15-minute delay signing in, versus unlimited offline-speed guessing at the
+ * only password protecting the deployment. It cannot be designed away at this
+ * layer either: a rotating attacker always presents a *fresh* key, so any rule
+ * of the form "let through callers whose own key looks clean" lets the attacker
+ * through by construction. The real fix is not a cleverer counter, it is per-
+ * caller identity — i.e. WorkOS returning and this temporary lock going away.
+ *
  * Still per-instance and in-memory, so a serverless cold start resets it — the
  * pre-existing caveat, unchanged. A durable KV store is the real fix and needs
  * infra the owner has not provisioned; this raises the cost of brute-forcing
