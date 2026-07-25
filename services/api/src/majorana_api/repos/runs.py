@@ -4,6 +4,7 @@ run_events and verification_records carry no workspace_id; every access resolves
 the parent run under scope first. run_events is append-only (DB grant enforced).
 """
 
+import datetime as dt
 import uuid
 from typing import Any
 
@@ -49,6 +50,44 @@ async def list_runs(
     if cursor is not None:
         stmt = stmt.where(Run.id < cursor)
     return list((await session.execute(stmt)).scalars().all())
+
+
+#: Modes that can consume execution budget at admission time. AUTO belongs here
+#: even though it is not itself an execution: it is the *default* mode on
+#: CreateRunRequest, and the worker may resolve it to EXECUTE.
+BACKSTOP_COUNTED_MODES = (RunMode.EXECUTE.value, RunMode.AUTO.value)
+
+
+async def count_runs_by_mode_since(
+    scope: Scope, session: AsyncSession, since: dt.datetime
+) -> dict[str, int]:
+    """Per-mode run counts for this workspace since `since`, for EXECUTE/AUTO.
+
+    Backs the API-side abuse backstop in `routes.runs.create_run`.
+
+    Counting EXECUTE alone is not enough, and this is the whole reason the
+    function is shaped this way. AUTO is the default mode on CreateRunRequest,
+    so a caller who simply omits `mode` never lands in an execute-only count —
+    they could submit without bound while the counter read zero. The worker does
+    rewrite AUTO rows to their resolved mode, but that happens *after*
+    admission, which is exactly too late for a gate that runs at admission.
+
+    Returns a mode -> count mapping rather than a single number so the caller
+    can hold a tight bound on explicit EXECUTE and a separate, looser bound on
+    everything that might become one, instead of metering ordinary
+    conversational traffic against the strict ceiling.
+    """
+    stmt = (
+        select(Run.mode, func.count())
+        .select_from(Run)
+        .where(
+            Run.workspace_id == scope.workspace_id,
+            Run.mode.in_(BACKSTOP_COUNTED_MODES),
+            Run.created_at >= since,
+        )
+        .group_by(Run.mode)
+    )
+    return {str(mode): int(count) for mode, count in (await session.execute(stmt)).all()}
 
 
 async def find_run_by_idempotency_key(

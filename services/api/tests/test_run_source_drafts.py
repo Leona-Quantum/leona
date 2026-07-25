@@ -89,6 +89,14 @@ async def test_run_and_job_are_bound_to_the_new_draft_version(scope, monkeypatch
     async def enqueue_job(_session, **values):
         captured["job"] = values
 
+    # This request carries the default mode (AUTO), which the admission backstop
+    # now counts — see `_enforce_execute_backstop`. Stub the count so this test
+    # keeps testing draft binding rather than quotas; `object()` is not a real
+    # session and cannot answer a query.
+    async def no_runs_yet(*_args, **_kwargs):
+        return {}
+
+    monkeypatch.setattr(runs.runs_repo, "count_runs_by_mode_since", no_runs_yet)
     monkeypatch.setattr(runs, "_create_stale_source_draft", create_draft)
     monkeypatch.setattr(runs.runs_repo, "create_run", create_run)
     monkeypatch.setattr(runs.runs_repo, "append_run_event", append_event)

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type MouseEvent, type UIEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type UIEvent } from "react";
 import { SyntaxHighlightedCode, VerificationSummaryPanel } from "@majorana/ui";
 import { CheckIcon, CopyIcon, PanelRightIcon, SearchIcon } from "../../../components/icons";
 import { artifactFromResource, frameworkVariantsFromRemote, getLibraryArtifact, loadLibraryArtifacts, statusFromVerificationSummary, type LibraryArtifact } from "../../../lib/library-data";
@@ -9,6 +9,7 @@ import { BUILDER_GATES, builderStepLabel, createBuilderStepId, generateBuilderCo
 import { loadStoredCircuit, saveStoredCircuit } from "../../../lib/studio-circuits";
 import { circuitSyncState, type CircuitSyncState } from "../../../lib/studio-sync";
 import { allCircuitConversionResults, parseCircuitSource, parseInterchangeCircuit, reconstructInterchangeCircuit, looksLikeOpenQasm3 } from "../../../lib/circuit-conversion";
+import { CircuitDiagram } from "../../../components/circuit-diagram";
 import { MAX_BUILDER_QUBITS, MAX_VIEWABLE_QUBITS, MAX_VIEWABLE_STEPS } from "../../../lib/studio-parse";
 import { CIRCUIT_FRAMEWORKS, circuitFramework, circuitFrameworkOrNull, isExecutableCircuitFramework, type CircuitFrameworkKey } from "../../../lib/circuit-frameworks";
 import { MAX_CPU_SEED, MAX_CPU_SHOTS, cpuSimulationEligibility, loadCpuSimulationRecords, runCpuSimulation, saveCpuSimulationRecord, sourceFingerprint, type CpuSimulationEligibility, type CpuSimulationLimits, type CpuSimulationRecord } from "../../../lib/studio-simulation";
@@ -968,12 +969,6 @@ function CircuitBuilder({ seed, framework, selectedGate, onSelectGate, onApply, 
     }
   }
 
-  const columnWidth = 52;
-  const leftPad = 74;
-  const topPad = 34;
-  const rowHeight = 52;
-  const width = Math.max(560, leftPad + (steps.length + 2) * columnWidth + 40);
-  const height = topPad + qubitCount * rowHeight + 10;
 
   return (
     <section className="mj-studio-surface mj-studio-canvas" aria-label={copy.canvasLabel} hidden={hidden}>
@@ -1032,96 +1027,20 @@ function CircuitBuilder({ seed, framework, selectedGate, onSelectGate, onApply, 
         </div>
       )}
 
-      <div className={`mj-circuit-stage${readOnly ? " mj-circuit-stage--readonly" : ""}`}>
-        <svg className="mj-circuit-svg" viewBox={`0 0 ${width} ${height}`} role="img" aria-label={copy.circuitAria(frameworkLabel(framework))} style={readOnly ? { width, height, maxWidth: "none" } : { maxWidth: "100%" }}>
-          {Array.from({ length: qubitCount }, (_, q) => {
-            const y = topPad + q * rowHeight;
-            return (
-              <g key={q}>
-                <text className="mj-circuit-label" x="18" y={y + 5}>q{q}</text>
-                <line className="mj-circuit-wire" x1={leftPad - 16} y1={y} x2={width - 24} y2={y} />
-                {readOnly ? null : (
-                <g
-                  className={`mj-circuit-gate mj-builder-slot${pendingQubits.includes(q) ? " is-selected" : ""}`}
-                  role="button"
-                  tabIndex={0}
-                  aria-label={`q${q}: ${selectedLabel}`}
-                  onClick={() => placeOnQubit(q)}
-                  onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); placeOnQubit(q); } }}
-                >
-                  <rect x={leftPad + steps.length * columnWidth - 17} y={y - 17} width="34" height="34" rx="7" strokeDasharray="4 3" fill="transparent" />
-                  <text x={leftPad + steps.length * columnWidth} y={y + 5}>+</text>
-                </g>
-                )}
-              </g>
-            );
-          })}
-          {steps.map((step, index) => {
-            const x = leftPad + index * columnWidth;
-            const yFor = (q: number) => topPad + q * rowHeight;
-            const selected = !readOnly && selectedStepIds.includes(step.id);
-            const label = builderStepLabel(step, customGates);
-            const selectProps = readOnly ? ({} as Record<string, never>) : {
-              role: "button" as const,
-              tabIndex: 0,
-              "aria-label": `${label} on ${step.qubits.map((qubit) => `q${qubit}`).join(", ")}`,
-              onClick: (event: MouseEvent<SVGGElement>) => selectStep(step.id, event.shiftKey),
-              onKeyDown: (event: KeyboardEvent<SVGGElement>) => handleStepKeyDown(step.id, event),
-            };
-            if (step.gate === "CUSTOM") {
-              const custom = customGates.find((gate) => gate.id === step.customGateId);
-              const minQubit = Math.min(...step.qubits);
-              const maxQubit = Math.max(...step.qubits);
-              return (
-                <g className={`mj-circuit-gate mj-circuit-custom-gate${selected ? " is-selected" : ""}`} key={step.id} {...selectProps}>
-                  <title>{label}</title>
-                  <line className="mj-circuit-control" x1={x} y1={yFor(minQubit)} x2={x} y2={yFor(maxQubit)} />
-                  {step.qubits.map((qubit, qubitIndex) => (
-                    <g key={`${step.id}-${qubit}`}>
-                      <rect x={x - 17} y={yFor(qubit) - 17} width="34" height="34" rx="7" />
-                      <text x={x} y={yFor(qubit) + 5}>{qubitIndex === 0 ? (custom?.name ?? "CG").slice(0, 5) : "·"}</text>
-                    </g>
-                  ))}
-                </g>
-              );
-            }
-            if (step.gate === "CX" || step.gate === "CZ" || step.gate === "SWAP") {
-              const [control, target] = step.qubits;
-              return (
-                <g className={`mj-circuit-gate${selected ? " is-selected" : ""}`} key={step.id} {...selectProps}>
-                  <line className="mj-circuit-control" x1={x} y1={yFor(control)} x2={x} y2={yFor(target)} />
-                  {step.gate === "SWAP" ? (
-                    <>
-                      <path d={`M${x - 7} ${yFor(control) - 7}l14 14M${x - 7} ${yFor(control) + 7}l14 -14`} />
-                      <path d={`M${x - 7} ${yFor(target) - 7}l14 14M${x - 7} ${yFor(target) + 7}l14 -14`} />
-                    </>
-                  ) : (
-                    <>
-                      <circle className="mj-circuit-control-dot" cx={x} cy={yFor(control)} r="6" />
-                      {step.gate === "CX" ? (
-                        <>
-                          <circle className="mj-circuit-target" cx={x} cy={yFor(target)} r="13" />
-                          <path d={`M${x} ${yFor(target) - 9}v18M${x - 9} ${yFor(target)}h18`} />
-                        </>
-                      ) : (
-                        <circle className="mj-circuit-control-dot" cx={x} cy={yFor(target)} r="6" />
-                      )}
-                    </>
-                  )}
-                </g>
-              );
-            }
-            const y = yFor(step.qubits[0]);
-            return (
-              <g className={`mj-circuit-gate${selected ? " is-selected" : ""}`} key={step.id} {...selectProps}>
-                <rect x={x - 17} y={y - 17} width="34" height="34" rx="7" />
-                <text x={x} y={y + 5}>{step.gate === "M" ? "M" : step.gate}</text>
-                {step.param ? <text className="mj-circuit-label" x={x} y={y + 30}>{step.param.replace("pi", "π").replace("*", "")}</text> : null}
-              </g>
-            );
-          })}
-        </svg>
-      </div>
+      <CircuitDiagram
+        qubitCount={qubitCount}
+        steps={steps}
+        customGates={customGates}
+        ariaLabel={copy.circuitAria(frameworkLabel(framework))}
+        interaction={readOnly ? undefined : {
+          selectedStepIds,
+          pendingQubits,
+          selectedLabel,
+          onPlaceOnQubit: placeOnQubit,
+          onSelectStep: selectStep,
+          onStepKeyDown: handleStepKeyDown,
+        }}
+      />
 
       {readOnly ? null : (
       <div className="mj-builder-controls">
