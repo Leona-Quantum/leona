@@ -522,3 +522,57 @@ async def test_concurrent_attempt_allocation_is_unique_and_monotonic(db):
 
     attempts = await asyncio.gather(append_once(), append_once())
     assert sorted(attempts) == [1, 2]
+
+
+@requires_db
+async def test_concurrent_run_binding_has_exactly_one_winner(db):
+    async with db() as session:
+        scope = await _new_scope(session)
+        workflow, _ = await _make_component(scope, session, ComponentType.WORKFLOW)
+        experiment = await vqe.create_experiment(
+            scope,
+            session,
+            workflow_artifact_version_id=workflow.id,
+            resolved=_resolved(workflow.id),
+        )
+        execution = await vqe.create_execution(
+            scope,
+            session,
+            experiment.id,
+            binding=_binding(Framework.QISKIT),
+        )
+        runs = [
+            await runs_repo.create_run(
+                scope,
+                session,
+                task_prompt=f"concurrent binding {index}",
+                mode=RunMode.EXECUTE,
+                framework=ContractFramework.QISKIT,
+                seed=0,
+                timeout_s=300,
+                idempotency_key=f"vqe-bind-{uuid.uuid4()}",
+            )
+            for index in range(2)
+        ]
+        execution_id = execution.id
+        run_ids = [run.id for run in runs]
+        await session.commit()
+
+    async def bind_once(run_id):
+        async with db() as session:
+            try:
+                row = await vqe.bind_execution_run(
+                    scope,
+                    session,
+                    execution_id,
+                    run_id=run_id,
+                )
+                await session.commit()
+                return row.run_id
+            except ValueError:
+                await session.rollback()
+                return None
+
+    results = await asyncio.gather(*(bind_once(run_id) for run_id in run_ids))
+    assert sum(result is not None for result in results) == 1
+    assert next(result for result in results if result is not None) in run_ids

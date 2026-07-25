@@ -1,131 +1,174 @@
-# Atlas VQE Phase 5 — product integration and qualification record
+# Atlas VQE Phase 5 — corrected product-integration record
 
-Date: 2026-07-25
-Branch: `feature/vqe`
-Decision authority: ADR-0023–0031 and the 2026-07-25 owner deferral
-State: **Phase 5A implemented and verified; Phase 5B technical candidate
-evidence complete; independent human review and public promotion remain
-blocked**
+Date: 2026-07-26  
+Branch: `feature/vqe`  
+Source runtime commit: `61101676ab8aa79cb351ed2331fab8a91c7a9d47`  
+State: **local Phase 5 candidate implemented and technically requalified;
+independent human review, authenticated browser E2E, production runtime, and
+public promotion remain blocked**
 
-## 1. Phase 5A durable execution
+## 1. Exact claim boundary
 
-The implementation preserves one portable, framework-independent scientific
-experiment with independent Qiskit and PennyLane executions. The client may
-choose only a framework preference. Runtime profile, package versions,
-architecture, image digest, adapter release, protocol, dataset snapshot, and
-isolation policy are server-owned.
+The executable H₂ path is a **cross-framework VQE state-evaluation proof**.
+Qiskit and PennyLane consume the same frozen Hamiltonian, reference state,
+one-parameter canonical ansatz, bounds, and SciPy
+`minimize_scalar(method="bounded")` optimizer. Qiskit supplies its
+statevector/expectation evaluator and PennyLane supplies its
+`default.qubit` evaluator.
 
-Each execution is bound to one durable Run and `vqe.execute` job. The closed
-lifecycle is:
+It is not a comparison of Qiskit Algorithms VQE against a PennyLane-native
+optimizer, not a framework-compiler benchmark, and not reproduction of an
+external chemistry paper. The exact-energy value is an internal oracle
+obtained by diagonalizing the same frozen qubit Hamiltonian.
+
+## 2. Scientific identity and durable execution
+
+One portable scientific experiment is stored separately from:
+
+- the Registry UUID resolution that supplied its components;
+- framework/runtime-specific `ExecutionBinding`;
+- append-only attempt observations.
+
+Qiskit and PennyLane executions therefore remain distinct children of the
+same scientific experiment. Duplicate execution creation, Run binding, and
+attempt allocation are database-fenced and covered by two-session live
+PostgreSQL tests.
+
+Materialization is execution-specific:
 
 ```text
-planned → queued → running → succeeded
-                     ├────→ failed
-                     └────→ cancelled
+POST /v1/vqe/executions/{execution_id}/materialize
 ```
 
-Retries append a new immutable observation to the same execution. A terminal
-execution cannot be rewritten. Dead-letter handling closes both execution and
-Run. Workspace scope is enforced through the repository layer.
+The private candidate bundle contains the portable scientific specification,
+Registry resolution, selected execution binding/identity, selected
+observation, and all associated digests. It no longer selects the latest
+successful framework implicitly.
 
-The local candidate gate is fail-closed:
+## 3. Comparable resource protocol
 
-- default is disabled;
-- permitted only for an explicitly configured local development process;
-- rejected in Cloud Run, Vercel, and CI contexts;
-- public capability remains unavailable;
-- public execution, publication, and scientific release remain blocked.
+The comparison-eligible numbers describe the deterministic **canonical
+ansatz decomposition**, not a hardware-native optimized circuit:
 
-## 2. Runtime boundary
+```text
+metric_scope: ansatz_only
+reference state: excluded
+measurement: excluded
+hardware optimization: excluded
+routing: none
+basis: h, s, sdg, rz, cx
+```
 
-The Qiskit and PennyLane images use:
+The canonical fixture records expected metrics and an operation-sequence
+digest. Each adapter independently reconstructs its actual framework circuit
+or tape, normalizes the observed operations, recomputes dependency depth,
+gate/CNOT counts and operation digest, and fails closed on disagreement.
 
-- digest-pinned `python:3.12.12-slim-bookworm` base;
-- independent frozen `uv.lock` files;
-- Linux/x86_64;
-- non-root UID/GID 65532;
-- read-only root filesystem and bounded no-exec tmpfs;
-- `--network none`;
-- all Linux capabilities dropped and `no-new-privileges`;
-- CPU, memory, PID, time, stdout, and stderr limits;
-- no inherited host environment, credential mount, database URL, proxy, or
-  runtime package installation.
+| Observation | CNOT | Depth | Gates | Parameters | Operation verification |
+|---|---:|---:|---:|---:|---|
+| Canonical expected | 48 | 83 | 152 | 1 | pinned digest |
+| Qiskit observed | 48 | 83 | 152 | 1 | passed |
+| PennyLane observed | 48 | 83 | 152 | 1 | passed |
 
-The Worker launches the exact local image digest stored in the server-owned
-profile. Mutable image tags are documentation only and are never used for
-execution.
+Studio labels these as ansatz-only common-protocol values and explicitly says
+that reference preparation, measurement, hardware optimization, and routing
+are excluded.
 
-## 3. Actual qualification evidence
+## 4. Runtime lifecycle and isolation
+
+The development-only Docker executor uses a unique container name, bounded
+streaming stdout/stderr, live cancellation polling, timeout handling, and
+verified `docker rm -f` cleanup. Partial output from a cancelled process is
+never evidence. Deterministic contract/scientific failures are non-retryable;
+runtime unavailability and bounded timeouts have separate retry
+classifications.
+
+Both candidates use:
+
+- digest-pinned Python 3.12.12 base;
+- independent frozen locks with unused PySCF/Qiskit Nature removed;
+- `OMP_NUM_THREADS=1`, `OPENBLAS_NUM_THREADS=1`,
+  `MKL_NUM_THREADS=1`, and `NUMEXPR_NUM_THREADS=1`;
+- Linux/x86_64, non-root execution, read-only root, bounded no-exec tmpfs;
+- `--network none`, capability drop, `no-new-privileges`, and CPU/memory/PID
+  limits;
+- no credentials, database URL, proxy inheritance, or runtime installation.
+
+Timeout, cancel, output-overflow, invalid-result and failure-JSON paths are
+tested. These controls qualify the local Docker executor only; they do not
+constitute a production sandbox service.
+
+## 5. Runtime provenance and qualification
 
 Machine-readable evidence:
 
-- `evidence/phase5b_h2_runtime_qualification_2026-07-25.json`
-- `evidence/qiskit_h2_candidate_1e6552f.sbom.cdx.json`
-- `evidence/pennylane_h2_candidate_34214c9f.sbom.cdx.json`
+- `evidence/phase5b_h2_runtime_qualification_2026-07-26.json`
+- `evidence/phase5b_qiskit_runtime_sbom.spdx.json`
+- `evidence/phase5b_pennylane_runtime_sbom.spdx.json`
 
-| Candidate | Immutable image digest | Repetitions | Infrastructure failures | Max absolute error (Ha) | Min fidelity |
+| Candidate | Local Docker image ID | Runs | Infrastructure failures | Max error (Ha) | Min fidelity |
 |---|---|---:|---:|---:|---:|
-| Qiskit 1.4.6 | `sha256:1e6552f240a6a79555ee84da0460934900bfa62086467b5866954b96b871ea1c` | 10 | 0 | 1.821e-14 | 0.9999999999999896 |
-| PennyLane 0.45.1 | `sha256:34214c9f8ed7ea581a324eb6ebb464f001b75e00570da86e190876e57fe34e59` | 10 | 0 | 1.732e-14 | 0.9999999999999902 |
+| Qiskit 1.4.6 | `sha256:820b4fb9c9fa59160abb37062b6f71d43fedcb0a9a955bfcabe1c294889cfd6c` | 10 | 0 | 1.821e-14 | 0.9999999999999896 |
+| PennyLane 0.45.1 | `sha256:82d5cc74bd8f5083b64541cf5b7b30633c5c19b9340127b5c02aea41cfebf7a4` | 10 | 0 | 1.732e-14 | 0.9999999999999902 |
 
-Every run reported the same comparison-eligible common-basis metrics:
+The profile and qualification artifact bind source commit, Dockerfile,
+frozen lock, entrypoint, fixture manifest, canonical circuit file and
+semantic digests, compilation protocol, operation sequence, SBOM, and build
+attestation manifest. Runtime output is compared with the server-owned
+expected scientific digests before evidence is accepted.
+
+`container_digest_kind=local_docker_image_id` is explicit.
+`oci_manifest_digest` remains `null` because these candidates have not been
+pushed to an OCI Registry. A local image ID must not be presented as a
+pullable production manifest digest.
+
+## 6. Studio flow
+
+The authenticated product code now supports:
 
 ```text
-CNOT = 48
-Depth = 83
-Gate count = 152
-Parameters = 1
+Atlas VQE Methods
+→ Open executable workflows in Studio
+→ select Registry workflow
+→ create portable experiment
+→ select Qiskit or PennyLane
+→ run / inspect / cancel
+→ materialize the selected execution privately
 ```
 
-Both strict containers rejected an outbound TCP connection under
-`--network none`. Docker Scout extracted CycloneDX SBOMs from the build-time
-SBOM/provenance attestations: 140 packages for Qiskit and 149 for PennyLane.
+The BFF allowlists bare experiment creation and workflow listing. Polling now
+uses `GET /experiments/{id}/executions`; the legacy `/events` alias is marked
+deprecated because it is not an event stream.
 
-These measurements qualify the exact local Linux/x86_64 candidate images that
-were run. They do not prove deployment-environment scheduling, host-kernel
-isolation, or production service availability.
+This flow passes typecheck, build, and non-browser tests. A real
+authenticated Playwright journey has not yet been run and is not claimed.
 
-## 4. Studio and materialization
+## 7. Verification performed
 
-`/studio?vqeExperiment=<uuid>` renders a dedicated proof panel rather than
-mixing VQE evidence into the circuit editor. It supports:
+- full Python suite: `1117 passed, 77 skipped`;
+- local PostgreSQL migration `upgrade 0036 → downgrade 0035 → upgrade 0036`:
+  passed;
+- VQE live PostgreSQL tests, including concurrent create/bind/attempt:
+  `10 passed`;
+- web tests: `95 passed`;
+- TypeScript typecheck and targeted Ruff: passed;
+- generated canonical circuit and Registry manifest checks: passed;
+- strict Linux/x86_64 candidate runs: `10/10` per framework;
+- deny-all outbound TCP checks: passed for both images;
+- SPDX JSON SBOM generation and provenance hashing: passed.
 
-- Qiskit/PennyLane candidate selection;
-- durable execution start, polling, cancellation, and named failures;
-- energy, absolute error, fidelity, CNOT, depth, and parameter display;
-- private candidate materialization.
+The branch CI now runs on pushes to `feature/vqe`. Its first remote result
+must be recorded after this correction is pushed; configuration is not
+equivalent to a successful remote run.
 
-The UI parser fails closed unless API evidence remains explicitly
-`unreviewed`, `unqualified`, and `public_execution=blocked`. Materialized
-artifacts are private, unverified candidates and cannot be published through
-the normal artifact publication guard.
+## 8. Deliberately open gates
 
-## 5. Verification performed
+- independent human scientific review of the H₂ definitions and evidence;
+- authenticated browser E2E and owner UX confirmation;
+- a production `VqeRuntimeExecutor` implementation and staging
+  qualification;
+- OCI Registry push and manifest-digest pinning;
+- public execution, publication, scientific release, and deployment approval.
 
-- full Python suite: `1116 passed, 76 skipped`;
-- temporary Neon validation branch: `28 passed`;
-- web/turbo lint, typecheck, and tests: `6/6` tasks, `95` web tests;
-- Next production build: passed, 336 pages, VQE BFF route present;
-- targeted Ruff and diff checks: passed;
-- 10 strict Linux/x86_64 runs per framework: passed;
-- live deny-all egress checks for both image digests: passed;
-- CycloneDX SBOM extraction from attestations: passed.
-
-The in-app browser reached the local server, but the protected `/studio`
-route redirected the signed-out browser to the public home page. No
-authenticated browser flow was claimed as tested.
-
-## 6. Remaining external gates
-
-The following remain deliberately unpassed:
-
-- independent human scientific review of the executable H2 fixture;
-- owner review of the authenticated Studio user flow;
-- promotion of candidate profiles to a production runtime matrix;
-- public execution, publication, scientific claims, deployment, and MVP
-  release approval.
-
-Therefore `human_review_state=unreviewed`,
-`production_runtime_status=unqualified`, and every public/release state
-remain blocked. The technical evidence above is not a substitute for the
-independent reviewer or owner decision.
+The candidate remains `unreviewed`, `unqualified`, private, and blocked from
+public execution. Phase 5 evidence does not substitute for these gates.

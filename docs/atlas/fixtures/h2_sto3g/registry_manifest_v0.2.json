@@ -311,22 +311,22 @@
   },
   "runtime_spike_evidence": [
     {
-      "absolute_error_ha": 1.7763568394002505e-14,
-      "best_energy_ha": -1.137306035753356,
+      "absolute_error_ha": 1.8207657603852567e-14,
+      "best_energy_ha": -1.1373060357533555,
       "exact_energy_ha": -1.1373060357533737,
-      "final_parameter": -0.22353697909001485,
+      "final_parameter": -0.22353701675516133,
       "framework": "qiskit",
       "path": "docs/atlas/fixtures/h2_sto3g/raw/qiskit_vqe_v0.2.json",
-      "sha256": "1fa85cb67630c55d3b5901dcae7f6cd912f2d70baa7a0810230267fd902b82b3"
+      "sha256": "bc689a38897ea8e730712b27d9647e5d68293605dfe3b2ac6ec4b6b4c8ab2739"
     },
     {
-      "absolute_error_ha": 1.7763568394002505e-14,
-      "best_energy_ha": -1.137306035753356,
+      "absolute_error_ha": 1.7319479184152442e-14,
+      "best_energy_ha": -1.1373060357533564,
       "exact_energy_ha": -1.1373060357533737,
-      "final_parameter": -0.22353698760213844,
+      "final_parameter": -0.22353703567397756,
       "framework": "pennylane",
       "path": "docs/atlas/fixtures/h2_sto3g/raw/pennylane_vqe_v0.2.json",
-      "sha256": "8d892da5d0eca864ed2322710e41362fc0218d5c39019136ffec9e3c94b75610"
+      "sha256": "1aaaa37e89295b69ff2aa3ed742776445494e3e7c2823e9b149887522971f88c"
     }
   ],
   "schema_version": "0.2.0",

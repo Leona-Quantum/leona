@@ -1,0 +1,559 @@
+{
+  "candidates": [
+    {
+      "acceptance": {
+        "all_runs_succeeded": true,
+        "common_basis_resources_stable": true,
+        "max_absolute_error_ha": 1.8207657603852567e-14,
+        "min_final_state_fidelity": 0.9999999999999896
+      },
+      "binding": {
+        "adapter_release_id": "majorana-h2-qiskit-adapter-0.2.0",
+        "architecture": "linux-x86_64",
+        "container_digest": "sha256:820b4fb9c9fa59160abb37062b6f71d43fedcb0a9a955bfcabe1c294889cfd6c",
+        "container_digest_kind": "local_docker_image_id",
+        "dataset_snapshot_id": "h2-sto3g-fixture-6424713c69c2b734172db47329b7deb62b67a743c80fd792f48173fdaa4e3edc",
+        "framework": "qiskit",
+        "isolation_policy": {
+          "credential_policy": "none",
+          "database_url_policy": "omit",
+          "dynamic_package_installation": "forbidden",
+          "network_policy": "deny_all",
+          "output_filesystem": "bounded_ephemeral_only",
+          "root_filesystem": "read_only",
+          "run_as": "non_root",
+          "schema_version": "0.1.0"
+        },
+        "oci_manifest_digest": null,
+        "production_runtime_status": "unqualified",
+        "protocol_version": "0.2.0",
+        "provider_versions": {
+          "numpy": "2.5.1",
+          "qiskit": "1.4.6",
+          "scipy": "1.18.0"
+        },
+        "runtime_profile_id": "h2-qiskit-linux-x86_64-candidate-v1"
+      },
+      "framework": "qiskit",
+      "image": {
+        "architecture": "amd64",
+        "digest": "sha256:820b4fb9c9fa59160abb37062b6f71d43fedcb0a9a955bfcabe1c294889cfd6c",
+        "os": "linux"
+      },
+      "isolation": {
+        "exception_class": "OSError",
+        "network_mode": "none",
+        "outbound_connection_blocked": true
+      },
+      "lock_sha256": "51c8ed79eacab8292464ff5adccc95899fe7c428ce1568a8c068758d4a7b3159",
+      "runs": [
+        {
+          "absolute_error_ha": 1.8207657603852567e-14,
+          "best_energy_ha": -1.1373060357533555,
+          "common_basis_compiled": {
+            "depth": 83,
+            "gate_count": 152,
+            "parameter_count": 1,
+            "two_qubit_gate_count": 48
+          },
+          "final_state_fidelity": 0.9999999999999896,
+          "iterations": 13,
+          "optimizer_work": {
+            "energy_evaluations": 13,
+            "gradient_evaluations": 0,
+            "hessian_evaluations": 0,
+            "iterations": 13
+          },
+          "raw_report_sha256": "bc689a38897ea8e730712b27d9647e5d68293605dfe3b2ac6ec4b6b4c8ab2739",
+          "repetition": 1
+        },
+        {
+          "absolute_error_ha": 1.8207657603852567e-14,
+          "best_energy_ha": -1.1373060357533555,
+          "common_basis_compiled": {
+            "depth": 83,
+            "gate_count": 152,
+            "parameter_count": 1,
+            "two_qubit_gate_count": 48
+          },
+          "final_state_fidelity": 0.9999999999999896,
+          "iterations": 13,
+          "optimizer_work": {
+            "energy_evaluations": 13,
+            "gradient_evaluations": 0,
+            "hessian_evaluations": 0,
+            "iterations": 13
+          },
+          "raw_report_sha256": "c2f9151c92b5259ed5d3cea10952c2a21963cfe367adeb00a3a1c25330056e19",
+          "repetition": 2
+        },
+        {
+          "absolute_error_ha": 1.8207657603852567e-14,
+          "best_energy_ha": -1.1373060357533555,
+          "common_basis_compiled": {
+            "depth": 83,
+            "gate_count": 152,
+            "parameter_count": 1,
+            "two_qubit_gate_count": 48
+          },
+          "final_state_fidelity": 0.9999999999999896,
+          "iterations": 13,
+          "optimizer_work": {
+            "energy_evaluations": 13,
+            "gradient_evaluations": 0,
+            "hessian_evaluations": 0,
+            "iterations": 13
+          },
+          "raw_report_sha256": "1a18c37ada2863bfa6faaedb669b65d859be1bd459e6cc59d1b549f0f5a43b86",
+          "repetition": 3
+        },
+        {
+          "absolute_error_ha": 1.8207657603852567e-14,
+          "best_energy_ha": -1.1373060357533555,
+          "common_basis_compiled": {
+            "depth": 83,
+            "gate_count": 152,
+            "parameter_count": 1,
+            "two_qubit_gate_count": 48
+          },
+          "final_state_fidelity": 0.9999999999999896,
+          "iterations": 13,
+          "optimizer_work": {
+            "energy_evaluations": 13,
+            "gradient_evaluations": 0,
+            "hessian_evaluations": 0,
+            "iterations": 13
+          },
+          "raw_report_sha256": "7fe3dca5e95df0968b1a254e3e7354c8c4db98600b9508a8291ec70797607f5f",
+          "repetition": 4
+        },
+        {
+          "absolute_error_ha": 1.8207657603852567e-14,
+          "best_energy_ha": -1.1373060357533555,
+          "common_basis_compiled": {
+            "depth": 83,
+            "gate_count": 152,
+            "parameter_count": 1,
+            "two_qubit_gate_count": 48
+          },
+          "final_state_fidelity": 0.9999999999999896,
+          "iterations": 13,
+          "optimizer_work": {
+            "energy_evaluations": 13,
+            "gradient_evaluations": 0,
+            "hessian_evaluations": 0,
+            "iterations": 13
+          },
+          "raw_report_sha256": "67587c2896011d04c3a4a93ab9f6cfc77f33d4fd06a0412fd4d938a8a32d011a",
+          "repetition": 5
+        },
+        {
+          "absolute_error_ha": 1.8207657603852567e-14,
+          "best_energy_ha": -1.1373060357533555,
+          "common_basis_compiled": {
+            "depth": 83,
+            "gate_count": 152,
+            "parameter_count": 1,
+            "two_qubit_gate_count": 48
+          },
+          "final_state_fidelity": 0.9999999999999896,
+          "iterations": 13,
+          "optimizer_work": {
+            "energy_evaluations": 13,
+            "gradient_evaluations": 0,
+            "hessian_evaluations": 0,
+            "iterations": 13
+          },
+          "raw_report_sha256": "9830a4ce6defdc7df1c47318413db5735face45044c18ed3359b44c1895415e1",
+          "repetition": 6
+        },
+        {
+          "absolute_error_ha": 1.8207657603852567e-14,
+          "best_energy_ha": -1.1373060357533555,
+          "common_basis_compiled": {
+            "depth": 83,
+            "gate_count": 152,
+            "parameter_count": 1,
+            "two_qubit_gate_count": 48
+          },
+          "final_state_fidelity": 0.9999999999999896,
+          "iterations": 13,
+          "optimizer_work": {
+            "energy_evaluations": 13,
+            "gradient_evaluations": 0,
+            "hessian_evaluations": 0,
+            "iterations": 13
+          },
+          "raw_report_sha256": "1dcd9a081b08df1496270a9d440ad27db2f3fddd98274000b3c15496913dbc05",
+          "repetition": 7
+        },
+        {
+          "absolute_error_ha": 1.8207657603852567e-14,
+          "best_energy_ha": -1.1373060357533555,
+          "common_basis_compiled": {
+            "depth": 83,
+            "gate_count": 152,
+            "parameter_count": 1,
+            "two_qubit_gate_count": 48
+          },
+          "final_state_fidelity": 0.9999999999999896,
+          "iterations": 13,
+          "optimizer_work": {
+            "energy_evaluations": 13,
+            "gradient_evaluations": 0,
+            "hessian_evaluations": 0,
+            "iterations": 13
+          },
+          "raw_report_sha256": "52fa89f21ccf5d59b0114a3651d6f51a7f7b02732d40f564307e1796504e74f1",
+          "repetition": 8
+        },
+        {
+          "absolute_error_ha": 1.8207657603852567e-14,
+          "best_energy_ha": -1.1373060357533555,
+          "common_basis_compiled": {
+            "depth": 83,
+            "gate_count": 152,
+            "parameter_count": 1,
+            "two_qubit_gate_count": 48
+          },
+          "final_state_fidelity": 0.9999999999999896,
+          "iterations": 13,
+          "optimizer_work": {
+            "energy_evaluations": 13,
+            "gradient_evaluations": 0,
+            "hessian_evaluations": 0,
+            "iterations": 13
+          },
+          "raw_report_sha256": "a595cf963946d95ad2fb673092884fa01535f736f004084d36b6c73412fbdad8",
+          "repetition": 9
+        },
+        {
+          "absolute_error_ha": 1.8207657603852567e-14,
+          "best_energy_ha": -1.1373060357533555,
+          "common_basis_compiled": {
+            "depth": 83,
+            "gate_count": 152,
+            "parameter_count": 1,
+            "two_qubit_gate_count": 48
+          },
+          "final_state_fidelity": 0.9999999999999896,
+          "iterations": 13,
+          "optimizer_work": {
+            "energy_evaluations": 13,
+            "gradient_evaluations": 0,
+            "hessian_evaluations": 0,
+            "iterations": 13
+          },
+          "raw_report_sha256": "da41ae78abf60625be164a17254faa7f13cc3d6a6e53d7fbc8d6ff1dea050de5",
+          "repetition": 10
+        }
+      ],
+      "runtime_provenance": {
+        "build_attestation_manifest_sha256": "df9fe2ac62e2719003a900fdb62717028aace09c636b29e9a79978407291474f",
+        "canonical_circuit_file_sha256": "dc5970b66b3bb5da2467bdacfd5166373b2341f293c74486383bf2a0397cf43a",
+        "canonical_circuit_sha256": "f4fdb1ac3f041185fff63f6a7acb9d3ab1e9742131ed5bd3bb9ba2d99081a58c",
+        "common_basis_operation_sequence_sha256": "e0eaae576a3570dde47dcc5d5489dd758ee1311f911d0686cc87d5e2bd3f4cbd",
+        "compilation_protocol_sha256": "778fe0c7f3d361c54e9c41a0240ef31cc7926dacbe8fbc33ff96a57ee104393c",
+        "complete": true,
+        "digest_kind": "local_docker_image_id",
+        "dockerfile_sha256": "de36d90803e3b252fe60412d3bc07f9d018e6665da7ccc5b858a6fec55547774",
+        "entrypoint_sha256": "f770cb9fdd07684ad95e4e835337f1031c1287f180530c324df2f821112c8613",
+        "fixture_manifest_sha256": "6424713c69c2b734172db47329b7deb62b67a743c80fd792f48173fdaa4e3edc",
+        "oci_manifest_digest": null,
+        "qualification_script_sha256": "f23dad6356e71bc3a3b34ac3a4d2229e60e7c35317033ea3faca881251d1578b",
+        "sbom_sha256": "337a9d45772b37f2b48dd52b55b95326480e55e0e29b7eaf801a8da6724a6b64",
+        "source_git_commit": "61101676ab8aa79cb351ed2331fab8a91c7a9d47",
+        "verified_source_and_sbom_files": {
+          "canonical_circuit_file_sha256": "dc5970b66b3bb5da2467bdacfd5166373b2341f293c74486383bf2a0397cf43a",
+          "dockerfile_sha256": "de36d90803e3b252fe60412d3bc07f9d018e6665da7ccc5b858a6fec55547774",
+          "entrypoint_sha256": "f770cb9fdd07684ad95e4e835337f1031c1287f180530c324df2f821112c8613",
+          "fixture_manifest_sha256": "6424713c69c2b734172db47329b7deb62b67a743c80fd792f48173fdaa4e3edc",
+          "lock_sha256": "51c8ed79eacab8292464ff5adccc95899fe7c428ce1568a8c068758d4a7b3159",
+          "qualification_script_sha256": "f23dad6356e71bc3a3b34ac3a4d2229e60e7c35317033ea3faca881251d1578b",
+          "sbom_sha256": "337a9d45772b37f2b48dd52b55b95326480e55e0e29b7eaf801a8da6724a6b64"
+        }
+      }
+    },
+    {
+      "acceptance": {
+        "all_runs_succeeded": true,
+        "common_basis_resources_stable": true,
+        "max_absolute_error_ha": 1.7319479184152442e-14,
+        "min_final_state_fidelity": 0.9999999999999902
+      },
+      "binding": {
+        "adapter_release_id": "majorana-h2-pennylane-adapter-0.2.0",
+        "architecture": "linux-x86_64",
+        "container_digest": "sha256:82d5cc74bd8f5083b64541cf5b7b30633c5c19b9340127b5c02aea41cfebf7a4",
+        "container_digest_kind": "local_docker_image_id",
+        "dataset_snapshot_id": "h2-sto3g-fixture-6424713c69c2b734172db47329b7deb62b67a743c80fd792f48173fdaa4e3edc",
+        "framework": "pennylane",
+        "isolation_policy": {
+          "credential_policy": "none",
+          "database_url_policy": "omit",
+          "dynamic_package_installation": "forbidden",
+          "network_policy": "deny_all",
+          "output_filesystem": "bounded_ephemeral_only",
+          "root_filesystem": "read_only",
+          "run_as": "non_root",
+          "schema_version": "0.1.0"
+        },
+        "oci_manifest_digest": null,
+        "production_runtime_status": "unqualified",
+        "protocol_version": "0.2.0",
+        "provider_versions": {
+          "numpy": "2.5.1",
+          "pennylane": "0.45.1",
+          "scipy": "1.18.0"
+        },
+        "runtime_profile_id": "h2-pennylane-linux-x86_64-candidate-v1"
+      },
+      "framework": "pennylane",
+      "image": {
+        "architecture": "amd64",
+        "digest": "sha256:82d5cc74bd8f5083b64541cf5b7b30633c5c19b9340127b5c02aea41cfebf7a4",
+        "os": "linux"
+      },
+      "isolation": {
+        "exception_class": "OSError",
+        "network_mode": "none",
+        "outbound_connection_blocked": true
+      },
+      "lock_sha256": "00d97ccffef518385623b5943788db063de43cf6af3c9e144f0f66a8023fe8ac",
+      "runs": [
+        {
+          "absolute_error_ha": 1.7319479184152442e-14,
+          "best_energy_ha": -1.1373060357533564,
+          "common_basis_compiled": {
+            "depth": 83,
+            "gate_count": 152,
+            "parameter_count": 1,
+            "two_qubit_gate_count": 48
+          },
+          "final_state_fidelity": 0.9999999999999902,
+          "iterations": 14,
+          "optimizer_work": {
+            "energy_evaluations": 14,
+            "gradient_evaluations": 0,
+            "hessian_evaluations": 0,
+            "iterations": 14
+          },
+          "raw_report_sha256": "1aaaa37e89295b69ff2aa3ed742776445494e3e7c2823e9b149887522971f88c",
+          "repetition": 1
+        },
+        {
+          "absolute_error_ha": 1.7319479184152442e-14,
+          "best_energy_ha": -1.1373060357533564,
+          "common_basis_compiled": {
+            "depth": 83,
+            "gate_count": 152,
+            "parameter_count": 1,
+            "two_qubit_gate_count": 48
+          },
+          "final_state_fidelity": 0.9999999999999902,
+          "iterations": 14,
+          "optimizer_work": {
+            "energy_evaluations": 14,
+            "gradient_evaluations": 0,
+            "hessian_evaluations": 0,
+            "iterations": 14
+          },
+          "raw_report_sha256": "9893c2d2b61e9b99490963995d47696e06eff8189677fcb136811965e782e5a6",
+          "repetition": 2
+        },
+        {
+          "absolute_error_ha": 1.7319479184152442e-14,
+          "best_energy_ha": -1.1373060357533564,
+          "common_basis_compiled": {
+            "depth": 83,
+            "gate_count": 152,
+            "parameter_count": 1,
+            "two_qubit_gate_count": 48
+          },
+          "final_state_fidelity": 0.9999999999999902,
+          "iterations": 14,
+          "optimizer_work": {
+            "energy_evaluations": 14,
+            "gradient_evaluations": 0,
+            "hessian_evaluations": 0,
+            "iterations": 14
+          },
+          "raw_report_sha256": "de7264b9490b27b76d3029bf82923fddf21d6b1f02c3f3fcd7da69e6ee5b4efa",
+          "repetition": 3
+        },
+        {
+          "absolute_error_ha": 1.7319479184152442e-14,
+          "best_energy_ha": -1.1373060357533564,
+          "common_basis_compiled": {
+            "depth": 83,
+            "gate_count": 152,
+            "parameter_count": 1,
+            "two_qubit_gate_count": 48
+          },
+          "final_state_fidelity": 0.9999999999999902,
+          "iterations": 14,
+          "optimizer_work": {
+            "energy_evaluations": 14,
+            "gradient_evaluations": 0,
+            "hessian_evaluations": 0,
+            "iterations": 14
+          },
+          "raw_report_sha256": "9b0f3843860c7bc469418b013871916d69887627db06f50960051a3df5ada056",
+          "repetition": 4
+        },
+        {
+          "absolute_error_ha": 1.7319479184152442e-14,
+          "best_energy_ha": -1.1373060357533564,
+          "common_basis_compiled": {
+            "depth": 83,
+            "gate_count": 152,
+            "parameter_count": 1,
+            "two_qubit_gate_count": 48
+          },
+          "final_state_fidelity": 0.9999999999999902,
+          "iterations": 14,
+          "optimizer_work": {
+            "energy_evaluations": 14,
+            "gradient_evaluations": 0,
+            "hessian_evaluations": 0,
+            "iterations": 14
+          },
+          "raw_report_sha256": "6e61ba5a1e1d1d75129c2743afc85865fb5d9990e80b78ef03efe6cc68052203",
+          "repetition": 5
+        },
+        {
+          "absolute_error_ha": 1.7319479184152442e-14,
+          "best_energy_ha": -1.1373060357533564,
+          "common_basis_compiled": {
+            "depth": 83,
+            "gate_count": 152,
+            "parameter_count": 1,
+            "two_qubit_gate_count": 48
+          },
+          "final_state_fidelity": 0.9999999999999902,
+          "iterations": 14,
+          "optimizer_work": {
+            "energy_evaluations": 14,
+            "gradient_evaluations": 0,
+            "hessian_evaluations": 0,
+            "iterations": 14
+          },
+          "raw_report_sha256": "bbd48b6e9bf6f9390ef72ff81a55f86ed30963698478af8f1fea4ea88fd081a0",
+          "repetition": 6
+        },
+        {
+          "absolute_error_ha": 1.7319479184152442e-14,
+          "best_energy_ha": -1.1373060357533564,
+          "common_basis_compiled": {
+            "depth": 83,
+            "gate_count": 152,
+            "parameter_count": 1,
+            "two_qubit_gate_count": 48
+          },
+          "final_state_fidelity": 0.9999999999999902,
+          "iterations": 14,
+          "optimizer_work": {
+            "energy_evaluations": 14,
+            "gradient_evaluations": 0,
+            "hessian_evaluations": 0,
+            "iterations": 14
+          },
+          "raw_report_sha256": "e700f9acb063b6dad24ba53d2684a299d023264548187dc9ec7c668cbbdc3031",
+          "repetition": 7
+        },
+        {
+          "absolute_error_ha": 1.7319479184152442e-14,
+          "best_energy_ha": -1.1373060357533564,
+          "common_basis_compiled": {
+            "depth": 83,
+            "gate_count": 152,
+            "parameter_count": 1,
+            "two_qubit_gate_count": 48
+          },
+          "final_state_fidelity": 0.9999999999999902,
+          "iterations": 14,
+          "optimizer_work": {
+            "energy_evaluations": 14,
+            "gradient_evaluations": 0,
+            "hessian_evaluations": 0,
+            "iterations": 14
+          },
+          "raw_report_sha256": "33e8955dda82e189799a62b5ca71806399e4f4aeeeb49b6852309c50fb9a7a5b",
+          "repetition": 8
+        },
+        {
+          "absolute_error_ha": 1.7319479184152442e-14,
+          "best_energy_ha": -1.1373060357533564,
+          "common_basis_compiled": {
+            "depth": 83,
+            "gate_count": 152,
+            "parameter_count": 1,
+            "two_qubit_gate_count": 48
+          },
+          "final_state_fidelity": 0.9999999999999902,
+          "iterations": 14,
+          "optimizer_work": {
+            "energy_evaluations": 14,
+            "gradient_evaluations": 0,
+            "hessian_evaluations": 0,
+            "iterations": 14
+          },
+          "raw_report_sha256": "cf711ce9a2bae71badc1447d75c0641253ff9f0b16b949cf411ec0df2afe3492",
+          "repetition": 9
+        },
+        {
+          "absolute_error_ha": 1.7319479184152442e-14,
+          "best_energy_ha": -1.1373060357533564,
+          "common_basis_compiled": {
+            "depth": 83,
+            "gate_count": 152,
+            "parameter_count": 1,
+            "two_qubit_gate_count": 48
+          },
+          "final_state_fidelity": 0.9999999999999902,
+          "iterations": 14,
+          "optimizer_work": {
+            "energy_evaluations": 14,
+            "gradient_evaluations": 0,
+            "hessian_evaluations": 0,
+            "iterations": 14
+          },
+          "raw_report_sha256": "f702e00a14abb3fc4aeed80d3d06d5195ef0e1704a5819ddd7f925e3c7fab766",
+          "repetition": 10
+        }
+      ],
+      "runtime_provenance": {
+        "build_attestation_manifest_sha256": "c39ebac05684271254e4689a06da2008ce62d0c5cd0bebedcee500774df991e2",
+        "canonical_circuit_file_sha256": "dc5970b66b3bb5da2467bdacfd5166373b2341f293c74486383bf2a0397cf43a",
+        "canonical_circuit_sha256": "f4fdb1ac3f041185fff63f6a7acb9d3ab1e9742131ed5bd3bb9ba2d99081a58c",
+        "common_basis_operation_sequence_sha256": "e0eaae576a3570dde47dcc5d5489dd758ee1311f911d0686cc87d5e2bd3f4cbd",
+        "compilation_protocol_sha256": "778fe0c7f3d361c54e9c41a0240ef31cc7926dacbe8fbc33ff96a57ee104393c",
+        "complete": true,
+        "digest_kind": "local_docker_image_id",
+        "dockerfile_sha256": "de36d90803e3b252fe60412d3bc07f9d018e6665da7ccc5b858a6fec55547774",
+        "entrypoint_sha256": "9a960a6a29e0d6a70dcfd83a2a829999808168f3b5a4f02609b45f25f184c1dd",
+        "fixture_manifest_sha256": "6424713c69c2b734172db47329b7deb62b67a743c80fd792f48173fdaa4e3edc",
+        "oci_manifest_digest": null,
+        "qualification_script_sha256": "f23dad6356e71bc3a3b34ac3a4d2229e60e7c35317033ea3faca881251d1578b",
+        "sbom_sha256": "b11a25ac4a88ac296725b661264ce77b475d6044a440e1a53de354f6cdc1b3fb",
+        "source_git_commit": "61101676ab8aa79cb351ed2331fab8a91c7a9d47",
+        "verified_source_and_sbom_files": {
+          "canonical_circuit_file_sha256": "dc5970b66b3bb5da2467bdacfd5166373b2341f293c74486383bf2a0397cf43a",
+          "dockerfile_sha256": "de36d90803e3b252fe60412d3bc07f9d018e6665da7ccc5b858a6fec55547774",
+          "entrypoint_sha256": "9a960a6a29e0d6a70dcfd83a2a829999808168f3b5a4f02609b45f25f184c1dd",
+          "fixture_manifest_sha256": "6424713c69c2b734172db47329b7deb62b67a743c80fd792f48173fdaa4e3edc",
+          "lock_sha256": "00d97ccffef518385623b5943788db063de43cf6af3c9e144f0f66a8023fe8ac",
+          "qualification_script_sha256": "f23dad6356e71bc3a3b34ac3a4d2229e60e7c35317033ea3faca881251d1578b",
+          "sbom_sha256": "b11a25ac4a88ac296725b661264ce77b475d6044a440e1a53de354f6cdc1b3fb"
+        }
+      }
+    }
+  ],
+  "generated_at": "2026-07-25T16:03:10.132874+00:00",
+  "human_review_state": "unreviewed",
+  "production_runtime_status": "unqualified",
+  "promotion_performed": false,
+  "public_execution": "blocked",
+  "qualification_scope": "local_linux_x86_64_candidate",
+  "schema_version": "0.1.0"
+}

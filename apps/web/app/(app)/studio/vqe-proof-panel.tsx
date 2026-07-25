@@ -140,6 +140,7 @@ export function VqeProofPanel({
               <div><dt>public</dt><dd>{selected.public_execution}</dd></div>
               {success ? (
                 <>
+                  <div><dt>Resource protocol</dt><dd>Canonical ansatz decomposition</dd></div>
                   <div><dt>Energy (Ha)</dt><dd>{success.best_energy_ha.toPrecision(13)}</dd></div>
                   <div><dt>|error| (Ha)</dt><dd>{success.absolute_error_ha.toExponential(3)}</dd></div>
                   <div><dt>Fidelity</dt><dd>{success.final_state_fidelity.toPrecision(13)}</dd></div>
@@ -149,6 +150,13 @@ export function VqeProofPanel({
                 </>
               ) : null}
             </dl>
+            {resources ? (
+              <p className="mj-mono-muted">
+                {ja
+                  ? "CNOT/Depthはansatzのみの共通分解protocol値です。参照状態・測定・hardware最適化・routingを含みません。"
+                  : "CNOT/Depth are common-protocol ansatz-only decomposition metrics. They exclude reference-state preparation, measurement, hardware optimization, and routing."}
+              </p>
+            ) : null}
             <p className="mj-mono-muted">{selected.runtime_image_digest}</p>
             {selected.observations.filter((item) => item.status === "failed").map((item) => (
               <p role="alert" key={item.id}>{item.failure_code ?? "runtime_failure"} · attempt {item.attempt}</p>

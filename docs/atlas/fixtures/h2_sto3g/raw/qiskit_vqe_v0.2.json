@@ -1,110 +1,98 @@
 {
-  "schema_version": "0.2.0",
-  "status": "succeeded",
-  "capability": "h2_sto3g_actual_vqe_v1",
-  "framework": "qiskit",
-  "provider_versions": {
-    "qiskit": "1.4.6",
-    "scipy": "1.18.0",
-    "numpy": "2.5.1"
-  },
-  "platform": "macOS-26.0.1-arm64-arm-64bit",
-  "python_version": "3.12.12 (main, Oct 28 2025, 11:52:25) [Clang 20.1.4 ]",
   "canonical_input": {
-    "manifest_sha256": "6424713c69c2b734172db47329b7deb62b67a743c80fd792f48173fdaa4e3edc",
     "canonical_circuit_sha256": "f4fdb1ac3f041185fff63f6a7acb9d3ab1e9742131ed5bd3bb9ba2d99081a58c",
     "compilation_protocol_sha256": "778fe0c7f3d361c54e9c41a0240ef31cc7926dacbe8fbc33ff96a57ee104393c",
-    "hamiltonian_digest_legacy": "d9dd24eb30011e8ea091759e6f0e25d76d0ccc0661e47748afb85e5f13654d79",
-    "reference_bitstring_qubit0_first": "1010",
     "excited_bitstring_qubit0_first": "0101",
+    "hamiltonian_digest_legacy": "d9dd24eb30011e8ea091759e6f0e25d76d0ccc0661e47748afb85e5f13654d79",
+    "manifest_sha256": "6424713c69c2b734172db47329b7deb62b67a743c80fd792f48173fdaa4e3edc",
+    "parameter_orientation": "exp_theta_over_2_generator",
     "parameter_slot_id": "theta.double.occ0_occ2.to.virt1_virt3",
-    "parameter_orientation": "exp_theta_over_2_generator"
+    "reference_bitstring_qubit0_first": "1010"
   },
+  "capability": "h2_sto3g_actual_vqe_v1",
+  "framework": "qiskit",
   "optimization": {
+    "absolute_error_ha": 1.8207657603852567e-14,
     "algorithm": "scipy_minimize_scalar_bounded",
-    "success": true,
-    "message": "Solution found.",
-    "iterations": 14,
-    "function_evaluations": 14,
-    "final_parameter": -0.22353697909001485,
-    "best_energy_ha": -1.137306035753356,
+    "best_energy_ha": -1.1373060357533555,
     "exact_energy_ha": -1.1373060357533737,
-    "absolute_error_ha": 1.7763568394002505e-14,
-    "final_state_fidelity": 0.99999999999999,
+    "final_parameter": -0.22353701675516133,
+    "final_state_fidelity": 0.9999999999999896,
+    "function_evaluations": 13,
+    "iterations": 13,
+    "message": "Solution found.",
+    "success": true,
     "trajectory": [
       {
-        "theta": -0.7416294238611401,
-        "energy_ha": -1.0301947614549012
+        "energy_ha": -1.030194761454903,
+        "theta": -0.7416294238611401
       },
       {
-        "theta": 0.7416294238611396,
-        "energy_ha": -0.7857602226885368
+        "energy_ha": -0.7857602226885373,
+        "theta": 0.7416294238611396
       },
       {
-        "theta": -1.6583338058675134,
-        "energy_ha": -0.4317826331639568
+        "energy_ha": -0.43178263316395615,
+        "theta": -1.6583338058675134
       },
       {
-        "theta": -0.24187384428243436,
-        "energy_ha": -1.137168823130911
+        "energy_ha": -1.1371688231309136,
+        "theta": -0.2418738442824347
       },
       {
-        "theta": -0.21390750290513785,
-        "energy_ha": -1.1372681949229282
+        "energy_ha": -1.1372681949229273,
+        "theta": -0.21390750290513755
       },
       {
-        "theta": -0.22343665994733564,
-        "energy_ha": -1.1373060316447834
+        "energy_ha": -1.1373060316447852,
+        "theta": -0.22343665994749773
       },
       {
-        "theta": -0.22353706264348316,
-        "energy_ha": -1.1373060357533498
+        "energy_ha": -1.1373060357533515,
+        "theta": -0.2235370626437262
       },
       {
-        "theta": -0.22353699864463075,
-        "energy_ha": -1.1373060357533538
+        "energy_ha": -1.1373060357533529,
+        "theta": -0.22353699864479104
       },
       {
-        "theta": -0.22353695419506145,
-        "energy_ha": -1.137306035753352
+        "energy_ha": -1.1373060357533533,
+        "theta": -0.22353700513537908
       },
       {
-        "theta": -0.2235369953287079,
-        "energy_ha": -1.1373060357533546
+        "energy_ha": -1.1373060357533524,
+        "theta": -0.22353702393658167
       },
       {
-        "theta": -0.22353697909001485,
-        "energy_ha": -1.137306035753356
+        "energy_ha": -1.1373060357533542,
+        "theta": -0.22353701231679945
       },
       {
-        "theta": -0.22353696958098881,
-        "energy_ha": -1.137306035753355
+        "energy_ha": -1.1373060357533555,
+        "theta": -0.22353701675516133
       },
       {
-        "theta": -0.2235369824059374,
-        "energy_ha": -1.137306035753355
-      },
-      {
-        "theta": -0.22353697577409232,
-        "energy_ha": -1.137306035753355
+        "energy_ha": -1.1373060357533546,
+        "theta": -0.22353702007108442
       }
     ]
   },
+  "platform": "Linux-6.10.14-linuxkit-x86_64-with-glibc2.36",
+  "provider_versions": {
+    "numpy": "2.5.1",
+    "qiskit": "1.4.6",
+    "scipy": "1.18.0"
+  },
+  "python_version": "3.12.12 (main, Feb 24 2026, 20:29:11) [GCC 12.2.0]",
   "resources": {
-    "semantic_block": {
-      "canonical_double_excitation_blocks": 1
-    },
     "canonical_logical": {
-      "qubits": 4,
+      "canonical_circuit_sha256": "f4fdb1ac3f041185fff63f6a7acb9d3ab1e9742131ed5bd3bb9ba2d99081a58c",
       "parameter_count": 1,
       "pauli_rotation_blocks": 8,
-      "canonical_circuit_sha256": "f4fdb1ac3f041185fff63f6a7acb9d3ab1e9742131ed5bd3bb9ba2d99081a58c"
+      "qubits": 4
     },
     "common_basis_compiled": {
-      "depth": 83,
-      "gate_count": 152,
-      "cnot_count": 48,
-      "parameter_count": 1,
+      "adapter_verification": "passed",
       "basis_gates": [
         "h",
         "s",
@@ -112,29 +100,37 @@
         "rz",
         "cx"
       ],
+      "cnot_count": 48,
       "compilation_protocol_sha256": "778fe0c7f3d361c54e9c41a0240ef31cc7926dacbe8fbc33ff96a57ee104393c",
-      "operation_sequence_sha256": "e0eaae576a3570dde47dcc5d5489dd758ee1311f911d0686cc87d5e2bd3f4cbd",
-      "adapter_verification": "passed",
-      "metric_scope": "ansatz_only",
-      "includes_reference_state": false,
+      "depth": 83,
+      "gate_count": 152,
+      "includes_hardware_optimization_or_routing": false,
       "includes_measurement": false,
-      "includes_hardware_optimization_or_routing": false
+      "includes_reference_state": false,
+      "metric_scope": "ansatz_only",
+      "operation_sequence_sha256": "e0eaae576a3570dde47dcc5d5489dd758ee1311f911d0686cc87d5e2bd3f4cbd",
+      "parameter_count": 1
     },
     "provider_native_diagnostic": {
-      "depth": 116,
-      "gate_count": 282,
-      "two_qubit_gate_count": 48,
       "basis_gates": [
         "rz",
         "sx",
         "x",
         "cx"
       ],
-      "optimization_level": 0,
+      "comparison_eligible": false,
       "compiler_seed": 0,
+      "depth": 116,
+      "gate_count": 282,
       "includes_reference_state": true,
-      "comparison_eligible": false
+      "optimization_level": 0,
+      "two_qubit_gate_count": 48
+    },
+    "semantic_block": {
+      "canonical_double_excitation_blocks": 1
     }
   },
-  "wall_time_s": 0.041478042025119066
+  "schema_version": "0.2.0",
+  "status": "succeeded",
+  "wall_time_s": 0.11547158400003354
 }

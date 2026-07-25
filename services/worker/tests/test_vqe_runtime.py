@@ -28,6 +28,9 @@ RAW = ROOT / "docs" / "atlas" / "fixtures" / "h2_sto3g" / "raw"
 )
 def test_raw_runtime_report_translates_to_complete_evidence(framework, filename):
     profile = candidate_runtime_profile(framework)
+    assert profile.provenance_complete is True
+    assert profile.binding.container_digest_kind == "local_docker_image_id"
+    assert profile.binding.oci_manifest_digest is None
     report = json.loads((RAW / filename).read_text())
 
     evidence = build_success_evidence(
