@@ -5,10 +5,20 @@ overrides:
   fast-uri: 3.1.4
   js-yaml: 4.3.0
   sharp: 0.35.3
-  # Next 16 pins postcss@8.4.31, which GHSA-6g55-p6wh-862q (CVSS 7.5) now flags.
-  # Dedupe onto 8.5.16 — already in the tree via @tailwindcss/postcss and not
-  # flagged by osv. A minor, backward-compatible bump within postcss 8.x.
-  postcss@8.4.31: 8.5.16
+  # Next 16 pins postcss@8.4.31, which GHSA-6g55-p6wh-862q (CVSS 7.5) now flags;
+  # @tailwindcss/postcss independently resolves its own ^8.4 range to 8.5.16,
+  # which GHSA-r28c-9q8g-f849 (CVSS 7.5, path traversal in sourceMappingURL
+  # auto-loading; fixed 8.5.18) now flags too. A blanket override — not a
+  # version-keyed one — so every resolution in the tree lands on the same
+  # patched release. Minor, backward-compatible bumps within postcss 8.x.
+  postcss: 8.5.18
+  # GHSA-mh99-v99m-4gvg (CVE-2026-14257, CVSS 7.5): unbounded-length expansion
+  # OOM-crashes the process; the single upstream fix landed at 5.0.8 with no
+  # backport to the 2.x line minimatch@5.1.9 (openapi-typescript's toolchain)
+  # depends on. Both resolved copies (2.1.2 via minimatch@5.1.9, 5.0.7 via
+  # minimatch@10.2.5) are dev-tooling only — never reachable from a request —
+  # but osv-scanner blocks on CVSS regardless, so pin both onto the fixed release.
+  brace-expansion: 5.0.8
 # 05-security supply chain: build scripts stay blocked. sharp (next/image) is
 # explicitly denied - we do not use image optimization yet; revisit in Phase 3.
 allowBuilds:

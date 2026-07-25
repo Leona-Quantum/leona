@@ -159,7 +159,9 @@ async def test_generated_source_streams_as_bounded_llm_delta_events(monkeypatch)
         async def complete(self, request, *, on_delta=None):
             assert on_delta is not None
             await on_delta("{" + "x" * 170, "output")
-            return LLMResponse(text='{"source":"print(1)"}', model=request.model, input_tokens=3, output_tokens=4)
+            return LLMResponse(
+                text='{"source":"print(1)"}', model=request.model, input_tokens=3, output_tokens=4
+            )
 
     async def get_llm_call(*_args):
         return stored
