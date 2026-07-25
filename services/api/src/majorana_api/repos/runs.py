@@ -4,6 +4,7 @@ run_events and verification_records carry no workspace_id; every access resolves
 the parent run under scope first. run_events is append-only (DB grant enforced).
 """
 
+import datetime as dt
 import uuid
 from typing import Any
 
@@ -49,6 +50,35 @@ async def list_runs(
     if cursor is not None:
         stmt = stmt.where(Run.id < cursor)
     return list((await session.execute(stmt)).scalars().all())
+
+
+async def count_execute_runs_since(
+    scope: Scope, session: AsyncSession, since: dt.datetime
+) -> int:
+    """Execute-mode runs this workspace has created since `since`.
+
+    Backs the API-side abuse backstop in `routes.runs.create_run`. Counts only
+    `mode="execute"` so it lines up with what the BFF's tier allowance meters —
+    chat turns also create Run rows and counting them would measure something
+    else entirely.
+
+    AUTO is not counted, and does not need to be: the worker resolves AUTO to a
+    concrete mode and rewrites the run row, so an auto-submitted run that turned
+    out to be an execute is already stored as one and lands in this count. Only
+    the in-flight, not-yet-resolved window escapes it — the same tolerated
+    admission race the BFF gate documents, and immaterial against a ceiling this
+    far above any tier.
+    """
+    stmt = (
+        select(func.count())
+        .select_from(Run)
+        .where(
+            Run.workspace_id == scope.workspace_id,
+            Run.mode == RunMode.EXECUTE.value,
+            Run.created_at >= since,
+        )
+    )
+    return int((await session.execute(stmt)).scalar_one())
 
 
 async def find_run_by_idempotency_key(
