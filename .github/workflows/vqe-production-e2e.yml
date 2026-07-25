@@ -48,11 +48,9 @@ jobs:
       - name: provision frozen owner-waived H2 workflow
         env:
           DATABASE_URL: ${{ steps.neon.outputs.db_url_with_pooler }}
-          MAJORANA_ENV: development
-          MAJORANA_LOCAL_DEV_AUTH: "true"
-          MAJORANA_LOCAL_DEV_USER_ID: vqe-production-e2e
-          MAJORANA_LOCAL_DEV_EMAIL: vqe-production-e2e@majorana.test
-          MAJORANA_VQE_CANDIDATE_EXECUTION: "true"
+          MAJORANA_VQE_E2E_PROVISION: "true"
+          MAJORANA_VQE_E2E_USER_ID: vqe-production-e2e
+          MAJORANA_VQE_E2E_EMAIL: vqe-production-e2e@majorana.test
         run: |
           workflow_id="$(uv run python scripts/provision-h2-vqe-candidate.py)"
           echo "MAJORANA_VQE_E2E_WORKFLOW_ID=$workflow_id" >> "$GITHUB_ENV"

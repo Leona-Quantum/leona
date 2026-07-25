@@ -9,6 +9,7 @@ content.  It never publishes, accepts, or human-reviews an Artifact.
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 
 from majorana_contracts import Scope
@@ -95,16 +96,40 @@ async def _component(
 
 
 async def provision() -> str:
-    settings = Settings.from_env()
-    if not (
-        settings.environment == "development"
-        and settings.local_dev_auth
-        and settings.vqe_candidate_execution
-    ):
-        raise RuntimeError(
-            "H2 candidate provisioning requires local development auth and "
-            "MAJORANA_VQE_CANDIDATE_EXECUTION=true"
+    ci_e2e = os.environ.get("MAJORANA_VQE_E2E_PROVISION", "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+    }
+    if ci_e2e:
+        database_url = os.environ.get("DATABASE_URL", "")
+        if not (
+            os.environ.get("CI", "").strip().lower() == "true"
+            and os.environ.get("GITHUB_ACTIONS", "").strip().lower() == "true"
+            and ".neon.tech/" in database_url
+        ):
+            raise RuntimeError("E2E provisioning requires GitHub Actions and an explicit Neon URL")
+        workos_user_id = os.environ.get(
+            "MAJORANA_VQE_E2E_USER_ID",
+            "vqe-production-e2e",
         )
+        email = os.environ.get(
+            "MAJORANA_VQE_E2E_EMAIL",
+            "vqe-production-e2e@majorana.test",
+        )
+    else:
+        settings = Settings.from_env()
+        if not (
+            settings.environment == "development"
+            and settings.local_dev_auth
+            and settings.vqe_candidate_execution
+        ):
+            raise RuntimeError(
+                "H2 candidate provisioning requires local development auth and "
+                "MAJORANA_VQE_CANDIDATE_EXECUTION=true"
+            )
+        workos_user_id = settings.local_dev_user_id
+        email = settings.local_dev_email
     manifest = json.loads(MANIFEST_PATH.read_text())
     engine = engine_from_env()
     factory = session_factory(engine)
@@ -112,8 +137,8 @@ async def provision() -> str:
         async with factory() as session:
             user, workspace = await system.get_or_provision_user(
                 session,
-                workos_user_id=settings.local_dev_user_id,
-                email=settings.local_dev_email,
+                workos_user_id=workos_user_id,
+                email=email,
             )
             scope = Scope(user_id=user.id, workspace_id=workspace.id, role=Role.OWNER)
             component_ids = {}
