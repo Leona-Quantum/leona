@@ -157,7 +157,7 @@ class MeasurementProtocolSpec(ExecutableSpecBase):
 
 class CompilationMetricProtocolSpec(ExecutableSpecBase):
     kind: Literal["compilation_metric_protocol"]
-    protocol_id: Literal["majorana.h2.common_cnot_depth.v1"]
+    protocol_id: Literal["majorana.h2.common_cnot_depth.v2"]
     compilation_protocol_sha256: str = Field(pattern=SHA256_HEX_PATTERN)
     canonical_circuit_sha256: str = Field(pattern=SHA256_HEX_PATTERN)
     input_stage: Literal["canonical_logical_pauli_rotations"]
@@ -171,9 +171,12 @@ class CompilationMetricProtocolSpec(ExecutableSpecBase):
     routing_policy: Literal["none"]
     optimization_level: Literal[0]
     compiler: Literal["majorana_deterministic_pauli_rotation_compiler"]
-    compiler_version: Literal["0.1.0"]
+    compiler_version: Literal["0.2.0"]
     compiler_seed: Literal[0]
+    metric_scope: Literal["ansatz_only"]
+    reference_state_inclusion_policy: Literal["excluded"]
     measurement_inclusion_policy: Literal["excluded"]
+    hardware_optimization_inclusion_policy: Literal["excluded"]
     depth_definition: Literal["asap_dependency_layers_each_gate_duration_one"]
     cnot_definition: Literal["count_gate_name_cx"]
     expected_common_basis_cnot_count: Literal[48]

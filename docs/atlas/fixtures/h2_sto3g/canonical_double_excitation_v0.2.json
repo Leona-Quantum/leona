@@ -1,5 +1,5 @@
 {
-  "canonical_circuit_sha256": "a95f4a8e8749e361c85df00b9bf42d9cea407a048840bc8e58f7e5c9920be3b1",
+  "canonical_circuit_sha256": "f4fdb1ac3f041185fff63f6a7acb9d3ab1e9742131ed5bd3bb9ba2d99081a58c",
   "circuit_id": "h2.double.occ0_occ2.to.virt1_virt3.jw.v1",
   "common_basis_metrics": {
     "cnot_count": 48,
@@ -7,6 +7,7 @@
     "gate_count": 152,
     "parameter_count": 1
   },
+  "common_basis_operation_sequence_sha256": "e0eaae576a3570dde47dcc5d5489dd758ee1311f911d0686cc87d5e2bd3f4cbd",
   "common_basis_operations": [
     {
       "angle_theta_denominator": null,
@@ -1440,9 +1441,10 @@
     "cnot_definition": "count_gate_name_cx",
     "compiler": "majorana_deterministic_pauli_rotation_compiler",
     "compiler_seed": 0,
-    "compiler_version": "0.1.0",
+    "compiler_version": "0.2.0",
     "depth_definition": "asap_dependency_layers_each_gate_duration_one",
     "diagnostic_stage": "provider_native_diagnostic",
+    "hardware_optimization_inclusion_policy": "excluded",
     "initial_layout": [
       0,
       1,
@@ -1451,14 +1453,16 @@
     ],
     "input_stage": "canonical_logical_pauli_rotations",
     "measurement_inclusion_policy": "excluded",
+    "metric_scope": "ansatz_only",
     "optimization_level": 0,
     "parameter_binding": "same_float64_theta_for_all_rotations",
-    "protocol_id": "majorana.h2.common_cnot_depth.v1",
+    "protocol_id": "majorana.h2.common_cnot_depth.v2",
+    "reference_state_inclusion_policy": "excluded",
     "routing_policy": "none",
     "schema_version": "0.2.0",
     "topology": "four_qubit_all_to_all"
   },
-  "compilation_protocol_sha256": "4e949fdc81f6e4c0416b95eee2bb71d521216db8705bcd948320ddd83ae52acb",
+  "compilation_protocol_sha256": "778fe0c7f3d361c54e9c41a0240ef31cc7926dacbe8fbc33ff96a57ee104393c",
   "generator_convention": "antihermitian_tau_minus_tau_dagger",
   "generator_definition": "create1_create3_annihilate2_annihilate0_minus_adjoint",
   "generator_orientation": "occupied_0_2_to_virtual_1_3",

@@ -12,8 +12,8 @@
   "python_version": "3.12.12 (main, Oct 28 2025, 11:52:25) [Clang 20.1.4 ]",
   "canonical_input": {
     "manifest_sha256": "6424713c69c2b734172db47329b7deb62b67a743c80fd792f48173fdaa4e3edc",
-    "canonical_circuit_sha256": "a95f4a8e8749e361c85df00b9bf42d9cea407a048840bc8e58f7e5c9920be3b1",
-    "compilation_protocol_sha256": "4e949fdc81f6e4c0416b95eee2bb71d521216db8705bcd948320ddd83ae52acb",
+    "canonical_circuit_sha256": "f4fdb1ac3f041185fff63f6a7acb9d3ab1e9742131ed5bd3bb9ba2d99081a58c",
+    "compilation_protocol_sha256": "778fe0c7f3d361c54e9c41a0240ef31cc7926dacbe8fbc33ff96a57ee104393c",
     "hamiltonian_digest_legacy": "d9dd24eb30011e8ea091759e6f0e25d76d0ccc0661e47748afb85e5f13654d79",
     "reference_bitstring_qubit0_first": "1010",
     "excited_bitstring_qubit0_first": "0101",
@@ -126,12 +126,12 @@
       "qubits": 4,
       "parameter_count": 1,
       "pauli_rotation_blocks": 8,
-      "canonical_circuit_sha256": "a95f4a8e8749e361c85df00b9bf42d9cea407a048840bc8e58f7e5c9920be3b1"
+      "canonical_circuit_sha256": "f4fdb1ac3f041185fff63f6a7acb9d3ab1e9742131ed5bd3bb9ba2d99081a58c"
     },
     "common_basis_compiled": {
-      "cnot_count": 48,
       "depth": 83,
       "gate_count": 152,
+      "cnot_count": 48,
       "parameter_count": 1,
       "basis_gates": [
         "h",
@@ -140,7 +140,13 @@
         "rz",
         "cx"
       ],
-      "compilation_protocol_sha256": "4e949fdc81f6e4c0416b95eee2bb71d521216db8705bcd948320ddd83ae52acb"
+      "compilation_protocol_sha256": "778fe0c7f3d361c54e9c41a0240ef31cc7926dacbe8fbc33ff96a57ee104393c",
+      "operation_sequence_sha256": "e0eaae576a3570dde47dcc5d5489dd758ee1311f911d0686cc87d5e2bd3f4cbd",
+      "adapter_verification": "passed",
+      "metric_scope": "ansatz_only",
+      "includes_reference_state": false,
+      "includes_measurement": false,
+      "includes_hardware_optimization_or_routing": false
     },
     "provider_native_diagnostic": {
       "depth": 84,
@@ -158,5 +164,5 @@
       "comparison_eligible": false
     }
   },
-  "wall_time_s": 0.09841587499249727
+  "wall_time_s": 0.11250625003594905
 }

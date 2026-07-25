@@ -45,6 +45,7 @@ const COPY = {
     implementationAvailable: "implementation available",
     view: "View",
     compare: "Compare",
+    openStudio: "Open executable workflows in Studio",
     manualGold: "manual gold",
     machineGenerated: "machine-generated",
     humanValidated: "human-validated",
@@ -81,6 +82,7 @@ const COPY = {
     implementationAvailable: "実装あり",
     view: "詳細",
     compare: "比較",
+    openStudio: "実行可能WorkflowをStudioで開く",
     manualGold: "人手ゴールド",
     machineGenerated: "機械生成",
     humanValidated: "人手検証済み",
@@ -206,6 +208,11 @@ export function VqeMethodsBrowser({
 
   return (
     <div className="mj-repository-browser">
+      <div className="mj-repository-actions">
+        <a className="mj-primary-button" href="/studio?vqe=1">
+          {copy.openStudio}
+        </a>
+      </div>
       <div className="mj-repository-category-nav" aria-label={locale === "ja" ? "表示" : "View"}>
         {(Object.entries(copy.tabs) as Array<[typeof tab, string]>).map(([value, label]) => (
           <button

@@ -1,8 +1,8 @@
 from majorana_vqe.circuit import build_canonical_h2_double_excitation
 
 
-EXPECTED_CIRCUIT_SHA256 = "a95f4a8e8749e361c85df00b9bf42d9cea407a048840bc8e58f7e5c9920be3b1"
-EXPECTED_PROTOCOL_SHA256 = "4e949fdc81f6e4c0416b95eee2bb71d521216db8705bcd948320ddd83ae52acb"
+EXPECTED_CIRCUIT_SHA256 = "f4fdb1ac3f041185fff63f6a7acb9d3ab1e9742131ed5bd3bb9ba2d99081a58c"
+EXPECTED_PROTOCOL_SHA256 = "778fe0c7f3d361c54e9c41a0240ef31cc7926dacbe8fbc33ff96a57ee104393c"
 
 
 def test_canonical_h2_circuit_is_deterministic() -> None:

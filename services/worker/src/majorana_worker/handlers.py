@@ -68,7 +68,7 @@ from majorana_api.repos import qpu_runs as qpu_runs_repo
 from majorana_api.repos import system
 from majorana_api.repos import vqe as vqe_repo
 from majorana_api.vqe_runtime_profiles import candidate_runtime_profile
-from majorana_vqe.models import ExecutionBinding, FailureCode
+from majorana_vqe.models import ExecutionBinding
 from majorana_vqe.result import ExecutionFailureResult
 
 from .agent_events import AgentEventObserver
@@ -87,6 +87,7 @@ from .context import RunContext
 from .errors import RetryableJobError
 from .intent import resolve_mode
 from .vqe_runtime import (
+    VqeRuntimeCancelled,
     VqeRuntimeError,
     build_success_evidence,
     execute_candidate_image,
@@ -981,10 +982,11 @@ async def handle_vqe_execute(session: AsyncSession, payload: dict[str, Any]) -> 
     profile = candidate_runtime_profile(binding.framework)
     if binding != profile.binding:
         raise ValueError("persisted VQE binding is not the fixed server candidate profile")
-    observations = await vqe_repo.list_observations(scope, session, execution.id)
-    attempt = len(observations) + 1
     try:
-        runtime_output = await execute_candidate_image(profile)
+        runtime_output = await execute_candidate_image(
+            profile,
+            cancel_requested=lambda: _vqe_cancel_requested(run_store),
+        )
         if await run_store.current_status() is RunStatus.CANCELLED:
             current_execution = await vqe_repo.get_execution(
                 scope,
@@ -1008,10 +1010,19 @@ async def handle_vqe_execute(session: AsyncSession, payload: dict[str, Any]) -> 
             ansatz_semantic_digest=_ansatz_digest(experiment.scientific_spec_json),
             seed=int(experiment.scientific_spec_json["seed"]),
         )
+    except VqeRuntimeCancelled:
+        current_execution = await vqe_repo.get_execution(scope, session, execution.id)
+        if current_execution.status in {"planned", "queued", "running"}:
+            await vqe_repo.transition_execution(
+                scope,
+                session,
+                execution.id,
+                new_status="cancelled",
+            )
+            await session.commit()
+        return
     except VqeRuntimeError as exc:
-        failure_code = (
-            FailureCode.RUNTIME_UNAVAILABLE if exc.retryable else FailureCode.RESULT_CONTRACT_FAILED
-        )
+        failure_code = exc.failure_code
         failure = ExecutionFailureResult(
             scientific_spec_sha256=experiment.scientific_spec_sha256,
             registry_resolution_sha256=experiment.registry_resolution_sha256,
@@ -1026,13 +1037,14 @@ async def handle_vqe_execute(session: AsyncSession, payload: dict[str, Any]) -> 
             failure_code=failure_code,
             failure_detail=str(exc)[:500],
         )
-        await vqe_repo.append_observation(
+        observation = await vqe_repo.append_observation(
             scope,
             session,
             execution.id,
-            attempt=attempt,
+            attempt=None,
             evidence=failure,
         )
+        attempt = observation.attempt
         if exc.retryable:
             await session.commit()
             raise RetryableJobError(str(exc)) from exc
@@ -1060,11 +1072,14 @@ async def handle_vqe_execute(session: AsyncSession, payload: dict[str, Any]) -> 
         )
         return
 
+    current_execution = await vqe_repo.get_execution(scope, session, execution.id)
+    if current_execution.status in {"succeeded", "failed", "cancelled"}:
+        return
     await vqe_repo.append_observation(
         scope,
         session,
         execution.id,
-        attempt=attempt,
+        attempt=None,
         evidence=evidence,
         evidence_json={
             "stderr_was_empty": not bool(runtime_output.bounded_stderr),
@@ -1084,6 +1099,10 @@ async def handle_vqe_execute(session: AsyncSession, payload: dict[str, Any]) -> 
             "status": RunStatus.SUCCEEDED,
         },
     )
+
+
+async def _vqe_cancel_requested(run_store: RepoRunStateStore) -> bool:
+    return await run_store.current_status() is RunStatus.CANCELLED
 
 
 async def handle_vqe_dead_letter(

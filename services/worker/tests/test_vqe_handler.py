@@ -5,7 +5,7 @@ from types import SimpleNamespace
 
 import pytest
 from majorana_contracts.enums import RunStatus
-from majorana_vqe.models import Framework
+from majorana_vqe.models import FailureCode, Framework
 
 from majorana_api.vqe_runtime_profiles import candidate_runtime_profile
 from majorana_worker import handlers
@@ -98,7 +98,7 @@ def _install_common(monkeypatch):
 
     async def append_observation(scope, session, requested_id, *, evidence, **kwargs):
         state["observations"].append(evidence)
-        return evidence
+        return SimpleNamespace(attempt=len(state["observations"]))
 
     monkeypatch.setattr(handlers, "RepoRunStateStore", RunStore)
     monkeypatch.setattr(handlers, "RepoEventSink", EventSink)
@@ -122,7 +122,7 @@ async def test_vqe_handler_persists_success_and_closes_both_lifecycles(monkeypat
     state, payload = _install_common(monkeypatch)
     report = json.loads((RAW / "qiskit_vqe_v0.2.json").read_text())
 
-    async def execute(profile):
+    async def execute(profile, **kwargs):
         return VqeRuntimeOutput(payload=report, bounded_stderr="")
 
     monkeypatch.setattr(handlers, "execute_candidate_image", execute)
@@ -140,8 +140,12 @@ async def test_vqe_handler_appends_retry_observation_without_false_terminal_stat
     EventSink.events.clear()
     state, payload = _install_common(monkeypatch)
 
-    async def execute(profile):
-        raise VqeRuntimeError("temporary Docker outage", retryable=True)
+    async def execute(profile, **kwargs):
+        raise VqeRuntimeError(
+            "temporary Docker outage",
+            failure_code=FailureCode.RUNTIME_UNAVAILABLE,
+            retryable=True,
+        )
 
     monkeypatch.setattr(handlers, "execute_candidate_image", execute)
     session = Session()

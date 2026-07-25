@@ -71,7 +71,7 @@
     "trotter_steps": 1,
     "parameter_sharing": "none",
     "canonical_circuit_id": "h2.double.occ0_occ2.to.virt1_virt3.jw.v1",
-    "canonical_circuit_sha256": "a95f4a8e8749e361c85df00b9bf42d9cea407a048840bc8e58f7e5c9920be3b1",
+    "canonical_circuit_sha256": "f4fdb1ac3f041185fff63f6a7acb9d3ab1e9742131ed5bd3bb9ba2d99081a58c",
     "parameter_slots": [
       {
         "schema_version": "0.2.0",
@@ -132,9 +132,9 @@
   "compilation_backend": {
     "schema_version": "0.2.0",
     "kind": "compilation_metric_protocol",
-    "protocol_id": "majorana.h2.common_cnot_depth.v1",
-    "compilation_protocol_sha256": "4e949fdc81f6e4c0416b95eee2bb71d521216db8705bcd948320ddd83ae52acb",
-    "canonical_circuit_sha256": "a95f4a8e8749e361c85df00b9bf42d9cea407a048840bc8e58f7e5c9920be3b1",
+    "protocol_id": "majorana.h2.common_cnot_depth.v2",
+    "compilation_protocol_sha256": "778fe0c7f3d361c54e9c41a0240ef31cc7926dacbe8fbc33ff96a57ee104393c",
+    "canonical_circuit_sha256": "f4fdb1ac3f041185fff63f6a7acb9d3ab1e9742131ed5bd3bb9ba2d99081a58c",
     "input_stage": "canonical_logical_pauli_rotations",
     "primary_resource_stages": [
       "canonical_logical",
@@ -160,9 +160,12 @@
     "routing_policy": "none",
     "optimization_level": 0,
     "compiler": "majorana_deterministic_pauli_rotation_compiler",
-    "compiler_version": "0.1.0",
+    "compiler_version": "0.2.0",
     "compiler_seed": 0,
+    "metric_scope": "ansatz_only",
+    "reference_state_inclusion_policy": "excluded",
     "measurement_inclusion_policy": "excluded",
+    "hardware_optimization_inclusion_policy": "excluded",
     "depth_definition": "asap_dependency_layers_each_gate_duration_one",
     "cnot_definition": "count_gate_name_cx",
     "expected_common_basis_cnot_count": 48,

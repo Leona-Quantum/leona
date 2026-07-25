@@ -77,7 +77,7 @@ class InvalidWorkflowCompositionError(RepoError):
 
 H2_REVIEW_CANDIDATE_WORKFLOW_KEY = "h2.sto3g.actual_vqe.workflow.v0_2"
 H2_REVIEW_CANDIDATE_WORKFLOW_DIGEST = (
-    "4602559821a52c2f55c279ddc60191131613575168fbe4f5d317e2e5266a8117"
+    "ae7446e666697337823c86f4d23bc7d19f75c035e38ae6e06e6b4aa8910fb1c1"
 )
 
 
@@ -686,8 +686,26 @@ async def create_execution(
         execution_identity_sha256=identity,
         status="planned",
     )
-    session.add(execution)
-    await session.flush()
+    try:
+        async with session.begin_nested():
+            session.add(execution)
+            await session.flush()
+    except IntegrityError:
+        winner = (
+            (
+                await session.execute(
+                    select(VqeExecutionRow).where(
+                        VqeExecutionRow.experiment_id == experiment.id,
+                        VqeExecutionRow.execution_identity_sha256 == identity,
+                    )
+                )
+            )
+            .scalars()
+            .first()
+        )
+        if winner is None:
+            raise
+        return winner
     await session.refresh(execution)
     return execution
 
@@ -740,6 +758,16 @@ async def bind_execution_run(
         .values(run_id=run.id, status="queued", updated_at=func.now())
     )
     if result.rowcount != 1:
+        session.expire(execution)
+        winner = await get_execution(scope, session, execution.id)
+        if winner.run_id == run.id and winner.status in {
+            "queued",
+            "running",
+            "succeeded",
+            "failed",
+            "cancelled",
+        }:
+            return winner
         raise ValueError("VQE execution left planned state before run binding")
     await session.refresh(execution)
     return execution
@@ -794,6 +822,8 @@ async def get_execution(
     scope: Scope,
     session: AsyncSession,
     execution_id: uuid.UUID,
+    *,
+    for_update: bool = False,
 ) -> VqeExecutionRow:
     stmt = (
         select(VqeExecutionRow)
@@ -802,7 +832,10 @@ async def get_execution(
             VqeExecutionRow.id == execution_id,
             VqeExperimentRow.workspace_id == scope.workspace_id,
         )
+        .execution_options(populate_existing=True)
     )
+    if for_update:
+        stmt = stmt.with_for_update(of=VqeExecutionRow)
     execution = (await session.execute(stmt)).scalars().first()
     if execution is None:
         raise NotFoundError("vqe execution")
@@ -828,7 +861,7 @@ async def append_observation(
     session: AsyncSession,
     execution_id: uuid.UUID,
     *,
-    attempt: int,
+    attempt: int | None,
     evidence: ExecutionEvidence | dict[str, Any],
     detail_object_uri: str | None = None,
     detail_sha256: str | None = None,
@@ -841,7 +874,19 @@ async def append_observation(
     either mutation through a trigger (migration 0035).
     """
     require_write(scope)
-    execution = await get_execution(scope, session, execution_id)
+    execution = await get_execution(
+        scope,
+        session,
+        execution_id,
+        for_update=attempt is None,
+    )
+    if attempt is None:
+        current_attempt = await session.scalar(
+            select(func.coalesce(func.max(VqeObservationRow.attempt), 0)).where(
+                VqeObservationRow.execution_id == execution.id
+            )
+        )
+        attempt = int(current_attempt or 0) + 1
     experiment = await get_experiment(scope, session, execution.experiment_id)
     persisted_binding = ExecutionBinding.model_validate(execution.execution_binding_json)
     validated = EXECUTION_EVIDENCE_ADAPTER.validate_python(evidence)

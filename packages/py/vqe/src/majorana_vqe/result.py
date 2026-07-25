@@ -53,6 +53,12 @@ class ResourceObservation(VqeBaseModel):
     compiler: str | None = Field(default=None, max_length=100)
     compiler_version: str | None = Field(default=None, max_length=50)
     compiler_seed: int | None = Field(default=None, ge=0)
+    metric_scope: Literal["ansatz_only", "full_state_preparation"] | None = None
+    reference_state_included: bool | None = None
+    measurement_included: bool | None = None
+    hardware_optimization_or_routing_included: bool | None = None
+    adapter_verification: Literal["passed"] | None = None
+    operation_sequence_sha256: str | None = Field(default=None, pattern=SHA256_HEX_PATTERN)
 
 
 class ExecutionFailureResult(EvidenceCommon):

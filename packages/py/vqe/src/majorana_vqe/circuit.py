@@ -82,10 +82,10 @@ class ResourceMetrics(VqeBaseModel):
 
 class CommonCompilationProtocol(VqeBaseModel):
     schema_version: Literal["0.2.0"] = CANONICAL_CIRCUIT_SCHEMA_VERSION
-    protocol_id: Literal["majorana.h2.common_cnot_depth.v1"]
+    protocol_id: Literal["majorana.h2.common_cnot_depth.v2"]
     input_stage: Literal["canonical_logical_pauli_rotations"]
     compiler: Literal["majorana_deterministic_pauli_rotation_compiler"]
-    compiler_version: Literal["0.1.0"]
+    compiler_version: Literal["0.2.0"]
     basis_gates: list[str]
     topology: Literal["four_qubit_all_to_all"]
     initial_layout: list[int]
@@ -93,7 +93,10 @@ class CommonCompilationProtocol(VqeBaseModel):
     optimization_level: Literal[0]
     compiler_seed: Literal[0]
     parameter_binding: Literal["same_float64_theta_for_all_rotations"]
+    metric_scope: Literal["ansatz_only"]
+    reference_state_inclusion_policy: Literal["excluded"]
     measurement_inclusion_policy: Literal["excluded"]
+    hardware_optimization_inclusion_policy: Literal["excluded"]
     depth_definition: Literal["asap_dependency_layers_each_gate_duration_one"]
     cnot_definition: Literal["count_gate_name_cx"]
     allowed_primary_stages: list[Literal["canonical_logical", "common_basis_compiled"]]
@@ -111,6 +114,7 @@ class CanonicalExcitationCircuit(VqeBaseModel):
     parameter_slot_id: Literal["theta.double.occ0_occ2.to.virt1_virt3"] = CANONICAL_PARAMETER_SLOT
     logical_rotations: list[PauliRotation] = Field(min_length=8, max_length=8)
     common_basis_operations: list[PrimitiveGate] = Field(min_length=1)
+    common_basis_operation_sequence_sha256: str = Field(pattern=SHA256_HEX_PATTERN)
     common_basis_metrics: ResourceMetrics
     compilation_protocol: CommonCompilationProtocol
     compilation_protocol_sha256: str = Field(pattern=SHA256_HEX_PATTERN)
@@ -206,10 +210,10 @@ def build_canonical_h2_double_excitation() -> CanonicalExcitationCircuit:
         operation for rotation in rotations for operation in _rotation_operations(rotation)
     ]
     protocol = CommonCompilationProtocol(
-        protocol_id="majorana.h2.common_cnot_depth.v1",
+        protocol_id="majorana.h2.common_cnot_depth.v2",
         input_stage="canonical_logical_pauli_rotations",
         compiler="majorana_deterministic_pauli_rotation_compiler",
-        compiler_version="0.1.0",
+        compiler_version="0.2.0",
         basis_gates=["h", "s", "sdg", "rz", "cx"],
         topology="four_qubit_all_to_all",
         initial_layout=[0, 1, 2, 3],
@@ -217,13 +221,17 @@ def build_canonical_h2_double_excitation() -> CanonicalExcitationCircuit:
         optimization_level=0,
         compiler_seed=0,
         parameter_binding="same_float64_theta_for_all_rotations",
+        metric_scope="ansatz_only",
+        reference_state_inclusion_policy="excluded",
         measurement_inclusion_policy="excluded",
+        hardware_optimization_inclusion_policy="excluded",
         depth_definition="asap_dependency_layers_each_gate_duration_one",
         cnot_definition="count_gate_name_cx",
         allowed_primary_stages=["canonical_logical", "common_basis_compiled"],
         diagnostic_stage="provider_native_diagnostic",
     )
     protocol_json = protocol.model_dump(mode="json")
+    operation_json = [operation.model_dump(mode="json") for operation in operations]
     unsigned = {
         "schema_version": CANONICAL_CIRCUIT_SCHEMA_VERSION,
         "circuit_id": "h2.double.occ0_occ2.to.virt1_virt3.jw.v1",
@@ -234,7 +242,8 @@ def build_canonical_h2_double_excitation() -> CanonicalExcitationCircuit:
         "qubit_order": "qubit0_first",
         "parameter_slot_id": CANONICAL_PARAMETER_SLOT,
         "logical_rotations": [rotation.model_dump(mode="json") for rotation in rotations],
-        "common_basis_operations": [operation.model_dump(mode="json") for operation in operations],
+        "common_basis_operations": operation_json,
+        "common_basis_operation_sequence_sha256": _canonical_digest(operation_json),
         "common_basis_metrics": _resource_metrics(operations).model_dump(mode="json"),
         "compilation_protocol": protocol_json,
         "compilation_protocol_sha256": _canonical_digest(protocol_json),

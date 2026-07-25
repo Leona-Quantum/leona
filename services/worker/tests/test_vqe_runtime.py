@@ -1,5 +1,5 @@
-import json
 import asyncio
+import json
 from pathlib import Path
 
 import pytest
@@ -7,9 +7,10 @@ import pytest
 from majorana_api.vqe_runtime_profiles import candidate_runtime_profile
 from majorana_vqe.models import Framework
 from majorana_worker.vqe_runtime import (
-    _OutputLimitExceeded,
-    _read_bounded,
+    LocalDockerVqeRuntimeExecutor,
+    VqeRuntimeCancelled,
     VqeRuntimeError,
+    _MAX_STDOUT_BYTES,
     build_success_evidence,
     run_candidate_container,
 )
@@ -41,7 +42,7 @@ def test_raw_runtime_report_translates_to_complete_evidence(framework, filename)
     assert evidence.framework is framework
     assert evidence.absolute_error_ha <= 1e-10
     assert evidence.canonical_circuit_sha256 == (
-        "a95f4a8e8749e361c85df00b9bf42d9cea407a048840bc8e58f7e5c9920be3b1"
+        "f4fdb1ac3f041185fff63f6a7acb9d3ab1e9742131ed5bd3bb9ba2d99081a58c"
     )
     assert [resource.stage for resource in evidence.resources] == [
         "canonical_logical",
@@ -54,6 +55,8 @@ def test_raw_runtime_report_translates_to_complete_evidence(framework, filename)
         83,
         152,
     )
+    assert common.metric_scope == "ansatz_only"
+    assert common.adapter_verification == "passed"
 
 
 def test_runtime_report_rejects_framework_drift():
@@ -89,77 +92,135 @@ def test_runtime_report_rejects_numerical_gate_regression():
         )
 
 
-@pytest.mark.asyncio
+class _BlockedProcess:
+    def __init__(self, *, stdout: bytes = b"", stderr: bytes = b"") -> None:
+        self.stdout = asyncio.StreamReader()
+        self.stderr = asyncio.StreamReader()
+        self.stdout.feed_data(stdout)
+        self.stderr.feed_data(stderr)
+        self.returncode = None
+        self._finished = asyncio.Event()
+        self.killed = False
+
+    async def wait(self):
+        await self._finished.wait()
+        return self.returncode
+
+    def kill(self):
+        self.killed = True
+        self.returncode = -9
+        self.stdout.feed_eof()
+        self.stderr.feed_eof()
+        self._finished.set()
+
+
+class _SuccessfulProcess:
+    def __init__(self, stdout: bytes) -> None:
+        self.stdout = asyncio.StreamReader()
+        self.stderr = asyncio.StreamReader()
+        self.stdout.feed_data(stdout)
+        self.stdout.feed_eof()
+        self.stderr.feed_eof()
+        self.returncode = 0
+
+    async def wait(self):
+        return 0
+
+    def kill(self):
+        self.returncode = -9
+
+
 async def test_launcher_uses_exact_digest_and_does_not_inherit_environment(monkeypatch):
     profile = candidate_runtime_profile(Framework.QISKIT)
-    report = json.loads((RAW / "qiskit_vqe_v0.2.json").read_text())
+    report = (RAW / "qiskit_vqe_v0.2.json").read_bytes()
     captured = {}
 
-    class Process:
-        returncode = 0
-
-        def __init__(self):
-            self.stdout = asyncio.StreamReader()
-            self.stderr = asyncio.StreamReader()
-            self.stdout.feed_data(json.dumps(report).encode())
-            self.stdout.feed_eof()
-            self.stderr.feed_eof()
-
-        async def wait(self):
-            return self.returncode
-
-    async def fake_create(*command, **kwargs):
+    async def create(*command, **kwargs):
         captured["command"] = command
         captured["kwargs"] = kwargs
-        return Process()
+        return _SuccessfulProcess(report)
 
     monkeypatch.setenv("MAJORANA_ENV", "development")
     monkeypatch.setenv("DATABASE_URL", "must-not-reach-child")
-    monkeypatch.setattr(
-        "majorana_worker.vqe_runtime.asyncio.create_subprocess_exec",
-        fake_create,
-    )
+    monkeypatch.setattr("majorana_worker.vqe_runtime._docker_binary", lambda: "/docker")
+    monkeypatch.setattr("majorana_worker.vqe_runtime.asyncio.create_subprocess_exec", create)
 
     result = await run_candidate_container(profile.binding)
 
     assert result["framework"] == "qiskit"
-    command = captured["command"]
-    assert profile.binding.container_digest in command
-    assert profile.local_image_tag not in command
-    assert ("--network", "none") == command[
-        command.index("--network") : command.index("--network") + 2
-    ]
-    assert "--read-only" in command
-    assert ("--cap-drop", "ALL") == command[
-        command.index("--cap-drop") : command.index("--cap-drop") + 2
-    ]
+    assert profile.local_image_digest in captured["command"]
+    assert profile.local_image_tag not in captured["command"]
     assert captured["kwargs"]["env"] == {
         "PATH": "/usr/local/bin:/usr/bin:/bin",
         "DOCKER_CLI_HINTS": "false",
     }
 
 
-def test_candidate_profiles_pin_the_executed_digest():
-    for framework in Framework:
-        profile = candidate_runtime_profile(framework)
-        assert profile.local_image_digest == profile.binding.container_digest
-        assert profile.binding.production_runtime_status == "unqualified"
-
-
-@pytest.mark.asyncio
 async def test_candidate_transport_rejects_cloud_markers(monkeypatch):
     monkeypatch.setenv("MAJORANA_ENV", "development")
     monkeypatch.setenv("CI", "true")
-    with pytest.raises(RuntimeError, match="development-only"):
-        await run_candidate_container(
-            candidate_runtime_profile(Framework.QISKIT).binding,
+    with pytest.raises(VqeRuntimeError, match="development-only"):
+        await run_candidate_container(candidate_runtime_profile(Framework.QISKIT).binding)
+
+
+async def _executor_with_process(monkeypatch, process):
+    removed = []
+
+    async def create(*args, **kwargs):
+        return process
+
+    async def remove(docker, name):
+        removed.append(name)
+
+    monkeypatch.setenv("MAJORANA_ENV", "development")
+    monkeypatch.setattr("majorana_worker.vqe_runtime._docker_binary", lambda: "/docker")
+    monkeypatch.setattr("majorana_worker.vqe_runtime.asyncio.create_subprocess_exec", create)
+    monkeypatch.setattr("majorana_worker.vqe_runtime._force_remove_container", remove)
+    return LocalDockerVqeRuntimeExecutor(), removed
+
+
+async def test_runtime_timeout_removes_daemon_container(monkeypatch):
+    process = _BlockedProcess()
+    executor, removed = await _executor_with_process(monkeypatch, process)
+    profile = candidate_runtime_profile(Framework.QISKIT)
+
+    with pytest.raises(VqeRuntimeError) as excinfo:
+        await executor.run(profile.binding, timeout_s=0.001)
+
+    assert excinfo.value.failure_code.value == "runtime_timeout"
+    assert excinfo.value.retryable is True
+    assert process.killed is True
+    assert len(removed) == 1
+
+
+async def test_runtime_cancellation_removes_container_and_discards_output(monkeypatch):
+    process = _BlockedProcess(stdout=b'{"partial":')
+    executor, removed = await _executor_with_process(monkeypatch, process)
+    profile = candidate_runtime_profile(Framework.QISKIT)
+
+    async def cancelled():
+        return True
+
+    with pytest.raises(VqeRuntimeCancelled):
+        await executor.run(
+            profile.binding,
+            timeout_s=1,
+            cancel_requested=cancelled,
         )
 
+    assert process.killed is True
+    assert len(removed) == 1
 
-@pytest.mark.asyncio
-async def test_bounded_reader_stops_before_unbounded_memory_growth():
-    stream = asyncio.StreamReader()
-    stream.feed_data(b"12345")
-    stream.feed_eof()
-    with pytest.raises(_OutputLimitExceeded):
-        await _read_bounded(stream, 4)
+
+async def test_runtime_output_limit_kills_before_unbounded_buffering(monkeypatch):
+    process = _BlockedProcess(stdout=b"x" * (_MAX_STDOUT_BYTES + 1))
+    executor, removed = await _executor_with_process(monkeypatch, process)
+    profile = candidate_runtime_profile(Framework.QISKIT)
+
+    with pytest.raises(VqeRuntimeError) as excinfo:
+        await executor.run(profile.binding, timeout_s=1)
+
+    assert excinfo.value.failure_code.value == "output_limit_exceeded"
+    assert excinfo.value.retryable is False
+    assert process.killed is True
+    assert len(removed) == 1

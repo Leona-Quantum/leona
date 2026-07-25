@@ -6,6 +6,11 @@
 name: ci
 on:
   pull_request:
+  # Phase 5/6 VQE work is intentionally validated before a PR exists. This
+  # branch-only trigger must be removed when feature/vqe is retired.
+  push:
+    branches:
+      - feature/vqe
 
 jobs:
   ts:

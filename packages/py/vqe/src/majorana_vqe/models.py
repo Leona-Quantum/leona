@@ -357,6 +357,13 @@ class ExecutionBinding(VqeBaseModel):
     runtime_profile_id: str = Field(min_length=1, max_length=200)
     adapter_release_id: str = Field(min_length=1, max_length=200)
     container_digest: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
+    container_digest_kind: Literal["local_docker_image_id", "oci_manifest_digest"] = (
+        "local_docker_image_id"
+    )
+    oci_manifest_digest: str | None = Field(
+        default=None,
+        pattern=r"^sha256:[0-9a-f]{64}$",
+    )
     architecture: str = Field(min_length=1, max_length=50)
     production_runtime_status: Literal["unqualified"] = "unqualified"
     dataset_snapshot_id: str | None = Field(default=None, max_length=200)
@@ -394,6 +401,7 @@ class FailureCode(str, Enum):
     RUNTIME_UNAVAILABLE = "runtime_unavailable"
     RUNTIME_TIMEOUT = "runtime_timeout"
     RUNTIME_OOM = "runtime_oom"
+    OUTPUT_LIMIT_EXCEEDED = "output_limit_exceeded"
     EXECUTION_FAILED = "execution_failed"
     RESULT_CONTRACT_FAILED = "result_contract_failed"
     NUMERICAL_MISMATCH = "numerical_mismatch"

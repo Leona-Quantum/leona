@@ -28,7 +28,7 @@ export function VqeProofPanel({
 
   const refresh = useCallback(async () => {
     try {
-      const response = await fetch(`/api/vqe/experiments/${encodeURIComponent(experimentId)}/events`, {
+      const response = await fetch(`/api/vqe/experiments/${encodeURIComponent(experimentId)}/executions`, {
         cache: "no-store",
       });
       if (!response.ok) throw new Error(`execution evidence unavailable (${response.status})`);
@@ -63,7 +63,9 @@ export function VqeProofPanel({
     setMessage(null);
     const path = action === "start"
       ? `/api/vqe/experiments/${experimentId}/executions`
-      : `/api/vqe/experiments/${experimentId}/${action}`;
+      : action === "materialize" && selected
+        ? `/api/vqe/executions/${selected.id}/materialize`
+        : `/api/vqe/experiments/${experimentId}/${action}`;
     try {
       const response = await fetch(path, {
         method: "POST",

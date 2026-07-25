@@ -7,6 +7,7 @@ workflow lookup refuses a non-workflow component.
 """
 
 import datetime as dt
+import json
 import uuid
 from types import SimpleNamespace
 
@@ -47,7 +48,7 @@ def test_every_plan_candidate_endpoint_is_reachable_over_http():
         ("/vqe/executions/{execution_id}", "GET"),
         ("/vqe/experiments/{experiment_id}/cancel", "POST"),
         ("/vqe/experiments/{experiment_id}/events", "GET"),
-        ("/vqe/experiments/{experiment_id}/materialize", "POST"),
+        ("/vqe/executions/{execution_id}/materialize", "POST"),
     }
     assert expected <= _routes()
 
@@ -67,7 +68,7 @@ def test_every_route_requires_a_scope():
         vqe_routes.get_execution,
         vqe_routes.cancel_experiment,
         vqe_routes.experiment_events,
-        vqe_routes.materialize_experiment,
+        vqe_routes.materialize_execution,
     ):
         assert "scope" in handler.__annotations__
 
@@ -260,7 +261,11 @@ async def test_execution_endpoints_remain_honest_without_an_execution(monkeypatc
         assert eid == experiment_id
         return []
 
+    async def fake_get_execution(scope, session, execution_id):
+        return SimpleNamespace(status="planned")
+
     monkeypatch.setattr(vqe_repo, "list_executions", fake_list_executions)
+    monkeypatch.setattr(vqe_repo, "get_execution", fake_get_execution)
     with pytest.raises(HTTPException) as excinfo:
         await vqe_routes.cancel_experiment(
             experiment_id,
@@ -277,8 +282,8 @@ async def test_execution_endpoints_remain_honest_without_an_execution(monkeypatc
         == []
     )
     with pytest.raises(HTTPException) as excinfo:
-        await vqe_routes.materialize_experiment(
-            experiment_id,
+        await vqe_routes.materialize_execution(
+            uuid.uuid4(),
             scope=object(),
             session=object(),
         )
@@ -301,3 +306,91 @@ async def test_start_execution_is_fail_closed_without_development_gate():
         )
     assert excinfo.value.status_code == 409
     assert excinfo.value.detail["code"] == "candidate_execution_disabled"
+
+
+async def test_materialize_is_bound_to_the_selected_execution(monkeypatch):
+    execution_id = uuid.uuid4()
+    experiment_id = uuid.uuid4()
+    run_id = uuid.uuid4()
+    observation_id = uuid.uuid4()
+    artifact_id = uuid.uuid4()
+    version_id = uuid.uuid4()
+    execution = SimpleNamespace(
+        id=execution_id,
+        experiment_id=experiment_id,
+        run_id=run_id,
+        framework="qiskit",
+        status="succeeded",
+        execution_binding_json={"framework": "qiskit", "runtime_profile_id": "fixed"},
+        execution_identity_sha256="c" * 64,
+    )
+    observation = SimpleNamespace(
+        id=observation_id,
+        attempt=1,
+        status="succeeded",
+        result_contract_json={
+            "status": "succeeded",
+            "canonical_circuit_sha256": "d" * 64,
+            "compilation_protocol_sha256": "e" * 64,
+            "resources": [],
+        },
+        result_contract_sha256="f" * 64,
+    )
+    experiment = SimpleNamespace(
+        scientific_spec_json={"schema_version": "0.2.0"},
+        scientific_spec_sha256="a" * 64,
+        registry_resolution_json={"schema_version": "0.2.0"},
+        registry_resolution_sha256="b" * 64,
+    )
+    run = SimpleNamespace(id=run_id, artifact_version_id=None)
+    captured = {}
+
+    async def get_execution(scope, session, requested_id):
+        assert requested_id == execution_id
+        return execution
+
+    async def list_observations(scope, session, requested_id):
+        assert requested_id == execution_id
+        return [observation]
+
+    async def get_experiment(scope, session, requested_id):
+        assert requested_id == experiment_id
+        return experiment
+
+    async def get_run(scope, session, requested_id):
+        assert requested_id == run_id
+        return run
+
+    async def create_artifact(*args, **kwargs):
+        return SimpleNamespace(id=artifact_id)
+
+    async def create_version(*args, **kwargs):
+        captured.update(kwargs)
+        return SimpleNamespace(id=version_id)
+
+    async def set_run_artifact_version(scope, session, requested_run_id, requested_version_id):
+        assert (requested_run_id, requested_version_id) == (run_id, version_id)
+
+    monkeypatch.setattr(vqe_repo, "get_execution", get_execution)
+    monkeypatch.setattr(vqe_repo, "list_observations", list_observations)
+    monkeypatch.setattr(vqe_repo, "get_experiment", get_experiment)
+    monkeypatch.setattr(vqe_routes.runs_repo, "get_run", get_run)
+    monkeypatch.setattr(vqe_routes.artifacts_repo, "create_artifact", create_artifact)
+    monkeypatch.setattr(vqe_routes.artifacts_repo, "create_version", create_version)
+    monkeypatch.setattr(
+        vqe_routes.runs_repo,
+        "set_run_artifact_version",
+        set_run_artifact_version,
+    )
+
+    result = await vqe_routes.materialize_execution(
+        execution_id,
+        scope=object(),
+        session=object(),
+    )
+
+    bundle = json.loads(captured["code"])
+    assert result.artifact_version_id == version_id
+    assert bundle["execution"]["id"] == str(execution_id)
+    assert bundle["observation"]["id"] == str(observation_id)
+    assert bundle["scientific_experiment"]["spec_sha256"] == "a" * 64

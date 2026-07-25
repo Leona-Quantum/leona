@@ -92,12 +92,12 @@
       "component_type": "ansatz",
       "human_review_state": "unreviewed",
       "machine_validation_state": "machine_validated",
-      "normalized_spec_sha256": "f42b7987d227dc110bfdd9843bb9dc9b918709f572a72d2cf71a81876cd44072",
+      "normalized_spec_sha256": "e909752bd4f4b8f4edbd714387eef11d5a9d8ba429c596e6a1f2243b8730d3c8",
       "role": "ansatz",
       "semantic_key": "h2.sto3g.actual_vqe.v0_2.ansatz",
       "spec_json": {
         "canonical_circuit_id": "h2.double.occ0_occ2.to.virt1_virt3.jw.v1",
-        "canonical_circuit_sha256": "a95f4a8e8749e361c85df00b9bf42d9cea407a048840bc8e58f7e5c9920be3b1",
+        "canonical_circuit_sha256": "f4fdb1ac3f041185fff63f6a7acb9d3ab1e9742131ed5bd3bb9ba2d99081a58c",
         "expected_parameter_count": 1,
         "generator_convention": "antihermitian_tau_minus_tau_dagger",
         "generator_definition": "fermionic_double_excitation_0_2_to_1_3",
@@ -222,7 +222,7 @@
       "component_type": "compilation_backend",
       "human_review_state": "unreviewed",
       "machine_validation_state": "machine_validated",
-      "normalized_spec_sha256": "d8f219034ec4f8a56d0adfa50db66f75b2ec0971b315630ccdc435ebe025b634",
+      "normalized_spec_sha256": "5c05056794e4851e26e7fab207dbbeb0c07f95049ec7a869f60cc73ef1877e86",
       "role": "compilation_backend",
       "semantic_key": "h2.sto3g.actual_vqe.v0_2.compilation_backend",
       "spec_json": {
@@ -233,16 +233,17 @@
           "rz",
           "cx"
         ],
-        "canonical_circuit_sha256": "a95f4a8e8749e361c85df00b9bf42d9cea407a048840bc8e58f7e5c9920be3b1",
+        "canonical_circuit_sha256": "f4fdb1ac3f041185fff63f6a7acb9d3ab1e9742131ed5bd3bb9ba2d99081a58c",
         "cnot_definition": "count_gate_name_cx",
-        "compilation_protocol_sha256": "4e949fdc81f6e4c0416b95eee2bb71d521216db8705bcd948320ddd83ae52acb",
+        "compilation_protocol_sha256": "778fe0c7f3d361c54e9c41a0240ef31cc7926dacbe8fbc33ff96a57ee104393c",
         "compiler": "majorana_deterministic_pauli_rotation_compiler",
         "compiler_seed": 0,
-        "compiler_version": "0.1.0",
+        "compiler_version": "0.2.0",
         "depth_definition": "asap_dependency_layers_each_gate_duration_one",
         "diagnostic_resource_stage": "provider_native_diagnostic",
         "expected_common_basis_cnot_count": 48,
         "expected_common_basis_depth": 83,
+        "hardware_optimization_inclusion_policy": "excluded",
         "initial_layout": [
           0,
           1,
@@ -253,13 +254,15 @@
         "kind": "compilation_metric_protocol",
         "logical_block_definition": "canonical_double_excitation_block",
         "measurement_inclusion_policy": "excluded",
+        "metric_scope": "ansatz_only",
         "optimization_level": 0,
         "parameter_binding": "same_float64_theta_for_all_rotations",
         "primary_resource_stages": [
           "canonical_logical",
           "common_basis_compiled"
         ],
-        "protocol_id": "majorana.h2.common_cnot_depth.v1",
+        "protocol_id": "majorana.h2.common_cnot_depth.v2",
+        "reference_state_inclusion_policy": "excluded",
         "routing_policy": "none",
         "schema_version": "0.2.0",
         "topology": "four_qubit_all_to_all"
@@ -314,7 +317,7 @@
       "final_parameter": -0.22353697909001485,
       "framework": "qiskit",
       "path": "docs/atlas/fixtures/h2_sto3g/raw/qiskit_vqe_v0.2.json",
-      "sha256": "368448a580c53bd179334330bb354c8249a94ce6462786d82bd7ef661b310c87"
+      "sha256": "1fa85cb67630c55d3b5901dcae7f6cd912f2d70baa7a0810230267fd902b82b3"
     },
     {
       "absolute_error_ha": 1.7763568394002505e-14,
@@ -323,7 +326,7 @@
       "final_parameter": -0.22353698760213844,
       "framework": "pennylane",
       "path": "docs/atlas/fixtures/h2_sto3g/raw/pennylane_vqe_v0.2.json",
-      "sha256": "9a3b5406b6a709d2689c8b6e26a066a881328c53bd5dbc5a4f22a3b5b630b4c7"
+      "sha256": "8d892da5d0eca864ed2322710e41362fc0218d5c39019136ffec9e3c94b75610"
     }
   ],
   "schema_version": "0.2.0",
@@ -347,7 +350,7 @@
       "evaluation_protocol",
       "stopping_protocol"
     ],
-    "semantic_digest": "4602559821a52c2f55c279ddc60191131613575168fbe4f5d317e2e5266a8117",
+    "semantic_digest": "ae7446e666697337823c86f4d23bc7d19f75c035e38ae6e06e6b4aa8910fb1c1",
     "semantic_key": "h2.sto3g.actual_vqe.workflow.v0_2"
   }
 }

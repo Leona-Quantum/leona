@@ -622,7 +622,7 @@ async def cancel_experiment(
     return [await _to_execution_resource(scope, session, row) for row in changed]
 
 
-@router.get("/vqe/experiments/{experiment_id}/events")
+@router.get("/vqe/experiments/{experiment_id}/events", deprecated=True)
 async def experiment_events(
     experiment_id: uuid.UUID, scope: CurrentScope, session: DbSession
 ) -> list[ExecutionResource]:
@@ -630,17 +630,15 @@ async def experiment_events(
 
 
 @router.post(
-    "/vqe/experiments/{experiment_id}/materialize",
+    "/vqe/executions/{execution_id}/materialize",
     response_model=MaterializedVqeArtifactResource,
 )
-async def materialize_experiment(
-    experiment_id: uuid.UUID, scope: CurrentScope, session: DbSession
+async def materialize_execution(
+    execution_id: uuid.UUID, scope: CurrentScope, session: DbSession
 ) -> MaterializedVqeArtifactResource:
-    executions = await vqe_repo.list_executions(scope, session, experiment_id)
-    succeeded = [execution for execution in executions if execution.status == "succeeded"]
-    if not succeeded:
-        raise HTTPException(status_code=409, detail="no successful VQE execution to materialize")
-    execution = succeeded[-1]
+    execution = await vqe_repo.get_execution(scope, session, execution_id)
+    if execution.status != "succeeded":
+        raise HTTPException(status_code=409, detail="VQE execution has not succeeded")
     observations = await vqe_repo.list_observations(scope, session, execution.id)
     successful = [item for item in observations if item.status == "succeeded"]
     if not successful:
@@ -648,6 +646,7 @@ async def materialize_experiment(
     observation = successful[-1]
     if execution.run_id is None:
         raise HTTPException(status_code=409, detail="successful execution lacks a durable run")
+    experiment = await vqe_repo.get_experiment(scope, session, execution.experiment_id)
     run = await runs_repo.get_run(scope, session, execution.run_id)
     if run.artifact_version_id is not None:
         version = await artifacts_repo.get_version(scope, session, run.artifact_version_id)
@@ -664,11 +663,28 @@ async def materialize_experiment(
         family=Algorithm.VQE,
         framework=ContractFramework(execution.framework),
     )
-    evidence_bytes = json.dumps(
-        observation.result_contract_json,
-        sort_keys=True,
-        indent=2,
-    ).encode()
+    bundle = {
+        "schema_version": "0.1.0",
+        "kind": "majorana_vqe_execution_bundle",
+        "scientific_experiment": {
+            "spec": experiment.scientific_spec_json,
+            "spec_sha256": experiment.scientific_spec_sha256,
+            "registry_resolution": experiment.registry_resolution_json,
+            "registry_resolution_sha256": experiment.registry_resolution_sha256,
+        },
+        "execution": {
+            "id": str(execution.id),
+            "binding": execution.execution_binding_json,
+            "identity_sha256": execution.execution_identity_sha256,
+        },
+        "observation": {
+            "id": str(observation.id),
+            "attempt": observation.attempt,
+            "result": observation.result_contract_json,
+            "result_contract_sha256": observation.result_contract_sha256,
+        },
+    }
+    evidence_bytes = json.dumps(bundle, sort_keys=True, indent=2).encode()
     fingerprint = hashlib.sha256(evidence_bytes).hexdigest()
     version = await artifacts_repo.create_version(
         scope,
@@ -683,7 +699,16 @@ async def materialize_experiment(
             "publication": "blocked",
             "scientific_release": "blocked",
             "execution_id": str(execution.id),
+            "scientific_spec_sha256": experiment.scientific_spec_sha256,
+            "registry_resolution_sha256": experiment.registry_resolution_sha256,
+            "execution_identity_sha256": execution.execution_identity_sha256,
             "result_contract_sha256": observation.result_contract_sha256,
+            "canonical_circuit_sha256": observation.result_contract_json.get(
+                "canonical_circuit_sha256"
+            ),
+            "compilation_protocol_sha256": observation.result_contract_json.get(
+                "compilation_protocol_sha256"
+            ),
             "verification_summary": {
                 "verified": False,
                 "decision": None,

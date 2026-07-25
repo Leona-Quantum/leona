@@ -17,9 +17,30 @@ from majorana_vqe.models import ExecutionBinding, Framework
 class CandidateRuntimeProfile:
     binding: ExecutionBinding
     local_image_tag: str
+    # This is a local Docker image ID, not an OCI registry manifest digest.
     local_image_digest: str
     lock_sha256: str
+    dockerfile_sha256: str
+    entrypoint_sha256: str
+    fixture_manifest_sha256: str
+    canonical_circuit_file_sha256: str
+    canonical_circuit_sha256: str
+    compilation_protocol_sha256: str
+    common_basis_operation_sequence_sha256: str
+    source_git_commit: str | None = None
+    sbom_sha256: str | None = None
+    build_attestation_sha256: str | None = None
     entrypoint_kind: str = "frozen_h2_actual_vqe_stdout_v1"
+
+    @property
+    def provenance_complete(self) -> bool:
+        return all(
+            (
+                self.source_git_commit,
+                self.sbom_sha256,
+                self.build_attestation_sha256,
+            )
+        )
 
 
 _DATASET_SNAPSHOT_ID = (
@@ -49,7 +70,24 @@ _PROFILES = {
         local_image_digest=(
             "sha256:1e6552f240a6a79555ee84da0460934900bfa62086467b5866954b96b871ea1c"
         ),
-        lock_sha256="b7b33fde49f1250cf78141cc6fe1042b4e78620f5cce124a84316465a0296007",
+        lock_sha256="51c8ed79eacab8292464ff5adccc95899fe7c428ce1568a8c068758d4a7b3159",
+        dockerfile_sha256="de36d90803e3b252fe60412d3bc07f9d018e6665da7ccc5b858a6fec55547774",
+        entrypoint_sha256="f770cb9fdd07684ad95e4e835337f1031c1287f180530c324df2f821112c8613",
+        fixture_manifest_sha256=(
+            "6424713c69c2b734172db47329b7deb62b67a743c80fd792f48173fdaa4e3edc"
+        ),
+        canonical_circuit_file_sha256=(
+            "dc5970b66b3bb5da2467bdacfd5166373b2341f293c74486383bf2a0397cf43a"
+        ),
+        canonical_circuit_sha256=(
+            "f4fdb1ac3f041185fff63f6a7acb9d3ab1e9742131ed5bd3bb9ba2d99081a58c"
+        ),
+        compilation_protocol_sha256=(
+            "778fe0c7f3d361c54e9c41a0240ef31cc7926dacbe8fbc33ff96a57ee104393c"
+        ),
+        common_basis_operation_sequence_sha256=(
+            "e0eaae576a3570dde47dcc5d5489dd758ee1311f911d0686cc87d5e2bd3f4cbd"
+        ),
     ),
     Framework.PENNYLANE: CandidateRuntimeProfile(
         binding=ExecutionBinding(
@@ -73,7 +111,24 @@ _PROFILES = {
         local_image_digest=(
             "sha256:34214c9f8ed7ea581a324eb6ebb464f001b75e00570da86e190876e57fe34e59"
         ),
-        lock_sha256="2e6f0baa2f04f87973f18f0fe3bc21ed9020c8cdde5cbddd3b728f68272f8f00",
+        lock_sha256="00d97ccffef518385623b5943788db063de43cf6af3c9e144f0f66a8023fe8ac",
+        dockerfile_sha256="de36d90803e3b252fe60412d3bc07f9d018e6665da7ccc5b858a6fec55547774",
+        entrypoint_sha256="9a960a6a29e0d6a70dcfd83a2a829999808168f3b5a4f02609b45f25f184c1dd",
+        fixture_manifest_sha256=(
+            "6424713c69c2b734172db47329b7deb62b67a743c80fd792f48173fdaa4e3edc"
+        ),
+        canonical_circuit_file_sha256=(
+            "dc5970b66b3bb5da2467bdacfd5166373b2341f293c74486383bf2a0397cf43a"
+        ),
+        canonical_circuit_sha256=(
+            "f4fdb1ac3f041185fff63f6a7acb9d3ab1e9742131ed5bd3bb9ba2d99081a58c"
+        ),
+        compilation_protocol_sha256=(
+            "778fe0c7f3d361c54e9c41a0240ef31cc7926dacbe8fbc33ff96a57ee104393c"
+        ),
+        common_basis_operation_sequence_sha256=(
+            "e0eaae576a3570dde47dcc5d5489dd758ee1311f911d0686cc87d5e2bd3f4cbd"
+        ),
     ),
 }
 

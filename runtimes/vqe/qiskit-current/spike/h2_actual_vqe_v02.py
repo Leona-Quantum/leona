@@ -76,6 +76,81 @@ def _circuit(theta: float, circuit_spec: dict) -> QuantumCircuit:
     return circuit
 
 
+def _canonical_json_sha256(value: object) -> str:
+    encoded = json.dumps(
+        value,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+        allow_nan=False,
+    ).encode()
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def _observed_common_basis(theta: float, circuit_spec: dict) -> tuple[list[dict], dict]:
+    """Reconstruct and inspect the ansatz in Qiskit, independently of fixture metrics."""
+    if abs(theta) < 1e-12:
+        raise ValueError("resource verification requires a non-zero theta")
+    ansatz = QuantumCircuit(4)
+    _apply_canonical_excitation(ansatz, theta, circuit_spec)
+    operations: list[dict] = []
+    wire_depth = [0, 0, 0, 0]
+    for instruction in ansatz.data:
+        name = instruction.operation.name
+        wires = [ansatz.find_bit(qubit).index for qubit in instruction.qubits]
+        observed: dict = {
+            "gate": name,
+            "wires": wires,
+            "parameter_slot_id": None,
+            "angle_theta_numerator": None,
+            "angle_theta_denominator": None,
+        }
+        if name == "rz":
+            ratio = float(instruction.operation.params[0]) / theta
+            numerator = int(round(ratio * 8))
+            if not math.isclose(ratio, numerator / 8, abs_tol=1e-12):
+                raise ValueError("Qiskit RZ angle does not match the canonical theta/8 grid")
+            observed.update(
+                {
+                    "parameter_slot_id": PARAMETER_SLOT_ID,
+                    "angle_theta_numerator": numerator,
+                    "angle_theta_denominator": 8,
+                }
+            )
+        operations.append(observed)
+        layer = max(wire_depth[wire] for wire in wires) + 1
+        for wire in wires:
+            wire_depth[wire] = layer
+    metrics = {
+        "depth": max(wire_depth),
+        "gate_count": len(operations),
+        "cnot_count": sum(operation["gate"] == "cx" for operation in operations),
+        "parameter_count": 1,
+    }
+    return operations, metrics
+
+
+def _verified_common_basis(theta: float, circuit_spec: dict) -> dict:
+    operations, observed_metrics = _observed_common_basis(theta, circuit_spec)
+    operation_digest = _canonical_json_sha256(operations)
+    if operation_digest != circuit_spec["common_basis_operation_sequence_sha256"]:
+        raise ValueError("Qiskit ansatz operation sequence differs from the canonical protocol")
+    if observed_metrics != circuit_spec["common_basis_metrics"]:
+        raise ValueError("Qiskit-observed ansatz resources differ from canonical expectations")
+    protocol = circuit_spec["compilation_protocol"]
+    return {
+        **observed_metrics,
+        "basis_gates": protocol["basis_gates"],
+        "compilation_protocol_sha256": circuit_spec["compilation_protocol_sha256"],
+        "operation_sequence_sha256": operation_digest,
+        "adapter_verification": "passed",
+        "metric_scope": protocol["metric_scope"],
+        "includes_reference_state": False,
+        "includes_measurement": False,
+        "includes_hardware_optimization_or_routing": False,
+    }
+
+
 def _hamiltonian(manifest: dict) -> SparsePauliOp:
     terms = [
         (
@@ -111,6 +186,7 @@ def run(output_path: Path | None = OUTPUT_PATH) -> int:
             options={"xatol": 1e-12, "maxiter": 256},
         )
         final_theta = float(result.x)
+        common_basis_resources = _verified_common_basis(final_theta, circuit_spec)
         final_circuit = _circuit(final_theta, circuit_spec)
         final_state = np.asarray(Statevector.from_instruction(final_circuit).data)
         dense_hamiltonian = np.asarray(hamiltonian.to_matrix())
@@ -180,9 +256,7 @@ def run(output_path: Path | None = OUTPUT_PATH) -> int:
                 "canonical_circuit_sha256": circuit_spec["canonical_circuit_sha256"],
             },
             "common_basis_compiled": {
-                **circuit_spec["common_basis_metrics"],
-                "basis_gates": circuit_spec["compilation_protocol"]["basis_gates"],
-                "compilation_protocol_sha256": circuit_spec["compilation_protocol_sha256"],
+                **common_basis_resources,
             },
             "provider_native_diagnostic": {
                 "depth": int(compiled.depth()),

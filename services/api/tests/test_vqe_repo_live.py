@@ -6,6 +6,7 @@ workspace isolation, and one portable experiment resolving to multiple
 framework executions.
 """
 
+import asyncio
 import hashlib
 import os
 import uuid
@@ -449,3 +450,75 @@ async def test_observation_rows_reject_update_and_delete(db):
         with pytest.raises(DBAPIError, match="append-only"):
             await session.execute(delete(VqeObservation).where(VqeObservation.id == observation_id))
             await session.commit()
+
+
+@requires_db
+async def test_concurrent_identical_execution_creation_returns_one_row(db):
+    async with db() as session:
+        scope = await _new_scope(session)
+        workflow, _ = await _make_component(scope, session, ComponentType.WORKFLOW)
+        experiment = await vqe.create_experiment(
+            scope,
+            session,
+            workflow_artifact_version_id=workflow.id,
+            resolved=_resolved(workflow.id),
+        )
+        experiment_id = experiment.id
+        await session.commit()
+
+    async def create_once():
+        async with db() as session:
+            row = await vqe.create_execution(
+                scope,
+                session,
+                experiment_id,
+                binding=_binding(Framework.QISKIT),
+            )
+            await session.commit()
+            return row.id
+
+    first, second = await asyncio.gather(create_once(), create_once())
+    assert first == second
+
+    async with db() as session:
+        rows = await vqe.list_executions(scope, session, experiment_id)
+        assert len(rows) == 1
+
+
+@requires_db
+async def test_concurrent_attempt_allocation_is_unique_and_monotonic(db):
+    async with db() as session:
+        scope = await _new_scope(session)
+        workflow, _ = await _make_component(scope, session, ComponentType.WORKFLOW)
+        experiment = await vqe.create_experiment(
+            scope,
+            session,
+            workflow_artifact_version_id=workflow.id,
+            resolved=_resolved(workflow.id),
+        )
+        execution = await vqe.create_execution(
+            scope,
+            session,
+            experiment.id,
+            binding=_binding(Framework.QISKIT),
+        )
+        experiment_id = experiment.id
+        execution_id = execution.id
+        await session.commit()
+
+    async def append_once():
+        async with db() as session:
+            current_experiment = await vqe.get_experiment(scope, session, experiment_id)
+            current_execution = await vqe.get_execution(scope, session, execution_id)
+            row = await vqe.append_observation(
+                scope,
+                session,
+                execution_id,
+                attempt=None,
+                evidence=_success(current_experiment, current_execution),
+            )
+            await session.commit()
+            return row.attempt
+
+    attempts = await asyncio.gather(append_once(), append_once())
+    assert sorted(attempts) == [1, 2]

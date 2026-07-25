@@ -12,11 +12,13 @@ import asyncio
 import hashlib
 import json
 import os
+import shutil
 import struct
+import uuid
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Awaitable, Callable, Protocol
 
-from majorana_vqe.models import ExecutionBinding
+from majorana_vqe.models import ExecutionBinding, FailureCode
 from majorana_vqe.result import (
     OptimizerWork,
     ParameterValue,
@@ -33,9 +35,20 @@ _PARAMETER_SLOT = "theta.double.occ0_occ2.to.virt1_virt3"
 
 
 class VqeRuntimeError(RuntimeError):
-    def __init__(self, message: str, *, retryable: bool) -> None:
+    def __init__(
+        self,
+        message: str,
+        *,
+        failure_code: FailureCode,
+        retryable: bool,
+    ) -> None:
         super().__init__(message)
+        self.failure_code = failure_code
         self.retryable = retryable
+
+
+class VqeRuntimeCancelled(RuntimeError):
+    """The durable Run was cancelled; partial runtime output is discarded."""
 
 
 @dataclass(frozen=True)
@@ -44,55 +57,258 @@ class VqeRuntimeOutput:
     bounded_stderr: str
 
 
-class _OutputLimitExceeded(RuntimeError):
-    pass
+CancelProbe = Callable[[], Awaitable[bool]]
+
+
+class VqeRuntimeExecutor(Protocol):
+    async def run(
+        self,
+        binding: ExecutionBinding,
+        *,
+        timeout_s: float = 300.0,
+        cancel_requested: CancelProbe | None = None,
+    ) -> VqeRuntimeOutput: ...
+
+
+def _docker_binary() -> str:
+    for candidate in ("/usr/local/bin/docker", "/usr/bin/docker"):
+        if os.path.isfile(candidate) and os.access(candidate, os.X_OK):
+            return candidate
+    resolved = shutil.which("docker", path="/usr/local/bin:/usr/bin:/bin")
+    if resolved is None:
+        raise VqeRuntimeError(
+            "Docker CLI is unavailable",
+            failure_code=FailureCode.RUNTIME_UNAVAILABLE,
+            retryable=True,
+        )
+    return resolved
 
 
 async def _read_bounded(
-    stream: asyncio.StreamReader | None,
-    limit: int,
-) -> bytes:
-    if stream is None:
-        return b""
-    chunks: list[bytes] = []
-    size = 0
-    while True:
-        chunk = await stream.read(min(65_536, limit + 1 - size))
-        if not chunk:
-            return b"".join(chunks)
-        chunks.append(chunk)
-        size += len(chunk)
-        if size > limit:
-            raise _OutputLimitExceeded
-
-
-async def _communicate_bounded(
-    process: asyncio.subprocess.Process,
+    stream: asyncio.StreamReader,
     *,
-    timeout_s: float,
-) -> tuple[bytes, bytes]:
-    stdout_task = asyncio.create_task(_read_bounded(process.stdout, _MAX_STDOUT_BYTES))
-    stderr_task = asyncio.create_task(_read_bounded(process.stderr, _MAX_STDERR_BYTES))
-    wait_task = asyncio.create_task(process.wait())
-    tasks = (stdout_task, stderr_task, wait_task)
+    limit: int,
+    label: str,
+) -> bytes:
+    output = bytearray()
+    while True:
+        chunk = await stream.read(min(65_536, limit + 1 - len(output)))
+        if not chunk:
+            return bytes(output)
+        output.extend(chunk)
+        if len(output) > limit:
+            raise VqeRuntimeError(
+                f"VQE candidate runtime {label} exceeded {limit} bytes",
+                failure_code=FailureCode.OUTPUT_LIMIT_EXCEEDED,
+                retryable=False,
+            )
+
+
+async def _force_remove_container(docker: str, container_name: str) -> None:
+    process = await asyncio.create_subprocess_exec(
+        docker,
+        "rm",
+        "-f",
+        container_name,
+        stdin=asyncio.subprocess.DEVNULL,
+        stdout=asyncio.subprocess.DEVNULL,
+        stderr=asyncio.subprocess.DEVNULL,
+        env={"PATH": "/usr/local/bin:/usr/bin:/bin", "DOCKER_CLI_HINTS": "false"},
+    )
     try:
-        await asyncio.wait_for(
-            asyncio.gather(stdout_task, stderr_task, wait_task),
-            timeout=timeout_s,
-        )
+        await asyncio.wait_for(process.wait(), timeout=15)
     except TimeoutError:
         process.kill()
         await process.wait()
-        raise RuntimeError("VQE candidate runtime timed out") from None
-    except _OutputLimitExceeded:
-        process.kill()
-        await process.wait()
-        raise RuntimeError("VQE candidate runtime exceeded bounded output") from None
-    finally:
-        for task in tasks:
-            if not task.done():
-                task.cancel()
-    return stdout_task.result(), stderr_task.result()
+    inspect = await asyncio.create_subprocess_exec(
+        docker,
+        "container",
+        "inspect",
+        container_name,
+        stdin=asyncio.subprocess.DEVNULL,
+        stdout=asyncio.subprocess.DEVNULL,
+        stderr=asyncio.subprocess.DEVNULL,
+        env={"PATH": "/usr/local/bin:/usr/bin:/bin", "DOCKER_CLI_HINTS": "false"},
+    )
+    try:
+        inspect_returncode = await asyncio.wait_for(inspect.wait(), timeout=15)
+    except TimeoutError:
+        inspect.kill()
+        await inspect.wait()
+        inspect_returncode = 0
+    if inspect_returncode == 0:
+        raise VqeRuntimeError(
+            "VQE candidate container cleanup could not be verified",
+            failure_code=FailureCode.RUNTIME_UNAVAILABLE,
+            retryable=True,
+        )
+
+
+def _parse_report(stdout: bytes) -> dict[str, Any]:
+    try:
+        report = json.loads(stdout)
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise VqeRuntimeError(
+            "VQE candidate runtime emitted invalid JSON",
+            failure_code=FailureCode.RESULT_CONTRACT_FAILED,
+            retryable=False,
+        ) from exc
+    if not isinstance(report, dict):
+        raise VqeRuntimeError(
+            "VQE candidate runtime result must be a JSON object",
+            failure_code=FailureCode.RESULT_CONTRACT_FAILED,
+            retryable=False,
+        )
+    return report
+
+
+class LocalDockerVqeRuntimeExecutor:
+    """Development transport with bounded streaming and daemon-side cleanup."""
+
+    async def run(
+        self,
+        binding: ExecutionBinding,
+        *,
+        timeout_s: float = 300.0,
+        cancel_requested: CancelProbe | None = None,
+    ) -> VqeRuntimeOutput:
+        if os.environ.get("MAJORANA_ENV", "").strip().lower() != "development" or any(
+            os.environ.get(name)
+            for name in ("K_SERVICE", "K_REVISION", "K_CONFIGURATION", "VERCEL", "CI")
+        ):
+            raise VqeRuntimeError(
+                "candidate Docker transport is development-only",
+                failure_code=FailureCode.RUNTIME_UNAVAILABLE,
+                retryable=False,
+            )
+        profile = profile_for_binding(binding)
+        docker = _docker_binary()
+        container_name = f"majorana-vqe-{uuid.uuid4().hex}"
+        command = [
+            docker,
+            "run",
+            "--rm",
+            "--name",
+            container_name,
+            "--platform",
+            "linux/amd64",
+            "--network",
+            "none",
+            "--read-only",
+            "--cap-drop",
+            "ALL",
+            "--security-opt",
+            "no-new-privileges",
+            "--pids-limit",
+            "128",
+            "--memory",
+            "2g",
+            "--cpus",
+            "2",
+            "--tmpfs",
+            "/tmp:rw,noexec,nosuid,size=64m",
+            "--user",
+            "65532:65532",
+            profile.local_image_digest,
+        ]
+        try:
+            process = await asyncio.create_subprocess_exec(
+                *command,
+                stdin=asyncio.subprocess.DEVNULL,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+                env={
+                    "PATH": "/usr/local/bin:/usr/bin:/bin",
+                    "DOCKER_CLI_HINTS": "false",
+                },
+            )
+        except OSError as exc:
+            raise VqeRuntimeError(
+                "Docker CLI could not be started",
+                failure_code=FailureCode.RUNTIME_UNAVAILABLE,
+                retryable=True,
+            ) from exc
+        assert process.stdout is not None
+        assert process.stderr is not None
+        stdout_task = asyncio.create_task(
+            _read_bounded(process.stdout, limit=_MAX_STDOUT_BYTES, label="stdout")
+        )
+        stderr_task = asyncio.create_task(
+            _read_bounded(process.stderr, limit=_MAX_STDERR_BYTES, label="stderr")
+        )
+        wait_task = asyncio.create_task(process.wait())
+        tasks = {stdout_task, stderr_task, wait_task}
+        deadline = asyncio.get_running_loop().time() + timeout_s
+        abnormal = False
+        try:
+            while not all(task.done() for task in tasks):
+                remaining = deadline - asyncio.get_running_loop().time()
+                if remaining <= 0:
+                    raise VqeRuntimeError(
+                        "VQE candidate runtime timed out",
+                        failure_code=FailureCode.RUNTIME_TIMEOUT,
+                        retryable=True,
+                    )
+                await asyncio.wait(
+                    tasks,
+                    timeout=min(0.25, remaining),
+                    return_when=asyncio.FIRST_EXCEPTION,
+                )
+                for task in (stdout_task, stderr_task):
+                    if task.done() and task.exception() is not None:
+                        raise task.exception()  # type: ignore[misc]
+                if cancel_requested is not None and await cancel_requested():
+                    raise VqeRuntimeCancelled("VQE candidate runtime was cancelled")
+            stdout = stdout_task.result()
+            stderr = stderr_task.result()
+        except (VqeRuntimeError, VqeRuntimeCancelled):
+            abnormal = True
+            if process.returncode is None:
+                process.kill()
+            await process.wait()
+            await _force_remove_container(docker, container_name)
+            raise
+        finally:
+            if abnormal:
+                for task in tasks:
+                    if not task.done():
+                        task.cancel()
+                await asyncio.gather(*tasks, return_exceptions=True)
+
+        if process.returncode != 0:
+            if stdout:
+                report = _parse_report(stdout)
+                if report.get("status") == "failed":
+                    raise VqeRuntimeError(
+                        str(report.get("failure_detail", "runtime reported failure"))[:500],
+                        failure_code=FailureCode.EXECUTION_FAILED,
+                        retryable=False,
+                    )
+            detail = stderr.decode(errors="replace")[:2_000]
+            if process.returncode == 125:
+                raise VqeRuntimeError(
+                    f"Docker runtime unavailable: {detail}",
+                    failure_code=FailureCode.RUNTIME_UNAVAILABLE,
+                    retryable=True,
+                )
+            if process.returncode in {137, -9}:
+                raise VqeRuntimeError(
+                    "VQE candidate runtime exceeded its memory limit",
+                    failure_code=FailureCode.RUNTIME_OOM,
+                    retryable=False,
+                )
+            raise VqeRuntimeError(
+                f"VQE candidate runtime failed: {detail}",
+                failure_code=FailureCode.EXECUTION_FAILED,
+                retryable=False,
+            )
+        return VqeRuntimeOutput(
+            payload=_parse_report(stdout),
+            bounded_stderr=stderr.decode(errors="replace"),
+        )
+
+
+_LOCAL_DOCKER_EXECUTOR = LocalDockerVqeRuntimeExecutor()
 
 
 def _parameter(theta: float) -> ParameterValue:
@@ -113,68 +329,19 @@ async def run_candidate_container(
     *,
     timeout_s: float = 300.0,
 ) -> dict[str, Any]:
-    if os.environ.get("MAJORANA_ENV", "").strip().lower() != "development" or any(
-        os.environ.get(name)
-        for name in ("K_SERVICE", "K_REVISION", "K_CONFIGURATION", "VERCEL", "CI")
-    ):
-        raise RuntimeError("candidate Docker transport is development-only")
-    profile = profile_for_binding(binding)
-    command = [
-        "/usr/local/bin/docker",
-        "run",
-        "--rm",
-        "--platform",
-        "linux/amd64",
-        "--network",
-        "none",
-        "--read-only",
-        "--cap-drop",
-        "ALL",
-        "--security-opt",
-        "no-new-privileges",
-        "--pids-limit",
-        "128",
-        "--memory",
-        "2g",
-        "--cpus",
-        "2",
-        "--tmpfs",
-        "/tmp:rw,noexec,nosuid,size=64m",
-        "--user",
-        "65532:65532",
-        profile.local_image_digest,
-    ]
-    process = await asyncio.create_subprocess_exec(
-        *command,
-        stdin=asyncio.subprocess.DEVNULL,
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE,
-        env={
-            "PATH": "/usr/local/bin:/usr/bin:/bin",
-            "DOCKER_CLI_HINTS": "false",
-        },
-    )
-    stdout, stderr = await _communicate_bounded(process, timeout_s=timeout_s)
-    if process.returncode != 0:
-        detail = stderr.decode(errors="replace")[:2_000]
-        raise RuntimeError(f"VQE candidate runtime failed: {detail}")
-    try:
-        report = json.loads(stdout)
-    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
-        raise RuntimeError("VQE candidate runtime emitted invalid JSON") from exc
-    if not isinstance(report, dict):
-        raise RuntimeError("VQE candidate runtime result must be a JSON object")
-    return report
+    output = await _LOCAL_DOCKER_EXECUTOR.run(binding, timeout_s=timeout_s)
+    return output.payload
 
 
 async def execute_candidate_image(
     profile: CandidateRuntimeProfile,
+    *,
+    cancel_requested: CancelProbe | None = None,
 ) -> VqeRuntimeOutput:
-    try:
-        payload = await run_candidate_container(profile.binding)
-    except Exception as exc:
-        raise VqeRuntimeError(str(exc), retryable=True) from exc
-    return VqeRuntimeOutput(payload=payload, bounded_stderr="")
+    return await _LOCAL_DOCKER_EXECUTOR.run(
+        profile.binding,
+        cancel_requested=cancel_requested,
+    )
 
 
 def _build_success_evidence(
@@ -186,7 +353,7 @@ def _build_success_evidence(
     ansatz_semantic_digest: str,
     seed: int,
 ) -> VqeOptimizationSuccessResult:
-    profile_for_binding(binding)
+    profile = profile_for_binding(binding)
     optimization = report["optimization"]
     canonical_input = report["canonical_input"]
     resources = report["resources"]
@@ -200,11 +367,32 @@ def _build_success_evidence(
         raise ValueError("runtime Hamiltonian digest does not match frozen H2 fixture")
     if canonical_input.get("parameter_slot_id") != _PARAMETER_SLOT:
         raise ValueError("runtime parameter slot does not match frozen H2 fixture")
+    if canonical_input.get("manifest_sha256") != profile.fixture_manifest_sha256:
+        raise ValueError("runtime fixture manifest digest does not match the runtime profile")
+    if canonical_input.get("canonical_circuit_sha256") != profile.canonical_circuit_sha256:
+        raise ValueError("runtime canonical circuit digest does not match the runtime profile")
+    if canonical_input.get("compilation_protocol_sha256") != profile.compilation_protocol_sha256:
+        raise ValueError("runtime compilation protocol digest does not match the runtime profile")
 
     initial_parameters = [_parameter(0.0)]
     final_parameters = [_parameter(float(optimization["final_parameter"]))]
     trajectory = [float(item["energy_ha"]) for item in optimization["trajectory"]]
     common = resources["common_basis_compiled"]
+    if common.get("operation_sequence_sha256") != (profile.common_basis_operation_sequence_sha256):
+        raise ValueError("runtime operation sequence does not match the runtime profile")
+    if common.get("adapter_verification") != "passed":
+        raise ValueError("runtime adapter did not independently verify the common-basis circuit")
+    if common.get("metric_scope") != "ansatz_only":
+        raise ValueError("common-basis resources must be ansatz-only")
+    if any(
+        common.get(field) is not False
+        for field in (
+            "includes_reference_state",
+            "includes_measurement",
+            "includes_hardware_optimization_or_routing",
+        )
+    ):
+        raise ValueError("common-basis resources include an excluded metric scope")
     diagnostic = resources["provider_native_diagnostic"]
     diagnostic_two_qubit = diagnostic.get(
         "two_qubit_gate_count",
@@ -260,8 +448,14 @@ def _build_success_evidence(
                 parameter_count=int(common["parameter_count"]),
                 basis_gates=list(common["basis_gates"]),
                 compiler="majorana_deterministic_pauli_rotation_compiler",
-                compiler_version="0.1.0",
+                compiler_version="0.2.0",
                 compiler_seed=0,
+                metric_scope="ansatz_only",
+                reference_state_included=False,
+                measurement_included=False,
+                hardware_optimization_or_routing_included=False,
+                adapter_verification="passed",
+                operation_sequence_sha256=common["operation_sequence_sha256"],
             ),
             ResourceObservation(
                 stage="provider_native_diagnostic",
@@ -278,6 +472,9 @@ def _build_success_evidence(
         supplementary_evidence={
             "production_runtime_status": "unqualified",
             "public_execution": "blocked",
+            "runtime_provenance_complete": profile.provenance_complete,
+            "runtime_container_digest_kind": binding.container_digest_kind,
+            "runtime_oci_manifest_digest": binding.oci_manifest_digest,
             "platform": str(report["platform"]),
             "wall_time_s": float(report["wall_time_s"]),
         },
@@ -310,4 +507,8 @@ def build_success_evidence(
     except VqeRuntimeError:
         raise
     except Exception as exc:
-        raise VqeRuntimeError(str(exc), retryable=False) from exc
+        raise VqeRuntimeError(
+            str(exc),
+            failure_code=FailureCode.RESULT_CONTRACT_FAILED,
+            retryable=False,
+        ) from exc
