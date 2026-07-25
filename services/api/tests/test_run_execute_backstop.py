@@ -78,9 +78,7 @@ async def test_non_execute_modes_are_never_counted_or_refused(mode, scope, monke
 
 async def test_the_window_is_a_trailing_seven_days_in_utc(scope, monkeypatch):
     captured: dict = {}
-    monkeypatch.setattr(
-        runs.runs_repo, "count_execute_runs_since", _counter(0, captured)
-    )
+    monkeypatch.setattr(runs.runs_repo, "count_execute_runs_since", _counter(0, captured))
 
     before = dt.datetime.now(dt.timezone.utc)
     await runs._enforce_execute_backstop(_request(RunMode.EXECUTE), scope, object())

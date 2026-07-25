@@ -317,16 +317,20 @@ function CodeAndExport({ artifact, copied, onCopy, copy }: { artifact: LibraryAr
  *
  * Until now this page was code + metadata only: the Vault could tell you a
  * circuit existed and show you its source, but never showed you the circuit.
- * The reconstruction machinery (#150/#151) and the renderer already existed —
+ * The reconstruction machinery (PRs 150/151) and the renderer already existed —
  * the renderer was just trapped inside Studio's builder, so it has been lifted
  * into `components/circuit-diagram` and is reused verbatim here.
  *
  * Every branch of the reconstruction is given an honest surface. `too_large`
  * says so and names the numbers rather than drawing an empty canvas, matching
- * what Studio does; `unparsable` (which is what a pre-#148 artifact with no
+ * what Studio does; `unparsable` (which is what a pre-PR-148 artifact with no
  * stored QASM looks like) says the export is missing and how to mint one. The
  * one thing this must never do is render a blank frame that reads as "this
- * circuit has no gates". */
+ * circuit has no gates".
+ *
+ * (Issue refs are spelled "PR 148" rather than with a leading hash on purpose —
+ * the repo's raw-hex lint gate reads a hash followed by three digits as a CSS
+ * color literal.) */
 function CircuitDiagramPanel({ artifact, copy }: { artifact: LibraryArtifact; copy: ArtifactCopy }) {
   const reconstruction = useMemo(
     () => (artifact.qasm ? reconstructInterchangeCircuit(artifact.qasm) : null),

@@ -52,9 +52,7 @@ async def list_runs(
     return list((await session.execute(stmt)).scalars().all())
 
 
-async def count_execute_runs_since(
-    scope: Scope, session: AsyncSession, since: dt.datetime
-) -> int:
+async def count_execute_runs_since(scope: Scope, session: AsyncSession, since: dt.datetime) -> int:
     """Execute-mode runs this workspace has created since `since`.
 
     Backs the API-side abuse backstop in `routes.runs.create_run`. Counts only
