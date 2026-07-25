@@ -17,6 +17,7 @@ from majorana_agent import (
     SemanticReviewEvidence,
     SimpleCircuitPipeline,
     SimplePipelineStatus,
+    SimpleRetryTarget,
 )
 from majorana_contracts.enums import (
     Framework,
@@ -293,6 +294,109 @@ async def test_permanent_provider_failure_is_specific_and_not_retried_by_stage()
     assert outcome.failure.details["provider"] == "deepseek"
     assert outcome.counters.plan_attempts == 1
     assert llm.calls == 1
+
+
+class _RateLimitedLLM:
+    async def complete(self, request, *, on_delta=None):
+        raise LLMProviderError(
+            provider="deepseek",
+            model=request.model,
+            code="rate_limited",
+            retryable=True,
+            status_code=429,
+        )
+
+
+async def test_transient_provider_failure_at_plan_is_retryable_within_its_own_stage():
+    ports, *_ = _ports()
+    ports._llm = _RateLimitedLLM()
+
+    result = await ports.plan(uuid4(), None, None)
+
+    assert result.failure is not None
+    assert result.failure.retryable is True
+    assert result.failure.retry_target is SimpleRetryTarget.PLANNING
+    assert result.failure.code == "plan_provider_rate_limited"
+
+
+async def test_transient_provider_failure_at_generate_is_retryable_within_its_own_stage():
+    ports, *_ = _ports()
+    run_id = uuid4()
+    planned = await ports.plan(run_id, None, None)
+    assert planned.value is not None
+    ports._llm = _RateLimitedLLM()
+
+    result = await ports.generate(run_id, planned.value, None, None)
+
+    assert result.failure is not None
+    assert result.failure.retryable is True
+    assert result.failure.retry_target is SimpleRetryTarget.GENERATION
+    assert result.failure.code == "generation_provider_rate_limited"
+
+
+async def test_transient_provider_failure_at_review_is_retryable_within_its_own_stage():
+    ports, *_ = _ports()
+    run_id = uuid4()
+    planned = await ports.plan(run_id, None, None)
+    generated = await ports.generate(run_id, planned.value, None, None)
+    executed = await ports.run_execution(run_id, planned.value, generated.value)
+
+    class RateLimitedReviewer:
+        async def review(self, *_args, **_kwargs):
+            raise LLMProviderError(
+                provider="deepseek",
+                model="deepseek-v4-pro",
+                code="upstream_unavailable",
+                retryable=True,
+                status_code=503,
+            )
+
+    ports._reviewer = RateLimitedReviewer()
+
+    reviewed = await ports.review(run_id, planned.value, generated.value, executed.value, 1)
+
+    assert reviewed.failure is not None
+    assert reviewed.failure.retryable is True
+    assert reviewed.failure.retry_target is SimpleRetryTarget.REVIEW
+    assert reviewed.failure.code == "review_provider_upstream_unavailable"
+
+
+async def test_transient_provider_failure_recovers_within_the_pipeline_retry_budget():
+    """A rate limit that outlives RetryingLLM's own backoff must not fail the run:
+    the pipeline's bounded per-stage budget (ADR-0023) is exactly the mechanism
+    that should absorb it, the same way it already absorbs invalid model output."""
+
+    class FlakyOnceThenQueueLLM:
+        def __init__(self, texts):
+            self.texts = list(texts)
+            self.calls = 0
+
+        async def complete(self, request, *, on_delta=None):
+            self.calls += 1
+            if self.calls == 1:
+                raise LLMProviderError(
+                    provider="deepseek",
+                    model=request.model,
+                    code="rate_limited",
+                    retryable=True,
+                    status_code=429,
+                )
+            return LLMResponse(
+                text=self.texts.pop(0),
+                model=request.model,
+                input_tokens=1,
+                output_tokens=1,
+            )
+
+    ports, *_ = _ports()
+    ports._llm = FlakyOnceThenQueueLLM(
+        [json.dumps(_plan_payload()), json.dumps({"source": _SOURCE})]
+    )
+
+    outcome = await SimpleCircuitPipeline(ports=ports).run(uuid4())
+
+    assert outcome.status is SimplePipelineStatus.SUCCEEDED
+    assert outcome.counters.plan_attempts == 2
 
 
 async def test_replay_reuses_all_durable_outputs_without_provider_or_sandbox_calls():

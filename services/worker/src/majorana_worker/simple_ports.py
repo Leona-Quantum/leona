@@ -655,16 +655,40 @@ def _model_output_details(exception: Exception) -> dict[str, Any]:
     return details
 
 
+# The only stages that ever call _provider_failure; each retries within the
+# pipeline's own bounded per-stage budget, the same target its other retryable
+# failures (invalid model output, failed execution) already use.
+_STAGE_RETRY_TARGET: dict[SimplePipelineStage, SimpleRetryTarget] = {
+    SimplePipelineStage.PLANNING: SimpleRetryTarget.PLANNING,
+    SimplePipelineStage.GENERATING: SimpleRetryTarget.GENERATION,
+    SimplePipelineStage.REVIEWING: SimpleRetryTarget.REVIEW,
+}
+
+
 def _provider_failure(
     *,
     stage: SimplePipelineStage,
     role: str,
     exception: Exception,
 ) -> SimplePortResult:
-    """A provider call already exhausted the one client-level retry policy."""
+    """A provider call already exhausted the one client-level retry policy.
+
+    That policy (RetryingLLM) only covers a ~7s backoff window inside a single
+    call. A transient failure that outlives it — a rate limit, an upstream 5xx,
+    a timeout, a dropped connection — still deserves one more try inside the
+    pipeline's own bounded budget rather than failing the whole run; only
+    LLMProviderError already marks which failures are transient
+    (classify_provider_error), so that verdict must reach the typed failure
+    instead of being silently dropped to non-retryable.
+    """
 
     if isinstance(exception, LLMProviderError):
         status = f", HTTP {exception.status_code}" if exception.status_code is not None else ""
+        retry_target = (
+            _STAGE_RETRY_TARGET.get(stage, SimpleRetryTarget.NONE)
+            if exception.retryable
+            else SimpleRetryTarget.NONE
+        )
         return _failure(
             kind=SimpleFailureKind.PROVIDER,
             stage=stage,
@@ -672,6 +696,8 @@ def _provider_failure(
             message=(
                 f"{role} provider unavailable ({exception.provider}:{exception.code}{status})"
             ),
+            retryable=retry_target is not SimpleRetryTarget.NONE,
+            retry_target=retry_target,
             exception=exception,
             details=exception.safe_details(),
         )

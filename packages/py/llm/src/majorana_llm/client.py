@@ -117,9 +117,7 @@ def decode_params(request: LLMRequest, key_env: str) -> tuple[dict[str, Any], st
     unavailable now", verified live 2026-07-11), so it gets json_object (guarantees
     syntactically valid JSON) plus the schema injected into the system message to pin
     field names/enums. Module-level so the routing is testable without the SDK."""
-    params: dict[str, Any] = {}
-    if request.max_tokens is not None:
-        params["max_completion_tokens"] = request.max_tokens
+    params: dict[str, Any]
     if key_env == "DEEPSEEK_API_KEY":
         params = {
             "temperature": request.temperature,
@@ -130,6 +128,10 @@ def decode_params(request: LLMRequest, key_env: str) -> tuple[dict[str, Any], st
         }
         if request.max_tokens is not None:
             params["max_tokens"] = request.max_tokens
+    else:
+        params = {}
+        if request.max_tokens is not None:
+            params["max_completion_tokens"] = request.max_tokens
     system = request.system
     if request.response_schema is not None:
         if key_env == "DEEPSEEK_API_KEY":
