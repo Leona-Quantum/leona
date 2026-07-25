@@ -1,4 +1,5 @@
 import json
+import asyncio
 from pathlib import Path
 
 import pytest
@@ -6,8 +7,11 @@ import pytest
 from majorana_api.vqe_runtime_profiles import candidate_runtime_profile
 from majorana_vqe.models import Framework
 from majorana_worker.vqe_runtime import (
+    _OutputLimitExceeded,
+    _read_bounded,
     VqeRuntimeError,
     build_success_evidence,
+    run_candidate_container,
 )
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -83,3 +87,79 @@ def test_runtime_report_rejects_numerical_gate_regression():
             ansatz_semantic_digest="3" * 64,
             seed=0,
         )
+
+
+@pytest.mark.asyncio
+async def test_launcher_uses_exact_digest_and_does_not_inherit_environment(monkeypatch):
+    profile = candidate_runtime_profile(Framework.QISKIT)
+    report = json.loads((RAW / "qiskit_vqe_v0.2.json").read_text())
+    captured = {}
+
+    class Process:
+        returncode = 0
+
+        def __init__(self):
+            self.stdout = asyncio.StreamReader()
+            self.stderr = asyncio.StreamReader()
+            self.stdout.feed_data(json.dumps(report).encode())
+            self.stdout.feed_eof()
+            self.stderr.feed_eof()
+
+        async def wait(self):
+            return self.returncode
+
+    async def fake_create(*command, **kwargs):
+        captured["command"] = command
+        captured["kwargs"] = kwargs
+        return Process()
+
+    monkeypatch.setenv("MAJORANA_ENV", "development")
+    monkeypatch.setenv("DATABASE_URL", "must-not-reach-child")
+    monkeypatch.setattr(
+        "majorana_worker.vqe_runtime.asyncio.create_subprocess_exec",
+        fake_create,
+    )
+
+    result = await run_candidate_container(profile.binding)
+
+    assert result["framework"] == "qiskit"
+    command = captured["command"]
+    assert profile.binding.container_digest in command
+    assert profile.local_image_tag not in command
+    assert ("--network", "none") == command[
+        command.index("--network") : command.index("--network") + 2
+    ]
+    assert "--read-only" in command
+    assert ("--cap-drop", "ALL") == command[
+        command.index("--cap-drop") : command.index("--cap-drop") + 2
+    ]
+    assert captured["kwargs"]["env"] == {
+        "PATH": "/usr/local/bin:/usr/bin:/bin",
+        "DOCKER_CLI_HINTS": "false",
+    }
+
+
+def test_candidate_profiles_pin_the_executed_digest():
+    for framework in Framework:
+        profile = candidate_runtime_profile(framework)
+        assert profile.local_image_digest == profile.binding.container_digest
+        assert profile.binding.production_runtime_status == "unqualified"
+
+
+@pytest.mark.asyncio
+async def test_candidate_transport_rejects_cloud_markers(monkeypatch):
+    monkeypatch.setenv("MAJORANA_ENV", "development")
+    monkeypatch.setenv("CI", "true")
+    with pytest.raises(RuntimeError, match="development-only"):
+        await run_candidate_container(
+            candidate_runtime_profile(Framework.QISKIT).binding,
+        )
+
+
+@pytest.mark.asyncio
+async def test_bounded_reader_stops_before_unbounded_memory_growth():
+    stream = asyncio.StreamReader()
+    stream.feed_data(b"12345")
+    stream.feed_eof()
+    with pytest.raises(_OutputLimitExceeded):
+        await _read_bounded(stream, 4)

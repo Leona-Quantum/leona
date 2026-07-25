@@ -40,6 +40,9 @@ override both.
 - Main/production Neon: never used for feature migration tests
 - Phase 5 record: `PHASE5_PROGRESS.md`
 - Phase 6 decision: `PHASE6_GO_NO_GO.md`
+- Phase 6 threat, provenance, and rights review:
+  `PHASE6_THREAT_RIGHTS_REVIEW.md`
+- Phase 6 rollback and disablement runbook: `PHASE6_ROLLBACK.md`
 
 ## Status vocabulary
 

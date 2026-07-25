@@ -9,7 +9,7 @@ scientific review**
 
 | Gate | Evidence | Result |
 |---|---|---|
-| Python suite | 1112 passed, 74 skipped | pass |
+| Python suite | 1116 passed, 76 skipped | pass |
 | TS lint/typecheck/tests | Turbo 6/6, web 95 tests | pass |
 | Production web build | 336 pages generated | pass |
 | Corpus schema/reconciliation | Phase 2/4.5 generated checks and full suite | pass |

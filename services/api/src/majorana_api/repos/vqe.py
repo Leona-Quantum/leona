@@ -47,7 +47,7 @@ from majorana_vqe.portable import (
     workflow_semantic_digest,
 )
 from majorana_vqe.result import EXECUTION_EVIDENCE_ADAPTER, ExecutionEvidence
-from sqlalchemy import or_, select, update
+from sqlalchemy import func, or_, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -717,6 +717,15 @@ async def bind_execution_run(
     )
     if run is None:
         raise NotFoundError("run")
+    experiment = await get_experiment(scope, session, execution.experiment_id)
+    if run.mode != "execute":
+        raise ValueError("VQE execution requires an execute-mode durable run")
+    if run.framework != execution.framework:
+        raise ValueError("VQE run framework does not match the execution binding")
+    if run.seed != int(experiment.scientific_spec_json["seed"]):
+        raise ValueError("VQE run seed does not match the portable scientific spec")
+    if run.status != "queued":
+        raise ValueError("VQE execution can bind only a queued durable run")
     if execution.run_id is not None:
         if execution.run_id == run.id:
             return execution
@@ -728,7 +737,7 @@ async def bind_execution_run(
             VqeExecutionRow.status == "planned",
             VqeExecutionRow.run_id.is_(None),
         )
-        .values(run_id=run.id, status="queued")
+        .values(run_id=run.id, status="queued", updated_at=func.now())
     )
     if result.rowcount != 1:
         raise ValueError("VQE execution left planned state before run binding")
@@ -773,7 +782,7 @@ async def transition_execution(
             VqeExecutionRow.id == execution.id,
             VqeExecutionRow.status == current,
         )
-        .values(status=new_status)
+        .values(status=new_status, updated_at=func.now())
     )
     if result.rowcount != 1:
         raise ValueError("VQE execution state changed concurrently")

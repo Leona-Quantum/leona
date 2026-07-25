@@ -102,7 +102,7 @@ the normal artifact publication guard.
 
 ## 5. Verification performed
 
-- full Python suite: `1112 passed, 74 skipped`;
+- full Python suite: `1116 passed, 76 skipped`;
 - temporary Neon validation branch: `28 passed`;
 - web/turbo lint, typecheck, and tests: `6/6` tasks, `95` web tests;
 - Next production build: passed, 336 pages, VQE BFF route present;

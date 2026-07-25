@@ -44,6 +44,57 @@ class VqeRuntimeOutput:
     bounded_stderr: str
 
 
+class _OutputLimitExceeded(RuntimeError):
+    pass
+
+
+async def _read_bounded(
+    stream: asyncio.StreamReader | None,
+    limit: int,
+) -> bytes:
+    if stream is None:
+        return b""
+    chunks: list[bytes] = []
+    size = 0
+    while True:
+        chunk = await stream.read(min(65_536, limit + 1 - size))
+        if not chunk:
+            return b"".join(chunks)
+        chunks.append(chunk)
+        size += len(chunk)
+        if size > limit:
+            raise _OutputLimitExceeded
+
+
+async def _communicate_bounded(
+    process: asyncio.subprocess.Process,
+    *,
+    timeout_s: float,
+) -> tuple[bytes, bytes]:
+    stdout_task = asyncio.create_task(_read_bounded(process.stdout, _MAX_STDOUT_BYTES))
+    stderr_task = asyncio.create_task(_read_bounded(process.stderr, _MAX_STDERR_BYTES))
+    wait_task = asyncio.create_task(process.wait())
+    tasks = (stdout_task, stderr_task, wait_task)
+    try:
+        await asyncio.wait_for(
+            asyncio.gather(stdout_task, stderr_task, wait_task),
+            timeout=timeout_s,
+        )
+    except TimeoutError:
+        process.kill()
+        await process.wait()
+        raise RuntimeError("VQE candidate runtime timed out") from None
+    except _OutputLimitExceeded:
+        process.kill()
+        await process.wait()
+        raise RuntimeError("VQE candidate runtime exceeded bounded output") from None
+    finally:
+        for task in tasks:
+            if not task.done():
+                task.cancel()
+    return stdout_task.result(), stderr_task.result()
+
+
 def _parameter(theta: float) -> ParameterValue:
     return ParameterValue(
         slot_id=_PARAMETER_SLOT,
@@ -62,7 +113,10 @@ async def run_candidate_container(
     *,
     timeout_s: float = 300.0,
 ) -> dict[str, Any]:
-    if os.environ.get("MAJORANA_ENV", "").strip().lower() != "development":
+    if os.environ.get("MAJORANA_ENV", "").strip().lower() != "development" or any(
+        os.environ.get(name)
+        for name in ("K_SERVICE", "K_REVISION", "K_CONFIGURATION", "VERCEL", "CI")
+    ):
         raise RuntimeError("candidate Docker transport is development-only")
     profile = profile_for_binding(binding)
     command = [
@@ -100,14 +154,7 @@ async def run_candidate_container(
             "DOCKER_CLI_HINTS": "false",
         },
     )
-    try:
-        stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=timeout_s)
-    except TimeoutError:
-        process.kill()
-        await process.wait()
-        raise RuntimeError("VQE candidate runtime timed out") from None
-    if len(stdout) > _MAX_STDOUT_BYTES or len(stderr) > _MAX_STDERR_BYTES:
-        raise RuntimeError("VQE candidate runtime exceeded bounded output")
+    stdout, stderr = await _communicate_bounded(process, timeout_s=timeout_s)
     if process.returncode != 0:
         detail = stderr.decode(errors="replace")[:2_000]
         raise RuntimeError(f"VQE candidate runtime failed: {detail}")
