@@ -48,3 +48,10 @@ An architecture choice without an ADR did not happen.
 - 2026-07-25: ADR-0029 requires the server to construct scientific specs from
   scoped, typed Workflow ArtifactVersion links and separates HTTP request
   replay keys from Phase 5 execution identity.
+- 2026-07-25: ADR-0030 separates portable semantic identity from Registry UUID
+  resolution and makes execution cardinality explicit.
+- 2026-07-25: ADR-0031 permits fail-closed Phase 5A product integration before
+  independent scientific and production-runtime qualification.
+- 2026-07-26: ADR-0032 records the owner's independent-review waiver without
+  relabeling it as review, pins the private GHCR runtime digests, and requires
+  a pre-provisioned dedicated Docker host with deny-all execution.
