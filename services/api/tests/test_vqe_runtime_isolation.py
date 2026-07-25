@@ -8,6 +8,8 @@ from majorana_api.vqe_runtime_isolation import (
     PHASE5A_RUNTIME_CONSTRAINTS,
     runtime_environment,
 )
+from majorana_api.vqe_runtime_profiles import production_runtime_profile
+from majorana_vqe.models import Framework
 
 
 def _binding(**updates) -> ExecutionBinding:
@@ -65,6 +67,18 @@ def test_runtime_environment_is_fixed_offline_and_contains_no_secret_channels():
     assert PHASE5A_RUNTIME_CONSTRAINTS.network_mode == "none"
     assert PHASE5A_RUNTIME_CONSTRAINTS.credential_mounts == ()
     assert PHASE5A_RUNTIME_CONSTRAINTS.inherited_environment == ()
+
+
+def test_production_profile_is_exact_oci_digest_and_keeps_deny_all_policy():
+    profile = production_runtime_profile(Framework.QISKIT)
+    binding = profile.binding
+    assert binding.production_runtime_status == "qualified"
+    assert binding.container_digest_kind == "oci_manifest_digest"
+    assert binding.container_digest == profile.registry_manifest_digest
+    assert binding.oci_manifest_digest == profile.registry_manifest_digest
+    assert profile.image_reference.endswith(f"@{profile.registry_manifest_digest}")
+    assert profile.provenance_complete is True
+    assert dict(runtime_environment(binding))["PIP_NO_INDEX"] == "1"
 
 
 def test_candidate_runtime_scripts_have_no_network_or_dynamic_install_surface():

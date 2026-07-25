@@ -35,9 +35,9 @@ export type VqeExecution = {
   runtime_profile_id: string;
   runtime_image_digest: string;
   status: "planned" | "queued" | "running" | "succeeded" | "failed" | "cancelled";
-  production_runtime_status: "unqualified";
+  production_runtime_status: "unqualified" | "qualified";
   public_execution: "blocked";
-  review_state: "unreviewed";
+  review_state: "owner_waived";
   observations: VqeObservation[];
 };
 
@@ -69,9 +69,9 @@ export function parseVqeExecutions(value: unknown): VqeExecution[] {
       || !FRAMEWORKS.has(item.framework)
       || typeof item.status !== "string"
       || !STATUSES.has(item.status)
-      || item.production_runtime_status !== "unqualified"
+      || !["unqualified", "qualified"].includes(String(item.production_runtime_status))
       || item.public_execution !== "blocked"
-      || item.review_state !== "unreviewed"
+      || item.review_state !== "owner_waived"
       || !Array.isArray(item.observations)
     ) {
       throw new Error("VQE execution payload violates the candidate contract");

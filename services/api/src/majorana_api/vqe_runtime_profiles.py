@@ -1,9 +1,8 @@
-"""Server-owned Phase 5 H2 runtime support matrix.
+"""Server-owned Phase 5/6 H2 runtime support matrix.
 
-These profiles are candidates, not production qualifications.  Clients can
-choose only a framework preference; image identity, versions, architecture,
-and isolation policy are resolved here.  Changing any value is a reviewed
-scientific/runtime profile change.
+Clients can choose only a framework preference; image identity, versions,
+architecture, and isolation policy are resolved here. Changing any value is a
+reviewed scientific/runtime profile change.
 """
 
 from __future__ import annotations
@@ -44,6 +43,37 @@ class CandidateRuntimeProfile:
                 self.sbom_sha256,
                 self.build_attestation_sha256,
             )
+        )
+
+
+@dataclass(frozen=True)
+class ProductionRuntimeProfile:
+    """A registry-published runtime that may run only by exact OCI digest."""
+
+    binding: ExecutionBinding
+    image_reference: str
+    registry_manifest_digest: str
+    platform_manifest_digest: str
+    attestation_manifest_digest: str
+    lock_sha256: str
+    dockerfile_sha256: str
+    entrypoint_sha256: str
+    fixture_manifest_sha256: str
+    canonical_circuit_file_sha256: str
+    canonical_circuit_sha256: str
+    compilation_protocol_sha256: str
+    common_basis_operation_sequence_sha256: str
+    qualification_script_sha256: str
+    runtime_payload_source_commit: str
+    entrypoint_kind: str = "frozen_h2_actual_vqe_stdout_v1"
+
+    @property
+    def provenance_complete(self) -> bool:
+        return bool(
+            self.runtime_payload_source_commit
+            and self.registry_manifest_digest
+            and self.platform_manifest_digest
+            and self.attestation_manifest_digest
         )
 
 
@@ -152,6 +182,58 @@ _PROFILES = {
     ),
 }
 
+_PRODUCTION_DIGESTS = {
+    Framework.QISKIT: {
+        "registry": "sha256:3b66b9a813346c4ebba446c2cb80119b4d379725797f90463d2068e5285d62f6",
+        "platform": "sha256:e82b920d7858d69360bb2e12ca5e997b87c286adcc56ce70ab55b3ab4345fb54",
+        "attestation": "sha256:f10e69154515eab0f45ae64faa82d35ae52571fb285c1c475104fe77405b910a",
+    },
+    Framework.PENNYLANE: {
+        "registry": "sha256:205a795608b99e6901e9a03696a0aa38be718c636cdcadd530ada7492c288fd2",
+        "platform": "sha256:37f41aa59b8b2a90fb968e3a5eb33dbbe183b63883743769c1a9b87a005ca0ca",
+        "attestation": "sha256:115abae60d178ae59c8886884059431b500fb556c5326c0fb5ecd9896fd21318",
+    },
+}
+
+
+def _production_profile(framework: Framework) -> ProductionRuntimeProfile:
+    candidate = _PROFILES[framework]
+    digests = _PRODUCTION_DIGESTS[framework]
+    repository = f"ghcr.io/eshmis/majorana-vqe-{framework.value}"
+    binding = ExecutionBinding(
+        framework=framework,
+        provider_versions=candidate.binding.provider_versions,
+        runtime_profile_id=f"h2-{framework.value}-linux-x86_64-production-v1",
+        adapter_release_id=candidate.binding.adapter_release_id,
+        container_digest=digests["registry"],
+        container_digest_kind="oci_manifest_digest",
+        oci_manifest_digest=digests["registry"],
+        architecture="linux-x86_64",
+        production_runtime_status="qualified",
+        dataset_snapshot_id=candidate.binding.dataset_snapshot_id,
+        protocol_version=candidate.binding.protocol_version,
+    )
+    return ProductionRuntimeProfile(
+        binding=binding,
+        image_reference=f"{repository}@{digests['registry']}",
+        registry_manifest_digest=digests["registry"],
+        platform_manifest_digest=digests["platform"],
+        attestation_manifest_digest=digests["attestation"],
+        lock_sha256=candidate.lock_sha256,
+        dockerfile_sha256=candidate.dockerfile_sha256,
+        entrypoint_sha256=candidate.entrypoint_sha256,
+        fixture_manifest_sha256=candidate.fixture_manifest_sha256,
+        canonical_circuit_file_sha256=candidate.canonical_circuit_file_sha256,
+        canonical_circuit_sha256=candidate.canonical_circuit_sha256,
+        compilation_protocol_sha256=candidate.compilation_protocol_sha256,
+        common_basis_operation_sequence_sha256=(candidate.common_basis_operation_sequence_sha256),
+        qualification_script_sha256=candidate.qualification_script_sha256,
+        runtime_payload_source_commit=candidate.runtime_payload_source_commit or "",
+    )
+
+
+_PRODUCTION_PROFILES = {framework: _production_profile(framework) for framework in Framework}
+
 
 def candidate_runtime_profile(framework: Framework) -> CandidateRuntimeProfile:
     """Resolve a fixed candidate profile; never accept a profile from a client."""
@@ -162,8 +244,23 @@ def candidate_runtime_profiles() -> tuple[CandidateRuntimeProfile, ...]:
     return tuple(_PROFILES[framework] for framework in Framework)
 
 
-def profile_for_binding(binding: ExecutionBinding) -> CandidateRuntimeProfile:
-    profile = _PROFILES.get(binding.framework)
-    if profile is None or profile.binding != binding:
-        raise ValueError("binding is not an exact server-owned Phase 5 candidate profile")
-    return profile
+def production_runtime_profile(framework: Framework) -> ProductionRuntimeProfile:
+    """Resolve an exact digest-pinned production profile."""
+    return _PRODUCTION_PROFILES[Framework(framework)]
+
+
+def production_runtime_profiles() -> tuple[ProductionRuntimeProfile, ...]:
+    return tuple(_PRODUCTION_PROFILES[framework] for framework in Framework)
+
+
+def profile_for_binding(
+    binding: ExecutionBinding,
+) -> CandidateRuntimeProfile | ProductionRuntimeProfile:
+    candidates = (
+        _PROFILES.get(binding.framework),
+        _PRODUCTION_PROFILES.get(binding.framework),
+    )
+    for profile in candidates:
+        if profile is not None and profile.binding == binding:
+            return profile
+    raise ValueError("binding is not an exact server-owned VQE runtime profile")

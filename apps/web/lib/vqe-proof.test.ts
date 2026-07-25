@@ -12,7 +12,7 @@ const candidate = {
   status: "succeeded",
   production_runtime_status: "unqualified",
   public_execution: "blocked",
-  review_state: "unreviewed",
+  review_state: "owner_waived",
   observations: [{
     id: "o1",
     attempt: 1,
@@ -44,7 +44,7 @@ describe("VQE proof parsing", () => {
     assert.equal(comparableResources(result!)?.two_qubit_gate_count, 48);
   });
 
-  it("fails closed if the API relabels an unreviewed result", () => {
+  it("fails closed if the API fabricates a completed human review", () => {
     assert.throws(
       () => parseVqeExecutions([{ ...candidate, review_state: "human_reviewed" }]),
       /candidate contract/,

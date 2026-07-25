@@ -67,7 +67,7 @@ from majorana_api.repos import artifacts as artifacts_repo
 from majorana_api.repos import qpu_runs as qpu_runs_repo
 from majorana_api.repos import system
 from majorana_api.repos import vqe as vqe_repo
-from majorana_api.vqe_runtime_profiles import candidate_runtime_profile
+from majorana_api.vqe_runtime_profiles import profile_for_binding
 from majorana_vqe.models import ExecutionBinding
 from majorana_vqe.result import ExecutionFailureResult
 
@@ -979,9 +979,7 @@ async def handle_vqe_execute(session: AsyncSession, payload: dict[str, Any]) -> 
 
     experiment = await vqe_repo.get_experiment(scope, session, execution.experiment_id)
     binding = ExecutionBinding.model_validate(execution.execution_binding_json)
-    profile = candidate_runtime_profile(binding.framework)
-    if binding != profile.binding:
-        raise ValueError("persisted VQE binding is not the fixed server candidate profile")
+    profile = profile_for_binding(binding)
     try:
         runtime_output = await execute_candidate_image(
             profile,
@@ -1083,8 +1081,8 @@ async def handle_vqe_execute(session: AsyncSession, payload: dict[str, Any]) -> 
         evidence=evidence,
         evidence_json={
             "stderr_was_empty": not bool(runtime_output.bounded_stderr),
-            "human_review_state": "unreviewed",
-            "production_runtime_status": "unqualified",
+            "human_review_state": "owner_waived",
+            "production_runtime_status": binding.production_runtime_status,
         },
     )
     await vqe_repo.transition_execution(

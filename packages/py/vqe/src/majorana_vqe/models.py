@@ -365,7 +365,7 @@ class ExecutionBinding(VqeBaseModel):
         pattern=r"^sha256:[0-9a-f]{64}$",
     )
     architecture: str = Field(min_length=1, max_length=50)
-    production_runtime_status: Literal["unqualified"] = "unqualified"
+    production_runtime_status: Literal["unqualified", "qualified"] = "unqualified"
     dataset_snapshot_id: str | None = Field(default=None, max_length=200)
     protocol_version: str = Field(min_length=1, max_length=50)
     isolation_policy: RuntimeIsolationPolicy = Field(default_factory=RuntimeIsolationPolicy)

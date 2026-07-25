@@ -26,7 +26,13 @@ from majorana_vqe.result import (
     VqeOptimizationSuccessResult,
 )
 
-from majorana_api.vqe_runtime_profiles import CandidateRuntimeProfile, profile_for_binding
+from majorana_api.vqe_runtime_profiles import (
+    CandidateRuntimeProfile,
+    ProductionRuntimeProfile,
+    candidate_runtime_profile,
+    production_runtime_profile,
+    profile_for_binding,
+)
 
 _MAX_STDOUT_BYTES = 1_000_000
 _MAX_STDERR_BYTES = 64_000
@@ -162,16 +168,76 @@ def _parse_report(stdout: bytes) -> dict[str, Any]:
     return report
 
 
+_DOCKER_CLIENT_ENV = {
+    "PATH": "/usr/local/bin:/usr/bin:/bin",
+    "DOCKER_CLI_HINTS": "false",
+}
+
+
+async def _verify_preprovisioned_image(
+    docker: str,
+    profile: ProductionRuntimeProfile,
+) -> None:
+    """Fail closed unless the exact registry digest is already present locally."""
+    try:
+        process = await asyncio.create_subprocess_exec(
+            docker,
+            "image",
+            "inspect",
+            "--format",
+            "{{json .RepoDigests}}",
+            profile.image_reference,
+            stdin=asyncio.subprocess.DEVNULL,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+            env=_DOCKER_CLIENT_ENV,
+        )
+        stdout, _stderr = await asyncio.wait_for(process.communicate(), timeout=30)
+    except (OSError, TimeoutError) as exc:
+        raise VqeRuntimeError(
+            "pre-provisioned OCI runtime image could not be inspected",
+            failure_code=FailureCode.RUNTIME_UNAVAILABLE,
+            retryable=True,
+        ) from exc
+    if process.returncode != 0:
+        raise VqeRuntimeError(
+            "exact OCI runtime image is not pre-provisioned",
+            failure_code=FailureCode.RUNTIME_UNAVAILABLE,
+            retryable=True,
+        )
+    try:
+        repo_digests = json.loads(stdout)
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise VqeRuntimeError(
+            "Docker returned invalid OCI image identity",
+            failure_code=FailureCode.RUNTIME_UNAVAILABLE,
+            retryable=False,
+        ) from exc
+    if not isinstance(repo_digests, list) or profile.image_reference not in repo_digests:
+        raise VqeRuntimeError(
+            "pre-provisioned image does not match the approved OCI registry digest",
+            failure_code=FailureCode.RUNTIME_UNAVAILABLE,
+            retryable=False,
+        )
+
+
 class LocalDockerVqeRuntimeExecutor:
     """Development transport with bounded streaming and daemon-side cleanup."""
 
-    async def run(
+    def _profile(
         self,
         binding: ExecutionBinding,
-        *,
-        timeout_s: float = 300.0,
-        cancel_requested: CancelProbe | None = None,
-    ) -> VqeRuntimeOutput:
+    ) -> CandidateRuntimeProfile | ProductionRuntimeProfile:
+        profile = candidate_runtime_profile(binding.framework)
+        if profile.binding != binding:
+            raise VqeRuntimeError(
+                "binding is not an exact local candidate profile",
+                failure_code=FailureCode.RUNTIME_UNAVAILABLE,
+                retryable=False,
+            )
+        return profile
+
+    def _validate_environment(self) -> None:
         if os.environ.get("MAJORANA_ENV", "").strip().lower() != "development" or any(
             os.environ.get(name)
             for name in ("K_SERVICE", "K_REVISION", "K_CONFIGURATION", "VERCEL", "CI")
@@ -181,8 +247,26 @@ class LocalDockerVqeRuntimeExecutor:
                 failure_code=FailureCode.RUNTIME_UNAVAILABLE,
                 retryable=False,
             )
-        profile = profile_for_binding(binding)
+
+    async def _image_arguments(
+        self,
+        docker: str,
+        profile: CandidateRuntimeProfile | ProductionRuntimeProfile,
+    ) -> list[str]:
+        assert isinstance(profile, CandidateRuntimeProfile)
+        return [profile.local_image_digest]
+
+    async def run(
+        self,
+        binding: ExecutionBinding,
+        *,
+        timeout_s: float = 300.0,
+        cancel_requested: CancelProbe | None = None,
+    ) -> VqeRuntimeOutput:
+        self._validate_environment()
+        profile = self._profile(binding)
         docker = _docker_binary()
+        image_arguments = await self._image_arguments(docker, profile)
         container_name = f"majorana-vqe-{uuid.uuid4().hex}"
         command = [
             docker,
@@ -209,7 +293,7 @@ class LocalDockerVqeRuntimeExecutor:
             "/tmp:rw,noexec,nosuid,size=64m",
             "--user",
             "65532:65532",
-            profile.local_image_digest,
+            *image_arguments,
         ]
         try:
             process = await asyncio.create_subprocess_exec(
@@ -217,10 +301,7 @@ class LocalDockerVqeRuntimeExecutor:
                 stdin=asyncio.subprocess.DEVNULL,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
-                env={
-                    "PATH": "/usr/local/bin:/usr/bin:/bin",
-                    "DOCKER_CLI_HINTS": "false",
-                },
+                env=_DOCKER_CLIENT_ENV,
             )
         except OSError as exc:
             raise VqeRuntimeError(
@@ -308,7 +389,54 @@ class LocalDockerVqeRuntimeExecutor:
         )
 
 
+class OciDockerVqeRuntimeExecutor(LocalDockerVqeRuntimeExecutor):
+    """Dedicated-host transport for a pre-provisioned, exact OCI digest."""
+
+    def _profile(
+        self,
+        binding: ExecutionBinding,
+    ) -> CandidateRuntimeProfile | ProductionRuntimeProfile:
+        profile = production_runtime_profile(binding.framework)
+        if profile.binding != binding:
+            raise VqeRuntimeError(
+                "binding is not an exact production OCI profile",
+                failure_code=FailureCode.RUNTIME_UNAVAILABLE,
+                retryable=False,
+            )
+        return profile
+
+    def _validate_environment(self) -> None:
+        if os.environ.get("MAJORANA_ENV", "").strip().lower() != "production":
+            raise VqeRuntimeError(
+                "OCI runtime transport requires MAJORANA_ENV=production",
+                failure_code=FailureCode.RUNTIME_UNAVAILABLE,
+                retryable=False,
+            )
+        if os.environ.get("MAJORANA_VQE_RUNTIME_HOST", "").strip().lower() != "dedicated":
+            raise VqeRuntimeError(
+                "OCI runtime transport requires a dedicated runtime host",
+                failure_code=FailureCode.RUNTIME_UNAVAILABLE,
+                retryable=False,
+            )
+        if any(os.environ.get(name) for name in ("K_SERVICE", "K_REVISION", "K_CONFIGURATION")):
+            raise VqeRuntimeError(
+                "OCI Docker transport cannot run inside Cloud Run",
+                failure_code=FailureCode.RUNTIME_UNAVAILABLE,
+                retryable=False,
+            )
+
+    async def _image_arguments(
+        self,
+        docker: str,
+        profile: CandidateRuntimeProfile | ProductionRuntimeProfile,
+    ) -> list[str]:
+        assert isinstance(profile, ProductionRuntimeProfile)
+        await _verify_preprovisioned_image(docker, profile)
+        return ["--pull", "never", profile.image_reference]
+
+
 _LOCAL_DOCKER_EXECUTOR = LocalDockerVqeRuntimeExecutor()
+_OCI_DOCKER_EXECUTOR = OciDockerVqeRuntimeExecutor()
 
 
 def _parameter(theta: float) -> ParameterValue:
@@ -334,11 +462,16 @@ async def run_candidate_container(
 
 
 async def execute_candidate_image(
-    profile: CandidateRuntimeProfile,
+    profile: CandidateRuntimeProfile | ProductionRuntimeProfile,
     *,
     cancel_requested: CancelProbe | None = None,
 ) -> VqeRuntimeOutput:
-    return await _LOCAL_DOCKER_EXECUTOR.run(
+    executor = (
+        _OCI_DOCKER_EXECUTOR
+        if isinstance(profile, ProductionRuntimeProfile)
+        else _LOCAL_DOCKER_EXECUTOR
+    )
+    return await executor.run(
         profile.binding,
         cancel_requested=cancel_requested,
     )
@@ -470,7 +603,7 @@ def _build_success_evidence(
             ),
         ],
         supplementary_evidence={
-            "production_runtime_status": "unqualified",
+            "production_runtime_status": binding.production_runtime_status,
             "public_execution": "blocked",
             "runtime_provenance_complete": profile.provenance_complete,
             "runtime_container_digest_kind": binding.container_digest_kind,

@@ -33,8 +33,9 @@ def _validate_lock_token(token: str) -> None:
 @dataclass(frozen=True)
 class Settings:
     workos_client_id: str
-    # AuthKit session access tokens: iss is the user_management issuer for the
-    # client; JWKS is served per-client. Both overridable for custom auth domains.
+    # AuthKit session access tokens: issuer is environment-wide, while the
+    # client_id claim and per-client JWKS bind the token to this application.
+    # Issuer/JWKS remain overridable for a custom auth domain.
     workos_jwt_issuer: str
     workos_jwks_url: str
     web_origin: str
@@ -59,6 +60,10 @@ class Settings:
     # enabled only by a local development process; production capability
     # remains unavailable until Phase 5B qualification and owner promotion.
     vqe_candidate_execution: bool = False
+    # Private Phase 6 execution through a dedicated Docker runtime host. The
+    # API may enqueue from a managed control plane, but the worker must enforce
+    # the dedicated-host marker before it can launch an OCI runtime.
+    vqe_production_execution: bool = False
 
     def __post_init__(self) -> None:
         if self.local_dev_auth and self.environment != "development":
@@ -78,6 +83,12 @@ class Settings:
         ):
             raise RuntimeError(
                 "VQE candidate execution requires MAJORANA_ENV=development and a local process"
+            )
+        if self.vqe_production_execution and self.environment != "production":
+            raise RuntimeError("VQE production execution requires MAJORANA_ENV=production")
+        if self.vqe_candidate_execution and self.vqe_production_execution:
+            raise RuntimeError(
+                "candidate and production VQE execution gates are mutually exclusive"
             )
 
     @classmethod
@@ -108,6 +119,10 @@ class Settings:
             "MAJORANA_VQE_CANDIDATE_EXECUTION",
             "",
         ).strip().lower() in {"1", "true", "yes"}
+        vqe_production_execution = os.environ.get(
+            "MAJORANA_VQE_PRODUCTION_EXECUTION",
+            "",
+        ).strip().lower() in {"1", "true", "yes"}
 
         client_id = os.environ.get("WORKOS_CLIENT_ID")
         if not client_id and not (local_dev_auth or single_user_lock):
@@ -115,9 +130,7 @@ class Settings:
         client_id = client_id or "local-dev"
         return cls(
             workos_client_id=client_id,
-            workos_jwt_issuer=os.environ.get(
-                "WORKOS_JWT_ISSUER", f"https://api.workos.com/user_management/{client_id}"
-            ),
+            workos_jwt_issuer=os.environ.get("WORKOS_JWT_ISSUER", "https://api.workos.com"),
             workos_jwks_url=os.environ.get(
                 "WORKOS_JWKS_URL", f"https://api.workos.com/sso/jwks/{client_id}"
             ),
@@ -141,4 +154,5 @@ class Settings:
             ),
             catalog_authority=CatalogAuthority.from_env(),
             vqe_candidate_execution=vqe_candidate_execution,
+            vqe_production_execution=vqe_production_execution,
         )

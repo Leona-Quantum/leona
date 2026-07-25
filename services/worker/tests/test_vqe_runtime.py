@@ -4,10 +4,14 @@ from pathlib import Path
 
 import pytest
 
-from majorana_api.vqe_runtime_profiles import candidate_runtime_profile
+from majorana_api.vqe_runtime_profiles import (
+    candidate_runtime_profile,
+    production_runtime_profile,
+)
 from majorana_vqe.models import Framework
 from majorana_worker.vqe_runtime import (
     LocalDockerVqeRuntimeExecutor,
+    OciDockerVqeRuntimeExecutor,
     VqeRuntimeCancelled,
     VqeRuntimeError,
     _MAX_STDOUT_BYTES,
@@ -140,6 +144,15 @@ class _SuccessfulProcess:
         self.returncode = -9
 
 
+class _InspectProcess:
+    def __init__(self, stdout: bytes, *, returncode: int = 0) -> None:
+        self._stdout = stdout
+        self.returncode = returncode
+
+    async def communicate(self):
+        return self._stdout, b""
+
+
 async def test_launcher_uses_exact_digest_and_does_not_inherit_environment(monkeypatch):
     profile = candidate_runtime_profile(Framework.QISKIT)
     report = (RAW / "qiskit_vqe_v0.2.json").read_bytes()
@@ -171,6 +184,59 @@ async def test_candidate_transport_rejects_cloud_markers(monkeypatch):
     monkeypatch.setenv("CI", "true")
     with pytest.raises(VqeRuntimeError, match="development-only"):
         await run_candidate_container(candidate_runtime_profile(Framework.QISKIT).binding)
+
+
+async def test_production_launcher_requires_preprovisioned_exact_digest(monkeypatch):
+    profile = production_runtime_profile(Framework.QISKIT)
+    report = (RAW / "qiskit_vqe_v0.2.json").read_bytes()
+    captured = []
+
+    async def create(*command, **kwargs):
+        captured.append((command, kwargs))
+        if command[1:3] == ("image", "inspect"):
+            return _InspectProcess(json.dumps([profile.image_reference]).encode())
+        return _SuccessfulProcess(report)
+
+    monkeypatch.setenv("MAJORANA_ENV", "production")
+    monkeypatch.setenv("MAJORANA_VQE_RUNTIME_HOST", "dedicated")
+    monkeypatch.setenv("DATABASE_URL", "must-not-reach-child")
+    for name in ("K_SERVICE", "K_REVISION", "K_CONFIGURATION"):
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setattr("majorana_worker.vqe_runtime._docker_binary", lambda: "/docker")
+    monkeypatch.setattr("majorana_worker.vqe_runtime.asyncio.create_subprocess_exec", create)
+
+    output = await OciDockerVqeRuntimeExecutor().run(profile.binding)
+
+    assert output.payload["framework"] == "qiskit"
+    run_command, run_kwargs = captured[1]
+    assert ("--pull", "never") == (
+        run_command[run_command.index("--pull")],
+        run_command[run_command.index("--pull") + 1],
+    )
+    assert run_command[-1] == profile.image_reference
+    assert "--network" in run_command
+    assert run_command[run_command.index("--network") + 1] == "none"
+    assert run_kwargs["env"] == {
+        "PATH": "/usr/local/bin:/usr/bin:/bin",
+        "DOCKER_CLI_HINTS": "false",
+    }
+
+
+async def test_production_launcher_refuses_missing_exact_digest(monkeypatch):
+    profile = production_runtime_profile(Framework.PENNYLANE)
+
+    async def create(*_command, **_kwargs):
+        return _InspectProcess(b"[]")
+
+    monkeypatch.setenv("MAJORANA_ENV", "production")
+    monkeypatch.setenv("MAJORANA_VQE_RUNTIME_HOST", "dedicated")
+    for name in ("K_SERVICE", "K_REVISION", "K_CONFIGURATION"):
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setattr("majorana_worker.vqe_runtime._docker_binary", lambda: "/docker")
+    monkeypatch.setattr("majorana_worker.vqe_runtime.asyncio.create_subprocess_exec", create)
+
+    with pytest.raises(VqeRuntimeError, match="approved OCI registry digest"):
+        await OciDockerVqeRuntimeExecutor().run(profile.binding)
 
 
 async def _executor_with_process(monkeypatch, process):

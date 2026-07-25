@@ -114,7 +114,7 @@ const server = createServer(async (request, response) => {
       status: succeeded ? "succeeded" : "failed",
       production_runtime_status: "unqualified",
       public_execution: "blocked",
-      review_state: "unreviewed",
+      review_state: "owner_waived",
       observations: [observation(id, payload.preferred_framework)],
     };
     executionsByExperiment.set(experimentId, [

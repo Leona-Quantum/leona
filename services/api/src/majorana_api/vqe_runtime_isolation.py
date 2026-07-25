@@ -44,8 +44,8 @@ _FIXED_RUNTIME_ENVIRONMENT = MappingProxyType(
 
 def runtime_environment(binding: ExecutionBinding) -> Mapping[str, str]:
     """Return the complete runtime environment; never merge caller/host env."""
-    if binding.production_runtime_status != "unqualified":
-        raise ValueError("Phase 5A accepts only explicitly unqualified candidate runtimes")
+    if binding.production_runtime_status not in {"unqualified", "qualified"}:
+        raise ValueError("unknown VQE runtime qualification state")
     if binding.isolation_policy.network_policy != "deny_all":
         raise ValueError("VQE runtime binding must deny all network egress")
     if binding.isolation_policy.credential_policy != "none":

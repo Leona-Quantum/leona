@@ -37,7 +37,7 @@ from ..repos import runs as runs_repo
 from ..repos import system
 from ..repos import vqe as vqe_repo
 from ..settings import Settings
-from ..vqe_runtime_profiles import candidate_runtime_profile
+from ..vqe_runtime_profiles import candidate_runtime_profile, production_runtime_profile
 
 router = APIRouter()
 
@@ -154,7 +154,7 @@ class ExecutionResource(BaseModel):
     status: str
     production_runtime_status: str
     public_execution: Literal["blocked"] = "blocked"
-    review_state: Literal["unreviewed"] = "unreviewed"
+    review_state: Literal["owner_waived"] = "owner_waived"
     observations: list[ObservationResource] = Field(default_factory=list)
     created_at: dt.datetime | None
     updated_at: dt.datetime | None
@@ -452,7 +452,12 @@ async def create_experiment(
             body.workflow_artifact_version_id,
             catalog_workspace_id=catalog_workspace_id,
             review_policy=(
-                "h2_owner_deferred_candidate" if settings.vqe_candidate_execution else "approved"
+                "h2_owner_deferred_candidate"
+                if (
+                    settings.vqe_candidate_execution
+                    or getattr(settings, "vqe_production_execution", False)
+                )
+                else "approved"
             ),
         )
         experiment = await vqe_repo.create_experiment(
@@ -507,21 +512,27 @@ async def start_execution(
         Header(alias="Idempotency-Key", min_length=1, max_length=200),
     ],
 ) -> ExecutionResource:
-    if not settings.vqe_candidate_execution:
+    if not (
+        settings.vqe_candidate_execution or getattr(settings, "vqe_production_execution", False)
+    ):
         raise HTTPException(
             status_code=409,
             detail={
                 "code": "candidate_execution_disabled",
                 "message": (
-                    "public VQE execution is blocked; enable the local Phase 5A "
-                    "development gate explicitly"
+                    "VQE execution is blocked; enable one server-owned private "
+                    "execution gate explicitly"
                 ),
             },
         )
     if body.requested_capability is not Capability.H2_STO3G_ACTUAL_VQE:
         raise HTTPException(status_code=422, detail="unsupported Phase 5A capability")
     experiment = await vqe_repo.get_experiment(scope, session, experiment_id)
-    profile = candidate_runtime_profile(body.preferred_framework)
+    profile = (
+        production_runtime_profile(body.preferred_framework)
+        if getattr(settings, "vqe_production_execution", False)
+        else candidate_runtime_profile(body.preferred_framework)
+    )
     execution = await vqe_repo.create_execution(
         scope,
         session,
@@ -536,7 +547,7 @@ async def start_execution(
                 scope,
                 session,
                 task_prompt=(
-                    "Execute the frozen unreviewed H2 STO-3G actual-VQE "
+                    "Execute the frozen owner-waived H2 STO-3G actual-VQE "
                     f"candidate with {profile.binding.framework.value}"
                 ),
                 mode=RunMode.EXECUTE,
@@ -647,6 +658,12 @@ async def materialize_execution(
     if execution.run_id is None:
         raise HTTPException(status_code=409, detail="successful execution lacks a durable run")
     experiment = await vqe_repo.get_experiment(scope, session, execution.experiment_id)
+    runtime_status = execution.execution_binding_json.get(
+        "production_runtime_status",
+        "unqualified",
+    )
+    if runtime_status not in {"unqualified", "qualified"}:
+        raise HTTPException(status_code=409, detail="unknown VQE runtime qualification state")
     run = await runs_repo.get_run(scope, session, execution.run_id)
     if run.artifact_version_id is not None:
         version = await artifacts_repo.get_version(scope, session, run.artifact_version_id)
@@ -693,9 +710,9 @@ async def materialize_execution(
         qasm_version=None,
         qasm=None,
         metadata={
-            "source": "vqe_candidate_execution",
-            "human_review_state": "unreviewed",
-            "production_runtime_status": "unqualified",
+            "source": "vqe_private_execution",
+            "human_review_state": "owner_waived",
+            "production_runtime_status": runtime_status,
             "publication": "blocked",
             "scientific_release": "blocked",
             "execution_id": str(execution.id),
@@ -713,7 +730,7 @@ async def materialize_execution(
                 "verified": False,
                 "decision": None,
                 "evidence_strength": None,
-                "reason_code": "candidate_pending_human_and_runtime_qualification",
+                "reason_code": ("independent_human_review_owner_waived_publication_blocked"),
             },
         },
         code=evidence_bytes.decode(),
@@ -723,8 +740,8 @@ async def materialize_execution(
         export_reason="candidate scientific evidence is not an executable circuit export",
         resource_estimates=observation.result_contract_json.get("resources"),
         limitations=(
-            "Private Phase 5A candidate; human review and production runtime "
-            "qualification are incomplete."
+            "Private VQE evidence; independent human review was owner-waived "
+            "and publication remains blocked."
         ),
     )
     await runs_repo.set_run_artifact_version(scope, session, run.id, version.id)
