@@ -22,29 +22,33 @@ from scipy.optimize import minimize_scalar
 
 ROOT = Path(__file__).resolve().parents[3].parent
 MANIFEST_PATH = ROOT / "docs" / "atlas" / "fixtures" / "h2_sto3g" / "manifest.json"
+CIRCUIT_PATH = (
+    ROOT / "docs" / "atlas" / "fixtures" / "h2_sto3g" / "canonical_double_excitation_v0.2.json"
+)
 OUTPUT_PATH = ROOT / "docs" / "atlas" / "fixtures" / "h2_sto3g" / "raw" / "pennylane_vqe_v0.2.json"
 HF_BITSTRING_QUBIT0_FIRST = "1010"
-EXCITED_BITSTRING_QUBIT0_FIRST = "0101"
 PARAMETER_SLOT_ID = "theta.double.occ0_occ2.to.virt1_virt3"
 
 
-def _basis_index_pennylane(bitstring_qubit0_first: str) -> int:
-    return int(bitstring_qubit0_first, 2)
-
-
-def _canonical_double_excitation_unitary(theta: float) -> np.ndarray:
-    """exp(theta/2 * (|exc><hf| - |hf><exc|)) in PennyLane wire order."""
-    size = 2**4
-    matrix = np.eye(size, dtype=complex)
-    hf = _basis_index_pennylane(HF_BITSTRING_QUBIT0_FIRST)
-    excited = _basis_index_pennylane(EXCITED_BITSTRING_QUBIT0_FIRST)
-    cosine = math.cos(theta / 2.0)
-    sine = math.sin(theta / 2.0)
-    matrix[hf, hf] = cosine
-    matrix[excited, excited] = cosine
-    matrix[excited, hf] = sine
-    matrix[hf, excited] = -sine
-    return matrix
+def _apply_canonical_excitation(theta: float, circuit_spec: dict) -> None:
+    for operation in circuit_spec["common_basis_operations"]:
+        gate = operation["gate"]
+        wires = operation["wires"]
+        if gate == "h":
+            qml.Hadamard(wires=wires[0])
+        elif gate == "s":
+            qml.S(wires=wires[0])
+        elif gate == "sdg":
+            qml.adjoint(qml.S)(wires=wires[0])
+        elif gate == "cx":
+            qml.CNOT(wires=wires)
+        elif gate == "rz":
+            angle = (
+                theta * operation["angle_theta_numerator"] / operation["angle_theta_denominator"]
+            )
+            qml.RZ(angle, wires=wires[0])
+        else:
+            raise ValueError(f"unsupported canonical gate {gate!r}")
 
 
 def _pauli_word(label: str):
@@ -80,6 +84,8 @@ def run(output_path: Path = OUTPUT_PATH) -> int:
     started = time.perf_counter()
     manifest_bytes = MANIFEST_PATH.read_bytes()
     manifest = json.loads(manifest_bytes)
+    circuit_bytes = CIRCUIT_PATH.read_bytes()
+    circuit_spec = json.loads(circuit_bytes)
     hamiltonian = _hamiltonian(manifest)
     nuclear_repulsion = float(manifest["nuclear_repulsion_ha"])
     device = qml.device("default.qubit", wires=4, shots=None)
@@ -88,13 +94,13 @@ def run(output_path: Path = OUTPUT_PATH) -> int:
     @qml.qnode(device)
     def energy_circuit(theta: float):
         qml.BasisState(occupation, wires=range(4))
-        qml.QubitUnitary(_canonical_double_excitation_unitary(theta), wires=range(4))
+        _apply_canonical_excitation(theta, circuit_spec)
         return qml.expval(hamiltonian)
 
     @qml.qnode(device)
     def state_circuit(theta: float):
         qml.BasisState(occupation, wires=range(4))
-        qml.QubitUnitary(_canonical_double_excitation_unitary(theta), wires=range(4))
+        _apply_canonical_excitation(theta, circuit_spec)
         return qml.state()
 
     trajectory: list[dict[str, float]] = []
@@ -143,9 +149,11 @@ def run(output_path: Path = OUTPUT_PATH) -> int:
         "python_version": sys.version,
         "canonical_input": {
             "manifest_sha256": hashlib.sha256(manifest_bytes).hexdigest(),
+            "canonical_circuit_sha256": circuit_spec["canonical_circuit_sha256"],
+            "compilation_protocol_sha256": circuit_spec["compilation_protocol_sha256"],
             "hamiltonian_digest_legacy": manifest["hamiltonian_digest_sha256"],
             "reference_bitstring_qubit0_first": HF_BITSTRING_QUBIT0_FIRST,
-            "excited_bitstring_qubit0_first": EXCITED_BITSTRING_QUBIT0_FIRST,
+            "excited_bitstring_qubit0_first": "0101",
             "parameter_slot_id": PARAMETER_SLOT_ID,
             "parameter_orientation": "exp_theta_over_2_generator",
         },
@@ -163,16 +171,27 @@ def run(output_path: Path = OUTPUT_PATH) -> int:
             "trajectory": trajectory,
         },
         "resources": {
-            "logical": {
-                "qubits": 4,
-                "parameters": 1,
+            "semantic_block": {
                 "canonical_double_excitation_blocks": 1,
             },
-            "provider_native": {
+            "canonical_logical": {
+                "qubits": 4,
+                "parameter_count": 1,
+                "pauli_rotation_blocks": len(circuit_spec["logical_rotations"]),
+                "canonical_circuit_sha256": circuit_spec["canonical_circuit_sha256"],
+            },
+            "common_basis_compiled": {
+                **circuit_spec["common_basis_metrics"],
+                "basis_gates": circuit_spec["compilation_protocol"]["basis_gates"],
+                "compilation_protocol_sha256": circuit_spec["compilation_protocol_sha256"],
+            },
+            "provider_native_diagnostic": {
                 "depth": int(resource_info.depth),
                 "gate_count": int(resource_info.num_gates),
                 "gate_types": dict(resource_info.gate_types),
                 "shots": None,
+                "includes_reference_state": True,
+                "comparison_eligible": False,
             },
         },
         "wall_time_s": time.perf_counter() - started,

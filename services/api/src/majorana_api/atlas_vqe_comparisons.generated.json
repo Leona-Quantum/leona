@@ -10,7 +10,7 @@
         "grimsley2019",
         "tang2021"
       ],
-      "generated_at": "2026-07-25T11:13:52Z",
+      "generated_at": "2026-07-25T13:24:29Z",
       "dimensions": [
         {
           "name": "ansatz_semantic_definition",
@@ -157,6 +157,12 @@
           "evidence_locator": null
         },
         {
+          "name": "search_selection",
+          "status": "unknown",
+          "detail": null,
+          "evidence_locator": null
+        },
+        {
           "name": "seed",
           "status": "unknown",
           "detail": null,
@@ -204,7 +210,7 @@
         "omalley2016",
         "kandala2017"
       ],
-      "generated_at": "2026-07-25T11:13:52Z",
+      "generated_at": "2026-07-25T13:24:29Z",
       "dimensions": [
         {
           "name": "ansatz_semantic_definition",
@@ -351,6 +357,12 @@
           "evidence_locator": null
         },
         {
+          "name": "search_selection",
+          "status": "unknown",
+          "detail": null,
+          "evidence_locator": null
+        },
+        {
           "name": "seed",
           "status": "unknown",
           "detail": null,
@@ -398,7 +410,7 @@
         "peruzzo2014",
         "shen2017"
       ],
-      "generated_at": "2026-07-25T11:13:52Z",
+      "generated_at": "2026-07-25T13:24:29Z",
       "dimensions": [
         {
           "name": "ansatz_semantic_definition",
@@ -540,6 +552,12 @@
         },
         {
           "name": "search_scoring",
+          "status": "unknown",
+          "detail": null,
+          "evidence_locator": null
+        },
+        {
+          "name": "search_selection",
           "status": "unknown",
           "detail": null,
           "evidence_locator": null

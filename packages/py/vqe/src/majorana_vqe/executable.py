@@ -96,6 +96,8 @@ class AnsatzDefinitionSpec(ExecutableSpecBase):
     trotter_order: Literal[1]
     trotter_steps: Literal[1]
     parameter_sharing: Literal["none"]
+    canonical_circuit_id: Literal["h2.double.occ0_occ2.to.virt1_virt3.jw.v1"]
+    canonical_circuit_sha256: str = Field(pattern=SHA256_HEX_PATTERN)
     parameter_slots: list[ParameterSlotDefinition] = Field(min_length=1, max_length=1)
     expected_parameter_count: Literal[1]
 
@@ -155,13 +157,27 @@ class MeasurementProtocolSpec(ExecutableSpecBase):
 
 class CompilationMetricProtocolSpec(ExecutableSpecBase):
     kind: Literal["compilation_metric_protocol"]
-    primary_resource_stage: Literal["logical"]
-    secondary_resource_stage: Literal["provider_native_compiled"]
+    protocol_id: Literal["majorana.h2.common_cnot_depth.v1"]
+    compilation_protocol_sha256: str = Field(pattern=SHA256_HEX_PATTERN)
+    canonical_circuit_sha256: str = Field(pattern=SHA256_HEX_PATTERN)
+    input_stage: Literal["canonical_logical_pauli_rotations"]
+    primary_resource_stages: list[Literal["canonical_logical", "common_basis_compiled"]]
+    diagnostic_resource_stage: Literal["provider_native_diagnostic"]
     logical_block_definition: Literal["canonical_double_excitation_block"]
-    basis_gates: list[str] = Field(default_factory=list, max_length=32)
-    optimization_level: int = Field(ge=0, le=3)
-    routing: Literal["none_four_qubit_all_to_all"]
-    compiler_seed: int = Field(ge=0)
+    parameter_binding: Literal["same_float64_theta_for_all_rotations"]
+    basis_gates: list[str] = Field(min_length=5, max_length=5)
+    topology: Literal["four_qubit_all_to_all"]
+    initial_layout: list[int] = Field(min_length=4, max_length=4)
+    routing_policy: Literal["none"]
+    optimization_level: Literal[0]
+    compiler: Literal["majorana_deterministic_pauli_rotation_compiler"]
+    compiler_version: Literal["0.1.0"]
+    compiler_seed: Literal[0]
+    measurement_inclusion_policy: Literal["excluded"]
+    depth_definition: Literal["asap_dependency_layers_each_gate_duration_one"]
+    cnot_definition: Literal["count_gate_name_cx"]
+    expected_common_basis_cnot_count: Literal[48]
+    expected_common_basis_depth: Literal[83]
 
 
 class EvaluationProtocolV2(ExecutableSpecBase):
@@ -269,6 +285,8 @@ class ExecutableH2Workflow(VqeBaseModel):
             raise ValueError("measurement width does not match representation")
         if self.operator_pool.generator_ids != [self.ansatz.generator_id]:
             raise ValueError("operator pool and ansatz generator definitions disagree")
+        if self.compilation.canonical_circuit_sha256 != self.ansatz.canonical_circuit_sha256:
+            raise ValueError("ansatz and compilation canonical circuit digests disagree")
         if self.optimizer.max_function_evaluations != self.stopping.max_function_evaluations:
             raise ValueError("optimizer and stopping evaluation budgets disagree")
         if (

@@ -164,9 +164,10 @@ def _success(experiment, execution) -> VqeOptimizationSuccessResult:
         status="succeeded",
         capability="h2_sto3g_actual_vqe_v1",
         best_energy_ha=-1.1373060357534,
-        reference_energy_ha=-1.1373060357534,
+        exact_energy_ha=-1.1373060357534,
         absolute_error_ha=0.0,
         final_state_fidelity=1.0,
+        iterations=1,
         converged=True,
         optimizer_work=OptimizerWork(
             iterations=1,
@@ -174,19 +175,31 @@ def _success(experiment, execution) -> VqeOptimizationSuccessResult:
             gradient_evaluations=0,
             hessian_evaluations=0,
         ),
+        parameter_count=1,
         initial_parameters=[ParameterValue(slot_id="theta.0", float64_hex="0000000000000000")],
         final_parameters=[ParameterValue(slot_id="theta.0", float64_hex="bfcc9d4f00000000")],
         initial_parameters_sha256=_digest("initial"),
         final_parameters_sha256=_digest("final"),
         ansatz_semantic_digest=_digest("ansatz"),
+        canonical_circuit_sha256=_digest("canonical-circuit"),
+        compilation_protocol_sha256=_digest("compilation-protocol"),
         energy_trajectory=[-1.0, -1.1373060357534],
         resources=[
             ResourceObservation(
-                stage="logical",
-                metric_protocol_sha256=_digest("logical-metric-protocol"),
+                stage="canonical_logical",
+                metric_protocol_sha256=_digest("canonical-circuit"),
                 qubits=4,
                 parameter_count=1,
-            )
+            ),
+            ResourceObservation(
+                stage="common_basis_compiled",
+                metric_protocol_sha256=_digest("compilation-protocol"),
+                qubits=4,
+                depth=83,
+                gate_count=152,
+                two_qubit_gate_count=48,
+                parameter_count=1,
+            ),
         ],
     )
 

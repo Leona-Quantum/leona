@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import re
 from enum import Enum
-from typing import Self
+from typing import Literal, Self
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -327,6 +327,24 @@ class ExecutionRequest(VqeBaseModel):
     preferred_framework: Framework | None = None
 
 
+class RuntimeIsolationPolicy(VqeBaseModel):
+    """Server-fixed Phase 5A isolation contract.
+
+    These are Literals rather than booleans supplied by an HTTP request:
+    an ExecutionBinding cannot represent a network-enabled or
+    credential-bearing VQE runtime.
+    """
+
+    schema_version: Literal["0.1.0"] = "0.1.0"
+    network_policy: Literal["deny_all"] = "deny_all"
+    credential_policy: Literal["none"] = "none"
+    database_url_policy: Literal["omit"] = "omit"
+    dynamic_package_installation: Literal["forbidden"] = "forbidden"
+    root_filesystem: Literal["read_only"] = "read_only"
+    output_filesystem: Literal["bounded_ephemeral_only"] = "bounded_ephemeral_only"
+    run_as: Literal["non_root"] = "non_root"
+
+
 class ExecutionBinding(VqeBaseModel):
     """The server-resolved execution authority for a request (plan Part II
     §9). A client-supplied runtime_profile_key/digest/provider version is
@@ -339,8 +357,10 @@ class ExecutionBinding(VqeBaseModel):
     adapter_release_id: str = Field(min_length=1, max_length=200)
     container_digest: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
     architecture: str = Field(min_length=1, max_length=50)
+    production_runtime_status: Literal["unqualified"] = "unqualified"
     dataset_snapshot_id: str | None = Field(default=None, max_length=200)
     protocol_version: str = Field(min_length=1, max_length=50)
+    isolation_policy: RuntimeIsolationPolicy = Field(default_factory=RuntimeIsolationPolicy)
 
     @model_validator(mode="after")
     def _labels_are_safe(self) -> Self:

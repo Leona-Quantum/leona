@@ -25,41 +25,45 @@ from scipy.optimize import minimize_scalar
 
 ROOT = Path(__file__).resolve().parents[3].parent
 MANIFEST_PATH = ROOT / "docs" / "atlas" / "fixtures" / "h2_sto3g" / "manifest.json"
+CIRCUIT_PATH = (
+    ROOT / "docs" / "atlas" / "fixtures" / "h2_sto3g" / "canonical_double_excitation_v0.2.json"
+)
 OUTPUT_PATH = ROOT / "docs" / "atlas" / "fixtures" / "h2_sto3g" / "raw" / "qiskit_vqe_v0.2.json"
 HF_BITSTRING_QUBIT0_FIRST = "1010"
-EXCITED_BITSTRING_QUBIT0_FIRST = "0101"
 PARAMETER_SLOT_ID = "theta.double.occ0_occ2.to.virt1_virt3"
 
 
-def _basis_index_qiskit(bitstring_qubit0_first: str) -> int:
-    return int(bitstring_qubit0_first[::-1], 2)
+def _apply_canonical_excitation(
+    circuit: QuantumCircuit,
+    theta: float,
+    circuit_spec: dict,
+) -> None:
+    for operation in circuit_spec["common_basis_operations"]:
+        gate = operation["gate"]
+        wires = operation["wires"]
+        if gate == "h":
+            circuit.h(wires[0])
+        elif gate == "s":
+            circuit.s(wires[0])
+        elif gate == "sdg":
+            circuit.sdg(wires[0])
+        elif gate == "cx":
+            circuit.cx(wires[0], wires[1])
+        elif gate == "rz":
+            angle = (
+                theta * operation["angle_theta_numerator"] / operation["angle_theta_denominator"]
+            )
+            circuit.rz(angle, wires[0])
+        else:
+            raise ValueError(f"unsupported canonical gate {gate!r}")
 
 
-def _canonical_double_excitation_unitary(theta: float) -> np.ndarray:
-    """exp(theta/2 * (|exc><hf| - |hf><exc|)) in Qiskit basis order."""
-    size = 2**4
-    matrix = np.eye(size, dtype=complex)
-    hf = _basis_index_qiskit(HF_BITSTRING_QUBIT0_FIRST)
-    excited = _basis_index_qiskit(EXCITED_BITSTRING_QUBIT0_FIRST)
-    cosine = math.cos(theta / 2.0)
-    sine = math.sin(theta / 2.0)
-    matrix[hf, hf] = cosine
-    matrix[excited, excited] = cosine
-    matrix[excited, hf] = sine
-    matrix[hf, excited] = -sine
-    return matrix
-
-
-def _circuit(theta: float) -> QuantumCircuit:
+def _circuit(theta: float, circuit_spec: dict) -> QuantumCircuit:
     circuit = QuantumCircuit(4)
     for qubit, occupied in enumerate(HF_BITSTRING_QUBIT0_FIRST):
         if occupied == "1":
             circuit.x(qubit)
-    circuit.unitary(
-        _canonical_double_excitation_unitary(theta),
-        list(range(4)),
-        label="canonical_double_excitation",
-    )
+    _apply_canonical_excitation(circuit, theta, circuit_spec)
     return circuit
 
 
@@ -78,12 +82,14 @@ def run(output_path: Path = OUTPUT_PATH) -> int:
     started = time.perf_counter()
     manifest_bytes = MANIFEST_PATH.read_bytes()
     manifest = json.loads(manifest_bytes)
+    circuit_bytes = CIRCUIT_PATH.read_bytes()
+    circuit_spec = json.loads(circuit_bytes)
     hamiltonian = _hamiltonian(manifest)
     nuclear_repulsion = float(manifest["nuclear_repulsion_ha"])
     trajectory: list[dict[str, float]] = []
 
     def energy(theta: float) -> float:
-        state = Statevector.from_instruction(_circuit(float(theta)))
+        state = Statevector.from_instruction(_circuit(float(theta), circuit_spec))
         value = float(np.real(state.expectation_value(hamiltonian))) + nuclear_repulsion
         trajectory.append({"theta": float(theta), "energy_ha": value})
         return value
@@ -96,7 +102,7 @@ def run(output_path: Path = OUTPUT_PATH) -> int:
             options={"xatol": 1e-12, "maxiter": 256},
         )
         final_theta = float(result.x)
-        final_circuit = _circuit(final_theta)
+        final_circuit = _circuit(final_theta, circuit_spec)
         final_state = np.asarray(Statevector.from_instruction(final_circuit).data)
         dense_hamiltonian = np.asarray(hamiltonian.to_matrix())
         eigenvalues, eigenvectors = np.linalg.eigh(dense_hamiltonian)
@@ -133,9 +139,11 @@ def run(output_path: Path = OUTPUT_PATH) -> int:
         "python_version": sys.version,
         "canonical_input": {
             "manifest_sha256": hashlib.sha256(manifest_bytes).hexdigest(),
+            "canonical_circuit_sha256": circuit_spec["canonical_circuit_sha256"],
+            "compilation_protocol_sha256": circuit_spec["compilation_protocol_sha256"],
             "hamiltonian_digest_legacy": manifest["hamiltonian_digest_sha256"],
             "reference_bitstring_qubit0_first": HF_BITSTRING_QUBIT0_FIRST,
-            "excited_bitstring_qubit0_first": EXCITED_BITSTRING_QUBIT0_FIRST,
+            "excited_bitstring_qubit0_first": "0101",
             "parameter_slot_id": PARAMETER_SLOT_ID,
             "parameter_orientation": "exp_theta_over_2_generator",
         },
@@ -153,18 +161,29 @@ def run(output_path: Path = OUTPUT_PATH) -> int:
             "trajectory": trajectory,
         },
         "resources": {
-            "logical": {
-                "qubits": 4,
-                "parameters": 1,
+            "semantic_block": {
                 "canonical_double_excitation_blocks": 1,
             },
-            "provider_native_compiled": {
+            "canonical_logical": {
+                "qubits": 4,
+                "parameter_count": 1,
+                "pauli_rotation_blocks": len(circuit_spec["logical_rotations"]),
+                "canonical_circuit_sha256": circuit_spec["canonical_circuit_sha256"],
+            },
+            "common_basis_compiled": {
+                **circuit_spec["common_basis_metrics"],
+                "basis_gates": circuit_spec["compilation_protocol"]["basis_gates"],
+                "compilation_protocol_sha256": circuit_spec["compilation_protocol_sha256"],
+            },
+            "provider_native_diagnostic": {
                 "depth": int(compiled.depth()),
                 "gate_count": int(sum(compiled.count_ops().values())),
                 "two_qubit_gate_count": int(compiled.count_ops().get("cx", 0)),
                 "basis_gates": ["rz", "sx", "x", "cx"],
                 "optimization_level": 0,
                 "compiler_seed": 0,
+                "includes_reference_state": True,
+                "comparison_eligible": False,
             },
         },
         "wall_time_s": time.perf_counter() - started,

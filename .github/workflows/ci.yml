@@ -62,7 +62,9 @@ jobs:
       - run: uv run ruff format --check .
       - run: uv run pytest -q
       - name: H2 VQE registry review manifest is current (ADR-0030)
-        run: uv run python scripts/generate-h2-vqe-registry-manifest.py --check
+        run: |
+          uv run python scripts/generate-h2-canonical-circuit.py --check
+          uv run python scripts/generate-h2-vqe-registry-manifest.py --check
       - name: openapi.json is current
         run: uv run python -m majorana_contracts.export --check
       # Authz invariant (02-architecture §4): DB access only via the repository layer

@@ -6,6 +6,7 @@ success payload whose scientifically necessary fields are mandatory.
 
 from __future__ import annotations
 
+import math
 from typing import Annotated, Literal, Self
 
 from pydantic import Field, TypeAdapter, model_validator
@@ -36,7 +37,12 @@ class EvidenceCommon(VqeBaseModel):
 
 
 class ResourceObservation(VqeBaseModel):
-    stage: Literal["logical", "synthesized", "compiled", "routed"]
+    stage: Literal[
+        "semantic_block",
+        "canonical_logical",
+        "common_basis_compiled",
+        "provider_native_diagnostic",
+    ]
     metric_protocol_sha256: str = Field(pattern=SHA256_HEX_PATTERN)
     qubits: int = Field(ge=0)
     depth: int | None = Field(default=None, ge=0)
@@ -84,16 +90,20 @@ class VqeOptimizationSuccessResult(EvidenceCommon):
     result_kind: Literal["vqe_optimization_success"] = "vqe_optimization_success"
     capability: Literal["h2_sto3g_actual_vqe_v1"]
     best_energy_ha: float
-    reference_energy_ha: float
+    exact_energy_ha: float
     absolute_error_ha: float = Field(ge=0)
     final_state_fidelity: float = Field(ge=0, le=1)
+    iterations: int = Field(ge=0)
     converged: bool
     optimizer_work: OptimizerWork
+    parameter_count: int = Field(gt=0, le=256)
     initial_parameters: list[ParameterValue] = Field(min_length=1, max_length=256)
     final_parameters: list[ParameterValue] = Field(min_length=1, max_length=256)
     initial_parameters_sha256: str = Field(pattern=SHA256_HEX_PATTERN)
     final_parameters_sha256: str = Field(pattern=SHA256_HEX_PATTERN)
     ansatz_semantic_digest: str = Field(pattern=SHA256_HEX_PATTERN)
+    canonical_circuit_sha256: str = Field(pattern=SHA256_HEX_PATTERN)
+    compilation_protocol_sha256: str = Field(pattern=SHA256_HEX_PATTERN)
     energy_trajectory: list[float] | None = Field(default=None, min_length=1, max_length=200)
     energy_trajectory_overflow: TrajectoryOverflowRef | None = None
     resources: list[ResourceObservation] = Field(min_length=1, max_length=4)
@@ -109,11 +119,31 @@ class VqeOptimizationSuccessResult(EvidenceCommon):
         final_slots = [parameter.slot_id for parameter in self.final_parameters]
         if initial_slots != final_slots:
             raise ValueError("initial and final parameter slot order must match")
+        if self.parameter_count != len(self.final_parameters):
+            raise ValueError("parameter_count must match final parameter slots")
+        if self.iterations != self.optimizer_work.iterations:
+            raise ValueError("iterations must match optimizer_work.iterations")
+        expected_error = abs(self.best_energy_ha - self.exact_energy_ha)
+        if not math.isclose(
+            self.absolute_error_ha,
+            expected_error,
+            rel_tol=0.0,
+            abs_tol=1e-12,
+        ):
+            raise ValueError("absolute_error_ha must equal abs(best_energy_ha - exact_energy_ha)")
         stages = [resource.stage for resource in self.resources]
         if len(stages) != len(set(stages)):
             raise ValueError("duplicate resource observation stage")
-        if "logical" not in stages:
-            raise ValueError("VQE success requires logical resource metrics")
+        required_stages = {"canonical_logical", "common_basis_compiled"}
+        if not required_stages.issubset(stages):
+            raise ValueError(
+                "VQE success requires canonical_logical and common_basis_compiled resource metrics"
+            )
+        compiled = next(
+            resource for resource in self.resources if resource.stage == "common_basis_compiled"
+        )
+        if compiled.metric_protocol_sha256 != self.compilation_protocol_sha256:
+            raise ValueError("common-basis resource protocol does not match result contract")
         if self.supplementary_evidence is not None:
             walk_and_validate_json_value(
                 self.supplementary_evidence,

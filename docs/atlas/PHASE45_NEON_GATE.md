@@ -80,8 +80,9 @@ The failed downgrade was transactional; the branch remained at revision
 
 Phase 4.5 Neon migration/integrity gate: **PASS**.
 
-Phase 5 remains **NO-GO** for the independent reasons in
-`PRE_PHASE5_GATE.md`: human scientific review, promoted digest-pinned Linux
-runtime profiles, deny-all egress evidence, and comparable decomposed-circuit
-resource metrics are still absent. A passing migration does not authorize
-publication or runtime promotion.
+The Neon gate alone does not authorize Phase 5. Under the later owner
+decision recorded by ADR-0031, Phase 5A product integration is now **GO**
+because the remaining software/scientific contracts were completed.
+Independent human review and promoted digest-pinned Linux runtime
+qualification remain explicitly deferred and unpassed. Public execution,
+publication, scientific claims, and runtime promotion remain blocked.

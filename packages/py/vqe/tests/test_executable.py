@@ -32,7 +32,12 @@ def test_review_candidate_h2_components_form_one_executable_workflow():
     assert workflow.reference_state.bitstring_qubit0_first == "1010"
     assert workflow.ansatz.expected_parameter_count == 1
     assert workflow.operator_pool.generator_ids == [workflow.ansatz.generator_id]
-    assert workflow.compilation.primary_resource_stage == "logical"
+    assert workflow.compilation.primary_resource_stages == [
+        "canonical_logical",
+        "common_basis_compiled",
+    ]
+    assert workflow.compilation.expected_common_basis_cnot_count == 48
+    assert workflow.compilation.expected_common_basis_depth == 83
 
 
 def test_component_type_and_payload_kind_must_agree():

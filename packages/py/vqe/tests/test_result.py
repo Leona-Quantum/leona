@@ -26,9 +26,10 @@ def _vqe_success(**updates):
         "status": "succeeded",
         "capability": "h2_sto3g_actual_vqe_v1",
         "best_energy_ha": -1.1373060357534,
-        "reference_energy_ha": -1.1373060357534,
+        "exact_energy_ha": -1.1373060357534,
         "absolute_error_ha": 0.0,
         "final_state_fidelity": 1.0,
+        "iterations": 13,
         "converged": True,
         "optimizer_work": OptimizerWork(
             iterations=13,
@@ -36,19 +37,31 @@ def _vqe_success(**updates):
             gradient_evaluations=0,
             hessian_evaluations=0,
         ),
+        "parameter_count": 1,
         "initial_parameters": [ParameterValue(slot_id="theta.0", float64_hex="0000000000000000")],
         "final_parameters": [ParameterValue(slot_id="theta.0", float64_hex="bfcc9d4f00000000")],
         "initial_parameters_sha256": "5" * 64,
         "final_parameters_sha256": "6" * 64,
         "ansatz_semantic_digest": "7" * 64,
+        "canonical_circuit_sha256": "9" * 64,
+        "compilation_protocol_sha256": "8" * 64,
         "energy_trajectory": [-1.0, -1.1373060357534],
         "resources": [
             ResourceObservation(
-                stage="logical",
-                metric_protocol_sha256="8" * 64,
+                stage="canonical_logical",
+                metric_protocol_sha256="9" * 64,
                 qubits=4,
                 parameter_count=1,
-            )
+            ),
+            ResourceObservation(
+                stage="common_basis_compiled",
+                metric_protocol_sha256="8" * 64,
+                qubits=4,
+                depth=83,
+                gate_count=152,
+                two_qubit_gate_count=48,
+                parameter_count=1,
+            ),
         ],
     }
     values.update(updates)
@@ -67,12 +80,12 @@ def test_vqe_success_requires_matching_parameter_slots():
         )
 
 
-def test_vqe_success_requires_logical_resource_metrics():
-    with pytest.raises(ValidationError, match="logical resource"):
+def test_vqe_success_requires_common_comparable_resource_metrics():
+    with pytest.raises(ValidationError, match="canonical_logical"):
         _vqe_success(
             resources=[
                 ResourceObservation(
-                    stage="compiled",
+                    stage="provider_native_diagnostic",
                     metric_protocol_sha256="8" * 64,
                     qubits=4,
                     parameter_count=1,
@@ -95,4 +108,13 @@ def test_execution_evidence_union_rejects_energyless_success():
 def test_complete_vqe_success_is_accepted():
     result = _vqe_success()
     assert result.converged
-    assert result.best_energy_ha == result.reference_energy_ha
+    assert result.best_energy_ha == result.exact_energy_ha
+
+
+def test_vqe_success_rejects_inconsistent_summary_fields():
+    with pytest.raises(ValidationError, match="parameter_count"):
+        _vqe_success(parameter_count=2)
+    with pytest.raises(ValidationError, match="iterations"):
+        _vqe_success(iterations=12)
+    with pytest.raises(ValidationError, match="absolute_error"):
+        _vqe_success(absolute_error_ha=0.1)

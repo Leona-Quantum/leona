@@ -63,10 +63,11 @@ presented as human-reviewed.
 - Persistence requires two digests and one additional table, and public
   execution is intentionally blocked until the H2 component set receives
   real human review and runtime profiles are promoted under ADR-0024.
-- The generic 16×16 unitary used by the Phase 4.5 H2 spike validates energy,
-  parameter orientation, and cross-framework semantics only.  Its
-  provider-native compiled CNOT/depth values are not comparable performance
-  evidence.
+- The Phase 4.5 H2 spike now uses one digest-pinned decomposed excitation
+  circuit in both adapters. Canonical-logical and fixed common-basis metrics
+  are comparable; provider-native compiled metrics remain diagnostic only.
+- ADR-0031 permits non-public Phase 5A integration while human review and
+  production runtime qualification remain explicitly unpassed.
 
 ## Reversal trigger
 

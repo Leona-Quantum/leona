@@ -1,13 +1,13 @@
 # Atlas VQE MVP 実行計画
 
-**文書version:** 1.1  
+**文書version:** 1.2  
 **作成日:** 2026-07-24 JST  
 **対象Repository:** `EshMis/majorana`  
 **基準commit:** `4ade53faf37443c90980f7515bbbb83b836240db`  
 **作業branch:** `feature/vqe`  
 **基準Alembic head:** `0034`  
-**状態:** implementation in progress; Phase 0–4 local implementation complete,
-Phase 3 Neon verification and Phase 5–6 remain open (2026-07-25 integrity remediation)  
+**状態:** implementation in progress; Phase 0–4.5 complete,
+Phase 5A authorized, Phase 5B–6 remain open (2026-07-25 owner decision)  
 **長期構想:** `atlas_vqe_github_wrapper_master_plan_ja.md`
 
 ---
@@ -42,7 +42,8 @@ GPU、QPU、古い論文環境の実行へ進んではならない。
 | 2 | 25 papers / 15 verified implementation repositories / 50+ components curated corpus (ADR-0026: machine-validated, no Human Review in MVP) | no | no | complete_machine_validated |
 | 3 | Component Registry + experiment evidence in Neon | yes | contract only | verified_local; Neon/import pending |
 | 4 | Atlas Browse / Compare UI | Phase 3 | yes | implemented_and_browser_verified |
-| 5 | Qiskit/PennyLane runtime + Studio proof execution | Phase 3 | yes | not_started |
+| 5A | Durable non-public execution product integration | Phase 3 | yes | authorized |
+| 5B | Scientific/runtime production qualification | Phase 3 | yes | blocked_on_external_gates |
 | 6 | Security/scientific/E2E hardening and MVP Go/No-Go | test only | test | not_started |
 | 7 | Manual GitHub metadata import | later | minimal | later |
 | 8–9 | Deterministic/LLM extraction and reviewed materialization | later | later | later |
@@ -985,11 +986,59 @@ human-curated gold reportであるかのように装ってはならない。
 
 ## Phase 5 — Qiskit/PennyLane Proof Execution
 
-**Status:** not_started  
+**Status:** Phase 5A authorized; Phase 5B blocked  
 **DB change:** Phase 3 tablesを利用  
 **UI:** Studio / Run / Library integration
 
-### 5A. Isolated runtimes
+### Owner decision: start gate and release gate are separate
+
+Phase 5A開始時点では、H2の独立人間reviewとLinux/x86_64 production
+runtime qualificationを完了条件にしない。ただし、これは合格を意味しない。
+
+```text
+human_review_state = unreviewed
+production_runtime_status = unqualified
+public_execution = blocked
+publication = blocked
+scientific_release = blocked
+```
+
+独立人間reviewはpublic execution、scientific claim、MVP releaseより前に必須。
+digest-pinned Linux/x86_64 OCI image、SBOM、live deny-all egress proofは
+Phase 5Bおよびpublic executionより前に必須である。この延期はADR-0031に記録する。
+
+### 5A. Durable product integration
+
+Phase 5Aは公開実行ではなく、fail-closedな製品基盤を作る。
+
+1. immutable `ExecutionBinding`をserver-sideで解決する。
+2. 一つのexperimentに複数executionを紐付ける。
+3. durable job、lease、heartbeat、retry、cancel、terminal failureを統合する。
+4. discriminated result contractをrepository layer経由でappend-only保存する。
+5. Studioにcandidate/unreviewed/unqualified/non-public状態を正確に表示する。
+6. materializationとpublic capabilityはblockedのままにする。
+7. static launch contractでnetwork、credential、DB URL、dynamic install、
+   inherited environmentを拒否する。
+
+最初のsliceは、固定candidate profileに対する`ExecutionBinding`解決とdurable
+job lifecycleの接続である。
+
+### 5A開始前に固定した科学contract
+
+- generic unitaryではないcanonical decomposed H2 excitation circuit
+- generator、occupied/virtual、parameter sign、qubit order、circuit digest
+- versioned resource protocol:
+  - `semantic_block`
+  - `canonical_logical`
+  - `common_basis_compiled`
+  - `provider_native_diagnostic`
+- 比較可能なのは`canonical_logical`と`common_basis_compiled`のみ
+- operator pool/order、search/selection、growth、compression、gradient、
+  grouping、shots、measurement cost、compilationを独立dimensionとして保持
+- actual VQE successにはenergy/exact/error、convergence、optimizer work、
+  parameter vectors/digests、trajectory、circuit/protocol digest、resourcesが必須
+
+### 5B. Production qualification
 
 Qiskit/PennyLaneを別profileにし、候補versionはresolver、lock、golden test、
 human promotion前は`CANDIDATE_UNVERIFIED`とする。
@@ -1003,6 +1052,14 @@ Runtime requirements:
 - no credentials / DB access / runtime install
 - CPU/memory/pids/time/output cap
 - immutable input / ephemeral output
+
+さらに次を必須とする。
+
+- H2 candidateの独立した人間科学review
+- Linux/x86_64でのimage qualification
+- image digestとSBOM
+- promoted imageに対するlive deny-all egress test
+- public execution、publication、scientific releaseの明示的owner承認
 
 ### 5B. Studio proof flow
 
@@ -1567,8 +1624,10 @@ ADR-0030により、以下のv0.1記述を置換する。
 - MVP literature corpusのmachine-only posture (ADR-0026)は維持する一方、
   executable H2 registry promotionには両軸の通過を必須とする。
 
-Phase 4.5の実装証拠・残課題・Phase 5 NO-GO判定は
+Phase 4.5の実装証拠・残課題・Phase 5A限定GO判定は
 `docs/atlas/PHASE45_PROGRESS.md`と`docs/atlas/PRE_PHASE5_GATE.md`を正とする。
+Human review、production runtime qualification、public execution、
+publication、scientific releaseは未達・blockedのままである。
 
 ---
 

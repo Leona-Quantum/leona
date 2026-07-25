@@ -1,13 +1,11 @@
 """Comparison dimension model (plan Part III §14).
 
 `classify_comparison()` is an MVP heuristic, not a claim of scientific
-ground truth -- the plan is explicit that the first curated comparison
-reports (Phase 2/4) are human-authored gold, and this function "自動判定を
-装ってはならない" (must not be dressed up as automatic judgment). It exists
-so the schema has *a* deterministic, testable default and so later phases
-have something concrete to validate or override against real curated
-reports, not because Phase 1 is asserting it is correct VQE-comparison
-methodology.
+ground truth. Under ADR-0026 the initial Phase 2/4 reports are machine
+generated, explicitly not manual gold and not human validated. This function
+must not be presented as expert judgment. It exists so the schema has a
+deterministic, testable default and so later phases have something concrete
+to validate against independently reviewed reports.
 """
 
 from __future__ import annotations
@@ -37,6 +35,7 @@ class ComparisonDimensionName(str, Enum):
     ANSATZ_SEMANTIC_DEFINITION = "ansatz_semantic_definition"
     OPERATOR_POOL = "operator_pool"
     OPERATOR_POOL_ORDERING = "operator_pool_ordering"
+    SEARCH_SELECTION = "search_selection"
     SEARCH_SCORING = "search_scoring"
     SELECTION_RULE = "selection_rule"
     GROWTH_BATCHING = "growth_batching"

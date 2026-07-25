@@ -1,0 +1,1535 @@
+{
+  "canonical_circuit_sha256": "a95f4a8e8749e361c85df00b9bf42d9cea407a048840bc8e58f7e5c9920be3b1",
+  "circuit_id": "h2.double.occ0_occ2.to.virt1_virt3.jw.v1",
+  "common_basis_metrics": {
+    "cnot_count": 48,
+    "depth": 83,
+    "gate_count": 152,
+    "parameter_count": 1
+  },
+  "common_basis_operations": [
+    {
+      "angle_theta_denominator": null,
+      "angle_theta_numerator": null,
+      "gate": "h",
+      "parameter_slot_id": null,
+      "wires": [
+        0
+      ]
+    },
+    {
+      "angle_theta_denominator": null,
+      "angle_theta_numerator": null,
+      "gate": "h",
+      "parameter_slot_id": null,
+      "wires": [
+        1
+      ]
+    },
+    {
+      "angle_theta_denominator": null,
+      "angle_theta_numerator": null,
+      "gate": "h",
+      "parameter_slot_id": null,
+      "wires": [
+        2
+      ]
+    },
+    {
+      "angle_theta_denominator": null,
+      "angle_theta_numerator": null,
+      "gate": "sdg",
+      "parameter_slot_id": null,
+      "wires": [
+        3
+      ]
+    },
+    {
+      "angle_theta_denominator": null,
+      "angle_theta_numerator": null,
+      "gate": "h",
+      "parameter_slot_id": null,
+      "wires": [
+        3
+      ]
+    },
+    {
+      "angle_theta_denominator": null,
+      "angle_theta_numerator": null,
+      "gate": "cx",
+      "parameter_slot_id": null,
+      "wires": [
+        0,
+        1
+      ]
+    },
+    {
+      "angle_theta_denominator": null,
+      "angle_theta_numerator": null,
+      "gate": "cx",
+      "parameter_slot_id": null,
+      "wires": [
+        1,
+        2
+      ]
+    },
+    {
+      "angle_theta_denominator": null,
+      "angle_theta_numerator": null,
+      "gate": "cx",
+      "parameter_slot_id": null,
+      "wires": [
+        2,
+        3
+      ]
+    },
+    {
+      "angle_theta_denominator": 8,
+      "angle_theta_numerator": 1,
+      "gate": "rz",
+      "parameter_slot_id": "theta.double.occ0_occ2.to.virt1_virt3",
+      "wires": [
+        3
+      ]
+    },
+    {
+      "angle_theta_denominator": null,
+      "angle_theta_numerator": null,
+      "gate": "cx",
+      "parameter_slot_id": null,
+      "wires": [
+        2,
+        3
+      ]
+    },
+    {
+      "angle_theta_denominator": null,
+      "angle_theta_numerator": null,
+      "gate": "cx",
+      "parameter_slot_id": null,
+      "wires": [
+        1,
+        2
+      ]
+    },
+    {
+      "angle_theta_denominator": null,
+      "angle_theta_numerator": null,
+      "gate": "cx",
+      "parameter_slot_id": null,
+      "wires": [
+        0,
+        1
+      ]
+    },
+    {
+      "angle_theta_denominator": null,
+      "angle_theta_numerator": null,
+      "gate": "h",
+      "parameter_slot_id": null,
+      "wires": [
+        3
+      ]
+    },
+    {
+      "angle_theta_denominator": null,
+      "angle_theta_numerator": null,
+      "gate": "s",
+      "parameter_slot_id": null,
+      "wires": [
+        3
+      ]
+    },
+    {
+      "angle_theta_denominator": null,
+      "angle_theta_numerator": null,
+      "gate": "h",
+      "parameter_slot_id": null,
+      "wires": [
+        2
+      ]
+    },
+    {
+      "angle_theta_denominator": null,
+      "angle_theta_numerator": null,
+      "gate": "h",
+      "parameter_slot_id": null,
+      "wires": [
+        1
+      ]
+    },
+    {
+      "angle_theta_denominator": null,
+      "angle_theta_numerator": null,
+      "gate": "h",
+      "parameter_slot_id": null,
+      "wires": [
+        0
+      ]
+    },
+    {
+      "angle_theta_denominator": null,
+      "angle_theta_numerator": null,
+      "gate": "h",
+      "parameter_slot_id": null,
+      "wires": [
+        0
+      ]
+    },
+    {
+      "angle_theta_denominator": null,
+      "angle_theta_numerator": null,
+      "gate": "h",
+      "parameter_slot_id": null,
+      "wires": [
+        1
+      ]
+    },
+    {
+      "angle_theta_denominator": null,
+      "angle_theta_numerator": null,
+      "gate": "sdg",
+      "parameter_slot_id": null,
+      "wires": [
+        2
+      ]
+    },
+    {
+      "angle_theta_denominator": null,
+      "angle_theta_numerator": null,
+      "gate": "h",
+      "parameter_slot_id": null,
+      "wires": [
+        2
+      ]
+    },
+    {
+      "angle_theta_denominator": null,
+      "angle_theta_numerator": null,
+      "gate": "h",
+      "parameter_slot_id": null,
+      "wires": [
+        3
+      ]
+    },
+    {
+      "angle_theta_denominator": null,
+      "angle_theta_numerator": null,
+      "gate": "cx",
+      "parameter_slot_id": null,
+      "wires": [
+        0,
+        1
+      ]
+    },
+    {
+      "angle_theta_denominator": null,
+      "angle_theta_numerator": null,
+      "gate": "cx",
+      "parameter_slot_id": null,
+      "wires": [
+        1,
+        2
+      ]
+    },
+    {
+      "angle_theta_denominator": null,
+      "angle_theta_numerator": null,
+      "gate": "cx",
+      "parameter_slot_id": null,
+      "wires": [
+        2,
+        3
+      ]
+    },
+    {
+      "angle_theta_denominator": 8,
+      "angle_theta_numerator": -1,
+      "gate": "rz",
+      "parameter_slot_id": "theta.double.occ0_occ2.to.virt1_virt3",
+      "wires": [
+        3
+      ]
+    },
+    {
+      "angle_theta_denominator": null,
+      "angle_theta_numerator": null,
+      "gate": "cx",
+      "parameter_slot_id": null,
+      "wires": [
+        2,
+        3
+      ]
+    },
+    {
+      "angle_theta_denominator": null,
+      "angle_theta_numerator": null,
+      "gate": "cx",
+      "parameter_slot_id": null,
+      "wires": [
+        1,
+        2
+      ]
+    },
+    {
+      "angle_theta_denominator": null,
+      "angle_theta_numerator": null,
+      "gate": "cx",
+      "parameter_slot_id": null,
+      "wires": [
+        0,
+        1
+      ]
+    },
+    {
+      "angle_theta_denominator": null,
+      "angle_theta_numerator": null,
+      "gate": "h",
+      "parameter_slot_id": null,
+      "wires": [
+        3
+      ]
+    },
+    {
+      "angle_theta_denominator": null,
+      "angle_theta_numerator": null,
+      "gate": "h",
+      "parameter_slot_id": null,
+      "wires": [
+        2
+      ]
+    },
+    {
+      "angle_theta_denominator": null,
+      "angle_theta_numerator": null,
+      "gate": "s",
+      "parameter_slot_id": null,
+      "wires": [
+        2
+      ]
+    },
+    {
+      "angle_theta_denominator": null,
+      "angle_theta_numerator": null,
+      "gate": "h",
+      "parameter_slot_id": null,
+      "wires": [
+        1
+      ]
+    },
+    {
+      "angle_theta_denominator": null,
+      "angle_theta_numerator": null,
+      "gate": "h",
+      "parameter_slot_id": null,
+      "wires": [
+        0
+      ]
+    },
+    {
+      "angle_theta_denominator": null,
+      "angle_theta_numerator": null,
+      "gate": "h",
+      "parameter_slot_id": null,
+      "wires": [
+        0
+      ]
+    },
+    {
+      "angle_theta_denominator": null,
+      "angle_theta_numerator": null,
+      "gate": "sdg",
+      "parameter_slot_id": null,
+      "wires": [
+        1
+      ]
+    },
+    {
+      "angle_theta_denominator": null,
+      "angle_theta_numerator": null,
+      "gate": "h",
+      "parameter_slot_id": null,
+      "wires": [
+        1
+      ]
+    },
+    {
+      "angle_theta_denominator": null,
+      "angle_theta_numerator": null,
+      "gate": "h",
+      "parameter_slot_id": null,
+      "wires": [
+        2
+      ]
+    },
+    {
+      "angle_theta_denominator": null,
+      "angle_theta_numerator": null,
+      "gate": "h",
+      "parameter_slot_id": null,
+      "wires": [
+        3
+      ]
+    },
+    {
+      "angle_theta_denominator": null,
+      "angle_theta_numerator": null,
+      "gate": "cx",
+      "parameter_slot_id": null,
+      "wires": [
+        0,
+        1
+      ]
+    },
+    {
+      "angle_theta_denominator": null,
+      "angle_theta_numerator": null,
+      "gate": "cx",
+      "parameter_slot_id": null,
+      "wires": [
+        1,
+        2
+      ]
+    },
+    {
+      "angle_theta_denominator": null,
+      "angle_theta_numerator": null,
+      "gate": "cx",
+      "parameter_slot_id": null,
+      "wires": [
+        2,
+        3
+      ]
+    },
+    {
+      "angle_theta_denominator": 8,
+      "angle_theta_numerator": 1,
+      "gate": "rz",
+      "parameter_slot_id": "theta.double.occ0_occ2.to.virt1_virt3",
+      "wires": [
+        3
+      ]
+    },
+    {
+      "angle_theta_denominator": null,
+      "angle_theta_numerator": null,
+      "gate": "cx",
+      "parameter_slot_id": null,
+      "wires": [
+        2,
+        3
+      ]
+    },
+    {
+      "angle_theta_denominator": null,
+      "angle_theta_numerator": null,
+      "gate": "cx",
+      "parameter_slot_id": null,
+      "wires": [
+        1,
+        2
+      ]
+    },
+    {
+      "angle_theta_denominator": null,
+      "angle_theta_numerator": null,
+      "gate": "cx",
+      "parameter_slot_id": null,
+      "wires": [
+        0,
+        1
+      ]
+    },
+    {
+      "angle_theta_denominator": null,
+      "angle_theta_numerator": null,
+      "gate": "h",
+      "parameter_slot_id": null,
+      "wires": [
+        3
+      ]
+    },
+    {
+      "angle_theta_denominator": null,
+      "angle_theta_numerator": null,
+      "gate": "h",
+      "parameter_slot_id": null,
+      "wires": [
+        2
+      ]
+    },
+    {
+      "angle_theta_denominator": null,
+      "angle_theta_numerator": null,
+      "gate": "h",
+      "parameter_slot_id": null,
+      "wires": [
+        1
+      ]
+    },
+    {
+      "angle_theta_denominator": null,
+      "angle_theta_numerator": null,
+      "gate": "s",
+      "parameter_slot_id": null,
+      "wires": [
+        1
+      ]
+    },
+    {
+      "angle_theta_denominator": null,
+      "angle_theta_numerator": null,
+      "gate": "h",
+      "parameter_slot_id": null,
+      "wires": [
+        0
+      ]
+    },
+    {
+      "angle_theta_denominator": null,
+      "angle_theta_numerator": null,
+      "gate": "h",
+      "parameter_slot_id": null,
+      "wires": [
+        0
+      ]
+    },
+    {
+      "angle_theta_denominator": null,
+      "angle_theta_numerator": null,
+      "gate": "sdg",
+      "parameter_slot_id": null,
+      "wires": [
+        1
+      ]
+    },
+    {
+      "angle_theta_denominator": null,
+      "angle_theta_numerator": null,
+      "gate": "h",
+      "parameter_slot_id": null,
+      "wires": [
+        1
+      ]
+    },
+    {
+      "angle_theta_denominator": null,
+      "angle_theta_numerator": null,
+      "gate": "sdg",
+      "parameter_slot_id": null,
+      "wires": [
+        2
+      ]
+    },
+    {
+      "angle_theta_denominator": null,
+      "angle_theta_numerator": null,
+      "gate": "h",
+      "parameter_slot_id": null,
+      "wires": [
+        2
+      ]
+    },
+    {
+      "angle_theta_denominator": null,
+      "angle_theta_numerator": null,
+      "gate": "sdg",
+      "parameter_slot_id": null,
+      "wires": [
+        3
+      ]
+    },
+    {
+      "angle_theta_denominator": null,
+      "angle_theta_numerator": null,
+      "gate": "h",
+      "parameter_slot_id": null,
+      "wires": [
+        3
+      ]
+    },
+    {
+      "angle_theta_denominator": null,
+      "angle_theta_numerator": null,
+      "gate": "cx",
+      "parameter_slot_id": null,
+      "wires": [
+        0,
+        1
+      ]
+    },
+    {
+      "angle_theta_denominator": null,
+      "angle_theta_numerator": null,
+      "gate": "cx",
+      "parameter_slot_id": null,
+      "wires": [
+        1,
+        2
+      ]
+    },
+    {
+      "angle_theta_denominator": null,
+      "angle_theta_numerator": null,
+      "gate": "cx",
+      "parameter_slot_id": null,
+      "wires": [
+        2,
+        3
+      ]
+    },
+    {
+      "angle_theta_denominator": 8,
+      "angle_theta_numerator": 1,
+      "gate": "rz",
+      "parameter_slot_id": "theta.double.occ0_occ2.to.virt1_virt3",
+      "wires": [
+        3
+      ]
+    },
+    {
+      "angle_theta_denominator": null,
+      "angle_theta_numerator": null,
+      "gate": "cx",
+      "parameter_slot_id": null,
+      "wires": [
+        2,
+        3
+      ]
+    },
+    {
+      "angle_theta_denominator": null,
+      "angle_theta_numerator": null,
+      "gate": "cx",
+      "parameter_slot_id": null,
+      "wires": [
+        1,
+        2
+      ]
+    },
+    {
+      "angle_theta_denominator": null,
+      "angle_theta_numerator": null,
+      "gate": "cx",
+      "parameter_slot_id": null,
+      "wires": [
+        0,
+        1
+      ]
+    },
+    {
+      "angle_theta_denominator": null,
+      "angle_theta_numerator": null,
+      "gate": "h",
+      "parameter_slot_id": null,
+      "wires": [
+        3
+      ]
+    },
+    {
+      "angle_theta_denominator": null,
+      "angle_theta_numerator": null,
+      "gate": "s",
+      "parameter_slot_id": null,
+      "wires": [
+        3
+      ]
+    },
+    {
+      "angle_theta_denominator": null,
+      "angle_theta_numerator": null,
+      "gate": "h",
+      "parameter_slot_id": null,
+      "wires": [
+        2
+      ]
+    },
+    {
+      "angle_theta_denominator": null,
+      "angle_theta_numerator": null,
+      "gate": "s",
+      "parameter_slot_id": null,
+      "wires": [
+        2
+      ]
+    },
+    {
+      "angle_theta_denominator": null,
+      "angle_theta_numerator": null,
+      "gate": "h",
+      "parameter_slot_id": null,
+      "wires": [
+        1
+      ]
+    },
+    {
+      "angle_theta_denominator": null,
+      "angle_theta_numerator": null,
+      "gate": "s",
+      "parameter_slot_id": null,
+      "wires": [
+        1
+      ]
+    },
+    {
+      "angle_theta_denominator": null,
+      "angle_theta_numerator": null,
+      "gate": "h",
+      "parameter_slot_id": null,
+      "wires": [
+        0
+      ]
+    },
+    {
+      "angle_theta_denominator": null,
+      "angle_theta_numerator": null,
+      "gate": "sdg",
+      "parameter_slot_id": null,
+      "wires": [
+        0
+      ]
+    },
+    {
+      "angle_theta_denominator": null,
+      "angle_theta_numerator": null,
+      "gate": "h",
+      "parameter_slot_id": null,
+      "wires": [
+        0
+      ]
+    },
+    {
+      "angle_theta_denominator": null,
+      "angle_theta_numerator": null,
+      "gate": "h",
+      "parameter_slot_id": null,
+      "wires": [
+        1
+      ]
+    },
+    {
+      "angle_theta_denominator": null,
+      "angle_theta_numerator": null,
+      "gate": "h",
+      "parameter_slot_id": null,
+      "wires": [
+        2
+      ]
+    },
+    {
+      "angle_theta_denominator": null,
+      "angle_theta_numerator": null,
+      "gate": "h",
+      "parameter_slot_id": null,
+      "wires": [
+        3
+      ]
+    },
+    {
+      "angle_theta_denominator": null,
+      "angle_theta_numerator": null,
+      "gate": "cx",
+      "parameter_slot_id": null,
+      "wires": [
+        0,
+        1
+      ]
+    },
+    {
+      "angle_theta_denominator": null,
+      "angle_theta_numerator": null,
+      "gate": "cx",
+      "parameter_slot_id": null,
+      "wires": [
+        1,
+        2
+      ]
+    },
+    {
+      "angle_theta_denominator": null,
+      "angle_theta_numerator": null,
+      "gate": "cx",
+      "parameter_slot_id": null,
+      "wires": [
+        2,
+        3
+      ]
+    },
+    {
+      "angle_theta_denominator": 8,
+      "angle_theta_numerator": -1,
+      "gate": "rz",
+      "parameter_slot_id": "theta.double.occ0_occ2.to.virt1_virt3",
+      "wires": [
+        3
+      ]
+    },
+    {
+      "angle_theta_denominator": null,
+      "angle_theta_numerator": null,
+      "gate": "cx",
+      "parameter_slot_id": null,
+      "wires": [
+        2,
+        3
+      ]
+    },
+    {
+      "angle_theta_denominator": null,
+      "angle_theta_numerator": null,
+      "gate": "cx",
+      "parameter_slot_id": null,
+      "wires": [
+        1,
+        2
+      ]
+    },
+    {
+      "angle_theta_denominator": null,
+      "angle_theta_numerator": null,
+      "gate": "cx",
+      "parameter_slot_id": null,
+      "wires": [
+        0,
+        1
+      ]
+    },
+    {
+      "angle_theta_denominator": null,
+      "angle_theta_numerator": null,
+      "gate": "h",
+      "parameter_slot_id": null,
+      "wires": [
+        3
+      ]
+    },
+    {
+      "angle_theta_denominator": null,
+      "angle_theta_numerator": null,
+      "gate": "h",
+      "parameter_slot_id": null,
+      "wires": [
+        2
+      ]
+    },
+    {
+      "angle_theta_denominator": null,
+      "angle_theta_numerator": null,
+      "gate": "h",
+      "parameter_slot_id": null,
+      "wires": [
+        1
+      ]
+    },
+    {
+      "angle_theta_denominator": null,
+      "angle_theta_numerator": null,
+      "gate": "h",
+      "parameter_slot_id": null,
+      "wires": [
+        0
+      ]
+    },
+    {
+      "angle_theta_denominator": null,
+      "angle_theta_numerator": null,
+      "gate": "s",
+      "parameter_slot_id": null,
+      "wires": [
+        0
+      ]
+    },
+    {
+      "angle_theta_denominator": null,
+      "angle_theta_numerator": null,
+      "gate": "sdg",
+      "parameter_slot_id": null,
+      "wires": [
+        0
+      ]
+    },
+    {
+      "angle_theta_denominator": null,
+      "angle_theta_numerator": null,
+      "gate": "h",
+      "parameter_slot_id": null,
+      "wires": [
+        0
+      ]
+    },
+    {
+      "angle_theta_denominator": null,
+      "angle_theta_numerator": null,
+      "gate": "h",
+      "parameter_slot_id": null,
+      "wires": [
+        1
+      ]
+    },
+    {
+      "angle_theta_denominator": null,
+      "angle_theta_numerator": null,
+      "gate": "sdg",
+      "parameter_slot_id": null,
+      "wires": [
+        2
+      ]
+    },
+    {
+      "angle_theta_denominator": null,
+      "angle_theta_numerator": null,
+      "gate": "h",
+      "parameter_slot_id": null,
+      "wires": [
+        2
+      ]
+    },
+    {
+      "angle_theta_denominator": null,
+      "angle_theta_numerator": null,
+      "gate": "sdg",
+      "parameter_slot_id": null,
+      "wires": [
+        3
+      ]
+    },
+    {
+      "angle_theta_denominator": null,
+      "angle_theta_numerator": null,
+      "gate": "h",
+      "parameter_slot_id": null,
+      "wires": [
+        3
+      ]
+    },
+    {
+      "angle_theta_denominator": null,
+      "angle_theta_numerator": null,
+      "gate": "cx",
+      "parameter_slot_id": null,
+      "wires": [
+        0,
+        1
+      ]
+    },
+    {
+      "angle_theta_denominator": null,
+      "angle_theta_numerator": null,
+      "gate": "cx",
+      "parameter_slot_id": null,
+      "wires": [
+        1,
+        2
+      ]
+    },
+    {
+      "angle_theta_denominator": null,
+      "angle_theta_numerator": null,
+      "gate": "cx",
+      "parameter_slot_id": null,
+      "wires": [
+        2,
+        3
+      ]
+    },
+    {
+      "angle_theta_denominator": 8,
+      "angle_theta_numerator": -1,
+      "gate": "rz",
+      "parameter_slot_id": "theta.double.occ0_occ2.to.virt1_virt3",
+      "wires": [
+        3
+      ]
+    },
+    {
+      "angle_theta_denominator": null,
+      "angle_theta_numerator": null,
+      "gate": "cx",
+      "parameter_slot_id": null,
+      "wires": [
+        2,
+        3
+      ]
+    },
+    {
+      "angle_theta_denominator": null,
+      "angle_theta_numerator": null,
+      "gate": "cx",
+      "parameter_slot_id": null,
+      "wires": [
+        1,
+        2
+      ]
+    },
+    {
+      "angle_theta_denominator": null,
+      "angle_theta_numerator": null,
+      "gate": "cx",
+      "parameter_slot_id": null,
+      "wires": [
+        0,
+        1
+      ]
+    },
+    {
+      "angle_theta_denominator": null,
+      "angle_theta_numerator": null,
+      "gate": "h",
+      "parameter_slot_id": null,
+      "wires": [
+        3
+      ]
+    },
+    {
+      "angle_theta_denominator": null,
+      "angle_theta_numerator": null,
+      "gate": "s",
+      "parameter_slot_id": null,
+      "wires": [
+        3
+      ]
+    },
+    {
+      "angle_theta_denominator": null,
+      "angle_theta_numerator": null,
+      "gate": "h",
+      "parameter_slot_id": null,
+      "wires": [
+        2
+      ]
+    },
+    {
+      "angle_theta_denominator": null,
+      "angle_theta_numerator": null,
+      "gate": "s",
+      "parameter_slot_id": null,
+      "wires": [
+        2
+      ]
+    },
+    {
+      "angle_theta_denominator": null,
+      "angle_theta_numerator": null,
+      "gate": "h",
+      "parameter_slot_id": null,
+      "wires": [
+        1
+      ]
+    },
+    {
+      "angle_theta_denominator": null,
+      "angle_theta_numerator": null,
+      "gate": "h",
+      "parameter_slot_id": null,
+      "wires": [
+        0
+      ]
+    },
+    {
+      "angle_theta_denominator": null,
+      "angle_theta_numerator": null,
+      "gate": "s",
+      "parameter_slot_id": null,
+      "wires": [
+        0
+      ]
+    },
+    {
+      "angle_theta_denominator": null,
+      "angle_theta_numerator": null,
+      "gate": "sdg",
+      "parameter_slot_id": null,
+      "wires": [
+        0
+      ]
+    },
+    {
+      "angle_theta_denominator": null,
+      "angle_theta_numerator": null,
+      "gate": "h",
+      "parameter_slot_id": null,
+      "wires": [
+        0
+      ]
+    },
+    {
+      "angle_theta_denominator": null,
+      "angle_theta_numerator": null,
+      "gate": "sdg",
+      "parameter_slot_id": null,
+      "wires": [
+        1
+      ]
+    },
+    {
+      "angle_theta_denominator": null,
+      "angle_theta_numerator": null,
+      "gate": "h",
+      "parameter_slot_id": null,
+      "wires": [
+        1
+      ]
+    },
+    {
+      "angle_theta_denominator": null,
+      "angle_theta_numerator": null,
+      "gate": "h",
+      "parameter_slot_id": null,
+      "wires": [
+        2
+      ]
+    },
+    {
+      "angle_theta_denominator": null,
+      "angle_theta_numerator": null,
+      "gate": "sdg",
+      "parameter_slot_id": null,
+      "wires": [
+        3
+      ]
+    },
+    {
+      "angle_theta_denominator": null,
+      "angle_theta_numerator": null,
+      "gate": "h",
+      "parameter_slot_id": null,
+      "wires": [
+        3
+      ]
+    },
+    {
+      "angle_theta_denominator": null,
+      "angle_theta_numerator": null,
+      "gate": "cx",
+      "parameter_slot_id": null,
+      "wires": [
+        0,
+        1
+      ]
+    },
+    {
+      "angle_theta_denominator": null,
+      "angle_theta_numerator": null,
+      "gate": "cx",
+      "parameter_slot_id": null,
+      "wires": [
+        1,
+        2
+      ]
+    },
+    {
+      "angle_theta_denominator": null,
+      "angle_theta_numerator": null,
+      "gate": "cx",
+      "parameter_slot_id": null,
+      "wires": [
+        2,
+        3
+      ]
+    },
+    {
+      "angle_theta_denominator": 8,
+      "angle_theta_numerator": 1,
+      "gate": "rz",
+      "parameter_slot_id": "theta.double.occ0_occ2.to.virt1_virt3",
+      "wires": [
+        3
+      ]
+    },
+    {
+      "angle_theta_denominator": null,
+      "angle_theta_numerator": null,
+      "gate": "cx",
+      "parameter_slot_id": null,
+      "wires": [
+        2,
+        3
+      ]
+    },
+    {
+      "angle_theta_denominator": null,
+      "angle_theta_numerator": null,
+      "gate": "cx",
+      "parameter_slot_id": null,
+      "wires": [
+        1,
+        2
+      ]
+    },
+    {
+      "angle_theta_denominator": null,
+      "angle_theta_numerator": null,
+      "gate": "cx",
+      "parameter_slot_id": null,
+      "wires": [
+        0,
+        1
+      ]
+    },
+    {
+      "angle_theta_denominator": null,
+      "angle_theta_numerator": null,
+      "gate": "h",
+      "parameter_slot_id": null,
+      "wires": [
+        3
+      ]
+    },
+    {
+      "angle_theta_denominator": null,
+      "angle_theta_numerator": null,
+      "gate": "s",
+      "parameter_slot_id": null,
+      "wires": [
+        3
+      ]
+    },
+    {
+      "angle_theta_denominator": null,
+      "angle_theta_numerator": null,
+      "gate": "h",
+      "parameter_slot_id": null,
+      "wires": [
+        2
+      ]
+    },
+    {
+      "angle_theta_denominator": null,
+      "angle_theta_numerator": null,
+      "gate": "h",
+      "parameter_slot_id": null,
+      "wires": [
+        1
+      ]
+    },
+    {
+      "angle_theta_denominator": null,
+      "angle_theta_numerator": null,
+      "gate": "s",
+      "parameter_slot_id": null,
+      "wires": [
+        1
+      ]
+    },
+    {
+      "angle_theta_denominator": null,
+      "angle_theta_numerator": null,
+      "gate": "h",
+      "parameter_slot_id": null,
+      "wires": [
+        0
+      ]
+    },
+    {
+      "angle_theta_denominator": null,
+      "angle_theta_numerator": null,
+      "gate": "s",
+      "parameter_slot_id": null,
+      "wires": [
+        0
+      ]
+    },
+    {
+      "angle_theta_denominator": null,
+      "angle_theta_numerator": null,
+      "gate": "sdg",
+      "parameter_slot_id": null,
+      "wires": [
+        0
+      ]
+    },
+    {
+      "angle_theta_denominator": null,
+      "angle_theta_numerator": null,
+      "gate": "h",
+      "parameter_slot_id": null,
+      "wires": [
+        0
+      ]
+    },
+    {
+      "angle_theta_denominator": null,
+      "angle_theta_numerator": null,
+      "gate": "sdg",
+      "parameter_slot_id": null,
+      "wires": [
+        1
+      ]
+    },
+    {
+      "angle_theta_denominator": null,
+      "angle_theta_numerator": null,
+      "gate": "h",
+      "parameter_slot_id": null,
+      "wires": [
+        1
+      ]
+    },
+    {
+      "angle_theta_denominator": null,
+      "angle_theta_numerator": null,
+      "gate": "sdg",
+      "parameter_slot_id": null,
+      "wires": [
+        2
+      ]
+    },
+    {
+      "angle_theta_denominator": null,
+      "angle_theta_numerator": null,
+      "gate": "h",
+      "parameter_slot_id": null,
+      "wires": [
+        2
+      ]
+    },
+    {
+      "angle_theta_denominator": null,
+      "angle_theta_numerator": null,
+      "gate": "h",
+      "parameter_slot_id": null,
+      "wires": [
+        3
+      ]
+    },
+    {
+      "angle_theta_denominator": null,
+      "angle_theta_numerator": null,
+      "gate": "cx",
+      "parameter_slot_id": null,
+      "wires": [
+        0,
+        1
+      ]
+    },
+    {
+      "angle_theta_denominator": null,
+      "angle_theta_numerator": null,
+      "gate": "cx",
+      "parameter_slot_id": null,
+      "wires": [
+        1,
+        2
+      ]
+    },
+    {
+      "angle_theta_denominator": null,
+      "angle_theta_numerator": null,
+      "gate": "cx",
+      "parameter_slot_id": null,
+      "wires": [
+        2,
+        3
+      ]
+    },
+    {
+      "angle_theta_denominator": 8,
+      "angle_theta_numerator": -1,
+      "gate": "rz",
+      "parameter_slot_id": "theta.double.occ0_occ2.to.virt1_virt3",
+      "wires": [
+        3
+      ]
+    },
+    {
+      "angle_theta_denominator": null,
+      "angle_theta_numerator": null,
+      "gate": "cx",
+      "parameter_slot_id": null,
+      "wires": [
+        2,
+        3
+      ]
+    },
+    {
+      "angle_theta_denominator": null,
+      "angle_theta_numerator": null,
+      "gate": "cx",
+      "parameter_slot_id": null,
+      "wires": [
+        1,
+        2
+      ]
+    },
+    {
+      "angle_theta_denominator": null,
+      "angle_theta_numerator": null,
+      "gate": "cx",
+      "parameter_slot_id": null,
+      "wires": [
+        0,
+        1
+      ]
+    },
+    {
+      "angle_theta_denominator": null,
+      "angle_theta_numerator": null,
+      "gate": "h",
+      "parameter_slot_id": null,
+      "wires": [
+        3
+      ]
+    },
+    {
+      "angle_theta_denominator": null,
+      "angle_theta_numerator": null,
+      "gate": "h",
+      "parameter_slot_id": null,
+      "wires": [
+        2
+      ]
+    },
+    {
+      "angle_theta_denominator": null,
+      "angle_theta_numerator": null,
+      "gate": "s",
+      "parameter_slot_id": null,
+      "wires": [
+        2
+      ]
+    },
+    {
+      "angle_theta_denominator": null,
+      "angle_theta_numerator": null,
+      "gate": "h",
+      "parameter_slot_id": null,
+      "wires": [
+        1
+      ]
+    },
+    {
+      "angle_theta_denominator": null,
+      "angle_theta_numerator": null,
+      "gate": "s",
+      "parameter_slot_id": null,
+      "wires": [
+        1
+      ]
+    },
+    {
+      "angle_theta_denominator": null,
+      "angle_theta_numerator": null,
+      "gate": "h",
+      "parameter_slot_id": null,
+      "wires": [
+        0
+      ]
+    },
+    {
+      "angle_theta_denominator": null,
+      "angle_theta_numerator": null,
+      "gate": "s",
+      "parameter_slot_id": null,
+      "wires": [
+        0
+      ]
+    }
+  ],
+  "compilation_protocol": {
+    "allowed_primary_stages": [
+      "canonical_logical",
+      "common_basis_compiled"
+    ],
+    "basis_gates": [
+      "h",
+      "s",
+      "sdg",
+      "rz",
+      "cx"
+    ],
+    "cnot_definition": "count_gate_name_cx",
+    "compiler": "majorana_deterministic_pauli_rotation_compiler",
+    "compiler_seed": 0,
+    "compiler_version": "0.1.0",
+    "depth_definition": "asap_dependency_layers_each_gate_duration_one",
+    "diagnostic_stage": "provider_native_diagnostic",
+    "initial_layout": [
+      0,
+      1,
+      2,
+      3
+    ],
+    "input_stage": "canonical_logical_pauli_rotations",
+    "measurement_inclusion_policy": "excluded",
+    "optimization_level": 0,
+    "parameter_binding": "same_float64_theta_for_all_rotations",
+    "protocol_id": "majorana.h2.common_cnot_depth.v1",
+    "routing_policy": "none",
+    "schema_version": "0.2.0",
+    "topology": "four_qubit_all_to_all"
+  },
+  "compilation_protocol_sha256": "4e949fdc81f6e4c0416b95eee2bb71d521216db8705bcd948320ddd83ae52acb",
+  "generator_convention": "antihermitian_tau_minus_tau_dagger",
+  "generator_definition": "create1_create3_annihilate2_annihilate0_minus_adjoint",
+  "generator_orientation": "occupied_0_2_to_virtual_1_3",
+  "logical_rotations": [
+    {
+      "generator_imaginary_coefficient_denominator": 8,
+      "generator_imaginary_coefficient_numerator": -1,
+      "parameter_slot_id": "theta.double.occ0_occ2.to.virt1_virt3",
+      "pauli_qubit0_first": "XXXY",
+      "rz_angle_theta_denominator": 8,
+      "rz_angle_theta_numerator": 1
+    },
+    {
+      "generator_imaginary_coefficient_denominator": 8,
+      "generator_imaginary_coefficient_numerator": 1,
+      "parameter_slot_id": "theta.double.occ0_occ2.to.virt1_virt3",
+      "pauli_qubit0_first": "XXYX",
+      "rz_angle_theta_denominator": 8,
+      "rz_angle_theta_numerator": -1
+    },
+    {
+      "generator_imaginary_coefficient_denominator": 8,
+      "generator_imaginary_coefficient_numerator": -1,
+      "parameter_slot_id": "theta.double.occ0_occ2.to.virt1_virt3",
+      "pauli_qubit0_first": "XYXX",
+      "rz_angle_theta_denominator": 8,
+      "rz_angle_theta_numerator": 1
+    },
+    {
+      "generator_imaginary_coefficient_denominator": 8,
+      "generator_imaginary_coefficient_numerator": -1,
+      "parameter_slot_id": "theta.double.occ0_occ2.to.virt1_virt3",
+      "pauli_qubit0_first": "XYYY",
+      "rz_angle_theta_denominator": 8,
+      "rz_angle_theta_numerator": 1
+    },
+    {
+      "generator_imaginary_coefficient_denominator": 8,
+      "generator_imaginary_coefficient_numerator": 1,
+      "parameter_slot_id": "theta.double.occ0_occ2.to.virt1_virt3",
+      "pauli_qubit0_first": "YXXX",
+      "rz_angle_theta_denominator": 8,
+      "rz_angle_theta_numerator": -1
+    },
+    {
+      "generator_imaginary_coefficient_denominator": 8,
+      "generator_imaginary_coefficient_numerator": 1,
+      "parameter_slot_id": "theta.double.occ0_occ2.to.virt1_virt3",
+      "pauli_qubit0_first": "YXYY",
+      "rz_angle_theta_denominator": 8,
+      "rz_angle_theta_numerator": -1
+    },
+    {
+      "generator_imaginary_coefficient_denominator": 8,
+      "generator_imaginary_coefficient_numerator": -1,
+      "parameter_slot_id": "theta.double.occ0_occ2.to.virt1_virt3",
+      "pauli_qubit0_first": "YYXY",
+      "rz_angle_theta_denominator": 8,
+      "rz_angle_theta_numerator": 1
+    },
+    {
+      "generator_imaginary_coefficient_denominator": 8,
+      "generator_imaginary_coefficient_numerator": 1,
+      "parameter_slot_id": "theta.double.occ0_occ2.to.virt1_virt3",
+      "pauli_qubit0_first": "YYYX",
+      "rz_angle_theta_denominator": 8,
+      "rz_angle_theta_numerator": -1
+    }
+  ],
+  "parameter_orientation": "exp_theta_over_2_generator",
+  "parameter_slot_id": "theta.double.occ0_occ2.to.virt1_virt3",
+  "qubit_order": "qubit0_first",
+  "schema_version": "0.2.0"
+}
