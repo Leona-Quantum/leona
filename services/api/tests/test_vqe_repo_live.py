@@ -12,7 +12,7 @@ import uuid
 
 import pytest
 from majorana_contracts import Scope
-from majorana_contracts.enums import Algorithm, ExportStatus
+from majorana_contracts.enums import Algorithm, ExportStatus, RunMode
 from majorana_contracts.enums import Framework as ContractFramework
 from majorana_contracts.enums import Role
 from majorana_vqe.models import ComponentType, ExecutionBinding, Framework
@@ -36,7 +36,13 @@ from sqlalchemy.exc import DBAPIError, IntegrityError
 
 from majorana_api.db import engine_from_env, session_factory
 from majorana_api.orm import VqeComponentSpec, VqeObservation
-from majorana_api.repos import NotFoundError, artifacts as artifacts_repo, system, vqe
+from majorana_api.repos import (
+    NotFoundError,
+    artifacts as artifacts_repo,
+    runs as runs_repo,
+    system,
+    vqe,
+)
 
 requires_db = pytest.mark.skipif(
     "DATABASE_URL" not in os.environ, reason="VQE repo live tests need DATABASE_URL"
@@ -350,6 +356,64 @@ async def test_one_experiment_has_independent_qiskit_and_pennylane_executions(db
         assert {row.framework for row in executions} == {"qiskit", "pennylane"}
         assert len(await vqe.list_observations(scope, session, qiskit.id)) == 1
         assert len(await vqe.list_observations(scope, session, pennylane.id)) == 1
+
+
+@requires_db
+async def test_execution_run_binding_and_lifecycle_are_fenced(db):
+    async with db() as session:
+        scope = await _new_scope(session)
+        workflow, _ = await _make_component(scope, session, ComponentType.WORKFLOW)
+        experiment = await vqe.create_experiment(
+            scope,
+            session,
+            workflow_artifact_version_id=workflow.id,
+            resolved=_resolved(workflow.id),
+        )
+        execution = await vqe.create_execution(
+            scope,
+            session,
+            experiment.id,
+            binding=_binding(Framework.QISKIT),
+        )
+        run = await runs_repo.create_run(
+            scope,
+            session,
+            task_prompt="frozen H2 candidate",
+            mode=RunMode.EXECUTE,
+            framework=ContractFramework.QISKIT,
+            seed=0,
+            timeout_s=300,
+            idempotency_key=f"vqe-live-{uuid.uuid4()}",
+        )
+        queued = await vqe.bind_execution_run(
+            scope,
+            session,
+            execution.id,
+            run_id=run.id,
+        )
+        assert queued.status == "queued"
+        assert queued.run_id == run.id
+        running = await vqe.transition_execution(
+            scope,
+            session,
+            execution.id,
+            new_status="running",
+        )
+        assert running.status == "running"
+        succeeded = await vqe.transition_execution(
+            scope,
+            session,
+            execution.id,
+            new_status="succeeded",
+        )
+        assert succeeded.status == "succeeded"
+        with pytest.raises(ValueError, match="illegal VQE execution transition"):
+            await vqe.transition_execution(
+                scope,
+                session,
+                execution.id,
+                new_status="failed",
+            )
 
 
 @requires_db

@@ -285,6 +285,7 @@ class Capability(str, Enum):
     free-text field -- only what Phase 0 actually proved exists today."""
 
     H2_STO3G_EXACT_ENERGY = "h2_sto3g_exact_energy"
+    H2_STO3G_ACTUAL_VQE = "h2_sto3g_actual_vqe_v1"
 
 
 class ScientificExperimentSpec(VqeBaseModel):

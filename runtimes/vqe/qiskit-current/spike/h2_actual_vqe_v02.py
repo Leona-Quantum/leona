@@ -8,6 +8,7 @@ that parameter.  Every reported number is measured during this run.
 
 from __future__ import annotations
 
+import argparse
 import hashlib
 import json
 import math
@@ -23,7 +24,15 @@ from qiskit import QuantumCircuit, transpile
 from qiskit.quantum_info import SparsePauliOp, Statevector
 from scipy.optimize import minimize_scalar
 
-ROOT = Path(__file__).resolve().parents[3].parent
+
+def _fixture_root() -> Path:
+    for parent in Path(__file__).resolve().parents:
+        if (parent / "docs" / "atlas" / "fixtures" / "h2_sto3g" / "manifest.json").is_file():
+            return parent
+    raise RuntimeError("frozen H2 fixture root is unavailable")
+
+
+ROOT = _fixture_root()
 MANIFEST_PATH = ROOT / "docs" / "atlas" / "fixtures" / "h2_sto3g" / "manifest.json"
 CIRCUIT_PATH = (
     ROOT / "docs" / "atlas" / "fixtures" / "h2_sto3g" / "canonical_double_excitation_v0.2.json"
@@ -78,7 +87,7 @@ def _hamiltonian(manifest: dict) -> SparsePauliOp:
     return SparsePauliOp.from_list(terms)
 
 
-def run(output_path: Path = OUTPUT_PATH) -> int:
+def run(output_path: Path | None = OUTPUT_PATH) -> int:
     started = time.perf_counter()
     manifest_bytes = MANIFEST_PATH.read_bytes()
     manifest = json.loads(manifest_bytes)
@@ -188,10 +197,18 @@ def run(output_path: Path = OUTPUT_PATH) -> int:
         },
         "wall_time_s": time.perf_counter() - started,
     }
-    output_path.write_text(json.dumps(report, indent=2))
+    if output_path is not None:
+        output_path.write_text(json.dumps(report, indent=2))
     print(json.dumps(report, indent=2))
     return 0
 
 
 if __name__ == "__main__":
-    raise SystemExit(run())
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--stdout-only",
+        action="store_true",
+        help="emit bounded JSON to stdout without mutating a fixture file",
+    )
+    args = parser.parse_args()
+    raise SystemExit(run(None if args.stdout_only else OUTPUT_PATH))

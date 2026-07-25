@@ -86,3 +86,20 @@ def test_local_dev_auth_rejects_cloud_run(monkeypatch):
     monkeypatch.setenv("K_SERVICE", "majorana-api")
     with pytest.raises(RuntimeError, match="local process"):
         Settings.from_env()
+
+
+def test_vqe_candidate_execution_is_local_development_only(monkeypatch):
+    monkeypatch.setenv("MAJORANA_ENV", "production")
+    monkeypatch.setenv("WORKOS_CLIENT_ID", "client_x")
+    monkeypatch.setenv("MAJORANA_VQE_CANDIDATE_EXECUTION", "true")
+    with pytest.raises(RuntimeError, match="local process"):
+        Settings.from_env()
+
+
+def test_vqe_candidate_execution_rejects_cloud_markers(monkeypatch):
+    monkeypatch.setenv("MAJORANA_ENV", "development")
+    monkeypatch.setenv("WORKOS_CLIENT_ID", "client_x")
+    monkeypatch.setenv("MAJORANA_VQE_CANDIDATE_EXECUTION", "true")
+    monkeypatch.setenv("K_SERVICE", "majorana-api")
+    with pytest.raises(RuntimeError, match="local process"):
+        Settings.from_env()

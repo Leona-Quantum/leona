@@ -55,6 +55,10 @@ class Settings:
     single_user_lock_email: str = "operator@leonaquantum.com"
     single_user_lock_display_name: str = "Leona Quantum"
     catalog_authority: CatalogAuthority = CatalogAuthority()
+    # Phase 5A candidate execution is deliberately non-public. It may be
+    # enabled only by a local development process; production capability
+    # remains unavailable until Phase 5B qualification and owner promotion.
+    vqe_candidate_execution: bool = False
 
     def __post_init__(self) -> None:
         if self.local_dev_auth and self.environment != "development":
@@ -64,6 +68,16 @@ class Settings:
         if self.single_user_lock and self.local_dev_auth:
             raise RuntimeError(
                 "SINGLE_USER_LOCK and MAJORANA_LOCAL_DEV_AUTH are mutually exclusive"
+            )
+        if self.vqe_candidate_execution and (
+            self.environment != "development"
+            or any(
+                os.environ.get(name)
+                for name in ("K_SERVICE", "K_REVISION", "K_CONFIGURATION", "VERCEL", "CI")
+            )
+        ):
+            raise RuntimeError(
+                "VQE candidate execution requires MAJORANA_ENV=development and a local process"
             )
 
     @classmethod
@@ -90,6 +104,10 @@ class Settings:
             "true",
             "yes",
         }
+        vqe_candidate_execution = os.environ.get(
+            "MAJORANA_VQE_CANDIDATE_EXECUTION",
+            "",
+        ).strip().lower() in {"1", "true", "yes"}
 
         client_id = os.environ.get("WORKOS_CLIENT_ID")
         if not client_id and not (local_dev_auth or single_user_lock):
@@ -122,4 +140,5 @@ class Settings:
                 "SINGLE_USER_LOCK_DISPLAY_NAME", "Leona Quantum"
             ),
             catalog_authority=CatalogAuthority.from_env(),
+            vqe_candidate_execution=vqe_candidate_execution,
         )

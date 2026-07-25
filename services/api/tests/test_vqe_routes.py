@@ -1,9 +1,9 @@
-"""DB-free route-handler tests for the Atlas VQE surface (Phase 3).
+"""DB-free route-handler tests for the Atlas VQE surface.
 
 Mirrors test_qpu_routes.py: handlers are called directly with monkeypatched
 repo functions, never through TestClient/HTTP. The most important behaviour
-under test here is that cancel/events/materialize are honest stubs (409, not
-a silent 200) and that a workflow lookup refuses a non-workflow component.
+under test here is that candidate execution stays fail-closed and that a
+workflow lookup refuses a non-workflow component.
 """
 
 import datetime as dt
@@ -18,7 +18,10 @@ from majorana_api.routes import vqe as vqe_routes
 
 
 def _settings():
-    return SimpleNamespace(catalog_authority=SimpleNamespace(configured=False, workspace_id=None))
+    return SimpleNamespace(
+        catalog_authority=SimpleNamespace(configured=False, workspace_id=None),
+        vqe_candidate_execution=False,
+    )
 
 
 def _routes() -> set[tuple[str, str]]:
@@ -39,6 +42,9 @@ def test_every_plan_candidate_endpoint_is_reachable_over_http():
         ("/vqe/capabilities", "GET"),
         ("/vqe/experiments", "POST"),
         ("/vqe/experiments/{experiment_id}", "GET"),
+        ("/vqe/experiments/{experiment_id}/executions", "GET"),
+        ("/vqe/experiments/{experiment_id}/executions", "POST"),
+        ("/vqe/executions/{execution_id}", "GET"),
         ("/vqe/experiments/{experiment_id}/cancel", "POST"),
         ("/vqe/experiments/{experiment_id}/events", "GET"),
         ("/vqe/experiments/{experiment_id}/materialize", "POST"),
@@ -56,6 +62,9 @@ def test_every_route_requires_a_scope():
         vqe_routes.vqe_capabilities,
         vqe_routes.create_experiment,
         vqe_routes.get_experiment,
+        vqe_routes.list_executions,
+        vqe_routes.start_execution,
+        vqe_routes.get_execution,
         vqe_routes.cancel_experiment,
         vqe_routes.experiment_events,
         vqe_routes.materialize_experiment,
@@ -72,11 +81,12 @@ def test_create_experiment_requires_a_request_idempotency_key_with_no_default():
 
 async def test_capabilities_reports_the_h2_capability_as_unavailable():
     response = await vqe_routes.vqe_capabilities(scope=object())
-    assert len(response.capabilities) == 1
-    status = response.capabilities[0]
-    assert status.capability == "h2_sto3g_exact_energy"
-    assert status.available is False
-    assert status.reason
+    assert {status.capability for status in response.capabilities} == {
+        "h2_sto3g_exact_energy",
+        "h2_sto3g_actual_vqe_v1",
+    }
+    assert all(status.available is False for status in response.capabilities)
+    assert all(status.reason for status in response.capabilities)
 
 
 async def test_get_component_converts_the_row(monkeypatch):
@@ -243,19 +253,51 @@ async def _fake_experiment(experiment_id: uuid.UUID) -> SimpleNamespace:
     )
 
 
-@pytest.mark.parametrize(
-    "handler",
-    [vqe_routes.cancel_experiment, vqe_routes.experiment_events, vqe_routes.materialize_experiment],
-)
-async def test_execution_stubs_return_409_not_fake_success(monkeypatch, handler):
+async def test_execution_endpoints_remain_honest_without_an_execution(monkeypatch):
     experiment_id = uuid.uuid4()
 
-    async def fake_get_experiment(scope, session, eid):
+    async def fake_list_executions(scope, session, eid):
         assert eid == experiment_id
-        return await _fake_experiment(eid)
+        return []
 
-    monkeypatch.setattr(vqe_repo, "get_experiment", fake_get_experiment)
+    monkeypatch.setattr(vqe_repo, "list_executions", fake_list_executions)
     with pytest.raises(HTTPException) as excinfo:
-        await handler(experiment_id, scope=object(), session=object())
+        await vqe_routes.cancel_experiment(
+            experiment_id,
+            scope=object(),
+            session=object(),
+        )
     assert excinfo.value.status_code == 409
-    assert excinfo.value.detail["code"] == "no_execution_started"
+    assert (
+        await vqe_routes.experiment_events(
+            experiment_id,
+            scope=object(),
+            session=object(),
+        )
+        == []
+    )
+    with pytest.raises(HTTPException) as excinfo:
+        await vqe_routes.materialize_experiment(
+            experiment_id,
+            scope=object(),
+            session=object(),
+        )
+    assert excinfo.value.status_code == 409
+
+
+async def test_start_execution_is_fail_closed_without_development_gate():
+    experiment_id = uuid.uuid4()
+    with pytest.raises(HTTPException) as excinfo:
+        await vqe_routes.start_execution(
+            experiment_id,
+            vqe_routes.StartExecutionRequest(
+                requested_capability="h2_sto3g_actual_vqe_v1",
+                preferred_framework="qiskit",
+            ),
+            scope=object(),
+            session=object(),
+            settings=_settings(),
+            idempotency_key="candidate-request",
+        )
+    assert excinfo.value.status_code == 409
+    assert excinfo.value.detail["code"] == "candidate_execution_disabled"

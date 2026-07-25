@@ -6,43 +6,42 @@ plan's own Phase 3 DB-responsibilities list has no comparisons table, and
 Phase 2's comparison reports are versioned, machine-generated corpus data
 (ADR-0026), not per-workspace mutable state.
 
-POST /v1/vqe/experiments/{id}/cancel, GET .../events, and POST
-.../materialize remain honest stubs: Phase 4.5 can persist planned execution
-bindings, but no runtime is promoted under ADR-0024 and no durable run/job is
-started. Each returns a contract-shaped 409 instead of invented success.
+Phase 5A candidate execution is available only when a local-development
+feature gate is enabled. It reuses durable runs/jobs/events while public
+capability and scientific promotion remain blocked.
 """
 
 import datetime as dt
+import hashlib
 import json
 import uuid
 from pathlib import Path
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query
 from fastapi import Path as PathParam
-from majorana_vqe.models import Capability, ComponentType
-from pydantic import BaseModel, ConfigDict
+from majorana_contracts.enums import Algorithm, ExportStatus, RunMode, RunStatus
+from majorana_contracts.enums import Framework as ContractFramework
+from majorana_vqe.models import Capability, ComponentType, Framework
+from pydantic import BaseModel, ConfigDict, Field
 
 from ..auth.deps import CurrentScope, DbSession, get_settings
+from ..jobs import VQE_EXECUTE_JOB_KIND
 from ..orm import VqeComponentSpec as VqeComponentSpecRow
 from ..orm import VqeExperiment as VqeExperimentRow
+from ..orm import VqeExecution as VqeExecutionRow
+from ..orm import VqeObservation as VqeObservationRow
 from ..orm import VqeWorkflowComponent as VqeWorkflowComponentRow
+from ..repos import artifacts as artifacts_repo
+from ..repos import runs as runs_repo
+from ..repos import system
 from ..repos import vqe as vqe_repo
 from ..settings import Settings
+from ..vqe_runtime_profiles import candidate_runtime_profile
 
 router = APIRouter()
 
 _COMPARISON_ID_PATTERN = r"^[a-zA-Z0-9_]+$"
-
-_NO_EXECUTION_DETAIL = {
-    "code": "no_execution_started",
-    "message": (
-        "This experiment has no promoted runtime execution or run yet. "
-        "Execution begins in "
-        "Phase 5 once a runtime profile is promoted out of CANDIDATE_UNVERIFIED "
-        "(ADR-0024)."
-    ),
-}
 
 
 def _catalog_workspace_id(settings: Settings) -> uuid.UUID | None:
@@ -123,6 +122,90 @@ class ExperimentResource(BaseModel):
     registry_resolution_sha256: str
     request_idempotency_key: str | None
     created_at: dt.datetime | None
+
+
+class StartExecutionRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    requested_capability: Capability
+    preferred_framework: Framework = Framework.QISKIT
+
+
+class ObservationResource(BaseModel):
+    id: uuid.UUID
+    execution_id: uuid.UUID
+    attempt: int
+    status: str
+    result_contract_json: dict[str, Any]
+    result_contract_sha256: str
+    failure_code: str | None
+    created_at: dt.datetime | None
+
+
+class ExecutionResource(BaseModel):
+    id: uuid.UUID
+    experiment_id: uuid.UUID
+    run_id: uuid.UUID | None
+    framework: str
+    runtime_profile_id: str
+    runtime_image_digest: str
+    adapter_release_id: str
+    execution_identity_sha256: str
+    status: str
+    production_runtime_status: str
+    public_execution: Literal["blocked"] = "blocked"
+    review_state: Literal["unreviewed"] = "unreviewed"
+    observations: list[ObservationResource] = Field(default_factory=list)
+    created_at: dt.datetime | None
+    updated_at: dt.datetime | None
+
+
+class MaterializedVqeArtifactResource(BaseModel):
+    artifact_id: uuid.UUID
+    artifact_version_id: uuid.UUID
+    visibility: Literal["private"] = "private"
+    publication: Literal["blocked"] = "blocked"
+    scientific_release: Literal["blocked"] = "blocked"
+
+
+def _to_observation_resource(row: VqeObservationRow) -> ObservationResource:
+    return ObservationResource(
+        id=row.id,
+        execution_id=row.execution_id,
+        attempt=row.attempt,
+        status=row.status,
+        result_contract_json=row.result_contract_json,
+        result_contract_sha256=row.result_contract_sha256,
+        failure_code=row.failure_code,
+        created_at=row.created_at,
+    )
+
+
+async def _to_execution_resource(
+    scope: CurrentScope,
+    session: DbSession,
+    row: VqeExecutionRow,
+) -> ExecutionResource:
+    observations = await vqe_repo.list_observations(scope, session, row.id)
+    binding = row.execution_binding_json
+    return ExecutionResource(
+        id=row.id,
+        experiment_id=row.experiment_id,
+        run_id=row.run_id,
+        framework=row.framework,
+        runtime_profile_id=row.runtime_profile_id,
+        runtime_image_digest=row.runtime_image_digest,
+        adapter_release_id=row.adapter_release_id,
+        execution_identity_sha256=row.execution_identity_sha256,
+        status=row.status,
+        production_runtime_status=binding.get(
+            "production_runtime_status",
+            "unqualified",
+        ),
+        observations=[_to_observation_resource(item) for item in observations],
+        created_at=row.created_at,
+        updated_at=row.updated_at,
+    )
 
 
 def _to_component_spec_resource(row: VqeComponentSpecRow) -> ComponentSpecResource:
@@ -333,9 +416,17 @@ async def vqe_capabilities(scope: CurrentScope) -> CapabilitiesResponse:
                 available=False,
                 reason=(
                     "no runtime profile has been promoted out of "
-                    "CANDIDATE_UNVERIFIED yet (ADR-0024, Phase 5)"
+                    "CANDIDATE_UNVERIFIED yet (ADR-0024, Phase 5B)"
                 ),
-            )
+            ),
+            CapabilityStatus(
+                capability=Capability.H2_STO3G_ACTUAL_VQE.value,
+                available=False,
+                reason=(
+                    "local Phase 5A candidate execution is not a public capability; "
+                    "human review and production runtime qualification remain pending"
+                ),
+            ),
         ]
     )
 
@@ -360,6 +451,9 @@ async def create_experiment(
             session,
             body.workflow_artifact_version_id,
             catalog_workspace_id=catalog_workspace_id,
+            review_policy=(
+                "h2_owner_deferred_candidate" if settings.vqe_candidate_execution else "approved"
+            ),
         )
         experiment = await vqe_repo.create_experiment(
             scope,
@@ -384,25 +478,232 @@ async def get_experiment(
     return _to_experiment_resource(experiment)
 
 
+@router.get(
+    "/vqe/experiments/{experiment_id}/executions",
+    response_model=list[ExecutionResource],
+)
+async def list_executions(
+    experiment_id: uuid.UUID,
+    scope: CurrentScope,
+    session: DbSession,
+) -> list[ExecutionResource]:
+    rows = await vqe_repo.list_executions(scope, session, experiment_id)
+    return [await _to_execution_resource(scope, session, row) for row in rows]
+
+
+@router.post(
+    "/vqe/experiments/{experiment_id}/executions",
+    response_model=ExecutionResource,
+    status_code=201,
+)
+async def start_execution(
+    experiment_id: uuid.UUID,
+    body: StartExecutionRequest,
+    scope: CurrentScope,
+    session: DbSession,
+    settings: Annotated[Settings, Depends(get_settings)],
+    idempotency_key: Annotated[
+        str,
+        Header(alias="Idempotency-Key", min_length=1, max_length=200),
+    ],
+) -> ExecutionResource:
+    if not settings.vqe_candidate_execution:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "candidate_execution_disabled",
+                "message": (
+                    "public VQE execution is blocked; enable the local Phase 5A "
+                    "development gate explicitly"
+                ),
+            },
+        )
+    if body.requested_capability is not Capability.H2_STO3G_ACTUAL_VQE:
+        raise HTTPException(status_code=422, detail="unsupported Phase 5A capability")
+    experiment = await vqe_repo.get_experiment(scope, session, experiment_id)
+    profile = candidate_runtime_profile(body.preferred_framework)
+    execution = await vqe_repo.create_execution(
+        scope,
+        session,
+        experiment.id,
+        binding=profile.binding,
+    )
+    if execution.run_id is None:
+        run_key = f"vqe-execution-{execution.execution_identity_sha256}-{idempotency_key}"
+        run = await runs_repo.find_run_by_idempotency_key(scope, session, run_key)
+        if run is None:
+            run = await runs_repo.create_run(
+                scope,
+                session,
+                task_prompt=(
+                    "Execute the frozen unreviewed H2 STO-3G actual-VQE "
+                    f"candidate with {profile.binding.framework.value}"
+                ),
+                mode=RunMode.EXECUTE,
+                framework=ContractFramework(profile.binding.framework.value),
+                seed=experiment.scientific_spec_json["seed"],
+                timeout_s=300,
+                idempotency_key=run_key,
+            )
+            await runs_repo.append_run_event(
+                scope,
+                session,
+                run.id,
+                type="run.queued",
+                payload={
+                    "mode": RunMode.EXECUTE.value,
+                    "framework": profile.binding.framework.value,
+                },
+            )
+        execution = await vqe_repo.bind_execution_run(
+            scope,
+            session,
+            execution.id,
+            run_id=run.id,
+        )
+        await system.enqueue_job(
+            session,
+            kind=VQE_EXECUTE_JOB_KIND,
+            payload={
+                "execution_id": str(execution.id),
+                "run_id": str(run.id),
+                "workspace_id": str(scope.workspace_id),
+                "user_id": str(scope.user_id),
+            },
+            run_id=run.id,
+        )
+    return await _to_execution_resource(scope, session, execution)
+
+
+@router.get(
+    "/vqe/executions/{execution_id}",
+    response_model=ExecutionResource,
+)
+async def get_execution(
+    execution_id: uuid.UUID,
+    scope: CurrentScope,
+    session: DbSession,
+) -> ExecutionResource:
+    execution = await vqe_repo.get_execution(scope, session, execution_id)
+    return await _to_execution_resource(scope, session, execution)
+
+
 @router.post("/vqe/experiments/{experiment_id}/cancel")
 async def cancel_experiment(
     experiment_id: uuid.UUID, scope: CurrentScope, session: DbSession
-) -> None:
-    await vqe_repo.get_experiment(scope, session, experiment_id)  # 404 if unknown/out of scope
-    raise HTTPException(status_code=409, detail=_NO_EXECUTION_DETAIL)
+) -> list[ExecutionResource]:
+    executions = await vqe_repo.list_executions(scope, session, experiment_id)
+    if not executions:
+        raise HTTPException(status_code=409, detail="experiment has no execution to cancel")
+    changed: list[VqeExecutionRow] = []
+    for execution in executions:
+        if execution.status not in {"planned", "queued", "running"}:
+            changed.append(execution)
+            continue
+        if execution.run_id is not None:
+            run = await runs_repo.get_run(scope, session, execution.run_id, for_update=True)
+            if RunStatus(run.status) in {RunStatus.QUEUED, RunStatus.RUNNING}:
+                await runs_repo.finish_run(
+                    scope,
+                    session,
+                    run.id,
+                    RunStatus.CANCELLED,
+                    event_payload={"status": RunStatus.CANCELLED.value},
+                    event_id=uuid.uuid5(run.id, "run.finished"),
+                )
+        changed.append(
+            await vqe_repo.transition_execution(
+                scope,
+                session,
+                execution.id,
+                new_status="cancelled",
+            )
+        )
+    return [await _to_execution_resource(scope, session, row) for row in changed]
 
 
 @router.get("/vqe/experiments/{experiment_id}/events")
 async def experiment_events(
     experiment_id: uuid.UUID, scope: CurrentScope, session: DbSession
-) -> None:
-    await vqe_repo.get_experiment(scope, session, experiment_id)
-    raise HTTPException(status_code=409, detail=_NO_EXECUTION_DETAIL)
+) -> list[ExecutionResource]:
+    return await list_executions(experiment_id, scope, session)
 
 
-@router.post("/vqe/experiments/{experiment_id}/materialize")
+@router.post(
+    "/vqe/experiments/{experiment_id}/materialize",
+    response_model=MaterializedVqeArtifactResource,
+)
 async def materialize_experiment(
     experiment_id: uuid.UUID, scope: CurrentScope, session: DbSession
-) -> None:
-    await vqe_repo.get_experiment(scope, session, experiment_id)
-    raise HTTPException(status_code=409, detail=_NO_EXECUTION_DETAIL)
+) -> MaterializedVqeArtifactResource:
+    executions = await vqe_repo.list_executions(scope, session, experiment_id)
+    succeeded = [execution for execution in executions if execution.status == "succeeded"]
+    if not succeeded:
+        raise HTTPException(status_code=409, detail="no successful VQE execution to materialize")
+    execution = succeeded[-1]
+    observations = await vqe_repo.list_observations(scope, session, execution.id)
+    successful = [item for item in observations if item.status == "succeeded"]
+    if not successful:
+        raise HTTPException(status_code=409, detail="successful execution lacks evidence")
+    observation = successful[-1]
+    if execution.run_id is None:
+        raise HTTPException(status_code=409, detail="successful execution lacks a durable run")
+    run = await runs_repo.get_run(scope, session, execution.run_id)
+    if run.artifact_version_id is not None:
+        version = await artifacts_repo.get_version(scope, session, run.artifact_version_id)
+        artifact = await artifacts_repo.get_artifact(scope, session, version.artifact_id)
+        return MaterializedVqeArtifactResource(
+            artifact_id=artifact.id,
+            artifact_version_id=version.id,
+        )
+    artifact = await artifacts_repo.create_artifact(
+        scope,
+        session,
+        slug=f"h2-vqe-candidate-{execution.id}",
+        title=f"H2 STO-3G VQE candidate — {execution.framework}",
+        family=Algorithm.VQE,
+        framework=ContractFramework(execution.framework),
+    )
+    evidence_bytes = json.dumps(
+        observation.result_contract_json,
+        sort_keys=True,
+        indent=2,
+    ).encode()
+    fingerprint = hashlib.sha256(evidence_bytes).hexdigest()
+    version = await artifacts_repo.create_version(
+        scope,
+        session,
+        artifact.id,
+        qasm_version=None,
+        qasm=None,
+        metadata={
+            "source": "vqe_candidate_execution",
+            "human_review_state": "unreviewed",
+            "production_runtime_status": "unqualified",
+            "publication": "blocked",
+            "scientific_release": "blocked",
+            "execution_id": str(execution.id),
+            "result_contract_sha256": observation.result_contract_sha256,
+            "verification_summary": {
+                "verified": False,
+                "decision": None,
+                "evidence_strength": None,
+                "reason_code": "candidate_pending_human_and_runtime_qualification",
+            },
+        },
+        code=evidence_bytes.decode(),
+        code_lang="json",
+        fingerprint=fingerprint,
+        export_status=ExportStatus.UNSUPPORTED,
+        export_reason="candidate scientific evidence is not an executable circuit export",
+        resource_estimates=observation.result_contract_json.get("resources"),
+        limitations=(
+            "Private Phase 5A candidate; human review and production runtime "
+            "qualification are incomplete."
+        ),
+    )
+    await runs_repo.set_run_artifact_version(scope, session, run.id, version.id)
+    return MaterializedVqeArtifactResource(
+        artifact_id=artifact.id,
+        artifact_version_id=version.id,
+    )

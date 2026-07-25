@@ -20,7 +20,7 @@ with an incremented attempt, never a mutation of a prior one.
 import hashlib
 import json
 import uuid
-from typing import Any
+from typing import Any, Literal
 
 from majorana_contracts import Scope
 from majorana_vqe.models import (
@@ -47,12 +47,12 @@ from majorana_vqe.portable import (
     workflow_semantic_digest,
 )
 from majorana_vqe.result import EXECUTION_EVIDENCE_ADAPTER, ExecutionEvidence
-from sqlalchemy import or_, select
+from sqlalchemy import or_, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..ids import uuid7
-from ..orm import Artifact, ArtifactVersion
+from ..orm import Artifact, ArtifactVersion, Run
 from ..orm import VqeComponentSpec as VqeComponentSpecRow
 from ..orm import VqeExperiment as VqeExperimentRow
 from ..orm import VqeExecution as VqeExecutionRow
@@ -73,6 +73,12 @@ class IdempotencyConflictError(RepoError):
 
 class InvalidWorkflowCompositionError(RepoError):
     """A workflow cannot be represented losslessly as portable schema v0.2."""
+
+
+H2_REVIEW_CANDIDATE_WORKFLOW_KEY = "h2.sto3g.actual_vqe.workflow.v0_2"
+H2_REVIEW_CANDIDATE_WORKFLOW_DIGEST = (
+    "4602559821a52c2f55c279ddc60191131613575168fbe4f5d317e2e5266a8117"
+)
 
 
 # --- component specs ---------------------------------------------------
@@ -310,6 +316,10 @@ async def resolve_scientific_experiment_spec(
     *,
     catalog_workspace_id: uuid.UUID | None = None,
     approved_seed: int = 0,
+    review_policy: Literal[
+        "approved",
+        "h2_owner_deferred_candidate",
+    ] = "approved",
 ) -> ResolvedPortableExperiment:
     """Build portable schema v0.2 and a separate registry-resolution proof.
 
@@ -327,11 +337,20 @@ async def resolve_scientific_experiment_spec(
         raise InvalidWorkflowCompositionError("artifact version is not a VQE workflow")
     if workflow.machine_validation_state != MachineValidationState.MACHINE_VALIDATED.value:
         raise InvalidWorkflowCompositionError("workflow is not machine validated")
-    if workflow.review_state not in {
+    approved_review_states = {
         ReviewState.HUMAN_REVIEWED.value,
         ReviewState.AUTHOR_CONFIRMED.value,
-    }:
-        raise InvalidWorkflowCompositionError("workflow is not scientifically reviewed")
+    }
+    if review_policy == "approved":
+        if workflow.review_state not in approved_review_states:
+            raise InvalidWorkflowCompositionError("workflow is not scientifically reviewed")
+    elif not (
+        workflow.review_state == ReviewState.UNREVIEWED.value
+        and workflow.semantic_key == H2_REVIEW_CANDIDATE_WORKFLOW_KEY
+    ):
+        raise InvalidWorkflowCompositionError(
+            "owner-deferred execution is restricted to the frozen unreviewed H2 candidate"
+        )
 
     links = await list_workflow_components(
         scope,
@@ -383,12 +402,17 @@ async def resolve_scientific_experiment_spec(
             raise InvalidWorkflowCompositionError(
                 f"component {component.semantic_key!r} is not machine validated"
             )
-        if component.review_state not in {
-            ReviewState.HUMAN_REVIEWED.value,
-            ReviewState.AUTHOR_CONFIRMED.value,
-        }:
+        if review_policy == "approved":
+            if component.review_state not in approved_review_states:
+                raise InvalidWorkflowCompositionError(
+                    f"component {component.semantic_key!r} is not scientifically reviewed"
+                )
+        elif not (
+            component.review_state == ReviewState.UNREVIEWED.value
+            and component.semantic_key == f"h2.sto3g.actual_vqe.v0_2.{role_type.value}"
+        ):
             raise InvalidWorkflowCompositionError(
-                f"component {component.semantic_key!r} is not scientifically reviewed"
+                "owner-deferred execution encountered a non-canonical H2 candidate component"
             )
         semantic_bindings.append(
             ComponentSemanticBinding(
@@ -435,6 +459,13 @@ async def resolve_scientific_experiment_spec(
         initial_parameter_slots=initial_slots,
         seed=approved_seed,
     )
+    if (
+        review_policy == "h2_owner_deferred_candidate"
+        and scientific_spec.workflow_semantic_digest != H2_REVIEW_CANDIDATE_WORKFLOW_DIGEST
+    ):
+        raise InvalidWorkflowCompositionError(
+            "owner-deferred H2 candidate workflow digest does not match the frozen manifest"
+        )
     registry_resolution = RegistryResolution(
         workflow_artifact_version_id=workflow_artifact_version_id,
         components=registry_components,
@@ -481,9 +512,9 @@ async def create_experiment(
 ) -> VqeExperimentRow:
     """Persist an immutable ScientificExperimentSpec (ADR-0023 spec/binding
     separation). Deliberately does not create a `runs` row or enqueue a job:
-    there is no approved ExecutionBinding to resolve a framework/runtime
-    against until Phase 5 ships real, promoted runtime profiles (ADR-0024) —
-    run_id stays null here.
+    the portable experiment remains framework-independent. A separate
+    execution mutation may later bind it to a server-owned candidate or
+    promoted ExecutionBinding and durable Run.
 
     Both digests are recomputed here from validated models. Route callers
     cannot supply a digest independently from its JSON payload.
@@ -657,6 +688,95 @@ async def create_execution(
     )
     session.add(execution)
     await session.flush()
+    await session.refresh(execution)
+    return execution
+
+
+async def bind_execution_run(
+    scope: Scope,
+    session: AsyncSession,
+    execution_id: uuid.UUID,
+    *,
+    run_id: uuid.UUID,
+) -> VqeExecutionRow:
+    """Attach the one durable Run that owns this execution's job lifecycle."""
+    require_write(scope)
+    execution = await get_execution(scope, session, execution_id)
+    run = (
+        (
+            await session.execute(
+                select(Run).where(
+                    Run.id == run_id,
+                    Run.workspace_id == scope.workspace_id,
+                    Run.user_id == scope.user_id,
+                )
+            )
+        )
+        .scalars()
+        .first()
+    )
+    if run is None:
+        raise NotFoundError("run")
+    if execution.run_id is not None:
+        if execution.run_id == run.id:
+            return execution
+        raise ValueError("VQE execution is already bound to a different run")
+    result = await session.execute(
+        update(VqeExecutionRow)
+        .where(
+            VqeExecutionRow.id == execution.id,
+            VqeExecutionRow.status == "planned",
+            VqeExecutionRow.run_id.is_(None),
+        )
+        .values(run_id=run.id, status="queued")
+    )
+    if result.rowcount != 1:
+        raise ValueError("VQE execution left planned state before run binding")
+    await session.refresh(execution)
+    return execution
+
+
+_EXECUTION_TRANSITIONS = {
+    "planned": {"queued", "cancelled"},
+    "queued": {"running", "cancelled", "failed"},
+    "running": {"succeeded", "cancelled", "failed"},
+    "succeeded": set(),
+    "cancelled": set(),
+    "failed": set(),
+}
+
+
+async def transition_execution(
+    scope: Scope,
+    session: AsyncSession,
+    execution_id: uuid.UUID,
+    *,
+    new_status: Literal[
+        "queued",
+        "running",
+        "succeeded",
+        "cancelled",
+        "failed",
+    ],
+) -> VqeExecutionRow:
+    """Apply the closed execution lifecycle with an optimistic state fence."""
+    require_write(scope)
+    execution = await get_execution(scope, session, execution_id)
+    current = execution.status
+    if new_status == current:
+        return execution
+    if new_status not in _EXECUTION_TRANSITIONS.get(current, set()):
+        raise ValueError(f"illegal VQE execution transition {current!r} -> {new_status!r}")
+    result = await session.execute(
+        update(VqeExecutionRow)
+        .where(
+            VqeExecutionRow.id == execution.id,
+            VqeExecutionRow.status == current,
+        )
+        .values(status=new_status)
+    )
+    if result.rowcount != 1:
+        raise ValueError("VQE execution state changed concurrently")
     await session.refresh(execution)
     return execution
 

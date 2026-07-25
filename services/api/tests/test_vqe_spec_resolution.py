@@ -148,6 +148,53 @@ async def test_resolver_rejects_unreviewed_workflow(monkeypatch):
         )
 
 
+async def test_owner_deferred_policy_accepts_only_digest_pinned_h2_candidate(
+    monkeypatch,
+):
+    workflow, components, links = _complete_workflow()
+    workflow.review_state = ReviewState.UNREVIEWED.value
+    workflow.semantic_key = vqe.H2_REVIEW_CANDIDATE_WORKFLOW_KEY
+    for role, component in components.items():
+        component.review_state = ReviewState.UNREVIEWED.value
+        component.semantic_key = f"h2.sto3g.actual_vqe.v0_2.{role.value}"
+    _install_repo_fakes(monkeypatch, workflow, components, links)
+
+    resolved = await vqe.resolve_scientific_experiment_spec(
+        object(),
+        object(),
+        workflow.artifact_version_id,
+        review_policy="h2_owner_deferred_candidate",
+    )
+
+    assert (
+        resolved.scientific_spec.workflow_semantic_digest == vqe.H2_REVIEW_CANDIDATE_WORKFLOW_DIGEST
+    )
+
+
+async def test_owner_deferred_policy_rejects_lookalike_unreviewed_workflow(
+    monkeypatch,
+):
+    workflow, components, links = _complete_workflow()
+    workflow.review_state = ReviewState.UNREVIEWED.value
+    workflow.semantic_key = vqe.H2_REVIEW_CANDIDATE_WORKFLOW_KEY
+    for role, component in components.items():
+        component.review_state = ReviewState.UNREVIEWED.value
+        component.semantic_key = f"h2.sto3g.actual_vqe.v0_2.{role.value}"
+    components[ComponentType.ANSATZ].semantic_key = "h2.lookalike.ansatz"
+    _install_repo_fakes(monkeypatch, workflow, components, links)
+
+    with pytest.raises(
+        vqe.InvalidWorkflowCompositionError,
+        match="non-canonical H2 candidate",
+    ):
+        await vqe.resolve_scientific_experiment_spec(
+            object(),
+            object(),
+            workflow.artifact_version_id,
+            review_policy="h2_owner_deferred_candidate",
+        )
+
+
 async def test_resolver_rejects_component_not_representable_in_spec_v02(monkeypatch):
     workflow, components, links = _complete_workflow()
     extra = _component(

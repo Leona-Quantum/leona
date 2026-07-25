@@ -54,13 +54,22 @@ from majorana_api.catalog_bootstrap_manifest import BootstrapManifestSource
 from majorana_api.catalog_import_fixtures import LocalFixtureSource
 from majorana_api.catalog_import_sources import ImportSource
 from majorana_api.db import AsyncSession
-from majorana_api.jobs import CATALOG_IMPORT_JOB_KIND, QPU_RUN_JOB_KIND, RUN_EXECUTE_JOB_KIND
+from majorana_api.jobs import (
+    CATALOG_IMPORT_JOB_KIND,
+    QPU_RUN_JOB_KIND,
+    RUN_EXECUTE_JOB_KIND,
+    VQE_EXECUTE_JOB_KIND,
+)
 from majorana_api.orm import ImportJob
 from majorana_api.repos import catalog_import as catalog_import_repo
 from majorana_api.repos import runs as runs_repo
 from majorana_api.repos import artifacts as artifacts_repo
 from majorana_api.repos import qpu_runs as qpu_runs_repo
 from majorana_api.repos import system
+from majorana_api.repos import vqe as vqe_repo
+from majorana_api.vqe_runtime_profiles import candidate_runtime_profile
+from majorana_vqe.models import ExecutionBinding, FailureCode
+from majorana_vqe.result import ExecutionFailureResult
 
 from .agent_events import AgentEventObserver
 from .agent_llm import MeteredAgentLLM
@@ -75,7 +84,13 @@ from .agent_ports import (
 from .agent_store import RepoAgentStore
 from .best_effort import choose_best_effort
 from .context import RunContext
+from .errors import RetryableJobError
 from .intent import resolve_mode
+from .vqe_runtime import (
+    VqeRuntimeError,
+    build_success_evidence,
+    execute_candidate_image,
+)
 
 log = logging.getLogger("majorana_worker")
 
@@ -920,6 +935,176 @@ JobHandler = Callable[[AsyncSession, dict[str, Any]], Awaitable[None]]
 DeadLetterHandler = Callable[[AsyncSession, dict[str, Any], str], Awaitable[None]]
 
 
+def _ansatz_digest(scientific_spec_json: dict[str, Any]) -> str:
+    for component in scientific_spec_json.get("component_bindings", []):
+        if component.get("role") == "ansatz":
+            return str(component["component_spec_sha256"])
+    raise ValueError("portable scientific spec lacks an ansatz binding")
+
+
+async def handle_vqe_execute(session: AsyncSession, payload: dict[str, Any]) -> None:
+    """Execute one frozen H2 candidate and append capability-specific evidence."""
+    scope = _scope_from_payload(payload)
+    execution_id = uuid.UUID(payload["execution_id"])
+    run_id = uuid.UUID(payload["run_id"])
+    execution = await vqe_repo.get_execution(scope, session, execution_id)
+    if execution.run_id != run_id:
+        raise ValueError("VQE job run does not match execution binding")
+    if execution.status in {"succeeded", "failed", "cancelled"}:
+        return
+    run_store = RepoRunStateStore(scope, session, run_id)
+    if await run_store.current_status() is RunStatus.CANCELLED:
+        await vqe_repo.transition_execution(
+            scope,
+            session,
+            execution.id,
+            new_status="cancelled",
+        )
+        await session.commit()
+        return
+    if execution.status == "queued":
+        execution = await vqe_repo.transition_execution(
+            scope,
+            session,
+            execution.id,
+            new_status="running",
+        )
+        await run_store.set_status(RunStatus.RUNNING, started_at_now=True)
+        await RepoEventSink(scope, session, run_id).emit(
+            "run.started",
+            {},
+            event_id=uuid.uuid5(run_id, "run.started"),
+        )
+
+    experiment = await vqe_repo.get_experiment(scope, session, execution.experiment_id)
+    binding = ExecutionBinding.model_validate(execution.execution_binding_json)
+    profile = candidate_runtime_profile(binding.framework)
+    if binding != profile.binding:
+        raise ValueError("persisted VQE binding is not the fixed server candidate profile")
+    observations = await vqe_repo.list_observations(scope, session, execution.id)
+    attempt = len(observations) + 1
+    try:
+        runtime_output = await execute_candidate_image(profile)
+        if await run_store.current_status() is RunStatus.CANCELLED:
+            current_execution = await vqe_repo.get_execution(
+                scope,
+                session,
+                execution.id,
+            )
+            if current_execution.status == "running":
+                await vqe_repo.transition_execution(
+                    scope,
+                    session,
+                    execution.id,
+                    new_status="cancelled",
+                )
+                await session.commit()
+            return
+        evidence = build_success_evidence(
+            runtime_output.payload,
+            binding=binding,
+            scientific_spec_sha256=experiment.scientific_spec_sha256,
+            registry_resolution_sha256=experiment.registry_resolution_sha256,
+            ansatz_semantic_digest=_ansatz_digest(experiment.scientific_spec_json),
+            seed=int(experiment.scientific_spec_json["seed"]),
+        )
+    except VqeRuntimeError as exc:
+        failure_code = (
+            FailureCode.RUNTIME_UNAVAILABLE if exc.retryable else FailureCode.RESULT_CONTRACT_FAILED
+        )
+        failure = ExecutionFailureResult(
+            scientific_spec_sha256=experiment.scientific_spec_sha256,
+            registry_resolution_sha256=experiment.registry_resolution_sha256,
+            framework=binding.framework,
+            runtime_profile_id=binding.runtime_profile_id,
+            runtime_image_digest=binding.container_digest,
+            adapter_release_id=binding.adapter_release_id,
+            provider_versions=binding.provider_versions,
+            hamiltonian_exact_digest="d9dd24eb30011e8ea091759e6f0e25d76d0ccc0661e47748afb85e5f13654d79",
+            seed=int(experiment.scientific_spec_json["seed"]),
+            status="failed",
+            failure_code=failure_code,
+            failure_detail=str(exc)[:500],
+        )
+        await vqe_repo.append_observation(
+            scope,
+            session,
+            execution.id,
+            attempt=attempt,
+            evidence=failure,
+        )
+        if exc.retryable:
+            await session.commit()
+            raise RetryableJobError(str(exc)) from exc
+        await vqe_repo.transition_execution(
+            scope,
+            session,
+            execution.id,
+            new_status="failed",
+        )
+        await RepoEventSink(scope, session, run_id).emit(
+            "run.error",
+            {
+                "stage": "final_execute",
+                "code": failure_code.value,
+                "message": str(exc)[:2000],
+            },
+            event_id=uuid.uuid5(run_id, f"run.error.vqe.{attempt}"),
+        )
+        await run_store.finish(
+            RunStatus.FAILED,
+            {
+                "status": RunStatus.FAILED,
+                "reason_code": failure_code.value,
+            },
+        )
+        return
+
+    await vqe_repo.append_observation(
+        scope,
+        session,
+        execution.id,
+        attempt=attempt,
+        evidence=evidence,
+        evidence_json={
+            "stderr_was_empty": not bool(runtime_output.bounded_stderr),
+            "human_review_state": "unreviewed",
+            "production_runtime_status": "unqualified",
+        },
+    )
+    await vqe_repo.transition_execution(
+        scope,
+        session,
+        execution.id,
+        new_status="succeeded",
+    )
+    await run_store.finish(
+        RunStatus.SUCCEEDED,
+        {
+            "status": RunStatus.SUCCEEDED,
+        },
+    )
+
+
+async def handle_vqe_dead_letter(
+    session: AsyncSession,
+    payload: dict[str, Any],
+    reason: str,
+) -> None:
+    scope = _scope_from_payload(payload)
+    execution_id = uuid.UUID(payload["execution_id"])
+    run_id = uuid.UUID(payload["run_id"])
+    execution = await vqe_repo.get_execution(scope, session, execution_id)
+    if execution.status in {"planned", "queued", "running"}:
+        await vqe_repo.transition_execution(
+            scope,
+            session,
+            execution.id,
+            new_status="failed",
+        )
+    await handle_run_dead_letter(session, {**payload, "run_id": str(run_id)}, reason)
+
+
 async def handle_run_dead_letter(
     session: AsyncSession, payload: dict[str, Any], reason: str
 ) -> None:
@@ -1218,9 +1403,11 @@ HANDLERS: dict[str, JobHandler] = {
     RUN_EXECUTE_JOB_KIND: handle_run_execute,
     CATALOG_IMPORT_JOB_KIND: handle_catalog_import,
     QPU_RUN_JOB_KIND: handle_qpu_run,
+    VQE_EXECUTE_JOB_KIND: handle_vqe_execute,
 }
 
 DEAD_LETTER_HANDLERS: dict[str, DeadLetterHandler] = {
     RUN_EXECUTE_JOB_KIND: handle_run_dead_letter,
     QPU_RUN_JOB_KIND: handle_qpu_run_dead_letter,
+    VQE_EXECUTE_JOB_KIND: handle_vqe_dead_letter,
 }
