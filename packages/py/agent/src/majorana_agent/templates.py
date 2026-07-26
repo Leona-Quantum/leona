@@ -38,8 +38,14 @@ _H2_EQUILIBRIUM_PATTERN = re.compile(
     r"(?:0[.,]7350*(?!\d)|equilibrium|平衡(?:結合)?距離)",
     re.IGNORECASE,
 )
+# The fractional part is optional on purpose. Requiring `\d+[.,]\d+` let "H2 at
+# 2 bohr" and "H2 dissociation at 3 Angstrom" match _H2_PATTERN, hit no
+# exclusion, and receive the EQUILIBRIUM reference — and because
+# _apply_trusted_task_reference overwrites the plan's reference_hamiltonian with
+# it, the run would be graded against the wrong operator and could record
+# evidence_strength PHYSICAL while answering a different question.
 _EXPLICIT_BOND_LENGTH_PATTERN = re.compile(
-    r"\b\d+[.,]\d+\s*(?:å|angstrom|ångström|a\.?u\.?|bohr)\b",
+    r"\b\d+(?:[.,]\d+)?\s*(?:å|angstrom|ångström|a\.?u\.?|bohr)\b",
     re.IGNORECASE,
 )
 _H2_REFERENCE_CONFLICT_PATTERN = re.compile(

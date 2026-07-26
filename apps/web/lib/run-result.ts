@@ -152,12 +152,15 @@ export function runResultFromEvents(
   const reviewAccepted = !failed
     && summary?.semantic_review_decision !== "code_repair"
     && summary?.semantic_review_decision !== "replan";
-  const eventRisks = Array.isArray(finished.residual_risks)
-    ? finished.residual_risks
-    : typeof finished.residual_risks === "string"
-      ? [finished.residual_risks]
-      : [];
-  const bestRisks = Array.isArray(best?.residual_risks) ? best.residual_risks : [];
+  // Filter by element type, not just Array.isArray: a model-authored array
+  // holding a number or an object passes the array check, and the `.trim()`
+  // below then throws and blanks the entire result view.
+  const strings = (value: unknown): string[] =>
+    Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
+  const eventRisks = typeof finished.residual_risks === "string"
+    ? [finished.residual_risks]
+    : strings(finished.residual_risks);
+  const bestRisks = strings(best?.residual_risks);
   const limitations = [
     ...(summary?.unverified_claims ?? []).map(humanize),
     ...bestRisks,

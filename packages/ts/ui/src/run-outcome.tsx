@@ -132,7 +132,10 @@ export function RunOutcome({
               <span>{outcome.code.label}</span>
               <span>{outcome.code.language}</span>
             </summary>
-            <pre>
+            {/* Focusable and labelled: when the block overflows, a keyboard-only
+                user has no other way to scroll it. Mirrors CodeStage in
+                live-run.tsx, which renders the same content. */}
+            <pre tabIndex={0} role="region" aria-label={`${outcome.code.label} source`}>
               <SyntaxHighlightedCode
                 code={outcome.code.source}
                 language={outcome.code.language}

@@ -400,6 +400,13 @@ export function LiveRun({ taskId }: { taskId: string }) {
                 // Keep the page-level error channel for transport and submission
                 // failures so one provider error is not rendered twice.
                 setStreaming(false);
+                // Clear `pending` here too. If the stream ends after run.error
+                // without a terminal run.finished — worker crash, dropped
+                // connection — the composer stayed disabled forever with no
+                // error surfaced anywhere. Progress and outcome already derive
+                // failure from the error event, so nothing is lost by
+                // re-enabling input.
+                setPending(false);
               }
               if (event.type === "run.finished") {
                 terminal = true;
