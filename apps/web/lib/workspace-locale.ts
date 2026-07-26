@@ -302,6 +302,7 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
     showInspector: string;
     circuitRestored: string;
     circuitNotRebuildable: string;
+    sourceFallbackNote: (target: string, source: string) => string;
     circuitTooLargeToDraw: string;
     circuitViewerReadonly: string;
     readonlyDiagram: (qubits: number) => string;
@@ -656,6 +657,7 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
       showInspector: "Inspector",
       circuitRestored: "Circuit loaded from the saved artifact. Edits stay in this draft until you verify & save.",
       circuitNotRebuildable: "This artifact's code goes beyond the visual builder — edit it in the Code tab.",
+      sourceFallbackNote: (target, source) => `No safe ${target} conversion exists for this circuit, so this tab shows the stored ${source} source — it is a source reference, not ${target} code. Exports and runs from this tab use ${source}.`,
       circuitTooLargeToDraw: "This circuit is too large to draw as a diagram — its qubit or gate count would render an unreadable canvas. The Code tab holds the full source to read and run.",
       circuitViewerReadonly: "This circuit is wider than the editable builder, so it opens as a read-only diagram. Edit the circuit in the Code tab.",
       readonlyDiagram: (qubits: number) => `Read-only diagram · ${qubits} qubits. Wider than the drag-and-drop builder (max 6) — reconstructed from the saved circuit so you can see it. The Code tab holds the source to edit and run.`,
@@ -1010,6 +1012,7 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
       showInspector: "インスペクタ",
       circuitRestored: "保存済みアーティファクトから回路を読み込みました。検証して保存するまで、編集はこの下書きに留まります。",
       circuitNotRebuildable: "このアーティファクトのコードはビジュアルビルダーの範囲を超えています。コードタブで編集してください。",
+      sourceFallbackNote: (target, source) => `この回路には安全な${target}変換がないため、このタブには保存済みの${source}ソースを表示しています。${target}のコードではなくソース参照です。このタブからのエクスポートと実行は${source}を使用します。`,
       circuitTooLargeToDraw: "この回路は図として描画するには大きすぎます — 量子ビット数またはゲート数が多く、キャンバスが判読不能になります。全ソースはコードタブで確認・実行できます。",
       circuitViewerReadonly: "この回路は編集可能なビルダーより幅が広いため、読み取り専用の図として開きます。回路の編集はコードタブで行ってください。",
       readonlyDiagram: (qubits: number) => `読み取り専用の回路図 · ${qubits} 量子ビット。ドラッグ&ドロップのビルダー（最大6）より広いため、保存された回路から再構成して表示しています。編集・実行するソースはコードタブにあります。`,

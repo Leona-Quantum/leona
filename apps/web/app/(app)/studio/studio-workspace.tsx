@@ -8,7 +8,8 @@ import type { PublicLocale } from "../../../lib/public-locale";
 import { BUILDER_GATES, builderStepLabel, createBuilderStepId, generateBuilderCode, ROTATION_GATES, TWO_QUBIT_GATES, type BuilderCodeVariants, type BuilderGate, type BuilderStep, type CustomGateDefinition } from "../../../lib/studio-builder";
 import { loadStoredCircuit, saveStoredCircuit } from "../../../lib/studio-circuits";
 import { circuitSyncState, type CircuitSyncState } from "../../../lib/studio-sync";
-import { allCircuitConversionResults, parseCircuitSource, parseInterchangeCircuit, reconstructInterchangeCircuit, looksLikeOpenQasm3 } from "../../../lib/circuit-conversion";
+import { looksLikeOpenQasm3, parseCircuitSource, parseInterchangeCircuit, reconstructInterchangeCircuit } from "../../../lib/circuit-conversion";
+import { canvasSeedCandidates, draftSourceFramework, studioDraftBundle, type StudioDraftBundle } from "../../../lib/studio-drafts";
 import { CircuitDiagram } from "../../../components/circuit-diagram";
 import { MAX_BUILDER_QUBITS, MAX_VIEWABLE_QUBITS, MAX_VIEWABLE_STEPS } from "../../../lib/studio-parse";
 import { CIRCUIT_FRAMEWORKS, circuitFramework, circuitFrameworkOrNull, isExecutableCircuitFramework, type CircuitFrameworkKey } from "../../../lib/circuit-frameworks";
@@ -39,10 +40,7 @@ const EMPTY_SEED: Omit<BuilderSeed, "key"> = { artifactIdentity: null, qubitCoun
 
 type StudioFramework = CircuitFrameworkKey;
 
-type DraftBundle = {
-  codes: BuilderCodeVariants;
-  notes: Partial<Record<StudioFramework, string>>;
-};
+type DraftBundle = StudioDraftBundle;
 
 const FRAMEWORK_OPTIONS = CIRCUIT_FRAMEWORKS.map(({ key: value, label, executable }) => ({
   value,
@@ -78,8 +76,12 @@ export function StudioWorkspace({ artifactId, newDraft = false, locale = "en", l
   const [query, setQuery] = useState("");
   const [title, setTitle] = useState("Untitled circuit");
   const [framework, setFramework] = useState<StudioFramework>("qiskit");
-  const [drafts, setDrafts] = useState<BuilderCodeVariants>(() => makeDraftBundle(null).codes);
-  const [draftNotes, setDraftNotes] = useState<Partial<Record<StudioFramework, string>>>(() => makeDraftBundle(null).notes);
+  const [drafts, setDrafts] = useState<BuilderCodeVariants>(() => ({ ...STARTER_CODES }));
+  const [draftNotes, setDraftNotes] = useState<Partial<Record<StudioFramework, string>>>({});
+  // Which tabs hold another framework's source rather than a conversion of it.
+  // Everything that pairs code with a framework — export header, run request,
+  // the parser — must resolve through this, never trust the selected tab alone.
+  const [draftFallbacks, setDraftFallbacks] = useState<DraftBundle["fallbacks"]>({});
   const [code, setCode] = useState(STARTER_CODES.qiskit);
   const [panel, setPanel] = useState<StudioPanel>("canvas");
   const [selectedGate, setSelectedGate] = useState("H");
@@ -169,12 +171,19 @@ export function StudioWorkspace({ artifactId, newDraft = false, locale = "en", l
     setRerunPending(false);
   }, [code, framework]);
 
+  // The language the editor's text is actually in. Equal to the selected tab
+  // except when that tab is a source fallback — a framework with no safe
+  // conversion shows the stored source instead of an empty editor, and calling
+  // that source by the tab's name would mislabel every export and run made from
+  // it, and hand the parser the wrong language.
+  const sourceFramework = draftSourceFramework({ fallbacks: draftFallbacks }, framework);
+
   // The diagram is only trustworthy while it still describes the code that
   // will actually run. Compare structurally rather than textually: generated
   // and hand-written source differ in imports and spacing while meaning the
   // same circuit, and a warning that fires constantly gets ignored.
   const canvasSync: CircuitSyncState = useMemo(() => {
-    const fromCode = parseCircuitSource(code, framework);
+    const fromCode = parseCircuitSource(code, sourceFramework);
     if (fromCode) return circuitSyncState(fromCode, canvasCircuit);
     // The active code is outside the builder's subset — an LLM run's Python with
     // transpile/AerSimulator boilerplate is the common case. If the canvas was
@@ -185,16 +194,17 @@ export function StudioWorkspace({ artifactId, newDraft = false, locale = "en", l
     // honestly falls back to "the diagram no longer matches the code".
     const fromQasm = artifact?.code === code && artifact.qasm ? parseInterchangeCircuit(artifact.qasm) : null;
     return circuitSyncState(fromQasm, canvasCircuit);
-  }, [code, framework, canvasCircuit, artifact?.code, artifact?.qasm]);
+  }, [code, sourceFramework, canvasCircuit, artifact?.code, artifact?.qasm]);
 
   const cpuEligibility = useMemo(() => cpuSimulationEligibility({
     artifactId: artifact?.id ?? "",
     code,
-    framework,
+    framework: sourceFramework,
     qasm: artifact?.code === code ? artifact.qasm : null,
-  }, limits), [artifact?.id, artifact?.code, artifact?.qasm, code, framework, limits]);
+  }, limits), [artifact?.id, artifact?.code, artifact?.qasm, code, sourceFramework, limits]);
 
-  function seedForArtifact(next: LibraryArtifact, activeDrafts: BuilderCodeVariants, activeFramework: StudioFramework): { seed: BuilderSeed; note: string | null } {
+  function seedForArtifact(next: LibraryArtifact, bundle: DraftBundle, activeFramework: StudioFramework): { seed: BuilderSeed; note: string | null } {
+    const activeDrafts = bundle.codes;
     seedCounter.current += 1;
     const key = `${next.id}:${seedCounter.current}`;
     const stored = loadStoredCircuit(next.id);
@@ -213,14 +223,12 @@ export function StudioWorkspace({ artifactId, newDraft = false, locale = "en", l
       return { seed: { key, artifactIdentity, qubitCount: stored.qubitCount, steps: stored.steps, customGates: stored.customGates }, note: copy.circuitRestored };
     }
     const hasOwnCode = Boolean(next.code || next.frameworkVariants || next.qasm);
-    const candidates = [
-      { framework: activeFramework, code: activeDrafts[activeFramework] },
-      ...Object.entries(next.frameworkVariants ?? {}).flatMap(([name, code]) => {
-        const framework = normalizeFramework(name);
-        return framework ? [{ framework, code }] : [];
-      }),
-      ...(next.qasm ? [{ framework: "openqasm3" as const, code: next.qasm }] : []),
-    ];
+    // Every draft the picker holds, not just the artifact's own stored variants.
+    // The OpenQASM 3 draft is very often derived from source the editable parser
+    // rejects, and it is exactly what the interchange reader can draw — skipping
+    // it is what left artifacts opening to a blank canvas beside a perfectly
+    // drawable circuit one tab away. See canvasSeedCandidates.
+    const candidates = canvasSeedCandidates(next, activeDrafts, activeFramework, bundle.fallbacks);
     // First choice: an editable circuit the six-wire builder can reconstruct.
     const parsed = hasOwnCode
       ? candidates.map((candidate) => parseCircuitSource(candidate.code, candidate.framework)).find(Boolean) ?? null
@@ -239,7 +247,18 @@ export function StudioWorkspace({ artifactId, newDraft = false, locale = "en", l
     // also decline as too_large — a decomposed gate set that would draw a
     // pathological diagram — which we surface honestly rather than as an empty
     // canvas that looks like a bug.
-    const interchange = hasOwnCode && next.qasm ? reconstructInterchangeCircuit(next.qasm) : null;
+    // The stored interchange first, then the OpenQASM 3 draft the picker just
+    // derived. An artifact whose export never ran has no stored qasm at all, and
+    // for those the derived draft is the only interchange there is — without it
+    // the canvas stays empty for every run whose best-effort export was skipped.
+    // `looksLikeOpenQasm3` inside the reader rejects a source-fallback draft, so
+    // this can never hand it Python.
+    const interchange = hasOwnCode
+      ? [next.qasm, activeDrafts.openqasm3]
+        .filter((value): value is string => Boolean(value))
+        .map((qasm) => reconstructInterchangeCircuit(qasm))
+        .find((result) => result.kind !== "unparsable") ?? null
+      : null;
     // Only reach for the builder-shaped fallback if the interchange QASM path
     // didn't already produce a drawable circuit — parsing every candidate is
     // wasted work once the primary path succeeds.
@@ -264,13 +283,14 @@ export function StudioWorkspace({ artifactId, newDraft = false, locale = "en", l
     setShowEditor(true);
     setArtifact(next);
     setTitle(next?.title ?? "Untitled circuit");
-    const nextBundle = makeDraftBundle(next);
+    const nextBundle = makeDraftBundle(next, copy);
     const nextDrafts = nextBundle.codes;
     const nextFramework = normalizeFramework(next?.framework)
       ?? CIRCUIT_FRAMEWORKS.find(({ key }) => Boolean(nextDrafts[key]))?.key
       ?? "qiskit";
     setDrafts(nextDrafts);
     setDraftNotes(nextBundle.notes);
+    setDraftFallbacks(nextBundle.fallbacks);
     setFramework(nextFramework);
     setCode(nextDrafts[nextFramework]);
     setPanel("canvas");
@@ -282,7 +302,7 @@ export function StudioWorkspace({ artifactId, newDraft = false, locale = "en", l
       setMessage(null);
       return;
     }
-    const { seed, note } = seedForArtifact(next, nextDrafts, nextFramework);
+    const { seed, note } = seedForArtifact(next, nextBundle, nextFramework);
     seedBuilder(seed);
     setMessage(note);
   }
@@ -295,7 +315,7 @@ export function StudioWorkspace({ artifactId, newDraft = false, locale = "en", l
 
   /** Redraw the canvas from whatever the Code tab currently holds. */
   function rebuildCanvasFromCode() {
-    const parsed = parseCircuitSource(code, framework);
+    const parsed = parseCircuitSource(code, sourceFramework);
     if (!parsed) return;
     seedCounter.current += 1;
     seedBuilder({
@@ -362,7 +382,9 @@ export function StudioWorkspace({ artifactId, newDraft = false, locale = "en", l
     const exportArtifact = verificationStale
       ? { ...artifact, status: "stale" as const, verificationSummary: null }
       : artifact;
-    const body = JSON.stringify(artifactExportManifest(exportArtifact, { framework, code }), null, 2);
+    // sourceFramework, not the selected tab: an export that labelled a stored
+    // Qiskit source as PennyLane would be a lie in a file that outlives the tab.
+    const body = JSON.stringify(artifactExportManifest(exportArtifact, { framework: sourceFramework, code }), null, 2);
     const url = URL.createObjectURL(new Blob([body], { type: "application/json" }));
     const anchor = document.createElement("a");
     anchor.href = url;
@@ -413,7 +435,7 @@ export function StudioWorkspace({ artifactId, newDraft = false, locale = "en", l
         artifactId: artifact.id,
         artifactVersionId: artifact.currentVersionId,
         code,
-        framework,
+        framework: sourceFramework,
         qasm: artifact.code === code ? artifact.qasm : null,
         shots: parsedShots,
         seed: parsedSeed,
@@ -433,7 +455,11 @@ export function StudioWorkspace({ artifactId, newDraft = false, locale = "en", l
   }
 
   async function startRun() {
-    if (!code.trim() || busy || !isExecutableCircuitFramework(framework)) return;
+    // Both must be executable. `framework` keeps the button's meaning tied to
+    // the tab the user is looking at; `sourceFramework` is what actually gets
+    // submitted, and a source fallback can point at a framework the API cannot
+    // run even when the selected tab is one it can.
+    if (!code.trim() || busy || !isExecutableCircuitFramework(framework) || !isExecutableCircuitFramework(sourceFramework)) return;
     setBusy("save");
     setMessage(null);
     setRunId(null);
@@ -445,9 +471,13 @@ export function StudioWorkspace({ artifactId, newDraft = false, locale = "en", l
           "Idempotency-Key": crypto.randomUUID(),
         },
         body: JSON.stringify({
-          task_prompt: `Please verify and save a new version of the edited quantum circuit “${title}” in ${frameworkLabel(framework)}. Preserve the supplied source code, report the evidence clearly, and do not silently change frameworks.`,
+          // sourceFramework: submitting the editor's text under the selected
+          // tab's name would hand the pipeline Qiskit source labelled PennyLane
+          // whenever that tab is a source fallback, and it would fail on the
+          // framework contract rather than on anything the user did.
+          task_prompt: `Please verify and save a new version of the edited quantum circuit “${title}” in ${frameworkLabel(sourceFramework)}. Preserve the supplied source code, report the evidence clearly, and do not silently change frameworks.`,
           mode: "execute",
-          framework,
+          framework: sourceFramework,
           source_code: code,
           ...sampling(shots, seed),
           ...(artifact?.currentVersionId ? { artifact_version_id: artifact.currentVersionId } : {}),
@@ -492,7 +522,7 @@ export function StudioWorkspace({ artifactId, newDraft = false, locale = "en", l
                   <button className="mj-secondary-button" type="button" onClick={() => void copyCode()} title={copied ? copy.copied : copy.copyCode}><CopyIcon size={14} />{copied ? copy.copied : copy.copyCode}</button>
                   {artifact ? <button className="mj-secondary-button" type="button" onClick={downloadDraft}>{copy.downloadExport}</button> : null}
                   <button className="mj-secondary-button" type="button" disabled={!code.trim()} onClick={openSimulation}>{copy.simulate}</button>
-                  <button className="mj-primary-button" type="button" disabled={!code.trim() || busy !== null || !isExecutableCircuitFramework(framework)} onClick={() => void startRun()}>{busy === "save" ? copy.starting : copy.verifySave}</button>
+                  <button className="mj-primary-button" type="button" disabled={!code.trim() || busy !== null || !isExecutableCircuitFramework(framework) || !isExecutableCircuitFramework(sourceFramework)} onClick={() => void startRun()}>{busy === "save" ? copy.starting : copy.verifySave}</button>
                 </div>
               </div>
 
@@ -1521,38 +1551,9 @@ async function loadArtifact(id: string): Promise<LibraryArtifact | null> {
 }
 
 
-function makeDraftBundle(artifact: LibraryArtifact | null): DraftBundle {
-  if (!artifact) return { codes: { ...STARTER_CODES }, notes: {} };
-  const active = normalizeFramework(artifact?.framework);
-  const variants = artifact?.frameworkVariants ?? {};
-  const provided: Partial<BuilderCodeVariants> = {};
-  for (const [name, code] of Object.entries(variants)) {
-    const framework = normalizeFramework(name);
-    if (framework && code) provided[framework] = code;
-  }
-  if (artifact.code && active) provided[active] = artifact.code;
-  const qasm = artifact.qasm && looksLikeOpenQasm3(artifact.qasm) ? artifact.qasm : null;
-  if (qasm) provided.openqasm3 = qasm;
-  const candidates = Object.entries(provided)
-    .map(([framework, code]) => ({ framework: framework as StudioFramework, code }))
-  const source = candidates.find((candidate) => Boolean(parseCircuitSource(candidate.code, candidate.framework)))
-    ?? (qasm ? { framework: "openqasm3" as const, code: qasm } : undefined);
-  const converted = source
-    ? allCircuitConversionResults(source.code, source.framework, qasm)
-    : {};
-  const notes: Partial<Record<StudioFramework, string>> = {};
-  for (const { key } of CIRCUIT_FRAMEWORKS) {
-    const conversion = converted[key];
-    if (!provided[key] && conversion?.fidelity === "standard_gate_decomposition") {
-      notes[key] = conversion.note;
-    }
-  }
-  return {
-    codes: Object.fromEntries(
-      CIRCUIT_FRAMEWORKS.map(({ key }) => [key, provided[key] ?? converted[key]?.code ?? ""]),
-    ) as BuilderCodeVariants,
-    notes,
-  };
+function makeDraftBundle(artifact: LibraryArtifact | null, copy: StudioCopy): DraftBundle {
+  if (!artifact) return { codes: { ...STARTER_CODES }, notes: {}, fallbacks: {} };
+  return studioDraftBundle(artifact, copy);
 }
 
 function normalizeFramework(value: string | undefined): StudioFramework | null {

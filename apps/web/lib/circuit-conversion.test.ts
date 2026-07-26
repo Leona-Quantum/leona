@@ -11,7 +11,7 @@ import {
 } from "./circuit-conversion.ts";
 import { MAX_VIEWABLE_QUBITS, MAX_VIEWABLE_STEPS } from "./studio-parse.ts";
 
-test("portable circuits emit non-empty source for all seven framework targets", () => {
+test("portable circuits emit non-empty source for every framework target", () => {
   const generated = generatePortableCircuitCode({
     qubitCount: 2,
     steps: [
@@ -29,6 +29,35 @@ test("portable circuits emit non-empty source for all seven framework targets", 
   assert.match(generated.braket, /circuit\.cnot/);
   assert.match(generated.openqasm3, /c = measure q;/);
   assert.match(generated.pyquil, /MEASURE/);
+  assert.match(generated.qmod, /CX\(q\[0\], q\[1\]\)/);
+});
+
+test("conversion is bounded by the viewing ceiling, not the six-wire canvas", () => {
+  // Written in exactly the portable gate subset the converter supports, and
+  // eight qubits wide: before this bound was separated from the builder's, every
+  // target came back null and Studio opened seven empty tabs for a circuit it
+  // could translate perfectly.
+  const wide = [
+    "from qiskit import QuantumCircuit",
+    "",
+    "qc = QuantumCircuit(8)",
+    "qc.h(0)",
+    ...Array.from({ length: 7 }, (_, index) => `qc.cx(${index}, ${index + 1})`),
+    "qc.measure_all()",
+  ].join("\n");
+
+  const converted = allCircuitConversionResults(wide, "qiskit");
+
+  for (const framework of CIRCUIT_FRAMEWORKS) {
+    assert.ok(converted[framework.key]?.code.trim(), framework.label);
+  }
+  assert.match(converted.openqasm3!.code, /qubit\[8\] q;/);
+  assert.equal(converted.pennylane!.fidelity, "deterministic_subset");
+
+  // ...and the ceiling is still a ceiling: past the viewing width there is no
+  // conversion at all rather than a truncated one.
+  const tooWide = wide.replace("QuantumCircuit(8)", `QuantumCircuit(${MAX_VIEWABLE_QUBITS + 1})`);
+  assert.equal(convertCircuitSource(tooWide, "qiskit", "cirq"), null);
 });
 
 test("OpenQASM standard gates emit direct target source instead of a runtime recipe", () => {
