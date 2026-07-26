@@ -1,9 +1,8 @@
 import type { ReactNode } from "react";
 
-import { SyntaxHighlightedCode } from "@majorana/ui";
-
 import { formatShare } from "../lib/simulation-visual.ts";
 import type { RunResultView } from "../lib/run-result.ts";
+import { RunCodeExport } from "./run-code-export";
 
 /**
  * The end of a run: what it measured, what it reported, and the best program it
@@ -16,9 +15,13 @@ import type { RunResultView } from "../lib/run-result.ts";
 export function RunResult({
   result,
   action,
+  artifactId = null,
 }: {
   result: RunResultView;
   action?: ReactNode;
+  /** When the run saved an artifact, its stored QASM is what makes the
+   * framework conversions, the circuit diagram and the export possible. */
+  artifactId?: string | null;
 }) {
   const { distribution } = result;
   return (
@@ -96,15 +99,12 @@ export function RunResult({
         </ul>
       ) : null}
 
-      {result.code ? (
-        <div className="mj-run-result-code">
-          <span className="mj-section-label">
-            {result.code.label} · {result.code.language}
-          </span>
-          <pre>
-            <SyntaxHighlightedCode code={result.code.source} language={result.code.language} />
-          </pre>
-        </div>
+      {result.code || artifactId ? (
+        <RunCodeExport
+          artifactId={artifactId}
+          title={result.summary}
+          fallback={result.code}
+        />
       ) : null}
 
       {result.limitations.length ? (
