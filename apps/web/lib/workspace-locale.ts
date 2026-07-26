@@ -1,3 +1,4 @@
+import type { AccountTier } from "./account-tier";
 import type { PublicLocale } from "./public-locale";
 
 export const WORKSPACE_COPY: Record<PublicLocale, {
@@ -73,6 +74,8 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
     accountMenu: string;
     usageLimits: string;
     signOut: string;
+    /** Plan name shown beside the person's first name in the sidebar footer. */
+    tierLabel: Record<AccountTier, string>;
   };
   run: {
     previewStatus: string;
@@ -392,6 +395,7 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
       accountMenu: "Account menu",
       usageLimits: "Usage & limits",
       signOut: "Log out",
+      tierLabel: { demo: "Preview", free: "Free", developer: "Developer" },
     },
     run: {
       previewStatus: "Public preview · view-only",
@@ -750,6 +754,7 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
       accountMenu: "アカウントメニュー",
       usageLimits: "使用状況と上限",
       signOut: "ログアウト",
+      tierLabel: { demo: "プレビュー", free: "フリー", developer: "開発者" },
     },
     run: {
       previewStatus: "公開プレビュー · 閲覧のみ",
