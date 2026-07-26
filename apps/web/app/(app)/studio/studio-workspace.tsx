@@ -568,13 +568,19 @@ export function StudioWorkspace({ artifactId, newDraft = false, locale = "en", l
                     }}
                     onApply={(codes) => {
                       setDrafts(codes);
+                      // Notes and fallbacks describe the drafts and must be
+                      // cleared with them. Applying the canvas regenerates every
+                      // framework from the diagram, so no tab is a source
+                      // reference any more — a stale mapping here would label a
+                      // freshly generated PennyLane export as Qiskit.
                       setDraftNotes({});
+                      setDraftFallbacks({});
                       setCode(codes[framework]);
                       setVerificationStale(Boolean(artifact));
                       setMessage(copy.appliedToCode);
                     }}
                   />
-                  {panel === "code" ? <CodeEditor code={code} framework={framework} onChange={(next) => { setCode(next); setVerificationStale(Boolean(artifact)); }} onCopy={() => void copyCode()} copied={copied} copy={copy} /> : null}
+                  {panel === "code" ? <CodeEditor code={code} framework={framework} sourceFramework={sourceFramework} onChange={(next) => { setCode(next); setVerificationStale(Boolean(artifact)); }} onCopy={() => void copyCode()} copied={copied} copy={copy} /> : null}
                   {panel === "simulation" ? (
                     <SimulationPanel
                       artifact={artifact}
@@ -1127,7 +1133,18 @@ function CircuitBuilder({ seed, framework, selectedGate, onSelectGate, onApply, 
   );
 }
 
-function CodeEditor({ code, framework, onChange, onCopy, copied, copy }: { code: string; framework: StudioFramework; onChange: (code: string) => void; onCopy: () => void; copied: boolean; copy: StudioCopy }) {
+/**
+ * @param framework the selected tab.
+ * @param sourceFramework the language the text is actually in. Differs only for
+ *   a source reference, where the heading must not read "OpenQASM 3.0
+ *   implementation" over Python and the highlighter must not tokenize Python as
+ *   OpenQASM. The toast that explains the fallback is transient; this is not.
+ */
+function CodeEditor({ code, framework, sourceFramework, onChange, onCopy, copied, copy }: { code: string; framework: StudioFramework; sourceFramework: StudioFramework; onChange: (code: string) => void; onCopy: () => void; copied: boolean; copy: StudioCopy }) {
+  const isSourceReference = sourceFramework !== framework;
+  const heading = isSourceReference
+    ? copy.sourceReferenceHeading(frameworkLabel(sourceFramework), frameworkLabel(framework))
+    : copy.implementation(frameworkLabel(framework));
   // Colored editor (Owner Inbox 2026-07-19, "all code should be colored well"):
   // a syntax-highlighted <pre> sits directly behind a transparent-text
   // <textarea> that shares its exact typography and padding, so the caret and
@@ -1144,12 +1161,12 @@ function CodeEditor({ code, framework, onChange, onCopy, copied, copy }: { code:
   };
   return (
     <section className="mj-studio-surface mj-studio-code-panel" aria-label={copy.sourceEditor}>
-      <div className="mj-studio-surface-head"><div><span className="mj-section-label">{copy.sourceEditor}</span><h2>{copy.implementation(frameworkLabel(framework))}</h2></div><button className="mj-secondary-button" type="button" onClick={onCopy} title={copied ? copy.copied : copy.copyCode}><CopyIcon size={14} />{copied ? copy.copied : copy.copyCode}</button></div>
+      <div className="mj-studio-surface-head"><div><span className="mj-section-label">{copy.sourceEditor}</span><h2>{heading}</h2></div><button className="mj-secondary-button" type="button" onClick={onCopy} title={copied ? copy.copied : copy.copyCode}><CopyIcon size={14} />{copied ? copy.copied : copy.copyCode}</button></div>
       <div className="mj-studio-code-editor-wrap">
         <pre className="mj-studio-code-highlight" aria-hidden="true" ref={highlightRef}>
-          <SyntaxHighlightedCode code={code + "\n"} language={framework} />
+          <SyntaxHighlightedCode code={code + "\n"} language={sourceFramework} />
         </pre>
-        <textarea className="mj-studio-code-editor" value={code} onChange={(event) => onChange(event.target.value)} onScroll={syncScroll} spellCheck={false} aria-label={`${frameworkLabel(framework)} ${copy.sourceEditorInput}`} />
+        <textarea className="mj-studio-code-editor" value={code} onChange={(event) => onChange(event.target.value)} onScroll={syncScroll} spellCheck={false} aria-label={`${frameworkLabel(sourceFramework)} ${copy.sourceEditorInput}`} />
       </div>
       <p className="mj-studio-editor-note">{copy.editorNote}</p>
     </section>
