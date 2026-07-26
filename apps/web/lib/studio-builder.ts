@@ -254,6 +254,37 @@ function pyquilOperation(step: BuilderStep): string {
   }
 }
 
+/**
+ * Classiq's Qmod, in its Python-embedded form. Gate names and argument order are
+ * taken from Classiq's own standard-gate reference: single-qubit gates take a
+ * target, `RX`/`RY`/`RZ` take `(theta, target)`, `CX`/`CZ` take
+ * `(control, target)`, and `SWAP` takes `(qbit0, qbit1)`.
+ *
+ * There is deliberately no measurement operation. A Qmod model does not place
+ * measure gates; the qubits it exposes as `Output` are what an execution
+ * samples, so measurement is expressed by executing the synthesized program.
+ * `generateBuilderCode` appends that call instead.
+ */
+function qmodOperation(step: BuilderStep): string {
+  const [a, b] = step.qubits;
+  switch (step.gate) {
+    case "H": return `H(q[${a}])`;
+    case "X": return `X(q[${a}])`;
+    case "Y": return `Y(q[${a}])`;
+    case "Z": return `Z(q[${a}])`;
+    case "S": return `S(q[${a}])`;
+    case "T": return `T(q[${a}])`;
+    case "RX": return `RX(${step.param}, q[${a}])`;
+    case "RY": return `RY(${step.param}, q[${a}])`;
+    case "RZ": return `RZ(${step.param}, q[${a}])`;
+    case "CX": return `CX(q[${a}], q[${b}])`;
+    case "CZ": return `CZ(q[${a}], q[${b}])`;
+    case "SWAP": return `SWAP(q[${a}], q[${b}])`;
+    case "M": return "";
+    case "CUSTOM": return "";
+  }
+}
+
 export function generateBuilderCode(
   steps: BuilderStep[],
   qubitCount: number,
@@ -350,5 +381,25 @@ export function generateBuilderCode(
     ...(measured ? Array.from({ length: qubitCount }, (_, qubit) => `program += MEASURE(${qubit}, ro[${qubit}])`) : []),
   ].join("\n");
 
-  return { qiskit, pennylane, cirq, cudaq, braket, openqasm3, pyquil };
+  const qmodLines = flattenedOperations.map(qmodOperation).filter(Boolean);
+  const qmod = [
+    "from classiq import *",
+    ...(usesAngle ? ["from classiq.qmod.symbolic import pi"] : []),
+    "",
+    "@qfunc",
+    "def main(q: Output[QArray[QBit]]) -> None:",
+    `    allocate(${qubitCount}, q)`,
+    ...qmodLines.map((line) => `    ${line}`),
+    "",
+    "qprog = synthesize(create_model(main))",
+    ...(measured
+      ? [
+        "",
+        "# Qmod has no measure gate: executing the model samples its Output qubits.",
+        "print(execute(qprog).result_value().counts)",
+      ]
+      : []),
+  ].join("\n");
+
+  return { qiskit, pennylane, cirq, cudaq, braket, openqasm3, pyquil, qmod };
 }

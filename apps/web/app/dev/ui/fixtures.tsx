@@ -7,6 +7,9 @@ import { EmptyState, RunView, StageRail, VerdictBanner, type RailStage } from "@
 import { RUN_FIXTURES } from "../../(app)/run/[taskId]/fixtures";
 import { CircuitDiagram } from "../../../components/circuit-diagram";
 import { reconstructInterchangeCircuit } from "../../../lib/circuit-conversion";
+import { CIRCUIT_FRAMEWORKS } from "../../../lib/circuit-frameworks";
+import { studioDraftBundle, type StudioDraftArtifact } from "../../../lib/studio-drafts";
+import { WORKSPACE_COPY } from "../../../lib/workspace-locale";
 
 /** A GHZ state on `n` qubits as interchange OpenQASM 3. */
 function ghzQasm(n: number): string {
@@ -71,9 +74,86 @@ const FAILED_RUN: RailStage[] = [
   { id: "analyze", name: "Analysis", state: "pending" },
 ];
 
+/**
+ * What the Studio framework picker actually holds for one artifact, and whether
+ * the canvas can draw it — the two things that used to fail silently. The local
+ * dev server cannot reach the control plane, so these run the real
+ * studioDraftBundle over inlined records instead of a live artifact.
+ */
+function DraftBundleFixture({ title, artifact }: { title: string; artifact: StudioDraftArtifact }) {
+  const bundle = studioDraftBundle(artifact, WORKSPACE_COPY.en.studio);
+  const seed = reconstructInterchangeCircuit(bundle.codes.openqasm3 || "");
+  return (
+    <section data-testid={`draft-bundle-${title.replaceAll(/\W+/g, "-").toLowerCase()}`}>
+      <h2 style={{ fontSize: "var(--fs-16)", fontWeight: 500 }}>{title}</h2>
+      <ul className="mj-artifact-copy" style={{ display: "grid", gap: "var(--sp-1)" }}>
+        {CIRCUIT_FRAMEWORKS.map(({ key, label }) => {
+          const code = bundle.codes[key];
+          const via = bundle.fallbacks[key];
+          const state = !code ? "EMPTY" : via ? `source reference (${via})` : "conversion";
+          return (
+            <li key={key} data-framework={key} data-state={state}>
+              <strong>{label}</strong> — {state}
+              {code ? ` · ${code.split("\n").length} lines` : ""}
+            </li>
+          );
+        })}
+      </ul>
+      {seed.kind === "ok" ? (
+        <CircuitDiagram
+          qubitCount={seed.circuit.qubitCount}
+          steps={seed.circuit.steps}
+          customGates={[]}
+          ariaLabel={`${title} canvas`}
+        />
+      ) : (
+        <p className="mj-artifact-copy">Canvas: no drawable circuit ({seed.kind}).</p>
+      )}
+    </section>
+  );
+}
+
+const LLM_QISKIT = `from qiskit import QuantumCircuit, transpile
+from qiskit_aer import AerSimulator
+
+def build_circuit():
+    qc = QuantumCircuit(3, 3)
+    qc.h(0)
+    qc.cx(0, 1)
+    qc.cx(1, 2)
+    qc.measure([0, 1, 2], [0, 1, 2])
+    return qc
+
+FINAL_CIRCUIT = build_circuit()
+sim = AerSimulator()
+RESULT = {"counts": sim.run(transpile(FINAL_CIRCUIT, sim), shots=2048).result().get_counts()}
+`;
+
+const WIDE_QISKIT = [
+  "from qiskit import QuantumCircuit",
+  "",
+  "qc = QuantumCircuit(8)",
+  "qc.h(0)",
+  ...Array.from({ length: 7 }, (_, index) => `qc.cx(${index}, ${index + 1})`),
+  "qc.measure_all()",
+].join("\n");
+
 export function UiFixtures() {
   return (
     <div style={{ display: "grid", gap: "var(--sp-8)" }}>
+      <DraftBundleFixture
+        title="Draft bundle — LLM run with stored interchange"
+        artifact={{ framework: "qiskit", code: LLM_QISKIT, qasm: ghzQasm(3) }}
+      />
+      <DraftBundleFixture
+        title="Draft bundle — LLM run whose export never ran"
+        artifact={{ framework: "qiskit", code: LLM_QISKIT, qasm: null }}
+      />
+      <DraftBundleFixture
+        title="Draft bundle — 8 qubits, wider than the canvas"
+        artifact={{ framework: "qiskit", code: WIDE_QISKIT, qasm: null }}
+      />
+
       <section>
         <h2 style={{ fontSize: "var(--fs-16)", fontWeight: 500 }}>
           Stage rail — mid-run (pass / running / pending)

@@ -12,9 +12,32 @@ const NEXT_ACTION: Record<VerificationSummary["retry_target"], string> = {
   none: "Review the evidence before relying on this artifact.",
 };
 
+/** Reason codes the fixed pipeline emits for a run that finished on its own
+ * trusted evidence. Matching them by prefix rather than by one exact string is
+ * deliberate: keying on `ai_review_aligned` alone made the STRONGER outcome
+ * render worse than the weaker one, because a run whose plan-declared
+ * `exact_diag`/`brute_force` reference actually passed reports
+ * `ai_review_aligned_with_reference_check` and fell through to the generic
+ * "Verification unavailable" branch. See ADR-0023 Amendment 1. */
+const ADVISORY_REASON_PREFIX = "ai_review_aligned";
+const TRUSTED_EVIDENCE_REASON = "trusted_evidence_without_review_acceptance";
+
+function isAdvisoryOutcome(summary: VerificationSummary): boolean {
+  return summary.reason_code.startsWith(ADVISORY_REASON_PREFIX)
+    || summary.reason_code === TRUSTED_EVIDENCE_REASON;
+}
+
+/** A reference check ran and passed, so one number really was compared against
+ * what the physics should do. The overall decision stays INCONCLUSIVE — that
+ * split is exactly what EvidenceStrength exists to express. */
+function hasReferenceEvidence(summary: VerificationSummary): boolean {
+  return isAdvisoryOutcome(summary) && summary.evidence_strength === "physical";
+}
+
 function titleFor(summary: VerificationSummary): string {
   if (summary.decision === "fail") return "Failed";
-  if (summary.reason_code === "ai_review_aligned") return "Executed";
+  if (hasReferenceEvidence(summary)) return "Executed · reference check passed";
+  if (isAdvisoryOutcome(summary)) return "Executed";
   if (summary.decision === "inconclusive") return "Verification unavailable";
   return summary.evidence_strength === "physical" ? "Verified" : "Structurally verified";
 }
@@ -58,12 +81,14 @@ export function VerificationSummaryPanel({
   const unresolved = summary.checks?.filter((check) => check.result === "unavailable" || check.result === "error") ?? [];
   const failed = summary.checks?.filter((check) => check.result === "fail") ?? [];
   const claims = summary.unverified_claims ?? [];
-  const advisoryOutcome = summary.reason_code === "ai_review_aligned";
-  const warning = advisoryOutcome
-    ? "The generated code ran and its basic result contract passed. Strict quantum correctness was not verified."
-    : summary.decision === "inconclusive"
-      ? "Verification unavailable — correctness has not been confirmed."
-      : null;
+  const advisoryOutcome = isAdvisoryOutcome(summary);
+  const warning = hasReferenceEvidence(summary)
+    ? "The generated code ran, its basic result contract passed, and its reported value matched the reference the plan declared. No other quantum property was checked."
+    : advisoryOutcome
+      ? "The generated code ran and its basic result contract passed. Strict quantum correctness was not verified."
+      : summary.decision === "inconclusive"
+        ? "Verification unavailable — correctness has not been confirmed."
+        : null;
   const action = advisoryOutcome
     ? "Treat this private artifact as unverified."
     : summary.retry_target === "none" && summary.decision === "pass"

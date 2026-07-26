@@ -77,3 +77,44 @@ test("nested custom gates flatten recursively and cyclic definitions terminate s
   assert.match(generated.qiskit, /def custom_inner_inner/);
   assert.match(generated.qiskit, /custom_inner_inner\(qc, \[qubits\[0\], qubits\[1\]\]\)/);
 });
+
+test("Qmod emits Classiq's Python-embedded form with its documented gate signatures", () => {
+  const generated = generateBuilderCode([
+    { id: "h", gate: "H", qubits: [0] },
+    { id: "cx", gate: "CX", qubits: [0, 1] },
+    { id: "cz", gate: "CZ", qubits: [1, 2] },
+    { id: "swap", gate: "SWAP", qubits: [0, 2] },
+    { id: "rz", gate: "RZ", qubits: [2], param: "pi/4" },
+    { id: "s", gate: "S", qubits: [1] },
+    { id: "m0", gate: "M", qubits: [0] },
+  ], 3);
+
+  assert.match(generated.qmod, /^from classiq import \*$/m);
+  // Classiq's own symbolic pi, not numpy's: the angle is a Qmod expression.
+  assert.match(generated.qmod, /^from classiq\.qmod\.symbolic import pi$/m);
+  assert.match(generated.qmod, /^@qfunc$/m);
+  assert.match(generated.qmod, /^def main\(q: Output\[QArray\[QBit\]\]\) -> None:$/m);
+  assert.match(generated.qmod, /^ {4}allocate\(3, q\)$/m);
+  // Argument order per Classiq's standard-gate reference: (theta, target) for
+  // rotations, (control, target) for CX/CZ, (qbit0, qbit1) for SWAP.
+  assert.match(generated.qmod, /^ {4}RZ\(pi\/4, q\[2\]\)$/m);
+  assert.match(generated.qmod, /^ {4}CX\(q\[0\], q\[1\]\)$/m);
+  assert.match(generated.qmod, /^ {4}CZ\(q\[1\], q\[2\]\)$/m);
+  assert.match(generated.qmod, /^ {4}SWAP\(q\[0\], q\[2\]\)$/m);
+  assert.match(generated.qmod, /^ {4}S\(q\[1\]\)$/m);
+  assert.match(generated.qmod, /^qprog = synthesize\(create_model\(main\)\)$/m);
+  // A Qmod model has no measure gate; execution samples the Output qubits. The
+  // pattern is anchored to a call rather than the bare word so the explanatory
+  // comment in the emitted source does not satisfy its own assertion.
+  assert.doesNotMatch(generated.qmod, /^\s*\S*measure\S*\(/im);
+  assert.match(generated.qmod, /execute\(qprog\)\.result_value\(\)\.counts/);
+});
+
+test("an unmeasured Qmod model synthesizes without an execution call", () => {
+  const generated = generateBuilderCode([{ id: "h", gate: "H", qubits: [0] }], 1);
+
+  assert.match(generated.qmod, /^qprog = synthesize\(create_model\(main\)\)$/m);
+  assert.doesNotMatch(generated.qmod, /execute\(/);
+  // No angles used, so Classiq's symbolic pi is not imported.
+  assert.doesNotMatch(generated.qmod, /symbolic import pi/);
+});

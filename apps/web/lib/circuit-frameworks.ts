@@ -6,6 +6,11 @@ export const CIRCUIT_FRAMEWORKS = [
   { key: "braket", label: "Amazon Braket", language: "python", extension: "py", executable: false },
   { key: "openqasm3", label: "OpenQASM 3.0", language: "openqasm", extension: "qasm", executable: false },
   { key: "pyquil", label: "PyQuil", language: "python", extension: "py", executable: false },
+  // Classiq's Qmod. The emitter targets the Python-embedded form (`from classiq
+  // import *`, `@qfunc def main(...)`), not the standalone `.qmod` file syntax,
+  // because that is the form Classiq's own gate reference documents and the one
+  // that runs unchanged through `create_model`/`synthesize`. Hence `.py`.
+  { key: "qmod", label: "Qmod", language: "python", extension: "py", executable: false },
 ] as const;
 
 export type CircuitFramework = (typeof CIRCUIT_FRAMEWORKS)[number];
@@ -34,6 +39,12 @@ export function circuitFrameworkOrNull(value: string | null | undefined): Circui
   if (!normalized) return null;
   if (normalized === "openqasm30" || normalized === "openqasm3" || normalized === "qasm3") {
     return CIRCUIT_FRAMEWORKS.find((framework) => framework.key === "openqasm3")!;
+  }
+  // Qmod is the language; Classiq is the vendor whose SDK carries it. Records
+  // and prompts use both names interchangeably, and resolving only one of them
+  // would silently drop the framework on the other spelling.
+  if (normalized === "classiq" || normalized === "classiqqmod") {
+    return CIRCUIT_FRAMEWORKS.find((framework) => framework.key === "qmod")!;
   }
   return CIRCUIT_FRAMEWORKS.find((framework) => (
     framework.key.replaceAll(/[._-]+/g, "") === normalized

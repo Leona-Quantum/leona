@@ -55,14 +55,23 @@ export function parseCircuitSource(
   return parseBuilderCircuit(code, key, maxQubits);
 }
 
+/**
+ * Rewriting a circuit from one SDK into another is not drawing it on the
+ * six-wire grid, so this parses at the *viewing* ceiling rather than the
+ * builder's. Before that distinction was made here, an 8-qubit circuit written
+ * in exactly the portable gate subset this converter supports produced no
+ * conversions at all — every target came back null and the Studio's framework
+ * tabs opened empty — purely because the canvas cannot draw eight wires.
+ */
 export function convertCircuitSource(
   code: string,
   sourceFramework: CircuitFrameworkKey | string,
   targetFramework: CircuitFrameworkKey,
   qasm?: string | null,
+  maxQubits: number = MAX_VIEWABLE_QUBITS,
 ): CircuitConversion | null {
-  const parsed = parseCircuitSource(code, sourceFramework)
-    ?? (qasm && looksLikeOpenQasm3(qasm) ? parseCircuitSource(qasm, "openqasm3") : null);
+  const parsed = parseCircuitSource(code, sourceFramework, maxQubits)
+    ?? (qasm && looksLikeOpenQasm3(qasm) ? parseCircuitSource(qasm, "openqasm3", maxQubits) : null);
   if (parsed) {
     return {
       code: generateBuilderCode(parsed.steps, parsed.qubitCount)[targetFramework],
@@ -92,10 +101,11 @@ export function allCircuitConversionResults(
   code: string,
   sourceFramework: CircuitFrameworkKey | string,
   qasm?: string | null,
+  maxQubits: number = MAX_VIEWABLE_QUBITS,
 ): Partial<Record<CircuitFrameworkKey, CircuitConversion>> {
   return Object.fromEntries(
     CIRCUIT_FRAMEWORKS.flatMap(({ key }) => {
-      const conversion = convertCircuitSource(code, sourceFramework, key, qasm);
+      const conversion = convertCircuitSource(code, sourceFramework, key, qasm, maxQubits);
       return conversion ? [[key, conversion]] : [];
     }),
   ) as Partial<Record<CircuitFrameworkKey, CircuitConversion>>;
@@ -105,9 +115,10 @@ export function allCircuitConversions(
   code: string,
   sourceFramework: CircuitFrameworkKey | string,
   qasm?: string | null,
+  maxQubits: number = MAX_VIEWABLE_QUBITS,
 ): Partial<BuilderCodeVariants> {
   return Object.fromEntries(
-    Object.entries(allCircuitConversionResults(code, sourceFramework, qasm))
+    Object.entries(allCircuitConversionResults(code, sourceFramework, qasm, maxQubits))
       .map(([key, conversion]) => [key, conversion.code]),
   ) as Partial<BuilderCodeVariants>;
 }
