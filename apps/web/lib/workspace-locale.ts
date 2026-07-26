@@ -262,6 +262,7 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
     sourceEditor: string;
     sourceEditorInput: string;
     implementation: (framework: string) => string;
+    sourceReferenceHeading: (source: string, target: string) => string;
     editorNote: string;
     versionHistory: string;
     repositoryView: string;
@@ -603,6 +604,7 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
       sourceEditor: "Source editor",
       sourceEditorInput: "source editor",
       implementation: (framework) => `${framework} implementation`,
+      sourceReferenceHeading: (source, target) => `${source} source · no ${target} conversion`,
       editorNote: "Edit the draft directly. Simulate or verify it to produce evidence before it becomes a saved Vault version.",
       versionHistory: "Version history",
       repositoryView: "atlas view",
@@ -958,6 +960,7 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
       sourceEditor: "ソースエディタ",
       sourceEditorInput: "ソースエディタ",
       implementation: (framework) => `${framework}の実装`,
+      sourceReferenceHeading: (source, target) => `${source}ソース · ${target}への変換なし`,
       editorNote: "下書きを直接編集できます。保存済みボールトバージョンにする前に、シミュレーションまたは検証を実行してください。",
       versionHistory: "バージョン履歴",
       repositoryView: "Atlas表示",
