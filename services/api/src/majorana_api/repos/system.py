@@ -294,6 +294,11 @@ async def ensure_starter_bell_artifact(session: AsyncSession, workspace_id) -> N
         family="Bell",
         framework="qiskit",
         visibility="private",
+        # This row is built directly rather than through create_artifact, so it
+        # does not inherit that function's kept default. It must be kept: the
+        # whole point of the starter example is that a brand-new Vault is not
+        # empty, and an unkept one is invisible to the list (0036).
+        kept_at=dt.datetime.now(dt.UTC),
     )
     session.add(artifact)
     await session.flush()

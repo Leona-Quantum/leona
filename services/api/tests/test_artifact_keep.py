@@ -139,6 +139,45 @@ async def test_auto_keep_defaults_off_when_the_workspace_is_missing(scope, sessi
     assert "workspaces.id" in _sql(session.statements[0])
 
 
+def test_every_direct_artifact_insert_sets_kept_at():
+    """Rows built with `Artifact(...)` instead of `create_artifact` do not inherit
+    its kept default, and an unkept row is invisible to the Vault.
+
+    The starter Bell example is exactly this, and shipping without it would have
+    emptied the Vault of every new workspace — the DB-backed authz suite caught
+    that, no unit test did. This is the cheap version of that check: any new
+    direct insert must say what it means about keeping.
+    """
+    import ast
+    import pathlib
+
+    src_root = pathlib.Path(__file__).resolve().parents[1] / "src" / "majorana_api"
+    assert src_root.is_dir(), f"source root not found at {src_root}"
+
+    offenders = []
+    seen = 0
+    for path in src_root.rglob("*.py"):
+        tree = ast.parse(path.read_text())
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            if not (isinstance(node.func, ast.Name) and node.func.id == "Artifact"):
+                continue
+            seen += 1
+            if not any(kw.arg == "kept_at" for kw in node.keywords):
+                offenders.append(f"{path.name}:{node.lineno}")
+
+    # A scan that finds nothing to scan passes for the wrong reason — which is
+    # exactly how the first version of this test went green over a path that did
+    # not exist. There are three such call sites today.
+    assert seen >= 3, f"expected to find Artifact(...) call sites, found {seen}"
+    # repos/artifacts.py:create_artifact is the one that derives it from `kept`.
+    assert offenders == [], (
+        f"Artifact(...) built without kept_at at {offenders} — it will not appear "
+        "in the Vault. Pass kept_at explicitly, or go through create_artifact."
+    )
+
+
 def _paths(router) -> set[tuple[str, str]]:
     return {
         (route.path, method)
