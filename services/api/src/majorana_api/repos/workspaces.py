@@ -22,6 +22,35 @@ async def get_workspace(scope: Scope, session: AsyncSession) -> Workspace:
     return ws
 
 
+async def auto_keep_artifacts(scope: Scope, session: AsyncSession) -> bool:
+    """Whether finished runs put their artifact straight into the Vault (0036).
+
+    Read on the save path, so a missing workspace must not fail a run that has
+    already done all its work: absence resolves to the default, which is the
+    safe direction — the artifact still exists and can be kept by hand, whereas
+    defaulting to True would file things the user did not ask for.
+    """
+    value = (
+        await session.execute(
+            select(Workspace.auto_keep_artifacts).where(
+                Workspace.id == scope.workspace_id,
+                Workspace.deleted_at.is_(None),
+            )
+        )
+    ).scalar_one_or_none()
+    return bool(value)
+
+
+async def set_auto_keep_artifacts(
+    scope: Scope, session: AsyncSession, *, enabled: bool
+) -> Workspace:
+    """Flip the settings toggle. Applies to future saves only, never backwards."""
+    workspace = await get_workspace(scope, session)
+    workspace.auto_keep_artifacts = enabled
+    await session.flush()
+    return workspace
+
+
 async def update_display_name(
     scope: Scope,
     session: AsyncSession,
@@ -71,9 +100,13 @@ async def get_overview(
     artifact_count = int(
         (
             await session.execute(
+                # Kept only: this is the number the account page shows as the
+                # user's artifacts, and it must agree with what the Vault lists.
+                # A materialized-but-unkept run is not theirs yet (0036).
                 select(func.count(Artifact.id)).where(
                     Artifact.workspace_id == scope.workspace_id,
                     Artifact.deleted_at.is_(None),
+                    Artifact.kept_at.is_not(None),
                 )
             )
         ).scalar_one()

@@ -1064,6 +1064,11 @@ export const ACCOUNT_COPY: Record<PublicLocale, {
   runs: string;
   access: string;
   privateAccess: string;
+  autoKeep: string;
+  autoKeepHelp: string;
+  autoKeepOn: string;
+  autoKeepOff: string;
+  autoKeepFailed: string;
   workspaceBoundaries: string;
   library: string;
   libraryHelp: string;
@@ -1131,6 +1136,12 @@ export const ACCOUNT_COPY: Record<PublicLocale, {
     runs: "Runs",
     access: "Access",
     privateAccess: "Private",
+    autoKeep: "Automatically save results to the Vault",
+    autoKeepHelp:
+      "Off by default. When off, a finished run asks before it saves — the result is still there to open, convert and build on, it just does not fill your Vault unless you keep it.",
+    autoKeepOn: "New results will be saved to your Vault automatically.",
+    autoKeepOff: "New results will ask before saving.",
+    autoKeepFailed: "Could not change that setting.",
     workspaceBoundaries: "Workspace boundaries",
     library: "Vault",
     libraryHelp: "Saved runs and public references stay in your personal Vault.",
@@ -1198,6 +1209,12 @@ export const ACCOUNT_COPY: Record<PublicLocale, {
     runs: "実行",
     access: "アクセス",
     privateAccess: "非公開",
+    autoKeep: "結果を自動的に Vault に保存する",
+    autoKeepHelp:
+      "既定ではオフです。オフのときは、実行が終わってから保存するかを尋ねます。結果は開いて変換したり続きを作ったりできますが、保存を選ぶまで Vault には入りません。",
+    autoKeepOn: "これからの結果は自動的に Vault に保存されます。",
+    autoKeepOff: "これからの結果は保存前に確認します。",
+    autoKeepFailed: "設定を変更できませんでした。",
     workspaceBoundaries: "ワークスペースの範囲",
     library: "ボールト",
     libraryHelp: "保存した実行と公開リファレンスは、個人ボールトに保持されます。",

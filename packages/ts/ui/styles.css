@@ -6669,6 +6669,49 @@ div.mj-rail-row:hover {
   border-color: var(--accent);
   outline: none;
 }
+/* Settings checkbox with a title and an explanation under it. */
+.mj-account-toggle {
+  display: flex;
+  gap: var(--sp-2);
+  align-items: start;
+  margin-top: var(--sp-3);
+  cursor: pointer;
+}
+.mj-account-toggle input {
+  margin-top: 2px;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+.mj-account-toggle span {
+  display: grid;
+  gap: 2px;
+}
+.mj-account-toggle strong {
+  color: var(--text-0);
+  font-size: var(--fs-13);
+  font-weight: 500;
+}
+.mj-account-toggle small {
+  color: var(--text-2);
+  font-size: var(--fs-12);
+  line-height: 1.5;
+}
+
+/* "Keep in Vault" on a finished run, with the reason it is being asked. */
+.mj-run-keep {
+  display: inline-flex;
+  gap: var(--sp-2);
+  flex-wrap: wrap;
+  align-items: center;
+}
+.mj-run-keep small {
+  color: var(--text-2);
+  font-size: var(--fs-12);
+}
+.mj-run-keep small[role="alert"] {
+  color: var(--err);
+}
+
 .mj-contact-form-wide {
   grid-column: 1 / -1;
 }

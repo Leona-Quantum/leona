@@ -250,6 +250,10 @@ async def stage_artifact(
         review_state=ReviewState.DRAFT,
         publication_state=PublicationState.PRIVATE,
         parent_artifact_id=parent_artifact_id,
+        # Curated corpus content, staged deliberately by an importer — never a
+        # run result awaiting a keep decision. Set explicitly because this row
+        # bypasses create_artifact and would otherwise be invisible (0036).
+        kept_at=dt.datetime.now(dt.UTC),
     )
     session.add(artifact)
     await session.flush()

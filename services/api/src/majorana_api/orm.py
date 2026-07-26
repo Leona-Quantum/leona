@@ -56,6 +56,9 @@ class Workspace(Base):
     name: Mapped[str]
     owner_user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"))
     plan: Mapped[str | None] = mapped_column(server_default="free")
+    # Read at save time (migration 0036). False means a finished run materializes
+    # its artifact but leaves it out of the Vault list until the user keeps it.
+    auto_keep_artifacts: Mapped[bool] = mapped_column(server_default=text("false"))
     deleted_at: Mapped[dt.datetime | None]
     created_at: Mapped[dt.datetime | None] = mapped_column(server_default=func.now())
     updated_at: Mapped[dt.datetime | None] = mapped_column(server_default=func.now())
@@ -99,6 +102,10 @@ class Artifact(Base):
     execution_state: Mapped[str | None]
     review_state: Mapped[str | None]
     publication_state: Mapped[str | None]
+    # Migration 0036. NULL = materialized (so the run keeps its conversion tabs
+    # and can be forked from) but deliberately NOT in the Vault list. This is
+    # separate from deleted_at: never kept is not the same as thrown away.
+    kept_at: Mapped[dt.datetime | None]
     deleted_at: Mapped[dt.datetime | None]
     created_at: Mapped[dt.datetime | None] = mapped_column(server_default=func.now())
     updated_at: Mapped[dt.datetime | None] = mapped_column(server_default=func.now())

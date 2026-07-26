@@ -556,6 +556,7 @@ class RepoReviewArtifactSaver:
         title: str,
         parent_artifact_version_id: UUID | None = None,
         parent_artifact_fingerprint: str | None = None,
+        auto_keep: bool = False,
     ) -> None:
         self._scope = scope
         self._session = session
@@ -564,6 +565,11 @@ class RepoReviewArtifactSaver:
         self._parent_artifact_version_id = parent_artifact_version_id
         self._parent_artifact_fingerprint = parent_artifact_fingerprint
         self._title = title
+        # Resolved once when the run is set up, not on the save path: save runs
+        # after every expensive stage has succeeded and is the worst place to
+        # add a query that can fail. Defaults False -- the direction where an
+        # artifact still exists and can be kept by hand.
+        self._auto_keep = auto_keep
 
     async def save(
         self,
@@ -591,6 +597,12 @@ class RepoReviewArtifactSaver:
             and self._parent_artifact_fingerprint != candidate.source_fingerprint
         )
         if artifact_id is None or save_as_copy:
+            # The run always materializes -- the Run surface's conversion tabs
+            # read this version and the next turn forks from it. What the
+            # workspace setting decides is only whether the result is listed in
+            # the Vault straight away or waits for "Keep this" (0036). A new
+            # version of an artifact the user already kept is not re-asked
+            # about: this branch is the only one that mints a new artifact.
             artifact = await artifacts_repo.create_artifact(
                 self._scope,
                 self._session,
@@ -599,6 +611,7 @@ class RepoReviewArtifactSaver:
                 family=plan.algorithm,
                 framework=candidate.framework,
                 parent_artifact_id=self._parent_artifact_id if save_as_copy else None,
+                kept=self._auto_keep,
             )
             artifact_id = artifact.id
 
