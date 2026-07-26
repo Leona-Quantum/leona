@@ -1,4 +1,5 @@
 import { BUILDER_GATES, ROTATION_GATES, TWO_QUBIT_GATES, type BuilderStep, type CustomGateDefinition } from "./studio-builder.ts";
+import { scopedStorage } from "./user-storage.ts";
 
 export interface StoredStudioCircuit {
   artifactIdentity: string;
@@ -12,10 +13,11 @@ const STORAGE_KEY = "majorana.studio-circuits.v2";
 const MAX_STORED_CIRCUITS = 60;
 const MAX_STORED_QUBITS = 6;
 
+// Per-account storage (lib/user-storage.ts): a stored circuit is the user's work.
 function canUseStorage(): boolean {
   if (typeof window === "undefined") return false;
   try {
-    return Boolean(window.localStorage);
+    return scopedStorage.available();
   } catch {
     return false;
   }
@@ -24,7 +26,7 @@ function canUseStorage(): boolean {
 function loadAll(): Record<string, StoredStudioCircuit> {
   if (!canUseStorage()) return {};
   try {
-    const parsed = JSON.parse(window.localStorage.getItem(STORAGE_KEY) ?? "{}") as unknown;
+    const parsed = JSON.parse(scopedStorage.getItem(STORAGE_KEY) ?? "{}") as unknown;
     if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
     return Object.fromEntries(
       Object.entries(parsed as Record<string, unknown>).flatMap(([id, value]) =>
@@ -48,8 +50,9 @@ export function saveStoredCircuit(artifactId: string, circuit: Omit<StoredStudio
     const entries = Object.entries(all)
       .sort((a, b) => b[1].updatedAt.localeCompare(a[1].updatedAt))
       .slice(0, MAX_STORED_CIRCUITS);
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(Object.fromEntries(entries)));
-    return true;
+    // The wrapper reports whether the write landed; a quota failure must not
+    // read to the caller as a saved circuit.
+    return scopedStorage.setItem(STORAGE_KEY, JSON.stringify(Object.fromEntries(entries)));
   } catch {
     return false;
   }
@@ -61,8 +64,7 @@ export function removeStoredCircuit(artifactId: string): boolean {
     const all = loadAll();
     if (!(artifactId in all)) return true;
     delete all[artifactId];
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(all));
-    return true;
+    return scopedStorage.setItem(STORAGE_KEY, JSON.stringify(all));
   } catch {
     return false;
   }

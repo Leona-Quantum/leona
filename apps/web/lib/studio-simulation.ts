@@ -2,6 +2,7 @@ import { circuitFramework, isExecutableCircuitFramework, type CircuitFrameworkKe
 import { allCircuitConversionResults, parseCircuitSource } from "./circuit-conversion.ts";
 import { MAX_PARSABLE_QUBITS, type ParsedBuilderCircuit } from "./studio-parse.ts";
 import { TIER_LIMITS, type TierLimits } from "./account-tier.ts";
+import { scopedStorage } from "./user-storage.ts";
 
 /**
  * A deliberately small, in-browser execution lane for Studio. It never runs
@@ -205,7 +206,7 @@ export function loadCpuSimulationRecords(artifactId: string): CpuSimulationRecor
 }
 
 export function saveCpuSimulationRecord(record: CpuSimulationRecord): boolean {
-  const storage = localStorageOrNull();
+  const storage = scopedStoreOrNull();
   if (!storage) return false;
   try {
     const all = loadAllRecords();
@@ -216,8 +217,9 @@ export function saveCpuSimulationRecord(record: CpuSimulationRecord): boolean {
     const entries = Object.entries({ ...all, [record.artifactId]: next })
       .sort(([, left], [, right]) => (right[0]?.createdAt ?? "").localeCompare(left[0]?.createdAt ?? ""))
       .slice(0, MAX_STORED_ARTIFACTS);
-    storage.setItem(STORAGE_KEY, JSON.stringify(Object.fromEntries(entries)));
-    return true;
+    // Reports whether the write landed, so a full quota is not presented as a
+    // saved simulation record.
+    return storage.setItem(STORAGE_KEY, JSON.stringify(Object.fromEntries(entries)));
   } catch {
     return false;
   }
@@ -389,17 +391,14 @@ function mulberry32(seed: number): () => number {
   };
 }
 
-function localStorageOrNull(): Storage | null {
-  if (typeof window === "undefined") return null;
-  try {
-    return window.localStorage;
-  } catch {
-    return null;
-  }
+// Per-account storage (lib/user-storage.ts): a saved run records what this
+// person sampled, keyed by their own artifact ids.
+function scopedStoreOrNull(): Pick<typeof scopedStorage, "getItem" | "setItem"> | null {
+  return scopedStorage.available() ? scopedStorage : null;
 }
 
 function loadAllRecords(): Record<string, CpuSimulationRecord[]> {
-  const storage = localStorageOrNull();
+  const storage = scopedStoreOrNull();
   if (!storage) return {};
   try {
     const parsed = JSON.parse(storage.getItem(STORAGE_KEY) ?? "{}") as unknown;

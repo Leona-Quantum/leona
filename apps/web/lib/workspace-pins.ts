@@ -1,3 +1,5 @@
+import { scopedStorage } from "./user-storage.ts";
+
 export type PinnedItemKind = "chat" | "artifact";
 
 type PinnedItems = {
@@ -8,14 +10,16 @@ type PinnedItems = {
 const STORAGE_KEY = "majorana.workspace-pins.v1";
 export const WORKSPACE_PINS_EVENT = "majorana:workspace-pins";
 
+// Per-account storage (lib/user-storage.ts): pins name the user's own chats
+// and artifacts.
 function canUseStorage(): boolean {
-  return typeof window !== "undefined" && typeof window.localStorage !== "undefined";
+  return scopedStorage.available();
 }
 
 function readPins(): PinnedItems {
   if (!canUseStorage()) return { chats: [], artifacts: [] };
   try {
-    const parsed = JSON.parse(window.localStorage.getItem(STORAGE_KEY) ?? "{}") as unknown;
+    const parsed = JSON.parse(scopedStorage.getItem(STORAGE_KEY) ?? "{}") as unknown;
     if (!parsed || typeof parsed !== "object") return { chats: [], artifacts: [] };
     const candidate = parsed as Partial<PinnedItems>;
     return {
@@ -28,7 +32,7 @@ function readPins(): PinnedItems {
 }
 
 function writePins(pins: PinnedItems): PinnedItems {
-  if (canUseStorage()) window.localStorage.setItem(STORAGE_KEY, JSON.stringify(pins));
+  if (canUseStorage()) scopedStorage.setItem(STORAGE_KEY, JSON.stringify(pins));
   if (typeof window !== "undefined") window.dispatchEvent(new Event(WORKSPACE_PINS_EVENT));
   return pins;
 }

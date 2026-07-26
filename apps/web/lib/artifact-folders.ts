@@ -1,3 +1,5 @@
+import { scopedStorage } from "./user-storage.ts";
+
 export interface ArtifactFolder {
   id: string;
   name: string;
@@ -8,8 +10,9 @@ const FOLDERS_STORAGE_KEY = "majorana.artifact-folders.v1";
 const ASSIGNMENTS_STORAGE_KEY = "majorana.artifact-folder-assignments.v1";
 export const ARTIFACT_FOLDERS_EVENT = "majorana:artifact-folders";
 
+// Per-account storage (lib/user-storage.ts): folder names are the user's words.
 function canUseStorage(): boolean {
-  return typeof window !== "undefined" && typeof window.localStorage !== "undefined";
+  return scopedStorage.available();
 }
 
 function emitChange(): void {
@@ -23,7 +26,7 @@ function normalizeName(name: string): string {
 export function loadArtifactFolders(): ArtifactFolder[] {
   if (!canUseStorage()) return [];
   try {
-    const parsed = JSON.parse(window.localStorage.getItem(FOLDERS_STORAGE_KEY) ?? "null") as unknown;
+    const parsed = JSON.parse(scopedStorage.getItem(FOLDERS_STORAGE_KEY) ?? "null") as unknown;
     if (!Array.isArray(parsed)) return [];
     return parsed.filter(isArtifactFolder).sort((a, b) => a.createdAt.localeCompare(b.createdAt));
   } catch {
@@ -49,7 +52,7 @@ export function createArtifactFolder(name: string): ArtifactFolder[] {
 export function getArtifactFolderId(artifactId: string): string | undefined {
   if (!canUseStorage()) return undefined;
   try {
-    const parsed = JSON.parse(window.localStorage.getItem(ASSIGNMENTS_STORAGE_KEY) ?? "{}") as unknown;
+    const parsed = JSON.parse(scopedStorage.getItem(ASSIGNMENTS_STORAGE_KEY) ?? "{}") as unknown;
     if (!parsed || typeof parsed !== "object") return undefined;
     const value = (parsed as Record<string, unknown>)[artifactId];
     return typeof value === "string" ? value : undefined;
@@ -61,11 +64,11 @@ export function getArtifactFolderId(artifactId: string): string | undefined {
 export function assignArtifactToFolder(artifactId: string, folderId?: string): void {
   if (!canUseStorage()) return;
   try {
-    const parsed = JSON.parse(window.localStorage.getItem(ASSIGNMENTS_STORAGE_KEY) ?? "{}") as unknown;
+    const parsed = JSON.parse(scopedStorage.getItem(ASSIGNMENTS_STORAGE_KEY) ?? "{}") as unknown;
     const assignments = parsed && typeof parsed === "object" ? { ...(parsed as Record<string, unknown>) } : {};
     if (folderId) assignments[artifactId] = folderId;
     else delete assignments[artifactId];
-    window.localStorage.setItem(ASSIGNMENTS_STORAGE_KEY, JSON.stringify(assignments));
+    scopedStorage.setItem(ASSIGNMENTS_STORAGE_KEY, JSON.stringify(assignments));
     emitChange();
   } catch {
     // Storage is a convenience layer; the artifact remains available without it.
@@ -73,7 +76,7 @@ export function assignArtifactToFolder(artifactId: string, folderId?: string): v
 }
 
 function writeFolders(folders: ArtifactFolder[]): void {
-  if (canUseStorage()) window.localStorage.setItem(FOLDERS_STORAGE_KEY, JSON.stringify(folders));
+  if (canUseStorage()) scopedStorage.setItem(FOLDERS_STORAGE_KEY, JSON.stringify(folders));
   emitChange();
 }
 
