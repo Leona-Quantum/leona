@@ -568,7 +568,13 @@ export function StudioWorkspace({ artifactId, newDraft = false, locale = "en", l
                     }}
                     onApply={(codes) => {
                       setDrafts(codes);
+                      // Notes and fallbacks describe the drafts and must be
+                      // cleared with them. Applying the canvas regenerates every
+                      // framework from the diagram, so no tab is a source
+                      // reference any more — a stale mapping here would label a
+                      // freshly generated PennyLane export as Qiskit.
                       setDraftNotes({});
+                      setDraftFallbacks({});
                       setCode(codes[framework]);
                       setVerificationStale(Boolean(artifact));
                       setMessage(copy.appliedToCode);
