@@ -37,6 +37,8 @@ import {
   type ChatStatus,
   type ChatSummary,
 } from "../lib/chat-history";
+import { accountFirstName, accountInitials } from "../lib/account-identity";
+import type { AccountTier } from "../lib/account-tier";
 import { titleFromPrompt } from "../lib/chat-title";
 import {
   ARTIFACT_FOLDERS_EVENT,
@@ -65,6 +67,7 @@ export function Shell({
   demoMode = false,
   locale = "en",
   accountName,
+  accountTier,
 }: {
   children: ReactNode;
   headerRight?: ReactNode;
@@ -73,6 +76,9 @@ export function Shell({
   /** Signed-in user's display name for the sidebar footer. Omitted on surfaces
    * with no session (the /dev fixtures page), which fall back to the generic label. */
   accountName?: string;
+  /** Resolved on the server — the developer allowlist is a server-only env var.
+   * Omitted on sessionless surfaces, which show no plan rather than guessing one. */
+  accountTier?: AccountTier;
 }) {
   const pathname = usePathname();
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
@@ -226,6 +232,7 @@ export function Shell({
           folderSyncState={folderSyncState}
           locale={locale}
           accountName={accountName}
+          accountTier={accountTier}
           onArchive={(chat) => {
             archiveChat(chat.id, chat);
             refreshAfterLocalChange();
@@ -286,6 +293,7 @@ function WorkspaceSidebar({
   folderSyncState,
   locale,
   accountName,
+  accountTier,
   onArchive,
   onRestore,
   onArchiveArtifact,
@@ -316,11 +324,13 @@ function WorkspaceSidebar({
   onDeleteArtifact: (artifact: LibraryArtifact) => void;
   onRenameChat: (chat: ChatSummary, name: string) => void;
   onRenameArtifact: (artifact: LibraryArtifact, name: string) => void;
+  accountTier?: AccountTier;
 }) {
   const copy = WORKSPACE_COPY[locale].sidebar;
   const [openFolders, setOpenFolders] = useState<Set<string>>(new Set());
   const [dragTarget, setDragTarget] = useState<string | null>(null);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
+  const userMenuRef = useRef<HTMLDivElement | null>(null);
   const [creatingFolder, setCreatingFolder] = useState(false);
   const [folderName, setFolderName] = useState("");
   const [creatingArtifactFolder, setCreatingArtifactFolder] = useState(false);
@@ -332,12 +342,21 @@ function WorkspaceSidebar({
   // plumbed through, both rendered copy.personalWorkspace and the footer showed
   // "Personal workspace" twice, stacked.
   const sidebarName = demoMode ? copy.publicPreview : accountName || copy.personalWorkspace;
-  const sidebarSubtitle = demoMode
-    ? copy.readOnlyData
+  // "first name · account type" per the owner. The plan is the useful half — it
+  // is what decides run allowances — so it wins the subtitle slot over the old
+  // "Personal workspace", which said nothing a signed-in person did not know.
+  // Falls back to that label only where there is no session to resolve a tier
+  // from (the /dev fixtures page), rather than guessing a plan.
+  const sidebarTier = demoMode ? "demo" : accountTier;
+  const sidebarSubtitle = sidebarTier
+    ? copy.tierLabel[sidebarTier]
     : accountName
       ? copy.personalWorkspace
       : null;
-  const sidebarInitial = sidebarName.slice(0, 1).toUpperCase();
+  const sidebarGreeting = demoMode ? sidebarName : accountFirstName(sidebarName);
+  // An empty string is possible only for a name that is all separators; the
+  // circle keeps its shape either way, so no placeholder glyph is invented.
+  const sidebarInitial = accountInitials(sidebarName);
   const pinnedChats = chats.filter((chat) => isPinned("chat", chat.id));
   const unpinnedChats = chats.filter((chat) => !isPinned("chat", chat.id));
   const pinnedArtifacts = artifacts.filter((artifact) => isPinned("artifact", artifact.id));
@@ -353,6 +372,31 @@ function WorkspaceSidebar({
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [deleteTarget]);
+
+  // The account drawer used to close on mouseleave of its container, and the
+  // panel was offset from the trigger by a gap — so the pointer crossed dead
+  // space on the way up and the menu vanished under it. That is the owner's
+  // "sometimes hard to catch". Dismissal is now deliberate: click elsewhere, or
+  // press Escape. `pointerdown` rather than `click` so a drag that starts
+  // outside still dismisses, and it fires before any link navigates.
+  useEffect(() => {
+    if (!userMenuOpen) return;
+    const handlePointerDown = (event: PointerEvent) => {
+      if (userMenuRef.current?.contains(event.target as Node)) return;
+      setUserMenuOpen(false);
+    };
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      setUserMenuOpen(false);
+      userMenuRef.current?.querySelector<HTMLButtonElement>(".mj-sidebar-user")?.focus();
+    };
+    window.addEventListener("pointerdown", handlePointerDown);
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.removeEventListener("pointerdown", handlePointerDown);
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [userMenuOpen]);
 
   function toggleFolder(id: string) {
     setOpenFolders((current) => {
@@ -567,26 +611,28 @@ function WorkspaceSidebar({
             </span>
           </a>
         ) : (
-          <div className="mj-sidebar-user-menu" onMouseLeave={() => setUserMenuOpen(false)}>
+          <div className="mj-sidebar-user-menu" ref={userMenuRef} data-open={userMenuOpen}>
+            {/* The drawer stays mounted so it can animate open AND shut; `inert`
+                keeps its links out of the tab order and off the accessibility
+                tree while it is closed, which `display: none` would have done
+                for free but at the cost of the motion the owner asked for. */}
+            <div className="mj-sidebar-user-drawer" role="menu" aria-hidden={!userMenuOpen} inert={!userMenuOpen}>
+              <div className="mj-sidebar-user-drawer-panel">
+                <div className="mj-sidebar-user-drawer-items">
+                  <a role="menuitem" href="/account"><SettingsIcon size={15} />{copy.settings}</a>
+                  <a role="menuitem" href="/account#usage">{copy.usageLimits}</a>
+                  <a role="menuitem" className="is-danger" href="/auth/sign-out">{copy.signOut}</a>
+                </div>
+              </div>
+            </div>
             <button className="mj-sidebar-user" type="button" aria-label={copy.accountMenu} aria-expanded={userMenuOpen} onClick={() => setUserMenuOpen((value) => !value)}>
               <span className="mj-avatar">{sidebarInitial}</span>
               <span className="mj-sidebar-user-copy mj-sidebar-copy">
-                <strong>{sidebarName}</strong>
+                <strong>{sidebarGreeting}</strong>
                 {sidebarSubtitle ? <small>{sidebarSubtitle}</small> : null}
               </span>
               <span className="mj-sidebar-user-caret mj-sidebar-copy">⌄</span>
             </button>
-            {userMenuOpen ? (
-              <div className="mj-sidebar-user-popover" role="menu">
-                <div className="mj-sidebar-user-popover-name">
-                  <strong>{sidebarName}</strong>
-                  {sidebarSubtitle ? <small>{sidebarSubtitle}</small> : null}
-                </div>
-                <a role="menuitem" href="/account"><SettingsIcon size={15} />{copy.settings}</a>
-                <a role="menuitem" href="/account#usage">{copy.usageLimits}</a>
-                <a role="menuitem" className="is-danger" href="/auth/sign-out">{copy.signOut}</a>
-              </div>
-            ) : null}
           </div>
         )}
       </div>

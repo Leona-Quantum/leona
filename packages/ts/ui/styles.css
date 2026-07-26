@@ -7515,38 +7515,60 @@ div.mj-rail-row:hover {
 }
 .mj-sidebar-user-menu .mj-sidebar-user {
   width: 100%;
-  border: 0;
+  /* Transparent rather than absent so the open state can colour it in without
+     the 2px layout shift a 0 -> 1px border would cause. */
+  border: 1px solid transparent;
   background: transparent;
   font: inherit;
   text-align: left;
   cursor: pointer;
 }
-.mj-sidebar-user-popover {
+/* Account drawer.
+   Anchored at `bottom: 100%` with no gap, and the trigger below it takes a
+   matching border and a flat top edge while open, so the two read as one panel
+   growing upward out of the button. The previous popover was offset by --sp-1
+   and its container closed on mouseleave, which made that gap a dead zone the
+   pointer could not cross -- the owner's "disconnected and hard to catch". */
+.mj-sidebar-user-drawer {
   position: absolute;
   z-index: 30;
-  bottom: calc(100% + var(--sp-1));
+  bottom: 100%;
   left: 0;
   right: 0;
   display: grid;
+  /* 0fr -> 1fr animates to the panel's natural height without measuring it. */
+  grid-template-rows: 0fr;
+  opacity: 0;
+  pointer-events: none;
+  transition:
+    grid-template-rows 160ms cubic-bezier(0.2, 0.8, 0.2, 1),
+    opacity 120ms ease;
+}
+.mj-sidebar-user-menu[data-open="true"] .mj-sidebar-user-drawer {
+  grid-template-rows: 1fr;
+  opacity: 1;
+  pointer-events: auto;
+}
+.mj-sidebar-user-drawer-panel {
+  /* Both are required for the 0fr row to actually clip its content. The panel
+     carries no border of its own: a border is a min-content contribution, and
+     a 1px one kept the closed row at 1px instead of 0. `align-content: end`
+     pins the items to the bottom of the clip, so the drawer unrolls out of the
+     button rather than appearing from the top of an empty box. */
+  min-height: 0;
+  overflow: hidden;
+  display: grid;
+  align-content: end;
+}
+.mj-sidebar-user-drawer-items {
+  display: grid;
   padding: var(--sp-1);
   border: 1px solid var(--border-0);
-  border-radius: var(--radius-card);
+  border-bottom: 0;
+  border-radius: var(--radius-card) var(--radius-card) 0 0;
   background: var(--bg-1);
 }
-.mj-sidebar-user-popover-name {
-  display: grid;
-  padding: var(--sp-2);
-  border-bottom: 1px solid var(--border-0);
-}
-.mj-sidebar-user-popover-name strong {
-  font-size: var(--fs-13);
-  font-weight: 500;
-}
-.mj-sidebar-user-popover-name small {
-  color: var(--text-2);
-  font-size: var(--fs-12);
-}
-.mj-sidebar-user-popover a {
+.mj-sidebar-user-drawer a {
   display: flex;
   align-items: center;
   gap: var(--sp-2);
@@ -7557,13 +7579,31 @@ div.mj-rail-row:hover {
   font-size: var(--fs-12);
   text-decoration: none;
 }
-.mj-sidebar-user-popover a:hover,
-.mj-sidebar-user-popover a:focus-visible {
+.mj-sidebar-user-drawer a:hover,
+.mj-sidebar-user-drawer a:focus-visible {
   color: var(--text-0);
   background: var(--bg-2);
 }
-.mj-sidebar-user-popover a.is-danger {
+.mj-sidebar-user-drawer a.is-danger {
   color: var(--err);
+}
+.mj-sidebar-user-menu[data-open="true"] .mj-sidebar-user {
+  border-color: var(--border-0);
+  border-top-color: transparent;
+  border-radius: 0 0 var(--radius-card) var(--radius-card);
+  background: var(--bg-1);
+}
+.mj-sidebar-user-menu[data-open="true"] .mj-sidebar-user-caret {
+  transform: rotate(180deg);
+}
+.mj-sidebar-user-caret {
+  transition: transform 160ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+@media (prefers-reduced-motion: reduce) {
+  .mj-sidebar-user-drawer,
+  .mj-sidebar-user-caret {
+    transition: none;
+  }
 }
 
 /* public header sign-out */

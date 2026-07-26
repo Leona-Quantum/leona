@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import type { UserInfo } from "@workos-inc/authkit-nextjs";
 import { Shell } from "../../components/shell";
+import { resolveAccountTier } from "../../lib/account-tier";
 import { getMajoranaAuth } from "../../lib/auth";
 import { getPublicLocale } from "../../lib/public-locale-server";
 
@@ -12,7 +13,14 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
     getPublicLocale(),
   ]);
   return (
-    <Shell locale={locale} accountName={accountName(auth.user)}>
+    // The tier is resolved here rather than in the Shell because the developer
+    // allowlist lives in a server-only environment variable: reading it in a
+    // client component would silently resolve every account to "free".
+    <Shell
+      locale={locale}
+      accountName={accountName(auth.user)}
+      accountTier={resolveAccountTier(auth.user.email)}
+    >
       {children}
     </Shell>
   );
