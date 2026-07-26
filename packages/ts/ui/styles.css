@@ -3031,6 +3031,56 @@
   border: 0;
   border-top: 1px solid var(--border-0);
 }
+/* Run surface: framework picker + export beside the produced program. */
+.mj-run-code-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-2);
+  margin-bottom: var(--sp-2);
+}
+.mj-run-code-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-2);
+}
+.mj-run-code-note {
+  margin-top: var(--sp-2);
+  color: var(--text-2);
+  font-size: var(--fs-12);
+  line-height: 1.5;
+}
+
+/* GFM tables. The chat model reaches for one whenever it compares things (the
+ * four Bell states, framework trade-offs, gate sets), so this is a routine
+ * answer shape rather than an edge case. The wrapper scrolls instead of the
+ * page: a wide comparison table must never widen the chat column. */
+.mj-chat-message .mj-md-table {
+  overflow-x: auto;
+  margin: var(--sp-3) 0;
+}
+.mj-chat-message table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--fs-13);
+}
+.mj-chat-message th,
+.mj-chat-message td {
+  padding: var(--sp-2) var(--sp-3);
+  border: 1px solid var(--border-0);
+  text-align: left;
+  vertical-align: top;
+}
+.mj-chat-message th {
+  color: var(--text-0);
+  background: var(--bg-2);
+  font-weight: 600;
+}
+.mj-chat-message td {
+  color: var(--text-1);
+}
 .mj-chat-thinking {
   margin-bottom: var(--sp-3);
   color: var(--text-1);

@@ -10,6 +10,7 @@ import { reconstructInterchangeCircuit } from "../../../lib/circuit-conversion";
 import { CIRCUIT_FRAMEWORKS } from "../../../lib/circuit-frameworks";
 import { studioDraftBundle, type StudioDraftArtifact } from "../../../lib/studio-drafts";
 import { DETAIL_COPY, MeasuredResultPanel } from "../../(app)/library/[artifactId]/artifact-detail";
+import { CompletedAssistant, type Turn } from "../../(app)/run/[taskId]/live-run";
 import { measuredResultFromMetadata } from "../../../lib/measured-result";
 import { WORKSPACE_COPY } from "../../../lib/workspace-locale";
 
@@ -72,6 +73,86 @@ function MeasuredResultFixture({ title, metadata }: { title: string; metadata: u
     </section>
   );
 }
+
+/** One finished conversation turn, rendered by the component the Run page uses.
+ *
+ * These exist because a chat answer was being replaced on screen by an empty
+ * "Deliverable / Final Output / Quantum circuit run" card: `runResultFromEvents`
+ * returned a view for any non-cancelled `run.finished`, and both render sites
+ * prefer that view to the text. Going through the real `CompletedAssistant`
+ * rather than asserting on the view model is the point — the defect lived in
+ * which branch won, not in either branch. */
+function ChatTurnFixture({ title, turn }: { title: string; turn: Turn }) {
+  return (
+    <section>
+      <h2 style={{ fontSize: "var(--fs-16)", fontWeight: 500 }}>{title}</h2>
+      <div className="mj-chat-thread">
+        <div className="mj-chat-turn">
+          <div className="mj-chat-message mj-chat-message--user">{turn.prompt}</div>
+          <CompletedAssistant turn={turn} />
+        </div>
+      </div>
+    </section>
+  );
+}
+
+/** Events a conversation run really emits, in wire shape (flat, not wrapped). */
+function chatTurn(id: string, prompt: string, answer: string): Turn {
+  return {
+    id,
+    prompt,
+    answer,
+    events: [
+      { run_id: id, type: "run.queued", mode: "auto" },
+      { run_id: id, type: "run.mode_resolved", requested: "auto", resolved: "chat" },
+      { run_id: id, type: "run.started" },
+      { run_id: id, type: "chat.completed", text: answer },
+      { run_id: id, type: "run.finished", status: "succeeded" },
+    ] as Turn["events"],
+    verificationSummary: null,
+    terminal: true,
+  };
+}
+
+// Verbatim from production run 019f9ea6-ef13-7ea5-83a4-bd08b4af9764 ("ベル状態とは
+// 何ですか？"). Kept as the model actually wrote it: a GFM table, inline `$…$`
+// math, a fenced ASCII circuit, and a horizontal rule in one answer.
+const JA_BELL_ANSWER = `ベル状態（Bell state）は、2量子ビットの**最大エンタングル状態**の4つの基底です。
+
+## 4つのベル状態
+
+| 状態 | 数式 | よく使う記号 |
+|------|------|-------------|
+| $|\\Phi^+\\rangle$ | $\\frac{1}{\\sqrt{2}}(|00\\rangle + |11\\rangle)$ | ベル状態 |
+| $|\\Phi^-\\rangle$ | $\\frac{1}{\\sqrt{2}}(|00\\rangle - |11\\rangle)$ | |
+| $|\\Psi^+\\rangle$ | $\\frac{1}{\\sqrt{2}}(|01\\rangle + |10\\rangle)$ | |
+| $|\\Psi^-\\rangle$ | $\\frac{1}{\\sqrt{2}}(|01\\rangle - |10\\rangle)$ | 一重項状態 |
+
+## 生成回路
+
+\`\`\`
+q0: ──H──●──
+          │
+q1: ─────X──
+\`\`\`
+
+---
+
+**Execute**で依頼すれば、実際のシミュレーション結果を確認できます。`;
+
+const EN_TABLE_ANSWER = `Both are fine choices — they differ in what they optimise for.
+
+| Framework | Best at | Watch out for |
+|---|---|---|
+| Qiskit | hardware-facing work, transpilation | verbose primitives API |
+| PennyLane | differentiable circuits, QML | slower for large shot counts |
+| Cirq | explicit moment/scheduling control | smaller gate library |
+
+Display math still has to render beside a table:
+
+\\[ |\\Phi^+\\rangle = \\frac{1}{\\sqrt{2}}\\left(|00\\rangle + |11\\rangle\\right) \\]
+
+I cannot run anything from this turn — ask in **Execute** to get measured counts.`;
 
 const WIDE_HISTOGRAM = Object.fromEntries(
   Array.from({ length: 64 }, (_, index) => [index.toString(2).padStart(10, "0"), 64 - index]),
@@ -161,9 +242,56 @@ const WIDE_QISKIT = [
   "qc.measure_all()",
 ].join("\n");
 
+/** A finished execute run, as the wire really reports one.
+ *
+ * Guards the other half of the same branch: the chat fix must not have taken the
+ * Final Output card away from a run that genuinely produced something. No
+ * `artifact.saved`, so `RunCodeExport` stays on its fallback path — which is the
+ * path that has to survive a control plane the local dev server cannot reach. */
+const EXECUTE_TURN: Turn = {
+  id: "run-ghz",
+  prompt: "Build a 3-qubit GHZ state and measure all qubits",
+  answer: null,
+  events: [
+    { run_id: "run-ghz", type: "run.queued", mode: "execute" },
+    {
+      run_id: "run-ghz",
+      type: "plan.produced",
+      plan: {
+        problem_summary: "Prepare a 3-qubit GHZ state and measure every qubit",
+        algorithm: "GHZ",
+        framework: "qiskit",
+        expected_output_keys: ["counts"],
+      },
+    },
+    { run_id: "run-ghz", type: "code.generated", revision: 1, code: LLM_QISKIT, language: "python" },
+    { run_id: "run-ghz", type: "sandbox.result", result: { counts: { "000": 508, "111": 516 } } },
+    { run_id: "run-ghz", type: "run.finished", status: "succeeded" },
+  ] as Turn["events"],
+  verificationSummary: null,
+  terminal: true,
+};
+
 export function UiFixtures() {
   return (
     <div style={{ display: "grid", gap: "var(--sp-8)" }}>
+      <ChatTurnFixture
+        title="Chat turn — Japanese answer with a GFM table (must show TEXT, never a Final Output card)"
+        turn={chatTurn("chat-ja", "ベル状態とは何ですか？", JA_BELL_ANSWER)}
+      />
+      <ChatTurnFixture
+        title="Chat turn — table + display math"
+        turn={chatTurn("chat-en", "Should I use Qiskit or PennyLane?", EN_TABLE_ANSWER)}
+      />
+      <ChatTurnFixture
+        title="Chat turn — answer text missing (honest fallback, not loading dots)"
+        turn={{ ...chatTurn("chat-empty", "hi", ""), answer: null }}
+      />
+      <ChatTurnFixture
+        title="Execute turn — MUST still show Final Output (histogram, values, code)"
+        turn={EXECUTE_TURN}
+      />
+
       <DraftBundleFixture
         title="Draft bundle — LLM run with stored interchange"
         artifact={{ framework: "qiskit", code: LLM_QISKIT, qasm: ghzQasm(3) }}

@@ -112,6 +112,46 @@ test("a review that did not accept is marked, not hidden", () => {
   assert.deepEqual(result?.limitations, ["Intent Alignment"]);
 });
 
+test("a chat turn is not a deliverable — the answer owns the message", () => {
+  // A conversation run finishes SUCCEEDED with no plan, no code and no sandbox
+  // result. Returning a view here rendered "✓ Deliverable / Final Output /
+  // Quantum circuit run" *in place of* the assistant's answer, because both
+  // render sites prefer the result over the text.
+  assert.equal(
+    runResultFromEvents([
+      { type: "run.queued", mode: "auto" },
+      { type: "run.started" },
+      { type: "run.mode_resolved", requested: "auto", resolved: "chat" } as OutcomeEvent,
+      { type: "chat.completed", text: "A Bell state is a maximally entangled two-qubit state." } as OutcomeEvent,
+      { type: "run.finished", status: "succeeded" },
+    ]),
+    null,
+  );
+});
+
+test("a succeeded run with neither a program nor a result is not a deliverable", () => {
+  // Mode-independent: the header says "Deliverable", so something has to have
+  // been delivered. Without this the fallback summary invents one.
+  assert.equal(
+    runResultFromEvents([
+      { type: "run.queued", mode: "execute" },
+      { type: "run.finished", status: "succeeded" },
+    ]),
+    null,
+  );
+});
+
+test("a legacy analysis-only run leaves the message to its answer text", () => {
+  assert.equal(
+    runResultFromEvents([
+      { type: "run.queued", mode: "auto" },
+      { type: "run.analysis", interpretation: "Here is how Grover's algorithm works." },
+      { type: "run.finished", status: "succeeded" },
+    ]),
+    null,
+  );
+});
+
 test("a failed run produces no result view — the failure card owns that case", () => {
   assert.equal(
     runResultFromEvents([

@@ -140,10 +140,17 @@ export function runResultFromEvents(
     ? best ?? lastEvent(events, "code.finalized") ?? lastEvent(events, "code.generated")
     : lastEvent(events, "code.finalized") ?? lastEvent(events, "code.generated");
   const result = protectedResult(events, failed ? source?.revision : undefined);
-  // Operational failures before generation still belong to the failure card. Once
-  // code or protected RESULT exists, it is a useful deliverable even if review did
-  // not accept it; hiding it recreates the old "No accepted result" dead end.
-  if (failed && !source?.code && !result) return null;
+  // A block headed "Deliverable" has to have delivered something. The test is
+  // mode-independent on purpose: a conversation turn finishes SUCCEEDED with no
+  // plan, no program and no protected RESULT, and both render sites prefer this
+  // view to the message text — so returning a view for one drew an empty
+  // "Final Output / Quantum circuit run" card *over* the assistant's answer.
+  // Guarding only the failed case (as this did) left every chat turn exposed.
+  //
+  // Once code or a protected RESULT exists it stays a useful deliverable even
+  // when review did not accept it; hiding those recreates the old
+  // "No accepted result" dead end.
+  if (!source?.code && !result) return null;
   const counts = countsFrom(result);
 
   const shots = counts ? Object.values(counts).reduce((total, count) => total + count, 0) : 0;

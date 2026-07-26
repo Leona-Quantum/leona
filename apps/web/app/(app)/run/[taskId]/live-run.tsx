@@ -179,7 +179,7 @@ type ConversationPayload = {
   }>;
 };
 
-type Turn = {
+export type Turn = {
   id: string;
   prompt: string;
   answer: string | null;
@@ -599,7 +599,7 @@ export function LiveRun({ taskId }: { taskId: string }) {
   );
 }
 
-function CompletedAssistant({ turn }: { turn: Turn }) {
+export function CompletedAssistant({ turn }: { turn: Turn }) {
   // Failure context and the best produced output are separate concerns. A rejected
   // candidate still remains inspectable after the reason it was rejected.
   const result = runResultFromEvents(turn.events, turn.verificationSummary);
@@ -700,7 +700,11 @@ function FinalOutput({
           <h2>Final Output</h2>
         </div>
       </header>
-      <RunResult result={result} action={<ArtifactLink events={events} />} />
+      <RunResult
+        result={result}
+        action={<ArtifactLink events={events} />}
+        artifactId={artifactIdFromEvents(events)}
+      />
     </section>
   );
 }

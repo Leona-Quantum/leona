@@ -9,8 +9,12 @@ import { verificationFromMetadata, verificationFromResource } from "../../../../
 import { measuredResultFromMetadata, type MeasuredResult } from "../../../../lib/measured-result";
 import { formatShare, simulationChartData } from "../../../../lib/simulation-visual";
 import type { PublicLocale } from "../../../../lib/public-locale";
-import { CIRCUIT_FRAMEWORKS, circuitFramework, circuitFrameworkOrNull } from "../../../../lib/circuit-frameworks";
-import { convertCircuitSource, looksLikeOpenQasm3, parseCircuitSource, reconstructInterchangeCircuit } from "../../../../lib/circuit-conversion";
+import { circuitFramework } from "../../../../lib/circuit-frameworks";
+import { parseCircuitSource, reconstructInterchangeCircuit } from "../../../../lib/circuit-conversion";
+import {
+  frameworkCodeOptions as sharedFrameworkCodeOptions,
+  type FrameworkCodeOption,
+} from "../../../../lib/framework-code-options";
 import { MAX_VIEWABLE_QUBITS, MAX_VIEWABLE_STEPS } from "../../../../lib/studio-parse";
 import { CircuitDiagram } from "../../../../components/circuit-diagram";
 import { artifactExportFilename, artifactExportManifest, artifactExportSource } from "../../../../lib/artifact-export";
@@ -459,38 +463,16 @@ function CircuitDiagramPanel({ artifact, copy }: { artifact: LibraryArtifact; co
   );
 }
 
-function frameworkCodeOptions(artifact: LibraryArtifact): Array<{ key: string; label: string; code: string; note?: string }> {
-  const provided = new Map<string, string>();
-  for (const [framework, code] of Object.entries(artifact.frameworkVariants ?? {})) {
-    const normalized = normalizeFramework(framework);
-    if (normalized && code) provided.set(normalized, code);
-  }
-  const primary = normalizeFramework(artifact.framework);
-  if (primary && artifact.code) provided.set(primary, artifact.code);
-  if (artifact.qasm && looksLikeOpenQasm3(artifact.qasm)) provided.set("openqasm3", artifact.qasm);
-
-  const qasm = artifact.qasm && looksLikeOpenQasm3(artifact.qasm) ? artifact.qasm : null;
-  const candidates = [...provided.entries()]
-    .map(([framework, code]) => ({ framework, code }))
-  const source = candidates.find((candidate) => Boolean(parseCircuitSource(candidate.code, candidate.framework)))
-    ?? (qasm ? { framework: "openqasm3", code: qasm } : undefined);
-
-  return CIRCUIT_FRAMEWORKS.flatMap(({ key, label }) => {
-    const existing = provided.get(key);
-    if (existing) return [{ key, label, code: existing }];
-    if (!source) return [];
-    const conversion = convertCircuitSource(source.code, source.framework, key, qasm);
-    return conversion ? [{
-      key,
-      label,
-      code: conversion.code,
-      ...(conversion.fidelity === "standard_gate_decomposition" ? { note: conversion.note } : {}),
-    }] : [];
+// Shared with the Run surface's Final Output — see lib/framework-code-options.
+// Keeping one implementation is the only way "conversions show up wherever code
+// does" stays true as frameworks are added.
+function frameworkCodeOptions(artifact: LibraryArtifact): FrameworkCodeOption[] {
+  return sharedFrameworkCodeOptions({
+    framework: artifact.framework,
+    code: artifact.code,
+    qasm: artifact.qasm,
+    frameworkVariants: artifact.frameworkVariants,
   });
-}
-
-function normalizeFramework(value: string): string | null {
-  return circuitFrameworkOrNull(value)?.key ?? null;
 }
 
 function Runs({ artifact, copy }: { artifact: LibraryArtifact; copy: ArtifactCopy }) {
