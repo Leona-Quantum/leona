@@ -314,6 +314,10 @@ class SimpleCircuitPipeline:
         soundest: SoundCandidate | None = None
         soundest_score: tuple[int, int, int, int] | None = None
         attempts: list[dict[str, Any]] = []
+        # What forced the pending replan. A replan that then fails must not be
+        # allowed to erase it — see _with_originating_cause.
+        replan_cause: SimplePipelineFailure | None = None
+        seen_fingerprints: dict[str, int] = {}
 
         while True:
             if plan is None or plan_feedback is not None:
@@ -327,7 +331,7 @@ class SimpleCircuitPipeline:
                     assert plan_result.failure is not None
                     return await self._recover_sound_candidate_or_fail(
                         run_id,
-                        failure=plan_result.failure,
+                        failure=self._with_originating_cause(plan_result.failure, replan_cause),
                         soundest=soundest,
                         counts=counts,
                         warnings=warnings,
@@ -352,6 +356,7 @@ class SimpleCircuitPipeline:
                 plan_feedback = None
                 generation_feedback = None
                 consecutive_code_repairs = 0
+                replan_cause = None
 
             out_of_budget = counts["generation_attempts"] >= self._budget.max_generation_attempts
             out_of_time = self._out_of_time(plan, counts["generation_attempts"])
@@ -431,6 +436,19 @@ class SimpleCircuitPipeline:
                 )
             new_candidate = generated.value
             assert new_candidate is not None
+            repeat_failure = self._repeat_candidate_failure(new_candidate, seen_fingerprints)
+            if repeat_failure is not None:
+                return await self._recover_sound_candidate_or_fail(
+                    run_id,
+                    failure=repeat_failure,
+                    soundest=soundest,
+                    counts=counts,
+                    warnings=warnings,
+                    plan=plan,
+                    candidate=candidate,
+                    execution=execution,
+                    review=review,
+                )
             binding_failure = self._validate_candidate(run_id, plan, new_candidate, candidate)
             if binding_failure is not None:
                 return self._failed(
@@ -490,13 +508,12 @@ class SimpleCircuitPipeline:
                     }
                     or repeated_failure
                 ) and counts["plan_attempts"] < self._budget.max_plan_attempts:
-                    plan_feedback = self._feedback(
-                        self._escalated_execution_failure(
-                            failure,
-                            repeated=repeated_failure,
-                        ),
-                        attempts,
+                    escalated = self._escalated_execution_failure(
+                        failure,
+                        repeated=repeated_failure,
                     )
+                    plan_feedback = self._feedback(escalated, attempts)
+                    replan_cause = escalated
                     continue
                 if counts["generation_attempts"] < self._budget.max_generation_attempts:
                     generation_feedback = self._feedback(failure, attempts)
@@ -1311,6 +1328,116 @@ class SimpleCircuitPipeline:
                     f"{key}: {str(item)[-500:]}" for item in value[:20] if str(item).strip()
                 )
         return diagnostics[-24:]
+
+    #: Fields of an originating execution failure that name the real cause. A
+    #: memory refusal already carries the numbers; only the terminal failure was
+    #: dropping them.
+    _CAUSE_DETAIL_KEYS = (
+        "exit_code",
+        "failure_kind",
+        "estimated_memory_mb",
+        "memory_limit_mb",
+        "qubits",
+    )
+
+    @staticmethod
+    def _with_originating_cause(
+        failure: SimplePipelineFailure,
+        cause: SimplePipelineFailure | None,
+    ) -> SimplePipelineFailure:
+        """Report what actually went wrong when a forced replan then fails.
+
+        Observed in production (run 019f9ea8-5c20-718a-bbff-9168ccd5543e):
+        `Simulate a 40-qubit random circuit` surfaced as `plan_output_invalid`,
+        so the user read "the planner returned a plan that could not be read".
+        The truth was in the events — `sandbox.result` exit_code 75,
+        duration_ms 0 — the statevector memory preflight refusing it before it
+        ran. That correctly retries at PLANNING, the replan failed, and the
+        terminal failure described only the second failure.
+
+        The originating failure already carries `estimated_memory_mb`,
+        `memory_limit_mb` and `qubits`. This carries them, the cause's code, and
+        the replan's own code forward together, so the terminal state says both
+        what could not be run and that no smaller plan was found.
+
+        Deliberately fixed HERE and not by sniffing exit code 75 in the web
+        layer: a real process can exit 75 for its own reasons, and the worker is
+        the only component that knows which failure came first.
+        """
+        if cause is None:
+            return failure
+        details = dict(failure.details)
+        details["replan_failure_code"] = failure.code
+        details["originating_failure"] = {
+            "code": cause.code,
+            "stage": cause.stage.value,
+            "kind": cause.kind.value,
+            **{
+                key: cause.details[key]
+                for key in SimpleCircuitPipeline._CAUSE_DETAIL_KEYS
+                if key in cause.details
+            },
+        }
+        return SimplePipelineFailure(
+            # The cause's kind, not the replan's: a run refused for memory is a
+            # RESOURCE failure however the replan afterwards went wrong.
+            kind=cause.kind,
+            stage=cause.stage,
+            code=f"{cause.code}_replan_failed",
+            message=(
+                f"{cause.message}; replanning to fit did not produce a usable plan ({failure.code})"
+            ),
+            retryable=False,
+            details=details,
+        )
+
+    @staticmethod
+    def _repeat_candidate_failure(
+        candidate: CandidateRevision,
+        seen: dict[str, int],
+    ) -> SimplePipelineFailure | None:
+        """Stop a repair loop that keeps emitting the same bytes.
+
+        Observed in production (run 019f9ea8-deac-7650-babc-5925d7585211):
+        `Convert a Bell state circuit to Cirq` routed to execute with
+        framework=qiskit, and the generator emitted `FINAL_CIRCUIT = None` plus a
+        comment saying Qiskit cannot produce Cirq — **eight times,
+        byte-identical**. Every one of those cost a model call and a sandbox
+        execution to learn nothing.
+
+        It refuses the THIRD occurrence, not the second, and that is a real
+        distinction rather than caution. Two identical candidates have an
+        innocent explanation: a blocked review can ask for a repair, the
+        generator can return the same source, and the *reviewer* can then change
+        its verdict and pass it — `test_production_ports_regenerate_after_a_
+        blocked_review` pins exactly that path, and refusing at two broke it. By
+        a third the loop has evaluated identical bytes twice and is demonstrably
+        not moving. That still turns the observed eight attempts into three.
+
+        `source_fingerprint` is a SHA-256 over the framework-native source and is
+        validated against it by CandidateRevision, so it cannot drift from what
+        actually ran.
+        """
+        fingerprint = candidate.source_fingerprint
+        seen[fingerprint] = seen.get(fingerprint, 0) + 1
+        occurrences = seen[fingerprint]
+        if occurrences < 3:
+            return None
+        return SimplePipelineFailure(
+            kind=SimpleFailureKind.GENERATION,
+            stage=SimplePipelineStage.GENERATING,
+            code="candidate_not_converging",
+            message=(
+                "the generator returned source it had already produced, so repairing "
+                "it again cannot change the outcome"
+            ),
+            retryable=False,
+            details={
+                "source_fingerprint": fingerprint,
+                "occurrences": occurrences,
+                "framework": candidate.framework.value,
+            },
+        )
 
     @staticmethod
     def _execution_failure_signature(failure: SimplePipelineFailure) -> str:
