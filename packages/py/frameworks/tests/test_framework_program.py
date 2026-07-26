@@ -40,6 +40,21 @@ def test_contract_requires_final_circuit_for_every_selected_framework():
     assert program.contract_diagnostics(circuit_expected=False) == []
 
 
+def test_contract_rejects_invalid_python_and_foreign_framework_imports():
+    invalid = FrameworkProgram(Framework.QISKIT, "if :\n")
+    foreign = FrameworkProgram(
+        Framework.CIRQ,
+        "from qiskit import QuantumCircuit\nFINAL_CIRCUIT = QuantumCircuit(1)\n",
+    )
+
+    assert invalid.contract_diagnostics(circuit_expected=True) == [
+        "contract:generated source must be valid Python"
+    ]
+    assert foreign.contract_diagnostics(circuit_expected=True) == [
+        "contract:cirq source imports foreign quantum framework `qiskit`"
+    ]
+
+
 def test_comments_and_literals_do_not_satisfy_circuit_contract_or_metrics():
     program = FrameworkProgram(
         Framework.QISKIT,
@@ -114,6 +129,24 @@ def test_non_circuit_program_is_not_forced_through_openqasm():
 
     assert program.trusted_observer(circuit_expected=False) == ""
     assert extract_interchange_qasm(None).qasm is None
+
+
+@pytest.mark.parametrize("framework", list(Framework))
+def test_simple_execution_can_skip_unused_native_verification_evidence(framework):
+    program = FrameworkProgram(framework, "FINAL_CIRCUIT = circuit\n")
+
+    setup = program.trusted_setup(
+        circuit_expected=True,
+        collect_native_evidence=False,
+    )
+    observer = program.trusted_observer(
+        circuit_expected=True,
+        collect_native_evidence=False,
+    )
+
+    assert "_majorana_native_evidence" not in setup
+    assert "_majorana_native_evidence" not in observer
+    assert "resource_metrics" in observer
 
 
 def test_cirq_interchange_uses_native_openqasm3_export():
@@ -313,7 +346,8 @@ def test_pennylane_observer_treats_an_empty_wire_list_as_all_wires():
 
     code = (
         "import pennylane as qml\n"
-        "dev = qml.device('default.qubit', wires=2, shots=100)\n"
+        "dev = qml.device('default.qubit', wires=2)\n"
+        "@qml.set_shots(100)\n"
         "@qml.qnode(dev)\n"
         "def circuit():\n"
         "    qml.Hadamard(0)\n"
@@ -425,7 +459,8 @@ def test_pennylane_interchange_preserves_wire_labels_when_tape_order_is_unsorted
 
     code = (
         "import pennylane as qml\n"
-        "dev = qml.device('default.qubit', wires=3, shots=100)\n"
+        "dev = qml.device('default.qubit', wires=3)\n"
+        "@qml.set_shots(100)\n"
         "@qml.qnode(dev)\n"
         "def circuit():\n"
         "    qml.PauliX(wires=0)\n"
@@ -513,6 +548,61 @@ def test_qiskit_c_if_is_caught_before_execution_and_names_its_replacement():
         "RESULT = {'counts': {}}\n"
     )
     assert FrameworkProgram(Framework.QISKIT, ok).contract_diagnostics(circuit_expected=True) == []
+
+
+def test_qiskit_get_statevector_without_save_is_caught_before_execution():
+    """AerSimulator.run(...).result().get_statevector(...) raises QiskitError unless
+    the circuit calls .save_statevector() first — production run 019f9759-4fd1
+    burned all 4 generation attempts on this exact KeyError/QiskitError for a VQE
+    energy calculation before this deterministic check existed."""
+
+    source = (
+        "from qiskit import QuantumCircuit\n"
+        "from qiskit_aer import AerSimulator\n"
+        "qc = QuantumCircuit(2)\n"
+        "qc.h(0)\n"
+        "sim = AerSimulator(method='statevector')\n"
+        "result = sim.run(qc, shots=None).result()\n"
+        "sv = result.get_statevector(qc)\n"
+        "FINAL_CIRCUIT = qc\n"
+        "RESULT = {'energy': 0.0}\n"
+    )
+    diagnostics = FrameworkProgram(Framework.QISKIT, source).contract_diagnostics(
+        circuit_expected=True
+    )
+    assert any("get_statevector" in d and "save_statevector" in d for d in diagnostics), diagnostics
+
+    saved = (
+        "from qiskit import QuantumCircuit\n"
+        "from qiskit_aer import AerSimulator\n"
+        "qc = QuantumCircuit(2)\n"
+        "qc.h(0)\n"
+        "qc.save_statevector()\n"
+        "sim = AerSimulator(method='statevector')\n"
+        "result = sim.run(qc, shots=None).result()\n"
+        "sv = result.get_statevector(qc)\n"
+        "FINAL_CIRCUIT = qc\n"
+        "RESULT = {'energy': 0.0}\n"
+    )
+    assert (
+        FrameworkProgram(Framework.QISKIT, saved).contract_diagnostics(circuit_expected=True) == []
+    )
+
+    via_statevector_class = (
+        "from qiskit import QuantumCircuit\n"
+        "from qiskit.quantum_info import Statevector\n"
+        "qc = QuantumCircuit(2)\n"
+        "qc.h(0)\n"
+        "sv = Statevector(qc)\n"
+        "FINAL_CIRCUIT = qc\n"
+        "RESULT = {'energy': 0.0}\n"
+    )
+    assert (
+        FrameworkProgram(Framework.QISKIT, via_statevector_class).contract_diagnostics(
+            circuit_expected=True
+        )
+        == []
+    )
 
 
 # --- Framework-native verification evidence ----------------------------------------
@@ -682,7 +772,8 @@ def test_pennylane_native_statevector_and_sampled_counts():
     pytest.importorskip("pennylane")
     code = (
         "import pennylane as qml\n"
-        "dev = qml.device('default.qubit', wires=3, shots=128)\n"
+        "dev = qml.device('default.qubit', wires=3)\n"
+        "@qml.set_shots(128)\n"
         "@qml.qnode(dev)\n"
         "def circuit():\n"
         "    qml.PauliX(wires=0)\n"
@@ -733,8 +824,9 @@ def test_pennylane_expectation_is_not_a_measurement():
 
     code = (
         "import pennylane as qml\n"
-        "dev = qml.device('default.qubit', wires=2, shots=100)\n"
+        "dev = qml.device('default.qubit', wires=2)\n"
         "H = 0.5 * qml.PauliZ(0) + 1.2 * qml.PauliZ(1) + 0.8 * qml.PauliX(0) @ qml.PauliX(1)\n"
+        "@qml.set_shots(100)\n"
         "@qml.qnode(dev)\n"
         "def circuit():\n"
         "    qml.RY(0.3, wires=0)\n"

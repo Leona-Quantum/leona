@@ -1,23 +1,18 @@
-"""Repository-backed AgentStore with a commit at every durable boundary."""
+"""Repository-backed store for the fixed pipeline's durable boundaries."""
 
 from __future__ import annotations
 
 from uuid import UUID
 
 from majorana_agent import (
-    AgentState,
     CandidateRevision,
     ConversionEvidence,
     ExecutionEvidence,
     MaterializedArtifact,
     PlanRevision,
-    PlanRecord,
-    PublishedArtifact,
     SemanticReviewEvidence,
-    StrictVerificationAttempt,
     ToolCall,
     ToolResult,
-    VerificationEvidence,
 )
 from majorana_contracts import Scope
 from majorana_contracts.enums import Framework
@@ -31,14 +26,14 @@ class RepoAgentStore:
         self._scope = scope
         self._session = session
 
-    async def state(self, run_id: UUID) -> AgentState:
-        row = await agent_repo.get_or_create_agent_run(self._scope, self._session, run_id)
-        await self._session.commit()
-        return AgentState(row.state)
-
-    async def set_state(self, run_id: UUID, state: AgentState) -> None:
-        await agent_repo.set_agent_state(self._scope, self._session, run_id, state.value)
-        await self._session.commit()
+    async def has_legacy_progress(self, run_id: UUID) -> bool:
+        """Detect an old in-flight tool loop before the fixed pipeline spends work."""
+        steps = await agent_repo.list_steps(self._scope, self._session, run_id)
+        if steps:
+            return any(not row.tool_call_id.startswith("simple:") for row in steps)
+        plan = await agent_repo.latest_plan_revision(self._scope, self._session, run_id)
+        candidates = await agent_repo.list_candidates(self._scope, self._session, run_id)
+        return plan is not None or bool(candidates)
 
     async def completed_tool_call(self, run_id: UUID, tool_call_id: str) -> ToolResult | None:
         row = await agent_repo.get_step(self._scope, self._session, run_id, tool_call_id)
@@ -52,16 +47,6 @@ class RepoAgentStore:
             payload=row.result or {},
             error_code=row.error_code,
             error_message=row.error_message,
-        )
-
-    async def tool_call(self, run_id: UUID, tool_call_id: str) -> ToolCall | None:
-        row = await agent_repo.get_step(self._scope, self._session, run_id, tool_call_id)
-        if row is None:
-            return None
-        return ToolCall(
-            tool_call_id=row.tool_call_id,
-            name=row.name,
-            arguments=row.arguments,
         )
 
     async def begin_tool_call(self, run_id: UUID, call: ToolCall) -> None:
@@ -114,28 +99,6 @@ class RepoAgentStore:
             if row.status == "completed"
         ]
 
-    async def add_plan(self, record: PlanRecord) -> None:
-        await agent_repo.set_plan(
-            self._scope,
-            self._session,
-            record.run_id,
-            plan_id=record.plan_id,
-            plan=record.plan.model_dump(mode="json"),
-        )
-        await self._session.commit()
-
-    async def plan(self, run_id: UUID, plan_id: UUID) -> PlanRecord:
-        row = await agent_repo.get_plan_revision(self._scope, self._session, run_id, plan_id)
-        if row is None:
-            raise KeyError(plan_id)
-        return PlanRecord(plan_id=plan_id, run_id=run_id, plan=row.plan)
-
-    async def latest_plan(self, run_id: UUID) -> PlanRecord | None:
-        row = await agent_repo.get_current_plan_revision(self._scope, self._session, run_id)
-        if row is None:
-            return None
-        return PlanRecord(plan_id=row.id, run_id=run_id, plan=row.plan)
-
     @staticmethod
     def _plan_revision(row) -> PlanRevision:
         return PlanRevision(
@@ -169,10 +132,6 @@ class RepoAgentStore:
         if row is None:
             raise KeyError(plan_id)
         return self._plan_revision(row)
-
-    async def current_plan_revision(self, run_id: UUID) -> PlanRevision | None:
-        row = await agent_repo.get_current_plan_revision(self._scope, self._session, run_id)
-        return self._plan_revision(row) if row is not None else None
 
     async def select_current_plan(self, run_id: UUID, plan_id: UUID) -> None:
         await agent_repo.select_current_plan(self._scope, self._session, run_id, plan_id)
@@ -239,10 +198,6 @@ class RepoAgentStore:
         )
         return self._candidate(row) if row is not None else None
 
-    async def latest_candidate(self, run_id: UUID) -> CandidateRevision | None:
-        rows = await agent_repo.list_candidates(self._scope, self._session, run_id)
-        return self._candidate(rows[-1]) if rows else None
-
     async def list_candidates(self, run_id: UUID) -> list[CandidateRevision]:
         rows = await agent_repo.list_candidates(self._scope, self._session, run_id)
         return [self._candidate(row) for row in rows]
@@ -290,55 +245,6 @@ class RepoAgentStore:
             duration_ms=row.duration_ms,
             result=row.result,
             observation=row.observation,
-        )
-
-    async def add_verification(self, evidence: VerificationEvidence) -> None:
-        row = await agent_repo.get_candidate_by_id(
-            self._scope, self._session, evidence.candidate_id
-        )
-        if row is None:
-            raise KeyError(evidence.candidate_id)
-        candidate = self._candidate(row)
-        execution = await self.execution_for(candidate.run_id, candidate.candidate_id)
-        if execution is None or execution.execution_id != evidence.execution_id:
-            raise ValueError("verification references a different execution")
-        if (
-            candidate.source_fingerprint != evidence.source_fingerprint
-            or execution.source_fingerprint != evidence.source_fingerprint
-        ):
-            raise ValueError("verification fingerprint does not match executed candidate")
-        await agent_repo.add_verification(
-            self._scope,
-            self._session,
-            candidate.run_id,
-            {
-                "id": evidence.verification_id,
-                "candidate_id": evidence.candidate_id,
-                "execution_id": evidence.execution_id,
-                "source_fingerprint": evidence.source_fingerprint,
-                "decision": evidence.decision.value,
-                "deterministic_checks": evidence.deterministic_checks,
-                "critic": evidence.critic,
-                "repair": evidence.repair.model_dump(mode="json") if evidence.repair else None,
-            },
-        )
-        await self._session.commit()
-
-    async def verification_for(
-        self, run_id: UUID, candidate_id: UUID
-    ) -> VerificationEvidence | None:
-        row = await agent_repo.get_verification(self._scope, self._session, run_id, candidate_id)
-        if row is None:
-            return None
-        return VerificationEvidence(
-            verification_id=row.id,
-            candidate_id=row.candidate_id,
-            execution_id=row.execution_id,
-            source_fingerprint=row.source_fingerprint,
-            decision=row.decision,
-            deterministic_checks=row.deterministic_checks,
-            critic=row.critic,
-            repair=row.repair,
         )
 
     @staticmethod
@@ -404,87 +310,6 @@ class RepoAgentStore:
         )
         return self._semantic_review(row) if row is not None else None
 
-    @staticmethod
-    def _strict_verification(row) -> StrictVerificationAttempt:
-        return StrictVerificationAttempt(
-            attempt_id=row.id,
-            candidate_id=row.candidate_id,
-            execution_id=row.execution_id,
-            semantic_review_id=row.semantic_review_id,
-            source_fingerprint=row.source_fingerprint,
-            attempt_seq=row.attempt_seq,
-            checks=row.checks,
-            decision=row.decision,
-            evidence_strength=row.evidence_strength,
-            claim_coverage=row.claim_coverage,
-            reason_code=row.reason_code,
-            candidate_defect_observed=row.candidate_defect_observed,
-            failure_class=row.failure_class,
-            retry_target=row.retry_target,
-            unverified_claims=row.unverified_claims,
-            verifier_version=row.verifier_version,
-        )
-
-    async def append_strict_verification(self, attempt: StrictVerificationAttempt) -> None:
-        row = await agent_repo.get_candidate_by_id(self._scope, self._session, attempt.candidate_id)
-        if row is None:
-            raise KeyError(attempt.candidate_id)
-        candidate = self._candidate(row)
-        execution = await self.execution_for(candidate.run_id, candidate.candidate_id)
-        if execution is None:
-            raise ValueError("candidate must be executed before strict verification")
-        review_row = await agent_repo.get_semantic_review(
-            self._scope,
-            self._session,
-            candidate.run_id,
-            candidate.candidate_id,
-            attempt.semantic_review_id,
-        )
-        if review_row is None:
-            raise ValueError("strict verification requires its semantic review")
-        review = self._semantic_review(review_row)
-        attempt.assert_binding(candidate, execution, review)
-        await agent_repo.append_strict_verification(
-            self._scope,
-            self._session,
-            candidate.run_id,
-            {
-                "id": attempt.attempt_id,
-                "candidate_id": attempt.candidate_id,
-                "execution_id": attempt.execution_id,
-                "semantic_review_id": attempt.semantic_review_id,
-                "source_fingerprint": attempt.source_fingerprint,
-                "attempt_seq": attempt.attempt_seq,
-                "checks": attempt.checks,
-                "decision": attempt.decision.value,
-                "evidence_strength": (
-                    attempt.evidence_strength.value if attempt.evidence_strength else None
-                ),
-                "claim_coverage": attempt.claim_coverage,
-                "reason_code": attempt.reason_code,
-                "candidate_defect_observed": attempt.candidate_defect_observed,
-                "failure_class": (attempt.failure_class.value if attempt.failure_class else None),
-                "retry_target": attempt.retry_target.value,
-                "unverified_claims": attempt.unverified_claims,
-                "verifier_version": attempt.verifier_version,
-            },
-        )
-        await self._session.commit()
-
-    async def latest_strict_verification(
-        self, run_id: UUID, candidate_id: UUID
-    ) -> StrictVerificationAttempt | None:
-        row = await agent_repo.latest_strict_verification(
-            self._scope, self._session, run_id, candidate_id
-        )
-        return self._strict_verification(row) if row is not None else None
-
-    async def strict_verification(self, run_id, candidate_id, attempt_id):
-        row = await agent_repo.get_strict_verification(
-            self._scope, self._session, run_id, candidate_id, attempt_id
-        )
-        return self._strict_verification(row) if row is not None else None
-
     async def add_conversion(self, evidence: ConversionEvidence) -> None:
         row = await agent_repo.get_candidate_by_id(
             self._scope, self._session, evidence.candidate_id
@@ -492,16 +317,14 @@ class RepoAgentStore:
         if row is None:
             raise KeyError(evidence.candidate_id)
         candidate = self._candidate(row)
-        verification = await self.latest_strict_verification(
-            candidate.run_id, candidate.candidate_id
-        )
         execution = await self.execution_for(candidate.run_id, candidate.candidate_id)
-        if verification is None or verification.decision.value not in {"pass", "inconclusive"}:
-            raise ValueError("conversion requires strict PASS or INCONCLUSIVE")
+        review = await self.latest_semantic_review(candidate.run_id, candidate.candidate_id)
+        if review is None or not review.is_deliverable():
+            raise ValueError("conversion requires a review whose evidence is deliverable")
         if execution is None or not (
-            verification.execution_id == evidence.execution_id == execution.execution_id
+            review.execution_id == evidence.execution_id == execution.execution_id
             and candidate.source_fingerprint
-            == verification.source_fingerprint
+            == review.source_fingerprint
             == evidence.source_fingerprint
             == execution.source_fingerprint
         ):
@@ -534,9 +357,13 @@ class RepoAgentStore:
         if row is None:
             raise KeyError(materialization.candidate_id)
         candidate = self._candidate(row)
-        strict = await self.latest_strict_verification(candidate.run_id, candidate.candidate_id)
-        if strict is None or strict.decision.value not in {"pass", "inconclusive"}:
-            raise ValueError("materialization requires strict PASS or INCONCLUSIVE")
+        execution = await self.execution_for(candidate.run_id, candidate.candidate_id)
+        review = await self.latest_semantic_review(candidate.run_id, candidate.candidate_id)
+        if execution is None or not execution.succeeded:
+            raise ValueError("materialization requires successful execution")
+        if review is None or not review.is_deliverable():
+            raise ValueError("materialization requires a review whose evidence is deliverable")
+        review.assert_binding(candidate, execution)
         if candidate.source_fingerprint != materialization.source_fingerprint:
             raise ValueError("materialization fingerprint does not match candidate")
         await agent_repo.set_materialization(
@@ -555,43 +382,3 @@ class RepoAgentStore:
             return None
         materialization = MaterializedArtifact.model_validate(row.materialization)
         return materialization if materialization.candidate_id == candidate_id else None
-
-    async def add_publication(self, publication: PublishedArtifact) -> None:
-        row = await agent_repo.get_candidate_by_id(
-            self._scope, self._session, publication.candidate_id
-        )
-        if row is None:
-            raise KeyError(publication.candidate_id)
-        candidate = self._candidate(row)
-        verification = await self.verification_for(candidate.run_id, candidate.candidate_id)
-        if verification is None or verification.decision.value != "pass":
-            raise ValueError("publication requires verification PASS")
-        if candidate.source_fingerprint != publication.source_fingerprint:
-            raise ValueError("publication fingerprint does not match candidate")
-        await agent_repo.set_publication(
-            self._scope,
-            self._session,
-            candidate.run_id,
-            publication.model_dump(mode="json"),
-        )
-        await self._session.commit()
-
-    async def published_verification(self, run_id: UUID) -> VerificationEvidence | None:
-        """The evidence behind the candidate this run actually published.
-
-        The run handler knows the loop reached PUBLISHED but not what that publication
-        was proved by, and `latest_candidate` is not the answer — the published one is
-        whichever candidate passed, not whichever came last.
-        """
-        row = await agent_repo.get_or_create_agent_run(self._scope, self._session, run_id)
-        if row.publication is None:
-            return None
-        publication = PublishedArtifact.model_validate(row.publication)
-        return await self.verification_for(run_id, publication.candidate_id)
-
-    async def publication_for(self, run_id: UUID, candidate_id: UUID) -> PublishedArtifact | None:
-        row = await agent_repo.get_or_create_agent_run(self._scope, self._session, run_id)
-        if row.publication is None:
-            return None
-        publication = PublishedArtifact.model_validate(row.publication)
-        return publication if publication.candidate_id == candidate_id else None

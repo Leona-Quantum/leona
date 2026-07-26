@@ -277,8 +277,8 @@ class VerificationPlan(_PlanBase):
         `exact_diag` was in VerificationMethod from migration 0001 but never in the
         planner's schema, so `_drop_unplannable_methods` below normalized it away
         and stored plans carrying it were parsed fine. Making it plannable turns
-        those same rows into hard validation errors — and `PlanRecord.plan` is
-        typed `Plan`, so every rehydration of a stored plan re-validates it. A run
+        those same rows into hard validation errors — and every durable plan
+        revision re-validates as `Plan` when it is loaded. A run
         resuming across this deploy would die on a plan that used to parse.
 
         So the absent case normalizes to yesterday's behaviour: drop the method,
@@ -318,8 +318,8 @@ class VerificationPlan(_PlanBase):
         exists for: `brute_force` was in VerificationMethod from migration 0001
         but never plannable, so `_drop_unplannable_methods` normalized it away and
         stored plans carrying it parsed fine. Making it plannable turns those rows
-        into hard validation errors, and `PlanRecord.plan` re-validates on every
-        rehydration — a run resuming across this deploy would die on a plan that
+        into hard validation errors, and every durable plan revision re-validates
+        as `Plan` when loaded — a run resuming across this deploy would die on a plan that
         used to parse. The absent case normalizes to yesterday's behaviour: drop
         the method, run without the check.
 

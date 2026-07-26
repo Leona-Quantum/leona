@@ -7,4 +7,4 @@ expect:
   # The artifact must remain lossless instead of inheriting a private-model limit.
   export_status: lossless
   saves_artifact: true
-  verifier_decision: pass
+  terminal_reason: ai_review_aligned

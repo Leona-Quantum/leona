@@ -148,7 +148,9 @@ from .lifecycle import (
 # and optional machine-readable terminal reasons.
 # 2.3.0: Artifact, ArtifactVersion, and Run expose typed bounded verification
 # summaries so clients never infer trust from arbitrary metadata.
-CONTRACTS_VERSION = "2.3.0"
+# 2.4.0: SandboxResult exposes the bounded protected RESULT payload so replaying
+# clients can render the actual simulation values without parsing stdout.
+CONTRACTS_VERSION = "2.4.0"
 
 __all__ = [
     "CONTRACTS_VERSION",

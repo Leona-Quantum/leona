@@ -339,7 +339,9 @@ export function rememberArtifactFromRun(events: readonly RunEvent[], prompt: str
     framework,
     status: statusFromFinished(finished),
     updatedAt,
-    description: `Saved from the verified Leona Run for: ${prompt}`,
+    description: statusFromFinished(finished) === "inconclusive"
+      ? `Saved from an executed, unverified Leona Run for: ${prompt}`
+      : `Saved from the Leona Run for: ${prompt}`,
     tags: [String(family).toLowerCase(), String(framework).toLowerCase(), "run"],
     verification,
     code,
