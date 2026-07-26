@@ -28,3 +28,6 @@ class RunContext:
     source_code: str | None = None
     source_framework: Framework | None = None
     parent_artifact_id: Any | None = None
+    #: Short model-written name for this conversation, settled before dispatch.
+    #: None on a later turn, which already has one, or when naming failed.
+    conversation_title: str | None = None

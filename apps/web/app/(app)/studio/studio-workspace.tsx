@@ -18,7 +18,7 @@ import { TIER_LIMITS } from "../../../lib/account-tier";
 import { formatShare, simulationChartData, simulationReading, type SimulationChartData, type SimulationReading } from "../../../lib/simulation-visual";
 import { fetchQpuBackends, fetchQpuEstimate, fetchQpuRun, fetchQpuSubmissionGate, formatUsd, submitQpuRun, type QpuBackendInfo, type QpuCostEstimate, type QpuRunRecord, type QpuSubmissionGate } from "../../../lib/qpu";
 import { WORKSPACE_COPY } from "../../../lib/workspace-locale";
-import { sampling } from "../../../lib/studio-run-request";
+import { DEFAULT_RUN_SHOTS, sampling } from "../../../lib/studio-run-request";
 import { verificationFromMetadata, verificationFromResource, type VerificationCheck } from "../../../lib/verification-record";
 import { artifactExportManifest } from "../../../lib/artifact-export";
 import { studioVerificationDisplayState } from "../../../lib/verification-display";
@@ -94,7 +94,7 @@ export function StudioWorkspace({ artifactId, newDraft = false, locale = "en", l
   const [inspectorOpen, setInspectorOpen] = useState(true);
   // Strings, not numbers: an empty seed field means "let the planner choose" and
   // a number state would have to encode that as 0, which is a valid seed.
-  const [shots, setShots] = useState("4096");
+  const [shots, setShots] = useState(String(DEFAULT_RUN_SHOTS));
   const [seed, setSeed] = useState("");
   const [artifactHydration, setArtifactHydration] = useState<ArtifactHydration>(() => artifactId && !newDraft ? "loading" : "ready");
   const [artifactSyncError, setArtifactSyncError] = useState(false);
@@ -592,6 +592,12 @@ export function StudioWorkspace({ artifactId, newDraft = false, locale = "en", l
                       onRun={() => startCpuSimulation()}
                       onConfirmRerun={() => startCpuSimulation(true)}
                       onCancelRerun={() => setRerunPending(false)}
+                      onRunInSandbox={
+                        code.trim() && isExecutableCircuitFramework(sourceFramework)
+                          ? () => void startRun()
+                          : null
+                      }
+                      sandboxBusy={busy !== null}
                       copy={copy}
                     />
                   ) : null}
@@ -1195,6 +1201,8 @@ function SimulationPanel({
   onRun,
   onConfirmRerun,
   onCancelRerun,
+  onRunInSandbox,
+  sandboxBusy,
   copy,
 }: {
   artifact: LibraryArtifact | null;
@@ -1206,6 +1214,8 @@ function SimulationPanel({
   onRun: () => void;
   onConfirmRerun: () => void;
   onCancelRerun: () => void;
+  onRunInSandbox: (() => void) | null;
+  sandboxBusy: boolean;
   copy: StudioCopy;
 }) {
   const currentRecords = eligibility.eligible
@@ -1250,7 +1260,27 @@ function SimulationPanel({
               {busy ? copy.starting : currentRecords.length ? copy.rerunCpuSimulation : copy.runCpuSimulation}
             </button>
           )
-        ) : <p className="mj-studio-simulation-unavailable" role="alert">{copy.cpuUnavailable(eligibility.reason)}</p>}
+        ) : (
+          <div className="mj-studio-simulation-unavailable" role="alert">
+            <p>{copy.cpuUnavailable(eligibility.reason)}</p>
+            {/* The browser lane can only run circuits its bounded parser can
+                rebuild, which is the Studio builder's own twelve-gate shape —
+                so ordinary Qiskit with transpile/AerSimulator, loops, or helper
+                functions never qualifies, which is nearly everything a run
+                produces. That was a dead end with no next step on the screen.
+                The sandbox runs the exact source instead, including whatever
+                error it raises, which is the outcome a user asking "why won't
+                this simulate" actually wants. */}
+            {onRunInSandbox ? (
+              <>
+                <p>{copy.sandboxFallbackExplainer}</p>
+                <button className="mj-primary-button" type="button" disabled={sandboxBusy} onClick={onRunInSandbox}>
+                  {sandboxBusy ? copy.starting : copy.runInSandbox}
+                </button>
+              </>
+            ) : null}
+          </div>
+        )}
 
         <section className="mj-studio-hardware-lanes" aria-label={copy.hardwareLanes}>
           <span className="mj-section-label">{copy.hardwareLanes}</span>

@@ -541,6 +541,46 @@ export interface components {
             type: "compilation.result";
         };
         /**
+         * ConversationTitled
+         * @description A short name for the conversation, written by the model on its first turn.
+         *
+         *     Emitted at most once per conversation and never for a later turn, so the name
+         *     a user sees in their sidebar does not shift under them mid-thread. The title
+         *     is the model's own words in the language the user wrote in — deriving it from
+         *     the prompt text is what produced sidebar rows that were whole paragraphs, and
+         *     translating it is what mixed two languages into one list.
+         */
+        ConversationTitled: {
+            /**
+             * Run Id
+             * Format: uuid
+             */
+            run_id: string;
+            /**
+             * Seq
+             * @description Unique per run; powers replay and SSE Last-Event-ID
+             */
+            seq: number;
+            /**
+             * Source
+             * @default model
+             * @enum {string}
+             */
+            source: "model" | "fallback";
+            /** Title */
+            title: string;
+            /**
+             * Ts
+             * Format: date-time
+             */
+            ts: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "conversation.titled";
+        };
+        /**
          * EvidenceStrength
          * @description What a passing run's verdict was actually proved by.
          *
@@ -1398,7 +1438,7 @@ export interface components {
          * RunEvent
          * @description Discriminated union of all run event types (class name sets the schema id).
          */
-        RunEvent: components["schemas"]["RunQueued"] | components["schemas"]["RunStarted"] | components["schemas"]["RunModeResolved"] | components["schemas"]["StageStarted"] | components["schemas"]["StageFinished"] | components["schemas"]["PlanProduced"] | components["schemas"]["ResearchCompleted"] | components["schemas"]["LlmCall"] | components["schemas"]["LlmDelta"] | components["schemas"]["ChatDelta"] | components["schemas"]["ChatCompleted"] | components["schemas"]["ChatError"] | components["schemas"]["CodeGenerated"] | components["schemas"]["ScreenResult"] | components["schemas"]["ResourceEstimateResult"] | components["schemas"]["CompilationResult"] | components["schemas"]["CodeFinalized"] | components["schemas"]["SandboxResult"] | components["schemas"]["VerificationResult"] | components["schemas"]["SemanticReviewRecorded"] | components["schemas"]["StrictVerificationRecorded"] | components["schemas"]["BaselineResult"] | components["schemas"]["ExportClassified"] | components["schemas"]["ArtifactSaved"] | components["schemas"]["RunAnalysis"] | components["schemas"]["RunDiagnosed"] | components["schemas"]["RunRestarted"] | components["schemas"]["RunBestEffort"] | components["schemas"]["RunErrorEvent"] | components["schemas"]["RunFinished"];
+        RunEvent: components["schemas"]["RunQueued"] | components["schemas"]["RunStarted"] | components["schemas"]["RunModeResolved"] | components["schemas"]["StageStarted"] | components["schemas"]["StageFinished"] | components["schemas"]["PlanProduced"] | components["schemas"]["ResearchCompleted"] | components["schemas"]["LlmCall"] | components["schemas"]["LlmDelta"] | components["schemas"]["ChatDelta"] | components["schemas"]["ChatCompleted"] | components["schemas"]["ChatError"] | components["schemas"]["ConversationTitled"] | components["schemas"]["CodeGenerated"] | components["schemas"]["ScreenResult"] | components["schemas"]["ResourceEstimateResult"] | components["schemas"]["CompilationResult"] | components["schemas"]["CodeFinalized"] | components["schemas"]["SandboxResult"] | components["schemas"]["VerificationResult"] | components["schemas"]["SemanticReviewRecorded"] | components["schemas"]["StrictVerificationRecorded"] | components["schemas"]["BaselineResult"] | components["schemas"]["ExportClassified"] | components["schemas"]["ArtifactSaved"] | components["schemas"]["RunAnalysis"] | components["schemas"]["RunDiagnosed"] | components["schemas"]["RunRestarted"] | components["schemas"]["RunBestEffort"] | components["schemas"]["RunErrorEvent"] | components["schemas"]["RunFinished"];
         /** RunFinished */
         RunFinished: {
             /** @default null */

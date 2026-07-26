@@ -21,12 +21,14 @@ from majorana_llm.parsing import (
 
 from majorana_llm.prompts import (
     CHAT_SYSTEM_PROMPT,
+    CONVERSATION_TITLE_SYSTEM_PROMPT,
     FRAMEWORK_DIRECTIVE,
     INTENT_ROUTER_SYSTEM_PROMPT,
     SIMPLE_GENERATION_SYSTEM_PROMPT,
     SIMPLE_PLAN_SYSTEM_PROMPT,
     SIMPLE_REVIEW_SYSTEM_PROMPT,
     RenderedPrompt,
+    render_conversation_title_prompt,
     render_intent_prompt,
 )
 
@@ -48,10 +50,12 @@ __all__ = [
     "StageOutputError",
     "INTENT_ROUTER_SYSTEM_PROMPT",
     "CHAT_SYSTEM_PROMPT",
+    "CONVERSATION_TITLE_SYSTEM_PROMPT",
     "SIMPLE_GENERATION_SYSTEM_PROMPT",
     "SIMPLE_PLAN_SYSTEM_PROMPT",
     "SIMPLE_REVIEW_SYSTEM_PROMPT",
     "FRAMEWORK_DIRECTIVE",
     "RenderedPrompt",
+    "render_conversation_title_prompt",
     "render_intent_prompt",
 ]

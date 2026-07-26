@@ -32,7 +32,14 @@ from majorana_agent import (
     SimplePipelineStatus,
 )
 from majorana_contracts.events import run_event_adapter
-from majorana_llm import CHAT_SYSTEM_PROMPT, LLMClient, LLMRequest, default_llm, model_for
+from majorana_llm import (
+    CHAT_SYSTEM_PROMPT,
+    LLMClient,
+    LLMRequest,
+    default_llm,
+    model_for,
+    render_conversation_title_prompt,
+)
 from majorana_qpu import (
     QpuJobRequest,
     QpuJobStatus,
@@ -293,6 +300,7 @@ async def handle_run_execute(
                 llm=provider,
                 has_source_code=bool(payload.get("source_code")),
             )
+            ctx = await _title_conversation(ctx, store, scope=scope, session=session, llm=provider)
             if ctx.mode is not RunMode.EXECUTE:
                 final = await _handle_conversation(ctx, store, provider)
             else:
@@ -316,6 +324,110 @@ async def handle_run_execute(
             await _finish_timed_out_run(ctx, store)
         final = RunStatus.FAILED
     log.info("run %s finished: %s", run_id, final)
+
+
+#: How long naming may take before the run gives up and uses its own fallback.
+#: A name is decoration; a user waiting on an answer is not, so this is short.
+_TITLE_TIMEOUT_S = 8.0
+_TITLE_MAX_WORDS = 5
+_TITLE_MAX_CHARS = 60
+
+
+def normalize_conversation_title(raw: str) -> str | None:
+    """Reduce a model's reply to a title, or None if there is nothing usable.
+
+    Word-capping is whitespace-based, which is the right rule for the languages
+    that use spaces and a no-op for Japanese — where a five-"word" cap has no
+    meaning and the character cap is what actually bounds the row. Applying a
+    space-based cap to Japanese would truncate nothing; applying only a character
+    cap to English would let a nine-word title through. Both run, in that order.
+    """
+    text = " ".join(raw.strip().split())
+    if not text:
+        return None
+    # Models like to answer a naming request with `Title: "Bell state"`.
+    lowered = text.lower()
+    for prefix in ("title:", "タイトル:", "タイトル："):
+        if lowered.startswith(prefix):
+            text = text[len(prefix) :].strip()
+            break
+    text = text.strip("\"'`“”«»「」『』 \t")
+    words = text.split()
+    if len(words) > _TITLE_MAX_WORDS:
+        text = " ".join(words[:_TITLE_MAX_WORDS])
+    text = text[:_TITLE_MAX_CHARS].rstrip(" .、。,")
+    return text or None
+
+
+def fallback_conversation_title(task_prompt: str) -> str | None:
+    """The name to use when the model could not supply one.
+
+    Deliberately the same shape as a model title — first clause, five words —
+    rather than the whole prompt. The failure mode being fixed is sidebar rows
+    that are paragraphs, and a fallback that reintroduces them just moves the
+    defect behind a provider outage.
+    """
+    first_line = task_prompt.strip().split("\n", 1)[0]
+    return normalize_conversation_title(first_line)
+
+
+async def _title_conversation(
+    ctx: RunContext,
+    store: RepoRunStateStore,
+    *,
+    scope: Scope,
+    session: AsyncSession,
+    llm: LLMClient,
+) -> RunContext:
+    """Name this turn, and — on the opening turn only — the conversation.
+
+    Runs before dispatch so both modes are named the same way. The name is
+    always computed, because an artifact saved by *any* turn needs a short title
+    and the alternative is the raw prompt. The `conversation.titled` event is
+    emitted only when no earlier turn exists: a sidebar row that renamed itself
+    every time the user sent another message would not be an identity for the
+    thread.
+
+    Nothing here may fail a run. A conversation with a clumsy name is a working
+    conversation; a run that died naming itself is not.
+    """
+    if await store.current_status() not in {RunStatus.QUEUED, RunStatus.RUNNING}:
+        return ctx
+    opening_turn = True
+    if ctx.conversation_id is not None:
+        earlier = await runs_repo.list_conversation_messages(
+            scope, session, ctx.conversation_id, exclude_run_id=ctx.run_id
+        )
+        opening_turn = not earlier
+
+    title: str | None = None
+    source = "model"
+    prompt = render_conversation_title_prompt(ctx.task_prompt)
+    try:
+        async with asyncio.timeout(_TITLE_TIMEOUT_S):
+            response = await llm.complete(
+                LLMRequest(
+                    model=model_for("writeback"),
+                    system=prompt.system,
+                    user=prompt.user,
+                    temperature=0.0,
+                    # max_tokens is deliberately unset. The writeback role runs a
+                    # reasoning model, and a small ceiling is what bench-14 proved
+                    # can consume the whole budget on reasoning and return empty
+                    # content — the exact failure a title cap looks safe against.
+                )
+            )
+        title = normalize_conversation_title(response.text)
+    except Exception:
+        log.warning("conversation naming failed for run %s", ctx.run_id, exc_info=True)
+    if title is None:
+        title = fallback_conversation_title(ctx.task_prompt)
+        source = "fallback"
+    if title is None:
+        return ctx
+    if opening_turn:
+        await ctx.sink.emit("conversation.titled", {"title": title, "source": source})
+    return replace(ctx, conversation_title=title)
 
 
 async def _resolve_mode(
@@ -466,7 +578,10 @@ async def _handle_agent_execution(
             parent_artifact_id=parent_artifact_id,
             parent_artifact_version_id=parent_artifact_version_id,
             parent_artifact_fingerprint=parent_artifact_fingerprint,
-            title=ctx.task_prompt,
+            # The conversation's own short name when it has one. Falling back to
+            # the raw prompt is what titled every Vault row with a paragraph;
+            # keep it only as the last resort it is.
+            title=ctx.conversation_title or ctx.task_prompt,
         ),
         task_prompt=ctx.task_prompt,
         framework=ctx.framework,

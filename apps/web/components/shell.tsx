@@ -37,6 +37,7 @@ import {
   type ChatStatus,
   type ChatSummary,
 } from "../lib/chat-history";
+import { titleFromPrompt } from "../lib/chat-title";
 import {
   ARTIFACT_FOLDERS_EVENT,
   assignArtifactToFolder,
@@ -130,7 +131,15 @@ export function Shell({
           byId.set(
             local.id,
             remote
-              ? { ...local, ...remote, title: local.titleOverride ?? remote.title, folderId: remote.folderId ?? local.folderId }
+              // `remote.title` is re-derived from the run's prompt on every
+              // refresh — the run list carries no name — so it must lose to both
+              // a rename and the model's own name, or this poll overwrites them.
+              ? {
+                  ...local,
+                  ...remote,
+                  title: local.titleOverride ?? local.modelTitle ?? remote.title,
+                  folderId: remote.folderId ?? local.folderId,
+                }
               : local,
           );
         }
@@ -935,7 +944,3 @@ function chatFromRun(value: unknown): ChatSummary[] {
   }];
 }
 
-function titleFromPrompt(prompt: string): string {
-  const firstLine = prompt.split(/\r?\n/, 1)[0].trim();
-  return firstLine.length > 54 ? `${firstLine.slice(0, 54).trimEnd()}…` : firstLine;
-}

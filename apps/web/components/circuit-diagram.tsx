@@ -2,6 +2,7 @@
 
 import type { KeyboardEvent, MouseEvent } from "react";
 import { builderStepLabel, type BuilderStep, type CustomGateDefinition } from "../lib/studio-builder";
+import { formatGateParam } from "../lib/gate-param-label";
 
 /** The circuit SVG, shared by every surface that draws a circuit.
  *
@@ -153,7 +154,14 @@ export function CircuitDiagram({
             <g className={`mj-circuit-gate${selected ? " is-selected" : ""}`} key={step.id} {...selectProps}>
               <rect x={x - 17} y={y - 17} width="34" height="34" rx="7" />
               <text x={x} y={y + 5}>{step.gate === "M" ? "M" : step.gate}</text>
-              {step.param ? <text className="mj-circuit-label" x={x} y={y + 30}>{step.param.replace("pi", "π").replace("*", "")}</text> : null}
+              {step.param ? (
+                // The full angle stays in the code and in the tooltip; only the
+                // drawn label is bounded. See lib/gate-param-label.
+                <text className="mj-circuit-label" x={x} y={y + 30}>
+                  <title>{step.param}</title>
+                  {formatGateParam(step.param)}
+                </text>
+              ) : null}
             </g>
           );
         })}
