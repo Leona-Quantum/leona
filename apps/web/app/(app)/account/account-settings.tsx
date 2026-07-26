@@ -23,6 +23,8 @@ export function AccountSettings({ initialEmail, locale }: { initialEmail: string
   const [displayName, setDisplayName] = useState("");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [autoKeep, setAutoKeep] = useState(false);
+  const [savingAutoKeep, setSavingAutoKeep] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
 
   useEffect(() => {
@@ -36,6 +38,7 @@ export function AccountSettings({ initialEmail, locale }: { initialEmail: string
         setMe(identity);
         setDisplayName(identity.display_name ?? "");
         setWorkspace(overview);
+        setAutoKeep(Boolean(overview.workspace.auto_keep_artifacts));
         setLoading(false);
       })
       .catch((cause) => {
@@ -78,6 +81,27 @@ export function AccountSettings({ initialEmail, locale }: { initialEmail: string
     }
   }
 
+  async function saveAutoKeep(next: boolean) {
+    if (savingAutoKeep) return;
+    setSavingAutoKeep(true);
+    setAutoKeep(next);
+    setMessage(null);
+    try {
+      const response = await fetch("/api/workspace/settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ auto_keep_artifacts: next }),
+      });
+      if (!response.ok) throw new AccountRequestError(copy.autoKeepFailed);
+      setMessage(next ? copy.autoKeepOn : copy.autoKeepOff);
+    } catch (cause) {
+      setAutoKeep(!next);
+      setMessage(cause instanceof AccountRequestError ? cause.message : copy.autoKeepFailed);
+    } finally {
+      setSavingAutoKeep(false);
+    }
+  }
+
   if (loading) return <p className="mj-page-lede">{copy.loading}</p>;
   if (!workspace || !me) return <p className="mj-page-lede" role="alert">{message ?? `${initialEmail}: ${copy.unavailable}`}</p>;
 
@@ -105,6 +129,21 @@ export function AccountSettings({ initialEmail, locale }: { initialEmail: string
           <div><dt>{copy.runs}</dt><dd>{workspace.run_count}</dd></div>
           <div><dt>{copy.access}</dt><dd>{copy.privateAccess}</dd></div>
         </dl>
+        {/* Optimistic, and reverted on failure: the checkbox is the only
+            feedback there is, so leaving it in the state the user clicked while
+            the request fails would be a lie. */}
+        <label className="mj-account-toggle">
+          <input
+            type="checkbox"
+            checked={autoKeep}
+            disabled={savingAutoKeep}
+            onChange={(event) => saveAutoKeep(event.target.checked)}
+          />
+          <span>
+            <strong>{copy.autoKeep}</strong>
+            <small>{copy.autoKeepHelp}</small>
+          </span>
+        </label>
       </section>
       <section className="mj-artifact-panel mj-artifact-panel--wide">
         <div className="mj-panel-heading"><h2>{copy.workspaceBoundaries}</h2><span className="mj-mono-muted">v1</span></div>

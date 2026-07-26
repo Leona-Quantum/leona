@@ -10,11 +10,19 @@ from majorana_contracts.enums import Role, WorkspaceKind
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from ..auth.deps import CurrentScope, DbSession
-from ..orm import Membership, User, WorkspaceFolder
+from ..orm import Membership, User
+from ..orm import Workspace as WorkspaceRow
+from ..orm import WorkspaceFolder
 from ..repos import folders as folders_repo
 from ..repos import workspaces as workspaces_repo
 
 router = APIRouter()
+
+
+class WorkspaceSettingsRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    auto_keep_artifacts: bool
 
 
 class CreateFolderRequest(BaseModel):
@@ -52,25 +60,48 @@ def _to_folder(folder: WorkspaceFolder) -> WorkspaceFolderResource:
     )
 
 
+def _to_workspace(workspace: WorkspaceRow) -> WorkspaceResource:
+    return WorkspaceResource(
+        id=workspace.id,
+        kind=WorkspaceKind(workspace.kind),
+        name=workspace.name,
+        owner_user_id=workspace.owner_user_id,
+        plan=workspace.plan or "free",
+        auto_keep_artifacts=bool(workspace.auto_keep_artifacts),
+        created_at=workspace.created_at,
+        deleted_at=workspace.deleted_at,
+    )
+
+
 @router.get("/workspace", response_model=WorkspaceOverview)
 async def get_workspace(scope: CurrentScope, session: DbSession) -> WorkspaceOverview:
     workspace, members, artifact_count, run_count = await workspaces_repo.get_overview(
         scope, session
     )
     return WorkspaceOverview(
-        workspace=WorkspaceResource(
-            id=workspace.id,
-            kind=WorkspaceKind(workspace.kind),
-            name=workspace.name,
-            owner_user_id=workspace.owner_user_id,
-            plan=workspace.plan or "free",
-            created_at=workspace.created_at,
-            deleted_at=workspace.deleted_at,
-        ),
+        workspace=_to_workspace(workspace),
         members=[_to_member(membership, user) for membership, user in members],
         artifact_count=artifact_count,
         run_count=run_count,
     )
+
+
+@router.patch("/workspace/settings", response_model=WorkspaceResource)
+async def update_workspace_settings(
+    body: WorkspaceSettingsRequest,
+    scope: CurrentScope,
+    session: DbSession,
+) -> WorkspaceResource:
+    """Change workspace-level preferences.
+
+    Only `auto_keep_artifacts` today. It is read at save time, so flipping it
+    never reaches backwards: turning it on does not file runs already finished,
+    and turning it off does not remove anything already kept.
+    """
+    workspace = await workspaces_repo.set_auto_keep_artifacts(
+        scope, session, enabled=body.auto_keep_artifacts
+    )
+    return _to_workspace(workspace)
 
 
 @router.get("/workspace/folders", response_model=list[WorkspaceFolderResource])

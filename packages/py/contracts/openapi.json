@@ -80,6 +80,19 @@
             "title": "Id",
             "type": "string"
           },
+          "kept_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Kept At"
+          },
           "parent_artifact_id": {
             "anyOf": [
               {
@@ -4291,6 +4304,11 @@
       "Workspace": {
         "additionalProperties": false,
         "properties": {
+          "auto_keep_artifacts": {
+            "default": false,
+            "title": "Auto Keep Artifacts",
+            "type": "boolean"
+          },
           "created_at": {
             "format": "date-time",
             "title": "Created At",

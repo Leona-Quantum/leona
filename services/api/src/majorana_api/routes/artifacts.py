@@ -118,6 +118,7 @@ def _to_artifact(row: ArtifactRow, version_metadata: dict | None = None) -> Arti
         verification_summary=parse_verification_summary(raw),
         created_at=row.created_at,
         updated_at=row.updated_at,
+        kept_at=row.kept_at,
         deleted_at=row.deleted_at,
     )
 
@@ -239,6 +240,31 @@ async def get_artifact(
 ) -> ArtifactResource:
     artifact = await artifacts_repo.get_artifact(scope, session, artifact_id)
     metadata = None
+    if artifact.current_version_id is not None:
+        version = await artifacts_repo.get_version(scope, session, artifact.current_version_id)
+        metadata = version.artifact_metadata
+    return _to_artifact(artifact, metadata)
+
+
+@router.post("/artifacts/{artifact_id}/keep", response_model=ArtifactResource)
+async def keep_artifact(
+    artifact_id: uuid.UUID,
+    scope: CurrentScope,
+    session: DbSession,
+) -> ArtifactResource:
+    """Put a materialized run result into the Vault (migration 0036).
+
+    Every successful run materializes an artifact, because the Run surface's
+    conversion tabs read the saved version and the next turn in a conversation
+    forks from it. What the user chooses is whether it is *filed*: unkept
+    artifacts are excluded from `GET /artifacts` and from the workspace's
+    artifact count.
+
+    Idempotent — keeping something already kept returns it unchanged rather than
+    re-stamping, so a double click cannot reorder the Vault.
+    """
+    artifact = await artifacts_repo.keep_artifact(scope, session, artifact_id)
+    metadata: dict | None = None
     if artifact.current_version_id is not None:
         version = await artifacts_repo.get_version(scope, session, artifact.current_version_id)
         metadata = version.artifact_metadata

@@ -69,6 +69,9 @@ class Workspace(_ResourceBase):
     name: str
     owner_user_id: UUID
     plan: str
+    # Settings toggle (0036), default off: when true a finished run files its
+    # artifact in the Vault immediately instead of waiting for "Keep this".
+    auto_keep_artifacts: bool = False
     created_at: datetime
     deleted_at: datetime | None = None
 
@@ -118,6 +121,11 @@ class Artifact(_ResourceBase):
     verification_summary: VerificationSummary | None = None
     created_at: datetime
     updated_at: datetime
+    # When the user chose to keep this in the Vault. None means the run
+    # materialized it — so the Run surface keeps its conversion tabs and the next
+    # turn can fork from it — but it is not filed in the Vault. Distinct from
+    # deleted_at: never kept is not the same as thrown away.
+    kept_at: datetime | None = None
     deleted_at: datetime | None = None
 
 

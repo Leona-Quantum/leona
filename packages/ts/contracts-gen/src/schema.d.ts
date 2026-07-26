@@ -43,6 +43,11 @@ export interface components {
              */
             id: string;
             /**
+             * Kept At
+             * @default null
+             */
+            kept_at: string | null;
+            /**
              * Parent Artifact Id
              * @description Provenance edge
              * @default null
@@ -2181,6 +2186,11 @@ export interface components {
         Visibility: "private" | "public";
         /** Workspace */
         Workspace: {
+            /**
+             * Auto Keep Artifacts
+             * @default false
+             */
+            auto_keep_artifacts: boolean;
             /**
              * Created At
              * Format: date-time

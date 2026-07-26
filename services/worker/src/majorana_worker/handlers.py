@@ -64,6 +64,7 @@ from majorana_api.repos import runs as runs_repo
 from majorana_api.repos import artifacts as artifacts_repo
 from majorana_api.repos import qpu_runs as qpu_runs_repo
 from majorana_api.repos import system
+from majorana_api.repos import workspaces as workspaces_repo
 
 from .agent_llm import MeteredAgentLLM
 from .agent_store import RepoAgentStore
@@ -561,6 +562,10 @@ async def _handle_agent_execution(
 
     observer = SimpleEventObserver(store=agent_store, sink=ctx.sink)
     await observer.recover(ctx.run_id)
+    # Read here rather than on the save path: save runs only after every
+    # expensive stage has already succeeded, and is the worst place to introduce
+    # a query that can fail (0036).
+    auto_keep_artifacts = await workspaces_repo.auto_keep_artifacts(scope, session)
     ports = ProductionSimplePipelinePorts(
         store=agent_store,
         observer=observer,
@@ -582,6 +587,7 @@ async def _handle_agent_execution(
             # the raw prompt is what titled every Vault row with a paragraph;
             # keep it only as the last resort it is.
             title=ctx.conversation_title or ctx.task_prompt,
+            auto_keep=auto_keep_artifacts,
         ),
         task_prompt=ctx.task_prompt,
         framework=ctx.framework,

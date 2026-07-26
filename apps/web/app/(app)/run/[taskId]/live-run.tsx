@@ -1401,13 +1401,78 @@ function RunProgressBlock({
   );
 }
 
+/**
+ * Keep this result, or go to it if it is already kept.
+ *
+ * A finished run always materializes its artifact — the conversion tabs below
+ * read the saved version, and the next turn in this conversation forks from it —
+ * but it is not filed in the Vault until the user says so (migration 0036). So
+ * this control has to know which state it is in, which the run events cannot
+ * say: `artifact.saved` is emitted for kept and unkept alike. Hence the fetch.
+ *
+ * While that fetch is in flight nothing is rendered rather than guessing a
+ * label, because guessing wrong means offering to keep something already kept.
+ */
 function ArtifactLink({ events }: { events: WireEvent[] }) {
   const artifactId = artifactIdFromEvents(events);
-  if (!artifactId) return null;
+  const [kept, setKept] = useState<boolean | null>(null);
+  const [keeping, setKeeping] = useState(false);
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    if (!artifactId) return;
+    let active = true;
+    setKept(null);
+    fetch(`/api/artifacts/${artifactId}`, { cache: "no-store" })
+      .then((response) => (response.ok ? response.json() : null))
+      .then((payload: { kept_at?: string | null } | null) => {
+        if (!active) return;
+        // A failed lookup leaves this null and renders nothing: the artifact is
+        // safe either way, and a wrong button is worse than no button.
+        if (payload) setKept(Boolean(payload.kept_at));
+      })
+      .catch(() => undefined);
+    return () => {
+      active = false;
+    };
+  }, [artifactId]);
+
+  if (!artifactId || kept === null) return null;
+
+  if (kept) {
+    return (
+      <Link className="mj-secondary-button" href={`/library/${artifactId}`}>
+        View in Vault →
+      </Link>
+    );
+  }
+
+  async function keep() {
+    if (keeping) return;
+    setKeeping(true);
+    setFailed(false);
+    try {
+      const response = await fetch(`/api/artifacts/${artifactId}/keep`, { method: "POST" });
+      if (!response.ok) throw new Error("keep failed");
+      setKept(true);
+    } catch {
+      setFailed(true);
+    } finally {
+      setKeeping(false);
+    }
+  }
+
   return (
-    <Link className="mj-secondary-button" href={`/library/${artifactId}`}>
-      View in Vault →
-    </Link>
+    <span className="mj-run-keep">
+      <button className="mj-secondary-button" type="button" disabled={keeping} onClick={keep}>
+        {keeping ? "Keeping…" : "Keep in Vault"}
+      </button>
+      {failed ? (
+        <small role="alert">Could not keep this — try again.</small>
+      ) : (
+        <small>Not saved to your Vault yet.</small>
+      )}
+    </span>
   );
 }
 

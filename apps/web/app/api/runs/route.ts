@@ -80,9 +80,10 @@ export async function POST(request: Request) {
         }
       }
     }
-    // A run without a parent artifact version materializes a new Vault
-    // artifact on success; refuse it at the cap. Reruns against an existing
-    // version append evidence and stay allowed.
+    // A run without a parent artifact version can add a new artifact to the
+    // Vault; refuse it at the cap. Reruns against an existing version append
+    // evidence and stay allowed. `/v1/artifacts` counts kept artifacts only, so
+    // a run the user never kept does not spend their allowance.
     if (limits.privateArtifacts !== null && !submission.artifact_version_id) {
       const artifacts = await fetchJsonArray(
         `/v1/artifacts?limit=${limits.privateArtifacts + 1}`,
