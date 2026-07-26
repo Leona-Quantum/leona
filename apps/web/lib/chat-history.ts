@@ -6,6 +6,14 @@ export interface ChatSummary {
   title: string;
   /** User-chosen name; wins over titles re-derived from remote run prompts. */
   titleOverride?: string;
+  /**
+   * The name the model gave this conversation on its opening turn, carried on
+   * the `conversation.titled` run event. Below a user rename and above anything
+   * re-derived from prompt text — the run list endpoint has no title field, so
+   * every refresh rebuilds `title` from `task_prompt` and would otherwise
+   * overwrite this on the next tick.
+   */
+  modelTitle?: string;
   prompt: string;
   createdAt: string;
   status: ChatStatus;
@@ -134,7 +142,7 @@ export function rememberChat(chat: ChatSummary): ChatSummary[] {
 
 export function updateChat(
   id: string,
-  patch: Partial<Pick<ChatSummary, "title" | "titleOverride" | "status" | "framework" | "folderId" | "archivedAt">>,
+  patch: Partial<Pick<ChatSummary, "title" | "titleOverride" | "modelTitle" | "status" | "framework" | "folderId" | "archivedAt">>,
 ): ChatSummary[] {
   return persist(
     loadChatHistory({ includeDemo: false, includeArchived: true }).map((chat) => (chat.id === id ? { ...chat, ...patch } : chat)),
@@ -347,6 +355,10 @@ export function collapseConversationChats(chats: ChatSummary[]): ChatSummary[] {
       const identity = chronological[0]!;
       const newest = chronological[chronological.length - 1]!;
       const renamed = chronological.find((chat) => chat.titleOverride) ?? identity;
+      // The model names a conversation on its opening turn, so the name lives on
+      // whichever run carried that turn — not necessarily the identity row after
+      // a merge, and never on `newest`.
+      const named = chronological.find((chat) => chat.modelTitle);
       const folderOwner = chronological.find((chat) => chat.folderId);
       const archived = chronological.find((chat) => chat.archivedAt);
 
@@ -354,8 +366,9 @@ export function collapseConversationChats(chats: ChatSummary[]): ChatSummary[] {
         ...newest,
         id: identity.id,
         conversationId: newest.conversationId ?? identity.conversationId,
-        title: renamed.titleOverride ?? identity.title,
+        title: renamed.titleOverride ?? named?.modelTitle ?? identity.title,
         ...(renamed.titleOverride ? { titleOverride: renamed.titleOverride } : {}),
+        ...(named?.modelTitle ? { modelTitle: named.modelTitle } : {}),
         prompt: identity.prompt,
         folderId: newest.folderId ?? folderOwner?.folderId,
         ...(archived?.archivedAt ? { archivedAt: archived.archivedAt } : {}),

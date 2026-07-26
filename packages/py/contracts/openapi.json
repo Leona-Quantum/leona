@@ -1092,6 +1092,57 @@
         "title": "CompilationResult",
         "type": "object"
       },
+      "ConversationTitled": {
+        "additionalProperties": false,
+        "description": "A short name for the conversation, written by the model on its first turn.\n\nEmitted at most once per conversation and never for a later turn, so the name\na user sees in their sidebar does not shift under them mid-thread. The title\nis the model's own words in the language the user wrote in \u2014 deriving it from\nthe prompt text is what produced sidebar rows that were whole paragraphs, and\ntranslating it is what mixed two languages into one list.",
+        "properties": {
+          "run_id": {
+            "format": "uuid",
+            "title": "Run Id",
+            "type": "string"
+          },
+          "seq": {
+            "description": "Unique per run; powers replay and SSE Last-Event-ID",
+            "minimum": 0,
+            "title": "Seq",
+            "type": "integer"
+          },
+          "source": {
+            "default": "model",
+            "enum": [
+              "model",
+              "fallback"
+            ],
+            "title": "Source",
+            "type": "string"
+          },
+          "title": {
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Title",
+            "type": "string"
+          },
+          "ts": {
+            "format": "date-time",
+            "title": "Ts",
+            "type": "string"
+          },
+          "type": {
+            "const": "conversation.titled",
+            "default": "conversation.titled",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "run_id",
+          "seq",
+          "ts",
+          "title"
+        ],
+        "title": "ConversationTitled",
+        "type": "object"
+      },
       "EvidenceStrength": {
         "description": "What a passing run's verdict was actually proved by.\n\nDeliberately *not* a fourth VerifierDecision value. A run whose only check was\n`return_contract` \u2014 \"does the result dict have a `counts` key?\" \u2014 is a real pass:\nnothing it claimed was contradicted. It is just not the same claim as a run whose\nreported distribution was compared against the circuit's Born distribution to\n1.8e-16, and until 2026-07-20 both printed the single word \"Verified\".\n\nThis grades the checks, not final sufficiency. Verification v2 refuses a final\nPASS when the check set is structural-only or lacks a dedicated property check;\na physical grade may likewise describe one limited passing claim while the final\ndecision remains INCONCLUSIVE because another required claim is unsupported.",
         "enum": [
@@ -2683,6 +2734,7 @@
             "code.finalized": "#/components/schemas/CodeFinalized",
             "code.generated": "#/components/schemas/CodeGenerated",
             "compilation.result": "#/components/schemas/CompilationResult",
+            "conversation.titled": "#/components/schemas/ConversationTitled",
             "export.classified": "#/components/schemas/ExportClassified",
             "llm.call": "#/components/schemas/LlmCall",
             "llm.delta": "#/components/schemas/LlmDelta",
@@ -2744,6 +2796,9 @@
           },
           {
             "$ref": "#/components/schemas/ChatError"
+          },
+          {
+            "$ref": "#/components/schemas/ConversationTitled"
           },
           {
             "$ref": "#/components/schemas/CodeGenerated"

@@ -11,7 +11,9 @@ import {
 } from "@majorana/ui";
 import { ChatMarkdown } from "../../../../components/chat-markdown";
 import { archiveChat, deleteChat, loadChatHistory, rememberChat, updateChat, type ChatSummary } from "../../../../lib/chat-history";
-import { RunComposer } from "../../../../components/run-composer";
+import { displayChatTitle, titleFromPrompt } from "../../../../lib/chat-title";
+import { RunComposer, type ComposerFramework } from "../../../../components/run-composer";
+import type { ComposerMode } from "../../../../lib/run-mode";
 import { RUN_FIXTURES } from "./fixtures";
 import { verificationSummaryFromValue, type VerificationSummary } from "../../../../lib/verification-record";
 import { runOutcomeFromEvents } from "../../../../lib/run-outcome";
@@ -54,6 +56,7 @@ type WireEvent = {
   after?: Record<string, unknown> | null;
   compatibility?: Record<string, unknown>;
   artifact_id?: string;
+  title?: string;
   plan?: {
     problem_summary?: string;
     domain?: string;
@@ -233,7 +236,28 @@ function retainRunEvent(event: WireEvent): boolean {
   // call/code events carry everything this surface renders, while retaining every
   // delta makes each SSE update re-project an ever-growing array. Chat text has its
   // own streaming state and final chat.completed event.
-  return event.type !== "llm.delta" && event.type !== "chat.delta";
+  //
+  // `conversation.titled` is dropped for a different reason: it is workspace
+  // metadata, not evidence about the run. Everything downstream of `liveEvents`
+  // — progress, outcome, result — reasons about what the pipeline did, and a
+  // naming event has no place in any of them. It is read straight off the wire
+  // and off the raw conversation payload instead (see conversationTitleFrom*).
+  return (
+    event.type !== "llm.delta"
+    && event.type !== "chat.delta"
+    && event.type !== "conversation.titled"
+  );
+}
+
+/** The model's name for this conversation, if its opening turn recorded one. */
+function conversationTitleFromPayload(payload: ConversationPayload): string | null {
+  for (const turn of payload.turns) {
+    const titled = turn.events.find(
+      (event) => event.type === "conversation.titled" && typeof event.title === "string",
+    );
+    if (titled?.title) return titled.title;
+  }
+  return null;
 }
 
 function turnsFromConversation(payload: ConversationPayload): Turn[] {
@@ -284,6 +308,16 @@ export function LiveRun({ taskId }: { taskId: string }) {
   );
   const [attachments, setAttachments] = useState<Array<{ name: string; size: number; content: string }>>([]);
   const [existingChat, setExistingChat] = useState<ChatSummary | null>(null);
+  const [conversationTitle, setConversationTitle] = useState<string | null>(null);
+  // The prompt of a follow-up that has been sent but whose turn has not come
+  // back from /conversation yet. Without it the message the user just sent
+  // renders nowhere for the length of a round trip.
+  const [pendingPrompt, setPendingPrompt] = useState<string | null>(null);
+  // A conversation is still a place where the user picks how to be answered and
+  // in which framework. Both selections used to exist only on the /run home
+  // screen, so they vanished the moment the first message was sent.
+  const [mode, setMode] = useState<ComposerMode>("auto");
+  const [framework, setFramework] = useState<ComposerFramework>("qiskit");
   const lastEventId = useRef<number | null>(null);
   const loadSeq = useRef(0);
   const conversationIdRef = useRef<string | null>(null);
@@ -291,19 +325,25 @@ export function LiveRun({ taskId }: { taskId: string }) {
   const shouldAutoScrollRef = useRef(true);
 
   useEffect(() => {
-    setExistingChat(
-      loadChatHistory({ includeArchived: true }).find(
-        (item) => item.id === taskId || item.conversationId === conversationId,
-      ) ?? null,
-    );
+    const found = loadChatHistory({ includeArchived: true }).find(
+      (item) => item.id === taskId || item.conversationId === conversationId,
+    ) ?? null;
+    // Hold the current row while a follow-up is in flight. Each turn is a new run
+    // id, so between `router.replace` and the next `/conversation` response the
+    // new id is not in local history and `conversationId` is briefly null —
+    // dropping the row there is what made the header flash from the conversation's
+    // name to the raw text of its first prompt on every message.
+    setExistingChat((current) => found ?? (conversationId === null ? current : null));
   }, [conversationId, taskId]);
 
-  const title = existingChat?.title ?? turns[0]?.prompt ?? "Quantum chat";
+  const title = conversationTitle
+    ?? (existingChat ? displayChatTitle(existingChat) : null)
+    ?? (turns[0]?.prompt ? titleFromPrompt(turns[0].prompt) : null)
+    ?? "Quantum chat";
 
   useEffect(() => {
     conversationIdRef.current = null;
     setConversationId(null);
-    setExistingChat(null);
     shouldAutoScrollRef.current = true;
   }, [taskId]);
 
@@ -338,6 +378,11 @@ export function LiveRun({ taskId }: { taskId: string }) {
         conversationIdRef.current = payload.id;
         setConversationId(payload.id);
         setTurns(turnsFromConversation(payload));
+        const named = conversationTitleFromPayload(payload);
+        // A reload has no live stream to learn the name from, so it comes off
+        // the durable events. Only ever set, never cleared: an older turn that
+        // predates naming would otherwise blank a name already on screen.
+        if (named) setConversationTitle(named);
         setPending(payload.turns.some((turn) =>
           turn.run.id === taskId
           && !hasFinished(turn.events)
@@ -389,6 +434,17 @@ export function LiveRun({ taskId }: { taskId: string }) {
               if (event.type === "chat.completed" && event.text) {
                 setStreamingText(event.text);
                 setStreaming(false);
+              }
+              if (event.type === "conversation.titled" && event.title) {
+                const named = event.title;
+                setConversationTitle(named);
+                // Persist beside the run this browser already knows about, so the
+                // sidebar shows the name too and the next workspace refresh — which
+                // rebuilds every title from prompt text — cannot undo it.
+                const sidebarChat = loadChatHistory({ includeDemo: false, includeArchived: true }).find(
+                  (chat) => chat.id === taskId || chat.conversationId === conversationIdRef.current,
+                );
+                if (sidebarChat) updateChat(sidebarChat.id, { modelTitle: named });
               }
               if (event.type === "chat.error") {
                 setError(event.message ?? "The assistant could not complete this response.");
@@ -489,7 +545,15 @@ export function LiveRun({ taskId }: { taskId: string }) {
     }
     setPending(true);
     setError(null);
-    const attachmentBlocks = attachments.map((attachment) => `\n\n--- Attachment: ${attachment.name} ---\n${attachment.content}`).join("");
+    // Show the message immediately and empty the box. Each turn is a new run id,
+    // so the sent text has no turn to live in until /conversation answers — it
+    // used to disappear for that whole round trip while still sitting in the
+    // composer, which read as the send having failed.
+    setPendingPrompt(taskPrompt);
+    setPrompt("");
+    const sentAttachments = attachments;
+    setAttachments([]);
+    const attachmentBlocks = sentAttachments.map((attachment) => `\n\n--- Attachment: ${attachment.name} ---\n${attachment.content}`).join("");
     try {
       const response = await fetch("/api/runs", {
         method: "POST",
@@ -497,7 +561,16 @@ export function LiveRun({ taskId }: { taskId: string }) {
           "Content-Type": "application/json",
           "Idempotency-Key": crypto.randomUUID(),
         },
-        body: JSON.stringify({ task_prompt: `${taskPrompt}${attachmentBlocks}`, conversation_id: conversationId }),
+        body: JSON.stringify({
+          task_prompt: `${taskPrompt}${attachmentBlocks}`,
+          conversation_id: conversationId,
+          // Both were silently dropped on every follow-up: the composer offered
+          // neither control here, so a conversation could never be told to
+          // execute, and every turn was submitted as Qiskit whatever the user
+          // had picked on the way in.
+          mode,
+          framework,
+        }),
       });
       const payload = (await response.json()) as { id?: string; conversation_id?: string; detail?: string; error?: string };
       if (!response.ok || !payload.id) throw new Error(payload.detail ?? payload.error ?? `Message submission failed (${response.status})`);
@@ -513,6 +586,7 @@ export function LiveRun({ taskId }: { taskId: string }) {
           id: taskId,
           conversationId: payload.conversation_id ?? conversationId,
           title: titleFromPrompt(turns[0]?.prompt ?? taskPrompt),
+          ...(conversationTitle ? { modelTitle: conversationTitle } : {}),
           prompt: turns[0]?.prompt ?? taskPrompt,
           createdAt: new Date().toISOString(),
           status: "queued",
@@ -522,11 +596,25 @@ export function LiveRun({ taskId }: { taskId: string }) {
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Message submission failed");
       setPending(false);
+      // The turn never started, so put the text back rather than losing it.
+      setPrompt((current) => current || taskPrompt);
+      setAttachments((current) => (current.length ? current : sentAttachments));
+      setPendingPrompt(null);
     }
   }
 
-  const activePrompt = turns.find((turn) => turn.id === taskId)?.prompt ?? existingChat?.prompt;
-  const showActiveUser = Boolean(activePrompt && !turns.some((turn) => turn.id === taskId));
+  const settledTurn = turns.find((turn) => turn.id === taskId);
+  // `pendingPrompt` covers the window between send and the first /conversation
+  // response; `existingChat.prompt` still covers a cold open of a run whose
+  // conversation has not loaded yet.
+  const activePrompt = settledTurn?.prompt ?? pendingPrompt ?? existingChat?.prompt;
+  const showActiveUser = Boolean(activePrompt && !settledTurn);
+
+  useEffect(() => {
+    // The server's copy of the turn has arrived; the optimistic one would now be
+    // a duplicate.
+    if (settledTurn) setPendingPrompt(null);
+  }, [settledTurn]);
 
   return (
     <div className="mj-run-task">
@@ -594,6 +682,10 @@ export function LiveRun({ taskId }: { taskId: string }) {
         onFiles={addFiles}
         attachments={attachments.map(({ name, size }) => ({ name, size }))}
         onRemoveAttachment={(name) => setAttachments((current) => current.filter((item) => item.name !== name))}
+        mode={mode}
+        onModeChange={setMode}
+        framework={framework}
+        onFrameworkChange={setFramework}
       />
     </div>
   );
@@ -1317,9 +1409,4 @@ function AssistantLoading() {
       <span className="mj-chat-loading-dot" />
     </div>
   );
-}
-
-function titleFromPrompt(prompt: string): string {
-  const firstLine = prompt.split(/\r?\n/, 1)[0].trim();
-  return firstLine.length > 54 ? `${firstLine.slice(0, 54).trimEnd()}…` : firstLine;
 }
