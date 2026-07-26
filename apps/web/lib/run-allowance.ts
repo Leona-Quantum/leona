@@ -3,8 +3,19 @@
  *
  * Pure functions over data the BFF already has (the account's recent runs from
  * `GET /v1/runs`), so the policy is unit-testable without any network. The BFF
- * run route applies the verdict before a submission ever reaches the control
- * plane — a client cannot skip it without also skipping its own session cookie.
+ * run route applies the verdict before a submission reaches the control plane.
+ *
+ * SCOPE OF THAT GUARANTEE — this file used to claim a client "cannot skip it
+ * without also skipping its own session cookie", which is not true and was
+ * worth correcting because it invited later sessions to trust a server-side
+ * gate that does not exist. It binds callers who go through the BFF; the
+ * control plane is a *separate service*, and a script holding a valid access
+ * token can call `POST /v1/runs` on it directly and never pass through here.
+ * That path is bounded by a flat per-workspace ceiling in the API itself
+ * (`_enforce_execute_backstop` in services/api/.../routes/runs.py), which is an
+ * abuse backstop far above every tier — deliberately not a second copy of this
+ * policy. Real per-tier enforcement has to move server-side before multi-user
+ * signup ships; see DECISIONS.md 2026-07-26.
  *
  * Only `mode: "execute"` submissions are metered: those are the agent-pipeline
  * runs the published "runs per week" allowance describes. Chat turns are not

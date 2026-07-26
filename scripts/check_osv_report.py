@@ -37,7 +37,20 @@ from pathlib import Path
 BLOCKING_CVSS = 7.0
 
 # OSV id -> why it is accepted. Keep short, dated, and revisit on expiry.
-ALLOWLIST: dict[str, str] = {}
+ALLOWLIST: dict[str, str] = {
+    # brace-expansion DoS (unbounded expansion -> OOM). The 5.x line is patched
+    # via a pnpm override; this covers the 2.x copy that only
+    # @redocly/openapi-core pulls, through openapi-typescript, for the contracts
+    # codegen. Accepted rather than upgraded because there is no fix available:
+    # 2.1.2 is the last 2.x and upstream patched only 5.0.8, and the override
+    # that would reach it (minimatch@^5 -> 10) breaks @redocly, which calls
+    # minimatch's removed callable default export. Verified against the
+    # installed file. Build-time only, never on a request path, and the pattern
+    # it globs is our own OpenAPI spec, not user input — an attacker has no way
+    # to supply the pathological brace expression. Revisit 2026-10-26, or
+    # sooner if openapi-typescript moves to @redocly 2.x.
+    "GHSA-mh99-v99m-4gvg": "brace-expansion 2.1.2 via @redocly codegen; no fix in 2.x; build-time only; review 2026-10-26",
+}
 
 
 def _score(group: dict) -> float | None:

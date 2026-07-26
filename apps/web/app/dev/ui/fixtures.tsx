@@ -5,6 +5,51 @@
 // axe-core / visual-diff checks when Playwright lands.
 import { EmptyState, RunView, StageRail, VerdictBanner, type RailStage } from "@majorana/ui";
 import { RUN_FIXTURES } from "../../(app)/run/[taskId]/fixtures";
+import { CircuitDiagram } from "../../../components/circuit-diagram";
+import { reconstructInterchangeCircuit } from "../../../lib/circuit-conversion";
+
+/** A GHZ state on `n` qubits as interchange OpenQASM 3. */
+function ghzQasm(n: number): string {
+  return [
+    "OPENQASM 3.0;",
+    'include "stdgates.inc";',
+    `qubit[${n}] q;`,
+    `bit[${n}] c;`,
+    "h q[0];",
+    ...Array.from({ length: n - 1 }, (_, i) => `cx q[0], q[${i + 1}];`),
+    ...Array.from({ length: n }, (_, i) => `c[${i}] = measure q[${i}];`),
+  ].join("\n");
+}
+
+/** Render whatever the Vault artifact-detail page would render for this QASM.
+ *
+ * Deliberately goes through `reconstructInterchangeCircuit` rather than taking
+ * a pre-built circuit, so these fixtures exercise the same parse → discriminate
+ * → draw path the real page uses. A wide circuit here is the only place the
+ * read-only branch can be seen without a seeded artifact from the control
+ * plane, which a local dev server cannot reach. */
+function DiagramFixture({ qasm, title }: { qasm: string; title: string }) {
+  const result = reconstructInterchangeCircuit(qasm);
+  return (
+    <section>
+      <h2 style={{ fontSize: "var(--fs-16)", fontWeight: 500 }}>{title}</h2>
+      {result.kind === "ok" ? (
+        <CircuitDiagram
+          qubitCount={result.circuit.qubitCount}
+          steps={result.circuit.steps}
+          customGates={[]}
+          ariaLabel={title}
+        />
+      ) : result.kind === "too_large" ? (
+        <p className="mj-artifact-copy">
+          Too large to draw ({result.qubitCount} qubits, {result.stepCount} operations).
+        </p>
+      ) : (
+        <p className="mj-artifact-copy">No drawable OpenQASM 3.</p>
+      )}
+    </section>
+  );
+}
 
 const MID_RUN: RailStage[] = [
   { id: "plan", name: "Plan", state: "pass", elapsed: "2.1 s" },
@@ -72,6 +117,16 @@ export function UiFixtures() {
           />
         </div>
       </section>
+
+      <DiagramFixture qasm={ghzQasm(3)} title="Circuit diagram — narrow (3q GHZ)" />
+      <DiagramFixture
+        qasm={ghzQasm(10)}
+        title="Circuit diagram — read-only, wider than the editable builder (10q GHZ)"
+      />
+      <DiagramFixture
+        qasm={ghzQasm(80)}
+        title="Circuit diagram — beyond the viewing ceiling (80q GHZ, must not draw)"
+      />
 
       <section>
         <h2 style={{ fontSize: "var(--fs-16)", fontWeight: 500 }}>Empty state</h2>

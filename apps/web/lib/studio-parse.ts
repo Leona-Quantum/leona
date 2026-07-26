@@ -27,6 +27,32 @@ export const MAX_BUILDER_QUBITS = 6;
  */
 export const MAX_PARSABLE_QUBITS = 24;
 
+/**
+ * How wide a circuit the *read-only diagram viewer* will draw.
+ *
+ * Distinct from MAX_PARSABLE_QUBITS on purpose: that number caps what the
+ * editable/simulation path reconstructs (24 is a real capability limit for CPU
+ * simulation). Merely *looking* at a reconstructed diagram costs nothing but
+ * SVG — a 26-qubit GHZ that fails honestly for execution should still be
+ * viewable — so the viewing ceiling is higher and scrolls. Only the interchange
+ * viewer (`reconstructInterchangeCircuit`) uses this; simulation eligibility is
+ * unchanged.
+ */
+export const MAX_VIEWABLE_QUBITS = 64;
+
+/**
+ * How many gate columns the read-only viewer will draw before it declines.
+ *
+ * The diagram gives every reconstructed step its own ~52px column, and the
+ * standard-gate reader *decomposes* multi-qubit gates: one `ccx` becomes ~15
+ * primitive gates, `cswap` ~17. A wide circuit that is a few dozen Toffolis on
+ * paper explodes into thousands of columns — an SVG tens of thousands of pixels
+ * wide with a matching node count, which janks the browser and helps no one.
+ * Past this bound the viewer shows an honest "too large to draw" message
+ * instead. Independent of qubit count: a narrow-but-deep circuit trips it too.
+ */
+export const MAX_VIEWABLE_STEPS = 512;
+
 const QISKIT_GATE_METHODS: Record<string, BuiltinBuilderGate> = {
   h: "H", x: "X", y: "Y", z: "Z", s: "S", t: "T",
   rx: "RX", ry: "RY", rz: "RZ",

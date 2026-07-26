@@ -5,6 +5,7 @@ runs replay through the same code path, resumable via Last-Event-ID = seq.
 """
 
 import asyncio
+import datetime as dt
 import hashlib
 import json
 import uuid
@@ -133,6 +134,84 @@ def _to_resource(run: RunRow) -> RunResource:
     )
 
 
+# Abuse backstop for direct control-plane calls.
+#
+# The tier allowance (5 execute runs/week on free, per PR #146) is enforced in
+# the web BFF, which is a *different server* from this one. `run-allowance.ts`
+# claimed a client "cannot skip it without also skipping its own session
+# cookie", but that only holds for callers who go through the BFF at all: a
+# script holding a valid access token can call POST /v1/runs here directly and
+# the tier gate never runs. Today that is unreachable in production — the
+# single-user lock resolves to the unlimited developer tier, so there is no
+# limit to bypass — but it becomes real cost exposure the moment multi-user
+# WorkOS signup returns.
+#
+# This is deliberately NOT a mirror of the tier policy. Mirroring it would put
+# tier truth in two services, need LEONA_DEVELOPER_EMAILS set on Cloud Run as
+# well as Vercel, and risk throttling the live single-operator deployment at 5
+# runs/week if any of that were wrong. Instead this is a flat per-workspace
+# ceiling far above every tier: it cannot refuse a legitimate user, it needs no
+# tier model, no new env var, and no owner action, and it removes the property
+# that actually matters — that a token holder can spend unboundedly. The
+# tier-accurate gate stays in the BFF where the owner approved it.
+#
+# Promotion trigger: when multi-user signup ships, this ceiling stops being
+# sufficient and real per-tier enforcement has to move server-side. Recorded in
+# the 2026-07-26 DECISIONS.md entry and NEXT.md.
+#
+# TWO ceilings, not one, because AUTO is the DEFAULT mode on CreateRunRequest.
+# A first cut gated only `mode == EXECUTE`, which a caller defeated simply by
+# omitting `mode`: those rows are AUTO at admission, the worker rewrites them to
+# their resolved mode only afterwards, and a gate that runs at admission cannot
+# read a value written later. So AUTO has to be bounded too. It is bounded
+# separately and much more loosely because AUTO is also what ordinary
+# conversational traffic arrives as, and metering chat against the strict
+# execute ceiling would refuse legitimate users — which is the one thing a
+# backstop must never do.
+EXECUTE_BACKSTOP_WINDOW = dt.timedelta(days=7)
+#: Explicit `mode="execute"` submissions.
+EXECUTE_BACKSTOP_LIMIT = 200
+#: EXECUTE + AUTO together — the bound that closes the default-mode bypass.
+SUBMISSION_BACKSTOP_LIMIT = 1000
+
+
+def _backstop_refusal(reason: str, used: int, limit: int) -> HTTPException:
+    return HTTPException(
+        status_code=429,
+        detail={
+            "error": (
+                "This workspace has reached the platform ceiling on runs for a "
+                "rolling seven-day window. This is an abuse backstop, not your "
+                "plan allowance — if you are seeing it in normal use, contact "
+                "support."
+            ),
+            "reason": reason,
+            "used": used,
+            "limit": limit,
+        },
+    )
+
+
+async def _enforce_execute_backstop(
+    body: CreateRunRequest,
+    scope: CurrentScope,
+    session: DbSession,
+) -> None:
+    if body.mode not in (RunMode.EXECUTE, RunMode.AUTO):
+        return
+    since = dt.datetime.now(dt.timezone.utc) - EXECUTE_BACKSTOP_WINDOW
+    counts = await runs_repo.count_runs_by_mode_since(scope, session, since)
+    executed = counts.get(RunMode.EXECUTE.value, 0)
+    submitted = executed + counts.get(RunMode.AUTO.value, 0)
+
+    if body.mode == RunMode.EXECUTE and executed >= EXECUTE_BACKSTOP_LIMIT:
+        raise _backstop_refusal("execute_backstop_exhausted", executed, EXECUTE_BACKSTOP_LIMIT)
+    if submitted >= SUBMISSION_BACKSTOP_LIMIT:
+        raise _backstop_refusal(
+            "submission_backstop_exhausted", submitted, SUBMISSION_BACKSTOP_LIMIT
+        )
+
+
 @router.post("/runs", response_model=RunResource, status_code=201)
 async def create_run(
     body: CreateRunRequest,
@@ -144,6 +223,7 @@ async def create_run(
         existing = await runs_repo.find_run_by_idempotency_key(scope, session, idempotency_key)
         if existing is not None:
             return _to_resource(existing)
+    await _enforce_execute_backstop(body, scope, session)
     artifact_version_id = await _create_stale_source_draft(body, scope, session)
     run = await runs_repo.create_run(
         scope,
