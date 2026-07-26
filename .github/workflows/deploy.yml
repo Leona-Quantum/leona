@@ -196,13 +196,23 @@ jobs:
 
       # The worker takes no traffic, so there is no dark-revision step — but the
       # --command override must be preserved or the image starts the API instead.
+      #
+      # The scaling flags are repeated on every deploy on purpose. This worker is
+      # a database poller: nothing sends it an HTTP request, so a queued job
+      # cannot wake a scaled-to-zero instance, and a throttled instance does not
+      # get CPU between requests it never receives. Those settings were correct
+      # in production but were unowned live-service state that `gcloud run deploy
+      # --image` merely happened to preserve — one console edit or one
+      # service-replacing command away from a silent outage with a green deploy.
+      # State the repo depends on, in the repo.
       - name: deploy worker
         if: steps.creds.outputs.have == 'true'
         id: worker
         run: |
           gcloud run deploy majorana-worker --project "$GCP_PROJECT" --region "$GCP_REGION" \
             --image "$IMAGE_REPO:${{ steps.tag.outputs.tag }}" \
-            --command majorana-worker
+            --command majorana-worker \
+            --min-instances 1 --max-instances 1 --no-cpu-throttling
           rev=$(gcloud run services describe majorana-worker \
             --project "$GCP_PROJECT" --region "$GCP_REGION" \
             --format="value(status.latestCreatedRevisionName)")
@@ -218,6 +228,14 @@ jobs:
       # is draining and — if it was crash-looping — is exactly what this deploy is
       # replacing. Unscoped, the sicker the thing we just fixed was, the more
       # certainly it fails the deploy that fixed it.
+      # This step also carries the LLM gate. The worker preflights its configured
+      # models against the provider's served list at startup and reports a
+      # definitive mismatch as a structured severity=ERROR line, which lands here.
+      #
+      # `value(textPayload)` alone was not enough: a structured log entry arrives
+      # as jsonPayload, so the projection returned an empty string and `-n` read
+      # a real alarm as silence. Both payload shapes are read now — an alarm the
+      # gate cannot see is not a gate.
       - name: worker is actually running
         if: steps.creds.outputs.have == 'true'
         run: |
@@ -228,7 +246,7 @@ jobs:
              AND resource.labels.revision_name="${{ steps.worker.outputs.revision }}"
              AND severity>=ERROR' \
             --project "$GCP_PROJECT" --freshness=2m --limit 20 \
-            --format="value(textPayload)")
+            --format="value(textPayload,jsonPayload.message)")
           if [ -n "$logs" ]; then
             echo "revision ${{ steps.worker.outputs.revision }} logged errors after deploy:"
             echo "$logs"
