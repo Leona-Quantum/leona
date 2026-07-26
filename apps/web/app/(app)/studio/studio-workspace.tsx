@@ -1282,9 +1282,13 @@ function SimulationPanel({
           </div>
         )}
 
+        {/* The GPU lane was a button that could never be pressed, next to a
+            paragraph explaining that it could never be pressed. A control that
+            exists only to be disabled is a promise the screen cannot keep; the
+            roadmap says this on the public site, which is where a roadmap
+            belongs. */}
         <section className="mj-studio-hardware-lanes" aria-label={copy.hardwareLanes}>
           <span className="mj-section-label">{copy.hardwareLanes}</span>
-          <div><button className="mj-secondary-button" type="button" disabled title={copy.gpuUnavailable}>{copy.gpuSimulation}</button><p>{copy.gpuUnavailable}</p></div>
           <QpuLane artifact={artifact} shots={shots} copy={copy} />
         </section>
 
@@ -1429,7 +1433,11 @@ function QpuLane({ artifact, shots, copy }: { artifact: LibraryArtifact | null; 
 
   return (
     <div className="mj-qpu-lane">
-      <button className="mj-secondary-button" type="button" disabled title={copy.qpuExecution}>{copy.qpuExecution}</button>
+      {/* Was a permanently disabled button, sitting directly above the device
+          picker and submit control that DO work — so the lane read as switched
+          off while its real flow was live underneath. It was only ever a label;
+          it is one now. */}
+      <span className="mj-qpu-lane-title">{copy.qpuExecution}</span>
       {catalogError ? <p>{copy.hardwareCatalogUnavailable}</p> : null}
       {!catalogError && !backends ? <p>{copy.hardwareCatalogLoading}</p> : null}
       {backends && backends.length ? (

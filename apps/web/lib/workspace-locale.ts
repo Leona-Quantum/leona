@@ -180,9 +180,7 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
     confirmRerun: string;
     cancel: string;
     hardwareLanes: string;
-    gpuSimulation: string;
     qpuExecution: string;
-    gpuUnavailable: string;
     qpuUnavailable: string;
     simulationResults: string;
     simulationNoRecords: string;
@@ -521,9 +519,7 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
       confirmRerun: "Confirm rerun",
       cancel: "Cancel",
       hardwareLanes: "Hardware lanes",
-      gpuSimulation: "GPU simulation",
       qpuExecution: "QPU execution",
-      gpuUnavailable: "GPU simulation is planned. It remains unavailable until provider, cost, and security work are complete.",
       qpuUnavailable: "QPU execution is planned. It remains unavailable until a provider, estimate, confirmation, and spend policy are in place.",
       simulationResults: "Simulation records",
       simulationNoRecords: "No CPU simulation record exists for this artifact in this browser.",
@@ -880,9 +876,7 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
       confirmRerun: "再実行を確認",
       cancel: "キャンセル",
       hardwareLanes: "ハードウェアレーン",
-      gpuSimulation: "GPUシミュレーション",
       qpuExecution: "QPU実行",
-      gpuUnavailable: "GPUシミュレーションは計画中です。プロバイダー、コスト、セキュリティの作業が完了するまで利用できません。",
       qpuUnavailable: "QPU実行は計画中です。プロバイダー、見積り、確認、利用ポリシーが整うまで利用できません。",
       simulationResults: "シミュレーション記録",
       simulationNoRecords: "このブラウザには、このアーティファクトのCPUシミュレーション記録がありません。",
