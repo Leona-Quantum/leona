@@ -1,5 +1,10 @@
 "use client";
 
+// Deliberately NOT per-account (see DEVICE_STORAGE_KEYS in lib/user-storage.ts).
+// These are bookmarks over the PUBLIC corpus, on pages that render while signed
+// out and sit outside the authenticated layout where the account scope is
+// established. Scoping them would make the same star appear or vanish depending
+// on whether the visitor arrived by client navigation or a fresh page load.
 const STORAGE_KEY = "majorana.public-repository-stars.v1";
 const CHANGE_EVENT = "majorana:repository-stars";
 

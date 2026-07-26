@@ -55,6 +55,8 @@ import { ThemeToggle } from "./theme-toggle";
 import type { PublicLocale } from "../lib/public-locale";
 import { WORKSPACE_COPY } from "../lib/workspace-locale";
 
+// A viewport preference, not content: stays device-global rather than
+// per-account (see DEVICE_STORAGE_KEYS in lib/user-storage.ts).
 const SIDEBAR_STORAGE_KEY = "majorana.sidebar-collapsed.v1";
 type WorkspaceSurface = "run" | "studio";
 type DeleteTarget =

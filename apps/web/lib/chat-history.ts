@@ -1,3 +1,5 @@
+import { scopedStorage } from "./user-storage.ts";
+
 export type ChatStatus = "queued" | "running" | "verified" | "failed" | "draft";
 
 export interface ChatSummary {
@@ -68,8 +70,10 @@ const DEFAULT_CHATS: ChatSummary[] = [
   },
 ];
 
+// Storage is per-account (lib/user-storage.ts): these keys carry chat titles and
+// prompt text, which is the leak that made public sign-up unsafe.
 function canUseStorage(): boolean {
-  return typeof window !== "undefined" && typeof window.localStorage !== "undefined";
+  return scopedStorage.available();
 }
 
 function emitChange(): void {
@@ -85,19 +89,19 @@ function normalizeFolderName(name: string): string {
 }
 
 function persist(chats: ChatSummary[]): ChatSummary[] {
-  if (canUseStorage()) window.localStorage.setItem(STORAGE_KEY, JSON.stringify(chats));
+  if (canUseStorage()) scopedStorage.setItem(STORAGE_KEY, JSON.stringify(chats));
   emitChange();
   return chats;
 }
 
 function persistSilently(chats: ChatSummary[]): void {
-  if (canUseStorage()) window.localStorage.setItem(STORAGE_KEY, JSON.stringify(chats));
+  if (canUseStorage()) scopedStorage.setItem(STORAGE_KEY, JSON.stringify(chats));
 }
 
 function loadDeletedIds(): Set<string> {
   if (!canUseStorage()) return new Set();
   try {
-    const parsed = JSON.parse(window.localStorage.getItem(DELETED_STORAGE_KEY) ?? "[]") as unknown;
+    const parsed = JSON.parse(scopedStorage.getItem(DELETED_STORAGE_KEY) ?? "[]") as unknown;
     return new Set(Array.isArray(parsed) ? parsed.filter((value): value is string => typeof value === "string") : []);
   } catch {
     return new Set();
@@ -105,13 +109,13 @@ function loadDeletedIds(): Set<string> {
 }
 
 function persistDeletedIds(ids: Set<string>): void {
-  if (canUseStorage()) window.localStorage.setItem(DELETED_STORAGE_KEY, JSON.stringify([...ids]));
+  if (canUseStorage()) scopedStorage.setItem(DELETED_STORAGE_KEY, JSON.stringify([...ids]));
 }
 
 export function loadChatHistory({ includeDemo = true, includeArchived = false }: HistoryOptions = {}): ChatSummary[] {
   if (!canUseStorage()) return includeDemo ? DEFAULT_CHATS : [];
   try {
-    const raw = window.localStorage.getItem(STORAGE_KEY);
+    const raw = scopedStorage.getItem(STORAGE_KEY);
     if (!raw) return includeDemo ? DEFAULT_CHATS : [];
     const parsed = JSON.parse(raw) as unknown;
     if (!Array.isArray(parsed)) return includeDemo ? DEFAULT_CHATS : [];
@@ -188,7 +192,7 @@ function isArchiveExpired(archivedAt: string): boolean {
 export function loadChatFolders(): ChatFolder[] {
   if (!canUseStorage()) return [];
   try {
-    const raw = window.localStorage.getItem(FOLDERS_STORAGE_KEY);
+    const raw = scopedStorage.getItem(FOLDERS_STORAGE_KEY);
     if (!raw) return [];
     const parsed = JSON.parse(raw) as unknown;
     if (!Array.isArray(parsed)) return [];
@@ -199,7 +203,7 @@ export function loadChatFolders(): ChatFolder[] {
 }
 
 function persistFolders(folders: ChatFolder[]): ChatFolder[] {
-  if (canUseStorage()) window.localStorage.setItem(FOLDERS_STORAGE_KEY, JSON.stringify(folders));
+  if (canUseStorage()) scopedStorage.setItem(FOLDERS_STORAGE_KEY, JSON.stringify(folders));
   emitFoldersChange();
   return folders;
 }
