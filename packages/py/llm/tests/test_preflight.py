@@ -139,3 +139,36 @@ def test_log_payload_names_the_offenders_and_carries_no_secret():
     assert payload["unsupported"] == [{"role": "plan", "model": "deepseek-reasoner"}]
     assert payload["checked"] == {"plan": "deepseek-reasoner", "chat": "deepseek-v4-pro"}
     assert "key" not in repr(payload).lower()
+
+
+@pytest.mark.asyncio
+async def test_a_shutdown_cancels_the_preflight_instead_of_absorbing_it(monkeypatch):
+    """Swallowing CancelledError would keep the check alive through a worker drain."""
+    import asyncio
+
+    async def never(*args, **kwargs):
+        await asyncio.sleep(3600)
+
+    monkeypatch.setattr(preflight, "check_configured_models", never)
+    task = asyncio.create_task(preflight.check_with_timeout(timeout_s=30))
+    await asyncio.sleep(0)
+    task.cancel()
+
+    with pytest.raises(asyncio.CancelledError):
+        await task
+
+
+@pytest.mark.asyncio
+async def test_a_slow_provider_times_out_to_unknown(monkeypatch):
+    import asyncio
+
+    async def slow(*args, **kwargs):
+        await asyncio.sleep(3600)
+
+    monkeypatch.setattr(preflight, "check_configured_models", slow)
+
+    report = await preflight.check_with_timeout(timeout_s=0.01)
+
+    assert report.unsupported == ()
+    assert not report.proven
+    assert all(role.reason == "timeout" for role in report.roles)

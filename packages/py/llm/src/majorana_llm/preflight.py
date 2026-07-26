@@ -186,10 +186,14 @@ async def check_with_timeout(
 
     A startup check must never be able to delay the poll loop indefinitely — the
     worker's job is to drain the queue, not to finish this.
+
+    Only the timeout is swallowed. A CancelledError means the *caller* is shutting
+    down, and absorbing it would keep this coroutine running through a drain — long
+    enough to emit a startup alarm while the worker is stopping.
     """
     try:
         return await asyncio.wait_for(check_configured_models(roles), timeout=timeout_s)
-    except (TimeoutError, asyncio.CancelledError):
+    except TimeoutError:
         provider = resolve_provider()
         return PreflightReport(
             provider=provider,
