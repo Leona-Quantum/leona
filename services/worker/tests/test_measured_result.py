@@ -122,3 +122,19 @@ def test_nested_structures_are_not_passed_through():
     )
 
     assert summary == {"values": {"energy": -1.0}}
+
+
+def test_an_unrepresentable_integer_never_aborts_the_save():
+    """math.isfinite(10**400) raises OverflowError — it must not reach the save path."""
+    summary = measured_result_summary({"huge": 10**400, "energy": -1.0})
+
+    assert summary["values"] == {"energy": -1.0}
+
+
+def test_an_unrepresentable_count_is_dropped_not_stored():
+    """It could not survive the JSON round-trip into the browser either."""
+    summary = measured_result_summary({"counts": {"00": 10**400, "01": 5}})
+
+    assert summary["counts"] == {"01": 5}
+    assert summary["shots"] == 5
+    assert summary["outcome_count"] == 1

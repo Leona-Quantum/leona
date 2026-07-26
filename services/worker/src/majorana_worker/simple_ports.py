@@ -391,6 +391,24 @@ MAX_STORED_VALUES = 16
 MAX_KEY_CHARS = 64
 
 
+def _representable(value: int | float) -> float | None:
+    """The value as a finite float, or None if it cannot be one.
+
+    Python ints are arbitrary precision, so a sandbox program returning something
+    like 10**400 reaches here as a perfectly valid int — and `math.isfinite` on it
+    raises OverflowError rather than answering, which would abort the save of a run
+    that had already executed and passed review. It also could not survive the JSON
+    round-trip into the browser, which parses it as Infinity and drops it anyway.
+
+    A number that cannot reach the reader is not storable evidence.
+    """
+    try:
+        number = float(value)
+    except (OverflowError, ValueError):
+        return None
+    return number if math.isfinite(number) else None
+
+
 def measured_result_summary(result: dict[str, Any]) -> dict[str, Any] | None:
     """Bounded projection of what the program actually measured, for the artifact.
 
@@ -429,13 +447,13 @@ def measured_result_summary(result: dict[str, Any]) -> dict[str, Any] | None:
                 if isinstance(count, bool) or not isinstance(count, int) or count < 0:
                     continue
                 outcome = str(bitstring)
-                if len(outcome) > MAX_KEY_CHARS:
+                if len(outcome) > MAX_KEY_CHARS or _representable(count) is None:
                     continue
                 counts[outcome] = count
         elif isinstance(value, bool) or not isinstance(value, (int, float)):
             continue
-        elif math.isfinite(value):
-            values[name] = float(value)
+        elif (number := _representable(value)) is not None:
+            values[name] = number
 
     outcome_count = len(counts)
     shots = sum(counts.values())
