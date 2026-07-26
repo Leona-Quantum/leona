@@ -1351,16 +1351,21 @@ class ProductionSimplePipelinePorts:
         )
         try:
             await self._store.set_candidate_status(run_id, candidate.candidate_id, status.value)
-            await self._complete(
-                run_id,
-                ToolCall(
-                    tool_call_id=candidate.tool_call_id,
-                    name=_SIMULATION_TOOL[candidate.framework],
-                    arguments={"plan_id": str(plan.plan_id), "revision": candidate.revision},
-                ),
-                result_state,
-                payload,
-            )
+            # Guard tool completion the way every sibling stage does. Skipping
+            # only the sandbox run on replay still rewrote the durable tool row
+            # and re-projected `sandbox.result`, so a restarted run emitted the
+            # execution event twice for one execution.
+            if await self._store.completed_tool_call(run_id, candidate.tool_call_id) is None:
+                await self._complete(
+                    run_id,
+                    ToolCall(
+                        tool_call_id=candidate.tool_call_id,
+                        name=_SIMULATION_TOOL[candidate.framework],
+                        arguments={"plan_id": str(plan.plan_id), "revision": candidate.revision},
+                    ),
+                    result_state,
+                    payload,
+                )
         except Exception as exc:
             return _failure(
                 kind=SimpleFailureKind.PERSISTENCE,

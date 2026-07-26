@@ -1054,7 +1054,12 @@ class SimpleCircuitPipeline:
         if stage is SimplePipelineStage.EXPORTING:
             reserve = self._estimated_save_s()
         else:
-            reserve = self._estimated_finalization_s() if self._sound_candidate_available else 5.0
+            # Reserve the finalization tail unconditionally. Keying it on
+            # _sound_candidate_available left the FIRST candidate only 5 s, so a
+            # slow one could pass review and reach _finalize with a few seconds
+            # left, then be cancelled mid-save by the worker's outer timeout and
+            # deliver nothing — the exact failure the reserve exists to prevent.
+            reserve = self._estimated_finalization_s()
         return max(0.1, remaining - reserve)
 
     async def _invoke(

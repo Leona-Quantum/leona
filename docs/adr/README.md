@@ -26,5 +26,7 @@ An architecture choice without an ADR did not happen.
   writes and one transaction for Dead Letter Run closure.
 - 2026-07-23: ADR-0022 proposes three-state verification, evidence-bound retry
   routing, and private unverified Studio materialization with PASS-only Verified/public gates.
-- 2026-07-24: ADR-0023 proposes a fixed nameko-style circuit pipeline for new
-  execute runs while retaining Majorana's durable evidence and sandbox boundaries.
+- 2026-07-24: ADR-0023 supersedes ADR-0014 for new execute runs with a fixed
+  nameko-style circuit pipeline, while retaining Majorana's durable evidence and
+  sandbox boundaries. Amended 2026-07-25 to let a Plan declare an independent
+  reference check and to make every review name a next step.

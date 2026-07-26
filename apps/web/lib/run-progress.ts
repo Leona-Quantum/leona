@@ -136,7 +136,10 @@ function activeStep(
   const generatedIndex = eventIndex(events, "code.generated");
   const sandboxIndex = eventIndex(events, "sandbox.result");
   const sandbox = lastEvent(events, "sandbox.result");
-  if (sandboxIndex > generatedIndex && sandbox?.exit_code !== 0) return "generate";
+  // `exit_code` is optional. `undefined !== 0` would rewind the UI to Generate
+  // and show a repair cycle that nothing reported, while detailsFor guards the
+  // same field and refuses to claim one. An unknown exit code is not a failure.
+  if (sandboxIndex > generatedIndex && sandbox?.exit_code !== undefined && sandbox.exit_code !== 0) return "generate";
   if (sandboxIndex > generatedIndex) return "review";
   if (generatedIndex >= 0) return "execute";
   if (eventIndex(events, "plan.produced") >= 0) return "generate";
