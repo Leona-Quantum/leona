@@ -716,15 +716,17 @@ body {
   .mj-contact-layout { grid-template-columns: 1fr; }
 }
 
-/* Single-user-lock sign-in page (Owner Inbox 2026-07-19): a centered card with
- * a username/password form, themed from the design tokens so it reads like the
- * rest of the marketing surface. */
-.mj-lock-shell {
+/* Centered auth card: the single-user-lock sign-in page (Owner Inbox
+ * 2026-07-19) and the /welcome name gate (Owner Inbox 2026-07-27). Named for
+ * what it is rather than for the lock, which is temporary and would leave these
+ * rules misnamed the day it goes. Themed from the design tokens so both read
+ * like the rest of the marketing surface. */
+.mj-auth-shell {
   display: flex;
   justify-content: center;
   padding: clamp(2rem, 6vw, 5rem) var(--sp-4);
 }
-.mj-lock-card {
+.mj-auth-card {
   width: 100%;
   max-width: 400px;
   background: var(--bg-1);
@@ -732,7 +734,7 @@ body {
   border-radius: var(--radius-card);
   padding: clamp(1.5rem, 3vw, 2.25rem);
 }
-.mj-lock-card-head {
+.mj-auth-card-head {
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -740,21 +742,21 @@ body {
   gap: var(--sp-2);
   margin-bottom: var(--sp-6);
 }
-.mj-lock-card-head h1 { margin: 0; font-size: clamp(1.4rem, 1.1rem + 1.2vw, 1.75rem); }
-.mj-lock-card-head p { margin: 0; color: var(--text-1); max-width: 34ch; }
-.mj-lock-form {
+.mj-auth-card-head h1 { margin: 0; font-size: clamp(1.4rem, 1.1rem + 1.2vw, 1.75rem); }
+.mj-auth-card-head p { margin: 0; color: var(--text-1); max-width: 34ch; }
+.mj-auth-form {
   display: flex;
   flex-direction: column;
   gap: var(--sp-4);
 }
-.mj-lock-form label {
+.mj-auth-form label {
   display: flex;
   flex-direction: column;
   gap: var(--sp-1);
   font-size: var(--fs-13);
   color: var(--text-1);
 }
-.mj-lock-form input {
+.mj-auth-form input {
   padding: 10px 12px;
   border: 1px solid var(--border-0);
   border-radius: var(--radius-control);
@@ -762,13 +764,13 @@ body {
   color: var(--text-0);
   font: inherit;
 }
-.mj-lock-form input:focus-visible {
+.mj-auth-form input:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 1px;
   border-color: var(--accent);
 }
-.mj-lock-form .mj-primary-button { margin-top: var(--sp-2); width: 100%; }
-.mj-lock-form-error { margin: 0; color: var(--err); font-size: var(--fs-13); }
+.mj-auth-form .mj-primary-button { margin-top: var(--sp-2); width: 100%; }
+.mj-auth-form-error { margin: 0; color: var(--err); font-size: var(--fs-13); }
 
 @media (prefers-reduced-motion: reduce) {
   [class*="lq-"],

@@ -142,19 +142,7 @@ export function areLockCredentialsValid(username: string, password: string): boo
   return userOk && passOk;
 }
 
-// Same-origin relative path guard for post-sign-in redirects (prevents open
-// redirects via ?returnTo=). Falls back to /run.
-export function safeReturnTo(raw: string | null | undefined): string {
-  if (!raw) return "/run";
-  // Parse against a fixed dummy origin: a truly same-origin relative path keeps
-  // that origin. Backslashes (e.g. "/\evil.example") normalize to a network-path
-  // redirect whose origin differs, so they fall back to /run.
-  try {
-    const base = new URL("https://lock.invalid");
-    const target = new URL(raw, base);
-    if (target.origin !== base.origin) return "/run";
-    return `${target.pathname}${target.search}${target.hash}`;
-  } catch {
-    return "/run";
-  }
-}
+// Moved to lib/return-to.ts when the /welcome name gate needed the same guard.
+// Re-exported so this module's existing callers keep working, and so the guard
+// outlives the lock.
+export { safeReturnTo } from "./return-to";

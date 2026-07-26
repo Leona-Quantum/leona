@@ -1,7 +1,9 @@
 import type { ReactNode } from "react";
 import type { UserInfo } from "@workos-inc/authkit-nextjs";
+import { redirect } from "next/navigation";
 import { Shell } from "../../components/shell";
 import { StorageScope } from "../../components/storage-scope";
+import { hasCompleteProfileName } from "../../lib/account-profile";
 import { resolveAccountTier } from "../../lib/account-tier";
 import { getMajoranaAuth } from "../../lib/auth";
 import { getPublicLocale } from "../../lib/public-locale-server";
@@ -14,6 +16,15 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
     getMajoranaAuth({ ensureSignedIn: true }),
     getPublicLocale(),
   ]);
+
+  // An account has a first and last name before it opens (Owner Inbox
+  // 2026-07-27). WorkOS leaves both null for email-only sign-ups, so this is the
+  // only place it can be required. Gating in the LAYOUT rather than the
+  // middleware is deliberate: the middleware would have to decode the session on
+  // every asset request to learn the same thing, and /api routes must keep
+  // answering — /api/account/profile is how the name gets set.
+  if (!hasCompleteProfileName(auth.user)) redirect("/welcome");
+
   const scopeId = storageScopeId(auth.user);
   return (
     // The tier is resolved here rather than in the Shell because the developer
