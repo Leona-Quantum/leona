@@ -5639,6 +5639,11 @@ div.mj-rail-row:hover {
 .mj-qpu-lane > button {
   justify-self: start;
 }
+.mj-qpu-lane-title {
+  color: var(--text-0);
+  font-size: var(--fs-13);
+  font-weight: 500;
+}
 .mj-qpu-lane p {
   margin: 0;
   color: var(--text-1);
