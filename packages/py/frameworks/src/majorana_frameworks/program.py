@@ -80,19 +80,26 @@ class FrameworkProgram:
             observation=observation,
         )
 
-    def trusted_observer(self, *, circuit_expected: bool) -> str:
+    def trusted_observer(
+        self, *, circuit_expected: bool, collect_native_evidence: bool = True
+    ) -> str:
         """Build provider-owned SDK observation code.
 
         Cirq and PennyLane remain valid framework-native programs without OpenQASM.
         Their future converters belong behind this boundary rather than in the worker.
         """
         return adapter_for(self.framework).trusted_observer(
-            self.source, circuit_expected=circuit_expected
+            self.source,
+            circuit_expected=circuit_expected,
+            collect_native_evidence=collect_native_evidence,
         )
 
-    def trusted_setup(self, *, circuit_expected: bool) -> str:
+    def trusted_setup(self, *, circuit_expected: bool, collect_native_evidence: bool = True) -> str:
         """Build imports and stable SDK references captured before generated code."""
-        return adapter_for(self.framework).trusted_setup(circuit_expected=circuit_expected)
+        return adapter_for(self.framework).trusted_setup(
+            circuit_expected=circuit_expected,
+            collect_native_evidence=collect_native_evidence,
+        )
 
 
 def extract_interchange_qasm(

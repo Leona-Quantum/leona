@@ -150,3 +150,51 @@ async def test_metering_failure_does_not_retry_completed_provider_call(monkeypat
     assert calls == 1
     assert metering_attempts == 2
     assert stored.metered is True
+
+
+async def test_generated_source_streams_as_bounded_llm_delta_events(monkeypatch):
+    stored = None
+
+    class StreamingDelegate:
+        async def complete(self, request, *, on_delta=None):
+            assert on_delta is not None
+            await on_delta("{" + "x" * 170, "output")
+            return LLMResponse(
+                text='{"source":"print(1)"}', model=request.model, input_tokens=3, output_tokens=4
+            )
+
+    async def get_llm_call(*_args):
+        return stored
+
+    async def add_llm_call(*_args, response, duration_ms, **_kwargs):
+        nonlocal stored
+        stored = SimpleNamespace(response=response, duration_ms=duration_ms, metered=False)
+        return stored
+
+    async def record_usage(*_args, **_kwargs):
+        return None
+
+    async def mark_llm_call_metered(*_args):
+        stored.metered = True
+
+    monkeypatch.setattr("majorana_worker.agent_llm.agent_repo.get_llm_call", get_llm_call)
+    monkeypatch.setattr("majorana_worker.agent_llm.agent_repo.add_llm_call", add_llm_call)
+    monkeypatch.setattr("majorana_worker.agent_llm.usage_repo.record_usage", record_usage)
+    monkeypatch.setattr(
+        "majorana_worker.agent_llm.agent_repo.mark_llm_call_metered", mark_llm_call_metered
+    )
+    sink = Sink()
+    llm = MeteredAgentLLM(
+        delegate=StreamingDelegate(),
+        sink=sink,
+        scope=Scope(user_id=uuid4(), workspace_id=uuid4(), role=Role.MEMBER),
+        session=Session(),
+        run_id=uuid4(),
+    )
+
+    await llm.complete(LLMRequest(model="test", system="test", schema_name="generate_circuit"))
+
+    deltas = [event for event in sink.events if event[0] == "llm.delta"]
+    assert [event[1]["text"] for event in deltas] == ["{" + "x" * 159, "x" * 11]
+    assert all(event[1]["stage"].value == "generate" for event in deltas)
+    assert all(event[1]["kind"] == "output" for event in deltas)

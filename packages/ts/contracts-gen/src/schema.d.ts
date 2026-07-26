@@ -1586,6 +1586,13 @@ export interface components {
             /** @default null */
             qasm_emission: components["schemas"]["QasmEmission"] | null;
             /**
+             * Result
+             * @description Bounded JSON result captured from the protected sandbox sidecar.
+             */
+            result?: {
+                [key: string]: unknown;
+            };
+            /**
              * Run Id
              * Format: uuid
              */

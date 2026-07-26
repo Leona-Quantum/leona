@@ -70,6 +70,11 @@ const VERIFIED: RunEvent[] = [
     duration_ms: 4520,
     exit_code: 0,
     memory_mb: 128,
+    result: {
+      counts: { "01010": 2184, "10101": 1912 },
+      cut_value: 4,
+      bitstring: "01010",
+    },
     stderr: "",
     stdout: '{"cut_value": 4, "bitstring": "01010"}',
     truncated: false,

@@ -229,6 +229,10 @@ class SandboxResult(_EventBase):
     exit_code: int
     duration_ms: int = Field(ge=0)
     memory_mb: int | None = Field(default=None, ge=0)
+    result: dict[str, Any] = Field(
+        default_factory=dict,
+        description="Bounded JSON result captured from the protected sandbox sidecar.",
+    )
     stdout: str
     stderr: str
     truncated: bool = False

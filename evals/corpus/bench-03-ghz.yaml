@@ -3,7 +3,7 @@ category: "A — Bell/GHZ state prep"
 prompt: "Prepare a 3-qubit GHZ state and measure all qubits."
 framework: qiskit
 expect:
-  verifier_decision: pass
+  terminal_reason: ai_review_aligned
   export_status: lossless
   output_keys: ["counts"]
   saves_artifact: true

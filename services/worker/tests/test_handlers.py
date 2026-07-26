@@ -2,21 +2,29 @@ import uuid
 from types import SimpleNamespace
 
 import pytest
-from majorana_agent import SemanticReviewEvidence, StrictVerificationAttempt
+from majorana_agent import (
+    SimpleFailureKind,
+    SimplePipelineCounters,
+    SimplePipelineFailure,
+    SimplePipelineOutcome,
+    SimplePipelineStage,
+    SimplePipelineStatus,
+)
 from majorana_contracts.enums import (
-    EvidenceStrength,
     Framework,
-    RetryTarget,
     RunMode,
     RunStatus,
     SemanticReviewDecision,
-    VerificationFailureClass,
     VerifierDecision,
 )
-from majorana_llm import PLAN_SYSTEM_PROMPT, QUANTUM_AGENT_SYSTEM_PROMPT, LLMResponse
+from majorana_llm import CHAT_SYSTEM_PROMPT, LLMResponse
 from majorana_sandbox import LocalSubprocessSandbox
 from majorana_worker import handlers
 from majorana_worker.context import RunContext
+
+
+def test_default_run_timeout_matches_api_maximum():
+    assert handlers.DEFAULT_RUN_TIMEOUT_S == 600.0
 
 
 async def test_dead_letter_handler_commits_terminal_sequence_once(monkeypatch):
@@ -87,24 +95,187 @@ def test_default_sandbox_rejects_unknown_provider(monkeypatch):
         handlers._default_sandbox()
 
 
-@pytest.mark.parametrize(
-    ("raw", "expected"),
-    [(None, True), ("1", True), ("true", True), ("0", False), ("off", False)],
-)
-def test_inconclusive_materialization_rollout_flag(monkeypatch, raw, expected):
-    name = "MAJORANA_INCONCLUSIVE_MATERIALIZATION_ENABLED"
-    if raw is None:
-        monkeypatch.delenv(name, raising=False)
-    else:
-        monkeypatch.setenv(name, raw)
-    assert handlers._enabled(name, default=True) is expected
+async def test_simple_terminal_success_records_typed_advisory_outcome():
+    run_id = uuid.uuid4()
+    candidate_id = uuid.uuid4()
+    candidate = SimpleNamespace(
+        candidate_id=candidate_id,
+        source_fingerprint="a" * 64,
+    )
+    execution = SimpleNamespace()
+    review = SimpleNamespace(
+        decision=SemanticReviewDecision.READY,
+        feedback={"critic": {"residual_risks": ["AI review is advisory"]}},
+        assert_binding=lambda _candidate, _execution: None,
+    )
+    artifact = SimpleNamespace(
+        candidate_id=candidate_id,
+        source_fingerprint="a" * 64,
+    )
+    outcome = SimplePipelineOutcome(
+        status=SimplePipelineStatus.SUCCEEDED,
+        stage=SimplePipelineStage.COMPLETED,
+        counters=SimplePipelineCounters(),
+        candidate=candidate,
+        execution=execution,
+        review=review,
+        artifact=artifact,
+    )
+
+    class RunStore:
+        async def finish(self, status, payload, **fields):
+            self.observed = (status, payload, fields)
+            return status
+
+    run_store = RunStore()
+    ctx = RunContext(
+        run_id=run_id,
+        task_prompt="Bell state",
+        mode=RunMode.EXECUTE,
+        framework=Framework.QISKIT,
+        seed=None,
+        shots=None,
+        timeout_s=None,
+        sink=object(),
+    )
+    result = await handlers._finish_simple_pipeline(ctx, run_store, outcome)
+
+    assert result is RunStatus.SUCCEEDED
+    status, payload, fields = run_store.observed
+    assert status is RunStatus.SUCCEEDED
+    assert payload["reason_code"] == "ai_review_aligned"
+    assert payload["verifier_decision"] == "inconclusive"
+    assert payload["evidence_strength"] == "structural"
+    summary = payload["verification_summary"]
+    assert summary["decision"] == "inconclusive"
+    assert summary["semantic_review_decision"] == "ready"
+    assert summary["candidate_defect_observed"] is False
+    assert summary["failure_class"] == "evidence_gap"
+    assert summary["retry_target"] == "none"
+    assert summary["checks"] == [
+        {"method": "structural", "result": "pass"},
+        {"method": "return_contract", "result": "pass"},
+        {"method": "success_criteria", "result": "pass"},
+    ]
+    assert fields == {
+        "verifier_decision": VerifierDecision.INCONCLUSIVE,
+        "verification_summary": summary,
+        "residual_risks": "AI review is advisory",
+    }
 
 
-def test_invalid_rollout_flag_fails_closed(monkeypatch):
-    name = "MAJORANA_INCONCLUSIVE_MATERIALIZATION_ENABLED"
-    monkeypatch.setenv(name, "sometimes")
-    with pytest.raises(RuntimeError, match="boolean feature flag"):
-        handlers._enabled(name, default=True)
+async def test_simple_terminal_failure_emits_typed_sanitized_error():
+    run_id = uuid.uuid4()
+    emitted = []
+
+    class Sink:
+        async def emit(self, event_type, payload, *, event_id=None):
+            emitted.append((event_type, payload, event_id))
+
+    class RunStore:
+        async def finish(self, status, payload, **fields):
+            self.observed = (status, payload, fields)
+            return status
+
+    failure = SimplePipelineFailure(
+        kind=SimpleFailureKind.MODEL_OUTPUT,
+        stage=SimplePipelineStage.GENERATING,
+        code="generation_output_invalid",
+        message="generation model returned invalid source",
+    )
+    outcome = SimplePipelineOutcome(
+        status=SimplePipelineStatus.FAILED,
+        stage=failure.stage,
+        counters=SimplePipelineCounters(generation_attempts=2),
+        failure=failure,
+    )
+    ctx = RunContext(
+        run_id=run_id,
+        task_prompt="Bell state",
+        mode=RunMode.EXECUTE,
+        framework=Framework.QISKIT,
+        seed=None,
+        shots=None,
+        timeout_s=None,
+        sink=Sink(),
+    )
+    run_store = RunStore()
+
+    result = await handlers._finish_simple_pipeline(ctx, run_store, outcome)
+
+    assert result is RunStatus.FAILED
+    assert emitted[0][0] == "run.error"
+    assert emitted[0][1] == {
+        "stage": "generate",
+        "code": "generation_output_invalid",
+        "message": "generation model returned invalid source",
+    }
+    assert run_store.observed[1]["reason_code"] == "generation_output_invalid"
+
+
+async def test_simple_terminal_failure_exposes_last_candidate_without_strict_lookup():
+    run_id = uuid.uuid4()
+    emitted = []
+
+    class Sink:
+        async def emit(self, event_type, payload, *, event_id=None):
+            emitted.append((event_type, payload, event_id))
+
+    class RunStore:
+        async def finish(self, status, payload, **fields):
+            self.observed = status, payload, fields
+            return status
+
+    candidate = SimpleNamespace(
+        framework=Framework.QISKIT,
+        source="from qiskit import QuantumCircuit\nqc = QuantumCircuit(2)",
+        revision=3,
+    )
+    review = SimpleNamespace(
+        feedback={
+            "critic": {
+                "summary": "The requested measurement is missing.",
+                "failed_checks": ["measurement contract"],
+                "residual_risks": ["No counts were produced."],
+            }
+        }
+    )
+    failure = SimplePipelineFailure(
+        kind=SimpleFailureKind.REVIEW,
+        stage=SimplePipelineStage.REVIEWING,
+        code="candidate_budget_exhausted",
+        message="review requested repair after the bounded generation budget",
+    )
+    outcome = SimplePipelineOutcome(
+        status=SimplePipelineStatus.FAILED,
+        stage=failure.stage,
+        counters=SimplePipelineCounters(generation_attempts=3, review_attempts=2),
+        candidate=candidate,
+        review=review,
+        failure=failure,
+    )
+    ctx = RunContext(
+        run_id=run_id,
+        task_prompt="Bell counts",
+        mode=RunMode.EXECUTE,
+        framework=Framework.QISKIT,
+        seed=None,
+        shots=None,
+        timeout_s=None,
+        sink=Sink(),
+    )
+
+    result = await handlers._finish_simple_pipeline(ctx, RunStore(), outcome)
+
+    assert result is RunStatus.FAILED
+    assert [event[0] for event in emitted] == ["run.best_effort", "run.error"]
+    best = emitted[0][1]
+    assert best["code"] == candidate.source
+    assert best["revision"] == 3
+    assert best["candidates_considered"] == 3
+    assert best["failed_checks"] == ["measurement contract"]
+    assert best["critic_summary"] == "The requested measurement is missing."
+    assert best["residual_risks"] == ["No counts were produced."]
 
 
 def test_verification_metrics_separate_decision_route_and_error(monkeypatch):
@@ -177,183 +348,6 @@ class _RecordingSink:
         self.events.append((event_type, payload))
 
 
-async def test_materialized_inconclusive_finishes_successfully_without_best_effort():
-    run_id = uuid.uuid4()
-    candidate_id = uuid.uuid4()
-    execution_id = uuid.uuid4()
-    review = SemanticReviewEvidence(
-        review_id=uuid.uuid4(),
-        candidate_id=candidate_id,
-        execution_id=execution_id,
-        source_fingerprint="a" * 64,
-        attempt_seq=1,
-        decision=SemanticReviewDecision.INCONCLUSIVE,
-        reason_code="semantic_evidence_gap",
-        failure_class=VerificationFailureClass.EVIDENCE_GAP,
-        retry_target=RetryTarget.VERIFICATION,
-    )
-    strict = StrictVerificationAttempt(
-        attempt_id=uuid.uuid4(),
-        candidate_id=candidate_id,
-        execution_id=execution_id,
-        semantic_review_id=review.review_id,
-        source_fingerprint="a" * 64,
-        attempt_seq=1,
-        decision=VerifierDecision.INCONCLUSIVE,
-        evidence_strength=EvidenceStrength.STRUCTURAL,
-        reason_code="unsupported_dynamic_circuit",
-        candidate_defect_observed=False,
-        failure_class=VerificationFailureClass.CAPABILITY_LIMIT,
-        retry_target=RetryTarget.NONE,
-        unverified_claims=["dynamic-circuit behavior"],
-        verifier_version="verification-v2",
-    )
-
-    class Sink:
-        def __init__(self):
-            self.events = {}
-
-        async def emit(self, event_type, payload, *, event_id=None):
-            self.events.setdefault(event_id, (event_type, payload))
-
-    class AgentStore:
-        async def latest_candidate(self, _run_id):
-            return type(
-                "Candidate",
-                (),
-                {"candidate_id": candidate_id, "source_fingerprint": "a" * 64},
-            )()
-
-        async def latest_strict_verification(self, _run_id, _candidate_id):
-            return strict
-
-        async def latest_semantic_review(self, _run_id, _candidate_id):
-            return review
-
-        async def published_verification(self, _run_id):
-            raise AssertionError("strict terminal evidence must be authoritative")
-
-    class RunStore:
-        def __init__(self):
-            self.finishes = []
-
-        async def finish(self, status, payload, **kwargs):
-            self.finishes.append((status, payload, kwargs))
-            return status
-
-    sink = Sink()
-    run_store = RunStore()
-    ctx = RunContext(
-        run_id=run_id,
-        task_prompt="dynamic circuit",
-        mode=RunMode.EXECUTE,
-        framework=Framework.QISKIT,
-        seed=None,
-        shots=None,
-        timeout_s=None,
-        sink=sink,
-    )
-
-    result = await handlers._finish_materialized_agent(ctx, run_store, AgentStore())
-
-    assert result is RunStatus.SUCCEEDED
-    assert sink.events == {}
-    status, payload, fields = run_store.finishes[0]
-    assert status is RunStatus.SUCCEEDED
-    assert payload["status"] is RunStatus.SUCCEEDED
-    assert payload["verifier_decision"] == "inconclusive"
-    assert payload["verification_summary"]["candidate_defect_observed"] is False
-    assert fields["verifier_decision"] == "inconclusive"
-    assert fields["verification_summary"] == payload["verification_summary"]
-
-
-async def test_materialized_terminal_rejects_stale_candidate_fingerprint(monkeypatch):
-    candidate_id = uuid.uuid4()
-    calls = []
-    counter = SimpleNamespace(add=lambda value, attributes: calls.append((value, attributes)))
-    monkeypatch.setattr(handlers, "_fingerprint_mismatches", counter)
-
-    class AgentStore:
-        async def latest_candidate(self, _run_id):
-            return type(
-                "Candidate",
-                (),
-                {"candidate_id": candidate_id, "source_fingerprint": "b" * 64},
-            )()
-
-        async def latest_strict_verification(self, _run_id, _candidate_id):
-            return type("Strict", (), {"source_fingerprint": "a" * 64})()
-
-        async def latest_semantic_review(self, _run_id, _candidate_id):
-            return object()
-
-        async def published_verification(self, _run_id):
-            raise AssertionError("strict evidence must remain authoritative")
-
-    ctx = RunContext(
-        run_id=uuid.uuid4(),
-        task_prompt="stale evidence",
-        mode=RunMode.EXECUTE,
-        framework=Framework.QISKIT,
-        seed=None,
-        shots=None,
-        timeout_s=None,
-        sink=object(),
-    )
-
-    with pytest.raises(RuntimeError, match="stale candidate fingerprint"):
-        await handlers._finish_materialized_agent(ctx, object(), AgentStore())
-    assert calls == [(1, {"boundary": "candidate_to_strict"})]
-
-
-async def test_materialized_terminal_rejects_mismatched_latest_review():
-    candidate_id = uuid.uuid4()
-    strict = type(
-        "Strict",
-        (),
-        {
-            "source_fingerprint": "a" * 64,
-            "semantic_review_id": uuid.uuid4(),
-        },
-    )()
-    review = type(
-        "Review",
-        (),
-        {"review_id": uuid.uuid4(), "source_fingerprint": "a" * 64},
-    )()
-
-    class AgentStore:
-        async def latest_candidate(self, _run_id):
-            return type(
-                "Candidate",
-                (),
-                {"candidate_id": candidate_id, "source_fingerprint": "a" * 64},
-            )()
-
-        async def latest_strict_verification(self, _run_id, _candidate_id):
-            return strict
-
-        async def latest_semantic_review(self, _run_id, _candidate_id):
-            return review
-
-        async def published_verification(self, _run_id):
-            raise AssertionError("strict evidence must remain authoritative")
-
-    ctx = RunContext(
-        run_id=uuid.uuid4(),
-        task_prompt="mismatched evidence",
-        mode=RunMode.EXECUTE,
-        framework=Framework.QISKIT,
-        seed=None,
-        shots=None,
-        timeout_s=None,
-        sink=object(),
-    )
-
-    with pytest.raises(RuntimeError, match="not bound to the latest review"):
-        await handlers._finish_materialized_agent(ctx, object(), AgentStore())
-
-
 async def test_repo_run_store_terminalizes_with_one_commit_and_stable_event_id(monkeypatch):
     run_id = uuid.uuid4()
     commits = 0
@@ -390,12 +384,56 @@ async def test_repo_run_store_terminalizes_with_one_commit_and_stable_event_id(m
     assert captured["event_payload"]["reason_code"] == "provider_failed"
 
 
-async def test_resource_exhaustion_emits_best_effort_and_typed_terminal(monkeypatch):
-    run_id = uuid.uuid4()
-    best_effort = []
+async def test_timeout_emits_one_typed_error_without_legacy_verification_state():
+    class Sink:
+        def __init__(self):
+            self.events = []
 
-    async def emit_best_effort(ctx, agent_store, reason):
-        best_effort.append((ctx.run_id, agent_store, reason))
+        async def emit(self, event_type, payload, *, event_id=None):
+            self.events.append((event_type, payload, event_id))
+
+    class RunStore:
+        async def finish(self, status, payload, **fields):
+            self.terminal = status, payload, fields
+            return status
+
+    run_id = uuid.uuid4()
+    sink = Sink()
+    ctx = RunContext(
+        run_id=run_id,
+        task_prompt="timeout before strict",
+        mode=RunMode.EXECUTE,
+        framework=Framework.QISKIT,
+        seed=None,
+        shots=None,
+        timeout_s=1,
+        sink=sink,
+    )
+    run_store = RunStore()
+
+    await handlers._finish_timed_out_run(ctx, run_store)
+
+    _, payload, fields = run_store.terminal
+    assert payload == {
+        "status": RunStatus.FAILED,
+        "reason_code": "run_timeout",
+    }
+    assert fields == {}
+    assert sink.events == [
+        (
+            "run.error",
+            {
+                "stage": None,
+                "code": "run_timeout",
+                "message": "run exceeded its time budget",
+            },
+            uuid.uuid5(run_id, "run.error.run_timeout"),
+        )
+    ]
+
+
+async def test_legacy_progress_is_terminalized_without_resuming_old_runtime():
+    run_id = uuid.uuid4()
 
     class Sink:
         def __init__(self):
@@ -406,16 +444,14 @@ async def test_resource_exhaustion_emits_best_effort_and_typed_terminal(monkeypa
 
     class RunStore:
         async def finish(self, status, payload, **fields):
-            self.terminal = (status, payload, fields)
+            self.terminal = status, payload, fields
             return status
 
-    monkeypatch.setattr(handlers, "_emit_best_effort", emit_best_effort)
     sink = Sink()
-    run_store = RunStore()
-    agent_store = object()
+    store = RunStore()
     ctx = RunContext(
         run_id=run_id,
-        task_prompt="large circuit",
+        task_prompt="old partial run",
         mode=RunMode.EXECUTE,
         framework=Framework.QISKIT,
         seed=None,
@@ -424,242 +460,18 @@ async def test_resource_exhaustion_emits_best_effort_and_typed_terminal(monkeypa
         sink=sink,
     )
 
-    result = await handlers._finish_resource_exhausted(
-        ctx, run_store, agent_store, "sandbox_memory_exhausted"
-    )
+    status = await handlers._finish_legacy_progress(ctx, store)
 
-    assert result is RunStatus.FAILED
-    assert best_effort == [(run_id, agent_store, "sandbox_memory_exhausted")]
-    assert sink.events[0][1]["code"] == "resource_exhausted"
-    status, payload, fields = run_store.terminal
     assert status is RunStatus.FAILED
-    assert payload["reason_code"] == "resource_exhausted"
-    assert payload["verification_summary"]["candidate_defect_observed"] is False
-    assert fields["verifier_decision"] == "inconclusive"
-    assert fields["verification_summary"] == payload["verification_summary"]
-
-
-@pytest.mark.parametrize(
-    ("failure_class", "retry_target", "candidate_defect_observed"),
-    [
-        (VerificationFailureClass.CANDIDATE_DEFECT, RetryTarget.CODE_GENERATION, True),
-        (VerificationFailureClass.PLAN_DEFECT, RetryTarget.PLANNING, False),
-    ],
-)
-async def test_failed_agent_persists_bound_strict_fail_summary(
-    monkeypatch, failure_class, retry_target, candidate_defect_observed
-):
-    run_id = uuid.uuid4()
-    candidate_id = uuid.uuid4()
-    execution_id = uuid.uuid4()
-    fingerprint = "a" * 64
-    candidate = SimpleNamespace(
-        candidate_id=candidate_id,
-        source_fingerprint=fingerprint,
+    assert store.terminal == (
+        RunStatus.FAILED,
+        {
+            "status": RunStatus.FAILED,
+            "reason_code": "legacy_run_requires_restart",
+        },
+        {},
     )
-    execution = SimpleNamespace(
-        execution_id=execution_id,
-        candidate_id=candidate_id,
-        source_fingerprint=fingerprint,
-    )
-    review = SemanticReviewEvidence(
-        review_id=uuid.uuid4(),
-        candidate_id=candidate_id,
-        execution_id=execution_id,
-        source_fingerprint=fingerprint,
-        attempt_seq=1,
-        decision=SemanticReviewDecision.READY,
-        reason_code="semantic_ready",
-        retry_target=RetryTarget.NONE,
-    )
-    strict = StrictVerificationAttempt(
-        attempt_id=uuid.uuid4(),
-        candidate_id=candidate_id,
-        execution_id=execution_id,
-        semantic_review_id=review.review_id,
-        source_fingerprint=fingerprint,
-        attempt_seq=1,
-        checks=[{"method": "success_criteria", "result": "fail"}],
-        decision=VerifierDecision.FAIL,
-        evidence_strength=EvidenceStrength.STRUCTURAL,
-        reason_code="strict_candidate_defect",
-        candidate_defect_observed=candidate_defect_observed,
-        failure_class=failure_class,
-        retry_target=retry_target,
-        verifier_version="verification-v2",
-    )
-
-    class AgentStore:
-        async def latest_candidate(self, _run_id):
-            return candidate
-
-        async def latest_strict_verification(self, _run_id, _candidate_id):
-            return strict
-
-        async def execution_for(self, _run_id, _candidate_id):
-            return execution
-
-        async def latest_semantic_review(self, _run_id, _candidate_id):
-            return review
-
-    class Sink:
-        async def emit(self, *_args, **_kwargs):
-            return None
-
-    class RunStore:
-        async def finish(self, status, payload, **fields):
-            self.terminal = status, payload, fields
-            return status
-
-    async def no_best_effort(*_args):
-        return None
-
-    monkeypatch.setattr(handlers, "_emit_best_effort", no_best_effort)
-    ctx = RunContext(
-        run_id=run_id,
-        task_prompt="failing candidate",
-        mode=RunMode.EXECUTE,
-        framework=Framework.QISKIT,
-        seed=None,
-        shots=None,
-        timeout_s=None,
-        sink=Sink(),
-    )
-    run_store = RunStore()
-
-    result = await handlers._finish_failed_agent(
-        ctx,
-        run_store,
-        AgentStore(),
-        failure_reason="candidate_budget_exhausted",
-        failure_message="agent failed",
-    )
-
-    assert result is RunStatus.FAILED
-    _, payload, fields = run_store.terminal
-    assert payload["verification_summary"]["decision"] == "fail"
-    assert payload["verification_summary"]["failure_class"] == failure_class.value
-    assert fields["verification_summary"] == payload["verification_summary"]
-    assert fields["verifier_decision"] == "fail"
-
-
-async def test_timeout_preserves_already_durable_bound_strict_verdict():
-    run_id = uuid.uuid4()
-    candidate_id = uuid.uuid4()
-    execution_id = uuid.uuid4()
-    fingerprint = "b" * 64
-    candidate = SimpleNamespace(
-        candidate_id=candidate_id,
-        source_fingerprint=fingerprint,
-    )
-    execution = SimpleNamespace(
-        execution_id=execution_id,
-        candidate_id=candidate_id,
-        source_fingerprint=fingerprint,
-    )
-    review = SemanticReviewEvidence(
-        review_id=uuid.uuid4(),
-        candidate_id=candidate_id,
-        execution_id=execution_id,
-        source_fingerprint=fingerprint,
-        attempt_seq=1,
-        decision=SemanticReviewDecision.READY,
-        reason_code="semantic_ready",
-        retry_target=RetryTarget.NONE,
-    )
-    strict = StrictVerificationAttempt(
-        attempt_id=uuid.uuid4(),
-        candidate_id=candidate_id,
-        execution_id=execution_id,
-        semantic_review_id=review.review_id,
-        source_fingerprint=fingerprint,
-        attempt_seq=1,
-        checks=[{"method": "success_criteria", "result": "fail"}],
-        decision=VerifierDecision.FAIL,
-        evidence_strength=EvidenceStrength.STRUCTURAL,
-        reason_code="strict_plan_defect",
-        candidate_defect_observed=False,
-        failure_class=VerificationFailureClass.PLAN_DEFECT,
-        retry_target=RetryTarget.PLANNING,
-        verifier_version="verification-v2",
-    )
-
-    class AgentStore:
-        async def latest_candidate(self, _run_id):
-            return candidate
-
-        async def latest_strict_verification(self, _run_id, _candidate_id):
-            return strict
-
-        async def execution_for(self, _run_id, _candidate_id):
-            return execution
-
-        async def latest_semantic_review(self, _run_id, _candidate_id):
-            return review
-
-    class Sink:
-        async def emit(self, *_args, **_kwargs):
-            return None
-
-    class RunStore:
-        async def finish(self, status, payload, **fields):
-            self.terminal = status, payload, fields
-            return status
-
-    ctx = RunContext(
-        run_id=run_id,
-        task_prompt="timeout after strict",
-        mode=RunMode.EXECUTE,
-        framework=Framework.QISKIT,
-        seed=None,
-        shots=None,
-        timeout_s=1,
-        sink=Sink(),
-    )
-    run_store = RunStore()
-
-    result = await handlers._finish_timed_out_run(ctx, run_store, AgentStore())
-
-    assert result is RunStatus.FAILED
-    _, payload, fields = run_store.terminal
-    assert payload["reason_code"] == "run_timeout"
-    assert payload["verification_summary"]["decision"] == "fail"
-    assert fields["verification_summary"] == payload["verification_summary"]
-    assert fields["verifier_decision"] == "fail"
-
-
-async def test_timeout_without_strict_evidence_is_explicitly_inconclusive():
-    class AgentStore:
-        async def latest_candidate(self, _run_id):
-            return None
-
-    class Sink:
-        async def emit(self, *_args, **_kwargs):
-            return None
-
-    class RunStore:
-        async def finish(self, status, payload, **fields):
-            self.terminal = status, payload, fields
-            return status
-
-    ctx = RunContext(
-        run_id=uuid.uuid4(),
-        task_prompt="timeout before strict",
-        mode=RunMode.EXECUTE,
-        framework=Framework.QISKIT,
-        seed=None,
-        shots=None,
-        timeout_s=1,
-        sink=Sink(),
-    )
-    run_store = RunStore()
-
-    await handlers._finish_timed_out_run(ctx, run_store, AgentStore())
-
-    _, payload, fields = run_store.terminal
-    assert payload["verification_summary"]["decision"] == "inconclusive"
-    assert payload["verification_summary"]["reason_code"] == "run_timeout"
-    assert fields["verification_summary"] == payload["verification_summary"]
+    assert sink.events[0][1]["code"] == "legacy_run_requires_restart"
 
 
 class _FakeStore:
@@ -722,8 +534,7 @@ async def test_conversation_mode_answers_without_pipeline_or_sandbox():
     # edit to the assistant's persona broke this test for no behavioural reason.
     # What matters here is that chat uses the assistant prompt and not the
     # planner's (the only other live pipeline prompt in majorana_llm).
-    assert llm.request.system == QUANTUM_AGENT_SYSTEM_PROMPT
-    assert llm.request.system != PLAN_SYSTEM_PROMPT
+    assert llm.request.system == CHAT_SYSTEM_PROMPT
     assert [message.model_dump() for message in llm.request.messages] == [
         {"role": "user", "content": "What is a Bell state?"}
     ]

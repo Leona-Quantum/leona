@@ -1,7 +1,9 @@
 import uuid
 from types import SimpleNamespace
 
+import pytest
 from majorana_contracts.enums import ExportStatus, Framework
+from pydantic import ValidationError
 
 from majorana_api.routes import runs
 
@@ -13,6 +15,19 @@ def _request(*, version_id: uuid.UUID, source: str) -> runs.CreateRunRequest:
         artifact_version_id=version_id,
         source_code=source,
     )
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("shots", 20_001),
+        ("seed", -1),
+        ("seed", 2**31),
+    ],
+)
+def test_run_request_rejects_values_the_executor_cannot_preserve(field, value):
+    with pytest.raises(ValidationError):
+        runs.CreateRunRequest(task_prompt="Build a Bell circuit", **{field: value})
 
 
 async def test_edited_source_creates_explicitly_unverified_immutable_draft(scope, monkeypatch):

@@ -49,8 +49,8 @@ class CreateRunRequest(BaseModel):
     # throughout generation, verification, optimization, and artifact writeback.
     framework: Framework = Framework.QISKIT
     artifact_version_id: uuid.UUID | None = None
-    seed: int | None = None
-    shots: int | None = Field(default=None, ge=1, le=1_000_000)
+    seed: int | None = Field(default=None, ge=0, le=2**31 - 1)
+    shots: int | None = Field(default=None, ge=1, le=20_000)
     timeout_s: int | None = Field(default=None, ge=1, le=600)
     source_code: str | None = Field(default=None, max_length=100_000)
     conversation_id: uuid.UUID | None = None

@@ -19,6 +19,14 @@ dev = [
     # present transitively via majorana-verification; this closes the other side.
     "cirq-core>=1.4",
     "pennylane>=0.40",
+    # The local sandbox double (majorana_sandbox.local) executes generated code with
+    # the worker's OWN interpreter, so anything the generation prompt promises the
+    # sandbox must be importable here or every local run dies at execution. qiskit_aer
+    # is promised by _RUNTIME_LIMITS and used by the Qiskit reference template, but
+    # was the one runtime package no dependency pulled in: a local walkthrough burned
+    # its whole candidate budget on ModuleNotFoundError before any review ran. Pinned
+    # to the version in infra/sandbox/Dockerfile so local execution matches production.
+    "qiskit-aer==0.17.2",
 ]
 
 [tool.uv.workspace]

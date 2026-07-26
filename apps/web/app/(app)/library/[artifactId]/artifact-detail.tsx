@@ -38,7 +38,15 @@ function verdictChip(artifact: LibraryArtifact, copy: ArtifactCopy): { label: st
   if (artifact.status === "structural") return { label: copy.structural, glyph: "–" };
   if (artifact.status === "verified") return { label: copy.verified, glyph: "✓" };
   if (artifact.status === "failed") return { label: "Failed", glyph: "×" };
-  if (artifact.status === "inconclusive") return { label: "Verification unavailable", glyph: "–" };
+  if (
+    artifact.status === "inconclusive"
+    && artifact.verificationSummary?.reason_code === "ai_review_aligned"
+  ) {
+    return { label: "Executed", glyph: "–" };
+  }
+  if (artifact.status === "inconclusive") {
+    return { label: "Verification unavailable", glyph: "–" };
+  }
   if (artifact.status === "stale") return { label: "Verification stale", glyph: "–" };
   return { label: "Legacy evidence unknown", glyph: "–" };
 }

@@ -1,10 +1,15 @@
 # Verification v2 — gated implementation plan
 
-Status: proposed; implementation must not begin past a gate without explicit audit approval  
+Status: superseded by ADR-0023; retained as historical design context only
 Prepared: 2026-07-23  
 Target integration path: `feature/* -> dev -> prod`, squash merge only  
 Primary scope: `packages/py/{contracts,verification,agent,llm,frameworks}`, `services/{api,worker}`, `evals/`  
 UI scope: `apps/web` only after an explicit Eshaan/owner lane override  
+
+The strict-verification runtime described below is not the architecture for new
+runs. The current product uses Plan → Generate → Execute → basic contract check →
+AI intent review → optional export → private save. Do not implement this plan
+without a new owner decision.
 
 ## 1. Objective
 

@@ -3,7 +3,7 @@ category: "F — Grover / oracle search recovery"
 prompt: "Use Grover's algorithm on 4 qubits to recover the marked bitstring 1100. Measure all qubits and return the measurement counts. The most-probable outcome must be 1100 in Qiskit measurement order."
 framework: qiskit
 expect:
-  verifier_decision: pass
+  terminal_reason: ai_review_aligned
   output_keys: ["counts"]
   saves_artifact: true
   # Value-level correctness: the deterministic verifier checks circuit-consistency, not

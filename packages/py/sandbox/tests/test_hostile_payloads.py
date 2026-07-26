@@ -160,11 +160,21 @@ def test_vercel_create_always_requests_deny_all_egress():
     kwargs = _create_kwargs(ExecutionSpec(code="print(1)"), image="majorana-runner")
     assert kwargs["image"] == "majorana-runner"
     assert "runtime" not in kwargs  # custom images and built-in runtimes are exclusive
+    assert kwargs["resources"] == {"vcpus": 1}  # 1 vCPU provisions the requested 2 GiB
     assert kwargs["network_policy"] == DENY_ALL_EGRESS
     assert kwargs["env"] == {}  # no credentials inside the sandbox
     assert VercelSandbox(image="majorana-runner@sha256:test").environment_id == (
         "vercel:majorana-runner@sha256:test"
     )
+
+
+def test_vercel_resources_round_memory_up_to_provider_vcpu_units():
+    kwargs = _create_kwargs(
+        ExecutionSpec(code="print(1)", memory_mb=2049),
+        image="majorana-runner",
+    )
+
+    assert kwargs["resources"] == {"vcpus": 2}
 
 
 async def test_vercel_execute_without_sdk_raises_not_silently_runs():

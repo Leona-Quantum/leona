@@ -25,6 +25,7 @@ from ..orm import (
     RunPlan,
 )
 from ..ids import uuid7
+from . import artifacts as artifacts_repo
 from ._base import NotFoundError, require_write
 
 
@@ -83,9 +84,9 @@ async def set_plan(
     row.updated_at = func.now()
     await session.flush()
 
-    # Compatibility bridge: the current runtime still calls set_plan, while the
-    # post-0026 candidate FK requires every selected plan to exist in run_plans.
-    # Keep the legacy columns readable and dual-write only the immutable rev1 row.
+    # Compatibility bridge for historical callers and records. The fixed pipeline
+    # writes run_plans directly; this method keeps the legacy columns readable and
+    # dual-writes only the immutable rev1 row.
     revision = await get_plan_revision(scope, session, run_id, plan_id)
     if revision is None:
         await append_plan_revision(
@@ -704,18 +705,18 @@ async def add_conversion(
     candidate = await get_candidate(scope, session, run_id, values["candidate_id"])
     if candidate is None:
         raise NotFoundError("candidate")
-    verification = await latest_strict_verification(scope, session, run_id, candidate.id)
     execution = await get_execution(scope, session, run_id, candidate.id)
-    if verification is None or verification.decision not in {"pass", "inconclusive"}:
-        raise NotFoundError("terminal_strict_verification")
+    review = await latest_semantic_review(scope, session, run_id, candidate.id)
+    if review is None or review.decision != "ready":
+        raise NotFoundError("ready_semantic_review")
     if execution is None:
         raise NotFoundError("candidate_execution")
     if not (
         candidate.source_fingerprint
-        == verification.source_fingerprint
+        == review.source_fingerprint
         == execution.source_fingerprint
         == values.get("source_fingerprint")
-        and verification.execution_id == execution.id == values.get("execution_id")
+        and review.execution_id == execution.id == values.get("execution_id")
     ):
         raise ValueError("conversion evidence execution binding mismatch")
     row = CandidateConversion(**values)
@@ -759,7 +760,39 @@ async def set_materialization(
     scope: Scope, session: AsyncSession, run_id: uuid.UUID, materialization: dict[str, Any]
 ) -> None:
     require_write(scope)
-    await _scoped_run(scope, session, run_id)
+    run = await _scoped_run(scope, session, run_id)
+    try:
+        candidate_id = uuid.UUID(str(materialization["candidate_id"]))
+        artifact_id = uuid.UUID(str(materialization["artifact_id"]))
+        version_id = uuid.UUID(str(materialization["version_id"]))
+    except (KeyError, TypeError, ValueError) as exc:
+        raise ValueError(
+            "materialization requires candidate_id, artifact_id, and version_id"
+        ) from exc
+    if run.artifact_version_id != version_id:
+        raise ValueError("materialization version is not linked to the run")
+    version = await artifacts_repo.get_version(scope, session, version_id)
+    if version.artifact_id != artifact_id or version.fingerprint != materialization.get(
+        "source_fingerprint"
+    ):
+        raise ValueError("materialization artifact version binding mismatch")
+    candidate = await get_candidate(scope, session, run_id, candidate_id)
+    if candidate is None:
+        raise NotFoundError("candidate")
+    execution = await get_execution(scope, session, run_id, candidate_id)
+    review = await latest_semantic_review(scope, session, run_id, candidate_id)
+    if execution is None or execution.exit_code != 0:
+        raise NotFoundError("successful_candidate_execution")
+    if review is None or review.decision != "ready":
+        raise NotFoundError("ready_semantic_review")
+    if not (
+        candidate.source_fingerprint
+        == execution.source_fingerprint
+        == review.source_fingerprint
+        == materialization.get("source_fingerprint")
+        and review.execution_id == execution.id
+    ):
+        raise ValueError("materialization evidence binding mismatch")
     row = (
         await session.execute(
             select(AgentRun)

@@ -20,8 +20,11 @@ from majorana_api.repos import usage as usage_repo
 _ROLE_STAGE = {
     "request_plan": Stage.PLAN,
     "agent_tool_call": Stage.GENERATE,
+    "generate_circuit": Stage.GENERATE,
     "intent_alignment": Stage.VERIFY,
 }
+
+_LIVE_DELTA_CHARS = 160
 
 log = logging.getLogger("majorana_worker.agent_llm")
 
@@ -52,9 +55,53 @@ class MeteredAgentLLM:
         stored = await agent_repo.get_llm_call(
             self._scope, self._session, self._run_id, request_fingerprint
         )
+        stage = _ROLE_STAGE.get(request.schema_name, Stage.GENERATE)
+        delta_buffers = {"reasoning": "", "output": ""}
+
+        async def flush_deltas() -> None:
+            for kind, text in delta_buffers.items():
+                if text:
+                    delta_buffers[kind] = ""
+                    await self._sink.emit(
+                        "llm.delta",
+                        {"stage": stage, "kind": kind, "text": text},
+                    )
+
+        async def stream_delta(text: str, kind: str) -> None:
+            normalized_kind = kind if kind in delta_buffers else "output"
+            if not text:
+                return
+            # Only generation deltas are useful to the circuit Run UI. Plans and
+            # reviews are structured control records, not user-facing prose.
+            if stage is Stage.GENERATE:
+                delta_buffers[normalized_kind] += text
+                while len(delta_buffers[normalized_kind]) >= _LIVE_DELTA_CHARS:
+                    chunk = delta_buffers[normalized_kind][:_LIVE_DELTA_CHARS]
+                    delta_buffers[normalized_kind] = delta_buffers[normalized_kind][
+                        _LIVE_DELTA_CHARS:
+                    ]
+                    await self._sink.emit(
+                        "llm.delta",
+                        {"stage": stage, "kind": normalized_kind, "text": chunk},
+                    )
+            if on_delta is not None:
+                await on_delta(text, normalized_kind)
+
         if stored is None:
             started = time.monotonic()
-            response = await self._delegate.complete(request, on_delta=on_delta)
+            try:
+                response = await self._delegate.complete(
+                    request,
+                    # The provider only enables its stream when it receives a handler.
+                    # Keep all other circuit calls non-streaming unless their caller
+                    # explicitly needs deltas.
+                    on_delta=stream_delta
+                    if request.schema_name == "generate_circuit" or on_delta is not None
+                    else None,
+                )
+            finally:
+                # Preserve any safely received prefix if the provider disconnects.
+                await flush_deltas()
             duration_ms = int((time.monotonic() - started) * 1000)
             stored = await agent_repo.add_llm_call(
                 self._scope,
@@ -72,7 +119,6 @@ class MeteredAgentLLM:
             duration_ms = stored.duration_ms
         if stored.metered:
             return response
-        stage = _ROLE_STAGE.get(request.schema_name, Stage.GENERATE)
         try:
             await self._sink.emit(
                 "llm.call",
