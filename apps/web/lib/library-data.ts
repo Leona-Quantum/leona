@@ -1,4 +1,5 @@
 import type { RunEvent } from "@majorana/ui";
+import type { MeasuredResult } from "./measured-result.ts";
 import type { VerificationCheck, VerificationSummary } from "./verification-record.ts";
 import { verificationFromResource, verificationSummaryFromValue } from "./verification-record.ts";
 
@@ -35,6 +36,9 @@ export interface LibraryArtifact {
   checks?: VerificationCheck[];
   criticSummary?: string;
   verificationSummary?: VerificationSummary | null;
+  // What the program measured, stored on the version so a reopened artifact shows
+  // numbers and not only a verdict. Absent on artifacts saved before 2026-07-26.
+  measuredResult?: MeasuredResult | null;
 }
 
 const STORAGE_KEY = "majorana.library.v1";

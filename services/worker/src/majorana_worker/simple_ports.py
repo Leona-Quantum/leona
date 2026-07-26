@@ -380,6 +380,67 @@ class SimpleIntentReviewer:
         )
 
 
+#: Widest histogram a saved artifact carries. A 20-qubit measurement can produce
+#: more distinct bitstrings than anything a reader or a chart can use, so the
+#: stored copy keeps the heaviest outcomes and says so.
+MAX_STORED_OUTCOMES = 64
+#: Scalars beyond this are display noise; the program's own RESULT stays intact
+#: in the run's execution evidence either way.
+MAX_STORED_VALUES = 16
+
+
+def measured_result_summary(result: dict[str, Any]) -> dict[str, Any] | None:
+    """Bounded projection of what the program actually measured, for the artifact.
+
+    The run surface reads these numbers from the event stream, but the artifact is
+    the object a researcher keeps, reopens and cites — and it carried the verdict,
+    the prose and the resource estimates while the measured distribution existed
+    only on the run. Reopening a saved Bell state showed "3 checks passed" and no
+    counts.
+
+    Everything here is sandbox output derived from model-authored code, so nothing
+    is passed through: keys are coerced and length-capped, values must really be
+    numbers, cardinality is bounded, and `shots`/`outcome_count` describe the FULL
+    distribution even when `counts` holds only the heaviest slice. A truncated
+    histogram that silently reported a truncated total would misstate the
+    experiment rather than abbreviate it.
+
+    Returns None when nothing survives projection, so an artifact never carries an
+    empty shell that the UI would have to distinguish from real emptiness.
+    """
+
+    counts: dict[str, int] = {}
+    values: dict[str, float] = {}
+    for key, value in result.items():
+        name = str(key)[:64]
+        if name == "counts" and isinstance(value, dict):
+            for bitstring, count in value.items():
+                # bool is an int subclass; a measurement count is never a bool.
+                if isinstance(count, bool) or not isinstance(count, int) or count < 0:
+                    continue
+                counts[str(bitstring)[:64]] = count
+        elif isinstance(value, bool) or not isinstance(value, (int, float)):
+            continue
+        elif math.isfinite(value):
+            values[name] = float(value)
+
+    outcome_count = len(counts)
+    shots = sum(counts.values())
+    if outcome_count > MAX_STORED_OUTCOMES:
+        heaviest = sorted(counts.items(), key=lambda item: (-item[1], item[0]))
+        counts = dict(heaviest[:MAX_STORED_OUTCOMES])
+
+    summary: dict[str, Any] = {}
+    if outcome_count:
+        summary["counts"] = counts
+        summary["shots"] = shots
+        summary["outcome_count"] = outcome_count
+        summary["truncated"] = outcome_count > MAX_STORED_OUTCOMES
+    if values:
+        summary["values"] = dict(list(values.items())[:MAX_STORED_VALUES])
+    return summary or None
+
+
 def simple_pipeline_verification_summary(
     reference_methods: Sequence[VerificationMethod] = (),
     semantic_review_decision: SemanticReviewDecision = SemanticReviewDecision.READY,
@@ -579,6 +640,7 @@ class RepoReviewArtifactSaver:
             "verification_summary": simple_pipeline_verification_summary(
                 reference_methods, review.decision
             ),
+            "measured_result": measured_result_summary(execution.result),
             "export_manifest": {
                 "review_status": review_status,
                 "warning": (

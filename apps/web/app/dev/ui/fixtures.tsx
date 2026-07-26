@@ -9,6 +9,8 @@ import { CircuitDiagram } from "../../../components/circuit-diagram";
 import { reconstructInterchangeCircuit } from "../../../lib/circuit-conversion";
 import { CIRCUIT_FRAMEWORKS } from "../../../lib/circuit-frameworks";
 import { studioDraftBundle, type StudioDraftArtifact } from "../../../lib/studio-drafts";
+import { DETAIL_COPY, MeasuredResultPanel } from "../../(app)/library/[artifactId]/artifact-detail";
+import { measuredResultFromMetadata } from "../../../lib/measured-result";
 import { WORKSPACE_COPY } from "../../../lib/workspace-locale";
 
 /** A GHZ state on `n` qubits as interchange OpenQASM 3. */
@@ -53,6 +55,27 @@ function DiagramFixture({ qasm, title }: { qasm: string; title: string }) {
     </section>
   );
 }
+
+/** The Vault artifact panel that carries what the program measured.
+ *
+ * Goes through `measuredResultFromMetadata` on a metadata blob shaped exactly as
+ * the worker stores it, so this exercises the real parse rather than a
+ * hand-built view model — a local dev server cannot reach the control plane, and
+ * this panel only appears for an artifact saved by a real run. */
+function MeasuredResultFixture({ title, metadata }: { title: string; metadata: unknown }) {
+  return (
+    <section>
+      <h2 style={{ fontSize: "var(--fs-16)", fontWeight: 500 }}>{title}</h2>
+      <div className="mj-artifact-grid">
+        <MeasuredResultPanel measured={measuredResultFromMetadata(metadata)} copy={DETAIL_COPY.en} />
+      </div>
+    </section>
+  );
+}
+
+const WIDE_HISTOGRAM = Object.fromEntries(
+  Array.from({ length: 64 }, (_, index) => [index.toString(2).padStart(10, "0"), 64 - index]),
+);
 
 const MID_RUN: RailStage[] = [
   { id: "plan", name: "Plan", state: "pass", elapsed: "2.1 s" },
@@ -246,6 +269,26 @@ export function UiFixtures() {
           emptyMessage="Waiting for the pipeline…"
         />
       </section>
+      <MeasuredResultFixture
+        title="Measured result — Bell state, saved artifact"
+        metadata={{ measured_result: { counts: { "00": 529, "11": 495 }, shots: 1024, outcome_count: 2, truncated: false } }}
+      />
+
+      <MeasuredResultFixture
+        title="Measured result — wide histogram, truncated to the heaviest outcomes"
+        metadata={{ measured_result: { counts: WIDE_HISTOGRAM, shots: 8192, outcome_count: 412, truncated: true } }}
+      />
+
+      <MeasuredResultFixture
+        title="Measured result — scalars only (VQE-shaped run)"
+        metadata={{ measured_result: { values: { ground_state_energy: -1.137, iterations: 42 } } }}
+      />
+
+      <MeasuredResultFixture
+        title="Measured result — artifact saved before the field existed (renders nothing)"
+        metadata={{ source: "simple_pipeline_candidate" }}
+      />
+
     </div>
   );
 }

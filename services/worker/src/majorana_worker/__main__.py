@@ -9,6 +9,7 @@ active job before Cloud Run scale-down.
 import asyncio
 import contextlib
 import datetime as dt
+import json
 import logging
 import math
 import os
@@ -71,6 +72,57 @@ _job_lease_losses = _meter.create_counter("majorana.jobs.lease_lost")
 _job_attempts = _meter.create_histogram("majorana.jobs.attempts")
 _job_queue_age = _meter.create_histogram("majorana.jobs.queue_age_seconds")
 _runs_reaped = _meter.create_counter("majorana.runs.reaped")
+
+
+def _structured_log(severity: str, message: str, **fields: Any) -> None:
+    """Emit one Cloud Logging structured line.
+
+    Cloud Run parses a single-line JSON object on stdout and honours its
+    `severity` field. Plain `logging` output from this process lands at DEFAULT
+    severity instead — checked against seven days of production logs, where the
+    only entries above WARNING were multi-line tracebacks. That distinction is
+    the whole point here: the deploy workflow's post-deploy gate filters on
+    `severity>=ERROR`, so an alarm raised through `log.error` would be invisible
+    to the very check that is supposed to fail the deploy.
+    """
+    print(json.dumps({"severity": severity, "message": message, **fields}), flush=True)
+
+
+async def _preflight_models() -> None:
+    """Ask the provider whether it serves the models this worker would send.
+
+    Runs once at startup, off the poll loop, and never blocks job processing or
+    startup. A definitive mismatch is loud, because the deploy gate reads it;
+    anything unproven is a quiet INFO, because a preflight that fires on a
+    network blip is a preflight somebody disables.
+
+    This is the check whose absence let a stale MAJORANA_MODEL_* override on the
+    live service take down every execute run for days behind a green deploy
+    (2026-07-26) — chat had no override, so the product still looked half-alive.
+    """
+    try:
+        from majorana_llm.preflight import check_with_timeout
+
+        report = await check_with_timeout()
+    except asyncio.CancelledError:
+        raise
+    except Exception:
+        log.warning("model preflight did not complete", exc_info=True)
+        return
+    if report.unsupported:
+        named = ", ".join(f"{role.role}={role.model}" for role in report.unsupported)
+        _structured_log(
+            "ERROR",
+            f"configured models are not served by {report.provider}: {named}. "
+            "Every run reaching these stages will fail. Compare the "
+            "MAJORANA_MODEL_* overrides on this service against the defaults in "
+            "majorana_llm.models.",
+            **report.as_log_payload(),
+        )
+    elif report.proven:
+        log.info("model preflight ok: %s", report.as_log_payload()["checked"])
+    else:
+        log.info("model preflight inconclusive: no provider model list available")
 
 
 async def _heartbeat_loop(factory, *, job_id: Any, lease_token, stop: asyncio.Event) -> None:
@@ -265,6 +317,9 @@ async def run_forever() -> None:
         loop.add_signal_handler(sig, stop.set)
     liveness = await _start_liveness() if os.environ.get("PORT") else None
     log.info("worker %s started (poll %.1fs)", worker_id, POLL_INTERVAL_S)
+    # Concurrent with the first poll cycles, not ahead of them: a provider that
+    # is slow to answer must not delay draining the queue.
+    preflight = asyncio.create_task(_preflight_models())
     next_reap_at = 0.0  # sweep on the first cycle, then every REAP_INTERVAL_S
 
     try:
@@ -412,6 +467,9 @@ async def run_forever() -> None:
             except TimeoutError:
                 pass
     finally:
+        preflight.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await preflight
         if liveness is not None:
             liveness.close()
             await liveness.wait_closed()
