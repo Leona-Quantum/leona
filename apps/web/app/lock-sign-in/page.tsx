@@ -42,9 +42,9 @@ export default async function LockSignInPage({
 
   return (
     <PublicSite activePath="/lock-sign-in" className="mj-lock-page" locale={locale}>
-      <section className="mj-lock-shell">
-        <div className="mj-lock-card">
-          <div className="mj-lock-card-head">
+      <section className="mj-auth-shell">
+        <div className="mj-auth-card">
+          <div className="mj-auth-card-head">
             <BrandMark size={36} />
             <h1>{copy.title}</h1>
             <p>{copy.lede}</p>

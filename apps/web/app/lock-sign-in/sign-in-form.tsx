@@ -64,7 +64,7 @@ export function LockSignInForm({ locale, returnTo }: { locale: PublicLocale; ret
   }
 
   return (
-    <form className="mj-lock-form" onSubmit={submit}>
+    <form className="mj-auth-form" onSubmit={submit}>
       <label>
         <span>{copy.username}</span>
         <input name="username" required autoComplete="username" autoFocus />
@@ -73,7 +73,7 @@ export function LockSignInForm({ locale, returnTo }: { locale: PublicLocale; ret
         <span>{copy.password}</span>
         <input name="password" required type="password" autoComplete="current-password" />
       </label>
-      {error ? <p className="mj-lock-form-error" role="alert">{error}</p> : null}
+      {error ? <p className="mj-auth-form-error" role="alert">{error}</p> : null}
       <button className="mj-primary-button" type="submit" disabled={pending}>
         {pending ? copy.submitting : copy.submit}
       </button>
