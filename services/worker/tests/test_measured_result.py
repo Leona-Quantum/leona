@@ -75,9 +75,7 @@ def test_booleans_are_not_measurements():
 
 
 def test_infinities_and_nans_never_reach_the_artifact():
-    summary = measured_result_summary(
-        {"energy": float("inf"), "error": float("nan"), "real": 1.5}
-    )
+    summary = measured_result_summary({"energy": float("inf"), "error": float("nan"), "real": 1.5})
 
     assert summary["values"] == {"real": 1.5}
 
