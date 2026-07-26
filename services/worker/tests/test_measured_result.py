@@ -9,6 +9,7 @@ these tests are as much about what must NOT survive projection as what must.
 """
 
 from majorana_worker.simple_ports import (
+    MAX_KEY_CHARS,
     MAX_STORED_OUTCOMES,
     MAX_STORED_VALUES,
     measured_result_summary,
@@ -80,11 +81,31 @@ def test_infinities_and_nans_never_reach_the_artifact():
     assert summary["values"] == {"real": 1.5}
 
 
-def test_keys_are_length_bounded():
-    summary = measured_result_summary({"x" * 500: 1.0, "counts": {"0" * 500: 7}})
+def test_overlong_keys_are_rejected_not_truncated():
+    """Truncating would let two distinct outcomes collide on a shared prefix."""
+    summary = measured_result_summary(
+        {"x" * 500: 1.0, "energy": -1.0, "counts": {"0" * 500: 7, "01": 3}}
+    )
 
-    assert all(len(key) <= 64 for key in summary["values"])
-    assert all(len(key) <= 64 for key in summary["counts"])
+    assert summary["values"] == {"energy": -1.0}
+    assert summary["counts"] == {"01": 3}
+
+
+def test_colliding_prefixes_never_overwrite_each_other():
+    """The exact failure truncation would cause: two outcomes, one surviving count."""
+    shared = "1" * MAX_KEY_CHARS
+    summary = measured_result_summary({"counts": {shared + "0": 400, shared + "1": 600}})
+
+    # Both are rejected as overlong — never merged into one 1000-shot outcome.
+    assert summary is None
+
+
+def test_shots_and_outcome_count_describe_only_accepted_outcomes():
+    summary = measured_result_summary({"counts": {"00": 10, "1" * 500: 90}})
+
+    assert summary["counts"] == {"00": 10}
+    assert summary["shots"] == 10, "a rejected outcome must not inflate the total"
+    assert summary["outcome_count"] == 1
 
 
 def test_scalar_count_is_bounded():

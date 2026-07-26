@@ -31,32 +31,59 @@ export interface MeasuredResult {
   values: MeasuredResultValue[];
 }
 
+// The worker's own bounds, restated. The write path caps these, but a stored
+// artifact outlives the writer that produced it, so a blob that reaches here
+// unbounded — older schema, hand-edited row, a future writer — must not be able
+// to make the chart sort an unbounded histogram or the panel render an unbounded
+// list. Keep these in step with simple_ports.MAX_* if those ever move.
+const MAX_OUTCOMES = 64;
+const MAX_VALUES = 16;
+const MAX_KEY_CHARS = 64;
+
 function finiteNumber(value: unknown): number | null {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
 
+/** Reject arrays and exotic objects; only a plain record can carry these fields. */
+function plainRecord(value: unknown): Record<string, unknown> | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  return value as Record<string, unknown>;
+}
+
 /** Parse `metadata.measured_result`; null when the artifact carries no measurement. */
 export function measuredResultFromMetadata(metadata: unknown): MeasuredResult | null {
-  if (!metadata || typeof metadata !== "object") return null;
-  const stored = (metadata as Record<string, unknown>).measured_result;
-  if (!stored || typeof stored !== "object") return null;
-  const record = stored as Record<string, unknown>;
+  const outer = plainRecord(metadata);
+  if (!outer) return null;
+  const record = plainRecord(outer.measured_result);
+  if (!record) return null;
 
   let counts: Record<string, number> | null = null;
-  if (record.counts && typeof record.counts === "object") {
-    const parsed: Record<string, number> = {};
-    for (const [bitstring, raw] of Object.entries(record.counts as Record<string, unknown>)) {
+  let acceptedOutcomes = 0;
+  const storedCounts = plainRecord(record.counts);
+  if (storedCounts) {
+    const accepted: Array<[string, number]> = [];
+    for (const [bitstring, raw] of Object.entries(storedCounts)) {
+      // Overlong keys are rejected, never truncated — truncation would collide
+      // two distinct outcomes onto one bar.
+      if (bitstring.length > MAX_KEY_CHARS) continue;
       const count = finiteNumber(raw);
-      if (count !== null && count >= 0) parsed[bitstring] = count;
+      if (count !== null && count >= 0) accepted.push([bitstring, count]);
     }
-    if (Object.keys(parsed).length) counts = parsed;
+    acceptedOutcomes = accepted.length;
+    if (accepted.length) {
+      accepted.sort(([leftKey, left], [rightKey, right]) => right - left || leftKey.localeCompare(rightKey));
+      counts = Object.fromEntries(accepted.slice(0, MAX_OUTCOMES));
+    }
   }
 
   const values: MeasuredResultValue[] = [];
-  if (record.values && typeof record.values === "object") {
-    for (const [label, raw] of Object.entries(record.values as Record<string, unknown>)) {
+  const storedValues = plainRecord(record.values);
+  if (storedValues) {
+    for (const [label, raw] of Object.entries(storedValues)) {
+      if (label.length > MAX_KEY_CHARS) continue;
       const value = finiteNumber(raw);
       if (value !== null) values.push({ label: label.replaceAll("_", " "), value });
+      if (values.length === MAX_VALUES) break;
     }
   }
 
@@ -70,8 +97,10 @@ export function measuredResultFromMetadata(metadata: unknown): MeasuredResult | 
   const shots = storedShots !== null && storedShots >= summed ? storedShots : summed;
   const storedOutcomes = finiteNumber(record.outcomeCount ?? record.outcome_count);
   const visibleOutcomes = counts ? Object.keys(counts).length : 0;
-  const outcomeCount =
-    storedOutcomes !== null && storedOutcomes >= visibleOutcomes ? storedOutcomes : visibleOutcomes;
+  // Floor at what this parser itself accepted before capping, not at what
+  // survived the cap. Otherwise a blob holding 100 outcomes and no
+  // `outcome_count` would cap to 64 and then report 64 as the whole truth.
+  const outcomeCount = Math.max(storedOutcomes ?? 0, acceptedOutcomes, visibleOutcomes);
 
   return {
     counts,

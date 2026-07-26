@@ -387,6 +387,8 @@ MAX_STORED_OUTCOMES = 64
 #: Scalars beyond this are display noise; the program's own RESULT stays intact
 #: in the run's execution evidence either way.
 MAX_STORED_VALUES = 16
+#: Longest accepted outcome/metric key. Wider than any simulable bitstring.
+MAX_KEY_CHARS = 64
 
 
 def measured_result_summary(result: dict[str, Any]) -> dict[str, Any] | None:
@@ -412,13 +414,24 @@ def measured_result_summary(result: dict[str, Any]) -> dict[str, Any] | None:
     counts: dict[str, int] = {}
     values: dict[str, float] = {}
     for key, value in result.items():
-        name = str(key)[:64]
+        name = str(key)
+        # Reject an overlong key rather than truncate it. Truncating makes two
+        # distinct outcomes collide on their shared prefix and silently overwrite
+        # each other, which would leave `shots` and `outcome_count` describing a
+        # distribution that never existed — the opposite of what they promise. A
+        # measured bitstring longer than MAX_KEY_CHARS is past every simulation
+        # ceiling in the product anyway, so nothing real is lost.
+        if len(name) > MAX_KEY_CHARS:
+            continue
         if name == "counts" and isinstance(value, dict):
             for bitstring, count in value.items():
                 # bool is an int subclass; a measurement count is never a bool.
                 if isinstance(count, bool) or not isinstance(count, int) or count < 0:
                     continue
-                counts[str(bitstring)[:64]] = count
+                outcome = str(bitstring)
+                if len(outcome) > MAX_KEY_CHARS:
+                    continue
+                counts[outcome] = count
         elif isinstance(value, bool) or not isinstance(value, (int, float)):
             continue
         elif math.isfinite(value):

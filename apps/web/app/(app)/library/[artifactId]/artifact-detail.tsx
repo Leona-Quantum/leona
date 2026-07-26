@@ -228,7 +228,7 @@ export function ArtifactDetail({ artifactId, locale = "en" }: { artifactId: stri
             ))}
           </nav>
 
-          {tab === "overview" ? <Overview artifact={artifact} copy={copy} /> : null}
+          {tab === "overview" ? <Overview artifact={artifact} copy={copy} locale={locale} /> : null}
           {tab === "code" ? <CodeAndExport artifact={artifact} copied={copied} onCopy={copyCode} copy={copy} /> : null}
           {tab === "runs" ? <Runs artifact={artifact} copy={copy} /> : null}
           {tab === "verification" ? <Verification artifact={artifact} copy={copy} /> : null}
@@ -253,7 +253,7 @@ export function ArtifactDetail({ artifactId, locale = "en" }: { artifactId: stri
   );
 }
 
-function Overview({ artifact, copy }: { artifact: LibraryArtifact; copy: ArtifactCopy }) {
+function Overview({ artifact, copy, locale }: { artifact: LibraryArtifact; copy: ArtifactCopy; locale: PublicLocale }) {
   return (
     <div className="mj-artifact-grid">
       <section className="mj-artifact-panel mj-artifact-panel--wide">
@@ -263,7 +263,7 @@ function Overview({ artifact, copy }: { artifact: LibraryArtifact; copy: Artifac
         <h3>{copy.verificationSummary}</h3>
         <VerificationSummaryPanel summary={artifact.verificationSummary ?? null} />
       </section>
-      <MeasuredResultPanel measured={artifact.measuredResult ?? null} copy={copy} />
+      <MeasuredResultPanel measured={artifact.measuredResult ?? null} copy={copy} locale={locale} />
       <section className="mj-artifact-panel">
         <div className="mj-panel-heading"><h2>{copy.resources}</h2><span className="mj-mono-muted">{copy.currentVersion}</span></div>
         <dl className="mj-resource-list">{artifact.resourceRows.map((row) => <div key={row.label}><dt>{row.label}</dt><dd>{row.value}</dd></div>)}</dl>
@@ -287,7 +287,8 @@ function Overview({ artifact, copy }: { artifact: LibraryArtifact; copy: Artifac
  * would read as "this run measured nothing" instead of "this artifact does not
  * carry it". Reuses the Run surface's bar markup so one experiment does not get two
  * different-looking histograms depending on which page it is read from. */
-export function MeasuredResultPanel({ measured, copy }: { measured: MeasuredResult | null; copy: ArtifactCopy }) {
+export function MeasuredResultPanel({ measured, copy, locale = "en" }: { measured: MeasuredResult | null; copy: ArtifactCopy; locale?: PublicLocale }) {
+  const numberLocale = locale === "ja" ? "ja-JP" : "en-US";
   if (!measured) return null;
   // Same chart math as the Run surface, so one experiment does not get a 12-bar
   // histogram on the page that produced it and a 64-bar wall in the Vault. The
@@ -308,12 +309,12 @@ export function MeasuredResultPanel({ measured, copy }: { measured: MeasuredResu
       {measured.values.length ? (
         <dl className="mj-resource-list">
           {measured.values.map((value) => (
-            <div key={value.label}><dt>{value.label}</dt><dd>{value.value.toLocaleString()}</dd></div>
+            <div key={value.label}><dt>{value.label}</dt><dd>{value.value.toLocaleString(numberLocale)}</dd></div>
           ))}
         </dl>
       ) : null}
       {data ? (
-        <div className="mj-run-live-chart" role="img" aria-label={copy.countsLabel(measured.shots)}>
+        <div className="mj-run-live-chart" role="group" aria-label={copy.countsLabel(measured.shots)}>
           {data.bars.map((bar) => (
             <div className="mj-run-live-bar" key={bar.bitstring}>
               <code>{bar.bitstring}</code>
@@ -321,8 +322,8 @@ export function MeasuredResultPanel({ measured, copy }: { measured: MeasuredResu
                 <span style={{ width: `${(bar.count / data.peak.count) * 100}%` }} />
               </span>
               <span>
-                {bar.count.toLocaleString()}
-                <small>{formatShare(bar.share, "en-US")}</small>
+                {bar.count.toLocaleString(numberLocale)}
+                <small>{formatShare(bar.share, numberLocale)}</small>
               </span>
             </div>
           ))}

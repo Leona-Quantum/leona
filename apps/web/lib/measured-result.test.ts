@@ -74,3 +74,53 @@ test("a malformed stored blob does not throw", () => {
   assert.equal(measuredResultFromMetadata({ measured_result: { counts: "00" } }), null);
   assert.equal(measuredResultFromMetadata("nope"), null);
 });
+
+test("re-applies the worker's bounds on a blob that arrives unbounded", () => {
+  const counts = Object.fromEntries(
+    Array.from({ length: 300 }, (_, index) => [index.toString(2).padStart(12, "0"), index + 1]),
+  );
+  const values = Object.fromEntries(Array.from({ length: 40 }, (_, index) => [`m${index}`, index]));
+
+  const result = measuredResultFromMetadata({ measured_result: { counts, values } });
+
+  assert.equal(Object.keys(result!.counts!).length, 64, "histogram is capped");
+  assert.equal(result?.values.length, 16, "value list is capped");
+  assert.equal(result?.truncated, true);
+});
+
+test("a capped histogram still reports how many outcomes there really were", () => {
+  const counts = Object.fromEntries(
+    Array.from({ length: 100 }, (_, index) => [index.toString(2).padStart(12, "0"), index + 1]),
+  );
+
+  // No outcome_count stored — the parser must not report its own cap as the truth.
+  const result = measuredResultFromMetadata({ measured_result: { counts } });
+
+  assert.equal(result?.outcomeCount, 100);
+  assert.equal(result?.truncated, true);
+});
+
+test("the capped histogram keeps the heaviest outcomes", () => {
+  const counts = Object.fromEntries(
+    Array.from({ length: 100 }, (_, index) => [`s${index}`, index + 1]),
+  );
+
+  const result = measuredResultFromMetadata({ measured_result: { counts } });
+
+  assert.ok("s99" in result!.counts!, "heaviest kept");
+  assert.ok(!("s0" in result!.counts!), "lightest dropped");
+});
+
+test("overlong keys are rejected, never truncated into a collision", () => {
+  const shared = "1".repeat(64);
+  const result = measuredResultFromMetadata({
+    measured_result: { counts: { [`${shared}0`]: 400, [`${shared}1`]: 600, "01": 7 } },
+  });
+
+  assert.deepEqual(result?.counts, { "01": 7 });
+});
+
+test("arrays are not records", () => {
+  assert.equal(measuredResultFromMetadata({ measured_result: [1, 2, 3] }), null);
+  assert.equal(measuredResultFromMetadata({ measured_result: { counts: [1, 2] } }), null);
+});
