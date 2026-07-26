@@ -85,10 +85,19 @@ def _ctx(sink) -> RunContext:
 
 
 @pytest.fixture(autouse=True)
-def _empty_allowlist(monkeypatch):
-    """No LEONA_DEVELOPER_EMAILS, i.e. the default Cloud Run configuration."""
-    monkeypatch.delenv("LEONA_DEVELOPER_EMAILS", raising=False)
-    monkeypatch.setenv("WORKOS_CLIENT_ID", "test-client")
+def _worker_production_environment(monkeypatch):
+    """The environment the worker actually runs in on Cloud Run.
+
+    No LEONA_DEVELOPER_EMAILS and — the part that matters — no WORKOS_CLIENT_ID.
+    The worker authenticates nothing, so it has never had one. The first cut of
+    this check resolved the allowlist through `Settings.from_env()`, which
+    validates the whole API service's configuration and raises RuntimeError
+    without that variable: every AUTO run that resolved to EXECUTE would have
+    failed in production. Setting the variable here to make the test pass is
+    exactly how that ships again.
+    """
+    for name in ("LEONA_DEVELOPER_EMAILS", "WORKOS_CLIENT_ID", "SINGLE_USER_LOCK"):
+        monkeypatch.delenv(name, raising=False)
 
 
 async def test_auto_cannot_be_used_to_spend_an_exhausted_allowance(monkeypatch):
@@ -213,3 +222,22 @@ async def test_the_refusal_lands_in_the_run_stream_as_a_reason_not_a_crash():
 
 async def _noop_set_mode(_scope, _session, _run_id, _mode):
     return None
+
+
+async def test_the_check_survives_the_worker_environment_it_runs_in(monkeypatch):
+    """A regression guard with a name, because this one was a live outage.
+
+    The autouse fixture already strips WORKOS_CLIENT_ID; this asserts the
+    consequence directly so the reason cannot be lost if the fixture is edited.
+    """
+    import os
+
+    assert "WORKOS_CLIENT_ID" not in os.environ
+
+    async def count_execute_runs_since(_scope, _session, _since):
+        return 0
+
+    monkeypatch.setattr(handlers.runs_repo, "count_execute_runs_since", count_execute_runs_since)
+
+    # No exception is the assertion.
+    await handlers._assert_execute_allowance(_Scope(), _Session(_User("someone@example.com")))
