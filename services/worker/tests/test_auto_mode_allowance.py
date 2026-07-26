@@ -1,0 +1,215 @@
+"""The half of the per-tier run allowance that only the worker can enforce.
+
+The API refuses an explicit `mode=execute` submission once an account's weekly
+runs are spent. It cannot refuse an AUTO submission: AUTO has not decided what it
+is yet, and refusing those would refuse ordinary chat, which is unmetered by
+policy. So a caller could have spent an unbounded number of executions simply by
+omitting `mode`.
+
+This is where that closes — at the moment AUTO actually becomes EXECUTE.
+"""
+
+import uuid
+
+import pytest
+from majorana_contracts.enums import Framework, RunMode, RunStatus
+from majorana_worker import handlers
+from majorana_worker.context import RunContext
+
+
+class _RecordingSink:
+    def __init__(self):
+        self.events = []
+
+    async def emit(self, event_type, payload, *, event_id=None):
+        self.events.append((event_type, payload))
+
+
+class _FakeStore:
+    def __init__(self, status=RunStatus.QUEUED):
+        self.status = status
+        self.finished = None
+
+    async def current_status(self):
+        return self.status
+
+    async def finish(self, status, payload):
+        self.finished = (status, payload)
+        return status
+
+
+class _ExecuteLLM:
+    async def complete(self, request, *, on_delta=None):
+        from majorana_llm import LLMResponse
+
+        return LLMResponse(
+            text='{"intent": "execute", "reason": "runs a circuit"}',
+            model="test",
+            usage=None,
+        )
+
+
+class _Scope:
+    user_id = uuid.uuid4()
+    workspace_id = uuid.uuid4()
+
+
+class _User:
+    def __init__(self, email: str, plan: str | None = None):
+        self.email = email
+        self.plan = plan
+
+
+class _Session:
+    def __init__(self, user):
+        self._user = user
+
+    async def get(self, _model, _pk):
+        return self._user
+
+    async def commit(self):
+        return None
+
+
+def _ctx(sink) -> RunContext:
+    return RunContext(
+        run_id=uuid.uuid4(),
+        task_prompt="Build a Bell pair and measure it",
+        mode=RunMode.AUTO,
+        framework=Framework.QISKIT,
+        seed=None,
+        shots=None,
+        timeout_s=None,
+        sink=sink,
+    )
+
+
+@pytest.fixture(autouse=True)
+def _empty_allowlist(monkeypatch):
+    """No LEONA_DEVELOPER_EMAILS, i.e. the default Cloud Run configuration."""
+    monkeypatch.delenv("LEONA_DEVELOPER_EMAILS", raising=False)
+    monkeypatch.setenv("WORKOS_CLIENT_ID", "test-client")
+
+
+async def test_auto_cannot_be_used_to_spend_an_exhausted_allowance(monkeypatch):
+    """The bypass this file exists to close."""
+    used = {"count": 5}
+
+    async def count_execute_runs_since(_scope, _session, _since):
+        return used["count"]
+
+    monkeypatch.setattr(handlers.runs_repo, "count_execute_runs_since", count_execute_runs_since)
+
+    sink = _RecordingSink()
+    with pytest.raises(handlers._RunAllowanceExhausted) as caught:
+        await handlers._resolve_mode(
+            _ctx(sink),
+            _FakeStore(),
+            scope=_Scope(),
+            session=_Session(_User("someone@example.com")),
+            llm=_ExecuteLLM(),
+            has_source_code=False,
+        )
+
+    assert caught.value.used == 5
+    assert caught.value.limit == 5
+
+
+async def test_the_run_being_resolved_is_not_counted_against_itself(monkeypatch):
+    """Four used, limit five: this run is the fifth and must be allowed.
+
+    The row is still AUTO in the database at this point, so it is outside the
+    execute count — which is why `used >= limit` is the right comparison and
+    `used > limit` would silently grant everyone a sixth run.
+    """
+
+    async def count_execute_runs_since(_scope, _session, _since):
+        return 4
+
+    monkeypatch.setattr(handlers.runs_repo, "count_execute_runs_since", count_execute_runs_since)
+
+    recorded = {}
+
+    async def set_run_mode(_scope, _session, run_id, mode):
+        recorded["mode"] = mode
+
+    monkeypatch.setattr(handlers.runs_repo, "set_run_mode", set_run_mode)
+
+    sink = _RecordingSink()
+    result = await handlers._resolve_mode(
+        _ctx(sink),
+        _FakeStore(),
+        scope=_Scope(),
+        session=_Session(_User("someone@example.com")),
+        llm=_ExecuteLLM(),
+        has_source_code=False,
+    )
+
+    assert result.mode is RunMode.EXECUTE
+    assert recorded["mode"] is RunMode.EXECUTE
+
+
+async def test_the_operator_is_not_metered_without_any_configuration(monkeypatch):
+    """A missing allowlist must not throttle the live single-operator deployment."""
+
+    async def count_execute_runs_since(_scope, _session, _since):
+        return 10_000
+
+    monkeypatch.setattr(handlers.runs_repo, "count_execute_runs_since", count_execute_runs_since)
+    monkeypatch.setattr(handlers.runs_repo, "set_run_mode", _noop_set_mode)
+
+    result = await handlers._resolve_mode(
+        _ctx(_RecordingSink()),
+        _FakeStore(),
+        scope=_Scope(),
+        session=_Session(_User("operator@leonaquantum.com")),
+        llm=_ExecuteLLM(),
+        has_source_code=False,
+    )
+    assert result.mode is RunMode.EXECUTE
+
+
+async def test_a_developer_by_plan_column_is_not_metered(monkeypatch):
+    async def count_execute_runs_since(_scope, _session, _since):
+        return 10_000
+
+    monkeypatch.setattr(handlers.runs_repo, "count_execute_runs_since", count_execute_runs_since)
+    monkeypatch.setattr(handlers.runs_repo, "set_run_mode", _noop_set_mode)
+
+    result = await handlers._resolve_mode(
+        _ctx(_RecordingSink()),
+        _FakeStore(),
+        scope=_Scope(),
+        session=_Session(_User("collaborator@example.com", plan="developer")),
+        llm=_ExecuteLLM(),
+        has_source_code=False,
+    )
+    assert result.mode is RunMode.EXECUTE
+
+
+async def test_the_refusal_lands_in_the_run_stream_as_a_reason_not_a_crash():
+    """A refused run must end where the user is looking, with words they know."""
+    sink = _RecordingSink()
+    store = _FakeStore()
+    ctx = _ctx(sink)
+
+    status = await handlers._finish_allowance_exhausted(
+        ctx, store, handlers._RunAllowanceExhausted(5, 5)
+    )
+
+    assert status is RunStatus.FAILED
+    assert store.finished == (
+        RunStatus.FAILED,
+        {"status": RunStatus.FAILED, "reason_code": "run_allowance_exhausted"},
+    )
+    [(event_type, payload)] = sink.events
+    # run.error is an EXISTING event type: a new one would need a migration for
+    # run_events.ck_type_enum, and the reason belongs in the payload anyway.
+    assert event_type == "run.error"
+    assert payload["code"] == "run_allowance_exhausted"
+    assert "5 verified runs per week" in payload["message"]
+    assert "abuse" not in payload["message"]
+
+
+async def _noop_set_mode(_scope, _session, _run_id, _mode):
+    return None

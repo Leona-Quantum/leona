@@ -8,6 +8,7 @@ import os
 from dataclasses import dataclass
 
 from .catalog_authority import CatalogAuthority
+from .tiers import parse_developer_emails
 
 # The placeholder the web app shipped before the API had a lock counterpart. It
 # is public in the repo, so accepting it would let anyone past the username/
@@ -54,6 +55,11 @@ class Settings:
     single_user_lock_user_id: str = "single-user-lock"
     single_user_lock_email: str = "operator@leonaquantum.com"
     single_user_lock_display_name: str = "Leona Quantum"
+    #: Addresses granted the developer tier by this service (tiers.py). Empty by
+    #: default and never hardcoded — this repository is public. A missing value
+    #: meters collaborators like free accounts; it cannot throttle the operator,
+    #: whose identity is recognised without configuration.
+    developer_emails: frozenset[str] = frozenset()
     catalog_authority: CatalogAuthority = CatalogAuthority()
 
     def __post_init__(self) -> None:
@@ -121,5 +127,6 @@ class Settings:
             single_user_lock_display_name=os.environ.get(
                 "SINGLE_USER_LOCK_DISPLAY_NAME", "Leona Quantum"
             ),
+            developer_emails=parse_developer_emails(os.environ.get("LEONA_DEVELOPER_EMAILS")),
             catalog_authority=CatalogAuthority.from_env(),
         )

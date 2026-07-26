@@ -90,6 +90,32 @@ async def count_runs_by_mode_since(
     return {str(mode): int(count) for mode, count in (await session.execute(stmt)).all()}
 
 
+async def count_execute_runs_since(scope: Scope, session: AsyncSession, since: dt.datetime) -> int:
+    """Runs whose RESOLVED mode is EXECUTE, for the per-tier weekly allowance.
+
+    Deliberately narrower than `count_runs_by_mode_since`, and the difference is
+    the point. The backstop counts AUTO too, because at admission an AUTO row
+    might still become an execution and an abuse ceiling must bound the worst
+    case. A *plan* allowance must not: a free account's chat is unmetered by
+    policy, and counting AUTO here would spend someone's five weekly runs on
+    conversation.
+
+    The worker rewrites an AUTO row to EXECUTE when it resolves it, so a run that
+    really did execute is counted from that moment on, whichever mode it was
+    submitted as.
+    """
+    stmt = (
+        select(func.count())
+        .select_from(Run)
+        .where(
+            Run.workspace_id == scope.workspace_id,
+            Run.mode == RunMode.EXECUTE.value,
+            Run.created_at >= since,
+        )
+    )
+    return int((await session.execute(stmt)).scalar_one())
+
+
 async def find_run_by_idempotency_key(
     scope: Scope, session: AsyncSession, idempotency_key: str
 ) -> Run | None:

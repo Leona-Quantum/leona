@@ -8,14 +8,20 @@
  * SCOPE OF THAT GUARANTEE — this file used to claim a client "cannot skip it
  * without also skipping its own session cookie", which is not true and was
  * worth correcting because it invited later sessions to trust a server-side
- * gate that does not exist. It binds callers who go through the BFF; the
- * control plane is a *separate service*, and a script holding a valid access
- * token can call `POST /v1/runs` on it directly and never pass through here.
- * That path is bounded by a flat per-workspace ceiling in the API itself
- * (`_enforce_execute_backstop` in services/api/.../routes/runs.py), which is an
- * abuse backstop far above every tier — deliberately not a second copy of this
- * policy. Real per-tier enforcement has to move server-side before multi-user
- * signup ships; see DECISIONS.md 2026-07-26.
+ * gate that did not exist. It binds callers who go through the BFF; the control
+ * plane is a *separate service*, and a script holding a valid access token can
+ * call `POST /v1/runs` on it directly and never pass through here.
+ *
+ * That gap is now closed on the server. `majorana_api.tiers` holds the control
+ * plane's own copy of the tier decision, `routes/runs.py` refuses an explicit
+ * execute submission over the weekly limit, and the worker refuses an AUTO run
+ * at the moment it resolves to EXECUTE — the one place the default-mode bypass
+ * can be caught. The flat abuse ceiling stays above both.
+ *
+ * So this file is now the *fast* refusal rather than the only one: it answers
+ * without a round trip and words the message for the user, and the server
+ * enforces the same numbers whether or not anyone came through here. Keep the
+ * two in step — the API's TIER_LIMITS mirrors the free-tier numbers below.
  *
  * Only `mode: "execute"` submissions are metered: those are the agent-pipeline
  * runs the published "runs per week" allowance describes. Chat turns are not

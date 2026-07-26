@@ -6,7 +6,7 @@ the control plane's repository layer.
 
 import re
 import uuid
-from typing import Any
+from typing import Annotated, Any
 
 from fastapi import APIRouter, HTTPException
 from majorana_contracts import Artifact as ArtifactResource
@@ -22,13 +22,33 @@ from majorana_contracts.enums import (
 from majorana_openqasm import OpenQASMError, fingerprint, normalize
 from pydantic import AnyHttpUrl, BaseModel, ConfigDict, Field
 
-from ..auth.deps import CurrentScope, DbSession
+from fastapi import Depends
+
+from ..auth.deps import CurrentIdentity, CurrentScope, DbSession, get_settings
 from ..repos import artifacts as artifacts_repo
+from ..repos import workspaces as workspaces_repo
 from ..orm import Artifact as ArtifactRow
 from ..orm import ArtifactVersion as ArtifactVersionRow
+from ..settings import Settings
+from ..tiers import limits_for, resolve_tier
 from ..verification_summary import parse_verification_summary
 
 router = APIRouter()
+
+
+def _vault_cap_refusal(used: int, limit: int) -> HTTPException:
+    return HTTPException(
+        status_code=429,
+        detail={
+            "error": (
+                f"Your Vault holds {used} of {limit} artifacts on this plan. "
+                "Archive an artifact you no longer need and this one will file."
+            ),
+            "reason": "artifact_allowance_exhausted",
+            "used": used,
+            "limit": limit,
+        },
+    )
 
 
 class ImportPublicArtifactRequest(BaseModel):
@@ -251,6 +271,8 @@ async def keep_artifact(
     artifact_id: uuid.UUID,
     scope: CurrentScope,
     session: DbSession,
+    identity: CurrentIdentity,
+    settings: Annotated[Settings, Depends(get_settings)],
 ) -> ArtifactResource:
     """Put a materialized run result into the Vault (migration 0036).
 
@@ -262,7 +284,24 @@ async def keep_artifact(
 
     Idempotent — keeping something already kept returns it unchanged rather than
     re-stamping, so a double click cannot reorder the Vault.
+
+    This is where the per-tier Vault cap is enforced, because since migration
+    0036 it is the only place an artifact ENTERS the Vault by a user's choice.
+    The cap is checked before the write and skipped for an artifact that is
+    already kept, so re-keeping never fails at the boundary.
     """
+    user, _workspace = identity
+    limits = limits_for(
+        resolve_tier(user.email, plan=user.plan, developer_emails=settings.developer_emails)
+    )
+    if limits.private_artifacts is not None:
+        existing = await artifacts_repo.get_artifact(scope, session, artifact_id)
+        if existing.kept_at is None:
+            _workspace_row, _members, kept, _runs = await workspaces_repo.get_overview(
+                scope, session
+            )
+            if kept >= limits.private_artifacts:
+                raise _vault_cap_refusal(kept, limits.private_artifacts)
     artifact = await artifacts_repo.keep_artifact(scope, session, artifact_id)
     metadata: dict | None = None
     if artifact.current_version_id is not None:
