@@ -3044,6 +3044,7 @@
   display: flex;
   flex-wrap: wrap;
   align-items: center;
+  justify-content: flex-end;
   gap: var(--sp-2);
 }
 .mj-run-code-note {
@@ -4126,7 +4127,10 @@
   justify-content: flex-end;
   gap: var(--sp-2);
 }
-.mj-artifact-code-actions select {
+/* The Run surface's framework picker is the same control as the Vault one and
+ * must not drift into a raw browser select beside it. */
+.mj-artifact-code-actions select,
+.mj-run-code-actions select {
   min-height: 32px;
   padding: 0 var(--sp-2);
   border: 1px solid var(--border-0);
