@@ -20,6 +20,7 @@ import { runOutcomeFromEvents } from "../../../../lib/run-outcome";
 import { runResultFromEvents } from "../../../../lib/run-result";
 import { RunResult } from "../../../../components/run-result";
 import { runProgressFromEvents } from "../../../../lib/run-progress";
+import { formatShare, simulationChartData } from "../../../../lib/simulation-visual";
 
 type WireEvent = {
   run_id: string;
@@ -856,7 +857,7 @@ function SimulationResult({ event }: { event: WireEvent }) {
       .sort(([left], [right]) => left.localeCompare(right))
     : [];
   const total = countEntries.reduce((sum, [, value]) => sum + value, 0);
-  const max = Math.max(1, ...countEntries.map(([, value]) => value));
+  const chart = total ? simulationChartData(Object.fromEntries(countEntries), total) : null;
   const scalarEntries = result
     ? Object.entries(result).filter(
       ([key, value]) => key !== "counts" && ["string", "number", "boolean"].includes(typeof value),
@@ -887,23 +888,32 @@ function SimulationResult({ event }: { event: WireEvent }) {
           </div>
         ))}
       </dl>
-      {countEntries.length ? (
-        <div className="mj-run-live-chart" role="img" aria-label={`Measured counts from ${total} shots`}>
-          {countEntries.map(([state, value]) => {
-            const percent = total ? (value / total) * 100 : 0;
-            return (
-              <div className="mj-run-live-bar" key={state}>
-                <code>{state}</code>
-                <span className="mj-run-live-bar-track" aria-hidden="true">
-                  <span style={{ width: `${(value / max) * 100}%` }} />
-                </span>
-                <span>
-                  {value.toLocaleString()}
-                  <small>{percent.toFixed(1)}%</small>
-                </span>
-              </div>
-            );
-          })}
+      {chart ? (
+        // Every other counts chart in the product goes through simulationChartData
+        // and formatShare. This one had its own sort, no cap on how many bars it
+        // would draw, and its own `toFixed(1)` — so a 12-qubit circuit drew
+        // hundreds of rows here and a dozen everywhere else, with the percentages
+        // rounded differently in each. role="group" rather than role="img": every
+        // bitstring, count and percentage below is real text, and role="img"
+        // hid all of it behind a label that only said counts exist.
+        <div className="mj-run-live-chart" role="group" aria-label={`Measured counts from ${total.toLocaleString()} shots`}>
+          {chart.bars.map((bar) => (
+            <div className="mj-run-live-bar" key={bar.bitstring}>
+              <code>{bar.bitstring}</code>
+              <span className="mj-run-live-bar-track" aria-hidden="true">
+                <span style={{ width: `${(bar.count / chart.peak.count) * 100}%` }} />
+              </span>
+              <span>
+                {bar.count.toLocaleString()}
+                <small>{formatShare(bar.share, "en-US")}</small>
+              </span>
+            </div>
+          ))}
+          {chart.otherStates ? (
+            <p className="mj-run-live-chart-note">
+              {`Showing the ${chart.bars.length} heaviest of ${chart.distinctStates.toLocaleString()} measured outcomes.`}
+            </p>
+          ) : null}
         </div>
       ) : result && Object.keys(result).length ? (
         <pre className="mj-run-live-result-json">{JSON.stringify(result, null, 2)}</pre>

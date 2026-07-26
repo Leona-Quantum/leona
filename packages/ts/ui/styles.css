@@ -5566,9 +5566,14 @@ div.mj-rail-row:hover {
   display: grid;
   gap: 2px;
 }
+/* The outcome label column is bounded at both ends. It was `minmax(4ch, auto)`
+   — a floor with no ceiling — so a 20-qubit circuit's 20-character bitstrings
+   grew the column until the bar track it is supposed to label had almost no
+   width left. 12ch keeps the common cases (up to 12 qubits) intact and lets
+   anything wider scroll inside its own cell rather than squeezing the chart. */
 .mj-sim-chart-row {
   display: grid;
-  grid-template-columns: minmax(4ch, auto) 1fr minmax(6ch, auto);
+  grid-template-columns: minmax(4ch, 12ch) 1fr minmax(6ch, auto);
   align-items: center;
   gap: var(--sp-3);
   min-height: 16px;
@@ -5577,6 +5582,8 @@ div.mj-rail-row:hover {
   color: var(--text-1);
   font-family: var(--font-mono);
   font-size: var(--fs-12);
+  overflow-x: auto;
+  white-space: nowrap;
 }
 .mj-sim-chart-row.is-peak code,
 .mj-sim-chart-row.is-peak .mj-sim-chart-value {

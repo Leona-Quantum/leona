@@ -234,7 +234,11 @@ SIMPLE_PLAN_SYSTEM_PROMPT = f"""You plan one executable quantum-circuit artifact
 Interpret the user's request and emit the smallest Plan that lets an implementation
 model write and run selected-framework Python. Preserve the selected framework and any
 requested shots or seed. Choose reasonable bounded defaults when the request is
-executable without clarification.
+executable without clarification. When the request does not state a shot count, plan
+1024 — the product's default and the convention every quantum toolkit ships with — and
+depart from it only when the task needs it: raise it when a declared reference check has
+to resolve a small difference, and lower it only when the task is explicitly about few
+shots.
 
 {FRAMEWORK_DIRECTIVE}
 

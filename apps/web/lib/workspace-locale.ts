@@ -153,6 +153,8 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
     cpuLane: string;
     cpuEligible: string;
     cpuUnavailable: (reason: string) => string;
+    sandboxFallbackExplainer: string;
+    runInSandbox: string;
     openSimulation: string;
     simulationArtifactRequired: string;
     cpuInvalidShots: (maximum: number) => string;
@@ -486,11 +488,13 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
       cpuUnavailable: (reason) => ({
         artifact_required: "Save this draft to Vault before creating an artifact-owned simulation record.",
         framework_unavailable: "CPU execution is available only for Qiskit, PennyLane, and Cirq source.",
-        source_unavailable: "This source is outside the bounded CPU simulation model. No result will be invented.",
+        source_unavailable: "The in-browser lane can only rebuild circuits written in Studio's own gate shape, and this one is beyond it — so nothing is simulated here rather than a result being invented.",
         source_limit: "This source is too large for the bounded CPU simulation lane.",
         qubit_limit: "This circuit is wider than the browser simulation lane can run on your plan.",
         operation_limit: "This source exceeds the bounded CPU operation limit.",
       }[reason] ?? "CPU simulation is unavailable for this source."),
+      sandboxFallbackExplainer: "Run it for real instead: the sandbox executes this exact source and reports whatever it produces, including the error if it does not work.",
+      runInSandbox: "Run this code for real",
       openSimulation: "Open simulation",
       simulationArtifactRequired: "Save this draft to Vault before creating an artifact-owned simulation record.",
       cpuInvalidShots: (maximum) => `Shots must be a whole number from 1 to ${maximum.toLocaleString("en-US")}.`,
@@ -842,11 +846,13 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
       cpuUnavailable: (reason) => ({
         artifact_required: "アーティファクトに紐づくシミュレーション記録を作成する前に、この下書きをボールトへ保存してください。",
         framework_unavailable: "CPU実行はQiskit、PennyLane、Cirqのソースでのみ利用できます。",
-        source_unavailable: "このソースは限定CPUシミュレーションモデルの対象外です。結果は生成しません。",
+        source_unavailable: "ブラウザ内のレーンはStudio独自のゲート表記で書かれた回路しか再構成できず、このソースはその範囲を超えています。結果を捏造せず、ここでは実行しません。",
         source_limit: "このソースは限定CPUシミュレーションレーンには大きすぎます。",
         qubit_limit: "この回路は、お使いのプランでブラウザシミュレーションを実行できる幅を超えています。",
         operation_limit: "このソースは限定CPU操作数の上限を超えています。",
       }[reason] ?? "このソースではCPUシミュレーションを利用できません。"),
+      sandboxFallbackExplainer: "代わりに実際に実行できます。サンドボックスはこのソースをそのまま実行し、動作しない場合はエラーも含めて結果を報告します。",
+      runInSandbox: "このコードを実際に実行",
       openSimulation: "シミュレーションを開く",
       simulationArtifactRequired: "アーティファクトに紐づくシミュレーション記録を作成する前に、この下書きをボールトへ保存してください。",
       cpuInvalidShots: (maximum) => `ショット数は1から${maximum.toLocaleString("en-US")}までの整数にしてください。`,

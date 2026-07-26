@@ -15,6 +15,16 @@ export function artifactExportFilename(artifact: LibraryArtifact, framework: str
   return `${stem}.${resolved.key}.${resolved.extension}`;
 }
 
+/** The extension a download button labels itself with, e.g. `py` or `qasm`.
+ *
+ * A button reading "Download bell-state-circuit.openqasm3.qasm" is mostly noise
+ * next to a framework picker that already names the framework. The file on disk
+ * keeps its full, collision-proof name; only the label is shortened. */
+export function fileExtension(filename: string): string {
+  const dot = filename.lastIndexOf(".");
+  return dot > 0 && dot < filename.length - 1 ? filename.slice(dot + 1) : "";
+}
+
 /** A provenance header prepended to raw source exports.
  *
  * A bare downloaded .py is anonymous the moment it leaves the browser — nothing

@@ -29,6 +29,7 @@ import { CircuitDiagram } from "./circuit-diagram";
 import {
   artifactExportFilename,
   artifactExportSource,
+  fileExtension,
 } from "../lib/artifact-export";
 import { reconstructInterchangeCircuit } from "../lib/circuit-conversion";
 import { circuitFramework } from "../lib/circuit-frameworks";
@@ -170,9 +171,16 @@ export function RunCodeExport({
               ))}
             </select>
           </label>
+          {/* The label used to be the whole filename — "Download
+              bell-state-circuit.openqasm3.qasm" — which is a long, noisy button
+              beside a framework picker that already says which framework this
+              is. The exact name still reaches the user, on hover and in the
+              accessible name, and is unchanged on disk. */}
           <button
             className="mj-secondary-button"
             type="button"
+            title={filename}
+            aria-label={`Download ${filename}`}
             onClick={() =>
               download(
                 artifactExportSource(loaded.exportArtifact, {
@@ -184,7 +192,7 @@ export function RunCodeExport({
               )
             }
           >
-            Download {filename}
+            Download <span className="mj-mono-muted">.{fileExtension(filename)}</span>
           </button>
         </div>
       </div>

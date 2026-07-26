@@ -8,6 +8,17 @@
 export const MAX_RUN_SHOTS = 20_000;
 export const MAX_RUN_SEED = 2 ** 31 - 1;
 
+/** The shot count a sampling field is pre-filled with.
+ *
+ * 1,024 is the convention every quantum toolkit ships with and what this
+ * repository's own generation examples use, so a run the user never touched
+ * matches what they would have typed. It is a *prefill*, not a floor or a
+ * fallback: leaving the field blank still means "the planner chooses", which is
+ * why `sampling()` omits an empty field rather than substituting this. The same
+ * number is stated to the planner (see SIMPLE_PLAN_SYSTEM_PROMPT) so the two
+ * paths cannot drift into recommending different defaults. */
+export const DEFAULT_RUN_SHOTS = 1_024;
+
 /** Sampling fields for the run request, omitted rather than guessed.
  *
  * Anything outside the API's bounds — or blank, or unparseable — is left out

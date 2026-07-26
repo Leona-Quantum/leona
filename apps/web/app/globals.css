@@ -595,13 +595,24 @@ body {
   display: grid;
   gap: var(--sp-2);
 }
+/* Same bound as .mj-sim-chart-row in @majorana/ui: the outcome label column had
+   a floor and no ceiling, so wide circuits' long bitstrings ate the bar track. */
 .mj-run-live-bar {
   display: grid;
-  grid-template-columns: minmax(32px, auto) minmax(100px, 1fr) auto;
+  grid-template-columns: minmax(32px, 12ch) minmax(100px, 1fr) auto;
   align-items: center;
   gap: var(--sp-3);
   color: var(--text-1);
   font-family: var(--font-mono);
+  font-size: var(--fs-12);
+}
+.mj-run-live-bar code {
+  overflow-x: auto;
+  white-space: nowrap;
+}
+.mj-run-live-chart-note {
+  margin: var(--sp-2) 0 0;
+  color: var(--text-2);
   font-size: var(--fs-12);
 }
 .mj-run-live-bar-track {
