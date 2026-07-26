@@ -1,9 +1,14 @@
 """The API-side abuse backstop on run creation.
 
-The tier allowance lives in the web BFF, which is a different server; a caller
-holding a valid token can reach POST /v1/runs directly and never pass it. These
-tests pin the two per-workspace ceilings that bound that path — see the
-rationale block above `_enforce_execute_backstop` in routes/runs.py.
+Two ceilings live here now and they are different things. The BACKSTOP is a flat
+per-workspace ceiling far above every tier, bounding a token holder who calls
+POST /v1/runs directly. The TIER gate below it is the account's actual plan
+allowance, moved server-side so that it binds the same caller — see
+`test_run_tier_allowance.py`.
+
+These tests pin the backstop, so they run as a DEVELOPER identity: unlimited
+weekly runs means the tier gate is a no-op and each assertion is about the
+ceiling it names.
 """
 
 import datetime as dt
@@ -12,7 +17,24 @@ import pytest
 from fastapi import HTTPException
 from majorana_contracts.enums import Framework, RunMode
 
+from majorana_api.orm import User, Workspace
 from majorana_api.routes import runs
+from majorana_api.settings import Settings
+
+
+def _settings(developer_emails: frozenset[str] = frozenset()) -> Settings:
+    return Settings(
+        workos_client_id="test",
+        workos_jwt_issuer="https://issuer.invalid",
+        workos_jwks_url="https://jwks.invalid",
+        web_origin="https://web.invalid",
+        developer_emails=developer_emails,
+    )
+
+
+def _identity(email: str = "operator@leonaquantum.com", plan: str | None = None):
+    """A DEVELOPER identity by default — the operator address needs no config."""
+    return User(email=email, plan=plan), Workspace()
 
 
 def _request(mode: RunMode) -> runs.CreateRunRequest:
@@ -39,7 +61,9 @@ async def test_execute_run_under_the_ceiling_is_admitted(scope, monkeypatch):
         _counter({RunMode.EXECUTE.value: runs.EXECUTE_BACKSTOP_LIMIT - 1}),
     )
     # No exception is the assertion: the backstop must be invisible below it.
-    await runs._enforce_execute_backstop(_request(RunMode.EXECUTE), scope, object())
+    await runs._enforce_execute_backstop(
+        _request(RunMode.EXECUTE), scope, object(), _identity(), _settings()
+    )
 
 
 async def test_execute_run_at_the_ceiling_is_refused(scope, monkeypatch):
@@ -50,7 +74,9 @@ async def test_execute_run_at_the_ceiling_is_refused(scope, monkeypatch):
     )
 
     with pytest.raises(HTTPException) as caught:
-        await runs._enforce_execute_backstop(_request(RunMode.EXECUTE), scope, object())
+        await runs._enforce_execute_backstop(
+            _request(RunMode.EXECUTE), scope, object(), _identity(), _settings()
+        )
 
     assert caught.value.status_code == 429
     detail = caught.value.detail
@@ -81,7 +107,7 @@ async def test_default_mode_cannot_be_used_to_bypass_the_ceiling(scope, monkeypa
     )
 
     with pytest.raises(HTTPException) as caught:
-        await runs._enforce_execute_backstop(defaulted, scope, object())
+        await runs._enforce_execute_backstop(defaulted, scope, object(), _identity(), _settings())
     assert caught.value.detail["reason"] == "submission_backstop_exhausted"
 
 
@@ -97,7 +123,9 @@ async def test_auto_traffic_is_not_metered_against_the_strict_execute_ceiling(sc
         "count_runs_by_mode_since",
         _counter({RunMode.AUTO.value: runs.EXECUTE_BACKSTOP_LIMIT * 2}),
     )
-    await runs._enforce_execute_backstop(_request(RunMode.AUTO), scope, object())
+    await runs._enforce_execute_backstop(
+        _request(RunMode.AUTO), scope, object(), _identity(), _settings()
+    )
 
 
 async def test_auto_volume_still_blocks_a_new_explicit_execute(scope, monkeypatch):
@@ -108,7 +136,9 @@ async def test_auto_volume_still_blocks_a_new_explicit_execute(scope, monkeypatc
         _counter({RunMode.AUTO.value: runs.SUBMISSION_BACKSTOP_LIMIT}),
     )
     with pytest.raises(HTTPException) as caught:
-        await runs._enforce_execute_backstop(_request(RunMode.EXECUTE), scope, object())
+        await runs._enforce_execute_backstop(
+            _request(RunMode.EXECUTE), scope, object(), _identity(), _settings()
+        )
     assert caught.value.detail["reason"] == "submission_backstop_exhausted"
 
 
@@ -129,7 +159,7 @@ async def test_resolved_non_execute_modes_are_never_counted_or_refused(mode, sco
             }
         ),
     )
-    await runs._enforce_execute_backstop(_request(mode), scope, object())
+    await runs._enforce_execute_backstop(_request(mode), scope, object(), _identity(), _settings())
 
 
 async def test_the_window_is_a_trailing_seven_days_in_utc(scope, monkeypatch):
@@ -137,7 +167,9 @@ async def test_the_window_is_a_trailing_seven_days_in_utc(scope, monkeypatch):
     monkeypatch.setattr(runs.runs_repo, "count_runs_by_mode_since", _counter({}, captured))
 
     before = dt.datetime.now(dt.timezone.utc)
-    await runs._enforce_execute_backstop(_request(RunMode.EXECUTE), scope, object())
+    await runs._enforce_execute_backstop(
+        _request(RunMode.EXECUTE), scope, object(), _identity(), _settings()
+    )
     after = dt.datetime.now(dt.timezone.utc)
 
     since = captured["since"]

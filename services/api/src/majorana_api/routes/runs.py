@@ -11,7 +11,7 @@ import json
 import uuid
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Header, HTTPException, Request
+from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from majorana_contracts import Conversation as ConversationResource
 from majorana_contracts import ConversationTurn
@@ -20,13 +20,15 @@ from majorana_contracts import Run as RunResource
 from majorana_contracts.enums import ExportStatus, Framework, RunMode, RunStatus
 from pydantic import BaseModel, ConfigDict, Field
 
-from ..auth.deps import CurrentScope, DbSession
+from ..auth.deps import CurrentIdentity, CurrentScope, DbSession, get_settings
 from ..jobs import RUN_EXECUTE_JOB_KIND
 from ..orm import Run as RunRow
 from ..repos import artifacts as artifacts_repo
 from ..repos import folders as folders_repo
 from ..repos import runs as runs_repo
 from ..repos import system
+from ..settings import Settings
+from ..tiers import limits_for, resolve_tier
 from ..verification_summary import parse_verification_summary
 
 router = APIRouter()
@@ -192,10 +194,38 @@ def _backstop_refusal(reason: str, used: int, limit: int) -> HTTPException:
     )
 
 
+#: The tier allowance window. Same seven days the BFF measures, so a user cannot
+#: see two different "used" numbers depending on which service refused them.
+TIER_WINDOW = dt.timedelta(days=7)
+
+
+def tier_allowance_refusal(used: int, limit: int) -> HTTPException:
+    """The refusal a metered account sees when its weekly runs are spent.
+
+    Worded like the BFF's `runAllowanceRefusal` rather than like the backstop:
+    this one IS the plan allowance, and telling a user they hit "a platform
+    abuse ceiling" when they simply used their five runs would be wrong.
+    """
+    return HTTPException(
+        status_code=429,
+        detail={
+            "error": (
+                f"Your plan includes {limit} verified runs per week and all {limit} "
+                "are used. Browser simulation in Studio stays available."
+            ),
+            "reason": "run_allowance_exhausted",
+            "used": used,
+            "limit": limit,
+        },
+    )
+
+
 async def _enforce_execute_backstop(
     body: CreateRunRequest,
     scope: CurrentScope,
     session: DbSession,
+    identity: CurrentIdentity,
+    settings: Settings,
 ) -> None:
     if body.mode not in (RunMode.EXECUTE, RunMode.AUTO):
         return
@@ -203,6 +233,27 @@ async def _enforce_execute_backstop(
     counts = await runs_repo.count_runs_by_mode_since(scope, session, since)
     executed = counts.get(RunMode.EXECUTE.value, 0)
     submitted = executed + counts.get(RunMode.AUTO.value, 0)
+
+    # The tier gate runs FIRST, because it is the smaller number and the one the
+    # user recognises. A metered account that has spent its week should read
+    # "your plan includes 5 runs", never "platform abuse ceiling".
+    #
+    # Only explicit EXECUTE is refused here. An AUTO submission has not decided
+    # what it is yet, and refusing it would refuse ordinary chat — which for a
+    # free account is unmetered by policy. The hole that leaves (submit
+    # everything as AUTO and let the worker resolve it to EXECUTE) is closed
+    # where the decision is actually made, in the worker's mode resolution:
+    # majorana_worker.handlers._resolve_mode.
+    user, _workspace = identity
+    limits = limits_for(
+        resolve_tier(user.email, plan=user.plan, developer_emails=settings.developer_emails)
+    )
+    if body.mode == RunMode.EXECUTE and limits.agent_runs_per_week is not None:
+        tier_used = await runs_repo.count_execute_runs_since(
+            scope, session, dt.datetime.now(dt.timezone.utc) - TIER_WINDOW
+        )
+        if tier_used >= limits.agent_runs_per_week:
+            raise tier_allowance_refusal(tier_used, limits.agent_runs_per_week)
 
     if body.mode == RunMode.EXECUTE and executed >= EXECUTE_BACKSTOP_LIMIT:
         raise _backstop_refusal("execute_backstop_exhausted", executed, EXECUTE_BACKSTOP_LIMIT)
@@ -217,13 +268,15 @@ async def create_run(
     body: CreateRunRequest,
     scope: CurrentScope,
     session: DbSession,
+    identity: CurrentIdentity,
+    settings: Annotated[Settings, Depends(get_settings)],
     idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
 ) -> RunResource:
     if idempotency_key:
         existing = await runs_repo.find_run_by_idempotency_key(scope, session, idempotency_key)
         if existing is not None:
             return _to_resource(existing)
-    await _enforce_execute_backstop(body, scope, session)
+    await _enforce_execute_backstop(body, scope, session, identity, settings)
     artifact_version_id = await _create_stale_source_draft(body, scope, session)
     run = await runs_repo.create_run(
         scope,

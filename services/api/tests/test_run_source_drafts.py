@@ -5,7 +5,9 @@ import pytest
 from majorana_contracts.enums import ExportStatus, Framework
 from pydantic import ValidationError
 
+from majorana_api.orm import User, Workspace
 from majorana_api.routes import runs
+from majorana_api.settings import Settings
 
 
 def _request(*, version_id: uuid.UUID, source: str) -> runs.CreateRunRequest:
@@ -118,7 +120,16 @@ async def test_run_and_job_are_bound_to_the_new_draft_version(scope, monkeypatch
     monkeypatch.setattr(runs.system, "enqueue_job", enqueue_job)
     monkeypatch.setattr(runs, "_to_resource", lambda row: row.id)
 
-    result = await runs.create_run(body, scope, object())
+    # A DEVELOPER identity so the per-tier gate is a no-op here; this test is
+    # about draft binding, not allowances (see test_run_tier_allowance.py).
+    identity = (User(email="operator@leonaquantum.com", plan=None), Workspace())
+    settings = Settings(
+        workos_client_id="test",
+        workos_jwt_issuer="https://issuer.invalid",
+        workos_jwks_url="https://jwks.invalid",
+        web_origin="https://web.invalid",
+    )
+    result = await runs.create_run(body, scope, object(), identity, settings)
 
     assert result == run_id
     assert captured["run"]["artifact_version_id"] == draft_id

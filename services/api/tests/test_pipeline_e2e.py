@@ -31,6 +31,7 @@ from majorana_sandbox import ExecutionSpec, LocalSubprocessSandbox, Sandbox, San
 from majorana_api.app import create_app
 from majorana_api.auth import deps as auth_deps
 from majorana_api.db import engine_from_env, session_factory
+from majorana_api.orm import User
 from majorana_api.repos import artifacts as artifacts_repo
 from majorana_api.repos import system
 from majorana_api.settings import Settings
@@ -178,12 +179,21 @@ async def env():
         )
         await session.commit()
         scope = Scope(user_id=user.id, workspace_id=ws.id, role=Role.OWNER)
+        # Snapshot the fields run admission reads while the session is still
+        # open. `user` itself is detached once this block exits, and `plan` has a
+        # server default that a flush does not populate, so a later attribute
+        # access on it would go looking for a session that is gone.
+        identity = (User(id=user.id, email=user.email, plan=user.plan), ws)
 
     app = create_app(SETTINGS)
     app.state.engine = engine
     app.state.session_factory = factory
     app.dependency_overrides[auth_deps.get_scope] = lambda: scope
-    app.dependency_overrides[auth_deps.get_identity] = lambda: (None, None)
+    # The REAL provisioned identity, not the (None, None) stub this used to be.
+    # Run admission resolves the account's tier from the user now, so the stub
+    # both crashed the route and stopped this suite exercising the gate every
+    # real submission passes through.
+    app.dependency_overrides[auth_deps.get_identity] = lambda: identity
 
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:

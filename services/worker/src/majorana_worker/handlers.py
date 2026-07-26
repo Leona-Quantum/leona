@@ -58,13 +58,15 @@ from majorana_api.catalog_import_fixtures import LocalFixtureSource
 from majorana_api.catalog_import_sources import ImportSource
 from majorana_api.db import AsyncSession
 from majorana_api.jobs import CATALOG_IMPORT_JOB_KIND, QPU_RUN_JOB_KIND, RUN_EXECUTE_JOB_KIND
-from majorana_api.orm import ImportJob
+from majorana_api.orm import ImportJob, User
 from majorana_api.repos import catalog_import as catalog_import_repo
 from majorana_api.repos import runs as runs_repo
 from majorana_api.repos import artifacts as artifacts_repo
 from majorana_api.repos import qpu_runs as qpu_runs_repo
 from majorana_api.repos import system
 from majorana_api.repos import workspaces as workspaces_repo
+from majorana_api.settings import Settings
+from majorana_api.tiers import limits_for, resolve_tier
 
 from .agent_llm import MeteredAgentLLM
 from .agent_store import RepoAgentStore
@@ -317,6 +319,10 @@ async def handle_run_execute(
                     parent_artifact_fingerprint=parent_artifact_fingerprint,
                     run_deadline=run_deadline,
                 )
+    except _RunAllowanceExhausted as exhausted:
+        # A refusal, not a fault: the run ends in its own event stream with a
+        # reason the user recognises, exactly as the API's admission gate words it.
+        final = await _finish_allowance_exhausted(ctx, store, exhausted)
     except TimeoutError:
         # The stage coroutine was cancelled mid-flight; reset the session and
         # record the failure so the event log never ends mid-run.
@@ -431,6 +437,85 @@ async def _title_conversation(
     return replace(ctx, conversation_title=title)
 
 
+#: Seven days, matching the API's TIER_WINDOW so a user never sees two different
+#: "used" numbers depending on which service refused them.
+_TIER_WINDOW = timedelta(days=7)
+
+
+class _RunAllowanceExhausted(Exception):
+    """An AUTO run resolved to EXECUTE with the account's weekly runs spent.
+
+    Raised rather than handled in place because the caller dispatches on
+    `ctx.mode` immediately afterwards: quietly leaving the mode unresolved would
+    send a finished run into the conversation handler.
+    """
+
+    def __init__(self, used: int, limit: int) -> None:
+        super().__init__(f"{used}/{limit} weekly execute runs used")
+        self.used = used
+        self.limit = limit
+
+
+async def _assert_execute_allowance(scope: Scope, session: AsyncSession) -> None:
+    """The other half of the per-tier gate the API applies at admission.
+
+    The API can only refuse an EXPLICIT `mode=execute` submission: an AUTO
+    request has not decided what it is yet, and refusing those would refuse
+    ordinary chat, which is unmetered by policy. So a caller could spend an
+    unlimited number of executions simply by omitting `mode`. This is where that
+    closes, because this is where AUTO actually becomes EXECUTE.
+
+    Reads the tier from the same three signals the API does (majorana_api.tiers)
+    and re-reads settings per call rather than caching, so a redeployed
+    allowlist takes effect without a worker restart.
+    """
+    user = await session.get(User, scope.user_id)
+    if user is None:  # pragma: no cover - a run cannot outlive its owner
+        return
+    limits = limits_for(
+        resolve_tier(
+            user.email,
+            plan=user.plan,
+            developer_emails=Settings.from_env().developer_emails,
+        )
+    )
+    if limits.agent_runs_per_week is None:
+        return
+    since = datetime.now(UTC) - _TIER_WINDOW
+    used = await runs_repo.count_execute_runs_since(scope, session, since)
+    # The run being resolved is still AUTO in the database, so it is not in this
+    # count — `used >= limit` is the correct comparison, not `>`.
+    if used >= limits.agent_runs_per_week:
+        raise _RunAllowanceExhausted(used, limits.agent_runs_per_week)
+
+
+async def _finish_allowance_exhausted(
+    ctx: RunContext,
+    run_store: RepoRunStateStore,
+    exhausted: _RunAllowanceExhausted,
+) -> RunStatus:
+    """Refuse the execution in the run's own event stream, not as a crash."""
+    await ctx.sink.emit(
+        "run.error",
+        {
+            "stage": None,
+            "code": "run_allowance_exhausted",
+            "message": (
+                f"Your plan includes {exhausted.limit} verified runs per week and all "
+                f"{exhausted.limit} are used. Browser simulation in Studio stays available."
+            ),
+        },
+        event_id=uuid.uuid5(ctx.run_id, "run.error.run_allowance_exhausted"),
+    )
+    return await run_store.finish(
+        RunStatus.FAILED,
+        {
+            "status": RunStatus.FAILED,
+            "reason_code": "run_allowance_exhausted",
+        },
+    )
+
+
 async def _resolve_mode(
     ctx: RunContext,
     store: RepoRunStateStore,
@@ -468,6 +553,10 @@ async def _resolve_mode(
     )
     if not decision.changed:
         return ctx
+    if decision.resolved is RunMode.EXECUTE:
+        # Checked BEFORE the row is rewritten, so this run is not counted
+        # against its own allowance.
+        await _assert_execute_allowance(scope, session)
     await runs_repo.set_run_mode(scope, session, ctx.run_id, decision.resolved)
     await session.commit()
     await ctx.sink.emit("run.mode_resolved", decision.as_event_payload())
