@@ -1,6 +1,7 @@
 """GET /v1/me — the auth round-trip: verified identity + derived scope."""
 
 from fastapi import APIRouter
+from majorana_contracts.enums import WorkspaceKind
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from ..auth.deps import CurrentIdentity, CurrentScope, DbSession
@@ -16,6 +17,13 @@ class MeResponse(BaseModel):
     workspace_id: str
     workspace_name: str
     role: str
+    #: True when the active workspace is the one this account owns. NOT
+    #: `kind == personal`: a guest in someone else's personal workspace reads
+    #: kind=personal for a tenant that is not theirs, and the web app keys the
+    #: browser's local mirror on this — getting it wrong would show one
+    #: workspace's chat titles and Vault inside another.
+    is_personal_workspace: bool = True
+    workspace_kind: str = "personal"
 
 
 class UpdateMeRequest(BaseModel):
@@ -32,10 +40,7 @@ class UpdateMeRequest(BaseModel):
         return normalized or None
 
 
-@router.get("/me", response_model=MeResponse)
-async def me(identity: CurrentIdentity, scope: CurrentScope, session: DbSession) -> MeResponse:
-    user, _ = identity
-    workspace = await workspaces_repo.get_workspace(scope, session)
+def _me(user, workspace, scope) -> MeResponse:
     return MeResponse(
         user_id=str(user.id),
         email=user.email,
@@ -43,7 +48,18 @@ async def me(identity: CurrentIdentity, scope: CurrentScope, session: DbSession)
         workspace_id=str(scope.workspace_id),
         workspace_name=workspace.name,
         role=str(scope.role),
+        is_personal_workspace=(
+            workspace.kind == WorkspaceKind.PERSONAL and workspace.owner_user_id == user.id
+        ),
+        workspace_kind=str(workspace.kind),
     )
+
+
+@router.get("/me", response_model=MeResponse)
+async def me(identity: CurrentIdentity, scope: CurrentScope, session: DbSession) -> MeResponse:
+    user, _ = identity
+    workspace = await workspaces_repo.get_workspace(scope, session)
+    return _me(user, workspace, scope)
 
 
 @router.patch("/me", response_model=MeResponse)
@@ -58,11 +74,4 @@ async def update_me(
         display_name=body.display_name,
     )
     workspace = await workspaces_repo.get_workspace(scope, session)
-    return MeResponse(
-        user_id=str(user.id),
-        email=user.email,
-        display_name=user.display_name,
-        workspace_id=str(scope.workspace_id),
-        workspace_name=workspace.name,
-        role=str(scope.role),
-    )
+    return _me(user, workspace, scope)

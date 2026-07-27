@@ -6780,6 +6780,60 @@ div.mj-rail-row:hover {
   font-size: var(--fs-12);
   line-height: 1.5;
 }
+/* Workspaces and members on Settings. One row shape for both lists: a name with
+   a quiet second line, then whatever acts on it, pushed right. */
+.mj-workspace-list {
+  display: grid;
+  margin: var(--sp-4) 0 0;
+  padding: 0;
+  gap: var(--sp-2);
+  list-style: none;
+}
+.mj-workspace-list > li {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: var(--sp-3);
+  border: 1px solid var(--border-0);
+  border-radius: var(--radius-control);
+  background: var(--bg-0);
+}
+/* The workspace you are in, marked by the same accent the nav uses for the page
+   you are on — being in the wrong tenant should look as obvious as being on the
+   wrong page. */
+.mj-workspace-list > li[data-active] {
+  border-color: var(--accent);
+}
+.mj-workspace-list-name {
+  display: grid;
+  flex: 1 1 auto;
+  min-width: 0;
+  gap: 2px;
+}
+.mj-workspace-list-name strong {
+  overflow: hidden;
+  color: var(--text-0);
+  font-size: var(--fs-13);
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mj-workspace-list-name small {
+  overflow: hidden;
+  color: var(--text-2);
+  font-size: var(--fs-12);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mj-workspace-list select {
+  padding: var(--sp-1) var(--sp-2);
+  border: 1px solid var(--border-0);
+  border-radius: var(--radius-control);
+  background: var(--bg-1);
+  color: var(--text-0);
+  font-size: var(--fs-12);
+}
+
 .mj-verification-summary--reference {
   border-left-color: var(--warn);
 }
@@ -7847,4 +7901,12 @@ div.mj-rail-row:hover {
 }
 .mj-builder-slot text {
   fill: var(--text-2);
+}
+
+/* Help text under a Settings form control, where it describes what the choice
+   means. In the label it read like a caption that kept rewriting itself. */
+.mj-account-profile-form label small {
+  color: var(--text-2);
+  font-size: var(--fs-12);
+  line-height: 1.5;
 }

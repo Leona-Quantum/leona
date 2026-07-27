@@ -99,12 +99,20 @@ function storageOrNull(): Storage | null {
  * layout could not resolve an id for. Storage then uses the unscoped keys,
  * unchanged.
  */
-export function setStorageScope(scope: string | null): void {
+export function setStorageScope(
+  scope: string | null,
+  options: { mayAdoptLegacyData?: boolean } = {},
+): void {
   if (typeof window === "undefined") return;
   const next = scope?.trim() || null;
   if (next === activeScope) return;
   activeScope = next;
-  if (next) adoptLegacyData(next);
+  // A shared workspace never claims the pre-scoping data. It was written by one
+  // person before workspaces were plural, so it belongs in the workspace they
+  // own; adopting it into a shared one would move their prompts and chat titles
+  // into a tenant other people can read. Defaults to true so every existing
+  // caller behaves exactly as it did.
+  if (next && options.mayAdoptLegacyData !== false) adoptLegacyData(next);
 }
 
 export function currentStorageScope(): string | null {

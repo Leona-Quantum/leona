@@ -12,16 +12,44 @@ not depend on Vercel Preview deployments. A stable Preview link remains useful
 for authenticated product review; local browsers are the source of truth for
 unmerged changes.
 
-## Adding A Collaborator
+## Sharing A Workspace
 
-The collaborator must first accept the WorkOS invitation and sign in once so
-the control plane can provision their user. Then an owner or admin opens
-**Settings → Workspace members**, enters the exact email address, and chooses
-`Member` or `Viewer`. The member is attached to the existing workspace and can
-see its runs and Vault artifacts; they do not receive database credentials.
+Every account gets one personal workspace on first sign-in and can create
+shared ones. Everything a person runs and saves belongs to exactly one
+workspace, and which workspace that is comes from a server-side pointer
+(`users.active_workspace_id`) — never from anything the browser sends.
 
-If the email is rejected, the user has not completed first login in this
-environment yet, or the address does not match the WorkOS account claim.
+**To share work, in Settings:**
+
+1. **Workspaces → New shared workspace.** Creating one does not move you into
+   it; press **Open** when you want to work there. The free tier may own three
+   workspaces in total, personal included.
+2. **Members → Invite.** Enter the exact email address and choose `Member` (can
+   run, save and edit) or `Viewer` (can read everything, cannot run or save).
+   Admin is granted afterwards from the role selector, not by the invitation.
+3. The invitee presses **Open** on that workspace in their own Settings.
+
+**The invitee must have signed in to this deployment at least once.** An account
+is provisioned from a verified WorkOS token, so an address nobody has signed in
+with has no user row to attach. That case answers 404 and the UI says so; it is
+not a failure to retry.
+
+**What a member sees:** every run and every Vault artifact in the workspace,
+including work saved before they arrived. There is no per-artifact sharing.
+Their own browser-local drafts and chat titles stay theirs — local storage is
+keyed by account *and* workspace.
+
+**Removing someone** takes effect on their next request, not their next
+sign-in: the pointer is re-validated against the membership table every time a
+scope is derived, and a removed user falls back to their own workspace. Their
+runs and artifacts stay — they belong to the workspace.
+
+**The owner cannot be removed or re-roled.** Ownership transfer is a separate
+operation that does not exist yet.
+
+**Allowances.** The weekly execute-run allowance follows the *account* across
+every workspace it can reach, so switching does not refill it and a colleague's
+runs never spend yours. The Vault artifact cap is per workspace.
 
 ## Local Contributor Loop
 
