@@ -683,6 +683,14 @@ async def delete_workspace(session: AsyncSession, *, user: User, workspace_id: u
     ).scalar_one_or_none()
     if workspace is None:
         return False
+    if workspace.owner_user_id != user.id:
+        # Re-checked AFTER the lock, and not redundant with the membership read
+        # above: that one is unlocked, so a transfer committing in between leaves
+        # the caller holding a membership row that still says OWNER while the
+        # workspace belongs to somebody else. Whoever lost the workspace a moment
+        # ago must not be able to delete it. `transfer_ownership` makes the same
+        # check for the same reason.
+        raise NotWorkspaceOwner(str(workspace_id))
     if workspace.kind == WorkspaceKind.PERSONAL:
         raise CannotDeletePersonalWorkspace(str(workspace_id))
     workspace.deleted_at = dt.datetime.now(dt.timezone.utc)
@@ -690,10 +698,15 @@ async def delete_workspace(session: AsyncSession, *, user: User, workspace_id: u
     # already falls back on a pointer that no longer resolves, so this is not
     # what makes the deletion correct — it is what stops every other member
     # paying a failed lookup on their next request for a tenant that is gone.
+    #
+    # `synchronize_session="fetch"` for the same reason `_stamp_acknowledged`
+    # uses it: this is a bulk ORM UPDATE, and without it the User objects already
+    # loaded in this session keep a pointer the database no longer has.
     await session.execute(
         update(User)
         .where(User.active_workspace_id == workspace_id)
         .values(active_workspace_id=None)
+        .execution_options(synchronize_session="fetch")
     )
     await session.flush()
     return True

@@ -104,12 +104,17 @@ async def test_only_the_owner_may_transfer(db, role: Role):
     workspace away is not on that list."""
     owner, workspace = await _team(db, f"gate-{role}")
     other, _ = await _make_user(db, f"gate-other-{role}")
+    # A third member as the target. Naming `other` would have been refused by the
+    # self-transfer check too, so the test would pass on whichever guard happened
+    # to run first rather than on the role gate it is named after.
+    target, _ = await _make_user(db, f"gate-target-{role}")
     db.add(Membership(workspace_id=workspace.id, user_id=other.id, role=role))
+    db.add(Membership(workspace_id=workspace.id, user_id=target.id, role=Role.MEMBER))
     await db.flush()
 
     with pytest.raises(AuthzError):
         await workspaces.transfer_ownership(
-            _scope(other, workspace, role), db, user_id=other.id, owned_workspace_limit=None
+            _scope(other, workspace, role), db, user_id=target.id, owned_workspace_limit=None
         )
     assert await _owner_column(db, workspace) == owner.id
 
@@ -263,6 +268,39 @@ async def test_only_the_owner_may_delete(db):
     with pytest.raises(system.NotWorkspaceOwner):
         await system.delete_workspace(db, user=admin, workspace_id=workspace.id)
     assert await system.delete_workspace(db, user=owner, workspace_id=workspace.id) is True
+
+
+async def test_a_former_owner_holding_a_stale_membership_cannot_delete(db):
+    """The membership read is unlocked and the workspace read is not, so a
+    transfer committing between them leaves the old owner holding a row that
+    still says OWNER. The post-lock check on `owner_user_id` is what refuses
+    them; without it, whoever lost the workspace a moment ago can destroy it.
+
+    The interleaving is modelled rather than raced: two sessions contending for
+    this row would deadlock on the lock the code is taking, and what is being
+    asserted is the guard, not the lock (see the memory note on why concurrent
+    versions of these tests do not work inside one process).
+    """
+    owner, workspace = await _team(db, "stale-owner")
+    heir, _ = await _make_user(db, "stale-owner-heir")
+    db.add(Membership(workspace_id=workspace.id, user_id=heir.id, role=Role.MEMBER))
+    await db.flush()
+
+    await workspaces.transfer_ownership(
+        _scope(owner, workspace, Role.OWNER), db, user_id=heir.id, owned_workspace_limit=None
+    )
+    # Exactly the state a lost race leaves behind: the workspace is the heir's,
+    # and the old owner's membership row has not caught up.
+    stale = await system.find_membership(db, workspace_id=workspace.id, user_id=owner.id)
+    stale.role = Role.OWNER
+    await db.flush()
+
+    with pytest.raises(system.NotWorkspaceOwner):
+        await system.delete_workspace(db, user=owner, workspace_id=workspace.id)
+    live = (
+        await db.execute(select(Workspace.deleted_at).where(Workspace.id == workspace.id))
+    ).scalar_one()
+    assert live is None
 
 
 async def test_a_non_member_gets_the_same_answer_as_a_workspace_that_is_absent(db):
