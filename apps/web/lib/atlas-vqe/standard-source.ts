@@ -114,7 +114,8 @@ export function checkStandardWorkflowSelections(
     if (roles.has(selection.role)) {
       issues.push({
         code: "duplicate_role",
-        component_semantic_key: selection.component_semantic_key,
+        component_semantic_key:
+          selection.component_semantic_key ?? `<role:${selection.role}>`,
         missing_contract: null,
       });
       continue;

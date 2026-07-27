@@ -56,8 +56,8 @@ const COPY = {
     currentWorkflow: "Current Workflow",
     template: "Workflow template",
     compatibility: "Compatibility",
-    compatible: "Compatible",
-    incompatible: "Incompatible",
+    compatibleResult: "Compatible",
+    incompatibleResult: "Incompatible",
     run: "Run in Studio",
     runBlocked: "Execution is unavailable until every selected component has a qualified binding.",
     swap: "Swap into current workflow",
@@ -71,9 +71,11 @@ const COPY = {
     draft: "Draft",
     structured: "Structured",
     reviewed: "Reviewed",
-    executable: "Executable workflow",
-    compatible: "Compatible workflow",
-    executed: "Executed workflow",
+    workflowDraft: "Draft workflow",
+    workflowStructured: "Structured workflow",
+    workflowExecutable: "Executable workflow",
+    workflowCompatible: "Compatible workflow",
+    workflowExecuted: "Executed workflow",
     experimental: "Experimental",
     deferred: "Deferred",
     resultCount: (count: number) => `${count} components`,
@@ -83,6 +85,9 @@ const COPY = {
     noChange: "No component has been changed.",
     uncontrolled: (count: number) => `${count} components changed — not a controlled comparison.`,
     providerUnavailable: "No implementation binding is recorded",
+    saveSwap: "Save controlled swap in Studio",
+    swapQualification:
+      "The SLSQP definition is experimental and its adapter has Linux evidence, but the registry runtime is not qualified. The private workflow can be saved; execution remains blocked.",
   },
   ja: {
     title: "VQE Methods",
@@ -97,8 +102,8 @@ const COPY = {
     currentWorkflow: "現在のWorkflow",
     template: "Workflow template",
     compatibility: "互換性",
-    compatible: "互換",
-    incompatible: "非互換",
+    compatibleResult: "互換",
+    incompatibleResult: "非互換",
     run: "Studioで実行",
     runBlocked: "選択した全componentに検証済みbindingが揃うまで実行できません。",
     swap: "現在のWorkflowへ交換",
@@ -112,9 +117,11 @@ const COPY = {
     draft: "草案",
     structured: "構造化済み",
     reviewed: "レビュー済み",
-    executable: "実行可能workflow",
-    compatible: "互換workflow",
-    executed: "実行証拠ありworkflow",
+    workflowDraft: "草案workflow",
+    workflowStructured: "構造化済みworkflow",
+    workflowExecutable: "実行可能workflow",
+    workflowCompatible: "互換workflow",
+    workflowExecuted: "実行証拠ありworkflow",
     experimental: "実験的",
     deferred: "後続",
     resultCount: (count: number) => `${count}部品`,
@@ -124,6 +131,9 @@ const COPY = {
     noChange: "componentは変更されていません。",
     uncontrolled: (count: number) => `${count}部品が変更されています（統制比較ではありません）。`,
     providerUnavailable: "実装bindingが記録されていません",
+    saveSwap: "統制された交換をStudioへ保存",
+    swapQualification:
+      "SLSQP定義は実験的で、adapterにはLinux実行証拠がありますが、Registry runtimeは未認定です。private workflowとして保存できますが、実行は引き続き停止されます。",
   },
 } as const;
 
@@ -163,7 +173,14 @@ function workflowStatusLabel(
   copy: (typeof COPY)[PublicLocale],
   status: StandardWorkflowStatus,
 ) {
-  return copy[status];
+  const keys = {
+    draft: "workflowDraft",
+    structured: "workflowStructured",
+    executable: "workflowExecutable",
+    compatible: "workflowCompatible",
+    executed: "workflowExecuted",
+  } as const;
+  return copy[keys[status]];
 }
 
 function sortedSelections(selections: StandardWorkflowSelection[]) {
@@ -264,6 +281,14 @@ export function VqeMethodsBrowser({
     baseline.supported_evaluator_providers.includes(executionProvider) &&
     changedRoles.length === 0 &&
     typeof baseline.registry_semantic_key === "string";
+  const controlledSwapReady =
+    compatibility.compatible &&
+    baseline.workflow_key === "workflow.h2.fixed_excitation.v1" &&
+    typeof baseline.registry_semantic_key === "string" &&
+    changedRoles.length === 1 &&
+    changedRoles[0] === "parameter_optimizer" &&
+    currentByRole.get("parameter_optimizer")?.component_semantic_key ===
+      "optimizer.slsqp.v1";
 
   function selectTemplate(nextKey: string) {
     const next = catalog.workflows.find((workflow) => workflow.workflow_key === nextKey);
@@ -516,7 +541,9 @@ export function VqeMethodsBrowser({
           >
             <strong>
               {copy.compatibility}:{" "}
-              {compatibility.compatible ? copy.compatible : copy.incompatible}
+              {compatibility.compatible
+                ? copy.compatibleResult
+                : copy.incompatibleResult}
             </strong>
             {!compatibility.compatible ? (
               <ul>
@@ -544,7 +571,21 @@ export function VqeMethodsBrowser({
             {changedRoles.length > 1 ? <p>{copy.uncontrolled(changedRoles.length)}</p> : null}
           </div>
 
-          {executable ? (
+          {controlledSwapReady ? (
+            <>
+              <a
+                className="mj-primary-button"
+                href={`/studio?vqe=1&vqeWorkflowKey=${encodeURIComponent(
+                  baseline.registry_semantic_key ?? "",
+                )}&vqeProvider=${encodeURIComponent(
+                  executionProvider,
+                )}&vqeSwap=${encodeURIComponent("optimizer.slsqp.v1")}`}
+              >
+                {copy.saveSwap}
+              </a>
+              <p className="mj-vqe-run-note">{copy.swapQualification}</p>
+            </>
+          ) : executable ? (
             <a
               className="mj-primary-button"
               href={`/studio?vqe=1&vqeWorkflowKey=${encodeURIComponent(

@@ -14,6 +14,7 @@ type StudioSearchParams = {
   vqeExperiment?: string;
   vqeFramework?: string;
   vqeProvider?: string;
+  vqeSwap?: string;
   vqeWorkflow?: string;
   vqeWorkflowKey?: string;
 };
@@ -43,6 +44,7 @@ export default async function StudioPage({
         initialFramework={parseVqeFramework(params.vqeProvider)}
         initialWorkflowId={params.vqeWorkflow}
         initialWorkflowKey={params.vqeWorkflowKey}
+        initialSwapComponentKey={params.vqeSwap}
         locale={locale}
       />
     );

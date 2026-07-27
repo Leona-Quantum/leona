@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { PublicLocale } from "../../../lib/public-locale";
 import type { VqeFramework } from "../../../lib/vqe-proof";
 import { resolveInitialWorkflowId } from "../../../lib/vqe-workflow-launch";
@@ -10,6 +10,22 @@ type Workflow = {
   semantic_key: string;
   machine_validation_state: string;
   review_state: string;
+  execution_status?: string;
+};
+
+type Component = {
+  artifact_version_id: string;
+  component_type: string;
+  semantic_key: string;
+  normalized_spec_sha256: string;
+};
+
+type SavedSwap = {
+  workflow_artifact_version_id: string;
+  workflow_semantic_key: string;
+  replayed: boolean;
+  execution_status: "blocked_until_runtime_qualified";
+  visibility: "private";
 };
 
 function parseWorkflows(value: unknown): Workflow[] {
@@ -25,11 +41,40 @@ function parseWorkflows(value: unknown): Workflow[] {
       || typeof item.machine_validation_state !== "string"
       || typeof item.review_state !== "string"
     ) return [];
+    const spec = item.spec_json;
+    const executionStatus =
+      spec && typeof spec === "object"
+        && typeof (spec as Record<string, unknown>).execution_status === "string"
+        ? (spec as Record<string, string>).execution_status
+        : undefined;
     return [{
       artifact_version_id: item.artifact_version_id,
       semantic_key: item.semantic_key,
       machine_validation_state: item.machine_validation_state,
       review_state: item.review_state,
+      execution_status: executionStatus,
+    }];
+  });
+}
+
+function parseComponents(value: unknown): Component[] {
+  if (!value || typeof value !== "object") return [];
+  const rows = (value as { components?: unknown }).components;
+  if (!Array.isArray(rows)) return [];
+  return rows.flatMap((row) => {
+    if (!row || typeof row !== "object") return [];
+    const item = row as Record<string, unknown>;
+    if (
+      typeof item.artifact_version_id !== "string"
+      || typeof item.component_type !== "string"
+      || typeof item.semantic_key !== "string"
+      || typeof item.normalized_spec_sha256 !== "string"
+    ) return [];
+    return [{
+      artifact_version_id: item.artifact_version_id,
+      component_type: item.component_type,
+      semantic_key: item.semantic_key,
+      normalized_spec_sha256: item.normalized_spec_sha256,
     }];
   });
 }
@@ -38,11 +83,13 @@ export function VqeExperimentLauncher({
   initialFramework,
   initialWorkflowId,
   initialWorkflowKey,
+  initialSwapComponentKey,
   locale,
 }: {
   initialFramework: VqeFramework;
   initialWorkflowId?: string;
   initialWorkflowKey?: string;
+  initialSwapComponentKey?: string;
   locale: PublicLocale;
 }) {
   const ja = locale === "ja";
@@ -51,6 +98,9 @@ export function VqeExperimentLauncher({
   const [state, setState] = useState<"loading" | "ready" | "error">("loading");
   const [message, setMessage] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
+  const [savingSwap, setSavingSwap] = useState(false);
+  const [savedSwap, setSavedSwap] = useState<SavedSwap | null>(null);
+  const swapIdempotencyKey = useRef<string | null>(null);
 
   useEffect(() => {
     void fetch("/api/atlas/workflows?limit=50", { cache: "no-store" })
@@ -112,7 +162,107 @@ export function VqeExperimentLauncher({
     }
   }
 
+  async function saveControlledSwap() {
+    if (
+      !workflowId
+      || initialSwapComponentKey !== "optimizer.slsqp.v1"
+    ) return;
+    setSavingSwap(true);
+    setMessage(null);
+    try {
+      const componentResponse = await fetch(
+        "/api/atlas/components?component_type=parameter_optimizer&limit=200",
+        { cache: "no-store" },
+      );
+      if (!componentResponse.ok) {
+        throw new Error(`component registry unavailable (${componentResponse.status})`);
+      }
+      const components = parseComponents(await componentResponse.json());
+      const candidate = components.find(
+        (component) =>
+          component.component_type === "parameter_optimizer"
+          && component.semantic_key === initialSwapComponentKey,
+      );
+      if (!candidate) {
+        throw new Error(
+          ja
+            ? "SLSQP componentの固定版をRegistryで解決できません。"
+            : "The pinned SLSQP component could not be resolved in the Registry.",
+        );
+      }
+      if (!swapIdempotencyKey.current) {
+        swapIdempotencyKey.current = crypto.randomUUID();
+      }
+      const response = await fetch("/api/atlas/workflows/swaps", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Idempotency-Key": swapIdempotencyKey.current,
+        },
+        body: JSON.stringify({
+          baseline_workflow_artifact_version_id: workflowId,
+          baseline_template_key: "workflow.h2.fixed_excitation.v1",
+          changed_role: "parameter_optimizer",
+          candidate_component_semantic_key: initialSwapComponentKey,
+          candidate_component_spec_sha256: candidate.normalized_spec_sha256,
+          configuration: {},
+          evaluator_provider: initialFramework,
+        }),
+      });
+      const payload = await response.json() as Partial<SavedSwap> & {
+        detail?: unknown;
+        error?: string;
+      };
+      if (
+        !response.ok
+        || typeof payload.workflow_artifact_version_id !== "string"
+        || typeof payload.workflow_semantic_key !== "string"
+        || payload.execution_status !== "blocked_until_runtime_qualified"
+        || payload.visibility !== "private"
+      ) {
+        const detail = typeof payload.detail === "string"
+          ? payload.detail
+          : payload.error ?? JSON.stringify(payload.detail);
+        throw new Error(detail || `workflow swap save failed (${response.status})`);
+      }
+      const saved: SavedSwap = {
+        workflow_artifact_version_id: payload.workflow_artifact_version_id,
+        workflow_semantic_key: payload.workflow_semantic_key,
+        replayed: payload.replayed === true,
+        execution_status: payload.execution_status,
+        visibility: payload.visibility,
+      };
+      setSavedSwap(saved);
+      setWorkflows((current) => [
+        ...current.filter(
+          (workflow) =>
+            workflow.artifact_version_id !== saved.workflow_artifact_version_id,
+        ),
+        {
+          artifact_version_id: saved.workflow_artifact_version_id,
+          semantic_key: saved.workflow_semantic_key,
+          machine_validation_state: "unvalidated",
+          review_state: "unreviewed",
+          execution_status: saved.execution_status,
+        },
+      ]);
+      setWorkflowId(saved.workflow_artifact_version_id);
+      setMessage(
+        ja
+          ? "privateな統制交換Workflowを保存しました。runtime未認定のため実行は停止中です。"
+          : "The private controlled-swap workflow was saved. Execution remains blocked pending runtime qualification.",
+      );
+    } catch (cause) {
+      setMessage(cause instanceof Error ? cause.message : "workflow swap save failed");
+    } finally {
+      setSavingSwap(false);
+    }
+  }
+
   const selected = workflows.find((item) => item.artifact_version_id === workflowId);
+  const swapRequested = initialSwapComponentKey === "optimizer.slsqp.v1";
+  const executionBlocked =
+    selected?.execution_status === "blocked_until_runtime_qualified";
   return (
     <main className="mj-studio-page">
       <section className="mj-studio-main">
@@ -154,20 +304,47 @@ export function VqeExperimentLauncher({
           <dl className="mj-studio-contract">
             <div><dt>machine validation</dt><dd>{selected.machine_validation_state}</dd></div>
             <div><dt>human review</dt><dd>{selected.review_state}</dd></div>
+            <div>
+              <dt>execution</dt>
+              <dd>{selected.execution_status ?? "registry qualified"}</dd>
+            </div>
             <div><dt>Registry UUID</dt><dd className="mj-mono-muted">{selected.artifact_version_id}</dd></div>
           </dl>
         ) : null}
         <div className="mj-studio-actions">
-          <button
-            className="mj-primary-button"
-            type="button"
-            disabled={!workflowId || creating}
-            onClick={() => void createExperiment()}
-          >
-            {creating
-              ? (ja ? "作成中…" : "Creating…")
-              : (ja ? "実験を作成" : "Create experiment")}
-          </button>
+          {swapRequested && !savedSwap ? (
+            <button
+              className="mj-primary-button"
+              type="button"
+              disabled={!workflowId || savingSwap}
+              onClick={() => void saveControlledSwap()}
+            >
+              {savingSwap
+                ? (ja ? "保存中…" : "Saving…")
+                : (ja ? "SLSQP交換をprivate保存" : "Save private SLSQP swap")}
+            </button>
+          ) : (
+            <button
+              className="mj-primary-button"
+              type="button"
+              disabled={!workflowId || creating || Boolean(savedSwap) || executionBlocked}
+              onClick={() => void createExperiment()}
+            >
+              {creating
+                ? (ja ? "作成中…" : "Creating…")
+                : (ja ? "実験を作成" : "Create experiment")}
+            </button>
+          )}
+          {savedSwap ? (
+            <a
+              className="mj-secondary-button"
+              href={`/studio?vqe=1&vqeWorkflow=${encodeURIComponent(
+                savedSwap.workflow_artifact_version_id,
+              )}&vqeProvider=${encodeURIComponent(initialFramework)}`}
+            >
+              {ja ? "保存したWorkflowを再表示" : "Reopen saved workflow"}
+            </a>
+          ) : null}
         </div>
         {message && state !== "error" ? <p role="alert">{message}</p> : null}
       </section>

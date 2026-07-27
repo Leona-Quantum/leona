@@ -562,3 +562,57 @@ As in S7, it has not been pushed to a registry, so public/runtime promotion
 remains blocked.
 
 S9: **replicated_linux_registry_digest_pending**
+
+## S10 — Component swap compose, private save, and reopen
+
+The component-first browser now distinguishes the compatibility verdict from
+the Workflow lifecycle label. This fixes a pre-existing duplicate translation
+key where `compatible` silently meant two different things.
+
+For the one permitted Phase 7.6 change, the UI now supports:
+
+```text
+H2 fixed-excitation baseline
+  -> replace parameter_optimizer with optimizer.slsqp.v1
+  -> display the single changed role
+  -> re-check compatibility in the browser
+  -> resolve the pinned SLSQP Definition from the authenticated Registry
+  -> ask the server to validate and save a private Workflow ArtifactVersion
+  -> reopen that immutable Workflow by Registry UUID
+```
+
+The server remains authoritative for the Definition digest, baseline
+composition, configuration migration, compatibility, and new Workflow
+identity. The browser cannot supply a runtime image or mark the candidate
+executable.
+
+The candidate is explicitly shown as:
+
+```text
+definition: experimental
+adapter: tested with Linux evidence
+visibility: private
+execution: blocked_until_runtime_qualified
+```
+
+No experiment or Comparison Run is created from this draft. That is deliberate:
+the local Linux OCI evidence from S7/S9 is not a pushed registry qualification.
+The UI therefore saves and reopens the scientific draft while keeping the Run
+button disabled. Comparison persistence from S8 becomes usable only after two
+qualified executions exist.
+
+Production build testing detected and fixed a separate nullable-role bug:
+duplicate `not_applicable` roles previously passed a null Component key into a
+non-null error record. The error now uses an explicit role marker and has a
+regression test.
+
+```text
+web tests: 103 passed
+web lint/token checks: passed
+Next production build: passed, 336 routes
+new authenticated routes:
+  /api/atlas/components
+  /api/atlas/workflows/swaps
+```
+
+S10: **private_compose_save_reopen_verified_execution_blocked_by_design**

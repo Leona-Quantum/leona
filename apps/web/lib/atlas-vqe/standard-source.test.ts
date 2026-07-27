@@ -79,3 +79,28 @@ test("component swap fails when a required contract is absent", () => {
   assert.equal(result.compatible, false);
   assert.ok(result.issues.some((issue) => issue.missing_contract === "electrons:2"));
 });
+
+test("duplicate inapplicable roles fail closed without inventing a component key", () => {
+  const bundle = getStandardVqeCatalog();
+  const workflow = bundle.workflows.find(
+    (item) => item.workflow_key === "workflow.h2.uccsd.v1",
+  );
+  assert.ok(workflow);
+  const selection = workflow.selections.find(
+    (item) =>
+      item.role === "operator_pool" && item.component_semantic_key === null,
+  );
+  assert.ok(selection);
+  const result = checkStandardWorkflowSelections([
+    ...workflow.selections,
+    selection,
+  ]);
+  assert.equal(result.compatible, false);
+  assert.ok(
+    result.issues.some(
+      (issue) =>
+        issue.code === "duplicate_role"
+        && issue.component_semantic_key === "<role:operator_pool>",
+    ),
+  );
+});
