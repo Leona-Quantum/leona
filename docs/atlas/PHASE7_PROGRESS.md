@@ -2,9 +2,14 @@
 
 Date: 2026-07-27 JST  
 Branch: `feature/vqe`  
-State: **in progress; S0-S3 input, bounded client, and immutable snapshot
-boundary implemented; live network, persistence, and publication not
-enabled**
+State: **S0-S7 implemented and locally verified; live GitHub acquisition and
+disposable-Neon migration proof remain operator-gated; publication remains
+disabled**
+
+Owner Decision: ADR-0033 pivots the MVP to canonical standard components.
+Phase 7 is an acquisition layer for component implementation provenance, not a
+paper/repository catalog. Its output never becomes a public component without
+an explicit reviewed promotion step.
 
 ## 1. Claim and capability boundary
 
@@ -30,12 +35,17 @@ The phase does not:
 | S1 | Pure GitHub coordinate parser and bounded metadata selection | implemented |
 | S2 | Recorded-response GitHub REST client; no live credentials | implemented |
 | S3 | Immutable commit/tree retrieval manifest and stable failures | implemented |
-| S4 | Durable importer provider and idempotency integration | pending |
-| S5 | License/citation/dependency fact extraction as assertions | pending |
-| S6 | Phase 2 corpus reconciliation and negative fixtures | pending |
-| S7 | Disposable-Neon operator E2E and rollback | pending |
+| S4 | Durable importer provider, immutable snapshot persistence, and idempotency integration | implemented; live DB proof skipped without `DATABASE_URL` |
+| S5 | Owner-approved standard-source registry and direct metadata-presence assertions | implemented |
+| S6 | Unmatched provider-source candidate boundary; no inferred component match | implemented |
+| S7 | Private append-only assertion/candidate persistence; no auto-publish | implemented; live DB proof skipped without `DATABASE_URL` |
 
 No later slice is considered complete merely because S1 accepts a URL.
+
+Initial S5-S7 provider scope is restricted to verified official sources for
+Qiskit / Qiskit Nature / Qiskit Algorithms, PennyLane, OpenFermion, and an
+independently verified HamLib dataset source. An unresolved or unofficial
+HamLib locator remains `unknown` and is not imported by assumption.
 
 ## 3. S0 official-source decisions
 
@@ -142,7 +152,7 @@ All S1-S3 tests use recorded `httpx.MockTransport` responses. Passing them
 demonstrates deterministic boundary behavior, not live GitHub availability,
 GitHub App permission correctness, or durable database recovery.
 
-Verification on 2026-07-27:
+Verification on 2026-07-27 before S4-S7:
 
 ```text
 Phase 7 focused tests: 43 passed
@@ -154,7 +164,66 @@ Ruff format check: 299 files already formatted
 The four warnings are PennyLane deprecation warnings in pre-existing framework
 tests; Phase 7 does not suppress or reinterpret them.
 
-## 7. Academic integrity gate
+## 7. Implemented S4-S7 persistence and promotion boundary
+
+Migrations `0037` and `0038` make the immutable snapshot resumable without
+refetching mutable branches. S7 persists only:
+
+```text
+RepositorySnapshot
+MetadataAssertion
+ComponentImplementationCandidate
+```
+
+The primary reconciliation target is an existing canonical Component
+Definition and a versioned provider implementation. A candidate that cannot be
+matched stays staged and unpublished. Phase 2 paper annotations are
+`SourceEvidence` / `ComponentMention`; they are not Component Definitions and
+cannot authorize publication.
+
+Idempotency is based on:
+
+```text
+provider numeric repository identity
++ resolved immutable commit SHA
++ importer policy version
+```
+
+The durable record must preserve requested ref separately from resolved source
+identity. Retries may add append-only observations or extractor-version
+outputs, but cannot mutate the immutable snapshot or silently promote evidence.
+
+S5 records only directly observable metadata-file presence:
+
+```text
+license file present
+citation file present
+dependency declaration present
+CI workflow present
+```
+
+It deliberately does not infer SPDX identity, package version, scientific
+capability, compatibility, or maintenance quality. S6 creates an unmatched
+`ComponentImplementationCandidate` with `publication_eligible=false`; it does
+not fabricate a canonical Component Definition match.
+
+Current verification:
+
+```text
+Phase 7 + 7.5 focused persistence/catalog tests: 20 passed, 4 skipped
+Repository Python suite: 1188 passed, 85 skipped, 4 upstream warnings
+Web unit tests: 101 passed
+Ruff lint: passed
+Ruff format check: passed after formatting one new live-test file
+Alembic: one head, 0038
+```
+
+The four focused skips are the explicit live-Postgres tests because the test
+process did not receive `DATABASE_URL`. Their fixtures now cover immutable
+snapshot replay and S7 assertion/candidate replay. This is an unexecuted
+environment proof, not a hidden pass.
+
+## 8. Academic integrity gate
 
 Retrieved data produces assertions with source locators, not verified facts.
 Repository metadata, detected license, dependency files, and paper relations
@@ -162,9 +231,24 @@ must keep separate evidence and confidence states. `unknown`, `not_reported`,
 `conflicting`, and `unreadable_due_to_limit` are preserved. Phase 2 corpus
 records are a reconciliation set, not automatically a human gold standard.
 
-## 8. Rollback
+## 9. Rollback
 
 S1 rollback is code-only: remove the pure parser and tests. Once durable import
 begins, rollback disables provider creation and drains/cancels its jobs while
 retaining private staged evidence for audit. It never deletes or publishes
 records to hide a failed import.
+
+## 10. Handoff to Phase 7.5
+
+The durable acquisition boundary is independently testable, so Phase 7.5 has
+started. Its normative execution plan is
+`docs/atlas/PHASE75_STANDARD_COMPONENT_MVP.md`.
+
+Phase 7.5, not repository count, owns the component-first success measures:
+
+- 18+ canonical standard components;
+- 12+ executable provider bindings;
+- 4+ workflow templates;
+- 2+ problems/datasets;
+- 3+ controlled one-component swaps;
+- compose → compatibility → run → compare → save.

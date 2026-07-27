@@ -15,6 +15,7 @@ from sqlalchemy import (
     ForeignKey,
     ForeignKeyConstraint,
     Integer,
+    LargeBinary,
     Numeric,
     Text,
     UniqueConstraint,
@@ -558,6 +559,107 @@ class ImportItem(Base):
     max_attempts: Mapped[int] = mapped_column(Integer, server_default="3")
     created_at: Mapped[dt.datetime | None] = mapped_column(server_default=func.now())
     updated_at: Mapped[dt.datetime | None] = mapped_column(server_default=func.now())
+
+
+class GitHubRepositorySnapshotRow(Base):
+    """Private append-only Phase 7 source snapshot (migration 0037)."""
+
+    __tablename__ = "github_repository_snapshots"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True)
+    repository_id: Mapped[int] = mapped_column(BigInteger)
+    repository_node_id: Mapped[str]
+    full_name: Mapped[str]
+    canonical_repository_url: Mapped[str]
+    requested_ref: Mapped[str | None]
+    default_branch: Mapped[str]
+    archived: Mapped[bool]
+    disabled: Mapped[bool]
+    api_version: Mapped[str]
+    commit_sha: Mapped[str]
+    tree_sha: Mapped[str]
+    tree_entry_count: Mapped[int] = mapped_column(Integer)
+    tree_manifest_sha256: Mapped[str]
+    selected_metadata_bytes: Mapped[int] = mapped_column(Integer)
+    metadata_manifest_sha256: Mapped[str]
+    skipped_oversized_paths: Mapped[list[str]] = mapped_column(JSONB)
+    importer_policy_version: Mapped[str]
+    audit_manifest_json: Mapped[dict[str, Any]] = mapped_column(JSONB)
+    created_at: Mapped[dt.datetime | None] = mapped_column(server_default=func.now())
+
+
+class GitHubRepositorySnapshotFileRow(Base):
+    """Content-addressed selected metadata bytes for one immutable snapshot."""
+
+    __tablename__ = "github_repository_snapshot_files"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True)
+    snapshot_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("github_repository_snapshots.id", ondelete="CASCADE")
+    )
+    path: Mapped[str]
+    mode: Mapped[str]
+    blob_sha: Mapped[str]
+    size: Mapped[int] = mapped_column(Integer)
+    content_sha256: Mapped[str]
+    content: Mapped[bytes] = mapped_column(LargeBinary)
+    created_at: Mapped[dt.datetime | None] = mapped_column(server_default=func.now())
+
+
+class GitHubSnapshotImportRequestRow(Base):
+    """Append-only request replay ledger, separate from source identity."""
+
+    __tablename__ = "github_snapshot_import_requests"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True)
+    idempotency_key: Mapped[str] = mapped_column(unique=True)
+    snapshot_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("github_repository_snapshots.id", ondelete="RESTRICT")
+    )
+    request_descriptor_json: Mapped[dict[str, Any]] = mapped_column(JSONB)
+    request_descriptor_sha256: Mapped[str]
+    created_at: Mapped[dt.datetime | None] = mapped_column(server_default=func.now())
+
+
+class GitHubMetadataAssertionRow(Base):
+    """Append-only direct observations over one bounded source snapshot."""
+
+    __tablename__ = "github_metadata_assertions"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True)
+    snapshot_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("github_repository_snapshots.id", ondelete="RESTRICT")
+    )
+    assertion_key: Mapped[str]
+    extractor_version: Mapped[str]
+    source_key: Mapped[str]
+    predicate: Mapped[str]
+    observed: Mapped[bool]
+    evidence_paths: Mapped[list[str]] = mapped_column(JSONB)
+    evidence_content_sha256: Mapped[list[str]] = mapped_column(JSONB)
+    assertion_json: Mapped[dict[str, Any]] = mapped_column(JSONB)
+    assertion_sha256: Mapped[str]
+    created_at: Mapped[dt.datetime | None] = mapped_column(server_default=func.now())
+
+
+class VqeComponentImplementationCandidateRow(Base):
+    """Private provider-source candidate; never a published component."""
+
+    __tablename__ = "vqe_component_implementation_candidates"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True)
+    snapshot_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("github_repository_snapshots.id", ondelete="RESTRICT")
+    )
+    candidate_key: Mapped[str]
+    adapter_version: Mapped[str]
+    source_key: Mapped[str]
+    provider_key: Mapped[str]
+    component_semantic_key: Mapped[str | None]
+    match_state: Mapped[str]
+    candidate_json: Mapped[dict[str, Any]] = mapped_column(JSONB)
+    candidate_sha256: Mapped[str]
+    created_at: Mapped[dt.datetime | None] = mapped_column(server_default=func.now())
 
 
 class Job(Base):

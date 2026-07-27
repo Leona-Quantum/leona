@@ -19,9 +19,11 @@ from . import (
     catalog,
     catalog_import,
     folders,
+    github_import,
     runs,
     system,
     usage,
+    vqe_source_staging,
     workspaces,
 )
 from ._base import ADMIN_ROLES, WRITE_ROLES, AuthzError, NotFoundError, RepoError
@@ -37,9 +39,11 @@ __all__ = [
     "audit",
     "catalog",
     "catalog_import",
+    "github_import",
     "folders",
     "runs",
     "system",
     "usage",
+    "vqe_source_staging",
     "workspaces",
 ]
