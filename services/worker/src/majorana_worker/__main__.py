@@ -71,6 +71,22 @@ REAP_INTERVAL_S = _positive_env("WORKER_REAP_INTERVAL_S", 60.0)
 #
 # Claim latency is deliberately untouched. `claim_job` still runs every cycle;
 # only the sweeps around it are gated.
+#
+# MEASURED, after the fact, A/B against a scratch database on the production
+# instance — 120s of the real run_forever() each way, reading xact_commit:
+#
+#     ungated  2.175 transactions/s
+#     gated    1.408 transactions/s     (1.55x, not the 3x the session counting
+#                                        suggested)
+#
+# The gap is `pool_pre_ping=True` in db.py: every pool checkout issues its own
+# statement, which Postgres commits as its own transaction. So a session costs
+# two transactions, not one, and the claim — the session deliberately left on
+# every cycle — is two of them. Dropping the pre-ping would roughly halve what
+# is left, and it is NOT being dropped: it exists so a connection killed by a
+# Cloud SQL maintenance restart is replaced transparently instead of failing one
+# user's request, and since the move to a fixed-price instance a transaction
+# costs nothing. Reliability over a cost that no longer exists.
 RECOVER_INTERVAL_S = _positive_env("WORKER_RECOVER_INTERVAL_S", 30.0)
 if RECOVER_INTERVAL_S > JOB_LEASE_S:
     raise ValueError("WORKER_RECOVER_INTERVAL_S must not exceed WORKER_JOB_LEASE_S")
