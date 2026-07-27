@@ -142,7 +142,17 @@ async def ensure_system_catalog_authority(
     ):
         await session.execute(
             pg_insert(Membership)
-            .values(workspace_id=workspace_id, user_id=user_id, role=role)
+            .values(
+                workspace_id=workspace_id,
+                user_id=user_id,
+                role=role,
+                # Nobody invited a system identity (0038). These two never sign
+                # in, so no notice could reach them — but leaving the column NULL
+                # would make "unacknowledged means somebody was invited" false in
+                # the one place it is never read, which is exactly where a wrong
+                # invariant survives.
+                acknowledged_at=func.now(),
+            )
             .on_conflict_do_nothing(index_elements=[Membership.workspace_id, Membership.user_id])
         )
     await session.flush()
