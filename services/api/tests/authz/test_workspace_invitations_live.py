@@ -23,6 +23,7 @@ from majorana_contracts import Scope
 from majorana_contracts.enums import Role
 from sqlalchemy import select
 
+from majorana_api.db import engine_from_env, session_factory
 from majorana_api.orm import Membership, User, Workspace
 from majorana_api.repos import system, workspaces
 
@@ -145,6 +146,107 @@ async def test_acknowledging_twice_is_the_same_as_once(db):
         )
     ).scalar_one()
     assert first == second
+    # And the door they came through does not matter: switching in afterwards
+    # must not re-stamp either.
+    await system.set_active_workspace(db, user=guest, workspace_id=host_ws.id)
+    third = (
+        await db.execute(
+            select(Membership.acknowledged_at).where(
+                Membership.workspace_id == host_ws.id, Membership.user_id == guest.id
+            )
+        )
+    ).scalar_one()
+    assert third == first
+
+
+async def test_two_concurrent_acknowledgements_keep_the_first_timestamp(db):
+    """The race a Python-side `if acknowledged_at is None` cannot win.
+
+    Two tabs answer the same notice, or one opens the workspace while the other
+    dismisses it. Both requests read `acknowledged_at IS NULL` before either
+    writes — that is the whole window — and with the check in Python both then
+    write, so the stored moment is whichever transaction committed *last*.
+
+    The interleaving is explicit rather than threaded, because a real one
+    deadlocks the test and proves nothing: Postgres takes a row lock, so the
+    second UPDATE simply blocks until the first commits. The order below is the
+    order the two requests actually reach the database, with the second one's
+    read placed inside the window on purpose.
+
+    Mutation check: restore `if membership.acknowledged_at is None: membership
+    .acknowledged_at = datetime.now(...)` in `acknowledge_membership` and this
+    fails — the second session's own `find_membership` returns its
+    identity-mapped row, still carrying the NULL it read in the window, and
+    stamps over the first timestamp.
+
+    Commits rather than rolls back, unlike everything else in this file: one
+    connection cannot observe another's uncommitted row, so the race does not
+    exist inside a single transaction. The rows are removed at the end.
+    """
+    host, host_ws = await _make_user(db, "race-host")
+    guest, _guest_ws = await _make_user(db, "race-guest")
+    await _invite(db, host, host_ws, guest)
+    await db.commit()
+
+    engine = engine_from_env()
+    factory = session_factory(engine)
+    try:
+        async with factory() as first_session, factory() as second_session:
+            first_user = await first_session.get(User, guest.id)
+            second_user = await second_session.get(User, guest.id)
+            assert first_user is not None and second_user is not None
+
+            # The window: both requests have seen an outstanding invitation.
+            assert (
+                await system.find_membership(
+                    first_session, workspace_id=host_ws.id, user_id=guest.id
+                )
+            ).acknowledged_at is None
+            assert (
+                await system.find_membership(
+                    second_session, workspace_id=host_ws.id, user_id=guest.id
+                )
+            ).acknowledged_at is None
+
+            await system.acknowledge_membership(
+                first_session, user=first_user, workspace_id=host_ws.id
+            )
+            await first_session.commit()
+            first_stamp = (
+                await first_session.execute(
+                    select(Membership.acknowledged_at).where(
+                        Membership.workspace_id == host_ws.id,
+                        Membership.user_id == guest.id,
+                    )
+                )
+            ).scalar_one()
+            assert first_stamp is not None
+
+            await system.acknowledge_membership(
+                second_session, user=second_user, workspace_id=host_ws.id
+            )
+            await second_session.commit()
+
+        async with factory() as reader:
+            stamped = (
+                await reader.execute(
+                    select(Membership.acknowledged_at).where(
+                        Membership.workspace_id == host_ws.id,
+                        Membership.user_id == guest.id,
+                    )
+                )
+            ).scalar_one()
+            assert stamped is not None
+            assert stamped == first_stamp
+            assert (await system.list_unacknowledged_memberships(reader, user_id=guest.id)) == []
+
+        async with factory() as cleanup:
+            await cleanup.execute(
+                Membership.__table__.delete().where(Membership.user_id == guest.id)
+            )
+            await cleanup.commit()
+    finally:
+        await engine.dispose()
 
 
 async def test_acknowledging_a_workspace_you_are_not_in_is_refused(db):

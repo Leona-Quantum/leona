@@ -508,8 +508,7 @@ async def set_active_workspace(
     # leaving it to the client is what stops the notice following someone around
     # inside the very workspace it is announcing — the Settings switcher can
     # move them too, and it has never called an acknowledge route.
-    if membership.acknowledged_at is None:
-        membership.acknowledged_at = dt.datetime.now(dt.timezone.utc)
+    await _stamp_acknowledged(session, workspace_id=workspace_id, user_id=user.id)
     await session.flush()
     return workspace, membership
 
@@ -543,20 +542,49 @@ async def list_unacknowledged_memberships(
     return [tuple(row) for row in (await session.execute(stmt)).all()]  # type: ignore[misc]
 
 
+async def _stamp_acknowledged(session: AsyncSession, *, workspace_id: Any, user_id: Any) -> None:
+    """Record that this person has been told. First write wins.
+
+    Conditional in the DATABASE rather than in Python. Two tabs answering the
+    same notice — or one opening the workspace while the other dismisses it —
+    both read `acknowledged_at IS NULL` before either writes, so a Python-side
+    guard lets both through and the stored moment becomes whichever transaction
+    committed *last*. Postgres re-evaluates this WHERE clause after taking the
+    row lock, so the second UPDATE matches nothing.
+
+    `func.now()` for the neighbouring reason: the database's clock rather than
+    one of however many API instances'.
+
+    Nothing reads the value today beyond NULL/NOT NULL, which is exactly why it
+    is worth pinning now — the day something does, the defect is a wrong date in
+    a record nobody thought was approximate.
+    """
+    await session.execute(
+        update(Membership)
+        .where(
+            Membership.workspace_id == workspace_id,
+            Membership.user_id == user_id,
+            Membership.acknowledged_at.is_(None),
+        )
+        .values(acknowledged_at=func.now())
+        .execution_options(synchronize_session="fetch")
+    )
+
+
 async def acknowledge_membership(
     session: AsyncSession, *, user: User, workspace_id: uuid.UUID
 ) -> bool:
     """Mark an invitation as seen without acting on it. False if not a member.
 
-    Idempotent: acknowledging twice is the same as once, because the second call
-    is usually two tabs answering the same notice.
+    The membership is looked up first so a workspace the caller does not belong
+    to is an honest 404, rather than an UPDATE that matches nothing and reports
+    success.
     """
     membership = await find_membership(session, workspace_id=workspace_id, user_id=user.id)
     if membership is None:
         return False
-    if membership.acknowledged_at is None:
-        membership.acknowledged_at = dt.datetime.now(dt.timezone.utc)
-        await session.flush()
+    await _stamp_acknowledged(session, workspace_id=workspace_id, user_id=user.id)
+    await session.flush()
     return True
 
 
