@@ -1268,6 +1268,69 @@ export const ACCOUNT_COPY: Record<PublicLocale, {
  * before they arrived, and there is no wording of that which is both softer and
  * true.
  */
+/**
+ * The notice an invited person sees, and the wording that makes it honest.
+ *
+ * "You can open it now" rather than "do you accept": the membership already
+ * grants access by the time this renders, so a notice that read like a pending
+ * offer would be describing a state the system does not have.
+ *
+ * `addedBy` and `added` are the same sentence with and without an author. The
+ * authorless one is not a fallback nobody sees — a membership whose inviter's
+ * account was deleted keeps its notice and loses the name.
+ */
+export const INVITE_COPY: Record<PublicLocale, {
+  title: string;
+  addedBy: (inviter: string, workspace: string, role: string) => string;
+  added: (workspace: string, role: string) => string;
+  memberAccess: string;
+  viewerAccess: string;
+  open: string;
+  opening: string;
+  dismiss: string;
+  decline: string;
+  declineConfirm: string;
+  declining: string;
+  cancel: string;
+  declineWarning: (workspace: string) => string;
+  failed: string;
+}> = {
+  en: {
+    title: "New workspace",
+    addedBy: (inviter, workspace, role) => `${inviter} added you to ${workspace} as a ${role}.`,
+    added: (workspace, role) => `You were added to ${workspace} as a ${role}.`,
+    memberAccess: "You can run, save and edit everything in it — including work saved before you arrived.",
+    viewerAccess: "You can read everything in it, including work saved before you arrived. You cannot run or save.",
+    open: "Open it",
+    opening: "Opening…",
+    dismiss: "Not now",
+    decline: "Leave",
+    declineConfirm: "Leave for good",
+    declining: "Leaving…",
+    cancel: "Keep it",
+    declineWarning: (workspace) =>
+      `Leaving ${workspace} gives up your access to it. Anything you already ran there stays — it belongs to the workspace. Only an admin can let you back in.`,
+    failed: "Could not do that just now.",
+  },
+  ja: {
+    title: "新しいワークスペース",
+    addedBy: (inviter, workspace, role) => `${inviter} さんが、あなたを ${workspace} に${role}として追加しました。`,
+    added: (workspace, role) => `あなたは ${workspace} に${role}として追加されました。`,
+    memberAccess: "参加前に保存されたものも含め、すべて実行・保存・編集できます。",
+    viewerAccess: "参加前に保存されたものも含め、すべて閲覧できます。実行と保存はできません。",
+    open: "開く",
+    opening: "切り替え中…",
+    dismiss: "あとで",
+    decline: "参加しない",
+    declineConfirm: "参加をやめる",
+    declining: "退出中…",
+    cancel: "残る",
+    declineWarning: (workspace) =>
+      `${workspace} から退出すると、アクセスできなくなります。すでに実行したものはワークスペースに残ります。再参加には管理者の招待が必要です。`,
+    failed: "いま実行できませんでした。",
+  },
+};
+
 export const SHARING_COPY: Record<PublicLocale, {
   workspacesTitle: string;
   workspacesHelp: string;
@@ -1282,6 +1345,12 @@ export const SHARING_COPY: Record<PublicLocale, {
   createFailed: string;
   created: (name: string) => string;
   switchFailed: string;
+  leave: string;
+  leaveConfirm: string;
+  leaveCancel: string;
+  leaving: string;
+  leaveFailed: string;
+  left: (name: string) => string;
   membersTitle: string;
   membersHelp: string;
   membersShareWarning: string;
@@ -1324,6 +1393,12 @@ export const SHARING_COPY: Record<PublicLocale, {
     createFailed: "Could not create that workspace.",
     created: (name) => `${name} created. Open it when you are ready — you are still here for now.`,
     switchFailed: "Could not switch workspace.",
+    leave: "Leave",
+    leaveConfirm: "Leave for good",
+    leaveCancel: "Stay",
+    leaving: "Leaving…",
+    leaveFailed: "Could not leave that workspace.",
+    left: (name) => `You have left ${name}. Anything you ran there stays — it belongs to the workspace. Only an admin can let you back in.`,
     membersTitle: "Members",
     membersHelp: "People who can act in the workspace you have open.",
     membersShareWarning:
@@ -1368,6 +1443,12 @@ export const SHARING_COPY: Record<PublicLocale, {
     createFailed: "ワークスペースを作成できませんでした。",
     created: (name) => `${name} を作成しました。準備ができたら開いてください（今はまだ移動していません）。`,
     switchFailed: "ワークスペースを切り替えられませんでした。",
+    leave: "退出",
+    leaveConfirm: "退出する",
+    leaveCancel: "残る",
+    leaving: "退出中…",
+    leaveFailed: "退出できませんでした。",
+    left: (name) => `${name} から退出しました。実行したものはワークスペースに残ります。再参加には管理者の招待が必要です。`,
     membersTitle: "メンバー",
     membersHelp: "いま開いているワークスペースで作業できる人です。",
     membersShareWarning:

@@ -45,6 +45,8 @@ export function WorkspaceSharing({
   const [inviteRole, setInviteRole] = useState<"member" | "viewer">("member");
   const [inviting, setInviting] = useState(false);
   const [pendingMember, setPendingMember] = useState<string | null>(null);
+  const [confirmingLeave, setConfirmingLeave] = useState<string | null>(null);
+  const [leavingId, setLeavingId] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
 
   const canAdminister = ADMIN_ROLES.has(viewerRole);
@@ -111,6 +113,46 @@ export function WorkspaceSharing({
     } catch {
       setMessage(copy.switchFailed);
       setSwitchingTo(null);
+    }
+  }
+
+  /**
+   * Leaving a workspace somebody else runs.
+   *
+   * The notice above the page offers this too, but the notice is answered once
+   * and never comes back — so without a row here, dismissing it would make the
+   * membership permanent until an admin removed you. Asks twice: it is the only
+   * control on this page that cannot be undone without the workspace's admin.
+   *
+   * A full reload afterwards for the same reason switching does one: if you were
+   * standing in the workspace you just left, the sidebar on screen is reading
+   * from a storage key for a tenant you are no longer in.
+   */
+  async function leave(workspace: WorkspaceSummary) {
+    if (leavingId) return;
+    setLeavingId(workspace.id);
+    setMessage(null);
+    try {
+      const response = await fetch("/api/workspaces/leave", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ workspace_id: workspace.id }),
+      });
+      if (!response.ok) {
+        setMessage(errorDetail(await readJson(response), copy.leaveFailed));
+        return;
+      }
+      if (workspace.is_active) {
+        window.location.assign("/account");
+        return;
+      }
+      setMessage(copy.left(workspace.name));
+      setConfirmingLeave(null);
+      await loadWorkspaces();
+    } catch {
+      setMessage(copy.leaveFailed);
+    } finally {
+      setLeavingId(null);
     }
   }
 
@@ -226,6 +268,41 @@ export function WorkspaceSharing({
                   {switchingTo === workspace.id ? copy.opening : copy.open}
                 </button>
               )}
+              {/* The owner cannot leave — there would be nobody left to run it,
+                  and the control plane refuses. Hiding it rather than disabling
+                  it: a control that exists only to be unavailable is the pattern
+                  PR 161 removed two of. */}
+              {workspace.role !== "owner" ? (
+                confirmingLeave === workspace.id ? (
+                  <>
+                    <button
+                      className="mj-workspace-leave"
+                      type="button"
+                      disabled={leavingId !== null}
+                      onClick={() => void leave(workspace)}
+                    >
+                      {leavingId === workspace.id ? copy.leaving : copy.leaveConfirm}
+                    </button>
+                    <button
+                      className="mj-secondary-button"
+                      type="button"
+                      disabled={leavingId !== null}
+                      onClick={() => setConfirmingLeave(null)}
+                    >
+                      {copy.leaveCancel}
+                    </button>
+                  </>
+                ) : (
+                  <button
+                    className="mj-workspace-leave"
+                    type="button"
+                    disabled={leavingId !== null}
+                    onClick={() => setConfirmingLeave(workspace.id)}
+                  >
+                    {copy.leave}
+                  </button>
+                )
+              ) : null}
             </li>
           ))}
         </ul>
