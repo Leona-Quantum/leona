@@ -52,6 +52,7 @@ GPU、QPU、古い論文環境の実行へ進んではならない。
 | 6 | Security/scientific/E2E hardening and MVP Go/No-Go | test only | test | private_test_complete; public_release_no_go |
 | 7 | Manual GitHub metadata import | later | minimal | in_progress; execution_and_publication_prohibited |
 | 7.5 | Standard Component MVP and component-first UI | existing registry plus additive contracts | yes | locally implemented; live E2E operator-gated; ADR-0033 |
+| 7.6 | First executable Component swap | existing ArtifactVersion identity plus minimal additive comparison relations | yes | planned; H2 bounded scalar vs SLSQP vertical slice |
 | 8–9 | Deterministic/LLM extraction and reviewed materialization | later | later | later |
 | 10 | Isolated external Repository execution | separate milestone | later | prohibited in MVP |
 
@@ -65,6 +66,11 @@ Phase 7はmetadata-onlyで開始し、外部Repository codeを実行しない。
 Phase 7.5では、論文一覧ではなくcanonical component、provider
 implementation、compatibility、Workflow composition、controlled swapを公開MVPの
 主語にする。Legacy literature corpusは削除せずsource/evidenceへ降格する。
+Phase 7.6では、Component数を増やさず、Phase 7.5のprovider/evidence帰属を
+修正したうえで、H2 fixed-excitation WorkflowのOptimizerだけを交換し、
+交換後Workflowのimmutable保存、実行、ControlledComparisonSpec/Run、
+Neon・WorkOS・runtimeを通した再閲覧までを一つの縦のE2Eとして完成させる。
+詳細は`PHASE76_FIRST_EXECUTABLE_COMPONENT_SWAP_PLAN.md`をauthorityとする。
 
 ---
 
