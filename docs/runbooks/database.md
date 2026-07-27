@@ -78,6 +78,12 @@ Two things follow, and both were done:
 1. **The poll loop was the bug.** Two of those three transactions were sweeps
    that found nothing on essentially every cycle; they are now wall-clock gated
    (`Sweep` in the worker). This is a fix on any provider.
+
+   Measured afterwards, A/B on a scratch database on this instance: **2.175
+   transactions/s ungated → 1.408 gated, a 1.55× reduction.** Counting *sessions*
+   predicted 3×; the difference is `pool_pre_ping`, which spends a transaction of
+   its own on every checkout. It is kept deliberately — see the comment above
+   `RECOVER_INTERVAL_S`.
 2. **An always-on worker and a per-second-billed serverless database are the
    wrong shape for each other.** No poll interval makes a scale-to-zero database
    scale to zero. A fixed-price always-on instance matches the workload, and
