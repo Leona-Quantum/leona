@@ -116,6 +116,7 @@ class Sweep:
         """Record that the sweep ran. `productive` means it found work."""
         self._next_at = now if productive else now + self._interval_s
 
+
 _meter = metrics.get_meter("majorana.worker.queue")
 _job_claims = _meter.create_counter("majorana.jobs.claimed")
 _job_requeues = _meter.create_counter("majorana.jobs.requeued")
