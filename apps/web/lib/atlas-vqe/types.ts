@@ -109,6 +109,96 @@ export interface VqeCorpusBundle {
   comparisons: VqeComparisonRecord[];
 }
 
+export type StandardComponentGroup =
+  | "problems_datasets"
+  | "representation"
+  | "states_ansatze"
+  | "operator_pools"
+  | "search_growth"
+  | "optimizers"
+  | "compression"
+  | "measurement"
+  | "evaluation_execution";
+
+export type StandardCapabilityStatus =
+  | "executable"
+  | "structured"
+  | "experimental"
+  | "deferred";
+
+export interface StandardComponentDefinition {
+  semantic_key: string;
+  definition_version: string;
+  display_name: string;
+  component_type: string;
+  group: StandardComponentGroup;
+  semantic_definition: string;
+  status: StandardCapabilityStatus;
+  requires: string[];
+  provides: string[];
+  source_locators: string[];
+}
+
+export interface StandardImplementationBinding {
+  binding_key: string;
+  component_semantic_key: string;
+  provider: string;
+  package: string;
+  package_version: string;
+  runtime_profile_id: string;
+  adapter_release_id: string;
+  status: StandardCapabilityStatus;
+  evidence_level: string;
+  evidence_locators: string[];
+}
+
+export interface StandardWorkflowSelection {
+  role: string;
+  component_semantic_key: string;
+  configuration: Array<[string, string]>;
+  bound_contracts: string[];
+}
+
+export interface StandardCompatibilityIssue {
+  code: string;
+  component_semantic_key: string;
+  missing_contract: string | null;
+}
+
+export interface StandardCompatibilityResult {
+  compatible: boolean;
+  contract_version: string;
+  issues: StandardCompatibilityIssue[];
+  accumulated_contracts: string[];
+}
+
+export interface StandardWorkflowTemplate {
+  workflow_key: string;
+  display_name: string;
+  status: StandardCapabilityStatus;
+  selections: StandardWorkflowSelection[];
+  supported_providers: string[];
+  registry_semantic_key: string | null;
+  compatibility: StandardCompatibilityResult;
+}
+
+export interface StandardControlledComparison {
+  comparison_key: string;
+  baseline_workflow_key: string;
+  candidate_workflow_key: string;
+  changed_role: string;
+  baseline_component_key: string;
+  candidate_component_key: string;
+}
+
+export interface StandardVqeCatalogBundle {
+  schema_version: string;
+  components: StandardComponentDefinition[];
+  implementations: StandardImplementationBinding[];
+  workflows: StandardWorkflowTemplate[];
+  controlled_comparisons: StandardControlledComparison[];
+}
+
 /** Bounded public browse projections. Detail-only evidence stays server-side
  * until a user opens the corresponding route. */
 export type VqePaperListEntry = Pick<

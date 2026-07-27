@@ -544,6 +544,243 @@ body {
 .mj-lock-form .mj-primary-button { margin-top: var(--sp-2); width: 100%; }
 .mj-lock-form-error { margin: 0; color: var(--err); font-size: var(--fs-13); }
 
+/* Component-first Atlas VQE composer (ADR-0033). The three-column layout
+ * mirrors component type → canonical catalog → current workflow; the same
+ * structure collapses into a linear flow on narrow screens. */
+.mj-vqe-methods {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-5);
+  margin-top: var(--sp-5);
+}
+.mj-vqe-methods-heading {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: var(--sp-4);
+}
+.mj-vqe-methods-heading h2,
+.mj-vqe-methods-heading p {
+  margin: 0;
+}
+.mj-vqe-methods-heading > div {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+.mj-vqe-composer {
+  display: grid;
+  grid-template-columns: minmax(180px, 0.56fr) minmax(360px, 1.7fr) minmax(280px, 0.9fr);
+  gap: var(--sp-4);
+  align-items: start;
+}
+.mj-vqe-component-types {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  position: sticky;
+  top: var(--sp-4);
+}
+.mj-vqe-component-types button {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--sp-2);
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--text-1);
+  text-align: left;
+  cursor: pointer;
+}
+.mj-vqe-component-types button:hover,
+.mj-vqe-component-types button.is-active {
+  border-color: var(--border-0);
+  background: var(--bg-1);
+  color: var(--text-0);
+}
+.mj-vqe-component-types button span {
+  color: var(--text-2);
+  font-family: var(--font-mono, monospace);
+  font-size: var(--fs-12);
+}
+.mj-vqe-component-catalog {
+  min-width: 0;
+}
+.mj-vqe-component-catalog .mj-repository-controls {
+  grid-template-columns: minmax(180px, 1fr) minmax(120px, 0.5fr) minmax(130px, 0.5fr);
+}
+.mj-vqe-component-list {
+  display: grid;
+  gap: var(--sp-3);
+}
+.mj-vqe-component-card,
+.mj-vqe-workflow-tray {
+  border: 1px solid var(--border-0);
+  border-radius: var(--radius-card);
+  background: var(--bg-1);
+  padding: var(--sp-4);
+}
+.mj-vqe-component-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+}
+.mj-vqe-component-card h3,
+.mj-vqe-component-card p {
+  margin: 0;
+}
+.mj-vqe-component-card details {
+  color: var(--text-1);
+  font-size: var(--fs-12);
+}
+.mj-vqe-component-card details summary {
+  cursor: pointer;
+}
+.mj-vqe-component-card details ul {
+  overflow-wrap: anywhere;
+  padding-left: var(--sp-4);
+}
+.mj-vqe-contract-list {
+  display: grid;
+  gap: var(--sp-2);
+  margin: 0;
+}
+.mj-vqe-contract-list div {
+  display: grid;
+  grid-template-columns: minmax(90px, 0.32fr) 1fr;
+  gap: var(--sp-2);
+}
+.mj-vqe-contract-list dt {
+  color: var(--text-2);
+  font-size: var(--fs-12);
+}
+.mj-vqe-contract-list dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+  color: var(--text-1);
+  font-family: var(--font-mono, monospace);
+  font-size: var(--fs-12);
+}
+.mj-vqe-binding {
+  display: block;
+}
+.mj-vqe-workflow-tray {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+  position: sticky;
+  top: var(--sp-4);
+  max-height: calc(100vh - var(--sp-8));
+  overflow: auto;
+}
+.mj-vqe-workflow-tray h3,
+.mj-vqe-workflow-tray p {
+  margin: 0;
+}
+.mj-vqe-workflow-tray label {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  color: var(--text-1);
+  font-size: var(--fs-12);
+}
+.mj-vqe-workflow-tray select {
+  width: 100%;
+  padding: 8px;
+  border: 1px solid var(--border-0);
+  border-radius: var(--radius-control);
+  background: var(--bg-0);
+  color: var(--text-0);
+}
+.mj-vqe-workflow-components {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.mj-vqe-workflow-components li {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding-bottom: var(--sp-2);
+  border-bottom: 1px solid var(--border-0);
+}
+.mj-vqe-workflow-components li span,
+.mj-vqe-workflow-components li small {
+  color: var(--text-2);
+  font-size: var(--fs-12);
+}
+.mj-vqe-workflow-components li strong {
+  font-size: var(--fs-13);
+}
+.mj-vqe-compatibility,
+.mj-vqe-comparison-state {
+  padding: var(--sp-3);
+  border: 1px solid var(--border-0);
+  border-radius: var(--radius-control);
+  background: var(--bg-0);
+  font-size: var(--fs-12);
+}
+.mj-vqe-compatibility[data-compatible="true"] {
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--border-0));
+}
+.mj-vqe-compatibility[data-compatible="false"] {
+  border-color: var(--err);
+}
+.mj-vqe-compatibility ul {
+  margin: var(--sp-2) 0 0;
+  padding-left: var(--sp-4);
+  overflow-wrap: anywhere;
+}
+.mj-vqe-comparison-state {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+}
+.mj-vqe-run-note {
+  color: var(--text-2);
+  font-size: var(--fs-12);
+}
+.mj-vqe-workflow-tray .mj-primary-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.48;
+}
+
+@media (max-width: 1080px) {
+  .mj-vqe-composer {
+    grid-template-columns: minmax(160px, 0.5fr) minmax(0, 1.5fr);
+  }
+  .mj-vqe-workflow-tray {
+    grid-column: 1 / -1;
+    position: static;
+    max-height: none;
+  }
+}
+@media (max-width: 720px) {
+  .mj-vqe-methods-heading {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .mj-vqe-composer {
+    grid-template-columns: 1fr;
+  }
+  .mj-vqe-component-types {
+    display: grid;
+    grid-template-columns: 1fr;
+    position: static;
+  }
+  .mj-vqe-component-catalog .mj-repository-controls {
+    grid-template-columns: 1fr;
+  }
+  .mj-vqe-contract-list div {
+    grid-template-columns: 1fr;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   [class*="lq-"],
   [style*="lq-"] { animation: none !important; }

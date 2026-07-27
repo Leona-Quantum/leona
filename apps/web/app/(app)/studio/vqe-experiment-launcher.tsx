@@ -2,6 +2,8 @@
 
 import { useEffect, useState } from "react";
 import type { PublicLocale } from "../../../lib/public-locale";
+import type { VqeFramework } from "../../../lib/vqe-proof";
+import { resolveInitialWorkflowId } from "../../../lib/vqe-workflow-launch";
 
 type Workflow = {
   artifact_version_id: string;
@@ -33,10 +35,14 @@ function parseWorkflows(value: unknown): Workflow[] {
 }
 
 export function VqeExperimentLauncher({
+  initialFramework,
   initialWorkflowId,
+  initialWorkflowKey,
   locale,
 }: {
+  initialFramework: VqeFramework;
   initialWorkflowId?: string;
+  initialWorkflowKey?: string;
   locale: PublicLocale;
 }) {
   const ja = locale === "ja";
@@ -55,14 +61,25 @@ export function VqeExperimentLauncher({
       .then((payload) => {
         const parsed = parseWorkflows(payload);
         setWorkflows(parsed);
-        if (!initialWorkflowId && parsed[0]) setWorkflowId(parsed[0].artifact_version_id);
+        const resolvedId = resolveInitialWorkflowId(parsed, {
+          artifactVersionId: initialWorkflowId,
+          semanticKey: initialWorkflowKey,
+        });
+        setWorkflowId(resolvedId ?? "");
+        if ((initialWorkflowId || initialWorkflowKey) && !resolvedId) {
+          setMessage(
+            ja
+              ? "指定されたWorkflowはRegistryで解決できません。"
+              : "The requested workflow could not be resolved in the Registry.",
+          );
+        }
         setState("ready");
       })
       .catch((cause) => {
         setState("error");
         setMessage(cause instanceof Error ? cause.message : "workflow registry unavailable");
       });
-  }, [initialWorkflowId]);
+  }, [initialWorkflowId, initialWorkflowKey, ja]);
 
   async function createExperiment() {
     if (!workflowId) return;
@@ -84,7 +101,11 @@ export function VqeExperimentLauncher({
           : payload.error ?? JSON.stringify(payload.detail);
         throw new Error(detail || `experiment creation failed (${response.status})`);
       }
-      window.location.assign(`/studio?vqeExperiment=${encodeURIComponent(payload.id)}`);
+      window.location.assign(
+        `/studio?vqeExperiment=${encodeURIComponent(
+          payload.id,
+        )}&vqeFramework=${encodeURIComponent(initialFramework)}`,
+      );
     } catch (cause) {
       setMessage(cause instanceof Error ? cause.message : "experiment creation failed");
       setCreating(false);

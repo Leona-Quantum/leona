@@ -5,12 +5,7 @@
 // axe-core / visual-diff checks when Playwright lands.
 import { EmptyState, RunView, StageRail, VerdictBanner, type RailStage } from "@majorana/ui";
 import { RUN_FIXTURES } from "../../(app)/run/[taskId]/fixtures";
-import {
-  getVqeComparisonListEntries,
-  getVqeComponentListEntries,
-  getVqePaperListEntries,
-  getVqeRepositoryListEntries,
-} from "../../../lib/atlas-vqe/source";
+import { getStandardVqeCatalog } from "../../../lib/atlas-vqe/standard-source";
 import { VqeMethodsBrowser } from "../../repository/vqe/vqe-methods-browser";
 
 const MID_RUN: RailStage[] = [
@@ -121,24 +116,15 @@ export function UiFixtures() {
 
       <section>
         <h2 style={{ fontSize: "var(--fs-16)", fontWeight: 500 }}>
-          Atlas VQE — real corpus data (26 papers / 15 repositories / 3 comparisons)
+          Atlas VQE — canonical components and workflows
         </h2>
-        <VqeMethodsBrowser
-          papers={getVqePaperListEntries()}
-          components={getVqeComponentListEntries()}
-          repositories={getVqeRepositoryListEntries()}
-          comparisons={getVqeComparisonListEntries()}
-          locale="en"
-        />
+        <VqeMethodsBrowser catalog={getStandardVqeCatalog()} locale="en" />
       </section>
 
       <section>
         <h2 style={{ fontSize: "var(--fs-16)", fontWeight: 500 }}>Atlas VQE — empty (all filters excluded)</h2>
         <VqeMethodsBrowser
-          papers={[]}
-          components={[]}
-          repositories={[]}
-          comparisons={[]}
+          catalog={{ ...getStandardVqeCatalog(), components: [] }}
           locale="en"
         />
       </section>

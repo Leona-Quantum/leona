@@ -1,451 +1,553 @@
 "use client";
 
-/**
- * Browse UI for the Atlas VQE corpus (ADR-0027, plan Phase 4 "Browse
- * requirements"/"Compare requirements"). Three sub-views over the same
- * static, machine-validated corpus: Papers, Repositories (with the 4-way
- * relation breakdown the plan's own acceptance criterion requires always
- * showing together, not just an official/author total -- see
- * docs/atlas/PHASE2_PROGRESS.md for why that matters), and the 3 Comparison
- * reports. Every unknown/null field renders as an explicit "unknown" pill,
- * never a blank cell (plan: "unknown/conflictを空欄に変換しない").
- */
 import { useMemo, useState } from "react";
 import type { PublicLocale } from "../../../lib/public-locale";
+import { checkStandardWorkflowSelections } from "../../../lib/atlas-vqe/standard-source";
 import type {
-  VqeComparisonListEntry,
-  VqeComponentListEntry,
-  VqePaperListEntry,
-  VqeRepositoryListEntry,
-  VqeRepositoryRelation,
+  StandardCapabilityStatus,
+  StandardComponentDefinition,
+  StandardComponentGroup,
+  StandardVqeCatalogBundle,
+  StandardWorkflowSelection,
 } from "../../../lib/atlas-vqe/types";
+
+const GROUP_ORDER: StandardComponentGroup[] = [
+  "problems_datasets",
+  "representation",
+  "states_ansatze",
+  "operator_pools",
+  "search_growth",
+  "optimizers",
+  "compression",
+  "measurement",
+  "evaluation_execution",
+];
+
+const ROLE_ORDER = [
+  "problem",
+  "problem_preparation",
+  "representation",
+  "reference_state",
+  "ansatz",
+  "operator_pool",
+  "search_selection",
+  "growth_batching",
+  "parameter_optimizer",
+  "compression",
+  "measurement",
+  "error_mitigation",
+  "evaluation_protocol",
+  "stopping_protocol",
+  "compilation_backend",
+];
 
 const COPY = {
   en: {
-    search: "Search papers, methods, or repositories",
-    placeholder: "Title, author, method family, or venue",
-    tabs: {
-      papers: "Papers",
-      components: "Components",
-      repositories: "Repositories",
-      comparisons: "Comparisons",
-    },
-    methodFamily: "Method family",
-    allFamilies: "All method families",
-    componentType: "Component type",
-    allComponentTypes: "All component types",
-    relation: "Relation",
-    allRelations: "All relations",
-    resultCount: (n: number) => `${n} ${n === 1 ? "record" : "records"}`,
-    emptyTitle: "No records match those filters.",
-    emptyBody: "Try a broader search or clear the filters.",
-    clear: "Clear filters",
-    machineValidated: "machine-validated, ADR-0026",
-    unknown: "unknown",
-    implementationAvailable: "implementation available",
-    view: "View",
-    compare: "Compare",
-    openStudio: "Open executable workflows in Studio",
-    manualGold: "manual gold",
-    machineGenerated: "machine-generated",
-    humanValidated: "human-validated",
-    notHumanValidated: "not human-validated",
-    relationLabels: {
-      official: "Official",
-      author: "Author",
-      general_framework_library: "General framework/library",
-      third_party_reference_implementation: "Third-party reproduction",
-    } as Record<VqeRepositoryRelation, string>,
-    associatedPapers: (n: number) => `${n} associated paper${n === 1 ? "" : "s"}`,
+    title: "VQE Methods",
+    subtitle: "Build a VQE workflow from verified standard components.",
+    search: "Search components",
+    searchPlaceholder: "UCCSD, Jordan–Wigner, optimizer…",
+    provider: "Provider",
+    allProviders: "All providers",
+    status: "Execution status",
+    allStatuses: "All statuses",
+    currentWorkflow: "Current Workflow",
+    template: "Workflow template",
+    compatibility: "Compatibility",
+    compatible: "Compatible",
+    incompatible: "Incompatible",
+    run: "Run in Studio",
+    runBlocked: "Execution is unavailable until every selected component has a qualified binding.",
+    swap: "Swap into current workflow",
+    add: "Add to current workflow",
+    selected: "Selected",
+    implementations: "Implementations",
+    inputs: "Inputs",
+    outputs: "Outputs",
+    sources: "Sources & provenance",
+    noSource: "Atlas-neutral protocol",
+    executable: "Executable",
+    structured: "Structured only",
+    experimental: "Experimental",
+    deferred: "Deferred",
+    resultCount: (count: number) => `${count} components`,
+    noResults: "No canonical components match these filters.",
+    controlled: "Controlled comparison",
+    changed: "Changed component",
+    noChange: "No component has been changed.",
+    uncontrolled: (count: number) => `${count} components changed — not a controlled comparison.`,
+    providerQualified: "runtime-qualified",
+    providerUnavailable: "No qualified implementation for this provider",
   },
   ja: {
-    search: "論文・手法・実装リポジトリを検索",
-    placeholder: "タイトル、著者、手法系統、掲載誌",
-    tabs: {
-      papers: "論文",
-      components: "構成要素",
-      repositories: "実装リポジトリ",
-      comparisons: "比較",
-    },
-    methodFamily: "手法系統",
-    allFamilies: "すべての手法系統",
-    componentType: "構成要素の種類",
-    allComponentTypes: "すべての種類",
-    relation: "関係",
-    allRelations: "すべての関係",
-    resultCount: (n: number) => `${n}件`,
-    emptyTitle: "条件に一致するレコードがありません。",
-    emptyBody: "検索範囲を広げるか、条件をクリアしてください。",
-    clear: "条件をクリア",
-    machineValidated: "機械検証済み（ADR-0026）",
-    unknown: "不明",
-    implementationAvailable: "実装あり",
-    view: "詳細",
-    compare: "比較",
-    openStudio: "実行可能WorkflowをStudioで開く",
-    manualGold: "人手ゴールド",
-    machineGenerated: "機械生成",
-    humanValidated: "人手検証済み",
-    notHumanValidated: "人手未検証",
-    relationLabels: {
-      official: "公式",
-      author: "著者",
-      general_framework_library: "汎用フレームワーク/ライブラリ",
-      third_party_reference_implementation: "第三者による再現実装",
-    } as Record<VqeRepositoryRelation, string>,
-    associatedPapers: (n: number) => `関連論文 ${n}件`,
+    title: "VQE Methods",
+    subtitle: "検証済みの標準部品からVQEワークフローを組み立てます。",
+    search: "部品を検索",
+    searchPlaceholder: "UCCSD、Jordan–Wigner、Optimizer…",
+    provider: "Provider",
+    allProviders: "すべて",
+    status: "実行状態",
+    allStatuses: "すべて",
+    currentWorkflow: "現在のWorkflow",
+    template: "Workflow template",
+    compatibility: "互換性",
+    compatible: "互換",
+    incompatible: "非互換",
+    run: "Studioで実行",
+    runBlocked: "選択した全componentに検証済みbindingが揃うまで実行できません。",
+    swap: "現在のWorkflowへ交換",
+    add: "現在のWorkflowへ追加",
+    selected: "選択済み",
+    implementations: "実装",
+    inputs: "入力契約",
+    outputs: "出力契約",
+    sources: "出典・provenance",
+    noSource: "Atlas中立protocol",
+    executable: "実行可能",
+    structured: "構造化のみ",
+    experimental: "実験的",
+    deferred: "後続",
+    resultCount: (count: number) => `${count}部品`,
+    noResults: "条件に一致するcanonical componentはありません。",
+    controlled: "統制比較",
+    changed: "変更したcomponent",
+    noChange: "componentは変更されていません。",
+    uncontrolled: (count: number) => `${count}部品が変更されています（統制比較ではありません）。`,
+    providerQualified: "runtime検証済み",
+    providerUnavailable: "このProviderに検証済み実装がありません",
   },
 } as const;
 
-const RELATIONS: VqeRepositoryRelation[] = [
-  "official",
-  "author",
-  "general_framework_library",
-  "third_party_reference_implementation",
-];
+const GROUP_LABELS = {
+  en: {
+    problems_datasets: "Problems & Datasets",
+    representation: "Representation",
+    states_ansatze: "States & Ansätze",
+    operator_pools: "Operator Pools",
+    search_growth: "Search & Growth",
+    optimizers: "Optimizers",
+    compression: "Compression",
+    measurement: "Measurement",
+    evaluation_execution: "Evaluation & Execution",
+  },
+  ja: {
+    problems_datasets: "Problems & Datasets",
+    representation: "Representation",
+    states_ansatze: "States & Ansätze",
+    operator_pools: "Operator Pools",
+    search_growth: "Search & Growth",
+    optimizers: "Optimizers",
+    compression: "Compression",
+    measurement: "Measurement",
+    evaluation_execution: "Evaluation & Execution",
+  },
+} satisfies Record<PublicLocale, Record<StandardComponentGroup, string>>;
 
-function Badge({ tone, children }: { tone: "ok" | "warn" | "neutral"; children: React.ReactNode }) {
-  return (
-    <span className="mj-vqe-badge" data-tone={tone}>
-      {children}
-    </span>
+function statusLabel(
+  copy: (typeof COPY)[PublicLocale],
+  status: StandardCapabilityStatus,
+) {
+  return copy[status];
+}
+
+function sortedSelections(selections: StandardWorkflowSelection[]) {
+  return [...selections].sort(
+    (left, right) => ROLE_ORDER.indexOf(left.role) - ROLE_ORDER.indexOf(right.role),
   );
 }
 
 export function VqeMethodsBrowser({
-  papers,
-  components,
-  repositories,
-  comparisons,
+  catalog,
   locale,
 }: {
-  papers: VqePaperListEntry[];
-  components: VqeComponentListEntry[];
-  repositories: VqeRepositoryListEntry[];
-  comparisons: VqeComparisonListEntry[];
+  catalog: StandardVqeCatalogBundle;
   locale: PublicLocale;
 }) {
   const copy = COPY[locale];
-  const [tab, setTab] = useState<
-    "papers" | "components" | "repositories" | "comparisons"
-  >("papers");
+  const labels = GROUP_LABELS[locale];
+  const initialWorkflow =
+    catalog.workflows.find(
+      (workflow) => workflow.workflow_key === "workflow.h2.fixed_excitation.v1",
+    ) ?? catalog.workflows[0];
+  const [group, setGroup] = useState<StandardComponentGroup>("problems_datasets");
   const [query, setQuery] = useState("");
-  const [methodFamily, setMethodFamily] = useState("");
-  const [relation, setRelation] = useState<"" | VqeRepositoryRelation>("");
-  const [componentType, setComponentType] = useState("");
-
-  const methodFamilies = useMemo(
-    () => Array.from(new Set(papers.flatMap((paper) => paper.method_family))).sort(),
-    [papers],
+  const [filterProvider, setFilterProvider] = useState("");
+  const [executionProvider, setExecutionProvider] = useState("qiskit");
+  const [status, setStatus] = useState<"" | StandardCapabilityStatus>("");
+  const [templateKey, setTemplateKey] = useState(initialWorkflow.workflow_key);
+  const [selections, setSelections] = useState<StandardWorkflowSelection[]>(
+    initialWorkflow.selections,
   );
 
-  const filteredPapers = useMemo(() => {
-    const normalized = query.trim().toLowerCase();
-    return papers.filter((paper) => {
-      const matchesQuery =
-        !normalized ||
-        [paper.title, ...paper.authors, paper.venue, ...paper.method_family, paper.problem_summary]
-          .join(" ")
-          .toLowerCase()
-          .includes(normalized);
-      const matchesFamily = !methodFamily || paper.method_family.includes(methodFamily);
-      return matchesQuery && matchesFamily;
-    });
-  }, [papers, query, methodFamily]);
-
-  const filteredRepositories = useMemo(() => {
-    const normalized = query.trim().toLowerCase();
-    return repositories.filter((repo) => {
-      const matchesQuery = !normalized || repo.repository_url.toLowerCase().includes(normalized);
-      const matchesRelation = !relation || repo.relation === relation;
-      return matchesQuery && matchesRelation;
-    });
-  }, [repositories, query, relation]);
-
-  const componentTypes = useMemo(
-    () => Array.from(new Set(components.map((component) => component.component_type))).sort(),
-    [components],
+  const componentByKey = useMemo(
+    () => new Map(catalog.components.map((component) => [component.semantic_key, component])),
+    [catalog.components],
   );
+  const providers = useMemo(
+    () => Array.from(new Set(catalog.implementations.map((item) => item.provider))).sort(),
+    [catalog.implementations],
+  );
+  const bindingsByComponent = useMemo(() => {
+    const result = new Map<string, typeof catalog.implementations>();
+    for (const binding of catalog.implementations) {
+      result.set(binding.component_semantic_key, [
+        ...(result.get(binding.component_semantic_key) ?? []),
+        binding,
+      ]);
+    }
+    return result;
+  }, [catalog.implementations]);
 
   const filteredComponents = useMemo(() => {
     const normalized = query.trim().toLowerCase();
-    return components.filter((component) => {
-      const matchesQuery =
-        !normalized ||
-        [
-          component.component_type,
-          component.family_or_name,
-          component.notes ?? "",
-          component.paper_title,
-        ]
-          .join(" ")
-          .toLowerCase()
-          .includes(normalized);
-      const matchesType = !componentType || component.component_type === componentType;
-      return matchesQuery && matchesType;
+    return catalog.components.filter((component) => {
+      const providerBindings = bindingsByComponent.get(component.semantic_key) ?? [];
+      return (
+        component.group === group &&
+        (!normalized ||
+          [
+            component.display_name,
+            component.semantic_definition,
+            component.component_type,
+          ]
+            .join(" ")
+            .toLowerCase()
+            .includes(normalized)) &&
+        (!status || component.status === status) &&
+        (!filterProvider ||
+          providerBindings.some((binding) => binding.provider === filterProvider))
+      );
     });
-  }, [components, componentType, query]);
+  }, [bindingsByComponent, catalog.components, filterProvider, group, query, status]);
 
-  const relationBreakdown = useMemo(() => {
-    const counts: Record<VqeRepositoryRelation, number> = {
-      official: 0,
-      author: 0,
-      general_framework_library: 0,
-      third_party_reference_implementation: 0,
-    };
-    for (const repo of repositories) counts[repo.relation] += 1;
-    return counts;
-  }, [repositories]);
+  const compatibility = useMemo(
+    () => checkStandardWorkflowSelections(sortedSelections(selections), catalog.components),
+    [catalog.components, selections],
+  );
+  const selectedBindings = useMemo(
+    () =>
+      selections.map((selection) =>
+        catalog.implementations.find(
+          (binding) =>
+            binding.component_semantic_key === selection.component_semantic_key &&
+            binding.provider === executionProvider &&
+            binding.status === "executable",
+        ),
+      ),
+    [catalog.implementations, executionProvider, selections],
+  );
 
-  function clearFilters() {
-    setQuery("");
-    setMethodFamily("");
-    setRelation("");
-    setComponentType("");
+  const baseline =
+    catalog.workflows.find((workflow) => workflow.workflow_key === templateKey) ??
+    initialWorkflow;
+  const baselineByRole = new Map(
+    baseline.selections.map((selection) => [selection.role, selection]),
+  );
+  const currentByRole = new Map(selections.map((selection) => [selection.role, selection]));
+  const changedRoles = Array.from(
+    new Set([...baselineByRole.keys(), ...currentByRole.keys()]),
+  ).filter(
+    (role) =>
+      baselineByRole.get(role)?.component_semantic_key !==
+      currentByRole.get(role)?.component_semantic_key,
+  );
+  const executable =
+    compatibility.compatible &&
+    selectedBindings.every(Boolean) &&
+    changedRoles.length === 0 &&
+    typeof baseline.registry_semantic_key === "string";
+
+  function selectTemplate(nextKey: string) {
+    const next = catalog.workflows.find((workflow) => workflow.workflow_key === nextKey);
+    if (!next) return;
+    setTemplateKey(nextKey);
+    setSelections(next.selections);
   }
 
-  const paperTitleById = useMemo(() => new Map(papers.map((paper) => [paper.paper_id, paper.title])), [papers]);
+  function swapComponent(component: StandardComponentDefinition) {
+    const index = selections.findIndex(
+      (selection) => selection.role === component.component_type,
+    );
+    if (
+      index >= 0 &&
+      selections[index]?.component_semantic_key === component.semantic_key
+    ) {
+      return;
+    }
+    const nextSelection: StandardWorkflowSelection = {
+      role: component.component_type,
+      component_semantic_key: component.semantic_key,
+      configuration: [],
+      bound_contracts: [],
+    };
+    if (index < 0) {
+      setSelections(sortedSelections([...selections, nextSelection]));
+      return;
+    }
+    setSelections(
+      selections.map((selection, selectionIndex) =>
+        selectionIndex === index ? nextSelection : selection,
+      ),
+    );
+  }
 
   return (
-    <div className="mj-repository-browser">
-      <div className="mj-repository-actions">
-        <a className="mj-primary-button" href="/studio?vqe=1">
-          {copy.openStudio}
+    <section className="mj-vqe-methods" aria-labelledby="vqe-methods-heading">
+      <header className="mj-vqe-methods-heading">
+        <div>
+          <p className="mj-eyebrow">Component-first catalog</p>
+          <h2 id="vqe-methods-heading">{copy.title}</h2>
+          <p>{copy.subtitle}</p>
+        </div>
+        <a className="mj-primary-button" href="#current-vqe-workflow">
+          {locale === "ja" ? "VQEワークフローを組み立てる" : "Build a VQE Workflow"}
         </a>
-      </div>
-      <div className="mj-repository-category-nav" aria-label={locale === "ja" ? "表示" : "View"}>
-        {(Object.entries(copy.tabs) as Array<[typeof tab, string]>).map(([value, label]) => (
-          <button
-            key={value}
-            type="button"
-            className={tab === value ? "is-active" : ""}
-            aria-pressed={tab === value}
-            onClick={() => setTab(value)}
-          >
-            {label}
-          </button>
-        ))}
-      </div>
+      </header>
 
-      {tab !== "comparisons" ? (
-        <div className="mj-repository-controls">
-          <label>
-            <span>{copy.search}</span>
-            <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={copy.placeholder} type="search" />
-          </label>
-          {tab === "papers" ? (
+      <div className="mj-vqe-composer">
+        <nav className="mj-vqe-component-types" aria-label="Component types">
+          {GROUP_ORDER.map((value) => (
+            <button
+              type="button"
+              key={value}
+              className={group === value ? "is-active" : ""}
+              aria-pressed={group === value}
+              onClick={() => setGroup(value)}
+            >
+              {labels[value]}
+              <span>
+                {catalog.components.filter((component) => component.group === value).length}
+              </span>
+            </button>
+          ))}
+        </nav>
+
+        <div className="mj-vqe-component-catalog">
+          <div className="mj-repository-controls">
             <label>
-              <span>{copy.methodFamily}</span>
-              <select value={methodFamily} onChange={(event) => setMethodFamily(event.target.value)}>
-                <option value="">{copy.allFamilies}</option>
-                {methodFamilies.map((option) => (
-                  <option key={option} value={option}>{option}</option>
-                ))}
-              </select>
+              <span>{copy.search}</span>
+              <input
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                placeholder={copy.searchPlaceholder}
+                type="search"
+              />
             </label>
-          ) : tab === "components" ? (
             <label>
-              <span>{copy.componentType}</span>
+              <span>{copy.provider}</span>
               <select
-                value={componentType}
-                onChange={(event) => setComponentType(event.target.value)}
+                value={filterProvider}
+                onChange={(event) => setFilterProvider(event.target.value)}
               >
-                <option value="">{copy.allComponentTypes}</option>
-                {componentTypes.map((option) => (
-                  <option key={option} value={option}>
-                    {option}
+                <option value="">{copy.allProviders}</option>
+                {providers.map((item) => (
+                  <option value={item} key={item}>
+                    {item}
                   </option>
                 ))}
               </select>
             </label>
-          ) : (
             <label>
-              <span>{copy.relation}</span>
-              <select value={relation} onChange={(event) => setRelation(event.target.value as "" | VqeRepositoryRelation)}>
-                <option value="">{copy.allRelations}</option>
-                {RELATIONS.map((option) => (
-                  <option key={option} value={option}>{copy.relationLabels[option]}</option>
-                ))}
+              <span>{copy.status}</span>
+              <select
+                value={status}
+                onChange={(event) =>
+                  setStatus(event.target.value as "" | StandardCapabilityStatus)
+                }
+              >
+                <option value="">{copy.allStatuses}</option>
+                {(["executable", "structured", "experimental", "deferred"] as const).map(
+                  (item) => (
+                    <option value={item} key={item}>
+                      {statusLabel(copy, item)}
+                    </option>
+                  ),
+                )}
               </select>
             </label>
-          )}
-        </div>
-      ) : null}
+          </div>
 
-      {tab === "repositories" ? (
-        <div className="mj-vqe-relation-breakdown" aria-label={locale === "ja" ? "関係の内訳" : "Relation breakdown"}>
-          {RELATIONS.map((r) => (
-            <span key={r}>
-              {copy.relationLabels[r]}: <strong>{relationBreakdown[r]}</strong>
-            </span>
-          ))}
-        </div>
-      ) : null}
-
-      {tab === "components" ? (
-        <>
           <p className="mj-repository-result-count" aria-live="polite">
             {copy.resultCount(filteredComponents.length)}
           </p>
+          <div className="mj-vqe-component-list">
+            {filteredComponents.map((component) => {
+              const bindings = bindingsByComponent.get(component.semantic_key) ?? [];
+              const hasRole = selections.some(
+                (selection) => selection.role === component.component_type,
+              );
+              const isSelected = selections.some(
+                (selection) =>
+                  selection.role === component.component_type &&
+                  selection.component_semantic_key === component.semantic_key,
+              );
+              return (
+                <article className="mj-vqe-component-card" key={component.semantic_key}>
+                  <div className="mj-repo-card-top">
+                    <span className="mj-vqe-badge" data-tone={component.status === "executable" ? "ok" : "neutral"}>
+                      {statusLabel(copy, component.status)}
+                    </span>
+                    <span>{component.component_type}</span>
+                    <span>Definition {component.definition_version}</span>
+                  </div>
+                  <h3>{component.display_name}</h3>
+                  <p>{component.semantic_definition}</p>
+                  <dl className="mj-vqe-contract-list">
+                    <div>
+                      <dt>{copy.inputs}</dt>
+                      <dd>{component.requires.join(", ") || "—"}</dd>
+                    </div>
+                    <div>
+                      <dt>{copy.outputs}</dt>
+                      <dd>{component.provides.join(", ") || "—"}</dd>
+                    </div>
+                    <div>
+                      <dt>{copy.implementations}</dt>
+                      <dd>
+                        {bindings.length
+                          ? bindings.map((binding) => (
+                              <span className="mj-vqe-binding" key={binding.binding_key}>
+                                {binding.provider} {binding.package_version} · {copy.providerQualified}
+                              </span>
+                            ))
+                          : copy.providerUnavailable}
+                      </dd>
+                    </div>
+                  </dl>
+                  <details>
+                    <summary>{copy.sources}</summary>
+                    {component.source_locators.length ? (
+                      <ul>
+                        {component.source_locators.map((source) => (
+                          <li key={source}>
+                            <a href={source} target="_blank" rel="noreferrer">
+                              {source}
+                            </a>
+                          </li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <p>{copy.noSource}</p>
+                    )}
+                  </details>
+                  <button
+                    className="mj-secondary-button"
+                    type="button"
+                    disabled={isSelected}
+                    onClick={() => swapComponent(component)}
+                  >
+                    {isSelected ? copy.selected : hasRole ? copy.swap : copy.add}
+                  </button>
+                </article>
+              );
+            })}
+          </div>
           {!filteredComponents.length ? (
             <div className="mj-repository-empty">
-              <h3>{copy.emptyTitle}</h3>
-              <p>{copy.emptyBody}</p>
-              <button type="button" onClick={clearFilters}>
-                {copy.clear}
+              <p>{copy.noResults}</p>
+            </div>
+          ) : null}
+        </div>
+
+        <aside className="mj-vqe-workflow-tray" id="current-vqe-workflow">
+          <h3>{copy.currentWorkflow}</h3>
+          <label>
+            <span>{copy.template}</span>
+            <select value={templateKey} onChange={(event) => selectTemplate(event.target.value)}>
+              {catalog.workflows.map((workflow) => (
+                <option key={workflow.workflow_key} value={workflow.workflow_key}>
+                  {workflow.display_name} · {statusLabel(copy, workflow.status)}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            <span>{copy.provider}</span>
+            <select
+              value={executionProvider}
+              onChange={(event) => setExecutionProvider(event.target.value)}
+            >
+              {providers.map((item) => (
+                <option value={item} key={item}>
+                  {item}
+                </option>
+              ))}
+            </select>
+          </label>
+          <ol className="mj-vqe-workflow-components">
+            {sortedSelections(selections).map((selection) => (
+              <li key={selection.role}>
+                <span>{selection.role}</span>
+                <strong>
+                  {componentByKey.get(selection.component_semantic_key)?.display_name ??
+                    selection.component_semantic_key}
+                </strong>
+                {!catalog.implementations.some(
+                  (binding) =>
+                    binding.component_semantic_key === selection.component_semantic_key &&
+                    binding.provider === executionProvider &&
+                    binding.status === "executable",
+                ) ? (
+                  <small>{copy.providerUnavailable}</small>
+                ) : null}
+              </li>
+            ))}
+          </ol>
+
+          <div
+            className="mj-vqe-compatibility"
+            data-compatible={compatibility.compatible}
+            aria-live="polite"
+          >
+            <strong>
+              {copy.compatibility}:{" "}
+              {compatibility.compatible ? copy.compatible : copy.incompatible}
+            </strong>
+            {!compatibility.compatible ? (
+              <ul>
+                {compatibility.issues.map((issue, index) => (
+                  <li key={`${issue.component_semantic_key}:${issue.code}:${index}`}>
+                    {issue.component_semantic_key}: {issue.code}
+                    {issue.missing_contract ? ` (${issue.missing_contract})` : ""}
+                  </li>
+                ))}
+              </ul>
+            ) : null}
+          </div>
+
+          <div className="mj-vqe-comparison-state">
+            <strong>{copy.controlled}</strong>
+            {changedRoles.length === 0 ? <p>{copy.noChange}</p> : null}
+            {changedRoles.length === 1 ? (
+              <p>
+                {copy.changed}: {changedRoles[0]}
+                <br />
+                {baselineByRole.get(changedRoles[0])?.component_semantic_key} →{" "}
+                {currentByRole.get(changedRoles[0])?.component_semantic_key}
+              </p>
+            ) : null}
+            {changedRoles.length > 1 ? <p>{copy.uncontrolled(changedRoles.length)}</p> : null}
+          </div>
+
+          {executable ? (
+            <a
+              className="mj-primary-button"
+              href={`/studio?vqe=1&vqeWorkflowKey=${encodeURIComponent(
+                baseline.registry_semantic_key ?? "",
+              )}&vqeProvider=${encodeURIComponent(executionProvider)}`}
+            >
+              {copy.run}
+            </a>
+          ) : (
+            <>
+              <button className="mj-primary-button" type="button" disabled>
+                {copy.run}
               </button>
-            </div>
-          ) : (
-            <div className="mj-repo-list">
-              {filteredComponents.map((component) => (
-                <article className="mj-repo-card" key={component.observation_key}>
-                  <div className="mj-repo-card-top">
-                    <Badge tone="neutral">{component.component_type}</Badge>
-                    <span>
-                      {locale === "ja" ? "論文注釈" : "paper annotation"}
-                    </span>
-                  </div>
-                  <h3>{component.family_or_name}</h3>
-                  <p>{component.notes ?? copy.unknown}</p>
-                  <div className="mj-repo-card-foot">
-                    <a
-                      className="mj-text-link"
-                      href={`/repository/vqe/${component.paper_id}`}
-                    >
-                      {component.paper_title} ↗
-                    </a>
-                  </div>
-                </article>
-              ))}
-            </div>
+              <p className="mj-vqe-run-note">{copy.runBlocked}</p>
+            </>
           )}
-        </>
-      ) : null}
-
-      {tab === "papers" ? (
-        <>
-          <p className="mj-repository-result-count" aria-live="polite">{copy.resultCount(filteredPapers.length)}</p>
-          {!filteredPapers.length ? (
-            <div className="mj-repository-empty">
-              <h3>{copy.emptyTitle}</h3>
-              <p>{copy.emptyBody}</p>
-              <button type="button" onClick={clearFilters}>{copy.clear}</button>
-            </div>
-          ) : (
-            <div className="mj-repo-list">
-              {filteredPapers.map((paper) => (
-                <article className="mj-repo-card" key={paper.paper_id}>
-                  <div className="mj-repo-card-top">
-                    <Badge tone={paper.validation_state.state === "machine_validated" ? "ok" : "warn"}>
-                      {paper.validation_state.state === "machine_validated" ? copy.machineValidated : paper.validation_state.state}
-                    </Badge>
-                    <span>{paper.venue} {paper.year}</span>
-                    {paper.implementation_ref ? <Badge tone="ok">{copy.implementationAvailable}</Badge> : null}
-                  </div>
-                  <h3><a href={`/repository/vqe/${paper.paper_id}`}>{paper.title}</a></h3>
-                  <p>{paper.problem_summary}</p>
-                  <div className="mj-repo-card-foot">
-                    <div className="mj-repository-tags">
-                      {paper.method_family.map((f) => <span key={f}>{f}</span>)}
-                    </div>
-                    <a className="mj-text-link" href={`/repository/vqe/${paper.paper_id}`}>{copy.view} ↗</a>
-                  </div>
-                </article>
-              ))}
-            </div>
-          )}
-        </>
-      ) : null}
-
-      {tab === "repositories" ? (
-        <>
-          <p className="mj-repository-result-count" aria-live="polite">{copy.resultCount(filteredRepositories.length)}</p>
-          {!filteredRepositories.length ? (
-            <div className="mj-repository-empty">
-              <h3>{copy.emptyTitle}</h3>
-              <p>{copy.emptyBody}</p>
-              <button type="button" onClick={clearFilters}>{copy.clear}</button>
-            </div>
-          ) : (
-            <div className="mj-repo-list">
-              {filteredRepositories.map((repo) => (
-                <article className="mj-repo-card" key={repo.repo_id}>
-                  <div className="mj-repo-card-top">
-                    <Badge tone={repo.relation === "official" || repo.relation === "author" ? "ok" : "neutral"}>
-                      {copy.relationLabels[repo.relation]}
-                    </Badge>
-                    <span>{copy.associatedPapers(repo.associated_paper_ids.length)}</span>
-                  </div>
-                  <h3>
-                    <a href={repo.repository_url} target="_blank" rel="noreferrer">{repo.repo_id}</a>
-                  </h3>
-                  <p>
-                    {locale === "ja" ? "ライセンス" : "License"}: {repo.license_state === "unknown" ? copy.unknown : repo.license_state}
-                    {" · "}
-                    {locale === "ja" ? "環境の完全性" : "Environment completeness"}:{" "}
-                    {repo.environment_completeness === "unknown" ? copy.unknown : repo.environment_completeness}
-                  </p>
-                  <div className="mj-repo-card-foot">
-                    <div className="mj-repository-tags">
-                      {repo.associated_paper_ids.slice(0, 3).map((paperId) => (
-                        <a key={paperId} href={`/repository/vqe/${paperId}`}>
-                          {paperTitleById.get(paperId) ?? paperId}
-                        </a>
-                      ))}
-                    </div>
-                  </div>
-                </article>
-              ))}
-            </div>
-          )}
-        </>
-      ) : null}
-
-      {tab === "comparisons" ? (
-        <>
-          <p className="mj-repository-result-count" aria-live="polite">{copy.resultCount(comparisons.length)}</p>
-          {!comparisons.length ? (
-            <div className="mj-repository-empty">
-              <h3>{copy.emptyTitle}</h3>
-              <p>{copy.emptyBody}</p>
-            </div>
-          ) : (
-            <div className="mj-repo-list">
-              {comparisons.map((comparison) => (
-                <article className="mj-repo-card" key={comparison.comparison_id}>
-                  <div className="mj-repo-card-top">
-                    <Badge
-                      tone={
-                        comparison.classification === "strict"
-                          ? "ok"
-                          : comparison.classification === "invalid"
-                            ? "warn"
-                            : "neutral"
-                      }
-                    >
-                      {comparison.classification}
-                    </Badge>
-                    <Badge tone="neutral">{comparison.is_manual_gold ? copy.manualGold : copy.machineGenerated}</Badge>
-                    <Badge tone={comparison.human_validated ? "ok" : "neutral"}>
-                      {comparison.human_validated ? copy.humanValidated : copy.notHumanValidated}
-                    </Badge>
-                  </div>
-                  <h3>
-                    <a href={`/repository/vqe/compare/${comparison.comparison_id}`}>
-                      {comparison.source_record_ids.map((id) => paperTitleById.get(id) ?? id).join(" vs. ")}
-                    </a>
-                  </h3>
-                  <div className="mj-repo-card-foot">
-                    <a className="mj-text-link" href={`/repository/vqe/compare/${comparison.comparison_id}`}>
-                      {copy.compare} ↗
-                    </a>
-                  </div>
-                </article>
-              ))}
-            </div>
-          )}
-        </>
-      ) : null}
-    </div>
+        </aside>
+      </div>
+    </section>
   );
 }

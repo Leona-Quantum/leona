@@ -3,21 +3,16 @@
 /**
  * The single content-type switch that keeps the VQE Registry/Compare data
  * under the existing /repository page instead of a separate top-level
- * section (ADR-0027). Circuits is the existing 283-record browser,
- * untouched; VQE Methods is the new literature/method corpus (26 papers,
- * 15 repositories, 3 comparison reports).
+ * section. Circuits remains the existing browser; VQE Methods is the
+ * component-first standard catalog fixed by ADR-0033. Literature and
+ * repository records remain provenance-only and are not primary tabs.
  */
 import { useState, type ReactNode } from "react";
 import type { PublicLocale } from "../../lib/public-locale";
 import type { PublicRepositoryListEntry } from "../../lib/public-repository";
 import { RepositoryBrowser } from "./repository-browser";
 import { VqeMethodsBrowser } from "./vqe/vqe-methods-browser";
-import type {
-  VqeComparisonListEntry,
-  VqeComponentListEntry,
-  VqePaperListEntry,
-  VqeRepositoryListEntry,
-} from "../../lib/atlas-vqe/types";
+import type { StandardVqeCatalogBundle } from "../../lib/atlas-vqe/types";
 
 const COPY = {
   en: { circuits: "Circuits", vqeMethods: "VQE Methods" },
@@ -26,20 +21,14 @@ const COPY = {
 
 export function AtlasContentSwitch({
   entries,
-  papers,
-  components,
-  repositories,
-  comparisons,
+  vqeCatalog,
   locale,
   isSignedIn,
   signInHref,
   legend,
 }: {
   entries: PublicRepositoryListEntry[];
-  papers: VqePaperListEntry[];
-  components: VqeComponentListEntry[];
-  repositories: VqeRepositoryListEntry[];
-  comparisons: VqeComparisonListEntry[];
+  vqeCatalog: StandardVqeCatalogBundle;
   locale: PublicLocale;
   isSignedIn: boolean;
   signInHref: string | null;
@@ -72,13 +61,7 @@ export function AtlasContentSwitch({
       {contentType === "circuits" ? (
         <RepositoryBrowser entries={entries} locale={locale} isSignedIn={isSignedIn} signInHref={signInHref} legend={legend} />
       ) : (
-        <VqeMethodsBrowser
-          papers={papers}
-          components={components}
-          repositories={repositories}
-          comparisons={comparisons}
-          locale={locale}
-        />
+        <VqeMethodsBrowser catalog={vqeCatalog} locale={locale} />
       )}
     </div>
   );

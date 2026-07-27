@@ -14,13 +14,15 @@ const ACTIVE = new Set(["planned", "queued", "running"]);
 
 export function VqeProofPanel({
   experimentId,
+  initialFramework,
   locale,
 }: {
   experimentId: string;
+  initialFramework: VqeFramework;
   locale: PublicLocale;
 }) {
   const ja = locale === "ja";
-  const [framework, setFramework] = useState<VqeFramework>("qiskit");
+  const [framework, setFramework] = useState<VqeFramework>(initialFramework);
   const [executions, setExecutions] = useState<VqeExecution[]>([]);
   const [state, setState] = useState<"loading" | "ready" | "error">("loading");
   const [message, setMessage] = useState<string | null>(null);
