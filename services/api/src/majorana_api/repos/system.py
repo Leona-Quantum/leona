@@ -1,12 +1,25 @@
 """System repository — the ONLY unscoped surface, by design.
 
-Two callers, both pre-/extra-tenant:
+Three callers, all of them questions a Scope cannot answer:
+
 1. Identity bootstrap: WorkOS first-login provisioning runs before any Scope
    exists (it *creates* the personal workspace a Scope would point at).
 2. Worker job loop: jobs are control-plane internal rows with no workspace_id.
+3. Questions a user asks ABOUT their tenants rather than inside one (0037/0038):
+   which workspaces am I in, which one am I acting in, which was I added to and
+   not told about, let me out of this one. A Scope names a single tenant and is
+   derived from the pointer these functions read and write, so none of them can
+   be expressed in terms of one — the switcher's whole job is to name a
+   workspace the caller is not currently scoped into.
 
-Nothing else may import this module from request-handling code. Tenant data
-stays behind the scoped repositories.
+Category 3 is bounded by the predicate, not by convention: every query in it is
+keyed on `Membership.user_id == <the caller>`, so it can only ever return
+workspaces the caller holds a membership in. That is what keeps "may never
+expose tenant data to request handlers" true — the rows these return are the
+caller's own memberships, and their *contents* (runs, artifacts, versions) stay
+behind the scoped repositories where a Scope gates every read.
+
+Nothing else may import this module from request-handling code.
 """
 
 import datetime as dt
