@@ -28,9 +28,40 @@ test("browser layer recomputes executable workflow compatibility", () => {
   assert.ok(workflow);
   assert.equal(checkStandardWorkflowSelections(workflow.selections).compatible, true);
   assert.equal(
+    checkStandardWorkflowSelections(workflow.selections).contract_version,
+    workflow.compatibility.contract_version,
+  );
+  assert.equal(
     workflow.registry_semantic_key,
     "h2.sto3g.actual_vqe.workflow.v0_2",
   );
+});
+
+test("fixed-ansatz workflows mark adaptive-only roles as not applicable", () => {
+  const bundle = getStandardVqeCatalog();
+  const workflow = bundle.workflows.find(
+    (item) => item.workflow_key === "workflow.h2.uccsd.v1",
+  );
+  assert.ok(workflow);
+  const adaptiveRoles = new Set([
+    "operator_pool",
+    "search_selection",
+    "growth_batching",
+  ]);
+  const selections = workflow.selections.filter((selection) =>
+    adaptiveRoles.has(selection.role),
+  );
+  assert.equal(selections.length, 3);
+  assert.ok(
+    selections.every(
+      (selection) =>
+        selection.applicability === "not_applicable" &&
+        selection.component_semantic_key === null,
+    ),
+  );
+  const clientResult = checkStandardWorkflowSelections(workflow.selections);
+  assert.equal(clientResult.compatible, workflow.compatibility.compatible);
+  assert.deepEqual(clientResult.issues, workflow.compatibility.issues);
 });
 
 test("component swap fails when a required contract is absent", () => {

@@ -1,14 +1,6 @@
 {
   "comparison_specs": [
     {
-      "baseline_component_key": "ansatz.h2.fixed_excitation.v1",
-      "baseline_workflow_key": "workflow.h2.fixed_excitation.v1",
-      "candidate_component_key": "ansatz.uccsd.v1",
-      "candidate_workflow_key": "workflow.h2.uccsd.v1",
-      "changed_role": "ansatz",
-      "comparison_key": "comparison.h2.ansatz.uccsd_vs_fixed.v1"
-    },
-    {
       "baseline_component_key": "optimizer.slsqp.v1",
       "baseline_workflow_key": "workflow.h2.fixed_excitation.slsqp.v1",
       "candidate_component_key": "optimizer.cobyla.v1",
@@ -34,10 +26,22 @@
       "group": "problems_datasets",
       "maturity": "structured",
       "provides": [
-        "problem:electronic_structure",
-        "molecule:h2",
-        "electrons:2",
-        "spin_orbitals:4"
+        {
+          "name": "problem",
+          "value": "electronic_structure"
+        },
+        {
+          "name": "molecule",
+          "value": "h2"
+        },
+        {
+          "name": "electrons",
+          "value": "2"
+        },
+        {
+          "name": "spin_orbitals",
+          "value": "4"
+        }
       ],
       "requires": [],
       "semantic_definition": "Neutral H₂ electronic-structure problem in the STO-3G basis.",
@@ -52,8 +56,14 @@
       "group": "problems_datasets",
       "maturity": "structured",
       "provides": [
-        "problem:electronic_structure",
-        "molecule:lih"
+        {
+          "name": "problem",
+          "value": "electronic_structure"
+        },
+        {
+          "name": "molecule",
+          "value": "lih"
+        }
       ],
       "requires": [],
       "semantic_definition": "Neutral LiH electronic-structure problem in the STO-3G basis.",
@@ -68,8 +78,14 @@
       "group": "problems_datasets",
       "maturity": "structured",
       "provides": [
-        "problem:qubit_hamiltonian",
-        "dataset:hamlib"
+        {
+          "name": "problem",
+          "value": "qubit_hamiltonian"
+        },
+        {
+          "name": "dataset",
+          "value": "hamlib"
+        }
       ],
       "requires": [],
       "semantic_definition": "A bounded selection of Hamiltonian instances from HamLib.",
@@ -86,10 +102,16 @@
       "group": "problems_datasets",
       "maturity": "structured",
       "provides": [
-        "prepared:electronic_structure"
+        {
+          "name": "prepared",
+          "value": "electronic_structure"
+        }
       ],
       "requires": [
-        "problem:electronic_structure"
+        {
+          "name": "problem",
+          "value": "electronic_structure"
+        }
       ],
       "semantic_definition": "Restricted Hartree–Fock integral and orbital preparation with pinned conventions.",
       "semantic_key": "preparation.pyscf.rhf.v1",
@@ -103,11 +125,20 @@
       "group": "representation",
       "maturity": "structured",
       "provides": [
-        "operator:qubit",
-        "mapping:jordan_wigner"
+        {
+          "name": "operator",
+          "value": "qubit"
+        },
+        {
+          "name": "mapping",
+          "value": "jordan_wigner"
+        }
       ],
       "requires": [
-        "prepared:electronic_structure"
+        {
+          "name": "prepared",
+          "value": "electronic_structure"
+        }
       ],
       "semantic_definition": "Jordan–Wigner fermion-to-qubit mapping.",
       "semantic_key": "mapping.jordan_wigner.v1",
@@ -125,11 +156,20 @@
       "group": "representation",
       "maturity": "structured",
       "provides": [
-        "operator:qubit",
-        "mapping:parity"
+        {
+          "name": "operator",
+          "value": "qubit"
+        },
+        {
+          "name": "mapping",
+          "value": "parity"
+        }
       ],
       "requires": [
-        "prepared:electronic_structure"
+        {
+          "name": "prepared",
+          "value": "electronic_structure"
+        }
       ],
       "semantic_definition": "Parity fermion-to-qubit mapping without implicit tapering.",
       "semantic_key": "mapping.parity.v1",
@@ -145,11 +185,20 @@
       "group": "representation",
       "maturity": "structured",
       "provides": [
-        "operator:qubit",
-        "mapping:bravyi_kitaev"
+        {
+          "name": "operator",
+          "value": "qubit"
+        },
+        {
+          "name": "mapping",
+          "value": "bravyi_kitaev"
+        }
       ],
       "requires": [
-        "prepared:electronic_structure"
+        {
+          "name": "prepared",
+          "value": "electronic_structure"
+        }
       ],
       "semantic_definition": "Bravyi–Kitaev fermion-to-qubit mapping.",
       "semantic_key": "mapping.bravyi_kitaev.v1",
@@ -166,11 +215,20 @@
       "group": "states_ansatze",
       "maturity": "structured",
       "provides": [
-        "state:reference"
+        {
+          "name": "state",
+          "value": "reference"
+        }
       ],
       "requires": [
-        "qubits:4",
-        "electrons:2"
+        {
+          "name": "qubits",
+          "value": "4"
+        },
+        {
+          "name": "electrons",
+          "value": "2"
+        }
       ],
       "semantic_definition": "Computational-basis Hartree–Fock occupation state.",
       "semantic_key": "reference.hartree_fock.v1",
@@ -187,13 +245,28 @@
       "group": "states_ansatze",
       "maturity": "structured",
       "provides": [
-        "state:parametric",
-        "parameters:1"
+        {
+          "name": "state",
+          "value": "parametric"
+        },
+        {
+          "name": "parameters",
+          "value": "1"
+        }
       ],
       "requires": [
-        "state:reference",
-        "mapping:jordan_wigner",
-        "qubits:4"
+        {
+          "name": "state",
+          "value": "reference"
+        },
+        {
+          "name": "mapping",
+          "value": "jordan_wigner"
+        },
+        {
+          "name": "qubits",
+          "value": "4"
+        }
       ],
       "semantic_definition": "One canonical anti-Hermitian double-excitation block for four-qubit H₂.",
       "semantic_key": "ansatz.h2.fixed_excitation.v1",
@@ -207,12 +280,24 @@
       "group": "states_ansatze",
       "maturity": "structured",
       "provides": [
-        "state:parametric",
-        "ansatz:uccsd"
+        {
+          "name": "state",
+          "value": "parametric"
+        },
+        {
+          "name": "ansatz",
+          "value": "uccsd"
+        }
       ],
       "requires": [
-        "state:reference",
-        "operator:qubit"
+        {
+          "name": "state",
+          "value": "reference"
+        },
+        {
+          "name": "operator",
+          "value": "qubit"
+        }
       ],
       "semantic_definition": "Unitary coupled-cluster ansatz with single and double excitations.",
       "semantic_key": "ansatz.uccsd.v1",
@@ -229,12 +314,24 @@
       "group": "states_ansatze",
       "maturity": "structured",
       "provides": [
-        "state:parametric",
-        "ansatz:hardware_efficient"
+        {
+          "name": "state",
+          "value": "parametric"
+        },
+        {
+          "name": "ansatz",
+          "value": "hardware_efficient"
+        }
       ],
       "requires": [
-        "state:reference",
-        "operator:qubit"
+        {
+          "name": "state",
+          "value": "reference"
+        },
+        {
+          "name": "operator",
+          "value": "qubit"
+        }
       ],
       "semantic_definition": "Layered RY rotations and CX entanglers with explicit topology and depth.",
       "semantic_key": "ansatz.hardware_efficient_ry_cx.v1",
@@ -248,12 +345,24 @@
       "group": "operator_pools",
       "maturity": "structured",
       "provides": [
-        "pool:operators",
-        "pool:singleton"
+        {
+          "name": "pool",
+          "value": "operators"
+        },
+        {
+          "name": "pool",
+          "value": "singleton"
+        }
       ],
       "requires": [
-        "mapping:jordan_wigner",
-        "qubits:4"
+        {
+          "name": "mapping",
+          "value": "jordan_wigner"
+        },
+        {
+          "name": "qubits",
+          "value": "4"
+        }
       ],
       "semantic_definition": "The single canonical H₂ double-excitation generator.",
       "semantic_key": "pool.h2.singleton_double.v1",
@@ -267,11 +376,20 @@
       "group": "operator_pools",
       "maturity": "structured",
       "provides": [
-        "pool:operators",
-        "pool:uccsd"
+        {
+          "name": "pool",
+          "value": "operators"
+        },
+        {
+          "name": "pool",
+          "value": "uccsd"
+        }
       ],
       "requires": [
-        "prepared:electronic_structure"
+        {
+          "name": "prepared",
+          "value": "electronic_structure"
+        }
       ],
       "semantic_definition": "Occupied-to-virtual single and double excitation generators.",
       "semantic_key": "pool.uccsd.singles_doubles.v1",
@@ -285,11 +403,20 @@
       "group": "operator_pools",
       "maturity": "structured",
       "provides": [
-        "pool:operators",
-        "pool:fermionic_sd"
+        {
+          "name": "pool",
+          "value": "operators"
+        },
+        {
+          "name": "pool",
+          "value": "fermionic_sd"
+        }
       ],
       "requires": [
-        "prepared:electronic_structure"
+        {
+          "name": "prepared",
+          "value": "electronic_structure"
+        }
       ],
       "semantic_definition": "Spin-orbital fermionic single and double excitation generators.",
       "semantic_key": "pool.fermionic.singles_doubles.v1",
@@ -303,11 +430,20 @@
       "group": "operator_pools",
       "maturity": "structured",
       "provides": [
-        "pool:operators",
-        "pool:generalized_sd"
+        {
+          "name": "pool",
+          "value": "operators"
+        },
+        {
+          "name": "pool",
+          "value": "generalized_sd"
+        }
       ],
       "requires": [
-        "prepared:electronic_structure"
+        {
+          "name": "prepared",
+          "value": "electronic_structure"
+        }
       ],
       "semantic_definition": "Generalized single and double excitations over the active spin orbitals.",
       "semantic_key": "pool.generalized.singles_doubles.v1",
@@ -321,10 +457,16 @@
       "group": "search_growth",
       "maturity": "structured",
       "provides": [
-        "selection:fixed"
+        {
+          "name": "selection",
+          "value": "fixed"
+        }
       ],
       "requires": [
-        "pool:operators"
+        {
+          "name": "pool",
+          "value": "operators"
+        }
       ],
       "semantic_definition": "No adaptive ranking; use the fixed operator sequence.",
       "semantic_key": "search.fixed.none.v1",
@@ -338,12 +480,24 @@
       "group": "search_growth",
       "maturity": "structured",
       "provides": [
-        "selection:gradient_top1"
+        {
+          "name": "selection",
+          "value": "gradient_top1"
+        }
       ],
       "requires": [
-        "pool:operators",
-        "operator:qubit",
-        "state:parametric"
+        {
+          "name": "pool",
+          "value": "operators"
+        },
+        {
+          "name": "operator",
+          "value": "qubit"
+        },
+        {
+          "name": "state",
+          "value": "parametric"
+        }
       ],
       "semantic_definition": "Select one pool member with the largest absolute energy gradient.",
       "semantic_key": "search.gradient_top1.v1",
@@ -359,10 +513,16 @@
       "group": "search_growth",
       "maturity": "structured",
       "provides": [
-        "growth:single"
+        {
+          "name": "growth",
+          "value": "single"
+        }
       ],
       "requires": [
-        "selection:gradient_top1"
+        {
+          "name": "selection",
+          "value": "gradient_top1"
+        }
       ],
       "semantic_definition": "Append exactly one selected operator per adaptive iteration.",
       "semantic_key": "growth.single_operator.v1",
@@ -378,12 +538,24 @@
       "group": "search_growth",
       "maturity": "structured",
       "provides": [
-        "state:parametric",
-        "growth:fixed"
+        {
+          "name": "state",
+          "value": "parametric"
+        },
+        {
+          "name": "growth",
+          "value": "fixed"
+        }
       ],
       "requires": [
-        "selection:fixed",
-        "pool:singleton"
+        {
+          "name": "selection",
+          "value": "fixed"
+        },
+        {
+          "name": "pool",
+          "value": "singleton"
+        }
       ],
       "semantic_definition": "Materialize the one fixed H₂ pool member once.",
       "semantic_key": "growth.fixed_singleton.v1",
@@ -397,11 +569,20 @@
       "group": "optimizers",
       "maturity": "structured",
       "provides": [
-        "parameters:optimized"
+        {
+          "name": "parameters",
+          "value": "optimized"
+        }
       ],
       "requires": [
-        "state:parametric",
-        "parameters:1"
+        {
+          "name": "state",
+          "value": "parametric"
+        },
+        {
+          "name": "parameters",
+          "value": "1"
+        }
       ],
       "semantic_definition": "Deterministic bounded scalar minimization for the one-parameter H₂ workflow.",
       "semantic_key": "optimizer.scipy_bounded_scalar.v1",
@@ -415,11 +596,20 @@
       "group": "optimizers",
       "maturity": "structured",
       "provides": [
-        "parameters:optimized",
-        "optimizer:slsqp"
+        {
+          "name": "parameters",
+          "value": "optimized"
+        },
+        {
+          "name": "optimizer",
+          "value": "slsqp"
+        }
       ],
       "requires": [
-        "state:parametric"
+        {
+          "name": "state",
+          "value": "parametric"
+        }
       ],
       "semantic_definition": "Sequential least-squares programming with explicit tolerances and bounds.",
       "semantic_key": "optimizer.slsqp.v1",
@@ -433,11 +623,20 @@
       "group": "optimizers",
       "maturity": "structured",
       "provides": [
-        "parameters:optimized",
-        "optimizer:cobyla"
+        {
+          "name": "parameters",
+          "value": "optimized"
+        },
+        {
+          "name": "optimizer",
+          "value": "cobyla"
+        }
       ],
       "requires": [
-        "state:parametric"
+        {
+          "name": "state",
+          "value": "parametric"
+        }
       ],
       "semantic_definition": "Derivative-free constrained optimization with explicit stopping settings.",
       "semantic_key": "optimizer.cobyla.v1",
@@ -451,10 +650,16 @@
       "group": "compression",
       "maturity": "structured",
       "provides": [
-        "compression:none"
+        {
+          "name": "compression",
+          "value": "none"
+        }
       ],
       "requires": [
-        "state:parametric"
+        {
+          "name": "state",
+          "value": "parametric"
+        }
       ],
       "semantic_definition": "Identity compression policy that preserves the complete ansatz.",
       "semantic_key": "compression.none.v1",
@@ -468,11 +673,20 @@
       "group": "measurement",
       "maturity": "structured",
       "provides": [
-        "observation:energy_exact"
+        {
+          "name": "observation",
+          "value": "energy_exact"
+        }
       ],
       "requires": [
-        "operator:qubit",
-        "state:parametric"
+        {
+          "name": "operator",
+          "value": "qubit"
+        },
+        {
+          "name": "state",
+          "value": "parametric"
+        }
       ],
       "semantic_definition": "Deterministic exact expectation of the qubit Hamiltonian; shots are absent.",
       "semantic_key": "measurement.exact_statevector.v1",
@@ -486,11 +700,20 @@
       "group": "measurement",
       "maturity": "draft",
       "provides": [
-        "observation:energy_sampled"
+        {
+          "name": "observation",
+          "value": "energy_sampled"
+        }
       ],
       "requires": [
-        "operator:qubit",
-        "state:parametric"
+        {
+          "name": "operator",
+          "value": "qubit"
+        },
+        {
+          "name": "state",
+          "value": "parametric"
+        }
       ],
       "semantic_definition": "Shot-based energy estimation with explicit shot count and random seed.",
       "semantic_key": "measurement.finite_shot.v1",
@@ -504,7 +727,10 @@
       "group": "measurement",
       "maturity": "structured",
       "provides": [
-        "mitigation:none"
+        {
+          "name": "mitigation",
+          "value": "none"
+        }
       ],
       "requires": [],
       "semantic_definition": "Identity mitigation policy.",
@@ -519,10 +745,16 @@
       "group": "evaluation_execution",
       "maturity": "structured",
       "provides": [
-        "evaluation:absolute_error"
+        {
+          "name": "evaluation",
+          "value": "absolute_error"
+        }
       ],
       "requires": [
-        "observation:energy_exact"
+        {
+          "name": "observation",
+          "value": "energy_exact"
+        }
       ],
       "semantic_definition": "Absolute total-energy error against a fixed offline exact reference.",
       "semantic_key": "evaluation.exact_reference.v1",
@@ -536,10 +768,16 @@
       "group": "evaluation_execution",
       "maturity": "structured",
       "provides": [
-        "stopping:optimizer_convergence"
+        {
+          "name": "stopping",
+          "value": "optimizer_convergence"
+        }
       ],
       "requires": [
-        "parameters:optimized"
+        {
+          "name": "parameters",
+          "value": "optimized"
+        }
       ],
       "semantic_definition": "Stop according to the optimizer tolerance and function-evaluation cap.",
       "semantic_key": "stopping.optimizer_convergence.v1",
@@ -553,10 +791,16 @@
       "group": "evaluation_execution",
       "maturity": "structured",
       "provides": [
-        "metrics:cnot_depth"
+        {
+          "name": "metrics",
+          "value": "cnot_depth"
+        }
       ],
       "requires": [
-        "state:parametric"
+        {
+          "name": "state",
+          "value": "parametric"
+        }
       ],
       "semantic_definition": "Framework-neutral logical CNOT/depth protocol with fixed basis and topology.",
       "semantic_key": "compilation.canonical_logical.v2",
@@ -843,93 +1087,110 @@
           "stopping:optimizer_convergence"
         ],
         "compatible": true,
-        "contract_version": "1.0.0",
+        "contract_version": "2.0.0",
         "issues": []
       },
       "display_name": "H₂ fixed-excitation VQE",
       "registry_semantic_key": "h2.sto3g.actual_vqe.workflow.v0_2",
       "selections": [
         {
+          "applicability": "required",
           "bound_contracts": [],
           "component_semantic_key": "problem.h2.sto3g.v1",
           "configuration": [],
           "role": "problem"
         },
         {
+          "applicability": "required",
           "bound_contracts": [],
           "component_semantic_key": "preparation.pyscf.rhf.v1",
           "configuration": [],
           "role": "problem_preparation"
         },
         {
+          "applicability": "required",
           "bound_contracts": [
-            "qubits:4"
+            {
+              "name": "qubits",
+              "value": "4"
+            }
           ],
           "component_semantic_key": "mapping.jordan_wigner.v1",
           "configuration": [],
           "role": "representation"
         },
         {
+          "applicability": "required",
           "bound_contracts": [],
           "component_semantic_key": "reference.hartree_fock.v1",
           "configuration": [],
           "role": "reference_state"
         },
         {
+          "applicability": "required",
           "bound_contracts": [],
           "component_semantic_key": "ansatz.h2.fixed_excitation.v1",
           "configuration": [],
           "role": "ansatz"
         },
         {
+          "applicability": "required",
           "bound_contracts": [],
           "component_semantic_key": "pool.h2.singleton_double.v1",
           "configuration": [],
           "role": "operator_pool"
         },
         {
+          "applicability": "required",
           "bound_contracts": [],
           "component_semantic_key": "search.fixed.none.v1",
           "configuration": [],
           "role": "search_selection"
         },
         {
+          "applicability": "required",
           "bound_contracts": [],
           "component_semantic_key": "growth.fixed_singleton.v1",
           "configuration": [],
           "role": "growth_batching"
         },
         {
+          "applicability": "required",
           "bound_contracts": [],
           "component_semantic_key": "optimizer.scipy_bounded_scalar.v1",
           "configuration": [],
           "role": "parameter_optimizer"
         },
         {
+          "applicability": "required",
           "bound_contracts": [],
           "component_semantic_key": "compression.none.v1",
           "configuration": [],
           "role": "compression"
         },
         {
+          "applicability": "required",
           "bound_contracts": [],
           "component_semantic_key": "measurement.exact_statevector.v1",
           "configuration": [],
           "role": "measurement"
         },
         {
+          "applicability": "required",
           "bound_contracts": [],
           "component_semantic_key": "evaluation.exact_reference.v1",
           "configuration": [],
           "role": "evaluation_protocol"
         },
         {
+          "applicability": "required",
           "bound_contracts": [],
           "component_semantic_key": "stopping.optimizer_convergence.v1",
           "configuration": [],
           "role": "stopping_protocol"
         },
         {
+          "applicability": "required",
           "bound_contracts": [],
           "component_semantic_key": "compilation.canonical_logical.v2",
           "configuration": [],
@@ -950,26 +1211,22 @@
           "compression:none",
           "electrons:2",
           "evaluation:absolute_error",
-          "growth:fixed",
           "mapping:jordan_wigner",
           "metrics:cnot_depth",
           "molecule:h2",
           "observation:energy_exact",
           "operator:qubit",
           "parameters:optimized",
-          "pool:operators",
-          "pool:singleton",
           "prepared:electronic_structure",
           "problem:electronic_structure",
           "qubits:4",
-          "selection:fixed",
           "spin_orbitals:4",
           "state:parametric",
           "state:reference",
           "stopping:optimizer_convergence"
         ],
         "compatible": false,
-        "contract_version": "1.0.0",
+        "contract_version": "2.0.0",
         "issues": [
           {
             "code": "missing_contract",
@@ -982,86 +1239,103 @@
       "registry_semantic_key": null,
       "selections": [
         {
+          "applicability": "required",
           "bound_contracts": [],
           "component_semantic_key": "problem.h2.sto3g.v1",
           "configuration": [],
           "role": "problem"
         },
         {
+          "applicability": "required",
           "bound_contracts": [],
           "component_semantic_key": "preparation.pyscf.rhf.v1",
           "configuration": [],
           "role": "problem_preparation"
         },
         {
+          "applicability": "required",
           "bound_contracts": [
-            "qubits:4"
+            {
+              "name": "qubits",
+              "value": "4"
+            }
           ],
           "component_semantic_key": "mapping.jordan_wigner.v1",
           "configuration": [],
           "role": "representation"
         },
         {
+          "applicability": "required",
           "bound_contracts": [],
           "component_semantic_key": "reference.hartree_fock.v1",
           "configuration": [],
           "role": "reference_state"
         },
         {
+          "applicability": "required",
           "bound_contracts": [],
           "component_semantic_key": "ansatz.uccsd.v1",
           "configuration": [],
           "role": "ansatz"
         },
         {
+          "applicability": "not_applicable",
           "bound_contracts": [],
-          "component_semantic_key": "pool.h2.singleton_double.v1",
+          "component_semantic_key": null,
           "configuration": [],
           "role": "operator_pool"
         },
         {
+          "applicability": "not_applicable",
           "bound_contracts": [],
-          "component_semantic_key": "search.fixed.none.v1",
+          "component_semantic_key": null,
           "configuration": [],
           "role": "search_selection"
         },
         {
+          "applicability": "not_applicable",
           "bound_contracts": [],
-          "component_semantic_key": "growth.fixed_singleton.v1",
+          "component_semantic_key": null,
           "configuration": [],
           "role": "growth_batching"
         },
         {
+          "applicability": "required",
           "bound_contracts": [],
           "component_semantic_key": "optimizer.scipy_bounded_scalar.v1",
           "configuration": [],
           "role": "parameter_optimizer"
         },
         {
+          "applicability": "required",
           "bound_contracts": [],
           "component_semantic_key": "compression.none.v1",
           "configuration": [],
           "role": "compression"
         },
         {
+          "applicability": "required",
           "bound_contracts": [],
           "component_semantic_key": "measurement.exact_statevector.v1",
           "configuration": [],
           "role": "measurement"
         },
         {
+          "applicability": "required",
           "bound_contracts": [],
           "component_semantic_key": "evaluation.exact_reference.v1",
           "configuration": [],
           "role": "evaluation_protocol"
         },
         {
+          "applicability": "required",
           "bound_contracts": [],
           "component_semantic_key": "stopping.optimizer_convergence.v1",
           "configuration": [],
           "role": "stopping_protocol"
         },
         {
+          "applicability": "required",
           "bound_contracts": [],
           "component_semantic_key": "compilation.canonical_logical.v2",
           "configuration": [],
@@ -1079,26 +1353,22 @@
           "compression:none",
           "electrons:2",
           "evaluation:absolute_error",
-          "growth:fixed",
           "mapping:jordan_wigner",
           "metrics:cnot_depth",
           "molecule:h2",
           "observation:energy_exact",
           "operator:qubit",
           "parameters:optimized",
-          "pool:operators",
-          "pool:singleton",
           "prepared:electronic_structure",
           "problem:electronic_structure",
           "qubits:4",
-          "selection:fixed",
           "spin_orbitals:4",
           "state:parametric",
           "state:reference",
           "stopping:optimizer_convergence"
         ],
         "compatible": false,
-        "contract_version": "1.0.0",
+        "contract_version": "2.0.0",
         "issues": [
           {
             "code": "missing_contract",
@@ -1111,86 +1381,103 @@
       "registry_semantic_key": null,
       "selections": [
         {
+          "applicability": "required",
           "bound_contracts": [],
           "component_semantic_key": "problem.h2.sto3g.v1",
           "configuration": [],
           "role": "problem"
         },
         {
+          "applicability": "required",
           "bound_contracts": [],
           "component_semantic_key": "preparation.pyscf.rhf.v1",
           "configuration": [],
           "role": "problem_preparation"
         },
         {
+          "applicability": "required",
           "bound_contracts": [
-            "qubits:4"
+            {
+              "name": "qubits",
+              "value": "4"
+            }
           ],
           "component_semantic_key": "mapping.jordan_wigner.v1",
           "configuration": [],
           "role": "representation"
         },
         {
+          "applicability": "required",
           "bound_contracts": [],
           "component_semantic_key": "reference.hartree_fock.v1",
           "configuration": [],
           "role": "reference_state"
         },
         {
+          "applicability": "required",
           "bound_contracts": [],
           "component_semantic_key": "ansatz.hardware_efficient_ry_cx.v1",
           "configuration": [],
           "role": "ansatz"
         },
         {
+          "applicability": "not_applicable",
           "bound_contracts": [],
-          "component_semantic_key": "pool.h2.singleton_double.v1",
+          "component_semantic_key": null,
           "configuration": [],
           "role": "operator_pool"
         },
         {
+          "applicability": "not_applicable",
           "bound_contracts": [],
-          "component_semantic_key": "search.fixed.none.v1",
+          "component_semantic_key": null,
           "configuration": [],
           "role": "search_selection"
         },
         {
+          "applicability": "not_applicable",
           "bound_contracts": [],
-          "component_semantic_key": "growth.fixed_singleton.v1",
+          "component_semantic_key": null,
           "configuration": [],
           "role": "growth_batching"
         },
         {
+          "applicability": "required",
           "bound_contracts": [],
           "component_semantic_key": "optimizer.scipy_bounded_scalar.v1",
           "configuration": [],
           "role": "parameter_optimizer"
         },
         {
+          "applicability": "required",
           "bound_contracts": [],
           "component_semantic_key": "compression.none.v1",
           "configuration": [],
           "role": "compression"
         },
         {
+          "applicability": "required",
           "bound_contracts": [],
           "component_semantic_key": "measurement.exact_statevector.v1",
           "configuration": [],
           "role": "measurement"
         },
         {
+          "applicability": "required",
           "bound_contracts": [],
           "component_semantic_key": "evaluation.exact_reference.v1",
           "configuration": [],
           "role": "evaluation_protocol"
         },
         {
+          "applicability": "required",
           "bound_contracts": [],
           "component_semantic_key": "stopping.optimizer_convergence.v1",
           "configuration": [],
           "role": "stopping_protocol"
         },
         {
+          "applicability": "required",
           "bound_contracts": [],
           "component_semantic_key": "compilation.canonical_logical.v2",
           "configuration": [],
@@ -1227,93 +1514,110 @@
           "stopping:optimizer_convergence"
         ],
         "compatible": true,
-        "contract_version": "1.0.0",
+        "contract_version": "2.0.0",
         "issues": []
       },
       "display_name": "H₂ standard ADAPT-VQE",
       "registry_semantic_key": null,
       "selections": [
         {
+          "applicability": "required",
           "bound_contracts": [],
           "component_semantic_key": "problem.h2.sto3g.v1",
           "configuration": [],
           "role": "problem"
         },
         {
+          "applicability": "required",
           "bound_contracts": [],
           "component_semantic_key": "preparation.pyscf.rhf.v1",
           "configuration": [],
           "role": "problem_preparation"
         },
         {
+          "applicability": "required",
           "bound_contracts": [
-            "qubits:4"
+            {
+              "name": "qubits",
+              "value": "4"
+            }
           ],
           "component_semantic_key": "mapping.jordan_wigner.v1",
           "configuration": [],
           "role": "representation"
         },
         {
+          "applicability": "required",
           "bound_contracts": [],
           "component_semantic_key": "reference.hartree_fock.v1",
           "configuration": [],
           "role": "reference_state"
         },
         {
+          "applicability": "required",
           "bound_contracts": [],
           "component_semantic_key": "ansatz.h2.fixed_excitation.v1",
           "configuration": [],
           "role": "ansatz"
         },
         {
+          "applicability": "required",
           "bound_contracts": [],
           "component_semantic_key": "pool.h2.singleton_double.v1",
           "configuration": [],
           "role": "operator_pool"
         },
         {
+          "applicability": "required",
           "bound_contracts": [],
           "component_semantic_key": "search.gradient_top1.v1",
           "configuration": [],
           "role": "search_selection"
         },
         {
+          "applicability": "required",
           "bound_contracts": [],
           "component_semantic_key": "growth.single_operator.v1",
           "configuration": [],
           "role": "growth_batching"
         },
         {
+          "applicability": "required",
           "bound_contracts": [],
           "component_semantic_key": "optimizer.scipy_bounded_scalar.v1",
           "configuration": [],
           "role": "parameter_optimizer"
         },
         {
+          "applicability": "required",
           "bound_contracts": [],
           "component_semantic_key": "compression.none.v1",
           "configuration": [],
           "role": "compression"
         },
         {
+          "applicability": "required",
           "bound_contracts": [],
           "component_semantic_key": "measurement.exact_statevector.v1",
           "configuration": [],
           "role": "measurement"
         },
         {
+          "applicability": "required",
           "bound_contracts": [],
           "component_semantic_key": "evaluation.exact_reference.v1",
           "configuration": [],
           "role": "evaluation_protocol"
         },
         {
+          "applicability": "required",
           "bound_contracts": [],
           "component_semantic_key": "stopping.optimizer_convergence.v1",
           "configuration": [],
           "role": "stopping_protocol"
         },
         {
+          "applicability": "required",
           "bound_contracts": [],
           "component_semantic_key": "compilation.canonical_logical.v2",
           "configuration": [],
@@ -1348,7 +1652,7 @@
           "stopping:optimizer_convergence"
         ],
         "compatible": false,
-        "contract_version": "1.0.0",
+        "contract_version": "2.0.0",
         "issues": [
           {
             "code": "missing_contract",
@@ -1366,86 +1670,103 @@
       "registry_semantic_key": null,
       "selections": [
         {
+          "applicability": "required",
           "bound_contracts": [],
           "component_semantic_key": "problem.lih.sto3g.v1",
           "configuration": [],
           "role": "problem"
         },
         {
+          "applicability": "required",
           "bound_contracts": [],
           "component_semantic_key": "preparation.pyscf.rhf.v1",
           "configuration": [],
           "role": "problem_preparation"
         },
         {
+          "applicability": "required",
           "bound_contracts": [
-            "qubits:4"
+            {
+              "name": "qubits",
+              "value": "4"
+            }
           ],
           "component_semantic_key": "mapping.jordan_wigner.v1",
           "configuration": [],
           "role": "representation"
         },
         {
+          "applicability": "required",
           "bound_contracts": [],
           "component_semantic_key": "reference.hartree_fock.v1",
           "configuration": [],
           "role": "reference_state"
         },
         {
+          "applicability": "required",
           "bound_contracts": [],
           "component_semantic_key": "ansatz.uccsd.v1",
           "configuration": [],
           "role": "ansatz"
         },
         {
+          "applicability": "required",
           "bound_contracts": [],
           "component_semantic_key": "pool.h2.singleton_double.v1",
           "configuration": [],
           "role": "operator_pool"
         },
         {
+          "applicability": "required",
           "bound_contracts": [],
           "component_semantic_key": "search.fixed.none.v1",
           "configuration": [],
           "role": "search_selection"
         },
         {
+          "applicability": "required",
           "bound_contracts": [],
           "component_semantic_key": "growth.fixed_singleton.v1",
           "configuration": [],
           "role": "growth_batching"
         },
         {
+          "applicability": "required",
           "bound_contracts": [],
           "component_semantic_key": "optimizer.scipy_bounded_scalar.v1",
           "configuration": [],
           "role": "parameter_optimizer"
         },
         {
+          "applicability": "required",
           "bound_contracts": [],
           "component_semantic_key": "compression.none.v1",
           "configuration": [],
           "role": "compression"
         },
         {
+          "applicability": "required",
           "bound_contracts": [],
           "component_semantic_key": "measurement.exact_statevector.v1",
           "configuration": [],
           "role": "measurement"
         },
         {
+          "applicability": "required",
           "bound_contracts": [],
           "component_semantic_key": "evaluation.exact_reference.v1",
           "configuration": [],
           "role": "evaluation_protocol"
         },
         {
+          "applicability": "required",
           "bound_contracts": [],
           "component_semantic_key": "stopping.optimizer_convergence.v1",
           "configuration": [],
           "role": "stopping_protocol"
         },
         {
+          "applicability": "required",
           "bound_contracts": [],
           "component_semantic_key": "compilation.canonical_logical.v2",
           "configuration": [],
@@ -1483,93 +1804,110 @@
           "stopping:optimizer_convergence"
         ],
         "compatible": true,
-        "contract_version": "1.0.0",
+        "contract_version": "2.0.0",
         "issues": []
       },
       "display_name": "H₂ fixed-excitation VQE with SLSQP",
       "registry_semantic_key": null,
       "selections": [
         {
+          "applicability": "required",
           "bound_contracts": [],
           "component_semantic_key": "problem.h2.sto3g.v1",
           "configuration": [],
           "role": "problem"
         },
         {
+          "applicability": "required",
           "bound_contracts": [],
           "component_semantic_key": "preparation.pyscf.rhf.v1",
           "configuration": [],
           "role": "problem_preparation"
         },
         {
+          "applicability": "required",
           "bound_contracts": [
-            "qubits:4"
+            {
+              "name": "qubits",
+              "value": "4"
+            }
           ],
           "component_semantic_key": "mapping.jordan_wigner.v1",
           "configuration": [],
           "role": "representation"
         },
         {
+          "applicability": "required",
           "bound_contracts": [],
           "component_semantic_key": "reference.hartree_fock.v1",
           "configuration": [],
           "role": "reference_state"
         },
         {
+          "applicability": "required",
           "bound_contracts": [],
           "component_semantic_key": "ansatz.h2.fixed_excitation.v1",
           "configuration": [],
           "role": "ansatz"
         },
         {
+          "applicability": "required",
           "bound_contracts": [],
           "component_semantic_key": "pool.h2.singleton_double.v1",
           "configuration": [],
           "role": "operator_pool"
         },
         {
+          "applicability": "required",
           "bound_contracts": [],
           "component_semantic_key": "search.fixed.none.v1",
           "configuration": [],
           "role": "search_selection"
         },
         {
+          "applicability": "required",
           "bound_contracts": [],
           "component_semantic_key": "growth.fixed_singleton.v1",
           "configuration": [],
           "role": "growth_batching"
         },
         {
+          "applicability": "required",
           "bound_contracts": [],
           "component_semantic_key": "optimizer.slsqp.v1",
           "configuration": [],
           "role": "parameter_optimizer"
         },
         {
+          "applicability": "required",
           "bound_contracts": [],
           "component_semantic_key": "compression.none.v1",
           "configuration": [],
           "role": "compression"
         },
         {
+          "applicability": "required",
           "bound_contracts": [],
           "component_semantic_key": "measurement.exact_statevector.v1",
           "configuration": [],
           "role": "measurement"
         },
         {
+          "applicability": "required",
           "bound_contracts": [],
           "component_semantic_key": "evaluation.exact_reference.v1",
           "configuration": [],
           "role": "evaluation_protocol"
         },
         {
+          "applicability": "required",
           "bound_contracts": [],
           "component_semantic_key": "stopping.optimizer_convergence.v1",
           "configuration": [],
           "role": "stopping_protocol"
         },
         {
+          "applicability": "required",
           "bound_contracts": [],
           "component_semantic_key": "compilation.canonical_logical.v2",
           "configuration": [],
@@ -1607,93 +1945,110 @@
           "stopping:optimizer_convergence"
         ],
         "compatible": true,
-        "contract_version": "1.0.0",
+        "contract_version": "2.0.0",
         "issues": []
       },
       "display_name": "H₂ fixed-excitation VQE with COBYLA",
       "registry_semantic_key": null,
       "selections": [
         {
+          "applicability": "required",
           "bound_contracts": [],
           "component_semantic_key": "problem.h2.sto3g.v1",
           "configuration": [],
           "role": "problem"
         },
         {
+          "applicability": "required",
           "bound_contracts": [],
           "component_semantic_key": "preparation.pyscf.rhf.v1",
           "configuration": [],
           "role": "problem_preparation"
         },
         {
+          "applicability": "required",
           "bound_contracts": [
-            "qubits:4"
+            {
+              "name": "qubits",
+              "value": "4"
+            }
           ],
           "component_semantic_key": "mapping.jordan_wigner.v1",
           "configuration": [],
           "role": "representation"
         },
         {
+          "applicability": "required",
           "bound_contracts": [],
           "component_semantic_key": "reference.hartree_fock.v1",
           "configuration": [],
           "role": "reference_state"
         },
         {
+          "applicability": "required",
           "bound_contracts": [],
           "component_semantic_key": "ansatz.h2.fixed_excitation.v1",
           "configuration": [],
           "role": "ansatz"
         },
         {
+          "applicability": "required",
           "bound_contracts": [],
           "component_semantic_key": "pool.h2.singleton_double.v1",
           "configuration": [],
           "role": "operator_pool"
         },
         {
+          "applicability": "required",
           "bound_contracts": [],
           "component_semantic_key": "search.fixed.none.v1",
           "configuration": [],
           "role": "search_selection"
         },
         {
+          "applicability": "required",
           "bound_contracts": [],
           "component_semantic_key": "growth.fixed_singleton.v1",
           "configuration": [],
           "role": "growth_batching"
         },
         {
+          "applicability": "required",
           "bound_contracts": [],
           "component_semantic_key": "optimizer.cobyla.v1",
           "configuration": [],
           "role": "parameter_optimizer"
         },
         {
+          "applicability": "required",
           "bound_contracts": [],
           "component_semantic_key": "compression.none.v1",
           "configuration": [],
           "role": "compression"
         },
         {
+          "applicability": "required",
           "bound_contracts": [],
           "component_semantic_key": "measurement.exact_statevector.v1",
           "configuration": [],
           "role": "measurement"
         },
         {
+          "applicability": "required",
           "bound_contracts": [],
           "component_semantic_key": "evaluation.exact_reference.v1",
           "configuration": [],
           "role": "evaluation_protocol"
         },
         {
+          "applicability": "required",
           "bound_contracts": [],
           "component_semantic_key": "stopping.optimizer_convergence.v1",
           "configuration": [],
           "role": "stopping_protocol"
         },
         {
+          "applicability": "required",
           "bound_contracts": [],
           "component_semantic_key": "compilation.canonical_logical.v2",
           "configuration": [],

@@ -8,12 +8,14 @@ URLs are provenance only and never executable identities.
 from __future__ import annotations
 
 import dataclasses
+import re
 from enum import Enum
 
 from .models import ComponentType
 
 CATALOG_SCHEMA_VERSION = "1.1.0"
-COMPATIBILITY_CONTRACT_VERSION = "1.0.0"
+COMPATIBILITY_CONTRACT_VERSION = "2.0.0"
+_PORT_TOKEN = re.compile(r"^[a-z][a-z0-9_]*:[a-z0-9_.-]+$")
 
 
 class ComponentGroup(str, Enum):
@@ -76,6 +78,26 @@ class WorkflowStatus(str, Enum):
     EXECUTED = "executed"
 
 
+class RoleApplicability(str, Enum):
+    REQUIRED = "required"
+    OPTIONAL = "optional"
+    NOT_APPLICABLE = "not_applicable"
+    FORBIDDEN = "forbidden"
+
+
+@dataclasses.dataclass(frozen=True, order=True)
+class ContractPort:
+    name: str
+    value: str
+
+
+def _port(token: str) -> ContractPort:
+    if not _PORT_TOKEN.fullmatch(token):
+        raise ValueError(f"invalid compatibility port token: {token!r}")
+    name, value = token.split(":", 1)
+    return ContractPort(name=name, value=value)
+
+
 @dataclasses.dataclass(frozen=True)
 class CanonicalComponentDefinition:
     semantic_key: str
@@ -86,8 +108,8 @@ class CanonicalComponentDefinition:
     semantic_definition: str
     maturity: DefinitionMaturity
     catalog_state: CatalogState
-    requires: tuple[str, ...]
-    provides: tuple[str, ...]
+    requires: tuple[ContractPort, ...]
+    provides: tuple[ContractPort, ...]
     source_locators: tuple[str, ...]
 
 
@@ -108,9 +130,10 @@ class ComponentImplementationBinding:
 @dataclasses.dataclass(frozen=True)
 class WorkflowComponentSelection:
     role: ComponentType
-    component_semantic_key: str
+    component_semantic_key: str | None
+    applicability: RoleApplicability = RoleApplicability.REQUIRED
     configuration: tuple[tuple[str, str], ...] = ()
-    bound_contracts: tuple[str, ...] = ()
+    bound_contracts: tuple[ContractPort, ...] = ()
 
 
 @dataclasses.dataclass(frozen=True)
@@ -148,6 +171,13 @@ class ControlledComparisonSpec:
     candidate_component_key: str
 
 
+@dataclasses.dataclass(frozen=True)
+class ConfigurationMigrationResult:
+    migrated: tuple[tuple[str, str], ...]
+    dropped: tuple[tuple[str, str], ...]
+    requires_explicit_acceptance: bool
+
+
 def _definition(
     semantic_key: str,
     display_name: str,
@@ -180,8 +210,8 @@ def _definition(
         semantic_definition=definition,
         maturity=maturity,
         catalog_state=catalog_state,
-        requires=requires,
-        provides=provides,
+        requires=tuple(_port(item) for item in requires),
+        provides=tuple(_port(item) for item in provides),
         source_locators=sources,
     )
 
@@ -684,7 +714,9 @@ _H2_FIXED_SELECTIONS = tuple(
             item.component_type for item in STANDARD_COMPONENTS if item.semantic_key == semantic_key
         ),
         component_semantic_key=semantic_key,
-        bound_contracts=("qubits:4",) if semantic_key == "mapping.jordan_wigner.v1" else (),
+        bound_contracts=(_port("qubits:4"),)
+        if semantic_key == "mapping.jordan_wigner.v1"
+        else (),
     )
     for semantic_key in _H2_EXECUTABLE_COMPONENTS
 )
@@ -693,13 +725,75 @@ _H2_FIXED_SELECTIONS = tuple(
 def _replace_selection(
     selections: tuple[WorkflowComponentSelection, ...],
     role: ComponentType,
-    semantic_key: str,
+    semantic_key: str | None,
+    *,
+    applicability: RoleApplicability = RoleApplicability.REQUIRED,
 ) -> tuple[WorkflowComponentSelection, ...]:
     return tuple(
-        WorkflowComponentSelection(role=item.role, component_semantic_key=semantic_key)
+        WorkflowComponentSelection(
+            role=item.role,
+            component_semantic_key=semantic_key,
+            applicability=applicability,
+        )
         if item.role is role
         else item
         for item in selections
+    )
+
+
+def _mark_not_applicable(
+    selections: tuple[WorkflowComponentSelection, ...],
+    *roles: ComponentType,
+) -> tuple[WorkflowComponentSelection, ...]:
+    result = selections
+    for role in roles:
+        result = _replace_selection(
+            result,
+            role,
+            None,
+            applicability=RoleApplicability.NOT_APPLICABLE,
+        )
+    return result
+
+
+_CONFIGURATION_FIELDS_BY_COMPONENT: dict[str, frozenset[str]] = {
+    "optimizer.scipy_bounded_scalar.v1": frozenset(
+        {
+            "initial_point_float64_hex",
+            "lower_bound_float64_hex",
+            "upper_bound_float64_hex",
+            "energy_tolerance_float64_hex",
+            "max_objective_evaluations",
+            "max_wall_time_seconds",
+        }
+    ),
+    "optimizer.slsqp.v1": frozenset(
+        {
+            "initial_point_float64_hex",
+            "lower_bound_float64_hex",
+            "upper_bound_float64_hex",
+            "energy_tolerance_float64_hex",
+            "max_objective_evaluations",
+            "max_wall_time_seconds",
+        }
+    ),
+}
+
+
+def migrate_selection_configuration(
+    configuration: tuple[tuple[str, str], ...],
+    *,
+    candidate_component_key: str,
+) -> ConfigurationMigrationResult:
+    """Report incompatible configuration fields instead of silently dropping them."""
+
+    allowed = _CONFIGURATION_FIELDS_BY_COMPONENT.get(candidate_component_key, frozenset())
+    migrated = tuple(item for item in configuration if item[0] in allowed)
+    dropped = tuple(item for item in configuration if item[0] not in allowed)
+    return ConfigurationMigrationResult(
+        migrated=migrated,
+        dropped=dropped,
+        requires_explicit_acceptance=bool(dropped),
     )
 
 
@@ -716,10 +810,15 @@ STANDARD_WORKFLOWS: tuple[StandardWorkflowTemplate, ...] = (
         workflow_key="workflow.h2.uccsd.v1",
         display_name="H₂ UCCSD VQE",
         status=WorkflowStatus.STRUCTURED,
-        selections=_replace_selection(
-            _H2_FIXED_SELECTIONS,
-            ComponentType.ANSATZ,
-            "ansatz.uccsd.v1",
+        selections=_mark_not_applicable(
+            _replace_selection(
+                _H2_FIXED_SELECTIONS,
+                ComponentType.ANSATZ,
+                "ansatz.uccsd.v1",
+            ),
+            ComponentType.OPERATOR_POOL,
+            ComponentType.SEARCH_SELECTION,
+            ComponentType.GROWTH_BATCHING,
         ),
         supported_evaluator_providers=(),
     ),
@@ -727,10 +826,15 @@ STANDARD_WORKFLOWS: tuple[StandardWorkflowTemplate, ...] = (
         workflow_key="workflow.h2.hardware_efficient.v1",
         display_name="H₂ hardware-efficient VQE",
         status=WorkflowStatus.STRUCTURED,
-        selections=_replace_selection(
-            _H2_FIXED_SELECTIONS,
-            ComponentType.ANSATZ,
-            "ansatz.hardware_efficient_ry_cx.v1",
+        selections=_mark_not_applicable(
+            _replace_selection(
+                _H2_FIXED_SELECTIONS,
+                ComponentType.ANSATZ,
+                "ansatz.hardware_efficient_ry_cx.v1",
+            ),
+            ComponentType.OPERATOR_POOL,
+            ComponentType.SEARCH_SELECTION,
+            ComponentType.GROWTH_BATCHING,
         ),
         supported_evaluator_providers=(),
     ),
@@ -806,7 +910,7 @@ def workflow_by_key(workflow_key: str) -> StandardWorkflowTemplate:
 def check_workflow_compatibility(
     workflow: StandardWorkflowTemplate,
 ) -> CompatibilityResult:
-    available: set[str] = set()
+    available: set[ContractPort] = set()
     issues: list[CompatibilityIssue] = []
     seen_roles: set[ComponentType] = set()
     for selection in workflow.selections:
@@ -819,6 +923,27 @@ def check_workflow_compatibility(
             )
             continue
         seen_roles.add(selection.role)
+        if selection.applicability in (
+            RoleApplicability.NOT_APPLICABLE,
+            RoleApplicability.FORBIDDEN,
+        ):
+            if selection.component_semantic_key is not None:
+                issues.append(
+                    CompatibilityIssue(
+                        code="component_present_for_inapplicable_role",
+                        component_semantic_key=selection.component_semantic_key,
+                    )
+                )
+            continue
+        if selection.component_semantic_key is None:
+            if selection.applicability is RoleApplicability.REQUIRED:
+                issues.append(
+                    CompatibilityIssue(
+                        code="missing_required_role",
+                        component_semantic_key=f"role:{selection.role.value}",
+                    )
+                )
+            continue
         try:
             component = component_by_key(selection.component_semantic_key)
         except KeyError:
@@ -842,7 +967,7 @@ def check_workflow_compatibility(
                     CompatibilityIssue(
                         code="missing_contract",
                         component_semantic_key=component.semantic_key,
-                        missing_contract=requirement,
+                        missing_contract=f"{requirement.name}:{requirement.value}",
                     )
                 )
         available.update(component.provides)
@@ -851,7 +976,9 @@ def check_workflow_compatibility(
         compatible=not issues,
         contract_version=COMPATIBILITY_CONTRACT_VERSION,
         issues=tuple(issues),
-        accumulated_contracts=tuple(sorted(available)),
+        accumulated_contracts=tuple(
+            f"{port.name}:{port.value}" for port in sorted(available)
+        ),
     )
 
 
@@ -881,11 +1008,6 @@ def build_controlled_comparison(
 
 
 CONTROLLED_COMPARISON_SPECS: tuple[ControlledComparisonSpec, ...] = (
-    build_controlled_comparison(
-        "comparison.h2.ansatz.uccsd_vs_fixed.v1",
-        workflow_by_key("workflow.h2.fixed_excitation.v1"),
-        workflow_by_key("workflow.h2.uccsd.v1"),
-    ),
     build_controlled_comparison(
         "comparison.h2.optimizer.slsqp_vs_cobyla.v1",
         workflow_by_key("workflow.h2.fixed_excitation.slsqp.v1"),

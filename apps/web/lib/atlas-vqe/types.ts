@@ -138,6 +138,16 @@ export type StandardBindingKind =
   | "dataset_snapshot"
   | "runtime_observed"
   | "documented_only";
+export type StandardRoleApplicability =
+  | "required"
+  | "optional"
+  | "not_applicable"
+  | "forbidden";
+
+export interface StandardContractPort {
+  name: string;
+  value: string;
+}
 
 export interface StandardComponentDefinition {
   semantic_key: string;
@@ -148,8 +158,8 @@ export interface StandardComponentDefinition {
   semantic_definition: string;
   maturity: StandardDefinitionMaturity;
   catalog_state: StandardCatalogState;
-  requires: string[];
-  provides: string[];
+  requires: StandardContractPort[];
+  provides: StandardContractPort[];
   source_locators: string[];
 }
 
@@ -168,9 +178,10 @@ export interface StandardImplementationBinding {
 
 export interface StandardWorkflowSelection {
   role: string;
-  component_semantic_key: string;
+  component_semantic_key: string | null;
+  applicability: StandardRoleApplicability;
   configuration: Array<[string, string]>;
-  bound_contracts: string[];
+  bound_contracts: StandardContractPort[];
 }
 
 export interface StandardCompatibilityIssue {

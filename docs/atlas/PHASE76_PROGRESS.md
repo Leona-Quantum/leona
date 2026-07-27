@@ -4,7 +4,7 @@ Date: 2026-07-28 JST
 Branch: `feature/vqe`  
 Starting commit: `ef62a005479e9a141715406d02e65ecff442c79f`  
 Starting Alembic head: `0038`  
-State: **S0–S2 verified locally; S3 pending**
+State: **S0–S3 verified locally; S4 pending**
 
 ## S0 — Baseline freeze and claim inventory
 
@@ -242,6 +242,62 @@ S2: **verified_local**
 The current H₂ baseline is now reachable from catalog selections through one
 typed, canonical scientific identity path. S3 may add role applicability and
 server-authoritative compatibility without replacing this identity model.
+
+## S3 — Role applicability and Compatibility v2
+
+### Outcome
+
+Compatibility contract `2.0.0` introduces:
+
+- explicit `required`, `optional`, `not_applicable`, and `forbidden` role
+  applicability;
+- typed `{name, value}` contract ports in generated data;
+- distinct fail-closed reason codes for missing roles, unknown Components,
+  role/type mismatch, missing ports, and Components present on inapplicable
+  roles;
+- a configuration migration report that separates migrated and dropped
+  fields and requires explicit acceptance when any field would be dropped.
+
+UCCSD and hardware-efficient fixed-Ansatz templates now mark Operator Pool,
+Search, and Growth as `not_applicable` with no selected Component. ADAPT keeps
+those roles `required`. This removes the former misleading implication that
+all fixed Ansatz workflows use an adaptive growth loop.
+
+The former “fixed excitation versus UCCSD” comparison specification was
+removed because correcting role applicability reveals that it changes four
+roles, not one. The remaining specifications still satisfy the exact
+one-Component-difference invariant.
+
+The H₂ UCCSD seed remains incompatible, honestly, because its inherited
+one-parameter bounded-scalar optimizer requires `parameters:1` while UCCSD
+does not provide that contract. No default optimizer was invented.
+
+### Client/server parity boundary
+
+The generated bundle carries the Python compatibility-v2 result. The browser
+recomputes the same deterministic preview and tests assert equal issues for
+the fixed-Ansatz fixture. This remains a UI explanation layer; a later API
+write path must recompute compatibility server-side before persistence or
+execution.
+
+### Verification
+
+```text
+Python executable/portable/catalog tests: 28 passed
+Web tests: 102 passed
+TypeScript: no errors
+catalog and identity generators --check: passed
+immutable S0 evidence generator --check: passed
+Web lint/token checks: passed
+git diff --check: passed
+```
+
+### S3 decision
+
+S3: **verified_local**
+
+No structured-only workflow was promoted to executable. S4 may now resolve
+role-specific Implementation bindings into a server-owned Executable Plan.
 
 ## Current safety boundary
 

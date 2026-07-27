@@ -10,11 +10,13 @@ from majorana_vqe.standard_catalog import (
     STANDARD_WORKFLOWS,
     BindingKind,
     EvidenceLevel,
+    RoleApplicability,
     StandardWorkflowTemplate,
     WorkflowStatus,
     WorkflowComponentSelection,
     build_controlled_comparison,
     check_workflow_compatibility,
+    migrate_selection_configuration,
     workflow_by_key,
 )
 
@@ -64,6 +66,74 @@ def test_executable_h2_workflow_is_compatible():
     assert result.compatible is True
     assert result.issues == ()
     assert "observation:energy_exact" in result.accumulated_contracts
+    assert result.contract_version == "2.0.0"
+
+
+def test_fixed_ansatz_and_adapt_roles_have_explicit_applicability():
+    uccsd = workflow_by_key("workflow.h2.uccsd.v1")
+    not_applicable = {
+        selection.role
+        for selection in uccsd.selections
+        if selection.applicability is RoleApplicability.NOT_APPLICABLE
+    }
+    assert not_applicable == {
+        ComponentType.OPERATOR_POOL,
+        ComponentType.SEARCH_SELECTION,
+        ComponentType.GROWTH_BATCHING,
+    }
+    assert all(
+        selection.component_semantic_key is None
+        for selection in uccsd.selections
+        if selection.role in not_applicable
+    )
+    assert check_workflow_compatibility(uccsd).compatible is False
+    assert {
+        issue.missing_contract for issue in check_workflow_compatibility(uccsd).issues
+    } == {"parameters:1"}
+    adapt = workflow_by_key("workflow.h2.adapt.v1")
+    assert all(
+        selection.applicability is RoleApplicability.REQUIRED
+        for selection in adapt.selections
+        if selection.role
+        in {
+            ComponentType.OPERATOR_POOL,
+            ComponentType.SEARCH_SELECTION,
+            ComponentType.GROWTH_BATCHING,
+        }
+    )
+
+
+def test_component_on_not_applicable_role_fails_closed():
+    uccsd = workflow_by_key("workflow.h2.uccsd.v1")
+    invalid = dataclasses.replace(
+        uccsd,
+        selections=tuple(
+            dataclasses.replace(
+                selection,
+                component_semantic_key="pool.h2.singleton_double.v1",
+            )
+            if selection.role is ComponentType.OPERATOR_POOL
+            else selection
+            for selection in uccsd.selections
+        ),
+    )
+    result = check_workflow_compatibility(invalid)
+    assert "component_present_for_inapplicable_role" in {
+        issue.code for issue in result.issues
+    }
+
+
+def test_configuration_migration_never_silently_discards_fields():
+    result = migrate_selection_configuration(
+        (
+            ("lower_bound_float64_hex", "c00921fb54442d18"),
+            ("bounded_scalar_xatol", "3d719799812dea11"),
+        ),
+        candidate_component_key="optimizer.slsqp.v1",
+    )
+    assert result.migrated == (("lower_bound_float64_hex", "c00921fb54442d18"),)
+    assert result.dropped == (("bounded_scalar_xatol", "3d719799812dea11"),)
+    assert result.requires_explicit_acceptance is True
 
 
 def test_missing_and_wrong_role_components_fail_closed():

@@ -72,7 +72,10 @@ function validateBundle(raw: unknown): StandardVqeCatalogBundle {
       fail("non-executable workflow cannot claim a Registry execution identity");
     }
     for (const selection of workflow.selections) {
-      if (!componentKeys.has(selection.component_semantic_key)) {
+      if (
+        selection.component_semantic_key !== null &&
+        !componentKeys.has(selection.component_semantic_key)
+      ) {
         fail("workflow references an unknown component");
       }
     }
@@ -117,6 +120,29 @@ export function checkStandardWorkflowSelections(
       continue;
     }
     roles.add(selection.role);
+    if (
+      selection.applicability === "not_applicable" ||
+      selection.applicability === "forbidden"
+    ) {
+      if (selection.component_semantic_key !== null) {
+        issues.push({
+          code: "component_present_for_inapplicable_role",
+          component_semantic_key: selection.component_semantic_key,
+          missing_contract: null,
+        });
+      }
+      continue;
+    }
+    if (selection.component_semantic_key === null) {
+      if (selection.applicability === "required") {
+        issues.push({
+          code: "missing_required_role",
+          component_semantic_key: `role:${selection.role}`,
+          missing_contract: null,
+        });
+      }
+      continue;
+    }
     const component = byKey.get(selection.component_semantic_key);
     if (!component) {
       issues.push({
@@ -134,20 +160,25 @@ export function checkStandardWorkflowSelections(
       });
     }
     for (const requirement of component.requires) {
-      if (!available.has(requirement)) {
+      const token = `${requirement.name}:${requirement.value}`;
+      if (!available.has(token)) {
         issues.push({
           code: "missing_contract",
           component_semantic_key: component.semantic_key,
-          missing_contract: requirement,
+          missing_contract: token,
         });
       }
     }
-    component.provides.forEach((contract) => available.add(contract));
-    selection.bound_contracts.forEach((contract) => available.add(contract));
+    component.provides.forEach((contract) =>
+      available.add(`${contract.name}:${contract.value}`),
+    );
+    selection.bound_contracts.forEach((contract) =>
+      available.add(`${contract.name}:${contract.value}`),
+    );
   }
   return {
     compatible: issues.length === 0,
-    contract_version: "1.0.0",
+    contract_version: "2.0.0",
     issues,
     accumulated_contracts: Array.from(available).sort(),
   };

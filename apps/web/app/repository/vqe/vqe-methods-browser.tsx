@@ -172,6 +172,10 @@ function sortedSelections(selections: StandardWorkflowSelection[]) {
   );
 }
 
+function formatPort(port: { name: string; value: string }) {
+  return `${port.name}:${port.value}`;
+}
+
 export function VqeMethodsBrowser({
   catalog,
   locale,
@@ -284,8 +288,9 @@ export function VqeMethodsBrowser({
     const nextSelection: StandardWorkflowSelection = {
       role: component.component_type,
       component_semantic_key: component.semantic_key,
-      configuration: [],
-      bound_contracts: [],
+      applicability: "required",
+      configuration: index >= 0 ? selections[index]?.configuration ?? [] : [],
+      bound_contracts: index >= 0 ? selections[index]?.bound_contracts ?? [] : [],
     };
     if (index < 0) {
       setSelections(sortedSelections([...selections, nextSelection]));
@@ -406,11 +411,11 @@ export function VqeMethodsBrowser({
                   <dl className="mj-vqe-contract-list">
                     <div>
                       <dt>{copy.inputs}</dt>
-                      <dd>{component.requires.join(", ") || "—"}</dd>
+                      <dd>{component.requires.map(formatPort).join(", ") || "—"}</dd>
                     </div>
                     <div>
                       <dt>{copy.outputs}</dt>
-                      <dd>{component.provides.join(", ") || "—"}</dd>
+                      <dd>{component.provides.map(formatPort).join(", ") || "—"}</dd>
                     </div>
                     <div>
                       <dt>{copy.implementations}</dt>
@@ -491,10 +496,13 @@ export function VqeMethodsBrowser({
               <li key={selection.role}>
                 <span>{selection.role}</span>
                 <strong>
-                  {componentByKey.get(selection.component_semantic_key)?.display_name ??
-                    selection.component_semantic_key}
+                  {selection.component_semantic_key === null
+                    ? selection.applicability
+                    : componentByKey.get(selection.component_semantic_key)?.display_name ??
+                      selection.component_semantic_key}
                 </strong>
-                {!(bindingsByComponent.get(selection.component_semantic_key) ?? []).length ? (
+                {selection.component_semantic_key !== null &&
+                !(bindingsByComponent.get(selection.component_semantic_key) ?? []).length ? (
                   <small>{copy.providerUnavailable}</small>
                 ) : null}
               </li>
