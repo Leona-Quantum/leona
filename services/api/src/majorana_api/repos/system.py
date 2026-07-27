@@ -339,13 +339,21 @@ async def _existing_user(
     )
     if user is None:
         return None
+    # Keyed on OWNERSHIP, not on membership.
+    #
+    # This used to join `memberships` and take the first personal workspace the
+    # user belonged to. That was unambiguous only while nobody could be a member
+    # of anyone else's workspace — and a personal workspace is exactly what an
+    # invite attaches a collaborator to. Once that happens the old query matches
+    # two rows with no ORDER BY, so a user's "personal workspace" could resolve
+    # to someone else's tenant, on some requests and not others. Ownership is
+    # single-valued: `get_or_provision_user` sets owner_user_id to the user it
+    # just created the workspace for, and nothing reassigns it.
     ws = (
         (
             await session.execute(
-                select(Workspace)
-                .join(Membership, Membership.workspace_id == Workspace.id)
-                .where(
-                    Membership.user_id == user.id,
+                select(Workspace).where(
+                    Workspace.owner_user_id == user.id,
                     Workspace.kind == "personal",
                     Workspace.deleted_at.is_(None),
                 )
@@ -377,14 +385,103 @@ async def find_membership(
     )
 
 
-async def default_workspace_id(
+@dataclass(frozen=True)
+class ActiveWorkspace:
+    """The tenant a request acts in, and the caller's role in it."""
+
+    workspace_id: uuid.UUID
+    role: str
+
+
+async def resolve_active_workspace(
     session: AsyncSession,
     *,
-    user_id: Any,
+    user: User,
     personal_workspace_id: Any,
-) -> Any:
-    """Return the personal workspace until collaboration is productized."""
-    return personal_workspace_id
+) -> ActiveWorkspace | None:
+    """Which workspace this request acts in (migration 0037).
+
+    `users.active_workspace_id` is a *preference*. The grant is the membership
+    row, and it is read here on every request, so revoking someone's access takes
+    effect on their next request rather than on their next sign-in.
+
+    A pointer that no longer resolves — access revoked, workspace soft-deleted —
+    falls back to the personal workspace and is cleared, rather than refusing the
+    request. Locking a user out of their own account because someone else removed
+    them from a shared workspace would be a worse outcome than the one it
+    prevents, and there is nothing to protect: the fallback is the tenant they
+    own.
+
+    Returns None only when the personal membership itself is missing, which is a
+    broken account rather than an authorization decision; the caller turns that
+    into a 404.
+    """
+    target_id = user.active_workspace_id
+    if target_id is not None and target_id != personal_workspace_id:
+        membership = await find_membership(session, workspace_id=target_id, user_id=user.id)
+        if membership is not None:
+            live = (
+                await session.execute(
+                    select(Workspace.id).where(
+                        Workspace.id == target_id, Workspace.deleted_at.is_(None)
+                    )
+                )
+            ).scalar_one_or_none()
+            if live is not None:
+                return ActiveWorkspace(workspace_id=target_id, role=membership.role)
+        # Stale pointer. Clear it so the next request costs one lookup, not three.
+        user.active_workspace_id = None
+        await session.flush()
+
+    personal = await find_membership(session, workspace_id=personal_workspace_id, user_id=user.id)
+    if personal is None:
+        return None
+    return ActiveWorkspace(workspace_id=personal_workspace_id, role=personal.role)
+
+
+async def list_user_workspaces(
+    session: AsyncSession, *, user_id: Any
+) -> list[tuple[Workspace, Membership]]:
+    """Every live workspace the user is a member of, personal first then by name.
+
+    Pre-Scope like the rest of this module: a workspace switcher has to be able
+    to name a tenant the caller is not currently scoped into.
+    """
+    stmt = (
+        select(Workspace, Membership)
+        .join(Membership, Membership.workspace_id == Workspace.id)
+        .where(Membership.user_id == user_id, Workspace.deleted_at.is_(None))
+        .order_by(
+            case((Workspace.owner_user_id == user_id, 0), else_=1),
+            Workspace.name,
+            Workspace.id,
+        )
+    )
+    return list((await session.execute(stmt)).all())
+
+
+async def set_active_workspace(
+    session: AsyncSession, *, user: User, workspace_id: uuid.UUID
+) -> tuple[Workspace, Membership] | None:
+    """Point the user at a workspace they belong to. None if they do not.
+
+    Membership is checked here as well as in `resolve_active_workspace` — this
+    one gives the caller an honest 404 instead of a switch that appears to work
+    and silently keeps them where they were.
+    """
+    membership = await find_membership(session, workspace_id=workspace_id, user_id=user.id)
+    if membership is None:
+        return None
+    workspace = (
+        await session.execute(
+            select(Workspace).where(Workspace.id == workspace_id, Workspace.deleted_at.is_(None))
+        )
+    ).scalar_one_or_none()
+    if workspace is None:
+        return None
+    user.active_workspace_id = workspace_id
+    await session.flush()
+    return workspace, membership
 
 
 async def get_or_provision_user(

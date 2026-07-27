@@ -1,19 +1,21 @@
 """Workspace settings and collaboration endpoints."""
 
 import datetime as dt
+import uuid
 
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 from majorana_contracts import Workspace as WorkspaceResource
 from majorana_contracts import WorkspaceFolder as WorkspaceFolderResource
-from majorana_contracts import WorkspaceMember, WorkspaceOverview
+from majorana_contracts import WorkspaceMember, WorkspaceOverview, WorkspaceSummary
 from majorana_contracts.enums import Role, WorkspaceKind
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from ..auth.deps import CurrentScope, DbSession
+from ..auth.deps import CurrentIdentity, CurrentScope, DbSession
 from ..orm import Membership, User
 from ..orm import Workspace as WorkspaceRow
 from ..orm import WorkspaceFolder
 from ..repos import folders as folders_repo
+from ..repos import system
 from ..repos import workspaces as workspaces_repo
 
 router = APIRouter()
@@ -23,6 +25,12 @@ class WorkspaceSettingsRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     auto_keep_artifacts: bool
+
+
+class SwitchWorkspaceRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    workspace_id: uuid.UUID
 
 
 class CreateFolderRequest(BaseModel):
@@ -70,6 +78,76 @@ def _to_workspace(workspace: WorkspaceRow) -> WorkspaceResource:
         auto_keep_artifacts=bool(workspace.auto_keep_artifacts),
         created_at=workspace.created_at,
         deleted_at=workspace.deleted_at,
+    )
+
+
+def _to_summary(
+    workspace: WorkspaceRow,
+    membership: Membership,
+    *,
+    user_id: uuid.UUID,
+    active_workspace_id: uuid.UUID,
+) -> WorkspaceSummary:
+    return WorkspaceSummary(
+        id=workspace.id,
+        kind=WorkspaceKind(workspace.kind),
+        name=workspace.name,
+        role=Role(membership.role),
+        is_personal=(
+            workspace.kind == WorkspaceKind.PERSONAL and workspace.owner_user_id == user_id
+        ),
+        is_active=workspace.id == active_workspace_id,
+    )
+
+
+@router.get("/workspaces", response_model=list[WorkspaceSummary])
+async def list_workspaces(
+    identity: CurrentIdentity, scope: CurrentScope, session: DbSession
+) -> list[WorkspaceSummary]:
+    """Every workspace the caller can act in — the switcher's data.
+
+    `scope` is a dependency rather than `identity.active_workspace_id` on
+    purpose: it is the resolved answer, so a pointer at a workspace the caller
+    was removed from shows the personal workspace as active, which is where the
+    next request will actually land.
+    """
+    user, _personal = identity
+    rows = await system.list_user_workspaces(session, user_id=user.id)
+    return [
+        _to_summary(
+            workspace,
+            membership,
+            user_id=user.id,
+            active_workspace_id=scope.workspace_id,
+        )
+        for workspace, membership in rows
+    ]
+
+
+@router.post("/workspaces/active", response_model=WorkspaceSummary)
+async def switch_active_workspace(
+    body: SwitchWorkspaceRequest,
+    identity: CurrentIdentity,
+    session: DbSession,
+) -> WorkspaceSummary:
+    """Change which workspace subsequent requests act in.
+
+    Takes no `CurrentScope`: the scope of the request that performs a switch is
+    the one being left, and depending on it would only add a lookup nobody reads.
+    A workspace the caller has no membership in is 404 — the same answer as one
+    that does not exist, because telling them apart would confirm the existence
+    of another tenant's workspace to a stranger holding its id.
+    """
+    user, _personal = identity
+    switched = await system.set_active_workspace(session, user=user, workspace_id=body.workspace_id)
+    if switched is None:
+        raise HTTPException(404, "workspace not found")
+    workspace, membership = switched
+    return _to_summary(
+        workspace,
+        membership,
+        user_id=user.id,
+        active_workspace_id=workspace.id,
     )
 
 

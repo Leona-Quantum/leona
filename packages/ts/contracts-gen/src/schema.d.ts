@@ -2278,6 +2278,30 @@ export interface components {
             run_count: number;
             workspace: components["schemas"]["Workspace"];
         };
+        /**
+         * WorkspaceSummary
+         * @description One row of the workspace switcher: a tenant the caller can act in.
+         *
+         *     `is_active` is what the *next* request will scope to, not the raw value of
+         *     the stored pointer — a pointer to a workspace the caller was removed from
+         *     resolves back to personal, and the switcher must show where they actually
+         *     are.
+         */
+        WorkspaceSummary: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Is Active */
+            is_active: boolean;
+            /** Is Personal */
+            is_personal: boolean;
+            kind: components["schemas"]["WorkspaceKind"];
+            /** Name */
+            name: string;
+            role: components["schemas"]["Role"];
+        };
     };
     responses: never;
     parameters: never;

@@ -84,6 +84,26 @@ class WorkspaceMember(_ResourceBase):
     created_at: datetime
 
 
+class WorkspaceSummary(_ResourceBase):
+    """One row of the workspace switcher: a tenant the caller can act in.
+
+    `is_active` is what the *next* request will scope to, not the raw value of
+    the stored pointer — a pointer to a workspace the caller was removed from
+    resolves back to personal, and the switcher must show where they actually
+    are.
+    """
+
+    id: UUID
+    kind: WorkspaceKind
+    name: str
+    role: Role
+    #: The caller's own personal workspace. Not `kind == personal`: a member of
+    #: someone else's personal workspace sees kind=personal for a tenant that is
+    #: not theirs.
+    is_personal: bool
+    is_active: bool
+
+
 class WorkspaceOverview(_ResourceBase):
     workspace: Workspace
     members: list[WorkspaceMember]

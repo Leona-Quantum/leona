@@ -150,21 +150,27 @@ async def get_scope(
     identity: Annotated[tuple[User, Workspace], Depends(get_identity)],
     session: Annotated[AsyncSession, Depends(get_session)],
 ) -> Scope:
-    """Derive a private personal-workspace scope for the authenticated user.
+    """Derive the scope for the authenticated user's active workspace.
 
-    Collaboration is intentionally deferred. Do not accept a browser-selected
-    workspace id here: the personal workspace is the only tenant exposed by
-    the current product contract.
+    Do not accept a workspace id from the request. The active workspace is a
+    server-side pointer (`users.active_workspace_id`, migration 0037) that only
+    `POST /v1/workspaces/active` writes, and it is re-validated against the
+    membership table on every request. A caller cannot widen their own scope by
+    editing a header, and a proxy route cannot narrow it by forgetting to
+    forward one.
+
+    Absent or stale, the pointer resolves to the personal workspace — the
+    pre-collaboration behaviour, unchanged for every account that never switches.
     """
     user, personal_ws = identity
-    membership = await system.find_membership(
+    active = await system.resolve_active_workspace(
         session,
-        workspace_id=personal_ws.id,
-        user_id=user.id,
+        user=user,
+        personal_workspace_id=personal_ws.id,
     )
-    if membership is None:
+    if active is None:
         raise HTTPException(404, "workspace not found")
-    return Scope(user_id=user.id, workspace_id=personal_ws.id, role=membership.role)
+    return Scope(user_id=user.id, workspace_id=active.workspace_id, role=active.role)
 
 
 CurrentScope = Annotated[Scope, Depends(get_scope)]
