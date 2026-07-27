@@ -1351,6 +1351,20 @@ export const SHARING_COPY: Record<PublicLocale, {
   leaving: string;
   leaveFailed: string;
   left: (name: string) => string;
+  deleteWorkspace: string;
+  deleteConfirm: string;
+  deleteCancel: string;
+  deleting: string;
+  deleteWarning: string;
+  deleteFailed: string;
+  deletedWorkspace: (name: string) => string;
+  makeOwner: string;
+  makeOwnerConfirm: (name: string) => string;
+  makeOwnerCancel: string;
+  transferring: string;
+  transferHelp: string;
+  transferFailed: string;
+  transferred: (name: string) => string;
   membersTitle: string;
   membersHelp: string;
   membersShareWarning: string;
@@ -1399,6 +1413,22 @@ export const SHARING_COPY: Record<PublicLocale, {
     leaving: "Leaving…",
     leaveFailed: "Could not leave that workspace.",
     left: (name) => `You have left ${name}. Anything you ran there stays — it belongs to the workspace. Only an admin can let you back in.`,
+    deleteWorkspace: "Delete",
+    deleteConfirm: "Delete for good",
+    deleteCancel: "Keep it",
+    deleting: "Deleting…",
+    deleteWarning:
+      "Deleting a workspace takes it away from everyone in it, along with every run and saved artifact it holds. You cannot undo this here.",
+    deleteFailed: "Could not delete that workspace.",
+    deletedWorkspace: (name) => `${name} is gone. Everyone who was in it has been returned to their own workspace.`,
+    makeOwner: "Make owner",
+    makeOwnerConfirm: (name) => `Hand it to ${name}`,
+    makeOwnerCancel: "Cancel",
+    transferring: "Handing over…",
+    transferHelp:
+      "The owner is the only person who can delete this workspace or hand it on. Give it away and you stay as an admin — which the new owner can take back.",
+    transferFailed: "Could not hand the workspace over.",
+    transferred: (name) => `${name} owns this workspace now. You are an admin of it, and you can leave whenever you like.`,
     membersTitle: "Members",
     membersHelp: "People who can act in the workspace you have open.",
     membersShareWarning:
@@ -1449,6 +1479,22 @@ export const SHARING_COPY: Record<PublicLocale, {
     leaving: "退出中…",
     leaveFailed: "退出できませんでした。",
     left: (name) => `${name} から退出しました。実行したものはワークスペースに残ります。再参加には管理者の招待が必要です。`,
+    deleteWorkspace: "削除",
+    deleteConfirm: "完全に削除する",
+    deleteCancel: "残す",
+    deleting: "削除中…",
+    deleteWarning:
+      "ワークスペースを削除すると、参加している全員から見えなくなります。中の実行と保存済みアーティファクトもすべて含まれます。ここから元に戻すことはできません。",
+    deleteFailed: "ワークスペースを削除できませんでした。",
+    deletedWorkspace: (name) => `${name} を削除しました。参加していた全員が自分のワークスペースに戻ります。`,
+    makeOwner: "オーナーにする",
+    makeOwnerConfirm: (name) => `${name} に譲渡する`,
+    makeOwnerCancel: "やめる",
+    transferring: "譲渡中…",
+    transferHelp:
+      "このワークスペースを削除・譲渡できるのはオーナーだけです。譲渡すると、あなたは管理者として残ります（新しいオーナーはそれを解除できます）。",
+    transferFailed: "オーナーを変更できませんでした。",
+    transferred: (name) => `${name} がこのワークスペースのオーナーになりました。あなたは管理者で、いつでも退出できます。`,
     membersTitle: "メンバー",
     membersHelp: "いま開いているワークスペースで作業できる人です。",
     membersShareWarning:

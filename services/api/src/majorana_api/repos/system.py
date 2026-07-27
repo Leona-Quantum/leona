@@ -27,7 +27,7 @@ import uuid
 from dataclasses import dataclass
 from typing import Any
 
-from majorana_contracts.enums import Role, RunStatus
+from majorana_contracts.enums import Role, RunStatus, WorkspaceKind
 from majorana_openqasm import fingerprint as qasm_fingerprint
 from majorana_openqasm import normalize
 from sqlalchemy import case, func, or_, select, update
@@ -636,6 +636,78 @@ async def leave_workspace(session: AsyncSession, *, user: User, workspace_id: uu
     # at a tenant they just left.
     if user.active_workspace_id == workspace_id:
         user.active_workspace_id = None
+    await session.flush()
+    return True
+
+
+class NotWorkspaceOwner(Exception):
+    """Only the owner may dispose of a workspace."""
+
+
+class CannotDeletePersonalWorkspace(Exception):
+    """The account's own tenant is not deletable — it is where everything falls back to."""
+
+
+async def delete_workspace(session: AsyncSession, *, user: User, workspace_id: uuid.UUID) -> bool:
+    """Retire a shared workspace. False if the caller is not a member of it.
+
+    The other half of ownership transfer, and the reason it is in the same
+    change: those are the only two ways out of a workspace you own, and shipping
+    one without the other leaves an owner who does not want to hand the group to
+    anybody still stuck with it forever.
+
+    Pre-Scope for the same reason `leave_workspace` is — the workspace being
+    disposed of is usually not the one the caller is standing in, and requiring a
+    switch first would mean entering a tenant in order to destroy it, then being
+    bounced out of it mid-request.
+
+    A SOFT delete. `deleted_at` is already the predicate every workspace read
+    filters on — the switcher, the invitation list, scope resolution — so setting
+    it removes the workspace from all of them in one write, and the runs and
+    artifacts underneath keep pointing at a row that still exists. Nothing here
+    is recoverable through the product; it is recoverable by an operator with a
+    SQL prompt, which is the right amount of difficulty for an operation the UI
+    asks about twice.
+    """
+    membership = await find_membership(session, workspace_id=workspace_id, user_id=user.id)
+    if membership is None:
+        return False
+    if membership.role != Role.OWNER:
+        raise NotWorkspaceOwner(str(workspace_id))
+    workspace = (
+        await session.execute(
+            select(Workspace)
+            .where(Workspace.id == workspace_id, Workspace.deleted_at.is_(None))
+            .with_for_update()
+        )
+    ).scalar_one_or_none()
+    if workspace is None:
+        return False
+    if workspace.owner_user_id != user.id:
+        # Re-checked AFTER the lock, and not redundant with the membership read
+        # above: that one is unlocked, so a transfer committing in between leaves
+        # the caller holding a membership row that still says OWNER while the
+        # workspace belongs to somebody else. Whoever lost the workspace a moment
+        # ago must not be able to delete it. `transfer_ownership` makes the same
+        # check for the same reason.
+        raise NotWorkspaceOwner(str(workspace_id))
+    if workspace.kind == WorkspaceKind.PERSONAL:
+        raise CannotDeletePersonalWorkspace(str(workspace_id))
+    workspace.deleted_at = dt.datetime.now(dt.timezone.utc)
+    # Everyone standing in it, not just the owner. `resolve_active_workspace`
+    # already falls back on a pointer that no longer resolves, so this is not
+    # what makes the deletion correct — it is what stops every other member
+    # paying a failed lookup on their next request for a tenant that is gone.
+    #
+    # `synchronize_session="fetch"` for the same reason `_stamp_acknowledged`
+    # uses it: this is a bulk ORM UPDATE, and without it the User objects already
+    # loaded in this session keep a pointer the database no longer has.
+    await session.execute(
+        update(User)
+        .where(User.active_workspace_id == workspace_id)
+        .values(active_workspace_id=None)
+        .execution_options(synchronize_session="fetch")
+    )
     await session.flush()
     return True
 
