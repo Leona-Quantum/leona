@@ -57,12 +57,65 @@ if RETRY_BASE_S > RETRY_MAX_S:
 # it otherwise would be in any way that matters at a 15-minute grace.
 REAP_INTERVAL_S = _positive_env("WORKER_REAP_INTERVAL_S", 60.0)
 
+# The same argument, applied to the two sweeps that were still running on every
+# cycle. Both are recovery paths whose own timescales are measured in minutes:
+# lease recovery cannot act before a JOB_LEASE_S (120s) lease has expired, and
+# dead-letter delivery already retries ~30s apart. Running them every 2s bought
+# no recovery a caller can perceive and cost two extra round trips per cycle.
+#
+# It was not free. Over the 17.7 days to 2026-07-27 the database logged
+# 2,334,042 committed transactions and 5.03 GB of egress against a 47 MB
+# database — 1.5 transactions/second, which is exactly three per 2s cycle, and
+# almost exactly the free-tier transfer allowance. The queue was idle for
+# essentially all of it: an idle worker, not a user, spent the quota.
+#
+# Claim latency is deliberately untouched. `claim_job` still runs every cycle;
+# only the sweeps around it are gated.
+RECOVER_INTERVAL_S = _positive_env("WORKER_RECOVER_INTERVAL_S", 30.0)
+if RECOVER_INTERVAL_S > JOB_LEASE_S:
+    raise ValueError("WORKER_RECOVER_INTERVAL_S must not exceed WORKER_JOB_LEASE_S")
+
 DEAD_LETTER_TIMEOUT_S = _positive_env("WORKER_DEAD_LETTER_TIMEOUT_S", 30.0)
 DEAD_LETTER_LEASE_S = _positive_env(
     "WORKER_DEAD_LETTER_LEASE_S", max(45.0, DEAD_LETTER_TIMEOUT_S + 15.0)
 )
 if DEAD_LETTER_LEASE_S <= DEAD_LETTER_TIMEOUT_S:
     raise ValueError("WORKER_DEAD_LETTER_LEASE_S must exceed WORKER_DEAD_LETTER_TIMEOUT_S")
+DEAD_LETTER_INTERVAL_S = _positive_env("WORKER_DEAD_LETTER_INTERVAL_S", 15.0)
+
+
+class Sweep:
+    """A background query that must not run on every poll cycle.
+
+    Two properties matter, and both are why this is a class rather than an
+    inline `if now >= next_at`:
+
+    * **The clock, not the cycle count.** A busy queue skips the sleep entirely
+      (`continue` drains the queue), so counting cycles would put a sweep back
+      between every pair of jobs — the hot path REAP_INTERVAL_S exists to keep
+      it off.
+    * **A productive sweep re-arms immediately.** Each of these sweeps handles
+      one item per call. Gating a backlog behind the full interval would drain
+      it at one item per interval; `due()` stays true while there is more to do,
+      so a backlog drains at poll speed and only an *empty* sweep waits.
+
+    The first call is always due, so a restarted worker sweeps promptly rather
+    than ignoring a stranded job for its first interval.
+    """
+
+    __slots__ = ("_interval_s", "_next_at")
+
+    def __init__(self, interval_s: float) -> None:
+        self._interval_s = interval_s
+        self._next_at = 0.0
+
+    def due(self, now: float) -> bool:
+        return now >= self._next_at
+
+    def done(self, now: float, *, productive: bool) -> None:
+        """Record that the sweep ran. `productive` means it found work."""
+        self._next_at = now if productive else now + self._interval_s
+
 
 _meter = metrics.get_meter("majorana.worker.queue")
 _job_claims = _meter.create_counter("majorana.jobs.claimed")
@@ -211,7 +264,12 @@ async def _execute_with_heartbeat(
     await handler_task
 
 
-async def _deliver_pending_dead_letters(factory, *, worker_id: str) -> None:
+async def _deliver_pending_dead_letters(factory, *, worker_id: str) -> bool:
+    """Deliver at most one pending dead letter. True when one was claimed.
+
+    The return value is what re-arms the sweep: a backlog must drain at poll
+    speed rather than one item per DEAD_LETTER_INTERVAL_S.
+    """
     async with factory() as session:
         job = await system.claim_pending_dead_letter(
             session,
@@ -220,7 +278,7 @@ async def _deliver_pending_dead_letters(factory, *, worker_id: str) -> None:
         )
         await session.commit()  # reservation is durable before callback I/O
     if job is None:
-        return
+        return False
     delivery_token = job.dead_letter_lease_token
     if delivery_token is None:
         raise RuntimeError(f"claimed dead-letter job {job.id} has no delivery token")
@@ -256,15 +314,21 @@ async def _deliver_pending_dead_letters(factory, *, worker_id: str) -> None:
         log.info("job %s dead-letter callback completed", job.id)
     elif int(job.dead_letter_attempts or 0) + 1 >= system.DEFAULT_DEAD_LETTER_MAX_ATTEMPTS:
         log.error("job %s dead-letter callback abandoned after retry budget", job.id)
+    return True
 
 
-async def _reap_orphaned_runs(factory) -> None:
+async def _reap_orphaned_runs(factory) -> int:
     """Reconcile runs left active by a job that is terminal and past delivery.
 
     Dead-letter delivery is the only path that closes such a run, and it is not
     guaranteed to happen — see close_orphaned_run. This is the safety net, so it
     is deliberately forgiving: one capped batch per poll cycle, and a run that
     fails to close is logged and retried next cycle rather than stopping the rest.
+
+    Returns how many runs were listed, not how many closed. `list_orphaned_runs`
+    is capped at ten, so a full batch means there may be more waiting — and a
+    batch where every close FAILED still has work left. Either way the sweep
+    re-arms immediately rather than leaving the remainder for the next interval.
     """
     async with factory() as session:
         orphans = await system.list_orphaned_runs(session)
@@ -290,6 +354,7 @@ async def _reap_orphaned_runs(factory) -> None:
                 orphan.run_id,
                 orphan.job_id,
             )
+    return len(orphans)
 
 
 async def _start_liveness() -> asyncio.AbstractServer:
@@ -320,23 +385,31 @@ async def run_forever() -> None:
     # Concurrent with the first poll cycles, not ahead of them: a provider that
     # is slow to answer must not delay draining the queue.
     preflight = asyncio.create_task(_preflight_models())
-    next_reap_at = 0.0  # sweep on the first cycle, then every REAP_INTERVAL_S
+    # Each sweeps on the first cycle, then on its own wall clock. See Sweep.
+    recover_sweep = Sweep(RECOVER_INTERVAL_S)
+    dead_letter_sweep = Sweep(DEAD_LETTER_INTERVAL_S)
+    reap_sweep = Sweep(REAP_INTERVAL_S)
 
     try:
         while not stop.is_set():
             delay = POLL_INTERVAL_S
             try:
-                async with factory() as session:
-                    recovery = await system.recover_stale_jobs(session)
-                    await session.commit()
-                if recovery.requeued:
-                    _job_requeues.add(recovery.requeued, {"reason": "lease_expired"})
-                    log.warning("requeued %d jobs with expired leases", recovery.requeued)
-                if recovery.dead_jobs:
-                    _job_terminals.add(len(recovery.dead_jobs), {"status": "dead"})
-                    log.error(
-                        "dead-lettered %d jobs after lease exhaustion", len(recovery.dead_jobs)
+                if recover_sweep.due(loop.time()):
+                    async with factory() as session:
+                        recovery = await system.recover_stale_jobs(session)
+                        await session.commit()
+                    recover_sweep.done(
+                        loop.time(),
+                        productive=bool(recovery.requeued or recovery.dead_jobs),
                     )
+                    if recovery.requeued:
+                        _job_requeues.add(recovery.requeued, {"reason": "lease_expired"})
+                        log.warning("requeued %d jobs with expired leases", recovery.requeued)
+                    if recovery.dead_jobs:
+                        _job_terminals.add(len(recovery.dead_jobs), {"status": "dead"})
+                        log.error(
+                            "dead-lettered %d jobs after lease exhaustion", len(recovery.dead_jobs)
+                        )
                 claimed: tuple[object, str, dict, object, int, float] | None = None
                 async with factory() as session:
                     job = await system.claim_job(
@@ -448,14 +521,16 @@ async def run_forever() -> None:
                 # bounded dead-letter callback runs only after that job finishes
                 # (or immediately when the queue is idle), so no claimed lease
                 # ticks while callback delivery blocks.
-                await _deliver_pending_dead_letters(factory, worker_id=worker_id)
+                if dead_letter_sweep.due(loop.time()):
+                    delivered = await _deliver_pending_dead_letters(factory, worker_id=worker_id)
+                    dead_letter_sweep.done(loop.time(), productive=delivered)
                 # Last line of defence, after delivery has had its full budget.
                 # Rate-limited off the claim hot path (see REAP_INTERVAL_S); the
                 # first cycle reaps immediately so a restart still sweeps
                 # promptly.
-                if loop.time() >= next_reap_at:
-                    next_reap_at = loop.time() + REAP_INTERVAL_S
-                    await _reap_orphaned_runs(factory)
+                if reap_sweep.due(loop.time()):
+                    reaped = await _reap_orphaned_runs(factory)
+                    reap_sweep.done(loop.time(), productive=bool(reaped))
                 if claimed is not None:
                     continue  # drain the main queue before sleeping again
             except Exception:
