@@ -1,0 +1,117 @@
+{
+  "schema_version": "0.2.0",
+  "status": "succeeded",
+  "capability": "h2_sto3g_actual_vqe_v1",
+  "framework": "pennylane",
+  "provider_versions": {
+    "pennylane": "0.45.1",
+    "scipy": "1.18.0",
+    "numpy": "2.5.1"
+  },
+  "platform": "Linux-6.10.14-linuxkit-x86_64-with-glibc2.36",
+  "python_version": "3.12.12 (main, Feb 24 2026, 20:29:11) [GCC 12.2.0]",
+  "canonical_input": {
+    "manifest_sha256": "6424713c69c2b734172db47329b7deb62b67a743c80fd792f48173fdaa4e3edc",
+    "canonical_circuit_sha256": "f4fdb1ac3f041185fff63f6a7acb9d3ab1e9742131ed5bd3bb9ba2d99081a58c",
+    "compilation_protocol_sha256": "778fe0c7f3d361c54e9c41a0240ef31cc7926dacbe8fbc33ff96a57ee104393c",
+    "hamiltonian_digest_legacy": "d9dd24eb30011e8ea091759e6f0e25d76d0ccc0661e47748afb85e5f13654d79",
+    "reference_bitstring_qubit0_first": "1010",
+    "excited_bitstring_qubit0_first": "0101",
+    "parameter_slot_id": "theta.double.occ0_occ2.to.virt1_virt3",
+    "parameter_orientation": "exp_theta_over_2_generator"
+  },
+  "optimization": {
+    "algorithm": "scipy_slsqp",
+    "success": true,
+    "message": "Optimization terminated successfully",
+    "iterations": 4,
+    "function_evaluations": 8,
+    "gradient_evaluations": 4,
+    "final_parameter": -0.22353694769629973,
+    "best_energy_ha": -1.1373060357533529,
+    "exact_energy_ha": -1.1373060357533737,
+    "absolute_error_ha": 2.0872192862952943e-14,
+    "final_state_fidelity": 0.9999999999999885,
+    "trajectory": [
+      {
+        "theta": 0.0,
+        "energy_ha": -1.1169989967540022
+      },
+      {
+        "theta": 1.4901161193847656e-08,
+        "energy_ha": -1.116998994057917
+      },
+      {
+        "theta": -0.1809312105178833,
+        "energy_ha": -1.1365653594343352
+      },
+      {
+        "theta": -0.1809311956167221,
+        "energy_ha": -1.1365653589163163
+      },
+      {
+        "theta": -0.22396286809856938,
+        "energy_ha": -1.1373059617398944
+      },
+      {
+        "theta": -0.2239628531974082,
+        "energy_ha": -1.137305961745073
+      },
+      {
+        "theta": -0.22353694769629973,
+        "energy_ha": -1.1373060357533529
+      },
+      {
+        "theta": -0.22353693279513853,
+        "energy_ha": -1.137306035753351
+      }
+    ]
+  },
+  "resources": {
+    "semantic_block": {
+      "canonical_double_excitation_blocks": 1
+    },
+    "canonical_logical": {
+      "qubits": 4,
+      "parameter_count": 1,
+      "pauli_rotation_blocks": 8,
+      "canonical_circuit_sha256": "f4fdb1ac3f041185fff63f6a7acb9d3ab1e9742131ed5bd3bb9ba2d99081a58c"
+    },
+    "common_basis_compiled": {
+      "depth": 83,
+      "gate_count": 152,
+      "cnot_count": 48,
+      "parameter_count": 1,
+      "basis_gates": [
+        "h",
+        "s",
+        "sdg",
+        "rz",
+        "cx"
+      ],
+      "compilation_protocol_sha256": "778fe0c7f3d361c54e9c41a0240ef31cc7926dacbe8fbc33ff96a57ee104393c",
+      "operation_sequence_sha256": "e0eaae576a3570dde47dcc5d5489dd758ee1311f911d0686cc87d5e2bd3f4cbd",
+      "adapter_verification": "passed",
+      "metric_scope": "ansatz_only",
+      "includes_reference_state": false,
+      "includes_measurement": false,
+      "includes_hardware_optimization_or_routing": false
+    },
+    "provider_native_diagnostic": {
+      "depth": 84,
+      "gate_count": 153,
+      "gate_types": {
+        "BasisState": 1,
+        "Hadamard": 64,
+        "Adjoint(S)": 16,
+        "CNOT": 48,
+        "RZ": 8,
+        "S": 16
+      },
+      "shots": null,
+      "includes_reference_state": true,
+      "comparison_eligible": false
+    }
+  },
+  "wall_time_s": 0.34351791599999615
+}

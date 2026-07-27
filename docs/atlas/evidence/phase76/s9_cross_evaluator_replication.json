@@ -1,0 +1,32 @@
+{
+  "schema_version": "1.0.0",
+  "phase": "7.6-S9",
+  "source_commit": "7b39671",
+  "platform": "linux/amd64",
+  "cross_evaluator_energy_tolerance_ha": 1e-12,
+  "pennylane_local_oci_manifest_digest": "sha256:a71211a3a70757f625cd5708bbb60fb7f86e2c0fb5638f5570162c35eafeb603",
+  "registry_qualification": false,
+  "evidence": {
+    "pennylane_slsqp_sha256": "c138d517da4199cfaa3e6c21a3e96ff8fb06bb546c62e87cf17d17528c6a5527",
+    "pennylane_bounded_sha256": "15e891e8120ce0259e4070913981c1eddf9244f5275ef2f270086c178514c364"
+  },
+  "observations": {
+    "qiskit": {
+      "bounded": {"energy_ha": -1.1373060357533555, "objective_calls": 13},
+      "slsqp": {"energy_ha": -1.1373060357533529, "objective_calls": 8}
+    },
+    "pennylane": {
+      "bounded": {"energy_ha": -1.1373060357533564, "objective_calls": 14},
+      "slsqp": {"energy_ha": -1.1373060357533529, "objective_calls": 8}
+    }
+  },
+  "agreement": {
+    "slsqp_energy_delta_ha": 0.0,
+    "bounded_energy_delta_ha": 8.881784197001252e-16,
+    "within_prefixed_tolerance": true,
+    "same_canonical_circuit": true,
+    "same_common_cnot": true,
+    "same_common_depth": true
+  },
+  "interpretation": "The optimizer-work observation replicated across two state evaluators. It remains a single H2 exact-statevector case and does not establish general superiority."
+}

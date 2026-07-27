@@ -534,3 +534,31 @@ S8: **verified_local_db_replay_pending**
 
 Actual PostgreSQL append-only, tenant isolation, concurrent idempotency, and
 up/down/up behavior remain assigned to S11.
+
+## S9 — PennyLane Linux/amd64 replication
+
+The same fixed Hamiltonian, canonical circuit, parameter orientation,
+optimizer policy, and hard budget were executed in the PennyLane
+Linux/amd64 image.
+
+```text
+                     bounded calls    SLSQP calls
+Qiskit                    13               8
+PennyLane                 14               8
+
+SLSQP energy delta across evaluators: 0.0 Ha
+bounded energy delta: 8.88e-16 Ha
+pre-fixed agreement tolerance: 1e-12 Ha
+all runs: 1 parameter, 48 CNOT, depth 83
+```
+
+The one-call baseline difference is retained rather than averaged away. It
+reflects framework/platform numerical termination behavior and illustrates
+why objective work must be reported with the evaluator binding.
+
+The PennyLane local OCI manifest digest is
+`sha256:a71211a3a70757f625cd5708bbb60fb7f86e2c0fb5638f5570162c35eafeb603`.
+As in S7, it has not been pushed to a registry, so public/runtime promotion
+remains blocked.
+
+S9: **replicated_linux_registry_digest_pending**

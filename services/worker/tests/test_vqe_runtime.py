@@ -73,8 +73,17 @@ def test_raw_runtime_report_translates_to_complete_evidence(framework, filename)
     assert common.adapter_verification == "passed"
 
 
-def test_slsqp_runtime_report_requires_matching_scientific_selection():
-    profile = candidate_runtime_profile(Framework.QISKIT)
+@pytest.mark.parametrize(
+    ("framework", "filename"),
+    [
+        (Framework.QISKIT, "qiskit_slsqp_linux_amd64.json"),
+        (Framework.PENNYLANE, "pennylane_slsqp_linux_amd64.json"),
+    ],
+)
+def test_slsqp_runtime_report_requires_matching_scientific_selection(
+    framework, filename
+):
+    profile = candidate_runtime_profile(framework)
     report = json.loads(
         (
             ROOT
@@ -82,7 +91,7 @@ def test_slsqp_runtime_report_requires_matching_scientific_selection():
             / "atlas"
             / "evidence"
             / "phase76"
-            / "qiskit_slsqp_linux_amd64.json"
+            / filename
         ).read_text()
     )
 
