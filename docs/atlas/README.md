@@ -55,6 +55,8 @@ override both.
   `PHASE7_PROGRESS.md`
 - Phase 7.6 first executable Component swap plan:
   `PHASE76_FIRST_EXECUTABLE_COMPONENT_SWAP_PLAN.md`
+- Phase 7.6 execution evidence and progress:
+  `PHASE76_PROGRESS.md`
 - Phase 6 rollback and disablement runbook: `PHASE6_ROLLBACK.md`
 - Beginner-facing test deployment and dashboard manual:
   `../runbooks/vqe-test-vercel-workos-neon-manual_ja.md`
