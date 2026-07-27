@@ -443,7 +443,7 @@ STANDARD_COMPONENTS: tuple[CanonicalComponentDefinition, ...] = (
         ComponentType.PARAMETER_OPTIMIZER,
         ComponentGroup.OPTIMIZERS,
         "Sequential least-squares programming with explicit tolerances and bounds.",
-        CapabilityStatus.STRUCTURED,
+        CapabilityStatus.EXPERIMENTAL,
         requires=("state:parametric",),
         provides=("parameters:optimized", "optimizer:slsqp"),
     ),
@@ -721,9 +721,11 @@ STANDARD_IMPLEMENTATIONS: tuple[ComponentImplementationBinding, ...] = (
         "scipy",
         "1.18.0",
         BindingKind.PROVIDER_NATIVE,
-        EvidenceLevel.DOCUMENTED,
+        EvidenceLevel.ADAPTER_TESTED,
         evidence=(
             "https://docs.scipy.org/doc/scipy/reference/optimize.minimize-slsqp.html",
+            "docs/atlas/evidence/phase76/qiskit_slsqp_local.json",
+            "docs/atlas/evidence/phase76/pennylane_slsqp_local.json",
         ),
         supported_configuration_fields=tuple(
             sorted(_CONFIGURATION_FIELDS_BY_COMPONENT["optimizer.slsqp.v1"])

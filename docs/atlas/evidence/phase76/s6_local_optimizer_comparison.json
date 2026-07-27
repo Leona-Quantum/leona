@@ -1,0 +1,32 @@
+{
+  "schema_version": "1.0.0",
+  "phase": "7.6-S6",
+  "claim_scope": "local_adapter_observation_only",
+  "qualification_boundary": "macOS arm64 observations do not qualify a Linux/x86_64 OCI runtime",
+  "fixed_invariants": {
+    "problem": "H2/STO-3G at 0.735 angstrom",
+    "canonical_circuit_sha256": "f4fdb1ac3f041185fff63f6a7acb9d3ab1e9742131ed5bd3bb9ba2d99081a58c",
+    "compilation_protocol_sha256": "778fe0c7f3d361c54e9c41a0240ef31cc7926dacbe8fbc33ff96a57ee104393c",
+    "max_function_evaluations": 256,
+    "initial_parameter": 0.0,
+    "bounds": [-3.141592653589793, 3.141592653589793],
+    "energy_tolerance": 1e-12
+  },
+  "changed_role": "parameter_optimizer",
+  "baseline": {
+    "algorithm": "scipy_minimize_scalar_bounded",
+    "qiskit": {"energy_ha": -1.137306035753356, "absolute_error_ha": 1.7763568394002505e-14, "function_evaluations": 14},
+    "pennylane": {"energy_ha": -1.137306035753356, "absolute_error_ha": 1.7763568394002505e-14, "function_evaluations": 21}
+  },
+  "candidate": {
+    "algorithm": "scipy_slsqp",
+    "qiskit": {"energy_ha": -1.1373060357533324, "absolute_error_ha": 4.1300296516055823e-14, "function_evaluations": 8, "gradient_evaluations": 4, "evidence_sha256": "6349e2a627618c982653f3ad3708be1e9651bb35c875df44fd195c67648bfdbc"},
+    "pennylane": {"energy_ha": -1.1373060357533449, "absolute_error_ha": 2.886579864025407e-14, "function_evaluations": 8, "gradient_evaluations": 4, "evidence_sha256": "ec79eade88f0994bc3b258fcad866866372328436f131e8a439b1c4ba3713964"}
+  },
+  "resource_result": {
+    "qiskit": {"cnot": 48, "depth": 83, "parameters": 1},
+    "pennylane": {"cnot": 48, "depth": 83, "parameters": 1},
+    "interpretation": "Optimizer exchange reduced observed objective calls but cannot reduce the fixed ansatz circuit."
+  },
+  "adapter_source_sha256": "202ec9ee2cc173aa16bd2c6e78731acb70c92f1bc6ea60557d8df9cf649378ec"
+}

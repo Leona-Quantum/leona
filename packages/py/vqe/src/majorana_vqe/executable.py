@@ -142,7 +142,7 @@ class GrowthProtocolSpec(ExecutableSpecBase):
 
 class OptimizerSpec(ExecutableSpecBase):
     kind: Literal["optimizer"]
-    algorithm: Literal["scipy_minimize_scalar_bounded"]
+    algorithm: Literal["scipy_minimize_scalar_bounded", "scipy_slsqp"]
     provider: Literal["scipy"]
     provider_version: str = Field(min_length=1, max_length=50)
     initial_point_policy: Literal["component_parameter_slot_defaults"]
@@ -290,6 +290,14 @@ H2_BASELINE_SEMANTIC_KEYS: dict[ComponentType, str] = {
     ComponentType.EVALUATION_PROTOCOL: "evaluation.exact_reference.v1",
     ComponentType.STOPPING_PROTOCOL: "stopping.optimizer_convergence.v1",
 }
+H2_SLSQP_SEMANTIC_KEYS: dict[ComponentType, str] = {
+    **H2_BASELINE_SEMANTIC_KEYS,
+    ComponentType.PARAMETER_OPTIMIZER: "optimizer.slsqp.v1",
+}
+H2_SUPPORTED_SEMANTIC_KEY_SETS = (
+    H2_BASELINE_SEMANTIC_KEYS,
+    H2_SLSQP_SEMANTIC_KEYS,
+)
 
 
 def parse_executable_component(
@@ -425,7 +433,7 @@ def build_h2_scientific_identity(
                 f"duplicate semantic selection role={selection.role.value}"
             )
         selected[selection.role] = selection.component_semantic_key
-    if selected != H2_BASELINE_SEMANTIC_KEYS:
+    if selected not in H2_SUPPORTED_SEMANTIC_KEY_SETS:
         missing = set(H2_BASELINE_SEMANTIC_KEYS) - set(selected)
         extra = set(selected) - set(H2_BASELINE_SEMANTIC_KEYS)
         mismatched = sorted(

@@ -27,6 +27,7 @@ RUN cd /workspace/runtime \
     && find .venv -type d -name __pycache__ -prune -exec rm -rf '{}' +
 
 COPY ${PROFILE_DIR}/spike/h2_actual_vqe_v02.py /workspace/runtime/spike/
+COPY optimizer_protocol.py /workspace/runtime/spike/
 COPY --from=fixture manifest.json /workspace/docs/atlas/fixtures/h2_sto3g/
 COPY --from=fixture canonical_double_excitation_v0.2.json /workspace/docs/atlas/fixtures/h2_sto3g/
 

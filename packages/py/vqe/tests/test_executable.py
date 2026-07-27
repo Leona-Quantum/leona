@@ -158,6 +158,51 @@ def test_provider_version_is_not_part_of_scientific_component_payload():
     assert payload["algorithm"] == "scipy_minimize_scalar_bounded"
 
 
+def test_slsqp_swap_changes_only_optimizer_scientific_binding():
+    baseline_specs = _fixture()
+    candidate_specs = _fixture()
+    candidate_specs[ComponentType.PARAMETER_OPTIMIZER] = {
+        **candidate_specs[ComponentType.PARAMETER_OPTIMIZER],
+        "algorithm": "scipy_slsqp",
+    }
+    baseline = build_h2_scientific_identity(
+        selections=_selections(),
+        specs=baseline_specs,
+        hamiltonian_digest_sha256=(
+            "d9dd24eb30011e8ea091759e6f0e25d76d0ccc0661e47748afb85e5f13654d79"
+        ),
+    )
+    candidate_workflow = workflow_by_key("workflow.h2.fixed_excitation.slsqp.v1")
+    candidate = build_h2_scientific_identity(
+        selections=[
+            H2SemanticSelection(
+                role=selection.role,
+                component_semantic_key=selection.component_semantic_key,
+            )
+            for selection in candidate_workflow.selections
+        ],
+        specs=candidate_specs,
+        hamiltonian_digest_sha256=baseline.hamiltonian_digest_sha256,
+    )
+
+    baseline_bindings = {
+        binding.role: binding for binding in baseline.portable_spec.component_bindings
+    }
+    candidate_bindings = {
+        binding.role: binding for binding in candidate.portable_spec.component_bindings
+    }
+    changed_roles = [
+        role
+        for role in baseline_bindings
+        if baseline_bindings[role] != candidate_bindings[role]
+    ]
+    assert changed_roles == [ComponentType.PARAMETER_OPTIMIZER]
+    assert baseline.portable_spec.dataset_snapshot_sha256 == (
+        candidate.portable_spec.dataset_snapshot_sha256
+    )
+    assert baseline.hamiltonian_digest_sha256 == candidate.hamiltonian_digest_sha256
+
+
 def test_unknown_or_mismatched_seed_selection_fails_closed():
     selections = _selections()
     selections[-1] = H2SemanticSelection(

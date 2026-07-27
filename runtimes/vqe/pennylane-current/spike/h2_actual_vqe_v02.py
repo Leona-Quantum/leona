@@ -19,7 +19,11 @@ from pathlib import Path
 import numpy as np
 import pennylane as qml
 import scipy
-from scipy.optimize import minimize_scalar
+try:
+    from optimizer_protocol import OptimizerAlgorithm, optimize_one_parameter
+except ModuleNotFoundError:  # Local checkout; the container copies it beside this script.
+    sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+    from optimizer_protocol import OptimizerAlgorithm, optimize_one_parameter
 
 
 def _fixture_root() -> Path:
@@ -174,7 +178,11 @@ def _hamiltonian(manifest: dict):
     return qml.Hamiltonian(coefficients, operators)
 
 
-def run(output_path: Path | None = OUTPUT_PATH) -> int:
+def run(
+    output_path: Path | None = OUTPUT_PATH,
+    *,
+    optimizer_algorithm: OptimizerAlgorithm = "scipy_minimize_scalar_bounded",
+) -> int:
     started = time.perf_counter()
     manifest_bytes = MANIFEST_PATH.read_bytes()
     manifest = json.loads(manifest_bytes)
@@ -197,21 +205,15 @@ def run(output_path: Path | None = OUTPUT_PATH) -> int:
         _apply_canonical_excitation(theta, circuit_spec)
         return qml.state()
 
-    trajectory: list[dict[str, float]] = []
-
     def energy(theta: float) -> float:
-        value = float(energy_circuit(float(theta))) + nuclear_repulsion
-        trajectory.append({"theta": float(theta), "energy_ha": value})
-        return value
+        return float(energy_circuit(float(theta))) + nuclear_repulsion
 
     try:
-        result = minimize_scalar(
+        result = optimize_one_parameter(
             energy,
-            method="bounded",
-            bounds=(-math.pi, math.pi),
-            options={"xatol": 1e-12, "maxiter": 256},
+            algorithm=optimizer_algorithm,
         )
-        final_theta = float(result.x)
+        final_theta = result.final_parameter
         common_basis_resources = _verified_common_basis(final_theta, circuit_spec)
         final_state = np.asarray(state_circuit(final_theta))
         dense_hamiltonian = np.asarray(qml.matrix(hamiltonian, wire_order=range(4)))
@@ -227,7 +229,9 @@ def run(output_path: Path | None = OUTPUT_PATH) -> int:
             "error_type": type(exc).__name__,
             "error_message": str(exc),
         }
-        output_path.write_text(json.dumps(report, indent=2))
+        if output_path is not None:
+            output_path.write_text(json.dumps(report, indent=2))
+        print(json.dumps(report, indent=2))
         return 1
 
     report = {
@@ -253,17 +257,18 @@ def run(output_path: Path | None = OUTPUT_PATH) -> int:
             "parameter_orientation": "exp_theta_over_2_generator",
         },
         "optimization": {
-            "algorithm": "scipy_minimize_scalar_bounded",
-            "success": bool(result.success),
-            "message": str(result.message),
-            "iterations": int(result.nit),
-            "function_evaluations": int(result.nfev),
+            "algorithm": result.algorithm,
+            "success": result.success,
+            "message": result.message,
+            "iterations": result.iterations,
+            "function_evaluations": result.function_evaluations,
+            "gradient_evaluations": result.gradient_evaluations,
             "final_parameter": final_theta,
-            "best_energy_ha": float(result.fun),
+            "best_energy_ha": result.best_energy_ha,
             "exact_energy_ha": exact_total_energy,
-            "absolute_error_ha": abs(float(result.fun) - exact_total_energy),
+            "absolute_error_ha": abs(result.best_energy_ha - exact_total_energy),
             "final_state_fidelity": fidelity,
-            "trajectory": trajectory,
+            "trajectory": list(result.trajectory),
         },
         "resources": {
             "semantic_block": {
@@ -302,5 +307,21 @@ if __name__ == "__main__":
         action="store_true",
         help="emit bounded JSON to stdout without mutating a fixture file",
     )
+    parser.add_argument(
+        "--optimizer",
+        choices=("scipy_minimize_scalar_bounded", "scipy_slsqp"),
+        default="scipy_minimize_scalar_bounded",
+    )
+    parser.add_argument(
+        "--output",
+        type=Path,
+        help="write a new evidence file; never use this option for a frozen fixture",
+    )
     args = parser.parse_args()
-    raise SystemExit(run(None if args.stdout_only else OUTPUT_PATH))
+    selected_output = None if args.stdout_only else (args.output or OUTPUT_PATH)
+    raise SystemExit(
+        run(
+            selected_output,
+            optimizer_algorithm=args.optimizer,
+        )
+    )

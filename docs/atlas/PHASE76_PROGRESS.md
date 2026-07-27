@@ -416,3 +416,45 @@ qualify the SLSQP scientific/adapter slice.
 - No external Repository code execution.
 - No new Component catalog expansion.
 - Evidence is additive and the canonical H2 fixture remains unchanged.
+
+## S6 — Shared bounded SLSQP adapter
+
+Both H2 evaluator scripts now delegate optimization policy to one shared
+adapter. It fixes the initial point, bounds, energy tolerance, iteration and
+objective-call caps, wall-time cap, and finite-value checks. The canonical
+fixture was not modified. New observations live only under
+`docs/atlas/evidence/phase76/`.
+
+The SLSQP Definition is `experimental` and its SciPy binding is
+`adapter_tested`; it is deliberately not `runtime_qualified`.
+
+```text
+                         bounded calls    SLSQP calls
+Qiskit                        14               8
+PennyLane                     21               8
+
+SLSQP absolute error:
+Qiskit      4.13e-14 Ha
+PennyLane   2.89e-14 Ha
+
+Every run: 1 parameter, 48 CNOT, depth 83
+```
+
+This is local evidence of lower optimizer work for one fixed H2 instance. It
+is not a circuit-resource or generalization claim. The scientific-identity
+test proves only `parameter_optimizer` changes.
+
+```text
+majorana-vqe tests: 194 passed
+shared optimizer tests: 7 passed
+Ruff: passed
+frozen H2 fixture diff: empty
+```
+
+A lost `math` import was detected as a structured failed run and repaired
+before accepting evidence.
+
+S6: **adapter_tested_runtime_qualification_pending**
+
+S7 must run this exact source in the digest-pinned Linux/x86_64 Qiskit
+runtime before executable promotion.
