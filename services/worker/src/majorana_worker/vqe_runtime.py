@@ -16,7 +16,7 @@ import shutil
 import struct
 import uuid
 from dataclasses import dataclass
-from typing import Any, Awaitable, Callable, Protocol
+from typing import Any, Awaitable, Callable, Literal, Protocol
 
 from majorana_vqe.models import ExecutionBinding, FailureCode
 from majorana_vqe.result import (
@@ -64,6 +64,7 @@ class VqeRuntimeOutput:
 
 
 CancelProbe = Callable[[], Awaitable[bool]]
+OptimizerAlgorithm = Literal["scipy_minimize_scalar_bounded", "scipy_slsqp"]
 
 
 class VqeRuntimeExecutor(Protocol):
@@ -71,6 +72,7 @@ class VqeRuntimeExecutor(Protocol):
         self,
         binding: ExecutionBinding,
         *,
+        optimizer_algorithm: OptimizerAlgorithm = "scipy_minimize_scalar_bounded",
         timeout_s: float = 300.0,
         cancel_requested: CancelProbe | None = None,
     ) -> VqeRuntimeOutput: ...
@@ -260,6 +262,7 @@ class LocalDockerVqeRuntimeExecutor:
         self,
         binding: ExecutionBinding,
         *,
+        optimizer_algorithm: OptimizerAlgorithm = "scipy_minimize_scalar_bounded",
         timeout_s: float = 300.0,
         cancel_requested: CancelProbe | None = None,
     ) -> VqeRuntimeOutput:
@@ -294,6 +297,8 @@ class LocalDockerVqeRuntimeExecutor:
             "--user",
             "65532:65532",
             *image_arguments,
+            "--optimizer",
+            optimizer_algorithm,
         ]
         try:
             process = await asyncio.create_subprocess_exec(
@@ -464,6 +469,7 @@ async def run_candidate_container(
 async def execute_candidate_image(
     profile: CandidateRuntimeProfile | ProductionRuntimeProfile,
     *,
+    optimizer_algorithm: OptimizerAlgorithm = "scipy_minimize_scalar_bounded",
     cancel_requested: CancelProbe | None = None,
 ) -> VqeRuntimeOutput:
     executor = (
@@ -473,6 +479,7 @@ async def execute_candidate_image(
     )
     return await executor.run(
         profile.binding,
+        optimizer_algorithm=optimizer_algorithm,
         cancel_requested=cancel_requested,
     )
 
@@ -485,9 +492,12 @@ def _build_success_evidence(
     registry_resolution_sha256: str,
     ansatz_semantic_digest: str,
     seed: int,
+    expected_optimizer_algorithm: OptimizerAlgorithm,
 ) -> VqeOptimizationSuccessResult:
     profile = profile_for_binding(binding)
     optimization = report["optimization"]
+    if optimization.get("algorithm") != expected_optimizer_algorithm:
+        raise ValueError("runtime optimizer algorithm does not match the scientific selection")
     canonical_input = report["canonical_input"]
     resources = report["resources"]
     if report.get("status") != "succeeded":
@@ -552,7 +562,7 @@ def _build_success_evidence(
         optimizer_work=OptimizerWork(
             iterations=int(optimization["iterations"]),
             energy_evaluations=int(optimization["function_evaluations"]),
-            gradient_evaluations=0,
+            gradient_evaluations=int(optimization.get("gradient_evaluations", 0)),
             hessian_evaluations=0,
         ),
         parameter_count=1,
@@ -627,6 +637,7 @@ def build_success_evidence(
     registry_resolution_sha256: str,
     ansatz_semantic_digest: str,
     seed: int,
+    expected_optimizer_algorithm: OptimizerAlgorithm = "scipy_minimize_scalar_bounded",
 ) -> VqeOptimizationSuccessResult:
     try:
         return _build_success_evidence(
@@ -636,6 +647,7 @@ def build_success_evidence(
             registry_resolution_sha256=registry_resolution_sha256,
             ansatz_semantic_digest=ansatz_semantic_digest,
             seed=seed,
+            expected_optimizer_algorithm=expected_optimizer_algorithm,
         )
     except VqeRuntimeError:
         raise

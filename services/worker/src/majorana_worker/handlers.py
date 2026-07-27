@@ -87,6 +87,7 @@ from .context import RunContext
 from .errors import RetryableJobError
 from .intent import resolve_mode
 from .vqe_runtime import (
+    OptimizerAlgorithm,
     VqeRuntimeCancelled,
     VqeRuntimeError,
     build_success_evidence,
@@ -943,6 +944,21 @@ def _ansatz_digest(scientific_spec_json: dict[str, Any]) -> str:
     raise ValueError("portable scientific spec lacks an ansatz binding")
 
 
+def _optimizer_algorithm(
+    scientific_spec_json: dict[str, Any],
+) -> OptimizerAlgorithm:
+    for component in scientific_spec_json.get("component_bindings", []):
+        if component.get("role") != "parameter_optimizer":
+            continue
+        semantic_key = component.get("component_semantic_key")
+        if semantic_key == "optimizer.scipy_bounded_scalar.v1":
+            return "scipy_minimize_scalar_bounded"
+        if semantic_key == "optimizer.slsqp.v1":
+            return "scipy_slsqp"
+        raise ValueError(f"unsupported optimizer semantic key {semantic_key!r}")
+    raise ValueError("portable scientific spec lacks an optimizer binding")
+
+
 async def handle_vqe_execute(session: AsyncSession, payload: dict[str, Any]) -> None:
     """Execute one frozen H2 candidate and append capability-specific evidence."""
     scope = _scope_from_payload(payload)
@@ -980,9 +996,11 @@ async def handle_vqe_execute(session: AsyncSession, payload: dict[str, Any]) -> 
     experiment = await vqe_repo.get_experiment(scope, session, execution.experiment_id)
     binding = ExecutionBinding.model_validate(execution.execution_binding_json)
     profile = profile_for_binding(binding)
+    optimizer_algorithm = _optimizer_algorithm(experiment.scientific_spec_json)
     try:
         runtime_output = await execute_candidate_image(
             profile,
+            optimizer_algorithm=optimizer_algorithm,
             cancel_requested=lambda: _vqe_cancel_requested(run_store),
         )
         if await run_store.current_status() is RunStatus.CANCELLED:
@@ -1007,6 +1025,7 @@ async def handle_vqe_execute(session: AsyncSession, payload: dict[str, Any]) -> 
             registry_resolution_sha256=experiment.registry_resolution_sha256,
             ansatz_semantic_digest=_ansatz_digest(experiment.scientific_spec_json),
             seed=int(experiment.scientific_spec_json["seed"]),
+            expected_optimizer_algorithm=optimizer_algorithm,
         )
     except VqeRuntimeCancelled:
         current_execution = await vqe_repo.get_execution(scope, session, execution.id)

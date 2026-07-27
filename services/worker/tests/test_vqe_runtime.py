@@ -73,6 +73,42 @@ def test_raw_runtime_report_translates_to_complete_evidence(framework, filename)
     assert common.adapter_verification == "passed"
 
 
+def test_slsqp_runtime_report_requires_matching_scientific_selection():
+    profile = candidate_runtime_profile(Framework.QISKIT)
+    report = json.loads(
+        (
+            ROOT
+            / "docs"
+            / "atlas"
+            / "evidence"
+            / "phase76"
+            / "qiskit_slsqp_linux_amd64.json"
+        ).read_text()
+    )
+
+    evidence = build_success_evidence(
+        report,
+        binding=profile.binding,
+        scientific_spec_sha256="1" * 64,
+        registry_resolution_sha256="2" * 64,
+        ansatz_semantic_digest="3" * 64,
+        seed=0,
+        expected_optimizer_algorithm="scipy_slsqp",
+    )
+    assert evidence.optimizer_work.energy_evaluations == 8
+    assert evidence.optimizer_work.gradient_evaluations == 4
+
+    with pytest.raises(VqeRuntimeError, match="optimizer algorithm"):
+        build_success_evidence(
+            report,
+            binding=profile.binding,
+            scientific_spec_sha256="1" * 64,
+            registry_resolution_sha256="2" * 64,
+            ansatz_semantic_digest="3" * 64,
+            seed=0,
+        )
+
+
 def test_runtime_report_rejects_framework_drift():
     profile = candidate_runtime_profile(Framework.QISKIT)
     report = json.loads((RAW / "qiskit_vqe_v0.2.json").read_text())
@@ -213,7 +249,11 @@ async def test_production_launcher_requires_preprovisioned_exact_digest(monkeypa
         run_command[run_command.index("--pull")],
         run_command[run_command.index("--pull") + 1],
     )
-    assert run_command[-1] == profile.image_reference
+    image_index = run_command.index(profile.image_reference)
+    assert run_command[image_index + 1 :] == (
+        "--optimizer",
+        "scipy_minimize_scalar_bounded",
+    )
     assert "--network" in run_command
     assert run_command[run_command.index("--network") + 1] == "none"
     assert run_kwargs["env"] == {
