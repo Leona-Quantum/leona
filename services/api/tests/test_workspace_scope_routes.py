@@ -71,9 +71,38 @@ def test_an_invite_cannot_hand_out_administrative_authority():
 
 
 def test_a_role_change_cannot_grant_ownership():
+    """Ownership transfer exists now and is still not this route. Granting OWNER
+    also demotes the caller, so a one-sided role change is the wrong shape."""
     with pytest.raises(ValidationError):
         workspace_routes.MemberRoleRequest(role=Role.OWNER)
     assert workspace_routes.MemberRoleRequest(role=Role.ADMIN).role == Role.ADMIN
+
+
+def test_a_workspace_can_be_handed_over_and_disposed_of():
+    """The last two holes in the membership lifecycle. Without transfer an owner
+    can neither leave, be removed nor be re-roled; without delete, an owner who
+    does not want to hand the group to anyone is stuck with it forever."""
+    assert ("/workspace/transfer-ownership", "POST") in _routes()
+    assert ("/workspaces/delete", "POST") in _routes()
+
+
+def test_a_transfer_names_a_member_by_id_not_by_address():
+    """`add_member_by_email` is one route away. Accepting an address here would
+    collapse "let this person in" and "give them the workspace" into one call."""
+    fields = workspace_routes.TransferOwnershipRequest.model_fields
+    assert set(fields) == {"user_id"}
+    assert workspace_routes.TransferOwnershipRequest.model_config["extra"] == "forbid"
+    with pytest.raises(ValidationError):
+        workspace_routes.TransferOwnershipRequest(user_id="someone@example.com")
+
+
+def test_deleting_a_workspace_names_it_in_the_body():
+    """Same body model as leave and acknowledge, so the no-`{workspace_id}`-in-a-
+    path sweep above keeps covering it."""
+    import inspect
+
+    signature = inspect.signature(workspace_routes.delete_workspace)
+    assert signature.parameters["body"].annotation is workspace_routes.WorkspaceRefRequest
 
 
 @pytest.mark.parametrize("value", ["", "   ", "nobody", "@example.com", "someone@"])

@@ -3,12 +3,13 @@
 import uuid
 
 from majorana_contracts import Scope
-from majorana_contracts.enums import Role
+from majorana_contracts.enums import Role, WorkspaceKind
 from sqlalchemy import delete, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..orm import Artifact, Membership, Run, User, Workspace
-from ._base import AuthzError, NotFoundError, require_admin
+from ._base import AuthzError, NotFoundError, require_admin, require_owner
+from .system import WorkspaceLimitReached
 
 
 async def get_workspace(scope: Scope, session: AsyncSession) -> Workspace:
@@ -158,16 +159,33 @@ async def _member_row(scope: Scope, session: AsyncSession, user_id: uuid.UUID) -
     return membership
 
 
+async def member_with_user(
+    scope: Scope, session: AsyncSession, *, user_id: uuid.UUID
+) -> tuple[Membership, User]:
+    """A member of this workspace, and the account behind them.
+
+    Scoped read of a row the caller can already see in the members list, so it
+    needs no role gate beyond the membership every Scope is built from.
+    """
+    membership = await _member_row(scope, session, user_id)
+    user = (await session.execute(select(User).where(User.id == user_id))).scalars().first()
+    if user is None:  # pragma: no cover - a membership cannot outlive its user
+        raise NotFoundError("user")
+    return membership, user
+
+
 async def set_member_role(
     scope: Scope, session: AsyncSession, *, user_id: uuid.UUID, role: Role
 ) -> tuple[Membership, User]:
     """Change an existing member's role.
 
     The OWNER role is neither grantable nor removable here, in either direction.
-    Granting it would be an ownership transfer, and taking it away would leave a
-    workspace whose `owner_user_id` points at someone with no membership — a
-    state nothing else in the system expects. Both are deliberate separate
-    operations that do not exist yet.
+    Granting it would be an ownership transfer — a two-sided operation that also
+    demotes the caller, so routing it through a one-sided role change would make
+    it look like something it is not. `transfer_ownership` is that operation.
+    Taking OWNER away would leave a workspace whose `owner_user_id` points at
+    someone with no membership, which is a state nothing else in the system
+    expects; the way out of a workspace you own is to hand it over or delete it.
     """
     require_admin(scope)
     if role == Role.OWNER:
@@ -211,6 +229,94 @@ async def remove_member(scope: Scope, session: AsyncSession, *, user_id: uuid.UU
         .values(active_workspace_id=None)
     )
     await session.flush()
+
+
+class CannotTransferPersonalWorkspace(Exception):
+    """A personal workspace belongs to the account, not to a role."""
+
+
+class AlreadyTheOwner(Exception):
+    """The transfer target is the caller."""
+
+
+async def transfer_ownership(
+    scope: Scope,
+    session: AsyncSession,
+    *,
+    user_id: uuid.UUID,
+    owned_workspace_limit: int | None,
+) -> list[tuple[Membership, User]]:
+    """Hand a workspace to one of its existing members. Owner only.
+
+    The last hole in the membership lifecycle. An owner could invite, re-role and
+    remove other people, but could not be removed, re-roled or leave themselves —
+    every one of those refuses, because `workspaces.owner_user_id` would end up
+    pointing at somebody with no membership. So an owner who wanted out of their
+    own workspace had no operation at all, and neither did a group whose owner
+    had left the group.
+
+    Three things move together and must move in one transaction, because any two
+    of them without the third is a state the rest of the system does not expect:
+    `owner_user_id`, the target's role, and the caller's. The caller becomes
+    ADMIN rather than losing their membership — handing over a workspace is not
+    the same as leaving it, and if they did want out, `leave_workspace` is now
+    open to them, which it was not a moment ago.
+
+    The target is named by user id and must already hold a membership. Never by
+    email: `add_member_by_email` exists and would let this route both create an
+    account's access and hand it the workspace in one call, which is not an
+    invitation, it is a way to give a stranger a tenant.
+
+    The recipient's own `owned_workspaces` allowance is enforced here, which is
+    not obvious — no workspace is created, so the total is unchanged. It closes a
+    bypass: without it, an account at its limit transfers its workspaces to a
+    confederate, creates the same number again, and repeats, and the cap that
+    exists to bound the per-workspace Vault caps bounds nothing.
+    """
+    require_owner(scope)
+    if user_id == scope.user_id:
+        raise AlreadyTheOwner(str(user_id))
+    # Locked for the whole transaction: two owners cannot both be transferring
+    # this workspace, and a transfer cannot interleave with its own deletion.
+    workspace = (
+        await session.execute(
+            select(Workspace)
+            .where(Workspace.id == scope.workspace_id, Workspace.deleted_at.is_(None))
+            .with_for_update()
+        )
+    ).scalar_one_or_none()
+    if workspace is None:
+        raise NotFoundError("workspace")
+    if workspace.kind == WorkspaceKind.PERSONAL:
+        # The tenant `resolve_active_workspace` falls back to. Giving it away
+        # would leave an account whose own fallback is somebody else's.
+        raise CannotTransferPersonalWorkspace(str(workspace.id))
+    if workspace.owner_user_id != scope.user_id:
+        # The scope says OWNER and the row disagrees. Refusing is the only safe
+        # reading: one of the two is wrong and this operation trusts neither.
+        raise AuthzError("scope owner does not match the workspace owner")
+
+    membership, target = await member_with_user(scope, session, user_id=user_id)
+    if owned_workspace_limit is not None:
+        owned = int(
+            (
+                await session.execute(
+                    select(func.count(Workspace.id)).where(
+                        Workspace.owner_user_id == user_id,
+                        Workspace.deleted_at.is_(None),
+                    )
+                )
+            ).scalar_one()
+        )
+        if owned >= owned_workspace_limit:
+            raise WorkspaceLimitReached(owned, owned_workspace_limit)
+
+    caller_membership = await _member_row(scope, session, scope.user_id)
+    workspace.owner_user_id = target.id
+    membership.role = Role.OWNER
+    caller_membership.role = Role.ADMIN
+    await session.flush()
+    return await list_members_with_users(scope, session)
 
 
 async def add_member_by_email(

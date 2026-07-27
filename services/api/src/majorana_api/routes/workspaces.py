@@ -105,8 +105,24 @@ class MemberRoleRequest(BaseModel):
     @classmethod
     def role_is_assignable(cls, value: Role) -> Role:
         if value == Role.OWNER:
-            raise ValueError("ownership transfer is not supported")
+            # Ownership transfer exists now, but it is not this. Granting OWNER
+            # also demotes the caller, and a one-sided role change is the wrong
+            # shape for a two-sided operation.
+            raise ValueError("use POST /workspace/transfer-ownership")
         return value
+
+
+class TransferOwnershipRequest(BaseModel):
+    """The member who is to receive the workspace, by user id.
+
+    Never an email. `add_member_by_email` exists one route away, and accepting an
+    address here would collapse "let this person in" and "give them the
+    workspace" into a single call.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    user_id: uuid.UUID
 
 
 class CreateFolderRequest(BaseModel):
@@ -308,6 +324,116 @@ async def leave_workspace(
         ) from None
     if not left:
         raise HTTPException(404, "workspace not found")
+
+
+@router.post("/workspaces/delete", status_code=204)
+async def delete_workspace(
+    body: WorkspaceRefRequest,
+    identity: CurrentIdentity,
+    session: DbSession,
+) -> None:
+    """Retire a shared workspace you own.
+
+    Named in the body like leave and acknowledge, and for the same reason: the
+    workspace being deleted is usually not the one the caller is standing in, and
+    making them switch into a tenant in order to destroy it would bounce them out
+    of it halfway through the request that did it.
+
+    Not a member of it at all is 404 — the same answer as a workspace that does
+    not exist, so an id alone tells a stranger nothing. A member who is not the
+    owner is 403: they can see it, they simply may not do this.
+    """
+    user, _personal = identity
+    try:
+        deleted = await system.delete_workspace(session, user=user, workspace_id=body.workspace_id)
+    except system.NotWorkspaceOwner:
+        raise HTTPException(
+            status_code=403,
+            detail={
+                "error": "Only the owner can delete a workspace.",
+                "reason": "not_workspace_owner",
+            },
+        ) from None
+    except system.CannotDeletePersonalWorkspace:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "error": (
+                    "Your personal workspace cannot be deleted — it is where "
+                    "your account falls back to."
+                ),
+                "reason": "personal_workspace",
+            },
+        ) from None
+    if not deleted:
+        raise HTTPException(404, "workspace not found")
+
+
+@router.post("/workspace/transfer-ownership", response_model=list[WorkspaceMember])
+async def transfer_ownership(
+    body: TransferOwnershipRequest,
+    scope: CurrentScope,
+    session: DbSession,
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> list[WorkspaceMember]:
+    """Hand this workspace to one of its existing members. Owner only.
+
+    Scoped, unlike delete: the members list this chooses from is the open
+    workspace's, so the operation is already standing in the right tenant, and
+    the response is that same list with two roles changed.
+
+    The recipient's `owned_workspaces` allowance is checked against *their* tier,
+    not the caller's — the workspace is about to become theirs. See the repo
+    function for why an operation that creates no workspace enforces a cap on
+    how many exist.
+    """
+    # A user id that is not a member of this workspace raises NotFoundError,
+    # which the app turns into a 404 — the same answer as an id that does not
+    # exist, so this cannot be used to probe for accounts.
+    _membership, target = await workspaces_repo.member_with_user(
+        scope, session, user_id=body.user_id
+    )
+    limits = limits_for(
+        resolve_tier(target.email, plan=target.plan, developer_emails=settings.developer_emails)
+    )
+    try:
+        members = await workspaces_repo.transfer_ownership(
+            scope,
+            session,
+            user_id=body.user_id,
+            owned_workspace_limit=limits.owned_workspaces,
+        )
+    except workspaces_repo.AlreadyTheOwner:
+        raise HTTPException(
+            status_code=409,
+            detail={"error": "You already own this workspace.", "reason": "already_owner"},
+        ) from None
+    except workspaces_repo.CannotTransferPersonalWorkspace:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "error": (
+                    "A personal workspace belongs to its account and cannot be "
+                    "handed over. Create a shared workspace to collaborate."
+                ),
+                "reason": "personal_workspace",
+            },
+        ) from None
+    except system.WorkspaceLimitReached as reached:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "error": (
+                    f"That person's plan includes {reached.limit} workspaces and "
+                    f"all {reached.limit} are in use, so they cannot take on "
+                    "another one."
+                ),
+                "reason": "recipient_workspace_allowance_exhausted",
+                "used": reached.owned,
+                "limit": reached.limit,
+            },
+        ) from None
+    return [_to_member(membership, user) for membership, user in members]
 
 
 @router.post("/workspaces", response_model=WorkspaceSummary, status_code=201)
