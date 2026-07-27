@@ -616,3 +616,52 @@ new authenticated routes:
 ```
 
 S10: **private_compose_save_reopen_verified_execution_blocked_by_design**
+
+## S11 — Neon materialization, migration, and concurrency
+
+The owner-configured disposable Neon development branch was at migration
+`0035`. Before inserting Phase 7.6 records, PostgreSQL 17.10 completed:
+
+```text
+0035 -> 0039 -> 0038 -> 0039
+```
+
+An operator-only materializer now persists the authored standard catalog
+through scoped repositories. It does not use raw SQL, publish records, set
+human review, or set machine-validation/runtime claims. A required
+`--confirm-disposable` flag and `MAJORANA_ENV=production` refusal guard the
+operator entry point.
+
+```text
+first pass:  29 Component Definitions created, 7 Workflow seeds created
+second pass: 29 Component Definitions reused,  7 Workflow seeds reused
+catalog digest:
+  1ae9a4eb41bd8b8af5b1c6d73b18330d6bf19e41cba847d27bf79279fa21d188
+```
+
+Every record is private, unreviewed, and unvalidated. Reuse verifies immutable
+ArtifactVersion fingerprint, semantic key, role, normalized spec digest, and
+Workflow composition. Drift stops the import rather than creating a silent
+replacement.
+
+Live Neon validation:
+
+```text
+existing VQE repository invariants: 10 passed
+Phase 7.6 materialization/comparison: 2 passed
+up/down/up before evidence: passed
+downgrade after comparison evidence: rejected; head remained 0039
+import-linter contracts: 4 kept
+raw-query gate: clean
+```
+
+The live run exposed an inherited concurrency bug in `bind_execution_run`:
+the losing transaction expired an ORM instance and then read its ID, causing
+async `MissingGreenlet`. It now re-reads with the immutable function argument.
+The comparison idempotency path was also closed with a savepoint and
+unique-winner re-read. Both race paths pass against Neon.
+
+Full structured evidence:
+`docs/atlas/evidence/phase76/s11_neon_validation.json`.
+
+S11: **verified_neon_private_unreviewed**

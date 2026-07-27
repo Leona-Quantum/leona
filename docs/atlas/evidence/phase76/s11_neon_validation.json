@@ -1,0 +1,88 @@
+{
+  "schema_version": "1.0.0",
+  "environment": {
+    "database_class": "owner-confirmed disposable Neon development branch",
+    "postgresql_version": "17.10",
+    "connection_policy": {
+      "application": "pooled endpoint",
+      "migration": "direct endpoint",
+      "credentials_recorded": false
+    }
+  },
+  "migration": {
+    "starting_revision": "0035",
+    "sequence_before_materialization": [
+      "upgrade 0039",
+      "downgrade 0038",
+      "upgrade 0039"
+    ],
+    "final_revision": "0039",
+    "single_head": true,
+    "downgrade_with_comparison_evidence": {
+      "result": "rejected",
+      "reason": "cannot downgrade 0039 while comparison evidence exists",
+      "revision_after_rejection": "0039"
+    }
+  },
+  "standard_seed_materialization": {
+    "visibility": "private",
+    "review_state": "unreviewed",
+    "machine_validation_state": "unvalidated",
+    "publication_performed": false,
+    "first_run": {
+      "component_created": 29,
+      "component_reused": 0,
+      "workflow_created": 7,
+      "workflow_reused": 0
+    },
+    "second_run": {
+      "component_created": 0,
+      "component_reused": 29,
+      "workflow_created": 0,
+      "workflow_reused": 7
+    },
+    "catalog_digest_sha256": "1ae9a4eb41bd8b8af5b1c6d73b18330d6bf19e41cba847d27bf79279fa21d188"
+  },
+  "live_tests": {
+    "existing_vqe_repository": {
+      "passed": 10,
+      "failed": 0
+    },
+    "phase76_materialization_comparison": {
+      "passed": 2,
+      "failed": 0
+    },
+    "verified_properties": [
+      "workspace isolation",
+      "append-only triggers",
+      "experiment and execution idempotency",
+      "concurrent observation attempt allocation",
+      "concurrent run binding",
+      "concurrent controlled-comparison idempotency",
+      "catalog materialization replay",
+      "dangerous downgrade refusal"
+    ]
+  },
+  "defects_detected_and_fixed": [
+    {
+      "area": "concurrent VQE run binding",
+      "symptom": "expired ORM identity triggered MissingGreenlet in the losing transaction",
+      "fix": "re-read the winner with the immutable function argument instead of an expired ORM attribute"
+    },
+    {
+      "area": "controlled comparison creation",
+      "symptom": "pre-insert idempotency lookup did not close the concurrent insert race",
+      "fix": "use a savepoint and re-read the unique-key winner after IntegrityError"
+    },
+    {
+      "area": "architecture boundary",
+      "symptom": "operator materializer imported SQLAlchemy only for a type annotation",
+      "fix": "remove the dependency; import-linter and raw-query gates now pass"
+    }
+  ],
+  "claim_boundary": [
+    "This is persistence and concurrency evidence on one disposable Neon branch.",
+    "It is not scientific review, public catalog publication, or production migration evidence.",
+    "The SLSQP workflow remains blocked until a pushed registry runtime digest is qualified."
+  ]
+}

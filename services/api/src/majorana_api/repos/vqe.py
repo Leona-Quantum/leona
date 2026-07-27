@@ -1025,8 +1025,28 @@ async def create_controlled_comparison_spec(
         spec_sha256=digest,
         request_idempotency_key=request_idempotency_key,
     )
-    session.add(row)
-    await session.flush()
+    try:
+        async with session.begin_nested():
+            session.add(row)
+            await session.flush()
+    except IntegrityError:
+        winner = (
+            await session.execute(
+                select(VqeControlledComparisonSpecRow).where(
+                    VqeControlledComparisonSpecRow.workspace_id
+                    == scope.workspace_id,
+                    VqeControlledComparisonSpecRow.request_idempotency_key
+                    == request_idempotency_key,
+                )
+            )
+        ).scalars().first()
+        if winner is None:
+            raise
+        if winner.spec_sha256 != digest:
+            raise IdempotencyConflictError(
+                "comparison idempotency key was used for different content"
+            ) from None
+        return winner
     await session.refresh(row)
     return row
 
@@ -1249,7 +1269,10 @@ async def bind_execution_run(
     )
     if result.rowcount != 1:
         session.expire(execution)
-        winner = await get_execution(scope, session, execution.id)
+        # `execution` is expired so every ORM attribute access may perform IO.
+        # Reuse the immutable function argument instead of reading `.id` from
+        # the expired instance outside SQLAlchemy's async greenlet context.
+        winner = await get_execution(scope, session, execution_id)
         if winner.run_id == run.id and winner.status in {
             "queued",
             "running",
