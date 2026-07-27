@@ -1,6 +1,6 @@
 # Atlas VQE Phase 6 — corrected hardening and release decision
 
-Date: 2026-07-26  
+Date: 2026-07-27  
 Branch: `feature/vqe`  
 Decision: **NO-GO for public MVP release; GO for GitHub metadata Wrapper,
 claim/metric source modeling, independent scientific review, and
@@ -28,7 +28,7 @@ production-runtime design**
 | Remote `feature/vqe` CI | implementation run 30165157403 at a49b6d5 and closure run 30171168974 at 6d8a054; py/ts/db/ui-visual | pass |
 | Authenticated browser contract E2E | local identity + real Next BFF + deterministic mock API; success/failure | pass_limited |
 | Private production system E2E | WorkOS-shaped JWT verification + disposable Neon + durable worker + real OCI runtime | pass for Qiskit and PennyLane |
-| Live WorkOS tenant/browser E2E | owner-managed tenant credentials unavailable; Vercel excluded by owner | not_run |
+| Live WorkOS tenant/browser control-plane E2E | WorkOS Staging→Vercel Preview→Cloud Run FastAPI→Neon test branch; owner-observed `/api/me` 200 | pass_control_plane |
 | Independent H₂ scientific review | explicitly waived by owner; not relabeled as review | owner_waived |
 | Production runtime provider | pre-provisioned dedicated Docker host, exact digest, `--pull=never` | implemented_private |
 | OCI Registry manifest digest | GHCR Linux/amd64 indexes with SBOM/provenance attestations | pass |
@@ -60,24 +60,35 @@ settings.
 The private production path now has Registry-pullable OCI digests and a
 dedicated-host executor. Run `30172634273` passed a disposable-Neon system E2E
 for both frameworks through the real JWT verifier, API, durable queue/worker,
-real OCI image, and persisted evidence. The issuer was an ephemeral
-WorkOS-shaped JWKS service, not a live WorkOS tenant. Vercel was explicitly
-excluded by the owner. Deployment monitoring and incident-response evidence
-remain absent.
+real OCI image, and persisted evidence. Its issuer was an ephemeral
+WorkOS-shaped JWKS service.
+
+Separately, on 2026-07-27 the owner completed a live WorkOS Staging login
+through the Vercel `feature/vqe` Preview and obtained a successful `/api/me`
+response through Cloud Run FastAPI and the Neon test branch. This closes the
+live control-plane authentication gate, not a browser-triggered OCI execution
+gate. See `PHASE6_LIVE_CONTROL_PLANE_E2E.md`. Deployment monitoring and
+incident-response evidence for a persistent dedicated runtime host remain
+absent.
 
 ## Release decision
 
-Public MVP release remains **NO-GO**. The earlier statement that all technical
-hardening except human/owner decisions was complete was incorrect and has
-been withdrawn. Local P0 hardening is now substantially closed. Remote branch
-CI and the limited authenticated browser contract are closed; production
-runtime, OCI promotion, production browser E2E, independent scientific
-review, and owner authorization remain explicit gates.
+Public MVP release remains **NO-GO**. Private/test Phase 6 is complete enough
+to start Phase 7 metadata-only GitHub import. This is not a public release:
+one continuous live browser→dedicated-worker execution E2E, persistent-host
+operations, independent scientific review, license approval, and owner
+publication authorization remain explicit gates.
 
 Remote CI passed at `6cceb1255a57973b9bf388ada3c615407bc991e2`
 (CI run `30172634255`; production-system E2E run `30172634273`, two tests in
 22.03 s). Development priority now returns to the original
 master-plan objective:
+
+On 2026-07-27 a manual E2E re-run exposed inherited Neon parent schema drift.
+The failed run is retained as evidence (`30270582015`). After making the named
+disposable branch self-initializing, production-system E2E run `30271046708`
+passed both frameworks and full CI run `30271046766` passed all four jobs at
+commit `7bc436c54845a24ebd40f44d9ec62015fe3744f0`.
 
 1. manual GitHub URL import;
 2. immutable commit, license, citation, and dependency capture;

@@ -1,0 +1,27 @@
+{
+  "schema_version": "atlas.phase6.live-control-plane-evidence.v1",
+  "observed_at": "2026-07-27",
+  "environment": "test",
+  "branch": "feature/vqe",
+  "vercel_source_commit": "e4e0f8fce8093c7f25663f5654be4c8142cd482b",
+  "cloud_run_revision": "majorana-api-vqe-test-00003-ttr",
+  "workos_environment": "staging",
+  "checks": {
+    "protected_run_route_rendered": true,
+    "next_bff_api_me_http_200": true,
+    "fastapi_jwt_verification": true,
+    "neon_user_workspace_resolution": true,
+    "non_empty_user_id": true,
+    "non_empty_workspace_id": true,
+    "owner_role": true
+  },
+  "observation_method": "owner_observed_browser_response",
+  "secrets_recorded": false,
+  "not_proven": [
+    "browser_triggered_dedicated_worker_execution",
+    "public_execution",
+    "publication",
+    "independent_scientific_review",
+    "scientific_release"
+  ]
+}

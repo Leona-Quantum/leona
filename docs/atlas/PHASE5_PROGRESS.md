@@ -1,11 +1,12 @@
 # Atlas VQE Phase 5 — corrected product-integration record
 
-Date: 2026-07-26  
+Date: 2026-07-27  
 Branch: `feature/vqe`  
 Source runtime commit: `99e95a9a2589a3ca0ac01c3e44499046fabbce89`  
-State: **local Phase 5 candidate implemented and technically requalified;
-independent human review, authenticated browser E2E, production runtime, and
-public promotion remain blocked**
+State: **private Phase 5 path implemented and technically requalified;
+live authenticated control-plane E2E and the separate digest-pinned
+production-runtime E2E pass; independent scientific review is owner-waived
+and public promotion remains blocked**
 
 ## 1. Exact claim boundary
 
@@ -180,14 +181,25 @@ snapshot checker. Those additions passed at closure head
 all four jobs passed again. This later result is not retroactively attributed
 to run `30165157403`.
 
-## 8. Deliberately open gates
+## 8. Live test addendum and deliberately open gates
+
+On 2026-07-27 the owner completed a live WorkOS Staging sign-in through the
+Vercel `feature/vqe` Preview deployment. `GET /api/me` then passed through the
+real Next BFF, Cloud Run FastAPI JWT verifier, and Neon test branch with a
+non-empty user/workspace identity and `role: owner`. See
+`PHASE6_LIVE_CONTROL_PLANE_E2E.md`.
+
+This does not turn the separate production-runtime CI into one continuous
+browser-triggered execution E2E. The test API has execution disabled and no
+persistent dedicated Docker worker.
 
 - independent human scientific review of the H₂ definitions and evidence;
-- production WorkOS/Neon/runtime browser E2E and owner UX confirmation;
-- a production `VqeRuntimeExecutor` implementation and staging
-  qualification;
-- OCI Registry push and manifest-digest pinning;
+- one continuous live browser→dedicated-worker execution E2E;
+- operational monitoring and incident-response evidence for a persistent
+  dedicated worker host;
 - public execution, publication, scientific release, and deployment approval.
 
-The candidate remains `unreviewed`, `unqualified`, private, and blocked from
-public execution. Phase 5 evidence does not substitute for these gates.
+The scientific fixture remains `owner_waived`, never `human_reviewed`.
+The exact OCI profiles are technically `qualified` for the private path, but
+the capability remains private and blocked from public execution. Phase 5
+engineering evidence does not substitute for independent scientific review.

@@ -7,9 +7,9 @@
 **作業branch:** `feature/vqe`  
 **基準Alembic head:** `0034`  
 **状態:** implementation in progress; Phase 0–4.5 complete,
-Phase 5A implemented/verified, Phase 5B technical candidate qualification
-complete but human review/promotion blocked, Phase 6 automated hardening
-complete with public MVP NO-GO (2026-07-25)
+Phase 5 private technical path qualified with owner-waived scientific review,
+Phase 6 private/test hardening complete and public MVP NO-GO, Phase 7
+metadata-only manual GitHub import started (2026-07-27)
 **長期構想:** `atlas_vqe_github_wrapper_master_plan_ja.md`
 
 ---
@@ -45,18 +45,19 @@ GPU、QPU、古い論文環境の実行へ進んではならない。
 | 3 | Component Registry + experiment evidence in Neon | yes | contract only | verified_local; Neon/import pending |
 | 4 | Atlas Browse / Compare UI | Phase 3 | yes | implemented_and_browser_verified |
 | 5A | Durable non-public execution product integration | Phase 3 | yes | implemented_and_verified |
-| 5B | Scientific/runtime production qualification | Phase 3 | yes | candidate_qualified; blocked_on_human_review_and_promotion |
-| 6 | Security/scientific/E2E hardening and MVP Go/No-Go | test only | test | automated_gates_complete; public_release_no_go |
-| 7 | Manual GitHub metadata import | later | minimal | later |
+| 5B | Scientific/runtime production qualification | Phase 3 | yes | private_runtime_qualified; scientific_review_owner_waived; public_promotion_blocked |
+| 6 | Security/scientific/E2E hardening and MVP Go/No-Go | test only | test | private_test_complete; public_release_no_go |
+| 7 | Manual GitHub metadata import | later | minimal | in_progress; execution_and_publication_prohibited |
 | 8–9 | Deterministic/LLM extraction and reviewed materialization | later | later | later |
 | 10 | Isolated external Repository execution | separate milestone | later | prohibited in MVP |
 
-**Active pickup:** 2026-07-25 integrity remediation後のPhase 3 Neon child
-branch検証・curated corpus import判断。Phase 2はADR-0026に従うmachine-only
-acceptanceとして完了したが、human curation、inter-annotator agreement、
-manual-gold評価はpost-MVPのままである。Phase 3のschema/APIはlocal
-PostgreSQLで検証済みだが、Neon接続と実corpus importはowner承認前に完了扱い
-しない。詳細は`docs/atlas/INTEGRITY_REMEDIATION_2026-07-25.md`。
+**Active pickup:** Phase 7のmanual read-only GitHub metadata import。
+Phase 6では、live WorkOS Staging→Vercel Preview→Cloud Run FastAPI→Neon
+test branchのcontrol-plane E2Eと、別系統のWorkOS-shaped JWT→disposable
+Neon→durable worker→digest-pinned OCI runtime E2Eを確認した。この二つを
+一つの連続したlive execution E2Eとは呼ばない。public execution、
+publication、verified badge、scientific releaseは引き続きblockedである。
+Phase 7はmetadata-onlyで開始し、外部Repository codeを実行しない。
 
 ---
 
@@ -988,8 +989,8 @@ human-curated gold reportであるかのように装ってはならない。
 
 ## Phase 5 — Qiskit/PennyLane Proof Execution
 
-**Status:** Phase 5A implemented/verified; Phase 5B candidate evidence complete,
-independent review and public promotion blocked
+**Status:** Phase 5A implemented/verified; Phase 5B private runtime technically
+qualified; independent review owner-waived and public promotion blocked
 **DB change:** Phase 3 tablesを利用  
 **UI:** Studio / Run / Library integration
 
@@ -1096,8 +1097,8 @@ Runtime profileをuserの自由文字列として選択させない。
 
 ## Phase 6 — MVP hardening and release decision
 
-**Status:** automated hardening complete; public MVP release NO-GO pending
-independent H2 review and owner user-flow confirmation
+**Status:** private/test hardening complete; owner user-flow confirmation
+complete for the live control-plane path; public MVP release remains NO-GO
 
 ### Required gates
 

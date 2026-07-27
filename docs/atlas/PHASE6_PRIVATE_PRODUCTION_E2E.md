@@ -57,3 +57,30 @@ Independent H2 scientific review was owner-waived. Evidence is labeled
 machine-generated H2 evidence into independent scientific validation. Public
 execution, publication, verified badges, and scientific release remain
 blocked.
+
+## 2026-07-27 revalidation and schema-drift correction
+
+A manual re-run at source head
+`e4e0f8fce8093c7f25663f5654be4c8142cd482b` initially failed before runtime
+execution because the newly created Neon child inherited an inconsistent
+parent state: `alembic_version` indicated the current revision while
+`vqe_component_specs` was absent. Run
+[`30270582015`](https://github.com/EshMis/majorana/actions/runs/30270582015)
+is retained as negative infrastructure evidence.
+
+Commit `7bc436c54845a24ebd40f44d9ec62015fe3744f0` corrected the E2E isolation:
+the workflow now drops and recreates `public` only on its named disposable
+child branch before applying migrations. It does not reset the parent or any
+persistent database.
+
+Revalidation run
+[`30271046708`](https://github.com/EshMis/majorana/actions/runs/30271046708)
+then passed both framework cases (`2 passed in 14.06 s`), including exact OCI
+digest pre-provisioning, durable execution, numerical gates, evidence
+persistence, and child-branch deletion. Companion full CI run
+[`30271046766`](https://github.com/EshMis/majorana/actions/runs/30271046766)
+passed Python, TypeScript/production build, database/Neon, and UI-visual jobs.
+
+This correction makes the test independent of the mutable parent schema. It
+does not repair or make a claim about that parent; persistent database drift
+must be audited separately before using it as a migration authority.

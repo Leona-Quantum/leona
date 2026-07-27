@@ -42,9 +42,15 @@ override both.
 - Phase 6 decision: `PHASE6_GO_NO_GO.md`
 - Phase 6 private production-system E2E:
   `PHASE6_PRIVATE_PRODUCTION_E2E.md`
+- Phase 6 live WorkOS/Vercel/FastAPI/Neon control-plane E2E:
+  `PHASE6_LIVE_CONTROL_PLANE_E2E.md`
 - Phase 6 threat, provenance, and rights review:
   `PHASE6_THREAT_RIGHTS_REVIEW.md`
+- Phase 7 manual GitHub metadata import progress:
+  `PHASE7_PROGRESS.md`
 - Phase 6 rollback and disablement runbook: `PHASE6_ROLLBACK.md`
+- Beginner-facing test deployment and dashboard manual:
+  `../runbooks/vqe-test-vercel-workos-neon-manual_ja.md`
 
 ## Status vocabulary
 
