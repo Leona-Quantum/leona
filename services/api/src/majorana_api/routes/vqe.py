@@ -94,6 +94,28 @@ class WorkflowResource(BaseModel):
     components: list[WorkflowComponentResource]
 
 
+class CreateWorkflowSwapRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    baseline_workflow_artifact_version_id: uuid.UUID
+    baseline_template_key: Literal["workflow.h2.fixed_excitation.v1"]
+    changed_role: Literal["parameter_optimizer"]
+    candidate_component_semantic_key: Literal["optimizer.slsqp.v1"]
+    candidate_component_spec_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    configuration: dict[str, str] = Field(default_factory=dict, max_length=16)
+    evaluator_provider: Literal["qiskit", "pennylane"]
+
+
+class WorkflowSwapResource(BaseModel):
+    artifact_id: uuid.UUID
+    workflow_artifact_version_id: uuid.UUID
+    workflow_semantic_key: str
+    request_sha256: str
+    replayed: bool
+    execution_status: Literal["blocked_until_runtime_qualified"]
+    visibility: Literal["private"] = "private"
+
+
 class CapabilityStatus(BaseModel):
     capability: str
     available: bool
@@ -294,6 +316,50 @@ async def get_component(
 
 
 # --- workflows -------------------------------------------------------------
+
+
+@router.post(
+    "/atlas/workflows/swaps",
+    response_model=WorkflowSwapResource,
+    status_code=201,
+)
+async def create_workflow_swap(
+    body: CreateWorkflowSwapRequest,
+    scope: CurrentScope,
+    session: DbSession,
+    settings: Annotated[Settings, Depends(get_settings)],
+    request_idempotency_key: Annotated[
+        str, Header(alias="Idempotency-Key", min_length=1, max_length=200)
+    ],
+) -> WorkflowSwapResource:
+    try:
+        saved = await vqe_repo.save_component_swap_workflow_draft(
+            scope,
+            session,
+            baseline_workflow_artifact_version_id=(
+                body.baseline_workflow_artifact_version_id
+            ),
+            baseline_template_key=body.baseline_template_key,
+            changed_role=ComponentType(body.changed_role),
+            candidate_component_semantic_key=body.candidate_component_semantic_key,
+            candidate_component_spec_sha256=body.candidate_component_spec_sha256,
+            configuration=tuple(sorted(body.configuration.items())),
+            evaluator_provider=body.evaluator_provider,
+            request_idempotency_key=request_idempotency_key,
+            catalog_workspace_id=_catalog_workspace_id(settings),
+        )
+    except (vqe_repo.InvalidWorkflowCompositionError, vqe_repo.NotFoundError) as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from None
+    except vqe_repo.IdempotencyConflictError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from None
+    return WorkflowSwapResource(
+        artifact_id=saved.artifact.id,
+        workflow_artifact_version_id=saved.version.id,
+        workflow_semantic_key=saved.workflow_spec.semantic_key,
+        request_sha256=saved.version.fingerprint,
+        replayed=saved.replayed,
+        execution_status="blocked_until_runtime_qualified",
+    )
 
 
 @router.get("/atlas/workflows", response_model=ComponentSpecListResponse)

@@ -4,7 +4,7 @@ Date: 2026-07-28 JST
 Branch: `feature/vqe`  
 Starting commit: `ef62a005479e9a141715406d02e65ecff442c79f`  
 Starting Alembic head: `0038`  
-State: **S0–S4 verified locally; S5 pending**
+State: **S0–S5 implemented and locally verified; S6 pending**
 
 ## S0 — Baseline freeze and claim inventory
 
@@ -349,6 +349,64 @@ S4: **verified_local_with_expected_candidate_block**
 The resolver infrastructure is safe for the qualified baseline. Candidate
 execution remains unavailable until S6. S5 may implement immutable swapped
 Workflow persistence while preserving that execution block.
+
+## S5 — Immutable swapped Workflow draft
+
+### Outcome
+
+A scoped `POST /v1/atlas/workflows/swaps` write path now accepts only the
+bounded owner choices for the first slice:
+
+- baseline Workflow ArtifactVersion;
+- the fixed baseline template key;
+- `parameter_optimizer` as the only changed role;
+- `optimizer.slsqp.v1` plus its expected content digest;
+- bounded configuration values;
+- Qiskit or PennyLane as evaluator preference;
+- an HTTP idempotency key.
+
+The repository boundary re-resolves the baseline, template, Component
+Definition, candidate Component ArtifactVersion, compatibility-v2 report, and
+Registry links. Clients cannot submit Registry UUIDs for leaf Components,
+package versions, runtime profiles, adapter releases, or container digests.
+
+The saved object is a private Artifact plus immutable ArtifactVersion and
+`vqe_workflow_components` links. A deterministic workspace-scoped slug and a
+canonical request digest make same-key/same-request replay return the existing
+version; same-key/different-request returns an idempotency conflict.
+
+The draft is explicitly stored as:
+
+```text
+machine_validation_state = unvalidated
+execution_status = blocked_until_runtime_qualified
+publication = blocked
+scientific_release = blocked
+```
+
+It is not yet promoted to an executable scientific experiment. S6 must add
+the typed SLSQP Component and qualified adapter before a new executable
+Workflow version can be created.
+
+### Verification
+
+```text
+API route + plan tests: 19 passed
+Ruff: passed
+git diff --check: passed
+```
+
+Route tests verify the request cannot inject runtime or package authority.
+PostgreSQL replay, uniqueness, and cross-workspace behavior remain assigned
+to S11 Neon verification; no database claim is made from mock tests.
+
+### S5 decision
+
+S5: **verified_local_db_pending**
+
+The structured candidate can be persisted without reusing the baseline
+Registry key and without overstating executability. S6 may implement and
+qualify the SLSQP scientific/adapter slice.
 
 ## Current safety boundary
 

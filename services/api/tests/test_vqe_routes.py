@@ -38,6 +38,7 @@ def test_every_plan_candidate_endpoint_is_reachable_over_http():
         ("/atlas/components", "GET"),
         ("/atlas/components/{artifact_version_id}", "GET"),
         ("/atlas/workflows", "GET"),
+        ("/atlas/workflows/swaps", "POST"),
         ("/atlas/workflows/{workflow_artifact_version_id}", "GET"),
         ("/atlas/comparisons/{comparison_id}", "GET"),
         ("/vqe/capabilities", "GET"),
@@ -58,6 +59,7 @@ def test_every_route_requires_a_scope():
         vqe_routes.list_components,
         vqe_routes.get_component,
         vqe_routes.list_workflows,
+        vqe_routes.create_workflow_swap,
         vqe_routes.get_workflow,
         vqe_routes.get_comparison,
         vqe_routes.vqe_capabilities,
@@ -78,6 +80,44 @@ def test_create_experiment_requires_a_request_idempotency_key_with_no_default():
 
     sig = inspect.signature(vqe_routes.create_experiment)
     assert sig.parameters["request_idempotency_key"].default is inspect.Parameter.empty
+
+
+async def test_create_workflow_swap_passes_only_bounded_owner_choices(monkeypatch):
+    baseline_id = uuid.uuid4()
+    artifact_id = uuid.uuid4()
+    version_id = uuid.uuid4()
+    captured = {}
+
+    async def fake_save(scope, session, **kwargs):
+        captured.update(kwargs)
+        return SimpleNamespace(
+            artifact=SimpleNamespace(id=artifact_id),
+            version=SimpleNamespace(id=version_id, fingerprint="a" * 64),
+            workflow_spec=SimpleNamespace(semantic_key="workflow.instance.test"),
+            replayed=False,
+        )
+
+    monkeypatch.setattr(vqe_repo, "save_component_swap_workflow_draft", fake_save)
+    body = vqe_routes.CreateWorkflowSwapRequest(
+        baseline_workflow_artifact_version_id=baseline_id,
+        baseline_template_key="workflow.h2.fixed_excitation.v1",
+        changed_role="parameter_optimizer",
+        candidate_component_semantic_key="optimizer.slsqp.v1",
+        candidate_component_spec_sha256="b" * 64,
+        configuration={"max_objective_evaluations": "256"},
+        evaluator_provider="qiskit",
+    )
+    result = await vqe_routes.create_workflow_swap(
+        body,
+        scope=object(),
+        session=object(),
+        settings=_settings(),
+        request_idempotency_key="request-1",
+    )
+    assert result.workflow_artifact_version_id == version_id
+    assert captured["candidate_component_semantic_key"] == "optimizer.slsqp.v1"
+    assert "runtime_profile_id" not in captured
+    assert "package_version" not in captured
 
 
 async def test_capabilities_reports_the_h2_capability_as_unavailable():

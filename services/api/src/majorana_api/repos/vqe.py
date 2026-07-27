@@ -17,12 +17,16 @@ append_observation is strictly append-only (ADR-0025): a retry is a new row
 with an incremented attempt, never a mutation of a prior one.
 """
 
+import dataclasses
 import hashlib
 import json
 import uuid
+from dataclasses import dataclass
 from typing import Any, Literal
 
 from majorana_contracts import Scope
+from majorana_contracts.enums import Algorithm, ExportStatus
+from majorana_contracts.enums import Framework as ContractFramework
 from majorana_vqe.models import (
     ComponentType,
     ExecutionBinding,
@@ -47,6 +51,14 @@ from majorana_vqe.portable import (
     workflow_semantic_digest,
 )
 from majorana_vqe.result import EXECUTION_EVIDENCE_ADAPTER, ExecutionEvidence
+from majorana_vqe.standard_catalog import (
+    STANDARD_IMPLEMENTATIONS,
+    WorkflowComponentSelection,
+    check_workflow_compatibility,
+    component_by_key,
+    migrate_selection_configuration,
+    workflow_by_key,
+)
 from sqlalchemy import func, or_, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -73,6 +85,15 @@ class IdempotencyConflictError(RepoError):
 
 class InvalidWorkflowCompositionError(RepoError):
     """A workflow cannot be represented losslessly as portable schema v0.2."""
+
+
+@dataclass(frozen=True)
+class SavedWorkflowDraft:
+    artifact: Artifact
+    version: ArtifactVersion
+    workflow_spec: VqeComponentSpecRow
+    links: tuple[VqeWorkflowComponentRow, ...]
+    replayed: bool
 
 
 H2_REVIEW_CANDIDATE_WORKFLOW_KEY = "h2.sto3g.actual_vqe.workflow.v0_2"
@@ -307,6 +328,256 @@ async def list_workflow_components(
         .order_by(VqeWorkflowComponentRow.component_role, VqeWorkflowComponentRow.ordinal)
     )
     return list((await session.execute(stmt)).scalars().all())
+
+
+async def _get_unique_component_by_semantic_digest(
+    scope: Scope,
+    session: AsyncSession,
+    *,
+    semantic_key: str,
+    normalized_spec_sha256: str,
+    catalog_workspace_id: uuid.UUID | None,
+) -> VqeComponentSpecRow:
+    stmt = (
+        select(VqeComponentSpecRow)
+        .join(ArtifactVersion, VqeComponentSpecRow.artifact_version_id == ArtifactVersion.id)
+        .join(Artifact, ArtifactVersion.artifact_id == Artifact.id)
+        .where(
+            VqeComponentSpecRow.semantic_key == semantic_key,
+            VqeComponentSpecRow.normalized_spec_sha256 == normalized_spec_sha256,
+            _readable_artifact_predicate(
+                scope,
+                catalog_workspace_id=catalog_workspace_id,
+            ),
+            Artifact.deleted_at.is_(None),
+        )
+    )
+    rows = list((await session.execute(stmt)).scalars().all())
+    if not rows:
+        raise NotFoundError("vqe component semantic digest")
+    if len(rows) != 1:
+        raise InvalidWorkflowCompositionError(
+            "component semantic key and digest resolve ambiguously"
+        )
+    return rows[0]
+
+
+async def save_component_swap_workflow_draft(
+    scope: Scope,
+    session: AsyncSession,
+    *,
+    baseline_workflow_artifact_version_id: uuid.UUID,
+    baseline_template_key: str,
+    changed_role: ComponentType,
+    candidate_component_semantic_key: str,
+    candidate_component_spec_sha256: str,
+    configuration: tuple[tuple[str, str], ...],
+    evaluator_provider: Literal["qiskit", "pennylane"],
+    request_idempotency_key: str,
+    catalog_workspace_id: uuid.UUID | None,
+) -> SavedWorkflowDraft:
+    """Persist one immutable structured swap draft with server-owned resolution."""
+
+    require_write(scope)
+    if changed_role is not ComponentType.PARAMETER_OPTIMIZER:
+        raise InvalidWorkflowCompositionError(
+            "Phase 7.6 permits only parameter_optimizer swaps"
+        )
+    baseline_spec = await get_component_spec(
+        scope,
+        session,
+        baseline_workflow_artifact_version_id,
+        catalog_workspace_id=catalog_workspace_id,
+    )
+    if baseline_spec.component_type != ComponentType.WORKFLOW.value:
+        raise InvalidWorkflowCompositionError("baseline is not a workflow")
+    if baseline_spec.semantic_key != baseline_template_key:
+        raise InvalidWorkflowCompositionError(
+            "baseline Registry identity does not match the requested template"
+        )
+    template = workflow_by_key(baseline_template_key)
+    candidate_definition = component_by_key(candidate_component_semantic_key)
+    if candidate_definition.component_type is not changed_role:
+        raise InvalidWorkflowCompositionError("candidate component role mismatch")
+    migrated = migrate_selection_configuration(
+        configuration,
+        candidate_component_key=candidate_component_semantic_key,
+    )
+    if migrated.requires_explicit_acceptance:
+        raise InvalidWorkflowCompositionError(
+            "configuration contains fields unsupported by the candidate"
+        )
+    selections = tuple(
+        WorkflowComponentSelection(
+            role=selection.role,
+            component_semantic_key=(
+                candidate_component_semantic_key
+                if selection.role is changed_role
+                else selection.component_semantic_key
+            ),
+            applicability=selection.applicability,
+            configuration=migrated.migrated
+            if selection.role is changed_role
+            else selection.configuration,
+            bound_contracts=selection.bound_contracts,
+        )
+        for selection in template.selections
+    )
+    candidate_template = dataclasses.replace(template, selections=selections)
+    compatibility = check_workflow_compatibility(candidate_template)
+    if not compatibility.compatible:
+        raise InvalidWorkflowCompositionError(
+            "candidate swap is incompatible: "
+            + ",".join(issue.code for issue in compatibility.issues)
+        )
+
+    baseline_links = await list_workflow_components(
+        scope,
+        session,
+        baseline_workflow_artifact_version_id,
+        catalog_workspace_id=catalog_workspace_id,
+    )
+    baseline_by_role = {ComponentType(link.component_role): link for link in baseline_links}
+    candidate_spec = await _get_unique_component_by_semantic_digest(
+        scope,
+        session,
+        semantic_key=candidate_component_semantic_key,
+        normalized_spec_sha256=candidate_component_spec_sha256,
+        catalog_workspace_id=catalog_workspace_id,
+    )
+    if set(baseline_by_role) != {
+        selection.role
+        for selection in selections
+        if selection.component_semantic_key is not None
+    }:
+        raise InvalidWorkflowCompositionError(
+            "baseline Registry composition does not match the template roles"
+        )
+
+    request_payload = {
+        "schema_version": "0.1.0",
+        "baseline_workflow_artifact_version_id": str(
+            baseline_workflow_artifact_version_id
+        ),
+        "baseline_template_key": baseline_template_key,
+        "changed_role": changed_role.value,
+        "candidate_component_semantic_key": candidate_component_semantic_key,
+        "candidate_component_spec_sha256": candidate_component_spec_sha256,
+        "configuration": list(migrated.migrated),
+        "evaluator_provider": evaluator_provider,
+    }
+    request_sha256 = hashlib.sha256(
+        json.dumps(request_payload, sort_keys=True, separators=(",", ":")).encode()
+    ).hexdigest()
+    slug_material = f"{scope.workspace_id}:{request_idempotency_key}".encode()
+    slug = f"vqe-swap-{hashlib.sha256(slug_material).hexdigest()[:32]}"
+    existing = await artifacts_repo.get_artifact_by_slug(scope, session, slug)
+    if existing is not None:
+        if existing.current_version_id is None:
+            raise IdempotencyConflictError("existing swap artifact has no version")
+        version = await artifacts_repo.get_version(
+            scope,
+            session,
+            existing.current_version_id,
+        )
+        metadata = version.artifact_metadata or {}
+        if metadata.get("request_sha256") != request_sha256:
+            raise IdempotencyConflictError(
+                "Idempotency-Key was reused for a different component swap"
+            )
+        workflow_spec = await get_component_spec(scope, session, version.id)
+        links = await list_workflow_components(scope, session, version.id)
+        return SavedWorkflowDraft(existing, version, workflow_spec, tuple(links), True)
+
+    resolved_links: list[tuple[ComponentType, uuid.UUID, dict[str, Any]]] = []
+    implementation_by_component = {
+        binding.component_semantic_key: binding
+        for binding in STANDARD_IMPLEMENTATIONS
+        if binding.component_semantic_key == candidate_component_semantic_key
+        and binding.provider == "scipy"
+    }
+    for selection in selections:
+        if selection.component_semantic_key is None:
+            continue
+        if selection.role is changed_role:
+            component_version_id = candidate_spec.artifact_version_id
+            binding = implementation_by_component.get(selection.component_semantic_key)
+            binding_metadata = {
+                "binding_key": binding.binding_key if binding else None,
+                "evidence_level": binding.evidence_level.value if binding else "missing",
+            }
+        else:
+            link = baseline_by_role[selection.role]
+            component_version_id = link.component_artifact_version_id
+            binding_metadata = link.binding_metadata or {}
+        resolved_links.append((selection.role, component_version_id, binding_metadata))
+
+    artifact = await artifacts_repo.create_artifact(
+        scope,
+        session,
+        slug=slug,
+        title="H2 optimizer-swap Workflow draft",
+        family=Algorithm.VQE,
+        framework=ContractFramework(evaluator_provider),
+        parent_artifact_id=None,
+    )
+    workflow_payload = {
+        **request_payload,
+        "kind": "component_swap_workflow_draft",
+        "request_sha256": request_sha256,
+        "compatibility": dataclasses.asdict(compatibility),
+        "execution_status": "blocked_until_runtime_qualified",
+    }
+    code = json.dumps(workflow_payload, sort_keys=True, indent=2)
+    version = await artifacts_repo.create_version(
+        scope,
+        session,
+        artifact.id,
+        qasm_version=None,
+        qasm=None,
+        metadata={
+            "source": "vqe_component_swap",
+            "request_sha256": request_sha256,
+            "baseline_workflow_artifact_version_id": str(
+                baseline_workflow_artifact_version_id
+            ),
+            "publication": "blocked",
+            "scientific_release": "blocked",
+        },
+        code=code,
+        code_lang="json",
+        fingerprint=request_sha256,
+        export_status=ExportStatus.UNSUPPORTED,
+        export_reason="structured VQE Workflow draft is not a circuit export",
+        limitations="Execution remains blocked until every binding is runtime-qualified.",
+    )
+    workflow_spec = await create_component_spec(
+        scope,
+        session,
+        artifact_version_id=version.id,
+        schema_version="0.1.0",
+        component_type=ComponentType.WORKFLOW,
+        semantic_key=f"workflow.instance.{request_sha256}",
+        spec_json=workflow_payload,
+        machine_validation_state=MachineValidationState.UNVALIDATED,
+        review_state=ReviewState.UNREVIEWED,
+    )
+    links = tuple(
+        [
+            await create_workflow_component(
+                scope,
+                session,
+                workflow_artifact_version_id=version.id,
+                component_role=role.value,
+                component_artifact_version_id=component_version_id,
+                ordinal=0,
+                binding_metadata=binding_metadata,
+                catalog_workspace_id=catalog_workspace_id,
+            )
+            for role, component_version_id, binding_metadata in resolved_links
+        ]
+    )
+    return SavedWorkflowDraft(artifact, version, workflow_spec, links, False)
 
 
 async def resolve_scientific_experiment_spec(
