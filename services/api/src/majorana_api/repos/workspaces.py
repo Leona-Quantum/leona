@@ -127,7 +127,14 @@ async def add_member(
     require_admin(scope)
     if role == Role.OWNER:  # ownership transfer is a separate deliberate operation
         raise AuthzError("cannot grant owner via add_member")
-    member = Membership(workspace_id=scope.workspace_id, user_id=user_id, role=role)
+    member = Membership(
+        workspace_id=scope.workspace_id,
+        user_id=user_id,
+        role=role,
+        # Somebody else's decision, so it is announced (0038). acknowledged_at
+        # stays NULL: this is the row the invitee's notice is read from.
+        invited_by_user_id=scope.user_id,
+    )
     session.add(member)
     await session.flush()
     return member
@@ -237,8 +244,14 @@ async def add_member_by_email(
             workspace_id=scope.workspace_id,
             user_id=user.id,
             role=role,
+            invited_by_user_id=scope.user_id,
         )
         session.add(membership)
+    # A role change on an existing membership does NOT re-announce. They already
+    # know they are here — that is what the existing row means — and a notice
+    # saying "you were added" for something that happened weeks ago is worse
+    # than saying nothing. Telling someone their role changed is a different
+    # message, and it does not exist yet.
     elif membership.role != Role.OWNER:
         await session.execute(
             update(Membership)

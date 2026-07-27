@@ -7910,3 +7910,106 @@ div.mj-rail-row:hover {
   font-size: var(--fs-12);
   line-height: 1.5;
 }
+
+/* ---------- the invitation notice ----------
+   Sits above the page on every authenticated surface (apps/web/components/
+   invite-notice.tsx). Accent-bordered rather than tinted: it is the same signal
+   the active-workspace row uses, and it says "this is about which tenant you are
+   in" without inventing a colour that means nothing anywhere else. */
+.mj-invite-notices {
+  display: grid;
+  gap: var(--sp-3);
+  margin-bottom: var(--sp-6);
+}
+.mj-invite-notice {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--sp-4);
+  padding: var(--sp-4);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-control);
+  background: var(--bg-1);
+}
+.mj-invite-notice-body {
+  display: grid;
+  flex: 1 1 320px;
+  min-width: 0;
+  gap: var(--sp-1);
+}
+.mj-invite-notice-tag {
+  color: var(--text-2);
+  font-size: var(--fs-12);
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+.mj-invite-notice-headline {
+  margin: 0;
+  color: var(--text-0);
+  font-size: var(--fs-14);
+  font-weight: 500;
+  line-height: 1.45;
+}
+.mj-invite-notice-detail {
+  margin: 0;
+  max-width: 60ch;
+  color: var(--text-1);
+  font-size: var(--fs-13);
+  line-height: 1.55;
+}
+.mj-invite-notice-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-2);
+}
+/* Leaving is text, not a button: it is the destructive choice, and giving it the
+   same weight as "Open it" would put the two one misclick apart. */
+.mj-invite-notice-decline {
+  padding: 0 var(--sp-2);
+  border: 0;
+  color: var(--text-2);
+  background: none;
+  font: inherit;
+  font-size: var(--fs-13);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+.mj-invite-notice-decline:hover {
+  color: var(--err);
+}
+.mj-invite-notice-decline:disabled {
+  cursor: wait;
+  opacity: 0.65;
+}
+.mj-invite-notice-error {
+  flex: 1 1 100%;
+  margin: 0;
+  color: var(--err);
+  font-size: var(--fs-13);
+}
+
+/* The way out of a workspace you were invited to, in the Settings switcher.
+   Text rather than a button for the same reason as the notice's: it must not sit
+   one misclick from Open. */
+.mj-workspace-leave {
+  padding: 0 var(--sp-2);
+  border: 0;
+  color: var(--text-2);
+  background: none;
+  font: inherit;
+  font-size: var(--fs-12);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+.mj-workspace-leave:hover {
+  color: var(--err);
+}
+.mj-workspace-leave:disabled {
+  cursor: wait;
+  opacity: 0.65;
+}

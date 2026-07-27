@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import type { UserInfo } from "@workos-inc/authkit-nextjs";
 import { redirect } from "next/navigation";
+import { InviteNotice } from "../../components/invite-notice";
 import { Shell } from "../../components/shell";
 import { StorageScope } from "../../components/storage-scope";
 import { hasCompleteProfileName } from "../../lib/account-profile";
@@ -50,6 +51,14 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
         accountTier={resolveAccountTier(auth.user.email)}
         workspaceName={workspace && !workspace.isPersonal ? workspace.name : undefined}
       >
+        {/*
+          Above the page, on every authenticated surface, because there is no
+          single place an invited person is guaranteed to visit — and it renders
+          nothing at all until its own fetch finds something, which is almost
+          always. Inside Shell rather than around it so it sits in the content
+          column instead of over the sidebar.
+        */}
+        <InviteNotice locale={locale} />
         {children}
       </Shell>
     </StorageScope>

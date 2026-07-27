@@ -2243,6 +2243,43 @@ export interface components {
             workspace_id: string;
         };
         /**
+         * WorkspaceInvitation
+         * @description A workspace the caller has been added to and has not been told about.
+         *
+         *     Not a pending offer: the membership already grants access, so this is a
+         *     notice rather than an invitation to accept. The distinction matters for the
+         *     copy — "you can open this now", not "do you accept".
+         *
+         *     `invited_by_email` is the inviter's address, which the invitee can already
+         *     see in the workspace's member list. It is here because "you were added to
+         *     Ion trap group" with no author reads like something the system did.
+         */
+        WorkspaceInvitation: {
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Invited By Email
+             * @default null
+             */
+            invited_by_email: string | null;
+            /**
+             * Invited By Name
+             * @default null
+             */
+            invited_by_name: string | null;
+            role: components["schemas"]["Role"];
+            /**
+             * Workspace Id
+             * Format: uuid
+             */
+            workspace_id: string;
+            /** Workspace Name */
+            workspace_name: string;
+        };
+        /**
          * WorkspaceKind
          * @enum {string}
          */

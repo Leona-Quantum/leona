@@ -74,6 +74,13 @@ class Membership(Base):
     workspace_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("workspaces.id"), primary_key=True)
     user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"), primary_key=True)
     role: Mapped[str]
+    # Migration 0038. Who attached this person, for the notice that tells them.
+    # NULL for a membership somebody made for themselves, and for one whose
+    # inviter's account has since been deleted.
+    invited_by_user_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id"))
+    # Migration 0038. NULL means the person has not been told this membership
+    # exists. Written when they open the workspace, dismiss the notice, or leave.
+    acknowledged_at: Mapped[dt.datetime | None]
     created_at: Mapped[dt.datetime | None] = mapped_column(server_default=func.now())
     updated_at: Mapped[dt.datetime | None] = mapped_column(server_default=func.now())
 

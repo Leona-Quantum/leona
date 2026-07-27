@@ -28,6 +28,7 @@ EXPORTED = [
     scope.Scope,
     models.Workspace,
     models.WorkspaceFolder,
+    models.WorkspaceInvitation,
     models.WorkspaceMember,
     models.WorkspaceOverview,
     models.WorkspaceSummary,

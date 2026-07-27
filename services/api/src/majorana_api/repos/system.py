@@ -1,12 +1,25 @@
 """System repository — the ONLY unscoped surface, by design.
 
-Two callers, both pre-/extra-tenant:
+Three callers, all of them questions a Scope cannot answer:
+
 1. Identity bootstrap: WorkOS first-login provisioning runs before any Scope
    exists (it *creates* the personal workspace a Scope would point at).
 2. Worker job loop: jobs are control-plane internal rows with no workspace_id.
+3. Questions a user asks ABOUT their tenants rather than inside one (0037/0038):
+   which workspaces am I in, which one am I acting in, which was I added to and
+   not told about, let me out of this one. A Scope names a single tenant and is
+   derived from the pointer these functions read and write, so none of them can
+   be expressed in terms of one — the switcher's whole job is to name a
+   workspace the caller is not currently scoped into.
 
-Nothing else may import this module from request-handling code. Tenant data
-stays behind the scoped repositories.
+Category 3 is bounded by the predicate, not by convention: every query in it is
+keyed on `Membership.user_id == <the caller>`, so it can only ever return
+workspaces the caller holds a membership in. That is what keeps "may never
+expose tenant data to request handlers" true — the rows these return are the
+caller's own memberships, and their *contents* (runs, artifacts, versions) stay
+behind the scoped repositories where a Scope gates every read.
+
+Nothing else may import this module from request-handling code.
 """
 
 import datetime as dt
@@ -21,6 +34,7 @@ from sqlalchemy import case, func, or_, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import aliased
 
 from ..ids import uuid7
 from ..orm import Artifact, ArtifactVersion, Job, Membership, Run, User, Workspace
@@ -141,7 +155,17 @@ async def ensure_system_catalog_authority(
     ):
         await session.execute(
             pg_insert(Membership)
-            .values(workspace_id=workspace_id, user_id=user_id, role=role)
+            .values(
+                workspace_id=workspace_id,
+                user_id=user_id,
+                role=role,
+                # Nobody invited a system identity (0038). These two never sign
+                # in, so no notice could reach them — but leaving the column NULL
+                # would make "unacknowledged means somebody was invited" false in
+                # the one place it is never read, which is exactly where a wrong
+                # invariant survives.
+                acknowledged_at=func.now(),
+            )
             .on_conflict_do_nothing(index_elements=[Membership.workspace_id, Membership.user_id])
         )
     await session.flush()
@@ -493,8 +517,127 @@ async def set_active_workspace(
     if workspace is None:
         return None
     user.active_workspace_id = workspace_id
+    # Entering a workspace is knowing about it. Acknowledging here rather than
+    # leaving it to the client is what stops the notice following someone around
+    # inside the very workspace it is announcing — the Settings switcher can
+    # move them too, and it has never called an acknowledge route.
+    await _stamp_acknowledged(session, workspace_id=workspace_id, user_id=user.id)
     await session.flush()
     return workspace, membership
+
+
+async def list_unacknowledged_memberships(
+    session: AsyncSession, *, user_id: Any
+) -> list[tuple[Workspace, Membership, User | None]]:
+    """Workspaces this user was added to and has not been told about (0038).
+
+    Pre-Scope for the same reason as the switcher: the whole point is to name a
+    tenant the caller has never been scoped into. Read on every authenticated
+    page load and empty almost every time, which is what
+    `ix_memberships_unacknowledged` is for.
+
+    The inviter is an OUTER join. A membership whose inviter has since been
+    deleted still has to be announced — losing the author is not a reason to
+    leave someone permanently unaware of a workspace they are in.
+    """
+    inviter = aliased(User)
+    stmt = (
+        select(Workspace, Membership, inviter)
+        .join(Membership, Membership.workspace_id == Workspace.id)
+        .outerjoin(inviter, inviter.id == Membership.invited_by_user_id)
+        .where(
+            Membership.user_id == user_id,
+            Membership.acknowledged_at.is_(None),
+            Workspace.deleted_at.is_(None),
+        )
+        .order_by(Membership.created_at, Workspace.id)
+    )
+    return [tuple(row) for row in (await session.execute(stmt)).all()]  # type: ignore[misc]
+
+
+async def _stamp_acknowledged(session: AsyncSession, *, workspace_id: Any, user_id: Any) -> None:
+    """Record that this person has been told. First write wins.
+
+    Conditional in the DATABASE rather than in Python. Two tabs answering the
+    same notice — or one opening the workspace while the other dismisses it —
+    both read `acknowledged_at IS NULL` before either writes, so a Python-side
+    guard lets both through and the stored moment becomes whichever transaction
+    committed *last*. Postgres re-evaluates this WHERE clause after taking the
+    row lock, so the second UPDATE matches nothing.
+
+    `func.now()` for the neighbouring reason: the database's clock rather than
+    one of however many API instances'.
+
+    Nothing reads the value today beyond NULL/NOT NULL, which is exactly why it
+    is worth pinning now — the day something does, the defect is a wrong date in
+    a record nobody thought was approximate.
+    """
+    await session.execute(
+        update(Membership)
+        .where(
+            Membership.workspace_id == workspace_id,
+            Membership.user_id == user_id,
+            Membership.acknowledged_at.is_(None),
+        )
+        .values(acknowledged_at=func.now())
+        .execution_options(synchronize_session="fetch")
+    )
+
+
+async def acknowledge_membership(
+    session: AsyncSession, *, user: User, workspace_id: uuid.UUID
+) -> bool:
+    """Mark an invitation as seen without acting on it. False if not a member.
+
+    The membership is looked up first so a workspace the caller does not belong
+    to is an honest 404, rather than an UPDATE that matches nothing and reports
+    success.
+    """
+    membership = await find_membership(session, workspace_id=workspace_id, user_id=user.id)
+    if membership is None:
+        return False
+    await _stamp_acknowledged(session, workspace_id=workspace_id, user_id=user.id)
+    await session.flush()
+    return True
+
+
+class CannotLeaveOwnedWorkspace(Exception):
+    """The caller owns this workspace, so leaving it would orphan it."""
+
+
+async def leave_workspace(session: AsyncSession, *, user: User, workspace_id: uuid.UUID) -> bool:
+    """Give up your own access to a workspace. False if you were not in it.
+
+    The counterpart to `remove_member`, and NOT the same operation: that one is
+    admin-only and refuses to touch the caller's own row, so before this there
+    was no way out of a workspace somebody put you in except to ask them to
+    remove you. A notice that can only be dismissed is not a choice.
+
+    The owner is refused. Their leaving would leave `workspaces.owner_user_id`
+    pointing at someone with no membership — the same state `set_member_role`
+    refuses to create, and the fix for it is an ownership transfer, which does
+    not exist yet.
+
+    Their runs and artifacts stay. They belong to the workspace.
+    """
+    membership = await find_membership(session, workspace_id=workspace_id, user_id=user.id)
+    if membership is None:
+        return False
+    if membership.role == Role.OWNER:
+        raise CannotLeaveOwnedWorkspace(str(workspace_id))
+    await session.execute(
+        Membership.__table__.delete().where(
+            Membership.workspace_id == workspace_id,
+            Membership.user_id == user.id,
+        )
+    )
+    # Same reason as remove_member: resolve_active_workspace would fall back on
+    # the next request anyway, but a user should not walk away holding a pointer
+    # at a tenant they just left.
+    if user.active_workspace_id == workspace_id:
+        user.active_workspace_id = None
+    await session.flush()
+    return True
 
 
 async def count_owned_workspaces(session: AsyncSession, *, user_id: Any) -> int:
@@ -560,7 +703,13 @@ async def create_team_workspace(
     )
     session.add(workspace)
     await session.flush()
-    membership = Membership(workspace_id=workspace.id, user_id=owner.id, role=Role.OWNER)
+    membership = Membership(
+        workspace_id=workspace.id,
+        user_id=owner.id,
+        role=Role.OWNER,
+        # Self-created: they are looking at the form that made it.
+        acknowledged_at=dt.datetime.now(dt.timezone.utc),
+    )
     session.add(membership)
     await session.flush()
     return workspace, membership
@@ -622,7 +771,17 @@ async def get_or_provision_user(
     ws = Workspace(id=uuid7(), kind="personal", name=normalized_email, owner_user_id=user.id)
     session.add(ws)
     await session.flush()
-    session.add(Membership(workspace_id=ws.id, user_id=user.id, role=Role.OWNER))
+    session.add(
+        Membership(
+            workspace_id=ws.id,
+            user_id=user.id,
+            role=Role.OWNER,
+            # Nobody invited them here — this workspace was created for them, by
+            # signing in. An unacknowledged membership would announce their own
+            # account to them on their first page load (migration 0038).
+            acknowledged_at=dt.datetime.now(dt.timezone.utc),
+        )
+    )
     await session.flush()
     await ensure_starter_bell_artifact(session, ws.id)
     return user, ws

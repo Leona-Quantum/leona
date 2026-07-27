@@ -104,6 +104,29 @@ class WorkspaceSummary(_ResourceBase):
     is_active: bool
 
 
+class WorkspaceInvitation(_ResourceBase):
+    """A workspace the caller has been added to and has not been told about.
+
+    Not a pending offer: the membership already grants access, so this is a
+    notice rather than an invitation to accept. The distinction matters for the
+    copy — "you can open this now", not "do you accept".
+
+    `invited_by_email` is the inviter's address, which the invitee can already
+    see in the workspace's member list. It is here because "you were added to
+    Ion trap group" with no author reads like something the system did.
+    """
+
+    workspace_id: UUID
+    workspace_name: str
+    role: Role
+    #: NULL when the membership predates migration 0038, or when the inviter's
+    #: account has been deleted. The notice drops the name rather than the whole
+    #: message.
+    invited_by_email: str | None = None
+    invited_by_name: str | None = None
+    created_at: datetime
+
+
 class WorkspaceOverview(_ResourceBase):
     workspace: Workspace
     members: list[WorkspaceMember]
