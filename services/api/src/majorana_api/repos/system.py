@@ -484,6 +484,75 @@ async def set_active_workspace(
     return workspace, membership
 
 
+async def count_owned_workspaces(session: AsyncSession, *, user_id: Any) -> int:
+    """Live workspaces this user owns, personal included.
+
+    Personal is counted rather than exempted so the number the tier limit is
+    compared against is the same number the user can see in their switcher.
+    """
+    return int(
+        (
+            await session.execute(
+                select(func.count(Workspace.id)).where(
+                    Workspace.owner_user_id == user_id,
+                    Workspace.deleted_at.is_(None),
+                )
+            )
+        ).scalar_one()
+    )
+
+
+class WorkspaceLimitReached(Exception):
+    """The account already owns as many workspaces as its tier allows."""
+
+    def __init__(self, owned: int, limit: int) -> None:
+        super().__init__(f"{owned}/{limit} workspaces owned")
+        self.owned = owned
+        self.limit = limit
+
+
+async def create_team_workspace(
+    session: AsyncSession,
+    *,
+    owner: User,
+    name: str,
+    owned_workspace_limit: int | None,
+) -> tuple[Workspace, Membership]:
+    """Create a shared workspace with its creator as OWNER.
+
+    Unscoped like the rest of this module by necessity: a workspace that does
+    not exist yet cannot be the subject of a Scope. The authority checked is
+    "you are a signed-in user", which is all creating your own tenant requires.
+
+    Deliberately does NOT set the creator's active workspace. `get_scope` reads
+    one pointer and exactly one route writes it, and that property is worth more
+    than saving the client a round trip.
+
+    No starter artifact. The Bell circuit exists to give a new *account* a
+    working example; a second workspace is made by someone who already has one,
+    and filing an unasked-for artifact into a shared Vault is noise.
+    """
+    normalized = " ".join(name.strip().split())
+    if not normalized:
+        raise ValueError("workspace name cannot be blank")
+    if owned_workspace_limit is not None:
+        owned = await count_owned_workspaces(session, user_id=owner.id)
+        if owned >= owned_workspace_limit:
+            raise WorkspaceLimitReached(owned, owned_workspace_limit)
+    workspace = Workspace(
+        id=uuid7(),
+        kind="team",
+        name=normalized,
+        owner_user_id=owner.id,
+    )
+    session.add(workspace)
+    await session.flush()
+    membership = Membership(workspace_id=workspace.id, user_id=owner.id, role=Role.OWNER)
+    session.add(membership)
+    await session.flush()
+    return workspace, membership
+
+
 async def get_or_provision_user(
     session: AsyncSession,
     *,

@@ -4,7 +4,7 @@ import uuid
 
 from majorana_contracts import Scope
 from majorana_contracts.enums import Role
-from sqlalchemy import func, select, update
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..orm import Artifact, Membership, Run, User, Workspace
@@ -131,6 +131,79 @@ async def add_member(
     session.add(member)
     await session.flush()
     return member
+
+
+async def _member_row(scope: Scope, session: AsyncSession, user_id: uuid.UUID) -> Membership:
+    membership = (
+        (
+            await session.execute(
+                select(Membership).where(
+                    Membership.workspace_id == scope.workspace_id,
+                    Membership.user_id == user_id,
+                )
+            )
+        )
+        .scalars()
+        .first()
+    )
+    if membership is None:
+        raise NotFoundError("membership")
+    return membership
+
+
+async def set_member_role(
+    scope: Scope, session: AsyncSession, *, user_id: uuid.UUID, role: Role
+) -> tuple[Membership, User]:
+    """Change an existing member's role.
+
+    The OWNER role is neither grantable nor removable here, in either direction.
+    Granting it would be an ownership transfer, and taking it away would leave a
+    workspace whose `owner_user_id` points at someone with no membership — a
+    state nothing else in the system expects. Both are deliberate separate
+    operations that do not exist yet.
+    """
+    require_admin(scope)
+    if role == Role.OWNER:
+        raise AuthzError("cannot grant owner via role change")
+    membership = await _member_row(scope, session, user_id)
+    if membership.role == Role.OWNER:
+        raise AuthzError("cannot change the role of the workspace owner")
+    membership.role = role
+    await session.flush()
+    user = (await session.execute(select(User).where(User.id == user_id))).scalars().first()
+    if user is None:  # pragma: no cover - a membership cannot outlive its user
+        raise NotFoundError("user")
+    return membership, user
+
+
+async def remove_member(scope: Scope, session: AsyncSession, *, user_id: uuid.UUID) -> None:
+    """Revoke a member's access to this workspace.
+
+    Takes effect on their next request, not their next sign-in: the active
+    workspace pointer is re-validated against this table every time a scope is
+    derived, so a removed user's next call resolves back to their own workspace.
+    Their runs and artifacts stay — they belong to the workspace, not to them.
+    """
+    require_admin(scope)
+    membership = await _member_row(scope, session, user_id)
+    if membership.role == Role.OWNER:
+        raise AuthzError("cannot remove the workspace owner")
+    await session.execute(
+        delete(Membership).where(
+            Membership.workspace_id == scope.workspace_id,
+            Membership.user_id == user_id,
+        )
+    )
+    # Anyone pointing at this workspace loses the pointer now rather than on
+    # their next request. The re-check in resolve_active_workspace makes this
+    # redundant for correctness; it is here so a revoked user is not carrying a
+    # stale pointer at a tenant they can no longer enter.
+    await session.execute(
+        update(User)
+        .where(User.id == user_id, User.active_workspace_id == scope.workspace_id)
+        .values(active_workspace_id=None)
+    )
+    await session.flush()
 
 
 async def add_member_by_email(
