@@ -8,7 +8,6 @@ import {
 import { getMajoranaAuth } from "../../../../lib/auth";
 import { isWorkosAuthConfigured } from "../../../../lib/auth-config";
 import { isLocalDevAuthEnabled } from "../../../../lib/local-dev-auth";
-import { isSingleUserLockEnabled } from "../../../../lib/single-user-lock";
 
 /**
  * Records the first and last name a new account is required to give
@@ -27,11 +26,10 @@ import { isSingleUserLockEnabled } from "../../../../lib/single-user-lock";
  * /welcome, and loop forever.
  */
 export async function PATCH(request: NextRequest): Promise<Response> {
-  // Synthetic identities (the single-user lock, local dev auth) have no WorkOS
-  // user to update. Neither can reach this in practice — both carry names, so
-  // the gate never fires — but a direct call must fail honestly rather than
-  // 500 inside the SDK.
-  if (isSingleUserLockEnabled() || isLocalDevAuthEnabled() || !isWorkosAuthConfigured()) {
+  // The local-dev synthetic identity has no WorkOS user to update. It cannot
+  // reach this in practice — it carries a name, so the gate never fires — but a
+  // direct call must fail honestly rather than 500 inside the SDK.
+  if (isLocalDevAuthEnabled() || !isWorkosAuthConfigured()) {
     return NextResponse.json({ error: "not_supported" }, { status: 409 });
   }
 

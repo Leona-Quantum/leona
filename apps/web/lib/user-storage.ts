@@ -14,16 +14,15 @@
  * ## Why "until then" is safe
  *
  * The scope is set by `<StorageScope>` in the authenticated layout, from the
- * WorkOS user id — and deliberately NOT set while the single-user lock is on,
- * because the lock already guarantees one identity. So the unscoped keys are
- * only ever read in a configuration where there is nobody to leak to.
+ * WorkOS user id. Until it is set — on public pages, and on the very first
+ * render of a browser whose data predates PR 162 — the unscoped keys are read,
+ * and the adoption below is what moves that data under an owner.
  *
- * That also solves the migration. The owner's existing chats sit under the
- * unscoped keys today. If we adopted them into the lock's synthetic
- * `single-user-lock` identity, the owner's real WorkOS account would find an
- * empty sidebar the day the lock comes off. Instead the legacy data waits, and
- * the first real account to sign in claims it — which, on the owner's browser,
- * is the owner.
+ * That also solves the migration. Data written before PR 162 sits under the
+ * unscoped keys. Adopting it into a synthetic identity would have stranded it
+ * the day a real WorkOS account signed in — so instead the legacy data waits,
+ * and the first real account to sign in on that browser claims it, which on the
+ * owner's machine is the owner.
  *
  * ## The claim is once, and recorded
  *
@@ -96,8 +95,9 @@ function storageOrNull(): Storage | null {
  * storage. Idempotent: re-running with the same scope does nothing, which is
  * what makes a render-time call safe under StrictMode's double invocation.
  *
- * Pass `null` to mean "no identity in effect" — the single-user lock, or a
- * public page. Storage then uses the unscoped keys, unchanged.
+ * Pass `null` to mean "no identity in effect" — a public page, or a user the
+ * layout could not resolve an id for. Storage then uses the unscoped keys,
+ * unchanged.
  */
 export function setStorageScope(scope: string | null): void {
   if (typeof window === "undefined") return;

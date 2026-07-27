@@ -31,53 +31,40 @@ def test_local_dev_auth_rejects_non_development_environment(monkeypatch):
         Settings.from_env()
 
 
-def _production_lock_env(monkeypatch):
+def _production_env(monkeypatch):
     monkeypatch.setenv("MAJORANA_ENV", "production")
     monkeypatch.setenv("WORKOS_CLIENT_ID", "client_x")
-    monkeypatch.setenv("SINGLE_USER_LOCK", "true")
     monkeypatch.delenv("MAJORANA_LOCAL_DEV_AUTH", raising=False)
 
 
-def test_single_user_lock_requires_a_token(monkeypatch):
-    _production_lock_env(monkeypatch)
-    monkeypatch.delenv("SINGLE_USER_LOCK_API_TOKEN", raising=False)
-    with pytest.raises(RuntimeError, match="requires SINGLE_USER_LOCK_API_TOKEN"):
-        Settings.from_env()
+def test_the_deploy_probe_is_off_unless_a_token_is_set(monkeypatch):
+    """Every environment except production leaves DEPLOY_PROBE_TOKEN unset."""
+    _production_env(monkeypatch)
+    monkeypatch.delenv("DEPLOY_PROBE_TOKEN", raising=False)
+    assert Settings.from_env().deploy_probe_token == ""
 
 
-def test_single_user_lock_refuses_the_public_placeholder(monkeypatch):
-    """The web app shipped this constant in-repo; accepting it protects nothing."""
-    _production_lock_env(monkeypatch)
-    monkeypatch.setenv("SINGLE_USER_LOCK_API_TOKEN", "majorana-single-user-lock")
+def test_the_deploy_probe_refuses_a_public_placeholder(monkeypatch):
+    """A literal that appears in this public repository protects nothing."""
+    _production_env(monkeypatch)
+    monkeypatch.setenv("DEPLOY_PROBE_TOKEN", "majorana-deploy-probe")
     with pytest.raises(RuntimeError, match="public placeholder"):
         Settings.from_env()
 
 
-def test_single_user_lock_refuses_a_low_entropy_token(monkeypatch):
-    _production_lock_env(monkeypatch)
-    monkeypatch.setenv("SINGLE_USER_LOCK_API_TOKEN", "hunter2")
+def test_the_deploy_probe_refuses_a_low_entropy_token(monkeypatch):
+    _production_env(monkeypatch)
+    monkeypatch.setenv("DEPLOY_PROBE_TOKEN", "hunter2")
     with pytest.raises(RuntimeError, match="at least 32 characters"):
         Settings.from_env()
 
 
-def test_single_user_lock_starts_with_a_real_token(monkeypatch):
-    _production_lock_env(monkeypatch)
-    monkeypatch.setenv("SINGLE_USER_LOCK_API_TOKEN", "t" * 48)
+def test_the_deploy_probe_starts_with_a_real_token(monkeypatch):
+    _production_env(monkeypatch)
+    monkeypatch.setenv("DEPLOY_PROBE_TOKEN", "t" * 48)
     settings = Settings.from_env()
-    assert settings.single_user_lock is True
-    assert settings.single_user_lock_user_id == "single-user-lock"
-
-
-def test_single_user_lock_and_local_dev_auth_are_mutually_exclusive(monkeypatch):
-    for name in ("CI", "VERCEL", "K_SERVICE", "K_REVISION", "K_CONFIGURATION"):
-        monkeypatch.delenv(name, raising=False)
-    monkeypatch.setenv("MAJORANA_ENV", "development")
-    monkeypatch.setenv("WORKOS_CLIENT_ID", "client_x")
-    monkeypatch.setenv("SINGLE_USER_LOCK", "true")
-    monkeypatch.setenv("SINGLE_USER_LOCK_API_TOKEN", "t" * 48)
-    monkeypatch.setenv("MAJORANA_LOCAL_DEV_AUTH", "true")
-    with pytest.raises(RuntimeError, match="mutually exclusive"):
-        Settings.from_env()
+    assert settings.deploy_probe_token == "t" * 48
+    assert settings.deploy_probe_email == "deploy-probe@leonaquantum.com"
 
 
 def test_local_dev_auth_rejects_cloud_run(monkeypatch):

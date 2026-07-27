@@ -716,11 +716,11 @@ body {
   .mj-contact-layout { grid-template-columns: 1fr; }
 }
 
-/* Centered auth card: the single-user-lock sign-in page (Owner Inbox
- * 2026-07-19) and the /welcome name gate (Owner Inbox 2026-07-27). Named for
- * what it is rather than for the lock, which is temporary and would leave these
- * rules misnamed the day it goes. Themed from the design tokens so both read
- * like the rest of the marketing surface. */
+/* Centered auth card, used by the /welcome name gate (Owner Inbox 2026-07-27).
+ * Named for what it is rather than for its first caller — the single-user-lock
+ * sign-in page, now deleted — which is why these rules did not have to be
+ * renamed when that page went. Themed from the design tokens so it reads like
+ * the rest of the marketing surface. */
 .mj-auth-shell {
   display: flex;
   justify-content: center;

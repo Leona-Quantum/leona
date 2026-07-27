@@ -7,7 +7,6 @@ import { hasCompleteProfileName } from "../../lib/account-profile";
 import { resolveAccountTier } from "../../lib/account-tier";
 import { getMajoranaAuth } from "../../lib/auth";
 import { getPublicLocale } from "../../lib/public-locale-server";
-import { isSingleUserLockEnabled } from "../../lib/single-user-lock";
 
 // Authed surface shell (Run / Library / Account). Middleware already gates these
 // routes; withAuth here only supplies the header identity.
@@ -53,19 +52,15 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
 /**
  * Which account browser storage belongs to.
  *
- * `null` while the single-user lock is on, and that is the load-bearing part.
- * The lock guarantees one identity, so there is nothing to separate — and
- * adopting the owner's existing chats into the lock's synthetic
- * `single-user-lock` id would strand them the day the lock comes off and the
- * owner signs in as their real WorkOS account. Leaving them unscoped lets that
- * account claim them (see lib/user-storage.ts).
- *
- * Read here rather than in the client component: the lock's environment
- * variables are server-only, and a client read would resolve to "unlocked" for
- * everyone.
+ * `null` only for a user with no id, which the type allows and the runtime does
+ * not produce. Everything unscoped that predates PR 162 is still adopted once, by
+ * the first account to sign in on that browser — see lib/user-storage.ts. That
+ * adoption is why this returned `null` under the single-user lock: scoping the
+ * owner's chats to the lock's synthetic identity would have stranded them the
+ * day they signed in for real. The lock is gone; the adoption is not, because
+ * browsers that have never signed in since PR 162 still exist.
  */
 function storageScopeId(user: UserInfo["user"]): string | null {
-  if (isSingleUserLockEnabled()) return null;
   return user.id ? `u:${user.id}` : null;
 }
 

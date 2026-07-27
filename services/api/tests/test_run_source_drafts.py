@@ -122,7 +122,7 @@ async def test_run_and_job_are_bound_to_the_new_draft_version(scope, monkeypatch
 
     # A DEVELOPER identity so the per-tier gate is a no-op here; this test is
     # about draft binding, not allowances (see test_run_tier_allowance.py).
-    identity = (User(email="operator@leonaquantum.com", plan=None), Workspace())
+    identity = (User(email="local-dev@majorana.test", plan=None), Workspace())
     settings = Settings(
         workos_client_id="test",
         workos_jwt_issuer="https://issuer.invalid",

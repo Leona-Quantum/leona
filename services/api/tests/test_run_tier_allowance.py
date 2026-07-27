@@ -106,12 +106,12 @@ async def test_chat_traffic_is_never_metered_against_the_plan(scope, monkeypatch
 async def test_the_operator_is_never_throttled_by_a_missing_env_var(scope, monkeypatch):
     """The failure mode that kept this server-side gate from being written.
 
-    Both synthetic identities resolve to developer with an EMPTY allowlist, so a
-    Cloud Run service missing LEONA_DEVELOPER_EMAILS cannot cut the live
-    single-operator deployment down to five runs a week.
+    Every synthetic identity resolves to developer with an EMPTY allowlist, so a
+    Cloud Run service missing LEONA_DEVELOPER_EMAILS cannot cut the operator — or
+    the deploy gate, which is not a customer either — down to five runs a week.
     """
     monkeypatch.setattr(runs.runs_repo, "count_execute_runs_since", _executed(FREE_WEEKLY * 100))
-    for email in ("operator@leonaquantum.com", "local-dev@majorana.test"):
+    for email in ("local-dev@majorana.test", "deploy-probe@leonaquantum.com"):
         await runs._enforce_execute_backstop(
             _request(), scope, object(), _identity(email), _settings()
         )
@@ -189,4 +189,4 @@ def test_an_unknown_account_is_free_rather_than_unlimited():
     assert resolve_tier("stranger@example.com") == "free"
     assert resolve_tier("stranger@example.com", plan="free") == "free"
     # Case and padding must not be a way past the allowlist or into it.
-    assert resolve_tier("  OPERATOR@LeonaQuantum.com ") == "developer"
+    assert resolve_tier("  Local-Dev@Majorana.TEST ") == "developer"

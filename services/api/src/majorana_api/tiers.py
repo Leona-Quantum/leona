@@ -73,7 +73,6 @@ TIER_LIMITS: dict[AccountTier, TierLimits] = {
 #: failing it on the sixth deploy of a week, which reads as a product outage.
 OPERATOR_IDENTITIES = frozenset(
     {
-        "operator@leonaquantum.com",  # single-user lock
         "local-dev@majorana.test",  # MAJORANA_LOCAL_DEV_AUTH
         "deploy-probe@leonaquantum.com",  # DEPLOY_PROBE_TOKEN (post-deploy gate)
     }

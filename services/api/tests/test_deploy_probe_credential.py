@@ -128,23 +128,6 @@ async def test_an_unset_probe_token_accepts_nothing():
         assert exc.value.status_code == 401
 
 
-async def test_the_lock_still_wins_while_it_is_on(monkeypatch):
-    """While the lock is on, the lock token is the ONLY credential.
-
-    The lock is off in production today, but it is kept revertible. If it ever
-    goes back on, the probe must not be a second door through it.
-    """
-
-    async def explode(*_args, **_kwargs):  # pragma: no cover - must not run
-        raise AssertionError("WorkOS verification must not run while the lock is on")
-
-    monkeypatch.setattr("majorana_api.auth.deps.verify_bearer_token", explode)
-    settings = _settings(single_user_lock=True, single_user_lock_token="l" * 48)
-    with pytest.raises(HTTPException) as exc:
-        await get_verified_token(_request("POST", "/runs"), settings, f"Bearer {PROBE_TOKEN}")
-    assert exc.value.status_code == 401
-
-
 def test_a_weak_probe_token_fails_startup_instead_of_quietly_working():
     for weak in ("majorana-deploy-probe", "changeme", "short"):
         with pytest.raises(RuntimeError):
