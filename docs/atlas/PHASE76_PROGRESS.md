@@ -4,7 +4,7 @@ Date: 2026-07-28 JST
 Branch: `feature/vqe`  
 Starting commit: `ef62a005479e9a141715406d02e65ecff442c79f`  
 Starting Alembic head: `0038`  
-State: **S0–S3 verified locally; S4 pending**
+State: **S0–S4 verified locally; S5 pending**
 
 ## S0 — Baseline freeze and claim inventory
 
@@ -298,6 +298,57 @@ S3: **verified_local**
 
 No structured-only workflow was promoted to executable. S4 may now resolve
 role-specific Implementation bindings into a server-owned Executable Plan.
+
+## S4 — Role-specific Implementation Plan resolver
+
+### Outcome
+
+`majorana_vqe.executable_plan` now resolves a compatible Workflow into one
+server-owned plan containing the exact binding selected for every applicable
+role. The resolver accepts only an evaluator preference (`qiskit` or
+`pennylane`); it does not accept client-selected package versions, runtime
+profiles, adapters, or container identities.
+
+For both evaluator choices, the baseline resolves as:
+
+```text
+Problem preparation → PySCF
+Optimizer           → SciPy
+neutral protocols   → Atlas
+Reference/Ansatz/
+Measurement         → selected evaluator
+```
+
+Evaluator roles must resolve to one coherent runtime profile and adapter
+release. Missing, ambiguous, incompatible, insufficient-evidence, and
+incoherent-runtime cases fail closed with distinct codes.
+
+Implementation bindings now also expose their supported configuration field
+subset and known incompatibilities. The SLSQP binding is recorded only as
+`documented` with `no_runtime_qualified_phase76_adapter`; attempting to
+resolve it currently fails with `insufficient_binding_evidence`. This is an
+intentional safety gate, not an implementation claim. S6 must replace that
+state only after the adapter and runtime tests exist.
+
+### Verification
+
+```text
+Executable Plan + catalog tests: 14 passed
+Web tests: 102 passed
+TypeScript: no errors
+generated catalog refreshed
+```
+
+The tests prove Qiskit/PennyLane are not attributed ownership of PySCF or
+SciPy roles, and inject a duplicate binding to verify ambiguity is rejected.
+
+### S4 decision
+
+S4: **verified_local_with_expected_candidate_block**
+
+The resolver infrastructure is safe for the qualified baseline. Candidate
+execution remains unavailable until S6. S5 may implement immutable swapped
+Workflow persistence while preserving that execution block.
 
 ## Current safety boundary
 

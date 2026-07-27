@@ -125,6 +125,8 @@ class ComponentImplementationBinding:
     adapter_release_id: str | None
     evidence_level: EvidenceLevel
     evidence_locators: tuple[str, ...]
+    supported_configuration_fields: tuple[str, ...] = ()
+    known_incompatibilities: tuple[str, ...] = ()
 
 
 @dataclasses.dataclass(frozen=True)
@@ -538,6 +540,8 @@ def _binding(
     runtime: str | None = None,
     adapter: str | None = None,
     evidence: tuple[str, ...] = (),
+    supported_configuration_fields: tuple[str, ...] = (),
+    known_incompatibilities: tuple[str, ...] = (),
 ) -> ComponentImplementationBinding:
     return ComponentImplementationBinding(
         binding_key=f"{component}:{provider}:{version}",
@@ -550,6 +554,8 @@ def _binding(
         adapter_release_id=adapter,
         evidence_level=evidence_level,
         evidence_locators=evidence,
+        supported_configuration_fields=supported_configuration_fields,
+        known_incompatibilities=known_incompatibilities,
     )
 
 
@@ -581,6 +587,29 @@ _CIRCUIT_EVIDENCE = (
     "docs/atlas/fixtures/h2_sto3g/canonical_double_excitation_v0.2.json",
     *_RUNTIME_EVIDENCE,
 )
+
+_CONFIGURATION_FIELDS_BY_COMPONENT: dict[str, frozenset[str]] = {
+    "optimizer.scipy_bounded_scalar.v1": frozenset(
+        {
+            "initial_point_float64_hex",
+            "lower_bound_float64_hex",
+            "upper_bound_float64_hex",
+            "energy_tolerance_float64_hex",
+            "max_objective_evaluations",
+            "max_wall_time_seconds",
+        }
+    ),
+    "optimizer.slsqp.v1": frozenset(
+        {
+            "initial_point_float64_hex",
+            "lower_bound_float64_hex",
+            "upper_bound_float64_hex",
+            "energy_tolerance_float64_hex",
+            "max_objective_evaluations",
+            "max_wall_time_seconds",
+        }
+    ),
+}
 
 STANDARD_IMPLEMENTATIONS: tuple[ComponentImplementationBinding, ...] = (
     _binding(
@@ -682,6 +711,24 @@ STANDARD_IMPLEMENTATIONS: tuple[ComponentImplementationBinding, ...] = (
         BindingKind.PROVIDER_NATIVE,
         EvidenceLevel.RUNTIME_QUALIFIED,
         evidence=_RUNTIME_EVIDENCE,
+        supported_configuration_fields=tuple(
+            sorted(_CONFIGURATION_FIELDS_BY_COMPONENT["optimizer.scipy_bounded_scalar.v1"])
+        ),
+    ),
+    _binding(
+        "optimizer.slsqp.v1",
+        "scipy",
+        "scipy",
+        "1.18.0",
+        BindingKind.PROVIDER_NATIVE,
+        EvidenceLevel.DOCUMENTED,
+        evidence=(
+            "https://docs.scipy.org/doc/scipy/reference/optimize.minimize-slsqp.html",
+        ),
+        supported_configuration_fields=tuple(
+            sorted(_CONFIGURATION_FIELDS_BY_COMPONENT["optimizer.slsqp.v1"])
+        ),
+        known_incompatibilities=("no_runtime_qualified_phase76_adapter",),
     ),
     _binding(
         "measurement.exact_statevector.v1",
@@ -754,30 +801,6 @@ def _mark_not_applicable(
             applicability=RoleApplicability.NOT_APPLICABLE,
         )
     return result
-
-
-_CONFIGURATION_FIELDS_BY_COMPONENT: dict[str, frozenset[str]] = {
-    "optimizer.scipy_bounded_scalar.v1": frozenset(
-        {
-            "initial_point_float64_hex",
-            "lower_bound_float64_hex",
-            "upper_bound_float64_hex",
-            "energy_tolerance_float64_hex",
-            "max_objective_evaluations",
-            "max_wall_time_seconds",
-        }
-    ),
-    "optimizer.slsqp.v1": frozenset(
-        {
-            "initial_point_float64_hex",
-            "lower_bound_float64_hex",
-            "upper_bound_float64_hex",
-            "energy_tolerance_float64_hex",
-            "max_objective_evaluations",
-            "max_wall_time_seconds",
-        }
-    ),
-}
 
 
 def migrate_selection_configuration(

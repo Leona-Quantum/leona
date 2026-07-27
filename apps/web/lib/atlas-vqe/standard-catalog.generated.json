@@ -818,10 +818,12 @@
         "docs/atlas/fixtures/h2_sto3g/manifest.json",
         "docs/atlas/fixtures/h2_sto3g/executable_components_v0.2.json"
       ],
+      "known_incompatibilities": [],
       "package": "atlas-h2-fixture",
       "package_version": "0.2.0",
       "provider": "atlas",
-      "runtime_profile_id": null
+      "runtime_profile_id": null,
+      "supported_configuration_fields": []
     },
     {
       "adapter_release_id": null,
@@ -833,10 +835,12 @@
         "docs/atlas/fixtures/h2_sto3g/manifest.json",
         "docs/atlas/fixtures/h2_sto3g/executable_components_v0.2.json"
       ],
+      "known_incompatibilities": [],
       "package": "pyscf",
       "package_version": "2.14.0",
       "provider": "pyscf",
-      "runtime_profile_id": null
+      "runtime_profile_id": null,
+      "supported_configuration_fields": []
     },
     {
       "adapter_release_id": null,
@@ -848,10 +852,12 @@
         "docs/atlas/fixtures/h2_sto3g/manifest.json",
         "docs/atlas/fixtures/h2_sto3g/executable_components_v0.2.json"
       ],
+      "known_incompatibilities": [],
       "package": "atlas-h2-fixture",
       "package_version": "0.2.0",
       "provider": "atlas",
-      "runtime_profile_id": null
+      "runtime_profile_id": null,
+      "supported_configuration_fields": []
     },
     {
       "adapter_release_id": "majorana-h2-qiskit-adapter-0.2.0",
@@ -862,10 +868,12 @@
       "evidence_locators": [
         "docs/atlas/evidence/phase5b_h2_runtime_qualification_2026-07-26.json"
       ],
+      "known_incompatibilities": [],
       "package": "qiskit",
       "package_version": "1.4.6",
       "provider": "qiskit",
-      "runtime_profile_id": "h2-qiskit-linux-x86_64-candidate-v1"
+      "runtime_profile_id": "h2-qiskit-linux-x86_64-candidate-v1",
+      "supported_configuration_fields": []
     },
     {
       "adapter_release_id": "majorana-h2-pennylane-adapter-0.2.0",
@@ -876,10 +884,12 @@
       "evidence_locators": [
         "docs/atlas/evidence/phase5b_h2_runtime_qualification_2026-07-26.json"
       ],
+      "known_incompatibilities": [],
       "package": "pennylane",
       "package_version": "0.45.1",
       "provider": "pennylane",
-      "runtime_profile_id": "h2-pennylane-linux-x86_64-candidate-v1"
+      "runtime_profile_id": "h2-pennylane-linux-x86_64-candidate-v1",
+      "supported_configuration_fields": []
     },
     {
       "adapter_release_id": "majorana-h2-qiskit-adapter-0.2.0",
@@ -891,10 +901,12 @@
         "docs/atlas/fixtures/h2_sto3g/canonical_double_excitation_v0.2.json",
         "docs/atlas/evidence/phase5b_h2_runtime_qualification_2026-07-26.json"
       ],
+      "known_incompatibilities": [],
       "package": "qiskit",
       "package_version": "1.4.6",
       "provider": "qiskit",
-      "runtime_profile_id": "h2-qiskit-linux-x86_64-candidate-v1"
+      "runtime_profile_id": "h2-qiskit-linux-x86_64-candidate-v1",
+      "supported_configuration_fields": []
     },
     {
       "adapter_release_id": "majorana-h2-pennylane-adapter-0.2.0",
@@ -906,10 +918,12 @@
         "docs/atlas/fixtures/h2_sto3g/canonical_double_excitation_v0.2.json",
         "docs/atlas/evidence/phase5b_h2_runtime_qualification_2026-07-26.json"
       ],
+      "known_incompatibilities": [],
       "package": "pennylane",
       "package_version": "0.45.1",
       "provider": "pennylane",
-      "runtime_profile_id": "h2-pennylane-linux-x86_64-candidate-v1"
+      "runtime_profile_id": "h2-pennylane-linux-x86_64-candidate-v1",
+      "supported_configuration_fields": []
     },
     {
       "adapter_release_id": null,
@@ -921,10 +935,12 @@
         "docs/atlas/fixtures/h2_sto3g/manifest.json",
         "docs/atlas/fixtures/h2_sto3g/executable_components_v0.2.json"
       ],
+      "known_incompatibilities": [],
       "package": "majorana-vqe",
       "package_version": "0.1.0",
       "provider": "atlas",
-      "runtime_profile_id": null
+      "runtime_profile_id": null,
+      "supported_configuration_fields": []
     },
     {
       "adapter_release_id": null,
@@ -936,10 +952,12 @@
         "docs/atlas/fixtures/h2_sto3g/manifest.json",
         "docs/atlas/fixtures/h2_sto3g/executable_components_v0.2.json"
       ],
+      "known_incompatibilities": [],
       "package": "majorana-vqe",
       "package_version": "0.1.0",
       "provider": "atlas",
-      "runtime_profile_id": null
+      "runtime_profile_id": null,
+      "supported_configuration_fields": []
     },
     {
       "adapter_release_id": null,
@@ -951,10 +969,12 @@
         "docs/atlas/fixtures/h2_sto3g/manifest.json",
         "docs/atlas/fixtures/h2_sto3g/executable_components_v0.2.json"
       ],
+      "known_incompatibilities": [],
       "package": "majorana-vqe",
       "package_version": "0.1.0",
       "provider": "atlas",
-      "runtime_profile_id": null
+      "runtime_profile_id": null,
+      "supported_configuration_fields": []
     },
     {
       "adapter_release_id": null,
@@ -966,10 +986,12 @@
         "docs/atlas/fixtures/h2_sto3g/manifest.json",
         "docs/atlas/fixtures/h2_sto3g/executable_components_v0.2.json"
       ],
+      "known_incompatibilities": [],
       "package": "majorana-vqe",
       "package_version": "0.1.0",
       "provider": "atlas",
-      "runtime_profile_id": null
+      "runtime_profile_id": null,
+      "supported_configuration_fields": []
     },
     {
       "adapter_release_id": null,
@@ -981,10 +1003,12 @@
         "docs/atlas/fixtures/h2_sto3g/manifest.json",
         "docs/atlas/fixtures/h2_sto3g/executable_components_v0.2.json"
       ],
+      "known_incompatibilities": [],
       "package": "majorana-vqe",
       "package_version": "0.1.0",
       "provider": "atlas",
-      "runtime_profile_id": null
+      "runtime_profile_id": null,
+      "supported_configuration_fields": []
     },
     {
       "adapter_release_id": null,
@@ -996,10 +1020,12 @@
         "docs/atlas/fixtures/h2_sto3g/manifest.json",
         "docs/atlas/fixtures/h2_sto3g/executable_components_v0.2.json"
       ],
+      "known_incompatibilities": [],
       "package": "majorana-vqe",
       "package_version": "0.1.0",
       "provider": "atlas",
-      "runtime_profile_id": null
+      "runtime_profile_id": null,
+      "supported_configuration_fields": []
     },
     {
       "adapter_release_id": null,
@@ -1011,10 +1037,12 @@
         "docs/atlas/fixtures/h2_sto3g/manifest.json",
         "docs/atlas/fixtures/h2_sto3g/executable_components_v0.2.json"
       ],
+      "known_incompatibilities": [],
       "package": "majorana-vqe",
       "package_version": "0.1.0",
       "provider": "atlas",
-      "runtime_profile_id": null
+      "runtime_profile_id": null,
+      "supported_configuration_fields": []
     },
     {
       "adapter_release_id": null,
@@ -1025,10 +1053,44 @@
       "evidence_locators": [
         "docs/atlas/evidence/phase5b_h2_runtime_qualification_2026-07-26.json"
       ],
+      "known_incompatibilities": [],
       "package": "scipy",
       "package_version": "1.18.0",
       "provider": "scipy",
-      "runtime_profile_id": null
+      "runtime_profile_id": null,
+      "supported_configuration_fields": [
+        "energy_tolerance_float64_hex",
+        "initial_point_float64_hex",
+        "lower_bound_float64_hex",
+        "max_objective_evaluations",
+        "max_wall_time_seconds",
+        "upper_bound_float64_hex"
+      ]
+    },
+    {
+      "adapter_release_id": null,
+      "binding_key": "optimizer.slsqp.v1:scipy:1.18.0",
+      "binding_kind": "provider_native",
+      "component_semantic_key": "optimizer.slsqp.v1",
+      "evidence_level": "documented",
+      "evidence_locators": [
+        "https://docs.scipy.org/doc/scipy/reference/optimize.minimize-slsqp.html"
+      ],
+      "known_incompatibilities": [
+        "no_runtime_qualified_phase76_adapter"
+      ],
+      "package": "scipy",
+      "package_version": "1.18.0",
+      "provider": "scipy",
+      "runtime_profile_id": null,
+      "supported_configuration_fields": [
+        "energy_tolerance_float64_hex",
+        "initial_point_float64_hex",
+        "lower_bound_float64_hex",
+        "max_objective_evaluations",
+        "max_wall_time_seconds",
+        "upper_bound_float64_hex"
+      ]
     },
     {
       "adapter_release_id": "majorana-h2-qiskit-adapter-0.2.0",
@@ -1039,10 +1101,12 @@
       "evidence_locators": [
         "docs/atlas/evidence/phase5b_h2_runtime_qualification_2026-07-26.json"
       ],
+      "known_incompatibilities": [],
       "package": "qiskit",
       "package_version": "1.4.6",
       "provider": "qiskit",
-      "runtime_profile_id": "h2-qiskit-linux-x86_64-candidate-v1"
+      "runtime_profile_id": "h2-qiskit-linux-x86_64-candidate-v1",
+      "supported_configuration_fields": []
     },
     {
       "adapter_release_id": "majorana-h2-pennylane-adapter-0.2.0",
@@ -1053,10 +1117,12 @@
       "evidence_locators": [
         "docs/atlas/evidence/phase5b_h2_runtime_qualification_2026-07-26.json"
       ],
+      "known_incompatibilities": [],
       "package": "pennylane",
       "package_version": "0.45.1",
       "provider": "pennylane",
-      "runtime_profile_id": "h2-pennylane-linux-x86_64-candidate-v1"
+      "runtime_profile_id": "h2-pennylane-linux-x86_64-candidate-v1",
+      "supported_configuration_fields": []
     }
   ],
   "schema_version": "1.1.0",

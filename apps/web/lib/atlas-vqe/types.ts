@@ -174,6 +174,8 @@ export interface StandardImplementationBinding {
   adapter_release_id: string | null;
   evidence_level: StandardEvidenceLevel;
   evidence_locators: string[];
+  supported_configuration_fields: string[];
+  known_incompatibilities: string[];
 }
 
 export interface StandardWorkflowSelection {
