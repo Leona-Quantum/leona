@@ -254,6 +254,116 @@ jobs:
           fi
           echo "revision ${{ steps.worker.outputs.revision }} clean for 45s after deploy"
 
+      # The gate every other step in this workflow is a proxy for: one real run,
+      # on the stack that was just deployed, end to end.
+      #
+      # Everything above proves the pieces are up. Nothing above proves they work
+      # together, and the two most expensive defects of the last month both lived
+      # exactly in that gap: a worker crash-looping against a schema its image
+      # predated (Cloud Run reported a healthy service), and #164's allowance
+      # check building a Settings object that validates the *API's* configuration
+      # inside the *worker*, which raised on every AUTO run that resolved to
+      # EXECUTE. Local tests passed. CI passed. The smoke test above passed.
+      # Only a live run touches that line.
+      #
+      # mode=auto, deliberately, even though execute is what we want. An explicit
+      # mode is passthrough in the worker's resolver — it never reaches
+      # `_assert_execute_allowance`, which is the line #164 broke. AUTO is the
+      # path a real user's message takes, so AUTO is the path this gate takes.
+      #
+      # The success condition is therefore two things, not one: the run reached
+      # `succeeded`, AND it resolved to `execute`. A run that answers
+      # conversationally also reports `succeeded` without ever entering the
+      # sandbox, so status alone would let a chat reply certify a broken
+      # execution path.
+      #
+      # The credential is narrow by construction: DEPLOY_PROBE_TOKEN may create a
+      # run, read that run, and read its events — every other route answers 403
+      # (services/api/src/majorana_api/auth/deps.py, and the test that enumerates
+      # the router to prove it). It is read from Secret Manager here rather than
+      # held as a GitHub secret so there is one copy of it in the world.
+      #
+      # A missing secret FAILS. It must: a gate that skips itself when its
+      # credential disappears is not a gate, and this workflow already has a
+      # skip-with-a-warning path that exists for a different reason (no deploy
+      # credentials at all, i.e. nothing was deployed to test).
+      - name: a real run finishes on the deployed stack
+        if: steps.creds.outputs.have == 'true'
+        env:
+          DEADLINE_SECONDS: "600"
+        run: |
+          if ! probe=$(gcloud secrets versions access latest \
+            --secret=DEPLOY_PROBE_TOKEN --project "$GCP_PROJECT" 2>/tmp/probe.err); then
+            echo "::error::could not read DEPLOY_PROBE_TOKEN: $(cat /tmp/probe.err)"
+            echo "::error::the post-deploy run gate cannot authenticate. Provision the secret"
+            echo "::error::(docs/runbooks/deploys.md § Post-deploy synthetic run) — do not"
+            echo "::error::delete this step to make the deploy green."
+            exit 1
+          fi
+          test -n "$probe" || { echo "::error::DEPLOY_PROBE_TOKEN is empty"; exit 1; }
+          echo "::add-mask::$probe"
+
+          api=$(gcloud run services describe majorana-api \
+            --project "$GCP_PROJECT" --region "$GCP_REGION" --format='value(status.url)')
+          test -n "$api" || { echo "::error::could not resolve the api URL"; exit 1; }
+
+          # Idempotency-Key is the deploy tag: re-running this workflow for the
+          # same commit re-reads the run it already created instead of spending
+          # another one.
+          created=$(curl -sS -X POST "$api/v1/runs" \
+            -H "Authorization: Bearer $probe" \
+            -H 'Content-Type: application/json' \
+            -H "Idempotency-Key: deploy-${{ steps.tag.outputs.tag }}" \
+            -d '{"task_prompt":"Build a 2-qubit Bell state circuit, run it, and report the measurement counts.","framework":"qiskit","mode":"auto","shots":128,"seed":7,"timeout_s":120}')
+          # `|| true` throughout the polling: the runner's default shell is
+          # `bash -e -o pipefail`, so one transient curl or one unparseable body
+          # would abort the step and report a network blip as a broken deploy.
+          # Every read is allowed to come back empty and be retried; the deadline
+          # is what ends the loop.
+          run_id=$(printf '%s' "$created" | jq -r '.id // empty' || true)
+          if [ -z "$run_id" ]; then
+            echo "::error::POST /v1/runs did not return a run id"
+            printf '%s\n' "$created" | head -c 2000
+            exit 1
+          fi
+          echo "submitted run $run_id"
+
+          deadline=$(( $(date +%s) + DEADLINE_SECONDS ))
+          status=""
+          mode=""
+          while [ "$(date +%s)" -lt "$deadline" ]; do
+            sleep 10
+            body=$(curl -sS "$api/v1/runs/$run_id" -H "Authorization: Bearer $probe" || true)
+            status=$(printf '%s' "$body" | jq -r '.status // empty' || true)
+            mode=$(printf '%s' "$body" | jq -r '.mode // empty' || true)
+            case "$status" in
+              succeeded|failed|cancelled) break ;;
+              "") echo "::warning::could not read run status; retrying" ;;
+              *) echo "  $status ($mode)" ;;
+            esac
+          done
+
+          if [ "$status" != "succeeded" ] || [ "$mode" != "execute" ]; then
+            if [ "$status" = "succeeded" ]; then
+              echo "::error::the run succeeded but resolved to mode '$mode', not 'execute' —"
+              echo "::error::nothing entered the sandbox, so this deploy is UNVERIFIED. If the"
+              echo "::error::stack is otherwise healthy this is an intent-router misclassification"
+              echo "::error::of the probe prompt, not an outage."
+            else
+              echo "::error::post-deploy run $run_id ended '${status:-no terminal status before the deadline}'"
+              echo "::error::(mode '${mode:-unknown}') — the deployed stack cannot complete a run."
+            fi
+            # Whole events, not a summary. A failing check's output is the only
+            # input the next person has, and the payload fields are flattened
+            # into the envelope by the events contract — a projection down to
+            # {type} would throw away the stage, the error code and the numbers.
+            echo "last events:"
+            curl -sS "$api/v1/runs/$run_id/events" -H "Authorization: Bearer $probe" \
+              | jq -c '.[-20:][]? | del(.run_id)' || true
+            exit 1
+          fi
+          echo "run $run_id succeeded in mode $mode on the deployed stack"
+
       - name: rollback api on failure
         if: failure() && steps.creds.outputs.have == 'true'
         run: |
