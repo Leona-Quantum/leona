@@ -47,9 +47,26 @@ export function WorkspaceSharing({
   const [pendingMember, setPendingMember] = useState<string | null>(null);
   const [confirmingLeave, setConfirmingLeave] = useState<string | null>(null);
   const [leavingId, setLeavingId] = useState<string | null>(null);
+  const [confirmingDelete, setConfirmingDelete] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [confirmingTransfer, setConfirmingTransfer] = useState<string | null>(null);
+  const [transferringTo, setTransferringTo] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
 
   const canAdminister = ADMIN_ROLES.has(viewerRole);
+  /**
+   * Handing the workspace over is offered only where it can succeed: by its
+   * owner, and never in a personal workspace — that one is the tenant every
+   * account falls back to, so the control plane refuses to move it and a button
+   * here would exist only to produce a 409.
+   *
+   * `is_personal` comes from the workspaces list rather than from a prop
+   * because it is BOTH halves of the predicate: a guest invited into somebody
+   * else's personal workspace sees kind=personal for a tenant that is not
+   * theirs, and the server computes the pair.
+   */
+  const activeWorkspace = (workspaces ?? []).find((row) => row.is_active) ?? null;
+  const canTransfer = viewerRole === "owner" && activeWorkspace?.is_personal === false;
 
   const loadWorkspaces = useCallback(async () => {
     try {
@@ -153,6 +170,81 @@ export function WorkspaceSharing({
       setMessage(copy.leaveFailed);
     } finally {
       setLeavingId(null);
+    }
+  }
+
+  /**
+   * Deleting a workspace you own.
+   *
+   * Asks twice, like leaving does, and for a stronger reason: leaving costs you
+   * your own access, this costs everybody theirs. The control plane soft-deletes
+   * — an operator can still reach the rows — but nothing in the product can, so
+   * from here it is permanent and the copy says so.
+   */
+  async function deleteWorkspace(workspace: WorkspaceSummary) {
+    if (deletingId) return;
+    setDeletingId(workspace.id);
+    setMessage(null);
+    try {
+      const response = await fetch("/api/workspaces/delete", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ workspace_id: workspace.id }),
+      });
+      if (!response.ok) {
+        setMessage(errorDetail(await readJson(response), copy.deleteFailed));
+        return;
+      }
+      // Standing in the workspace that just stopped existing: the sidebar on
+      // screen is reading a storage key for a tenant that is gone, same as
+      // leaving. A full load lands them back in their own workspace.
+      if (workspace.is_active) {
+        window.location.assign("/account");
+        return;
+      }
+      setMessage(copy.deletedWorkspace(workspace.name));
+      setConfirmingDelete(null);
+      await loadWorkspaces();
+    } catch {
+      setMessage(copy.deleteFailed);
+    } finally {
+      setDeletingId(null);
+    }
+  }
+
+  /**
+   * Handing this workspace to another member.
+   *
+   * The response is the whole members list rather than the two rows that
+   * changed, because two rows change and patching them one at a time would show
+   * a moment with two owners or none.
+   */
+  async function transferOwnership(member: WorkspaceMember) {
+    if (transferringTo) return;
+    setTransferringTo(member.user_id);
+    setMessage(null);
+    const label = memberLabel(member, viewerUserId, copy.you);
+    try {
+      const response = await fetch("/api/workspace/transfer-ownership", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ user_id: member.user_id }),
+      });
+      const payload = (await readJson(response)) as WorkspaceMember[] | ErrorPayload;
+      if (!response.ok || !Array.isArray(payload)) {
+        setMessage(errorDetail(payload, copy.transferFailed));
+        return;
+      }
+      onMembersChanged(payload);
+      setConfirmingTransfer(null);
+      setMessage(copy.transferred(label));
+      // The caller's own role changed too, and the page was rendered from it —
+      // the workspaces list still says "Owner" next to this workspace.
+      await loadWorkspaces();
+    } catch {
+      setMessage(copy.transferFailed);
+    } finally {
+      setTransferringTo(null);
     }
   }
 
@@ -303,9 +395,46 @@ export function WorkspaceSharing({
                   </button>
                 )
               ) : null}
+              {/* Delete is the owner's counterpart to Leave, and appears in the
+                  same slot for the same reason: an owner has no Leave, because
+                  until they hand the workspace on there is nobody to leave it
+                  to. Personal is excluded — it is the tenant everything falls
+                  back to, and the control plane refuses. */}
+              {workspace.role === "owner" && !workspace.is_personal ? (
+                confirmingDelete === workspace.id ? (
+                  <>
+                    <button
+                      className="mj-workspace-leave"
+                      type="button"
+                      disabled={deletingId !== null}
+                      onClick={() => void deleteWorkspace(workspace)}
+                    >
+                      {deletingId === workspace.id ? copy.deleting : copy.deleteConfirm}
+                    </button>
+                    <button
+                      className="mj-secondary-button"
+                      type="button"
+                      disabled={deletingId !== null}
+                      onClick={() => setConfirmingDelete(null)}
+                    >
+                      {copy.deleteCancel}
+                    </button>
+                  </>
+                ) : (
+                  <button
+                    className="mj-workspace-leave"
+                    type="button"
+                    disabled={deletingId !== null}
+                    onClick={() => setConfirmingDelete(workspace.id)}
+                  >
+                    {copy.deleteWorkspace}
+                  </button>
+                )
+              ) : null}
             </li>
           ))}
         </ul>
+        {confirmingDelete ? <p className="mj-artifact-copy">{copy.deleteWarning}</p> : null}
         <form className="mj-account-profile-form" onSubmit={createWorkspace}>
           <label>
             <span>{copy.createTitle}</span>
@@ -358,6 +487,42 @@ export function WorkspaceSharing({
                     >
                       {pendingMember === member.user_id ? copy.removing : copy.remove}
                     </button>
+                    {/* Only the owner, and only outside a personal workspace.
+                        Asks twice: it is the one control on this page that
+                        hands away the authority needed to undo it. */}
+                    {canTransfer ? (
+                      confirmingTransfer === member.user_id ? (
+                        <>
+                          <button
+                            className="mj-workspace-leave"
+                            type="button"
+                            disabled={transferringTo !== null}
+                            onClick={() => void transferOwnership(member)}
+                          >
+                            {transferringTo === member.user_id
+                              ? copy.transferring
+                              : copy.makeOwnerConfirm(memberLabel(member, viewerUserId, copy.you))}
+                          </button>
+                          <button
+                            className="mj-secondary-button"
+                            type="button"
+                            disabled={transferringTo !== null}
+                            onClick={() => setConfirmingTransfer(null)}
+                          >
+                            {copy.makeOwnerCancel}
+                          </button>
+                        </>
+                      ) : (
+                        <button
+                          className="mj-secondary-button"
+                          type="button"
+                          disabled={transferringTo !== null}
+                          onClick={() => setConfirmingTransfer(member.user_id)}
+                        >
+                          {copy.makeOwner}
+                        </button>
+                      )
+                    ) : null}
                   </>
                 ) : (
                   <span className="mj-mono-muted">{roleLabels[member.role] ?? member.role}</span>
@@ -366,6 +531,7 @@ export function WorkspaceSharing({
             );
           })}
         </ul>
+        {confirmingTransfer ? <p className="mj-artifact-copy">{copy.transferHelp}</p> : null}
         {members.length <= 1 ? <p className="mj-artifact-copy">{copy.noMembers}</p> : null}
         {canAdminister ? (
           <form className="mj-account-profile-form" onSubmit={invite}>
