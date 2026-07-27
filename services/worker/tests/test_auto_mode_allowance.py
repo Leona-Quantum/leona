@@ -96,7 +96,7 @@ def _worker_production_environment(monkeypatch):
     failed in production. Setting the variable here to make the test pass is
     exactly how that ships again.
     """
-    for name in ("LEONA_DEVELOPER_EMAILS", "WORKOS_CLIENT_ID", "SINGLE_USER_LOCK"):
+    for name in ("LEONA_DEVELOPER_EMAILS", "WORKOS_CLIENT_ID"):
         monkeypatch.delenv(name, raising=False)
 
 
@@ -159,7 +159,7 @@ async def test_the_run_being_resolved_is_not_counted_against_itself(monkeypatch)
 
 
 async def test_the_operator_is_not_metered_without_any_configuration(monkeypatch):
-    """A missing allowlist must not throttle the live single-operator deployment."""
+    """A missing allowlist must not throttle an operator-owned synthetic identity."""
 
     async def count_execute_runs_since(_scope, _session, _since):
         return 10_000
@@ -171,7 +171,7 @@ async def test_the_operator_is_not_metered_without_any_configuration(monkeypatch
         _ctx(_RecordingSink()),
         _FakeStore(),
         scope=_Scope(),
-        session=_Session(_User("operator@leonaquantum.com")),
+        session=_Session(_User("local-dev@majorana.test")),
         llm=_ExecuteLLM(),
         has_source_code=False,
     )

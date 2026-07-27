@@ -32,7 +32,7 @@ def _settings(developer_emails: frozenset[str] = frozenset()) -> Settings:
     )
 
 
-def _identity(email: str = "operator@leonaquantum.com", plan: str | None = None):
+def _identity(email: str = "local-dev@majorana.test", plan: str | None = None):
     """A DEVELOPER identity by default — the operator address needs no config."""
     return User(email=email, plan=plan), Workspace()
 

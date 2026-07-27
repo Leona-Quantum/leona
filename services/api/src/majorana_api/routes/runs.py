@@ -138,28 +138,19 @@ def _to_resource(run: RunRow) -> RunResource:
 
 # Abuse backstop for direct control-plane calls.
 #
-# The tier allowance (5 execute runs/week on free, per PR #146) is enforced in
-# the web BFF, which is a *different server* from this one. `run-allowance.ts`
-# claimed a client "cannot skip it without also skipping its own session
-# cookie", but that only holds for callers who go through the BFF at all: a
-# script holding a valid access token can call POST /v1/runs here directly and
-# the tier gate never runs. Today that is unreachable in production — the
-# single-user lock resolves to the unlimited developer tier, so there is no
-# limit to bypass — but it becomes real cost exposure the moment multi-user
-# WorkOS signup returns.
+# Originally this was the ONLY server-side limit, added while the tier allowance
+# still lived exclusively in the web BFF — a different server, which binds only
+# callers who go through it. A script holding a valid access token could call
+# POST /v1/runs directly and meet no tier gate at all. The promotion trigger
+# recorded here was "when multi-user signup ships"; it shipped, and #164 moved
+# the tier-accurate gate into this service (`tiers.py`, applied below).
 #
-# This is deliberately NOT a mirror of the tier policy. Mirroring it would put
-# tier truth in two services, need LEONA_DEVELOPER_EMAILS set on Cloud Run as
-# well as Vercel, and risk throttling the live single-operator deployment at 5
-# runs/week if any of that were wrong. Instead this is a flat per-workspace
-# ceiling far above every tier: it cannot refuse a legitimate user, it needs no
-# tier model, no new env var, and no owner action, and it removes the property
-# that actually matters — that a token holder can spend unboundedly. The
-# tier-accurate gate stays in the BFF where the owner approved it.
-#
-# Promotion trigger: when multi-user signup ships, this ceiling stops being
-# sufficient and real per-tier enforcement has to move server-side. Recorded in
-# the 2026-07-26 DECISIONS.md entry and NEXT.md.
+# So this is no longer the tier gate, and it never was a mirror of the tier
+# policy. It is a flat per-workspace ceiling far above every tier: it cannot
+# refuse a legitimate user, needs no tier model and no environment variable, and
+# removes the property that actually matters — that a token holder can spend
+# unboundedly. It sits ABOVE the real gate so a metered user reads "your plan
+# includes 5 runs", never "platform abuse ceiling".
 #
 # TWO ceilings, not one, because AUTO is the DEFAULT mode on CreateRunRequest.
 # A first cut gated only `mode == EXECUTE`, which a caller defeated simply by

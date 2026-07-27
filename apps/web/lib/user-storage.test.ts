@@ -42,7 +42,7 @@ beforeEach(() => {
 
 const CHATS = "majorana.chat-history.v1";
 
-test("no scope reads and writes the unscoped key, as the single-user lock relies on", () => {
+test("no scope reads and writes the unscoped key, which is what legacy data uses", () => {
   setStorageScope(null);
   scopedStorage.setItem(CHATS, "[1]");
   assert.equal(currentStorageScope(), null);

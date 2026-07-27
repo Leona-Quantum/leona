@@ -90,25 +90,8 @@ async def get_verified_token(
         raise HTTPException(401, "missing bearer token", headers=challenge)
     presented = authorization.removeprefix("Bearer ")
 
-    # Single-operator lock: the API half of the web perimeter. While it is on,
-    # the lock token is the ONLY accepted credential — a WorkOS JWT must not
-    # also work, or any WorkOS account could walk past the username/password.
-    # Settings.__post_init__ has already refused a weak or placeholder token.
-    if settings.single_user_lock:
-        if not compare_digest(presented, settings.single_user_lock_token):
-            raise HTTPException(401, "invalid token", headers=challenge)
-        return VerifiedToken(
-            workos_user_id=settings.single_user_lock_user_id,
-            session_id="single-user-lock-session",
-            claims={
-                "email": settings.single_user_lock_email,
-                "name": settings.single_user_lock_display_name,
-            },
-        )
-
-    # Post-deploy probe. Checked BEFORE the WorkOS verify because it is not a
-    # JWT and would only fail there, and AFTER the lock because while the lock is
-    # on nothing but the lock token may pass.
+    # Post-deploy probe. Checked BEFORE the WorkOS verify because it is not a JWT
+    # and would only fail there.
     #
     # The route check is inside this branch on purpose. Refusing the probe on an
     # out-of-scope route must not tell an unrelated caller anything, and the
