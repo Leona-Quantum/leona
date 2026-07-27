@@ -36,6 +36,9 @@ env:
   GCP_PROJECT: majorana-core
   GCP_REGION: us-west1
   IMAGE_REPO: us-west1-docker.pkg.dev/majorana-core/majorana/api
+  # The production database since 2026-07-27. Both Cloud Run services mount it
+  # as a Unix socket; this workflow reaches it through the Auth Proxy.
+  CLOUDSQL_INSTANCE: majorana-core:us-west1:majorana-pg
 
 jobs:
   deploy:
@@ -113,11 +116,59 @@ jobs:
       # renames something the live code still uses will break production in the
       # window between this step and the traffic shift.
       #
+      # Production moved to Cloud SQL on 2026-07-27, and that instance has NO
+      # authorized networks — nothing reaches it by IP, from a GitHub runner or
+      # anywhere else. The Cloud SQL Auth Proxy is the only way in: it
+      # authenticates as the deploy service account (roles/cloudsql.client) over
+      # the Admin API and forwards a local port.
+      #
+      # Pinned to an exact version AND an exact SHA-256, checked before the file
+      # is made executable. This step puts a binary on a runner that holds a
+      # credential able to deploy production, so "latest" would mean trusting
+      # whatever that URL serves on the day it runs.
+      #
+      # What the hash does and does not buy: it was taken from two independent
+      # downloads of v2.24.1 on 2026-07-27 (36,553,843 bytes, a statically
+      # linked x86-64 ELF). Google publishes no .sha256 sidecar at this path, so
+      # this pins the artifact against future change — it is not an independent
+      # attestation of what Google built. Bump both fields together, never one.
+      - name: start the Cloud SQL Auth Proxy
+        if: steps.creds.outputs.have == 'true'
+        env:
+          PROXY_VERSION: v2.24.1
+          PROXY_SHA256: fae2766aac9d614a2bdef2f2a7778f3d054f3acd5ff07a81a9e300bd471512eb
+        run: |
+          curl -fsSL -o cloud-sql-proxy \
+            "https://storage.googleapis.com/cloud-sql-connectors/cloud-sql-proxy/${PROXY_VERSION}/cloud-sql-proxy.linux.amd64"
+          echo "${PROXY_SHA256}  cloud-sql-proxy" | sha256sum -c - || {
+            echo "::error::the Cloud SQL Auth Proxy binary does not match its pinned"
+            echo "::error::SHA-256. Do NOT update the hash to make this pass without"
+            echo "::error::establishing why the artifact changed."
+            exit 1
+          }
+          chmod +x cloud-sql-proxy
+          ./cloud-sql-proxy --port 5432 --health-check --http-address 127.0.0.1 \
+            "$CLOUDSQL_INSTANCE" &
+          # The proxy answers /startup only once it is ready to accept
+          # connections. Polling it beats `sleep 5`: a slow start would otherwise
+          # fail the migration with a connection error that reads like a broken
+          # database.
+          for _ in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:9090/startup >/dev/null 2>&1; then
+              echo "proxy ready"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "::error::the Cloud SQL Auth Proxy never became ready; the migration"
+          echo "::error::below cannot reach the database. See docs/runbooks/database.md."
+          exit 1
+
       # DATABASE_URL_SECRET is the Secret Manager entry name; DATABASE_URL_DIRECT is
-      # the env var alembic reads (db/migrations/env.py). It holds the Neon DIRECT
-      # (unpooled) endpoint — DDL through the pooler is not safe. The runner reaches
-      # Neon over the public endpoint, the same path ci.yml's `db` job uses on every
-      # PR today.
+      # the env var alembic reads (db/migrations/env.py). Since the Cloud SQL move
+      # it holds a 127.0.0.1:5432 URL that resolves through the proxy started
+      # above — a TCP connection straight to Postgres, with no PgBouncer in front
+      # of it, which is what DDL needs.
       - name: migrate database
         if: steps.creds.outputs.have == 'true'
         run: |
@@ -159,6 +210,7 @@ jobs:
         run: |
           gcloud run deploy majorana-api --project "$GCP_PROJECT" --region "$GCP_REGION" \
             --image "$IMAGE_REPO:${{ steps.tag.outputs.tag }}" \
+            --set-cloudsql-instances "$CLOUDSQL_INSTANCE" \
             --no-traffic --tag verify
           # Parse the URL out with jq rather than a --format projection. Two
           # earlier attempts failed here (2026-07-19):
@@ -205,6 +257,11 @@ jobs:
       # --image` merely happened to preserve — one console edit or one
       # service-replacing command away from a silent outage with a green deploy.
       # State the repo depends on, in the repo.
+      #
+      # --set-cloudsql-instances is stated for the same reason. It is the only
+      # route to the database now: the instance has no authorized networks, so a
+      # revision without this attachment does not fail over to something slower,
+      # it cannot connect at all.
       - name: deploy worker
         if: steps.creds.outputs.have == 'true'
         id: worker
@@ -212,6 +269,7 @@ jobs:
           gcloud run deploy majorana-worker --project "$GCP_PROJECT" --region "$GCP_REGION" \
             --image "$IMAGE_REPO:${{ steps.tag.outputs.tag }}" \
             --command majorana-worker \
+            --set-cloudsql-instances "$CLOUDSQL_INSTANCE" \
             --min-instances 1 --max-instances 1 --no-cpu-throttling
           rev=$(gcloud run services describe majorana-worker \
             --project "$GCP_PROJECT" --region "$GCP_REGION" \

@@ -177,19 +177,20 @@ gcloud run services describe majorana-worker --region us-west1 \
   --project majorana-core --format=json | jq '.spec.template.spec.containers[0].env'
 ```
 
-`DATABASE_URL` is the **pooled** Neon hostname, and it is the only database URL
-either service should ever get.
+`DATABASE_URL` is the Cloud SQL **Unix socket** URL, and it is the only database
+URL either service should ever get. Full detail in
+[database.md](database.md) — including why the URL has no host in it.
 
-The **direct** (non-pooled) hostname is for Alembic only. Two different names are
-involved and they are easy to confuse:
+Alembic uses a different URL. Two names are involved and they are easy to
+confuse:
 
 - **`DATABASE_URL_DIRECT`** is the *environment variable* Alembic reads (see
   `.env.example`). It exists only in a migration shell, never on a service.
 - **`DATABASE_URL_SECRET`** is the *GCP Secret Manager entry* that stores that
   value in production. The name is unfortunate — it is not "the secret for
-  `DATABASE_URL`", it is the direct URL. Verified 2026-07-19: the `DATABASE_URL`
-  entry holds the `-pooler` hostname, `DATABASE_URL_SECRET` holds the same host
-  without `-pooler`.
+  `DATABASE_URL`", it is the direct URL. Since the Cloud SQL move (2026-07-27)
+  it holds a `127.0.0.1:5432` URL that only resolves while this workflow's Cloud
+  SQL Auth Proxy step is running.
 
 So a migration run reads the `DATABASE_URL_SECRET` entry into the
 `DATABASE_URL_DIRECT` variable. Never wire either to a Cloud Run service. The

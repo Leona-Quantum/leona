@@ -16,6 +16,26 @@ jobs:
     runs-on: ubuntu-latest
     # Only run when the LLM key is configured; otherwise there is no honest number.
     if: ${{ github.repository == 'EshMis/majorana' }}
+    # Was a throwaway Neon branch until 2026-07-27. The baseline needs a real
+    # database, not production's data — a fresh migrated + seeded Postgres is
+    # closer to what it was actually using, since a Neon branch was reset on
+    # every run anyway.
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: pg
+          POSTGRES_PASSWORD: pg
+          POSTGRES_DB: majorana_bench
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      BENCH_DATABASE_URL: postgresql://pg:pg@localhost:5432/majorana_bench
     steps:
       - uses: actions/checkout@v4
       - name: guard on provider keys
@@ -32,24 +52,17 @@ jobs:
       - if: ${{ env.skip != 'true' }}
         run: uv sync --all-packages --frozen
       - if: ${{ env.skip != 'true' }}
-        uses: neondatabase/create-branch-action@v5
-        id: neon
-        with:
-          project_id: twilight-wildflower-01313590
-          branch_name: bench-${{ github.run_id }}
-          api_key: ${{ secrets.NEON_API_KEY }}
-      - if: ${{ env.skip != 'true' }}
         name: migrate + seed
         env:
-          DATABASE_URL_DIRECT: ${{ steps.neon.outputs.db_url }}
-          DATABASE_URL: ${{ steps.neon.outputs.db_url_with_pooler }}
+          DATABASE_URL_DIRECT: ${{ env.BENCH_DATABASE_URL }}
+          DATABASE_URL: ${{ env.BENCH_DATABASE_URL }}
         run: |
           uv run --package majorana-api alembic -c db/alembic.ini upgrade head
           uv run --package majorana-api python db/seeds/seed.py --skip-if-populated
       - if: ${{ env.skip != 'true' }}
         name: run corpus → report.json
         env:
-          DATABASE_URL: ${{ steps.neon.outputs.db_url_with_pooler }}
+          DATABASE_URL: ${{ env.BENCH_DATABASE_URL }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
@@ -65,9 +78,3 @@ jobs:
         with:
           name: eval-report
           path: evals/report.json
-      - if: ${{ env.skip != 'true' && always() }}
-        uses: neondatabase/delete-branch-action@v3
-        with:
-          project_id: twilight-wildflower-01313590
-          branch: bench-${{ github.run_id }}
-          api_key: ${{ secrets.NEON_API_KEY }}
