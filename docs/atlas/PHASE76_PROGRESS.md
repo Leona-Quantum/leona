@@ -458,3 +458,38 @@ S6: **adapter_tested_runtime_qualification_pending**
 
 S7 must run this exact source in the digest-pinned Linux/x86_64 Qiskit
 runtime before executable promotion.
+
+## S7 — Qiskit Linux/amd64 vertical execution
+
+The Qiskit image was rebuilt from commit
+`52a2ed9a68066201894ff001724b71ee325732b9` for `linux/amd64`. Both baseline
+and SLSQP ran with no network, read-only root, non-root UID, all capabilities
+dropped, no-new-privileges, and bounded CPU, memory, PID, output, and time.
+
+```text
+Qiskit / Linux amd64
+bounded: 13 objective calls, |error| 1.82e-14 Ha
+SLSQP:    8 objective calls, |error| 2.09e-14 Ha
+both:     1 parameter, 48 CNOT, depth 83
+```
+
+The worker now derives the optimizer command from the server-owned portable
+scientific selection. It rejects a runtime report whose optimizer algorithm
+does not match that selection; the client cannot inject the command.
+
+The local Buildx manifest digest is
+`sha256:29502979903012722d9af45b3b361710c4e1e470693c27c5d7bbbf243c0831fd`.
+This is reproducible local OCI evidence, but it is not a pushed registry
+manifest. Therefore global `runtime_qualified` promotion remains pending.
+
+```text
+worker runtime/handler tests: 46 passed
+Ruff: passed
+mypy: unavailable in the locked root tool environment (no claim)
+```
+
+The first container build also exposed an incorrect Docker COPY path for the
+shared adapter. The build failed before execution; the path was corrected and
+the image rebuilt.
+
+S7: **linux_adapter_verified_registry_digest_pending**

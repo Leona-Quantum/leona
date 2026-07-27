@@ -1,0 +1,44 @@
+{
+  "schema_version": "1.0.0",
+  "phase": "7.6-S7",
+  "source_commit": "52a2ed9a68066201894ff001724b71ee325732b9",
+  "framework": "qiskit",
+  "platform": "linux/amd64",
+  "local_oci_manifest_digest": "sha256:29502979903012722d9af45b3b361710c4e1e470693c27c5d7bbbf243c0831fd",
+  "digest_kind": "local_buildx_manifest_list_digest",
+  "registry_qualification": false,
+  "sandbox": {
+    "network": "none",
+    "root_filesystem": "read_only",
+    "user": "65532:65532",
+    "capabilities": "all_dropped",
+    "no_new_privileges": true,
+    "pids_limit": 128,
+    "memory": "2g",
+    "cpus": 2,
+    "tmpfs": "/tmp:rw,noexec,nosuid,size=64m"
+  },
+  "baseline": {
+    "algorithm": "scipy_minimize_scalar_bounded",
+    "evidence_sha256": "80a4a0042a169770dad51ac426c9d4da402b72bbfea0f86f2022a757427c7dcd",
+    "function_evaluations": 13,
+    "absolute_error_ha": 1.8207657603852567e-14
+  },
+  "candidate": {
+    "algorithm": "scipy_slsqp",
+    "evidence_sha256": "5bf48bcc63d9678a9fff18be4513fad4f1007fcf9c8ed9d4a39dd273dd0dcf83",
+    "function_evaluations": 8,
+    "gradient_evaluations": 4,
+    "absolute_error_ha": 2.0872192862952943e-14
+  },
+  "invariant_audit": {
+    "same_canonical_circuit": true,
+    "same_compilation_protocol": true,
+    "same_parameter_count": true,
+    "same_cnot": true,
+    "same_depth": true,
+    "same_budget_hard_cap": true,
+    "changed_role_only": "parameter_optimizer"
+  },
+  "decision": "linux_adapter_verified_registry_digest_pending"
+}
