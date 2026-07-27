@@ -99,6 +99,7 @@ from .models import (
     WorkspaceFolder,
     WorkspaceMember,
     WorkspaceOverview,
+    WorkspaceSummary,
 )
 from .plan import (
     ArtifactContract,
@@ -259,6 +260,7 @@ __all__ = [
     "WorkspaceFolder",
     "WorkspaceMember",
     "WorkspaceOverview",
+    "WorkspaceSummary",
     "WorkspaceKind",
     "run_event_adapter",
     "assert_import_item_transition",

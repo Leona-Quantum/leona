@@ -4483,6 +4483,45 @@
         ],
         "title": "WorkspaceOverview",
         "type": "object"
+      },
+      "WorkspaceSummary": {
+        "additionalProperties": false,
+        "description": "One row of the workspace switcher: a tenant the caller can act in.\n\n`is_active` is what the *next* request will scope to, not the raw value of\nthe stored pointer \u2014 a pointer to a workspace the caller was removed from\nresolves back to personal, and the switcher must show where they actually\nare.",
+        "properties": {
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "is_active": {
+            "title": "Is Active",
+            "type": "boolean"
+          },
+          "is_personal": {
+            "title": "Is Personal",
+            "type": "boolean"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/WorkspaceKind"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "role": {
+            "$ref": "#/components/schemas/Role"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "name",
+          "role",
+          "is_personal",
+          "is_active"
+        ],
+        "title": "WorkspaceSummary",
+        "type": "object"
       }
     }
   },

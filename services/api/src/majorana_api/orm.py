@@ -44,6 +44,10 @@ class User(Base):
     email: Mapped[str]
     display_name: Mapped[str | None]
     plan: Mapped[str | None] = mapped_column(server_default="free")
+    # Migration 0037. NULL = the personal workspace. A preference, never a grant:
+    # re-checked against `memberships` on every request, and a stale value falls
+    # back to personal instead of refusing the request.
+    active_workspace_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("workspaces.id"))
     created_at: Mapped[dt.datetime | None] = mapped_column(server_default=func.now())
     updated_at: Mapped[dt.datetime | None] = mapped_column(server_default=func.now())
 
