@@ -24,20 +24,21 @@ function fail(message: string): never {
 function validateBundle(raw: unknown): StandardVqeCatalogBundle {
   if (!raw || typeof raw !== "object") fail("bundle must be an object");
   const bundle = raw as Partial<StandardVqeCatalogBundle>;
-  if (bundle.schema_version !== "1.0.0") fail("unsupported schema version");
+  if (bundle.schema_version !== "1.1.0") fail("unsupported schema version");
   if (
     !Array.isArray(bundle.components) ||
     !Array.isArray(bundle.implementations) ||
     !Array.isArray(bundle.workflows) ||
-    !Array.isArray(bundle.controlled_comparisons)
+    !Array.isArray(bundle.comparison_specs)
   ) {
     fail("bundle collections are missing");
   }
-  if (bundle.components.length < 18 || bundle.implementations.length < 12) {
-    fail("component-first MVP seed is below its owner-approved minimum");
-  }
-  if (bundle.workflows.length < 4 || bundle.controlled_comparisons.length < 3) {
-    fail("workflow/comparison seed is below its owner-approved minimum");
+  if (
+    bundle.components.length === 0 ||
+    bundle.implementations.length === 0 ||
+    bundle.workflows.length === 0
+  ) {
+    fail("component-first seed must contain components, bindings, and workflows");
   }
   const componentKeys = new Set<string>();
   for (const component of bundle.components) {
@@ -47,7 +48,7 @@ function validateBundle(raw: unknown): StandardVqeCatalogBundle {
       typeof component.component_type !== "string" ||
       !GROUPS.has(component.group)
     ) {
-      fail("invalid canonical component");
+      fail("invalid standard-component seed candidate");
     }
     if (componentKeys.has(component.semantic_key)) fail("duplicate component identity");
     componentKeys.add(component.semantic_key);
@@ -74,6 +75,15 @@ function validateBundle(raw: unknown): StandardVqeCatalogBundle {
       if (!componentKeys.has(selection.component_semantic_key)) {
         fail("workflow references an unknown component");
       }
+    }
+  }
+  const workflowKeys = new Set(bundle.workflows.map((workflow) => workflow.workflow_key));
+  for (const comparison of bundle.comparison_specs) {
+    if (
+      !workflowKeys.has(comparison.baseline_workflow_key) ||
+      !workflowKeys.has(comparison.candidate_workflow_key)
+    ) {
+      fail("comparison specification references an unknown workflow");
     }
   }
   return bundle as StandardVqeCatalogBundle;

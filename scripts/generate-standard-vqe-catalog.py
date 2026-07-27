@@ -15,7 +15,7 @@ sys.path.insert(0, str(ROOT / "packages" / "py" / "vqe" / "src"))
 
 from majorana_vqe.standard_catalog import (  # noqa: E402
     CATALOG_SCHEMA_VERSION,
-    CONTROLLED_COMPARISONS,
+    CONTROLLED_COMPARISON_SPECS,
     STANDARD_COMPONENTS,
     STANDARD_IMPLEMENTATIONS,
     STANDARD_WORKFLOWS,
@@ -52,7 +52,7 @@ def build_bundle() -> dict[str, object]:
             }
             for workflow in STANDARD_WORKFLOWS
         ],
-        "controlled_comparisons": _json_value(CONTROLLED_COMPARISONS),
+        "comparison_specs": _json_value(CONTROLLED_COMPARISON_SPECS),
     }
 
 

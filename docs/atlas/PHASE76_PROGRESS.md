@@ -4,7 +4,7 @@ Date: 2026-07-28 JST
 Branch: `feature/vqe`  
 Starting commit: `ef62a005479e9a141715406d02e65ecff442c79f`  
 Starting Alembic head: `0038`  
-State: **S0 verified locally; S1 in progress**
+State: **S0–S1 verified locally; S2 pending**
 
 ## S0 — Baseline freeze and claim inventory
 
@@ -107,6 +107,74 @@ S0: **verified_local**
 
 No scientific identity field required by the existing H2 slice is unknown.
 S1 may proceed.
+
+## S1 — Claim and provider-attribution remediation
+
+### Outcome
+
+The public seed model now separates four different questions that the former
+single `status` field conflated:
+
+```text
+Component Definition:
+  maturity = draft | structured | reviewed
+  catalog_state = active | experimental | deferred
+
+Component Implementation:
+  binding_kind
+  evidence_level = documented | adapter_tested | runtime_qualified
+
+Workflow:
+  status = structured | compatible | executable | executed
+```
+
+An executable Workflow no longer implies that every selected role is
+implemented by the evaluator provider. Provider attribution is recorded per
+role:
+
+- PySCF owns electronic-structure preparation;
+- SciPy owns the bounded scalar optimizer;
+- Qiskit and PennyLane own their evaluator/circuit bindings;
+- fixture snapshots and neutral protocols are explicitly attributed to Atlas.
+
+The pre-remediation Cartesian projection of every executable component onto
+both Qiskit and PennyLane has been removed. The generated catalog now contains
+17 role-specific bindings with an explicit `binding_kind`; this number is a
+descriptive observation, not a success threshold.
+
+The old `controlled_comparisons` public field is now
+`comparison_specs`. These records describe a planned one-component change and
+must not be interpreted as measured comparison results.
+
+### UI truthfulness
+
+- “verified standard components” was replaced by “structured
+  standard-component seed candidates”;
+- Component cards show Definition maturity and catalog state separately;
+- implementation rows show provider, package version, binding kind, and
+  evidence level;
+- the execution-provider selector is explicitly restricted to the
+  Workflow's supported evaluator providers;
+- comparison UI says “comparison specification”.
+
+### Verification
+
+```text
+Python standard-catalog tests: 7 passed
+Web tests: 101 passed
+TypeScript: no errors
+Web lint/token checks: passed
+generated catalog --check: passed
+git diff --check: passed
+```
+
+### S1 decision
+
+S1: **verified_local**
+
+The catalog no longer makes cross-provider ownership claims or presents a
+comparison design as a measured result. S2 may connect the catalog selection
+model to the existing typed executable schema.
 
 ## Current safety boundary
 

@@ -12,7 +12,7 @@ from enum import Enum
 
 from .models import ComponentType
 
-CATALOG_SCHEMA_VERSION = "1.0.0"
+CATALOG_SCHEMA_VERSION = "1.1.0"
 COMPATIBILITY_CONTRACT_VERSION = "1.0.0"
 
 
@@ -29,16 +29,51 @@ class ComponentGroup(str, Enum):
 
 
 class CapabilityStatus(str, Enum):
+    """Legacy seed-construction state.
+
+    This is intentionally not serialized on a Component Definition.  It
+    remains only to keep the bounded seed declarations readable while S2
+    migrates their semantic payloads to the typed executable schema.
+    """
+
     EXECUTABLE = "executable"
     STRUCTURED = "structured"
     EXPERIMENTAL = "experimental"
     DEFERRED = "deferred"
 
 
+class DefinitionMaturity(str, Enum):
+    DRAFT = "draft"
+    STRUCTURED = "structured"
+    REVIEWED = "reviewed"
+
+
+class CatalogState(str, Enum):
+    ACTIVE = "active"
+    EXPERIMENTAL = "experimental"
+    DEFERRED = "deferred"
+
+
 class EvidenceLevel(str, Enum):
+    DOCUMENTED = "documented"
+    ADAPTER_TESTED = "adapter_tested"
     RUNTIME_QUALIFIED = "runtime_qualified"
-    OFFICIAL_DOCUMENTATION = "official_documentation"
-    STRUCTURED_SPECIFICATION = "structured_specification"
+
+
+class BindingKind(str, Enum):
+    PROVIDER_NATIVE = "provider_native"
+    ATLAS_ADAPTER = "atlas_adapter"
+    NEUTRAL_PROTOCOL = "neutral_protocol"
+    DATASET_SNAPSHOT = "dataset_snapshot"
+    RUNTIME_OBSERVED = "runtime_observed"
+    DOCUMENTED_ONLY = "documented_only"
+
+
+class WorkflowStatus(str, Enum):
+    STRUCTURED = "structured"
+    COMPATIBLE = "compatible"
+    EXECUTABLE = "executable"
+    EXECUTED = "executed"
 
 
 @dataclasses.dataclass(frozen=True)
@@ -49,7 +84,8 @@ class CanonicalComponentDefinition:
     component_type: ComponentType
     group: ComponentGroup
     semantic_definition: str
-    status: CapabilityStatus
+    maturity: DefinitionMaturity
+    catalog_state: CatalogState
     requires: tuple[str, ...]
     provides: tuple[str, ...]
     source_locators: tuple[str, ...]
@@ -62,9 +98,9 @@ class ComponentImplementationBinding:
     provider: str
     package: str
     package_version: str
-    runtime_profile_id: str
-    adapter_release_id: str
-    status: CapabilityStatus
+    binding_kind: BindingKind
+    runtime_profile_id: str | None
+    adapter_release_id: str | None
     evidence_level: EvidenceLevel
     evidence_locators: tuple[str, ...]
 
@@ -81,9 +117,9 @@ class WorkflowComponentSelection:
 class StandardWorkflowTemplate:
     workflow_key: str
     display_name: str
-    status: CapabilityStatus
+    status: WorkflowStatus
     selections: tuple[WorkflowComponentSelection, ...]
-    supported_providers: tuple[str, ...]
+    supported_evaluator_providers: tuple[str, ...]
     registry_semantic_key: str | None = None
 
 
@@ -103,7 +139,7 @@ class CompatibilityResult:
 
 
 @dataclasses.dataclass(frozen=True)
-class ControlledComparison:
+class ControlledComparisonSpec:
     comparison_key: str
     baseline_workflow_key: str
     candidate_workflow_key: str
@@ -124,6 +160,17 @@ def _definition(
     provides: tuple[str, ...] = (),
     sources: tuple[str, ...] = (),
 ) -> CanonicalComponentDefinition:
+    maturity = (
+        DefinitionMaturity.STRUCTURED
+        if status in (CapabilityStatus.EXECUTABLE, CapabilityStatus.STRUCTURED)
+        else DefinitionMaturity.DRAFT
+    )
+    catalog_state = {
+        CapabilityStatus.EXECUTABLE: CatalogState.ACTIVE,
+        CapabilityStatus.STRUCTURED: CatalogState.ACTIVE,
+        CapabilityStatus.EXPERIMENTAL: CatalogState.EXPERIMENTAL,
+        CapabilityStatus.DEFERRED: CatalogState.DEFERRED,
+    }[status]
     return CanonicalComponentDefinition(
         semantic_key=semantic_key,
         definition_version="1.0.0",
@@ -131,7 +178,8 @@ def _definition(
         component_type=component_type,
         group=group,
         semantic_definition=definition,
-        status=status,
+        maturity=maturity,
+        catalog_state=catalog_state,
         requires=requires,
         provides=provides,
         source_locators=sources,
@@ -454,8 +502,12 @@ def _binding(
     provider: str,
     package: str,
     version: str,
-    runtime: str,
-    adapter: str,
+    binding_kind: BindingKind,
+    evidence_level: EvidenceLevel,
+    *,
+    runtime: str | None = None,
+    adapter: str | None = None,
+    evidence: tuple[str, ...] = (),
 ) -> ComponentImplementationBinding:
     return ComponentImplementationBinding(
         binding_key=f"{component}:{provider}:{version}",
@@ -463,11 +515,11 @@ def _binding(
         provider=provider,
         package=package,
         package_version=version,
+        binding_kind=binding_kind,
         runtime_profile_id=runtime,
         adapter_release_id=adapter,
-        status=CapabilityStatus.EXECUTABLE,
-        evidence_level=EvidenceLevel.RUNTIME_QUALIFIED,
-        evidence_locators=("docs/atlas/evidence/phase5b_h2_runtime_qualification_2026-07-26.json",),
+        evidence_level=evidence_level,
+        evidence_locators=evidence,
     )
 
 
@@ -488,25 +540,141 @@ _H2_EXECUTABLE_COMPONENTS = (
     "compilation.canonical_logical.v2",
 )
 
-STANDARD_IMPLEMENTATIONS: tuple[ComponentImplementationBinding, ...] = tuple(
+_RUNTIME_EVIDENCE = (
+    "docs/atlas/evidence/phase5b_h2_runtime_qualification_2026-07-26.json",
+)
+_FIXTURE_EVIDENCE = (
+    "docs/atlas/fixtures/h2_sto3g/manifest.json",
+    "docs/atlas/fixtures/h2_sto3g/executable_components_v0.2.json",
+)
+_CIRCUIT_EVIDENCE = (
+    "docs/atlas/fixtures/h2_sto3g/canonical_double_excitation_v0.2.json",
+    *_RUNTIME_EVIDENCE,
+)
+
+STANDARD_IMPLEMENTATIONS: tuple[ComponentImplementationBinding, ...] = (
     _binding(
-        component,
-        provider,
-        "qiskit" if provider == "qiskit" else "pennylane",
-        "1.4.6" if provider == "qiskit" else "0.45.1",
-        (
-            "h2-qiskit-linux-x86_64-candidate-v1"
-            if provider == "qiskit"
-            else "h2-pennylane-linux-x86_64-candidate-v1"
-        ),
-        (
-            "majorana-h2-qiskit-adapter-0.2.0"
-            if provider == "qiskit"
-            else "majorana-h2-pennylane-adapter-0.2.0"
-        ),
-    )
-    for provider in ("qiskit", "pennylane")
-    for component in _H2_EXECUTABLE_COMPONENTS
+        "problem.h2.sto3g.v1",
+        "atlas",
+        "atlas-h2-fixture",
+        "0.2.0",
+        BindingKind.DATASET_SNAPSHOT,
+        EvidenceLevel.RUNTIME_QUALIFIED,
+        evidence=_FIXTURE_EVIDENCE,
+    ),
+    _binding(
+        "preparation.pyscf.rhf.v1",
+        "pyscf",
+        "pyscf",
+        "2.14.0",
+        BindingKind.RUNTIME_OBSERVED,
+        EvidenceLevel.ADAPTER_TESTED,
+        evidence=_FIXTURE_EVIDENCE,
+    ),
+    _binding(
+        "mapping.jordan_wigner.v1",
+        "atlas",
+        "atlas-h2-fixture",
+        "0.2.0",
+        BindingKind.DATASET_SNAPSHOT,
+        EvidenceLevel.ADAPTER_TESTED,
+        evidence=_FIXTURE_EVIDENCE,
+    ),
+    _binding(
+        "reference.hartree_fock.v1",
+        "qiskit",
+        "qiskit",
+        "1.4.6",
+        BindingKind.ATLAS_ADAPTER,
+        EvidenceLevel.RUNTIME_QUALIFIED,
+        runtime="h2-qiskit-linux-x86_64-candidate-v1",
+        adapter="majorana-h2-qiskit-adapter-0.2.0",
+        evidence=_RUNTIME_EVIDENCE,
+    ),
+    _binding(
+        "reference.hartree_fock.v1",
+        "pennylane",
+        "pennylane",
+        "0.45.1",
+        BindingKind.ATLAS_ADAPTER,
+        EvidenceLevel.RUNTIME_QUALIFIED,
+        runtime="h2-pennylane-linux-x86_64-candidate-v1",
+        adapter="majorana-h2-pennylane-adapter-0.2.0",
+        evidence=_RUNTIME_EVIDENCE,
+    ),
+    _binding(
+        "ansatz.h2.fixed_excitation.v1",
+        "qiskit",
+        "qiskit",
+        "1.4.6",
+        BindingKind.ATLAS_ADAPTER,
+        EvidenceLevel.RUNTIME_QUALIFIED,
+        runtime="h2-qiskit-linux-x86_64-candidate-v1",
+        adapter="majorana-h2-qiskit-adapter-0.2.0",
+        evidence=_CIRCUIT_EVIDENCE,
+    ),
+    _binding(
+        "ansatz.h2.fixed_excitation.v1",
+        "pennylane",
+        "pennylane",
+        "0.45.1",
+        BindingKind.ATLAS_ADAPTER,
+        EvidenceLevel.RUNTIME_QUALIFIED,
+        runtime="h2-pennylane-linux-x86_64-candidate-v1",
+        adapter="majorana-h2-pennylane-adapter-0.2.0",
+        evidence=_CIRCUIT_EVIDENCE,
+    ),
+    *(
+        _binding(
+            component,
+            "atlas",
+            "majorana-vqe",
+            "0.1.0",
+            BindingKind.NEUTRAL_PROTOCOL,
+            EvidenceLevel.ADAPTER_TESTED,
+            evidence=_FIXTURE_EVIDENCE,
+        )
+        for component in (
+            "pool.h2.singleton_double.v1",
+            "search.fixed.none.v1",
+            "growth.fixed_singleton.v1",
+            "compression.none.v1",
+            "evaluation.exact_reference.v1",
+            "stopping.optimizer_convergence.v1",
+            "compilation.canonical_logical.v2",
+        )
+    ),
+    _binding(
+        "optimizer.scipy_bounded_scalar.v1",
+        "scipy",
+        "scipy",
+        "1.18.0",
+        BindingKind.PROVIDER_NATIVE,
+        EvidenceLevel.RUNTIME_QUALIFIED,
+        evidence=_RUNTIME_EVIDENCE,
+    ),
+    _binding(
+        "measurement.exact_statevector.v1",
+        "qiskit",
+        "qiskit",
+        "1.4.6",
+        BindingKind.PROVIDER_NATIVE,
+        EvidenceLevel.RUNTIME_QUALIFIED,
+        runtime="h2-qiskit-linux-x86_64-candidate-v1",
+        adapter="majorana-h2-qiskit-adapter-0.2.0",
+        evidence=_RUNTIME_EVIDENCE,
+    ),
+    _binding(
+        "measurement.exact_statevector.v1",
+        "pennylane",
+        "pennylane",
+        "0.45.1",
+        BindingKind.PROVIDER_NATIVE,
+        EvidenceLevel.RUNTIME_QUALIFIED,
+        runtime="h2-pennylane-linux-x86_64-candidate-v1",
+        adapter="majorana-h2-pennylane-adapter-0.2.0",
+        evidence=_RUNTIME_EVIDENCE,
+    ),
 )
 
 
@@ -539,37 +707,37 @@ STANDARD_WORKFLOWS: tuple[StandardWorkflowTemplate, ...] = (
     StandardWorkflowTemplate(
         workflow_key="workflow.h2.fixed_excitation.v1",
         display_name="H₂ fixed-excitation VQE",
-        status=CapabilityStatus.EXECUTABLE,
+        status=WorkflowStatus.EXECUTABLE,
         selections=_H2_FIXED_SELECTIONS,
-        supported_providers=("qiskit", "pennylane"),
+        supported_evaluator_providers=("qiskit", "pennylane"),
         registry_semantic_key="h2.sto3g.actual_vqe.workflow.v0_2",
     ),
     StandardWorkflowTemplate(
         workflow_key="workflow.h2.uccsd.v1",
         display_name="H₂ UCCSD VQE",
-        status=CapabilityStatus.STRUCTURED,
+        status=WorkflowStatus.STRUCTURED,
         selections=_replace_selection(
             _H2_FIXED_SELECTIONS,
             ComponentType.ANSATZ,
             "ansatz.uccsd.v1",
         ),
-        supported_providers=(),
+        supported_evaluator_providers=(),
     ),
     StandardWorkflowTemplate(
         workflow_key="workflow.h2.hardware_efficient.v1",
         display_name="H₂ hardware-efficient VQE",
-        status=CapabilityStatus.STRUCTURED,
+        status=WorkflowStatus.STRUCTURED,
         selections=_replace_selection(
             _H2_FIXED_SELECTIONS,
             ComponentType.ANSATZ,
             "ansatz.hardware_efficient_ry_cx.v1",
         ),
-        supported_providers=(),
+        supported_evaluator_providers=(),
     ),
     StandardWorkflowTemplate(
         workflow_key="workflow.h2.adapt.v1",
         display_name="H₂ standard ADAPT-VQE",
-        status=CapabilityStatus.STRUCTURED,
+        status=WorkflowStatus.STRUCTURED,
         selections=_replace_selection(
             _replace_selection(
                 _H2_FIXED_SELECTIONS,
@@ -579,12 +747,12 @@ STANDARD_WORKFLOWS: tuple[StandardWorkflowTemplate, ...] = (
             ComponentType.GROWTH_BATCHING,
             "growth.single_operator.v1",
         ),
-        supported_providers=(),
+        supported_evaluator_providers=(),
     ),
     StandardWorkflowTemplate(
         workflow_key="workflow.lih.uccsd.v1",
         display_name="LiH UCCSD VQE",
-        status=CapabilityStatus.STRUCTURED,
+        status=WorkflowStatus.STRUCTURED,
         selections=_replace_selection(
             _replace_selection(
                 _H2_FIXED_SELECTIONS,
@@ -594,29 +762,29 @@ STANDARD_WORKFLOWS: tuple[StandardWorkflowTemplate, ...] = (
             ComponentType.ANSATZ,
             "ansatz.uccsd.v1",
         ),
-        supported_providers=(),
+        supported_evaluator_providers=(),
     ),
     StandardWorkflowTemplate(
         workflow_key="workflow.h2.fixed_excitation.slsqp.v1",
         display_name="H₂ fixed-excitation VQE with SLSQP",
-        status=CapabilityStatus.STRUCTURED,
+        status=WorkflowStatus.STRUCTURED,
         selections=_replace_selection(
             _H2_FIXED_SELECTIONS,
             ComponentType.PARAMETER_OPTIMIZER,
             "optimizer.slsqp.v1",
         ),
-        supported_providers=(),
+        supported_evaluator_providers=(),
     ),
     StandardWorkflowTemplate(
         workflow_key="workflow.h2.fixed_excitation.cobyla.v1",
         display_name="H₂ fixed-excitation VQE with COBYLA",
-        status=CapabilityStatus.STRUCTURED,
+        status=WorkflowStatus.STRUCTURED,
         selections=_replace_selection(
             _H2_FIXED_SELECTIONS,
             ComponentType.PARAMETER_OPTIMIZER,
             "optimizer.cobyla.v1",
         ),
-        supported_providers=(),
+        supported_evaluator_providers=(),
     ),
 )
 
@@ -691,7 +859,7 @@ def build_controlled_comparison(
     comparison_key: str,
     baseline: StandardWorkflowTemplate,
     candidate: StandardWorkflowTemplate,
-) -> ControlledComparison:
+) -> ControlledComparisonSpec:
     baseline_by_role = {item.role: item for item in baseline.selections}
     candidate_by_role = {item.role: item for item in candidate.selections}
     if set(baseline_by_role) != set(candidate_by_role):
@@ -702,7 +870,7 @@ def build_controlled_comparison(
     if len(changes) != 1:
         raise ValueError("controlled comparison must change exactly one component")
     role = changes[0]
-    return ControlledComparison(
+    return ControlledComparisonSpec(
         comparison_key=comparison_key,
         baseline_workflow_key=baseline.workflow_key,
         candidate_workflow_key=candidate.workflow_key,
@@ -712,7 +880,7 @@ def build_controlled_comparison(
     )
 
 
-CONTROLLED_COMPARISONS: tuple[ControlledComparison, ...] = (
+CONTROLLED_COMPARISON_SPECS: tuple[ControlledComparisonSpec, ...] = (
     build_controlled_comparison(
         "comparison.h2.ansatz.uccsd_vs_fixed.v1",
         workflow_by_key("workflow.h2.fixed_excitation.v1"),
@@ -729,3 +897,8 @@ CONTROLLED_COMPARISONS: tuple[ControlledComparison, ...] = (
         workflow_by_key("workflow.h2.hardware_efficient.v1"),
     ),
 )
+
+# Historical import compatibility for the immutable Phase 7.6-S0 evidence
+# generator. New public bundles use ``comparison_specs`` so an unevaluated
+# comparison design cannot be mistaken for measured comparison results.
+CONTROLLED_COMPARISONS = CONTROLLED_COMPARISON_SPECS

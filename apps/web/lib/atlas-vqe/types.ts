@@ -120,11 +120,24 @@ export type StandardComponentGroup =
   | "measurement"
   | "evaluation_execution";
 
-export type StandardCapabilityStatus =
-  | "executable"
+export type StandardDefinitionMaturity = "draft" | "structured" | "reviewed";
+export type StandardCatalogState = "active" | "experimental" | "deferred";
+export type StandardWorkflowStatus =
   | "structured"
-  | "experimental"
-  | "deferred";
+  | "compatible"
+  | "executable"
+  | "executed";
+export type StandardEvidenceLevel =
+  | "documented"
+  | "adapter_tested"
+  | "runtime_qualified";
+export type StandardBindingKind =
+  | "provider_native"
+  | "atlas_adapter"
+  | "neutral_protocol"
+  | "dataset_snapshot"
+  | "runtime_observed"
+  | "documented_only";
 
 export interface StandardComponentDefinition {
   semantic_key: string;
@@ -133,7 +146,8 @@ export interface StandardComponentDefinition {
   component_type: string;
   group: StandardComponentGroup;
   semantic_definition: string;
-  status: StandardCapabilityStatus;
+  maturity: StandardDefinitionMaturity;
+  catalog_state: StandardCatalogState;
   requires: string[];
   provides: string[];
   source_locators: string[];
@@ -145,10 +159,10 @@ export interface StandardImplementationBinding {
   provider: string;
   package: string;
   package_version: string;
-  runtime_profile_id: string;
-  adapter_release_id: string;
-  status: StandardCapabilityStatus;
-  evidence_level: string;
+  binding_kind: StandardBindingKind;
+  runtime_profile_id: string | null;
+  adapter_release_id: string | null;
+  evidence_level: StandardEvidenceLevel;
   evidence_locators: string[];
 }
 
@@ -175,14 +189,14 @@ export interface StandardCompatibilityResult {
 export interface StandardWorkflowTemplate {
   workflow_key: string;
   display_name: string;
-  status: StandardCapabilityStatus;
+  status: StandardWorkflowStatus;
   selections: StandardWorkflowSelection[];
-  supported_providers: string[];
+  supported_evaluator_providers: string[];
   registry_semantic_key: string | null;
   compatibility: StandardCompatibilityResult;
 }
 
-export interface StandardControlledComparison {
+export interface StandardControlledComparisonSpec {
   comparison_key: string;
   baseline_workflow_key: string;
   candidate_workflow_key: string;
@@ -196,7 +210,7 @@ export interface StandardVqeCatalogBundle {
   components: StandardComponentDefinition[];
   implementations: StandardImplementationBinding[];
   workflows: StandardWorkflowTemplate[];
-  controlled_comparisons: StandardControlledComparison[];
+  comparison_specs: StandardControlledComparisonSpec[];
 }
 
 /** Bounded public browse projections. Detail-only evidence stays server-side

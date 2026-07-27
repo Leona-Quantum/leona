@@ -5,12 +5,19 @@ import {
   getStandardVqeCatalog,
 } from "./standard-source.ts";
 
-test("component-first catalog meets the owner-approved bounded MVP seed", () => {
+test("component-first catalog has linked seed records without count-based claims", () => {
   const bundle = getStandardVqeCatalog();
-  assert.ok(bundle.components.length >= 18);
-  assert.ok(bundle.implementations.length >= 12);
-  assert.ok(bundle.workflows.length >= 4);
-  assert.ok(bundle.controlled_comparisons.length >= 3);
+  assert.ok(bundle.components.length > 0);
+  assert.ok(bundle.implementations.length > 0);
+  assert.ok(bundle.workflows.length > 0);
+  assert.ok(bundle.comparison_specs.length > 0);
+  assert.ok(
+    bundle.implementations.every((binding) =>
+      bundle.components.some(
+        (component) => component.semantic_key === binding.component_semantic_key,
+      ),
+    ),
+  );
 });
 
 test("browser layer recomputes executable workflow compatibility", () => {

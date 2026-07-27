@@ -1,514 +1,5 @@
 {
-  "components": [
-    {
-      "component_type": "problem",
-      "definition_version": "1.0.0",
-      "display_name": "H₂ / STO-3G",
-      "group": "problems_datasets",
-      "provides": [
-        "problem:electronic_structure",
-        "molecule:h2",
-        "electrons:2",
-        "spin_orbitals:4"
-      ],
-      "requires": [],
-      "semantic_definition": "Neutral H₂ electronic-structure problem in the STO-3G basis.",
-      "semantic_key": "problem.h2.sto3g.v1",
-      "source_locators": [],
-      "status": "executable"
-    },
-    {
-      "component_type": "problem",
-      "definition_version": "1.0.0",
-      "display_name": "LiH / STO-3G",
-      "group": "problems_datasets",
-      "provides": [
-        "problem:electronic_structure",
-        "molecule:lih"
-      ],
-      "requires": [],
-      "semantic_definition": "Neutral LiH electronic-structure problem in the STO-3G basis.",
-      "semantic_key": "problem.lih.sto3g.v1",
-      "source_locators": [],
-      "status": "structured"
-    },
-    {
-      "component_type": "problem",
-      "definition_version": "1.0.0",
-      "display_name": "HamLib small instances",
-      "group": "problems_datasets",
-      "provides": [
-        "problem:qubit_hamiltonian",
-        "dataset:hamlib"
-      ],
-      "requires": [],
-      "semantic_definition": "A bounded selection of Hamiltonian instances from HamLib.",
-      "semantic_key": "dataset.hamlib.small.v1",
-      "source_locators": [
-        "https://portal.nersc.gov/cfs/m888/dcamps/hamlib/"
-      ],
-      "status": "structured"
-    },
-    {
-      "component_type": "problem_preparation",
-      "definition_version": "1.0.0",
-      "display_name": "PySCF canonical RHF preparation",
-      "group": "problems_datasets",
-      "provides": [
-        "prepared:electronic_structure"
-      ],
-      "requires": [
-        "problem:electronic_structure"
-      ],
-      "semantic_definition": "Restricted Hartree–Fock integral and orbital preparation with pinned conventions.",
-      "semantic_key": "preparation.pyscf.rhf.v1",
-      "source_locators": [],
-      "status": "executable"
-    },
-    {
-      "component_type": "representation",
-      "definition_version": "1.0.0",
-      "display_name": "Jordan–Wigner",
-      "group": "representation",
-      "provides": [
-        "operator:qubit",
-        "mapping:jordan_wigner"
-      ],
-      "requires": [
-        "prepared:electronic_structure"
-      ],
-      "semantic_definition": "Jordan–Wigner fermion-to-qubit mapping.",
-      "semantic_key": "mapping.jordan_wigner.v1",
-      "source_locators": [
-        "https://qiskit-community.github.io/qiskit-nature/apidocs/qiskit_nature.second_q.circuit.library.html",
-        "https://docs.pennylane.ai/en/stable/code/api/pennylane.qchem.molecular_hamiltonian.html",
-        "https://github.com/quantumlib/OpenFermion"
-      ],
-      "status": "executable"
-    },
-    {
-      "component_type": "representation",
-      "definition_version": "1.0.0",
-      "display_name": "Parity mapping",
-      "group": "representation",
-      "provides": [
-        "operator:qubit",
-        "mapping:parity"
-      ],
-      "requires": [
-        "prepared:electronic_structure"
-      ],
-      "semantic_definition": "Parity fermion-to-qubit mapping without implicit tapering.",
-      "semantic_key": "mapping.parity.v1",
-      "source_locators": [
-        "https://docs.pennylane.ai/en/stable/code/api/pennylane.qchem.molecular_hamiltonian.html"
-      ],
-      "status": "structured"
-    },
-    {
-      "component_type": "representation",
-      "definition_version": "1.0.0",
-      "display_name": "Bravyi–Kitaev",
-      "group": "representation",
-      "provides": [
-        "operator:qubit",
-        "mapping:bravyi_kitaev"
-      ],
-      "requires": [
-        "prepared:electronic_structure"
-      ],
-      "semantic_definition": "Bravyi–Kitaev fermion-to-qubit mapping.",
-      "semantic_key": "mapping.bravyi_kitaev.v1",
-      "source_locators": [
-        "https://docs.pennylane.ai/en/stable/code/api/pennylane.qchem.molecular_hamiltonian.html",
-        "https://github.com/quantumlib/OpenFermion"
-      ],
-      "status": "structured"
-    },
-    {
-      "component_type": "reference_state",
-      "definition_version": "1.0.0",
-      "display_name": "Hartree–Fock reference",
-      "group": "states_ansatze",
-      "provides": [
-        "state:reference"
-      ],
-      "requires": [
-        "qubits:4",
-        "electrons:2"
-      ],
-      "semantic_definition": "Computational-basis Hartree–Fock occupation state.",
-      "semantic_key": "reference.hartree_fock.v1",
-      "source_locators": [
-        "https://qiskit-community.github.io/qiskit-nature/apidocs/qiskit_nature.second_q.circuit.library.html",
-        "https://docs.pennylane.ai/en/stable/code/api/pennylane.UCCSD.html"
-      ],
-      "status": "executable"
-    },
-    {
-      "component_type": "ansatz",
-      "definition_version": "1.0.0",
-      "display_name": "Fixed one-parameter H₂ excitation",
-      "group": "states_ansatze",
-      "provides": [
-        "state:parametric",
-        "parameters:1"
-      ],
-      "requires": [
-        "state:reference",
-        "mapping:jordan_wigner",
-        "qubits:4"
-      ],
-      "semantic_definition": "One canonical anti-Hermitian double-excitation block for four-qubit H₂.",
-      "semantic_key": "ansatz.h2.fixed_excitation.v1",
-      "source_locators": [],
-      "status": "executable"
-    },
-    {
-      "component_type": "ansatz",
-      "definition_version": "1.0.0",
-      "display_name": "UCCSD",
-      "group": "states_ansatze",
-      "provides": [
-        "state:parametric",
-        "ansatz:uccsd"
-      ],
-      "requires": [
-        "state:reference",
-        "operator:qubit"
-      ],
-      "semantic_definition": "Unitary coupled-cluster ansatz with single and double excitations.",
-      "semantic_key": "ansatz.uccsd.v1",
-      "source_locators": [
-        "https://qiskit-community.github.io/qiskit-nature/apidocs/qiskit_nature.second_q.circuit.library.html",
-        "https://docs.pennylane.ai/en/stable/code/api/pennylane.UCCSD.html"
-      ],
-      "status": "structured"
-    },
-    {
-      "component_type": "ansatz",
-      "definition_version": "1.0.0",
-      "display_name": "Hardware-efficient RY–CX",
-      "group": "states_ansatze",
-      "provides": [
-        "state:parametric",
-        "ansatz:hardware_efficient"
-      ],
-      "requires": [
-        "state:reference",
-        "operator:qubit"
-      ],
-      "semantic_definition": "Layered RY rotations and CX entanglers with explicit topology and depth.",
-      "semantic_key": "ansatz.hardware_efficient_ry_cx.v1",
-      "source_locators": [],
-      "status": "structured"
-    },
-    {
-      "component_type": "operator_pool",
-      "definition_version": "1.0.0",
-      "display_name": "H₂ singleton double pool",
-      "group": "operator_pools",
-      "provides": [
-        "pool:operators",
-        "pool:singleton"
-      ],
-      "requires": [
-        "mapping:jordan_wigner",
-        "qubits:4"
-      ],
-      "semantic_definition": "The single canonical H₂ double-excitation generator.",
-      "semantic_key": "pool.h2.singleton_double.v1",
-      "source_locators": [],
-      "status": "executable"
-    },
-    {
-      "component_type": "operator_pool",
-      "definition_version": "1.0.0",
-      "display_name": "UCCSD singles/doubles pool",
-      "group": "operator_pools",
-      "provides": [
-        "pool:operators",
-        "pool:uccsd"
-      ],
-      "requires": [
-        "prepared:electronic_structure"
-      ],
-      "semantic_definition": "Occupied-to-virtual single and double excitation generators.",
-      "semantic_key": "pool.uccsd.singles_doubles.v1",
-      "source_locators": [],
-      "status": "structured"
-    },
-    {
-      "component_type": "operator_pool",
-      "definition_version": "1.0.0",
-      "display_name": "Fermionic singles/doubles pool",
-      "group": "operator_pools",
-      "provides": [
-        "pool:operators",
-        "pool:fermionic_sd"
-      ],
-      "requires": [
-        "prepared:electronic_structure"
-      ],
-      "semantic_definition": "Spin-orbital fermionic single and double excitation generators.",
-      "semantic_key": "pool.fermionic.singles_doubles.v1",
-      "source_locators": [],
-      "status": "structured"
-    },
-    {
-      "component_type": "operator_pool",
-      "definition_version": "1.0.0",
-      "display_name": "Generalized singles/doubles pool",
-      "group": "operator_pools",
-      "provides": [
-        "pool:operators",
-        "pool:generalized_sd"
-      ],
-      "requires": [
-        "prepared:electronic_structure"
-      ],
-      "semantic_definition": "Generalized single and double excitations over the active spin orbitals.",
-      "semantic_key": "pool.generalized.singles_doubles.v1",
-      "source_locators": [],
-      "status": "structured"
-    },
-    {
-      "component_type": "search_selection",
-      "definition_version": "1.0.0",
-      "display_name": "Fixed ansatz / no adaptive search",
-      "group": "search_growth",
-      "provides": [
-        "selection:fixed"
-      ],
-      "requires": [
-        "pool:operators"
-      ],
-      "semantic_definition": "No adaptive ranking; use the fixed operator sequence.",
-      "semantic_key": "search.fixed.none.v1",
-      "source_locators": [],
-      "status": "executable"
-    },
-    {
-      "component_type": "search_selection",
-      "definition_version": "1.0.0",
-      "display_name": "Gradient top-1 selection",
-      "group": "search_growth",
-      "provides": [
-        "selection:gradient_top1"
-      ],
-      "requires": [
-        "pool:operators",
-        "operator:qubit",
-        "state:parametric"
-      ],
-      "semantic_definition": "Select one pool member with the largest absolute energy gradient.",
-      "semantic_key": "search.gradient_top1.v1",
-      "source_locators": [
-        "https://qiskit-community.github.io/qiskit-nature/howtos/adapt_vqe.html"
-      ],
-      "status": "structured"
-    },
-    {
-      "component_type": "growth_batching",
-      "definition_version": "1.0.0",
-      "display_name": "Single-operator growth",
-      "group": "search_growth",
-      "provides": [
-        "growth:single"
-      ],
-      "requires": [
-        "selection:gradient_top1"
-      ],
-      "semantic_definition": "Append exactly one selected operator per adaptive iteration.",
-      "semantic_key": "growth.single_operator.v1",
-      "source_locators": [
-        "https://qiskit-community.github.io/qiskit-nature/howtos/adapt_vqe.html"
-      ],
-      "status": "structured"
-    },
-    {
-      "component_type": "growth_batching",
-      "definition_version": "1.0.0",
-      "display_name": "Fixed singleton growth",
-      "group": "search_growth",
-      "provides": [
-        "state:parametric",
-        "growth:fixed"
-      ],
-      "requires": [
-        "selection:fixed",
-        "pool:singleton"
-      ],
-      "semantic_definition": "Materialize the one fixed H₂ pool member once.",
-      "semantic_key": "growth.fixed_singleton.v1",
-      "source_locators": [],
-      "status": "executable"
-    },
-    {
-      "component_type": "parameter_optimizer",
-      "definition_version": "1.0.0",
-      "display_name": "SciPy bounded scalar optimizer",
-      "group": "optimizers",
-      "provides": [
-        "parameters:optimized"
-      ],
-      "requires": [
-        "state:parametric",
-        "parameters:1"
-      ],
-      "semantic_definition": "Deterministic bounded scalar minimization for the one-parameter H₂ workflow.",
-      "semantic_key": "optimizer.scipy_bounded_scalar.v1",
-      "source_locators": [],
-      "status": "executable"
-    },
-    {
-      "component_type": "parameter_optimizer",
-      "definition_version": "1.0.0",
-      "display_name": "SLSQP",
-      "group": "optimizers",
-      "provides": [
-        "parameters:optimized",
-        "optimizer:slsqp"
-      ],
-      "requires": [
-        "state:parametric"
-      ],
-      "semantic_definition": "Sequential least-squares programming with explicit tolerances and bounds.",
-      "semantic_key": "optimizer.slsqp.v1",
-      "source_locators": [],
-      "status": "structured"
-    },
-    {
-      "component_type": "parameter_optimizer",
-      "definition_version": "1.0.0",
-      "display_name": "COBYLA",
-      "group": "optimizers",
-      "provides": [
-        "parameters:optimized",
-        "optimizer:cobyla"
-      ],
-      "requires": [
-        "state:parametric"
-      ],
-      "semantic_definition": "Derivative-free constrained optimization with explicit stopping settings.",
-      "semantic_key": "optimizer.cobyla.v1",
-      "source_locators": [],
-      "status": "structured"
-    },
-    {
-      "component_type": "compression",
-      "definition_version": "1.0.0",
-      "display_name": "No compression",
-      "group": "compression",
-      "provides": [
-        "compression:none"
-      ],
-      "requires": [
-        "state:parametric"
-      ],
-      "semantic_definition": "Identity compression policy that preserves the complete ansatz.",
-      "semantic_key": "compression.none.v1",
-      "source_locators": [],
-      "status": "executable"
-    },
-    {
-      "component_type": "measurement",
-      "definition_version": "1.0.0",
-      "display_name": "Exact statevector estimator",
-      "group": "measurement",
-      "provides": [
-        "observation:energy_exact"
-      ],
-      "requires": [
-        "operator:qubit",
-        "state:parametric"
-      ],
-      "semantic_definition": "Deterministic exact expectation of the qubit Hamiltonian; shots are absent.",
-      "semantic_key": "measurement.exact_statevector.v1",
-      "source_locators": [],
-      "status": "executable"
-    },
-    {
-      "component_type": "measurement",
-      "definition_version": "1.0.0",
-      "display_name": "Finite-shot estimator",
-      "group": "measurement",
-      "provides": [
-        "observation:energy_sampled"
-      ],
-      "requires": [
-        "operator:qubit",
-        "state:parametric"
-      ],
-      "semantic_definition": "Shot-based energy estimation with explicit shot count and random seed.",
-      "semantic_key": "measurement.finite_shot.v1",
-      "source_locators": [],
-      "status": "experimental"
-    },
-    {
-      "component_type": "error_mitigation",
-      "definition_version": "1.0.0",
-      "display_name": "No error mitigation",
-      "group": "measurement",
-      "provides": [
-        "mitigation:none"
-      ],
-      "requires": [],
-      "semantic_definition": "Identity mitigation policy.",
-      "semantic_key": "mitigation.none.v1",
-      "source_locators": [],
-      "status": "structured"
-    },
-    {
-      "component_type": "evaluation_protocol",
-      "definition_version": "1.0.0",
-      "display_name": "Exact reference comparison",
-      "group": "evaluation_execution",
-      "provides": [
-        "evaluation:absolute_error"
-      ],
-      "requires": [
-        "observation:energy_exact"
-      ],
-      "semantic_definition": "Absolute total-energy error against a fixed offline exact reference.",
-      "semantic_key": "evaluation.exact_reference.v1",
-      "source_locators": [],
-      "status": "executable"
-    },
-    {
-      "component_type": "stopping_protocol",
-      "definition_version": "1.0.0",
-      "display_name": "Optimizer convergence stopping",
-      "group": "evaluation_execution",
-      "provides": [
-        "stopping:optimizer_convergence"
-      ],
-      "requires": [
-        "parameters:optimized"
-      ],
-      "semantic_definition": "Stop according to the optimizer tolerance and function-evaluation cap.",
-      "semantic_key": "stopping.optimizer_convergence.v1",
-      "source_locators": [],
-      "status": "executable"
-    },
-    {
-      "component_type": "compilation_backend",
-      "definition_version": "1.0.0",
-      "display_name": "Canonical logical resource protocol",
-      "group": "evaluation_execution",
-      "provides": [
-        "metrics:cnot_depth"
-      ],
-      "requires": [
-        "state:parametric"
-      ],
-      "semantic_definition": "Framework-neutral logical CNOT/depth protocol with fixed basis and topology.",
-      "semantic_key": "compilation.canonical_logical.v2",
-      "source_locators": [],
-      "status": "executable"
-    }
-  ],
-  "controlled_comparisons": [
+  "comparison_specs": [
     {
       "baseline_component_key": "ansatz.h2.fixed_excitation.v1",
       "baseline_workflow_key": "workflow.h2.fixed_excitation.v1",
@@ -534,52 +25,594 @@
       "comparison_key": "comparison.h2.ansatz.uccsd_vs_hardware_efficient.v1"
     }
   ],
+  "components": [
+    {
+      "catalog_state": "active",
+      "component_type": "problem",
+      "definition_version": "1.0.0",
+      "display_name": "H₂ / STO-3G",
+      "group": "problems_datasets",
+      "maturity": "structured",
+      "provides": [
+        "problem:electronic_structure",
+        "molecule:h2",
+        "electrons:2",
+        "spin_orbitals:4"
+      ],
+      "requires": [],
+      "semantic_definition": "Neutral H₂ electronic-structure problem in the STO-3G basis.",
+      "semantic_key": "problem.h2.sto3g.v1",
+      "source_locators": []
+    },
+    {
+      "catalog_state": "active",
+      "component_type": "problem",
+      "definition_version": "1.0.0",
+      "display_name": "LiH / STO-3G",
+      "group": "problems_datasets",
+      "maturity": "structured",
+      "provides": [
+        "problem:electronic_structure",
+        "molecule:lih"
+      ],
+      "requires": [],
+      "semantic_definition": "Neutral LiH electronic-structure problem in the STO-3G basis.",
+      "semantic_key": "problem.lih.sto3g.v1",
+      "source_locators": []
+    },
+    {
+      "catalog_state": "active",
+      "component_type": "problem",
+      "definition_version": "1.0.0",
+      "display_name": "HamLib small instances",
+      "group": "problems_datasets",
+      "maturity": "structured",
+      "provides": [
+        "problem:qubit_hamiltonian",
+        "dataset:hamlib"
+      ],
+      "requires": [],
+      "semantic_definition": "A bounded selection of Hamiltonian instances from HamLib.",
+      "semantic_key": "dataset.hamlib.small.v1",
+      "source_locators": [
+        "https://portal.nersc.gov/cfs/m888/dcamps/hamlib/"
+      ]
+    },
+    {
+      "catalog_state": "active",
+      "component_type": "problem_preparation",
+      "definition_version": "1.0.0",
+      "display_name": "PySCF canonical RHF preparation",
+      "group": "problems_datasets",
+      "maturity": "structured",
+      "provides": [
+        "prepared:electronic_structure"
+      ],
+      "requires": [
+        "problem:electronic_structure"
+      ],
+      "semantic_definition": "Restricted Hartree–Fock integral and orbital preparation with pinned conventions.",
+      "semantic_key": "preparation.pyscf.rhf.v1",
+      "source_locators": []
+    },
+    {
+      "catalog_state": "active",
+      "component_type": "representation",
+      "definition_version": "1.0.0",
+      "display_name": "Jordan–Wigner",
+      "group": "representation",
+      "maturity": "structured",
+      "provides": [
+        "operator:qubit",
+        "mapping:jordan_wigner"
+      ],
+      "requires": [
+        "prepared:electronic_structure"
+      ],
+      "semantic_definition": "Jordan–Wigner fermion-to-qubit mapping.",
+      "semantic_key": "mapping.jordan_wigner.v1",
+      "source_locators": [
+        "https://qiskit-community.github.io/qiskit-nature/apidocs/qiskit_nature.second_q.circuit.library.html",
+        "https://docs.pennylane.ai/en/stable/code/api/pennylane.qchem.molecular_hamiltonian.html",
+        "https://github.com/quantumlib/OpenFermion"
+      ]
+    },
+    {
+      "catalog_state": "active",
+      "component_type": "representation",
+      "definition_version": "1.0.0",
+      "display_name": "Parity mapping",
+      "group": "representation",
+      "maturity": "structured",
+      "provides": [
+        "operator:qubit",
+        "mapping:parity"
+      ],
+      "requires": [
+        "prepared:electronic_structure"
+      ],
+      "semantic_definition": "Parity fermion-to-qubit mapping without implicit tapering.",
+      "semantic_key": "mapping.parity.v1",
+      "source_locators": [
+        "https://docs.pennylane.ai/en/stable/code/api/pennylane.qchem.molecular_hamiltonian.html"
+      ]
+    },
+    {
+      "catalog_state": "active",
+      "component_type": "representation",
+      "definition_version": "1.0.0",
+      "display_name": "Bravyi–Kitaev",
+      "group": "representation",
+      "maturity": "structured",
+      "provides": [
+        "operator:qubit",
+        "mapping:bravyi_kitaev"
+      ],
+      "requires": [
+        "prepared:electronic_structure"
+      ],
+      "semantic_definition": "Bravyi–Kitaev fermion-to-qubit mapping.",
+      "semantic_key": "mapping.bravyi_kitaev.v1",
+      "source_locators": [
+        "https://docs.pennylane.ai/en/stable/code/api/pennylane.qchem.molecular_hamiltonian.html",
+        "https://github.com/quantumlib/OpenFermion"
+      ]
+    },
+    {
+      "catalog_state": "active",
+      "component_type": "reference_state",
+      "definition_version": "1.0.0",
+      "display_name": "Hartree–Fock reference",
+      "group": "states_ansatze",
+      "maturity": "structured",
+      "provides": [
+        "state:reference"
+      ],
+      "requires": [
+        "qubits:4",
+        "electrons:2"
+      ],
+      "semantic_definition": "Computational-basis Hartree–Fock occupation state.",
+      "semantic_key": "reference.hartree_fock.v1",
+      "source_locators": [
+        "https://qiskit-community.github.io/qiskit-nature/apidocs/qiskit_nature.second_q.circuit.library.html",
+        "https://docs.pennylane.ai/en/stable/code/api/pennylane.UCCSD.html"
+      ]
+    },
+    {
+      "catalog_state": "active",
+      "component_type": "ansatz",
+      "definition_version": "1.0.0",
+      "display_name": "Fixed one-parameter H₂ excitation",
+      "group": "states_ansatze",
+      "maturity": "structured",
+      "provides": [
+        "state:parametric",
+        "parameters:1"
+      ],
+      "requires": [
+        "state:reference",
+        "mapping:jordan_wigner",
+        "qubits:4"
+      ],
+      "semantic_definition": "One canonical anti-Hermitian double-excitation block for four-qubit H₂.",
+      "semantic_key": "ansatz.h2.fixed_excitation.v1",
+      "source_locators": []
+    },
+    {
+      "catalog_state": "active",
+      "component_type": "ansatz",
+      "definition_version": "1.0.0",
+      "display_name": "UCCSD",
+      "group": "states_ansatze",
+      "maturity": "structured",
+      "provides": [
+        "state:parametric",
+        "ansatz:uccsd"
+      ],
+      "requires": [
+        "state:reference",
+        "operator:qubit"
+      ],
+      "semantic_definition": "Unitary coupled-cluster ansatz with single and double excitations.",
+      "semantic_key": "ansatz.uccsd.v1",
+      "source_locators": [
+        "https://qiskit-community.github.io/qiskit-nature/apidocs/qiskit_nature.second_q.circuit.library.html",
+        "https://docs.pennylane.ai/en/stable/code/api/pennylane.UCCSD.html"
+      ]
+    },
+    {
+      "catalog_state": "active",
+      "component_type": "ansatz",
+      "definition_version": "1.0.0",
+      "display_name": "Hardware-efficient RY–CX",
+      "group": "states_ansatze",
+      "maturity": "structured",
+      "provides": [
+        "state:parametric",
+        "ansatz:hardware_efficient"
+      ],
+      "requires": [
+        "state:reference",
+        "operator:qubit"
+      ],
+      "semantic_definition": "Layered RY rotations and CX entanglers with explicit topology and depth.",
+      "semantic_key": "ansatz.hardware_efficient_ry_cx.v1",
+      "source_locators": []
+    },
+    {
+      "catalog_state": "active",
+      "component_type": "operator_pool",
+      "definition_version": "1.0.0",
+      "display_name": "H₂ singleton double pool",
+      "group": "operator_pools",
+      "maturity": "structured",
+      "provides": [
+        "pool:operators",
+        "pool:singleton"
+      ],
+      "requires": [
+        "mapping:jordan_wigner",
+        "qubits:4"
+      ],
+      "semantic_definition": "The single canonical H₂ double-excitation generator.",
+      "semantic_key": "pool.h2.singleton_double.v1",
+      "source_locators": []
+    },
+    {
+      "catalog_state": "active",
+      "component_type": "operator_pool",
+      "definition_version": "1.0.0",
+      "display_name": "UCCSD singles/doubles pool",
+      "group": "operator_pools",
+      "maturity": "structured",
+      "provides": [
+        "pool:operators",
+        "pool:uccsd"
+      ],
+      "requires": [
+        "prepared:electronic_structure"
+      ],
+      "semantic_definition": "Occupied-to-virtual single and double excitation generators.",
+      "semantic_key": "pool.uccsd.singles_doubles.v1",
+      "source_locators": []
+    },
+    {
+      "catalog_state": "active",
+      "component_type": "operator_pool",
+      "definition_version": "1.0.0",
+      "display_name": "Fermionic singles/doubles pool",
+      "group": "operator_pools",
+      "maturity": "structured",
+      "provides": [
+        "pool:operators",
+        "pool:fermionic_sd"
+      ],
+      "requires": [
+        "prepared:electronic_structure"
+      ],
+      "semantic_definition": "Spin-orbital fermionic single and double excitation generators.",
+      "semantic_key": "pool.fermionic.singles_doubles.v1",
+      "source_locators": []
+    },
+    {
+      "catalog_state": "active",
+      "component_type": "operator_pool",
+      "definition_version": "1.0.0",
+      "display_name": "Generalized singles/doubles pool",
+      "group": "operator_pools",
+      "maturity": "structured",
+      "provides": [
+        "pool:operators",
+        "pool:generalized_sd"
+      ],
+      "requires": [
+        "prepared:electronic_structure"
+      ],
+      "semantic_definition": "Generalized single and double excitations over the active spin orbitals.",
+      "semantic_key": "pool.generalized.singles_doubles.v1",
+      "source_locators": []
+    },
+    {
+      "catalog_state": "active",
+      "component_type": "search_selection",
+      "definition_version": "1.0.0",
+      "display_name": "Fixed ansatz / no adaptive search",
+      "group": "search_growth",
+      "maturity": "structured",
+      "provides": [
+        "selection:fixed"
+      ],
+      "requires": [
+        "pool:operators"
+      ],
+      "semantic_definition": "No adaptive ranking; use the fixed operator sequence.",
+      "semantic_key": "search.fixed.none.v1",
+      "source_locators": []
+    },
+    {
+      "catalog_state": "active",
+      "component_type": "search_selection",
+      "definition_version": "1.0.0",
+      "display_name": "Gradient top-1 selection",
+      "group": "search_growth",
+      "maturity": "structured",
+      "provides": [
+        "selection:gradient_top1"
+      ],
+      "requires": [
+        "pool:operators",
+        "operator:qubit",
+        "state:parametric"
+      ],
+      "semantic_definition": "Select one pool member with the largest absolute energy gradient.",
+      "semantic_key": "search.gradient_top1.v1",
+      "source_locators": [
+        "https://qiskit-community.github.io/qiskit-nature/howtos/adapt_vqe.html"
+      ]
+    },
+    {
+      "catalog_state": "active",
+      "component_type": "growth_batching",
+      "definition_version": "1.0.0",
+      "display_name": "Single-operator growth",
+      "group": "search_growth",
+      "maturity": "structured",
+      "provides": [
+        "growth:single"
+      ],
+      "requires": [
+        "selection:gradient_top1"
+      ],
+      "semantic_definition": "Append exactly one selected operator per adaptive iteration.",
+      "semantic_key": "growth.single_operator.v1",
+      "source_locators": [
+        "https://qiskit-community.github.io/qiskit-nature/howtos/adapt_vqe.html"
+      ]
+    },
+    {
+      "catalog_state": "active",
+      "component_type": "growth_batching",
+      "definition_version": "1.0.0",
+      "display_name": "Fixed singleton growth",
+      "group": "search_growth",
+      "maturity": "structured",
+      "provides": [
+        "state:parametric",
+        "growth:fixed"
+      ],
+      "requires": [
+        "selection:fixed",
+        "pool:singleton"
+      ],
+      "semantic_definition": "Materialize the one fixed H₂ pool member once.",
+      "semantic_key": "growth.fixed_singleton.v1",
+      "source_locators": []
+    },
+    {
+      "catalog_state": "active",
+      "component_type": "parameter_optimizer",
+      "definition_version": "1.0.0",
+      "display_name": "SciPy bounded scalar optimizer",
+      "group": "optimizers",
+      "maturity": "structured",
+      "provides": [
+        "parameters:optimized"
+      ],
+      "requires": [
+        "state:parametric",
+        "parameters:1"
+      ],
+      "semantic_definition": "Deterministic bounded scalar minimization for the one-parameter H₂ workflow.",
+      "semantic_key": "optimizer.scipy_bounded_scalar.v1",
+      "source_locators": []
+    },
+    {
+      "catalog_state": "active",
+      "component_type": "parameter_optimizer",
+      "definition_version": "1.0.0",
+      "display_name": "SLSQP",
+      "group": "optimizers",
+      "maturity": "structured",
+      "provides": [
+        "parameters:optimized",
+        "optimizer:slsqp"
+      ],
+      "requires": [
+        "state:parametric"
+      ],
+      "semantic_definition": "Sequential least-squares programming with explicit tolerances and bounds.",
+      "semantic_key": "optimizer.slsqp.v1",
+      "source_locators": []
+    },
+    {
+      "catalog_state": "active",
+      "component_type": "parameter_optimizer",
+      "definition_version": "1.0.0",
+      "display_name": "COBYLA",
+      "group": "optimizers",
+      "maturity": "structured",
+      "provides": [
+        "parameters:optimized",
+        "optimizer:cobyla"
+      ],
+      "requires": [
+        "state:parametric"
+      ],
+      "semantic_definition": "Derivative-free constrained optimization with explicit stopping settings.",
+      "semantic_key": "optimizer.cobyla.v1",
+      "source_locators": []
+    },
+    {
+      "catalog_state": "active",
+      "component_type": "compression",
+      "definition_version": "1.0.0",
+      "display_name": "No compression",
+      "group": "compression",
+      "maturity": "structured",
+      "provides": [
+        "compression:none"
+      ],
+      "requires": [
+        "state:parametric"
+      ],
+      "semantic_definition": "Identity compression policy that preserves the complete ansatz.",
+      "semantic_key": "compression.none.v1",
+      "source_locators": []
+    },
+    {
+      "catalog_state": "active",
+      "component_type": "measurement",
+      "definition_version": "1.0.0",
+      "display_name": "Exact statevector estimator",
+      "group": "measurement",
+      "maturity": "structured",
+      "provides": [
+        "observation:energy_exact"
+      ],
+      "requires": [
+        "operator:qubit",
+        "state:parametric"
+      ],
+      "semantic_definition": "Deterministic exact expectation of the qubit Hamiltonian; shots are absent.",
+      "semantic_key": "measurement.exact_statevector.v1",
+      "source_locators": []
+    },
+    {
+      "catalog_state": "experimental",
+      "component_type": "measurement",
+      "definition_version": "1.0.0",
+      "display_name": "Finite-shot estimator",
+      "group": "measurement",
+      "maturity": "draft",
+      "provides": [
+        "observation:energy_sampled"
+      ],
+      "requires": [
+        "operator:qubit",
+        "state:parametric"
+      ],
+      "semantic_definition": "Shot-based energy estimation with explicit shot count and random seed.",
+      "semantic_key": "measurement.finite_shot.v1",
+      "source_locators": []
+    },
+    {
+      "catalog_state": "active",
+      "component_type": "error_mitigation",
+      "definition_version": "1.0.0",
+      "display_name": "No error mitigation",
+      "group": "measurement",
+      "maturity": "structured",
+      "provides": [
+        "mitigation:none"
+      ],
+      "requires": [],
+      "semantic_definition": "Identity mitigation policy.",
+      "semantic_key": "mitigation.none.v1",
+      "source_locators": []
+    },
+    {
+      "catalog_state": "active",
+      "component_type": "evaluation_protocol",
+      "definition_version": "1.0.0",
+      "display_name": "Exact reference comparison",
+      "group": "evaluation_execution",
+      "maturity": "structured",
+      "provides": [
+        "evaluation:absolute_error"
+      ],
+      "requires": [
+        "observation:energy_exact"
+      ],
+      "semantic_definition": "Absolute total-energy error against a fixed offline exact reference.",
+      "semantic_key": "evaluation.exact_reference.v1",
+      "source_locators": []
+    },
+    {
+      "catalog_state": "active",
+      "component_type": "stopping_protocol",
+      "definition_version": "1.0.0",
+      "display_name": "Optimizer convergence stopping",
+      "group": "evaluation_execution",
+      "maturity": "structured",
+      "provides": [
+        "stopping:optimizer_convergence"
+      ],
+      "requires": [
+        "parameters:optimized"
+      ],
+      "semantic_definition": "Stop according to the optimizer tolerance and function-evaluation cap.",
+      "semantic_key": "stopping.optimizer_convergence.v1",
+      "source_locators": []
+    },
+    {
+      "catalog_state": "active",
+      "component_type": "compilation_backend",
+      "definition_version": "1.0.0",
+      "display_name": "Canonical logical resource protocol",
+      "group": "evaluation_execution",
+      "maturity": "structured",
+      "provides": [
+        "metrics:cnot_depth"
+      ],
+      "requires": [
+        "state:parametric"
+      ],
+      "semantic_definition": "Framework-neutral logical CNOT/depth protocol with fixed basis and topology.",
+      "semantic_key": "compilation.canonical_logical.v2",
+      "source_locators": []
+    }
+  ],
   "implementations": [
     {
-      "adapter_release_id": "majorana-h2-qiskit-adapter-0.2.0",
-      "binding_key": "problem.h2.sto3g.v1:qiskit:1.4.6",
+      "adapter_release_id": null,
+      "binding_key": "problem.h2.sto3g.v1:atlas:0.2.0",
+      "binding_kind": "dataset_snapshot",
       "component_semantic_key": "problem.h2.sto3g.v1",
       "evidence_level": "runtime_qualified",
       "evidence_locators": [
-        "docs/atlas/evidence/phase5b_h2_runtime_qualification_2026-07-26.json"
+        "docs/atlas/fixtures/h2_sto3g/manifest.json",
+        "docs/atlas/fixtures/h2_sto3g/executable_components_v0.2.json"
       ],
-      "package": "qiskit",
-      "package_version": "1.4.6",
-      "provider": "qiskit",
-      "runtime_profile_id": "h2-qiskit-linux-x86_64-candidate-v1",
-      "status": "executable"
+      "package": "atlas-h2-fixture",
+      "package_version": "0.2.0",
+      "provider": "atlas",
+      "runtime_profile_id": null
     },
     {
-      "adapter_release_id": "majorana-h2-qiskit-adapter-0.2.0",
-      "binding_key": "preparation.pyscf.rhf.v1:qiskit:1.4.6",
+      "adapter_release_id": null,
+      "binding_key": "preparation.pyscf.rhf.v1:pyscf:2.14.0",
+      "binding_kind": "runtime_observed",
       "component_semantic_key": "preparation.pyscf.rhf.v1",
-      "evidence_level": "runtime_qualified",
+      "evidence_level": "adapter_tested",
       "evidence_locators": [
-        "docs/atlas/evidence/phase5b_h2_runtime_qualification_2026-07-26.json"
+        "docs/atlas/fixtures/h2_sto3g/manifest.json",
+        "docs/atlas/fixtures/h2_sto3g/executable_components_v0.2.json"
       ],
-      "package": "qiskit",
-      "package_version": "1.4.6",
-      "provider": "qiskit",
-      "runtime_profile_id": "h2-qiskit-linux-x86_64-candidate-v1",
-      "status": "executable"
+      "package": "pyscf",
+      "package_version": "2.14.0",
+      "provider": "pyscf",
+      "runtime_profile_id": null
     },
     {
-      "adapter_release_id": "majorana-h2-qiskit-adapter-0.2.0",
-      "binding_key": "mapping.jordan_wigner.v1:qiskit:1.4.6",
+      "adapter_release_id": null,
+      "binding_key": "mapping.jordan_wigner.v1:atlas:0.2.0",
+      "binding_kind": "dataset_snapshot",
       "component_semantic_key": "mapping.jordan_wigner.v1",
-      "evidence_level": "runtime_qualified",
+      "evidence_level": "adapter_tested",
       "evidence_locators": [
-        "docs/atlas/evidence/phase5b_h2_runtime_qualification_2026-07-26.json"
+        "docs/atlas/fixtures/h2_sto3g/manifest.json",
+        "docs/atlas/fixtures/h2_sto3g/executable_components_v0.2.json"
       ],
-      "package": "qiskit",
-      "package_version": "1.4.6",
-      "provider": "qiskit",
-      "runtime_profile_id": "h2-qiskit-linux-x86_64-candidate-v1",
-      "status": "executable"
+      "package": "atlas-h2-fixture",
+      "package_version": "0.2.0",
+      "provider": "atlas",
+      "runtime_profile_id": null
     },
     {
       "adapter_release_id": "majorana-h2-qiskit-adapter-0.2.0",
       "binding_key": "reference.hartree_fock.v1:qiskit:1.4.6",
+      "binding_kind": "atlas_adapter",
       "component_semantic_key": "reference.hartree_fock.v1",
       "evidence_level": "runtime_qualified",
       "evidence_locators": [
@@ -588,194 +621,12 @@
       "package": "qiskit",
       "package_version": "1.4.6",
       "provider": "qiskit",
-      "runtime_profile_id": "h2-qiskit-linux-x86_64-candidate-v1",
-      "status": "executable"
-    },
-    {
-      "adapter_release_id": "majorana-h2-qiskit-adapter-0.2.0",
-      "binding_key": "ansatz.h2.fixed_excitation.v1:qiskit:1.4.6",
-      "component_semantic_key": "ansatz.h2.fixed_excitation.v1",
-      "evidence_level": "runtime_qualified",
-      "evidence_locators": [
-        "docs/atlas/evidence/phase5b_h2_runtime_qualification_2026-07-26.json"
-      ],
-      "package": "qiskit",
-      "package_version": "1.4.6",
-      "provider": "qiskit",
-      "runtime_profile_id": "h2-qiskit-linux-x86_64-candidate-v1",
-      "status": "executable"
-    },
-    {
-      "adapter_release_id": "majorana-h2-qiskit-adapter-0.2.0",
-      "binding_key": "pool.h2.singleton_double.v1:qiskit:1.4.6",
-      "component_semantic_key": "pool.h2.singleton_double.v1",
-      "evidence_level": "runtime_qualified",
-      "evidence_locators": [
-        "docs/atlas/evidence/phase5b_h2_runtime_qualification_2026-07-26.json"
-      ],
-      "package": "qiskit",
-      "package_version": "1.4.6",
-      "provider": "qiskit",
-      "runtime_profile_id": "h2-qiskit-linux-x86_64-candidate-v1",
-      "status": "executable"
-    },
-    {
-      "adapter_release_id": "majorana-h2-qiskit-adapter-0.2.0",
-      "binding_key": "search.fixed.none.v1:qiskit:1.4.6",
-      "component_semantic_key": "search.fixed.none.v1",
-      "evidence_level": "runtime_qualified",
-      "evidence_locators": [
-        "docs/atlas/evidence/phase5b_h2_runtime_qualification_2026-07-26.json"
-      ],
-      "package": "qiskit",
-      "package_version": "1.4.6",
-      "provider": "qiskit",
-      "runtime_profile_id": "h2-qiskit-linux-x86_64-candidate-v1",
-      "status": "executable"
-    },
-    {
-      "adapter_release_id": "majorana-h2-qiskit-adapter-0.2.0",
-      "binding_key": "growth.fixed_singleton.v1:qiskit:1.4.6",
-      "component_semantic_key": "growth.fixed_singleton.v1",
-      "evidence_level": "runtime_qualified",
-      "evidence_locators": [
-        "docs/atlas/evidence/phase5b_h2_runtime_qualification_2026-07-26.json"
-      ],
-      "package": "qiskit",
-      "package_version": "1.4.6",
-      "provider": "qiskit",
-      "runtime_profile_id": "h2-qiskit-linux-x86_64-candidate-v1",
-      "status": "executable"
-    },
-    {
-      "adapter_release_id": "majorana-h2-qiskit-adapter-0.2.0",
-      "binding_key": "optimizer.scipy_bounded_scalar.v1:qiskit:1.4.6",
-      "component_semantic_key": "optimizer.scipy_bounded_scalar.v1",
-      "evidence_level": "runtime_qualified",
-      "evidence_locators": [
-        "docs/atlas/evidence/phase5b_h2_runtime_qualification_2026-07-26.json"
-      ],
-      "package": "qiskit",
-      "package_version": "1.4.6",
-      "provider": "qiskit",
-      "runtime_profile_id": "h2-qiskit-linux-x86_64-candidate-v1",
-      "status": "executable"
-    },
-    {
-      "adapter_release_id": "majorana-h2-qiskit-adapter-0.2.0",
-      "binding_key": "compression.none.v1:qiskit:1.4.6",
-      "component_semantic_key": "compression.none.v1",
-      "evidence_level": "runtime_qualified",
-      "evidence_locators": [
-        "docs/atlas/evidence/phase5b_h2_runtime_qualification_2026-07-26.json"
-      ],
-      "package": "qiskit",
-      "package_version": "1.4.6",
-      "provider": "qiskit",
-      "runtime_profile_id": "h2-qiskit-linux-x86_64-candidate-v1",
-      "status": "executable"
-    },
-    {
-      "adapter_release_id": "majorana-h2-qiskit-adapter-0.2.0",
-      "binding_key": "measurement.exact_statevector.v1:qiskit:1.4.6",
-      "component_semantic_key": "measurement.exact_statevector.v1",
-      "evidence_level": "runtime_qualified",
-      "evidence_locators": [
-        "docs/atlas/evidence/phase5b_h2_runtime_qualification_2026-07-26.json"
-      ],
-      "package": "qiskit",
-      "package_version": "1.4.6",
-      "provider": "qiskit",
-      "runtime_profile_id": "h2-qiskit-linux-x86_64-candidate-v1",
-      "status": "executable"
-    },
-    {
-      "adapter_release_id": "majorana-h2-qiskit-adapter-0.2.0",
-      "binding_key": "evaluation.exact_reference.v1:qiskit:1.4.6",
-      "component_semantic_key": "evaluation.exact_reference.v1",
-      "evidence_level": "runtime_qualified",
-      "evidence_locators": [
-        "docs/atlas/evidence/phase5b_h2_runtime_qualification_2026-07-26.json"
-      ],
-      "package": "qiskit",
-      "package_version": "1.4.6",
-      "provider": "qiskit",
-      "runtime_profile_id": "h2-qiskit-linux-x86_64-candidate-v1",
-      "status": "executable"
-    },
-    {
-      "adapter_release_id": "majorana-h2-qiskit-adapter-0.2.0",
-      "binding_key": "stopping.optimizer_convergence.v1:qiskit:1.4.6",
-      "component_semantic_key": "stopping.optimizer_convergence.v1",
-      "evidence_level": "runtime_qualified",
-      "evidence_locators": [
-        "docs/atlas/evidence/phase5b_h2_runtime_qualification_2026-07-26.json"
-      ],
-      "package": "qiskit",
-      "package_version": "1.4.6",
-      "provider": "qiskit",
-      "runtime_profile_id": "h2-qiskit-linux-x86_64-candidate-v1",
-      "status": "executable"
-    },
-    {
-      "adapter_release_id": "majorana-h2-qiskit-adapter-0.2.0",
-      "binding_key": "compilation.canonical_logical.v2:qiskit:1.4.6",
-      "component_semantic_key": "compilation.canonical_logical.v2",
-      "evidence_level": "runtime_qualified",
-      "evidence_locators": [
-        "docs/atlas/evidence/phase5b_h2_runtime_qualification_2026-07-26.json"
-      ],
-      "package": "qiskit",
-      "package_version": "1.4.6",
-      "provider": "qiskit",
-      "runtime_profile_id": "h2-qiskit-linux-x86_64-candidate-v1",
-      "status": "executable"
-    },
-    {
-      "adapter_release_id": "majorana-h2-pennylane-adapter-0.2.0",
-      "binding_key": "problem.h2.sto3g.v1:pennylane:0.45.1",
-      "component_semantic_key": "problem.h2.sto3g.v1",
-      "evidence_level": "runtime_qualified",
-      "evidence_locators": [
-        "docs/atlas/evidence/phase5b_h2_runtime_qualification_2026-07-26.json"
-      ],
-      "package": "pennylane",
-      "package_version": "0.45.1",
-      "provider": "pennylane",
-      "runtime_profile_id": "h2-pennylane-linux-x86_64-candidate-v1",
-      "status": "executable"
-    },
-    {
-      "adapter_release_id": "majorana-h2-pennylane-adapter-0.2.0",
-      "binding_key": "preparation.pyscf.rhf.v1:pennylane:0.45.1",
-      "component_semantic_key": "preparation.pyscf.rhf.v1",
-      "evidence_level": "runtime_qualified",
-      "evidence_locators": [
-        "docs/atlas/evidence/phase5b_h2_runtime_qualification_2026-07-26.json"
-      ],
-      "package": "pennylane",
-      "package_version": "0.45.1",
-      "provider": "pennylane",
-      "runtime_profile_id": "h2-pennylane-linux-x86_64-candidate-v1",
-      "status": "executable"
-    },
-    {
-      "adapter_release_id": "majorana-h2-pennylane-adapter-0.2.0",
-      "binding_key": "mapping.jordan_wigner.v1:pennylane:0.45.1",
-      "component_semantic_key": "mapping.jordan_wigner.v1",
-      "evidence_level": "runtime_qualified",
-      "evidence_locators": [
-        "docs/atlas/evidence/phase5b_h2_runtime_qualification_2026-07-26.json"
-      ],
-      "package": "pennylane",
-      "package_version": "0.45.1",
-      "provider": "pennylane",
-      "runtime_profile_id": "h2-pennylane-linux-x86_64-candidate-v1",
-      "status": "executable"
+      "runtime_profile_id": "h2-qiskit-linux-x86_64-candidate-v1"
     },
     {
       "adapter_release_id": "majorana-h2-pennylane-adapter-0.2.0",
       "binding_key": "reference.hartree_fock.v1:pennylane:0.45.1",
+      "binding_kind": "atlas_adapter",
       "component_semantic_key": "reference.hartree_fock.v1",
       "evidence_level": "runtime_qualified",
       "evidence_locators": [
@@ -784,96 +635,175 @@
       "package": "pennylane",
       "package_version": "0.45.1",
       "provider": "pennylane",
-      "runtime_profile_id": "h2-pennylane-linux-x86_64-candidate-v1",
-      "status": "executable"
+      "runtime_profile_id": "h2-pennylane-linux-x86_64-candidate-v1"
+    },
+    {
+      "adapter_release_id": "majorana-h2-qiskit-adapter-0.2.0",
+      "binding_key": "ansatz.h2.fixed_excitation.v1:qiskit:1.4.6",
+      "binding_kind": "atlas_adapter",
+      "component_semantic_key": "ansatz.h2.fixed_excitation.v1",
+      "evidence_level": "runtime_qualified",
+      "evidence_locators": [
+        "docs/atlas/fixtures/h2_sto3g/canonical_double_excitation_v0.2.json",
+        "docs/atlas/evidence/phase5b_h2_runtime_qualification_2026-07-26.json"
+      ],
+      "package": "qiskit",
+      "package_version": "1.4.6",
+      "provider": "qiskit",
+      "runtime_profile_id": "h2-qiskit-linux-x86_64-candidate-v1"
     },
     {
       "adapter_release_id": "majorana-h2-pennylane-adapter-0.2.0",
       "binding_key": "ansatz.h2.fixed_excitation.v1:pennylane:0.45.1",
+      "binding_kind": "atlas_adapter",
       "component_semantic_key": "ansatz.h2.fixed_excitation.v1",
       "evidence_level": "runtime_qualified",
       "evidence_locators": [
+        "docs/atlas/fixtures/h2_sto3g/canonical_double_excitation_v0.2.json",
         "docs/atlas/evidence/phase5b_h2_runtime_qualification_2026-07-26.json"
       ],
       "package": "pennylane",
       "package_version": "0.45.1",
       "provider": "pennylane",
-      "runtime_profile_id": "h2-pennylane-linux-x86_64-candidate-v1",
-      "status": "executable"
+      "runtime_profile_id": "h2-pennylane-linux-x86_64-candidate-v1"
     },
     {
-      "adapter_release_id": "majorana-h2-pennylane-adapter-0.2.0",
-      "binding_key": "pool.h2.singleton_double.v1:pennylane:0.45.1",
+      "adapter_release_id": null,
+      "binding_key": "pool.h2.singleton_double.v1:atlas:0.1.0",
+      "binding_kind": "neutral_protocol",
       "component_semantic_key": "pool.h2.singleton_double.v1",
-      "evidence_level": "runtime_qualified",
+      "evidence_level": "adapter_tested",
       "evidence_locators": [
-        "docs/atlas/evidence/phase5b_h2_runtime_qualification_2026-07-26.json"
+        "docs/atlas/fixtures/h2_sto3g/manifest.json",
+        "docs/atlas/fixtures/h2_sto3g/executable_components_v0.2.json"
       ],
-      "package": "pennylane",
-      "package_version": "0.45.1",
-      "provider": "pennylane",
-      "runtime_profile_id": "h2-pennylane-linux-x86_64-candidate-v1",
-      "status": "executable"
+      "package": "majorana-vqe",
+      "package_version": "0.1.0",
+      "provider": "atlas",
+      "runtime_profile_id": null
     },
     {
-      "adapter_release_id": "majorana-h2-pennylane-adapter-0.2.0",
-      "binding_key": "search.fixed.none.v1:pennylane:0.45.1",
+      "adapter_release_id": null,
+      "binding_key": "search.fixed.none.v1:atlas:0.1.0",
+      "binding_kind": "neutral_protocol",
       "component_semantic_key": "search.fixed.none.v1",
-      "evidence_level": "runtime_qualified",
+      "evidence_level": "adapter_tested",
       "evidence_locators": [
-        "docs/atlas/evidence/phase5b_h2_runtime_qualification_2026-07-26.json"
+        "docs/atlas/fixtures/h2_sto3g/manifest.json",
+        "docs/atlas/fixtures/h2_sto3g/executable_components_v0.2.json"
       ],
-      "package": "pennylane",
-      "package_version": "0.45.1",
-      "provider": "pennylane",
-      "runtime_profile_id": "h2-pennylane-linux-x86_64-candidate-v1",
-      "status": "executable"
+      "package": "majorana-vqe",
+      "package_version": "0.1.0",
+      "provider": "atlas",
+      "runtime_profile_id": null
     },
     {
-      "adapter_release_id": "majorana-h2-pennylane-adapter-0.2.0",
-      "binding_key": "growth.fixed_singleton.v1:pennylane:0.45.1",
+      "adapter_release_id": null,
+      "binding_key": "growth.fixed_singleton.v1:atlas:0.1.0",
+      "binding_kind": "neutral_protocol",
       "component_semantic_key": "growth.fixed_singleton.v1",
-      "evidence_level": "runtime_qualified",
+      "evidence_level": "adapter_tested",
       "evidence_locators": [
-        "docs/atlas/evidence/phase5b_h2_runtime_qualification_2026-07-26.json"
+        "docs/atlas/fixtures/h2_sto3g/manifest.json",
+        "docs/atlas/fixtures/h2_sto3g/executable_components_v0.2.json"
       ],
-      "package": "pennylane",
-      "package_version": "0.45.1",
-      "provider": "pennylane",
-      "runtime_profile_id": "h2-pennylane-linux-x86_64-candidate-v1",
-      "status": "executable"
+      "package": "majorana-vqe",
+      "package_version": "0.1.0",
+      "provider": "atlas",
+      "runtime_profile_id": null
     },
     {
-      "adapter_release_id": "majorana-h2-pennylane-adapter-0.2.0",
-      "binding_key": "optimizer.scipy_bounded_scalar.v1:pennylane:0.45.1",
+      "adapter_release_id": null,
+      "binding_key": "compression.none.v1:atlas:0.1.0",
+      "binding_kind": "neutral_protocol",
+      "component_semantic_key": "compression.none.v1",
+      "evidence_level": "adapter_tested",
+      "evidence_locators": [
+        "docs/atlas/fixtures/h2_sto3g/manifest.json",
+        "docs/atlas/fixtures/h2_sto3g/executable_components_v0.2.json"
+      ],
+      "package": "majorana-vqe",
+      "package_version": "0.1.0",
+      "provider": "atlas",
+      "runtime_profile_id": null
+    },
+    {
+      "adapter_release_id": null,
+      "binding_key": "evaluation.exact_reference.v1:atlas:0.1.0",
+      "binding_kind": "neutral_protocol",
+      "component_semantic_key": "evaluation.exact_reference.v1",
+      "evidence_level": "adapter_tested",
+      "evidence_locators": [
+        "docs/atlas/fixtures/h2_sto3g/manifest.json",
+        "docs/atlas/fixtures/h2_sto3g/executable_components_v0.2.json"
+      ],
+      "package": "majorana-vqe",
+      "package_version": "0.1.0",
+      "provider": "atlas",
+      "runtime_profile_id": null
+    },
+    {
+      "adapter_release_id": null,
+      "binding_key": "stopping.optimizer_convergence.v1:atlas:0.1.0",
+      "binding_kind": "neutral_protocol",
+      "component_semantic_key": "stopping.optimizer_convergence.v1",
+      "evidence_level": "adapter_tested",
+      "evidence_locators": [
+        "docs/atlas/fixtures/h2_sto3g/manifest.json",
+        "docs/atlas/fixtures/h2_sto3g/executable_components_v0.2.json"
+      ],
+      "package": "majorana-vqe",
+      "package_version": "0.1.0",
+      "provider": "atlas",
+      "runtime_profile_id": null
+    },
+    {
+      "adapter_release_id": null,
+      "binding_key": "compilation.canonical_logical.v2:atlas:0.1.0",
+      "binding_kind": "neutral_protocol",
+      "component_semantic_key": "compilation.canonical_logical.v2",
+      "evidence_level": "adapter_tested",
+      "evidence_locators": [
+        "docs/atlas/fixtures/h2_sto3g/manifest.json",
+        "docs/atlas/fixtures/h2_sto3g/executable_components_v0.2.json"
+      ],
+      "package": "majorana-vqe",
+      "package_version": "0.1.0",
+      "provider": "atlas",
+      "runtime_profile_id": null
+    },
+    {
+      "adapter_release_id": null,
+      "binding_key": "optimizer.scipy_bounded_scalar.v1:scipy:1.18.0",
+      "binding_kind": "provider_native",
       "component_semantic_key": "optimizer.scipy_bounded_scalar.v1",
       "evidence_level": "runtime_qualified",
       "evidence_locators": [
         "docs/atlas/evidence/phase5b_h2_runtime_qualification_2026-07-26.json"
       ],
-      "package": "pennylane",
-      "package_version": "0.45.1",
-      "provider": "pennylane",
-      "runtime_profile_id": "h2-pennylane-linux-x86_64-candidate-v1",
-      "status": "executable"
+      "package": "scipy",
+      "package_version": "1.18.0",
+      "provider": "scipy",
+      "runtime_profile_id": null
     },
     {
-      "adapter_release_id": "majorana-h2-pennylane-adapter-0.2.0",
-      "binding_key": "compression.none.v1:pennylane:0.45.1",
-      "component_semantic_key": "compression.none.v1",
+      "adapter_release_id": "majorana-h2-qiskit-adapter-0.2.0",
+      "binding_key": "measurement.exact_statevector.v1:qiskit:1.4.6",
+      "binding_kind": "provider_native",
+      "component_semantic_key": "measurement.exact_statevector.v1",
       "evidence_level": "runtime_qualified",
       "evidence_locators": [
         "docs/atlas/evidence/phase5b_h2_runtime_qualification_2026-07-26.json"
       ],
-      "package": "pennylane",
-      "package_version": "0.45.1",
-      "provider": "pennylane",
-      "runtime_profile_id": "h2-pennylane-linux-x86_64-candidate-v1",
-      "status": "executable"
+      "package": "qiskit",
+      "package_version": "1.4.6",
+      "provider": "qiskit",
+      "runtime_profile_id": "h2-qiskit-linux-x86_64-candidate-v1"
     },
     {
       "adapter_release_id": "majorana-h2-pennylane-adapter-0.2.0",
       "binding_key": "measurement.exact_statevector.v1:pennylane:0.45.1",
+      "binding_kind": "provider_native",
       "component_semantic_key": "measurement.exact_statevector.v1",
       "evidence_level": "runtime_qualified",
       "evidence_locators": [
@@ -882,53 +812,10 @@
       "package": "pennylane",
       "package_version": "0.45.1",
       "provider": "pennylane",
-      "runtime_profile_id": "h2-pennylane-linux-x86_64-candidate-v1",
-      "status": "executable"
-    },
-    {
-      "adapter_release_id": "majorana-h2-pennylane-adapter-0.2.0",
-      "binding_key": "evaluation.exact_reference.v1:pennylane:0.45.1",
-      "component_semantic_key": "evaluation.exact_reference.v1",
-      "evidence_level": "runtime_qualified",
-      "evidence_locators": [
-        "docs/atlas/evidence/phase5b_h2_runtime_qualification_2026-07-26.json"
-      ],
-      "package": "pennylane",
-      "package_version": "0.45.1",
-      "provider": "pennylane",
-      "runtime_profile_id": "h2-pennylane-linux-x86_64-candidate-v1",
-      "status": "executable"
-    },
-    {
-      "adapter_release_id": "majorana-h2-pennylane-adapter-0.2.0",
-      "binding_key": "stopping.optimizer_convergence.v1:pennylane:0.45.1",
-      "component_semantic_key": "stopping.optimizer_convergence.v1",
-      "evidence_level": "runtime_qualified",
-      "evidence_locators": [
-        "docs/atlas/evidence/phase5b_h2_runtime_qualification_2026-07-26.json"
-      ],
-      "package": "pennylane",
-      "package_version": "0.45.1",
-      "provider": "pennylane",
-      "runtime_profile_id": "h2-pennylane-linux-x86_64-candidate-v1",
-      "status": "executable"
-    },
-    {
-      "adapter_release_id": "majorana-h2-pennylane-adapter-0.2.0",
-      "binding_key": "compilation.canonical_logical.v2:pennylane:0.45.1",
-      "component_semantic_key": "compilation.canonical_logical.v2",
-      "evidence_level": "runtime_qualified",
-      "evidence_locators": [
-        "docs/atlas/evidence/phase5b_h2_runtime_qualification_2026-07-26.json"
-      ],
-      "package": "pennylane",
-      "package_version": "0.45.1",
-      "provider": "pennylane",
-      "runtime_profile_id": "h2-pennylane-linux-x86_64-candidate-v1",
-      "status": "executable"
+      "runtime_profile_id": "h2-pennylane-linux-x86_64-candidate-v1"
     }
   ],
-  "schema_version": "1.0.0",
+  "schema_version": "1.1.0",
   "workflows": [
     {
       "compatibility": {
@@ -1050,7 +937,7 @@
         }
       ],
       "status": "executable",
-      "supported_providers": [
+      "supported_evaluator_providers": [
         "qiskit",
         "pennylane"
       ],
@@ -1182,7 +1069,7 @@
         }
       ],
       "status": "structured",
-      "supported_providers": [],
+      "supported_evaluator_providers": [],
       "workflow_key": "workflow.h2.uccsd.v1"
     },
     {
@@ -1311,7 +1198,7 @@
         }
       ],
       "status": "structured",
-      "supported_providers": [],
+      "supported_evaluator_providers": [],
       "workflow_key": "workflow.h2.hardware_efficient.v1"
     },
     {
@@ -1434,7 +1321,7 @@
         }
       ],
       "status": "structured",
-      "supported_providers": [],
+      "supported_evaluator_providers": [],
       "workflow_key": "workflow.h2.adapt.v1"
     },
     {
@@ -1566,7 +1453,7 @@
         }
       ],
       "status": "structured",
-      "supported_providers": [],
+      "supported_evaluator_providers": [],
       "workflow_key": "workflow.lih.uccsd.v1"
     },
     {
@@ -1690,7 +1577,7 @@
         }
       ],
       "status": "structured",
-      "supported_providers": [],
+      "supported_evaluator_providers": [],
       "workflow_key": "workflow.h2.fixed_excitation.slsqp.v1"
     },
     {
@@ -1814,7 +1701,7 @@
         }
       ],
       "status": "structured",
-      "supported_providers": [],
+      "supported_evaluator_providers": [],
       "workflow_key": "workflow.h2.fixed_excitation.cobyla.v1"
     }
   ]

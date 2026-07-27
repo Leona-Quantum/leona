@@ -4,10 +4,11 @@ import { useMemo, useState } from "react";
 import type { PublicLocale } from "../../../lib/public-locale";
 import { checkStandardWorkflowSelections } from "../../../lib/atlas-vqe/standard-source";
 import type {
-  StandardCapabilityStatus,
   StandardComponentDefinition,
   StandardComponentGroup,
+  StandardDefinitionMaturity,
   StandardVqeCatalogBundle,
+  StandardWorkflowStatus,
   StandardWorkflowSelection,
 } from "../../../lib/atlas-vqe/types";
 
@@ -44,13 +45,14 @@ const ROLE_ORDER = [
 const COPY = {
   en: {
     title: "VQE Methods",
-    subtitle: "Build a VQE workflow from verified standard components.",
+    subtitle:
+      "Compose a VQE workflow candidate from structured standard-component seeds. Execution evidence is shown per implementation.",
     search: "Search components",
     searchPlaceholder: "UCCSD, Jordan–Wigner, optimizer…",
     provider: "Provider",
     allProviders: "All providers",
-    status: "Execution status",
-    allStatuses: "All statuses",
+    status: "Definition maturity",
+    allStatuses: "All maturities",
     currentWorkflow: "Current Workflow",
     template: "Workflow template",
     compatibility: "Compatibility",
@@ -66,27 +68,31 @@ const COPY = {
     outputs: "Outputs",
     sources: "Sources & provenance",
     noSource: "Atlas-neutral protocol",
-    executable: "Executable",
-    structured: "Structured only",
+    draft: "Draft",
+    structured: "Structured",
+    reviewed: "Reviewed",
+    executable: "Executable workflow",
+    compatible: "Compatible workflow",
+    executed: "Executed workflow",
     experimental: "Experimental",
     deferred: "Deferred",
     resultCount: (count: number) => `${count} components`,
-    noResults: "No canonical components match these filters.",
-    controlled: "Controlled comparison",
+    noResults: "No standard-component seed candidates match these filters.",
+    controlled: "Comparison specification",
     changed: "Changed component",
     noChange: "No component has been changed.",
     uncontrolled: (count: number) => `${count} components changed — not a controlled comparison.`,
-    providerQualified: "runtime-qualified",
-    providerUnavailable: "No qualified implementation for this provider",
+    providerUnavailable: "No implementation binding is recorded",
   },
   ja: {
     title: "VQE Methods",
-    subtitle: "検証済みの標準部品からVQEワークフローを組み立てます。",
+    subtitle:
+      "構造化済みの標準component候補からVQE workflowを組み立てます。実行証拠は実装ごとに表示します。",
     search: "部品を検索",
     searchPlaceholder: "UCCSD、Jordan–Wigner、Optimizer…",
     provider: "Provider",
     allProviders: "すべて",
-    status: "実行状態",
+    status: "定義の成熟度",
     allStatuses: "すべて",
     currentWorkflow: "現在のWorkflow",
     template: "Workflow template",
@@ -103,18 +109,21 @@ const COPY = {
     outputs: "出力契約",
     sources: "出典・provenance",
     noSource: "Atlas中立protocol",
-    executable: "実行可能",
-    structured: "構造化のみ",
+    draft: "草案",
+    structured: "構造化済み",
+    reviewed: "レビュー済み",
+    executable: "実行可能workflow",
+    compatible: "互換workflow",
+    executed: "実行証拠ありworkflow",
     experimental: "実験的",
     deferred: "後続",
     resultCount: (count: number) => `${count}部品`,
-    noResults: "条件に一致するcanonical componentはありません。",
-    controlled: "統制比較",
+    noResults: "条件に一致する標準component候補はありません。",
+    controlled: "比較仕様",
     changed: "変更したcomponent",
     noChange: "componentは変更されていません。",
     uncontrolled: (count: number) => `${count}部品が変更されています（統制比較ではありません）。`,
-    providerQualified: "runtime検証済み",
-    providerUnavailable: "このProviderに検証済み実装がありません",
+    providerUnavailable: "実装bindingが記録されていません",
   },
 } as const;
 
@@ -143,9 +152,16 @@ const GROUP_LABELS = {
   },
 } satisfies Record<PublicLocale, Record<StandardComponentGroup, string>>;
 
-function statusLabel(
+function maturityLabel(
   copy: (typeof COPY)[PublicLocale],
-  status: StandardCapabilityStatus,
+  maturity: StandardDefinitionMaturity,
+) {
+  return copy[maturity];
+}
+
+function workflowStatusLabel(
+  copy: (typeof COPY)[PublicLocale],
+  status: StandardWorkflowStatus,
 ) {
   return copy[status];
 }
@@ -173,7 +189,7 @@ export function VqeMethodsBrowser({
   const [query, setQuery] = useState("");
   const [filterProvider, setFilterProvider] = useState("");
   const [executionProvider, setExecutionProvider] = useState("qiskit");
-  const [status, setStatus] = useState<"" | StandardCapabilityStatus>("");
+  const [maturity, setMaturity] = useState<"" | StandardDefinitionMaturity>("");
   const [templateKey, setTemplateKey] = useState(initialWorkflow.workflow_key);
   const [selections, setSelections] = useState<StandardWorkflowSelection[]>(
     initialWorkflow.selections,
@@ -213,30 +229,17 @@ export function VqeMethodsBrowser({
             .join(" ")
             .toLowerCase()
             .includes(normalized)) &&
-        (!status || component.status === status) &&
+        (!maturity || component.maturity === maturity) &&
         (!filterProvider ||
           providerBindings.some((binding) => binding.provider === filterProvider))
       );
     });
-  }, [bindingsByComponent, catalog.components, filterProvider, group, query, status]);
+  }, [bindingsByComponent, catalog.components, filterProvider, group, maturity, query]);
 
   const compatibility = useMemo(
     () => checkStandardWorkflowSelections(sortedSelections(selections), catalog.components),
     [catalog.components, selections],
   );
-  const selectedBindings = useMemo(
-    () =>
-      selections.map((selection) =>
-        catalog.implementations.find(
-          (binding) =>
-            binding.component_semantic_key === selection.component_semantic_key &&
-            binding.provider === executionProvider &&
-            binding.status === "executable",
-        ),
-      ),
-    [catalog.implementations, executionProvider, selections],
-  );
-
   const baseline =
     catalog.workflows.find((workflow) => workflow.workflow_key === templateKey) ??
     initialWorkflow;
@@ -253,7 +256,8 @@ export function VqeMethodsBrowser({
   );
   const executable =
     compatibility.compatible &&
-    selectedBindings.every(Boolean) &&
+    baseline.status === "executable" &&
+    baseline.supported_evaluator_providers.includes(executionProvider) &&
     changedRoles.length === 0 &&
     typeof baseline.registry_semantic_key === "string";
 
@@ -262,6 +266,9 @@ export function VqeMethodsBrowser({
     if (!next) return;
     setTemplateKey(nextKey);
     setSelections(next.selections);
+    if (!next.supported_evaluator_providers.includes(executionProvider)) {
+      setExecutionProvider(next.supported_evaluator_providers[0] ?? "");
+    }
   }
 
   function swapComponent(component: StandardComponentDefinition) {
@@ -350,16 +357,16 @@ export function VqeMethodsBrowser({
             <label>
               <span>{copy.status}</span>
               <select
-                value={status}
+                value={maturity}
                 onChange={(event) =>
-                  setStatus(event.target.value as "" | StandardCapabilityStatus)
+                  setMaturity(event.target.value as "" | StandardDefinitionMaturity)
                 }
               >
                 <option value="">{copy.allStatuses}</option>
-                {(["executable", "structured", "experimental", "deferred"] as const).map(
+                {(["draft", "structured", "reviewed"] as const).map(
                   (item) => (
                     <option value={item} key={item}>
-                      {statusLabel(copy, item)}
+                      {maturityLabel(copy, item)}
                     </option>
                   ),
                 )}
@@ -384,9 +391,13 @@ export function VqeMethodsBrowser({
               return (
                 <article className="mj-vqe-component-card" key={component.semantic_key}>
                   <div className="mj-repo-card-top">
-                    <span className="mj-vqe-badge" data-tone={component.status === "executable" ? "ok" : "neutral"}>
-                      {statusLabel(copy, component.status)}
+                    <span
+                      className="mj-vqe-badge"
+                      data-tone={component.maturity === "reviewed" ? "ok" : "neutral"}
+                    >
+                      {maturityLabel(copy, component.maturity)}
                     </span>
+                    <span>{component.catalog_state}</span>
                     <span>{component.component_type}</span>
                     <span>Definition {component.definition_version}</span>
                   </div>
@@ -407,7 +418,8 @@ export function VqeMethodsBrowser({
                         {bindings.length
                           ? bindings.map((binding) => (
                               <span className="mj-vqe-binding" key={binding.binding_key}>
-                                {binding.provider} {binding.package_version} · {copy.providerQualified}
+                                {binding.provider} {binding.package_version} ·{" "}
+                                {binding.binding_kind} · {binding.evidence_level}
                               </span>
                             ))
                           : copy.providerUnavailable}
@@ -456,7 +468,7 @@ export function VqeMethodsBrowser({
             <select value={templateKey} onChange={(event) => selectTemplate(event.target.value)}>
               {catalog.workflows.map((workflow) => (
                 <option key={workflow.workflow_key} value={workflow.workflow_key}>
-                  {workflow.display_name} · {statusLabel(copy, workflow.status)}
+                  {workflow.display_name} · {workflowStatusLabel(copy, workflow.status)}
                 </option>
               ))}
             </select>
@@ -467,7 +479,7 @@ export function VqeMethodsBrowser({
               value={executionProvider}
               onChange={(event) => setExecutionProvider(event.target.value)}
             >
-              {providers.map((item) => (
+              {baseline.supported_evaluator_providers.map((item) => (
                 <option value={item} key={item}>
                   {item}
                 </option>
@@ -482,12 +494,7 @@ export function VqeMethodsBrowser({
                   {componentByKey.get(selection.component_semantic_key)?.display_name ??
                     selection.component_semantic_key}
                 </strong>
-                {!catalog.implementations.some(
-                  (binding) =>
-                    binding.component_semantic_key === selection.component_semantic_key &&
-                    binding.provider === executionProvider &&
-                    binding.status === "executable",
-                ) ? (
+                {!(bindingsByComponent.get(selection.component_semantic_key) ?? []).length ? (
                   <small>{copy.providerUnavailable}</small>
                 ) : null}
               </li>
