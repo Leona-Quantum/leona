@@ -16,6 +16,16 @@ from .tiers import parse_developer_emails
 _PUBLIC_PLACEHOLDER_LOCK_TOKEN = "majorana-single-user-lock"
 _MIN_LOCK_TOKEN_LENGTH = 32
 
+#: Any literal that appears in this public repository must never be accepted as a
+#: real credential, no matter which variable it is set in.
+_PUBLIC_PLACEHOLDERS = frozenset(
+    {
+        _PUBLIC_PLACEHOLDER_LOCK_TOKEN,
+        "majorana-deploy-probe",
+        "changeme",
+    }
+)
+
 
 def _validate_lock_token(token: str) -> None:
     """Fail closed on a lock token that would not actually protect anything."""
@@ -28,6 +38,23 @@ def _validate_lock_token(token: str) -> None:
     if len(token) < _MIN_LOCK_TOKEN_LENGTH:
         raise RuntimeError(
             f"SINGLE_USER_LOCK_API_TOKEN must be at least {_MIN_LOCK_TOKEN_LENGTH} characters"
+        )
+
+
+def _validate_deploy_probe_token(token: str) -> None:
+    """An empty value disables the probe; a weak one must not silently enable it.
+
+    The probe credential is narrower than the lock's ever was — it may create a
+    run and read that run back, nothing else (auth/deps.py) — but it is still a
+    standing bearer token on the production control plane, so it is held to the
+    same strength.
+    """
+    if token in _PUBLIC_PLACEHOLDERS:
+        raise RuntimeError("DEPLOY_PROBE_TOKEN is a public placeholder; generate a real secret")
+    if len(token) < _MIN_LOCK_TOKEN_LENGTH:
+        raise RuntimeError(
+            f"DEPLOY_PROBE_TOKEN must be at least {_MIN_LOCK_TOKEN_LENGTH} characters "
+            "(unset it entirely to disable the post-deploy probe)"
         )
 
 
@@ -60,6 +87,14 @@ class Settings:
     #: meters collaborators like free accounts; it cannot throttle the operator,
     #: whose identity is recognised without configuration.
     developer_emails: frozenset[str] = frozenset()
+    # Post-deploy probe (NEXT.md §2 item 1, approved session 33). Empty disables
+    # it, which is the state every environment except production is in. Unlike
+    # the lock, this credential does not open the product: it may create a run
+    # and read that one run back, and every other route refuses it.
+    deploy_probe_token: str = ""
+    deploy_probe_user_id: str = "deploy-probe"
+    deploy_probe_email: str = "deploy-probe@leonaquantum.com"
+    deploy_probe_display_name: str = "Deploy probe"
     catalog_authority: CatalogAuthority = CatalogAuthority()
 
     def __post_init__(self) -> None:
@@ -71,6 +106,8 @@ class Settings:
             raise RuntimeError(
                 "SINGLE_USER_LOCK and MAJORANA_LOCAL_DEV_AUTH are mutually exclusive"
             )
+        if self.deploy_probe_token:
+            _validate_deploy_probe_token(self.deploy_probe_token)
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -128,5 +165,6 @@ class Settings:
                 "SINGLE_USER_LOCK_DISPLAY_NAME", "Leona Quantum"
             ),
             developer_emails=parse_developer_emails(os.environ.get("LEONA_DEVELOPER_EMAILS")),
+            deploy_probe_token=os.environ.get("DEPLOY_PROBE_TOKEN", "").strip(),
             catalog_authority=CatalogAuthority.from_env(),
         )
