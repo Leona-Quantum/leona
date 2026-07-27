@@ -850,3 +850,45 @@ class VqeObservation(Base):
     evidence_json: Mapped[dict[str, Any] | None]
     failure_code: Mapped[str | None]
     created_at: Mapped[dt.datetime | None] = mapped_column(server_default=func.now())
+
+
+class VqeControlledComparisonSpec(Base):
+    """Immutable comparison plan; it is not a measured result."""
+
+    __tablename__ = "vqe_controlled_comparison_specs"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True)
+    workspace_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("workspaces.id"))
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"))
+    baseline_workflow_artifact_version_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("artifact_versions.id")
+    )
+    candidate_workflow_artifact_version_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("artifact_versions.id")
+    )
+    changed_role: Mapped[str]
+    spec_json: Mapped[dict[str, Any]]
+    spec_sha256: Mapped[str]
+    request_idempotency_key: Mapped[str | None]
+    created_at: Mapped[dt.datetime | None] = mapped_column(server_default=func.now())
+
+
+class VqeControlledComparisonRun(Base):
+    """Append-only observed outcome for one comparison plan."""
+
+    __tablename__ = "vqe_controlled_comparison_runs"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True)
+    comparison_spec_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("vqe_controlled_comparison_specs.id")
+    )
+    baseline_execution_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("vqe_executions.id")
+    )
+    candidate_execution_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("vqe_executions.id")
+    )
+    status: Mapped[str]
+    run_json: Mapped[dict[str, Any]]
+    run_sha256: Mapped[str]
+    created_at: Mapped[dt.datetime | None] = mapped_column(server_default=func.now())

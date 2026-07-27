@@ -33,6 +33,10 @@ from majorana_vqe.models import (
     MachineValidationState,
     ReviewState,
 )
+from majorana_vqe.controlled_comparison import (
+    ControlledComparisonRunV1,
+    ControlledComparisonSpecV1,
+)
 from majorana_vqe.executable import (
     parse_executable_component,
     validate_h2_executable_composition,
@@ -69,6 +73,8 @@ from ..orm import VqeComponentSpec as VqeComponentSpecRow
 from ..orm import VqeExperiment as VqeExperimentRow
 from ..orm import VqeExecution as VqeExecutionRow
 from ..orm import VqeObservation as VqeObservationRow
+from ..orm import VqeControlledComparisonRun as VqeControlledComparisonRunRow
+from ..orm import VqeControlledComparisonSpec as VqeControlledComparisonSpecRow
 from ..orm import VqeWorkflowComponent as VqeWorkflowComponentRow
 from . import artifacts as artifacts_repo
 from ._base import NotFoundError, RepoError, require_write
@@ -85,6 +91,10 @@ class IdempotencyConflictError(RepoError):
 
 class InvalidWorkflowCompositionError(RepoError):
     """A workflow cannot be represented losslessly as portable schema v0.2."""
+
+
+class ComparisonIntegrityError(RepoError):
+    """The comparison does not reference one controlled Workflow pair."""
 
 
 @dataclass(frozen=True)
@@ -897,6 +907,215 @@ async def list_experiments(
     if cursor is not None:
         stmt = stmt.where(VqeExperimentRow.id < cursor)
     return list((await session.execute(stmt)).scalars().all())
+
+
+# --- controlled comparisons -----------------------------------------------
+
+
+def _canonical_sha256(payload: dict[str, Any]) -> str:
+    encoded = json.dumps(
+        payload,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+        allow_nan=False,
+    ).encode()
+    return hashlib.sha256(encoded).hexdigest()
+
+
+async def create_controlled_comparison_spec(
+    scope: Scope,
+    session: AsyncSession,
+    *,
+    spec: ControlledComparisonSpecV1,
+    request_idempotency_key: str,
+    catalog_workspace_id: uuid.UUID | None = None,
+) -> VqeControlledComparisonSpecRow:
+    require_write(scope)
+    if spec.changed_role is not ComponentType.PARAMETER_OPTIMIZER:
+        raise ComparisonIntegrityError("Phase 7.6 permits only an optimizer swap")
+    for version_id in (
+        spec.baseline_workflow_artifact_version_id,
+        spec.candidate_workflow_artifact_version_id,
+    ):
+        row = await get_component_spec(
+            scope,
+            session,
+            version_id,
+            catalog_workspace_id=catalog_workspace_id,
+        )
+        if row.component_type != ComponentType.WORKFLOW.value:
+            raise ComparisonIntegrityError("comparison endpoint requires Workflow versions")
+    baseline_links = await list_workflow_components(
+        scope,
+        session,
+        spec.baseline_workflow_artifact_version_id,
+        catalog_workspace_id=catalog_workspace_id,
+    )
+    candidate_links = await list_workflow_components(
+        scope,
+        session,
+        spec.candidate_workflow_artifact_version_id,
+        catalog_workspace_id=catalog_workspace_id,
+    )
+
+    async def role_digests(
+        links: list[VqeWorkflowComponentRow],
+    ) -> dict[ComponentType, str]:
+        result: dict[ComponentType, str] = {}
+        for link in links:
+            role = ComponentType(link.component_role)
+            if role in result:
+                raise ComparisonIntegrityError("duplicate Workflow component role")
+            component = await get_component_spec(
+                scope,
+                session,
+                link.component_artifact_version_id,
+                catalog_workspace_id=catalog_workspace_id,
+            )
+            result[role] = component.normalized_spec_sha256
+        return result
+
+    baseline_digests = await role_digests(baseline_links)
+    candidate_digests = await role_digests(candidate_links)
+    if set(baseline_digests) != set(candidate_digests):
+        raise ComparisonIntegrityError("Workflow role sets differ")
+    observed_changed = {
+        role
+        for role in baseline_digests
+        if baseline_digests[role] != candidate_digests[role]
+    }
+    if observed_changed != {spec.changed_role}:
+        raise ComparisonIntegrityError(
+            "Workflow pair must differ in exactly the declared role"
+        )
+    server_fixed = {
+        role: digest
+        for role, digest in baseline_digests.items()
+        if role is not spec.changed_role
+    }
+    if server_fixed != spec.fixed_component_digests:
+        raise ComparisonIntegrityError("fixed component digests are not server-derived values")
+
+    payload = spec.model_dump(mode="json")
+    digest = _canonical_sha256(payload)
+    existing = (
+        await session.execute(
+            select(VqeControlledComparisonSpecRow).where(
+                VqeControlledComparisonSpecRow.workspace_id == scope.workspace_id,
+                VqeControlledComparisonSpecRow.request_idempotency_key
+                == request_idempotency_key,
+            )
+        )
+    ).scalars().first()
+    if existing is not None:
+        if existing.spec_sha256 != digest:
+            raise IdempotencyConflictError(
+                "comparison idempotency key was used for different content"
+            )
+        return existing
+    row = VqeControlledComparisonSpecRow(
+        id=uuid7(),
+        workspace_id=scope.workspace_id,
+        user_id=scope.user_id,
+        baseline_workflow_artifact_version_id=spec.baseline_workflow_artifact_version_id,
+        candidate_workflow_artifact_version_id=spec.candidate_workflow_artifact_version_id,
+        changed_role=spec.changed_role.value,
+        spec_json=payload,
+        spec_sha256=digest,
+        request_idempotency_key=request_idempotency_key,
+    )
+    session.add(row)
+    await session.flush()
+    await session.refresh(row)
+    return row
+
+
+async def get_controlled_comparison_spec(
+    scope: Scope,
+    session: AsyncSession,
+    comparison_spec_id: uuid.UUID,
+) -> VqeControlledComparisonSpecRow:
+    row = (
+        await session.execute(
+            select(VqeControlledComparisonSpecRow).where(
+                VqeControlledComparisonSpecRow.id == comparison_spec_id,
+                VqeControlledComparisonSpecRow.workspace_id == scope.workspace_id,
+            )
+        )
+    ).scalars().first()
+    if row is None:
+        raise NotFoundError("controlled comparison spec")
+    return row
+
+
+async def append_controlled_comparison_run(
+    scope: Scope,
+    session: AsyncSession,
+    *,
+    run: ControlledComparisonRunV1,
+) -> VqeControlledComparisonRunRow:
+    require_write(scope)
+    spec_row = await get_controlled_comparison_spec(
+        scope, session, run.comparison_spec_id
+    )
+    baseline_execution = await get_execution(
+        scope, session, run.baseline_execution_id
+    )
+    candidate_execution = await get_execution(
+        scope, session, run.candidate_execution_id
+    )
+    baseline_experiment = await get_experiment(
+        scope, session, baseline_execution.experiment_id
+    )
+    candidate_experiment = await get_experiment(
+        scope, session, candidate_execution.experiment_id
+    )
+    if (
+        baseline_experiment.workflow_artifact_version_id
+        != spec_row.baseline_workflow_artifact_version_id
+        or candidate_experiment.workflow_artifact_version_id
+        != spec_row.candidate_workflow_artifact_version_id
+    ):
+        raise ComparisonIntegrityError(
+            "execution pair does not belong to the comparison Workflow pair"
+        )
+    payload = run.model_dump(mode="json")
+    row = VqeControlledComparisonRunRow(
+        id=uuid7(),
+        comparison_spec_id=run.comparison_spec_id,
+        baseline_execution_id=run.baseline_execution_id,
+        candidate_execution_id=run.candidate_execution_id,
+        status=run.status.value,
+        run_json=payload,
+        run_sha256=_canonical_sha256(payload),
+    )
+    session.add(row)
+    await session.flush()
+    await session.refresh(row)
+    return row
+
+
+async def list_controlled_comparison_runs(
+    scope: Scope,
+    session: AsyncSession,
+    comparison_spec_id: uuid.UUID,
+) -> list[VqeControlledComparisonRunRow]:
+    await get_controlled_comparison_spec(scope, session, comparison_spec_id)
+    return list(
+        (
+            await session.execute(
+                select(VqeControlledComparisonRunRow)
+                .where(
+                    VqeControlledComparisonRunRow.comparison_spec_id
+                    == comparison_spec_id
+                )
+                .order_by(VqeControlledComparisonRunRow.created_at.asc())
+            )
+        )
+        .scalars()
+        .all()
+    )
 
 
 # --- executions and observations -------------------------------------------

@@ -493,3 +493,44 @@ shared adapter. The build failed before execution; the path was corrected and
 the image rebuilt.
 
 S7: **linux_adapter_verified_registry_digest_pending**
+
+## S8 — Immutable ControlledComparison plan/result persistence
+
+Migration `0039` adds two separate append-only entities:
+
+```text
+vqe_controlled_comparison_specs
+vqe_controlled_comparison_runs
+```
+
+A Spec records the immutable Workflow pair, the single changed role, the
+server-verified fixed component digests, both configurations, and metric and
+budget protocol digests. It contains no result fields. A Run references two
+existing scoped executions and records observations plus an invariant audit.
+
+The repository re-reads both Workflow component graphs and rejects a request
+unless exactly `parameter_optimizer` differs. It also verifies each execution
+belongs to the corresponding Workflow before appending a result. Thus clients
+cannot label an uncontrolled pair as controlled by supplying hashes.
+
+Statuses are distinct:
+
+```text
+planned / running / comparable / comparability_failed / inconclusive / failed
+```
+
+`comparable` requires every invariant to pass. `comparability_failed` requires
+both a failed invariant and an explicit reason. PostgreSQL triggers and
+privilege revocation reject UPDATE/DELETE; downgrade refuses to discard
+existing evidence.
+
+```text
+focused domain/API/migration tests: 19 passed
+Ruff: passed
+Alembic: one head at 0039
+```
+
+S8: **verified_local_db_replay_pending**
+
+Actual PostgreSQL append-only, tenant isolation, concurrent idempotency, and
+up/down/up behavior remain assigned to S11.

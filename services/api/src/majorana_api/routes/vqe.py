@@ -23,6 +23,7 @@ from fastapi import Path as PathParam
 from majorana_contracts.enums import Algorithm, ExportStatus, RunMode, RunStatus
 from majorana_contracts.enums import Framework as ContractFramework
 from majorana_vqe.models import Capability, ComponentType, Framework
+from majorana_vqe.controlled_comparison import ControlledComparisonSpecV1
 from pydantic import BaseModel, ConfigDict, Field
 
 from ..auth.deps import CurrentScope, DbSession, get_settings
@@ -31,6 +32,8 @@ from ..orm import VqeComponentSpec as VqeComponentSpecRow
 from ..orm import VqeExperiment as VqeExperimentRow
 from ..orm import VqeExecution as VqeExecutionRow
 from ..orm import VqeObservation as VqeObservationRow
+from ..orm import VqeControlledComparisonRun as VqeControlledComparisonRunRow
+from ..orm import VqeControlledComparisonSpec as VqeControlledComparisonSpecRow
 from ..orm import VqeWorkflowComponent as VqeWorkflowComponentRow
 from ..repos import artifacts as artifacts_repo
 from ..repos import runs as runs_repo
@@ -190,6 +193,42 @@ class MaterializedVqeArtifactResource(BaseModel):
     scientific_release: Literal["blocked"] = "blocked"
 
 
+class CreateControlledComparisonRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    baseline_workflow_artifact_version_id: uuid.UUID
+    candidate_workflow_artifact_version_id: uuid.UUID
+    changed_role: Literal["parameter_optimizer"]
+    fixed_component_digests: dict[ComponentType, str] = Field(min_length=1)
+    baseline_configuration: dict[str, str] = Field(max_length=32)
+    candidate_configuration: dict[str, str] = Field(max_length=32)
+    metric_protocol_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    budget_protocol_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+
+
+class ControlledComparisonRunResource(BaseModel):
+    id: uuid.UUID
+    comparison_spec_id: uuid.UUID
+    baseline_execution_id: uuid.UUID
+    candidate_execution_id: uuid.UUID
+    status: str
+    run_json: dict[str, Any]
+    run_sha256: str
+    created_at: dt.datetime | None
+
+
+class ControlledComparisonResource(BaseModel):
+    id: uuid.UUID
+    workspace_id: uuid.UUID
+    baseline_workflow_artifact_version_id: uuid.UUID
+    candidate_workflow_artifact_version_id: uuid.UUID
+    changed_role: str
+    spec_json: dict[str, Any]
+    spec_sha256: str
+    runs: list[ControlledComparisonRunResource] = Field(default_factory=list)
+    created_at: dt.datetime | None
+
+
 def _to_observation_resource(row: VqeObservationRow) -> ObservationResource:
     return ObservationResource(
         id=row.id,
@@ -199,6 +238,40 @@ def _to_observation_resource(row: VqeObservationRow) -> ObservationResource:
         result_contract_json=row.result_contract_json,
         result_contract_sha256=row.result_contract_sha256,
         failure_code=row.failure_code,
+        created_at=row.created_at,
+    )
+
+
+def _to_comparison_run_resource(
+    row: VqeControlledComparisonRunRow,
+) -> ControlledComparisonRunResource:
+    return ControlledComparisonRunResource(
+        id=row.id,
+        comparison_spec_id=row.comparison_spec_id,
+        baseline_execution_id=row.baseline_execution_id,
+        candidate_execution_id=row.candidate_execution_id,
+        status=row.status,
+        run_json=row.run_json,
+        run_sha256=row.run_sha256,
+        created_at=row.created_at,
+    )
+
+
+async def _to_controlled_comparison_resource(
+    scope: CurrentScope,
+    session: DbSession,
+    row: VqeControlledComparisonSpecRow,
+) -> ControlledComparisonResource:
+    runs = await vqe_repo.list_controlled_comparison_runs(scope, session, row.id)
+    return ControlledComparisonResource(
+        id=row.id,
+        workspace_id=row.workspace_id,
+        baseline_workflow_artifact_version_id=row.baseline_workflow_artifact_version_id,
+        candidate_workflow_artifact_version_id=row.candidate_workflow_artifact_version_id,
+        changed_role=row.changed_role,
+        spec_json=row.spec_json,
+        spec_sha256=row.spec_sha256,
+        runs=[_to_comparison_run_resource(item) for item in runs],
         created_at=row.created_at,
     )
 
@@ -547,6 +620,51 @@ async def get_experiment(
 ) -> ExperimentResource:
     experiment = await vqe_repo.get_experiment(scope, session, experiment_id)
     return _to_experiment_resource(experiment)
+
+
+@router.post(
+    "/vqe/controlled-comparisons",
+    response_model=ControlledComparisonResource,
+    status_code=201,
+)
+async def create_controlled_comparison(
+    body: CreateControlledComparisonRequest,
+    scope: CurrentScope,
+    session: DbSession,
+    settings: Annotated[Settings, Depends(get_settings)],
+    request_idempotency_key: Annotated[
+        str, Header(alias="Idempotency-Key", min_length=1, max_length=200)
+    ],
+) -> ControlledComparisonResource:
+    try:
+        spec = ControlledComparisonSpecV1.model_validate(body.model_dump())
+        row = await vqe_repo.create_controlled_comparison_spec(
+            scope,
+            session,
+            spec=spec,
+            request_idempotency_key=request_idempotency_key,
+            catalog_workspace_id=_catalog_workspace_id(settings),
+        )
+    except vqe_repo.ComparisonIntegrityError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from None
+    except vqe_repo.IdempotencyConflictError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from None
+    return await _to_controlled_comparison_resource(scope, session, row)
+
+
+@router.get(
+    "/vqe/controlled-comparisons/{comparison_spec_id}",
+    response_model=ControlledComparisonResource,
+)
+async def get_controlled_comparison(
+    comparison_spec_id: uuid.UUID,
+    scope: CurrentScope,
+    session: DbSession,
+) -> ControlledComparisonResource:
+    row = await vqe_repo.get_controlled_comparison_spec(
+        scope, session, comparison_spec_id
+    )
+    return await _to_controlled_comparison_resource(scope, session, row)
 
 
 @router.get(
