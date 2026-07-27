@@ -57,6 +57,46 @@ describe("assessRunAllowance", () => {
   });
 });
 
+describe("a shared workspace", () => {
+  const mine = "user-mine";
+  const theirs = "user-theirs";
+
+  function runBy(userId: string, daysAgo: number) {
+    return { ...runAt(daysAgo), user_id: userId };
+  }
+
+  it("does not spend my allowance on a colleague's runs", () => {
+    const runs = [0, 1, 2, 3, 4, 5].map((d) => runBy(theirs, d));
+    const verdict = assessRunAllowance(5, runs, NOW, mine);
+    assert.equal(verdict.allowed, true);
+    assert.equal(verdict.used, 0);
+  });
+
+  it("still counts my own runs in a workspace I do not own", () => {
+    const runs = [...[0, 1, 2].map((d) => runBy(mine, d)), ...[3, 4].map((d) => runBy(theirs, d))];
+    const verdict = assessRunAllowance(3, runs, NOW, mine);
+    assert.equal(verdict.allowed, false);
+    assert.equal(verdict.used, 3);
+  });
+
+  it("counts everything when the viewer is unknown, rather than nothing", () => {
+    // A failed identity read must not turn the pre-check off. Degrading to the
+    // pre-collaboration behaviour is the safe direction; degrading to "allow"
+    // would make an unreadable /v1/me a way past the gate.
+    const runs = [0, 1, 2].map((d) => runBy(theirs, d));
+    assert.equal(assessRunAllowance(3, runs, NOW, null).used, 3);
+    assert.equal(assessRunAllowance(3, runs, NOW).used, 3);
+  });
+
+  it("counts a run whose author is unknown, whoever is asking", () => {
+    // Runs recorded before the resource carried user_id, and any response the
+    // control plane trims. Unattributed usage is counted, not waved through.
+    const verdict = assessRunAllowance(2, [runAt(0), runAt(1)], NOW, mine);
+    assert.equal(verdict.used, 2);
+    assert.equal(verdict.allowed, false);
+  });
+});
+
 describe("refusal payloads", () => {
   it("run refusal carries the typed reason and machine-readable numbers", () => {
     const verdict = assessRunAllowance(5, [0.1, 1, 2, 3, 4].map((d) => runAt(d)), NOW);

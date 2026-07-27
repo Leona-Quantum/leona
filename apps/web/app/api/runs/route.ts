@@ -47,6 +47,21 @@ async function fetchJsonArray(path: string, accessToken: string): Promise<unknow
   }
 }
 
+/** The control plane's id for the signed-in account, or null if unreadable. */
+async function fetchViewerUserId(accessToken: string): Promise<string | null> {
+  try {
+    const upstream = await fetch(new URL("/v1/me", API_URL), {
+      headers: { Authorization: `Bearer ${accessToken}` },
+      cache: "no-store",
+    });
+    if (!upstream.ok) return null;
+    const payload = (await upstream.json()) as { user_id?: unknown };
+    return typeof payload.user_id === "string" ? payload.user_id : null;
+  } catch {
+    return null;
+  }
+}
+
 /**
  * The weekly run allowance and the Vault artifact cap, enforced where the
  * submission enters the product. Metered tiers pay one or two upstream list
@@ -69,11 +84,21 @@ export async function POST(request: Request) {
   if (submission.mode === "execute") {
     const { limits } = await getAccountTier();
     if (limits.agentRunsPerWeek !== null) {
-      const runs = await fetchJsonArray("/v1/runs?limit=100", accessToken);
+      // `/v1/runs` lists the active WORKSPACE's runs, which in a shared one
+      // includes colleagues'. The viewer's own id is fetched alongside so the
+      // pre-check never refuses someone for another member's usage; a failed
+      // identity read leaves it undefined, which degrades to counting
+      // everything rather than to letting everything through.
+      const [runs, viewerUserId] = await Promise.all([
+        fetchJsonArray("/v1/runs?limit=100", accessToken),
+        fetchViewerUserId(accessToken),
+      ]);
       if (runs) {
         const verdict = assessRunAllowance(
           limits.agentRunsPerWeek,
-          runs as Array<{ mode?: string | null; created_at?: string | null }>,
+          runs as Array<{ mode?: string | null; created_at?: string | null; user_id?: string | null }>,
+          undefined,
+          viewerUserId,
         );
         if (!verdict.allowed) {
           return NextResponse.json(runAllowanceRefusal(verdict), { status: 429 });

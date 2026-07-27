@@ -8,8 +8,13 @@ caller sends, and that adding the switch did not quietly open a second way in.
 
 import inspect
 
+import pytest
+from majorana_contracts.enums import Role
+from pydantic import ValidationError
+
 from majorana_api.auth import deps
 from majorana_api.routes import workspaces as workspace_routes
+from majorana_api.tiers import limits_for
 
 
 def _routes() -> set[tuple[str, str]]:
@@ -23,6 +28,47 @@ def _routes() -> set[tuple[str, str]]:
 def test_the_switcher_is_reachable_over_http():
     assert ("/workspaces", "GET") in _routes()
     assert ("/workspaces/active", "POST") in _routes()
+
+
+def test_collaboration_is_reachable_over_http():
+    """`add_member_by_email` was implemented, scoped, role-gated and tested, and
+    called by no route at all — the runbook documented an invite flow that did
+    not exist end to end. These are the routes that make it exist."""
+    assert ("/workspaces", "POST") in _routes()
+    assert ("/workspace/members", "POST") in _routes()
+    assert ("/workspace/members/{user_id}", "PATCH") in _routes()
+    assert ("/workspace/members/{user_id}", "DELETE") in _routes()
+
+
+def test_an_invite_cannot_hand_out_administrative_authority():
+    """OWNER would be an ownership transfer; ADMIN is authority that belongs to
+    someone already in the workspace, not to the invitation that lets them in."""
+    assert set(workspace_routes.INVITABLE_ROLES) == {Role.MEMBER, Role.VIEWER}
+    for refused in (Role.OWNER, Role.ADMIN):
+        with pytest.raises(ValidationError):
+            workspace_routes.InviteMemberRequest(email="someone@example.com", role=refused)
+
+
+def test_a_role_change_cannot_grant_ownership():
+    with pytest.raises(ValidationError):
+        workspace_routes.MemberRoleRequest(role=Role.OWNER)
+    assert workspace_routes.MemberRoleRequest(role=Role.ADMIN).role == Role.ADMIN
+
+
+@pytest.mark.parametrize("value", ["", "   ", "nobody", "@example.com", "someone@"])
+def test_an_invite_needs_an_address(value: str):
+    with pytest.raises(ValidationError):
+        workspace_routes.InviteMemberRequest(email=value)
+
+
+def test_the_owned_workspace_limit_exists_for_every_tier():
+    """It is not a feature gate. The Vault artifact cap is per workspace, so an
+    account that can mint workspaces without bound has no artifact cap."""
+    free = limits_for("free")
+    developer = limits_for("developer")
+    assert free.owned_workspaces is not None and free.owned_workspaces >= 1
+    assert developer.owned_workspaces is None
+    assert free.private_artifacts is not None
 
 
 def test_no_route_accepts_a_caller_supplied_scope():
@@ -53,6 +99,6 @@ def test_switch_refuses_extra_fields():
 def test_the_deploy_probe_cannot_switch_workspaces():
     """The post-deploy credential is confined to three run routes. A switch
     would let it move itself into a customer tenant."""
-    for path in ("/workspaces", "/workspaces/active"):
-        for method in ("GET", "POST"):
+    for path, _method in _routes():
+        for method in ("GET", "POST", "PATCH", "DELETE"):
             assert (method, path) not in deps.DEPLOY_PROBE_ROUTES

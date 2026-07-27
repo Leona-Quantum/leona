@@ -35,6 +35,7 @@ const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
 export type MeteredRun = {
   mode?: string | null;
   created_at?: string | null;
+  user_id?: string | null;
 };
 
 export type RunAllowanceVerdict = {
@@ -51,12 +52,30 @@ export function assessRunAllowance(
   limit: number | null,
   runs: readonly MeteredRun[],
   now: Date = new Date(),
+  /**
+   * The viewer's own user id. When given, runs created by anyone else are not
+   * counted.
+   *
+   * This matters only in a shared workspace, and it matters in the direction
+   * that is worst to get wrong: `GET /v1/runs` lists the WORKSPACE's runs, so
+   * without this a collaborator is refused here for runs a colleague submitted,
+   * under a message that says "your plan". The control plane counts the
+   * account's own runs across every workspace, which this cannot see; that is
+   * the authoritative number, and this stays the fast pre-check that must never
+   * refuse someone for somebody else's usage.
+   *
+   * Undefined means "not known" and counts everything — the pre-metering
+   * behaviour, and the same failure direction the rest of this route takes when
+   * a usage read fails.
+   */
+  viewerUserId?: string | null,
 ): RunAllowanceVerdict {
   if (limit === null) return { allowed: true, used: 0, limit: null, resetsAt: null };
   const windowStart = now.getTime() - WEEK_MS;
   const counted: number[] = [];
   for (const run of runs) {
     if (run.mode !== "execute" || !run.created_at) continue;
+    if (viewerUserId && run.user_id && run.user_id !== viewerUserId) continue;
     const at = Date.parse(run.created_at);
     if (Number.isFinite(at) && at > windowStart && at <= now.getTime()) counted.push(at);
   }

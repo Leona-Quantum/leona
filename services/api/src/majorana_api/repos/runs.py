@@ -103,12 +103,37 @@ async def count_execute_runs_since(scope: Scope, session: AsyncSession, since: d
     The worker rewrites an AUTO row to EXECUTE when it resolves it, so a run that
     really did execute is counted from that moment on, whichever mode it was
     submitted as.
+
+    THE ONLY QUERY IN THE REPOSITORY LAYER THAT DOES NOT BIND
+    `scope.workspace_id`, and the omission is the point rather than an oversight.
+    It is asserted by `test_repo_scoping.test_tier_allowance_counts_the_account`,
+    so removing this comment does not remove the decision.
+
+    The weekly allowance belongs to an ACCOUNT, not to a tenant. Both of the
+    workspace-bound readings are wrong once a user can be in more than one:
+
+    - Per workspace alone: a collaborator opens a shared workspace and reads
+      "all 5 of your runs are used" because somebody else used them. The refusal
+      says *your plan*, so it would be a lie about whose allowance was spent.
+    - Per (workspace, user): the allowance multiplies by the number of
+      workspaces the user can reach. A free account owning three, or invited
+      into ten, would hold fifteen or fifty weekly runs while the product says
+      five.
+
+    Counting the caller's own rows across every workspace they act in leaks
+    nothing across the tenancy boundary: `Run.user_id == scope.user_id` selects
+    rows the caller created, which are the caller's own data by definition. The
+    boundary this layer protects is "scope A cannot see workspace B's rows", and
+    no row here belongs to anyone else.
+
+    The flat abuse ceiling above this one stays per workspace on purpose — that
+    one bounds a tenant rather than an account.
     """
     stmt = (
         select(func.count())
         .select_from(Run)
         .where(
-            Run.workspace_id == scope.workspace_id,
+            Run.user_id == scope.user_id,
             Run.mode == RunMode.EXECUTE.value,
             Run.created_at >= since,
         )

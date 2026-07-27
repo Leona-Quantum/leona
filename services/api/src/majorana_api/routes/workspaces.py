@@ -2,21 +2,24 @@
 
 import datetime as dt
 import uuid
+from typing import Annotated
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from majorana_contracts import Workspace as WorkspaceResource
 from majorana_contracts import WorkspaceFolder as WorkspaceFolderResource
 from majorana_contracts import WorkspaceMember, WorkspaceOverview, WorkspaceSummary
 from majorana_contracts.enums import Role, WorkspaceKind
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from ..auth.deps import CurrentIdentity, CurrentScope, DbSession
+from ..auth.deps import CurrentIdentity, CurrentScope, DbSession, get_settings
 from ..orm import Membership, User
 from ..orm import Workspace as WorkspaceRow
 from ..orm import WorkspaceFolder
 from ..repos import folders as folders_repo
 from ..repos import system
 from ..repos import workspaces as workspaces_repo
+from ..settings import Settings
+from ..tiers import limits_for, resolve_tier
 
 router = APIRouter()
 
@@ -31,6 +34,62 @@ class SwitchWorkspaceRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     workspace_id: uuid.UUID
+
+
+class CreateWorkspaceRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    name: str = Field(min_length=1, max_length=120)
+
+    @field_validator("name")
+    @classmethod
+    def require_non_blank_name(cls, value: str) -> str:
+        normalized = " ".join(value.strip().split())
+        if not normalized:
+            raise ValueError("workspace name cannot be blank")
+        return normalized
+
+
+#: Roles an invite may grant. OWNER and ADMIN are both absent, for different
+#: reasons: OWNER is an ownership transfer, and ADMIN is an authority that should
+#: be granted to someone already in the workspace rather than handed out with the
+#: invitation that lets them in.
+INVITABLE_ROLES = (Role.MEMBER, Role.VIEWER)
+
+
+class InviteMemberRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    email: str = Field(min_length=3, max_length=320)
+    role: Role = Role.MEMBER
+
+    @field_validator("email")
+    @classmethod
+    def normalize_email(cls, value: str) -> str:
+        normalized = value.strip().lower()
+        if "@" not in normalized or normalized.startswith("@") or normalized.endswith("@"):
+            raise ValueError("an email address is required")
+        return normalized
+
+    @field_validator("role")
+    @classmethod
+    def only_invitable_roles(cls, value: Role) -> Role:
+        if value not in INVITABLE_ROLES:
+            raise ValueError("role must be member or viewer")
+        return value
+
+
+class MemberRoleRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    role: Role
+
+    @field_validator("role")
+    @classmethod
+    def role_is_assignable(cls, value: Role) -> Role:
+        if value == Role.OWNER:
+            raise ValueError("ownership transfer is not supported")
+        return value
 
 
 class CreateFolderRequest(BaseModel):
@@ -149,6 +208,107 @@ async def switch_active_workspace(
         user_id=user.id,
         active_workspace_id=workspace.id,
     )
+
+
+@router.post("/workspaces", response_model=WorkspaceSummary, status_code=201)
+async def create_workspace(
+    body: CreateWorkspaceRequest,
+    identity: CurrentIdentity,
+    session: DbSession,
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> WorkspaceSummary:
+    """Create a shared workspace, owned by the caller.
+
+    Does not switch to it. `get_scope` reads one pointer and exactly one route
+    writes it; a client that wants to land in the new workspace calls
+    `POST /v1/workspaces/active` next, and pays one round trip for a property
+    worth more than the round trip.
+
+    The tier's `owned_workspaces` limit is enforced here and is not a product
+    feature gate. The Vault artifact cap is per workspace because it bounds one
+    tenant's disk — so an account that can mint tenants without bound has no
+    artifact cap at all.
+    """
+    user, _personal = identity
+    limits = limits_for(
+        resolve_tier(user.email, plan=user.plan, developer_emails=settings.developer_emails)
+    )
+    try:
+        workspace, membership = await system.create_team_workspace(
+            session,
+            owner=user,
+            name=body.name,
+            owned_workspace_limit=limits.owned_workspaces,
+        )
+    except system.WorkspaceLimitReached as reached:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "error": (
+                    f"Your plan includes {reached.limit} workspaces and all "
+                    f"{reached.limit} are in use. Rename or reuse one you already have."
+                ),
+                "reason": "workspace_allowance_exhausted",
+                "used": reached.owned,
+                "limit": reached.limit,
+            },
+        ) from None
+    return _to_summary(
+        workspace,
+        membership,
+        user_id=user.id,
+        # Creating a workspace does not enter it, so it is never the active one
+        # at this point. Saying otherwise would make the switcher show the user
+        # somewhere they are not.
+        active_workspace_id=user.active_workspace_id or _personal.id,
+    )
+
+
+@router.post("/workspace/members", response_model=WorkspaceMember, status_code=201)
+async def invite_member(
+    body: InviteMemberRequest,
+    scope: CurrentScope,
+    session: DbSession,
+) -> WorkspaceMember:
+    """Attach an existing account to this workspace by email address.
+
+    The invitee must have signed in to this deployment at least once: an account
+    is provisioned from a verified WorkOS token, and inviting an address that has
+    never presented one would create a membership pointing at a user row this
+    service invented. So an unknown address is a 404 on `user`, and the UI says
+    what to do about it.
+
+    Read the room this opens. A member sees every run and every Vault artifact in
+    the workspace, including work saved before they arrived — that is what a
+    shared tenant means, and it is why this is admin-only.
+    """
+    membership, user = await workspaces_repo.add_member_by_email(
+        scope, session, email=body.email, role=body.role
+    )
+    return _to_member(membership, user)
+
+
+@router.patch("/workspace/members/{user_id}", response_model=WorkspaceMember)
+async def update_member_role(
+    user_id: uuid.UUID,
+    body: MemberRoleRequest,
+    scope: CurrentScope,
+    session: DbSession,
+) -> WorkspaceMember:
+    membership, user = await workspaces_repo.set_member_role(
+        scope, session, user_id=user_id, role=body.role
+    )
+    return _to_member(membership, user)
+
+
+@router.delete("/workspace/members/{user_id}", status_code=204)
+async def remove_member(
+    user_id: uuid.UUID,
+    scope: CurrentScope,
+    session: DbSession,
+) -> None:
+    """Revoke access. Their runs and artifacts stay — they are the workspace's."""
+    await workspaces_repo.remove_member(scope, session, user_id=user_id)
 
 
 @router.get("/workspace", response_model=WorkspaceOverview)

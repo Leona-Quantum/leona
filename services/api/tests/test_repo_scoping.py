@@ -97,6 +97,39 @@ async def test_list_runs(scope, session):
     assert_workspace_bound(session.statements[0], scope)
 
 
+async def test_tier_allowance_counts_the_account_not_the_workspace(scope, session):
+    """The documented exception to the rule this file enforces.
+
+    The weekly execute allowance belongs to an account. Binding the workspace
+    would multiply it by the number of workspaces the user can reach — a free
+    account invited into ten would hold fifty weekly runs while the product says
+    five — and binding *only* the workspace would spend a collaborator's
+    allowance on somebody else's runs while the refusal says "your plan".
+
+    Counting the caller's own rows crosses no tenancy boundary: every row
+    matched was created by `scope.user_id`.
+    """
+    import datetime as _dt
+
+    await runs.count_execute_runs_since(scope, session, _dt.datetime.now(_dt.UTC))
+    sql, params = compiled(session.statements[0])
+    assert "user_id" in sql
+    assert scope.user_id in params.values()
+    assert scope.workspace_id not in params.values(), (
+        "the account-wide allowance must not be narrowed to one workspace"
+    )
+
+
+async def test_the_abuse_backstop_stays_bound_to_the_workspace(scope, session):
+    """The ceiling above the allowance bounds a TENANT, so it keeps the
+    workspace predicate. If this ever starts counting per account instead, one
+    tenant's runaway script stops being contained by its own workspace."""
+    import datetime as _dt
+
+    await runs.count_runs_by_mode_since(scope, session, _dt.datetime.now(_dt.UTC))
+    assert_workspace_bound(session.statements[0], scope)
+
+
 async def test_list_folders(scope, session):
     await folders.list_folders(scope, session)
     assert_workspace_bound(session.statements[0], scope)

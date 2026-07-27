@@ -48,18 +48,27 @@ ACCOUNT_TIERS: tuple[AccountTier, ...] = ("free", "developer")
 class TierLimits:
     """The allowances this service enforces. `None` means unlimited."""
 
-    #: Runs whose resolved mode is EXECUTE, in a trailing seven days.
+    #: Runs whose resolved mode is EXECUTE, in a trailing seven days. Counted
+    #: per USER, not per workspace — see repos/runs.count_execute_runs_since.
     agent_runs_per_week: int | None
-    #: Artifacts filed in the Vault (`kept_at` set, not deleted).
+    #: Artifacts filed in the Vault (`kept_at` set, not deleted). Per WORKSPACE,
+    #: which is what `owned_workspaces` below exists to bound.
     private_artifacts: int | None
+    #: Workspaces the account may own. This is not a product feature limit; it
+    #: is what stops the Vault cap from being trivially bypassed. That cap is
+    #: per workspace by design (it bounds one tenant's disk), so an account able
+    #: to mint tenants without bound has no artifact cap at all.
+    owned_workspaces: int | None
 
 
-#: Mirrors apps/web/lib/account-tier.ts for the two limits with a server-side
-#: cost. If these ever disagree, the smaller one wins in practice and the user
-#: sees the server's refusal — which is the correct direction for a divergence.
+#: Mirrors apps/web/lib/account-tier.ts for the limits with a server-side cost.
+#: If these ever disagree, the smaller one wins in practice and the user sees the
+#: server's refusal — which is the correct direction for a divergence.
 TIER_LIMITS: dict[AccountTier, TierLimits] = {
-    "free": TierLimits(agent_runs_per_week=5, private_artifacts=25),
-    "developer": TierLimits(agent_runs_per_week=None, private_artifacts=None),
+    "free": TierLimits(agent_runs_per_week=5, private_artifacts=25, owned_workspaces=3),
+    "developer": TierLimits(
+        agent_runs_per_week=None, private_artifacts=None, owned_workspaces=None
+    ),
 }
 
 #: Identities minted by a non-WorkOS auth mode — the operator, or the operator's
