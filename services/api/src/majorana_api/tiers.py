@@ -62,12 +62,20 @@ TIER_LIMITS: dict[AccountTier, TierLimits] = {
     "developer": TierLimits(agent_runs_per_week=None, private_artifacts=None),
 }
 
-#: Identities minted by a non-WorkOS auth mode, each of which IS the operator.
+#: Identities minted by a non-WorkOS auth mode — the operator, or the operator's
+#: own infrastructure. None of them is a customer, so none of them is metered.
 #: Kept in step with OPERATOR_IDENTITIES in apps/web/lib/account-tier.ts.
+#:
+#: The deploy probe is here rather than in LEONA_DEVELOPER_EMAILS deliberately.
+#: A gate that stops working when an environment variable is mistyped is not a
+#: gate — and that exact variable was found set-but-empty on Vercel one session
+#: ago. Metering the probe would not fail the deploy honestly; it would start
+#: failing it on the sixth deploy of a week, which reads as a product outage.
 OPERATOR_IDENTITIES = frozenset(
     {
         "operator@leonaquantum.com",  # single-user lock
         "local-dev@majorana.test",  # MAJORANA_LOCAL_DEV_AUTH
+        "deploy-probe@leonaquantum.com",  # DEPLOY_PROBE_TOKEN (post-deploy gate)
     }
 )
 

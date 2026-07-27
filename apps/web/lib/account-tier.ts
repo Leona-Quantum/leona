@@ -88,10 +88,17 @@ export const TIER_LIMITS: Record<AccountTier, TierLimits> = {
   },
 };
 
-/** Identities minted by a non-WorkOS auth mode, each of which IS the operator. */
+/** Identities minted by a non-WorkOS auth mode — the operator, or the operator's
+ * own infrastructure. Kept in step with OPERATOR_IDENTITIES in
+ * services/api/src/majorana_api/tiers.py, which is the copy that enforces. The
+ * deploy probe never reaches this file — it holds an API credential and calls
+ * the control plane directly — but the two sets are stated identically so a
+ * reader comparing them does not have to work out which entries are missing on
+ * purpose. */
 const OPERATOR_IDENTITIES = new Set([
   "operator@leonaquantum.com", // single-user lock (lib/auth.ts lockAuth)
   "local-dev@majorana.test", // MAJORANA_LOCAL_DEV_AUTH
+  "deploy-probe@leonaquantum.com", // DEPLOY_PROBE_TOKEN (post-deploy gate)
 ]);
 
 function normalizeEmail(email: string | null | undefined): string {
