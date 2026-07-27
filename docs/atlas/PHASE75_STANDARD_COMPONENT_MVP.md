@@ -6,6 +6,14 @@ Authority: ADR-0033
 State: **S0-S5 implemented and locally verified; live Registry/Neon E2E and
 public publication remain operator-gated**
 
+> **Historical correction (2026-07-28):** the 29 entries described below are
+> schema-valid seed candidates, not human-reviewed canonical ground truth. The
+> 28 Phase 7.5 provider projections were not 28 independently runtime-qualified
+> implementations, and the three comparison entries were plans rather than
+> executed Comparison Runs. Phase 7.6 preserves these records but replaces the
+> overstated lifecycle labels with private/unreviewed seed, evidence-level, and
+> digest-pinned runtime gates.
+
 ## 1. Objective
 
 Researchers browse standard VQE components by scientific role, compose a

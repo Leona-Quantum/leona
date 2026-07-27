@@ -4,7 +4,9 @@ Date: 2026-07-28 JST
 Branch: `feature/vqe`  
 Starting commit: `ef62a005479e9a141715406d02e65ecff442c79f`  
 Starting Alembic head: `0038`  
-State: **S0–S5 implemented and locally verified; S6 pending**
+State: **S0–S11 implemented and verified at their stated evidence levels; S12
+audited NO-GO because the current source and OCI runtimes are not continuously
+deployed**
 
 ## S0 — Baseline freeze and claim inventory
 
@@ -665,3 +667,84 @@ Full structured evidence:
 `docs/atlas/evidence/phase76/s11_neon_validation.json`.
 
 S11: **verified_neon_private_unreviewed**
+
+## S12 — Authenticated full E2E and Phase close audit
+
+The mandatory continuous flow was audited against the exact source/runtime
+identity required by the plan:
+
+```text
+WorkOS Staging
+→ Vercel Web
+→ Cloud Run API
+→ Neon
+→ durable worker
+→ registry digest-pinned Qiskit/PennyLane runtimes
+→ Comparison Run
+→ logout/login reopen
+```
+
+It is **not complete** for the current Phase 7.6 source. The previously recorded
+live control-plane proof uses Vercel source commit
+`e4e0f8fce8093c7f25663f5654be4c8142cd482b` and Cloud Run revision
+`majorana-api-vqe-test-00003-ttr`. Phase 7.6 source is newer and remained local
+during this audit. Its Qiskit and PennyLane Linux images have local manifest
+digests, but neither was promoted to an approved OCI registry. Consequently:
+
+- the current Composer/save path was not represented as live deployed;
+- the worker could not server-resolve an approved registry digest;
+- baseline/candidate executions and a Comparison Run were not created through
+  one authenticated live session;
+- logout/login Comparison reopening was not claimed.
+
+This is an external-promotion boundary, not a reason to weaken runtime
+qualification or silently reuse historical deployment evidence. No code was
+pushed or deployment mutated during S12.
+
+### S12 verification and faults found
+
+```text
+full Python suite: 1211 passed, 87 skipped
+web tests: 103 passed
+web lint and TypeScript: passed
+Next production build: passed, 336 routes
+rollback/fail-closed tests: 2 passed
+catalog generation --check: passed after regeneration
+```
+
+The full suite exposed two stale worker fixtures that omitted the newly
+required Optimizer binding. The fixtures now state the Optimizer explicitly;
+the runtime contract was not relaxed to an implicit default.
+
+Catalog generation also detected stale SLSQP lifecycle evidence in the checked
+bundle. It now records:
+
+```text
+Definition: experimental / draft
+implementation evidence: adapter_tested
+runtime incompatibility: no_runtime_qualified_phase76_adapter
+```
+
+The rollback drill confirmed that production execution remains fail-closed
+without the production gate and that the development bypass cannot enable a
+production VQE execution.
+
+### Phase close decision
+
+**NO-GO for Phase 7.6 live closure and for scientific performance claims.**
+S0–S11 artifacts remain valid only at their explicitly stated evidence levels.
+The following operator-controlled actions are required before reassessment:
+
+1. explicitly approve and push the current `feature/vqe` source;
+2. publish Qiskit and PennyLane images and record registry manifest digests;
+3. attach provenance/attestations and qualify the exact implementation
+   bindings;
+4. deploy the matching Web/API source and a durable worker host;
+5. execute both baseline/candidate pairs and persist raw observations;
+6. persist the Comparison Run, log out/in, and reopen it under the same
+   workspace scope.
+
+Structured evidence:
+`docs/atlas/evidence/phase76/s12_phase_close_audit.json`.
+
+S12: **audited_no_go_external_promotion_required**

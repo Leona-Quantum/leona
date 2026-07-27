@@ -76,6 +76,11 @@ def _install_common(monkeypatch):
             "seed": 0,
             "component_bindings": [
                 {"role": "ansatz", "component_spec_sha256": "3" * 64},
+                {
+                    "role": "parameter_optimizer",
+                    "component_semantic_key": "optimizer.scipy_bounded_scalar.v1",
+                    "component_spec_sha256": "4" * 64,
+                },
             ],
         },
     )

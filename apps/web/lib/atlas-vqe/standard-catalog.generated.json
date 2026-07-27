@@ -589,12 +589,12 @@
       "source_locators": []
     },
     {
-      "catalog_state": "active",
+      "catalog_state": "experimental",
       "component_type": "parameter_optimizer",
       "definition_version": "1.0.0",
       "display_name": "SLSQP",
       "group": "optimizers",
-      "maturity": "structured",
+      "maturity": "draft",
       "provides": [
         {
           "name": "parameters",
@@ -1072,9 +1072,11 @@
       "binding_key": "optimizer.slsqp.v1:scipy:1.18.0",
       "binding_kind": "provider_native",
       "component_semantic_key": "optimizer.slsqp.v1",
-      "evidence_level": "documented",
+      "evidence_level": "adapter_tested",
       "evidence_locators": [
-        "https://docs.scipy.org/doc/scipy/reference/optimize.minimize-slsqp.html"
+        "https://docs.scipy.org/doc/scipy/reference/optimize.minimize-slsqp.html",
+        "docs/atlas/evidence/phase76/qiskit_slsqp_local.json",
+        "docs/atlas/evidence/phase76/pennylane_slsqp_local.json"
       ],
       "known_incompatibilities": [
         "no_runtime_qualified_phase76_adapter"

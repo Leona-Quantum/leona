@@ -1,0 +1,85 @@
+{
+  "schema_version": "atlas.phase76.s12-audit.v1",
+  "recorded_date_jst": "2026-07-28",
+  "branch": "feature/vqe",
+  "phase_start_commit": "ef62a005479e9a141715406d02e65ecff442c79f",
+  "source_identity_at_audit": {
+    "local_commit_before_s12_audit_changes": "8b3bd4868bf79c792a184934204eb31e0ec02309",
+    "origin_feature_vqe_commit": "80b0a8dae972fa1558bf7570219d876189366adf",
+    "unpushed_commits_before_s12_audit_changes": 14,
+    "live_vercel_source_commit": "e4e0f8fce8093c7f25663f5654be4c8142cd482b",
+    "live_cloud_run_revision": "majorana-api-vqe-test-00003-ttr",
+    "continuous_identity_match": false
+  },
+  "runtime_identity": {
+    "qiskit_local_linux_manifest_digest": "sha256:29502979903012722d9af45b3b361710c4e1e470693c27c5d7bbbf243c0831fd",
+    "pennylane_local_linux_manifest_digest": "sha256:a71211a3a70757f625cd5708bbb60fb7f86e2c0fb5638f5570162c35eafeb603",
+    "registry_manifest_digests_available": false,
+    "qualified_bindings_available": false,
+    "blocking_reason": "no_runtime_qualified_phase76_adapter"
+  },
+  "control_plane": {
+    "historical_live_workos_web_api_neon_evidence_available": true,
+    "historical_evidence_applies_to_current_phase76_source": false,
+    "current_authenticated_continuous_flow_executed": false
+  },
+  "s12_required_flow": {
+    "workos_login": "not_reexecuted_for_current_source",
+    "private_component_catalog": "implemented_local",
+    "optimizer_swap": "implemented_local",
+    "api_validation": "implemented_and_tested",
+    "workflow_save_reopen": "implemented_and_tested",
+    "qiskit_baseline_candidate_live": "blocked_registry_digest",
+    "pennylane_baseline_candidate_live": "blocked_registry_digest",
+    "comparison_run_live": "blocked_missing_live_executions",
+    "logout_login_reopen": "not_run"
+  },
+  "verification": {
+    "python": {
+      "passed": 1211,
+      "skipped": 87,
+      "warnings": 4
+    },
+    "web": {
+      "passed": 103,
+      "lint": "passed",
+      "typescript": "passed",
+      "production_build_routes": 336
+    },
+    "rollback_fail_closed_tests": {
+      "passed": 2
+    },
+    "catalog_generation_check": "passed_after_regeneration",
+    "neon_s11_evidence": "docs/atlas/evidence/phase76/s11_neon_validation.json"
+  },
+  "faults_detected": [
+    {
+      "id": "S12-F1",
+      "finding": "Two worker fixtures omitted the newly mandatory optimizer binding.",
+      "resolution": "The fixtures now include the bounded-scalar optimizer semantic key; no implicit runtime default was introduced."
+    },
+    {
+      "id": "S12-F2",
+      "finding": "The generated web catalog retained stale SLSQP lifecycle evidence.",
+      "resolution": "The bundle was regenerated from the authored source and now remains experimental, adapter-tested, and runtime-unqualified."
+    },
+    {
+      "id": "S12-F3",
+      "finding": "Phase 7.5 called seed projections runtime-qualified and static plans controlled comparisons.",
+      "resolution": "Historical correction notes preserve the record and withdraw those overstated labels."
+    }
+  ],
+  "security": {
+    "secrets_recorded": false,
+    "external_mutations_during_s12": false,
+    "push_performed": false,
+    "deployment_performed": false,
+    "runtime_fail_closed": true
+  },
+  "scientific_claim_boundary": {
+    "component_swap_performance_claim_allowed": false,
+    "live_reproducibility_claim_allowed": false,
+    "allowed_claim": "Local and Linux adapter observations exist under fixed H2 protocol; current live continuous E2E remains unverified."
+  },
+  "decision": "NO_GO_EXTERNAL_PROMOTION_REQUIRED"
+}

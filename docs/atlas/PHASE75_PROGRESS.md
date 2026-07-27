@@ -4,6 +4,25 @@ Date: 2026-07-27 JST
 Branch: `feature/vqe`  
 Authority: ADR-0033
 
+## Historical correction (2026-07-28)
+
+The counts below describe the pre-remediation Phase 7.5 seed bundle, not
+independently reviewed or runtime-qualified scientific Components:
+
+- `29 canonical components` means 29 schema-valid **seed candidates**. Phase
+  7.6 materialized them privately and explicitly left them unreviewed and
+  unvalidated.
+- `28 runtime-qualified bindings` was an overstatement. The generator produced
+  28 provider projections, but most had documentation-level evidence only.
+  Phase 7.6 therefore calls these **generated implementation bindings** and
+  qualifies no binding until a digest-pinned registry runtime exists.
+- `3 controlled comparisons` were static comparison plans. They were not
+  persisted Comparison Runs and contained no executed evidence.
+
+This correction preserves the historical record while preventing the old
+labels from being used as scientific or operational claims. Phase 7.6 evidence
+and status supersede the labels in the original table.
+
 ## Outcome
 
 The public VQE surface is now component-first. Papers and repositories remain
@@ -15,11 +34,11 @@ contains Papers, Repositories, or Comparisons tabs.
 | Slice | Result |
 |---|---|
 | S0 | Definition / Implementation / Configuration / Compatibility / Workflow identities fixed |
-| S1 | 29 canonical components in nine UI groups |
-| S2 | 28 runtime-qualified H₂ provider bindings across Qiskit and PennyLane |
+| S1 | 29 schema-valid seed candidates in nine UI groups |
+| S2 | 28 generated provider projections; qualification not established |
 | S3 | Component catalog, Current Workflow tray, compatibility and responsive UI |
 | S4 | Seven templates; one executable and six explicitly structured |
-| S5 | Three exactly-one-role controlled comparisons |
+| S5 | Three exactly-one-role static comparison plans; no executed Runs |
 
 ## Safety boundary
 
