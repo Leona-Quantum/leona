@@ -159,29 +159,30 @@ async def test_acknowledging_twice_is_the_same_as_once(db):
     assert third == first
 
 
-async def test_two_concurrent_acknowledgements_keep_the_first_timestamp(db):
-    """The race a Python-side `if acknowledged_at is None` cannot win.
+async def test_a_second_connection_does_not_move_the_timestamp(db):
+    """Acknowledging from another session leaves the first moment alone.
 
-    Two tabs answer the same notice, or one opens the workspace while the other
-    dismisses it. Both requests read `acknowledged_at IS NULL` before either
-    writes — that is the whole window — and with the check in Python both then
-    write, so the stored moment is whichever transaction committed *last*.
+    **This test does not reproduce the race, and it is important to know that.**
+    The defect `_stamp_acknowledged` exists to prevent is two requests both
+    reading `acknowledged_at IS NULL` before either writes, so a Python-side
+    guard lets both through and the stored moment becomes whichever transaction
+    committed last. Reproducing that inside pytest was attempted and abandoned:
+    a genuinely concurrent version deadlocks (Postgres row-locks the UPDATE, so
+    the second blocks until the first commits), and a hand-interleaved version
+    passes with the Python guard restored, because the second session's
+    `find_membership` returns the freshly committed value rather than the NULL it
+    read in the window. So a "mutation check" note here would have been false.
 
-    The interleaving is explicit rather than threaded, because a real one
-    deadlocks the test and proves nothing: Postgres takes a row lock, so the
-    second UPDATE simply blocks until the first commits. The order below is the
-    order the two requests actually reach the database, with the second one's
-    read placed inside the window on purpose.
-
-    Mutation check: restore `if membership.acknowledged_at is None: membership
-    .acknowledged_at = datetime.now(...)` in `acknowledge_membership` and this
-    fails — the second session's own `find_membership` returns its
-    identity-mapped row, still carrying the NULL it read in the window, and
-    stamps over the first timestamp.
+    What was done instead: a two-connection probe outside the suite, holding the
+    stale read across the first commit, which writes twice under the Python guard
+    (`FIRST != FINAL`) and once under the conditional UPDATE. That is the
+    evidence for the fix; this test is the regression guard for the part a suite
+    can hold — that a second acknowledgement from a separate connection is a
+    no-op, whichever door it comes through.
 
     Commits rather than rolls back, unlike everything else in this file: one
-    connection cannot observe another's uncommitted row, so the race does not
-    exist inside a single transaction. The rows are removed at the end.
+    connection cannot see another's uncommitted rows. The rows are removed at the
+    end.
     """
     host, host_ws = await _make_user(db, "race-host")
     guest, _guest_ws = await _make_user(db, "race-guest")
@@ -196,7 +197,7 @@ async def test_two_concurrent_acknowledgements_keep_the_first_timestamp(db):
             second_user = await second_session.get(User, guest.id)
             assert first_user is not None and second_user is not None
 
-            # The window: both requests have seen an outstanding invitation.
+            # Both connections start out seeing an outstanding invitation.
             assert (
                 await system.find_membership(
                     first_session, workspace_id=host_ws.id, user_id=guest.id
@@ -223,6 +224,12 @@ async def test_two_concurrent_acknowledgements_keep_the_first_timestamp(db):
             assert first_stamp is not None
 
             await system.acknowledge_membership(
+                second_session, user=second_user, workspace_id=host_ws.id
+            )
+            # The other door, from the same second connection: switching in must
+            # not re-stamp either, or "when were they told" moves every time
+            # somebody opens the workspace.
+            await system.set_active_workspace(
                 second_session, user=second_user, workspace_id=host_ws.id
             )
             await second_session.commit()
