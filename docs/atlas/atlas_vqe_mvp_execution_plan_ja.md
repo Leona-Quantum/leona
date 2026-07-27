@@ -1,6 +1,6 @@
 # Atlas VQE MVP 実行計画
 
-**文書version:** 1.2  
+**文書version:** 1.3  
 **作成日:** 2026-07-24 JST  
 **対象Repository:** `EshMis/majorana`  
 **基準commit:** `4ade53faf37443c90980f7515bbbb83b836240db`  
@@ -8,8 +8,10 @@
 **基準Alembic head:** `0034`  
 **状態:** implementation in progress; Phase 0–4.5 complete,
 Phase 5 private technical path qualified with owner-waived scientific review,
-Phase 6 private/test hardening complete and public MVP NO-GO, Phase 7
-metadata-only manual GitHub import started (2026-07-27)
+Phase 6 private/test hardening complete and public MVP NO-GO, Phase 7 S0–S7
+locally implemented with live persistence proof operator-gated,
+component-first Phase 7.5 S0–S5 locally implemented with live Registry E2E
+operator-gated (2026-07-27)
 **長期構想:** `atlas_vqe_github_wrapper_master_plan_ja.md`
 
 ---
@@ -23,12 +25,13 @@ MVPの優先順位は次のとおり。実行機能はAtlasの中心ではなく
 保存された科学metadataから同一実験を再構成できることを示す証拠である。
 
 ```text
-VQE Component Schema
-→ 手動review済みCurated Registry
-→ Browse / Compare UI
+Canonical VQE Component Definition
+→ Provider-specific Implementation / Configuration
+→ Compatibility-aware Workflow composition
+→ Controlled one-component swap comparison
 → ScientificExperimentSpecからの再構成
 → Qiskit/PennyLaneによる検証証拠
-→ GitHub Wrapperをmetadata-onlyで追加
+→ GitHub Wrapperをprovenance acquisitionとして追加
 → 外部Repository実行は十分な隔離後
 ```
 
@@ -48,6 +51,7 @@ GPU、QPU、古い論文環境の実行へ進んではならない。
 | 5B | Scientific/runtime production qualification | Phase 3 | yes | private_runtime_qualified; scientific_review_owner_waived; public_promotion_blocked |
 | 6 | Security/scientific/E2E hardening and MVP Go/No-Go | test only | test | private_test_complete; public_release_no_go |
 | 7 | Manual GitHub metadata import | later | minimal | in_progress; execution_and_publication_prohibited |
+| 7.5 | Standard Component MVP and component-first UI | existing registry plus additive contracts | yes | locally implemented; live E2E operator-gated; ADR-0033 |
 | 8–9 | Deterministic/LLM extraction and reviewed materialization | later | later | later |
 | 10 | Isolated external Repository execution | separate milestone | later | prohibited in MVP |
 
@@ -58,6 +62,9 @@ Neon→durable worker→digest-pinned OCI runtime E2Eを確認した。この二
 一つの連続したlive execution E2Eとは呼ばない。public execution、
 publication、verified badge、scientific releaseは引き続きblockedである。
 Phase 7はmetadata-onlyで開始し、外部Repository codeを実行しない。
+Phase 7.5では、論文一覧ではなくcanonical component、provider
+implementation、compatibility、Workflow composition、controlled swapを公開MVPの
+主語にする。Legacy literature corpusは削除せずsource/evidenceへ降格する。
 
 ---
 
@@ -65,32 +72,34 @@ Phase 7はmetadata-onlyで開始し、外部Repository codeを実行しない。
 
 ## 1. MVPの一文
 
-> 研究者がVQE論文・実装をversioned component単位で検索・比較し、条件の
-> 一致・不一致・不明点と再現性evidenceを確認でき、少なくとも一つの標準
-> ScientificExperimentSpecをQiskitとPennyLaneで再実行して検証証拠まで
-> 確認できる。
+> 研究者が標準的なVQE Component Definitionとversioned provider
+> implementationを種類別に選択し、Problem、representation、state/ansatz、
+> pool、search、optimizer、compression、measurement、evaluationをWorkflowへ
+> 組み合わせ、互換性を確認し、同一条件で一部品だけを交換して比較・実行・
+> 保存できる。
 
 ## 2. MVPで必ず実現するもの
 
 1. Framework非依存の`ScientificExperimentSpec v0.1`。
 2. `ExecutionBinding`を科学specから分離。
 3. versioned VQE Component/Workflow schema。
-4. 25本以上の論文、15件以上の実装Repository、50件以上のcomponent。
-5. curated corpus全recordがmachine validation (schema/enum/reference整合性)
-   を通過。人間reviewはMVP必須要件ではない (ADR-0026、post-MVPへ延期)。
-6. 3組以上のmachine-generated curated comparison report
-   (`is_manual_gold: false` / `human_validated: false` を明示、ADR-0026)。
-7. Atlas Browse / Compare UI。
-8. 不明・矛盾・比較不能理由の明示。
-9. Canonical Hamiltonian表現とdigest。
-10. Qiskit/PennyLane CPU runtime profile。
-11. H2の独立承認済みgolden fixture。
-12. exact/statevector execution。
-13. 実行結果、metric semantics、environment digestの永続化。
-14. durable job、retry、append-only observation。
-15. Studio UIからのproof executionとArtifact化。
-16. deny-all network、credentialなし、resource cap付きruntime。
-17. schema、annotation guideline、curated corpusのmachine-readable保存。
+4. 18件以上のcanonical standard Component Definition。
+5. 12件以上のexecutable provider implementation binding。
+6. 2件以上のProblem/Datasetと4件以上のWorkflow template。
+7. 3組以上のcontrolled one-component-swap comparison。
+8. component-first VQE Methods UIとCurrent Workflow composer。
+9. Legacy literature corpusはsource/evidenceとしてmachine validationを維持し、
+   canonical componentやhuman goldとして扱わない。
+10. 不明・矛盾・非互換・structured-only理由の明示。
+11. Canonical Hamiltonian表現とdigest。
+12. Qiskit/PennyLane CPU runtime profile。
+13. exact/statevector execution。
+14. 実行結果、metric semantics、environment digestの永続化。
+15. durable job、retry、append-only observation。
+16. Studio UIからのproof executionとArtifact化。
+17. deny-all network、credentialなし、resource cap付きruntime。
+18. schema、compatibility contract、canonical seed、provenanceの
+    machine-readable保存。
 
 ## 3. MVPに含めないもの
 
@@ -98,6 +107,11 @@ Phase 7はmetadata-onlyで開始し、外部Repository codeを実行しない。
 - GitHub App installation
 - 自動論文検索
 - 自動GitHub Repository discovery
+- Papers / Repositories / Comparisonsをprimary navigationへ戻すこと
+- paper component annotationのcanonical definitionへの自動昇格
+- GitHub stars、paper数、Repository数を主要MVP KPIにすること
+- CEO-ADAPT、TETRIS、HA-ADAPT、OBS/pruning、LLM/Transformer selection
+  などpaper-specific advanced componentのMVP投入
 - LLM metadata extraction
 - PySCFによる任意分子生成
 - geometry optimization
@@ -908,18 +922,19 @@ POST /v1/vqe/experiments/{id}/materialize
 
 ---
 
-## Phase 4 — Atlas Browse and Compare UI
+## Phase 4 — Legacy literature Browse and Compare UI
 
 **Status:** implemented_and_browser_verified (2026-07-25 remediation。
 既存`/repository`へ統合 (ADR-0027)。static corpus
 (26 papers / 59 paper-annotated components / 15 repositories /
 3 comparisons) に対してbuild/typecheck/lint/92 testsが通過。
 実ブラウザでcomponent検索・filterと390×844px表示を検証済み。詳細:
-`docs/atlas/PHASE4_PROGRESS.md`)  
+`docs/atlas/PHASE4_PROGRESS.md`)。この画面と件数は履歴的な取得・検証証拠として
+保持するが、ADR-0033以降のpublic MVP primary surfaceおよび成功KPIではない。  
 **Primary UI owner:** Claude Code / designated UI owner  
 **Codex lane:** contracts、API evidence、test fixture、non-UI review
 
-### UI placement
+### Historical UI placement
 
 Registryと比較をMVPの主画面にする。既存`/repository`とのidentity/search重複を
 ADRで解決し、Atlasが別の孤立Catalogにならないようにする。
@@ -975,7 +990,7 @@ MVPの3 comparisonはmachine-generatedであり (ADR-0026)、UIは
 `is_manual_gold: false` / `human_validated: false`を明示し、自動判定結果を
 human-curated gold reportであるかのように装ってはならない。
 
-### UI acceptance
+### Historical UI acceptance
 
 - 25 papers / 50 componentsをfilterできる。
 - componentから関連Workflow/論文へ遷移できる。
@@ -984,6 +999,24 @@ human-curated gold reportであるかのように装ってはならない。
 - clientへ全raw corpusを無制限送信しない。
 - keyboard、responsive、dark/light、reduced motionを確認。
 - loading、empty、failureをfixtureで確認。
+
+上記はPhase 4時点の受け入れ証拠であり、Phase 7.5では次へ置換する。
+
+```text
+VQE Methods
+├── Problems & Datasets
+├── Representation
+├── States & Ansätze
+├── Operator Pools
+├── Search & Growth
+├── Optimizers
+├── Compression
+├── Measurement
+└── Evaluation & Execution
+```
+
+Papers、Repositories、Comparisonsはprimary tabから外し、Source／Evidenceおよび
+Workflow内のcontrolled component swapへ移す。
 
 ---
 
@@ -1120,20 +1153,24 @@ complete for the live control-plane path; public MVP release remains NO-GO
 
 Registry:
 
-- papers >= 25
-- verified implementation repositories >= 15
-  (official/author/general_framework_library/third_party_reference_implementationの
-  内訳を記録。ADR-0026によりhuman-reviewed比率はMVP Go criteriaではない)
-- components >= 50
+- canonical standard component definitions >= 18
+- executable provider bindings >= 12
+- Workflow templates >= 4
+- Problems / Datasets >= 2
+- provider bindingはpackage × version × runtime × capability × evidenceへ固定
+- QiskitとPennyLaneの双方で実装されるcore workflow >= 1
 - unknown/conflict表示
-- corpus validatorのschema/enum/reference validation errorが0件
+- component/workflow validatorのschema/enum/reference validation errorが0件
+- paper由来annotationをcanonical definitionへ自動昇格しない
 
 Compare:
 
-- machine-generated comparison reports >= 3
-  (`is_manual_gold: false` / `human_validated: false`を明示、ADR-0026)
-- strict/controlled/partial/invalid表示
-- component、dataset、optimizer、resource metric定義差を表示
+- controlled component-swap comparison >= 3
+- 一比較で変更するcomponentは厳密に一つ
+- fixed dimensions、changed component、unknown、blocking mismatchを表示
+- UCCSD vs Hardware-Efficient、SLSQP vs COBYLA、Fixed Ansatz vs ADAPTを
+  最初の候補とする。ただし実行可能性を検証できない組合せは
+  `Structured only`として実行不可にする
 
 Execution:
 
@@ -1145,12 +1182,14 @@ Execution:
 
 Academic:
 
-- versioned schema and annotation guideline
-- machine-readable curated corpus, machine-validated (not human-validated;
-  see ADR-0026)
+- versioned Component Definition、Implementation、Configuration、
+  Compatibility Contract、Workflow schema
+- Source／Paper／GitHubはprovenanceとして保持
+- machine-readable canonical component catalog
 - negative/unknown evidence preserved
-- (post-MVP) human-reviewed gold labels for later extraction/comparison
-  evaluation -- explicitly deferred, not an MVP Go criterion (ADR-0026)
+- legacy literature corpusはsource-evidence only
+- READMEや論文文章をcomponent definitionへコピーして意味定義にしない
+- providerで未対応・未検証のcapabilityをExecutableと表示しない
 
 ---
 
@@ -1182,7 +1221,11 @@ optional DOI/arXiv
 - unknown/conflicts
 - extraction candidates
 
-Phase 2 corpusをground truthにして、同じRepositoryの取得結果を照合する。
+最初はQiskit / Qiskit Nature / Qiskit Algorithms、PennyLane、
+OpenFermion、HamLibの確認済み公式sourceだけを対象にする。取得結果は既存の
+canonical Component DefinitionおよびImplementation Version候補へ照合する。
+Phase 2 literature corpusとの一致はsecondary reconciliationであり、ground truth
+や自動publish authorityにはしない。
 
 ### Minimal provider permissions
 
@@ -1540,16 +1583,23 @@ MVPは以下が全部成立したときだけcomplete。
 
 - Component/Workflow/Scientific Experiment schema v0.1がversioned。
 - Scientific specとExecutionBindingが分離。
-- 25 papers / 15 verified implementation repositories (official/author/
-  general_framework_library/third_party_reference_implementationの内訳を記録) /
-  50 componentsを収録。
-- 全recordがcorpus validatorのmachine validationを通過 (schema/enum/reference
-  整合性、errorが0件)。human-reviewed比率はMVP DoDの対象外 (ADR-0026、
-  post-MVPへ延期)。
-- 3組以上のmachine-generated comparison report
-  (`is_manual_gold: false` / `human_validated: false`を明示、手動goldではない)。
+- canonical standard Component Definitionを18件以上収録。
+- executable provider bindingを12件以上収録。
+- Workflow templateを4件以上、Problem/Datasetを2件以上収録。
+- Qiskit/PennyLane両方のbindingを持つcore workflowが1件以上ある。
+- 全canonical recordがcomponent/workflow validatorのmachine validationを通過
+  (schema/enum/reference整合性、errorが0件)。
+- 3組以上のcontrolled component-swap comparisonがあり、各比較で変更する
+  componentが厳密に一つである。
 - unknown/conflict/negative evidenceを表示。
-- Atlas Browse / Compare UIが利用可能。
+- VQE Methodsでcomponent typeを選択できる。
+- ComponentをCurrent Workflowへ追加・交換できる。
+- 非互換な組合せを理由付きで拒否できる。
+- 変更したcomponentを明示できる。
+- component選択→互換性確認→実行→比較→保存の導線が利用可能。
+- Papers / Repositories / Comparisonsがprimary tabに存在しない。
+- Paper／GitHub／DOI／commit／licenseはprovenanceとして保持される。
+- paper annotationはcanonical definitionへ自動昇格しない。
 - H2 fixtureがreview済み。
 - Qiskit profileがdigest-pinned。
 - PennyLane profileがdigest-pinned。
@@ -1574,25 +1624,26 @@ MVPは以下が全部成立したときだけcomplete。
 
 # Part X. Immediate execution order
 
-順序:
+Phase 0〜6とPhase 7 S0〜S3は履歴上完了している。以後の順序:
 
-1. 改定planを`feature/vqe`へ保存・Push。
-2. owner/Claude/CodexでPhase 0 ADR boundaryをreview。
-3. H2 golden fixtureとQiskit/PennyLane resolver spike。
-4. Component/Workflow/Scientific Experiment schema。
-5. 5論文pilot annotation。
-6. schema修正後、25 papers / 15 repositories / 50 componentsへ拡張。
-7. 3 curated comparison reports。
-8. Neon Component Registryとexplicit corpus import。
-9. Atlas Browse / Compare UI。
-10. Qiskit/PennyLane isolated runtimes。
-11. durable API / Studio proof execution / Artifact化。
-12. MVP hardeningとGo/No-Go。
-13. manual GitHub metadata import。
-14. deterministic extraction。
-15. LLM-assisted extraction/review。
-
-最初の実装commitはDB migrationではなく、Phase 0のADRとscientific spikeにする。
+1. ADR-0033とcomponent-first MVP planを`feature/vqe`へ固定。
+2. Phase 7 S4 durable importerをfail-closedに完成。
+3. Phase 7 S5を確認済み標準provider sourceへ限定。
+4. Phase 7 S6で既存Component Definition／Implementation Versionをprimary
+   match targetにし、legacy literature corpusをsecondary checkにする。
+5. Phase 7 S7でRepositorySnapshot、MetadataAssertion、
+   ComponentImplementationCandidateまでをtemporary Neonへ保存し、
+   auto-publishしない。
+6. Phase 7.5 S0でComponent Definition、Implementation、Configuration、
+   Compatibility Contract、Workflow Template／Instanceを固定。
+7. Phase 7.5 S1で18〜25件のcanonical standard component seedを登録。
+8. Phase 7.5 S2でQiskit、PennyLane、OpenFermion、HamLib bindingを追加。
+9. Phase 7.5 S3でcomponent-first VQE Methods UIへ置換。
+10. Phase 7.5 S4で4件以上のWorkflow templateを追加。
+11. Phase 7.5 S5で一componentだけを変えるcontrolled comparisonを3件以上追加。
+12. compose→compatibility→run→compare→saveをprivate/test環境でE2E監査。
+13. deterministic extraction、LLM-assisted extraction、Advanced Component Intakeは
+    standard-component MVP合格後に着手。
 
 ---
 

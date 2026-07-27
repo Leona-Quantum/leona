@@ -55,3 +55,6 @@ An architecture choice without an ADR did not happen.
 - 2026-07-26: ADR-0032 records the owner's independent-review waiver without
   relabeling it as review, pins the private GHCR runtime digests, and requires
   a pre-provisioned dedicated Docker host with deny-all execution.
+- 2026-07-27: ADR-0033 pivots the Atlas VQE MVP from paper-first browsing to
+  canonical components, provider implementations, compatible Workflows, and
+  controlled one-component swaps; papers and repositories remain provenance.

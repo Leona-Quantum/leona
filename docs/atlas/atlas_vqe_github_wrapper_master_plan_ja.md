@@ -1,7 +1,7 @@
 # Atlas GitHub Wrapper × VQE Framework Integration
 # 超包括的分析・実装マスタープラン
 
-**文書バージョン:** 1.0  
+**文書バージョン:** 1.1  
 **調査基準日:** 2026-07-24 JST  
 **対象Repository:** `EshMis/majorana`  
 **分析基準commit:** `4ade53faf37443c90980f7515bbbb83b836240db`  
@@ -14,24 +14,36 @@ Go/No-Goは`docs/atlas/INTEGRITY_REMEDIATION_2026-07-25.md`を参照する。
 特にGitHub Wrapper、外部Repository import/execution、claim reproductionは
 未実装であり、Atlas全体または学術的再現基盤の完成を主張しない。
 
+**Owner Decision amendment (2026-07-27, ADR-0033):** standard-component MVPの
+primary product objectはPaperまたはRepositoryではなく、
+`Component Definition + Component Implementation + Workflow`である。
+GitHub Wrapperはcomponent実装候補とprovenanceを安全に取得するacquisition
+layerであり、登録件数をMVP成果にしない。Papers、Repositories、Comparisonsは
+primary navigationから外し、Source／EvidenceおよびWorkflow内のcontrolled
+component swapへ移す。Phase 7.5の実行計画は
+`docs/atlas/PHASE75_STANDARD_COMPONENT_MVP.md`を正とし、実装証拠は
+`docs/atlas/PHASE75_PROGRESS.md`へ記録する。
+
 ---
 
 ## 0. この文書が統合する二つの構想
 
 本計画は、次の二つの構想を一つに統合する。
 
-### 構想A: GitHub Wrapperを入口にする
+### 構想A: GitHub Wrapperをacquisition layerにする
 
 ```text
 GitHub Repository
 → immutable snapshot
-→ 根拠付きmetadata
-→ VQE component
-→ 比較可能性
-→ 再現証拠
+→ 根拠付きmetadata assertion
+→ existing Component Definition / Implementation candidate
+→ human-reviewed promotion
+→ provenance / execution evidence
 ```
 
-目的は、最新論文のRepositoryを低コストで発見・取得・分類し、研究者の手入力負担を減らすことである。
+目的は、確認済み標準providerの実装情報を低コストで取得・固定し、canonical
+componentへの手入力とversion追跡負担を減らすことである。新規論文固有の
+componentを自動生成・公開することはstandard-component MVPの目的ではない。
 
 ### 構想B: VQE frameworkを段階導入する
 
@@ -47,7 +59,9 @@ GitHub Repository
 
 ### 統合後の一文
 
-> Atlasは、GitHubや論文を集めるリンク集ではなく、異種VQE実装を固定source・固定environment・根拠付きmetadata・比較可能性・再現証拠へ変換する研究基盤である。
+> Atlasは、標準的なVQE componentを選択・組合せ・互換性確認・一部交換・
+> 比較・実行でき、GitHubや論文をそのcomponentの固定source・実装・
+> provenance・再現証拠として参照できる研究基盤である。
 
 ---
 
@@ -3452,9 +3466,10 @@ Agentは以下で停止してhuman decisionを要求する。
 
 # Part XXIII. Validation and Go/No-Go
 
-## 79. MVP corpus
+## 79. Advanced Component Intake corpus (post-MVP)
 
-20–50 Repository。
+以下はstandard-component MVP合格後のGitHub Wrapper評価corpusであり、
+Phase 7.5のpublic catalogまたはMVP件数KPIではない。20–50 Repository。
 
 内訳:
 
@@ -3470,7 +3485,7 @@ pruning/compression
 learning-guided VQE
 ```
 
-## 80. Product Go criteria
+## 80. Advanced intake Product Go criteria
 
 - 80%以上で固定commit取得
 - 70%以上でpaper relation特定
@@ -3481,6 +3496,17 @@ learning-guided VQE
 -少なくとも10件でinstall status
 -少なくとも5件でnumerical verification
 -少なくとも3件でclaim reproduction
+
+standard-component MVPのProduct Go criteriaは次を優先する。
+
+- canonical standard component definitions >= 18
+- executable provider bindings >= 12
+- Workflow templates >= 4
+- Problems / Datasets >= 2
+- controlled one-component swap comparisons >= 3
+- Qiskit/PennyLane双方のbindingを持つcore workflow >= 1
+- compose → compatibility → run → compare → saveの完遂
+- Papers / Repositories / Comparisonsをprimary navigationに置かない
 
 ## 81. Engineering Go criteria
 
@@ -3649,22 +3675,25 @@ IEEE TQE QuantMark publication page
 
 順序を変更しない。
 
-1. PR-00 ADRを作る。
-2. PR-01 presentation payloadを分離する。
-3. PR-02 source graphを追加する。
-4. PR-03 import multi-outputを追加する。
-5. PR-04 GitHub App read-only clientを作る。
-6. PR-05 fetch/quarantine security boundaryを承認・実装する。
-7. PR-06 manual metadata-only importを完成する。
-8. 20件のVQE corpusを取り込む。
-9. deterministic extractionの精度を測る。
-10. LLM extractionはその後に追加する。
-11. VQE schema v0.1をcorpusから確定する。
-12. Qiskit/PennyLane runtime profileをcontrol planeと別projectで作る。
-13. golden testsを通してからsupport badgeを付ける。
-14. datasets/protocolを追加する。
-15. Tangelo/OpenVQE/CUDA-QXは、需要とcorpusに基づき一件ずつisolated executionを追加する。
-16. comparability engineとclaim reproductionへ進む。
+1. ADR-0033でcomponent-first product boundaryを固定する。
+2. Phase 7 S4 durable importerを完成する。
+3. S5-S7を確認済みQiskit、PennyLane、OpenFermion、HamLib sourceへ限定する。
+4. RepositorySnapshot、MetadataAssertion、
+   ComponentImplementationCandidateまでをprivate stagingへ保存する。
+5. 自動publishとpaper-specific component materializationを禁止する。
+6. Phase 7.5 S0でDefinition／Implementation／Configuration／Compatibility／
+   Workflow identityを固定する。
+7. 18〜25件のcanonical standard component seedを登録する。
+8. Qiskit、PennyLane、OpenFermion、HamLib provider bindingを追加する。
+9. component-first VQE Methods UIへ置換する。
+10. 4件以上のWorkflow templateを追加する。
+11. 一componentだけを変えるcontrolled comparisonを3件以上追加する。
+12. private/test環境でcompose → compatibility → run → compare → saveを監査する。
+13. standard-component MVP合格後に20件のadvanced intake corpusへ進む。
+14. deterministic extractionの精度を測る。
+15. LLM extractionはdeterministic baselineとreview queueの後に追加する。
+16. Tangelo/OpenVQE/CUDA-QX、paper-specific component、claim reproductionは
+    Advanced Component Intakeとして一件ずつ追加する。
 
 ---
 
@@ -3680,3 +3709,5 @@ IEEE TQE QuantMark publication page
 8. **実行成功と科学的正しさを分ける。**
 9. **学術価値は統合数ではなく、抽出・drift・比較・再現の定量評価から作る。**
 10. **すべてのsupport claimは、version・runtime・capability・evidenceへ紐づける。**
+11. **Paper annotationをcanonical Component Definitionへ自動昇格しない。**
+12. **比較は一覧件数ではなく、一度に一componentだけを変えるcontrolled operationとして行う。**
