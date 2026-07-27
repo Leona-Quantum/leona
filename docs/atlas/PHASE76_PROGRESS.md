@@ -4,7 +4,7 @@ Date: 2026-07-28 JST
 Branch: `feature/vqe`  
 Starting commit: `ef62a005479e9a141715406d02e65ecff442c79f`  
 Starting Alembic head: `0038`  
-State: **S0–S1 verified locally; S2 pending**
+State: **S0–S2 verified locally; S3 pending**
 
 ## S0 — Baseline freeze and claim inventory
 
@@ -175,6 +175,73 @@ S1: **verified_local**
 The catalog no longer makes cross-provider ownership claims or presents a
 comparison design as a measured result. S2 may connect the catalog selection
 model to the existing typed executable schema.
+
+## S2 — Typed H₂ scientific identity bridge
+
+### Outcome
+
+The existing `majorana_vqe.executable` v0.2 models remain authoritative. No
+parallel Problem/Ansatz/Optimizer schema was introduced.
+
+An additive `ExecutableH2ScientificIdentity` envelope now connects:
+
+```text
+standard Component semantic selections
+→ existing typed executable Component payloads
+→ provider-neutral Component content digests
+→ portable Workflow semantic digest
+→ canonical Hamiltonian digest
+```
+
+The bridge fails closed on missing, duplicate, unknown, or role-mismatched
+legacy seed selections. It does not fill missing scientific values with
+defaults.
+
+`provider` and `provider_version` are projected out of preparation and
+optimizer scientific payloads before hashing. Algorithm, bounds, tolerance,
+budget, geometry, ordering, generator semantics, measurement protocol, and
+compilation metric protocol remain digest-relevant. The selected runtime and
+package versions remain the responsibility of the later Implementation Plan.
+
+### Golden evidence
+
+The deterministic generator writes:
+
+`docs/atlas/evidence/phase76/h2_baseline_scientific_identity_v0.1.json`
+
+It includes all 14 roles in the current executable H₂ slice, the canonical
+Hamiltonian digest, the exact reference energy bytes, each scientific
+Component digest, the Workflow semantic digest, and the enclosing identity
+digest. Its review state is explicitly
+`machine_validated_not_independent_human_reviewed`.
+
+### Verification
+
+```text
+executable/portable/catalog tests: 25 passed
+identity generator --check: passed
+git diff --check: passed
+```
+
+Negative coverage includes:
+
+- unknown fields;
+- missing execution roles;
+- role/payload mismatch;
+- qubit/occupation mismatch;
+- generator-slot mismatch;
+- unsupported semantic-key substitutions.
+
+Digest coverage confirms field-order independence, sensitivity to semantic
+budget changes, and independence from provider version metadata.
+
+### S2 decision
+
+S2: **verified_local**
+
+The current H₂ baseline is now reachable from catalog selections through one
+typed, canonical scientific identity path. S3 may add role applicability and
+server-authoritative compatibility without replacing this identity model.
 
 ## Current safety boundary
 

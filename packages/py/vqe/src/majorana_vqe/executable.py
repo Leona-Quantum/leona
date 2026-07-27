@@ -8,12 +8,23 @@ persisted.
 
 from __future__ import annotations
 
-from typing import Annotated, Literal, Self
+import hashlib
+import json
+from pathlib import Path
+from typing import Annotated, Iterable, Literal, Self
 
 from pydantic import Field, TypeAdapter, model_validator
 
 from .models import SHA256_HEX_PATTERN, ComponentType, VqeBaseModel, walk_and_validate_json_value
-from .portable import FLOAT64_HEX_PATTERN, PORTABLE_SCIENTIFIC_ROLES
+from .portable import (
+    FLOAT64_HEX_PATTERN,
+    PORTABLE_SCIENTIFIC_ROLES,
+    ComponentSemanticBinding,
+    ParameterSlotValue,
+    PortableScientificExperimentSpec,
+    normalized_component_spec_digest,
+    workflow_semantic_digest,
+)
 
 EXECUTABLE_COMPONENT_SCHEMA_VERSION = "0.2.0"
 
@@ -242,6 +253,45 @@ class ExecutableCompositionError(ValueError):
     pass
 
 
+class H2SemanticSelection(VqeBaseModel):
+    """A Definition selection, deliberately free of Registry/runtime identity."""
+
+    role: ComponentType
+    component_semantic_key: str = Field(min_length=1, max_length=200)
+
+
+class ExecutableH2ScientificIdentity(VqeBaseModel):
+    """Scientific identity envelope for the bounded H2 executable slice.
+
+    The existing typed component models remain authoritative. This envelope
+    only connects their portable digests to the canonical Hamiltonian content
+    digest, which the v0.2 problem model intentionally did not carry.
+    """
+
+    schema_version: Literal["0.1.0"] = "0.1.0"
+    portable_spec: PortableScientificExperimentSpec
+    hamiltonian_digest_sha256: str = Field(pattern=SHA256_HEX_PATTERN)
+    reference_energy_float64_hex: str = Field(pattern=FLOAT64_HEX_PATTERN)
+
+
+H2_BASELINE_SEMANTIC_KEYS: dict[ComponentType, str] = {
+    ComponentType.PROBLEM: "problem.h2.sto3g.v1",
+    ComponentType.PROBLEM_PREPARATION: "preparation.pyscf.rhf.v1",
+    ComponentType.REPRESENTATION: "mapping.jordan_wigner.v1",
+    ComponentType.REFERENCE_STATE: "reference.hartree_fock.v1",
+    ComponentType.ANSATZ: "ansatz.h2.fixed_excitation.v1",
+    ComponentType.OPERATOR_POOL: "pool.h2.singleton_double.v1",
+    ComponentType.SEARCH_SELECTION: "search.fixed.none.v1",
+    ComponentType.GROWTH_BATCHING: "growth.fixed_singleton.v1",
+    ComponentType.PARAMETER_OPTIMIZER: "optimizer.scipy_bounded_scalar.v1",
+    ComponentType.COMPRESSION: "compression.none.v1",
+    ComponentType.MEASUREMENT: "measurement.exact_statevector.v1",
+    ComponentType.COMPILATION_BACKEND: "compilation.canonical_logical.v2",
+    ComponentType.EVALUATION_PROTOCOL: "evaluation.exact_reference.v1",
+    ComponentType.STOPPING_PROTOCOL: "stopping.optimizer_convergence.v1",
+}
+
+
 def parse_executable_component(
     component_type: ComponentType,
     spec_json: dict[str, object],
@@ -331,3 +381,127 @@ def validate_h2_executable_composition(
         evaluation=parsed[ComponentType.EVALUATION_PROTOCOL],
         stopping=parsed[ComponentType.STOPPING_PROTOCOL],
     )
+
+
+def executable_component_scientific_payload(
+    component_type: ComponentType,
+    spec: ExecutableComponentSpec,
+) -> dict[str, object]:
+    """Project a typed Component spec onto scientific, provider-neutral data.
+
+    Provider/package versions belong to an Implementation Binding. They must
+    not change the scientific digest of otherwise identical preparation or
+    optimizer semantics.
+    """
+
+    payload = spec.model_dump(mode="json")
+    payload.pop("schema_version", None)
+    if component_type in (
+        ComponentType.PROBLEM_PREPARATION,
+        ComponentType.PARAMETER_OPTIMIZER,
+    ):
+        payload.pop("provider", None)
+        payload.pop("provider_version", None)
+    return payload
+
+
+def build_h2_scientific_identity(
+    *,
+    selections: Iterable[H2SemanticSelection],
+    specs: dict[ComponentType, dict[str, object]],
+    hamiltonian_digest_sha256: str,
+    seed: int = 0,
+) -> ExecutableH2ScientificIdentity:
+    """Validate and canonicalize one H2 Definition composition.
+
+    This is the fail-closed legacy-seed-to-typed-payload bridge. Unknown,
+    duplicate, missing, or role-mismatched seed entries are never defaulted.
+    """
+
+    selected: dict[ComponentType, str] = {}
+    for selection in selections:
+        if selection.role in selected:
+            raise ExecutableCompositionError(
+                f"duplicate semantic selection role={selection.role.value}"
+            )
+        selected[selection.role] = selection.component_semantic_key
+    if selected != H2_BASELINE_SEMANTIC_KEYS:
+        missing = set(H2_BASELINE_SEMANTIC_KEYS) - set(selected)
+        extra = set(selected) - set(H2_BASELINE_SEMANTIC_KEYS)
+        mismatched = sorted(
+            role.value
+            for role in set(selected) & set(H2_BASELINE_SEMANTIC_KEYS)
+            if selected[role] != H2_BASELINE_SEMANTIC_KEYS[role]
+        )
+        raise ExecutableCompositionError(
+            "unsupported H2 semantic selection set; "
+            f"missing={sorted(role.value for role in missing)}, "
+            f"extra={sorted(role.value for role in extra)}, "
+            f"mismatched={mismatched}"
+        )
+
+    workflow = validate_h2_executable_composition(specs)
+    bindings: list[ComponentSemanticBinding] = []
+    for role in PORTABLE_SCIENTIFIC_ROLES:
+        parsed = parse_executable_component(role, specs[role])
+        scientific_payload = executable_component_scientific_payload(role, parsed)
+        bindings.append(
+            ComponentSemanticBinding(
+                role=role,
+                component_type=role,
+                component_semantic_key=selected[role],
+                component_spec_sha256=normalized_component_spec_digest(
+                    component_type=role,
+                    spec_json=scientific_payload,
+                ),
+            )
+        )
+
+    parameter_slots = [
+        ParameterSlotValue(slot_id=slot.slot_id, float64_hex=slot.initial_float64_hex)
+        for slot in workflow.ansatz.parameter_slots
+    ]
+    portable_spec = PortableScientificExperimentSpec(
+        workflow_semantic_digest=workflow_semantic_digest(bindings),
+        component_bindings=bindings,
+        dataset_snapshot_sha256=workflow.problem.dataset_snapshot_sha256,
+        initial_parameter_slots=parameter_slots,
+        seed=seed,
+    )
+    return ExecutableH2ScientificIdentity(
+        portable_spec=portable_spec,
+        hamiltonian_digest_sha256=hamiltonian_digest_sha256,
+        reference_energy_float64_hex=workflow.evaluation.reference_energy_float64_hex,
+    )
+
+
+def executable_h2_scientific_identity_digest(
+    identity: ExecutableH2ScientificIdentity,
+) -> str:
+    encoded = json.dumps(
+        identity.model_dump(mode="json"),
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+        allow_nan=False,
+    ).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def load_h2_executable_component_specs(
+    fixture_path: Path,
+) -> dict[ComponentType, dict[str, object]]:
+    """Read the legacy seed fixture without inventing missing role payloads."""
+
+    raw = json.loads(fixture_path.read_text())
+    if not isinstance(raw, dict):
+        raise ExecutableCompositionError("H2 executable component fixture must be an object")
+    if any(not isinstance(value, dict) for value in raw.values()):
+        raise ExecutableCompositionError("every H2 component payload must be an object")
+    try:
+        return {
+            ComponentType(role): value
+            for role, value in raw.items()
+        }
+    except ValueError as exc:
+        raise ExecutableCompositionError("fixture contains an unknown component role") from exc

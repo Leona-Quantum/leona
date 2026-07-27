@@ -1,0 +1,136 @@
+{
+  "identity": {
+    "hamiltonian_digest_sha256": "d9dd24eb30011e8ea091759e6f0e25d76d0ccc0661e47748afb85e5f13654d79",
+    "portable_spec": {
+      "component_bindings": [
+        {
+          "applicability": "required",
+          "component_semantic_key": "problem.h2.sto3g.v1",
+          "component_spec_sha256": "da2ee5ae773862f40de86f868e0ce0cc14d6bc12b2387d909e36672aece752f5",
+          "component_type": "problem",
+          "ordinal": 0,
+          "role": "problem"
+        },
+        {
+          "applicability": "required",
+          "component_semantic_key": "preparation.pyscf.rhf.v1",
+          "component_spec_sha256": "70d6361f1cbfb7ad4e84bc7a90dda803c0b2f206a4513b236061ea0fbc8786c8",
+          "component_type": "problem_preparation",
+          "ordinal": 0,
+          "role": "problem_preparation"
+        },
+        {
+          "applicability": "required",
+          "component_semantic_key": "mapping.jordan_wigner.v1",
+          "component_spec_sha256": "408be1b2c5ecc6dc3e6d33baebdd938582ae6eec8a60873b263ab3c732dab9a1",
+          "component_type": "representation",
+          "ordinal": 0,
+          "role": "representation"
+        },
+        {
+          "applicability": "required",
+          "component_semantic_key": "reference.hartree_fock.v1",
+          "component_spec_sha256": "fe318c885ef0c8014faaa74d58cf339d506206ceb336e558573535c146d5a478",
+          "component_type": "reference_state",
+          "ordinal": 0,
+          "role": "reference_state"
+        },
+        {
+          "applicability": "required",
+          "component_semantic_key": "ansatz.h2.fixed_excitation.v1",
+          "component_spec_sha256": "22e0d580be8247003926c7efb674c9b957224c364e2ad279127ac61ec22eb7bc",
+          "component_type": "ansatz",
+          "ordinal": 0,
+          "role": "ansatz"
+        },
+        {
+          "applicability": "required",
+          "component_semantic_key": "pool.h2.singleton_double.v1",
+          "component_spec_sha256": "b80b21a34ff21e43e19ae2937eb8224c7760445463daaf250bc6722dd03ad9ed",
+          "component_type": "operator_pool",
+          "ordinal": 0,
+          "role": "operator_pool"
+        },
+        {
+          "applicability": "required",
+          "component_semantic_key": "search.fixed.none.v1",
+          "component_spec_sha256": "9b6284d496ce9bc9bde6fe4be84f400298d5ea5da5f0d224d8cf17d51ce47b03",
+          "component_type": "search_selection",
+          "ordinal": 0,
+          "role": "search_selection"
+        },
+        {
+          "applicability": "required",
+          "component_semantic_key": "growth.fixed_singleton.v1",
+          "component_spec_sha256": "83d6ba00bbdacaeebe99f5852013454c9c4ce6b869621fd2c7028dea45589996",
+          "component_type": "growth_batching",
+          "ordinal": 0,
+          "role": "growth_batching"
+        },
+        {
+          "applicability": "required",
+          "component_semantic_key": "optimizer.scipy_bounded_scalar.v1",
+          "component_spec_sha256": "29869d0724263f7fc552348ebad3c9963d20cb80607306c4c2b53c4b34f1447c",
+          "component_type": "parameter_optimizer",
+          "ordinal": 0,
+          "role": "parameter_optimizer"
+        },
+        {
+          "applicability": "required",
+          "component_semantic_key": "compression.none.v1",
+          "component_spec_sha256": "f364469ccb3a6ea70c36df4e8cccdea3ac9a47f4455d4bf43d9e3e5c5eb9e6fb",
+          "component_type": "compression",
+          "ordinal": 0,
+          "role": "compression"
+        },
+        {
+          "applicability": "required",
+          "component_semantic_key": "measurement.exact_statevector.v1",
+          "component_spec_sha256": "10e6e8bdcdf108e92ead897e370bd25d67172eafe4fa9ca520a0a2a2df5448f0",
+          "component_type": "measurement",
+          "ordinal": 0,
+          "role": "measurement"
+        },
+        {
+          "applicability": "required",
+          "component_semantic_key": "compilation.canonical_logical.v2",
+          "component_spec_sha256": "5eb379fc6115f559478b0413f4e1d5b3a5bed9c9662f4cef7516002d8d85e67b",
+          "component_type": "compilation_backend",
+          "ordinal": 0,
+          "role": "compilation_backend"
+        },
+        {
+          "applicability": "required",
+          "component_semantic_key": "evaluation.exact_reference.v1",
+          "component_spec_sha256": "679e93bf7664704cc325d1b219f663b64c42f2c40b0a31d0adb6c78887ec8777",
+          "component_type": "evaluation_protocol",
+          "ordinal": 0,
+          "role": "evaluation_protocol"
+        },
+        {
+          "applicability": "required",
+          "component_semantic_key": "stopping.optimizer_convergence.v1",
+          "component_spec_sha256": "084122f4bf398db8df7a0e03b5a8b70786566f128966a59c267346311adb0060",
+          "component_type": "stopping_protocol",
+          "ordinal": 0,
+          "role": "stopping_protocol"
+        }
+      ],
+      "dataset_snapshot_sha256": "6424713c69c2b734172db47329b7deb62b67a743c80fd792f48173fdaa4e3edc",
+      "initial_parameter_slots": [
+        {
+          "float64_hex": "0000000000000000",
+          "slot_id": "theta.double.occ0_occ2.to.virt1_virt3"
+        }
+      ],
+      "schema_version": "0.2.0",
+      "seed": 0,
+      "workflow_semantic_digest": "47e0e38699018a1a00d232ad2c7fb8838979e85ed1f22a8e695d7167da45cae2"
+    },
+    "reference_energy_float64_hex": "bff23267d051ab0e",
+    "schema_version": "0.1.0"
+  },
+  "identity_sha256": "b4ff4b525ff388d86211149a0ea1779cb228477ae0d9f3b37414c4b453b985fd",
+  "record_kind": "phase76_h2_baseline_scientific_identity",
+  "review_status": "machine_validated_not_independent_human_reviewed"
+}
