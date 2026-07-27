@@ -53,7 +53,22 @@ export function WorkspaceSharing({
   const [transferringTo, setTransferringTo] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
 
-  const canAdminister = ADMIN_ROLES.has(viewerRole);
+  /**
+   * The caller's own role, from the freshest source that has it.
+   *
+   * `viewerRole` is a prop rendered on the server, and a transfer changes the
+   * caller's role in this very workspace — so after one, the prop says "owner"
+   * about somebody who is now an admin, and the controls it gates stay on
+   * screen until a reload. Found by handing a workspace over on a running page:
+   * Make owner was still offered afterwards, and would have 403ed.
+   *
+   * The workspaces list is refetched after every operation that can change this,
+   * and its `role` is the same server's answer to the same question. Null until
+   * the first fetch resolves, which is what the prop is still here for.
+   */
+  const activeWorkspace = (workspaces ?? []).find((row) => row.is_active) ?? null;
+  const effectiveRole = activeWorkspace?.role ?? viewerRole;
+  const canAdminister = ADMIN_ROLES.has(effectiveRole);
   /**
    * Handing the workspace over is offered only where it can succeed: by its
    * owner, and never in a personal workspace — that one is the tenant every
@@ -65,8 +80,7 @@ export function WorkspaceSharing({
    * else's personal workspace sees kind=personal for a tenant that is not
    * theirs, and the server computes the pair.
    */
-  const activeWorkspace = (workspaces ?? []).find((row) => row.is_active) ?? null;
-  const canTransfer = viewerRole === "owner" && activeWorkspace?.is_personal === false;
+  const canTransfer = effectiveRole === "owner" && activeWorkspace?.is_personal === false;
 
   const loadWorkspaces = useCallback(async () => {
     try {

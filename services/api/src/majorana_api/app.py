@@ -41,10 +41,19 @@ async def _lifespan(app: FastAPI):
 
 
 def _problem(
-    status: int, title: str, code: str, headers: dict[str, str] | None = None
+    status: int,
+    title: str,
+    code: str,
+    headers: dict[str, str] | None = None,
+    extra: dict | None = None,
 ) -> JSONResponse:
+    body = {"type": "about:blank", "title": title, "status": status, "code": code}
+    if extra:
+        # Typed-refusal fields (`reason`, and whatever that reason carries) as
+        # siblings of `title`, which is what RFC 7807 says extensions are.
+        body.update({k: v for k, v in extra.items() if k not in body})
     return JSONResponse(
-        {"type": "about:blank", "title": title, "status": status, "code": code},
+        body,
         status_code=status,
         media_type="application/problem+json",
         headers=headers,
@@ -64,7 +73,23 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @app.exception_handler(HTTPException)
     async def _http_exc(request: Request, exc: HTTPException):
-        return _problem(exc.status_code, str(exc.detail), "http_error", headers=exc.headers)
+        detail = exc.detail
+        if isinstance(detail, dict):
+            # A typed refusal — `{"error": <a sentence for the user>, "reason":
+            # <a token for the client>, ...}`. `str()` on that is a Python repr,
+            # single quotes and all, and the web client renders `title` straight
+            # to the person: the free tier's workspace limit has been putting
+            # {'error': 'Your plan includes 3 workspaces...'} on screen since it
+            # shipped. Nobody saw it because the accounts that hit these limits
+            # are not the ones the product was demonstrated from.
+            return _problem(
+                exc.status_code,
+                str(detail.get("error", "request refused")),
+                "http_error",
+                headers=exc.headers,
+                extra={k: v for k, v in detail.items() if k != "error"},
+            )
+        return _problem(exc.status_code, str(detail), "http_error", headers=exc.headers)
 
     @app.exception_handler(NotFoundError)
     async def _not_found(request: Request, exc: NotFoundError):
