@@ -40,6 +40,27 @@ def test_collaboration_is_reachable_over_http():
     assert ("/workspace/members/{user_id}", "DELETE") in _routes()
 
 
+def test_an_invitation_can_be_seen_answered_and_refused():
+    """The three routes an invited person needs and did not have. Without the
+    first they are attached silently; without the third the only way out of a
+    workspace somebody put them in is to ask that person to remove them."""
+    assert ("/workspaces/invitations", "GET") in _routes()
+    assert ("/workspaces/acknowledge", "POST") in _routes()
+    assert ("/workspaces/leave", "POST") in _routes()
+
+
+def test_the_invitation_routes_name_a_workspace_in_the_body():
+    """Path parameters were available and are not used, because
+    `test_no_route_accepts_a_caller_supplied_scope` sweeps handler signatures for
+    a `workspace_id` argument and a path parameter would have quietly widened
+    what that sweep tolerates. The body model forbids extras for the same reason
+    the switch's does."""
+    assert workspace_routes.WorkspaceRefRequest.model_config["extra"] == "forbid"
+    assert issubclass(workspace_routes.SwitchWorkspaceRequest, workspace_routes.WorkspaceRefRequest)
+    for path, _method in _routes():
+        assert "{workspace_id}" not in path
+
+
 def test_an_invite_cannot_hand_out_administrative_authority():
     """OWNER would be an ownership transfer; ADMIN is authority that belongs to
     someone already in the workspace, not to the invitation that lets them in."""

@@ -97,6 +97,7 @@ from .models import (
     Conversation,
     ConversationTurn,
     WorkspaceFolder,
+    WorkspaceInvitation,
     WorkspaceMember,
     WorkspaceOverview,
     WorkspaceSummary,
@@ -152,7 +153,10 @@ from .lifecycle import (
 # summaries so clients never infer trust from arbitrary metadata.
 # 2.4.0: SandboxResult exposes the bounded protected RESULT payload so replaying
 # clients can render the actual simulation values without parsing stdout.
-CONTRACTS_VERSION = "2.4.0"
+# 2.5.0: WorkspaceInvitation — a membership the invited person has not been told
+# about yet, so an invite can announce itself instead of relying on the inviter
+# to mention it out of band (migration 0038).
+CONTRACTS_VERSION = "2.5.0"
 
 __all__ = [
     "CONTRACTS_VERSION",
@@ -258,6 +262,7 @@ __all__ = [
     "Conversation",
     "ConversationTurn",
     "WorkspaceFolder",
+    "WorkspaceInvitation",
     "WorkspaceMember",
     "WorkspaceOverview",
     "WorkspaceSummary",

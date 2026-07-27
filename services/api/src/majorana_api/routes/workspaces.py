@@ -7,7 +7,12 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException
 from majorana_contracts import Workspace as WorkspaceResource
 from majorana_contracts import WorkspaceFolder as WorkspaceFolderResource
-from majorana_contracts import WorkspaceMember, WorkspaceOverview, WorkspaceSummary
+from majorana_contracts import (
+    WorkspaceInvitation,
+    WorkspaceMember,
+    WorkspaceOverview,
+    WorkspaceSummary,
+)
 from majorana_contracts.enums import Role, WorkspaceKind
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -30,10 +35,22 @@ class WorkspaceSettingsRequest(BaseModel):
     auto_keep_artifacts: bool
 
 
-class SwitchWorkspaceRequest(BaseModel):
+class WorkspaceRefRequest(BaseModel):
+    """A workspace named in a body, never in a path.
+
+    The three routes that take one — switch, acknowledge, leave — all act on the
+    caller's OWN membership of it, and all validate it against `memberships`. It
+    is not a scope selector, and `test_no_route_accepts_a_caller_supplied_scope`
+    is what keeps it from becoming one.
+    """
+
     model_config = ConfigDict(extra="forbid")
 
     workspace_id: uuid.UUID
+
+
+class SwitchWorkspaceRequest(WorkspaceRefRequest):
+    pass
 
 
 class CreateWorkspaceRequest(BaseModel):
@@ -208,6 +225,89 @@ async def switch_active_workspace(
         user_id=user.id,
         active_workspace_id=workspace.id,
     )
+
+
+@router.get("/workspaces/invitations", response_model=list[WorkspaceInvitation])
+async def list_invitations(
+    identity: CurrentIdentity, session: DbSession
+) -> list[WorkspaceInvitation]:
+    """Workspaces the caller was added to and has not been told about (0038).
+
+    The whole reason this route exists: an invite grants access silently, so
+    before it, a collaborator had no way to learn they had one except to be told
+    out of band. Read on every authenticated page load and empty almost always.
+
+    Takes no `CurrentScope` — an invitation is about a workspace the caller has
+    never been scoped into, which is what makes it worth announcing.
+    """
+    user, _personal = identity
+    rows = await system.list_unacknowledged_memberships(session, user_id=user.id)
+    now = dt.datetime.now(dt.timezone.utc)
+    return [
+        WorkspaceInvitation(
+            workspace_id=workspace.id,
+            workspace_name=workspace.name,
+            role=Role(membership.role),
+            invited_by_email=inviter.email if inviter is not None else None,
+            invited_by_name=inviter.display_name if inviter is not None else None,
+            created_at=membership.created_at or now,
+        )
+        for workspace, membership, inviter in rows
+    ]
+
+
+@router.post("/workspaces/acknowledge", status_code=204)
+async def acknowledge_invitation(
+    body: WorkspaceRefRequest,
+    identity: CurrentIdentity,
+    session: DbSession,
+) -> None:
+    """Stop announcing a workspace without entering it — the notice's "not now".
+
+    Carries the workspace in the BODY rather than the path for the same reason
+    the switch does: `test_no_route_accepts_a_caller_supplied_scope` sweeps
+    handler signatures for a `workspace_id` argument, because one would be a
+    second way to choose the tenant a handler reads. This one selects nothing —
+    it names a membership of the caller's own, validated against `memberships`,
+    and a workspace they are not in is a 404.
+    """
+    user, _personal = identity
+    if not await system.acknowledge_membership(session, user=user, workspace_id=body.workspace_id):
+        raise HTTPException(404, "workspace not found")
+
+
+@router.post("/workspaces/leave", status_code=204)
+async def leave_workspace(
+    body: WorkspaceRefRequest,
+    identity: CurrentIdentity,
+    session: DbSession,
+) -> None:
+    """Give up your own access to a workspace somebody else runs.
+
+    Not `DELETE /workspace/members/{me}`: that route is admin-only and scoped to
+    the workspace already open, so declining an invitation would have meant
+    switching into the tenant you want out of, and being an admin of it. This
+    one is the member's own decision about a workspace named by id.
+
+    The owner is refused with 409 rather than 403: it is not that they lack
+    authority, it is that there would be nobody left to run the workspace.
+    """
+    user, _personal = identity
+    try:
+        left = await system.leave_workspace(session, user=user, workspace_id=body.workspace_id)
+    except system.CannotLeaveOwnedWorkspace:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "error": (
+                    "You own this workspace, so you cannot leave it. "
+                    "Remove the other members instead."
+                ),
+                "reason": "owner_cannot_leave",
+            },
+        ) from None
+    if not left:
+        raise HTTPException(404, "workspace not found")
 
 
 @router.post("/workspaces", response_model=WorkspaceSummary, status_code=201)
