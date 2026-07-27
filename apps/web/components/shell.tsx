@@ -344,15 +344,20 @@ function WorkspaceSidebar({
   // plumbed through, both rendered copy.personalWorkspace and the footer showed
   // "Personal workspace" twice, stacked.
   const sidebarName = demoMode ? copy.publicPreview : accountName || copy.personalWorkspace;
-  // "first name · account type" per the owner. The plan is the useful half — it
-  // is what decides run allowances — so it wins the subtitle slot over the old
-  // "Personal workspace", which said nothing a signed-in person did not know.
-  // Falls back to that label only where there is no session to resolve a tier
-  // from (the /dev fixtures page), rather than guessing a plan.
-  const sidebarTier = demoMode ? "demo" : accountTier;
+  // "first name · account type" per the owner, now on ONE line (2026-07-27
+  // inbox). The plan is the useful half — it is what decides run allowances —
+  // so it wins the second slot over the old "Personal workspace", which said
+  // nothing a signed-in person did not know. Falls back to that label only
+  // where there is no session to resolve a tier from (the /dev fixtures page),
+  // rather than guessing a plan.
+  //
+  // Demo carries no tier suffix: the name already reads "Public preview", and
+  // "Public preview · Preview" is the same word twice. Stacked it was merely
+  // redundant; on one line it would look like a bug.
+  const sidebarTier = demoMode ? null : accountTier;
   const sidebarSubtitle = sidebarTier
     ? copy.tierLabel[sidebarTier]
-    : accountName
+    : !demoMode && accountName
       ? copy.personalWorkspace
       : null;
   const sidebarGreeting = demoMode ? sidebarName : accountFirstName(sidebarName);
@@ -609,7 +614,6 @@ function WorkspaceSidebar({
             <span className="mj-avatar">{sidebarInitial}</span>
             <span className="mj-sidebar-user-copy mj-sidebar-copy">
               <strong>{sidebarName}</strong>
-              {sidebarSubtitle ? <small>{sidebarSubtitle}</small> : null}
             </span>
           </a>
         ) : (

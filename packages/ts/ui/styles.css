@@ -1797,10 +1797,15 @@
   font-size: var(--fs-12);
   font-weight: 500;
 }
+/* Owner request (2026-07-27): the account type sits beside the first name so the
+   footer profile is one line, not two. The name is the only part that can be
+   arbitrarily long, so it is the only part allowed to shrink — a clipped
+   "Develop…" would read as a rendering bug, while a clipped name does not. */
 .mj-sidebar-user-copy {
   min-width: 0;
   flex: 1 1 auto;
-  display: grid;
+  display: flex;
+  align-items: baseline;
   gap: var(--sp-1);
 }
 .mj-sidebar-user-copy strong,
@@ -1810,13 +1815,23 @@
   white-space: nowrap;
 }
 .mj-sidebar-user-copy strong {
+  min-width: 0;
+  flex: 0 1 auto;
   color: var(--text-0);
   font-size: var(--fs-12);
   font-weight: 500;
 }
 .mj-sidebar-user-copy small {
+  flex: 0 0 auto;
   color: var(--text-2);
   font-size: var(--fs-12);
+}
+/* Decorative separator. It lives in CSS rather than the copy dictionary so no
+   translation has to carry punctuation, and it appears only when there is a
+   second half to separate. */
+.mj-sidebar-user-copy small::before {
+  content: "·";
+  margin-inline-end: var(--sp-1);
 }
 .mj-sidebar-user-caret {
   color: var(--text-2);
@@ -7560,6 +7575,12 @@ div.mj-rail-row:hover {
 /* profile popup */
 .mj-sidebar-user-menu {
   position: relative;
+  /* A grid item's default `min-width: auto` is min-content, so without this the
+     menu — and with it the button, the copy, and the name — refuses to shrink
+     below the widest unbreakable word and a long name pushes the account type
+     out past the 256px sidebar. Every ancestor between the footer track and the
+     name has to opt out of that floor for `text-overflow: ellipsis` to fire. */
+  min-width: 0;
 }
 .mj-sidebar-user-menu .mj-sidebar-user {
   width: 100%;

@@ -1087,7 +1087,7 @@ export const ACCOUNT_COPY: Record<PublicLocale, {
   usageArtifacts: (count: number) => string;
   usageQubits: (count: number) => string;
   tierNames: Record<"demo" | "free" | "developer", string>;
-  usageUnenforced: string;
+  usageEnforcement: string;
   billingTitle: string;
   billingHelp: string;
   billingPayments: string;
@@ -1160,7 +1160,7 @@ export const ACCOUNT_COPY: Record<PublicLocale, {
     usageArtifacts: (count) => `${count} artifacts`,
     usageQubits: (count) => `Up to ${count} qubits`,
     tierNames: { demo: "Preview", free: "Free", developer: "Developer" },
-    usageUnenforced: "These allowances are enforced when you submit a run. Browser simulation always stays available on your own hardware.",
+    usageEnforcement: "These allowances are enforced when you submit a run. Browser simulation always stays available on your own hardware.",
     billingTitle: "Billing & credits",
     billingHelp: "How Leona Quantum will charge for agent runs and hardware. Shown for transparency — payments are not enabled.",
     billingPayments: "Payments",
@@ -1233,7 +1233,7 @@ export const ACCOUNT_COPY: Record<PublicLocale, {
     usageArtifacts: (count) => `${count}件`,
     usageQubits: (count) => `${count}量子ビットまで`,
     tierNames: { demo: "プレビュー", free: "Free", developer: "Developer" },
-    usageUnenforced: "これらの上限は実行の送信時に適用されます。ブラウザーでのシミュレーションはお使いの端末上で常に利用できます。",
+    usageEnforcement: "これらの上限は実行の送信時に適用されます。ブラウザーでのシミュレーションはお使いの端末上で常に利用できます。",
     billingTitle: "請求とクレジット",
     billingHelp: "Leona Quantum がエージェント実行とハードウェアに課金する仕組みです。透明性のために表示しており、支払いは有効化されていません。",
     billingPayments: "支払い",
