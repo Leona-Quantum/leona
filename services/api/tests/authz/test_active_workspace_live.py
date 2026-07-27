@@ -152,7 +152,7 @@ async def test_switching_into_a_workspace_that_does_not_exist_is_refused(db):
     assert await system.set_active_workspace(db, user=guest, workspace_id=uuid.uuid4()) is None
 
 
-async def test_list_user_workspaces_puts_the_owned_one_first(db):
+async def test_list_user_workspaces_puts_the_personal_one_first(db):
     host, host_ws = await _make_user(db, "list-host")
     guest, guest_ws = await _make_user(db, "list-guest")
     host_ws.name = "aaa-sorts-first-by-name"
@@ -162,6 +162,25 @@ async def test_list_user_workspaces_puts_the_owned_one_first(db):
     rows = await system.list_user_workspaces(db, user_id=guest.id)
     assert [ws.id for ws, _m in rows] == [guest_ws.id, host_ws.id]
     assert [m.role for _ws, m in rows] == [Role.OWNER, Role.MEMBER]
+
+
+async def test_a_team_workspace_you_own_still_sorts_below_your_personal_one(db):
+    """The case the first ordering key got wrong.
+
+    "Owned first" and "personal first" are the same rule until the user owns a
+    team workspace as well — and then a team called "Ion trap group" sorts above
+    a personal workspace named after an email address, which is what a running
+    server actually did.
+    """
+    user, personal = await _make_user(db, "own-team")
+    personal.name = "zzz-last-by-name"
+    team, _ = await system.create_team_workspace(
+        db, owner=user, name="aaa-first-by-name", owned_workspace_limit=None
+    )
+    await db.flush()
+
+    rows = await system.list_user_workspaces(db, user_id=user.id)
+    assert [ws.id for ws, _m in rows] == [personal.id, team.id]
 
 
 async def test_a_guest_scope_reads_the_host_workspace_not_their_own(db):

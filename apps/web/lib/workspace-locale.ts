@@ -1110,7 +1110,7 @@ export const ACCOUNT_COPY: Record<PublicLocale, {
 }> = {
   en: {
     title: "Settings",
-    lede: "Your identity, private Vault, personal workspace data, and display preferences.",
+    lede: "Your identity, your Vault, the workspaces you can open, and display preferences.",
     signOut: "Sign out",
     preferences: "Preferences",
     language: "Language",
@@ -1125,7 +1125,7 @@ export const ACCOUNT_COPY: Record<PublicLocale, {
     profileSaved: "Profile saved.",
     profileSaveFailed: "Profile could not be saved",
     personalWorkspace: "Personal workspace",
-    personalWorkspaceHelp: "This workspace belongs only to you. Collaboration and shared workspaces are planned, but not enabled yet.",
+    personalWorkspaceHelp: "Your own workspace. Nobody else can open it unless you invite them below.",
     artifacts: "Artifacts",
     runs: "Runs",
     access: "Access",
@@ -1142,7 +1142,7 @@ export const ACCOUNT_COPY: Record<PublicLocale, {
     repositoryExport: "Atlas export",
     repositoryExportHelp: "Sign in to copy a public entry into this workspace and open it in Studio.",
     collaboration: "Collaboration",
-    collaborationHelp: "Deferred until shared access, invitations, and permissions are productized.",
+    collaborationHelp: "Invite people by email into any workspace you own or administer. Roles are owner, admin, member and viewer.",
     loading: "Loading workspace data…",
     unavailable: "Workspace data is unavailable.",
     requestFailed: "Request failed",
@@ -1183,7 +1183,7 @@ export const ACCOUNT_COPY: Record<PublicLocale, {
   },
   ja: {
     title: "設定",
-    lede: "本人情報、非公開ボールト、個人ワークスペースのデータ、表示設定を管理します。",
+    lede: "本人情報、非公開ボールト、開けるワークスペース、表示設定を管理します。",
     signOut: "サインアウト",
     preferences: "表示設定",
     language: "言語",
@@ -1198,7 +1198,7 @@ export const ACCOUNT_COPY: Record<PublicLocale, {
     profileSaved: "プロフィールを保存しました。",
     profileSaveFailed: "プロフィールを保存できませんでした",
     personalWorkspace: "個人ワークスペース",
-    personalWorkspaceHelp: "このワークスペースはあなただけが利用できます。共同利用と共有ワークスペースは今後対応予定です。",
+    personalWorkspaceHelp: "あなた自身のワークスペースです。下から招待しない限り、他の人は開けません。",
     artifacts: "アーティファクト",
     runs: "実行",
     access: "アクセス",
@@ -1215,7 +1215,7 @@ export const ACCOUNT_COPY: Record<PublicLocale, {
     repositoryExport: "Atlasから保存",
     repositoryExportHelp: "サインインすると、公開エントリをこのワークスペースへコピーしてStudioで開けます。",
     collaboration: "共同利用",
-    collaborationHelp: "共有アクセス、招待、権限の正式対応まで利用できません。",
+    collaborationHelp: "オーナーまたは管理者であるワークスペースに、メールアドレスで招待できます。権限はオーナー・管理者・メンバー・閲覧者です。",
     loading: "ワークスペースデータを読み込んでいます…",
     unavailable: "ワークスペースデータを取得できません。",
     requestFailed: "リクエストに失敗しました",
@@ -1253,5 +1253,148 @@ export const ACCOUNT_COPY: Record<PublicLocale, {
     billingPolicyHardware: "GPU / QPU ハードウェア",
     billingPolicyHardwareValue: "オーナー承認制。実行前に Studio のハードウェアレーンに出典付き見積もりが表示されます。",
     billingEstimatesLink: "Studio でハードウェア見積もりを見る",
+  },
+};
+
+/**
+ * Workspaces and members, on the Settings page.
+ *
+ * Kept out of ACCOUNT_COPY as its own record rather than growing a type that is
+ * already sixty fields long — these strings appear in two panels that either
+ * both render or neither does.
+ *
+ * The wording is deliberately blunt about what sharing exposes. A member reads
+ * every run and every Vault artifact in the workspace, including work saved
+ * before they arrived, and there is no wording of that which is both softer and
+ * true.
+ */
+export const SHARING_COPY: Record<PublicLocale, {
+  workspacesTitle: string;
+  workspacesHelp: string;
+  personalTag: string;
+  activeTag: string;
+  open: string;
+  opening: string;
+  createTitle: string;
+  createPlaceholder: string;
+  create: string;
+  creating: string;
+  createFailed: string;
+  created: (name: string) => string;
+  switchFailed: string;
+  membersTitle: string;
+  membersHelp: string;
+  membersShareWarning: string;
+  invitePlaceholder: string;
+  invite: string;
+  inviting: string;
+  inviteFailed: string;
+  inviteUnknownAccount: string;
+  invited: (email: string) => string;
+  roleMember: string;
+  roleViewer: string;
+  roleAdmin: string;
+  roleOwner: string;
+  roleLabel: string;
+  roleMemberHelp: string;
+  roleViewerHelp: string;
+  remove: string;
+  removing: string;
+  removeFailed: string;
+  removed: (name: string) => string;
+  roleChanged: (name: string) => string;
+  roleChangeFailed: string;
+  you: string;
+  adminOnly: string;
+  noMembers: string;
+  sharedWith: (count: number) => string;
+}> = {
+  en: {
+    workspacesTitle: "Workspaces",
+    workspacesHelp:
+      "Everything you run and save belongs to one workspace. Switching changes what Run, Studio and the Vault show you.",
+    personalTag: "Personal",
+    activeTag: "Active",
+    open: "Open",
+    opening: "Opening…",
+    createTitle: "New shared workspace",
+    createPlaceholder: "Ion trap group",
+    create: "Create",
+    creating: "Creating…",
+    createFailed: "Could not create that workspace.",
+    created: (name) => `${name} created. Open it when you are ready — you are still here for now.`,
+    switchFailed: "Could not switch workspace.",
+    membersTitle: "Members",
+    membersHelp: "People who can act in the workspace you have open.",
+    membersShareWarning:
+      "A member sees every run and every saved artifact in this workspace, including work saved before they arrived. A viewer can read all of it but cannot run or save.",
+    invitePlaceholder: "colleague@university.edu",
+    invite: "Invite",
+    inviting: "Inviting…",
+    inviteFailed: "Could not add that person.",
+    inviteUnknownAccount:
+      "No account here uses that address yet. Ask them to sign in once, then invite them again.",
+    invited: (email) => `${email} can now open this workspace.`,
+    roleMember: "Member",
+    roleViewer: "Viewer",
+    roleAdmin: "Admin",
+    roleOwner: "Owner",
+    roleLabel: "Role",
+    roleMemberHelp: "Can run, save and edit.",
+    roleViewerHelp: "Can read everything; cannot run or save.",
+    remove: "Remove",
+    removing: "Removing…",
+    removeFailed: "Could not remove that person.",
+    removed: (name) => `${name} no longer has access. Their runs and artifacts stay here.`,
+    roleChanged: (name) => `${name}'s role was changed.`,
+    roleChangeFailed: "Could not change that role.",
+    you: "You",
+    adminOnly: "Only an owner or admin can invite and remove people.",
+    noMembers: "No one else is in this workspace.",
+    sharedWith: (count) => (count === 1 ? "1 person" : `${count} people`),
+  },
+  ja: {
+    workspacesTitle: "ワークスペース",
+    workspacesHelp:
+      "実行と保存はすべて、いずれかのワークスペースに属します。切り替えると、Run・Studio・Vault の表示内容が変わります。",
+    personalTag: "個人",
+    activeTag: "使用中",
+    open: "開く",
+    opening: "切り替え中…",
+    createTitle: "共有ワークスペースを作成",
+    createPlaceholder: "イオントラップ班",
+    create: "作成",
+    creating: "作成中…",
+    createFailed: "ワークスペースを作成できませんでした。",
+    created: (name) => `${name} を作成しました。準備ができたら開いてください（今はまだ移動していません）。`,
+    switchFailed: "ワークスペースを切り替えられませんでした。",
+    membersTitle: "メンバー",
+    membersHelp: "いま開いているワークスペースで作業できる人です。",
+    membersShareWarning:
+      "メンバーは、このワークスペースのすべての実行と保存済みアーティファクトを閲覧できます。参加前に保存されたものも含みます。閲覧者はすべて読めますが、実行や保存はできません。",
+    invitePlaceholder: "colleague@university.edu",
+    invite: "招待",
+    inviting: "追加中…",
+    inviteFailed: "この人を追加できませんでした。",
+    inviteUnknownAccount:
+      "このアドレスのアカウントはまだありません。一度サインインしてもらってから、もう一度招待してください。",
+    invited: (email) => `${email} がこのワークスペースを開けるようになりました。`,
+    roleMember: "メンバー",
+    roleViewer: "閲覧者",
+    roleAdmin: "管理者",
+    roleOwner: "オーナー",
+    roleLabel: "権限",
+    roleMemberHelp: "実行・保存・編集ができます。",
+    roleViewerHelp: "すべて閲覧できますが、実行・保存はできません。",
+    remove: "削除",
+    removing: "削除中…",
+    removeFailed: "この人を削除できませんでした。",
+    removed: (name) => `${name} のアクセスを解除しました。実行とアーティファクトはここに残ります。`,
+    roleChanged: (name) => `${name} の権限を変更しました。`,
+    roleChangeFailed: "権限を変更できませんでした。",
+    you: "あなた",
+    adminOnly: "招待と削除ができるのはオーナーと管理者だけです。",
+    noMembers: "このワークスペースには他に誰もいません。",
+    sharedWith: (count) => `${count}人`,
   },
 };

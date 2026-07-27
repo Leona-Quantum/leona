@@ -4,7 +4,8 @@ import type { ReactNode } from "react";
 import { setStorageScope } from "../lib/user-storage";
 
 /**
- * Points browser storage at the signed-in account, for everything it wraps.
+ * Points browser storage at the signed-in account and its active workspace, for
+ * everything it wraps.
  *
  * Deliberately a wrapper rather than a sibling: React runs a parent's body
  * before any of its children's, so wrapping makes "the scope is set before the
@@ -17,11 +18,14 @@ import { setStorageScope } from "../lib/user-storage";
  */
 export function StorageScope({
   scopeId,
+  mayAdoptLegacyData = true,
   children,
 }: {
   scopeId: string | null;
+  /** False inside a shared workspace — see lib/storage-scope-id.ts. */
+  mayAdoptLegacyData?: boolean;
   children: ReactNode;
 }) {
-  setStorageScope(scopeId);
+  setStorageScope(scopeId, { mayAdoptLegacyData });
   return <>{children}</>;
 }

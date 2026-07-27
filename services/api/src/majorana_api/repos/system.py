@@ -451,8 +451,21 @@ async def list_user_workspaces(
         select(Workspace, Membership)
         .join(Membership, Membership.workspace_id == Workspace.id)
         .where(Membership.user_id == user_id, Workspace.deleted_at.is_(None))
+        # Personal first, then by name. The first term is the same predicate the
+        # `is_personal` flag is computed from, and it has to be BOTH halves: an
+        # "owned first" key looks identical until the user owns a team workspace
+        # too, and then it sorts their own workspace under whatever they happened
+        # to name the other one. Found by reading the list on a running server,
+        # where a workspace called "Ion trap group" pushed the personal one
+        # second on the alphabet.
         .order_by(
-            case((Workspace.owner_user_id == user_id, 0), else_=1),
+            case(
+                (
+                    (Workspace.kind == "personal") & (Workspace.owner_user_id == user_id),
+                    0,
+                ),
+                else_=1,
+            ),
             Workspace.name,
             Workspace.id,
         )

@@ -70,6 +70,7 @@ export function Shell({
   locale = "en",
   accountName,
   accountTier,
+  workspaceName,
 }: {
   children: ReactNode;
   headerRight?: ReactNode;
@@ -78,6 +79,10 @@ export function Shell({
   /** Signed-in user's display name for the sidebar footer. Omitted on surfaces
    * with no session (the /dev fixtures page), which fall back to the generic label. */
   accountName?: string;
+  /** The active workspace's name, ONLY when it is a shared one. Undefined in a
+   * personal workspace, which needs no label — everyone is in theirs by default,
+   * and naming it would push the plan out of the one line there is. */
+  workspaceName?: string;
   /** Resolved on the server — the developer allowlist is a server-only env var.
    * Omitted on sessionless surfaces, which show no plan rather than guessing one. */
   accountTier?: AccountTier;
@@ -235,6 +240,7 @@ export function Shell({
           locale={locale}
           accountName={accountName}
           accountTier={accountTier}
+          workspaceName={workspaceName}
           onArchive={(chat) => {
             archiveChat(chat.id, chat);
             refreshAfterLocalChange();
@@ -296,6 +302,7 @@ function WorkspaceSidebar({
   locale,
   accountName,
   accountTier,
+  workspaceName,
   onArchive,
   onRestore,
   onArchiveArtifact,
@@ -318,6 +325,7 @@ function WorkspaceSidebar({
   folderSyncState: "local" | "synced" | "error";
   locale: PublicLocale;
   accountName?: string;
+  workspaceName?: string;
   onArchive: (chat: ChatSummary) => void;
   onRestore: (chat: ChatSummary) => void;
   onArchiveArtifact: (artifact: LibraryArtifact) => void;
@@ -355,11 +363,21 @@ function WorkspaceSidebar({
   // "Public preview · Preview" is the same word twice. Stacked it was merely
   // redundant; on one line it would look like a bug.
   const sidebarTier = demoMode ? null : accountTier;
-  const sidebarSubtitle = sidebarTier
-    ? copy.tierLabel[sidebarTier]
-    : !demoMode && accountName
-      ? copy.personalWorkspace
-      : null;
+  // A shared workspace takes the line back off the plan.
+  //
+  // Which tenant you are in outranks which plan you are on the moment it can be
+  // somebody else's: a person who switched and forgot would otherwise run and
+  // save into a colleague's workspace with nothing on screen saying so. It is
+  // named only when it is shared, because "you are in your own workspace" is
+  // what everybody's default already is and says nothing.
+  const sharedWorkspaceName = demoMode ? null : workspaceName?.trim() || null;
+  const sidebarSubtitle = sharedWorkspaceName
+    ? sharedWorkspaceName
+    : sidebarTier
+      ? copy.tierLabel[sidebarTier]
+      : !demoMode && accountName
+        ? copy.personalWorkspace
+        : null;
   const sidebarGreeting = demoMode ? sidebarName : accountFirstName(sidebarName);
   // An empty string is possible only for a name that is all separators; the
   // circle keeps its shape either way, so no placeholder glyph is invented.
