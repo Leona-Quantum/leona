@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getMajoranaAuth } from "../../../../../lib/auth";
+import { controlPlaneUnavailable, controlPlaneUrl, fetchControlPlane } from "../../../../../lib/control-plane";
 import { looksLikeOpenQasm3 } from "../../../../../lib/circuit-conversion";
 import {
   getPublicRepositoryLibraryVariant,
@@ -8,8 +9,6 @@ import {
   type PublicRepositoryEntry,
 } from "../../../../../lib/public-repository";
 import { getRepositoryEntry } from "../../../../../lib/repository-source";
-
-const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
 export const dynamic = "force-dynamic";
 
@@ -31,21 +30,20 @@ export async function POST(
 
   const { accessToken } = await getMajoranaAuth({ ensureSignedIn: true });
   try {
-    const upstream = await fetch(`${API_URL}/v1/artifacts/import-public`, {
+    const upstream = await fetchControlPlane(controlPlaneUrl("/v1/artifacts/import-public"), {
       method: "POST",
       headers: {
         Authorization: `Bearer ${accessToken}`,
         "Content-Type": "application/json",
       },
       body: JSON.stringify(publicImportPayload(entry, libraryVariant)),
-      cache: "no-store",
     });
     return new NextResponse(upstream.body, {
       status: upstream.status,
       headers: { "Content-Type": upstream.headers.get("Content-Type") ?? "application/json" },
     });
-  } catch {
-    return NextResponse.json({ error: "control plane unavailable" }, { status: 502 });
+  } catch (error) {
+    return controlPlaneUnavailable(error);
   }
 }
 

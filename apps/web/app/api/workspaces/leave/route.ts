@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 import { getMajoranaAuth } from "../../../../lib/auth";
-
-const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+import { controlPlaneUnavailable, controlPlaneUrl, fetchControlPlane } from "../../../../lib/control-plane";
 
 export const dynamic = "force-dynamic";
 
@@ -32,21 +31,20 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "workspace_id is required" }, { status: 400 });
   }
   try {
-    const upstream = await fetch(new URL("/v1/workspaces/leave", API_URL), {
+    const upstream = await fetchControlPlane(controlPlaneUrl("/v1/workspaces/leave"), {
       method: "POST",
       headers: {
         Authorization: `Bearer ${accessToken}`,
         "Content-Type": "application/json",
       },
       body: JSON.stringify({ workspace_id: workspaceId }),
-      cache: "no-store",
     });
     if (upstream.status === 204) return new NextResponse(null, { status: 204 });
     return new NextResponse(upstream.body, {
       status: upstream.status,
       headers: { "Content-Type": upstream.headers.get("Content-Type") ?? "application/json" },
     });
-  } catch {
-    return NextResponse.json({ error: "control plane unavailable" }, { status: 502 });
+  } catch (error) {
+    return controlPlaneUnavailable(error);
   }
 }

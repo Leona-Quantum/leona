@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 import { getMajoranaAuth } from "../../../../../lib/auth";
-
-const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+import { controlPlaneUnavailable, controlPlaneUrl, fetchControlPlane } from "../../../../../lib/control-plane";
 
 export const dynamic = "force-dynamic";
 
@@ -48,16 +47,15 @@ export async function DELETE(_request: Request, context: Context) {
 async function proxy(
   path: string,
   options: { method: string; accessToken: string; body?: string },
-): Promise<NextResponse> {
+): Promise<Response> {
   try {
-    const upstream = await fetch(new URL(path, API_URL), {
+    const upstream = await fetchControlPlane(controlPlaneUrl(path), {
       method: options.method,
       headers: {
         Authorization: `Bearer ${options.accessToken}`,
         ...(options.body ? { "Content-Type": "application/json" } : {}),
       },
       body: options.body,
-      cache: "no-store",
     });
     // 204 carries no body, and constructing a NextResponse with one for a 204
     // throws in the Node runtime.
@@ -66,7 +64,7 @@ async function proxy(
       status: upstream.status,
       headers: { "Content-Type": upstream.headers.get("Content-Type") ?? "application/json" },
     });
-  } catch {
-    return NextResponse.json({ error: "control plane unavailable" }, { status: 502 });
+  } catch (error) {
+    return controlPlaneUnavailable(error);
   }
 }
