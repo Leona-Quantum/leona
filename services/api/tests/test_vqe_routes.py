@@ -443,3 +443,4 @@ async def test_materialize_is_bound_to_the_selected_execution(monkeypatch):
     assert bundle["execution"]["id"] == str(execution_id)
     assert bundle["observation"]["id"] == str(observation_id)
     assert bundle["scientific_experiment"]["spec_sha256"] == "a" * 64
+    assert captured["resource_estimates"] == {"stages": []}

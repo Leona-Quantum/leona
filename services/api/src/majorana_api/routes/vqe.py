@@ -952,7 +952,14 @@ async def materialize_execution(
         fingerprint=fingerprint,
         export_status=ExportStatus.UNSUPPORTED,
         export_reason="candidate scientific evidence is not an executable circuit export",
-        resource_estimates=observation.result_contract_json.get("resources"),
+        # The execution contract records one resource row per compilation
+        # stage, while ArtifactVersion deliberately exposes a mapping so the
+        # representation can be extended without changing its top-level type.
+        # Preserve every stage instead of storing the raw list, which cannot
+        # be deserialized through the public artifact contract.
+        resource_estimates={
+            "stages": observation.result_contract_json.get("resources", []),
+        },
         limitations=(
             "Private VQE evidence; independent human review was owner-waived "
             "and publication remains blocked."
