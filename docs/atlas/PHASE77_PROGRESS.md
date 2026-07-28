@@ -101,8 +101,13 @@ Status: complete
 - The verified image digest and observed output are recorded in
   `evidence/phase77/linux_amd64_conversion_evidence.json`.
 - A full-disk condition initially caused Docker Desktop export to fail. Only
-  disposable package caches were cleared; the daemon was restarted; the build
-  then succeeded. No repository or scientific data was removed.
+  disposable package caches were cleared; no repository or scientific data was
+  removed. Because the local Docker VM did not recover cleanly, the final image
+  was rebuilt and hardened-executed on a clean GitHub-hosted Linux/amd64 runner.
+- Qualification run:
+  `https://github.com/EshMis/majorana/actions/runs/30391378015`.
+- The reusable manual qualification workflow remains fail-closed and requires
+  an immutable full source commit after it reaches the default branch.
 
 ## S10 — Closeout
 
@@ -120,7 +125,7 @@ Status: complete
   rotations, incomplete/extra/non-finite parameter assignments, and invalid
   witness tolerances.
 - Final Linux/amd64 image:
-  `sha256:b4f0b16788f8170193e6bf7ec8445ebe5e2a2ddebf406aec8a73e3b52febaa16`.
+  `sha256:dcd947ad182577e459e470a57548ddfa4c8a3f815135526b6fce02af3d8b91c7`.
 
 ## Recorded limitations
 
