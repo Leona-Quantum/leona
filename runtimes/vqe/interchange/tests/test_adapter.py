@@ -59,10 +59,7 @@ def _fixture_qubit() -> CanonicalQubitOperator:
     raw = json.loads(MANIFEST.read_text())
     hamiltonian = CanonicalHamiltonian(
         num_qubits=raw["electron_orbital_qubit_counts"]["n_qubits"],
-        terms=[
-            PauliTerm.model_validate(term)
-            for term in raw["canonical_hamiltonian"]["terms"]
-        ],
+        terms=[PauliTerm.model_validate(term) for term in raw["canonical_hamiltonian"]["terms"]],
         coefficient_rounding_decimals=15,
     )
     context = _context()
@@ -80,9 +77,7 @@ def _openfermion_fixture_qubit(canonical: CanonicalQubitOperator):
     native = openfermion.QubitOperator()
     for term in canonical.hamiltonian.terms:
         factors = tuple(
-            (qubit, letter)
-            for qubit, letter in enumerate(term.pauli_qubit0_first)
-            if letter != "I"
+            (qubit, letter) for qubit, letter in enumerate(term.pauli_qubit0_first) if letter != "I"
         )
         native += openfermion.QubitOperator(
             factors,

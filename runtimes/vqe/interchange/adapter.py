@@ -383,10 +383,7 @@ def qiskit_array_to_qubit0_first(array: np.ndarray, *, num_qubits: int) -> np.nd
     array = np.asarray(array)
     dimension = 2**num_qubits
     permutation = np.array(
-        [
-            int(format(index, f"0{num_qubits}b")[::-1], 2)
-            for index in range(dimension)
-        ],
+        [int(format(index, f"0{num_qubits}b")[::-1], 2) for index in range(dimension)],
         dtype=int,
     )
     if array.shape == (dimension,):

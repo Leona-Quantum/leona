@@ -78,10 +78,7 @@ def _canonical_qubit() -> CanonicalQubitOperator:
     raw = json.loads(MANIFEST.read_text())
     hamiltonian = CanonicalHamiltonian(
         num_qubits=raw["electron_orbital_qubit_counts"]["n_qubits"],
-        terms=[
-            PauliTerm.model_validate(term)
-            for term in raw["canonical_hamiltonian"]["terms"]
-        ],
+        terms=[PauliTerm.model_validate(term) for term in raw["canonical_hamiltonian"]["terms"]],
         coefficient_rounding_decimals=15,
     )
     context = _context()
@@ -99,9 +96,7 @@ def _to_openfermion(operator: CanonicalQubitOperator):
     result = openfermion.QubitOperator()
     for term in operator.hamiltonian.terms:
         factors = tuple(
-            (qubit, letter)
-            for qubit, letter in enumerate(term.pauli_qubit0_first)
-            if letter != "I"
+            (qubit, letter) for qubit, letter in enumerate(term.pauli_qubit0_first) if letter != "I"
         )
         result += openfermion.QubitOperator(
             factors,
@@ -221,11 +216,7 @@ def generate() -> dict:
             "input_qubit_exact_sha256": canonical.exact_content_sha256,
             "output_qubit_exact_sha256": jw_observed.exact_content_sha256,
             "max_abs_matrix_difference": float(
-                np.max(
-                    np.abs(
-                        openfermion_expected_matrix - openfermion_observed_matrix
-                    )
-                )
+                np.max(np.abs(openfermion_expected_matrix - openfermion_observed_matrix))
             ),
             "tolerance": 2e-12,
             "verification": "matrix_equivalence",
@@ -238,8 +229,7 @@ def generate() -> dict:
         "qiskit": {
             "roundtrip_qubit_exact_sha256": qiskit_roundtrip.exact_content_sha256,
             "exact_content_match": (
-                qiskit_roundtrip.exact_content_sha256
-                == canonical.exact_content_sha256
+                qiskit_roundtrip.exact_content_sha256 == canonical.exact_content_sha256
             ),
         },
         "qiskit_pennylane_equivalence": {
@@ -250,9 +240,7 @@ def generate() -> dict:
                 qiskit_matrix,
                 tolerance=1e-12,
             ),
-            "statevector_overlap_absolute": float(
-                abs(np.vdot(qiskit_state, pennylane_state))
-            ),
+            "statevector_overlap_absolute": float(abs(np.vdot(qiskit_state, pennylane_state))),
             "tolerance": 1e-12,
         },
         "inherited_unresolved_issue": (

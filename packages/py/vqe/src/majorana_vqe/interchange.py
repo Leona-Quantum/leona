@@ -87,10 +87,7 @@ class CanonicalFermionOperator(VqeBaseModel):
             raise ValueError("fermionic zero threshold cannot be negative")
         keys: list[tuple[tuple[int, str], ...]] = []
         for term in self.terms:
-            if any(
-                operator.spin_orbital >= self.num_spin_orbitals
-                for operator in term.operators
-            ):
+            if any(operator.spin_orbital >= self.num_spin_orbitals for operator in term.operators):
                 raise ValueError("fermionic operator references an out-of-range spin orbital")
             creation_indices = [
                 operator.spin_orbital
@@ -102,10 +99,9 @@ class CanonicalFermionOperator(VqeBaseModel):
                 for operator in term.operators
                 if operator.action is LadderAction.ANNIHILATE
             ]
-            expected_actions = (
-                [LadderAction.CREATE] * len(creation_indices)
-                + [LadderAction.ANNIHILATE] * len(annihilation_indices)
-            )
+            expected_actions = [LadderAction.CREATE] * len(creation_indices) + [
+                LadderAction.ANNIHILATE
+            ] * len(annihilation_indices)
             if [operator.action for operator in term.operators] != expected_actions:
                 raise ValueError(
                     "fermionic term is not normal ordered: creation operators must precede "
@@ -115,9 +111,7 @@ class CanonicalFermionOperator(VqeBaseModel):
                 raise ValueError("fermionic creation operators must use descending indices")
             if annihilation_indices != sorted(annihilation_indices, reverse=True):
                 raise ValueError("fermionic annihilation operators must use descending indices")
-            ladder_keys = [
-                (operator.spin_orbital, operator.action) for operator in term.operators
-            ]
+            ladder_keys = [(operator.spin_orbital, operator.action) for operator in term.operators]
             if len(ladder_keys) != len(set(ladder_keys)):
                 raise ValueError("fermionic term contains a repeated ladder operator")
             coefficient_magnitude = math.hypot(
@@ -129,8 +123,7 @@ class CanonicalFermionOperator(VqeBaseModel):
                     "fermionic term coefficient must exceed the declared zero threshold"
                 )
             key = tuple(
-                (operator.spin_orbital, operator.action.value)
-                for operator in term.operators
+                (operator.spin_orbital, operator.action.value) for operator in term.operators
             )
             keys.append(key)
         if keys != sorted(keys):
@@ -316,10 +309,7 @@ class ConversionEvidence(VqeBaseModel):
         tolerance = ieee754_hex_to_float(self.tolerance_float64_hex)
         if tolerance < 0:
             raise ValueError("conversion verification tolerance cannot be negative")
-        if (
-            self.verification is ConversionVerification.EXACT_RECONSTRUCTION
-            and tolerance != 0
-        ):
+        if self.verification is ConversionVerification.EXACT_RECONSTRUCTION and tolerance != 0:
             raise ValueError("exact reconstruction evidence requires zero tolerance")
         return self
 

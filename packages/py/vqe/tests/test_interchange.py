@@ -105,9 +105,7 @@ def test_fermionic_threshold_is_nonnegative_and_excludes_small_terms():
         update={"coefficient_re_float64_hex": float_to_ieee754_hex(1e-13)}
     )
     with pytest.raises(ValidationError, match="must exceed"):
-        CanonicalFermionOperator(
-            **{**valid.model_dump(), "terms": [small_term]}
-        )
+        CanonicalFermionOperator(**{**valid.model_dump(), "terms": [small_term]})
 
 
 def test_fermionic_term_must_match_declared_normal_order_convention():
