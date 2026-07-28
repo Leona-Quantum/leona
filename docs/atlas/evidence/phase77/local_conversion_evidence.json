@@ -41,9 +41,9 @@
   },
   "schema_version": "0.1.0",
   "source": {
-    "adapter_sha256": "6e7ff1ede543cb01386b0c2980875e36753454c0c5154d96c02372eaaf646c97",
+    "adapter_sha256": "8e970aab5d18a2512a7055e7c1a061b3899ca2c46a9bf544c18c166d807c872f",
     "adapter_version": "0.1.0",
-    "implementation_source_commit": "9ac21b27ae2f2816b34f6982bf97309b9208ece7",
+    "implementation_source_commit": "c950cfd7f946b1a7041638674dc6a5b994b9bf1a",
     "manifest_sha256": "6424713c69c2b734172db47329b7deb62b67a743c80fd792f48173fdaa4e3edc",
     "uv_lock_sha256": "df139fe5ac067e491325154199a75bdf72a34309ca9b620e3d804162b93bee65"
   },
