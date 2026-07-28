@@ -27,7 +27,7 @@
       "branch_id": "br-winter-surf-a6ls9v6s",
       "endpoint_id": "ep-hidden-term-a6n5wwj4",
       "migration_head": "0039",
-      "disposition": "disposable; deletion required after evidence commit"
+      "disposition": "deleted after evidence commit; branch list no longer returned the ID"
     },
     "worker": {
       "mode": "dedicated local staging worker",
@@ -181,6 +181,14 @@
     "scientific_performance_claim": "no_go",
     "optimizer_superiority_claim": "not_allowed",
     "allowed_statement": "Under one fixed H2 exact-statevector protocol, the private staging system composed, executed, compared, and saved bounded-scalar and SLSQP workflows for Qiskit and PennyLane. SLSQP used fewer objective evaluations in this instance, but no general performance claim is supported."
+  },
+  "cleanup": {
+    "worker": "stopped",
+    "cloud_run_traffic": "restored to majorana-api-vqe-test-00003-ttr at 100 percent",
+    "temporary_cloud_run_revision": "retained with zero traffic for auditability",
+    "temporary_database_secret": "deleted",
+    "disposable_neon_branch": "deleted",
+    "temporary_browser_scripts": "deleted"
   },
   "secrets_recorded": false
 }

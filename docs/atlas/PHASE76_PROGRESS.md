@@ -812,3 +812,17 @@ S12 reassessment:
 **partial_pass_private_staging; same_workspace_login_reopen_not_verified**.
 
 Public MVP and scientific performance claims remain **NO-GO**.
+
+### Staging cleanup
+
+After the structured evidence was committed:
+
+- the dedicated staging worker was stopped;
+- Cloud Run test traffic was restored to
+  `majorana-api-vqe-test-00003-ttr` at 100%;
+- the temporary database Secret Manager secret was deleted;
+- the disposable Neon branch was deleted;
+- temporary browser orchestration files were removed.
+
+The qualified OCI images and the zero-traffic Cloud Run revision remain as
+immutable audit inputs; neither receives public execution traffic.
