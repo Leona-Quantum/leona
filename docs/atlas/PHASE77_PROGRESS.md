@@ -112,9 +112,27 @@ Status: complete
   blocked.
 - Pure-domain regression suite: `208 passed`.
 - Locked provider-adapter suite: `6 passed`.
-- Relevant API/worker regression suite: `35 passed`.
-- Ruff, provider-import boundary scan, secret-pattern scan, JSON/hash
-  cross-check, and `git diff --check` passed.
+- Relevant API/worker regression suite: `50 passed`.
+- Ruff, import-linter, provider-import boundary scan, JSON parsing,
+  digest-to-image matching, and `git diff --check` passed.
+- Closeout review added fail-closed checks for falsely normal-ordered
+  fermionic monomials, repeated ladder operators, all-identity symbolic
+  rotations, incomplete/extra/non-finite parameter assignments, and invalid
+  witness tolerances.
 - Final Linux/amd64 image:
-  `sha256:f45c496286e7b7f5ffeb8b2e57153f80236b243dcb9a2ce83339ed904d4b4fac`.
-- Commit and push are the only remaining delivery operations.
+  `sha256:b4f0b16788f8170193e6bf7ec8445ebe5e2a2ddebf406aec8a73e3b52febaa16`.
+
+## Recorded limitations
+
+- The OpenFermion path starts from reverse-Jordan-Wigner applied to the frozen
+  qubit fixture. It verifies the declared interchange path but is not an
+  independent electronic-structure derivation.
+- The OpenFermion round trip is matrix-equivalent within `2e-12`; exact
+  canonical-content identity is not claimed because an approximately-zero
+  numerical term is removed.
+- The evidence covers one H2/STO-3G fixture and one canonical parametric
+  excitation. It does not establish equivalence for arbitrary molecules,
+  mappings, ansätze, or provider releases.
+- Human review, public execution, and performance claims remain blocked.
+- The inherited WorkOS selected-account versus `/api/me` identity discrepancy
+  remains unresolved and was not converted into a success claim.
