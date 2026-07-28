@@ -31,7 +31,14 @@ function listen(handler: Parameters<typeof createServer>[1]): Promise<{
 
 const servers: Server[] = [];
 after(() => {
-  for (const server of servers) server.close();
+  for (const server of servers) {
+    // `close` alone only stops new connections. These servers deliberately hold
+    // requests open forever, so without destroying the live sockets the runner
+    // waits on a drained-looking event loop that never drains — a regression
+    // that removes the abort would hang the suite instead of ending it red.
+    server.closeAllConnections();
+    server.close();
+  }
 });
 
 test("a timeout is recognised through undici's wrapper, not just at the top", () => {
@@ -67,7 +74,16 @@ test("the shipped timeout is the one constant, and it is a sane one", () => {
   assert.equal(CONTROL_PLANE_TIMEOUT_MS, 15_000);
 });
 
-test("a whole-response timeout aborts an upstream that goes quiet mid-body", async () => {
+/**
+ * The three tests below assert that something gives up. Without an explicit
+ * per-test timeout the regression they exist to catch — no abort at all — does
+ * not fail them, it hangs them, and node's runner has no default deadline. A
+ * mutation run proved exactly that: deleting the signal wedged the suite
+ * instead of turning it red.
+ */
+const DEADLINE = { timeout: TEST_TIMEOUT_MS * 20 };
+
+test("a whole-response timeout aborts an upstream that goes quiet mid-body", DEADLINE, async () => {
   const { origin, server } = await listen((_request, response) => {
     response.writeHead(200, { "Content-Type": "application/json" });
     response.write('{"partial":');
@@ -79,7 +95,7 @@ test("a whole-response timeout aborts an upstream that goes quiet mid-body", asy
   await assert.rejects(upstream.text(), (error: unknown) => isControlPlaneTimeout(error));
 });
 
-test("a stream whose headers arrive is not cut off by the timeout", async () => {
+test("a stream whose headers arrive is not cut off by the timeout", DEADLINE, async () => {
   const { origin, server } = await listen((_request, response) => {
     response.writeHead(200, { "Content-Type": "text/event-stream" });
     response.write(": open\n\n");
@@ -109,7 +125,7 @@ test("a stream whose headers arrive is not cut off by the timeout", async () => 
   await reader.cancel();
 });
 
-test("a stream whose headers never arrive does trip the timeout", async () => {
+test("a stream whose headers never arrive does trip the timeout", DEADLINE, async () => {
   const { origin, server } = await listen(() => {
     // Accept the connection and say nothing at all.
   });
