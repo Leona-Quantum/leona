@@ -141,6 +141,13 @@ jobs:
           project_id: twilight-wildflower-01313590
           branch_name: ci-pr${{ github.event.number }}-run${{ github.run_id }}
           api_key: ${{ secrets.NEON_API_KEY }}
+      - name: reset the disposable Neon branch schema
+        env:
+          DATABASE_URL_DIRECT: ${{ steps.neon.outputs.db_url }}
+        run: |
+          psql "$DATABASE_URL_DIRECT" \
+            --set=ON_ERROR_STOP=1 \
+            --command='DROP SCHEMA IF EXISTS public CASCADE; CREATE SCHEMA public;'
       - name: migrate the Neon branch for the live suites
         env:
           DATABASE_URL_DIRECT: ${{ steps.neon.outputs.db_url }}

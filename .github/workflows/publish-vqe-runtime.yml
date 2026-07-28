@@ -1,22 +1,12 @@
 name: publish-vqe-runtime
 
 on:
-  push:
-    branches:
-      - feature/vqe
-    paths:
-      - .github/workflows/publish-vqe-runtime.yml
-      - runtimes/vqe/**
-      - docs/atlas/fixtures/h2_sto3g/**
   workflow_dispatch:
     inputs:
       source_commit:
         description: Full commit SHA containing the qualified runtime payload
         required: true
         type: string
-
-env:
-  QUALIFIED_RUNTIME_PAYLOAD_COMMIT: 99e95a9a2589a3ca0ac01c3e44499046fabbce89
 
 permissions:
   contents: read
@@ -36,10 +26,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ inputs.source_commit || env.QUALIFIED_RUNTIME_PAYLOAD_COMMIT }}
+          ref: ${{ inputs.source_commit }}
       - id: commit
         env:
-          REQUESTED_COMMIT: ${{ inputs.source_commit || env.QUALIFIED_RUNTIME_PAYLOAD_COMMIT }}
+          REQUESTED_COMMIT: ${{ inputs.source_commit }}
         run: |
           set -euo pipefail
           if [[ ! "$REQUESTED_COMMIT" =~ ^[0-9a-f]{40}$ ]]; then
@@ -81,30 +71,103 @@ jobs:
           outputs: type=image,name=ghcr.io/eshmis/majorana-vqe-${{ matrix.framework }}:source-${{ needs.validate.outputs.source_commit }},push=true,oci-mediatypes=true,compression=zstd,compression-level=3,force-compression=true
           provenance: mode=max
           sbom: true
-      - name: write immutable digest evidence
+      - id: attest
+        name: attest the registry image
+        uses: actions/attest@v4
+        with:
+          subject-name: ghcr.io/eshmis/majorana-vqe-${{ matrix.framework }}
+          subject-digest: ${{ steps.build.outputs.digest }}
+          push-to-registry: true
+      - name: inspect registry identity and write immutable evidence
         env:
           DIGEST: ${{ steps.build.outputs.digest }}
           FRAMEWORK: ${{ matrix.framework }}
           SOURCE_COMMIT: ${{ needs.validate.outputs.source_commit }}
+          ATTESTATION_ID: ${{ steps.attest.outputs.attestation-id }}
+          ATTESTATION_URL: ${{ steps.attest.outputs.attestation-url }}
         run: |
+          set -euo pipefail
           mkdir -p runtime-digests
+          image="ghcr.io/eshmis/majorana-vqe-$FRAMEWORK"
+          reference="$image@$DIGEST"
+          docker buildx imagetools inspect --raw "$reference" \
+            > "runtime-digests/$FRAMEWORK-index.json"
+          platform_digest="$(
+            jq -er '
+              [
+                .manifests[]
+                | select(.platform.os == "linux")
+                | select(.platform.architecture == "amd64")
+                | .digest
+              ]
+              | if length == 1 then .[0] else error("expected exactly one linux/amd64 manifest") end
+            ' "runtime-digests/$FRAMEWORK-index.json"
+          )"
+          docker buildx imagetools inspect --raw "$image@$platform_digest" \
+            > "runtime-digests/$FRAMEWORK-platform.json"
+          config_digest="$(
+            jq -er '.config.digest' "runtime-digests/$FRAMEWORK-platform.json"
+          )"
+          mapfile -t attestation_digests < <(
+            jq -r '
+              .manifests[]
+              | select(.annotations["vnd.docker.reference.type"] == "attestation-manifest")
+              | .digest
+            ' "runtime-digests/$FRAMEWORK-index.json"
+          )
+          if [[ "${#attestation_digests[@]}" -lt 1 ]]; then
+            echo "::error::registry index has no BuildKit attestation manifest"
+            exit 1
+          fi
+          docker buildx imagetools inspect "$reference" \
+            --format '{{ json (index .SBOM "linux/amd64").SPDX }}' \
+            > "runtime-digests/$FRAMEWORK-sbom.spdx.json"
+          docker buildx imagetools inspect "$reference" \
+            --format '{{ json (index .Provenance "linux/amd64").SLSA }}' \
+            > "runtime-digests/$FRAMEWORK-provenance.slsa.json"
+          jq -e 'type == "object" and length > 0' \
+            "runtime-digests/$FRAMEWORK-sbom.spdx.json" >/dev/null
+          jq -e 'type == "object" and length > 0' \
+            "runtime-digests/$FRAMEWORK-provenance.slsa.json" >/dev/null
+          sbom_sha256="$(
+            sha256sum "runtime-digests/$FRAMEWORK-sbom.spdx.json" | cut -d' ' -f1
+          )"
+          provenance_sha256="$(
+            sha256sum "runtime-digests/$FRAMEWORK-provenance.slsa.json" | cut -d' ' -f1
+          )"
+          attestation_digests_json="$(
+            printf '%s\n' "${attestation_digests[@]}" | jq -R . | jq -s .
+          )"
           jq -n \
             --arg framework "$FRAMEWORK" \
             --arg source_commit "$SOURCE_COMMIT" \
-            --arg image "ghcr.io/eshmis/majorana-vqe-$FRAMEWORK@$DIGEST" \
-            --arg manifest_digest "$DIGEST" \
+            --arg image "$reference" \
+            --arg index_digest "$DIGEST" \
+            --arg platform_manifest_digest "$platform_digest" \
+            --arg config_digest "$config_digest" \
+            --arg sbom_sha256 "$sbom_sha256" \
+            --arg provenance_sha256 "$provenance_sha256" \
+            --arg github_attestation_id "$ATTESTATION_ID" \
+            --arg github_attestation_url "$ATTESTATION_URL" \
+            --argjson buildkit_attestation_manifest_digests "$attestation_digests_json" \
             '{
-              schema_version: "1.0.0",
+              schema_version: "2.0.0",
               framework: $framework,
               source_commit: $source_commit,
               image: $image,
-              manifest_digest: $manifest_digest,
-              digest_kind: "oci_registry_manifest_digest",
-              platform: "linux/amd64"
+              index_digest: $index_digest,
+              platform: "linux/amd64",
+              platform_manifest_digest: $platform_manifest_digest,
+              image_config_digest: $config_digest,
+              buildkit_attestation_manifest_digests: $buildkit_attestation_manifest_digests,
+              sbom_sha256: $sbom_sha256,
+              provenance_sha256: $provenance_sha256,
+              github_attestation_id: $github_attestation_id,
+              github_attestation_url: $github_attestation_url
             }' > "runtime-digests/$FRAMEWORK.json"
       - uses: actions/upload-artifact@v4
         with:
           name: vqe-runtime-${{ matrix.framework }}-digest
-          path: runtime-digests/${{ matrix.framework }}.json
+          path: runtime-digests/${{ matrix.framework }}*
           if-no-files-found: error
           retention-days: 90
