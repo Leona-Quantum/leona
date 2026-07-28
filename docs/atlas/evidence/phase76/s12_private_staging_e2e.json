@@ -1,0 +1,186 @@
+{
+  "schema_version": "atlas.phase76.s12-private-staging-e2e.v1",
+  "recorded_date_jst": "2026-07-29",
+  "claim_boundary": "Private disposable staging evidence only. This record is not a public-production, optimizer-superiority, or human-reviewed scientific claim.",
+  "source": {
+    "branch": "feature/vqe",
+    "final_api_source_commit": "828773e3697f0aada6f1a375327ed94936e011cb",
+    "authenticated_comparison_proxy_commit": "86eb62fcca4c6e87d1ea569584dc8c46e0ff988f",
+    "github_ci_run": "https://github.com/EshMis/majorana/actions/runs/30382230953",
+    "github_ci_conclusion": "success"
+  },
+  "control_plane": {
+    "web": {
+      "provider": "Vercel Preview",
+      "branch": "feature/vqe",
+      "authentication": "WorkOS Staging"
+    },
+    "api": {
+      "provider": "Google Cloud Run",
+      "service": "majorana-api-vqe-test",
+      "region": "us-west1",
+      "revision": "majorana-api-vqe-test-00008-noc",
+      "image": "us-west1-docker.pkg.dev/majorana-core/majorana/api@sha256:2336d7e1ead4792247bb52b456400256e57b15a9f90891ae547c159d2342f6f8"
+    },
+    "database": {
+      "provider": "Neon",
+      "branch_id": "br-winter-surf-a6ls9v6s",
+      "endpoint_id": "ep-hidden-term-a6n5wwj4",
+      "migration_head": "0039",
+      "disposition": "disposable; deletion required after evidence commit"
+    },
+    "worker": {
+      "mode": "dedicated local staging worker",
+      "network_policy": "runtime containers executed with network none",
+      "public_execution": false
+    }
+  },
+  "runtime_identity": {
+    "qiskit": {
+      "version": "1.4.6",
+      "image": "ghcr.io/eshmis/majorana-vqe-qiskit@sha256:f2d19903e323da3f60039ac81627ed466f36055b7e157959ed1afe6168e4d992"
+    },
+    "pennylane": {
+      "version": "0.45.1",
+      "image": "ghcr.io/eshmis/majorana-vqe-pennylane@sha256:da0e2caa3ac106c6627a1f9f166f9b4213ce7fef8b3145263904e3df7b399c69"
+    }
+  },
+  "workspace_scope": {
+    "evidence_workspace_id": "019fa8e6-db6e-7bfb-92e1-6d45aef8da37",
+    "evidence_workspace_name": "reimantuan@gmail.com",
+    "cross_workspace_negative_check": {
+      "other_workspace_id": "019fa9cc-7eb6-72a3-b032-c326147ec7ed",
+      "other_workspace_name": "rei.watanabe@keio.jp",
+      "comparison_read_status": 404,
+      "verdict": "pass_tenant_isolation"
+    },
+    "logout_check": "pass; a post-logout /api/me request redirected to WorkOS Staging",
+    "same_workspace_login_reopen": "not_verified",
+    "same_workspace_login_reopen_reason": "The browser authentication flow repeatedly resolved to a distinct WorkOS user despite the operator selecting the intended account. No further repeated login requests were imposed on the operator."
+  },
+  "scientific_protocol": {
+    "problem": "H2 / STO-3G / 0.735 angstrom / neutral singlet",
+    "changed_role": "parameter_optimizer",
+    "baseline_optimizer": "scipy_minimize_scalar_bounded",
+    "candidate_optimizer": "scipy_slsqp",
+    "canonical_circuit_sha256": "f4fdb1ac3f041185fff63f6a7acb9d3ab1e9742131ed5bd3bb9ba2d99081a58c",
+    "resource_protocol": "canonical ansatz-only decomposition; reference-state preparation, measurement, hardware optimization, and routing excluded",
+    "cnot": 48,
+    "depth": 83,
+    "parameters": 1
+  },
+  "baseline": {
+    "workflow_artifact_version_id": "019fa973-3263-7ab0-9f7e-3008b86f9bdb",
+    "experiment_id": "019fa97e-bc90-7938-b720-b0202fbda8f7",
+    "executions": {
+      "qiskit": {
+        "id": "019fa97e-cbe3-788b-8931-a00f3661f433",
+        "energy_ha": -1.1373060357533555,
+        "absolute_error_ha": 1.8207657603852567e-14,
+        "fidelity": 0.9999999999999896,
+        "objective_evaluations": 13,
+        "private_artifact_version_id": "019fa97f-ae59-7a07-aa10-0b1e8b34ad98"
+      },
+      "pennylane": {
+        "id": "019fa97f-ed28-720d-a80d-c24a0ca05383",
+        "energy_ha": -1.1373060357533564,
+        "absolute_error_ha": 1.7319479184152442e-14,
+        "fidelity": 0.9999999999999902,
+        "objective_evaluations": 14,
+        "private_artifact_version_id": "019fa980-40bb-7385-83e6-c1bab00c7602"
+      }
+    }
+  },
+  "candidate": {
+    "workflow_artifact_version_id": "019fa990-2e7b-706c-8b0f-d02b4cfe264f",
+    "experiment_id": "019fa990-657d-7c92-a548-5cc1dda7e894",
+    "controlled_diff": {
+      "fixed_roles": 13,
+      "changed_roles": [
+        "parameter_optimizer"
+      ]
+    },
+    "executions": {
+      "qiskit": {
+        "id": "019fa991-eb41-7f50-8b8e-413de2f70069",
+        "energy_ha": -1.1373060357533529,
+        "absolute_error_ha": 2.0872192862952943e-14,
+        "fidelity": 0.9999999999999882,
+        "objective_evaluations": 4,
+        "private_artifact_version_id": "019fa99e-a14c-7569-899d-b9ea5c325881"
+      },
+      "pennylane": {
+        "id": "019fa992-f35b-73e7-b1c3-9ebd148c05f4",
+        "energy_ha": -1.1373060357533529,
+        "absolute_error_ha": 2.0872192862952943e-14,
+        "fidelity": 0.9999999999999885,
+        "objective_evaluations": 4,
+        "private_artifact_version_id": "019fa99c-54e4-709a-b80b-72722e32dd2e"
+      }
+    }
+  },
+  "controlled_comparison": {
+    "spec_id": "019fa9b4-dc70-7713-b555-b927b74da21a",
+    "spec_sha256": "ccc40cacc3211d72af6e0433b42aa8f558c0fb28dd3db2645ccdf7af013d8df3",
+    "runs": {
+      "qiskit": {
+        "id": "019fa9b5-a2a1-7579-ab43-ab7ce92cf289",
+        "status": "comparable",
+        "run_sha256": "d246474611df23e3a32be4061cae249c21ff11ba4cd5c9c10d169612edee1efd"
+      },
+      "pennylane": {
+        "id": "019fa9b5-a79b-7672-bd51-c3e4eecd2402",
+        "status": "comparable",
+        "run_sha256": "7c502ed4f19d724704c7a0e8c13dac4d16fd4180cce32ff8646d442d5ed11b97"
+      }
+    },
+    "invariant_audit": {
+      "checks_per_run": 13,
+      "all_checks_passed": true
+    }
+  },
+  "negative_tests": {
+    "invalid_workflow_swap": {
+      "status": 422,
+      "reason": "optimizer and stopping evaluation budgets disagree",
+      "new_workflow_created": false
+    },
+    "invalid_comparison_configuration_after_fix": {
+      "idempotency_key": "phase76-s12-invalid-comparison-after-fix-828773e",
+      "status": 422,
+      "reason": "candidate configuration field is not present in the immutable optimizer",
+      "comparison_row_created": false
+    },
+    "pre_fix_diagnostic": {
+      "spec_id": "019fa9b6-8f76-77ae-aea0-94f911a20b6c",
+      "spec_sha256": "720d151f175692464f66cecd9b87c4e93bd9a88070ef0fea9881e126e058b860",
+      "finding": "Before commit 828773e, an undeclared comparison configuration field was accepted.",
+      "runs_created": 0,
+      "artifacts_created": 0,
+      "publication": "blocked",
+      "disposition": "Retained append-only on the disposable branch for transparent diagnosis; removed only by deleting the entire disposable branch."
+    }
+  },
+  "verification": {
+    "targeted_configuration_tests": "23 passed",
+    "full_disposable_neon_phase76_tests": "3 passed in 697.23 seconds",
+    "web_tests_after_proxy_change": "105 passed",
+    "github_ci_exact_final_commit": "success",
+    "private_artifacts": {
+      "count": 4,
+      "visibility": "private",
+      "export_status": "unsupported"
+    }
+  },
+  "claim_decision": {
+    "private_compose_execute_compare_save": "pass",
+    "cross_workspace_isolation": "pass",
+    "same_workspace_logout_login_reopen": "not_verified",
+    "full_s12_continuous_e2e": "partial_pass",
+    "public_mvp": "no_go",
+    "scientific_performance_claim": "no_go",
+    "optimizer_superiority_claim": "not_allowed",
+    "allowed_statement": "Under one fixed H2 exact-statevector protocol, the private staging system composed, executed, compared, and saved bounded-scalar and SLSQP workflows for Qiskit and PennyLane. SLSQP used fewer objective evaluations in this instance, but no general performance claim is supported."
+  },
+  "secrets_recorded": false
+}

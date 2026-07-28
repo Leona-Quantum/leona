@@ -748,3 +748,67 @@ Structured evidence:
 `docs/atlas/evidence/phase76/s12_phase_close_audit.json`.
 
 S12: **audited_no_go_external_promotion_required**
+
+## S12 reassessment — private disposable staging execution
+
+The operator subsequently approved the previously blocked private-staging
+promotion work. The exact `feature/vqe` source was pushed, both Linux/amd64
+runtime images were published by OCI index digest, the matching API was
+deployed to an isolated Cloud Run test service, and a disposable Neon branch
+was migrated to `0039`.
+
+The authenticated private flow then produced:
+
+```text
+baseline Workflow
+→ Qiskit and PennyLane executions
+→ SLSQP-only Workflow swap
+→ Qiskit and PennyLane candidate executions
+→ two comparable ControlledComparison Runs
+→ four private, non-exportable evidence Artifacts
+```
+
+Both Comparison Runs passed all 13 server-derived invariants. The fixed
+resource protocol produced 48 CNOT, depth 83, and one parameter for every
+execution. The candidate used four objective evaluations in both evaluators;
+the bounded baseline used 13 for Qiskit and 14 for PennyLane. This is a
+single-instance observation and is not evidence of general SLSQP superiority.
+
+### Faults found during the live flow
+
+1. Authenticated comparison routes were absent from the narrow Web proxy
+   allowlist. Commit `86eb62f` added only create/read/run comparison routes;
+   list, delete, and publication routes remain blocked.
+2. A client could previously describe an optimizer configuration field that
+   did not exist in the immutable optimizer Definition. Commit `828773e`
+   binds concrete comparison claims to the immutable optimizer spec and
+   rejects unknown or mismatched fields.
+3. One pre-fix invalid comparison Spec was append-only persisted on the
+   disposable branch. It has no Runs, Artifacts, or publication state. It is
+   retained in the staging evidence record and removed only with the whole
+   disposable branch.
+
+The correct negative Workflow swap and the post-fix invalid comparison both
+returned HTTP 422 without creating a new Workflow or Comparison Spec.
+
+### Authentication boundary
+
+Logout was observed: a subsequent `/api/me` request redirected to WorkOS
+Staging. A login under a distinct WorkOS identity received an isolated
+workspace and a 404 when reading the private comparison, proving negative
+tenant isolation.
+
+The intended same-workspace login/reopen was **not observed**. Although the
+operator selected the intended Gmail identity, the authentication result
+repeatedly resolved to a distinct WorkOS user. Repeating the same operator
+action was stopped. Database durability and pre-logout comparison reads were
+verified, but they do not substitute for the missing same-workspace
+post-login observation.
+
+Structured evidence:
+`docs/atlas/evidence/phase76/s12_private_staging_e2e.json`.
+
+S12 reassessment:
+**partial_pass_private_staging; same_workspace_login_reopen_not_verified**.
+
+Public MVP and scientific performance claims remain **NO-GO**.
