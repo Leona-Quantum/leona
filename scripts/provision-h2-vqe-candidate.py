@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import os
+import hashlib
 from pathlib import Path
 
 from majorana_contracts import Scope
@@ -32,13 +33,28 @@ ROOT = Path(__file__).resolve().parents[1]
 MANIFEST_PATH = ROOT / "docs" / "atlas" / "fixtures" / "h2_sto3g" / ("registry_manifest_v0.2.json")
 
 
+def _workspace_slug(scope: Scope, semantic_key: str) -> str:
+    semantic_suffix = hashlib.sha256(semantic_key.encode()).hexdigest()[:16]
+    workspace_suffix = hashlib.sha256(str(scope.workspace_id).encode()).hexdigest()[:12]
+    return f"vqe-h2-candidate-{semantic_suffix}-{workspace_suffix}"
+
+
 async def _component(
     scope: Scope,
     session,
     entry: dict,
 ):
     semantic_key = entry["semantic_key"]
-    existing_artifact = await artifacts.get_artifact_by_slug(scope, session, semantic_key)
+    storage_slug = _workspace_slug(scope, semantic_key)
+    existing_artifact = await artifacts.get_artifact_by_slug(scope, session, storage_slug)
+    if existing_artifact is None:
+        # Reuse the original pre-S12 seed only within the workspace that owns
+        # it. The repository lookup is tenant-scoped.
+        existing_artifact = await artifacts.get_artifact_by_slug(
+            scope,
+            session,
+            semantic_key,
+        )
     if existing_artifact is not None:
         if existing_artifact.current_version_id is None:
             raise RuntimeError(f"{semantic_key} exists without a current version")
@@ -58,7 +74,7 @@ async def _component(
     artifact = await artifacts.create_artifact(
         scope,
         session,
-        slug=semantic_key,
+        slug=storage_slug,
         title=semantic_key,
         family=Algorithm.VQE,
         framework=ContractFramework.QISKIT,
@@ -72,6 +88,7 @@ async def _component(
         qasm=None,
         metadata={
             "source": "frozen_h2_phase5_candidate",
+            "storage_slug_version": "workspace_scoped_v1",
             "human_review_state": "unreviewed",
             "publication": "blocked",
             "scientific_release": "blocked",

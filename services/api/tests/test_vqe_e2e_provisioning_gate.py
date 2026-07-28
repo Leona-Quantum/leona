@@ -2,8 +2,11 @@ from __future__ import annotations
 
 import importlib.util
 from pathlib import Path
+import uuid
 
 import pytest
+from majorana_contracts import Scope
+from majorana_contracts.enums import Role
 
 ROOT = Path(__file__).resolve().parents[3]
 SCRIPT = ROOT / "scripts" / "provision-h2-vqe-candidate.py"
@@ -44,6 +47,29 @@ def test_remote_provisioning_accepts_github_actions_neon(
 
     assert provision_script._remote_provisioning_allowed(
         "postgresql://example:secret@example-pooler.neon.tech/database"
+    )
+
+
+def test_candidate_storage_slug_is_workspace_scoped_and_semantically_stable(
+    provision_script,
+) -> None:
+    semantic_key = "h2.sto3g.actual_vqe.v0_2.problem"
+    first = Scope(
+        user_id=uuid.UUID("11111111-1111-4111-8111-111111111111"),
+        workspace_id=uuid.UUID("22222222-2222-4222-8222-222222222222"),
+        role=Role.OWNER,
+    )
+    second = Scope(
+        user_id=uuid.UUID("33333333-3333-4333-8333-333333333333"),
+        workspace_id=uuid.UUID("44444444-4444-4444-8444-444444444444"),
+        role=Role.OWNER,
+    )
+
+    assert provision_script._workspace_slug(first, semantic_key) != (
+        provision_script._workspace_slug(second, semantic_key)
+    )
+    assert provision_script._workspace_slug(first, semantic_key) == (
+        provision_script._workspace_slug(first, semantic_key)
     )
 
 

@@ -133,6 +133,29 @@ async def test_standard_materialization_is_idempotent_and_digest_stable(db):
 
 
 @requires_db
+async def test_standard_materialization_is_isolated_across_workspaces(db):
+    reports = []
+    for ordinal in range(2):
+        async with db() as session:
+            user, workspace = await system.get_or_provision_user(
+                session,
+                workos_user_id=f"phase76-materializer-tenant-{ordinal}-{uuid.uuid4()}",
+                email=f"phase76-materializer-{ordinal}-{uuid.uuid4().hex}@invalid.test",
+            )
+            scope = Scope(
+                user_id=user.id,
+                workspace_id=workspace.id,
+                role=Role.OWNER,
+            )
+            reports.append(await materialize_standard_vqe_catalog(scope, session))
+            await session.commit()
+
+    assert all(report.component_created == 29 for report in reports)
+    assert all(report.workflow_created == 7 for report in reports)
+    assert reports[0].catalog_digest_sha256 == reports[1].catalog_digest_sha256
+
+
+@requires_db
 async def test_comparison_spec_concurrency_is_idempotent_and_tenant_scoped(db):
     scope, spec = await _comparison_pair(db)
     key = f"phase76-comparison-{uuid.uuid4()}"

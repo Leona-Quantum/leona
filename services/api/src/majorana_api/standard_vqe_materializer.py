@@ -70,9 +70,28 @@ def _canonical_bytes(value: Any) -> bytes:
     ).encode()
 
 
-def _slug(kind: str, semantic_key: str) -> str:
+def _legacy_slug(kind: str, semantic_key: str) -> str:
     suffix = hashlib.sha256(semantic_key.encode()).hexdigest()[:24]
     return f"vqe-standard-{kind}-{suffix}"
+
+
+def _slug(kind: str, semantic_key: str) -> str:
+    """Return the deterministic pre-S12 slug used for legacy lookup.
+
+    Keep this helper as a compatibility surface for existing callers and
+    deterministic-identity tests. New writes use ``_workspace_slug`` below;
+    changing this value would prevent safe reuse of already-materialized
+    catalog entries.
+    """
+
+    return _legacy_slug(kind, semantic_key)
+
+
+def _workspace_slug(kind: str, semantic_key: str, workspace_id: Any) -> str:
+    """Return a storage identity without changing the scientific identity."""
+    semantic_suffix = hashlib.sha256(semantic_key.encode()).hexdigest()[:16]
+    workspace_suffix = hashlib.sha256(str(workspace_id).encode()).hexdigest()[:12]
+    return f"vqe-standard-{kind}-{semantic_suffix}-{workspace_suffix}"
 
 
 async def _persist_spec(
@@ -91,11 +110,21 @@ async def _persist_spec(
         component_type=component_type,
         spec_json=payload,
     )
+    storage_slug = _workspace_slug(kind, semantic_key, scope.workspace_id)
     artifact = await artifacts_repo.get_artifact_by_slug(
         scope,
         session,
-        _slug(kind, semantic_key),
+        storage_slug,
     )
+    if artifact is None:
+        # Reuse pre-S12 seeds in their original workspace. The repository
+        # lookup is tenant-scoped, so this cannot attach another workspace's
+        # legacy artifact.
+        artifact = await artifacts_repo.get_artifact_by_slug(
+            scope,
+            session,
+            _legacy_slug(kind, semantic_key),
+        )
     if artifact is not None:
         if artifact.current_version_id is None:
             raise StandardCatalogDriftError(
@@ -121,7 +150,7 @@ async def _persist_spec(
     artifact = await artifacts_repo.create_artifact(
         scope,
         session,
-        slug=_slug(kind, semantic_key),
+        slug=storage_slug,
         title=title,
         family=Algorithm.VQE,
         # Artifact.framework is a legacy required storage field. Scientific
@@ -140,6 +169,7 @@ async def _persist_spec(
             "semantic_key": semantic_key,
             "semantic_framework": "neutral",
             "legacy_framework_field": "qiskit_non_semantic",
+            "storage_slug_version": "workspace_scoped_v1",
             "publication": "blocked",
             "scientific_release": "blocked",
         },
