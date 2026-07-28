@@ -1117,6 +1117,41 @@ def _canonical_sha256(payload: dict[str, Any]) -> str:
     return hashlib.sha256(encoded).hexdigest()
 
 
+def _validate_concrete_comparison_configuration(
+    *,
+    label: str,
+    declared: dict[str, str],
+    optimizer_spec_json: dict[str, Any],
+) -> None:
+    """Bind client-facing comparison labels to an executable optimizer spec.
+
+    Structured-only definitions may not expose provider configuration yet.  A
+    concrete executable optimizer does, and accepting invented or mismatched
+    fields there would let a comparison claim a change that the immutable
+    Workflow does not contain.
+    """
+
+    if "algorithm" not in optimizer_spec_json:
+        return
+    if "algorithm" not in declared:
+        raise ComparisonIntegrityError(
+            f"{label} configuration must declare the server-resolved algorithm"
+        )
+    for key, value in declared.items():
+        actual = optimizer_spec_json.get(key)
+        if actual is None or isinstance(actual, (dict, list)):
+            raise ComparisonIntegrityError(
+                f"{label} configuration field is not present in the immutable optimizer"
+            )
+        canonical_actual = (
+            json.dumps(actual, separators=(",", ":")) if isinstance(actual, bool) else str(actual)
+        )
+        if value != canonical_actual:
+            raise ComparisonIntegrityError(
+                f"{label} configuration does not match the immutable optimizer"
+            )
+
+
 async def create_controlled_comparison_spec(
     scope: Scope,
     session: AsyncSession,
@@ -1153,10 +1188,10 @@ async def create_controlled_comparison_spec(
         catalog_workspace_id=catalog_workspace_id,
     )
 
-    async def role_digests(
+    async def role_components(
         links: list[VqeWorkflowComponentRow],
-    ) -> dict[ComponentType, str]:
-        result: dict[ComponentType, str] = {}
+    ) -> dict[ComponentType, VqeComponentSpecRow]:
+        result: dict[ComponentType, VqeComponentSpecRow] = {}
         for link in links:
             role = ComponentType(link.component_role)
             if role in result:
@@ -1167,11 +1202,17 @@ async def create_controlled_comparison_spec(
                 link.component_artifact_version_id,
                 catalog_workspace_id=catalog_workspace_id,
             )
-            result[role] = component.normalized_spec_sha256
+            result[role] = component
         return result
 
-    baseline_digests = await role_digests(baseline_links)
-    candidate_digests = await role_digests(candidate_links)
+    baseline_components = await role_components(baseline_links)
+    candidate_components = await role_components(candidate_links)
+    baseline_digests = {
+        role: component.normalized_spec_sha256 for role, component in baseline_components.items()
+    }
+    candidate_digests = {
+        role: component.normalized_spec_sha256 for role, component in candidate_components.items()
+    }
     if set(baseline_digests) != set(candidate_digests):
         raise ComparisonIntegrityError("Workflow role sets differ")
     observed_changed = {
@@ -1184,6 +1225,16 @@ async def create_controlled_comparison_spec(
     }
     if server_fixed != spec.fixed_component_digests:
         raise ComparisonIntegrityError("fixed component digests are not server-derived values")
+    _validate_concrete_comparison_configuration(
+        label="baseline",
+        declared=spec.baseline_configuration,
+        optimizer_spec_json=baseline_components[ComponentType.PARAMETER_OPTIMIZER].spec_json,
+    )
+    _validate_concrete_comparison_configuration(
+        label="candidate",
+        declared=spec.candidate_configuration,
+        optimizer_spec_json=candidate_components[ComponentType.PARAMETER_OPTIMIZER].spec_json,
+    )
 
     payload = spec.model_dump(mode="json")
     digest = _canonical_sha256(payload)
