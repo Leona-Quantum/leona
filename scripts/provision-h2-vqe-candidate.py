@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-"""Provision the frozen unreviewed H2 candidate into a local developer workspace.
+"""Provision the frozen unreviewed H2 candidate into an explicitly gated workspace.
 
-The command is intentionally unavailable outside a local development process.
+The command is intentionally unavailable outside local development, the
+dedicated GitHub Actions E2E, or the owner-approved Phase 7.6 S12 staging gate.
 It is idempotent and fails closed if an existing semantic key has different
-content.  It never publishes, accepts, or human-reviews an Artifact.
+content. It never publishes, accepts, or human-reviews an Artifact.
 """
 
 from __future__ import annotations
@@ -96,6 +97,21 @@ async def _component(
     return spec.artifact_version_id
 
 
+def _remote_provisioning_allowed(database_url: str) -> bool:
+    """Allow only CI or the exact owner-approved S12 staging environment."""
+    github_actions = (
+        os.environ.get("CI", "").strip().lower() == "true"
+        and os.environ.get("GITHUB_ACTIONS", "").strip().lower() == "true"
+    )
+    owner_staging = (
+        os.environ.get("MAJORANA_VQE_E2E_OWNER_STAGING_PROVISION", "").strip().lower()
+        in {"1", "true", "yes"}
+        and os.environ.get("MAJORANA_ENV", "").strip().lower() == "production"
+        and os.environ.get("MAJORANA_DEPLOYMENT_ENVIRONMENT", "").strip() == "phase76-s12-staging"
+    )
+    return ".neon.tech/" in database_url and (github_actions or owner_staging)
+
+
 async def provision() -> str:
     ci_e2e = os.environ.get("MAJORANA_VQE_E2E_PROVISION", "").strip().lower() in {
         "1",
@@ -104,12 +120,11 @@ async def provision() -> str:
     }
     if ci_e2e:
         database_url = os.environ.get("DATABASE_URL", "")
-        if not (
-            os.environ.get("CI", "").strip().lower() == "true"
-            and os.environ.get("GITHUB_ACTIONS", "").strip().lower() == "true"
-            and ".neon.tech/" in database_url
-        ):
-            raise RuntimeError("E2E provisioning requires GitHub Actions and an explicit Neon URL")
+        if not _remote_provisioning_allowed(database_url):
+            raise RuntimeError(
+                "E2E provisioning requires GitHub Actions or the explicit owner-approved "
+                "Phase 7.6 S12 staging gate, plus a Neon URL"
+            )
         workos_user_id = os.environ.get(
             "MAJORANA_VQE_E2E_USER_ID",
             "vqe-production-e2e",
