@@ -23,6 +23,18 @@ def provision_script():
     return _load_script()
 
 
+@pytest.fixture(autouse=True)
+def isolate_remote_provisioning_environment(monkeypatch: pytest.MonkeyPatch) -> None:
+    for name in (
+        "CI",
+        "GITHUB_ACTIONS",
+        "MAJORANA_VQE_E2E_OWNER_STAGING_PROVISION",
+        "MAJORANA_ENV",
+        "MAJORANA_DEPLOYMENT_ENVIRONMENT",
+    ):
+        monkeypatch.delenv(name, raising=False)
+
+
 def test_remote_provisioning_accepts_github_actions_neon(
     monkeypatch: pytest.MonkeyPatch,
     provision_script,
