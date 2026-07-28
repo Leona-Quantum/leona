@@ -93,16 +93,92 @@ test("no route builds a control-plane URL of its own", () => {
 });
 
 /**
+ * Blank out comments and string bodies so the scan below sees code only.
+ *
+ * The first version of this file anchored on `await|return|= fetch(` purely to
+ * avoid one comment in `account/profile` that mentions `fetch()` in prose. That
+ * bought a false negative for every other call form — `fetch(url);` on its own
+ * line, `void fetch(url)`, `globalThis.fetch(url)` — each of which is an untimed
+ * call that would have passed. Removing the prose instead lets the check be the
+ * obvious one.
+ *
+ * Characters are replaced rather than deleted so that nothing new abuts
+ * anything else and creates a match that was not in the source.
+ *
+ * Known limit: a regular-expression literal containing an odd quote would be
+ * misread as opening a string. No route contains one, and `no route calls fetch
+ * directly` failing loudly is the failure mode, not passing quietly.
+ */
+export function stripCommentsAndStrings(source: string): string {
+  let out = "";
+  let i = 0;
+  while (i < source.length) {
+    const two = source.slice(i, i + 2);
+    if (two === "//" || two === "/*") {
+      const end =
+        two === "//"
+          ? (source.indexOf("\n", i) + 1 || source.length + 1) - 1
+          : (source.indexOf("*/", i) + 2 || source.length + 2) - 2 + 2;
+      out += " ".repeat(end - i);
+      i = end;
+      continue;
+    }
+    const ch = source[i];
+    if (ch === '"' || ch === "'" || ch === "`") {
+      out += " ";
+      i += 1;
+      while (i < source.length && source[i] !== ch) {
+        if (source[i] === "\\") {
+          out += "  ";
+          i += 2;
+          continue;
+        }
+        out += source[i] === "\n" ? "\n" : " ";
+        i += 1;
+      }
+      out += " ";
+      i += 1;
+      continue;
+    }
+    out += ch;
+    i += 1;
+  }
+  return out;
+}
+
+/**
+ * The stripper is the load-bearing half of the test below, so it is checked
+ * against the cases that motivated it rather than trusted. Without the first
+ * assertion the scan fails on a comment; without the rest it passes on a real
+ * untimed call.
+ */
+test("the comment stripper keeps code and drops prose", () => {
+  assert.doesNotMatch(stripCommentsAndStrings("// opaque to a fetch() caller"), /\bfetch\s*\(/);
+  assert.doesNotMatch(stripCommentsAndStrings('/* see fetch(x) */'), /\bfetch\s*\(/);
+  assert.doesNotMatch(stripCommentsAndStrings('const s = "fetch(evil)";'), /\bfetch\s*\(/);
+  for (const call of [
+    "fetch(url);",
+    "void fetch(url);",
+    "const r = (await fetch(url));",
+    "return globalThis.fetch(url);",
+    "await  fetch (url);",
+  ]) {
+    assert.match(stripCommentsAndStrings(call), /\bfetch\s*\(/, `should have caught: ${call}`);
+  }
+  // The helpers must not read as a bare `fetch` — the name only differs after
+  // the point the pattern stops looking.
+  assert.doesNotMatch(stripCommentsAndStrings("await fetchControlPlane(u);"), /\bfetch\s*\(/);
+});
+
+/**
  * A bare `fetch` is the one way to reintroduce an untimed call without
- * tripping anything above. Anchored on the call forms that actually appear in
- * a route body so that prose mentioning `fetch()` in a comment does not fail
- * the build.
+ * tripping anything above.
  */
 test("no route calls fetch directly", () => {
   for (const { name, source } of routes) {
     assert.doesNotMatch(
-      source,
-      /(?:await|return|=)\s+fetch\s*\(/,
+      stripCommentsAndStrings(source),
+      /\bfetch\s*\(/,
       `${name} calls fetch directly; use fetchControlPlane or openControlPlaneStream`,
     );
   }
