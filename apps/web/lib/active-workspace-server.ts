@@ -1,8 +1,7 @@
 import "server-only";
 
 import { getMajoranaAuth } from "./auth";
-
-const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+import { controlPlaneUrl, fetchControlPlane } from "./control-plane";
 
 export type ActiveWorkspace = {
   id: string;
@@ -35,9 +34,8 @@ export type ActiveWorkspace = {
 export async function getActiveWorkspace(): Promise<ActiveWorkspace | null> {
   const { accessToken } = await getMajoranaAuth({ ensureSignedIn: true });
   try {
-    const upstream = await fetch(new URL("/v1/me", API_URL), {
+    const upstream = await fetchControlPlane(controlPlaneUrl("/v1/me"), {
       headers: { Authorization: `Bearer ${accessToken}` },
-      cache: "no-store",
     });
     if (!upstream.ok) return null;
     const payload = (await upstream.json()) as {
