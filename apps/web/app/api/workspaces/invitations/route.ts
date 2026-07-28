@@ -1,6 +1,10 @@
 import { NextResponse } from "next/server";
 import { getMajoranaAuth } from "../../../../lib/auth";
-import { controlPlaneUrl, fetchControlPlane } from "../../../../lib/control-plane";
+import {
+  controlPlaneUnavailable,
+  controlPlaneUrl,
+  fetchControlPlane,
+} from "../../../../lib/control-plane";
 
 export const dynamic = "force-dynamic";
 
@@ -21,9 +25,13 @@ export async function GET() {
       status: upstream.status,
       headers: { "Content-Type": upstream.headers.get("Content-Type") ?? "application/json" },
     });
-  } catch {
+  } catch (error) {
     // The notice simply does not appear. It is an announcement, not a gate —
-    // failing it closed would be worse than the outage it reports.
-    return NextResponse.json({ error: "control plane unavailable" }, { status: 502 });
+    // failing it closed would be worse than the outage it reports. It still
+    // answers through the shared helper: the client treats every failure the
+    // same way, but a hung control plane and a refused one have to stay
+    // separable in the logs, and this route is the likeliest to see either —
+    // it is fetched on every authenticated page load.
+    return controlPlaneUnavailable(error);
   }
 }
