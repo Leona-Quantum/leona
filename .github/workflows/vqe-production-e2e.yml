@@ -63,8 +63,8 @@ jobs:
           echo "MAJORANA_VQE_E2E_WORKFLOW_ID=$workflow_id" >> "$GITHUB_ENV"
       - name: pre-provision approved OCI digests
         run: |
-          docker pull --platform linux/amd64 ghcr.io/eshmis/majorana-vqe-qiskit@sha256:3b66b9a813346c4ebba446c2cb80119b4d379725797f90463d2068e5285d62f6
-          docker pull --platform linux/amd64 ghcr.io/eshmis/majorana-vqe-pennylane@sha256:205a795608b99e6901e9a03696a0aa38be718c636cdcadd530ada7492c288fd2
+          docker pull --platform linux/amd64 ghcr.io/eshmis/majorana-vqe-qiskit@sha256:f2d19903e323da3f60039ac81627ed466f36055b7e157959ed1afe6168e4d992
+          docker pull --platform linux/amd64 ghcr.io/eshmis/majorana-vqe-pennylane@sha256:da0e2caa3ac106c6627a1f9f166f9b4213ce7fef8b3145263904e3df7b399c69
       - name: WorkOS JWT contract → Neon → real OCI runtime E2E
         env:
           DATABASE_URL: ${{ steps.neon.outputs.db_url_with_pooler }}

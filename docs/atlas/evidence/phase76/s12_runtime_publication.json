@@ -1,0 +1,47 @@
+{
+  "schema_version": "atlas.phase76.s12-runtime-publication.v1",
+  "claim_boundary": "Private staging runtime qualification only; this is not a public-production or optimizer-superiority claim.",
+  "release_candidate_tag": "atlas-vqe-phase76-s12-rc1",
+  "runtime_payload_source_commit": "fae2d2f4d6310a6cbc29cc0fe5ebab20b361ae07",
+  "qualification_workflow_commit": "e019a6a850e05a0b5d652ef0c6bcbcb4e4770227",
+  "source_ci_run": "https://github.com/EshMis/majorana/actions/runs/30333523336",
+  "publication_run": "https://github.com/EshMis/majorana/actions/runs/30338266230",
+  "platform": "linux/amd64",
+  "shared_inputs": {
+    "dockerfile_sha256": "1c292a4e33cf09c03ceba899d855c16e7b22005fef87af4722099e99e70029aa",
+    "fixture_manifest_sha256": "6424713c69c2b734172db47329b7deb62b67a743c80fd792f48173fdaa4e3edc",
+    "canonical_circuit_file_sha256": "dc5970b66b3bb5da2467bdacfd5166373b2341f293c74486383bf2a0397cf43a",
+    "optimizer_protocol_sha256": "e061c99cf94d585341c89af44db12881c0dd77d487807720e0072202e361274f",
+    "qualification_script_sha256": "7f74f0447c1747d080062839e8fa2f9d4225000c78ad9e1a8f75a556fd85b69a"
+  },
+  "frameworks": {
+    "qiskit": {
+      "image": "ghcr.io/eshmis/majorana-vqe-qiskit@sha256:f2d19903e323da3f60039ac81627ed466f36055b7e157959ed1afe6168e4d992",
+      "oci_index_digest": "sha256:f2d19903e323da3f60039ac81627ed466f36055b7e157959ed1afe6168e4d992",
+      "platform_manifest_digest": "sha256:3461b33911b58018dc30c742e9dceb0f230b33fbe53266097020276f1273cc02",
+      "image_config_digest": "sha256:468347cd3afad741615aaed5b06558d27de9a01d53574987f3a3d1c70b59e425",
+      "buildkit_attestation_manifest_digest": "sha256:0fecaefdab93bf11b134fd4e64531c12ee1fe46d57342715439e41b0ae553165",
+      "lock_sha256": "51c8ed79eacab8292464ff5adccc95899fe7c428ce1568a8c068758d4a7b3159",
+      "entrypoint_sha256": "03619d9e561c3358b7b264b64174fce834aac14a9ae4c2fe9d00de8603b1821a",
+      "sbom_sha256": "2767b23bc23a3e6c4eb6294e1249e34ca2c38107f8793e404897b90444e777c3",
+      "provenance_sha256": "45f66c5337c2d0fb57ebc802a12ac33ee5f85769f9434fcd54610fe6914694eb",
+      "github_attestation_id": "37460770",
+      "github_attestation_url": "https://github.com/EshMis/majorana/attestations/37460770",
+      "github_attestation_verified": true
+    },
+    "pennylane": {
+      "image": "ghcr.io/eshmis/majorana-vqe-pennylane@sha256:da0e2caa3ac106c6627a1f9f166f9b4213ce7fef8b3145263904e3df7b399c69",
+      "oci_index_digest": "sha256:da0e2caa3ac106c6627a1f9f166f9b4213ce7fef8b3145263904e3df7b399c69",
+      "platform_manifest_digest": "sha256:c141ef55a2104fa76f5688481983611fda8f9e2029b52b8ad755bff594aa81d8",
+      "image_config_digest": "sha256:a5da57b8fcfa21124322649dcbbb613327ee59c15938a15ff90161d217679e19",
+      "buildkit_attestation_manifest_digest": "sha256:355ed7d6340d3085b60bdb79b55153faba9a0ffbe8a9ea68f9a9f300811bac0c",
+      "lock_sha256": "00d97ccffef518385623b5943788db063de43cf6af3c9e144f0f66a8023fe8ac",
+      "entrypoint_sha256": "65ae875dca65d77f1f0ae5f556a5ce17e4621d8fff6b068e81b994c131cdd05a",
+      "sbom_sha256": "521c82dde8f8f76fbf9449669cb21ad3df91aced8f984abb470b328507dbb868",
+      "provenance_sha256": "e87d29092001816d5710a6ae0102faedbe062e99dd5ae18ff6ce09e0872c2dc8",
+      "github_attestation_id": "37460757",
+      "github_attestation_url": "https://github.com/EshMis/majorana/attestations/37460757",
+      "github_attestation_verified": true
+    }
+  }
+}

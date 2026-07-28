@@ -55,6 +55,11 @@ class ProductionRuntimeProfile:
     registry_manifest_digest: str
     platform_manifest_digest: str
     attestation_manifest_digest: str
+    image_config_digest: str
+    sbom_sha256: str
+    provenance_sha256: str
+    github_attestation_id: str
+    github_attestation_url: str
     lock_sha256: str
     dockerfile_sha256: str
     entrypoint_sha256: str
@@ -74,6 +79,11 @@ class ProductionRuntimeProfile:
             and self.registry_manifest_digest
             and self.platform_manifest_digest
             and self.attestation_manifest_digest
+            and self.image_config_digest
+            and self.sbom_sha256
+            and self.provenance_sha256
+            and self.github_attestation_id
+            and self.github_attestation_url
         )
 
 
@@ -184,14 +194,30 @@ _PROFILES = {
 
 _PRODUCTION_DIGESTS = {
     Framework.QISKIT: {
-        "registry": "sha256:3b66b9a813346c4ebba446c2cb80119b4d379725797f90463d2068e5285d62f6",
-        "platform": "sha256:e82b920d7858d69360bb2e12ca5e997b87c286adcc56ce70ab55b3ab4345fb54",
-        "attestation": "sha256:f10e69154515eab0f45ae64faa82d35ae52571fb285c1c475104fe77405b910a",
+        "registry": "sha256:f2d19903e323da3f60039ac81627ed466f36055b7e157959ed1afe6168e4d992",
+        "platform": "sha256:3461b33911b58018dc30c742e9dceb0f230b33fbe53266097020276f1273cc02",
+        "attestation": "sha256:0fecaefdab93bf11b134fd4e64531c12ee1fe46d57342715439e41b0ae553165",
+        "config": "sha256:468347cd3afad741615aaed5b06558d27de9a01d53574987f3a3d1c70b59e425",
+        "sbom": "2767b23bc23a3e6c4eb6294e1249e34ca2c38107f8793e404897b90444e777c3",
+        "provenance": "45f66c5337c2d0fb57ebc802a12ac33ee5f85769f9434fcd54610fe6914694eb",
+        "github_attestation_id": "37460770",
+        "github_attestation_url": "https://github.com/EshMis/majorana/attestations/37460770",
+        "source_commit": "fae2d2f4d6310a6cbc29cc0fe5ebab20b361ae07",
+        "dockerfile": "1c292a4e33cf09c03ceba899d855c16e7b22005fef87af4722099e99e70029aa",
+        "entrypoint": "03619d9e561c3358b7b264b64174fce834aac14a9ae4c2fe9d00de8603b1821a",
     },
     Framework.PENNYLANE: {
-        "registry": "sha256:205a795608b99e6901e9a03696a0aa38be718c636cdcadd530ada7492c288fd2",
-        "platform": "sha256:37f41aa59b8b2a90fb968e3a5eb33dbbe183b63883743769c1a9b87a005ca0ca",
-        "attestation": "sha256:115abae60d178ae59c8886884059431b500fb556c5326c0fb5ecd9896fd21318",
+        "registry": "sha256:da0e2caa3ac106c6627a1f9f166f9b4213ce7fef8b3145263904e3df7b399c69",
+        "platform": "sha256:c141ef55a2104fa76f5688481983611fda8f9e2029b52b8ad755bff594aa81d8",
+        "attestation": "sha256:355ed7d6340d3085b60bdb79b55153faba9a0ffbe8a9ea68f9a9f300811bac0c",
+        "config": "sha256:a5da57b8fcfa21124322649dcbbb613327ee59c15938a15ff90161d217679e19",
+        "sbom": "521c82dde8f8f76fbf9449669cb21ad3df91aced8f984abb470b328507dbb868",
+        "provenance": "e87d29092001816d5710a6ae0102faedbe062e99dd5ae18ff6ce09e0872c2dc8",
+        "github_attestation_id": "37460757",
+        "github_attestation_url": "https://github.com/EshMis/majorana/attestations/37460757",
+        "source_commit": "fae2d2f4d6310a6cbc29cc0fe5ebab20b361ae07",
+        "dockerfile": "1c292a4e33cf09c03ceba899d855c16e7b22005fef87af4722099e99e70029aa",
+        "entrypoint": "65ae875dca65d77f1f0ae5f556a5ce17e4621d8fff6b068e81b994c131cdd05a",
     },
 }
 
@@ -219,16 +245,21 @@ def _production_profile(framework: Framework) -> ProductionRuntimeProfile:
         registry_manifest_digest=digests["registry"],
         platform_manifest_digest=digests["platform"],
         attestation_manifest_digest=digests["attestation"],
+        image_config_digest=digests["config"],
+        sbom_sha256=digests["sbom"],
+        provenance_sha256=digests["provenance"],
+        github_attestation_id=digests["github_attestation_id"],
+        github_attestation_url=digests["github_attestation_url"],
         lock_sha256=candidate.lock_sha256,
-        dockerfile_sha256=candidate.dockerfile_sha256,
-        entrypoint_sha256=candidate.entrypoint_sha256,
+        dockerfile_sha256=digests["dockerfile"],
+        entrypoint_sha256=digests["entrypoint"],
         fixture_manifest_sha256=candidate.fixture_manifest_sha256,
         canonical_circuit_file_sha256=candidate.canonical_circuit_file_sha256,
         canonical_circuit_sha256=candidate.canonical_circuit_sha256,
         compilation_protocol_sha256=candidate.compilation_protocol_sha256,
         common_basis_operation_sequence_sha256=(candidate.common_basis_operation_sequence_sha256),
         qualification_script_sha256=candidate.qualification_script_sha256,
-        runtime_payload_source_commit=candidate.runtime_payload_source_commit or "",
+        runtime_payload_source_commit=digests["source_commit"],
     )
 
 
