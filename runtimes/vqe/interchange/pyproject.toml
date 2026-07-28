@@ -1,0 +1,20 @@
+[project]
+name = "majorana-vqe-runtime-interchange"
+version = "0.1.0"
+requires-python = ">=3.12"
+dependencies = [
+    "majorana-vqe",
+    "numpy==2.5.1",
+    "openfermion==1.7.1",
+    "pennylane==0.45.1",
+    "qiskit==1.4.6",
+]
+
+[tool.uv.sources]
+majorana-vqe = { path = "../../../packages/py/vqe" }
+
+[dependency-groups]
+dev = ["pytest==9.1.1"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

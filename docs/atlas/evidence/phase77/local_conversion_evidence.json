@@ -1,0 +1,50 @@
+{
+  "canonical_inputs": {
+    "basis_state_sha256": "b9b6f0b05a8b2a198c4759cf2c2279c6d50529ec77e8c7201444fcc2ed693847",
+    "fermion_sha256": "0157d40431acec269fa97ea0b411667b04ce021759549a6eab468d91fe3b2f4e",
+    "parametric_circuit_sha256": "0f92f164765c1641e23891336efeb3132533b927eef85e4bec8e965df613c573",
+    "qubit_exact_sha256": "62dc2d6375a869b13601eb9acf313035a620dad702cdae473e7e6fe6ab1756ea"
+  },
+  "claim_scope": "private_bounded_conversion_evidence_only",
+  "human_review": "unreviewed",
+  "inherited_unresolved_issue": "Phase 7.6 selected WorkOS account and /api/me identity were not demonstrated to be the same identity; no repeated login requested.",
+  "openfermion_jordan_wigner": {
+    "exact_content_identity_claimed": false,
+    "input_qubit_exact_sha256": "62dc2d6375a869b13601eb9acf313035a620dad702cdae473e7e6fe6ab1756ea",
+    "limitation": "The fermionic input is reverse-JW derived from the frozen qubit fixture; this is structural round-trip evidence, not an independent chemistry derivation.",
+    "max_abs_matrix_difference": 1.000532989792191e-12,
+    "output_qubit_exact_sha256": "52764ac58405a6424f4f0539e2e600732d50a76cbb5c4eb2453be2ffb51a7a90",
+    "tolerance": 2e-12,
+    "verification": "matrix_equivalence"
+  },
+  "performance_claims": "blocked",
+  "phase": "7.7",
+  "public_execution": "blocked",
+  "qiskit": {
+    "exact_content_match": true,
+    "roundtrip_qubit_exact_sha256": "62dc2d6375a869b13601eb9acf313035a620dad702cdae473e7e6fe6ab1756ea"
+  },
+  "qiskit_pennylane_equivalence": {
+    "hamiltonian_matrix_witness_sha256": "6d09f3f04683a1dac53782cfa242c6707ea68863df0d6fd46e7cbc45f4e49dca",
+    "max_abs_hamiltonian_matrix_difference": 0.0,
+    "statevector_overlap_absolute": 0.9999999999999893,
+    "tolerance": 1e-12
+  },
+  "runtime": {
+    "machine": "arm64",
+    "numpy": "2.5.1",
+    "openfermion": "1.7.1",
+    "pennylane": "0.45.1",
+    "platform": "macOS-26.0.1-arm64-arm-64bit",
+    "python": "3.12.12 (main, Oct 28 2025, 11:52:25) [Clang 20.1.4 ]",
+    "qiskit": "1.4.6"
+  },
+  "schema_version": "0.1.0",
+  "source": {
+    "adapter_sha256": "6e7ff1ede543cb01386b0c2980875e36753454c0c5154d96c02372eaaf646c97",
+    "adapter_version": "0.1.0",
+    "manifest_sha256": "6424713c69c2b734172db47329b7deb62b67a743c80fd792f48173fdaa4e3edc",
+    "uv_lock_sha256": "df139fe5ac067e491325154199a75bdf72a34309ca9b620e3d804162b93bee65"
+  },
+  "status": "local_adapter_verified"
+}
