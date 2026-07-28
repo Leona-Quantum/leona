@@ -1,32 +1,12 @@
 import { NextResponse } from "next/server";
 import { getMajoranaAuth } from "../../../../lib/auth";
+import { isAllowedVqeProxyRequest } from "../../../../lib/vqe-proxy-policy";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
-const UUID = "[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}";
-const ALLOWED = [
-  /^experiments$/,
-  new RegExp(`^experiments/${UUID}$`),
-  new RegExp(`^experiments/${UUID}/executions$`),
-  new RegExp(`^experiments/${UUID}/cancel$`),
-  new RegExp(`^executions/${UUID}$`),
-  new RegExp(`^executions/${UUID}/materialize$`),
-];
-
-function allowed(path: string, method: string): boolean {
-  if (!ALLOWED.some((pattern) => pattern.test(path))) return false;
-  if (method === "GET") return !path.endsWith("/cancel") && !path.endsWith("/materialize");
-  if (method === "POST") {
-    return path === "experiments"
-      || path.endsWith("/executions")
-      || path.endsWith("/cancel")
-      || path.endsWith("/materialize");
-  }
-  return false;
-}
 
 async function proxy(request: Request, context: { params: Promise<{ path: string[] }> }) {
   const path = (await context.params).path.join("/");
-  if (!allowed(path, request.method)) {
+  if (!isAllowedVqeProxyRequest(path, request.method)) {
     return NextResponse.json({ error: "unsupported VQE proxy path" }, { status: 404 });
   }
   const { accessToken } = await getMajoranaAuth({ ensureSignedIn: true });
