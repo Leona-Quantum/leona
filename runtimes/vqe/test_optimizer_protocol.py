@@ -50,7 +50,9 @@ def test_slsqp_can_reach_a_frozen_boundary() -> None:
 
 
 def test_deterministic_replay_has_identical_trajectory() -> None:
-    objective = lambda theta: (theta + 0.125) ** 2
+    def objective(theta: float) -> float:
+        return (theta + 0.125) ** 2
+
     left = optimize_one_parameter(objective, algorithm="scipy_slsqp")
     right = optimize_one_parameter(objective, algorithm="scipy_slsqp")
     assert left == right

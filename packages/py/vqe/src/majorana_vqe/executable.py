@@ -507,9 +507,6 @@ def load_h2_executable_component_specs(
     if any(not isinstance(value, dict) for value in raw.values()):
         raise ExecutableCompositionError("every H2 component payload must be an object")
     try:
-        return {
-            ComponentType(role): value
-            for role, value in raw.items()
-        }
+        return {ComponentType(role): value for role, value in raw.items()}
     except ValueError as exc:
         raise ExecutableCompositionError("fixture contains an unknown component role") from exc

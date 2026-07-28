@@ -47,7 +47,9 @@ def test_only_runtime_qualified_h2_workflow_is_marked_executable():
 
 def test_bindings_do_not_misattribute_cross_provider_components():
     by_component = {
-        component: [item for item in STANDARD_IMPLEMENTATIONS if item.component_semantic_key == component]
+        component: [
+            item for item in STANDARD_IMPLEMENTATIONS if item.component_semantic_key == component
+        ]
         for component in {item.component_semantic_key for item in STANDARD_IMPLEMENTATIONS}
     }
     assert {item.provider for item in by_component["preparation.pyscf.rhf.v1"]} == {"pyscf"}
@@ -87,9 +89,9 @@ def test_fixed_ansatz_and_adapt_roles_have_explicit_applicability():
         if selection.role in not_applicable
     )
     assert check_workflow_compatibility(uccsd).compatible is False
-    assert {
-        issue.missing_contract for issue in check_workflow_compatibility(uccsd).issues
-    } == {"parameters:1"}
+    assert {issue.missing_contract for issue in check_workflow_compatibility(uccsd).issues} == {
+        "parameters:1"
+    }
     adapt = workflow_by_key("workflow.h2.adapt.v1")
     assert all(
         selection.applicability is RoleApplicability.REQUIRED
@@ -118,9 +120,7 @@ def test_component_on_not_applicable_role_fails_closed():
         ),
     )
     result = check_workflow_compatibility(invalid)
-    assert "component_present_for_inapplicable_role" in {
-        issue.code for issue in result.issues
-    }
+    assert "component_present_for_inapplicable_role" in {issue.code for issue in result.issues}
 
 
 def test_configuration_migration_never_silently_discards_fields():

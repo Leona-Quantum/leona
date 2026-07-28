@@ -192,9 +192,7 @@ def test_slsqp_swap_changes_only_optimizer_scientific_binding():
         binding.role: binding for binding in candidate.portable_spec.component_bindings
     }
     changed_roles = [
-        role
-        for role in baseline_bindings
-        if baseline_bindings[role] != candidate_bindings[role]
+        role for role in baseline_bindings if baseline_bindings[role] != candidate_bindings[role]
     ]
     assert changed_roles == [ComponentType.PARAMETER_OPTIMIZER]
     assert baseline.portable_spec.dataset_snapshot_sha256 == (

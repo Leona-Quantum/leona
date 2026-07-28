@@ -67,9 +67,7 @@ async def _comparison_pair(factory):
             limit=200,
         )
         baseline = next(
-            row
-            for row in workflows
-            if row.semantic_key == "workflow.h2.fixed_excitation.v1"
+            row for row in workflows if row.semantic_key == "workflow.h2.fixed_excitation.v1"
         )
         optimizers = await vqe_repo.list_component_specs(
             scope,
@@ -77,9 +75,7 @@ async def _comparison_pair(factory):
             component_type=ComponentType.PARAMETER_OPTIMIZER,
             limit=200,
         )
-        slsqp = next(
-            row for row in optimizers if row.semantic_key == "optimizer.slsqp.v1"
-        )
+        slsqp = next(row for row in optimizers if row.semantic_key == "optimizer.slsqp.v1")
         candidate = await vqe_repo.save_component_swap_workflow_draft(
             scope,
             session,
@@ -111,9 +107,7 @@ async def _comparison_pair(factory):
         await session.commit()
         spec = ControlledComparisonSpecV1(
             baseline_workflow_artifact_version_id=baseline.artifact_version_id,
-            candidate_workflow_artifact_version_id=(
-                candidate.workflow_spec.artifact_version_id
-            ),
+            candidate_workflow_artifact_version_id=(candidate.workflow_spec.artifact_version_id),
             changed_role=ComponentType.PARAMETER_OPTIMIZER,
             fixed_component_digests=fixed,
             baseline_configuration={"algorithm": "bounded"},

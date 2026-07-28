@@ -24,12 +24,7 @@ COMPONENT_FIXTURE = (
 )
 MANIFEST = ROOT / "docs" / "atlas" / "fixtures" / "h2_sto3g" / "manifest.json"
 OUTPUT = (
-    ROOT
-    / "docs"
-    / "atlas"
-    / "evidence"
-    / "phase76"
-    / "h2_baseline_scientific_identity_v0.1.json"
+    ROOT / "docs" / "atlas" / "evidence" / "phase76" / "h2_baseline_scientific_identity_v0.1.json"
 )
 
 

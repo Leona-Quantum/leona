@@ -882,12 +882,8 @@ class VqeControlledComparisonRun(Base):
     comparison_spec_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("vqe_controlled_comparison_specs.id")
     )
-    baseline_execution_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("vqe_executions.id")
-    )
-    candidate_execution_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("vqe_executions.id")
-    )
+    baseline_execution_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("vqe_executions.id"))
+    candidate_execution_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("vqe_executions.id"))
     status: Mapped[str]
     run_json: Mapped[dict[str, Any]]
     run_sha256: Mapped[str]

@@ -33,9 +33,7 @@ def test_plan_is_not_a_result_and_changed_role_cannot_be_fixed() -> None:
         ControlledComparisonSpecV1(
             **{
                 **spec.model_dump(),
-                "fixed_component_digests": {
-                    ComponentType.PARAMETER_OPTIMIZER: "d" * 64
-                },
+                "fixed_component_digests": {ComponentType.PARAMETER_OPTIMIZER: "d" * 64},
             }
         )
 
@@ -51,9 +49,7 @@ def test_comparable_run_requires_every_invariant() -> None:
     }
     assert ControlledComparisonRunV1(**run_args).status is ControlledComparisonStatus.COMPARABLE
     with pytest.raises(ValidationError, match="every invariant"):
-        ControlledComparisonRunV1(
-            **{**run_args, "invariant_audit": {"same_problem": False}}
-        )
+        ControlledComparisonRunV1(**{**run_args, "invariant_audit": {"same_problem": False}})
 
 
 def test_comparability_failure_requires_reason_and_failed_invariant() -> None:

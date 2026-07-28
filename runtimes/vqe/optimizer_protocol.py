@@ -58,9 +58,7 @@ def optimize_one_parameter(
                 f"objective evaluation cap {protocol.max_function_evaluations} reached"
             )
         if time.monotonic() - started > protocol.wall_time_limit_s:
-            raise TimeoutError(
-                f"optimizer wall-time cap {protocol.wall_time_limit_s:.1f}s reached"
-            )
+            raise TimeoutError(f"optimizer wall-time cap {protocol.wall_time_limit_s:.1f}s reached")
         theta = float(np.asarray(theta_like, dtype=float).reshape(-1)[0])
         if not math.isfinite(theta):
             raise ValueError("optimizer proposed a non-finite parameter")

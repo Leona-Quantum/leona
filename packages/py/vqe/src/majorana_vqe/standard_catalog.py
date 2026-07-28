@@ -576,9 +576,7 @@ _H2_EXECUTABLE_COMPONENTS = (
     "compilation.canonical_logical.v2",
 )
 
-_RUNTIME_EVIDENCE = (
-    "docs/atlas/evidence/phase5b_h2_runtime_qualification_2026-07-26.json",
-)
+_RUNTIME_EVIDENCE = ("docs/atlas/evidence/phase5b_h2_runtime_qualification_2026-07-26.json",)
 _FIXTURE_EVIDENCE = (
     "docs/atlas/fixtures/h2_sto3g/manifest.json",
     "docs/atlas/fixtures/h2_sto3g/executable_components_v0.2.json",
@@ -763,9 +761,7 @@ _H2_FIXED_SELECTIONS = tuple(
             item.component_type for item in STANDARD_COMPONENTS if item.semantic_key == semantic_key
         ),
         component_semantic_key=semantic_key,
-        bound_contracts=(_port("qubits:4"),)
-        if semantic_key == "mapping.jordan_wigner.v1"
-        else (),
+        bound_contracts=(_port("qubits:4"),) if semantic_key == "mapping.jordan_wigner.v1" else (),
     )
     for semantic_key in _H2_EXECUTABLE_COMPONENTS
 )
@@ -1001,9 +997,7 @@ def check_workflow_compatibility(
         compatible=not issues,
         contract_version=COMPATIBILITY_CONTRACT_VERSION,
         issues=tuple(issues),
-        accumulated_contracts=tuple(
-            f"{port.name}:{port.value}" for port in sorted(available)
-        ),
+        accumulated_contracts=tuple(f"{port.name}:{port.value}" for port in sorted(available)),
     )
 
 

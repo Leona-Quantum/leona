@@ -145,9 +145,7 @@ def _claim_inventory() -> dict[str, Any]:
             "remediation_phase": "7.6-S1",
         },
         "workflow_keys": [workflow.workflow_key for workflow in STANDARD_WORKFLOWS],
-        "comparison_keys": [
-            comparison.comparison_key for comparison in CONTROLLED_COMPARISONS
-        ],
+        "comparison_keys": [comparison.comparison_key for comparison in CONTROLLED_COMPARISONS],
     }
 
 
@@ -164,14 +162,10 @@ def _optimizer_swap_protocol() -> dict[str, Any]:
             "fixture_id": manifest["fixture_id"],
             "geometry": manifest["geometry"],
             "n_electrons": manifest["electron_orbital_qubit_counts"]["n_electrons"],
-            "n_spatial_orbitals": manifest["electron_orbital_qubit_counts"][
-                "n_spatial_orbitals"
-            ],
+            "n_spatial_orbitals": manifest["electron_orbital_qubit_counts"]["n_spatial_orbitals"],
             "n_qubits": manifest["electron_orbital_qubit_counts"]["n_qubits"],
             "nuclear_repulsion_ha": manifest["nuclear_repulsion_ha"],
-            "canonical_hamiltonian_term_count": manifest["canonical_hamiltonian"][
-                "term_count"
-            ],
+            "canonical_hamiltonian_term_count": manifest["canonical_hamiltonian"]["term_count"],
             "hamiltonian_digest_kind": "legacy_phase0_sha256",
             "hamiltonian_digest_sha256": manifest["hamiltonian_digest_sha256"],
             "manifest_sha256": _sha256_path(MANIFEST_PATH),
@@ -215,9 +209,7 @@ def _optimizer_swap_protocol() -> dict[str, Any]:
 def generate() -> None:
     EVIDENCE_DIR.mkdir(parents=True, exist_ok=True)
     source_commit = _git("rev-parse", "HEAD")
-    reports = {
-        framework: _run_runtime(framework) for framework in RUNTIME_COMMANDS
-    }
+    reports = {framework: _run_runtime(framework) for framework in RUNTIME_COMMANDS}
     for framework, report in reports.items():
         _write_json(EVIDENCE_DIR / f"{framework}_bounded_baseline_local.json", report)
 
@@ -229,9 +221,7 @@ def generate() -> None:
     raw_evidence = {
         framework: {
             "path": f"{framework}_bounded_baseline_local.json",
-            "sha256": _sha256_path(
-                EVIDENCE_DIR / f"{framework}_bounded_baseline_local.json"
-            ),
+            "sha256": _sha256_path(EVIDENCE_DIR / f"{framework}_bounded_baseline_local.json"),
             "status": report["status"],
             "framework": report["framework"],
             "platform": report["platform"],
@@ -249,13 +239,9 @@ def generate() -> None:
         "source_commit": source_commit,
         "branch": _git("branch", "--show-current"),
         "alembic_head": _alembic_head(),
-        "source_file_sha256": {
-            str(path): _sha256_path(ROOT / path) for path in SOURCE_PATHS
-        },
+        "source_file_sha256": {str(path): _sha256_path(ROOT / path) for path in SOURCE_PATHS},
         "evidence_file_sha256": {
-            "claim_inventory.json": _sha256_path(
-                EVIDENCE_DIR / "claim_inventory.json"
-            ),
+            "claim_inventory.json": _sha256_path(EVIDENCE_DIR / "claim_inventory.json"),
             "H2_OPTIMIZER_SWAP_PROTOCOL.json": _sha256_path(
                 EVIDENCE_DIR / "H2_OPTIMIZER_SWAP_PROTOCOL.json"
             ),
@@ -283,13 +269,12 @@ def check() -> None:
     for framework in RUNTIME_COMMANDS:
         report_path = EVIDENCE_DIR / f"{framework}_bounded_baseline_local.json"
         report = json.loads(report_path.read_text())
-        if report["canonical_input"]["manifest_sha256"] != protocol["problem"][
-            "manifest_sha256"
-        ]:
+        if report["canonical_input"]["manifest_sha256"] != protocol["problem"]["manifest_sha256"]:
             raise SystemExit(f"{framework} manifest identity mismatch")
-        if report["canonical_input"]["canonical_circuit_sha256"] != protocol[
-            "source_digests"
-        ]["canonical_circuit_sha256"]:
+        if (
+            report["canonical_input"]["canonical_circuit_sha256"]
+            != protocol["source_digests"]["canonical_circuit_sha256"]
+        ):
             raise SystemExit(f"{framework} circuit identity mismatch")
         if report["resources"]["common_basis_compiled"]["cnot_count"] != 48:
             raise SystemExit(f"{framework} CNOT protocol mismatch")

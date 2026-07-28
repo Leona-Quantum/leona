@@ -158,12 +158,16 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    count = op.get_bind().execute(
-        sa.text(
-            "select (select count(*) from vqe_controlled_comparison_specs) + "
-            "(select count(*) from vqe_controlled_comparison_runs)"
+    count = (
+        op.get_bind()
+        .execute(
+            sa.text(
+                "select (select count(*) from vqe_controlled_comparison_specs) + "
+                "(select count(*) from vqe_controlled_comparison_runs)"
+            )
         )
-    ).scalar_one()
+        .scalar_one()
+    )
     if count:
         raise RuntimeError("cannot downgrade 0039 while comparison evidence exists")
     for table in reversed(_TABLES):

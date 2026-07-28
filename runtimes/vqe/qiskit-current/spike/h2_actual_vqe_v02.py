@@ -22,6 +22,7 @@ import qiskit
 import scipy
 from qiskit import QuantumCircuit, transpile
 from qiskit.quantum_info import SparsePauliOp, Statevector
+
 try:
     from optimizer_protocol import OptimizerAlgorithm, optimize_one_parameter
 except ModuleNotFoundError:  # Local checkout; the container copies it beside this script.
@@ -178,6 +179,7 @@ def run(
     circuit_spec = json.loads(circuit_bytes)
     hamiltonian = _hamiltonian(manifest)
     nuclear_repulsion = float(manifest["nuclear_repulsion_ha"])
+
     def energy(theta: float) -> float:
         state = Statevector.from_instruction(_circuit(float(theta), circuit_spec))
         return float(np.real(state.expectation_value(hamiltonian))) + nuclear_repulsion

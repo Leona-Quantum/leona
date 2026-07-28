@@ -80,20 +80,9 @@ def test_raw_runtime_report_translates_to_complete_evidence(framework, filename)
         (Framework.PENNYLANE, "pennylane_slsqp_linux_amd64.json"),
     ],
 )
-def test_slsqp_runtime_report_requires_matching_scientific_selection(
-    framework, filename
-):
+def test_slsqp_runtime_report_requires_matching_scientific_selection(framework, filename):
     profile = candidate_runtime_profile(framework)
-    report = json.loads(
-        (
-            ROOT
-            / "docs"
-            / "atlas"
-            / "evidence"
-            / "phase76"
-            / filename
-        ).read_text()
-    )
+    report = json.loads((ROOT / "docs" / "atlas" / "evidence" / "phase76" / filename).read_text())
 
     evidence = build_success_evidence(
         report,

@@ -19,6 +19,7 @@ from pathlib import Path
 import numpy as np
 import pennylane as qml
 import scipy
+
 try:
     from optimizer_protocol import OptimizerAlgorithm, optimize_one_parameter
 except ModuleNotFoundError:  # Local checkout; the container copies it beside this script.

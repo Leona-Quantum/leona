@@ -224,9 +224,7 @@ async def materialize_standard_vqe_catalog(
                 )
         else:
             expected = {
-                selection.role.value: component_versions[
-                    selection.component_semantic_key
-                ]
+                selection.role.value: component_versions[selection.component_semantic_key]
                 for selection in workflow.selections
                 if selection.component_semantic_key is not None
             }
@@ -236,8 +234,7 @@ async def materialize_standard_vqe_catalog(
                 spec.artifact_version_id,
             )
             actual = {
-                link.component_role: link.component_artifact_version_id
-                for link in actual_links
+                link.component_role: link.component_artifact_version_id for link in actual_links
             }
             if actual != expected:
                 raise StandardCatalogDriftError(
@@ -264,9 +261,7 @@ async def materialize_standard_vqe_catalog(
                     component_type=ComponentType.WORKFLOW,
                     spec_json={
                         **_json_value(workflow),
-                        "compatibility": _json_value(
-                            check_workflow_compatibility(workflow)
-                        ),
+                        "compatibility": _json_value(check_workflow_compatibility(workflow)),
                     },
                 ),
             }
@@ -278,7 +273,5 @@ async def materialize_standard_vqe_catalog(
         component_reused=len(STANDARD_COMPONENTS) - component_created,
         workflow_created=workflow_created,
         workflow_reused=len(STANDARD_WORKFLOWS) - workflow_created,
-        catalog_digest_sha256=hashlib.sha256(
-            _canonical_bytes(digest_payload)
-        ).hexdigest(),
+        catalog_digest_sha256=hashlib.sha256(_canonical_bytes(digest_payload)).hexdigest(),
     )

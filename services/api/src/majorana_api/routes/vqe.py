@@ -409,9 +409,7 @@ async def create_workflow_swap(
         saved = await vqe_repo.save_component_swap_workflow_draft(
             scope,
             session,
-            baseline_workflow_artifact_version_id=(
-                body.baseline_workflow_artifact_version_id
-            ),
+            baseline_workflow_artifact_version_id=(body.baseline_workflow_artifact_version_id),
             baseline_template_key=body.baseline_template_key,
             changed_role=ComponentType(body.changed_role),
             candidate_component_semantic_key=body.candidate_component_semantic_key,
@@ -661,9 +659,7 @@ async def get_controlled_comparison(
     scope: CurrentScope,
     session: DbSession,
 ) -> ControlledComparisonResource:
-    row = await vqe_repo.get_controlled_comparison_spec(
-        scope, session, comparison_spec_id
-    )
+    row = await vqe_repo.get_controlled_comparison_spec(scope, session, comparison_spec_id)
     return await _to_controlled_comparison_resource(scope, session, row)
 
 
