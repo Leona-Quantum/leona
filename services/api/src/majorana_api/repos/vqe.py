@@ -654,6 +654,7 @@ async def save_component_swap_workflow_draft(
     )
     workflow_payload = {
         **request_payload,
+        "schema_version": "0.2.0",
         "kind": "component_swap_workflow_draft",
         "request_sha256": request_sha256,
         "compatibility": dataclasses.asdict(compatibility),
@@ -691,7 +692,7 @@ async def save_component_swap_workflow_draft(
         scope,
         session,
         artifact_version_id=version.id,
-        schema_version="0.1.0",
+        schema_version="0.2.0",
         component_type=ComponentType.WORKFLOW,
         semantic_key=f"workflow.instance.{request_sha256}",
         spec_json=workflow_payload,
