@@ -120,10 +120,10 @@ jobs:
             exit 1
           fi
           docker buildx imagetools inspect "$reference" \
-            --format '{{ json (index .SBOM "linux/amd64").SPDX }}' \
+            --format '{{ json .SBOM.SPDX }}' \
             > "runtime-digests/$FRAMEWORK-sbom.spdx.json"
           docker buildx imagetools inspect "$reference" \
-            --format '{{ json (index .Provenance "linux/amd64").SLSA }}' \
+            --format '{{ json .Provenance.SLSA }}' \
             > "runtime-digests/$FRAMEWORK-provenance.slsa.json"
           jq -e 'type == "object" and length > 0' \
             "runtime-digests/$FRAMEWORK-sbom.spdx.json" >/dev/null
