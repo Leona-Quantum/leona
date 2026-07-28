@@ -98,11 +98,14 @@ async def _workflow(scope: Scope, session):
 
 
 def _resolved(workflow_id: uuid.UUID) -> ResolvedPortableExperiment:
+    semantic_keys = {
+        ComponentType.PARAMETER_OPTIMIZER: "optimizer.scipy_bounded_scalar.v1",
+    }
     bindings = [
         ComponentSemanticBinding(
             role=role,
             component_type=role,
-            component_semantic_key=f"h2.worker.{role.value}",
+            component_semantic_key=semantic_keys.get(role, f"h2.worker.{role.value}"),
             component_spec_sha256=_digest(role.value),
         )
         for role in PORTABLE_SCIENTIFIC_ROLES
