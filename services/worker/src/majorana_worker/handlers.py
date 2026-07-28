@@ -947,11 +947,23 @@ def _ansatz_digest(scientific_spec_json: dict[str, Any]) -> str:
 def _optimizer_algorithm(
     scientific_spec_json: dict[str, Any],
 ) -> OptimizerAlgorithm:
+    frozen_h2_bounded_scalar = (
+        "h2.sto3g.actual_vqe.v0_2.parameter_optimizer",
+        "dabb6c8ff883eb2e5c969a988a7a416a7415025e6cfa163e98a29ba262e5645c",
+    )
     for component in scientific_spec_json.get("component_bindings", []):
         if component.get("role") != "parameter_optimizer":
             continue
         semantic_key = component.get("component_semantic_key")
         if semantic_key == "optimizer.scipy_bounded_scalar.v1":
+            return "scipy_minimize_scalar_bounded"
+        if (
+            semantic_key,
+            component.get("component_spec_sha256"),
+        ) == frozen_h2_bounded_scalar:
+            # The owner-waived H2 v0.2 registry predates the canonical
+            # component key.  Accept only its exact reviewed digest; a reused
+            # legacy key with different scientific content remains rejected.
             return "scipy_minimize_scalar_bounded"
         if semantic_key == "optimizer.slsqp.v1":
             return "scipy_slsqp"

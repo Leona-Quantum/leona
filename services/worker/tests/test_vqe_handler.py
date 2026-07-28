@@ -121,6 +121,24 @@ def _install_common(monkeypatch):
     return state, payload
 
 
+def test_optimizer_algorithm_accepts_only_exact_frozen_h2_legacy_digest():
+    binding = {
+        "role": "parameter_optimizer",
+        "component_semantic_key": "h2.sto3g.actual_vqe.v0_2.parameter_optimizer",
+        "component_spec_sha256": (
+            "dabb6c8ff883eb2e5c969a988a7a416a7415025e6cfa163e98a29ba262e5645c"
+        ),
+    }
+    assert (
+        handlers._optimizer_algorithm({"component_bindings": [binding]})
+        == "scipy_minimize_scalar_bounded"
+    )
+
+    binding["component_spec_sha256"] = "0" * 64
+    with pytest.raises(ValueError, match="unsupported optimizer semantic key"):
+        handlers._optimizer_algorithm({"component_bindings": [binding]})
+
+
 async def test_vqe_handler_persists_success_and_closes_both_lifecycles(monkeypatch):
     RunStore.instances.clear()
     EventSink.events.clear()
