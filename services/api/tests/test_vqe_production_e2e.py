@@ -10,6 +10,7 @@ tenant was used.
 from __future__ import annotations
 
 import datetime as dt
+import hashlib
 import json
 import os
 import threading
@@ -69,13 +70,13 @@ def _start_jwks_server() -> tuple[ThreadingHTTPServer, threading.Thread, object]
     return server, thread, private_key
 
 
-def _token(private_key: object, issuer: str) -> str:
+def _token(private_key: object, issuer: str, *, session_id: str) -> str:
     now = dt.datetime.now(dt.UTC)
     return pyjwt.encode(
         {
             "iss": issuer,
             "sub": SUBJECT,
-            "sid": "session_phase6_e2e",
+            "sid": session_id,
             "client_id": CLIENT_ID,
             "iat": now,
             "exp": now + dt.timedelta(minutes=10),
@@ -88,9 +89,67 @@ def _token(private_key: object, issuer: str) -> str:
     )
 
 
+async def _execute_and_finish(
+    *,
+    client: httpx.AsyncClient,
+    factory,
+    experiment_id: str,
+    framework: str,
+    label: str,
+) -> dict:
+    response = await client.post(
+        f"/v1/vqe/experiments/{experiment_id}/executions",
+        headers={"Idempotency-Key": f"phase76-s12-execution-{label}-{framework}"},
+        json={
+            "requested_capability": "h2_sto3g_actual_vqe_v1",
+            "preferred_framework": framework,
+        },
+    )
+    assert response.status_code == 201, response.text
+    execution = response.json()
+    assert execution["production_runtime_status"] == "qualified"
+    assert execution["review_state"] == "owner_waived"
+
+    async with factory() as session:
+        job = await system.claim_job(
+            session,
+            worker_id="phase76-s12-production-e2e",
+            lease_seconds=300,
+        )
+        assert job is not None
+        assert job.kind == "vqe.execute"
+        assert job.payload["execution_id"] == execution["id"]
+        assert job.lease_token is not None
+        payload = dict(job.payload)
+        lease_token = job.lease_token
+        await session.commit()
+    async with factory() as session:
+        await handle_vqe_execute(session, payload)
+    async with factory() as session:
+        await system.finish_job(
+            session,
+            job_id=job.id,
+            lease_token=lease_token,
+            status="done",
+        )
+        await session.commit()
+
+    final_response = await client.get(f"/v1/vqe/executions/{execution['id']}")
+    assert final_response.status_code == 200, final_response.text
+    final = final_response.json()
+    assert final["status"] == "succeeded"
+    assert final["production_runtime_status"] == "qualified"
+    assert len(final["observations"]) == 1
+    result = final["observations"][0]["result_contract_json"]
+    assert result["status"] == "succeeded"
+    assert result["absolute_error_ha"] <= 1e-10
+    assert result["supplementary_evidence"]["public_execution"] == "blocked"
+    assert result["supplementary_evidence"]["production_runtime_status"] == "qualified"
+    return final
+
+
 @requires_production_e2e
-@pytest.mark.parametrize("framework", ["qiskit", "pennylane"])
-async def test_workos_contract_neon_and_real_oci_runtime_end_to_end(framework: str):
+async def test_workos_contract_neon_and_real_oci_runtime_end_to_end():
     server, thread, private_key = _start_jwks_server()
     issuer = f"http://127.0.0.1:{server.server_port}"
     auth_jwt._jwk_client.cache_clear()
@@ -107,7 +166,11 @@ async def test_workos_contract_neon_and_real_oci_runtime_end_to_end(framework: s
     app = create_app(settings)
     app.state.engine = engine
     app.state.session_factory = factory
-    headers = {"Authorization": f"Bearer {_token(private_key, issuer)}"}
+    headers = {
+        "Authorization": (
+            f"Bearer {_token(private_key, issuer, session_id='session_phase76_s12_first')}"
+        )
+    }
 
     try:
         transport = httpx.ASGITransport(app=app)
@@ -119,71 +182,204 @@ async def test_workos_contract_neon_and_real_oci_runtime_end_to_end(framework: s
             me = await client.get("/v1/me")
             assert me.status_code == 200, me.text
 
-            experiment_response = await client.post(
+            baseline_response = await client.post(
                 "/v1/vqe/experiments",
-                headers={"Idempotency-Key": f"phase6-production-e2e-experiment-{framework}"},
+                headers={"Idempotency-Key": "phase76-s12-baseline-experiment"},
                 json={"workflow_artifact_version_id": os.environ["MAJORANA_VQE_E2E_WORKFLOW_ID"]},
             )
-            assert experiment_response.status_code == 201, experiment_response.text
-            experiment = experiment_response.json()
+            assert baseline_response.status_code == 201, baseline_response.text
+            baseline_experiment = baseline_response.json()
 
-            execution_response = await client.post(
-                f"/v1/vqe/experiments/{experiment['id']}/executions",
-                headers={"Idempotency-Key": f"phase6-production-e2e-execution-{framework}"},
+            components_response = await client.get(
+                "/v1/atlas/components",
+                params={"component_type": "parameter_optimizer", "limit": 200},
+            )
+            assert components_response.status_code == 200, components_response.text
+            slsqp = next(
+                item
+                for item in components_response.json()["components"]
+                if item["semantic_key"] == "optimizer.slsqp.v1"
+            )
+            swap_response = await client.post(
+                "/v1/atlas/workflows/swaps",
+                headers={"Idempotency-Key": "phase76-s12-slsqp-swap"},
                 json={
-                    "requested_capability": "h2_sto3g_actual_vqe_v1",
-                    "preferred_framework": framework,
+                    "baseline_workflow_artifact_version_id": os.environ[
+                        "MAJORANA_VQE_E2E_WORKFLOW_ID"
+                    ],
+                    "baseline_template_key": "workflow.h2.fixed_excitation.v1",
+                    "changed_role": "parameter_optimizer",
+                    "candidate_component_semantic_key": "optimizer.slsqp.v1",
+                    "candidate_component_spec_sha256": slsqp["normalized_spec_sha256"],
+                    "configuration": {},
+                    "evaluator_provider": "qiskit",
                 },
             )
-            assert execution_response.status_code == 201, execution_response.text
-            execution = execution_response.json()
-            assert execution["production_runtime_status"] == "qualified"
-            assert execution["review_state"] == "owner_waived"
+            assert swap_response.status_code == 201, swap_response.text
+            swap = swap_response.json()
+            assert swap["execution_status"] == "private_qualification_candidate"
+            assert swap["visibility"] == "private"
 
-        async with factory() as session:
-            job = await system.claim_job(
-                session,
-                worker_id="phase6-production-e2e",
-                lease_seconds=300,
+            candidate_response = await client.post(
+                "/v1/vqe/experiments",
+                headers={"Idempotency-Key": "phase76-s12-candidate-experiment"},
+                json={"workflow_artifact_version_id": swap["workflow_artifact_version_id"]},
             )
-            assert job is not None
-            assert job.kind == "vqe.execute"
-            assert job.payload["execution_id"] == execution["id"]
-            lease_token = job.lease_token
-            assert lease_token is not None
-            payload = dict(job.payload)
-            await session.commit()
+            assert candidate_response.status_code == 201, candidate_response.text
+            candidate_experiment = candidate_response.json()
 
-        async with factory() as session:
-            await handle_vqe_execute(session, payload)
+            executions: dict[str, dict] = {}
+            for framework in ("qiskit", "pennylane"):
+                executions[f"baseline_{framework}"] = await _execute_and_finish(
+                    client=client,
+                    factory=factory,
+                    experiment_id=baseline_experiment["id"],
+                    framework=framework,
+                    label="baseline",
+                )
+                executions[f"candidate_{framework}"] = await _execute_and_finish(
+                    client=client,
+                    factory=factory,
+                    experiment_id=candidate_experiment["id"],
+                    framework=framework,
+                    label="candidate",
+                )
 
-        async with factory() as session:
-            await system.finish_job(
-                session,
-                job_id=job.id,
-                lease_token=lease_token,
-                status="done",
+            fixed_component_digests = {
+                item["role"]: item["component_spec_sha256"]
+                for item in baseline_experiment["scientific_spec_json"]["component_bindings"]
+                if item["role"] != "parameter_optimizer"
+            }
+            comparison_response = await client.post(
+                "/v1/vqe/controlled-comparisons",
+                headers={"Idempotency-Key": "phase76-s12-controlled-comparison"},
+                json={
+                    "baseline_workflow_artifact_version_id": os.environ[
+                        "MAJORANA_VQE_E2E_WORKFLOW_ID"
+                    ],
+                    "candidate_workflow_artifact_version_id": swap["workflow_artifact_version_id"],
+                    "changed_role": "parameter_optimizer",
+                    "fixed_component_digests": fixed_component_digests,
+                    "baseline_configuration": {"algorithm": "scipy_minimize_scalar_bounded"},
+                    "candidate_configuration": {"algorithm": "scipy_slsqp"},
+                    "metric_protocol_sha256": fixed_component_digests["evaluation_protocol"],
+                    "budget_protocol_sha256": fixed_component_digests["stopping_protocol"],
+                },
             )
-            await session.commit()
+            assert comparison_response.status_code == 201, comparison_response.text
+            comparison = comparison_response.json()
+            comparison_runs: dict[str, dict] = {}
+            artifacts: dict[str, dict] = {}
+            for framework in ("qiskit", "pennylane"):
+                run_response = await client.post(
+                    f"/v1/vqe/controlled-comparisons/{comparison['id']}/runs",
+                    json={
+                        "baseline_execution_id": executions[f"baseline_{framework}"]["id"],
+                        "candidate_execution_id": executions[f"candidate_{framework}"]["id"],
+                    },
+                )
+                assert run_response.status_code == 201, run_response.text
+                comparison_runs[framework] = run_response.json()
+                assert comparison_runs[framework]["status"] == "comparable"
+                assert all(comparison_runs[framework]["run_json"]["invariant_audit"].values())
+                materialize_response = await client.post(
+                    f"/v1/vqe/executions/{executions[f'candidate_{framework}']['id']}/materialize"
+                )
+                assert materialize_response.status_code == 200, materialize_response.text
+                artifacts[framework] = materialize_response.json()
+                assert artifacts[framework]["visibility"] == "private"
+                assert artifacts[framework]["publication"] == "blocked"
 
-        transport = httpx.ASGITransport(app=app)
+            negative_response = await client.post(
+                "/v1/atlas/workflows/swaps",
+                headers={"Idempotency-Key": "phase76-s12-negative-swap"},
+                json={
+                    "baseline_workflow_artifact_version_id": os.environ[
+                        "MAJORANA_VQE_E2E_WORKFLOW_ID"
+                    ],
+                    "baseline_template_key": "workflow.h2.fixed_excitation.v1",
+                    "changed_role": "parameter_optimizer",
+                    "candidate_component_semantic_key": "optimizer.slsqp.v1",
+                    "candidate_component_spec_sha256": slsqp["normalized_spec_sha256"],
+                    "configuration": {"max_objective_evaluations": "1"},
+                    "evaluator_provider": "qiskit",
+                },
+            )
+            assert negative_response.status_code == 422, negative_response.text
+
+        reopened_headers = {
+            "Authorization": (
+                f"Bearer {_token(private_key, issuer, session_id='session_phase76_s12_second')}"
+            )
+        }
         async with httpx.AsyncClient(
-            transport=transport,
+            transport=httpx.ASGITransport(app=app),
             base_url="http://test",
-            headers=headers,
-        ) as client:
-            final_response = await client.get(f"/v1/vqe/executions/{execution['id']}")
-            assert final_response.status_code == 200, final_response.text
-            final = final_response.json()
+            headers=reopened_headers,
+        ) as reopened_client:
+            reopened_me = await reopened_client.get("/v1/me")
+            assert reopened_me.status_code == 200, reopened_me.text
+            reopened_comparison_response = await reopened_client.get(
+                f"/v1/vqe/controlled-comparisons/{comparison['id']}"
+            )
+            assert reopened_comparison_response.status_code == 200
+            reopened_comparison = reopened_comparison_response.json()
+            assert {item["id"] for item in reopened_comparison["runs"]} == {
+                item["id"] for item in comparison_runs.values()
+            }
+            for framework, artifact in artifacts.items():
+                artifact_response = await reopened_client.get(
+                    f"/v1/artifacts/{artifact['artifact_id']}"
+                )
+                assert artifact_response.status_code == 200, artifact_response.text
+                version_response = await reopened_client.get(
+                    f"/v1/artifacts/{artifact['artifact_id']}/versions/current"
+                )
+                assert version_response.status_code == 200, version_response.text
+                assert version_response.json()["id"] == artifact["artifact_version_id"]
+                execution_response = await reopened_client.get(
+                    f"/v1/vqe/executions/{executions[f'candidate_{framework}']['id']}"
+                )
+                assert execution_response.status_code == 200
+                assert execution_response.json()["status"] == "succeeded"
 
-        assert final["status"] == "succeeded"
-        assert final["production_runtime_status"] == "qualified"
-        assert len(final["observations"]) == 1
-        result = final["observations"][0]["result_contract_json"]
-        assert result["status"] == "succeeded"
-        assert result["absolute_error_ha"] <= 1e-10
-        assert result["supplementary_evidence"]["public_execution"] == "blocked"
-        assert result["supplementary_evidence"]["production_runtime_status"] == "qualified"
+        evidence = {
+            "schema_version": "1.0.0",
+            "kind": "phase76_s12_private_ci_e2e",
+            "source_commit": os.environ.get("GITHUB_SHA"),
+            "workos_auth": "synthetic_contract_only",
+            "database": "disposable_neon_branch",
+            "runtime_host": "github_actions_dedicated_docker",
+            "baseline_workflow_artifact_version_id": os.environ["MAJORANA_VQE_E2E_WORKFLOW_ID"],
+            "candidate_workflow_artifact_version_id": swap["workflow_artifact_version_id"],
+            "changed_roles": ["parameter_optimizer"],
+            "execution_ids": {name: item["id"] for name, item in executions.items()},
+            "comparison_spec_id": comparison["id"],
+            "comparison_run_ids": {name: item["id"] for name, item in comparison_runs.items()},
+            "materialized_artifact_ids": {
+                name: item["artifact_version_id"] for name, item in artifacts.items()
+            },
+            "session_reopen": "passed",
+            "failure_path": "passed",
+            "public_execution": False,
+            "publication": False,
+            "evidence_digest_sha256": hashlib.sha256(
+                json.dumps(
+                    {
+                        "executions": executions,
+                        "comparison_runs": comparison_runs,
+                        "artifacts": artifacts,
+                    },
+                    sort_keys=True,
+                    separators=(",", ":"),
+                ).encode()
+            ).hexdigest(),
+        }
+        evidence_path = os.environ.get("MAJORANA_VQE_E2E_EVIDENCE_PATH")
+        if evidence_path:
+            with open(evidence_path, "w", encoding="utf-8") as handle:
+                json.dump(evidence, handle, sort_keys=True, indent=2)
+                handle.write("\n")
     finally:
         await engine.dispose()
         auth_jwt._jwk_client.cache_clear()

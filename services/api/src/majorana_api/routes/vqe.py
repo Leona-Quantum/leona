@@ -115,7 +115,10 @@ class WorkflowSwapResource(BaseModel):
     workflow_semantic_key: str
     request_sha256: str
     replayed: bool
-    execution_status: Literal["blocked_until_runtime_qualified"]
+    execution_status: Literal[
+        "blocked_until_runtime_qualified",
+        "private_qualification_candidate",
+    ]
     visibility: Literal["private"] = "private"
 
 
@@ -215,6 +218,13 @@ class ControlledComparisonRunResource(BaseModel):
     run_json: dict[str, Any]
     run_sha256: str
     created_at: dt.datetime | None
+
+
+class FinalizeControlledComparisonRunRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    baseline_execution_id: uuid.UUID
+    candidate_execution_id: uuid.UUID
 
 
 class ControlledComparisonResource(BaseModel):
@@ -429,7 +439,7 @@ async def create_workflow_swap(
         workflow_semantic_key=saved.workflow_spec.semantic_key,
         request_sha256=saved.version.fingerprint,
         replayed=saved.replayed,
-        execution_status="blocked_until_runtime_qualified",
+        execution_status=saved.workflow_spec.spec_json["execution_status"],
     )
 
 
@@ -661,6 +671,30 @@ async def get_controlled_comparison(
 ) -> ControlledComparisonResource:
     row = await vqe_repo.get_controlled_comparison_spec(scope, session, comparison_spec_id)
     return await _to_controlled_comparison_resource(scope, session, row)
+
+
+@router.post(
+    "/vqe/controlled-comparisons/{comparison_spec_id}/runs",
+    response_model=ControlledComparisonRunResource,
+    status_code=201,
+)
+async def finalize_controlled_comparison_run(
+    comparison_spec_id: uuid.UUID,
+    body: FinalizeControlledComparisonRunRequest,
+    scope: CurrentScope,
+    session: DbSession,
+) -> ControlledComparisonRunResource:
+    try:
+        row = await vqe_repo.finalize_controlled_comparison_run(
+            scope,
+            session,
+            comparison_spec_id=comparison_spec_id,
+            baseline_execution_id=body.baseline_execution_id,
+            candidate_execution_id=body.candidate_execution_id,
+        )
+    except vqe_repo.ComparisonIntegrityError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from None
+    return _to_comparison_run_resource(row)
 
 
 @router.get(

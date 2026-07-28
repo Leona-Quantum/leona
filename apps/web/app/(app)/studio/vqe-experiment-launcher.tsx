@@ -24,7 +24,9 @@ type SavedSwap = {
   workflow_artifact_version_id: string;
   workflow_semantic_key: string;
   replayed: boolean;
-  execution_status: "blocked_until_runtime_qualified";
+  execution_status:
+    | "blocked_until_runtime_qualified"
+    | "private_qualification_candidate";
   visibility: "private";
 };
 
@@ -217,7 +219,10 @@ export function VqeExperimentLauncher({
         !response.ok
         || typeof payload.workflow_artifact_version_id !== "string"
         || typeof payload.workflow_semantic_key !== "string"
-        || payload.execution_status !== "blocked_until_runtime_qualified"
+        || (
+          payload.execution_status !== "private_qualification_candidate"
+          && payload.execution_status !== "blocked_until_runtime_qualified"
+        )
         || payload.visibility !== "private"
       ) {
         const detail = typeof payload.detail === "string"
@@ -241,17 +246,22 @@ export function VqeExperimentLauncher({
         {
           artifact_version_id: saved.workflow_artifact_version_id,
           semantic_key: saved.workflow_semantic_key,
-          machine_validation_state: "unvalidated",
+          machine_validation_state:
+            saved.execution_status === "private_qualification_candidate"
+              ? "machine_validated"
+              : "unvalidated",
           review_state: "unreviewed",
           execution_status: saved.execution_status,
         },
       ]);
       setWorkflowId(saved.workflow_artifact_version_id);
-      setMessage(
-        ja
-          ? "privateな統制交換Workflowを保存しました。runtime未認定のため実行は停止中です。"
-          : "The private controlled-swap workflow was saved. Execution remains blocked pending runtime qualification.",
-      );
+      setMessage(saved.execution_status === "private_qualification_candidate"
+        ? (ja
+          ? "privateな統制交換Workflowを保存しました。S12認定候補として実行できますが、公開と性能主張は停止中です。"
+          : "The private controlled-swap workflow was saved. It may run as an S12 qualification candidate; publication and performance claims remain blocked.")
+        : (ja
+          ? "privateな構造化Workflowを保存しました。実行可能な設定への解決が未完了のため実行は停止中です。"
+          : "The private structured workflow was saved. Execution remains blocked because no executable configuration has been resolved."));
     } catch (cause) {
       setMessage(cause instanceof Error ? cause.message : "workflow swap save failed");
     } finally {
@@ -327,7 +337,7 @@ export function VqeExperimentLauncher({
             <button
               className="mj-primary-button"
               type="button"
-              disabled={!workflowId || creating || Boolean(savedSwap) || executionBlocked}
+              disabled={!workflowId || creating || executionBlocked}
               onClick={() => void createExperiment()}
             >
               {creating

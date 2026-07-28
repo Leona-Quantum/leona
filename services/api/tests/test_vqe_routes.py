@@ -43,6 +43,9 @@ def test_every_plan_candidate_endpoint_is_reachable_over_http():
         ("/atlas/comparisons/{comparison_id}", "GET"),
         ("/vqe/capabilities", "GET"),
         ("/vqe/experiments", "POST"),
+        ("/vqe/controlled-comparisons", "POST"),
+        ("/vqe/controlled-comparisons/{comparison_spec_id}", "GET"),
+        ("/vqe/controlled-comparisons/{comparison_spec_id}/runs", "POST"),
         ("/vqe/experiments/{experiment_id}", "GET"),
         ("/vqe/experiments/{experiment_id}/executions", "GET"),
         ("/vqe/experiments/{experiment_id}/executions", "POST"),
@@ -65,6 +68,9 @@ def test_every_route_requires_a_scope():
         vqe_routes.vqe_capabilities,
         vqe_routes.create_experiment,
         vqe_routes.get_experiment,
+        vqe_routes.create_controlled_comparison,
+        vqe_routes.get_controlled_comparison,
+        vqe_routes.finalize_controlled_comparison_run,
         vqe_routes.list_executions,
         vqe_routes.start_execution,
         vqe_routes.get_execution,
@@ -93,7 +99,10 @@ async def test_create_workflow_swap_passes_only_bounded_owner_choices(monkeypatc
         return SimpleNamespace(
             artifact=SimpleNamespace(id=artifact_id),
             version=SimpleNamespace(id=version_id, fingerprint="a" * 64),
-            workflow_spec=SimpleNamespace(semantic_key="workflow.instance.test"),
+            workflow_spec=SimpleNamespace(
+                semantic_key="workflow.instance.test",
+                spec_json={"execution_status": "private_qualification_candidate"},
+            ),
             replayed=False,
         )
 

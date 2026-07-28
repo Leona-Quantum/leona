@@ -25,6 +25,7 @@ from majorana_vqe.portable import normalized_component_spec_digest
 from majorana_api.db import engine_from_env, session_factory
 from majorana_api.repos import artifacts, system, vqe
 from majorana_api.settings import Settings
+from majorana_api.standard_vqe_materializer import materialize_standard_vqe_catalog
 
 ROOT = Path(__file__).resolve().parents[1]
 MANIFEST_PATH = ROOT / "docs" / "atlas" / "fixtures" / "h2_sto3g" / ("registry_manifest_v0.2.json")
@@ -141,6 +142,11 @@ async def provision() -> str:
                 email=email,
             )
             scope = Scope(user_id=user.id, workspace_id=workspace.id, role=Role.OWNER)
+            # The canonical definitions are provenance and discovery records.
+            # The executable workflow below remains the separately frozen H2
+            # registry candidate; materializing both prevents Definition and
+            # configured scientific instances from being conflated.
+            await materialize_standard_vqe_catalog(scope, session)
             component_ids = {}
             for entry in manifest["components"]:
                 component_ids[entry["role"]] = await _component(scope, session, entry)

@@ -36,6 +36,7 @@ from majorana_vqe.models import (
 from majorana_vqe.controlled_comparison import (
     ControlledComparisonRunV1,
     ControlledComparisonSpecV1,
+    ControlledComparisonStatus,
 )
 from majorana_vqe.executable import (
     parse_executable_component,
@@ -399,11 +400,14 @@ async def save_component_swap_workflow_draft(
     )
     if baseline_spec.component_type != ComponentType.WORKFLOW.value:
         raise InvalidWorkflowCompositionError("baseline is not a workflow")
-    if baseline_spec.semantic_key != baseline_template_key:
+    template = workflow_by_key(baseline_template_key)
+    if baseline_spec.semantic_key not in {
+        baseline_template_key,
+        template.registry_semantic_key,
+    }:
         raise InvalidWorkflowCompositionError(
             "baseline Registry identity does not match the requested template"
         )
-    template = workflow_by_key(baseline_template_key)
     candidate_definition = component_by_key(candidate_component_semantic_key)
     if candidate_definition.component_type is not changed_role:
         raise InvalidWorkflowCompositionError("candidate component role mismatch")
@@ -446,7 +450,7 @@ async def save_component_swap_workflow_draft(
         catalog_workspace_id=catalog_workspace_id,
     )
     baseline_by_role = {ComponentType(link.component_role): link for link in baseline_links}
-    candidate_spec = await _get_unique_component_by_semantic_digest(
+    candidate_definition_spec = await _get_unique_component_by_semantic_digest(
         scope,
         session,
         semantic_key=candidate_component_semantic_key,
@@ -459,6 +463,13 @@ async def save_component_swap_workflow_draft(
         raise InvalidWorkflowCompositionError(
             "baseline Registry composition does not match the template roles"
         )
+    baseline_optimizer_link = baseline_by_role[ComponentType.PARAMETER_OPTIMIZER]
+    baseline_optimizer_spec = await get_component_spec(
+        scope,
+        session,
+        baseline_optimizer_link.component_artifact_version_id,
+        catalog_workspace_id=catalog_workspace_id,
+    )
 
     request_payload = {
         "schema_version": "0.1.0",
@@ -493,6 +504,114 @@ async def save_component_swap_workflow_draft(
         links = await list_workflow_components(scope, session, version.id)
         return SavedWorkflowDraft(existing, version, workflow_spec, tuple(links), True)
 
+    private_qualification_candidate = baseline_spec.semantic_key == template.registry_semantic_key
+    configured_optimizer_spec = candidate_definition_spec
+    if private_qualification_candidate:
+        configured_optimizer_payload = dict(baseline_optimizer_spec.spec_json)
+        configured_optimizer_payload["algorithm"] = "scipy_slsqp"
+        configurable_payload_fields = {
+            "lower_bound_float64_hex": "lower_bound_float64_hex",
+            "upper_bound_float64_hex": "upper_bound_float64_hex",
+            "energy_tolerance_float64_hex": "energy_tolerance_float64_hex",
+            "max_objective_evaluations": "max_function_evaluations",
+        }
+        unsupported_private_configuration = set(dict(migrated.migrated)) - set(
+            configurable_payload_fields
+        )
+        if unsupported_private_configuration:
+            raise InvalidWorkflowCompositionError(
+                "private executable swap cannot represent configuration fields: "
+                + ",".join(sorted(unsupported_private_configuration))
+            )
+        for configuration_key, payload_key in configurable_payload_fields.items():
+            configured_value = dict(migrated.migrated).get(configuration_key)
+            if configured_value is None:
+                continue
+            configured_optimizer_payload[payload_key] = (
+                int(configured_value)
+                if configuration_key == "max_objective_evaluations"
+                else configured_value
+            )
+        try:
+            parse_executable_component(
+                ComponentType.PARAMETER_OPTIMIZER,
+                configured_optimizer_payload,
+            )
+        except ValueError as exc:
+            raise InvalidWorkflowCompositionError(
+                f"configured optimizer is not executable: {exc}"
+            ) from exc
+        configured_workflow_specs: dict[ComponentType, dict[str, object]] = {}
+        for role, link in baseline_by_role.items():
+            component = await get_component_spec(
+                scope,
+                session,
+                link.component_artifact_version_id,
+                catalog_workspace_id=catalog_workspace_id,
+            )
+            configured_workflow_specs[role] = (
+                configured_optimizer_payload
+                if role is ComponentType.PARAMETER_OPTIMIZER
+                else component.spec_json
+            )
+        try:
+            validate_h2_executable_composition(configured_workflow_specs)
+        except ValueError as exc:
+            raise InvalidWorkflowCompositionError(
+                f"configured optimizer swap violates H2 invariants: {exc}"
+            ) from exc
+        configured_optimizer_digest = normalized_component_spec_digest(
+            component_type=ComponentType.PARAMETER_OPTIMIZER,
+            spec_json=configured_optimizer_payload,
+        )
+        configured_optimizer_artifact = await artifacts_repo.create_artifact(
+            scope,
+            session,
+            slug=f"{slug}-configured-optimizer",
+            title="Configured SLSQP optimizer for H2 controlled swap",
+            family=Algorithm.VQE,
+            framework=ContractFramework(evaluator_provider),
+        )
+        configured_optimizer_code = json.dumps(
+            configured_optimizer_payload,
+            sort_keys=True,
+            indent=2,
+        )
+        configured_optimizer_version = await artifacts_repo.create_version(
+            scope,
+            session,
+            configured_optimizer_artifact.id,
+            qasm_version=None,
+            qasm=None,
+            metadata={
+                "source": "vqe_component_swap_configuration",
+                "definition_artifact_version_id": str(
+                    candidate_definition_spec.artifact_version_id
+                ),
+                "definition_semantic_key": candidate_component_semantic_key,
+                "definition_spec_sha256": candidate_component_spec_sha256,
+                "publication": "blocked",
+                "scientific_release": "blocked",
+            },
+            code=configured_optimizer_code,
+            code_lang="json",
+            fingerprint=configured_optimizer_digest,
+            export_status=ExportStatus.UNSUPPORTED,
+            export_reason="configured optimizer is not a circuit export",
+        )
+        configured_optimizer_spec = await create_component_spec(
+            scope,
+            session,
+            artifact_version_id=configured_optimizer_version.id,
+            schema_version="0.2.0",
+            component_type=ComponentType.PARAMETER_OPTIMIZER,
+            semantic_key=candidate_component_semantic_key,
+            spec_json=configured_optimizer_payload,
+            normalized_spec_sha256=configured_optimizer_digest,
+            machine_validation_state=MachineValidationState.MACHINE_VALIDATED,
+            review_state=ReviewState.UNREVIEWED,
+        )
+
     resolved_links: list[tuple[ComponentType, uuid.UUID, dict[str, Any]]] = []
     implementation_by_component = {
         binding.component_semantic_key: binding
@@ -504,11 +623,19 @@ async def save_component_swap_workflow_draft(
         if selection.component_semantic_key is None:
             continue
         if selection.role is changed_role:
-            component_version_id = candidate_spec.artifact_version_id
+            component_version_id = configured_optimizer_spec.artifact_version_id
             binding = implementation_by_component.get(selection.component_semantic_key)
             binding_metadata = {
                 "binding_key": binding.binding_key if binding else None,
                 "evidence_level": binding.evidence_level.value if binding else "missing",
+                "definition_artifact_version_id": str(
+                    candidate_definition_spec.artifact_version_id
+                ),
+                "configuration_artifact_version_id": (
+                    str(configured_optimizer_spec.artifact_version_id)
+                    if private_qualification_candidate
+                    else None
+                ),
             }
         else:
             link = baseline_by_role[selection.role]
@@ -530,7 +657,11 @@ async def save_component_swap_workflow_draft(
         "kind": "component_swap_workflow_draft",
         "request_sha256": request_sha256,
         "compatibility": dataclasses.asdict(compatibility),
-        "execution_status": "blocked_until_runtime_qualified",
+        "execution_status": (
+            "private_qualification_candidate"
+            if private_qualification_candidate
+            else "blocked_until_runtime_qualified"
+        ),
     }
     code = json.dumps(workflow_payload, sort_keys=True, indent=2)
     version = await artifacts_repo.create_version(
@@ -551,7 +682,10 @@ async def save_component_swap_workflow_draft(
         fingerprint=request_sha256,
         export_status=ExportStatus.UNSUPPORTED,
         export_reason="structured VQE Workflow draft is not a circuit export",
-        limitations="Execution remains blocked until every binding is runtime-qualified.",
+        limitations=(
+            "Private owner-waived qualification candidate; public execution and "
+            "scientific performance claims remain blocked."
+        ),
     )
     workflow_spec = await create_component_spec(
         scope,
@@ -561,7 +695,11 @@ async def save_component_swap_workflow_draft(
         component_type=ComponentType.WORKFLOW,
         semantic_key=f"workflow.instance.{request_sha256}",
         spec_json=workflow_payload,
-        machine_validation_state=MachineValidationState.UNVALIDATED,
+        machine_validation_state=(
+            MachineValidationState.MACHINE_VALIDATED
+            if private_qualification_candidate
+            else MachineValidationState.UNVALIDATED
+        ),
         review_state=ReviewState.UNREVIEWED,
     )
     links = tuple(
@@ -614,16 +752,59 @@ async def resolve_scientific_experiment_spec(
         ReviewState.HUMAN_REVIEWED.value,
         ReviewState.AUTHOR_CONFIRMED.value,
     }
+    owner_deferred_baseline = (
+        workflow.review_state == ReviewState.UNREVIEWED.value
+        and workflow.semantic_key == H2_REVIEW_CANDIDATE_WORKFLOW_KEY
+    )
+    owner_deferred_optimizer_swap = (
+        workflow.review_state == ReviewState.UNREVIEWED.value
+        and workflow.spec_json.get("kind") == "component_swap_workflow_draft"
+        and workflow.spec_json.get("changed_role") == ComponentType.PARAMETER_OPTIMIZER.value
+        and workflow.spec_json.get("candidate_component_semantic_key") == "optimizer.slsqp.v1"
+        and workflow.spec_json.get("execution_status") == "private_qualification_candidate"
+    )
+    baseline_swap_components: dict[ComponentType, VqeWorkflowComponentRow] = {}
     if review_policy == "approved":
         if workflow.review_state not in approved_review_states:
             raise InvalidWorkflowCompositionError("workflow is not scientifically reviewed")
-    elif not (
-        workflow.review_state == ReviewState.UNREVIEWED.value
-        and workflow.semantic_key == H2_REVIEW_CANDIDATE_WORKFLOW_KEY
-    ):
+    elif not (owner_deferred_baseline or owner_deferred_optimizer_swap):
         raise InvalidWorkflowCompositionError(
-            "owner-deferred execution is restricted to the frozen unreviewed H2 candidate"
+            "owner-deferred execution is restricted to the frozen H2 baseline "
+            "or its server-validated private SLSQP swap"
         )
+    elif owner_deferred_optimizer_swap:
+        try:
+            baseline_workflow_id = uuid.UUID(
+                str(workflow.spec_json["baseline_workflow_artifact_version_id"])
+            )
+        except (KeyError, ValueError) as exc:
+            raise InvalidWorkflowCompositionError(
+                "optimizer swap lacks a valid frozen baseline identity"
+            ) from exc
+        baseline_workflow = await get_component_spec(
+            scope,
+            session,
+            baseline_workflow_id,
+            catalog_workspace_id=catalog_workspace_id,
+        )
+        if (
+            baseline_workflow.semantic_key != H2_REVIEW_CANDIDATE_WORKFLOW_KEY
+            or baseline_workflow.review_state != ReviewState.UNREVIEWED.value
+            or baseline_workflow.machine_validation_state
+            != MachineValidationState.MACHINE_VALIDATED.value
+        ):
+            raise InvalidWorkflowCompositionError(
+                "optimizer swap baseline is not the frozen owner-deferred H2 workflow"
+            )
+        baseline_swap_components = {
+            ComponentType(link.component_role): link
+            for link in await list_workflow_components(
+                scope,
+                session,
+                baseline_workflow_id,
+                catalog_workspace_id=catalog_workspace_id,
+            )
+        }
 
     links = await list_workflow_components(
         scope,
@@ -680,13 +861,34 @@ async def resolve_scientific_experiment_spec(
                 raise InvalidWorkflowCompositionError(
                     f"component {component.semantic_key!r} is not scientifically reviewed"
                 )
-        elif not (
-            component.review_state == ReviewState.UNREVIEWED.value
-            and component.semantic_key == f"h2.sto3g.actual_vqe.v0_2.{role_type.value}"
-        ):
-            raise InvalidWorkflowCompositionError(
-                "owner-deferred execution encountered a non-canonical H2 candidate component"
-            )
+        elif owner_deferred_baseline:
+            if not (
+                component.review_state == ReviewState.UNREVIEWED.value
+                and component.semantic_key == f"h2.sto3g.actual_vqe.v0_2.{role_type.value}"
+            ):
+                raise InvalidWorkflowCompositionError(
+                    "owner-deferred execution encountered a non-canonical H2 candidate component"
+                )
+        elif role_type is ComponentType.PARAMETER_OPTIMIZER:
+            if not (
+                component.review_state == ReviewState.UNREVIEWED.value
+                and component.semantic_key == "optimizer.slsqp.v1"
+                and component.spec_json.get("algorithm") == "scipy_slsqp"
+            ):
+                raise InvalidWorkflowCompositionError(
+                    "private optimizer swap does not resolve to the configured SLSQP component"
+                )
+        else:
+            baseline_link = baseline_swap_components.get(role_type)
+            if (
+                baseline_link is None
+                or baseline_link.component_artifact_version_id != component.artifact_version_id
+                or component.review_state != ReviewState.UNREVIEWED.value
+                or component.semantic_key != f"h2.sto3g.actual_vqe.v0_2.{role_type.value}"
+            ):
+                raise InvalidWorkflowCompositionError(
+                    f"private optimizer swap changed fixed role {role_type.value!r}"
+                )
         semantic_bindings.append(
             ComponentSemanticBinding(
                 role=role_type,
@@ -732,9 +934,8 @@ async def resolve_scientific_experiment_spec(
         initial_parameter_slots=initial_slots,
         seed=approved_seed,
     )
-    if (
-        review_policy == "h2_owner_deferred_candidate"
-        and scientific_spec.workflow_semantic_digest != H2_REVIEW_CANDIDATE_WORKFLOW_DIGEST
+    if owner_deferred_baseline and (
+        scientific_spec.workflow_semantic_digest != H2_REVIEW_CANDIDATE_WORKFLOW_DIGEST
     ):
         raise InvalidWorkflowCompositionError(
             "owner-deferred H2 candidate workflow digest does not match the frozen manifest"
@@ -1101,6 +1302,184 @@ async def append_controlled_comparison_run(
     await session.flush()
     await session.refresh(row)
     return row
+
+
+async def finalize_controlled_comparison_run(
+    scope: Scope,
+    session: AsyncSession,
+    *,
+    comparison_spec_id: uuid.UUID,
+    baseline_execution_id: uuid.UUID,
+    candidate_execution_id: uuid.UUID,
+) -> VqeControlledComparisonRunRow:
+    """Recompute and append one provider-specific controlled comparison."""
+
+    spec_row = await get_controlled_comparison_spec(scope, session, comparison_spec_id)
+    existing_run = (
+        (
+            await session.execute(
+                select(VqeControlledComparisonRunRow).where(
+                    VqeControlledComparisonRunRow.comparison_spec_id == comparison_spec_id,
+                    VqeControlledComparisonRunRow.baseline_execution_id == baseline_execution_id,
+                    VqeControlledComparisonRunRow.candidate_execution_id == candidate_execution_id,
+                )
+            )
+        )
+        .scalars()
+        .first()
+    )
+    if existing_run is not None:
+        return existing_run
+    spec = ControlledComparisonSpecV1.model_validate(spec_row.spec_json)
+    baseline_execution = await get_execution(scope, session, baseline_execution_id)
+    candidate_execution = await get_execution(scope, session, candidate_execution_id)
+    if baseline_execution.status != "succeeded" or candidate_execution.status != "succeeded":
+        raise ComparisonIntegrityError("comparison executions must both have succeeded")
+    baseline_experiment = await get_experiment(scope, session, baseline_execution.experiment_id)
+    candidate_experiment = await get_experiment(scope, session, candidate_execution.experiment_id)
+    baseline_observations = [
+        item
+        for item in await list_observations(scope, session, baseline_execution.id)
+        if item.status == "succeeded"
+    ]
+    candidate_observations = [
+        item
+        for item in await list_observations(scope, session, candidate_execution.id)
+        if item.status == "succeeded"
+    ]
+    if not baseline_observations or not candidate_observations:
+        raise ComparisonIntegrityError("successful comparison execution lacks evidence")
+    baseline_observation = baseline_observations[-1]
+    candidate_observation = candidate_observations[-1]
+
+    def bindings(experiment: VqeExperimentRow) -> dict[ComponentType, dict[str, Any]]:
+        return {
+            ComponentType(item["role"]): item
+            for item in experiment.scientific_spec_json["component_bindings"]
+        }
+
+    baseline_bindings = bindings(baseline_experiment)
+    candidate_bindings = bindings(candidate_experiment)
+    fixed_roles = set(baseline_bindings) - {spec.changed_role}
+    fixed_binding_match = all(
+        baseline_bindings[role] == candidate_bindings.get(role) for role in fixed_roles
+    )
+    declared_fixed_match = all(
+        baseline_bindings.get(role, {}).get("component_spec_sha256") == digest
+        for role, digest in spec.fixed_component_digests.items()
+    )
+    baseline_changed = baseline_bindings.get(spec.changed_role)
+    candidate_changed = candidate_bindings.get(spec.changed_role)
+    changed_role_only = (
+        set(baseline_bindings) == set(candidate_bindings)
+        and fixed_binding_match
+        and baseline_changed is not None
+        and candidate_changed is not None
+        and baseline_changed != candidate_changed
+    )
+    baseline_result = baseline_observation.result_contract_json
+    candidate_result = candidate_observation.result_contract_json
+
+    def comparable_resources(result: dict[str, Any]) -> dict[str, Any]:
+        return {
+            item["stage"]: item
+            for item in result["resources"]
+            if item["stage"] in {"canonical_logical", "common_basis_compiled"}
+        }
+
+    invariant_audit = {
+        "workflow_pair_matches_spec": (
+            baseline_experiment.workflow_artifact_version_id
+            == spec.baseline_workflow_artifact_version_id
+            and candidate_experiment.workflow_artifact_version_id
+            == spec.candidate_workflow_artifact_version_id
+        ),
+        "same_component_roles": set(baseline_bindings) == set(candidate_bindings),
+        "only_declared_role_changed": changed_role_only,
+        "declared_fixed_digests_match": declared_fixed_match,
+        "same_dataset_snapshot": (
+            baseline_experiment.scientific_spec_json["dataset_snapshot_sha256"]
+            == candidate_experiment.scientific_spec_json["dataset_snapshot_sha256"]
+        ),
+        "same_initial_parameters": (
+            baseline_experiment.scientific_spec_json["initial_parameter_slots"]
+            == candidate_experiment.scientific_spec_json["initial_parameter_slots"]
+        ),
+        "same_seed": (
+            baseline_experiment.scientific_spec_json["seed"]
+            == candidate_experiment.scientific_spec_json["seed"]
+        ),
+        "same_evaluator_provider": (baseline_execution.framework == candidate_execution.framework),
+        "same_runtime_profile": (
+            baseline_execution.runtime_profile_id == candidate_execution.runtime_profile_id
+        ),
+        "same_runtime_image": (
+            baseline_execution.runtime_image_digest == candidate_execution.runtime_image_digest
+        ),
+        "same_adapter_release": (
+            baseline_execution.adapter_release_id == candidate_execution.adapter_release_id
+        ),
+        "same_canonical_input": (
+            baseline_result.get("hamiltonian_exact_digest")
+            == candidate_result.get("hamiltonian_exact_digest")
+            and baseline_result.get("initial_parameters_sha256")
+            == candidate_result.get("initial_parameters_sha256")
+            and baseline_result.get("ansatz_semantic_digest")
+            == candidate_result.get("ansatz_semantic_digest")
+            and baseline_result.get("canonical_circuit_sha256")
+            == candidate_result.get("canonical_circuit_sha256")
+            and baseline_result.get("compilation_protocol_sha256")
+            == candidate_result.get("compilation_protocol_sha256")
+        ),
+        "same_canonical_circuit_metrics": (
+            comparable_resources(baseline_result) == comparable_resources(candidate_result)
+        ),
+    }
+
+    def metric_summary(
+        observation: VqeObservationRow,
+        result: dict[str, Any],
+    ) -> dict[str, Any]:
+        trajectory = result.get("energy_trajectory") or []
+        return {
+            "execution_id": str(observation.execution_id),
+            "result_contract_sha256": observation.result_contract_sha256,
+            "optimization": {
+                "best_energy_ha": result["best_energy_ha"],
+                "absolute_error_ha": result["absolute_error_ha"],
+                "converged": result["converged"],
+                "iterations": result["iterations"],
+                "optimizer_work": result["optimizer_work"],
+                "final_parameters": result["final_parameters"],
+                "final_state_fidelity": result["final_state_fidelity"],
+                "trajectory_sha256": _canonical_sha256(trajectory),
+            },
+            "resources": comparable_resources(result),
+            "wall_time_s": result.get("supplementary_evidence", {}).get("wall_time_s"),
+        }
+
+    run = ControlledComparisonRunV1(
+        comparison_spec_id=comparison_spec_id,
+        baseline_execution_id=baseline_execution_id,
+        candidate_execution_id=candidate_execution_id,
+        status=(
+            ControlledComparisonStatus.COMPARABLE
+            if all(invariant_audit.values())
+            else ControlledComparisonStatus.COMPARABILITY_FAILED
+        ),
+        invariant_audit=invariant_audit,
+        metric_observations={
+            "framework": baseline_execution.framework,
+            "baseline": metric_summary(baseline_observation, baseline_result),
+            "candidate": metric_summary(candidate_observation, candidate_result),
+        },
+        terminal_reason=(
+            None
+            if all(invariant_audit.values())
+            else "server-recomputed controlled-comparison invariant failed"
+        ),
+    )
+    return await append_controlled_comparison_run(scope, session, run=run)
 
 
 async def list_controlled_comparison_runs(
