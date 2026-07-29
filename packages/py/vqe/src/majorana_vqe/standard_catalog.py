@@ -585,6 +585,12 @@ _CIRCUIT_EVIDENCE = (
     "docs/atlas/fixtures/h2_sto3g/canonical_double_excitation_v0.2.json",
     *_RUNTIME_EVIDENCE,
 )
+_UCCSD_LOCAL_EVIDENCE = (
+    "docs/atlas/PHASE78_H2_UCCSD_EXECUTABLE_PLAN.md",
+    "docs/atlas/fixtures/h2_sto3g/canonical_uccsd_v0.1.json",
+    "docs/atlas/fixtures/h2_sto3g/raw/qiskit_uccsd_v0.1.json",
+    "docs/atlas/fixtures/h2_sto3g/raw/pennylane_uccsd_v0.1.json",
+)
 
 _CONFIGURATION_FIELDS_BY_COMPONENT: dict[str, frozenset[str]] = {
     "optimizer.scipy_bounded_scalar.v1": frozenset(
@@ -684,6 +690,28 @@ STANDARD_IMPLEMENTATIONS: tuple[ComponentImplementationBinding, ...] = (
         evidence=_CIRCUIT_EVIDENCE,
     ),
     _binding(
+        "ansatz.uccsd.v1",
+        "qiskit",
+        "qiskit",
+        "1.4.6",
+        BindingKind.ATLAS_ADAPTER,
+        EvidenceLevel.ADAPTER_TESTED,
+        adapter="majorana-h2-uccsd-qiskit-adapter-0.1.0",
+        evidence=_UCCSD_LOCAL_EVIDENCE,
+        known_incompatibilities=("private_oci_runtime_not_yet_qualified",),
+    ),
+    _binding(
+        "ansatz.uccsd.v1",
+        "pennylane",
+        "pennylane",
+        "0.45.1",
+        BindingKind.ATLAS_ADAPTER,
+        EvidenceLevel.ADAPTER_TESTED,
+        adapter="majorana-h2-uccsd-pennylane-adapter-0.1.0",
+        evidence=_UCCSD_LOCAL_EVIDENCE,
+        known_incompatibilities=("private_oci_runtime_not_yet_qualified",),
+    ),
+    _binding(
         "ansatz.h2.fixed_excitation.v1",
         "pennylane",
         "pennylane",
@@ -737,6 +765,7 @@ STANDARD_IMPLEMENTATIONS: tuple[ComponentImplementationBinding, ...] = (
             "https://docs.scipy.org/doc/scipy/reference/optimize.minimize-slsqp.html",
             "docs/atlas/evidence/phase76/qiskit_slsqp_local.json",
             "docs/atlas/evidence/phase76/pennylane_slsqp_local.json",
+            *_UCCSD_LOCAL_EVIDENCE,
         ),
         supported_configuration_fields=tuple(
             sorted(_CONFIGURATION_FIELDS_BY_COMPONENT["optimizer.slsqp.v1"])
@@ -833,6 +862,20 @@ def _mark_not_applicable(
     return result
 
 
+def _bind_contracts(
+    selections: tuple[WorkflowComponentSelection, ...],
+    role: ComponentType,
+    *contracts: str,
+) -> tuple[WorkflowComponentSelection, ...]:
+    bound = tuple(_port(contract) for contract in contracts)
+    return tuple(
+        dataclasses.replace(selection, bound_contracts=bound)
+        if selection.role is role
+        else selection
+        for selection in selections
+    )
+
+
 def migrate_selection_configuration(
     configuration: tuple[tuple[str, str], ...],
     *,
@@ -862,16 +905,24 @@ STANDARD_WORKFLOWS: tuple[StandardWorkflowTemplate, ...] = (
     StandardWorkflowTemplate(
         workflow_key="workflow.h2.uccsd.v1",
         display_name="H₂ UCCSD VQE",
-        status=WorkflowStatus.STRUCTURED,
-        selections=_mark_not_applicable(
-            _replace_selection(
-                _H2_FIXED_SELECTIONS,
-                ComponentType.ANSATZ,
-                "ansatz.uccsd.v1",
+        status=WorkflowStatus.COMPATIBLE,
+        selections=_bind_contracts(
+            _mark_not_applicable(
+                _replace_selection(
+                    _replace_selection(
+                        _H2_FIXED_SELECTIONS,
+                        ComponentType.ANSATZ,
+                        "ansatz.uccsd.v1",
+                    ),
+                    ComponentType.PARAMETER_OPTIMIZER,
+                    "optimizer.slsqp.v1",
+                ),
+                ComponentType.OPERATOR_POOL,
+                ComponentType.SEARCH_SELECTION,
+                ComponentType.GROWTH_BATCHING,
             ),
-            ComponentType.OPERATOR_POOL,
-            ComponentType.SEARCH_SELECTION,
-            ComponentType.GROWTH_BATCHING,
+            ComponentType.ANSATZ,
+            "parameters:3",
         ),
         supported_evaluator_providers=(),
     ),
@@ -881,9 +932,13 @@ STANDARD_WORKFLOWS: tuple[StandardWorkflowTemplate, ...] = (
         status=WorkflowStatus.STRUCTURED,
         selections=_mark_not_applicable(
             _replace_selection(
-                _H2_FIXED_SELECTIONS,
-                ComponentType.ANSATZ,
-                "ansatz.hardware_efficient_ry_cx.v1",
+                _replace_selection(
+                    _H2_FIXED_SELECTIONS,
+                    ComponentType.ANSATZ,
+                    "ansatz.hardware_efficient_ry_cx.v1",
+                ),
+                ComponentType.PARAMETER_OPTIMIZER,
+                "optimizer.slsqp.v1",
             ),
             ComponentType.OPERATOR_POOL,
             ComponentType.SEARCH_SELECTION,

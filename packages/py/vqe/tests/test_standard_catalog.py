@@ -104,10 +104,21 @@ def test_fixed_ansatz_and_adapt_roles_have_explicit_applicability():
         for selection in uccsd.selections
         if selection.role in not_applicable
     )
-    assert check_workflow_compatibility(uccsd).compatible is False
-    assert {issue.missing_contract for issue in check_workflow_compatibility(uccsd).issues} == {
-        "parameters:1"
+    compatibility = check_workflow_compatibility(uccsd)
+    assert compatibility.compatible is True
+    assert compatibility.issues == ()
+    ansatz = next(
+        selection for selection in uccsd.selections if selection.role is ComponentType.ANSATZ
+    )
+    assert {(contract.name, contract.value) for contract in ansatz.bound_contracts} == {
+        ("parameters", "3")
     }
+    optimizer = next(
+        selection
+        for selection in uccsd.selections
+        if selection.role is ComponentType.PARAMETER_OPTIMIZER
+    )
+    assert optimizer.component_semantic_key == "optimizer.slsqp.v1"
     adapt = workflow_by_key("workflow.h2.adapt.v1")
     assert all(
         selection.applicability is RoleApplicability.REQUIRED
@@ -165,6 +176,22 @@ def test_cobyla_configuration_keeps_trust_region_distinct_from_energy_tolerance(
     assert result.migrated == configuration
     assert result.dropped == ()
     assert result.requires_explicit_acceptance is False
+
+
+def test_uccsd_bindings_are_local_adapter_evidence_not_runtime_qualification():
+    bindings = [
+        binding
+        for binding in STANDARD_IMPLEMENTATIONS
+        if binding.component_semantic_key == "ansatz.uccsd.v1"
+    ]
+
+    assert {binding.provider for binding in bindings} == {"qiskit", "pennylane"}
+    assert {binding.evidence_level for binding in bindings} == {EvidenceLevel.ADAPTER_TESTED}
+    assert all(binding.runtime_profile_id is None for binding in bindings)
+    assert all(
+        binding.known_incompatibilities == ("private_oci_runtime_not_yet_qualified",)
+        for binding in bindings
+    )
 
 
 def test_missing_and_wrong_role_components_fail_closed():

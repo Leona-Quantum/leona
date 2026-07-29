@@ -909,6 +909,48 @@
       "supported_configuration_fields": []
     },
     {
+      "adapter_release_id": "majorana-h2-uccsd-qiskit-adapter-0.1.0",
+      "binding_key": "ansatz.uccsd.v1:qiskit:1.4.6",
+      "binding_kind": "atlas_adapter",
+      "component_semantic_key": "ansatz.uccsd.v1",
+      "evidence_level": "adapter_tested",
+      "evidence_locators": [
+        "docs/atlas/PHASE78_H2_UCCSD_EXECUTABLE_PLAN.md",
+        "docs/atlas/fixtures/h2_sto3g/canonical_uccsd_v0.1.json",
+        "docs/atlas/fixtures/h2_sto3g/raw/qiskit_uccsd_v0.1.json",
+        "docs/atlas/fixtures/h2_sto3g/raw/pennylane_uccsd_v0.1.json"
+      ],
+      "known_incompatibilities": [
+        "private_oci_runtime_not_yet_qualified"
+      ],
+      "package": "qiskit",
+      "package_version": "1.4.6",
+      "provider": "qiskit",
+      "runtime_profile_id": null,
+      "supported_configuration_fields": []
+    },
+    {
+      "adapter_release_id": "majorana-h2-uccsd-pennylane-adapter-0.1.0",
+      "binding_key": "ansatz.uccsd.v1:pennylane:0.45.1",
+      "binding_kind": "atlas_adapter",
+      "component_semantic_key": "ansatz.uccsd.v1",
+      "evidence_level": "adapter_tested",
+      "evidence_locators": [
+        "docs/atlas/PHASE78_H2_UCCSD_EXECUTABLE_PLAN.md",
+        "docs/atlas/fixtures/h2_sto3g/canonical_uccsd_v0.1.json",
+        "docs/atlas/fixtures/h2_sto3g/raw/qiskit_uccsd_v0.1.json",
+        "docs/atlas/fixtures/h2_sto3g/raw/pennylane_uccsd_v0.1.json"
+      ],
+      "known_incompatibilities": [
+        "private_oci_runtime_not_yet_qualified"
+      ],
+      "package": "pennylane",
+      "package_version": "0.45.1",
+      "provider": "pennylane",
+      "runtime_profile_id": null,
+      "supported_configuration_fields": []
+    },
+    {
       "adapter_release_id": "majorana-h2-pennylane-adapter-0.2.0",
       "binding_key": "ansatz.h2.fixed_excitation.v1:pennylane:0.45.1",
       "binding_kind": "atlas_adapter",
@@ -1076,7 +1118,11 @@
       "evidence_locators": [
         "https://docs.scipy.org/doc/scipy/reference/optimize.minimize-slsqp.html",
         "docs/atlas/evidence/phase76/qiskit_slsqp_local.json",
-        "docs/atlas/evidence/phase76/pennylane_slsqp_local.json"
+        "docs/atlas/evidence/phase76/pennylane_slsqp_local.json",
+        "docs/atlas/PHASE78_H2_UCCSD_EXECUTABLE_PLAN.md",
+        "docs/atlas/fixtures/h2_sto3g/canonical_uccsd_v0.1.json",
+        "docs/atlas/fixtures/h2_sto3g/raw/qiskit_uccsd_v0.1.json",
+        "docs/atlas/fixtures/h2_sto3g/raw/pennylane_uccsd_v0.1.json"
       ],
       "known_incompatibilities": [
         "no_runtime_qualified_phase76_adapter"
@@ -1315,6 +1361,8 @@
           "molecule:h2",
           "observation:energy_exact",
           "operator:qubit",
+          "optimizer:slsqp",
+          "parameters:3",
           "parameters:optimized",
           "prepared:electronic_structure",
           "problem:electronic_structure",
@@ -1324,15 +1372,9 @@
           "state:reference",
           "stopping:optimizer_convergence"
         ],
-        "compatible": false,
+        "compatible": true,
         "contract_version": "2.0.0",
-        "issues": [
-          {
-            "code": "missing_contract",
-            "component_semantic_key": "optimizer.scipy_bounded_scalar.v1",
-            "missing_contract": "parameters:1"
-          }
-        ]
+        "issues": []
       },
       "display_name": "H₂ UCCSD VQE",
       "registry_semantic_key": null,
@@ -1372,7 +1414,12 @@
         },
         {
           "applicability": "required",
-          "bound_contracts": [],
+          "bound_contracts": [
+            {
+              "name": "parameters",
+              "value": "3"
+            }
+          ],
           "component_semantic_key": "ansatz.uccsd.v1",
           "configuration": [],
           "role": "ansatz"
@@ -1401,7 +1448,7 @@
         {
           "applicability": "required",
           "bound_contracts": [],
-          "component_semantic_key": "optimizer.scipy_bounded_scalar.v1",
+          "component_semantic_key": "optimizer.slsqp.v1",
           "configuration": [],
           "role": "parameter_optimizer"
         },
@@ -1441,7 +1488,7 @@
           "role": "compilation_backend"
         }
       ],
-      "status": "structured",
+      "status": "compatible",
       "supported_evaluator_providers": [],
       "workflow_key": "workflow.h2.uccsd.v1"
     },
@@ -1457,6 +1504,7 @@
           "molecule:h2",
           "observation:energy_exact",
           "operator:qubit",
+          "optimizer:slsqp",
           "parameters:optimized",
           "prepared:electronic_structure",
           "problem:electronic_structure",
@@ -1466,15 +1514,9 @@
           "state:reference",
           "stopping:optimizer_convergence"
         ],
-        "compatible": false,
+        "compatible": true,
         "contract_version": "2.0.0",
-        "issues": [
-          {
-            "code": "missing_contract",
-            "component_semantic_key": "optimizer.scipy_bounded_scalar.v1",
-            "missing_contract": "parameters:1"
-          }
-        ]
+        "issues": []
       },
       "display_name": "H₂ hardware-efficient VQE",
       "registry_semantic_key": null,
@@ -1543,7 +1585,7 @@
         {
           "applicability": "required",
           "bound_contracts": [],
-          "component_semantic_key": "optimizer.scipy_bounded_scalar.v1",
+          "component_semantic_key": "optimizer.slsqp.v1",
           "configuration": [],
           "role": "parameter_optimizer"
         },

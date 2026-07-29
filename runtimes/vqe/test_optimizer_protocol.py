@@ -2,9 +2,15 @@ from __future__ import annotations
 
 import math
 
+import numpy as np
 import pytest
 
-from optimizer_protocol import ObjectiveBudgetExceeded, OptimizerProtocol, optimize_one_parameter
+from optimizer_protocol import (
+    ObjectiveBudgetExceeded,
+    OptimizerProtocol,
+    optimize_one_parameter,
+    optimize_parameters,
+)
 
 
 @pytest.mark.parametrize(
@@ -82,4 +88,43 @@ def test_wall_time_limit_fails_closed(monkeypatch: pytest.MonkeyPatch) -> None:
             lambda theta: theta**2,
             algorithm="scipy_slsqp",
             protocol=OptimizerProtocol(wall_time_limit_s=1.0),
+        )
+
+
+@pytest.mark.parametrize("algorithm", ["scipy_slsqp", "scipy_cobyla"])
+def test_vector_optimizer_recovers_three_parameter_minimum(algorithm: str) -> None:
+    target = np.asarray([0.25, -0.5, 0.75])
+    outcome = optimize_parameters(
+        lambda parameters: float(np.sum((parameters - target) ** 2) - 1.0),
+        algorithm=algorithm,
+        initial_parameters=[0.0, 0.0, 0.0],
+    )
+
+    assert outcome.success
+    assert outcome.function_evaluations == len(outcome.trajectory)
+    assert outcome.function_evaluations <= 256
+    assert np.allclose(outcome.final_parameters, target, atol=1e-5)
+    assert all(
+        len(point["parameters"]) == 3
+        and all(-math.pi <= parameter <= math.pi for parameter in point["parameters"])
+        for point in outcome.trajectory
+    )
+
+
+def test_vector_optimizer_rejects_scalar_initial_state() -> None:
+    with pytest.raises(ValueError, match="at least two"):
+        optimize_parameters(
+            lambda parameters: float(np.sum(parameters**2)),
+            algorithm="scipy_slsqp",
+            initial_parameters=[0.0],
+        )
+
+
+def test_vector_optimizer_budget_is_hard_cap() -> None:
+    with pytest.raises(ObjectiveBudgetExceeded):
+        optimize_parameters(
+            lambda parameters: float(np.sum(parameters**2)),
+            algorithm="scipy_slsqp",
+            initial_parameters=[0.0, 0.0, 0.0],
+            protocol=OptimizerProtocol(max_function_evaluations=1),
         )

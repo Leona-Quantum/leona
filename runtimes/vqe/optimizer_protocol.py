@@ -5,7 +5,7 @@ from __future__ import annotations
 import math
 import time
 from dataclasses import dataclass
-from typing import Callable, Literal
+from typing import Callable, Literal, Sequence
 
 import numpy as np
 from scipy.optimize import minimize, minimize_scalar
@@ -46,6 +46,19 @@ class OptimizationOutcome:
     final_parameter: float
     best_energy_ha: float
     trajectory: tuple[dict[str, float], ...]
+
+
+@dataclass(frozen=True)
+class VectorOptimizationOutcome:
+    algorithm: Literal["scipy_slsqp", "scipy_cobyla"]
+    success: bool
+    message: str
+    iterations: int
+    function_evaluations: int
+    gradient_evaluations: int
+    final_parameters: tuple[float, ...]
+    best_energy_ha: float
+    trajectory: tuple[dict[str, object], ...]
 
 
 def optimize_one_parameter(
@@ -143,6 +156,112 @@ def optimize_one_parameter(
         function_evaluations=len(trajectory),
         gradient_evaluations=gradient_evaluations,
         final_parameter=final_parameter,
+        best_energy_ha=float(result.fun),
+        trajectory=tuple(trajectory),
+    )
+
+
+def optimize_parameters(
+    energy: Callable[[np.ndarray], float],
+    *,
+    algorithm: Literal["scipy_slsqp", "scipy_cobyla"],
+    initial_parameters: Sequence[float],
+    protocol: OptimizerProtocol = OptimizerProtocol(),
+) -> VectorOptimizationOutcome:
+    """Optimize an explicit finite vector under one hard objective budget.
+
+    This is a separate contract from ``optimize_one_parameter`` so the frozen
+    scalar evidence and its trajectory schema cannot silently change.
+    """
+
+    initial = np.asarray(initial_parameters, dtype=float)
+    if initial.ndim != 1 or initial.size < 2:
+        raise ValueError("vector optimization requires at least two parameters")
+    if not np.all(np.isfinite(initial)):
+        raise ValueError("initial parameters must all be finite")
+    if np.any(initial < protocol.lower_bound) or np.any(initial > protocol.upper_bound):
+        raise ValueError("initial parameters must be within the frozen bounds")
+
+    started = time.monotonic()
+    trajectory: list[dict[str, object]] = []
+    iteration_count = 0
+
+    def record_iteration(_parameters: np.ndarray) -> None:
+        nonlocal iteration_count
+        iteration_count += 1
+
+    def guarded_energy(parameters_like: np.ndarray) -> float:
+        if len(trajectory) >= protocol.max_function_evaluations:
+            raise ObjectiveBudgetExceeded(
+                f"objective evaluation cap {protocol.max_function_evaluations} reached"
+            )
+        if time.monotonic() - started > protocol.wall_time_limit_s:
+            raise TimeoutError(f"optimizer wall-time cap {protocol.wall_time_limit_s:.1f}s reached")
+        parameters = np.asarray(parameters_like, dtype=float)
+        if parameters.shape != initial.shape:
+            raise ValueError("optimizer changed the parameter-vector shape")
+        if not np.all(np.isfinite(parameters)):
+            raise ValueError("optimizer proposed a non-finite parameter")
+        value = float(energy(parameters.copy()))
+        if not math.isfinite(value):
+            raise ValueError("objective returned a non-finite energy")
+        trajectory.append(
+            {
+                "parameters": [float(parameter) for parameter in parameters],
+                "energy_ha": value,
+            }
+        )
+        return value
+
+    bounds = [(protocol.lower_bound, protocol.upper_bound)] * initial.size
+    if algorithm == "scipy_slsqp":
+        result = minimize(
+            guarded_energy,
+            x0=initial,
+            method="SLSQP",
+            jac=None,
+            bounds=bounds,
+            options={
+                "ftol": protocol.energy_tolerance,
+                "maxiter": protocol.max_iterations,
+                "disp": False,
+            },
+            callback=record_iteration,
+        )
+        gradient_evaluations = int(getattr(result, "njev", 0) or 0)
+    elif algorithm == "scipy_cobyla":
+        result = minimize(
+            guarded_energy,
+            x0=initial,
+            method="COBYLA",
+            jac=None,
+            bounds=bounds,
+            options={
+                "rhobeg": protocol.cobyla_initial_trust_region_radius,
+                "tol": protocol.cobyla_final_trust_region_radius,
+                "catol": protocol.cobyla_constraint_tolerance,
+                "maxiter": protocol.max_function_evaluations,
+                "disp": False,
+            },
+            callback=record_iteration,
+        )
+        gradient_evaluations = 0
+    else:  # pragma: no cover
+        raise ValueError(f"unsupported vector optimizer algorithm {algorithm!r}")
+
+    if not trajectory:
+        raise ValueError("optimizer completed without evaluating the objective")
+    final = np.asarray(result.x, dtype=float)
+    if final.shape != initial.shape:
+        raise ValueError("optimizer returned the wrong parameter-vector shape")
+    return VectorOptimizationOutcome(
+        algorithm=algorithm,
+        success=bool(result.success),
+        message=str(result.message),
+        iterations=int(getattr(result, "nit", iteration_count)),
+        function_evaluations=len(trajectory),
+        gradient_evaluations=gradient_evaluations,
+        final_parameters=tuple(float(parameter) for parameter in final),
         best_energy_ha=float(result.fun),
         trajectory=tuple(trajectory),
     )

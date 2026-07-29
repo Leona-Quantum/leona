@@ -135,3 +135,51 @@ def test_resource_adapters_do_not_use_provider_native_generic_unitaries():
     assert ".unitary(" not in qiskit_source
     assert "UnitaryGate" not in qiskit_source
     assert "QubitUnitary" not in pennylane_source
+
+
+def test_uccsd_reports_share_the_frozen_three_parameter_identity():
+    qiskit = _report("qiskit_uccsd_v0.1.json")
+    pennylane = _report("pennylane_uccsd_v0.1.json")
+
+    assert qiskit["status"] == pennylane["status"] == "succeeded"
+    assert qiskit["capability"] == pennylane["capability"] == "h2_sto3g_uccsd_v1"
+    assert qiskit["canonical_input"] == pennylane["canonical_input"]
+    assert qiskit["canonical_input"]["parameter_orientation"] == "exp_theta_generator"
+    assert len(qiskit["canonical_input"]["parameter_slot_order"]) == 3
+
+
+def test_cross_framework_uccsd_matches_energy_state_and_common_resources():
+    qiskit = _report("qiskit_uccsd_v0.1.json")
+    pennylane = _report("pennylane_uccsd_v0.1.json")
+    qiskit_optimization = qiskit["optimization"]
+    pennylane_optimization = pennylane["optimization"]
+
+    assert abs(
+        qiskit_optimization["best_energy_ha"] - pennylane_optimization["best_energy_ha"]
+    ) <= (1e-12)
+    assert qiskit_optimization["absolute_error_ha"] <= 1e-12
+    assert pennylane_optimization["absolute_error_ha"] <= 1e-12
+    assert 1.0 - qiskit_optimization["final_state_fidelity"] <= 1e-12
+    assert 1.0 - pennylane_optimization["final_state_fidelity"] <= 1e-12
+    assert np.allclose(
+        qiskit_optimization["final_parameters"],
+        pennylane_optimization["final_parameters"],
+        atol=2e-7,
+    )
+    assert (
+        qiskit["resources"]["common_basis_compiled"]
+        == pennylane["resources"]["common_basis_compiled"]
+    )
+    assert qiskit["resources"]["common_basis_compiled"]["cnot_count"] == 56
+    assert qiskit["resources"]["common_basis_compiled"]["depth"] == 96
+    assert qiskit["resources"]["common_basis_compiled"]["parameter_count"] == 3
+
+
+def test_uccsd_resource_adapters_do_not_use_provider_native_templates():
+    qiskit_source = (ROOT / "runtimes/vqe/qiskit-current/spike/h2_uccsd_v01.py").read_text()
+    pennylane_source = (ROOT / "runtimes/vqe/pennylane-current/spike/h2_uccsd_v01.py").read_text()
+
+    assert "UCCSD(" not in qiskit_source
+    assert "UCCSD(" not in pennylane_source
+    assert ".unitary(" not in qiskit_source
+    assert "QubitUnitary" not in pennylane_source

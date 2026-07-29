@@ -1,0 +1,228 @@
+{
+  "schema_version": "0.1.0",
+  "status": "succeeded",
+  "capability": "h2_sto3g_uccsd_v1",
+  "framework": "qiskit",
+  "provider_versions": {
+    "qiskit": "1.4.6",
+    "scipy": "1.18.0",
+    "numpy": "2.5.1"
+  },
+  "platform": "macOS-26.0.1-arm64-arm-64bit",
+  "python_version": "3.12.12 (main, Oct 28 2025, 11:52:25) [Clang 20.1.4 ]",
+  "canonical_input": {
+    "manifest_sha256": "6424713c69c2b734172db47329b7deb62b67a743c80fd792f48173fdaa4e3edc",
+    "canonical_circuit_sha256": "e0f4f55c966f2de92046a82c8538fe5074447c030d67155dced9d7ca5a6a9a98",
+    "compilation_protocol_sha256": "b4553154fdb2db269ca1f43b361d6530fa9814d866103c71490d04d2b0552c52",
+    "hamiltonian_digest_legacy": "d9dd24eb30011e8ea091759e6f0e25d76d0ccc0661e47748afb85e5f13654d79",
+    "reference_bitstring_qubit0_first": "1010",
+    "generator_order": [
+      "double.occ0_occ2.to.virt1_virt3",
+      "single.occ0.to.virt1",
+      "single.occ2.to.virt3"
+    ],
+    "parameter_slot_order": [
+      "theta.double.occ0_occ2.to.virt1_virt3",
+      "theta.single.occ0.to.virt1",
+      "theta.single.occ2.to.virt3"
+    ],
+    "parameter_orientation": "exp_theta_generator"
+  },
+  "optimization": {
+    "algorithm": "scipy_slsqp",
+    "success": true,
+    "message": "Optimization terminated successfully",
+    "iterations": 4,
+    "function_evaluations": 17,
+    "gradient_evaluations": 4,
+    "final_parameters": [
+      -0.11176847603726517,
+      2.955630597660967e-08,
+      2.955630597660967e-08
+    ],
+    "best_energy_ha": -1.137306035753347,
+    "exact_energy_ha": -1.1373060357533737,
+    "absolute_error_ha": 2.6645352591003757e-14,
+    "final_state_fidelity": 0.999999999999984,
+    "trajectory": [
+      {
+        "parameters": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "energy_ha": -1.1169989967539973
+      },
+      {
+        "parameters": [
+          1.4901161193847656e-08,
+          0.0,
+          0.0
+        ],
+        "energy_ha": -1.116998991361827
+      },
+      {
+        "parameters": [
+          0.0,
+          1.4901161193847656e-08,
+          0.0
+        ],
+        "energy_ha": -1.1169989967539973
+      },
+      {
+        "parameters": [
+          0.0,
+          0.0,
+          1.4901161193847656e-08
+        ],
+        "energy_ha": -1.1169989967539973
+      },
+      {
+        "parameters": [
+          -0.3618624210357666,
+          0.0,
+          0.0
+        ],
+        "energy_ha": -1.0373176242848139
+      },
+      {
+        "parameters": [
+          -0.1124835262541435,
+          0.0,
+          0.0
+        ],
+        "energy_ha": -1.1373052011850104
+      },
+      {
+        "parameters": [
+          -0.1124835113529823,
+          0.0,
+          0.0
+        ],
+        "energy_ha": -1.1373052012197964
+      },
+      {
+        "parameters": [
+          -0.1124835262541435,
+          1.4901161193847656e-08,
+          0.0
+        ],
+        "energy_ha": -1.1373052011850104
+      },
+      {
+        "parameters": [
+          -0.1124835262541435,
+          0.0,
+          1.4901161193847656e-08
+        ],
+        "energy_ha": -1.1373052011850104
+      },
+      {
+        "parameters": [
+          -0.11176252420871335,
+          0.0,
+          0.0
+        ],
+        "energy_ha": -1.1373060356950737
+      },
+      {
+        "parameters": [
+          -0.11176250930755216,
+          0.0,
+          0.0
+        ],
+        "energy_ha": -1.1373060356947842
+      },
+      {
+        "parameters": [
+          -0.11176252420871335,
+          1.4901161193847656e-08,
+          0.0
+        ],
+        "energy_ha": -1.1373060356950742
+      },
+      {
+        "parameters": [
+          -0.11176252420871335,
+          0.0,
+          1.4901161193847656e-08
+        ],
+        "energy_ha": -1.1373060356950742
+      },
+      {
+        "parameters": [
+          -0.11176847603726517,
+          2.955630597660967e-08,
+          2.955630597660967e-08
+        ],
+        "energy_ha": -1.137306035753347
+      },
+      {
+        "parameters": [
+          -0.11176846113610397,
+          2.955630597660967e-08,
+          2.955630597660967e-08
+        ],
+        "energy_ha": -1.1373060357533462
+      },
+      {
+        "parameters": [
+          -0.11176847603726517,
+          4.4457467170457326e-08,
+          2.955630597660967e-08
+        ],
+        "energy_ha": -1.1373060357533444
+      },
+      {
+        "parameters": [
+          -0.11176847603726517,
+          2.955630597660967e-08,
+          4.4457467170457326e-08
+        ],
+        "energy_ha": -1.1373060357533449
+      }
+    ]
+  },
+  "resources": {
+    "semantic_block": {
+      "canonical_uccsd_generators": 3,
+      "product_formula_order": "double_then_singles"
+    },
+    "canonical_logical": {
+      "qubits": 4,
+      "parameter_count": 3,
+      "pauli_rotation_blocks": 12,
+      "canonical_circuit_sha256": "e0f4f55c966f2de92046a82c8538fe5074447c030d67155dced9d7ca5a6a9a98"
+    },
+    "common_basis_compiled": {
+      "depth": 96,
+      "gate_count": 188,
+      "cnot_count": 56,
+      "parameter_count": 3,
+      "pauli_rotation_count": 12,
+      "operation_sequence_sha256": "084c35304374462e182fb28cceab067f06762275b78b48c7ef444b5a25c4bdac",
+      "compilation_protocol_sha256": "b4553154fdb2db269ca1f43b361d6530fa9814d866103c71490d04d2b0552c52",
+      "adapter_verification": "passed",
+      "metric_scope": "ansatz_only",
+      "includes_reference_state": false,
+      "includes_measurement": false,
+      "includes_hardware_optimization_or_routing": false
+    },
+    "provider_native_diagnostic": {
+      "depth": 137,
+      "gate_count": 350,
+      "two_qubit_gate_count": 56,
+      "basis_gates": [
+        "rz",
+        "sx",
+        "x",
+        "cx"
+      ],
+      "optimization_level": 0,
+      "compiler_seed": 0,
+      "includes_reference_state": true,
+      "comparison_eligible": false
+    }
+  },
+  "wall_time_s": 0.16596625000238419
+}

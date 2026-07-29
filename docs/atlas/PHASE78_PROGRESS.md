@@ -2,9 +2,9 @@
 
 ## Scope
 
-Only `optimizer.cobyla.v1` is being promoted from a structured catalog entry
-to a private executable component. H₂ UCCSD and all later Phase 7.8 additions
-remain deferred until this slice closes.
+`optimizer.cobyla.v1` has completed private runtime qualification. The next
+bounded slice is the H₂ UCCSD ansatz. Later Phase 7.8 additions remain deferred
+until the UCCSD slice closes.
 
 ## Status
 
@@ -106,6 +106,67 @@ Phase 7.8 COBYLA is complete for the stated private acceptance boundary:
 Human review remains owner-waived. The synthetic authentication contract is
 adequate for this private CI qualification but is not evidence of a live
 WorkOS tenant session.
+
+## H₂ UCCSD slice
+
+### Current status
+
+- scientific configuration and parameter convention: complete;
+- provider-neutral canonical circuit: complete;
+- bounded three-parameter optimizer protocol: complete;
+- independent macOS/arm64 Qiskit and PennyLane adapters: complete;
+- catalog compatibility and adapter-tested bindings: complete;
+- typed Registry/API/worker execution: pending;
+- Linux/amd64 OCI publication: pending;
+- private deployed E2E and runtime qualification: pending.
+
+The frozen configuration is documented in
+`docs/atlas/PHASE78_H2_UCCSD_EXECUTABLE_PLAN.md`. It is a separate scientific
+specification from the existing one-parameter ansatz:
+
+- three independent amplitudes;
+- `exp(theta * generator)`, not the prior
+  `exp(theta / 2 * generator)`;
+- first-order product with the double generator followed by the two
+  spin-conserving single generators;
+- Operator Pool, Search, and Growth roles explicitly not applicable.
+
+The provider-neutral canonical fixture is
+`docs/atlas/fixtures/h2_sto3g/canonical_uccsd_v0.1.json`:
+
+- canonical circuit digest:
+  `e0f4f55c966f2de92046a82c8538fe5074447c030d67155dced9d7ca5a6a9a98`;
+- compilation protocol digest:
+  `b4553154fdb2db269ca1f43b361d6530fa9814d866103c71490d04d2b0552c52`;
+- Pauli rotations: `12`;
+- parameters: `3`;
+- CNOT: `56`;
+- depth: `96`;
+- total gates: `188`.
+
+Independent local reports are retained at:
+
+- `docs/atlas/fixtures/h2_sto3g/raw/qiskit_uccsd_v0.1.json`;
+- `docs/atlas/fixtures/h2_sto3g/raw/pennylane_uccsd_v0.1.json`.
+
+Both used SciPy SLSQP with the same zero initial vector, bounds, tolerance,
+and hard objective budget. Both completed in 17 energy evaluations.
+
+| Adapter | Energy (Ha) | Absolute error (Ha) | Fidelity |
+| --- | ---: | ---: | ---: |
+| Qiskit 1.4.6 | -1.137306035753347 | 2.665e-14 | 0.999999999999984 |
+| PennyLane 0.45.1 | -1.137306035753333 | 4.041e-14 | 0.999999999999971 |
+
+The tiny nonzero single amplitudes differ within floating-point finite-
+difference noise. The cross-framework acceptance compares final energy,
+fidelity, parameter vector tolerance, canonical input digests, and the exact
+common resource sequence; it does not require byte-identical optimizer
+trajectories.
+
+`ansatz.uccsd.v1` remains only `adapter_tested`. Its Qiskit and PennyLane
+bindings explicitly carry `private_oci_runtime_not_yet_qualified`; the H₂
+UCCSD workflow is `compatible`, not executable or executed. No runtime or
+publication claim is made from the macOS evidence.
 
 ## Claim boundary
 
