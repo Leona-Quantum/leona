@@ -14,7 +14,7 @@ remain deferred until this slice closes.
 - S3 Registry/API/worker: complete locally
 - S4 component-first UI: complete locally
 - S5 verification/evidence: complete for private macOS/arm64 adapter evidence
-- S6 remote reproducibility: OCI publish complete; private E2E pending
+- S6 remote reproducibility: complete for private qualification
 
 ## Local verification
 
@@ -66,11 +66,46 @@ The immutable publish records are stored in:
 The prior production-v1 profiles remain resolvable for historical execution
 bindings. New executions select production-v2 with adapter release 0.3.0.
 
-COBYLA must remain a private qualification candidate until the remaining
-remote gate succeeds:
+The private PostgreSQL + WorkOS-contract + real-OCI E2E succeeded on source
+commit `1b0c926a3cc06e9f7a1fb3efcc375f0595874f17`:
 
-1. run the private PostgreSQL + WorkOS-contract + real-OCI E2E;
-2. record the exact GitHub Actions run and evidence artifact.
+- CI:
+  [GitHub Actions run 30428158003](https://github.com/EshMis/majorana/actions/runs/30428158003);
+- private VQE E2E:
+  [GitHub Actions run 30428157848](https://github.com/EshMis/majorana/actions/runs/30428157848);
+- uploaded evidence artifact:
+  `phase78-cobyla-private-ci-e2e-1b0c926a3cc06e9f7a1fb3efcc375f0595874f17`
+  (artifact ID `8714432254`);
+- durable qualification record:
+  `docs/atlas/evidence/phase78/s6_private_oci_e2e.json`.
+
+The E2E used an isolated PostgreSQL 17 database, a synthetic WorkOS-shaped JWT
+contract, the exact Linux/amd64 OCI digests above, and separate Qiskit and
+PennyLane executions. It verified exactly one changed role
+(`parameter_optimizer`), private materialization for both providers, failure
+handling, and session reopening. It did not perform a live human WorkOS login.
+
+`optimizer.cobyla.v1:scipy:1.18.0` is therefore recorded as
+`runtime_qualified`, with the local reports, immutable OCI publication records,
+and private E2E record all retained as evidence locators. The COBYLA workflow
+template remains `structured`: a runnable candidate is produced by cloning the
+frozen executable baseline and saving the one-role swap. It is not promoted to
+a standalone public Registry workflow.
+
+## Phase close
+
+Phase 7.8 COBYLA is complete for the stated private acceptance boundary:
+
+- selectable and saveable as the sole controlled component change;
+- resolved to `scipy_cobyla`;
+- executed independently by Qiskit and PennyLane;
+- materialized and reopened privately;
+- qualified against digest-pinned Linux/amd64 runtimes;
+- blocked from public execution and publication.
+
+Human review remains owner-waived. The synthetic authentication contract is
+adequate for this private CI qualification but is not evidence of a live
+WorkOS tenant session.
 
 ## Claim boundary
 

@@ -1099,15 +1099,16 @@
       "binding_key": "optimizer.cobyla.v1:scipy:1.18.0",
       "binding_kind": "provider_native",
       "component_semantic_key": "optimizer.cobyla.v1",
-      "evidence_level": "adapter_tested",
+      "evidence_level": "runtime_qualified",
       "evidence_locators": [
         "https://docs.scipy.org/doc/scipy/reference/optimize.minimize-cobyla.html",
         "docs/atlas/evidence/phase78/qiskit_cobyla_local.json",
-        "docs/atlas/evidence/phase78/pennylane_cobyla_local.json"
+        "docs/atlas/evidence/phase78/pennylane_cobyla_local.json",
+        "docs/atlas/evidence/phase78/qiskit_oci_publish.json",
+        "docs/atlas/evidence/phase78/pennylane_oci_publish.json",
+        "docs/atlas/evidence/phase78/s6_private_oci_e2e.json"
       ],
-      "known_incompatibilities": [
-        "no_runtime_qualified_phase78_adapter"
-      ],
+      "known_incompatibilities": [],
       "package": "scipy",
       "package_version": "1.18.0",
       "provider": "scipy",

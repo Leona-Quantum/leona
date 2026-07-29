@@ -63,6 +63,22 @@ def test_bindings_do_not_misattribute_cross_provider_components():
     assert neutral[0].evidence_level is EvidenceLevel.ADAPTER_TESTED
 
 
+def test_cobyla_binding_records_private_runtime_qualification_without_public_claim():
+    cobyla = next(
+        item
+        for item in STANDARD_IMPLEMENTATIONS
+        if item.component_semantic_key == "optimizer.cobyla.v1"
+    )
+    assert cobyla.provider == "scipy"
+    assert cobyla.evidence_level is EvidenceLevel.RUNTIME_QUALIFIED
+    assert cobyla.known_incompatibilities == ()
+    assert "docs/atlas/evidence/phase78/s6_private_oci_e2e.json" in cobyla.evidence_locators
+
+    workflow = workflow_by_key("workflow.h2.fixed_excitation.cobyla.v1")
+    assert workflow.status is WorkflowStatus.STRUCTURED
+    assert workflow.registry_semantic_key is None
+
+
 def test_executable_h2_workflow_is_compatible():
     result = check_workflow_compatibility(workflow_by_key("workflow.h2.fixed_excitation.v1"))
     assert result.compatible is True

@@ -749,16 +749,18 @@ STANDARD_IMPLEMENTATIONS: tuple[ComponentImplementationBinding, ...] = (
         "scipy",
         "1.18.0",
         BindingKind.PROVIDER_NATIVE,
-        EvidenceLevel.ADAPTER_TESTED,
+        EvidenceLevel.RUNTIME_QUALIFIED,
         evidence=(
             "https://docs.scipy.org/doc/scipy/reference/optimize.minimize-cobyla.html",
             "docs/atlas/evidence/phase78/qiskit_cobyla_local.json",
             "docs/atlas/evidence/phase78/pennylane_cobyla_local.json",
+            "docs/atlas/evidence/phase78/qiskit_oci_publish.json",
+            "docs/atlas/evidence/phase78/pennylane_oci_publish.json",
+            "docs/atlas/evidence/phase78/s6_private_oci_e2e.json",
         ),
         supported_configuration_fields=tuple(
             sorted(_CONFIGURATION_FIELDS_BY_COMPONENT["optimizer.cobyla.v1"])
         ),
-        known_incompatibilities=("no_runtime_qualified_phase78_adapter",),
     ),
     _binding(
         "measurement.exact_statevector.v1",

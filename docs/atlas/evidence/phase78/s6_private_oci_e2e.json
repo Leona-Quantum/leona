@@ -1,0 +1,41 @@
+{
+  "schema_version": "1.0.0",
+  "kind": "phase78_cobyla_private_oci_e2e_qualification",
+  "source_commit": "1b0c926a3cc06e9f7a1fb3efcc375f0595874f17",
+  "github_actions": {
+    "workflow_run_id": 30428157848,
+    "workflow_run_url": "https://github.com/EshMis/majorana/actions/runs/30428157848",
+    "artifact_id": 8714432254,
+    "artifact_name": "phase78-cobyla-private-ci-e2e-1b0c926a3cc06e9f7a1fb3efcc375f0595874f17",
+    "result": "success"
+  },
+  "runtime_host": "github_actions_dedicated_docker",
+  "database": "disposable_postgresql_17",
+  "workos_auth": "synthetic_contract_only",
+  "changed_roles": [
+    "parameter_optimizer"
+  ],
+  "provider_results": {
+    "qiskit": {
+      "execution": "passed",
+      "comparison": "passed",
+      "private_materialization": "passed"
+    },
+    "pennylane": {
+      "execution": "passed",
+      "comparison": "passed",
+      "private_materialization": "passed"
+    }
+  },
+  "session_reopen": "passed",
+  "failure_path": "passed",
+  "public_execution": false,
+  "publication": false,
+  "claim_boundary": [
+    "private runtime qualification only",
+    "owner-waived human review",
+    "no optimizer superiority claim",
+    "no public scientific result"
+  ],
+  "upstream_evidence_digest_sha256": "aeab5ba15466824d0a835df445bafbc2482adcf141b3347c8344ab40b2ec1dae"
+}
