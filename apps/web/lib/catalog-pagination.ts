@@ -83,11 +83,20 @@ export async function collectCatalogPages(
     }
     collected.push(...result.payload);
 
-    // No total header: a pre-pagination server, which ignored limit/offset and
-    // has already handed us the whole corpus. Asking for page 2 would return
-    // the same rows again, forever.
-    if (result.total === null) return collected;
-    if (page === 0) total = result.total;
+    if (page === 0) {
+      // No total header on the FIRST page: a pre-pagination server, which
+      // ignored limit/offset and has already handed us the whole corpus.
+      // Asking for page 2 would return the same rows again, forever.
+      if (result.total === null) return collected;
+      total = result.total;
+    } else if (result.total === null) {
+      // A header that disappears mid-walk is a broken response, not a
+      // pre-pagination server — a rolling deploy can put an old instance
+      // behind the same load balancer as a new one. Returning here would skip
+      // the completeness check below and serve the partial corpus.
+      log(`[catalog-pagination] page ${page} lost its total header mid-walk (${url})`);
+      return null;
+    }
 
     if (collected.length >= (total ?? 0)) break;
     // A server that answers a page inside the advertised range with nothing has

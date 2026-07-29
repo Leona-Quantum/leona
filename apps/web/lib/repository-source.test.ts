@@ -68,6 +68,20 @@ test("a server with no total header is treated as having returned everything", a
   assert.equal(requested.length, 1);
 });
 
+test("a total that disappears mid-walk is a broken response, not a bare server", async () => {
+  // A rolling deploy can put a pre-pagination instance behind the same load
+  // balancer as a paginating one. Page 0 says 230; page 1 comes back with no
+  // header. Treating that second page the way we treat a bare server would
+  // return 100 entries and skip the completeness check entirely.
+  let call = 0;
+  const fetchPage = async (): Promise<CatalogPage> => {
+    call += 1;
+    const payload = Array.from({ length: 100 }, () => ({}));
+    return { payload, total: call === 1 ? 230 : null };
+  };
+  assert.equal(await collectCatalogPages(API, "list", fetchPage, silent), null);
+});
+
 test("an exact multiple of the page size does not fetch an extra empty page", async () => {
   const { fetchPage, requested } = serve({ total: CATALOG_PAGE_SIZE, corpus: CATALOG_PAGE_SIZE });
   const entries = (await collectCatalogPages(API, "list", fetchPage, silent)) as unknown[];
