@@ -7,6 +7,7 @@ import {
 } from "@workos-inc/authkit-nextjs";
 import { isWorkosAuthConfigured } from "./auth-config";
 import { isLocalDevAuthEnabled, LOCAL_DEV_ACCESS_TOKEN } from "./local-dev-auth";
+import { siteOrigin } from "./site-origin";
 
 const LOCAL_DEV_AUTH: UserInfo = {
   user: {
@@ -53,7 +54,24 @@ export function isMajoranaAuthConfigured(): boolean {
   return isWorkosAuthConfigured();
 }
 
+/**
+ * Sign out, and say where to land.
+ *
+ * WorkOS decides the destination, not us: `signOut` forwards `returnTo` to the
+ * hosted logout endpoint as `return_to`, and a value that is not an absolute
+ * URL registered as a sign-out redirect is ignored in favour of the
+ * environment's *default* sign-out redirect. We passed `"/"`, which is neither,
+ * so every sign-out landed on whatever that default happened to be — in this
+ * deployment a stale Vercel preview host left over from before the domain
+ * existed, which is what the owner saw.
+ *
+ * Passing the absolute origin is the half that belongs in code: the app should
+ * name where it wants people to end up instead of inheriting it from a
+ * dashboard field nobody looks at. The other half is registering that origin as
+ * a sign-out redirect and making it the default — until that exists WorkOS
+ * falls back exactly as it does today, so this is inert rather than wrong.
+ */
 export async function signOutMajorana(): Promise<void> {
   if (isLocalDevAuthEnabled()) return;
-  await signOut({ returnTo: "/" });
+  await signOut({ returnTo: siteOrigin() ?? "/" });
 }
