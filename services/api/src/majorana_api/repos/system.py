@@ -1,12 +1,25 @@
 """System repository — the ONLY unscoped surface, by design.
 
-Two callers, both pre-/extra-tenant:
+Three callers, all of them questions a Scope cannot answer:
+
 1. Identity bootstrap: WorkOS first-login provisioning runs before any Scope
    exists (it *creates* the personal workspace a Scope would point at).
 2. Worker job loop: jobs are control-plane internal rows with no workspace_id.
+3. Questions a user asks ABOUT their tenants rather than inside one (0037/0038):
+   which workspaces am I in, which one am I acting in, which was I added to and
+   not told about, let me out of this one. A Scope names a single tenant and is
+   derived from the pointer these functions read and write, so none of them can
+   be expressed in terms of one — the switcher's whole job is to name a
+   workspace the caller is not currently scoped into.
 
-Nothing else may import this module from request-handling code. Tenant data
-stays behind the scoped repositories.
+Category 3 is bounded by the predicate, not by convention: every query in it is
+keyed on `Membership.user_id == <the caller>`, so it can only ever return
+workspaces the caller holds a membership in. That is what keeps "may never
+expose tenant data to request handlers" true — the rows these return are the
+caller's own memberships, and their *contents* (runs, artifacts, versions) stay
+behind the scoped repositories where a Scope gates every read.
+
+Nothing else may import this module from request-handling code.
 """
 
 import datetime as dt
@@ -14,13 +27,14 @@ import uuid
 from dataclasses import dataclass
 from typing import Any
 
-from majorana_contracts.enums import Role, RunStatus
+from majorana_contracts.enums import Role, RunStatus, WorkspaceKind
 from majorana_openqasm import fingerprint as qasm_fingerprint
 from majorana_openqasm import normalize
 from sqlalchemy import case, func, or_, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import aliased
 
 from ..ids import uuid7
 from ..orm import Artifact, ArtifactVersion, Job, Membership, Run, User, Workspace
@@ -141,7 +155,17 @@ async def ensure_system_catalog_authority(
     ):
         await session.execute(
             pg_insert(Membership)
-            .values(workspace_id=workspace_id, user_id=user_id, role=role)
+            .values(
+                workspace_id=workspace_id,
+                user_id=user_id,
+                role=role,
+                # Nobody invited a system identity (0038). These two never sign
+                # in, so no notice could reach them — but leaving the column NULL
+                # would make "unacknowledged means somebody was invited" false in
+                # the one place it is never read, which is exactly where a wrong
+                # invariant survives.
+                acknowledged_at=func.now(),
+            )
             .on_conflict_do_nothing(index_elements=[Membership.workspace_id, Membership.user_id])
         )
     await session.flush()
@@ -294,6 +318,11 @@ async def ensure_starter_bell_artifact(session: AsyncSession, workspace_id) -> N
         family="Bell",
         framework="qiskit",
         visibility="private",
+        # This row is built directly rather than through create_artifact, so it
+        # does not inherit that function's kept default. It must be kept: the
+        # whole point of the starter example is that a brand-new Vault is not
+        # empty, and an unkept one is invisible to the list (0036).
+        kept_at=dt.datetime.now(dt.UTC),
     )
     session.add(artifact)
     await session.flush()
@@ -334,13 +363,21 @@ async def _existing_user(
     )
     if user is None:
         return None
+    # Keyed on OWNERSHIP, not on membership.
+    #
+    # This used to join `memberships` and take the first personal workspace the
+    # user belonged to. That was unambiguous only while nobody could be a member
+    # of anyone else's workspace — and a personal workspace is exactly what an
+    # invite attaches a collaborator to. Once that happens the old query matches
+    # two rows with no ORDER BY, so a user's "personal workspace" could resolve
+    # to someone else's tenant, on some requests and not others. Ownership is
+    # single-valued: `get_or_provision_user` sets owner_user_id to the user it
+    # just created the workspace for, and nothing reassigns it.
     ws = (
         (
             await session.execute(
-                select(Workspace)
-                .join(Membership, Membership.workspace_id == Workspace.id)
-                .where(
-                    Membership.user_id == user.id,
+                select(Workspace).where(
+                    Workspace.owner_user_id == user.id,
                     Workspace.kind == "personal",
                     Workspace.deleted_at.is_(None),
                 )
@@ -372,14 +409,382 @@ async def find_membership(
     )
 
 
-async def default_workspace_id(
+@dataclass(frozen=True)
+class ActiveWorkspace:
+    """The tenant a request acts in, and the caller's role in it."""
+
+    workspace_id: uuid.UUID
+    role: str
+
+
+async def resolve_active_workspace(
     session: AsyncSession,
     *,
-    user_id: Any,
+    user: User,
     personal_workspace_id: Any,
-) -> Any:
-    """Return the personal workspace until collaboration is productized."""
-    return personal_workspace_id
+) -> ActiveWorkspace | None:
+    """Which workspace this request acts in (migration 0037).
+
+    `users.active_workspace_id` is a *preference*. The grant is the membership
+    row, and it is read here on every request, so revoking someone's access takes
+    effect on their next request rather than on their next sign-in.
+
+    A pointer that no longer resolves — access revoked, workspace soft-deleted —
+    falls back to the personal workspace and is cleared, rather than refusing the
+    request. Locking a user out of their own account because someone else removed
+    them from a shared workspace would be a worse outcome than the one it
+    prevents, and there is nothing to protect: the fallback is the tenant they
+    own.
+
+    Returns None only when the personal membership itself is missing, which is a
+    broken account rather than an authorization decision; the caller turns that
+    into a 404.
+    """
+    target_id = user.active_workspace_id
+    if target_id is not None and target_id != personal_workspace_id:
+        membership = await find_membership(session, workspace_id=target_id, user_id=user.id)
+        if membership is not None:
+            live = (
+                await session.execute(
+                    select(Workspace.id).where(
+                        Workspace.id == target_id, Workspace.deleted_at.is_(None)
+                    )
+                )
+            ).scalar_one_or_none()
+            if live is not None:
+                return ActiveWorkspace(workspace_id=target_id, role=membership.role)
+        # Stale pointer. Clear it so the next request costs one lookup, not three.
+        user.active_workspace_id = None
+        await session.flush()
+
+    personal = await find_membership(session, workspace_id=personal_workspace_id, user_id=user.id)
+    if personal is None:
+        return None
+    return ActiveWorkspace(workspace_id=personal_workspace_id, role=personal.role)
+
+
+async def list_user_workspaces(
+    session: AsyncSession, *, user_id: Any
+) -> list[tuple[Workspace, Membership]]:
+    """Every live workspace the user is a member of, personal first then by name.
+
+    Pre-Scope like the rest of this module: a workspace switcher has to be able
+    to name a tenant the caller is not currently scoped into.
+    """
+    stmt = (
+        select(Workspace, Membership)
+        .join(Membership, Membership.workspace_id == Workspace.id)
+        .where(Membership.user_id == user_id, Workspace.deleted_at.is_(None))
+        # Personal first, then by name. The first term is the same predicate the
+        # `is_personal` flag is computed from, and it has to be BOTH halves: an
+        # "owned first" key looks identical until the user owns a team workspace
+        # too, and then it sorts their own workspace under whatever they happened
+        # to name the other one. Found by reading the list on a running server,
+        # where a workspace called "Ion trap group" pushed the personal one
+        # second on the alphabet.
+        .order_by(
+            case(
+                (
+                    (Workspace.kind == "personal") & (Workspace.owner_user_id == user_id),
+                    0,
+                ),
+                else_=1,
+            ),
+            Workspace.name,
+            Workspace.id,
+        )
+    )
+    return list((await session.execute(stmt)).all())
+
+
+async def set_active_workspace(
+    session: AsyncSession, *, user: User, workspace_id: uuid.UUID
+) -> tuple[Workspace, Membership] | None:
+    """Point the user at a workspace they belong to. None if they do not.
+
+    Membership is checked here as well as in `resolve_active_workspace` — this
+    one gives the caller an honest 404 instead of a switch that appears to work
+    and silently keeps them where they were.
+    """
+    membership = await find_membership(session, workspace_id=workspace_id, user_id=user.id)
+    if membership is None:
+        return None
+    workspace = (
+        await session.execute(
+            select(Workspace).where(Workspace.id == workspace_id, Workspace.deleted_at.is_(None))
+        )
+    ).scalar_one_or_none()
+    if workspace is None:
+        return None
+    user.active_workspace_id = workspace_id
+    # Entering a workspace is knowing about it. Acknowledging here rather than
+    # leaving it to the client is what stops the notice following someone around
+    # inside the very workspace it is announcing — the Settings switcher can
+    # move them too, and it has never called an acknowledge route.
+    await _stamp_acknowledged(session, workspace_id=workspace_id, user_id=user.id)
+    await session.flush()
+    return workspace, membership
+
+
+async def list_unacknowledged_memberships(
+    session: AsyncSession, *, user_id: Any
+) -> list[tuple[Workspace, Membership, User | None]]:
+    """Workspaces this user was added to and has not been told about (0038).
+
+    Pre-Scope for the same reason as the switcher: the whole point is to name a
+    tenant the caller has never been scoped into. Read on every authenticated
+    page load and empty almost every time, which is what
+    `ix_memberships_unacknowledged` is for.
+
+    The inviter is an OUTER join. A membership whose inviter has since been
+    deleted still has to be announced — losing the author is not a reason to
+    leave someone permanently unaware of a workspace they are in.
+    """
+    inviter = aliased(User)
+    stmt = (
+        select(Workspace, Membership, inviter)
+        .join(Membership, Membership.workspace_id == Workspace.id)
+        .outerjoin(inviter, inviter.id == Membership.invited_by_user_id)
+        .where(
+            Membership.user_id == user_id,
+            Membership.acknowledged_at.is_(None),
+            Workspace.deleted_at.is_(None),
+        )
+        .order_by(Membership.created_at, Workspace.id)
+    )
+    return [tuple(row) for row in (await session.execute(stmt)).all()]  # type: ignore[misc]
+
+
+async def _stamp_acknowledged(session: AsyncSession, *, workspace_id: Any, user_id: Any) -> None:
+    """Record that this person has been told. First write wins.
+
+    Conditional in the DATABASE rather than in Python. Two tabs answering the
+    same notice — or one opening the workspace while the other dismisses it —
+    both read `acknowledged_at IS NULL` before either writes, so a Python-side
+    guard lets both through and the stored moment becomes whichever transaction
+    committed *last*. Postgres re-evaluates this WHERE clause after taking the
+    row lock, so the second UPDATE matches nothing.
+
+    `func.now()` for the neighbouring reason: the database's clock rather than
+    one of however many API instances'.
+
+    Nothing reads the value today beyond NULL/NOT NULL, which is exactly why it
+    is worth pinning now — the day something does, the defect is a wrong date in
+    a record nobody thought was approximate.
+    """
+    await session.execute(
+        update(Membership)
+        .where(
+            Membership.workspace_id == workspace_id,
+            Membership.user_id == user_id,
+            Membership.acknowledged_at.is_(None),
+        )
+        .values(acknowledged_at=func.now())
+        .execution_options(synchronize_session="fetch")
+    )
+
+
+async def acknowledge_membership(
+    session: AsyncSession, *, user: User, workspace_id: uuid.UUID
+) -> bool:
+    """Mark an invitation as seen without acting on it. False if not a member.
+
+    The membership is looked up first so a workspace the caller does not belong
+    to is an honest 404, rather than an UPDATE that matches nothing and reports
+    success.
+    """
+    membership = await find_membership(session, workspace_id=workspace_id, user_id=user.id)
+    if membership is None:
+        return False
+    await _stamp_acknowledged(session, workspace_id=workspace_id, user_id=user.id)
+    await session.flush()
+    return True
+
+
+class CannotLeaveOwnedWorkspace(Exception):
+    """The caller owns this workspace, so leaving it would orphan it."""
+
+
+async def leave_workspace(session: AsyncSession, *, user: User, workspace_id: uuid.UUID) -> bool:
+    """Give up your own access to a workspace. False if you were not in it.
+
+    The counterpart to `remove_member`, and NOT the same operation: that one is
+    admin-only and refuses to touch the caller's own row, so before this there
+    was no way out of a workspace somebody put you in except to ask them to
+    remove you. A notice that can only be dismissed is not a choice.
+
+    The owner is refused. Their leaving would leave `workspaces.owner_user_id`
+    pointing at someone with no membership — the same state `set_member_role`
+    refuses to create, and the fix for it is an ownership transfer, which does
+    not exist yet.
+
+    Their runs and artifacts stay. They belong to the workspace.
+    """
+    membership = await find_membership(session, workspace_id=workspace_id, user_id=user.id)
+    if membership is None:
+        return False
+    if membership.role == Role.OWNER:
+        raise CannotLeaveOwnedWorkspace(str(workspace_id))
+    await session.execute(
+        Membership.__table__.delete().where(
+            Membership.workspace_id == workspace_id,
+            Membership.user_id == user.id,
+        )
+    )
+    # Same reason as remove_member: resolve_active_workspace would fall back on
+    # the next request anyway, but a user should not walk away holding a pointer
+    # at a tenant they just left.
+    if user.active_workspace_id == workspace_id:
+        user.active_workspace_id = None
+    await session.flush()
+    return True
+
+
+class NotWorkspaceOwner(Exception):
+    """Only the owner may dispose of a workspace."""
+
+
+class CannotDeletePersonalWorkspace(Exception):
+    """The account's own tenant is not deletable — it is where everything falls back to."""
+
+
+async def delete_workspace(session: AsyncSession, *, user: User, workspace_id: uuid.UUID) -> bool:
+    """Retire a shared workspace. False if the caller is not a member of it.
+
+    The other half of ownership transfer, and the reason it is in the same
+    change: those are the only two ways out of a workspace you own, and shipping
+    one without the other leaves an owner who does not want to hand the group to
+    anybody still stuck with it forever.
+
+    Pre-Scope for the same reason `leave_workspace` is — the workspace being
+    disposed of is usually not the one the caller is standing in, and requiring a
+    switch first would mean entering a tenant in order to destroy it, then being
+    bounced out of it mid-request.
+
+    A SOFT delete. `deleted_at` is already the predicate every workspace read
+    filters on — the switcher, the invitation list, scope resolution — so setting
+    it removes the workspace from all of them in one write, and the runs and
+    artifacts underneath keep pointing at a row that still exists. Nothing here
+    is recoverable through the product; it is recoverable by an operator with a
+    SQL prompt, which is the right amount of difficulty for an operation the UI
+    asks about twice.
+    """
+    membership = await find_membership(session, workspace_id=workspace_id, user_id=user.id)
+    if membership is None:
+        return False
+    if membership.role != Role.OWNER:
+        raise NotWorkspaceOwner(str(workspace_id))
+    workspace = (
+        await session.execute(
+            select(Workspace)
+            .where(Workspace.id == workspace_id, Workspace.deleted_at.is_(None))
+            .with_for_update()
+        )
+    ).scalar_one_or_none()
+    if workspace is None:
+        return False
+    if workspace.owner_user_id != user.id:
+        # Re-checked AFTER the lock, and not redundant with the membership read
+        # above: that one is unlocked, so a transfer committing in between leaves
+        # the caller holding a membership row that still says OWNER while the
+        # workspace belongs to somebody else. Whoever lost the workspace a moment
+        # ago must not be able to delete it. `transfer_ownership` makes the same
+        # check for the same reason.
+        raise NotWorkspaceOwner(str(workspace_id))
+    if workspace.kind == WorkspaceKind.PERSONAL:
+        raise CannotDeletePersonalWorkspace(str(workspace_id))
+    workspace.deleted_at = dt.datetime.now(dt.timezone.utc)
+    # Everyone standing in it, not just the owner. `resolve_active_workspace`
+    # already falls back on a pointer that no longer resolves, so this is not
+    # what makes the deletion correct — it is what stops every other member
+    # paying a failed lookup on their next request for a tenant that is gone.
+    #
+    # `synchronize_session="fetch"` for the same reason `_stamp_acknowledged`
+    # uses it: this is a bulk ORM UPDATE, and without it the User objects already
+    # loaded in this session keep a pointer the database no longer has.
+    await session.execute(
+        update(User)
+        .where(User.active_workspace_id == workspace_id)
+        .values(active_workspace_id=None)
+        .execution_options(synchronize_session="fetch")
+    )
+    await session.flush()
+    return True
+
+
+async def count_owned_workspaces(session: AsyncSession, *, user_id: Any) -> int:
+    """Live workspaces this user owns, personal included.
+
+    Personal is counted rather than exempted so the number the tier limit is
+    compared against is the same number the user can see in their switcher.
+    """
+    return int(
+        (
+            await session.execute(
+                select(func.count(Workspace.id)).where(
+                    Workspace.owner_user_id == user_id,
+                    Workspace.deleted_at.is_(None),
+                )
+            )
+        ).scalar_one()
+    )
+
+
+class WorkspaceLimitReached(Exception):
+    """The account already owns as many workspaces as its tier allows."""
+
+    def __init__(self, owned: int, limit: int) -> None:
+        super().__init__(f"{owned}/{limit} workspaces owned")
+        self.owned = owned
+        self.limit = limit
+
+
+async def create_team_workspace(
+    session: AsyncSession,
+    *,
+    owner: User,
+    name: str,
+    owned_workspace_limit: int | None,
+) -> tuple[Workspace, Membership]:
+    """Create a shared workspace with its creator as OWNER.
+
+    Unscoped like the rest of this module by necessity: a workspace that does
+    not exist yet cannot be the subject of a Scope. The authority checked is
+    "you are a signed-in user", which is all creating your own tenant requires.
+
+    Deliberately does NOT set the creator's active workspace. `get_scope` reads
+    one pointer and exactly one route writes it, and that property is worth more
+    than saving the client a round trip.
+
+    No starter artifact. The Bell circuit exists to give a new *account* a
+    working example; a second workspace is made by someone who already has one,
+    and filing an unasked-for artifact into a shared Vault is noise.
+    """
+    normalized = " ".join(name.strip().split())
+    if not normalized:
+        raise ValueError("workspace name cannot be blank")
+    if owned_workspace_limit is not None:
+        owned = await count_owned_workspaces(session, user_id=owner.id)
+        if owned >= owned_workspace_limit:
+            raise WorkspaceLimitReached(owned, owned_workspace_limit)
+    workspace = Workspace(
+        id=uuid7(),
+        kind="team",
+        name=normalized,
+        owner_user_id=owner.id,
+    )
+    session.add(workspace)
+    await session.flush()
+    membership = Membership(
+        workspace_id=workspace.id,
+        user_id=owner.id,
+        role=Role.OWNER,
+        # Self-created: they are looking at the form that made it.
+        acknowledged_at=dt.datetime.now(dt.timezone.utc),
+    )
+    session.add(membership)
+    await session.flush()
+    return workspace, membership
 
 
 async def get_or_provision_user(
@@ -438,7 +843,17 @@ async def get_or_provision_user(
     ws = Workspace(id=uuid7(), kind="personal", name=normalized_email, owner_user_id=user.id)
     session.add(ws)
     await session.flush()
-    session.add(Membership(workspace_id=ws.id, user_id=user.id, role=Role.OWNER))
+    session.add(
+        Membership(
+            workspace_id=ws.id,
+            user_id=user.id,
+            role=Role.OWNER,
+            # Nobody invited them here — this workspace was created for them, by
+            # signing in. An unacknowledged membership would announce their own
+            # account to them on their first page load (migration 0038).
+            acknowledged_at=dt.datetime.now(dt.timezone.utc),
+        )
+    )
     await session.flush()
     await ensure_starter_bell_artifact(session, ws.id)
     return user, ws

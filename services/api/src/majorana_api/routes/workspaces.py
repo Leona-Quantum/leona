@@ -1,20 +1,128 @@
 """Workspace settings and collaboration endpoints."""
 
 import datetime as dt
+import uuid
+from typing import Annotated
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends, HTTPException
 from majorana_contracts import Workspace as WorkspaceResource
 from majorana_contracts import WorkspaceFolder as WorkspaceFolderResource
-from majorana_contracts import WorkspaceMember, WorkspaceOverview
+from majorana_contracts import (
+    WorkspaceInvitation,
+    WorkspaceMember,
+    WorkspaceOverview,
+    WorkspaceSummary,
+)
 from majorana_contracts.enums import Role, WorkspaceKind
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from ..auth.deps import CurrentScope, DbSession
-from ..orm import Membership, User, WorkspaceFolder
+from ..auth.deps import CurrentIdentity, CurrentScope, DbSession, get_settings
+from ..orm import Membership, User
+from ..orm import Workspace as WorkspaceRow
+from ..orm import WorkspaceFolder
 from ..repos import folders as folders_repo
+from ..repos import system
 from ..repos import workspaces as workspaces_repo
+from ..settings import Settings
+from ..tiers import limits_for, resolve_tier
 
 router = APIRouter()
+
+
+class WorkspaceSettingsRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    auto_keep_artifacts: bool
+
+
+class WorkspaceRefRequest(BaseModel):
+    """A workspace named in a body, never in a path.
+
+    The three routes that take one — switch, acknowledge, leave — all act on the
+    caller's OWN membership of it, and all validate it against `memberships`. It
+    is not a scope selector, and `test_no_route_accepts_a_caller_supplied_scope`
+    is what keeps it from becoming one.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    workspace_id: uuid.UUID
+
+
+class SwitchWorkspaceRequest(WorkspaceRefRequest):
+    pass
+
+
+class CreateWorkspaceRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    name: str = Field(min_length=1, max_length=120)
+
+    @field_validator("name")
+    @classmethod
+    def require_non_blank_name(cls, value: str) -> str:
+        normalized = " ".join(value.strip().split())
+        if not normalized:
+            raise ValueError("workspace name cannot be blank")
+        return normalized
+
+
+#: Roles an invite may grant. OWNER and ADMIN are both absent, for different
+#: reasons: OWNER is an ownership transfer, and ADMIN is an authority that should
+#: be granted to someone already in the workspace rather than handed out with the
+#: invitation that lets them in.
+INVITABLE_ROLES = (Role.MEMBER, Role.VIEWER)
+
+
+class InviteMemberRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    email: str = Field(min_length=3, max_length=320)
+    role: Role = Role.MEMBER
+
+    @field_validator("email")
+    @classmethod
+    def normalize_email(cls, value: str) -> str:
+        normalized = value.strip().lower()
+        if "@" not in normalized or normalized.startswith("@") or normalized.endswith("@"):
+            raise ValueError("an email address is required")
+        return normalized
+
+    @field_validator("role")
+    @classmethod
+    def only_invitable_roles(cls, value: Role) -> Role:
+        if value not in INVITABLE_ROLES:
+            raise ValueError("role must be member or viewer")
+        return value
+
+
+class MemberRoleRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    role: Role
+
+    @field_validator("role")
+    @classmethod
+    def role_is_assignable(cls, value: Role) -> Role:
+        if value == Role.OWNER:
+            # Ownership transfer exists now, but it is not this. Granting OWNER
+            # also demotes the caller, and a one-sided role change is the wrong
+            # shape for a two-sided operation.
+            raise ValueError("use POST /workspace/transfer-ownership")
+        return value
+
+
+class TransferOwnershipRequest(BaseModel):
+    """The member who is to receive the workspace, by user id.
+
+    Never an email. `add_member_by_email` exists one route away, and accepting an
+    address here would collapse "let this person in" and "give them the
+    workspace" into a single call.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    user_id: uuid.UUID
 
 
 class CreateFolderRequest(BaseModel):
@@ -52,25 +160,412 @@ def _to_folder(folder: WorkspaceFolder) -> WorkspaceFolderResource:
     )
 
 
+def _to_workspace(workspace: WorkspaceRow) -> WorkspaceResource:
+    return WorkspaceResource(
+        id=workspace.id,
+        kind=WorkspaceKind(workspace.kind),
+        name=workspace.name,
+        owner_user_id=workspace.owner_user_id,
+        plan=workspace.plan or "free",
+        auto_keep_artifacts=bool(workspace.auto_keep_artifacts),
+        created_at=workspace.created_at,
+        deleted_at=workspace.deleted_at,
+    )
+
+
+def _to_summary(
+    workspace: WorkspaceRow,
+    membership: Membership,
+    *,
+    user_id: uuid.UUID,
+    active_workspace_id: uuid.UUID,
+) -> WorkspaceSummary:
+    return WorkspaceSummary(
+        id=workspace.id,
+        kind=WorkspaceKind(workspace.kind),
+        name=workspace.name,
+        role=Role(membership.role),
+        is_personal=(
+            workspace.kind == WorkspaceKind.PERSONAL and workspace.owner_user_id == user_id
+        ),
+        is_active=workspace.id == active_workspace_id,
+    )
+
+
+@router.get("/workspaces", response_model=list[WorkspaceSummary])
+async def list_workspaces(
+    identity: CurrentIdentity, scope: CurrentScope, session: DbSession
+) -> list[WorkspaceSummary]:
+    """Every workspace the caller can act in — the switcher's data.
+
+    `scope` is a dependency rather than `identity.active_workspace_id` on
+    purpose: it is the resolved answer, so a pointer at a workspace the caller
+    was removed from shows the personal workspace as active, which is where the
+    next request will actually land.
+    """
+    user, _personal = identity
+    rows = await system.list_user_workspaces(session, user_id=user.id)
+    return [
+        _to_summary(
+            workspace,
+            membership,
+            user_id=user.id,
+            active_workspace_id=scope.workspace_id,
+        )
+        for workspace, membership in rows
+    ]
+
+
+@router.post("/workspaces/active", response_model=WorkspaceSummary)
+async def switch_active_workspace(
+    body: SwitchWorkspaceRequest,
+    identity: CurrentIdentity,
+    session: DbSession,
+) -> WorkspaceSummary:
+    """Change which workspace subsequent requests act in.
+
+    Takes no `CurrentScope`: the scope of the request that performs a switch is
+    the one being left, and depending on it would only add a lookup nobody reads.
+    A workspace the caller has no membership in is 404 — the same answer as one
+    that does not exist, because telling them apart would confirm the existence
+    of another tenant's workspace to a stranger holding its id.
+    """
+    user, _personal = identity
+    switched = await system.set_active_workspace(session, user=user, workspace_id=body.workspace_id)
+    if switched is None:
+        raise HTTPException(404, "workspace not found")
+    workspace, membership = switched
+    return _to_summary(
+        workspace,
+        membership,
+        user_id=user.id,
+        active_workspace_id=workspace.id,
+    )
+
+
+@router.get("/workspaces/invitations", response_model=list[WorkspaceInvitation])
+async def list_invitations(
+    identity: CurrentIdentity, session: DbSession
+) -> list[WorkspaceInvitation]:
+    """Workspaces the caller was added to and has not been told about (0038).
+
+    The whole reason this route exists: an invite grants access silently, so
+    before it, a collaborator had no way to learn they had one except to be told
+    out of band. Read on every authenticated page load and empty almost always.
+
+    Takes no `CurrentScope` — an invitation is about a workspace the caller has
+    never been scoped into, which is what makes it worth announcing.
+    """
+    user, _personal = identity
+    rows = await system.list_unacknowledged_memberships(session, user_id=user.id)
+    now = dt.datetime.now(dt.timezone.utc)
+    return [
+        WorkspaceInvitation(
+            workspace_id=workspace.id,
+            workspace_name=workspace.name,
+            role=Role(membership.role),
+            invited_by_email=inviter.email if inviter is not None else None,
+            invited_by_name=inviter.display_name if inviter is not None else None,
+            created_at=membership.created_at or now,
+        )
+        for workspace, membership, inviter in rows
+    ]
+
+
+@router.post("/workspaces/acknowledge", status_code=204)
+async def acknowledge_invitation(
+    body: WorkspaceRefRequest,
+    identity: CurrentIdentity,
+    session: DbSession,
+) -> None:
+    """Stop announcing a workspace without entering it — the notice's "not now".
+
+    Carries the workspace in the BODY rather than the path for the same reason
+    the switch does: `test_no_route_accepts_a_caller_supplied_scope` sweeps
+    handler signatures for a `workspace_id` argument, because one would be a
+    second way to choose the tenant a handler reads. This one selects nothing —
+    it names a membership of the caller's own, validated against `memberships`,
+    and a workspace they are not in is a 404.
+    """
+    user, _personal = identity
+    if not await system.acknowledge_membership(session, user=user, workspace_id=body.workspace_id):
+        raise HTTPException(404, "workspace not found")
+
+
+@router.post("/workspaces/leave", status_code=204)
+async def leave_workspace(
+    body: WorkspaceRefRequest,
+    identity: CurrentIdentity,
+    session: DbSession,
+) -> None:
+    """Give up your own access to a workspace somebody else runs.
+
+    Not `DELETE /workspace/members/{me}`: that route is admin-only and scoped to
+    the workspace already open, so declining an invitation would have meant
+    switching into the tenant you want out of, and being an admin of it. This
+    one is the member's own decision about a workspace named by id.
+
+    The owner is refused with 409 rather than 403: it is not that they lack
+    authority, it is that there would be nobody left to run the workspace.
+    """
+    user, _personal = identity
+    try:
+        left = await system.leave_workspace(session, user=user, workspace_id=body.workspace_id)
+    except system.CannotLeaveOwnedWorkspace:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "error": (
+                    "You own this workspace, so you cannot leave it. "
+                    "Remove the other members instead."
+                ),
+                "reason": "owner_cannot_leave",
+            },
+        ) from None
+    if not left:
+        raise HTTPException(404, "workspace not found")
+
+
+@router.post("/workspaces/delete", status_code=204)
+async def delete_workspace(
+    body: WorkspaceRefRequest,
+    identity: CurrentIdentity,
+    session: DbSession,
+) -> None:
+    """Retire a shared workspace you own.
+
+    Named in the body like leave and acknowledge, and for the same reason: the
+    workspace being deleted is usually not the one the caller is standing in, and
+    making them switch into a tenant in order to destroy it would bounce them out
+    of it halfway through the request that did it.
+
+    Not a member of it at all is 404 — the same answer as a workspace that does
+    not exist, so an id alone tells a stranger nothing. A member who is not the
+    owner is 403: they can see it, they simply may not do this.
+    """
+    user, _personal = identity
+    try:
+        deleted = await system.delete_workspace(session, user=user, workspace_id=body.workspace_id)
+    except system.NotWorkspaceOwner:
+        raise HTTPException(
+            status_code=403,
+            detail={
+                "error": "Only the owner can delete a workspace.",
+                "reason": "not_workspace_owner",
+            },
+        ) from None
+    except system.CannotDeletePersonalWorkspace:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "error": (
+                    "Your personal workspace cannot be deleted — it is where "
+                    "your account falls back to."
+                ),
+                "reason": "personal_workspace",
+            },
+        ) from None
+    if not deleted:
+        raise HTTPException(404, "workspace not found")
+
+
+@router.post("/workspace/transfer-ownership", response_model=list[WorkspaceMember])
+async def transfer_ownership(
+    body: TransferOwnershipRequest,
+    scope: CurrentScope,
+    session: DbSession,
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> list[WorkspaceMember]:
+    """Hand this workspace to one of its existing members. Owner only.
+
+    Scoped, unlike delete: the members list this chooses from is the open
+    workspace's, so the operation is already standing in the right tenant, and
+    the response is that same list with two roles changed.
+
+    The recipient's `owned_workspaces` allowance is checked against *their* tier,
+    not the caller's — the workspace is about to become theirs. See the repo
+    function for why an operation that creates no workspace enforces a cap on
+    how many exist.
+    """
+    # A user id that is not a member of this workspace raises NotFoundError,
+    # which the app turns into a 404 — the same answer as an id that does not
+    # exist, so this cannot be used to probe for accounts.
+    _membership, target = await workspaces_repo.member_with_user(
+        scope, session, user_id=body.user_id
+    )
+    limits = limits_for(
+        resolve_tier(target.email, plan=target.plan, developer_emails=settings.developer_emails)
+    )
+    try:
+        members = await workspaces_repo.transfer_ownership(
+            scope,
+            session,
+            user_id=body.user_id,
+            owned_workspace_limit=limits.owned_workspaces,
+        )
+    except workspaces_repo.AlreadyTheOwner:
+        raise HTTPException(
+            status_code=409,
+            detail={"error": "You already own this workspace.", "reason": "already_owner"},
+        ) from None
+    except workspaces_repo.CannotTransferPersonalWorkspace:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "error": (
+                    "A personal workspace belongs to its account and cannot be "
+                    "handed over. Create a shared workspace to collaborate."
+                ),
+                "reason": "personal_workspace",
+            },
+        ) from None
+    except system.WorkspaceLimitReached as reached:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "error": (
+                    f"That person's plan includes {reached.limit} workspaces and "
+                    f"all {reached.limit} are in use, so they cannot take on "
+                    "another one."
+                ),
+                "reason": "recipient_workspace_allowance_exhausted",
+                "used": reached.owned,
+                "limit": reached.limit,
+            },
+        ) from None
+    return [_to_member(membership, user) for membership, user in members]
+
+
+@router.post("/workspaces", response_model=WorkspaceSummary, status_code=201)
+async def create_workspace(
+    body: CreateWorkspaceRequest,
+    identity: CurrentIdentity,
+    session: DbSession,
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> WorkspaceSummary:
+    """Create a shared workspace, owned by the caller.
+
+    Does not switch to it. `get_scope` reads one pointer and exactly one route
+    writes it; a client that wants to land in the new workspace calls
+    `POST /v1/workspaces/active` next, and pays one round trip for a property
+    worth more than the round trip.
+
+    The tier's `owned_workspaces` limit is enforced here and is not a product
+    feature gate. The Vault artifact cap is per workspace because it bounds one
+    tenant's disk — so an account that can mint tenants without bound has no
+    artifact cap at all.
+    """
+    user, _personal = identity
+    limits = limits_for(
+        resolve_tier(user.email, plan=user.plan, developer_emails=settings.developer_emails)
+    )
+    try:
+        workspace, membership = await system.create_team_workspace(
+            session,
+            owner=user,
+            name=body.name,
+            owned_workspace_limit=limits.owned_workspaces,
+        )
+    except system.WorkspaceLimitReached as reached:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "error": (
+                    f"Your plan includes {reached.limit} workspaces and all "
+                    f"{reached.limit} are in use. Rename or reuse one you already have."
+                ),
+                "reason": "workspace_allowance_exhausted",
+                "used": reached.owned,
+                "limit": reached.limit,
+            },
+        ) from None
+    return _to_summary(
+        workspace,
+        membership,
+        user_id=user.id,
+        # Creating a workspace does not enter it, so it is never the active one
+        # at this point. Saying otherwise would make the switcher show the user
+        # somewhere they are not.
+        active_workspace_id=user.active_workspace_id or _personal.id,
+    )
+
+
+@router.post("/workspace/members", response_model=WorkspaceMember, status_code=201)
+async def invite_member(
+    body: InviteMemberRequest,
+    scope: CurrentScope,
+    session: DbSession,
+) -> WorkspaceMember:
+    """Attach an existing account to this workspace by email address.
+
+    The invitee must have signed in to this deployment at least once: an account
+    is provisioned from a verified WorkOS token, and inviting an address that has
+    never presented one would create a membership pointing at a user row this
+    service invented. So an unknown address is a 404 on `user`, and the UI says
+    what to do about it.
+
+    Read the room this opens. A member sees every run and every Vault artifact in
+    the workspace, including work saved before they arrived — that is what a
+    shared tenant means, and it is why this is admin-only.
+    """
+    membership, user = await workspaces_repo.add_member_by_email(
+        scope, session, email=body.email, role=body.role
+    )
+    return _to_member(membership, user)
+
+
+@router.patch("/workspace/members/{user_id}", response_model=WorkspaceMember)
+async def update_member_role(
+    user_id: uuid.UUID,
+    body: MemberRoleRequest,
+    scope: CurrentScope,
+    session: DbSession,
+) -> WorkspaceMember:
+    membership, user = await workspaces_repo.set_member_role(
+        scope, session, user_id=user_id, role=body.role
+    )
+    return _to_member(membership, user)
+
+
+@router.delete("/workspace/members/{user_id}", status_code=204)
+async def remove_member(
+    user_id: uuid.UUID,
+    scope: CurrentScope,
+    session: DbSession,
+) -> None:
+    """Revoke access. Their runs and artifacts stay — they are the workspace's."""
+    await workspaces_repo.remove_member(scope, session, user_id=user_id)
+
+
 @router.get("/workspace", response_model=WorkspaceOverview)
 async def get_workspace(scope: CurrentScope, session: DbSession) -> WorkspaceOverview:
     workspace, members, artifact_count, run_count = await workspaces_repo.get_overview(
         scope, session
     )
     return WorkspaceOverview(
-        workspace=WorkspaceResource(
-            id=workspace.id,
-            kind=WorkspaceKind(workspace.kind),
-            name=workspace.name,
-            owner_user_id=workspace.owner_user_id,
-            plan=workspace.plan or "free",
-            created_at=workspace.created_at,
-            deleted_at=workspace.deleted_at,
-        ),
+        workspace=_to_workspace(workspace),
         members=[_to_member(membership, user) for membership, user in members],
         artifact_count=artifact_count,
         run_count=run_count,
     )
+
+
+@router.patch("/workspace/settings", response_model=WorkspaceResource)
+async def update_workspace_settings(
+    body: WorkspaceSettingsRequest,
+    scope: CurrentScope,
+    session: DbSession,
+) -> WorkspaceResource:
+    """Change workspace-level preferences.
+
+    Only `auto_keep_artifacts` today. It is read at save time, so flipping it
+    never reaches backwards: turning it on does not file runs already finished,
+    and turning it off does not remove anything already kept.
+    """
+    workspace = await workspaces_repo.set_auto_keep_artifacts(
+        scope, session, enabled=body.auto_keep_artifacts
+    )
+    return _to_workspace(workspace)
 
 
 @router.get("/workspace/folders", response_model=list[WorkspaceFolderResource])

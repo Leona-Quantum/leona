@@ -45,6 +45,36 @@ class LLMResponse(BaseModel):
     output_tokens: int = Field(ge=0)
 
 
+class LLMProviderError(RuntimeError):
+    """Sanitized provider failure with an explicit retry decision."""
+
+    def __init__(
+        self,
+        *,
+        provider: str,
+        model: str,
+        code: str,
+        retryable: bool,
+        status_code: int | None = None,
+    ) -> None:
+        self.provider = provider
+        self.model = model
+        self.code = code
+        self.retryable = retryable
+        self.status_code = status_code
+        status = f"; HTTP {status_code}" if status_code is not None else ""
+        super().__init__(f"{provider} request failed ({code}{status}; model={model})")
+
+    def safe_details(self) -> dict[str, Any]:
+        return {
+            "provider": self.provider,
+            "model": self.model,
+            "provider_code": self.code,
+            "status_code": self.status_code,
+            "retryable": self.retryable,
+        }
+
+
 DeltaHandler = Callable[[str, str], Awaitable[None]]
 
 
@@ -87,13 +117,21 @@ def decode_params(request: LLMRequest, key_env: str) -> tuple[dict[str, Any], st
     unavailable now", verified live 2026-07-11), so it gets json_object (guarantees
     syntactically valid JSON) plus the schema injected into the system message to pin
     field names/enums. Module-level so the routing is testable without the SDK."""
-    params: dict[str, Any] = {}
-    if request.max_tokens is not None:
-        params["max_completion_tokens"] = request.max_tokens
+    params: dict[str, Any]
     if key_env == "DEEPSEEK_API_KEY":
-        params = {"temperature": request.temperature}
+        params = {
+            "temperature": request.temperature,
+            # namekoQ's production compatibility shim sends this on every
+            # DeepSeek request.  It prevents V4 Pro from consuming the response
+            # budget and wall clock on hidden reasoning before emitting content.
+            "extra_body": {"thinking": {"type": "disabled"}},
+        }
         if request.max_tokens is not None:
             params["max_tokens"] = request.max_tokens
+    else:
+        params = {}
+        if request.max_tokens is not None:
+            params["max_completion_tokens"] = request.max_tokens
     system = request.system
     if request.response_schema is not None:
         if key_env == "DEEPSEEK_API_KEY":
@@ -117,6 +155,60 @@ def decode_params(request: LLMRequest, key_env: str) -> tuple[dict[str, Any], st
     return params, system
 
 
+def classify_provider_error(
+    exception: Exception,
+    *,
+    provider: str,
+    model: str,
+) -> LLMProviderError:
+    """Map SDK-specific exceptions to a stable, secret-free failure contract."""
+
+    status = getattr(exception, "status_code", None)
+    status_code = status if isinstance(status, int) else None
+    raw_code = getattr(exception, "code", None)
+    body = getattr(exception, "body", None)
+    if not isinstance(raw_code, str) and isinstance(body, dict):
+        error = body.get("error")
+        if isinstance(error, dict) and isinstance(error.get("code"), str):
+            raw_code = error["code"]
+    provider_code = raw_code.lower() if isinstance(raw_code, str) else ""
+    name = type(exception).__name__.lower()
+
+    if provider_code in {
+        "insufficient_quota",
+        "billing_hard_limit_reached",
+        "billing_not_active",
+    }:
+        code, retryable = "quota_exhausted", False
+    elif status_code == 429:
+        code, retryable = "rate_limited", True
+    elif status_code == 401 or "authentication" in name:
+        code, retryable = "authentication_failed", False
+    elif status_code == 403 or "permission" in name:
+        code, retryable = "permission_denied", False
+    elif status_code == 404 or provider_code == "model_not_found":
+        code, retryable = "model_not_found", False
+    elif status_code == 400 or "badrequest" in name:
+        code, retryable = "bad_request", False
+    elif status_code is not None and status_code >= 500:
+        code, retryable = "upstream_unavailable", True
+    elif status_code in {408, 409, 425}:
+        code, retryable = "transient_http_error", True
+    elif isinstance(exception, TimeoutError) or "timeout" in name:
+        code, retryable = "timeout", True
+    elif "connection" in name:
+        code, retryable = "connection_error", True
+    else:
+        code, retryable = "provider_error", False
+    return LLMProviderError(
+        provider=provider,
+        model=model,
+        code=code,
+        retryable=retryable,
+        status_code=status_code,
+    )
+
+
 class OpenAICompatibleLLM:
     """Owner-confirmed production client (OpenAI + DeepSeek, 2026-07-10). Routes
     per model id via endpoint_for, so one client serves the mixed per-stage
@@ -126,62 +218,98 @@ class OpenAICompatibleLLM:
     async def complete(
         self, request: LLMRequest, *, on_delta: DeltaHandler | None = None
     ) -> LLMResponse:
+        base_url, key_env = endpoint_for(request.model)
+        provider = "deepseek" if key_env == "DEEPSEEK_API_KEY" else "openai"
         try:
             from openai import AsyncOpenAI  # type: ignore
         except Exception as exc:  # pragma: no cover - only without the SDK
-            raise RuntimeError(
-                "install majorana-llm[openai] and set OPENAI_API_KEY/DEEPSEEK_API_KEY"
+            raise LLMProviderError(
+                provider=provider,
+                model=request.model,
+                code="client_unavailable",
+                retryable=False,
             ) from exc
         import os
 
-        base_url, key_env = endpoint_for(request.model)
         api_key = os.environ.get(key_env)
         if not api_key:
-            raise RuntimeError(f"{key_env} is not set (required for model {request.model!r})")
+            raise LLMProviderError(
+                provider=provider,
+                model=request.model,
+                code="credentials_missing",
+                retryable=False,
+            )
 
         params, system = decode_params(request, key_env)
 
-        client = AsyncOpenAI(api_key=api_key, base_url=base_url)
         messages = [{"role": "system", "content": system}, *request_messages(request)]
-        if on_delta is None:
-            completion = await client.chat.completions.create(
+        try:
+            # RetryingLLM below is the one retry authority. Disabling the SDK's
+            # implicit retries prevents 3x3 request amplification on one 429.
+            client = AsyncOpenAI(api_key=api_key, base_url=base_url, max_retries=0)
+            if on_delta is None:
+                completion = await client.chat.completions.create(
+                    model=request.model,
+                    messages=messages,
+                    **params,
+                )
+                text = completion.choices[0].message.content or ""
+                usage = completion.usage
+                served_model = getattr(completion, "model", None)
+            else:
+                stream = await client.chat.completions.create(
+                    model=request.model,
+                    messages=messages,
+                    stream=True,
+                    **params,
+                )
+                text_parts: list[str] = []
+                usage = None
+                served_model = None
+                async for chunk in stream:
+                    served_model = getattr(chunk, "model", None) or served_model
+                    if getattr(chunk, "usage", None) is not None:
+                        usage = chunk.usage
+                    for choice in getattr(chunk, "choices", []) or []:
+                        delta = choice.delta
+                        reasoning = getattr(delta, "reasoning_content", None) or ""
+                        content = getattr(delta, "content", None) or ""
+                        if reasoning:
+                            await on_delta(reasoning, "reasoning")
+                        if content:
+                            text_parts.append(content)
+                            await on_delta(content, "output")
+                text = "".join(text_parts)
+        except LLMProviderError:
+            raise
+        except Exception as exc:
+            raise classify_provider_error(
+                exc,
+                provider=provider,
                 model=request.model,
-                messages=messages,
-                **params,
-            )
-            text = completion.choices[0].message.content or ""
-            usage = completion.usage
-        else:
-            stream = await client.chat.completions.create(
-                model=request.model,
-                messages=messages,
-                stream=True,
-                **params,
-            )
-            text_parts: list[str] = []
-            usage = None
-            async for chunk in stream:
-                if getattr(chunk, "usage", None) is not None:
-                    usage = chunk.usage
-                for choice in getattr(chunk, "choices", []) or []:
-                    delta = choice.delta
-                    reasoning = getattr(delta, "reasoning_content", None) or ""
-                    content = getattr(delta, "content", None) or ""
-                    if reasoning:
-                        await on_delta(reasoning, "reasoning")
-                    if content:
-                        text_parts.append(content)
-                        await on_delta(content, "output")
-            text = "".join(text_parts)
+            ) from exc
         # Missing usage must not silently zero the llm.call event (quota/event
         # integrity); use a conservative character-length estimate instead.
+        input_chars = len(system) + sum(
+            len(message["content"]) for message in request_messages(request)
+        )
         return LLMResponse(
             text=text,
-            model=request.model,
-            input_tokens=usage.prompt_tokens
-            if usage
-            else max(1, len(system) + len(request.user)) // 4,
-            output_tokens=usage.completion_tokens if usage else max(1, len(text)) // 4,
+            # What the PROVIDER says it served, not what we asked for. An alias or a
+            # silent substitution is invisible when the request is echoed back, and
+            # this value is what the llm.call event and the stored response row carry —
+            # the only durable record of which model actually produced a run.
+            model=str(served_model or request.model),
+            input_tokens=(
+                int(usage.prompt_tokens)
+                if usage and getattr(usage, "prompt_tokens", None) is not None
+                else max(1, input_chars // 4)
+            ),
+            output_tokens=(
+                int(usage.completion_tokens)
+                if usage and getattr(usage, "completion_tokens", None) is not None
+                else max(1, len(text) // 4)
+            ),
         )
 
 
@@ -245,7 +373,12 @@ class RetryingLLM:
                 )
             except Exception as exc:  # noqa: BLE001 - re-raised below if every attempt fails
                 last_error = exc
-                if emitted or attempt == self._attempts - 1:
+                retryable = (
+                    exc.retryable
+                    if isinstance(exc, LLMProviderError)
+                    else isinstance(exc, (TimeoutError, ConnectionError))
+                )
+                if emitted or not retryable or attempt == self._attempts - 1:
                     raise
                 await self._wait(attempt)
                 continue
@@ -292,7 +425,22 @@ class AnthropicLLM:
         try:
             from anthropic import AsyncAnthropic  # type: ignore
         except Exception as exc:  # pragma: no cover - only without the SDK
-            raise RuntimeError("install majorana-llm[anthropic] and set ANTHROPIC_API_KEY") from exc
+            raise LLMProviderError(
+                provider="anthropic",
+                model=request.model,
+                code="client_unavailable",
+                retryable=False,
+            ) from exc
+        import os
+
+        api_key = self._api_key or os.environ.get("ANTHROPIC_API_KEY")
+        if not api_key:
+            raise LLMProviderError(
+                provider="anthropic",
+                model=request.model,
+                code="credentials_missing",
+                retryable=False,
+            )
 
         # No response_format on the Messages API — approximate structured decoding
         # by appending the schema to the system prompt (weaker; the OpenAI-compatible
@@ -305,34 +453,44 @@ class AnthropicLLM:
             )
 
         max_tokens = request.max_tokens or _ANTHROPIC_DEFAULT_MAX_TOKENS
-        client = AsyncAnthropic(api_key=self._api_key)  # picks up ANTHROPIC_API_KEY
         messages = request_messages(request)
-        if on_delta is None:
-            message = await client.messages.create(
+        try:
+            client = AsyncAnthropic(api_key=api_key)
+            if on_delta is None:
+                message = await client.messages.create(
+                    model=request.model,
+                    max_tokens=max_tokens,
+                    temperature=request.temperature,
+                    system=system,
+                    messages=messages,
+                )
+                text = "".join(block.text for block in message.content if block.type == "text")
+            else:
+                text_parts: list[str] = []
+                async with client.messages.stream(
+                    model=request.model,
+                    max_tokens=max_tokens,
+                    temperature=request.temperature,
+                    system=system,
+                    messages=messages,
+                ) as stream:
+                    async for fragment in stream.text_stream:
+                        text_parts.append(fragment)
+                        await on_delta(fragment, "output")
+                    message = await stream.get_final_message()
+                text = "".join(text_parts)
+        except LLMProviderError:
+            raise
+        except Exception as exc:
+            raise classify_provider_error(
+                exc,
+                provider="anthropic",
                 model=request.model,
-                max_tokens=max_tokens,
-                temperature=request.temperature,
-                system=system,
-                messages=messages,
-            )
-            text = "".join(block.text for block in message.content if block.type == "text")
-        else:
-            text_parts: list[str] = []
-            async with client.messages.stream(
-                model=request.model,
-                max_tokens=max_tokens,
-                temperature=request.temperature,
-                system=system,
-                messages=messages,
-            ) as stream:
-                async for fragment in stream.text_stream:
-                    text_parts.append(fragment)
-                    await on_delta(fragment, "output")
-                message = await stream.get_final_message()
-            text = "".join(text_parts)
+            ) from exc
         return LLMResponse(
             text=text,
-            model=request.model,
+            # Provider-reported, for the same reason as the OpenAI-compatible path.
+            model=str(getattr(message, "model", None) or request.model),
             input_tokens=message.usage.input_tokens,
             output_tokens=message.usage.output_tokens,
         )

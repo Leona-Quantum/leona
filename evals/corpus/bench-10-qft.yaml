@@ -3,6 +3,6 @@ category: "C — QFT/QPE"
 prompt: "Build a 3-qubit quantum Fourier transform circuit and return its statevector."
 framework: qiskit
 expect:
-  verifier_decision: pass
+  terminal_reason: ai_review_aligned
   export_status: lossless
   saves_artifact: true

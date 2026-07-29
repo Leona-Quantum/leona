@@ -180,7 +180,7 @@ class HamiltonianEquivalenceRecord(VqeBaseModel):
 def scientific_experiment_spec_digest(spec: ScientificExperimentSpec) -> str:
     """SHA-256 of a ScientificExperimentSpec's canonical JSON. Because this
     type never contains framework/runtime/provider information (the
-    ADR-0023 spec/binding separation), the same digest is produced
+    ADR-0024 spec/binding separation), the same digest is produced
     regardless of which ExecutionBinding later executes it -- that
     invariant is exactly what the "scientific spec hash unchanged across
     framework bindings" test (plan Part IV Phase 1 Tests) checks."""

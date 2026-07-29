@@ -1,7 +1,7 @@
 """Generates the 3 MVP comparison reports (docs/atlas/corpus/comparisons/)
 from the existing paper records. Machine-generated, not curated gold --
 every dimension not directly backed by a corpus record's own recorded
-evidence is left `unknown`, per ADR-0026 and ANNOTATION_GUIDELINE.md §8.
+evidence is left `unknown`, per ADR-0027 and ANNOTATION_GUIDELINE.md §8.
 
 At this corpus depth (literature-review-level annotation, no executed
 ScientificExperimentSpec yet -- that is Phase 3/5), most dimensions are

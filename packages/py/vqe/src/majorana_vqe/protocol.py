@@ -19,7 +19,7 @@ from .models import SCHEMA_VERSION, ComponentSpec, ComponentType, EvidenceStage,
 
 class EvaluationProtocol(VqeBaseModel):
     """What kind of evidence a result represents and, for finite-shot
-    evidence, how many shots. ADR-0025: finite-shot is never by itself
+    evidence, how many shots. ADR-0026: finite-shot is never by itself
     sufficient for a scientific pass condition -- enforced downstream by
     whatever consumes `estimator`, not by this model (this model only
     records what was asked for)."""
@@ -81,7 +81,7 @@ def parse_evaluation_protocol(component: ComponentSpec) -> EvaluationProtocol:
 
 
 def parse_stopping_protocol(component: ComponentSpec) -> StoppingProtocol:
-    """Parse an independently versioned stopping rule (ADR-0028).
+    """Parse an independently versioned stopping rule (ADR-0029).
 
     Stopping rules are comparison-critical: changing a gradient threshold or
     iteration cap can change both accuracy and resource cost. Keeping them as

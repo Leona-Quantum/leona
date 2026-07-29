@@ -4,6 +4,7 @@ import type { FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { rememberChat } from "../../../lib/chat-history";
+import { titleFromPrompt } from "../../../lib/chat-title";
 import { artifactFromResource, type LibraryArtifact } from "../../../lib/library-data";
 import type { PublicLocale } from "../../../lib/public-locale";
 import { WORKSPACE_COPY } from "../../../lib/workspace-locale";
@@ -376,9 +377,4 @@ function ExampleStrip({ copy, onPick }: { copy: (typeof WORKSPACE_COPY)[PublicLo
       ) : null}
     </section>
   );
-}
-
-function titleFromPrompt(prompt: string): string {
-  const firstLine = prompt.split(/\r?\n/, 1)[0].trim();
-  return firstLine.length > 54 ? `${firstLine.slice(0, 54).trimEnd()}…` : firstLine;
 }

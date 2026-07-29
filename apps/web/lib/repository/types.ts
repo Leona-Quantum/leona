@@ -10,7 +10,8 @@ export type PublicRepositoryFramework =
   | "CUDA-Q"
   | "Amazon Braket"
   | "OpenQASM 3.0"
-  | "PyQuil";
+  | "PyQuil"
+  | "Qmod";
 export type PublicRepositoryVariantStatus = "native" | "conversion" | "source" | "unsupported";
 
 export interface PublicRepositoryCodeVariant {
@@ -212,4 +213,5 @@ export const PUBLIC_REPOSITORY_FRAMEWORKS: PublicRepositoryFramework[] = [
   "Amazon Braket",
   "OpenQASM 3.0",
   "PyQuil",
+  "Qmod",
 ];

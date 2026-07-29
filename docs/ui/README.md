@@ -17,6 +17,8 @@ Domain home for the product surface (`apps/web` + `packages/ts/ui`), per
 | App shell + primary nav | `packages/ts/ui/src/app-shell.tsx`; labels ONLY in `src/nav-config.ts` |
 | Workspace sidebar/history | `apps/web/components/shell.tsx` + `apps/web/lib/chat-history.ts` |
 | Run composer | `apps/web/components/run-composer.tsx` (bottom dock; route owns submission) |
+| Compact live run progress | `packages/ts/ui/src/run-progress.tsx` + `apps/web/lib/run-progress.ts` |
+| Structured run outcome | `packages/ts/ui/src/run-outcome.tsx` + `apps/web/lib/run-outcome.ts` |
 | Vault list/detail | `apps/web/app/(app)/library` + `apps/web/lib/library-data.ts` |
 | Studio editor/circuit workspace | `apps/web/app/(app)/studio` + `docs/ui/studio.md` |
 | Pipeline stage rail (S3, the brand) | `packages/ts/ui/src/stage-rail.tsx` |

@@ -25,7 +25,12 @@ from majorana_evals import (
     score_seeded_corpus,
     top_measured_bitstring,
 )
-from majorana_evals.runner import _last_json_object, _latest_sandbox_event
+from majorana_evals.runner import (
+    _latest_sandbox_event,
+    _latest_trusted_result,
+    _score_result_expectations,
+    _score_terminal_expectations,
+)
 
 requires_db = pytest.mark.skipif(
     "DATABASE_URL" not in os.environ, reason="harness self-test needs DATABASE_URL"
@@ -50,27 +55,14 @@ requires_live_llm = pytest.mark.skipif(
 
 
 def test_top_measured_bitstring_picks_dominant_state():
-    # dominant state wins; the last JSON line is the one parsed
-    stdout = 'noise\n{"counts": {"1100": 970, "0000": 12, "1000": 18}}'
-    assert top_measured_bitstring(stdout) == "1100"
+    # dominant state wins from the trusted result mapping
+    result = {"counts": {"1100": 970, "0000": 12, "1000": 18}}
+    assert top_measured_bitstring(result) == "1100"
     # register-separator spaces are stripped so it compares to a plain target
-    assert top_measured_bitstring('{"counts": {"11 00": 900, "00 11": 5}}') == "1100"
-    # no counts / unparseable → None, not a crash
-    assert top_measured_bitstring('{"energy": -1.137}') is None
-    assert top_measured_bitstring("not json at all") is None
-    assert top_measured_bitstring("") is None
-
-
-def test_top_measured_bitstring_ignores_appended_qasm_epilogue():
-    stdout = """{\"counts\": {\"1100\": 973, \"0000\": 27}}
-__MAJORANA_FINAL_QASM_BEGIN__
-OPENQASM 2.0;
-include \"qelib1.inc\";
-qreg q[4];
-creg c[4];
-measure q[0] -> c[0];
-__MAJORANA_FINAL_QASM_END__"""
-    assert top_measured_bitstring(stdout) == "1100"
+    assert top_measured_bitstring({"counts": {"11 00": 900, "00 11": 5}}) == "1100"
+    # no counts / absent evidence → None, not a crash
+    assert top_measured_bitstring({"energy": -1.137}) is None
+    assert top_measured_bitstring(None) is None
 
 
 def test_latest_sandbox_event_uses_repaired_terminal_attempt():
@@ -82,15 +74,32 @@ def test_latest_sandbox_event_uses_repaired_terminal_attempt():
     assert _latest_sandbox_event([first, unrelated, final]) is final
 
 
-def test_last_json_object_reads_pretty_result_before_qasm_epilogue():
-    stdout = """{
-  \"ground_state_energy_Ha\": -1.1373,
-  \"counts\": {\"00\": 10}
-}
-__MAJORANA_FINAL_QASM_BEGIN__
-OPENQASM 2.0;
-__MAJORANA_FINAL_QASM_END__"""
-    assert _last_json_object(stdout)["ground_state_energy_Ha"] == -1.1373
+async def test_latest_trusted_result_requires_candidate_fingerprint_binding():
+    candidate_id = uuid.uuid4()
+    execution_id = uuid.uuid4()
+    candidate = SimpleNamespace(candidate_id=candidate_id, source_fingerprint="a" * 64)
+    execution = SimpleNamespace(
+        candidate_id=candidate_id,
+        execution_id=execution_id,
+        source_fingerprint="a" * 64,
+        result={"counts": {"11": 8}},
+    )
+
+    class Store:
+        async def latest_candidate(self, _run_id):
+            return candidate
+
+        async def execution_for(self, _run_id, _candidate_id):
+            return execution
+
+    result, got_candidate_id, got_execution_id = await _latest_trusted_result(Store(), uuid.uuid4())
+    assert result == {"counts": {"11": 8}}
+    assert got_candidate_id == str(candidate_id)
+    assert got_execution_id == str(execution_id)
+
+    execution.source_fingerprint = "b" * 64
+    with pytest.raises(ValueError, match="not bound"):
+        await _latest_trusted_result(Store(), uuid.uuid4())
 
 
 def test_value_check_catches_endianness_bit_reversal():
@@ -98,12 +107,85 @@ def test_value_check_catches_endianness_bit_reversal():
     # but the recovered top state is the bit-reversal 0011. The value-level check must
     # reject it even though verifier_decision would say pass. Guards NEXT.md's warning
     # that a naive bench-30 gives false comfort on a wrong answer.
-    bit_reversed = '{"counts": {"0011": 973, "0000": 27}}'
+    bit_reversed = {"counts": {"0011": 973, "0000": 27}}
     assert top_measured_bitstring(bit_reversed) == "0011"
     assert top_measured_bitstring(bit_reversed) != "1100"
 
-    correct = '{"counts": {"1100": 973, "0000": 27}}'
+    correct = {"counts": {"1100": 973, "0000": 27}}
     assert top_measured_bitstring(correct) == "1100"
+
+
+def test_untrusted_stdout_cannot_satisfy_result_expectations():
+    expect = Expect(
+        output_keys=["counts", "energy"],
+        expected_top_bitstring="1100",
+        expected_values={"energy": -1.137},
+    )
+    malicious_stdout = '{"counts": {"1100": 999}, "energy": -1.137}'
+
+    # The scorer has no stdout argument. Model-controlled diagnostics cannot supply
+    # a missing RESULT field or value, even if they contain plausible JSON.
+    reasons = _score_result_expectations(expect, None)
+    assert malicious_stdout
+    assert reasons == [
+        "expected top bitstring '1100' but no measurement counts were found in RESULT",
+        "expected numeric RESULT field 'energy' was not found",
+        "RESULT missing promised key 'counts'",
+        "RESULT missing promised key 'energy'",
+    ]
+
+
+def test_result_expectations_use_exact_protected_result_fields():
+    expect = Expect(
+        output_keys=["counts", "energy"],
+        expected_top_bitstring="1100",
+        expected_values={"energy": -1.137},
+        expected_value_tolerance=0.001,
+    )
+    assert (
+        _score_result_expectations(
+            expect,
+            {"counts": {"1100": 999, "0000": 1}, "energy": -1.137},
+        )
+        == []
+    )
+
+
+def test_simple_terminal_scoring_requires_alignment_without_strict_verdict():
+    expect = Expect()
+
+    assert (
+        _score_terminal_expectations(
+            expect,
+            run_status="succeeded",
+            terminal_reason="ai_review_aligned",
+            verifier_decision=None,
+        )
+        == []
+    )
+    assert _score_terminal_expectations(
+        expect,
+        run_status="failed",
+        terminal_reason="intent_review_inconclusive",
+        verifier_decision=None,
+    ) == [
+        "run_status 'failed' != expected 'succeeded'",
+        "terminal_reason 'intent_review_inconclusive' != expected 'ai_review_aligned'",
+    ]
+
+
+def test_legacy_terminal_scoring_checks_verifier_only_when_explicit():
+    expect = Expect(
+        terminal_reason=None,
+        verifier_decision=VerifierDecision.PASS,
+    )
+
+    assert _score_terminal_expectations(
+        expect,
+        run_status="succeeded",
+        terminal_reason="strict_pass",
+        verifier_decision="fail",
+    ) == ["verifier_decision 'fail' != expected 'pass'"]
 
 
 def test_bench_30_corpus_case_pins_the_target():
@@ -121,8 +203,11 @@ def test_corpus_loads_from_yaml():
     corpus = load_corpus(Path(__file__).parents[3] / "evals" / "corpus")
     assert corpus, "starter corpus should be non-empty"
     assert any(c.id == "bench-01" for c in corpus)
-    # every case pins an honest expectation
-    assert all(c.expect.verifier_decision for c in corpus)
+    # The default product path is AI-reviewed and explicitly does not fabricate
+    # a strict-verifier verdict.
+    assert all(c.expect.run_status.value == "succeeded" for c in corpus)
+    assert all(c.expect.terminal_reason == "ai_review_aligned" for c in corpus)
+    assert all(c.expect.verifier_decision is None for c in corpus)
 
 
 def _seeded_corpus():
@@ -232,7 +317,8 @@ async def test_harness_scores_a_passing_bell_case():
             case, factory=factory, scope=scope, llm=default_llm(), sandbox=LocalSubprocessSandbox()
         )
         assert result.passed, result.reasons
-        assert result.verifier_decision == "pass"
+        assert result.verifier_decision is None
+        assert result.terminal_reason == "ai_review_aligned"
         assert result.export_status == "lossless"
         assert result.saved
         assert result.evidence.qasm_source == "sandbox_epilogue"

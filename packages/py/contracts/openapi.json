@@ -80,6 +80,19 @@
             "title": "Id",
             "type": "string"
           },
+          "kept_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Kept At"
+          },
           "parent_artifact_id": {
             "anyOf": [
               {
@@ -1090,6 +1103,57 @@
           "mode"
         ],
         "title": "CompilationResult",
+        "type": "object"
+      },
+      "ConversationTitled": {
+        "additionalProperties": false,
+        "description": "A short name for the conversation, written by the model on its first turn.\n\nEmitted at most once per conversation and never for a later turn, so the name\na user sees in their sidebar does not shift under them mid-thread. The title\nis the model's own words in the language the user wrote in \u2014 deriving it from\nthe prompt text is what produced sidebar rows that were whole paragraphs, and\ntranslating it is what mixed two languages into one list.",
+        "properties": {
+          "run_id": {
+            "format": "uuid",
+            "title": "Run Id",
+            "type": "string"
+          },
+          "seq": {
+            "description": "Unique per run; powers replay and SSE Last-Event-ID",
+            "minimum": 0,
+            "title": "Seq",
+            "type": "integer"
+          },
+          "source": {
+            "default": "model",
+            "enum": [
+              "model",
+              "fallback"
+            ],
+            "title": "Source",
+            "type": "string"
+          },
+          "title": {
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Title",
+            "type": "string"
+          },
+          "ts": {
+            "format": "date-time",
+            "title": "Ts",
+            "type": "string"
+          },
+          "type": {
+            "const": "conversation.titled",
+            "default": "conversation.titled",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "run_id",
+          "seq",
+          "ts",
+          "title"
+        ],
+        "title": "ConversationTitled",
         "type": "object"
       },
       "EvidenceStrength": {
@@ -2683,6 +2747,7 @@
             "code.finalized": "#/components/schemas/CodeFinalized",
             "code.generated": "#/components/schemas/CodeGenerated",
             "compilation.result": "#/components/schemas/CompilationResult",
+            "conversation.titled": "#/components/schemas/ConversationTitled",
             "export.classified": "#/components/schemas/ExportClassified",
             "llm.call": "#/components/schemas/LlmCall",
             "llm.delta": "#/components/schemas/LlmDelta",
@@ -2744,6 +2809,9 @@
           },
           {
             "$ref": "#/components/schemas/ChatError"
+          },
+          {
+            "$ref": "#/components/schemas/ConversationTitled"
           },
           {
             "$ref": "#/components/schemas/CodeGenerated"
@@ -3150,6 +3218,12 @@
               }
             ],
             "default": null
+          },
+          "result": {
+            "additionalProperties": true,
+            "description": "Bounded JSON result captured from the protected sandbox sidecar.",
+            "title": "Result",
+            "type": "object"
           },
           "run_id": {
             "format": "uuid",
@@ -4230,6 +4304,11 @@
       "Workspace": {
         "additionalProperties": false,
         "properties": {
+          "auto_keep_artifacts": {
+            "default": false,
+            "title": "Auto Keep Artifacts",
+            "type": "boolean"
+          },
           "created_at": {
             "format": "date-time",
             "title": "Created At",
@@ -4321,6 +4400,61 @@
         "title": "WorkspaceFolder",
         "type": "object"
       },
+      "WorkspaceInvitation": {
+        "additionalProperties": false,
+        "description": "A workspace the caller has been added to and has not been told about.\n\nNot a pending offer: the membership already grants access, so this is a\nnotice rather than an invitation to accept. The distinction matters for the\ncopy \u2014 \"you can open this now\", not \"do you accept\".\n\n`invited_by_email` is the inviter's address, which the invitee can already\nsee in the workspace's member list. It is here because \"you were added to\nIon trap group\" with no author reads like something the system did.",
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "invited_by_email": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Invited By Email"
+          },
+          "invited_by_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Invited By Name"
+          },
+          "role": {
+            "$ref": "#/components/schemas/Role"
+          },
+          "workspace_id": {
+            "format": "uuid",
+            "title": "Workspace Id",
+            "type": "string"
+          },
+          "workspace_name": {
+            "title": "Workspace Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "workspace_id",
+          "workspace_name",
+          "role",
+          "created_at"
+        ],
+        "title": "WorkspaceInvitation",
+        "type": "object"
+      },
       "WorkspaceKind": {
         "enum": [
           "personal",
@@ -4404,13 +4538,52 @@
         ],
         "title": "WorkspaceOverview",
         "type": "object"
+      },
+      "WorkspaceSummary": {
+        "additionalProperties": false,
+        "description": "One row of the workspace switcher: a tenant the caller can act in.\n\n`is_active` is what the *next* request will scope to, not the raw value of\nthe stored pointer \u2014 a pointer to a workspace the caller was removed from\nresolves back to personal, and the switcher must show where they actually\nare.",
+        "properties": {
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "is_active": {
+            "title": "Is Active",
+            "type": "boolean"
+          },
+          "is_personal": {
+            "title": "Is Personal",
+            "type": "boolean"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/WorkspaceKind"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "role": {
+            "$ref": "#/components/schemas/Role"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "name",
+          "role",
+          "is_personal",
+          "is_active"
+        ],
+        "title": "WorkspaceSummary",
+        "type": "object"
       }
     }
   },
   "info": {
     "description": "Cross-boundary types only; API paths are owned by services/api.",
     "title": "majorana-contracts",
-    "version": "2.3.0"
+    "version": "2.5.0"
   },
   "openapi": "3.1.0",
   "paths": {}

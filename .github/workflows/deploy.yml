@@ -36,6 +36,9 @@ env:
   GCP_PROJECT: majorana-core
   GCP_REGION: us-west1
   IMAGE_REPO: us-west1-docker.pkg.dev/majorana-core/majorana/api
+  # The production database since 2026-07-27. Both Cloud Run services mount it
+  # as a Unix socket; this workflow reaches it through the Auth Proxy.
+  CLOUDSQL_INSTANCE: majorana-core:us-west1:majorana-pg
 
 jobs:
   deploy:
@@ -113,11 +116,59 @@ jobs:
       # renames something the live code still uses will break production in the
       # window between this step and the traffic shift.
       #
+      # Production moved to Cloud SQL on 2026-07-27, and that instance has NO
+      # authorized networks — nothing reaches it by IP, from a GitHub runner or
+      # anywhere else. The Cloud SQL Auth Proxy is the only way in: it
+      # authenticates as the deploy service account (roles/cloudsql.client) over
+      # the Admin API and forwards a local port.
+      #
+      # Pinned to an exact version AND an exact SHA-256, checked before the file
+      # is made executable. This step puts a binary on a runner that holds a
+      # credential able to deploy production, so "latest" would mean trusting
+      # whatever that URL serves on the day it runs.
+      #
+      # What the hash does and does not buy: it was taken from two independent
+      # downloads of v2.24.1 on 2026-07-27 (36,553,843 bytes, a statically
+      # linked x86-64 ELF). Google publishes no .sha256 sidecar at this path, so
+      # this pins the artifact against future change — it is not an independent
+      # attestation of what Google built. Bump both fields together, never one.
+      - name: start the Cloud SQL Auth Proxy
+        if: steps.creds.outputs.have == 'true'
+        env:
+          PROXY_VERSION: v2.24.1
+          PROXY_SHA256: fae2766aac9d614a2bdef2f2a7778f3d054f3acd5ff07a81a9e300bd471512eb
+        run: |
+          curl -fsSL -o cloud-sql-proxy \
+            "https://storage.googleapis.com/cloud-sql-connectors/cloud-sql-proxy/${PROXY_VERSION}/cloud-sql-proxy.linux.amd64"
+          echo "${PROXY_SHA256}  cloud-sql-proxy" | sha256sum -c - || {
+            echo "::error::the Cloud SQL Auth Proxy binary does not match its pinned"
+            echo "::error::SHA-256. Do NOT update the hash to make this pass without"
+            echo "::error::establishing why the artifact changed."
+            exit 1
+          }
+          chmod +x cloud-sql-proxy
+          ./cloud-sql-proxy --port 5432 --health-check --http-address 127.0.0.1 \
+            "$CLOUDSQL_INSTANCE" &
+          # The proxy answers /startup only once it is ready to accept
+          # connections. Polling it beats `sleep 5`: a slow start would otherwise
+          # fail the migration with a connection error that reads like a broken
+          # database.
+          for _ in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:9090/startup >/dev/null 2>&1; then
+              echo "proxy ready"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "::error::the Cloud SQL Auth Proxy never became ready; the migration"
+          echo "::error::below cannot reach the database. See docs/runbooks/database.md."
+          exit 1
+
       # DATABASE_URL_SECRET is the Secret Manager entry name; DATABASE_URL_DIRECT is
-      # the env var alembic reads (db/migrations/env.py). It holds the Neon DIRECT
-      # (unpooled) endpoint — DDL through the pooler is not safe. The runner reaches
-      # Neon over the public endpoint, the same path ci.yml's `db` job uses on every
-      # PR today.
+      # the env var alembic reads (db/migrations/env.py). Since the Cloud SQL move
+      # it holds a 127.0.0.1:5432 URL that resolves through the proxy started
+      # above — a TCP connection straight to Postgres, with no PgBouncer in front
+      # of it, which is what DDL needs.
       - name: migrate database
         if: steps.creds.outputs.have == 'true'
         run: |
@@ -159,6 +210,7 @@ jobs:
         run: |
           gcloud run deploy majorana-api --project "$GCP_PROJECT" --region "$GCP_REGION" \
             --image "$IMAGE_REPO:${{ steps.tag.outputs.tag }}" \
+            --set-cloudsql-instances "$CLOUDSQL_INSTANCE" \
             --no-traffic --tag verify
           # Parse the URL out with jq rather than a --format projection. Two
           # earlier attempts failed here (2026-07-19):
@@ -196,13 +248,29 @@ jobs:
 
       # The worker takes no traffic, so there is no dark-revision step — but the
       # --command override must be preserved or the image starts the API instead.
+      #
+      # The scaling flags are repeated on every deploy on purpose. This worker is
+      # a database poller: nothing sends it an HTTP request, so a queued job
+      # cannot wake a scaled-to-zero instance, and a throttled instance does not
+      # get CPU between requests it never receives. Those settings were correct
+      # in production but were unowned live-service state that `gcloud run deploy
+      # --image` merely happened to preserve — one console edit or one
+      # service-replacing command away from a silent outage with a green deploy.
+      # State the repo depends on, in the repo.
+      #
+      # --set-cloudsql-instances is stated for the same reason. It is the only
+      # route to the database now: the instance has no authorized networks, so a
+      # revision without this attachment does not fail over to something slower,
+      # it cannot connect at all.
       - name: deploy worker
         if: steps.creds.outputs.have == 'true'
         id: worker
         run: |
           gcloud run deploy majorana-worker --project "$GCP_PROJECT" --region "$GCP_REGION" \
             --image "$IMAGE_REPO:${{ steps.tag.outputs.tag }}" \
-            --command majorana-worker
+            --command majorana-worker \
+            --set-cloudsql-instances "$CLOUDSQL_INSTANCE" \
+            --min-instances 1 --max-instances 1 --no-cpu-throttling
           rev=$(gcloud run services describe majorana-worker \
             --project "$GCP_PROJECT" --region "$GCP_REGION" \
             --format="value(status.latestCreatedRevisionName)")
@@ -218,6 +286,14 @@ jobs:
       # is draining and — if it was crash-looping — is exactly what this deploy is
       # replacing. Unscoped, the sicker the thing we just fixed was, the more
       # certainly it fails the deploy that fixed it.
+      # This step also carries the LLM gate. The worker preflights its configured
+      # models against the provider's served list at startup and reports a
+      # definitive mismatch as a structured severity=ERROR line, which lands here.
+      #
+      # `value(textPayload)` alone was not enough: a structured log entry arrives
+      # as jsonPayload, so the projection returned an empty string and `-n` read
+      # a real alarm as silence. Both payload shapes are read now — an alarm the
+      # gate cannot see is not a gate.
       - name: worker is actually running
         if: steps.creds.outputs.have == 'true'
         run: |
@@ -228,13 +304,123 @@ jobs:
              AND resource.labels.revision_name="${{ steps.worker.outputs.revision }}"
              AND severity>=ERROR' \
             --project "$GCP_PROJECT" --freshness=2m --limit 20 \
-            --format="value(textPayload)")
+            --format="value(textPayload,jsonPayload.message)")
           if [ -n "$logs" ]; then
             echo "revision ${{ steps.worker.outputs.revision }} logged errors after deploy:"
             echo "$logs"
             exit 1
           fi
           echo "revision ${{ steps.worker.outputs.revision }} clean for 45s after deploy"
+
+      # The gate every other step in this workflow is a proxy for: one real run,
+      # on the stack that was just deployed, end to end.
+      #
+      # Everything above proves the pieces are up. Nothing above proves they work
+      # together, and the two most expensive defects of the last month both lived
+      # exactly in that gap: a worker crash-looping against a schema its image
+      # predated (Cloud Run reported a healthy service), and #164's allowance
+      # check building a Settings object that validates the *API's* configuration
+      # inside the *worker*, which raised on every AUTO run that resolved to
+      # EXECUTE. Local tests passed. CI passed. The smoke test above passed.
+      # Only a live run touches that line.
+      #
+      # mode=auto, deliberately, even though execute is what we want. An explicit
+      # mode is passthrough in the worker's resolver — it never reaches
+      # `_assert_execute_allowance`, which is the line #164 broke. AUTO is the
+      # path a real user's message takes, so AUTO is the path this gate takes.
+      #
+      # The success condition is therefore two things, not one: the run reached
+      # `succeeded`, AND it resolved to `execute`. A run that answers
+      # conversationally also reports `succeeded` without ever entering the
+      # sandbox, so status alone would let a chat reply certify a broken
+      # execution path.
+      #
+      # The credential is narrow by construction: DEPLOY_PROBE_TOKEN may create a
+      # run, read that run, and read its events — every other route answers 403
+      # (services/api/src/majorana_api/auth/deps.py, and the test that enumerates
+      # the router to prove it). It is read from Secret Manager here rather than
+      # held as a GitHub secret so there is one copy of it in the world.
+      #
+      # A missing secret FAILS. It must: a gate that skips itself when its
+      # credential disappears is not a gate, and this workflow already has a
+      # skip-with-a-warning path that exists for a different reason (no deploy
+      # credentials at all, i.e. nothing was deployed to test).
+      - name: a real run finishes on the deployed stack
+        if: steps.creds.outputs.have == 'true'
+        env:
+          DEADLINE_SECONDS: "600"
+        run: |
+          if ! probe=$(gcloud secrets versions access latest \
+            --secret=DEPLOY_PROBE_TOKEN --project "$GCP_PROJECT" 2>/tmp/probe.err); then
+            echo "::error::could not read DEPLOY_PROBE_TOKEN: $(cat /tmp/probe.err)"
+            echo "::error::the post-deploy run gate cannot authenticate. Provision the secret"
+            echo "::error::(docs/runbooks/deploys.md § Post-deploy synthetic run) — do not"
+            echo "::error::delete this step to make the deploy green."
+            exit 1
+          fi
+          test -n "$probe" || { echo "::error::DEPLOY_PROBE_TOKEN is empty"; exit 1; }
+          echo "::add-mask::$probe"
+
+          api=$(gcloud run services describe majorana-api \
+            --project "$GCP_PROJECT" --region "$GCP_REGION" --format='value(status.url)')
+          test -n "$api" || { echo "::error::could not resolve the api URL"; exit 1; }
+
+          # Idempotency-Key is the deploy tag: re-running this workflow for the
+          # same commit re-reads the run it already created instead of spending
+          # another one.
+          created=$(curl -sS -X POST "$api/v1/runs" \
+            -H "Authorization: Bearer $probe" \
+            -H 'Content-Type: application/json' \
+            -H "Idempotency-Key: deploy-${{ steps.tag.outputs.tag }}" \
+            -d '{"task_prompt":"Build a 2-qubit Bell state circuit, run it, and report the measurement counts.","framework":"qiskit","mode":"auto","shots":128,"seed":7,"timeout_s":120}')
+          # `|| true` throughout the polling: the runner's default shell is
+          # `bash -e -o pipefail`, so one transient curl or one unparseable body
+          # would abort the step and report a network blip as a broken deploy.
+          # Every read is allowed to come back empty and be retried; the deadline
+          # is what ends the loop.
+          run_id=$(printf '%s' "$created" | jq -r '.id // empty' || true)
+          if [ -z "$run_id" ]; then
+            echo "::error::POST /v1/runs did not return a run id"
+            printf '%s\n' "$created" | head -c 2000
+            exit 1
+          fi
+          echo "submitted run $run_id"
+
+          deadline=$(( $(date +%s) + DEADLINE_SECONDS ))
+          status=""
+          mode=""
+          while [ "$(date +%s)" -lt "$deadline" ]; do
+            sleep 10
+            body=$(curl -sS "$api/v1/runs/$run_id" -H "Authorization: Bearer $probe" || true)
+            status=$(printf '%s' "$body" | jq -r '.status // empty' || true)
+            mode=$(printf '%s' "$body" | jq -r '.mode // empty' || true)
+            case "$status" in
+              succeeded|failed|cancelled) break ;;
+              "") echo "::warning::could not read run status; retrying" ;;
+              *) echo "  $status ($mode)" ;;
+            esac
+          done
+
+          if [ "$status" != "succeeded" ] || [ "$mode" != "execute" ]; then
+            if [ "$status" = "succeeded" ]; then
+              echo "::error::the run succeeded but resolved to mode '$mode', not 'execute' —"
+              echo "::error::nothing entered the sandbox, so this deploy is UNVERIFIED. If the"
+              echo "::error::stack is otherwise healthy this is an intent-router misclassification"
+              echo "::error::of the probe prompt, not an outage."
+            else
+              echo "::error::post-deploy run $run_id ended '${status:-no terminal status before the deadline}'"
+              echo "::error::(mode '${mode:-unknown}') — the deployed stack cannot complete a run."
+            fi
+            # Whole events, not a summary. A failing check's output is the only
+            # input the next person has, and the payload fields are flattened
+            # into the envelope by the events contract — a projection down to
+            # {type} would throw away the stage, the error code and the numbers.
+            echo "last events:"
+            curl -sS "$api/v1/runs/$run_id/events" -H "Authorization: Bearer $probe" \
+              | jq -c '.[-20:][]? | del(.run_id)' || true
+            exit 1
+          fi
+          echo "run $run_id succeeded in mode $mode on the deployed stack"
 
       - name: rollback api on failure
         if: failure() && steps.creds.outputs.have == 'true'

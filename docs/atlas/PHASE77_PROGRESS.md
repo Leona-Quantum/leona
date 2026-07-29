@@ -141,3 +141,36 @@ Status: complete
 - Human review, public execution, and performance claims remain blocked.
 - The inherited WorkOS selected-account versus `/api/me` identity discrepancy
   remains unresolved and was not converted into a success claim.
+
+## Post-closeout DEV synchronization (2026-07-29)
+
+Status: verified locally
+
+- `origin/dev` at `b5fe8d96` was merged into `feature/vqe`; the pre-merge VQE
+  tip is retained as
+  `safety/feature-vqe-pre-dev-sync-20260729` (`8520a8be`).
+- DEV remains authoritative for WorkOS identity, active-workspace selection,
+  shared-workspace membership, the simple circuit pipeline, and normal run
+  execution. Phase 7.7 retains only additive VQE registry, conversion,
+  qualification, and private-evidence behavior.
+- Eight textual merge conflicts were resolved. Two additional identity
+  collisions that Git cannot detect were also removed:
+  - DEV ADR-0023 remains fixed; VQE ADRs moved from 0023–0033 to 0024–0034.
+  - DEV database revisions 0035–0038 remain fixed; VQE revisions moved from
+    0035–0039 to 0039–0043, preserving one linear Alembic head.
+- Historical evidence files remain immutable. Consequently, evidence captured
+  before this synchronization can contain the revision numbers that were valid
+  at capture time. Current code and new evidence use revisions 0039–0043.
+- Local verification after the merge:
+  - Python: `1358 passed, 168 skipped`.
+  - Web: `242 passed`.
+  - Turbo lint/typecheck/test: all six tasks passed.
+  - Next.js production build: passed.
+  - Ruff, import-linter, raw-query scan, and `git diff --check`: passed.
+  - Fresh PostgreSQL migration round trip
+    (`upgrade head → downgrade base → upgrade head`): passed with one head at
+    revision 0043.
+- These checks establish that the synchronized branch is internally
+  consistent. They do not claim that future DEV commits cannot conflict, and
+  they do not lift the existing blocks on publication, human-reviewed status,
+  or performance claims.

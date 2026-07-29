@@ -45,6 +45,10 @@ class User(Base):
     email: Mapped[str]
     display_name: Mapped[str | None]
     plan: Mapped[str | None] = mapped_column(server_default="free")
+    # Migration 0037. NULL = the personal workspace. A preference, never a grant:
+    # re-checked against `memberships` on every request, and a stale value falls
+    # back to personal instead of refusing the request.
+    active_workspace_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("workspaces.id"))
     created_at: Mapped[dt.datetime | None] = mapped_column(server_default=func.now())
     updated_at: Mapped[dt.datetime | None] = mapped_column(server_default=func.now())
 
@@ -57,6 +61,9 @@ class Workspace(Base):
     name: Mapped[str]
     owner_user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"))
     plan: Mapped[str | None] = mapped_column(server_default="free")
+    # Read at save time (migration 0036). False means a finished run materializes
+    # its artifact but leaves it out of the Vault list until the user keeps it.
+    auto_keep_artifacts: Mapped[bool] = mapped_column(server_default=text("false"))
     deleted_at: Mapped[dt.datetime | None]
     created_at: Mapped[dt.datetime | None] = mapped_column(server_default=func.now())
     updated_at: Mapped[dt.datetime | None] = mapped_column(server_default=func.now())
@@ -68,6 +75,13 @@ class Membership(Base):
     workspace_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("workspaces.id"), primary_key=True)
     user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"), primary_key=True)
     role: Mapped[str]
+    # Migration 0038. Who attached this person, for the notice that tells them.
+    # NULL for a membership somebody made for themselves, and for one whose
+    # inviter's account has since been deleted.
+    invited_by_user_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id"))
+    # Migration 0038. NULL means the person has not been told this membership
+    # exists. Written when they open the workspace, dismiss the notice, or leave.
+    acknowledged_at: Mapped[dt.datetime | None]
     created_at: Mapped[dt.datetime | None] = mapped_column(server_default=func.now())
     updated_at: Mapped[dt.datetime | None] = mapped_column(server_default=func.now())
 
@@ -100,6 +114,10 @@ class Artifact(Base):
     execution_state: Mapped[str | None]
     review_state: Mapped[str | None]
     publication_state: Mapped[str | None]
+    # Migration 0036. NULL = materialized (so the run keeps its conversion tabs
+    # and can be forked from) but deliberately NOT in the Vault list. This is
+    # separate from deleted_at: never kept is not the same as thrown away.
+    kept_at: Mapped[dt.datetime | None]
     deleted_at: Mapped[dt.datetime | None]
     created_at: Mapped[dt.datetime | None] = mapped_column(server_default=func.now())
     updated_at: Mapped[dt.datetime | None] = mapped_column(server_default=func.now())
@@ -562,7 +580,7 @@ class ImportItem(Base):
 
 
 class GitHubRepositorySnapshotRow(Base):
-    """Private append-only Phase 7 source snapshot (migration 0037)."""
+    """Private append-only Phase 7 source snapshot (migration 0041)."""
 
     __tablename__ = "github_repository_snapshots"
 
@@ -752,7 +770,7 @@ class QpuRun(Base):
 
 class VqeComponentSpec(Base):
     """Typed VQE metadata attached to an existing ArtifactVersion (migration
-    0035, ADR-0023). Component identity IS the ArtifactVersion — this table
+    0035, ADR-0024). Component identity IS the ArtifactVersion — this table
     adds VQE-specific typed fields without a second identity/provenance/
     license system alongside the one artifacts/artifact_versions already own."""
 
@@ -773,8 +791,8 @@ class VqeComponentSpec(Base):
 
 class VqeWorkflowComponent(Base):
     """Links a Workflow ArtifactVersion to one of its component
-    ArtifactVersions with an explicit role and ordinal (migration 0035,
-    ADR-0023)."""
+    ArtifactVersions with an explicit role and ordinal (migration 0039,
+    ADR-0024)."""
 
     __tablename__ = "vqe_workflow_components"
 
@@ -832,7 +850,7 @@ class VqeExecution(Base):
 
 
 class VqeObservation(Base):
-    """Append-only execution evidence (migration 0035, ADR-0025) — never
+    """Append-only execution evidence (migration 0039, ADR-0026) — never
     UPDATEd; a retry is a new row with an incremented `attempt`, never a
     mutation of a prior row."""
 

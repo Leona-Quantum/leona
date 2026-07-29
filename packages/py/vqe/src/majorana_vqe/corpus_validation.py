@@ -1,7 +1,7 @@
 """Phase 2 curated corpus validator (docs/atlas/corpus/) -- offline schema,
 enum, and cross-reference checks only. See
 docs/atlas/corpus/ANNOTATION_GUIDELINE.md for the schema this checks against
-and ADR-0026 for why validation here is machine-only (no claim of human
+and ADR-0027 for why validation here is machine-only (no claim of human
 review is made or checked).
 
 Deliberately offline: never makes a network call. Online URL-reachability
@@ -193,7 +193,7 @@ def _check_validation_state(record: dict, record_id: str) -> list[ValidationIssu
             )
         )
     # NOTE: this state is machine-only by construction -- there is no
-    # "human_reviewed" value in VALID_VALIDATION_STATES at all (ADR-0026).
+    # "human_reviewed" value in VALID_VALIDATION_STATES at all (ADR-0027).
     return issues
 
 
@@ -368,7 +368,7 @@ def validate_comparison_record(record: dict, filename: str) -> list[ValidationIs
                 record_id,
                 "is_manual_gold",
                 "error",
-                "MVP comparison reports must have is_manual_gold=false (ADR-0026)",
+                "MVP comparison reports must have is_manual_gold=false (ADR-0027)",
             )
         )
     if record.get("human_validated") is not False:
@@ -377,7 +377,7 @@ def validate_comparison_record(record: dict, filename: str) -> list[ValidationIs
                 record_id,
                 "human_validated",
                 "error",
-                "MVP comparison reports must have human_validated=false (ADR-0026)",
+                "MVP comparison reports must have human_validated=false (ADR-0027)",
             )
         )
 

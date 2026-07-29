@@ -4,7 +4,7 @@ GET /v1/atlas/comparisons/{id} reads directly from the bundled
 docs/atlas/corpus/comparisons/*.json files rather than a DB table: the
 plan's own Phase 3 DB-responsibilities list has no comparisons table, and
 Phase 2's comparison reports are versioned, machine-generated corpus data
-(ADR-0026), not per-workspace mutable state.
+(ADR-0027), not per-workspace mutable state.
 
 Phase 5A candidate execution is available only when a local-development
 feature gate is enabled. It reuses durable runs/jobs/events while public
@@ -553,7 +553,7 @@ async def vqe_capabilities(scope: CurrentScope) -> CapabilitiesResponse:
     actually available right now. Phase 0 proved H2_STO3G_EXACT_ENERGY on
     independent spike runtimes, not on an approved production
     ExecutionBinding — so it is listed as unavailable until Phase 5 promotes
-    a runtime profile out of CANDIDATE_UNVERIFIED (ADR-0024). Never report a
+    a runtime profile out of CANDIDATE_UNVERIFIED (ADR-0025). Never report a
     capability as available without an actual promoted binding behind it.
     """
     return CapabilitiesResponse(
@@ -563,7 +563,7 @@ async def vqe_capabilities(scope: CurrentScope) -> CapabilitiesResponse:
                 available=False,
                 reason=(
                     "no runtime profile has been promoted out of "
-                    "CANDIDATE_UNVERIFIED yet (ADR-0024, Phase 5B)"
+                    "CANDIDATE_UNVERIFIED yet (ADR-0025, Phase 5B)"
                 ),
             ),
             CapabilityStatus(

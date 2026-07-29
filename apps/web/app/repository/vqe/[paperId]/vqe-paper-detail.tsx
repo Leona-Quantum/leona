@@ -6,7 +6,7 @@ const COPY = {
   en: {
     back: "← Atlas",
     validationState: "Validation state",
-    machineValidated: "machine-validated (ADR-0026): sourced and schema-checked, not human-confirmed",
+    machineValidated: "machine-validated (ADR-0027): sourced and schema-checked, not human-confirmed",
     problem: "Problem",
     components: "Components (literature-level annotation)",
     workflow: "Workflow composition",
@@ -30,7 +30,7 @@ const COPY = {
   ja: {
     back: "← Atlas",
     validationState: "検証状態",
-    machineValidated: "機械検証済み（ADR-0026）：出典記録・スキーマ検査は通過、人手による内容確認は未実施",
+    machineValidated: "機械検証済み（ADR-0027）：出典記録・スキーマ検査は通過、人手による内容確認は未実施",
     problem: "問題設定",
     components: "コンポーネント（文献レベルの注釈）",
     workflow: "ワークフロー構成",

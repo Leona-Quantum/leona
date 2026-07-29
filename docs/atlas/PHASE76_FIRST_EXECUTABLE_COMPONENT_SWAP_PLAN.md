@@ -5,7 +5,7 @@
 **対象branch:** `feature/vqe`  
 **開始時Alembic head:** `0038`  
 **状態:** `in_progress`（S0 verified locally; S1 in progress）  
-**Authority:** Owner decision（2026-07-28）と本計画。既存ADR-0023〜0033、
+**Authority:** Owner decision（2026-07-28）と本計画。既存ADR-0024〜0033、
 Repository `AGENTS.md`、認証・Scope・sandbox規則が常に優先する。
 
 ---

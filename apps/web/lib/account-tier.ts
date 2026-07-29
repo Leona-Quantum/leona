@@ -1,11 +1,11 @@
 /**
  * Account tiers and what each one may do.
  *
- * Deliberately identity-source-agnostic. Production currently runs behind the
- * single-user lock, where there is exactly one synthetic identity and WorkOS is
- * bypassed; local development has a third. A resolver keyed on the *email* is
- * the only shape that stays correct across all three, so flipping
- * SINGLE_USER_LOCK back off does not require revisiting this file.
+ * Deliberately identity-source-agnostic. Production signs in through WorkOS;
+ * local development mints its own synthetic identity, and so does the deploy
+ * probe. A resolver keyed on the *email* is the only shape that stays correct
+ * across all of them, which is why adding or removing an identity source has
+ * never required revisiting this file.
  *
  * The developer allowlist is read from the environment and is EMPTY by default.
  * This repository is public, so collaborator addresses must not be committed to
@@ -88,10 +88,16 @@ export const TIER_LIMITS: Record<AccountTier, TierLimits> = {
   },
 };
 
-/** Identities minted by a non-WorkOS auth mode, each of which IS the operator. */
+/** Identities minted by a non-WorkOS auth mode — the operator, or the operator's
+ * own infrastructure. Kept in step with OPERATOR_IDENTITIES in
+ * services/api/src/majorana_api/tiers.py, which is the copy that enforces. The
+ * deploy probe never reaches this file — it holds an API credential and calls
+ * the control plane directly — but the two sets are stated identically so a
+ * reader comparing them does not have to work out which entries are missing on
+ * purpose. */
 const OPERATOR_IDENTITIES = new Set([
-  "operator@leonaquantum.com", // single-user lock (lib/auth.ts lockAuth)
   "local-dev@majorana.test", // MAJORANA_LOCAL_DEV_AUTH
+  "deploy-probe@leonaquantum.com", // DEPLOY_PROBE_TOKEN (post-deploy gate)
 ]);
 
 function normalizeEmail(email: string | null | undefined): string {

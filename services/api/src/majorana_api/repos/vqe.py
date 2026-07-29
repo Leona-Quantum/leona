@@ -1,7 +1,7 @@
 """VQE registry, portable experiments, executions, and evidence (Phase 4.5).
 
 vqe_component_specs and vqe_workflow_components carry no workspace_id of
-their own — identity is the referenced ArtifactVersion (ADR-0023), so every
+their own — identity is the referenced ArtifactVersion (ADR-0024), so every
 read joins through artifact_versions -> artifacts to apply the workspace
 predicate, the same pattern verification_records/run_events use through
 runs. vqe_experiments carries workspace_id directly. vqe_executions and
@@ -13,7 +13,7 @@ Portable identity, typed composition, and capability-specific result
 validation are recomputed in this repository boundary; callers cannot supply
 an authoritative hash independently from its content.
 
-append_observation is strictly append-only (ADR-0025): a retry is a new row
+append_observation is strictly append-only (ADR-0026): a retry is a new row
 with an incremented attempt, never a mutation of a prior one.
 """
 
@@ -131,7 +131,7 @@ async def create_component_spec(
 ) -> VqeComponentSpecRow:
     """Attach typed VQE metadata to an existing, in-scope ArtifactVersion.
 
-    artifact_version_id is the primary key of vqe_component_specs (ADR-0023:
+    artifact_version_id is the primary key of vqe_component_specs (ADR-0024:
     component identity IS the ArtifactVersion), so this is a create, not an
     upsert — a spec that needs to change belongs on a new ArtifactVersion,
     matching how artifacts.create_version already treats versions as
@@ -985,7 +985,7 @@ async def create_experiment(
     request_idempotency_key: str | None = None,
     catalog_workspace_id: uuid.UUID | None = None,
 ) -> VqeExperimentRow:
-    """Persist an immutable ScientificExperimentSpec (ADR-0023 spec/binding
+    """Persist an immutable ScientificExperimentSpec (ADR-0024 spec/binding
     separation). Deliberately does not create a `runs` row or enqueue a job:
     the portable experiment remains framework-independent. A separate
     execution mutation may later bind it to a server-owned candidate or
@@ -1797,9 +1797,9 @@ async def append_observation(
     evidence_json: dict[str, Any] | None = None,
 ) -> VqeObservationRow:
     """Append one execution-evidence row. Never call this to correct a prior
-    attempt — a retry is `attempt + 1`, matching ADR-0025's append-only
+    attempt — a retry is `attempt + 1`, matching ADR-0026's append-only
     contract. PostgreSQL also revokes UPDATE/DELETE from app_rw and rejects
-    either mutation through a trigger (migration 0035).
+    either mutation through a trigger (migration 0039).
     """
     require_write(scope)
     execution = await get_execution(

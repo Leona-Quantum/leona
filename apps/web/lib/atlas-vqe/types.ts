@@ -1,11 +1,11 @@
 /**
- * Types for the Atlas VQE corpus (ADR-0027). These mirror
+ * Types for the Atlas VQE corpus (ADR-0028). These mirror
  * docs/atlas/corpus/{papers,repositories,comparisons}/*.json field-for-field
  * (snake_case, same field names) rather than adopting `PublicRepositoryEntry`'s
  * camelCase/circuit-execution shape — the two record kinds are genuinely
  * different data (literature/method records vs. executable circuits), and
  * this project's standing rule is never to synthesize a field to satisfy a
- * shape it doesn't actually have (see ADR-0027, root AGENTS.md "no invented
+ * shape it doesn't actually have (see ADR-0028, root AGENTS.md "no invented
  * results"). `unknown`/`null`/`machine_validated` markers already present in
  * the corpus are kept as-is so the UI can render them honestly instead of as
  * blanks (plan Phase 4 acceptance: "unknown/conflictを空欄に変換しない").

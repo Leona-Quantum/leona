@@ -25,12 +25,19 @@ async def list_artifacts(
     family: Algorithm | None = None,
     cursor: uuid.UUID | None = None,
     limit: int = 50,
+    include_unkept: bool = False,
 ) -> list[tuple[Artifact, dict[str, Any] | None]]:
     """Artifacts plus each one's current-version metadata (None when no version).
 
     The metadata rides along so the list resource can carry the verification
     grade — without it the web fabricated "verified" for every unopened
     artifact. One outer join, not a per-row fetch.
+
+    Unkept artifacts (migration 0036) are excluded by default: a run always
+    materializes, but the result belongs in the Vault only once the user keeps
+    it. `include_unkept` exists for callers that reason about everything a
+    workspace has produced — quota accounting must NOT use it, or an unkept run
+    would spend the user's Vault allowance.
     """
     stmt = (
         select(Artifact, ArtifactVersion.artifact_metadata)
@@ -43,6 +50,8 @@ async def list_artifacts(
         .order_by(Artifact.id.desc())
         .limit(limit)
     )
+    if not include_unkept:
+        stmt = stmt.where(Artifact.kept_at.is_not(None))
     if family is not None:
         stmt = stmt.where(Artifact.family == family)
     if cursor is not None:  # UUIDv7 PKs are time-ordered: id is the cursor
@@ -88,7 +97,14 @@ async def create_artifact(
     family: Algorithm,
     framework: Framework,
     parent_artifact_id: uuid.UUID | None = None,
+    kept: bool = True,
 ) -> Artifact:
+    """Create an artifact.
+
+    `kept` defaults True so every existing caller — imports, the catalog staging
+    path, tests — keeps behaving as it did. Only the agent save path passes
+    False, and only when the workspace has not opted into automatic keeping.
+    """
     require_write(scope)
     if parent_artifact_id is not None:  # provenance edge must stay in-workspace
         await get_artifact(scope, session, parent_artifact_id)
@@ -101,9 +117,26 @@ async def create_artifact(
         framework=framework,
         visibility=Visibility.PRIVATE,
         parent_artifact_id=parent_artifact_id,
+        kept_at=dt.datetime.now(dt.UTC) if kept else None,
     )
     session.add(artifact)
     await session.flush()
+    return artifact
+
+
+async def keep_artifact(scope: Scope, session: AsyncSession, artifact_id: uuid.UUID) -> Artifact:
+    """Put a materialized-but-unkept artifact into the Vault.
+
+    Idempotent, and deliberately does not re-stamp: keeping something twice must
+    not move it to the top of a list ordered by when the user kept it. Reuses
+    get_artifact, so an out-of-workspace or deleted id raises NotFoundError
+    rather than silently keeping nothing.
+    """
+    require_write(scope)
+    artifact = await get_artifact(scope, session, artifact_id, for_update=True)
+    if artifact.kept_at is None:
+        artifact.kept_at = dt.datetime.now(dt.UTC)
+        await session.flush()
     return artifact
 
 

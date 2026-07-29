@@ -34,7 +34,7 @@ jobs:
         run: |
           node --test 'scripts/catalog-bootstrap/*.test.mjs'
           node scripts/generate-catalog-bootstrap-manifest.mjs --check
-      - name: atlas VQE corpus bundle is current (ADR-0027)
+      - name: atlas VQE corpus bundle is current (ADR-0028)
         run: node scripts/generate-atlas-vqe-corpus.mjs --check
 
   # UI a11y gate (roadmap 04 §5 step 2, slice a): render the real @majorana/ui
@@ -70,7 +70,7 @@ jobs:
       - run: uv run ruff check .
       - run: uv run ruff format --check .
       - run: uv run pytest -q
-      - name: H2 VQE registry review manifest is current (ADR-0030)
+      - name: H2 VQE registry review manifest is current (ADR-0031)
         run: |
           uv run python scripts/generate-h2-canonical-circuit.py --check
           uv run python scripts/generate-h2-vqe-registry-manifest.py --check
@@ -190,13 +190,21 @@ jobs:
   # is present; 0019 narrows a CHECK the data no longer satisfies), so
   # `downgrade base` became impossible and `db` failed on every PR, including
   # docs-only ones. Reversibility is a property of the schema, so it belongs on an
-  # empty database; the live suites below keep the Neon branch, where a real
-  # pooled endpoint is the point.
+  # empty database.
+  #
+  # Every live suite runs against this container. Two of them used to run against
+  # a throwaway Neon branch instead, "where a real pooled endpoint is the point" —
+  # that reason expired on 2026-07-27 when production moved to Cloud SQL and
+  # stopped having a pooled endpoint at all. Both were checked against a plain
+  # migrated Postgres 17 before the branch steps were removed.
+  #
+  # postgres:17 matches production. It was 16 while production was Neon's 17,
+  # which is the sort of gap that surfaces as a mystery on the day it matters.
   db:
     runs-on: ubuntu-latest
     services:
       postgres:
-        image: postgres:16
+        image: postgres:17
         env:
           POSTGRES_USER: pg
           POSTGRES_PASSWORD: pg
@@ -231,48 +239,36 @@ jobs:
             uv run --package majorana-api alembic -c db/alembic.ini upgrade head
           '
           uv run --package majorana-api python db/seeds/seed.py
-      - uses: neondatabase/create-branch-action@v5
-        id: neon
-        with:
-          project_id: twilight-wildflower-01313590
-          branch_name: ci-pr${{ github.event.number }}-run${{ github.run_id }}
-          api_key: ${{ secrets.NEON_API_KEY }}
-      - name: reset the disposable Neon branch schema
+      # A third database, separate from the migration gate's so the seed rows
+      # stay out of these suites, and separate from majorana_live below because
+      # that one must NOT have the catalog authority (see its comment).
+      - name: create the live-suite database
+        run: PGPASSWORD=pg psql -h localhost -U pg -d postgres -c 'CREATE DATABASE majorana_authz'
+      - name: migrate the live-suite database
         env:
-          DATABASE_URL_DIRECT: ${{ steps.neon.outputs.db_url }}
-        run: |
-          psql "$DATABASE_URL_DIRECT" \
-            --set=ON_ERROR_STOP=1 \
-            --command='DROP SCHEMA IF EXISTS public CASCADE; CREATE SCHEMA public;'
-      - name: migrate the Neon branch for the live suites
-        env:
-          DATABASE_URL_DIRECT: ${{ steps.neon.outputs.db_url }}
-          DATABASE_URL: ${{ steps.neon.outputs.db_url_with_pooler }}
+          DATABASE_URL_DIRECT: postgresql://pg:pg@localhost:5432/majorana_authz
+          DATABASE_URL: postgresql://pg:pg@localhost:5432/majorana_authz
         run: uv run --package majorana-api alembic -c db/alembic.ini upgrade head
-      # Authz suite (Phase 1 step 4): entity × role × cross-workspace against
-      # the same throwaway branch. Required-check status rides on this db job.
+      # Authz suite (Phase 1 step 4): entity × role × cross-workspace.
+      # Required-check status rides on this db job.
       - name: authz suite
         env:
-          DATABASE_URL: ${{ steps.neon.outputs.db_url_with_pooler }}
+          DATABASE_URL: postgresql://pg:pg@localhost:5432/majorana_authz
         run: uv run pytest services/api/tests/authz -q
       # Pipeline spine E2E (Phase 2 step 1): run -> job -> events -> SSE replay.
       # --all-extras keeps qiskit installed (a prior `uv run --package` step can
       # prune it) so the sandbox subprocess can import it for the QASM epilogue.
       - name: pipeline e2e
         env:
-          DATABASE_URL: ${{ steps.neon.outputs.db_url_with_pooler }}
+          DATABASE_URL: postgresql://pg:pg@localhost:5432/majorana_authz
         run: uv run --all-extras pytest services/api/tests/test_pipeline_e2e.py -q
-      # Catalog-free database, on the throwaway Postgres rather than the Neon
-      # branch. These fixtures PROVISION the system catalog authority themselves,
-      # inserting the importer with a deterministic uuid and
-      # workos_user_id='system:catalog-importer'. Production now has that identity
-      # under a different uuid, so on a branch cut from `main` the insert's
-      # ON CONFLICT (id) misses and the users_workos_user_id_key UNIQUE fires
-      # instead — 9 errors. They need a database where the catalog does not
-      # already exist, which the Neon branch can no longer be. Separate DB from
-      # the migration gate's so the seed rows stay out of the queue tests.
-      # (authz and pipeline-e2e above do not touch the catalog authority, so they
-      # stay on Neon, where a real pooled endpoint is the point.)
+      # Catalog-free database. These fixtures PROVISION the system catalog
+      # authority themselves, inserting the importer with a deterministic uuid
+      # and workos_user_id='system:catalog-importer'. Production has that
+      # identity under a different uuid, so against any copy of production data
+      # the insert's ON CONFLICT (id) misses and the users_workos_user_id_key
+      # UNIQUE fires instead — 9 errors. That is why this database is its own,
+      # and it is why it must never be seeded either.
       - name: create the catalog-free live database
         run: PGPASSWORD=pg psql -h localhost -U pg -d postgres -c 'CREATE DATABASE majorana_live'
       - name: repository concurrency and integrity
@@ -288,9 +284,3 @@ jobs:
             services/api/tests/test_vqe_repo_live.py \
             services/worker/tests/test_vqe_execution_live.py \
             -q
-      - uses: neondatabase/delete-branch-action@v3
-        if: always()
-        with:
-          project_id: twilight-wildflower-01313590
-          branch: ci-pr${{ github.event.number }}-run${{ github.run_id }}
-          api_key: ${{ secrets.NEON_API_KEY }}

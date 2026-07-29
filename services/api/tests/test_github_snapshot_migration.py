@@ -10,9 +10,9 @@ def _module():
         / "db"
         / "migrations"
         / "versions"
-        / "0037_github_snapshot_staging.py"
+        / "0041_github_snapshot_staging.py"
     )
-    spec = importlib.util.spec_from_file_location("migration_0037_github_snapshot", path)
+    spec = importlib.util.spec_from_file_location("migration_0041_github_snapshot", path)
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
@@ -49,7 +49,7 @@ def test_github_snapshot_migration_is_additive_append_only_and_reversible(monkey
     module.upgrade()
     module.downgrade()
 
-    assert module.down_revision == "0036"
+    assert module.down_revision == "0040"
     assert tables == [
         "github_repository_snapshots",
         "github_repository_snapshot_files",

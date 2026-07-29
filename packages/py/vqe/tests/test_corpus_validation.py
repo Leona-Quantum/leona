@@ -249,7 +249,7 @@ class TestValidationStateConsistency:
         assert any(i.field_name == "validation_state" for i in issues)
 
     def test_human_reviewed_is_not_a_valid_state(self):
-        """ADR-0026: there is no human-reviewed state at all in this schema."""
+        """ADR-0027: there is no human-reviewed state at all in this schema."""
         record = _minimal_paper(
             validation_state={
                 "state": "human_reviewed",

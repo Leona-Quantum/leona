@@ -4,6 +4,7 @@ run_events and verification_records carry no workspace_id; every access resolves
 the parent run under scope first. run_events is append-only (DB grant enforced).
 """
 
+import datetime as dt
 import uuid
 from typing import Any
 
@@ -49,6 +50,95 @@ async def list_runs(
     if cursor is not None:
         stmt = stmt.where(Run.id < cursor)
     return list((await session.execute(stmt)).scalars().all())
+
+
+#: Modes that can consume execution budget at admission time. AUTO belongs here
+#: even though it is not itself an execution: it is the *default* mode on
+#: CreateRunRequest, and the worker may resolve it to EXECUTE.
+BACKSTOP_COUNTED_MODES = (RunMode.EXECUTE.value, RunMode.AUTO.value)
+
+
+async def count_runs_by_mode_since(
+    scope: Scope, session: AsyncSession, since: dt.datetime
+) -> dict[str, int]:
+    """Per-mode run counts for this workspace since `since`, for EXECUTE/AUTO.
+
+    Backs the API-side abuse backstop in `routes.runs.create_run`.
+
+    Counting EXECUTE alone is not enough, and this is the whole reason the
+    function is shaped this way. AUTO is the default mode on CreateRunRequest,
+    so a caller who simply omits `mode` never lands in an execute-only count —
+    they could submit without bound while the counter read zero. The worker does
+    rewrite AUTO rows to their resolved mode, but that happens *after*
+    admission, which is exactly too late for a gate that runs at admission.
+
+    Returns a mode -> count mapping rather than a single number so the caller
+    can hold a tight bound on explicit EXECUTE and a separate, looser bound on
+    everything that might become one, instead of metering ordinary
+    conversational traffic against the strict ceiling.
+    """
+    stmt = (
+        select(Run.mode, func.count())
+        .select_from(Run)
+        .where(
+            Run.workspace_id == scope.workspace_id,
+            Run.mode.in_(BACKSTOP_COUNTED_MODES),
+            Run.created_at >= since,
+        )
+        .group_by(Run.mode)
+    )
+    return {str(mode): int(count) for mode, count in (await session.execute(stmt)).all()}
+
+
+async def count_execute_runs_since(scope: Scope, session: AsyncSession, since: dt.datetime) -> int:
+    """Runs whose RESOLVED mode is EXECUTE, for the per-tier weekly allowance.
+
+    Deliberately narrower than `count_runs_by_mode_since`, and the difference is
+    the point. The backstop counts AUTO too, because at admission an AUTO row
+    might still become an execution and an abuse ceiling must bound the worst
+    case. A *plan* allowance must not: a free account's chat is unmetered by
+    policy, and counting AUTO here would spend someone's five weekly runs on
+    conversation.
+
+    The worker rewrites an AUTO row to EXECUTE when it resolves it, so a run that
+    really did execute is counted from that moment on, whichever mode it was
+    submitted as.
+
+    THE ONLY QUERY IN THE REPOSITORY LAYER THAT DOES NOT BIND
+    `scope.workspace_id`, and the omission is the point rather than an oversight.
+    It is asserted by `test_repo_scoping.test_tier_allowance_counts_the_account`,
+    so removing this comment does not remove the decision.
+
+    The weekly allowance belongs to an ACCOUNT, not to a tenant. Both of the
+    workspace-bound readings are wrong once a user can be in more than one:
+
+    - Per workspace alone: a collaborator opens a shared workspace and reads
+      "all 5 of your runs are used" because somebody else used them. The refusal
+      says *your plan*, so it would be a lie about whose allowance was spent.
+    - Per (workspace, user): the allowance multiplies by the number of
+      workspaces the user can reach. A free account owning three, or invited
+      into ten, would hold fifteen or fifty weekly runs while the product says
+      five.
+
+    Counting the caller's own rows across every workspace they act in leaks
+    nothing across the tenancy boundary: `Run.user_id == scope.user_id` selects
+    rows the caller created, which are the caller's own data by definition. The
+    boundary this layer protects is "scope A cannot see workspace B's rows", and
+    no row here belongs to anyone else.
+
+    The flat abuse ceiling above this one stays per workspace on purpose — that
+    one bounds a tenant rather than an account.
+    """
+    stmt = (
+        select(func.count())
+        .select_from(Run)
+        .where(
+            Run.user_id == scope.user_id,
+            Run.mode == RunMode.EXECUTE.value,
+            Run.created_at >= since,
+        )
+    )
+    return int((await session.execute(stmt)).scalar_one())
 
 
 async def find_run_by_idempotency_key(

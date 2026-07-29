@@ -1,26 +1,34 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { SyntaxHighlightedCode, VerificationSummaryPanel } from "@majorana/ui";
 import { CopyIcon, MoreIcon, StarIcon } from "../../../../components/icons";
 import { archiveArtifact, artifactFromResource, deleteArtifact, frameworkVariantsFromRemote, getLibraryArtifact, loadStarredLibraryArtifactIds, statusFromVerificationSummary, toggleLibraryArtifactStar, type LibraryArtifact } from "../../../../lib/library-data";
 import { verificationFromMetadata, verificationFromResource } from "../../../../lib/verification-record";
+import { measuredResultFromMetadata, type MeasuredResult } from "../../../../lib/measured-result";
+import { formatShare, simulationChartData } from "../../../../lib/simulation-visual";
 import type { PublicLocale } from "../../../../lib/public-locale";
-import { CIRCUIT_FRAMEWORKS, circuitFramework, circuitFrameworkOrNull } from "../../../../lib/circuit-frameworks";
-import { convertCircuitSource, looksLikeOpenQasm3, parseCircuitSource } from "../../../../lib/circuit-conversion";
-import { artifactExportManifest } from "../../../../lib/artifact-export";
+import { circuitFramework } from "../../../../lib/circuit-frameworks";
+import { parseCircuitSource, reconstructInterchangeCircuit } from "../../../../lib/circuit-conversion";
+import {
+  frameworkCodeOptions as sharedFrameworkCodeOptions,
+  type FrameworkCodeOption,
+} from "../../../../lib/framework-code-options";
+import { MAX_VIEWABLE_QUBITS, MAX_VIEWABLE_STEPS } from "../../../../lib/studio-parse";
+import { CircuitDiagram } from "../../../../components/circuit-diagram";
+import { artifactExportFilename, artifactExportManifest, artifactExportSource, fileExtension } from "../../../../lib/artifact-export";
 
 type DetailTab = "overview" | "code" | "runs" | "verification" | "notes";
 
-const DETAIL_COPY: Record<PublicLocale, {
-  back: string; reference: string; verified: string; structural: string; options: string; openStudio: string; openRun: string; askInRun: string; archive: string; delete: string; cancel: string; deleteConfirmTitle: string; deleteWarning: (title: string) => string; star: string; unstar: string; framework: string; type: string; artifact: string; updated: string; source: string; runSource: string; publicSource: string; curatedSource: string; tabs: Record<DetailTab, string>; overview: string; verificationSummary: string; resources: string; currentVersion: string; evidence: string; savedRecord: string; verificationReport: string; available: string; runProvenance: string; linked: string; example: string; recorded: string; exportStatus: string; openQasm: string; frameworkOnly: string; sourceCode: string; exportHeading: string; classified: string; copied: string; copyCode: string; noCode: string; lossless: string; noNative: string; runRecords: string; publicReference: string; verifiedRun: string; referenceRun: string; publicRunBody: string; runBody: string; verificationEvidence: string; auditSurface: string; whatChecked: string; publicChecked: string; verifiedChecked: string; notes: string; workspace: string; demoNote: string; publicNote: string; runNote: string; loading: string; unknown: string;
+export const DETAIL_COPY: Record<PublicLocale, {
+  back: string; reference: string; verified: string; structural: string; options: string; openStudio: string; openRun: string; askInRun: string; archive: string; delete: string; cancel: string; deleteConfirmTitle: string; deleteWarning: (title: string) => string; star: string; unstar: string; framework: string; type: string; artifact: string; updated: string; source: string; runSource: string; publicSource: string; curatedSource: string; tabs: Record<DetailTab, string>; overview: string; verificationSummary: string; resources: string; currentVersion: string; evidence: string; savedRecord: string; verificationReport: string; available: string; runProvenance: string; linked: string; example: string; recorded: string; exportStatus: string; openQasm: string; frameworkOnly: string; sourceCode: string; exportHeading: string; classified: string; copied: string; copyCode: string; noCode: string; lossless: string; noNative: string; runRecords: string; publicReference: string; verifiedRun: string; referenceRun: string; publicRunBody: string; runBody: string; verificationEvidence: string; auditSurface: string; whatChecked: string; publicChecked: string; verifiedChecked: string; notes: string; workspace: string; demoNote: string; publicNote: string; runNote: string; loading: string; unknown: string; circuitHeading: string; diagramReadOnly: string; diagramTooLarge: (qubits: number, steps: number) => string; diagramUnavailable: string; downloadSource: (extension: string) => string; downloadManifest: string; measuredResult: string; shotsLabel: (shots: number) => string; countsLabel: (shots: number) => string; truncatedNote: (shown: number, total: number) => string;
 }> = {
   en: {
-    back: "← Vault", reference: "Reference", verified: "Verified", structural: "Structurally verified", options: "Artifact options", openStudio: "Open in Studio", openRun: "Open in Run", askInRun: "Ask in Run", archive: "Archive", delete: "Delete", cancel: "Cancel", deleteConfirmTitle: "Are you sure?", deleteWarning: (title) => `“${title}” will be removed from your workspace and not saved.`, star: "Star artifact", unstar: "Remove artifact star", framework: "Framework", type: "Type", artifact: "artifact", updated: "Updated", source: "Source", runSource: "Leona Run", publicSource: "Public Atlas", curatedSource: "Curated example", tabs: { overview: "Overview", code: "Code & Export", runs: "Runs", verification: "Verification", notes: "Notes" }, overview: "Overview", verificationSummary: "Verification summary", resources: "Resources", currentVersion: "current version", evidence: "Evidence", savedRecord: "saved record", verificationReport: "Verification report", available: "available", runProvenance: "Run provenance", linked: "linked", example: "example", recorded: "recorded with the run", exportStatus: "Export status", openQasm: "OpenQASM 3", frameworkOnly: "framework only", sourceCode: "Source code", exportHeading: "Export", classified: "classified", copied: "Copied", copyCode: "Copy code", noCode: "Code will appear after the artifact is loaded from the control plane.", lossless: "Lossless", noNative: "No native OpenQASM export was saved for this artifact.", runRecords: "Run records", publicReference: "Public reference", verifiedRun: "Verified Leona Run", referenceRun: "Reference run", publicRunBody: "Public source context and export metadata are retained. Run this copy before treating it as new workspace evidence.", runBody: "Simulation evidence, verification parameters, and export status are retained with this artifact.", verificationEvidence: "Verification evidence", auditSurface: "audit surface", whatChecked: "What was checked", publicChecked: "The public record's stated method, result, source, and export boundary were preserved. Execute this private copy to create workspace-specific evidence.", verifiedChecked: "No machine-readable check record was saved with this version — it predates the stored check list.", notes: "Notes", workspace: "workspace", demoNote: "This is a curated replayable example.", publicNote: "This entry was imported from the public research database; source and license context are retained in the saved version.", runNote: "This entry was saved from a live workspace run.", loading: "Loading artifact…", unknown: "Unknown",
+    back: "← Vault", reference: "Reference", verified: "Verified", structural: "Structurally verified", options: "Artifact options", openStudio: "Open in Studio", openRun: "Open in Run", askInRun: "Ask in Run", archive: "Archive", delete: "Delete", cancel: "Cancel", deleteConfirmTitle: "Are you sure?", deleteWarning: (title) => `“${title}” will be removed from your workspace and not saved.`, star: "Star artifact", unstar: "Remove artifact star", framework: "Framework", type: "Type", artifact: "artifact", updated: "Updated", source: "Source", runSource: "Leona Run", publicSource: "Public Atlas", curatedSource: "Curated example", tabs: { overview: "Overview", code: "Code & Export", runs: "Runs", verification: "Verification", notes: "Notes" }, overview: "Overview", verificationSummary: "Verification summary", resources: "Resources", currentVersion: "current version", evidence: "Evidence", savedRecord: "saved record", verificationReport: "Verification report", available: "available", runProvenance: "Run provenance", linked: "linked", example: "example", recorded: "recorded with the run", exportStatus: "Export status", openQasm: "OpenQASM 3", frameworkOnly: "framework only", sourceCode: "Source code", exportHeading: "Export", classified: "classified", copied: "Copied", copyCode: "Copy code", noCode: "Code will appear after the artifact is loaded from the control plane.", lossless: "Lossless", noNative: "No native OpenQASM export was saved for this artifact.", runRecords: "Run records", publicReference: "Public reference", verifiedRun: "Verified Leona Run", referenceRun: "Reference run", publicRunBody: "Public source context and export metadata are retained. Run this copy before treating it as new workspace evidence.", runBody: "Simulation evidence, verification parameters, and export status are retained with this artifact.", verificationEvidence: "Verification evidence", auditSurface: "audit surface", whatChecked: "What was checked", publicChecked: "The public record's stated method, result, source, and export boundary were preserved. Execute this private copy to create workspace-specific evidence.", verifiedChecked: "No machine-readable check record was saved with this version — it predates the stored check list.", notes: "Notes", workspace: "workspace", demoNote: "This is a curated replayable example.", publicNote: "This entry was imported from the public research database; source and license context are retained in the saved version.", runNote: "This entry was saved from a live workspace run.", loading: "Loading artifact…", unknown: "Unknown", circuitHeading: "Circuit", diagramReadOnly: "read-only", diagramTooLarge: (qubits, steps) => `This circuit is too large to draw (${qubits} qubits, ${steps} operations). Read it as code below.`, diagramUnavailable: "No stored OpenQASM 3 export to draw from. Rerun Verify & save to mint one.", downloadSource: (extension) => `Download .${extension}`, downloadManifest: "Download with verification metadata", measuredResult: "Measured result", shotsLabel: (shots) => `${shots.toLocaleString("en-US")} shots`, countsLabel: (shots) => `Measured counts from ${shots.toLocaleString("en-US")} shots`, truncatedNote: (shown, total) => `Showing the ${shown} heaviest of ${total.toLocaleString("en-US")} measured outcomes.`,
   },
   ja: {
-    back: "← ボールト", reference: "リファレンス", verified: "検証済み", structural: "構造のみ検証", options: "アーティファクトの設定", openStudio: "Studioで開く", openRun: "実行で開く", askInRun: "実行で質問", archive: "アーカイブ", delete: "削除", cancel: "キャンセル", deleteConfirmTitle: "削除してもよいですか？", deleteWarning: (title) => `「${title}」はワークスペースから削除され、保存されません。`, star: "アーティファクトにスターを付ける", unstar: "アーティファクトのスターを外す", framework: "フレームワーク", type: "種類", artifact: "アーティファクト", updated: "更新日", source: "ソース", runSource: "Leona実行", publicSource: "公開Atlas", curatedSource: "キュレーション例", tabs: { overview: "概要", code: "コードとエクスポート", runs: "実行", verification: "検証", notes: "メモ" }, overview: "概要", verificationSummary: "検証サマリー", resources: "リソース", currentVersion: "現在のバージョン", evidence: "根拠", savedRecord: "保存済み記録", verificationReport: "検証レポート", available: "利用可能", runProvenance: "実行プロベナンス", linked: "リンク済み", example: "例", recorded: "実行時に記録済み", exportStatus: "エクスポート状態", openQasm: "OpenQASM 3", frameworkOnly: "frameworkのみ", sourceCode: "ソースコード", exportHeading: "エクスポート", classified: "分類済み", copied: "コピー済み", copyCode: "コードをコピー", noCode: "制御プレーンからアーティファクトを読み込むとコードが表示されます。", lossless: "ロスレス", noNative: "このアーティファクトにはネイティブOpenQASMエクスポートが保存されていません。", runRecords: "実行記録", publicReference: "公開リファレンス", verifiedRun: "検証済みLeona実行", referenceRun: "リファレンス実行", publicRunBody: "公開ソースのコンテキストとエクスポート情報を保持しています。新しいワークスペースの根拠とする前に、このコピーを実行してください。", runBody: "シミュレーションの根拠、検証パラメータ、エクスポート状態をこのアーティファクトに保持しています。", verificationEvidence: "検証の根拠", auditSurface: "監査表示", whatChecked: "確認した内容", publicChecked: "公開記録の方法、結果、ソース、エクスポート範囲を保持しています。ワークスペース固有の根拠を作るには、この非公開コピーを実行してください。", verifiedChecked: "このバージョンには機械可読な検証記録が保存されていません。検証項目の保存より前に作成されたアーティファクトです。", notes: "メモ", workspace: "ワークスペース", demoNote: "キュレーションされた再生可能な例です。", publicNote: "公開研究データベースから取り込んだエントリです。ソースとライセンスの情報は保存版に保持されます。", runNote: "このエントリはライブワークスペースの実行から保存されました。", loading: "アーティファクトを読み込んでいます…", unknown: "不明",
+    back: "← ボールト", reference: "リファレンス", verified: "検証済み", structural: "構造のみ検証", options: "アーティファクトの設定", openStudio: "Studioで開く", openRun: "実行で開く", askInRun: "実行で質問", archive: "アーカイブ", delete: "削除", cancel: "キャンセル", deleteConfirmTitle: "削除してもよいですか？", deleteWarning: (title) => `「${title}」はワークスペースから削除され、保存されません。`, star: "アーティファクトにスターを付ける", unstar: "アーティファクトのスターを外す", framework: "フレームワーク", type: "種類", artifact: "アーティファクト", updated: "更新日", source: "ソース", runSource: "Leona実行", publicSource: "公開Atlas", curatedSource: "キュレーション例", tabs: { overview: "概要", code: "コードとエクスポート", runs: "実行", verification: "検証", notes: "メモ" }, overview: "概要", verificationSummary: "検証サマリー", resources: "リソース", currentVersion: "現在のバージョン", evidence: "根拠", savedRecord: "保存済み記録", verificationReport: "検証レポート", available: "利用可能", runProvenance: "実行プロベナンス", linked: "リンク済み", example: "例", recorded: "実行時に記録済み", exportStatus: "エクスポート状態", openQasm: "OpenQASM 3", frameworkOnly: "frameworkのみ", sourceCode: "ソースコード", exportHeading: "エクスポート", classified: "分類済み", copied: "コピー済み", copyCode: "コードをコピー", noCode: "制御プレーンからアーティファクトを読み込むとコードが表示されます。", lossless: "ロスレス", noNative: "このアーティファクトにはネイティブOpenQASMエクスポートが保存されていません。", runRecords: "実行記録", publicReference: "公開リファレンス", verifiedRun: "検証済みLeona実行", referenceRun: "リファレンス実行", publicRunBody: "公開ソースのコンテキストとエクスポート情報を保持しています。新しいワークスペースの根拠とする前に、このコピーを実行してください。", runBody: "シミュレーションの根拠、検証パラメータ、エクスポート状態をこのアーティファクトに保持しています。", verificationEvidence: "検証の根拠", auditSurface: "監査表示", whatChecked: "確認した内容", publicChecked: "公開記録の方法、結果、ソース、エクスポート範囲を保持しています。ワークスペース固有の根拠を作るには、この非公開コピーを実行してください。", verifiedChecked: "このバージョンには機械可読な検証記録が保存されていません。検証項目の保存より前に作成されたアーティファクトです。", notes: "メモ", workspace: "ワークスペース", demoNote: "キュレーションされた再生可能な例です。", publicNote: "公開研究データベースから取り込んだエントリです。ソースとライセンスの情報は保存版に保持されます。", runNote: "このエントリはライブワークスペースの実行から保存されました。", loading: "アーティファクトを読み込んでいます…", unknown: "不明", circuitHeading: "回路", diagramReadOnly: "読み取り専用", diagramTooLarge: (qubits, steps) => `この回路は大きすぎて描画できません（${qubits}量子ビット、${steps}操作）。下のコードで確認してください。`, diagramUnavailable: "描画元となるOpenQASM 3エクスポートが保存されていません。「検証して保存」を再実行すると生成されます。", downloadSource: (extension) => `.${extension} をダウンロード`, downloadManifest: "検証メタデータ付きでダウンロード", measuredResult: "測定結果", shotsLabel: (shots) => `${shots.toLocaleString("ja-JP")} ショット`, countsLabel: (shots) => `${shots.toLocaleString("ja-JP")} ショットの測定カウント`, truncatedNote: (shown, total) => `測定された ${total.toLocaleString("ja-JP")} 個の状態のうち、上位 ${shown} 件を表示しています。`,
   },
 };
 type ArtifactCopy = (typeof DETAIL_COPY)[PublicLocale];
@@ -36,7 +44,15 @@ function verdictChip(artifact: LibraryArtifact, copy: ArtifactCopy): { label: st
   if (artifact.status === "structural") return { label: copy.structural, glyph: "–" };
   if (artifact.status === "verified") return { label: copy.verified, glyph: "✓" };
   if (artifact.status === "failed") return { label: "Failed", glyph: "×" };
-  if (artifact.status === "inconclusive") return { label: "Verification unavailable", glyph: "–" };
+  if (
+    artifact.status === "inconclusive"
+    && artifact.verificationSummary?.reason_code === "ai_review_aligned"
+  ) {
+    return { label: "Executed", glyph: "–" };
+  }
+  if (artifact.status === "inconclusive") {
+    return { label: "Verification unavailable", glyph: "–" };
+  }
   if (artifact.status === "stale") return { label: "Verification stale", glyph: "–" };
   return { label: "Legacy evidence unknown", glyph: "–" };
 }
@@ -110,6 +126,7 @@ export function ArtifactDetail({ artifactId, locale = "en" }: { artifactId: stri
               frameworkVariants: frameworkVariantsFromRemote(version.framework_variants) ?? current?.frameworkVariants,
               qasm: typeof version.qasm === "string" ? version.qasm : current?.qasm ?? null,
               resourceRows: current?.resourceRows?.length ? current.resourceRows : resourceRowsFromRemote(version.resource_estimates),
+              measuredResult: measuredResultFromMetadata(version.metadata) ?? current?.measuredResult ?? null,
             }));
           });
       })
@@ -215,7 +232,7 @@ export function ArtifactDetail({ artifactId, locale = "en" }: { artifactId: stri
             ))}
           </nav>
 
-          {tab === "overview" ? <Overview artifact={artifact} copy={copy} /> : null}
+          {tab === "overview" ? <Overview artifact={artifact} copy={copy} locale={locale} /> : null}
           {tab === "code" ? <CodeAndExport artifact={artifact} copied={copied} onCopy={copyCode} copy={copy} /> : null}
           {tab === "runs" ? <Runs artifact={artifact} copy={copy} /> : null}
           {tab === "verification" ? <Verification artifact={artifact} copy={copy} /> : null}
@@ -240,7 +257,7 @@ export function ArtifactDetail({ artifactId, locale = "en" }: { artifactId: stri
   );
 }
 
-function Overview({ artifact, copy }: { artifact: LibraryArtifact; copy: ArtifactCopy }) {
+function Overview({ artifact, copy, locale }: { artifact: LibraryArtifact; copy: ArtifactCopy; locale: PublicLocale }) {
   return (
     <div className="mj-artifact-grid">
       <section className="mj-artifact-panel mj-artifact-panel--wide">
@@ -250,6 +267,7 @@ function Overview({ artifact, copy }: { artifact: LibraryArtifact; copy: Artifac
         <h3>{copy.verificationSummary}</h3>
         <VerificationSummaryPanel summary={artifact.verificationSummary ?? null} />
       </section>
+      <MeasuredResultPanel measured={artifact.measuredResult ?? null} copy={copy} locale={locale} />
       <section className="mj-artifact-panel">
         <div className="mj-panel-heading"><h2>{copy.resources}</h2><span className="mj-mono-muted">{copy.currentVersion}</span></div>
         <dl className="mj-resource-list">{artifact.resourceRows.map((row) => <div key={row.label}><dt>{row.label}</dt><dd>{row.value}</dd></div>)}</dl>
@@ -266,67 +284,195 @@ function Overview({ artifact, copy }: { artifact: LibraryArtifact; copy: Artifac
   );
 }
 
+/** What the program measured — the thing a verdict is a verdict *about*.
+ *
+ * Deliberately absent rather than empty when the artifact carries no measurement:
+ * everything saved before 2026-07-26 predates the stored field, and an empty chart
+ * would read as "this run measured nothing" instead of "this artifact does not
+ * carry it". Reuses the Run surface's bar markup so one experiment does not get two
+ * different-looking histograms depending on which page it is read from. */
+export function MeasuredResultPanel({ measured, copy, locale = "en" }: { measured: MeasuredResult | null; copy: ArtifactCopy; locale?: PublicLocale }) {
+  const numberLocale = locale === "ja" ? "ja-JP" : "en-US";
+  if (!measured) return null;
+  // Same chart math as the Run surface, so one experiment does not get a 12-bar
+  // histogram on the page that produced it and a 64-bar wall in the Vault. The
+  // first draft rendered every stored outcome and buried the Overview tab.
+  const data = measured.counts ? simulationChartData(measured.counts, measured.shots) : null;
+  // One honest sentence covering both ways outcomes can be missing: capped for
+  // display here, and capped for storage by the worker on a wide distribution.
+  const shown = data?.bars.length ?? 0;
+  const omitted = measured.outcomeCount > shown;
+  return (
+    <section className="mj-artifact-panel">
+      <div className="mj-panel-heading">
+        <h2>{copy.measuredResult}</h2>
+        <span className="mj-mono-muted">
+          {measured.shots ? copy.shotsLabel(measured.shots) : copy.savedRecord}
+        </span>
+      </div>
+      {measured.values.length ? (
+        <dl className="mj-resource-list">
+          {measured.values.map((value) => (
+            <div key={value.label}><dt>{value.label}</dt><dd>{value.value.toLocaleString(numberLocale)}</dd></div>
+          ))}
+        </dl>
+      ) : null}
+      {data ? (
+        <div className="mj-run-live-chart" role="group" aria-label={copy.countsLabel(measured.shots)}>
+          {data.bars.map((bar) => (
+            <div className="mj-run-live-bar" key={bar.bitstring}>
+              <code>{bar.bitstring}</code>
+              <span className="mj-run-live-bar-track" aria-hidden="true">
+                <span style={{ width: `${(bar.count / data.peak.count) * 100}%` }} />
+              </span>
+              <span>
+                {bar.count.toLocaleString(numberLocale)}
+                <small>{formatShare(bar.share, numberLocale)}</small>
+              </span>
+            </div>
+          ))}
+        </div>
+      ) : null}
+      {omitted ? (
+        <p className="mj-artifact-copy mj-mono-muted">
+          {copy.truncatedNote(shown, measured.outcomeCount)}
+        </p>
+      ) : null}
+    </section>
+  );
+}
+
 function CodeAndExport({ artifact, copied, onCopy, copy }: { artifact: LibraryArtifact; copied: boolean; onCopy: (code?: string) => void; copy: ArtifactCopy }) {
   const options = frameworkCodeOptions(artifact);
   const [selected, setSelected] = useState(options[0]?.key ?? "qiskit");
   const selectedOption = options.find((option) => option.key === selected);
   const selectedCode = selectedOption?.code ?? artifact.code;
-  function downloadExport() {
-    const body = JSON.stringify(artifactExportManifest(artifact, { framework: selected, code: selectedCode }), null, 2);
-    const url = URL.createObjectURL(new Blob([body], { type: "application/json" }));
+  function download(body: string, filename: string, type: string) {
+    const url = URL.createObjectURL(new Blob([body], { type }));
     const anchor = document.createElement("a");
     anchor.href = url;
-    anchor.download = `${artifact.slug || artifact.id}.majorana.json`;
+    anchor.download = filename;
     anchor.click();
     URL.revokeObjectURL(url);
   }
+  function downloadExport() {
+    download(
+      JSON.stringify(artifactExportManifest(artifact, { framework: selected, code: selectedCode }), null, 2),
+      `${artifact.slug || artifact.id}.majorana.json`,
+      "application/json",
+    );
+  }
+  // The manifest is for re-importing into Leona; a researcher who wants to run
+  // this circuit in their own notebook needs the actual file, not a JSON
+  // envelope they have to unwrap by hand first.
+  function downloadSource() {
+    download(
+      artifactExportSource(artifact, { framework: selected, code: selectedCode }),
+      artifactExportFilename(artifact, selected),
+      "text/plain",
+    );
+  }
   return (
     <div className="mj-artifact-grid mj-artifact-grid--code">
+      <CircuitDiagramPanel artifact={artifact} copy={copy} />
       <section className="mj-artifact-panel mj-artifact-panel--wide">
         <div className="mj-panel-heading"><h2>{copy.sourceCode}</h2><div className="mj-artifact-code-actions">{options.length > 1 ? <label><span className="sr-only">{copy.framework}</span><select value={selected} onChange={(event) => setSelected(event.target.value)}>{options.map((option) => <option key={option.key} value={option.key}>{option.label}</option>)}</select></label> : null}<button className="mj-secondary-button" type="button" onClick={() => onCopy(selectedCode)} title={copied ? copy.copied : copy.copyCode}><CopyIcon size={14} />{copied ? copy.copied : copy.copyCode}</button></div></div>
         <pre className="mj-artifact-code" tabIndex={0} role="region" aria-label={`${artifact.title} ${selected} ${copy.sourceCode}`}>{selectedCode ? <SyntaxHighlightedCode code={selectedCode} language={selected} /> : <code>{copy.noCode}</code>}</pre>
         {selectedOption?.note ? <p className="mj-artifact-copy">{selectedOption.note}</p> : null}
       </section>
       <section className="mj-artifact-panel">
-        <div className="mj-panel-heading"><h2>{copy.exportHeading}</h2><button className="mj-secondary-button" type="button" onClick={downloadExport}>Download with verification metadata</button></div>
+        <div className="mj-panel-heading"><h2>{copy.exportHeading}</h2><div className="mj-artifact-code-actions"><button className="mj-secondary-button" type="button" onClick={downloadSource} disabled={!selectedCode} title={artifactExportFilename(artifact, selected)}>{copy.downloadSource(fileExtension(artifactExportFilename(artifact, selected)))}</button><button className="mj-secondary-button" type="button" onClick={downloadExport}>{copy.downloadManifest}</button></div></div>
         <div className="mj-export-state"><span className="mj-library-status mj-library-status--verified"><span aria-hidden="true">✓</span>{artifact.qasm ? copy.lossless : copy.frameworkOnly}</span><p>{artifact.qasm ?? copy.noNative}</p></div>
       </section>
     </div>
   );
 }
 
-function frameworkCodeOptions(artifact: LibraryArtifact): Array<{ key: string; label: string; code: string; note?: string }> {
-  const provided = new Map<string, string>();
-  for (const [framework, code] of Object.entries(artifact.frameworkVariants ?? {})) {
-    const normalized = normalizeFramework(framework);
-    if (normalized && code) provided.set(normalized, code);
-  }
-  const primary = normalizeFramework(artifact.framework);
-  if (primary && artifact.code) provided.set(primary, artifact.code);
-  if (artifact.qasm && looksLikeOpenQasm3(artifact.qasm)) provided.set("openqasm3", artifact.qasm);
+/** The saved circuit, drawn.
+ *
+ * Until now this page was code + metadata only: the Vault could tell you a
+ * circuit existed and show you its source, but never showed you the circuit.
+ * The reconstruction machinery (PRs 150/151) and the renderer already existed —
+ * the renderer was just trapped inside Studio's builder, so it has been lifted
+ * into `components/circuit-diagram` and is reused verbatim here.
+ *
+ * Every branch of the reconstruction is given an honest surface. `too_large`
+ * says so and names the numbers rather than drawing an empty canvas, matching
+ * what Studio does; `unparsable` (which is what a pre-PR-148 artifact with no
+ * stored QASM looks like) says the export is missing and how to mint one. The
+ * one thing this must never do is render a blank frame that reads as "this
+ * circuit has no gates".
+ *
+ * (Issue refs are spelled "PR 148" rather than with a leading hash on purpose —
+ * the repo's raw-hex lint gate reads a hash followed by three digits as a CSS
+ * color literal.) */
+function CircuitDiagramPanel({ artifact, copy }: { artifact: LibraryArtifact; copy: ArtifactCopy }) {
+  const reconstruction = useMemo(
+    () => {
+      if (artifact.qasm) return reconstructInterchangeCircuit(artifact.qasm);
+      // No stored QASM is the *common* case for anything saved before PR 148,
+      // not an edge case, and those are exactly the artifacts someone is most
+      // likely to open. Their framework source is sitting right here, so try
+      // it rather than going straight to "re-verify to mint one".
+      //
+      // This recovers a subset, not everything, and that was measured rather
+      // than assumed: `parseCircuitSource` accepts only the canonical builder
+      // shape (`QuantumCircuit(n)` + `measure_all()`), so freely-written
+      // model output using `QuantumCircuit(n, n)` or explicit `qc.measure(...)`
+      // still returns null and correctly falls through to the honest
+      // "no export to draw from" note. Worth having anyway — it costs one
+      // parse attempt and strictly increases how many artifacts draw.
+      //
+      // The viewing ceiling is passed explicitly because this parser defaults
+      // to the six-wire *editable* bound, which is not the bound that applies
+      // to a read-only drawing: a canonical 10q circuit parses with the
+      // ceiling passed and returns null without it.
+      const parsed = artifact.code
+        ? parseCircuitSource(artifact.code, artifact.framework, MAX_VIEWABLE_QUBITS)
+        : null;
+      if (!parsed) return null;
+      if (parsed.steps.length > MAX_VIEWABLE_STEPS) {
+        return { kind: "too_large" as const, qubitCount: parsed.qubitCount, stepCount: parsed.steps.length };
+      }
+      return { kind: "ok" as const, circuit: parsed };
+    },
+    [artifact.qasm, artifact.code, artifact.framework],
+  );
 
-  const qasm = artifact.qasm && looksLikeOpenQasm3(artifact.qasm) ? artifact.qasm : null;
-  const candidates = [...provided.entries()]
-    .map(([framework, code]) => ({ framework, code }))
-  const source = candidates.find((candidate) => Boolean(parseCircuitSource(candidate.code, candidate.framework)))
-    ?? (qasm ? { framework: "openqasm3", code: qasm } : undefined);
+  const body = !reconstruction || reconstruction.kind === "unparsable"
+    ? <p className="mj-artifact-copy">{copy.diagramUnavailable}</p>
+    : reconstruction.kind === "too_large"
+      ? <p className="mj-artifact-copy">{copy.diagramTooLarge(reconstruction.qubitCount, reconstruction.stepCount)}</p>
+      : (
+        <CircuitDiagram
+          qubitCount={reconstruction.circuit.qubitCount}
+          steps={reconstruction.circuit.steps}
+          customGates={[]}
+          ariaLabel={`${artifact.title} circuit diagram`}
+        />
+      );
 
-  return CIRCUIT_FRAMEWORKS.flatMap(({ key, label }) => {
-    const existing = provided.get(key);
-    if (existing) return [{ key, label, code: existing }];
-    if (!source) return [];
-    const conversion = convertCircuitSource(source.code, source.framework, key, qasm);
-    return conversion ? [{
-      key,
-      label,
-      code: conversion.code,
-      ...(conversion.fidelity === "standard_gate_decomposition" ? { note: conversion.note } : {}),
-    }] : [];
-  });
+  return (
+    <section className="mj-artifact-panel mj-artifact-panel--wide">
+      <div className="mj-panel-heading">
+        <h2>{copy.circuitHeading}</h2>
+        <span className="mj-mono-muted">{copy.diagramReadOnly}</span>
+      </div>
+      {body}
+    </section>
+  );
 }
 
-function normalizeFramework(value: string): string | null {
-  return circuitFrameworkOrNull(value)?.key ?? null;
+// Shared with the Run surface's Final Output — see lib/framework-code-options.
+// Keeping one implementation is the only way "conversions show up wherever code
+// does" stays true as frameworks are added.
+function frameworkCodeOptions(artifact: LibraryArtifact): FrameworkCodeOption[] {
+  return sharedFrameworkCodeOptions({
+    framework: artifact.framework,
+    code: artifact.code,
+    qasm: artifact.qasm,
+    frameworkVariants: artifact.frameworkVariants,
+  });
 }
 
 function Runs({ artifact, copy }: { artifact: LibraryArtifact; copy: ArtifactCopy }) {

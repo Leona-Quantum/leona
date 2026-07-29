@@ -5,10 +5,30 @@ overrides:
   fast-uri: 3.1.4
   js-yaml: 4.3.0
   sharp: 0.35.3
-  # Next 16 pins postcss@8.4.31, which GHSA-6g55-p6wh-862q (CVSS 7.5) now flags.
-  # Dedupe onto 8.5.16 — already in the tree via @tailwindcss/postcss and not
-  # flagged by osv. A minor, backward-compatible bump within postcss 8.x.
-  postcss@8.4.31: 8.5.16
+  # postcss advisories keep landing on the version Next/Tailwind pull in:
+  # GHSA-6g55-p6wh-862q flagged 8.4.31, then GHSA-r28c-9q8g-f849 (CVSS 7.5,
+  # source-map path traversal) flagged everything <= 8.5.17. A targeted
+  # `8.4.31: x` override can't catch the copy @tailwindcss/postcss resolves by
+  # range, so dedupe the whole tree onto the first patched release. All postcss
+  # here is 8.x; 8.5.18 is a backward-compatible patch bump.
+  postcss: 8.5.18
+  # GHSA-mh99-v99m-4gvg (high): unbounded brace expansion OOMs the process.
+  # Only the 5.x line is reachable here (minimatch@10 -> brace-expansion@5.0.7,
+  # via @sentry/bundler-plugin-core's glob and openapi-typescript's @redocly).
+  # Scoped to ^5 on purpose: minimatch@5 still resolves 2.1.2 and a blanket
+  # override would jump it three majors for no advisory.
+  brace-expansion@^5.0.0: 5.0.8
+  # NOT `minimatch@^5 -> 10`, though that is the tempting way to drag the last
+  # vulnerable brace-expansion off the tree. minimatch 10 moved from a callable
+  # default export to named exports, and @redocly/openapi-core (the only
+  # minimatch@5 consumer here) does `const minimatch = require("minimatch")`
+  # and then calls it — which throws "m is not a function" under 10. That was
+  # verified against the installed file, not inferred: the contracts codegen
+  # still passed with the override in place because a plain JSON spec never
+  # reaches minimatch's glob path, so the break was latent rather than loud.
+  # There is no callable-default minimatch that depends on a patched
+  # brace-expansion, so the remaining advisory is allowlisted instead — see
+  # ALLOWLIST in scripts/check_osv_report.py.
 # 05-security supply chain: build scripts stay blocked. sharp (next/image) is
 # explicitly denied - we do not use image optimization yet; revisit in Phase 3.
 allowBuilds:

@@ -11,16 +11,16 @@ document is the stop-and-report required before that gate.
 
 ## 1. What was built
 
-`db/migrations/versions/0035_vqe_component_registry.py` — four purely
+`db/migrations/versions/0039_vqe_component_registry.py` — four purely
 additive tables, matching the plan's Part II §8 field lists exactly:
 
 - `vqe_component_specs` (PK = `artifact_version_id`; component identity IS
-  the existing ArtifactVersion, ADR-0023 — no parallel identity system).
+  the existing ArtifactVersion, ADR-0024 — no parallel identity system).
 - `vqe_workflow_components` (links a workflow ArtifactVersion to its
   member component ArtifactVersions with an explicit role/ordinal).
 - `vqe_experiments` (immutable `ScientificExperimentSpec` only;
   `run_id` nullable+unique — see §5 below for why).
-- `vqe_observations` (append-only execution evidence, ADR-0025).
+- `vqe_observations` (append-only execution evidence, ADR-0026).
 
 Every enum-shaped text column carries a CHECK constraint pinned to
 `majorana_vqe.models`'s own enums (`ComponentType`, `AnnotationState`,
@@ -72,7 +72,7 @@ POST /v1/vqe/experiments/{experiment_id}/materialize
    scientific spec only; execution status is `runs`/`jobs`'s authority" —
    but there is no approved `ExecutionBinding` to resolve a
    framework/runtime against until Phase 5 ships real, promoted runtime
-   profiles (ADR-0024's `CANDIDATE_UNVERIFIED` gate). `run_id` stays
+   profiles (ADR-0025's `CANDIDATE_UNVERIFIED` gate). `run_id` stays
    `NULL` on every experiment created in this phase. Consequently:
 2. **`POST .../cancel`, `GET .../events`, `POST .../materialize` are
    honest stubs, not fake success.** Each confirms the experiment exists
@@ -86,7 +86,7 @@ POST /v1/vqe/experiments/{experiment_id}/materialize
 3. **`GET /v1/atlas/comparisons/{id}` reads the bundled corpus JSON
    directly, not a DB table.** The plan's Phase 3 DB-responsibilities list
    has no comparisons table, and Phase 2's 3 comparison reports are
-   versioned, machine-generated corpus data (ADR-0026), not per-workspace
+   versioned, machine-generated corpus data (ADR-0027), not per-workspace
    mutable state. `comparison_id` is constrained by an anchored
    `^[a-zA-Z0-9_]+$` path-parameter pattern (FastAPI-level, rejects the
    request before the handler runs), so path traversal is not reachable
@@ -105,8 +105,8 @@ POST /v1/vqe/experiments/{experiment_id}/materialize
    this deliberately diverges from `POST /v1/runs`'s own convention, where
    the same header is optional. The divergence is the plan's own
    instruction, not an inconsistency to fix.
-   ADR-0029 names its persisted value `request_idempotency_key`: it is HTTP
-   replay safety, not ADR-0023's server-generated Phase 5 execution identity.
+   ADR-0030 names its persisted value `request_idempotency_key`: it is HTTP
+   replay safety, not ADR-0024's server-generated Phase 5 execution identity.
 6. **`create_experiment`'s idempotent-retry logic mirrors
    `catalog_import.create_import_job` byte-for-byte**: look up by
    `(workspace_id, request_idempotency_key)` first; on a flush-time
@@ -115,7 +115,7 @@ POST /v1/vqe/experiments/{experiment_id}/materialize
    `workflow_artifact_version_id` or `scientific_spec_sha256` raises
    `IdempotencyConflictError` (409) instead of silently returning the
    wrong experiment.
-7. **The server constructs the scientific spec (ADR-0029).** The client
+7. **The server constructs the scientific spec (ADR-0030).** The client
    supplies a Workflow ArtifactVersion plus dataset/initial-parameter/seed
    inputs, never component UUIDs. The repository resolves all 12 required
    ordinal-zero links under Scope, checks every `ComponentType`, and rejects
@@ -143,7 +143,7 @@ migrated, unseeded database unless noted:
   `alembic upgrade head` → `alembic downgrade base` → `alembic upgrade head`,
   all three succeeding in under 2 seconds (CI budget is 60s). `downgrade
   base` was also exercised earlier in this phase specifically for
-  migration 0035's own guard (refuses to drop `vqe_observations` while a
+  migration 0039's own guard (refuses to drop `vqe_observations` while a
   `succeeded` row exists) — confirmed it raises, then confirmed it
   succeeds once that row no longer blocks it.
 - **`db/seeds/seed.py`** ran clean against the freshly migrated schema
@@ -256,7 +256,7 @@ principle against hiding a result that didn't fit the narrative.
   exercised (§4; no import has run against this phase's code yet).
 - API resolves component ArtifactVersions to build the scientific spec —
   done in the repository under Scope for all 12 required component roles;
-  client-supplied component UUIDs are rejected (ADR-0028/0029).
+  client-supplied component UUIDs are rejected (ADR-0029/0029).
 - Requested capability resolves server-side to an approved
   ExecutionBinding — `GET /v1/vqe/capabilities` reports the one known
   capability (`h2_sto3g_exact_energy`) as `available: false` with an

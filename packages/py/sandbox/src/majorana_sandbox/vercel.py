@@ -41,9 +41,14 @@ class SandboxProviderError(RuntimeError):
 def _create_kwargs(spec: ExecutionSpec, image: str) -> dict[str, Any]:
     """Build the AsyncSandbox.create(...) kwargs. Isolated so tests can assert the
     deny-all egress policy without a live provider."""
+    # Vercel provisions 2 GiB per requested vCPU. Map the provider-neutral memory
+    # contract onto the smallest sandbox that satisfies it instead of silently
+    # dropping ExecutionSpec.memory_mb at the production boundary.
+    vcpus = max(1, (spec.memory_mb + 2047) // 2048)
     return {
         "image": image,
         "timeout": spec.timeout_s * 1000,  # SDK takes milliseconds
+        "resources": {"vcpus": vcpus},
         "network_policy": DENY_ALL_EGRESS,  # <-- the invariant
         "env": {},  # no credentials inside the sandbox, ever
     }
@@ -63,7 +68,11 @@ class VercelSandbox:
     async def _execute(self, spec: ExecutionSpec) -> SandboxResult:
         try:
             from vercel.sandbox.aio import Sandbox as AsyncSandbox  # type: ignore
-            from vercel.sandbox import SandboxAuthError, SandboxPermissionError  # type: ignore
+            from vercel.sandbox import (  # type: ignore
+                Resources,
+                SandboxAuthError,
+                SandboxPermissionError,
+            )
         except Exception as exc:  # pragma: no cover - exercised only without the SDK
             raise SandboxProviderError(
                 "install majorana-sandbox[vercel] and provide Vercel OIDC/token auth"
@@ -71,7 +80,9 @@ class VercelSandbox:
 
         started = time.monotonic()
         try:
-            sandbox = await AsyncSandbox.create(**_create_kwargs(spec, self._image))
+            create_kwargs = _create_kwargs(spec, self._image)
+            create_kwargs["resources"] = Resources(**create_kwargs["resources"])
+            sandbox = await AsyncSandbox.create(**create_kwargs)
         except SandboxAuthError as exc:
             raise SandboxProviderError(
                 "Vercel sandbox authentication failed; provide Vercel OIDC/token auth"

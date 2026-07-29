@@ -237,7 +237,7 @@ class TestQiskitPennyLaneFixtureParity:
 class TestScientificSpecHashUnchangedAcrossFrameworkBindings:
     def test_digest_does_not_depend_on_any_framework_choice(self):
         """ScientificExperimentSpec structurally never contains a framework
-        field (ADR-0023) -- this test guards the invariant against a future
+        field (ADR-0024) -- this test guards the invariant against a future
         regression that accidentally adds one."""
         spec = _make_spec()
         assert "framework" not in ScientificExperimentSpec.model_fields

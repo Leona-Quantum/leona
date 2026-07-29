@@ -3,7 +3,8 @@
 import type { components } from "@majorana/contracts-gen";
 import { type FormEvent, useEffect, useState } from "react";
 import type { PublicLocale } from "../../../lib/public-locale";
-import { ACCOUNT_COPY } from "../../../lib/workspace-locale";
+import { ACCOUNT_COPY, SHARING_COPY } from "../../../lib/workspace-locale";
+import { WorkspaceSharing } from "./workspace-sharing";
 
 type WorkspaceOverview = components["schemas"]["WorkspaceOverview"];
 
@@ -14,6 +15,9 @@ type Me = {
   workspace_id: string;
   workspace_name: string;
   role: components["schemas"]["Role"];
+  /** Optional so an older control plane, which had no shared workspaces at all,
+   *  still reads as personal rather than as somebody else's. */
+  is_personal_workspace?: boolean;
 };
 
 export function AccountSettings({ initialEmail, locale }: { initialEmail: string; locale: PublicLocale }) {
@@ -23,6 +27,8 @@ export function AccountSettings({ initialEmail, locale }: { initialEmail: string
   const [displayName, setDisplayName] = useState("");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [autoKeep, setAutoKeep] = useState(false);
+  const [savingAutoKeep, setSavingAutoKeep] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
 
   useEffect(() => {
@@ -36,6 +42,7 @@ export function AccountSettings({ initialEmail, locale }: { initialEmail: string
         setMe(identity);
         setDisplayName(identity.display_name ?? "");
         setWorkspace(overview);
+        setAutoKeep(Boolean(overview.workspace.auto_keep_artifacts));
         setLoading(false);
       })
       .catch((cause) => {
@@ -78,8 +85,35 @@ export function AccountSettings({ initialEmail, locale }: { initialEmail: string
     }
   }
 
+  async function saveAutoKeep(next: boolean) {
+    if (savingAutoKeep) return;
+    setSavingAutoKeep(true);
+    setAutoKeep(next);
+    setMessage(null);
+    try {
+      const response = await fetch("/api/workspace/settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ auto_keep_artifacts: next }),
+      });
+      if (!response.ok) throw new AccountRequestError(copy.autoKeepFailed);
+      setMessage(next ? copy.autoKeepOn : copy.autoKeepOff);
+    } catch (cause) {
+      setAutoKeep(!next);
+      setMessage(cause instanceof AccountRequestError ? cause.message : copy.autoKeepFailed);
+    } finally {
+      setSavingAutoKeep(false);
+    }
+  }
+
   if (loading) return <p className="mj-page-lede">{copy.loading}</p>;
   if (!workspace || !me) return <p className="mj-page-lede" role="alert">{message ?? `${initialEmail}: ${copy.unavailable}`}</p>;
+
+  const sharing = SHARING_COPY[locale];
+  // `kind === "personal"` is NOT the test: a guest in someone else's personal
+  // workspace reads kind=personal for a tenant that is not theirs.
+  const isPersonal = me.is_personal_workspace !== false;
+  const memberCount = workspace.members.length;
 
   return (
     <div className="mj-artifact-grid">
@@ -97,15 +131,43 @@ export function AccountSettings({ initialEmail, locale }: { initialEmail: string
           <button className="mj-primary-button" disabled={saving} type="submit">{saving ? copy.saving : copy.saveName}</button>
         </form>
       </section>
+      {/* Titled by the workspace once there can be more than one: the counts
+          below are the ACTIVE workspace's, and heading them "Personal
+          workspace" while sitting in a colleague's would misattribute their
+          artifacts to you. */}
       <section className="mj-artifact-panel">
-        <div className="mj-panel-heading"><h2>{copy.personalWorkspace}</h2><span className="mj-mono-muted">{workspace.workspace.plan}</span></div>
-        <p className="mj-artifact-copy">{copy.personalWorkspaceHelp}</p>
+        <div className="mj-panel-heading"><h2>{isPersonal ? copy.personalWorkspace : me.workspace_name}</h2><span className="mj-mono-muted">{workspace.workspace.plan}</span></div>
+        <p className="mj-artifact-copy">{isPersonal ? copy.personalWorkspaceHelp : sharing.membersHelp}</p>
         <dl className="mj-resource-list">
           <div><dt>{copy.artifacts}</dt><dd>{workspace.artifact_count}</dd></div>
           <div><dt>{copy.runs}</dt><dd>{workspace.run_count}</dd></div>
-          <div><dt>{copy.access}</dt><dd>{copy.privateAccess}</dd></div>
+          <div><dt>{copy.access}</dt><dd>{memberCount > 1 ? sharing.sharedWith(memberCount) : copy.privateAccess}</dd></div>
         </dl>
+        {/* Optimistic, and reverted on failure: the checkbox is the only
+            feedback there is, so leaving it in the state the user clicked while
+            the request fails would be a lie. */}
+        <label className="mj-account-toggle">
+          <input
+            type="checkbox"
+            checked={autoKeep}
+            disabled={savingAutoKeep}
+            onChange={(event) => saveAutoKeep(event.target.checked)}
+          />
+          <span>
+            <strong>{copy.autoKeep}</strong>
+            <small>{copy.autoKeepHelp}</small>
+          </span>
+        </label>
       </section>
+      <WorkspaceSharing
+        locale={locale}
+        members={workspace.members}
+        viewerUserId={me.user_id}
+        viewerRole={me.role}
+        onMembersChanged={(members) =>
+          setWorkspace((current) => (current ? { ...current, members } : current))
+        }
+      />
       <section className="mj-artifact-panel mj-artifact-panel--wide">
         <div className="mj-panel-heading"><h2>{copy.workspaceBoundaries}</h2><span className="mj-mono-muted">v1</span></div>
         <div className="mj-account-boundary-grid">

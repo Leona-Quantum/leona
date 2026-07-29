@@ -11,7 +11,7 @@ from majorana_contracts.enums import Framework
 from majorana_frameworks import FrameworkProgram, extract_interchange_qasm
 from majorana_sandbox.guard import check_python_code
 from majorana_sandbox.spec import ExecutionSpec, compose_execution
-from majorana_worker.agent_events import _qasm_emission
+from majorana_worker.simple_events import _qasm_emission
 
 
 def _install_fake_qiskit(monkeypatch, dumps) -> None:

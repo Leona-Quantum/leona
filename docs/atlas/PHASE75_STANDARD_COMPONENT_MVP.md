@@ -2,7 +2,7 @@
 
 Date: 2026-07-27 JST  
 Branch: `feature/vqe`  
-Authority: ADR-0033  
+Authority: ADR-0034  
 State: **S0-S5 implemented and locally verified; live Registry/Neon E2E and
 public publication remain operator-gated**
 
@@ -67,7 +67,7 @@ The database enum is not widened merely to create UI labels.
 
 ### 7.5-S0 — Product contracts
 
-- ADR-0033 accepted.
+- ADR-0034 accepted.
 - Fix Definition / Implementation / Configuration / Compatibility / Workflow
   terminology.
 - Keep identity on `ArtifactVersion`.

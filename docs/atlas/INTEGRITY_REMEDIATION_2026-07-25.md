@@ -9,7 +9,7 @@ Claude実装を全面破棄して過去commitへ戻す必要はない。Phase 1�
 今回の判定は次のとおり。
 
 - **コード基盤:** targeted remediation後は継続利用可能。
-- **Phase 1/2:** local acceptanceを満たす。ただしPhase 2はADR-0026の
+- **Phase 1/2:** local acceptanceを満たす。ただしPhase 2はADR-0027の
   machine-only corpusであり、人手検証済みとは呼ばない。
 - **Phase 3:** local PostgreSQLでschema/repository/APIを検証済み。
   Neon child branch検証とcurated corpus importは未実施。

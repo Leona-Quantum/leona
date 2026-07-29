@@ -43,6 +43,11 @@ export interface components {
              */
             id: string;
             /**
+             * Kept At
+             * @default null
+             */
+            kept_at: string | null;
+            /**
              * Parent Artifact Id
              * @description Provenance edge
              * @default null
@@ -539,6 +544,46 @@ export interface components {
              * @enum {string}
              */
             type: "compilation.result";
+        };
+        /**
+         * ConversationTitled
+         * @description A short name for the conversation, written by the model on its first turn.
+         *
+         *     Emitted at most once per conversation and never for a later turn, so the name
+         *     a user sees in their sidebar does not shift under them mid-thread. The title
+         *     is the model's own words in the language the user wrote in — deriving it from
+         *     the prompt text is what produced sidebar rows that were whole paragraphs, and
+         *     translating it is what mixed two languages into one list.
+         */
+        ConversationTitled: {
+            /**
+             * Run Id
+             * Format: uuid
+             */
+            run_id: string;
+            /**
+             * Seq
+             * @description Unique per run; powers replay and SSE Last-Event-ID
+             */
+            seq: number;
+            /**
+             * Source
+             * @default model
+             * @enum {string}
+             */
+            source: "model" | "fallback";
+            /** Title */
+            title: string;
+            /**
+             * Ts
+             * Format: date-time
+             */
+            ts: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "conversation.titled";
         };
         /**
          * EvidenceStrength
@@ -1398,7 +1443,7 @@ export interface components {
          * RunEvent
          * @description Discriminated union of all run event types (class name sets the schema id).
          */
-        RunEvent: components["schemas"]["RunQueued"] | components["schemas"]["RunStarted"] | components["schemas"]["RunModeResolved"] | components["schemas"]["StageStarted"] | components["schemas"]["StageFinished"] | components["schemas"]["PlanProduced"] | components["schemas"]["ResearchCompleted"] | components["schemas"]["LlmCall"] | components["schemas"]["LlmDelta"] | components["schemas"]["ChatDelta"] | components["schemas"]["ChatCompleted"] | components["schemas"]["ChatError"] | components["schemas"]["CodeGenerated"] | components["schemas"]["ScreenResult"] | components["schemas"]["ResourceEstimateResult"] | components["schemas"]["CompilationResult"] | components["schemas"]["CodeFinalized"] | components["schemas"]["SandboxResult"] | components["schemas"]["VerificationResult"] | components["schemas"]["SemanticReviewRecorded"] | components["schemas"]["StrictVerificationRecorded"] | components["schemas"]["BaselineResult"] | components["schemas"]["ExportClassified"] | components["schemas"]["ArtifactSaved"] | components["schemas"]["RunAnalysis"] | components["schemas"]["RunDiagnosed"] | components["schemas"]["RunRestarted"] | components["schemas"]["RunBestEffort"] | components["schemas"]["RunErrorEvent"] | components["schemas"]["RunFinished"];
+        RunEvent: components["schemas"]["RunQueued"] | components["schemas"]["RunStarted"] | components["schemas"]["RunModeResolved"] | components["schemas"]["StageStarted"] | components["schemas"]["StageFinished"] | components["schemas"]["PlanProduced"] | components["schemas"]["ResearchCompleted"] | components["schemas"]["LlmCall"] | components["schemas"]["LlmDelta"] | components["schemas"]["ChatDelta"] | components["schemas"]["ChatCompleted"] | components["schemas"]["ChatError"] | components["schemas"]["ConversationTitled"] | components["schemas"]["CodeGenerated"] | components["schemas"]["ScreenResult"] | components["schemas"]["ResourceEstimateResult"] | components["schemas"]["CompilationResult"] | components["schemas"]["CodeFinalized"] | components["schemas"]["SandboxResult"] | components["schemas"]["VerificationResult"] | components["schemas"]["SemanticReviewRecorded"] | components["schemas"]["StrictVerificationRecorded"] | components["schemas"]["BaselineResult"] | components["schemas"]["ExportClassified"] | components["schemas"]["ArtifactSaved"] | components["schemas"]["RunAnalysis"] | components["schemas"]["RunDiagnosed"] | components["schemas"]["RunRestarted"] | components["schemas"]["RunBestEffort"] | components["schemas"]["RunErrorEvent"] | components["schemas"]["RunFinished"];
         /** RunFinished */
         RunFinished: {
             /** @default null */
@@ -1585,6 +1630,13 @@ export interface components {
             phase: "verification" | "final";
             /** @default null */
             qasm_emission: components["schemas"]["QasmEmission"] | null;
+            /**
+             * Result
+             * @description Bounded JSON result captured from the protected sandbox sidecar.
+             */
+            result?: {
+                [key: string]: unknown;
+            };
             /**
              * Run Id
              * Format: uuid
@@ -2135,6 +2187,11 @@ export interface components {
         /** Workspace */
         Workspace: {
             /**
+             * Auto Keep Artifacts
+             * @default false
+             */
+            auto_keep_artifacts: boolean;
+            /**
              * Created At
              * Format: date-time
              */
@@ -2186,6 +2243,43 @@ export interface components {
             workspace_id: string;
         };
         /**
+         * WorkspaceInvitation
+         * @description A workspace the caller has been added to and has not been told about.
+         *
+         *     Not a pending offer: the membership already grants access, so this is a
+         *     notice rather than an invitation to accept. The distinction matters for the
+         *     copy — "you can open this now", not "do you accept".
+         *
+         *     `invited_by_email` is the inviter's address, which the invitee can already
+         *     see in the workspace's member list. It is here because "you were added to
+         *     Ion trap group" with no author reads like something the system did.
+         */
+        WorkspaceInvitation: {
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Invited By Email
+             * @default null
+             */
+            invited_by_email: string | null;
+            /**
+             * Invited By Name
+             * @default null
+             */
+            invited_by_name: string | null;
+            role: components["schemas"]["Role"];
+            /**
+             * Workspace Id
+             * Format: uuid
+             */
+            workspace_id: string;
+            /** Workspace Name */
+            workspace_name: string;
+        };
+        /**
          * WorkspaceKind
          * @enum {string}
          */
@@ -2220,6 +2314,30 @@ export interface components {
             /** Run Count */
             run_count: number;
             workspace: components["schemas"]["Workspace"];
+        };
+        /**
+         * WorkspaceSummary
+         * @description One row of the workspace switcher: a tenant the caller can act in.
+         *
+         *     `is_active` is what the *next* request will scope to, not the raw value of
+         *     the stored pointer — a pointer to a workspace the caller was removed from
+         *     resolves back to personal, and the switcher must show where they actually
+         *     are.
+         */
+        WorkspaceSummary: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Is Active */
+            is_active: boolean;
+            /** Is Personal */
+            is_personal: boolean;
+            kind: components["schemas"]["WorkspaceKind"];
+            /** Name */
+            name: string;
+            role: components["schemas"]["Role"];
         };
     };
     responses: never;

@@ -2,7 +2,7 @@
 
 **Date:** 2026-07-24 (revised; supersedes the earlier version of this document)
 **Status:** all corpus-mechanics acceptance criteria met, machine-validated,
-zero errors. See `docs/adr/0026-vqe-mvp-machine-only-corpus-validation.md`
+zero errors. See `docs/adr/0027-vqe-mvp-machine-only-corpus-validation.md`
 for why this document no longer describes an owner/human-review stop point.
 
 ## 0. What changed since the first version of this document
@@ -12,7 +12,7 @@ corpus mechanics done but explicitly stopped before claiming any of:
 80%-human-reviewed, inter-annotator agreement, or 3 human-curated "manual
 gold" comparison reports — correctly, per the plan as it existed then.
 
-The owner subsequently issued ADR-0026: **MVP acceptance for this corpus
+The owner subsequently issued ADR-0027: **MVP acceptance for this corpus
 does not require or claim human review at all.** This is a documented scope
 change, not a silent pass — the removed requirements, why, and what was
 deferred to post-MVP are recorded in the ADR and in
@@ -58,7 +58,7 @@ validator (schema/enum/reference/consistency checks), plus
 `packages/py/vqe/tests/test_corpus_validation.py` (43 tests, including an
 integration test that runs the validator against the real corpus).
 
-## 2. Phase 2 acceptance criteria (revised, ADR-0026) — measured against actual
+## 2. Phase 2 acceptance criteria (revised, ADR-0027) — measured against actual
 
 | Criterion | Required | Actual |
 |---|---:|---:|
@@ -77,7 +77,7 @@ integration test that runs the validator against the real corpus).
 **"Verified" here means:** sourced (a real, dereferenceable URL was opened
 or directly returned by a search for that specific fact) and passed the
 offline schema/consistency validator. It does **not** mean a human
-confirmed the content is scientifically correct — see ADR-0026 and
+confirmed the content is scientifically correct — see ADR-0027 and
 `ANNOTATION_GUIDELINE.md` §5 rule 5 for why that distinction is enforced
 everywhere this word is used.
 
@@ -163,7 +163,7 @@ never `human_reviewed`, because that value does not exist in this schema.
   weaker evidence in that record's own `unknown_or_ambiguous_fields`.
 - Human curation, inter-annotator agreement, and manual-gold comparison
   authoring remain real future work, explicitly deferred to post-MVP by
-  ADR-0026 — not deleted from the project's intent, just not an MVP gate.
+  ADR-0027 — not deleted from the project's intent, just not an MVP gate.
 - Phase 3 (Neon Component Registry) import of this corpus must not set
   `majorana_vqe.models.AnnotationState.HUMAN_REVIEWED` on any component
   derived from these records merely because their `validation_state.state`

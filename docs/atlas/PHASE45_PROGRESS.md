@@ -2,7 +2,7 @@
 
 Date: 2026-07-25  
 Branch: `feature/vqe`  
-Decision authority: ADR-0030 and ADR-0031  
+Decision authority: ADR-0031 and ADR-0032  
 State: **ready for Phase 5A product integration; not qualified for public
 execution, publication, or scientific release**
 

@@ -92,6 +92,36 @@ async def test_verified_physical_pass_can_be_made_public(scope, monkeypatch):
     assert len(session.statements) == 1
 
 
+async def test_simple_review_only_artifact_cannot_be_made_public(scope, monkeypatch):
+    version_id = uuid.uuid4()
+
+    async def get_artifact(*_args, **_kwargs):
+        return SimpleNamespace(current_version_id=version_id)
+
+    async def get_version(*_args, **_kwargs):
+        return SimpleNamespace(
+            fingerprint="a" * 64,
+            artifact_metadata={
+                "source": "simple_pipeline_candidate",
+                "source_fingerprint": "a" * 64,
+                "review_summary": {"status": "aligned", "decision": "ready"},
+                "verification_summary": {
+                    "verified": False,
+                    "decision": "not_run",
+                    "evidence_strength": None,
+                    "reason_code": "strict_verification_not_run",
+                },
+            },
+        )
+
+    monkeypatch.setattr(artifacts, "get_artifact", get_artifact)
+    monkeypatch.setattr(artifacts, "get_version", get_version)
+
+    admin = scope.model_copy(update={"role": "admin"})
+    with pytest.raises(ValueError, match="verified physical PASS"):
+        await artifacts.set_visibility(admin, _WriteSession(), uuid.uuid4(), Visibility.PUBLIC)
+
+
 @pytest.mark.parametrize(
     "case",
     load_seeded_corpus(Path(__file__).parents[3] / "evals" / "seeded-mistakes"),

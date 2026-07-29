@@ -1,5 +1,5 @@
 /**
- * Server-side source of the /repository page's Atlas VQE section (ADR-0027).
+ * Server-side source of the /repository page's Atlas VQE section (ADR-0028).
  *
  * Reads the committed, generated corpus bundle (a static JSON import, so both
  * `next dev` and a Vercel build bundle it correctly) rather than fetching the

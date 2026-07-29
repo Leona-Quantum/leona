@@ -69,6 +69,9 @@ class Workspace(_ResourceBase):
     name: str
     owner_user_id: UUID
     plan: str
+    # Settings toggle (0036), default off: when true a finished run files its
+    # artifact in the Vault immediately instead of waiting for "Keep this".
+    auto_keep_artifacts: bool = False
     created_at: datetime
     deleted_at: datetime | None = None
 
@@ -78,6 +81,49 @@ class WorkspaceMember(_ResourceBase):
     email: str
     display_name: str | None = None
     role: Role
+    created_at: datetime
+
+
+class WorkspaceSummary(_ResourceBase):
+    """One row of the workspace switcher: a tenant the caller can act in.
+
+    `is_active` is what the *next* request will scope to, not the raw value of
+    the stored pointer — a pointer to a workspace the caller was removed from
+    resolves back to personal, and the switcher must show where they actually
+    are.
+    """
+
+    id: UUID
+    kind: WorkspaceKind
+    name: str
+    role: Role
+    #: The caller's own personal workspace. Not `kind == personal`: a member of
+    #: someone else's personal workspace sees kind=personal for a tenant that is
+    #: not theirs.
+    is_personal: bool
+    is_active: bool
+
+
+class WorkspaceInvitation(_ResourceBase):
+    """A workspace the caller has been added to and has not been told about.
+
+    Not a pending offer: the membership already grants access, so this is a
+    notice rather than an invitation to accept. The distinction matters for the
+    copy — "you can open this now", not "do you accept".
+
+    `invited_by_email` is the inviter's address, which the invitee can already
+    see in the workspace's member list. It is here because "you were added to
+    Ion trap group" with no author reads like something the system did.
+    """
+
+    workspace_id: UUID
+    workspace_name: str
+    role: Role
+    #: NULL when the membership predates migration 0038, or when the inviter's
+    #: account has been deleted. The notice drops the name rather than the whole
+    #: message.
+    invited_by_email: str | None = None
+    invited_by_name: str | None = None
     created_at: datetime
 
 
@@ -118,6 +164,11 @@ class Artifact(_ResourceBase):
     verification_summary: VerificationSummary | None = None
     created_at: datetime
     updated_at: datetime
+    # When the user chose to keep this in the Vault. None means the run
+    # materialized it — so the Run surface keeps its conversion tabs and the next
+    # turn can fork from it — but it is not filed in the Vault. Distinct from
+    # deleted_at: never kept is not the same as thrown away.
+    kept_at: datetime | None = None
     deleted_at: datetime | None = None
 
 

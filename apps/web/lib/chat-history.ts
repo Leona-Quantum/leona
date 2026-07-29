@@ -1,3 +1,5 @@
+import { scopedStorage } from "./user-storage.ts";
+
 export type ChatStatus = "queued" | "running" | "verified" | "failed" | "draft";
 
 export interface ChatSummary {
@@ -6,6 +8,14 @@ export interface ChatSummary {
   title: string;
   /** User-chosen name; wins over titles re-derived from remote run prompts. */
   titleOverride?: string;
+  /**
+   * The name the model gave this conversation on its opening turn, carried on
+   * the `conversation.titled` run event. Below a user rename and above anything
+   * re-derived from prompt text — the run list endpoint has no title field, so
+   * every refresh rebuilds `title` from `task_prompt` and would otherwise
+   * overwrite this on the next tick.
+   */
+  modelTitle?: string;
   prompt: string;
   createdAt: string;
   status: ChatStatus;
@@ -60,8 +70,10 @@ const DEFAULT_CHATS: ChatSummary[] = [
   },
 ];
 
+// Storage is per-account (lib/user-storage.ts): these keys carry chat titles and
+// prompt text, which is the leak that made public sign-up unsafe.
 function canUseStorage(): boolean {
-  return typeof window !== "undefined" && typeof window.localStorage !== "undefined";
+  return scopedStorage.available();
 }
 
 function emitChange(): void {
@@ -77,19 +89,19 @@ function normalizeFolderName(name: string): string {
 }
 
 function persist(chats: ChatSummary[]): ChatSummary[] {
-  if (canUseStorage()) window.localStorage.setItem(STORAGE_KEY, JSON.stringify(chats));
+  if (canUseStorage()) scopedStorage.setItem(STORAGE_KEY, JSON.stringify(chats));
   emitChange();
   return chats;
 }
 
 function persistSilently(chats: ChatSummary[]): void {
-  if (canUseStorage()) window.localStorage.setItem(STORAGE_KEY, JSON.stringify(chats));
+  if (canUseStorage()) scopedStorage.setItem(STORAGE_KEY, JSON.stringify(chats));
 }
 
 function loadDeletedIds(): Set<string> {
   if (!canUseStorage()) return new Set();
   try {
-    const parsed = JSON.parse(window.localStorage.getItem(DELETED_STORAGE_KEY) ?? "[]") as unknown;
+    const parsed = JSON.parse(scopedStorage.getItem(DELETED_STORAGE_KEY) ?? "[]") as unknown;
     return new Set(Array.isArray(parsed) ? parsed.filter((value): value is string => typeof value === "string") : []);
   } catch {
     return new Set();
@@ -97,13 +109,13 @@ function loadDeletedIds(): Set<string> {
 }
 
 function persistDeletedIds(ids: Set<string>): void {
-  if (canUseStorage()) window.localStorage.setItem(DELETED_STORAGE_KEY, JSON.stringify([...ids]));
+  if (canUseStorage()) scopedStorage.setItem(DELETED_STORAGE_KEY, JSON.stringify([...ids]));
 }
 
 export function loadChatHistory({ includeDemo = true, includeArchived = false }: HistoryOptions = {}): ChatSummary[] {
   if (!canUseStorage()) return includeDemo ? DEFAULT_CHATS : [];
   try {
-    const raw = window.localStorage.getItem(STORAGE_KEY);
+    const raw = scopedStorage.getItem(STORAGE_KEY);
     if (!raw) return includeDemo ? DEFAULT_CHATS : [];
     const parsed = JSON.parse(raw) as unknown;
     if (!Array.isArray(parsed)) return includeDemo ? DEFAULT_CHATS : [];
@@ -134,7 +146,7 @@ export function rememberChat(chat: ChatSummary): ChatSummary[] {
 
 export function updateChat(
   id: string,
-  patch: Partial<Pick<ChatSummary, "title" | "titleOverride" | "status" | "framework" | "folderId" | "archivedAt">>,
+  patch: Partial<Pick<ChatSummary, "title" | "titleOverride" | "modelTitle" | "status" | "framework" | "folderId" | "archivedAt">>,
 ): ChatSummary[] {
   return persist(
     loadChatHistory({ includeDemo: false, includeArchived: true }).map((chat) => (chat.id === id ? { ...chat, ...patch } : chat)),
@@ -180,7 +192,7 @@ function isArchiveExpired(archivedAt: string): boolean {
 export function loadChatFolders(): ChatFolder[] {
   if (!canUseStorage()) return [];
   try {
-    const raw = window.localStorage.getItem(FOLDERS_STORAGE_KEY);
+    const raw = scopedStorage.getItem(FOLDERS_STORAGE_KEY);
     if (!raw) return [];
     const parsed = JSON.parse(raw) as unknown;
     if (!Array.isArray(parsed)) return [];
@@ -191,7 +203,7 @@ export function loadChatFolders(): ChatFolder[] {
 }
 
 function persistFolders(folders: ChatFolder[]): ChatFolder[] {
-  if (canUseStorage()) window.localStorage.setItem(FOLDERS_STORAGE_KEY, JSON.stringify(folders));
+  if (canUseStorage()) scopedStorage.setItem(FOLDERS_STORAGE_KEY, JSON.stringify(folders));
   emitFoldersChange();
   return folders;
 }
@@ -347,6 +359,10 @@ export function collapseConversationChats(chats: ChatSummary[]): ChatSummary[] {
       const identity = chronological[0]!;
       const newest = chronological[chronological.length - 1]!;
       const renamed = chronological.find((chat) => chat.titleOverride) ?? identity;
+      // The model names a conversation on its opening turn, so the name lives on
+      // whichever run carried that turn — not necessarily the identity row after
+      // a merge, and never on `newest`.
+      const named = chronological.find((chat) => chat.modelTitle);
       const folderOwner = chronological.find((chat) => chat.folderId);
       const archived = chronological.find((chat) => chat.archivedAt);
 
@@ -354,8 +370,9 @@ export function collapseConversationChats(chats: ChatSummary[]): ChatSummary[] {
         ...newest,
         id: identity.id,
         conversationId: newest.conversationId ?? identity.conversationId,
-        title: renamed.titleOverride ?? identity.title,
+        title: renamed.titleOverride ?? named?.modelTitle ?? identity.title,
         ...(renamed.titleOverride ? { titleOverride: renamed.titleOverride } : {}),
+        ...(named?.modelTitle ? { modelTitle: named.modelTitle } : {}),
         prompt: identity.prompt,
         folderId: newest.folderId ?? folderOwner?.folderId,
         ...(archived?.archivedAt ? { archivedAt: archived.archivedAt } : {}),

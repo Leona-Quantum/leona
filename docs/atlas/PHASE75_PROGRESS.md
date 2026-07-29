@@ -2,7 +2,7 @@
 
 Date: 2026-07-27 JST  
 Branch: `feature/vqe`  
-Authority: ADR-0033
+Authority: ADR-0034
 
 ## Historical correction (2026-07-28)
 

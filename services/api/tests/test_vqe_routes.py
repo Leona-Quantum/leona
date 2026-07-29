@@ -238,7 +238,7 @@ async def test_get_workflow_returns_its_components(monkeypatch):
 
 async def test_get_comparison_reads_a_real_bundled_report():
     """peruzzo2014_vs_shen2017 is one of the 3 machine-generated MVP reports
-    (ADR-0026) committed under docs/atlas/corpus/comparisons/."""
+    (ADR-0027) committed under docs/atlas/corpus/comparisons/."""
     result = await vqe_routes.get_comparison("peruzzo2014_vs_shen2017", scope=object())
     assert result["comparison_id"] == "peruzzo2014_vs_shen2017"
     assert result["is_manual_gold"] is False

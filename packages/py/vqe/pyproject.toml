@@ -1,7 +1,7 @@
 [project]
 name = "majorana-vqe"
 version = "0.1.0"
-description = "Pure VQE domain models: components, workflows, scientific experiment specs, canonical Hamiltonians, comparison. No Qiskit/PennyLane/FastAPI/SQLAlchemy imports (ADR-0023/0024/0025)."
+description = "Pure VQE domain models: components, workflows, scientific experiment specs, canonical Hamiltonians, comparison. No Qiskit/PennyLane/FastAPI/SQLAlchemy imports (ADR-0024/0024/0025)."
 requires-python = ">=3.12"
 dependencies = ["pydantic>=2.8"]
 

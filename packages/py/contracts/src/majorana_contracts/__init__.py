@@ -54,6 +54,7 @@ from .events import (
     ChatCompleted,
     ChatDelta,
     ChatError,
+    ConversationTitled,
     ExportClassified,
     LlmCall,
     LlmDelta,
@@ -96,8 +97,10 @@ from .models import (
     Conversation,
     ConversationTurn,
     WorkspaceFolder,
+    WorkspaceInvitation,
     WorkspaceMember,
     WorkspaceOverview,
+    WorkspaceSummary,
 )
 from .plan import (
     ArtifactContract,
@@ -148,7 +151,12 @@ from .lifecycle import (
 # and optional machine-readable terminal reasons.
 # 2.3.0: Artifact, ArtifactVersion, and Run expose typed bounded verification
 # summaries so clients never infer trust from arbitrary metadata.
-CONTRACTS_VERSION = "2.3.0"
+# 2.4.0: SandboxResult exposes the bounded protected RESULT payload so replaying
+# clients can render the actual simulation values without parsing stdout.
+# 2.5.0: WorkspaceInvitation — a membership the invited person has not been told
+# about yet, so an invite can announce itself instead of relying on the inviter
+# to mention it out of band (migration 0038).
+CONTRACTS_VERSION = "2.5.0"
 
 __all__ = [
     "CONTRACTS_VERSION",
@@ -169,6 +177,7 @@ __all__ = [
     "ChatCompleted",
     "ChatDelta",
     "ChatError",
+    "ConversationTitled",
     "CitationRelation",
     "EvidenceStrength",
     "ExecutionState",
@@ -253,8 +262,10 @@ __all__ = [
     "Conversation",
     "ConversationTurn",
     "WorkspaceFolder",
+    "WorkspaceInvitation",
     "WorkspaceMember",
     "WorkspaceOverview",
+    "WorkspaceSummary",
     "WorkspaceKind",
     "run_event_adapter",
     "assert_import_item_transition",

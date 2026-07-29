@@ -8,12 +8,12 @@ release, or a scientific performance claim. Those states remain blocked.
 
 | Gate | Evidence | State |
 |---|---|---|
-| Portable UUID-free scientific identity | ADR-0030, unit tests | pass |
+| Portable UUID-free scientific identity | ADR-0031, unit tests | pass |
 | Typed H2 composition | executable v0.2 fixture, cross-role validator | pass |
 | Actual VQE numerical parity | Qiskit/PennyLane raw v0.2 evidence | pass locally |
 | Canonical decomposed excitation | frozen Pauli rotations, digest, adapter equivalence tests | pass |
 | Comparable CNOT/depth protocol | canonical logical and common-basis stages; provider-native diagnostic excluded | pass |
-| Experiment → multiple executions | migration 0035 + live PostgreSQL tests | pass locally |
+| Experiment → multiple executions | migration 0039 + live PostgreSQL tests | pass locally |
 | Append-only scientific evidence | DB trigger/privileges + live mutation tests | pass locally |
 | Machine/human review truthfulness | independent states + fail-closed resolver | pass in code |
 | Independent human review of H2 | `human_review_state=unreviewed` | **owner-approved deferral** |

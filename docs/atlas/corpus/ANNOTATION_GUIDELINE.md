@@ -3,7 +3,7 @@
 **Version:** 0.2.0 (breaking change from 0.1.0 — see §0 below)
 **Status:** draft (Phase 2 in progress)
 **Authority:** `docs/atlas/atlas_vqe_mvp_execution_plan_ja.md` Phase 2,
-`docs/adr/0026-vqe-mvp-machine-only-corpus-validation.md`
+`docs/adr/0027-vqe-mvp-machine-only-corpus-validation.md`
 
 This directory is the Phase 2 curated corpus: real VQE papers, their
 implementation repositories, and the versioned components they report,
@@ -12,17 +12,17 @@ requirements. **No DB schema exists yet** (Phase 2 explicitly has
 `DB change: none`) — this is plain JSON, machine-validated per this
 guideline before any of it becomes a Neon `ArtifactVersion` in Phase 3.
 
-## 0. Schema change from 0.1.0 (ADR-0026)
+## 0. Schema change from 0.1.0 (ADR-0027)
 
 The original 0.1.0 schema had a `reviewer_decision` object implying human
 review (`annotation_state: draft | human_reviewed | unknown | conflicting`,
-plus a `reviewer` name and `reviewed_at` date). Per ADR-0026, **MVP
+plus a `reviewer` name and `reviewed_at` date). Per ADR-0027, **MVP
 acceptance for this corpus does not require or claim human review**. 0.2.0
 replaces `reviewer_decision` with `validation_state` (§2 below), a strictly
 machine-checkable status. This is a breaking, not additive, change — every
 record's `annotation_schema_version` must read `0.2.0`, and no record may
 mix the two shapes. Nothing about this change hides that human review was
-originally planned: see ADR-0026 and `docs/atlas/PHASE2_PROGRESS.md` for
+originally planned: see ADR-0027 and `docs/atlas/PHASE2_PROGRESS.md` for
 the full history, and this file's own git history for the 0.1.0 text.
 
 ## 1. Hard rules
@@ -178,7 +178,7 @@ inflated by including general tooling:
 category. `general_framework_library` and `third_party_reference_implementation`
 are real, useful, verified corpus entries, but they are not that category —
 see the Phase 2 acceptance criterion `verified implementation repositories`
-(plan §Phase 2, ADR-0026) for how the overall repository count is now
+(plan §Phase 2, ADR-0027) for how the overall repository count is now
 defined, and always report the four-way breakdown alongside any total.
 
 ## 5. Method family taxonomy (plan Phase 2 candidate list)
@@ -251,11 +251,11 @@ network blip never makes the standard test suite flaky.
 ```
 
 `is_manual_gold` and `human_validated` are always `false` for MVP-generated
-reports (ADR-0026); a future post-MVP human-curated report would be a
+reports (ADR-0027); a future post-MVP human-curated report would be a
 *different* record with those fields `true` and a recorded reviewer
 identity, never the same record retroactively edited.
 
-## 9. What Phase 2 MVP does NOT claim (ADR-0026)
+## 9. What Phase 2 MVP does NOT claim (ADR-0027)
 
 - No record's `validation_state` is anything implying human review — the
   state machine (§2) has no `human_reviewed` value at all.
@@ -270,5 +270,5 @@ identity, never the same record retroactively edited.
   entries (§4.1).
 
 These are deliberate, documented MVP-scope decisions
-(`docs/adr/0026-vqe-mvp-machine-only-corpus-validation.md`), not silently
+(`docs/adr/0027-vqe-mvp-machine-only-corpus-validation.md`), not silently
 unmet requirements.

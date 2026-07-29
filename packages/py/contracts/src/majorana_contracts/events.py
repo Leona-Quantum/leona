@@ -143,6 +143,21 @@ class ChatError(_EventBase):
     message: str = Field(min_length=1, max_length=2_000)
 
 
+class ConversationTitled(_EventBase):
+    """A short name for the conversation, written by the model on its first turn.
+
+    Emitted at most once per conversation and never for a later turn, so the name
+    a user sees in their sidebar does not shift under them mid-thread. The title
+    is the model's own words in the language the user wrote in — deriving it from
+    the prompt text is what produced sidebar rows that were whole paragraphs, and
+    translating it is what mixed two languages into one list.
+    """
+
+    type: Literal["conversation.titled"] = "conversation.titled"
+    title: str = Field(min_length=1, max_length=120)
+    source: Literal["model", "fallback"] = "model"
+
+
 class CodeGenerated(_EventBase):
     type: Literal["code.generated"] = "code.generated"
     language: str
@@ -229,6 +244,10 @@ class SandboxResult(_EventBase):
     exit_code: int
     duration_ms: int = Field(ge=0)
     memory_mb: int | None = Field(default=None, ge=0)
+    result: dict[str, Any] = Field(
+        default_factory=dict,
+        description="Bounded JSON result captured from the protected sandbox sidecar.",
+    )
     stdout: str
     stderr: str
     truncated: bool = False
@@ -415,6 +434,7 @@ RunEvent = Annotated[
     | ChatDelta
     | ChatCompleted
     | ChatError
+    | ConversationTitled
     | CodeGenerated
     | ScreenResult
     | ResourceEstimateResult

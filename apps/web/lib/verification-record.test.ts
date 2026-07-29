@@ -32,6 +32,31 @@ test("reads the complete typed API summary without inferring a verdict", () => {
   assert.match(recommendedVerificationAction(summary!), /same candidate revision/);
 });
 
+test("reads the simple pipeline outcome as typed inconclusive evidence, not legacy", () => {
+  const summary = verificationSummaryFromValue({
+    decision: "inconclusive",
+    semantic_review_decision: "ready",
+    evidence_strength: "structural",
+    reason_code: "ai_review_aligned",
+    candidate_defect_observed: false,
+    failure_class: "evidence_gap",
+    retry_target: "none",
+    checks: [
+      { method: "structural", result: "pass" },
+      { method: "return_contract", result: "pass" },
+    ],
+    unverified_claims: ["quantum correctness", "physical fidelity", "optimality"],
+  });
+
+  assert.equal(summary?.decision, "inconclusive");
+  assert.equal(summary?.reason_code, "ai_review_aligned");
+  assert.equal(summary?.evidence_strength, "structural");
+  assert.deepEqual(summary?.checks, [
+    { method: "structural", result: "pass" },
+    { method: "return_contract", result: "pass" },
+  ]);
+});
+
 test("rejects malformed, partial, and dishonest inconclusive summaries", () => {
   for (const value of [
     null,

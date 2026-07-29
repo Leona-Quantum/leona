@@ -333,80 +333,6 @@ body {
   }
 }
 
-/* Run process narrative — a step-by-step, ChatGPT-style "what the agent is
- * doing" trace shown while a circuit-execution run is in progress. Every step
- * the run has completed so far stays visible (the full history is genuinely
- * useful for a multi-minute plan/execute/review/verify loop, not just its
- * latest line) — only the newest step keeps the shimmering "in progress"
- * treatment; earlier ones settle into a plain, muted, completed style. */
-.mj-run-process-list {
-  display: flex;
-  flex-direction: column;
-  gap: var(--sp-1);
-  margin: 0 0 var(--sp-3);
-  padding: 0;
-  list-style: none;
-}
-.mj-run-process-text {
-  margin: 0;
-  width: fit-content;
-  background-image: linear-gradient(
-    90deg,
-    var(--text-2) 0%,
-    var(--text-2) 40%,
-    var(--text-0) 50%,
-    var(--text-2) 60%,
-    var(--text-2) 100%
-  );
-  background-size: 220% 100%;
-  background-clip: text;
-  -webkit-background-clip: text;
-  color: transparent;
-  font-size: var(--fs-12);
-  line-height: 1.6;
-  animation:
-    mj-run-process-fade-in 400ms ease-out,
-    mj-run-process-shimmer 1.8s linear infinite;
-}
-.mj-run-process-text--done {
-  background-image: none;
-  -webkit-background-clip: initial;
-  background-clip: initial;
-  color: var(--text-2);
-  animation: mj-run-process-fade-in 400ms ease-out;
-}
-@keyframes mj-run-process-fade-in {
-  from { opacity: 0; transform: translateY(2px); }
-  to { opacity: 1; transform: translateY(0); }
-}
-@keyframes mj-run-process-shimmer {
-  from { background-position: 200% 0; }
-  to { background-position: -200% 0; }
-}
-@media (prefers-reduced-motion: reduce) {
-  .mj-run-process-text,
-  .mj-run-process-text--done {
-    animation: none;
-  }
-}
-
-/* Pull tabs on steps that have something underneath their summary line — the
- * plan, the code a simulate tool ran, why review/strict verification decided
- * what it decided. <summary> keeps the native disclosure marker/keyboard
- * behavior; only its color comes from .mj-run-process-text(--done) above. */
-.mj-run-process-detail > summary {
-  cursor: pointer;
-  list-style-position: outside;
-}
-.mj-run-process-detail-body {
-  margin: var(--sp-1) 0 0 var(--sp-4);
-  padding: var(--sp-2) var(--sp-3);
-  border: 1px solid var(--border-0);
-  border-radius: var(--radius-control);
-  background: var(--bg-1);
-  max-height: 260px;
-  overflow: auto;
-}
 .mj-run-process-detail-pre {
   margin: 0;
   font-family: var(--font-mono, monospace);
@@ -426,20 +352,320 @@ body {
   margin: 0 0 var(--sp-1);
   padding-left: var(--sp-4);
 }
-.mj-run-process-detail-fields {
+/* Replay-safe stage evidence. Each card appears only after its durable event
+ * arrives; the newest card opens while completed cards remain one click away. */
+.mj-run-agent-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-4);
+  padding: var(--sp-4);
+  border-bottom: 1px solid var(--border-0);
+}
+.mj-run-agent-head > div {
   display: grid;
-  grid-template-columns: auto 1fr;
-  gap: var(--sp-1) var(--sp-2);
-  margin: 0;
+  min-width: 0;
+  gap: var(--sp-1);
+}
+.mj-run-agent-head strong {
+  overflow: hidden;
+  color: var(--text-0);
+  font-size: var(--fs-13);
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mj-run-agent-label {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  color: var(--text-2);
+  font-family: var(--font-mono);
+  font-size: var(--fs-12);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.mj-run-agent-count {
+  flex: 0 0 auto;
+  color: var(--text-2);
+  font-family: var(--font-mono);
+  font-size: var(--fs-12);
+  font-variant-numeric: tabular-nums;
+}
+.mj-run-live-stages {
+  display: grid;
+  gap: var(--sp-2);
+  padding: var(--sp-4);
+}
+.mj-run-live-stage {
+  min-width: 0;
+  border: 1px solid var(--border-0);
+  border-radius: var(--radius-control);
+  background: var(--bg-0);
+  overflow: hidden;
+}
+.mj-run-live-stage[data-state="active"] {
+  border-color: var(--accent);
+  background: var(--bg-1);
+}
+.mj-run-live-stage[data-state="warn"] {
+  border-color: var(--warn);
+}
+.mj-run-live-stage[data-state="error"] {
+  border-color: var(--err);
+}
+.mj-run-live-stage > summary {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: var(--sp-3);
+  cursor: pointer;
+  list-style: none;
+}
+.mj-run-live-stage > summary::-webkit-details-marker {
+  display: none;
+}
+.mj-run-live-stage-index {
+  display: grid;
+  width: var(--sp-5);
+  height: var(--sp-5);
+  place-items: center;
+  border: 1px solid var(--border-0);
+  border-radius: 50%;
+  color: var(--text-1);
+  font-family: var(--font-mono);
   font-size: var(--fs-12);
 }
-.mj-run-process-detail-fields dt {
+.mj-run-live-stage[open] .mj-run-live-stage-index {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.mj-run-live-stage[data-state="done"] .mj-run-live-stage-index {
+  border-color: var(--ok);
+  color: var(--ok);
+}
+.mj-run-live-stage[data-state="warn"] .mj-run-live-stage-index {
+  border-color: var(--warn);
+  color: var(--warn);
+}
+.mj-run-live-stage[data-state="error"] .mj-run-live-stage-index {
+  border-color: var(--err);
+  color: var(--err);
+}
+.mj-run-live-stage[data-state="active"] .mj-run-live-stage-index {
+  border-color: var(--accent);
+  color: var(--accent);
+  animation: mj-ring-fade 1.2s ease-in-out infinite;
+}
+.mj-run-live-stage-heading {
+  display: grid;
+  min-width: 0;
+  gap: var(--sp-1);
+}
+.mj-run-live-stage-heading > span {
   color: var(--text-2);
+  font-family: var(--font-mono);
+  font-size: var(--fs-12);
+  text-transform: uppercase;
+}
+.mj-run-live-stage-heading > strong {
+  overflow: hidden;
+  color: var(--text-0);
+  font-size: var(--fs-13);
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mj-run-live-stage-meta {
+  display: grid;
+  justify-items: end;
+  gap: var(--sp-1);
+  color: var(--text-2);
+  font-family: var(--font-mono);
+  font-size: var(--fs-12);
+  text-align: right;
+}
+.mj-run-live-stage-meta strong {
+  color: var(--text-1);
+  font: inherit;
   font-weight: 500;
 }
-.mj-run-process-detail-fields dd {
+.mj-run-live-stage[data-state="active"] .mj-run-live-stage-meta strong {
+  color: var(--accent);
+}
+.mj-run-live-stage[data-state="warn"] .mj-run-live-stage-meta strong {
+  color: var(--warn);
+}
+.mj-run-live-stage[data-state="error"] .mj-run-live-stage-meta strong {
+  color: var(--err);
+}
+.mj-run-live-stage-body {
+  padding: var(--sp-4);
+  border-top: 1px solid var(--border-0);
+  background: var(--bg-1);
+}
+.mj-run-live-plan {
+  display: grid;
+  gap: var(--sp-3);
+}
+.mj-run-live-plan > p,
+.mj-run-live-empty-result {
   margin: 0;
   color: var(--text-1);
+  font-size: var(--fs-13);
+  line-height: 1.6;
+}
+.mj-run-live-facts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+  gap: var(--sp-2);
+  margin: 0;
+}
+.mj-run-live-facts > div {
+  display: grid;
+  gap: var(--sp-1);
+  padding: var(--sp-2) var(--sp-3);
+  border: 1px solid var(--border-0);
+  border-radius: var(--radius-control);
+  background: var(--bg-0);
+}
+.mj-run-live-facts dt {
+  color: var(--text-2);
+  font-size: var(--fs-12);
+  text-transform: capitalize;
+}
+.mj-run-live-facts dd {
+  margin: 0;
+  color: var(--text-0);
+  font-family: var(--font-mono);
+  font-size: var(--fs-12);
+  overflow-wrap: anywhere;
+}
+.mj-run-live-code,
+.mj-run-live-result-json {
+  max-height: 360px;
+  margin: 0;
+  overflow: auto;
+  color: var(--text-1);
+  font-family: var(--font-mono);
+  font-size: var(--fs-12);
+  line-height: 1.65;
+  white-space: pre;
+}
+.mj-run-live-simulation {
+  display: grid;
+  gap: var(--sp-4);
+}
+.mj-run-live-active-copy {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  color: var(--text-1);
+  font-size: var(--fs-13);
+}
+.mj-run-live-pulse {
+  width: var(--sp-2);
+  height: var(--sp-2);
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: var(--accent);
+  animation: mj-run-progress-pulse 1.2s ease-in-out infinite;
+}
+.mj-run-live-logs {
+  color: var(--text-1);
+  font-size: var(--fs-12);
+}
+.mj-run-live-logs > summary {
+  width: fit-content;
+  color: var(--text-2);
+  cursor: pointer;
+}
+.mj-run-live-logs > div {
+  display: grid;
+  gap: var(--sp-1);
+  margin-top: var(--sp-3);
+}
+.mj-run-live-logs > div > span {
+  color: var(--text-2);
+  font-family: var(--font-mono);
+  font-size: var(--fs-12);
+}
+.mj-run-live-chart {
+  display: grid;
+  gap: var(--sp-2);
+}
+/* Same bound as .mj-sim-chart-row in @majorana/ui: the outcome label column had
+   a floor and no ceiling, so wide circuits' long bitstrings ate the bar track. */
+.mj-run-live-bar {
+  display: grid;
+  grid-template-columns: minmax(32px, 12ch) minmax(100px, 1fr) auto;
+  align-items: center;
+  gap: var(--sp-3);
+  color: var(--text-1);
+  font-family: var(--font-mono);
+  font-size: var(--fs-12);
+}
+.mj-run-live-bar code {
+  overflow-x: auto;
+  white-space: nowrap;
+}
+.mj-run-live-chart-note {
+  margin: var(--sp-2) 0 0;
+  color: var(--text-2);
+  font-size: var(--fs-12);
+}
+.mj-run-live-bar-track {
+  height: var(--sp-2);
+  border-radius: var(--radius-control);
+  background: var(--bg-0);
+  overflow: hidden;
+}
+.mj-run-live-bar-track > span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--accent);
+}
+.mj-run-live-bar > span:last-child {
+  display: flex;
+  min-width: 92px;
+  justify-content: flex-end;
+  gap: var(--sp-2);
+}
+.mj-run-live-bar small {
+  color: var(--text-2);
+  font: inherit;
+}
+
+@media (max-width: 640px) {
+  .mj-run-agent-head {
+    align-items: flex-start;
+  }
+  .mj-run-agent-head strong {
+    white-space: normal;
+  }
+  .mj-run-live-stage > summary {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+  .mj-run-live-stage-meta {
+    grid-column: 2;
+    text-align: left;
+  }
+  .mj-run-live-bar {
+    grid-template-columns: minmax(28px, auto) 1fr;
+  }
+  .mj-run-live-bar > span:last-child {
+    grid-column: 2;
+    justify-content: flex-start;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mj-run-live-stage[data-state="active"] .mj-run-live-stage-index,
+  .mj-run-live-pulse {
+    animation: none;
+  }
 }
 
 /* ── Brand-refresh (Leona Quantum handoff) ─────────────────────────────────
@@ -490,15 +716,17 @@ body {
   .mj-contact-layout { grid-template-columns: 1fr; }
 }
 
-/* Single-user-lock sign-in page (Owner Inbox 2026-07-19): a centered card with
- * a username/password form, themed from the design tokens so it reads like the
- * rest of the marketing surface. */
-.mj-lock-shell {
+/* Centered auth card, used by the /welcome name gate (Owner Inbox 2026-07-27).
+ * Named for what it is rather than for its first caller — the single-user-lock
+ * sign-in page, now deleted — which is why these rules did not have to be
+ * renamed when that page went. Themed from the design tokens so it reads like
+ * the rest of the marketing surface. */
+.mj-auth-shell {
   display: flex;
   justify-content: center;
   padding: clamp(2rem, 6vw, 5rem) var(--sp-4);
 }
-.mj-lock-card {
+.mj-auth-card {
   width: 100%;
   max-width: 400px;
   background: var(--bg-1);
@@ -506,7 +734,7 @@ body {
   border-radius: var(--radius-card);
   padding: clamp(1.5rem, 3vw, 2.25rem);
 }
-.mj-lock-card-head {
+.mj-auth-card-head {
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -514,21 +742,21 @@ body {
   gap: var(--sp-2);
   margin-bottom: var(--sp-6);
 }
-.mj-lock-card-head h1 { margin: 0; font-size: clamp(1.4rem, 1.1rem + 1.2vw, 1.75rem); }
-.mj-lock-card-head p { margin: 0; color: var(--text-1); max-width: 34ch; }
-.mj-lock-form {
+.mj-auth-card-head h1 { margin: 0; font-size: clamp(1.4rem, 1.1rem + 1.2vw, 1.75rem); }
+.mj-auth-card-head p { margin: 0; color: var(--text-1); max-width: 34ch; }
+.mj-auth-form {
   display: flex;
   flex-direction: column;
   gap: var(--sp-4);
 }
-.mj-lock-form label {
+.mj-auth-form label {
   display: flex;
   flex-direction: column;
   gap: var(--sp-1);
   font-size: var(--fs-13);
   color: var(--text-1);
 }
-.mj-lock-form input {
+.mj-auth-form input {
   padding: 10px 12px;
   border: 1px solid var(--border-0);
   border-radius: var(--radius-control);
@@ -536,15 +764,15 @@ body {
   color: var(--text-0);
   font: inherit;
 }
-.mj-lock-form input:focus-visible {
+.mj-auth-form input:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 1px;
   border-color: var(--accent);
 }
-.mj-lock-form .mj-primary-button { margin-top: var(--sp-2); width: 100%; }
-.mj-lock-form-error { margin: 0; color: var(--err); font-size: var(--fs-13); }
+.mj-auth-form .mj-primary-button { margin-top: var(--sp-2); width: 100%; }
+.mj-auth-form-error { margin: 0; color: var(--err); font-size: var(--fs-13); }
 
-/* Component-first Atlas VQE composer (ADR-0033). The three-column layout
+/* Component-first Atlas VQE composer (ADR-0034). The three-column layout
  * mirrors component type → canonical catalog → current workflow; the same
  * structure collapses into a linear flow on narrow screens. */
 .mj-vqe-methods {
@@ -784,4 +1012,186 @@ body {
 @media (prefers-reduced-motion: reduce) {
   [class*="lq-"],
   [style*="lq-"] { animation: none !important; }
+}
+
+/* Final Output stays visible after both accepted and rejected runs. The surrounding
+   frame separates the deliverable from the agent's activity and failure context. */
+.mj-run-final-output {
+  overflow: hidden;
+  border: 1px solid var(--border-0);
+  border-radius: var(--radius-card);
+  background: var(--bg-1);
+}
+.mj-run-final-output-heading {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: var(--sp-4) var(--sp-5);
+  border-bottom: 1px solid var(--border-0);
+}
+.mj-run-final-output-marker {
+  display: grid;
+  width: var(--sp-6);
+  height: var(--sp-6);
+  flex: 0 0 auto;
+  place-items: center;
+  border: 1px solid var(--accent);
+  border-radius: 50%;
+  color: var(--accent);
+  font-family: var(--font-mono);
+  font-size: var(--fs-12);
+}
+.mj-run-final-output-marker[data-tone="warn"] {
+  border-color: var(--warn);
+  color: var(--warn);
+}
+.mj-run-final-output-heading > div {
+  display: grid;
+  gap: var(--sp-1);
+}
+.mj-run-final-output-heading span {
+  color: var(--text-2);
+  font-family: var(--font-mono);
+  font-size: var(--fs-12);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.mj-run-final-output-heading h2 {
+  margin: 0;
+  color: var(--text-0);
+  font-size: var(--fs-16);
+  font-weight: 500;
+}
+.mj-run-final-output > .mj-run-result {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+/* Run result — measured values and best available framework-native program. */
+.mj-run-result {
+  display: grid;
+  gap: var(--sp-4);
+  padding: var(--sp-5);
+  border: 1px solid var(--border-0);
+  border-radius: var(--radius-card);
+  background: var(--bg-1);
+}
+.mj-run-result-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--sp-3);
+}
+.mj-run-result-summary {
+  flex: 1 1 20ch;
+  margin: 0;
+  color: var(--text-0);
+  font-size: var(--fs-14);
+  line-height: 1.5;
+}
+.mj-run-result-badges {
+  display: flex;
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.mj-run-result-badges li {
+  padding: var(--sp-1) var(--sp-2);
+  border: 1px solid var(--border-0);
+  border-radius: var(--radius-card);
+  color: var(--text-1);
+  background: var(--bg-0);
+  font-family: var(--font-mono);
+  font-size: var(--fs-12);
+  line-height: 1.2;
+}
+.mj-run-result-badges li[data-tone="ok"] {
+  border-color: var(--ok);
+  color: var(--ok);
+}
+.mj-run-result-badges li[data-tone="warn"] {
+  border-color: var(--warn);
+  color: var(--warn);
+}
+.mj-run-result-values {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 1px;
+  margin: 0;
+  overflow: hidden;
+  border: 1px solid var(--border-0);
+  border-radius: var(--radius-control);
+  background: var(--border-0);
+}
+.mj-run-result-values > div {
+  display: grid;
+  gap: var(--sp-1);
+  padding: var(--sp-3);
+  background: var(--bg-0);
+}
+.mj-run-result-values dt {
+  color: var(--text-2);
+  font-size: var(--fs-12);
+}
+.mj-run-result-values dd {
+  margin: 0;
+  color: var(--text-0);
+  font-family: var(--font-mono);
+  font-size: var(--fs-14);
+  overflow-wrap: anywhere;
+}
+.mj-run-result-facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2) var(--sp-4);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.mj-run-result-facts li {
+  display: flex;
+  gap: var(--sp-2);
+  color: var(--text-2);
+  font-size: var(--fs-12);
+}
+.mj-run-result-facts strong {
+  color: var(--text-1);
+  font-family: var(--font-mono);
+  font-weight: 400;
+}
+.mj-run-result-code {
+  display: grid;
+  gap: var(--sp-2);
+  min-width: 0;
+}
+.mj-run-result-code pre {
+  margin: 0;
+  overflow-x: auto;
+  padding: var(--sp-3);
+  border: 1px solid var(--border-0);
+  border-radius: var(--radius-control);
+  background: var(--bg-0);
+  font-family: var(--font-mono);
+  font-size: var(--fs-12);
+  line-height: 1.6;
+}
+.mj-run-result-limits summary {
+  color: var(--text-2);
+  font-size: var(--fs-12);
+  cursor: pointer;
+}
+.mj-run-result-limits p {
+  margin: var(--sp-2) 0 0;
+  color: var(--text-2);
+  font-size: var(--fs-12);
+}
+.mj-run-result-action {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-3);
 }

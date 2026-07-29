@@ -1,7 +1,7 @@
 """Comparison dimension model (plan Part III §14).
 
 `classify_comparison()` is an MVP heuristic, not a claim of scientific
-ground truth. Under ADR-0026 the initial Phase 2/4 reports are machine
+ground truth. Under ADR-0027 the initial Phase 2/4 reports are machine
 generated, explicitly not manual gold and not human validated. This function
 must not be presented as expert judgment. It exists so the schema has a
 deterministic, testable default and so later phases have something concrete

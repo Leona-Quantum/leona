@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 // Generate (or --check) the static Atlas VQE corpus bundle the public
-// /repository page's VQE section reads (ADR-0027).
+// /repository page's VQE section reads (ADR-0028).
 //
 // Source of truth is docs/atlas/corpus/{papers,repositories,comparisons}/*.json
-// (Phase 2, ADR-0026 machine-validated corpus). This script never edits those
+// (Phase 2, ADR-0027 machine-validated corpus). This script never edits those
 // files; it only projects them into one deterministic, committed JSON bundle
 // apps/web can `import` statically (Next.js bundles a static JSON import
 // correctly for both `next dev` and a Vercel build; a raw runtime `fs.readFile`

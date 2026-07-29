@@ -4,7 +4,7 @@
  * The single content-type switch that keeps the VQE Registry/Compare data
  * under the existing /repository page instead of a separate top-level
  * section. Circuits remains the existing browser; VQE Methods is the
- * component-first standard catalog fixed by ADR-0033. Literature and
+ * component-first standard catalog fixed by ADR-0034. Literature and
  * repository records remain provenance-only and are not primary tabs.
  */
 import { useState, type ReactNode } from "react";

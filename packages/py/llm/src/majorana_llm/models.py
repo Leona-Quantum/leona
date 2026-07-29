@@ -1,6 +1,4 @@
-"""Per-role model constants. Strong model for planning and verification judgment,
-cheaper tiers for implementation and writeback — the token-economy
-tiering from the house workflow.
+"""Per-role model constants for the configured provider profile.
 
 Provider: owner confirmed OpenAI + DeepSeek (2026-07-10 Owner Inbox — the legacy
 product's providers; keys live in the nameko Vercel project). The OpenAI-compatible
@@ -13,28 +11,21 @@ from __future__ import annotations
 import os
 
 from majorana_contracts.enums import Stage
-from pydantic import BaseModel, ConfigDict, Field
-
-
-class AnalysisOutput(BaseModel):
-    """Internal schema for the user-facing analysis prose."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    summary: str = Field(min_length=1)
-    interpretation: str = Field(min_length=1)
-    residual_risks: str | None = None
 
 
 # Per-provider stage defaults. Override any stage with MAJORANA_MODEL_<STAGE>.
 _DEFAULTS: dict[str, dict[str, str]] = {
     "openai": {
-        "chat": "deepseek-chat",
-        # Intent routing is one short classification in front of every run: it must
-        # be the cheapest and fastest tier available, never the judgment tier.
-        "route": "deepseek-chat",
-        # Legacy nameko tiering: GPT for judgment, DeepSeek for volume work.
-        "plan": "gpt-5.5",  # structured planning + judgment
+        # DeepSeek's current endpoint accepts the v4 model names, not the legacy
+        # deepseek-chat alias. Keep every product path on the same supported model
+        # unless an operator explicitly overrides a role with MAJORANA_MODEL_*.
+        "chat": "deepseek-v4-pro",
+        "route": "deepseek-v4-pro",
+        # Keep every substantive circuit stage on the same capable model. Mixing
+        # OpenAI into planning/review made an otherwise healthy DeepSeek run fail
+        # when the OpenAI account returned 429, and deepseek-chat repeatedly
+        # produced schema-invalid plans for the live H2 VQE walkthrough.
+        "plan": "deepseek-v4-pro",
         # v4-pro reproducibly burned its whole 8192 budget on reasoning with zero
         # content on VQE-scale tasks (bench-14, 2026-07-11), so this was
         # deepseek-chat (non-reasoning) until 2026-07-23. Re-benchmarked that day
@@ -45,8 +36,8 @@ _DEFAULTS: dict[str, dict[str, str]] = {
         # model.py) specifically to give harder/VQE-scale tasks more headroom
         # before hitting the exact failure bench-14 found.
         "generate": "deepseek-v4-pro",
-        "verify": "gpt-5.5",  # strict critic — high-stakes review
-        "analyze": "gpt-5.5",  # evidence-grounded natural-language explanation
+        "verify": "deepseek-v4-pro",
+        "analyze": "deepseek-v4-pro",
         "writeback": "deepseek-v4-pro",  # library metadata + explanations
     },
     "anthropic": {

@@ -1,7 +1,7 @@
 """VQE registry metadata and legacy schema v0.1 contracts.
 
-Pure Pydantic models per ADR-0023 (identity), ADR-0024 (runtime trust
-boundary), ADR-0025 (evidence). No Qiskit/PennyLane/FastAPI/SQLAlchemy
+Pure Pydantic models per ADR-0024 (identity), ADR-0025 (runtime trust
+boundary), ADR-0026 (evidence). No Qiskit/PennyLane/FastAPI/SQLAlchemy
 imports -- see AGENTS.md. Portable scientific identity v0.2 lives in
 ``portable.py`` and capability-specific evidence lives in ``result.py``.
 """
@@ -131,7 +131,7 @@ class SpecJsonMixin(VqeBaseModel):
 
 
 class ComponentType(str, Enum):
-    """The 17 component types MVP schema distinguishes (ADR-0028)."""
+    """The 17 component types MVP schema distinguishes (ADR-0029)."""
 
     PROBLEM = "problem"
     PROBLEM_PREPARATION = "problem_preparation"
@@ -199,7 +199,7 @@ class ReviewState(str, Enum):
 
 
 class ComponentReference(VqeBaseModel):
-    """A component identified by its immutable ArtifactVersion (ADR-0023) --
+    """A component identified by its immutable ArtifactVersion (ADR-0024) --
     never a string label. This layer validates shape only (a well-formed
     UUID); existence/Scope checks are the repository layer's job in a later
     phase."""
@@ -210,7 +210,7 @@ class ComponentReference(VqeBaseModel):
 
 class ComponentSpec(SpecJsonMixin):
     """Typed metadata attached to an existing Artifact/ArtifactVersion.
-    Mirrors the `vqe_component_specs` table shape fixed by ADR-0023 (plan
+    Mirrors the `vqe_component_specs` table shape fixed by ADR-0024 (plan
     Part II §8), without committing to that table until Phase 3."""
 
     schema_version: str = Field(default=SCHEMA_VERSION, pattern=r"^\d+\.\d+\.\d+$")
@@ -268,7 +268,7 @@ class WorkflowSpec(VqeBaseModel):
 class VersionLane(str, Enum):
     """Plan Part II §10: MVP has exactly these two lanes. `latest_observed`
     is explicitly deferred to the GitHub Wrapper phases and must never be
-    added here without a superseding ADR (ADR-0024)."""
+    added here without a superseding ADR (ADR-0025)."""
 
     FROZEN_REPRODUCTION = "frozen_reproduction"
     CURRENT_COMPATIBILITY = "current_compatibility"
@@ -290,7 +290,7 @@ class Capability(str, Enum):
 
 class ScientificExperimentSpec(VqeBaseModel):
     """`ScientificExperimentSpec v0.1` -- what to compute, with no framework,
-    runtime, or provider information (ADR-0023/ADR-0024 boundary; plan Part
+    runtime, or provider information (ADR-0024/ADR-0025 boundary; plan Part
     II §9). Every `*_version_id` field is an ArtifactVersion reference for
     the component playing that role."""
 
@@ -321,7 +321,7 @@ class ScientificExperimentSpec(VqeBaseModel):
 class ExecutionRequest(VqeBaseModel):
     """What a client may ask for: a capability and an optional framework
     preference. Never a runtime profile, digest, or provider version --
-    those are server-resolved (ADR-0024)."""
+    those are server-resolved (ADR-0025)."""
 
     experiment_id: UUID
     requested_capability: Capability
@@ -409,7 +409,7 @@ class FailureCode(str, Enum):
 
 
 class EvidenceStage(str, Enum):
-    """exact vs finite-shot evidence (ADR-0025) -- never conflated. A
+    """exact vs finite-shot evidence (ADR-0026) -- never conflated. A
     finite_shot result is never by itself sufficient for a scientific pass
     condition in the MVP (plan Part III §13)."""
 
@@ -419,7 +419,7 @@ class EvidenceStage(str, Enum):
 
 class CircuitStage(str, Enum):
     """Whether a resource metric (qubits/depth/gate_count/...) was measured
-    on the logical circuit or after compilation (ADR-0025: "resource metric
+    on the logical circuit or after compilation (ADR-0026: "resource metric
     stage/compiler semanticsを保存")."""
 
     LOGICAL = "logical"
@@ -428,7 +428,7 @@ class CircuitStage(str, Enum):
 
 class TrajectoryOverflowRef(VqeBaseModel):
     """Where an energy trajectory too large to store inline landed instead
-    (ADR-0025: "上限超過時はcontent-addressed objectへ保存")."""
+    (ADR-0026: "上限超過時はcontent-addressed objectへ保存")."""
 
     object_uri: str = Field(min_length=1, max_length=500)
     sha256: str = Field(pattern=SHA256_HEX_PATTERN)

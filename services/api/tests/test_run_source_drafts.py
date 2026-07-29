@@ -1,9 +1,13 @@
 import uuid
 from types import SimpleNamespace
 
+import pytest
 from majorana_contracts.enums import ExportStatus, Framework
+from pydantic import ValidationError
 
+from majorana_api.orm import User, Workspace
 from majorana_api.routes import runs
+from majorana_api.settings import Settings
 
 
 def _request(*, version_id: uuid.UUID, source: str) -> runs.CreateRunRequest:
@@ -13,6 +17,19 @@ def _request(*, version_id: uuid.UUID, source: str) -> runs.CreateRunRequest:
         artifact_version_id=version_id,
         source_code=source,
     )
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("shots", 20_001),
+        ("seed", -1),
+        ("seed", 2**31),
+    ],
+)
+def test_run_request_rejects_values_the_executor_cannot_preserve(field, value):
+    with pytest.raises(ValidationError):
+        runs.CreateRunRequest(task_prompt="Build a Bell circuit", **{field: value})
 
 
 async def test_edited_source_creates_explicitly_unverified_immutable_draft(scope, monkeypatch):
@@ -89,13 +106,30 @@ async def test_run_and_job_are_bound_to_the_new_draft_version(scope, monkeypatch
     async def enqueue_job(_session, **values):
         captured["job"] = values
 
+    # This request carries the default mode (AUTO), which the admission backstop
+    # now counts — see `_enforce_execute_backstop`. Stub the count so this test
+    # keeps testing draft binding rather than quotas; `object()` is not a real
+    # session and cannot answer a query.
+    async def no_runs_yet(*_args, **_kwargs):
+        return {}
+
+    monkeypatch.setattr(runs.runs_repo, "count_runs_by_mode_since", no_runs_yet)
     monkeypatch.setattr(runs, "_create_stale_source_draft", create_draft)
     monkeypatch.setattr(runs.runs_repo, "create_run", create_run)
     monkeypatch.setattr(runs.runs_repo, "append_run_event", append_event)
     monkeypatch.setattr(runs.system, "enqueue_job", enqueue_job)
     monkeypatch.setattr(runs, "_to_resource", lambda row: row.id)
 
-    result = await runs.create_run(body, scope, object())
+    # A DEVELOPER identity so the per-tier gate is a no-op here; this test is
+    # about draft binding, not allowances (see test_run_tier_allowance.py).
+    identity = (User(email="local-dev@majorana.test", plan=None), Workspace())
+    settings = Settings(
+        workos_client_id="test",
+        workos_jwt_issuer="https://issuer.invalid",
+        workos_jwks_url="https://jwks.invalid",
+        web_origin="https://web.invalid",
+    )
+    result = await runs.create_run(body, scope, object(), identity, settings)
 
     assert result == run_id
     assert captured["run"]["artifact_version_id"] == draft_id

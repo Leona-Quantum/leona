@@ -44,14 +44,14 @@ GPU、QPU、古い論文環境の実行へ進んではならない。
 |---|---|---:|---:|---|
 | 0 | ADR + H2/Qiskit/PennyLane executable spike | no | no | complete |
 | 1 | Component/Workflow/Scientific Experiment schema | no | no | complete |
-| 2 | 25 papers / 15 verified implementation repositories / 50+ components curated corpus (ADR-0026: machine-validated, no Human Review in MVP) | no | no | complete_machine_validated |
+| 2 | 25 papers / 15 verified implementation repositories / 50+ components curated corpus (ADR-0027: machine-validated, no Human Review in MVP) | no | no | complete_machine_validated |
 | 3 | Component Registry + experiment evidence in Neon | yes | contract only | verified_local; Neon/import pending |
 | 4 | Atlas Browse / Compare UI | Phase 3 | yes | implemented_and_browser_verified |
 | 5A | Durable non-public execution product integration | Phase 3 | yes | implemented_and_verified |
 | 5B | Scientific/runtime production qualification | Phase 3 | yes | private_runtime_qualified; scientific_review_owner_waived; public_promotion_blocked |
 | 6 | Security/scientific/E2E hardening and MVP Go/No-Go | test only | test | private_test_complete; public_release_no_go |
 | 7 | Manual GitHub metadata import | later | minimal | in_progress; execution_and_publication_prohibited |
-| 7.5 | Standard Component MVP and component-first UI | existing registry plus additive contracts | yes | locally implemented; live E2E operator-gated; ADR-0033 |
+| 7.5 | Standard Component MVP and component-first UI | existing registry plus additive contracts | yes | locally implemented; live E2E operator-gated; ADR-0034 |
 | 7.6 | First executable Component swap | existing ArtifactVersion identity plus minimal additive comparison relations | yes | planned; H2 bounded scalar vs SLSQP vertical slice |
 | 8–9 | Deterministic/LLM extraction and reviewed materialization | later | later | later |
 | 10 | Isolated external Repository execution | separate milestone | later | prohibited in MVP |
@@ -758,7 +758,7 @@ lossなく表現できる。
   (`;:'?!"`)へ拡張し、path traversal/絶対pathの拒否は別の、より特異的な
   patternが引き続き担当することを確認した上で修正 (regression test追加)。
 - 2026-07-25 remediation: `stopping_protocol_version_id`を独立して比較可能な
-  immutable componentとして維持するため、ADR-0028で
+  immutable componentとして維持するため、ADR-0029で
   `ComponentType.STOPPING_PROTOCOL`を追加した。gradient threshold、energy
   tolerance、iteration capはaccuracy/resource costを変えるため、
   evaluation protocolへ暗黙に内包しない。
@@ -771,8 +771,8 @@ lossなく表現できる。
 
 **Status:** complete (2026-07-24。corpus mechanics: 26 papers, 15 verified
 implementation repositories, 59 components, machine-generated comparison
-report 3件。Human Review関連要件はADR-0026によりMVP acceptanceから明示的に除外 —
-`docs/adr/0026-vqe-mvp-machine-only-corpus-validation.md`、
+report 3件。Human Review関連要件はADR-0027によりMVP acceptanceから明示的に除外 —
+`docs/adr/0027-vqe-mvp-machine-only-corpus-validation.md`、
 `docs/atlas/PHASE2_PROGRESS.md`参照。改訂後の11 acceptance criteria全て達成)  
 **DB change:** none  
 **UI:** none
@@ -794,14 +794,14 @@ machine-generated curated comparison reports: >= 3
   (is_manual_gold: false / human_validated: false を明示)
 ```
 
-**ADR-0026 (2026-07-24):** 当初計画は「human-reviewed records >= 80%」
+**ADR-0027 (2026-07-24):** 当初計画は「human-reviewed records >= 80%」
 「inter-annotator agreement測定」「comparison reportを手動goldとして作成」を
 Phase 2 acceptanceに含んでいたが、owner指示によりMVPスコープから明示的に
 除外した。理由: MVPでは自動検証可能なデータパイプラインの成立を優先し、
 人間によるcuration、inter-annotator agreement、manual-gold評価はpost-MVPへ
 延期する。MVPのデータはhuman-validatedとは主張しない。この変更は要件を
 黙って満たしたことにするものではなく、削除した要件・理由・影響を
-ADR-0026とこの文書に明示的に記録する。
+ADR-0027とこの文書に明示的に記録する。
 
 候補method family:
 
@@ -836,12 +836,12 @@ learning-guided VQE
 - **validation state** (machine-checked: draft / machine_validated /
   validation_failed / conflicting、validator_version、validated_at) と
   annotation schema version。旧`reviewer_decision` (human review専用) は
-  ADR-0026によりこのフィールドへ置換した
+  ADR-0027によりこのフィールドへ置換した
 - negative result / missing implementation
 
 著作権のあるREADME本文やsource codeをcorpusへ転載しない。
 
-### Acceptance (ADR-0026後、Human Review非依存)
+### Acceptance (ADR-0027後、Human Review非依存)
 
 - versioned annotation guidelineが存在する。
 - verified paper records >= 25。
@@ -861,16 +861,16 @@ learning-guided VQE
 ここでの「verified」は「人間が内容の正しさを保証した」ではなく、
 「出典が記録され、機械的なschema/consistency検査を通過した」ことのみを
 意味する。人間によるcuration、inter-annotator agreement、manual-gold
-comparisonはpost-MVPへ延期する (ADR-0026)。
+comparisonはpost-MVPへ延期する (ADR-0027)。
 
 ---
 
 ## Phase 3 — Neon Component Registry and Experiment Persistence
 
-**Status:** verified_local (2026-07-24。migration 0035、repository層、API
+**Status:** verified_local (2026-07-24。migration 0039、repository層、API
 candidate 11 endpoint全て実装しlocal throwaway Postgresでtest済み。Neon branch
 へは未接続 — owner go-ahead待ち。詳細: `docs/atlas/PHASE3_PROGRESS.md`)  
-**DB change:** migration 0035 (`vqe_component_specs` / `vqe_workflow_components`
+**DB change:** migration 0039 (`vqe_component_specs` / `vqe_workflow_components`
 / `vqe_experiments` / `vqe_observations`, 全てadditive)  
 **UI:** API contract only
 
@@ -903,7 +903,7 @@ POST /v1/vqe/experiments/{id}/materialize
 - materializeは成功済みobservationのみ。
 - public publicationは行わない。
 
-**2026-07-25 remediation clarification (ADR-0029):**
+**2026-07-25 remediation clarification (ADR-0030):**
 
 - clientは完全な`ScientificExperimentSpec`やcomponent UUIDを提出しない。
 - API/repositoryが選択Workflowのtyped component linksをScope付きで解決し、
@@ -931,12 +931,12 @@ POST /v1/vqe/experiments/{id}/materialize
 ## Phase 4 — Legacy literature Browse and Compare UI
 
 **Status:** implemented_and_browser_verified (2026-07-25 remediation。
-既存`/repository`へ統合 (ADR-0027)。static corpus
+既存`/repository`へ統合 (ADR-0028)。static corpus
 (26 papers / 59 paper-annotated components / 15 repositories /
 3 comparisons) に対してbuild/typecheck/lint/92 testsが通過。
 実ブラウザでcomponent検索・filterと390×844px表示を検証済み。詳細:
 `docs/atlas/PHASE4_PROGRESS.md`)。この画面と件数は履歴的な取得・検証証拠として
-保持するが、ADR-0033以降のpublic MVP primary surfaceおよび成功KPIではない。  
+保持するが、ADR-0034以降のpublic MVP primary surfaceおよび成功KPIではない。  
 **Primary UI owner:** Claude Code / designated UI owner  
 **Codex lane:** contracts、API evidence、test fixture、non-UI review
 
@@ -992,7 +992,7 @@ strict / controlled / partial / invalid
 metric definition differences
 ```
 
-MVPの3 comparisonはmachine-generatedであり (ADR-0026)、UIは
+MVPの3 comparisonはmachine-generatedであり (ADR-0027)、UIは
 `is_manual_gold: false` / `human_validated: false`を明示し、自動判定結果を
 human-curated gold reportであるかのように装ってはならない。
 
@@ -1048,7 +1048,7 @@ scientific_release = blocked
 
 独立人間reviewはpublic execution、scientific claim、MVP releaseより前に必須。
 digest-pinned Linux/x86_64 OCI image、SBOM、live deny-all egress proofは
-Phase 5Bおよびpublic executionより前に必須である。この延期はADR-0031に記録する。
+Phase 5Bおよびpublic executionより前に必須である。この延期はADR-0032に記録する。
 
 ### 5A. Durable product integration
 
@@ -1632,7 +1632,7 @@ MVPは以下が全部成立したときだけcomplete。
 
 Phase 0〜6とPhase 7 S0〜S3は履歴上完了している。以後の順序:
 
-1. ADR-0033とcomponent-first MVP planを`feature/vqe`へ固定。
+1. ADR-0034とcomponent-first MVP planを`feature/vqe`へ固定。
 2. Phase 7 S4 durable importerをfail-closedに完成。
 3. Phase 7 S5を確認済み標準provider sourceへ限定。
 4. Phase 7 S6で既存Component Definition／Implementation Versionをprimary
@@ -1674,7 +1674,7 @@ Phase 0〜6とPhase 7 S0〜S3は履歴上完了している。以後の順序:
 
 ## 2026-07-25 Phase 4.5 amendment
 
-ADR-0030により、以下のv0.1記述を置換する。
+ADR-0031により、以下のv0.1記述を置換する。
 
 - Scientific Experimentの科学的identityにArtifactVersion UUIDを含めない。
   UUID解決結果は`RegistryResolution`として別digestへ保存する。
@@ -1683,7 +1683,7 @@ ADR-0030により、以下のv0.1記述を置換する。
 - clientはWorkflowだけを選択し、dataset digest、parameter slot、seedを
   serverがreview済みtyped componentから解決する。
 - machine validationとhuman scientific reviewを独立状態として記録する。
-- MVP literature corpusのmachine-only posture (ADR-0026)は維持する一方、
+- MVP literature corpusのmachine-only posture (ADR-0027)は維持する一方、
   executable H2 registry promotionには両軸の通過を必須とする。
 
 Phase 4.5の実装証拠・残課題・Phase 5A限定GO判定は
@@ -1693,11 +1693,11 @@ publication、scientific releaseは未達・blockedのままである。
 
 ---
 
-# Part XI. データ完全性・報告に関する常時遵守事項 (ADR-0026)
+# Part XI. データ完全性・報告に関する常時遵守事項 (ADR-0027)
 
 Phase 2でのHuman Review除外・repository分類誤り・sources_verified不備の
 是正を経て、Phase 3以降の全Phaseで常に守る事項として明文化する
-(ADR-0026、`docs/atlas/PHASE2_PROGRESS.md`参照)。
+(ADR-0027、`docs/atlas/PHASE2_PROGRESS.md`参照)。
 
 1. 実測値と目標値を混同しない。「目標を満たした」と「目標に向けて作業した」を
    明確に区別して報告する。
@@ -1715,7 +1715,7 @@ Phase 2でのHuman Review除外・repository分類誤り・sources_verified不�
    (`majorana_vqe.comparison`、corpus comparison schema)。
 7. acceptance criteriaの変更を結果確認後に黙って行わない。要件変更は
    理由・影響・変更前後をADRまたは計画文書に明示的に記録する
-   (本ADR-0026がその模範例)。
+   (本ADR-0027がその模範例)。
 8. DB migration前にschemaとrollbackを検証する (既存Part VI §15の手順を
    Phase 3以降も継続する)。
 9. 外部入力、Repository、論文由来データを信頼済みとして扱わない —

@@ -17,18 +17,18 @@ anticipates exactly this kind of collision ("既存`/repository`との
 identity/search重複をADRで解決") but doesn't resolve it. The owner was asked
 directly and chose to merge the new VQE corpus into the existing
 `/repository` page rather than mint a second "Atlas" surface. Full reasoning
-in **ADR-0027**, including a second, code-level finding made while
+in **ADR-0028**, including a second, code-level finding made while
 implementing that choice: `PublicRepositoryEntry` (the type every existing
 `/repository` record is shaped as) requires a real circuit `visualization`
 and `codeVariants` — fields the literature-only VQE corpus genuinely doesn't
-have at this annotation depth (Phase 2/ADR-0026 stopped before execution).
+have at this annotation depth (Phase 2/ADR-0027 stopped before execution).
 Forcing VQE records through that type would mean fabricating data, so VQE
 records use their own types instead, sharing only the page/URL/nav identity,
 not the TypeScript shape.
 
 ## 2. What was built
 
-- **ADR-0027** (`docs/adr/0027-atlas-vqe-ui-merges-into-existing-repository.md`):
+- **ADR-0028** (`docs/adr/0028-atlas-vqe-ui-merges-into-existing-repository.md`):
   the merge decision and its consequences, including the reversal trigger.
 - **`scripts/generate-atlas-vqe-corpus.mjs`** (+ `--check`): projects
   `docs/atlas/corpus/{papers,repositories,comparisons}/*.json` into one
@@ -64,7 +64,7 @@ not the TypeScript shape.
   papers, search + relation filter for repositories (with the 4-way
   relation breakdown — official/author/general_framework_library/
   third_party_reference_implementation — always shown together, per the
-  plan's own acceptance wording, restated from the miscount ADR-0026 caught
+  plan's own acceptance wording, restated from the miscount ADR-0027 caught
   in Phase 2), and the 3 comparison reports with their `is_manual_gold`/
   `human_validated` flags rendered as visible badges, never implied away.
 - **`apps/web/app/repository/vqe/[paperId]/page.tsx`** +

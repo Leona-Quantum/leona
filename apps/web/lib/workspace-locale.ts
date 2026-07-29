@@ -1,3 +1,4 @@
+import type { AccountTier } from "./account-tier";
 import type { PublicLocale } from "./public-locale";
 
 export const WORKSPACE_COPY: Record<PublicLocale, {
@@ -73,6 +74,8 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
     accountMenu: string;
     usageLimits: string;
     signOut: string;
+    /** Plan name shown beside the person's first name in the sidebar footer. */
+    tierLabel: Record<AccountTier, string>;
   };
   run: {
     previewStatus: string;
@@ -153,6 +156,8 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
     cpuLane: string;
     cpuEligible: string;
     cpuUnavailable: (reason: string) => string;
+    sandboxFallbackExplainer: string;
+    runInSandbox: string;
     openSimulation: string;
     simulationArtifactRequired: string;
     cpuInvalidShots: (maximum: number) => string;
@@ -175,9 +180,7 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
     confirmRerun: string;
     cancel: string;
     hardwareLanes: string;
-    gpuSimulation: string;
     qpuExecution: string;
-    gpuUnavailable: string;
     qpuUnavailable: string;
     simulationResults: string;
     simulationNoRecords: string;
@@ -262,6 +265,7 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
     sourceEditor: string;
     sourceEditorInput: string;
     implementation: (framework: string) => string;
+    sourceReferenceHeading: (source: string, target: string) => string;
     editorNote: string;
     versionHistory: string;
     repositoryView: string;
@@ -302,6 +306,8 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
     showInspector: string;
     circuitRestored: string;
     circuitNotRebuildable: string;
+    sourceFallbackNote: (target: string, source: string) => string;
+    circuitTooLargeToDraw: string;
     circuitViewerReadonly: string;
     readonlyDiagram: (qubits: number) => string;
     readonlyDiagramHint: string;
@@ -387,6 +393,7 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
       accountMenu: "Account menu",
       usageLimits: "Usage & limits",
       signOut: "Log out",
+      tierLabel: { demo: "Preview", free: "Free", developer: "Developer" },
     },
     run: {
       previewStatus: "Public preview · view-only",
@@ -483,11 +490,13 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
       cpuUnavailable: (reason) => ({
         artifact_required: "Save this draft to Vault before creating an artifact-owned simulation record.",
         framework_unavailable: "CPU execution is available only for Qiskit, PennyLane, and Cirq source.",
-        source_unavailable: "This source is outside the bounded CPU simulation model. No result will be invented.",
+        source_unavailable: "The in-browser lane can only rebuild circuits written in Studio's own gate shape, and this one is beyond it — so nothing is simulated here rather than a result being invented.",
         source_limit: "This source is too large for the bounded CPU simulation lane.",
         qubit_limit: "This circuit is wider than the browser simulation lane can run on your plan.",
         operation_limit: "This source exceeds the bounded CPU operation limit.",
       }[reason] ?? "CPU simulation is unavailable for this source."),
+      sandboxFallbackExplainer: "Run it for real instead: the sandbox executes this exact source and reports whatever it produces, including the error if it does not work.",
+      runInSandbox: "Run this code for real",
       openSimulation: "Open simulation",
       simulationArtifactRequired: "Save this draft to Vault before creating an artifact-owned simulation record.",
       cpuInvalidShots: (maximum) => `Shots must be a whole number from 1 to ${maximum.toLocaleString("en-US")}.`,
@@ -510,9 +519,7 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
       confirmRerun: "Confirm rerun",
       cancel: "Cancel",
       hardwareLanes: "Hardware lanes",
-      gpuSimulation: "GPU simulation",
       qpuExecution: "QPU execution",
-      gpuUnavailable: "GPU simulation is planned. It remains unavailable until provider, cost, and security work are complete.",
       qpuUnavailable: "QPU execution is planned. It remains unavailable until a provider, estimate, confirmation, and spend policy are in place.",
       simulationResults: "Simulation records",
       simulationNoRecords: "No CPU simulation record exists for this artifact in this browser.",
@@ -601,6 +608,7 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
       sourceEditor: "Source editor",
       sourceEditorInput: "source editor",
       implementation: (framework) => `${framework} implementation`,
+      sourceReferenceHeading: (source, target) => `${source} source · no ${target} conversion`,
       editorNote: "Edit the draft directly. Simulate or verify it to produce evidence before it becomes a saved Vault version.",
       versionHistory: "Version history",
       repositoryView: "atlas view",
@@ -655,6 +663,8 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
       showInspector: "Inspector",
       circuitRestored: "Circuit loaded from the saved artifact. Edits stay in this draft until you verify & save.",
       circuitNotRebuildable: "This artifact's code goes beyond the visual builder — edit it in the Code tab.",
+      sourceFallbackNote: (target, source) => `No safe ${target} conversion exists for this circuit, so this tab shows the stored ${source} source — it is a source reference, not ${target} code. Exports and runs from this tab use ${source}.`,
+      circuitTooLargeToDraw: "This circuit is too large to draw as a diagram — its qubit or gate count would render an unreadable canvas. The Code tab holds the full source to read and run.",
       circuitViewerReadonly: "This circuit is wider than the editable builder, so it opens as a read-only diagram. Edit the circuit in the Code tab.",
       readonlyDiagram: (qubits: number) => `Read-only diagram · ${qubits} qubits. Wider than the drag-and-drop builder (max 6) — reconstructed from the saved circuit so you can see it. The Code tab holds the source to edit and run.`,
       readonlyDiagramHint: "Read-only view — reconstructed from the saved circuit. Edit the source in the Code tab.",
@@ -740,6 +750,7 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
       accountMenu: "アカウントメニュー",
       usageLimits: "使用状況と上限",
       signOut: "ログアウト",
+      tierLabel: { demo: "プレビュー", free: "フリー", developer: "開発者" },
     },
     run: {
       previewStatus: "公開プレビュー · 閲覧のみ",
@@ -836,11 +847,13 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
       cpuUnavailable: (reason) => ({
         artifact_required: "アーティファクトに紐づくシミュレーション記録を作成する前に、この下書きをボールトへ保存してください。",
         framework_unavailable: "CPU実行はQiskit、PennyLane、Cirqのソースでのみ利用できます。",
-        source_unavailable: "このソースは限定CPUシミュレーションモデルの対象外です。結果は生成しません。",
+        source_unavailable: "ブラウザ内のレーンはStudio独自のゲート表記で書かれた回路しか再構成できず、このソースはその範囲を超えています。結果を捏造せず、ここでは実行しません。",
         source_limit: "このソースは限定CPUシミュレーションレーンには大きすぎます。",
         qubit_limit: "この回路は、お使いのプランでブラウザシミュレーションを実行できる幅を超えています。",
         operation_limit: "このソースは限定CPU操作数の上限を超えています。",
       }[reason] ?? "このソースではCPUシミュレーションを利用できません。"),
+      sandboxFallbackExplainer: "代わりに実際に実行できます。サンドボックスはこのソースをそのまま実行し、動作しない場合はエラーも含めて結果を報告します。",
+      runInSandbox: "このコードを実際に実行",
       openSimulation: "シミュレーションを開く",
       simulationArtifactRequired: "アーティファクトに紐づくシミュレーション記録を作成する前に、この下書きをボールトへ保存してください。",
       cpuInvalidShots: (maximum) => `ショット数は1から${maximum.toLocaleString("en-US")}までの整数にしてください。`,
@@ -863,9 +876,7 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
       confirmRerun: "再実行を確認",
       cancel: "キャンセル",
       hardwareLanes: "ハードウェアレーン",
-      gpuSimulation: "GPUシミュレーション",
       qpuExecution: "QPU実行",
-      gpuUnavailable: "GPUシミュレーションは計画中です。プロバイダー、コスト、セキュリティの作業が完了するまで利用できません。",
       qpuUnavailable: "QPU実行は計画中です。プロバイダー、見積り、確認、利用ポリシーが整うまで利用できません。",
       simulationResults: "シミュレーション記録",
       simulationNoRecords: "このブラウザには、このアーティファクトのCPUシミュレーション記録がありません。",
@@ -954,6 +965,7 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
       sourceEditor: "ソースエディタ",
       sourceEditorInput: "ソースエディタ",
       implementation: (framework) => `${framework}の実装`,
+      sourceReferenceHeading: (source, target) => `${source}ソース · ${target}への変換なし`,
       editorNote: "下書きを直接編集できます。保存済みボールトバージョンにする前に、シミュレーションまたは検証を実行してください。",
       versionHistory: "バージョン履歴",
       repositoryView: "Atlas表示",
@@ -1008,6 +1020,8 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
       showInspector: "インスペクタ",
       circuitRestored: "保存済みアーティファクトから回路を読み込みました。検証して保存するまで、編集はこの下書きに留まります。",
       circuitNotRebuildable: "このアーティファクトのコードはビジュアルビルダーの範囲を超えています。コードタブで編集してください。",
+      sourceFallbackNote: (target, source) => `この回路には安全な${target}変換がないため、このタブには保存済みの${source}ソースを表示しています。${target}のコードではなくソース参照です。このタブからのエクスポートと実行は${source}を使用します。`,
+      circuitTooLargeToDraw: "この回路は図として描画するには大きすぎます — 量子ビット数またはゲート数が多く、キャンバスが判読不能になります。全ソースはコードタブで確認・実行できます。",
       circuitViewerReadonly: "この回路は編集可能なビルダーより幅が広いため、読み取り専用の図として開きます。回路の編集はコードタブで行ってください。",
       readonlyDiagram: (qubits: number) => `読み取り専用の回路図 · ${qubits} 量子ビット。ドラッグ&ドロップのビルダー（最大6）より広いため、保存された回路から再構成して表示しています。編集・実行するソースはコードタブにあります。`,
       readonlyDiagramHint: "読み取り専用の表示 — 保存された回路から再構成しています。ソースの編集はコードタブで行ってください。",
@@ -1044,6 +1058,11 @@ export const ACCOUNT_COPY: Record<PublicLocale, {
   runs: string;
   access: string;
   privateAccess: string;
+  autoKeep: string;
+  autoKeepHelp: string;
+  autoKeepOn: string;
+  autoKeepOff: string;
+  autoKeepFailed: string;
   workspaceBoundaries: string;
   library: string;
   libraryHelp: string;
@@ -1068,7 +1087,7 @@ export const ACCOUNT_COPY: Record<PublicLocale, {
   usageArtifacts: (count: number) => string;
   usageQubits: (count: number) => string;
   tierNames: Record<"demo" | "free" | "developer", string>;
-  usageUnenforced: string;
+  usageEnforcement: string;
   billingTitle: string;
   billingHelp: string;
   billingPayments: string;
@@ -1091,7 +1110,7 @@ export const ACCOUNT_COPY: Record<PublicLocale, {
 }> = {
   en: {
     title: "Settings",
-    lede: "Your identity, private Vault, personal workspace data, and display preferences.",
+    lede: "Your identity, your Vault, the workspaces you can open, and display preferences.",
     signOut: "Sign out",
     preferences: "Preferences",
     language: "Language",
@@ -1106,18 +1125,24 @@ export const ACCOUNT_COPY: Record<PublicLocale, {
     profileSaved: "Profile saved.",
     profileSaveFailed: "Profile could not be saved",
     personalWorkspace: "Personal workspace",
-    personalWorkspaceHelp: "This workspace belongs only to you. Collaboration and shared workspaces are planned, but not enabled yet.",
+    personalWorkspaceHelp: "Your own workspace. Nobody else can open it unless you invite them below.",
     artifacts: "Artifacts",
     runs: "Runs",
     access: "Access",
     privateAccess: "Private",
+    autoKeep: "Automatically save results to the Vault",
+    autoKeepHelp:
+      "Off by default. When off, a finished run asks before it saves — the result is still there to open, convert and build on, it just does not fill your Vault unless you keep it.",
+    autoKeepOn: "New results will be saved to your Vault automatically.",
+    autoKeepOff: "New results will ask before saving.",
+    autoKeepFailed: "Could not change that setting.",
     workspaceBoundaries: "Workspace boundaries",
     library: "Vault",
     libraryHelp: "Saved runs and public references stay in your personal Vault.",
     repositoryExport: "Atlas export",
     repositoryExportHelp: "Sign in to copy a public entry into this workspace and open it in Studio.",
     collaboration: "Collaboration",
-    collaborationHelp: "Deferred until shared access, invitations, and permissions are productized.",
+    collaborationHelp: "Invite people by email into any workspace you own or administer. Roles are owner, admin, member and viewer.",
     loading: "Loading workspace data…",
     unavailable: "Workspace data is unavailable.",
     requestFailed: "Request failed",
@@ -1135,7 +1160,7 @@ export const ACCOUNT_COPY: Record<PublicLocale, {
     usageArtifacts: (count) => `${count} artifacts`,
     usageQubits: (count) => `Up to ${count} qubits`,
     tierNames: { demo: "Preview", free: "Free", developer: "Developer" },
-    usageUnenforced: "These allowances are enforced when you submit a run. Browser simulation always stays available on your own hardware.",
+    usageEnforcement: "These allowances are enforced when you submit a run. Browser simulation always stays available on your own hardware.",
     billingTitle: "Billing & credits",
     billingHelp: "How Leona Quantum will charge for agent runs and hardware. Shown for transparency — payments are not enabled.",
     billingPayments: "Payments",
@@ -1158,7 +1183,7 @@ export const ACCOUNT_COPY: Record<PublicLocale, {
   },
   ja: {
     title: "設定",
-    lede: "本人情報、非公開ボールト、個人ワークスペースのデータ、表示設定を管理します。",
+    lede: "本人情報、非公開ボールト、開けるワークスペース、表示設定を管理します。",
     signOut: "サインアウト",
     preferences: "表示設定",
     language: "言語",
@@ -1173,18 +1198,24 @@ export const ACCOUNT_COPY: Record<PublicLocale, {
     profileSaved: "プロフィールを保存しました。",
     profileSaveFailed: "プロフィールを保存できませんでした",
     personalWorkspace: "個人ワークスペース",
-    personalWorkspaceHelp: "このワークスペースはあなただけが利用できます。共同利用と共有ワークスペースは今後対応予定です。",
+    personalWorkspaceHelp: "あなた自身のワークスペースです。下から招待しない限り、他の人は開けません。",
     artifacts: "アーティファクト",
     runs: "実行",
     access: "アクセス",
     privateAccess: "非公開",
+    autoKeep: "結果を自動的に Vault に保存する",
+    autoKeepHelp:
+      "既定ではオフです。オフのときは、実行が終わってから保存するかを尋ねます。結果は開いて変換したり続きを作ったりできますが、保存を選ぶまで Vault には入りません。",
+    autoKeepOn: "これからの結果は自動的に Vault に保存されます。",
+    autoKeepOff: "これからの結果は保存前に確認します。",
+    autoKeepFailed: "設定を変更できませんでした。",
     workspaceBoundaries: "ワークスペースの範囲",
     library: "ボールト",
     libraryHelp: "保存した実行と公開リファレンスは、個人ボールトに保持されます。",
     repositoryExport: "Atlasから保存",
     repositoryExportHelp: "サインインすると、公開エントリをこのワークスペースへコピーしてStudioで開けます。",
     collaboration: "共同利用",
-    collaborationHelp: "共有アクセス、招待、権限の正式対応まで利用できません。",
+    collaborationHelp: "オーナーまたは管理者であるワークスペースに、メールアドレスで招待できます。権限はオーナー・管理者・メンバー・閲覧者です。",
     loading: "ワークスペースデータを読み込んでいます…",
     unavailable: "ワークスペースデータを取得できません。",
     requestFailed: "リクエストに失敗しました",
@@ -1202,7 +1233,7 @@ export const ACCOUNT_COPY: Record<PublicLocale, {
     usageArtifacts: (count) => `${count}件`,
     usageQubits: (count) => `${count}量子ビットまで`,
     tierNames: { demo: "プレビュー", free: "Free", developer: "Developer" },
-    usageUnenforced: "これらの上限は実行の送信時に適用されます。ブラウザーでのシミュレーションはお使いの端末上で常に利用できます。",
+    usageEnforcement: "これらの上限は実行の送信時に適用されます。ブラウザーでのシミュレーションはお使いの端末上で常に利用できます。",
     billingTitle: "請求とクレジット",
     billingHelp: "Leona Quantum がエージェント実行とハードウェアに課金する仕組みです。透明性のために表示しており、支払いは有効化されていません。",
     billingPayments: "支払い",
@@ -1222,5 +1253,275 @@ export const ACCOUNT_COPY: Record<PublicLocale, {
     billingPolicyHardware: "GPU / QPU ハードウェア",
     billingPolicyHardwareValue: "オーナー承認制。実行前に Studio のハードウェアレーンに出典付き見積もりが表示されます。",
     billingEstimatesLink: "Studio でハードウェア見積もりを見る",
+  },
+};
+
+/**
+ * Workspaces and members, on the Settings page.
+ *
+ * Kept out of ACCOUNT_COPY as its own record rather than growing a type that is
+ * already sixty fields long — these strings appear in two panels that either
+ * both render or neither does.
+ *
+ * The wording is deliberately blunt about what sharing exposes. A member reads
+ * every run and every Vault artifact in the workspace, including work saved
+ * before they arrived, and there is no wording of that which is both softer and
+ * true.
+ */
+/**
+ * The notice an invited person sees, and the wording that makes it honest.
+ *
+ * "You can open it now" rather than "do you accept": the membership already
+ * grants access by the time this renders, so a notice that read like a pending
+ * offer would be describing a state the system does not have.
+ *
+ * `addedBy` and `added` are the same sentence with and without an author. The
+ * authorless one is not a fallback nobody sees — a membership whose inviter's
+ * account was deleted keeps its notice and loses the name.
+ */
+export const INVITE_COPY: Record<PublicLocale, {
+  title: string;
+  addedBy: (inviter: string, workspace: string, role: string) => string;
+  added: (workspace: string, role: string) => string;
+  memberAccess: string;
+  viewerAccess: string;
+  open: string;
+  opening: string;
+  dismiss: string;
+  decline: string;
+  declineConfirm: string;
+  declining: string;
+  cancel: string;
+  declineWarning: (workspace: string) => string;
+  failed: string;
+}> = {
+  en: {
+    title: "New workspace",
+    addedBy: (inviter, workspace, role) => `${inviter} added you to ${workspace} as a ${role}.`,
+    added: (workspace, role) => `You were added to ${workspace} as a ${role}.`,
+    memberAccess: "You can run, save and edit everything in it — including work saved before you arrived.",
+    viewerAccess: "You can read everything in it, including work saved before you arrived. You cannot run or save.",
+    open: "Open it",
+    opening: "Opening…",
+    dismiss: "Not now",
+    decline: "Leave",
+    declineConfirm: "Leave for good",
+    declining: "Leaving…",
+    cancel: "Keep it",
+    declineWarning: (workspace) =>
+      `Leaving ${workspace} gives up your access to it. Anything you already ran there stays — it belongs to the workspace. Only an admin can let you back in.`,
+    failed: "Could not do that just now.",
+  },
+  ja: {
+    title: "新しいワークスペース",
+    addedBy: (inviter, workspace, role) => `${inviter} さんが、あなたを ${workspace} に${role}として追加しました。`,
+    added: (workspace, role) => `あなたは ${workspace} に${role}として追加されました。`,
+    memberAccess: "参加前に保存されたものも含め、すべて実行・保存・編集できます。",
+    viewerAccess: "参加前に保存されたものも含め、すべて閲覧できます。実行と保存はできません。",
+    open: "開く",
+    opening: "切り替え中…",
+    dismiss: "あとで",
+    decline: "参加しない",
+    declineConfirm: "参加をやめる",
+    declining: "退出中…",
+    cancel: "残る",
+    declineWarning: (workspace) =>
+      `${workspace} から退出すると、アクセスできなくなります。すでに実行したものはワークスペースに残ります。再参加には管理者の招待が必要です。`,
+    failed: "いま実行できませんでした。",
+  },
+};
+
+export const SHARING_COPY: Record<PublicLocale, {
+  workspacesTitle: string;
+  workspacesHelp: string;
+  personalTag: string;
+  activeTag: string;
+  open: string;
+  opening: string;
+  createTitle: string;
+  createPlaceholder: string;
+  create: string;
+  creating: string;
+  createFailed: string;
+  created: (name: string) => string;
+  switchFailed: string;
+  leave: string;
+  leaveConfirm: string;
+  leaveCancel: string;
+  leaving: string;
+  leaveFailed: string;
+  left: (name: string) => string;
+  deleteWorkspace: string;
+  deleteConfirm: string;
+  deleteCancel: string;
+  deleting: string;
+  deleteWarning: string;
+  deleteFailed: string;
+  deletedWorkspace: (name: string) => string;
+  makeOwner: string;
+  makeOwnerConfirm: (name: string) => string;
+  makeOwnerCancel: string;
+  transferring: string;
+  transferHelp: string;
+  transferFailed: string;
+  transferred: (name: string) => string;
+  membersTitle: string;
+  membersHelp: string;
+  membersShareWarning: string;
+  invitePlaceholder: string;
+  invite: string;
+  inviting: string;
+  inviteFailed: string;
+  inviteUnknownAccount: string;
+  invited: (email: string) => string;
+  roleMember: string;
+  roleViewer: string;
+  roleAdmin: string;
+  roleOwner: string;
+  roleLabel: string;
+  roleMemberHelp: string;
+  roleViewerHelp: string;
+  remove: string;
+  removing: string;
+  removeFailed: string;
+  removed: (name: string) => string;
+  roleChanged: (name: string) => string;
+  roleChangeFailed: string;
+  you: string;
+  adminOnly: string;
+  noMembers: string;
+  sharedWith: (count: number) => string;
+}> = {
+  en: {
+    workspacesTitle: "Workspaces",
+    workspacesHelp:
+      "Everything you run and save belongs to one workspace. Switching changes what Run, Studio and the Vault show you.",
+    personalTag: "Personal",
+    activeTag: "Active",
+    open: "Open",
+    opening: "Opening…",
+    createTitle: "New shared workspace",
+    createPlaceholder: "Ion trap group",
+    create: "Create",
+    creating: "Creating…",
+    createFailed: "Could not create that workspace.",
+    created: (name) => `${name} created. Open it when you are ready — you are still here for now.`,
+    switchFailed: "Could not switch workspace.",
+    leave: "Leave",
+    leaveConfirm: "Leave for good",
+    leaveCancel: "Stay",
+    leaving: "Leaving…",
+    leaveFailed: "Could not leave that workspace.",
+    left: (name) => `You have left ${name}. Anything you ran there stays — it belongs to the workspace. Only an admin can let you back in.`,
+    deleteWorkspace: "Delete",
+    deleteConfirm: "Delete for good",
+    deleteCancel: "Keep it",
+    deleting: "Deleting…",
+    deleteWarning:
+      "Deleting a workspace takes it away from everyone in it, along with every run and saved artifact it holds. You cannot undo this here.",
+    deleteFailed: "Could not delete that workspace.",
+    deletedWorkspace: (name) => `${name} is gone. Everyone who was in it has been returned to their own workspace.`,
+    makeOwner: "Make owner",
+    makeOwnerConfirm: (name) => `Hand it to ${name}`,
+    makeOwnerCancel: "Cancel",
+    transferring: "Handing over…",
+    transferHelp:
+      "The owner is the only person who can delete this workspace or hand it on. Give it away and you stay as an admin — which the new owner can take back.",
+    transferFailed: "Could not hand the workspace over.",
+    transferred: (name) => `${name} owns this workspace now. You are an admin of it, and you can leave whenever you like.`,
+    membersTitle: "Members",
+    membersHelp: "People who can act in the workspace you have open.",
+    membersShareWarning:
+      "A member sees every run and every saved artifact in this workspace, including work saved before they arrived. A viewer can read all of it but cannot run or save.",
+    invitePlaceholder: "colleague@university.edu",
+    invite: "Invite",
+    inviting: "Inviting…",
+    inviteFailed: "Could not add that person.",
+    inviteUnknownAccount:
+      "No account here uses that address yet. Ask them to sign in once, then invite them again.",
+    invited: (email) => `${email} can now open this workspace.`,
+    roleMember: "Member",
+    roleViewer: "Viewer",
+    roleAdmin: "Admin",
+    roleOwner: "Owner",
+    roleLabel: "Role",
+    roleMemberHelp: "Can run, save and edit.",
+    roleViewerHelp: "Can read everything; cannot run or save.",
+    remove: "Remove",
+    removing: "Removing…",
+    removeFailed: "Could not remove that person.",
+    removed: (name) => `${name} no longer has access. Their runs and artifacts stay here.`,
+    roleChanged: (name) => `${name}'s role was changed.`,
+    roleChangeFailed: "Could not change that role.",
+    you: "You",
+    adminOnly: "Only an owner or admin can invite and remove people.",
+    noMembers: "No one else is in this workspace.",
+    sharedWith: (count) => (count === 1 ? "1 person" : `${count} people`),
+  },
+  ja: {
+    workspacesTitle: "ワークスペース",
+    workspacesHelp:
+      "実行と保存はすべて、いずれかのワークスペースに属します。切り替えると、Run・Studio・Vault の表示内容が変わります。",
+    personalTag: "個人",
+    activeTag: "使用中",
+    open: "開く",
+    opening: "切り替え中…",
+    createTitle: "共有ワークスペースを作成",
+    createPlaceholder: "イオントラップ班",
+    create: "作成",
+    creating: "作成中…",
+    createFailed: "ワークスペースを作成できませんでした。",
+    created: (name) => `${name} を作成しました。準備ができたら開いてください（今はまだ移動していません）。`,
+    switchFailed: "ワークスペースを切り替えられませんでした。",
+    leave: "退出",
+    leaveConfirm: "退出する",
+    leaveCancel: "残る",
+    leaving: "退出中…",
+    leaveFailed: "退出できませんでした。",
+    left: (name) => `${name} から退出しました。実行したものはワークスペースに残ります。再参加には管理者の招待が必要です。`,
+    deleteWorkspace: "削除",
+    deleteConfirm: "完全に削除する",
+    deleteCancel: "残す",
+    deleting: "削除中…",
+    deleteWarning:
+      "ワークスペースを削除すると、参加している全員から見えなくなります。中の実行と保存済みアーティファクトもすべて含まれます。ここから元に戻すことはできません。",
+    deleteFailed: "ワークスペースを削除できませんでした。",
+    deletedWorkspace: (name) => `${name} を削除しました。参加していた全員が自分のワークスペースに戻ります。`,
+    makeOwner: "オーナーにする",
+    makeOwnerConfirm: (name) => `${name} に譲渡する`,
+    makeOwnerCancel: "やめる",
+    transferring: "譲渡中…",
+    transferHelp:
+      "このワークスペースを削除・譲渡できるのはオーナーだけです。譲渡すると、あなたは管理者として残ります（新しいオーナーはそれを解除できます）。",
+    transferFailed: "オーナーを変更できませんでした。",
+    transferred: (name) => `${name} がこのワークスペースのオーナーになりました。あなたは管理者で、いつでも退出できます。`,
+    membersTitle: "メンバー",
+    membersHelp: "いま開いているワークスペースで作業できる人です。",
+    membersShareWarning:
+      "メンバーは、このワークスペースのすべての実行と保存済みアーティファクトを閲覧できます。参加前に保存されたものも含みます。閲覧者はすべて読めますが、実行や保存はできません。",
+    invitePlaceholder: "colleague@university.edu",
+    invite: "招待",
+    inviting: "追加中…",
+    inviteFailed: "この人を追加できませんでした。",
+    inviteUnknownAccount:
+      "このアドレスのアカウントはまだありません。一度サインインしてもらってから、もう一度招待してください。",
+    invited: (email) => `${email} がこのワークスペースを開けるようになりました。`,
+    roleMember: "メンバー",
+    roleViewer: "閲覧者",
+    roleAdmin: "管理者",
+    roleOwner: "オーナー",
+    roleLabel: "権限",
+    roleMemberHelp: "実行・保存・編集ができます。",
+    roleViewerHelp: "すべて閲覧できますが、実行・保存はできません。",
+    remove: "削除",
+    removing: "削除中…",
+    removeFailed: "この人を削除できませんでした。",
+    removed: (name) => `${name} のアクセスを解除しました。実行とアーティファクトはここに残ります。`,
+    roleChanged: (name) => `${name} の権限を変更しました。`,
+    roleChangeFailed: "権限を変更できませんでした。",
+    you: "あなた",
+    adminOnly: "招待と削除ができるのはオーナーと管理者だけです。",
+    noMembers: "このワークスペースには他に誰もいません。",
+    sharedWith: (count) => `${count}人`,
   },
 };

@@ -36,11 +36,12 @@ test("a signed-in address that is not allowlisted is free, not developer", () =>
   assert.equal(resolveAccountTier("stranger@example.com", { allowlist: ALLOWLIST }), "free");
 });
 
-test("both non-WorkOS operator identities are developer without any allowlist", () => {
-  // Production runs behind the single-user lock today, so if this regressed the
-  // owner would silently drop to the free tier on their own deployment.
-  assert.equal(resolveAccountTier("operator@leonaquantum.com", { allowlist: [] }), "developer");
+test("the non-WorkOS operator identities are developer without any allowlist", () => {
+  // These are minted by an auth mode rather than by a sign-up, so no allowlist
+  // can reach them. If this regressed, a missing environment variable would
+  // silently meter the operator's own infrastructure.
   assert.equal(resolveAccountTier("local-dev@majorana.test", { allowlist: [] }), "developer");
+  assert.equal(resolveAccountTier("deploy-probe@leonaquantum.com", { allowlist: [] }), "developer");
 });
 
 test("a missing identity is demo, never free", () => {

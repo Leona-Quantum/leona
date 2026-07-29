@@ -6,7 +6,7 @@ State: **S0-S7 implemented and locally verified; live GitHub acquisition and
 disposable-Neon migration proof remain operator-gated; publication remains
 disabled**
 
-Owner Decision: ADR-0033 pivots the MVP to canonical standard components.
+Owner Decision: ADR-0034 pivots the MVP to canonical standard components.
 Phase 7 is an acquisition layer for component implementation provenance, not a
 paper/repository catalog. Its output never becomes a public component without
 an explicit reviewed promotion step.

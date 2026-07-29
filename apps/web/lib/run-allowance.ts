@@ -3,8 +3,25 @@
  *
  * Pure functions over data the BFF already has (the account's recent runs from
  * `GET /v1/runs`), so the policy is unit-testable without any network. The BFF
- * run route applies the verdict before a submission ever reaches the control
- * plane — a client cannot skip it without also skipping its own session cookie.
+ * run route applies the verdict before a submission reaches the control plane.
+ *
+ * SCOPE OF THAT GUARANTEE — this file used to claim a client "cannot skip it
+ * without also skipping its own session cookie", which is not true and was
+ * worth correcting because it invited later sessions to trust a server-side
+ * gate that did not exist. It binds callers who go through the BFF; the control
+ * plane is a *separate service*, and a script holding a valid access token can
+ * call `POST /v1/runs` on it directly and never pass through here.
+ *
+ * That gap is now closed on the server. `majorana_api.tiers` holds the control
+ * plane's own copy of the tier decision, `routes/runs.py` refuses an explicit
+ * execute submission over the weekly limit, and the worker refuses an AUTO run
+ * at the moment it resolves to EXECUTE — the one place the default-mode bypass
+ * can be caught. The flat abuse ceiling stays above both.
+ *
+ * So this file is now the *fast* refusal rather than the only one: it answers
+ * without a round trip and words the message for the user, and the server
+ * enforces the same numbers whether or not anyone came through here. Keep the
+ * two in step — the API's TIER_LIMITS mirrors the free-tier numbers below.
  *
  * Only `mode: "execute"` submissions are metered: those are the agent-pipeline
  * runs the published "runs per week" allowance describes. Chat turns are not
@@ -18,6 +35,7 @@ const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
 export type MeteredRun = {
   mode?: string | null;
   created_at?: string | null;
+  user_id?: string | null;
 };
 
 export type RunAllowanceVerdict = {
@@ -34,12 +52,30 @@ export function assessRunAllowance(
   limit: number | null,
   runs: readonly MeteredRun[],
   now: Date = new Date(),
+  /**
+   * The viewer's own user id. When given, runs created by anyone else are not
+   * counted.
+   *
+   * This matters only in a shared workspace, and it matters in the direction
+   * that is worst to get wrong: `GET /v1/runs` lists the WORKSPACE's runs, so
+   * without this a collaborator is refused here for runs a colleague submitted,
+   * under a message that says "your plan". The control plane counts the
+   * account's own runs across every workspace, which this cannot see; that is
+   * the authoritative number, and this stays the fast pre-check that must never
+   * refuse someone for somebody else's usage.
+   *
+   * Undefined means "not known" and counts everything — the pre-metering
+   * behaviour, and the same failure direction the rest of this route takes when
+   * a usage read fails.
+   */
+  viewerUserId?: string | null,
 ): RunAllowanceVerdict {
   if (limit === null) return { allowed: true, used: 0, limit: null, resetsAt: null };
   const windowStart = now.getTime() - WEEK_MS;
   const counted: number[] = [];
   for (const run of runs) {
     if (run.mode !== "execute" || !run.created_at) continue;
+    if (viewerUserId && run.user_id && run.user_id !== viewerUserId) continue;
     const at = Date.parse(run.created_at);
     if (Number.isFinite(at) && at > windowStart && at <= now.getTime()) counted.push(at);
   }

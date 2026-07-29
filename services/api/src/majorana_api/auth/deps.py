@@ -17,6 +17,35 @@ from ..repos import system
 from ..settings import Settings
 from .jwt import TokenError, VerifiedToken, verify_bearer_token
 
+#: The only (method, route) pairs the post-deploy probe credential may reach:
+#: submit one run, then watch that run finish. Everything else — listing runs,
+#: cancelling, reading a conversation, and every artifact, workspace, billing and
+#: QPU route — refuses it.
+#:
+#: Matched against the *route template* resolved by the router, never against the
+#: raw request path. A raw-path match has to reason about trailing slashes,
+#: percent-encoding and `..` segments; the template is what FastAPI actually
+#: decided to run, so "which handler is about to execute" is answered directly.
+#:
+#: The templates are as the sub-router registered them, without the `/v1` the app
+#: mounts them under — that is the value FastAPI puts in `scope["route"]`, and
+#: reconstructing the full path from it would be guesswork. The mount point is
+#: pinned separately below rather than assumed. If a future FastAPI changes that
+#: shape, nothing here matches and the probe is refused everywhere: the deploy
+#: gate fails loudly, which is the safe direction, and the enumeration test in
+#: tests/test_deploy_probe_credential.py fails in CI first.
+DEPLOY_PROBE_ROUTES: frozenset[tuple[str, str]] = frozenset(
+    {
+        ("POST", "/runs"),
+        ("GET", "/runs/{run_id}"),
+        ("GET", "/runs/{run_id}/events"),
+    }
+)
+
+#: Every router in app.py is mounted here. Checked so an unprefixed template
+#: cannot be reached through some future second mount point.
+DEPLOY_PROBE_PREFIX = "/v1/"
+
 
 def get_settings(request: Request) -> Settings:
     return request.app.state.settings
@@ -28,7 +57,18 @@ async def get_session(request: Request):
         await session.commit()
 
 
+def _probe_may_reach(request: Request) -> bool:
+    route = request.scope.get("route")
+    path = getattr(route, "path", None)
+    if path is None:
+        return False
+    if not request.scope.get("path", "").startswith(DEPLOY_PROBE_PREFIX):
+        return False
+    return (request.method, path) in DEPLOY_PROBE_ROUTES
+
+
 async def get_verified_token(
+    request: Request,
     settings: Annotated[Settings, Depends(get_settings)],
     authorization: Annotated[str | None, Header()] = None,
 ) -> VerifiedToken:
@@ -50,19 +90,22 @@ async def get_verified_token(
         raise HTTPException(401, "missing bearer token", headers=challenge)
     presented = authorization.removeprefix("Bearer ")
 
-    # Single-operator lock: the API half of the web perimeter. While it is on,
-    # the lock token is the ONLY accepted credential — a WorkOS JWT must not
-    # also work, or any WorkOS account could walk past the username/password.
-    # Settings.__post_init__ has already refused a weak or placeholder token.
-    if settings.single_user_lock:
-        if not compare_digest(presented, settings.single_user_lock_token):
-            raise HTTPException(401, "invalid token", headers=challenge)
+    # Post-deploy probe. Checked BEFORE the WorkOS verify because it is not a JWT
+    # and would only fail there.
+    #
+    # The route check is inside this branch on purpose. Refusing the probe on an
+    # out-of-scope route must not tell an unrelated caller anything, and the
+    # comparison is constant-time either way — an attacker who does not hold the
+    # token never reaches the route check at all.
+    if settings.deploy_probe_token and compare_digest(presented, settings.deploy_probe_token):
+        if not _probe_may_reach(request):
+            raise HTTPException(403, "the deploy probe credential cannot reach this route")
         return VerifiedToken(
-            workos_user_id=settings.single_user_lock_user_id,
-            session_id="single-user-lock-session",
+            workos_user_id=settings.deploy_probe_user_id,
+            session_id="deploy-probe-session",
             claims={
-                "email": settings.single_user_lock_email,
-                "name": settings.single_user_lock_display_name,
+                "email": settings.deploy_probe_email,
+                "name": settings.deploy_probe_display_name,
             },
         )
 
@@ -108,21 +151,27 @@ async def get_scope(
     identity: Annotated[tuple[User, Workspace], Depends(get_identity)],
     session: Annotated[AsyncSession, Depends(get_session)],
 ) -> Scope:
-    """Derive a private personal-workspace scope for the authenticated user.
+    """Derive the scope for the authenticated user's active workspace.
 
-    Collaboration is intentionally deferred. Do not accept a browser-selected
-    workspace id here: the personal workspace is the only tenant exposed by
-    the current product contract.
+    Do not accept a workspace id from the request. The active workspace is a
+    server-side pointer (`users.active_workspace_id`, migration 0037) that only
+    `POST /v1/workspaces/active` writes, and it is re-validated against the
+    membership table on every request. A caller cannot widen their own scope by
+    editing a header, and a proxy route cannot narrow it by forgetting to
+    forward one.
+
+    Absent or stale, the pointer resolves to the personal workspace — the
+    pre-collaboration behaviour, unchanged for every account that never switches.
     """
     user, personal_ws = identity
-    membership = await system.find_membership(
+    active = await system.resolve_active_workspace(
         session,
-        workspace_id=personal_ws.id,
-        user_id=user.id,
+        user=user,
+        personal_workspace_id=personal_ws.id,
     )
-    if membership is None:
+    if active is None:
         raise HTTPException(404, "workspace not found")
-    return Scope(user_id=user.id, workspace_id=personal_ws.id, role=membership.role)
+    return Scope(user_id=user.id, workspace_id=active.workspace_id, role=active.role)
 
 
 CurrentScope = Annotated[Scope, Depends(get_scope)]

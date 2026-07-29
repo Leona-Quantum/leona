@@ -1,6 +1,8 @@
 import type { RunEvent } from "@majorana/ui";
+import type { MeasuredResult } from "./measured-result.ts";
 import type { VerificationCheck, VerificationSummary } from "./verification-record.ts";
 import { verificationFromResource, verificationSummaryFromValue } from "./verification-record.ts";
+import { scopedStorage } from "./user-storage.ts";
 
 /** `structural` is a pass whose evidence was contract checks only — the result dict
  * had the promised keys, the qubit count was within the plan's ceiling — with nothing
@@ -35,6 +37,9 @@ export interface LibraryArtifact {
   checks?: VerificationCheck[];
   criticSummary?: string;
   verificationSummary?: VerificationSummary | null;
+  // What the program measured, stored on the version so a reopened artifact shows
+  // numbers and not only a verdict. Absent on artifacts saved before 2026-07-26.
+  measuredResult?: MeasuredResult | null;
 }
 
 const STORAGE_KEY = "majorana.library.v1";
@@ -143,8 +148,10 @@ const DEMO_ARTIFACTS: LibraryArtifact[] = [
   },
 ];
 
+// Per-account storage (lib/user-storage.ts): this mirror holds artifact titles
+// and result payloads.
 function canUseStorage(): boolean {
-  return typeof window !== "undefined" && typeof window.localStorage !== "undefined";
+  return scopedStorage.available();
 }
 
 function emitChange(): void {
@@ -152,19 +159,19 @@ function emitChange(): void {
 }
 
 function persist(artifacts: LibraryArtifact[]): LibraryArtifact[] {
-  if (canUseStorage()) window.localStorage.setItem(STORAGE_KEY, JSON.stringify(artifacts));
+  if (canUseStorage()) scopedStorage.setItem(STORAGE_KEY, JSON.stringify(artifacts));
   emitChange();
   return artifacts;
 }
 
 function persistSilently(artifacts: LibraryArtifact[]): void {
-  if (canUseStorage()) window.localStorage.setItem(STORAGE_KEY, JSON.stringify(artifacts));
+  if (canUseStorage()) scopedStorage.setItem(STORAGE_KEY, JSON.stringify(artifacts));
 }
 
 function loadDeletedIds(): Set<string> {
   if (!canUseStorage()) return new Set();
   try {
-    const parsed = JSON.parse(window.localStorage.getItem(DELETED_STORAGE_KEY) ?? "[]") as unknown;
+    const parsed = JSON.parse(scopedStorage.getItem(DELETED_STORAGE_KEY) ?? "[]") as unknown;
     return new Set(Array.isArray(parsed) ? parsed.filter((value): value is string => typeof value === "string") : []);
   } catch {
     return new Set();
@@ -172,13 +179,13 @@ function loadDeletedIds(): Set<string> {
 }
 
 function persistDeletedIds(ids: Set<string>): void {
-  if (canUseStorage()) window.localStorage.setItem(DELETED_STORAGE_KEY, JSON.stringify([...ids]));
+  if (canUseStorage()) scopedStorage.setItem(DELETED_STORAGE_KEY, JSON.stringify([...ids]));
 }
 
 function loadStarredIds(): Set<string> {
   if (!canUseStorage()) return new Set();
   try {
-    const parsed = JSON.parse(window.localStorage.getItem(STARRED_STORAGE_KEY) ?? "[]") as unknown;
+    const parsed = JSON.parse(scopedStorage.getItem(STARRED_STORAGE_KEY) ?? "[]") as unknown;
     return new Set(Array.isArray(parsed) ? parsed.filter((value): value is string => typeof value === "string") : []);
   } catch {
     return new Set();
@@ -197,7 +204,7 @@ export function toggleLibraryArtifactStar(id: string): boolean {
   const starred = loadStarredIds();
   if (starred.has(id)) starred.delete(id);
   else starred.add(id);
-  if (canUseStorage()) window.localStorage.setItem(STARRED_STORAGE_KEY, JSON.stringify([...starred]));
+  if (canUseStorage()) scopedStorage.setItem(STARRED_STORAGE_KEY, JSON.stringify([...starred]));
   emitChange();
   return starred.has(id);
 }
@@ -205,7 +212,7 @@ export function toggleLibraryArtifactStar(id: string): boolean {
 export function loadLibraryArtifacts({ includeDemo = false, includeArchived = false }: { includeDemo?: boolean; includeArchived?: boolean } = {}): LibraryArtifact[] {
   if (!canUseStorage()) return includeDemo ? DEMO_ARTIFACTS : [];
   try {
-    const raw = window.localStorage.getItem(STORAGE_KEY);
+    const raw = scopedStorage.getItem(STORAGE_KEY);
     if (!raw) return includeDemo ? DEMO_ARTIFACTS : [];
     const parsed = JSON.parse(raw) as unknown;
     if (!Array.isArray(parsed)) return includeDemo ? DEMO_ARTIFACTS : [];
@@ -339,7 +346,9 @@ export function rememberArtifactFromRun(events: readonly RunEvent[], prompt: str
     framework,
     status: statusFromFinished(finished),
     updatedAt,
-    description: `Saved from the verified Leona Run for: ${prompt}`,
+    description: statusFromFinished(finished) === "inconclusive"
+      ? `Saved from an executed, unverified Leona Run for: ${prompt}`
+      : `Saved from the Leona Run for: ${prompt}`,
     tags: [String(family).toLowerCase(), String(framework).toLowerCase(), "run"],
     verification,
     code,

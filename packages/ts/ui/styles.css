@@ -1797,10 +1797,15 @@
   font-size: var(--fs-12);
   font-weight: 500;
 }
+/* Owner request (2026-07-27): the account type sits beside the first name so the
+   footer profile is one line, not two. The name is the only part that can be
+   arbitrarily long, so it is the only part allowed to shrink — a clipped
+   "Develop…" would read as a rendering bug, while a clipped name does not. */
 .mj-sidebar-user-copy {
   min-width: 0;
   flex: 1 1 auto;
-  display: grid;
+  display: flex;
+  align-items: baseline;
   gap: var(--sp-1);
 }
 .mj-sidebar-user-copy strong,
@@ -1810,13 +1815,23 @@
   white-space: nowrap;
 }
 .mj-sidebar-user-copy strong {
+  min-width: 0;
+  flex: 0 1 auto;
   color: var(--text-0);
   font-size: var(--fs-12);
   font-weight: 500;
 }
 .mj-sidebar-user-copy small {
+  flex: 0 0 auto;
   color: var(--text-2);
   font-size: var(--fs-12);
+}
+/* Decorative separator. It lives in CSS rather than the copy dictionary so no
+   translation has to carry punctuation, and it appears only when there is a
+   second half to separate. */
+.mj-sidebar-user-copy small::before {
+  content: "·";
+  margin-inline-end: var(--sp-1);
 }
 .mj-sidebar-user-caret {
   color: var(--text-2);
@@ -2956,6 +2971,15 @@
 .mj-chat-message--assistant {
   width: 100%;
 }
+.mj-chat-message--run {
+  display: grid;
+  width: min(100%, calc(var(--composer-max) + var(--sp-12)));
+  gap: var(--sp-3);
+}
+.mj-chat-message--run > .mj-run-workflow,
+.mj-chat-message--run > .mj-run-outcome {
+  margin-bottom: 0;
+}
 .mj-chat-message p {
   margin: 0 0 var(--sp-3);
 }
@@ -3022,6 +3046,57 @@
   border: 0;
   border-top: 1px solid var(--border-0);
 }
+/* Run surface: framework picker + export beside the produced program. */
+.mj-run-code-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-2);
+  margin-bottom: var(--sp-2);
+}
+.mj-run-code-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--sp-2);
+}
+.mj-run-code-note {
+  margin-top: var(--sp-2);
+  color: var(--text-2);
+  font-size: var(--fs-12);
+  line-height: 1.5;
+}
+
+/* GFM tables. The chat model reaches for one whenever it compares things (the
+ * four Bell states, framework trade-offs, gate sets), so this is a routine
+ * answer shape rather than an edge case. The wrapper scrolls instead of the
+ * page: a wide comparison table must never widen the chat column. */
+.mj-chat-message .mj-md-table {
+  overflow-x: auto;
+  margin: var(--sp-3) 0;
+}
+.mj-chat-message table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--fs-13);
+}
+.mj-chat-message th,
+.mj-chat-message td {
+  padding: var(--sp-2) var(--sp-3);
+  border: 1px solid var(--border-0);
+  text-align: left;
+  vertical-align: top;
+}
+.mj-chat-message th {
+  color: var(--text-0);
+  background: var(--bg-2);
+  font-weight: 600;
+}
+.mj-chat-message td {
+  color: var(--text-1);
+}
 .mj-chat-thinking {
   margin-bottom: var(--sp-3);
   color: var(--text-1);
@@ -3036,6 +3111,527 @@
   margin-top: var(--sp-2);
   color: var(--text-1);
   font-size: var(--fs-12);
+}
+.mj-run-workflow,
+.mj-run-progress {
+  overflow: hidden;
+  margin-bottom: var(--sp-4);
+  border: 1px solid var(--border-0);
+  border-radius: var(--radius-card);
+  background: var(--bg-1);
+}
+.mj-run-workflow > .mj-run-progress {
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+.mj-run-progress-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-4);
+  padding: var(--sp-4);
+}
+.mj-run-progress-heading {
+  display: grid;
+  min-width: 0;
+  gap: var(--sp-1);
+}
+.mj-run-progress-heading strong {
+  overflow: hidden;
+  color: var(--text-0);
+  font-size: var(--fs-13);
+  font-weight: 500;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mj-run-progress-label {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  color: var(--text-2);
+  font-family: var(--font-mono);
+  font-size: var(--fs-12);
+  line-height: 1;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.mj-run-progress-live-dot {
+  width: var(--sp-2);
+  height: var(--sp-2);
+  border-radius: 50%;
+  background: var(--accent);
+  animation: mj-run-progress-pulse 1.2s ease-in-out infinite;
+}
+.mj-run-progress-meta {
+  display: grid;
+  flex: 0 0 auto;
+  justify-items: end;
+  gap: var(--sp-1);
+}
+.mj-run-progress-count,
+.mj-run-progress-percent {
+  flex: 0 0 auto;
+  color: var(--text-1);
+  font-family: var(--font-mono);
+  font-size: var(--fs-12);
+  font-variant-numeric: tabular-nums;
+}
+.mj-run-progress-percent {
+  color: var(--text-2);
+}
+.mj-run-progress-meter {
+  height: var(--sp-1);
+  background: var(--bg-2);
+}
+.mj-run-progress-meter > span {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+}
+.mj-run-progress-list {
+  display: grid;
+  margin: 0;
+  padding: var(--sp-2) var(--sp-3) var(--sp-3);
+  list-style: none;
+}
+.mj-run-progress-row {
+  display: grid;
+  grid-template-columns: var(--sp-5) minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--sp-3);
+  min-height: var(--sp-12);
+  padding: var(--sp-2);
+  border-radius: var(--radius-control);
+  color: var(--text-1);
+}
+.mj-run-progress-row[data-state="active"] {
+  color: var(--text-0);
+  background: var(--bg-2);
+}
+.mj-run-progress-row[data-state="error"] {
+  background: var(--bg-2);
+}
+.mj-run-progress-marker {
+  display: grid;
+  width: var(--sp-5);
+  height: var(--sp-5);
+  place-items: center;
+  border: 1px solid var(--border-0);
+  border-radius: 50%;
+  color: var(--text-2);
+  font-family: var(--font-mono);
+  font-size: var(--fs-12);
+  font-weight: 500;
+  line-height: 1;
+}
+.mj-run-progress-row[data-state="active"] .mj-run-progress-marker {
+  border-color: var(--accent);
+  color: var(--accent);
+  animation: mj-ring-fade 1.2s ease-in-out infinite;
+}
+.mj-run-progress-row[data-state="done"] .mj-run-progress-marker {
+  border-color: var(--ok);
+  color: var(--ok);
+}
+.mj-run-progress-row[data-state="error"] .mj-run-progress-marker {
+  border-color: var(--err);
+  color: var(--err);
+}
+.mj-run-progress-row[data-state="stopped"] .mj-run-progress-marker {
+  border-color: var(--warn);
+  color: var(--warn);
+}
+.mj-run-progress-copy {
+  display: grid;
+  min-width: 0;
+  gap: var(--sp-1);
+}
+.mj-run-progress-title {
+  color: currentColor;
+  font-size: var(--fs-13);
+  font-weight: 500;
+  line-height: 1.2;
+}
+.mj-run-progress-detail {
+  overflow: hidden;
+  color: var(--text-2);
+  font-size: var(--fs-12);
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mj-run-progress-row[data-state="active"] .mj-run-progress-detail {
+  color: var(--text-1);
+}
+.mj-run-progress-row[data-state="error"] .mj-run-progress-detail {
+  color: var(--text-1);
+}
+.mj-run-progress-state {
+  padding: var(--sp-1) var(--sp-2);
+  border: 1px solid transparent;
+  border-radius: var(--radius-control);
+  color: var(--text-2);
+  font-family: var(--font-mono);
+  font-size: var(--fs-12);
+  line-height: 1.2;
+}
+.mj-run-progress-row[data-state="active"] .mj-run-progress-state {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.mj-run-progress-row[data-state="error"] .mj-run-progress-state {
+  border-color: var(--err);
+  color: var(--err);
+}
+.mj-run-progress-technical {
+  margin: 0;
+  border-top: 1px solid var(--border-0);
+  color: var(--text-1);
+  font-size: var(--fs-12);
+}
+.mj-run-progress-technical > summary {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  width: 100%;
+  box-sizing: border-box;
+  padding: var(--sp-3) var(--sp-4);
+  cursor: pointer;
+  list-style: none;
+}
+.mj-run-progress-technical > summary::-webkit-details-marker {
+  display: none;
+}
+.mj-run-progress-technical > summary > span:last-child {
+  margin-left: auto;
+  color: var(--text-2);
+  font-family: var(--font-mono);
+}
+.mj-run-progress-technical > summary::after {
+  content: "+";
+  color: var(--text-2);
+  font-family: var(--font-mono);
+}
+.mj-run-progress-technical[open] > summary::after {
+  content: "−";
+}
+.mj-run-progress-technical-body {
+  padding: var(--sp-4);
+  border-top: 1px solid var(--border-0);
+  background: var(--bg-0);
+}
+.mj-run-outcome {
+  display: grid;
+  gap: 0;
+  min-width: 0;
+  margin: 0 0 var(--sp-4);
+  border: 1px solid var(--border-0);
+  border-radius: var(--radius-card);
+  background: var(--bg-1);
+  overflow: hidden;
+  overflow-wrap: anywhere;
+}
+.mj-run-outcome-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  padding: var(--sp-5);
+  border-bottom: 1px solid var(--border-0);
+}
+.mj-run-outcome-identity {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: var(--sp-3);
+}
+.mj-run-outcome-glyph {
+  display: grid;
+  flex: 0 0 auto;
+  width: var(--sp-8);
+  height: var(--sp-8);
+  place-items: center;
+  border: 1px solid var(--border-0);
+  border-radius: 50%;
+  color: var(--text-1);
+  background: var(--bg-0);
+  font-size: var(--fs-14);
+  font-weight: 600;
+}
+.mj-run-outcome[data-tone="ok"] .mj-run-outcome-glyph {
+  border-color: var(--ok);
+  color: var(--ok);
+}
+.mj-run-outcome[data-tone="warn"] .mj-run-outcome-glyph {
+  border-color: var(--warn);
+  color: var(--warn);
+}
+.mj-run-outcome[data-tone="err"] .mj-run-outcome-glyph {
+  border-color: var(--err);
+  color: var(--err);
+}
+.mj-run-outcome-heading {
+  display: grid;
+  min-width: 0;
+  gap: var(--sp-1);
+}
+.mj-run-outcome-heading > span {
+  color: var(--text-2);
+  font-family: var(--font-mono);
+  font-size: var(--fs-12);
+  line-height: 1;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.mj-run-outcome-heading h2 {
+  margin: 0;
+  color: var(--text-0);
+  font-size: var(--fs-16);
+  font-weight: 500;
+  line-height: 1.35;
+}
+.mj-run-outcome-description {
+  max-width: 72ch;
+  margin: 0;
+  color: var(--text-1);
+  font-size: var(--fs-13);
+  line-height: 1.55;
+}
+.mj-run-outcome-badges {
+  display: flex;
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--sp-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.mj-run-outcome-badges li {
+  padding: var(--sp-1) var(--sp-2);
+  border: 1px solid var(--border-0);
+  border-radius: var(--radius-card);
+  color: var(--text-1);
+  background: var(--bg-0);
+  font-family: var(--font-mono);
+  font-size: var(--fs-12);
+  line-height: 1.2;
+}
+.mj-run-outcome-badges li[data-tone="ok"] {
+  border-color: var(--ok);
+  color: var(--ok);
+}
+.mj-run-outcome-badges li[data-tone="warn"] {
+  border-color: var(--warn);
+  color: var(--warn);
+}
+.mj-run-outcome-badges li[data-tone="err"] {
+  border-color: var(--err);
+  color: var(--err);
+}
+.mj-run-outcome-body {
+  display: grid;
+  gap: var(--sp-4);
+  padding: var(--sp-5);
+}
+.mj-run-outcome-facts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(132px, 1fr));
+  gap: 1px;
+  margin: 0;
+  overflow: hidden;
+  border: 1px solid var(--border-0);
+  border-radius: var(--radius-control);
+  background: var(--border-0);
+}
+.mj-run-outcome-facts > div {
+  display: grid;
+  gap: var(--sp-1);
+  min-width: 0;
+  padding: var(--sp-3);
+  background: var(--bg-0);
+}
+.mj-run-outcome-facts dt {
+  color: var(--text-2);
+  font-size: var(--fs-12);
+}
+.mj-run-outcome-facts dd {
+  overflow: hidden;
+  margin: 0;
+  color: var(--text-0);
+  font-family: var(--font-mono);
+  font-size: var(--fs-12);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mj-run-outcome-callout {
+  display: grid;
+  gap: var(--sp-1);
+  padding: var(--sp-3);
+  border: 1px solid currentColor;
+  border-radius: var(--radius-control);
+  color: var(--text-1);
+  background: var(--bg-2);
+}
+.mj-run-outcome[data-tone="warn"] .mj-run-outcome-callout {
+  color: var(--warn);
+}
+.mj-run-outcome[data-tone="err"] .mj-run-outcome-callout {
+  color: var(--err);
+}
+.mj-run-outcome-callout strong {
+  color: currentColor;
+  font-size: var(--fs-12);
+  font-weight: 500;
+}
+.mj-run-outcome-callout p {
+  margin: 0;
+  color: var(--text-1);
+  font-size: var(--fs-12);
+  line-height: 1.5;
+}
+.mj-run-outcome-details {
+  overflow: hidden;
+  border: 1px solid var(--border-0);
+  border-radius: var(--radius-control);
+  color: var(--text-1);
+  font-size: var(--fs-12);
+}
+.mj-run-outcome-details > summary {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  width: 100%;
+  box-sizing: border-box;
+  padding: var(--sp-3);
+  color: var(--text-1);
+  cursor: pointer;
+  list-style: none;
+}
+.mj-run-outcome-details > summary::-webkit-details-marker {
+  display: none;
+}
+.mj-run-outcome-details > summary > span:first-child {
+  color: var(--text-0);
+  font-weight: 500;
+}
+.mj-run-outcome-details > summary > span:last-child {
+  margin-left: auto;
+  color: var(--text-2);
+  font-family: var(--font-mono);
+}
+.mj-run-outcome-details > summary::after {
+  content: "+";
+  color: var(--text-2);
+  font-family: var(--font-mono);
+}
+.mj-run-outcome-details[open] > summary::after {
+  content: "−";
+}
+.mj-run-outcome-details ul {
+  display: grid;
+  gap: var(--sp-2);
+  margin: 0;
+  padding: var(--sp-3);
+  border-top: 1px solid var(--border-0);
+  background: var(--bg-0);
+  list-style: none;
+}
+.mj-run-outcome-details li {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+}
+.mj-run-outcome-details code {
+  padding: 0;
+  color: var(--text-1);
+  background: transparent;
+  font-size: var(--fs-12);
+}
+.mj-run-outcome-check {
+  min-width: 72px;
+  color: var(--text-2);
+  font-family: var(--font-mono);
+  font-size: var(--fs-12);
+}
+.mj-run-outcome-check[data-state="pass"] {
+  color: var(--ok);
+}
+.mj-run-outcome-check[data-state="fail"] {
+  color: var(--err);
+}
+.mj-run-outcome-code pre {
+  max-height: 360px;
+  margin: 0;
+  padding: var(--sp-4);
+  overflow: auto;
+  border: 0;
+  border-top: 1px solid var(--border-0);
+  border-radius: 0;
+  background: var(--bg-0);
+}
+.mj-run-outcome-code pre code {
+  color: var(--text-0);
+  font-family: var(--font-mono);
+  font-size: var(--fs-12);
+  line-height: 1.55;
+  white-space: pre;
+}
+.mj-run-outcome-action {
+  padding: var(--sp-3);
+  border: 1px solid var(--border-0);
+  border-radius: var(--radius-control);
+  background: var(--bg-0);
+}
+@keyframes mj-run-progress-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.3;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .mj-run-progress-live-dot,
+  .mj-run-progress-row[data-state="active"] .mj-run-progress-marker {
+    animation: none;
+  }
+}
+@media (max-width: 640px) {
+  .mj-chat-message--run {
+    width: 100%;
+  }
+  .mj-run-progress-head,
+  .mj-run-outcome-head {
+    align-items: flex-start;
+  }
+  .mj-run-progress-heading strong {
+    white-space: normal;
+  }
+  .mj-run-progress-row {
+    grid-template-columns: var(--sp-5) minmax(0, 1fr);
+  }
+  .mj-run-progress-state {
+    grid-column: 2;
+    justify-self: start;
+  }
+  .mj-run-outcome-head {
+    display: grid;
+    padding: var(--sp-4);
+  }
+  .mj-run-outcome-badges {
+    justify-content: flex-start;
+  }
+  .mj-run-outcome-body {
+    padding: var(--sp-4);
+  }
+  .mj-run-outcome-facts {
+    grid-template-columns: 1fr;
+  }
 }
 .mj-chat-caret {
   display: inline-block;
@@ -3546,7 +4142,10 @@
   justify-content: flex-end;
   gap: var(--sp-2);
 }
-.mj-artifact-code-actions select {
+/* The Run surface's framework picker is the same control as the Vault one and
+ * must not drift into a raw browser select beside it. */
+.mj-artifact-code-actions select,
+.mj-run-code-actions select {
   min-height: 32px;
   padding: 0 var(--sp-2);
   border: 1px solid var(--border-0);
@@ -4982,9 +5581,14 @@ div.mj-rail-row:hover {
   display: grid;
   gap: 2px;
 }
+/* The outcome label column is bounded at both ends. It was `minmax(4ch, auto)`
+   — a floor with no ceiling — so a 20-qubit circuit's 20-character bitstrings
+   grew the column until the bar track it is supposed to label had almost no
+   width left. 12ch keeps the common cases (up to 12 qubits) intact and lets
+   anything wider scroll inside its own cell rather than squeezing the chart. */
 .mj-sim-chart-row {
   display: grid;
-  grid-template-columns: minmax(4ch, auto) 1fr minmax(6ch, auto);
+  grid-template-columns: minmax(4ch, 12ch) 1fr minmax(6ch, auto);
   align-items: center;
   gap: var(--sp-3);
   min-height: 16px;
@@ -4993,6 +5597,8 @@ div.mj-rail-row:hover {
   color: var(--text-1);
   font-family: var(--font-mono);
   font-size: var(--fs-12);
+  overflow-x: auto;
+  white-space: nowrap;
 }
 .mj-sim-chart-row.is-peak code,
 .mj-sim-chart-row.is-peak .mj-sim-chart-value {
@@ -5047,6 +5653,11 @@ div.mj-rail-row:hover {
 }
 .mj-qpu-lane > button {
   justify-self: start;
+}
+.mj-qpu-lane-title {
+  color: var(--text-0);
+  font-size: var(--fs-13);
+  font-weight: 500;
 }
 .mj-qpu-lane p {
   margin: 0;
@@ -6078,6 +6689,49 @@ div.mj-rail-row:hover {
   border-color: var(--accent);
   outline: none;
 }
+/* Settings checkbox with a title and an explanation under it. */
+.mj-account-toggle {
+  display: flex;
+  gap: var(--sp-2);
+  align-items: start;
+  margin-top: var(--sp-3);
+  cursor: pointer;
+}
+.mj-account-toggle input {
+  margin-top: 2px;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+.mj-account-toggle span {
+  display: grid;
+  gap: 2px;
+}
+.mj-account-toggle strong {
+  color: var(--text-0);
+  font-size: var(--fs-13);
+  font-weight: 500;
+}
+.mj-account-toggle small {
+  color: var(--text-2);
+  font-size: var(--fs-12);
+  line-height: 1.5;
+}
+
+/* "Keep in Vault" on a finished run, with the reason it is being asked. */
+.mj-run-keep {
+  display: inline-flex;
+  gap: var(--sp-2);
+  flex-wrap: wrap;
+  align-items: center;
+}
+.mj-run-keep small {
+  color: var(--text-2);
+  font-size: var(--fs-12);
+}
+.mj-run-keep small[role="alert"] {
+  color: var(--err);
+}
+
 .mj-contact-form-wide {
   grid-column: 1 / -1;
 }
@@ -6126,6 +6780,60 @@ div.mj-rail-row:hover {
   font-size: var(--fs-12);
   line-height: 1.5;
 }
+/* Workspaces and members on Settings. One row shape for both lists: a name with
+   a quiet second line, then whatever acts on it, pushed right. */
+.mj-workspace-list {
+  display: grid;
+  margin: var(--sp-4) 0 0;
+  padding: 0;
+  gap: var(--sp-2);
+  list-style: none;
+}
+.mj-workspace-list > li {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: var(--sp-3);
+  border: 1px solid var(--border-0);
+  border-radius: var(--radius-control);
+  background: var(--bg-0);
+}
+/* The workspace you are in, marked by the same accent the nav uses for the page
+   you are on — being in the wrong tenant should look as obvious as being on the
+   wrong page. */
+.mj-workspace-list > li[data-active] {
+  border-color: var(--accent);
+}
+.mj-workspace-list-name {
+  display: grid;
+  flex: 1 1 auto;
+  min-width: 0;
+  gap: 2px;
+}
+.mj-workspace-list-name strong {
+  overflow: hidden;
+  color: var(--text-0);
+  font-size: var(--fs-13);
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mj-workspace-list-name small {
+  overflow: hidden;
+  color: var(--text-2);
+  font-size: var(--fs-12);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mj-workspace-list select {
+  padding: var(--sp-1) var(--sp-2);
+  border: 1px solid var(--border-0);
+  border-radius: var(--radius-control);
+  background: var(--bg-1);
+  color: var(--text-0);
+  font-size: var(--fs-12);
+}
+
 .mj-verification-summary--reference {
   border-left-color: var(--warn);
 }
@@ -6934,41 +7642,69 @@ div.mj-rail-row:hover {
 /* profile popup */
 .mj-sidebar-user-menu {
   position: relative;
+  /* A grid item's default `min-width: auto` is min-content, so without this the
+     menu — and with it the button, the copy, and the name — refuses to shrink
+     below the widest unbreakable word and a long name pushes the account type
+     out past the 256px sidebar. Every ancestor between the footer track and the
+     name has to opt out of that floor for `text-overflow: ellipsis` to fire. */
+  min-width: 0;
 }
 .mj-sidebar-user-menu .mj-sidebar-user {
   width: 100%;
-  border: 0;
+  /* Transparent rather than absent so the open state can colour it in without
+     the 2px layout shift a 0 -> 1px border would cause. */
+  border: 1px solid transparent;
   background: transparent;
   font: inherit;
   text-align: left;
   cursor: pointer;
 }
-.mj-sidebar-user-popover {
+/* Account drawer.
+   Anchored at `bottom: 100%` with no gap, and the trigger below it takes a
+   matching border and a flat top edge while open, so the two read as one panel
+   growing upward out of the button. The previous popover was offset by --sp-1
+   and its container closed on mouseleave, which made that gap a dead zone the
+   pointer could not cross -- the owner's "disconnected and hard to catch". */
+.mj-sidebar-user-drawer {
   position: absolute;
   z-index: 30;
-  bottom: calc(100% + var(--sp-1));
+  bottom: 100%;
   left: 0;
   right: 0;
   display: grid;
+  /* 0fr -> 1fr animates to the panel's natural height without measuring it. */
+  grid-template-rows: 0fr;
+  opacity: 0;
+  pointer-events: none;
+  transition:
+    grid-template-rows 160ms cubic-bezier(0.2, 0.8, 0.2, 1),
+    opacity 120ms ease;
+}
+.mj-sidebar-user-menu[data-open="true"] .mj-sidebar-user-drawer {
+  grid-template-rows: 1fr;
+  opacity: 1;
+  pointer-events: auto;
+}
+.mj-sidebar-user-drawer-panel {
+  /* Both are required for the 0fr row to actually clip its content. The panel
+     carries no border of its own: a border is a min-content contribution, and
+     a 1px one kept the closed row at 1px instead of 0. `align-content: end`
+     pins the items to the bottom of the clip, so the drawer unrolls out of the
+     button rather than appearing from the top of an empty box. */
+  min-height: 0;
+  overflow: hidden;
+  display: grid;
+  align-content: end;
+}
+.mj-sidebar-user-drawer-items {
+  display: grid;
   padding: var(--sp-1);
   border: 1px solid var(--border-0);
-  border-radius: var(--radius-card);
+  border-bottom: 0;
+  border-radius: var(--radius-card) var(--radius-card) 0 0;
   background: var(--bg-1);
 }
-.mj-sidebar-user-popover-name {
-  display: grid;
-  padding: var(--sp-2);
-  border-bottom: 1px solid var(--border-0);
-}
-.mj-sidebar-user-popover-name strong {
-  font-size: var(--fs-13);
-  font-weight: 500;
-}
-.mj-sidebar-user-popover-name small {
-  color: var(--text-2);
-  font-size: var(--fs-12);
-}
-.mj-sidebar-user-popover a {
+.mj-sidebar-user-drawer a {
   display: flex;
   align-items: center;
   gap: var(--sp-2);
@@ -6979,13 +7715,31 @@ div.mj-rail-row:hover {
   font-size: var(--fs-12);
   text-decoration: none;
 }
-.mj-sidebar-user-popover a:hover,
-.mj-sidebar-user-popover a:focus-visible {
+.mj-sidebar-user-drawer a:hover,
+.mj-sidebar-user-drawer a:focus-visible {
   color: var(--text-0);
   background: var(--bg-2);
 }
-.mj-sidebar-user-popover a.is-danger {
+.mj-sidebar-user-drawer a.is-danger {
   color: var(--err);
+}
+.mj-sidebar-user-menu[data-open="true"] .mj-sidebar-user {
+  border-color: var(--border-0);
+  border-top-color: transparent;
+  border-radius: 0 0 var(--radius-card) var(--radius-card);
+  background: var(--bg-1);
+}
+.mj-sidebar-user-menu[data-open="true"] .mj-sidebar-user-caret {
+  transform: rotate(180deg);
+}
+.mj-sidebar-user-caret {
+  transition: transform 160ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+@media (prefers-reduced-motion: reduce) {
+  .mj-sidebar-user-drawer,
+  .mj-sidebar-user-caret {
+    transition: none;
+  }
 }
 
 /* public header sign-out */
@@ -7162,7 +7916,7 @@ div.mj-rail-row:hover {
   fill: var(--text-2);
 }
 
-/* ---------- Atlas VQE section (ADR-0027): merged into /repository, not a
+/* ---------- Atlas VQE section (ADR-0028): merged into /repository, not a
    separate page -- see AtlasContentSwitch. ---------- */
 .mj-atlas-switch-wrap {
   display: grid;
@@ -7247,3 +8001,114 @@ div.mj-rail-row:hover {
   border-bottom: 1px solid var(--border-hairline);
 }
 .mj-vqe-plain-list li:last-child { border-bottom: none; }
+
+/* Help text under a Settings form control, where it describes what the choice
+   means. In the label it read like a caption that kept rewriting itself. */
+.mj-account-profile-form label small {
+  color: var(--text-2);
+  font-size: var(--fs-12);
+  line-height: 1.5;
+}
+
+/* ---------- the invitation notice ----------
+   Sits above the page on every authenticated surface (apps/web/components/
+   invite-notice.tsx). Accent-bordered rather than tinted: it is the same signal
+   the active-workspace row uses, and it says "this is about which tenant you are
+   in" without inventing a colour that means nothing anywhere else. */
+.mj-invite-notices {
+  display: grid;
+  gap: var(--sp-3);
+  margin-bottom: var(--sp-6);
+}
+.mj-invite-notice {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--sp-4);
+  padding: var(--sp-4);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-control);
+  background: var(--bg-1);
+}
+.mj-invite-notice-body {
+  display: grid;
+  flex: 1 1 320px;
+  min-width: 0;
+  gap: var(--sp-1);
+}
+.mj-invite-notice-tag {
+  color: var(--text-2);
+  font-size: var(--fs-12);
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+.mj-invite-notice-headline {
+  margin: 0;
+  color: var(--text-0);
+  font-size: var(--fs-14);
+  font-weight: 500;
+  line-height: 1.45;
+}
+.mj-invite-notice-detail {
+  margin: 0;
+  max-width: 60ch;
+  color: var(--text-1);
+  font-size: var(--fs-13);
+  line-height: 1.55;
+}
+.mj-invite-notice-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-2);
+}
+/* Leaving is text, not a button: it is the destructive choice, and giving it the
+   same weight as "Open it" would put the two one misclick apart. */
+.mj-invite-notice-decline {
+  padding: 0 var(--sp-2);
+  border: 0;
+  color: var(--text-2);
+  background: none;
+  font: inherit;
+  font-size: var(--fs-13);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+.mj-invite-notice-decline:hover {
+  color: var(--err);
+}
+.mj-invite-notice-decline:disabled {
+  cursor: wait;
+  opacity: 0.65;
+}
+.mj-invite-notice-error {
+  flex: 1 1 100%;
+  margin: 0;
+  color: var(--err);
+  font-size: var(--fs-13);
+}
+
+/* The way out of a workspace you were invited to, in the Settings switcher.
+   Text rather than a button for the same reason as the notice's: it must not sit
+   one misclick from Open. */
+.mj-workspace-leave {
+  padding: 0 var(--sp-2);
+  border: 0;
+  color: var(--text-2);
+  background: none;
+  font: inherit;
+  font-size: var(--fs-12);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+.mj-workspace-leave:hover {
+  color: var(--err);
+}
+.mj-workspace-leave:disabled {
+  cursor: wait;
+  opacity: 0.65;
+}

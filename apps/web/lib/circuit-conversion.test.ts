@@ -7,9 +7,11 @@ import {
   convertCircuitSource,
   generatePortableCircuitCode,
   parseInterchangeCircuit,
+  reconstructInterchangeCircuit,
 } from "./circuit-conversion.ts";
+import { MAX_VIEWABLE_QUBITS, MAX_VIEWABLE_STEPS } from "./studio-parse.ts";
 
-test("portable circuits emit non-empty source for all seven framework targets", () => {
+test("portable circuits emit non-empty source for every framework target", () => {
   const generated = generatePortableCircuitCode({
     qubitCount: 2,
     steps: [
@@ -27,6 +29,35 @@ test("portable circuits emit non-empty source for all seven framework targets", 
   assert.match(generated.braket, /circuit\.cnot/);
   assert.match(generated.openqasm3, /c = measure q;/);
   assert.match(generated.pyquil, /MEASURE/);
+  assert.match(generated.qmod, /CX\(q\[0\], q\[1\]\)/);
+});
+
+test("conversion is bounded by the viewing ceiling, not the six-wire canvas", () => {
+  // Written in exactly the portable gate subset the converter supports, and
+  // eight qubits wide: before this bound was separated from the builder's, every
+  // target came back null and Studio opened seven empty tabs for a circuit it
+  // could translate perfectly.
+  const wide = [
+    "from qiskit import QuantumCircuit",
+    "",
+    "qc = QuantumCircuit(8)",
+    "qc.h(0)",
+    ...Array.from({ length: 7 }, (_, index) => `qc.cx(${index}, ${index + 1})`),
+    "qc.measure_all()",
+  ].join("\n");
+
+  const converted = allCircuitConversionResults(wide, "qiskit");
+
+  for (const framework of CIRCUIT_FRAMEWORKS) {
+    assert.ok(converted[framework.key]?.code.trim(), framework.label);
+  }
+  assert.match(converted.openqasm3!.code, /qubit\[8\] q;/);
+  assert.equal(converted.pennylane!.fidelity, "deterministic_subset");
+
+  // ...and the ceiling is still a ceiling: past the viewing width there is no
+  // conversion at all rather than a truncated one.
+  const tooWide = wide.replace("QuantumCircuit(8)", `QuantumCircuit(${MAX_VIEWABLE_QUBITS + 1})`);
+  assert.equal(convertCircuitSource(tooWide, "qiskit", "cirq"), null);
 });
 
 test("OpenQASM standard gates emit direct target source instead of a runtime recipe", () => {
@@ -169,4 +200,61 @@ qubit[2] q;
 h q[0];
 c[0] = measure q;`;
   assert.equal(parseInterchangeCircuit(mixedIndex), null);
+});
+
+function ghzQasm(wires: number): string {
+  return [
+    "OPENQASM 3.0;",
+    "include \"stdgates.inc\";",
+    `bit[${wires}] meas;`,
+    `qubit[${wires}] q;`,
+    "h q[0];",
+    ...Array.from({ length: wires - 1 }, (_, i) => `cx q[${i}], q[${i + 1}];`),
+    ...Array.from({ length: wires }, (_, i) => `meas[${i}] = measure q[${i}];`),
+  ].join("\n");
+}
+
+test("a 26-qubit GHZ reconstructs read-only past the 24-qubit simulation ceiling", () => {
+  // 26q GHZ is the canonical "fails honestly for execution but should be
+  // viewable" circuit — the viewing ceiling is higher than the sim ceiling.
+  const result = reconstructInterchangeCircuit(ghzQasm(26));
+  assert.equal(result.kind, "ok");
+  assert.ok(result.kind === "ok");
+  assert.equal(result.circuit.qubitCount, 26);
+  // parseInterchangeCircuit is the thin wrapper: it draws it too.
+  assert.ok(parseInterchangeCircuit(ghzQasm(26)));
+});
+
+test("a circuit wider than the viewing ceiling reports too_large, not a partial draw", () => {
+  const wide = ghzQasm(MAX_VIEWABLE_QUBITS + 1);
+  const result = reconstructInterchangeCircuit(wide);
+  assert.equal(result.kind, "too_large");
+  assert.ok(result.kind === "too_large");
+  assert.equal(result.qubitCount, MAX_VIEWABLE_QUBITS + 1);
+  // The boolean wrapper still fails closed above the ceiling.
+  assert.equal(parseInterchangeCircuit(wide), null);
+});
+
+test("a decomposed gate set past the step guard reports too_large even when narrow", () => {
+  // Each ccx decomposes into ~15 primitive columns; enough of them exceed the
+  // step guard on only three wires — the guard is about draw cost, not width.
+  const toffoliCount = 40;
+  const deep = [
+    "OPENQASM 3.0;",
+    "include \"stdgates.inc\";",
+    "qubit[3] q;",
+    ...Array.from({ length: toffoliCount }, () => "ccx q[0], q[1], q[2];"),
+  ].join("\n");
+  const result = reconstructInterchangeCircuit(deep);
+  assert.equal(result.kind, "too_large");
+  assert.ok(result.kind === "too_large");
+  assert.ok(result.stepCount > MAX_VIEWABLE_STEPS, `expected > ${MAX_VIEWABLE_STEPS} steps, got ${result.stepCount}`);
+  assert.equal(parseInterchangeCircuit(deep), null);
+});
+
+test("an explicit maxQubits override still narrows the viewer below the default ceiling", () => {
+  // The seed passes no override and gets the wide default; a caller that wants
+  // the old 24-wire behavior can still ask for it.
+  assert.equal(reconstructInterchangeCircuit(ghzQasm(26), { maxQubits: 24 }).kind, "too_large");
+  assert.equal(parseInterchangeCircuit(ghzQasm(26), 24), null);
 });

@@ -14,7 +14,7 @@ Go/No-Goは`docs/atlas/INTEGRITY_REMEDIATION_2026-07-25.md`を参照する。
 特にGitHub Wrapper、外部Repository import/execution、claim reproductionは
 未実装であり、Atlas全体または学術的再現基盤の完成を主張しない。
 
-**Owner Decision amendment (2026-07-27, ADR-0033):** standard-component MVPの
+**Owner Decision amendment (2026-07-27, ADR-0034):** standard-component MVPの
 primary product objectはPaperまたはRepositoryではなく、
 `Component Definition + Component Implementation + Workflow`である。
 GitHub Wrapperはcomponent実装候補とprovenanceを安全に取得するacquisition
@@ -3675,7 +3675,7 @@ IEEE TQE QuantMark publication page
 
 順序を変更しない。
 
-1. ADR-0033でcomponent-first product boundaryを固定する。
+1. ADR-0034でcomponent-first product boundaryを固定する。
 2. Phase 7 S4 durable importerを完成する。
 3. S5-S7を確認済みQiskit、PennyLane、OpenFermion、HamLib sourceへ限定する。
 4. RepositorySnapshot、MetadataAssertion、
