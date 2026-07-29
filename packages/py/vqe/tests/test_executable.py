@@ -235,10 +235,7 @@ def test_cobyla_swap_changes_only_optimizer_and_requires_explicit_settings():
         for role, binding in {
             item.role: item for item in baseline.portable_spec.component_bindings
         }.items()
-        if binding
-        != {
-            item.role: item for item in candidate.portable_spec.component_bindings
-        }[role]
+        if binding != {item.role: item for item in candidate.portable_spec.component_bindings}[role]
     ]
     assert changed_roles == [ComponentType.PARAMETER_OPTIMIZER]
 

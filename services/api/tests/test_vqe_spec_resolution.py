@@ -285,8 +285,7 @@ async def test_owner_deferred_policy_accepts_only_optimizer_changed_private_swap
         binding.role: binding for binding in resolved.scientific_spec.component_bindings
     }
     assert (
-        resolved_by_role[ComponentType.PARAMETER_OPTIMIZER].component_semantic_key
-        == optimizer_key
+        resolved_by_role[ComponentType.PARAMETER_OPTIMIZER].component_semantic_key == optimizer_key
     )
     assert all(
         resolved_by_role[role].component_spec_sha256 == components[role].normalized_spec_sha256

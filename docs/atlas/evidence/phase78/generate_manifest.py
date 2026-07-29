@@ -78,9 +78,7 @@ def _validated_result(framework: str, path: Path) -> dict[str, Any]:
         "iterations": optimization["iterations"],
         "energy_evaluations": optimization["function_evaluations"],
         "gradient_evaluations": optimization.get("gradient_evaluations", 0),
-        "common_protocol_resources": {
-            key: common[key] for key in EXPECTED_RESOURCES
-        },
+        "common_protocol_resources": {key: common[key] for key in EXPECTED_RESOURCES},
         "compilation_protocol_sha256": common["compilation_protocol_sha256"],
         "operation_sequence_sha256": common["operation_sequence_sha256"],
     }
@@ -88,8 +86,7 @@ def _validated_result(framework: str, path: Path) -> dict[str, Any]:
 
 def generate() -> bytes:
     results = {
-        framework: _validated_result(framework, path)
-        for framework, path in REPORT_PATHS.items()
+        framework: _validated_result(framework, path) for framework, path in REPORT_PATHS.items()
     }
     energy_delta = abs(results["qiskit"]["energy_ha"] - results["pennylane"]["energy_ha"])
     if energy_delta > 1e-10:

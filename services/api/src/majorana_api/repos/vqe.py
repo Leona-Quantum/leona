@@ -540,12 +540,8 @@ async def save_component_swap_workflow_draft(
             "upper_bound_float64_hex": "upper_bound_float64_hex",
             "energy_tolerance_float64_hex": "energy_tolerance_float64_hex",
             "max_objective_evaluations": "max_function_evaluations",
-            "initial_trust_region_radius_float64_hex": (
-                "initial_trust_region_radius_float64_hex"
-            ),
-            "final_trust_region_radius_float64_hex": (
-                "final_trust_region_radius_float64_hex"
-            ),
+            "initial_trust_region_radius_float64_hex": ("initial_trust_region_radius_float64_hex"),
+            "final_trust_region_radius_float64_hex": ("final_trust_region_radius_float64_hex"),
             "constraint_tolerance_float64_hex": "constraint_tolerance_float64_hex",
         }
         unsupported_private_configuration = set(dict(migrated.migrated)) - set(
@@ -602,8 +598,7 @@ async def save_component_swap_workflow_draft(
             session,
             slug=f"{slug}-configured-optimizer",
             title=(
-                f"Configured {candidate_definition.display_name} optimizer "
-                "for H2 controlled swap"
+                f"Configured {candidate_definition.display_name} optimizer for H2 controlled swap"
             ),
             family=Algorithm.VQE,
             framework=ContractFramework(evaluator_provider),

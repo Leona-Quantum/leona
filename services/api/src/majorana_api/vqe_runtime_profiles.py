@@ -265,12 +265,8 @@ def _production_profile(
     binding = ExecutionBinding(
         framework=framework,
         provider_versions=candidate.binding.provider_versions,
-        runtime_profile_id=(
-            f"h2-{framework.value}-linux-x86_64-production-v{profile_version}"
-        ),
-        adapter_release_id=(
-            f"majorana-h2-{framework.value}-adapter-{adapter_version}"
-        ),
+        runtime_profile_id=(f"h2-{framework.value}-linux-x86_64-production-v{profile_version}"),
+        adapter_release_id=(f"majorana-h2-{framework.value}-adapter-{adapter_version}"),
         container_digest=digests["registry"],
         container_digest_kind="oci_manifest_digest",
         oci_manifest_digest=digests["registry"],

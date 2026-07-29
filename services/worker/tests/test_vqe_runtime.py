@@ -35,13 +35,9 @@ def test_current_production_profile_is_versioned_without_orphaning_v1_bindings()
     current = production_runtime_profile(Framework.QISKIT)
     assert current.binding.runtime_profile_id.endswith("-production-v2")
     assert current.binding.adapter_release_id.endswith("-adapter-0.3.0")
-    assert current.runtime_payload_source_commit == (
-        "a4c11cf5be8d5235901f1c1399f483e381833d4a"
-    )
+    assert current.runtime_payload_source_commit == ("a4c11cf5be8d5235901f1c1399f483e381833d4a")
 
-    legacy_digest = (
-        "sha256:f2d19903e323da3f60039ac81627ed466f36055b7e157959ed1afe6168e4d992"
-    )
+    legacy_digest = "sha256:f2d19903e323da3f60039ac81627ed466f36055b7e157959ed1afe6168e4d992"
     legacy_binding = current.binding.model_copy(
         update={
             "runtime_profile_id": "h2-qiskit-linux-x86_64-production-v1",
@@ -53,9 +49,7 @@ def test_current_production_profile_is_versioned_without_orphaning_v1_bindings()
 
     resolved = profile_for_binding(legacy_binding)
     assert resolved.binding == legacy_binding
-    assert resolved.runtime_payload_source_commit == (
-        "fae2d2f4d6310a6cbc29cc0fe5ebab20b361ae07"
-    )
+    assert resolved.runtime_payload_source_commit == ("fae2d2f4d6310a6cbc29cc0fe5ebab20b361ae07")
 
 
 @pytest.mark.parametrize(
@@ -148,9 +142,7 @@ def test_cobyla_runtime_report_is_machine_checked_as_private_local_evidence(
     expected_energy_evaluations,
 ):
     profile = candidate_runtime_profile(framework)
-    report = json.loads(
-        (ROOT / "docs" / "atlas" / "evidence" / "phase78" / filename).read_text()
-    )
+    report = json.loads((ROOT / "docs" / "atlas" / "evidence" / "phase78" / filename).read_text())
 
     evidence = build_success_evidence(
         report,
