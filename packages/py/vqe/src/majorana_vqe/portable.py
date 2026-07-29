@@ -359,3 +359,7 @@ def portable_scientific_spec_v03_digest(spec: PortableScientificExperimentSpecV0
 
 def registry_resolution_digest(resolution: RegistryResolution) -> str:
     return _canonical_json_sha256(resolution.model_dump(mode="json"))
+
+
+def registry_resolution_v02_digest(resolution: RegistryResolutionV02) -> str:
+    return _canonical_json_sha256(resolution.model_dump(mode="json"))

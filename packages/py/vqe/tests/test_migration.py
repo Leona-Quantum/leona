@@ -19,6 +19,12 @@ from majorana_vqe.migration import (
     build_h2_fixed_to_uccsd_migration,
 )
 from majorana_vqe.models import ComponentType
+from majorana_vqe.portable import (
+    ComponentRoleBindingV03,
+    PortableScientificExperimentSpecV03,
+    portable_scientific_spec_digest,
+    workflow_semantic_digest_v03,
+)
 
 ROOT = Path(__file__).resolve().parents[4]
 FIXTURE_DIR = ROOT / "docs/atlas/fixtures/h2_sto3g"
@@ -59,10 +65,34 @@ def _identities():
     return baseline, candidate
 
 
+def _project_baseline_to_v03(baseline) -> PortableScientificExperimentSpecV03:
+    """Normalize the legacy baseline into the candidate digest protocol."""
+
+    bindings = [
+        ComponentRoleBindingV03(
+            role=binding.role,
+            component_type=binding.component_type,
+            component_semantic_key=binding.component_semantic_key,
+            component_spec_sha256=binding.component_spec_sha256,
+        )
+        for binding in baseline.portable_spec.component_bindings
+    ]
+    return PortableScientificExperimentSpecV03(
+        workflow_semantic_digest=workflow_semantic_digest_v03(bindings),
+        component_bindings=bindings,
+        dataset_snapshot_sha256=baseline.portable_spec.dataset_snapshot_sha256,
+        initial_parameter_slots=baseline.portable_spec.initial_parameter_slots,
+        seed=baseline.portable_spec.seed,
+    )
+
+
 def _migration() -> ControlledAnsatzMigrationV01:
     baseline, candidate = _identities()
     return build_h2_fixed_to_uccsd_migration(
-        baseline_spec=baseline.portable_spec,
+        baseline_spec=_project_baseline_to_v03(baseline),
+        baseline_source_spec_v02_sha256=portable_scientific_spec_digest(
+            baseline.portable_spec
+        ),
         candidate_spec=candidate.portable_spec,
         baseline_hamiltonian_sha256=baseline.hamiltonian_digest_sha256,
         candidate_hamiltonian_sha256=candidate.hamiltonian_digest_sha256,

@@ -12,6 +12,7 @@ from majorana_vqe.executable import (
     ExecutableCompositionError,
     UccsdAnsatzDefinitionSpec,
     build_h2_uccsd_scientific_identity,
+    load_packaged_h2_uccsd_executable_component_specs,
     validate_h2_uccsd_executable_composition,
 )
 from majorana_vqe.models import ComponentType
@@ -82,3 +83,8 @@ def test_uccsd_identity_fixture_is_current_and_marks_na_roles():
         ComponentType.GROWTH_BATCHING,
     }
     assert len(identity.portable_spec.initial_parameter_slots) == 3
+
+
+def test_packaged_uccsd_seed_matches_authored_fixture():
+    packaged = load_packaged_h2_uccsd_executable_component_specs()
+    assert packaged == _specs()

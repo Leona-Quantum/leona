@@ -16,7 +16,6 @@ from .models import SHA256_HEX_PATTERN, ComponentType, VqeBaseModel
 from .portable import (
     FLOAT64_HEX_PATTERN,
     ParameterSlotValue,
-    PortableScientificExperimentSpec,
     PortableScientificExperimentSpecV03,
 )
 
@@ -76,7 +75,8 @@ class ControlledAnsatzMigrationV01(VqeBaseModel):
         max_length=3,
     )
     preserved_roles: list[ComponentType] = Field(min_length=1, max_length=14)
-    baseline_spec: PortableScientificExperimentSpec
+    baseline_spec: PortableScientificExperimentSpecV03
+    baseline_source_spec_v02_sha256: str = Field(pattern=SHA256_HEX_PATTERN)
     candidate_spec: PortableScientificExperimentSpecV03
     baseline_hamiltonian_sha256: str = Field(pattern=SHA256_HEX_PATTERN)
     candidate_hamiltonian_sha256: str = Field(pattern=SHA256_HEX_PATTERN)
@@ -164,7 +164,8 @@ class ControlledAnsatzMigrationV01(VqeBaseModel):
 
 def build_h2_fixed_to_uccsd_migration(
     *,
-    baseline_spec: PortableScientificExperimentSpec,
+    baseline_spec: PortableScientificExperimentSpecV03,
+    baseline_source_spec_v02_sha256: str,
     candidate_spec: PortableScientificExperimentSpecV03,
     baseline_hamiltonian_sha256: str,
     candidate_hamiltonian_sha256: str,
@@ -196,6 +197,7 @@ def build_h2_fixed_to_uccsd_migration(
         ],
         preserved_roles=preserved,
         baseline_spec=baseline_spec,
+        baseline_source_spec_v02_sha256=baseline_source_spec_v02_sha256,
         candidate_spec=candidate_spec,
         baseline_hamiltonian_sha256=baseline_hamiltonian_sha256,
         candidate_hamiltonian_sha256=candidate_hamiltonian_sha256,

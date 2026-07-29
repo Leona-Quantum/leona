@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from importlib.resources import files
 from pathlib import Path
 from typing import Annotated, Iterable, Literal, Self
 
@@ -30,6 +31,9 @@ from .portable import (
 )
 
 EXECUTABLE_COMPONENT_SCHEMA_VERSION = "0.2.0"
+H2_STO3G_HAMILTONIAN_DIGEST_SHA256 = (
+    "d9dd24eb30011e8ea091759e6f0e25d76d0ccc0661e47748afb85e5f13654d79"
+)
 
 
 class ExecutableSpecBase(VqeBaseModel):
@@ -817,3 +821,30 @@ def load_h2_executable_component_specs(
         return {ComponentType(role): value for role, value in raw.items()}
     except ValueError as exc:
         raise ExecutableCompositionError("fixture contains an unknown component role") from exc
+
+
+def load_packaged_h2_uccsd_executable_component_specs() -> dict[
+    ComponentType,
+    dict[str, object],
+]:
+    """Load the immutable control-plane UCCSD seed bundled in the wheel.
+
+    Callers cannot select a path.  This keeps the server-owned executable
+    configuration identical in editable installs, wheels, and containers.
+    """
+
+    resource = files("majorana_vqe").joinpath(
+        "data",
+        "h2_uccsd_executable_components_v0.3.json",
+    )
+    raw = json.loads(resource.read_text(encoding="utf-8"))
+    if not isinstance(raw, dict) or any(not isinstance(value, dict) for value in raw.values()):
+        raise ExecutableCompositionError("packaged H2 UCCSD component seed is malformed")
+    try:
+        specs = {ComponentType(role): value for role, value in raw.items()}
+    except ValueError as exc:
+        raise ExecutableCompositionError(
+            "packaged H2 UCCSD component seed contains an unknown role"
+        ) from exc
+    validate_h2_uccsd_executable_composition(specs)
+    return specs
