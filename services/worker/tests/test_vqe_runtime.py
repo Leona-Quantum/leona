@@ -6,6 +6,7 @@ import pytest
 
 from majorana_api.vqe_runtime_profiles import (
     candidate_runtime_profile,
+    profile_for_binding,
     production_runtime_profile,
 )
 from majorana_vqe.models import Framework
@@ -28,6 +29,33 @@ def _enable_local_candidate(monkeypatch):
     monkeypatch.setenv("MAJORANA_ENV", "development")
     for name in _CLOUD_MARKERS:
         monkeypatch.delenv(name, raising=False)
+
+
+def test_current_production_profile_is_versioned_without_orphaning_v1_bindings():
+    current = production_runtime_profile(Framework.QISKIT)
+    assert current.binding.runtime_profile_id.endswith("-production-v2")
+    assert current.binding.adapter_release_id.endswith("-adapter-0.3.0")
+    assert current.runtime_payload_source_commit == (
+        "a4c11cf5be8d5235901f1c1399f483e381833d4a"
+    )
+
+    legacy_digest = (
+        "sha256:f2d19903e323da3f60039ac81627ed466f36055b7e157959ed1afe6168e4d992"
+    )
+    legacy_binding = current.binding.model_copy(
+        update={
+            "runtime_profile_id": "h2-qiskit-linux-x86_64-production-v1",
+            "adapter_release_id": "majorana-h2-qiskit-adapter-0.2.0",
+            "container_digest": legacy_digest,
+            "oci_manifest_digest": legacy_digest,
+        }
+    )
+
+    resolved = profile_for_binding(legacy_binding)
+    assert resolved.binding == legacy_binding
+    assert resolved.runtime_payload_source_commit == (
+        "fae2d2f4d6310a6cbc29cc0fe5ebab20b361ae07"
+    )
 
 
 @pytest.mark.parametrize(

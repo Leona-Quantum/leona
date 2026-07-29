@@ -192,7 +192,7 @@ _PROFILES = {
     ),
 }
 
-_PRODUCTION_DIGESTS = {
+_PRODUCTION_DIGESTS_V1 = {
     Framework.QISKIT: {
         "registry": "sha256:f2d19903e323da3f60039ac81627ed466f36055b7e157959ed1afe6168e4d992",
         "platform": "sha256:3461b33911b58018dc30c742e9dceb0f230b33fbe53266097020276f1273cc02",
@@ -222,15 +222,55 @@ _PRODUCTION_DIGESTS = {
 }
 
 
-def _production_profile(framework: Framework) -> ProductionRuntimeProfile:
+_PRODUCTION_DIGESTS = {
+    Framework.QISKIT: {
+        "registry": "sha256:17a1ee0690ce768a076c370ee17c36de5f536ff4b61d8ebe4ae43b961a277b76",
+        "platform": "sha256:e45c84d49ba168eb88424c3707fd4c8bbd7e9934d397866ab838e4199a04b911",
+        "attestation": "sha256:d507ed6ce24f36212f1fd8443b21c3a7756617071ee33fe0d77a12d5368bbc69",
+        "config": "sha256:f186b8fb15d07b56111eb956124102abbf642276f137aeab7e2a0a215a7957c1",
+        "sbom": "63449e1f16821b0be46a7d188c326edcc5605da60cdc28da735fb2233f9dc393",
+        "provenance": "287a69296c77a241373e5436f6b8916899c18cc4f27410f979a67c88c358314d",
+        "github_attestation_id": "37673517",
+        "github_attestation_url": "https://github.com/EshMis/majorana/attestations/37673517",
+        "source_commit": "a4c11cf5be8d5235901f1c1399f483e381833d4a",
+        "dockerfile": "1c292a4e33cf09c03ceba899d855c16e7b22005fef87af4722099e99e70029aa",
+        "entrypoint": "dce23e808e3b038c51fe7d0a8141edb8330246c6350c302b42be0b0040a6d92d",
+    },
+    Framework.PENNYLANE: {
+        "registry": "sha256:e29149db8efb338c4dd82879909ad8dd4928174309bc0b9fc1b7db0ef2a21930",
+        "platform": "sha256:0de23bc6318644b83732bbe02f24ebf7834756d3d9f023a8685f6e11cb994cf1",
+        "attestation": "sha256:6ae37d53c2c749f2555bcb05a694fd589f0bbd332f4b6d59251c8f9f0986360a",
+        "config": "sha256:7c146e505e446c01832fd708fea2dfa6942c9682a8b7f5694339ee1c3106592f",
+        "sbom": "b4d1f654f30fe6f7ca6d83f1d4d2fa4a0c91ce42088353a3d85b672cbc4b7932",
+        "provenance": "9c5bdc7fd486b425f710d3ccad6b51d02eb53eeadd142ae724272d2c688dd22d",
+        "github_attestation_id": "37673489",
+        "github_attestation_url": "https://github.com/EshMis/majorana/attestations/37673489",
+        "source_commit": "a4c11cf5be8d5235901f1c1399f483e381833d4a",
+        "dockerfile": "1c292a4e33cf09c03ceba899d855c16e7b22005fef87af4722099e99e70029aa",
+        "entrypoint": "9d771abbefc369ac8f5c7e868bd00d551f637171dcbe158b70507b590890e671",
+    },
+}
+
+
+def _production_profile(
+    framework: Framework,
+    *,
+    digests_by_framework: dict[Framework, dict[str, str]],
+    profile_version: int,
+    adapter_version: str,
+) -> ProductionRuntimeProfile:
     candidate = _PROFILES[framework]
-    digests = _PRODUCTION_DIGESTS[framework]
+    digests = digests_by_framework[framework]
     repository = f"ghcr.io/eshmis/majorana-vqe-{framework.value}"
     binding = ExecutionBinding(
         framework=framework,
         provider_versions=candidate.binding.provider_versions,
-        runtime_profile_id=f"h2-{framework.value}-linux-x86_64-production-v1",
-        adapter_release_id=candidate.binding.adapter_release_id,
+        runtime_profile_id=(
+            f"h2-{framework.value}-linux-x86_64-production-v{profile_version}"
+        ),
+        adapter_release_id=(
+            f"majorana-h2-{framework.value}-adapter-{adapter_version}"
+        ),
         container_digest=digests["registry"],
         container_digest_kind="oci_manifest_digest",
         oci_manifest_digest=digests["registry"],
@@ -263,7 +303,24 @@ def _production_profile(framework: Framework) -> ProductionRuntimeProfile:
     )
 
 
-_PRODUCTION_PROFILES = {framework: _production_profile(framework) for framework in Framework}
+_LEGACY_PRODUCTION_PROFILES = {
+    framework: _production_profile(
+        framework,
+        digests_by_framework=_PRODUCTION_DIGESTS_V1,
+        profile_version=1,
+        adapter_version="0.2.0",
+    )
+    for framework in Framework
+}
+_PRODUCTION_PROFILES = {
+    framework: _production_profile(
+        framework,
+        digests_by_framework=_PRODUCTION_DIGESTS,
+        profile_version=2,
+        adapter_version="0.3.0",
+    )
+    for framework in Framework
+}
 
 
 def candidate_runtime_profile(framework: Framework) -> CandidateRuntimeProfile:
@@ -290,6 +347,7 @@ def profile_for_binding(
     candidates = (
         _PROFILES.get(binding.framework),
         _PRODUCTION_PROFILES.get(binding.framework),
+        _LEGACY_PRODUCTION_PROFILES.get(binding.framework),
     )
     for profile in candidates:
         if profile is not None and profile.binding == binding:

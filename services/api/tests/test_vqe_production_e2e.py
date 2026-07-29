@@ -99,7 +99,7 @@ async def _execute_and_finish(
 ) -> dict:
     response = await client.post(
         f"/v1/vqe/experiments/{experiment_id}/executions",
-        headers={"Idempotency-Key": f"phase76-s12-execution-{label}-{framework}"},
+        headers={"Idempotency-Key": f"phase78-execution-{label}-{framework}"},
         json={
             "requested_capability": "h2_sto3g_actual_vqe_v1",
             "preferred_framework": framework,
@@ -168,7 +168,7 @@ async def test_workos_contract_postgres_and_real_oci_runtime_end_to_end():
     app.state.session_factory = factory
     headers = {
         "Authorization": (
-            f"Bearer {_token(private_key, issuer, session_id='session_phase76_s12_first')}"
+            f"Bearer {_token(private_key, issuer, session_id='session_phase78_first')}"
         )
     }
 
@@ -184,7 +184,7 @@ async def test_workos_contract_postgres_and_real_oci_runtime_end_to_end():
 
             baseline_response = await client.post(
                 "/v1/vqe/experiments",
-                headers={"Idempotency-Key": "phase76-s12-baseline-experiment"},
+                headers={"Idempotency-Key": "phase78-baseline-experiment"},
                 json={"workflow_artifact_version_id": os.environ["MAJORANA_VQE_E2E_WORKFLOW_ID"]},
             )
             assert baseline_response.status_code == 201, baseline_response.text
@@ -195,22 +195,22 @@ async def test_workos_contract_postgres_and_real_oci_runtime_end_to_end():
                 params={"component_type": "parameter_optimizer", "limit": 200},
             )
             assert components_response.status_code == 200, components_response.text
-            slsqp = next(
+            cobyla = next(
                 item
                 for item in components_response.json()["components"]
-                if item["semantic_key"] == "optimizer.slsqp.v1"
+                if item["semantic_key"] == "optimizer.cobyla.v1"
             )
             swap_response = await client.post(
                 "/v1/atlas/workflows/swaps",
-                headers={"Idempotency-Key": "phase76-s12-slsqp-swap"},
+                headers={"Idempotency-Key": "phase78-cobyla-swap"},
                 json={
                     "baseline_workflow_artifact_version_id": os.environ[
                         "MAJORANA_VQE_E2E_WORKFLOW_ID"
                     ],
                     "baseline_template_key": "workflow.h2.fixed_excitation.v1",
                     "changed_role": "parameter_optimizer",
-                    "candidate_component_semantic_key": "optimizer.slsqp.v1",
-                    "candidate_component_spec_sha256": slsqp["normalized_spec_sha256"],
+                    "candidate_component_semantic_key": "optimizer.cobyla.v1",
+                    "candidate_component_spec_sha256": cobyla["normalized_spec_sha256"],
                     "configuration": {},
                     "evaluator_provider": "qiskit",
                 },
@@ -222,7 +222,7 @@ async def test_workos_contract_postgres_and_real_oci_runtime_end_to_end():
 
             candidate_response = await client.post(
                 "/v1/vqe/experiments",
-                headers={"Idempotency-Key": "phase76-s12-candidate-experiment"},
+                headers={"Idempotency-Key": "phase78-candidate-experiment"},
                 json={"workflow_artifact_version_id": swap["workflow_artifact_version_id"]},
             )
             assert candidate_response.status_code == 201, candidate_response.text
@@ -252,7 +252,7 @@ async def test_workos_contract_postgres_and_real_oci_runtime_end_to_end():
             }
             comparison_response = await client.post(
                 "/v1/vqe/controlled-comparisons",
-                headers={"Idempotency-Key": "phase76-s12-controlled-comparison"},
+                headers={"Idempotency-Key": "phase78-controlled-comparison"},
                 json={
                     "baseline_workflow_artifact_version_id": os.environ[
                         "MAJORANA_VQE_E2E_WORKFLOW_ID"
@@ -261,7 +261,7 @@ async def test_workos_contract_postgres_and_real_oci_runtime_end_to_end():
                     "changed_role": "parameter_optimizer",
                     "fixed_component_digests": fixed_component_digests,
                     "baseline_configuration": {"algorithm": "scipy_minimize_scalar_bounded"},
-                    "candidate_configuration": {"algorithm": "scipy_slsqp"},
+                    "candidate_configuration": {"algorithm": "scipy_cobyla"},
                     "metric_protocol_sha256": fixed_component_digests["evaluation_protocol"],
                     "budget_protocol_sha256": fixed_component_digests["stopping_protocol"],
                 },
@@ -292,15 +292,15 @@ async def test_workos_contract_postgres_and_real_oci_runtime_end_to_end():
 
             negative_response = await client.post(
                 "/v1/atlas/workflows/swaps",
-                headers={"Idempotency-Key": "phase76-s12-negative-swap"},
+                headers={"Idempotency-Key": "phase78-negative-swap"},
                 json={
                     "baseline_workflow_artifact_version_id": os.environ[
                         "MAJORANA_VQE_E2E_WORKFLOW_ID"
                     ],
                     "baseline_template_key": "workflow.h2.fixed_excitation.v1",
                     "changed_role": "parameter_optimizer",
-                    "candidate_component_semantic_key": "optimizer.slsqp.v1",
-                    "candidate_component_spec_sha256": slsqp["normalized_spec_sha256"],
+                    "candidate_component_semantic_key": "optimizer.cobyla.v1",
+                    "candidate_component_spec_sha256": cobyla["normalized_spec_sha256"],
                     "configuration": {"max_objective_evaluations": "1"},
                     "evaluator_provider": "qiskit",
                 },
@@ -309,7 +309,7 @@ async def test_workos_contract_postgres_and_real_oci_runtime_end_to_end():
 
         reopened_headers = {
             "Authorization": (
-                f"Bearer {_token(private_key, issuer, session_id='session_phase76_s12_second')}"
+                f"Bearer {_token(private_key, issuer, session_id='session_phase78_second')}"
             )
         }
         async with httpx.AsyncClient(
@@ -345,10 +345,10 @@ async def test_workos_contract_postgres_and_real_oci_runtime_end_to_end():
 
         evidence = {
             "schema_version": "1.0.0",
-            "kind": "phase76_s12_private_ci_e2e",
+            "kind": "phase78_cobyla_private_ci_e2e",
             "source_commit": os.environ.get("GITHUB_SHA"),
             "workos_auth": "synthetic_contract_only",
-            "database": "disposable_neon_branch",
+            "database": "disposable_postgresql_17",
             "runtime_host": "github_actions_dedicated_docker",
             "baseline_workflow_artifact_version_id": os.environ["MAJORANA_VQE_E2E_WORKFLOW_ID"],
             "candidate_workflow_artifact_version_id": swap["workflow_artifact_version_id"],

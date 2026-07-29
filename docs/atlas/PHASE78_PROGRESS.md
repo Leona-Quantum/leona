@@ -14,7 +14,7 @@ remain deferred until this slice closes.
 - S3 Registry/API/worker: complete locally
 - S4 component-first UI: complete locally
 - S5 verification/evidence: complete for private macOS/arm64 adapter evidence
-- S6 remote reproducibility: pending
+- S6 remote reproducibility: OCI publish complete; private E2E pending
 
 ## Local verification
 
@@ -48,14 +48,29 @@ resource protocol, and rejects an attempted SLSQP reinterpretation.
 
 ## Remote gate
 
-The currently configured production OCI digests predate the COBYLA adapter.
-Therefore COBYLA must remain non-qualified until all of the following occur:
+The source payload was frozen at
+`a4c11cf5be8d5235901f1c1399f483e381833d4a` and the two Linux/amd64 images
+were built, SBOM-attached, provenance-attested, and published successfully by
+[GitHub Actions run 30427673977](https://github.com/EshMis/majorana/actions/runs/30427673977).
 
-1. commit the exact runtime payload;
-2. build and attest new Linux/amd64 images from that commit;
-3. bind the returned immutable OCI digests and attestations;
-4. run the private PostgreSQL + WorkOS-contract + real-OCI E2E;
-5. record the exact GitHub Actions runs and evidence artifacts.
+- Qiskit OCI index:
+  `sha256:17a1ee0690ce768a076c370ee17c36de5f536ff4b61d8ebe4ae43b961a277b76`
+- PennyLane OCI index:
+  `sha256:e29149db8efb338c4dd82879909ad8dd4928174309bc0b9fc1b7db0ef2a21930`
+
+The immutable publish records are stored in:
+
+- `docs/atlas/evidence/phase78/qiskit_oci_publish.json`;
+- `docs/atlas/evidence/phase78/pennylane_oci_publish.json`.
+
+The prior production-v1 profiles remain resolvable for historical execution
+bindings. New executions select production-v2 with adapter release 0.3.0.
+
+COBYLA must remain a private qualification candidate until the remaining
+remote gate succeeds:
+
+1. run the private PostgreSQL + WorkOS-contract + real-OCI E2E;
+2. record the exact GitHub Actions run and evidence artifact.
 
 ## Claim boundary
 

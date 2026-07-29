@@ -67,21 +67,21 @@ jobs:
           echo "MAJORANA_VQE_E2E_WORKFLOW_ID=$workflow_id" >> "$GITHUB_ENV"
       - name: pre-provision approved OCI digests
         run: |
-          docker pull --platform linux/amd64 ghcr.io/eshmis/majorana-vqe-qiskit@sha256:f2d19903e323da3f60039ac81627ed466f36055b7e157959ed1afe6168e4d992
-          docker pull --platform linux/amd64 ghcr.io/eshmis/majorana-vqe-pennylane@sha256:da0e2caa3ac106c6627a1f9f166f9b4213ce7fef8b3145263904e3df7b399c69
+          docker pull --platform linux/amd64 ghcr.io/eshmis/majorana-vqe-qiskit@sha256:17a1ee0690ce768a076c370ee17c36de5f536ff4b61d8ebe4ae43b961a277b76
+          docker pull --platform linux/amd64 ghcr.io/eshmis/majorana-vqe-pennylane@sha256:e29149db8efb338c4dd82879909ad8dd4928174309bc0b9fc1b7db0ef2a21930
       - name: WorkOS JWT contract → isolated PostgreSQL → real OCI runtime E2E
         env:
           DATABASE_URL: postgresql://pg:pg@localhost:5432/majorana_vqe_e2e
           MAJORANA_ENV: production
           MAJORANA_VQE_RUNTIME_HOST: dedicated
           MAJORANA_RUN_VQE_PRODUCTION_E2E: "1"
-          MAJORANA_VQE_E2E_EVIDENCE_PATH: /tmp/phase76-s12-private-ci-e2e.json
+          MAJORANA_VQE_E2E_EVIDENCE_PATH: /tmp/phase78-cobyla-private-ci-e2e.json
         run: uv run pytest services/api/tests/test_vqe_production_e2e.py -q
       - name: upload redacted private E2E evidence
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: phase76-s12-private-ci-e2e-${{ github.sha }}
-          path: /tmp/phase76-s12-private-ci-e2e.json
+          name: phase78-cobyla-private-ci-e2e-${{ github.sha }}
+          path: /tmp/phase78-cobyla-private-ci-e2e.json
           if-no-files-found: error
           retention-days: 30

@@ -1,0 +1,18 @@
+{
+  "schema_version": "2.0.0",
+  "framework": "pennylane",
+  "source_commit": "a4c11cf5be8d5235901f1c1399f483e381833d4a",
+  "image": "ghcr.io/eshmis/majorana-vqe-pennylane@sha256:e29149db8efb338c4dd82879909ad8dd4928174309bc0b9fc1b7db0ef2a21930",
+  "index_digest": "sha256:e29149db8efb338c4dd82879909ad8dd4928174309bc0b9fc1b7db0ef2a21930",
+  "platform": "linux/amd64",
+  "platform_manifest_digest": "sha256:0de23bc6318644b83732bbe02f24ebf7834756d3d9f023a8685f6e11cb994cf1",
+  "image_config_digest": "sha256:7c146e505e446c01832fd708fea2dfa6942c9682a8b7f5694339ee1c3106592f",
+  "buildkit_attestation_manifest_digests": [
+    "sha256:6ae37d53c2c749f2555bcb05a694fd589f0bbd332f4b6d59251c8f9f0986360a"
+  ],
+  "sbom_sha256": "b4d1f654f30fe6f7ca6d83f1d4d2fa4a0c91ce42088353a3d85b672cbc4b7932",
+  "provenance_sha256": "9c5bdc7fd486b425f710d3ccad6b51d02eb53eeadd142ae724272d2c688dd22d",
+  "github_attestation_id": "37673489",
+  "github_attestation_url": "https://github.com/EshMis/majorana/attestations/37673489",
+  "workflow_run_url": "https://github.com/EshMis/majorana/actions/runs/30427673977"
+}
