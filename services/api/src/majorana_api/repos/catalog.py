@@ -928,11 +928,42 @@ async def get_publication_readiness(
     return await _artifact_publication_readiness(session, artifact=artifact)
 
 
+def _public_catalog_predicate(workspace_id: uuid.UUID) -> list[Any]:
+    """The accepted+public filter, shared by the page query and its count.
+
+    Kept in one place because a count that does not match the rows it claims to
+    describe is worse than no count at all: the web app compares the two to
+    decide whether it has the whole corpus (see repository-source.ts).
+    """
+    return [
+        Artifact.workspace_id == workspace_id,
+        Artifact.deleted_at.is_(None),
+        Artifact.review_state == ReviewState.ACCEPTED,
+        Artifact.publication_state == PublicationState.PUBLIC,
+    ]
+
+
+async def count_public_catalog_entries(
+    scope: Scope,
+    session: AsyncSession,
+    *,
+    authority: CatalogAuthority,
+) -> int:
+    """How many entries the unpaginated listing would return."""
+    workspace = await get_catalog_workspace(scope, session, authority=authority)
+    stmt = (
+        select(func.count()).select_from(Artifact).where(*_public_catalog_predicate(workspace.id))
+    )
+    return int((await session.execute(stmt)).scalar_one())
+
+
 async def list_public_catalog_entries(
     scope: Scope,
     session: AsyncSession,
     *,
     authority: CatalogAuthority,
+    limit: int | None = None,
+    offset: int = 0,
 ) -> list[PublicCatalogEntry]:
     """Anonymous-safe listing of accepted+public catalog records (Step 6).
 
@@ -942,6 +973,17 @@ async def list_public_catalog_entries(
     review_state='accepted', publication_state='public', and not soft-deleted
     are returned — the exact set a reviewer published. Provenance and the rich
     presentation `record` come from the pinned import source at read time.
+
+    `limit`/`offset` bound the *database* read, not just the response. Bounding
+    only the response would leave the original complaint intact: this route read
+    the whole table on every anonymous request.
+
+    Offset rather than a keyset cursor, unlike list_artifacts: the ordering key
+    here is `coalesce(upstream_identity, slug)`, which nothing enforces as
+    unique, and a keyset over a non-unique key silently drops rows. Offset's own
+    weakness — drift when rows are inserted mid-pagination — costs nothing on
+    this table, whose only writer is an operator running the publication CLI by
+    hand.
     """
     workspace = await get_catalog_workspace(scope, session, authority=authority)
     stmt = (
@@ -958,14 +1000,13 @@ async def list_public_catalog_entries(
         .join(ArtifactVersion, ArtifactVersion.id == Artifact.current_version_id)
         .outerjoin(ImportItem, ImportItem.resulting_artifact_id == Artifact.id)
         .outerjoin(ImportJob, ImportJob.id == ImportItem.import_job_id)
-        .where(
-            Artifact.workspace_id == workspace.id,
-            Artifact.deleted_at.is_(None),
-            Artifact.review_state == ReviewState.ACCEPTED,
-            Artifact.publication_state == PublicationState.PUBLIC,
-        )
+        .where(*_public_catalog_predicate(workspace.id))
         .order_by(func.coalesce(ImportItem.upstream_identity, Artifact.slug))
     )
+    if offset:
+        stmt = stmt.offset(offset)
+    if limit is not None:
+        stmt = stmt.limit(limit)
     rows = (await session.execute(stmt)).all()
     return [
         build_public_catalog_entry(
