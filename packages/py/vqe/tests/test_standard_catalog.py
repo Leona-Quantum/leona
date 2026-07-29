@@ -136,6 +136,21 @@ def test_configuration_migration_never_silently_discards_fields():
     assert result.requires_explicit_acceptance is True
 
 
+def test_cobyla_configuration_keeps_trust_region_distinct_from_energy_tolerance():
+    configuration = (
+        ("energy_tolerance_float64_hex", "3d719799812dea11"),
+        ("final_trust_region_radius_float64_hex", "3e45798ee2308c3a"),
+        ("constraint_tolerance_float64_hex", "3d719799812dea11"),
+    )
+    result = migrate_selection_configuration(
+        configuration,
+        candidate_component_key="optimizer.cobyla.v1",
+    )
+    assert result.migrated == configuration
+    assert result.dropped == ()
+    assert result.requires_explicit_acceptance is False
+
+
 def test_missing_and_wrong_role_components_fail_closed():
     baseline = workflow_by_key("workflow.h2.fixed_excitation.v1")
     wrong = StandardWorkflowTemplate(

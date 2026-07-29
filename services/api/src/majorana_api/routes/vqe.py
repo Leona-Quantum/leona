@@ -103,7 +103,10 @@ class CreateWorkflowSwapRequest(BaseModel):
     baseline_workflow_artifact_version_id: uuid.UUID
     baseline_template_key: Literal["workflow.h2.fixed_excitation.v1"]
     changed_role: Literal["parameter_optimizer"]
-    candidate_component_semantic_key: Literal["optimizer.slsqp.v1"]
+    candidate_component_semantic_key: Literal[
+        "optimizer.slsqp.v1",
+        "optimizer.cobyla.v1",
+    ]
     candidate_component_spec_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
     configuration: dict[str, str] = Field(default_factory=dict, max_length=16)
     evaluator_provider: Literal["qiskit", "pennylane"]

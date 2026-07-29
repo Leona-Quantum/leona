@@ -9,7 +9,7 @@ from optimizer_protocol import ObjectiveBudgetExceeded, OptimizerProtocol, optim
 
 @pytest.mark.parametrize(
     "algorithm",
-    ["scipy_minimize_scalar_bounded", "scipy_slsqp"],
+    ["scipy_minimize_scalar_bounded", "scipy_slsqp", "scipy_cobyla"],
 )
 def test_optimizers_share_bounds_and_recover_quadratic_minimum(algorithm: str) -> None:
     outcome = optimize_one_parameter(
@@ -53,9 +53,25 @@ def test_deterministic_replay_has_identical_trajectory() -> None:
     def objective(theta: float) -> float:
         return (theta + 0.125) ** 2
 
-    left = optimize_one_parameter(objective, algorithm="scipy_slsqp")
-    right = optimize_one_parameter(objective, algorithm="scipy_slsqp")
-    assert left == right
+    for algorithm in ("scipy_slsqp", "scipy_cobyla"):
+        left = optimize_one_parameter(objective, algorithm=algorithm)
+        right = optimize_one_parameter(objective, algorithm=algorithm)
+        assert left == right
+
+
+def test_cobyla_tolerances_are_not_energy_tolerance_aliases() -> None:
+    protocol = OptimizerProtocol(
+        energy_tolerance=1.0e-3,
+        cobyla_final_trust_region_radius=1.0e-8,
+        cobyla_constraint_tolerance=1.0e-12,
+    )
+    outcome = optimize_one_parameter(
+        lambda theta: (theta - 0.25) ** 2,
+        algorithm="scipy_cobyla",
+        protocol=protocol,
+    )
+    assert outcome.success
+    assert math.isclose(outcome.final_parameter, 0.25, abs_tol=1e-5)
 
 
 def test_wall_time_limit_fails_closed(monkeypatch: pytest.MonkeyPatch) -> None:

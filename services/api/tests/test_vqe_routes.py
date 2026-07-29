@@ -129,6 +129,23 @@ async def test_create_workflow_swap_passes_only_bounded_owner_choices(monkeypatc
     assert "package_version" not in captured
 
 
+def test_workflow_swap_request_accepts_only_admitted_private_optimizers():
+    common = {
+        "baseline_workflow_artifact_version_id": uuid.uuid4(),
+        "baseline_template_key": "workflow.h2.fixed_excitation.v1",
+        "changed_role": "parameter_optimizer",
+        "candidate_component_spec_sha256": "b" * 64,
+        "configuration": {},
+        "evaluator_provider": "pennylane",
+    }
+    for semantic_key in ("optimizer.slsqp.v1", "optimizer.cobyla.v1"):
+        request = vqe_routes.CreateWorkflowSwapRequest(
+            **common,
+            candidate_component_semantic_key=semantic_key,
+        )
+        assert request.candidate_component_semantic_key == semantic_key
+
+
 async def test_capabilities_reports_the_h2_capability_as_unavailable():
     response = await vqe_routes.vqe_capabilities(scope=object())
     assert {status.capability for status in response.capabilities} == {

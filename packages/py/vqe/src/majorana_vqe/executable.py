@@ -142,7 +142,11 @@ class GrowthProtocolSpec(ExecutableSpecBase):
 
 class OptimizerSpec(ExecutableSpecBase):
     kind: Literal["optimizer"]
-    algorithm: Literal["scipy_minimize_scalar_bounded", "scipy_slsqp"]
+    algorithm: Literal[
+        "scipy_minimize_scalar_bounded",
+        "scipy_slsqp",
+        "scipy_cobyla",
+    ]
     provider: Literal["scipy"]
     provider_version: str = Field(min_length=1, max_length=50)
     initial_point_policy: Literal["component_parameter_slot_defaults"]
@@ -151,6 +155,35 @@ class OptimizerSpec(ExecutableSpecBase):
     energy_tolerance_float64_hex: str = Field(pattern=FLOAT64_HEX_PATTERN)
     max_function_evaluations: int = Field(gt=0, le=100_000)
     deterministic: Literal[True]
+    initial_trust_region_radius_float64_hex: str | None = Field(
+        default=None,
+        pattern=FLOAT64_HEX_PATTERN,
+    )
+    final_trust_region_radius_float64_hex: str | None = Field(
+        default=None,
+        pattern=FLOAT64_HEX_PATTERN,
+    )
+    constraint_tolerance_float64_hex: str | None = Field(
+        default=None,
+        pattern=FLOAT64_HEX_PATTERN,
+    )
+
+    @model_validator(mode="after")
+    def _algorithm_specific_fields_are_explicit(self) -> Self:
+        cobyla_fields = (
+            self.initial_trust_region_radius_float64_hex,
+            self.final_trust_region_radius_float64_hex,
+            self.constraint_tolerance_float64_hex,
+        )
+        if self.algorithm == "scipy_cobyla":
+            if any(value is None for value in cobyla_fields):
+                raise ValueError(
+                    "COBYLA requires explicit initial/final trust-region radii "
+                    "and constraint tolerance"
+                )
+        elif any(value is not None for value in cobyla_fields):
+            raise ValueError("COBYLA-specific settings are forbidden for other optimizers")
+        return self
 
 
 class CompressionProtocolSpec(ExecutableSpecBase):
@@ -294,9 +327,14 @@ H2_SLSQP_SEMANTIC_KEYS: dict[ComponentType, str] = {
     **H2_BASELINE_SEMANTIC_KEYS,
     ComponentType.PARAMETER_OPTIMIZER: "optimizer.slsqp.v1",
 }
+H2_COBYLA_SEMANTIC_KEYS: dict[ComponentType, str] = {
+    **H2_BASELINE_SEMANTIC_KEYS,
+    ComponentType.PARAMETER_OPTIMIZER: "optimizer.cobyla.v1",
+}
 H2_SUPPORTED_SEMANTIC_KEY_SETS = (
     H2_BASELINE_SEMANTIC_KEYS,
     H2_SLSQP_SEMANTIC_KEYS,
+    H2_COBYLA_SEMANTIC_KEYS,
 )
 
 

@@ -107,6 +107,56 @@ def test_slsqp_runtime_report_requires_matching_scientific_selection(framework, 
         )
 
 
+@pytest.mark.parametrize(
+    ("framework", "filename", "expected_energy_evaluations"),
+    [
+        (Framework.QISKIT, "qiskit_cobyla_local.json", 42),
+        (Framework.PENNYLANE, "pennylane_cobyla_local.json", 43),
+    ],
+)
+def test_cobyla_runtime_report_is_machine_checked_as_private_local_evidence(
+    framework,
+    filename,
+    expected_energy_evaluations,
+):
+    profile = candidate_runtime_profile(framework)
+    report = json.loads(
+        (ROOT / "docs" / "atlas" / "evidence" / "phase78" / filename).read_text()
+    )
+
+    evidence = build_success_evidence(
+        report,
+        binding=profile.binding,
+        scientific_spec_sha256="1" * 64,
+        registry_resolution_sha256="2" * 64,
+        ansatz_semantic_digest="3" * 64,
+        seed=0,
+        expected_optimizer_algorithm="scipy_cobyla",
+    )
+
+    assert evidence.absolute_error_ha <= 1e-10
+    assert evidence.final_state_fidelity >= 1 - 1e-10
+    assert evidence.optimizer_work.energy_evaluations == expected_energy_evaluations
+    assert evidence.optimizer_work.gradient_evaluations == 0
+    common = evidence.resources[1]
+    assert (common.two_qubit_gate_count, common.depth, common.gate_count) == (
+        48,
+        83,
+        152,
+    )
+
+    with pytest.raises(VqeRuntimeError, match="optimizer algorithm"):
+        build_success_evidence(
+            report,
+            binding=profile.binding,
+            scientific_spec_sha256="1" * 64,
+            registry_resolution_sha256="2" * 64,
+            ansatz_semantic_digest="3" * 64,
+            seed=0,
+            expected_optimizer_algorithm="scipy_slsqp",
+        )
+
+
 def test_runtime_report_rejects_framework_drift():
     profile = candidate_runtime_profile(Framework.QISKIT)
     report = json.loads((RAW / "qiskit_vqe_v0.2.json").read_text())

@@ -87,7 +87,7 @@ const COPY = {
     providerUnavailable: "No implementation binding is recorded",
     saveSwap: "Save controlled swap in Studio",
     swapQualification:
-      "The SLSQP definition is experimental and its adapter has Linux evidence, but the registry runtime is not qualified. The private workflow can be saved; execution remains blocked.",
+      "The selected optimizer is an owner-waived private qualification candidate. Publication and performance claims remain blocked.",
   },
   ja: {
     title: "VQE Methods",
@@ -133,7 +133,7 @@ const COPY = {
     providerUnavailable: "実装bindingが記録されていません",
     saveSwap: "統制された交換をStudioへ保存",
     swapQualification:
-      "SLSQP定義は実験的で、adapterにはLinux実行証拠がありますが、Registry runtimeは未認定です。private workflowとして保存できますが、実行は引き続き停止されます。",
+      "選択したoptimizerはowner-waivedのprivate認定候補です。公開と性能主張は引き続き停止されます。",
   },
 } as const;
 
@@ -287,8 +287,9 @@ export function VqeMethodsBrowser({
     typeof baseline.registry_semantic_key === "string" &&
     changedRoles.length === 1 &&
     changedRoles[0] === "parameter_optimizer" &&
-    currentByRole.get("parameter_optimizer")?.component_semantic_key ===
-      "optimizer.slsqp.v1";
+    new Set(["optimizer.slsqp.v1", "optimizer.cobyla.v1"]).has(
+      currentByRole.get("parameter_optimizer")?.component_semantic_key ?? "",
+    );
 
   function selectTemplate(nextKey: string) {
     const next = catalog.workflows.find((workflow) => workflow.workflow_key === nextKey);
@@ -579,7 +580,9 @@ export function VqeMethodsBrowser({
                   baseline.registry_semantic_key ?? "",
                 )}&vqeProvider=${encodeURIComponent(
                   executionProvider,
-                )}&vqeSwap=${encodeURIComponent("optimizer.slsqp.v1")}`}
+                )}&vqeSwap=${encodeURIComponent(
+                  currentByRole.get("parameter_optimizer")?.component_semantic_key ?? "",
+                )}`}
               >
                 {copy.saveSwap}
               </a>

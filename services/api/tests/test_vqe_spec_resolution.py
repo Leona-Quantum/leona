@@ -195,8 +195,17 @@ async def test_owner_deferred_policy_rejects_lookalike_unreviewed_workflow(
         )
 
 
+@pytest.mark.parametrize(
+    ("optimizer_key", "optimizer_algorithm"),
+    [
+        ("optimizer.slsqp.v1", "scipy_slsqp"),
+        ("optimizer.cobyla.v1", "scipy_cobyla"),
+    ],
+)
 async def test_owner_deferred_policy_accepts_only_optimizer_changed_private_swap(
     monkeypatch,
+    optimizer_key,
+    optimizer_algorithm,
 ):
     baseline, components, baseline_links = _complete_workflow()
     baseline.review_state = ReviewState.UNREVIEWED.value
@@ -205,28 +214,36 @@ async def test_owner_deferred_policy_accepts_only_optimizer_changed_private_swap
         component.review_state = ReviewState.UNREVIEWED.value
         component.semantic_key = f"h2.sto3g.actual_vqe.v0_2.{role.value}"
 
-    slsqp_payload = dict(components[ComponentType.PARAMETER_OPTIMIZER].spec_json)
-    slsqp_payload["algorithm"] = "scipy_slsqp"
-    slsqp = _component(ComponentType.PARAMETER_OPTIMIZER, slsqp_payload)
-    slsqp.review_state = ReviewState.UNREVIEWED.value
-    slsqp.semantic_key = "optimizer.slsqp.v1"
+    optimizer_payload = dict(components[ComponentType.PARAMETER_OPTIMIZER].spec_json)
+    optimizer_payload["algorithm"] = optimizer_algorithm
+    if optimizer_algorithm == "scipy_cobyla":
+        optimizer_payload.update(
+            {
+                "initial_trust_region_radius_float64_hex": "3ff0000000000000",
+                "final_trust_region_radius_float64_hex": "3e45798ee2308c3a",
+                "constraint_tolerance_float64_hex": "3d719799812dea11",
+            }
+        )
+    optimizer = _component(ComponentType.PARAMETER_OPTIMIZER, optimizer_payload)
+    optimizer.review_state = ReviewState.UNREVIEWED.value
+    optimizer.semantic_key = optimizer_key
     candidate = _component(
         ComponentType.WORKFLOW,
         {
             "kind": "component_swap_workflow_draft",
             "changed_role": "parameter_optimizer",
-            "candidate_component_semantic_key": "optimizer.slsqp.v1",
+            "candidate_component_semantic_key": optimizer_key,
             "baseline_workflow_artifact_version_id": str(baseline.artifact_version_id),
             "execution_status": "private_qualification_candidate",
         },
     )
     candidate.review_state = ReviewState.UNREVIEWED.value
-    candidate.semantic_key = "workflow.instance.slsqp"
+    candidate.semantic_key = f"workflow.instance.{optimizer_key.rsplit('.', 2)[1]}"
     candidate_links = [
         SimpleNamespace(
             component_role=link.component_role,
             component_artifact_version_id=(
-                slsqp.artifact_version_id
+                optimizer.artifact_version_id
                 if link.component_role == ComponentType.PARAMETER_OPTIMIZER.value
                 else link.component_artifact_version_id
             ),
@@ -237,7 +254,7 @@ async def test_owner_deferred_policy_accepts_only_optimizer_changed_private_swap
     by_id = {
         baseline.artifact_version_id: baseline,
         candidate.artifact_version_id: candidate,
-        slsqp.artifact_version_id: slsqp,
+        optimizer.artifact_version_id: optimizer,
         **{component.artifact_version_id: component for component in components.values()},
     }
 
@@ -269,7 +286,7 @@ async def test_owner_deferred_policy_accepts_only_optimizer_changed_private_swap
     }
     assert (
         resolved_by_role[ComponentType.PARAMETER_OPTIMIZER].component_semantic_key
-        == "optimizer.slsqp.v1"
+        == optimizer_key
     )
     assert all(
         resolved_by_role[role].component_spec_sha256 == components[role].normalized_spec_sha256

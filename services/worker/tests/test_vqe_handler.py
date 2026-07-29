@@ -139,6 +139,22 @@ def test_optimizer_algorithm_accepts_only_exact_frozen_h2_legacy_digest():
         handlers._optimizer_algorithm({"component_bindings": [binding]})
 
 
+@pytest.mark.parametrize(
+    ("semantic_key", "expected"),
+    [
+        ("optimizer.slsqp.v1", "scipy_slsqp"),
+        ("optimizer.cobyla.v1", "scipy_cobyla"),
+    ],
+)
+def test_optimizer_algorithm_maps_admitted_private_components(semantic_key, expected):
+    binding = {
+        "role": "parameter_optimizer",
+        "component_semantic_key": semantic_key,
+        "component_spec_sha256": "0" * 64,
+    }
+    assert handlers._optimizer_algorithm({"component_bindings": [binding]}) == expected
+
+
 async def test_vqe_handler_persists_success_and_closes_both_lifecycles(monkeypatch):
     RunStore.instances.clear()
     EventSink.events.clear()

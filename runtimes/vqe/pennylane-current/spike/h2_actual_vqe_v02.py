@@ -310,7 +310,7 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--optimizer",
-        choices=("scipy_minimize_scalar_bounded", "scipy_slsqp"),
+        choices=("scipy_minimize_scalar_bounded", "scipy_slsqp", "scipy_cobyla"),
         default="scipy_minimize_scalar_bounded",
     )
     parser.add_argument(

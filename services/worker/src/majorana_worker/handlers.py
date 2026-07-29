@@ -978,6 +978,8 @@ def _optimizer_algorithm(
             return "scipy_minimize_scalar_bounded"
         if semantic_key == "optimizer.slsqp.v1":
             return "scipy_slsqp"
+        if semantic_key == "optimizer.cobyla.v1":
+            return "scipy_cobyla"
         raise ValueError(f"unsupported optimizer semantic key {semantic_key!r}")
     raise ValueError("portable scientific spec lacks an optimizer binding")
 

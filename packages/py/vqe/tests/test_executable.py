@@ -201,6 +201,62 @@ def test_slsqp_swap_changes_only_optimizer_scientific_binding():
     assert baseline.hamiltonian_digest_sha256 == candidate.hamiltonian_digest_sha256
 
 
+def test_cobyla_swap_changes_only_optimizer_and_requires_explicit_settings():
+    baseline_specs = _fixture()
+    candidate_specs = _fixture()
+    candidate_specs[ComponentType.PARAMETER_OPTIMIZER] = {
+        **candidate_specs[ComponentType.PARAMETER_OPTIMIZER],
+        "algorithm": "scipy_cobyla",
+        "initial_trust_region_radius_float64_hex": "3ff0000000000000",
+        "final_trust_region_radius_float64_hex": "3e45798ee2308c3a",
+        "constraint_tolerance_float64_hex": "3d719799812dea11",
+    }
+    baseline = build_h2_scientific_identity(
+        selections=_selections(),
+        specs=baseline_specs,
+        hamiltonian_digest_sha256=(
+            "d9dd24eb30011e8ea091759e6f0e25d76d0ccc0661e47748afb85e5f13654d79"
+        ),
+    )
+    candidate_workflow = workflow_by_key("workflow.h2.fixed_excitation.cobyla.v1")
+    candidate = build_h2_scientific_identity(
+        selections=[
+            H2SemanticSelection(
+                role=selection.role,
+                component_semantic_key=selection.component_semantic_key,
+            )
+            for selection in candidate_workflow.selections
+        ],
+        specs=candidate_specs,
+        hamiltonian_digest_sha256=baseline.hamiltonian_digest_sha256,
+    )
+    changed_roles = [
+        role
+        for role, binding in {
+            item.role: item for item in baseline.portable_spec.component_bindings
+        }.items()
+        if binding
+        != {
+            item.role: item for item in candidate.portable_spec.component_bindings
+        }[role]
+    ]
+    assert changed_roles == [ComponentType.PARAMETER_OPTIMIZER]
+
+    missing_settings = dict(candidate_specs[ComponentType.PARAMETER_OPTIMIZER])
+    del missing_settings["final_trust_region_radius_float64_hex"]
+    with pytest.raises(ValidationError, match="COBYLA requires explicit"):
+        parse_executable_component(ComponentType.PARAMETER_OPTIMIZER, missing_settings)
+
+
+def test_non_cobyla_optimizer_rejects_cobyla_specific_settings():
+    payload = {
+        **_fixture()[ComponentType.PARAMETER_OPTIMIZER],
+        "initial_trust_region_radius_float64_hex": "3ff0000000000000",
+    }
+    with pytest.raises(ValidationError, match="forbidden"):
+        parse_executable_component(ComponentType.PARAMETER_OPTIMIZER, payload)
+
+
 def test_unknown_or_mismatched_seed_selection_fails_closed():
     selections = _selections()
     selections[-1] = H2SemanticSelection(

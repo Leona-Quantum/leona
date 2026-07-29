@@ -30,6 +30,11 @@ type SavedSwap = {
   visibility: "private";
 };
 
+const PRIVATE_EXECUTABLE_OPTIMIZERS = new Map([
+  ["optimizer.slsqp.v1", "SLSQP"],
+  ["optimizer.cobyla.v1", "COBYLA"],
+]);
+
 function parseWorkflows(value: unknown): Workflow[] {
   if (!value || typeof value !== "object") return [];
   const rows = (value as { components?: unknown }).components;
@@ -167,7 +172,8 @@ export function VqeExperimentLauncher({
   async function saveControlledSwap() {
     if (
       !workflowId
-      || initialSwapComponentKey !== "optimizer.slsqp.v1"
+      || !initialSwapComponentKey
+      || !PRIVATE_EXECUTABLE_OPTIMIZERS.has(initialSwapComponentKey)
     ) return;
     setSavingSwap(true);
     setMessage(null);
@@ -188,8 +194,8 @@ export function VqeExperimentLauncher({
       if (!candidate) {
         throw new Error(
           ja
-            ? "SLSQP componentの固定版をRegistryで解決できません。"
-            : "The pinned SLSQP component could not be resolved in the Registry.",
+            ? "選択したoptimizer componentの固定版をRegistryで解決できません。"
+            : "The pinned optimizer component could not be resolved in the Registry.",
         );
       }
       if (!swapIdempotencyKey.current) {
@@ -270,7 +276,12 @@ export function VqeExperimentLauncher({
   }
 
   const selected = workflows.find((item) => item.artifact_version_id === workflowId);
-  const swapRequested = initialSwapComponentKey === "optimizer.slsqp.v1";
+  const swapRequested =
+    typeof initialSwapComponentKey === "string"
+    && PRIVATE_EXECUTABLE_OPTIMIZERS.has(initialSwapComponentKey);
+  const swapOptimizerName = initialSwapComponentKey
+    ? PRIVATE_EXECUTABLE_OPTIMIZERS.get(initialSwapComponentKey)
+    : undefined;
   const executionBlocked =
     selected?.execution_status === "blocked_until_runtime_qualified";
   return (
@@ -331,7 +342,9 @@ export function VqeExperimentLauncher({
             >
               {savingSwap
                 ? (ja ? "保存中…" : "Saving…")
-                : (ja ? "SLSQP交換をprivate保存" : "Save private SLSQP swap")}
+                : (ja
+                  ? `${swapOptimizerName ?? "optimizer"}交換をprivate保存`
+                  : `Save private ${swapOptimizerName ?? "optimizer"} swap`)}
             </button>
           ) : (
             <button

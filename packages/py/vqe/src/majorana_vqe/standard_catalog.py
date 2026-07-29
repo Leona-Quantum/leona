@@ -607,6 +607,19 @@ _CONFIGURATION_FIELDS_BY_COMPONENT: dict[str, frozenset[str]] = {
             "max_wall_time_seconds",
         }
     ),
+    "optimizer.cobyla.v1": frozenset(
+        {
+            "initial_point_float64_hex",
+            "lower_bound_float64_hex",
+            "upper_bound_float64_hex",
+            "energy_tolerance_float64_hex",
+            "max_objective_evaluations",
+            "max_wall_time_seconds",
+            "initial_trust_region_radius_float64_hex",
+            "final_trust_region_radius_float64_hex",
+            "constraint_tolerance_float64_hex",
+        }
+    ),
 }
 
 STANDARD_IMPLEMENTATIONS: tuple[ComponentImplementationBinding, ...] = (
@@ -729,6 +742,23 @@ STANDARD_IMPLEMENTATIONS: tuple[ComponentImplementationBinding, ...] = (
             sorted(_CONFIGURATION_FIELDS_BY_COMPONENT["optimizer.slsqp.v1"])
         ),
         known_incompatibilities=("no_runtime_qualified_phase76_adapter",),
+    ),
+    _binding(
+        "optimizer.cobyla.v1",
+        "scipy",
+        "scipy",
+        "1.18.0",
+        BindingKind.PROVIDER_NATIVE,
+        EvidenceLevel.ADAPTER_TESTED,
+        evidence=(
+            "https://docs.scipy.org/doc/scipy/reference/optimize.minimize-cobyla.html",
+            "docs/atlas/evidence/phase78/qiskit_cobyla_local.json",
+            "docs/atlas/evidence/phase78/pennylane_cobyla_local.json",
+        ),
+        supported_configuration_fields=tuple(
+            sorted(_CONFIGURATION_FIELDS_BY_COMPONENT["optimizer.cobyla.v1"])
+        ),
+        known_incompatibilities=("no_runtime_qualified_phase78_adapter",),
     ),
     _binding(
         "measurement.exact_statevector.v1",

@@ -64,7 +64,11 @@ class VqeRuntimeOutput:
 
 
 CancelProbe = Callable[[], Awaitable[bool]]
-OptimizerAlgorithm = Literal["scipy_minimize_scalar_bounded", "scipy_slsqp"]
+OptimizerAlgorithm = Literal[
+    "scipy_minimize_scalar_bounded",
+    "scipy_slsqp",
+    "scipy_cobyla",
+]
 
 
 class VqeRuntimeExecutor(Protocol):

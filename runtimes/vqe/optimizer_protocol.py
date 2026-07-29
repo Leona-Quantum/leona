@@ -10,7 +10,11 @@ from typing import Callable, Literal
 import numpy as np
 from scipy.optimize import minimize, minimize_scalar
 
-OptimizerAlgorithm = Literal["scipy_minimize_scalar_bounded", "scipy_slsqp"]
+OptimizerAlgorithm = Literal[
+    "scipy_minimize_scalar_bounded",
+    "scipy_slsqp",
+    "scipy_cobyla",
+]
 
 
 class ObjectiveBudgetExceeded(RuntimeError):
@@ -26,6 +30,9 @@ class OptimizerProtocol:
     max_function_evaluations: int = 256
     max_iterations: int = 256
     wall_time_limit_s: float = 60.0
+    cobyla_initial_trust_region_radius: float = 1.0
+    cobyla_final_trust_region_radius: float = 1.0e-8
+    cobyla_constraint_tolerance: float = 1.0e-12
 
 
 @dataclass(frozen=True)
@@ -51,6 +58,11 @@ def optimize_one_parameter(
 
     started = time.monotonic()
     trajectory: list[dict[str, float]] = []
+    iteration_count = 0
+
+    def record_iteration(_parameter: np.ndarray) -> None:
+        nonlocal iteration_count
+        iteration_count += 1
 
     def guarded_energy(theta_like: float | np.ndarray) -> float:
         if len(trajectory) >= protocol.max_function_evaluations:
@@ -92,9 +104,32 @@ def optimize_one_parameter(
                 "maxiter": protocol.max_iterations,
                 "disp": False,
             },
+            callback=record_iteration,
         )
         final_parameter = float(np.asarray(result.x, dtype=float)[0])
         gradient_evaluations = int(getattr(result, "njev", 0) or 0)
+    elif algorithm == "scipy_cobyla":
+        # COBYLA's `tol` is a lower bound on the final trust-region size.
+        # It is deliberately distinct from the energy acceptance tolerance.
+        result = minimize(
+            guarded_energy,
+            x0=np.asarray([protocol.initial_parameter], dtype=float),
+            method="COBYLA",
+            jac=None,
+            bounds=[(protocol.lower_bound, protocol.upper_bound)],
+            options={
+                "rhobeg": protocol.cobyla_initial_trust_region_radius,
+                "tol": protocol.cobyla_final_trust_region_radius,
+                "catol": protocol.cobyla_constraint_tolerance,
+                # SciPy defines COBYLA maxiter as the objective-call limit.
+                # guarded_energy independently enforces the same hard cap.
+                "maxiter": protocol.max_function_evaluations,
+                "disp": False,
+            },
+            callback=record_iteration,
+        )
+        final_parameter = float(np.asarray(result.x, dtype=float)[0])
+        gradient_evaluations = 0
     else:  # pragma: no cover
         raise ValueError(f"unsupported optimizer algorithm {algorithm!r}")
 
@@ -104,7 +139,7 @@ def optimize_one_parameter(
         algorithm=algorithm,
         success=bool(result.success),
         message=str(result.message),
-        iterations=int(result.nit),
+        iterations=int(getattr(result, "nit", iteration_count)),
         function_evaluations=len(trajectory),
         gradient_evaluations=gradient_evaluations,
         final_parameter=final_parameter,

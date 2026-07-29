@@ -1095,6 +1095,36 @@
       ]
     },
     {
+      "adapter_release_id": null,
+      "binding_key": "optimizer.cobyla.v1:scipy:1.18.0",
+      "binding_kind": "provider_native",
+      "component_semantic_key": "optimizer.cobyla.v1",
+      "evidence_level": "adapter_tested",
+      "evidence_locators": [
+        "https://docs.scipy.org/doc/scipy/reference/optimize.minimize-cobyla.html",
+        "docs/atlas/evidence/phase78/qiskit_cobyla_local.json",
+        "docs/atlas/evidence/phase78/pennylane_cobyla_local.json"
+      ],
+      "known_incompatibilities": [
+        "no_runtime_qualified_phase78_adapter"
+      ],
+      "package": "scipy",
+      "package_version": "1.18.0",
+      "provider": "scipy",
+      "runtime_profile_id": null,
+      "supported_configuration_fields": [
+        "constraint_tolerance_float64_hex",
+        "energy_tolerance_float64_hex",
+        "final_trust_region_radius_float64_hex",
+        "initial_point_float64_hex",
+        "initial_trust_region_radius_float64_hex",
+        "lower_bound_float64_hex",
+        "max_objective_evaluations",
+        "max_wall_time_seconds",
+        "upper_bound_float64_hex"
+      ]
+    },
+    {
       "adapter_release_id": "majorana-h2-qiskit-adapter-0.2.0",
       "binding_key": "measurement.exact_statevector.v1:qiskit:1.4.6",
       "binding_kind": "provider_native",

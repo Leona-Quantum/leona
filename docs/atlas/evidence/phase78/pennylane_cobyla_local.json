@@ -1,0 +1,257 @@
+{
+  "schema_version": "0.2.0",
+  "status": "succeeded",
+  "capability": "h2_sto3g_actual_vqe_v1",
+  "framework": "pennylane",
+  "provider_versions": {
+    "pennylane": "0.45.1",
+    "scipy": "1.18.0",
+    "numpy": "2.5.1"
+  },
+  "platform": "macOS-26.0.1-arm64-arm-64bit",
+  "python_version": "3.12.12 (main, Oct 28 2025, 11:52:25) [Clang 20.1.4 ]",
+  "canonical_input": {
+    "manifest_sha256": "6424713c69c2b734172db47329b7deb62b67a743c80fd792f48173fdaa4e3edc",
+    "canonical_circuit_sha256": "f4fdb1ac3f041185fff63f6a7acb9d3ab1e9742131ed5bd3bb9ba2d99081a58c",
+    "compilation_protocol_sha256": "778fe0c7f3d361c54e9c41a0240ef31cc7926dacbe8fbc33ff96a57ee104393c",
+    "hamiltonian_digest_legacy": "d9dd24eb30011e8ea091759e6f0e25d76d0ccc0661e47748afb85e5f13654d79",
+    "reference_bitstring_qubit0_first": "1010",
+    "excited_bitstring_qubit0_first": "0101",
+    "parameter_slot_id": "theta.double.occ0_occ2.to.virt1_virt3",
+    "parameter_orientation": "exp_theta_over_2_generator"
+  },
+  "optimization": {
+    "algorithm": "scipy_cobyla",
+    "success": true,
+    "message": "Return from COBYLA because the trust region radius reaches its lower bound.",
+    "iterations": 40,
+    "function_evaluations": 43,
+    "gradient_evaluations": 0,
+    "final_parameter": -0.22353700000000004,
+    "best_energy_ha": -1.137306035753355,
+    "exact_energy_ha": -1.1373060357533737,
+    "absolute_error_ha": 1.865174681370263e-14,
+    "final_state_fidelity": 0.9999999999999896,
+    "trajectory": [
+      {
+        "theta": 0.0,
+        "energy_ha": -1.1169989967540022
+      },
+      {
+        "theta": 1.0,
+        "energy_ha": -0.598888808671093
+      },
+      {
+        "theta": -1.0,
+        "energy_ha": -0.903385518400523
+      },
+      {
+        "theta": 0.5,
+        "energy_ha": -0.9328269986928094
+      },
+      {
+        "theta": -0.25,
+        "energy_ha": -1.1370202702350896
+      },
+      {
+        "theta": -0.5,
+        "energy_ha": -1.1063130745063052
+      },
+      {
+        "theta": -0.14999999999999997,
+        "energy_ha": -1.135100200696141
+      },
+      {
+        "theta": -0.35000000000000003,
+        "energy_ha": -1.130788175410757
+      },
+      {
+        "theta": -0.2,
+        "energy_ha": -1.1370799677707066
+      },
+      {
+        "theta": -0.17500000000000002,
+        "energy_ha": -1.136344827427744
+      },
+      {
+        "theta": -0.21000000000000002,
+        "energy_ha": -1.1372312540983511
+      },
+      {
+        "theta": -0.22000000000000003,
+        "energy_ha": -1.1373009303953787
+      },
+      {
+        "theta": -0.23000000000000004,
+        "energy_ha": -1.1372889896942167
+      },
+      {
+        "theta": -0.21500000000000002,
+        "energy_ha": -1.13727629412745
+      },
+      {
+        "theta": -0.22250000000000003,
+        "energy_ha": -1.1373055969065096
+      },
+      {
+        "theta": -0.22500000000000003,
+        "energy_ha": -1.1373051622862338
+      },
+      {
+        "theta": -0.22150000000000003,
+        "energy_ha": -1.1373043424369067
+      },
+      {
+        "theta": -0.22350000000000003,
+        "energy_ha": -1.137306035194729
+      },
+      {
+        "theta": -0.22450000000000003,
+        "energy_ha": -1.1373056573011322
+      },
+      {
+        "theta": -0.22300000000000003,
+        "energy_ha": -1.1373059180733383
+      },
+      {
+        "theta": -0.22375000000000003,
+        "energy_ha": -1.137306017238373
+      },
+      {
+        "theta": -0.22340000000000004,
+        "energy_ha": -1.137306028094088
+      },
+      {
+        "theta": -0.22360000000000002,
+        "energy_ha": -1.1373060341335512
+      },
+      {
+        "theta": -0.22345000000000004,
+        "energy_ha": -1.1373060326646365
+      },
+      {
+        "theta": -0.22352500000000003,
+        "energy_ha": -1.1373060356946056
+      },
+      {
+        "theta": -0.22355000000000003,
+        "energy_ha": -1.137306035684368
+      },
+      {
+        "theta": -0.22351500000000002,
+        "energy_ha": -1.1373060355558708
+      },
+      {
+        "theta": -0.22353500000000004,
+        "energy_ha": -1.1373060357517253
+      },
+      {
+        "theta": -0.22354500000000005,
+        "energy_ha": -1.1373060357272258
+      },
+      {
+        "theta": -0.22353000000000003,
+        "energy_ha": -1.1373060357333675
+      },
+      {
+        "theta": -0.22353750000000003,
+        "energy_ha": -1.1373060357532534
+      },
+      {
+        "theta": -0.22354000000000002,
+        "energy_ha": -1.1373060357496767
+      },
+      {
+        "theta": -0.22353650000000003,
+        "energy_ha": -1.1373060357532525
+      },
+      {
+        "theta": -0.22353850000000003,
+        "energy_ha": -1.1373060357524314
+      },
+      {
+        "theta": -0.22353700000000004,
+        "energy_ha": -1.137306035753355
+      },
+      {
+        "theta": -0.22353650000000005,
+        "energy_ha": -1.1373060357532525
+      },
+      {
+        "theta": -0.22353725000000005,
+        "energy_ha": -1.1373060357533267
+      },
+      {
+        "theta": -0.22353690000000004,
+        "energy_ha": -1.137306035753352
+      },
+      {
+        "theta": -0.22353710000000004,
+        "energy_ha": -1.137306035753348
+      },
+      {
+        "theta": -0.22353695000000004,
+        "energy_ha": -1.1373060357533515
+      },
+      {
+        "theta": -0.22353702500000003,
+        "energy_ha": -1.1373060357533533
+      },
+      {
+        "theta": -0.22353699000000005,
+        "energy_ha": -1.137306035753352
+      },
+      {
+        "theta": -0.22353701000000004,
+        "energy_ha": -1.1373060357533529
+      }
+    ]
+  },
+  "resources": {
+    "semantic_block": {
+      "canonical_double_excitation_blocks": 1
+    },
+    "canonical_logical": {
+      "qubits": 4,
+      "parameter_count": 1,
+      "pauli_rotation_blocks": 8,
+      "canonical_circuit_sha256": "f4fdb1ac3f041185fff63f6a7acb9d3ab1e9742131ed5bd3bb9ba2d99081a58c"
+    },
+    "common_basis_compiled": {
+      "depth": 83,
+      "gate_count": 152,
+      "cnot_count": 48,
+      "parameter_count": 1,
+      "basis_gates": [
+        "h",
+        "s",
+        "sdg",
+        "rz",
+        "cx"
+      ],
+      "compilation_protocol_sha256": "778fe0c7f3d361c54e9c41a0240ef31cc7926dacbe8fbc33ff96a57ee104393c",
+      "operation_sequence_sha256": "e0eaae576a3570dde47dcc5d5489dd758ee1311f911d0686cc87d5e2bd3f4cbd",
+      "adapter_verification": "passed",
+      "metric_scope": "ansatz_only",
+      "includes_reference_state": false,
+      "includes_measurement": false,
+      "includes_hardware_optimization_or_routing": false
+    },
+    "provider_native_diagnostic": {
+      "depth": 84,
+      "gate_count": 153,
+      "gate_types": {
+        "BasisState": 1,
+        "Hadamard": 64,
+        "Adjoint(S)": 16,
+        "CNOT": 48,
+        "RZ": 8,
+        "S": 16
+      },
+      "shots": null,
+      "includes_reference_state": true,
+      "comparison_eligible": false
+    }
+  },
+  "wall_time_s": 0.6995247919112444
+}

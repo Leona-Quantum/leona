@@ -390,8 +390,18 @@ async def save_component_swap_workflow_draft(
     """Persist one immutable structured swap draft with server-owned resolution."""
 
     require_write(scope)
+    executable_optimizer_algorithms = {
+        "optimizer.slsqp.v1": "scipy_slsqp",
+        "optimizer.cobyla.v1": "scipy_cobyla",
+    }
     if changed_role is not ComponentType.PARAMETER_OPTIMIZER:
-        raise InvalidWorkflowCompositionError("Phase 7.6 permits only parameter_optimizer swaps")
+        raise InvalidWorkflowCompositionError(
+            "private executable swaps permit only parameter_optimizer changes"
+        )
+    if candidate_component_semantic_key not in executable_optimizer_algorithms:
+        raise InvalidWorkflowCompositionError(
+            "candidate optimizer is not admitted to the private executable slice"
+        )
     baseline_spec = await get_component_spec(
         scope,
         session,
@@ -508,12 +518,35 @@ async def save_component_swap_workflow_draft(
     configured_optimizer_spec = candidate_definition_spec
     if private_qualification_candidate:
         configured_optimizer_payload = dict(baseline_optimizer_spec.spec_json)
-        configured_optimizer_payload["algorithm"] = "scipy_slsqp"
+        configured_optimizer_payload["algorithm"] = executable_optimizer_algorithms[
+            candidate_component_semantic_key
+        ]
+        for field in (
+            "initial_trust_region_radius_float64_hex",
+            "final_trust_region_radius_float64_hex",
+            "constraint_tolerance_float64_hex",
+        ):
+            configured_optimizer_payload.pop(field, None)
+        if candidate_component_semantic_key == "optimizer.cobyla.v1":
+            configured_optimizer_payload.update(
+                {
+                    "initial_trust_region_radius_float64_hex": "3ff0000000000000",
+                    "final_trust_region_radius_float64_hex": "3e45798ee2308c3a",
+                    "constraint_tolerance_float64_hex": "3d719799812dea11",
+                }
+            )
         configurable_payload_fields = {
             "lower_bound_float64_hex": "lower_bound_float64_hex",
             "upper_bound_float64_hex": "upper_bound_float64_hex",
             "energy_tolerance_float64_hex": "energy_tolerance_float64_hex",
             "max_objective_evaluations": "max_function_evaluations",
+            "initial_trust_region_radius_float64_hex": (
+                "initial_trust_region_radius_float64_hex"
+            ),
+            "final_trust_region_radius_float64_hex": (
+                "final_trust_region_radius_float64_hex"
+            ),
+            "constraint_tolerance_float64_hex": "constraint_tolerance_float64_hex",
         }
         unsupported_private_configuration = set(dict(migrated.migrated)) - set(
             configurable_payload_fields
@@ -568,7 +601,10 @@ async def save_component_swap_workflow_draft(
             scope,
             session,
             slug=f"{slug}-configured-optimizer",
-            title="Configured SLSQP optimizer for H2 controlled swap",
+            title=(
+                f"Configured {candidate_definition.display_name} optimizer "
+                "for H2 controlled swap"
+            ),
             family=Algorithm.VQE,
             framework=ContractFramework(evaluator_provider),
         )
@@ -761,7 +797,8 @@ async def resolve_scientific_experiment_spec(
         workflow.review_state == ReviewState.UNREVIEWED.value
         and workflow.spec_json.get("kind") == "component_swap_workflow_draft"
         and workflow.spec_json.get("changed_role") == ComponentType.PARAMETER_OPTIMIZER.value
-        and workflow.spec_json.get("candidate_component_semantic_key") == "optimizer.slsqp.v1"
+        and workflow.spec_json.get("candidate_component_semantic_key")
+        in {"optimizer.slsqp.v1", "optimizer.cobyla.v1"}
         and workflow.spec_json.get("execution_status") == "private_qualification_candidate"
     )
     baseline_swap_components: dict[ComponentType, VqeWorkflowComponentRow] = {}
@@ -771,7 +808,7 @@ async def resolve_scientific_experiment_spec(
     elif not (owner_deferred_baseline or owner_deferred_optimizer_swap):
         raise InvalidWorkflowCompositionError(
             "owner-deferred execution is restricted to the frozen H2 baseline "
-            "or its server-validated private SLSQP swap"
+            "or a server-validated private optimizer swap"
         )
     elif owner_deferred_optimizer_swap:
         try:
@@ -871,13 +908,18 @@ async def resolve_scientific_experiment_spec(
                     "owner-deferred execution encountered a non-canonical H2 candidate component"
                 )
         elif role_type is ComponentType.PARAMETER_OPTIMIZER:
+            expected_private_optimizers = {
+                "optimizer.slsqp.v1": "scipy_slsqp",
+                "optimizer.cobyla.v1": "scipy_cobyla",
+            }
             if not (
                 component.review_state == ReviewState.UNREVIEWED.value
-                and component.semantic_key == "optimizer.slsqp.v1"
-                and component.spec_json.get("algorithm") == "scipy_slsqp"
+                and component.semantic_key in expected_private_optimizers
+                and component.spec_json.get("algorithm")
+                == expected_private_optimizers[component.semantic_key]
             ):
                 raise InvalidWorkflowCompositionError(
-                    "private optimizer swap does not resolve to the configured SLSQP component"
+                    "private optimizer swap does not resolve to its configured component"
                 )
         else:
             baseline_link = baseline_swap_components.get(role_type)
