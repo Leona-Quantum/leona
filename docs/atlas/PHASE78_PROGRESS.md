@@ -168,6 +168,35 @@ bindings explicitly carry `private_oci_runtime_not_yet_qualified`; the H₂
 UCCSD workflow is `compatible`, not executable or executed. No runtime or
 publication claim is made from the macOS evidence.
 
+### Typed identity and applicability gate
+
+The local result is now represented by additive, versioned contracts rather
+than by relabeling the frozen one-parameter ansatz:
+
+- portable scientific identity: `0.3.0`;
+- executable UCCSD component configuration: `0.3.0`;
+- applicable Registry component roles: 11;
+- explicitly `not_applicable` roles:
+  - `operator_pool`;
+  - `search_selection`;
+  - `growth_batching`;
+- independent initial parameter slots: 3.
+
+The v0.3 Registry resolution contains rows only for applicable roles and must
+match those roles, semantic keys, and normalized content digests exactly.
+`not_applicable` roles cannot carry a fabricated key or digest. The frozen
+portable v0.2 identity and its 14-component Registry resolution remain
+unchanged.
+
+Generated evidence:
+
+- `docs/atlas/fixtures/h2_sto3g/executable_components_uccsd_v0.3.json`;
+- `docs/atlas/fixtures/h2_sto3g/uccsd_scientific_identity_v0.3.json`;
+- `scripts/generate-h2-uccsd-executable-components.py --check`.
+
+This closes the local typed-composition gate only. Private OCI/runtime
+qualification remains pending.
+
 ## Claim boundary
 
 This phase establishes executable interoperability and controlled component
