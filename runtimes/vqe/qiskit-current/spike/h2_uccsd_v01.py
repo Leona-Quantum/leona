@@ -289,8 +289,13 @@ def run(output_path: Path | None = OUTPUT_PATH) -> int:
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--output", type=Path, default=OUTPUT_PATH)
+    parser.add_argument(
+        "--stdout-only",
+        action="store_true",
+        help="Do not write the default fixture path; emit the report only.",
+    )
     args = parser.parse_args()
-    return run(args.output)
+    return run(None if args.stdout_only else args.output)
 
 
 if __name__ == "__main__":

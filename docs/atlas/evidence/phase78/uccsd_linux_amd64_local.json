@@ -1,0 +1,62 @@
+{
+  "schema_version": "1.0.0",
+  "phase": "7.8",
+  "capability": "h2_sto3g_uccsd_v1",
+  "evidence_scope": "local_linux_amd64_docker_desktop",
+  "runtime_qualification": "not_established",
+  "public_execution": "blocked",
+  "publication": "blocked",
+  "performance_claim": "not_made",
+  "isolation": {
+    "network": "none",
+    "root_filesystem": "read_only",
+    "temporary_filesystem": "/tmp:rw,noexec,nosuid,size=64m",
+    "capabilities": "all_dropped",
+    "no_new_privileges": true,
+    "pids_limit": 128,
+    "memory_limit": "2g",
+    "cpu_limit": 1
+  },
+  "faults_detected": [
+    {
+      "code": "read_only_runtime_requires_bounded_tmpfs",
+      "observed": "Qiskit dependency dill could not initialize tempfile with no writable directory",
+      "resolution": "retain read-only root and mount only a bounded noexec/nosuid /tmp tmpfs",
+      "security_boundary_relaxed": false
+    }
+  ],
+  "inputs": {
+    "dockerfile_sha256": "427d74ca9f1cb9825e6ff4947d81a589920fc60765f9025749b68e569ae252a7",
+    "canonical_circuit_sha256": "e0f4f55c966f2de92046a82c8538fe5074447c030d67155dced9d7ca5a6a9a98",
+    "compilation_protocol_sha256": "b4553154fdb2db269ca1f43b361d6530fa9814d866103c71490d04d2b0552c52"
+  },
+  "results": {
+    "qiskit": {
+      "local_image_id": "sha256:dca63381fba1c629363bbdba76eb13f03c2383a8750dc44f74f2717bd7614a73",
+      "platform": "linux/amd64",
+      "entrypoint_sha256": "e4383d2cfe3ac0fde137adfadaf2a0e51bfd9d61104c6a7165699bb9fc9c90d5",
+      "report_sha256": "2dc5fe951a026f96f3f6c55692e856912977daf5464bada310145dd845cdf8cf",
+      "energy_ha": -1.1373060357533489,
+      "absolute_error_ha": 2.4868995751603507e-14,
+      "fidelity": 0.9999999999999856,
+      "function_evaluations": 17,
+      "cnot": 56,
+      "depth": 96,
+      "parameters": 3
+    },
+    "pennylane": {
+      "local_image_id": "sha256:a23f276e449ea0edc6e4bc6d43d585410802b6cc274f45af7d6c455c7fbbced2",
+      "platform": "linux/amd64",
+      "entrypoint_sha256": "730d1ce2dc69e6442716ed4d8baaa40255a69c33fd51baf8763561cbb6a52fab",
+      "report_sha256": "2bf990741ae7748710bd717c316320843fa6354434605d1f202e076c891d8757",
+      "energy_ha": -1.1373060357533435,
+      "absolute_error_ha": 3.019806626980426e-14,
+      "fidelity": 0.9999999999999822,
+      "function_evaluations": 17,
+      "cnot": 56,
+      "depth": 96,
+      "parameters": 3
+    }
+  },
+  "claim_boundary": "Local image IDs are not OCI Registry digests and do not establish production runtime qualification."
+}

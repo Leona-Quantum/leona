@@ -197,6 +197,32 @@ Generated evidence:
 This closes the local typed-composition gate only. Private OCI/runtime
 qualification remains pending.
 
+### Linux/amd64 local container gate
+
+Separate UCCSD images now build from `runtimes/vqe/Dockerfile.uccsd` without
+changing the frozen fixed-excitation runtime image or entrypoint. Both
+frameworks succeeded under:
+
+- `linux/amd64`;
+- deny-all network;
+- read-only root filesystem;
+- all Linux capabilities dropped;
+- no-new-privileges;
+- bounded CPU, memory, process count, and `/tmp` tmpfs.
+
+The first Qiskit attempt correctly failed because a completely read-only
+filesystem exposed `dill`'s need for a temporary directory. The corrected
+policy did not make the root writable or enable egress; it added only a
+64 MiB `noexec,nosuid` tmpfs at `/tmp`. This operational requirement is
+retained in
+`docs/atlas/evidence/phase78/uccsd_linux_amd64_local.json`.
+
+The local Linux results preserve 17 objective evaluations, 56 CNOT, depth 96,
+three parameters, sub-`4e-14` absolute energy error, and fidelity above
+`0.99999999999998` for both providers. Local Docker image IDs are explicitly
+not treated as OCI Registry digests, so production runtime qualification
+remains pending.
+
 ## Claim boundary
 
 This phase establishes executable interoperability and controlled component

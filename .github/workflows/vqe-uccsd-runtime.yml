@@ -1,0 +1,80 @@
+name: vqe-uccsd-runtime
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - feature/vqe
+    paths:
+      - .github/workflows/vqe-uccsd-runtime.yml
+      - runtimes/vqe/Dockerfile.uccsd
+      - runtimes/vqe/optimizer_protocol.py
+      - runtimes/vqe/qiskit-current/**
+      - runtimes/vqe/pennylane-current/**
+      - docs/atlas/fixtures/h2_sto3g/manifest.json
+      - docs/atlas/fixtures/h2_sto3g/canonical_uccsd_v0.1.json
+
+permissions:
+  contents: read
+
+concurrency:
+  group: vqe-uccsd-runtime-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  hardened-linux-amd64:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - framework: qiskit
+            profile_dir: runtimes/vqe/qiskit-current
+          - framework: pennylane
+            profile_dir: runtimes/vqe/pennylane-current
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: build isolated UCCSD runtime
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: runtimes/vqe/Dockerfile.uccsd
+          build-args: PROFILE_DIR=${{ matrix.profile_dir }}
+          build-contexts: fixture=docs/atlas/fixtures/h2_sto3g
+          platforms: linux/amd64
+          load: true
+          tags: majorana-vqe-uccsd-${{ matrix.framework }}:${{ github.sha }}
+      - name: execute with deny-all egress and read-only root
+        run: |
+          set -euo pipefail
+          docker run --rm \
+            --platform linux/amd64 \
+            --network none \
+            --read-only \
+            --tmpfs /tmp:rw,noexec,nosuid,size=64m \
+            --cap-drop ALL \
+            --security-opt no-new-privileges \
+            --pids-limit 128 \
+            --memory 2g \
+            --cpus 1 \
+            "majorana-vqe-uccsd-${{ matrix.framework }}:${{ github.sha }}" \
+            > "${{ matrix.framework }}-uccsd-linux-amd64.json"
+          jq -e '
+            .status == "succeeded"
+            and .optimization.absolute_error_ha < 1e-10
+            and .optimization.final_state_fidelity > 0.9999999999
+            and .resources.common_basis_compiled.cnot_count == 56
+            and .resources.common_basis_compiled.depth == 96
+            and .resources.common_basis_compiled.parameter_count == 3
+            and .canonical_input.canonical_circuit_sha256
+              == "e0f4f55c966f2de92046a82c8538fe5074447c030d67155dced9d7ca5a6a9a98"
+          ' "${{ matrix.framework }}-uccsd-linux-amd64.json"
+      - name: upload private runtime evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: uccsd-${{ matrix.framework }}-linux-amd64-${{ github.sha }}
+          path: ${{ matrix.framework }}-uccsd-linux-amd64.json
+          if-no-files-found: error
+          retention-days: 30
