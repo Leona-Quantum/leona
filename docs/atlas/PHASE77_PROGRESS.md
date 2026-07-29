@@ -183,6 +183,10 @@ Status: verified locally
     evidence materialization remain covered;
   - the test explicitly does not claim use of a live WorkOS tenant or the
     production Cloud SQL database.
+- The aligned remote rerun passed both the full CI suite and the private VQE
+  E2E:
+  - CI: `https://github.com/EshMis/majorana/actions/runs/30422091752`
+  - VQE E2E: `https://github.com/EshMis/majorana/actions/runs/30422091700`
 - These checks establish that the synchronized branch is internally
   consistent. They do not claim that future DEV commits cannot conflict, and
   they do not lift the existing blocks on publication, human-reviewed status,
