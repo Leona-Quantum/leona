@@ -10,7 +10,7 @@ CLI (catalog_admin), not a request handler.
 
 from typing import Annotated, Literal
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Response
 from majorana_contracts import PublicCatalogEntry
 
 from ..auth.catalog_deps import PublicCatalogScope
@@ -30,16 +30,50 @@ _Settings = Annotated[Settings, Depends(get_settings)]
 # falling back to 'full'.
 CatalogEntriesView = Literal["full", "list"]
 
+#: The page an anonymous caller gets when it does not ask for one, and the
+#: largest it may ask for. Before this, the route accepted no bound at all and
+#: served the entire corpus — 1.94 MB, one full-table read — to anybody, on
+#: every request.
+#:
+#: The default is the maximum on purpose. A smaller default would silently
+#: truncate the public /repository page for any client that predates
+#: pagination, and a catalog that is quietly missing records looks exactly like
+#: a working one. Clients that page (see repository-source.ts) pass an explicit
+#: limit and are unaffected by this value.
+CATALOG_ENTRIES_MAX_LIMIT = 500
+
+#: Total number of entries the caller would get with no pagination at all.
+#: Present so a paginating client can tell "I have the whole corpus" from "the
+#: server stopped early", which is otherwise indistinguishable from the outside.
+CATALOG_TOTAL_HEADER = "X-Catalog-Total"
+
 
 @router.get("/catalog/entries", response_model=list[PublicCatalogEntry])
 async def list_catalog_entries(
     scope: PublicCatalogScope,
     session: DbSession,
     settings: _Settings,
+    response: Response,
     view: CatalogEntriesView = "full",
+    limit: int = CATALOG_ENTRIES_MAX_LIMIT,
+    offset: int = 0,
 ) -> list[PublicCatalogEntry]:
-    entries = await catalog_repo.list_public_catalog_entries(
+    """One page of the published catalog, oldest manifest identity first.
+
+    `limit` is clamped rather than rejected: this is an anonymous browse
+    endpoint, and refusing a caller who asked for too much would turn a
+    harmless mistake into an error page on the public site.
+    """
+    total = await catalog_repo.count_public_catalog_entries(
         scope, session, authority=settings.catalog_authority
+    )
+    response.headers[CATALOG_TOTAL_HEADER] = str(total)
+    entries = await catalog_repo.list_public_catalog_entries(
+        scope,
+        session,
+        authority=settings.catalog_authority,
+        limit=min(max(limit, 1), CATALOG_ENTRIES_MAX_LIMIT),
+        offset=max(offset, 0),
     )
     if view == "list":
         return [

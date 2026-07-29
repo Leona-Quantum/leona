@@ -39,6 +39,8 @@ from sqlalchemy import select
 
 from majorana_api.app import create_app
 from majorana_api.catalog_authority import CatalogAuthority
+from majorana_api.catalog_read_model import LIST_VIEW_RECORD_FIELDS
+from majorana_api.routes.catalog import CATALOG_ENTRIES_MAX_LIMIT
 from majorana_api.db import engine_from_env, session_factory
 from majorana_api.ids import uuid7
 from majorana_api.orm import Artifact, ImportItem, ImportJob, Job, Membership
@@ -428,6 +430,76 @@ async def test_route_serves_published_entries_when_enabled(env):
 
         # an unknown slug is a 404, not a leak of internal state
         assert (await client.get("/v1/catalog/entries/no-such-entry")).status_code == 404
+
+
+@requires_db
+async def test_listing_pages_and_reports_its_own_total(env):
+    """limit/offset are honoured, and the total header describes the whole set.
+
+    The header is what lets a client tell a complete corpus from a truncated
+    one; without it, a page that stops early is indistinguishable from a
+    catalog that genuinely holds that many records.
+    """
+    configured, reviewer_id, factory = env
+    slugs = sorted(f"paged-{uuid.uuid4()}" for _ in range(3))
+    for slug in slugs:
+        await _publish_new_entry(factory, configured, reviewer_id, slug=slug)
+
+    async with _client(configured, factory) as client:
+        everything = await client.get("/v1/catalog/entries")
+        assert everything.status_code == 200
+        total = int(everything.headers["X-Catalog-Total"])
+        assert total == len(everything.json())
+
+        first = await client.get("/v1/catalog/entries?limit=2&offset=0")
+        second = await client.get("/v1/catalog/entries?limit=2&offset=2")
+        assert len(first.json()) == 2
+        # The total describes the corpus, not the page.
+        assert int(first.headers["X-Catalog-Total"]) == total
+
+        # Paging covers the corpus exactly once, in the listing's own order.
+        walked: list[str] = []
+        for offset in range(0, total, 2):
+            page = await client.get(f"/v1/catalog/entries?limit=2&offset={offset}")
+            walked.extend(entry["slug"] for entry in page.json())
+        assert walked == [entry["slug"] for entry in everything.json()]
+        assert len(walked) == len(set(walked)) == total
+        assert set(slugs) <= set(walked)
+        assert second.json()[0]["slug"] == walked[2]
+
+
+@requires_db
+async def test_listing_clamps_an_out_of_range_limit_instead_of_refusing(env):
+    """A public browse endpoint must not turn a silly query into an error page.
+
+    Also pins the ceiling: an anonymous caller cannot ask for an unbounded read
+    of the table, which is the whole point of the bound.
+    """
+    configured, reviewer_id, factory = env
+    await _publish_new_entry(factory, configured, reviewer_id, slug=f"clamped-{uuid.uuid4()}")
+
+    async with _client(configured, factory) as client:
+        for query in ("limit=0", "limit=-5", "limit=100000", "offset=-1"):
+            response = await client.get(f"/v1/catalog/entries?{query}")
+            assert response.status_code == 200, query
+
+        assert len((await client.get("/v1/catalog/entries?limit=0")).json()) == 1
+        huge = await client.get("/v1/catalog/entries?limit=100000")
+        assert len(huge.json()) <= CATALOG_ENTRIES_MAX_LIMIT
+
+
+@requires_db
+async def test_the_view_projection_still_applies_to_a_page(env):
+    """`view=list` and pagination are independent; combining them must not drop
+    the projection and start serving full records under a list request."""
+    configured, reviewer_id, factory = env
+    await _publish_new_entry(factory, configured, reviewer_id, slug=f"viewed-{uuid.uuid4()}")
+
+    async with _client(configured, factory) as client:
+        page = await client.get("/v1/catalog/entries?view=list&limit=1&offset=0")
+        assert page.status_code == 200
+        [entry] = page.json()
+        assert set(entry["record"]) <= set(LIST_VIEW_RECORD_FIELDS)
 
 
 @requires_db

@@ -28,6 +28,25 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 const CATALOG_REVALIDATE_SECONDS = 300;
 
 /**
+ * Entries requested per page.
+ *
+ * Chosen so that a page of the FULL view stays under Vercel's 2 MB data-cache
+ * ceiling: the whole corpus is ~2.37 MB across 283 records, so 100 records is
+ * roughly 840 KB. The unpaginated full view was over the ceiling and therefore
+ * refetched on every single request; paginating is what makes its `revalidate`
+ * window real rather than decorative.
+ */
+const CATALOG_PAGE_SIZE = 100;
+
+/** Server's count of everything the listing would return, unpaginated. */
+const CATALOG_TOTAL_HEADER = "x-catalog-total";
+
+/** Refuse to loop forever if the server never advances. */
+const CATALOG_MAX_PAGES = 100;
+
+type CatalogPage = { payload: unknown; total: number | null };
+
+/**
  * Fetch + JSON-decode one catalog URL, or null with a loud log.
  *
  * `expected404` is set by the per-slug lookup, where a 404 is the ordinary
@@ -36,7 +55,7 @@ const CATALOG_REVALIDATE_SECONDS = 300;
  * like an API outage, which is exactly the noise that makes a real outage hard
  * to spot. Every other status, on every caller, still logs.
  */
-async function fetchCatalogPayload(url: string, expected404 = false): Promise<unknown | null> {
+async function fetchCatalogPage(url: string, expected404 = false): Promise<CatalogPage | null> {
   try {
     const upstream = await fetch(url, {
       headers: { Accept: "application/json" },
@@ -48,15 +67,76 @@ async function fetchCatalogPayload(url: string, expected404 = false): Promise<un
       }
       return null;
     }
-    return await upstream.json();
+    const header = upstream.headers.get(CATALOG_TOTAL_HEADER);
+    const parsedTotal = header === null ? Number.NaN : Number(header);
+    return {
+      payload: await upstream.json(),
+      total: Number.isInteger(parsedTotal) ? parsedTotal : null,
+    };
   } catch (error) {
     console.error(`[repository-source] catalog fetch threw (${url}):`, error);
     return null;
   }
 }
 
+async function fetchCatalogPayload(url: string, expected404 = false): Promise<unknown | null> {
+  const page = await fetchCatalogPage(url, expected404);
+  return page === null ? null : page.payload;
+}
+
+/**
+ * Every page of the catalog listing, concatenated — or null if we cannot prove
+ * we got all of it.
+ *
+ * The proof matters more than the pagination. A short catalog renders exactly
+ * like a complete one: no error, no empty state, just fewer algorithms than the
+ * corpus actually holds. So a page count that disagrees with the server's own
+ * `X-Catalog-Total` is treated as a failed fetch and sends the caller to the
+ * static corpus, which is complete by construction.
+ *
+ * A server that predates pagination sends no total header and ignores the query
+ * parameters, returning the whole corpus in one response. That is detected by
+ * the absent header and accepted as-is, so this works against either version and
+ * the two deploys need no ordering between them.
+ */
+async function fetchAllCatalogPages(view: "full" | "list"): Promise<unknown[] | null> {
+  const viewParam = view === "list" ? "&view=list" : "";
+  const collected: unknown[] = [];
+  let total: number | null = null;
+
+  for (let page = 0; page < CATALOG_MAX_PAGES; page += 1) {
+    const offset = page * CATALOG_PAGE_SIZE;
+    const url = `${API_URL}/v1/catalog/entries?limit=${CATALOG_PAGE_SIZE}&offset=${offset}${viewParam}`;
+    const result = await fetchCatalogPage(url);
+    if (result === null) return null;
+    if (!Array.isArray(result.payload)) {
+      console.error(`[repository-source] catalog page ${page} was not an array (${url})`);
+      return null;
+    }
+    collected.push(...result.payload);
+
+    // No total header: a pre-pagination server, which ignored limit/offset and
+    // has already handed us everything. Asking for page 2 would return the same
+    // rows again.
+    if (result.total === null) return collected;
+    if (page === 0) total = result.total;
+
+    if (collected.length >= (total ?? 0)) break;
+    if (result.payload.length === 0) break;
+  }
+
+  if (total !== null && collected.length !== total) {
+    console.error(
+      `[repository-source] catalog pagination collected ${collected.length} of ${total} entries; ` +
+        "refusing to serve a partial corpus",
+    );
+    return null;
+  }
+  return collected;
+}
+
 async function fetchCatalogEntries(): Promise<PublicRepositoryEntry[] | null> {
-  const payload = await fetchCatalogPayload(`${API_URL}/v1/catalog/entries`);
+  const payload = await fetchAllCatalogPages("full");
   if (payload === null) return null;
 
   const { entries, rejected } = parseCatalogEntries(payload);
@@ -71,7 +151,7 @@ async function fetchCatalogEntries(): Promise<PublicRepositoryEntry[] | null> {
 }
 
 async function fetchCatalogListEntries(): Promise<PublicRepositoryListEntry[] | null> {
-  const payload = await fetchCatalogPayload(`${API_URL}/v1/catalog/entries?view=list`);
+  const payload = await fetchAllCatalogPages("list");
   if (payload === null) return null;
 
   const { entries, rejected } = parseCatalogListEntries(payload);
@@ -89,9 +169,10 @@ async function fetchCatalogListEntries(): Promise<PublicRepositoryListEntry[] | 
  * Every entry backing /repository, with the FULL record. Async by construction
  * so the call sites do not have to change again when the flag flips.
  *
- * Prefer getRepositoryListEntries() for anything that only renders the browse
- * list — this response is ~2.37 MB and is over Vercel's data-cache ceiling, so
- * it is refetched on every request.
+ * Still prefer getRepositoryListEntries() for anything that only renders the
+ * browse list — this reads ~2.37 MB across all pages either way. What changed
+ * is that no single response is over Vercel's data-cache ceiling any more, so
+ * these pages are actually cached instead of refetched on every request.
  */
 export async function getRepositoryEntries(): Promise<PublicRepositoryEntry[]> {
   if (!isPublicCatalogApiEnabled()) return PUBLIC_REPOSITORY_ENTRIES;
@@ -107,10 +188,10 @@ export async function getRepositoryEntries(): Promise<PublicRepositoryEntry[]> {
  * Every entry backing /repository, projected to the fields the browse list and
  * the detail page's related-links strip actually read (Slice E).
  *
- * This is the cacheable path: ~0.91 MB against a 2 MB ceiling, so the
- * revalidate window on the fetch is real rather than inert. The static corpus
- * satisfies the narrower type directly (PublicRepositoryEntry is a superset),
- * so the fallback needs no projection of its own.
+ * This is the cheap path: ~0.91 MB in total, now split across pages of roughly
+ * 320 KB. The static corpus satisfies the narrower type directly
+ * (PublicRepositoryEntry is a superset), so the fallback needs no projection of
+ * its own.
  */
 export async function getRepositoryListEntries(): Promise<PublicRepositoryListEntry[]> {
   if (!isPublicCatalogApiEnabled()) return PUBLIC_REPOSITORY_ENTRIES;
