@@ -39,6 +39,7 @@ def test_every_plan_candidate_endpoint_is_reachable_over_http():
         ("/atlas/components/{artifact_version_id}", "GET"),
         ("/atlas/workflows", "GET"),
         ("/atlas/workflows/swaps", "POST"),
+        ("/atlas/workflows/ansatz-migrations", "POST"),
         ("/atlas/workflows/{workflow_artifact_version_id}", "GET"),
         ("/atlas/comparisons/{comparison_id}", "GET"),
         ("/vqe/capabilities", "GET"),
@@ -63,6 +64,7 @@ def test_every_route_requires_a_scope():
         vqe_routes.get_component,
         vqe_routes.list_workflows,
         vqe_routes.create_workflow_swap,
+        vqe_routes.create_ansatz_migration,
         vqe_routes.get_workflow,
         vqe_routes.get_comparison,
         vqe_routes.vqe_capabilities,
@@ -127,6 +129,51 @@ async def test_create_workflow_swap_passes_only_bounded_owner_choices(monkeypatc
     assert captured["candidate_component_semantic_key"] == "optimizer.slsqp.v1"
     assert "runtime_profile_id" not in captured
     assert "package_version" not in captured
+
+
+async def test_create_ansatz_migration_passes_only_bounded_owner_choices(monkeypatch):
+    baseline_id = uuid.uuid4()
+    artifact_id = uuid.uuid4()
+    version_id = uuid.uuid4()
+    captured = {}
+
+    async def fake_save(scope, session, **kwargs):
+        captured.update(kwargs)
+        return SimpleNamespace(
+            artifact=SimpleNamespace(id=artifact_id),
+            version=SimpleNamespace(id=version_id, fingerprint="c" * 64),
+            workflow_spec=SimpleNamespace(
+                semantic_key="workflow.instance.uccsd",
+                spec_json={"execution_status": "private_qualification_candidate"},
+            ),
+            replayed=False,
+        )
+
+    monkeypatch.setattr(
+        vqe_repo,
+        "save_h2_uccsd_migration_workflow_draft",
+        fake_save,
+    )
+    body = vqe_routes.CreateAnsatzMigrationRequest(
+        baseline_workflow_artifact_version_id=baseline_id,
+        migration="h2_fixed_excitation_slsqp_to_uccsd_slsqp",
+        evaluator_provider="pennylane",
+    )
+    result = await vqe_routes.create_ansatz_migration(
+        body,
+        scope=object(),
+        session=object(),
+        settings=_settings(),
+        request_idempotency_key="migration-1",
+    )
+
+    assert result.workflow_artifact_version_id == version_id
+    assert captured == {
+        "baseline_workflow_artifact_version_id": baseline_id,
+        "evaluator_provider": "pennylane",
+        "request_idempotency_key": "migration-1",
+        "catalog_workspace_id": None,
+    }
 
 
 def test_workflow_swap_request_accepts_only_admitted_private_optimizers():

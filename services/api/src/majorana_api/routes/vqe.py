@@ -112,6 +112,14 @@ class CreateWorkflowSwapRequest(BaseModel):
     evaluator_provider: Literal["qiskit", "pennylane"]
 
 
+class CreateAnsatzMigrationRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    baseline_workflow_artifact_version_id: uuid.UUID
+    migration: Literal["h2_fixed_excitation_slsqp_to_uccsd_slsqp"]
+    evaluator_provider: Literal["qiskit", "pennylane"]
+
+
 class WorkflowSwapResource(BaseModel):
     artifact_id: uuid.UUID
     workflow_artifact_version_id: uuid.UUID
@@ -428,6 +436,45 @@ async def create_workflow_swap(
             candidate_component_semantic_key=body.candidate_component_semantic_key,
             candidate_component_spec_sha256=body.candidate_component_spec_sha256,
             configuration=tuple(sorted(body.configuration.items())),
+            evaluator_provider=body.evaluator_provider,
+            request_idempotency_key=request_idempotency_key,
+            catalog_workspace_id=_catalog_workspace_id(settings),
+        )
+    except (vqe_repo.InvalidWorkflowCompositionError, vqe_repo.NotFoundError) as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from None
+    except vqe_repo.IdempotencyConflictError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from None
+    return WorkflowSwapResource(
+        artifact_id=saved.artifact.id,
+        workflow_artifact_version_id=saved.version.id,
+        workflow_semantic_key=saved.workflow_spec.semantic_key,
+        request_sha256=saved.version.fingerprint,
+        replayed=saved.replayed,
+        execution_status=saved.workflow_spec.spec_json["execution_status"],
+    )
+
+
+@router.post(
+    "/atlas/workflows/ansatz-migrations",
+    response_model=WorkflowSwapResource,
+    status_code=201,
+)
+async def create_ansatz_migration(
+    body: CreateAnsatzMigrationRequest,
+    scope: CurrentScope,
+    session: DbSession,
+    settings: Annotated[Settings, Depends(get_settings)],
+    request_idempotency_key: Annotated[
+        str, Header(alias="Idempotency-Key", min_length=1, max_length=200)
+    ],
+) -> WorkflowSwapResource:
+    try:
+        saved = await vqe_repo.save_h2_uccsd_migration_workflow_draft(
+            scope,
+            session,
+            baseline_workflow_artifact_version_id=(
+                body.baseline_workflow_artifact_version_id
+            ),
             evaluator_provider=body.evaluator_provider,
             request_idempotency_key=request_idempotency_key,
             catalog_workspace_id=_catalog_workspace_id(settings),

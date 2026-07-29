@@ -39,21 +39,34 @@ from majorana_vqe.controlled_comparison import (
     ControlledComparisonStatus,
 )
 from majorana_vqe.executable import (
+    H2_STO3G_HAMILTONIAN_DIGEST_SHA256,
+    H2_UCCSD_APPLICABLE_ROLES,
+    executable_component_scientific_payload,
+    load_packaged_h2_uccsd_executable_component_specs,
     parse_executable_component,
     validate_h2_executable_composition,
+    validate_h2_uccsd_executable_composition,
 )
+from majorana_vqe.migration import build_h2_fixed_to_uccsd_migration
 from majorana_vqe.portable import (
     PORTABLE_SCIENTIFIC_ROLES,
+    ComponentRoleBindingV03,
     ComponentSemanticBinding,
     ParameterSlotValue,
     PortableScientificExperimentSpec,
+    PortableScientificExperimentSpecV03,
     RegistryComponentResolution,
     RegistryResolution,
+    RegistryResolutionV02,
     ResolvedPortableExperiment,
+    ResolvedPortableExperimentV03,
     normalized_component_spec_digest,
     portable_scientific_spec_digest,
+    portable_scientific_spec_v03_digest,
     registry_resolution_digest,
+    registry_resolution_v02_digest,
     workflow_semantic_digest,
+    workflow_semantic_digest_v03,
 )
 from majorana_vqe.result import EXECUTION_EVIDENCE_ADAPTER, ExecutionEvidence
 from majorana_vqe.standard_catalog import (
@@ -752,6 +765,297 @@ async def save_component_swap_workflow_draft(
     return SavedWorkflowDraft(artifact, version, workflow_spec, links, False)
 
 
+async def save_h2_uccsd_migration_workflow_draft(
+    scope: Scope,
+    session: AsyncSession,
+    *,
+    baseline_workflow_artifact_version_id: uuid.UUID,
+    evaluator_provider: Literal["qiskit", "pennylane"],
+    request_idempotency_key: str,
+    catalog_workspace_id: uuid.UUID | None,
+) -> SavedWorkflowDraft:
+    """Persist the private fixed-excitation/SLSQP -> UCCSD migration.
+
+    This is deliberately separate from ``save_component_swap_workflow_draft``:
+    the primary ansatz change also changes the dependent compilation protocol,
+    makes three adaptive-only roles inapplicable, and resets all parameters.
+    """
+
+    require_write(scope)
+    baseline = await get_component_spec(
+        scope,
+        session,
+        baseline_workflow_artifact_version_id,
+        catalog_workspace_id=catalog_workspace_id,
+    )
+    if not (
+        baseline.component_type == ComponentType.WORKFLOW.value
+        and baseline.machine_validation_state
+        == MachineValidationState.MACHINE_VALIDATED.value
+        and baseline.review_state == ReviewState.UNREVIEWED.value
+        and baseline.spec_json.get("kind") == "component_swap_workflow_draft"
+        and baseline.spec_json.get("changed_role")
+        == ComponentType.PARAMETER_OPTIMIZER.value
+        and baseline.spec_json.get("candidate_component_semantic_key")
+        == "optimizer.slsqp.v1"
+        and baseline.spec_json.get("execution_status")
+        == "private_qualification_candidate"
+    ):
+        raise InvalidWorkflowCompositionError(
+            "UCCSD migration baseline must be the machine-validated private "
+            "fixed-excitation SLSQP workflow"
+        )
+
+    await resolve_scientific_experiment_spec(
+        scope,
+        session,
+        baseline_workflow_artifact_version_id,
+        catalog_workspace_id=catalog_workspace_id,
+        review_policy="h2_owner_deferred_candidate",
+    )
+    baseline_links = await list_workflow_components(
+        scope,
+        session,
+        baseline_workflow_artifact_version_id,
+        catalog_workspace_id=catalog_workspace_id,
+    )
+    baseline_by_role = {ComponentType(link.component_role): link for link in baseline_links}
+    if set(baseline_by_role) != set(PORTABLE_SCIENTIFIC_ROLES):
+        raise InvalidWorkflowCompositionError("SLSQP baseline does not contain all v0.2 roles")
+
+    request_payload = {
+        "schema_version": "0.1.0",
+        "baseline_workflow_artifact_version_id": str(
+            baseline_workflow_artifact_version_id
+        ),
+        "migration": "h2_fixed_excitation_slsqp_to_uccsd_slsqp",
+        "comparison_class": "controlled_capability_migration_not_one_component_swap",
+        "primary_changed_role": ComponentType.ANSATZ.value,
+        "dependent_changed_roles": [ComponentType.COMPILATION_BACKEND.value],
+        "required_to_not_applicable_roles": sorted(
+            role.value
+            for role in set(PORTABLE_SCIENTIFIC_ROLES)
+            - set(H2_UCCSD_APPLICABLE_ROLES)
+        ),
+        "parameter_policy": "reset_all",
+        "evaluator_provider": evaluator_provider,
+    }
+    request_sha256 = hashlib.sha256(
+        json.dumps(request_payload, sort_keys=True, separators=(",", ":")).encode()
+    ).hexdigest()
+    slug_material = f"{scope.workspace_id}:{request_idempotency_key}".encode()
+    slug = f"vqe-uccsd-migration-{hashlib.sha256(slug_material).hexdigest()[:32]}"
+    existing = await artifacts_repo.get_artifact_by_slug(scope, session, slug)
+    if existing is not None:
+        if existing.current_version_id is None:
+            raise IdempotencyConflictError("existing UCCSD migration has no version")
+        version = await artifacts_repo.get_version(
+            scope,
+            session,
+            existing.current_version_id,
+        )
+        if (version.artifact_metadata or {}).get("request_sha256") != request_sha256:
+            raise IdempotencyConflictError(
+                "Idempotency-Key was reused for a different UCCSD migration"
+            )
+        workflow_spec = await get_component_spec(scope, session, version.id)
+        links = await list_workflow_components(scope, session, version.id)
+        return SavedWorkflowDraft(existing, version, workflow_spec, tuple(links), True)
+
+    uccsd_specs = load_packaged_h2_uccsd_executable_component_specs()
+    candidate_specs: dict[ComponentType, dict[str, object]] = {}
+    resolved_links: list[tuple[ComponentType, uuid.UUID, dict[str, Any]]] = []
+    changed_roles = {
+        ComponentType.ANSATZ,
+        ComponentType.COMPILATION_BACKEND,
+    }
+    semantic_keys = {
+        ComponentType.ANSATZ: "ansatz.uccsd.v1",
+        ComponentType.COMPILATION_BACKEND: (
+            "compilation.h2.uccsd.canonical_logical.v1"
+        ),
+    }
+
+    for role in H2_UCCSD_APPLICABLE_ROLES:
+        if role not in changed_roles:
+            link = baseline_by_role[role]
+            component = await get_component_spec(
+                scope,
+                session,
+                link.component_artifact_version_id,
+                catalog_workspace_id=catalog_workspace_id,
+            )
+            baseline_payload = executable_component_scientific_payload(
+                role,
+                parse_executable_component(role, component.spec_json),
+            )
+            candidate_payload = executable_component_scientific_payload(
+                role,
+                parse_executable_component(role, uccsd_specs[role]),
+            )
+            if baseline_payload != candidate_payload:
+                raise InvalidWorkflowCompositionError(
+                    f"UCCSD migration would silently change preserved role {role.value!r}"
+                )
+            candidate_specs[role] = component.spec_json
+            resolved_links.append(
+                (
+                    role,
+                    link.component_artifact_version_id,
+                    link.binding_metadata or {},
+                )
+            )
+            continue
+
+        configured_payload = uccsd_specs[role]
+        configured_digest = normalized_component_spec_digest(
+            component_type=role,
+            spec_json=configured_payload,
+        )
+        component_artifact = await artifacts_repo.create_artifact(
+            scope,
+            session,
+            slug=f"{slug}-{role.value}",
+            title=f"Configured H2 UCCSD {role.value}",
+            family=Algorithm.VQE,
+            framework=ContractFramework(evaluator_provider),
+        )
+        component_code = json.dumps(configured_payload, sort_keys=True, indent=2)
+        component_version = await artifacts_repo.create_version(
+            scope,
+            session,
+            component_artifact.id,
+            qasm_version=None,
+            qasm=None,
+            metadata={
+                "source": "h2_uccsd_packaged_executable_seed_v0.3",
+                "semantic_key": semantic_keys[role],
+                "publication": "blocked",
+                "scientific_release": "blocked",
+            },
+            code=component_code,
+            code_lang="json",
+            fingerprint=configured_digest,
+            export_status=ExportStatus.UNSUPPORTED,
+            export_reason="configured VQE component is not a circuit export",
+        )
+        component_spec = await create_component_spec(
+            scope,
+            session,
+            artifact_version_id=component_version.id,
+            schema_version=str(configured_payload["schema_version"]),
+            component_type=role,
+            semantic_key=semantic_keys[role],
+            spec_json=configured_payload,
+            normalized_spec_sha256=configured_digest,
+            machine_validation_state=MachineValidationState.MACHINE_VALIDATED,
+            review_state=ReviewState.UNREVIEWED,
+        )
+        candidate_specs[role] = configured_payload
+        resolved_links.append(
+            (
+                role,
+                component_spec.artifact_version_id,
+                {
+                    "binding_key": (
+                        f"{semantic_keys[role]}:{evaluator_provider}:"
+                        f"{'1.4.6' if evaluator_provider == 'qiskit' else '0.45.1'}"
+                    ),
+                    "evidence_level": "adapter_tested",
+                    "runtime_qualification": "pending",
+                },
+            )
+        )
+
+    try:
+        validate_h2_uccsd_executable_composition(candidate_specs)
+    except ValueError as exc:
+        raise InvalidWorkflowCompositionError(
+            f"configured UCCSD migration violates H2 invariants: {exc}"
+        ) from exc
+
+    artifact = await artifacts_repo.create_artifact(
+        scope,
+        session,
+        slug=slug,
+        title="H2 fixed-excitation to UCCSD migration draft",
+        family=Algorithm.VQE,
+        framework=ContractFramework(evaluator_provider),
+    )
+    workflow_payload = {
+        **request_payload,
+        "schema_version": "0.3.0",
+        "kind": "ansatz_migration_workflow_draft",
+        "request_sha256": request_sha256,
+        "execution_status": "private_qualification_candidate",
+        "publication": "blocked",
+        "scientific_release": "blocked",
+    }
+    code = json.dumps(workflow_payload, sort_keys=True, indent=2)
+    version = await artifacts_repo.create_version(
+        scope,
+        session,
+        artifact.id,
+        qasm_version=None,
+        qasm=None,
+        metadata={
+            "source": "vqe_ansatz_migration",
+            "request_sha256": request_sha256,
+            "baseline_workflow_artifact_version_id": str(
+                baseline_workflow_artifact_version_id
+            ),
+            "publication": "blocked",
+            "scientific_release": "blocked",
+        },
+        code=code,
+        code_lang="json",
+        fingerprint=request_sha256,
+        export_status=ExportStatus.UNSUPPORTED,
+        export_reason="structured VQE Workflow migration is not a circuit export",
+        limitations=(
+            "Private owner-waived qualification candidate; not a one-component "
+            "comparison; public execution and scientific claims remain blocked."
+        ),
+    )
+    workflow_spec = await create_component_spec(
+        scope,
+        session,
+        artifact_version_id=version.id,
+        schema_version="0.3.0",
+        component_type=ComponentType.WORKFLOW,
+        semantic_key=f"workflow.instance.{request_sha256}",
+        spec_json=workflow_payload,
+        machine_validation_state=MachineValidationState.MACHINE_VALIDATED,
+        review_state=ReviewState.UNREVIEWED,
+    )
+    links = tuple(
+        [
+            await create_workflow_component(
+                scope,
+                session,
+                workflow_artifact_version_id=version.id,
+                component_role=role.value,
+                component_artifact_version_id=component_version_id,
+                ordinal=0,
+                binding_metadata=binding_metadata,
+                catalog_workspace_id=catalog_workspace_id,
+            )
+            for role, component_version_id, binding_metadata in resolved_links
+        ]
+    )
+
+    # Resolve from the rows just persisted, then validate the complete
+    # migration against the baseline. This prevents the stored workflow
+    # metadata from becoming more authoritative than its component links.
+    await resolve_uccsd_scientific_experiment_spec(
+        scope,
+        session,
+        version.id,
+        catalog_workspace_id=catalog_workspace_id,
+    )
+    return SavedWorkflowDraft(artifact, version, workflow_spec, links, False)
+
+
 async def resolve_scientific_experiment_spec(
     scope: Scope,
     session: AsyncSession,
@@ -763,7 +1067,7 @@ async def resolve_scientific_experiment_spec(
         "approved",
         "h2_owner_deferred_candidate",
     ] = "approved",
-) -> ResolvedPortableExperiment:
+) -> ResolvedPortableExperiment | ResolvedPortableExperimentV03:
     """Build portable schema v0.2 and a separate registry-resolution proof.
 
     Client input selects only a Workflow. Component semantic keys, normalized
@@ -778,6 +1082,18 @@ async def resolve_scientific_experiment_spec(
     )
     if workflow.component_type != ComponentType.WORKFLOW.value:
         raise InvalidWorkflowCompositionError("artifact version is not a VQE workflow")
+    if workflow.spec_json.get("kind") == "ansatz_migration_workflow_draft":
+        if review_policy != "h2_owner_deferred_candidate":
+            raise InvalidWorkflowCompositionError(
+                "private UCCSD migration requires the owner-deferred candidate policy"
+            )
+        return await resolve_uccsd_scientific_experiment_spec(
+            scope,
+            session,
+            workflow_artifact_version_id,
+            catalog_workspace_id=catalog_workspace_id,
+            approved_seed=approved_seed,
+        )
     if workflow.machine_validation_state != MachineValidationState.MACHINE_VALIDATED.value:
         raise InvalidWorkflowCompositionError("workflow is not machine validated")
     approved_review_states = {
@@ -988,6 +1304,290 @@ async def resolve_scientific_experiment_spec(
     )
 
 
+async def resolve_uccsd_scientific_experiment_spec(
+    scope: Scope,
+    session: AsyncSession,
+    workflow_artifact_version_id: uuid.UUID,
+    *,
+    catalog_workspace_id: uuid.UUID | None = None,
+    approved_seed: int = 0,
+) -> ResolvedPortableExperimentV03:
+    """Resolve only the server-authored private H₂ UCCSD migration as v0.3."""
+
+    workflow = await get_component_spec(
+        scope,
+        session,
+        workflow_artifact_version_id,
+        catalog_workspace_id=catalog_workspace_id,
+    )
+    expected_na_roles = sorted(
+        role.value
+        for role in set(PORTABLE_SCIENTIFIC_ROLES) - set(H2_UCCSD_APPLICABLE_ROLES)
+    )
+    if not (
+        workflow.component_type == ComponentType.WORKFLOW.value
+        and workflow.machine_validation_state
+        == MachineValidationState.MACHINE_VALIDATED.value
+        and workflow.review_state == ReviewState.UNREVIEWED.value
+        and workflow.spec_json.get("kind") == "ansatz_migration_workflow_draft"
+        and workflow.spec_json.get("comparison_class")
+        == "controlled_capability_migration_not_one_component_swap"
+        and workflow.spec_json.get("primary_changed_role") == ComponentType.ANSATZ.value
+        and workflow.spec_json.get("dependent_changed_roles")
+        == [ComponentType.COMPILATION_BACKEND.value]
+        and workflow.spec_json.get("required_to_not_applicable_roles")
+        == expected_na_roles
+        and workflow.spec_json.get("parameter_policy") == "reset_all"
+        and workflow.spec_json.get("execution_status")
+        == "private_qualification_candidate"
+    ):
+        raise InvalidWorkflowCompositionError(
+            "workflow is not the server-validated private H2 UCCSD migration"
+        )
+    try:
+        baseline_workflow_id = uuid.UUID(
+            str(workflow.spec_json["baseline_workflow_artifact_version_id"])
+        )
+    except (KeyError, ValueError) as exc:
+        raise InvalidWorkflowCompositionError(
+            "UCCSD migration lacks a valid SLSQP baseline identity"
+        ) from exc
+    baseline = await get_component_spec(
+        scope,
+        session,
+        baseline_workflow_id,
+        catalog_workspace_id=catalog_workspace_id,
+    )
+    if not (
+        baseline.spec_json.get("kind") == "component_swap_workflow_draft"
+        and baseline.spec_json.get("changed_role")
+        == ComponentType.PARAMETER_OPTIMIZER.value
+        and baseline.spec_json.get("candidate_component_semantic_key")
+        == "optimizer.slsqp.v1"
+        and baseline.spec_json.get("execution_status")
+        == "private_qualification_candidate"
+    ):
+        raise InvalidWorkflowCompositionError(
+            "UCCSD migration baseline is not the private SLSQP workflow"
+        )
+
+    baseline_resolved = await resolve_scientific_experiment_spec(
+        scope,
+        session,
+        baseline_workflow_id,
+        catalog_workspace_id=catalog_workspace_id,
+        approved_seed=approved_seed,
+        review_policy="h2_owner_deferred_candidate",
+    )
+    baseline_links = {
+        ComponentType(link.component_role): link
+        for link in await list_workflow_components(
+            scope,
+            session,
+            baseline_workflow_id,
+            catalog_workspace_id=catalog_workspace_id,
+        )
+    }
+    links = await list_workflow_components(
+        scope,
+        session,
+        workflow_artifact_version_id,
+        catalog_workspace_id=catalog_workspace_id,
+    )
+    if len(links) != len(H2_UCCSD_APPLICABLE_ROLES):
+        raise InvalidWorkflowCompositionError(
+            "UCCSD workflow must contain exactly its 11 applicable role links"
+        )
+
+    seen_roles: set[ComponentType] = set()
+    typed_specs: dict[ComponentType, dict[str, object]] = {}
+    scientific_by_role: dict[ComponentType, tuple[str, str]] = {}
+    registry_components: list[RegistryComponentResolution] = []
+    changed_roles = {
+        ComponentType.ANSATZ,
+        ComponentType.COMPILATION_BACKEND,
+    }
+    expected_changed_keys = {
+        ComponentType.ANSATZ: "ansatz.uccsd.v1",
+        ComponentType.COMPILATION_BACKEND: (
+            "compilation.h2.uccsd.canonical_logical.v1"
+        ),
+    }
+    for link in links:
+        try:
+            role = ComponentType(link.component_role)
+        except ValueError as exc:
+            raise InvalidWorkflowCompositionError(
+                f"unknown UCCSD workflow role {link.component_role!r}"
+            ) from exc
+        if (
+            role not in H2_UCCSD_APPLICABLE_ROLES
+            or link.ordinal != 0
+            or role in seen_roles
+        ):
+            raise InvalidWorkflowCompositionError(
+                f"invalid or duplicate UCCSD workflow role {role.value!r}"
+            )
+        component = await get_component_spec(
+            scope,
+            session,
+            link.component_artifact_version_id,
+            catalog_workspace_id=catalog_workspace_id,
+        )
+        if (
+            component.component_type != role.value
+            or component.machine_validation_state
+            != MachineValidationState.MACHINE_VALIDATED.value
+            or component.review_state != ReviewState.UNREVIEWED.value
+        ):
+            raise InvalidWorkflowCompositionError(
+                f"UCCSD component {role.value!r} violates private validation policy"
+            )
+        full_digest = normalized_component_spec_digest(
+            component_type=role,
+            spec_json=component.spec_json,
+        )
+        if full_digest != component.normalized_spec_sha256:
+            raise InvalidWorkflowCompositionError(
+                f"UCCSD component {role.value!r} normalized digest mismatch"
+            )
+        if role in changed_roles:
+            if component.semantic_key != expected_changed_keys[role]:
+                raise InvalidWorkflowCompositionError(
+                    f"UCCSD changed role {role.value!r} has the wrong semantic key"
+                )
+        else:
+            baseline_link = baseline_links.get(role)
+            if (
+                baseline_link is None
+                or baseline_link.component_artifact_version_id
+                != component.artifact_version_id
+            ):
+                raise InvalidWorkflowCompositionError(
+                    f"UCCSD migration changed preserved role {role.value!r}"
+                )
+
+        parsed = parse_executable_component(role, component.spec_json)
+        scientific_payload = executable_component_scientific_payload(role, parsed)
+        scientific_digest = normalized_component_spec_digest(
+            component_type=role,
+            spec_json=scientific_payload,
+        )
+        typed_specs[role] = component.spec_json
+        scientific_by_role[role] = (component.semantic_key, scientific_digest)
+        registry_components.append(
+            RegistryComponentResolution(
+                role=role,
+                artifact_version_id=component.artifact_version_id,
+                component_semantic_key=component.semantic_key,
+                component_spec_sha256=scientific_digest,
+            )
+        )
+        seen_roles.add(role)
+    if seen_roles != set(H2_UCCSD_APPLICABLE_ROLES):
+        raise InvalidWorkflowCompositionError("UCCSD workflow applicable role set mismatch")
+
+    try:
+        executable = validate_h2_uccsd_executable_composition(typed_specs)
+    except ValueError as exc:
+        raise InvalidWorkflowCompositionError(str(exc)) from exc
+    bindings: list[ComponentRoleBindingV03] = []
+    for role in PORTABLE_SCIENTIFIC_ROLES:
+        if role not in seen_roles:
+            bindings.append(
+                ComponentRoleBindingV03(
+                    role=role,
+                    component_type=role,
+                    applicability="not_applicable",
+                )
+            )
+            continue
+        semantic_key, scientific_digest = scientific_by_role[role]
+        bindings.append(
+            ComponentRoleBindingV03(
+                role=role,
+                component_type=role,
+                component_semantic_key=semantic_key,
+                component_spec_sha256=scientific_digest,
+            )
+        )
+    scientific_spec = PortableScientificExperimentSpecV03(
+        workflow_semantic_digest=workflow_semantic_digest_v03(bindings),
+        component_bindings=bindings,
+        dataset_snapshot_sha256=executable.problem.dataset_snapshot_sha256,
+        initial_parameter_slots=[
+            ParameterSlotValue(
+                slot_id=slot.slot_id,
+                float64_hex=slot.initial_float64_hex,
+            )
+            for slot in executable.ansatz.parameter_slots
+        ],
+        seed=approved_seed,
+    )
+    registry_resolution = RegistryResolutionV02(
+        workflow_artifact_version_id=workflow_artifact_version_id,
+        components=registry_components,
+    )
+    resolved = ResolvedPortableExperimentV03(
+        scientific_spec=scientific_spec,
+        registry_resolution=registry_resolution,
+    )
+
+    baseline_specs: dict[ComponentType, dict[str, object]] = {}
+    baseline_v03_bindings: list[ComponentRoleBindingV03] = []
+    for role, link in baseline_links.items():
+        component = await get_component_spec(
+            scope,
+            session,
+            link.component_artifact_version_id,
+            catalog_workspace_id=catalog_workspace_id,
+        )
+        baseline_specs[role] = component.spec_json
+        baseline_scientific_payload = executable_component_scientific_payload(
+            role,
+            parse_executable_component(role, component.spec_json),
+        )
+        baseline_v03_bindings.append(
+            ComponentRoleBindingV03(
+                role=role,
+                component_type=role,
+                component_semantic_key=component.semantic_key,
+                component_spec_sha256=normalized_component_spec_digest(
+                    component_type=role,
+                    spec_json=baseline_scientific_payload,
+                ),
+            )
+        )
+    baseline_executable = validate_h2_executable_composition(baseline_specs)
+    baseline_v03_spec = PortableScientificExperimentSpecV03(
+        workflow_semantic_digest=workflow_semantic_digest_v03(
+            baseline_v03_bindings
+        ),
+        component_bindings=baseline_v03_bindings,
+        dataset_snapshot_sha256=(
+            baseline_resolved.scientific_spec.dataset_snapshot_sha256
+        ),
+        initial_parameter_slots=baseline_resolved.scientific_spec.initial_parameter_slots,
+        seed=baseline_resolved.scientific_spec.seed,
+    )
+    build_h2_fixed_to_uccsd_migration(
+        baseline_spec=baseline_v03_spec,
+        baseline_source_spec_v02_sha256=portable_scientific_spec_digest(
+            baseline_resolved.scientific_spec
+        ),
+        candidate_spec=scientific_spec,
+        baseline_hamiltonian_sha256=H2_STO3G_HAMILTONIAN_DIGEST_SHA256,
+        candidate_hamiltonian_sha256=H2_STO3G_HAMILTONIAN_DIGEST_SHA256,
+        baseline_reference_energy_float64_hex=(
+            baseline_executable.evaluation.reference_energy_float64_hex
+        ),
+        candidate_reference_energy_float64_hex=(
+            executable.evaluation.reference_energy_float64_hex
+        ),
+    )
+    return resolved
+
+
 # --- experiments -----------------------------------------------------------
 
 
@@ -1018,7 +1618,7 @@ async def create_experiment(
     session: AsyncSession,
     *,
     workflow_artifact_version_id: uuid.UUID,
-    resolved: ResolvedPortableExperiment,
+    resolved: ResolvedPortableExperiment | ResolvedPortableExperimentV03,
     request_idempotency_key: str | None = None,
     catalog_workspace_id: uuid.UUID | None = None,
 ) -> VqeExperimentRow:
@@ -1049,8 +1649,18 @@ async def create_experiment(
         raise InvalidWorkflowCompositionError("workflow_artifact_version_id is not a workflow")
     if resolved.registry_resolution.workflow_artifact_version_id != workflow_artifact_version_id:
         raise InvalidWorkflowCompositionError("registry resolution names a different workflow")
-    scientific_spec_sha256 = portable_scientific_spec_digest(resolved.scientific_spec)
-    resolution_sha256 = registry_resolution_digest(resolved.registry_resolution)
+    if isinstance(resolved, ResolvedPortableExperimentV03):
+        scientific_spec_sha256 = portable_scientific_spec_v03_digest(
+            resolved.scientific_spec
+        )
+        resolution_sha256 = registry_resolution_v02_digest(
+            resolved.registry_resolution
+        )
+    else:
+        scientific_spec_sha256 = portable_scientific_spec_digest(
+            resolved.scientific_spec
+        )
+        resolution_sha256 = registry_resolution_digest(resolved.registry_resolution)
 
     if request_idempotency_key is not None:
         existing = await find_experiment_by_request_idempotency_key(
