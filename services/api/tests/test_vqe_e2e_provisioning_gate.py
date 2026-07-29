@@ -38,7 +38,7 @@ def isolate_remote_provisioning_environment(monkeypatch: pytest.MonkeyPatch) -> 
         monkeypatch.delenv(name, raising=False)
 
 
-def test_remote_provisioning_accepts_github_actions_neon(
+def test_remote_provisioning_accepts_github_actions_isolated_postgres(
     monkeypatch: pytest.MonkeyPatch,
     provision_script,
 ) -> None:
@@ -46,7 +46,7 @@ def test_remote_provisioning_accepts_github_actions_neon(
     monkeypatch.setenv("GITHUB_ACTIONS", "true")
 
     assert provision_script._remote_provisioning_allowed(
-        "postgresql://example:secret@example-pooler.neon.tech/database"
+        "postgresql://pg:pg@localhost:5432/majorana_vqe_e2e"
     )
 
 
@@ -73,44 +73,29 @@ def test_candidate_storage_slug_is_workspace_scoped_and_semantically_stable(
     )
 
 
-def test_remote_provisioning_accepts_exact_owner_s12_staging(
-    monkeypatch: pytest.MonkeyPatch,
-    provision_script,
-) -> None:
-    monkeypatch.setenv("MAJORANA_VQE_E2E_OWNER_STAGING_PROVISION", "true")
-    monkeypatch.setenv("MAJORANA_ENV", "production")
-    monkeypatch.setenv("MAJORANA_DEPLOYMENT_ENVIRONMENT", "phase76-s12-staging")
-
-    assert provision_script._remote_provisioning_allowed(
-        "postgresql://example:secret@example-pooler.neon.tech/database"
-    )
-
-
 @pytest.mark.parametrize(
-    ("database_url", "environment", "deployment_environment"),
+    "database_url",
     [
-        ("postgresql://localhost/database", "production", "phase76-s12-staging"),
-        (
-            "postgresql://example:secret@example-pooler.neon.tech/database",
-            "development",
-            "phase76-s12-staging",
-        ),
-        (
-            "postgresql://example:secret@example-pooler.neon.tech/database",
-            "production",
-            "production",
-        ),
+        "postgresql://pg:pg@localhost:5432/another_database",
+        "postgresql://pg:pg@remote.example/majorana_vqe_e2e",
+        "postgresql://example:secret@example-pooler.neon.tech/database",
+        "not-a-database-url",
     ],
 )
-def test_remote_provisioning_rejects_non_s12_contexts(
+def test_remote_provisioning_rejects_other_github_actions_databases(
     monkeypatch: pytest.MonkeyPatch,
     provision_script,
     database_url: str,
-    environment: str,
-    deployment_environment: str,
 ) -> None:
-    monkeypatch.setenv("MAJORANA_VQE_E2E_OWNER_STAGING_PROVISION", "true")
-    monkeypatch.setenv("MAJORANA_ENV", environment)
-    monkeypatch.setenv("MAJORANA_DEPLOYMENT_ENVIRONMENT", deployment_environment)
+    monkeypatch.setenv("CI", "true")
+    monkeypatch.setenv("GITHUB_ACTIONS", "true")
 
     assert not provision_script._remote_provisioning_allowed(database_url)
+
+
+def test_remote_provisioning_rejects_local_database_outside_github_actions(
+    provision_script,
+) -> None:
+    assert not provision_script._remote_provisioning_allowed(
+        "postgresql://pg:pg@localhost:5432/majorana_vqe_e2e"
+    )

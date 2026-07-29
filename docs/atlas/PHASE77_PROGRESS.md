@@ -170,6 +170,19 @@ Status: verified locally
   - Fresh PostgreSQL migration round trip
     (`upgrade head → downgrade base → upgrade head`): passed with one head at
     revision 0043.
+- The first post-merge remote `vqe-production-e2e` run correctly failed closed
+  because its legacy job still presented a disposable Neon URL while
+  `MAJORANA_ENV=production`. DEV moved production persistence to Cloud SQL on
+  2026-07-27 and now rejects that split-brain risk. The VQE E2E was therefore
+  aligned with DEV rather than bypassing the guard:
+  - its isolated database is now PostgreSQL 17, matching the normal DEV CI and
+    production PostgreSQL major version;
+  - provisioning accepts only the exact loopback `majorana_vqe_e2e` database
+    created inside GitHub Actions;
+  - WorkOS-shaped JWT verification, digest-pinned OCI execution, and private
+    evidence materialization remain covered;
+  - the test explicitly does not claim use of a live WorkOS tenant or the
+    production Cloud SQL database.
 - These checks establish that the synchronized branch is internally
   consistent. They do not claim that future DEV commits cannot conflict, and
   they do not lift the existing blocks on publication, human-reviewed status,

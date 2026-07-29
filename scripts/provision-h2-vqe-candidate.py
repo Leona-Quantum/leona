@@ -23,6 +23,8 @@ from majorana_vqe.models import (
     ReviewState,
 )
 from majorana_vqe.portable import normalized_component_spec_digest
+from sqlalchemy.exc import ArgumentError
+from sqlalchemy.engine import make_url
 
 from majorana_api.db import engine_from_env, session_factory
 from majorana_api.repos import artifacts, system, vqe
@@ -115,18 +117,24 @@ async def _component(
 
 
 def _remote_provisioning_allowed(database_url: str) -> bool:
-    """Allow only CI or the exact owner-approved S12 staging environment."""
+    """Allow only the isolated PostgreSQL database owned by GitHub Actions.
+
+    Production moved from Neon to Cloud SQL on 2026-07-27.  This provisioner
+    therefore must not make the retired Neon path look production-valid.  The
+    CI path is intentionally narrower than a generic ``CI=true`` bypass: it
+    accepts only the dedicated loopback database created by the VQE E2E job.
+    """
     github_actions = (
         os.environ.get("CI", "").strip().lower() == "true"
         and os.environ.get("GITHUB_ACTIONS", "").strip().lower() == "true"
     )
-    owner_staging = (
-        os.environ.get("MAJORANA_VQE_E2E_OWNER_STAGING_PROVISION", "").strip().lower()
-        in {"1", "true", "yes"}
-        and os.environ.get("MAJORANA_ENV", "").strip().lower() == "production"
-        and os.environ.get("MAJORANA_DEPLOYMENT_ENVIRONMENT", "").strip() == "phase76-s12-staging"
-    )
-    return ".neon.tech/" in database_url and (github_actions or owner_staging)
+    if not github_actions:
+        return False
+    try:
+        parsed = make_url(database_url)
+    except (ArgumentError, TypeError, ValueError):
+        return False
+    return parsed.host in {"localhost", "127.0.0.1"} and parsed.database == "majorana_vqe_e2e"
 
 
 async def provision() -> str:
@@ -139,8 +147,8 @@ async def provision() -> str:
         database_url = os.environ.get("DATABASE_URL", "")
         if not _remote_provisioning_allowed(database_url):
             raise RuntimeError(
-                "E2E provisioning requires GitHub Actions or the explicit owner-approved "
-                "Phase 7.6 S12 staging gate, plus a Neon URL"
+                "E2E provisioning requires GitHub Actions and its isolated "
+                "localhost/majorana_vqe_e2e PostgreSQL database"
             )
         workos_user_id = os.environ.get(
             "MAJORANA_VQE_E2E_USER_ID",

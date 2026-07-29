@@ -8,6 +8,7 @@ on:
     paths:
       - .github/workflows/vqe-production-e2e.yml
       - services/api/src/majorana_api/auth/**
+      - services/api/src/majorana_api/db.py
       - services/api/src/majorana_api/routes/vqe.py
       - services/api/src/majorana_api/settings.py
       - services/api/src/majorana_api/vqe_runtime_profiles.py
@@ -15,6 +16,8 @@ on:
       - services/worker/src/majorana_worker/handlers.py
       - services/worker/src/majorana_worker/vqe_runtime.py
       - packages/py/vqe/**
+      - scripts/provision-h2-vqe-candidate.py
+      - db/migrations/**
 
 permissions:
   contents: read
@@ -25,36 +28,37 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  workos-contract-neon-oci:
+  workos-contract-postgres-oci:
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: pg
+          POSTGRES_PASSWORD: pg
+          POSTGRES_DB: majorana_vqe_e2e
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v6
         with:
           python-version: "3.12"
       - run: uv sync --all-packages --frozen
-      - uses: neondatabase/create-branch-action@v5
-        id: neon
-        with:
-          project_id: twilight-wildflower-01313590
-          branch_name: ci-vqe-production-e2e-${{ github.run_id }}
-          api_key: ${{ secrets.NEON_API_KEY }}
-      - name: reset disposable Neon branch schema
+      - name: migrate isolated PostgreSQL 17 database
         env:
-          DATABASE_URL_DIRECT: ${{ steps.neon.outputs.db_url }}
-        run: |
-          psql "$DATABASE_URL_DIRECT" \
-            --set=ON_ERROR_STOP=1 \
-            --command='DROP SCHEMA IF EXISTS public CASCADE; CREATE SCHEMA public;'
-      - name: migrate disposable Neon branch
-        env:
-          DATABASE_URL_DIRECT: ${{ steps.neon.outputs.db_url }}
-          DATABASE_URL: ${{ steps.neon.outputs.db_url_with_pooler }}
+          DATABASE_URL_DIRECT: postgresql://pg:pg@localhost:5432/majorana_vqe_e2e
+          DATABASE_URL: postgresql://pg:pg@localhost:5432/majorana_vqe_e2e
         run: uv run --package majorana-api alembic -c db/alembic.ini upgrade head
       - name: provision frozen owner-waived H2 workflow
         env:
-          DATABASE_URL: ${{ steps.neon.outputs.db_url_with_pooler }}
+          DATABASE_URL: postgresql://pg:pg@localhost:5432/majorana_vqe_e2e
           MAJORANA_VQE_E2E_PROVISION: "true"
           MAJORANA_VQE_E2E_USER_ID: vqe-production-e2e
           MAJORANA_VQE_E2E_EMAIL: vqe-production-e2e@majorana.test
@@ -65,9 +69,9 @@ jobs:
         run: |
           docker pull --platform linux/amd64 ghcr.io/eshmis/majorana-vqe-qiskit@sha256:f2d19903e323da3f60039ac81627ed466f36055b7e157959ed1afe6168e4d992
           docker pull --platform linux/amd64 ghcr.io/eshmis/majorana-vqe-pennylane@sha256:da0e2caa3ac106c6627a1f9f166f9b4213ce7fef8b3145263904e3df7b399c69
-      - name: WorkOS JWT contract → Neon → real OCI runtime E2E
+      - name: WorkOS JWT contract → isolated PostgreSQL → real OCI runtime E2E
         env:
-          DATABASE_URL: ${{ steps.neon.outputs.db_url_with_pooler }}
+          DATABASE_URL: postgresql://pg:pg@localhost:5432/majorana_vqe_e2e
           MAJORANA_ENV: production
           MAJORANA_VQE_RUNTIME_HOST: dedicated
           MAJORANA_RUN_VQE_PRODUCTION_E2E: "1"
@@ -81,9 +85,3 @@ jobs:
           path: /tmp/phase76-s12-private-ci-e2e.json
           if-no-files-found: error
           retention-days: 30
-      - uses: neondatabase/delete-branch-action@v3
-        if: always()
-        with:
-          project_id: twilight-wildflower-01313590
-          branch: ci-vqe-production-e2e-${{ github.run_id }}
-          api_key: ${{ secrets.NEON_API_KEY }}

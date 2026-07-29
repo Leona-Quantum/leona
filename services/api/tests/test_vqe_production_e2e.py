@@ -1,10 +1,10 @@
-"""Private Phase 6 system E2E over WorkOS-shaped JWT, Neon, and real OCI Docker.
+"""Private Phase 6 system E2E over WorkOS-shaped JWT, PostgreSQL, and real OCI Docker.
 
-This is deliberately opt-in. CI provides a disposable Neon branch, provisions
-the frozen H2 workflow for the same identity, pulls the approved image before
-the test, and then sets ``--pull=never`` execution mode. The local JWKS issuer
-exercises the production verification code without claiming that a real WorkOS
-tenant was used.
+This is deliberately opt-in. CI provides an isolated PostgreSQL 17 database,
+provisions the frozen H2 workflow for the same identity, pulls the approved
+image before the test, and then sets ``--pull=never`` execution mode. The local
+JWKS issuer exercises the production verification code without claiming that a
+real WorkOS tenant or the production Cloud SQL database was used.
 """
 
 from __future__ import annotations
@@ -33,7 +33,7 @@ requires_production_e2e = pytest.mark.skipif(
     os.environ.get("MAJORANA_RUN_VQE_PRODUCTION_E2E") != "1"
     or "DATABASE_URL" not in os.environ
     or "MAJORANA_VQE_E2E_WORKFLOW_ID" not in os.environ,
-    reason="requires explicit production E2E gate, Neon, and provisioned H2 workflow",
+    reason="requires explicit production E2E gate, isolated PostgreSQL, and provisioned H2 workflow",
 )
 
 CLIENT_ID = "client_vqe_production_e2e"
@@ -149,7 +149,7 @@ async def _execute_and_finish(
 
 
 @requires_production_e2e
-async def test_workos_contract_neon_and_real_oci_runtime_end_to_end():
+async def test_workos_contract_postgres_and_real_oci_runtime_end_to_end():
     server, thread, private_key = _start_jwks_server()
     issuer = f"http://127.0.0.1:{server.server_port}"
     auth_jwt._jwk_client.cache_clear()
