@@ -25,6 +25,7 @@ from .models import (
 )
 
 PORTABLE_SPEC_VERSION = "0.2.0"
+PORTABLE_SPEC_V03_VERSION = "0.3.0"
 FLOAT64_HEX_PATTERN = r"^[0-9a-f]{16}$"
 
 # The two roles added in v0.2 are comparison-critical: chemistry preparation
@@ -176,6 +177,97 @@ class PortableScientificExperimentSpec(VqeBaseModel):
         return self
 
 
+class ComponentRoleBindingV03(VqeBaseModel):
+    """One explicit workflow role in the v0.3 scientific identity.
+
+    A fixed ansatz does not have an operator-pool/search/growth component.
+    Those roles remain visible in the identity as ``not_applicable`` without
+    inventing a component key, content digest, or registry row.
+    """
+
+    role: ComponentType
+    ordinal: int = Field(default=0, ge=0)
+    component_type: ComponentType
+    component_semantic_key: str | None = Field(default=None, min_length=1, max_length=200)
+    component_spec_sha256: str | None = Field(default=None, pattern=SHA256_HEX_PATTERN)
+    applicability: Literal["required", "not_applicable"] = "required"
+
+    @model_validator(mode="after")
+    def _role_and_applicability_are_valid(self) -> Self:
+        if self.role is not self.component_type:
+            raise ValueError("component role and component_type must match in schema v0.3")
+        if self.role is ComponentType.WORKFLOW:
+            raise ValueError("workflow cannot be a leaf scientific component")
+        if self.applicability == "required":
+            if self.component_semantic_key is None or self.component_spec_sha256 is None:
+                raise ValueError(
+                    "required role must include component_semantic_key and component_spec_sha256"
+                )
+        elif self.component_semantic_key is not None or self.component_spec_sha256 is not None:
+            raise ValueError(
+                "not_applicable role must not invent a component key or component digest"
+            )
+        if self.component_semantic_key is not None:
+            reject_path_module_or_code(
+                self.component_semantic_key,
+                field_path="component_semantic_key",
+            )
+        return self
+
+
+def workflow_semantic_digest_v03(bindings: list[ComponentRoleBindingV03]) -> str:
+    ordered = sorted(
+        (binding.model_dump(mode="json") for binding in bindings),
+        key=lambda item: (item["role"], item["ordinal"]),
+    )
+    return _canonical_json_sha256(
+        {
+            "digest_protocol": "majorana-vqe-workflow-v2",
+            "component_role_bindings": ordered,
+        }
+    )
+
+
+class PortableScientificExperimentSpecV03(VqeBaseModel):
+    """Portable identity with explicit applicability for every scientific role."""
+
+    schema_version: Literal["0.3.0"] = PORTABLE_SPEC_V03_VERSION
+    workflow_semantic_digest: str = Field(pattern=SHA256_HEX_PATTERN)
+    component_bindings: list[ComponentRoleBindingV03] = Field(min_length=1, max_length=16)
+    dataset_snapshot_sha256: str | None = Field(default=None, pattern=SHA256_HEX_PATTERN)
+    initial_parameter_slots: list[ParameterSlotValue] = Field(default_factory=list, max_length=256)
+    seed: int = Field(ge=0)
+
+    @model_validator(mode="after")
+    def _composition_is_complete_and_digest_matches(self) -> Self:
+        keys = [(binding.role, binding.ordinal) for binding in self.component_bindings]
+        if len(keys) != len(set(keys)):
+            raise ValueError("duplicate (role, ordinal) in component_bindings")
+        roles = {binding.role for binding in self.component_bindings}
+        missing = set(PORTABLE_SCIENTIFIC_ROLES) - roles
+        if missing:
+            raise ValueError(
+                "portable scientific spec is missing required role declarations: "
+                + ", ".join(sorted(role.value for role in missing))
+            )
+        unsupported = roles - set(PORTABLE_SCIENTIFIC_ROLES)
+        if unsupported:
+            raise ValueError(
+                "portable scientific spec contains unsupported roles: "
+                + ", ".join(sorted(role.value for role in unsupported))
+            )
+        for binding in self.component_bindings:
+            if binding.ordinal != 0:
+                raise ValueError("schema v0.3 supports exactly one ordinal=0 binding per role")
+        expected = workflow_semantic_digest_v03(self.component_bindings)
+        if self.workflow_semantic_digest != expected:
+            raise ValueError("workflow_semantic_digest does not match component_bindings")
+        slot_ids = [slot.slot_id for slot in self.initial_parameter_slots]
+        if len(slot_ids) != len(set(slot_ids)):
+            raise ValueError("duplicate initial parameter slot_id")
+        return self
+
+
 class RegistryComponentResolution(VqeBaseModel):
     role: ComponentType
     ordinal: int = Field(default=0, ge=0)
@@ -210,7 +302,58 @@ class ResolvedPortableExperiment(VqeBaseModel):
     registry_resolution: RegistryResolution
 
 
+class RegistryResolutionV02(VqeBaseModel):
+    """Registry rows for applicable v0.3 roles only."""
+
+    schema_version: Literal["0.2.0"] = "0.2.0"
+    workflow_artifact_version_id: UUID
+    components: list[RegistryComponentResolution] = Field(min_length=1, max_length=16)
+
+    @model_validator(mode="after")
+    def _resolution_keys_are_unique(self) -> Self:
+        keys = [(item.role, item.ordinal) for item in self.components]
+        if len(keys) != len(set(keys)):
+            raise ValueError("duplicate registry component resolution")
+        return self
+
+
+class ResolvedPortableExperimentV03(VqeBaseModel):
+    scientific_spec: PortableScientificExperimentSpecV03
+    registry_resolution: RegistryResolutionV02
+
+    @model_validator(mode="after")
+    def _registry_resolves_exactly_the_applicable_roles(self) -> Self:
+        expected = {
+            (
+                binding.role,
+                binding.ordinal,
+                binding.component_semantic_key,
+                binding.component_spec_sha256,
+            )
+            for binding in self.scientific_spec.component_bindings
+            if binding.applicability == "required"
+        }
+        actual = {
+            (
+                item.role,
+                item.ordinal,
+                item.component_semantic_key,
+                item.component_spec_sha256,
+            )
+            for item in self.registry_resolution.components
+        }
+        if actual != expected:
+            raise ValueError(
+                "registry resolution must match exactly the applicable scientific roles"
+            )
+        return self
+
+
 def portable_scientific_spec_digest(spec: PortableScientificExperimentSpec) -> str:
+    return _canonical_json_sha256(spec.model_dump(mode="json"))
+
+
+def portable_scientific_spec_v03_digest(spec: PortableScientificExperimentSpecV03) -> str:
     return _canonical_json_sha256(spec.model_dump(mode="json"))
 
 
