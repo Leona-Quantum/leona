@@ -951,7 +951,9 @@ async def count_public_catalog_entries(
 ) -> int:
     """How many entries the unpaginated listing would return."""
     workspace = await get_catalog_workspace(scope, session, authority=authority)
-    stmt = select(func.count()).select_from(Artifact).where(*_public_catalog_predicate(workspace.id))
+    stmt = (
+        select(func.count()).select_from(Artifact).where(*_public_catalog_predicate(workspace.id))
+    )
     return int((await session.execute(stmt)).scalar_one())
 
 
