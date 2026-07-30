@@ -221,8 +221,24 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
     starting: string;
     view: string;
     circuit: string;
+    visual: string;
     code: string;
+    summary: string;
     versions: string;
+    openSummary: string;
+    expandPanel: string;
+    collapsePanel: string;
+    computeLanes: string;
+    cpuUnavailableShort: string;
+    gpuLane: string;
+    gpuPending: string;
+    gpuExplainer: string;
+    aboutConversions: string;
+    conversionExplainer: string;
+    conversionUnavailable: (target: string, source: string) => string;
+    exportOnlyFramework: string;
+    uncommittedEdits: string;
+    uncommittedEditsNote: string;
     footer: string;
     openRun: string;
     inspector: string;
@@ -564,9 +580,25 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
       starting: "Starting…",
       view: "Studio view",
       circuit: "Circuit",
+      visual: "Visual",
       code: "Code",
+      summary: "Summary",
       versions: "Versions",
-      footer: "Select a gate to inspect it, or switch to Code to edit the source.",
+      openSummary: "Open the summary tab",
+      expandPanel: "Expand this panel",
+      collapsePanel: "Return this panel to the page",
+      computeLanes: "Compute lanes",
+      cpuUnavailableShort: "Not eligible",
+      gpuLane: "GPU lane",
+      gpuPending: "No provider connected",
+      gpuExplainer: "A GPU simulation provider is being arranged. Nothing is wired to it yet, so this lane cannot run a circuit and there is no control here to press. When the provider is connected, this lane gains a run control and its own cost and limit figures.",
+      aboutConversions: "About these conversions",
+      conversionExplainer: "Each framework tab is generated from this circuit's own stored source through a bounded gate set. Where a conversion goes through standard-gate decomposition, the note above says so; stored native source is never rewritten and carries no note. Four of the eight are export formats — they can be produced and downloaded, but Leona Quantum executes only Qiskit, PennyLane, and Cirq.",
+      conversionUnavailable: (target, source) => `No ${target} conversion could be produced from this circuit, so the ${source} source is shown instead. Exports and runs made here use ${source}.`,
+      exportOnlyFramework: "This format is for copy and export. Sandbox execution is limited to Qiskit, PennyLane, and Cirq.",
+      uncommittedEdits: "Edited since the last saved version",
+      uncommittedEditsNote: "These edits exist only in this browser until a verification run saves them as the next version.",
+      footer: "Edits stay in this browser until a verification run saves them as the next version.",
       openRun: "Open live run",
       inspector: "Circuit inspector",
       liveDraft: "live draft",
@@ -921,9 +953,25 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
       starting: "開始中…",
       view: "Studioの表示切り替え",
       circuit: "回路",
+      visual: "回路図",
       code: "コード",
+      summary: "概要",
       versions: "バージョン",
-      footer: "ゲートを選んで確認するか、コード表示に切り替えて編集します。",
+      openSummary: "概要タブを開く",
+      expandPanel: "このパネルを広げる",
+      collapsePanel: "このパネルを元に戻す",
+      computeLanes: "実行環境",
+      cpuUnavailableShort: "この回路では利用できません",
+      gpuLane: "GPU",
+      gpuPending: "接続前",
+      gpuExplainer: "GPUシミュレーションの提供元を準備中です。まだ接続していないため、この環境では回路を実行できず、操作ボタンもありません。接続が完了した時点で、実行ボタンと料金・上限の情報がここに表示されます。",
+      aboutConversions: "変換について",
+      conversionExplainer: "各フレームワークのコードは、この回路に保存されているソースから、対応するゲートの範囲内で生成しています。標準ゲートに分解して変換した場合はその旨を上に表示します。元から保存されているコードは書き換えないため、注記は付きません。8種類のうち4種類は書き出し専用です。Leona Quantum が実行できるのは Qiskit、PennyLane、Cirq のみです。",
+      conversionUnavailable: (target, source) => `この回路から${target}への変換は生成できなかったため、${source}のソースを表示しています。ここからの書き出しと実行は${source}として扱われます。`,
+      exportOnlyFramework: "この形式はコピーと書き出し用です。サンドボックスでの実行は Qiskit、PennyLane、Cirq に限定されています。",
+      uncommittedEdits: "保存済みバージョンから編集されています",
+      uncommittedEditsNote: "この編集はブラウザ内にのみ存在します。検証を実行すると次のバージョンとして保存されます。",
+      footer: "編集内容はこのブラウザ内にのみ保持されます。検証を実行すると次のバージョンとして保存されます。",
       openRun: "実行を開く",
       inspector: "回路の詳細",
       liveDraft: "編集中",
