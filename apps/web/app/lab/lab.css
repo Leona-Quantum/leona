@@ -1,0 +1,713 @@
+/* Exploration surface: "lab" direction. Fully self-contained and scoped under
+ * .lab-root, so it shares nothing with the shipped marketing styles. Palette
+ * lives in tokens.css under [data-surface="lab"] (the raw-hex gate allows hex
+ * only there). Delete this file and app/lab/ to retire the exploration.
+ *
+ * Language: scientific instrument. Near-black ground, one phosphor-amber
+ * signal, hairlines instead of cards, mono for anything measured.
+ */
+
+.lab-root {
+  --lab-gutter: clamp(20px, 5vw, 72px);
+  --lab-max: 1320px;
+  --lab-rule: 1px solid var(--lab-line);
+  /* Two curves, two jobs. --lab-ease-heavy carries mass, for things that
+     arrive; --lab-ease-quick is for things that answer the pointer, where a
+     long tail would feel unresponsive. Neither is ease-in-out. */
+  --lab-ease-heavy: cubic-bezier(0.32, 0.72, 0, 1);
+  --lab-ease-quick: cubic-bezier(0.2, 0.8, 0.2, 1);
+  /* Machined-edge highlight. Real instrument housings catch light along the
+     top edge; a hairline alone reads as a drawing of a panel, not a panel. */
+  --lab-edge: inset 0 1px 0 rgb(255 255 255 / 0.055);
+
+  min-height: 100dvh;
+  background: var(--lab-bg);
+  color: var(--lab-ink-0);
+  font-family: var(--font-lab-sans, system-ui), var(--font-lab-jp, system-ui), sans-serif;
+  font-size: 16px;
+  line-height: 1.5;
+  /* Optical: the amber never sits on a pure-black field, which would bloom. */
+  background-image: radial-gradient(
+    120% 80% at 50% -10%,
+    rgb(255 176 32 / 0.05),
+    transparent 60%
+  );
+}
+
+/* Grain. Fixed and pointer-events-none so it never repaints with scroll, which
+   is what makes noise overlays expensive. At 0.025 it is not visible as
+   texture; it just stops the large dark fields from banding and reading as
+   flat vector fill. */
+.lab-root::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  pointer-events: none;
+  opacity: 0.025;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+.lab-shell {
+  max-width: var(--lab-max);
+  margin: 0 auto;
+  padding: 0 var(--lab-gutter);
+}
+
+.lab-root :focus-visible {
+  outline: 2px solid var(--lab-signal);
+  outline-offset: 3px;
+}
+
+/* Data, labels, and anything measured is mono. Prose is not. */
+.lab-mono {
+  font-family: var(--font-lab-mono, ui-monospace), monospace;
+  font-variant-numeric: tabular-nums;
+}
+
+/* One eyebrow style, rationed to 2 uses on the whole page. */
+.lab-eyebrow {
+  margin: 0 0 20px;
+  color: var(--lab-signal);
+  font-family: var(--font-lab-mono, ui-monospace), monospace;
+  font-size: 11px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+}
+
+/* ---------- nav: one line, 68px ---------- */
+.lab-nav {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  gap: 32px;
+  height: 68px;
+  border-bottom: var(--lab-rule);
+  background: rgb(10 12 14 / 0.82);
+  backdrop-filter: blur(12px);
+}
+.lab-nav-inner {
+  display: flex;
+  align-items: center;
+  width: 100%;
+}
+.lab-nav-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--lab-ink-0);
+  font-weight: 600;
+  font-size: 15px;
+  letter-spacing: -0.01em;
+  text-decoration: none;
+  white-space: nowrap;
+}
+.lab-nav-brand svg {
+  color: var(--lab-signal);
+}
+.lab-nav-links {
+  display: flex;
+  gap: 28px;
+  margin-left: auto;
+}
+.lab-nav-links a {
+  color: var(--lab-ink-1);
+  font-size: 14px;
+  text-decoration: none;
+  /* Japanese labels have no spaces to break on, so a squeezed flex item would
+     split them mid-word. Nav labels never wrap and never compress. */
+  white-space: nowrap;
+  flex-shrink: 0;
+  transition: color 140ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.lab-nav-links a:hover {
+  color: var(--lab-ink-0);
+}
+@media (max-width: 860px) {
+  .lab-nav-links {
+    display: none;
+  }
+}
+
+/* ---------- buttons ---------- */
+.lab-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 48px;
+  padding: 0 26px;
+  border: 1px solid transparent;
+  border-radius: 2px; /* shape lock: everything on this page is near-sharp */
+  font: inherit;
+  font-size: 15px;
+  font-weight: 500;
+  white-space: nowrap;
+  text-decoration: none;
+  cursor: pointer;
+  transition:
+    background-color 140ms cubic-bezier(0.2, 0.8, 0.2, 1),
+    border-color 140ms cubic-bezier(0.2, 0.8, 0.2, 1),
+    color 140ms cubic-bezier(0.2, 0.8, 0.2, 1),
+    transform 90ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.lab-btn--primary {
+  color: var(--lab-bg);
+  background: var(--lab-signal);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.22);
+}
+.lab-btn--primary:hover {
+  background: var(--lab-ink-0);
+}
+.lab-btn--ghost {
+  color: var(--lab-ink-0);
+  border-color: var(--lab-line-bright);
+  box-shadow: var(--lab-edge);
+}
+.lab-btn--ghost:hover {
+  border-color: var(--lab-signal);
+  color: var(--lab-signal);
+}
+.lab-btn:active {
+  transform: translateY(1px);
+}
+/* The arrow leans out on hover. One small thing that answers the pointer
+   before the click lands. */
+.lab-btn-arrow {
+  display: inline-block;
+  margin-left: 10px;
+  transition: transform 220ms var(--lab-ease-quick);
+}
+.lab-btn:hover .lab-btn-arrow {
+  transform: translateX(3px);
+}
+
+/* ---------- hero: asymmetric split, not centered ---------- */
+.lab-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 0.92fr);
+  align-items: center;
+  gap: clamp(40px, 6vw, 88px);
+  padding: clamp(56px, 9vh, 96px) 0 clamp(64px, 10vh, 112px);
+}
+.lab-hero-title {
+  margin: 0;
+  font-size: clamp(2.5rem, 5.4vw, 4.25rem);
+  font-weight: 500;
+  letter-spacing: -0.035em;
+  line-height: 1.02;
+  text-wrap: balance;
+}
+/* Emphasis stays in the same family (italic), never a borrowed serif. */
+.lab-hero-title em {
+  font-style: italic;
+  color: var(--lab-signal);
+  /* descender clearance for the italic 'y' in "actually" */
+  line-height: 1.1;
+  padding-bottom: 2px;
+}
+.lab-hero-lede {
+  max-width: 46ch;
+  margin: 28px 0 0;
+  color: var(--lab-ink-1);
+  font-size: 17px;
+  line-height: 1.6;
+  text-wrap: pretty;
+}
+.lab-hero-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 36px;
+}
+@media (max-width: 900px) {
+  .lab-hero {
+    grid-template-columns: 1fr;
+    gap: 44px;
+    padding-top: 40px;
+  }
+}
+
+/* ---------- instrument panel (hero right) ---------- */
+/* Nested enclosure: an outer housing with the readout seated inside it, the way
+   a bench instrument puts a screen in a machined bezel. This is depth earned
+   from the object being depicted, not a glass panel borrowed from a SaaS
+   template. Radii stay near-sharp (3px outer, 2px inner) so it still reads as
+   milled metal. */
+.lab-panel {
+  padding: 6px;
+  border: var(--lab-rule);
+  border-radius: 3px;
+  background: var(--lab-bg-2);
+  box-shadow: var(--lab-edge);
+}
+.lab-panel > * {
+  background: var(--lab-bg-1);
+}
+.lab-panel > :first-child {
+  border-radius: 2px 2px 0 0;
+}
+.lab-panel > :last-child {
+  border-radius: 0 0 2px 2px;
+}
+.lab-panel-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px 16px;
+  border-bottom: var(--lab-rule);
+  color: var(--lab-ink-2);
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+.lab-panel-body {
+  padding: 24px 16px;
+}
+.lab-panel-foot {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px 16px;
+  border-top: var(--lab-rule);
+  color: var(--lab-ink-2);
+  font-size: 11px;
+}
+.lab-circuit {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+.lab-circuit-wire {
+  stroke: var(--lab-line-bright);
+  stroke-width: 1;
+}
+.lab-circuit-gate {
+  fill: var(--lab-bg-2);
+  stroke: var(--lab-signal);
+  stroke-width: 1;
+}
+.lab-circuit-glyph {
+  fill: var(--lab-signal);
+  font-family: var(--font-lab-mono, ui-monospace), monospace;
+  font-size: 13px;
+}
+.lab-circuit-label {
+  fill: var(--lab-ink-2);
+  font-family: var(--font-lab-mono, ui-monospace), monospace;
+  font-size: 11px;
+}
+.lab-circuit-node {
+  fill: var(--lab-signal);
+}
+.lab-circuit-target {
+  fill: none;
+  stroke: var(--lab-signal);
+  stroke-width: 1;
+}
+.lab-circuit-cross {
+  stroke: var(--lab-signal);
+  stroke-width: 1;
+}
+
+/* histogram: real Bell-state distribution, no filled background track */
+.lab-hist {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 10px;
+  align-items: end;
+  height: 128px;
+  margin-top: 24px;
+  padding-top: 12px;
+  border-top: var(--lab-rule);
+}
+.lab-hist-col {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 8px;
+  height: 100%;
+}
+.lab-hist-bar {
+  width: 100%;
+  min-height: 2px;
+  background: var(--lab-signal);
+  transform-origin: bottom;
+}
+.lab-hist-bar[data-weak="true"] {
+  background: var(--lab-signal-dim);
+}
+.lab-hist-key {
+  color: var(--lab-ink-2);
+  font-size: 11px;
+}
+.lab-hist-val {
+  color: var(--lab-ink-1);
+  font-size: 11px;
+}
+
+/* ---------- statement: full-bleed editorial, its own layout family ---------- */
+.lab-statement {
+  padding: clamp(104px, 18vh, 200px) 0;
+  border-top: var(--lab-rule);
+}
+.lab-statement p {
+  max-width: 20ch;
+  margin: 0;
+  font-size: clamp(2rem, 4.6vw, 3.5rem);
+  font-weight: 500;
+  letter-spacing: -0.03em;
+  line-height: 1.08;
+  text-wrap: balance;
+}
+.lab-statement span {
+  color: var(--lab-ink-2);
+}
+
+/* ---------- pipeline: horizontal instrument strip ---------- */
+.lab-pipeline {
+  border-top: var(--lab-rule);
+  padding: clamp(88px, 13vh, 148px) 0;
+}
+.lab-section-title {
+  max-width: 18ch;
+  margin: 0;
+  font-size: clamp(1.75rem, 3.4vw, 2.75rem);
+  font-weight: 500;
+  letter-spacing: -0.03em;
+  line-height: 1.1;
+  text-wrap: balance;
+}
+.lab-pipeline-track {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin-top: 48px;
+  border-left: var(--lab-rule);
+}
+.lab-pipeline-stage {
+  padding: 0 24px 0 24px;
+  border-right: var(--lab-rule);
+}
+.lab-pipeline-tick {
+  position: relative;
+  height: 1px;
+  margin-bottom: 28px;
+  background: var(--lab-line);
+}
+.lab-pipeline-tick::before {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 28px;
+  height: 1px;
+  background: var(--lab-signal);
+}
+.lab-pipeline-stage h3 {
+  margin: 0 0 12px;
+  font-size: 19px;
+  font-weight: 500;
+  letter-spacing: -0.015em;
+}
+.lab-pipeline-stage p {
+  margin: 0;
+  color: var(--lab-ink-1);
+  font-size: 14px;
+  line-height: 1.6;
+  text-wrap: pretty;
+}
+@media (max-width: 900px) {
+  .lab-pipeline-track {
+    grid-template-columns: 1fr;
+    border-left: 0;
+  }
+  .lab-pipeline-stage {
+    padding: 0 0 28px;
+    border-right: 0;
+    border-bottom: var(--lab-rule);
+  }
+  .lab-pipeline-stage:last-child {
+    border-bottom: 0;
+    padding-bottom: 0;
+  }
+}
+
+/* ---------- evidence: asymmetric grid, exactly 3 cells ---------- */
+.lab-evidence {
+  border-top: var(--lab-rule);
+  padding: clamp(88px, 13vh, 148px) 0;
+}
+.lab-evidence h2 {
+  max-width: 18ch;
+  margin: 0 0 48px;
+  font-size: clamp(1.75rem, 3.4vw, 2.75rem);
+  font-weight: 500;
+  letter-spacing: -0.03em;
+  line-height: 1.1;
+  text-wrap: balance;
+}
+.lab-evidence-grid {
+  display: grid;
+  grid-template-columns: 1.55fr 1fr;
+  grid-template-rows: auto auto;
+  gap: 1px;
+  background: var(--lab-line);
+  border: var(--lab-rule);
+}
+.lab-cell {
+  padding: 32px;
+  background: var(--lab-bg);
+}
+/* the tall cell carries the visual weight */
+.lab-cell--lead {
+  grid-row: span 2;
+  background: var(--lab-bg-1);
+}
+.lab-cell h3 {
+  margin: 0 0 12px;
+  font-size: 18px;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+}
+.lab-cell p {
+  margin: 0;
+  color: var(--lab-ink-1);
+  font-size: 14px;
+  line-height: 1.65;
+  text-wrap: pretty;
+}
+.lab-metric {
+  display: block;
+  margin: 0 0 4px;
+  color: var(--lab-signal);
+  font-size: clamp(2.25rem, 4vw, 3rem);
+  font-weight: 500;
+  letter-spacing: -0.04em;
+  line-height: 1;
+}
+/* state-vector readout: real amplitudes, gives the lead cell a real visual */
+.lab-readout {
+  margin: 28px 0 0;
+  padding: 0;
+  list-style: none;
+  border-top: var(--lab-rule);
+}
+.lab-readout li {
+  display: grid;
+  grid-template-columns: 68px 1fr 56px;
+  align-items: center;
+  gap: 14px;
+  padding: 11px 0;
+}
+.lab-readout li + li {
+  border-top: var(--lab-rule);
+}
+.lab-readout-key {
+  color: var(--lab-ink-1);
+  font-size: 13px;
+}
+.lab-readout-meter {
+  height: 3px;
+  background: var(--lab-signal);
+  transform-origin: left;
+}
+.lab-readout-val {
+  color: var(--lab-ink-2);
+  font-size: 12px;
+  text-align: right;
+}
+@media (max-width: 900px) {
+  .lab-evidence-grid {
+    grid-template-columns: 1fr;
+  }
+  .lab-cell--lead {
+    grid-row: auto;
+  }
+}
+
+/* ---------- cta ---------- */
+.lab-cta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  justify-content: space-between;
+  gap: 32px;
+  border-top: var(--lab-rule);
+  padding: clamp(88px, 13vh, 148px) 0;
+}
+.lab-cta-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.lab-cta h2 {
+  max-width: 16ch;
+  margin: 0;
+  font-size: clamp(1.75rem, 3.6vw, 2.75rem);
+  font-weight: 500;
+  letter-spacing: -0.03em;
+  line-height: 1.08;
+  text-wrap: balance;
+}
+.lab-foot {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 16px;
+  border-top: var(--lab-rule);
+  padding: 28px 0 48px;
+  color: var(--lab-ink-2);
+  font-size: 12px;
+}
+
+/* ---------- Japanese typesetting ----------
+ * The display settings above are tuned for Latin text and actively break on
+ * Japanese, so each one is corrected rather than inherited:
+ *
+ *   letter-spacing  A -0.035em tightening that flatters Latin display type
+ *                   collides kanji, which are already drawn to fill their em
+ *                   box. Japanese wants normal tracking or looser.
+ *   line-height     1.02 is legible for Latin caps but crowds Japanese glyphs,
+ *                   which use the full em box with no descender slack.
+ *   font-style      Japanese fonts ship no true italic, so `em` gets a
+ *                   synthesized skew that reads as a rendering fault. The
+ *                   emphasis carries on colour alone.
+ *   max-width       `ch` is the width of "0", roughly half an em. A full-width
+ *                   Japanese character is a whole em, so a `ch` measure yields
+ *                   about half the intended characters per line. Switched to
+ *                   `em`, which for Japanese is a direct character count.
+ */
+:lang(ja) .lab-hero-title {
+  max-width: 12em;
+  font-size: clamp(2.1rem, 4.4vw, 3.5rem);
+  letter-spacing: 0.005em;
+  line-height: 1.28;
+}
+:lang(ja) .lab-hero-title em {
+  font-style: normal;
+  line-height: inherit;
+  padding-bottom: 0;
+}
+:lang(ja) .lab-hero-lede {
+  max-width: 34em;
+  line-height: 1.85;
+}
+:lang(ja) .lab-statement p {
+  max-width: 14em;
+  font-size: clamp(1.75rem, 3.8vw, 2.9rem);
+  letter-spacing: 0.005em;
+  line-height: 1.42;
+}
+:lang(ja) .lab-section-title,
+:lang(ja) .lab-evidence h2 {
+  max-width: 16em;
+  letter-spacing: 0.005em;
+  line-height: 1.4;
+}
+:lang(ja) .lab-cta h2 {
+  max-width: 15em;
+  letter-spacing: 0.005em;
+  line-height: 1.4;
+}
+:lang(ja) .lab-metric {
+  letter-spacing: -0.04em; /* the metric is a numeral, so Latin tracking is right */
+}
+:lang(ja) .lab-cell h3,
+:lang(ja) .lab-pipeline-stage h3 {
+  letter-spacing: 0.005em;
+  line-height: 1.5;
+}
+:lang(ja) .lab-cell p,
+:lang(ja) .lab-pipeline-stage p {
+  line-height: 1.85; /* Japanese needs more leading than the 1.6 Latin uses */
+}
+/* Kinsoku shori: never open a line with 。 、 or a small kana. */
+:lang(ja) .lab-root {
+  line-break: strict;
+  overflow-wrap: normal;
+}
+
+/* ---------- motion ----------
+ * Scroll-driven CSS, zero JS and zero dependencies. Each animation is
+ * motivated: the hero states its case on arrival, sections reveal in reading
+ * order to build the argument, and the bars/meters grow because growth is what
+ * a measurement does. Content is visible by default; motion only attaches
+ * where the browser supports view() timelines, so unsupported browsers and
+ * no-JS both get the full static page.
+ */
+@media (prefers-reduced-motion: no-preference) {
+  @supports (animation-timeline: view()) {
+    .lab-rise {
+      animation: lab-rise linear both;
+      animation-timeline: view();
+      animation-range: entry 6% cover 30%;
+    }
+    /* bars grow from the axis as they enter */
+    .lab-hist-bar,
+    .lab-readout-meter {
+      animation: lab-grow linear both;
+      animation-timeline: view();
+      animation-range: entry 20% cover 34%;
+    }
+    .lab-readout-meter {
+      animation-name: lab-grow-x;
+    }
+  }
+  /* hero is above the fold, so it animates on load rather than on scroll */
+  .lab-hero-eyebrow,
+  .lab-hero-title,
+  .lab-hero-lede,
+  .lab-hero-actions,
+  .lab-hero-panel {
+    animation: lab-rise 900ms var(--lab-ease-heavy) both;
+  }
+  .lab-hero-title {
+    animation-delay: 60ms;
+  }
+  .lab-hero-lede {
+    animation-delay: 140ms;
+  }
+  .lab-hero-actions {
+    animation-delay: 220ms;
+  }
+  .lab-hero-panel {
+    animation-delay: 180ms;
+  }
+}
+/* The slight defocus on entry is what separates "faded in" from "arrived":
+   things resolve as they settle, the way a lens finds focus. Kept to 5px so it
+   never reads as a blur effect, and dropped entirely on the last 40% of the
+   curve so text is never soft while readable. */
+@keyframes lab-rise {
+  from {
+    opacity: 0;
+    transform: translateY(22px);
+    filter: blur(5px);
+  }
+  60% {
+    filter: blur(0);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+    filter: blur(0);
+  }
+}
+@keyframes lab-grow {
+  from {
+    transform: scaleY(0);
+  }
+  to {
+    transform: scaleY(1);
+  }
+}
+@keyframes lab-grow-x {
+  from {
+    transform: scaleX(0);
+  }
+  to {
+    transform: scaleX(1);
+  }
+}

@@ -70,6 +70,11 @@
   text-decoration: none;
   font-size: var(--fs-13);
   font-weight: 500;
+  /* Japanese has no inter-word spaces, so the default break-anywhere behaviour
+     splits a label mid-word ("プロダク/ト") the moment flex shrinks it. Nav
+     labels are atoms: never wrap them, never let them be compressed. */
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 .mj-public-nav a:hover,
 .mj-public-nav a[aria-current="page"] {
@@ -118,6 +123,7 @@
   font: inherit;
   font-size: var(--fs-12);
   cursor: pointer;
+  white-space: nowrap;
 }
 .mj-theme-toggle button:hover {
   color: var(--text-0);
@@ -161,12 +167,58 @@
   font: inherit;
   font-size: var(--fs-12);
   cursor: pointer;
+  white-space: nowrap;
 }
 .mj-language-toggle button:hover,
 .mj-language-toggle button[aria-pressed="true"] {
   color: var(--bg-0);
   background: var(--text-0);
 }
+/* Japanese header fit.
+   Every label in this row is longer set in Japanese ("Contact" becomes
+   "お問い合わせ", "Open workspace" becomes "ワークスペースを開く"), so the header
+   runs out of room roughly 250px earlier than the English one does. With the
+   labels now unbreakable, that shortfall has to come from somewhere, so take it
+   in the order that costs the least meaning:
+     1. the theme toggle's words (the sun and moon glyphs already say it),
+     2. the gaps between groups,
+     3. the nav's own padding.
+   Keyed off :lang(ja) rather than a plain width query so the English header,
+   which still fits, keeps its labels. */
+@media (max-width: 1280px) {
+  :lang(ja) .mj-public-header > .mj-theme-toggle span {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+}
+@media (max-width: 1120px) {
+  :lang(ja) .mj-public-header {
+    gap: var(--sp-3);
+  }
+  :lang(ja) .mj-public-nav {
+    gap: var(--sp-2);
+  }
+  :lang(ja) .mj-public-nav a {
+    padding-inline: var(--sp-1);
+  }
+}
+
+/* Japanese line breaking for prose. Without kinsoku shori the browser is happy
+   to open a line with 。 、 or a small kana, which reads as broken typesetting
+   to a Japanese reader even when nothing overflows. Scoped to :lang(ja) so the
+   English text-wrap rules are untouched. */
+:lang(ja) {
+  line-break: strict;
+  overflow-wrap: normal;
+}
+
 .mj-public-overline {
   margin: 0 0 var(--sp-4);
   color: var(--accent);
@@ -2271,6 +2323,21 @@
   font-weight: 500;
   cursor: pointer;
 }
+/* Hover/press feel. Colour was snapping instantly and a press produced no
+   feedback at all, which reads as a picture of a button rather than a button.
+   transform/opacity only, so it stays on the compositor. */
+.mj-primary-button,
+.mj-secondary-button {
+  transition:
+    background-color var(--dur-hover) var(--ease-out-ui),
+    border-color var(--dur-hover) var(--ease-out-ui),
+    color var(--dur-hover) var(--ease-out-ui),
+    transform var(--dur-press) var(--ease-out-ui);
+}
+.mj-primary-button:active:not(:disabled),
+.mj-secondary-button:active:not(:disabled) {
+  transform: translateY(1px);
+}
 .mj-primary-button {
   border-color: var(--accent);
   color: var(--bg-0);
@@ -2285,6 +2352,17 @@
 }
 .mj-secondary-button:hover {
   border-color: var(--text-1);
+}
+@media (prefers-reduced-motion: reduce) {
+  /* :active-level selector required — an element-level override loses
+     specificity to the :active transform above. */
+  .mj-primary-button,
+  .mj-secondary-button,
+  .mj-primary-button:active:not(:disabled),
+  .mj-secondary-button:active:not(:disabled) {
+    transition: none;
+    transform: none;
+  }
 }
 .mj-primary-button:disabled,
 .mj-secondary-button:disabled,
@@ -7734,6 +7812,10 @@ div.mj-rail-row:hover {
   color: var(--text-2);
   font-size: var(--fs-13);
   text-decoration: none;
+  /* "サインアウト" was breaking after "サインアウ" for the same reason as the
+     nav labels. */
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 .mj-public-nav-signout:hover,
 .mj-public-nav-signout:focus-visible {
@@ -8012,4 +8094,44 @@ div.mj-rail-row:hover {
 .mj-workspace-leave:disabled {
   cursor: wait;
   opacity: 0.65;
+}
+
+/* ---------- public surface polish (2026-07-31) ----------
+   The public site had been inheriting the workspace's control density and the
+   browser's line-breaking. Both are right for a tool and wrong for a landing
+   page, so the corrections below are scoped to .mj-public-site and never reach
+   the product shell. */
+
+/* 1. CTA scale. A 32px button with 12px of side padding is a toolbar control;
+      in a hero it reads as a footnote. Public CTAs get their own box. */
+.mj-public-site .mj-public-actions .mj-primary-button,
+.mj-public-site .mj-public-actions .mj-secondary-button,
+.mj-public-site .mj-pricing-card .mj-primary-button,
+.mj-public-site .mj-pricing-card .mj-secondary-button {
+  min-height: var(--control-h-cta);
+  padding: 0 var(--control-px-cta);
+  font-size: var(--fs-14);
+}
+
+/* 2. Headline breaking. Display type set at 44px wraps into orphans — a lone
+      trailing word is the single clearest tell of untended typography.
+      `balance` evens the ragged edge across the (few) lines of a heading;
+      `pretty` only protects the last line, which is what long body copy
+      wants. */
+.mj-public-site h1,
+.mj-public-site h2,
+.mj-public-site h3 {
+  text-wrap: balance;
+}
+.mj-company-hero-lede,
+.mj-company-hero-note,
+.mj-public-page-hero > p:last-child,
+.mj-pricing-description,
+.mj-pricing-note > p {
+  text-wrap: pretty;
+}
+
+/* 3. Prices are figures, not prose: line them up on the digit. */
+.mj-pricing-price {
+  font-variant-numeric: tabular-nums;
 }
