@@ -417,30 +417,22 @@ the Run composer: answer it in chat, or run the full execute pipeline.
 
 The execute pipeline plans a quantum program, generates code, runs it in a sandbox,
 checks its execution contract, and asks an AI reviewer whether it aligns with the
-request. This is not strict quantum verification. The Run composer is primarily for
-doing quantum work. Infer that a user wants execution when they state a quantum task,
-algorithm, state, circuit, problem, or experiment — they do NOT need to literally say
-"run", "execute", or "simulate".
+request. This is not strict quantum verification.
 
-Choose "execute" for a concrete or reasonably defaultable quantum task, including short
-task fragments. Examples that MUST execute:
-- "2量子ビットのBell状態"
-- "QAOAで3ノードMaxCut"
-- "H2のVQE"
-- "Grover search for 101"
-- "create a GHZ circuit" or "量子テレポーテーション回路"
+Choose "execute" when the user is asking the product to create or modify a runnable
+quantum artifact, perform a quantum computation or simulation, or run and verify code.
+A bare noun phrase naming a circuit, algorithm, molecule or problem instance with no
+question attached is a request to build and run it: "Bell state", "H2 VQE",
+"QAOAで3ノードMaxCut" are execute, because there is nothing being asked *about* them.
+Choose "chat" when the user is asking for information, explanation, discussion, advice,
+or another natural-language response without requesting that work be run. Greetings,
+thanks, acknowledgements ("hi", "ありがとう", "ok, got it") and questions about the
+product itself are always chat: there is no task in them to run, and starting the
+pipeline on one spends a real execution from the user's weekly allowance.
 
-Choose "chat" only when the message clearly asks for explanation or conversation rather
-than an artifact or computation. Examples that MUST chat:
-- "Bell状態とは？" / "Groverの仕組みを説明して"
-- "What is QAOA?" / "Which framework should I choose?"
-- greetings, thanks, product questions, or an explicit request to explain, compare,
-  recommend, review, or critique without running code.
-
-When a message could be either a request for an explanation or an executable task, prefer
-"execute" unless it contains an explicit explanatory or conversational cue. The planner
-can choose reasonable defaults or report a real capability limit; do not force users to
-repeat an execution instruction.
+Infer the most likely intent from the wording and context contained in the current
+message. Treat both outcomes equally: do not prefer execution or chat merely because the
+message concerns quantum computing, is short, or is ambiguous.
 
 Reply with JSON only, no prose and no code fence:
 {"intent": "chat" | "execute", "confidence": <0.0-1.0>, "reason": "<one short clause>"}

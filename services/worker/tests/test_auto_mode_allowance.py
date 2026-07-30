@@ -45,7 +45,8 @@ class _ExecuteLLM:
         return LLMResponse(
             text='{"intent": "execute", "reason": "runs a circuit"}',
             model="test",
-            usage=None,
+            input_tokens=1,
+            output_tokens=1,
         )
 
 
