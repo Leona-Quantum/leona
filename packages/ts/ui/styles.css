@@ -2606,13 +2606,18 @@
   right: var(--sp-2);
   pointer-events: none;
 }
-.mj-composer-model,
 .mj-composer-quota {
   color: var(--text-2);
   font-size: var(--fs-12);
-}
-.mj-composer-quota {
   font-family: var(--font-mono);
+}
+/* Stop stands where Send stands. Same box, same weight — the reader's hand is
+   already there and there is never a moment where both are offered. */
+.mj-composer-stop-mark {
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+  background: currentcolor;
 }
 .mj-composer-error {
   max-width: 260px;
@@ -2777,41 +2782,29 @@
 }
 .mj-example-strip {
   display: flex;
-  align-items: stretch;
+  flex-wrap: wrap;
+  align-items: center;
   gap: var(--sp-2);
 }
-.mj-example-ticker {
-  display: grid;
-  flex: 1 1 auto;
-  min-width: 0;
-  gap: 2px;
-  padding: var(--sp-2) var(--sp-3);
+.mj-example-chip {
+  min-height: 28px;
+  padding: 0 var(--sp-3);
   border: 1px solid var(--border-0);
   border-radius: var(--radius-control);
-  color: var(--text-0);
+  color: var(--text-1);
   background: var(--bg-1);
-  text-align: left;
   font: inherit;
+  font-size: var(--fs-12);
   cursor: pointer;
 }
-.mj-example-ticker:hover {
+.mj-example-chip:hover {
+  color: var(--text-0);
   background: var(--bg-2);
-}
-.mj-example-ticker strong {
-  font-size: var(--fs-12);
-  font-weight: 500;
-}
-.mj-example-ticker span {
-  overflow: hidden;
-  color: var(--text-2);
-  font-size: var(--fs-12);
-  line-height: 1.4;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 .mj-example-more {
   flex: 0 0 auto;
   align-self: center;
+  min-height: 28px;
 }
 .mj-example-popout {
   display: grid;
@@ -3651,6 +3644,24 @@
   gap: 4px;
   min-height: 28px;
 }
+/* The waiting state is a word plus the dots, not the dots alone: three pulsing
+   dots read identically at half a second and at forty, and this pipeline can
+   genuinely take a while. */
+.mj-chat-thinking-label {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  color: var(--text-2);
+  font-size: var(--fs-12);
+}
+.mj-chat-thinking-word {
+  color: var(--text-2);
+}
+.mj-chat-loading-dots {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
 .mj-chat-loading-dot {
   width: 6px;
   height: 6px;
@@ -3663,6 +3674,12 @@
 @keyframes mj-chat-loading {
   0%, 60%, 100% { opacity: 0.35; transform: translateY(0); }
   30% { opacity: 1; transform: translateY(-3px); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .mj-chat-loading-dot {
+    animation: none;
+    opacity: 0.55;
+  }
 }
 .mj-run-waiting {
   margin: 0;
@@ -6501,9 +6518,6 @@ div.mj-rail-row:hover {
   }
   .mj-composer-right {
     justify-content: space-between;
-  }
-  .mj-composer-model {
-    display: none;
   }
   .mj-composer-error {
     max-width: 180px;

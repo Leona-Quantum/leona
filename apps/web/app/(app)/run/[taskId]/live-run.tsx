@@ -21,6 +21,8 @@ import { runResultFromEvents } from "../../../../lib/run-result";
 import { RunResult } from "../../../../components/run-result";
 import { runProgressFromEvents } from "../../../../lib/run-progress";
 import { formatShare, simulationChartData } from "../../../../lib/simulation-visual";
+import { ThinkingLabel } from "../../../../components/thinking-label";
+import { useSmoothedText } from "../../../../components/use-smoothed-text";
 
 type WireEvent = {
   run_id: string;
@@ -571,7 +573,15 @@ export function LiveRun({ taskId }: { taskId: string }) {
   async function submitFollowup(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const taskPrompt = prompt.trim();
-    if (!taskPrompt || pending) return;
+    if (!taskPrompt) return;
+    // The composer stays editable during a turn — drafting the next question
+    // while reading the answer is the normal way to use this — but a turn is a
+    // run and runs are sequential. Say so instead of swallowing the keystroke,
+    // which is what this did while the box was simply disabled.
+    if (pending) {
+      setError("One response at a time. Stop the current one, or wait for it to finish.");
+      return;
+    }
     if (!conversationId) {
       setError("The conversation is still loading. Try again in a moment.");
       return;
@@ -670,20 +680,13 @@ export function LiveRun({ taskId }: { taskId: string }) {
                 <span className="mj-status-dot" aria-hidden="true" />
                 {fixtureEvents ? "Example" : streaming || pending ? "Live" : "Ready"}
               </span>
+              {/* Stop used to live here, and only when this browser happened to
+                  have the conversation in local history — so on a cold open of a
+                  running turn there was no way to cancel at all. It is now the
+                  composer's send button, which is where a reader's hand already
+                  is and which does not depend on localStorage. */}
               {!fixtureEvents && existingChat ? (
-                <>
-                  <button className="mj-secondary-button" type="button" onClick={() => { archiveChat(existingChat.id, existingChat); router.push("/run"); }}>Archive</button>
-                  {streaming || pending ? (
-                    <button
-                      className="mj-secondary-button mj-danger-button"
-                      type="button"
-                      disabled={stopping}
-                      onClick={() => void stopRun()}
-                    >
-                      {stopping ? "Stopping…" : "Stop"}
-                    </button>
-                  ) : null}
-                </>
+                <button className="mj-secondary-button" type="button" onClick={() => { archiveChat(existingChat.id, existingChat); router.push("/run"); }}>Archive</button>
               ) : null}
             </div>
           </header>
@@ -697,9 +700,9 @@ export function LiveRun({ taskId }: { taskId: string }) {
                 {turn.answer || turn.terminal ? (
                   <CompletedAssistant turn={turn} />
                 ) : turn.id === taskId && (streamingText || reasoningText || liveEvents.length > 0) ? (
-                  <AssistantMessage reasoning={reasoningText} text={streamingText} streaming={streaming} events={liveEvents} />
+                  <AssistantMessage reasoning={reasoningText} text={streamingText} streaming={streaming} events={liveEvents} turnId={turn.id} />
                 ) : turn.id === taskId && pending ? (
-                  <AssistantLoading />
+                  <AssistantLoading turnId={turn.id} />
                 ) : null}
               </div>
             ))}
@@ -707,8 +710,8 @@ export function LiveRun({ taskId }: { taskId: string }) {
               <div className="mj-chat-turn">
                 <div className="mj-chat-message mj-chat-message--user"><ChatMarkdown source={activePrompt ?? ""} /></div>
                 {streamingText || reasoningText || liveEvents.length > 0 ? (
-                  <AssistantMessage reasoning={reasoningText} text={streamingText} streaming={streaming} events={liveEvents} />
-                ) : pending ? <AssistantLoading /> : null}
+                  <AssistantMessage reasoning={reasoningText} text={streamingText} streaming={streaming} events={liveEvents} turnId={taskId} />
+                ) : pending ? <AssistantLoading turnId={taskId} /> : null}
               </div>
             ) : null}
             {!turns.length && !activePrompt && !pending ? <p className="mj-run-waiting">Connecting to the conversation…</p> : null}
@@ -728,6 +731,8 @@ export function LiveRun({ taskId }: { taskId: string }) {
         onModeChange={setMode}
         framework={framework}
         onFrameworkChange={setFramework}
+        onStop={fixtureEvents ? undefined : () => void stopRun()}
+        stopping={stopping}
       />
     </div>
   );
@@ -770,11 +775,13 @@ function AssistantMessage({
   text,
   streaming,
   events,
+  turnId,
 }: {
   reasoning: string;
   text: string;
   streaming: boolean;
   events: WireEvent[];
+  turnId?: string | null;
 }) {
   const progress = runProgressFromEvents(events, streaming);
   const result = runResultFromEvents(events);
@@ -782,13 +789,34 @@ function AssistantMessage({
   const outcomeWithoutDuplicateCode = outcome && result
     ? { ...outcome, code: undefined }
     : outcome;
+  // Both streams are paced rather than painted in the worker's 160-character
+  // lumps. The answer settles when the stream closes; the reasoning settles as
+  // soon as answer text starts, because the model has stopped adding to it.
+  const smoothedText = useSmoothedText(text, !streaming);
+  const smoothedReasoning = useSmoothedText(reasoning, !streaming || Boolean(text));
+  // null until the reader expresses a preference; see the <details> below.
+  const [thoughtOpen, setThoughtOpen] = useState<boolean | null>(null);
   return (
     <div className={`mj-chat-message mj-chat-message--assistant${progress ? " mj-chat-message--run" : ""}`}>
       {progress ? <RunProgressBlock events={events} running={streaming} /> : null}
       {reasoning ? (
-        <details className="mj-chat-thinking" open={streaming}>
-          <summary>Thinking</summary>
-          <ChatMarkdown source={reasoning} />
+        // Open while it is the only thing there is to read, and folded away by
+        // the answer arriving — the thought is context for the answer, not a
+        // second answer to scroll past every time. `open` is derived only until
+        // the reader touches it: a streaming turn re-renders many times a
+        // second, so a plain derived `open` would slam the panel shut again
+        // every frame after they opened it.
+        <details
+          className="mj-chat-thinking"
+          open={thoughtOpen ?? (streaming && !text)}
+          onToggle={(event) => setThoughtOpen(event.currentTarget.open)}
+        >
+          <summary>
+            {streaming && !text
+              ? <ThinkingLabel turnId={turnId} className="mj-chat-thinking-label" />
+              : <span className="mj-chat-thinking-word">Thought for a moment</span>}
+          </summary>
+          <ChatMarkdown source={smoothedReasoning} />
         </details>
       ) : null}
       {outcomeWithoutDuplicateCode && events.some((event) => event.type === "run.finished" && event.status !== "succeeded") ? (
@@ -799,13 +827,9 @@ function AssistantMessage({
       ) : outcomeWithoutDuplicateCode ? (
         <RunOutcome outcome={outcomeWithoutDuplicateCode} action={<ArtifactLink events={events} />} />
       ) : text ? (
-        <ChatMarkdown source={text} />
+        <ChatMarkdown source={smoothedText} />
       ) : progress ? null : (
-        <span className="mj-chat-message--loading">
-          <span className="mj-chat-loading-dot" />
-          <span className="mj-chat-loading-dot" />
-          <span className="mj-chat-loading-dot" />
-        </span>
+        <ThinkingLabel turnId={turnId} className="mj-chat-message--loading mj-chat-thinking-label" />
       )}
       {!result && !outcomeWithoutDuplicateCode ? <ArtifactLink events={events} /> : null}
     </div>
@@ -1520,12 +1544,10 @@ function ArtifactLink({ events }: { events: WireEvent[] }) {
   );
 }
 
-function AssistantLoading() {
+function AssistantLoading({ turnId }: { turnId?: string | null }) {
   return (
     <div className="mj-chat-message mj-chat-message--assistant mj-chat-message--loading" aria-label="Waiting for response">
-      <span className="mj-chat-loading-dot" />
-      <span className="mj-chat-loading-dot" />
-      <span className="mj-chat-loading-dot" />
+      <ThinkingLabel turnId={turnId} />
     </div>
   );
 }

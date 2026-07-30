@@ -58,8 +58,19 @@ export function ElectronField({
       isBright = (i) => i >= targets.length - 2;
     }
 
+    // Orbiting every point of a 239-point silhouette reads as static noise: the
+    // dispersed phase is meant to be a scatter of electrons, and at that density
+    // it is a haze. Only `ORBIT_SHARE` of them orbit; the rest fade in as the
+    // shape gathers, so the silhouette still lands with its full point count
+    // (Owner Inbox 2026-07-31: "many less dots while spinning but still have the
+    // same amount of dots when it makes the lion shape"). Chosen by index rather
+    // than at random so the orbit is evenly sampled across the figure instead of
+    // clumping wherever the silhouette was densely sampled.
+    const ORBIT_SHARE = 0.34;
+    const orbitStride = Math.max(1, Math.round(1 / ORBIT_SHARE));
     const parts = targets.map((tp, i) => ({
       tp, bright: isBright(i),
+      orbits: i % orbitStride === 0,
       a: Math.random() * 7, rad: 0.24 + Math.random() * 0.12,
       sp: 0.5 + Math.random() * 0.6, r: 1.1 + Math.random() * 1.6,
     }));
@@ -67,7 +78,11 @@ export function ElectronField({
     function colors() {
       const st = getComputedStyle(canvas!);
       const accent = st.getPropertyValue("--accent").trim() || "olivedrab";
-      return { accent, bright: st.getPropertyValue("--text-0").trim() || "honeydew" };
+      // The marker point was --text-0, i.e. white on the dark theme: one bright
+      // dot in an otherwise green field read as a stray pixel rather than as the
+      // eye of the figure (Owner Inbox 2026-07-31). It is the accent now, and it
+      // stays distinguishable by radius and opacity instead of by hue.
+      return { accent, bright: accent };
     }
 
     let frame = 0;
@@ -114,18 +129,24 @@ export function ElectronField({
 
       parts.forEach((pt) => {
         if (!reduceMotion) pt.a += 0.009 * pt.sp;
+        // A non-orbiting point is invisible while dispersed and fades in over
+        // the first third of the convergence, so it arrives before the shape
+        // resolves rather than popping in on top of it.
+        const presence = pt.orbits ? 1 : Math.min(1, Math.max(0, (conv - 0.05) / 0.3));
+        if (presence <= 0) return;
         const ox = cx + Math.cos(pt.a) * pt.rad * scale;
         const oy = cy + Math.sin(pt.a) * pt.rad * scale * 0.62;
         const tx = originX + pt.tp[0] * boxW;
         const ty = originY + pt.tp[1] * boxH;
         const x = ox + (tx - ox) * conv;
         const y = oy + (ty - oy) * conv;
-        if (conv < 0.4) {
+        if (conv < 0.4 && pt.orbits) {
           ctx!.globalAlpha = 0.1 * (1 - conv);
           ctx!.strokeStyle = accent;
           ctx!.beginPath(); ctx!.moveTo(cx, cy); ctx!.lineTo(x, y); ctx!.stroke();
         }
-        ctx!.globalAlpha = 0.5 + 0.5 * conv;
+        const baseAlpha = (0.5 + 0.5 * conv) * presence;
+        ctx!.globalAlpha = pt.bright ? Math.min(1, baseAlpha + 0.4) : baseAlpha;
         ctx!.fillStyle = pt.bright ? bright : accent;
         ctx!.beginPath(); ctx!.arc(x, y, pt.bright ? pt.r + 1.1 : pt.r, 0, Math.PI * 2); ctx!.fill();
       });
