@@ -245,6 +245,12 @@ export function RunWorkspace({ demoMode = false, locale = "en" }: { demoMode?: b
               attachments={attachments.map(({ name, size }) => ({ name, size }))}
               onRemoveAttachment={(name) => setAttachments((current) => current.filter((item) => item.name !== name))}
               onAttach={demoMode ? () => setError(locale === "ja" ? "公開プレビューでは添付を利用できません。" : "Attachments are unavailable in the public preview.") : undefined}
+              // The same prompts the example strip below offers, typed into the
+              // box itself. A blank composer with a generic placeholder is the
+              // hardest version of this product to start using; showing real
+              // questions being written is the cheapest way to answer "what can
+              // I even ask it".
+              suggestions={copy.examples.map((example) => example.prompt)}
               locale={locale}
             />
           </div>
@@ -321,38 +327,31 @@ function RunGreeting({ copy }: { copy: (typeof WORKSPACE_COPY)[PublicLocale]["ru
   );
 }
 
+/**
+ * The examples, as titles only.
+ *
+ * This used to be a ticker that rotated one example every six seconds and
+ * printed its full prompt sentence — the same sentence the composer's
+ * placeholder is now typing out a few pixels above it. Two copies of the same
+ * paragraph on one screen is exactly the crowding the surface is being thinned
+ * of, so the strip keeps the part the composer cannot show (the whole set, at a
+ * glance) and drops the part it duplicates.
+ */
 function ExampleStrip({ copy, onPick }: { copy: (typeof WORKSPACE_COPY)[PublicLocale]["run"]; onPick: (prompt: string) => void }) {
-  const [index, setIndex] = useState(0);
   const [expanded, setExpanded] = useState(false);
-  const [paused, setPaused] = useState(false);
-  const examples = copy.examples;
   const allPrompts = [...copy.examples, ...copy.morePrompts];
 
-  useEffect(() => {
-    if (paused || expanded) return;
-    const timer = window.setInterval(() => setIndex((current) => (current + 1) % examples.length), 6000);
-    return () => window.clearInterval(timer);
-  }, [paused, expanded, examples.length]);
-
-  const active = examples[index];
   return (
     <section className="mj-run-home-examples" aria-labelledby="examples-title">
       <div className="mj-run-home-examples-head">
         <h2 id="examples-title">{copy.examplesTitle}</h2>
       </div>
-      <div
-        className="mj-example-strip"
-        onMouseEnter={() => setPaused(true)}
-        onMouseLeave={() => setPaused(false)}
-        onFocus={() => setPaused(true)}
-        onBlur={(event) => {
-          if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setPaused(false);
-        }}
-      >
-        <button className="mj-example-ticker" type="button" key={active.title} onClick={() => onPick(active.prompt)}>
-          <strong>{active.title}</strong>
-          <span>{active.prompt}</span>
-        </button>
+      <div className="mj-example-strip">
+        {copy.examples.map((example) => (
+          <button className="mj-example-chip" type="button" key={example.title} onClick={() => onPick(example.prompt)}>
+            {example.title}
+          </button>
+        ))}
         <button className="mj-secondary-button mj-example-more" type="button" aria-expanded={expanded} onClick={() => setExpanded((current) => !current)}>
           {expanded ? copy.examplesClose : copy.examplesMore}
         </button>
