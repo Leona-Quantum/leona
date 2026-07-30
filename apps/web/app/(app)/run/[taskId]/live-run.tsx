@@ -10,7 +10,7 @@ import {
   type RunEvent,
 } from "@majorana/ui";
 import { ChatMarkdown } from "../../../../components/chat-markdown";
-import { archiveChat, deleteChat, loadChatHistory, rememberChat, updateChat, type ChatSummary } from "../../../../lib/chat-history";
+import { archiveChat, loadChatHistory, rememberChat, updateChat, type ChatSummary } from "../../../../lib/chat-history";
 import { displayChatTitle, titleFromPrompt } from "../../../../lib/chat-title";
 import { RunComposer, type ComposerFramework } from "../../../../components/run-composer";
 import type { ComposerMode } from "../../../../lib/run-mode";
@@ -302,6 +302,7 @@ export function LiveRun({ taskId }: { taskId: string }) {
   const [reasoningText, setReasoningText] = useState("");
   const [streaming, setStreaming] = useState(!fixtureEvents || !fixtureIsTerminal);
   const [error, setError] = useState<string | null>(null);
+  const [stopping, setStopping] = useState(false);
   const [prompt, setPrompt] = useState("");
   const [pending, setPending] = useState(Boolean(fixtureEvents && !fixtureIsTerminal));
   const [liveEvents, setLiveEvents] = useState<WireEvent[]>(
@@ -345,6 +346,7 @@ export function LiveRun({ taskId }: { taskId: string }) {
   useEffect(() => {
     conversationIdRef.current = null;
     setConversationId(null);
+    setStopping(false);
     shouldAutoScrollRef.current = true;
   }, [taskId]);
 
@@ -451,6 +453,7 @@ export function LiveRun({ taskId }: { taskId: string }) {
                 setError(event.message ?? "The assistant could not complete this response.");
                 setStreaming(false);
                 setPending(false);
+                setStopping(false);
               }
               if (event.type === "run.error") {
                 // Domain failures belong to the deterministic result/progress model.
@@ -464,11 +467,13 @@ export function LiveRun({ taskId }: { taskId: string }) {
                 // failure from the error event, so nothing is lost by
                 // re-enabling input.
                 setPending(false);
+                setStopping(false);
               }
               if (event.type === "run.finished") {
                 terminal = true;
                 setPending(false);
                 setStreaming(false);
+                setStopping(false);
                 const sidebarChat = loadChatHistory({ includeDemo: false, includeArchived: true }).find(
                   (chat) => chat.id === taskId || chat.conversationId === conversationIdRef.current,
                 );
@@ -534,6 +539,33 @@ export function LiveRun({ taskId }: { taskId: string }) {
       setAttachments([...nextByName.values()]);
       setError([...new Set(errors)].join(" ") || null);
     })();
+  }
+
+  async function stopRun() {
+    if (stopping || (!streaming && !pending)) return;
+    setStopping(true);
+    setError(null);
+    try {
+      const response = await fetch(`/api/runs/${encodeURIComponent(taskId)}/cancel`, {
+        method: "POST",
+      });
+      if (!response.ok) {
+        const payload = (await response.json().catch(() => null)) as {
+          detail?: string;
+          error?: string;
+        } | null;
+        throw new Error(
+          payload?.detail
+          ?? payload?.error
+          ?? `Run could not be stopped (${response.status})`,
+        );
+      }
+      // The event stream receives the durable run.finished/cancelled event and
+      // updates the page in place. Do not navigate or delete the conversation.
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Run could not be stopped");
+      setStopping(false);
+    }
   }
 
   async function submitFollowup(event: FormEvent<HTMLFormElement>) {
@@ -641,7 +673,16 @@ export function LiveRun({ taskId }: { taskId: string }) {
               {!fixtureEvents && existingChat ? (
                 <>
                   <button className="mj-secondary-button" type="button" onClick={() => { archiveChat(existingChat.id, existingChat); router.push("/run"); }}>Archive</button>
-                  <button className="mj-secondary-button mj-danger-button" type="button" onClick={() => { deleteChat(existingChat.id); router.push("/run"); }}>Delete</button>
+                  {streaming || pending ? (
+                    <button
+                      className="mj-secondary-button mj-danger-button"
+                      type="button"
+                      disabled={stopping}
+                      onClick={() => void stopRun()}
+                    >
+                      {stopping ? "Stopping…" : "Stop"}
+                    </button>
+                  ) : null}
                 </>
               ) : null}
             </div>
@@ -1383,8 +1424,8 @@ function RunProgressBlock({
   const completed = progress.items.filter((item) => item.state === "done").length;
   const active = progress.items.some((item) => item.state === "active");
   return (
-    <section className="mj-run-workflow" aria-label="Run activity">
-      <header className="mj-run-agent-head">
+    <details className="mj-run-workflow">
+      <summary className="mj-run-agent-head" title="Show or hide execution process">
         <div>
           <span className="mj-run-agent-label">
             {active ? <span className="mj-run-progress-live-dot" aria-hidden="true" /> : null}
@@ -1392,12 +1433,15 @@ function RunProgressBlock({
           </span>
           <strong>{progress.headline}</strong>
         </div>
-        <span className="mj-run-agent-count">
-          {completed}/{progress.items.length} stages
+        <span className="mj-run-agent-actions">
+          <span className="mj-run-agent-count">
+            {completed}/{progress.items.length} stages
+          </span>
+          <span className="mj-run-agent-toggle" aria-hidden="true">▼</span>
         </span>
-      </header>
+      </summary>
       <RunEvidenceFeed events={events} running={running} />
-    </section>
+    </details>
   );
 }
 

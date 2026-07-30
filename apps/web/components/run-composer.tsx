@@ -122,7 +122,11 @@ export function RunComposer({
           value={value}
           onChange={(event) => onChange(event.target.value)}
           onKeyDown={(event) => {
-            if (event.key === "Enter" && !event.shiftKey) {
+            if (
+              event.key === "Enter"
+              && (event.metaKey || event.ctrlKey)
+              && !event.nativeEvent.isComposing
+            ) {
               event.preventDefault();
               event.currentTarget.form?.requestSubmit();
             }
@@ -206,7 +210,7 @@ export function RunComposer({
             {error ? <span className="mj-composer-error" role="alert">{error}</span> : null}
             <button className="mj-primary-button" type="submit" disabled={pending || !value.trim()}>
               {pending ? labels.pending : labels.send}
-              <span className="mj-command-hint">⌘↵</span>
+              <span className="mj-command-hint">⌘/Ctrl ↵</span>
             </button>
           </div>
         </div>
