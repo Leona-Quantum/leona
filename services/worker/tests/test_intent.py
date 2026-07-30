@@ -1,16 +1,11 @@
-"""Intent routing: which mode a run actually dispatches in.
-
-Auto mode is execution-oriented: it leaves only obvious conversational messages in
-chat and lets the LLM infer execution from ordinary quantum-task statements. A
-deliberate mode selection still passes through unchanged.
-"""
+"""Intent routing: which mode a run actually dispatches in."""
 
 import pytest
 from majorana_contracts.enums import Framework, RunMode, RunStatus
 from majorana_llm import LLMResponse
 from majorana_worker import handlers
 from majorana_worker.context import RunContext
-from majorana_worker.intent import ModeDecision, heuristic_decision, resolve_mode
+from majorana_worker.intent import ModeDecision, resolve_mode
 
 
 class _RecordingSink:
@@ -56,14 +51,14 @@ class _BrokenLLM:
     "prompt",
     ["hi", "Hello!", "  THANKS  ", "ok", "test", "what can you do?", "?"],
 )
-async def test_pleasantries_route_to_chat_without_spending_a_model_call(prompt):
-    llm = _ScriptedLLM()
+async def test_every_auto_message_uses_the_llm_router(prompt):
+    llm = _ScriptedLLM('{"intent": "chat", "reason": "conversation"}')
 
     decision = await resolve_mode(prompt, RunMode.AUTO, llm)
 
     assert decision.resolved is RunMode.CHAT
-    assert decision.source == "heuristic"
-    assert llm.calls == 0
+    assert decision.source == "classifier"
+    assert llm.calls == 1
 
 
 async def test_an_explicit_execute_is_authoritative_even_for_a_short_prompt():
@@ -87,11 +82,6 @@ async def test_a_greeting_with_a_task_attached_is_not_a_greeting():
     assert decision.resolved is RunMode.EXECUTE
     assert decision.source == "classifier"
     assert llm.calls == 1
-
-
-@pytest.mark.parametrize("prompt", ["Bell state", "VQE", "QAOAでMaxCut", "run grover"])
-async def test_short_quantum_tasks_reach_the_llm_router(prompt):
-    assert heuristic_decision(prompt, RunMode.AUTO) is None
 
 
 async def test_classifier_verdict_of_chat_is_honoured():
@@ -118,23 +108,23 @@ async def test_verdict_wrapped_in_a_code_fence_still_parses():
     "text",
     ["not json at all", "{}", '{"intent": "maybe"}', '{"intent": "ideate"}', ""],
 )
-async def test_an_unreadable_verdict_defaults_to_execute(text):
+async def test_an_unreadable_verdict_falls_back_to_chat(text):
     """Including 'ideate': the router may only produce chat or execute, so a
     verdict naming a mode outside that set is unusable, not a third answer."""
     llm = _ScriptedLLM(text)
 
     decision = await resolve_mode("Some ambiguous request about circuits", RunMode.AUTO, llm)
 
-    assert decision.resolved is RunMode.EXECUTE
+    assert decision.resolved is RunMode.CHAT
     assert decision.source == "fallback"
 
 
-async def test_a_provider_outage_defaults_to_execute_without_failing_the_run():
+async def test_a_provider_outage_falls_back_to_chat_without_failing_the_run():
     llm = _BrokenLLM()
 
     decision = await resolve_mode("Some ambiguous request about circuits", RunMode.AUTO, llm)
 
-    assert decision.resolved is RunMode.EXECUTE
+    assert decision.resolved is RunMode.CHAT
     assert decision.source == "fallback"
 
 
@@ -214,11 +204,11 @@ async def test_a_run_that_is_already_over_is_not_routed(status):
 
 
 async def test_the_event_payload_is_serialisable_strings():
-    decision = ModeDecision(RunMode.AUTO, RunMode.CHAT, "heuristic", "greeting")
+    decision = ModeDecision(RunMode.AUTO, RunMode.CHAT, "classifier", "greeting")
 
     assert decision.as_event_payload() == {
         "requested": "auto",
         "resolved": "chat",
-        "source": "heuristic",
+        "source": "classifier",
         "reason": "greeting",
     }
