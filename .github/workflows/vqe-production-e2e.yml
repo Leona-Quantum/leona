@@ -9,6 +9,7 @@ on:
       - .github/workflows/vqe-production-e2e.yml
       - services/api/src/majorana_api/auth/**
       - services/api/src/majorana_api/db.py
+      - services/api/src/majorana_api/repos/vqe.py
       - services/api/src/majorana_api/routes/vqe.py
       - services/api/src/majorana_api/settings.py
       - services/api/src/majorana_api/vqe_runtime_profiles.py
