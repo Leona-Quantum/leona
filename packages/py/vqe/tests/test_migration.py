@@ -90,9 +90,7 @@ def _migration() -> ControlledAnsatzMigrationV01:
     baseline, candidate = _identities()
     return build_h2_fixed_to_uccsd_migration(
         baseline_spec=_project_baseline_to_v03(baseline),
-        baseline_source_spec_v02_sha256=portable_scientific_spec_digest(
-            baseline.portable_spec
-        ),
+        baseline_source_spec_v02_sha256=portable_scientific_spec_digest(baseline.portable_spec),
         candidate_spec=candidate.portable_spec,
         baseline_hamiltonian_sha256=baseline.hamiltonian_digest_sha256,
         candidate_hamiltonian_sha256=candidate.hamiltonian_digest_sha256,

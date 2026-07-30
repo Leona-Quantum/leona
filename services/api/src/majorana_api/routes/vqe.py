@@ -66,9 +66,7 @@ def _catalog_workspace_id(settings: Settings) -> uuid.UUID | None:
 
 def _matches_h2_uccsd_component_identity(scientific_spec_json: dict[str, Any]) -> bool:
     try:
-        scientific_spec = PortableScientificExperimentSpecV03.model_validate(
-            scientific_spec_json
-        )
+        scientific_spec = PortableScientificExperimentSpecV03.model_validate(scientific_spec_json)
         semantic_keys = {
             binding.role: binding.component_semantic_key
             for binding in scientific_spec.component_bindings

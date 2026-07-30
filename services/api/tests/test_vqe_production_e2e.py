@@ -300,15 +300,9 @@ async def test_workos_contract_postgres_and_real_oci_runtime_end_to_end():
             uccsd_experiment_response = await client.post(
                 "/v1/vqe/experiments",
                 headers={"Idempotency-Key": "phase78-uccsd-experiment"},
-                json={
-                    "workflow_artifact_version_id": migration[
-                        "workflow_artifact_version_id"
-                    ]
-                },
+                json={"workflow_artifact_version_id": migration["workflow_artifact_version_id"]},
             )
-            assert uccsd_experiment_response.status_code == 201, (
-                uccsd_experiment_response.text
-            )
+            assert uccsd_experiment_response.status_code == 201, uccsd_experiment_response.text
             uccsd_experiment = uccsd_experiment_response.json()
             uccsd_bindings = {
                 item["role"]: item
@@ -484,16 +478,11 @@ async def test_workos_contract_postgres_and_real_oci_runtime_end_to_end():
                     "operator_pool",
                     "search_selection",
                 ],
-                "workflow_artifact_version_id": migration[
-                    "workflow_artifact_version_id"
-                ],
+                "workflow_artifact_version_id": migration["workflow_artifact_version_id"],
                 "experiment_id": uccsd_experiment["id"],
-                "execution_ids": {
-                    name: item["id"] for name, item in uccsd_executions.items()
-                },
+                "execution_ids": {name: item["id"] for name, item in uccsd_executions.items()},
                 "materialized_artifact_ids": {
-                    name: item["artifact_version_id"]
-                    for name, item in uccsd_artifacts.items()
+                    name: item["artifact_version_id"] for name, item in uccsd_artifacts.items()
                 },
             },
             "session_reopen": "passed",

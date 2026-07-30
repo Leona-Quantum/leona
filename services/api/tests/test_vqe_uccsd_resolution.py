@@ -20,13 +20,7 @@ from majorana_vqe.portable import normalized_component_spec_digest
 
 from majorana_api.repos import vqe
 
-_FIXTURE_DIR = (
-    Path(__file__).resolve().parents[3]
-    / "docs"
-    / "atlas"
-    / "fixtures"
-    / "h2_sto3g"
-)
+_FIXTURE_DIR = Path(__file__).resolve().parents[3] / "docs" / "atlas" / "fixtures" / "h2_sto3g"
 
 
 def _component(
@@ -76,9 +70,7 @@ def _composition() -> SimpleNamespace:
         role: _component(role, H2_SLSQP_SEMANTIC_KEYS[role], payload)
         for role, payload in baseline_payloads.items()
     }
-    baseline_links = [
-        _link(role, component) for role, component in baseline_components.items()
-    ]
+    baseline_links = [_link(role, component) for role, component in baseline_components.items()]
     baseline_workflow = _component(
         ComponentType.WORKFLOW,
         "workflow.instance.slsqp",
@@ -94,9 +86,7 @@ def _composition() -> SimpleNamespace:
         "workflow.instance.uccsd",
         {
             "kind": "ansatz_migration_workflow_draft",
-            "comparison_class": (
-                "controlled_capability_migration_not_one_component_swap"
-            ),
+            "comparison_class": ("controlled_capability_migration_not_one_component_swap"),
             "primary_changed_role": ComponentType.ANSATZ.value,
             "dependent_changed_roles": [ComponentType.COMPILATION_BACKEND.value],
             "required_to_not_applicable_roles": [
@@ -106,9 +96,7 @@ def _composition() -> SimpleNamespace:
             ],
             "parameter_policy": "reset_all",
             "execution_status": "private_qualification_candidate",
-            "baseline_workflow_artifact_version_id": str(
-                baseline_workflow.artifact_version_id
-            ),
+            "baseline_workflow_artifact_version_id": str(baseline_workflow.artifact_version_id),
         },
     )
     candidate_components = {
@@ -123,9 +111,7 @@ def _composition() -> SimpleNamespace:
         )
         for role in H2_UCCSD_APPLICABLE_ROLES
     }
-    candidate_links = [
-        _link(role, component) for role, component in candidate_components.items()
-    ]
+    candidate_links = [_link(role, component) for role, component in candidate_components.items()]
     baseline_identity = build_h2_scientific_identity(
         selections=[
             H2SemanticSelection(role=role, component_semantic_key=key)
@@ -141,20 +127,14 @@ def _composition() -> SimpleNamespace:
         candidate_components=candidate_components,
         baseline_links=baseline_links,
         candidate_links=candidate_links,
-        baseline_resolved=SimpleNamespace(
-            scientific_spec=baseline_identity.portable_spec
-        ),
+        baseline_resolved=SimpleNamespace(scientific_spec=baseline_identity.portable_spec),
     )
 
 
 def _install_fakes(monkeypatch, composition: SimpleNamespace) -> None:
     by_id = {
-        composition.baseline_workflow.artifact_version_id: (
-            composition.baseline_workflow
-        ),
-        composition.candidate_workflow.artifact_version_id: (
-            composition.candidate_workflow
-        ),
+        composition.baseline_workflow.artifact_version_id: (composition.baseline_workflow),
+        composition.candidate_workflow.artifact_version_id: (composition.candidate_workflow),
         **{
             component.artifact_version_id: component
             for component in composition.baseline_components.values()
@@ -176,10 +156,7 @@ def _install_fakes(monkeypatch, composition: SimpleNamespace) -> None:
     ):
         if workflow_artifact_version_id == composition.baseline_workflow.artifact_version_id:
             return composition.baseline_links
-        assert (
-            workflow_artifact_version_id
-            == composition.candidate_workflow.artifact_version_id
-        )
+        assert workflow_artifact_version_id == composition.candidate_workflow.artifact_version_id
         return composition.candidate_links
 
     async def fake_resolve_baseline(*args, **kwargs):
@@ -210,22 +187,15 @@ async def test_uccsd_resolver_normalizes_baseline_and_candidate_to_v03(monkeypat
 
     assert resolved.scientific_spec.schema_version == "0.3.0"
     assert len(resolved.scientific_spec.initial_parameter_slots) == 3
-    by_role = {
-        binding.role: binding
-        for binding in resolved.scientific_spec.component_bindings
-    }
+    by_role = {binding.role: binding for binding in resolved.scientific_spec.component_bindings}
     assert {
-        role
-        for role, binding in by_role.items()
-        if binding.applicability == "not_applicable"
+        role for role, binding in by_role.items() if binding.applicability == "not_applicable"
     } == {
         ComponentType.OPERATOR_POOL,
         ComponentType.SEARCH_SELECTION,
         ComponentType.GROWTH_BATCHING,
     }
-    assert len(resolved.registry_resolution.components) == len(
-        H2_UCCSD_APPLICABLE_ROLES
-    )
+    assert len(resolved.registry_resolution.components) == len(H2_UCCSD_APPLICABLE_ROLES)
 
 
 async def test_uccsd_resolver_rejects_retained_adaptive_only_role(monkeypatch):
@@ -251,9 +221,7 @@ async def test_uccsd_resolver_rejects_retained_adaptive_only_role(monkeypatch):
 
 async def test_uccsd_resolver_rejects_hidden_optimizer_replacement(monkeypatch):
     composition = _composition()
-    baseline_optimizer = composition.baseline_components[
-        ComponentType.PARAMETER_OPTIMIZER
-    ]
+    baseline_optimizer = composition.baseline_components[ComponentType.PARAMETER_OPTIMIZER]
     lookalike = _component(
         ComponentType.PARAMETER_OPTIMIZER,
         baseline_optimizer.semantic_key,
