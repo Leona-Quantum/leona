@@ -16,13 +16,15 @@ export default async function ContactPage() {
   const copy = CONTACT_COPY[locale];
   return (
     <PublicSite activePath="/contact" className="mj-contact-site" locale={locale}>
-      <section className="mj-contact-hero">
-        <div>
-          <p className="mj-public-overline">{copy.overline}</p>
-          <h1>{copy.title}</h1>
-          <p>{copy.body}</p>
-        </div>
-      </section>
+      <Reveal>
+        <section className="mj-contact-hero">
+          <div>
+            <p className="mj-public-overline">{copy.overline}</p>
+            <h1>{copy.title}</h1>
+            <p>{copy.body}</p>
+          </div>
+        </section>
+      </Reveal>
 
       <Reveal>
         <section className="mj-contact-layout" aria-label={copy.overline}>
