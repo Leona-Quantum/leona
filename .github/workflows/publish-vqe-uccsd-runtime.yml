@@ -1,6 +1,12 @@
 name: publish-vqe-uccsd-runtime
 
 on:
+  workflow_call:
+    inputs:
+      source_commit:
+        description: Full commit SHA containing the qualified UCCSD runtime payload
+        required: true
+        type: string
   workflow_dispatch:
     inputs:
       source_commit:

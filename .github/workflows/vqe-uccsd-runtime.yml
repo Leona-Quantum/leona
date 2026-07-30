@@ -2,6 +2,16 @@ name: vqe-uccsd-runtime
 
 on:
   workflow_dispatch:
+    inputs:
+      publish_oci:
+        description: Publish the qualified UCCSD images and immutable evidence
+        required: false
+        default: false
+        type: boolean
+      source_commit:
+        description: Optional full source commit SHA; defaults to this workflow run
+        required: false
+        type: string
   push:
     branches:
       - feature/vqe
@@ -78,3 +88,15 @@ jobs:
           path: ${{ matrix.framework }}-uccsd-linux-amd64.json
           if-no-files-found: error
           retention-days: 30
+
+  publish-oci:
+    needs: hardened-linux-amd64
+    if: github.event_name == 'workflow_dispatch' && inputs.publish_oci
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
+    uses: ./.github/workflows/publish-vqe-uccsd-runtime.yml
+    with:
+      source_commit: ${{ inputs.source_commit || github.sha }}
