@@ -5387,6 +5387,135 @@ div.mj-rail-row:hover {
   font-size: var(--fs-14);
   font-weight: 500;
 }
+/* Each tab's own controls sit in its own header rather than in a shared strip
+   above the tab bar, so a control is never offered on a tab it does not act on.
+   The `> div` grid rule above would otherwise stack these vertically. */
+.mj-studio-surface-head > .mj-studio-surface-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--sp-2);
+}
+.mj-studio-framework-select select {
+  min-height: 32px;
+  padding: 0 var(--sp-2);
+  border: 1px solid var(--border-0);
+  border-radius: var(--radius-control);
+  color: var(--text-0);
+  background: var(--bg-1);
+  font: inherit;
+  font-size: var(--fs-12);
+}
+.mj-studio-inline-field {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  color: var(--text-2);
+  font-size: var(--fs-12);
+}
+.mj-studio-inline-field input {
+  width: 80px;
+  min-height: 32px;
+  padding: 0 var(--sp-2);
+  border: 1px solid var(--border-0);
+  border-radius: var(--radius-control);
+  color: var(--text-0);
+  background: var(--bg-1);
+  font: inherit;
+  font-family: var(--font-mono);
+  font-size: var(--fs-12);
+}
+/* One line of status in the page header, replacing a full evidence panel that
+   was rendered above the tabs on every draft. It is a button because the
+   evidence it summarizes is one tab away. */
+.mj-studio-verdict-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-height: 32px;
+  padding: 0 var(--sp-3);
+  border: 1px solid var(--border-0);
+  border-radius: var(--radius-control);
+  color: var(--text-1);
+  background: var(--bg-1);
+  font: inherit;
+  font-size: var(--fs-12);
+  cursor: pointer;
+}
+.mj-studio-verdict-chip:hover {
+  color: var(--text-0);
+  background: var(--bg-2);
+}
+.mj-studio-verdict-chip[data-tone="ok"] {
+  color: var(--ok);
+}
+.mj-studio-verdict-chip[data-tone="warn"] {
+  color: var(--warn);
+}
+.mj-studio-verdict-chip[data-tone="err"] {
+  color: var(--err);
+}
+.mj-studio-code-notes {
+  display: grid;
+  gap: var(--sp-2);
+  padding: 0 var(--sp-4) var(--sp-4);
+}
+.mj-studio-code-note {
+  margin: 0;
+  color: var(--text-2);
+  font-size: var(--fs-12);
+  line-height: 1.5;
+}
+.mj-studio-code-note[data-tone="warn"] {
+  color: var(--warn);
+}
+.mj-studio-code-about p {
+  margin: var(--sp-2) 0 0;
+  color: var(--text-2);
+  font-size: var(--fs-12);
+  line-height: 1.5;
+}
+/* One lane, one status line, one explanation. The CPU lane used to print its
+   eligibility twice — once beside the heading and once inside the box saying
+   what to do about it. */
+.mj-studio-lane {
+  display: grid;
+  gap: var(--sp-2);
+  padding: var(--sp-3);
+  border: 1px solid var(--border-0);
+  border-radius: var(--radius-card);
+  background: var(--bg-0);
+}
+.mj-studio-lane[data-state="pending"] {
+  border-style: dashed;
+}
+.mj-studio-lane-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--sp-3);
+}
+.mj-studio-lane-title {
+  color: var(--text-0);
+  font-size: var(--fs-13);
+  font-weight: 500;
+}
+.mj-studio-lane > p {
+  margin: 0;
+  color: var(--text-2);
+  font-size: var(--fs-12);
+  line-height: 1.5;
+}
+.mj-studio-summary-section {
+  display: grid;
+  gap: var(--sp-3);
+  padding: var(--sp-4);
+  border-bottom: 1px solid var(--border-0);
+}
+.mj-studio-gate-note {
+  margin: 0 var(--sp-4) var(--sp-3);
+}
 /* Says when the diagram no longer describes the code in the Code tab. Sits
    directly above the stage so the caveat and the drawing are read together. */
 .mj-circuit-sync {

@@ -179,18 +179,22 @@ body {
   height: 24px;
   pointer-events: none;
 }
-.mj-studio-inspector:not([hidden]) {
-  animation: mj-inspector-pop 220ms ease-out;
+/* A panel thrown full-viewport. Deliberately not a modal: nothing behind it
+ * needs blocking, so it does not inherit the missing focus trap the four
+ * hand-rolled dialogs in this repo share. Escape closes it (studio-workspace). */
+.mj-studio-surface.is-popout {
+  position: fixed;
+  z-index: 80;
+  inset: var(--sp-4);
+  overflow-y: auto;
+  animation: mj-popout-open 160ms ease-out;
 }
-.mj-studio-inspector-toggle.is-open {
-  color: var(--accent);
-}
-@keyframes mj-inspector-pop {
-  from { opacity: 0; transform: translateX(14px); }
-  to { opacity: 1; transform: translateX(0); }
+@keyframes mj-popout-open {
+  from { opacity: 0; transform: scale(0.99); }
+  to { opacity: 1; transform: scale(1); }
 }
 @media (prefers-reduced-motion: reduce) {
-  .mj-studio-inspector:not([hidden]) {
+  .mj-studio-surface.is-popout {
     animation: none;
   }
 }
