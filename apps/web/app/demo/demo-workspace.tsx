@@ -21,7 +21,7 @@ export function DemoWorkspace({ locale = "en" }: { locale?: PublicLocale }) {
         <div>
           <span className="mj-section-label">{copy.surfaces.preview}</span>
           <h1>{locale === "ja" ? "Leona Quantumのワークスペースを試す" : "Explore the Leona Quantum workspace."}</h1>
-          <p>{locale === "ja" ? "このプレビューではフィクスチャを使い、WorkOSとライブ制御プレーンを設定する間もプロダクトの流れを確認できます。" : "This preview uses fixture artifacts so the product flow stays visible while WorkOS and the live control plane are configured."}</p>
+          <p>{locale === "ja" ? "このプレビューではサンプルデータを使って、主な操作の流れを確認できます。" : "This preview uses fixture artifacts so the product flow stays visible while WorkOS and the live control plane are configured."}</p>
         </div>
         <div className="mj-demo-tabs" role="tablist" aria-label={copy.surfaces.preview}>
           <a className={view === "run" ? "is-active" : ""} href="/demo?view=run" role="tab" aria-selected={view === "run"}>{copy.surfaces.brandedRun}</a>

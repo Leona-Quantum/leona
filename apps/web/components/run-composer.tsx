@@ -65,7 +65,7 @@ export function RunComposer({
         mode: "応答モード",
         modeAuto: "自動",
         modeExecute: "実行",
-        modeIdeate: "アイデア",
+        modeIdeate: "考える",
         modeExplain: "解説",
         framework: "回路フレームワーク",
       }
@@ -122,12 +122,16 @@ export function RunComposer({
           value={value}
           onChange={(event) => onChange(event.target.value)}
           onKeyDown={(event) => {
-            if (event.key === "Enter" && !event.shiftKey) {
+            if (
+              event.key === "Enter"
+              && (event.metaKey || event.ctrlKey)
+              && !event.nativeEvent.isComposing
+            ) {
               event.preventDefault();
               event.currentTarget.form?.requestSubmit();
             }
           }}
-          placeholder={locale === "ja" ? "量子アルゴリズムについて何でも聞いてください…" : "Ask anything about quantum algorithms…"}
+          placeholder={locale === "ja" ? "作りたい回路や検証したいことを入力してください…" : "Ask anything about quantum algorithms…"}
           aria-label={labels.task}
           rows={2}
           disabled={pending}
@@ -206,7 +210,7 @@ export function RunComposer({
             {error ? <span className="mj-composer-error" role="alert">{error}</span> : null}
             <button className="mj-primary-button" type="submit" disabled={pending || !value.trim()}>
               {pending ? labels.pending : labels.send}
-              <span className="mj-command-hint">⌘↵</span>
+              <span className="mj-command-hint">⌘/Ctrl ↵</span>
             </button>
           </div>
         </div>

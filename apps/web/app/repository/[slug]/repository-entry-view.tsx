@@ -66,7 +66,7 @@ const COPY = {
     request: "変換をリクエスト",
     star: "スターを付ける",
     unstar: "スターを外す",
-    starNote: "公開Atlasのスターは公開カタログに保存されます。このエントリをボールトに保存すると、非公開コピーは未スターで始まります。",
+    starNote: "スターはAtlasに保存されます。Vaultに追加したコピーには引き継がれません。",
     resources: "基本情報",
     verification: "検証",
     method: "方法",
@@ -76,18 +76,18 @@ const COPY = {
     literature: "文献と参考資料",
     comparison: "量子と古典の比較",
     baseline: "古典ベースライン",
-    quantum: "量子側の主張",
+    quantum: "量子手法で期待されること",
     practical: "比較の方法",
     metricLabel: "指標",
     metricClassical: "古典",
     metricQuantum: "量子",
-    industry: "産業ユースケース",
+    industry: "活用が考えられる分野",
     related: "関連エントリ",
-    noCode: "ネイティブスニペットはまだ公開されていません。",
-    notCircuit: "この記録は具体的な回路ではありません。",
+    noCode: "このフレームワーク向けのコードはまだ公開されていません。",
+    notCircuit: "この項目には実行可能な回路がありません。",
     kind: "種別",
     contributor: "投稿者",
-    reviewedBy: "レビュー",
+    reviewedBy: "確認者",
     license: "ライセンス",
   },
 } as const;
@@ -124,11 +124,11 @@ const DATA_LABELS_JA: Record<string, string> = {
   Family: "系統",
   Control: "制御",
   Target: "対象",
-  "Universal role": "万能性での役割",
+  "Universal role": "普遍量子計算での役割",
   "Native form": "ネイティブ形式",
   Decomposition: "分解",
   Role: "役割",
-  Promise: "約束条件",
+  Promise: "前提条件",
   "Quantum queries": "量子クエリ",
   "Classical queries": "古典クエリ",
   Function: "関数",
@@ -143,6 +143,40 @@ const DATA_LABELS_JA: Record<string, string> = {
 
 function dataLabel(label: string, locale: PublicLocale): string {
   return locale === "ja" ? DATA_LABELS_JA[label] ?? label : label;
+}
+
+const ALGORITHM_FAMILY_LABELS_JA: Record<string, string> = {
+  "Single-qubit gate": "単一量子ビットゲート",
+  "Pauli operator": "パウリ演算子",
+  "Controlled gate": "制御ゲート",
+  "Two-qubit gate": "2量子ビットゲート",
+  "Quantum query algorithm": "量子クエリアルゴリズム",
+  "Bell / entanglement": "ベル状態・量子もつれ",
+  "GHZ / entanglement": "GHZ状態・量子もつれ",
+  "Amplitude amplification": "振幅増幅",
+  "Hidden-period / factoring": "隠れ周期・因数分解",
+  "Amplitude estimation": "振幅推定",
+  "Variational quantum algorithm": "変分量子アルゴリズム",
+  "Eigenvalue estimation": "固有値推定",
+  "Quantum linear algebra": "量子線形代数",
+  "Quantum machine learning": "量子機械学習",
+  "Entanglement and communication": "量子もつれと通信",
+  "Quantum error correction": "量子誤り訂正",
+  "Quantum Fourier transform": "量子フーリエ変換",
+  "Hamiltonian simulation": "ハミルトニアンシミュレーション",
+  "Hamiltonian / observable": "ハミルトニアン・観測量",
+  "Rotation gate": "回転ゲート",
+  "Phase gate": "位相ゲート",
+  "Multi-qubit gate": "多量子ビットゲート",
+  "Entangled state": "量子もつれ状態",
+  "Encoded state": "符号化状態",
+  "Sampling / benchmarking": "サンプリング・ベンチマーク",
+  "Error mitigation": "誤り緩和",
+  "Optimization / annealing": "最適化・アニーリング",
+};
+
+function algorithmFamilyLabel(family: string, locale: PublicLocale): string {
+  return locale === "ja" ? ALGORITHM_FAMILY_LABELS_JA[family] ?? family : family;
 }
 
 export interface RelatedEntrySummary {
@@ -201,7 +235,7 @@ export function RepositoryEntryView({
         <div className="mj-repository-detail-kicker">
           <VerificationTierBadge methods={methods} locale={locale} />
           <span>{locale === "ja" ? entry.categoryLabelJa : entry.categoryLabel}</span>
-          <span>{entry.algorithmFamily}</span>
+          <span>{algorithmFamilyLabel(entry.algorithmFamily, locale)}</span>
           <time dateTime={entry.updatedAt}>{entry.updatedAt}</time>
         </div>
         <h1>{title}</h1>
@@ -311,7 +345,7 @@ export function RepositoryEntryView({
             <p className="mj-section-label">{copy.source}</p>
             <a className="mj-repository-source-title" href={entry.source.url} target="_blank" rel="noreferrer">{entry.source.title} ↗</a>
             <dl className="mj-repository-detail-dl">
-              <div><dt>{copy.kind}</dt><dd>{locale === "ja" ? entry.source.kind === "curated_reference" ? "キュレーション参照" : entry.source.kind === "verified_run" ? "検証済み実行" : "コミュニティ投稿" : entry.source.kind.replaceAll("_", " ")}</dd></div>
+              <div><dt>{copy.kind}</dt><dd>{locale === "ja" ? entry.source.kind === "curated_reference" ? "運営が確認した資料" : entry.source.kind === "verified_run" ? "検証済みの実行" : "コミュニティ投稿" : entry.source.kind.replaceAll("_", " ")}</dd></div>
               {entry.source.contributor ? <div><dt>{copy.contributor}</dt><dd>{entry.source.contributor}</dd></div> : null}
               {entry.source.reviewedBy ? <div><dt>{copy.reviewedBy}</dt><dd>{entry.source.reviewedBy}</dd></div> : null}
               <div><dt>{copy.license}</dt><dd>{entry.source.license}</dd></div>

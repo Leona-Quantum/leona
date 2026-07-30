@@ -360,7 +360,14 @@ body {
   justify-content: space-between;
   gap: var(--sp-4);
   padding: var(--sp-4);
+  cursor: pointer;
+  list-style: none;
+}
+.mj-run-workflow[open] > .mj-run-agent-head {
   border-bottom: 1px solid var(--border-0);
+}
+.mj-run-agent-head::-webkit-details-marker {
+  display: none;
 }
 .mj-run-agent-head > div {
   display: grid;
@@ -385,12 +392,27 @@ body {
   letter-spacing: 0.04em;
   text-transform: uppercase;
 }
+.mj-run-agent-actions {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: var(--sp-3);
+}
 .mj-run-agent-count {
   flex: 0 0 auto;
   color: var(--text-2);
   font-family: var(--font-mono);
   font-size: var(--fs-12);
   font-variant-numeric: tabular-nums;
+}
+.mj-run-agent-toggle {
+  color: var(--text-2);
+  font-size: var(--fs-12);
+  line-height: 1;
+  transition: transform 160ms ease;
+}
+.mj-run-workflow[open] .mj-run-agent-toggle {
+  transform: rotate(180deg);
 }
 .mj-run-live-stages {
   display: grid;
@@ -662,6 +684,9 @@ body {
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .mj-run-agent-toggle {
+    transition: none;
+  }
   .mj-run-live-stage[data-state="active"] .mj-run-live-stage-index,
   .mj-run-live-pulse {
     animation: none;

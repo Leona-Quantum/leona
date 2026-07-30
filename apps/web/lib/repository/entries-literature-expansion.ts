@@ -292,7 +292,7 @@ function circuitEntry(spec: CircuitFamily, width: number): PublicRepositoryEntry
     introduction: `${spec.description} This ${width}-qubit record gives the repository a concrete, inspectable circuit at a known width rather than only a family-level description.`,
     introductionJa: `${spec.descriptionJa} この${width}量子ビット項目は、ファミリー説明だけでなく、幅が明確な検査可能な回路を提供します。`,
     explanation: `The circuit is stored once as a framework-neutral ordered gate graph and converted lazily when a framework is selected. The converter preserves gate order, numeric angle expressions, qubit indices, and terminal all-qubit measurement for its bounded gate set. It intentionally does not claim that downstream compiler decompositions or device behavior are identical. The cited MQT Bench work motivates scalable, cross-level benchmark families; this particular circuit is a Leona Quantum-authored scaffold and should be compared by width, operation count, transpiled depth, two-qubit count, and measured output behavior.`,
-    explanationJa: `この回路はフレームワーク中立の順序付きゲートグラフとして一度だけ保存され、選択時に遅延変換されます。限定ゲート集合の範囲で、ゲート順、数値角度、量子ビット番号、末尾の全量子ビット測定を保持します。一方、各コンパイラの分解や実機挙動が同一であるとは主張しません。MQT Bench論文は規模可変・多層のベンチマーク方法論の根拠であり、この具体回路はLeona Quantum独自の足場です。幅、演算数、変換後深さ、2量子ビット演算数、測定結果で比較してください。`,
+    explanationJa: `この回路はフレームワークに依存しない順序付きゲートグラフとして保存し、選択したフレームワークへ表示時に変換します。対応するゲートの範囲では、ゲート順、数値角度、量子ビット番号、末尾の全量子ビット測定を保持します。ただし、各コンパイラでの分解や実機での動作が同じになるとは限りません。MQT Bench論文は、規模を変えられる多層的なベンチマーク方法の出典です。この回路自体はLeona Quantum独自のサンプル実装です。量子ビット数、演算数、変換後の深さ、2量子ビット演算数、測定結果を比較してください。`,
     tags: [...spec.tags, `${width} qubits`, "seven-framework export"],
     resources: [
       { label: "Qubits", value: String(width) },
@@ -403,7 +403,7 @@ function vqeEntry(concept: Concept): PublicRepositoryEntry {
     introduction: `${concept.summary} This record separates the reusable method idea from any one molecule, Hamiltonian, optimizer, or device.`,
     introductionJa: `${concept.summaryJa} この項目は再利用可能な手法の考え方を、特定の分子、Hamiltonian、最適化器、デバイスから分離して示します。`,
     explanation: `${concept.summary} In a complete experiment, the method must be paired with a defined qubit Hamiltonian, reference state, parameterized circuit, measurement grouping, classical optimizer, stopping rule, and error analysis. The catalog therefore treats it as a literature-backed algorithm record rather than pretending that one generic snippet is the paper's implementation. Use the cited source to recover assumptions and compare energy error, variance, circuit resources, measurement cost, optimizer evaluations, and robustness under the same instance and budget.`,
-    explanationJa: `${concept.summaryJa} 完全な実験では、量子ビットHamiltonian、参照状態、パラメータ化回路、測定グループ、古典最適化器、停止規則、誤差解析を明示する必要があります。そのため本カタログでは、一般的な1つのスニペットを論文実装と装うのではなく、文献に基づくアルゴリズム記録として扱います。同一問題と予算で、エネルギー誤差、分散、回路資源、測定コスト、最適化評価回数、ノイズ耐性を比較してください。`,
+    explanationJa: `${concept.summaryJa} 完全な実験では、量子ビットHamiltonian、参照状態、パラメータ化回路、測定グループ、古典最適化器、停止条件、誤差解析を明示する必要があります。ここでは特定論文の実装ではなく、文献に基づく一般的なアルゴリズム例として掲載しています。同じ問題と計算予算で、エネルギー誤差、分散、回路資源、測定コスト、最適化の評価回数、ノイズ耐性を比較してください。`,
     tags: ["VQE", "variational algorithm", concept.title.toLowerCase()],
     resources: [
       { label: "Record type", value: "Literature method" },
