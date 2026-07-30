@@ -96,12 +96,16 @@ async def _execute_and_finish(
     experiment_id: str,
     framework: str,
     label: str,
+    requested_capability: str = "h2_sto3g_actual_vqe_v1",
+    expected_cnot_count: int = 48,
+    expected_depth: int = 83,
+    expected_parameter_count: int = 1,
 ) -> dict:
     response = await client.post(
         f"/v1/vqe/experiments/{experiment_id}/executions",
         headers={"Idempotency-Key": f"phase78-execution-{label}-{framework}"},
         json={
-            "requested_capability": "h2_sto3g_actual_vqe_v1",
+            "requested_capability": requested_capability,
             "preferred_framework": framework,
         },
     )
@@ -143,6 +147,13 @@ async def _execute_and_finish(
     result = final["observations"][0]["result_contract_json"]
     assert result["status"] == "succeeded"
     assert result["absolute_error_ha"] <= 1e-10
+    assert result["parameter_count"] == expected_parameter_count
+    common_basis = next(
+        item for item in result["resources"] if item["stage"] == "common_basis_compiled"
+    )
+    assert common_basis["two_qubit_gate_count"] == expected_cnot_count
+    assert common_basis["depth"] == expected_depth
+    assert common_basis["parameter_count"] == expected_parameter_count
     assert result["supplementary_evidence"]["public_execution"] == "blocked"
     assert result["supplementary_evidence"]["production_runtime_status"] == "qualified"
     return final
@@ -200,6 +211,11 @@ async def test_workos_contract_postgres_and_real_oci_runtime_end_to_end():
                 for item in components_response.json()["components"]
                 if item["semantic_key"] == "optimizer.cobyla.v1"
             )
+            slsqp = next(
+                item
+                for item in components_response.json()["components"]
+                if item["semantic_key"] == "optimizer.slsqp.v1"
+            )
             swap_response = await client.post(
                 "/v1/atlas/workflows/swaps",
                 headers={"Idempotency-Key": "phase78-cobyla-swap"},
@@ -244,6 +260,91 @@ async def test_workos_contract_postgres_and_real_oci_runtime_end_to_end():
                     framework=framework,
                     label="candidate",
                 )
+
+            slsqp_response = await client.post(
+                "/v1/atlas/workflows/swaps",
+                headers={"Idempotency-Key": "phase78-uccsd-slsqp-prerequisite"},
+                json={
+                    "baseline_workflow_artifact_version_id": os.environ[
+                        "MAJORANA_VQE_E2E_WORKFLOW_ID"
+                    ],
+                    "baseline_template_key": "workflow.h2.fixed_excitation.v1",
+                    "changed_role": "parameter_optimizer",
+                    "candidate_component_semantic_key": "optimizer.slsqp.v1",
+                    "candidate_component_spec_sha256": slsqp["normalized_spec_sha256"],
+                    "configuration": {},
+                    "evaluator_provider": "qiskit",
+                },
+            )
+            assert slsqp_response.status_code == 201, slsqp_response.text
+            slsqp_workflow = slsqp_response.json()
+            assert slsqp_workflow["execution_status"] == "private_qualification_candidate"
+            assert slsqp_workflow["visibility"] == "private"
+
+            migration_response = await client.post(
+                "/v1/atlas/workflows/ansatz-migrations",
+                headers={"Idempotency-Key": "phase78-uccsd-migration"},
+                json={
+                    "baseline_workflow_artifact_version_id": slsqp_workflow[
+                        "workflow_artifact_version_id"
+                    ],
+                    "migration": "h2_fixed_excitation_slsqp_to_uccsd_slsqp",
+                    "evaluator_provider": "qiskit",
+                },
+            )
+            assert migration_response.status_code == 201, migration_response.text
+            migration = migration_response.json()
+            assert migration["execution_status"] == "private_qualification_candidate"
+            assert migration["visibility"] == "private"
+
+            uccsd_experiment_response = await client.post(
+                "/v1/vqe/experiments",
+                headers={"Idempotency-Key": "phase78-uccsd-experiment"},
+                json={
+                    "workflow_artifact_version_id": migration[
+                        "workflow_artifact_version_id"
+                    ]
+                },
+            )
+            assert uccsd_experiment_response.status_code == 201, (
+                uccsd_experiment_response.text
+            )
+            uccsd_experiment = uccsd_experiment_response.json()
+            uccsd_bindings = {
+                item["role"]: item
+                for item in uccsd_experiment["scientific_spec_json"]["component_bindings"]
+            }
+            assert uccsd_bindings["ansatz"]["component_semantic_key"] == "ansatz.uccsd.v1"
+            assert (
+                uccsd_bindings["compilation_backend"]["component_semantic_key"]
+                == "compilation.h2.uccsd.canonical_logical.v1"
+            )
+            assert {
+                uccsd_bindings[role]["applicability"]
+                for role in ("operator_pool", "search_selection", "growth_batching")
+            } == {"not_applicable"}
+
+            uccsd_executions: dict[str, dict] = {}
+            uccsd_artifacts: dict[str, dict] = {}
+            for framework in ("qiskit", "pennylane"):
+                uccsd_executions[framework] = await _execute_and_finish(
+                    client=client,
+                    factory=factory,
+                    experiment_id=uccsd_experiment["id"],
+                    framework=framework,
+                    label="uccsd",
+                    requested_capability="h2_sto3g_uccsd_v1",
+                    expected_cnot_count=56,
+                    expected_depth=96,
+                    expected_parameter_count=3,
+                )
+                materialize_response = await client.post(
+                    f"/v1/vqe/executions/{uccsd_executions[framework]['id']}/materialize"
+                )
+                assert materialize_response.status_code == 200, materialize_response.text
+                uccsd_artifacts[framework] = materialize_response.json()
+                assert uccsd_artifacts[framework]["visibility"] == "private"
+                assert uccsd_artifacts[framework]["publication"] == "blocked"
 
             fixed_component_digests = {
                 item["role"]: item["component_spec_sha256"]
@@ -342,10 +443,25 @@ async def test_workos_contract_postgres_and_real_oci_runtime_end_to_end():
                 )
                 assert execution_response.status_code == 200
                 assert execution_response.json()["status"] == "succeeded"
+            for framework, artifact in uccsd_artifacts.items():
+                artifact_response = await reopened_client.get(
+                    f"/v1/artifacts/{artifact['artifact_id']}"
+                )
+                assert artifact_response.status_code == 200, artifact_response.text
+                version_response = await reopened_client.get(
+                    f"/v1/artifacts/{artifact['artifact_id']}/versions/current"
+                )
+                assert version_response.status_code == 200, version_response.text
+                assert version_response.json()["id"] == artifact["artifact_version_id"]
+                execution_response = await reopened_client.get(
+                    f"/v1/vqe/executions/{uccsd_executions[framework]['id']}"
+                )
+                assert execution_response.status_code == 200
+                assert execution_response.json()["status"] == "succeeded"
 
         evidence = {
             "schema_version": "1.0.0",
-            "kind": "phase78_cobyla_private_ci_e2e",
+            "kind": "phase78_private_ci_e2e",
             "source_commit": os.environ.get("GITHUB_SHA"),
             "workos_auth": "synthetic_contract_only",
             "database": "disposable_postgresql_17",
@@ -359,6 +475,27 @@ async def test_workos_contract_postgres_and_real_oci_runtime_end_to_end():
             "materialized_artifact_ids": {
                 name: item["artifact_version_id"] for name, item in artifacts.items()
             },
+            "uccsd_migration": {
+                "comparison_class": "controlled_capability_migration_not_one_component_swap",
+                "primary_changed_role": "ansatz",
+                "dependent_changed_roles": ["compilation_backend"],
+                "required_to_not_applicable_roles": [
+                    "growth_batching",
+                    "operator_pool",
+                    "search_selection",
+                ],
+                "workflow_artifact_version_id": migration[
+                    "workflow_artifact_version_id"
+                ],
+                "experiment_id": uccsd_experiment["id"],
+                "execution_ids": {
+                    name: item["id"] for name, item in uccsd_executions.items()
+                },
+                "materialized_artifact_ids": {
+                    name: item["artifact_version_id"]
+                    for name, item in uccsd_artifacts.items()
+                },
+            },
             "session_reopen": "passed",
             "failure_path": "passed",
             "public_execution": False,
@@ -369,6 +506,8 @@ async def test_workos_contract_postgres_and_real_oci_runtime_end_to_end():
                         "executions": executions,
                         "comparison_runs": comparison_runs,
                         "artifacts": artifacts,
+                        "uccsd_executions": uccsd_executions,
+                        "uccsd_artifacts": uccsd_artifacts,
                     },
                     sort_keys=True,
                     separators=(",", ":"),

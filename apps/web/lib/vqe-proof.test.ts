@@ -1,6 +1,11 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { comparableResources, latestSuccess, parseVqeExecutions } from "./vqe-proof.ts";
+import {
+  capabilityFromExperiment,
+  comparableResources,
+  latestSuccess,
+  parseVqeExecutions,
+} from "./vqe-proof.ts";
 
 const candidate = {
   id: "00000000-0000-0000-0000-000000000001",
@@ -37,6 +42,36 @@ const candidate = {
 };
 
 describe("VQE proof parsing", () => {
+  it("derives UCCSD capability only from the frozen ansatz identity", () => {
+    assert.equal(
+      capabilityFromExperiment({
+        scientific_spec_json: {
+          component_bindings: [{
+            role: "ansatz",
+            applicability: "required",
+            component_semantic_key: "ansatz.uccsd.v1",
+          }],
+        },
+      }),
+      "h2_sto3g_uccsd_v1",
+    );
+  });
+
+  it("fails closed on an unknown executable ansatz identity", () => {
+    assert.throws(
+      () => capabilityFromExperiment({
+        scientific_spec_json: {
+          component_bindings: [{
+            role: "ansatz",
+            applicability: "required",
+            component_semantic_key: "ansatz.unreviewed.v1",
+          }],
+        },
+      }),
+      /not executable/,
+    );
+  });
+
   it("shows only comparison-protocol resources from an honest candidate", () => {
     const execution = parseVqeExecutions([candidate])[0]!;
     const result = latestSuccess(execution);

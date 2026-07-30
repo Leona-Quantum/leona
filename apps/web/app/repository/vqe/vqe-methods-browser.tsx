@@ -88,6 +88,9 @@ const COPY = {
     saveSwap: "Save controlled swap in Studio",
     swapQualification:
       "The selected optimizer is an owner-waived private qualification candidate. Publication and performance claims remain blocked.",
+    saveMigration: "Save private UCCSD migration in Studio",
+    migrationQualification:
+      "This is a controlled capability migration, not a one-component swap. The ansatz and dependent compilation protocol change, adaptive-only roles become not applicable, and publication and performance claims remain blocked.",
   },
   ja: {
     title: "VQE Methods",
@@ -134,6 +137,9 @@ const COPY = {
     saveSwap: "統制された交換をStudioへ保存",
     swapQualification:
       "選択したoptimizerはowner-waivedのprivate認定候補です。公開と性能主張は引き続き停止されます。",
+    saveMigration: "UCCSD migrationをStudioへprivate保存",
+    migrationQualification:
+      "これは一部品交換ではなく、統制されたcapability migrationです。Ansatzと従属するcompilation protocolが変わり、adaptive専用roleはnot_applicableになります。公開と性能主張は引き続き停止されます。",
   },
 } as const;
 
@@ -281,6 +287,14 @@ export function VqeMethodsBrowser({
     baseline.supported_evaluator_providers.includes(executionProvider) &&
     changedRoles.length === 0 &&
     typeof baseline.registry_semantic_key === "string";
+  const fixedExcitationBaseline = catalog.workflows.find(
+    (workflow) => workflow.workflow_key === "workflow.h2.fixed_excitation.v1",
+  );
+  const uccsdMigrationReady =
+    compatibility.compatible &&
+    baseline.workflow_key === "workflow.h2.uccsd.v1" &&
+    new Set(["qiskit", "pennylane"]).has(executionProvider) &&
+    typeof fixedExcitationBaseline?.registry_semantic_key === "string";
   const controlledSwapReady =
     compatibility.compatible &&
     baseline.workflow_key === "workflow.h2.fixed_excitation.v1" &&
@@ -296,7 +310,10 @@ export function VqeMethodsBrowser({
     if (!next) return;
     setTemplateKey(nextKey);
     setSelections(next.selections);
-    if (!next.supported_evaluator_providers.includes(executionProvider)) {
+    if (
+      next.supported_evaluator_providers.length > 0
+      && !next.supported_evaluator_providers.includes(executionProvider)
+    ) {
       setExecutionProvider(next.supported_evaluator_providers[0] ?? "");
     }
   }
@@ -572,7 +589,23 @@ export function VqeMethodsBrowser({
             {changedRoles.length > 1 ? <p>{copy.uncontrolled(changedRoles.length)}</p> : null}
           </div>
 
-          {controlledSwapReady ? (
+          {uccsdMigrationReady ? (
+            <>
+              <a
+                className="mj-primary-button"
+                href={`/studio?vqe=1&vqeWorkflowKey=${encodeURIComponent(
+                  fixedExcitationBaseline?.registry_semantic_key ?? "",
+                )}&vqeProvider=${encodeURIComponent(
+                  executionProvider,
+                )}&vqeMigration=${encodeURIComponent(
+                  "h2_fixed_excitation_slsqp_to_uccsd_slsqp",
+                )}`}
+              >
+                {copy.saveMigration}
+              </a>
+              <p className="mj-vqe-run-note">{copy.migrationQualification}</p>
+            </>
+          ) : controlledSwapReady ? (
             <>
               <a
                 className="mj-primary-button"

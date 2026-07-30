@@ -1,4 +1,7 @@
 export type VqeFramework = "qiskit" | "pennylane";
+export type VqeCapability =
+  | "h2_sto3g_actual_vqe_v1"
+  | "h2_sto3g_uccsd_v1";
 
 export type VqeResourceObservation = {
   stage: string;
@@ -52,6 +55,30 @@ function record(value: unknown): Record<string, unknown> | null {
 
 function finite(value: unknown): value is number {
   return typeof value === "number" && Number.isFinite(value);
+}
+
+export function capabilityFromExperiment(value: unknown): VqeCapability {
+  const experiment = record(value);
+  const scientificSpec = record(experiment?.scientific_spec_json);
+  const bindings = scientificSpec?.component_bindings;
+  if (!Array.isArray(bindings)) {
+    throw new Error("VQE experiment has no frozen component identity");
+  }
+  const ansatzBindings = bindings.flatMap((candidate) => {
+    const item = record(candidate);
+    return item?.role === "ansatz" && item.applicability !== "not_applicable"
+      ? [item]
+      : [];
+  });
+  if (ansatzBindings.length !== 1) {
+    throw new Error("VQE experiment has an ambiguous ansatz identity");
+  }
+  const semanticKey = ansatzBindings[0]?.component_semantic_key;
+  if (semanticKey === "ansatz.uccsd.v1") return "h2_sto3g_uccsd_v1";
+  if (semanticKey === "ansatz.h2.fixed_excitation.v1") {
+    return "h2_sto3g_actual_vqe_v1";
+  }
+  throw new Error("VQE experiment ansatz is not executable by this private runtime");
 }
 
 export function parseVqeExecutions(value: unknown): VqeExecution[] {

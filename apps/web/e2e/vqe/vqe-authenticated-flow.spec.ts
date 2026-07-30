@@ -41,3 +41,36 @@ test("runtime failure stays failed and cannot be materialized", async ({ page })
   await expect(page.getByRole("button", { name: "Save private candidate" })).toBeDisabled();
   await expect(page.getByText("Energy (Ha)")).toHaveCount(0);
 });
+
+test("private UCCSD migration is chained through its SLSQP prerequisite", async ({
+  page,
+}) => {
+  await page.goto(
+    "/studio?vqe=1"
+      + "&vqeWorkflowKey=vqe.workflow.h2_sto3g_actual_vqe_v1"
+      + "&vqeProvider=qiskit"
+      + "&vqeMigration=h2_fixed_excitation_slsqp_to_uccsd_slsqp",
+  );
+  await page.getByRole("button", { name: "Save private UCCSD migration" }).click();
+  await expect(
+    page.getByText(/The private UCCSD capability migration was saved/),
+  ).toBeVisible();
+  await page.getByRole("link", { name: "Reopen saved workflow" }).click();
+  await page.getByRole("button", { name: "Create experiment" }).click();
+  await page.waitForURL(/\/studio\?vqeExperiment=/);
+  await expect(
+    page.getByRole("heading", {
+      name: "H₂ STO-3G UCCSD private qualification",
+    }),
+  ).toBeVisible();
+
+  await page.getByRole("button", {
+    name: "Run private qualification candidate",
+  }).click();
+  await expect(page.getByText("qiskit · succeeded")).toBeVisible();
+  await expect(page.getByText("56", { exact: true })).toBeVisible();
+  await expect(page.getByText("96", { exact: true })).toBeVisible();
+  await expect(
+    page.getByText(/public execution, public results, and performance claims remain blocked/i),
+  ).toBeVisible();
+});

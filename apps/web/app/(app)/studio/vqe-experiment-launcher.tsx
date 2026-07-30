@@ -34,6 +34,7 @@ const PRIVATE_EXECUTABLE_OPTIMIZERS = new Map([
   ["optimizer.slsqp.v1", "SLSQP"],
   ["optimizer.cobyla.v1", "COBYLA"],
 ]);
+const H2_UCCSD_MIGRATION = "h2_fixed_excitation_slsqp_to_uccsd_slsqp";
 
 function parseWorkflows(value: unknown): Workflow[] {
   if (!value || typeof value !== "object") return [];
@@ -90,12 +91,14 @@ export function VqeExperimentLauncher({
   initialFramework,
   initialWorkflowId,
   initialWorkflowKey,
+  initialMigration,
   initialSwapComponentKey,
   locale,
 }: {
   initialFramework: VqeFramework;
   initialWorkflowId?: string;
   initialWorkflowKey?: string;
+  initialMigration?: string;
   initialSwapComponentKey?: string;
   locale: PublicLocale;
 }) {
@@ -108,6 +111,7 @@ export function VqeExperimentLauncher({
   const [savingSwap, setSavingSwap] = useState(false);
   const [savedSwap, setSavedSwap] = useState<SavedSwap | null>(null);
   const swapIdempotencyKey = useRef<string | null>(null);
+  const migrationIdempotencyKey = useRef<string | null>(null);
 
   useEffect(() => {
     void fetch("/api/atlas/workflows?limit=50", { cache: "no-store" })
@@ -275,10 +279,138 @@ export function VqeExperimentLauncher({
     }
   }
 
+  async function saveAnsatzMigration() {
+    if (!workflowId || initialMigration !== H2_UCCSD_MIGRATION) return;
+    setSavingSwap(true);
+    setMessage(null);
+    try {
+      const componentResponse = await fetch(
+        "/api/atlas/components?component_type=parameter_optimizer&limit=200",
+        { cache: "no-store" },
+      );
+      if (!componentResponse.ok) {
+        throw new Error(`component registry unavailable (${componentResponse.status})`);
+      }
+      const components = parseComponents(await componentResponse.json());
+      const slsqp = components.find(
+        (component) =>
+          component.component_type === "parameter_optimizer"
+          && component.semantic_key === "optimizer.slsqp.v1",
+      );
+      if (!slsqp) {
+        throw new Error(
+          ja
+            ? "UCCSD migrationに必要な固定SLSQP componentをRegistryで解決できません。"
+            : "The pinned SLSQP component required by the UCCSD migration could not be resolved.",
+        );
+      }
+      if (!swapIdempotencyKey.current) {
+        swapIdempotencyKey.current = crypto.randomUUID();
+      }
+      const prerequisiteResponse = await fetch("/api/atlas/workflows/swaps", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Idempotency-Key": swapIdempotencyKey.current,
+        },
+        body: JSON.stringify({
+          baseline_workflow_artifact_version_id: workflowId,
+          baseline_template_key: "workflow.h2.fixed_excitation.v1",
+          changed_role: "parameter_optimizer",
+          candidate_component_semantic_key: "optimizer.slsqp.v1",
+          candidate_component_spec_sha256: slsqp.normalized_spec_sha256,
+          configuration: {},
+          evaluator_provider: initialFramework,
+        }),
+      });
+      const prerequisite = await prerequisiteResponse.json() as Partial<SavedSwap> & {
+        detail?: unknown;
+        error?: string;
+      };
+      if (
+        !prerequisiteResponse.ok
+        || typeof prerequisite.workflow_artifact_version_id !== "string"
+        || prerequisite.execution_status !== "private_qualification_candidate"
+        || prerequisite.visibility !== "private"
+      ) {
+        const detail = typeof prerequisite.detail === "string"
+          ? prerequisite.detail
+          : prerequisite.error ?? JSON.stringify(prerequisite.detail);
+        throw new Error(
+          detail || `SLSQP migration prerequisite failed (${prerequisiteResponse.status})`,
+        );
+      }
+      if (!migrationIdempotencyKey.current) {
+        migrationIdempotencyKey.current = crypto.randomUUID();
+      }
+      const response = await fetch("/api/atlas/workflows/ansatz-migrations", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Idempotency-Key": migrationIdempotencyKey.current,
+        },
+        body: JSON.stringify({
+          baseline_workflow_artifact_version_id:
+            prerequisite.workflow_artifact_version_id,
+          migration: H2_UCCSD_MIGRATION,
+          evaluator_provider: initialFramework,
+        }),
+      });
+      const payload = await response.json() as Partial<SavedSwap> & {
+        detail?: unknown;
+        error?: string;
+      };
+      if (
+        !response.ok
+        || typeof payload.workflow_artifact_version_id !== "string"
+        || typeof payload.workflow_semantic_key !== "string"
+        || payload.execution_status !== "private_qualification_candidate"
+        || payload.visibility !== "private"
+      ) {
+        const detail = typeof payload.detail === "string"
+          ? payload.detail
+          : payload.error ?? JSON.stringify(payload.detail);
+        throw new Error(detail || `ansatz migration save failed (${response.status})`);
+      }
+      const saved: SavedSwap = {
+        workflow_artifact_version_id: payload.workflow_artifact_version_id,
+        workflow_semantic_key: payload.workflow_semantic_key,
+        replayed: payload.replayed === true,
+        execution_status: payload.execution_status,
+        visibility: payload.visibility,
+      };
+      setSavedSwap(saved);
+      setWorkflows((current) => [
+        ...current.filter(
+          (workflow) =>
+            workflow.artifact_version_id !== saved.workflow_artifact_version_id,
+        ),
+        {
+          artifact_version_id: saved.workflow_artifact_version_id,
+          semantic_key: saved.workflow_semantic_key,
+          machine_validation_state: "machine_validated",
+          review_state: "unreviewed",
+          execution_status: saved.execution_status,
+        },
+      ]);
+      setWorkflowId(saved.workflow_artifact_version_id);
+      setMessage(
+        ja
+          ? "privateなUCCSD capability migrationを保存しました。Ansatzと従属するcompilation protocolが変わり、adaptive専用roleはnot_applicableになります。これは一部品交換ではありません。公開と性能主張は停止中です。"
+          : "The private UCCSD capability migration was saved. The ansatz and its dependent compilation protocol change, while adaptive-only roles become not applicable. This is not a one-component swap. Publication and performance claims remain blocked.",
+      );
+    } catch (cause) {
+      setMessage(cause instanceof Error ? cause.message : "ansatz migration save failed");
+    } finally {
+      setSavingSwap(false);
+    }
+  }
+
   const selected = workflows.find((item) => item.artifact_version_id === workflowId);
   const swapRequested =
     typeof initialSwapComponentKey === "string"
     && PRIVATE_EXECUTABLE_OPTIMIZERS.has(initialSwapComponentKey);
+  const migrationRequested = initialMigration === H2_UCCSD_MIGRATION;
   const swapOptimizerName = initialSwapComponentKey
     ? PRIVATE_EXECUTABLE_OPTIMIZERS.get(initialSwapComponentKey)
     : undefined;
@@ -333,18 +465,25 @@ export function VqeExperimentLauncher({
           </dl>
         ) : null}
         <div className="mj-studio-actions">
-          {swapRequested && !savedSwap ? (
+          {(swapRequested || migrationRequested) && !savedSwap ? (
             <button
               className="mj-primary-button"
               type="button"
               disabled={!workflowId || savingSwap}
-              onClick={() => void saveControlledSwap()}
+              onClick={() =>
+                void (migrationRequested
+                  ? saveAnsatzMigration()
+                  : saveControlledSwap())}
             >
               {savingSwap
                 ? (ja ? "保存中…" : "Saving…")
-                : (ja
-                  ? `${swapOptimizerName ?? "optimizer"}交換をprivate保存`
-                  : `Save private ${swapOptimizerName ?? "optimizer"} swap`)}
+                : migrationRequested
+                  ? (ja
+                    ? "UCCSD migrationをprivate保存"
+                    : "Save private UCCSD migration")
+                  : (ja
+                    ? `${swapOptimizerName ?? "optimizer"}交換をprivate保存`
+                    : `Save private ${swapOptimizerName ?? "optimizer"} swap`)}
             </button>
           ) : (
             <button

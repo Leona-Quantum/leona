@@ -251,6 +251,85 @@ _PRODUCTION_DIGESTS = {
     },
 }
 
+_UCCSD_PRODUCTION_DIGESTS = {
+    Framework.QISKIT: {
+        "registry": "sha256:9e0d646fd59cee3d51a72a60d36b306619150732cf01bda73de23c1cdbd119d5",
+        "platform": "sha256:64effada2d704410bc26cbea0734e069dafe6f229a59d0424b6523085d2f3879",
+        "attestation": "sha256:f5de1ed01ded16af61e68abbb4bd654f65181677e5de9b25d40e77cc16ce6f3d",
+        "config": "sha256:b8b29ef54ead15ac0dcb7df1bc1a24b32d6cb238781a6c91ec7d50cbedb4d5ac",
+        "sbom": "1d702357d36cb11f17c09ad16b35d9cb451f5261b153a756bd0586f1d564e54d",
+        "provenance": "fc24ebcd4f06acc0d6618644af6e438c649106cae28b8d6d304ae6d598cb21cd",
+        "github_attestation_id": "37901390",
+        "github_attestation_url": "https://github.com/EshMis/majorana/attestations/37901390",
+        "entrypoint": "e4383d2cfe3ac0fde137adfadaf2a0e51bfd9d61104c6a7165699bb9fc9c90d5",
+    },
+    Framework.PENNYLANE: {
+        "registry": "sha256:daac7c918f277555515bc3a4c5c7fa29e6634a44184db1f04f4cd3ef5d3e9980",
+        "platform": "sha256:31d3b3a1042eb1326c01e4eaafc0ac4c9d6839d051852fa14bff12b57c954285",
+        "attestation": "sha256:0274d0229858810e86a47f771c2f85c4666d07b1c2b53ec1818ab04b5b9154ed",
+        "config": "sha256:1dd7105b4246a9cc4f65665eafe85b9d8ef3515046d7f14e42c0c2d7b2804f68",
+        "sbom": "b7f17b6cf4dd7b6553104aa4a5fe3881218ee2956d2a86a5044483a37197f48e",
+        "provenance": "56e4dd4beb0dec3a33fb2892af581c5e7a44600eac17bacebf905854aa51f658",
+        "github_attestation_id": "37901345",
+        "github_attestation_url": "https://github.com/EshMis/majorana/attestations/37901345",
+        "entrypoint": "730d1ce2dc69e6442716ed4d8baaa40255a69c33fd51baf8763561cbb6a52fab",
+    },
+}
+
+
+def _uccsd_production_profile(framework: Framework) -> ProductionRuntimeProfile:
+    candidate = _PROFILES[framework]
+    digests = _UCCSD_PRODUCTION_DIGESTS[framework]
+    repository = f"ghcr.io/eshmis/majorana-vqe-uccsd-{framework.value}"
+    binding = ExecutionBinding(
+        framework=framework,
+        provider_versions=candidate.binding.provider_versions,
+        runtime_profile_id=f"h2-uccsd-{framework.value}-linux-x86_64-production-v1",
+        adapter_release_id=f"majorana-h2-uccsd-{framework.value}-adapter-0.3.0",
+        container_digest=digests["registry"],
+        container_digest_kind="oci_manifest_digest",
+        oci_manifest_digest=digests["registry"],
+        architecture="linux-x86_64",
+        production_runtime_status="qualified",
+        dataset_snapshot_id=candidate.binding.dataset_snapshot_id,
+        protocol_version="0.3.0",
+    )
+    return ProductionRuntimeProfile(
+        binding=binding,
+        image_reference=f"{repository}@{digests['registry']}",
+        registry_manifest_digest=digests["registry"],
+        platform_manifest_digest=digests["platform"],
+        attestation_manifest_digest=digests["attestation"],
+        image_config_digest=digests["config"],
+        sbom_sha256=digests["sbom"],
+        provenance_sha256=digests["provenance"],
+        github_attestation_id=digests["github_attestation_id"],
+        github_attestation_url=digests["github_attestation_url"],
+        lock_sha256=candidate.lock_sha256,
+        dockerfile_sha256=("427d74ca9f1cb9825e6ff4947d81a589920fc60765f9025749b68e569ae252a7"),
+        entrypoint_sha256=digests["entrypoint"],
+        fixture_manifest_sha256=(
+            "6424713c69c2b734172db47329b7deb62b67a743c80fd792f48173fdaa4e3edc"
+        ),
+        canonical_circuit_file_sha256=(
+            "912e8c78b5b71f399bbef72f6829ede9d239e7f2ec406c8de46311223fcd1132"
+        ),
+        canonical_circuit_sha256=(
+            "e0f4f55c966f2de92046a82c8538fe5074447c030d67155dced9d7ca5a6a9a98"
+        ),
+        compilation_protocol_sha256=(
+            "b4553154fdb2db269ca1f43b361d6530fa9814d866103c71490d04d2b0552c52"
+        ),
+        common_basis_operation_sequence_sha256=(
+            "084c35304374462e182fb28cceab067f06762275b78b48c7ef444b5a25c4bdac"
+        ),
+        qualification_script_sha256=(
+            "6c80ea1f92aa1549dacbd8c7319aacec1fedc6b667f07fe89670d66a7849f433"
+        ),
+        runtime_payload_source_commit="6e78bdff2b9486f564441dcd267b91a41038a5df",
+        entrypoint_kind="h2_uccsd_stdout_v1",
+    )
+
 
 def _production_profile(
     framework: Framework,
@@ -317,6 +396,9 @@ _PRODUCTION_PROFILES = {
     )
     for framework in Framework
 }
+_UCCSD_PRODUCTION_PROFILES = {
+    framework: _uccsd_production_profile(framework) for framework in Framework
+}
 
 
 def candidate_runtime_profile(framework: Framework) -> CandidateRuntimeProfile:
@@ -337,6 +419,15 @@ def production_runtime_profiles() -> tuple[ProductionRuntimeProfile, ...]:
     return tuple(_PRODUCTION_PROFILES[framework] for framework in Framework)
 
 
+def uccsd_production_runtime_profile(framework: Framework) -> ProductionRuntimeProfile:
+    """Resolve the exact attested H2 UCCSD production profile."""
+    return _UCCSD_PRODUCTION_PROFILES[Framework(framework)]
+
+
+def uccsd_production_runtime_profiles() -> tuple[ProductionRuntimeProfile, ...]:
+    return tuple(_UCCSD_PRODUCTION_PROFILES[framework] for framework in Framework)
+
+
 def profile_for_binding(
     binding: ExecutionBinding,
 ) -> CandidateRuntimeProfile | ProductionRuntimeProfile:
@@ -344,6 +435,7 @@ def profile_for_binding(
         _PROFILES.get(binding.framework),
         _PRODUCTION_PROFILES.get(binding.framework),
         _LEGACY_PRODUCTION_PROFILES.get(binding.framework),
+        _UCCSD_PRODUCTION_PROFILES.get(binding.framework),
     )
     for profile in candidates:
         if profile is not None and profile.binding == binding:

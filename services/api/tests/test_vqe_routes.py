@@ -9,6 +9,7 @@ workflow lookup refuses a non-workflow component.
 import datetime as dt
 import json
 import uuid
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -16,6 +17,8 @@ from fastapi import HTTPException
 
 from majorana_api.repos import vqe as vqe_repo
 from majorana_api.routes import vqe as vqe_routes
+
+ROOT = Path(__file__).resolve().parents[3]
 
 
 def _settings():
@@ -88,6 +91,27 @@ def test_create_experiment_requires_a_request_idempotency_key_with_no_default():
 
     sig = inspect.signature(vqe_routes.create_experiment)
     assert sig.parameters["request_idempotency_key"].default is inspect.Parameter.empty
+
+
+def test_uccsd_execution_identity_requires_the_exact_component_set():
+    identity = json.loads(
+        (
+            ROOT
+            / "docs"
+            / "atlas"
+            / "fixtures"
+            / "h2_sto3g"
+            / "uccsd_scientific_identity_v0.3.json"
+        ).read_text()
+    )
+    scientific_spec = identity["portable_spec"]
+
+    assert vqe_routes._matches_h2_uccsd_component_identity(scientific_spec) is True
+
+    drifted = json.loads(json.dumps(scientific_spec))
+    ansatz = next(item for item in drifted["component_bindings"] if item["role"] == "ansatz")
+    ansatz["component_semantic_key"] = "ansatz.fixed_excitation.v1"
+    assert vqe_routes._matches_h2_uccsd_component_identity(drifted) is False
 
 
 async def test_create_workflow_swap_passes_only_bounded_owner_choices(monkeypatch):
@@ -198,6 +222,7 @@ async def test_capabilities_reports_the_h2_capability_as_unavailable():
     assert {status.capability for status in response.capabilities} == {
         "h2_sto3g_exact_energy",
         "h2_sto3g_actual_vqe_v1",
+        "h2_sto3g_uccsd_v1",
     }
     assert all(status.available is False for status in response.capabilities)
     assert all(status.reason for status in response.capabilities)

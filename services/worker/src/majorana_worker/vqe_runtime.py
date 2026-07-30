@@ -29,8 +29,6 @@ from majorana_vqe.result import (
 from majorana_api.vqe_runtime_profiles import (
     CandidateRuntimeProfile,
     ProductionRuntimeProfile,
-    candidate_runtime_profile,
-    production_runtime_profile,
     profile_for_binding,
 )
 
@@ -38,6 +36,11 @@ _MAX_STDOUT_BYTES = 1_000_000
 _MAX_STDERR_BYTES = 64_000
 _H2_HAMILTONIAN_DIGEST = "d9dd24eb30011e8ea091759e6f0e25d76d0ccc0661e47748afb85e5f13654d79"
 _PARAMETER_SLOT = "theta.double.occ0_occ2.to.virt1_virt3"
+_UCCSD_PARAMETER_SLOTS = (
+    _PARAMETER_SLOT,
+    "theta.single.occ0.to.virt1",
+    "theta.single.occ2.to.virt3",
+)
 
 
 class VqeRuntimeError(RuntimeError):
@@ -234,8 +237,15 @@ class LocalDockerVqeRuntimeExecutor:
         self,
         binding: ExecutionBinding,
     ) -> CandidateRuntimeProfile | ProductionRuntimeProfile:
-        profile = candidate_runtime_profile(binding.framework)
-        if profile.binding != binding:
+        try:
+            profile = profile_for_binding(binding)
+        except ValueError as exc:
+            raise VqeRuntimeError(
+                "binding is not an exact server-owned VQE runtime profile",
+                failure_code=FailureCode.RUNTIME_UNAVAILABLE,
+                retryable=False,
+            ) from exc
+        if not isinstance(profile, CandidateRuntimeProfile):
             raise VqeRuntimeError(
                 "binding is not an exact local candidate profile",
                 failure_code=FailureCode.RUNTIME_UNAVAILABLE,
@@ -272,6 +282,7 @@ class LocalDockerVqeRuntimeExecutor:
     ) -> VqeRuntimeOutput:
         self._validate_environment()
         profile = self._profile(binding)
+        runtime_arguments = _runtime_arguments(profile, optimizer_algorithm)
         docker = _docker_binary()
         image_arguments = await self._image_arguments(docker, profile)
         container_name = f"majorana-vqe-{uuid.uuid4().hex}"
@@ -301,8 +312,7 @@ class LocalDockerVqeRuntimeExecutor:
             "--user",
             "65532:65532",
             *image_arguments,
-            "--optimizer",
-            optimizer_algorithm,
+            *runtime_arguments,
         ]
         try:
             process = await asyncio.create_subprocess_exec(
@@ -405,8 +415,15 @@ class OciDockerVqeRuntimeExecutor(LocalDockerVqeRuntimeExecutor):
         self,
         binding: ExecutionBinding,
     ) -> CandidateRuntimeProfile | ProductionRuntimeProfile:
-        profile = production_runtime_profile(binding.framework)
-        if profile.binding != binding:
+        try:
+            profile = profile_for_binding(binding)
+        except ValueError as exc:
+            raise VqeRuntimeError(
+                "binding is not an exact server-owned VQE runtime profile",
+                failure_code=FailureCode.RUNTIME_UNAVAILABLE,
+                retryable=False,
+            ) from exc
+        if not isinstance(profile, ProductionRuntimeProfile):
             raise VqeRuntimeError(
                 "binding is not an exact production OCI profile",
                 failure_code=FailureCode.RUNTIME_UNAVAILABLE,
@@ -448,9 +465,34 @@ _LOCAL_DOCKER_EXECUTOR = LocalDockerVqeRuntimeExecutor()
 _OCI_DOCKER_EXECUTOR = OciDockerVqeRuntimeExecutor()
 
 
+def _runtime_arguments(
+    profile: CandidateRuntimeProfile | ProductionRuntimeProfile,
+    optimizer_algorithm: OptimizerAlgorithm,
+) -> list[str]:
+    if profile.entrypoint_kind == "frozen_h2_actual_vqe_stdout_v1":
+        return ["--optimizer", optimizer_algorithm]
+    if profile.entrypoint_kind == "h2_uccsd_stdout_v1":
+        if optimizer_algorithm != "scipy_slsqp":
+            raise VqeRuntimeError(
+                "H2 UCCSD runtime requires the frozen SLSQP optimizer",
+                failure_code=FailureCode.RUNTIME_UNAVAILABLE,
+                retryable=False,
+            )
+        return []
+    raise VqeRuntimeError(
+        "unknown VQE runtime entrypoint contract",
+        failure_code=FailureCode.RUNTIME_UNAVAILABLE,
+        retryable=False,
+    )
+
+
 def _parameter(theta: float) -> ParameterValue:
+    return _parameter_for_slot(_PARAMETER_SLOT, theta)
+
+
+def _parameter_for_slot(slot_id: str, theta: float) -> ParameterValue:
     return ParameterValue(
-        slot_id=_PARAMETER_SLOT,
+        slot_id=slot_id,
         float64_hex=struct.pack(">d", theta).hex(),
     )
 
@@ -499,6 +541,8 @@ def _build_success_evidence(
     expected_optimizer_algorithm: OptimizerAlgorithm,
 ) -> VqeOptimizationSuccessResult:
     profile = profile_for_binding(binding)
+    if profile.entrypoint_kind != "frozen_h2_actual_vqe_stdout_v1":
+        raise ValueError("runtime profile is not the frozen one-parameter H2 contract")
     optimization = report["optimization"]
     if optimization.get("algorithm") != expected_optimizer_algorithm:
         raise ValueError("runtime optimizer algorithm does not match the scientific selection")
@@ -506,6 +550,8 @@ def _build_success_evidence(
     resources = report["resources"]
     if report.get("status") != "succeeded":
         raise ValueError("runtime report is not successful")
+    if report.get("capability") != "h2_sto3g_actual_vqe_v1":
+        raise ValueError("runtime capability does not match the frozen H2 contract")
     if report.get("framework") != binding.framework.value:
         raise ValueError("runtime framework does not match execution binding")
     if report.get("provider_versions") != binding.provider_versions:
@@ -633,6 +679,179 @@ def _build_success_evidence(
     return result
 
 
+def _build_uccsd_success_evidence(
+    report: dict[str, Any],
+    *,
+    binding: ExecutionBinding,
+    scientific_spec_sha256: str,
+    registry_resolution_sha256: str,
+    ansatz_semantic_digest: str,
+    seed: int,
+    expected_optimizer_algorithm: OptimizerAlgorithm,
+) -> VqeOptimizationSuccessResult:
+    profile = profile_for_binding(binding)
+    if not isinstance(profile, ProductionRuntimeProfile) or (
+        profile.entrypoint_kind != "h2_uccsd_stdout_v1"
+    ):
+        raise ValueError("runtime profile is not the frozen H2 UCCSD contract")
+    if expected_optimizer_algorithm != "scipy_slsqp":
+        raise ValueError("H2 UCCSD scientific selection must use SLSQP")
+
+    optimization = report["optimization"]
+    canonical_input = report["canonical_input"]
+    resources = report["resources"]
+    if report.get("status") != "succeeded":
+        raise ValueError("runtime report is not successful")
+    if report.get("capability") != "h2_sto3g_uccsd_v1":
+        raise ValueError("runtime capability does not match the H2 UCCSD contract")
+    if report.get("framework") != binding.framework.value:
+        raise ValueError("runtime framework does not match execution binding")
+    if report.get("provider_versions") != binding.provider_versions:
+        raise ValueError("runtime provider versions do not match execution binding")
+    if optimization.get("algorithm") != expected_optimizer_algorithm:
+        raise ValueError("runtime optimizer algorithm does not match the scientific selection")
+    if canonical_input.get("hamiltonian_digest_legacy") != _H2_HAMILTONIAN_DIGEST:
+        raise ValueError("runtime Hamiltonian digest does not match frozen H2 fixture")
+    if tuple(canonical_input.get("parameter_slot_order", ())) != _UCCSD_PARAMETER_SLOTS:
+        raise ValueError("runtime parameter order does not match the frozen H2 UCCSD fixture")
+    if canonical_input.get("manifest_sha256") != profile.fixture_manifest_sha256:
+        raise ValueError("runtime fixture manifest digest does not match the runtime profile")
+    if canonical_input.get("canonical_circuit_sha256") != profile.canonical_circuit_sha256:
+        raise ValueError("runtime canonical circuit digest does not match the runtime profile")
+    if canonical_input.get("compilation_protocol_sha256") != profile.compilation_protocol_sha256:
+        raise ValueError("runtime compilation protocol digest does not match the runtime profile")
+
+    final_values = optimization.get("final_parameters")
+    if not isinstance(final_values, list) or len(final_values) != len(_UCCSD_PARAMETER_SLOTS):
+        raise ValueError("runtime final UCCSD parameter vector has the wrong shape")
+    trajectory_items = optimization.get("trajectory")
+    if not isinstance(trajectory_items, list) or not trajectory_items:
+        raise ValueError("runtime UCCSD energy trajectory is missing")
+    for item in trajectory_items:
+        if not isinstance(item, dict) or len(item.get("parameters", ())) != len(
+            _UCCSD_PARAMETER_SLOTS
+        ):
+            raise ValueError("runtime UCCSD trajectory parameter vector has the wrong shape")
+
+    initial_parameters = [_parameter_for_slot(slot_id, 0.0) for slot_id in _UCCSD_PARAMETER_SLOTS]
+    final_parameters = [
+        _parameter_for_slot(slot_id, float(value))
+        for slot_id, value in zip(_UCCSD_PARAMETER_SLOTS, final_values, strict=True)
+    ]
+    trajectory = [float(item["energy_ha"]) for item in trajectory_items]
+    common = resources["common_basis_compiled"]
+    if common.get("operation_sequence_sha256") != (profile.common_basis_operation_sequence_sha256):
+        raise ValueError("runtime operation sequence does not match the runtime profile")
+    if common.get("adapter_verification") != "passed":
+        raise ValueError("runtime adapter did not independently verify the common-basis circuit")
+    if common.get("metric_scope") != "ansatz_only":
+        raise ValueError("common-basis resources must be ansatz-only")
+    if any(
+        common.get(field) is not False
+        for field in (
+            "includes_reference_state",
+            "includes_measurement",
+            "includes_hardware_optimization_or_routing",
+        )
+    ):
+        raise ValueError("common-basis resources include an excluded metric scope")
+    diagnostic = resources["provider_native_diagnostic"]
+
+    result = VqeOptimizationSuccessResult(
+        scientific_spec_sha256=scientific_spec_sha256,
+        registry_resolution_sha256=registry_resolution_sha256,
+        framework=binding.framework,
+        runtime_profile_id=binding.runtime_profile_id,
+        runtime_image_digest=binding.container_digest,
+        adapter_release_id=binding.adapter_release_id,
+        provider_versions=binding.provider_versions,
+        hamiltonian_exact_digest=_H2_HAMILTONIAN_DIGEST,
+        seed=seed,
+        status="succeeded",
+        capability="h2_sto3g_uccsd_v1",
+        best_energy_ha=float(optimization["best_energy_ha"]),
+        exact_energy_ha=float(optimization["exact_energy_ha"]),
+        absolute_error_ha=float(optimization["absolute_error_ha"]),
+        final_state_fidelity=float(optimization["final_state_fidelity"]),
+        iterations=int(optimization["iterations"]),
+        converged=bool(optimization["success"]),
+        optimizer_work=OptimizerWork(
+            iterations=int(optimization["iterations"]),
+            energy_evaluations=int(optimization["function_evaluations"]),
+            gradient_evaluations=int(optimization.get("gradient_evaluations", 0)),
+            hessian_evaluations=0,
+        ),
+        parameter_count=len(_UCCSD_PARAMETER_SLOTS),
+        initial_parameters=initial_parameters,
+        final_parameters=final_parameters,
+        initial_parameters_sha256=_parameter_digest(initial_parameters),
+        final_parameters_sha256=_parameter_digest(final_parameters),
+        ansatz_semantic_digest=ansatz_semantic_digest,
+        canonical_circuit_sha256=canonical_input["canonical_circuit_sha256"],
+        compilation_protocol_sha256=canonical_input["compilation_protocol_sha256"],
+        energy_trajectory=trajectory,
+        resources=[
+            ResourceObservation(
+                stage="canonical_logical",
+                metric_protocol_sha256=canonical_input["canonical_circuit_sha256"],
+                qubits=int(resources["canonical_logical"]["qubits"]),
+                parameter_count=int(resources["canonical_logical"]["parameter_count"]),
+            ),
+            ResourceObservation(
+                stage="common_basis_compiled",
+                metric_protocol_sha256=canonical_input["compilation_protocol_sha256"],
+                qubits=int(resources["canonical_logical"]["qubits"]),
+                depth=int(common["depth"]),
+                gate_count=int(common["gate_count"]),
+                two_qubit_gate_count=int(common["cnot_count"]),
+                parameter_count=int(common["parameter_count"]),
+                compiler="majorana_deterministic_pauli_rotation_compiler",
+                compiler_version="0.3.0",
+                compiler_seed=0,
+                metric_scope="ansatz_only",
+                reference_state_included=False,
+                measurement_included=False,
+                hardware_optimization_or_routing_included=False,
+                adapter_verification="passed",
+                operation_sequence_sha256=common["operation_sequence_sha256"],
+            ),
+            ResourceObservation(
+                stage="provider_native_diagnostic",
+                metric_protocol_sha256=canonical_input["compilation_protocol_sha256"],
+                qubits=int(resources["canonical_logical"]["qubits"]),
+                depth=int(diagnostic["depth"]),
+                gate_count=int(diagnostic["gate_count"]),
+                two_qubit_gate_count=int(diagnostic["two_qubit_gate_count"]),
+                parameter_count=len(_UCCSD_PARAMETER_SLOTS),
+                basis_gates=diagnostic.get("basis_gates"),
+                compiler_seed=diagnostic.get("compiler_seed"),
+                metric_scope="full_state_preparation",
+                reference_state_included=True,
+                measurement_included=False,
+                hardware_optimization_or_routing_included=False,
+            ),
+        ],
+        supplementary_evidence={
+            "production_runtime_status": binding.production_runtime_status,
+            "public_execution": "blocked",
+            "scientific_release": "blocked",
+            "runtime_provenance_complete": profile.provenance_complete,
+            "runtime_container_digest_kind": binding.container_digest_kind,
+            "runtime_oci_manifest_digest": binding.oci_manifest_digest,
+            "runtime_payload_source_commit": profile.runtime_payload_source_commit,
+            "github_attestation_id": profile.github_attestation_id,
+            "github_attestation_url": profile.github_attestation_url,
+            "platform": str(report["platform"]),
+            "wall_time_s": float(report["wall_time_s"]),
+        },
+    )
+    if result.absolute_error_ha > 1e-10:
+        raise ValueError("runtime result exceeds the frozen H2 UCCSD numerical gate")
+    if 1.0 - result.final_state_fidelity > 1e-10:
+        raise ValueError("runtime state fidelity exceeds the frozen H2 UCCSD gate")
+    return result
+
+
 def build_success_evidence(
     report: dict[str, Any],
     *,
@@ -644,6 +863,17 @@ def build_success_evidence(
     expected_optimizer_algorithm: OptimizerAlgorithm = "scipy_minimize_scalar_bounded",
 ) -> VqeOptimizationSuccessResult:
     try:
+        profile = profile_for_binding(binding)
+        if profile.entrypoint_kind == "h2_uccsd_stdout_v1":
+            return _build_uccsd_success_evidence(
+                report,
+                binding=binding,
+                scientific_spec_sha256=scientific_spec_sha256,
+                registry_resolution_sha256=registry_resolution_sha256,
+                ansatz_semantic_digest=ansatz_semantic_digest,
+                seed=seed,
+                expected_optimizer_algorithm=expected_optimizer_algorithm,
+            )
         return _build_success_evidence(
             report,
             binding=binding,

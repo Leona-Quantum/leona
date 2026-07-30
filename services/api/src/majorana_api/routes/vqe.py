@@ -24,6 +24,8 @@ from majorana_contracts.enums import Algorithm, ExportStatus, RunMode, RunStatus
 from majorana_contracts.enums import Framework as ContractFramework
 from majorana_vqe.models import Capability, ComponentType, Framework
 from majorana_vqe.controlled_comparison import ControlledComparisonSpecV1
+from majorana_vqe.executable import H2_UCCSD_SEMANTIC_KEYS
+from majorana_vqe.portable import PortableScientificExperimentSpecV03
 from pydantic import BaseModel, ConfigDict, Field
 
 from ..auth.deps import CurrentScope, DbSession, get_settings
@@ -40,7 +42,11 @@ from ..repos import runs as runs_repo
 from ..repos import system
 from ..repos import vqe as vqe_repo
 from ..settings import Settings
-from ..vqe_runtime_profiles import candidate_runtime_profile, production_runtime_profile
+from ..vqe_runtime_profiles import (
+    candidate_runtime_profile,
+    production_runtime_profile,
+    uccsd_production_runtime_profile,
+)
 
 router = APIRouter()
 
@@ -56,6 +62,21 @@ def _catalog_workspace_id(settings: Settings) -> uuid.UUID | None:
     return (
         settings.catalog_authority.workspace_id if settings.catalog_authority.configured else None
     )
+
+
+def _matches_h2_uccsd_component_identity(scientific_spec_json: dict[str, Any]) -> bool:
+    try:
+        scientific_spec = PortableScientificExperimentSpecV03.model_validate(
+            scientific_spec_json
+        )
+        semantic_keys = {
+            binding.role: binding.component_semantic_key
+            for binding in scientific_spec.component_bindings
+            if binding.applicability == "required"
+        }
+    except (TypeError, ValueError):
+        return False
+    return semantic_keys == H2_UCCSD_SEMANTIC_KEYS
 
 
 # --- resource shapes ---------------------------------------------------
@@ -472,9 +493,7 @@ async def create_ansatz_migration(
         saved = await vqe_repo.save_h2_uccsd_migration_workflow_draft(
             scope,
             session,
-            baseline_workflow_artifact_version_id=(
-                body.baseline_workflow_artifact_version_id
-            ),
+            baseline_workflow_artifact_version_id=(body.baseline_workflow_artifact_version_id),
             evaluator_provider=body.evaluator_provider,
             request_idempotency_key=request_idempotency_key,
             catalog_workspace_id=_catalog_workspace_id(settings),
@@ -622,6 +641,14 @@ async def vqe_capabilities(scope: CurrentScope) -> CapabilitiesResponse:
                 reason=(
                     "local Phase 5A candidate execution is not a public capability; "
                     "human review and production runtime qualification remain pending"
+                ),
+            ),
+            CapabilityStatus(
+                capability=Capability.H2_STO3G_UCCSD_VQE.value,
+                available=False,
+                reason=(
+                    "attested OCI runtimes exist for private qualification only; "
+                    "public execution and scientific release remain blocked"
                 ),
             ),
         ]
@@ -789,14 +816,36 @@ async def start_execution(
                 ),
             },
         )
-    if body.requested_capability is not Capability.H2_STO3G_ACTUAL_VQE:
-        raise HTTPException(status_code=422, detail="unsupported Phase 5A capability")
     experiment = await vqe_repo.get_experiment(scope, session, experiment_id)
-    profile = (
-        production_runtime_profile(body.preferred_framework)
-        if getattr(settings, "vqe_production_execution", False)
-        else candidate_runtime_profile(body.preferred_framework)
-    )
+    production_execution = getattr(settings, "vqe_production_execution", False)
+    if body.requested_capability is Capability.H2_STO3G_ACTUAL_VQE:
+        profile = (
+            production_runtime_profile(body.preferred_framework)
+            if production_execution
+            else candidate_runtime_profile(body.preferred_framework)
+        )
+    elif body.requested_capability is Capability.H2_STO3G_UCCSD_VQE:
+        if not production_execution:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": "uccsd_requires_qualified_runtime",
+                    "message": (
+                        "H2 UCCSD execution requires the server-owned, "
+                        "digest-pinned production runtime gate"
+                    ),
+                },
+            )
+        if not _matches_h2_uccsd_component_identity(experiment.scientific_spec_json):
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    "requested H2 UCCSD capability does not match the experiment component identity"
+                ),
+            )
+        profile = uccsd_production_runtime_profile(body.preferred_framework)
+    else:
+        raise HTTPException(status_code=422, detail="unsupported private VQE capability")
     execution = await vqe_repo.create_execution(
         scope,
         session,
@@ -811,7 +860,8 @@ async def start_execution(
                 scope,
                 session,
                 task_prompt=(
-                    "Execute the frozen owner-waived H2 STO-3G actual-VQE "
+                    "Execute the frozen owner-waived private "
+                    f"{body.requested_capability.value} "
                     f"candidate with {profile.binding.framework.value}"
                 ),
                 mode=RunMode.EXECUTE,

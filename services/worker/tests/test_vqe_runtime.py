@@ -8,6 +8,7 @@ from majorana_api.vqe_runtime_profiles import (
     candidate_runtime_profile,
     profile_for_binding,
     production_runtime_profile,
+    uccsd_production_runtime_profile,
 )
 from majorana_vqe.models import Framework
 from majorana_worker.vqe_runtime import (
@@ -50,6 +51,77 @@ def test_current_production_profile_is_versioned_without_orphaning_v1_bindings()
     resolved = profile_for_binding(legacy_binding)
     assert resolved.binding == legacy_binding
     assert resolved.runtime_payload_source_commit == ("fae2d2f4d6310a6cbc29cc0fe5ebab20b361ae07")
+
+
+@pytest.mark.parametrize(
+    ("framework", "expected_registry_digest", "expected_platform_digest"),
+    [
+        (
+            Framework.QISKIT,
+            "sha256:9e0d646fd59cee3d51a72a60d36b306619150732cf01bda73de23c1cdbd119d5",
+            "sha256:64effada2d704410bc26cbea0734e069dafe6f229a59d0424b6523085d2f3879",
+        ),
+        (
+            Framework.PENNYLANE,
+            "sha256:daac7c918f277555515bc3a4c5c7fa29e6634a44184db1f04f4cd3ef5d3e9980",
+            "sha256:31d3b3a1042eb1326c01e4eaafc0ac4c9d6839d051852fa14bff12b57c954285",
+        ),
+    ],
+)
+def test_uccsd_production_profile_is_exact_and_attested(
+    framework,
+    expected_registry_digest,
+    expected_platform_digest,
+):
+    profile = uccsd_production_runtime_profile(framework)
+
+    assert profile.binding.container_digest == expected_registry_digest
+    assert profile.platform_manifest_digest == expected_platform_digest
+    assert profile.binding.production_runtime_status == "qualified"
+    assert profile.entrypoint_kind == "h2_uccsd_stdout_v1"
+    assert profile.runtime_payload_source_commit == ("6e78bdff2b9486f564441dcd267b91a41038a5df")
+    assert profile.provenance_complete is True
+    assert profile_for_binding(profile.binding) is profile
+
+
+@pytest.mark.parametrize(
+    ("framework", "filename"),
+    [
+        (Framework.QISKIT, "qiskit_uccsd_v0.1.json"),
+        (Framework.PENNYLANE, "pennylane_uccsd_v0.1.json"),
+    ],
+)
+def test_uccsd_report_translates_to_three_parameter_private_evidence(framework, filename):
+    profile = uccsd_production_runtime_profile(framework)
+    report = json.loads((RAW / filename).read_text())
+
+    evidence = build_success_evidence(
+        report,
+        binding=profile.binding,
+        scientific_spec_sha256="1" * 64,
+        registry_resolution_sha256="2" * 64,
+        ansatz_semantic_digest="3" * 64,
+        seed=0,
+        expected_optimizer_algorithm="scipy_slsqp",
+    )
+
+    assert evidence.capability == "h2_sto3g_uccsd_v1"
+    assert evidence.parameter_count == 3
+    assert [parameter.slot_id for parameter in evidence.final_parameters] == [
+        "theta.double.occ0_occ2.to.virt1_virt3",
+        "theta.single.occ0.to.virt1",
+        "theta.single.occ2.to.virt3",
+    ]
+    assert evidence.absolute_error_ha <= 1e-10
+    assert evidence.final_state_fidelity >= 1 - 1e-10
+    common = evidence.resources[1]
+    assert (common.two_qubit_gate_count, common.depth, common.gate_count) == (
+        56,
+        96,
+        188,
+    )
+    assert evidence.supplementary_evidence["public_execution"] == "blocked"
+    assert evidence.supplementary_evidence["scientific_release"] == "blocked"
 
 
 @pytest.mark.parametrize(
@@ -328,6 +400,51 @@ async def test_production_launcher_requires_preprovisioned_exact_digest(monkeypa
         "PATH": "/usr/local/bin:/usr/bin:/bin",
         "DOCKER_CLI_HINTS": "false",
     }
+
+
+async def test_uccsd_production_launcher_uses_frozen_entrypoint_without_cli_override(
+    monkeypatch,
+):
+    profile = uccsd_production_runtime_profile(Framework.QISKIT)
+    report = (RAW / "qiskit_uccsd_v0.1.json").read_bytes()
+    captured = []
+
+    async def create(*command, **kwargs):
+        captured.append((command, kwargs))
+        if command[1:3] == ("image", "inspect"):
+            return _InspectProcess(json.dumps([profile.image_reference]).encode())
+        return _SuccessfulProcess(report)
+
+    monkeypatch.setenv("MAJORANA_ENV", "production")
+    monkeypatch.setenv("MAJORANA_VQE_RUNTIME_HOST", "dedicated")
+    for name in ("K_SERVICE", "K_REVISION", "K_CONFIGURATION"):
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setattr("majorana_worker.vqe_runtime._docker_binary", lambda: "/docker")
+    monkeypatch.setattr("majorana_worker.vqe_runtime.asyncio.create_subprocess_exec", create)
+
+    output = await OciDockerVqeRuntimeExecutor().run(
+        profile.binding,
+        optimizer_algorithm="scipy_slsqp",
+    )
+
+    assert output.payload["capability"] == "h2_sto3g_uccsd_v1"
+    run_command, _run_kwargs = captured[1]
+    image_index = run_command.index(profile.image_reference)
+    assert run_command[image_index + 1 :] == ()
+
+
+async def test_uccsd_production_launcher_rejects_optimizer_drift(monkeypatch):
+    profile = uccsd_production_runtime_profile(Framework.PENNYLANE)
+    monkeypatch.setenv("MAJORANA_ENV", "production")
+    monkeypatch.setenv("MAJORANA_VQE_RUNTIME_HOST", "dedicated")
+    for name in ("K_SERVICE", "K_REVISION", "K_CONFIGURATION"):
+        monkeypatch.delenv(name, raising=False)
+
+    with pytest.raises(VqeRuntimeError, match="requires the frozen SLSQP"):
+        await OciDockerVqeRuntimeExecutor().run(
+            profile.binding,
+            optimizer_algorithm="scipy_cobyla",
+        )
 
 
 async def test_production_launcher_refuses_missing_exact_digest(monkeypatch):
