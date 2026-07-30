@@ -1,7 +1,10 @@
 import { NextResponse } from "next/server";
 import { getMajoranaAuth } from "../../../../../lib/auth";
-
-const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+import {
+  controlPlaneUnavailable,
+  controlPlaneUrl,
+  fetchControlPlane,
+} from "../../../../../lib/control-plane";
 
 export async function POST(request: Request) {
   const { accessToken } = await getMajoranaAuth({ ensureSignedIn: true });
@@ -21,7 +24,7 @@ export async function POST(request: Request) {
     );
   }
   try {
-    const upstream = await fetch(new URL("/v1/atlas/workflows/swaps", API_URL), {
+    const upstream = await fetchControlPlane(controlPlaneUrl("/v1/atlas/workflows/swaps"), {
       method: "POST",
       headers: {
         Authorization: `Bearer ${accessToken}`,
@@ -29,7 +32,6 @@ export async function POST(request: Request) {
         "Idempotency-Key": idempotencyKey,
       },
       body: await request.text(),
-      cache: "no-store",
     });
     return new NextResponse(upstream.body, {
       status: upstream.status,
@@ -37,11 +39,8 @@ export async function POST(request: Request) {
         "Content-Type": upstream.headers.get("Content-Type") ?? "application/json",
       },
     });
-  } catch {
-    return NextResponse.json(
-      { error: "control plane unavailable" },
-      { status: 502 },
-    );
+  } catch (error) {
+    return controlPlaneUnavailable(error);
   }
 }
 

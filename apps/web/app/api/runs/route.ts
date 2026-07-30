@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getMajoranaAuth } from "../../../lib/auth";
+import { controlPlaneUnavailable, controlPlaneUrl, fetchControlPlane } from "../../../lib/control-plane";
 import { getAccountTier } from "../../../lib/account-tier-server";
 import {
   artifactAllowanceRefusal,
@@ -7,37 +8,33 @@ import {
   runAllowanceRefusal,
 } from "../../../lib/run-allowance";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
-
 export const dynamic = "force-dynamic";
 
 export async function GET(request: Request) {
   const { accessToken } = await getMajoranaAuth({ ensureSignedIn: true });
   const requestUrl = new URL(request.url);
-  const upstreamUrl = new URL("/v1/runs", API_URL);
+  const upstreamUrl = controlPlaneUrl("/v1/runs");
   for (const key of ["status", "cursor", "limit"]) {
     const value = requestUrl.searchParams.get(key);
     if (value) upstreamUrl.searchParams.set(key, value);
   }
   try {
-    const upstream = await fetch(upstreamUrl, {
+    const upstream = await fetchControlPlane(upstreamUrl, {
       headers: { Authorization: `Bearer ${accessToken}` },
-      cache: "no-store",
     });
     return new NextResponse(upstream.body, {
       status: upstream.status,
       headers: { "Content-Type": upstream.headers.get("Content-Type") ?? "application/json" },
     });
-  } catch {
-    return NextResponse.json({ error: "control plane unavailable" }, { status: 502 });
+  } catch (error) {
+    return controlPlaneUnavailable(error);
   }
 }
 
 async function fetchJsonArray(path: string, accessToken: string): Promise<unknown[] | null> {
   try {
-    const upstream = await fetch(new URL(path, API_URL), {
+    const upstream = await fetchControlPlane(controlPlaneUrl(path), {
       headers: { Authorization: `Bearer ${accessToken}` },
-      cache: "no-store",
     });
     if (!upstream.ok) return null;
     const payload = (await upstream.json()) as unknown;
@@ -50,9 +47,8 @@ async function fetchJsonArray(path: string, accessToken: string): Promise<unknow
 /** The control plane's id for the signed-in account, or null if unreadable. */
 async function fetchViewerUserId(accessToken: string): Promise<string | null> {
   try {
-    const upstream = await fetch(new URL("/v1/me", API_URL), {
+    const upstream = await fetchControlPlane(controlPlaneUrl("/v1/me"), {
       headers: { Authorization: `Bearer ${accessToken}` },
-      cache: "no-store",
     });
     if (!upstream.ok) return null;
     const payload = (await upstream.json()) as { user_id?: unknown };
@@ -124,7 +120,7 @@ export async function POST(request: Request) {
   }
 
   try {
-    const upstream = await fetch(`${API_URL}/v1/runs`, {
+    const upstream = await fetchControlPlane(controlPlaneUrl("/v1/runs"), {
       method: "POST",
       headers: {
         Authorization: `Bearer ${accessToken}`,
@@ -132,7 +128,6 @@ export async function POST(request: Request) {
         ...(idempotencyKey ? { "Idempotency-Key": idempotencyKey } : {}),
       },
       body,
-      cache: "no-store",
     });
 
     return new NextResponse(upstream.body, {
@@ -141,7 +136,7 @@ export async function POST(request: Request) {
         "Content-Type": upstream.headers.get("Content-Type") ?? "application/json",
       },
     });
-  } catch {
-    return NextResponse.json({ error: "control plane unavailable" }, { status: 502 });
+  } catch (error) {
+    return controlPlaneUnavailable(error);
   }
 }

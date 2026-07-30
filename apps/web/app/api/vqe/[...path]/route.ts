@@ -1,8 +1,11 @@
 import { NextResponse } from "next/server";
 import { getMajoranaAuth } from "../../../../lib/auth";
+import {
+  controlPlaneUnavailable,
+  controlPlaneUrl,
+  fetchControlPlane,
+} from "../../../../lib/control-plane";
 import { isAllowedVqeProxyRequest } from "../../../../lib/vqe-proxy-policy";
-
-const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
 async function proxy(request: Request, context: { params: Promise<{ path: string[] }> }) {
   const path = (await context.params).path.join("/");
@@ -16,11 +19,10 @@ async function proxy(request: Request, context: { params: Promise<{ path: string
   if (contentType) headers["Content-Type"] = contentType;
   if (idempotencyKey) headers["Idempotency-Key"] = idempotencyKey;
   try {
-    const upstream = await fetch(new URL(`/v1/vqe/${path}`, API_URL), {
+    const upstream = await fetchControlPlane(controlPlaneUrl(`/v1/vqe/${path}`), {
       method: request.method,
       headers,
       body: request.method === "POST" ? await request.text() : undefined,
-      cache: "no-store",
     });
     return new NextResponse(upstream.body, {
       status: upstream.status,
@@ -28,8 +30,8 @@ async function proxy(request: Request, context: { params: Promise<{ path: string
         "Content-Type": upstream.headers.get("Content-Type") ?? "application/json",
       },
     });
-  } catch {
-    return NextResponse.json({ error: "control plane unavailable" }, { status: 502 });
+  } catch (error) {
+    return controlPlaneUnavailable(error);
   }
 }
 

@@ -17,6 +17,12 @@
 // dependency): the only importers are server components and route handlers. The
 // client components take entries as props and keep importing the static barrel
 // for their synchronous variant/verification helpers.
+import {
+  catalogPageUrl,
+  collectCatalogPages,
+  parseCatalogTotal,
+  type CatalogPage,
+} from "./catalog-pagination";
 import { isPublicCatalogApiEnabled } from "./public-catalog";
 import { parseCatalogEntries, parseCatalogListEntries } from "./repository/from-catalog";
 import { PUBLIC_REPOSITORY_ENTRIES } from "./public-repository";
@@ -36,7 +42,7 @@ const CATALOG_REVALIDATE_SECONDS = 300;
  * like an API outage, which is exactly the noise that makes a real outage hard
  * to spot. Every other status, on every caller, still logs.
  */
-async function fetchCatalogPayload(url: string, expected404 = false): Promise<unknown | null> {
+async function fetchCatalogPage(url: string, expected404 = false): Promise<CatalogPage | null> {
   try {
     const upstream = await fetch(url, {
       headers: { Accept: "application/json" },
@@ -48,15 +54,25 @@ async function fetchCatalogPayload(url: string, expected404 = false): Promise<un
       }
       return null;
     }
-    return await upstream.json();
+    return { payload: await upstream.json(), total: parseCatalogTotal(upstream.headers) };
   } catch (error) {
     console.error(`[repository-source] catalog fetch threw (${url}):`, error);
     return null;
   }
 }
 
+async function fetchCatalogPayload(url: string, expected404 = false): Promise<unknown | null> {
+  const page = await fetchCatalogPage(url, expected404);
+  return page === null ? null : page.payload;
+}
+
+/** Every page of the listing, or null if completeness could not be proved. */
+function fetchAllCatalogPages(view: "full" | "list"): Promise<unknown[] | null> {
+  return collectCatalogPages(API_URL, view, (url) => fetchCatalogPage(url));
+}
+
 async function fetchCatalogEntries(): Promise<PublicRepositoryEntry[] | null> {
-  const payload = await fetchCatalogPayload(`${API_URL}/v1/catalog/entries`);
+  const payload = await fetchAllCatalogPages("full");
   if (payload === null) return null;
 
   const { entries, rejected } = parseCatalogEntries(payload);
@@ -71,7 +87,7 @@ async function fetchCatalogEntries(): Promise<PublicRepositoryEntry[] | null> {
 }
 
 async function fetchCatalogListEntries(): Promise<PublicRepositoryListEntry[] | null> {
-  const payload = await fetchCatalogPayload(`${API_URL}/v1/catalog/entries?view=list`);
+  const payload = await fetchAllCatalogPages("list");
   if (payload === null) return null;
 
   const { entries, rejected } = parseCatalogListEntries(payload);
@@ -89,9 +105,10 @@ async function fetchCatalogListEntries(): Promise<PublicRepositoryListEntry[] | 
  * Every entry backing /repository, with the FULL record. Async by construction
  * so the call sites do not have to change again when the flag flips.
  *
- * Prefer getRepositoryListEntries() for anything that only renders the browse
- * list — this response is ~2.37 MB and is over Vercel's data-cache ceiling, so
- * it is refetched on every request.
+ * Still prefer getRepositoryListEntries() for anything that only renders the
+ * browse list — this reads ~2.37 MB across all pages either way. What changed
+ * is that no single response is over Vercel's data-cache ceiling any more, so
+ * these pages are actually cached instead of refetched on every request.
  */
 export async function getRepositoryEntries(): Promise<PublicRepositoryEntry[]> {
   if (!isPublicCatalogApiEnabled()) return PUBLIC_REPOSITORY_ENTRIES;
@@ -107,10 +124,10 @@ export async function getRepositoryEntries(): Promise<PublicRepositoryEntry[]> {
  * Every entry backing /repository, projected to the fields the browse list and
  * the detail page's related-links strip actually read (Slice E).
  *
- * This is the cacheable path: ~0.91 MB against a 2 MB ceiling, so the
- * revalidate window on the fetch is real rather than inert. The static corpus
- * satisfies the narrower type directly (PublicRepositoryEntry is a superset),
- * so the fallback needs no projection of its own.
+ * This is the cheap path: ~0.91 MB in total, now split across pages of roughly
+ * 320 KB. The static corpus satisfies the narrower type directly
+ * (PublicRepositoryEntry is a superset), so the fallback needs no projection of
+ * its own.
  */
 export async function getRepositoryListEntries(): Promise<PublicRepositoryListEntry[]> {
   if (!isPublicCatalogApiEnabled()) return PUBLIC_REPOSITORY_ENTRIES;

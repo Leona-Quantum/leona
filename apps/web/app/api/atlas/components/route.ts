@@ -1,7 +1,10 @@
 import { NextResponse } from "next/server";
 import { getMajoranaAuth } from "../../../../lib/auth";
-
-const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+import {
+  controlPlaneUnavailable,
+  controlPlaneUrl,
+  fetchControlPlane,
+} from "../../../../lib/control-plane";
 
 export async function GET(request: Request) {
   const { accessToken } = await getMajoranaAuth({ ensureSignedIn: true });
@@ -14,7 +17,7 @@ export async function GET(request: Request) {
       { status: 400 },
     );
   }
-  const upstreamUrl = new URL("/v1/atlas/components", API_URL);
+  const upstreamUrl = controlPlaneUrl("/v1/atlas/components");
   upstreamUrl.searchParams.set("component_type", componentType);
   upstreamUrl.searchParams.set(
     "limit",
@@ -27,9 +30,8 @@ export async function GET(request: Request) {
     ),
   );
   try {
-    const upstream = await fetch(upstreamUrl, {
+    const upstream = await fetchControlPlane(upstreamUrl, {
       headers: { Authorization: `Bearer ${accessToken}` },
-      cache: "no-store",
     });
     return new NextResponse(upstream.body, {
       status: upstream.status,
@@ -37,11 +39,8 @@ export async function GET(request: Request) {
         "Content-Type": upstream.headers.get("Content-Type") ?? "application/json",
       },
     });
-  } catch {
-    return NextResponse.json(
-      { error: "control plane unavailable" },
-      { status: 502 },
-    );
+  } catch (error) {
+    return controlPlaneUnavailable(error);
   }
 }
 

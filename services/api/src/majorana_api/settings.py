@@ -42,6 +42,42 @@ def _validate_deploy_probe_token(token: str) -> None:
         )
 
 
+#: WorkOS serves both of these per client id, so each one embeds the client it
+#: belongs to. That is what makes a mismatch detectable at all.
+_WORKOS_ISSUER_PREFIX = "https://api.workos.com/user_management/"
+_WORKOS_JWKS_PREFIX = "https://api.workos.com/sso/jwks/"
+
+
+def _validate_workos_client_consistency(client_id: str, issuer: str, jwks_url: str) -> None:
+    """Refuse an issuer or JWKS URL that names a different client than we use.
+
+    Both default to the client id and would move with it. Production does not
+    take the default — it pins all three explicitly — so moving between WorkOS
+    environments means changing every one of them, and changing only
+    `WORKOS_CLIENT_ID` leaves token *validation* pointed at the environment we
+    just left. Every request then 403s, sign-in included, and the service starts
+    perfectly healthy: nothing is unreachable, the signature simply never
+    matches. It is the same total outage as a missing `email` claim and it has
+    no symptom that names its own cause.
+
+    Only WorkOS-shaped values are checked. A custom auth domain or a proxy is a
+    deliberate override and means the operator is not making this mistake; there
+    is nothing to compare it against.
+    """
+    for name, value, prefix in (
+        ("WORKOS_JWT_ISSUER", issuer, _WORKOS_ISSUER_PREFIX),
+        ("WORKOS_JWKS_URL", jwks_url, _WORKOS_JWKS_PREFIX),
+    ):
+        if not value.startswith(prefix):
+            continue
+        named = value[len(prefix) :].strip("/")
+        if named != client_id:
+            raise RuntimeError(
+                f"{name} names client {named!r} but WORKOS_CLIENT_ID is {client_id!r}. "
+                "These must move together — unset it to derive it from the client id."
+            )
+
+
 @dataclass(frozen=True)
 class Settings:
     workos_client_id: str
@@ -101,6 +137,12 @@ class Settings:
             )
         if self.deploy_probe_token:
             _validate_deploy_probe_token(self.deploy_probe_token)
+        # Here rather than in `from_env` so it also holds for a Settings built
+        # directly — the deploy probe and the tests both do that, and a guard
+        # that only covers one construction path is a guard with a way round it.
+        _validate_workos_client_consistency(
+            self.workos_client_id, self.workos_jwt_issuer, self.workos_jwks_url
+        )
 
     @classmethod
     def from_env(cls) -> "Settings":
