@@ -253,10 +253,10 @@ has an SBOM plus provenance attestation:
   `sha256:31d3b3a1042eb1326c01e4eaafc0ac4c9d6839d051852fa14bff12b57c954285`.
 
 The private authentication → database → real-OCI path succeeded in
-[GitHub Actions run 30524426784](https://github.com/EshMis/majorana/actions/runs/30524426784)
-on source commit `22d3c6588627ec20ecf9f015e61cf2ea307d5d06`.
+[GitHub Actions run 30526084585](https://github.com/EshMis/majorana/actions/runs/30526084585)
+on source commit `0bd1aa48bc2ea9cfcc3bca92b55797ad18e3573d`.
 The corresponding general
-[CI run 30524426779](https://github.com/EshMis/majorana/actions/runs/30524426779)
+[CI run 30526084592](https://github.com/EshMis/majorana/actions/runs/30526084592)
 also succeeded. The E2E used:
 
 - an isolated PostgreSQL 17 database;
@@ -277,9 +277,9 @@ superiority.
 The durable redacted qualification record is
 `docs/atlas/evidence/phase78/uccsd_private_oci_qualification.json`. The
 ephemeral GitHub artifact is
-`phase78-private-ci-e2e-22d3c6588627ec20ecf9f015e61cf2ea307d5d06`
-(artifact ID `8752144280`, archive digest
-`sha256:1482dc21ce3ff8cc1e7aaed69d46a1a50e6de28ca38cddccf95f65d3c71f0cfa`).
+`phase78-private-ci-e2e-0bd1aa48bc2ea9cfcc3bca92b55797ad18e3573d`
+(artifact ID `8752758394`, archive digest
+`sha256:bb160418c141d9220c944db6fb5977e87dcef5d27d00e0c1b89b2aac8ee375c3`).
 
 ### H₂ UCCSD private qualification close
 
