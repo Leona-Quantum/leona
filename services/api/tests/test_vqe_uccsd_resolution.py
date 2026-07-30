@@ -23,6 +23,46 @@ from majorana_api.repos import vqe
 _FIXTURE_DIR = Path(__file__).resolve().parents[3] / "docs" / "atlas" / "fixtures" / "h2_sto3g"
 
 
+def _uccsd_workflow_payload() -> dict[str, object]:
+    return {
+        "schema_version": "0.3.0",
+        "kind": "ansatz_migration_workflow_draft",
+        "baseline_workflow_artifact_version_id": str(uuid.uuid4()),
+        "migration": "h2_fixed_excitation_slsqp_to_uccsd_slsqp",
+        "comparison_class": "controlled_capability_migration_not_one_component_swap",
+        "primary_changed_role": ComponentType.ANSATZ.value,
+        "dependent_changed_roles": [ComponentType.COMPILATION_BACKEND.value],
+        "required_to_not_applicable_roles": [
+            ComponentType.GROWTH_BATCHING.value,
+            ComponentType.OPERATOR_POOL.value,
+            ComponentType.SEARCH_SELECTION.value,
+        ],
+        "parameter_policy": "reset_all",
+        "evaluator_provider": "qiskit",
+        "request_sha256": "a" * 64,
+        "execution_status": "private_qualification_candidate",
+        "publication": "blocked",
+        "scientific_release": "blocked",
+    }
+
+
+def test_machine_validated_workflow_gate_accepts_only_bounded_uccsd_v03_envelope():
+    payload = _uccsd_workflow_payload()
+    vqe._validate_machine_validated_workflow_payload(payload)
+
+    for field, invalid_value in (
+        ("comparison_class", "controlled_one_component_swap"),
+        ("dependent_changed_roles", []),
+        ("required_to_not_applicable_roles", []),
+        ("evaluator_provider", "unregistered"),
+        ("request_sha256", "not-a-digest"),
+        ("publication", "public"),
+    ):
+        invalid = {**payload, field: invalid_value}
+        with pytest.raises(ValueError, match="H2 UCCSD workflow migration"):
+            vqe._validate_machine_validated_workflow_payload(invalid)
+
+
 def _component(
     role: ComponentType,
     semantic_key: str,

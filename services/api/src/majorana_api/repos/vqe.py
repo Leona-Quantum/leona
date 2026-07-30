@@ -129,6 +129,57 @@ H2_REVIEW_CANDIDATE_WORKFLOW_DIGEST = (
 # --- component specs ---------------------------------------------------
 
 
+def _validate_machine_validated_workflow_payload(payload: dict[str, Any]) -> None:
+    """Fail closed on every workflow metadata schema admitted by this repository.
+
+    v0.2 predates the bounded UCCSD migration and remains immutable.  v0.3 is
+    admitted only for the exact private H2 migration envelope; accepting an
+    arbitrary ``schema_version=0.3.0`` object here would let untyped workflow
+    metadata acquire a machine-validated label before its component links are
+    resolved.
+    """
+
+    schema_version = payload.get("schema_version")
+    kind = payload.get("kind")
+    if schema_version == "0.2.0" and isinstance(kind, str) and kind:
+        return
+    if schema_version != "0.3.0" or kind != "ansatz_migration_workflow_draft":
+        raise ValueError(
+            "machine-validated workflow requires typed v0.2 metadata or "
+            "the bounded H2 UCCSD v0.3 migration envelope"
+        )
+
+    expected_values: dict[str, object] = {
+        "migration": "h2_fixed_excitation_slsqp_to_uccsd_slsqp",
+        "comparison_class": "controlled_capability_migration_not_one_component_swap",
+        "primary_changed_role": ComponentType.ANSATZ.value,
+        "dependent_changed_roles": [ComponentType.COMPILATION_BACKEND.value],
+        "required_to_not_applicable_roles": sorted(
+            role.value for role in set(PORTABLE_SCIENTIFIC_ROLES) - set(H2_UCCSD_APPLICABLE_ROLES)
+        ),
+        "parameter_policy": "reset_all",
+        "execution_status": "private_qualification_candidate",
+        "publication": "blocked",
+        "scientific_release": "blocked",
+    }
+    for field, expected in expected_values.items():
+        if payload.get(field) != expected:
+            raise ValueError(f"invalid H2 UCCSD workflow migration field {field!r}")
+    if payload.get("evaluator_provider") not in {"qiskit", "pennylane"}:
+        raise ValueError("invalid H2 UCCSD workflow migration evaluator_provider")
+    try:
+        uuid.UUID(str(payload["baseline_workflow_artifact_version_id"]))
+    except (KeyError, ValueError) as exc:
+        raise ValueError("invalid H2 UCCSD workflow migration baseline identity") from exc
+    request_sha256 = payload.get("request_sha256")
+    if not (
+        isinstance(request_sha256, str)
+        and len(request_sha256) == 64
+        and all(character in "0123456789abcdef" for character in request_sha256)
+    ):
+        raise ValueError("invalid H2 UCCSD workflow migration request digest")
+
+
 async def create_component_spec(
     scope: Scope,
     session: AsyncSession,
@@ -174,8 +225,7 @@ async def create_component_spec(
             # arbitrary JSON by setting an enum value.
             parse_executable_component(component_type, payload)
         elif component_type is ComponentType.WORKFLOW:
-            if payload.get("schema_version") != "0.2.0" or not payload.get("kind"):
-                raise ValueError("machine-validated workflow requires typed v0.2 metadata")
+            _validate_machine_validated_workflow_payload(payload)
         else:
             raise ValueError(
                 f"no executable validator exists for {component_type.value!r}; "
