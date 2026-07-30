@@ -1,10 +1,13 @@
 """Intent routing: which mode a run actually dispatches in."""
 
+import asyncio
+
 import pytest
 from majorana_contracts.enums import Framework, RunMode, RunStatus
 from majorana_llm import LLMResponse
 from majorana_worker import handlers
 from majorana_worker.context import RunContext
+from majorana_worker import intent
 from majorana_worker.intent import ModeDecision, resolve_mode
 
 
@@ -212,3 +215,55 @@ async def test_the_event_payload_is_serialisable_strings():
         "source": "classifier",
         "reason": "greeting",
     }
+
+
+class _HangingLLM:
+    """Never answers. Stands in for a wedged provider connection."""
+
+    def __init__(self):
+        self.calls = 0
+
+    async def complete(self, request, *, on_delta=None):
+        self.calls += 1
+        await asyncio.Event().wait()
+
+
+async def test_a_router_that_hangs_falls_back_rather_than_holding_the_run_open(monkeypatch):
+    """The router is on the path of every auto message, so a hung provider call
+    with no deadline of its own would stall every submission the composer makes.
+
+    The `asyncio.wait_for` is the test's own deadline and is load-bearing, not
+    belt-and-braces. The failure mode being guarded against is a hang: delete
+    the timeout in `intent.py` and, without this wrapper, the test hangs forever
+    rather than failing — this suite has no default deadline (pytest-timeout is
+    not a dependency), so a hang surfaces as a stuck CI job instead of a red
+    test. The wrapper's budget is two orders of magnitude above the patched
+    deadline so it can only fire when the deadline is genuinely gone.
+    """
+    monkeypatch.setattr(intent, "_ROUTE_TIMEOUT_S", 0.05)
+    llm = _HangingLLM()
+
+    decision = await asyncio.wait_for(
+        resolve_mode("Build a Bell state", RunMode.AUTO, llm), timeout=5
+    )
+
+    assert decision.resolved is RunMode.CHAT
+    assert decision.source == "fallback"
+    assert llm.calls == 1
+
+
+async def test_a_bare_task_statement_reaches_the_router_rather_than_being_pre_judged():
+    """The four prompts a deleted heuristic used to name explicitly.
+
+    Nothing in this module may decide them without asking: they are exactly the
+    messages where a keyword rule and a reader disagree. What is asserted here is
+    that they are *classified*, not that they classify one way — the verdict is
+    the model's, and the prompt's execute clause names this shape.
+    """
+    for prompt in ["Bell state", "VQE", "QAOAでMaxCut", "run grover"]:
+        llm = _ScriptedLLM('{"intent": "execute", "reason": "names a circuit to build"}')
+
+        decision = await resolve_mode(prompt, RunMode.AUTO, llm)
+
+        assert decision.source == "classifier", prompt
+        assert llm.calls == 1, prompt

@@ -24,6 +24,7 @@ falls back to chat so an uncertain classification cannot start a costly executio
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 from dataclasses import dataclass
@@ -40,6 +41,11 @@ DecisionSource = Literal["passthrough", "classifier", "fallback"]
 # selections, never inferred: nothing in a bare message distinguishes "explain
 # this to me" from "answer this" reliably enough to route on.
 _ROUTABLE = {RunMode.CHAT, RunMode.EXECUTE}
+
+# Matches the conversation-naming deadline in handlers.py. Long enough that a
+# healthy provider is never cut off, short enough that a wedged one costs the
+# user seconds rather than the whole request.
+_ROUTE_TIMEOUT_S = 8.0
 
 
 @dataclass(frozen=True)
@@ -103,14 +109,22 @@ async def resolve_mode(
 
     rendered = render_intent_prompt(prompt)
     try:
-        response = await llm.complete(
-            LLMRequest(
-                model=model_for("route"),
-                system=rendered.system,
-                user=rendered.user,
-                temperature=0.0,
+        # Bounded on purpose. This call is now on the path of every auto message
+        # — which is every message the composer sends by default — and it is the
+        # only model call before dispatch that had no deadline of its own. The
+        # route model is the same heavyweight model as generate, and the adjacent
+        # conversation-naming call, which is decoration rather than a gate, has
+        # been bounded at 8s since it shipped. A router that hangs must degrade
+        # to the fallback below, not hold the run open.
+        async with asyncio.timeout(_ROUTE_TIMEOUT_S):
+            response = await llm.complete(
+                LLMRequest(
+                    model=model_for("route"),
+                    system=rendered.system,
+                    user=rendered.user,
+                    temperature=0.0,
+                )
             )
-        )
     except Exception:  # noqa: BLE001 - routing must never be what fails a run
         log.exception("intent router provider call failed")
         return ModeDecision(

@@ -421,8 +421,14 @@ request. This is not strict quantum verification.
 
 Choose "execute" when the user is asking the product to create or modify a runnable
 quantum artifact, perform a quantum computation or simulation, or run and verify code.
+A bare noun phrase naming a circuit, algorithm, molecule or problem instance with no
+question attached is a request to build and run it: "Bell state", "H2 VQE",
+"QAOAで3ノードMaxCut" are execute, because there is nothing being asked *about* them.
 Choose "chat" when the user is asking for information, explanation, discussion, advice,
-or another natural-language response without requesting that work be run.
+or another natural-language response without requesting that work be run. Greetings,
+thanks, acknowledgements ("hi", "ありがとう", "ok, got it") and questions about the
+product itself are always chat: there is no task in them to run, and starting the
+pipeline on one spends a real execution from the user's weekly allowance.
 
 Infer the most likely intent from the wording and context contained in the current
 message. Treat both outcomes equally: do not prefer execution or chat merely because the
