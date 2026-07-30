@@ -11,6 +11,7 @@ import pytest
 from majorana_vqe.executable import (
     H2_SLSQP_SEMANTIC_KEYS,
     H2_UCCSD_APPLICABLE_ROLES,
+    H2_UCCSD_MIGRATED_SEMANTIC_KEYS,
     H2_UCCSD_SEMANTIC_KEYS,
     H2SemanticSelection,
     build_h2_scientific_identity,
@@ -106,8 +107,12 @@ def _composition() -> SimpleNamespace:
     baseline_payloads[ComponentType.PARAMETER_OPTIMIZER] = uccsd_payloads[
         ComponentType.PARAMETER_OPTIMIZER
     ]
+    baseline_keys = {role: f"h2.sto3g.actual_vqe.v0_2.{role.value}" for role in baseline_payloads}
+    baseline_keys[ComponentType.PARAMETER_OPTIMIZER] = H2_SLSQP_SEMANTIC_KEYS[
+        ComponentType.PARAMETER_OPTIMIZER
+    ]
     baseline_components = {
-        role: _component(role, H2_SLSQP_SEMANTIC_KEYS[role], payload)
+        role: _component(role, baseline_keys[role], payload)
         for role, payload in baseline_payloads.items()
     }
     baseline_links = [_link(role, component) for role, component in baseline_components.items()]
@@ -236,6 +241,12 @@ async def test_uccsd_resolver_normalizes_baseline_and_candidate_to_v03(monkeypat
         ComponentType.GROWTH_BATCHING,
     }
     assert len(resolved.registry_resolution.components) == len(H2_UCCSD_APPLICABLE_ROLES)
+    semantic_keys = {
+        binding.role: binding.component_semantic_key
+        for binding in resolved.scientific_spec.component_bindings
+        if binding.applicability == "required"
+    }
+    assert semantic_keys == H2_UCCSD_MIGRATED_SEMANTIC_KEYS
 
 
 async def test_uccsd_resolver_rejects_retained_adaptive_only_role(monkeypatch):

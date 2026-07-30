@@ -14,6 +14,7 @@ from types import SimpleNamespace
 
 import pytest
 from fastapi import HTTPException
+from majorana_vqe.portable import ComponentRoleBindingV03, workflow_semantic_digest_v03
 
 from majorana_api.repos import vqe as vqe_repo
 from majorana_api.routes import vqe as vqe_routes
@@ -107,6 +108,21 @@ def test_uccsd_execution_identity_requires_the_exact_component_set():
     scientific_spec = identity["portable_spec"]
 
     assert vqe_routes._matches_h2_uccsd_component_identity(scientific_spec) is True
+
+    migrated = json.loads(json.dumps(scientific_spec))
+    for binding in migrated["component_bindings"]:
+        if binding["applicability"] != "required":
+            continue
+        role = binding["role"]
+        if role not in {"ansatz", "parameter_optimizer", "compilation_backend"}:
+            binding["component_semantic_key"] = f"h2.sto3g.actual_vqe.v0_2.{role}"
+    migrated["workflow_semantic_digest"] = workflow_semantic_digest_v03(
+        [
+            ComponentRoleBindingV03.model_validate(binding)
+            for binding in migrated["component_bindings"]
+        ]
+    )
+    assert vqe_routes._matches_h2_uccsd_component_identity(migrated) is True
 
     drifted = json.loads(json.dumps(scientific_spec))
     ansatz = next(item for item in drifted["component_bindings"] if item["role"] == "ansatz")

@@ -24,7 +24,7 @@ from majorana_contracts.enums import Algorithm, ExportStatus, RunMode, RunStatus
 from majorana_contracts.enums import Framework as ContractFramework
 from majorana_vqe.models import Capability, ComponentType, Framework
 from majorana_vqe.controlled_comparison import ControlledComparisonSpecV1
-from majorana_vqe.executable import H2_UCCSD_SEMANTIC_KEYS
+from majorana_vqe.executable import H2_UCCSD_SUPPORTED_SEMANTIC_KEY_SETS
 from majorana_vqe.portable import PortableScientificExperimentSpecV03
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -74,7 +74,9 @@ def _matches_h2_uccsd_component_identity(scientific_spec_json: dict[str, Any]) -
         }
     except (TypeError, ValueError):
         return False
-    return semantic_keys == H2_UCCSD_SEMANTIC_KEYS
+    return any(
+        semantic_keys == supported_keys for supported_keys in H2_UCCSD_SUPPORTED_SEMANTIC_KEY_SETS
+    )
 
 
 # --- resource shapes ---------------------------------------------------

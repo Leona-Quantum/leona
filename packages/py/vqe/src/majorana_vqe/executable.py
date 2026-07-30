@@ -602,6 +602,16 @@ H2_UCCSD_SEMANTIC_KEYS: dict[ComponentType, str] = {
     ComponentType.EVALUATION_PROTOCOL: "evaluation.exact_reference.v1",
     ComponentType.STOPPING_PROTOCOL: "stopping.optimizer_convergence.v1",
 }
+H2_UCCSD_MIGRATED_SEMANTIC_KEYS: dict[ComponentType, str] = {
+    **{role: f"h2.sto3g.actual_vqe.v0_2.{role.value}" for role in H2_UCCSD_APPLICABLE_ROLES},
+    ComponentType.ANSATZ: "ansatz.uccsd.v1",
+    ComponentType.PARAMETER_OPTIMIZER: "optimizer.slsqp.v1",
+    ComponentType.COMPILATION_BACKEND: "compilation.h2.uccsd.canonical_logical.v1",
+}
+H2_UCCSD_SUPPORTED_SEMANTIC_KEY_SETS = (
+    H2_UCCSD_SEMANTIC_KEYS,
+    H2_UCCSD_MIGRATED_SEMANTIC_KEYS,
+)
 
 
 def validate_h2_uccsd_executable_composition(
