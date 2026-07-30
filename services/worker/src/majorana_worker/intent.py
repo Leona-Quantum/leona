@@ -6,26 +6,25 @@ failed run. The execute pipeline has no graceful answer for a message that is no
 a task: it exhausts its candidate budget trying to implement one.
 
 This module is the gate in front of that. It resolves a requested mode to the
-mode the run really dispatches in, using the cheapest sufficient evidence:
+mode the run really dispatches in:
 
 1. an explicit non-auto mode the router has no business overriding (`chat`,
    `execute`, `ideate`, or `explain`) passes straight through;
-2. a message that is obviously not a task — a greeting, an acknowledgement, a
-   couple of words with nothing to implement — resolves without an LLM call;
-3. anything else costs one short classification on the cheap model tier.
+2. every auto-mode message receives one short classification on the route model.
 
 Every path returns a `ModeDecision` carrying why, which the worker emits as
 `run.mode_resolved` so the choice is visible in the event stream rather than
 being an invisible behaviour change.
 
-The Run composer is execution-oriented. Clear conversation stays in chat, but the
-router must infer execution from an ordinary quantum-task statement — users do not
-need to repeat "run this". If the router is unavailable, non-conversational input
-falls through to execute rather than silently becoming an explanation.
+The router treats chat and execution symmetrically. It infers the user's likely
+intent from the current message rather than applying keyword lists or a
+product-level preference for one mode. If the router is unavailable, the run
+falls back to chat so an uncertain classification cannot start a costly execution.
 """
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 from dataclasses import dataclass
@@ -36,63 +35,17 @@ from majorana_llm import LLMClient, LLMRequest, model_for, render_intent_prompt
 
 log = logging.getLogger(__name__)
 
-DecisionSource = Literal["passthrough", "heuristic", "classifier", "fallback"]
+DecisionSource = Literal["passthrough", "classifier", "fallback"]
 
 # Modes the router is allowed to produce. ideate/explain are deliberate user
 # selections, never inferred: nothing in a bare message distinguishes "explain
 # this to me" from "answer this" reliably enough to route on.
 _ROUTABLE = {RunMode.CHAT, RunMode.EXECUTE}
 
-# Messages that are complete in themselves and ask for no work. Matched whole, so
-# "hi" routes to chat while "hi, build me a GHZ state on 4 qubits" does not.
-_PLEASANTRIES = frozenset(
-    {
-        "hi",
-        "hii",
-        "hey",
-        "yo",
-        "hello",
-        "helo",
-        "hiya",
-        "sup",
-        "good morning",
-        "good afternoon",
-        "good evening",
-        "howdy",
-        "greetings",
-        "thanks",
-        "thank you",
-        "thx",
-        "ty",
-        "cheers",
-        "ok",
-        "okay",
-        "k",
-        "cool",
-        "nice",
-        "great",
-        "got it",
-        "sure",
-        "yes",
-        "yeah",
-        "yep",
-        "no",
-        "nope",
-        "bye",
-        "goodbye",
-        "test",
-        "testing",
-        "ping",
-        "you there",
-        "are you there",
-        "who are you",
-        "what are you",
-        "what is this",
-        "what can you do",
-        "help",
-        "?",
-    }
-)
+# Matches the conversation-naming deadline in handlers.py. Long enough that a
+# healthy provider is never cut off, short enough that a wedged one costs the
+# user seconds rather than the whole request.
+_ROUTE_TIMEOUT_S = 8.0
 
 
 @dataclass(frozen=True)
@@ -115,32 +68,6 @@ class ModeDecision:
             "source": self.source,
             "reason": self.reason,
         }
-
-
-def _normalize(prompt: str) -> str:
-    """Lowercase, collapse whitespace, drop trailing punctuation.
-
-    Terminal punctuation is stripped so "hello!" and "what can you do?" match the
-    same entries as their bare forms. A message that is nothing but punctuation
-    normalizes to empty, which is itself a chat answer.
-    """
-    return " ".join(prompt.lower().split()).strip(" .!,?")
-
-
-def heuristic_decision(prompt: str, requested: RunMode) -> ModeDecision | None:
-    """Resolve the cases that need no model, or None to ask the classifier.
-
-    Only obvious conversational input is short-circuited to chat. Short quantum
-    tasks such as "Bell state", "VQE", or "QAOAでMaxCut" must reach the LLM
-    router, which has the semantic context to distinguish task statements from
-    explanatory questions.
-    """
-    normalized = _normalize(prompt)
-    if not normalized:
-        return ModeDecision(requested, RunMode.CHAT, "heuristic", "empty message")
-    if normalized in _PLEASANTRIES:
-        return ModeDecision(requested, RunMode.CHAT, "heuristic", "greeting or acknowledgement")
-    return None
 
 
 def _parse_verdict(text: str) -> tuple[RunMode, str] | None:
@@ -180,31 +107,35 @@ async def resolve_mode(
     if requested is not RunMode.AUTO:
         return ModeDecision(requested, requested, "passthrough", "mode explicitly selected")
 
-    heuristic = heuristic_decision(prompt, requested)
-    if heuristic is not None:
-        return heuristic
-
     rendered = render_intent_prompt(prompt)
     try:
-        response = await llm.complete(
-            LLMRequest(
-                model=model_for("route"),
-                system=rendered.system,
-                user=rendered.user,
-                temperature=0.0,
+        # Bounded on purpose. This call is now on the path of every auto message
+        # — which is every message the composer sends by default — and it is the
+        # only model call before dispatch that had no deadline of its own. The
+        # route model is the same heavyweight model as generate, and the adjacent
+        # conversation-naming call, which is decoration rather than a gate, has
+        # been bounded at 8s since it shipped. A router that hangs must degrade
+        # to the fallback below, not hold the run open.
+        async with asyncio.timeout(_ROUTE_TIMEOUT_S):
+            response = await llm.complete(
+                LLMRequest(
+                    model=model_for("route"),
+                    system=rendered.system,
+                    user=rendered.user,
+                    temperature=0.0,
+                )
             )
-        )
     except Exception:  # noqa: BLE001 - routing must never be what fails a run
         log.exception("intent router provider call failed")
         return ModeDecision(
-            requested, RunMode.EXECUTE, "fallback", "router unavailable; execute default"
+            requested, RunMode.CHAT, "fallback", "router unavailable; chat fallback"
         )
 
     verdict = _parse_verdict(response.text or "")
     if verdict is None:
         log.warning("intent router returned an unusable verdict: %r", (response.text or "")[:200])
         return ModeDecision(
-            requested, RunMode.EXECUTE, "fallback", "router verdict unreadable; execute default"
+            requested, RunMode.CHAT, "fallback", "router verdict unreadable; chat fallback"
         )
 
     resolved, reason = verdict
