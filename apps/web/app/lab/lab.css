@@ -125,9 +125,18 @@
 .lab-nav-links a:hover {
   color: var(--lab-ink-0);
 }
+/* Narrow: drop the nav to its own line rather than hiding it. Hiding it left
+   the page with no route back to the shipped site on a phone — the brand mark
+   points at /lab itself, so the only escape hatch was in the list being
+   removed. */
 @media (max-width: 860px) {
+  .lab-nav-inner {
+    flex-wrap: wrap;
+    row-gap: 8px;
+  }
   .lab-nav-links {
-    display: none;
+    gap: 16px;
+    font-size: 12px;
   }
 }
 
@@ -700,18 +709,18 @@
   }
 }
 @keyframes lab-grow {
-  from {
+  0% {
     transform: scaleY(0);
   }
-  to {
+  100% {
     transform: scaleY(1);
   }
 }
 @keyframes lab-grow-x {
-  from {
+  0% {
     transform: scaleX(0);
   }
-  to {
+  100% {
     transform: scaleX(var(--lab-amp, 1));
   }
 }

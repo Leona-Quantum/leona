@@ -14,9 +14,17 @@ const jetbrainsMono = JetBrains_Mono({ subsets: ["latin"], variable: "--font-lab
  * modern gothic whose even, geometric construction sits with Space Grotesk
  * instead of fighting it. Latin still resolves to Space Grotesk because it
  * comes first in the stack; this face only picks up the Japanese glyphs. */
+/* Only the weights lab.css actually sets, and only weights this face actually
+ * has. next/font self-hosts every requested weight at build time — Google
+ * serves 121 unicode-range chunks per weight for this family — and `subsets`
+ * only decides which get preloaded, so an unused weight is build output nobody
+ * renders. lab.css sets 500 nine times and 600 once; Zen Kaku Gothic New ships
+ * 300/400/500/700 and 900 and has no 600, so the brand row's 600 resolves to
+ * the 500 face for Japanese either way. Requesting 700 for it would have been a
+ * different weight than the Latin brand row renders at. */
 const zenKaku = Zen_Kaku_Gothic_New({
   subsets: ["latin"],
-  weight: ["400", "500", "700"],
+  weight: ["400", "500"],
   variable: "--font-lab-jp",
 });
 

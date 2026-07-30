@@ -201,7 +201,8 @@
     padding: 0;
     margin: -1px;
     overflow: hidden;
-    clip: rect(0, 0, 0, 0);
+    /* `clip-path` alone. The old `clip: rect(...)` companion is deprecated and
+       is only needed for browsers this app already excludes elsewhere. */
     clip-path: inset(50%);
     white-space: nowrap;
   }
@@ -2339,20 +2340,36 @@
   font-weight: 500;
   cursor: pointer;
 }
-/* Hover/press feel. Colour was snapping instantly and a press produced no
-   feedback at all, which reads as a picture of a button rather than a button.
-   transform/opacity only, so it stays on the compositor. */
-.mj-primary-button,
-.mj-secondary-button {
+/* Hover/press feel, PUBLIC SURFACE ONLY. Colour was snapping instantly and a
+   press produced no feedback at all, which reads as a picture of a button
+   rather than a button.
+   Scoped to `.mj-public-site` on purpose: the unscoped version reached every
+   button in the authenticated workspace, under a section heading stating the
+   product shell was untouched. A press animation on a 44px marketing CTA and on
+   a 32px toolbar control you click forty times an hour are different decisions,
+   and only the first one was made here. Colour/transform only, so it stays on
+   the compositor; the reduced-motion block below turns it off. */
+.mj-public-site .mj-primary-button,
+.mj-public-site .mj-secondary-button {
   transition:
     background-color var(--dur-hover) var(--ease-out-ui),
     border-color var(--dur-hover) var(--ease-out-ui),
     color var(--dur-hover) var(--ease-out-ui),
     transform var(--dur-press) var(--ease-out-ui);
 }
-.mj-primary-button:active:not(:disabled),
-.mj-secondary-button:active:not(:disabled) {
+.mj-public-site .mj-primary-button:active:not(:disabled),
+.mj-public-site .mj-secondary-button:active:not(:disabled) {
   transform: translateY(1px);
+}
+@media (prefers-reduced-motion: reduce) {
+  .mj-public-site .mj-primary-button,
+  .mj-public-site .mj-secondary-button {
+    transition: none;
+  }
+  .mj-public-site .mj-primary-button:active:not(:disabled),
+  .mj-public-site .mj-secondary-button:active:not(:disabled) {
+    transform: none;
+  }
 }
 .mj-primary-button {
   border-color: var(--accent);
