@@ -23,6 +23,7 @@ import { verificationFromMetadata, verificationFromResource, type VerificationCh
 import { artifactExportManifest } from "../../../lib/artifact-export";
 import { studioVerificationDisplayState } from "../../../lib/verification-display";
 import { DEFAULT_STUDIO_PANEL, STUDIO_PANELS, type StudioPanel } from "../../../lib/studio-panels";
+import { PanelTabs, panelRegion } from "../../../components/panel-tabs";
 
 // Tab order is the working order: you write code, you run it, you look at what
 // you wrote, and then you read what the run said about it (Owner Inbox
@@ -100,6 +101,17 @@ export function StudioWorkspace({ artifactId, newDraft = false, locale = "en", l
   const [rerunPending, setRerunPending] = useState(false);
   const [copied, setCopied] = useState(false);
   const [popout, setPopout] = useState<StudioPopout | null>(null);
+
+  /** Changing tab always closes a popout.
+   *
+   * Leaving it set is not merely untidy: only two panels can pop out, so
+   * switching away from a popped-out Code tab left `popout === "code"` with
+   * nothing rendering it, and returning to Code reopened it full-screen with no
+   * action from the user in between. */
+  function selectPanel(next: StudioPanel) {
+    setPanel(next);
+    setPopout(null);
+  }
   // Strings, not numbers: an empty seed field means "let the planner choose" and
   // a number state would have to encode that as 0, which is a valid seed.
   const [shots, setShots] = useState(String(DEFAULT_RUN_SHOTS));
@@ -311,7 +323,7 @@ export function StudioWorkspace({ artifactId, newDraft = false, locale = "en", l
     setDraftFallbacks(nextBundle.fallbacks);
     setFramework(nextFramework);
     setCode(nextDrafts[nextFramework]);
-    setPanel(DEFAULT_STUDIO_PANEL);
+    selectPanel(DEFAULT_STUDIO_PANEL);
     setRunId(null);
     setVerificationStale(false);
     if (!next) {
@@ -412,18 +424,18 @@ export function StudioWorkspace({ artifactId, newDraft = false, locale = "en", l
   }
 
   function openSimulation() {
-    setPanel("simulation");
+    selectPanel("simulation");
     setMessage(null);
   }
 
   function startCpuSimulation(confirmRerun = false) {
     if (!artifact) {
-      setPanel("simulation");
+      selectPanel("simulation");
       setMessage(copy.simulationArtifactRequired);
       return;
     }
     if (!cpuEligibility.eligible) {
-      setPanel("simulation");
+      selectPanel("simulation");
       setMessage(copy.cpuUnavailable(cpuEligibility.reason));
       return;
     }
@@ -538,7 +550,7 @@ export function StudioWorkspace({ artifactId, newDraft = false, locale = "en", l
                     <StudioVerdictChip
                       summary={artifact?.verificationSummary ?? null}
                       state={verificationDisplayState}
-                      onOpen={() => setPanel("summary")}
+                      onOpen={() => selectPanel("summary")}
                       copy={copy}
                     />
                   )}
@@ -547,13 +559,14 @@ export function StudioWorkspace({ artifactId, newDraft = false, locale = "en", l
                 </div>
               </div>
 
-              <nav className="mj-studio-tabs" aria-label={copy.view}>
-                {STUDIO_PANELS.map((item) => (
-                  <button className={panel === item ? "is-active" : ""} type="button" key={item} onClick={() => setPanel(item)}>
-                    {item === "code" ? copy.code : item === "simulation" ? copy.simulation : item === "visual" ? copy.visual : copy.summary}
-                  </button>
-                ))}
-              </nav>
+              <PanelTabs
+                panels={STUDIO_PANELS}
+                active={panel}
+                onSelect={selectPanel}
+                label={copy.view}
+                labelFor={(item) => (item === "code" ? copy.code : item === "simulation" ? copy.simulation : item === "visual" ? copy.visual : copy.summary)}
+                idPrefix="studio"
+              />
 
               {artifactId && !newDraft && artifactHydration !== "ready" ? (
                 <div className="mj-studio-empty" role={artifactHydration === "error" ? "alert" : "status"}>
@@ -568,6 +581,7 @@ export function StudioWorkspace({ artifactId, newDraft = false, locale = "en", l
                     selectedGate={selectedGate}
                     onSelectGate={setSelectedGate}
                     hidden={panel !== "visual"}
+                    region={panelRegion("studio", "visual")}
                     popout={popout === "visual"}
                     onTogglePopout={() => setPopout((current) => (current === "visual" ? null : "visual"))}
                     copy={copy}
@@ -605,6 +619,7 @@ export function StudioWorkspace({ artifactId, newDraft = false, locale = "en", l
                       onFrameworkChange={changeFramework}
                       note={draftNotes[framework] ?? null}
                       popout={popout === "code"}
+                      region={panelRegion("studio", "code")}
                       onTogglePopout={() => setPopout((current) => (current === "code" ? null : "code"))}
                       copy={copy}
                       locale={locale}
@@ -867,7 +882,7 @@ function StudioDots() {
 
 const ANGLE_OPTIONS = ["pi/8", "pi/4", "pi/2", "pi", "3*pi/2", "2*pi"];
 
-function CircuitBuilder({ seed, framework, selectedGate, onSelectGate, onApply, onCircuitChange, hidden, popout, onTogglePopout, copy, syncState, onRebuildFromCode, sourceCode }: { seed: BuilderSeed; framework: StudioFramework; selectedGate: string; onSelectGate: (gate: string) => void; onApply: (codes: BuilderCodeVariants) => void; onCircuitChange?: (circuit: { qubitCount: number; steps: BuilderStep[]; customGates: CustomGateDefinition[] }) => void; hidden: boolean; popout: boolean; onTogglePopout: () => void; copy: StudioCopy; syncState: CircuitSyncState; onRebuildFromCode: () => void; sourceCode: string }) {
+function CircuitBuilder({ seed, framework, selectedGate, onSelectGate, onApply, onCircuitChange, hidden, popout, onTogglePopout, region, copy, syncState, onRebuildFromCode, sourceCode }: { seed: BuilderSeed; framework: StudioFramework; selectedGate: string; onSelectGate: (gate: string) => void; onApply: (codes: BuilderCodeVariants) => void; onCircuitChange?: (circuit: { qubitCount: number; steps: BuilderStep[]; customGates: CustomGateDefinition[] }) => void; hidden: boolean; popout: boolean; onTogglePopout: () => void; region?: Record<string, string>; copy: StudioCopy; syncState: CircuitSyncState; onRebuildFromCode: () => void; sourceCode: string }) {
   const [qubitCount, setQubitCount] = useState(seed.qubitCount);
   const [steps, setSteps] = useState<BuilderStep[]>(seed.steps);
   const [pendingQubits, setPendingQubits] = useState<number[]>([]);
@@ -1033,6 +1048,7 @@ function CircuitBuilder({ seed, framework, selectedGate, onSelectGate, onApply, 
       onTogglePopout={onTogglePopout}
       copy={copy}
       hidden={hidden}
+      region={region}
     >
       {readOnly ? (
         <div className="mj-circuit-sync mj-circuit-sync--readonly" role="status">
@@ -1182,6 +1198,7 @@ function CodeEditor({
   note,
   popout,
   onTogglePopout,
+  region,
   copy,
   locale,
 }: {
@@ -1195,6 +1212,7 @@ function CodeEditor({
   note: string | null;
   popout: boolean;
   onTogglePopout: () => void;
+  region?: Record<string, string>;
   copy: StudioCopy;
   locale: PublicLocale;
 }) {
@@ -1225,6 +1243,7 @@ function CodeEditor({
       heading={heading}
       popout={popout}
       onTogglePopout={onTogglePopout}
+      region={region}
       copy={copy}
       controls={
         <>
@@ -1291,6 +1310,7 @@ function StudioPanelSurface({
   copy,
   children,
   hidden = false,
+  region,
 }: {
   className: string;
   label: string;
@@ -1303,6 +1323,8 @@ function StudioPanelSurface({
   copy: StudioCopy;
   children: ReactNode;
   hidden?: boolean;
+  /** role/id/aria-labelledby from panelRegion, so its tab points somewhere. */
+  region?: Record<string, string>;
 }) {
   useEffect(() => {
     if (!popout || !onTogglePopout) return;
@@ -1318,6 +1340,7 @@ function StudioPanelSurface({
       className={`mj-studio-surface ${className}${popout ? " is-popout" : ""}`}
       aria-label={label}
       hidden={hidden}
+      {...region}
     >
       <div className="mj-studio-surface-head">
         <div>
@@ -1395,7 +1418,7 @@ function SimulationPanel({
     ))
     : [];
   return (
-    <section className="mj-studio-surface mj-studio-simulation-panel" aria-label={copy.simulation}>
+    <section className="mj-studio-surface mj-studio-simulation-panel" aria-label={copy.simulation} {...panelRegion("studio", "simulation")}>
       <div className="mj-studio-surface-head">
         <div>
           <span className="mj-section-label">{copy.computeLanes}</span>
@@ -1788,7 +1811,7 @@ function SummaryPanel({
 }) {
   const checks: VerificationCheck[] = artifact?.checks ?? [];
   return (
-    <section className="mj-studio-surface mj-studio-version-panel" aria-label={copy.summary}>
+    <section className="mj-studio-surface mj-studio-version-panel" aria-label={copy.summary} {...panelRegion("studio", "summary")}>
       <div className="mj-studio-surface-head">
         <div>
           <span className="mj-section-label">{copy.summary}</span>

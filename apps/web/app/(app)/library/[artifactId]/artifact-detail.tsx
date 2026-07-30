@@ -19,6 +19,7 @@ import { MAX_VIEWABLE_QUBITS, MAX_VIEWABLE_STEPS } from "../../../../lib/studio-
 import { CircuitDiagram } from "../../../../components/circuit-diagram";
 import { artifactExportFilename, artifactExportManifest, artifactExportSource, fileExtension } from "../../../../lib/artifact-export";
 import { ARTIFACT_PANELS, type StudioPanel as ArtifactPanel } from "../../../../lib/studio-panels";
+import { PanelTabs, panelRegion } from "../../../../components/panel-tabs";
 
 /** The same four tabs Studio uses, in the same order — see lib/studio-panels.
  *
@@ -312,18 +313,22 @@ export function ArtifactDetail({ artifactId, locale = "en" }: { artifactId: stri
             <Meta label={copy.source} value={artifact.source === "run" ? copy.runSource : artifact.source === "public" ? copy.publicSource : copy.curatedSource} />
           </div>
 
-          <nav className="mj-artifact-tabs" aria-label={copy.options}>
-            {ARTIFACT_PANELS.map((item) => (
-              <button className={tab === item ? "is-active" : ""} type="button" key={item} onClick={() => setTab(item)}>
-                {copy.tabs[item]}
-              </button>
-            ))}
-          </nav>
+          <PanelTabs
+            panels={ARTIFACT_PANELS}
+            active={tab}
+            onSelect={setTab}
+            label={copy.options}
+            labelFor={(item) => copy.tabs[item]}
+            idPrefix="artifact"
+            className="mj-artifact-tabs"
+          />
 
-          {tab === "code" ? <CodeAndExport artifact={artifact} copied={copied} onCopy={copyCode} copy={copy} /> : null}
-          {tab === "simulation" ? <Simulation artifact={artifact} copy={copy} locale={locale} /> : null}
-          {tab === "visual" ? <CircuitDiagramPanel artifact={artifact} copy={copy} /> : null}
-          {tab === "summary" ? <Summary artifact={artifact} copy={copy} locale={locale} /> : null}
+          <div {...panelRegion("artifact", tab)}>
+            {tab === "code" ? <CodeAndExport artifact={artifact} copied={copied} onCopy={copyCode} copy={copy} /> : null}
+            {tab === "simulation" ? <Simulation artifact={artifact} copy={copy} locale={locale} /> : null}
+            {tab === "visual" ? <CircuitDiagramPanel artifact={artifact} copy={copy} /> : null}
+            {tab === "summary" ? <Summary artifact={artifact} copy={copy} locale={locale} /> : null}
+          </div>
         </div>
       </div>
       {deleteOpen ? (
