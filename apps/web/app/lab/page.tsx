@@ -1,3 +1,4 @@
+import type { CSSProperties } from "react";
 import type { Metadata } from "next";
 import { BrandMark } from "../../components/icons";
 import { getPublicLocale } from "../../lib/public-locale-server";
@@ -170,9 +171,16 @@ export default async function LabPage() {
                 {IDEAL_AMPLITUDES.map((row) => (
                   <li key={row.key}>
                     <span className="lab-readout-key lab-mono">{row.key}</span>
+                    {/* The amplitude rides on a custom property, not on an
+                        inline transform. The scroll-driven `lab-grow-x`
+                        animates `transform` with fill-mode `both`, and an
+                        animation beats an inline style — so every meter used to
+                        settle at scaleX(1), including the two rows whose printed
+                        value is 0.0000. A measurement visual that draws zero as
+                        a full bar is the one thing this page must not do. */}
                     <span
                       className="lab-readout-meter"
-                      style={{ transform: `scaleX(${row.amp || 0.004})` }}
+                      style={{ "--lab-amp": String(row.amp || 0.004) } as CSSProperties}
                       aria-hidden="true"
                     />
                     <span className="lab-readout-val lab-mono">{row.amp.toFixed(4)}</span>

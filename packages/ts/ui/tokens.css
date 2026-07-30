@@ -133,8 +133,17 @@
  * reach any existing page. Instrument-panel language: near-black ground, signal
  * amber, mono-forward. Deliberately NOT the warm-paper/moss identity above.
  * Theme-locked dark by design (an oscilloscope has no light mode).
- * Contrast on --lab-bg (#0a0c0e): ink-0 17.9:1, ink-1 8.4:1, ink-2 4.6:1,
- * signal 11.2:1. All clear WCAG AA.
+ * Contrast, computed (WCAG 2.x relative luminance) against all three grounds —
+ * --lab-bg #0a0c0e / --lab-bg-1 #101316 / --lab-bg-2 #171b1f:
+ *   ink-0   16.62 / 15.81 / 14.69
+ *   ink-1    7.61 /  7.24 /  6.73
+ *   ink-2    5.13 /  4.88 /  4.53   (text, clears the 4.5:1 AA floor everywhere)
+ *   signal  10.71 / 10.19 /  9.47
+ *   signal-dim 4.61 / 4.39 / 4.08   (tracks and rules only — non-text, 3:1 floor)
+ * ink-2 was #626d76, which measured 3.70 / 3.52 / 3.27 and was the colour of
+ * every 11-12px label on the page: below AA at every size it is used at, under a
+ * comment certifying 4.6:1. Ratios here are measured, not estimated; recompute
+ * before changing any value.
  * Not owner-ratified. Delete this block if the direction is rejected.
  * ------------------------------------------------------------------------- */
 [data-surface="lab"] {
@@ -146,7 +155,7 @@
   --lab-line-bright: #333d45; /* hairline under focus */
   --lab-ink-0: #e8edf1; /* primary */
   --lab-ink-1: #97a3ad; /* secondary */
-  --lab-ink-2: #626d76; /* tertiary, axis labels */
+  --lab-ink-2: #79848d; /* tertiary, axis labels — AA on all three grounds */
   --lab-signal: #ffb020; /* the one accent - phosphor amber */
   --lab-signal-dim: #a86f10; /* amber at rest, for tracks and rules */
 }

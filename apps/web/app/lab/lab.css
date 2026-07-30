@@ -512,6 +512,10 @@
   height: 3px;
   background: var(--lab-signal);
   transform-origin: left;
+  /* --lab-amp carries the amplitude (page.tsx). The scroll animation below
+     ends on the same value, so the bar settles at the datum rather than at
+     full scale. */
+  transform: scaleX(var(--lab-amp, 1));
 }
 .lab-readout-val {
   color: var(--lab-ink-2);
@@ -708,6 +712,6 @@
     transform: scaleX(0);
   }
   to {
-    transform: scaleX(1);
+    transform: scaleX(var(--lab-amp, 1));
   }
 }
