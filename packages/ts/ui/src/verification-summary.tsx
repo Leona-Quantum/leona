@@ -57,6 +57,25 @@ function stateMessage(state: Exclude<DisplayState, "ready">): { title: string; b
   }
 }
 
+/** The one-line version of this panel: the same words, without the evidence.
+ *
+ * Exported so a compact status chip elsewhere cannot invent its own vocabulary.
+ * A second implementation of "what does this artifact's evidence amount to" is
+ * exactly how a structural pass ends up reading as "Verified" on one screen and
+ * not another — the conflation `verdictChip` in the Vault was written to undo.
+ * The glyph is carried alongside the tone so status never rides on hue alone. */
+export function verificationHeadline(
+  summary: VerificationSummary | null,
+  state: DisplayState = summary ? "ready" : "legacy",
+): { title: string; tone: "ok" | "warn" | "err" | "neutral"; glyph: string } {
+  if (state !== "ready" || !summary) {
+    const display = stateMessage(state === "ready" ? "legacy" : state);
+    return { title: display.title, tone: display.tone, glyph: display.tone === "err" ? "×" : "–" };
+  }
+  const tone = toneFor(summary);
+  return { title: titleFor(summary), tone, glyph: tone === "ok" ? "✓" : tone === "err" ? "×" : "–" };
+}
+
 /** Pure renderer for the API-owned verification state. It never derives a verdict
  * from RunStatus, source kind, local storage, or missing data. */
 export function VerificationSummaryPanel({
