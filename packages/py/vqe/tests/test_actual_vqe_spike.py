@@ -183,3 +183,61 @@ def test_uccsd_resource_adapters_do_not_use_provider_native_templates():
     assert "UCCSD(" not in pennylane_source
     assert ".unitary(" not in qiskit_source
     assert "QubitUnitary" not in pennylane_source
+
+
+def test_hardware_efficient_reports_share_the_frozen_provider_neutral_identity():
+    qiskit = _report("qiskit_hardware_efficient_v0.1.json")
+    pennylane = _report("pennylane_hardware_efficient_v0.1.json")
+
+    assert qiskit["status"] == pennylane["status"] == "succeeded"
+    assert qiskit["capability"] == pennylane["capability"] == "h2_sto3g_hardware_efficient_ry_cx_v1"
+    assert qiskit["canonical_input"] == pennylane["canonical_input"]
+    assert qiskit["provider_versions"]["qiskit"] == "1.4.6"
+    assert pennylane["provider_versions"]["pennylane"] == "0.45.1"
+    assert len(qiskit["canonical_input"]["parameter_slot_order"]) == 8
+    assert len(qiskit["canonical_input"]["initial_parameter_float64_hex"]) == 8
+
+
+def test_cross_framework_hardware_efficient_matches_energy_state_and_resources():
+    qiskit = _report("qiskit_hardware_efficient_v0.1.json")
+    pennylane = _report("pennylane_hardware_efficient_v0.1.json")
+    qiskit_optimization = qiskit["optimization"]
+    pennylane_optimization = pennylane["optimization"]
+
+    assert qiskit_optimization["success"] is True
+    assert pennylane_optimization["success"] is True
+    assert qiskit_optimization["function_evaluations"] <= 256
+    assert pennylane_optimization["function_evaluations"] <= 256
+    assert (
+        abs(qiskit_optimization["best_energy_ha"] - pennylane_optimization["best_energy_ha"])
+        <= 1e-12
+    )
+    assert qiskit_optimization["absolute_error_ha"] <= 1e-12
+    assert pennylane_optimization["absolute_error_ha"] <= 1e-12
+    assert 1.0 - qiskit_optimization["final_state_fidelity"] <= 1e-12
+    assert 1.0 - pennylane_optimization["final_state_fidelity"] <= 1e-12
+
+    qiskit_resources = qiskit["resources"]["common_basis_compiled"]
+    pennylane_resources = pennylane["resources"]["common_basis_compiled"]
+    assert qiskit_resources == pennylane_resources
+    assert qiskit_resources["adapter_verification"] == "passed"
+    assert qiskit_resources["cnot_count"] == 6
+    assert qiskit_resources["depth"] == 7
+    assert qiskit_resources["gate_count"] == 14
+    assert qiskit_resources["parameter_count"] == 8
+    assert qiskit["resources"]["provider_native_diagnostic"]["comparison_eligible"] is False
+    assert pennylane["resources"]["provider_native_diagnostic"]["comparison_eligible"] is False
+
+
+def test_hardware_efficient_resource_adapters_do_not_use_provider_templates():
+    qiskit_source = (
+        ROOT / "runtimes/vqe/qiskit-current/spike/h2_hardware_efficient_v01.py"
+    ).read_text()
+    pennylane_source = (
+        ROOT / "runtimes/vqe/pennylane-current/spike/h2_hardware_efficient_v01.py"
+    ).read_text()
+
+    assert "TwoLocal(" not in qiskit_source
+    assert "EfficientSU2(" not in qiskit_source
+    assert "BasicEntanglerLayers(" not in pennylane_source
+    assert "StronglyEntanglingLayers(" not in pennylane_source

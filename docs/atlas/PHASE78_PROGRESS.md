@@ -109,6 +109,50 @@ Human review remains owner-waived. The synthetic authentication contract is
 adequate for this private CI qualification but is not evidence of a live
 WorkOS tenant session.
 
+## H₂ hardware-efficient RY–CX slice
+
+### Current status
+
+- S0 scientific specification and claim boundary: complete;
+- S1 provider-neutral immutable model and generated fixture: complete locally;
+- stale UCCSD fixture check: corrected from fail-open to fail-closed;
+- S2 Qiskit/PennyLane runtime adapters: complete locally on macOS/arm64;
+- S3 provider equivalence evidence: complete locally;
+- S4 Registry/API/worker: pending;
+- S5 private UI workflow: pending;
+- S6 Linux/amd64 OCI and remote private E2E: pending.
+
+The authoritative bounded specification is
+`docs/atlas/PHASE78_H2_HARDWARE_EFFICIENT_EXECUTABLE_PLAN.md`. The canonical
+fixture fixes two RY-all/CX-linear layers, eight independent parameters, no
+final rotation layer, a benchmark-specific disclosed non-zero seed, and an
+ansatz-only common resource protocol.
+
+Independent local reports are retained at:
+
+- `docs/atlas/fixtures/h2_sto3g/raw/qiskit_hardware_efficient_v0.1.json`;
+- `docs/atlas/fixtures/h2_sto3g/raw/pennylane_hardware_efficient_v0.1.json`.
+
+Both adapters consumed the same ordered operation list, parameter-slot order,
+IEEE-754 initialization bytes, SLSQP settings, and 256-evaluation hard cap.
+They independently reconstructed and verified the operation and compilation
+protocol digests.
+
+| Adapter | Energy (Ha) | Absolute error (Ha) | Fidelity | Evaluations |
+| --- | ---: | ---: | ---: | ---: |
+| Qiskit 1.4.6 | -1.137306035753359 | 1.465e-14 | 0.999999999999988 | 164 |
+| PennyLane 0.45.1 | -1.137306035753367 | 7.105e-15 | 0.999999999999996 | 164 |
+
+The common ansatz-only resource record is CNOT 6, depth 7, 14 gates, and eight
+independent parameters. Provider-native metrics include Hartree–Fock
+preparation and are retained only as non-comparable diagnostics.
+
+These macOS/arm64 observations establish local adapter agreement only. The
+component is not runtime-qualified, the catalog records remain structured, and
+the existing UCCSD-vs-hardware-efficient comparison remains an unevaluated
+design. Linux/amd64 OCI qualification and private deployed E2E are still
+required before any status promotion.
+
 ## H₂ UCCSD slice
 
 ### Current status

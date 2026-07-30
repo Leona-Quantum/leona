@@ -1,0 +1,174 @@
+{
+  "schema_version": "0.1.0",
+  "circuit_id": "h2.hardware_efficient.ry_linear_cx.reps2.v1",
+  "num_qubits": 4,
+  "rotation_gate": "ry",
+  "entanglement_gate": "cx",
+  "entanglement_topology": "directed_linear_0_1_2_3",
+  "repetitions": 2,
+  "final_rotation_layer": false,
+  "parameter_sharing": "none",
+  "reference_state_policy": "external_hartree_fock_1010",
+  "parameter_slot_order": [
+    "theta.layer0.qubit0",
+    "theta.layer0.qubit1",
+    "theta.layer0.qubit2",
+    "theta.layer0.qubit3",
+    "theta.layer1.qubit0",
+    "theta.layer1.qubit1",
+    "theta.layer1.qubit2",
+    "theta.layer1.qubit3"
+  ],
+  "initial_parameters": [
+    {
+      "slot_id": "theta.layer0.qubit0",
+      "initial_float64_hex": "bfc999999999999a"
+    },
+    {
+      "slot_id": "theta.layer0.qubit1",
+      "initial_float64_hex": "bfb999999999999a"
+    },
+    {
+      "slot_id": "theta.layer0.qubit2",
+      "initial_float64_hex": "3fb999999999999a"
+    },
+    {
+      "slot_id": "theta.layer0.qubit3",
+      "initial_float64_hex": "3fc999999999999a"
+    },
+    {
+      "slot_id": "theta.layer1.qubit0",
+      "initial_float64_hex": "3fc999999999999a"
+    },
+    {
+      "slot_id": "theta.layer1.qubit1",
+      "initial_float64_hex": "3fb999999999999a"
+    },
+    {
+      "slot_id": "theta.layer1.qubit2",
+      "initial_float64_hex": "bfb999999999999a"
+    },
+    {
+      "slot_id": "theta.layer1.qubit3",
+      "initial_float64_hex": "bfc999999999999a"
+    }
+  ],
+  "common_basis_operations": [
+    {
+      "gate": "ry",
+      "wires": [
+        0
+      ],
+      "parameter_slot_id": "theta.layer0.qubit0"
+    },
+    {
+      "gate": "ry",
+      "wires": [
+        1
+      ],
+      "parameter_slot_id": "theta.layer0.qubit1"
+    },
+    {
+      "gate": "ry",
+      "wires": [
+        2
+      ],
+      "parameter_slot_id": "theta.layer0.qubit2"
+    },
+    {
+      "gate": "ry",
+      "wires": [
+        3
+      ],
+      "parameter_slot_id": "theta.layer0.qubit3"
+    },
+    {
+      "gate": "cx",
+      "wires": [
+        0,
+        1
+      ],
+      "parameter_slot_id": null
+    },
+    {
+      "gate": "cx",
+      "wires": [
+        1,
+        2
+      ],
+      "parameter_slot_id": null
+    },
+    {
+      "gate": "cx",
+      "wires": [
+        2,
+        3
+      ],
+      "parameter_slot_id": null
+    },
+    {
+      "gate": "ry",
+      "wires": [
+        0
+      ],
+      "parameter_slot_id": "theta.layer1.qubit0"
+    },
+    {
+      "gate": "ry",
+      "wires": [
+        1
+      ],
+      "parameter_slot_id": "theta.layer1.qubit1"
+    },
+    {
+      "gate": "ry",
+      "wires": [
+        2
+      ],
+      "parameter_slot_id": "theta.layer1.qubit2"
+    },
+    {
+      "gate": "ry",
+      "wires": [
+        3
+      ],
+      "parameter_slot_id": "theta.layer1.qubit3"
+    },
+    {
+      "gate": "cx",
+      "wires": [
+        0,
+        1
+      ],
+      "parameter_slot_id": null
+    },
+    {
+      "gate": "cx",
+      "wires": [
+        1,
+        2
+      ],
+      "parameter_slot_id": null
+    },
+    {
+      "gate": "cx",
+      "wires": [
+        2,
+        3
+      ],
+      "parameter_slot_id": null
+    }
+  ],
+  "common_basis_operation_sequence_sha256": "349652753a7114f9cdaf6582670594fd07341f846508dc7f51d4094162365c02",
+  "common_basis_metrics": {
+    "depth": 7,
+    "gate_count": 14,
+    "cnot_count": 6,
+    "parameter_count": 8,
+    "rotation_layer_count": 2,
+    "entanglement_layer_count": 2
+  },
+  "compilation_protocol_id": "majorana.h2.hea_ry_cx.common_cnot_depth.v1",
+  "compilation_protocol_sha256": "c088fcfb95244dbba960cd096fd58fea8e9f289fbce509758e1a59f58270539c",
+  "canonical_circuit_sha256": "7e28b52d16d694ac59e8b1a2ce2f9b6e215df60e67ac9b3521231e10859016c8"
+}
