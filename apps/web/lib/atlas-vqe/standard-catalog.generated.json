@@ -909,45 +909,45 @@
       "supported_configuration_fields": []
     },
     {
-      "adapter_release_id": "majorana-h2-uccsd-qiskit-adapter-0.1.0",
+      "adapter_release_id": "majorana-h2-uccsd-qiskit-adapter-0.3.0",
       "binding_key": "ansatz.uccsd.v1:qiskit:1.4.6",
       "binding_kind": "atlas_adapter",
       "component_semantic_key": "ansatz.uccsd.v1",
-      "evidence_level": "adapter_tested",
+      "evidence_level": "runtime_qualified",
       "evidence_locators": [
         "docs/atlas/PHASE78_H2_UCCSD_EXECUTABLE_PLAN.md",
         "docs/atlas/fixtures/h2_sto3g/canonical_uccsd_v0.1.json",
         "docs/atlas/fixtures/h2_sto3g/raw/qiskit_uccsd_v0.1.json",
-        "docs/atlas/fixtures/h2_sto3g/raw/pennylane_uccsd_v0.1.json"
+        "docs/atlas/fixtures/h2_sto3g/raw/pennylane_uccsd_v0.1.json",
+        "docs/atlas/evidence/phase78/uccsd_linux_amd64_local.json",
+        "docs/atlas/evidence/phase78/uccsd_private_oci_qualification.json"
       ],
-      "known_incompatibilities": [
-        "private_oci_runtime_not_yet_qualified"
-      ],
+      "known_incompatibilities": [],
       "package": "qiskit",
       "package_version": "1.4.6",
       "provider": "qiskit",
-      "runtime_profile_id": null,
+      "runtime_profile_id": "h2-uccsd-qiskit-linux-x86_64-production-v1",
       "supported_configuration_fields": []
     },
     {
-      "adapter_release_id": "majorana-h2-uccsd-pennylane-adapter-0.1.0",
+      "adapter_release_id": "majorana-h2-uccsd-pennylane-adapter-0.3.0",
       "binding_key": "ansatz.uccsd.v1:pennylane:0.45.1",
       "binding_kind": "atlas_adapter",
       "component_semantic_key": "ansatz.uccsd.v1",
-      "evidence_level": "adapter_tested",
+      "evidence_level": "runtime_qualified",
       "evidence_locators": [
         "docs/atlas/PHASE78_H2_UCCSD_EXECUTABLE_PLAN.md",
         "docs/atlas/fixtures/h2_sto3g/canonical_uccsd_v0.1.json",
         "docs/atlas/fixtures/h2_sto3g/raw/qiskit_uccsd_v0.1.json",
-        "docs/atlas/fixtures/h2_sto3g/raw/pennylane_uccsd_v0.1.json"
+        "docs/atlas/fixtures/h2_sto3g/raw/pennylane_uccsd_v0.1.json",
+        "docs/atlas/evidence/phase78/uccsd_linux_amd64_local.json",
+        "docs/atlas/evidence/phase78/uccsd_private_oci_qualification.json"
       ],
-      "known_incompatibilities": [
-        "private_oci_runtime_not_yet_qualified"
-      ],
+      "known_incompatibilities": [],
       "package": "pennylane",
       "package_version": "0.45.1",
       "provider": "pennylane",
-      "runtime_profile_id": null,
+      "runtime_profile_id": "h2-uccsd-pennylane-linux-x86_64-production-v1",
       "supported_configuration_fields": []
     },
     {

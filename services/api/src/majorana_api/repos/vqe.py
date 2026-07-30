@@ -126,6 +126,46 @@ H2_REVIEW_CANDIDATE_WORKFLOW_DIGEST = (
 )
 
 
+def _uccsd_private_runtime_binding_metadata(
+    *,
+    role: ComponentType,
+    semantic_key: str,
+    evaluator_provider: str,
+) -> dict[str, Any]:
+    """Resolve evidence metadata from the qualified UCCSD ansatz binding.
+
+    The OCI runtime qualifies the bounded H2 UCCSD capability as a composition.
+    Only the ansatz has a public standard-catalog implementation binding; the
+    dependent configured compilation role therefore carries the same
+    capability-scoped runtime identity without fabricating a catalog binding.
+    """
+
+    bindings = [
+        binding
+        for binding in STANDARD_IMPLEMENTATIONS
+        if binding.component_semantic_key == "ansatz.uccsd.v1"
+        and binding.provider == evaluator_provider
+        and binding.evidence_level.value == "runtime_qualified"
+        and binding.runtime_profile_id is not None
+        and binding.adapter_release_id is not None
+    ]
+    if len(bindings) != 1:
+        raise InvalidWorkflowCompositionError(
+            f"no unique qualified UCCSD runtime binding for {evaluator_provider!r}"
+        )
+    binding = bindings[0]
+    return {
+        "binding_key": (binding.binding_key if role is ComponentType.ANSATZ else None),
+        "configured_component_semantic_key": semantic_key,
+        "evidence_level": binding.evidence_level.value,
+        "runtime_qualification": "private_qualified",
+        "qualification_scope": "h2_sto3g_uccsd_v1",
+        "runtime_profile_id": binding.runtime_profile_id,
+        "adapter_release_id": binding.adapter_release_id,
+        "publication": "blocked",
+    }
+
+
 # --- component specs ---------------------------------------------------
 
 
@@ -996,14 +1036,11 @@ async def save_h2_uccsd_migration_workflow_draft(
             (
                 role,
                 component_spec.artifact_version_id,
-                {
-                    "binding_key": (
-                        f"{semantic_keys[role]}:{evaluator_provider}:"
-                        f"{'1.4.6' if evaluator_provider == 'qiskit' else '0.45.1'}"
-                    ),
-                    "evidence_level": "adapter_tested",
-                    "runtime_qualification": "pending",
-                },
+                _uccsd_private_runtime_binding_metadata(
+                    role=role,
+                    semantic_key=semantic_keys[role],
+                    evaluator_provider=evaluator_provider,
+                ),
             )
         )
 

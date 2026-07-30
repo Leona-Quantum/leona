@@ -591,6 +591,11 @@ _UCCSD_LOCAL_EVIDENCE = (
     "docs/atlas/fixtures/h2_sto3g/raw/qiskit_uccsd_v0.1.json",
     "docs/atlas/fixtures/h2_sto3g/raw/pennylane_uccsd_v0.1.json",
 )
+_UCCSD_RUNTIME_EVIDENCE = (
+    *_UCCSD_LOCAL_EVIDENCE,
+    "docs/atlas/evidence/phase78/uccsd_linux_amd64_local.json",
+    "docs/atlas/evidence/phase78/uccsd_private_oci_qualification.json",
+)
 
 _CONFIGURATION_FIELDS_BY_COMPONENT: dict[str, frozenset[str]] = {
     "optimizer.scipy_bounded_scalar.v1": frozenset(
@@ -695,10 +700,10 @@ STANDARD_IMPLEMENTATIONS: tuple[ComponentImplementationBinding, ...] = (
         "qiskit",
         "1.4.6",
         BindingKind.ATLAS_ADAPTER,
-        EvidenceLevel.ADAPTER_TESTED,
-        adapter="majorana-h2-uccsd-qiskit-adapter-0.1.0",
-        evidence=_UCCSD_LOCAL_EVIDENCE,
-        known_incompatibilities=("private_oci_runtime_not_yet_qualified",),
+        EvidenceLevel.RUNTIME_QUALIFIED,
+        runtime="h2-uccsd-qiskit-linux-x86_64-production-v1",
+        adapter="majorana-h2-uccsd-qiskit-adapter-0.3.0",
+        evidence=_UCCSD_RUNTIME_EVIDENCE,
     ),
     _binding(
         "ansatz.uccsd.v1",
@@ -706,10 +711,10 @@ STANDARD_IMPLEMENTATIONS: tuple[ComponentImplementationBinding, ...] = (
         "pennylane",
         "0.45.1",
         BindingKind.ATLAS_ADAPTER,
-        EvidenceLevel.ADAPTER_TESTED,
-        adapter="majorana-h2-uccsd-pennylane-adapter-0.1.0",
-        evidence=_UCCSD_LOCAL_EVIDENCE,
-        known_incompatibilities=("private_oci_runtime_not_yet_qualified",),
+        EvidenceLevel.RUNTIME_QUALIFIED,
+        runtime="h2-uccsd-pennylane-linux-x86_64-production-v1",
+        adapter="majorana-h2-uccsd-pennylane-adapter-0.3.0",
+        evidence=_UCCSD_RUNTIME_EVIDENCE,
     ),
     _binding(
         "ansatz.h2.fixed_excitation.v1",

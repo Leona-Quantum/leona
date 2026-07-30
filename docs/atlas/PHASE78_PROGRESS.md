@@ -2,9 +2,9 @@
 
 ## Scope
 
-`optimizer.cobyla.v1` has completed private runtime qualification. The next
-bounded slice is the H₂ UCCSD ansatz. Later Phase 7.8 additions remain deferred
-until the UCCSD slice closes.
+`optimizer.cobyla.v1` and the bounded H₂ UCCSD capability have completed
+private runtime qualification. Later Phase 7.8 additions remain deferred; this
+document does not promote either slice to public execution or publication.
 
 ## Status
 
@@ -13,8 +13,10 @@ until the UCCSD slice closes.
 - S2 runtime adapter: complete locally
 - S3 Registry/API/worker: complete locally
 - S4 component-first UI: complete locally
-- S5 verification/evidence: complete for private macOS/arm64 adapter evidence
-- S6 remote reproducibility: complete for private qualification
+- S5 verification/evidence: complete for private macOS/arm64 and Linux/amd64
+  evidence
+- S6 remote reproducibility: complete for private COBYLA and UCCSD
+  qualification
 
 ## Local verification
 
@@ -116,9 +118,10 @@ WorkOS tenant session.
 - bounded three-parameter optimizer protocol: complete;
 - independent macOS/arm64 Qiskit and PennyLane adapters: complete;
 - catalog compatibility and adapter-tested bindings: complete;
-- typed Registry/API/worker execution: pending;
-- Linux/amd64 OCI publication: pending;
-- private deployed E2E and runtime qualification: pending.
+- typed Registry/API/worker execution: complete for the bounded private path;
+- Linux/amd64 OCI publication: complete with digest-pinned images, SBOMs, and
+  provenance attestations;
+- private remote E2E and runtime qualification: complete.
 
 The frozen configuration is documented in
 `docs/atlas/PHASE78_H2_UCCSD_EXECUTABLE_PLAN.md`. It is a separate scientific
@@ -163,10 +166,10 @@ fidelity, parameter vector tolerance, canonical input digests, and the exact
 common resource sequence; it does not require byte-identical optimizer
 trajectories.
 
-`ansatz.uccsd.v1` remains only `adapter_tested`. Its Qiskit and PennyLane
-bindings explicitly carry `private_oci_runtime_not_yet_qualified`; the H₂
-UCCSD workflow is `compatible`, not executable or executed. No runtime or
-publication claim is made from the macOS evidence.
+The macOS reports alone remain adapter evidence. Runtime qualification is
+instead based on the later hardened Linux/amd64 run, immutable OCI publication,
+and private remote E2E described below. Publication and public execution remain
+blocked.
 
 ### Typed identity and applicability gate
 
@@ -194,8 +197,8 @@ Generated evidence:
 - `docs/atlas/fixtures/h2_sto3g/uccsd_scientific_identity_v0.3.json`;
 - `scripts/generate-h2-uccsd-executable-components.py --check`.
 
-This closes the local typed-composition gate only. Private OCI/runtime
-qualification remains pending.
+This closes the local typed-composition gate. The separate private OCI/runtime
+qualification gate is recorded below.
 
 ### Linux/amd64 local container gate
 
@@ -218,10 +221,82 @@ retained in
 `docs/atlas/evidence/phase78/uccsd_linux_amd64_local.json`.
 
 The local Linux results preserve 17 objective evaluations, 56 CNOT, depth 96,
-three parameters, sub-`4e-14` absolute energy error, and fidelity above
-`0.99999999999998` for both providers. Local Docker image IDs are explicitly
-not treated as OCI Registry digests, so production runtime qualification
-remains pending.
+three parameters, sub-`4.1e-14` absolute energy error, and fidelity above
+`0.99999999999997` for both providers. Local Docker image IDs are explicitly
+not treated as OCI Registry digests. Qualification instead uses the immutable
+registry digests below.
+
+### Immutable OCI publication and private remote E2E
+
+The hardened Linux/amd64 verification succeeded in
+[GitHub Actions run 30520738678](https://github.com/EshMis/majorana/actions/runs/30520738678).
+Both providers used the same canonical circuit and resource protocol:
+
+| Adapter | Energy (Ha) | Absolute error (Ha) | Fidelity | CNOT | Depth | Parameters |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Qiskit 1.4.6 | -1.137306035753347 | 2.665e-14 | 0.999999999999984 | 56 | 96 | 3 |
+| PennyLane 0.45.1 | -1.137306035753333 | 4.041e-14 | 0.999999999999971 | 56 | 96 | 3 |
+
+The images were published by
+[GitHub Actions run 30520940143](https://github.com/EshMis/majorana/actions/runs/30520940143)
+from source commit `6e78bdff2b9486f564441dcd267b91a41038a5df`.
+Each image is pinned by OCI index and Linux/amd64 platform manifest digest and
+has an SBOM plus provenance attestation:
+
+- Qiskit index:
+  `sha256:9e0d646fd59cee3d51a72a60d36b306619150732cf01bda73de23c1cdbd119d5`;
+- Qiskit Linux/amd64 manifest:
+  `sha256:64effada2d704410bc26cbea0734e069dafe6f229a59d0424b6523085d2f3879`;
+- PennyLane index:
+  `sha256:daac7c918f277555515bc3a4c5c7fa29e6634a44184db1f04f4cd3ef5d3e9980`;
+- PennyLane Linux/amd64 manifest:
+  `sha256:31d3b3a1042eb1326c01e4eaafc0ac4c9d6839d051852fa14bff12b57c954285`.
+
+The private authentication → database → real-OCI path succeeded in
+[GitHub Actions run 30524426784](https://github.com/EshMis/majorana/actions/runs/30524426784)
+on source commit `22d3c6588627ec20ecf9f015e61cf2ea307d5d06`.
+The corresponding general
+[CI run 30524426779](https://github.com/EshMis/majorana/actions/runs/30524426779)
+also succeeded. The E2E used:
+
+- an isolated PostgreSQL 17 database;
+- a synthetic WorkOS-shaped JWT contract, not a live WorkOS tenant;
+- the exact digest-pinned Qiskit and PennyLane OCI images;
+- a dedicated GitHub Actions Docker host, not Cloud Run or another permanent
+  production host;
+- private materialization followed by a separate-session reopen;
+- an exercised failure path.
+
+The migration changes the primary `ansatz` role, changes
+`compilation_backend` as a scientifically required dependency, and changes
+`operator_pool`, `search_selection`, and `growth_batching` to
+`not_applicable`. It is therefore a controlled capability migration, not a
+one-component controlled comparison and not evidence of performance
+superiority.
+
+The durable redacted qualification record is
+`docs/atlas/evidence/phase78/uccsd_private_oci_qualification.json`. The
+ephemeral GitHub artifact is
+`phase78-private-ci-e2e-22d3c6588627ec20ecf9f015e61cf2ea307d5d06`
+(artifact ID `8752144280`, archive digest
+`sha256:1482dc21ce3ff8cc1e7aaed69d46a1a50e6de28ca38cddccf95f65d3c71f0cfa`).
+
+### H₂ UCCSD private qualification close
+
+The bounded UCCSD slice is complete for private qualification:
+
+- the portable scientific identity is frozen separately from Registry UUIDs;
+- exact role, semantic-key, digest, and applicability gates fail closed;
+- Qiskit and PennyLane independently execute the three-parameter protocol;
+- common-protocol energy, fidelity, CNOT, depth, gate, and parameter evidence
+  is retained;
+- digest-pinned Linux/amd64 OCI runtimes are SBOM- and provenance-attested;
+- private materialized evidence can be reopened in a separate authenticated
+  session.
+
+Human review remains owner-waived. A live WorkOS tenant, Neon or another
+production database, a permanent production host, public execution, and
+publication were not tested and are not implied by this qualification.
 
 ## Claim boundary
 

@@ -64,6 +64,57 @@ def test_machine_validated_workflow_gate_accepts_only_bounded_uccsd_v03_envelope
             vqe._validate_machine_validated_workflow_payload(invalid)
 
 
+@pytest.mark.parametrize(
+    ("provider", "role", "semantic_key", "expected_binding_key"),
+    (
+        (
+            "qiskit",
+            ComponentType.ANSATZ,
+            "ansatz.uccsd.v1",
+            "ansatz.uccsd.v1:qiskit:1.4.6",
+        ),
+        (
+            "pennylane",
+            ComponentType.COMPILATION_BACKEND,
+            "compilation.h2.uccsd.canonical_logical.v1",
+            None,
+        ),
+    ),
+)
+def test_uccsd_migration_metadata_uses_private_qualified_runtime(
+    provider,
+    role,
+    semantic_key,
+    expected_binding_key,
+):
+    metadata = vqe._uccsd_private_runtime_binding_metadata(
+        role=role,
+        semantic_key=semantic_key,
+        evaluator_provider=provider,
+    )
+
+    assert metadata["binding_key"] == expected_binding_key
+    assert metadata["configured_component_semantic_key"] == semantic_key
+    assert metadata["evidence_level"] == "runtime_qualified"
+    assert metadata["runtime_qualification"] == "private_qualified"
+    assert metadata["qualification_scope"] == "h2_sto3g_uccsd_v1"
+    assert metadata["runtime_profile_id"] == (f"h2-uccsd-{provider}-linux-x86_64-production-v1")
+    assert metadata["adapter_release_id"] == (f"majorana-h2-uccsd-{provider}-adapter-0.3.0")
+    assert metadata["publication"] == "blocked"
+
+
+def test_uccsd_migration_metadata_rejects_unqualified_provider():
+    with pytest.raises(
+        vqe.InvalidWorkflowCompositionError,
+        match="no unique qualified UCCSD runtime binding",
+    ):
+        vqe._uccsd_private_runtime_binding_metadata(
+            role=ComponentType.ANSATZ,
+            semantic_key="ansatz.uccsd.v1",
+            evaluator_provider="unregistered",
+        )
+
+
 def _component(
     role: ComponentType,
     semantic_key: str,

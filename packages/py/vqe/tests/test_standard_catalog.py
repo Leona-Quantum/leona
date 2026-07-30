@@ -178,7 +178,7 @@ def test_cobyla_configuration_keeps_trust_region_distinct_from_energy_tolerance(
     assert result.requires_explicit_acceptance is False
 
 
-def test_uccsd_bindings_are_local_adapter_evidence_not_runtime_qualification():
+def test_uccsd_bindings_are_private_runtime_qualified_with_durable_evidence():
     bindings = [
         binding
         for binding in STANDARD_IMPLEMENTATIONS
@@ -186,10 +186,19 @@ def test_uccsd_bindings_are_local_adapter_evidence_not_runtime_qualification():
     ]
 
     assert {binding.provider for binding in bindings} == {"qiskit", "pennylane"}
-    assert {binding.evidence_level for binding in bindings} == {EvidenceLevel.ADAPTER_TESTED}
-    assert all(binding.runtime_profile_id is None for binding in bindings)
+    assert {binding.evidence_level for binding in bindings} == {EvidenceLevel.RUNTIME_QUALIFIED}
+    assert {binding.runtime_profile_id for binding in bindings} == {
+        "h2-uccsd-qiskit-linux-x86_64-production-v1",
+        "h2-uccsd-pennylane-linux-x86_64-production-v1",
+    }
+    assert {binding.adapter_release_id for binding in bindings} == {
+        "majorana-h2-uccsd-qiskit-adapter-0.3.0",
+        "majorana-h2-uccsd-pennylane-adapter-0.3.0",
+    }
+    assert all(not binding.known_incompatibilities for binding in bindings)
     assert all(
-        binding.known_incompatibilities == ("private_oci_runtime_not_yet_qualified",)
+        "docs/atlas/evidence/phase78/uccsd_private_oci_qualification.json"
+        in binding.evidence_locators
         for binding in bindings
     )
 
