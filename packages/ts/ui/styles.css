@@ -8027,3 +8027,17 @@ div.mj-rail-row:hover {
   cursor: wait;
   opacity: 0.65;
 }
+
+/* A run that asked to execute and was answered in chat because routing failed.
+   Not an error — the answer is real — so it is a note above it rather than a
+   banner, and it names the one action that gets the execution the user asked
+   for. */
+.mj-run-fallback-notice {
+  margin: 0 0 var(--sp-3);
+  padding: var(--sp-2) var(--sp-3);
+  border-left: 3px solid var(--warn);
+  color: var(--text-1);
+  background: var(--bg-2);
+  font-size: var(--fs-12);
+  line-height: 1.5;
+}

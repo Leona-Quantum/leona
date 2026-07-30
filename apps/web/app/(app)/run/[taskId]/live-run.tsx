@@ -748,6 +748,7 @@ export function CompletedAssistant({ turn }: { turn: Turn }) {
     : outcome;
   return (
     <div className={`mj-chat-message mj-chat-message--assistant${result || outcome ? " mj-chat-message--run" : ""}`}>
+      {chatFallbackNotice(turn.events) ? <ChatFallbackNotice /> : null}
       <RunProgressBlock events={turn.events} running={false} />
       {outcomeWithoutDuplicateCode && turn.events.some((event) => event.type === "run.finished" && event.status !== "succeeded") ? (
         <RunOutcome outcome={outcomeWithoutDuplicateCode} />
@@ -798,6 +799,7 @@ function AssistantMessage({
   const [thoughtOpen, setThoughtOpen] = useState<boolean | null>(null);
   return (
     <div className={`mj-chat-message mj-chat-message--assistant${progress ? " mj-chat-message--run" : ""}`}>
+      {chatFallbackNotice(events) ? <ChatFallbackNotice /> : null}
       {progress ? <RunProgressBlock events={events} running={streaming} /> : null}
       {reasoning ? (
         // Open while it is the only thing there is to read, and folded away by
@@ -864,6 +866,40 @@ function FinalOutput({
         artifactId={artifactIdFromEvents(events)}
       />
     </section>
+  );
+}
+
+/**
+ * "You asked for this to be run and it was answered in prose instead."
+ *
+ * `auto` is the composer's default, so every message is classified before it
+ * dispatches, and when that classification cannot be made — the router is down,
+ * or its verdict is unreadable — the run resolves to chat. That is the right
+ * default; silently starting an execution on a guess is worse. But it was
+ * invisible: `run.mode_resolved` is emitted and logged, and the only code in the
+ * repo that rendered it was a dev-only fixtures page, so a user who asked for a
+ * circuit and got an essay had nothing on screen telling them why.
+ *
+ * Only the `fallback` source is surfaced. A classifier that decided chat decided
+ * it from the message, and annotating every conversational answer with a note
+ * about routing would be noise on the common path.
+ */
+function chatFallbackNotice(events: WireEvent[]): boolean {
+  const resolved = lastEvent(events, "run.mode_resolved");
+  return Boolean(
+    resolved
+    && (resolved as { source?: string }).source === "fallback"
+    && (resolved as { resolved?: string }).resolved === "chat"
+    && (resolved as { requested?: string }).requested !== "chat",
+  );
+}
+
+function ChatFallbackNotice() {
+  return (
+    <p className="mj-run-fallback-notice" role="status">
+      Answered in chat. The router could not classify this message, so it was not
+      run — resend it with <strong>Execute</strong> selected to run it.
+    </p>
   );
 }
 
