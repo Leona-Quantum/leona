@@ -68,13 +68,13 @@ export const VERIFICATION_TIERS: readonly VerificationTierInfo[] = [
   {
     tier: 2,
     name: "Strong empirical",
-    nameJa: "強い実証",
+    nameJa: "実測による検証",
     glyph: "✓",
     tone: "accent",
     summary:
       "The design was verified by construction plus measured evidence: statistical re-execution, small-instance analytic agreement, sub-block, echo, or invariant checks. Scale-specific bugs can still survive.",
     summaryJa:
-      "構成の検証に加え、統計的再実行・小規模での解析的一致・サブブロック・エコー・不変量チェックなどの実測的根拠で設計を検証しています。スケール固有のバグは残り得ます。",
+      "構成の確認に加え、統計的な再実行、小規模での解析結果との一致、サブブロック、エコー、不変量などの実測結果で設計を検証しています。規模に固有の問題は残る可能性があります。",
   },
   {
     tier: 3,
@@ -85,7 +85,7 @@ export const VERIFICATION_TIERS: readonly VerificationTierInfo[] = [
     summary:
       "The record rests on external authority: peer-reviewed papers, standard textbooks, expert review, or evidence carried over from related verified entries. Nothing here was re-executed by this catalog.",
     summaryJa:
-      "査読論文、標準的な教科書、専門家レビュー、関連レコードからの傍証など外部の裏付けに基づきます。このカタログで再実行された根拠ではありません。",
+      "査読論文、標準的な教科書、専門家レビュー、関連する検証済み項目など、外部の裏付けに基づきます。このAtlas上では再実行していません。",
   },
   {
     tier: 4,
@@ -96,7 +96,7 @@ export const VERIFICATION_TIERS: readonly VerificationTierInfo[] = [
     summary:
       "Only automated (LLM-assisted) review or an unreviewed community submission backs this record so far. Treat it as a starting point, not evidence.",
     summaryJa:
-      "現時点ではLLM支援レビューまたは未レビューのコミュニティ投稿のみが裏付けです。根拠ではなく出発点として扱ってください。",
+      "現時点ではLLMによる確認、または未レビューのコミュニティ投稿です。正しさが確認済みとはみなさず、参考情報として扱ってください。",
   },
 ] as const;
 
@@ -139,7 +139,7 @@ export const VERIFICATION_METHODS: readonly VerificationMethodInfo[] = [
     label: "Basis-state truth table",
     labelJa: "基底状態の真理値表",
     description: "Reversible classical logic was checked exhaustively (or at edge cases) on computational-basis inputs.",
-    descriptionJa: "可逆な古典論理を計算基底の入力で（網羅的または境界事例で）検証しています。",
+    descriptionJa: "可逆な古典論理を計算基底の入力で、網羅的または境界値を使って検証しています。",
   },
   {
     id: "statistical_counts",
@@ -147,7 +147,7 @@ export const VERIFICATION_METHODS: readonly VerificationMethodInfo[] = [
     label: "Statistical re-execution",
     labelJa: "統計的再実行",
     description: "Measured counts from independent executions agreed within statistical tolerance (e.g. TVD bounds).",
-    descriptionJa: "独立した実行の測定カウントが統計的許容範囲（例: TVD境界）で一致しています。",
+    descriptionJa: "独立した実行の測定結果が統計的な許容範囲（例: TVDの許容範囲）で一致しています。",
   },
   {
     id: "small_instance",
@@ -155,7 +155,7 @@ export const VERIFICATION_METHODS: readonly VerificationMethodInfo[] = [
     label: "Small-instance agreement",
     labelJa: "小規模での解析的一致",
     description: "The same generator matched analytic results at tractable sizes; large instances are inferred.",
-    descriptionJa: "同じ生成器が扱える規模で解析結果と一致しています。大規模は推論です。",
+    descriptionJa: "同じ生成器が扱える規模で解析結果と一致しています。大規模な回路での一致は未確認です。",
   },
   {
     id: "subblock",
@@ -195,7 +195,7 @@ export const VERIFICATION_METHODS: readonly VerificationMethodInfo[] = [
     label: "Peer-reviewed paper",
     labelJa: "査読付き論文",
     description: "The record's claims trace to one or more peer-reviewed publications cited on the entry.",
-    descriptionJa: "レコードの主張は、エントリに引用された査読付き論文に基づきます。",
+    descriptionJa: "この項目の説明は、引用された査読付き論文に基づきます。",
   },
   {
     id: "textbook_citation",
@@ -211,7 +211,7 @@ export const VERIFICATION_METHODS: readonly VerificationMethodInfo[] = [
     label: "Expert review",
     labelJa: "専門家レビュー",
     description: "A named human reviewer with domain expertise checked the record.",
-    descriptionJa: "領域の専門知識を持つレビュアーがレコードを確認しています。",
+    descriptionJa: "該当分野の専門知識を持つレビュアーが内容を確認しています。",
   },
   {
     id: "tangential",
@@ -219,7 +219,7 @@ export const VERIFICATION_METHODS: readonly VerificationMethodInfo[] = [
     label: "Tangential evidence",
     labelJa: "傍証",
     description: "Correctness is supported indirectly through related verified entries (e.g. a gate verified inside a verified algorithm).",
-    descriptionJa: "関連する検証済みレコードを通じて間接的に裏付けられています（例: 検証済みアルゴリズム内で使われたゲート）。",
+    descriptionJa: "関連する検証済み項目を通じて間接的に裏付けられています（例: 検証済みアルゴリズム内で使われたゲート）。",
   },
   {
     id: "llm_reviewed",
@@ -227,7 +227,7 @@ export const VERIFICATION_METHODS: readonly VerificationMethodInfo[] = [
     label: "LLM-assisted review",
     labelJa: "LLM支援レビュー",
     description: "An LLM checked the record for internal consistency. Useful screening, not evidence of correctness.",
-    descriptionJa: "LLMがレコードの内部整合性を確認しました。スクリーニングには有用ですが、正しさの根拠ではありません。",
+    descriptionJa: "LLMで記述内容の内部整合性を確認しました。初期確認には有用ですが、正しさを保証するものではありません。",
   },
   {
     id: "community_submission",

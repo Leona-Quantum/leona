@@ -21,7 +21,7 @@ const OPENQASM3_PAPER = {
   year: "2021",
   url: "https://arxiv.org/abs/2104.14722",
   relevance: "Defines the standard gate library (id, sdg, tdg, cy, crz, rxx, rzz, ccx, cx…) used natively by the code snippets on this record.",
-  relevanceJa: "この記録のコードで使われるid・sdg・tdg・cy・crz・rxx・rzz・ccx・cxなどの標準ゲートライブラリを定義します。",
+  relevanceJa: "この項目のコードで使うid・sdg・tdg・cy・crz・rxx・rzz・ccx・cxなどの標準ゲートライブラリを定義します。",
 };
 
 const MCKAY_2017 = {
@@ -542,7 +542,7 @@ $$
     descriptionJa: "制御が|1⟩のときにのみ対象にRZ(θ)回転を適用する、パラメータ化された制御ゲートです。Z回転自体を別の量子ビットに条件付けする必要がある場合に使われる、RZのエンタングルする一般化です。",
     introduction:
       "CRZ is easy to confuse with the controlled-phase gate CP, since both are parametrized two-qubit gates built around a single-qubit Z-axis operation — but they are genuinely different unitaries, and this record exists partly to make that distinction explicit.",
-    introductionJa: "CRZは、両方とも単一量子ビットのZ軸演算を中心に構成されたパラメータ化2量子ビットゲートであるため、制御位相ゲートCPと混同しやすいですが、実際には異なるユニタリです。この記録は、その違いを明示するためでもあります。",
+    introductionJa: "CRZと制御位相ゲートCPは、どちらも単一量子ビットのZ軸演算をもとに構成されたパラメータ付き2量子ビットゲートですが、異なるユニタリです。ここでは、その違いを明示します。",
     explanation:
       "CRZ(θ) acts as the identity on the control-0 subspace and as RZ(θ) on the control-1 subspace. Unlike CP(θ), which only phases |11⟩, RZ splits its phase symmetrically across both target basis states, so CRZ(θ) also applies a nontrivial phase to |10⟩ — the two gates coincide only up to a target-dependent phase correction, not exactly.",
     explanationJa: "CRZ(θ)は制御が0の部分空間では恒等として、制御が1の部分空間ではRZ(θ)として作用します。|11⟩のみに位相を与えるCP(θ)と異なり、RZは両方の対象基底状態に対称に位相を分けるため、CRZ(θ)は|10⟩にも自明でない位相を与えます。2つのゲートは対象に依存する位相補正を除いてのみ一致し、厳密には一致しません。",

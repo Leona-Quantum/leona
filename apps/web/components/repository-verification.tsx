@@ -65,7 +65,7 @@ export function VerificationLegend({ locale }: { locale: PublicLocale }) {
       <div className="mj-vlegend-body">
         <p className="mj-vlegend-note">
         {isJapanese
-          ? "各レコードは、どのように検証されたかで分類されます。バッジは最も強い根拠の階層を示し、チップは適用された個々の方法を示します。"
+          ? "各資料を、確認方法の確かさに応じて分類しています。バッジは最も確かな確認レベルを、項目は実施した確認方法を示します。"
           : "Every record is classified by how it was verified. The badge shows the strongest tier of evidence; the chips list each method that applies."}
         </p>
         {VERIFICATION_TIERS.map((tier) => (

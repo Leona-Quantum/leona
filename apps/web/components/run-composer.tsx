@@ -65,7 +65,7 @@ export function RunComposer({
         mode: "応答モード",
         modeAuto: "自動",
         modeExecute: "実行",
-        modeIdeate: "アイデア",
+        modeIdeate: "考える",
         modeExplain: "解説",
         framework: "回路フレームワーク",
       }
@@ -127,7 +127,7 @@ export function RunComposer({
               event.currentTarget.form?.requestSubmit();
             }
           }}
-          placeholder={locale === "ja" ? "量子アルゴリズムについて何でも聞いてください…" : "Ask anything about quantum algorithms…"}
+          placeholder={locale === "ja" ? "作りたい回路や検証したいことを入力してください…" : "Ask anything about quantum algorithms…"}
           aria-label={labels.task}
           rows={2}
           disabled={pending}

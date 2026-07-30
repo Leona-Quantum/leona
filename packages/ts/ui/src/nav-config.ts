@@ -6,9 +6,9 @@ export interface NavSurface {
 }
 
 export const NAV_SURFACES: NavSurface[] = [
-  { href: "/run", labels: { en: "Run", ja: "実行" } },
-  { href: "/library", labels: { en: "Vault", ja: "ボールト" } },
-  { href: "/studio", labels: { en: "Studio", ja: "スタジオ" } },
+  { href: "/run", labels: { en: "Run", ja: "Run" } },
+  { href: "/library", labels: { en: "Vault", ja: "Vault" } },
+  { href: "/studio", labels: { en: "Studio", ja: "Studio" } },
   { href: "/account", labels: { en: "Account", ja: "アカウント" } },
 ];
 

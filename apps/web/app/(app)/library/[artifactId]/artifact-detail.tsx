@@ -28,7 +28,81 @@ export const DETAIL_COPY: Record<PublicLocale, {
     back: "← Vault", reference: "Reference", verified: "Verified", structural: "Structurally verified", options: "Artifact options", openStudio: "Open in Studio", openRun: "Open in Run", askInRun: "Ask in Run", archive: "Archive", delete: "Delete", cancel: "Cancel", deleteConfirmTitle: "Are you sure?", deleteWarning: (title) => `“${title}” will be removed from your workspace and not saved.`, star: "Star artifact", unstar: "Remove artifact star", framework: "Framework", type: "Type", artifact: "artifact", updated: "Updated", source: "Source", runSource: "Leona Run", publicSource: "Public Atlas", curatedSource: "Curated example", tabs: { overview: "Overview", code: "Code & Export", runs: "Runs", verification: "Verification", notes: "Notes" }, overview: "Overview", verificationSummary: "Verification summary", resources: "Resources", currentVersion: "current version", evidence: "Evidence", savedRecord: "saved record", verificationReport: "Verification report", available: "available", runProvenance: "Run provenance", linked: "linked", example: "example", recorded: "recorded with the run", exportStatus: "Export status", openQasm: "OpenQASM 3", frameworkOnly: "framework only", sourceCode: "Source code", exportHeading: "Export", classified: "classified", copied: "Copied", copyCode: "Copy code", noCode: "Code will appear after the artifact is loaded from the control plane.", lossless: "Lossless", noNative: "No native OpenQASM export was saved for this artifact.", runRecords: "Run records", publicReference: "Public reference", verifiedRun: "Verified Leona Run", referenceRun: "Reference run", publicRunBody: "Public source context and export metadata are retained. Run this copy before treating it as new workspace evidence.", runBody: "Simulation evidence, verification parameters, and export status are retained with this artifact.", verificationEvidence: "Verification evidence", auditSurface: "audit surface", whatChecked: "What was checked", publicChecked: "The public record's stated method, result, source, and export boundary were preserved. Execute this private copy to create workspace-specific evidence.", verifiedChecked: "No machine-readable check record was saved with this version — it predates the stored check list.", notes: "Notes", workspace: "workspace", demoNote: "This is a curated replayable example.", publicNote: "This entry was imported from the public research database; source and license context are retained in the saved version.", runNote: "This entry was saved from a live workspace run.", loading: "Loading artifact…", unknown: "Unknown", circuitHeading: "Circuit", diagramReadOnly: "read-only", diagramTooLarge: (qubits, steps) => `This circuit is too large to draw (${qubits} qubits, ${steps} operations). Read it as code below.`, diagramUnavailable: "No stored OpenQASM 3 export to draw from. Rerun Verify & save to mint one.", downloadSource: (extension) => `Download .${extension}`, downloadManifest: "Download with verification metadata", measuredResult: "Measured result", shotsLabel: (shots) => `${shots.toLocaleString("en-US")} shots`, countsLabel: (shots) => `Measured counts from ${shots.toLocaleString("en-US")} shots`, truncatedNote: (shown, total) => `Showing the ${shown} heaviest of ${total.toLocaleString("en-US")} measured outcomes.`,
   },
   ja: {
-    back: "← ボールト", reference: "リファレンス", verified: "検証済み", structural: "構造のみ検証", options: "アーティファクトの設定", openStudio: "Studioで開く", openRun: "実行で開く", askInRun: "実行で質問", archive: "アーカイブ", delete: "削除", cancel: "キャンセル", deleteConfirmTitle: "削除してもよいですか？", deleteWarning: (title) => `「${title}」はワークスペースから削除され、保存されません。`, star: "アーティファクトにスターを付ける", unstar: "アーティファクトのスターを外す", framework: "フレームワーク", type: "種類", artifact: "アーティファクト", updated: "更新日", source: "ソース", runSource: "Leona実行", publicSource: "公開Atlas", curatedSource: "キュレーション例", tabs: { overview: "概要", code: "コードとエクスポート", runs: "実行", verification: "検証", notes: "メモ" }, overview: "概要", verificationSummary: "検証サマリー", resources: "リソース", currentVersion: "現在のバージョン", evidence: "根拠", savedRecord: "保存済み記録", verificationReport: "検証レポート", available: "利用可能", runProvenance: "実行プロベナンス", linked: "リンク済み", example: "例", recorded: "実行時に記録済み", exportStatus: "エクスポート状態", openQasm: "OpenQASM 3", frameworkOnly: "frameworkのみ", sourceCode: "ソースコード", exportHeading: "エクスポート", classified: "分類済み", copied: "コピー済み", copyCode: "コードをコピー", noCode: "制御プレーンからアーティファクトを読み込むとコードが表示されます。", lossless: "ロスレス", noNative: "このアーティファクトにはネイティブOpenQASMエクスポートが保存されていません。", runRecords: "実行記録", publicReference: "公開リファレンス", verifiedRun: "検証済みLeona実行", referenceRun: "リファレンス実行", publicRunBody: "公開ソースのコンテキストとエクスポート情報を保持しています。新しいワークスペースの根拠とする前に、このコピーを実行してください。", runBody: "シミュレーションの根拠、検証パラメータ、エクスポート状態をこのアーティファクトに保持しています。", verificationEvidence: "検証の根拠", auditSurface: "監査表示", whatChecked: "確認した内容", publicChecked: "公開記録の方法、結果、ソース、エクスポート範囲を保持しています。ワークスペース固有の根拠を作るには、この非公開コピーを実行してください。", verifiedChecked: "このバージョンには機械可読な検証記録が保存されていません。検証項目の保存より前に作成されたアーティファクトです。", notes: "メモ", workspace: "ワークスペース", demoNote: "キュレーションされた再生可能な例です。", publicNote: "公開研究データベースから取り込んだエントリです。ソースとライセンスの情報は保存版に保持されます。", runNote: "このエントリはライブワークスペースの実行から保存されました。", loading: "アーティファクトを読み込んでいます…", unknown: "不明", circuitHeading: "回路", diagramReadOnly: "読み取り専用", diagramTooLarge: (qubits, steps) => `この回路は大きすぎて描画できません（${qubits}量子ビット、${steps}操作）。下のコードで確認してください。`, diagramUnavailable: "描画元となるOpenQASM 3エクスポートが保存されていません。「検証して保存」を再実行すると生成されます。", downloadSource: (extension) => `.${extension} をダウンロード`, downloadManifest: "検証メタデータ付きでダウンロード", measuredResult: "測定結果", shotsLabel: (shots) => `${shots.toLocaleString("ja-JP")} ショット`, countsLabel: (shots) => `${shots.toLocaleString("ja-JP")} ショットの測定カウント`, truncatedNote: (shown, total) => `測定された ${total.toLocaleString("ja-JP")} 個の状態のうち、上位 ${shown} 件を表示しています。`,
+    back: "← Vault",
+    reference: "参照資料",
+    verified: "検証済み",
+    structural: "構造のみ検証",
+    options: "回路の操作",
+    openStudio: "Studioで開く",
+    openRun: "Runで開く",
+    askInRun: "Runで質問する",
+    archive: "アーカイブ",
+    delete: "削除",
+    cancel: "キャンセル",
+    deleteConfirmTitle: "この回路を削除しますか？",
+    deleteWarning: (title) => `「${title}」をワークスペースから完全に削除します。この操作は取り消せません。`,
+    star: "この回路にスターを付ける",
+    unstar: "この回路のスターを外す",
+    framework: "フレームワーク",
+    type: "種類",
+    artifact: "回路",
+    updated: "更新日",
+    source: "作成元",
+    runSource: "Leona Run",
+    publicSource: "Atlas",
+    curatedSource: "サンプル",
+    tabs: { overview: "概要", code: "コードと書き出し", runs: "実行記録", verification: "検証結果", notes: "メモ" },
+    overview: "概要",
+    verificationSummary: "検証結果",
+    resources: "回路情報",
+    currentVersion: "現在のバージョン",
+    evidence: "検証結果",
+    savedRecord: "保存済み",
+    verificationReport: "検証レポート",
+    available: "確認可能",
+    runProvenance: "実行元と条件",
+    linked: "関連付け済み",
+    example: "サンプル",
+    recorded: "実行時に記録",
+    exportStatus: "書き出し状況",
+    openQasm: "OpenQASM 3",
+    frameworkOnly: "元のフレームワークのみ",
+    sourceCode: "ソースコード",
+    exportHeading: "書き出し",
+    classified: "判定済み",
+    copied: "コピーしました",
+    copyCode: "コードをコピー",
+    noCode: "サーバーから回路を読み込むとコードが表示されます。",
+    lossless: "情報を保持",
+    noNative: "この回路にはOpenQASM形式の書き出しデータが保存されていません。",
+    runRecords: "実行記録",
+    publicReference: "Atlasの参照資料",
+    verifiedRun: "検証済みのLeona Run",
+    referenceRun: "参照用の実行",
+    publicRunBody: "公開元、出典、書き出し可能な範囲を保持しています。自分の検証結果として使う前に、このコピーを実行してください。",
+    runBody: "シミュレーション結果、検証条件、書き出し状況をこの回路と一緒に保存しています。",
+    verificationEvidence: "検証結果",
+    auditSurface: "確認記録",
+    whatChecked: "確認した内容",
+    publicChecked: "公開資料に記載された方法、結果、出典、書き出し範囲を保持しています。このワークスペースで実行すると、独自の検証記録を作成できます。",
+    verifiedChecked: "このバージョンには詳細な検証項目が保存されていません。検証項目の保存機能が追加される前に作成された回路です。",
+    notes: "メモ",
+    workspace: "ワークスペース",
+    demoNote: "実行して確かめられるサンプルです。",
+    publicNote: "Atlasから追加した公開資料です。出典とライセンス情報は保存したバージョンに保持されます。",
+    runNote: "この回路はワークスペースでの実行結果から保存されました。",
+    loading: "回路を読み込んでいます…",
+    unknown: "不明",
+    circuitHeading: "回路",
+    diagramReadOnly: "読み取り専用",
+    diagramTooLarge: (qubits, steps) => `回路が大きいため描画できません（${qubits}量子ビット、${steps}操作）。下のコードで確認してください。`,
+    diagramUnavailable: "回路図の生成に必要なOpenQASM 3データがありません。「検証して保存」をもう一度実行してください。",
+    downloadSource: (extension) => `.${extension}形式でダウンロード`,
+    downloadManifest: "検証情報と一緒にダウンロード",
+    measuredResult: "測定結果",
+    shotsLabel: (shots) => `${shots.toLocaleString("ja-JP")}ショット`,
+    countsLabel: (shots) => `${shots.toLocaleString("ja-JP")}ショットの測定結果`,
+    truncatedNote: (shown, total) => `${total.toLocaleString("ja-JP")}通りの測定結果のうち、件数が多い上位${shown}件を表示しています。`,
   },
 };
 type ArtifactCopy = (typeof DETAIL_COPY)[PublicLocale];
@@ -39,22 +113,22 @@ type ArtifactCopy = (typeof DETAIL_COPY)[PublicLocale];
  * independent of the artifact's status, so an artifact whose only evidence was a
  * return-contract check read exactly like one checked against the physics. See
  * plans/evidence-strength-labelling.md. */
-function verdictChip(artifact: LibraryArtifact, copy: ArtifactCopy): { label: string; glyph: string } {
+function verdictChip(artifact: LibraryArtifact, copy: ArtifactCopy, locale: PublicLocale): { label: string; glyph: string } {
   if (artifact.source === "public") return { label: copy.reference, glyph: "–" };
   if (artifact.status === "structural") return { label: copy.structural, glyph: "–" };
   if (artifact.status === "verified") return { label: copy.verified, glyph: "✓" };
-  if (artifact.status === "failed") return { label: "Failed", glyph: "×" };
+  if (artifact.status === "failed") return { label: locale === "ja" ? "検証失敗" : "Failed", glyph: "×" };
   if (
     artifact.status === "inconclusive"
     && artifact.verificationSummary?.reason_code === "ai_review_aligned"
   ) {
-    return { label: "Executed", glyph: "–" };
+    return { label: locale === "ja" ? "実行済み" : "Executed", glyph: "–" };
   }
   if (artifact.status === "inconclusive") {
-    return { label: "Verification unavailable", glyph: "–" };
+    return { label: locale === "ja" ? "検証結果なし" : "Verification unavailable", glyph: "–" };
   }
-  if (artifact.status === "stale") return { label: "Verification stale", glyph: "–" };
-  return { label: "Legacy evidence unknown", glyph: "–" };
+  if (artifact.status === "stale") return { label: locale === "ja" ? "要再検証" : "Verification stale", glyph: "–" };
+  return { label: locale === "ja" ? "旧形式・検証記録なし" : "Legacy evidence unknown", glyph: "–" };
 }
 
 export function ArtifactDetail({ artifactId, locale = "en" }: { artifactId: string; locale?: PublicLocale }) {
@@ -184,7 +258,7 @@ export function ArtifactDetail({ artifactId, locale = "en" }: { artifactId: stri
       return (
         <div className="mj-library-detail-loading" role="alert">
           {locale === "ja"
-            ? "このアーティファクトを読み込めませんでした。"
+            ? "この回路を読み込めませんでした。削除されたか、アクセス権がない可能性があります。"
             : "Could not load this artifact. It may have been deleted, or you may not have access to it."}
         </div>
       );
@@ -204,7 +278,7 @@ export function ArtifactDetail({ artifactId, locale = "en" }: { artifactId: stri
                   <StarIcon size={18} filled={starred} />
                 </button>
                 <h1 className="mj-page-title">{artifact.title}</h1>
-                <span className={`mj-library-status mj-library-status--${artifact.status}`}><span aria-hidden="true">{verdictChip(artifact, copy).glyph}</span>{verdictChip(artifact, copy).label}</span>
+                <span className={`mj-library-status mj-library-status--${artifact.status}`}><span aria-hidden="true">{verdictChip(artifact, copy, locale).glyph}</span>{verdictChip(artifact, copy, locale).label}</span>
               </div>
               <p className="mj-page-lede">{artifact.description}</p>
             </div>
@@ -234,7 +308,7 @@ export function ArtifactDetail({ artifactId, locale = "en" }: { artifactId: stri
 
           {tab === "overview" ? <Overview artifact={artifact} copy={copy} locale={locale} /> : null}
           {tab === "code" ? <CodeAndExport artifact={artifact} copied={copied} onCopy={copyCode} copy={copy} /> : null}
-          {tab === "runs" ? <Runs artifact={artifact} copy={copy} /> : null}
+          {tab === "runs" ? <Runs artifact={artifact} copy={copy} locale={locale} /> : null}
           {tab === "verification" ? <Verification artifact={artifact} copy={copy} /> : null}
           {tab === "notes" ? <Notes artifact={artifact} copy={copy} /> : null}
         </div>
@@ -475,9 +549,9 @@ function frameworkCodeOptions(artifact: LibraryArtifact): FrameworkCodeOption[] 
   });
 }
 
-function Runs({ artifact, copy }: { artifact: LibraryArtifact; copy: ArtifactCopy }) {
+function Runs({ artifact, copy, locale }: { artifact: LibraryArtifact; copy: ArtifactCopy; locale: PublicLocale }) {
   const isPublicReference = artifact.source === "public";
-  return <section className="mj-artifact-panel"><div className="mj-panel-heading"><h2>{copy.runRecords}</h2><span className="mj-mono-muted">{artifact.runId ?? (isPublicReference ? copy.publicReference : copy.example)}</span></div><div className="mj-run-record"><span className="mj-chat-status">{isPublicReference ? "–" : verdictChip(artifact, copy).glyph}</span><div><strong>{isPublicReference ? copy.publicReference : verdictChip(artifact, copy).label}</strong><p>{isPublicReference ? copy.publicRunBody : copy.runBody}</p></div><span className={`mj-library-status mj-library-status--${artifact.status}`}><span aria-hidden="true">{verdictChip(artifact, copy).glyph}</span>{verdictChip(artifact, copy).label}</span></div></section>;
+  return <section className="mj-artifact-panel"><div className="mj-panel-heading"><h2>{copy.runRecords}</h2><span className="mj-mono-muted">{artifact.runId ?? (isPublicReference ? copy.publicReference : copy.example)}</span></div><div className="mj-run-record"><span className="mj-chat-status">{isPublicReference ? "–" : verdictChip(artifact, copy, locale).glyph}</span><div><strong>{isPublicReference ? copy.publicReference : verdictChip(artifact, copy, locale).label}</strong><p>{isPublicReference ? copy.publicRunBody : copy.runBody}</p></div><span className={`mj-library-status mj-library-status--${artifact.status}`}><span aria-hidden="true">{verdictChip(artifact, copy, locale).glyph}</span>{verdictChip(artifact, copy, locale).label}</span></div></section>;
 }
 
 function Verification({ artifact, copy }: { artifact: LibraryArtifact; copy: ArtifactCopy }) {
