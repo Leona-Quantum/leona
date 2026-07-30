@@ -16,10 +16,12 @@ export default async function PricingPage() {
   const demoEnabled = isPublicDemoEnabled();
   return (
     <PublicSite activePath="/pricing" className="mj-pricing-site" locale={locale}>
-      <section className="mj-public-page-hero">
-        <h1>{copy.hero.title}</h1>
-        <p>{copy.hero.body}</p>
-      </section>
+      <Reveal>
+        <section className="mj-public-page-hero">
+          <h1>{copy.hero.title}</h1>
+          <p>{copy.hero.body}</p>
+        </section>
+      </Reveal>
 
       <section className="mj-pricing-grid" aria-label={locale === "ja" ? "Leona Quantumのプラン" : "Leona Quantum plans"}>
         {copy.plans.map((plan, index) => (
