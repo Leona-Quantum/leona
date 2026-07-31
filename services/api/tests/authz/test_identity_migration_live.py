@@ -258,9 +258,7 @@ async def test_a_blocked_row_reports_the_memberships_it_would_strand(db):
     # the merge is blocked and the membership has nowhere to go.
     new_sub = f"prod-{uuid.uuid4()}"
     duplicate = await _account(db, guest_email, new_sub)
-    _dup, dup_ws = await system.get_or_provision_user(
-        db, workos_user_id=new_sub, email=guest_email
-    )
+    _dup, dup_ws = await system.get_or_provision_user(db, workos_user_id=new_sub, email=guest_email)
     await artifacts_repo.create_artifact(
         Scope(user_id=duplicate.id, workspace_id=dup_ws.id, role=Role.OWNER),
         db,
