@@ -1,7 +1,8 @@
 export type VqeFramework = "qiskit" | "pennylane";
 export type VqeCapability =
   | "h2_sto3g_actual_vqe_v1"
-  | "h2_sto3g_uccsd_v1";
+  | "h2_sto3g_uccsd_v1"
+  | "h2_sto3g_hardware_efficient_ry_cx_v1";
 
 export type VqeResourceObservation = {
   stage: string;
@@ -75,6 +76,9 @@ export function capabilityFromExperiment(value: unknown): VqeCapability {
   }
   const semanticKey = ansatzBindings[0]?.component_semantic_key;
   if (semanticKey === "ansatz.uccsd.v1") return "h2_sto3g_uccsd_v1";
+  if (semanticKey === "ansatz.hardware_efficient_ry_cx.v1") {
+    return "h2_sto3g_hardware_efficient_ry_cx_v1";
+  }
   if (semanticKey === "ansatz.h2.fixed_excitation.v1") {
     return "h2_sto3g_actual_vqe_v1";
   }

@@ -57,6 +57,21 @@ describe("VQE proof parsing", () => {
     );
   });
 
+  it("recognizes the frozen hardware-efficient ansatz identity", () => {
+    assert.equal(
+      capabilityFromExperiment({
+        scientific_spec_json: {
+          component_bindings: [{
+            role: "ansatz",
+            applicability: "required",
+            component_semantic_key: "ansatz.hardware_efficient_ry_cx.v1",
+          }],
+        },
+      }),
+      "h2_sto3g_hardware_efficient_ry_cx_v1",
+    );
+  });
+
   it("fails closed on an unknown executable ansatz identity", () => {
     assert.throws(
       () => capabilityFromExperiment({

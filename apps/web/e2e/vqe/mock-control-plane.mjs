@@ -4,6 +4,7 @@ const port = Number(process.env.MOCK_VQE_API_PORT ?? "18000");
 const workflowId = "10000000-0000-4000-8000-000000000001";
 const slsqpWorkflowId = "10000000-0000-4000-8000-000000000002";
 const uccsdWorkflowId = "10000000-0000-4000-8000-000000000003";
+const hardwareEfficientWorkflowId = "10000000-0000-4000-8000-000000000004";
 const slsqpDigest = "b".repeat(64);
 let experimentSequence = 0;
 let executionSequence = 0;
@@ -97,6 +98,15 @@ const server = createServer(async (request, response) => {
         spec_json: { execution_status: "private_qualification_candidate" },
       });
     }
+    if ([...experimentsById.values()].some((item) => item.hardwareEfficientSaved)) {
+      components.push({
+        artifact_version_id: hardwareEfficientWorkflowId,
+        semantic_key: "workflow.instance.mock.hardware-efficient",
+        machine_validation_state: "machine_validated",
+        review_state: "unreviewed",
+        spec_json: { execution_status: "blocked_until_runtime_qualified" },
+      });
+    }
     return json(response, 200, {
       components,
     });
@@ -143,10 +153,28 @@ const server = createServer(async (request, response) => {
   ) {
     const payload = await body(request);
     if (
+      payload.baseline_workflow_artifact_version_id === uccsdWorkflowId
+      && payload.migration
+        === "h2_uccsd_slsqp_to_hardware_efficient_slsqp"
+    ) {
+      experimentsById.set("hardware-efficient-state", {
+        hardwareEfficientSaved: true,
+      });
+      return json(response, 201, {
+        artifact_id: "60000000-0000-4000-8000-000000000003",
+        workflow_artifact_version_id: hardwareEfficientWorkflowId,
+        workflow_semantic_key: "workflow.instance.mock.hardware-efficient",
+        request_sha256: "e".repeat(64),
+        replayed: false,
+        execution_status: "blocked_until_runtime_qualified",
+        visibility: "private",
+      });
+    }
+    if (
       payload.baseline_workflow_artifact_version_id !== slsqpWorkflowId
       || payload.migration !== "h2_fixed_excitation_slsqp_to_uccsd_slsqp"
     ) {
-      return json(response, 422, { detail: "unexpected UCCSD migration" });
+      return json(response, 422, { detail: "unexpected ansatz migration" });
     }
     experimentsById.set("uccsd-state", { uccsdSaved: true });
     return json(response, 201, {

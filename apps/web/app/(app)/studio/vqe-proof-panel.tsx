@@ -124,7 +124,9 @@ export function VqeProofPanel({
             <h1>
               {capability === "h2_sto3g_uccsd_v1"
                 ? "H₂ STO-3G UCCSD private qualification"
-                : "H₂ STO-3G actual-VQE proof"}
+                : capability === "h2_sto3g_hardware_efficient_ry_cx_v1"
+                  ? "H₂ STO-3G hardware-efficient private qualification"
+                  : "H₂ STO-3G actual-VQE proof"}
             </h1>
             <p className="mj-mono-muted">{experimentId}</p>
           </div>
@@ -191,6 +193,8 @@ export function VqeProofPanel({
               ? (ja ? "開始中…" : "Starting…")
               : capability === "h2_sto3g_uccsd_v1"
                 ? (ja ? "private認定候補を実行" : "Run private qualification candidate")
+                : capability === "h2_sto3g_hardware_efficient_ry_cx_v1"
+                  ? (ja ? "private認定候補を実行" : "Run private qualification candidate")
                 : (ja ? "ローカル候補を実行" : "Run local candidate")}
           </button>
           <button className="mj-secondary-button" type="button" disabled={busy !== null || !hasActive} onClick={() => void mutate("cancel")}>

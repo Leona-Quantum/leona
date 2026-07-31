@@ -91,6 +91,10 @@ const COPY = {
     saveMigration: "Save private UCCSD migration in Studio",
     migrationQualification:
       "This is a controlled capability migration, not a one-component swap. The ansatz and dependent compilation protocol change, adaptive-only roles become not applicable, and publication and performance claims remain blocked.",
+    saveHardwareEfficientMigration:
+      "Save private hardware-efficient migration in Studio",
+    hardwareEfficientMigrationQualification:
+      "This controlled capability migration changes the ansatz and dependent compilation protocol. The frozen RY–CX structure is adapter-tested, but its Linux/amd64 OCI runtime is not yet qualified, so execution, publication, and performance claims remain blocked.",
   },
   ja: {
     title: "VQE Methods",
@@ -140,6 +144,10 @@ const COPY = {
     saveMigration: "UCCSD migrationをStudioへprivate保存",
     migrationQualification:
       "これは一部品交換ではなく、統制されたcapability migrationです。Ansatzと従属するcompilation protocolが変わり、adaptive専用roleはnot_applicableになります。公開と性能主張は引き続き停止されます。",
+    saveHardwareEfficientMigration:
+      "Hardware-Efficient migrationをStudioへprivate保存",
+    hardwareEfficientMigrationQualification:
+      "これはAnsatzと従属するcompilation protocolを変更する統制されたcapability migrationです。固定RY–CX構造はadapterで検証済みですが、Linux/amd64 OCI runtimeは未認定のため、実行・公開・性能主張は停止中です。",
   },
 } as const;
 
@@ -293,6 +301,11 @@ export function VqeMethodsBrowser({
   const uccsdMigrationReady =
     compatibility.compatible &&
     baseline.workflow_key === "workflow.h2.uccsd.v1" &&
+    new Set(["qiskit", "pennylane"]).has(executionProvider) &&
+    typeof fixedExcitationBaseline?.registry_semantic_key === "string";
+  const hardwareEfficientMigrationReady =
+    compatibility.compatible &&
+    baseline.workflow_key === "workflow.h2.hardware_efficient.v1" &&
     new Set(["qiskit", "pennylane"]).has(executionProvider) &&
     typeof fixedExcitationBaseline?.registry_semantic_key === "string";
   const controlledSwapReady =
@@ -589,7 +602,25 @@ export function VqeMethodsBrowser({
             {changedRoles.length > 1 ? <p>{copy.uncontrolled(changedRoles.length)}</p> : null}
           </div>
 
-          {uccsdMigrationReady ? (
+          {hardwareEfficientMigrationReady ? (
+            <>
+              <a
+                className="mj-primary-button"
+                href={`/studio?vqe=1&vqeWorkflowKey=${encodeURIComponent(
+                  fixedExcitationBaseline?.registry_semantic_key ?? "",
+                )}&vqeProvider=${encodeURIComponent(
+                  executionProvider,
+                )}&vqeMigration=${encodeURIComponent(
+                  "h2_uccsd_slsqp_to_hardware_efficient_slsqp",
+                )}`}
+              >
+                {copy.saveHardwareEfficientMigration}
+              </a>
+              <p className="mj-vqe-run-note">
+                {copy.hardwareEfficientMigrationQualification}
+              </p>
+            </>
+          ) : uccsdMigrationReady ? (
             <>
               <a
                 className="mj-primary-button"

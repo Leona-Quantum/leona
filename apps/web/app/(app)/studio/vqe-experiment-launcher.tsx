@@ -35,6 +35,8 @@ const PRIVATE_EXECUTABLE_OPTIMIZERS = new Map([
   ["optimizer.cobyla.v1", "COBYLA"],
 ]);
 const H2_UCCSD_MIGRATION = "h2_fixed_excitation_slsqp_to_uccsd_slsqp";
+const H2_HARDWARE_EFFICIENT_MIGRATION =
+  "h2_uccsd_slsqp_to_hardware_efficient_slsqp";
 
 function parseWorkflows(value: unknown): Workflow[] {
   if (!value || typeof value !== "object") return [];
@@ -111,7 +113,8 @@ export function VqeExperimentLauncher({
   const [savingSwap, setSavingSwap] = useState(false);
   const [savedSwap, setSavedSwap] = useState<SavedSwap | null>(null);
   const swapIdempotencyKey = useRef<string | null>(null);
-  const migrationIdempotencyKey = useRef<string | null>(null);
+  const uccsdMigrationIdempotencyKey = useRef<string | null>(null);
+  const hardwareEfficientMigrationIdempotencyKey = useRef<string | null>(null);
 
   useEffect(() => {
     void fetch("/api/atlas/workflows?limit=50", { cache: "no-store" })
@@ -280,7 +283,12 @@ export function VqeExperimentLauncher({
   }
 
   async function saveAnsatzMigration() {
-    if (!workflowId || initialMigration !== H2_UCCSD_MIGRATION) return;
+    if (
+      !workflowId
+      || ![H2_UCCSD_MIGRATION, H2_HARDWARE_EFFICIENT_MIGRATION].includes(
+        initialMigration ?? "",
+      )
+    ) return;
     setSavingSwap(true);
     setMessage(null);
     try {
@@ -340,14 +348,14 @@ export function VqeExperimentLauncher({
           detail || `SLSQP migration prerequisite failed (${prerequisiteResponse.status})`,
         );
       }
-      if (!migrationIdempotencyKey.current) {
-        migrationIdempotencyKey.current = crypto.randomUUID();
+      if (!uccsdMigrationIdempotencyKey.current) {
+        uccsdMigrationIdempotencyKey.current = crypto.randomUUID();
       }
-      const response = await fetch("/api/atlas/workflows/ansatz-migrations", {
+      const uccsdResponse = await fetch("/api/atlas/workflows/ansatz-migrations", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "Idempotency-Key": migrationIdempotencyKey.current,
+          "Idempotency-Key": uccsdMigrationIdempotencyKey.current,
         },
         body: JSON.stringify({
           baseline_workflow_artifact_version_id:
@@ -356,21 +364,76 @@ export function VqeExperimentLauncher({
           evaluator_provider: initialFramework,
         }),
       });
-      const payload = await response.json() as Partial<SavedSwap> & {
+      const uccsdPayload = await uccsdResponse.json() as Partial<SavedSwap> & {
         detail?: unknown;
         error?: string;
       };
       if (
-        !response.ok
-        || typeof payload.workflow_artifact_version_id !== "string"
+        !uccsdResponse.ok
+        || typeof uccsdPayload.workflow_artifact_version_id !== "string"
+        || typeof uccsdPayload.workflow_semantic_key !== "string"
+        || uccsdPayload.execution_status !== "private_qualification_candidate"
+        || uccsdPayload.visibility !== "private"
+      ) {
+        const detail = typeof uccsdPayload.detail === "string"
+          ? uccsdPayload.detail
+          : uccsdPayload.error ?? JSON.stringify(uccsdPayload.detail);
+        throw new Error(
+          detail || `UCCSD ansatz migration save failed (${uccsdResponse.status})`,
+        );
+      }
+      let payload = uccsdPayload;
+      if (initialMigration === H2_HARDWARE_EFFICIENT_MIGRATION) {
+        if (!hardwareEfficientMigrationIdempotencyKey.current) {
+          hardwareEfficientMigrationIdempotencyKey.current = crypto.randomUUID();
+        }
+        const hardwareEfficientResponse = await fetch(
+          "/api/atlas/workflows/ansatz-migrations",
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "Idempotency-Key": hardwareEfficientMigrationIdempotencyKey.current,
+            },
+            body: JSON.stringify({
+              baseline_workflow_artifact_version_id:
+                uccsdPayload.workflow_artifact_version_id,
+              migration: H2_HARDWARE_EFFICIENT_MIGRATION,
+              evaluator_provider: initialFramework,
+            }),
+          },
+        );
+        const hardwareEfficientPayload = await hardwareEfficientResponse.json() as
+          Partial<SavedSwap> & { detail?: unknown; error?: string };
+        if (
+          !hardwareEfficientResponse.ok
+          || typeof hardwareEfficientPayload.workflow_artifact_version_id !== "string"
+          || typeof hardwareEfficientPayload.workflow_semantic_key !== "string"
+          || hardwareEfficientPayload.execution_status
+            !== "blocked_until_runtime_qualified"
+          || hardwareEfficientPayload.visibility !== "private"
+        ) {
+          const detail = typeof hardwareEfficientPayload.detail === "string"
+            ? hardwareEfficientPayload.detail
+            : hardwareEfficientPayload.error
+              ?? JSON.stringify(hardwareEfficientPayload.detail);
+          throw new Error(
+            detail
+              || `hardware-efficient ansatz migration save failed (${hardwareEfficientResponse.status})`,
+          );
+        }
+        payload = hardwareEfficientPayload;
+      }
+      if (
+        typeof payload.workflow_artifact_version_id !== "string"
         || typeof payload.workflow_semantic_key !== "string"
-        || payload.execution_status !== "private_qualification_candidate"
+        || (
+          payload.execution_status !== "private_qualification_candidate"
+          && payload.execution_status !== "blocked_until_runtime_qualified"
+        )
         || payload.visibility !== "private"
       ) {
-        const detail = typeof payload.detail === "string"
-          ? payload.detail
-          : payload.error ?? JSON.stringify(payload.detail);
-        throw new Error(detail || `ansatz migration save failed (${response.status})`);
+        throw new Error("ansatz migration response violated the workflow contract");
       }
       const saved: SavedSwap = {
         workflow_artifact_version_id: payload.workflow_artifact_version_id,
@@ -395,9 +458,13 @@ export function VqeExperimentLauncher({
       ]);
       setWorkflowId(saved.workflow_artifact_version_id);
       setMessage(
-        ja
-          ? "privateなUCCSD capability migrationを保存しました。Ansatzと従属するcompilation protocolが変わり、adaptive専用roleはnot_applicableになります。これは一部品交換ではありません。公開と性能主張は停止中です。"
-          : "The private UCCSD capability migration was saved. The ansatz and its dependent compilation protocol change, while adaptive-only roles become not applicable. This is not a one-component swap. Publication and performance claims remain blocked.",
+        initialMigration === H2_HARDWARE_EFFICIENT_MIGRATION
+          ? (ja
+            ? "privateなHardware-Efficient capability migrationを保存しました。固定したRY–CX構造とSLSQP設定はadapterで検証済みですが、Linux/amd64 OCI runtimeは未認定です。保存と再表示のみ可能で、実行・公開・性能主張は停止中です。"
+            : "The private hardware-efficient capability migration was saved. Its frozen RY–CX structure and SLSQP configuration are adapter-tested, but the Linux/amd64 OCI runtime is not yet qualified. Save and reopen are available; execution, publication, and performance claims remain blocked.")
+          : (ja
+            ? "privateなUCCSD capability migrationを保存しました。Ansatzと従属するcompilation protocolが変わり、adaptive専用roleはnot_applicableになります。これは一部品交換ではありません。公開と性能主張は停止中です。"
+            : "The private UCCSD capability migration was saved. The ansatz and its dependent compilation protocol change, while adaptive-only roles become not applicable. This is not a one-component swap. Publication and performance claims remain blocked."),
       );
     } catch (cause) {
       setMessage(cause instanceof Error ? cause.message : "ansatz migration save failed");
@@ -410,7 +477,12 @@ export function VqeExperimentLauncher({
   const swapRequested =
     typeof initialSwapComponentKey === "string"
     && PRIVATE_EXECUTABLE_OPTIMIZERS.has(initialSwapComponentKey);
-  const migrationRequested = initialMigration === H2_UCCSD_MIGRATION;
+  const migrationRequested = [
+    H2_UCCSD_MIGRATION,
+    H2_HARDWARE_EFFICIENT_MIGRATION,
+  ].includes(initialMigration ?? "");
+  const hardwareEfficientMigrationRequested =
+    initialMigration === H2_HARDWARE_EFFICIENT_MIGRATION;
   const swapOptimizerName = initialSwapComponentKey
     ? PRIVATE_EXECUTABLE_OPTIMIZERS.get(initialSwapComponentKey)
     : undefined;
@@ -479,8 +551,8 @@ export function VqeExperimentLauncher({
                 ? (ja ? "保存中…" : "Saving…")
                 : migrationRequested
                   ? (ja
-                    ? "UCCSD migrationをprivate保存"
-                    : "Save private UCCSD migration")
+                    ? `${hardwareEfficientMigrationRequested ? "Hardware-Efficient" : "UCCSD"} migrationをprivate保存`
+                    : `Save private ${hardwareEfficientMigrationRequested ? "hardware-efficient" : "UCCSD"} migration`)
                   : (ja
                     ? `${swapOptimizerName ?? "optimizer"}交換をprivate保存`
                     : `Save private ${swapOptimizerName ?? "optimizer"} swap`)}

@@ -74,3 +74,26 @@ test("private UCCSD migration is chained through its SLSQP prerequisite", async 
     page.getByText(/public execution, public results, and performance claims remain blocked/i),
   ).toBeVisible();
 });
+
+test("private hardware-efficient migration is saved but execution stays blocked", async ({
+  page,
+}) => {
+  await page.goto(
+    "/studio?vqe=1"
+      + "&vqeWorkflowKey=vqe.workflow.h2_sto3g_actual_vqe_v1"
+      + "&vqeProvider=qiskit"
+      + "&vqeMigration=h2_uccsd_slsqp_to_hardware_efficient_slsqp",
+  );
+  await page.getByRole("button", {
+    name: "Save private hardware-efficient migration",
+  }).click();
+  await expect(
+    page.getByText(/The private hardware-efficient capability migration was saved/),
+  ).toBeVisible();
+  await page.getByRole("link", { name: "Reopen saved workflow" }).click();
+  await expect(page.getByLabel("Workflow")).toContainText(
+    "workflow.instance.mock.hardware-efficient",
+  );
+  await expect(page.getByText("blocked_until_runtime_qualified")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Create experiment" })).toBeDisabled();
+});
