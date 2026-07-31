@@ -91,6 +91,10 @@ class WorkspaceFolder(Base):
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True)
     workspace_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("workspaces.id"))
     name: Mapped[str]
+    # Migration 0040. User-chosen order for the sidebar. Not unique — ties fall
+    # back to (created_at, id), which is the order this table had before, so a
+    # collision degrades to the old behaviour rather than to a random one.
+    position: Mapped[int] = mapped_column(Integer, server_default="0")
     created_at: Mapped[dt.datetime | None] = mapped_column(server_default=func.now())
     updated_at: Mapped[dt.datetime | None] = mapped_column(server_default=func.now())
 

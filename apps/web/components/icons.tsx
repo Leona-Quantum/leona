@@ -41,8 +41,17 @@ export function LibraryIcon(props: IconProps) {
   return <Icon {...props}><path d="M3.5 3.5h9v9h-9zM5.5 5.5h5M5.5 8h5M5.5 10.5h3" /></Icon>;
 }
 
-export function FolderIcon(props: IconProps) {
-  return <Icon {...props}><path d="M2.5 4.5h4l1.5 1.7h5.5v5.3a1 1 0 0 1-1 1h-9a1 1 0 0 1-1-1z" /><path d="M2.5 6.2h11" /></Icon>;
+/**
+ * `open` tilts the front face forward, the way a folder pulled open looks.
+ *
+ * The sidebar uses this INSTEAD of a separate disclosure chevron: in a rail this
+ * narrow, an arrow and an icon side by side spend two columns saying one thing.
+ */
+export function FolderIcon({ open = false, ...props }: IconProps & { open?: boolean }) {
+  if (!open) {
+    return <Icon {...props}><path d="M2.5 4.5h4l1.5 1.7h5.5v5.3a1 1 0 0 1-1 1h-9a1 1 0 0 1-1-1z" /><path d="M2.5 6.2h11" /></Icon>;
+  }
+  return <Icon {...props}><path d="M2.5 4.5h4l1.5 1.7h4.5v1.5" /><path d="M2.5 4.5v7a1 1 0 0 0 1 1h9l1.6-5.3H4.1z" /></Icon>;
 }
 
 export function ArchiveIcon(props: IconProps) {

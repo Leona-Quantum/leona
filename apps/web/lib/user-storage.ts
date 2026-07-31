@@ -40,6 +40,10 @@
 export const SCOPED_STORAGE_KEYS = [
   "majorana.chat-history.v1",
   "majorana.chat-folders.v1",
+  // Per-account, not per-device: it records that THIS account's browser-era
+  // folders were uploaded to the workspace. On a second device the adoption has
+  // not happened yet and must be allowed to run.
+  "majorana.chat-folders-adopted.v1",
   "majorana.deleted-chats.v1",
   "majorana.library.v1",
   "majorana.deleted-artifacts.v1",
@@ -69,6 +73,11 @@ export const SCOPED_STORAGE_KEYS = [
 export const DEVICE_STORAGE_KEYS = [
   "majorana.theme.v1",
   "majorana.sidebar-collapsed.v1",
+  // Whether recent chats sit above or below the folders. A layout choice about
+  // this rail on this screen, exactly like the collapse state above it —
+  // someone who puts recents on top of a narrow laptop rail has not asked for
+  // that on their desktop. Carries no titles, prompts or private content.
+  "majorana.recents-position.v1",
   "majorana.public-repository-stars.v1",
 ] as const;
 

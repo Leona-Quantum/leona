@@ -4,7 +4,7 @@ import datetime as dt
 import uuid
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Response
 from majorana_contracts import Workspace as WorkspaceResource
 from majorana_contracts import WorkspaceFolder as WorkspaceFolderResource
 from majorana_contracts import (
@@ -137,6 +137,16 @@ class CreateFolderRequest(BaseModel):
         if not normalized:
             raise ValueError("folder name cannot be blank")
         return normalized
+
+
+class ReorderFoldersRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    #: Every folder the client knows about, in the order it wants them shown.
+    #: Not a {folder, index} pair: two tabs dragging against a positional API
+    #: interleave into an order neither person chose, whereas last-write-wins on
+    #: a whole list is at least an order somebody actually saw.
+    order: list[uuid.UUID] = Field(max_length=500)
 
 
 def _to_member(membership: Membership, user: User) -> WorkspaceMember:
@@ -572,6 +582,14 @@ async def update_workspace_settings(
 async def list_workspace_folders(
     scope: CurrentScope, session: DbSession
 ) -> list[WorkspaceFolderResource]:
+    """Folders in the user's chosen order.
+
+    The order is carried by the ARRAY, not by a field. `workspace_folders.position`
+    (migration 0040) deliberately stays server-side: putting it on the wire would
+    add a field to a shared contract model — a CONTRACTS_VERSION bump and a
+    regenerated openapi.json — to tell the client something a JSON array already
+    says. Clients must preserve the order they receive rather than re-sorting.
+    """
     folders = await folders_repo.list_folders(scope, session)
     return [_to_folder(folder) for folder in folders]
 
@@ -584,3 +602,47 @@ async def create_workspace_folder(
 ) -> WorkspaceFolderResource:
     folder = await folders_repo.create_folder(scope, session, name=body.name)
     return _to_folder(folder)
+
+
+@router.patch("/workspace/folders/order", response_model=list[WorkspaceFolderResource])
+async def reorder_workspace_folders(
+    body: ReorderFoldersRequest,
+    scope: CurrentScope,
+    session: DbSession,
+) -> list[WorkspaceFolderResource]:
+    """Set the whole workspace's folder order from the list the client holds.
+
+    Declared BEFORE `/workspace/folders/{folder_id}` on purpose: FastAPI matches
+    routes in declaration order, so the parameterised route would otherwise
+    swallow `/order` and try to parse it as a UUID.
+    """
+    try:
+        folders = await folders_repo.reorder_folders(scope, session, list(body.order))
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return [_to_folder(folder) for folder in folders]
+
+
+@router.patch("/workspace/folders/{folder_id}", response_model=WorkspaceFolderResource)
+async def rename_workspace_folder(
+    folder_id: uuid.UUID,
+    body: CreateFolderRequest,
+    scope: CurrentScope,
+    session: DbSession,
+) -> WorkspaceFolderResource:
+    try:
+        folder = await folders_repo.rename_folder(scope, session, folder_id, name=body.name)
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return _to_folder(folder)
+
+
+@router.delete("/workspace/folders/{folder_id}", status_code=204)
+async def delete_workspace_folder(
+    folder_id: uuid.UUID,
+    scope: CurrentScope,
+    session: DbSession,
+) -> Response:
+    """Delete the folder. The runs inside it survive, unfiled."""
+    await folders_repo.delete_folder(scope, session, folder_id)
+    return Response(status_code=204)
