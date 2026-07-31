@@ -10,7 +10,7 @@ import { getPublicLocale } from "../lib/public-locale-server";
 
 export const metadata: Metadata = {
   title: "Leona Quantum",
-  description: "Leona Quantum connects public research, private workspaces, and verifiable quantum execution.",
+  description: "Generate, run, and use quantum circuits with AI in one platform.",
 };
 
 export default async function Home() {
@@ -25,22 +25,25 @@ export default async function Home() {
         <LeoConstellation className="mj-company-constellation" />
         <div className="mj-company-hero-copy">
           <h1 className="mj-company-hero-title">
-            {copy.hero.title.split(" ").map((word, index) => (
-              // The joining space lives outside the inline-block span — trailing
-              // whitespace inside one is trimmed and the words would run together.
-              <span key={`${word}-${index}`}>
-                {index > 0 ? " " : ""}
-                <span className="mj-hero-word" style={{ animationDelay: `${index * 90}ms` }}>{word}</span>
+            {copy.hero.title.split("\n").map((line, lineIndex) => (
+              <span className="mj-company-hero-title-line" key={line}>
+                {line.split(" ").map((word, wordIndex) => (
+                  // The joining space lives outside the inline-block span — trailing
+                  // whitespace inside one is trimmed and the words would run together.
+                  <span key={`${word}-${wordIndex}`}>
+                    {wordIndex > 0 ? " " : ""}
+                    <span className="mj-hero-word" style={{ animationDelay: `${(lineIndex + wordIndex) * 90}ms` }}>{word}</span>
+                  </span>
+                ))}
               </span>
             ))}
           </h1>
           <p className="mj-company-hero-lede">{copy.hero.lede}</p>
           <div className="mj-public-actions">
-            <a className="mj-primary-button" href="/repository">{copy.hero.primary}</a>
-            <a className="mj-secondary-button" href="/workspace">{copy.hero.secondary}</a>
+            <a className="mj-primary-button" href="/workspace">{copy.hero.primary}</a>
+            <a className="mj-secondary-button" href="/repository">{copy.hero.secondary}</a>
             <a className="mj-text-link" href="/contact">{copy.hero.contact} ↗</a>
           </div>
-          <p className="mj-company-hero-note">{copy.hero.note}</p>
         </div>
         <div className="mj-company-pipeline-band" aria-label={copy.visual.label}>
           <div className="mj-public-art-head">
@@ -86,7 +89,6 @@ export default async function Home() {
           <div className="mj-company-intro-copy">
             <p className="mj-section-label">{copy.intro.label}</p>
             <h2 id="company-intro-heading">{copy.intro.title}</h2>
-            <p>{copy.intro.body}</p>
           </div>
         </section>
       </Reveal>
@@ -111,7 +113,7 @@ export default async function Home() {
                   <h3>{item.title}</h3>
                   <p>{item.body}</p>
                 </div>
-                <a className="mj-company-capability-note" href={index === 0 ? "/repository" : index === 1 ? "/workspace" : "/contact"}>
+                <a className="mj-company-capability-note" href={item.href}>
                   {item.action} ↗
                 </a>
               </article>
@@ -119,6 +121,55 @@ export default async function Home() {
           ))}
         </div>
       </section>
+
+      <Reveal>
+        <section className="mj-company-section mj-company-detail" aria-labelledby="atlas-heading">
+          <div>
+            <p className="mj-section-label">{copy.atlas.label}</p>
+            <h2 id="atlas-heading">{copy.atlas.title}</h2>
+          </div>
+          <div className="mj-company-detail-copy">
+            <p>{copy.atlas.body}</p>
+            <a className="mj-text-link" href="/repository">{copy.atlas.action} ↗</a>
+          </div>
+        </section>
+      </Reveal>
+
+      <section className="mj-company-section mj-company-trace" aria-labelledby="trace-heading">
+        <Reveal>
+          <div className="mj-company-section-heading mj-company-trace-heading">
+            <p className="mj-section-label">{copy.trace.label}</p>
+            <h2 id="trace-heading">{copy.trace.title}</h2>
+            <p>{copy.trace.body}</p>
+          </div>
+        </Reveal>
+        <div className="mj-company-fact-grid">
+          {copy.trace.items.map((item, index) => (
+            <Reveal key={item.title} delay={index * 60}>
+              <article className="mj-company-fact-card">
+                <span className="mj-company-index">{String(index + 1).padStart(2, "0")}</span>
+                <h3>{item.title}</h3>
+                <p>{item.body}</p>
+              </article>
+            </Reveal>
+          ))}
+        </div>
+      </section>
+
+      <Reveal>
+        <section className="mj-company-section mj-company-detail" aria-labelledby="frameworks-heading">
+          <div>
+            <p className="mj-section-label">{copy.frameworks.label}</p>
+            <h2 id="frameworks-heading">{copy.frameworks.title}</h2>
+          </div>
+          <div className="mj-company-detail-copy">
+            <p>{copy.frameworks.body}</p>
+            <ul className="mj-company-framework-list" aria-label={copy.frameworks.title}>
+              {copy.frameworks.items.map((item) => <li key={item}>{item}</li>)}
+            </ul>
+          </div>
+        </section>
+      </Reveal>
 
       <section className="mj-company-section mj-company-principles" aria-labelledby="principles-heading">
         <Reveal>
@@ -141,13 +192,14 @@ export default async function Home() {
 
       <Reveal>
         <section className="mj-company-final-cta" aria-labelledby="company-cta-heading">
-          <div>
+          <div className="mj-company-final-cta-copy">
             <p className="mj-section-label">{copy.cta.label}</p>
             <h2 id="company-cta-heading">{copy.cta.title}</h2>
+            <p>{copy.cta.body}</p>
           </div>
           <div className="mj-public-actions">
-            <a className="mj-primary-button" href="/contact">{copy.cta.contact}</a>
-            <a className="mj-secondary-button" href="/pricing">{copy.cta.pricing}</a>
+            <a className="mj-primary-button" href="/workspace">{copy.cta.primary}</a>
+            <a className="mj-secondary-button" href="/repository">{copy.cta.secondary}</a>
           </div>
         </section>
       </Reveal>
