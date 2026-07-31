@@ -127,6 +127,57 @@ gcloud run services update-traffic majorana-api \
 
 Rollback is `update-traffic --to-revisions <previous>=100`.
 
+### A tag is a public URL, and it outlives the deploy that made it
+
+`--tag verify` is reassigned to the new revision on every deploy, so it stays
+current by itself. **Any other tag does not.** It pins one revision forever, and
+because the service grants `roles/run.invoker` to `allUsers` — it has to, it is
+the public API — that tag's URL serves that revision to anyone, at 0% traffic,
+indefinitely.
+
+What the pinned revision serves is its own environment as it was on the day it
+was deployed. On 2026-07-31 two orphan tags were found doing exactly this:
+
+| tag | revision | built | issuer it trusted |
+|---|---|---|---|
+| `catalog` | 00017 | 2026-07-19 | the **staging** WorkOS client |
+| `sqlverify` | 00192 | 2026-07-27 | the **staging** WorkOS client |
+
+Both predated the 2026-07-29 production cutover, so both would have accepted a
+staging-issued token; and both referenced `DATABASE_URL` at `:latest`, which
+resolves to whatever that secret points at **now**, not at deploy time. Neither
+worked when probed, but only by accident — 00017 has no Cloud SQL socket because
+it predates the move, 00192 references a secret since deleted.
+
+So, two rules:
+
+1. **List the tags before you assume the service has one entrance.**
+
+   ```bash
+   gcloud run services describe majorana-api --project majorana-core \
+     --region us-west1 --format=json | jq '.status.traffic[] | {revisionName, tag, url, percent}'
+   ```
+
+   Anything with a `tag` that is not `verify` should be removed once it has served
+   its purpose:
+
+   ```bash
+   gcloud run services update-traffic majorana-api --project majorana-core \
+     --region us-west1 --remove-tags=NAME
+   ```
+
+   Read the traffic block back afterwards — the command's own output narrates the
+   `verify` tag as "Adding"/"Deleting" while it re-applies it, which reads like it
+   is being removed and is not.
+
+2. **Check the tags before a database rollback.** See
+   `database.md § Rollback` — a stale tagged revision reading `DATABASE_URL:latest`
+   comes back to life the moment that secret points somewhere it can reach.
+
+Untagged revisions are safe to leave: at 0% traffic with no tag, nothing routes to
+them. There are ~127 of each service and they cost nothing. It is the tag, not the
+revision, that opens the door.
+
 ## Deploy the worker
 
 The worker takes no traffic, so there is no tagged-revision step — but it does
