@@ -1,0 +1,25 @@
+{
+  "schema_version": "atlas.phase8.deterministic-baseline.v1",
+  "recorded_on": "2026-07-31",
+  "scope": "synthetic_golden_fixture",
+  "extractor_version": "atlas.standard-metadata-declared.v2",
+  "formats": [
+    "CITATION.cff",
+    "pyproject.toml"
+  ],
+  "metrics": {
+    "expected_facts": 6,
+    "extracted_facts": 6,
+    "true_positive_facts": 6,
+    "precision": 1.0,
+    "recall": 1.0,
+    "evidence_locator_accuracy": 1.0
+  },
+  "verification_test": "services/api/tests/test_vqe_extraction_evaluation.py::test_synthetic_golden_baseline_has_exact_fact_and_locator_scores",
+  "limitations": [
+    "Synthetic parser-contract fixture only",
+    "Not an official-provider corpus score",
+    "Does not measure scientific capability extraction",
+    "Does not authorize component materialization or publication"
+  ]
+}
