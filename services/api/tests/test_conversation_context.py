@@ -29,6 +29,18 @@ def _history_tokens(messages: list[dict[str, str]]) -> int:
     return sum(_estimated_tokens(message["content"]) for message in messages)
 
 
+def _history_chars(messages: list[dict[str, str]]) -> int:
+    """Measure the result without using the estimator that produced it.
+
+    `_history_tokens` is the honest unit, but it is also the code under test:
+    an estimator that undercounts would agree with itself and every budget
+    assertion would still pass. Characters are the independent yardstick —
+    ASCII bottoms out near four per token, CJK near one — so a character
+    ceiling catches an estimate that has drifted from what a provider charges.
+    """
+    return sum(len(message["content"]) for message in messages)
+
+
 def test_completed_execute_turn_carries_exact_code_and_observed_result():
     events = [
         _event(
@@ -131,6 +143,9 @@ def test_history_never_exceeds_the_ceiling_however_long_the_conversation_runs():
     messages = _bounded_conversation_history(turns)
 
     assert _history_tokens(messages) <= ABSOLUTE_HISTORY_CEILING_TOKENS
+    # ASCII tokenizes at ~4 chars/token at best, so this is the same ceiling
+    # measured without the estimator.
+    assert _history_chars(messages) <= ABSOLUTE_HISTORY_CEILING_TOKENS * 4
 
 
 def test_history_ceiling_does_not_grow_with_conversation_length():
@@ -144,15 +159,33 @@ def test_history_ceiling_does_not_grow_with_conversation_length():
     assert long <= ABSOLUTE_HISTORY_CEILING_TOKENS
 
 
-def test_a_japanese_conversation_is_not_four_times_more_expensive():
-    """A character budget would let CJK history cost ~4x what English does.
+def test_the_token_estimate_does_not_undercount_cjk():
+    """The rate the whole budget rests on, pinned directly.
 
-    The follow-up this history exists for ("これを解説して") is Japanese, so the
-    budget is priced in estimated tokens and CJK is counted at its real rate.
+    A flat four-characters-per-token estimate is right for ASCII and wrong by
+    about 4x for Japanese. Every ceiling in this file is computed with
+    `_estimated_tokens`, so an estimator that undercounts would keep them all
+    green while the real provider bill quadrupled.
     """
-    english = _bounded_conversation_history([("explain this", "a" * 500_000)] * 50)
-    japanese = _bounded_conversation_history([("これを解説して", "あ" * 500_000)] * 50)
+    assert _estimated_tokens("a" * 4_000) == 1_000
+    assert _estimated_tokens("あ" * 4_000) == 4_000
+    assert _estimated_tokens("あ" * 100 + "a" * 400) == 200
 
+
+def test_a_japanese_conversation_is_not_four_times_more_expensive():
+    """The follow-up this history exists for ("これを解説して") is Japanese.
+
+    Asserted in characters, not estimated tokens: CJK costs roughly one token
+    per character, so a Japanese history that stays inside the token ceiling
+    must also stay inside roughly that many characters. A character-priced
+    budget — or a CJK-blind estimate — lets it run about four times longer, and
+    that is what this catches.
+    """
+    japanese = _bounded_conversation_history([("これを解説して", "あ" * 500_000)] * 50)
+    english = _bounded_conversation_history([("explain this", "a" * 500_000)] * 50)
+
+    assert _history_chars(japanese) <= ABSOLUTE_HISTORY_CEILING_TOKENS
+    assert _history_chars(english) <= ABSOLUTE_HISTORY_CEILING_TOKENS * 4
     assert _history_tokens(japanese) <= ABSOLUTE_HISTORY_CEILING_TOKENS
     assert _history_tokens(english) <= ABSOLUTE_HISTORY_CEILING_TOKENS
 
