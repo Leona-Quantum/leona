@@ -2823,26 +2823,6 @@
 .mj-run-home-examples {
   margin-top: var(--sp-8);
 }
-.mj-run-home-examples-head {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: var(--sp-4);
-  margin-bottom: var(--sp-2);
-  padding: 0 var(--sp-2);
-}
-.mj-run-home-examples-head h2 {
-  margin: 0;
-  color: var(--text-1);
-  font-size: var(--fs-12);
-  font-weight: 500;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-}
-.mj-run-home-examples-head span {
-  color: var(--text-2);
-  font-size: var(--fs-12);
-}
 .mj-run-home-examples .mj-example-list {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -2891,26 +2871,15 @@
     transition: none;
   }
 }
+/* One button now, under a centred composer, so the row centres it. It used to
+   hold a run of title chips that filled the width and read as deliberate at the
+   left edge; a lone control there reads as a stray. */
 .mj-example-strip {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
+  justify-content: center;
   gap: var(--sp-2);
-}
-.mj-example-chip {
-  min-height: 28px;
-  padding: 0 var(--sp-3);
-  border: 1px solid var(--border-0);
-  border-radius: var(--radius-control);
-  color: var(--text-1);
-  background: var(--bg-1);
-  font: inherit;
-  font-size: var(--fs-12);
-  cursor: pointer;
-}
-.mj-example-chip:hover {
-  color: var(--text-0);
-  background: var(--bg-2);
 }
 .mj-example-more {
   flex: 0 0 auto;

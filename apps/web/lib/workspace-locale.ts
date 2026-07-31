@@ -414,21 +414,28 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
     run: {
       previewStatus: "Public preview · view-only",
       examplesTitle: "Try an example",
+      // Short on purpose: the composer types these out character by character, so
+      // length is time spent watching rather than reading. Most of them also name
+      // no quantum method at all — someone who has never written a circuit should
+      // be able to read the whole strip and see a problem they recognise. The
+      // pipeline picks the method; stating one is the user's option, not the
+      // price of entry.
       examples: [
-        { title: "Recover a marked state with Grover", prompt: "Use Grover to recover the marked state 1100 and verify the measured distribution." },
-        { title: "Compare QAOA with a classical baseline", prompt: "Use QAOA to solve MaxCut on a 5-node ring and compare the result with an exact classical baseline." },
-        { title: "Build and verify a Bell state", prompt: "Build a Bell state in the selected framework, simulate it, and verify the expected 00/11 distribution." },
-        { title: "Estimate a QFT resource profile", prompt: "Estimate the qubit count, depth, and gate profile for a QFT circuit on eight qubits." },
+        { title: "Split a supplier network in two", prompt: "Split 6 suppliers into two groups, cutting the fewest links." },
+        { title: "Pick a portfolio at a set risk", prompt: "Pick 8 stocks for the best return at a fixed risk." },
+        { title: "Schedule jobs across machines", prompt: "Schedule 6 jobs on 3 machines to finish soonest." },
+        { title: "Search an unsorted list", prompt: "Search 16 records for the one that matches." },
+        { title: "Build and verify a Bell state", prompt: "Build a Bell state and verify it." },
+        { title: "Find H₂ ground-state energy", prompt: "Find the ground-state energy of an H₂ molecule." },
       ],
       morePrompts: [
-        { title: "Route a delivery fleet as a QUBO", prompt: "Formulate a delivery-route assignment for 12 vehicles and 40 stops as a QUBO, then build a QAOA circuit sized for a simulator and report the best cut found." },
-        { title: "Price an option with amplitude estimation", prompt: "Price a European call option with quantum amplitude estimation instead of classical Monte Carlo, show the circuit, and state the expected quadratic speedup and its caveats." },
-        { title: "Optimize a portfolio under a risk budget", prompt: "Select an optimal 8-asset portfolio under a fixed risk budget by encoding it as a QUBO, solve it with QAOA, and compare against a classical greedy baseline." },
-        { title: "Estimate H₂ ground-state energy with VQE", prompt: "Estimate the ground-state energy of the H₂ molecule with a two-qubit VQE ansatz, report the convergence curve, and compare with the exact diagonalization value." },
-        { title: "Schedule jobs on machines as a QUBO", prompt: "Encode a 6-job, 3-machine job-shop scheduling instance as a QUBO with makespan penalties and propose a variational circuit to explore it." },
-        { title: "Sketch a quantum kernel for fraud features", prompt: "Build a quantum kernel classifier sketch for 4 transaction-fraud features, explain the feature map, and state honestly where quantum helps and where it does not." },
+        { title: "Route a delivery fleet", prompt: "Assign 12 vehicles to 40 stops at the lowest total cost, and check the answer against a classical baseline." },
+        { title: "Price an option without Monte Carlo", prompt: "Price a European call option without classical Monte Carlo sampling, show the circuit, and state the speedup and its caveats." },
+        { title: "Detect fraud in transaction features", prompt: "Classify transactions as fraudulent from 4 features, explain the model, and say honestly where this approach helps and where it does not." },
+        { title: "Recover a marked state with Grover", prompt: "Use Grover to recover the marked state 1100 and verify the measured distribution." },
+        { title: "Compare QAOA with a classical baseline", prompt: "Use QAOA to solve MaxCut on a 5-node ring and compare the result with an exact classical baseline." },
+        { title: "Estimate a QFT resource profile", prompt: "Estimate the qubit count, depth, and gate profile for a QFT circuit on eight qubits." },
         { title: "Simulate credit-risk tails with QAE", prompt: "Model a small credit-portfolio loss distribution and show how quantum amplitude estimation would sample its tail risk versus classical Monte Carlo." },
-        { title: "Cut a supply network with MaxCut", prompt: "Model a 6-node supplier network partition as MaxCut, solve it with QAOA at p=2, and verify the result against brute force." },
       ],
       examplesMore: "More prompts",
       examplesClose: "Close",
@@ -787,21 +794,24 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
     run: {
       previewStatus: "公開プレビュー · 閲覧のみ",
       examplesTitle: "例から始める",
+      // 英語版と同じ意図：コンポーザーが1文字ずつ打ち出すため短く、そして大半は
+      // 量子の用語を一切含まない。前提知識がなくても読める問題文にしてある。
       examples: [
-        { title: "Groverでマークされた状態を探す", prompt: "Groverでマークされた状態1100を見つけ、測定分布を検証してください。" },
-        { title: "QAOAと古典ベースラインを比較", prompt: "5ノードのリンググラフのMaxCut問題をQAOAで解き、正確な古典ベースラインと比較してください。" },
-        { title: "ベル状態を作って検証", prompt: "選択したフレームワークでベル状態を作り、シミュレーションして00/11分布を検証してください。" },
-        { title: "QFTのリソースを見積もる", prompt: "8量子ビットのQFT回路の量子ビット数、深さ、ゲート構成を見積もってください。" },
+        { title: "取引先ネットワークを2分割", prompt: "6社の取引先を2組に分け、切る取引を最少にしてください。" },
+        { title: "リスク一定でポートフォリオ選択", prompt: "リスク一定で、8銘柄の最適な組み合わせを選んでください。" },
+        { title: "作業を機械に割り当てる", prompt: "6件の作業を3台の機械に割り当て、最短で終わらせてください。" },
+        { title: "未整列のデータを探索", prompt: "16件のデータから該当する1件を探してください。" },
+        { title: "ベル状態を作って検証", prompt: "ベル状態を作って検証してください。" },
+        { title: "H₂の基底状態エネルギー", prompt: "H₂分子の基底状態エネルギーを求めてください。" },
       ],
       morePrompts: [
-        { title: "配送ルートをQUBOで最適化", prompt: "12台の車両と40の配送先のルート割当をQUBOとして定式化し、シミュレータ向けのQAOA回路を作って最良の分割を報告してください。" },
-        { title: "振幅推定でオプション価格を計算", prompt: "古典モンテカルロの代わりに量子振幅推定でヨーロピアンコールオプションの価格を計算し、回路と二乗高速化の条件・注意点を示してください。" },
-        { title: "リスク制約付きポートフォリオ最適化", prompt: "リスク予算の制約下で8資産のポートフォリオ選択をQUBOに符号化し、QAOAで解いて古典的な貪欲法ベースラインと比較してください。" },
-        { title: "VQEでH₂の基底状態エネルギーを推定", prompt: "2量子ビットのVQEアンサッツでH₂分子の基底状態エネルギーを推定し、収束曲線を報告して厳密対角化の値と比較してください。" },
-        { title: "ジョブスケジューリングをQUBOに変換", prompt: "6ジョブ・3マシンのジョブショップスケジューリングをメイクスパンペナルティ付きQUBOに符号化し、探索用の変分回路を提案してください。" },
-        { title: "不正検知の量子カーネルを設計", prompt: "取引不正の4特徴量に対する量子カーネル分類器の設計を示し、特徴マップを説明した上で、量子が役立つ場面と役立たない場面を正直に述べてください。" },
+        { title: "配送車両を割り当てる", prompt: "12台の車両を40か所の配送先に最小コストで割り当て、古典的なベースラインと照合してください。" },
+        { title: "モンテカルロを使わず価格付け", prompt: "古典的なモンテカルロ法を使わずにヨーロピアンコールオプションを価格付けし、回路と高速化の条件・注意点を示してください。" },
+        { title: "取引データから不正を検知", prompt: "4つの特徴量から取引の不正を判定するモデルを作り、仕組みを説明した上で、この手法が有効な場面とそうでない場面を正直に述べてください。" },
+        { title: "Groverでマークされた状態を探す", prompt: "Groverでマークされた状態1100を見つけ、測定分布を検証してください。" },
+        { title: "QAOAと古典ベースラインを比較", prompt: "5ノードのリンググラフのMaxCut問題をQAOAで解き、正確な古典ベースラインと比較してください。" },
+        { title: "QFTのリソースを見積もる", prompt: "8量子ビットのQFT回路の量子ビット数、深さ、ゲート構成を見積もってください。" },
         { title: "QAEで信用リスクの裾を推定", prompt: "小規模な信用ポートフォリオの損失分布をモデル化し、量子振幅推定が古典モンテカルロと比べてテールリスクをどう推定するか示してください。" },
-        { title: "サプライ網の分割をMaxCutで解く", prompt: "6ノードのサプライヤー網の分割をMaxCutとしてモデル化し、p=2のQAOAで解いて総当たりと照合してください。" },
       ],
       examplesMore: "他のプロンプト",
       examplesClose: "閉じる",
