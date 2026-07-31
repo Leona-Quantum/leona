@@ -45,12 +45,17 @@ VERSION_PAGE_DEFAULT = 25
 VERSION_PAGE_MAX = 100
 
 
-def _vault_cap_refusal(used: int, limit: int) -> HTTPException:
+def _artifact_cap_refusal(used: int, limit: int) -> HTTPException:
+    # This sentence has a twin in `apps/web/lib/run-allowance.ts`, which refuses
+    # the same submission client-side before it is sent. Two copies of a refusal
+    # is already a smell; two copies that WORD it differently tells the same
+    # person two different things about one rule, so they change together or
+    # not at all.
     return HTTPException(
         status_code=429,
         detail={
             "error": (
-                f"Your Vault holds {used} of {limit} artifacts on this plan. "
+                f"Your Studio holds {used} of {limit} artifacts on this plan. "
                 "Archive an artifact you no longer need and this one will file."
             ),
             "reason": "artifact_allowance_exhausted",
@@ -310,7 +315,7 @@ async def keep_artifact(
                 scope, session
             )
             if kept >= limits.private_artifacts:
-                raise _vault_cap_refusal(kept, limits.private_artifacts)
+                raise _artifact_cap_refusal(kept, limits.private_artifacts)
     artifact = await artifacts_repo.keep_artifact(scope, session, artifact_id)
     metadata: dict | None = None
     if artifact.current_version_id is not None:

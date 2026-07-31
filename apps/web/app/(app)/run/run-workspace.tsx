@@ -82,7 +82,7 @@ export function RunWorkspace({ demoMode = false, locale = "en" }: { demoMode?: b
       frameworkCurrent.current = hydrated.framework;
       setFramework(hydrated.framework);
       setArtifactHydration("ready");
-      setPrompt(`Use the saved Vault artifact “${artifact.title}” as context for my next question.`);
+      setPrompt(`Use the saved artifact “${artifact.title}” as context for my next question.`);
     }
 
     void loadContext().catch(() => {
@@ -274,7 +274,7 @@ export function RunWorkspace({ demoMode = false, locale = "en" }: { demoMode?: b
             <p className="mj-run-context-link" role="alert">Artifact context could not be loaded.</p>
           ) : null}
 
-          {contextArtifact ? <a className="mj-run-context-link" href={demoMode ? "/demo?view=library" : `/library/${contextArtifact.id}`}>{copy.contextLabel}: {contextArtifact.title} · {copy.viewArtifact}</a> : null}
+          {contextArtifact ? <a className="mj-run-context-link" href={demoMode ? "/demo?view=library" : `/studio?artifact=${encodeURIComponent(contextArtifact.id)}`}>{copy.contextLabel}: {contextArtifact.title} · {copy.viewArtifact}</a> : null}
 
           <ExampleStrip
             copy={copy}

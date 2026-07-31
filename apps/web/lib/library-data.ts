@@ -409,7 +409,7 @@ function isDemoArtifact(artifact: LibraryArtifact): boolean {
   return artifact.source === "demo" || DEMO_ARTIFACT_IDS.has(artifact.id);
 }
 
-/** Map only the API's typed summary to a Vault status. Absence remains unknown. */
+/** Map only the API's typed summary to a list status. Absence remains unknown. */
 export function statusFromVerificationSummary(summary: VerificationSummary | null): LibraryStatus {
   if (!summary) return "legacy_unknown";
   if (summary.decision === "fail") return "failed";
@@ -424,7 +424,7 @@ export function statusFromResource(artifact: Record<string, unknown>): LibrarySt
 /** The one mapper from `GET /v1/artifacts` to a LibraryArtifact.
  *
  * There were two, near-identical, in library-studio.tsx and studio-workspace.tsx.
- * The Vault's copy was fixed to read the server's grade; Studio's was not, and
+ * The artifact list's copy was fixed to read the server's grade; Studio's was not, and
  * kept `status: existing?.status ?? "verified"` — so any artifact not already in
  * this browser's localStorage was shown as "Verified" in Studio's picker
  * regardless of what the pipeline actually proved, including artifacts that only
@@ -447,7 +447,7 @@ export function artifactFromResource(value: unknown): LibraryArtifact[] {
     framework: typeof artifact.framework === "string" ? artifact.framework : "Qiskit",
     status: statusFromVerificationSummary(verificationSummary),
     updatedAt: typeof artifact.updated_at === "string" ? artifact.updated_at : new Date().toISOString(),
-    description: existing?.description ?? "Saved artifact in the workspace vault.",
+    description: existing?.description ?? "Saved artifact in this workspace.",
     tags: existing?.tags ?? [family.toLowerCase()],
     verification: existing?.verification ?? "Verification record available in artifact detail.",
     code: existing?.code ?? "",

@@ -6,8 +6,8 @@ import { formatGateParam } from "../lib/gate-param-label";
 
 /** The circuit SVG, shared by every surface that draws a circuit.
  *
- * This used to live inline in Studio's `CircuitBuilder`, which meant the Vault
- * artifact-detail page — the one place a saved circuit is read rather than
+ * This used to live inline in Studio's `CircuitBuilder`, which meant the
+ * artifact-detail view — the one place a saved circuit is read rather than
  * edited — could only show code and metadata. Extracting it here is deliberately
  * a *move*, not a reimplementation: a second drawing routine would drift from
  * the first, and the two surfaces would disagree about what the same circuit

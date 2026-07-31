@@ -5,11 +5,11 @@ import { controlPlaneUnavailable, controlPlaneUrl, fetchControlPlane } from "../
 export const dynamic = "force-dynamic";
 
 /**
- * Put a finished run's artifact into the Vault.
+ * Keep a finished run's artifact.
  *
  * Every successful run materializes — the Run surface's conversion tabs read the
  * saved version and the next turn forks from it — but it is only listed in the
- * Vault once the user keeps it. See migration 0036.
+ * artifact list once the user keeps it. See migration 0036.
  */
 export async function POST(
   _request: Request,

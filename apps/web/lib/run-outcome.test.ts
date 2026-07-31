@@ -154,7 +154,7 @@ test("the simple pipeline is presented as executed and explicitly unverified", (
   assert.equal(outcome?.tone, "warn");
   assert.equal(outcome?.callout?.title, "Strict verification was not run");
   assert.match(outcome?.callout?.body ?? "", /Quantum Correctness/);
-  assert.ok(outcome?.badges.some((badge) => badge.label === "Saved to Vault"));
+  assert.ok(outcome?.badges.some((badge) => badge.label === "Saved"));
   assert.deepEqual(
     outcome?.facts.map((fact) => fact.label),
     ["Algorithm", "Framework", "Revision"],

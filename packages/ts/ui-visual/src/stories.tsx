@@ -108,7 +108,7 @@ export const STORIES: Story[] = [
           description: "Bell state preparation with Qiskit.",
           badges: [
             { label: "Executed", tone: "warn" },
-            { label: "Saved to Vault", tone: "neutral" },
+            { label: "Saved", tone: "neutral" },
           ],
           facts: [
             { label: "Algorithm", value: "Bell" },

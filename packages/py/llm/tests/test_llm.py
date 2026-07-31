@@ -287,6 +287,14 @@ def test_chat_persona_cannot_narrate_results_it_did_not_produce():
     assert "do not present them as a new execution" in CHAT_SYSTEM_PROMPT
 
 
+def test_chat_persona_names_no_surface_the_product_no_longer_has():
+    # The Vault was folded into Studio and /library now redirects. The capability
+    # list is the one piece of stale copy that would actively instruct a user to
+    # open a page that no longer exists, so it is pinned rather than trusted.
+    assert "Vault" not in CHAT_SYSTEM_PROMPT
+    assert "Studio" in CHAT_SYSTEM_PROMPT
+
+
 def test_grover_plan_and_review_prompts_pin_attainable_iteration_arithmetic():
     assert "four qubits needs about three iterations, not one" in SIMPLE_PLAN_SYSTEM_PROMPT
     assert "Recompute simple arithmetic instead of trusting a Plan rationale" in (

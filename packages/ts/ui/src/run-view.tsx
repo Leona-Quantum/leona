@@ -607,7 +607,7 @@ export function reduceRunEvents(events: readonly RunEvent[]): RunViewModel {
     bestEffort: buildBestEffort(bestEffort),
     baseline: buildBaseline(baseline),
     export: exportEv ? buildExportBadge(exportEv) : null,
-    libraryHref: saved ? `/library/${saved.artifact_id}` : null,
+    libraryHref: saved ? `/studio?artifact=${encodeURIComponent(saved.artifact_id)}` : null,
   };
   const liveOutput: LiveOutput = {
     thoughts: modelActivity.get("plan:reasoning")?.text ?? null,
@@ -1054,7 +1054,7 @@ function ResultPanel({ result, animateText }: { result: ResultView; animateText:
                 result.bestEffort.candidatesConsidered === 1 ? "candidate" : "candidates"
               } and ran out of budget before one passed verification. Revision ${
                 result.bestEffort.revision
-              } got the furthest. It has not been verified and was not saved to your vault — read it as a starting point, not a result.`}
+              } got the furthest. It has not been verified and was not saved — read it as a starting point, not a result.`}
               enabled={animateText}
             />
           </p>
@@ -1278,7 +1278,7 @@ function ResultPanel({ result, animateText }: { result: ResultView; animateText:
       {result.libraryHref ? (
         <section className="mj-result-section" id="mj-result-library">
           <a className="mj-result-link" href={result.libraryHref}>
-            Open in Vault -&gt;
+            Open in Studio -&gt;
           </a>
         </section>
       ) : null}

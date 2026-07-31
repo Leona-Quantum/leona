@@ -34,7 +34,7 @@ is provisioned from a verified WorkOS token, so an address nobody has signed in
 with has no user row to attach. That case answers 404 and the UI says so; it is
 not a failure to retry.
 
-**What a member sees:** every run and every Vault artifact in the workspace,
+**What a member sees:** every run and every saved artifact in the workspace,
 including work saved before they arrived. There is no per-artifact sharing.
 Their own browser-local drafts and chat titles stay theirs — local storage is
 keyed by account *and* workspace.
@@ -49,7 +49,7 @@ operation that does not exist yet.
 
 **Allowances.** The weekly execute-run allowance follows the *account* across
 every workspace it can reach, so switching does not refill it and a colleague's
-runs never spend yours. The Vault artifact cap is per workspace.
+runs never spend yours. The saved-artifact cap is per workspace.
 
 ## Local Contributor Loop
 

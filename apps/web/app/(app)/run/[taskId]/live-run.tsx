@@ -1665,7 +1665,7 @@ function RunActivityBlock({
  *
  * A finished run always materializes its artifact — the conversion tabs below
  * read the saved version, and the next turn in this conversation forks from it —
- * but it is not filed in the Vault until the user says so (migration 0036). So
+ * but it is not kept until the user says so (migration 0036). So
  * this control has to know which state it is in, which the run events cannot
  * say: `artifact.saved` is emitted for kept and unkept alike. Hence the fetch.
  *
@@ -1700,8 +1700,8 @@ function ArtifactLink({ events }: { events: WireEvent[] }) {
 
   if (kept) {
     return (
-      <Link className="mj-secondary-button" href={`/library/${artifactId}`}>
-        View in Vault →
+      <Link className="mj-secondary-button" href={`/studio?artifact=${encodeURIComponent(artifactId)}`}>
+        View in Studio →
       </Link>
     );
   }
@@ -1724,12 +1724,12 @@ function ArtifactLink({ events }: { events: WireEvent[] }) {
   return (
     <span className="mj-run-keep">
       <button className="mj-secondary-button" type="button" disabled={keeping} onClick={keep}>
-        {keeping ? "Keeping…" : "Keep in Vault"}
+        {keeping ? "Keeping…" : "Keep this result"}
       </button>
       {failed ? (
         <small role="alert">Could not keep this — try again.</small>
       ) : (
-        <small>Not saved to your Vault yet.</small>
+        <small>Not saved to your workspace yet.</small>
       )}
     </span>
   );
