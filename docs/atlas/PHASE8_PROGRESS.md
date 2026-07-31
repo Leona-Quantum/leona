@@ -11,13 +11,20 @@ The first bounded Phase 8 slice is implemented locally:
   top-level scalar fields;
 - S2 `pyproject.toml` deterministic extraction: complete for the allowlisted
   PEP 621 and build-system declarations;
+- S3 requirements declarations: complete for bounded literal root
+  `requirements*` lines; resolver directives are explicit issues. Structured
+  lockfile schemas remain open;
+- S4 Dockerfile declarations: complete for bounded `FROM`, `CMD`, and
+  `ENTRYPOINT` instructions without build or execution;
+- S5 GitHub Actions declarations: complete for workflow name and trigger keys
+  without expression evaluation or action execution;
 - S6 append-only staging integration: complete through extractor and candidate
   version changes;
 - S7 adversarial parser fixtures: complete for aliases, duplicate YAML keys,
   malformed TOML, and invalid declared-value shapes;
 - S8 synthetic golden baseline: complete for the initial six-fact fixture.
 
-S3–S5 and S9–S12 remain open. No requirements resolution, container build,
+Structured lockfile schemas and S9–S12 remain open. No requirements resolution, container build,
 workflow execution, Python import, notebook execution, component
 materialization, or public publication was enabled.
 
@@ -61,8 +68,9 @@ replayed; v1 rows remain intact and v2 rows are appended.
 
 ## Baseline result
 
-The committed synthetic golden fixture contains six allowlisted declared facts
-across one `CITATION.cff` and one `pyproject.toml`.
+The committed synthetic golden fixture contains twelve allowlisted declared
+facts across `CITATION.cff`, `pyproject.toml`, `requirements.txt`, `Dockerfile`,
+and one GitHub Actions workflow.
 
 | Metric | Result |
 | --- | ---: |
@@ -76,10 +84,10 @@ S9 must be reported separately and may reveal unknowns or unsupported metadata.
 
 ## Verification
 
-Initial focused verification:
+Focused verification after S3–S5:
 
 ```text
-10 passed
+14 passed, 4 database-gated tests skipped locally
 ```
 
 The release gate requires the full Python suite, lint/import boundaries, and

@@ -54,7 +54,7 @@ def test_extractor_records_presence_only_with_content_evidence():
     assertions = extract_metadata_assertions(get_standard_source("qiskit-nature"), snapshot)
     by_predicate = {item.predicate: item for item in assertions}
 
-    assert len(assertions) == 4
+    assert len(assertions) == len(MetadataPredicate)
     assert by_predicate[MetadataPredicate.LICENSE_FILE_PRESENT].observed is True
     assert by_predicate[MetadataPredicate.CITATION_FILE_PRESENT].observed is False
     assert by_predicate[MetadataPredicate.DEPENDENCY_DECLARATION_PRESENT].evidence_paths == (
@@ -63,6 +63,7 @@ def test_extractor_records_presence_only_with_content_evidence():
     assert by_predicate[MetadataPredicate.CI_WORKFLOW_PRESENT].evidence_content_sha256 == (
         hashlib.sha256(b"name: test").hexdigest(),
     )
+    assert by_predicate[MetadataPredicate.CONTAINER_DECLARATION_PRESENT].observed is False
     assert all(item.extractor_version == EXTRACTOR_VERSION for item in assertions)
 
 
@@ -111,6 +112,12 @@ def test_extractor_records_allowlisted_declared_facts_with_exact_locators():
             "duplicate_mapping_key",
         ),
         (
+            "CITATION.cff",
+            b"title: !!python/object/apply:os.system [echo]\n",
+            MetadataPredicate.CITATION_FILE_PRESENT,
+            "yaml_explicit_tag_rejected",
+        ),
+        (
             "pyproject.toml",
             b"[project\nname = 'broken'\n",
             MetadataPredicate.DEPENDENCY_DECLARATION_PRESENT,
@@ -143,6 +150,64 @@ def test_structured_extractor_records_out_of_bounds_declared_value_as_unknown_is
     assert [item.code for item in assertion.extraction_issues] == [
         "field_not_bounded_string_list:project.dependencies"
     ]
+
+
+def test_requirements_dockerfile_and_workflow_are_literal_and_never_executed():
+    requirements = b"# direct declarations\nqiskit==1.4.6\n-r other.txt\nhttps://example.invalid/pkg.whl#sha256=abc\n"
+    dockerfile = b'FROM python:3.12-slim AS runtime\nRUN curl https://example.invalid\nENTRYPOINT ["python", "-m", "app"]\n'
+    workflow = b"name: CI\non:\n  push:\n  workflow_dispatch:\njobs:\n  test:\n    runs-on: ubuntu-latest\n"
+    assertions = extract_metadata_assertions(
+        get_standard_source("qiskit-nature"),
+        _snapshot(
+            _file("requirements.txt", requirements),
+            _file("Dockerfile", dockerfile),
+            _file(".github/workflows/ci.yml", workflow),
+        ),
+    )
+    by_predicate = {item.predicate: item for item in assertions}
+    dependency = by_predicate[MetadataPredicate.DEPENDENCY_DECLARATION_PRESENT]
+    container = by_predicate[MetadataPredicate.CONTAINER_DECLARATION_PRESENT]
+    ci = by_predicate[MetadataPredicate.CI_WORKFLOW_PRESENT]
+
+    assert [(item.value, item.locator.pointer) for item in dependency.declared_facts] == [
+        ("qiskit==1.4.6", "/lines/2"),
+        ("https://example.invalid/pkg.whl#sha256=abc", "/lines/4"),
+    ]
+    assert [item.code for item in dependency.extraction_issues] == ["unsupported_directive:line:3"]
+    assert [(item.field, item.value) for item in container.declared_facts] == [
+        ("dockerfile.entrypoint", '["python", "-m", "app"]'),
+        ("dockerfile.from", "python:3.12-slim AS runtime"),
+    ]
+    assert [(item.field, item.value) for item in ci.declared_facts] == [
+        ("github-actions.name", "CI"),
+        ("github-actions.triggers", ("push", "workflow_dispatch")),
+    ]
+    serialized = str([item.as_dict() for item in assertions])
+    assert "curl https://example.invalid" not in serialized
+    assert "runs-on" not in serialized
+
+
+def test_workflow_alias_and_docker_continuation_fail_closed():
+    workflow = b"name: &name CI\non: *name\n"
+    dockerfile = b"FROM python:3.12 \\\n+  AS runtime\n"
+    assertions = extract_metadata_assertions(
+        get_standard_source("qiskit-nature"),
+        _snapshot(
+            _file(".github/workflows/ci.yml", workflow),
+            _file("Dockerfile", dockerfile),
+        ),
+    )
+    by_predicate = {item.predicate: item for item in assertions}
+
+    assert by_predicate[MetadataPredicate.CI_WORKFLOW_PRESENT].declared_facts == ()
+    assert [
+        item.code for item in by_predicate[MetadataPredicate.CI_WORKFLOW_PRESENT].extraction_issues
+    ] == ["yaml_alias_rejected"]
+    assert by_predicate[MetadataPredicate.CONTAINER_DECLARATION_PRESENT].declared_facts == ()
+    assert [
+        item.code
+        for item in by_predicate[MetadataPredicate.CONTAINER_DECLARATION_PRESENT].extraction_issues
+    ] == ["unsupported_continuation:line:1"]
 
 
 def test_extractor_is_deterministic_and_rejects_wrong_repository():

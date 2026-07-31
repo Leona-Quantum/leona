@@ -10,6 +10,9 @@ from majorana_api.vqe_standard_sources import get_standard_source
 
 CITATION = b"cff-version: 1.2.0\ntitle: Qiskit Nature\nversion: 0.8.0\n"
 PYPROJECT = b"""[project]\nname = "qiskit-nature"\nversion = "0.8.0"\ndependencies = ["qiskit>=1.0", "numpy"]\n"""
+REQUIREMENTS = b"qiskit==1.4.6\nnumpy>=1.26\n"
+DOCKERFILE = b'FROM python:3.12-slim\nENTRYPOINT ["python", "-m", "app"]\n'
+WORKFLOW = b"name: CI\non: [push, workflow_dispatch]\n"
 
 
 def _file(path: str, content: bytes) -> GitHubMetadataFile:
@@ -24,7 +27,13 @@ def _file(path: str, content: bytes) -> GitHubMetadataFile:
 
 
 def _snapshot() -> GitHubRepositorySnapshot:
-    files = (_file("CITATION.cff", CITATION), _file("pyproject.toml", PYPROJECT))
+    files = (
+        _file("CITATION.cff", CITATION),
+        _file("pyproject.toml", PYPROJECT),
+        _file("requirements.txt", REQUIREMENTS),
+        _file("Dockerfile", DOCKERFILE),
+        _file(".github/workflows/ci.yml", WORKFLOW),
+    )
     return GitHubRepositorySnapshot(
         api_version="2026-03-10",
         repository_id=123,
@@ -49,6 +58,9 @@ def _snapshot() -> GitHubRepositorySnapshot:
 def _expected() -> tuple[ExpectedDeclaredFact, ...]:
     citation_digest = hashlib.sha256(CITATION).hexdigest()
     pyproject_digest = hashlib.sha256(PYPROJECT).hexdigest()
+    requirements_digest = hashlib.sha256(REQUIREMENTS).hexdigest()
+    dockerfile_digest = hashlib.sha256(DOCKERFILE).hexdigest()
+    workflow_digest = hashlib.sha256(WORKFLOW).hexdigest()
     return (
         ExpectedDeclaredFact(
             "citation.cff-version", "1.2.0", "CITATION.cff", "/cff-version", citation_digest
@@ -72,6 +84,48 @@ def _expected() -> tuple[ExpectedDeclaredFact, ...]:
             "/project/dependencies",
             pyproject_digest,
         ),
+        ExpectedDeclaredFact(
+            "requirements.declaration",
+            "qiskit==1.4.6",
+            "requirements.txt",
+            "/lines/1",
+            requirements_digest,
+        ),
+        ExpectedDeclaredFact(
+            "requirements.declaration",
+            "numpy>=1.26",
+            "requirements.txt",
+            "/lines/2",
+            requirements_digest,
+        ),
+        ExpectedDeclaredFact(
+            "dockerfile.from",
+            "python:3.12-slim",
+            "Dockerfile",
+            "/lines/1",
+            dockerfile_digest,
+        ),
+        ExpectedDeclaredFact(
+            "dockerfile.entrypoint",
+            '["python", "-m", "app"]',
+            "Dockerfile",
+            "/lines/2",
+            dockerfile_digest,
+        ),
+        ExpectedDeclaredFact(
+            "github-actions.name",
+            "CI",
+            ".github/workflows/ci.yml",
+            "/name",
+            workflow_digest,
+        ),
+        ExpectedDeclaredFact(
+            "github-actions.triggers",
+            ("push", "workflow_dispatch"),
+            ".github/workflows/ci.yml",
+            "/on",
+            workflow_digest,
+        ),
     )
 
 
@@ -80,9 +134,9 @@ def test_synthetic_golden_baseline_has_exact_fact_and_locator_scores():
     metrics = evaluate_declared_facts(assertions, _expected())
 
     assert metrics.as_dict() == {
-        "expected_facts": 6,
-        "extracted_facts": 6,
-        "true_positive_facts": 6,
+        "expected_facts": 12,
+        "extracted_facts": 12,
+        "true_positive_facts": 12,
         "precision": 1.0,
         "recall": 1.0,
         "evidence_locator_accuracy": 1.0,
@@ -103,4 +157,4 @@ def test_locator_accuracy_is_not_conflated_with_fact_recall():
 
     assert metrics.precision == 1.0
     assert metrics.recall == 1.0
-    assert metrics.evidence_locator_accuracy == 5 / 6
+    assert metrics.evidence_locator_accuracy == 11 / 12

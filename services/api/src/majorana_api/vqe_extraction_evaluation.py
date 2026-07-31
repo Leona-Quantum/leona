@@ -44,14 +44,14 @@ def evaluate_declared_facts(
     extracted_by_fact = {}
     for assertion in assertions:
         for fact in assertion.declared_facts:
-            key = (fact.field, _value_key(fact.value))
+            key = (fact.locator.path, fact.field, _value_key(fact.value))
             if key in extracted_by_fact:
                 raise ValueError("duplicate extracted fact identity")
             extracted_by_fact[key] = fact.locator
 
     expected_by_fact = {}
     for fact in expected:
-        key = (fact.field, _value_key(fact.value))
+        key = (fact.path, fact.field, _value_key(fact.value))
         if key in expected_by_fact:
             raise ValueError("duplicate expected fact identity")
         expected_by_fact[key] = fact

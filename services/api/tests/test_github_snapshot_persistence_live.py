@@ -265,8 +265,8 @@ async def test_standard_source_evidence_stages_without_publication(env):
             source_key="qiskit-nature",
         )
 
-    assert len(first.assertion_ids) == 4
+    assert len(first.assertion_ids) == 5
     assert replay.assertion_ids == first.assertion_ids
     assert replay.candidate_id == first.candidate_id
-    assert replay.replayed_assertions == 4
+    assert replay.replayed_assertions == 5
     assert replay.replayed_candidate is True

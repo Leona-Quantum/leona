@@ -60,6 +60,7 @@ class MetadataPredicate(str, Enum):
     LICENSE_FILE_PRESENT = "license_file_present"
     CITATION_FILE_PRESENT = "citation_file_present"
     DEPENDENCY_DECLARATION_PRESENT = "dependency_declaration_present"
+    CONTAINER_DECLARATION_PRESENT = "container_declaration_present"
     CI_WORKFLOW_PRESENT = "ci_workflow_present"
 
 
@@ -144,6 +145,7 @@ _DEPENDENCY_NAMES = frozenset(
         "environment.yaml",
     }
 )
+_CONTAINER_NAMES = frozenset({"dockerfile"})
 
 
 def _canonical_sha256(value: object) -> str:
@@ -168,6 +170,8 @@ def _matching_files(
             matched = "/" not in lowered and (
                 basename in _DEPENDENCY_NAMES or basename.startswith("requirements")
             )
+        elif predicate is MetadataPredicate.CONTAINER_DECLARATION_PRESENT:
+            matched = "/" not in lowered and basename in _CONTAINER_NAMES
         elif predicate is MetadataPredicate.CI_WORKFLOW_PRESENT:
             matched = lowered.startswith(".github/workflows/") and lowered.endswith(
                 (".yml", ".yaml")
@@ -242,26 +246,10 @@ def _facts_from_citation(
             StructuredExtractionIssue(path, "citation-cff", "invalid_utf8", content_sha256),
         )
     try:
-        depth = 0
-        for event_index, event in enumerate(yaml.parse(text), start=1):
-            if event_index > _MAX_YAML_EVENTS:
-                raise ValueError("yaml_event_limit_exceeded")
-            if isinstance(event, AliasEvent):
-                raise ValueError("yaml_alias_rejected")
-            if isinstance(event, CollectionStartEvent):
-                depth += 1
-                if depth > _MAX_YAML_DEPTH:
-                    raise ValueError("yaml_depth_limit_exceeded")
-            elif isinstance(event, CollectionEndEvent):
-                depth -= 1
-        document = yaml.load(text, Loader=_UniqueKeyBaseLoader)
+        document = _load_bounded_yaml(text)
     except (ValueError, yaml.YAMLError) as exc:
         code = str(exc) if isinstance(exc, ValueError) else "invalid_yaml"
         return (), (StructuredExtractionIssue(path, "citation-cff", code, content_sha256),)
-    if not isinstance(document, dict):
-        return (), (
-            StructuredExtractionIssue(path, "citation-cff", "root_not_mapping", content_sha256),
-        )
 
     facts = []
     issues = []
@@ -345,6 +333,207 @@ def _facts_from_pyproject(
     return tuple(facts), tuple(issues)
 
 
+def _facts_from_requirements(
+    path: str,
+    content: bytes,
+    content_sha256: str,
+) -> tuple[tuple[DeclaredMetadataFact, ...], tuple[StructuredExtractionIssue, ...]]:
+    try:
+        text = content.decode("utf-8")
+    except UnicodeDecodeError:
+        return (), (
+            StructuredExtractionIssue(path, "requirements", "invalid_utf8", content_sha256),
+        )
+
+    facts = []
+    issues = []
+    for line_number, raw_line in enumerate(text.splitlines(), start=1):
+        declaration = raw_line.strip()
+        if not declaration or declaration.startswith("#"):
+            continue
+        if declaration.startswith("-"):
+            issues.append(
+                StructuredExtractionIssue(
+                    path,
+                    "requirements",
+                    f"unsupported_directive:line:{line_number}",
+                    content_sha256,
+                )
+            )
+            continue
+        value = _bounded_string(declaration)
+        if value is None:
+            issues.append(
+                StructuredExtractionIssue(
+                    path,
+                    "requirements",
+                    f"declaration_out_of_bounds:line:{line_number}",
+                    content_sha256,
+                )
+            )
+            continue
+        facts.append(
+            DeclaredMetadataFact(
+                field="requirements.declaration",
+                value=value,
+                locator=EvidenceLocator(
+                    path,
+                    _pointer(("lines", str(line_number))),
+                    content_sha256,
+                ),
+            )
+        )
+    return tuple(facts), tuple(issues)
+
+
+def _facts_from_dockerfile(
+    path: str,
+    content: bytes,
+    content_sha256: str,
+) -> tuple[tuple[DeclaredMetadataFact, ...], tuple[StructuredExtractionIssue, ...]]:
+    try:
+        text = content.decode("utf-8")
+    except UnicodeDecodeError:
+        return (), (StructuredExtractionIssue(path, "dockerfile", "invalid_utf8", content_sha256),)
+
+    facts = []
+    issues = []
+    allowed = {
+        "FROM": "dockerfile.from",
+        "CMD": "dockerfile.cmd",
+        "ENTRYPOINT": "dockerfile.entrypoint",
+    }
+    for line_number, raw_line in enumerate(text.splitlines(), start=1):
+        stripped = raw_line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        instruction, separator, argument = stripped.partition(" ")
+        instruction = instruction.upper()
+        field = allowed.get(instruction)
+        if field is None:
+            continue
+        if raw_line.rstrip().endswith("\\"):
+            issues.append(
+                StructuredExtractionIssue(
+                    path,
+                    "dockerfile",
+                    f"unsupported_continuation:line:{line_number}",
+                    content_sha256,
+                )
+            )
+            continue
+        value = _bounded_string(argument.strip()) if separator else None
+        if value is None:
+            issues.append(
+                StructuredExtractionIssue(
+                    path,
+                    "dockerfile",
+                    f"instruction_argument_out_of_bounds:line:{line_number}",
+                    content_sha256,
+                )
+            )
+            continue
+        facts.append(
+            DeclaredMetadataFact(
+                field=field,
+                value=value,
+                locator=EvidenceLocator(
+                    path,
+                    _pointer(("lines", str(line_number))),
+                    content_sha256,
+                ),
+            )
+        )
+    return tuple(facts), tuple(issues)
+
+
+def _load_bounded_yaml(text: str) -> dict[str, Any]:
+    depth = 0
+    for event_index, event in enumerate(yaml.parse(text), start=1):
+        if event_index > _MAX_YAML_EVENTS:
+            raise ValueError("yaml_event_limit_exceeded")
+        if isinstance(event, AliasEvent):
+            raise ValueError("yaml_alias_rejected")
+        if getattr(event, "tag", None) is not None:
+            raise ValueError("yaml_explicit_tag_rejected")
+        if isinstance(event, CollectionStartEvent):
+            depth += 1
+            if depth > _MAX_YAML_DEPTH:
+                raise ValueError("yaml_depth_limit_exceeded")
+        elif isinstance(event, CollectionEndEvent):
+            depth -= 1
+    document = yaml.load(text, Loader=_UniqueKeyBaseLoader)
+    if not isinstance(document, dict):
+        raise ValueError("root_not_mapping")
+    return document
+
+
+def _facts_from_github_actions(
+    path: str,
+    content: bytes,
+    content_sha256: str,
+) -> tuple[tuple[DeclaredMetadataFact, ...], tuple[StructuredExtractionIssue, ...]]:
+    try:
+        text = content.decode("utf-8")
+    except UnicodeDecodeError:
+        return (), (
+            StructuredExtractionIssue(path, "github-actions", "invalid_utf8", content_sha256),
+        )
+    try:
+        document = _load_bounded_yaml(text)
+    except (ValueError, yaml.YAMLError) as exc:
+        code = str(exc) if isinstance(exc, ValueError) else "invalid_yaml"
+        return (), (StructuredExtractionIssue(path, "github-actions", code, content_sha256),)
+
+    facts = []
+    issues = []
+    name = _bounded_string(document.get("name"))
+    if name is not None:
+        facts.append(
+            DeclaredMetadataFact(
+                field="github-actions.name",
+                value=name,
+                locator=EvidenceLocator(path, "/name", content_sha256),
+            )
+        )
+    elif document.get("name") is not None:
+        issues.append(
+            StructuredExtractionIssue(
+                path,
+                "github-actions",
+                "field_not_bounded_scalar:name",
+                content_sha256,
+            )
+        )
+
+    declared_triggers = document.get("on")
+    triggers: tuple[str, ...] | None = None
+    if isinstance(declared_triggers, str):
+        triggers = (declared_triggers,) if _bounded_string(declared_triggers) else None
+    elif isinstance(declared_triggers, list):
+        triggers = _bounded_string_list(declared_triggers)
+    elif isinstance(declared_triggers, dict):
+        triggers = _bounded_string_list(list(declared_triggers))
+    if triggers is not None:
+        facts.append(
+            DeclaredMetadataFact(
+                field="github-actions.triggers",
+                value=triggers,
+                locator=EvidenceLocator(path, "/on", content_sha256),
+            )
+        )
+    elif declared_triggers is not None:
+        issues.append(
+            StructuredExtractionIssue(
+                path,
+                "github-actions",
+                "field_not_bounded_trigger_declaration:on",
+                content_sha256,
+            )
+        )
+    return tuple(facts), tuple(issues)
+
+
 def _structured_metadata(
     snapshot: GitHubRepositorySnapshot,
     predicate: MetadataPredicate,
@@ -360,6 +549,28 @@ def _structured_metadata(
             and lowered == "pyproject.toml"
         ):
             found, found_issues = _facts_from_pyproject(
+                item.path, item.content, item.content_sha256
+            )
+        elif (
+            predicate is MetadataPredicate.DEPENDENCY_DECLARATION_PRESENT
+            and "/" not in lowered
+            and lowered.startswith("requirements")
+        ):
+            found, found_issues = _facts_from_requirements(
+                item.path, item.content, item.content_sha256
+            )
+        elif (
+            predicate is MetadataPredicate.CONTAINER_DECLARATION_PRESENT and lowered == "dockerfile"
+        ):
+            found, found_issues = _facts_from_dockerfile(
+                item.path, item.content, item.content_sha256
+            )
+        elif (
+            predicate is MetadataPredicate.CI_WORKFLOW_PRESENT
+            and lowered.startswith(".github/workflows/")
+            and lowered.endswith((".yml", ".yaml"))
+        ):
+            found, found_issues = _facts_from_github_actions(
                 item.path, item.content, item.content_sha256
             )
         else:
