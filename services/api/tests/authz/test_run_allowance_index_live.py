@@ -15,14 +15,19 @@ quietly reverting to the scan.
 import datetime as dt
 import uuid
 
-import pytest
 from majorana_contracts import Scope
 from majorana_contracts.enums import Role
+from matrix_helpers import requires_db
 from sqlalchemy import text
 
 from majorana_api.repos import runs as runs_repo
 
-pytestmark = pytest.mark.asyncio
+# `asyncio_mode = "auto"` already makes these coroutines run, so the marker this
+# file needs is the one that SKIPS: the `py` CI job runs the whole suite with no
+# DATABASE_URL and expects every database test to opt out by itself. Without it
+# these two error there rather than skipping, and the job fails while the `db`
+# job — the one that actually has a database — passes.
+pytestmark = requires_db
 
 
 async def _explain(db, stmt) -> str:
