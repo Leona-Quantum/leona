@@ -5,6 +5,7 @@ the parent run under scope first. run_events is append-only (DB grant enforced).
 """
 
 import datetime as dt
+import json
 import uuid
 from typing import Any
 
@@ -230,6 +231,161 @@ async def list_conversation_runs(
     return list((await session.execute(stmt)).scalars().all())
 
 
+_CONVERSATION_CODE_MAX_CHARS = 60_000
+_CONVERSATION_VALUE_MAX_CHARS = 12_000
+_CONVERSATION_ASSISTANT_MAX_CHARS = 100_000
+_CONVERSATION_HISTORY_MAX_CHARS = 120_000
+
+
+def _bounded_text(value: str, limit: int) -> str:
+    if len(value) <= limit:
+        return value
+    marker = "\n[Earlier output truncated for conversation context]"
+    if limit <= len(marker):
+        return value[:limit]
+    return f"{value[: max(0, limit - len(marker))]}{marker}"
+
+
+def _context_json(value: Any) -> str:
+    try:
+        rendered = json.dumps(value, ensure_ascii=False, indent=2, sort_keys=True, default=str)
+    except (TypeError, ValueError):
+        rendered = str(value)
+    return _bounded_text(rendered, _CONVERSATION_VALUE_MAX_CHARS)
+
+
+def _latest_event_payload(events: list[RunEvent], event_type: str) -> dict[str, Any] | None:
+    for event in reversed(events):
+        if event.type == event_type and isinstance(event.payload, dict):
+            return event.payload
+    return None
+
+
+def _execution_context_from_events(events: list[RunEvent]) -> str | None:
+    """Render one completed Execute turn as provider-neutral assistant history.
+
+    The conversation UI already replays source and results from these durable
+    events. The model must receive the same facts or a follow-up such as "explain
+    this" has no referent. stdout/stderr are deliberately excluded: only the
+    selected source, protected RESULT, plan, and terminal evidence are context.
+    """
+    finished = _latest_event_payload(events, "run.finished")
+    analysis = _latest_event_payload(events, "run.analysis")
+    if finished is None and analysis is None:
+        return None
+
+    source = (
+        _latest_event_payload(events, "code.finalized")
+        or _latest_event_payload(events, "run.best_effort")
+        or _latest_event_payload(events, "code.generated")
+    )
+    if source is None and analysis is None:
+        return None
+
+    sections = [
+        "[Prior Execute output — durable context from an earlier turn, not a new execution]"
+    ]
+    if analysis is not None:
+        interpretation = analysis.get("interpretation")
+        if isinstance(interpretation, str) and interpretation.strip():
+            sections.extend(["Analysis:", interpretation.strip()])
+
+    if source is not None:
+        code = source.get("code")
+        if isinstance(code, str) and code.strip():
+            language = str(source.get("language") or "text")
+            revision = source.get("revision")
+            revision_note = f", revision {revision}" if isinstance(revision, int) else ""
+            fence = "qasm" if language.lower() in {"openqasm", "qasm"} else "python"
+            sections.extend(
+                [
+                    f"Generated source ({language}{revision_note}):",
+                    f"```{fence}\n{_bounded_text(code.strip(), _CONVERSATION_CODE_MAX_CHARS)}\n```",
+                ]
+            )
+
+    plan = _latest_event_payload(events, "plan.produced")
+    if plan is not None and isinstance(plan.get("plan"), dict):
+        sections.extend(["Plan:", f"```json\n{_context_json(plan['plan'])}\n```"])
+
+    sandbox = _latest_event_payload(events, "sandbox.result")
+    if sandbox is not None and isinstance(sandbox.get("result"), dict):
+        sections.extend(
+            ["Observed sandbox RESULT:", f"```json\n{_context_json(sandbox['result'])}\n```"]
+        )
+
+    if source is not None and any(
+        key in source for key in ("failed_checks", "critic_summary", "residual_risks")
+    ):
+        limitations = {
+            key: source[key]
+            for key in ("failed_checks", "critic_summary", "residual_risks")
+            if source.get(key)
+        }
+        if limitations:
+            sections.extend(
+                ["Recorded limitations:", f"```json\n{_context_json(limitations)}\n```"]
+            )
+
+    if finished is not None:
+        terminal = {
+            key: finished[key]
+            for key in (
+                "status",
+                "verifier_decision",
+                "evidence_strength",
+                "reason_code",
+                "verification_summary",
+                "residual_risks",
+            )
+            if finished.get(key) is not None
+        }
+        if terminal:
+            sections.extend(
+                ["Recorded terminal evidence:", f"```json\n{_context_json(terminal)}\n```"]
+            )
+    return _bounded_text("\n\n".join(sections), _CONVERSATION_ASSISTANT_MAX_CHARS)
+
+
+def _conversation_assistant_text(events: list[RunEvent]) -> str | None:
+    """Return the exact assistant-side content a later turn may refer to."""
+    chat = _latest_event_payload(events, "chat.completed")
+    if chat is not None:
+        text = chat.get("text")
+        if isinstance(text, str) and text.strip():
+            return _bounded_text(text.strip(), _CONVERSATION_ASSISTANT_MAX_CHARS)
+    return _execution_context_from_events(events)
+
+
+def _bounded_conversation_history(
+    turns: list[tuple[str, str]],
+) -> list[dict[str, str]]:
+    """Keep the newest complete turns inside a predictable provider budget."""
+    selected: list[tuple[str, str]] = []
+    used = 0
+    for user, assistant in reversed(turns):
+        cost = len(user) + len(assistant)
+        if selected and used + cost > _CONVERSATION_HISTORY_MAX_CHARS:
+            break
+        if not selected and cost > _CONVERSATION_HISTORY_MAX_CHARS:
+            assistant = _bounded_text(
+                assistant,
+                max(1, _CONVERSATION_HISTORY_MAX_CHARS - len(user)),
+            )
+            cost = len(user) + len(assistant)
+        selected.append((user, assistant))
+        used += cost
+    messages: list[dict[str, str]] = []
+    for user, assistant in reversed(selected):
+        messages.extend(
+            [
+                {"role": "user", "content": user},
+                {"role": "assistant", "content": assistant},
+            ]
+        )
+    return messages
+
+
 async def list_conversation_messages(
     scope: Scope,
     session: AsyncSession,
@@ -238,10 +394,12 @@ async def list_conversation_messages(
     exclude_run_id: uuid.UUID | None = None,
     limit: int = 20,
 ) -> list[dict[str, str]]:
-    """Build provider-neutral user/assistant history from stored chat turns.
+    """Build provider-neutral user/assistant history from stored turns.
 
-    Only completed assistant text is replayed into a new provider request. A
-    failed or in-flight turn contributes no invented answer.
+    Completed chat text is replayed verbatim. Execute turns are reconstructed
+    from their durable plan/source/RESULT/terminal events, so references such as
+    "this code" retain their meaning. In-flight turns contribute no invented
+    answer, and the newest complete turns are bounded before provider dispatch.
     """
     conditions = [
         Run.workspace_id == scope.workspace_id,
@@ -257,30 +415,14 @@ async def list_conversation_messages(
     )
     rows = list((await session.execute(stmt)).scalars().all())
     rows.reverse()
-    messages: list[dict[str, str]] = []
+    turns: list[tuple[str, str]] = []
     for row in rows:
         events = await list_run_events(scope, session, row.id)
-        assistant_text: str | None = None
-        for event in reversed(events):
-            if event.type == "chat.completed":
-                value = event.payload.get("text")
-                if isinstance(value, str) and value.strip():
-                    assistant_text = value
-                    break
-            if event.type == "run.analysis":
-                value = event.payload.get("interpretation")
-                if isinstance(value, str) and value.strip():
-                    assistant_text = value
-                    break
+        assistant_text = _conversation_assistant_text(events)
         if assistant_text is None:
             continue
-        messages.extend(
-            [
-                {"role": "user", "content": row.task_prompt},
-                {"role": "assistant", "content": assistant_text},
-            ]
-        )
-    return messages
+        turns.append((row.task_prompt, assistant_text))
+    return _bounded_conversation_history(turns)
 
 
 # The only run columns a status transition may touch — an open **fields would

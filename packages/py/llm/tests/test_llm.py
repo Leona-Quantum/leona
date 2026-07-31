@@ -283,6 +283,8 @@ def test_chat_persona_cannot_narrate_results_it_did_not_produce():
     # The chat turn cannot execute anything, so the persona must not let the
     # model narrate results it did not produce.
     assert "never report simulation output" in CHAT_SYSTEM_PROMPT
+    assert "Prior Execute output" in CHAT_SYSTEM_PROMPT
+    assert "do not present them as a new execution" in CHAT_SYSTEM_PROMPT
 
 
 def test_grover_plan_and_review_prompts_pin_attainable_iteration_arithmetic():

@@ -541,6 +541,50 @@ async def test_conversation_mode_answers_without_pipeline_or_sandbox():
     assert store.finished == [(RunStatus.SUCCEEDED, {"status": RunStatus.SUCCEEDED}, {})]
 
 
+async def test_conversation_mode_passes_prior_execute_output_to_the_model(monkeypatch):
+    prior = (
+        "[Prior Execute output — durable context from an earlier turn]"
+        "\n\nGenerated source (qiskit):\n```python\nenergy = -1.137\n```"
+    )
+
+    async def list_messages(scope, session, conversation_id, *, exclude_run_id=None):
+        assert scope is store._scope
+        assert session is store._session
+        assert conversation_id == ctx.conversation_id
+        assert exclude_run_id == ctx.run_id
+        return [
+            {"role": "user", "content": "Find the H2 ground-state energy."},
+            {"role": "assistant", "content": prior},
+        ]
+
+    monkeypatch.setattr(handlers.runs_repo, "list_conversation_messages", list_messages)
+    sink = _RecordingSink()
+    ctx = RunContext(
+        run_id=uuid.uuid4(),
+        task_prompt="これを解説して",
+        mode=RunMode.CHAT,
+        framework=Framework.QISKIT,
+        seed=None,
+        shots=None,
+        timeout_s=None,
+        sink=sink,
+        conversation_id=uuid.uuid4(),
+    )
+    store = _FakeStore()
+    store._scope = object()
+    store._session = object()
+    llm = _ConversationLLM()
+
+    final = await handlers._handle_conversation(ctx, store, llm)
+
+    assert final is RunStatus.SUCCEEDED
+    assert [message.model_dump() for message in llm.request.messages] == [
+        {"role": "user", "content": "Find the H2 ground-state energy."},
+        {"role": "assistant", "content": prior},
+        {"role": "user", "content": "これを解説して"},
+    ]
+
+
 def test_validated_fixtures_dir_refuses_when_root_unset(monkeypatch, tmp_path):
     monkeypatch.delenv("MAJORANA_IMPORT_FIXTURES_ROOT", raising=False)
 
