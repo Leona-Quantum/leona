@@ -231,19 +231,63 @@ async def list_conversation_runs(
     return list((await session.execute(stmt)).scalars().all())
 
 
-_CONVERSATION_CODE_MAX_CHARS = 60_000
-_CONVERSATION_VALUE_MAX_CHARS = 12_000
-_CONVERSATION_ASSISTANT_MAX_CHARS = 100_000
-_CONVERSATION_HISTORY_MAX_CHARS = 120_000
+# Conversation history is priced in estimated tokens, not characters, because
+# what it costs is a provider request. Chat is the one unmetered surface in this
+# product: no weekly allowance, no submission backstop, no usage ledger (see
+# services/api/tests/test_run_execute_backstop.py). Nothing downstream will
+# refuse an expensive chat turn, so the ceiling has to be here, and it has to be
+# absolute rather than a function of how long the conversation has run.
+#
+# The per-turn shares below sum to less than the total on purpose: that is what
+# guarantees the newest turn is always admitted whole, so "explain this code"
+# never loses the thing "this" refers to.
+_CONVERSATION_CODE_MAX_TOKENS = 2_000
+_CONVERSATION_VALUE_MAX_TOKENS = 500
+_CONVERSATION_ASSISTANT_MAX_TOKENS = 4_000
+_CONVERSATION_USER_MAX_TOKENS = 1_000
+_CONVERSATION_HISTORY_MAX_TOKENS = 8_000
+
+_TRUNCATION_MARKER = "\n[Earlier output truncated for conversation context]"
 
 
-def _bounded_text(value: str, limit: int) -> str:
-    if len(value) <= limit:
+def _estimated_tokens(value: str) -> int:
+    """Provider-independent, deterministic token estimate.
+
+    ASCII prose and source tokenize at roughly four characters per token;
+    Japanese — a first-class UI language here, and the language the follow-up
+    case that motivated this history exists for was written in — tokenizes at
+    closer to one. Counting every non-ASCII character as its own token keeps one
+    budget honest for both, instead of a character budget that silently costs
+    four times as much on a Japanese conversation as on an English one.
+    """
+    ascii_chars = sum(1 for char in value if char.isascii())
+    return -(-ascii_chars // 4) + (len(value) - ascii_chars)
+
+
+def _bounded_text(value: str, token_limit: int) -> str:
+    """Return the longest prefix of `value` costing at most `token_limit`.
+
+    Truncation is oldest-first at the history level and tail-first here, and it
+    is always marked: an unmarked truncation would read to the model as source
+    or a result that genuinely ended there.
+    """
+    if _estimated_tokens(value) <= token_limit:
         return value
-    marker = "\n[Earlier output truncated for conversation context]"
-    if limit <= len(marker):
-        return value[:limit]
-    return f"{value[: max(0, limit - len(marker))]}{marker}"
+    budget = token_limit - _estimated_tokens(_TRUNCATION_MARKER)
+    if budget <= 0:
+        return ""
+    ascii_seen = 0
+    wide_seen = 0
+    cut = 0
+    for index, char in enumerate(value):
+        if char.isascii():
+            ascii_seen += 1
+        else:
+            wide_seen += 1
+        if -(-ascii_seen // 4) + wide_seen > budget:
+            break
+        cut = index + 1
+    return f"{value[:cut]}{_TRUNCATION_MARKER}"
 
 
 def _context_json(value: Any) -> str:
@@ -251,7 +295,7 @@ def _context_json(value: Any) -> str:
         rendered = json.dumps(value, ensure_ascii=False, indent=2, sort_keys=True, default=str)
     except (TypeError, ValueError):
         rendered = str(value)
-    return _bounded_text(rendered, _CONVERSATION_VALUE_MAX_CHARS)
+    return _bounded_text(rendered, _CONVERSATION_VALUE_MAX_TOKENS)
 
 
 def _latest_event_payload(events: list[RunEvent], event_type: str) -> dict[str, Any] | None:
@@ -300,7 +344,7 @@ def _execution_context_from_events(events: list[RunEvent]) -> str | None:
             sections.extend(
                 [
                     f"Generated source ({language}{revision_note}):",
-                    f"```{fence}\n{_bounded_text(code.strip(), _CONVERSATION_CODE_MAX_CHARS)}\n```",
+                    f"```{fence}\n{_bounded_text(code.strip(), _CONVERSATION_CODE_MAX_TOKENS)}\n```",
                 ]
             )
 
@@ -344,7 +388,7 @@ def _execution_context_from_events(events: list[RunEvent]) -> str | None:
             sections.extend(
                 ["Recorded terminal evidence:", f"```json\n{_context_json(terminal)}\n```"]
             )
-    return _bounded_text("\n\n".join(sections), _CONVERSATION_ASSISTANT_MAX_CHARS)
+    return _bounded_text("\n\n".join(sections), _CONVERSATION_ASSISTANT_MAX_TOKENS)
 
 
 def _conversation_assistant_text(events: list[RunEvent]) -> str | None:
@@ -353,26 +397,32 @@ def _conversation_assistant_text(events: list[RunEvent]) -> str | None:
     if chat is not None:
         text = chat.get("text")
         if isinstance(text, str) and text.strip():
-            return _bounded_text(text.strip(), _CONVERSATION_ASSISTANT_MAX_CHARS)
+            return _bounded_text(text.strip(), _CONVERSATION_ASSISTANT_MAX_TOKENS)
     return _execution_context_from_events(events)
 
 
 def _bounded_conversation_history(
     turns: list[tuple[str, str]],
 ) -> list[dict[str, str]]:
-    """Keep the newest complete turns inside a predictable provider budget."""
+    """Keep the newest complete turns inside a fixed, absolute provider budget.
+
+    Two ceilings, both applied here rather than trusted from the caller, so the
+    bound holds whatever was stored: every turn is first clamped to its per-turn
+    share, then turns are admitted newest-first until the total budget is spent.
+    Because one clamped turn always costs less than the total, the newest turn
+    is always admitted — a follow-up never loses the turn it refers to.
+
+    The invariant this exists to hold: the size of a chat request is a function
+    of the budget, never of how long the conversation is.
+    """
     selected: list[tuple[str, str]] = []
     used = 0
     for user, assistant in reversed(turns):
-        cost = len(user) + len(assistant)
-        if selected and used + cost > _CONVERSATION_HISTORY_MAX_CHARS:
+        user = _bounded_text(user, _CONVERSATION_USER_MAX_TOKENS)
+        assistant = _bounded_text(assistant, _CONVERSATION_ASSISTANT_MAX_TOKENS)
+        cost = _estimated_tokens(user) + _estimated_tokens(assistant)
+        if used + cost > _CONVERSATION_HISTORY_MAX_TOKENS:
             break
-        if not selected and cost > _CONVERSATION_HISTORY_MAX_CHARS:
-            assistant = _bounded_text(
-                assistant,
-                max(1, _CONVERSATION_HISTORY_MAX_CHARS - len(user)),
-            )
-            cost = len(user) + len(assistant)
         selected.append((user, assistant))
         used += cost
     messages: list[dict[str, str]] = []

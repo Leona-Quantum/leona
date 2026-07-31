@@ -1,13 +1,32 @@
 from types import SimpleNamespace
 
 from majorana_api.repos.runs import (
+    _CONVERSATION_ASSISTANT_MAX_TOKENS,
+    _CONVERSATION_HISTORY_MAX_TOKENS,
+    _CONVERSATION_USER_MAX_TOKENS,
     _bounded_conversation_history,
     _conversation_assistant_text,
+    _estimated_tokens,
 )
+
+#: The ceiling these tests defend, written as a literal on purpose.
+#:
+#: Chat is unmetered — no weekly allowance, no submission backstop, no usage
+#: ledger (see test_run_execute_backstop.py). Nothing downstream refuses an
+#: expensive chat turn, so this number is the only thing standing between a long
+#: conversation and an unbounded per-turn provider bill. Asserting against
+#: `_CONVERSATION_HISTORY_MAX_TOKENS` alone would pass just as happily if that
+#: constant were retuned to a million, which is exactly the change this file
+#: exists to fail on. Raising this literal must be a deliberate, reviewed edit.
+ABSOLUTE_HISTORY_CEILING_TOKENS = 8_000
 
 
 def _event(event_type: str, **payload):
     return SimpleNamespace(type=event_type, payload=payload)
+
+
+def _history_tokens(messages: list[dict[str, str]]) -> int:
+    return sum(_estimated_tokens(message["content"]) for message in messages)
 
 
 def test_completed_execute_turn_carries_exact_code_and_observed_result():
@@ -95,4 +114,84 @@ def test_history_budget_keeps_the_newest_complete_turns():
 
     assert messages[0] == {"role": "user", "content": "new question"}
     assert messages[1]["role"] == "assistant"
-    assert messages[1]["content"] == newest[1]
+    assert messages[1]["content"].startswith("y" * 1_000)
+    assert "old question" not in [message["content"] for message in messages]
+
+
+def test_history_never_exceeds_the_ceiling_however_long_the_conversation_runs():
+    """The bound, not the fact that something was truncated.
+
+    Every input here is far past every per-turn share: 400 turns, each with a
+    max-length prompt and half a megabyte of assistant text. Chat is unmetered,
+    so the only acceptable answer is a request sized by the budget rather than
+    by the conversation.
+    """
+    turns = [(f"{index} " + "q" * 20_000, "a" * 500_000) for index in range(400)]
+
+    messages = _bounded_conversation_history(turns)
+
+    assert _history_tokens(messages) <= ABSOLUTE_HISTORY_CEILING_TOKENS
+
+
+def test_history_ceiling_does_not_grow_with_conversation_length():
+    """Twenty times the turns must not buy twenty times the request."""
+    turn = ("explain this", "a" * 100_000)
+
+    short = _history_tokens(_bounded_conversation_history([turn] * 2))
+    long = _history_tokens(_bounded_conversation_history([turn] * 400))
+
+    assert long == short
+    assert long <= ABSOLUTE_HISTORY_CEILING_TOKENS
+
+
+def test_a_japanese_conversation_is_not_four_times_more_expensive():
+    """A character budget would let CJK history cost ~4x what English does.
+
+    The follow-up this history exists for ("これを解説して") is Japanese, so the
+    budget is priced in estimated tokens and CJK is counted at its real rate.
+    """
+    english = _bounded_conversation_history([("explain this", "a" * 500_000)] * 50)
+    japanese = _bounded_conversation_history([("これを解説して", "あ" * 500_000)] * 50)
+
+    assert _history_tokens(japanese) <= ABSOLUTE_HISTORY_CEILING_TOKENS
+    assert _history_tokens(english) <= ABSOLUTE_HISTORY_CEILING_TOKENS
+
+
+def test_one_clamped_turn_always_fits_so_the_newest_turn_survives():
+    """The structural reason `_bounded_conversation_history` cannot return [].
+
+    If the per-turn shares ever summed past the total, a single large newest
+    turn would be dropped and "explain this code" would lose its referent.
+    """
+    assert (
+        _CONVERSATION_USER_MAX_TOKENS + _CONVERSATION_ASSISTANT_MAX_TOKENS
+        <= _CONVERSATION_HISTORY_MAX_TOKENS
+    )
+    assert _CONVERSATION_HISTORY_MAX_TOKENS <= ABSOLUTE_HISTORY_CEILING_TOKENS
+
+    messages = _bounded_conversation_history([("q" * 20_000, "a" * 500_000)])
+
+    assert [message["role"] for message in messages] == ["user", "assistant"]
+    assert _history_tokens(messages) <= ABSOLUTE_HISTORY_CEILING_TOKENS
+
+
+def test_truncated_history_is_marked_so_the_model_does_not_read_it_as_complete():
+    messages = _bounded_conversation_history([("q", "a" * 500_000)])
+
+    assert messages[1]["content"].endswith("[Earlier output truncated for conversation context]")
+
+
+def test_execute_context_for_one_turn_stays_inside_its_per_turn_share():
+    """A single stored run must not be able to spend the whole budget."""
+    context = _conversation_assistant_text(
+        [
+            _event("plan.produced", plan={"algorithm": "VQE", "notes": "n" * 200_000}),
+            _event("code.finalized", language="qiskit", code="c" * 400_000, revision=2),
+            _event("sandbox.result", result={"counts": "r" * 200_000}),
+            _event("run.analysis", interpretation="i" * 200_000),
+            _event("run.finished", status="succeeded", verification_summary="v" * 200_000),
+        ]
+    )
+
+    assert context is not None
+    assert _estimated_tokens(context) <= _CONVERSATION_ASSISTANT_MAX_TOKENS
