@@ -21,6 +21,7 @@ import { WORKSPACE_COPY } from "../../../lib/workspace-locale";
 import { DEFAULT_RUN_SHOTS, sampling } from "../../../lib/studio-run-request";
 import { verificationFromMetadata, verificationFromResource, type VerificationCheck } from "../../../lib/verification-record";
 import { artifactExportManifest } from "../../../lib/artifact-export";
+import { restoreRefusalLosses, versionPageFromResource, type ArtifactVersionSummary, type RestoreLoss, type VersionOrigin } from "../../../lib/artifact-versions";
 import { studioVerificationDisplayState } from "../../../lib/verification-display";
 import { DEFAULT_STUDIO_PANEL, STUDIO_PANELS, type StudioPanel } from "../../../lib/studio-panels";
 import { PanelTabs, panelRegion } from "../../../components/panel-tabs";
@@ -655,6 +656,16 @@ export function StudioWorkspace({ artifactId, newDraft = false, locale = "en", l
                       stale={verificationStale}
                       state={verificationDisplayState}
                       copy={copy}
+                      locale={locale}
+                      onRestored={(seq) => {
+                        // Re-hydrate rather than patching state: a restore
+                        // changes code, OpenQASM, variants, estimates and the
+                        // verdict together, and half of them arrive only from
+                        // the version resource.
+                        if (artifact) void selectArtifact(artifact.id);
+                        setVerificationStale(false);
+                        setMessage(copy.restoreDone(seq));
+                      }}
                     />
                   ) : null}
                 </>
@@ -1802,12 +1813,16 @@ function SummaryPanel({
   stale,
   state,
   copy,
+  locale,
+  onRestored,
 }: {
   artifact: LibraryArtifact | null;
   runId: string | null;
   stale: boolean;
   state: ReturnType<typeof studioVerificationDisplayState>;
   copy: StudioCopy;
+  locale: PublicLocale;
+  onRestored: (seq: number) => void;
 }) {
   const checks: VerificationCheck[] = artifact?.checks ?? [];
   return (
@@ -1844,9 +1859,13 @@ function SummaryPanel({
 
       <div className="mj-studio-summary-section">
         <span className="mj-section-label">{copy.versionHistory}</span>
-        <div className="mj-studio-version-row"><span className="mj-studio-version-dot" /><div><strong>{artifact?.currentVersionId ? copy.currentVersion(artifact.currentVersionId.slice(0, 12)) : copy.draftNotSaved}</strong><p>{artifact ? copy.currentVersionNote : copy.draftVersionNote}</p></div></div>
         {stale ? <div className="mj-studio-version-row"><span className="mj-studio-version-dot is-pending" /><div><strong>{copy.uncommittedEdits}</strong><p>{copy.uncommittedEditsNote}</p></div></div> : null}
         {runId ? <div className="mj-studio-version-row"><span className="mj-studio-version-dot is-pending" /><div><strong>{copy.verificationQueued}</strong><p><a href={`/run/${runId}`}>{runId.slice(0, 12)}</a> · {copy.verificationAttach(runId.slice(0, 12))}</p></div></div> : null}
+        {artifact ? (
+          <VersionHistory artifact={artifact} copy={copy} locale={locale} onRestored={onRestored} />
+        ) : (
+          <div className="mj-studio-version-row"><span className="mj-studio-version-dot" /><div><strong>{copy.draftNotSaved}</strong><p>{copy.draftVersionNote}</p></div></div>
+        )}
       </div>
 
       <details className="mj-sim-details">
@@ -1858,6 +1877,240 @@ function SummaryPanel({
         </dl>
       </details>
     </section>
+  );
+}
+
+function originLabel(origin: VersionOrigin, copy: StudioCopy): string {
+  if (origin === "agent_run") return copy.versionOriginAgentRun;
+  if (origin === "studio_draft") return copy.versionOriginStudioDraft;
+  if (origin === "imported_reference") return copy.versionOriginImportedReference;
+  if (origin === "starter_example") return copy.versionOriginStarterExample;
+  return copy.versionOriginUnknown;
+}
+
+function capabilityLabel(loss: RestoreLoss, copy: StudioCopy): string {
+  if (loss === "qasm") return copy.capabilityQasm;
+  if (loss === "export") return copy.capabilityExport;
+  if (loss === "resource_estimates") return copy.capabilityResourceEstimates;
+  if (loss === "framework_variants") return copy.capabilityFrameworkVariants;
+  return copy.capabilityVerification;
+}
+
+/** What a row HOLDS, in the same words the restore warning uses for losing it. */
+function heldCapabilities(row: ArtifactVersionSummary, copy: StudioCopy): string[] {
+  const held: string[] = [];
+  if (row.hasQasm) held.push(copy.capabilityQasm);
+  if (row.exportable) held.push(copy.capabilityExport);
+  if (row.hasResourceEstimates) held.push(copy.capabilityResourceEstimates);
+  if (row.hasFrameworkVariants) held.push(copy.capabilityFrameworkVariants);
+  if (row.verified) held.push(copy.capabilityVerification);
+  return held;
+}
+
+/**
+ * The artifact's versions, and the way back to one of them.
+ *
+ * Two things this deliberately does NOT do.
+ *
+ * It does not read "current" from the top of the list. Restoring moves
+ * `artifacts.current_version_id` and writes no row, so the current version is
+ * frequently not the newest `seq`; the server flags it and this reads the flag.
+ *
+ * It does not present versions as equivalent. A version the user typed in
+ * Studio has no OpenQASM, no exports, no estimates and no verdict — restoring
+ * one over a verified run is a real loss, so each row states what it holds and
+ * a lossy restore has to be confirmed against a list of what goes.
+ */
+function VersionHistory({
+  artifact,
+  copy,
+  locale,
+  onRestored,
+}: {
+  artifact: LibraryArtifact;
+  copy: StudioCopy;
+  locale: PublicLocale;
+  onRestored: (seq: number) => void;
+}) {
+  const [rows, setRows] = useState<ArtifactVersionSummary[] | null>(null);
+  const [failed, setFailed] = useState(false);
+  const [nextBeforeSeq, setNextBeforeSeq] = useState<number | null>(null);
+  const [confirming, setConfirming] = useState<{ row: ArtifactVersionSummary; losses: RestoreLoss[] } | null>(null);
+  const [restoring, setRestoring] = useState<string | null>(null);
+  const [restoreError, setRestoreError] = useState<string | null>(null);
+
+  const artifactId = artifact.id;
+  // Keyed on the current version too: after a restore the pointer moved, so
+  // every row's `is_current` and `restore_losses` are stale.
+  const currentVersionId = artifact.currentVersionId ?? null;
+
+  useEffect(() => {
+    let active = true;
+    setRows(null);
+    setFailed(false);
+    void fetch(`/api/artifacts/${encodeURIComponent(artifactId)}/versions`, { cache: "no-store" })
+      .then(async (response) => {
+        if (!response.ok) throw new Error("version history unavailable");
+        return (await response.json()) as unknown;
+      })
+      .then((payload) => {
+        if (!active) return;
+        const page = versionPageFromResource(payload);
+        setRows(page.versions);
+        setNextBeforeSeq(page.nextBeforeSeq);
+      })
+      .catch(() => {
+        if (active) setFailed(true);
+      });
+    return () => {
+      active = false;
+    };
+  }, [artifactId, currentVersionId]);
+
+  async function loadOlder() {
+    if (nextBeforeSeq === null) return;
+    const response = await fetch(
+      `/api/artifacts/${encodeURIComponent(artifactId)}/versions?before_seq=${nextBeforeSeq}`,
+      { cache: "no-store" },
+    );
+    if (!response.ok) {
+      setFailed(true);
+      return;
+    }
+    const page = versionPageFromResource(await response.json());
+    setRows((current) => [...(current ?? []), ...page.versions]);
+    setNextBeforeSeq(page.nextBeforeSeq);
+  }
+
+  async function restore(row: ArtifactVersionSummary, acknowledged: boolean) {
+    if (restoring) return;
+    setRestoring(row.id);
+    setRestoreError(null);
+    try {
+      const response = await fetch(
+        `/api/artifacts/${encodeURIComponent(artifactId)}/versions/${encodeURIComponent(row.id)}/restore`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ acknowledge_capability_loss: acknowledged }),
+        },
+      );
+      if (response.status === 409) {
+        // The list said this restore was free but the artifact moved under us.
+        // Ask, with the server's list — never resend acknowledged on its behalf.
+        const losses = restoreRefusalLosses(await response.json());
+        if (losses) {
+          setConfirming({ row, losses });
+          return;
+        }
+        throw new Error("restore refused");
+      }
+      if (!response.ok) throw new Error("restore failed");
+      setConfirming(null);
+      onRestored(row.seq);
+    } catch {
+      setRestoreError(copy.restoreFailed);
+    } finally {
+      setRestoring(null);
+    }
+  }
+
+  if (failed) return <p className="mj-mono-muted" role="alert">{copy.versionHistoryUnavailable}</p>;
+  if (rows === null) return <p className="mj-mono-muted" role="status">{copy.versionHistoryLoading}</p>;
+  if (!rows.length) return <p className="mj-mono-muted">{copy.versionHistoryEmpty}</p>;
+
+  return (
+    <>
+      {restoreError ? <p role="alert" className="mj-delete-dialog-error">{restoreError}</p> : null}
+      {rows.map((row) => {
+        const held = heldCapabilities(row, copy);
+        return (
+          <div className="mj-studio-version-row" key={row.id}>
+            <span className={`mj-studio-version-dot${row.isCurrent ? "" : " is-past"}`} />
+            <div>
+              <span className="mj-studio-version-meta">
+                <strong>{copy.versionLabel(row.seq)}</strong>
+                {row.isCurrent ? <span className="mj-mono-muted">{copy.versionCurrentBadge}</span> : null}
+                <span className="mj-mono-muted">{originLabel(row.origin, copy)}</span>
+              </span>
+              <p>
+                {held.length ? `${copy.versionHolds}: ${held.join(" · ")}` : copy.versionHoldsNothing}
+              </p>
+              {row.createdAt ? (
+                <p className="mj-mono-muted">
+                  {new Date(row.createdAt).toLocaleDateString(locale === "ja" ? "ja-JP" : "en-US", {
+                    month: "short",
+                    day: "numeric",
+                    year: "numeric",
+                  })}
+                </p>
+              ) : null}
+            </div>
+            {row.isCurrent ? null : (
+              <button
+                className="mj-secondary-button"
+                type="button"
+                disabled={restoring !== null}
+                onClick={() => {
+                  // A lossy restore opens the dialog straight from the list's
+                  // own loss codes; the server still refuses an unacknowledged
+                  // one, so this is a faster path to the same gate, not a
+                  // replacement for it.
+                  if (row.restoreLosses.length) setConfirming({ row, losses: row.restoreLosses });
+                  else void restore(row, false);
+                }}
+              >
+                {restoring === row.id ? copy.restoring : copy.restore}
+              </button>
+            )}
+          </div>
+        );
+      })}
+      {nextBeforeSeq !== null ? (
+        <button className="mj-secondary-button" type="button" onClick={() => void loadOlder()}>
+          {copy.versionShowOlder}
+        </button>
+      ) : null}
+      {confirming ? (
+        <div
+          className="mj-delete-dialog-backdrop"
+          role="presentation"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) setConfirming(null);
+          }}
+        >
+          <section className="mj-delete-dialog" role="dialog" aria-modal="true" aria-labelledby="mj-restore-dialog-title">
+            <p className="mj-eyebrow">{copy.versionHistory}</p>
+            <h2 id="mj-restore-dialog-title">{copy.restoreConfirmTitle}</h2>
+            <p>{copy.restoreConfirmBody(confirming.row.seq)}</p>
+            {confirming.losses.length ? (
+              <>
+                <p>{copy.restoreLossIntro}</p>
+                <ul>
+                  {confirming.losses.map((loss) => (
+                    <li key={loss}>{capabilityLabel(loss, copy)}</li>
+                  ))}
+                </ul>
+              </>
+            ) : null}
+            {restoreError ? <p role="alert" className="mj-delete-dialog-error">{restoreError}</p> : null}
+            <div className="mj-delete-dialog-actions">
+              <button className="mj-secondary-button" type="button" onClick={() => setConfirming(null)}>
+                {copy.restoreCancel}
+              </button>
+              <button
+                className="mj-danger-button"
+                type="button"
+                disabled={restoring !== null}
+                onClick={() => void restore(confirming.row, true)}
+              >
+                {restoring ? copy.restoring : copy.restoreConfirmAnyway}
+              </button>
+            </div>
+          </section>
+        </div>
+      ) : null}
+    </>
   );
 }
 

@@ -6161,6 +6161,28 @@ div.mj-rail-row:hover {
 .mj-studio-version-dot.is-pending {
   border-color: var(--accent);
 }
+/* A restored version is neither committed-and-current nor pending: it is an
+   earlier row the user can return to. Muted so the current row still reads as
+   the one in force. */
+.mj-studio-version-dot.is-past {
+  border-color: var(--text-2);
+}
+/* The text column takes the slack so the Restore control sits at the trailing
+   edge. `min-width: 0` because a long limitation line is an unbreakable flex
+   item otherwise, and clips with no error rather than wrapping. */
+.mj-studio-version-row > div {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.mj-studio-version-row .mj-secondary-button {
+  flex: 0 0 auto;
+}
+.mj-studio-version-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+  align-items: baseline;
+}
 .mj-studio-footer {
   justify-content: space-between;
   gap: var(--sp-4);
