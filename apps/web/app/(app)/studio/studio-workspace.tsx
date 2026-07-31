@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNod
 import { SyntaxHighlightedCode, VerificationSummaryPanel, verificationHeadline } from "@majorana/ui";
 import { CopyIcon, SearchIcon } from "../../../components/icons";
 import { artifactFromResource, frameworkVariantsFromRemote, getLibraryArtifact, loadLibraryArtifacts, statusFromVerificationSummary, type LibraryArtifact } from "../../../lib/library-data";
+import { fetchArtifactPages } from "../../../lib/artifact-page";
 import type { PublicLocale } from "../../../lib/public-locale";
 import { BUILDER_GATES, builderStepLabel, createBuilderStepId, generateBuilderCode, ROTATION_GATES, TWO_QUBIT_GATES, type BuilderCodeVariants, type BuilderGate, type BuilderStep, type CustomGateDefinition } from "../../../lib/studio-builder";
 import { loadStoredCircuit, saveStoredCircuit } from "../../../lib/studio-circuits";
@@ -138,13 +139,13 @@ export function StudioWorkspace({ artifactId, newDraft = false, locale = "en", l
     setArtifacts(loadLibraryArtifacts());
     setArtifactSyncError(false);
     setArtifactHydration(artifactId && !newDraft ? "loading" : "ready");
-    void fetch("/api/artifacts", { cache: "no-store" })
-      .then(async (response) => {
-        if (!response.ok) throw new Error("Artifact API unavailable");
-        return (await response.json()) as unknown;
-      })
-      .then((payload) => {
-        if (!active || !Array.isArray(payload)) return;
+    // Paged, not a single fetch: an un-paged read returns the route's default
+    // of 50 rows and is indistinguishable from a workspace that holds 50. Studio
+    // is now the only surface over these rows, so a truncated list here is the
+    // whole list as far as the person is concerned. See lib/artifact-page.ts.
+    void fetchArtifactPages((query) => fetch(`/api/artifacts${query}`, { cache: "no-store" }))
+      .then(({ rows: payload }) => {
+        if (!active) return;
         const remote = payload.flatMap((value) => artifactFromResource(value));
         const byId = new Map([...loadLibraryArtifacts(), ...remote].map((item) => [item.id, item]));
         setArtifacts([...byId.values()].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)));
