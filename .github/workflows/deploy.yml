@@ -208,9 +208,20 @@ jobs:
         if: steps.creds.outputs.have == 'true'
         id: api
         run: |
+          # --max-instances is stated for the same reason the worker's scaling
+          # flags are: the connection budget in docs/runbooks/database.md is only
+          # arithmetic if every term in it is pinned somewhere a reader can find.
+          # 2 is what production already ran; this states it rather than changes it.
+          #
+          # --update-env-vars, never --set-env-vars: neither service's env is
+          # fully declared here yet (DATABASE_URL and the MAJORANA_* runtime
+          # settings are live-service state), so --set would wipe them and the
+          # revision would come up unable to reach the database.
           gcloud run deploy majorana-api --project "$GCP_PROJECT" --region "$GCP_REGION" \
             --image "$IMAGE_REPO:${{ steps.tag.outputs.tag }}" \
             --set-cloudsql-instances "$CLOUDSQL_INSTANCE" \
+            --max-instances 2 \
+            --update-env-vars MAJORANA_SERVICE=api \
             --no-traffic --tag verify
           # Parse the URL out with jq rather than a --format projection. Two
           # earlier attempts failed here (2026-07-19):
@@ -266,11 +277,43 @@ jobs:
         if: steps.creds.outputs.have == 'true'
         id: worker
         run: |
+          # THREE workers, not one. Runs were processed strictly serially
+          # product-wide until 2026-08-01 and the queue — not page latency — was
+          # what a class or a launch would have felt. `claim_job` is
+          # `FOR UPDATE SKIP LOCKED` with lease tokens and heartbeats, so the
+          # queue itself always supported this; the three sweeps do too, and each
+          # for its own stated reason:
+          #   recover_stale_jobs — repeats its predicates on both UPDATEs, so a
+          #     row another worker already moved no longer matches.
+          #   claim_pending_dead_letter — FOR UPDATE SKIP LOCKED, like claim_job.
+          #   the orphan reaper — close_orphaned_run writes deterministic uuid5
+          #     event ids and fail_run_from_dead_letter no-ops on an already
+          #     terminal run, so a double reap completes one sequence, not two.
+          # worker_id is "$hostname:$pid", so instances never collide on a lease.
+          #
+          # min == max on purpose. Cloud Run autoscales on request concurrency
+          # and this service serves only a static liveness responder, so it
+          # receives no request traffic and would never scale up on its own no
+          # matter what the maximum said. Parallel workers have to be always-on,
+          # which is real money: roughly $15-25/month each.
+          #
+          # THREE rather than the four the steady-state budget allows, because
+          # --min-instances is a REVISION-level setting: while this very command
+          # is rolling out, the outgoing revision is still in the traffic split
+          # and still holding its minimum, so the fleet transiently runs 2xN
+          # workers. Four would be 52 connections against a budget of 45 for the
+          # length of every deploy — and a deploy is exactly when Alembic needs
+          # one. See fleet_peak_connections() in db.py.
+          #
+          # DB_POOL_SIZE/DB_MAX_OVERFLOW are stated here because four workers at
+          # the API's 5+5 would have blown the instance's 50-connection ceiling.
+          # The worker holds at most two sessions at once (handler + heartbeat).
           gcloud run deploy majorana-worker --project "$GCP_PROJECT" --region "$GCP_REGION" \
             --image "$IMAGE_REPO:${{ steps.tag.outputs.tag }}" \
             --command majorana-worker \
             --set-cloudsql-instances "$CLOUDSQL_INSTANCE" \
-            --min-instances 1 --max-instances 1 --no-cpu-throttling
+            --update-env-vars MAJORANA_SERVICE=worker,DB_POOL_SIZE=2,DB_MAX_OVERFLOW=2 \
+            --min-instances 3 --max-instances 3 --no-cpu-throttling
           rev=$(gcloud run services describe majorana-worker \
             --project "$GCP_PROJECT" --region "$GCP_REGION" \
             --format="value(status.latestCreatedRevisionName)")
