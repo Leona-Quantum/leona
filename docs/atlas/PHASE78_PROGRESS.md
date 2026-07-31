@@ -15,8 +15,8 @@ document does not promote either slice to public execution or publication.
 - S4 component-first UI: complete locally
 - S5 verification/evidence: complete for private macOS/arm64 and Linux/amd64
   evidence
-- S6 remote reproducibility: complete for private COBYLA and UCCSD
-  qualification
+- S6 remote reproducibility: complete for private COBYLA, UCCSD, and bounded
+  hardware-efficient qualification
 
 ## Local verification
 
@@ -118,9 +118,9 @@ WorkOS tenant session.
 - stale UCCSD fixture check: corrected from fail-open to fail-closed;
 - S2 Qiskit/PennyLane runtime adapters: complete locally on macOS/arm64;
 - S3 provider equivalence evidence: complete locally;
-- S4 Registry/API/worker: pending;
-- S5 private UI workflow: pending;
-- S6 Linux/amd64 OCI and remote private E2E: pending.
+- S4 Registry/API/worker: complete for the bounded private path;
+- S5 private UI workflow: complete;
+- S6 Linux/amd64 OCI and remote private E2E: complete.
 
 The authoritative bounded specification is
 `docs/atlas/PHASE78_H2_HARDWARE_EFFICIENT_EXECUTABLE_PLAN.md`. The canonical
@@ -147,11 +147,55 @@ The common ansatz-only resource record is CNOT 6, depth 7, 14 gates, and eight
 independent parameters. Provider-native metrics include Hartree–Fock
 preparation and are retained only as non-comparable diagnostics.
 
-These macOS/arm64 observations establish local adapter agreement only. The
-component is not runtime-qualified, the catalog records remain structured, and
-the existing UCCSD-vs-hardware-efficient comparison remains an unevaluated
-design. Linux/amd64 OCI qualification and private deployed E2E are still
-required before any status promotion.
+These macOS/arm64 observations establish local adapter agreement only. Runtime
+qualification instead rests on the immutable Linux/amd64 and private E2E
+records below. The public catalog record remains structured, and the existing
+UCCSD-vs-hardware-efficient comparison remains an unevaluated design rather
+than a performance result.
+
+### Hardware-efficient immutable OCI and private E2E
+
+The hardened Linux/amd64 verification succeeded in
+[GitHub Actions run 30623109464](https://github.com/EshMis/majorana/actions/runs/30623109464).
+Both adapters completed 164 objective evaluations under deny-all egress,
+read-only root filesystems, dropped Linux capabilities, no-new-privileges, and
+bounded resources:
+
+| Adapter | Energy (Ha) | Absolute error (Ha) | Fidelity | CNOT | Depth | Parameters |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Qiskit 1.4.6 | -1.137306035753359 | 1.510e-14 | 0.999999999999991 | 6 | 7 | 8 |
+| PennyLane 0.45.1 | -1.137306035753365 | 8.882e-15 | 0.999999999999992 | 6 | 7 | 8 |
+
+The images were published from source commit
+`119df80ac4c642dfa64a7e8468b5c82bec99f7d8` by
+[GitHub Actions run 30623203874](https://github.com/EshMis/majorana/actions/runs/30623203874):
+
+- Qiskit OCI index:
+  `sha256:1bd4a30499fdb945ee61a89b703d28287eabe2d4dedf610c8a9b4fef6fee555d`;
+- Qiskit Linux/amd64 manifest:
+  `sha256:ad122a102153447add22f0e2578c5d2aabb61533f94ad0636e23418b451ac47c`;
+- PennyLane OCI index:
+  `sha256:f6977dcf8cdd99b198c739f6d1f33c98dcf840235a40f66c5632dd5adddeb207`;
+- PennyLane Linux/amd64 manifest:
+  `sha256:717f1281c825967330bba99d3e9b8ea85ab6aac29c1c2d4954568af169cda2b4`.
+
+Each image has a retained SBOM, provenance statement, and GitHub attestation.
+The private authentication → isolated PostgreSQL 17 → exact OCI → worker →
+private artifact → separate-session reopen path succeeded in
+[GitHub Actions run 30624939038](https://github.com/EshMis/majorana/actions/runs/30624939038)
+on source commit `f623e0e1616b67957f020cb7697a67f40d09a6e4`.
+The corresponding general
+[CI run 30624938943](https://github.com/EshMis/majorana/actions/runs/30624938943)
+also succeeded.
+
+The durable record is
+`docs/atlas/evidence/phase78/hardware_efficient_private_oci_qualification.json`.
+It distinguishes the synthetic WorkOS-shaped JWT contract, disposable
+database, and GitHub Actions Docker host from a live WorkOS tenant, Neon
+production database, or permanent deployment. The migration changes the
+primary `ansatz` and the dependent `compilation_backend`; it is therefore a
+controlled capability migration, not a one-component comparison. Public
+execution, publication, and performance-superiority claims remain blocked.
 
 ## H₂ UCCSD slice
 

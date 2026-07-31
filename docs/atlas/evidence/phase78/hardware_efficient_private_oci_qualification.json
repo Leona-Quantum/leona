@@ -1,0 +1,132 @@
+{
+  "schema_version": "1.0.0",
+  "kind": "phase78_h2_hardware_efficient_private_oci_qualification",
+  "capability": "h2_sto3g_hardware_efficient_ry_cx_v1",
+  "qualification": {
+    "status": "private_runtime_qualified",
+    "public_execution": "blocked",
+    "publication": "blocked",
+    "human_review": "owner_waived",
+    "scientific_claim": "executable_interoperability_only"
+  },
+  "scientific_protocol": {
+    "canonical_circuit_digest": "7e28b52d16d694ac59e8b1a2ce2f9b6e215df60e67ac9b3521231e10859016c8",
+    "compilation_protocol_digest": "c088fcfb95244dbba960cd096fd58fea8e9f289fbce509758e1a59f58270539c",
+    "operation_sequence_digest": "349652753a7114f9cdaf6582670594fd07341f846508dc7f51d4094162365c02",
+    "resource_protocol": "canonical_ansatz_only_decomposition",
+    "parameter_count": 8,
+    "cnot_count": 6,
+    "depth": 7,
+    "total_gate_count": 14
+  },
+  "hardened_runtime_verification": {
+    "run_id": 30623109464,
+    "run_url": "https://github.com/EshMis/majorana/actions/runs/30623109464",
+    "source_commit": "119df80ac4c642dfa64a7e8468b5c82bec99f7d8",
+    "platform": "linux/amd64",
+    "network": "deny_all",
+    "root_filesystem": "read_only",
+    "capabilities": "all_dropped",
+    "no_new_privileges": true,
+    "temporary_storage": "64_MiB_noexec_nosuid_tmpfs",
+    "results": {
+      "qiskit": {
+        "framework_version": "1.4.6",
+        "energy_ha": -1.1373060357533586,
+        "absolute_error_ha": 1.509903313490213e-14,
+        "fidelity": 0.9999999999999913,
+        "energy_evaluations": 164,
+        "artifact_id": 8790228494,
+        "artifact_digest": "sha256:ee2bdbbc0335145a96f5f9d1275d23fa47b5f6a838ef75db71cf5bd80cb5db57"
+      },
+      "pennylane": {
+        "framework_version": "0.45.1",
+        "energy_ha": -1.1373060357533649,
+        "absolute_error_ha": 8.881784197001252e-15,
+        "fidelity": 0.9999999999999918,
+        "energy_evaluations": 164,
+        "artifact_id": 8790232630,
+        "artifact_digest": "sha256:e1204ee8bdf6313113fd6c4d08c0caae47496d7095d53bdabc155f911c2e041d"
+      }
+    }
+  },
+  "oci_publication": {
+    "run_id": 30623203874,
+    "run_url": "https://github.com/EshMis/majorana/actions/runs/30623203874",
+    "source_commit": "119df80ac4c642dfa64a7e8468b5c82bec99f7d8",
+    "images": {
+      "qiskit": {
+        "repository": "ghcr.io/eshmis/majorana-vqe-hardware-efficient-qiskit",
+        "index_digest": "sha256:1bd4a30499fdb945ee61a89b703d28287eabe2d4dedf610c8a9b4fef6fee555d",
+        "platform_manifest_digest": "sha256:ad122a102153447add22f0e2578c5d2aabb61533f94ad0636e23418b451ac47c",
+        "image_config_digest": "sha256:a4bca296be07535687dd60432e34099f18b9c8acbe18e4cc28478ad5c6af27cc",
+        "buildkit_attestation_manifest_digest": "sha256:62c808ff9f65a76a7684aabbc64e44c309546d9f47558c55bc97879f3621fa19",
+        "sbom_sha256": "52c89456a85da8b487b14a7105fbca52d38664dbfeeaa8cb0a4a58caa413b346",
+        "provenance_sha256": "aefd3ecedb4cf65985abbee3858e8cce47d9a0e438dfb91c98d9ea43cb51daa7",
+        "github_attestation_id": "38148774",
+        "github_attestation_url": "https://github.com/EshMis/majorana/attestations/38148774"
+      },
+      "pennylane": {
+        "repository": "ghcr.io/eshmis/majorana-vqe-hardware-efficient-pennylane",
+        "index_digest": "sha256:f6977dcf8cdd99b198c739f6d1f33c98dcf840235a40f66c5632dd5adddeb207",
+        "platform_manifest_digest": "sha256:717f1281c825967330bba99d3e9b8ea85ab6aac29c1c2d4954568af169cda2b4",
+        "image_config_digest": "sha256:73c24c529a6b9c2880a4698dc67e2154097500571dacdad407174dd49009b281",
+        "buildkit_attestation_manifest_digest": "sha256:567644eab32d7dfca35d95575b86afb6c854aacf5894804f82b2c7c6e6a7756e",
+        "sbom_sha256": "225e7b8fec6f466289126420fe40306c3c00d080ed644217afea819497f950e7",
+        "provenance_sha256": "62f6e70c9bfb088f0783783ba92ca04402ff0bd3b428c2d6bc6a6ccd2a1f12a1",
+        "github_attestation_id": "38148757",
+        "github_attestation_url": "https://github.com/EshMis/majorana/attestations/38148757"
+      }
+    }
+  },
+  "private_remote_e2e": {
+    "run_id": 30624939038,
+    "run_url": "https://github.com/EshMis/majorana/actions/runs/30624939038",
+    "source_commit": "f623e0e1616b67957f020cb7697a67f40d09a6e4",
+    "database": "disposable_postgresql_17",
+    "authentication": "synthetic_workos_shaped_jwt_contract_only",
+    "runtime_host": "github_actions_dedicated_docker",
+    "session_reopen": "passed",
+    "failure_path": "passed",
+    "artifact": {
+      "id": 8790988822,
+      "name": "phase78-private-ci-e2e-f623e0e1616b67957f020cb7697a67f40d09a6e4",
+      "archive_digest": "sha256:f4ecded2d08791bdb3913e690b6797732d6e464a05f5920a6d85e7e7c6e1589a",
+      "payload_file_sha256": "266e5b4785b4287a5c6adad59a2b50fc825b1aba3838eb0863ba136a6f1431eb",
+      "payload_evidence_digest": "ce1bcbe56acb995b30a62043eba9bb2dd5367bc5c9a381e8e8662e436403cd82",
+      "expires_at": "2026-08-30T10:53:07Z"
+    },
+    "migration": {
+      "comparison_class": "controlled_capability_migration_not_one_component_swap",
+      "primary_changed_role": "ansatz",
+      "dependent_changed_roles": [
+        "compilation_backend"
+      ],
+      "experiment_id": "019fb7ce-4d11-73f6-b41e-5f319a654ee1",
+      "workflow_artifact_version_id": "019fb7ce-4c37-7db4-858f-4312256795b2",
+      "execution_ids": {
+        "qiskit": "019fb7ce-4d1d-7d02-a864-4c20cdf5f4c4",
+        "pennylane": "019fb7ce-58db-71c5-8998-a463a943aba3"
+      },
+      "materialized_artifact_ids": {
+        "qiskit": "019fb7ce-58cf-7a9a-a87a-335e4a5b9fd5",
+        "pennylane": "019fb7ce-6ca1-7ed5-94d3-a168959c38a1"
+      }
+    }
+  },
+  "verification": {
+    "general_ci_run_id": 30624938943,
+    "general_ci_run_url": "https://github.com/EshMis/majorana/actions/runs/30624938943",
+    "general_ci_conclusion": "success",
+    "production_e2e_conclusion": "success"
+  },
+  "excluded_claims": [
+    "live_workos_tenant_e2e",
+    "neon_or_production_database_e2e",
+    "cloud_run_or_permanent_host_e2e",
+    "public_execution",
+    "public_scientific_result",
+    "performance_superiority",
+    "one_component_controlled_comparison"
+  ]
+}
