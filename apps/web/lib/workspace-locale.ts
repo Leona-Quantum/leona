@@ -95,6 +95,11 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
     dropOutside: string;
     accountMenu: string;
     usageLimits: string;
+    usageRunsLeft: (remaining: number, limit: number) => string;
+    usageRunsNone: string;
+    usageRunsUnlimited: string;
+    usageNextSlotOn: (date: string) => string;
+    usageNextSlotWhen: (word: string) => string;
     signOut: string;
     /** Plan name shown beside the person's first name in the sidebar footer. */
     tierLabel: Record<AccountTier, string>;
@@ -452,6 +457,15 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
       dropOutside: "Drop here to remove from project",
       accountMenu: "Account menu",
       usageLimits: "Usage & limits",
+      // The allowance window ROLLS. "Resets weekly" would be the natural thing
+      // to write here and it would be false: runs come back one at a time,
+      // seven days after each was spent, so the only honest sentence names a
+      // day. See lib/usage-summary.describeNextSlot for why the two frames.
+      usageRunsLeft: (remaining: number, limit: number) => `${remaining} of ${limit} runs left`,
+      usageRunsNone: "No runs left",
+      usageRunsUnlimited: "Unlimited runs",
+      usageNextSlotOn: (date: string) => `1 more frees up on ${date}`,
+      usageNextSlotWhen: (word: string) => `1 more frees up ${word}`,
       signOut: "Log out",
       tierLabel: { demo: "Preview", free: "Free", developer: "Developer" },
     },
@@ -854,6 +868,13 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
       dropOutside: "ここにドロップしてプロジェクトから外す",
       accountMenu: "アカウントメニュー",
       usageLimits: "使用状況と上限",
+      // 英語版と同じ理由：この枠は「週ごとにリセット」ではなくローリング7日間。
+      // 使った実行が7日後に1回ずつ戻るので、曜日ではなく日付で言うしかない。
+      usageRunsLeft: (remaining: number, limit: number) => `実行 残り ${remaining}/${limit}`,
+      usageRunsNone: "実行の残りがありません",
+      usageRunsUnlimited: "実行は無制限",
+      usageNextSlotOn: (date: string) => `${date}に1回分が戻ります`,
+      usageNextSlotWhen: (word: string) => `${word}1回分が戻ります`,
       signOut: "ログアウト",
       tierLabel: { demo: "プレビュー", free: "フリー", developer: "開発者" },
     },
@@ -1210,6 +1231,15 @@ export const ACCOUNT_COPY: Record<PublicLocale, {
   usageRunsPerWeek: (count: number) => string;
   usageArtifacts: (count: number) => string;
   usageQubits: (count: number) => string;
+  usageNowTitle: string;
+  usageWorkspaces: string;
+  usageSpent: (used: number, limit: number) => string;
+  usageSpentUnmetered: (used: number) => string;
+  usageWindow: (days: number) => string;
+  usageArtifactsScope: string;
+  usageEnforcedAs: (tier: string) => string;
+  usageNextSlotOn: (date: string) => string;
+  usageNextSlotWhen: (word: string) => string;
   tierNames: Record<"demo" | "free" | "developer", string>;
   usageEnforcement: string;
   billingTitle: string;
@@ -1283,6 +1313,19 @@ export const ACCOUNT_COPY: Record<PublicLocale, {
     usageRunsPerWeek: (count) => `${count} per week`,
     usageArtifacts: (count) => `${count} artifacts`,
     usageQubits: (count) => `Up to ${count} qubits`,
+    usageNowTitle: "Right now",
+    usageWorkspaces: "Workspaces owned",
+    usageSpent: (used, limit) => `${used} of ${limit} used`,
+    usageSpentUnmetered: (used) => `${used} used — no limit on your plan`,
+    // "Rolling" rather than "weekly": each run returns seven days after it was
+    // spent, so there is no reset day, and saying there is one would send
+    // people back on the wrong morning.
+    usageWindow: (days) => `Rolling ${days} days — each run returns ${days} days after you use it`,
+    usageArtifactsScope: "In this workspace",
+    usageEnforcedAs: (tier) =>
+      `Your runs are being enforced as ${tier}. The limits above are what this page resolved; these are what the control plane applies.`,
+    usageNextSlotOn: (date) => `1 more frees up on ${date}`,
+    usageNextSlotWhen: (word) => `1 more frees up ${word}`,
     tierNames: { demo: "Preview", free: "Free", developer: "Developer" },
     usageEnforcement: "These allowances are enforced when you submit a run. Browser simulation always stays available on your own hardware.",
     billingTitle: "Billing & credits",
@@ -1356,6 +1399,21 @@ export const ACCOUNT_COPY: Record<PublicLocale, {
     usageRunsPerWeek: (count) => `週${count}回`,
     usageArtifacts: (count) => `${count}件`,
     usageQubits: (count) => `${count}量子ビットまで`,
+    usageNowTitle: "現在の使用状況",
+    usageWorkspaces: "所有ワークスペース",
+    // 助数詞を持たない形にしてある。実行は「回」、アーティファクトは「件」、
+    // ワークスペースは「つ」と数え方が違うので、三つの行で同じ関数を使う以上
+    // 数字だけを見せるのが唯一正しく読める書き方になる。
+    usageSpent: (used, limit) => `${used} / ${limit} 使用中`,
+    usageSpentUnmetered: (used) => `${used} 使用中 — 現在のプランでは上限なし`,
+    // 「毎週リセット」ではない。使った実行が7日後に1回ずつ戻るローリング方式で、
+    // リセット曜日があると書くと違う日に戻ってこられてしまう。
+    usageWindow: (days) => `直近${days}日間のローリング — 使った実行は${days}日後に1回ずつ戻ります`,
+    usageArtifactsScope: "このワークスペース内",
+    usageEnforcedAs: (tier) =>
+      `実行は ${tier} として制限されています。上の上限はこのページが判定した値、以下はコントロールプレーンが実際に適用している値です。`,
+    usageNextSlotOn: (date) => `${date}に1回分が戻ります`,
+    usageNextSlotWhen: (word) => `${word}1回分が戻ります`,
     tierNames: { demo: "プレビュー", free: "Free", developer: "Developer" },
     usageEnforcement: "これらの上限は実行の送信時に適用されます。ブラウザーでのシミュレーションはお使いの端末上で常に利用できます。",
     billingTitle: "請求とクレジット",

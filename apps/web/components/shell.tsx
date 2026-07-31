@@ -41,6 +41,7 @@ import {
 } from "../lib/chat-history";
 import { accountFirstName, accountInitials } from "../lib/account-identity";
 import type { AccountTier } from "../lib/account-tier";
+import { describeNextSlot, isMetered, parseUsage, type UsageSummary } from "../lib/usage-summary";
 import { titleFromPrompt } from "../lib/chat-title";
 import {
   ARTIFACT_FOLDERS_EVENT,
@@ -411,6 +412,8 @@ function WorkspaceSidebar({
   const [dragTarget, setDragTarget] = useState<string | null>(null);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const userMenuRef = useRef<HTMLDivElement | null>(null);
+  const [usage, setUsage] = useState<UsageSummary | null>(null);
+  const usageReadAt = useRef(0);
   const [creatingFolder, setCreatingFolder] = useState(false);
   const [folderName, setFolderName] = useState("");
   const [creatingArtifactFolder, setCreatingArtifactFolder] = useState(false);
@@ -535,6 +538,53 @@ function WorkspaceSidebar({
       window.removeEventListener("keydown", handleKeyDown);
     };
   }, [userMenuOpen]);
+
+  // The allowance numbers, read when the drawer opens rather than on every page
+  // load. Nobody needs them until they look, and this is one round trip to the
+  // control plane per look — re-read after thirty seconds because the thing
+  // most likely to have happened in between is the user spending a run.
+  //
+  // Every failure path here ends in the menu showing exactly what it showed
+  // before this existed: the link, and no numbers. A stale or invented count
+  // beside the words "usage & limits" is worse than none.
+  useEffect(() => {
+    if (!userMenuOpen || demoMode) return;
+    if (usage && Date.now() - usageReadAt.current < 30_000) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const response = await fetch("/api/usage", { cache: "no-store" });
+        if (!response.ok) return;
+        const summary = parseUsage(await response.json());
+        if (cancelled || !summary) return;
+        usageReadAt.current = Date.now();
+        setUsage(summary);
+      } catch {
+        // Offline, signed out mid-session, or the control plane is down. The
+        // drawer is not the place to report any of those.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [userMenuOpen, demoMode, usage]);
+
+  const usageLine = usage
+    ? !isMetered(usage)
+      ? copy.usageRunsUnlimited
+      : usage.runs.exhausted
+        ? copy.usageRunsNone
+        : copy.usageRunsLeft(usage.runs.remaining ?? 0, usage.runs.limit ?? 0)
+    : null;
+  const nextSlot =
+    usage && isMetered(usage) && usage.runs.nextSlotAt
+      ? describeNextSlot(usage.runs.nextSlotAt, locale)
+      : null;
+  const nextSlotLine = nextSlot
+    ? nextSlot.relative
+      ? copy.usageNextSlotWhen(nextSlot.text)
+      : copy.usageNextSlotOn(nextSlot.text)
+    : null;
 
   function toggleFolder(id: string) {
     setOpenFolders((current) => {
@@ -806,7 +856,15 @@ function WorkspaceSidebar({
               <div className="mj-sidebar-user-drawer-panel">
                 <div className="mj-sidebar-user-drawer-items">
                   <a role="menuitem" href="/account"><SettingsIcon size={15} />{copy.settings}</a>
-                  <a role="menuitem" href="/account#usage">{copy.usageLimits}</a>
+                  <a role="menuitem" className="mj-sidebar-usage" href="/account#usage">
+                    <span>{copy.usageLimits}</span>
+                    {usageLine ? (
+                      <span className="mj-sidebar-usage-detail" data-spent={usage?.runs.exhausted ? "" : undefined}>
+                        {usageLine}
+                        {nextSlotLine ? <small>{nextSlotLine}</small> : null}
+                      </span>
+                    ) : null}
+                  </a>
                   <a role="menuitem" className="is-danger" href="/auth/sign-out">{copy.signOut}</a>
                 </div>
               </div>

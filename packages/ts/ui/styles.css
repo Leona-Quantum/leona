@@ -8158,6 +8158,40 @@ div.mj-rail-row:hover {
 .mj-sidebar-user-drawer a.is-danger {
   color: var(--err);
 }
+/* "Usage & limits" carries the numbers now, so it is the one row that can be
+   two lines tall — and only once they have loaded. The row keeps its 30px
+   min-height and simply grows, so a drawer whose fetch has not answered (or
+   never will) is exactly the drawer that shipped before this existed rather
+   than a reserved empty gap.
+
+   Stacked, not label-left/number-right. The sidebar is ~220px wide and the
+   drawer inherits it: side by side, "Usage & limits" broke after the ampersand
+   and "1 more frees up tomorrow" took three lines beside it. Two columns
+   competing for 220px is not a layout, and the Japanese strings are longer
+   still. This was visible only on the rendered page — the markup was fine. */
+.mj-sidebar-user-drawer a.mj-sidebar-usage {
+  display: grid;
+  align-items: start;
+  gap: 1px;
+  padding-block: var(--sp-1);
+}
+.mj-sidebar-usage-detail {
+  display: grid;
+  gap: 1px;
+  color: var(--text-1);
+  font-variant-numeric: tabular-nums;
+}
+.mj-sidebar-usage-detail small {
+  font-size: var(--fs-12);
+  color: var(--text-2);
+}
+/* Spent, not broken: warn rather than err. An exhausted weekly allowance is the
+   plan working as sold, and colouring it like a failure sends people to support
+   for something support cannot fix — the same reason the refusal copy says
+   "your plan includes 5" instead of naming a backstop. */
+.mj-sidebar-usage-detail[data-spent] {
+  color: var(--warn);
+}
 .mj-sidebar-user-menu[data-open="true"] .mj-sidebar-user {
   border-color: var(--border-0);
   border-top-color: transparent;
@@ -8219,6 +8253,32 @@ div.mj-rail-row:hover {
   margin: 0;
   color: var(--text-1);
   font-size: var(--fs-13);
+}
+/* "Right now" — what is spent, under the ceilings that say what is allowed.
+   Appears only once the numbers load, so it reserves no space. */
+.mj-usage-now {
+  margin-top: var(--sp-4);
+}
+.mj-usage-now h3 {
+  margin: 0 0 var(--sp-2);
+  color: var(--text-2);
+  font-size: var(--fs-12);
+  font-weight: 500;
+}
+.mj-usage-now-conflict {
+  margin: 0 0 var(--sp-2);
+  color: var(--warn);
+  font-size: var(--fs-12);
+}
+.mj-usage-now .mj-usage-list dd {
+  display: grid;
+  gap: 2px;
+  font-variant-numeric: tabular-nums;
+}
+.mj-usage-now .mj-usage-list dd small {
+  color: var(--text-2);
+  font-size: var(--fs-12);
+  font-variant-numeric: normal;
 }
 
 /* studio circuit builder */
