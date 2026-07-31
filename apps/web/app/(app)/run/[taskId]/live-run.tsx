@@ -336,6 +336,11 @@ export function LiveRun({ taskId }: { taskId: string }) {
   const conversationIdRef = useRef<string | null>(null);
   const chatScrollRef = useRef<HTMLDivElement>(null);
   const shouldAutoScrollRef = useRef(true);
+  const completionScrolledForTaskRef = useRef<string | null>(null);
+
+  const currentRunIsTerminal = fixtureIsTerminal
+    || liveEvents.some((event) => event.run_id === taskId && event.type === "run.finished")
+    || turns.some((turn) => turn.id === taskId && turn.terminal);
 
   useEffect(() => {
     const found = loadChatHistory({ includeArchived: true }).find(
@@ -359,6 +364,7 @@ export function LiveRun({ taskId }: { taskId: string }) {
     setConversationId(null);
     setStopping(false);
     shouldAutoScrollRef.current = true;
+    completionScrolledForTaskRef.current = null;
   }, [taskId]);
 
   useEffect(() => {
@@ -366,6 +372,48 @@ export function LiveRun({ taskId }: { taskId: string }) {
     if (!scrollContainer || !shouldAutoScrollRef.current) return;
     scrollContainer.scrollTop = scrollContainer.scrollHeight;
   }, [taskId, turns, streamingText, reasoningText, liveEvents.length, pending]);
+
+  useEffect(() => {
+    if (
+      !currentRunIsTerminal
+      || completionScrolledForTaskRef.current === taskId
+      || !shouldAutoScrollRef.current
+    ) {
+      return;
+    }
+    const scrollContainer = chatScrollRef.current;
+    if (!scrollContainer) return;
+    const target = Array.from(
+      scrollContainer.querySelectorAll<HTMLElement>("[data-run-final-output]"),
+    ).find((element) => element.dataset.runFinalOutput === taskId);
+    // Conversation hydration can reveal `run.finished` one render before the
+    // result projection mounts. Leave the request pending so the next turns or
+    // event update can try again instead of falling back to the bottom edge.
+    if (!target) return;
+
+    const frame = window.requestAnimationFrame(() => {
+      // Do not steal the viewport if the reader moved away while the terminal
+      // render was settling. `onScroll` owns this preference.
+      if (!shouldAutoScrollRef.current) return;
+      const containerRect = scrollContainer.getBoundingClientRect();
+      const targetRect = target.getBoundingClientRect();
+      const top = Math.max(
+        0,
+        scrollContainer.scrollTop + targetRect.top - containerRect.top - 16,
+      );
+      const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+      scrollContainer.scrollTo({
+        top,
+        behavior: reducedMotion ? "auto" : "smooth",
+      });
+      completionScrolledForTaskRef.current = taskId;
+      // The result heading, rather than its lower code/log content, is now the
+      // stable reading anchor. Later hydration must not pull it down to the
+      // bottom again.
+      shouldAutoScrollRef.current = false;
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [currentRunIsTerminal, liveEvents.length, taskId, turns]);
 
   useEffect(() => {
     if (fixtureEvents) return;
@@ -764,7 +812,7 @@ export function CompletedAssistant({ turn }: { turn: Turn }) {
         <RunOutcome outcome={outcomeWithoutDuplicateCode} />
       ) : null}
       {result ? (
-        <FinalOutput result={result} events={turn.events} />
+        <FinalOutput result={result} events={turn.events} runId={turn.id} />
       ) : outcomeWithoutDuplicateCode ? (
         <RunOutcome outcome={outcomeWithoutDuplicateCode} action={<ArtifactLink events={turn.events} />} />
       ) : (
@@ -835,7 +883,7 @@ function AssistantMessage({
         <RunOutcome outcome={outcomeWithoutDuplicateCode} />
       ) : null}
       {result ? (
-        <FinalOutput result={result} events={events} />
+        <FinalOutput result={result} events={events} runId={turnId} />
       ) : outcomeWithoutDuplicateCode ? (
         <RunOutcome outcome={outcomeWithoutDuplicateCode} action={<ArtifactLink events={events} />} />
       ) : text ? (
@@ -851,16 +899,22 @@ function AssistantMessage({
 function FinalOutput({
   result,
   events,
+  runId,
 }: {
   result: NonNullable<ReturnType<typeof runResultFromEvents>>;
   events: WireEvent[];
+  runId?: string | null;
 }) {
   const accepted = events.some(
     (event) => event.type === "run.finished" && event.status === "succeeded",
   );
   const heading = accepted ? "Final Output" : "Best available result";
   return (
-    <section className="mj-run-final-output" aria-label={heading}>
+    <section
+      className="mj-run-final-output"
+      aria-label={heading}
+      data-run-final-output={runId ?? undefined}
+    >
       <span className="sr-only" role="status" aria-live="polite" aria-atomic="true">
         {heading} ready. {result.trust.label}.
       </span>

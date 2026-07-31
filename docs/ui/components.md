@@ -132,6 +132,10 @@ presented as **Best available result** with an explicit not-verified badge and a
 reason notice. “No accepted result” is reserved for runs that genuinely produced no
 deliverable. This preserves useful work without overstating verification.
 
+When the current run becomes terminal, a reader who was already following the live
+tail is moved to the Final Output heading. A reader who scrolled upward keeps their
+position, and later result hydration does not pull the heading down to the bottom.
+
 ## RunComposer (live chat route)
 
 The idle composer is compact and expands its text area on focus. While a request is in
