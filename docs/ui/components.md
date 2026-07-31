@@ -109,7 +109,7 @@ switch among retained revisions and copy the selected source without exposing ra
 payloads. The normal RUN surface does not expose the raw durable event log.
 
 `artifact.saved` means the run materialized a private result package. It must never claim
-that the user kept it in Vault; only the explicit Keep action establishes that state.
+that the user kept it; only the explicit Keep action establishes that state.
 The success, mid-run, failed, exhausted, skipped, inconclusive, and provider-error
 states are replayable through the local `/run/demo-*` fixtures.
 
