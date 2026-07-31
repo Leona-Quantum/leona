@@ -24,7 +24,7 @@ export const PUBLIC_SHELL_COPY: Record<PublicLocale, {
   en: {
     nav: { product: "Product", pricing: "Pricing", repository: "Atlas", workspace: "Workspace", contact: "Contact" },
     footer: {
-      promise: "Trustworthy quantum work, one verified artifact at a time.",
+      promise: "Generate, optimize, and use quantum circuits on one platform.",
       explore: "Explore",
       company: "Company",
       legal: "Legal",
@@ -38,14 +38,14 @@ export const PUBLIC_SHELL_COPY: Record<PublicLocale, {
   ja: {
     nav: { product: "プロダクト", pricing: "料金", repository: "Atlas", workspace: "ワークスペース", contact: "お問い合わせ" },
     footer: {
-      promise: "回路、実行条件、検証結果をひとつにまとめ、再現できる量子研究を支えます。",
+      promise: "量子回路の生成・最適化・活用を、ひとつのプラットフォームで",
       explore: "公開研究を見る",
       company: "会社情報",
       legal: "法務",
       contact: "お問い合わせ",
       privacy: "プライバシー",
       terms: "利用規約",
-      builtFor: "量子研究を検証し、再現・共有したい研究者、エンジニア、チームのために。",
+      builtFor: "量子研究を検証し、再現・共有したい研究者、エンジニア、チームのために",
     },
     actions: { workspace: "ワークスペースを開く", signIn: "サインイン", talk: "相談する", signOut: "サインアウト" },
   },

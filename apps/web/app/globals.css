@@ -725,6 +725,102 @@ body {
 }
 
 .mj-company-intro-copy { display: flex; flex-direction: column; gap: var(--sp-3, 12px); }
+.mj-company-intro .mj-section-label { color: var(--text-2); }
+html[lang="ja"] .mj-company-hero-title {
+  max-width: none;
+  font-size: clamp(1.15rem, 3.4vw, 2.75rem);
+  letter-spacing: -0.03em;
+  line-height: 1.08;
+}
+html[lang="ja"] .mj-company-hero-title-line {
+  display: block;
+  white-space: nowrap;
+}
+html[lang="ja"] .mj-company-hero-title > span,
+html[lang="ja"] .mj-company-hero-title .mj-hero-word {
+  white-space: nowrap;
+}
+
+/* Landing-page product story: three calm, text-first sections added after the
+ * existing capability band. They reuse the public typography and tokens while
+ * keeping the Atlas, execution record, and framework support visually distinct. */
+.mj-company-detail {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: var(--sp-12);
+  align-items: start;
+}
+.mj-company-detail-copy {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--sp-5);
+}
+.mj-company-detail-copy > p,
+.mj-company-trace-heading > p:last-child,
+.mj-company-final-cta-copy > p:last-child {
+  margin: 0;
+  color: var(--text-1);
+  line-height: 1.65;
+}
+.mj-company-trace-heading {
+  display: grid;
+  gap: var(--sp-3);
+  max-width: 760px;
+}
+.mj-company-fact-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--sp-4);
+}
+.mj-company-fact-card {
+  min-height: 152px;
+  padding: var(--sp-5);
+  border: 1px solid var(--border-0);
+  border-radius: var(--radius-card);
+  background: var(--bg-1);
+}
+.mj-company-fact-card h3 {
+  margin: var(--sp-4) 0 var(--sp-2);
+  font-size: var(--fs-16);
+  font-weight: 500;
+}
+.mj-company-fact-card p {
+  margin: 0;
+  color: var(--text-1);
+  line-height: 1.55;
+}
+.mj-company-framework-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.mj-company-framework-list li {
+  padding: var(--sp-2) var(--sp-4);
+  border: 1px solid var(--border-0);
+  border-radius: 999px;
+  background: var(--bg-1);
+  color: var(--text-0);
+  font-family: var(--font-mono);
+  font-size: var(--fs-12);
+}
+.mj-company-final-cta-copy {
+  display: grid;
+  gap: var(--sp-3);
+}
+
+@media (max-width: 860px) {
+  .mj-company-detail,
+  .mj-company-fact-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .mj-company-fact-card {
+    min-height: 0;
+  }
+}
 
 /* Contact page: form on the left, a compact Measure widget as a small aside on
    the right (Owner Inbox 2026-07-19). Stacks on narrow viewports. */

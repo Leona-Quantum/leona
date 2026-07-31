@@ -30,7 +30,6 @@ export const HOME_COPY: Record<PublicLocale, {
     primary: string;
     secondary: string;
     contact: string;
-    note: string;
     scrollCue: string;
   };
   visual: {
@@ -40,56 +39,85 @@ export const HOME_COPY: Record<PublicLocale, {
     footer: string;
     meta: string;
   };
-  intro: { label: string; title: string; body: string };
+  intro: { label: string; title: string };
   product: {
     label: string;
     title: string;
-    items: Array<{ index: string; title: string; body: string; action?: string }>;
+    items: Array<{ index: string; title: string; body: string; action: string; href: string }>;
   };
-  principles: {
+  atlas: { label: string; title: string; body: string; action: string };
+  trace: {
+    label: string;
+    title: string;
+    body: string;
+    items: Array<{ title: string; body: string }>;
+  };
+  frameworks: { label: string; title: string; body: string; items: string[] };
+  principles?: {
     label: string;
     title: string;
     items: Array<{ title: string; body: string }>;
   };
-  lioness: { label: string; title: string };
-  measure: { label: string; title: string; body: string };
-  cta: { label: string; title: string; contact: string; pricing: string };
+  cta: { label: string; title: string; body: string; primary: string; secondary: string };
 }> = {
   en: {
     hero: {
-      title: "Evidence for quantum work.",
-      lede: "Public research, a private workspace, and execution that shows its working — in one place.",
-      primary: "Explore the Atlas",
-      secondary: "Open the workspace",
+      title: "A self-evolving quantum solution platform.",
+      lede: "Generate, optimize, and reuse quantum circuits.",
+      primary: "Open the workspace",
+      secondary: "Explore the Atlas",
       contact: "Get in touch",
-      note: "For researchers and teams who need results they can inspect and revisit.",
       scrollCue: "Scroll",
     },
     visual: {
       label: "LEONA QUANTUM / PRODUCT",
-      status: "EVIDENCE FIRST",
+      status: "AI-POWERED CIRCUIT DEVELOPMENT",
       pipeline: [
-        { number: "01", label: "Atlas", detail: "Public algorithms and sources" },
-        { number: "02", label: "Workspace", detail: "Build, edit, and retain the record" },
-        { number: "03", label: "Execute", detail: "Simulation and verification" },
-        { number: "04", label: "Compute", detail: "GPU and QPU lanes ahead" },
+        { number: "01", label: "Describe", detail: "Express the circuit in natural language" },
+        { number: "02", label: "Generate", detail: "Create the circuit, code, and diagram" },
+        { number: "03", label: "Run & optimize", detail: "Execute, review, and optimize" },
+        { number: "04", label: "Save & use", detail: "Keep the work in your Vault" },
       ],
-      footer: "Quantum work, with context",
-      meta: "PUBLIC · PRIVATE · VERIFIED",
+      footer: "Quantum circuit development, in one flow",
+      meta: "GENERATE · OPTIMIZE · USE",
     },
     intro: {
-      label: "The company",
-      title: "Quantum work needs somewhere for evidence to live.",
-      body: "Quantum results are easy to produce and hard to trust. Papers are not runnable, notebooks go stale, and the assumptions behind a number rarely travel with it. Leona Quantum keeps the research, the code, the run, and the check in one record.",
+      label: "The platform",
+      title: "Generate, run, optimize, and use quantum circuits in one environment.",
     },
     product: {
       label: "Our product",
-      title: "Three parts, one standard of evidence.",
+      title: "Everything needed to develop and use quantum circuits.",
       items: [
-        { index: "01", title: "Public research", body: "Explore circuits and algorithms with classification, source context, verification boundaries, classical comparisons, and framework-aware code.", action: "Browse the Atlas" },
-        { index: "02", title: "Personal workspace", body: "Turn a natural-language question into a visible plan, implementation, simulation, verification, and saved Vault record.", action: "Open the workspace" },
-        { index: "03", title: "Verified execution", body: "Use the supported simulator today, then add heavier compute lanes only when their cost, hardware, and evidence boundaries are clear.", action: "See how it works" },
+        { index: "01", title: "AI quantum circuit generation", body: "Leona Quantum generates quantum circuits from natural-language input and outputs code and circuit diagrams.", action: "Open the workspace", href: "/workspace" },
+        { index: "02", title: "Quantum circuit optimization", body: "Optimize generated or existing circuits for the selected quantum framework. Review the optimized circuit before execution or storage.", action: "Open the workspace", href: "/workspace" },
+        { index: "03", title: "Research and circuit repository", body: "Search and use quantum circuits, algorithms, and implementation code in the Atlas. Save your own code and execution settings in the Vault for later editing and use.", action: "Explore the Atlas", href: "/repository" },
       ],
+    },
+    atlas: {
+      label: "Atlas",
+      title: "Put quantum circuits to work.",
+      body: "Search and use quantum circuits, algorithms, and implementation code in one place with Atlas.",
+      action: "Explore the Atlas",
+    },
+    trace: {
+      label: "Execution record",
+      title: "Trace how each result was produced.",
+      body: "Leona Quantum keeps the circuit, execution settings, results, checks, and related information together. Review what was generated, how it was executed, and how the result was produced.",
+      items: [
+        { title: "Circuit", body: "The generated or selected quantum circuit." },
+        { title: "Code", body: "The implementation used for the run." },
+        { title: "Execution settings", body: "Framework, simulator, shots, seed, and other conditions." },
+        { title: "Results", body: "The outputs returned by the recorded execution." },
+        { title: "Checks", body: "The checks completed for that result." },
+        { title: "Sources", body: "References and context connected to the work." },
+      ],
+    },
+    frameworks: {
+      label: "Frameworks",
+      title: "Supports a range of quantum frameworks",
+      body: "Generate and inspect quantum circuits using supported frameworks such as Qiskit, Cirq, and PennyLane. Select the framework that fits your development environment and purpose.",
+      items: ["Qiskit", "Cirq", "PennyLane"],
     },
     principles: {
       label: "Our principles",
@@ -98,85 +126,82 @@ export const HOME_COPY: Record<PublicLocale, {
         { title: "Evidence first", body: "A result you cannot inspect is a claim. The check ships with the answer, including when the check could not run." },
         { title: "Open by default", body: "The Atlas is public because shared groundwork makes private work faster." },
         { title: "Privacy by design", body: "Vault content is yours. Nothing you build there feeds anything public." },
-        { title: "Interoperable", body: "Open formats and APIs, so the record outlives the tool that made it." },
+        { title: "Supports a range of quantum frameworks", body: "Work with supported frameworks such as Qiskit, Cirq, and PennyLane, and choose the environment that fits the task." },
       ],
     },
-    lioness: {
-      label: "The mark",
-      title: "She resolves from the noise.",
-    },
-    measure: {
-      label: "How verification works",
-      title: "Measured, not asserted.",
-      body: "Every result resolves to a distribution, not a claim. Bias the state, take a shot, and watch the tally settle toward |α|², |β|² — the same honesty we hold execution to.",
-    },
     cta: {
-      label: "Contact",
-      title: "Tell us what you’re working on.",
-      contact: "Get in touch",
-      pricing: "See early-access plans",
+      label: "Get started",
+      title: "Develop your next quantum circuit with Leona Quantum.",
+      body: "Start from natural language or use an existing circuit from the Atlas.",
+      primary: "Open the workspace",
+      secondary: "Explore the Atlas",
     },
   },
   ja: {
     hero: {
-      title: "量子研究を、確かめられる成果へ。",
-      lede: "公開研究、非公開ワークスペース、実行・検証をひとつに。",
-      primary: "Atlasを見る",
-      secondary: "ワークスペースを開く",
+      title: "次世代\n量子コンピューティングプラットフォーム",
+      lede: "量子回路の開発から活用まで、ひとつのプラットフォームで",
+      primary: "ワークスペースを開く",
+      secondary: "Atlasを見る",
       contact: "お問い合わせ",
-      note: "結果を確かめ、あとからもう一度たどりたい研究者とチームのために。",
       scrollCue: "スクロール",
     },
     visual: {
       label: "LEONA QUANTUM / PRODUCT",
-      status: "実行結果まで確かめる",
+      status: "AIで量子回路を生成",
       pipeline: [
-        { number: "01", label: "Atlas", detail: "公開アルゴリズムと出典" },
-        { number: "02", label: "ワークスペース", detail: "回路を作る、試す、履歴を残す" },
-        { number: "03", label: "実行", detail: "シミュレーションと検証" },
-        { number: "04", label: "計算", detail: "GPU・QPUへ拡張予定" },
+        { number: "01", label: "自然言語で表現", detail: "生成したい量子回路を入力" },
+        { number: "02", label: "量子回路を生成", detail: "コードや回路図を出力" },
+        { number: "03", label: "実行・最適化", detail: "結果を確認し、回路を最適化" },
+        { number: "04", label: "保存・活用", detail: "情報をVaultに保存" },
       ],
-      footer: "コード・実行条件・検証結果をひとつに",
-      meta: "公開 · 非公開 · 検証済み",
+      footer: "量子回路の開発を、ひとつの流れに",
+      meta: "生成 · 最適化 · 活用",
     },
     intro: {
-      label: "会社情報",
-      title: "量子研究のコード、実行条件、結果、検証内容を、ひとつの記録に。",
-      body: "量子計算の結果は、数値だけでは信頼性を判断できません。論文、コード、実行条件、結果、検証内容をひとつにまとめ、あとから確認・再現できる研究記録として残します。",
+      label: "プラットフォーム",
+      title: "量子回路の生成、実行、最適化、活用までを一つの環境で実行",
     },
     product: {
       label: "プロダクト",
-      title: "研究・実行・検証を、ひとつの記録に。",
+      title: "量子回路の開発から活用まで、ひとつのプラットフォームで",
       items: [
-        { index: "01", title: "公開された量子研究", body: "回路とアルゴリズムの分類、出典、検証範囲、古典計算との比較、フレームワーク別コードを確認できます。", action: "Atlasを見る" },
-        { index: "02", title: "個人ワークスペース", body: "質問を入力すると、計画、回路の実装、シミュレーション、検証まで進み、結果をVaultに保存できます。", action: "ワークスペースを開く" },
-        { index: "03", title: "検証できる実行", body: "まずは対応済みのシミュレータで実行できます。高性能な計算環境は、費用、利用条件、検証範囲を明示したうえで順次追加します。", action: "仕組みを見る" },
+        { index: "01", title: "量子回路生成", body: "Leona Quantumは自然言語から量子回路を生成し、コードや回路図を出力", action: "ワークスペースを開く", href: "/workspace" },
+        { index: "02", title: "量子回路の最適化", body: "生成した回路や既存の回路を、選択した量子フレームワークに合わせて最適化　最適化後の回路を実行・保存の前に確認", action: "ワークスペースを開く", href: "/workspace" },
+        { index: "03", title: "研究・量子回路リポジトリ", body: "Atlasで量子回路、アルゴリズム、実装コードをまとめて検索し、活用　コード、実行条件などの情報をあとから編集・活用するためにVaultに保存", action: "Atlasを見る", href: "/repository" },
       ],
     },
-    principles: {
-      label: "原則",
-      title: "Leona Quantumが大切にすること",
+    atlas: {
+      label: "Atlas",
+      title: "量子回路を活用する",
+      body: "Atlasで量子回路、アルゴリズム、実装コードをまとめて検索し、活用",
+      action: "Atlasを見る",
+    },
+    trace: {
+      label: "実行記録",
+      title: "結果に至った過程を確認",
+      body: "量子回路、実行条件、実行結果、確認内容などをまとめて保存　何が生成され、どのように実行され、結果に至ったかをあとから確認",
       items: [
-        { title: "結果だけでなく、検証内容も示す", body: "確認できない結果は、検証済みとして扱いません。検証できなかった場合も、そのまま記録します。" },
-        { title: "公開できる研究は、誰でも確認できる形に", body: "共有された研究を再利用できるよう、Atlasは公開しています。" },
-        { title: "非公開の研究データは、初めから保護", body: "Vaultの内容は利用者のものです。非公開ワークスペースの作業が自動的に公開されることはありません。" },
-        { title: "相互運用性", body: "オープンな形式とAPIに対応し、ツールが変わっても記録を再利用できます。" },
+        { title: "量子回路", body: "生成または選択した量子回路" },
+        { title: "コード", body: "実行に使用した実装コード" },
+        { title: "実行条件", body: "フレームワーク、シミュレータ、ショット数、シードなどの条件" },
+        { title: "実行結果", body: "記録された実行から得られた出力" },
+        { title: "確認内容", body: "実行結果に対して完了した確認" },
+        { title: "出典", body: "量子回路に関連する参考情報" },
       ],
     },
-    lioness: {
-      label: "マーク",
-      title: "ノイズの中から、確かな結果を見つける。",
-    },
-    measure: {
-      label: "検証の仕組み",
-      title: "主張ではなく、測定を。",
-      body: "量子計算の結果は、断定ではなく測定値の分布として示します。状態を変えて測定を繰り返すと、集計は|α|²、|β|²へ近づきます。実行結果も、確認できる記録とともに示します。",
+    frameworks: {
+      label: "フレームワーク",
+      title: "さまざまな量子フレームワークに対応",
+      body: "Qiskit、Cirq、PennyLaneなど、さまざまな量子フレームワークに対応　開発環境や目的に合わせて、使用するフレームワークを選択",
+      items: ["Qiskit", "Cirq", "PennyLane"],
     },
     cta: {
-      label: "お問い合わせ",
-      title: "取り組んでいる研究や技術課題についてご相談ください。",
-      contact: "お問い合わせ",
-      pricing: "早期アクセスのプランを見る",
+      label: "始める",
+      title: "次の量子回路開発を、Leona Quantumで",
+      body: "Leona Quantumで全く新しい量子回路生成を体験",
+      primary: "ワークスペースを開く",
+      secondary: "Atlasを見る",
     },
   },
 };
