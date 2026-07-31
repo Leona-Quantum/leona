@@ -288,7 +288,7 @@ async def keep_artifact(
     identity: CurrentIdentity,
     settings: Annotated[Settings, Depends(get_settings)],
 ) -> ArtifactResource:
-    """Put a materialized run result into the Vault (migration 0036).
+    """File a materialized run result into the workspace (migration 0036).
 
     Every successful run materializes an artifact, because the Run surface's
     conversion tabs read the saved version and the next turn in a conversation
@@ -297,10 +297,10 @@ async def keep_artifact(
     artifact count.
 
     Idempotent — keeping something already kept returns it unchanged rather than
-    re-stamping, so a double click cannot reorder the Vault.
+    re-stamping, so a double click cannot reorder the artifact list.
 
-    This is where the per-tier Vault cap is enforced, because since migration
-    0036 it is the only place an artifact ENTERS the Vault by a user's choice.
+    This is where the per-tier artifact cap is enforced, because since migration
+    0036 it is the only place an artifact is FILED by a user's choice.
     The cap is checked before the write and skipped for an artifact that is
     already kept, so re-keeping never fails at the boundary.
     """

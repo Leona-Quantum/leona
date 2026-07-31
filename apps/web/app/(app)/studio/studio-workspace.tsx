@@ -1798,12 +1798,12 @@ function simulationModelLabel(model: CpuSimulationRecord["model"], copy: StudioC
  * This is the old Versions tab with the evidence it was always missing. A
  * version list without a verdict beside it answers a question nobody was
  * asking: the reason to open a version history here is to find out whether the
- * current version is trustworthy, and until now that meant leaving for the
- * Vault. The run contract came from the inspector for the same reason — it
+ * current version is trustworthy, and until now that meant leaving Studio for
+ * the artifact detail screen. The run contract came from the inspector for the same reason — it
  * describes what the next Verify & save will do, which is a fact about this
  * artifact's evidence, not a control.
  *
- * `checks` is populated when a version has been opened in the Vault; absent is
+ * `checks` is populated when a version has been opened before; absent is
  * "not loaded here", not "nothing was checked", and the copy says so rather
  * than implying an empty list means an empty panel.
  */
@@ -2115,7 +2115,7 @@ function VersionHistory({
 }
 
 /** Never the bare word "Verified" for a structural pass — that conflation is what
- * the Vault list was fixed for, and Studio must not reintroduce it. */
+ * the retired artifact list was fixed for, and Studio must not reintroduce it. */
 async function loadArtifact(id: string): Promise<LibraryArtifact | null> {
   const response = await fetch(`/api/artifacts/${encodeURIComponent(id)}`, { cache: "no-store" });
   if (!response.ok) return null;
@@ -2133,7 +2133,7 @@ async function loadArtifact(id: string): Promise<LibraryArtifact | null> {
     artifact.resourceRows = resourceRowsFromRemote(version.resource_estimates);
     // The Versions panel is only useful if the checks arrive with the artifact.
     // Without this the panel could only ever show evidence for an artifact this
-    // browser had already opened in the Vault — i.e. almost never, which would
+    // browser had already opened once before — i.e. almost never, which would
     // make the whole panel look like it did not work.
     const record = verificationFromMetadata(version.metadata);
     artifact.checks = record.checks ?? artifact.checks;
