@@ -24,7 +24,10 @@ from majorana_contracts.enums import Algorithm, ExportStatus, RunMode, RunStatus
 from majorana_contracts.enums import Framework as ContractFramework
 from majorana_vqe.models import Capability, ComponentType, Framework
 from majorana_vqe.controlled_comparison import ControlledComparisonSpecV1
-from majorana_vqe.executable import H2_UCCSD_SUPPORTED_SEMANTIC_KEY_SETS
+from majorana_vqe.executable import (
+    H2_HARDWARE_EFFICIENT_SUPPORTED_SEMANTIC_KEY_SETS,
+    H2_UCCSD_SUPPORTED_SEMANTIC_KEY_SETS,
+)
 from majorana_vqe.portable import PortableScientificExperimentSpecV03
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -76,6 +79,24 @@ def _matches_h2_uccsd_component_identity(scientific_spec_json: dict[str, Any]) -
         return False
     return any(
         semantic_keys == supported_keys for supported_keys in H2_UCCSD_SUPPORTED_SEMANTIC_KEY_SETS
+    )
+
+
+def _matches_h2_hardware_efficient_component_identity(
+    scientific_spec_json: dict[str, Any],
+) -> bool:
+    try:
+        scientific_spec = PortableScientificExperimentSpecV03.model_validate(scientific_spec_json)
+        semantic_keys = {
+            binding.role: binding.component_semantic_key
+            for binding in scientific_spec.component_bindings
+            if binding.applicability == "required"
+        }
+    except (TypeError, ValueError):
+        return False
+    return any(
+        semantic_keys == supported_keys
+        for supported_keys in H2_HARDWARE_EFFICIENT_SUPPORTED_SEMANTIC_KEY_SETS
     )
 
 
@@ -137,7 +158,10 @@ class CreateAnsatzMigrationRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     baseline_workflow_artifact_version_id: uuid.UUID
-    migration: Literal["h2_fixed_excitation_slsqp_to_uccsd_slsqp"]
+    migration: Literal[
+        "h2_fixed_excitation_slsqp_to_uccsd_slsqp",
+        "h2_uccsd_slsqp_to_hardware_efficient_slsqp",
+    ]
     evaluator_provider: Literal["qiskit", "pennylane"]
 
 
@@ -490,10 +514,15 @@ async def create_ansatz_migration(
     ],
 ) -> WorkflowSwapResource:
     try:
-        saved = await vqe_repo.save_h2_uccsd_migration_workflow_draft(
+        save = (
+            vqe_repo.save_h2_uccsd_migration_workflow_draft
+            if body.migration == "h2_fixed_excitation_slsqp_to_uccsd_slsqp"
+            else vqe_repo.save_h2_hardware_efficient_migration_workflow_draft
+        )
+        saved = await save(
             scope,
             session,
-            baseline_workflow_artifact_version_id=(body.baseline_workflow_artifact_version_id),
+            baseline_workflow_artifact_version_id=body.baseline_workflow_artifact_version_id,
             evaluator_provider=body.evaluator_provider,
             request_idempotency_key=request_idempotency_key,
             catalog_workspace_id=_catalog_workspace_id(settings),
@@ -649,6 +678,14 @@ async def vqe_capabilities(scope: CurrentScope) -> CapabilitiesResponse:
                 reason=(
                     "attested OCI runtimes exist for private qualification only; "
                     "public execution and scientific release remain blocked"
+                ),
+            ),
+            CapabilityStatus(
+                capability=Capability.H2_STO3G_HARDWARE_EFFICIENT_VQE.value,
+                available=False,
+                reason=(
+                    "independent local adapters are verified, but the exact linux/amd64 "
+                    "OCI runtimes are not yet qualified; execution and publication are blocked"
                 ),
             ),
         ]
@@ -844,6 +881,25 @@ async def start_execution(
                 ),
             )
         profile = uccsd_production_runtime_profile(body.preferred_framework)
+    elif body.requested_capability is Capability.H2_STO3G_HARDWARE_EFFICIENT_VQE:
+        if not _matches_h2_hardware_efficient_component_identity(experiment.scientific_spec_json):
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    "requested H2 hardware-efficient capability does not match "
+                    "the experiment component identity"
+                ),
+            )
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "hardware_efficient_runtime_not_qualified",
+                "message": (
+                    "H2 hardware-efficient execution remains blocked until exact "
+                    "digest-pinned linux/amd64 runtimes are qualified"
+                ),
+            },
+        )
     else:
         raise HTTPException(status_code=422, detail="unsupported private VQE capability")
     execution = await vqe_repo.create_execution(

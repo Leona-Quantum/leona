@@ -7,16 +7,21 @@ import pytest
 from pydantic import ValidationError
 
 from majorana_vqe.executable import (
+    H2_HARDWARE_EFFICIENT_APPLICABLE_ROLES,
+    H2_HARDWARE_EFFICIENT_SEMANTIC_KEYS,
     H2_SLSQP_SEMANTIC_KEYS,
     H2_UCCSD_APPLICABLE_ROLES,
     H2_UCCSD_SEMANTIC_KEYS,
     H2SemanticSelection,
+    build_h2_hardware_efficient_scientific_identity,
     build_h2_scientific_identity,
     build_h2_uccsd_scientific_identity,
 )
 from majorana_vqe.migration import (
     ControlledAnsatzMigrationV01,
+    ControlledHardwareEfficientMigrationV01,
     build_h2_fixed_to_uccsd_migration,
+    build_h2_uccsd_to_hardware_efficient_migration,
 )
 from majorana_vqe.models import ComponentType
 from majorana_vqe.portable import (
@@ -148,3 +153,66 @@ def test_changed_hamiltonian_fails_closed():
     payload["candidate_hamiltonian_sha256"] = "0" * 64
     with pytest.raises(ValidationError, match="Hamiltonian"):
         ControlledAnsatzMigrationV01.model_validate(payload)
+
+
+def _hardware_efficient_migration() -> ControlledHardwareEfficientMigrationV01:
+    _, uccsd = _identities()
+    payloads = {
+        ComponentType(role): spec
+        for role, spec in json.loads(
+            (FIXTURE_DIR / "executable_components_hardware_efficient_v0.4.json").read_text()
+        ).items()
+    }
+    candidate = build_h2_hardware_efficient_scientific_identity(
+        semantic_keys=H2_HARDWARE_EFFICIENT_SEMANTIC_KEYS,
+        specs={role: payloads[role] for role in H2_HARDWARE_EFFICIENT_APPLICABLE_ROLES},
+        hamiltonian_digest_sha256=HAMILTONIAN_DIGEST,
+    )
+    return build_h2_uccsd_to_hardware_efficient_migration(
+        baseline_spec=uccsd.portable_spec,
+        candidate_spec=candidate.portable_spec,
+        baseline_hamiltonian_sha256=uccsd.hamiltonian_digest_sha256,
+        candidate_hamiltonian_sha256=candidate.hamiltonian_digest_sha256,
+        baseline_reference_energy_float64_hex=uccsd.reference_energy_float64_hex,
+        candidate_reference_energy_float64_hex=candidate.reference_energy_float64_hex,
+    )
+
+
+def test_hardware_efficient_migration_declares_ansatz_and_compilation_changes():
+    migration = _hardware_efficient_migration()
+
+    assert migration.primary_changed_role is ComponentType.ANSATZ
+    assert migration.dependent_changed_roles == [ComponentType.COMPILATION_BACKEND]
+    assert set(migration.preserved_not_applicable_roles) == {
+        ComponentType.OPERATOR_POOL,
+        ComponentType.SEARCH_SELECTION,
+        ComponentType.GROWTH_BATCHING,
+    }
+    assert ComponentType.PARAMETER_OPTIMIZER in migration.preserved_required_roles
+    assert len(migration.parameter_reset.baseline_slots_ignored) == 3
+    assert len(migration.parameter_reset.candidate_initial_slots) == 8
+    assert migration.parameter_reset.reused_slot_ids == []
+
+
+def test_hardware_efficient_migration_rejects_hidden_optimizer_change():
+    payload = _hardware_efficient_migration().model_dump(mode="json")
+    optimizer = next(
+        item
+        for item in payload["candidate_spec"]["component_bindings"]
+        if item["role"] == ComponentType.PARAMETER_OPTIMIZER.value
+    )
+    optimizer["component_semantic_key"] = "optimizer.cobyla.v1"
+
+    with pytest.raises(
+        ValidationError,
+        match="workflow_semantic_digest|exactly ansatz plus",
+    ):
+        ControlledHardwareEfficientMigrationV01.model_validate(payload)
+
+
+def test_hardware_efficient_migration_rejects_parameter_reuse():
+    payload = _hardware_efficient_migration().model_dump(mode="json")
+    payload["parameter_reset"]["reused_slot_ids"] = ["theta.layer0.qubit0"]
+
+    with pytest.raises(ValidationError):
+        ControlledHardwareEfficientMigrationV01.model_validate(payload)

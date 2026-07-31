@@ -39,15 +39,24 @@ from majorana_vqe.controlled_comparison import (
     ControlledComparisonStatus,
 )
 from majorana_vqe.executable import (
+    H2_HARDWARE_EFFICIENT_APPLICABLE_ROLES,
+    H2_HARDWARE_EFFICIENT_MIGRATED_SEMANTIC_KEYS,
+    H2_HARDWARE_EFFICIENT_SEMANTIC_KEYS,
     H2_STO3G_HAMILTONIAN_DIGEST_SHA256,
     H2_UCCSD_APPLICABLE_ROLES,
+    build_h2_hardware_efficient_scientific_identity,
     executable_component_scientific_payload,
+    load_packaged_h2_hardware_efficient_executable_component_specs,
     load_packaged_h2_uccsd_executable_component_specs,
     parse_executable_component,
     validate_h2_executable_composition,
+    validate_h2_hardware_efficient_executable_composition,
     validate_h2_uccsd_executable_composition,
 )
-from majorana_vqe.migration import build_h2_fixed_to_uccsd_migration
+from majorana_vqe.migration import (
+    build_h2_fixed_to_uccsd_migration,
+    build_h2_uccsd_to_hardware_efficient_migration,
+)
 from majorana_vqe.portable import (
     PORTABLE_SCIENTIFIC_ROLES,
     ComponentRoleBindingV03,
@@ -166,58 +175,99 @@ def _uccsd_private_runtime_binding_metadata(
     }
 
 
+def _hardware_efficient_pending_runtime_binding_metadata(
+    *,
+    semantic_key: str,
+    evaluator_provider: str,
+) -> dict[str, Any]:
+    """Record the bounded adapter evidence without claiming OCI qualification."""
+
+    return {
+        "configured_component_semantic_key": semantic_key,
+        "evidence_level": "adapter_tested",
+        "runtime_qualification": "pending_linux_amd64_oci",
+        "qualification_scope": "h2_sto3g_hardware_efficient_ry_cx_v1",
+        "evaluator_provider": evaluator_provider,
+        "publication": "blocked",
+    }
+
+
 # --- component specs ---------------------------------------------------
 
 
 def _validate_machine_validated_workflow_payload(payload: dict[str, Any]) -> None:
     """Fail closed on every workflow metadata schema admitted by this repository.
 
-    v0.2 predates the bounded UCCSD migration and remains immutable.  v0.3 is
-    admitted only for the exact private H2 migration envelope; accepting an
-    arbitrary ``schema_version=0.3.0`` object here would let untyped workflow
-    metadata acquire a machine-validated label before its component links are
-    resolved.
+    v0.2 predates the bounded migrations and remains immutable. v0.3 and v0.4
+    are admitted only for the exact private H2 migration envelopes; accepting
+    an arbitrary object here would let untyped workflow metadata acquire a
+    machine-validated label before its component links are resolved.
     """
 
     schema_version = payload.get("schema_version")
     kind = payload.get("kind")
     if schema_version == "0.2.0" and isinstance(kind, str) and kind:
         return
-    if schema_version != "0.3.0" or kind != "ansatz_migration_workflow_draft":
+    if kind != "ansatz_migration_workflow_draft":
         raise ValueError(
             "machine-validated workflow requires typed v0.2 metadata or "
-            "the bounded H2 UCCSD v0.3 migration envelope"
+            "a bounded H2 ansatz-migration envelope"
         )
-
-    expected_values: dict[str, object] = {
-        "migration": "h2_fixed_excitation_slsqp_to_uccsd_slsqp",
-        "comparison_class": "controlled_capability_migration_not_one_component_swap",
-        "primary_changed_role": ComponentType.ANSATZ.value,
-        "dependent_changed_roles": [ComponentType.COMPILATION_BACKEND.value],
-        "required_to_not_applicable_roles": sorted(
-            role.value for role in set(PORTABLE_SCIENTIFIC_ROLES) - set(H2_UCCSD_APPLICABLE_ROLES)
-        ),
-        "parameter_policy": "reset_all",
-        "execution_status": "private_qualification_candidate",
-        "publication": "blocked",
-        "scientific_release": "blocked",
-    }
+    migration = payload.get("migration")
+    if schema_version == "0.3.0" and migration == ("h2_fixed_excitation_slsqp_to_uccsd_slsqp"):
+        expected_values: dict[str, object] = {
+            "migration": migration,
+            "comparison_class": "controlled_capability_migration_not_one_component_swap",
+            "primary_changed_role": ComponentType.ANSATZ.value,
+            "dependent_changed_roles": [ComponentType.COMPILATION_BACKEND.value],
+            "required_to_not_applicable_roles": sorted(
+                role.value
+                for role in set(PORTABLE_SCIENTIFIC_ROLES) - set(H2_UCCSD_APPLICABLE_ROLES)
+            ),
+            "parameter_policy": "reset_all",
+            "execution_status": "private_qualification_candidate",
+            "publication": "blocked",
+            "scientific_release": "blocked",
+        }
+        label = "H2 UCCSD"
+    elif schema_version == "0.4.0" and migration == ("h2_uccsd_slsqp_to_hardware_efficient_slsqp"):
+        expected_values = {
+            "migration": migration,
+            "comparison_class": "controlled_capability_migration_not_one_component_swap",
+            "primary_changed_role": ComponentType.ANSATZ.value,
+            "dependent_changed_roles": [ComponentType.COMPILATION_BACKEND.value],
+            "preserved_not_applicable_roles": sorted(
+                role.value
+                for role in set(PORTABLE_SCIENTIFIC_ROLES)
+                - set(H2_HARDWARE_EFFICIENT_APPLICABLE_ROLES)
+            ),
+            "parameter_policy": "reset_all",
+            "execution_status": "blocked_until_runtime_qualified",
+            "publication": "blocked",
+            "scientific_release": "blocked",
+        }
+        label = "H2 hardware-efficient"
+    else:
+        raise ValueError(
+            "machine-validated workflow requires the bounded H2 UCCSD v0.3 "
+            "or hardware-efficient v0.4 migration envelope"
+        )
     for field, expected in expected_values.items():
         if payload.get(field) != expected:
-            raise ValueError(f"invalid H2 UCCSD workflow migration field {field!r}")
+            raise ValueError(f"invalid {label} workflow migration field {field!r}")
     if payload.get("evaluator_provider") not in {"qiskit", "pennylane"}:
-        raise ValueError("invalid H2 UCCSD workflow migration evaluator_provider")
+        raise ValueError(f"invalid {label} workflow migration evaluator_provider")
     try:
         uuid.UUID(str(payload["baseline_workflow_artifact_version_id"]))
     except (KeyError, ValueError) as exc:
-        raise ValueError("invalid H2 UCCSD workflow migration baseline identity") from exc
+        raise ValueError(f"invalid {label} workflow migration baseline identity") from exc
     request_sha256 = payload.get("request_sha256")
     if not (
         isinstance(request_sha256, str)
         and len(request_sha256) == 64
         and all(character in "0123456789abcdef" for character in request_sha256)
     ):
-        raise ValueError("invalid H2 UCCSD workflow migration request digest")
+        raise ValueError(f"invalid {label} workflow migration request digest")
 
 
 async def create_component_spec(
@@ -1131,6 +1181,295 @@ async def save_h2_uccsd_migration_workflow_draft(
     return SavedWorkflowDraft(artifact, version, workflow_spec, links, False)
 
 
+async def save_h2_hardware_efficient_migration_workflow_draft(
+    scope: Scope,
+    session: AsyncSession,
+    *,
+    baseline_workflow_artifact_version_id: uuid.UUID,
+    evaluator_provider: Literal["qiskit", "pennylane"],
+    request_idempotency_key: str,
+    catalog_workspace_id: uuid.UUID | None,
+) -> SavedWorkflowDraft:
+    """Persist the private UCCSD/SLSQP -> bounded RY-CX migration.
+
+    This migration remains execution-blocked until exact linux/amd64 OCI
+    profiles have been qualified. Local adapter evidence is not silently
+    promoted to a server-owned runtime qualification.
+    """
+
+    require_write(scope)
+    baseline = await get_component_spec(
+        scope,
+        session,
+        baseline_workflow_artifact_version_id,
+        catalog_workspace_id=catalog_workspace_id,
+    )
+    if not (
+        baseline.component_type == ComponentType.WORKFLOW.value
+        and baseline.machine_validation_state == MachineValidationState.MACHINE_VALIDATED.value
+        and baseline.review_state == ReviewState.UNREVIEWED.value
+        and baseline.spec_json.get("kind") == "ansatz_migration_workflow_draft"
+        and baseline.spec_json.get("migration") == "h2_fixed_excitation_slsqp_to_uccsd_slsqp"
+        and baseline.spec_json.get("execution_status") == "private_qualification_candidate"
+    ):
+        raise InvalidWorkflowCompositionError(
+            "hardware-efficient migration baseline must be the machine-validated "
+            "private H2 UCCSD/SLSQP workflow"
+        )
+
+    baseline_resolved = await resolve_uccsd_scientific_experiment_spec(
+        scope,
+        session,
+        baseline_workflow_artifact_version_id,
+        catalog_workspace_id=catalog_workspace_id,
+    )
+    baseline_links = await list_workflow_components(
+        scope,
+        session,
+        baseline_workflow_artifact_version_id,
+        catalog_workspace_id=catalog_workspace_id,
+    )
+    baseline_by_role = {ComponentType(link.component_role): link for link in baseline_links}
+    if set(baseline_by_role) != set(H2_UCCSD_APPLICABLE_ROLES):
+        raise InvalidWorkflowCompositionError(
+            "UCCSD baseline does not contain exactly its applicable roles"
+        )
+
+    request_payload = {
+        "schema_version": "0.1.0",
+        "baseline_workflow_artifact_version_id": str(baseline_workflow_artifact_version_id),
+        "migration": "h2_uccsd_slsqp_to_hardware_efficient_slsqp",
+        "comparison_class": "controlled_capability_migration_not_one_component_swap",
+        "primary_changed_role": ComponentType.ANSATZ.value,
+        "dependent_changed_roles": [ComponentType.COMPILATION_BACKEND.value],
+        "preserved_not_applicable_roles": sorted(
+            role.value
+            for role in set(PORTABLE_SCIENTIFIC_ROLES) - set(H2_HARDWARE_EFFICIENT_APPLICABLE_ROLES)
+        ),
+        "parameter_policy": "reset_all",
+        "evaluator_provider": evaluator_provider,
+    }
+    request_sha256 = hashlib.sha256(
+        json.dumps(request_payload, sort_keys=True, separators=(",", ":")).encode()
+    ).hexdigest()
+    slug_material = f"{scope.workspace_id}:{request_idempotency_key}".encode()
+    slug = f"vqe-hardware-efficient-migration-{hashlib.sha256(slug_material).hexdigest()[:32]}"
+    existing = await artifacts_repo.get_artifact_by_slug(scope, session, slug)
+    if existing is not None:
+        if existing.current_version_id is None:
+            raise IdempotencyConflictError("existing hardware-efficient migration has no version")
+        version = await artifacts_repo.get_version(scope, session, existing.current_version_id)
+        if (version.artifact_metadata or {}).get("request_sha256") != request_sha256:
+            raise IdempotencyConflictError(
+                "Idempotency-Key was reused for a different hardware-efficient migration"
+            )
+        workflow_spec = await get_component_spec(scope, session, version.id)
+        links = await list_workflow_components(scope, session, version.id)
+        return SavedWorkflowDraft(existing, version, workflow_spec, tuple(links), True)
+
+    packaged_specs = load_packaged_h2_hardware_efficient_executable_component_specs()
+    candidate_specs: dict[ComponentType, dict[str, object]] = {}
+    resolved_links: list[tuple[ComponentType, uuid.UUID, dict[str, Any]]] = []
+    changed_roles = {ComponentType.ANSATZ, ComponentType.COMPILATION_BACKEND}
+
+    for role in H2_HARDWARE_EFFICIENT_APPLICABLE_ROLES:
+        if role not in changed_roles:
+            link = baseline_by_role[role]
+            component = await get_component_spec(
+                scope,
+                session,
+                link.component_artifact_version_id,
+                catalog_workspace_id=catalog_workspace_id,
+            )
+            baseline_payload = executable_component_scientific_payload(
+                role, parse_executable_component(role, component.spec_json)
+            )
+            candidate_payload = executable_component_scientific_payload(
+                role, parse_executable_component(role, packaged_specs[role])
+            )
+            if baseline_payload != candidate_payload:
+                raise InvalidWorkflowCompositionError(
+                    "hardware-efficient migration would silently change preserved role "
+                    f"{role.value!r}"
+                )
+            candidate_specs[role] = component.spec_json
+            resolved_links.append(
+                (
+                    role,
+                    link.component_artifact_version_id,
+                    link.binding_metadata or {},
+                )
+            )
+            continue
+
+        configured_payload = packaged_specs[role]
+        configured_digest = normalized_component_spec_digest(
+            component_type=role,
+            spec_json=configured_payload,
+        )
+        semantic_key = H2_HARDWARE_EFFICIENT_SEMANTIC_KEYS[role]
+        component_artifact = await artifacts_repo.create_artifact(
+            scope,
+            session,
+            slug=f"{slug}-{role.value}",
+            title=f"Configured H2 hardware-efficient {role.value}",
+            family=Algorithm.VQE,
+            framework=ContractFramework(evaluator_provider),
+        )
+        component_version = await artifacts_repo.create_version(
+            scope,
+            session,
+            component_artifact.id,
+            qasm_version=None,
+            qasm=None,
+            metadata={
+                "source": "h2_hardware_efficient_packaged_executable_seed_v0.4",
+                "semantic_key": semantic_key,
+                "runtime_qualification": "pending_linux_amd64_oci",
+                "publication": "blocked",
+                "scientific_release": "blocked",
+            },
+            code=json.dumps(configured_payload, sort_keys=True, indent=2),
+            code_lang="json",
+            fingerprint=configured_digest,
+            export_status=ExportStatus.UNSUPPORTED,
+            export_reason="configured VQE component is not a circuit export",
+        )
+        component_spec = await create_component_spec(
+            scope,
+            session,
+            artifact_version_id=component_version.id,
+            schema_version=str(configured_payload["schema_version"]),
+            component_type=role,
+            semantic_key=semantic_key,
+            spec_json=configured_payload,
+            normalized_spec_sha256=configured_digest,
+            machine_validation_state=MachineValidationState.MACHINE_VALIDATED,
+            review_state=ReviewState.UNREVIEWED,
+        )
+        candidate_specs[role] = configured_payload
+        resolved_links.append(
+            (
+                role,
+                component_spec.artifact_version_id,
+                _hardware_efficient_pending_runtime_binding_metadata(
+                    semantic_key=semantic_key,
+                    evaluator_provider=evaluator_provider,
+                ),
+            )
+        )
+
+    baseline_specs: dict[ComponentType, dict[str, object]] = {}
+    for role, link in baseline_by_role.items():
+        component = await get_component_spec(
+            scope,
+            session,
+            link.component_artifact_version_id,
+            catalog_workspace_id=catalog_workspace_id,
+        )
+        baseline_specs[role] = component.spec_json
+
+    try:
+        baseline_executable = validate_h2_uccsd_executable_composition(baseline_specs)
+        candidate = validate_h2_hardware_efficient_executable_composition(candidate_specs)
+    except ValueError as exc:
+        raise InvalidWorkflowCompositionError(
+            f"configured hardware-efficient migration violates H2 invariants: {exc}"
+        ) from exc
+
+    # Validate the domain migration before any workflow row can claim success.
+    build_h2_uccsd_to_hardware_efficient_migration(
+        baseline_spec=baseline_resolved.scientific_spec,
+        candidate_spec=build_h2_hardware_efficient_scientific_identity(
+            specs=candidate_specs,
+            semantic_keys=H2_HARDWARE_EFFICIENT_MIGRATED_SEMANTIC_KEYS,
+            hamiltonian_digest_sha256=H2_STO3G_HAMILTONIAN_DIGEST_SHA256,
+            seed=baseline_resolved.scientific_spec.seed,
+        ).portable_spec,
+        baseline_hamiltonian_sha256=H2_STO3G_HAMILTONIAN_DIGEST_SHA256,
+        candidate_hamiltonian_sha256=H2_STO3G_HAMILTONIAN_DIGEST_SHA256,
+        baseline_reference_energy_float64_hex=(
+            baseline_executable.evaluation.reference_energy_float64_hex
+        ),
+        candidate_reference_energy_float64_hex=candidate.evaluation.reference_energy_float64_hex,
+    )
+
+    artifact = await artifacts_repo.create_artifact(
+        scope,
+        session,
+        slug=slug,
+        title="H2 UCCSD to hardware-efficient migration draft",
+        family=Algorithm.VQE,
+        framework=ContractFramework(evaluator_provider),
+    )
+    workflow_payload = {
+        **request_payload,
+        "schema_version": "0.4.0",
+        "kind": "ansatz_migration_workflow_draft",
+        "request_sha256": request_sha256,
+        "execution_status": "blocked_until_runtime_qualified",
+        "publication": "blocked",
+        "scientific_release": "blocked",
+    }
+    version = await artifacts_repo.create_version(
+        scope,
+        session,
+        artifact.id,
+        qasm_version=None,
+        qasm=None,
+        metadata={
+            "source": "vqe_ansatz_migration",
+            "request_sha256": request_sha256,
+            "baseline_workflow_artifact_version_id": str(baseline_workflow_artifact_version_id),
+            "runtime_qualification": "pending_linux_amd64_oci",
+            "publication": "blocked",
+            "scientific_release": "blocked",
+        },
+        code=json.dumps(workflow_payload, sort_keys=True, indent=2),
+        code_lang="json",
+        fingerprint=request_sha256,
+        export_status=ExportStatus.UNSUPPORTED,
+        export_reason="structured VQE Workflow migration is not a circuit export",
+        limitations=(
+            "Private owner-waived adapter-tested candidate; not a one-component "
+            "comparison; execution remains blocked until exact OCI qualification."
+        ),
+    )
+    workflow_spec = await create_component_spec(
+        scope,
+        session,
+        artifact_version_id=version.id,
+        schema_version="0.4.0",
+        component_type=ComponentType.WORKFLOW,
+        semantic_key=f"workflow.instance.{request_sha256}",
+        spec_json=workflow_payload,
+        machine_validation_state=MachineValidationState.MACHINE_VALIDATED,
+        review_state=ReviewState.UNREVIEWED,
+    )
+    links = tuple(
+        [
+            await create_workflow_component(
+                scope,
+                session,
+                workflow_artifact_version_id=version.id,
+                component_role=role.value,
+                component_artifact_version_id=component_version_id,
+                ordinal=0,
+                binding_metadata=binding_metadata,
+                catalog_workspace_id=catalog_workspace_id,
+            )
+            for role, component_version_id, binding_metadata in resolved_links
+        ]
+    )
+    await resolve_hardware_efficient_scientific_experiment_spec(
+        scope,
+        session,
+        version.id,
+        catalog_workspace_id=catalog_workspace_id,
+    )
+    return SavedWorkflowDraft(artifact, version, workflow_spec, links, False)
+
+
 async def resolve_scientific_experiment_spec(
     scope: Scope,
     session: AsyncSession,
@@ -1160,15 +1499,26 @@ async def resolve_scientific_experiment_spec(
     if workflow.spec_json.get("kind") == "ansatz_migration_workflow_draft":
         if review_policy != "h2_owner_deferred_candidate":
             raise InvalidWorkflowCompositionError(
-                "private UCCSD migration requires the owner-deferred candidate policy"
+                "private H2 ansatz migration requires the owner-deferred candidate policy"
             )
-        return await resolve_uccsd_scientific_experiment_spec(
-            scope,
-            session,
-            workflow_artifact_version_id,
-            catalog_workspace_id=catalog_workspace_id,
-            approved_seed=approved_seed,
-        )
+        migration = workflow.spec_json.get("migration")
+        if migration == "h2_fixed_excitation_slsqp_to_uccsd_slsqp":
+            return await resolve_uccsd_scientific_experiment_spec(
+                scope,
+                session,
+                workflow_artifact_version_id,
+                catalog_workspace_id=catalog_workspace_id,
+                approved_seed=approved_seed,
+            )
+        if migration == "h2_uccsd_slsqp_to_hardware_efficient_slsqp":
+            return await resolve_hardware_efficient_scientific_experiment_spec(
+                scope,
+                session,
+                workflow_artifact_version_id,
+                catalog_workspace_id=catalog_workspace_id,
+                approved_seed=approved_seed,
+            )
+        raise InvalidWorkflowCompositionError("unsupported private H2 ansatz migration")
     if workflow.machine_validation_state != MachineValidationState.MACHINE_VALIDATED.value:
         raise InvalidWorkflowCompositionError("workflow is not machine validated")
     approved_review_states = {
@@ -1638,6 +1988,228 @@ async def resolve_uccsd_scientific_experiment_spec(
             baseline_executable.evaluation.reference_energy_float64_hex
         ),
         candidate_reference_energy_float64_hex=(executable.evaluation.reference_energy_float64_hex),
+    )
+    return resolved
+
+
+async def resolve_hardware_efficient_scientific_experiment_spec(
+    scope: Scope,
+    session: AsyncSession,
+    workflow_artifact_version_id: uuid.UUID,
+    *,
+    catalog_workspace_id: uuid.UUID | None = None,
+    approved_seed: int = 0,
+) -> ResolvedPortableExperimentV03:
+    """Resolve only the server-authored private H2 RY-CX migration as v0.4."""
+
+    workflow = await get_component_spec(
+        scope,
+        session,
+        workflow_artifact_version_id,
+        catalog_workspace_id=catalog_workspace_id,
+    )
+    expected_na_roles = sorted(
+        role.value
+        for role in set(PORTABLE_SCIENTIFIC_ROLES) - set(H2_HARDWARE_EFFICIENT_APPLICABLE_ROLES)
+    )
+    if not (
+        workflow.component_type == ComponentType.WORKFLOW.value
+        and workflow.machine_validation_state == MachineValidationState.MACHINE_VALIDATED.value
+        and workflow.review_state == ReviewState.UNREVIEWED.value
+        and workflow.spec_json.get("kind") == "ansatz_migration_workflow_draft"
+        and workflow.spec_json.get("migration") == "h2_uccsd_slsqp_to_hardware_efficient_slsqp"
+        and workflow.spec_json.get("comparison_class")
+        == "controlled_capability_migration_not_one_component_swap"
+        and workflow.spec_json.get("primary_changed_role") == ComponentType.ANSATZ.value
+        and workflow.spec_json.get("dependent_changed_roles")
+        == [ComponentType.COMPILATION_BACKEND.value]
+        and workflow.spec_json.get("preserved_not_applicable_roles") == expected_na_roles
+        and workflow.spec_json.get("parameter_policy") == "reset_all"
+        and workflow.spec_json.get("execution_status") == "blocked_until_runtime_qualified"
+        and workflow.spec_json.get("publication") == "blocked"
+        and workflow.spec_json.get("scientific_release") == "blocked"
+    ):
+        raise InvalidWorkflowCompositionError(
+            "workflow is not the server-validated private H2 hardware-efficient migration"
+        )
+    try:
+        baseline_workflow_id = uuid.UUID(
+            str(workflow.spec_json["baseline_workflow_artifact_version_id"])
+        )
+    except (KeyError, ValueError) as exc:
+        raise InvalidWorkflowCompositionError(
+            "hardware-efficient migration lacks a valid UCCSD baseline identity"
+        ) from exc
+
+    baseline = await get_component_spec(
+        scope,
+        session,
+        baseline_workflow_id,
+        catalog_workspace_id=catalog_workspace_id,
+    )
+    if not (
+        baseline.spec_json.get("kind") == "ansatz_migration_workflow_draft"
+        and baseline.spec_json.get("migration") == "h2_fixed_excitation_slsqp_to_uccsd_slsqp"
+        and baseline.spec_json.get("execution_status") == "private_qualification_candidate"
+    ):
+        raise InvalidWorkflowCompositionError(
+            "hardware-efficient migration baseline is not the private UCCSD workflow"
+        )
+    baseline_resolved = await resolve_uccsd_scientific_experiment_spec(
+        scope,
+        session,
+        baseline_workflow_id,
+        catalog_workspace_id=catalog_workspace_id,
+        approved_seed=approved_seed,
+    )
+    baseline_links = {
+        ComponentType(link.component_role): link
+        for link in await list_workflow_components(
+            scope,
+            session,
+            baseline_workflow_id,
+            catalog_workspace_id=catalog_workspace_id,
+        )
+    }
+    links = await list_workflow_components(
+        scope,
+        session,
+        workflow_artifact_version_id,
+        catalog_workspace_id=catalog_workspace_id,
+    )
+    if len(links) != len(H2_HARDWARE_EFFICIENT_APPLICABLE_ROLES):
+        raise InvalidWorkflowCompositionError(
+            "hardware-efficient workflow must contain exactly its 11 applicable role links"
+        )
+
+    changed_roles = {ComponentType.ANSATZ, ComponentType.COMPILATION_BACKEND}
+    seen_roles: set[ComponentType] = set()
+    typed_specs: dict[ComponentType, dict[str, object]] = {}
+    registry_components: list[RegistryComponentResolution] = []
+    for link in links:
+        try:
+            role = ComponentType(link.component_role)
+        except ValueError as exc:
+            raise InvalidWorkflowCompositionError(
+                f"unknown hardware-efficient workflow role {link.component_role!r}"
+            ) from exc
+        if (
+            role not in H2_HARDWARE_EFFICIENT_APPLICABLE_ROLES
+            or link.ordinal != 0
+            or role in seen_roles
+        ):
+            raise InvalidWorkflowCompositionError(
+                f"invalid or duplicate hardware-efficient workflow role {role.value!r}"
+            )
+        component = await get_component_spec(
+            scope,
+            session,
+            link.component_artifact_version_id,
+            catalog_workspace_id=catalog_workspace_id,
+        )
+        if (
+            component.component_type != role.value
+            or component.machine_validation_state != MachineValidationState.MACHINE_VALIDATED.value
+            or component.review_state != ReviewState.UNREVIEWED.value
+        ):
+            raise InvalidWorkflowCompositionError(
+                f"hardware-efficient component {role.value!r} violates private validation policy"
+            )
+        full_digest = normalized_component_spec_digest(
+            component_type=role,
+            spec_json=component.spec_json,
+        )
+        if full_digest != component.normalized_spec_sha256:
+            raise InvalidWorkflowCompositionError(
+                f"hardware-efficient component {role.value!r} normalized digest mismatch"
+            )
+        if component.semantic_key != H2_HARDWARE_EFFICIENT_MIGRATED_SEMANTIC_KEYS[role]:
+            raise InvalidWorkflowCompositionError(
+                f"hardware-efficient role {role.value!r} has the wrong semantic key"
+            )
+        if role in changed_roles:
+            metadata = link.binding_metadata or {}
+            if not (
+                metadata.get("runtime_qualification") == "pending_linux_amd64_oci"
+                and metadata.get("qualification_scope") == "h2_sto3g_hardware_efficient_ry_cx_v1"
+                and metadata.get("evidence_level") == "adapter_tested"
+                and "runtime_profile_id" not in metadata
+                and "adapter_release_id" not in metadata
+            ):
+                raise InvalidWorkflowCompositionError(
+                    f"hardware-efficient changed role {role.value!r} overstates runtime evidence"
+                )
+        else:
+            baseline_link = baseline_links.get(role)
+            if (
+                baseline_link is None
+                or baseline_link.component_artifact_version_id != component.artifact_version_id
+            ):
+                raise InvalidWorkflowCompositionError(
+                    f"hardware-efficient migration changed preserved role {role.value!r}"
+                )
+
+        parsed = parse_executable_component(role, component.spec_json)
+        scientific_payload = executable_component_scientific_payload(role, parsed)
+        scientific_digest = normalized_component_spec_digest(
+            component_type=role,
+            spec_json=scientific_payload,
+        )
+        typed_specs[role] = component.spec_json
+        registry_components.append(
+            RegistryComponentResolution(
+                role=role,
+                artifact_version_id=component.artifact_version_id,
+                component_semantic_key=component.semantic_key,
+                component_spec_sha256=scientific_digest,
+            )
+        )
+        seen_roles.add(role)
+    if seen_roles != set(H2_HARDWARE_EFFICIENT_APPLICABLE_ROLES):
+        raise InvalidWorkflowCompositionError(
+            "hardware-efficient workflow applicable role set mismatch"
+        )
+
+    try:
+        candidate_identity = build_h2_hardware_efficient_scientific_identity(
+            semantic_keys=H2_HARDWARE_EFFICIENT_MIGRATED_SEMANTIC_KEYS,
+            specs=typed_specs,
+            hamiltonian_digest_sha256=H2_STO3G_HAMILTONIAN_DIGEST_SHA256,
+            seed=approved_seed,
+        )
+    except ValueError as exc:
+        raise InvalidWorkflowCompositionError(str(exc)) from exc
+    scientific_spec = candidate_identity.portable_spec
+    resolved = ResolvedPortableExperimentV03(
+        scientific_spec=scientific_spec,
+        registry_resolution=RegistryResolutionV02(
+            workflow_artifact_version_id=workflow_artifact_version_id,
+            components=registry_components,
+        ),
+    )
+
+    baseline_specs: dict[ComponentType, dict[str, object]] = {}
+    for role, link in baseline_links.items():
+        component = await get_component_spec(
+            scope,
+            session,
+            link.component_artifact_version_id,
+            catalog_workspace_id=catalog_workspace_id,
+        )
+        baseline_specs[role] = component.spec_json
+    try:
+        baseline_executable = validate_h2_uccsd_executable_composition(baseline_specs)
+    except ValueError as exc:
+        raise InvalidWorkflowCompositionError(str(exc)) from exc
+    build_h2_uccsd_to_hardware_efficient_migration(
+        baseline_spec=baseline_resolved.scientific_spec,
+        candidate_spec=scientific_spec,
+        baseline_hamiltonian_sha256=H2_STO3G_HAMILTONIAN_DIGEST_SHA256,
+        candidate_hamiltonian_sha256=H2_STO3G_HAMILTONIAN_DIGEST_SHA256,
+        baseline_reference_energy_float64_hex=(
+            baseline_executable.evaluation.reference_energy_float64_hex
+        ),
+        candidate_reference_energy_float64_hex=(candidate_identity.reference_energy_float64_hex),
     )
     return resolved
 

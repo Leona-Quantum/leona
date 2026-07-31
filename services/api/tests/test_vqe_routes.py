@@ -130,6 +130,26 @@ def test_uccsd_execution_identity_requires_the_exact_component_set():
     assert vqe_routes._matches_h2_uccsd_component_identity(drifted) is False
 
 
+def test_hardware_efficient_execution_identity_requires_the_exact_component_set():
+    identity = json.loads(
+        (
+            ROOT
+            / "docs"
+            / "atlas"
+            / "fixtures"
+            / "h2_sto3g"
+            / "hardware_efficient_scientific_identity_v0.4.json"
+        ).read_text()
+    )
+    scientific_spec = identity["portable_spec"]
+
+    assert vqe_routes._matches_h2_hardware_efficient_component_identity(scientific_spec) is True
+    drifted = json.loads(json.dumps(scientific_spec))
+    ansatz = next(item for item in drifted["component_bindings"] if item["role"] == "ansatz")
+    ansatz["component_semantic_key"] = "ansatz.uccsd.v1"
+    assert vqe_routes._matches_h2_hardware_efficient_component_identity(drifted) is False
+
+
 async def test_create_workflow_swap_passes_only_bounded_owner_choices(monkeypatch):
     baseline_id = uuid.uuid4()
     artifact_id = uuid.uuid4()
@@ -216,6 +236,48 @@ async def test_create_ansatz_migration_passes_only_bounded_owner_choices(monkeyp
     }
 
 
+async def test_create_hardware_efficient_migration_uses_its_bounded_repository_path(
+    monkeypatch,
+):
+    baseline_id = uuid.uuid4()
+    version_id = uuid.uuid4()
+    captured = {}
+
+    async def fake_save(scope, session, **kwargs):
+        captured.update(kwargs)
+        return SimpleNamespace(
+            artifact=SimpleNamespace(id=uuid.uuid4()),
+            version=SimpleNamespace(id=version_id, fingerprint="d" * 64),
+            workflow_spec=SimpleNamespace(
+                semantic_key="workflow.instance.hardware-efficient",
+                spec_json={"execution_status": "blocked_until_runtime_qualified"},
+            ),
+            replayed=False,
+        )
+
+    monkeypatch.setattr(
+        vqe_repo,
+        "save_h2_hardware_efficient_migration_workflow_draft",
+        fake_save,
+    )
+    body = vqe_routes.CreateAnsatzMigrationRequest(
+        baseline_workflow_artifact_version_id=baseline_id,
+        migration="h2_uccsd_slsqp_to_hardware_efficient_slsqp",
+        evaluator_provider="qiskit",
+    )
+    result = await vqe_routes.create_ansatz_migration(
+        body,
+        scope=object(),
+        session=object(),
+        settings=_settings(),
+        request_idempotency_key="hardware-efficient-1",
+    )
+
+    assert result.workflow_artifact_version_id == version_id
+    assert result.execution_status == "blocked_until_runtime_qualified"
+    assert captured["baseline_workflow_artifact_version_id"] == baseline_id
+
+
 def test_workflow_swap_request_accepts_only_admitted_private_optimizers():
     common = {
         "baseline_workflow_artifact_version_id": uuid.uuid4(),
@@ -239,6 +301,7 @@ async def test_capabilities_reports_the_h2_capability_as_unavailable():
         "h2_sto3g_exact_energy",
         "h2_sto3g_actual_vqe_v1",
         "h2_sto3g_uccsd_v1",
+        "h2_sto3g_hardware_efficient_ry_cx_v1",
     }
     assert all(status.available is False for status in response.capabilities)
     assert all(status.reason for status in response.capabilities)
@@ -460,6 +523,46 @@ async def test_start_execution_is_fail_closed_without_development_gate():
         )
     assert excinfo.value.status_code == 409
     assert excinfo.value.detail["code"] == "candidate_execution_disabled"
+
+
+async def test_hardware_efficient_execution_remains_blocked_before_oci_qualification(
+    monkeypatch,
+):
+    identity = json.loads(
+        (
+            ROOT
+            / "docs"
+            / "atlas"
+            / "fixtures"
+            / "h2_sto3g"
+            / "hardware_efficient_scientific_identity_v0.4.json"
+        ).read_text()
+    )
+
+    async def fake_get_experiment(scope, session, experiment_id):
+        return SimpleNamespace(scientific_spec_json=identity["portable_spec"])
+
+    monkeypatch.setattr(vqe_repo, "get_experiment", fake_get_experiment)
+    settings = SimpleNamespace(
+        catalog_authority=SimpleNamespace(configured=False, workspace_id=None),
+        vqe_candidate_execution=False,
+        vqe_production_execution=True,
+    )
+    with pytest.raises(HTTPException) as excinfo:
+        await vqe_routes.start_execution(
+            uuid.uuid4(),
+            vqe_routes.StartExecutionRequest(
+                requested_capability="h2_sto3g_hardware_efficient_ry_cx_v1",
+                preferred_framework="qiskit",
+            ),
+            scope=object(),
+            session=object(),
+            settings=settings,
+            idempotency_key="hardware-efficient-before-qualification",
+        )
+
+    assert excinfo.value.status_code == 409
+    assert excinfo.value.detail["code"] == "hardware_efficient_runtime_not_qualified"
 
 
 async def test_materialize_is_bound_to_the_selected_execution(monkeypatch):

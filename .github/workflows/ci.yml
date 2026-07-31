@@ -77,6 +77,7 @@ jobs:
           uv run python scripts/generate-h2-uccsd-canonical-circuit.py --check
           uv run python scripts/generate-h2-uccsd-executable-components.py --check
           uv run python scripts/generate-h2-hardware-efficient-circuit.py --check
+          uv run python scripts/generate-h2-hardware-efficient-executable-components.py --check
           uv run python scripts/check-phase5-vqe-snapshot.py
       - name: openapi.json is current
         run: uv run python -m majorana_contracts.export --check

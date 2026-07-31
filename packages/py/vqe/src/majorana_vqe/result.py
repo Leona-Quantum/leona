@@ -94,7 +94,11 @@ class OptimizerWork(VqeBaseModel):
 class VqeOptimizationSuccessResult(EvidenceCommon):
     status: Literal["succeeded"]
     result_kind: Literal["vqe_optimization_success"] = "vqe_optimization_success"
-    capability: Literal["h2_sto3g_actual_vqe_v1", "h2_sto3g_uccsd_v1"]
+    capability: Literal[
+        "h2_sto3g_actual_vqe_v1",
+        "h2_sto3g_uccsd_v1",
+        "h2_sto3g_hardware_efficient_ry_cx_v1",
+    ]
     best_energy_ha: float
     exact_energy_ha: float
     absolute_error_ha: float = Field(ge=0)

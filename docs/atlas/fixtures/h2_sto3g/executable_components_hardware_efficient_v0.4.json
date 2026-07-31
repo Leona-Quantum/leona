@@ -1,0 +1,207 @@
+{
+  "ansatz": {
+    "canonical_circuit_id": "h2.hardware_efficient.ry_linear_cx.reps2.v1",
+    "canonical_circuit_sha256": "7e28b52d16d694ac59e8b1a2ce2f9b6e215df60e67ac9b3521231e10859016c8",
+    "entanglement_gate": "cx",
+    "entanglement_topology": "directed_linear_0_1_2_3",
+    "expected_parameter_count": 8,
+    "final_rotation_layer": false,
+    "initialization_policy": "benchmark_specific_frozen_palindromic_seed",
+    "kind": "hardware_efficient_ansatz_definition",
+    "name": "h2_hardware_efficient_ry_linear_cx_reps2",
+    "num_qubits": 4,
+    "operation_sequence_sha256": "349652753a7114f9cdaf6582670594fd07341f846508dc7f51d4094162365c02",
+    "parameter_sharing": "none",
+    "parameter_slots": [
+      {
+        "generator_id": "ry.layer0.qubit0",
+        "initial_float64_hex": "bfc999999999999a",
+        "schema_version": "0.2.0",
+        "slot_id": "theta.layer0.qubit0"
+      },
+      {
+        "generator_id": "ry.layer0.qubit1",
+        "initial_float64_hex": "bfb999999999999a",
+        "schema_version": "0.2.0",
+        "slot_id": "theta.layer0.qubit1"
+      },
+      {
+        "generator_id": "ry.layer0.qubit2",
+        "initial_float64_hex": "3fb999999999999a",
+        "schema_version": "0.2.0",
+        "slot_id": "theta.layer0.qubit2"
+      },
+      {
+        "generator_id": "ry.layer0.qubit3",
+        "initial_float64_hex": "3fc999999999999a",
+        "schema_version": "0.2.0",
+        "slot_id": "theta.layer0.qubit3"
+      },
+      {
+        "generator_id": "ry.layer1.qubit0",
+        "initial_float64_hex": "3fc999999999999a",
+        "schema_version": "0.2.0",
+        "slot_id": "theta.layer1.qubit0"
+      },
+      {
+        "generator_id": "ry.layer1.qubit1",
+        "initial_float64_hex": "3fb999999999999a",
+        "schema_version": "0.2.0",
+        "slot_id": "theta.layer1.qubit1"
+      },
+      {
+        "generator_id": "ry.layer1.qubit2",
+        "initial_float64_hex": "bfb999999999999a",
+        "schema_version": "0.2.0",
+        "slot_id": "theta.layer1.qubit2"
+      },
+      {
+        "generator_id": "ry.layer1.qubit3",
+        "initial_float64_hex": "bfc999999999999a",
+        "schema_version": "0.2.0",
+        "slot_id": "theta.layer1.qubit3"
+      }
+    ],
+    "repetitions": 2,
+    "rotation_gate": "ry",
+    "schema_version": "0.4.0"
+  },
+  "compilation_backend": {
+    "basis_gates": [
+      "ry",
+      "cx"
+    ],
+    "canonical_circuit_sha256": "7e28b52d16d694ac59e8b1a2ce2f9b6e215df60e67ac9b3521231e10859016c8",
+    "cnot_definition": "count_gate_name_cx",
+    "compilation_protocol_sha256": "c088fcfb95244dbba960cd096fd58fea8e9f289fbce509758e1a59f58270539c",
+    "compiler": "majorana_identity_common_basis_compiler",
+    "compiler_seed": 0,
+    "compiler_version": "0.1.0",
+    "depth_definition": "asap_dependency_layers_each_gate_duration_one",
+    "diagnostic_resource_stage": "provider_native_diagnostic",
+    "expected_common_basis_cnot_count": 6,
+    "expected_common_basis_depth": 7,
+    "expected_common_basis_gate_count": 14,
+    "hardware_optimization_inclusion_policy": "excluded",
+    "initial_layout": [
+      0,
+      1,
+      2,
+      3
+    ],
+    "input_stage": "canonical_ordered_parameterized_gate_list",
+    "kind": "hardware_efficient_compilation_metric_protocol",
+    "logical_block_definition": "canonical_ry_all_cx_linear_reps2",
+    "measurement_inclusion_policy": "excluded",
+    "metric_scope": "ansatz_only",
+    "operation_sequence_sha256": "349652753a7114f9cdaf6582670594fd07341f846508dc7f51d4094162365c02",
+    "optimization_level": 0,
+    "parameter_binding": "independent_float64_slot_per_ry",
+    "primary_resource_stages": [
+      "canonical_logical",
+      "common_basis_compiled"
+    ],
+    "protocol_id": "majorana.h2.hea_ry_cx.common_cnot_depth.v1",
+    "reference_state_inclusion_policy": "excluded",
+    "routing_policy": "none",
+    "schema_version": "0.4.0",
+    "topology": "four_qubit_directed_linear_0_1_2_3"
+  },
+  "compression": {
+    "kind": "compression_protocol",
+    "mode": "none",
+    "schema_version": "0.2.0"
+  },
+  "evaluation_protocol": {
+    "accepted_absolute_error_tolerance_float64_hex": "3e45798ee2308c3a",
+    "fidelity_tolerance_float64_hex": "3e45798ee2308c3a",
+    "kind": "evaluation_protocol",
+    "reference": "fci_total_energy_offline_acceptance_only",
+    "reference_energy_float64_hex": "bff23267d051ab0e",
+    "schema_version": "0.2.0"
+  },
+  "measurement": {
+    "estimator": "exact_statevector",
+    "grouping": "none_exact_expectation",
+    "kind": "measurement_protocol",
+    "observable_num_qubits": 4,
+    "schema_version": "0.2.0",
+    "shots": null
+  },
+  "parameter_optimizer": {
+    "algorithm": "scipy_slsqp",
+    "deterministic": true,
+    "energy_tolerance_float64_hex": "3d719799812dea11",
+    "initial_point_policy": "component_parameter_slot_defaults",
+    "kind": "optimizer",
+    "lower_bound_float64_hex": "c00921fb54442d18",
+    "max_function_evaluations": 256,
+    "provider": "scipy",
+    "provider_version": "1.18.0",
+    "schema_version": "0.2.0",
+    "upper_bound_float64_hex": "400921fb54442d18"
+  },
+  "problem": {
+    "active_electrons": 2,
+    "basis": "sto-3g",
+    "charge": 0,
+    "dataset_snapshot_sha256": "6424713c69c2b734172db47329b7deb62b67a743c80fd792f48173fdaa4e3edc",
+    "frozen_core": false,
+    "geometry": [
+      {
+        "element": "H",
+        "schema_version": "0.2.0",
+        "x_angstrom": 0.0,
+        "y_angstrom": 0.0,
+        "z_angstrom": 0.0
+      },
+      {
+        "element": "H",
+        "schema_version": "0.2.0",
+        "x_angstrom": 0.0,
+        "y_angstrom": 0.0,
+        "z_angstrom": 0.735
+      }
+    ],
+    "kind": "electronic_structure_problem",
+    "molecule": "H2",
+    "multiplicity": 1,
+    "schema_version": "0.2.0",
+    "spin_orbitals": 4
+  },
+  "problem_preparation": {
+    "integral_zero_threshold_float64_hex": "3d06849b86a12b9b",
+    "kind": "electronic_structure_preparation",
+    "mean_field": "rhf",
+    "nuclear_repulsion_convention": "stored_separately_added_to_total_energy",
+    "orbital_convention": "canonical_rhf_spin_orbitals_alpha_then_beta",
+    "provider": "pyscf",
+    "provider_version": "2.14.0",
+    "scf_convergence_tolerance_float64_hex": "3d719799812dea11",
+    "scf_max_cycles": 100,
+    "schema_version": "0.2.0",
+    "symmetry": "off"
+  },
+  "reference_state": {
+    "bitstring_qubit0_first": "1010",
+    "kind": "reference_state",
+    "num_qubits": 4,
+    "schema_version": "0.2.0",
+    "state": "hartree_fock"
+  },
+  "representation": {
+    "kind": "qubit_representation",
+    "mapping": "jordan_wigner",
+    "num_qubits": 4,
+    "qubit_order": "canonical_qubit0_first_alpha_then_beta",
+    "schema_version": "0.2.0",
+    "tapering": false
+  },
+  "stopping_protocol": {
+    "criterion": "optimizer_bounded_convergence",
+    "energy_tolerance_float64_hex": "3d719799812dea11",
+    "kind": "stopping_protocol",
+    "max_function_evaluations": 256,
+    "schema_version": "0.2.0"
+  }
+}

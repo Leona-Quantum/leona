@@ -57,6 +57,28 @@ class ParameterResetBoundary(VqeBaseModel):
         return self
 
 
+class HardwareEfficientParameterResetBoundary(VqeBaseModel):
+    """Explicitly forbids parameter reuse from UCCSD into direct RY angles."""
+
+    schema_version: Literal["0.1.0"] = "0.1.0"
+    policy: Literal["reset_all"]
+    reason: Literal["ansatz_parameter_semantics_and_dimension_changed"]
+    baseline_orientation: Literal["exp_theta_generator"]
+    candidate_orientation: Literal["direct_ry_angle"]
+    baseline_slots_ignored: list[str] = Field(min_length=3, max_length=3)
+    candidate_initial_slots: list[ParameterSlotValue] = Field(min_length=8, max_length=8)
+    reused_slot_ids: list[str] = Field(default_factory=list, max_length=0)
+
+    @model_validator(mode="after")
+    def _slots_are_unique(self) -> Self:
+        candidate_ids = [slot.slot_id for slot in self.candidate_initial_slots]
+        if len(self.baseline_slots_ignored) != len(set(self.baseline_slots_ignored)):
+            raise ValueError("baseline parameter slots must be unique")
+        if len(candidate_ids) != len(set(candidate_ids)):
+            raise ValueError("candidate parameter slots must be unique")
+        return self
+
+
 class ControlledAnsatzMigrationV01(VqeBaseModel):
     """Fixed-excitation to UCCSD scientific migration for the bounded H₂ slice.
 
@@ -208,6 +230,146 @@ def build_h2_fixed_to_uccsd_migration(
             reason="ansatz_parameter_orientation_and_dimension_changed",
             baseline_orientation="exp_theta_over_2_generator",
             candidate_orientation="exp_theta_generator",
+            baseline_slots_ignored=[slot.slot_id for slot in baseline_spec.initial_parameter_slots],
+            candidate_initial_slots=candidate_spec.initial_parameter_slots,
+            reused_slot_ids=[],
+        ),
+    )
+
+
+class ControlledHardwareEfficientMigrationV01(VqeBaseModel):
+    """UCCSD to RY-CX migration with one primary and one dependent change."""
+
+    schema_version: Literal["0.1.0"] = "0.1.0"
+    comparison_class: Literal["controlled_capability_migration_not_one_component_swap"]
+    primary_changed_role: Literal[ComponentType.ANSATZ]
+    dependent_changed_roles: list[ComponentType] = Field(min_length=1, max_length=1)
+    preserved_required_roles: list[ComponentType] = Field(min_length=1, max_length=11)
+    preserved_not_applicable_roles: list[ComponentType] = Field(min_length=3, max_length=3)
+    baseline_spec: PortableScientificExperimentSpecV03
+    candidate_spec: PortableScientificExperimentSpecV03
+    baseline_hamiltonian_sha256: str = Field(pattern=SHA256_HEX_PATTERN)
+    candidate_hamiltonian_sha256: str = Field(pattern=SHA256_HEX_PATTERN)
+    baseline_reference_energy_float64_hex: str = Field(pattern=FLOAT64_HEX_PATTERN)
+    candidate_reference_energy_float64_hex: str = Field(pattern=FLOAT64_HEX_PATTERN)
+    parameter_reset: HardwareEfficientParameterResetBoundary
+
+    @model_validator(mode="after")
+    def _migration_is_complete_and_controlled(self) -> Self:
+        if self.dependent_changed_roles != [ComponentType.COMPILATION_BACKEND]:
+            raise ValueError(
+                "hardware-efficient migration must declare compilation_backend "
+                "as its sole dependent changed role"
+            )
+        baseline = {item.role: item for item in self.baseline_spec.component_bindings}
+        candidate = {item.role: item for item in self.candidate_spec.component_bindings}
+        changed_required: set[ComponentType] = set()
+        preserved_required: set[ComponentType] = set()
+        preserved_na: set[ComponentType] = set()
+        for role, baseline_binding in baseline.items():
+            candidate_binding = candidate[role]
+            if (
+                baseline_binding.applicability == "not_applicable"
+                and candidate_binding.applicability == "not_applicable"
+            ):
+                preserved_na.add(role)
+                continue
+            if baseline_binding.applicability != candidate_binding.applicability:
+                raise ValueError("hardware-efficient migration cannot change role applicability")
+            if (
+                baseline_binding.component_semantic_key != candidate_binding.component_semantic_key
+                or baseline_binding.component_spec_sha256 != candidate_binding.component_spec_sha256
+            ):
+                changed_required.add(role)
+            else:
+                preserved_required.add(role)
+        if changed_required != {
+            ComponentType.ANSATZ,
+            ComponentType.COMPILATION_BACKEND,
+        }:
+            raise ValueError(
+                "hardware-efficient migration must change exactly ansatz plus "
+                "its dependent compilation protocol"
+            )
+        if set(self.preserved_required_roles) != preserved_required:
+            raise ValueError("preserved required roles do not match the scientific specs")
+        if set(self.preserved_not_applicable_roles) != preserved_na:
+            raise ValueError("preserved not-applicable roles do not match the scientific specs")
+        if len(self.preserved_required_roles) != len(set(self.preserved_required_roles)):
+            raise ValueError("duplicate preserved required role")
+        if len(self.preserved_not_applicable_roles) != len(
+            set(self.preserved_not_applicable_roles)
+        ):
+            raise ValueError("duplicate preserved not-applicable role")
+        if (
+            self.baseline_spec.dataset_snapshot_sha256
+            != self.candidate_spec.dataset_snapshot_sha256
+        ):
+            raise ValueError("dataset snapshot must remain fixed")
+        if self.baseline_spec.seed != self.candidate_spec.seed:
+            raise ValueError("scientific seed must remain fixed")
+        if self.baseline_hamiltonian_sha256 != self.candidate_hamiltonian_sha256:
+            raise ValueError("Hamiltonian content digest must remain fixed")
+        if (
+            self.baseline_reference_energy_float64_hex
+            != self.candidate_reference_energy_float64_hex
+        ):
+            raise ValueError("reference energy must remain fixed")
+        baseline_slots = [slot.slot_id for slot in self.baseline_spec.initial_parameter_slots]
+        if self.parameter_reset.baseline_slots_ignored != baseline_slots:
+            raise ValueError("parameter reset must ignore every UCCSD slot")
+        if (
+            self.parameter_reset.candidate_initial_slots
+            != self.candidate_spec.initial_parameter_slots
+        ):
+            raise ValueError("parameter reset must initialize every hardware-efficient slot")
+        return self
+
+
+def build_h2_uccsd_to_hardware_efficient_migration(
+    *,
+    baseline_spec: PortableScientificExperimentSpecV03,
+    candidate_spec: PortableScientificExperimentSpecV03,
+    baseline_hamiltonian_sha256: str,
+    candidate_hamiltonian_sha256: str,
+    baseline_reference_energy_float64_hex: str,
+    candidate_reference_energy_float64_hex: str,
+) -> ControlledHardwareEfficientMigrationV01:
+    """Derive and validate the bounded ansatz-family migration."""
+
+    baseline = {item.role: item for item in baseline_spec.component_bindings}
+    candidate = {item.role: item for item in candidate_spec.component_bindings}
+    preserved_required = [
+        role
+        for role, baseline_binding in baseline.items()
+        if baseline_binding.applicability == "required"
+        and candidate[role].applicability == "required"
+        and baseline_binding.component_semantic_key == candidate[role].component_semantic_key
+        and baseline_binding.component_spec_sha256 == candidate[role].component_spec_sha256
+    ]
+    preserved_na = [
+        role
+        for role, baseline_binding in baseline.items()
+        if baseline_binding.applicability == "not_applicable"
+        and candidate[role].applicability == "not_applicable"
+    ]
+    return ControlledHardwareEfficientMigrationV01(
+        comparison_class="controlled_capability_migration_not_one_component_swap",
+        primary_changed_role=ComponentType.ANSATZ,
+        dependent_changed_roles=[ComponentType.COMPILATION_BACKEND],
+        preserved_required_roles=preserved_required,
+        preserved_not_applicable_roles=preserved_na,
+        baseline_spec=baseline_spec,
+        candidate_spec=candidate_spec,
+        baseline_hamiltonian_sha256=baseline_hamiltonian_sha256,
+        candidate_hamiltonian_sha256=candidate_hamiltonian_sha256,
+        baseline_reference_energy_float64_hex=baseline_reference_energy_float64_hex,
+        candidate_reference_energy_float64_hex=candidate_reference_energy_float64_hex,
+        parameter_reset=HardwareEfficientParameterResetBoundary(
+            policy="reset_all",
+            reason="ansatz_parameter_semantics_and_dimension_changed",
+            baseline_orientation="exp_theta_generator",
+            candidate_orientation="direct_ry_angle",
             baseline_slots_ignored=[slot.slot_id for slot in baseline_spec.initial_parameter_slots],
             candidate_initial_slots=candidate_spec.initial_parameter_slots,
             reused_slot_ids=[],

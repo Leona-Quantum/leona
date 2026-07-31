@@ -173,6 +173,45 @@ class UccsdAnsatzDefinitionSpec(VqeBaseModel):
         return self
 
 
+class HardwareEfficientAnsatzDefinitionSpec(VqeBaseModel):
+    """Frozen eight-parameter H₂ RY-linear-CX configuration."""
+
+    schema_version: Literal["0.4.0"] = "0.4.0"
+    kind: Literal["hardware_efficient_ansatz_definition"]
+    name: Literal["h2_hardware_efficient_ry_linear_cx_reps2"]
+    num_qubits: Literal[4]
+    rotation_gate: Literal["ry"]
+    entanglement_gate: Literal["cx"]
+    entanglement_topology: Literal["directed_linear_0_1_2_3"]
+    repetitions: Literal[2]
+    final_rotation_layer: Literal[False]
+    parameter_sharing: Literal["none"]
+    initialization_policy: Literal["benchmark_specific_frozen_palindromic_seed"]
+    canonical_circuit_id: Literal["h2.hardware_efficient.ry_linear_cx.reps2.v1"]
+    canonical_circuit_sha256: str = Field(pattern=SHA256_HEX_PATTERN)
+    operation_sequence_sha256: str = Field(pattern=SHA256_HEX_PATTERN)
+    parameter_slots: list[ParameterSlotDefinition] = Field(min_length=8, max_length=8)
+    expected_parameter_count: Literal[8]
+
+    @model_validator(mode="after")
+    def _ordered_slots_match_ordered_rotations(self) -> Self:
+        expected_slots = [
+            f"theta.layer{layer}.qubit{qubit}" for layer in range(2) for qubit in range(4)
+        ]
+        expected_generators = [
+            f"ry.layer{layer}.qubit{qubit}" for layer in range(2) for qubit in range(4)
+        ]
+        if [slot.slot_id for slot in self.parameter_slots] != expected_slots:
+            raise ValueError("hardware-efficient parameter slots are not in frozen layer order")
+        if [slot.generator_id for slot in self.parameter_slots] != expected_generators:
+            raise ValueError("hardware-efficient parameter slots do not bind the frozen RY order")
+        walk_and_validate_json_value(
+            self.model_dump(mode="json"),
+            field_path=type(self).__name__,
+        )
+        return self
+
+
 class OperatorPoolSpec(ExecutableSpecBase):
     kind: Literal["operator_pool"]
     name: Literal["h2_singleton_double_pool"]
@@ -319,6 +358,49 @@ class UccsdCompilationMetricProtocolSpec(VqeBaseModel):
         return self
 
 
+class HardwareEfficientCompilationMetricProtocolSpec(VqeBaseModel):
+    """Canonical ansatz-only resource protocol for the frozen RY-CX circuit."""
+
+    schema_version: Literal["0.4.0"] = "0.4.0"
+    kind: Literal["hardware_efficient_compilation_metric_protocol"]
+    protocol_id: Literal["majorana.h2.hea_ry_cx.common_cnot_depth.v1"]
+    compilation_protocol_sha256: str = Field(pattern=SHA256_HEX_PATTERN)
+    canonical_circuit_sha256: str = Field(pattern=SHA256_HEX_PATTERN)
+    operation_sequence_sha256: str = Field(pattern=SHA256_HEX_PATTERN)
+    input_stage: Literal["canonical_ordered_parameterized_gate_list"]
+    primary_resource_stages: list[Literal["canonical_logical", "common_basis_compiled"]]
+    diagnostic_resource_stage: Literal["provider_native_diagnostic"]
+    logical_block_definition: Literal["canonical_ry_all_cx_linear_reps2"]
+    parameter_binding: Literal["independent_float64_slot_per_ry"]
+    basis_gates: list[Literal["ry", "cx"]] = Field(min_length=2, max_length=2)
+    topology: Literal["four_qubit_directed_linear_0_1_2_3"]
+    initial_layout: list[int] = Field(min_length=4, max_length=4)
+    routing_policy: Literal["none"]
+    optimization_level: Literal[0]
+    compiler: Literal["majorana_identity_common_basis_compiler"]
+    compiler_version: Literal["0.1.0"]
+    compiler_seed: Literal[0]
+    metric_scope: Literal["ansatz_only"]
+    reference_state_inclusion_policy: Literal["excluded"]
+    measurement_inclusion_policy: Literal["excluded"]
+    hardware_optimization_inclusion_policy: Literal["excluded"]
+    depth_definition: Literal["asap_dependency_layers_each_gate_duration_one"]
+    cnot_definition: Literal["count_gate_name_cx"]
+    expected_common_basis_gate_count: Literal[14]
+    expected_common_basis_cnot_count: Literal[6]
+    expected_common_basis_depth: Literal[7]
+
+    @model_validator(mode="after")
+    def _metadata_is_safe(self) -> Self:
+        if self.initial_layout != [0, 1, 2, 3]:
+            raise ValueError("hardware-efficient compilation requires the frozen logical layout")
+        walk_and_validate_json_value(
+            self.model_dump(mode="json"),
+            field_path=type(self).__name__,
+        )
+        return self
+
+
 class EvaluationProtocolV2(ExecutableSpecBase):
     kind: Literal["evaluation_protocol"]
     reference: Literal["fci_total_energy_offline_acceptance_only"]
@@ -341,6 +423,7 @@ ExecutableComponentSpec = Annotated[
     | ReferenceStateSpec
     | AnsatzDefinitionSpec
     | UccsdAnsatzDefinitionSpec
+    | HardwareEfficientAnsatzDefinitionSpec
     | OperatorPoolSpec
     | SelectionProtocolSpec
     | GrowthProtocolSpec
@@ -349,6 +432,7 @@ ExecutableComponentSpec = Annotated[
     | MeasurementProtocolSpec
     | CompilationMetricProtocolSpec
     | UccsdCompilationMetricProtocolSpec
+    | HardwareEfficientCompilationMetricProtocolSpec
     | EvaluationProtocolV2
     | StoppingProtocolV2,
     Field(discriminator="kind"),
@@ -365,7 +449,11 @@ _EXPECTED_MODEL_BY_ROLE: dict[
     ComponentType.PROBLEM_PREPARATION: ElectronicStructurePreparationSpec,
     ComponentType.REPRESENTATION: QubitRepresentationSpec,
     ComponentType.REFERENCE_STATE: ReferenceStateSpec,
-    ComponentType.ANSATZ: (AnsatzDefinitionSpec, UccsdAnsatzDefinitionSpec),
+    ComponentType.ANSATZ: (
+        AnsatzDefinitionSpec,
+        UccsdAnsatzDefinitionSpec,
+        HardwareEfficientAnsatzDefinitionSpec,
+    ),
     ComponentType.OPERATOR_POOL: OperatorPoolSpec,
     ComponentType.SEARCH_SELECTION: SelectionProtocolSpec,
     ComponentType.GROWTH_BATCHING: GrowthProtocolSpec,
@@ -375,6 +463,7 @@ _EXPECTED_MODEL_BY_ROLE: dict[
     ComponentType.COMPILATION_BACKEND: (
         CompilationMetricProtocolSpec,
         UccsdCompilationMetricProtocolSpec,
+        HardwareEfficientCompilationMetricProtocolSpec,
     ),
     ComponentType.EVALUATION_PROTOCOL: EvaluationProtocolV2,
     ComponentType.STOPPING_PROTOCOL: StoppingProtocolV2,
@@ -407,6 +496,13 @@ class ExecutableH2ScientificIdentity(VqeBaseModel):
 
 
 class ExecutableH2UccsdScientificIdentity(VqeBaseModel):
+    schema_version: Literal["0.1.0"] = "0.1.0"
+    portable_spec: PortableScientificExperimentSpecV03
+    hamiltonian_digest_sha256: str = Field(pattern=SHA256_HEX_PATTERN)
+    reference_energy_float64_hex: str = Field(pattern=FLOAT64_HEX_PATTERN)
+
+
+class ExecutableH2HardwareEfficientScientificIdentity(VqeBaseModel):
     schema_version: Literal["0.1.0"] = "0.1.0"
     portable_spec: PortableScientificExperimentSpecV03
     hamiltonian_digest_sha256: str = Field(pattern=SHA256_HEX_PATTERN)
@@ -644,6 +740,155 @@ def validate_h2_uccsd_executable_composition(
     )
 
 
+class ExecutableH2HardwareEfficientWorkflow(VqeBaseModel):
+    """Applicable roles for the bounded H₂ RY-linear-CX workflow."""
+
+    problem: H2ProblemSpec
+    problem_preparation: ElectronicStructurePreparationSpec
+    representation: QubitRepresentationSpec
+    reference_state: ReferenceStateSpec
+    ansatz: HardwareEfficientAnsatzDefinitionSpec
+    optimizer: OptimizerSpec
+    compression: CompressionProtocolSpec
+    measurement: MeasurementProtocolSpec
+    compilation: HardwareEfficientCompilationMetricProtocolSpec
+    evaluation: EvaluationProtocolV2
+    stopping: StoppingProtocolV2
+
+    @model_validator(mode="after")
+    def _cross_component_invariants_hold(self) -> Self:
+        if self.reference_state.bitstring_qubit0_first.count("1") != self.problem.active_electrons:
+            raise ValueError("reference-state occupation does not match active_electrons")
+        if self.representation.num_qubits != self.problem.spin_orbitals:
+            raise ValueError("representation width does not match problem spin orbitals")
+        if self.ansatz.num_qubits != self.representation.num_qubits:
+            raise ValueError("ansatz width does not match representation")
+        if self.measurement.observable_num_qubits != self.representation.num_qubits:
+            raise ValueError("measurement width does not match representation")
+        if self.compilation.canonical_circuit_sha256 != self.ansatz.canonical_circuit_sha256:
+            raise ValueError("ansatz and compilation canonical circuit digests disagree")
+        if self.compilation.operation_sequence_sha256 != self.ansatz.operation_sequence_sha256:
+            raise ValueError("ansatz and compilation operation-sequence digests disagree")
+        if self.optimizer.algorithm != "scipy_slsqp":
+            raise ValueError("the first hardware-efficient slice requires vector SLSQP")
+        if self.optimizer.max_function_evaluations != self.stopping.max_function_evaluations:
+            raise ValueError("optimizer and stopping evaluation budgets disagree")
+        if (
+            self.optimizer.energy_tolerance_float64_hex
+            != self.stopping.energy_tolerance_float64_hex
+        ):
+            raise ValueError("optimizer and stopping energy tolerances disagree")
+        return self
+
+
+H2_HARDWARE_EFFICIENT_APPLICABLE_ROLES = H2_UCCSD_APPLICABLE_ROLES
+H2_HARDWARE_EFFICIENT_SEMANTIC_KEYS: dict[ComponentType, str] = {
+    **H2_UCCSD_SEMANTIC_KEYS,
+    ComponentType.ANSATZ: "ansatz.hardware_efficient_ry_cx.v1",
+    ComponentType.COMPILATION_BACKEND: (
+        "compilation.h2.hardware_efficient_ry_cx.canonical_logical.v1"
+    ),
+}
+H2_HARDWARE_EFFICIENT_MIGRATED_SEMANTIC_KEYS: dict[ComponentType, str] = {
+    **{
+        role: f"h2.sto3g.actual_vqe.v0_2.{role.value}"
+        for role in H2_HARDWARE_EFFICIENT_APPLICABLE_ROLES
+    },
+    ComponentType.ANSATZ: "ansatz.hardware_efficient_ry_cx.v1",
+    ComponentType.PARAMETER_OPTIMIZER: "optimizer.slsqp.v1",
+    ComponentType.COMPILATION_BACKEND: (
+        "compilation.h2.hardware_efficient_ry_cx.canonical_logical.v1"
+    ),
+}
+H2_HARDWARE_EFFICIENT_SUPPORTED_SEMANTIC_KEY_SETS = (
+    H2_HARDWARE_EFFICIENT_SEMANTIC_KEYS,
+    H2_HARDWARE_EFFICIENT_MIGRATED_SEMANTIC_KEYS,
+)
+
+
+def validate_h2_hardware_efficient_executable_composition(
+    specs: dict[ComponentType, dict[str, object]],
+) -> ExecutableH2HardwareEfficientWorkflow:
+    expected = set(H2_HARDWARE_EFFICIENT_APPLICABLE_ROLES)
+    missing = expected - set(specs)
+    extra = set(specs) - expected
+    if missing or extra:
+        raise ExecutableCompositionError(
+            "H2 hardware-efficient executable composition role mismatch; "
+            f"missing={sorted(role.value for role in missing)}, "
+            f"extra={sorted(role.value for role in extra)}"
+        )
+    parsed = {
+        role: parse_executable_component(role, spec_json) for role, spec_json in specs.items()
+    }
+    return ExecutableH2HardwareEfficientWorkflow(
+        problem=parsed[ComponentType.PROBLEM],
+        problem_preparation=parsed[ComponentType.PROBLEM_PREPARATION],
+        representation=parsed[ComponentType.REPRESENTATION],
+        reference_state=parsed[ComponentType.REFERENCE_STATE],
+        ansatz=parsed[ComponentType.ANSATZ],
+        optimizer=parsed[ComponentType.PARAMETER_OPTIMIZER],
+        compression=parsed[ComponentType.COMPRESSION],
+        measurement=parsed[ComponentType.MEASUREMENT],
+        compilation=parsed[ComponentType.COMPILATION_BACKEND],
+        evaluation=parsed[ComponentType.EVALUATION_PROTOCOL],
+        stopping=parsed[ComponentType.STOPPING_PROTOCOL],
+    )
+
+
+def build_h2_hardware_efficient_scientific_identity(
+    *,
+    semantic_keys: dict[ComponentType, str],
+    specs: dict[ComponentType, dict[str, object]],
+    hamiltonian_digest_sha256: str,
+    seed: int = 0,
+) -> ExecutableH2HardwareEfficientScientificIdentity:
+    """Build the explicit-applicability identity for the bounded RY-CX slice."""
+
+    if semantic_keys not in H2_HARDWARE_EFFICIENT_SUPPORTED_SEMANTIC_KEY_SETS:
+        raise ExecutableCompositionError("unsupported H2 hardware-efficient semantic selection set")
+    workflow = validate_h2_hardware_efficient_executable_composition(specs)
+    bindings: list[ComponentRoleBindingV03] = []
+    for role in PORTABLE_SCIENTIFIC_ROLES:
+        if role not in H2_HARDWARE_EFFICIENT_APPLICABLE_ROLES:
+            bindings.append(
+                ComponentRoleBindingV03(
+                    role=role,
+                    component_type=role,
+                    applicability="not_applicable",
+                )
+            )
+            continue
+        parsed = parse_executable_component(role, specs[role])
+        scientific_payload = executable_component_scientific_payload(role, parsed)
+        bindings.append(
+            ComponentRoleBindingV03(
+                role=role,
+                component_type=role,
+                component_semantic_key=semantic_keys[role],
+                component_spec_sha256=normalized_component_spec_digest(
+                    component_type=role,
+                    spec_json=scientific_payload,
+                ),
+            )
+        )
+    portable_spec = PortableScientificExperimentSpecV03(
+        workflow_semantic_digest=workflow_semantic_digest_v03(bindings),
+        component_bindings=bindings,
+        dataset_snapshot_sha256=workflow.problem.dataset_snapshot_sha256,
+        initial_parameter_slots=[
+            ParameterSlotValue(slot_id=slot.slot_id, float64_hex=slot.initial_float64_hex)
+            for slot in workflow.ansatz.parameter_slots
+        ],
+        seed=seed,
+    )
+    return ExecutableH2HardwareEfficientScientificIdentity(
+        portable_spec=portable_spec,
+        hamiltonian_digest_sha256=hamiltonian_digest_sha256,
+        reference_energy_float64_hex=workflow.evaluation.reference_energy_float64_hex,
+    )
+
+
 def build_h2_uccsd_scientific_identity(
     *,
     semantic_keys: dict[ComponentType, str],
@@ -653,7 +898,7 @@ def build_h2_uccsd_scientific_identity(
 ) -> ExecutableH2UccsdScientificIdentity:
     """Build v0.3 identity without placeholder adaptive components."""
 
-    if semantic_keys != H2_UCCSD_SEMANTIC_KEYS:
+    if semantic_keys not in H2_UCCSD_SUPPORTED_SEMANTIC_KEY_SETS:
         missing = set(H2_UCCSD_SEMANTIC_KEYS) - set(semantic_keys)
         extra = set(semantic_keys) - set(H2_UCCSD_SEMANTIC_KEYS)
         mismatched = sorted(
@@ -857,4 +1102,29 @@ def load_packaged_h2_uccsd_executable_component_specs() -> dict[
             "packaged H2 UCCSD component seed contains an unknown role"
         ) from exc
     validate_h2_uccsd_executable_composition(specs)
+    return specs
+
+
+def load_packaged_h2_hardware_efficient_executable_component_specs() -> dict[
+    ComponentType,
+    dict[str, object],
+]:
+    """Load the immutable server-owned H₂ RY-CX component seed."""
+
+    resource = files("majorana_vqe").joinpath(
+        "data",
+        "h2_hardware_efficient_executable_components_v0.4.json",
+    )
+    raw = json.loads(resource.read_text(encoding="utf-8"))
+    if not isinstance(raw, dict) or any(not isinstance(value, dict) for value in raw.values()):
+        raise ExecutableCompositionError(
+            "packaged H2 hardware-efficient component seed is malformed"
+        )
+    try:
+        specs = {ComponentType(role): value for role, value in raw.items()}
+    except ValueError as exc:
+        raise ExecutableCompositionError(
+            "packaged H2 hardware-efficient component seed contains an unknown role"
+        ) from exc
+    validate_h2_hardware_efficient_executable_composition(specs)
     return specs

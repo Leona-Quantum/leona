@@ -287,6 +287,7 @@ class Capability(str, Enum):
     H2_STO3G_EXACT_ENERGY = "h2_sto3g_exact_energy"
     H2_STO3G_ACTUAL_VQE = "h2_sto3g_actual_vqe_v1"
     H2_STO3G_UCCSD_VQE = "h2_sto3g_uccsd_v1"
+    H2_STO3G_HARDWARE_EFFICIENT_VQE = "h2_sto3g_hardware_efficient_ry_cx_v1"
 
 
 class ScientificExperimentSpec(VqeBaseModel):
