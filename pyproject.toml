@@ -62,6 +62,7 @@ root_packages = [
     "majorana_api",
     "majorana_agent",
     "majorana_contracts",
+    "majorana_research_extraction",
     "majorana_worker",
     "majorana_vqe",
 ]
@@ -102,4 +103,21 @@ forbidden_modules = [
     "psycopg",
     "majorana_api",
     "majorana_worker",
+]
+
+[[tool.importlinter.contracts]]
+name = "research extraction remains pure and never gains execution, network, or DB dependencies"
+type = "forbidden"
+source_modules = ["majorana_research_extraction"]
+forbidden_modules = [
+    "majorana_api",
+    "majorana_worker",
+    "qiskit",
+    "pennylane",
+    "fastapi",
+    "sqlalchemy",
+    "psycopg",
+    "requests",
+    "httpx",
+    "subprocess",
 ]

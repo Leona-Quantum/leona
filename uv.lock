@@ -20,6 +20,7 @@ members = [
     "majorana-llm",
     "majorana-openqasm",
     "majorana-qpu",
+    "majorana-research-extraction",
     "majorana-sandbox",
     "majorana-verification",
     "majorana-vqe",
@@ -1207,6 +1208,11 @@ requires-dist = [
     { name = "qiskit-ibm-runtime", marker = "extra == 'ibm'", specifier = ">=0.48,<1" },
 ]
 provides-extras = ["ibm"]
+
+[[package]]
+name = "majorana-research-extraction"
+version = "0.1.0"
+source = { editable = "packages/py/research-extraction" }
 
 [[package]]
 name = "majorana-sandbox"

@@ -25,9 +25,11 @@ The first bounded Phase 8 slice is implemented locally:
   malformed TOML, and invalid declared-value shapes;
 - S8 synthetic golden baseline: complete for the current fourteen-fact fixture;
 - S9 official-provider dry run: complete for the six enabled GitHub sources in
-  the owner-approved Qiskit, PennyLane, OpenFermion, and HamLib source families.
+  the owner-approved Qiskit, PennyLane, OpenFermion, and HamLib source families;
+- S10 Python AST extractor: complete as the pure
+  `majorana-research-extraction` package with no target imports or execution.
 
-`environment.yml` is not treated as a lockfile, and S10–S12 remain open. No
+`environment.yml` is not treated as a lockfile, and S11–S12 remain open. No
 requirements resolution, container build, workflow execution, Python import, notebook execution, component
 materialization, or public publication was enabled.
 
@@ -127,6 +129,31 @@ Nature and the historically pinned Qiskit Algorithms repository. Registry
 membership permits bounded acquisition only; it does not establish a VQE
 capability or runtime compatibility. No S9 result was auto-materialized as a
 component.
+
+## S10 Python AST extractor
+
+`packages/py/research-extraction` is a separate standard-library-only package.
+It parses bounded UTF-8 `.py` bytes with `ast.parse`; it never imports, compiles
+to runnable bytecode, evaluates, or executes the target module. A dedicated
+import-linter contract prevents this package from acquiring framework,
+control-plane, database, network-client, or subprocess dependencies.
+
+The v1 schema records exact syntactic evidence for imports, import aliases,
+simple symbol aliases, imported-call sites, keyword names, bounded literal
+keyword configuration, and exact `if __name__ == "__main__"` entrypoint calls.
+Each fact contains the source SHA-256 and line/UTF-8-byte-column span. Source
+bytes, AST nodes/depth, fact count, literal depth/items/string length, and
+integer digits are bounded. Invalid paths, UTF-8, Python syntax, or resource
+limits fail closed with stable codes and no raw exception text.
+
+The synthetic fixture suite covers Qiskit, PennyLane, OpenFermion, OpenVQE,
+Tangelo, unused imports, lexical shadowing, conditional rebinding, oversized
+input, malformed syntax, non-literal configuration, and code that would create
+a file if executed. The latter leaves no file and records
+`execution_performed=false`. These are parser-contract tests, not real-provider
+precision/recall results. `imported_call` means only that the callee is
+syntactically resolved to an imported name; it is not proof of constructor
+semantics, execution, compatibility, or scientific capability.
 
 ## Verification
 
