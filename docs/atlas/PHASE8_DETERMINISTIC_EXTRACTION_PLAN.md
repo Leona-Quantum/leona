@@ -1,6 +1,6 @@
 # Phase 8 — Deterministic structured extraction
 
-Status: active on `feature/vqe`
+Status: complete on `feature/vqe` (2026-07-31)
 
 ## Product and scientific boundary
 

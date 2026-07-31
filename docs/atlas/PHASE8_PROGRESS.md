@@ -1,5 +1,8 @@
 # Phase 8 progress — deterministic structured extraction
 
+State: **S0–S12 complete at their stated private evidence levels. Public
+component materialization and scientific/performance claims remain blocked.**
+
 Updated: 2026-07-31
 
 ## Current status
@@ -29,9 +32,10 @@ The first bounded Phase 8 slice is implemented locally:
 - S10 Python AST extractor: complete as the pure
   `majorana-research-extraction` package with no target imports or execution;
 - S11 notebook sanitizer/extractor: complete for bounded Jupyter v4 JSON with
-  separate sanitized code/markdown channels and no notebook execution.
+  separate sanitized code/markdown channels and no notebook execution;
+- S12 release gate: complete locally and in the remote CI matrix.
 
-`environment.yml` is not treated as a lockfile, and S12 remains open. No
+`environment.yml` is not treated as a lockfile. No
 requirements resolution, container build, workflow execution, target Python
 import, notebook execution, component materialization, or public publication
 was enabled.
@@ -208,3 +212,36 @@ not part of this extraction result or its scientific evidence.
 
 The documentation-only lockfile follow-up also passed the full remote CI matrix:
 https://github.com/EshMis/majorana/actions/runs/30627566881.
+
+## S12 release gate
+
+The final local gate completed on commit `bbe48df` with:
+
+```text
+pytest: 1496 passed, 171 skipped
+Ruff lint: clean
+Ruff format: 384 files already formatted
+OpenAPI and all H2 registry/generated fixtures: current
+import-linter: 5 contracts kept, 0 broken
+raw-query boundary: clean
+Alembic: one head, 0044
+```
+
+The corresponding remote CI matrix passed at
+https://github.com/EshMis/majorana/actions/runs/30631592957. Its disposable
+Postgres job completed migration up→down→up, seed, authz, pipeline E2E, and
+repository concurrency/integrity checks. TypeScript build/tests, authenticated
+browser contracts, accessibility checks, Python tests, generation checks,
+import boundaries, and raw-query checks also passed.
+
+The CI run skipped the separately triggered Phase 7.7 Linux/amd64 interchange
+job because this commit did not carry its explicit qualification tag; the
+Phase 8 extractor neither changes nor claims that runtime boundary. GitHub
+again emitted non-blocking Node 20 action deprecation warnings while running
+those actions under Node 24. That repository-wide action-major maintenance
+remains separate from Phase 8 and did not weaken an extraction gate.
+
+Phase 8 closes with code and private evidence schemas only. No extracted fact,
+AST call, or notebook cell was promoted to a canonical component, treated as a
+verified implementation, published publicly, or used to make a performance
+claim.
