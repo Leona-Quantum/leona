@@ -41,6 +41,7 @@ import {
 } from "../lib/chat-history";
 import { accountFirstName, accountInitials } from "../lib/account-identity";
 import type { AccountTier } from "../lib/account-tier";
+import { fetchArtifactPages } from "../lib/artifact-page";
 import { describeNextSlot, isMetered, parseUsage, type UsageSummary } from "../lib/usage-summary";
 import { titleFromPrompt } from "../lib/chat-title";
 import {
@@ -146,12 +147,23 @@ export function Shell({
       }
 
       try {
-        const [runsResponse, artifactsResponse] = await Promise.all([
+        // Artifacts are paged rather than fetched once: an un-paged read returns
+        // the route's default of 50 and looks exactly like a workspace that
+        // holds 50. See lib/artifact-page.ts. Runs stay at one page — that list
+        // is the recent-chat rail and 50 is the intended ceiling, not an
+        // accident of the default.
+        const [runsResponse, artifactPages] = await Promise.all([
           fetch("/api/runs?limit=50", { cache: "no-store" }),
-          fetch("/api/artifacts", { cache: "no-store" }),
+          // A failed read falls back to the local mirror, as it did before this
+          // was paged. `complete: false` rather than true — nothing reads it
+          // here yet, and the first thing that does must not be told the empty
+          // list was the whole list.
+          fetchArtifactPages((query) => fetch(`/api/artifacts${query}`, { cache: "no-store" })).catch(
+            () => ({ rows: [] as unknown[], complete: false }),
+          ),
         ]);
         const runPayload = runsResponse.ok ? ((await runsResponse.json()) as unknown) : [];
-        const artifactPayload = artifactsResponse.ok ? ((await artifactsResponse.json()) as unknown) : [];
+        const artifactPayload = artifactPages.rows;
         const byId = new Map(Array.isArray(runPayload) ? runPayload.flatMap(chatFromRun).map((chat) => [chat.id, chat]) : []);
         for (const local of loadChatHistory({ includeDemo: false, includeArchived: true })) {
           const remote = byId.get(local.id);
