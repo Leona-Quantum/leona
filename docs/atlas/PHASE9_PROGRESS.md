@@ -12,13 +12,13 @@ Updated: 2026-07-31
   implemented and locally verified;
 - S5 adversarial corpus: implemented and locally verified;
 - S6 offline contract evaluation: implemented, regenerated, and locally verified;
-- S7 owner-approved live dry run: blocked by design until explicit
-  provider/model/budget approval;
+- S7 owner-approved live dry run: completed once with DeepSeek V4 Flash and a
+  private Qiskit Nature metadata bundle;
 - S8–S12 persistence, review, materialization, E2E, and release audit: not yet
   started.
 
-No live LLM provider was contacted, no credential was read, and no external
-quota was spent in S0–S6.
+No live LLM provider was contacted in S0–S6. S7 used the owner-supplied
+DeepSeek credential for exactly one generation request with retries disabled.
 
 ## S0 boundary
 
@@ -138,10 +138,44 @@ itself labels these numbers `synthetic_validator_contract_not_model_quality`
 and records `provider_call_performed=false`. These perfect synthetic contract
 scores are not evidence about a model, official provider, or VQE science.
 
+## S7 owner-approved private live dry run
+
+The owner approved a single DeepSeek call. The run used `deepseek-v4-flash`,
+made exactly one generation request, and performed zero retries. Before the
+provider boundary, the command re-fetched only the Phase 7 metadata allowlist
+for Qiskit Nature at immutable commit
+`478b26e1992d66582cf15bcb1c90df702a3b8f97` and required the repository URL,
+commit, metadata manifest, selected-byte count, and every selected file digest
+to equal the recorded Phase 8 evidence. Target code was not cloned, imported,
+installed, or executed.
+
+The strict response and evidence-reference validators accepted one complete
+private envelope. Its redacted audit record is stored at
+`docs/atlas/evidence/phase9/private_live_dry_run_2026-07-31.json` with SHA-256
+`eb98ff02e80102c8743442dd28ea4b0c31e32d50c879ca296ff2f1eeda28ed47`.
+It records 3 candidates, 13 field proposals, 10 unknowns, 0 conflicts, 6,605
+input tokens, and 1,269 output tokens. These are descriptive counts from one
+response, not precision, recall, scientific correctness, compatibility, or
+model-quality measurements.
+
+The full validated envelope is stored outside the repository with filesystem
+mode `0600`. Its contents, candidate values, and raw provider response are not
+included in the repository audit record. The envelope remains `unreviewed`,
+`publication_eligible=false`, and `materialization_eligible=false`. No
+candidate was persisted to Neon, published, or converted into a canonical
+component.
+
+The live-run script refuses repository-local private output, refuses overwrite,
+uses exclusive file creation, emits stable sanitized failure codes, and does not
+wrap the provider in a retry client. The local qualification tests verify a
+single call, redaction, pre-provider identity rejection, output isolation, and
+mode `0600` behavior.
+
 ## Open gates
 
-S7 remains closed until the owner explicitly approves the live provider, model,
-and maximum budget. Passing S5–S6 does not grant permission to use credentials,
-spend quota, or call a model. S8–S12 remain downstream of a valid private S7
-envelope and must not manufacture or substitute scripted provider output for a
-product qualification run.
+S7 is complete as a private operational qualification only. One accepted
+response does not authorize publication, model-quality claims, or automatic
+materialization. S8–S12 remain downstream gates for append-only private
+persistence, human review, explicit materialization, end-to-end validation,
+and release audit. They must use the validated private envelope without
+manufacturing or substituting scripted provider output.
