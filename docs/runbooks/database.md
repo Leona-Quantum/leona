@@ -60,6 +60,21 @@ SQLAlchemy's defaults (5 + 10) would let those same three processes reach 45 on
 their own. If you raise `maxScale` on either service, do this arithmetic again;
 `DB_POOL_SIZE` / `DB_MAX_OVERFLOW` are the knobs and both are read at startup.
 
+**The worker's 10 are sized like the API's and its workload is not.** It claims
+exactly one job per cycle and awaits the handler inline (`__main__.py`), so it is
+strictly serial; the concurrent users are the loop, the heartbeat task, and the
+periodic sweeps. If more workers are ever wanted — and the queue supports them,
+`claim_job` is `FOR UPDATE SKIP LOCKED` with leases — shrinking the worker's pool
+is the cheapest way to make room inside the 50, before paying for a larger tier.
+**Measure before choosing a number:** `select count(*), application_name from
+pg_stat_activity group by 2` while the queue is busy, not an estimate from
+reading the loop.
+
+Note also that raising the worker's `--max-instances` alone changes nothing.
+Cloud Run scales on request concurrency and the worker serves only a static
+liveness responder on `$PORT`, so it receives no request traffic. Parallel
+workers need `--min-instances N`, which is always-on billing.
+
 ## Why the move happened
 
 Neon's free plan allows 5 GB of data transfer and 100 compute-hours a month. On
@@ -125,9 +140,29 @@ predate the dump.
 
 ## Rollback
 
-Neon is untouched and still holds the pre-cutover data. To go back: add a
-Secret Manager version to `DATABASE_URL` with the Neon **pooled** URL and to
-`DATABASE_URL_SECRET` with the Neon **direct** URL, then redeploy both services.
+**First: list the Cloud Run tags.** Every revision holds its own `DATABASE_URL`
+reference, and they all point at the secret's `:latest` version — so a rollback
+does not only change what the *current* revision reads. Any tagged revision is
+publicly addressable at its own URL (`deploys.md § A tag is a public URL`), and a
+tagged revision old enough to predate a cutover trusts whatever it trusted then.
+
+The specific trap, found 2026-07-31: revision 00017 was tagged `catalog` and
+reachable, trusted the **staging** WorkOS issuer, and could not reach the database
+only because it predates the Cloud SQL move and has no socket mounted. A Neon URL
+is a plain TCP host and needs no socket. Performing this rollback would have given
+that public, staging-authenticated, 2026-07-19 build full access to production
+data on its next cold start. The tags have been removed; check again before
+relying on that.
+
+```bash
+gcloud run services describe majorana-api --project majorana-core \
+  --region us-west1 --format=json | jq '.status.traffic[] | select(.tag) | {tag, revisionName, url}'
+# expect exactly one: verify -> the current revision
+```
+
+Then: add a Secret Manager version to `DATABASE_URL` with the Neon **pooled** URL
+and to `DATABASE_URL_SECRET` with the Neon **direct** URL, then redeploy both
+services.
 Note the guard in `db.py` refuses a Neon URL in a deployed environment — that is
 deliberate (a stale secret that still connects means two live databases), so a
 genuine rollback has to remove it, which is exactly the amount of friction it
