@@ -129,7 +129,19 @@ async def count_execute_runs_since(scope: Scope, session: AsyncSession, since: d
     The flat abuse ceiling above this one stays per workspace on purpose — that
     one bounds a tenant rather than an account.
     """
-    stmt = (
+    return int((await session.execute(execute_allowance_stmt(scope, since))).scalar_one())
+
+
+def execute_allowance_stmt(scope: Scope, since: dt.datetime):
+    """The allowance count as a statement, so a test can EXPLAIN this exact one.
+
+    Split out rather than restated in the test. This query runs on every run
+    submission and `ix_runs_user_mode_created` (migration 0039) exists solely to
+    serve it — a refactor that changed the predicates would silently drop back to
+    the sequential scan the index was added to remove, and a test carrying its own
+    copy of the SQL would keep passing while it happened.
+    """
+    return (
         select(func.count())
         .select_from(Run)
         .where(
@@ -138,7 +150,6 @@ async def count_execute_runs_since(scope: Scope, session: AsyncSession, since: d
             Run.created_at >= since,
         )
     )
-    return int((await session.execute(stmt)).scalar_one())
 
 
 async def find_run_by_idempotency_key(
