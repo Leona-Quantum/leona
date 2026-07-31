@@ -26,12 +26,26 @@ for (const locale of LOCALES) {
     }
   });
 
-  test(`${locale}: most composer suggestions name no quantum method`, () => {
+  test(`${locale}: most composer suggestions assume no prior knowledge`, () => {
     // The point of the strip is that somebody who has never written a circuit
     // sees a problem they recognise. A set where every entry says QAOA or VQE
     // teaches the opposite, so this asserts the *ratio* rather than banning the
     // vocabulary — the Bell state belongs here, four of its neighbours do not.
-    const jargon = /grover|qaoa|vqe|qubo|qft|qae|qubit|quantum|量子|回路|ビット/i;
+    //
+    // "Bell state" and "ground-state energy" are on this list even though
+    // neither is a *method*. The first version of this test only listed
+    // algorithms, so both read as plain language and the ratio passed a
+    // mutation that should have broken it. The question the test is asking is
+    // whether a reader needs to know the term already, not what category it
+    // belongs to.
+    const jargon = new RegExp(
+      [
+        "grover|qaoa|vqe|qubo|qft|qae|qubit|quantum",
+        "bell|ghz|hadamard|entangl|superposition|amplitude|ansatz|ground.state|h₂|circuit",
+        "量子|回路|ビット|ベル|基底状態|分子|振幅|重ね合わせ",
+      ].join("|"),
+      "i",
+    );
     const plain = examples.filter((example) => !jargon.test(example.prompt));
     assert.ok(
       plain.length >= Math.ceil(examples.length / 2),
