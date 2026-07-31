@@ -40,9 +40,10 @@ test("a fresh failed run without a summary is not mislabeled as legacy", () => {
     { type: "run.finished", status: "failed" },
   ]);
 
-  assert.equal(outcome?.eyebrow, "Run incomplete");
-  assert.equal(outcome?.title, "No accepted result was produced");
-  assert.equal(outcome?.callout?.title, "Starting point only");
+  assert.equal(outcome?.eyebrow, "Best available result");
+  assert.equal(outcome?.title, "The strongest candidate was preserved");
+  assert.equal(outcome?.callout?.title, "Why it was not accepted");
+  assert.equal(outcome?.tone, "warn");
   assert.equal(outcome?.code?.source, "print('best effort')");
   assert.doesNotMatch(JSON.stringify(outcome), /Legacy/);
 });

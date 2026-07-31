@@ -34,6 +34,13 @@ export function RunResult({
         </ul>
       </header>
 
+      {result.notice ? (
+        <aside className="mj-run-result-notice" role="note">
+          <strong>{result.notice.title}</strong>
+          <p>{result.notice.body}</p>
+        </aside>
+      ) : null}
+
       {distribution ? (
         <div className="mj-sim-chart">
           <span className="mj-section-label">

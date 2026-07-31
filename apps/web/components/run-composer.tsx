@@ -65,7 +65,7 @@ export function RunComposer({
     ? {
         task: "メッセージ",
         attach: "ファイルを添付",
-        pending: "応答中",
+        pending: "実行中",
         send: "送信",
         stop: "停止",
         stopping: "停止しています",
@@ -83,7 +83,7 @@ export function RunComposer({
     : {
         task: "Message",
         attach: "Attach files",
-        pending: "Thinking",
+        pending: "Working",
         send: "Send",
         stop: "Stop",
         stopping: "Stopping",
@@ -102,7 +102,12 @@ export function RunComposer({
 
   return (
     <div className={`mj-composer-dock${centered ? " mj-composer-dock--centered" : ""}`}>
-      <form className="mj-composer" onSubmit={onSubmit}>
+      <form className="mj-composer" onSubmit={onSubmit} aria-busy={pending}>
+        {pending ? (
+          <span className="sr-only" role="status" aria-live="polite" aria-atomic="true">
+            {stopping ? labels.stopping : labels.pending}
+          </span>
+        ) : null}
         {contextArtifact ? (
           <div className="mj-composer-context" aria-label={`${labels.context}: ${contextArtifact.title}`}>
             <PaperclipIcon size={14} />
@@ -161,7 +166,7 @@ export function RunComposer({
           placeholder={ghost?.text || basePlaceholder(locale)}
           aria-label={labels.task}
           aria-describedby={ghost ? "mj-composer-tab-hint" : undefined}
-          rows={2}
+          rows={1}
         />
         {ghost ? <span className="sr-only" id="mj-composer-tab-hint">{labels.tabHint}</span> : null}
         <div className="mj-composer-controls">
@@ -248,10 +253,12 @@ export function RunComposer({
                 <span className="mj-composer-stop-mark" aria-hidden="true" />
               </button>
             ) : (
-              <button className="mj-primary-button" type="submit" disabled={pending || !value.trim()}>
-                {pending ? labels.pending : labels.send}
-                <span className="mj-command-hint">⌘/Ctrl ↵</span>
-              </button>
+              <>
+                {!pending ? <kbd className="mj-command-hint">⌘/Ctrl ↵</kbd> : null}
+                <button className="mj-primary-button" type="submit" disabled={pending || !value.trim()}>
+                  {pending ? labels.pending : labels.send}
+                </button>
+              </>
             )}
           </div>
         </div>

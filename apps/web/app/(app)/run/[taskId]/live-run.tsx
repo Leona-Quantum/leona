@@ -1,12 +1,15 @@
 "use client";
 
-import type { FormEvent } from "react";
+import type { FormEvent, ReactNode } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import {
+  AgentActivity,
   RunOutcome,
   SyntaxHighlightedCode,
+  type AgentActivityItem,
+  type AgentActivityState,
   type RunEvent,
 } from "@majorana/ui";
 import { ChatMarkdown } from "../../../../components/chat-markdown";
@@ -19,7 +22,10 @@ import { verificationSummaryFromValue, type VerificationSummary } from "../../..
 import { runOutcomeFromEvents } from "../../../../lib/run-outcome";
 import { runResultFromEvents } from "../../../../lib/run-result";
 import { RunResult } from "../../../../components/run-result";
-import { runProgressFromEvents } from "../../../../lib/run-progress";
+import {
+  runActivityFromEvents,
+  type RunActivityDetail,
+} from "../../../../lib/run-activity";
 import { formatShare, simulationChartData } from "../../../../lib/simulation-visual";
 import { ThinkingLabel } from "../../../../components/thinking-label";
 import { useSmoothedText } from "../../../../components/use-smoothed-text";
@@ -27,6 +33,7 @@ import { useSmoothedText } from "../../../../components/use-smoothed-text";
 type WireEvent = {
   run_id: string;
   seq?: number;
+  ts?: string;
   type: string;
   kind?: "reasoning" | "output";
   text?: string;
@@ -37,6 +44,7 @@ type WireEvent = {
   verifier_decision?: string | null;
   evidence_strength?: string | null;
   interpretation?: string;
+  summary?: string;
   decision?: string;
   reason_code?: string | null;
   revision?: number;
@@ -87,6 +95,7 @@ type WireEvent = {
   stdout?: string;
   stderr?: string;
   unverified_claims?: string[];
+  not_applicable_reason?: string | null;
   feedback?: {
     critic?: {
       summary?: string;
@@ -741,16 +750,17 @@ export function LiveRun({ taskId }: { taskId: string }) {
 export function CompletedAssistant({ turn }: { turn: Turn }) {
   // Failure context and the best produced output are separate concerns. A rejected
   // candidate still remains inspectable after the reason it was rejected.
+  const activity = runActivityFromEvents(turn.events, false);
   const result = runResultFromEvents(turn.events, turn.verificationSummary);
   const outcome = runOutcomeFromEvents(turn.events, turn.verificationSummary);
   const outcomeWithoutDuplicateCode = outcome && result
     ? { ...outcome, code: undefined }
     : outcome;
   return (
-    <div className={`mj-chat-message mj-chat-message--assistant${result || outcome ? " mj-chat-message--run" : ""}`}>
+    <div className={`mj-chat-message mj-chat-message--assistant${activity || result || outcome ? " mj-chat-message--run" : ""}`}>
       {chatFallbackNotice(turn.events) ? <ChatFallbackNotice /> : null}
-      <RunProgressBlock events={turn.events} running={false} />
-      {outcomeWithoutDuplicateCode && turn.events.some((event) => event.type === "run.finished" && event.status !== "succeeded") ? (
+      {activity ? <RunActivityBlock activity={activity} events={turn.events} /> : null}
+      {!result && outcomeWithoutDuplicateCode && turn.events.some((event) => event.type === "run.finished" && event.status !== "succeeded") ? (
         <RunOutcome outcome={outcomeWithoutDuplicateCode} />
       ) : null}
       {result ? (
@@ -784,7 +794,7 @@ function AssistantMessage({
   events: WireEvent[];
   turnId?: string | null;
 }) {
-  const progress = runProgressFromEvents(events, streaming);
+  const activity = runActivityFromEvents(events, streaming);
   const result = runResultFromEvents(events);
   const outcome = runOutcomeFromEvents(events);
   const outcomeWithoutDuplicateCode = outcome && result
@@ -798,9 +808,8 @@ function AssistantMessage({
   // null until the reader expresses a preference; see the <details> below.
   const [thoughtOpen, setThoughtOpen] = useState<boolean | null>(null);
   return (
-    <div className={`mj-chat-message mj-chat-message--assistant${progress ? " mj-chat-message--run" : ""}`}>
+    <div className={`mj-chat-message mj-chat-message--assistant${activity ? " mj-chat-message--run" : ""}`}>
       {chatFallbackNotice(events) ? <ChatFallbackNotice /> : null}
-      {progress ? <RunProgressBlock events={events} running={streaming} /> : null}
       {reasoning ? (
         // Open while it is the only thing there is to read, and folded away by
         // the answer arriving — the thought is context for the answer, not a
@@ -821,7 +830,8 @@ function AssistantMessage({
           <ChatMarkdown source={smoothedReasoning} />
         </details>
       ) : null}
-      {outcomeWithoutDuplicateCode && events.some((event) => event.type === "run.finished" && event.status !== "succeeded") ? (
+      {activity ? <RunActivityBlock activity={activity} events={events} /> : null}
+      {!result && outcomeWithoutDuplicateCode && events.some((event) => event.type === "run.finished" && event.status !== "succeeded") ? (
         <RunOutcome outcome={outcomeWithoutDuplicateCode} />
       ) : null}
       {result ? (
@@ -830,7 +840,7 @@ function AssistantMessage({
         <RunOutcome outcome={outcomeWithoutDuplicateCode} action={<ArtifactLink events={events} />} />
       ) : text ? (
         <ChatMarkdown source={smoothedText} />
-      ) : progress ? null : (
+      ) : activity ? null : (
         <ThinkingLabel turnId={turnId} className="mj-chat-message--loading mj-chat-thinking-label" />
       )}
       {!result && !outcomeWithoutDuplicateCode ? <ArtifactLink events={events} /> : null}
@@ -845,8 +855,15 @@ function FinalOutput({
   result: NonNullable<ReturnType<typeof runResultFromEvents>>;
   events: WireEvent[];
 }) {
+  const accepted = events.some(
+    (event) => event.type === "run.finished" && event.status === "succeeded",
+  );
+  const heading = accepted ? "Final Output" : "Best available result";
   return (
-    <section className="mj-run-final-output" aria-label="Final Output">
+    <section className="mj-run-final-output" aria-label={heading}>
+      <span className="sr-only" role="status" aria-live="polite" aria-atomic="true">
+        {heading} ready. {result.trust.label}.
+      </span>
       <header className="mj-run-final-output-heading">
         <span
           className="mj-run-final-output-marker"
@@ -856,8 +873,8 @@ function FinalOutput({
           {result.trust.tone === "ok" ? "✓" : "–"}
         </span>
         <div>
-          <span>Deliverable</span>
-          <h2>Final Output</h2>
+          <span>{accepted ? "Deliverable" : "Result preserved"}</span>
+          <h2>{heading}</h2>
         </div>
       </header>
       <RunResult
@@ -967,62 +984,68 @@ function SimulationResult({ event }: { event: WireEvent }) {
 
   return (
     <div className="mj-run-live-simulation">
-      <dl className="mj-run-live-facts">
-        <div>
-          <dt>Exit code</dt>
-          <dd>{event.exit_code ?? "—"}</dd>
+      <section>
+        <div className="mj-run-activity-section-head">
+          <strong>Structured result</strong>
+          <span>{event.exit_code === 0 ? "Execution passed" : "Execution output"}</span>
         </div>
-        <div>
-          <dt>Runtime</dt>
-          <dd>{durationLabel(event.duration_ms) ?? "—"}</dd>
-        </div>
-        {total ? (
+        <dl className="mj-run-live-facts">
           <div>
-            <dt>Shots</dt>
-            <dd>{total.toLocaleString()}</dd>
+            <dt>Exit code</dt>
+            <dd>{event.exit_code ?? "—"}</dd>
           </div>
-        ) : null}
-        {scalarEntries.map(([key, value]) => (
-          <div key={key}>
-            <dt>{key.replaceAll("_", " ")}</dt>
-            <dd>{String(value)}</dd>
+          <div>
+            <dt>Runtime</dt>
+            <dd>{durationLabel(event.duration_ms) ?? "—"}</dd>
           </div>
-        ))}
-      </dl>
-      {chart ? (
-        // Every other counts chart in the product goes through simulationChartData
-        // and formatShare. This one had its own sort, no cap on how many bars it
-        // would draw, and its own `toFixed(1)` — so a 12-qubit circuit drew
-        // hundreds of rows here and a dozen everywhere else, with the percentages
-        // rounded differently in each. role="group" rather than role="img": every
-        // bitstring, count and percentage below is real text, and role="img"
-        // hid all of it behind a label that only said counts exist.
-        <div className="mj-run-live-chart" role="group" aria-label={`Measured counts from ${total.toLocaleString()} shots`}>
-          {chart.bars.map((bar) => (
-            <div className="mj-run-live-bar" key={bar.bitstring}>
-              <code>{bar.bitstring}</code>
-              <span className="mj-run-live-bar-track" aria-hidden="true">
-                <span style={{ width: `${(bar.count / chart.peak.count) * 100}%` }} />
-              </span>
-              <span>
-                {bar.count.toLocaleString()}
-                <small>{formatShare(bar.share, "en-US")}</small>
-              </span>
+          {total ? (
+            <div>
+              <dt>Shots</dt>
+              <dd>{total.toLocaleString()}</dd>
+            </div>
+          ) : null}
+          {scalarEntries.map(([key, value]) => (
+            <div key={key}>
+              <dt>{key.replaceAll("_", " ")}</dt>
+              <dd>{String(value)}</dd>
             </div>
           ))}
-          {chart.otherStates ? (
-            <p className="mj-run-live-chart-note">
-              {`Showing the ${chart.bars.length} heaviest of ${chart.distinctStates.toLocaleString()} measured outcomes.`}
-            </p>
-          ) : null}
-        </div>
-      ) : result && Object.keys(result).length ? (
-        <pre className="mj-run-live-result-json">{JSON.stringify(result, null, 2)}</pre>
-      ) : (
-        <p className="mj-run-live-empty-result">
-          This replay predates structured simulation values. Runtime diagnostics remain below.
-        </p>
-      )}
+        </dl>
+        {chart ? (
+          // Every other counts chart in the product goes through simulationChartData
+          // and formatShare. This one had its own sort, no cap on how many bars it
+          // would draw, and its own `toFixed(1)` — so a 12-qubit circuit drew
+          // hundreds of rows here and a dozen everywhere else, with the percentages
+          // rounded differently in each. role="group" rather than role="img": every
+          // bitstring, count and percentage below is real text, and role="img"
+          // hid all of it behind a label that only said counts exist.
+          <div className="mj-run-live-chart" role="group" aria-label={`Measured counts from ${total.toLocaleString()} shots`}>
+            {chart.bars.map((bar) => (
+              <div className="mj-run-live-bar" key={bar.bitstring}>
+                <code>{bar.bitstring}</code>
+                <span className="mj-run-live-bar-track" aria-hidden="true">
+                  <span style={{ width: `${(bar.count / chart.peak.count) * 100}%` }} />
+                </span>
+                <span>
+                  {bar.count.toLocaleString()}
+                  <small>{formatShare(bar.share, "en-US")}</small>
+                </span>
+              </div>
+            ))}
+            {chart.otherStates ? (
+              <p className="mj-run-live-chart-note">
+                {`Showing the ${chart.bars.length} heaviest of ${chart.distinctStates.toLocaleString()} measured outcomes.`}
+              </p>
+            ) : null}
+          </div>
+        ) : result && Object.keys(result).length ? (
+          <pre className="mj-run-live-result-json">{JSON.stringify(result, null, 2)}</pre>
+        ) : (
+          <p className="mj-run-live-empty-result">
+            This replay predates structured simulation values. Runtime diagnostics remain below.
+          </p>
+        )}
+      </section>
       {event.stdout || event.stderr ? (
         <details className="mj-run-live-logs">
           <summary>Runtime logs</summary>
@@ -1042,263 +1065,6 @@ function SimulationResult({ event }: { event: WireEvent }) {
       ) : null}
     </div>
   );
-}
-
-type LiveStageKind =
-  | "plan"
-  | "generate"
-  | "screen"
-  | "simulation"
-  | "verification"
-  | "review"
-  | "compilation"
-  | "finalize"
-  | "save"
-  | "best_effort"
-  | "pending";
-
-type LiveStageState = "active" | "done" | "warn" | "error";
-
-type LiveStageCard = {
-  key: string;
-  kind: LiveStageKind;
-  title: string;
-  eyebrow: string;
-  state: LiveStageState;
-  status: string;
-  event: WireEvent | null;
-  call: WireEvent | null;
-};
-
-const ACTIVITY_GLYPH: Record<LiveStageState, string> = {
-  active: "•",
-  done: "✓",
-  warn: "–",
-  error: "×",
-};
-
-function pendingActivity(events: WireEvent[], running: boolean): LiveStageCard | null {
-  if (!running || lastEvent(events, "run.finished")) return null;
-  const progress = runProgressFromEvents(events, true);
-  const active = progress?.items.find((item) => item.state === "active");
-  if (!active) return null;
-  const revision = (lastEvent(events, "code.generated")?.revision ?? 0) + (
-    active.id === "generate" ? 1 : 0
-  );
-  const copy: Record<string, { eyebrow: string; title: string }> = {
-    plan: {
-      eyebrow: "Thinking",
-      title: "Understanding the request and choosing an approach",
-    },
-    generate: {
-      eyebrow: "Generating code",
-      title: `Writing candidate revision ${Math.max(1, revision)}`,
-    },
-    execute: {
-      eyebrow: "Running & testing",
-      title: `Running candidate revision ${Math.max(1, revision)}`,
-    },
-    review: {
-      eyebrow: "Quality check",
-      title: `Reviewing candidate revision ${Math.max(1, revision)}`,
-    },
-    save: {
-      eyebrow: "Finalizing",
-      title: "Preparing the final output",
-    },
-  };
-  const current = copy[active.id] ?? copy.plan;
-  return {
-    key: `pending-${active.id}-${revision}`,
-    kind: "pending",
-    title: current.title,
-    eyebrow: current.eyebrow,
-    state: "active",
-    status: "Running",
-    event: null,
-    call: null,
-  };
-}
-
-function activityCards(events: WireEvent[], running: boolean): LiveStageCard[] {
-  const cards: LiveStageCard[] = [];
-  let planCount = 0;
-  let currentRevision = 0;
-
-  events.forEach((event, index) => {
-    const key = `${event.seq ?? index}-${event.type}`;
-    switch (event.type) {
-      case "plan.produced":
-        planCount += 1;
-        cards.push({
-          key,
-          kind: "plan",
-          title: event.plan?.problem_summary ?? "Circuit plan",
-          eyebrow: planCount === 1 ? "Plan" : `Revised plan ${planCount}`,
-          state: "done",
-          status: "Complete",
-          event,
-          call: llmCallBefore(events, index, "plan"),
-        });
-        break;
-      case "code.generated":
-        currentRevision = event.revision ?? currentRevision + 1;
-        cards.push({
-          key,
-          kind: "generate",
-          title: `Candidate revision ${currentRevision}`,
-          eyebrow: "Generated code",
-          state: "done",
-          status: "Complete",
-          event,
-          call: llmCallBefore(events, index, "generate"),
-        });
-        break;
-      case "screen.result": {
-        const passed = event.lint_ok !== false && event.typecheck_ok !== false;
-        cards.push({
-          key,
-          kind: "screen",
-          title: passed ? "Static checks passed" : "Static checks found an issue",
-          eyebrow: "Code checks",
-          state: passed ? "done" : "error",
-          status: passed ? "Passed" : "Failed",
-          event,
-          call: null,
-        });
-        break;
-      }
-      case "sandbox.result": {
-        const passed = event.exit_code === 0;
-        cards.push({
-          key,
-          kind: "simulation",
-          title: passed
-            ? `Candidate revision ${Math.max(1, currentRevision)} executed`
-            : `Candidate revision ${Math.max(1, currentRevision)} needs repair`,
-          eyebrow: "Run & test",
-          state: passed ? "done" : "error",
-          status: passed ? "Passed" : "Failed",
-          event,
-          call: null,
-        });
-        break;
-      }
-      case "verification.result": {
-        const result = String(event.result ?? "unavailable");
-        const state: LiveStageState = result === "pass"
-          ? "done"
-          : result === "fail" || result === "error"
-            ? "error"
-            : "warn";
-        cards.push({
-          key,
-          kind: "verification",
-          title: (event.method && VERIFICATION_METHOD_LABEL[event.method])
-            || `Verification: ${event.method ?? "check"}`,
-          eyebrow: "Test result",
-          state,
-          status: result === "pass" ? "Passed" : result === "fail" ? "Failed" : "Unavailable",
-          event,
-          call: null,
-        });
-        break;
-      }
-      case "verification.semantic_review": {
-        const ready = event.decision === "ready";
-        cards.push({
-          key,
-          kind: "review",
-          title: ready
-            ? `Candidate revision ${Math.max(1, currentRevision)} aligned`
-            : event.decision === "replan"
-              ? "Quality check requested a revised plan"
-              : "Quality check requested a code repair",
-          eyebrow: "Quality check",
-          state: ready ? "done" : "warn",
-          status: ready ? "Passed" : "Needs revision",
-          event,
-          call: llmCallBefore(events, index, "verify", "review"),
-        });
-        break;
-      }
-      case "verification.strict_attempt": {
-        const passed = event.decision === "pass";
-        const failed = event.decision === "fail";
-        cards.push({
-          key,
-          kind: "verification",
-          title: passed
-            ? "Strict verification passed"
-            : failed
-              ? "Strict verification found an issue"
-              : "Strict verification was inconclusive",
-          eyebrow: "Verification",
-          state: passed ? "done" : failed ? "error" : "warn",
-          status: passed ? "Passed" : failed ? "Failed" : "Inconclusive",
-          event,
-          call: null,
-        });
-        break;
-      }
-      case "compilation.result":
-        cards.push({
-          key,
-          kind: "compilation",
-          title: event.accepted === false
-            ? "Compilation kept the original circuit"
-            : "Circuit compilation completed",
-          eyebrow: "Compilation",
-          state: event.accepted === false ? "warn" : "done",
-          status: event.accepted === false ? "Unchanged" : "Complete",
-          event,
-          call: null,
-        });
-        break;
-      case "code.finalized":
-        cards.push({
-          key,
-          kind: "finalize",
-          title: `Finalized candidate revision ${event.revision ?? Math.max(1, currentRevision)}`,
-          eyebrow: "Finalizing",
-          state: "done",
-          status: "Complete",
-          event,
-          call: null,
-        });
-        break;
-      case "artifact.saved":
-        cards.push({
-          key,
-          kind: "save",
-          title: "Saved the artifact to Vault",
-          eyebrow: "Save",
-          state: "done",
-          status: "Complete",
-          event,
-          call: null,
-        });
-        break;
-      case "run.best_effort":
-        cards.push({
-          key,
-          kind: "best_effort",
-          title: `Selected revision ${event.revision ?? Math.max(1, currentRevision)} as the best available candidate`,
-          eyebrow: "Finalizing",
-          state: "warn",
-          status: "Not accepted",
-          event,
-          call: null,
-        });
-        break;
-      default:
-        break;
-    }
-  });
-
-  const pending = pendingActivity(events, running);
-  if (pending) cards.push(pending);
-  return cards;
 }
 
 function EventRecord({ value }: { value: unknown }) {
@@ -1341,90 +1107,6 @@ function CompilationStage({ event }: { event: WireEvent }) {
           compatibility: event.compatibility,
         }} />
       ) : null}
-    </div>
-  );
-}
-
-function ActivityDetail({ card }: { card: LiveStageCard }) {
-  if (!card.event) {
-    return (
-      <div className="mj-run-live-active-copy">
-        <span className="mj-run-live-pulse" aria-hidden="true" />
-        Work is continuing. New evidence will appear here as soon as it is recorded.
-      </div>
-    );
-  }
-  switch (card.kind) {
-    case "plan":
-      return <PlanStage event={card.event} />;
-    case "generate":
-    case "finalize":
-      return <CodeStage event={card.event} />;
-    case "screen":
-      return <ScreenStage event={card.event} />;
-    case "simulation":
-      return <SimulationResult event={card.event} />;
-    case "review":
-      return <ReviewStage event={card.event} />;
-    case "verification":
-      return card.event.type === "verification.strict_attempt"
-        ? <StrictVerificationStage event={card.event} />
-        : <EventRecord value={card.event.details ?? card.event.result} />;
-    case "compilation":
-      return <CompilationStage event={card.event} />;
-    case "save":
-      return <p className="mj-run-live-empty-result">The private artifact is available in Vault.</p>;
-    case "best_effort":
-      return (
-        <div className="mj-run-process-detail-text">
-          {card.event.critic_summary ? <p>{card.event.critic_summary}</p> : null}
-          {card.event.failed_checks?.length ? (
-            <ul>{card.event.failed_checks.map((check) => <li key={check}>{check}</li>)}</ul>
-          ) : null}
-        </div>
-      );
-    default:
-      return null;
-  }
-}
-
-function RunEvidenceFeed({ events, running }: { events: WireEvent[]; running: boolean }) {
-  const cards = activityCards(events, running);
-
-  if (!cards.length) return null;
-  const currentKey = cards[cards.length - 1].key;
-  return (
-    <div className="mj-run-live-stages" aria-label="Agent activity">
-      {cards.map((card, index) => {
-        const current = card.key === currentKey;
-        return (
-          <details
-            className="mj-run-live-stage"
-            data-state={card.state}
-            key={card.key}
-            open={current}
-          >
-            <summary>
-              <span className="mj-run-live-stage-index" aria-hidden="true">
-                {card.state === "active"
-                  ? ACTIVITY_GLYPH.active
-                  : ACTIVITY_GLYPH[card.state] || String(index + 1).padStart(2, "0")}
-              </span>
-              <span className="mj-run-live-stage-heading">
-                <span>{card.eyebrow}</span>
-                <strong>{card.title}</strong>
-              </span>
-              <span className="mj-run-live-stage-meta">
-                <ModelCallMeta event={card.call} />
-                <strong>{card.status}</strong>
-              </span>
-            </summary>
-            <div className="mj-run-live-stage-body">
-              <ActivityDetail card={card} />
-            </div>
-          </details>
-        );
-      })}
     </div>
   );
 }
@@ -1472,36 +1154,427 @@ function CodeStage({ event }: { event: WireEvent }) {
   );
 }
 
-function RunProgressBlock({
-  events,
-  running,
-}: {
-  events: WireEvent[];
-  running: boolean;
-}) {
-  const progress = runProgressFromEvents(events, running);
-  if (!progress) return null;
-  const completed = progress.items.filter((item) => item.state === "done").length;
-  const active = progress.items.some((item) => item.state === "active");
+function EventMeta({ event }: { event: WireEvent | null }) {
+  if (!event) return null;
   return (
-    <details className="mj-run-workflow">
-      <summary className="mj-run-agent-head" title="Show or hide execution process">
-        <div>
-          <span className="mj-run-agent-label">
-            {active ? <span className="mj-run-progress-live-dot" aria-hidden="true" /> : null}
-            {progress.label}
-          </span>
-          <strong>{progress.headline}</strong>
+    <div className="mj-run-activity-call-meta">
+      <ModelCallMeta event={event} />
+    </div>
+  );
+}
+
+function ResourceStage({ event }: { event: WireEvent }) {
+  const entries = Object.entries(event.metrics ?? {}).filter(
+    (entry): entry is [string, string | number | boolean] =>
+      ["string", "number", "boolean"].includes(typeof entry[1]),
+  );
+  if (!entries.length) {
+    return event.metrics ? <EventRecord value={event.metrics} /> : null;
+  }
+  return (
+    <dl className="mj-run-live-facts">
+      {entries.map(([key, value]) => (
+        <div key={key}>
+          <dt>{key.replaceAll("_", " ")}</dt>
+          <dd>{String(value)}</dd>
         </div>
-        <span className="mj-run-agent-actions">
-          <span className="mj-run-agent-count">
-            {completed}/{progress.items.length} stages
-          </span>
-          <span className="mj-run-agent-toggle" aria-hidden="true">▼</span>
-        </span>
-      </summary>
-      <RunEvidenceFeed events={events} running={running} />
-    </details>
+      ))}
+    </dl>
+  );
+}
+
+function ActivityEmptyDetail({ state }: { state: AgentActivityState }) {
+  const copy = state === "active"
+    ? "Work is continuing. New evidence will appear here when it is recorded."
+    : state === "error"
+      ? "This operation stopped before detailed evidence was recorded."
+      : state === "warn"
+        ? "This operation completed with limited recorded evidence."
+        : "No additional detail was recorded for this operation.";
+  return (
+    <div className="mj-run-live-active-copy">
+      {state === "active" ? <span className="mj-run-live-pulse" aria-hidden="true" /> : null}
+      {copy}
+    </div>
+  );
+}
+
+function CodeActivityDetail({
+  detail,
+  events,
+  state,
+}: {
+  detail: Extract<RunActivityDetail, { kind: "code" }>;
+  events: WireEvent[];
+  state: AgentActivityState;
+}) {
+  const bestEffort = detail.bestEffortIndex === null ? null : events[detail.bestEffortIndex];
+  const retainedAttempt = detail.attempts.find(
+    (attempt) => attempt.revision === bestEffort?.revision,
+  );
+  const automaticIndex = retainedAttempt?.eventIndex
+    ?? detail.eventIndex
+    ?? detail.bestEffortIndex;
+  const [selectedIndex, setSelectedIndex] = useState<number | null>(automaticIndex);
+  const [copied, setCopied] = useState(false);
+  const selectionTouched = useRef(false);
+
+  useEffect(() => {
+    if (!selectionTouched.current) setSelectedIndex(automaticIndex);
+  }, [automaticIndex]);
+
+  const source = selectedIndex === null ? null : events[selectedIndex];
+  const selectedRevision = source?.revision
+    ?? detail.attempts.find((attempt) => attempt.eventIndex === selectedIndex)?.revision;
+  const call = selectedIndex === null
+    ? detail.callIndex === null ? null : events[detail.callIndex]
+    : llmCallBefore(events, selectedIndex, "generate");
+
+  async function copySource() {
+    if (!source?.code) return;
+    try {
+      await navigator.clipboard.writeText(source.code);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1600);
+    } catch {
+      setCopied(false);
+    }
+  }
+
+  return (
+    <div className="mj-run-activity-detail-stack">
+      {detail.attempts.length > 1 || bestEffort?.candidates_considered ? (
+        <div className="mj-run-attempt-history">
+          <div className="mj-run-activity-section-head">
+            <strong>Repair history</strong>
+            {bestEffort?.candidates_considered ? (
+              <span>{bestEffort.candidates_considered} candidates considered</span>
+            ) : null}
+          </div>
+          {detail.attempts.length ? (
+            <ol>
+              {detail.attempts.map((attempt) => (
+                <li data-state={attempt.state} key={`${attempt.revision}-${attempt.eventIndex}`}>
+                  <span aria-hidden="true">
+                    {attempt.state === "done" ? "✓" : attempt.state === "error" ? "×" : "–"}
+                  </span>
+                  <strong>Revision {attempt.revision}</strong>
+                  <small>{attempt.status}</small>
+                </li>
+              ))}
+            </ol>
+          ) : null}
+        </div>
+      ) : null}
+      {bestEffort?.critic_summary ? (
+        <p className="mj-run-live-empty-result">{bestEffort.critic_summary}</p>
+      ) : null}
+      <section>
+        <div className="mj-run-activity-section-head mj-run-code-section-head">
+          <div>
+            <strong>Candidate source</strong>
+            {selectedRevision ? <span>Revision {selectedRevision}</span> : null}
+          </div>
+          <div className="mj-run-code-actions">
+            {detail.attempts.length > 1 ? (
+              <label>
+                <span className="sr-only">Displayed code revision</span>
+                <select
+                  aria-label="Displayed code revision"
+                  value={selectedIndex ?? ""}
+                  onChange={(event) => {
+                    selectionTouched.current = true;
+                    setSelectedIndex(Number(event.target.value));
+                    setCopied(false);
+                  }}
+                >
+                  {detail.attempts.map((attempt) => (
+                    <option key={`${attempt.revision}-${attempt.eventIndex}`} value={attempt.eventIndex}>
+                      Revision {attempt.revision} · {attempt.status}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            ) : null}
+            {source?.code ? (
+              <button className="mj-secondary-button" type="button" onClick={() => void copySource()}>
+                {copied ? "Copied" : "Copy code"}
+              </button>
+            ) : null}
+          </div>
+        </div>
+        {source?.code ? <CodeStage event={source} /> : <ActivityEmptyDetail state={state} />}
+        <EventMeta event={call} />
+      </section>
+    </div>
+  );
+}
+
+function ChecksActivityDetail({
+  detail,
+  events,
+  state,
+}: {
+  detail: Extract<RunActivityDetail, { kind: "checks" }>;
+  events: WireEvent[];
+  state: AgentActivityState;
+}) {
+  const screen = detail.screenIndex === null ? null : events[detail.screenIndex];
+  const resources = detail.resourceIndex === null ? null : events[detail.resourceIndex];
+  if (!screen && !resources) return <ActivityEmptyDetail state={state} />;
+  return (
+    <div className="mj-run-activity-detail-stack">
+      {screen ? (
+        <section>
+          <div className="mj-run-activity-section-head"><strong>Code checks</strong></div>
+          <ScreenStage event={screen} />
+        </section>
+      ) : null}
+      {resources ? (
+        <section>
+          <div className="mj-run-activity-section-head"><strong>Resource estimate</strong></div>
+          <ResourceStage event={resources} />
+        </section>
+      ) : null}
+    </div>
+  );
+}
+
+function checkState(event: WireEvent): "done" | "warn" | "error" {
+  const outcome = String(event.result ?? event.decision ?? "unavailable");
+  if (outcome === "pass" || outcome === "ready") return "done";
+  if (outcome === "fail" || outcome === "error") return "error";
+  return "warn";
+}
+
+function checkStatus(event: WireEvent): string {
+  const outcome = String(event.result ?? event.decision ?? "unavailable");
+  if (outcome === "pass" || outcome === "ready") return "Passed";
+  if (outcome === "fail" || outcome === "error") return "Failed";
+  if (outcome === "code_repair") return "Repair requested";
+  if (outcome === "replan") return "Replan requested";
+  if (outcome === "skipped") return "Skipped";
+  if (outcome === "inconclusive") return "Inconclusive";
+  return "Unavailable";
+}
+
+function VerificationRow({
+  event,
+  label,
+  children,
+}: {
+  event: WireEvent;
+  label: string;
+  children?: ReactNode;
+}) {
+  const state = checkState(event);
+  return (
+    <li data-state={state}>
+      <span aria-hidden="true">{state === "done" ? "✓" : state === "error" ? "×" : "–"}</span>
+      <div>
+        <strong>{label}</strong>
+        <small>{checkStatus(event)}</small>
+        {children}
+      </div>
+    </li>
+  );
+}
+
+function VerificationActivityDetail({
+  detail,
+  events,
+  state,
+}: {
+  detail: Extract<RunActivityDetail, { kind: "verification" }>;
+  events: WireEvent[];
+  state: AgentActivityState;
+}) {
+  const review = detail.reviewIndex === null ? null : events[detail.reviewIndex];
+  const strict = detail.strictIndex === null ? null : events[detail.strictIndex];
+  if (!detail.eventIndices.length && !review && !strict) {
+    return <ActivityEmptyDetail state={state} />;
+  }
+  return (
+    <ol className="mj-run-verification-list">
+      {detail.eventIndices.map((index) => {
+        const event = events[index];
+        const label = event.method && VERIFICATION_METHOD_LABEL[event.method]
+          ? VERIFICATION_METHOD_LABEL[event.method]
+          : `Verification: ${event.method ?? "check"}`;
+        return (
+          <VerificationRow event={event} key={`${event.seq ?? index}-${event.method ?? "check"}`} label={label}>
+            {event.details ? (
+              <details className="mj-run-verification-evidence">
+                <summary>Evidence</summary>
+                <EventRecord value={event.details} />
+              </details>
+            ) : null}
+          </VerificationRow>
+        );
+      })}
+      {review ? (
+        <VerificationRow event={review} label="Intent and result alignment">
+          <ReviewStage event={review} />
+          <EventMeta event={llmCallBefore(events, detail.reviewIndex ?? 0, "verify", "review")} />
+        </VerificationRow>
+      ) : null}
+      {strict ? (
+        <VerificationRow event={strict} label="Strict acceptance review">
+          <StrictVerificationStage event={strict} />
+        </VerificationRow>
+      ) : null}
+    </ol>
+  );
+}
+
+function CompilationActivityDetail({
+  detail,
+  events,
+  state,
+}: {
+  detail: Extract<RunActivityDetail, { kind: "compilation" }>;
+  events: WireEvent[];
+  state: AgentActivityState;
+}) {
+  const compilation = detail.eventIndex === null ? null : events[detail.eventIndex];
+  const resources = detail.resourceIndex === null ? null : events[detail.resourceIndex];
+  if (!compilation && !resources) return <ActivityEmptyDetail state={state} />;
+  return (
+    <div className="mj-run-activity-detail-stack">
+      {compilation ? <CompilationStage event={compilation} /> : null}
+      {resources ? (
+        <section>
+          <div className="mj-run-activity-section-head"><strong>Compiled resources</strong></div>
+          <ResourceStage event={resources} />
+        </section>
+      ) : null}
+    </div>
+  );
+}
+
+const FINALIZE_LABEL: Record<string, string> = {
+  "code.finalized": "Final code selected",
+  "sandbox.result": "Final simulation",
+  "baseline.result": "Reference comparison",
+  "run.analysis": "Result analysis",
+  "artifact.saved": "Result package created",
+  "run.best_effort": "Best available candidate retained",
+};
+
+function finalizeState(event: WireEvent): "done" | "warn" | "error" {
+  if (event.type === "run.best_effort" || event.not_applicable_reason) return "warn";
+  if (event.type === "sandbox.result" && event.exit_code !== 0) return "error";
+  return "done";
+}
+
+function finalizeStatus(event: WireEvent): string {
+  if (event.type === "run.best_effort") return "Not accepted";
+  if (event.not_applicable_reason) return "Not applicable";
+  if (event.type === "sandbox.result") return event.exit_code === 0 ? "Passed" : "Failed";
+  if (event.type === "artifact.saved") return "Packaged";
+  if (event.type === "code.finalized" && event.revision) return `Revision ${event.revision}`;
+  return "Complete";
+}
+
+function FinalizeActivityDetail({
+  detail,
+  events,
+  state,
+}: {
+  detail: Extract<RunActivityDetail, { kind: "finalize" }>;
+  events: WireEvent[];
+  state: AgentActivityState;
+}) {
+  const indices = [...detail.eventIndices];
+  if (detail.bestEffortIndex !== null && !indices.includes(detail.bestEffortIndex)) {
+    indices.push(detail.bestEffortIndex);
+  }
+  if (!indices.length) return <ActivityEmptyDetail state={state} />;
+  indices.sort((left, right) => left - right);
+  return (
+    <ol className="mj-run-finalize-list">
+      {indices.map((index) => {
+        const event = events[index];
+        const state = finalizeState(event);
+        const explanation = event.type === "run.analysis"
+          ? event.interpretation ?? event.summary
+          : event.type === "run.best_effort"
+            ? event.critic_summary
+            : event.not_applicable_reason;
+        return (
+          <li data-state={state} key={`${event.seq ?? index}-${event.type}`}>
+            <span aria-hidden="true">{state === "done" ? "✓" : state === "error" ? "×" : "–"}</span>
+            <div>
+              <strong>{FINALIZE_LABEL[event.type] ?? event.type}</strong>
+              <small>{finalizeStatus(event)}</small>
+              {explanation ? <p>{explanation}</p> : null}
+            </div>
+          </li>
+        );
+      })}
+    </ol>
+  );
+}
+
+function RunActivityDetailPanel({
+  item,
+  events,
+}: {
+  item: AgentActivityItem<RunActivityDetail>;
+  events: WireEvent[];
+}) {
+  const detail = item.detail;
+  if (detail.kind === "plan") {
+    const index = detail.eventIndices.at(-1);
+    const event = index === undefined ? null : events[index];
+    const call = detail.callIndex === null ? null : events[detail.callIndex];
+    return event ? (
+      <div className="mj-run-activity-detail-stack">
+        <section>
+          <div className="mj-run-activity-section-head"><strong>Approach</strong></div>
+          <PlanStage event={event} />
+          <EventMeta event={call} />
+        </section>
+      </div>
+    ) : <ActivityEmptyDetail state={item.state} />;
+  }
+  if (detail.kind === "code") {
+    return <CodeActivityDetail detail={detail} events={events} state={item.state} />;
+  }
+  if (detail.kind === "checks") {
+    return <ChecksActivityDetail detail={detail} events={events} state={item.state} />;
+  }
+  if (detail.kind === "execution") {
+    const event = detail.eventIndex === null ? null : events[detail.eventIndex];
+    return event
+      ? <SimulationResult event={event} />
+      : <ActivityEmptyDetail state={item.state} />;
+  }
+  if (detail.kind === "verification") {
+    return (
+      <VerificationActivityDetail detail={detail} events={events} state={item.state} />
+    );
+  }
+  if (detail.kind === "compilation") {
+    return (
+      <CompilationActivityDetail detail={detail} events={events} state={item.state} />
+    );
+  }
+  return <FinalizeActivityDetail detail={detail} events={events} state={item.state} />;
+}
+
+function RunActivityBlock({
+  activity,
+  events,
+}: {
+  activity: NonNullable<ReturnType<typeof runActivityFromEvents>>;
+  events: WireEvent[];
+}) {
+  return (
+    <AgentActivity
+      activity={activity}
+      renderDetail={(item) => <RunActivityDetailPanel events={events} item={item} />}
+    />
   );
 }
 
