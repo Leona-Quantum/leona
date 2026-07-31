@@ -27,11 +27,14 @@ The first bounded Phase 8 slice is implemented locally:
 - S9 official-provider dry run: complete for the six enabled GitHub sources in
   the owner-approved Qiskit, PennyLane, OpenFermion, and HamLib source families;
 - S10 Python AST extractor: complete as the pure
-  `majorana-research-extraction` package with no target imports or execution.
+  `majorana-research-extraction` package with no target imports or execution;
+- S11 notebook sanitizer/extractor: complete for bounded Jupyter v4 JSON with
+  separate sanitized code/markdown channels and no notebook execution.
 
-`environment.yml` is not treated as a lockfile, and S11–S12 remain open. No
-requirements resolution, container build, workflow execution, Python import, notebook execution, component
-materialization, or public publication was enabled.
+`environment.yml` is not treated as a lockfile, and S12 remains open. No
+requirements resolution, container build, workflow execution, target Python
+import, notebook execution, component materialization, or public publication
+was enabled.
 
 ## Data boundary
 
@@ -154,6 +157,31 @@ a file if executed. The latter leaves no file and records
 precision/recall results. `imported_call` means only that the callee is
 syntactically resolved to an imported name; it is not proof of constructor
 semantics, execution, compatibility, or scientific capability.
+
+## S11 notebook sanitizer/extractor
+
+The notebook extractor accepts bounded UTF-8 Jupyter v4 JSON and never invokes
+a notebook kernel, imports cell code, compiles it, or evaluates it. It rejects
+duplicate JSON keys, non-finite JSON numbers, unsupported notebook versions and
+cell types, NUL bytes, attachment payloads, base64 data URLs, malformed output
+containers, and configured size, cell, JSON-node/depth, and deterministic
+lexical-token limits. Any such issue fails the entire notebook closed without
+returning partially sanitized cells or raw parser messages.
+
+Outputs, execution counts, and notebook metadata are excluded from the result.
+Markdown is reduced to text-only content with active HTML content removed; code
+remains an inert private evidence channel. Each accepted cell retains its
+original source SHA-256, notebook SHA-256, path, type, and zero-based cell
+index. The returned model explicitly records `execution_performed=false` and
+`publication_eligible=false`.
+
+The fourteen synthetic tests cover output and execution-count removal, active
+HTML stripping, attachments, base64 data URLs, invalid paths/UTF-8/JSON,
+duplicate keys, non-finite JSON numbers, unsupported formats and raw cells,
+resource ceilings, deterministic replay, and hostile code that would create a
+file if executed. The marker file is not created. These tests establish the
+sanitizer contract only; they are not an official-provider notebook quality or
+scientific-capability score.
 
 ## Verification
 

@@ -19,3 +19,10 @@ An `imported_call` is not proof that the callee is a constructor, that it ran,
 or that the referenced framework supports a scientific capability. These
 records remain private extraction evidence until a separate reviewed
 materialization step.
+
+The notebook sanitizer accepts bounded Jupyter v4 JSON only. It separates code
+and markdown channels, strips all HTML markup and active HTML content from
+markdown, removes outputs and execution counts from the returned model, rejects
+attachments and base64 data URLs, and records the original source digest at
+each cell index. Its lexical-token budget is deterministic and intentionally
+not presented as an LLM tokenizer count. Raw cells are unsupported in v1.

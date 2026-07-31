@@ -10,9 +10,24 @@ from .python_ast import (
     SourceSpan,
     extract_python_source,
 )
+from .notebook import (
+    NOTEBOOK_EXTRACTOR_VERSION,
+    NotebookCell,
+    NotebookCellLocator,
+    NotebookExtractionIssue,
+    NotebookExtractionLimits,
+    NotebookExtractionResult,
+    extract_notebook,
+)
 
 __all__ = [
     "EXTRACTOR_VERSION",
+    "NOTEBOOK_EXTRACTOR_VERSION",
+    "NotebookCell",
+    "NotebookCellLocator",
+    "NotebookExtractionIssue",
+    "NotebookExtractionLimits",
+    "NotebookExtractionResult",
     "PythonExtractionIssue",
     "PythonExtractionLimits",
     "PythonExtractionResult",
@@ -20,4 +35,5 @@ __all__ = [
     "PythonFactKind",
     "SourceSpan",
     "extract_python_source",
+    "extract_notebook",
 ]
