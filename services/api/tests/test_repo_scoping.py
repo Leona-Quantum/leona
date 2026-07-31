@@ -6,7 +6,7 @@ import uuid
 from types import SimpleNamespace
 
 import pytest
-from repo_test_helpers import compiled
+from repo_test_helpers import Row, Rows, SequencedSession, compiled
 from majorana_contracts.enums import RunMode, RunStatus, UsageKind, VerificationMethod
 
 from majorana_api.repos import (
@@ -70,6 +70,51 @@ async def test_get_version_joins_artifact(scope, session):
     sql, _ = compiled(stmt)
     assert "JOIN artifacts" in sql
     assert_workspace_bound(stmt, scope)
+
+
+async def test_version_history_refuses_an_artifact_outside_the_scope(scope, session):
+    """The list resolves the artifact first, and that resolution is the gate.
+
+    `artifact_versions` has no workspace_id column, so an unscoped version query
+    would happily hand one workspace another's history.
+    """
+    with pytest.raises(NotFoundError):
+        await artifacts.list_versions(scope, session, uuid.uuid4())
+    assert_workspace_bound(session.statements[0], scope)
+
+
+async def test_version_history_query_joins_artifact(scope, session):
+    """The version SELECT itself carries the predicate too.
+
+    Not redundant with the check above: the artifact lookup and the version
+    query are separate statements, and only this one reads artifact_versions.
+    """
+    artifact_id = uuid.uuid4()
+    seq = SequencedSession(
+        [Row(SimpleNamespace(id=artifact_id, workspace_id=scope.workspace_id)), Rows([])]
+    )
+    await artifacts.list_versions(scope, seq, artifact_id)
+    stmt = seq.statements[1]
+    sql, _ = compiled(stmt)
+    assert "artifact_versions" in sql
+    assert "JOIN artifacts" in sql
+    assert_workspace_bound(stmt, scope)
+
+
+async def test_fingerprint_lookup_joins_artifact(scope, session):
+    """`create_version` reinstates an existing row by fingerprint; that lookup
+    must not be able to reach across workspaces either."""
+    assert await artifacts.get_version_by_fingerprint(scope, session, uuid.uuid4(), "fp") is None
+    stmt = session.statements[0]
+    sql, _ = compiled(stmt)
+    assert "JOIN artifacts" in sql
+    assert_workspace_bound(stmt, scope)
+
+
+async def test_restore_version_is_scoped(scope, session):
+    with pytest.raises(NotFoundError):
+        await artifacts.restore_version(scope, session, uuid.uuid4(), uuid.uuid4())
+    assert_workspace_bound(session.statements[0], scope)
 
 
 async def test_set_visibility_scoped_update(scope, session):

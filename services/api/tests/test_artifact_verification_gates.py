@@ -209,6 +209,16 @@ class _ScalarResult:
         return 1
 
 
+class _NoExistingVersion:
+    """The duplicate-fingerprint lookup finding nothing — the new-content path."""
+
+    def scalars(self):
+        return self
+
+    def first(self):
+        return None
+
+
 class _CreateVersionSession:
     def __init__(self):
         self.statements = []
@@ -216,7 +226,11 @@ class _CreateVersionSession:
 
     async def execute(self, statement):
         self.statements.append(statement)
-        return _ScalarResult() if len(self.statements) == 1 else _WriteResult()
+        # In order: does this artifact already hold this fingerprint (no), what
+        # is the next seq, then the UPDATE that moves current_version_id.
+        if len(self.statements) == 1:
+            return _NoExistingVersion()
+        return _ScalarResult() if len(self.statements) == 2 else _WriteResult()
 
     def add(self, row):
         self.added.append(row)
