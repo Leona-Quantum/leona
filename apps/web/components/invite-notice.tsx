@@ -28,7 +28,7 @@ type WorkspaceInvitation = components["schemas"]["WorkspaceInvitation"];
  *    put you there to remove you.
  *
  * Opening reloads the page rather than navigating. The browser's local mirror of
- * chats and Vault entries is keyed by workspace, and that key is read during the
+ * chats and saved artifacts is keyed by workspace, and that key is read during the
  * authenticated layout's render.
  */
 export function InviteNotice({ locale }: { locale: PublicLocale }) {

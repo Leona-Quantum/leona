@@ -6,7 +6,7 @@
  *
  * The Run surface used to end at a single code block in the one framework the
  * model happened to generate — the only place in the product where code appeared
- * without the conversions beside it. Vault had them, Studio had them, Atlas had
+ * without the conversions beside it. The artifact page had them, Studio had them, Atlas had
  * them, Run did not.
  *
  * The conversions cannot come from the run's own event stream. Events carry the

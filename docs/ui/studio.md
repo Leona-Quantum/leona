@@ -2,14 +2,14 @@
 
 **Status:** owner-directed implementation slice, 2026-07-14.
 
-Studio is the durable editing and verification workspace for a saved Vault
-artifact. It is deliberately separate from Vault: Vault stores verified
-circuits and their evidence; Studio creates new versions, edits code, previews
-the circuit, runs safe simulations/checks, and saves the resulting evidence.
+Studio is the durable editing and verification workspace for a saved artifact.
+Its list view holds verified circuits and their evidence; the editor creates new
+versions, edits code, previews the circuit, runs safe simulations/checks, and
+saves the resulting evidence.
 
 ## Product contract
 
-- `/library` is storage-only. Its primary action is opening a saved artifact in
+- `/library` is retired and redirects here. Its former action was opening a saved artifact in
   Studio or opening the context in Run; it never becomes an editor.
 - `/studio?artifact=<id>` is addressable and refresh-safe. It loads the saved
   artifact, current code, provenance, and the current framework version.
@@ -19,7 +19,7 @@ the circuit, runs safe simulations/checks, and saves the resulting evidence.
 - `Simulate` opens an artifact-owned CPU surface. It executes only the parsed,
   bounded gate model in the browser for saved artifacts, then records the
   source fingerprint, inputs, and sampled result locally. It never starts
-  Nala, claims verification, updates the Vault version, or executes hardware.
+  Nala, claims verification, updates the saved version, or executes hardware.
   Unsupported source, export-only frameworks, unsaved drafts, and out-of-bound
   circuits fail closed with a visible reason. Re-runs require confirmation and
   append a new local record.
@@ -34,7 +34,7 @@ the circuit, runs safe simulations/checks, and saves the resulting evidence.
 - Qiskit is the default; explicit PennyLane or Cirq selection is preserved. A
   passing Execute run emits copyable native variants for every supported
   framework, with export status and caveats, and saves those variants on the
-  artifact version so Vault and Studio reopen the same set.
+  artifact version so the list and the editor reopen the same set.
 
 ## Screen spec
 

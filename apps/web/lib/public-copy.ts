@@ -227,16 +227,16 @@ export const PRICING_COPY: Record<PublicLocale, {
   note: { label: string; title: string; body: string };
 }> = {
   en: {
-    hero: { title: "A clear path from first run to team work.", body: "Start free, keep private work in your Vault, and move up when you need more verification capacity, export tooling, or shared R&D controls." },
+    hero: { title: "A clear path from first run to team work.", body: "Start free, keep private work in Studio, and move up when you need more verification capacity, export tooling, or shared R&D controls." },
     plans: [
-      { name: "Free", price: "$0", cadence: "while early access is open", description: "Enough to browse the public evidence and put the workbench through a real problem.", features: ["The full public Atlas", "5 agent runs a week", "25 private Vault artifacts", "Browser simulation up to 16 qubits"], action: "Try the preview", tone: "quiet" },
+      { name: "Free", price: "$0", cadence: "while early access is open", description: "Enough to browse the public evidence and put the workbench through a real problem.", features: ["The full public Atlas", "5 agent runs a week", "25 private artifacts", "Browser simulation up to 16 qubits"], action: "Try the preview", tone: "quiet" },
       { name: "Pro", price: "Early access", cadence: "for individual researchers", description: "More room for private research, stronger model tiers, and export-aware workflows.", features: ["Higher run limits", "Private artifacts and versions", "Baselines and export matrix", "Priority access to new capabilities"], action: "Join early access", tone: "featured" },
       { name: "Team", price: "Let’s talk", cadence: "for shared R&D and governance", description: "Shared workspaces, private corpora, auditability, and evaluation support as the product matures.", features: ["Team workspaces and roles", "Private corpus boundary", "Audit and governance workflows", "Design-partner conversations"], action: "Contact us", tone: "quiet" },
     ],
     note: { label: "A transparent starting point", title: "The product is live; paid billing is not.", body: "These plans describe the intended early-access packaging. Exact limits, credits, and checkout will be confirmed before paid billing is enabled. No card is required to explore the public Atlas or discuss a research workflow." },
   },
   ja: {
-    hero: { title: "まずは個人で試し、そのままチームで研究へ。", body: "無料で始め、非公開の研究はVaultに保存できます。検証できる実行回数、エクスポート、共同研究の管理が必要になったら次のプランへ進めます。" },
+    hero: { title: "まずは個人で試し、そのままチームで研究へ。", body: "無料で始め、非公開の研究はStudioに保存できます。検証できる実行回数、エクスポート、共同研究の管理が必要になったら次のプランへ進めます。" },
     plans: [
       { name: "Free", price: "$0", cadence: "早期アクセス期間中", description: "公開されている回路と検証結果を確認し、実際の課題で一連の操作を試せます。", features: ["公開Atlasのすべて", "週5回のエージェント実行", "非公開の回路・実行記録25件", "16量子ビットまでのブラウザ実行"], action: "プレビューを試す", tone: "quiet" },
       { name: "Pro", price: "早期アクセス", cadence: "個人研究者向け", description: "非公開研究、上位AIモデル、エクスポート機能を利用できます。", features: ["実行上限の拡張", "非公開の回路・実行記録とバージョン管理", "古典計算との比較・各形式での書き出し", "新機能への優先アクセス"], action: "早期アクセスに参加", tone: "featured" },
@@ -302,15 +302,15 @@ export const WORKSPACE_LANDING_COPY: Record<PublicLocale, {
   en: {
     overline: "Personal quantum workspace",
     title: "Turn a quantum question into work you can reopen.",
-    body: "Leona Quantum connects a guided workflow to a guarded simulator, verification evidence, Studio editing, and a personal Vault. Every account starts with its own workspace; prompts, runs, and saved artifacts are private by default.",
+    body: "Leona Quantum connects a guided workflow to a guarded simulator, verification evidence, and a personal Studio for editing and keeping saved work. Every account starts with its own workspace; prompts, runs, and saved artifacts are private by default.",
     primary: "Request workspace access",
     secondary: "Start from the Atlas",
     loopLabel: "One personal loop",
-    loopTitle: "Research, Studio, Vault, and execution stay connected.",
+    loopTitle: "Research, Studio, and execution stay connected.",
     loop: [
       { kicker: "01 / RUN", title: "Ask in natural language", body: "Turn a question into a visible plan, generated implementation, simulation, verification, and a readable answer." },
       { kicker: "02 / STUDIO", title: "Inspect and continue", body: "Open a saved circuit, switch framework variants, edit the implementation, and send the next version through the same evidence path." },
-      { kicker: "03 / VAULT", title: "Keep the record", body: "Private artifacts keep code, run records, verification, exports, provenance, resources, and limitations together." },
+      { kicker: "03 / RECORD", title: "Keep the record", body: "Private artifacts keep code, run records, verification, exports, provenance, resources, and limitations together." },
     ],
     computeLabel: "Compute roadmap",
     computeTitle: "Use the right execution lane when the product is ready.",
@@ -328,15 +328,15 @@ export const WORKSPACE_LANDING_COPY: Record<PublicLocale, {
   ja: {
     overline: "個人量子ワークスペース",
     title: "量子の問いを、再現できる研究成果へ。",
-    body: "Leona Quantumは、ガイド付きのワークフローをシミュレータ、検証記録、Studio、個人用Vaultにつなぎます。各アカウントには専用ワークスペースが用意され、質問、実行、保存した回路・実行結果は初期状態で非公開です。",
+    body: "Leona Quantumは、ガイド付きのワークフローをシミュレータ、検証記録、そして編集と保存を担う個人用Studioにつなぎます。各アカウントには専用ワークスペースが用意され、質問、実行、保存した回路・実行結果は初期状態で非公開です。",
     primary: "利用を相談する",
     secondary: "Atlasから始める",
     loopLabel: "個人の研究ループ",
-    loopTitle: "Run、Studio、Vaultをひとつにつなぐ。",
+    loopTitle: "RunとStudioをひとつにつなぐ。",
     loop: [
       { kicker: "01 / RUN", title: "自然言語でたずねる", body: "質問から回路の作成、シミュレーション、検証、回答までを一貫して支援します。" },
       { kicker: "02 / STUDIO", title: "確認して続ける", body: "保存した回路を開き、フレームワークを切り替えて編集し、同じ手順で再実行・再検証できます。" },
-      { kicker: "03 / VAULT", title: "記録を残す", body: "コード、実行条件、検証結果、エクスポート、出典、利用した計算資源、制限事項を非公開の研究記録にまとめます。" },
+      { kicker: "03 / RECORD", title: "記録を残す", body: "コード、実行条件、検証結果、エクスポート、出典、利用した計算資源、制限事項を非公開の研究記録にまとめます。" },
     ],
     computeLabel: "計算ロードマップ",
     computeTitle: "用途に合わせて実行先を選べます。",
@@ -369,9 +369,9 @@ export const PRIVACY_COPY: Record<PublicLocale, {
     noteBody: "This page describes the current product and operating practices. It will be updated as Leona Quantum grows, adds paid services, and formalizes its operating entity.",
     sections: [
       { title: "1. Information we receive", paragraphs: ["We may receive account information such as your email address and authentication details when you create or use an account.", "When you use the workbench, we may process prompts, generated code, circuit data, run settings, simulation results, verification records, saved artifacts, and related metadata that you choose to submit.", "If you contact us, we receive the information you include in that message and the reply details needed to respond."] },
-      { title: "2. How we use information", paragraphs: ["We use information to authenticate users, run and verify requested workflows, save and reopen Vault artifacts, provide support, secure the service, diagnose failures, and improve reliability and product quality.", "We may use aggregated or de-identified operational information to understand performance. We do not present private workspace artifacts as public Atlas material without an explicit publish action."] },
+      { title: "2. How we use information", paragraphs: ["We use information to authenticate users, run and verify requested workflows, save and reopen Studio artifacts, provide support, secure the service, diagnose failures, and improve reliability and product quality.", "We may use aggregated or de-identified operational information to understand performance. We do not present private workspace artifacts as public Atlas material without an explicit publish action."] },
       { title: "3. Service providers and infrastructure", paragraphs: ["Leona Quantum relies on specialized providers for hosting, authentication, databases, observability, model access, and isolated code execution. Those providers may process information only as needed to provide their services.", "Generated code is treated as untrusted input and is intended to run in an isolated, network-restricted execution environment. Do not submit secrets or information you are not authorized to process."] },
-      { title: "4. Public and private work", paragraphs: ["Public Atlas entries are separate from private Vaults. A Vault entry is private by default. Publishing is an explicit action that may make an artifact, its code, and its evidence available to other people; review the content before publishing."] },
+      { title: "4. Public and private work", paragraphs: ["Public Atlas entries are separate from private Studio workspaces. A Studio entry is private by default. Publishing is an explicit action that may make an artifact, its code, and its evidence available to other people; review the content before publishing."] },
       { title: "5. Retention and your choices", paragraphs: ["We retain account and workspace records for as long as needed to provide the service, meet legitimate operational needs, resolve disputes, and comply with applicable obligations. Retention may vary by record type and account status.", "You can ask about the information associated with your account, request correction or deletion where applicable, or ask a privacy question through the contact page. We may need to verify your request before acting on it."] },
       { title: "6. Cookies and security", paragraphs: ["The authenticated product uses cookies or similar technologies to maintain a secure session. The public site may also receive ordinary technical information from your browser and hosting infrastructure.", "We use reasonable technical and organizational measures for the stage of the product, but no online service can promise perfect security. Keep account credentials private and do not place API keys, passwords, or regulated data in prompts or generated code."] },
       { title: "7. Changes and contact", paragraphs: ["We may update this policy when the service changes. The date above identifies the latest version published on this page. Use the contact page for questions."] },
@@ -385,9 +385,9 @@ export const PRIVACY_COPY: Record<PublicLocale, {
     noteBody: "このページは現在のサービスと運用方法を説明します。Leona Quantumの成長、有料サービス、事業体制の正式化に合わせて更新します。",
     sections: [
       { title: "1. 受け取る情報", paragraphs: ["アカウントを作成または利用すると、メールアドレスや認証情報などのアカウント情報を受け取ることがあります。", "ワークベンチの利用時には、入力した内容、生成コード、回路データ、実行設定、シミュレーション結果、検証記録、保存した回路・実行結果、関連メタデータを処理することがあります。", "お問い合わせいただいた場合は、メッセージに含まれる情報と返信に必要な情報を受け取ります。"] },
-      { title: "2. 情報の利用目的", paragraphs: ["認証、ワークフローの実行と検証、Vaultへの保存と再表示、サポート、セキュリティ、障害診断、信頼性と品質の改善に利用します。", "集計または匿名化した運用情報を性能の把握と改善に利用することがあります。非公開ワークスペースの内容を、明示的な公開操作なしに公開Atlasへ掲載することはありません。"] },
+      { title: "2. 情報の利用目的", paragraphs: ["認証、ワークフローの実行と検証、Studioへの保存と再表示、サポート、セキュリティ、障害診断、信頼性と品質の改善に利用します。", "集計または匿名化した運用情報を性能の把握と改善に利用することがあります。非公開ワークスペースの内容を、明示的な公開操作なしに公開Atlasへ掲載することはありません。"] },
       { title: "3. サービスプロバイダとインフラ", paragraphs: ["Leona Quantumは、ホスティング、認証、データベース、稼働状況の監視、AIモデルの利用、隔離されたコード実行のために専門プロバイダを利用します。プロバイダはサービス提供に必要な範囲で情報を処理します。", "生成コードは信頼できない入力として扱い、ネットワークアクセスを制限した隔離環境で実行することを想定しています。秘密情報や、処理する権限のない情報は送信しないでください。"] },
-      { title: "4. 公開と非公開の研究", paragraphs: ["Atlasの公開資料と非公開Vaultの内容は分けて管理されます。Vaultの内容は初期状態では非公開です。公開すると、保存した回路、コード、検証結果が他の利用者に表示される場合があります。公開前に内容を確認してください。"] },
+      { title: "4. 公開と非公開の研究", paragraphs: ["Atlasの公開資料と非公開Studioの内容は分けて管理されます。Studioの内容は初期状態では非公開です。公開すると、保存した回路、コード、検証結果が他の利用者に表示される場合があります。公開前に内容を確認してください。"] },
       { title: "5. 保存期間と利用者の選択", paragraphs: ["サービス提供、サービスの適切な運用、紛争解決、法令上の義務への対応に必要な期間、アカウントとワークスペースの記録を保持します。保持期間は記録の種類やアカウント状態で異なることがあります。", "アカウントに関する情報の確認、該当する場合の訂正・削除、プライバシーに関する質問はお問い合わせページからご連絡ください。対応前に本人確認をお願いすることがあります。"] },
       { title: "6. Cookieとセキュリティ", paragraphs: ["認証済みサービスでは、安全なセッションを維持するためにCookieなどを利用します。公開サイトでも、ブラウザやホスティング基盤から通常の技術情報を受け取ることがあります。", "サービスの現段階で合理的に可能な対策を講じますが、オンラインサービスが完全な安全性を保証することはできません。認証情報を管理し、APIキー、パスワード、規制対象データを入力内容や生成コードに含めないでください。"] },
       { title: "7. 変更とお問い合わせ", paragraphs: ["サービスの変更に応じて本ポリシーを更新することがあります。上記の日付がこのページの最新版を示します。質問はお問い合わせページからお送りください。"] },
@@ -405,7 +405,7 @@ export const TERMS_COPY: Record<PublicLocale, {
 }> = {
   en: {
     title: "Terms of service",
-    lede: "The rules for using the Leona Quantum website, workbench, Vault, and public Atlas.",
+    lede: "The rules for using the Leona Quantum website, workbench, Studio, and public Atlas.",
     updated: "Last updated: July 15, 2026",
     noteLabel: "Early-access note:",
     noteBody: "These plain-language terms are a practical starting point for the current product. Additional commercial terms may apply when paid plans or enterprise agreements become available.",
@@ -413,7 +413,7 @@ export const TERMS_COPY: Record<PublicLocale, {
       { title: "1. Using Leona Quantum", paragraphs: ["By accessing Leona Quantum, you agree to use the service lawfully, respect other users, and follow these terms. If you use it for an organization, you represent that you have authority to accept these terms on its behalf."] },
       { title: "2. Prohibited use", paragraphs: ["Do not use the service to violate law or third-party rights, exfiltrate secrets, attack infrastructure, bypass usage controls, submit malware, or interfere with the service or another person’s workspace. Do not use generated code or results as a substitute for professional review in safety-critical, financial, medical, or regulated settings."] },
       { title: "3. Generated work and verification", paragraphs: ["Leona Quantum helps generate, execute, and analyze technical work. Generated code can be incomplete or wrong. A verification result means that the documented checks passed for the recorded run and conditions; it is not a guarantee of correctness in every environment or a promise of algorithmic advantage."] },
-      { title: "4. Your content", paragraphs: ["You keep the rights you have in content you submit. You grant Leona Quantum the limited permission needed to host, process, execute, display, back up, and improve the service for you. Private Vault content is not public by default."] },
+      { title: "4. Your content", paragraphs: ["You keep the rights you have in content you submit. You grant Leona Quantum the limited permission needed to host, process, execute, display, back up, and improve the service for you. Private Studio content is not public by default."] },
       { title: "5. Early-access packaging", paragraphs: ["Leona Quantum is currently an early-access product. The pricing page describes intended packaging; paid billing, limits, credits, and refunds will be governed by terms shown before a transaction is enabled."] },
       { title: "6. Disclaimers", paragraphs: ["To the extent permitted by law, the service is provided without warranties that it will be uninterrupted, error-free, secure, or suitable for a particular purpose. You use generated code, simulations, exports, and public artifacts at your own risk.", "Nothing on Leona Quantum is legal, medical, financial, or safety advice. Any limitation of liability or indemnity terms required for a paid or enterprise relationship will be stated in the applicable commercial agreement."] },
       { title: "7. Changes and contact", paragraphs: ["Use the contact page for questions about these terms. We may update them as the service adds accounts, paid plans, and new execution capabilities; the date above identifies the current version."] },
@@ -421,7 +421,7 @@ export const TERMS_COPY: Record<PublicLocale, {
   },
   ja: {
     title: "利用規約",
-    lede: "Leona Quantumの公開サイト、ワークベンチ、Vault、Atlasを利用するためのルールです。",
+    lede: "Leona Quantumの公開サイト、ワークベンチ、Studio、Atlasを利用するためのルールです。",
     updated: "最終更新日: 2026年7月15日",
     noteLabel: "早期アクセスに関する注記:",
     noteBody: "これは現在のサービスに適用する基本条件です。有料プランや法人向け契約には、追加の商用条件が適用されることがあります。",
@@ -429,7 +429,7 @@ export const TERMS_COPY: Record<PublicLocale, {
       { title: "1. Leona Quantumの利用", paragraphs: ["Leona Quantumへアクセスすることで、本サービスを適法に利用し、他の利用者を尊重し、本規約に従うことに同意します。組織のために利用する場合、その組織を代表して同意する権限があることを表明します。"] },
       { title: "2. 禁止される利用", paragraphs: ["法令や第三者の権利への違反、秘密情報の持ち出し、インフラへの攻撃、利用制限の回避、マルウェアの送信、サービスや他の人のワークスペースへの妨害に利用しないでください。安全性が重要な分野、金融、医療、規制対象の場面で、生成コードや結果を専門家の確認の代わりにしないでください。"] },
       { title: "3. 生成物と検証", paragraphs: ["Leona Quantumは技術的な作業の生成、実行、分析を支援します。生成コードは不完全または誤っている可能性があります。検証結果は、記録された条件で所定の検証に合格したことを示すもので、あらゆる環境での正しさやアルゴリズム上の優位性を保証しません。"] },
-      { title: "4. 利用者のコンテンツ", paragraphs: ["利用者は、送信したコンテンツについて、自らが保有する権利を引き続き保持します。Leona Quantumには、サービスを提供するためにホスト、処理、実行、表示、バックアップ、改善するための限定的な許諾を与えます。非公開Vaultの内容は初期状態で公開されません。"] },
+      { title: "4. 利用者のコンテンツ", paragraphs: ["利用者は、送信したコンテンツについて、自らが保有する権利を引き続き保持します。Leona Quantumには、サービスを提供するためにホスト、処理、実行、表示、バックアップ、改善するための限定的な許諾を与えます。非公開Studioの内容は初期状態で公開されません。"] },
       { title: "5. 早期アクセスの提供条件", paragraphs: ["Leona Quantumは現在、早期アクセス版のサービスです。料金ページは提供予定のプラン内容を示しています。決済、利用上限、クレジット、返金の条件は、有料サービスの申込み前に表示します。"] },
       { title: "6. 免責事項", paragraphs: ["法令で許される範囲で、サービスが中断しないこと、エラーがないこと、安全であること、特定目的に適合することを保証しません。生成コード、シミュレーション、エクスポート、公開されている回路・実行記録の利用は自己責任で行ってください。", "Leona Quantum上の情報は、法務、医療、金融、安全に関する助言ではありません。有料または法人向け契約に必要な責任制限や補償条件は、該当する商用契約に記載します。"] },
       { title: "7. 変更とお問い合わせ", paragraphs: ["規約に関する質問はお問い合わせページからお送りください。アカウント、有料プラン、新しい実行機能の追加に応じて更新することがあります。上記の日付が最新版を示します。"] },

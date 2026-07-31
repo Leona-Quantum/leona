@@ -47,7 +47,7 @@ export const LAB_COPY: Record<PublicLocale, {
         { title: "Compose", body: "Describe the circuit in plain language or write the gates yourself. The agent keeps both in sync." },
         { title: "Run", body: "Send the same circuit to a local simulator and to real hardware without rewriting it for each backend." },
         { title: "Verify", body: "Compare the run against a classical baseline and against the ideal state, with the gap stated in numbers." },
-        { title: "Publish", body: "Keep it private in your Vault or attach it to the public Atlas so others can rerun exactly what you ran." },
+        { title: "Publish", body: "Keep it private in Studio or attach it to the public Atlas so others can rerun exactly what you ran." },
       ],
     },
     evidence: {
@@ -93,7 +93,7 @@ export const LAB_COPY: Record<PublicLocale, {
         { title: "作成", body: "文章で書いても、ゲートを直接書いても構いません。どちらを直しても、もう片方に反映されます。" },
         { title: "実行", body: "手元のシミュレータにも実機にも、同じ回路のまま送れます。書き換えは要りません。" },
         { title: "検証", body: "古典計算の結果と理想状態の両方に照らして、どれだけずれたかを数値で出します。" },
-        { title: "公開", body: "Vaultに置いたままでも、Atlasに公開して誰でも再実行できるようにしても構いません。" },
+        { title: "公開", body: "Studioに置いたままでも、Atlasに公開して誰でも再実行できるようにしても構いません。" },
       ],
     },
     evidence: {

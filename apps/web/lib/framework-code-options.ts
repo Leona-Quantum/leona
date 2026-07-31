@@ -1,7 +1,7 @@
 /**
  * The per-framework code choices offered for one saved circuit.
  *
- * Extracted from the Vault artifact detail so the Run surface can offer exactly
+ * Extracted from the artifact detail view so the Run surface can offer exactly
  * the same set. "Framework conversions show up wherever code does" is only true
  * if it is one function — two implementations drift, and the Run surface would
  * be the one that silently stops converting.

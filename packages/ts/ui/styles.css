@@ -4464,7 +4464,7 @@
   justify-content: flex-end;
   gap: var(--sp-2);
 }
-/* The Run surface's framework picker is the same control as the Vault one and
+/* The Run surface's framework picker is the same control as the artifact one and
  * must not drift into a raw browser select beside it. */
 .mj-artifact-code-actions select,
 .mj-run-code-actions select {
@@ -7165,7 +7165,7 @@ div.mj-rail-row:hover {
   line-height: 1.5;
 }
 
-/* "Keep in Vault" on a finished run, with the reason it is being asked. */
+/* "Keep this result" on a finished run, with the reason it is being asked. */
 .mj-run-keep {
   display: inline-flex;
   gap: var(--sp-2);

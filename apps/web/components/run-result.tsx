@@ -30,7 +30,7 @@ export function RunResult({
         <p className="mj-run-result-summary">{result.summary}</p>
         <ul className="mj-run-result-badges" aria-label="Result status">
           <li data-tone={result.trust.tone}>{result.trust.label}</li>
-          <li data-tone="neutral">{result.saved ? "Saved to Vault" : "Not saved"}</li>
+          <li data-tone="neutral">{result.saved ? "Saved" : "Not saved"}</li>
         </ul>
       </header>
 

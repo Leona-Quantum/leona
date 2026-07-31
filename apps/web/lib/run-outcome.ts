@@ -237,7 +237,7 @@ function badgesFor(
 ): RunOutcomeBadge[] {
   return [
     { label: trustLabel, tone },
-    { label: saved ? "Saved to Vault" : "Not saved", tone: saved ? "neutral" : "warn" },
+    { label: saved ? "Saved" : "Not saved", tone: saved ? "neutral" : "warn" },
   ];
 }
 

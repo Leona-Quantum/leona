@@ -24,7 +24,7 @@ import { PanelTabs, panelRegion } from "../../../../components/panel-tabs";
 /** The same four tabs Studio uses, in the same order — see lib/studio-panels.
  *
  * These are two views of one artifact, and they used to speak two languages:
- * Studio said Circuit / Code / Simulation / Versions, the Vault said Overview /
+ * Studio said Circuit / Code / Simulation / Versions, this page said Overview /
  * Code & Export / Runs / Verification / Notes. Nothing lined up, so moving
  * between them meant relearning where each thing lived. Overview, Runs,
  * Verification and Notes are one tab now — they were four panels that each
@@ -36,10 +36,10 @@ export const DETAIL_COPY: Record<PublicLocale, {
   back: string; reference: string; verified: string; structural: string; options: string; openStudio: string; openRun: string; askInRun: string; archive: string; delete: string; cancel: string; deleteConfirmTitle: string; deleteWarning: (title: string) => string; star: string; unstar: string; framework: string; type: string; artifact: string; updated: string; source: string; runSource: string; publicSource: string; curatedSource: string; tabs: Record<DetailTab, string>; overview: string; verificationSummary: string; resources: string; currentVersion: string; evidence: string; savedRecord: string; verificationReport: string; available: string; runProvenance: string; linked: string; example: string; recorded: string; exportStatus: string; openQasm: string; frameworkOnly: string; sourceCode: string; exportHeading: string; classified: string; copied: string; copyCode: string; noCode: string; lossless: string; noNative: string; runRecords: string; publicReference: string; verifiedRun: string; referenceRun: string; publicRunBody: string; runBody: string; verificationEvidence: string; auditSurface: string; whatChecked: string; publicChecked: string; verifiedChecked: string; notes: string; workspace: string; demoNote: string; publicNote: string; runNote: string; loading: string; unknown: string; circuitHeading: string; diagramReadOnly: string; diagramTooLarge: (qubits: number, steps: number) => string; diagramUnavailable: string; downloadSource: (extension: string) => string; downloadManifest: string; measuredResult: string; noMeasuredResult: string; conversionUnavailable: string; nativeSource: string; convertedSource: string; shotsLabel: (shots: number) => string; countsLabel: (shots: number) => string; truncatedNote: (shown: number, total: number) => string;
 }> = {
   en: {
-    back: "← Vault", reference: "Reference", verified: "Verified", structural: "Structurally verified", options: "Artifact options", openStudio: "Open in Studio", openRun: "Open in Run", askInRun: "Ask in Run", archive: "Archive", delete: "Delete", cancel: "Cancel", deleteConfirmTitle: "Are you sure?", deleteWarning: (title) => `“${title}” will be removed from your workspace and not saved.`, star: "Star artifact", unstar: "Remove artifact star", framework: "Framework", type: "Type", artifact: "artifact", updated: "Updated", source: "Source", runSource: "Leona Run", publicSource: "Public Atlas", curatedSource: "Curated example", tabs: { code: "Code", simulation: "Simulation", visual: "Visual", summary: "Summary" }, overview: "Overview", verificationSummary: "Verification summary", resources: "Resources", currentVersion: "current version", evidence: "Evidence", savedRecord: "saved record", verificationReport: "Verification report", available: "available", runProvenance: "Run provenance", linked: "linked", example: "example", recorded: "recorded with the run", exportStatus: "Export status", openQasm: "OpenQASM 3", frameworkOnly: "framework only", sourceCode: "Source code", exportHeading: "Export", classified: "classified", copied: "Copied", copyCode: "Copy code", noCode: "Code will appear after the artifact is loaded from the control plane.", lossless: "Lossless", noNative: "No native OpenQASM export was saved for this artifact.", runRecords: "Run records", publicReference: "Public reference", verifiedRun: "Verified Leona Run", referenceRun: "Reference run", publicRunBody: "Public source context and export metadata are retained. Run this copy before treating it as new workspace evidence.", runBody: "Simulation evidence, verification parameters, and export status are retained with this artifact.", verificationEvidence: "Verification evidence", auditSurface: "audit surface", whatChecked: "What was checked", publicChecked: "The public record's stated method, result, source, and export boundary were preserved. Execute this private copy to create workspace-specific evidence.", verifiedChecked: "No machine-readable check record was saved with this version — it predates the stored check list.", notes: "Notes", workspace: "workspace", demoNote: "This is a curated replayable example.", publicNote: "This entry was imported from the public research database; source and license context are retained in the saved version.", runNote: "This entry was saved from a live workspace run.", loading: "Loading artifact…", unknown: "Unknown", circuitHeading: "Circuit", diagramReadOnly: "read-only", diagramTooLarge: (qubits, steps) => `This circuit is too large to draw (${qubits} qubits, ${steps} operations). Read it as code below.`, diagramUnavailable: "No stored OpenQASM 3 export to draw from. Rerun Verify & save to mint one.", downloadSource: (extension) => `Download .${extension}`, downloadManifest: "Download with verification metadata", measuredResult: "Measured result", conversionUnavailable: "no conversion available", nativeSource: "Stored with this artifact — nothing was rewritten.", convertedSource: "Generated from this artifact’s stored source.", noMeasuredResult: "This artifact carries no measured distribution. Everything saved before 26 July 2026 predates the stored field; open it in Studio and run it to record one.", shotsLabel: (shots) => `${shots.toLocaleString("en-US")} shots`, countsLabel: (shots) => `Measured counts from ${shots.toLocaleString("en-US")} shots`, truncatedNote: (shown, total) => `Showing the ${shown} heaviest of ${total.toLocaleString("en-US")} measured outcomes.`,
+    back: "← Artifacts", reference: "Reference", verified: "Verified", structural: "Structurally verified", options: "Artifact options", openStudio: "Open in Studio", openRun: "Open in Run", askInRun: "Ask in Run", archive: "Archive", delete: "Delete", cancel: "Cancel", deleteConfirmTitle: "Are you sure?", deleteWarning: (title) => `“${title}” will be removed from your workspace and not saved.`, star: "Star artifact", unstar: "Remove artifact star", framework: "Framework", type: "Type", artifact: "artifact", updated: "Updated", source: "Source", runSource: "Leona Run", publicSource: "Public Atlas", curatedSource: "Curated example", tabs: { code: "Code", simulation: "Simulation", visual: "Visual", summary: "Summary" }, overview: "Overview", verificationSummary: "Verification summary", resources: "Resources", currentVersion: "current version", evidence: "Evidence", savedRecord: "saved record", verificationReport: "Verification report", available: "available", runProvenance: "Run provenance", linked: "linked", example: "example", recorded: "recorded with the run", exportStatus: "Export status", openQasm: "OpenQASM 3", frameworkOnly: "framework only", sourceCode: "Source code", exportHeading: "Export", classified: "classified", copied: "Copied", copyCode: "Copy code", noCode: "Code will appear after the artifact is loaded from the control plane.", lossless: "Lossless", noNative: "No native OpenQASM export was saved for this artifact.", runRecords: "Run records", publicReference: "Public reference", verifiedRun: "Verified Leona Run", referenceRun: "Reference run", publicRunBody: "Public source context and export metadata are retained. Run this copy before treating it as new workspace evidence.", runBody: "Simulation evidence, verification parameters, and export status are retained with this artifact.", verificationEvidence: "Verification evidence", auditSurface: "audit surface", whatChecked: "What was checked", publicChecked: "The public record's stated method, result, source, and export boundary were preserved. Execute this private copy to create workspace-specific evidence.", verifiedChecked: "No machine-readable check record was saved with this version — it predates the stored check list.", notes: "Notes", workspace: "workspace", demoNote: "This is a curated replayable example.", publicNote: "This entry was imported from the public research database; source and license context are retained in the saved version.", runNote: "This entry was saved from a live workspace run.", loading: "Loading artifact…", unknown: "Unknown", circuitHeading: "Circuit", diagramReadOnly: "read-only", diagramTooLarge: (qubits, steps) => `This circuit is too large to draw (${qubits} qubits, ${steps} operations). Read it as code below.`, diagramUnavailable: "No stored OpenQASM 3 export to draw from. Rerun Verify & save to mint one.", downloadSource: (extension) => `Download .${extension}`, downloadManifest: "Download with verification metadata", measuredResult: "Measured result", conversionUnavailable: "no conversion available", nativeSource: "Stored with this artifact — nothing was rewritten.", convertedSource: "Generated from this artifact’s stored source.", noMeasuredResult: "This artifact carries no measured distribution. Everything saved before 26 July 2026 predates the stored field; open it in Studio and run it to record one.", shotsLabel: (shots) => `${shots.toLocaleString("en-US")} shots`, countsLabel: (shots) => `Measured counts from ${shots.toLocaleString("en-US")} shots`, truncatedNote: (shown, total) => `Showing the ${shown} heaviest of ${total.toLocaleString("en-US")} measured outcomes.`,
   },
   ja: {
-    back: "← Vault",
+    back: "← 一覧",
     reference: "参照資料",
     verified: "検証済み",
     structural: "構造のみ検証",
@@ -209,7 +209,7 @@ export function ArtifactDetail({ artifactId, locale = "en" }: { artifactId: stri
               criticSummary: recorded.criticSummary ?? current?.criticSummary,
               status: statusFromVerificationSummary(versionSummary ?? current?.verificationSummary ?? null),
               verificationSummary: versionSummary ?? current?.verificationSummary ?? null,
-              description: publicMetadata.introduction ?? current?.description ?? "Saved artifact in the workspace vault.",
+              description: publicMetadata.introduction ?? current?.description ?? "Saved artifact in this workspace.",
               verification: publicMetadata.verification ?? current?.verification ?? "Verification record available in the control plane.",
               code: typeof version.code === "string" ? version.code : current?.code ?? "",
               frameworkVariants: frameworkVariantsFromRemote(version.framework_variants) ?? current?.frameworkVariants,
@@ -240,7 +240,7 @@ export function ArtifactDetail({ artifactId, locale = "en" }: { artifactId: stri
   function handleArchive() {
     if (!artifact) return;
     archiveArtifact(artifact.id, artifact);
-    router.push("/library");
+    router.push("/studio");
   }
 
   async function handleDelete() {
@@ -249,10 +249,10 @@ export function ArtifactDetail({ artifactId, locale = "en" }: { artifactId: stri
     setDeleteError(null);
     try {
       // Only navigate away once the server confirms the delete. Navigating
-      // first would show the user a Library that "lost" an artifact still
+      // first would show the user a list that "lost" an artifact still
       // sitting in the database.
       await deleteArtifact(artifact.id);
-      router.push("/library");
+      router.push("/studio");
     } catch {
       setDeleteError(
         locale === "ja"
@@ -285,7 +285,7 @@ export function ArtifactDetail({ artifactId, locale = "en" }: { artifactId: stri
     <div className="mj-library-page">
       <div className="mj-library-scroll">
         <div className="mj-workspace-content">
-          <a className="mj-back-link" href="/library">{copy.back}</a>
+          <a className="mj-back-link" href="/studio">{copy.back}</a>
           <header className="mj-artifact-header">
             <div>
               <div className="mj-artifact-title-row">
@@ -446,7 +446,7 @@ export function MeasuredResultPanel({ measured, copy, locale = "en" }: { measure
   const numberLocale = locale === "ja" ? "ja-JP" : "en-US";
   if (!measured) return null;
   // Same chart math as the Run surface, so one experiment does not get a 12-bar
-  // histogram on the page that produced it and a 64-bar wall in the Vault. The
+  // histogram on the page that produced it and a 64-bar wall on the artifact page. The
   // first draft rendered every stored outcome and buried the Overview tab.
   const data = measured.counts ? simulationChartData(measured.counts, measured.shots) : null;
   // One honest sentence covering both ways outcomes can be missing: capped for
@@ -557,7 +557,7 @@ function CodeAndExport({ artifact, copied, onCopy, copy }: { artifact: LibraryAr
 
 /** The saved circuit, drawn.
  *
- * Until now this page was code + metadata only: the Vault could tell you a
+ * Until now this page was code + metadata only: it could tell you a
  * circuit existed and show you its source, but never showed you the circuit.
  * The reconstruction machinery (PRs 150/151) and the renderer already existed —
  * the renderer was just trapped inside Studio's builder, so it has been lifted
@@ -650,7 +650,7 @@ function Meta({ label, value }: { label: string; value: string }) {
 }
 
 function fallbackArtifact(id: string): LibraryArtifact {
-  return { id, slug: id, title: "Artifact", family: "Simulation", framework: "Qiskit", status: "legacy_unknown", updatedAt: new Date().toISOString(), description: "Saved artifact in the workspace vault.", tags: ["artifact"], verification: "Verification evidence has not been loaded.", code: "", qasm: null, resourceRows: [], verificationSummary: null, source: "run" };
+  return { id, slug: id, title: "Artifact", family: "Simulation", framework: "Qiskit", status: "legacy_unknown", updatedAt: new Date().toISOString(), description: "Saved artifact in this workspace.", tags: ["artifact"], verification: "Verification evidence has not been loaded.", code: "", qasm: null, resourceRows: [], verificationSummary: null, source: "run" };
 }
 
 function metadataFromIr(value: unknown): { introduction?: string; verification?: string } {

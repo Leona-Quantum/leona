@@ -1,14 +1,9 @@
-import { ArtifactDetail } from "./artifact-detail";
-import { getPublicLocale } from "../../../../lib/public-locale-server";
+import { redirect } from "next/navigation";
 
-export const dynamic = "force-dynamic";
-
-export async function generateMetadata({ params }: { params: Promise<{ artifactId: string }> }) {
-  const { artifactId } = await params;
-  return { title: `Artifact ${artifactId} — Leona Quantum Vault` };
-}
-
+// The Vault's artifact detail retires with its list. Studio already addresses
+// the same artifact by id, so the old deep link keeps resolving to the artifact
+// it named rather than dropping the person on a list to search it out again.
 export default async function ArtifactPage({ params }: { params: Promise<{ artifactId: string }> }) {
-  const [{ artifactId }, locale] = await Promise.all([params, getPublicLocale()]);
-  return <ArtifactDetail artifactId={artifactId} locale={locale} />;
+  const { artifactId } = await params;
+  redirect(`/studio?artifact=${encodeURIComponent(artifactId)}`);
 }

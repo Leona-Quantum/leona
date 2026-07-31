@@ -17,7 +17,7 @@ export type ActiveWorkspace = {
  * Resolved server-side, in the authenticated layout, because two things depend
  * on it before any child renders:
  *
- * 1. **The browser's local mirror.** The sidebar's chats and Vault entries are a
+ * 1. **The browser's local mirror.** The sidebar's chats and saved artifacts are a
  *    union of localStorage and the API. Those keys are scoped per account today;
  *    left that way, switching workspaces would show the personal workspace's
  *    chat titles and artifacts inside a shared one, permanently, because the

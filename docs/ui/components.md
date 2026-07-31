@@ -79,7 +79,7 @@ Reducer rules worth knowing (all deterministic):
   never the plan's `primary_metric` (a different quantity).
 
 Result panel order is FIXED (spec §3): verdict banner → Generate evidence → Verify evidence →
-Analysis answer and sources → baseline/comparison → export badges → Vault link. Answer is the
+Analysis answer and sources → baseline/comparison → export badges → artifact link. Answer is the
 natural-language interpretation from `run.analysis`, including comparison values and any
 residual-risk caveat. Plan reasoning and rationale stay in the live output surface rather than
 becoming a second schema-heavy card. Sources lists bounded public references from
@@ -109,7 +109,7 @@ switch among retained revisions and copy the selected source without exposing ra
 payloads. The normal RUN surface does not expose the raw durable event log.
 
 `artifact.saved` means the run materialized a private result package. It must never claim
-that the user kept it in Vault; only the explicit Keep action establishes that state.
+that the user kept it; only the explicit Keep action establishes that state.
 The success, mid-run, failed, exhausted, skipped, inconclusive, and provider-error
 states are replayable through the local `/run/demo-*` fixtures.
 
@@ -118,7 +118,7 @@ states are replayable through the local `/run/demo-*` fixtures.
 Terminal circuit runs render one structured result card instead of assembling a
 markdown answer and a second verification card. The card has a stable hierarchy:
 status/title and trust badges in one header, non-duplicated Plan facts, one actionable
-callout, consistent collapsed evidence/code rows, and the Vault action.
+callout, consistent collapsed evidence/code rows, and the keep action.
 
 `apps/web/lib/run-outcome.ts` is the only event-to-outcome projection. It distinguishes
 successful legacy records from fresh failures: only a successful run without a typed
@@ -161,14 +161,14 @@ P1: name the OpenQASM or verification operation that was actually checked.
 right slot, and an optional sidebar slot. In workspace mode the sidebar toggle is owned by
 the app wrapper, while `AppShell` supplies the landmark and accessible expanded state.
 `apps/web/components/shell.tsx` composes the product-specific sidebar: new chat, recent
-chat links, Run/Vault navigation, Settings, and the local workspace identity. Chat
+chat links, Run/Studio navigation, Settings, and the local workspace identity. Chat
 summaries are persisted in `apps/web/lib/chat-history.ts`, so starting a new chat never
 removes older run links. Labels from `src/nav-config.ts` remain the only source for the
 shared primary surfaces; `aria-current="page"` is applied to active workspace links.
 
-The run and vault routes deliberately keep data ownership outside shared UI components:
+The run and artifact routes deliberately keep data ownership outside shared UI components:
 `RunComposer` is a presentational bottom dock, `/run` and `/run/[taskId]` own submission and
-SSE state, and Vault owns artifact filtering/detail tabs while Studio owns editing. This keeps later UI/UX work
+SSE state, and the artifact list owns filtering/detail tabs while Studio owns editing. This keeps later UI/UX work
 localized to the route shell and tokenized CSS rather than coupling data fetching to the
 renderers.
 
@@ -187,5 +187,5 @@ step 2; the screenshot visual-diff slice (b) reuses the same `dist/*.html`.
 ## EmptyState
 
 One sentence + one action (`action` is an all-or-nothing `{label, href}` object).
-Every list gets one (e.g. Vault: "Nothing verified yet. Your first verified run
+Every list gets one (e.g. the artifact list: "Nothing verified yet. Your first verified run
 will appear here." + [Start a run]).

@@ -62,7 +62,7 @@ function stateMessage(state: Exclude<DisplayState, "ready">): { title: string; b
  * Exported so a compact status chip elsewhere cannot invent its own vocabulary.
  * A second implementation of "what does this artifact's evidence amount to" is
  * exactly how a structural pass ends up reading as "Verified" on one screen and
- * not another — the conflation `verdictChip` in the Vault was written to undo.
+ * not another — the conflation `verdictChip` on the artifact page was written to undo.
  * The glyph is carried alongside the tone so status never rides on hue alone. */
 export function verificationHeadline(
   summary: VerificationSummary | null,
