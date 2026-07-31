@@ -13,7 +13,7 @@ aws-us-west-2), on the free plan.
 | Storage | 10 GB SSD, auto-increase on. The data is ~50 MB |
 | Backups | daily 10:00 UTC, 7 retained. No HA replica |
 | Public IP | assigned, but **zero authorized networks** — nothing reaches it by IP |
-| Connections | `max_connections` 50 (see § Connection budget) |
+| Connections | `max_connections` 50; fleet worst case 36 (see § Connection budget) |
 
 ## How each caller connects
 
@@ -52,28 +52,77 @@ has a public IP at all is that private IP needs VPC peering that was not set up.
 
 ## Connection budget
 
-`db-g1-small` allows 50. `db.py` sets `pool_size=5, max_overflow=5` explicitly —
-10 per process, so two API instances plus one worker reach 30 and leave room for
-a deploy's Alembic step, Postgres's superuser reservation and one operator.
+`db-g1-small` allows 50 and reserves 3 for superusers.
 
-SQLAlchemy's defaults (5 + 10) would let those same three processes reach 45 on
-their own. If you raise `maxScale` on either service, do this arithmetic again;
-`DB_POOL_SIZE` / `DB_MAX_OVERFLOW` are the knobs and both are read at startup.
+| Term | Value | Where it is stated |
+|---|---|---|
+| API instances | 2 | `--max-instances 2` on the api deploy; `API_MAX_INSTANCES` |
+| API pool, per instance | 5 + 5 | `DEFAULT_POOL_SIZE` / `DEFAULT_MAX_OVERFLOW` in `db.py` |
+| Worker instances | **4** | `--min-instances 4 --max-instances 4`; `WORKER_INSTANCES` |
+| Worker pool, per instance | 2 + 2 | `DB_POOL_SIZE`/`DB_MAX_OVERFLOW` on the worker deploy; `WORKER_POOL_SIZE` |
+| **Fleet worst case** | **36** | `fleet_peak_connections()` |
+| Superuser reserved | 3 | Postgres |
+| Alembic + one operator | 2 | `OPERATIONAL_HEADROOM` |
+| **Budget** | **45** | |
 
-**The worker's 10 are sized like the API's and its workload is not.** It claims
-exactly one job per cycle and awaits the handler inline (`__main__.py`), so it is
-strictly serial; the concurrent users are the loop, the heartbeat task, and the
-periodic sweeps. If more workers are ever wanted — and the queue supports them,
-`claim_job` is `FOR UPDATE SKIP LOCKED` with leases — shrinking the worker's pool
-is the cheapest way to make room inside the 50, before paying for a larger tier.
-**Measure before choosing a number:** `select count(*), application_name from
-pg_stat_activity group by 2` while the queue is busy, not an estimate from
-reading the loop.
+`services/api/tests/test_database_configuration.py` asserts the sum, asserts that
+`deploy.yml` still deploys the number `db.py` computed against, and pins the
+boundary: **six workers fit, seven do not.** Past six the tier grows, not the
+count. Do not re-derive this by hand — change a constant and run that file.
 
-Note also that raising the worker's `--max-instances` alone changes nothing.
-Cloud Run scales on request concurrency and the worker serves only a static
-liveness responder on `$PORT`, so it receives no request traffic. Parallel
-workers need `--min-instances N`, which is always-on billing.
+**These are ceilings, not reservations.** SQLAlchemy opens connections on demand
+and keeps them up to `pool_size`; overflow connections are opened and closed per
+use. Measured against production on 2026-08-01 with the queue idle: **four
+backends on `majorana` for the entire fleet.** The budget is sized for the worst
+case because a burst that exhausts the ceiling takes the *next deploy's migration
+step* down with it, not because 36 connections are ever expected.
+
+**The worker holds at most two sessions at once** — the job handler and the
+concurrent heartbeat that fences its lease (`_execute_with_heartbeat`).
+Everything else in the loop opens one session and closes it before the next: the
+claim commits and exits its `async with` before dispatch, and the recover,
+dead-letter and reap sweeps run sequentially between cycles. That is why 2 + 2
+is enough where the API needs 5 + 5.
+
+**Measure before changing any of this:**
+
+```sql
+select coalesce(nullif(application_name, ''), '(unset)') as app, state, count(*)
+from pg_stat_activity where datname = 'majorana' group by 1, 2 order by 3 desc;
+```
+
+Every backend answered `(unset)` before 2026-08-01, which made that instruction
+impossible to follow. `MAJORANA_SERVICE` is now set on both Cloud Run services
+and `db.py` turns it into `application_name`, so an API backend and a worker
+backend are finally distinguishable. A backend reading `majorana-unset` is a
+process that did not get the env var — investigate rather than assume.
+
+### Why the worker count is `--min-instances`, and why it costs money
+
+Raising the worker's `--max-instances` alone changes nothing. Cloud Run scales on
+request concurrency and the worker serves only a static liveness responder on
+`$PORT`, so it receives no request traffic and the autoscaler never has a reason
+to add an instance. Parallel workers must be always-on, which bills continuously
+whether or not anything is queued — roughly **$15–25/month each**.
+
+Four workers is an owner decision (2026-08-01), taken because runs were processed
+strictly serially product-wide and the queue, not page latency, was what a class
+or a launch would have felt. Dropping to three is one line in `deploy.yml` and
+one constant in `db.py`; the test will tell you if you change only one of them.
+
+### Why N workers are safe
+
+The queue was built for this and no code changed to enable it. Each path has its
+own reason:
+
+- `claim_job` and `claim_pending_dead_letter` — `FOR UPDATE SKIP LOCKED` with
+  lease tokens, heartbeats and a recovery sweep.
+- `recover_stale_jobs` — repeats its predicates on both `UPDATE`s, so a row
+  another worker already moved no longer matches.
+- the orphan reaper — `close_orphaned_run` writes deterministic `uuid5` event ids
+  and `fail_run_from_dead_letter` no-ops on an already-terminal run, so two
+  workers reaping the same orphan complete one event sequence rather than two.
+- `worker_id` is `"$hostname:$pid"`, so instances never collide on a lease.
 
 ## Why the move happened
 

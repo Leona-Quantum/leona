@@ -44,11 +44,39 @@ _query_duration = _meter.create_histogram(
 )
 
 
-#: Per process. Two API instances (maxScale 2) and one worker (maxScale 1) reach
-#: 3 × 10 = 30 of the instance's 50, which leaves room for a deploy's Alembic
-#: step, Postgres's own superuser reservation, and a human with psql.
+#: Per process, and sized for the API's shape: many short concurrent requests.
+#: The worker's shape is different and it overrides both downward — see
+#: WORKER_POOL_SIZE below and docs/runbooks/database.md § Connection budget.
 DEFAULT_POOL_SIZE = 5
 DEFAULT_MAX_OVERFLOW = 5
+
+#: The fleet these defaults have to fit inside, stated here because the ceiling
+#: is a fixed small number and the arithmetic is otherwise spread across
+#: deploy.yml and a runbook. `deploy.yml` pins every one of these on the
+#: `gcloud run deploy` line; test_database_configuration.py asserts the sum.
+API_MAX_INSTANCES = 2
+WORKER_INSTANCES = 4
+#: The worker never holds more than two sessions at once — the job handler and
+#: the concurrent heartbeat that fences its lease (`_execute_with_heartbeat`).
+#: Everything else in the loop (claim, finish, the recover/dead-letter/reap
+#: sweeps) opens one session at a time and closes it before the next. Measured
+#: 2026-08-01 against production: four backends total on `majorana` at idle
+#: across the whole fleet, none of them close to the old 5+5 ceiling.
+WORKER_POOL_SIZE = 2
+WORKER_MAX_OVERFLOW = 2
+
+#: db-g1-small allows 50 and reserves 3 for superusers. A deploy's Alembic step
+#: and one operator with psql have to fit in what the fleet leaves behind.
+INSTANCE_CONNECTION_CEILING = 50
+SUPERUSER_RESERVED = 3
+OPERATIONAL_HEADROOM = 2  # Alembic during a deploy, plus one human
+
+
+def fleet_peak_connections() -> int:
+    """Worst case if every process fills both its pool and its overflow."""
+    return API_MAX_INSTANCES * (DEFAULT_POOL_SIZE + DEFAULT_MAX_OVERFLOW) + WORKER_INSTANCES * (
+        WORKER_POOL_SIZE + WORKER_MAX_OVERFLOW
+    )
 
 
 def _pool_setting(name: str, default: int) -> int:
@@ -118,6 +146,23 @@ def _instrument_engine(engine: AsyncEngine) -> None:
         _clear_query_timer(exception_context.connection)
 
 
+def _application_name() -> str:
+    """What this process calls itself in `pg_stat_activity.application_name`.
+
+    The runbook tells the next person to *measure* the pool before resizing it —
+    `select count(*), application_name from pg_stat_activity group by 2` — and
+    until now that query returned `(unset)` for every backend, so the instruction
+    could not be followed. Measured against production on 2026-08-01: five
+    backends, all anonymous, no way to tell an API instance from the worker.
+
+    `MAJORANA_SERVICE` is set on each Cloud Run service by `deploy.yml`. The
+    fallback is deliberately not "api": an unlabelled backend should read as
+    unlabelled rather than impersonate a service.
+    """
+    service = os.environ.get("MAJORANA_SERVICE", "").strip() or "unset"
+    return f"majorana-{service}"
+
+
 def engine_from_env() -> AsyncEngine:
     url = os.environ["DATABASE_URL"]
     _validate_application_url(url)
@@ -128,6 +173,10 @@ def engine_from_env() -> AsyncEngine:
         pool_pre_ping=True,
         pool_size=_pool_setting("DB_POOL_SIZE", DEFAULT_POOL_SIZE),
         max_overflow=_pool_setting("DB_MAX_OVERFLOW", DEFAULT_MAX_OVERFLOW),
+        # libpq connection parameter, forwarded by the psycopg dialect. Costs
+        # nothing per connection and is the only thing that makes a backend
+        # attributable to a service.
+        connect_args={"application_name": _application_name()},
     )
     _instrument_engine(engine)
     return engine
