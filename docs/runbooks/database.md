@@ -13,7 +13,7 @@ aws-us-west-2), on the free plan.
 | Storage | 10 GB SSD, auto-increase on. The data is ~50 MB |
 | Backups | daily 10:00 UTC, 7 retained. No HA replica |
 | Public IP | assigned, but **zero authorized networks** — nothing reaches it by IP |
-| Connections | `max_connections` 50; fleet worst case 36 (see § Connection budget) |
+| Connections | `max_connections` 50; fleet worst case 44 during a deploy (see § Connection budget) |
 
 ## How each caller connects
 
@@ -58,17 +58,28 @@ has a public IP at all is that private IP needs VPC peering that was not set up.
 |---|---|---|
 | API instances | 2 | `--max-instances 2` on the api deploy; `API_MAX_INSTANCES` |
 | API pool, per instance | 5 + 5 | `DEFAULT_POOL_SIZE` / `DEFAULT_MAX_OVERFLOW` in `db.py` |
-| Worker instances | **4** | `--min-instances 4 --max-instances 4`; `WORKER_INSTANCES` |
+| Worker instances | **3** | `--min-instances 3 --max-instances 3`; `WORKER_INSTANCES` |
 | Worker pool, per instance | 2 + 2 | `DB_POOL_SIZE`/`DB_MAX_OVERFLOW` on the worker deploy; `WORKER_POOL_SIZE` |
-| **Fleet worst case** | **36** | `fleet_peak_connections()` |
+| Fleet at rest | 32 | `fleet_peak_connections(during_worker_rollout=False)` |
+| **Fleet during a deploy** | **44** | `fleet_peak_connections()` — both worker revisions hold their minimum |
 | Superuser reserved | 3 | Postgres |
 | Alembic + one operator | 2 | `OPERATIONAL_HEADROOM` |
 | **Budget** | **45** | |
 
 `services/api/tests/test_database_configuration.py` asserts the sum, asserts that
 `deploy.yml` still deploys the number `db.py` computed against, and pins the
-boundary: **six workers fit, seven do not.** Past six the tier grows, not the
-count. Do not re-derive this by hand — change a constant and run that file.
+boundary: **three workers fit, four do not.** Do not re-derive this by hand —
+change a constant and run that file.
+
+**The binding constraint is the deploy, not the workload.** `--min-instances` is
+a *revision-level* setting, so while a `gcloud run deploy` is in flight the
+outgoing revision is still in the traffic split and still holding its minimum:
+both revisions run their full complement at once and the worker term doubles.
+Four workers is 36 connections at rest and **52 for the length of every deploy**,
+against a budget of 45 — and a deploy is precisely when a spare connection has to
+exist, because that is when Alembic wants one. Buying a fourth worker means
+shrinking the API's pool, raising the tier, or draining the old worker revision
+before the new one starts. It does not mean changing this number alone.
 
 **These are ceilings, not reservations.** SQLAlchemy opens connections on demand
 and keeps them up to `pool_size`; overflow connections are opened and closed per
@@ -105,10 +116,12 @@ request concurrency and the worker serves only a static liveness responder on
 to add an instance. Parallel workers must be always-on, which bills continuously
 whether or not anything is queued — roughly **$15–25/month each**.
 
-Four workers is an owner decision (2026-08-01), taken because runs were processed
-strictly serially product-wide and the queue, not page latency, was what a class
-or a launch would have felt. Dropping to three is one line in `deploy.yml` and
-one constant in `db.py`; the test will tell you if you change only one of them.
+Three workers is an owner decision (2026-08-01, from a stated range of three to
+four), taken because runs were processed strictly serially product-wide and the
+queue — not page latency — was what a class or a launch would have felt. Three
+rather than four is the deploy-overlap arithmetic above, not a preference.
+Changing the count is one line in `deploy.yml` and one constant in `db.py`; the
+test will tell you if you change only one of them.
 
 ### Why N workers are safe
 

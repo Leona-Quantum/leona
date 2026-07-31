@@ -55,7 +55,13 @@ DEFAULT_MAX_OVERFLOW = 5
 #: deploy.yml and a runbook. `deploy.yml` pins every one of these on the
 #: `gcloud run deploy` line; test_database_configuration.py asserts the sum.
 API_MAX_INSTANCES = 2
-WORKER_INSTANCES = 4
+#: THREE, not the four the budget allows at rest. `--min-instances` is a
+#: revision-level setting, so during a deploy the outgoing and incoming worker
+#: revisions each hold their minimum and the fleet transiently doubles its worker
+#: term — see fleet_peak_connections. Four workers is 36 connections at rest and
+#: 52 for the length of every deploy, against a budget of 45, and a deploy is
+#: precisely when a spare connection has to exist for Alembic.
+WORKER_INSTANCES = 3
 #: The worker never holds more than two sessions at once — the job handler and
 #: the concurrent heartbeat that fences its lease (`_execute_with_heartbeat`).
 #: Everything else in the loop (claim, finish, the recover/dead-letter/reap
@@ -72,9 +78,22 @@ SUPERUSER_RESERVED = 3
 OPERATIONAL_HEADROOM = 2  # Alembic during a deploy, plus one human
 
 
-def fleet_peak_connections() -> int:
-    """Worst case if every process fills both its pool and its overflow."""
-    return API_MAX_INSTANCES * (DEFAULT_POOL_SIZE + DEFAULT_MAX_OVERFLOW) + WORKER_INSTANCES * (
+def fleet_peak_connections(*, during_worker_rollout: bool = True) -> int:
+    """Worst case if every process fills both its pool and its overflow.
+
+    `during_worker_rollout` doubles the worker term, and it defaults to True
+    because that is the case the budget has to survive. `--min-instances` is a
+    REVISION-level setting: while a `gcloud run deploy` is in flight, the
+    outgoing revision is still in the traffic split and still holding its
+    minimum, so both revisions run their full complement at once. The steady
+    state is what you see in `pg_stat_activity`; the rollout is what breaks.
+
+    This is what decided three workers rather than four. Four is comfortable at
+    rest (36 of 45) and 52 of 45 for the length of every deploy — and a deploy is
+    exactly when the connections matter, because that is when Alembic needs one.
+    """
+    workers = WORKER_INSTANCES * (2 if during_worker_rollout else 1)
+    return API_MAX_INSTANCES * (DEFAULT_POOL_SIZE + DEFAULT_MAX_OVERFLOW) + workers * (
         WORKER_POOL_SIZE + WORKER_MAX_OVERFLOW
     )
 

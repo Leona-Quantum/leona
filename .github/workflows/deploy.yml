@@ -277,7 +277,7 @@ jobs:
         if: steps.creds.outputs.have == 'true'
         id: worker
         run: |
-          # FOUR workers, not one. Runs were processed strictly serially
+          # THREE workers, not one. Runs were processed strictly serially
           # product-wide until 2026-08-01 and the queue — not page latency — was
           # what a class or a launch would have felt. `claim_job` is
           # `FOR UPDATE SKIP LOCKED` with lease tokens and heartbeats, so the
@@ -295,8 +295,15 @@ jobs:
           # and this service serves only a static liveness responder, so it
           # receives no request traffic and would never scale up on its own no
           # matter what the maximum said. Parallel workers have to be always-on,
-          # which is real money: roughly $15-25/month each. Dropping to 3 is this
-          # one line and the constants in db.py.
+          # which is real money: roughly $15-25/month each.
+          #
+          # THREE rather than the four the steady-state budget allows, because
+          # --min-instances is a REVISION-level setting: while this very command
+          # is rolling out, the outgoing revision is still in the traffic split
+          # and still holding its minimum, so the fleet transiently runs 2xN
+          # workers. Four would be 52 connections against a budget of 45 for the
+          # length of every deploy — and a deploy is exactly when Alembic needs
+          # one. See fleet_peak_connections() in db.py.
           #
           # DB_POOL_SIZE/DB_MAX_OVERFLOW are stated here because four workers at
           # the API's 5+5 would have blown the instance's 50-connection ceiling.
@@ -306,7 +313,7 @@ jobs:
             --command majorana-worker \
             --set-cloudsql-instances "$CLOUDSQL_INSTANCE" \
             --update-env-vars MAJORANA_SERVICE=worker,DB_POOL_SIZE=2,DB_MAX_OVERFLOW=2 \
-            --min-instances 4 --max-instances 4 --no-cpu-throttling
+            --min-instances 3 --max-instances 3 --no-cpu-throttling
           rev=$(gcloud run services describe majorana-worker \
             --project "$GCP_PROJECT" --region "$GCP_REGION" \
             --format="value(status.latestCreatedRevisionName)")

@@ -86,25 +86,45 @@ def test_the_whole_fleet_fits_under_the_instance_ceiling():
     )
 
 
-def test_where_the_worker_count_actually_runs_out(monkeypatch):
+def test_the_budget_survives_a_deploy_not_just_a_quiet_afternoon():
+    """The rollout is the case that breaks, and the reason this is three workers.
+
+    `--min-instances` is revision-level, so while a `gcloud run deploy` is in
+    flight the outgoing revision is still in the traffic split and still holding
+    its minimum: both revisions run their full complement at once. Sizing for the
+    steady state passes every day and fails on the one operation that also needs
+    a connection for Alembic.
+    """
+    budget = INSTANCE_CONNECTION_CEILING - SUPERUSER_RESERVED - OPERATIONAL_HEADROOM
+    assert fleet_peak_connections(during_worker_rollout=True) <= budget
+    assert fleet_peak_connections(during_worker_rollout=False) < fleet_peak_connections(
+        during_worker_rollout=True
+    ), "the rollout case must actually be the larger of the two, or it is not a check"
+
+
+def test_where_the_worker_count_actually_runs_out():
     """A positive control, and the answer to "can we add more?".
 
     A budget assertion that holds for every input is the same as no assertion.
-    This pins the boundary instead: on today's constants six workers fit and
-    seven do not. Change any term — the API's maxScale, either pool number, the
-    instance tier — and this test moves, which is the point. It is also the
-    honest answer to the next scaling question: today's four is not the ceiling,
-    six is, and past that the tier has to grow rather than the count.
+    This pins the boundary: on today's constants three workers fit and four do
+    not, ONCE the deploy-time doubling is counted. Change any term — the API's
+    maxScale, either pool number, the instance tier — and this test moves, which
+    is the point.
+
+    It is also the honest answer to the next scaling question. Four workers is
+    not blocked by the database at rest; it is blocked by the deploy. Buying the
+    fourth means shrinking the API pool, raising the tier, or teaching the worker
+    deploy to drain the old revision before the new one starts.
     """
     budget = INSTANCE_CONNECTION_CEILING - SUPERUSER_RESERVED - OPERATIONAL_HEADROOM
     api = API_MAX_INSTANCES * (DEFAULT_POOL_SIZE + DEFAULT_MAX_OVERFLOW)
     per_worker = WORKER_POOL_SIZE + WORKER_MAX_OVERFLOW
 
     def fits(workers: int) -> bool:
-        return api + workers * per_worker <= budget
+        return api + 2 * workers * per_worker <= budget
 
-    assert fits(6), "six workers were expected to fit inside the budget"
-    assert not fits(7), "seven workers were expected to exceed it"
+    assert fits(3), "three workers were expected to fit, deploy included"
+    assert not fits(4), "four workers were expected to exceed the budget during a deploy"
     assert fits(WORKER_INSTANCES), "the deployed worker count must itself fit"
 
 
