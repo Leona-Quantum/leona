@@ -22,12 +22,19 @@ from yaml.resolver import BaseResolver
 from .github_snapshot import GitHubRepositorySnapshot
 from .vqe_standard_sources import StandardSource
 
-EXTRACTOR_VERSION = "atlas.standard-metadata-declared.v2"
+EXTRACTOR_VERSION = "atlas.standard-metadata-declared.v3"
 
 _MAX_DECLARED_STRING_LENGTH = 4096
 _MAX_DECLARED_LIST_ITEMS = 512
+_MAX_LOCK_PACKAGES = 512
 _MAX_YAML_EVENTS = 10_000
 _MAX_YAML_DEPTH = 32
+_MAX_JSON_NODES = 10_000
+_MAX_JSON_DEPTH = 32
+
+
+class _StructuredDocumentError(ValueError):
+    """A bounded, non-sensitive parser failure code controlled by Atlas."""
 
 
 class _UniqueKeyBaseLoader(yaml.BaseLoader):
@@ -386,6 +393,192 @@ def _facts_from_requirements(
     return tuple(facts), tuple(issues)
 
 
+def _facts_from_toml_lock(
+    path: str,
+    content: bytes,
+    content_sha256: str,
+    *,
+    parser: str,
+    field_prefix: str,
+) -> tuple[tuple[DeclaredMetadataFact, ...], tuple[StructuredExtractionIssue, ...]]:
+    """Extract only literal package names and versions from a TOML lockfile."""
+
+    try:
+        document = tomllib.loads(content.decode("utf-8"))
+    except UnicodeDecodeError:
+        return (), (StructuredExtractionIssue(path, parser, "invalid_utf8", content_sha256),)
+    except tomllib.TOMLDecodeError:
+        return (), (StructuredExtractionIssue(path, parser, "invalid_toml", content_sha256),)
+
+    packages = document.get("package")
+    if packages is None:
+        return (), ()
+    if not isinstance(packages, list) or len(packages) > _MAX_LOCK_PACKAGES:
+        return (), (
+            StructuredExtractionIssue(
+                path,
+                parser,
+                "package_table_not_bounded_list",
+                content_sha256,
+            ),
+        )
+
+    facts: list[DeclaredMetadataFact] = []
+    issues: list[StructuredExtractionIssue] = []
+    for index, package in enumerate(packages):
+        if not isinstance(package, dict):
+            issues.append(
+                StructuredExtractionIssue(
+                    path,
+                    parser,
+                    f"package_not_mapping:index:{index}",
+                    content_sha256,
+                )
+            )
+            continue
+        for key in ("name", "version"):
+            declared = package.get(key)
+            value = _bounded_string(declared)
+            if value is not None:
+                facts.append(
+                    DeclaredMetadataFact(
+                        field=f"{field_prefix}.package.{key}",
+                        value=value,
+                        locator=EvidenceLocator(
+                            path,
+                            _pointer(("package", str(index), key)),
+                            content_sha256,
+                        ),
+                    )
+                )
+            elif declared is not None:
+                issues.append(
+                    StructuredExtractionIssue(
+                        path,
+                        parser,
+                        f"package_{key}_not_bounded_scalar:index:{index}",
+                        content_sha256,
+                    )
+                )
+    return tuple(facts), tuple(issues)
+
+
+def _reject_duplicate_json_keys(pairs: list[tuple[str, object]]) -> dict[str, object]:
+    result: dict[str, object] = {}
+    for key, value in pairs:
+        if key in result:
+            raise _StructuredDocumentError("duplicate_mapping_key")
+        result[key] = value
+    return result
+
+
+def _load_bounded_json(text: str) -> dict[str, Any]:
+    document = json.loads(text, object_pairs_hook=_reject_duplicate_json_keys)
+    if not isinstance(document, dict):
+        raise _StructuredDocumentError("root_not_mapping")
+
+    nodes = 0
+    stack: list[tuple[object, int]] = [(document, 1)]
+    while stack:
+        value, depth = stack.pop()
+        nodes += 1
+        if nodes > _MAX_JSON_NODES:
+            raise _StructuredDocumentError("json_node_limit_exceeded")
+        if depth > _MAX_JSON_DEPTH:
+            raise _StructuredDocumentError("json_depth_limit_exceeded")
+        if isinstance(value, dict):
+            stack.extend((item, depth + 1) for item in value.values())
+        elif isinstance(value, list):
+            stack.extend((item, depth + 1) for item in value)
+    return document
+
+
+def _facts_from_pipfile_lock(
+    path: str,
+    content: bytes,
+    content_sha256: str,
+) -> tuple[tuple[DeclaredMetadataFact, ...], tuple[StructuredExtractionIssue, ...]]:
+    try:
+        text = content.decode("utf-8")
+    except UnicodeDecodeError:
+        return (), (
+            StructuredExtractionIssue(path, "pipfile-lock", "invalid_utf8", content_sha256),
+        )
+    try:
+        document = _load_bounded_json(text)
+    except _StructuredDocumentError as exc:
+        return (), (StructuredExtractionIssue(path, "pipfile-lock", str(exc), content_sha256),)
+    except (json.JSONDecodeError, RecursionError, ValueError):
+        return (), (
+            StructuredExtractionIssue(path, "pipfile-lock", "invalid_json", content_sha256),
+        )
+
+    facts: list[DeclaredMetadataFact] = []
+    issues: list[StructuredExtractionIssue] = []
+    for group in ("default", "develop"):
+        packages = document.get(group)
+        if packages is None:
+            continue
+        if not isinstance(packages, dict) or len(packages) > _MAX_LOCK_PACKAGES:
+            issues.append(
+                StructuredExtractionIssue(
+                    path,
+                    "pipfile-lock",
+                    f"package_group_not_bounded_mapping:{group}",
+                    content_sha256,
+                )
+            )
+            continue
+        for name, package in packages.items():
+            bounded_name = _bounded_string(name)
+            if bounded_name is None or not isinstance(package, dict):
+                issues.append(
+                    StructuredExtractionIssue(
+                        path,
+                        "pipfile-lock",
+                        f"package_entry_not_bounded_mapping:{group}",
+                        content_sha256,
+                    )
+                )
+                continue
+            package_pointer = (group, name)
+            facts.append(
+                DeclaredMetadataFact(
+                    field=f"pipfile-lock.{group}.package.name",
+                    value=bounded_name,
+                    locator=EvidenceLocator(
+                        path,
+                        _pointer(package_pointer),
+                        content_sha256,
+                    ),
+                )
+            )
+            declared_version = package.get("version")
+            version = _bounded_string(declared_version)
+            if version is not None:
+                facts.append(
+                    DeclaredMetadataFact(
+                        field=f"pipfile-lock.{group}.package.version",
+                        value=version,
+                        locator=EvidenceLocator(
+                            path,
+                            _pointer((*package_pointer, "version")),
+                            content_sha256,
+                        ),
+                    )
+                )
+            elif declared_version is not None:
+                issues.append(
+                    StructuredExtractionIssue(
+                        path,
+                        "pipfile-lock",
+                        f"package_version_not_bounded_scalar:{group}",
+                        content_sha256,
+                    )
+                )
+    return tuple(facts), tuple(issues)
+
+
 def _facts_from_dockerfile(
     path: str,
     content: bytes,
@@ -559,6 +752,26 @@ def _structured_metadata(
             found, found_issues = _facts_from_requirements(
                 item.path, item.content, item.content_sha256
             )
+        elif predicate is MetadataPredicate.DEPENDENCY_DECLARATION_PRESENT and lowered in {
+            "uv.lock",
+            "poetry.lock",
+        }:
+            parser = "uv-lock" if lowered == "uv.lock" else "poetry-lock"
+            field_prefix = "uv-lock" if lowered == "uv.lock" else "poetry-lock"
+            found, found_issues = _facts_from_toml_lock(
+                item.path,
+                item.content,
+                item.content_sha256,
+                parser=parser,
+                field_prefix=field_prefix,
+            )
+        elif (
+            predicate is MetadataPredicate.DEPENDENCY_DECLARATION_PRESENT
+            and lowered == "pipfile.lock"
+        ):
+            found, found_issues = _facts_from_pipfile_lock(
+                item.path, item.content, item.content_sha256
+            )
         elif (
             predicate is MetadataPredicate.CONTAINER_DECLARATION_PRESENT and lowered == "dockerfile"
         ):
@@ -578,7 +791,17 @@ def _structured_metadata(
         facts.extend(found)
         issues.extend(found_issues)
     return (
-        tuple(sorted(facts, key=lambda item: (item.locator.path, item.field))),
+        tuple(
+            sorted(
+                facts,
+                key=lambda item: (
+                    item.locator.path,
+                    item.field,
+                    item.locator.pointer,
+                    json.dumps(item.value, separators=(",", ":")),
+                ),
+            )
+        ),
         tuple(sorted(issues, key=lambda item: (item.path, item.parser, item.code))),
     )
 

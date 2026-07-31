@@ -11,9 +11,10 @@ The first bounded Phase 8 slice is implemented locally:
   top-level scalar fields;
 - S2 `pyproject.toml` deterministic extraction: complete for the allowlisted
   PEP 621 and build-system declarations;
-- S3 requirements declarations: complete for bounded literal root
-  `requirements*` lines; resolver directives are explicit issues. Structured
-  lockfile schemas remain open;
+- S3 requirements and lockfile declarations: complete for bounded literal root
+  `requirements*` lines and literal package name/version fields in `uv.lock`,
+  `poetry.lock`, and `Pipfile.lock`; resolver directives and malformed or
+  unsupported structures are explicit issues;
 - S4 Dockerfile declarations: complete for bounded `FROM`, `CMD`, and
   `ENTRYPOINT` instructions without build or execution;
 - S5 GitHub Actions declarations: complete for workflow name and trigger keys
@@ -22,10 +23,10 @@ The first bounded Phase 8 slice is implemented locally:
   version changes;
 - S7 adversarial parser fixtures: complete for aliases, duplicate YAML keys,
   malformed TOML, and invalid declared-value shapes;
-- S8 synthetic golden baseline: complete for the initial six-fact fixture.
+- S8 synthetic golden baseline: complete for the current fourteen-fact fixture.
 
-Structured lockfile schemas and S9–S12 remain open. No requirements resolution, container build,
-workflow execution, Python import, notebook execution, component
+`environment.yml` is not treated as a lockfile, and S9–S12 remain open. No
+requirements resolution, container build, workflow execution, Python import, notebook execution, component
 materialization, or public publication was enabled.
 
 ## Data boundary
@@ -46,10 +47,10 @@ extractor version
 
 The extractor changed from
 `atlas.standard-metadata-presence.v1` to
-`atlas.standard-metadata-declared.v2`. The provider candidate adapter changed
-from v1 to v2 because its digest payload includes the extractor version. This
+`atlas.standard-metadata-declared.v3`. The provider candidate adapter changed
+from v2 to v3 because its digest payload includes the extractor version. This
 prevents an immutable-row conflict when an already staged Phase 7 snapshot is
-replayed; v1 rows remain intact and v2 rows are appended.
+replayed; all earlier rows remain intact and v3 rows are appended.
 
 ## Security and academic controls
 
@@ -59,6 +60,11 @@ replayed; v1 rows remain intact and v2 rows are appended.
 - YAML event count and nesting depth are bounded before construction.
 - TOML is parsed with the Python standard library.
 - Dependencies stay literal strings; they are never installed or resolved.
+- Lockfiles expose only allowlisted literal package names and versions. Sources,
+  hashes, markers, dependency graphs, and installer semantics are not inferred.
+- JSON duplicate keys and excessive depth/node counts are rejected for
+  `Pipfile.lock`; TOML duplicate keys and malformed tables fail closed through
+  the standard-library parser.
 - Unsupported value shapes become bounded machine issues instead of being
   silently coerced.
 - Raw parser exceptions and source content are not copied into issues.
@@ -68,9 +74,9 @@ replayed; v1 rows remain intact and v2 rows are appended.
 
 ## Baseline result
 
-The committed synthetic golden fixture contains twelve allowlisted declared
+The committed synthetic golden fixture contains fourteen allowlisted declared
 facts across `CITATION.cff`, `pyproject.toml`, `requirements.txt`, `Dockerfile`,
-and one GitHub Actions workflow.
+one GitHub Actions workflow, and `uv.lock`.
 
 | Metric | Result |
 | --- | ---: |
@@ -84,12 +90,17 @@ S9 must be reported separately and may reveal unknowns or unsupported metadata.
 
 ## Verification
 
-Focused verification after S3–S5:
+Completed remote verification for the pre-lockfile S3–S5 slice:
 
 ```text
-14 passed, 4 database-gated tests skipped locally
+local: 1458 passed, 171 skipped
+GitHub CI: https://github.com/EshMis/majorana/actions/runs/30626901144 (success)
+production E2E: https://github.com/EshMis/majorana/actions/runs/30626901162 (success)
 ```
 
-The release gate requires the full Python suite, lint/import boundaries, and
-the database-backed append-only replay test before this slice may be marked
-complete.
+The production E2E is regression evidence for the existing private execution
+path; it is not an official-provider extraction score. The new lockfile slice
+passed the local release gate with `1464 passed, 171 skipped`, clean Ruff
+format/lint, current OpenAPI, all four import contracts kept, a clean raw-query
+boundary, and Alembic head `0044`. Database-backed append-only replay and the
+remote regression matrix must still pass before it may be marked complete.

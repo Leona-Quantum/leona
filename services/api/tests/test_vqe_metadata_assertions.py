@@ -1,5 +1,6 @@
 import dataclasses
 import hashlib
+import json
 
 import pytest
 
@@ -185,6 +186,112 @@ def test_requirements_dockerfile_and_workflow_are_literal_and_never_executed():
     serialized = str([item.as_dict() for item in assertions])
     assert "curl https://example.invalid" not in serialized
     assert "runs-on" not in serialized
+
+
+def test_uv_poetry_and_pipfile_locks_extract_only_literal_package_identity():
+    uv_lock = b"""version = 1
+[[package]]
+name = "numpy"
+version = "2.1.0"
+source = { registry = "https://example.invalid/simple" }
+"""
+    poetry_lock = b"""[[package]]
+name = "qiskit"
+version = "1.4.6"
+description = "not extracted"
+"""
+    pipfile_lock = b"""{
+      "default": {"penny/lane": {"version": "==0.45.1", "hashes": ["sha256:abc"]}},
+      "develop": {"pytest": {"version": "==8.4.0"}},
+      "_meta": {"requires": {"python_version": "3.12"}}
+    }"""
+    assertions = extract_metadata_assertions(
+        get_standard_source("qiskit-nature"),
+        _snapshot(
+            _file("uv.lock", uv_lock),
+            _file("poetry.lock", poetry_lock),
+            _file("Pipfile.lock", pipfile_lock),
+        ),
+    )
+    dependency = next(
+        item
+        for item in assertions
+        if item.predicate is MetadataPredicate.DEPENDENCY_DECLARATION_PRESENT
+    )
+
+    assert [
+        (item.field, item.value, item.locator.pointer) for item in dependency.declared_facts
+    ] == [
+        ("pipfile-lock.default.package.name", "penny/lane", "/default/penny~1lane"),
+        (
+            "pipfile-lock.default.package.version",
+            "==0.45.1",
+            "/default/penny~1lane/version",
+        ),
+        ("pipfile-lock.develop.package.name", "pytest", "/develop/pytest"),
+        ("pipfile-lock.develop.package.version", "==8.4.0", "/develop/pytest/version"),
+        ("poetry-lock.package.name", "qiskit", "/package/0/name"),
+        ("poetry-lock.package.version", "1.4.6", "/package/0/version"),
+        ("uv-lock.package.name", "numpy", "/package/0/name"),
+        ("uv-lock.package.version", "2.1.0", "/package/0/version"),
+    ]
+    serialized = str(dependency.as_dict())
+    assert "example.invalid" not in serialized
+    assert "not extracted" not in serialized
+    assert "sha256:abc" not in serialized
+    assert "python_version" not in serialized
+
+
+@pytest.mark.parametrize(
+    ("path", "content", "issue_code"),
+    [
+        ("uv.lock", b"[[package]\nname = 'broken'\n", "invalid_toml"),
+        (
+            "Pipfile.lock",
+            b'{"default": {}, "default": {}}',
+            "duplicate_mapping_key",
+        ),
+        ("Pipfile.lock", b'{"default": ', "invalid_json"),
+        ("poetry.lock", b"package = 'not-a-list'\n", "package_table_not_bounded_list"),
+    ],
+)
+def test_lockfile_extractors_fail_closed(path, content, issue_code):
+    assertions = extract_metadata_assertions(
+        get_standard_source("qiskit-nature"), _snapshot(_file(path, content))
+    )
+    dependency = next(
+        item
+        for item in assertions
+        if item.predicate is MetadataPredicate.DEPENDENCY_DECLARATION_PRESENT
+    )
+
+    assert dependency.declared_facts == ()
+    assert [item.code for item in dependency.extraction_issues] == [issue_code]
+    assert content.decode(errors="ignore") not in str(dependency.as_dict())
+
+
+def test_pipfile_lock_rejects_excessive_json_depth_and_node_count():
+    nested: object = "leaf"
+    for _ in range(40):
+        nested = {"next": nested}
+    deep_content = json.dumps({"_meta": nested}).encode()
+    wide_content = json.dumps({"_meta": {str(index): index for index in range(10_001)}}).encode()
+
+    for content, issue_code in (
+        (deep_content, "json_depth_limit_exceeded"),
+        (wide_content, "json_node_limit_exceeded"),
+    ):
+        assertions = extract_metadata_assertions(
+            get_standard_source("qiskit-nature"),
+            _snapshot(_file("Pipfile.lock", content)),
+        )
+        dependency = next(
+            item
+            for item in assertions
+            if item.predicate is MetadataPredicate.DEPENDENCY_DECLARATION_PRESENT
+        )
+        assert dependency.declared_facts == ()
+        assert [item.code for item in dependency.extraction_issues] == [issue_code]
 
 
 def test_workflow_alias_and_docker_continuation_fail_closed():

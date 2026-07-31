@@ -2,18 +2,19 @@
   "schema_version": "atlas.phase8.deterministic-baseline.v1",
   "recorded_on": "2026-07-31",
   "scope": "synthetic_golden_fixture",
-  "extractor_version": "atlas.standard-metadata-declared.v2",
+  "extractor_version": "atlas.standard-metadata-declared.v3",
   "formats": [
     "CITATION.cff",
     "pyproject.toml",
     "requirements.txt",
     "Dockerfile",
-    "GitHub Actions"
+    "GitHub Actions",
+    "uv.lock"
   ],
   "metrics": {
-    "expected_facts": 12,
-    "extracted_facts": 12,
-    "true_positive_facts": 12,
+    "expected_facts": 14,
+    "extracted_facts": 14,
+    "true_positive_facts": 14,
     "precision": 1.0,
     "recall": 1.0,
     "evidence_locator_accuracy": 1.0

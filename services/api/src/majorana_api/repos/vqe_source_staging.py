@@ -19,7 +19,7 @@ from ..vqe_metadata_assertions import EXTRACTOR_VERSION, extract_metadata_assert
 from ..vqe_standard_sources import get_standard_source, require_approved_github_source
 from .github_import import load_github_snapshot
 
-CANDIDATE_ADAPTER_VERSION = "atlas.standard-provider-candidate.v2"
+CANDIDATE_ADAPTER_VERSION = "atlas.standard-provider-candidate.v3"
 
 
 @dataclasses.dataclass(frozen=True)

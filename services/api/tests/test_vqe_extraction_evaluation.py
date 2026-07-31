@@ -13,6 +13,11 @@ PYPROJECT = b"""[project]\nname = "qiskit-nature"\nversion = "0.8.0"\ndependenci
 REQUIREMENTS = b"qiskit==1.4.6\nnumpy>=1.26\n"
 DOCKERFILE = b'FROM python:3.12-slim\nENTRYPOINT ["python", "-m", "app"]\n'
 WORKFLOW = b"name: CI\non: [push, workflow_dispatch]\n"
+UV_LOCK = b"""version = 1
+[[package]]
+name = "numpy"
+version = "2.1.0"
+"""
 
 
 def _file(path: str, content: bytes) -> GitHubMetadataFile:
@@ -33,6 +38,7 @@ def _snapshot() -> GitHubRepositorySnapshot:
         _file("requirements.txt", REQUIREMENTS),
         _file("Dockerfile", DOCKERFILE),
         _file(".github/workflows/ci.yml", WORKFLOW),
+        _file("uv.lock", UV_LOCK),
     )
     return GitHubRepositorySnapshot(
         api_version="2026-03-10",
@@ -61,6 +67,7 @@ def _expected() -> tuple[ExpectedDeclaredFact, ...]:
     requirements_digest = hashlib.sha256(REQUIREMENTS).hexdigest()
     dockerfile_digest = hashlib.sha256(DOCKERFILE).hexdigest()
     workflow_digest = hashlib.sha256(WORKFLOW).hexdigest()
+    uv_lock_digest = hashlib.sha256(UV_LOCK).hexdigest()
     return (
         ExpectedDeclaredFact(
             "citation.cff-version", "1.2.0", "CITATION.cff", "/cff-version", citation_digest
@@ -126,6 +133,20 @@ def _expected() -> tuple[ExpectedDeclaredFact, ...]:
             "/on",
             workflow_digest,
         ),
+        ExpectedDeclaredFact(
+            "uv-lock.package.name",
+            "numpy",
+            "uv.lock",
+            "/package/0/name",
+            uv_lock_digest,
+        ),
+        ExpectedDeclaredFact(
+            "uv-lock.package.version",
+            "2.1.0",
+            "uv.lock",
+            "/package/0/version",
+            uv_lock_digest,
+        ),
     )
 
 
@@ -134,9 +155,9 @@ def test_synthetic_golden_baseline_has_exact_fact_and_locator_scores():
     metrics = evaluate_declared_facts(assertions, _expected())
 
     assert metrics.as_dict() == {
-        "expected_facts": 12,
-        "extracted_facts": 12,
-        "true_positive_facts": 12,
+        "expected_facts": 14,
+        "extracted_facts": 14,
+        "true_positive_facts": 14,
         "precision": 1.0,
         "recall": 1.0,
         "evidence_locator_accuracy": 1.0,
@@ -157,4 +178,4 @@ def test_locator_accuracy_is_not_conflated_with_fact_recall():
 
     assert metrics.precision == 1.0
     assert metrics.recall == 1.0
-    assert metrics.evidence_locator_accuracy == 11 / 12
+    assert metrics.evidence_locator_accuracy == 13 / 14
