@@ -133,6 +133,22 @@ async def count_execute_runs_since(scope: Scope, session: AsyncSession, since: d
     return int((await session.execute(execute_allowance_stmt(scope, since))).scalar_one())
 
 
+def _spends_the_weekly_allowance(scope: Scope, since: dt.datetime):
+    """The rows that spend a weekly allowance. ONE definition, two statements.
+
+    Both the count the gate refuses on and the timestamps `/v1/usage` reports
+    "when your next run frees up" from are built from this tuple. Written twice,
+    they could drift by one predicate and the product would then refuse a
+    submission on a screen that had just said two runs were left — a difference
+    the user reads as the number being a lie, not as a bug.
+    """
+    return (
+        Run.user_id == scope.user_id,
+        Run.mode == RunMode.EXECUTE.value,
+        Run.created_at >= since,
+    )
+
+
 def execute_allowance_stmt(scope: Scope, since: dt.datetime):
     """The allowance count as a statement, so a test can EXPLAIN this exact one.
 
@@ -142,15 +158,39 @@ def execute_allowance_stmt(scope: Scope, since: dt.datetime):
     the sequential scan the index was added to remove, and a test carrying its own
     copy of the SQL would keep passing while it happened.
     """
+    return select(func.count()).select_from(Run).where(*_spends_the_weekly_allowance(scope, since))
+
+
+def oldest_allowance_runs_stmt(scope: Scope, since: dt.datetime, *, count: int):
+    """The oldest allowance-spending runs still inside the window, ascending.
+
+    Ascending rather than descending because the question it answers is "which
+    run leaves the window next" — that is the OLDEST one, and its `created_at`
+    plus the window length is the moment the caller gets a run back. Reads the
+    same index as the count (`ix_runs_user_mode_created` is DESC, which serves an
+    ascending scan backwards).
+    """
     return (
-        select(func.count())
-        .select_from(Run)
-        .where(
-            Run.user_id == scope.user_id,
-            Run.mode == RunMode.EXECUTE.value,
-            Run.created_at >= since,
-        )
+        select(Run.created_at)
+        .where(*_spends_the_weekly_allowance(scope, since))
+        .order_by(Run.created_at.asc())
+        .limit(count)
     )
+
+
+async def oldest_allowance_runs_since(
+    scope: Scope, session: AsyncSession, since: dt.datetime, *, count: int
+) -> list[dt.datetime]:
+    """`created_at` of the `count` oldest runs still spending the allowance.
+
+    Per USER and not per workspace, for the same reason the count above is —
+    the two must select the same rows or the number shown and the number
+    enforced disagree.
+    """
+    if count <= 0:
+        return []
+    rows = await session.execute(oldest_allowance_runs_stmt(scope, since, count=count))
+    return [stamp for stamp in rows.scalars().all()]
 
 
 async def find_run_by_idempotency_key(
