@@ -18,6 +18,21 @@ from majorana_llm.parsing import (
     StageOutputError,
     extract_json,
 )
+from majorana_llm.research_extraction import (
+    RESEARCH_EXTRACTION_POLICY_VERSION,
+    RESEARCH_EXTRACTION_PROMPT_VERSION,
+    RESEARCH_EXTRACTION_SCHEMA_VERSION,
+    RESEARCH_EXTRACTION_SYSTEM_PROMPT,
+    CandidateConflict,
+    CandidateFieldProposal,
+    CandidateUnknown,
+    ResearchCandidate,
+    ResearchCandidateResponse,
+    ResearchEvidenceBundle,
+    ResearchEvidenceItem,
+    build_research_extraction_request,
+    validate_evidence_references,
+)
 
 from majorana_llm.prompts import (
     CHAT_SYSTEM_PROMPT,
@@ -58,4 +73,17 @@ __all__ = [
     "RenderedPrompt",
     "render_conversation_title_prompt",
     "render_intent_prompt",
+    "RESEARCH_EXTRACTION_POLICY_VERSION",
+    "RESEARCH_EXTRACTION_PROMPT_VERSION",
+    "RESEARCH_EXTRACTION_SCHEMA_VERSION",
+    "RESEARCH_EXTRACTION_SYSTEM_PROMPT",
+    "CandidateConflict",
+    "CandidateFieldProposal",
+    "CandidateUnknown",
+    "ResearchCandidate",
+    "ResearchCandidateResponse",
+    "ResearchEvidenceBundle",
+    "ResearchEvidenceItem",
+    "build_research_extraction_request",
+    "validate_evidence_references",
 ]
