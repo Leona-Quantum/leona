@@ -10,7 +10,7 @@ import { getPublicLocale } from "../lib/public-locale-server";
 
 export const metadata: Metadata = {
   title: "Leona Quantum",
-  description: "Generate, optimize, and use quantum circuits with AI in one platform.",
+  description: "Generate, run, and use quantum circuits with AI in one platform.",
 };
 
 export default async function Home() {
@@ -171,26 +171,24 @@ export default async function Home() {
         </section>
       </Reveal>
 
-      {copy.principles ? (
-        <section className="mj-company-section mj-company-principles" aria-labelledby="principles-heading">
-          <Reveal>
-            <div>
-              <p className="mj-section-label">{copy.principles.label}</p>
-              <h2 id="principles-heading">{copy.principles.title}</h2>
-            </div>
-          </Reveal>
-          <div className="mj-company-principle-grid">
-            {copy.principles.items.map((item, index) => (
-              <Reveal key={item.title} delay={index * 90}>
-                <article className="mj-company-principle-card">
-                  <h3>{item.title}</h3>
-                  <p>{item.body}</p>
-                </article>
-              </Reveal>
-            ))}
+      <section className="mj-company-section mj-company-principles" aria-labelledby="principles-heading">
+        <Reveal>
+          <div>
+            <p className="mj-section-label">{copy.principles.label}</p>
+            <h2 id="principles-heading">{copy.principles.title}</h2>
           </div>
-        </section>
-      ) : null}
+        </Reveal>
+        <div className="mj-company-principle-grid">
+          {copy.principles.items.map((item, index) => (
+            <Reveal key={item.title} delay={index * 90}>
+              <article className="mj-company-principle-card">
+                <h3>{item.title}</h3>
+                <p>{item.body}</p>
+              </article>
+            </Reveal>
+          ))}
+        </div>
+      </section>
 
       <Reveal>
         <section className="mj-company-final-cta" aria-labelledby="company-cta-heading">

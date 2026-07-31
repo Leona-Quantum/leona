@@ -726,6 +726,23 @@ body {
 
 .mj-company-intro-copy { display: flex; flex-direction: column; gap: var(--sp-3, 12px); }
 .mj-company-intro .mj-section-label { color: var(--text-2); }
+/* Scoped to .mj-company-hero-title specifically, not html[lang="ja"] alone —
+ * an unscoped html[lang="ja"] rule reaches every JA string in the document,
+ * not just this hero (see memory: `:lang(ja)` reaches the whole document).
+ * The two title lines ("次世代" / "量子コンピューティングプラットフォーム")
+ * are each one unbroken run with no spaces, so at the clamp() floor
+ * (1.15rem = 18.4px at a 16px root) the second line's ~19 characters need
+ * roughly 330-350px, which is wider than the ~272px of content width left
+ * inside .mj-public-frame (1200px cap, 24px side padding) at a 320px
+ * viewport. `white-space: nowrap` on the line and the word span used to
+ * force that whole run onto one box and let it overflow past the frame,
+ * silently, since nothing here sets `overflow: hidden` to turn it into a
+ * visible scrollbar — that is the "clipped, with no error" failure mode.
+ * Dropping nowrap does NOT switch to `word-break: break-all`: browsers
+ * already insert break opportunities between CJK characters by default
+ * (UAX #14 line breaking), so plain `white-space: normal` (the default,
+ * simply by not overriding it) is enough for the row to wrap on its own —
+ * this is the "let the ROW wrap" fix, not a font-size shrink. */
 html[lang="ja"] .mj-company-hero-title {
   max-width: none;
   font-size: clamp(1.15rem, 3.4vw, 2.75rem);
@@ -734,11 +751,6 @@ html[lang="ja"] .mj-company-hero-title {
 }
 html[lang="ja"] .mj-company-hero-title-line {
   display: block;
-  white-space: nowrap;
-}
-html[lang="ja"] .mj-company-hero-title > span,
-html[lang="ja"] .mj-company-hero-title .mj-hero-word {
-  white-space: nowrap;
 }
 
 /* Landing-page product story: three calm, text-first sections added after the

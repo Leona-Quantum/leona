@@ -24,7 +24,7 @@ export const PUBLIC_SHELL_COPY: Record<PublicLocale, {
   en: {
     nav: { product: "Product", pricing: "Pricing", repository: "Atlas", workspace: "Workspace", contact: "Contact" },
     footer: {
-      promise: "Generate, optimize, and use quantum circuits on one platform.",
+      promise: "Generate, run, and use quantum circuits on one platform.",
       explore: "Explore",
       company: "Company",
       legal: "Legal",
@@ -38,7 +38,7 @@ export const PUBLIC_SHELL_COPY: Record<PublicLocale, {
   ja: {
     nav: { product: "プロダクト", pricing: "料金", repository: "Atlas", workspace: "ワークスペース", contact: "お問い合わせ" },
     footer: {
-      promise: "量子回路の生成・最適化・活用を、ひとつのプラットフォームで",
+      promise: "量子回路の生成・実行・活用を、ひとつのプラットフォームで",
       explore: "公開研究を見る",
       company: "会社情報",
       legal: "法務",
