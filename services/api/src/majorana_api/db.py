@@ -19,8 +19,11 @@ max_overflow 10) would let two API instances and the worker reach 45 on their
 own and leave nothing for a deploy's migration step or an operator's psql.
 """
 
+import functools
 import os
+import pathlib
 import time
+from dataclasses import dataclass
 
 from opentelemetry import metrics
 from sqlalchemy import event
@@ -45,40 +48,92 @@ _query_duration = _meter.create_histogram(
 
 
 #: Per process, and sized for the API's shape: many short concurrent requests.
-#: The worker's shape is different and it overrides both downward — see
-#: WORKER_POOL_SIZE below and docs/runbooks/database.md § Connection budget.
+#: The worker's shape is different and it overrides both downward, via
+#: DB_POOL_SIZE/DB_MAX_OVERFLOW on its Cloud Run service — see infra/fleet.env
+#: and docs/runbooks/database.md § Connection budget. These two are the only
+#: sizing numbers that are read on a request path, which is why they are literals
+#: here and everything else is not.
 DEFAULT_POOL_SIZE = 5
 DEFAULT_MAX_OVERFLOW = 5
 
-#: The fleet these defaults have to fit inside, stated here because the ceiling
-#: is a fixed small number and the arithmetic is otherwise spread across
-#: deploy.yml and a runbook. `deploy.yml` pins every one of these on the
-#: `gcloud run deploy` line; test_database_configuration.py asserts the sum.
-API_MAX_INSTANCES = 2
-#: THREE, not the four the budget allows at rest. `--min-instances` is a
-#: revision-level setting, so during a deploy the outgoing and incoming worker
-#: revisions each hold their minimum and the fleet transiently doubles its worker
-#: term — see fleet_peak_connections. Four workers is 36 connections at rest and
-#: 52 for the length of every deploy, against a budget of 45, and a deploy is
-#: precisely when a spare connection has to exist for Alembic.
-WORKER_INSTANCES = 3
-#: The worker never holds more than two sessions at once — the job handler and
-#: the concurrent heartbeat that fences its lease (`_execute_with_heartbeat`).
-#: Everything else in the loop (claim, finish, the recover/dead-letter/reap
-#: sweeps) opens one session at a time and closes it before the next. Measured
-#: 2026-08-01 against production: four backends total on `majorana` at idle
-#: across the whole fleet, none of them close to the old 5+5 ceiling.
-WORKER_POOL_SIZE = 2
-WORKER_MAX_OVERFLOW = 2
-
-#: db-g1-small allows 50 and reserves 3 for superusers. A deploy's Alembic step
-#: and one operator with psql have to fit in what the fleet leaves behind.
-INSTANCE_CONNECTION_CEILING = 50
-SUPERUSER_RESERVED = 3
-OPERATIONAL_HEADROOM = 2  # Alembic during a deploy, plus one human
+#: Where the rest of the fleet's sizing lives. Deliberately not in this file:
+#: every one of those numbers is also a `gcloud run deploy` argument, and two
+#: copies of a number that must agree is how production ends up running a size
+#: nobody computed a budget for.
+FLEET_FILE = "infra/fleet.env"
 
 
-def fleet_peak_connections(*, during_worker_rollout: bool = True) -> int:
+@dataclass(frozen=True)
+class FleetSizing:
+    """The deployed shape of the fleet, as parsed from infra/fleet.env."""
+
+    worker_instances: int
+    worker_pool_size: int
+    worker_max_overflow: int
+    api_max_instances: int
+    instance_connection_ceiling: int
+    superuser_reserved: int
+    operational_headroom: int
+
+    @property
+    def connection_budget(self) -> int:
+        """What the fleet is allowed to claim, after the reservations."""
+        return (
+            self.instance_connection_ceiling - self.superuser_reserved - self.operational_headroom
+        )
+
+
+def _fleet_file() -> pathlib.Path:
+    """Locate infra/fleet.env by walking up from this module.
+
+    Not importlib.resources: the file is deliberately outside the Python
+    package, because `gcloud run deploy` has to read it too and a shell cannot
+    reach inside a wheel.
+    """
+    for parent in pathlib.Path(__file__).resolve().parents:
+        candidate = parent / FLEET_FILE
+        if candidate.exists():
+            return candidate
+    raise RuntimeError(
+        f"{FLEET_FILE} was not found above {__file__}. It is deploy-time "
+        "configuration and is NOT copied into the container image, so this "
+        "error means something on a request path called fleet_sizing() — see "
+        "test_no_runtime_module_reads_the_fleet_file."
+    )
+
+
+@functools.lru_cache(maxsize=1)
+def fleet_sizing() -> FleetSizing:
+    """Parse infra/fleet.env.
+
+    DEPLOY-TIME ONLY. Nothing on a request path may call this: infra/ is not in
+    the container image (services/api/Dockerfile copies services/, packages/py/,
+    evals/harness/ and db/), so in production this raises. That is the intended
+    behaviour rather than a gap — a runtime caller of deploy-time sizing is a
+    bug, and failing loudly in a test is better than silently reading a stale
+    default. `test_no_runtime_module_reads_the_fleet_file` is the guard.
+    """
+    values: dict[str, int] = {}
+    for line in _fleet_file().read_text(encoding="utf-8").splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        key, _, raw = stripped.partition("=")
+        values[key.strip()] = int(raw.strip())
+    return FleetSizing(
+        worker_instances=values["WORKER_INSTANCES"],
+        worker_pool_size=values["WORKER_POOL_SIZE"],
+        worker_max_overflow=values["WORKER_MAX_OVERFLOW"],
+        api_max_instances=values["API_MAX_INSTANCES"],
+        instance_connection_ceiling=values["INSTANCE_CONNECTION_CEILING"],
+        superuser_reserved=values["SUPERUSER_RESERVED"],
+        operational_headroom=values["OPERATIONAL_HEADROOM"],
+    )
+
+
+def fleet_peak_connections(
+    *, during_worker_rollout: bool = True, workers: int | None = None
+) -> int:
     """Worst case if every process fills both its pool and its overflow.
 
     `during_worker_rollout` doubles the worker term, and it defaults to True
@@ -88,13 +143,18 @@ def fleet_peak_connections(*, during_worker_rollout: bool = True) -> int:
     minimum, so both revisions run their full complement at once. The steady
     state is what you see in `pg_stat_activity`; the rollout is what breaks.
 
-    This is what decided three workers rather than four. Four is comfortable at
-    rest (36 of 45) and 52 of 45 for the length of every deploy — and a deploy is
+    This is what caps the worker count at three. Four is comfortable at rest
+    (36 of 45) and 52 of 45 for the length of every deploy — and a deploy is
     exactly when the connections matter, because that is when Alembic needs one.
+
+    `workers` overrides the deployed count, so the boundary can be probed
+    without editing infra/fleet.env.
     """
-    workers = WORKER_INSTANCES * (2 if during_worker_rollout else 1)
-    return API_MAX_INSTANCES * (DEFAULT_POOL_SIZE + DEFAULT_MAX_OVERFLOW) + workers * (
-        WORKER_POOL_SIZE + WORKER_MAX_OVERFLOW
+    fleet = fleet_sizing()
+    count = fleet.worker_instances if workers is None else workers
+    count *= 2 if during_worker_rollout else 1
+    return fleet.api_max_instances * (DEFAULT_POOL_SIZE + DEFAULT_MAX_OVERFLOW) + count * (
+        fleet.worker_pool_size + fleet.worker_max_overflow
     )
 
 
