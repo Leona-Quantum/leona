@@ -410,7 +410,7 @@ export function VqeExperimentLauncher({
           || typeof hardwareEfficientPayload.workflow_artifact_version_id !== "string"
           || typeof hardwareEfficientPayload.workflow_semantic_key !== "string"
           || hardwareEfficientPayload.execution_status
-            !== "blocked_until_runtime_qualified"
+            !== "private_qualification_candidate"
           || hardwareEfficientPayload.visibility !== "private"
         ) {
           const detail = typeof hardwareEfficientPayload.detail === "string"
@@ -460,8 +460,8 @@ export function VqeExperimentLauncher({
       setMessage(
         initialMigration === H2_HARDWARE_EFFICIENT_MIGRATION
           ? (ja
-            ? "privateなHardware-Efficient capability migrationを保存しました。固定したRY–CX構造とSLSQP設定はadapterで検証済みですが、Linux/amd64 OCI runtimeは未認定です。保存と再表示のみ可能で、実行・公開・性能主張は停止中です。"
-            : "The private hardware-efficient capability migration was saved. Its frozen RY–CX structure and SLSQP configuration are adapter-tested, but the Linux/amd64 OCI runtime is not yet qualified. Save and reopen are available; execution, publication, and performance claims remain blocked.")
+            ? "privateなHardware-Efficient capability migrationを保存しました。固定したRY–CX構造とSLSQP設定はdigest固定済みLinux/amd64 OCI runtimeで認定されています。private実行は可能ですが、公開と性能主張は停止中です。"
+            : "The private hardware-efficient capability migration was saved. Its frozen RY–CX structure and SLSQP configuration are qualified on digest-pinned Linux/amd64 OCI runtimes. Private execution is available; publication and performance claims remain blocked.")
           : (ja
             ? "privateなUCCSD capability migrationを保存しました。Ansatzと従属するcompilation protocolが変わり、adaptive専用roleはnot_applicableになります。これは一部品交換ではありません。公開と性能主張は停止中です。"
             : "The private UCCSD capability migration was saved. The ansatz and its dependent compilation protocol change, while adaptive-only roles become not applicable. This is not a one-component swap. Publication and performance claims remain blocked."),

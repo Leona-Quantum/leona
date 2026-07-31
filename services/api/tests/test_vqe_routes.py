@@ -250,7 +250,7 @@ async def test_create_hardware_efficient_migration_uses_its_bounded_repository_p
             version=SimpleNamespace(id=version_id, fingerprint="d" * 64),
             workflow_spec=SimpleNamespace(
                 semantic_key="workflow.instance.hardware-efficient",
-                spec_json={"execution_status": "blocked_until_runtime_qualified"},
+                spec_json={"execution_status": "private_qualification_candidate"},
             ),
             replayed=False,
         )
@@ -274,7 +274,7 @@ async def test_create_hardware_efficient_migration_uses_its_bounded_repository_p
     )
 
     assert result.workflow_artifact_version_id == version_id
-    assert result.execution_status == "blocked_until_runtime_qualified"
+    assert result.execution_status == "private_qualification_candidate"
     assert captured["baseline_workflow_artifact_version_id"] == baseline_id
 
 
@@ -525,7 +525,7 @@ async def test_start_execution_is_fail_closed_without_development_gate():
     assert excinfo.value.detail["code"] == "candidate_execution_disabled"
 
 
-async def test_hardware_efficient_execution_remains_blocked_before_oci_qualification(
+async def test_hardware_efficient_execution_requires_the_production_gate(
     monkeypatch,
 ):
     identity = json.loads(
@@ -545,8 +545,8 @@ async def test_hardware_efficient_execution_remains_blocked_before_oci_qualifica
     monkeypatch.setattr(vqe_repo, "get_experiment", fake_get_experiment)
     settings = SimpleNamespace(
         catalog_authority=SimpleNamespace(configured=False, workspace_id=None),
-        vqe_candidate_execution=False,
-        vqe_production_execution=True,
+        vqe_candidate_execution=True,
+        vqe_production_execution=False,
     )
     with pytest.raises(HTTPException) as excinfo:
         await vqe_routes.start_execution(
@@ -558,11 +558,79 @@ async def test_hardware_efficient_execution_remains_blocked_before_oci_qualifica
             scope=object(),
             session=object(),
             settings=settings,
-            idempotency_key="hardware-efficient-before-qualification",
+            idempotency_key="hardware-efficient-without-production-gate",
         )
 
     assert excinfo.value.status_code == 409
-    assert excinfo.value.detail["code"] == "hardware_efficient_runtime_not_qualified"
+    assert excinfo.value.detail["code"] == "hardware_efficient_requires_qualified_runtime"
+
+
+async def test_hardware_efficient_execution_uses_exact_qualified_profile(monkeypatch):
+    identity = json.loads(
+        (
+            ROOT
+            / "docs"
+            / "atlas"
+            / "fixtures"
+            / "h2_sto3g"
+            / "hardware_efficient_scientific_identity_v0.4.json"
+        ).read_text()
+    )
+    experiment_id = uuid.uuid4()
+    run_id = uuid.uuid4()
+    captured = {}
+
+    async def fake_get_experiment(scope, session, requested_experiment_id):
+        assert requested_experiment_id == experiment_id
+        return SimpleNamespace(id=experiment_id, scientific_spec_json=identity["portable_spec"])
+
+    async def fake_create_execution(scope, session, requested_experiment_id, *, binding):
+        captured["binding"] = binding
+        return SimpleNamespace(
+            id=uuid.uuid4(),
+            experiment_id=requested_experiment_id,
+            run_id=run_id,
+            framework=binding.framework.value,
+            runtime_profile_id=binding.runtime_profile_id,
+            runtime_image_digest=binding.container_digest,
+            adapter_release_id=binding.adapter_release_id,
+            execution_identity_sha256="e" * 64,
+            execution_binding_json=binding.model_dump(mode="json"),
+            status="planned",
+            created_at=None,
+            updated_at=None,
+        )
+
+    async def fake_list_observations(scope, session, execution_id):
+        return []
+
+    monkeypatch.setattr(vqe_repo, "get_experiment", fake_get_experiment)
+    monkeypatch.setattr(vqe_repo, "create_execution", fake_create_execution)
+    monkeypatch.setattr(vqe_repo, "list_observations", fake_list_observations)
+    settings = SimpleNamespace(
+        catalog_authority=SimpleNamespace(configured=False, workspace_id=None),
+        vqe_candidate_execution=False,
+        vqe_production_execution=True,
+    )
+
+    result = await vqe_routes.start_execution(
+        experiment_id,
+        vqe_routes.StartExecutionRequest(
+            requested_capability="h2_sto3g_hardware_efficient_ry_cx_v1",
+            preferred_framework="qiskit",
+        ),
+        scope=object(),
+        session=object(),
+        settings=settings,
+        idempotency_key="hardware-efficient-qualified",
+    )
+
+    binding = captured["binding"]
+    assert binding.runtime_profile_id == ("h2-hardware-efficient-qiskit-linux-x86_64-production-v1")
+    assert binding.container_digest == (
+        "sha256:1bd4a30499fdb945ee61a89b703d28287eabe2d4dedf610c8a9b4fef6fee555d"
+    )
+    assert result.production_runtime_status == "qualified"
 
 
 async def test_materialize_is_bound_to_the_selected_execution(monkeypatch):

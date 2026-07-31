@@ -31,6 +31,8 @@ function uuid(prefix, sequence) {
 function observation(executionId, framework, capability) {
   const succeeded = framework === "qiskit";
   const uccsd = capability === "h2_sto3g_uccsd_v1";
+  const hardwareEfficient =
+    capability === "h2_sto3g_hardware_efficient_ry_cx_v1";
   return {
     id: uuid("3", executionSequence),
     execution_id: executionId,
@@ -48,10 +50,10 @@ function observation(executionId, framework, capability) {
           resources: [
             {
               stage: "common_basis_compiled",
-              two_qubit_gate_count: uccsd ? 56 : 48,
-              depth: uccsd ? 96 : 83,
-              gate_count: uccsd ? 188 : 152,
-              parameter_count: uccsd ? 3 : 1,
+              two_qubit_gate_count: hardwareEfficient ? 6 : uccsd ? 56 : 48,
+              depth: hardwareEfficient ? 7 : uccsd ? 96 : 83,
+              gate_count: hardwareEfficient ? 14 : uccsd ? 188 : 152,
+              parameter_count: hardwareEfficient ? 8 : uccsd ? 3 : 1,
             },
           ],
         }
@@ -104,7 +106,7 @@ const server = createServer(async (request, response) => {
         semantic_key: "workflow.instance.mock.hardware-efficient",
         machine_validation_state: "machine_validated",
         review_state: "unreviewed",
-        spec_json: { execution_status: "blocked_until_runtime_qualified" },
+        spec_json: { execution_status: "private_qualification_candidate" },
       });
     }
     return json(response, 200, {
@@ -166,7 +168,7 @@ const server = createServer(async (request, response) => {
         workflow_semantic_key: "workflow.instance.mock.hardware-efficient",
         request_sha256: "e".repeat(64),
         replayed: false,
-        execution_status: "blocked_until_runtime_qualified",
+        execution_status: "private_qualification_candidate",
         visibility: "private",
       });
     }
@@ -190,22 +192,28 @@ const server = createServer(async (request, response) => {
 
   if (request.method === "POST" && url.pathname === "/v1/vqe/experiments") {
     const payload = await body(request);
-    if (![workflowId, uccsdWorkflowId].includes(payload.workflow_artifact_version_id)) {
+    if (![workflowId, uccsdWorkflowId, hardwareEfficientWorkflowId].includes(
+      payload.workflow_artifact_version_id,
+    )) {
       return json(response, 422, { detail: "unexpected workflow" });
     }
     const uccsd = payload.workflow_artifact_version_id === uccsdWorkflowId;
+    const hardwareEfficient =
+      payload.workflow_artifact_version_id === hardwareEfficientWorkflowId;
     experimentSequence += 1;
     const id = uuid("1", experimentSequence);
     const experiment = {
       id,
-      workflow_artifact_version_id: workflowId,
+      workflow_artifact_version_id: payload.workflow_artifact_version_id,
       scientific_spec_json: {
         component_bindings: [{
           role: "ansatz",
           applicability: "required",
-          component_semantic_key: uccsd
-            ? "ansatz.uccsd.v1"
-            : "ansatz.h2.fixed_excitation.v1",
+          component_semantic_key: hardwareEfficient
+            ? "ansatz.hardware_efficient_ry_cx.v1"
+            : uccsd
+              ? "ansatz.uccsd.v1"
+              : "ansatz.h2.fixed_excitation.v1",
         }],
       },
     };
@@ -237,9 +245,11 @@ const server = createServer(async (request, response) => {
       return json(response, 422, { detail: "unexpected framework" });
     }
     const experiment = experimentsById.get(experimentId);
-    const expectedCapability =
-      experiment?.scientific_spec_json?.component_bindings?.[0]?.component_semantic_key
-        === "ansatz.uccsd.v1"
+    const ansatzKey =
+      experiment?.scientific_spec_json?.component_bindings?.[0]?.component_semantic_key;
+    const expectedCapability = ansatzKey === "ansatz.hardware_efficient_ry_cx.v1"
+      ? "h2_sto3g_hardware_efficient_ry_cx_v1"
+      : ansatzKey === "ansatz.uccsd.v1"
         ? "h2_sto3g_uccsd_v1"
         : "h2_sto3g_actual_vqe_v1";
     if (payload.requested_capability !== expectedCapability) {
@@ -253,14 +263,17 @@ const server = createServer(async (request, response) => {
       experiment_id: experimentId,
       run_id: null,
       framework: payload.preferred_framework,
-      runtime_profile_id: expectedCapability === "h2_sto3g_uccsd_v1"
-        ? `h2-uccsd-${payload.preferred_framework}-linux-x86_64-production-v1`
-        : `h2-${payload.preferred_framework}-linux-x86_64-candidate-v1`,
+      runtime_profile_id:
+        expectedCapability === "h2_sto3g_hardware_efficient_ry_cx_v1"
+          ? `h2-hardware-efficient-${payload.preferred_framework}-linux-x86_64-production-v1`
+          : expectedCapability === "h2_sto3g_uccsd_v1"
+            ? `h2-uccsd-${payload.preferred_framework}-linux-x86_64-production-v1`
+            : `h2-${payload.preferred_framework}-linux-x86_64-candidate-v1`,
       runtime_image_digest: `sha256:${"a".repeat(64)}`,
       status: succeeded ? "succeeded" : "failed",
-      production_runtime_status: expectedCapability === "h2_sto3g_uccsd_v1"
-        ? "qualified"
-        : "unqualified",
+      production_runtime_status: expectedCapability === "h2_sto3g_actual_vqe_v1"
+        ? "unqualified"
+        : "qualified",
       public_execution: "blocked",
       review_state: "owner_waived",
       observations: [observation(id, payload.preferred_framework, expectedCapability)],

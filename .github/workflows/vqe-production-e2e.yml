@@ -72,6 +72,8 @@ jobs:
           docker pull --platform linux/amd64 ghcr.io/eshmis/majorana-vqe-pennylane@sha256:e29149db8efb338c4dd82879909ad8dd4928174309bc0b9fc1b7db0ef2a21930
           docker pull --platform linux/amd64 ghcr.io/eshmis/majorana-vqe-uccsd-qiskit@sha256:9e0d646fd59cee3d51a72a60d36b306619150732cf01bda73de23c1cdbd119d5
           docker pull --platform linux/amd64 ghcr.io/eshmis/majorana-vqe-uccsd-pennylane@sha256:daac7c918f277555515bc3a4c5c7fa29e6634a44184db1f04f4cd3ef5d3e9980
+          docker pull --platform linux/amd64 ghcr.io/eshmis/majorana-vqe-hardware-efficient-qiskit@sha256:1bd4a30499fdb945ee61a89b703d28287eabe2d4dedf610c8a9b4fef6fee555d
+          docker pull --platform linux/amd64 ghcr.io/eshmis/majorana-vqe-hardware-efficient-pennylane@sha256:f6977dcf8cdd99b198c739f6d1f33c98dcf840235a40f66c5632dd5adddeb207
       - name: WorkOS JWT contract → isolated PostgreSQL → real OCI runtime E2E
         env:
           DATABASE_URL: postgresql://pg:pg@localhost:5432/majorana_vqe_e2e

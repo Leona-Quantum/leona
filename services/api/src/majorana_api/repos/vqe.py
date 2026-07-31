@@ -30,6 +30,7 @@ from majorana_contracts.enums import Framework as ContractFramework
 from majorana_vqe.models import (
     ComponentType,
     ExecutionBinding,
+    Framework,
     MachineValidationState,
     ReviewState,
 )
@@ -78,6 +79,8 @@ from majorana_vqe.portable import (
     workflow_semantic_digest_v03,
 )
 from majorana_vqe.result import EXECUTION_EVIDENCE_ADAPTER, ExecutionEvidence
+
+from ..vqe_runtime_profiles import hardware_efficient_production_runtime_profile
 from majorana_vqe.standard_catalog import (
     STANDARD_IMPLEMENTATIONS,
     WorkflowComponentSelection,
@@ -175,19 +178,24 @@ def _uccsd_private_runtime_binding_metadata(
     }
 
 
-def _hardware_efficient_pending_runtime_binding_metadata(
+def _hardware_efficient_private_runtime_binding_metadata(
     *,
     semantic_key: str,
     evaluator_provider: str,
 ) -> dict[str, Any]:
-    """Record the bounded adapter evidence without claiming OCI qualification."""
+    """Bind the bounded composition to an exact attested private OCI profile."""
+
+    profile = hardware_efficient_production_runtime_profile(Framework(evaluator_provider))
 
     return {
         "configured_component_semantic_key": semantic_key,
-        "evidence_level": "adapter_tested",
-        "runtime_qualification": "pending_linux_amd64_oci",
+        "evidence_level": "runtime_qualified",
+        "runtime_qualification": "private_qualified",
         "qualification_scope": "h2_sto3g_hardware_efficient_ry_cx_v1",
         "evaluator_provider": evaluator_provider,
+        "runtime_profile_id": profile.binding.runtime_profile_id,
+        "adapter_release_id": profile.binding.adapter_release_id,
+        "oci_manifest_digest": profile.registry_manifest_digest,
         "publication": "blocked",
     }
 
@@ -242,7 +250,7 @@ def _validate_machine_validated_workflow_payload(payload: dict[str, Any]) -> Non
                 - set(H2_HARDWARE_EFFICIENT_APPLICABLE_ROLES)
             ),
             "parameter_policy": "reset_all",
-            "execution_status": "blocked_until_runtime_qualified",
+            "execution_status": "private_qualification_candidate",
             "publication": "blocked",
             "scientific_release": "blocked",
         }
@@ -1325,7 +1333,7 @@ async def save_h2_hardware_efficient_migration_workflow_draft(
             metadata={
                 "source": "h2_hardware_efficient_packaged_executable_seed_v0.4",
                 "semantic_key": semantic_key,
-                "runtime_qualification": "pending_linux_amd64_oci",
+                "runtime_qualification": "private_qualified",
                 "publication": "blocked",
                 "scientific_release": "blocked",
             },
@@ -1352,7 +1360,7 @@ async def save_h2_hardware_efficient_migration_workflow_draft(
             (
                 role,
                 component_spec.artifact_version_id,
-                _hardware_efficient_pending_runtime_binding_metadata(
+                _hardware_efficient_private_runtime_binding_metadata(
                     semantic_key=semantic_key,
                     evaluator_provider=evaluator_provider,
                 ),
@@ -1407,7 +1415,7 @@ async def save_h2_hardware_efficient_migration_workflow_draft(
         "schema_version": "0.4.0",
         "kind": "ansatz_migration_workflow_draft",
         "request_sha256": request_sha256,
-        "execution_status": "blocked_until_runtime_qualified",
+        "execution_status": "private_qualification_candidate",
         "publication": "blocked",
         "scientific_release": "blocked",
     }
@@ -1421,7 +1429,7 @@ async def save_h2_hardware_efficient_migration_workflow_draft(
             "source": "vqe_ansatz_migration",
             "request_sha256": request_sha256,
             "baseline_workflow_artifact_version_id": str(baseline_workflow_artifact_version_id),
-            "runtime_qualification": "pending_linux_amd64_oci",
+            "runtime_qualification": "private_qualified",
             "publication": "blocked",
             "scientific_release": "blocked",
         },
@@ -1431,8 +1439,8 @@ async def save_h2_hardware_efficient_migration_workflow_draft(
         export_status=ExportStatus.UNSUPPORTED,
         export_reason="structured VQE Workflow migration is not a circuit export",
         limitations=(
-            "Private owner-waived adapter-tested candidate; not a one-component "
-            "comparison; execution remains blocked until exact OCI qualification."
+            "Private owner-waived digest-qualified candidate; not a one-component "
+            "comparison; publication and performance claims remain blocked."
         ),
     )
     workflow_spec = await create_component_spec(
@@ -2025,7 +2033,7 @@ async def resolve_hardware_efficient_scientific_experiment_spec(
         == [ComponentType.COMPILATION_BACKEND.value]
         and workflow.spec_json.get("preserved_not_applicable_roles") == expected_na_roles
         and workflow.spec_json.get("parameter_policy") == "reset_all"
-        and workflow.spec_json.get("execution_status") == "blocked_until_runtime_qualified"
+        and workflow.spec_json.get("execution_status") == "private_qualification_candidate"
         and workflow.spec_json.get("publication") == "blocked"
         and workflow.spec_json.get("scientific_release") == "blocked"
     ):
@@ -2076,6 +2084,9 @@ async def resolve_hardware_efficient_scientific_experiment_spec(
         session,
         workflow_artifact_version_id,
         catalog_workspace_id=catalog_workspace_id,
+    )
+    expected_runtime_profile = hardware_efficient_production_runtime_profile(
+        Framework(str(workflow.spec_json["evaluator_provider"]))
     )
     if len(links) != len(H2_HARDWARE_EFFICIENT_APPLICABLE_ROLES):
         raise InvalidWorkflowCompositionError(
@@ -2130,11 +2141,15 @@ async def resolve_hardware_efficient_scientific_experiment_spec(
         if role in changed_roles:
             metadata = link.binding_metadata or {}
             if not (
-                metadata.get("runtime_qualification") == "pending_linux_amd64_oci"
+                metadata.get("runtime_qualification") == "private_qualified"
                 and metadata.get("qualification_scope") == "h2_sto3g_hardware_efficient_ry_cx_v1"
-                and metadata.get("evidence_level") == "adapter_tested"
-                and "runtime_profile_id" not in metadata
-                and "adapter_release_id" not in metadata
+                and metadata.get("evidence_level") == "runtime_qualified"
+                and metadata.get("runtime_profile_id")
+                == expected_runtime_profile.binding.runtime_profile_id
+                and metadata.get("adapter_release_id")
+                == expected_runtime_profile.binding.adapter_release_id
+                and metadata.get("oci_manifest_digest")
+                == expected_runtime_profile.registry_manifest_digest
             ):
                 raise InvalidWorkflowCompositionError(
                     f"hardware-efficient changed role {role.value!r} overstates runtime evidence"

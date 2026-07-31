@@ -75,7 +75,7 @@ test("private UCCSD migration is chained through its SLSQP prerequisite", async 
   ).toBeVisible();
 });
 
-test("private hardware-efficient migration is saved but execution stays blocked", async ({
+test("private hardware-efficient migration runs on its qualified profile", async ({
   page,
 }) => {
   await page.goto(
@@ -94,6 +94,22 @@ test("private hardware-efficient migration is saved but execution stays blocked"
   await expect(page.getByLabel("Workflow")).toContainText(
     "workflow.instance.mock.hardware-efficient",
   );
-  await expect(page.getByText("blocked_until_runtime_qualified")).toBeVisible();
-  await expect(page.getByRole("button", { name: "Create experiment" })).toBeDisabled();
+  await expect(page.getByText("private_qualification_candidate")).toBeVisible();
+  await page.getByRole("button", { name: "Create experiment" }).click();
+  await page.waitForURL(/\/studio\?vqeExperiment=/);
+  await expect(
+    page.getByRole("heading", {
+      name: "H₂ STO-3G hardware-efficient private qualification",
+    }),
+  ).toBeVisible();
+  await page.getByRole("button", {
+    name: "Run private qualification candidate",
+  }).click();
+  await expect(page.getByText("qiskit · succeeded")).toBeVisible();
+  await expect(page.getByText("6", { exact: true })).toBeVisible();
+  await expect(page.getByText("7", { exact: true })).toBeVisible();
+  await expect(page.getByText("8", { exact: true })).toBeVisible();
+  await expect(
+    page.getByText(/public execution, public results, and performance claims remain blocked/i),
+  ).toBeVisible();
 });

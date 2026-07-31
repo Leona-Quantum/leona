@@ -340,6 +340,82 @@ async def test_workos_contract_postgres_and_real_oci_runtime_end_to_end():
                 assert uccsd_artifacts[framework]["visibility"] == "private"
                 assert uccsd_artifacts[framework]["publication"] == "blocked"
 
+            hardware_efficient_migration_response = await client.post(
+                "/v1/atlas/workflows/ansatz-migrations",
+                headers={"Idempotency-Key": "phase79-hardware-efficient-migration"},
+                json={
+                    "baseline_workflow_artifact_version_id": migration[
+                        "workflow_artifact_version_id"
+                    ],
+                    "migration": "h2_uccsd_slsqp_to_hardware_efficient_slsqp",
+                    "evaluator_provider": "qiskit",
+                },
+            )
+            assert hardware_efficient_migration_response.status_code == 201, (
+                hardware_efficient_migration_response.text
+            )
+            hardware_efficient_migration = hardware_efficient_migration_response.json()
+            assert (
+                hardware_efficient_migration["execution_status"]
+                == "private_qualification_candidate"
+            )
+            assert hardware_efficient_migration["visibility"] == "private"
+
+            hardware_efficient_experiment_response = await client.post(
+                "/v1/vqe/experiments",
+                headers={"Idempotency-Key": "phase79-hardware-efficient-experiment"},
+                json={
+                    "workflow_artifact_version_id": hardware_efficient_migration[
+                        "workflow_artifact_version_id"
+                    ]
+                },
+            )
+            assert hardware_efficient_experiment_response.status_code == 201, (
+                hardware_efficient_experiment_response.text
+            )
+            hardware_efficient_experiment = hardware_efficient_experiment_response.json()
+            hardware_efficient_bindings = {
+                item["role"]: item
+                for item in hardware_efficient_experiment["scientific_spec_json"][
+                    "component_bindings"
+                ]
+            }
+            assert (
+                hardware_efficient_bindings["ansatz"]["component_semantic_key"]
+                == "ansatz.hardware_efficient_ry_cx.v1"
+            )
+            assert (
+                hardware_efficient_bindings["compilation_backend"]["component_semantic_key"]
+                == "compilation.h2.hardware_efficient_ry_cx.canonical_logical.v1"
+            )
+            assert {
+                hardware_efficient_bindings[role]["applicability"]
+                for role in ("operator_pool", "search_selection", "growth_batching")
+            } == {"not_applicable"}
+
+            hardware_efficient_executions: dict[str, dict] = {}
+            hardware_efficient_artifacts: dict[str, dict] = {}
+            for framework in ("qiskit", "pennylane"):
+                hardware_efficient_executions[framework] = await _execute_and_finish(
+                    client=client,
+                    factory=factory,
+                    experiment_id=hardware_efficient_experiment["id"],
+                    framework=framework,
+                    label="hardware-efficient",
+                    requested_capability="h2_sto3g_hardware_efficient_ry_cx_v1",
+                    expected_cnot_count=6,
+                    expected_depth=7,
+                    expected_parameter_count=8,
+                )
+                materialize_response = await client.post(
+                    "/v1/vqe/executions/"
+                    f"{hardware_efficient_executions[framework]['id']}/materialize"
+                )
+                assert materialize_response.status_code == 200, materialize_response.text
+                hardware_efficient_artifacts[framework] = materialize_response.json()
+                assert hardware_efficient_artifacts[framework]["visibility"] == "private"
+                assert hardware_efficient_artifacts[framework]["publication"] == "blocked"
+
             fixed_component_digests = {
                 item["role"]: item["component_spec_sha256"]
                 for item in baseline_experiment["scientific_spec_json"]["component_bindings"]
@@ -452,6 +528,21 @@ async def test_workos_contract_postgres_and_real_oci_runtime_end_to_end():
                 )
                 assert execution_response.status_code == 200
                 assert execution_response.json()["status"] == "succeeded"
+            for framework, artifact in hardware_efficient_artifacts.items():
+                artifact_response = await reopened_client.get(
+                    f"/v1/artifacts/{artifact['artifact_id']}"
+                )
+                assert artifact_response.status_code == 200, artifact_response.text
+                version_response = await reopened_client.get(
+                    f"/v1/artifacts/{artifact['artifact_id']}/versions/current"
+                )
+                assert version_response.status_code == 200, version_response.text
+                assert version_response.json()["id"] == artifact["artifact_version_id"]
+                execution_response = await reopened_client.get(
+                    f"/v1/vqe/executions/{hardware_efficient_executions[framework]['id']}"
+                )
+                assert execution_response.status_code == 200
+                assert execution_response.json()["status"] == "succeeded"
 
         evidence = {
             "schema_version": "1.0.0",
@@ -485,6 +576,24 @@ async def test_workos_contract_postgres_and_real_oci_runtime_end_to_end():
                     name: item["artifact_version_id"] for name, item in uccsd_artifacts.items()
                 },
             },
+            "hardware_efficient_migration": {
+                "comparison_class": "controlled_capability_migration_not_one_component_swap",
+                "primary_changed_role": "ansatz",
+                "dependent_changed_roles": ["compilation_backend"],
+                "workflow_artifact_version_id": hardware_efficient_migration[
+                    "workflow_artifact_version_id"
+                ],
+                "experiment_id": hardware_efficient_experiment["id"],
+                "execution_ids": {
+                    name: item["id"] for name, item in hardware_efficient_executions.items()
+                },
+                "materialized_artifact_ids": {
+                    name: item["artifact_version_id"]
+                    for name, item in hardware_efficient_artifacts.items()
+                },
+                "public_execution": False,
+                "performance_claim": False,
+            },
             "session_reopen": "passed",
             "failure_path": "passed",
             "public_execution": False,
@@ -497,6 +606,8 @@ async def test_workos_contract_postgres_and_real_oci_runtime_end_to_end():
                         "artifacts": artifacts,
                         "uccsd_executions": uccsd_executions,
                         "uccsd_artifacts": uccsd_artifacts,
+                        "hardware_efficient_executions": hardware_efficient_executions,
+                        "hardware_efficient_artifacts": hardware_efficient_artifacts,
                     },
                     sort_keys=True,
                     separators=(",", ":"),

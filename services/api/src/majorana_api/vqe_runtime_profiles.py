@@ -276,6 +276,31 @@ _UCCSD_PRODUCTION_DIGESTS = {
     },
 }
 
+_HARDWARE_EFFICIENT_PRODUCTION_DIGESTS = {
+    Framework.QISKIT: {
+        "registry": "sha256:1bd4a30499fdb945ee61a89b703d28287eabe2d4dedf610c8a9b4fef6fee555d",
+        "platform": "sha256:ad122a102153447add22f0e2578c5d2aabb61533f94ad0636e23418b451ac47c",
+        "attestation": "sha256:62c808ff9f65a76a7684aabbc64e44c309546d9f47558c55bc97879f3621fa19",
+        "config": "sha256:a4bca296be07535687dd60432e34099f18b9c8acbe18e4cc28478ad5c6af27cc",
+        "sbom": "52c89456a85da8b487b14a7105fbca52d38664dbfeeaa8cb0a4a58caa413b346",
+        "provenance": "aefd3ecedb4cf65985abbee3858e8cce47d9a0e438dfb91c98d9ea43cb51daa7",
+        "github_attestation_id": "38148774",
+        "github_attestation_url": "https://github.com/EshMis/majorana/attestations/38148774",
+        "entrypoint": "2da384d0ce0fe5ac4786b6223af56b3dd58dfa09cd58a117fb20bbe9f83ec9c0",
+    },
+    Framework.PENNYLANE: {
+        "registry": "sha256:f6977dcf8cdd99b198c739f6d1f33c98dcf840235a40f66c5632dd5adddeb207",
+        "platform": "sha256:717f1281c825967330bba99d3e9b8ea85ab6aac29c1c2d4954568af169cda2b4",
+        "attestation": "sha256:567644eab32d7dfca35d95575b86afb6c854aacf5894804f82b2c7c6e6a7756e",
+        "config": "sha256:73c24c529a6b9c2880a4698dc67e2154097500571dacdad407174dd49009b281",
+        "sbom": "225e7b8fec6f466289126420fe40306c3c00d080ed644217afea819497f950e7",
+        "provenance": "62f6e70c9bfb088f0783783ba92ca04402ff0bd3b428c2d6bc6a6ccd2a1f12a1",
+        "github_attestation_id": "38148757",
+        "github_attestation_url": "https://github.com/EshMis/majorana/attestations/38148757",
+        "entrypoint": "4ef9d09ff7a2fbfda6a0361943d6b84f4db484fab891471a188e997becca92c8",
+    },
+}
+
 
 def _uccsd_production_profile(framework: Framework) -> ProductionRuntimeProfile:
     candidate = _PROFILES[framework]
@@ -328,6 +353,62 @@ def _uccsd_production_profile(framework: Framework) -> ProductionRuntimeProfile:
         ),
         runtime_payload_source_commit="6e78bdff2b9486f564441dcd267b91a41038a5df",
         entrypoint_kind="h2_uccsd_stdout_v1",
+    )
+
+
+def _hardware_efficient_production_profile(
+    framework: Framework,
+) -> ProductionRuntimeProfile:
+    candidate = _PROFILES[framework]
+    digests = _HARDWARE_EFFICIENT_PRODUCTION_DIGESTS[framework]
+    repository = f"ghcr.io/eshmis/majorana-vqe-hardware-efficient-{framework.value}"
+    binding = ExecutionBinding(
+        framework=framework,
+        provider_versions=candidate.binding.provider_versions,
+        runtime_profile_id=(f"h2-hardware-efficient-{framework.value}-linux-x86_64-production-v1"),
+        adapter_release_id=(f"majorana-h2-hardware-efficient-{framework.value}-adapter-0.4.0"),
+        container_digest=digests["registry"],
+        container_digest_kind="oci_manifest_digest",
+        oci_manifest_digest=digests["registry"],
+        architecture="linux-x86_64",
+        production_runtime_status="qualified",
+        dataset_snapshot_id=candidate.binding.dataset_snapshot_id,
+        protocol_version="0.4.0",
+    )
+    return ProductionRuntimeProfile(
+        binding=binding,
+        image_reference=f"{repository}@{digests['registry']}",
+        registry_manifest_digest=digests["registry"],
+        platform_manifest_digest=digests["platform"],
+        attestation_manifest_digest=digests["attestation"],
+        image_config_digest=digests["config"],
+        sbom_sha256=digests["sbom"],
+        provenance_sha256=digests["provenance"],
+        github_attestation_id=digests["github_attestation_id"],
+        github_attestation_url=digests["github_attestation_url"],
+        lock_sha256=candidate.lock_sha256,
+        dockerfile_sha256="27e5d8e27fa8ae70250275c9aac85510737ac811896cc879c212660d502d2613",
+        entrypoint_sha256=digests["entrypoint"],
+        fixture_manifest_sha256=(
+            "6424713c69c2b734172db47329b7deb62b67a743c80fd792f48173fdaa4e3edc"
+        ),
+        canonical_circuit_file_sha256=(
+            "424cbcb5fe68428e1d3762d679797e2a77e1a5be2d55cb3b9c81d8826f4dc10d"
+        ),
+        canonical_circuit_sha256=(
+            "7e28b52d16d694ac59e8b1a2ce2f9b6e215df60e67ac9b3521231e10859016c8"
+        ),
+        compilation_protocol_sha256=(
+            "c088fcfb95244dbba960cd096fd58fea8e9f289fbce509758e1a59f58270539c"
+        ),
+        common_basis_operation_sequence_sha256=(
+            "349652753a7114f9cdaf6582670594fd07341f846508dc7f51d4094162365c02"
+        ),
+        qualification_script_sha256=(
+            "f3147a28780b1c4366af2eae1690f46c0f2b0c615ff0d108af0d12d22d081b6c"
+        ),
+        runtime_payload_source_commit="119df80ac4c642dfa64a7e8468b5c82bec99f7d8",
+        entrypoint_kind="h2_hardware_efficient_stdout_v1",
     )
 
 
@@ -399,6 +480,9 @@ _PRODUCTION_PROFILES = {
 _UCCSD_PRODUCTION_PROFILES = {
     framework: _uccsd_production_profile(framework) for framework in Framework
 }
+_HARDWARE_EFFICIENT_PRODUCTION_PROFILES = {
+    framework: _hardware_efficient_production_profile(framework) for framework in Framework
+}
 
 
 def candidate_runtime_profile(framework: Framework) -> CandidateRuntimeProfile:
@@ -428,6 +512,17 @@ def uccsd_production_runtime_profiles() -> tuple[ProductionRuntimeProfile, ...]:
     return tuple(_UCCSD_PRODUCTION_PROFILES[framework] for framework in Framework)
 
 
+def hardware_efficient_production_runtime_profile(
+    framework: Framework,
+) -> ProductionRuntimeProfile:
+    """Resolve the exact attested H2 hardware-efficient production profile."""
+    return _HARDWARE_EFFICIENT_PRODUCTION_PROFILES[Framework(framework)]
+
+
+def hardware_efficient_production_runtime_profiles() -> tuple[ProductionRuntimeProfile, ...]:
+    return tuple(_HARDWARE_EFFICIENT_PRODUCTION_PROFILES[framework] for framework in Framework)
+
+
 def profile_for_binding(
     binding: ExecutionBinding,
 ) -> CandidateRuntimeProfile | ProductionRuntimeProfile:
@@ -436,6 +531,7 @@ def profile_for_binding(
         _PRODUCTION_PROFILES.get(binding.framework),
         _LEGACY_PRODUCTION_PROFILES.get(binding.framework),
         _UCCSD_PRODUCTION_PROFILES.get(binding.framework),
+        _HARDWARE_EFFICIENT_PRODUCTION_PROFILES.get(binding.framework),
     )
     for profile in candidates:
         if profile is not None and profile.binding == binding:

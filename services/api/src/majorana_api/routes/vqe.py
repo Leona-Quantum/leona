@@ -47,6 +47,7 @@ from ..repos import vqe as vqe_repo
 from ..settings import Settings
 from ..vqe_runtime_profiles import (
     candidate_runtime_profile,
+    hardware_efficient_production_runtime_profile,
     production_runtime_profile,
     uccsd_production_runtime_profile,
 )
@@ -684,8 +685,8 @@ async def vqe_capabilities(scope: CurrentScope) -> CapabilitiesResponse:
                 capability=Capability.H2_STO3G_HARDWARE_EFFICIENT_VQE.value,
                 available=False,
                 reason=(
-                    "independent local adapters are verified, but the exact linux/amd64 "
-                    "OCI runtimes are not yet qualified; execution and publication are blocked"
+                    "attested OCI runtimes exist for private qualification only; "
+                    "public execution and scientific release remain blocked"
                 ),
             ),
         ]
@@ -882,6 +883,17 @@ async def start_execution(
             )
         profile = uccsd_production_runtime_profile(body.preferred_framework)
     elif body.requested_capability is Capability.H2_STO3G_HARDWARE_EFFICIENT_VQE:
+        if not production_execution:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": "hardware_efficient_requires_qualified_runtime",
+                    "message": (
+                        "H2 hardware-efficient execution requires the server-owned, "
+                        "digest-pinned production runtime gate"
+                    ),
+                },
+            )
         if not _matches_h2_hardware_efficient_component_identity(experiment.scientific_spec_json):
             raise HTTPException(
                 status_code=422,
@@ -890,16 +902,7 @@ async def start_execution(
                     "the experiment component identity"
                 ),
             )
-        raise HTTPException(
-            status_code=409,
-            detail={
-                "code": "hardware_efficient_runtime_not_qualified",
-                "message": (
-                    "H2 hardware-efficient execution remains blocked until exact "
-                    "digest-pinned linux/amd64 runtimes are qualified"
-                ),
-            },
-        )
+        profile = hardware_efficient_production_runtime_profile(body.preferred_framework)
     else:
         raise HTTPException(status_code=422, detail="unsupported private VQE capability")
     execution = await vqe_repo.create_execution(

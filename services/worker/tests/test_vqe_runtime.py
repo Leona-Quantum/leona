@@ -6,6 +6,7 @@ import pytest
 
 from majorana_api.vqe_runtime_profiles import (
     candidate_runtime_profile,
+    hardware_efficient_production_runtime_profile,
     profile_for_binding,
     production_runtime_profile,
     uccsd_production_runtime_profile,
@@ -122,6 +123,77 @@ def test_uccsd_report_translates_to_three_parameter_private_evidence(framework, 
     )
     assert evidence.supplementary_evidence["public_execution"] == "blocked"
     assert evidence.supplementary_evidence["scientific_release"] == "blocked"
+
+
+@pytest.mark.parametrize(
+    ("framework", "expected_registry_digest", "expected_platform_digest"),
+    [
+        (
+            Framework.QISKIT,
+            "sha256:1bd4a30499fdb945ee61a89b703d28287eabe2d4dedf610c8a9b4fef6fee555d",
+            "sha256:ad122a102153447add22f0e2578c5d2aabb61533f94ad0636e23418b451ac47c",
+        ),
+        (
+            Framework.PENNYLANE,
+            "sha256:f6977dcf8cdd99b198c739f6d1f33c98dcf840235a40f66c5632dd5adddeb207",
+            "sha256:717f1281c825967330bba99d3e9b8ea85ab6aac29c1c2d4954568af169cda2b4",
+        ),
+    ],
+)
+def test_hardware_efficient_production_profile_is_exact_and_attested(
+    framework,
+    expected_registry_digest,
+    expected_platform_digest,
+):
+    profile = hardware_efficient_production_runtime_profile(framework)
+
+    assert profile.binding.container_digest == expected_registry_digest
+    assert profile.platform_manifest_digest == expected_platform_digest
+    assert profile.binding.production_runtime_status == "qualified"
+    assert profile.entrypoint_kind == "h2_hardware_efficient_stdout_v1"
+    assert profile.runtime_payload_source_commit == ("119df80ac4c642dfa64a7e8468b5c82bec99f7d8")
+    assert profile.provenance_complete is True
+    assert profile_for_binding(profile.binding) is profile
+
+
+@pytest.mark.parametrize(
+    ("framework", "filename"),
+    [
+        (Framework.QISKIT, "qiskit_hardware_efficient_v0.1.json"),
+        (Framework.PENNYLANE, "pennylane_hardware_efficient_v0.1.json"),
+    ],
+)
+def test_hardware_efficient_report_translates_to_eight_parameter_private_evidence(
+    framework,
+    filename,
+):
+    profile = hardware_efficient_production_runtime_profile(framework)
+    report = json.loads((RAW / filename).read_text())
+
+    evidence = build_success_evidence(
+        report,
+        binding=profile.binding,
+        scientific_spec_sha256="1" * 64,
+        registry_resolution_sha256="2" * 64,
+        ansatz_semantic_digest="3" * 64,
+        seed=1729,
+        expected_optimizer_algorithm="scipy_slsqp",
+    )
+
+    assert evidence.capability == "h2_sto3g_hardware_efficient_ry_cx_v1"
+    assert evidence.parameter_count == 8
+    assert [parameter.slot_id for parameter in evidence.final_parameters] == [
+        f"theta.layer{layer}.qubit{qubit}" for layer in range(2) for qubit in range(4)
+    ]
+    assert evidence.absolute_error_ha <= 1e-10
+    assert evidence.final_state_fidelity >= 1 - 1e-10
+    common = evidence.resources[1]
+    assert (common.two_qubit_gate_count, common.depth, common.gate_count) == (6, 7, 14)
+    assert evidence.supplementary_evidence["public_execution"] == "blocked"
+    assert evidence.supplementary_evidence["scientific_release"] == "blocked"
+    assert evidence.supplementary_evidence["comparison_class"] == (
+        "controlled_capability_migration_not_one_component_swap"
+    )
 
 
 @pytest.mark.parametrize(
@@ -435,6 +507,53 @@ async def test_uccsd_production_launcher_uses_frozen_entrypoint_without_cli_over
 
 async def test_uccsd_production_launcher_rejects_optimizer_drift(monkeypatch):
     profile = uccsd_production_runtime_profile(Framework.PENNYLANE)
+    monkeypatch.setenv("MAJORANA_ENV", "production")
+    monkeypatch.setenv("MAJORANA_VQE_RUNTIME_HOST", "dedicated")
+    for name in ("K_SERVICE", "K_REVISION", "K_CONFIGURATION"):
+        monkeypatch.delenv(name, raising=False)
+
+    with pytest.raises(VqeRuntimeError, match="requires the frozen SLSQP"):
+        await OciDockerVqeRuntimeExecutor().run(
+            profile.binding,
+            optimizer_algorithm="scipy_cobyla",
+        )
+
+
+async def test_hardware_efficient_production_launcher_uses_frozen_entrypoint(
+    monkeypatch,
+):
+    profile = hardware_efficient_production_runtime_profile(Framework.QISKIT)
+    report = (RAW / "qiskit_hardware_efficient_v0.1.json").read_bytes()
+    captured = []
+
+    async def create(*command, **kwargs):
+        captured.append((command, kwargs))
+        if command[1:3] == ("image", "inspect"):
+            return _InspectProcess(json.dumps([profile.image_reference]).encode())
+        return _SuccessfulProcess(report)
+
+    monkeypatch.setenv("MAJORANA_ENV", "production")
+    monkeypatch.setenv("MAJORANA_VQE_RUNTIME_HOST", "dedicated")
+    for name in ("K_SERVICE", "K_REVISION", "K_CONFIGURATION"):
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setattr("majorana_worker.vqe_runtime._docker_binary", lambda: "/docker")
+    monkeypatch.setattr("majorana_worker.vqe_runtime.asyncio.create_subprocess_exec", create)
+
+    output = await OciDockerVqeRuntimeExecutor().run(
+        profile.binding,
+        optimizer_algorithm="scipy_slsqp",
+    )
+
+    assert output.payload["capability"] == "h2_sto3g_hardware_efficient_ry_cx_v1"
+    run_command, _run_kwargs = captured[1]
+    image_index = run_command.index(profile.image_reference)
+    assert run_command[image_index + 1 :] == ()
+
+
+async def test_hardware_efficient_production_launcher_rejects_optimizer_drift(
+    monkeypatch,
+):
+    profile = hardware_efficient_production_runtime_profile(Framework.PENNYLANE)
     monkeypatch.setenv("MAJORANA_ENV", "production")
     monkeypatch.setenv("MAJORANA_VQE_RUNTIME_HOST", "dedicated")
     for name in ("K_SERVICE", "K_REVISION", "K_CONFIGURATION"):

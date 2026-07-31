@@ -39,7 +39,7 @@ def _workflow_payload() -> dict[str, object]:
         "parameter_policy": "reset_all",
         "evaluator_provider": "qiskit",
         "request_sha256": "a" * 64,
-        "execution_status": "blocked_until_runtime_qualified",
+        "execution_status": "private_qualification_candidate",
         "publication": "blocked",
         "scientific_release": "blocked",
     }
@@ -53,7 +53,7 @@ def test_machine_validated_gate_accepts_only_bounded_hardware_efficient_v04():
         ("comparison_class", "controlled_one_component_swap"),
         ("dependent_changed_roles", []),
         ("preserved_not_applicable_roles", []),
-        ("execution_status", "private_qualification_candidate"),
+        ("execution_status", "blocked_until_runtime_qualified"),
         ("evaluator_provider", "unregistered"),
         ("publication", "public"),
     ):
@@ -61,18 +61,25 @@ def test_machine_validated_gate_accepts_only_bounded_hardware_efficient_v04():
             vqe._validate_machine_validated_workflow_payload({**payload, field: invalid_value})
 
 
-def test_pending_runtime_metadata_never_claims_a_qualified_profile():
-    metadata = vqe._hardware_efficient_pending_runtime_binding_metadata(
+def test_private_runtime_metadata_is_bound_to_the_exact_qualified_profile():
+    metadata = vqe._hardware_efficient_private_runtime_binding_metadata(
         semantic_key="ansatz.hardware_efficient_ry_cx.v1",
         evaluator_provider="pennylane",
     )
 
-    assert metadata["evidence_level"] == "adapter_tested"
-    assert metadata["runtime_qualification"] == "pending_linux_amd64_oci"
+    assert metadata["evidence_level"] == "runtime_qualified"
+    assert metadata["runtime_qualification"] == "private_qualified"
     assert metadata["qualification_scope"] == ("h2_sto3g_hardware_efficient_ry_cx_v1")
     assert metadata["evaluator_provider"] == "pennylane"
-    assert "runtime_profile_id" not in metadata
-    assert "adapter_release_id" not in metadata
+    assert metadata["runtime_profile_id"] == (
+        "h2-hardware-efficient-pennylane-linux-x86_64-production-v1"
+    )
+    assert metadata["adapter_release_id"] == (
+        "majorana-h2-hardware-efficient-pennylane-adapter-0.4.0"
+    )
+    assert metadata["oci_manifest_digest"] == (
+        "sha256:f6977dcf8cdd99b198c739f6d1f33c98dcf840235a40f66c5632dd5adddeb207"
+    )
     assert metadata["publication"] == "blocked"
 
 
@@ -103,7 +110,7 @@ def _link(
 ) -> SimpleNamespace:
     metadata = None
     if pending_runtime:
-        metadata = vqe._hardware_efficient_pending_runtime_binding_metadata(
+        metadata = vqe._hardware_efficient_private_runtime_binding_metadata(
             semantic_key=component.semantic_key,
             evaluator_provider="qiskit",
         )
