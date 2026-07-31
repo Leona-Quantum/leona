@@ -1450,9 +1450,15 @@
 }
 .mj-shell--workspace {
   display: flex;
-  min-height: 100dvh;
-  height: 100dvh;
+  /* Desktop browser panes can report a transient dynamic viewport shorter than
+     their layout viewport. A fixed 100dvh shell then ends early, and continued
+     wheel input at the inner Run scroller exposes the document canvas below it.
+     Desktop workspace chrome follows the stable layout viewport; narrow mobile
+     screens opt back into dvh below so the composer follows browser UI/keyboard. */
+  min-height: 100vh;
+  height: 100vh;
   overflow: hidden;
+  overscroll-behavior: none;
 }
 .mj-shell-body {
   min-width: 0;
@@ -3978,6 +3984,7 @@
   min-height: 0;
   flex: 1 1 auto;
   overflow-y: auto;
+  overscroll-behavior-y: contain;
   padding: var(--sp-6) var(--sp-12) var(--sp-8);
 }
 .mj-run-task-content {
@@ -6871,6 +6878,10 @@ div.mj-rail-row:hover {
 }
 
 @media (max-width: 720px) {
+  .mj-shell--workspace {
+    min-height: 100dvh;
+    height: 100dvh;
+  }
   .mj-shell--workspace .mj-shell-header {
     padding-inline: var(--sp-3);
   }
