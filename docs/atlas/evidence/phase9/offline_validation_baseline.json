@@ -1,0 +1,69 @@
+{
+  "claim_boundary": "These metrics cover labelled local validator decisions and deterministic replay only. They are not LLM extraction precision, recall, scientific correctness, or official-provider performance.",
+  "classification": "synthetic_validator_contract_not_model_quality",
+  "fixtures": [
+    {
+      "expected_outcome": "accept",
+      "expected_rejection_code": null,
+      "name": "valid_candidate",
+      "response_sha256": "420361cfee4aab36bed850ac2ea47b032cb800f758eb15a6f9e7b388fcb95fbb"
+    },
+    {
+      "expected_outcome": "accept",
+      "expected_rejection_code": null,
+      "name": "honest_zero",
+      "response_sha256": "6ee92d70b70ef9bc3864c0750f133b185cb57116dfffaa4aa8ccaaf703c74e7c"
+    },
+    {
+      "expected_outcome": "reject",
+      "expected_rejection_code": "invalid_candidate_response",
+      "name": "dangling_evidence",
+      "response_sha256": "ee1d4e3adb2927c61f2d2d79a25a66f9b76a54eb84b4bc3c4bfb9f1d29698ce3"
+    },
+    {
+      "expected_outcome": "reject",
+      "expected_rejection_code": "invalid_candidate_response",
+      "name": "lifecycle_escalation",
+      "response_sha256": "1ff03f905fe1092f888b1b8e1e6d104f188ef833396d2c330c818ed3480fcb25"
+    },
+    {
+      "expected_outcome": "reject",
+      "expected_rejection_code": "invalid_candidate_response",
+      "name": "partial_invalid_batch",
+      "response_sha256": "63ac5cd27631633a01a428ec87ab79e36969f01a3421e81c5af25eb3ea295412"
+    },
+    {
+      "expected_outcome": "reject",
+      "expected_rejection_code": "duplicate_response_json_key",
+      "name": "duplicate_json_key",
+      "response_sha256": "dfc08c83de6d99bfdf052948290c15fb2a845af092ca2bf507a6f7cb488cd4ff"
+    },
+    {
+      "expected_outcome": "reject",
+      "expected_rejection_code": "nonfinite_response_number",
+      "name": "nonfinite_number",
+      "response_sha256": "165cae8682f7b3265c1410ff44e05ce10e8d20fdc48001cfdd9073804099bbaa"
+    },
+    {
+      "expected_outcome": "reject",
+      "expected_rejection_code": "invalid_response_json",
+      "name": "prompt_injection_prose",
+      "response_sha256": "18b35f3739da7776946ec41605ce80b736378973ac4406b0537cd57e3ff14ba0"
+    }
+  ],
+  "input_bundle_sha256": "520f8be60035d2edae458ab46f6722778464f610b9248a5ce190a074e39d320a",
+  "metrics": {
+    "contract_decision_accuracy": 1.0,
+    "correct_accept_count": 2,
+    "correct_reject_count": 6,
+    "deterministic_replay_accuracy": 1.0,
+    "deterministic_replay_matches": 8,
+    "expected_accept_count": 2,
+    "expected_reject_count": 6,
+    "fixture_count": 8,
+    "rejection_code_accuracy": 1.0,
+    "stable_rejection_code_matches": 6
+  },
+  "provider_call_performed": false,
+  "schema_version": "atlas.phase9-offline-validation-baseline.v1"
+}

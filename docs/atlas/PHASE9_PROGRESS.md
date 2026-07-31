@@ -10,14 +10,15 @@ Updated: 2026-07-31
 - S3 bounded Phase 8 input assembly: implemented and locally verified;
 - S4 strict whole-response validation and private provenance envelope:
   implemented and locally verified;
-- S5–S6 adversarial corpus and offline evaluation: not yet complete;
+- S5 adversarial corpus: implemented and locally verified;
+- S6 offline contract evaluation: implemented, regenerated, and locally verified;
 - S7 owner-approved live dry run: blocked by design until explicit
   provider/model/budget approval;
 - S8–S12 persistence, review, materialization, E2E, and release audit: not yet
   started.
 
 No live LLM provider was contacted, no credential was read, and no external
-quota was spent in S0–S2.
+quota was spent in S0–S6.
 
 ## S0 boundary
 
@@ -104,14 +105,43 @@ machine state is limited to `schema_and_evidence_validated`, while human review
 is `unreviewed` and both publication and materialization remain false. Request
 tampering is detected by rebuilding and comparing the canonical request.
 
-The `majorana-llm` suite now has 65 passing tests, including 27 focused Phase 9
-tests across S1–S4. These are deterministic contract tests with no provider
+The `majorana-llm` suite now has 66 passing tests, including 28 focused Phase 9
+tests across S1–S6. These are deterministic contract tests with no provider
 call and no extraction-quality measurement.
+
+## S5 adversarial corpus
+
+The labelled synthetic corpus covers eight whole-response cases: one valid
+candidate, one honest zero-candidate response, a dangling evidence reference,
+a lifecycle/publication escalation, a mixed valid-and-invalid batch, duplicate
+JSON keys, a non-finite number, and prompt-injection prose instead of JSON.
+The mixed batch is intentionally rejected in full so an invalid candidate
+cannot be dropped while apparently valid siblings are persisted.
+
+Fixtures contain no real repository source, provider output, credential, or
+human scientific label. They test only local trust-boundary behavior. The
+corpus therefore cannot be used to estimate extraction precision, recall, or
+scientific correctness.
+
+## S6 offline contract evaluation
+
+`evaluate_research_validation_fixtures` runs every labelled response twice and
+measures expected accept/reject decisions, stable rejection-code agreement,
+and deterministic replay. It has no provider or network dependency. The
+regenerable redacted evidence report is stored at
+`docs/atlas/evidence/phase9/offline_validation_baseline.json` with SHA-256
+`3f26c2c0884d1f7458a4a2a1e68c98b4f4c46fb2712b908ee3ecce4999f6a254`.
+
+The report records 8 fixtures, 2 expected accepts, 6 expected rejects, and
+1.0 decision, rejection-code, and deterministic-replay agreement. The report
+itself labels these numbers `synthetic_validator_contract_not_model_quality`
+and records `provider_call_performed=false`. These perfect synthetic contract
+scores are not evidence about a model, official provider, or VQE science.
 
 ## Open gates
 
-S5–S6 must add a dedicated adversarial/labelled corpus and measure schema,
-evidence-reference, unsupported-claim, and replay behavior without presenting
-synthetic results as live-model quality. No live provider call is permitted
-before those gates pass and the owner explicitly approves provider, model, and
-budget.
+S7 remains closed until the owner explicitly approves the live provider, model,
+and maximum budget. Passing S5–S6 does not grant permission to use credentials,
+spend quota, or call a model. S8–S12 remain downstream of a valid private S7
+envelope and must not manufacture or substitute scripted provider output for a
+product qualification run.

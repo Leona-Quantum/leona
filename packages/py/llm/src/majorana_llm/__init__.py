@@ -41,6 +41,11 @@ from majorana_llm.research_extraction import (
     parse_research_candidate_response,
     validate_evidence_references,
 )
+from majorana_llm.research_evaluation import (
+    ResearchValidationFixture,
+    ResearchValidationMetrics,
+    evaluate_research_validation_fixtures,
+)
 
 from majorana_llm.prompts import (
     CHAT_SYSTEM_PROMPT,
@@ -102,4 +107,7 @@ __all__ = [
     "build_research_candidate_envelope",
     "parse_research_candidate_response",
     "validate_evidence_references",
+    "ResearchValidationFixture",
+    "ResearchValidationMetrics",
+    "evaluate_research_validation_fixtures",
 ]
