@@ -218,6 +218,16 @@ _REVIEW_ROUTING: dict[
 }
 
 
+#: The only severities and confidences that clear a review, stated as a positive
+#: permission rather than as a list of prohibitions. A grade this module does not
+#: recognise — a new enum member, a model that answered off-schema, a field that
+#: some later refactor made optional and left unset — is therefore a denial. The
+#: inverse spelling ("severity not in {major, blocking}") reads an absent grade as
+#: permission, which is precisely how a blocking review reaches a user as passed.
+_ACCEPTING_SEVERITIES = frozenset({"none", "minor"})
+_ACCEPTING_CONFIDENCES = frozenset({"high", "medium"})
+
+
 def _decide(
     output: "_IntentReviewOutput",
     deterministic_failed: list[str],
@@ -225,11 +235,20 @@ def _decide(
     """Turn one advisory review into an actionable next step. Never a dead end.
 
     The controller — not the reviewer — owns transitions, so this only has to
-    answer "accept, or fix which layer?". Two rules:
+    answer "accept, or fix which layer?". The verdict and its disposition are two
+    separate questions, asked in that order and never fused:
 
-    * a deterministic failure always blocks acceptance;
-    * an advisory repair must name an observable defect to spend another candidate;
-    * otherwise take the faulty layer the reviewer named, defaulting to the candidate.
+    * VERDICT — does this review clear the candidate? Only a review that passed
+      every deterministic check AND graded itself acceptable does. A blocking or
+      major severity, a low confidence, or a grade this module cannot read is a
+      refusal, and no amount of missing follow-up detail converts it into an
+      acceptance. `_summary_reason_code` publishes READY to the user as
+      "ai_review_aligned", which `apps/web/lib/run-outcome.ts` renders as "the
+      circuit executed and matched the request" — so collapsing a refusal into
+      READY tells a user their circuit passed a review that said it had not.
+    * DISPOSITION — given a refusal, which layer gets the next attempt? Only that
+      second question consults the reviewer's own routing, defaulting to the
+      candidate.
 
     Deliberately no fourth "cannot tell" outcome. That state named no next step,
     so the controller regenerated identical evidence until the candidate budget
@@ -239,23 +258,36 @@ def _decide(
     bounded by the same budget, it feeds the reviewer's own findings back to the
     generator, and two consecutive repairs now escalate to a replan on their own.
 
-    Conversely, uncertainty recorded only as a residual risk does not consume source
-    revisions. The saved artifact remains explicitly INCONCLUSIVE/structural; accepting
-    it here is intent alignment, not a quantum-correctness claim.
+    Within an accepting grade, uncertainty alone does not consume a source
+    revision: a reviewer that asks for another candidate while naming no failed
+    check, no mismatch and no repair instruction has described a residual risk,
+    not a defect, and the artifact still saves as INCONCLUSIVE. That allowance is
+    scoped to a clean grade on purpose. `failed_checks`, `mismatches` and
+    `repair_instructions` all default to `[]` in model-authored JSON, so an empty
+    one is an absence of evidence and must never be read as evidence of absence.
+
+    A refusal is not a failed run. The controller repairs, and if it exhausts its
+    budget the run still delivers on trusted evidence — as
+    `trusted_evidence_without_review_acceptance`, with "intent alignment" listed
+    among the unverified claims. That is the honest surface for this state, and it
+    already exists; reaching it costs a candidate revision, which is cheaper than
+    a wrong sentence on a user's screen.
     """
 
+    graded_acceptable = (
+        output.severity in _ACCEPTING_SEVERITIES and output.confidence in _ACCEPTING_CONFIDENCES
+    )
+    if deterministic_failed or not graded_acceptable:
+        if output.decision is SemanticReviewDecision.REPLAN:
+            return SemanticReviewDecision.REPLAN
+        return SemanticReviewDecision.CODE_REPAIR
+
+    if output.decision is SemanticReviewDecision.READY:
+        return SemanticReviewDecision.READY
     actionable_finding = bool(
         output.failed_checks or output.mismatches or output.repair_instructions
     )
-    if not deterministic_failed and not actionable_finding:
-        return SemanticReviewDecision.READY
-
-    blocked = (
-        bool(deterministic_failed)
-        or output.confidence == "low"
-        or output.severity in {"major", "blocking"}
-    )
-    if output.decision is SemanticReviewDecision.READY and not blocked:
+    if not actionable_finding:
         return SemanticReviewDecision.READY
     if output.decision is SemanticReviewDecision.REPLAN:
         return SemanticReviewDecision.REPLAN
