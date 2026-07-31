@@ -1,6 +1,7 @@
 "use client";
 
 import type { DragEvent, FormEvent, ReactNode } from "react";
+import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { AppShell, BRAND_NAME, NAV_SURFACES, navSurfaceLabel } from "@majorana/ui";
@@ -364,7 +365,11 @@ function ArchiveNotice({ chat, locale, onUndo, onDismiss }: { chat: ChatSummary;
     <div className="mj-archive-notice" role="status" aria-live="polite">
       <span>{copy.chatArchived(chat.title)}</span>
       <button type="button" className="mj-archive-notice-action" onClick={onUndo}>{copy.undo}</button>
-      <a className="mj-archive-notice-action" href="/account#archived">{copy.archivedInSettings}</a>
+      {/* A <Link>, not an <a>: settings is an intercepted route now, and only
+          a client-side navigation opens it as a modal. As a plain anchor this
+          banner would throw away the Run the person is in the middle of, which
+          is the exact thing the modal exists to stop. */}
+      <Link className="mj-archive-notice-action" href="/account#archived">{copy.archivedInSettings}</Link>
       <button type="button" className="mj-archive-notice-close" aria-label={copy.cancel} onClick={onDismiss}>×</button>
     </div>
   );
@@ -867,8 +872,21 @@ function WorkspaceSidebar({
             <div className="mj-sidebar-user-drawer" role="menu" aria-hidden={!userMenuOpen} inert={!userMenuOpen}>
               <div className="mj-sidebar-user-drawer-panel">
                 <div className="mj-sidebar-user-drawer-items">
-                  <a role="menuitem" href="/account"><SettingsIcon size={15} />{copy.settings}</a>
-                  <a role="menuitem" className="mj-sidebar-usage" href="/account#usage">
+                  {/* Both of these are <Link>, and that is the whole feature.
+                      /account is an intercepted route: Next.js turns it into
+                      the centred modal ONLY for client-side navigations, so a
+                      plain <a> here would quietly keep the old behaviour — a
+                      document load onto the full page, discarding whatever Run
+                      or Studio session was open. Nothing would look broken,
+                      which is why it is worth saying twice and why
+                      lib/account-entry-points.test.ts enforces it.
+
+                      The drawer is deliberately NOT closed on the way out. It
+                      stays open, and not inert, behind the dialog — which is
+                      what lets the modal hand focus back to the exact item that
+                      opened it. */}
+                  <Link role="menuitem" href="/account"><SettingsIcon size={15} />{copy.settings}</Link>
+                  <Link role="menuitem" className="mj-sidebar-usage" href="/account#usage">
                     <span>{copy.usageLimits}</span>
                     {usageLine ? (
                       <span className="mj-sidebar-usage-detail" data-spent={usage?.runs.exhausted ? "" : undefined}>
@@ -876,12 +894,23 @@ function WorkspaceSidebar({
                         {nextSlotLine ? <small>{nextSlotLine}</small> : null}
                       </span>
                     ) : null}
-                  </a>
+                  </Link>
+                  {/* Stays an anchor. /auth/sign-out is a route handler that
+                      clears the session and redirects; there is no page for a
+                      client-side navigation to render. */}
                   <a role="menuitem" className="is-danger" href="/auth/sign-out">{copy.signOut}</a>
                 </div>
               </div>
             </div>
-            <button className="mj-sidebar-user" type="button" aria-label={copy.accountMenu} aria-expanded={userMenuOpen} onClick={() => setUserMenuOpen((value) => !value)}>
+            {/* `data-modal-return-focus`: where a modal sends focus when it
+                cannot send it back to whatever opened it. The settings dialog
+                normally returns to the drawer item that was clicked, but a
+                click on that dialog's backdrop counts as a click outside the
+                drawer and dismisses it — putting that item inside an `inert`
+                subtree, where .focus() silently does nothing. This button is
+                the drawer's own toggle, and the same place Escape already
+                returns focus to, so it is the honest next-best answer. */}
+            <button className="mj-sidebar-user" type="button" data-modal-return-focus="" aria-label={copy.accountMenu} aria-expanded={userMenuOpen} onClick={() => setUserMenuOpen((value) => !value)}>
               <span className="mj-avatar">{sidebarInitial}</span>
               <span className="mj-sidebar-user-copy mj-sidebar-copy">
                 <strong>{sidebarGreeting}</strong>

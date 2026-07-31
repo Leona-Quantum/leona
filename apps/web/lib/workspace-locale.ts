@@ -1271,6 +1271,13 @@ export const ACCOUNT_COPY: Record<PublicLocale, {
   title: string;
   lede: string;
   signOut: string;
+  /** Dismissal of the settings modal. Its own key rather than the sidebar's
+   * `cancel`, because "Cancel" is the wrong word for a surface that saves as
+   * you go — nothing is being abandoned, a panel is being put away. */
+  close: string;
+  /** Names the modal's scrollable region, which a keyboard user can focus in
+   * order to scroll it. The dialog's own name comes from the page's <h1>. */
+  settingsRegion: string;
   preferences: string;
   language: string;
   languageHelp: string;
@@ -1352,6 +1359,8 @@ export const ACCOUNT_COPY: Record<PublicLocale, {
     title: "Settings",
     lede: "Your identity, your saved artifacts, the workspaces you can open, and display preferences.",
     signOut: "Sign out",
+    close: "Close settings",
+    settingsRegion: "Settings",
     preferences: "Preferences",
     language: "Language",
     languageHelp: "Choose the language used for shared navigation and account settings.",
@@ -1438,6 +1447,8 @@ export const ACCOUNT_COPY: Record<PublicLocale, {
     title: "設定",
     lede: "プロフィール、保存した回路・実行記録、ワークスペース、表示設定を管理します。",
     signOut: "サインアウト",
+    close: "設定を閉じる",
+    settingsRegion: "設定",
     preferences: "表示設定",
     language: "言語",
     languageHelp: "共通ナビゲーションとアカウント設定で使用する言語を選択します。",

@@ -2430,6 +2430,80 @@
   border-color: var(--err);
 }
 
+/* ---------- settings modal (the intercepted /account route) ---------- */
+/* Set on <body> for as long as a modal is up. The workspace surfaces scroll
+   inside their own panes rather than on the document, so this is usually a
+   no-op — but /account as a full page does scroll the document, and a wheel
+   gesture that runs out of modal must not start moving what is behind it.
+   `overscroll-behavior` below stops the chaining; this stops the rest. */
+.mj-modal-open {
+  overflow: hidden;
+}
+.mj-account-modal-backdrop {
+  position: fixed;
+  z-index: 100;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  /* Load-bearing, and it does not look it. `place-items: center` alone leaves
+     the row auto-sized to its content, and the dialog's `max-height: 100%`
+     then resolves against that content — i.e. against itself, which is no
+     constraint at all. Measured before this line: an 860px viewport, a 1252px
+     dialog, and a settings panel running off the bottom of the screen with
+     nothing to scroll. A definite row makes the percentage mean the viewport. */
+  grid-template-rows: minmax(0, 1fr);
+  padding: var(--sp-6);
+  background: color-mix(in srgb, var(--bg-0) 78%, transparent);
+}
+.mj-account-modal {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  width: min(100%, 860px);
+  /* The backdrop's padding is the breathing room; the dialog takes the rest.
+     Settings is long — preferences, identity, archive, usage, billing — so on
+     a short viewport this is a hard ceiling and the body below scrolls, rather
+     than the dialog growing off the screen. */
+  max-height: 100%;
+  border: 1px solid var(--border-0);
+  border-radius: var(--radius-card);
+  background: var(--bg-1);
+  box-shadow: var(--shadow-popover);
+}
+/* The shell takes focus on open so the dialog is announced; it is not a Tab
+   stop and does not need a ring of its own. */
+.mj-account-modal:focus-visible {
+  outline: none;
+}
+.mj-account-modal-close {
+  position: absolute;
+  z-index: 1;
+  top: var(--sp-4);
+  right: var(--sp-4);
+}
+.mj-account-modal-body {
+  min-height: 0;
+  flex: 1 1 auto;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: var(--sp-8);
+}
+/* The shared header ends in a Sign out button, and the close control sits over
+   the same corner — so the header gives way rather than the two overlapping.
+   Scoped to this component's class: a bare `.mj-page-header` rule would reach
+   the full page too. */
+.mj-account-modal .mj-page-header {
+  padding-right: var(--sp-10);
+}
+@media (max-width: 720px) {
+  .mj-account-modal-backdrop {
+    padding: var(--sp-3);
+  }
+  .mj-account-modal-body {
+    padding: var(--sp-5);
+  }
+}
+
 .mj-delete-dialog-backdrop {
   position: fixed;
   z-index: 100;
