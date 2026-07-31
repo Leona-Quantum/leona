@@ -1,5 +1,6 @@
 import json
 
+import pytest
 from majorana_agent import SimplePlan, parse_simple_plan
 from majorana_agent.templates import known_reference_for_task
 from majorana_contracts.enums import Framework, MeasurementPolicy
@@ -132,6 +133,10 @@ def test_declared_reference_hamiltonian_reaches_the_durable_plan():
     terms = durable.verification_plan.reference_hamiltonian
     assert terms is not None
     assert [term.pauli for term in terms] == ["II", "IZ", "ZI", "ZZ", "XX"]
+    assert durable.verification_plan.thresholds is not None
+    assert durable.verification_plan.thresholds["ground_state_energy_Ha_error_max"] == (
+        pytest.approx(0.01020229665)
+    )
 
 
 def test_declared_tolerance_lands_under_the_metric_specific_threshold_key():
@@ -142,6 +147,18 @@ def test_declared_tolerance_lands_under_the_metric_specific_threshold_key():
 
     assert durable.verification_plan is not None
     assert durable.verification_plan.thresholds == {"ground_state_energy_Ha_error_max": 0.002}
+
+
+def test_shot_based_vqe_keeps_the_verifiers_sampling_aware_tolerance():
+    simple = parse_simple_plan(json.dumps(_exact_diag_payload()))
+    durable = simple.to_durable_plan(
+        selected_framework=Framework.QISKIT,
+        requested_shots=1024,
+        requested_seed=None,
+    )
+
+    assert durable.verification_plan is not None
+    assert durable.verification_plan.thresholds is None
 
 
 def test_exact_diag_without_a_hamiltonian_degrades_instead_of_failing_the_run():
@@ -156,6 +173,35 @@ def test_exact_diag_without_a_hamiltonian_degrades_instead_of_failing_the_run():
     payload["verification_plan"].pop("reference_hamiltonian")
 
     assert _durable(payload).verification_plan is None
+
+
+def test_exact_diag_rejects_a_finite_time_observable_with_incompatible_units():
+    payload = _exact_diag_payload()
+    payload.update(
+        {
+            "algorithm": "Simulation",
+            "problem_summary": "Evolve an Ising chain to t=0.8 and report magnetization",
+            "algorithm_rationale": "Suzuki-Trotter approximates finite-time dynamics",
+            "success_criteria": {"primary_metric": "magnetization_z"},
+            "expected_output_keys": ["magnetization_z"],
+        }
+    )
+
+    with pytest.raises(ValueError, match="ground-state energy/minimum eigenvalue"):
+        parse_simple_plan(json.dumps(payload))
+
+
+def test_exact_diag_allows_a_non_vqe_exact_ground_state_calculation():
+    payload = _exact_diag_payload()
+    payload.update(
+        {
+            "algorithm": "Simulation",
+            "problem_summary": "Compute the Hamiltonian ground state by exact diagonalization",
+            "algorithm_rationale": "The lowest eigenvalue is the requested result",
+        }
+    )
+
+    assert _durable(payload).verification_plan is not None
 
 
 def test_unsupported_reference_method_is_normalized_away():

@@ -1,0 +1,16 @@
+id: bench-19
+category: "E — QAOA weighted MaxCut"
+prompt: >-
+  Solve weighted MaxCut with QAOA p=2 on five nodes using weighted edges
+  (0,1,1), (1,2,2), (2,3,1), (3,4,2), (4,0,1), and (0,2,1).
+  Use at least 2048 shots and return the best observed cut value as the
+  top-level numeric RESULT key cut_value, together with counts. The classical
+  optimum is 7.
+framework: qiskit
+expect:
+  terminal_reason: ai_review_aligned_with_reference_check
+  output_keys: ["cut_value", "counts"]
+  expected_values:
+    cut_value: 7.0
+  expected_value_tolerance: 0.0
+  saves_artifact: true

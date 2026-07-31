@@ -1,8 +1,14 @@
 id: bench-18
 category: "E — QAOA MaxCut"
-prompt: "Solve MaxCut on a triangle graph with QAOA (p=1)."
+prompt: >-
+  Solve MaxCut on a triangle graph with unit-weight edges (0,1), (1,2), and
+  (2,0) using QAOA (p=1). Return the best cut value as the top-level numeric
+  RESULT key cut_value.
 framework: qiskit
 expect:
-  terminal_reason: ai_review_aligned
+  terminal_reason: ai_review_aligned_with_reference_check
   output_keys: ["cut_value"]
+  expected_values:
+    cut_value: 2.0
+  expected_value_tolerance: 0.0
   saves_artifact: true

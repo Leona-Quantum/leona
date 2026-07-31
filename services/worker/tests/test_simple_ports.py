@@ -802,6 +802,7 @@ async def test_second_intent_review_attempt_has_a_distinct_metering_request():
     outcome = await SimpleCircuitPipeline(ports=ports).run(uuid4())
 
     assert outcome.status is SimplePipelineStatus.SUCCEEDED
+    assert outcome.review is not None and outcome.review.attempt_seq == 1
     assert len(review_llm.requests) == 2
     assert '"review_attempt": 1' in review_llm.requests[0].user
     assert '"review_attempt": 2' in review_llm.requests[1].user
@@ -1203,6 +1204,45 @@ def test_failed_reference_check_routes_to_code_repair_not_inconclusive():
     assert routing == (SemanticReviewDecision.CODE_REPAIR, "reference_check_failed")
 
 
+def test_expected_range_that_excludes_reference_truth_routes_directly_to_replan():
+    plan, execution = _vqe_plan(-1.419)
+    plan = plan.model_copy(
+        update={
+            "success_criteria": plan.success_criteria.model_copy(
+                update={"expected_range": {"min": -1.0, "max": -0.5}}
+            )
+        }
+    )
+
+    routing = _reference_check_routing(
+        _reference_checks(plan, execution),
+        simple_ports_module._success_criteria_check(plan, execution),
+    )
+
+    assert routing == (
+        SemanticReviewDecision.REPLAN,
+        "success_criteria_excludes_reference_truth",
+    )
+
+
+def test_valid_tight_range_still_routes_an_inaccurate_candidate_to_code_repair():
+    plan, execution = _vqe_plan(-1.419)
+    plan = plan.model_copy(
+        update={
+            "success_criteria": plan.success_criteria.model_copy(
+                update={"expected_range": {"min": -1.14, "max": -1.13}}
+            )
+        }
+    )
+
+    routing = _reference_check_routing(
+        _reference_checks(plan, execution),
+        simple_ports_module._success_criteria_check(plan, execution),
+    )
+
+    assert routing == (SemanticReviewDecision.CODE_REPAIR, "reference_check_failed")
+
+
 def test_unusable_reference_declaration_is_blamed_on_the_plan():
     """A reference the verifier cannot use fails identically on every candidate.
 
@@ -1355,12 +1395,28 @@ async def _decide(payload: str, checks=None) -> SimpleIntentReviewResult:
             _critic(decision="code_repair", severity="minor", repair_instructions=["add cx"]),
             SemanticReviewDecision.CODE_REPAIR,
         ),
-        # An unhedged blocker is still a blocker, whatever the model called it.
-        (_critic(severity="blocking"), SemanticReviewDecision.CODE_REPAIR),
-        (_critic(confidence="low"), SemanticReviewDecision.CODE_REPAIR),
-        (_critic(decision="replan", severity="major"), SemanticReviewDecision.REPLAN),
-        # A model that answers "cannot tell" anyway is routed, not parked.
-        (_critic(decision="inconclusive", confidence="low"), SemanticReviewDecision.CODE_REPAIR),
+        # Confidence/severity without an observable defect is a residual risk, not a
+        # reason to spend another source revision.
+        (_critic(severity="blocking"), SemanticReviewDecision.READY),
+        (_critic(confidence="low"), SemanticReviewDecision.READY),
+        (
+            _critic(
+                severity="blocking",
+                failed_checks=["source omits the requested entangling gate"],
+            ),
+            SemanticReviewDecision.CODE_REPAIR,
+        ),
+        (
+            _critic(
+                decision="replan",
+                severity="major",
+                mismatches=["the Plan targets the wrong algorithm"],
+            ),
+            SemanticReviewDecision.REPLAN,
+        ),
+        # A model that answers "cannot tell" without a defect cannot burn the
+        # candidate budget; the final artifact still carries an inconclusive grade.
+        (_critic(decision="inconclusive", confidence="low"), SemanticReviewDecision.READY),
     ],
 )
 async def test_every_review_outcome_names_an_actionable_next_step(payload, expected):

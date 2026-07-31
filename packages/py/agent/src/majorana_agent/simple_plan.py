@@ -31,7 +31,7 @@ from majorana_contracts.plan import (
     VerificationPlan,
 )
 from majorana_llm import StageOutputError, extract_json
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class _SimplePlanModel(BaseModel):
@@ -126,7 +126,12 @@ class SimpleVerificationPlan(_SimplePlanModel):
     reference_problem: SimpleReferenceProblem | None = None
     tolerance: float | None = Field(default=None, gt=0)
 
-    def to_durable_verification_plan(self, *, primary_metric: str) -> VerificationPlan | None:
+    def to_durable_verification_plan(
+        self,
+        *,
+        primary_metric: str,
+        shots: int | None,
+    ) -> VerificationPlan | None:
         """Emit a durable VerificationPlan, or None when nothing checkable remains.
 
         Drops a method whose reference the planner did not actually supply rather
@@ -147,6 +152,21 @@ class SimpleVerificationPlan(_SimplePlanModel):
             methods.remove("brute_force")
         if not methods:
             return None
+        tolerance = self.tolerance
+        if "exact_diag" in methods and shots is None and self.reference_hamiltonian:
+            # Statevector expectation values have no sampling uncertainty. The
+            # verifier's general 2%-of-Hamiltonian-scale optimizer allowance is
+            # intentionally permissive for shot-based product runs, but it accepted
+            # a live six-qubit VQE 0.067 above the exact energy as research-ready.
+            # Tighten exact-expectation Plans to 0.5% of operator L1 scale while
+            # retaining a small absolute floor for near-zero normalized operators.
+            scale = sum(abs(term.coefficient) for term in self.reference_hamiltonian)
+            exact_expectation_tolerance = max(1e-3, 0.005 * scale)
+            tolerance = (
+                exact_expectation_tolerance
+                if tolerance is None
+                else min(tolerance, exact_expectation_tolerance)
+            )
         return VerificationPlan(
             methods=[VerificationMethod(method) for method in methods],
             reference_hamiltonian=(
@@ -173,9 +193,7 @@ class SimpleVerificationPlan(_SimplePlanModel):
             # first, so keep the historical `<metric>_error_max` spelling rather than
             # inventing a second convention for the same number.
             thresholds=(
-                {f"{primary_metric}_error_max": self.tolerance}
-                if self.tolerance is not None
-                else None
+                {f"{primary_metric}_error_max": tolerance} if tolerance is not None else None
             ),
         )
 
@@ -197,6 +215,49 @@ class SimplePlan(_SimplePlanModel):
     expected_output_keys: list[str] = Field(min_length=1)
     artifact_contract: SimpleArtifactContract = Field(default_factory=SimpleArtifactContract)
     verification_plan: SimpleVerificationPlan | None = None
+
+    @model_validator(mode="after")
+    def _exact_diag_is_only_for_a_ground_state_metric(self) -> "SimplePlan":
+        """Reject a reference whose units cannot match the reported metric.
+
+        ``exact_diag`` computes the minimum eigenvalue of the declared Hamiltonian.
+        It cannot independently verify a finite-time observable such as
+        magnetization, fidelity, or transition probability. Letting such a Plan
+        through deterministically sends every correct candidate into code repair,
+        because the verifier compares quantities with different units.
+        """
+
+        verification = self.verification_plan
+        if (
+            verification is None
+            or "exact_diag" not in verification.methods
+            or not verification.reference_hamiltonian
+        ):
+            return self
+        if self.algorithm is Algorithm.VQE:
+            return self
+        metric = self.success_criteria.primary_metric.strip().lower()
+        description = f"{self.problem_summary} {self.algorithm_rationale}".lower()
+        energy_metric = any(token in metric for token in ("energy", "eigenvalue"))
+        ground_state_claim = any(
+            phrase in description
+            for phrase in (
+                "ground state",
+                "ground-state",
+                "minimum eigenvalue",
+                "lowest eigenvalue",
+            )
+        )
+        if energy_metric and ground_state_claim:
+            return self
+        raise ValueError(
+            "verification_plan.methods includes 'exact_diag', but exact_diag verifies "
+            "only a reported Hamiltonian ground-state energy/minimum eigenvalue. It "
+            f"cannot verify primary_metric {self.success_criteria.primary_metric!r}. "
+            "For time evolution, magnetization, fidelity, or another observable, "
+            "drop exact_diag and omit verification_plan unless an independent "
+            "same-unit reference is available."
+        )
 
     def to_durable_plan(
         self,
@@ -261,7 +322,10 @@ class SimplePlan(_SimplePlanModel):
             expected_output_keys=keys,
             artifact_contract=artifact_contract,
             verification_plan=(
-                self.verification_plan.to_durable_verification_plan(primary_metric=metric)
+                self.verification_plan.to_durable_verification_plan(
+                    primary_metric=metric,
+                    shots=parameters.get("shots"),
+                )
                 if self.verification_plan is not None
                 else None
             ),

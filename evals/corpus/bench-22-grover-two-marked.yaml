@@ -1,0 +1,17 @@
+id: bench-22
+category: "F — Multi-solution amplitude amplification"
+prompt: >-
+  Use Grover amplitude amplification in Qiskit on five search qubits with
+  exactly two marked bitstrings, 10101 and 01010 in Qiskit measurement order.
+  Use the analytically appropriate three Grover iterations and 4096 shots.
+  Return counts and the combined measured probability of the two marked
+  strings as the top-level numeric RESULT key marked_probability.
+framework: qiskit
+expect:
+  terminal_reason: ai_review_aligned
+  export_status: lossless
+  output_keys: ["counts", "marked_probability"]
+  expected_values:
+    marked_probability: 0.9613189697
+  expected_value_tolerance: 0.04
+  saves_artifact: true
