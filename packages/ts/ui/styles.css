@@ -1,7 +1,7 @@
 /* Component styles for @majorana/ui — consumes tokens.css variables only.
  * No raw hex here (CI-enforced); values come from tokens.
  * Only permitted animations (spec §0.3): rail state transitions (150ms ease-out
- * opacity/color), skeleton shimmer, toast enter/exit. */
+ * opacity/color), skeleton/activity shimmer, the running-dot pulse, and toast enter/exit. */
 
 /* ---------- app shell ---------- */
 .mj-shell {
@@ -3417,6 +3417,22 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.mj-agent-activity[aria-busy="true"] .mj-agent-activity-head strong {
+  color: var(--text-1);
+  background: linear-gradient(
+    110deg,
+    var(--text-1) 30%,
+    var(--text-0) 46%,
+    var(--accent) 50%,
+    var(--text-0) 54%,
+    var(--text-1) 70%
+  );
+  background-clip: text;
+  background-size: 240% 100%;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: mj-agent-text-shimmer 2.4s linear infinite;
+}
 .mj-agent-activity-label {
   display: flex;
   align-items: center;
@@ -3583,6 +3599,20 @@
 @media (prefers-reduced-motion: reduce) {
   .mj-agent-activity-live-dot,
   .mj-agent-activity-item[data-state="active"] .mj-agent-activity-meta > span > span {
+    animation: none;
+  }
+  .mj-agent-activity[aria-busy="true"] .mj-agent-activity-head strong {
+    color: var(--text-1);
+    background: none;
+    -webkit-text-fill-color: currentColor;
+    animation: none;
+  }
+}
+@media (forced-colors: active) {
+  .mj-agent-activity[aria-busy="true"] .mj-agent-activity-head strong {
+    color: CanvasText;
+    background: none;
+    -webkit-text-fill-color: currentColor;
     animation: none;
   }
 }
@@ -3858,6 +3888,10 @@
   50% {
     opacity: 0.3;
   }
+}
+@keyframes mj-agent-text-shimmer {
+  from { background-position: 100% 0; }
+  to { background-position: -100% 0; }
 }
 @media (max-width: 640px) {
   .mj-chat-message--run {
