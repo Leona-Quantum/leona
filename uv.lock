@@ -1150,6 +1150,7 @@ version = "0.1.0"
 source = { editable = "packages/py/llm" }
 dependencies = [
     { name = "majorana-contracts" },
+    { name = "majorana-research-extraction" },
     { name = "pydantic" },
 ]
 
@@ -1165,6 +1166,7 @@ openai = [
 requires-dist = [
     { name = "anthropic", marker = "extra == 'anthropic'", specifier = ">=0.40" },
     { name = "majorana-contracts", editable = "packages/py/contracts" },
+    { name = "majorana-research-extraction", editable = "packages/py/research-extraction" },
     { name = "openai", marker = "extra == 'openai'", specifier = ">=1.50" },
     { name = "pydantic", specifier = ">=2.8" },
 ]

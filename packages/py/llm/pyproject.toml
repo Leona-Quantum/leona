@@ -3,7 +3,11 @@ name = "majorana-llm"
 version = "0.1.0"
 description = "LLM client, per-stage model constants, and system prompts for the pipeline"
 requires-python = ">=3.12"
-dependencies = ["pydantic>=2.8", "majorana-contracts"]
+dependencies = [
+    "pydantic>=2.8",
+    "majorana-contracts",
+    "majorana-research-extraction",
+]
 
 [project.optional-dependencies]
 # Real provider clients. Kept optional so the core package can be imported for
@@ -22,3 +26,4 @@ packages = ["src/majorana_llm"]
 
 [tool.uv.sources]
 majorana-contracts = { workspace = true }
+majorana-research-extraction = { workspace = true }
