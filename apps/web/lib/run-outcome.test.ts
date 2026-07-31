@@ -55,7 +55,7 @@ test("provider failures use stable user-facing copy", () => {
     {
       type: "run.error",
       stage: "generate",
-      message: "planner provider call failed (deepseek:rate_limited, HTTP 429)",
+      message: "planner provider call failed (rate_limited, HTTP 429)",
     },
     { type: "run.finished", status: "failed" },
   ]);

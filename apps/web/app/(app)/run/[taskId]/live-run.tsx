@@ -1005,7 +1005,6 @@ function durationLabel(durationMs: number | undefined): string | null {
 function ModelCallMeta({ event }: { event: WireEvent | null }) {
   if (!event) return null;
   const parts = [
-    event.model,
     durationLabel(event.duration_ms),
     event.input_tokens !== undefined && event.output_tokens !== undefined
       ? `${event.input_tokens.toLocaleString()} in · ${event.output_tokens.toLocaleString()} out`
@@ -1168,27 +1167,57 @@ function CompilationStage({ event }: { event: WireEvent }) {
 function PlanStage({ event }: { event: WireEvent }) {
   const plan = event.plan;
   if (!plan) return null;
-  const facts = [
-    ["Algorithm", plan.algorithm],
+  const executionFacts = [
     ["Framework", plan.framework],
     ["Qubits", plan.qubits_estimate],
     ["Shots", plan.parameters?.shots],
     ["Seed", plan.parameters?.seed],
-    ["Expected runtime", plan.expected_runtime_sec !== undefined ? `${plan.expected_runtime_sec} s` : null],
-    ["Primary metric", plan.success_criteria?.primary_metric],
-    ["Outputs", plan.expected_output_keys?.join(", ")],
+    ["Runtime", plan.expected_runtime_sec !== undefined ? `${plan.expected_runtime_sec} s` : null],
   ].filter((entry): entry is [string, string | number] => entry[1] !== undefined && entry[1] !== null && entry[1] !== "");
+  const primaryMetric = plan.success_criteria?.primary_metric;
+  const outputs = plan.expected_output_keys?.filter(Boolean) ?? [];
   return (
-    <div className="mj-run-live-plan">
-      {plan.algorithm_rationale ? <p>{plan.algorithm_rationale}</p> : null}
-      <dl className="mj-run-live-facts">
-        {facts.map(([label, value]) => (
-          <div key={label}>
-            <dt>{label}</dt>
-            <dd>{value}</dd>
+    <div className="mj-run-plan-overview">
+      <header className="mj-run-plan-summary">
+        <div className="mj-run-plan-copy">
+          <span>Proposed approach</span>
+          {plan.algorithm_rationale ? <p>{plan.algorithm_rationale}</p> : null}
+        </div>
+        {plan.algorithm ? (
+          <div className="mj-run-plan-algorithm">
+            <span>Algorithm</span>
+            <strong>{plan.algorithm}</strong>
           </div>
-        ))}
-      </dl>
+        ) : null}
+      </header>
+      {executionFacts.length ? (
+        <dl className="mj-run-plan-metrics">
+          {executionFacts.map(([label, value]) => (
+            <div key={label}>
+              <dt>{label}</dt>
+              <dd>{value}</dd>
+            </div>
+          ))}
+        </dl>
+      ) : null}
+      {primaryMetric || outputs.length ? (
+        <div className="mj-run-plan-contract">
+          {primaryMetric ? (
+            <div>
+              <span>Optimizes</span>
+              <strong>{primaryMetric}</strong>
+            </div>
+          ) : null}
+          {outputs.length ? (
+            <div>
+              <span>Returns</span>
+              <ul aria-label="Expected outputs">
+                {outputs.map((output) => <li key={output}>{output}</li>)}
+              </ul>
+            </div>
+          ) : null}
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -1584,8 +1613,7 @@ function RunActivityDetailPanel({
     const call = detail.callIndex === null ? null : events[detail.callIndex];
     return event ? (
       <div className="mj-run-activity-detail-stack">
-        <section>
-          <div className="mj-run-activity-section-head"><strong>Approach</strong></div>
+        <section className="mj-run-plan-section">
           <PlanStage event={event} />
           <EventMeta event={call} />
         </section>
