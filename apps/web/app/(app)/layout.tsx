@@ -13,7 +13,14 @@ import { scopeMayAdoptLegacyData, storageScopeId } from "../../lib/storage-scope
 
 // Authed surface shell (Run / Library / Account). Middleware already gates these
 // routes; withAuth here only supplies the header identity.
-export default async function AppLayout({ children }: { children: ReactNode }) {
+//
+// `modal` is a parallel route slot (`@modal`). It renders ALONGSIDE `children`
+// rather than instead of it, which is what lets settings open over a Run
+// without unmounting it — the screen underneath keeps its scroll position, its
+// in-flight stream and its component state, and closing the modal reveals it
+// untouched. On every route the slot does not match it renders
+// @modal/default.tsx, which is nothing at all.
+export default async function AppLayout({ children, modal }: { children: ReactNode; modal: ReactNode }) {
   const [auth, locale, workspace] = await Promise.all([
     getMajoranaAuth({ ensureSignedIn: true }),
     getPublicLocale(),
@@ -60,6 +67,15 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
         */}
         <InviteNotice locale={locale} />
         {children}
+        {/*
+          Inside the Shell, not around it, for two reasons. The settings panels
+          read chats and archived chats out of storage keyed by the StorageScope
+          above — outside it they would read another account's data, or none.
+          And the dialog is `position: fixed`, so sitting in the content column
+          costs it nothing: it still covers the sidebar. (The sidebar's own
+          confirm dialogs already depend on that being true.)
+        */}
+        {modal}
       </Shell>
     </StorageScope>
   );
