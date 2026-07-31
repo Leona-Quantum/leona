@@ -26,9 +26,7 @@ pytestmark = pytest.mark.asyncio
 
 
 async def _explain(db, stmt) -> str:
-    compiled = stmt.compile(
-        dialect=db.bind.dialect, compile_kwargs={"literal_binds": True}
-    )
+    compiled = stmt.compile(dialect=db.bind.dialect, compile_kwargs={"literal_binds": True})
     result = await db.execute(text(f"EXPLAIN (COSTS OFF) {compiled}"))
     return "\n".join(row[0] for row in result.all())
 
