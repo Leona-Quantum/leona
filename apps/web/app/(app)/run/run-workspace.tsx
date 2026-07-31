@@ -328,30 +328,27 @@ function RunGreeting({ copy }: { copy: (typeof WORKSPACE_COPY)[PublicLocale]["ru
 }
 
 /**
- * The examples, as titles only.
+ * One button, and the full set behind it.
  *
- * This used to be a ticker that rotated one example every six seconds and
- * printed its full prompt sentence — the same sentence the composer's
- * placeholder is now typing out a few pixels above it. Two copies of the same
- * paragraph on one screen is exactly the crowding the surface is being thinned
- * of, so the strip keeps the part the composer cannot show (the whole set, at a
- * glance) and drops the part it duplicates.
+ * This has now shed two layers. It was a ticker printing the same paragraph the
+ * composer's placeholder types a few pixels above it; then a heading plus a row
+ * of title chips. The chips were a third listing of prompts on a screen that
+ * already types one and holds the rest one click away, and the heading named a
+ * section whose entire content was that duplication. What is left is the part
+ * neither of the others can do: reach every prompt, with its full sentence, on
+ * demand.
+ *
+ * `examplesTitle` stays as the section's accessible name. The heading is gone
+ * visually, but a landmark with no name is worse for a screen reader than one
+ * with a name nobody sees.
  */
 function ExampleStrip({ copy, onPick }: { copy: (typeof WORKSPACE_COPY)[PublicLocale]["run"]; onPick: (prompt: string) => void }) {
   const [expanded, setExpanded] = useState(false);
   const allPrompts = [...copy.examples, ...copy.morePrompts];
 
   return (
-    <section className="mj-run-home-examples" aria-labelledby="examples-title">
-      <div className="mj-run-home-examples-head">
-        <h2 id="examples-title">{copy.examplesTitle}</h2>
-      </div>
+    <section className="mj-run-home-examples" aria-label={copy.examplesTitle}>
       <div className="mj-example-strip">
-        {copy.examples.map((example) => (
-          <button className="mj-example-chip" type="button" key={example.title} onClick={() => onPick(example.prompt)}>
-            {example.title}
-          </button>
-        ))}
         <button className="mj-secondary-button mj-example-more" type="button" aria-expanded={expanded} onClick={() => setExpanded((current) => !current)}>
           {expanded ? copy.examplesClose : copy.examplesMore}
         </button>
