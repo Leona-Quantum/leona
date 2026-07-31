@@ -1,14 +1,15 @@
 // Story list rendered to static HTML by scripts/render.mjs. Each story is a single real
 // @majorana/ui component instance in a known state; the a11y test asserts each is free of
-// WCAG violations. Coverage target (spec §5 step 2): every StageRail state in both the
+// WCAG violations. Coverage target (spec §5 step 2): every AgentActivity terminal state,
+// every StageRail state in both the
 // interactive (button rows) and non-interactive (div rows) paths, every VerdictBanner
 // verdict, EmptyState with and without an action, and the composed RunView across the
 // verified / mid-run / failed / queued fixtures.
 import type { ReactNode } from "react";
 import {
+  AgentActivity,
   EmptyState,
   RunOutcome,
-  RunProgress,
   RunView,
   StageRail,
   VerdictBanner,
@@ -41,13 +42,16 @@ const ALL_PASS: RailStage[] = MID_RUN.map((s) => ({
 
 const ALL_PENDING: RailStage[] = MID_RUN.map((s) => ({ id: s.id, name: s.name, state: "pending" }));
 
-const RUN_PROGRESS_ITEMS = [
-  { id: "plan", title: "Plan", detail: "Bell · qiskit · 2 qubits", state: "done" as const },
-  { id: "generate", title: "Generate", detail: "Revision 1 ready", state: "done" as const },
-  { id: "execute", title: "Execute", detail: "Sandbox completed in 1.2 s", state: "done" as const },
-  { id: "review", title: "Review", detail: "Check request, code, and result alignment", state: "active" as const },
-  { id: "save", title: "Save", detail: "Package the private artifact and optional OpenQASM", state: "waiting" as const },
+const AGENT_ACTIVITY_ITEMS = [
+  { id: "plan", icon: "plan" as const, label: "Plan", title: "Bell · Qiskit · 2 qubits", state: "done" as const, status: "Complete", meta: "2.1 s", detail: "Prepare and measure a Bell state." },
+  { id: "generate", icon: "code" as const, label: "Generated code", title: "Qiskit source produced", state: "done" as const, status: "Revision 1", meta: "8.4 s", detail: "Revision 1 is retained and ready to copy." },
+  { id: "execute", icon: "run" as const, label: "Sandbox execution", title: "The candidate returned structured output", state: "done" as const, status: "Passed", meta: "1.2 s", detail: "Sandbox completed with network access disabled." },
+  { id: "verify", icon: "verify" as const, label: "Verification", title: "Checking the measured distribution", state: "active" as const, status: "Checking", detail: "Comparing the candidate against the declared evidence." },
 ];
+
+function renderAgentActivityDetail(item: { detail: string }): ReactNode {
+  return <p>{item.detail}</p>;
+}
 
 // One rail exercising every state at once (pass / running / skipped / fail / pending).
 const ALL_STATES: RailStage[] = [
@@ -135,12 +139,12 @@ export const STORIES: Story[] = [
     node: (
       <RunOutcome
         outcome={{
-          tone: "err",
-          eyebrow: "Run incomplete",
-          title: "No accepted result was produced",
-          description: "The closest candidate is available for inspection, but it did not complete the workflow.",
+          tone: "warn",
+          eyebrow: "Best available result",
+          title: "The strongest candidate was preserved",
+          description: "The candidate is available for inspection and reuse, but verification did not complete.",
           badges: [
-            { label: "Unverified", tone: "err" },
+            { label: "Not verified", tone: "warn" },
             { label: "Not saved", tone: "warn" },
           ],
           facts: [
@@ -157,19 +161,19 @@ export const STORIES: Story[] = [
     ),
   },
   {
-    name: "run-progress-active",
-    title: "RunProgress — review active",
-    node: <RunProgress progress={{ label: "Run in progress", headline: "Check request, code, and result alignment", items: RUN_PROGRESS_ITEMS }} />,
+    name: "agent-activity-active",
+    title: "AgentActivity — verification active",
+    node: <AgentActivity activity={{ label: "Working", headline: "Checking the result against the declared evidence", items: AGENT_ACTIVITY_ITEMS }} renderDetail={renderAgentActivityDetail} />,
   },
   {
-    name: "run-progress-complete",
-    title: "RunProgress — complete",
-    node: <RunProgress progress={{ label: "Run complete", headline: "Circuit generated, executed, reviewed, and saved", items: RUN_PROGRESS_ITEMS.map((item) => ({ ...item, state: "done" as const })) }} />,
+    name: "agent-activity-complete",
+    title: "AgentActivity — complete",
+    node: <AgentActivity activity={{ label: "Complete", headline: "The result is ready", items: AGENT_ACTIVITY_ITEMS.map((item) => ({ ...item, state: "done" as const, status: "Complete" })) }} renderDetail={renderAgentActivityDetail} />,
   },
   {
-    name: "run-progress-error",
-    title: "RunProgress — generation error",
-    node: <RunProgress progress={{ label: "Run needs attention", headline: "Generation provider unavailable", items: RUN_PROGRESS_ITEMS.map((item) => item.id === "generate" ? { ...item, detail: "Provider rate limit reached", state: "error" as const } : item.id === "plan" ? item : { ...item, state: "waiting" as const }) }} />,
+    name: "agent-activity-error",
+    title: "AgentActivity — verification error",
+    node: <AgentActivity activity={{ label: "Needs attention", headline: "Verification could not complete", items: AGENT_ACTIVITY_ITEMS.map((item) => item.id === "verify" ? { ...item, title: "The verifier stopped before acceptance", detail: "The best candidate remains available.", state: "error" as const, status: "Stopped" } : item) }} renderDetail={renderAgentActivityDetail} />,
   },
   { name: "studio-verification-pass", title: "Studio — PASS artifact", node: <StudioEvidenceFixture title="Bell state"><VerificationSummaryPanel summary={PASS_SUMMARY} /></StudioEvidenceFixture> },
   { name: "studio-verification-fail", title: "Studio — FAIL evidence", node: <StudioEvidenceFixture title="Bell state candidate"><VerificationSummaryPanel summary={FAIL_SUMMARY} /></StudioEvidenceFixture> },

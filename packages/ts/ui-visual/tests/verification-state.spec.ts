@@ -42,7 +42,7 @@ test("mobile INCONCLUSIVE warning remains visible without horizontal overflow", 
 test("mobile run outcome keeps facts and code inside the viewport", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await loadStory(page, "run-outcome-reviewed");
-  await expect(page.getByText("The circuit executed and matched the request")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "The circuit executed and matched the request" })).toBeVisible();
   await page.getByText("Generated code · revision 1").click();
   await expect(page.getByText("QuantumCircuit", { exact: false })).toBeVisible();
   const sizes = await page.evaluate(() => ({
@@ -52,12 +52,11 @@ test("mobile run outcome keeps facts and code inside the viewport", async ({ pag
   expect(sizes.scroll).toBeLessThanOrEqual(sizes.client);
 });
 
-test("mobile run progress exposes stage state without horizontal overflow", async ({ page }) => {
+test("mobile agent activity exposes stage state without horizontal overflow", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
-  await loadStory(page, "run-progress-active");
-  await expect(page.getByText("3 of 5")).toBeVisible();
-  await expect(page.getByText("60%")).toBeVisible();
-  await expect(page.getByText("Running")).toBeVisible();
+  await loadStory(page, "agent-activity-active");
+  await expect(page.getByText("Checking the result against the declared evidence", { exact: true })).toBeVisible();
+  await expect(page.locator('summary[aria-current="step"]')).toContainText("Verification");
   const sizes = await page.evaluate(() => ({
     scroll: document.documentElement.scrollWidth,
     client: document.documentElement.clientWidth,
