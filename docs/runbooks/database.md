@@ -54,22 +54,48 @@ has a public IP at all is that private IP needs VPC peering that was not set up.
 
 `db-g1-small` allows 50 and reserves 3 for superusers.
 
+**Every term below except the API's own pool lives in `infra/fleet.env`, and that
+file is the only place it lives.** `deploy.yml` loads it into the job environment
+and passes the values straight to `gcloud run deploy`; `db.py`'s `fleet_sizing()`
+parses the same file for this arithmetic. There is no second copy to keep in step
+— that is the point of the file, and `test_the_deploy_reads_the_sizing_from_the_same_file_the_budget_does`
+fails if a literal reappears on a deploy line.
+
 | Term | Value | Where it is stated |
 |---|---|---|
-| API instances | 2 | `--max-instances 2` on the api deploy; `API_MAX_INSTANCES` |
-| API pool, per instance | 5 + 5 | `DEFAULT_POOL_SIZE` / `DEFAULT_MAX_OVERFLOW` in `db.py` |
-| Worker instances | **3** | `--min-instances 3 --max-instances 3`; `WORKER_INSTANCES` |
-| Worker pool, per instance | 2 + 2 | `DB_POOL_SIZE`/`DB_MAX_OVERFLOW` on the worker deploy; `WORKER_POOL_SIZE` |
-| Fleet at rest | 32 | `fleet_peak_connections(during_worker_rollout=False)` |
-| **Fleet during a deploy** | **44** | `fleet_peak_connections()` — both worker revisions hold their minimum |
+| API instances | 2 | `API_MAX_INSTANCES` in `infra/fleet.env` |
+| API pool, per instance | 5 + 5 | `DEFAULT_POOL_SIZE` / `DEFAULT_MAX_OVERFLOW` in `db.py` — the only sizing read on a request path |
+| Worker instances | **1** | `WORKER_INSTANCES` in `infra/fleet.env` |
+| Worker pool, per instance | 2 + 2 | `WORKER_POOL_SIZE` / `WORKER_MAX_OVERFLOW` in `infra/fleet.env`, deployed as `DB_POOL_SIZE`/`DB_MAX_OVERFLOW` |
+| Fleet at rest | 24 | `fleet_peak_connections(during_worker_rollout=False)` |
+| **Fleet during a deploy** | **28** | `fleet_peak_connections()` — both worker revisions hold their minimum |
 | Superuser reserved | 3 | Postgres |
 | Alembic + one operator | 2 | `OPERATIONAL_HEADROOM` |
 | **Budget** | **45** | |
 
+At three workers — the stress-test setting — those two rows read 32 and **44**,
+against the same budget of 45.
+
 `services/api/tests/test_database_configuration.py` asserts the sum, asserts that
-`deploy.yml` still deploys the number `db.py` computed against, and pins the
-boundary: **three workers fit, four do not.** Do not re-derive this by hand —
-change a constant and run that file.
+`deploy.yml` takes its numbers from `infra/fleet.env` rather than from a literal,
+asserts that the shell's export regex actually matches every key the deploy
+needs, and pins the boundary: **three workers fit, four do not.** Do not re-derive
+this by hand — edit `infra/fleet.env` and run that file.
+
+### Changing the worker count
+
+One edit:
+
+```bash
+# infra/fleet.env
+WORKER_INSTANCES=3    # 1 = serial (default), 3 = stress test, 4 does not fit
+```
+
+Commit, push to `dev`, and the next deploy runs that many. Nothing else changes:
+the deploy reads the file, the budget test reads the file, and raising it past
+what the budget allows fails CI rather than production. Turning it back down is
+the same edit — no revision surgery, because `--min-instances` is set on every
+deploy rather than being live-service state.
 
 **The binding constraint is the deploy, not the workload.** `--min-instances` is
 a *revision-level* setting, so while a `gcloud run deploy` is in flight the
@@ -116,12 +142,17 @@ request concurrency and the worker serves only a static liveness responder on
 to add an instance. Parallel workers must be always-on, which bills continuously
 whether or not anything is queued — roughly **$15–25/month each**.
 
-Three workers is an owner decision (2026-08-01, from a stated range of three to
-four), taken because runs were processed strictly serially product-wide and the
-queue — not page latency — was what a class or a launch would have felt. Three
-rather than four is the deploy-overlap arithmetic above, not a preference.
-Changing the count is one line in `deploy.yml` and one constant in `db.py`; the
-test will tell you if you change only one of them.
+The count has been an owner decision twice on 2026-08-01. First three, from a
+stated range of three to four, because runs were processed strictly serially
+product-wide and the queue — not page latency — was what a class or a launch
+would have felt. Then **back to one**, on the same day, because the queue is
+empty at today's usage and two extra always-on pollers are $30–50/month of
+capacity nobody is waiting on. Three rather than four was never a preference; it
+is the deploy-overlap arithmetic above.
+
+Because it moved twice in a day, the number stopped being a constant and became
+`WORKER_INSTANCES` in `infra/fleet.env` — one edit, no revision surgery, and the
+budget test refuses a value that does not fit.
 
 ### Why N workers are safe
 
