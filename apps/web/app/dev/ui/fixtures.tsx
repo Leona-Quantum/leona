@@ -27,7 +27,7 @@ function ghzQasm(n: number): string {
   ].join("\n");
 }
 
-/** Render whatever the Vault artifact-detail page would render for this QASM.
+/** Render whatever the artifact-detail view would render for this QASM.
  *
  * Deliberately goes through `reconstructInterchangeCircuit` rather than taking
  * a pre-built circuit, so these fixtures exercise the same parse → discriminate
@@ -57,7 +57,7 @@ function DiagramFixture({ qasm, title }: { qasm: string; title: string }) {
   );
 }
 
-/** The Vault artifact panel that carries what the program measured.
+/** The artifact panel that carries what the program measured.
  *
  * Goes through `measuredResultFromMetadata` on a metadata blob shaped exactly as
  * the worker stores it, so this exercises the real parse rather than a

@@ -3,7 +3,7 @@
 import type { StudioPanel } from "../lib/studio-panels";
 
 /**
- * The four-tab bar Studio and the Vault artifact view both render.
+ * The four-tab bar Studio and the artifact detail view both render.
  *
  * One component because they are one control: the two surfaces used to carry
  * near-identical `<nav>` + `<button>` + `.is-active` markup that had already

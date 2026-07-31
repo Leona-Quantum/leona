@@ -14,7 +14,7 @@ export const dynamic = "force-dynamic";
  * something else would produce an unreadable 422.
  *
  * The caller reloads the page afterwards rather than re-rendering. The browser's
- * local mirror of chats and Vault entries is keyed by workspace, and that key is
+ * local mirror of chats and saved artifacts is keyed by workspace, and that key is
  * read during the authenticated layout's render — so a soft navigation would
  * leave the previous workspace's sidebar on screen next to the new workspace's
  * data.

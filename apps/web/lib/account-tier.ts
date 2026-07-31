@@ -33,7 +33,7 @@ export type TierLimits = {
   /** Whether the tier may read QPU cost/resource estimates at all. */
   qpuEstimates: boolean;
   /** Whether saved artifacts persist beyond the browser session. */
-  persistentVault: boolean;
+  persistentArtifacts: boolean;
 };
 
 /**
@@ -62,7 +62,7 @@ export const TIER_LIMITS: Record<AccountTier, TierLimits> = {
     cpuSimShots: 8_192,
     cpuSimRunsPer10Min: 10,
     qpuEstimates: true,
-    persistentVault: false,
+    persistentArtifacts: false,
   },
   free: {
     agentRunsPerWeek: 5,
@@ -72,7 +72,7 @@ export const TIER_LIMITS: Record<AccountTier, TierLimits> = {
     cpuSimShots: 16_384,
     cpuSimRunsPer10Min: 10,
     qpuEstimates: true,
-    persistentVault: true,
+    persistentArtifacts: true,
   },
   // Collaborators and the owner. "Unlimited" here means unlimited *product*
   // allowances. It is NOT a security tier: see grantsQpuSubmission below.
@@ -84,7 +84,7 @@ export const TIER_LIMITS: Record<AccountTier, TierLimits> = {
     cpuSimShots: 65_536,
     cpuSimRunsPer10Min: 30,
     qpuEstimates: true,
-    persistentVault: true,
+    persistentArtifacts: true,
   },
 };
 

@@ -19,7 +19,7 @@ import type { BuilderCodeVariants } from "./studio-builder.ts";
  *
  * This used to live inside studio-workspace.tsx and had two defects that only a
  * test over real records makes visible. Measured on 2026-07-26 against the 282
- * Atlas entries the Vault can import: 129 of them opened in Studio with empty
+ * Atlas entries the workspace can import: 129 of them opened in Studio with empty
  * framework tabs.
  *
  * 1. It chose its conversion source with the *editable builder's* parser, whose

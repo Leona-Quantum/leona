@@ -19,31 +19,31 @@ const COPY: Record<PublicLocale, {
 }> = {
   en: {
     adding: "Adding…",
-    addPrivate: "Add to my Vault",
-    add: "Add to Vault",
+    addPrivate: "Add to my Studio",
+    add: "Add to Studio",
     close: "Close",
-    library: "Personal Vault",
+    library: "Personal workspace",
     title: "Sign in to unlock your workspace.",
-    body: "can be copied into your private Vault, where you can open the code in Studio or continue it in a verified Run. Each account has its own workspace.",
+    body: "can be copied into your private workspace, where you can open the code in Studio or continue it in a verified Run. Each account has its own.",
     signIn: "Sign in to continue",
     unavailable: "Authentication is not configured in this environment yet. Contact us to request access.",
     contact: "Contact Leona Quantum ↗",
-    error: "The entry could not be added to your Vault.",
-    starBoundary: "This public Atlas star is not copied into Vault; the private copy starts unstarred.",
+    error: "The entry could not be added to your workspace.",
+    starBoundary: "This public Atlas star is not copied with the entry; the private copy starts unstarred.",
   },
   ja: {
     adding: "追加中…",
-    addPrivate: "自分のVaultに追加",
-    add: "Vaultに追加",
+    addPrivate: "自分のStudioに追加",
+    add: "Studioに追加",
     close: "閉じる",
-    library: "個人用Vault",
+    library: "個人ワークスペース",
     title: "サインインすると、研究を自分の環境で試せます。",
-    body: "を個人用Vaultに追加すると、Studioでコードを確認・編集し、Leona Runで実行・検証できます。",
+    body: "を個人のワークスペースに追加すると、Studioでコードを確認・編集し、Leona Runで実行・検証できます。",
     signIn: "サインインして続ける",
     unavailable: "この環境では認証がまだ設定されていません。アクセスを申請するにはお問い合わせください。",
     contact: "Leona Quantumに問い合わせる ↗",
-    error: "この資料をVaultに追加できませんでした。",
-    starBoundary: "Atlasで付けたスターは、Vaultに追加したコピーには引き継がれません。",
+    error: "この資料をワークスペースに追加できませんでした。",
+    starBoundary: "Atlasで付けたスターは、追加したコピーには引き継がれません。",
   },
 };
 
@@ -84,7 +84,7 @@ export function RepositoryExportAction({
       if (!response.ok || typeof payload.id !== "string") {
         throw new Error(payload.error ?? copy.error);
       }
-      window.location.assign(`/library/${encodeURIComponent(payload.id)}`);
+      window.location.assign(`/studio?artifact=${encodeURIComponent(payload.id)}`);
     } catch (cause) {
       setStatus(cause instanceof Error ? cause.message : copy.error);
       setExporting(false);

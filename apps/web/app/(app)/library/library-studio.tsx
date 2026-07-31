@@ -224,7 +224,7 @@ function ArtifactRow({ artifact, demoMode, locale, starred, onToggleStar, onArch
         <button className={`mj-star-toggle mj-star-toggle--icon${starred ? " is-starred" : ""}`} type="button" aria-label={starred ? copy.unstar : copy.star} aria-pressed={starred} title={starred ? copy.unstar : copy.star} onClick={() => onToggleStar(artifact.id)}>
           <StarIcon size={16} filled={starred} />
         </button>
-        <a href={demoMode ? "/demo?view=library" : `/library/${artifact.id}`}>
+        <a href={demoMode ? "/demo?view=library" : `/studio?artifact=${encodeURIComponent(artifact.id)}`}>
           <span>
           <strong>{artifact.title}</strong>
           <small>{artifact.family} · {artifact.tags.slice(0, 2).join(" · ")}</small>

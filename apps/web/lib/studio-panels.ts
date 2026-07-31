@@ -15,11 +15,11 @@ export type StudioPanel = (typeof STUDIO_PANELS)[number];
 export const DEFAULT_STUDIO_PANEL: StudioPanel = "code";
 
 /**
- * The Vault artifact detail's tabs.
+ * The artifact detail's tabs.
  *
  * Deliberately the same four words in the same order as Studio's. They are two
  * views of one artifact and used to use two unrelated vocabularies — Studio said
- * Circuit/Code/Simulation/Versions, the Vault said
+ * Circuit/Code/Simulation/Versions, the artifact detail said
  * Overview/Code & Export/Runs/Verification/Notes — so moving between them meant
  * relearning where things were.
  */

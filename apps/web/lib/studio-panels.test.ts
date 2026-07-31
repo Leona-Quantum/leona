@@ -23,6 +23,6 @@ test("versions are folded into Summary rather than standing alone", () => {
   assert.ok(STUDIO_PANELS.includes("summary"));
 });
 
-test("the Vault artifact view uses the same tabs in the same order as Studio", () => {
+test("the artifact detail view uses the same tabs in the same order as Studio", () => {
   assert.deepEqual([...ARTIFACT_PANELS], [...STUDIO_PANELS]);
 });
