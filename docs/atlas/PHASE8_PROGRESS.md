@@ -102,5 +102,11 @@ The production E2E is regression evidence for the existing private execution
 path; it is not an official-provider extraction score. The new lockfile slice
 passed the local release gate with `1464 passed, 171 skipped`, clean Ruff
 format/lint, current OpenAPI, all four import contracts kept, a clean raw-query
-boundary, and Alembic head `0044`. Database-backed append-only replay and the
-remote regression matrix must still pass before it may be marked complete.
+boundary, and Alembic head `0044`. The database-backed append-only replay and
+full remote regression matrix also passed in
+https://github.com/EshMis/majorana/actions/runs/30627444700.
+
+GitHub emitted non-blocking deprecation warnings for Node 20-based action
+bundles while forcing those actions onto Node 24. No gate failed. Updating the
+shared CI action majors remains a separate repository-wide maintenance change,
+not part of this extraction result or its scientific evidence.
