@@ -47,6 +47,20 @@ class StandardSource:
 
 STANDARD_VQE_SOURCES: tuple[StandardSource, ...] = (
     StandardSource(
+        source_key="qiskit",
+        display_name="Qiskit",
+        source_kind=StandardSourceKind.GITHUB_REPOSITORY,
+        role=StandardSourceRole.FRAMEWORK,
+        canonical_locator="https://github.com/Qiskit/qiskit",
+        provider_key="qiskit",
+        maintenance_state=MaintenanceState.MAINTAINED,
+        acquisition_enabled=True,
+        qualification_note=(
+            "Official public Qiskit SDK source. Repository identity and declared "
+            "metadata do not establish a VQE capability or runtime compatibility."
+        ),
+    ),
+    StandardSource(
         source_key="qiskit-nature",
         display_name="Qiskit Nature",
         source_kind=StandardSourceKind.GITHUB_REPOSITORY,

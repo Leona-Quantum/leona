@@ -13,9 +13,9 @@ from majorana_api.vqe_standard_sources import (
 
 
 def test_standard_sources_are_unique_and_immutable():
-    assert len(STANDARD_VQE_SOURCES) == 6
-    assert len({source.source_key for source in STANDARD_VQE_SOURCES}) == 6
-    assert len({source.canonical_locator.casefold() for source in STANDARD_VQE_SOURCES}) == 6
+    assert len(STANDARD_VQE_SOURCES) == 7
+    assert len({source.source_key for source in STANDARD_VQE_SOURCES}) == 7
+    assert len({source.canonical_locator.casefold() for source in STANDARD_VQE_SOURCES}) == 7
     with pytest.raises(dataclasses.FrozenInstanceError):
         STANDARD_VQE_SOURCES[0].source_key = "changed"  # type: ignore[misc]
 
@@ -33,6 +33,14 @@ def test_qiskit_algorithms_maintenance_warning_is_preserved():
     source = get_standard_source("qiskit-algorithms")
     assert source.maintenance_state is MaintenanceState.UNSUPPORTED_BY_ORIGINAL_VENDOR
     assert "no longer" in source.qualification_note
+
+
+def test_qiskit_core_is_an_explicit_official_source_without_capability_claim():
+    source = get_standard_source("qiskit")
+    assert source.canonical_locator == "https://github.com/Qiskit/qiskit"
+    assert source.maintenance_state is MaintenanceState.MAINTAINED
+    assert source.canonical_locator in github_acquisition_allowlist()
+    assert "do not establish" in source.qualification_note
 
 
 def test_only_exact_approved_repository_coordinates_are_accepted():

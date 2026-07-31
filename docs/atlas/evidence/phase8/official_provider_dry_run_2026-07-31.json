@@ -1,0 +1,609 @@
+{
+  "extractor_version": "atlas.standard-metadata-declared.v3",
+  "failures": [],
+  "limitations": [
+    "Source metadata is not scientific capability evidence",
+    "Counts do not measure precision or recall",
+    "No repository code was cloned, imported, installed, or executed",
+    "No component or performance claim was materialized"
+  ],
+  "publication_eligible": false,
+  "schema_version": "atlas.phase8.official-provider-dry-run.v1",
+  "scientific_quality_metrics": "not_measured_without_independent_gold_labels",
+  "scope": "live_official_provider_metadata_dry_run",
+  "sources": [
+    {
+      "assertion_count": 5,
+      "commit_sha": "56147f83f0b463115ab55a838238944b9191e5a2",
+      "declared_fact_count": 56,
+      "declared_field_counts": {
+        "build-system.build-backend": 1,
+        "build-system.requires": 1,
+        "github-actions.name": 23,
+        "github-actions.triggers": 23,
+        "project.name": 1,
+        "project.requires-python": 1,
+        "requirements.declaration": 6
+      },
+      "deterministic_replay": true,
+      "extraction_issues": [],
+      "issue_code_counts": {},
+      "issue_count": 0,
+      "metadata_manifest_sha256": "4e1de94e7c8b30f9579329e722c943e6ac0e4c85144101415c597c886030cb5b",
+      "publication_eligible": false,
+      "repository_url": "https://github.com/Qiskit/qiskit",
+      "selected_metadata_bytes": 85503,
+      "selected_metadata_files": [
+        {
+          "content_sha256": "81339f97d3dd2f35ddf8aee4e6cd5a11dcf92afbc366f94ef43935bf2bbe788e",
+          "path": ".github/workflows/backport.yml",
+          "size": 2108
+        },
+        {
+          "content_sha256": "948612a57815870b3a91b77dc517b176b9eb8bfba4d411f3af3eb369737a6e57",
+          "path": ".github/workflows/branch-protection.yml",
+          "size": 7174
+        },
+        {
+          "content_sha256": "2cb30966ae781ae0625a03218ef79d14e2d2dd1e77bd5ea471f49fcec4febf04",
+          "path": ".github/workflows/config.yml",
+          "size": 1377
+        },
+        {
+          "content_sha256": "3f5a246d45d12e4d39589db59fbe127312acd2555d4c6d73bcda02ed6a54f14a",
+          "path": ".github/workflows/coverage.yml",
+          "size": 3481
+        },
+        {
+          "content_sha256": "c5f590adeb7d1448032395a4946a2cdb9c1245529acca9c8b0ba1a77ff5f0ff1",
+          "path": ".github/workflows/ctests.yml",
+          "size": 840
+        },
+        {
+          "content_sha256": "60c8dd600a11977872bc87a4a214fc47a1fdce633714365e86327397338d4a8f",
+          "path": ".github/workflows/docs.yml",
+          "size": 1220
+        },
+        {
+          "content_sha256": "e7fca4a415ad15319178e0bbf7f065d354c675d90b4f60cc671dab736ec2b1ee",
+          "path": ".github/workflows/docs_deploy.yml",
+          "size": 1664
+        },
+        {
+          "content_sha256": "580b7f13ff1acc47e9a4cea510b6d480a82531d7b3f5d8674fa93a7dc805e485",
+          "path": ".github/workflows/image-tests.yml",
+          "size": 1920
+        },
+        {
+          "content_sha256": "5de65a6bc905c7f33b8a58b6a263d3cad36adfcb7c00ecab2fdba33333ecffea",
+          "path": ".github/workflows/lint.yml",
+          "size": 1108
+        },
+        {
+          "content_sha256": "e3fef9438705625405657619f98e86beddc55c8d5360b0a17a1e35e086b28333",
+          "path": ".github/workflows/miri.yml",
+          "size": 1342
+        },
+        {
+          "content_sha256": "42299148a3f406f211cbb4794036de23d02ea6d31fc257644e4bfd82a57e3cd5",
+          "path": ".github/workflows/on-nightly.yml",
+          "size": 2087
+        },
+        {
+          "content_sha256": "65650adda8b52d8bb2c5aea692c85c2158acc9fc69533eadbc3c1fd11bbb7266",
+          "path": ".github/workflows/pyo3-ffi.yml",
+          "size": 784
+        },
+        {
+          "content_sha256": "333adab6d4ebd138a2cedacf642c9a1d63c3f3b552d714cd29f610968f94920a",
+          "path": ".github/workflows/qpy.yml",
+          "size": 1375
+        },
+        {
+          "content_sha256": "e99e9f9aecab7c55fd0488b9c81a4e16e2f36c9e7c311e9618bfee5c03aa666c",
+          "path": ".github/workflows/randomized_tests.yml",
+          "size": 1096
+        },
+        {
+          "content_sha256": "829ef785d264fb0dfd0e786213ae2f092f4f6f6b5855840129f4177d30d510dc",
+          "path": ".github/workflows/rust-tests.yml",
+          "size": 699
+        },
+        {
+          "content_sha256": "6a5f208f19ab0a5b33bec91a1832620808ff3a5df87284f4c2ef1f091885ddb4",
+          "path": ".github/workflows/slow.yml",
+          "size": 1242
+        },
+        {
+          "content_sha256": "fc99163ec1dddce1bff1719991ad281e13eac3c1747f71681d9c7f613310ddba",
+          "path": ".github/workflows/test-linux.yml",
+          "size": 5217
+        },
+        {
+          "content_sha256": "54bf2d9c42d50314a3ec124fe5632bd0c3fc70fb1f87a8b1ab05fce58866b3e9",
+          "path": ".github/workflows/test-mac.yml",
+          "size": 2864
+        },
+        {
+          "content_sha256": "4420af8ac6fbd18ebac4d4da67be0c0b5a828a36ac4e45e15a5190255105dc55",
+          "path": ".github/workflows/test-windows.yml",
+          "size": 2835
+        },
+        {
+          "content_sha256": "c3bb0535030556e94f718e2d8cf8ce934f7a37245435ccdcdf8e65d5571cd845",
+          "path": ".github/workflows/update-caches.yml",
+          "size": 1121
+        },
+        {
+          "content_sha256": "8630dc0dec7e3c246092d1e09a092510cb4c8e29ea172e66a6511ccd632f6ede",
+          "path": ".github/workflows/wheels-build.yml",
+          "size": 6937
+        },
+        {
+          "content_sha256": "c110ef267b5d91bd9612983f3a3cd37443e5752d523af9dd9981a184766e6cc4",
+          "path": ".github/workflows/wheels-pr.yml",
+          "size": 609
+        },
+        {
+          "content_sha256": "bc788511bdf4737aefdae2969e92903d5aa933b4afb65c44be72fe21ed8a4d89",
+          "path": ".github/workflows/wheels.yml",
+          "size": 1615
+        },
+        {
+          "content_sha256": "0a7558bc0c5a5bcac5e2bdc5e5367f3550b0c3b45b7e6f5a81b4f9fde6693374",
+          "path": "LICENSE.txt",
+          "size": 11418
+        },
+        {
+          "content_sha256": "5a9a1b910afabecf0a927dee99f5d0ecbd7e6cd6f45aa4ed1bbdafbc5794a5b0",
+          "path": "pyproject.toml",
+          "size": 20368
+        },
+        {
+          "content_sha256": "484851a6f064dbbdb6812275d1cd72e4d1c412d09e271cd4ae5c12105dc7302e",
+          "path": "requirements.txt",
+          "size": 241
+        },
+        {
+          "content_sha256": "9158b4f8fee0de36f183861fd72d08dcef4e997ce38dd5157516019471846316",
+          "path": "setup.py",
+          "size": 2761
+        }
+      ],
+      "skipped_oversized_paths": [],
+      "source_key": "qiskit",
+      "tree_entry_count": 4252,
+      "tree_sha": "ab8c0c23330cea6a08329a776d7baf63bc1d686d"
+    },
+    {
+      "assertion_count": 5,
+      "commit_sha": "478b26e1992d66582cf15bcb1c90df702a3b8f97",
+      "declared_fact_count": 43,
+      "declared_field_counts": {
+        "build-system.build-backend": 1,
+        "build-system.requires": 1,
+        "citation.cff-version": 1,
+        "citation.date-released": 1,
+        "citation.doi": 1,
+        "citation.message": 1,
+        "citation.title": 1,
+        "citation.url": 1,
+        "citation.version": 1,
+        "github-actions.name": 3,
+        "github-actions.triggers": 3,
+        "requirements.declaration": 28
+      },
+      "deterministic_replay": true,
+      "extraction_issues": [],
+      "issue_code_counts": {},
+      "issue_count": 0,
+      "metadata_manifest_sha256": "9e31c898376a1eab52724856f2f32719482ef80f2b7991873655a0a449c324ce",
+      "publication_eligible": false,
+      "repository_url": "https://github.com/qiskit-community/qiskit-nature",
+      "selected_metadata_bytes": 31230,
+      "selected_metadata_files": [
+        {
+          "content_sha256": "8d1e10e557d0f1e6c770ff9299152acc813cc8f64f0d2a70cb65941a90666c46",
+          "path": ".github/workflows/deploy-code.yml",
+          "size": 1197
+        },
+        {
+          "content_sha256": "38d35af7877bd1dbcf31f1a86469254af424b96f1b9ff13324ce1dabb970ad2a",
+          "path": ".github/workflows/deploy-docs.yml",
+          "size": 2183
+        },
+        {
+          "content_sha256": "eab08211ddc876698545654ea1f51112b07dd3b18deb4e54dd9b83b8244f2188",
+          "path": ".github/workflows/main.yml",
+          "size": 12299
+        },
+        {
+          "content_sha256": "b373baf7dce77989a5b82072199c0014c2b526e70a053bdf67c2662133d0799f",
+          "path": "CITATION.cff",
+          "size": 303
+        },
+        {
+          "content_sha256": "217ac15dbcda2782e004f5152886d847988c6367aaa0c4fc8c355363c21bd224",
+          "path": "LICENSE.txt",
+          "size": 11416
+        },
+        {
+          "content_sha256": "3b1e644c9f0df360a17fc4bced4f1fe3b8b255c4025c6821806f949bfa906aa7",
+          "path": "pyproject.toml",
+          "size": 149
+        },
+        {
+          "content_sha256": "897155eeb136e7f0dc64c852ff814716b39fb48c3f75088bfc60448c7e198c74",
+          "path": "requirements-dev.txt",
+          "size": 329
+        },
+        {
+          "content_sha256": "7b3d85e71df81f2685cc0440d011ea0225947cec99a6adf62a0a645d0de3d7b3",
+          "path": "requirements.txt",
+          "size": 107
+        },
+        {
+          "content_sha256": "947192682aa3f900fa7969f99ec574e1cfd247b062ecc4d0dc2c8686de18aa01",
+          "path": "setup.py",
+          "size": 3247
+        }
+      ],
+      "skipped_oversized_paths": [],
+      "source_key": "qiskit-nature",
+      "tree_entry_count": 772,
+      "tree_sha": "abb7b2cd1b51a9422280affca18a802cf276bd12"
+    },
+    {
+      "assertion_count": 5,
+      "commit_sha": "23187def78b8012e4bbf326811b33676b075c8f4",
+      "declared_fact_count": 34,
+      "declared_field_counts": {
+        "build-system.build-backend": 1,
+        "build-system.requires": 1,
+        "github-actions.name": 3,
+        "github-actions.triggers": 3,
+        "requirements.declaration": 26
+      },
+      "deterministic_replay": true,
+      "extraction_issues": [],
+      "issue_code_counts": {},
+      "issue_count": 0,
+      "metadata_manifest_sha256": "5acc54e06833fb8f3273e0bb8a1a85c988305e758359bd74ce8dfd8d4f151027",
+      "publication_eligible": false,
+      "repository_url": "https://github.com/qiskit-community/qiskit-algorithms",
+      "selected_metadata_bytes": 32084,
+      "selected_metadata_files": [
+        {
+          "content_sha256": "06498413bb78cb85f95e5f8916056a76df375a7887e49245dee9b417536d3095",
+          "path": ".github/workflows/deploy-code.yml",
+          "size": 1195
+        },
+        {
+          "content_sha256": "f4c22832350c01d97bcfdf2b151f8e360d976bfd09848b65f4bee276edd1700f",
+          "path": ".github/workflows/deploy-docs.yml",
+          "size": 1950
+        },
+        {
+          "content_sha256": "015ada69cd8305949aac553947f1cfa475efa7919937ff4b7195e4fdf61eb746",
+          "path": ".github/workflows/main.yml",
+          "size": 10548
+        },
+        {
+          "content_sha256": "217ac15dbcda2782e004f5152886d847988c6367aaa0c4fc8c355363c21bd224",
+          "path": "LICENSE.txt",
+          "size": 11416
+        },
+        {
+          "content_sha256": "3d81e8bb9b29be229f40cb1740b913300f899d0a2fd7798d3422c303c5e3ef7d",
+          "path": "pyproject.toml",
+          "size": 2962
+        },
+        {
+          "content_sha256": "8620a0ac760ba970e1829c5342f849c200a522da092f7be8041030459dae3544",
+          "path": "requirements-dev.txt",
+          "size": 844
+        },
+        {
+          "content_sha256": "af54e20eefeecc79e7b75b69f267b56c22dc3b0f24184fbd28785e465e1a1bbc",
+          "path": "requirements.txt",
+          "size": 35
+        },
+        {
+          "content_sha256": "e6f80938fbff995643bca7d8ad61a328ab64327b24a47fde58a3a11ed304dbfb",
+          "path": "setup.py",
+          "size": 3134
+        }
+      ],
+      "skipped_oversized_paths": [],
+      "source_key": "qiskit-algorithms",
+      "tree_entry_count": 376,
+      "tree_sha": "1d34f96af1cb315332c441118094ee4cb7d21324"
+    },
+    {
+      "assertion_count": 5,
+      "commit_sha": "21ec2dfba1071f8da3121aca340f087598009469",
+      "declared_fact_count": 57,
+      "declared_field_counts": {
+        "build-system.build-backend": 1,
+        "build-system.requires": 1,
+        "github-actions.name": 26,
+        "github-actions.triggers": 26,
+        "project.dependencies": 1,
+        "project.name": 1,
+        "project.requires-python": 1
+      },
+      "deterministic_replay": true,
+      "extraction_issues": [
+        {
+          "code": "invalid_yaml",
+          "content_sha256": "0b8f62b326a601a4103e7a23edd3a032293bf32666ba6662ae59654d015a147f",
+          "parser": "github-actions",
+          "path": ".github/workflows/unit-test.yml"
+        }
+      ],
+      "issue_code_counts": {
+        "github-actions:invalid_yaml": 1
+      },
+      "issue_count": 1,
+      "metadata_manifest_sha256": "9eb68e6dfdd97c6e8189eddd17e042c56fcac3356fe55bcd8bd3d820c8e1ebe9",
+      "publication_eligible": false,
+      "repository_url": "https://github.com/PennyLaneAI/pennylane",
+      "selected_metadata_bytes": 131772,
+      "selected_metadata_files": [
+        {
+          "content_sha256": "68a5c1caad3f0b4cf9d4c5b9a77087da7784598268f0874ce301d3a886294d9f",
+          "path": ".github/workflows/assign_bugs.yml",
+          "size": 494
+        },
+        {
+          "content_sha256": "b9660a3e3088cf9911312026033a16a4263aedc37ab0b085747749fa0525224c",
+          "path": ".github/workflows/changelog_reminder.yml",
+          "size": 933
+        },
+        {
+          "content_sha256": "31f28465625ebf8a8f6bcd6ef8f4bd2660a7924478119e8f6e3b16c972699d3e",
+          "path": ".github/workflows/check-external-contributor.yml",
+          "size": 569
+        },
+        {
+          "content_sha256": "d3012fc58228100a8666d77b6f9d528d109a7e76b5d2710d811fe8c2772234d4",
+          "path": ".github/workflows/check_in_artifact.yml",
+          "size": 6518
+        },
+        {
+          "content_sha256": "68117938c598f681e00491750ae5e228ca83d5fa3c59a2b56df96ec20c90da64",
+          "path": ".github/workflows/code_security_scan.yml",
+          "size": 832
+        },
+        {
+          "content_sha256": "b0e418a7f0a6dffbdbcd8d01ba2658bb80cd069adb8baa52666c4975de14960f",
+          "path": ".github/workflows/codeql.yml",
+          "size": 4799
+        },
+        {
+          "content_sha256": "fe8552e582f430549e379f7bf4389d75147b39f4fdcc7327c20ed38e8c95e3b4",
+          "path": ".github/workflows/create-release.yml",
+          "size": 4835
+        },
+        {
+          "content_sha256": "9ebfa4c1afebf78a22e56f84e1fbc447c34faaa4f8cdcc9f0dec028360d57de5",
+          "path": ".github/workflows/determine-workflow-runner.yml",
+          "size": 2452
+        },
+        {
+          "content_sha256": "cebc2b6a18317775a2e4014dadc08986031eeb2e041a43bc108856bcf1fa26e6",
+          "path": ".github/workflows/docs.yml",
+          "size": 2977
+        },
+        {
+          "content_sha256": "93cc99c9330a2b3a141f75f5e98c61cec6fd76ef796f1bab69438770f1f6cf16",
+          "path": ".github/workflows/documentation-tests.yml",
+          "size": 4926
+        },
+        {
+          "content_sha256": "7f5357abba9e1ea2c67c0c039172cca30c44ed0fb7e07e94f468f66d998cb4a5",
+          "path": ".github/workflows/format.yml",
+          "size": 1978
+        },
+        {
+          "content_sha256": "1dd83bb1b88ac668665389e3bb3b55d903966e5093569bb8a02cdf4a5c93feb0",
+          "path": ".github/workflows/interface-dependency-versions.yml",
+          "size": 3577
+        },
+        {
+          "content_sha256": "c63bba1ee5a7397725965ac4d52d6ac2fe4e49db5f47259cf230030964671020",
+          "path": ".github/workflows/interface-unit-tests.yml",
+          "size": 37006
+        },
+        {
+          "content_sha256": "37cce02c5b73f08674389b53dbffe56a4c4e80230375d2c90974ed7bfc0ac91e",
+          "path": ".github/workflows/module-validation.yml",
+          "size": 789
+        },
+        {
+          "content_sha256": "21cac1de61d5b5b6c36f23722bd83232b8c81468a007f466c99c18f5bb6589f1",
+          "path": ".github/workflows/package_warnings_as_errors.yml",
+          "size": 842
+        },
+        {
+          "content_sha256": "1ae8ab61961a4a43d1199bff8a581efb1bd4b1d1c205d9761395bd977a326845",
+          "path": ".github/workflows/rc_sync.yml",
+          "size": 3655
+        },
+        {
+          "content_sha256": "2b2a57d8c19d2fb34e6257dc79db5a84a1912ebce924632c0dfb53f332dd2bd3",
+          "path": ".github/workflows/rerun-test.yml",
+          "size": 4939
+        },
+        {
+          "content_sha256": "2582587010adf5b296554cb26e2faf80ffabac382a5d4444748dc343cf728038",
+          "path": ".github/workflows/rtd-check.yml",
+          "size": 1657
+        },
+        {
+          "content_sha256": "214df01fe10ef6a7afc068e6284e9582d918ee929ff5acb5f9bd3d0aafd049b0",
+          "path": ".github/workflows/tests-gpu.yml",
+          "size": 3581
+        },
+        {
+          "content_sha256": "e507702c8fe79935a3b1dcce49e325577328cf065f5ec2996abc4bbc49aa9310",
+          "path": ".github/workflows/tests-labs.yml",
+          "size": 3062
+        },
+        {
+          "content_sha256": "9add9b9c0ad03bb8c9da2efcd18b6fa71282485d02abf1a0d6f4663f7ccc520e",
+          "path": ".github/workflows/tests.yml",
+          "size": 2859
+        },
+        {
+          "content_sha256": "ffc8b5a05a0e869b4fdeb17cb8773b8b2af06e1f28cab968ad1bdc1bc3642e0c",
+          "path": ".github/workflows/trigger_benchmarks.yml",
+          "size": 4843
+        },
+        {
+          "content_sha256": "0b8f62b326a601a4103e7a23edd3a032293bf32666ba6662ae59654d015a147f",
+          "path": ".github/workflows/unit-test.yml",
+          "size": 8561
+        },
+        {
+          "content_sha256": "62758dab905a5032e08ff28a1da372e3e8c4c325ea5ffcc7f89cb118d1454116",
+          "path": ".github/workflows/update-durations.yml",
+          "size": 2141
+        },
+        {
+          "content_sha256": "bca0df7b328dc66de0f2cf47659e05af67c7adc9a825173688cbc334716c7cca",
+          "path": ".github/workflows/upload-nightly-rc-release.yml",
+          "size": 3190
+        },
+        {
+          "content_sha256": "682f9416903145e80e5d4564ca2d0f126559b30e15522ad17834ded63ba693aa",
+          "path": ".github/workflows/upload-nightly-release.yml",
+          "size": 1681
+        },
+        {
+          "content_sha256": "5d3e94dbde8c0a9e0b9d1b347bb967302b84d19a7bfc7d9492338f9c7f652b8c",
+          "path": ".github/workflows/upload.yml",
+          "size": 1291
+        },
+        {
+          "content_sha256": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4",
+          "path": "LICENSE",
+          "size": 11357
+        },
+        {
+          "content_sha256": "cfaf0786b14278f79972ae5bbb2dab389e9fb6c0633b438166ef067ace3ef44f",
+          "path": "pyproject.toml",
+          "size": 5375
+        },
+        {
+          "content_sha256": "94e2f0742f503a0a06694461a81fc01ecb2db8f6126cd40da5bc38dab3606898",
+          "path": "setup.py",
+          "size": 53
+        }
+      ],
+      "skipped_oversized_paths": [
+        "uv.lock"
+      ],
+      "source_key": "pennylane",
+      "tree_entry_count": 2186,
+      "tree_sha": "f8bb6e40af68e495c40ee5de43f6d1535d3e145f"
+    },
+    {
+      "assertion_count": 5,
+      "commit_sha": "2871f099ecc3f8990a514763b86587d988f67d48",
+      "declared_fact_count": 17,
+      "declared_field_counts": {
+        "citation.cff-version": 1,
+        "citation.date-released": 1,
+        "citation.license": 1,
+        "citation.message": 1,
+        "citation.repository-code": 1,
+        "citation.title": 1,
+        "citation.type": 1,
+        "citation.url": 1,
+        "citation.version": 1,
+        "github-actions.name": 4,
+        "github-actions.triggers": 4
+      },
+      "deterministic_replay": true,
+      "extraction_issues": [],
+      "issue_code_counts": {},
+      "issue_count": 0,
+      "metadata_manifest_sha256": "815a90ce93f909a7dd7aa5e1aedbf0672bcc0ea978f4c9625e0ea385a7ad42db",
+      "publication_eligible": false,
+      "repository_url": "https://github.com/quantumlib/OpenFermion",
+      "selected_metadata_bytes": 42258,
+      "selected_metadata_files": [
+        {
+          "content_sha256": "3c214153329c2598db23979f42f832728d2899e39abdfe9c9771ced773568288",
+          "path": ".github/workflows/ci.yaml",
+          "size": 10824
+        },
+        {
+          "content_sha256": "8313b0331f1f1cf07cac41651fca13c25492d88e4f3c2954a0a82e7151492527",
+          "path": ".github/workflows/nightly-pytest.yaml",
+          "size": 4443
+        },
+        {
+          "content_sha256": "38f881f495ad64b7a4a5142b516d4d640ec0096e8b9eb07a1d453e03268616eb",
+          "path": ".github/workflows/nightly.yaml",
+          "size": 1506
+        },
+        {
+          "content_sha256": "73d5f5ee8a69a80f3cb3ab09f88ee5b079295004e3f4d1afccb52d51cce92578",
+          "path": ".github/workflows/scorecard-scanner.yaml",
+          "size": 3274
+        },
+        {
+          "content_sha256": "8928b93ec7abbcec021cbac5987513ab254fdae7d0fdbc8550531a3aa0cf7090",
+          "path": "CITATION.cff",
+          "size": 4707
+        },
+        {
+          "content_sha256": "b40930bbcf80744c86c46a12bc9da056641d722716c378f5659b9e555ef833e1",
+          "path": "LICENSE",
+          "size": 11357
+        },
+        {
+          "content_sha256": "264591846c89bb07469ca6de0c097261e2b24161baf9f69441c09a7019f8117f",
+          "path": "pyproject.toml",
+          "size": 1900
+        },
+        {
+          "content_sha256": "497a6fa8fe786321b5f2d54c64f66d15c9430bcb648e4d52afa369c621215975",
+          "path": "setup.py",
+          "size": 4247
+        }
+      ],
+      "skipped_oversized_paths": [],
+      "source_key": "openfermion",
+      "tree_entry_count": 591,
+      "tree_sha": "779c273f4d97b9f67c68a763197f3b16b2de7604"
+    },
+    {
+      "assertion_count": 5,
+      "commit_sha": "b8d847e96c70cfc1dacbbae89551e57c055a3c38",
+      "declared_fact_count": 0,
+      "declared_field_counts": {},
+      "deterministic_replay": true,
+      "extraction_issues": [],
+      "issue_code_counts": {},
+      "issue_count": 0,
+      "metadata_manifest_sha256": "17dfd3e848872e16378f3c865b2ef9eb6f5afd6c5de0fe5f8101387578692ff2",
+      "publication_eligible": false,
+      "repository_url": "https://github.com/Azulene-Labs/hamlib_functions",
+      "selected_metadata_bytes": 11357,
+      "selected_metadata_files": [
+        {
+          "content_sha256": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4",
+          "path": "LICENSE",
+          "size": 11357
+        }
+      ],
+      "skipped_oversized_paths": [],
+      "source_key": "hamlib-functions",
+      "tree_entry_count": 11,
+      "tree_sha": "4bf27814c3b7de1d213ee644b62eb253892f37db"
+    }
+  ]
+}

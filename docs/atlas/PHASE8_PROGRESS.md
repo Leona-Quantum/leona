@@ -23,9 +23,11 @@ The first bounded Phase 8 slice is implemented locally:
   version changes;
 - S7 adversarial parser fixtures: complete for aliases, duplicate YAML keys,
   malformed TOML, and invalid declared-value shapes;
-- S8 synthetic golden baseline: complete for the current fourteen-fact fixture.
+- S8 synthetic golden baseline: complete for the current fourteen-fact fixture;
+- S9 official-provider dry run: complete for the six enabled GitHub sources in
+  the owner-approved Qiskit, PennyLane, OpenFermion, and HamLib source families.
 
-`environment.yml` is not treated as a lockfile, and S9–S12 remain open. No
+`environment.yml` is not treated as a lockfile, and S10–S12 remain open. No
 requirements resolution, container build, workflow execution, Python import, notebook execution, component
 materialization, or public publication was enabled.
 
@@ -85,8 +87,46 @@ one GitHub Actions workflow, and `uv.lock`.
 | Evidence-locator accuracy | 1.0 |
 
 This is a parser contract test, **not** an official-provider corpus score and
-not evidence of real-world extraction quality. The official-source dry run in
-S9 must be reported separately and may reveal unknowns or unsupported metadata.
+not evidence of real-world extraction quality.
+
+## S9 official-provider dry run
+
+The bounded live dry run resolved each enabled official/provider-linked source
+to an immutable commit and replayed extractor v3 twice. The committed redacted
+evidence is
+`docs/atlas/evidence/phase8/official_provider_dry_run_2026-07-31.json`
+(`sha256:60b094d56675fa1441cddaaef18d869a8e44e4ba3259638dc697250610f00daa`).
+It contains paths, sizes, content digests, field counts, and bounded issue
+identities, but no raw third-party bytes or declared fact values.
+
+| Source | Immutable commit | Selected files | Declared facts | Issues | Oversized skipped |
+| --- | --- | ---: | ---: | ---: | ---: |
+| Qiskit | `56147f83f0b463115ab55a838238944b9191e5a2` | 27 | 56 | 0 | 0 |
+| Qiskit Nature | `478b26e1992d66582cf15bcb1c90df702a3b8f97` | 9 | 43 | 0 | 0 |
+| Qiskit Algorithms | `23187def78b8012e4bbf326811b33676b075c8f4` | 8 | 34 | 0 | 0 |
+| PennyLane | `21ec2dfba1071f8da3121aca340f087598009469` | 30 | 57 | 1 | 1 |
+| OpenFermion | `2871f099ecc3f8990a514763b86587d988f67d48` | 8 | 17 | 0 | 0 |
+| HamLib helper functions | `b8d847e96c70cfc1dacbbae89551e57c055a3c38` | 1 | 0 | 0 | 0 |
+
+All six snapshots completed without connector failure and yielded 207
+allowlisted declared facts in total. This count is an extraction inventory,
+not a precision, recall, capability, compatibility, quality, or performance
+metric.
+
+PennyLane's `.github/workflows/unit-test.yml` contains a tab character where
+strict YAML rejects it; Atlas records only the bounded `github-actions:invalid_yaml`
+issue and the source content digest. Its root `uv.lock` exceeded the existing
+per-file acquisition cap and was deliberately skipped. Neither condition was
+silently relaxed. HamLib's paper-linked helper repository exposed only one
+selected metadata file and no allowlisted declared facts. That result remains
+an explicit zero, not an inferred absence of dataset functionality and not a
+failure of the separate HamLib dataset provider.
+
+The source registry now names Qiskit core explicitly in addition to Qiskit
+Nature and the historically pinned Qiskit Algorithms repository. Registry
+membership permits bounded acquisition only; it does not establish a VQE
+capability or runtime compatibility. No S9 result was auto-materialized as a
+component.
 
 ## Verification
 
@@ -110,3 +150,6 @@ GitHub emitted non-blocking deprecation warnings for Node 20-based action
 bundles while forcing those actions onto Node 24. No gate failed. Updating the
 shared CI action majors remains a separate repository-wide maintenance change,
 not part of this extraction result or its scientific evidence.
+
+The documentation-only lockfile follow-up also passed the full remote CI matrix:
+https://github.com/EshMis/majorana/actions/runs/30627566881.
