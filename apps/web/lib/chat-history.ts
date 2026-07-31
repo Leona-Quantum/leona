@@ -189,6 +189,14 @@ function isArchiveExpired(archivedAt: string): boolean {
   return daysUntilArchiveDeletion(archivedAt) <= 0;
 }
 
+/**
+ * The mirror, in the order the workspace holds them.
+ *
+ * NOT sorted by `createdAt` any more. Folders gained a user-chosen order in
+ * migration 0040 and the API returns them arranged; re-sorting on every read
+ * would make a drag appear to work and then silently revert on the next render.
+ * Array position IS the order, on the wire and in storage alike.
+ */
 export function loadChatFolders(): ChatFolder[] {
   if (!canUseStorage()) return [];
   try {
@@ -196,7 +204,7 @@ export function loadChatFolders(): ChatFolder[] {
     if (!raw) return [];
     const parsed = JSON.parse(raw) as unknown;
     if (!Array.isArray(parsed)) return [];
-    return parsed.filter(isChatFolder).sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+    return parsed.filter(isChatFolder);
   } catch {
     return [];
   }
@@ -208,10 +216,9 @@ function persistFolders(folders: ChatFolder[]): ChatFolder[] {
   return folders;
 }
 
+/** Store exactly the order given — see loadChatFolders on why nothing sorts. */
 export function replaceChatFolders(folders: ChatFolder[]): ChatFolder[] {
-  return persistFolders(
-    [...folders].sort((a, b) => a.createdAt.localeCompare(b.createdAt)),
-  );
+  return persistFolders([...folders]);
 }
 
 export function createChatFolder(name: string): ChatFolder[] {
@@ -274,6 +281,75 @@ export async function createRemoteChatFolder(name: string): Promise<ChatFolder> 
   return folder;
 }
 
+/**
+ * Persist the whole arrangement, optimistically.
+ *
+ * The mirror is written first so the dragged folder stays where it was dropped
+ * rather than snapping back for the length of a round trip. On failure the
+ * server's answer wins: an order the server refused must not survive locally,
+ * or the next reload would show a third order that nobody chose.
+ */
+export async function reorderChatFolders(folders: ChatFolder[]): Promise<ChatFolder[]> {
+  const previous = loadChatFolders();
+  replaceChatFolders(folders);
+  try {
+    const response = await fetch("/api/workspace/folders/order", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ order: folders.map((folder) => folder.id) }),
+      cache: "no-store",
+    });
+    if (!response.ok) throw new Error("Folder order could not be saved");
+    const payload = (await response.json()) as unknown;
+    if (!Array.isArray(payload)) throw new Error("Folder order response was invalid");
+    return replaceChatFolders(payload.filter(isRemoteFolder).map(toChatFolder));
+  } catch (error) {
+    replaceChatFolders(previous);
+    throw error;
+  }
+}
+
+export async function renameRemoteChatFolder(folderId: string, name: string): Promise<ChatFolder[]> {
+  const normalized = normalizeFolderName(name);
+  if (!normalized) return loadChatFolders();
+  const response = await fetch(`/api/workspace/folders/${encodeURIComponent(folderId)}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name: normalized }),
+    cache: "no-store",
+  });
+  if (!response.ok) throw new Error("Folder could not be renamed");
+  const payload = (await response.json()) as unknown;
+  if (!isRemoteFolder(payload)) throw new Error("Folder rename response was invalid");
+  const renamed = toChatFolder(payload);
+  // Rewritten in place rather than filtered-and-appended: a rename must not
+  // move the folder to the end of the arrangement.
+  return replaceChatFolders(
+    loadChatFolders().map((folder) => (folder.id === renamed.id ? renamed : folder)),
+  );
+}
+
+/**
+ * Delete the folder. Its chats survive, unfiled.
+ *
+ * The local unfiling is not optional. The server NULLs `runs.folder_id`, but the
+ * mirror holds its own copy: a chat left pointing at a folder that no longer
+ * exists renders in neither list — not under the folder, which is gone, and not
+ * under recents, which only shows chats with no folder at all.
+ */
+export async function deleteRemoteChatFolder(folderId: string): Promise<ChatFolder[]> {
+  const response = await fetch(`/api/workspace/folders/${encodeURIComponent(folderId)}`, {
+    method: "DELETE",
+    cache: "no-store",
+  });
+  if (!response.ok && response.status !== 404) throw new Error("Folder could not be deleted");
+  const orphaned = loadChatHistory({ includeDemo: false, includeArchived: true }).filter(
+    (chat) => chat.folderId === folderId,
+  );
+  for (const chat of orphaned) updateChat(chat.id, { folderId: undefined });
+  return replaceChatFolders(loadChatFolders().filter((folder) => folder.id !== folderId));
+}
+
 export async function assignChatToRemoteFolder(
   chatId: string,
   folderId?: string,
@@ -287,6 +363,38 @@ export async function assignChatToRemoteFolder(
   if (!response.ok) throw new Error("Chat folder assignment could not be saved");
 }
 
+/**
+ * Set once the browser's local folders have been adopted into the workspace.
+ *
+ * Before this existed, the adoption below ran on EVERY sidebar mount and created
+ * a remote folder for any local name with no remote match — which was invisible
+ * only because folders could not be deleted. The moment they could, delete
+ * became unshippable: the deleted folder survived in the local mirror
+ * (`replaceChatFolders` writes the union at the end of this function), so the
+ * next mount recreated it server-side and the user watched it come back.
+ *
+ * Adoption is a one-time migration, so it is recorded like one — the same shape
+ * as STORAGE_CLAIM_KEY in lib/user-storage.ts. After it has run, the server is
+ * authoritative and this function only mirrors downward.
+ *
+ * "Once" means once per storage scope, not once per account, and that is
+ * already correct without doing anything here: `scopedStorage` prefixes every
+ * key with `storageScopeId()`, which is `u:<id>` in a personal workspace and
+ * `u:<id>|w:<ws>` in a shared one. So a shared workspace carries its own
+ * adoption flag and adopts its own mirror, rather than inheriting a flag set
+ * while the person was somewhere else and skipping the upload entirely.
+ */
+const FOLDERS_ADOPTED_KEY = "majorana.chat-folders-adopted.v1";
+
+function foldersAlreadyAdopted(): boolean {
+  if (!canUseStorage()) return false;
+  return scopedStorage.getItem(FOLDERS_ADOPTED_KEY) === "true";
+}
+
+function markFoldersAdopted(): void {
+  if (canUseStorage()) scopedStorage.setItem(FOLDERS_ADOPTED_KEY, "true");
+}
+
 export async function hydrateChatFolders(chats: ChatSummary[]): Promise<{
   folders: ChatFolder[];
   localIdMap: Record<string, string>;
@@ -296,10 +404,14 @@ export async function hydrateChatFolders(chats: ChatSummary[]): Promise<{
   const payload = (await response.json()) as unknown;
   if (!Array.isArray(payload)) throw new Error("Workspace folder response was invalid");
 
+  // The API returns folders in the user's arrangement (workspace_folders.position,
+  // migration 0040). Preserve that order through the mirror — sorting here, or
+  // letting the union below reshuffle, would silently undo every drag.
   const remote = payload.filter(isRemoteFolder).map(toChatFolder);
   const byName = new Map(remote.map((folder) => [folder.name.toLocaleLowerCase(), folder]));
   const localIdMap: Record<string, string> = {};
   const created: ChatFolder[] = [];
+  const adopted = foldersAlreadyAdopted();
 
   for (const local of loadChatFolders()) {
     const existing = byName.get(local.name.toLocaleLowerCase());
@@ -307,11 +419,17 @@ export async function hydrateChatFolders(chats: ChatSummary[]): Promise<{
       localIdMap[local.id] = existing.id;
       continue;
     }
+    // A local folder with no remote match is one of two things, and which one
+    // depends entirely on whether adoption has run: before, it is folder the
+    // user made when this was a browser-only feature and it should be uploaded.
+    // After, it is a folder they DELETED, and uploading it un-deletes it.
+    if (adopted) continue;
     const folder = await createRemoteChatFolder(local.name);
     byName.set(folder.name.toLocaleLowerCase(), folder);
     localIdMap[local.id] = folder.id;
     created.push(folder);
   }
+  markFoldersAdopted();
 
   const folders = [...remote, ...created].filter(
     (folder, index, all) => all.findIndex((item) => item.id === folder.id) === index,

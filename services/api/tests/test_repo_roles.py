@@ -36,6 +36,9 @@ VIEWER_BLOCKED_WRITES = [
     lambda s, db: runs.create_run(s, db, task_prompt="p", mode=RunMode.EXECUTE, framework="qiskit"),
     lambda s, db: folders.create_folder(s, db, name="folder"),
     lambda s, db: folders.set_run_folder(s, db, uuid.uuid4(), uuid.uuid4()),
+    lambda s, db: folders.rename_folder(s, db, uuid.uuid4(), name="renamed"),
+    lambda s, db: folders.delete_folder(s, db, uuid.uuid4()),
+    lambda s, db: folders.reorder_folders(s, db, [uuid.uuid4()]),
     lambda s, db: runs.update_run_status(s, db, uuid.uuid4(), "running"),
     lambda s, db: runs.finish_run(
         s,

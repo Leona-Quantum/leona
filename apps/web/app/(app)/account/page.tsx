@@ -1,6 +1,7 @@
 import { getMajoranaAuth } from "../../../lib/auth";
 import { getAccountTier } from "../../../lib/account-tier-server";
 import { AccountSettings } from "./account-settings";
+import { ArchivedChats } from "./archived-chats";
 import { BillingPanel } from "./billing-panel";
 import { LanguageToggle } from "../../../components/language-toggle";
 import { getPublicLocale } from "../../../lib/public-locale-server";
@@ -46,6 +47,7 @@ export default async function Account() {
             </div>
           </section>
           <AccountSettings initialEmail={user.email} locale={locale} />
+          <ArchivedChats locale={locale} />
           <section className="mj-artifact-panel" id="usage" aria-labelledby="usage-heading">
             <div className="mj-panel-heading"><h2 id="usage-heading">{copy.usageTitle}</h2></div>
             <p className="mj-panel-help">{copy.usageEnforcement}</p>

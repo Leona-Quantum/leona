@@ -2048,11 +2048,98 @@
   color: var(--text-0);
   background: var(--bg-2);
 }
-.mj-sidebar-folder-trigger svg:first-child {
+/* The folder icon no longer rotates: it SWAPS between a closed and an open
+   folder (components/icons.tsx). The chevron that used to sit beside it is gone
+   — in a rail this narrow, an arrow and an icon spent two columns saying one
+   thing. The rotation rule is kept only for the Recents disclosure below, which
+   still uses a real chevron because it has no icon of its own. */
+.mj-sidebar-group {
+  display: grid;
+  gap: var(--sp-1);
+}
+.mj-sidebar-folder-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+.mj-sidebar-folder-row .mj-sidebar-folder-trigger {
+  min-width: 0;
+}
+.mj-sidebar-folder-actions {
+  /* Overlaid rather than laid out, exactly like .mj-sidebar-chat-actions: four
+     controls in the flow would push every folder name into an ellipsis at the
+     rail's default width, whether or not the pointer is anywhere near. */
+  position: absolute;
+  right: var(--sp-1);
+  display: flex;
+  gap: 2px;
+  opacity: 0;
+  background: linear-gradient(90deg, transparent, var(--bg-2) 18%);
+  padding-left: var(--sp-3);
+}
+@media (prefers-reduced-motion: no-preference) {
+  .mj-sidebar-folder-actions {
+    transition: opacity 120ms ease-out;
+  }
+}
+.mj-sidebar-folder-row:hover .mj-sidebar-folder-actions,
+.mj-sidebar-folder-actions:focus-within {
+  opacity: 1;
+}
+.mj-sidebar-folder-actions button[disabled] {
+  opacity: 0.35;
+  cursor: default;
+}
+/* The drop indicator for a folder being dragged over another. A top border
+   rather than a background: it says "it will land here", where a fill only says
+   "this one is involved". */
+.mj-sidebar-disclosure[data-chat-drop="true"] .mj-sidebar-folder-trigger {
+  color: var(--text-0);
+  background: var(--bg-2);
+  border-color: var(--accent);
+}
+.mj-sidebar-disclosure[data-folder-drop="true"] {
+  box-shadow: inset 0 2px 0 0 var(--accent);
+  border-radius: var(--radius-control);
+}
+.mj-sidebar-disclosure[draggable="true"] .mj-sidebar-folder-trigger {
+  cursor: grab;
+}
+.mj-sidebar-recents-toggle {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1);
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+.mj-sidebar-recents-toggle svg {
   transition: transform 150ms ease-out;
 }
-.mj-sidebar-folder-trigger svg:first-child.is-open {
+.mj-sidebar-recents-toggle svg.is-open {
   transform: rotate(90deg);
+}
+.mj-sidebar-error {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  margin: var(--sp-1) var(--sp-2);
+  padding: var(--sp-2);
+  border: 1px solid var(--border-0);
+  border-radius: var(--radius-control);
+  color: var(--text-1);
+  background: var(--bg-2);
+  font-size: var(--fs-12);
+}
+.mj-sidebar-error button {
+  margin-left: auto;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
 }
 .mj-sidebar-empty {
   display: block;
@@ -2219,6 +2306,114 @@
 .mj-sidebar-chat-action--danger {
   color: var(--err);
 }
+/* The archive undo banner. Bottom-centre, above the composer's own chrome but
+   below any modal — it is an offer, not an interruption, and it disappears on
+   its own after six seconds. */
+.mj-archive-notice {
+  position: fixed;
+  z-index: 90;
+  bottom: var(--sp-5);
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  max-width: min(92vw, 620px);
+  padding: var(--sp-3) var(--sp-4);
+  border: 1px solid var(--border-0);
+  border-radius: var(--radius-card);
+  color: var(--text-0);
+  background: var(--bg-2);
+  box-shadow: var(--shadow-popover);
+  font-size: var(--fs-13);
+}
+.mj-archive-notice > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mj-archive-notice-action {
+  flex: none;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text-0);
+  font: inherit;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+.mj-archive-notice-close {
+  flex: none;
+  margin-left: var(--sp-1);
+  border: 0;
+  background: transparent;
+  color: var(--text-2);
+  font-size: var(--fs-14);
+  cursor: pointer;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .mj-archive-notice {
+    animation: mj-archive-notice-in 160ms ease-out;
+  }
+}
+@keyframes mj-archive-notice-in {
+  from { opacity: 0; transform: translate(-50%, 8px); }
+  to { opacity: 1; transform: translate(-50%, 0); }
+}
+.mj-archived-list {
+  display: grid;
+  gap: var(--sp-1);
+  margin-top: var(--sp-3);
+}
+.mj-archived-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-2);
+  border: 1px solid var(--border-0);
+  border-radius: var(--radius-control);
+}
+.mj-archived-row > a {
+  display: flex;
+  flex: 1;
+  align-items: baseline;
+  gap: var(--sp-2);
+  min-width: 0;
+  color: var(--text-0);
+  text-decoration: none;
+}
+.mj-archived-row > a > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mj-archived-row > a > small {
+  flex: none;
+  color: var(--text-2);
+  font-family: var(--font-mono);
+  font-size: var(--fs-12);
+}
+.mj-archived-row-actions {
+  display: flex;
+  flex: none;
+  gap: var(--sp-1);
+}
+.mj-archived-row-actions button {
+  border: 1px solid var(--border-0);
+  border-radius: var(--radius-control);
+  padding: 2px var(--sp-2);
+  background: transparent;
+  color: var(--text-1);
+  font: inherit;
+  cursor: pointer;
+}
+.mj-archived-row-actions button.is-danger:hover {
+  color: var(--err);
+  border-color: var(--err);
+}
+
 .mj-delete-dialog-backdrop {
   position: fixed;
   z-index: 100;

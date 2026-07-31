@@ -11,6 +11,28 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
     projects: string;
     chats: string;
     artifacts: string;
+    /** Run's folder section. Studio's artifact grouping keeps `projects`. */
+    runFolders: string;
+    renameFolder: (name: string) => string;
+    deleteFolder: (name: string) => string;
+    deleteFolderTitle: string;
+    deleteFolderWarning: (name: string) => string;
+    folderOptions: (name: string) => string;
+    reorderFolder: (name: string) => string;
+    folderMoveUp: (name: string) => string;
+    folderMoveDown: (name: string) => string;
+    folderOrderFailed: string;
+    folderRenameFailed: string;
+    folderDeleteFailed: string;
+    recentsAbove: string;
+    recentsBelow: string;
+    recentsPositionLabel: string;
+    collapseRecents: string;
+    expandRecents: string;
+    archivedMoved: string;
+    archivedInSettings: string;
+    undo: string;
+    chatArchived: (title: string) => string;
     newArtifact: string;
     viewLibrary: string;
     newChat: string;
@@ -346,6 +368,28 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
       projects: "Projects",
       chats: "Chats",
       artifacts: "Artifacts",
+      runFolders: "Folders",
+      renameFolder: (name) => `Rename ${name}`,
+      deleteFolder: (name) => `Delete ${name}`,
+      deleteFolderTitle: "Delete this folder?",
+      deleteFolderWarning: (name) =>
+        `“${name}” will be removed. The chats inside it stay in your workspace.`,
+      folderOptions: (name) => `${name} options`,
+      reorderFolder: (name) => `Reorder ${name}`,
+      folderMoveUp: (name) => `Move ${name} up`,
+      folderMoveDown: (name) => `Move ${name} down`,
+      folderOrderFailed: "That order could not be saved.",
+      folderRenameFailed: "That folder could not be renamed.",
+      folderDeleteFailed: "That folder could not be deleted.",
+      recentsAbove: "Show recent chats above folders",
+      recentsBelow: "Show recent chats below folders",
+      recentsPositionLabel: "Recent chats position",
+      collapseRecents: "Collapse recent chats",
+      expandRecents: "Expand recent chats",
+      archivedMoved: "Archived.",
+      archivedInSettings: "View archived chats in settings",
+      undo: "Undo",
+      chatArchived: (title) => `${title} archived`,
       newArtifact: "New draft",
       viewLibrary: "View Vault",
       newChat: "New chat",
@@ -726,6 +770,28 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
       projects: "プロジェクト",
       chats: "チャット",
       artifacts: "回路・実行記録",
+      runFolders: "フォルダ",
+      renameFolder: (name) => `${name}の名前を変更`,
+      deleteFolder: (name) => `${name}を削除`,
+      deleteFolderTitle: "このフォルダを削除しますか",
+      deleteFolderWarning: (name) =>
+        `「${name}」を削除します。中のチャットはワークスペースに残ります。`,
+      folderOptions: (name) => `${name}のオプション`,
+      reorderFolder: (name) => `${name}の並び替え`,
+      folderMoveUp: (name) => `${name}を上へ`,
+      folderMoveDown: (name) => `${name}を下へ`,
+      folderOrderFailed: "並び順を保存できませんでした。",
+      folderRenameFailed: "フォルダの名前を変更できませんでした。",
+      folderDeleteFailed: "フォルダを削除できませんでした。",
+      recentsAbove: "最近のチャットをフォルダの上に表示",
+      recentsBelow: "最近のチャットをフォルダの下に表示",
+      recentsPositionLabel: "最近のチャットの位置",
+      collapseRecents: "最近のチャットを閉じる",
+      expandRecents: "最近のチャットを開く",
+      archivedMoved: "アーカイブしました。",
+      archivedInSettings: "アーカイブは設定から確認できます",
+      undo: "元に戻す",
+      chatArchived: (title) => `${title}をアーカイブしました`,
       newArtifact: "新しい下書き",
       viewLibrary: "Vaultを見る",
       newChat: "新しいチャット",
