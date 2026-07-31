@@ -5,6 +5,7 @@ the parent run under scope first. run_events is append-only (DB grant enforced).
 """
 
 import datetime as dt
+import json
 import uuid
 from typing import Any
 
@@ -132,6 +133,22 @@ async def count_execute_runs_since(scope: Scope, session: AsyncSession, since: d
     return int((await session.execute(execute_allowance_stmt(scope, since))).scalar_one())
 
 
+def _spends_the_weekly_allowance(scope: Scope, since: dt.datetime):
+    """The rows that spend a weekly allowance. ONE definition, two statements.
+
+    Both the count the gate refuses on and the timestamps `/v1/usage` reports
+    "when your next run frees up" from are built from this tuple. Written twice,
+    they could drift by one predicate and the product would then refuse a
+    submission on a screen that had just said two runs were left — a difference
+    the user reads as the number being a lie, not as a bug.
+    """
+    return (
+        Run.user_id == scope.user_id,
+        Run.mode == RunMode.EXECUTE.value,
+        Run.created_at >= since,
+    )
+
+
 def execute_allowance_stmt(scope: Scope, since: dt.datetime):
     """The allowance count as a statement, so a test can EXPLAIN this exact one.
 
@@ -141,15 +158,39 @@ def execute_allowance_stmt(scope: Scope, since: dt.datetime):
     the sequential scan the index was added to remove, and a test carrying its own
     copy of the SQL would keep passing while it happened.
     """
+    return select(func.count()).select_from(Run).where(*_spends_the_weekly_allowance(scope, since))
+
+
+def oldest_allowance_runs_stmt(scope: Scope, since: dt.datetime, *, count: int):
+    """The oldest allowance-spending runs still inside the window, ascending.
+
+    Ascending rather than descending because the question it answers is "which
+    run leaves the window next" — that is the OLDEST one, and its `created_at`
+    plus the window length is the moment the caller gets a run back. Reads the
+    same index as the count (`ix_runs_user_mode_created` is DESC, which serves an
+    ascending scan backwards).
+    """
     return (
-        select(func.count())
-        .select_from(Run)
-        .where(
-            Run.user_id == scope.user_id,
-            Run.mode == RunMode.EXECUTE.value,
-            Run.created_at >= since,
-        )
+        select(Run.created_at)
+        .where(*_spends_the_weekly_allowance(scope, since))
+        .order_by(Run.created_at.asc())
+        .limit(count)
     )
+
+
+async def oldest_allowance_runs_since(
+    scope: Scope, session: AsyncSession, since: dt.datetime, *, count: int
+) -> list[dt.datetime]:
+    """`created_at` of the `count` oldest runs still spending the allowance.
+
+    Per USER and not per workspace, for the same reason the count above is —
+    the two must select the same rows or the number shown and the number
+    enforced disagree.
+    """
+    if count <= 0:
+        return []
+    rows = await session.execute(oldest_allowance_runs_stmt(scope, since, count=count))
+    return [stamp for stamp in rows.scalars().all()]
 
 
 async def find_run_by_idempotency_key(
@@ -230,6 +271,211 @@ async def list_conversation_runs(
     return list((await session.execute(stmt)).scalars().all())
 
 
+# Conversation history is priced in estimated tokens, not characters, because
+# what it costs is a provider request. Chat is the one unmetered surface in this
+# product: no weekly allowance, no submission backstop, no usage ledger (see
+# services/api/tests/test_run_execute_backstop.py). Nothing downstream will
+# refuse an expensive chat turn, so the ceiling has to be here, and it has to be
+# absolute rather than a function of how long the conversation has run.
+#
+# The per-turn shares below sum to less than the total on purpose: that is what
+# guarantees the newest turn is always admitted whole, so "explain this code"
+# never loses the thing "this" refers to.
+_CONVERSATION_CODE_MAX_TOKENS = 2_000
+_CONVERSATION_VALUE_MAX_TOKENS = 500
+_CONVERSATION_ASSISTANT_MAX_TOKENS = 4_000
+_CONVERSATION_USER_MAX_TOKENS = 1_000
+_CONVERSATION_HISTORY_MAX_TOKENS = 8_000
+
+_TRUNCATION_MARKER = "\n[Earlier output truncated for conversation context]"
+
+
+def _estimated_tokens(value: str) -> int:
+    """Provider-independent, deterministic token estimate.
+
+    ASCII prose and source tokenize at roughly four characters per token;
+    Japanese — a first-class UI language here, and the language the follow-up
+    case that motivated this history exists for was written in — tokenizes at
+    closer to one. Counting every non-ASCII character as its own token keeps one
+    budget honest for both, instead of a character budget that silently costs
+    four times as much on a Japanese conversation as on an English one.
+    """
+    ascii_chars = sum(1 for char in value if char.isascii())
+    return -(-ascii_chars // 4) + (len(value) - ascii_chars)
+
+
+def _bounded_text(value: str, token_limit: int) -> str:
+    """Return the longest prefix of `value` costing at most `token_limit`.
+
+    Truncation is oldest-first at the history level and tail-first here, and it
+    is always marked: an unmarked truncation would read to the model as source
+    or a result that genuinely ended there.
+    """
+    if _estimated_tokens(value) <= token_limit:
+        return value
+    budget = token_limit - _estimated_tokens(_TRUNCATION_MARKER)
+    if budget <= 0:
+        return ""
+    ascii_seen = 0
+    wide_seen = 0
+    cut = 0
+    for index, char in enumerate(value):
+        if char.isascii():
+            ascii_seen += 1
+        else:
+            wide_seen += 1
+        if -(-ascii_seen // 4) + wide_seen > budget:
+            break
+        cut = index + 1
+    return f"{value[:cut]}{_TRUNCATION_MARKER}"
+
+
+def _context_json(value: Any) -> str:
+    try:
+        rendered = json.dumps(value, ensure_ascii=False, indent=2, sort_keys=True, default=str)
+    except (TypeError, ValueError):
+        rendered = str(value)
+    return _bounded_text(rendered, _CONVERSATION_VALUE_MAX_TOKENS)
+
+
+def _latest_event_payload(events: list[RunEvent], event_type: str) -> dict[str, Any] | None:
+    for event in reversed(events):
+        if event.type == event_type and isinstance(event.payload, dict):
+            return event.payload
+    return None
+
+
+def _execution_context_from_events(events: list[RunEvent]) -> str | None:
+    """Render one completed Execute turn as provider-neutral assistant history.
+
+    The conversation UI already replays source and results from these durable
+    events. The model must receive the same facts or a follow-up such as "explain
+    this" has no referent. stdout/stderr are deliberately excluded: only the
+    selected source, protected RESULT, plan, and terminal evidence are context.
+    """
+    finished = _latest_event_payload(events, "run.finished")
+    analysis = _latest_event_payload(events, "run.analysis")
+    if finished is None and analysis is None:
+        return None
+
+    source = (
+        _latest_event_payload(events, "code.finalized")
+        or _latest_event_payload(events, "run.best_effort")
+        or _latest_event_payload(events, "code.generated")
+    )
+    if source is None and analysis is None:
+        return None
+
+    sections = [
+        "[Prior Execute output — durable context from an earlier turn, not a new execution]"
+    ]
+    if analysis is not None:
+        interpretation = analysis.get("interpretation")
+        if isinstance(interpretation, str) and interpretation.strip():
+            sections.extend(["Analysis:", interpretation.strip()])
+
+    if source is not None:
+        code = source.get("code")
+        if isinstance(code, str) and code.strip():
+            language = str(source.get("language") or "text")
+            revision = source.get("revision")
+            revision_note = f", revision {revision}" if isinstance(revision, int) else ""
+            fence = "qasm" if language.lower() in {"openqasm", "qasm"} else "python"
+            sections.extend(
+                [
+                    f"Generated source ({language}{revision_note}):",
+                    f"```{fence}\n{_bounded_text(code.strip(), _CONVERSATION_CODE_MAX_TOKENS)}\n```",
+                ]
+            )
+
+    plan = _latest_event_payload(events, "plan.produced")
+    if plan is not None and isinstance(plan.get("plan"), dict):
+        sections.extend(["Plan:", f"```json\n{_context_json(plan['plan'])}\n```"])
+
+    sandbox = _latest_event_payload(events, "sandbox.result")
+    if sandbox is not None and isinstance(sandbox.get("result"), dict):
+        sections.extend(
+            ["Observed sandbox RESULT:", f"```json\n{_context_json(sandbox['result'])}\n```"]
+        )
+
+    if source is not None and any(
+        key in source for key in ("failed_checks", "critic_summary", "residual_risks")
+    ):
+        limitations = {
+            key: source[key]
+            for key in ("failed_checks", "critic_summary", "residual_risks")
+            if source.get(key)
+        }
+        if limitations:
+            sections.extend(
+                ["Recorded limitations:", f"```json\n{_context_json(limitations)}\n```"]
+            )
+
+    if finished is not None:
+        terminal = {
+            key: finished[key]
+            for key in (
+                "status",
+                "verifier_decision",
+                "evidence_strength",
+                "reason_code",
+                "verification_summary",
+                "residual_risks",
+            )
+            if finished.get(key) is not None
+        }
+        if terminal:
+            sections.extend(
+                ["Recorded terminal evidence:", f"```json\n{_context_json(terminal)}\n```"]
+            )
+    return _bounded_text("\n\n".join(sections), _CONVERSATION_ASSISTANT_MAX_TOKENS)
+
+
+def _conversation_assistant_text(events: list[RunEvent]) -> str | None:
+    """Return the exact assistant-side content a later turn may refer to."""
+    chat = _latest_event_payload(events, "chat.completed")
+    if chat is not None:
+        text = chat.get("text")
+        if isinstance(text, str) and text.strip():
+            return _bounded_text(text.strip(), _CONVERSATION_ASSISTANT_MAX_TOKENS)
+    return _execution_context_from_events(events)
+
+
+def _bounded_conversation_history(
+    turns: list[tuple[str, str]],
+) -> list[dict[str, str]]:
+    """Keep the newest complete turns inside a fixed, absolute provider budget.
+
+    Two ceilings, both applied here rather than trusted from the caller, so the
+    bound holds whatever was stored: every turn is first clamped to its per-turn
+    share, then turns are admitted newest-first until the total budget is spent.
+    Because one clamped turn always costs less than the total, the newest turn
+    is always admitted — a follow-up never loses the turn it refers to.
+
+    The invariant this exists to hold: the size of a chat request is a function
+    of the budget, never of how long the conversation is.
+    """
+    selected: list[tuple[str, str]] = []
+    used = 0
+    for user, assistant in reversed(turns):
+        user = _bounded_text(user, _CONVERSATION_USER_MAX_TOKENS)
+        assistant = _bounded_text(assistant, _CONVERSATION_ASSISTANT_MAX_TOKENS)
+        cost = _estimated_tokens(user) + _estimated_tokens(assistant)
+        if used + cost > _CONVERSATION_HISTORY_MAX_TOKENS:
+            break
+        selected.append((user, assistant))
+        used += cost
+    messages: list[dict[str, str]] = []
+    for user, assistant in reversed(selected):
+        messages.extend(
+            [
+                {"role": "user", "content": user},
+                {"role": "assistant", "content": assistant},
+            ]
+        )
+    return messages
+
+
 async def list_conversation_messages(
     scope: Scope,
     session: AsyncSession,
@@ -238,10 +484,12 @@ async def list_conversation_messages(
     exclude_run_id: uuid.UUID | None = None,
     limit: int = 20,
 ) -> list[dict[str, str]]:
-    """Build provider-neutral user/assistant history from stored chat turns.
+    """Build provider-neutral user/assistant history from stored turns.
 
-    Only completed assistant text is replayed into a new provider request. A
-    failed or in-flight turn contributes no invented answer.
+    Completed chat text is replayed verbatim. Execute turns are reconstructed
+    from their durable plan/source/RESULT/terminal events, so references such as
+    "this code" retain their meaning. In-flight turns contribute no invented
+    answer, and the newest complete turns are bounded before provider dispatch.
     """
     conditions = [
         Run.workspace_id == scope.workspace_id,
@@ -257,30 +505,14 @@ async def list_conversation_messages(
     )
     rows = list((await session.execute(stmt)).scalars().all())
     rows.reverse()
-    messages: list[dict[str, str]] = []
+    turns: list[tuple[str, str]] = []
     for row in rows:
         events = await list_run_events(scope, session, row.id)
-        assistant_text: str | None = None
-        for event in reversed(events):
-            if event.type == "chat.completed":
-                value = event.payload.get("text")
-                if isinstance(value, str) and value.strip():
-                    assistant_text = value
-                    break
-            if event.type == "run.analysis":
-                value = event.payload.get("interpretation")
-                if isinstance(value, str) and value.strip():
-                    assistant_text = value
-                    break
+        assistant_text = _conversation_assistant_text(events)
         if assistant_text is None:
             continue
-        messages.extend(
-            [
-                {"role": "user", "content": row.task_prompt},
-                {"role": "assistant", "content": assistant_text},
-            ]
-        )
-    return messages
+        turns.append((row.task_prompt, assistant_text))
+    return _bounded_conversation_history(turns)
 
 
 # The only run columns a status transition may touch — an open **fields would

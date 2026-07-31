@@ -3,6 +3,7 @@ import { getAccountTier } from "../../../lib/account-tier-server";
 import { AccountSettings } from "./account-settings";
 import { ArchivedChats } from "./archived-chats";
 import { BillingPanel } from "./billing-panel";
+import { UsageNow } from "./usage-now";
 import { LanguageToggle } from "../../../components/language-toggle";
 import { getPublicLocale } from "../../../lib/public-locale-server";
 import { ACCOUNT_COPY } from "../../../lib/workspace-locale";
@@ -57,6 +58,9 @@ export default async function Account() {
               <div><dt>{copy.usageStorage}</dt><dd>{storage}</dd></div>
               <div><dt>{copy.usageSimulation}</dt><dd>{copy.usageQubits(limits.cpuSimQubits)}</dd></div>
             </dl>
+            {/* The ceilings above are the plan; this is what is left of it.
+                Client-side and additive — see usage-now.tsx for why the split. */}
+            <UsageNow locale={locale} renderedTier={tier} />
           </section>
           <BillingPanel locale={locale} />
         </div>

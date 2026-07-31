@@ -1,0 +1,17 @@
+id: bench-15
+category: "D — VQE explicit Hamiltonian"
+prompt: >-
+  Use VQE in Qiskit to estimate the ground-state energy of this explicit
+  4-qubit Hamiltonian: -1.0 ZIII - 0.8 IZII - 0.6 IIZI - 0.4 IIIZ
+  + 0.3 XXII + 0.25 IXXI + 0.2 IIXX. Use a bounded scipy optimizer and
+  Statevector expectation values. Return the variational energy as the
+  top-level numeric RESULT key energy and bind the optimized ansatz circuit
+  to FINAL_CIRCUIT.
+framework: qiskit
+expect:
+  terminal_reason: ai_review_aligned_with_reference_check
+  output_keys: ["energy"]
+  expected_values:
+    energy: -2.8675005242
+  expected_value_tolerance: 0.15
+  saves_artifact: true

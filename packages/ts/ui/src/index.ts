@@ -11,11 +11,12 @@ export {
 export { VerdictBanner, type Verdict } from "./verdict-banner";
 export { VerificationSummaryPanel, verificationHeadline } from "./verification-summary";
 export {
-  RunProgress,
-  type RunProgressItem,
-  type RunProgressState,
-  type RunProgressView,
-} from "./run-progress";
+  AgentActivity,
+  type AgentActivityIcon,
+  type AgentActivityItem,
+  type AgentActivityState,
+  type AgentActivityView,
+} from "./agent-activity";
 export {
   RunOutcome,
   type RunOutcomeBadge,

@@ -8,8 +8,8 @@ build status and decisions that postdate those docs.
 |---|---|---|
 | S1 | Landing | not started (scaffold `/` sign-in page exists) |
 | S2 | Run home | shipped (`/run` composer submits through the authenticated BFF; examples, mode selection, and recent runs are present) |
-| S3 | Pipeline view | `RunView` + pure `reduceRunEvents` shipped at `/run/[taskId]`; live BFF event-stream replay, resumable SSE, and typed prose are wired |
-| S4 | Result panel | assembled — verdict → key numbers → code → baseline → export → Vault link, in spec §3 order; renders from the same replayed log |
+| S3 | Agent activity | `AgentActivity` + pure `runActivityFromEvents` shipped at `/run/[taskId]`; live BFF event-stream replay, resumable SSE, repair history, semantic operation disclosures, revision selection/copy, and structured evidence/log details are wired; raw technical transcripts stay off the normal surface |
+| S4 | Result panel | assembled — verdict → key numbers → code → baseline → export → Vault link, in spec §3 order; failed runs preserve and label the best available deliverable without implying verification |
 | S5 | Vault list | shipped with workspace-scoped API loading, search/filter controls, empty/error states, explicit demo-only fixtures, and storage-only copy |
 | S6 | Artifact detail | shipped — tabs expose "Code & Export" with OpenQASM download; current-version, provenance, copy, and Run handoff are wired |
 | S7 | Studio editor | owner-directed slice — code editor, semantic circuit preview, inspector, output drawer, and persisted framework variants |

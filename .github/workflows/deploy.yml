@@ -49,6 +49,30 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Load infra/fleet.env into the job environment so every `gcloud run
+      # deploy` below passes the numbers from that file rather than a literal
+      # copied beside it. The whole point of the file is that changing the
+      # worker count is ONE edit; a literal here would quietly make it two, and
+      # the second one is the one people forget.
+      #
+      # Filtered to KEY=INTEGER lines on purpose: $GITHUB_ENV rejects a comment
+      # line, and fleet.env is mostly comments — the reasoning for each number is
+      # the part worth keeping next to it.
+      #
+      # The keys are checked before they are exported, not after. An unmatched
+      # line does not fail the grep — it just does not export — and the failure
+      # then lands as `--min-instances ""` or `DB_POOL_SIZE=` further down, where
+      # gcloud reads it as "clear this setting" and ships a revision nobody sized.
+      - name: load fleet sizing
+        run: |
+          for key in WORKER_INSTANCES WORKER_POOL_SIZE WORKER_MAX_OVERFLOW API_MAX_INSTANCES; do
+            grep -qE "^${key}=[0-9]+$" infra/fleet.env || {
+              echo "::error::${key} is missing from infra/fleet.env or is not a plain integer"
+              exit 1
+            }
+          done
+          grep -E '^[A-Z_]+=[0-9]+$' infra/fleet.env >> "$GITHUB_ENV"
+
       - name: check deploy credentials
         id: creds
         run: echo "have=${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER != '' && secrets.GCP_DEPLOY_SERVICE_ACCOUNT != '' }}" >> "$GITHUB_OUTPUT"
@@ -211,7 +235,9 @@ jobs:
           # --max-instances is stated for the same reason the worker's scaling
           # flags are: the connection budget in docs/runbooks/database.md is only
           # arithmetic if every term in it is pinned somewhere a reader can find.
-          # 2 is what production already ran; this states it rather than changes it.
+          # It comes from infra/fleet.env via the "load fleet sizing" step above,
+          # which is also where db.py reads it for that budget — one number, not
+          # two that have to be kept equal.
           #
           # --update-env-vars, never --set-env-vars: neither service's env is
           # fully declared here yet (DATABASE_URL and the MAJORANA_* runtime
@@ -220,7 +246,7 @@ jobs:
           gcloud run deploy majorana-api --project "$GCP_PROJECT" --region "$GCP_REGION" \
             --image "$IMAGE_REPO:${{ steps.tag.outputs.tag }}" \
             --set-cloudsql-instances "$CLOUDSQL_INSTANCE" \
-            --max-instances 2 \
+            --max-instances "$API_MAX_INSTANCES" \
             --update-env-vars MAJORANA_SERVICE=api \
             --no-traffic --tag verify
           # Parse the URL out with jq rather than a --format projection. Two
@@ -277,43 +303,40 @@ jobs:
         if: steps.creds.outputs.have == 'true'
         id: worker
         run: |
-          # THREE workers, not one. Runs were processed strictly serially
-          # product-wide until 2026-08-01 and the queue — not page latency — was
-          # what a class or a launch would have felt. `claim_job` is
-          # `FOR UPDATE SKIP LOCKED` with lease tokens and heartbeats, so the
-          # queue itself always supported this; the three sweeps do too, and each
-          # for its own stated reason:
-          #   recover_stale_jobs — repeats its predicates on both UPDATEs, so a
-          #     row another worker already moved no longer matches.
-          #   claim_pending_dead_letter — FOR UPDATE SKIP LOCKED, like claim_job.
-          #   the orphan reaper — close_orphaned_run writes deterministic uuid5
-          #     event ids and fail_run_from_dead_letter no-ops on an already
-          #     terminal run, so a double reap completes one sequence, not two.
-          # worker_id is "$hostname:$pid", so instances never collide on a lease.
+          # How many workers run is NOT decided here — it is WORKER_INSTANCES in
+          # infra/fleet.env, loaded into the environment by the "load fleet
+          # sizing" step, and read by db.py's connection-budget arithmetic from
+          # the same file. One number, one edit, no second copy to forget.
+          #
+          # The queue supports any count. `claim_job` and
+          # `claim_pending_dead_letter` are `FOR UPDATE SKIP LOCKED` with lease
+          # tokens and heartbeats; `recover_stale_jobs` repeats its predicates on
+          # both UPDATEs, so a row another worker already moved no longer
+          # matches; the orphan reaper's `close_orphaned_run` writes
+          # deterministic uuid5 event ids onto a `fail_run_from_dead_letter` that
+          # no-ops on an already-terminal run, so a double reap completes one
+          # sequence rather than two. `worker_id` is "$hostname:$pid", so
+          # instances never collide on a lease.
           #
           # min == max on purpose. Cloud Run autoscales on request concurrency
           # and this service serves only a static liveness responder, so it
           # receives no request traffic and would never scale up on its own no
           # matter what the maximum said. Parallel workers have to be always-on,
-          # which is real money: roughly $15-25/month each.
+          # which is real money: roughly $15-25/month each. That cost is the
+          # reason the default went back to 1 on 2026-08-01 — the queue is empty
+          # at today's usage, so the parallelism was being paid for and not used.
           #
-          # THREE rather than the four the steady-state budget allows, because
-          # --min-instances is a REVISION-level setting: while this very command
-          # is rolling out, the outgoing revision is still in the traffic split
-          # and still holding its minimum, so the fleet transiently runs 2xN
-          # workers. Four would be 52 connections against a budget of 45 for the
-          # length of every deploy — and a deploy is exactly when Alembic needs
-          # one. See fleet_peak_connections() in db.py.
-          #
-          # DB_POOL_SIZE/DB_MAX_OVERFLOW are stated here because four workers at
-          # the API's 5+5 would have blown the instance's 50-connection ceiling.
-          # The worker holds at most two sessions at once (handler + heartbeat).
+          # DB_POOL_SIZE/DB_MAX_OVERFLOW come from the same file. They are not
+          # defaults in code: without them the worker is a 5+5 process, and
+          # several of those plus the API blows the instance's 50-connection
+          # ceiling. The worker holds at most two sessions at once (handler +
+          # heartbeat).
           gcloud run deploy majorana-worker --project "$GCP_PROJECT" --region "$GCP_REGION" \
             --image "$IMAGE_REPO:${{ steps.tag.outputs.tag }}" \
             --command majorana-worker \
             --set-cloudsql-instances "$CLOUDSQL_INSTANCE" \
-            --update-env-vars MAJORANA_SERVICE=worker,DB_POOL_SIZE=2,DB_MAX_OVERFLOW=2 \
-            --min-instances 3 --max-instances 3 --no-cpu-throttling
+            --update-env-vars MAJORANA_SERVICE=worker,DB_POOL_SIZE=$WORKER_POOL_SIZE,DB_MAX_OVERFLOW=$WORKER_MAX_OVERFLOW \
+            --min-instances "$WORKER_INSTANCES" --max-instances "$WORKER_INSTANCES" --no-cpu-throttling
           rev=$(gcloud run services describe majorana-worker \
             --project "$GCP_PROJECT" --region "$GCP_REGION" \
             --format="value(status.latestCreatedRevisionName)")

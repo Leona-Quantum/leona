@@ -140,6 +140,12 @@ class SimplePipelineStore(Protocol):
         review_id: UUID,
     ) -> SemanticReviewEvidence | None: ...
 
+    async def latest_semantic_review(
+        self,
+        run_id: UUID,
+        candidate_id: UUID,
+    ) -> SemanticReviewEvidence | None: ...
+
     async def append_semantic_review(self, evidence: SemanticReviewEvidence) -> None: ...
 
     async def conversion_for(
@@ -212,6 +218,16 @@ _REVIEW_ROUTING: dict[
 }
 
 
+#: The only severities and confidences that clear a review, stated as a positive
+#: permission rather than as a list of prohibitions. A grade this module does not
+#: recognise — a new enum member, a model that answered off-schema, a field that
+#: some later refactor made optional and left unset — is therefore a denial. The
+#: inverse spelling ("severity not in {major, blocking}") reads an absent grade as
+#: permission, which is precisely how a blocking review reaches a user as passed.
+_ACCEPTING_SEVERITIES = frozenset({"none", "minor"})
+_ACCEPTING_CONFIDENCES = frozenset({"high", "medium"})
+
+
 def _decide(
     output: "_IntentReviewOutput",
     deterministic_failed: list[str],
@@ -219,10 +235,20 @@ def _decide(
     """Turn one advisory review into an actionable next step. Never a dead end.
 
     The controller — not the reviewer — owns transitions, so this only has to
-    answer "accept, or fix which layer?". Two rules:
+    answer "accept, or fix which layer?". The verdict and its disposition are two
+    separate questions, asked in that order and never fused:
 
-    * accept only an unhedged acceptance backed by every deterministic check;
-    * otherwise take the layer the reviewer named, defaulting to the candidate.
+    * VERDICT — does this review clear the candidate? Only a review that passed
+      every deterministic check AND graded itself acceptable does. A blocking or
+      major severity, a low confidence, or a grade this module cannot read is a
+      refusal, and no amount of missing follow-up detail converts it into an
+      acceptance. `_summary_reason_code` publishes READY to the user as
+      "ai_review_aligned", which `apps/web/lib/run-outcome.ts` renders as "the
+      circuit executed and matched the request" — so collapsing a refusal into
+      READY tells a user their circuit passed a review that said it had not.
+    * DISPOSITION — given a refusal, which layer gets the next attempt? Only that
+      second question consults the reviewer's own routing, defaulting to the
+      candidate.
 
     Deliberately no fourth "cannot tell" outcome. That state named no next step,
     so the controller regenerated identical evidence until the candidate budget
@@ -232,15 +258,36 @@ def _decide(
     bounded by the same budget, it feeds the reviewer's own findings back to the
     generator, and two consecutive repairs now escalate to a replan on their own.
 
-    A blocked review therefore costs one candidate revision instead of the whole run.
+    Within an accepting grade, uncertainty alone does not consume a source
+    revision: a reviewer that asks for another candidate while naming no failed
+    check, no mismatch and no repair instruction has described a residual risk,
+    not a defect, and the artifact still saves as INCONCLUSIVE. That allowance is
+    scoped to a clean grade on purpose. `failed_checks`, `mismatches` and
+    `repair_instructions` all default to `[]` in model-authored JSON, so an empty
+    one is an absence of evidence and must never be read as evidence of absence.
+
+    A refusal is not a failed run. The controller repairs, and if it exhausts its
+    budget the run still delivers on trusted evidence — as
+    `trusted_evidence_without_review_acceptance`, with "intent alignment" listed
+    among the unverified claims. That is the honest surface for this state, and it
+    already exists; reaching it costs a candidate revision, which is cheaper than
+    a wrong sentence on a user's screen.
     """
 
-    blocked = (
-        bool(deterministic_failed)
-        or output.confidence == "low"
-        or output.severity in {"major", "blocking"}
+    graded_acceptable = (
+        output.severity in _ACCEPTING_SEVERITIES and output.confidence in _ACCEPTING_CONFIDENCES
     )
-    if output.decision is SemanticReviewDecision.READY and not blocked:
+    if deterministic_failed or not graded_acceptable:
+        if output.decision is SemanticReviewDecision.REPLAN:
+            return SemanticReviewDecision.REPLAN
+        return SemanticReviewDecision.CODE_REPAIR
+
+    if output.decision is SemanticReviewDecision.READY:
+        return SemanticReviewDecision.READY
+    actionable_finding = bool(
+        output.failed_checks or output.mismatches or output.repair_instructions
+    )
+    if not actionable_finding:
         return SemanticReviewDecision.READY
     if output.decision is SemanticReviewDecision.REPLAN:
         return SemanticReviewDecision.REPLAN
@@ -916,6 +963,7 @@ _REFERENCE_METHODS = frozenset({VerificationMethod.EXACT_DIAG, VerificationMetho
 
 def _reference_check_routing(
     checks: list[dict[str, Any]],
+    success_criteria_check: dict[str, Any] | None = None,
 ) -> tuple[SemanticReviewDecision, str] | None:
     """Route a failed reference check deterministically, without asking the model.
 
@@ -927,14 +975,44 @@ def _reference_check_routing(
 
     A Plan defect outranks a candidate defect when both appear. Rewriting the source
     against a reference that is itself unusable cannot converge, and the run has a
-    separate, larger budget for exactly that escalation.
+    separate, larger budget for exactly that escalation. The same is true when the
+    Plan's expected range excludes the independently computed truth itself: no
+    candidate can satisfy both checks, so replan immediately instead of spending a
+    code-repair candidate first.
     """
 
     failed = [check for check in checks if check.get("result") != "pass"]
-    if not failed:
-        return None
     if any((check.get("details") or {}).get("fault") == "plan" for check in failed):
         return SemanticReviewDecision.REPLAN, "reference_declaration_unusable"
+    success_details = (
+        success_criteria_check.get("details")
+        if isinstance(success_criteria_check, dict)
+        and success_criteria_check.get("result") == "fail"
+        else None
+    )
+    expected_range = (
+        success_details.get("expected_range") if isinstance(success_details, dict) else None
+    )
+    if isinstance(expected_range, dict):
+        reference_values: list[float] = []
+        for check in checks:
+            details = check.get("details")
+            scores = details.get("scores") if isinstance(details, dict) else None
+            if not isinstance(scores, dict):
+                continue
+            value = scores.get("exact_ground_state_energy", scores.get("optimal_value"))
+            if isinstance(value, int | float) and not isinstance(value, bool):
+                reference_values.append(float(value))
+        lower = expected_range.get("min")
+        upper = expected_range.get("max")
+        if any(
+            (isinstance(lower, int | float) and value < float(lower))
+            or (isinstance(upper, int | float) and value > float(upper))
+            for value in reference_values
+        ):
+            return SemanticReviewDecision.REPLAN, "success_criteria_excludes_reference_truth"
+    if not failed:
+        return None
     return SemanticReviewDecision.CODE_REPAIR, "reference_check_failed"
 
 
@@ -1593,6 +1671,8 @@ class ProductionSimplePipelinePorts:
                 if completed is None:
                     await self._complete_review_step(run_id, call, existing)
                 return SimplePortResult.success(existing)
+            latest = await self._store.latest_semantic_review(run_id, candidate.candidate_id)
+            semantic_attempt = 1 if latest is None else latest.attempt_seq + 1
             await self._store.begin_tool_call(run_id, call)
         except Exception as exc:
             return _failure(
@@ -1643,7 +1723,10 @@ class ProductionSimplePipelinePorts:
                 role="review",
                 exception=exc,
             )
-        routing = _reference_check_routing(reference_checks)
+        routing = _reference_check_routing(
+            reference_checks,
+            success_criteria_check=fast_checks[2],
+        )
         if routing is not None:
             # The advisory reviewer never gets to overturn a check that already
             # established a concrete mismatch against declared reference data. It can
@@ -1670,7 +1753,10 @@ class ProductionSimplePipelinePorts:
             candidate_id=candidate.candidate_id,
             execution_id=execution.execution_id,
             source_fingerprint=candidate.source_fingerprint,
-            attempt_seq=attempt,
+            # ``attempt`` counts provider/parser calls. Invalid model output is not
+            # durable semantic evidence, so its retry must not create a gap in the
+            # repository's per-candidate evidence sequence.
+            attempt_seq=semantic_attempt,
             decision=output.decision,
             confidence=output.critic.get("confidence") if output.critic else None,
             severity=output.critic.get("severity") if output.critic else None,

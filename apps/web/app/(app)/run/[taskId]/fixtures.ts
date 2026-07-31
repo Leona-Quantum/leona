@@ -385,7 +385,7 @@ const PROVIDER_FAILURE: RunEvent[] = [
     ts: ts(3),
     stage: "plan",
     code: "provider_rate_limited",
-    message: "planner provider call failed (deepseek:rate_limited, HTTP 429)",
+    message: "planner provider call failed (rate_limited, HTTP 429)",
   },
   {
     type: "run.finished",

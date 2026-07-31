@@ -5,16 +5,19 @@ genuinely needs one. Components are pure renderers of typed data — no fetching
 run state — so stored-run replay renders identically and fixtures drive every state.
 All states visible at `/dev/ui` (route fixtures; dev/CI only).
 
-Permitted animations: rail state transitions 150 ms ease-out, the running-ring fade
-(border-color `--accent`↔transparent @ 1.2 s — spec §2), skeleton shimmer, toast enter/exit,
+Permitted animations: the agent-activity running-ring fade
+(border-color `--accent`↔transparent @ 1.2 s), skeleton shimmer, toast enter/exit,
 and the owner-requested live prose reveal on `/run` (2026-07-13). The prose reveal is
 opt-in (`RunView` receives `animateText`), presentation-only, and `prefers-reduced-motion`
 shows the complete text immediately. Static fixtures keep it off so screenshot and a11y
 stories remain deterministic.
 
-## StageRail (S3 — the brand; get this pixel-right)
+## StageRail (legacy visual reference)
 
-240 px fixed, full height reserved at mount (no CLS). Row = 16 px dot + stage name +
+This renderer remains available to compare stored fixtures, but it is not used by
+the production conversation route. The production S3 surface is AgentActivity below.
+Its historical contract was: 240 px fixed, full height reserved at mount (no CLS).
+Row = 16 px dot + stage name +
 right-aligned mono elapsed. The user-facing stages are only: Plan → Generate → Verify →
 Analysis. The detailed event log remains an internal implementation contract; its
 generate/screen/estimate events project into Generate, its compile/final-execute events
@@ -42,9 +45,9 @@ are plain text, not emoji.
 stage's card; without it the rail renders non-interactive markup (no focusable no-ops).
 Acceptance test: refresh mid-run restores identical state from the event log.
 
-## RunView + `reduceRunEvents` (S3/S4 — the pipeline view body)
+## RunView + `reduceRunEvents` (legacy fixture body)
 
-`RunView` composes `StageRail` + the result panel for `/run/[taskId]`. It holds no state
+`RunView` composes `StageRail` + the old result panel for dev fixtures. It holds no state
 and reads no wall clock: `reduceRunEvents(events)` is a **pure fold** of the typed
 `RunEvent` log into a view model, so the same log always yields identical DOM and a
 mid-run refresh just replays a shorter *prefix* of the same log (07 §6). That purity is
@@ -87,22 +90,28 @@ its data exists; rail rows scroll to the matching card via `STAGE_TO_ANCHOR`. Th
 horizontally, so its `<pre>` is keyboard-focusable (`tabIndex=0`, `role="region"`,
 `aria-label`) — a scrollable region with no keyboard access is a WCAG 2.1.1 failure.
 
-## RunProgress (live chat route)
+## AgentActivity (live chat route)
 
-The conversation-style live route projects circuit events into exactly five stable
-rows: Plan → Generate → Execute → Review → Save. It shows one current headline and a
-completed count plus a bounded percentage meter; retries update the owning row instead
-of appending another visible step. Numbered waiting rows become explicit
-Complete/Running/Needs attention states as evidence arrives. A sandbox or review repair
-returns Generate to active, while `run.error` marks its owning row immediately without
-waiting for the terminal event.
+The production conversation route projects durable circuit events into at most seven
+semantic disclosures: Plan → Generated code → Code quality and resources → Sandbox
+execution → Verification → Compilation → Finalize result. Future work is not rendered
+as numbered placeholders. The current operation and terminal error open by default;
+completed operations collapse to a single row. Verification methods are one checklist,
+not one card per low-level check.
 
-`apps/web/lib/run-progress.ts` owns the pure event reduction and
-`packages/ts/ui/src/run-progress.tsx` remains a fetch-free renderer. Ordinary chat
-events return no progress model. The complete event history, code, stderr, and review
-details remain available in a collapsed “Technical details” footer inside the same
-activity surface. This preserves replay and debugging without turning the primary
-conversation into an orchestration log.
+`apps/web/lib/run-activity.ts` owns the pure event reduction and
+`packages/ts/ui/src/agent-activity.tsx` remains a fetch-free renderer. Repeated candidate
+revisions appear as Attempt history inside Generated code, so repair autonomy remains
+visible without producing unexplained “Candidate revision N” cards. Ordinary chat events
+return no activity model. Code, measured values, verification evidence, stdout/stderr,
+and compilation metrics live in their owning disclosure. Generated code lets the user
+switch among retained revisions and copy the selected source without exposing raw event
+payloads. The normal RUN surface does not expose the raw durable event log.
+
+`artifact.saved` means the run materialized a private result package. It must never claim
+that the user kept it in Vault; only the explicit Keep action establishes that state.
+The success, mid-run, failed, exhausted, skipped, inconclusive, and provider-error
+states are replayable through the local `/run/demo-*` fixtures.
 
 ## RunOutcome (live chat route)
 
@@ -117,6 +126,23 @@ summary is legacy. Failed or cancelled runs without a summary state that verific
 did not complete. Provider errors are normalized for the primary UI while their raw
 messages remain in Technical details. `packages/ts/ui/src/run-outcome.tsx` is the pure
 renderer and never derives trust from absent data.
+
+When a failed or inconclusive run still preserved an executable candidate, the result is
+presented as **Best available result** with an explicit not-verified badge and a compact
+reason notice. “No accepted result” is reserved for runs that genuinely produced no
+deliverable. This preserves useful work without overstating verification.
+
+When the current run becomes terminal, a reader who was already following the live
+tail is moved to the Final Output heading. A reader who scrolled upward keeps their
+position, and later result hydration does not pull the heading down to the bottom.
+
+## RunComposer (live chat route)
+
+The idle composer is compact and expands its text area on focus. While a request is in
+flight, the send action becomes Stop and the form exposes `aria-busy`; a polite live
+status announces the current state without duplicating visible text. Keyboard guidance
+is adjacent metadata rather than button-label content, so assistive technology receives
+a stable action name.
 
 ## VerdictBanner (S4)
 

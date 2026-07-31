@@ -1,8 +1,13 @@
 id: bench-14
 category: "D — VQE H2"
-prompt: "Estimate the ground-state energy of H2 at bond length 0.735 Angstrom."
+prompt: >-
+  Estimate the total ground-state energy of H2 at bond length 0.735 Angstrom.
+  Return the energy as the top-level numeric RESULT key ground_state_energy_Ha.
 framework: qiskit
 expect:
-  terminal_reason: ai_review_aligned
+  terminal_reason: ai_review_aligned_with_reference_check
   output_keys: ["ground_state_energy_Ha"]
+  expected_values:
+    ground_state_energy_Ha: -1.1373061
+  expected_value_tolerance: 0.01
   saves_artifact: true

@@ -28,12 +28,35 @@ def test_generation_prompt_always_embeds_nameko_style_reference_implementations(
     assert "Example 1 — Qiskit Bell state" in prompt
     assert "Example 2 — Qiskit H2 VQE" in prompt
     assert "Example 3 — Qiskit portfolio QAOA" in prompt
+    assert "Example 4 — Qiskit coherent bit-flip QEC" in prompt
     assert '("II", -0.3324043)' in prompt
     assert "TOTAL energies near -1.137 Ha" in prompt
     assert "DEMO DATA ONLY" in prompt
+    assert "partial_trace(recovered_state, [3, 4])" in prompt
+    assert "do not convert it with to_operator()" in prompt
+    assert "do not trust one optimizer run from only tiny parameters" in prompt
+    assert "Powell is often more robust" in prompt
     assert "The request and known_reference override every example." in prompt
-    assert prompt.count("FINAL_CIRCUIT =") >= 3
-    assert prompt.count("RESULT =") >= 3
+    assert "from __future__ import annotations" not in prompt
+    assert "minimize the negative" in prompt
+    assert "never place FINAL_CIRCUIT" in prompt
+    assert prompt.count("FINAL_CIRCUIT =") >= 4
+    assert prompt.count("RESULT =") >= 4
+
+
+def test_replan_prompt_requires_a_materially_different_approach_after_stagnation():
+    assert "autonomous replan, not a" in SIMPLE_PLAN_SYSTEM_PROMPT
+    assert "candidate_not_converging" in SIMPLE_PLAN_SYSTEM_PROMPT
+    assert "materially different, simpler executable approach" in SIMPLE_PLAN_SYSTEM_PROMPT
+
+
+def test_planner_and_reviewer_prompts_prevent_observed_live_false_failures():
+    assert "never add `circuit`, `program`, `source`" in SIMPLE_PLAN_SYSTEM_PROMPT
+    assert "Uncertainty by itself is not a defect" in SIMPLE_REVIEW_SYSTEM_PROMPT
+    assert "QFT applied to the default computational state" in SIMPLE_REVIEW_SYSTEM_PROMPT
+    assert "decision must be READY" in SIMPLE_REVIEW_SYSTEM_PROMPT
+    assert "Never use it to verify finite-time evolution" in SIMPLE_PLAN_SYSTEM_PROMPT
+    assert "0.5% of sum(abs(Hamiltonian coefficients))" in SIMPLE_PLAN_SYSTEM_PROMPT
 
 
 def test_model_constants_use_v4_pro_for_all_product_stages_and_are_env_overridable(monkeypatch):
@@ -260,6 +283,8 @@ def test_chat_persona_cannot_narrate_results_it_did_not_produce():
     # The chat turn cannot execute anything, so the persona must not let the
     # model narrate results it did not produce.
     assert "never report simulation output" in CHAT_SYSTEM_PROMPT
+    assert "Prior Execute output" in CHAT_SYSTEM_PROMPT
+    assert "do not present them as a new execution" in CHAT_SYSTEM_PROMPT
 
 
 def test_grover_plan_and_review_prompts_pin_attainable_iteration_arithmetic():

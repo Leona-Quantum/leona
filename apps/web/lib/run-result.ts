@@ -8,10 +8,12 @@
  * `<details>`. The run's product is the result and the program; the trust level is
  * one badge on top of them, not the headline.
  *
- * Failures still use `runOutcomeFromEvents` — there the reason IS the content.
+ * Failures with no executable deliverable still use `runOutcomeFromEvents`. When
+ * code or a protected RESULT exists, the explanation is a compact notice inside
+ * this result so the preserved work remains the headline.
  */
 
-import type { OutcomeEvent } from "./run-outcome.ts";
+import { friendlyFailure, type OutcomeEvent } from "./run-outcome.ts";
 import { simulationChartData, type SimulationChartData } from "./simulation-visual.ts";
 import {
   verificationSummaryFromValue,
@@ -38,6 +40,8 @@ export interface RunResultView {
   code: { label: string; language: string; source: string } | null;
   /** Unverified claims, kept available but never as the lead. */
   limitations: string[];
+  /** A compact explanation for a preserved result that did not pass the workflow. */
+  notice: { title: string; body: string } | null;
 }
 
 function lastEvent(events: readonly OutcomeEvent[], type: string): OutcomeEvent | null {
@@ -173,6 +177,15 @@ export function runResultFromEvents(
     ...bestRisks,
     ...eventRisks,
   ].filter((value, index, all) => Boolean(value.trim()) && all.indexOf(value) === index);
+  const failure = failed ? lastEvent(events, "run.error") : null;
+  const failureDescription = failure
+    ? friendlyFailure(failure.message, failure.stage, failure.code)
+    : null;
+  const noticeParts = failed
+    ? [best?.critic_summary, failureDescription]
+      .filter((value): value is string => typeof value === "string" && Boolean(value.trim()))
+      .filter((value, index, all) => all.indexOf(value) === index)
+    : [];
 
   return {
     summary:
@@ -181,7 +194,7 @@ export function runResultFromEvents(
       ?? "Quantum circuit run",
     trust: failed
       ? {
-          label: best ? "Best effort · not accepted" : "Executed · verification failed",
+          label: best ? "Best available · not verified" : "Executed · verification failed",
           tone: "warn",
         }
       : reviewAccepted
@@ -212,5 +225,11 @@ export function runResultFromEvents(
         }
       : null,
     limitations,
+    notice: noticeParts.length
+      ? {
+          title: best ? "Why this result was not accepted" : "Why verification stopped",
+          body: noticeParts.join(" "),
+        }
+      : null,
   };
 }
