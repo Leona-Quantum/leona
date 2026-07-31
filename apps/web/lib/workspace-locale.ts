@@ -318,6 +318,36 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
     draftVersionNote: string;
     verificationQueued: string;
     verificationAttach: (id: string) => string;
+    // Version history. Every capability label below doubles as a loss label in
+    // the restore dialog, so the list and the warning cannot describe the same
+    // thing two different ways.
+    versionLabel: (seq: number) => string;
+    versionCurrentBadge: string;
+    versionHistoryLoading: string;
+    versionHistoryUnavailable: string;
+    versionHistoryEmpty: string;
+    versionShowOlder: string;
+    versionOriginAgentRun: string;
+    versionOriginStudioDraft: string;
+    versionOriginImportedReference: string;
+    versionOriginStarterExample: string;
+    versionOriginUnknown: string;
+    versionHolds: string;
+    versionHoldsNothing: string;
+    capabilityQasm: string;
+    capabilityExport: string;
+    capabilityResourceEstimates: string;
+    capabilityFrameworkVariants: string;
+    capabilityVerification: string;
+    restore: string;
+    restoring: string;
+    restoreConfirmTitle: string;
+    restoreConfirmBody: (seq: number) => string;
+    restoreLossIntro: string;
+    restoreCancel: string;
+    restoreConfirmAnyway: string;
+    restoreFailed: string;
+    restoreDone: (seq: number) => string;
     frameworkNote: string;
     gateDescriptions: Record<string, string>;
     palette: string;
@@ -715,6 +745,34 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
       draftVersionNote: "Run verification to create the first durable artifact version.",
       verificationQueued: "Verification run queued",
       verificationAttach: (id) => `Run ${id} will attach evidence when it finishes.`,
+      versionLabel: (seq) => `Version ${seq}`,
+      versionCurrentBadge: "Current",
+      versionHistoryLoading: "Loading version history…",
+      versionHistoryUnavailable: "Version history could not be loaded.",
+      versionHistoryEmpty: "No saved versions yet.",
+      versionShowOlder: "Show older versions",
+      versionOriginAgentRun: "From a verified run",
+      versionOriginStudioDraft: "Your Studio edit",
+      versionOriginImportedReference: "Imported reference",
+      versionOriginStarterExample: "Starter example",
+      versionOriginUnknown: "Origin not recorded",
+      versionHolds: "Holds",
+      versionHoldsNothing: "Source only — no OpenQASM, exports, estimates or verdict",
+      capabilityQasm: "OpenQASM",
+      capabilityExport: "exports",
+      capabilityResourceEstimates: "resource estimates",
+      capabilityFrameworkVariants: "framework variants",
+      capabilityVerification: "a passing verdict",
+      restore: "Restore",
+      restoring: "Restoring…",
+      restoreConfirmTitle: "Restore this version?",
+      restoreConfirmBody: (seq) =>
+        `Version ${seq} becomes the current version. Nothing is deleted — every version stays in this list.`,
+      restoreLossIntro: "This artifact would no longer have:",
+      restoreCancel: "Cancel",
+      restoreConfirmAnyway: "Restore anyway",
+      restoreFailed: "Could not restore that version. Please try again.",
+      restoreDone: (seq) => `Version ${seq} is now current.`,
       frameworkNote: "Qiskit stays the default. Switch only when you want a different framework draft.",
       gateDescriptions: {
         H: "Hadamard creates an equal superposition on the selected qubit.",
@@ -1120,6 +1178,34 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
       draftVersionNote: "検証を実行すると、最初の保存バージョンが作成されます。",
       verificationQueued: "検証実行をキューに追加しました",
       verificationAttach: (id) => `実行 ${id} の完了後に検証結果が保存されます。`,
+      versionLabel: (seq) => `バージョン ${seq}`,
+      versionCurrentBadge: "現在",
+      versionHistoryLoading: "バージョン履歴を読み込んでいます…",
+      versionHistoryUnavailable: "バージョン履歴を読み込めませんでした。",
+      versionHistoryEmpty: "保存済みのバージョンはまだありません。",
+      versionShowOlder: "以前のバージョンを表示",
+      versionOriginAgentRun: "検証付きの実行から作成",
+      versionOriginStudioDraft: "Studioでの編集",
+      versionOriginImportedReference: "外部から取り込んだ参考回路",
+      versionOriginStarterExample: "はじめのサンプル",
+      versionOriginUnknown: "作成元の記録なし",
+      versionHolds: "含まれるもの",
+      versionHoldsNothing: "ソースのみ（OpenQASM・書き出し・リソース見積り・検証結果はありません）",
+      capabilityQasm: "OpenQASM",
+      capabilityExport: "書き出し",
+      capabilityResourceEstimates: "リソース見積り",
+      capabilityFrameworkVariants: "他フレームワーク版",
+      capabilityVerification: "合格した検証結果",
+      restore: "この版に戻す",
+      restoring: "戻しています…",
+      restoreConfirmTitle: "このバージョンに戻しますか？",
+      restoreConfirmBody: (seq) =>
+        `バージョン ${seq} が現在のバージョンになります。削除は行われず、どのバージョンも一覧に残ります。`,
+      restoreLossIntro: "この回路からは次が失われます：",
+      restoreCancel: "キャンセル",
+      restoreConfirmAnyway: "承知のうえで戻す",
+      restoreFailed: "バージョンを戻せませんでした。もう一度お試しください。",
+      restoreDone: (seq) => `バージョン ${seq} が現在のバージョンになりました。`,
       frameworkNote: "既定値はQiskitです。別のフレームワークの下書きを作るときだけ切り替えてください。",
       gateDescriptions: {
         H: "アダマールゲートは、選択した量子ビットに等しい重ね合わせ状態を作ります。",

@@ -191,6 +191,122 @@ async def soft_delete_artifact(scope: Scope, session: AsyncSession, artifact_id:
         raise NotFoundError("artifact")
 
 
+async def _point_current_version(
+    scope: Scope, session: AsyncSession, artifact: Artifact, version: ArtifactVersion
+) -> None:
+    """Make `version` the artifact's current one.
+
+    Demotes the artifact to PRIVATE, because visibility is earned by whatever is
+    current: `set_visibility` only grants PUBLIC while the current version's
+    metadata.source_fingerprint equals that version's fingerprint. Moving the
+    pointer without demoting would leave an artifact advertising a verdict for
+    content it no longer serves.
+
+    A pointer that is already where it should be is left entirely alone. That
+    matters for exactly the same reason: re-saving byte-identical content would
+    otherwise unpublish a PUBLIC artifact that never changed.
+    """
+    if artifact.current_version_id == version.id:
+        return
+    await session.execute(
+        update(Artifact)
+        .where(Artifact.id == artifact.id, Artifact.workspace_id == scope.workspace_id)
+        .values(
+            current_version_id=version.id,
+            visibility=Visibility.PRIVATE,
+            updated_at=func.now(),
+        )
+    )
+    # The SQL expression above can expire ORM attributes under AsyncSession;
+    # keep the just-written object safe for callers that serialize it in the
+    # same request without triggering implicit IO.
+    artifact.current_version_id = version.id
+    artifact.visibility = Visibility.PRIVATE
+    artifact.updated_at = dt.datetime.now(dt.timezone.utc)
+
+
+async def get_version_by_fingerprint(
+    scope: Scope, session: AsyncSession, artifact_id: uuid.UUID, fingerprint: str
+) -> ArtifactVersion | None:
+    """The artifact's existing row for this exact content, if it has one."""
+    stmt = (
+        select(ArtifactVersion)
+        .join(Artifact, ArtifactVersion.artifact_id == Artifact.id)
+        .where(
+            ArtifactVersion.artifact_id == artifact_id,
+            ArtifactVersion.fingerprint == fingerprint,
+            Artifact.workspace_id == scope.workspace_id,
+            Artifact.deleted_at.is_(None),
+        )
+    )
+    return (await session.execute(stmt)).scalars().first()
+
+
+async def list_versions(
+    scope: Scope,
+    session: AsyncSession,
+    artifact_id: uuid.UUID,
+    *,
+    before_seq: int | None = None,
+    limit: int = 50,
+) -> list[ArtifactVersion]:
+    """One artifact's version history, newest authored first.
+
+    Bounded and cursored on `seq` rather than on id: `seq` is the artifact-local
+    authoring order and is what the UI labels rows with, so paging on anything
+    else would page differently from how it reads.
+
+    `seq` is NOT "which one is current". A restore moves
+    `artifacts.current_version_id` without authoring a row, so max(seq) and the
+    current version can be different rows — callers must compare ids.
+
+    Raises NotFoundError for an artifact the scope cannot see, rather than
+    returning an empty list, so a foreign id is indistinguishable from a deleted
+    one.
+    """
+    artifact = await get_artifact(scope, session, artifact_id)
+    stmt = (
+        select(ArtifactVersion)
+        .join(Artifact, ArtifactVersion.artifact_id == Artifact.id)
+        .where(
+            ArtifactVersion.artifact_id == artifact.id,
+            Artifact.workspace_id == scope.workspace_id,
+            Artifact.deleted_at.is_(None),
+        )
+        .order_by(ArtifactVersion.seq.desc())
+        .limit(limit)
+    )
+    if before_seq is not None:
+        stmt = stmt.where(ArtifactVersion.seq < before_seq)
+    return list((await session.execute(stmt)).scalars().all())
+
+
+async def restore_version(
+    scope: Scope, session: AsyncSession, artifact_id: uuid.UUID, version_id: uuid.UUID
+) -> ArtifactVersion:
+    """Make an earlier version current again.
+
+    A pointer move, not a copy. Re-materializing the old content as a new row
+    would have to carry that row's verification_summary and source_fingerprint
+    into a second row describing the same bytes — evidence copied away from the
+    execution that earned it, which ADR-0022 forbids — and UNIQUE(artifact_id,
+    fingerprint) would reject it regardless.
+
+    The consequence is that history records authoring, not restores: `seq` never
+    moves, and nothing in `artifact_versions` says a restore happened. Only the
+    artifact's `current_version_id` and `updated_at` change.
+    """
+    require_write(scope)
+    artifact = await get_artifact(scope, session, artifact_id, for_update=True)
+    version = await get_version(scope, session, version_id)
+    if version.artifact_id != artifact.id:
+        # In-workspace but belonging to a different artifact: restoring it here
+        # would graft one artifact's content and evidence onto another.
+        raise NotFoundError("artifact version")
+    await _point_current_version(scope, session, artifact, version)
+    return version
+
+
 async def create_version(
     scope: Scope,
     session: AsyncSession,
@@ -208,9 +324,32 @@ async def create_version(
     resource_estimates: dict[str, Any] | None = None,
     limitations: str | None = None,
 ) -> ArtifactVersion:
+    """Save content as this artifact's current version.
+
+    Returning to content the artifact already holds REINSTATES that row rather
+    than writing a second one. `uq_artifact_versions_fingerprint` — UNIQUE
+    (artifact_id, fingerprint) since migration 0001 — made the second write an
+    IntegrityError with no handler, i.e. a 500, for two ordinary things: undoing
+    an edit in Studio (A → B → A), and the worker's own
+    `RepoReviewArtifactSaver`, which adds a version to the parent artifact ONLY
+    when the candidate fingerprint equals the parent's and forks a new artifact
+    otherwise — so its single same-artifact branch was the branch whose
+    fingerprint was always already taken.
+
+    Reinstating is sound because a fingerprint identifies content: the existing
+    row's evidence was earned on these exact bytes, which is the equality
+    ADR-0022 already requires between candidate, execution, review and version.
+    The cost is that a re-execution of unchanged content does not store a second
+    evidence record; the first one still describes the bytes accurately.
+
+    The artifact row lock below is what makes the check-then-insert safe: every
+    insert into artifact_versions goes through this function, so two concurrent
+    writers cannot both miss the same existing row.
+    """
     require_write(scope)
     # Lock the artifact row: serializes concurrent version creation so
-    # max(seq)+1 can't collide (uq_artifact_versions_seq rejects the loser).
+    # max(seq)+1 can't collide (uq_artifact_versions_seq rejects the loser), and
+    # so the duplicate-fingerprint check below cannot race an insert.
     artifact = await get_artifact(scope, session, artifact_id, for_update=True)
     if any(
         value is not None
@@ -222,6 +361,10 @@ async def create_version(
         )
     ):
         raise ValueError("catalog artifacts require the catalog repository lifecycle")
+    existing = await get_version_by_fingerprint(scope, session, artifact.id, fingerprint)
+    if existing is not None:
+        await _point_current_version(scope, session, artifact, existing)
+        return existing
     next_seq = (
         await session.execute(
             select(func.coalesce(func.max(ArtifactVersion.seq), 0) + 1).where(
@@ -247,21 +390,7 @@ async def create_version(
     )
     session.add(version)
     await session.flush()
-    await session.execute(
-        update(Artifact)
-        .where(Artifact.id == artifact.id, Artifact.workspace_id == scope.workspace_id)
-        .values(
-            current_version_id=version.id,
-            visibility=Visibility.PRIVATE,
-            updated_at=func.now(),
-        )
-    )
-    # The SQL expression above can expire ORM attributes under AsyncSession;
-    # keep the just-written object safe for callers that serialize it in the
-    # same request without triggering implicit IO.
-    artifact.current_version_id = version.id
-    artifact.visibility = Visibility.PRIVATE
-    artifact.updated_at = dt.datetime.now(dt.timezone.utc)
+    await _point_current_version(scope, session, artifact, version)
     return version
 
 
