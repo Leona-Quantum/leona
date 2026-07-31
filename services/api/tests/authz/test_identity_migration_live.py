@@ -17,6 +17,7 @@ from sqlalchemy import select
 from majorana_api.orm import User
 from majorana_api.repos import artifacts as artifacts_repo
 from majorana_api.repos import identity_migration, system
+from majorana_api.repos import workspaces as workspaces_repo
 
 pytestmark = requires_db
 
@@ -219,3 +220,71 @@ async def test_a_blocked_account_is_not_touched_by_apply(db):
     applied = await identity_migration.apply_reattachment(db, plan=plan)
     assert applied == []
     assert (await _sub_of(db, a.id), await _sub_of(db, b.id)) == before
+
+
+async def test_a_blocked_row_reports_the_memberships_it_would_strand(db):
+    """The number that was missing, and the reason this test exists.
+
+    `_content_counts` deliberately counts only workspaces the row OWNS, which is
+    right for "what work does this person get back". But a re-key moves the row
+    and carries its memberships with it, while BLOCKED leaves them on an identity
+    that can no longer sign in — and the plan showed nothing about them.
+
+    This is the shape of a real case. In the 2026-07-30 production reattachment
+    `emistry@berkeley.edu` was blocked reading `0 artifacts, 0 runs`: an account
+    that looked completely empty and safe to leave alone. It was also the only
+    identity holding admin on the public catalog workspace and collaborator
+    access to the owner's Vault. Both had to be moved by hand afterwards, because
+    nothing in the output said they existed.
+    """
+    host_email = _email("host")
+    host = await _account(db, host_email, f"staging-{uuid.uuid4()}")
+    _host_user, host_ws = await system.get_or_provision_user(
+        db, workos_user_id=await _sub_of(db, host.id), email=host_email
+    )
+
+    guest_email = _email("guest")
+    guest = await _account(db, guest_email, f"staging-{uuid.uuid4()}")
+    # The guest is a member of somebody else's workspace — the membership that a
+    # workspace-owned content count cannot see.
+    await workspaces_repo.add_member(
+        Scope(user_id=host.id, workspace_id=host_ws.id, role=Role.OWNER),
+        db,
+        user_id=guest.id,
+        role=Role.MEMBER,
+    )
+
+    # The guest then signs in under the new environment and does real work, so
+    # the merge is blocked and the membership has nowhere to go.
+    new_sub = f"prod-{uuid.uuid4()}"
+    duplicate = await _account(db, guest_email, new_sub)
+    _dup, dup_ws = await system.get_or_provision_user(
+        db, workos_user_id=new_sub, email=guest_email
+    )
+    await artifacts_repo.create_artifact(
+        Scope(user_id=duplicate.id, workspace_id=dup_ws.id, role=Role.OWNER),
+        db,
+        slug=f"guest-work-{uuid.uuid4().hex[:10]}",
+        title="Work under the new identity",
+        family="Bell",
+        framework="qiskit",
+    )
+    await db.flush()
+
+    plan = await identity_migration.plan_reattachment(db, identities={guest_email: new_sub})
+    [match] = plan.matches
+    assert match.action == "blocked"
+    # The row reads as empty on both of the numbers the report used to print...
+    assert (match.artifacts, match.runs) == (0, 0)
+    # ...and is not empty at all.
+    assert match.original_foreign_memberships == 1
+
+
+async def test_a_workspace_the_row_owns_is_not_counted_as_stranded(db):
+    """Own-workspace memberships travel with the row on a re-key and are already
+    described by the artifact and run counts. Counting them here would make every
+    account look like it had shared access to something."""
+    email = _email("solo")
+    original = await _account(db, email, f"staging-{uuid.uuid4()}")
+
+    assert await identity_migration.count_foreign_memberships(db, original.id) == 0
