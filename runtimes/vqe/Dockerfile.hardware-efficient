@@ -1,0 +1,38 @@
+ARG PYTHON_BASE=python:3.12.12-slim-bookworm@sha256:2986c55feb36e6cae00fa1fefb454283e4b33f35e75ff8bdd123b134130be301
+FROM ${PYTHON_BASE}
+
+ARG PROFILE_DIR
+ARG UV_VERSION=0.9.8
+
+ENV PYTHONHASHSEED=0 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    PIP_NO_CACHE_DIR=1 \
+    OMP_NUM_THREADS=1 \
+    OPENBLAS_NUM_THREADS=1 \
+    MKL_NUM_THREADS=1 \
+    NUMEXPR_NUM_THREADS=1 \
+    UV_COMPILE_BYTECODE=1 \
+    UV_LINK_MODE=copy
+
+RUN python -m pip install "uv==${UV_VERSION}" \
+    && groupadd --gid 65532 vqe \
+    && useradd --uid 65532 --gid 65532 --no-create-home --home-dir /nonexistent vqe
+
+WORKDIR /workspace
+COPY ${PROFILE_DIR}/pyproject.toml ${PROFILE_DIR}/uv.lock /workspace/runtime/
+RUN cd /workspace/runtime \
+    && uv sync --frozen --no-dev \
+    && uv cache clean \
+    && find .venv -type d -name __pycache__ -prune -exec rm -rf '{}' +
+
+COPY ${PROFILE_DIR}/spike/h2_hardware_efficient_v01.py /workspace/runtime/spike/
+COPY runtimes/vqe/optimizer_protocol.py /workspace/runtime/spike/
+COPY --from=fixture manifest.json /workspace/docs/atlas/fixtures/h2_sto3g/
+COPY --from=fixture canonical_hardware_efficient_v0.1.json /workspace/docs/atlas/fixtures/h2_sto3g/
+
+RUN chown -R 65532:65532 /workspace
+USER 65532:65532
+WORKDIR /workspace/runtime
+
+ENTRYPOINT [".venv/bin/python", "spike/h2_hardware_efficient_v01.py", "--stdout-only"]

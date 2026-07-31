@@ -1,0 +1,104 @@
+name: vqe-hardware-efficient-runtime
+
+on:
+  workflow_dispatch:
+    inputs:
+      publish_oci:
+        description: Publish qualified hardware-efficient images and immutable evidence
+        required: false
+        default: false
+        type: boolean
+      source_commit:
+        description: Optional full source commit SHA; defaults to this workflow run
+        required: false
+        type: string
+  push:
+    branches:
+      - feature/vqe
+    paths:
+      - .github/workflows/vqe-hardware-efficient-runtime.yml
+      - .github/workflows/publish-vqe-hardware-efficient-runtime.yml
+      - runtimes/vqe/Dockerfile.hardware-efficient
+      - runtimes/vqe/optimizer_protocol.py
+      - runtimes/vqe/qiskit-current/**
+      - runtimes/vqe/pennylane-current/**
+      - docs/atlas/fixtures/h2_sto3g/manifest.json
+      - docs/atlas/fixtures/h2_sto3g/canonical_hardware_efficient_v0.1.json
+
+permissions:
+  contents: read
+
+concurrency:
+  group: vqe-hardware-efficient-runtime-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  hardened-linux-amd64:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - framework: qiskit
+            profile_dir: runtimes/vqe/qiskit-current
+          - framework: pennylane
+            profile_dir: runtimes/vqe/pennylane-current
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: build isolated hardware-efficient runtime
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: runtimes/vqe/Dockerfile.hardware-efficient
+          build-args: PROFILE_DIR=${{ matrix.profile_dir }}
+          build-contexts: fixture=docs/atlas/fixtures/h2_sto3g
+          platforms: linux/amd64
+          load: true
+          tags: majorana-vqe-hardware-efficient-${{ matrix.framework }}:${{ github.sha }}
+      - name: execute with deny-all egress and read-only root
+        run: |
+          set -euo pipefail
+          docker run --rm \
+            --platform linux/amd64 \
+            --network none \
+            --read-only \
+            --tmpfs /tmp:rw,noexec,nosuid,size=64m \
+            --cap-drop ALL \
+            --security-opt no-new-privileges \
+            --pids-limit 128 \
+            --memory 2g \
+            --cpus 1 \
+            "majorana-vqe-hardware-efficient-${{ matrix.framework }}:${{ github.sha }}" \
+            > "${{ matrix.framework }}-hardware-efficient-linux-amd64.json"
+          jq -e '
+            .status == "succeeded"
+            and .capability == "h2_sto3g_hardware_efficient_ry_cx_v1"
+            and .optimization.absolute_error_ha < 1e-10
+            and .optimization.final_state_fidelity > 0.9999999999
+            and .resources.common_basis_compiled.cnot_count == 6
+            and .resources.common_basis_compiled.depth == 7
+            and .resources.common_basis_compiled.parameter_count == 8
+            and .canonical_input.canonical_circuit_sha256
+              == "7e28b52d16d694ac59e8b1a2ce2f9b6e215df60e67ac9b3521231e10859016c8"
+          ' "${{ matrix.framework }}-hardware-efficient-linux-amd64.json"
+      - name: upload private runtime evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: hardware-efficient-${{ matrix.framework }}-linux-amd64-${{ github.sha }}
+          path: ${{ matrix.framework }}-hardware-efficient-linux-amd64.json
+          if-no-files-found: error
+          retention-days: 30
+
+  publish-oci:
+    needs: hardened-linux-amd64
+    if: github.event_name == 'workflow_dispatch' && inputs.publish_oci
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
+    uses: ./.github/workflows/publish-vqe-hardware-efficient-runtime.yml
+    with:
+      source_commit: ${{ inputs.source_commit || github.sha }}
