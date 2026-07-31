@@ -506,6 +506,14 @@ async def test_never_accepted_review_stops_at_candidate_budget_without_certifyin
     assert outcome.counters.review_attempts == 2
     assert "export" not in ports.calls
     assert "save" not in ports.calls
+    final_feedback = ports.generation_feedback[1]
+    assert final_feedback is not None
+    assert final_feedback.details["candidate_budget"] == {
+        "attempt": 2,
+        "limit": 2,
+        "remaining_after_this": 0,
+        "last_chance": True,
+    }
 
 
 async def test_export_failure_is_a_warning_and_does_not_block_python_artifact():

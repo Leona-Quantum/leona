@@ -26,6 +26,7 @@ from majorana_evals import (
     top_measured_bitstring,
 )
 from majorana_evals.runner import (
+    _latest_export_event,
     _latest_sandbox_event,
     _latest_trusted_result,
     _score_result_expectations,
@@ -74,6 +75,14 @@ def test_latest_sandbox_event_uses_repaired_terminal_attempt():
     assert _latest_sandbox_event([first, unrelated, final]) is final
 
 
+def test_latest_export_event_prefers_current_finalized_projection():
+    legacy = SimpleNamespace(type="export.classified", payload={"status": "partial"})
+    finalized = SimpleNamespace(type="code.finalized", payload={"export_status": "lossless"})
+    unrelated = SimpleNamespace(type="artifact.saved", payload={})
+
+    assert _latest_export_event([legacy, finalized, unrelated]) is finalized
+
+
 async def test_latest_trusted_result_requires_candidate_fingerprint_binding():
     candidate_id = uuid.uuid4()
     execution_id = uuid.uuid4()
@@ -86,8 +95,8 @@ async def test_latest_trusted_result_requires_candidate_fingerprint_binding():
     )
 
     class Store:
-        async def latest_candidate(self, _run_id):
-            return candidate
+        async def list_candidates(self, _run_id):
+            return [candidate]
 
         async def execution_for(self, _run_id, _candidate_id):
             return execution
@@ -206,7 +215,12 @@ def test_corpus_loads_from_yaml():
     # The default product path is AI-reviewed and explicitly does not fabricate
     # a strict-verifier verdict.
     assert all(c.expect.run_status.value == "succeeded" for c in corpus)
-    assert all(c.expect.terminal_reason == "ai_review_aligned" for c in corpus)
+    references = {"bench-14", "bench-15", "bench-16", "bench-18", "bench-19", "bench-20"}
+    assert all(
+        c.expect.terminal_reason
+        == ("ai_review_aligned_with_reference_check" if c.id in references else "ai_review_aligned")
+        for c in corpus
+    )
     assert all(c.expect.verifier_decision is None for c in corpus)
 
 

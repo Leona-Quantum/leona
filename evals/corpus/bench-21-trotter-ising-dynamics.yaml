@@ -1,0 +1,18 @@
+id: bench-21
+category: "H — Hamiltonian time evolution"
+prompt: >-
+  Simulate real-time evolution of a five-qubit open-chain transverse-field
+  Ising model H = -sum_{i=0}^{3} Z_i Z_{i+1} - 0.7 sum_{i=0}^{4} X_i.
+  Start in |00000>, evolve to t=0.8 using a second-order Suzuki-Trotter
+  decomposition with 12 steps, and use Qiskit Statevector expectation values.
+  Return the final average Z magnetization as the top-level numeric RESULT key
+  magnetization_z. Bind the complete Trotter circuit to FINAL_CIRCUIT.
+framework: qiskit
+expect:
+  terminal_reason: ai_review_aligned
+  export_status: lossless
+  output_keys: ["magnetization_z"]
+  expected_values:
+    magnetization_z: 0.6539842446
+  expected_value_tolerance: 0.01
+  saves_artifact: true

@@ -1,0 +1,17 @@
+id: bench-11
+category: "C — QFT/QPE"
+prompt: >-
+  Implement quantum phase estimation in Qiskit for the eigenstate |1> of the
+  one-qubit phase gate whose eigenphase is exactly 3/8. Use three counting
+  qubits, an inverse QFT, and 2048 measurement shots. Return the estimated
+  phase as the top-level numeric RESULT key phase_estimate and the counting
+  register histogram as counts.
+framework: qiskit
+expect:
+  terminal_reason: ai_review_aligned
+  export_status: lossless
+  output_keys: ["phase_estimate", "counts"]
+  expected_values:
+    phase_estimate: 0.375
+  expected_value_tolerance: 0.001
+  saves_artifact: true

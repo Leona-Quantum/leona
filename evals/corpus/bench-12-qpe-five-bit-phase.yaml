@@ -1,0 +1,18 @@
+id: bench-12
+category: "C — Precision QPE"
+prompt: >-
+  Implement quantum phase estimation in Qiskit for the |1> eigenstate of a
+  one-qubit phase gate with eigenphase exactly 21/32. Use five counting
+  qubits, controlled powers of the unitary, an inverse QFT, and 4096 shots.
+  Return the numeric estimate as the top-level RESULT key phase_estimate and
+  the counting-register histogram as counts. Preserve Qiskit measurement
+  order explicitly.
+framework: qiskit
+expect:
+  terminal_reason: ai_review_aligned
+  export_status: lossless
+  output_keys: ["phase_estimate", "counts"]
+  expected_values:
+    phase_estimate: 0.65625
+  expected_value_tolerance: 0.001
+  saves_artifact: true

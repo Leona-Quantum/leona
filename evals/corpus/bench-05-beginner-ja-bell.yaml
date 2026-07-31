@@ -1,0 +1,12 @@
+id: bench-05
+category: "A — Beginner natural-language circuit"
+prompt: >-
+  量子回路は初めてです。Qiskitで2量子ビットのBell状態を作り、
+  1024ショット測定してください。測定結果はトップレベルのRESULTキー
+  countsに、各ビット列と回数の辞書として返してください。
+framework: qiskit
+expect:
+  terminal_reason: ai_review_aligned
+  export_status: lossless
+  output_keys: ["counts"]
+  saves_artifact: true
