@@ -1081,22 +1081,22 @@ async def contribute_artifact(
             "its owner can raise the limit or remove a circuit"
         )
     if workspace_artifact_limit is not None:
-        owner_kept = int(
-            (
-                await session.execute(
-                    select(func.count(Artifact.id)).where(
-                        Artifact.workspace_id == access.owner_workspace_id,
-                        Artifact.deleted_at.is_(None),
-                        Artifact.kept_at.is_not(None),
-                    )
-                )
-            ).scalar_one()
-        )
-        if owner_kept >= workspace_artifact_limit:
-            raise ShareError(
-                f"the workspace that owns this project is at its {workspace_artifact_limit}-"
-                "artifact plan limit; only its owner can make room"
+        # The project row is already locked; this adds the OWNING workspace's
+        # cap lock on top of it, in that order. `_lock_project` only serializes
+        # contributors to the SAME project — two grantees contributing to two
+        # different projects in one workspace both read the same count and both
+        # insert, which is the workspace cap failing in exactly the way the
+        # project cap does not. The workspace lock is always the last one taken;
+        # see `artifacts.reserve_artifact_slot` for why that ordering matters.
+        try:
+            await artifacts_repo.reserve_artifact_slot(
+                session, access.owner_workspace_id, workspace_artifact_limit
             )
+        except artifacts_repo.ArtifactCapReached as full:
+            raise ShareError(
+                f"the workspace that owns this project is at its {full.limit}-"
+                "artifact plan limit; only its owner can make room"
+            ) from full
 
     # Content, with no nonce. `create_version` treats the fingerprint as exact
     # content identity and REINSTATES a matching row rather than writing a second

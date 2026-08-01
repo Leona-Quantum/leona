@@ -29,7 +29,6 @@ from fastapi import Depends
 from ..auth.deps import CurrentIdentity, CurrentScope, DbSession, get_settings
 from ..repos import artifacts as artifacts_repo
 from ..repos import projects as projects_repo
-from ..repos import workspaces as workspaces_repo
 from ..orm import Artifact as ArtifactRow
 from ..orm import ArtifactVersion as ArtifactVersionRow
 from ..settings import Settings
@@ -301,24 +300,28 @@ async def keep_artifact(
     Idempotent — keeping something already kept returns it unchanged rather than
     re-stamping, so a double click cannot reorder the artifact list.
 
-    This is where the per-tier artifact cap is enforced, because since migration
-    0036 it is the only place an artifact is FILED by a user's choice.
-    The cap is checked before the write and skipped for an artifact that is
-    already kept, so re-keeping never fails at the boundary.
+    This is where the per-tier artifact cap is APPLIED, because since migration
+    0036 this is the only place an artifact is filed by a user's choice. It is
+    no longer where the cap is CHECKED: the check moved into
+    `artifacts_repo.keep_artifact`, which holds the workspace's cap lock across
+    the comparison and the write. Counting here and writing there left a gap two
+    connections could both pass — see `reserve_artifact_slot`. The route's
+    remaining job is to resolve the caller's tier and to turn the repository's
+    refusal into the 429 sentence the user reads.
     """
     user, _workspace = identity
     limits = limits_for(
         resolve_tier(user.email, plan=user.plan, developer_emails=settings.developer_emails)
     )
-    if limits.private_artifacts is not None:
-        existing = await artifacts_repo.get_artifact(scope, session, artifact_id)
-        if existing.kept_at is None:
-            _workspace_row, _members, kept, _runs = await workspaces_repo.get_overview(
-                scope, session
-            )
-            if kept >= limits.private_artifacts:
-                raise _artifact_cap_refusal(kept, limits.private_artifacts)
-    artifact = await artifacts_repo.keep_artifact(scope, session, artifact_id)
+    try:
+        artifact = await artifacts_repo.keep_artifact(
+            scope,
+            session,
+            artifact_id,
+            workspace_artifact_limit=limits.private_artifacts,
+        )
+    except artifacts_repo.ArtifactCapReached as full:
+        raise _artifact_cap_refusal(full.held, full.limit) from full
     metadata: dict | None = None
     if artifact.current_version_id is not None:
         version = await artifacts_repo.get_version(scope, session, artifact.current_version_id)

@@ -422,11 +422,16 @@ async def copy_shared_artifact(
 ) -> ArtifactResource:
     """Take a copy of a shared circuit into the caller's own workspace.
 
-    The Vault cap is checked HERE and not in the repository, mirroring
-    `keep_artifact`: that is the one place an artifact is filed by a user's
-    choice, and this is the second. The copy is created unkept, so a caller at
-    their cap gets a refusal instead of a row they cannot see — and the check
-    runs before anything is written rather than after.
+    The Vault cap is resolved HERE and enforced by `keep_artifact` below, which
+    holds the workspace's cap lock across the comparison and the write. It used
+    to be compared here, before the copy was written; that read nothing was
+    holding, so two concurrent copies at the boundary both passed it.
+
+    A cheap pre-check survives anyway, and is not redundant: without it a caller
+    already at their cap writes an artifact and a version, has them refused at
+    the keep, and the transaction rolls the whole thing back. Same outcome,
+    three statements of work — so this refuses the common case early and the
+    lock below is what makes the refusal true under concurrency.
     """
     user, _workspace = identity
     limits = limits_for(
@@ -447,9 +452,17 @@ async def copy_shared_artifact(
     except shares_repo.ShareError as exc:
         raise _share_refusal(exc) from exc
     # Filed immediately: the caller asked for a copy in their Studio, and an
-    # unkept one would be invisible there. The cap above is what makes this safe
-    # to do without a second round trip.
-    kept_copy = await artifacts_repo.keep_artifact(scope, session, copy.id)
+    # unkept one would be invisible there. The cap is applied by this call, not
+    # by the pre-check above.
+    try:
+        kept_copy = await artifacts_repo.keep_artifact(
+            scope,
+            session,
+            copy.id,
+            workspace_artifact_limit=limits.private_artifacts,
+        )
+    except artifacts_repo.ArtifactCapReached as full:
+        raise _artifact_cap_refusal(full.held, full.limit) from full
     metadata = None
     if kept_copy.current_version_id is not None:
         version = await artifacts_repo.get_version(scope, session, kept_copy.current_version_id)
