@@ -550,6 +550,21 @@ export interface components {
              */
             type: "compilation.result";
         };
+        /** Conversation */
+        Conversation: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Turns */
+            turns?: components["schemas"]["ConversationTurn"][];
+            /**
+             * Workspace Id
+             * Format: uuid
+             */
+            workspace_id: string;
+        };
         /**
          * ConversationTitled
          * @description A short name for the conversation, written by the model on its first turn.
@@ -589,6 +604,14 @@ export interface components {
              * @enum {string}
              */
             type: "conversation.titled";
+        };
+        /** ConversationTurn */
+        ConversationTurn: {
+            /** Events */
+            events?: {
+                [key: string]: unknown;
+            }[];
+            run: components["schemas"]["Run"];
         };
         /**
          * EvidenceStrength
@@ -896,6 +919,61 @@ export interface components {
              * Format: uuid
              */
             workspace_id: string;
+        };
+        /**
+         * ProjectShare
+         * @description One grant on one project, as the workspace that owns it sees it (0042).
+         *
+         *     Carries the grantee's email because that is what the grant was made with and
+         *     what the person managing it recognises; a user id is not something anybody can
+         *     check a name against. It carries nothing else about the grantee's account —
+         *     the granting workspace learns that this address has access, not what else the
+         *     address is.
+         */
+        ProjectShare: {
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Expires At
+             * @default null
+             */
+            expires_at: string | null;
+            /**
+             * Granted By Email
+             * @default null
+             */
+            granted_by_email: string | null;
+            /**
+             * Granted By User Id
+             * Format: uuid
+             */
+            granted_by_user_id: string;
+            /**
+             * Grantee Display Name
+             * @default null
+             */
+            grantee_display_name: string | null;
+            /** Grantee Email */
+            grantee_email: string;
+            /**
+             * Grantee User Id
+             * Format: uuid
+             */
+            grantee_user_id: string;
+            /**
+             * Project Id
+             * Format: uuid
+             */
+            project_id: string;
+            role: components["schemas"]["ShareRole"];
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
         };
         /**
          * PublicCatalogEntry
@@ -1819,6 +1897,78 @@ export interface components {
              * @enum {string}
              */
             type: "verification.semantic_review";
+        };
+        /**
+         * ShareRole
+         * @description What a project grant lets someone outside the workspace do (migration 0042).
+         *
+         *     Deliberately NOT `Role`, and deliberately not a subset of it. A workspace Role
+         *     answers "what may this member do anywhere in this tenant"; a ShareRole answers
+         *     "what may this outsider do to the contents of one project". They are two
+         *     different questions and the codebase has one gate — `require_write(scope)` —
+         *     that reads a Role. Sharing the type would make that gate look like it answers
+         *     both.
+         *
+         *     EDITOR is bounded by what the grant maps onto internally: a MEMBER-level scope
+         *     confined to one project, so every `require_admin` operation (deleting an
+         *     artifact, making one public) refuses a grantee without a denylist anyone could
+         *     forget to extend.
+         * @enum {string}
+         */
+        ShareRole: "viewer" | "editor";
+        /**
+         * SharedProject
+         * @description A project someone else's workspace has granted to the caller (0042).
+         *
+         *     Deliberately not a `Project`. A `Project` is a row the caller's workspace owns
+         *     and may rename, reorder and delete; this is a window into somebody else's, and
+         *     the fields that do not apply are absent rather than present-and-ignored. A
+         *     client that receives one of these cannot accidentally send it back to a route
+         *     that writes.
+         */
+        SharedProject: {
+            /** Artifact Count */
+            artifact_count: number;
+            /**
+             * Expires At
+             * @default null
+             */
+            expires_at: string | null;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Name */
+            name: string;
+            /**
+             * Owner Workspace Id
+             * Format: uuid
+             */
+            owner_workspace_id: string;
+            /** Owner Workspace Name */
+            owner_workspace_name: string;
+            /**
+             * Revision
+             * Format: date-time
+             */
+            revision: string;
+            role: components["schemas"]["ShareRole"];
+            /**
+             * Shared At
+             * Format: date-time
+             */
+            shared_at: string;
+            /**
+             * Shared By Display Name
+             * @default null
+             */
+            shared_by_display_name: string | null;
+            /**
+             * Shared By Email
+             * @default null
+             */
+            shared_by_email: string | null;
         };
         /**
          * Stage

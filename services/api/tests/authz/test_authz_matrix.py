@@ -17,6 +17,7 @@ from majorana_api.repos import (
     folders,
     projects,
     runs,
+    shares,
     usage,
     workspaces,
 )
@@ -168,6 +169,87 @@ async def test_role_gates_live(db, dataset):
         await artifacts.soft_delete_artifact(member, db, a.artifact_id)
     with pytest.raises(AuthzError):
         await audit.list_audit(member, db)
+
+
+async def test_no_grant_means_no_second_door(db, dataset):
+    """The share axis (migration 0042), with the dataset's zero grants.
+
+    `repos/shares.py` is the only module in the package that can reach a row
+    outside `scope.workspace_id`, so every function in it has to answer NotFound
+    for every role when no grant exists — including the ones that take an id the
+    caller could plausibly have seen, like their OWN artifact against somebody
+    else's project.
+
+    This is the assertion the feature makes *conditionally* false, and stating it
+    here is what keeps "conditionally" honest: the condition is a row in
+    `project_shares`, and `test_project_shares_live.py` is where a row exists.
+    """
+    a, b = dataset
+    for role in ALL_ROLES:
+        sa = scope_for(a, role)
+        assert await shares.list_shared_projects(sa, db) == []
+        with pytest.raises(NotFoundError):
+            await shares.resolve_share(sa, db, b.project_id)
+        with pytest.raises(NotFoundError):
+            await shares.get_shared_project(sa, db, b.project_id)
+        with pytest.raises(NotFoundError):
+            await shares.list_shared_artifacts(sa, db, b.project_id)
+        with pytest.raises(NotFoundError):
+            await shares.get_shared_artifact(sa, db, b.project_id, b.artifact_id)
+        with pytest.raises(NotFoundError):
+            await shares.list_shared_versions(sa, db, b.project_id, b.artifact_id)
+        with pytest.raises(NotFoundError):
+            await shares.get_shared_version(sa, db, b.project_id, b.artifact_id, b.version_id)
+        with pytest.raises(NotFoundError):
+            await shares.copy_shared_artifact(sa, db, b.project_id, b.artifact_id)
+        with pytest.raises(NotFoundError):
+            await shares.create_shared_version(
+                sa,
+                db,
+                b.project_id,
+                b.artifact_id,
+                expected_current_version_id=b.version_id,
+                code="x",
+                code_lang="python",
+            )
+        # Our own artifact against their project, and their artifact against
+        # ours. Neither pairing is reachable, and one shared check would pass
+        # while either half leaked — the same argument set_artifact_project's
+        # probes make one axis down.
+        with pytest.raises(NotFoundError):
+            await shares.get_shared_artifact(sa, db, b.project_id, a.artifact_id)
+        with pytest.raises(NotFoundError):
+            await shares.get_shared_artifact(sa, db, a.project_id, b.artifact_id)
+
+    for role in ADMIN_ROLES:  # the granting half binds workspace_id like everything else
+        sa = scope_for(a, role)
+        with pytest.raises(NotFoundError):
+            await shares.list_shares(sa, db, b.project_id)
+        with pytest.raises(NotFoundError):
+            await shares.grant_share(
+                sa, db, b.project_id, email="whoever@authz.test", role="viewer"
+            )
+        with pytest.raises(NotFoundError):
+            await shares.revoke_share(sa, db, b.project_id, grantee_user_id=b.users[Role.OWNER])
+        with pytest.raises(NotFoundError):
+            await shares.revoke_all_shares(sa, db, b.project_id)
+
+
+async def test_granting_is_an_admin_action(db, dataset):
+    """A member can create a project; only an admin can put a door in it."""
+    a, b = dataset
+    for role in (Role.MEMBER, Role.VIEWER):
+        sa = scope_for(a, role)
+        with pytest.raises(AuthzError):
+            await shares.list_shares(sa, db, a.project_id)
+        with pytest.raises(AuthzError):
+            await shares.grant_share(
+                sa, db, a.project_id, email=f"b-{Role.MEMBER}@authz.test", role="viewer"
+            )
+        with pytest.raises(AuthzError):
+            await shares.revoke_share(sa, db, a.project_id, grantee_user_id=b.users[Role.OWNER])
+        with pytest.raises(AuthzError):
+            await shares.revoke_all_shares(sa, db, a.project_id)
 
 
 async def test_the_test_unscoped_query_leaks(db, dataset):

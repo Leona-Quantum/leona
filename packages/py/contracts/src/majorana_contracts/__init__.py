@@ -31,6 +31,7 @@ from .enums import (
     RunStatus,
     RetryTarget,
     SemanticReviewDecision,
+    ShareRole,
     SourceKind,
     Stage,
     TopLevelExecution,
@@ -88,10 +89,12 @@ from .models import (
     ArtifactVersion,
     CatalogProvenance,
     Project,
+    ProjectShare,
     PublicCatalogEntry,
     QpuRunRecord,
     ResourceMetrics,
     Run,
+    SharedProject,
     VerificationRecord,
     VerificationCheckSummary,
     VerificationSummary,
@@ -162,7 +165,11 @@ from .lifecycle import (
 # browser's localStorage and onto the workspace (migration 0041). Additive: both
 # are optional to read and `project_id` defaults to None, so a client built
 # against 2.5.0 keeps working and simply shows every artifact ungrouped.
-CONTRACTS_VERSION = "2.6.0"
+# 2.7.0: ShareRole + ProjectShare + SharedProject — a project can be granted to a
+# person outside the workspace that owns it (migration 0042). Additive: three new
+# names, no existing field changes meaning, and a client built against 2.6.0 never
+# asks for a shared project and so never sees one.
+CONTRACTS_VERSION = "2.7.0"
 
 __all__ = [
     "CONTRACTS_VERSION",
@@ -210,6 +217,7 @@ __all__ = [
     "PlanParameters",
     "PlanProduced",
     "Project",
+    "ProjectShare",
     "PublicCatalogEntry",
     "PlannableVerificationMethod",
     "PublicationState",
@@ -243,6 +251,8 @@ __all__ = [
     "ScreenResult",
     "Scope",
     "SemanticReviewDecision",
+    "ShareRole",
+    "SharedProject",
     "SourceKind",
     "Stage",
     "StageFinished",

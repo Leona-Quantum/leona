@@ -26,6 +26,7 @@ async def list_artifacts(
     cursor: uuid.UUID | None = None,
     limit: int = 50,
     include_unkept: bool = False,
+    project_id: uuid.UUID | None = None,
 ) -> list[tuple[Artifact, dict[str, Any] | None]]:
     """Artifacts plus each one's current-version metadata (None when no version).
 
@@ -38,6 +39,13 @@ async def list_artifacts(
     it. `include_unkept` exists for callers that reason about everything a
     workspace has produced — quota accounting must NOT use it, or an unkept run
     would spend the user's Vault allowance.
+
+    `project_id` NARROWS, and that is the only reason it is allowed on a
+    workspace-scoped function: it is ANDed onto the workspace predicate, never
+    substituted for it, so no value of it can reach a row the scope could not
+    already reach. `repos/shares.py` passes it with a project it has already
+    proven the caller may see — which is how a shared project's contents get
+    listed without a second copy of this join drifting away from this one.
     """
     stmt = (
         select(Artifact, ArtifactVersion.artifact_metadata)
@@ -54,6 +62,8 @@ async def list_artifacts(
         stmt = stmt.where(Artifact.kept_at.is_not(None))
     if family is not None:
         stmt = stmt.where(Artifact.family == family)
+    if project_id is not None:
+        stmt = stmt.where(Artifact.project_id == project_id)
     if cursor is not None:  # UUIDv7 PKs are time-ordered: id is the cursor
         stmt = stmt.where(Artifact.id < cursor)
     return [

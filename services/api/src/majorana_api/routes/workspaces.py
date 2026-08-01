@@ -21,8 +21,10 @@ from ..auth.deps import CurrentIdentity, CurrentScope, DbSession, get_settings
 from ..orm import Membership, Project, User
 from ..orm import Workspace as WorkspaceRow
 from ..orm import WorkspaceFolder
+from ..repos import audit as audit_repo
 from ..repos import folders as folders_repo
 from ..repos import projects as projects_repo
+from ..repos import shares as shares_repo
 from ..repos import system
 from ..repos import workspaces as workspaces_repo
 from ..settings import Settings
@@ -754,6 +756,28 @@ async def delete_workspace_project(
     scope: CurrentScope,
     session: DbSession,
 ) -> Response:
-    """Delete the project. The artifacts inside it survive, ungrouped."""
+    """Delete the project. The artifacts inside it survive, ungrouped.
+
+    The grants go too — `project_shares.project_id` CASCADEs (migration 0042) —
+    and that is worth a line in the audit log, because a cascade writes no
+    history and "a project was deleted" is a different sentence from "four people
+    outside this workspace lost access to it". The count is read BEFORE the
+    delete for the obvious reason.
+
+    Counted rather than listed: `count_shares` needs only the write role that
+    deleting a project already needs, whereas naming the grantees is
+    `list_shares` and admin-only. A member deleting their own project should be
+    able to have the fact recorded without being able to read the guest list.
+    """
+    share_count = await shares_repo.count_shares(scope, session, project_id)
     await projects_repo.delete_project(scope, session, project_id)
+    if share_count:
+        await audit_repo.record_audit(
+            scope,
+            session,
+            action="project_share.revoked_by_project_delete",
+            target_kind="project",
+            target_id=project_id,
+            meta={"count": share_count},
+        )
     return Response(status_code=204)

@@ -385,6 +385,26 @@ class Role(StrEnum):
     VIEWER = "viewer"
 
 
+class ShareRole(StrEnum):
+    """What a project grant lets someone outside the workspace do (migration 0042).
+
+    Deliberately NOT `Role`, and deliberately not a subset of it. A workspace Role
+    answers "what may this member do anywhere in this tenant"; a ShareRole answers
+    "what may this outsider do to the contents of one project". They are two
+    different questions and the codebase has one gate — `require_write(scope)` —
+    that reads a Role. Sharing the type would make that gate look like it answers
+    both.
+
+    EDITOR is bounded by what the grant maps onto internally: a MEMBER-level scope
+    confined to one project, so every `require_admin` operation (deleting an
+    artifact, making one public) refuses a grantee without a denylist anyone could
+    forget to extend.
+    """
+
+    VIEWER = "viewer"
+    EDITOR = "editor"
+
+
 class JobStatus(StrEnum):
     QUEUED = "queued"
     RUNNING = "running"
