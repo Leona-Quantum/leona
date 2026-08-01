@@ -11,6 +11,9 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  ArtifactAssignmentRefused,
+  ArtifactGoneError,
+  assignArtifactToRemoteProject,
   hydrateArtifactProjects,
   loadArtifactProjects,
   replaceArtifactProjects,
@@ -242,5 +245,73 @@ test("an assignment naming a project that no longer exists is dropped, not uploa
   assert.deepEqual(
     calls.filter((call) => call.method === "PATCH"),
     [],
+  );
+});
+
+test("a full project comes back as a refusal carrying the server's sentence", async () => {
+  // The 409 and the 429 on this route are new (2026-08-02). Before this, both
+  // fell through to the generic "could not be saved" and the drag simply snapped
+  // back — a rule the person could act on, rendered as an unexplained failure.
+  withStorage();
+  const problem = {
+    type: "about:blank",
+    title: "This project holds 50 of its 50 artifacts. Raise its limit or move something out, and this one will file.",
+    status: 409,
+    code: "http_error",
+    reason: "project_artifact_limit_reached",
+    used: 50,
+    limit: 50,
+  };
+  (globalThis as { fetch?: unknown }).fetch = async () =>
+    new Response(JSON.stringify(problem), { status: 409 });
+
+  await assert.rejects(
+    () => assignArtifactToRemoteProject("artifact-1", "project-1"),
+    (error: unknown) => {
+      assert.ok(error instanceof ArtifactAssignmentRefused, "a refusal must be its own type");
+      // The SERVER's sentence, not one composed here: it names the numbers the
+      // refusal was actually measured against.
+      assert.equal((error as Error).message, problem.title);
+      assert.equal((error as ArtifactAssignmentRefused).reason, "project_artifact_limit_reached");
+      return true;
+    },
+  );
+});
+
+test("a plan refusal on the way out of a shared project is a refusal too, not a 404", async () => {
+  // 429 rather than 409, and it must NOT be read as ArtifactGoneError — that
+  // path treats the assignment as settled and closes the migration.
+  withStorage();
+  (globalThis as { fetch?: unknown }).fetch = async () =>
+    new Response(
+      JSON.stringify({ title: "Your Studio holds 150 of 150 artifacts on this plan.", reason: "artifact_allowance_exhausted" }),
+      { status: 429 },
+    );
+
+  await assert.rejects(
+    () => assignArtifactToRemoteProject("artifact-1", undefined),
+    (error: unknown) => {
+      assert.ok(error instanceof ArtifactAssignmentRefused);
+      assert.ok(!(error instanceof ArtifactGoneError), "a plan refusal is not a missing artifact");
+      assert.equal((error as ArtifactAssignmentRefused).reason, "artifact_allowance_exhausted");
+      return true;
+    },
+  );
+});
+
+test("a refusal with an unreadable body still says something true", async () => {
+  // A proxy that returns 409 with HTML, or an empty body. The person gets a
+  // generic sentence rather than "undefined" or a thrown parse error.
+  withStorage();
+  (globalThis as { fetch?: unknown }).fetch = async () => new Response("<html>", { status: 409 });
+
+  await assert.rejects(
+    () => assignArtifactToRemoteProject("artifact-1", "project-1"),
+    (error: unknown) => {
+      assert.ok(error instanceof ArtifactAssignmentRefused);
+      assert.equal((error as Error).message, "That circuit could not be filed there");
+      assert.equal((error as ArtifactAssignmentRefused).reason, null);
+      return true;
+    },
   );
 });

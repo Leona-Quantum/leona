@@ -13,6 +13,10 @@
  */
 
 import { clearArtifactProjectLocally, setArtifactProjectLocally } from "./library-data.ts";
+// The problem+json readers, imported rather than re-written. A second parser
+// for the same document is a second thing to disagree about which field holds
+// the sentence — and this route now returns exactly the shape sharing does.
+import { refusalReason, refusalSentence } from "./project-shares.ts";
 import { scopedStorage } from "./user-storage.ts";
 
 export interface ArtifactProject {
@@ -188,6 +192,28 @@ export async function reorderArtifactProjects(projects: ArtifactProject[]): Prom
  */
 export class ArtifactGoneError extends Error {}
 
+/**
+ * The move was understood and refused, and the sentence says why.
+ *
+ * Distinct from `ArtifactGoneError` and from a generic failure, because a
+ * refusal is the one case where there is something true to put on screen. Since
+ * 2026-08-02 this route has two of them: **409** when the target project is at
+ * its own artifact limit, and **429** when moving OUT of a shared project would
+ * put the workspace past its plan allowance. Neither existed when the drag
+ * handler was written, so both fell through to "could not be saved" — a
+ * sentence that reads as a bug for a rule the person could act on.
+ */
+export class ArtifactAssignmentRefused extends Error {
+  /** The control plane's machine-readable reason, when it sent one. */
+  readonly reason: string | null;
+
+  constructor(message: string, reason: string | null = null) {
+    super(message);
+    this.name = "ArtifactAssignmentRefused";
+    this.reason = reason;
+  }
+}
+
 export async function assignArtifactToRemoteProject(artifactId: string, projectId?: string): Promise<void> {
   const response = await fetch(`/api/artifacts/${encodeURIComponent(artifactId)}/project`, {
     method: "PATCH",
@@ -196,6 +222,21 @@ export async function assignArtifactToRemoteProject(artifactId: string, projectI
     cache: "no-store",
   });
   if (response.status === 404) throw new ArtifactGoneError("Artifact is not in this workspace");
+  if (response.status === 409 || response.status === 429) {
+    // RFC 9457: the sentence is `title` and the reason is its sibling. Read
+    // through the same helpers the sharing client uses so one refusal shape is
+    // parsed one way across the app.
+    let payload: unknown = null;
+    try {
+      payload = (await response.json()) as unknown;
+    } catch {
+      payload = null;
+    }
+    throw new ArtifactAssignmentRefused(
+      refusalSentence(payload) ?? "That circuit could not be filed there",
+      refusalReason(payload),
+    );
+  }
   if (!response.ok) throw new Error("Artifact project assignment could not be saved");
 }
 

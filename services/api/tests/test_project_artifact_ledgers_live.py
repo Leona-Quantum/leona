@@ -30,6 +30,8 @@ Committing, and therefore responsible for its own teardown — see
 `delete_committed_tenants`.
 """
 
+import asyncio
+import datetime as dt
 import os
 import uuid
 
@@ -37,6 +39,7 @@ import pytest
 from majorana_contracts import Scope
 from majorana_contracts.enums import Role, ShareRole
 from repo_test_helpers import delete_committed_tenants
+from sqlalchemy import func, select
 
 from majorana_api.db import engine_from_env, session_factory
 from majorana_api.repos import artifacts, projects, shares, system
@@ -51,6 +54,11 @@ pytestmark = requires_db
 
 TEAM = limits_for("team")
 FREE = limits_for("free")
+
+#: How long the expiring grant lives, measured on the DATABASE clock. The sleep
+#: below is twice this, so the margin scales with the number rather than with a
+#: literal somebody has to remember to change in two places.
+GRANT_LIFETIME_S = 2
 
 #: Derived from the real `team` row rather than written out, for the reason
 #: `matrix_helpers.any_team_grantee` gives: a hand-written `max_shared_projects=
@@ -419,7 +427,6 @@ async def test_an_expired_grant_puts_the_artifacts_back_on_the_ledger(world):
     what that means is "files nothing new", not "loses rows".
     """
     db = world.session
-    import datetime as dt
 
     alice = await tenant(world, "alice")
     bob = await tenant(world, "bob")
@@ -428,7 +435,15 @@ async def test_an_expired_grant_puts_the_artifacts_back_on_the_ledger(world):
     await projects.set_artifact_project(
         alice.scope, db, artifact.id, project.id, workspace_artifact_limit=None
     )
-    soon = dt.datetime.now(dt.timezone.utc) + dt.timedelta(seconds=2)
+    # The expiry is computed from the DATABASE clock, not this process's.
+    # `live_share_predicates` compares `expires_at` against `func.now()`, so a
+    # Python `datetime.now()` here would be racing two clocks against each other:
+    # the first draft gave a grant 2s of life and slept 2.5s, which leaves 0.5s
+    # of skew between an API host and a database host before the grant is still
+    # live after the sleep and this fails for a reason that is not the subject.
+    # Found by CodeRabbit on PR 216.
+    now = (await db.execute(select(func.now()))).scalar_one()
+    soon = now + dt.timedelta(seconds=GRANT_LIFETIME_S)
     await shares.grant_share(
         alice.scope,
         db,
@@ -441,12 +456,15 @@ async def test_an_expired_grant_puts_the_artifacts_back_on_the_ledger(world):
     await db.commit()
     while_live = await artifacts.count_kept_against_quota(alice.scope, db)
 
-    import asyncio
-
-    await asyncio.sleep(2.5)
+    await asyncio.sleep(GRANT_LIFETIME_S * 2)
     # A fresh transaction: `live_share_predicates` uses the transaction's clock,
     # so re-reading inside the same one would see the same `now()` forever.
     await db.rollback()
+    # The control: the grant really is expired by the database's own reckoning,
+    # so a failure below is the COUNT being wrong rather than the sleep being
+    # short. Without this, a slow machine reports "the ledger did not update".
+    expired_by_the_db = (await db.execute(select(func.now() > soon))).scalar_one()
+    assert expired_by_the_db, "the grant is still live; the sleep was too short to test anything"
     assert await artifacts.count_kept_against_quota(alice.scope, db) == while_live + 1
 
 

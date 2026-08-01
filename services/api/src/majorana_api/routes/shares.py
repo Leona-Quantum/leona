@@ -34,6 +34,7 @@ from ..request_models import RequestModel
 from ..orm import ProjectShare as ProjectShareRow
 from ..orm import User as UserRow
 from ..repos import artifacts as artifacts_repo
+from ..repos import projects as projects_repo
 from ..repos import shares as shares_repo
 from ..settings import Settings
 from ..tiers import limits_for, tier_of
@@ -509,10 +510,32 @@ async def copy_shared_artifact(
     the keep, and the transaction rolls the whole thing back. Same outcome,
     three statements of work — so this refuses the common case early and the
     lock below is what makes the refusal true under concurrency.
+
+    **A pre-check has to ask the same question the check asks**, and this one has
+    two conditions to match now, not one. `keep_artifact` skips the individual
+    allowance entirely when the artifact lands in a SHARED project, so a copy
+    filed into one of the caller's own shared projects spends no slot — and a
+    pre-check reading only the count would refuse, at the cap, a write the
+    authoritative check accepts. Found by CodeRabbit on PR 216, in a comment I
+    had written two lines below claiming the two numbers agreed. They agree only
+    while the target project carries no live grant.
     """
     user, _workspace = identity
     limits = limits_for(tier_of(user, settings))
-    if limits.private_artifacts is not None:
+    # Asked before the count, because it decides whether the count is relevant
+    # at all. `None` target means the ungrouped list, which always spends a slot.
+    #
+    # `get_project` FIRST, and not only to be tidy: `is_project_shared` takes a
+    # bare id, and asking it about an id this caller has not been proven to own
+    # would turn the 429 below into an oracle for "is that project shared?" on
+    # any uuid. Resolving through the scoped getter makes another workspace's
+    # project a 404 here — the same answer `copy_shared_artifact` gives it a few
+    # lines down, just sooner.
+    target_is_shared = False
+    if body.target_project_id is not None:
+        await projects_repo.get_project(scope, session, body.target_project_id)
+        target_is_shared = await shares_repo.is_project_shared(session, body.target_project_id)
+    if limits.private_artifacts is not None and not target_is_shared:
         # The QUOTA count, not `get_overview`'s Vault total. Those two numbers
         # separated on 2026-08-02 and this is the one the cap below compares
         # against, so reading the other here would refuse a copy the keep would
