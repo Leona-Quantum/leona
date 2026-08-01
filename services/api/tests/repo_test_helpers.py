@@ -162,6 +162,7 @@ async def delete_committed_tenants(factory, workspace_ids, user_ids) -> None:
         Membership,
         Project,
         ProjectShare,
+        QpuRun,
         Run,
         RunCandidate,
         RunEvent,
@@ -196,6 +197,13 @@ async def delete_committed_tenants(factory, workspace_ids, user_ids) -> None:
             await session.execute(
                 delete(ProjectShare).where(ProjectShare.project_id.in_(project_ids))
             )
+        # First, because a qpu_run references an artifact VERSION as well as the
+        # workspace and the user, and the versions go three statements below.
+        # Nothing references a qpu_run, so nothing needs it to survive. Absent
+        # here until a suite committed one — the same way runs were, and with
+        # the same good failure mode: a ForeignKeyViolation from the workspace
+        # delete rather than a wrong answer somewhere quiet.
+        await session.execute(delete(QpuRun).where(QpuRun.workspace_id.in_(workspace_ids)))
         if artifact_ids:
             await session.execute(
                 update(Artifact)

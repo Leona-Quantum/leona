@@ -82,9 +82,40 @@ def _submission(device_id: str = "braket.ionq.forte") -> QpuSubmissionRequest:
     )
 
 
+def _unmetered_identity():
+    """An identity on the unmetered tier, for tests about everything else.
+
+    The spend allowance has its own file. What this has to be is UNMETERED, not
+    merely present: a developer-tier caller reaches `reserve_qpu_spend_slot` and
+    returns from its first line, so these tests exercise the paths they are
+    about without a session that can answer a lock.
+    """
+    from types import SimpleNamespace
+
+    return (SimpleNamespace(email="dev@majorana.test", plan="developer"), object())
+
+
+def _sources():
+    from types import SimpleNamespace
+
+    return SimpleNamespace(developer_emails=frozenset(), team_emails=frozenset())
+
+
 def test_submission_route_is_reachable_and_scoped():
     assert ("/qpu/submissions", "POST") in _routes()
     assert "scope" in qpu_routes.qpu_submit.__annotations__
+
+
+def test_submission_takes_an_identity():
+    """The handler had none, and a handler with no tier cannot check an allowance.
+
+    That is not a style point: it is how `POST /qpu/submissions` came to accept
+    $96,006.30 from a free account. Pinned here rather than only in the
+    allowance suite so that removing the parameter fails the file that is about
+    the route's shape.
+    """
+    assert "identity" in qpu_routes.qpu_submit.__annotations__
+    assert "settings" in qpu_routes.qpu_submit.__annotations__
 
 
 async def test_submission_rejects_unknown_devices_with_404():
@@ -92,7 +123,11 @@ async def test_submission_rejects_unknown_devices_with_404():
 
     with pytest.raises(HTTPException) as excinfo:
         await qpu_routes.qpu_submit(
-            _submission("braket.acme.imaginary"), scope=object(), session=object()
+            _submission("braket.acme.imaginary"),
+            scope=object(),
+            session=object(),
+            identity=_unmetered_identity(),
+            settings=_sources(),
         )
     assert excinfo.value.status_code == 404
 
@@ -102,7 +137,13 @@ async def test_submission_refuses_with_the_gate_reason(monkeypatch):
 
     monkeypatch.delenv("MAJORANA_QPU_SUBMIT_ENABLED", raising=False)
     with pytest.raises(HTTPException) as excinfo:
-        await qpu_routes.qpu_submit(_submission(), scope=object(), session=object())
+        await qpu_routes.qpu_submit(
+            _submission(),
+            scope=object(),
+            session=object(),
+            identity=_unmetered_identity(),
+            settings=_sources(),
+        )
     assert excinfo.value.status_code == 409
     assert excinfo.value.detail == {"blocked_reason": "submission_disabled"}
 
@@ -149,7 +190,13 @@ async def test_submission_with_open_gates_writes_the_record_and_enqueues(monkeyp
     monkeypatch.setattr(qpu_routes.qpu_runs_repo, "create_record", fake_create_record)
     monkeypatch.setattr(qpu_routes.system, "enqueue_job", fake_enqueue_job)
 
-    result = await qpu_routes.qpu_submit(_submission(), scope=scope, session=object())
+    result = await qpu_routes.qpu_submit(
+        _submission(),
+        scope=scope,
+        session=object(),
+        identity=_unmetered_identity(),
+        settings=_sources(),
+    )
 
     assert result.status.value == "queued"
     assert result.id == record_id

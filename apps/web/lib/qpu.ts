@@ -6,6 +6,11 @@
  * unavailable catalog, never a default one.
  */
 
+// The problem+json readers, imported rather than re-written, for the reason
+// `artifact-projects.ts` states: a second parser for the same document is a
+// second thing to disagree about which field holds the sentence.
+import { refusalReason, refusalSentence } from "./project-shares.ts";
+
 export type QpuAccess = "free_queue" | "on_demand";
 
 export type QpuBackendInfo = {
@@ -94,6 +99,36 @@ export type QpuRunRecord = {
   created_at: string;
 };
 
+/**
+ * A submission the control plane refused, carrying the machine-readable reason.
+ *
+ * `reason` rather than only the sentence, for the reason `refusalReason` gives:
+ * `title` is English prose written by the API and this app renders Japanese, so
+ * the code is the only part of a refusal a locale can translate.
+ *
+ * The numbers ride along for `qpu_spend_exhausted`, because a budget refusal
+ * that does not say how much is left is a refusal nobody can act on.
+ */
+export class QpuSubmissionRefused extends Error {
+  readonly reason: string | null;
+  readonly spentUsd: number | null;
+  readonly limitUsd: number | null;
+  readonly estimateUsd: number | null;
+
+  constructor(
+    message: string,
+    reason: string | null,
+    amounts: { spent?: unknown; limit?: unknown; estimate?: unknown } = {},
+  ) {
+    super(message);
+    this.name = "QpuSubmissionRefused";
+    this.reason = reason;
+    this.spentUsd = typeof amounts.spent === "number" ? amounts.spent : null;
+    this.limitUsd = typeof amounts.limit === "number" ? amounts.limit : null;
+    this.estimateUsd = typeof amounts.estimate === "number" ? amounts.estimate : null;
+  }
+}
+
 export async function submitQpuRun(request: {
   device_id: string;
   shots: number;
@@ -106,14 +141,38 @@ export async function submitQpuRun(request: {
     body: JSON.stringify(request),
     cache: "no-store",
   });
-  const payload = (await response.json()) as QpuRunRecord & {
-    detail?: { blocked_reason?: string } | string;
-  };
+  // Parsed defensively, because the body is not always this API's. A proxy
+  // answering 502 with an HTML error page, or a gateway with an empty body,
+  // makes `response.json()` throw a raw SyntaxError — which escapes before any
+  // of the fallback below runs, so the person sees a parser's complaint instead
+  // of the sentence written for them. `null` here lets every reader treat it as
+  // "no readable body" rather than as a thrown parse error.
+  const payload: unknown = await response.json().catch(() => null);
   if (!response.ok) {
-    const detail = typeof payload.detail === "string" ? payload.detail : payload.detail?.blocked_reason;
-    throw new Error(detail ?? `qpu submission failed (${response.status})`);
+    // Read through the shared problem+json helpers rather than a parser of this
+    // module's own. The one that was here read `payload.detail.blocked_reason`
+    // — FastAPI's default shape, not this API's: `app._problem` flattens every
+    // refusal to `{type, title, status, code, ...extensions}`, so `detail` was
+    // always undefined and EVERY refusal this endpoint has ever sent fell
+    // through to "qpu submission failed (409)". The gate's carefully worded
+    // reason, the 404 for an unknown device, and the spend refusal below all
+    // reached the user as a status code. `project-shares.ts` documents having
+    // made and found exactly this mistake; importing from it is what stops a
+    // third copy disagreeing about which field holds the sentence.
+    const amounts = (payload ?? {}) as Record<string, unknown>;
+    throw new QpuSubmissionRefused(
+      refusalSentence(payload) ?? `qpu submission failed (${response.status})`,
+      refusalReason(payload) ?? (typeof amounts.blocked_reason === "string" ? amounts.blocked_reason : null),
+      { spent: amounts.spent_usd, limit: amounts.limit_usd, estimate: amounts.estimate_usd },
+    );
   }
-  return payload;
+  if (payload === null) {
+    // A 2xx whose body did not parse. Returning it as a record would put
+    // `undefined` in the status field and poll forever on `undefined` — say so
+    // instead, since a submission may well have been accepted.
+    throw new QpuSubmissionRefused(`qpu submission returned an unreadable body (${response.status})`, null);
+  }
+  return payload as QpuRunRecord;
 }
 
 export async function fetchQpuRun(recordId: string): Promise<QpuRunRecord> {

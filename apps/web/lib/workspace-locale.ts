@@ -269,6 +269,12 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
     hardwareJobError: string;
     hardwareRawCounts: string;
     hardwareBlockedReason: (reason: string) => string;
+    //: The weekly hardware BUDGET is spent, which is not the same thing as the
+    //: deployment being switched off — a person can act on this one. Takes the
+    //: formatted amounts rather than raw numbers so the currency renders the
+    //: same way as the estimate directly above it on screen.
+    hardwareSpendExhausted: (estimate: string, limit: string, spent: string) => string;
+    hardwareSpendFreeTier: (estimate: string) => string;
     verifySave: string;
     starting: string;
     view: string;
@@ -711,6 +717,10 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
         credentials_unconfigured: "No provider credentials are configured in this deployment, so nothing can be submitted.",
         provider_dependency_missing: "The provider SDK is not installed in this deployment, so nothing can be submitted.",
       }[reason] ?? "Hardware submission is unavailable in this deployment."),
+      hardwareSpendExhausted: (estimate, limit, spent) =>
+        `This run is estimated at ${estimate}. Your plan includes ${limit} of hardware time per week and ${spent} is already committed. Free-queue devices and browser simulation stay available.`,
+      hardwareSpendFreeTier: (estimate) =>
+        `This run is estimated at ${estimate}, and billed hardware is not part of the free plan. Free-queue devices and browser simulation stay available.`,
       verifySave: "Verify & save",
       starting: "Starting…",
       view: "Studio view",
@@ -1159,6 +1169,10 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
         credentials_unconfigured: "現在の環境には実機提供元の認証情報が設定されていないため、実行できません。",
         provider_dependency_missing: "現在の環境は、この実機提供元に対応していません。",
       }[reason] ?? "現在の環境では量子コンピュータでの実行を利用できません。"),
+      hardwareSpendExhausted: (estimate, limit, spent) =>
+        `この実行の見積もりは${estimate}です。現在のプランに含まれる実機の実行枠は週あたり${limit}で、すでに${spent}を使用しています。無料キューの実機とブラウザ上のシミュレーションは引き続き利用できます。`,
+      hardwareSpendFreeTier: (estimate) =>
+        `この実行の見積もりは${estimate}です。有料の実機実行は無料プランには含まれていません。無料キューの実機とブラウザ上のシミュレーションは引き続き利用できます。`,
       verifySave: "検証して保存",
       starting: "開始中…",
       view: "Studioの表示切り替え",

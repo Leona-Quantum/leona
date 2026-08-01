@@ -1,4 +1,5 @@
 import uuid
+from datetime import UTC, datetime
 from types import SimpleNamespace
 
 import pytest
@@ -758,8 +759,21 @@ def _patch_qpu_repo(monkeypatch, record: SimpleNamespace) -> dict:
     async def fake_enqueue(session, *, kind, payload, **kwargs):
         captured["enqueued"] = {"kind": kind, "payload": payload, **kwargs}
 
+    async def fake_claim(scope, session, record_id):
+        # Behaves like the real conditional UPDATE: the stamp lands once, and a
+        # caller arriving after it matches zero rows. A double that always
+        # returned True would make every test below pass against a handler with
+        # no at-most-once guarantee at all.
+        captured.setdefault("claims", 0)
+        captured["claims"] += 1
+        if record.submitted_at is not None:
+            return False
+        record.submitted_at = datetime.now(UTC)
+        return True
+
     monkeypatch.setattr(handlers.qpu_runs_repo, "get_record", fake_get_record)
     monkeypatch.setattr(handlers.qpu_runs_repo, "transition", fake_transition)
+    monkeypatch.setattr(handlers.qpu_runs_repo, "claim_submission_attempt", fake_claim)
     monkeypatch.setattr(handlers.system, "enqueue_job", fake_enqueue)
     return captured
 
@@ -818,7 +832,10 @@ async def test_qpu_run_submits_a_queued_record_and_schedules_the_poll(monkeypatc
     assert captured["transition"]["provider_job_id"] == "prov-123"
     assert captured["enqueued"]["kind"] == "qpu.run"
     assert captured["enqueued"]["run_after"] is not None
-    assert session.commits == 1
+    # TWO commits on the submit path, and the extra one is load-bearing: the
+    # first durably claims the attempt before the provider is contacted, so a
+    # redelivered job cannot contact them again. The second writes the outcome.
+    assert session.commits == 2
 
 
 async def test_qpu_run_poll_completes_the_record_with_raw_counts(monkeypatch):
@@ -846,6 +863,108 @@ async def test_qpu_run_poll_completes_the_record_with_raw_counts(monkeypatch):
     assert captured["transition"]["status"].value == "done"
     assert captured["transition"]["raw_counts"] == {"0": 66, "1": 62}
     assert "enqueued" not in captured
+
+
+async def test_a_redelivered_job_never_submits_to_the_provider_twice(monkeypatch):
+    """The measurement this guard exists for.
+
+    A `qpu.run` job is redelivered on failure like any other (three attempts by
+    default), and this is the one handler where a redelivery spends money. The
+    provider below accepts the job every time and loses the FIRST response —
+    a read timeout, a reset connection, the ordinary way a network call fails
+    after it has already had its effect.
+
+    Before the claim was stamped ahead of the call, this measured two
+    `provider.submit` calls for one record, with the attestation row keeping
+    only the SECOND provider job id: the first job runs, bills the operator's
+    provider account, and is tracked nowhere.
+    """
+    monkeypatch.setattr(handlers, "submission_block_reason", lambda: None)
+    record = _qpu_record("queued")
+    captured = _patch_qpu_repo(monkeypatch, record)
+    session = _FakeQpuSession()
+    submits: list[str] = []
+
+    class FlakyProvider:
+        def submit(self, request):
+            from majorana_qpu import QpuJobRecord, QpuJobStatus, QpuProviderKey
+
+            submits.append(request.source_fingerprint)
+            if len(submits) == 1:
+                raise TimeoutError("provider accepted the job; the response never arrived")
+            return QpuJobRecord(
+                provider=QpuProviderKey.BRAKET,
+                provider_job_id=f"prov-{len(submits)}",
+                device_id=request.device_id,
+                shots=request.shots,
+                status=QpuJobStatus.QUEUED,
+                submitted_at="2026-08-02T00:00:00+00:00",
+                source_fingerprint=request.source_fingerprint,
+            )
+
+    provider = FlakyProvider()
+    body = _qpu_payload(str(record.id))
+
+    with pytest.raises(TimeoutError):
+        await handlers.handle_qpu_run(session, body, provider=provider)
+
+    # The stamp survived the failure, which is the whole mechanism: it was
+    # committed before the provider was contacted, so it did not roll back with
+    # the rest of the handler's transaction.
+    assert record.submitted_at is not None
+
+    await handlers.handle_qpu_run(session, body, provider=provider)
+
+    assert len(submits) == 1, f"the provider was contacted {len(submits)} times for one record"
+    assert captured["transition"]["status"].value == "error"
+    assert "may have accepted" in captured["transition"]["error"]
+    assert "enqueued" not in captured, "a record that cannot be submitted must not schedule polls"
+
+
+async def test_the_claim_is_committed_before_the_provider_is_contacted(monkeypatch):
+    """Ordering, not just presence.
+
+    A claim written inside the handler's transaction rolls back with everything
+    else when the submit raises, and the redelivery finds the record exactly as
+    it left it — which is the bug, with an extra write in front of it.
+    """
+    monkeypatch.setattr(handlers, "submission_block_reason", lambda: None)
+    record = _qpu_record("queued")
+    _patch_qpu_repo(monkeypatch, record)
+    session = _FakeQpuSession()
+    order: list[str] = []
+
+    original_claim = handlers.qpu_runs_repo.claim_submission_attempt
+
+    async def watched_claim(scope, sess, record_id):
+        order.append("claim")
+        return await original_claim(scope, sess, record_id)
+
+    class WatchedSession(_FakeQpuSession):
+        async def commit(self):
+            order.append("commit")
+            await super().commit()
+
+    class FakeProvider:
+        def submit(self, request):
+            from majorana_qpu import QpuJobRecord, QpuJobStatus, QpuProviderKey
+
+            order.append("submit")
+            return QpuJobRecord(
+                provider=QpuProviderKey.BRAKET,
+                provider_job_id="prov-1",
+                device_id=request.device_id,
+                shots=request.shots,
+                status=QpuJobStatus.QUEUED,
+                submitted_at="2026-08-02T00:00:00+00:00",
+                source_fingerprint=request.source_fingerprint,
+            )
+
+    monkeypatch.setattr(handlers.qpu_runs_repo, "claim_submission_attempt", watched_claim)
+    session = WatchedSession()
+    await handlers.handle_qpu_run(session, _qpu_payload(str(record.id)), provider=FakeProvider())
+
+    assert order[:3] == ["claim", "commit", "submit"], order
 
 
 async def test_qpu_dead_letter_closes_an_open_record(monkeypatch):
