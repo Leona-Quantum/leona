@@ -113,6 +113,31 @@ export function isControlPlaneTimeout(error: unknown): boolean {
 }
 
 /**
+ * Hand the control plane's answer straight back to the browser.
+ *
+ * Every proxy route ends in the same four lines — forward the status, forward
+ * the content type, and special-case the statuses that carry no body, because
+ * constructing a `Response` with a body on a 204 throws. Ten routes writing
+ * those four lines is ten chances to forget the third one, and the failure shows
+ * up as a 500 on an operation that actually succeeded.
+ *
+ * Returns a plain `Response`, not a `NextResponse`, so this module stays
+ * loadable by the bare node test runner — the same reason the rest of the file
+ * imports nothing from `next/server`.
+ */
+const BODYLESS_STATUSES = new Set([204, 205, 304]);
+
+export function forwardFromControlPlane(upstream: Response): Response {
+  if (BODYLESS_STATUSES.has(upstream.status)) {
+    return new Response(null, { status: upstream.status });
+  }
+  return new Response(upstream.body, {
+    status: upstream.status,
+    headers: { "Content-Type": upstream.headers.get("Content-Type") ?? "application/json" },
+  });
+}
+
+/**
  * The answer when the control plane could not be reached.
  *
  * 504 when we gave up waiting, 502 when the call failed outright. Both say the

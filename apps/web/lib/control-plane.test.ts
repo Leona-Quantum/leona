@@ -5,6 +5,7 @@ import {
   CONTROL_PLANE_TIMEOUT_MS,
   controlPlaneUnavailable,
   fetchControlPlane,
+  forwardFromControlPlane,
   isControlPlaneTimeout,
   openControlPlaneStream,
 } from "./control-plane.ts";
@@ -140,4 +141,49 @@ test("a stream whose headers never arrive does trip the timeout", DEADLINE, asyn
     Date.now() - started >= TEST_TIMEOUT_MS - 50,
     "should have waited for the timeout rather than failing immediately",
   );
+});
+
+test("forwardFromControlPlane passes the status and content type through", async () => {
+  const forwarded = forwardFromControlPlane(
+    new Response(JSON.stringify({ ok: true }), {
+      status: 201,
+      headers: { "Content-Type": "application/json" },
+    }),
+  );
+  assert.equal(forwarded.status, 201);
+  assert.equal(forwarded.headers.get("Content-Type"), "application/json");
+  assert.deepEqual(await forwarded.json(), { ok: true });
+});
+
+test("forwardFromControlPlane drops the body on statuses that must not carry one", () => {
+  // `new Response(body, { status: 204 })` throws. A proxy that forwards a 204
+  // without this check answers 500 on an operation that already succeeded —
+  // which is every revoke and every delete.
+  for (const status of [204, 205, 304]) {
+    const forwarded = forwardFromControlPlane(new Response(null, { status }));
+    assert.equal(forwarded.status, status);
+    assert.equal(forwarded.body, null);
+  }
+});
+
+test("forwardFromControlPlane keeps a refusal intact", async () => {
+  // A 409 from the control plane is an ANSWER: the sentence inside it is what
+  // the user reads. Rewriting or swallowing it here loses the reason.
+  const forwarded = forwardFromControlPlane(
+    new Response(JSON.stringify({ detail: "already a member of this workspace" }), {
+      status: 409,
+      headers: { "Content-Type": "application/json" },
+    }),
+  );
+  assert.equal(forwarded.status, 409);
+  assert.deepEqual(await forwarded.json(), { detail: "already a member of this workspace" });
+});
+
+test("forwardFromControlPlane defaults the content type when the upstream sent none", () => {
+  // A byte body rather than a string: `new Response("{}")` labels itself
+  // text/plain, so a string here would test the platform default instead of
+  // this function.
+  const upstream = new Response(Uint8Array.from([123, 125]), { status: 200 });
+  assert.equal(upstream.headers.get("Content-Type"), null);
+  assert.equal(forwardFromControlPlane(upstream).headers.get("Content-Type"), "application/json");
 });

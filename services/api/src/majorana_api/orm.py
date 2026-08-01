@@ -121,6 +121,33 @@ class Project(Base):
     updated_at: Mapped[dt.datetime | None] = mapped_column(server_default=func.now())
 
 
+class ProjectShare(Base):
+    """One person's grant on one project (migration 0042).
+
+    The second authorization path to an artifact row, and the only one. Read in
+    exactly one place — `repos/shares.resolve_share` — so that `expires_at`,
+    the deleted-workspace check and the role mapping are evaluated together or
+    not at all.
+
+    There is no `revoked_at`: revoking deletes the row, so no query that reads
+    this table can widen access by forgetting a predicate. The revocation itself
+    is history in `audit_log`.
+    """
+
+    __tablename__ = "project_shares"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True)
+    project_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"))
+    grantee_user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"))
+    #: A ShareRole ("viewer" | "editor"), never a workspace Role.
+    role: Mapped[str]
+    granted_by_user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"))
+    #: NULL = never expires.
+    expires_at: Mapped[dt.datetime | None]
+    created_at: Mapped[dt.datetime | None] = mapped_column(server_default=func.now())
+    updated_at: Mapped[dt.datetime | None] = mapped_column(server_default=func.now())
+
+
 class Artifact(Base):
     __tablename__ = "artifacts"
 

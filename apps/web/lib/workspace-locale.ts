@@ -1888,3 +1888,210 @@ export const SHARING_COPY: Record<PublicLocale, {
     sharedWith: (count) => `${count}人`,
   },
 };
+
+/**
+ * Project sharing (migration 0042). Separate from `SHARING_COPY`, which is about
+ * WORKSPACE membership.
+ *
+ * The two are not one block on purpose, and the reason is the same one that
+ * keeps Run's *Folders* and Studio's *Projects* apart: they are different words
+ * for different things, and the last time two surfaces borrowed one another's
+ * sentences a locale key stopped rendering a whole section. A member of your
+ * workspace sees everything in it; someone a project is shared with sees one
+ * project and nothing else, and the copy has to be able to say so without
+ * hedging around a shared string.
+ */
+export const PROJECT_SHARE_COPY: Record<PublicLocale, {
+  share: string;
+  shareProject: (name: string) => string;
+  title: (name: string) => string;
+  help: string;
+  outsideWarning: string;
+  emailLabel: string;
+  emailPlaceholder: string;
+  roleLabel: string;
+  roleViewer: string;
+  roleEditor: string;
+  roleViewerHelp: string;
+  roleEditorHelp: string;
+  expiryLabel: string;
+  expiryNever: string;
+  expiresOn: (date: string) => string;
+  expiringSoon: (date: string) => string;
+  expired: string;
+  grant: string;
+  granting: string;
+  granted: (email: string) => string;
+  grantFailed: string;
+  nobody: string;
+  peopleWithAccess: string;
+  invitedBy: (email: string) => string;
+  remove: string;
+  removing: string;
+  removeFailed: string;
+  removed: (email: string) => string;
+  stopAll: string;
+  stopAllConfirm: (count: number) => string;
+  stopAllCancel: string;
+  close: string;
+  adminOnly: string;
+  deleteWarning: (count: number) => string;
+  sharedWithMe: string;
+  sharedWithMeEmpty: string;
+  sharedBy: (name: string) => string;
+  fromWorkspace: (name: string) => string;
+  circuits: (count: number) => string;
+  open: string;
+  readOnlyTag: string;
+  canEditTag: string;
+  copyHere: string;
+  copying: string;
+  copied: (title: string) => string;
+  copyFailed: string;
+  save: string;
+  saving: string;
+  saved: string;
+  saveFailed: string;
+  conflictTitle: string;
+  conflictBody: string;
+  reloadTheirs: string;
+  changedElsewhere: string;
+  refresh: string;
+  loadFailed: string;
+  noCircuits: string;
+  backToStudio: string;
+}> = {
+  en: {
+    share: "Share",
+    shareProject: (name) => `Share ${name}`,
+    title: (name) => `Share “${name}”`,
+    help: "The people below can open this project's circuits. They see nothing else in this workspace.",
+    outsideWarning:
+      "Sharing reaches outside this workspace. Anyone here can read every circuit filed under this project, including ones you add later.",
+    emailLabel: "Email address",
+    emailPlaceholder: "colleague@university.edu",
+    roleLabel: "They can",
+    roleViewer: "Read",
+    roleEditor: "Read and edit",
+    roleViewerHelp: "Open the circuits and their history. Nothing they do changes anything here.",
+    roleEditorHelp:
+      "Open the circuits and save new versions of them. They still cannot rename, delete or publish anything.",
+    expiryLabel: "Access ends",
+    expiryNever: "Never",
+    expiresOn: (date) => `Access ends ${date}`,
+    expiringSoon: (date) => `Access ends ${date} — soon`,
+    expired: "Access has ended",
+    grant: "Share",
+    granting: "Sharing…",
+    granted: (email) => `${email} can now open this project.`,
+    grantFailed: "This project could not be shared.",
+    nobody: "This project is not shared with anyone.",
+    peopleWithAccess: "People with access",
+    invitedBy: (email) => `Shared by ${email}`,
+    remove: "Remove access",
+    removing: "Removing…",
+    removeFailed: "Access could not be removed.",
+    removed: (email) => `${email} can no longer open this project.`,
+    stopAll: "Stop sharing with everyone",
+    stopAllConfirm: (count) =>
+      count === 1
+        ? "One person loses access to this project. Continue?"
+        : `${count} people lose access to this project. Continue?`,
+    stopAllCancel: "Keep sharing",
+    close: "Close",
+    adminOnly: "Only an owner or admin can share a project.",
+    deleteWarning: (count) =>
+      count === 1
+        ? "One person outside this workspace loses access when this project is deleted."
+        : `${count} people outside this workspace lose access when this project is deleted.`,
+    sharedWithMe: "Shared with me",
+    sharedWithMeEmpty: "Nothing has been shared with you yet.",
+    sharedBy: (name) => `Shared by ${name}`,
+    fromWorkspace: (name) => `from ${name}`,
+    circuits: (count) => (count === 1 ? "1 circuit" : `${count} circuits`),
+    open: "Open",
+    readOnlyTag: "Read only",
+    canEditTag: "You can edit",
+    copyHere: "Save a copy to my workspace",
+    copying: "Copying…",
+    copied: (title) => `${title} is now in your Studio. It carries no verification evidence of its own — re-run it.`,
+    copyFailed: "That circuit could not be copied.",
+    save: "Save",
+    saving: "Saving…",
+    saved: "Saved.",
+    saveFailed: "That edit could not be saved.",
+    conflictTitle: "Somebody else saved first",
+    conflictBody:
+      "This circuit changed while you were editing it. Open what they saved before replacing it — your text is still here.",
+    reloadTheirs: "Open theirs",
+    changedElsewhere: "This project changed since you opened it.",
+    refresh: "Refresh",
+    loadFailed: "This shared project could not be opened. The share may have been withdrawn.",
+    noCircuits: "There are no circuits in this project yet.",
+    backToStudio: "Back to Studio",
+  },
+  ja: {
+    share: "共有",
+    shareProject: (name) => `${name} を共有`,
+    title: (name) => `「${name}」を共有`,
+    help: "以下の人はこのプロジェクトの回路を開けます。このワークスペースの他のものは見えません。",
+    outsideWarning:
+      "共有はこのワークスペースの外に及びます。ここに追加した人は、このプロジェクトに入っている回路をすべて閲覧できます。後から追加した回路も含みます。",
+    emailLabel: "メールアドレス",
+    emailPlaceholder: "colleague@university.edu",
+    roleLabel: "できること",
+    roleViewer: "閲覧",
+    roleEditor: "閲覧と編集",
+    roleViewerHelp: "回路とその履歴を開けます。こちらの内容は一切変わりません。",
+    roleEditorHelp:
+      "回路を開き、新しいバージョンを保存できます。名前の変更・削除・公開はできません。",
+    expiryLabel: "アクセス期限",
+    expiryNever: "なし",
+    expiresOn: (date) => `${date} にアクセスが終了します`,
+    expiringSoon: (date) => `${date} にアクセスが終了します — まもなくです`,
+    expired: "アクセスは終了しました",
+    grant: "共有する",
+    granting: "共有中…",
+    granted: (email) => `${email} がこのプロジェクトを開けるようになりました。`,
+    grantFailed: "このプロジェクトを共有できませんでした。",
+    nobody: "このプロジェクトはまだ誰とも共有されていません。",
+    peopleWithAccess: "アクセスできる人",
+    invitedBy: (email) => `${email} が共有`,
+    remove: "アクセスを解除",
+    removing: "解除中…",
+    removeFailed: "アクセスを解除できませんでした。",
+    removed: (email) => `${email} はこのプロジェクトを開けなくなりました。`,
+    stopAll: "全員との共有をやめる",
+    stopAllConfirm: (count) => `${count}人がこのプロジェクトを開けなくなります。続けますか？`,
+    stopAllCancel: "共有を続ける",
+    close: "閉じる",
+    adminOnly: "プロジェクトを共有できるのはオーナーと管理者だけです。",
+    deleteWarning: (count) =>
+      `このプロジェクトを削除すると、ワークスペース外の${count}人がアクセスできなくなります。`,
+    sharedWithMe: "共有されたもの",
+    sharedWithMeEmpty: "まだ何も共有されていません。",
+    sharedBy: (name) => `${name} が共有`,
+    fromWorkspace: (name) => `${name} より`,
+    circuits: (count) => `回路 ${count} 件`,
+    open: "開く",
+    readOnlyTag: "閲覧のみ",
+    canEditTag: "編集できます",
+    copyHere: "自分のワークスペースに複製",
+    copying: "複製中…",
+    copied: (title) => `${title} を Studio に複製しました。検証の記録は引き継がれません — 実行し直してください。`,
+    copyFailed: "この回路を複製できませんでした。",
+    save: "保存",
+    saving: "保存中…",
+    saved: "保存しました。",
+    saveFailed: "この編集を保存できませんでした。",
+    conflictTitle: "他の人が先に保存しました",
+    conflictBody:
+      "編集中にこの回路が変更されました。上書きする前に、保存された内容を確認してください。入力した内容は残っています。",
+    reloadTheirs: "保存された内容を開く",
+    changedElsewhere: "開いてからこのプロジェクトが変更されました。",
+    refresh: "再読み込み",
+    loadFailed: "この共有プロジェクトを開けませんでした。共有が解除された可能性があります。",
+    noCircuits: "このプロジェクトにはまだ回路がありません。",
+    backToStudio: "Studio に戻る",
+  },
+};

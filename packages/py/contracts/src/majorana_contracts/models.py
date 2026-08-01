@@ -19,6 +19,7 @@ from .enums import (
     RunStatus,
     RetryTarget,
     SemanticReviewDecision,
+    ShareRole,
     VerificationFailureClass,
     VerificationMethod,
     VerificationResultKind,
@@ -160,6 +161,61 @@ class Project(_ResourceBase):
     name: str = Field(min_length=1, max_length=80)
     created_at: datetime
     updated_at: datetime
+
+
+class ProjectShare(_ResourceBase):
+    """One grant on one project, as the workspace that owns it sees it (0042).
+
+    Carries the grantee's email because that is what the grant was made with and
+    what the person managing it recognises; a user id is not something anybody can
+    check a name against. It carries nothing else about the grantee's account —
+    the granting workspace learns that this address has access, not what else the
+    address is.
+    """
+
+    project_id: UUID
+    grantee_user_id: UUID
+    grantee_email: str
+    grantee_display_name: str | None = None
+    role: ShareRole
+    granted_by_user_id: UUID
+    #: NULL when the granter's account has since been deleted — the row keeps
+    #: saying who has access even when it can no longer say who let them in.
+    granted_by_email: str | None = None
+    #: NULL = the grant does not expire.
+    expires_at: datetime | None = None
+    created_at: datetime
+    updated_at: datetime
+
+
+class SharedProject(_ResourceBase):
+    """A project someone else's workspace has granted to the caller (0042).
+
+    Deliberately not a `Project`. A `Project` is a row the caller's workspace owns
+    and may rename, reorder and delete; this is a window into somebody else's, and
+    the fields that do not apply are absent rather than present-and-ignored. A
+    client that receives one of these cannot accidentally send it back to a route
+    that writes.
+    """
+
+    id: UUID
+    name: str = Field(min_length=1, max_length=80)
+    owner_workspace_id: UUID
+    owner_workspace_name: str
+    role: ShareRole
+    shared_by_email: str | None = None
+    shared_by_display_name: str | None = None
+    #: NULL = the grant does not expire.
+    expires_at: datetime | None = None
+    #: When the grant was made, not when the project was created — the project may
+    #: predate the share by years and the caller has no business knowing that.
+    shared_at: datetime
+    #: Kept, undeleted artifacts filed under this project right now.
+    artifact_count: int = Field(ge=0)
+    #: The latest change to anything the caller can see through this grant — the
+    #: project row or any artifact in it. A polling client compares this to what it
+    #: last rendered to know somebody else edited, without diffing the contents.
+    revision: datetime
 
 
 class Artifact(_ResourceBase):

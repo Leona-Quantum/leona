@@ -33,6 +33,15 @@ EXPORTED = [
     models.WorkspaceOverview,
     models.WorkspaceSummary,
     models.Project,
+    models.ProjectShare,
+    models.SharedProject,
+    # Exported from the package since they were written, and absent from this
+    # list until 2026-08-01 — so neither reached openapi.json or the generated TS.
+    # Found by `test_every_public_resource_model_reaches_the_export`, which exists
+    # because the test above iterates THIS list and therefore cannot see a name
+    # that is not on it.
+    models.Conversation,
+    models.ConversationTurn,
     models.Artifact,
     models.ArtifactVersion,
     models.CatalogProvenance,

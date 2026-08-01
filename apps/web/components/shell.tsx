@@ -56,12 +56,14 @@ import {
   reorderArtifactProjects,
   type ArtifactProject,
 } from "../lib/artifact-projects";
+import { loadSharedProjects, type SharedProject } from "../lib/project-shares";
+import { ProjectShareDialog } from "./project-share-dialog";
 import { archiveArtifact, artifactFromResource, daysUntilArtifactDeletion, deleteArtifact, isArtifactDeleted, loadLibraryArtifacts, rememberArtifact, restoreArtifact, setArtifactProjectLocally, type LibraryArtifact } from "../lib/library-data";
 import { verificationFromResource } from "../lib/verification-record";
 import { WORKSPACE_PINS_EVENT, isPinned, setPinned, togglePinned } from "../lib/workspace-pins";
 import { ThemeToggle } from "./theme-toggle";
 import type { PublicLocale } from "../lib/public-locale";
-import { WORKSPACE_COPY } from "../lib/workspace-locale";
+import { PROJECT_SHARE_COPY, WORKSPACE_COPY } from "../lib/workspace-locale";
 
 // A viewport preference, not content: stays device-global rather than
 // per-account (see DEVICE_STORAGE_KEYS in lib/user-storage.ts).
@@ -522,9 +524,37 @@ function WorkspaceSidebar({
   const [deleteTarget, setDeleteTarget] = useState<DeleteTarget | null>(null);
   const [folderDeleteTarget, setFolderDeleteTarget] = useState<ChatFolder | null>(null);
   const [projectDeleteTarget, setProjectDeleteTarget] = useState<ArtifactProject | null>(null);
+  const [shareTarget, setShareTarget] = useState<ArtifactProject | null>(null);
+  // Projects OTHER workspaces have granted to this person. Never merged into
+  // `artifactProjects` and never written to the localStorage mirror: that
+  // mirror is keyed by this workspace's storage scope, and these rows belong
+  // to a workspace this browser has no scope for.
+  const [sharedProjects, setSharedProjects] = useState<SharedProject[]>([]);
   const [folderError, setFolderError] = useState<string | null>(null);
   const [draggingFolder, setDraggingFolder] = useState<string | null>(null);
   const [folderDragOver, setFolderDragOver] = useState<string | null>(null);
+  // Fetched on mount and never mirrored. Its own effect rather than a branch of
+  // the projects hydration for the reason that hydration already gives: two
+  // independent lists, and a control plane that answers one and not the other
+  // must not blank the one that worked.
+  useEffect(() => {
+    if (demoMode) return undefined;
+    let active = true;
+    void loadSharedProjects()
+      .then((rows) => {
+        if (active) setSharedProjects(rows);
+      })
+      .catch(() => {
+        // Nothing shown rather than an error row. "Shared with me" is empty for
+        // almost everybody, and an outage must not manufacture a section that
+        // says something went wrong with a feature they do not use.
+        if (active) setSharedProjects([]);
+      });
+    return () => {
+      active = false;
+    };
+  }, [demoMode]);
+
   const [recentsPosition, setRecentsPosition] = useState<RecentsPosition>("below");
   const [recentsOpen, setRecentsOpen] = useState(true);
 
@@ -979,12 +1009,38 @@ function WorkspaceSidebar({
                 onAssignProject={assignArtifact}
                 onRenameProject={(name) => void renameProject(project.id, name)}
                 onDeleteProject={() => setProjectDeleteTarget(project)}
+                onShareProject={() => setShareTarget(project)}
                 onMove={(delta) => void moveProject(index, index + delta)}
                 dropProps={dropProps("artifact", `artifact-project-${project.id}`, project.id)}
               />
             ))}
             {artifactProjects.length === 0 ? <span className="mj-sidebar-empty mj-sidebar-copy">{copy.emptyProjects}</span> : null}
           </div>
+
+          {/* Only when there is something in it. A permanently-empty section
+              in everybody's sidebar teaches people to skip that part of the
+              rail, which is where the notice will one day be. */}
+          {sharedProjects.length ? (
+            <>
+              <SidebarSectionHeader label={PROJECT_SHARE_COPY[locale].sharedWithMe} />
+              <div className="mj-sidebar-folder-list">
+                {sharedProjects.map((shared) => (
+                  <a
+                    key={shared.id}
+                    className="mj-sidebar-shared-project"
+                    href={`/shared/${encodeURIComponent(shared.id)}`}
+                    title={PROJECT_SHARE_COPY[locale].fromWorkspace(shared.ownerWorkspaceName)}
+                  >
+                    <span className="mj-sidebar-copy">{shared.name}</span>
+                    <small className="mj-sidebar-copy">
+                      {PROJECT_SHARE_COPY[locale].fromWorkspace(shared.ownerWorkspaceName)}
+                    </small>
+                    <span className="mj-sidebar-folder-count">{shared.artifactCount}</span>
+                  </a>
+                ))}
+              </div>
+            </>
+          ) : null}
 
           <SidebarSectionHeader label={copy.artifacts} />
           <nav className="mj-sidebar-chats" aria-label={copy.artifacts} {...dropProps("artifact", "artifact-standalone", undefined)}>
@@ -1085,6 +1141,14 @@ function WorkspaceSidebar({
           confirmLabel={copy.delete}
           onCancel={() => setFolderDeleteTarget(null)}
           onConfirm={() => void removeFolder(folderDeleteTarget)}
+        />
+      ) : null}
+      {shareTarget ? (
+        <ProjectShareDialog
+          projectId={shareTarget.id}
+          projectName={shareTarget.name}
+          locale={locale}
+          onClose={() => setShareTarget(null)}
         />
       ) : null}
       {projectDeleteTarget ? (
@@ -1388,6 +1452,7 @@ function ProjectRow({
   onAssignProject,
   onRenameProject,
   onDeleteProject,
+  onShareProject,
   onMove,
   dropProps,
 }: {
@@ -1407,10 +1472,12 @@ function ProjectRow({
   onAssignProject: (artifactId: string, projectId?: string) => void;
   onRenameProject: (name: string) => void;
   onDeleteProject: () => void;
+  onShareProject: () => void;
   onMove: (delta: number) => void;
   dropProps: ChatDropProps;
 }) {
   const copy = WORKSPACE_COPY[locale].sidebar;
+  const shareCopy = PROJECT_SHARE_COPY[locale];
   const [renaming, setRenaming] = useState(false);
   const [name, setName] = useState(project.name);
 
@@ -1477,6 +1544,13 @@ function ProjectRow({
                 title={copy.renameProject(project.name)}
                 onClick={() => { setName(project.name); setRenaming(true); }}
               >✎</button>
+              <button
+                className="mj-sidebar-chat-action"
+                type="button"
+                aria-label={shareCopy.shareProject(project.name)}
+                title={shareCopy.shareProject(project.name)}
+                onClick={onShareProject}
+              >⤴</button>
               <button
                 className="mj-sidebar-chat-action mj-sidebar-chat-action--danger"
                 type="button"
