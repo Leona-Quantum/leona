@@ -622,3 +622,64 @@ async def test_two_contributors_racing_the_last_slot_produce_one_artifact(db, pa
             [alice.user.id, bob.user.id, carol.user.id],
         )
         await engine.dispose()
+
+
+# --------------------------------------------------------------------------- #
+# 5. An address that matches more than one account
+# --------------------------------------------------------------------------- #
+
+
+async def test_an_ambiguous_email_is_refused_rather_than_guessed(db, pair):
+    """`users.email` has no unique constraint, and duplicates really happen.
+
+    Only `workos_user_id` is unique. Switching WorkOS environments mints a new
+    `sub` for the same person — the reason `repos/identity_migration.py` exists —
+    so one address can name two rows.
+
+    `_user_by_email` was `.first()` with no ORDER BY, which granted to whichever
+    row came back and then DISPLAYED the address, so it looked correct. The
+    likely victim is the orphaned account: the grant shows in the owner's list
+    and the person never sees the project.
+
+    Refusing is the rule `identity_migration` already set for this table. Found
+    by driving a share in a browser and noticing the grantee id was not the one
+    the fixture had made.
+    """
+    alice, bob = pair
+    twin, _twin_ws = await system.get_or_provision_user(
+        db,
+        workos_user_id=f"twin-{uuid.uuid4()}",
+        email=bob.user.email.upper(),  # same address, different case and sub
+        display_name="the same person, after an environment switch",
+    )
+    assert twin.id != bob.user.id
+
+    with pytest.raises(shares.ShareError) as refusal:
+        await shares.grant_share(
+            alice.scope,
+            db,
+            alice.project.id,
+            email=bob.user.email,
+            role=ShareRole.EDITOR,
+            expires_at=None,
+        )
+    assert "2 accounts" in str(refusal.value)
+
+    # And nothing was granted — a refusal that still wrote a row would be worse
+    # than the guess it replaced.
+    assert await shares.list_shares(alice.scope, db, alice.project.id) == []
+
+
+async def test_a_single_account_is_still_found_case_insensitively(db, pair):
+    """The positive control. One row at the address grants exactly as before."""
+    alice, bob = pair
+    share, grantee = await shares.grant_share(
+        alice.scope,
+        db,
+        alice.project.id,
+        email=bob.user.email.upper(),
+        role=ShareRole.EDITOR,
+        expires_at=None,
+    )
+    assert grantee.id == bob.user.id
+    assert share.grantee_user_id == bob.user.id

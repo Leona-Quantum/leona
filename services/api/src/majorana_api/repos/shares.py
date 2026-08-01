@@ -231,15 +231,48 @@ async def _share_row(
 
 
 async def _user_by_email(session: AsyncSession, email: str) -> User:
+    """The one account at this address — and a refusal when there is more than one.
+
+    `users.email` carries NO unique constraint; only `workos_user_id` does. Two
+    rows can hold the same address, and this is not hypothetical: switching WorkOS
+    environments mints a new `sub` for the same person, which is the entire reason
+    `repos/identity_migration.py` exists.
+
+    This used to be `.first()` with no ORDER BY, so a duplicated address granted
+    access to whichever row Postgres happened to return — and the grant list then
+    displayed the address, so it looked exactly right. The likely outcome is a
+    grant to the ORPHANED account: it appears in the owner's list, the person
+    never sees the project, and nothing anywhere reports a problem.
+
+    Refusing follows the rule `identity_migration` already set for this table and
+    this exact situation — "picking one would silently decide which of two
+    histories the person keeps". A grant is a door into a tenant, so guessing
+    which of two accounts to open it for is the one thing not to do. The refusal
+    names the ambiguity, which is something an operator can act on.
+
+    Found by driving a share in a browser and noticing the grantee id was not the
+    id the fixture had created.
+    """
     normalized = email.strip().lower()
-    user = (
-        (await session.execute(select(User).where(func.lower(User.email) == normalized)))
+    rows = list(
+        (
+            await session.execute(
+                select(User)
+                .where(func.lower(User.email) == normalized)
+                .order_by(User.created_at, User.id)
+            )
+        )
         .scalars()
-        .first()
+        .all()
     )
-    if user is None:
+    if not rows:
         raise NotFoundError("user")
-    return user
+    if len(rows) > 1:
+        raise ShareError(
+            f"{len(rows)} accounts on this deployment use that address; "
+            "it cannot be shared with until they are resolved"
+        )
+    return rows[0]
 
 
 async def grant_share(
