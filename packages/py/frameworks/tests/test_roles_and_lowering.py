@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import asyncio
 import importlib.util
+import os
 
 import pytest
 from majorana_contracts.enums import Framework
@@ -132,8 +133,24 @@ def test_derivation_is_read_from_one_place():
 # --------------------------------------------------------------------------- #
 
 
+#: Set in CI, where the SDK extras ARE installed and a skip would be a lie.
+#:
+#: Without this the sandbox cases below skip whenever a framework is missing —
+#: and the `py` job installs `--all-packages` WITHOUT `--all-extras`, so every one
+#: of them skipped there. They are the tests that actually prove lowering works;
+#: skipping is the difference between a gate and a green tick. Same class as the
+#: scan that scans nothing and passes.
+_REQUIRE_SDKS = os.environ.get("MAJORANA_REQUIRE_SDKS") == "1"
+
+
 def _installed(module: str) -> bool:
-    return importlib.util.find_spec(module) is not None
+    present = importlib.util.find_spec(module) is not None
+    if not present and _REQUIRE_SDKS:
+        raise AssertionError(
+            f"{module} is not installed but MAJORANA_REQUIRE_SDKS=1 — this suite would "
+            "have skipped silently and proved nothing"
+        )
+    return present
 
 
 def _observe(framework: Framework, source: str, *, derive: bool) -> dict:

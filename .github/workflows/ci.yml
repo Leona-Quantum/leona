@@ -59,6 +59,22 @@ jobs:
       - run: uv run ruff check .
       - run: uv run ruff format --check .
       - run: uv run pytest -q
+      # The framework-native sandbox suites EXECUTE generated code through
+      # LocalSubprocessSandbox, so they need the SDK extras that the sync above
+      # deliberately leaves out. Without this step they skip — and they are the
+      # tests that prove a published circuit is runnable at all, so skipping them
+      # is the difference between a gate and a green tick.
+      #
+      # MAJORANA_REQUIRE_SDKS=1 makes a missing SDK a FAILURE rather than a skip,
+      # so this step cannot quietly become a no-op if the extras stop resolving.
+      - name: framework-native execution (needs the SDK extras)
+        env:
+          MAJORANA_REQUIRE_SDKS: "1"
+        run: >
+          uv run --all-extras pytest
+          packages/py/frameworks
+          services/worker/tests/test_circuit_lowering.py
+          -q
       - name: openapi.json is current
         run: uv run python -m majorana_contracts.export --check
       # Authz invariant (02-architecture §4): DB access only via the repository layer
