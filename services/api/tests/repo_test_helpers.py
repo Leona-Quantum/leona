@@ -266,3 +266,39 @@ class LockOnlySession:
     async def execute(self, statement, *args, **kwargs):
         self.statements.append(statement)
         return None
+
+
+async def slot_taken_or_the_reason_why(taken, first_caller, timeout: float = 30.0) -> None:
+    """Wait for the first racer to take the contested slot — or surface why it did not.
+
+    Every two-connection race test in this suite is staged the same way: caller A
+    takes the last slot, sets an event, and holds its transaction open while
+    caller B proves it is blocked. A bare `await taken.wait()` is then a hang
+    waiting to happen. If A raises anywhere before the `set()` — a fixture that
+    staged the wrong count, a constraint, a repository signature that moved —
+    the event is never set, the test body waits forever, the `finally` that
+    tears down never runs, and the row A locked stays locked until the job is
+    killed. CI reports that as a stuck job with no reason attached, which is the
+    worst shape a failure can take: it costs the whole job's wall clock and says
+    nothing.
+
+    So this waits on the event AND on A's task, and if A finished first it
+    re-raises what A actually failed with. A timeout is the last resort rather
+    than the mechanism, because "timed out" is a much worse message than the
+    exception that caused it.
+    """
+    import asyncio
+
+    waiter = asyncio.create_task(taken.wait())
+    done, _pending = await asyncio.wait(
+        {waiter, first_caller}, return_when=asyncio.FIRST_COMPLETED, timeout=timeout
+    )
+    if waiter in done:
+        return
+    waiter.cancel()
+    if first_caller in done:
+        # Re-raises whatever the first caller failed with, rather than reporting
+        # a timeout that describes the symptom.
+        first_caller.result()
+        raise AssertionError("the first caller returned without taking the slot")
+    raise AssertionError(f"the first caller neither took the slot nor failed within {timeout}s")

@@ -26,7 +26,7 @@ import os
 import uuid
 
 import pytest
-from repo_test_helpers import delete_committed_tenants
+from repo_test_helpers import delete_committed_tenants, slot_taken_or_the_reason_why
 from majorana_contracts import Scope
 from majorana_contracts.enums import Role
 
@@ -145,7 +145,7 @@ async def test_the_last_slot_cannot_be_filled_twice_by_two_connections():
     try:
         # B must still be waiting on A's lock. Without it, B reads the same
         # pre-cap count A read and the cap is spent twice.
-        await a_has_the_slot.wait()
+        await slot_taken_or_the_reason_why(a_has_the_slot, a_task)
         done, _pending = await asyncio.wait({b_task}, timeout=BLOCKED_FOR_S)
         assert not done, (
             "the second caller completed while the first still held its "

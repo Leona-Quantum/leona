@@ -23,7 +23,7 @@ import uuid
 import pytest
 from majorana_contracts import Scope
 from majorana_contracts.enums import Framework, Role, RunMode
-from repo_test_helpers import delete_committed_tenants
+from repo_test_helpers import delete_committed_tenants, slot_taken_or_the_reason_why
 
 from majorana_api.db import engine_from_env, session_factory
 from majorana_api.repos import runs as runs_repo
@@ -113,7 +113,7 @@ async def test_the_last_weekly_run_cannot_be_spent_twice_by_two_connections():
     b_task = asyncio.create_task(caller_b())
 
     try:
-        await a_has_the_slot.wait()
+        await slot_taken_or_the_reason_why(a_has_the_slot, a_task)
         done, _pending = await asyncio.wait({b_task}, timeout=BLOCKED_FOR_S)
         assert not done, (
             "the second caller completed while the first still held its "
