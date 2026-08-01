@@ -28,13 +28,26 @@ def _live_files_on_disk() -> set[str]:
     return {path.name for path in _TESTS.glob("test_*_live.py")}
 
 
+_LIVE_PATH = re.compile(r"services/api/tests/(test_[a-z0-9_]+_live\.py)")
+
+
+def _uncommented(text: str) -> str:
+    """Workflow text with comments removed.
+
+    A path inside a `#` comment is documentation, not execution, and counting it
+    would make this guard agree that a commented-out suite still runs — the
+    silent pass this file exists to prevent. `#` never appears inside a quoted
+    string in these workflows; if that changes, this needs a YAML parser rather
+    than a regex, and `test_a_commented_out_path_does_not_count` will not notice
+    on its own.
+    """
+    return "\n".join(re.sub(r"#.*$", "", line) for line in text.splitlines())
+
+
 def _files_named_by_workflows() -> set[str]:
     named: set[str] = set()
     for workflow in _WORKFLOWS.glob("*.yml"):
-        for match in re.finditer(
-            r"services/api/tests/(test_[a-z0-9_]+_live\.py)", workflow.read_text()
-        ):
-            named.add(match.group(1))
+        named.update(_LIVE_PATH.findall(_uncommented(workflow.read_text())))
     return named
 
 
@@ -43,6 +56,16 @@ def test_the_scan_can_see_the_files_it_is_meant_to_guard():
     on_disk = _live_files_on_disk()
     assert len(on_disk) >= 10, f"expected the live suites to be found on disk, saw {on_disk}"
     assert _files_named_by_workflows(), "no workflow appears to name any live suite"
+
+
+def test_a_commented_out_path_does_not_count_as_ci_execution():
+    """The scan reads text, so a commented path looks exactly like a run one."""
+    active = "          uv run pytest services/api/tests/test_run_terminal_live.py -q"
+    commented = "          # uv run pytest services/api/tests/test_job_queue_live.py -q"
+    found = set(_LIVE_PATH.findall(_uncommented(f"{active}\n{commented}")))
+    assert found == {"test_run_terminal_live.py"}, (
+        "a suite that CI does not run must not be counted as covered"
+    )
 
 
 def test_every_live_suite_is_named_by_a_workflow():
