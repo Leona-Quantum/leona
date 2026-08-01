@@ -159,6 +159,11 @@ jobs:
       # and it is why it must never be seeded either.
       - name: create the catalog-free live database
         run: PGPASSWORD=pg psql -h localhost -U pg -d postgres -c 'CREATE DATABASE majorana_live'
+      # Every `*_live.py` suite, and the list is guarded: seven of these existed
+      # on disk and were named by no workflow at all, so they had never once run
+      # here — see services/api/tests/test_live_suite_is_wired_to_ci.py. They run
+      # in one invocation, against one database, on purpose: that is also what
+      # keeps them honest about the state they leave behind for each other.
       - name: repository concurrency and integrity
         env:
           DATABASE_URL_DIRECT: postgresql://pg:pg@localhost:5432/majorana_live
@@ -166,8 +171,16 @@ jobs:
         run: |
           uv run --package majorana-api alembic -c db/alembic.ini upgrade head
           uv run --all-extras pytest \
+            services/api/tests/test_artifact_versions_live.py \
+            services/api/tests/test_catalog_attestation_live.py \
+            services/api/tests/test_catalog_bootstrap_import_live.py \
+            services/api/tests/test_catalog_import_live.py \
             services/api/tests/test_catalog_provenance_live.py \
+            services/api/tests/test_catalog_public_read_live.py \
+            services/api/tests/test_catalog_staging_live.py \
+            services/api/tests/test_conversation_turns_live.py \
+            services/api/tests/test_folder_ordering_live.py \
             services/api/tests/test_job_queue_live.py \
             services/api/tests/test_run_terminal_live.py \
-            services/api/tests/test_artifact_versions_live.py \
+            services/api/tests/test_usage_allowance_live.py \
             -q

@@ -258,17 +258,28 @@ async def list_conversation_runs(
     *,
     limit: int = 50,
 ) -> list[Run]:
-    """Return the scoped turns in chronological order for durable chat replay."""
+    """Return the scoped turns in chronological order for durable chat replay.
+
+    The cap is applied to the NEWEST turns, not the oldest. Ordering ascending
+    and then limiting returns a conversation's first `limit` turns, so past that
+    many messages the screen silently stops at an old turn: the newest ones are
+    absent, and the client — which reads the last turn to learn which run is
+    still generating — is left tailing a run that finished long ago. Same shape
+    as `list_conversation_messages`, which already reads newest-first for the
+    same reason.
+    """
     stmt = (
         select(Run)
         .where(
             Run.workspace_id == scope.workspace_id,
             Run.conversation_id == conversation_id,
         )
-        .order_by(Run.created_at, Run.id)
+        .order_by(Run.created_at.desc(), Run.id.desc())
         .limit(min(max(limit, 1), 100))
     )
-    return list((await session.execute(stmt)).scalars().all())
+    rows = list((await session.execute(stmt)).scalars().all())
+    rows.reverse()
+    return rows
 
 
 # Conversation history is priced in estimated tokens, not characters, because
