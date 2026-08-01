@@ -26,7 +26,7 @@ from majorana_contracts import Artifact as ArtifactResource
 from majorana_contracts import ArtifactVersion as ArtifactVersionResource
 from majorana_contracts import ProjectShare as ProjectShareResource
 from majorana_contracts import SharedProject as SharedProjectResource
-from majorana_contracts.enums import ShareRole
+from majorana_contracts.enums import Algorithm, Framework, ShareRole
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from ..auth.deps import CurrentIdentity, CurrentScope, DbSession, get_settings
@@ -138,6 +138,7 @@ def _to_shared_project(row: shares_repo.SharedProjectRow) -> SharedProjectResour
         expires_at=row.access.expires_at,
         shared_at=row.access.shared_at,
         artifact_count=row.artifact_count,
+        artifact_limit=row.artifact_limit,
         revision=row.revision,
     )
 
@@ -454,3 +455,81 @@ async def copy_shared_artifact(
         version = await artifacts_repo.get_version(scope, session, kept_copy.current_version_id)
         metadata = version.artifact_metadata
     return _to_artifact(kept_copy, metadata)
+
+
+class ContributeArtifactRequest(BaseModel):
+    """A new circuit for a project somebody else owns.
+
+    No `project_id` and no `workspace_id`: both come from the path and the grant.
+    A body field for either would be a caller-supplied scope, which is the thing
+    `test_no_route_accepts_a_caller_supplied_scope` exists to refuse.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    title: str = Field(min_length=1, max_length=200)
+    family: Algorithm = Algorithm.OTHER
+    framework: Framework
+    code: str = Field(min_length=1, max_length=shares_repo.MAX_SHARED_CODE_CHARS)
+    code_lang: str = Field(default="python", max_length=32)
+
+    @field_validator("title")
+    @classmethod
+    def _title_not_blank(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("a contributed circuit needs a title")
+        return value
+
+
+@router.post(
+    "/shared/projects/{project_id}/artifacts",
+    response_model=ArtifactResource,
+    status_code=201,
+)
+async def contribute_shared_artifact(
+    project_id: uuid.UUID,
+    body: ContributeArtifactRequest,
+    scope: CurrentScope,
+    session: DbSession,
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> ArtifactResource:
+    """Add a new circuit to a project shared with you. EDITOR only.
+
+    ## Whose allowance this spends, and why the identity here is not the caller's
+
+    Every other artifact write in this service reads the tier off `CurrentIdentity`
+    — the person making the request. This one must not. The row lands in the
+    OWNER's workspace and is counted on the OWNER's account page, so the limit
+    that applies is theirs, and a developer-tier contributor must not be able to
+    fill a free-tier owner's Vault because their own plan says unlimited.
+
+    `shared_project_owner` resolves that account behind the grant, and the
+    resolved number is handed to the repository, which enforces it **and** the
+    project's own cap under the project row lock. The `Settings` dependency is
+    still the caller's request-scoped one — it carries the deployment's developer
+    allowlist, which is a property of the deployment, not of who is asking.
+
+    Refused with 409 and a sentence, not 403: at the moment of the refusal the
+    caller does have permission — the container is full. The two walls produce
+    different sentences because only one of them is one the contributor can do
+    anything about.
+    """
+    _access, owner = await shares_repo.shared_project_owner(scope, session, project_id)
+    limits = limits_for(
+        resolve_tier(owner.email, plan=owner.plan, developer_emails=settings.developer_emails)
+    )
+    try:
+        _access, artifact, version = await shares_repo.contribute_artifact(
+            scope,
+            session,
+            project_id,
+            title=body.title,
+            family=body.family,
+            framework=body.framework,
+            code=body.code,
+            code_lang=body.code_lang,
+            workspace_artifact_limit=limits.private_artifacts,
+        )
+    except shares_repo.ShareError as exc:
+        raise _share_refusal(exc) from exc
+    return _to_artifact(artifact, version.artifact_metadata)

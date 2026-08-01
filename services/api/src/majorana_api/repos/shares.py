@@ -83,6 +83,22 @@ MAX_SHARES_PER_PROJECT = 50
 #: else's workspace, so the bound belongs on the write rather than on the reader.
 MAX_SHARED_CODE_CHARS = 100_000
 
+#: What `projects.max_artifacts IS NULL` means (migration 0043). NOT unlimited:
+#: every project that predates the column is NULL and every one of them can be
+#: shared, so reading NULL as unbounded would make the column's own migration the
+#: hole it exists to close. Resolving it here rather than as a database DEFAULT
+#: means this number can be changed for everyone who never chose one.
+DEFAULT_PROJECT_ARTIFACT_LIMIT = 50
+
+#: The ceiling on what an owner may set, mirrored by `ck_projects_max_artifacts_range`.
+MAX_PROJECT_ARTIFACT_LIMIT = 500
+
+
+def project_artifact_limit(project: Project) -> int:
+    """The effective cap on a project's contents. One reader, three writers."""
+    limit = project.max_artifacts
+    return DEFAULT_PROJECT_ARTIFACT_LIMIT if limit is None else int(limit)
+
 
 class ShareError(Exception):
     """A grant was refused for a reason the caller should be told in words."""
@@ -557,6 +573,10 @@ class SharedProjectRow:
     artifact_count: int
     revision: dt.datetime
     project_updated_at: dt.datetime
+    #: What `contribute_artifact` will refuse past (migration 0043). On the
+    #: grantee's own header rather than only in the refusal, so an editor can see
+    #: the room before they write something and lose it to a 409.
+    artifact_limit: int
 
 
 async def list_shared_projects(scope: Scope, session: AsyncSession) -> list[SharedProjectRow]:
@@ -597,6 +617,7 @@ async def list_shared_projects(scope: Scope, session: AsyncSession) -> list[Shar
                 artifact_count=int(count or 0),
                 revision=max(updated_at, newest) if newest is not None else updated_at,
                 project_updated_at=updated_at,
+                artifact_limit=project_artifact_limit(project),
             )
         )
     return rows
@@ -628,6 +649,7 @@ async def get_shared_project(
         artifact_count=int(count or 0),
         revision=max(updated_at, newest) if newest is not None else updated_at,
         project_updated_at=updated_at,
+        artifact_limit=project_artifact_limit(project),
     )
 
 
@@ -902,3 +924,227 @@ async def copy_shared_artifact(
         },
     )
     return access, await artifacts_repo.get_artifact(scope, session, copy.id)
+
+
+async def shared_project_owner(
+    scope: Scope, session: AsyncSession, project_id: uuid.UUID
+) -> tuple[SharedAccess, User]:
+    """The account whose allowance a contribution would spend.
+
+    A grantee's new artifact is a row in the OWNER's workspace, counted by
+    `workspaces.get_overview` and shown on the owner's account page. So the tier
+    that bounds it is the owner's, not the contributor's, and the contributor's
+    own plan is irrelevant to whether the write is allowed.
+
+    Behind `resolve_share`, so an address that holds no grant learns nothing —
+    including whether the project exists.
+    """
+    access = await resolve_share(scope, session, project_id)
+    owner = (
+        (
+            await session.execute(
+                select(User)
+                .join(Workspace, Workspace.owner_user_id == User.id)
+                .where(Workspace.id == access.owner_workspace_id)
+            )
+        )
+        .scalars()
+        .first()
+    )
+    if owner is None:  # pragma: no cover - workspaces.owner_user_id is NOT NULL
+        raise NotFoundError("workspace owner")
+    return access, owner
+
+
+async def count_project_artifacts(
+    scope: Scope, session: AsyncSession, project_id: uuid.UUID
+) -> tuple[SharedAccess, int, int]:
+    """How full a shared project is, and how full it may get.
+
+    Read through the grant so the grantee can be shown the room they have before
+    they write something and lose it to a refusal. Uses the same
+    `_visible_artifacts_of` predicates the listing uses, because a count that
+    disagrees with the list it describes is worse than no count.
+    """
+    access = await resolve_share(scope, session, project_id)
+    project = await get_project(_elevated(access, scope.user_id), session, access.project_id)
+    count = int(
+        (
+            await session.execute(
+                select(func.count(Artifact.id)).where(
+                    *_visible_artifacts_of(access.project_id, access.owner_workspace_id)
+                )
+            )
+        ).scalar_one()
+    )
+    return access, count, project_artifact_limit(project)
+
+
+async def contribute_artifact(
+    scope: Scope,
+    session: AsyncSession,
+    project_id: uuid.UUID,
+    *,
+    title: str,
+    family: str,
+    framework: str,
+    code: str,
+    code_lang: str,
+    workspace_artifact_limit: int | None,
+) -> tuple[SharedAccess, Artifact, ArtifactVersion]:
+    """Add a NEW circuit to a project shared with you. EDITOR only.
+
+    ## Why this was refused until now, and what changed
+
+    Session 49 shipped editing and stopped deliberately short of this, because a
+    new artifact in somebody else's project is a row in **their** workspace,
+    counted against **their** tier allowance — and nothing in the product let
+    that account say how much of it a guest could spend. Migration 0043 is that
+    statement: `projects.max_artifacts` bounds the container, the owner sets it,
+    and it is the reason this function can exist at all.
+
+    ## Two limits, and they are not the same limit
+
+    - **The project cap** is the owner's *consent*: how much of their workspace
+      this project may become. Zero is legal and means "edit what is here, add
+      nothing".
+    - **The owning workspace's tier allowance** is what the owner's account can
+      *hold*. It is passed in rather than read here because the tier table lives
+      in `tiers.py` and is applied at the route boundary for every other artifact
+      write; a second copy of that resolution here would be a second thing to
+      drift. It is a REQUIRED argument, not a defaulted one, so a caller cannot
+      omit it and silently get no allowance check at all.
+
+    They are refused separately because a contributor can do something about one
+    of them (ask for more room) and nothing at all about the other, and a single
+    "limit reached" sentence would leave them retrying against the wrong wall.
+
+    ## Why the project row is locked
+
+    The cap is a read-then-write. Two grantees contributing at once against a
+    project with one slot left both read `count == 49` and both insert, and the
+    fiftieth-and-first artifact is a row the owner never consented to. Taking
+    `_lock_project` first — on the OWNING workspace's row, through the elevated
+    scope — is what makes the comparison a check rather than a race. This is the
+    same argument `create_shared_version` makes for locking the artifact before
+    comparing versions.
+
+    ## What the contributed artifact claims
+
+    Nothing. Same as `create_shared_version` and for the same reason: evidence
+    belongs to the execution that earned it, and this is bytes a person typed in
+    a workspace they are not a member of. It arrives verified=False with a reason
+    code, and the metadata names the contributor and the workspace they were
+    working from, because the owner reviewing their own project has to be able to
+    tell their work from a guest's.
+    """
+    if len(code) > MAX_SHARED_CODE_CHARS:
+        raise ShareError(f"a contributed circuit is limited to {MAX_SHARED_CODE_CHARS} characters")
+    normalized_title = " ".join(title.strip().split())[:200]
+    if not normalized_title:
+        raise ShareError("a contributed circuit needs a title")
+    access = await resolve_share(scope, session, project_id)
+    if not access.may_edit:
+        raise AuthzError("this project is shared with you read-only")
+    elevated = _elevated(access, scope.user_id)
+
+    # Locked before either count is read. Everything from here to the flush is
+    # serialized against another contributor doing the same thing.
+    project = await _lock_project(elevated, session, access.project_id)
+    limit = project_artifact_limit(project)
+    held = int(
+        (
+            await session.execute(
+                select(func.count(Artifact.id)).where(
+                    *_visible_artifacts_of(access.project_id, access.owner_workspace_id)
+                )
+            )
+        ).scalar_one()
+    )
+    if held >= limit:
+        # Zero gets its own sentence. "holds 0 of its 0-circuit limit" is
+        # arithmetically true and reads as a bug; the owner set it deliberately
+        # and the contributor should be told that, not shown a full-up counter.
+        if limit == 0:
+            raise ShareError("this project does not accept new circuits")
+        raise ShareError(
+            f"this project holds {held} of its {limit}-circuit limit; "
+            "its owner can raise the limit or remove a circuit"
+        )
+    if workspace_artifact_limit is not None:
+        owner_kept = int(
+            (
+                await session.execute(
+                    select(func.count(Artifact.id)).where(
+                        Artifact.workspace_id == access.owner_workspace_id,
+                        Artifact.deleted_at.is_(None),
+                        Artifact.kept_at.is_not(None),
+                    )
+                )
+            ).scalar_one()
+        )
+        if owner_kept >= workspace_artifact_limit:
+            raise ShareError(
+                f"the workspace that owns this project is at its {workspace_artifact_limit}-"
+                "artifact plan limit; only its owner can make room"
+            )
+
+    fingerprint = hashlib.sha256(f"{uuid7()}:{code}".encode()).hexdigest()
+    artifact = await artifacts_repo.create_artifact(
+        elevated,
+        session,
+        slug=f"contributed-{uuid7().hex}",
+        title=normalized_title,
+        family=family,
+        framework=framework,
+        kept=True,
+    )
+    version = await artifacts_repo.create_version(
+        elevated,
+        session,
+        artifact.id,
+        qasm_version=None,
+        qasm=None,
+        metadata={
+            "source": "shared_project_contribution",
+            "contributed_by_user_id": str(scope.user_id),
+            "contributed_from_workspace_id": str(scope.workspace_id),
+            "source_fingerprint": fingerprint,
+            "verification_summary": {
+                "verified": False,
+                "decision": None,
+                "evidence_strength": None,
+                "reason_code": "contributed_to_shared_project_not_verified",
+                "stale": True,
+            },
+        },
+        code=code,
+        code_lang=code_lang,
+        fingerprint=fingerprint,
+        export_status=ExportStatus.UNSUPPORTED,
+        export_reason="contributed source requires a run before it can be exported",
+        limitations=(
+            "Contributed through a project share. It carries no verification evidence of "
+            "its own; run it before relying on any result."
+        ),
+    )
+    # Filed into the project through the elevated scope, which resolves BOTH ids
+    # against the owning workspace — so this cannot file the new row under a
+    # different project, and it is the same function the owner's own drag uses.
+    await set_artifact_project(elevated, session, artifact.id, access.project_id)
+    await record_audit(
+        elevated,
+        session,
+        action="project_share.artifact_contributed",
+        target_kind="artifact",
+        target_id=artifact.id,
+        meta={
+            "project_id": str(access.project_id),
+            "version_id": str(version.id),
+            "contributor_workspace_id": str(scope.workspace_id),
+            "project_artifacts_after": held + 1,
+            "project_artifact_limit": limit,
+        },
+    )
+    await session.flush()
+    return access, await artifacts_repo.get_artifact(elevated, session, artifact.id), version

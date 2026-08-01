@@ -209,6 +209,10 @@ def _to_project(project: Project) -> ProjectResource:
         id=project.id,
         workspace_id=project.workspace_id,
         name=project.name,
+        # Resolved here, not on the wire as NULL: `shares.project_artifact_limit`
+        # is the one function that knows what an unset column means, and a client
+        # reimplementing it would be a second copy of the default to drift from.
+        max_artifacts=shares_repo.project_artifact_limit(project),
         created_at=project.created_at or now,
         updated_at=project.updated_at or now,
     )
@@ -736,15 +740,53 @@ async def reorder_workspace_projects(
     return [_to_project(project) for project in projects]
 
 
+class UpdateProjectRequest(BaseModel):
+    """A partial update. Omitted means unchanged; there is no way to send NULL.
+
+    `max_artifacts` is deliberately not resettable to the platform default. The
+    column's NULL means "whatever the default is today", and an owner who has
+    chosen 10 must not have that choice re-floated by a later change to the
+    default — so the API can move the number but not un-choose it.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    name: str | None = Field(default=None, min_length=1, max_length=80)
+    max_artifacts: int | None = Field(
+        default=None, ge=0, le=projects_repo.MAX_PROJECT_ARTIFACT_LIMIT
+    )
+
+    @field_validator("name")
+    @classmethod
+    def _name_not_blank(cls, value: str | None) -> str | None:
+        if value is not None and not value.strip():
+            raise ValueError("project name cannot be blank")
+        return value
+
+
 @router.patch("/workspace/projects/{project_id}", response_model=ProjectResource)
-async def rename_workspace_project(
+async def update_workspace_project(
     project_id: uuid.UUID,
-    body: CreateProjectRequest,
+    body: UpdateProjectRequest,
     scope: CurrentScope,
     session: DbSession,
 ) -> ProjectResource:
+    """Rename the project, change what a share grantee may grow it to, or both.
+
+    Still accepts the rename-only body every existing client sends — `name` was
+    required before and is now optional, which is the widening direction, so a web
+    deploy that lands before this one keeps working.
+    """
+    if body.name is None and body.max_artifacts is None:
+        raise HTTPException(status_code=422, detail="nothing to update")
     try:
-        project = await projects_repo.rename_project(scope, session, project_id, name=body.name)
+        project = await projects_repo.get_project(scope, session, project_id)
+        if body.name is not None:
+            project = await projects_repo.rename_project(scope, session, project_id, name=body.name)
+        if body.max_artifacts is not None:
+            project = await projects_repo.set_project_artifact_limit(
+                scope, session, project_id, max_artifacts=body.max_artifacts
+            )
     except ValueError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     return _to_project(project)

@@ -1,0 +1,581 @@
+"""Contributing INTO a project somebody else owns (migration 0043).
+
+`test_project_shares_live.py` covers reading and editing what is already there.
+This is the write that CREATES a row in another tenant's workspace, which session
+49 deliberately did not build, and the reason it did not was accounting rather
+than authorization: a new artifact spends the owner's allowance, and nothing let
+the owner say how much of it a guest could spend.
+
+So these cases are grouped by which wall is being tested:
+
+1. The permission wall — the same one everything else in `shares.py` is behind.
+   A viewer, a stranger, an expired grant and a revoked one each get nothing, and
+   the contribution lands in the OWNER's workspace rather than the caller's.
+2. The project cap — the owner's consent, including zero.
+3. The owning workspace's plan allowance — which is the OWNER's, not the
+   contributor's, and which the contributor cannot do anything about.
+4. Concurrency — two contributors against the last slot.
+
+Every one of them has a positive control: the same call, one condition changed,
+succeeding. A refusal test that would pass against a function which refuses
+everything is not a test of the refusal.
+"""
+
+import asyncio
+import datetime as dt
+import uuid
+
+import pytest
+from matrix_helpers import requires_db
+from majorana_contracts import Scope
+from majorana_contracts.enums import Role, ShareRole
+from repo_test_helpers import delete_committed_tenants
+from sqlalchemy import select
+
+from majorana_api.db import engine_from_env, session_factory
+from majorana_api.orm import Artifact, AuditLog
+from majorana_api.repos import (
+    AuthzError,
+    NotFoundError,
+    artifacts,
+    projects,
+    shares,
+    system,
+    workspaces,
+)
+
+pytestmark = requires_db
+
+CODE = "from qiskit import QuantumCircuit\nFINAL_CIRCUIT = QuantumCircuit(2)\n"
+
+
+class Tenant:
+    def __init__(self, *, user, workspace, scope):
+        self.user = user
+        self.workspace = workspace
+        self.scope = scope
+        self.project = None
+
+
+async def build_tenant(session, tag: str) -> Tenant:
+    user, ws = await system.get_or_provision_user(
+        session,
+        workos_user_id=f"contrib-{tag}-{uuid.uuid4()}",
+        email=f"{tag}-{uuid.uuid4().hex[:8]}@contrib.test",
+        display_name=f"{tag} person",
+    )
+    scope = Scope(user_id=user.id, workspace_id=ws.id, role=Role.OWNER)
+    tenant = Tenant(user=user, workspace=ws, scope=scope)
+    tenant.project = await projects.create_project(scope, session, name=f"{tag} project")
+    return tenant
+
+
+@pytest.fixture
+async def pair(db):
+    """Alice owns a project. Bob is an outsider with his own workspace."""
+    return await build_tenant(db, "alice"), await build_tenant(db, "bob")
+
+
+async def grant(db, alice, bob, role=ShareRole.EDITOR, expires_at=None):
+    share, _grantee = await shares.grant_share(
+        alice.scope, db, alice.project.id, email=bob.user.email, role=role, expires_at=expires_at
+    )
+    return share
+
+
+async def contribute(db, caller, project_id, *, title="Bob's circuit", limit=None, code=CODE):
+    return await shares.contribute_artifact(
+        caller.scope,
+        db,
+        project_id,
+        title=title,
+        family="Bell",
+        framework="qiskit",
+        code=code,
+        code_lang="python",
+        workspace_artifact_limit=limit,
+    )
+
+
+# --------------------------------------------------------------------------- #
+# 1. The permission wall
+# --------------------------------------------------------------------------- #
+
+
+async def test_an_editor_contributes_and_the_row_lands_in_the_owners_workspace(db, pair):
+    """The positive control for every refusal below, and the point of the feature.
+
+    The assertions that matter are not that it succeeded: they are WHERE the row
+    is. An artifact created in the contributor's own workspace and merely listed
+    through the grant would pass a naive version of this test and be a completely
+    different feature.
+    """
+    alice, bob = pair
+    await grant(db, alice, bob)
+
+    access, artifact, version = await contribute(db, bob, alice.project.id)
+
+    assert access.project_id == alice.project.id
+    assert artifact.workspace_id == alice.workspace.id
+    assert artifact.workspace_id != bob.workspace.id
+    assert artifact.project_id == alice.project.id
+    assert artifact.kept_at is not None
+    assert version.code == CODE
+
+    # Alice sees it in her own project without any share machinery.
+    hers = await artifacts.list_artifacts(alice.scope, db, project_id=alice.project.id)
+    assert artifact.id in {row.id for row, _meta in hers}
+
+    # Bob's own Vault is untouched: he spent nothing of his own.
+    his = await artifacts.list_artifacts(bob.scope, db)
+    assert artifact.id not in {row.id for row, _meta in his}
+
+
+async def test_a_viewer_cannot_contribute(db, pair):
+    alice, bob = pair
+    await grant(db, alice, bob, role=ShareRole.VIEWER)
+
+    with pytest.raises(AuthzError):
+        await contribute(db, bob, alice.project.id)
+
+    # Positive control: the same call with the role changed succeeds, so the
+    # refusal above is about the role and not about anything else in the fixture.
+    await grant(db, alice, bob, role=ShareRole.EDITOR)
+    _access, artifact, _version = await contribute(db, bob, alice.project.id)
+    assert artifact.workspace_id == alice.workspace.id
+
+
+async def test_no_grant_at_all_is_a_not_found(db, pair):
+    alice, bob = pair
+    with pytest.raises(NotFoundError):
+        await contribute(db, bob, alice.project.id)
+
+
+async def test_an_expired_grant_cannot_contribute(db, pair):
+    """Staged the way the read side stages it: granted live, then moved past.
+
+    `grant_share` refuses an expiry already in the past, so an expired grant can
+    only be reached by ageing a live one — which is also how a real one expires.
+    """
+    alice, bob = pair
+    share = await grant(
+        db, alice, bob, expires_at=dt.datetime.now(dt.timezone.utc) + dt.timedelta(days=1)
+    )
+    _access, artifact, _version = await contribute(db, bob, alice.project.id, title="while live")
+    assert artifact.project_id == alice.project.id
+
+    share.expires_at = dt.datetime.now(dt.timezone.utc) - dt.timedelta(seconds=1)
+    await db.flush()
+
+    with pytest.raises(NotFoundError):
+        await contribute(db, bob, alice.project.id, title="after expiry")
+
+
+async def test_a_revoked_grant_cannot_contribute(db, pair):
+    alice, bob = pair
+    await grant(db, alice, bob)
+    await contribute(db, bob, alice.project.id)  # works while the grant is live
+    await shares.revoke_share(alice.scope, db, alice.project.id, grantee_user_id=bob.user.id)
+    with pytest.raises(NotFoundError):
+        await contribute(db, bob, alice.project.id)
+
+
+async def test_a_grant_on_one_project_cannot_contribute_to_another(db, pair):
+    """The binding check, from the write side.
+
+    `_bound_artifact` proves a READ names an artifact inside the shared project.
+    This is the same question for a create: a second project in the same
+    workspace must be unreachable with a grant on the first.
+    """
+    alice, bob = pair
+    other = await projects.create_project(alice.scope, db, name="alice second project")
+    await grant(db, alice, bob)
+
+    with pytest.raises(NotFoundError):
+        await contribute(db, bob, other.id)
+
+    assert not await artifacts.list_artifacts(alice.scope, db, project_id=other.id)
+
+
+async def test_the_contribution_claims_no_verification_and_names_its_author(db, pair):
+    """Bytes a person typed are not evidence, and the owner must be able to tell.
+
+    Same rule as `create_shared_version` and `copy_shared_artifact`: evidence
+    belongs to the execution that earned it. A contribution arriving verified
+    would let an outsider write a PASS verdict into another tenant's project.
+    """
+    alice, bob = pair
+    await grant(db, alice, bob)
+    _access, _artifact, version = await contribute(db, bob, alice.project.id)
+
+    summary = version.artifact_metadata["verification_summary"]
+    assert summary["verified"] is False
+    assert summary["decision"] is None
+    assert summary["reason_code"] == "contributed_to_shared_project_not_verified"
+    assert version.artifact_metadata["contributed_by_user_id"] == str(bob.user.id)
+    assert version.artifact_metadata["contributed_from_workspace_id"] == str(bob.workspace.id)
+    assert version.export_status == "unsupported"
+
+
+async def test_the_audit_row_is_written_against_the_owning_workspace(db, pair):
+    """Alice's admins read Alice's log. A row in Bob's is a row she never sees."""
+    alice, bob = pair
+    await grant(db, alice, bob)
+    _access, artifact, _version = await contribute(db, bob, alice.project.id)
+
+    rows = (
+        (
+            await db.execute(
+                select(AuditLog).where(
+                    AuditLog.workspace_id == alice.workspace.id,
+                    AuditLog.action == "project_share.artifact_contributed",
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    assert len(rows) == 1
+    assert rows[0].target_id == artifact.id
+    assert rows[0].actor_user_id == bob.user.id
+    assert rows[0].meta["contributor_workspace_id"] == str(bob.workspace.id)
+
+    in_bobs_log = (
+        (
+            await db.execute(
+                select(AuditLog).where(
+                    AuditLog.workspace_id == bob.workspace.id,
+                    AuditLog.action == "project_share.artifact_contributed",
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    assert in_bobs_log == []
+
+
+# --------------------------------------------------------------------------- #
+# 2. The project cap — the owner's consent
+# --------------------------------------------------------------------------- #
+
+
+async def test_a_new_project_resolves_to_the_platform_default(db, pair):
+    alice, _bob = pair
+    assert alice.project.max_artifacts is None
+    assert shares.project_artifact_limit(alice.project) == shares.DEFAULT_PROJECT_ARTIFACT_LIMIT
+
+
+async def test_the_project_cap_refuses_the_one_past_it(db, pair):
+    alice, bob = pair
+    await projects.set_project_artifact_limit(alice.scope, db, alice.project.id, max_artifacts=2)
+    await grant(db, alice, bob)
+
+    await contribute(db, bob, alice.project.id, title="one")
+    await contribute(db, bob, alice.project.id, title="two")
+    with pytest.raises(shares.ShareError) as refusal:
+        await contribute(db, bob, alice.project.id, title="three")
+    assert "2-circuit limit" in str(refusal.value)
+
+    # Positive control: raising the limit lets the SAME call through, so the
+    # refusal was the cap rather than anything accumulated by the two writes.
+    await projects.set_project_artifact_limit(alice.scope, db, alice.project.id, max_artifacts=3)
+    _access, artifact, _version = await contribute(db, bob, alice.project.id, title="three")
+    assert artifact.title == "three"
+
+
+async def test_a_zero_limit_means_edit_but_do_not_add(db, pair):
+    """The permission an owner sharing finished work for review actually wants."""
+    alice, bob = pair
+    await projects.set_project_artifact_limit(alice.scope, db, alice.project.id, max_artifacts=0)
+    await grant(db, alice, bob)
+
+    with pytest.raises(shares.ShareError) as refusal:
+        await contribute(db, bob, alice.project.id)
+    assert "does not accept new circuits" in str(refusal.value)
+
+    # ...but editing what is already there still works, which is what makes zero
+    # a different thing from downgrading the grant to viewer.
+    existing = await artifacts.create_artifact(
+        alice.scope,
+        db,
+        slug=f"a-{uuid.uuid4().hex[:8]}",
+        title="alice's own",
+        family="Bell",
+        framework="qiskit",
+    )
+    await artifacts.create_version(
+        alice.scope,
+        db,
+        existing.id,
+        qasm_version=None,
+        qasm=None,
+        code="print(1)",
+        code_lang="python",
+        fingerprint=f"f-{uuid.uuid4().hex[:8]}",
+        export_status="unsupported",
+    )
+    existing = await projects.set_artifact_project(
+        alice.scope, db, existing.id, alice.project.id
+    )
+    _access, _artifact, version = await shares.create_shared_version(
+        bob.scope,
+        db,
+        alice.project.id,
+        existing.id,
+        expected_current_version_id=existing.current_version_id,
+        code="print(2)",
+        code_lang="python",
+    )
+    assert version.code == "print(2)"
+
+
+async def test_the_cap_counts_only_what_the_project_actually_holds(db, pair):
+    """Deleted, unkept and ungrouped artifacts are not the project's contents.
+
+    The count and the listing must describe the same set. If the cap counted rows
+    the grantee cannot see, a project would refuse contributions while looking
+    empty — which is a refusal nobody can act on.
+    """
+    alice, bob = pair
+    await projects.set_project_artifact_limit(alice.scope, db, alice.project.id, max_artifacts=1)
+    await grant(db, alice, bob)
+
+    # Two artifacts in Alice's workspace that must not count: one filed nowhere,
+    # one filed in the project and then soft-deleted.
+    loose = await artifacts.create_artifact(
+        alice.scope,
+        db,
+        slug=f"loose-{uuid.uuid4().hex[:8]}",
+        title="ungrouped",
+        family="Bell",
+        framework="qiskit",
+    )
+    assert loose.project_id is None
+    doomed = await artifacts.create_artifact(
+        alice.scope,
+        db,
+        slug=f"gone-{uuid.uuid4().hex[:8]}",
+        title="deleted",
+        family="Bell",
+        framework="qiskit",
+    )
+    await projects.set_artifact_project(alice.scope, db, doomed.id, alice.project.id)
+    await artifacts.soft_delete_artifact(alice.scope, db, doomed.id)
+
+    _access, artifact, _version = await contribute(db, bob, alice.project.id)
+    assert artifact.project_id == alice.project.id
+
+    _access, count, limit = await shares.count_project_artifacts(bob.scope, db, alice.project.id)
+    assert (count, limit) == (1, 1)
+
+
+async def test_the_grantee_can_read_the_room_before_writing(db, pair):
+    alice, bob = pair
+    await projects.set_project_artifact_limit(alice.scope, db, alice.project.id, max_artifacts=7)
+    await grant(db, alice, bob)
+    _access, count, limit = await shares.count_project_artifacts(bob.scope, db, alice.project.id)
+    assert (count, limit) == (0, 7)
+
+    _access, _artifact, _version = await contribute(db, bob, alice.project.id)
+    _access, count, limit = await shares.count_project_artifacts(bob.scope, db, alice.project.id)
+    assert (count, limit) == (1, 7)
+
+
+async def test_only_an_admin_of_the_owning_workspace_may_move_the_limit(db, pair):
+    """A grantee raising their own ceiling would make the cap decorative.
+
+    The elevated scope a share builds is `Role.MEMBER`, and
+    `set_project_artifact_limit` requires ADMIN, so the mapping refuses this
+    without a denylist. This test pins that the limit is behind ADMIN and not
+    behind `require_write`, because MEMBER passes `require_write`.
+    """
+    alice, _bob = pair
+    member = Scope(user_id=alice.user.id, workspace_id=alice.workspace.id, role=Role.MEMBER)
+    with pytest.raises(AuthzError):
+        await projects.set_project_artifact_limit(
+            member, db, alice.project.id, max_artifacts=99
+        )
+    project = await projects.set_project_artifact_limit(
+        alice.scope, db, alice.project.id, max_artifacts=99
+    )
+    assert project.max_artifacts == 99
+
+
+async def test_the_limit_is_bounded_at_both_ends(db, pair):
+    alice, _bob = pair
+    for bad in (-1, shares.MAX_PROJECT_ARTIFACT_LIMIT + 1):
+        with pytest.raises(ValueError):
+            await projects.set_project_artifact_limit(
+                alice.scope, db, alice.project.id, max_artifacts=bad
+            )
+    assert projects.MAX_PROJECT_ARTIFACT_LIMIT == shares.MAX_PROJECT_ARTIFACT_LIMIT
+
+
+async def test_the_limit_is_not_reachable_across_workspaces(db, pair):
+    alice, bob = pair
+    await grant(db, alice, bob)
+    with pytest.raises(NotFoundError):
+        await projects.set_project_artifact_limit(
+            bob.scope, db, alice.project.id, max_artifacts=500
+        )
+
+
+# --------------------------------------------------------------------------- #
+# 3. The owning workspace's plan allowance
+# --------------------------------------------------------------------------- #
+
+
+async def test_the_owners_plan_allowance_refuses_even_with_project_room(db, pair):
+    """The wall the contributor cannot do anything about, and it says so.
+
+    Two separate sentences on purpose: "the project is full" is something the
+    contributor can ask to have changed, and "the owner's plan is full" is not.
+    A single "limit reached" would send them at the wrong wall.
+    """
+    alice, bob = pair
+    await projects.set_project_artifact_limit(alice.scope, db, alice.project.id, max_artifacts=50)
+    await grant(db, alice, bob)
+
+    # One kept artifact already in Alice's workspace, and an allowance of one.
+    await contribute(db, bob, alice.project.id, title="first", limit=5)
+    with pytest.raises(shares.ShareError) as refusal:
+        await contribute(db, bob, alice.project.id, title="second", limit=1)
+    assert "plan limit" in str(refusal.value)
+    assert "1-artifact" in str(refusal.value)
+
+    # Positive control: the same call with a larger allowance succeeds, so the
+    # refusal was the allowance and not the project cap.
+    _access, artifact, _version = await contribute(
+        db, bob, alice.project.id, title="second", limit=5
+    )
+    assert artifact.title == "second"
+
+
+async def test_an_unlimited_owner_allowance_is_not_an_unlimited_project(db, pair):
+    """`workspace_artifact_limit=None` is a developer-tier owner. The cap still binds.
+
+    This is the case that would be silently unbounded if `max_artifacts IS NULL`
+    had been read as "no limit" — every project predating migration 0043 is NULL,
+    and the accounts most likely to own one have no workspace allowance either.
+    """
+    alice, bob = pair
+    await projects.set_project_artifact_limit(alice.scope, db, alice.project.id, max_artifacts=1)
+    await grant(db, alice, bob)
+
+    await contribute(db, bob, alice.project.id, title="one", limit=None)
+    with pytest.raises(shares.ShareError):
+        await contribute(db, bob, alice.project.id, title="two", limit=None)
+
+
+async def test_the_allowance_counts_the_owners_whole_workspace_not_the_project(db, pair):
+    """Artifacts filed elsewhere in Alice's workspace still spend Alice's plan."""
+    alice, bob = pair
+    await grant(db, alice, bob)
+    elsewhere = await artifacts.create_artifact(
+        alice.scope,
+        db,
+        slug=f"else-{uuid.uuid4().hex[:8]}",
+        title="not in the project",
+        family="Bell",
+        framework="qiskit",
+    )
+    assert elsewhere.kept_at is not None
+    assert elsewhere.project_id is None
+
+    with pytest.raises(shares.ShareError) as refusal:
+        await contribute(db, bob, alice.project.id, limit=1)
+    assert "plan limit" in str(refusal.value)
+
+
+async def test_the_owner_resolved_for_the_allowance_is_the_workspace_owner(db, pair):
+    """Not the contributor. A developer-tier guest must not lift a free-tier cap."""
+    alice, bob = pair
+    await grant(db, alice, bob)
+    access, owner = await shares.shared_project_owner(bob.scope, db, alice.project.id)
+    assert owner.id == alice.user.id
+    assert owner.email == alice.user.email
+    assert access.owner_workspace_id == alice.workspace.id
+
+
+async def test_a_stranger_cannot_learn_who_owns_a_project(db, pair):
+    alice, bob = pair
+    with pytest.raises(NotFoundError):
+        await shares.shared_project_owner(bob.scope, db, alice.project.id)
+
+
+# --------------------------------------------------------------------------- #
+# 4. Two contributors against the last slot
+# --------------------------------------------------------------------------- #
+
+
+async def test_two_contributors_racing_the_last_slot_produce_one_artifact(db, pair):
+    """The reason `contribute_artifact` locks the project row.
+
+    Both callers read the count, both see room for one, and without the lock both
+    insert — leaving the owner with an artifact they never consented to. Two REAL
+    transactions on two connections, because a race staged inside one session is
+    not a race at all.
+    """
+    alice, bob = pair
+    carol = await build_tenant(db, "carol")
+    await projects.set_project_artifact_limit(alice.scope, db, alice.project.id, max_artifacts=1)
+    await grant(db, alice, bob)
+    await grant(db, alice, carol)
+    await db.commit()
+
+    engine = engine_from_env()
+    factory = session_factory(engine)
+    project_id = alice.project.id
+    outcomes: list[str] = []
+
+    async def attempt(caller: Tenant, title: str) -> None:
+        async with factory() as session:
+            try:
+                await shares.contribute_artifact(
+                    caller.scope,
+                    session,
+                    project_id,
+                    title=title,
+                    family="Bell",
+                    framework="qiskit",
+                    code=CODE,
+                    code_lang="python",
+                    workspace_artifact_limit=None,
+                )
+                await session.commit()
+                outcomes.append(f"wrote:{title}")
+            except shares.ShareError:
+                await session.rollback()
+                outcomes.append(f"refused:{title}")
+
+    try:
+        await asyncio.gather(attempt(bob, "bob's"), attempt(carol, "carol's"))
+        assert sorted(o.split(":")[0] for o in outcomes) == ["refused", "wrote"]
+
+        async with factory() as session:
+            held = (
+                (
+                    await session.execute(
+                        select(Artifact).where(
+                            Artifact.project_id == project_id,
+                            Artifact.deleted_at.is_(None),
+                            Artifact.kept_at.is_not(None),
+                        )
+                    )
+                )
+                .scalars()
+                .all()
+            )
+            assert len(held) == 1
+    finally:
+        # This test COMMITS, so its rows are beyond the `db` fixture's rollback
+        # and removing them is this test's job. Two suites that never mention
+        # sharing broke on a CLEAN database in session 49 purely because one
+        # committing test left its workspaces behind.
+        await delete_committed_tenants(
+            factory,
+            [alice.workspace.id, bob.workspace.id, carol.workspace.id],
+            [alice.user.id, bob.user.id, carol.user.id],
+        )
+        await engine.dispose()

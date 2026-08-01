@@ -19,8 +19,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..ids import uuid7
 from ..orm import Artifact, Project
-from ._base import NotFoundError, require_write, touched_now
+from ._base import NotFoundError, require_admin, require_write, touched_now
 from .artifacts import get_artifact
+
+
+#: Mirrors `ck_projects_max_artifacts_range` and `shares.MAX_PROJECT_ARTIFACT_LIMIT`.
+#: Defined here rather than imported from `shares` because `shares` imports THIS
+#: module; the constant is asserted equal in `test_project_artifact_limit.py`.
+MAX_PROJECT_ARTIFACT_LIMIT = 500
 
 
 def normalize_name(name: str) -> str:
@@ -246,3 +252,29 @@ async def set_artifact_project(
     # a write that has already succeeded. Caught here by driving the endpoint
     # over HTTP; the repository-level tests never touch a second attribute.
     return await get_artifact(scope, session, artifact_id)
+
+
+async def set_project_artifact_limit(
+    scope: Scope, session: AsyncSession, project_id: uuid.UUID, *, max_artifacts: int
+) -> Project:
+    """How many artifacts a SHARE grantee may grow this project to (0043).
+
+    Writes a concrete number, never back to NULL. NULL means "whatever the
+    platform default is today" and is the state every project starts in; once an
+    owner has chosen, that choice must not be silently re-floated by a later
+    change to the default.
+
+    Admin, not write. Lowering this is what takes a collaborator's ability to
+    contribute away, so it is the same bar as revoking their grant — and
+    `require_write` would let a MEMBER-scoped elevated share scope reach it,
+    which is precisely the caller who must not decide their own ceiling.
+    """
+    require_admin(scope)
+    if not 0 <= max_artifacts <= MAX_PROJECT_ARTIFACT_LIMIT:
+        raise ValueError(f"an artifact limit must be between 0 and {MAX_PROJECT_ARTIFACT_LIMIT}")
+    project = await get_project(scope, session, project_id)
+    if project.max_artifacts != max_artifacts:
+        project.max_artifacts = max_artifacts
+        project.updated_at = touched_now()
+        await session.flush()
+    return project

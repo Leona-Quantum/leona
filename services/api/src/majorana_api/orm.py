@@ -117,6 +117,11 @@ class Project(Base):
     # Not unique — see migration 0040's note on folders. Ties fall back to
     # (created_at, id), the order the table has before anybody drags anything.
     position: Mapped[int] = mapped_column(Integer, server_default="0")
+    # Migration 0043. How many artifacts this project may hold, checked when a
+    # SHARE grantee contributes one. NULL is the platform default
+    # (shares.DEFAULT_PROJECT_ARTIFACT_LIMIT), never "unlimited" — every project
+    # that predates the column is NULL and every one of them is shareable.
+    max_artifacts: Mapped[int | None] = mapped_column(Integer)
     created_at: Mapped[dt.datetime | None] = mapped_column(server_default=func.now())
     updated_at: Mapped[dt.datetime | None] = mapped_column(server_default=func.now())
 

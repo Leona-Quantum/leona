@@ -159,6 +159,12 @@ class Project(_ResourceBase):
     id: UUID
     workspace_id: UUID
     name: str = Field(min_length=1, max_length=80)
+    #: How many artifacts this project may hold when a SHARE grantee contributes
+    #: one (migration 0043). Always a number on the wire even though the column is
+    #: nullable: NULL means the platform default, and a client that had to know
+    #: what NULL resolves to would be a second copy of that default to drift from.
+    #: 0 is legal and means "editors may edit what is here and add nothing".
+    max_artifacts: int = Field(ge=0, le=500)
     created_at: datetime
     updated_at: datetime
 
@@ -212,6 +218,10 @@ class SharedProject(_ResourceBase):
     shared_at: datetime
     #: Kept, undeleted artifacts filed under this project right now.
     artifact_count: int = Field(ge=0)
+    #: What the owner will let this project grow to (migration 0043). An EDITOR
+    #: whose `artifact_count` has reached it cannot contribute — which is why the
+    #: number is here rather than only in the refusal it produces.
+    artifact_limit: int = Field(ge=0, le=500)
     #: The latest change to anything the caller can see through this grant — the
     #: project row or any artifact in it. A polling client compares this to what it
     #: last rendered to know somebody else edited, without diffing the contents.
