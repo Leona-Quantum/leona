@@ -238,12 +238,33 @@ async def import_public_artifact(
     body: ImportPublicArtifactRequest,
     scope: CurrentScope,
     session: DbSession,
+    identity: CurrentIdentity,
+    settings: Annotated[Settings, Depends(get_settings)],
 ) -> ArtifactResource:
     """Copy a public reference into the caller's personal Library.
 
     This is an import snapshot, not a new verification result. The source and
     limitations are retained on the artifact version so the private copy does not
     lose its public provenance.
+
+    ## The allowance, and why this route had none
+
+    It files an artifact into the caller's Vault, so it spends the same allowance
+    `POST /artifacts/{id}/keep` spends. It did not check it — and could not have:
+    the handler took `scope` and `session` and no `CurrentIdentity`, so there was
+    no account to resolve a tier from. **A route that writes a metered row and
+    does not take the identity is not enforcing a cap, whatever the rest of the
+    service does.** Measured over real HTTP before this changed: 35 imports, all
+    201, a free-tier workspace holding 36 against a cap of 25.
+
+    Fixed by filing the way everything else files — created unkept, then
+    `keep_artifact`, which holds the workspace lock across the comparison and the
+    write. A count compared here, before the rows were written, would be the
+    read-then-write `reserve_artifact_slot` exists to close.
+
+    Idempotent on the source slug, and that is load-bearing for the cap too:
+    re-importing something already imported returns the existing row and spends
+    nothing, so an account at its limit can still open what it already has.
     """
     slug = f"public-{_public_slug(body.source_slug)}-{scope.workspace_id.hex}"
     existing = await artifacts_repo.get_artifact_by_slug(scope, session, slug)
@@ -251,6 +272,9 @@ async def import_public_artifact(
         return _to_artifact(existing)
 
     qasm, qasm_version, qasm_fingerprint = _canonical_public_qasm(body.qasm)
+    # Unkept, then filed below. `keep_artifact` is the one place an artifact
+    # enters the Vault under the workspace's cap lock; creating it kept here is
+    # what walked past the allowance entirely.
     artifact = await artifacts_repo.create_artifact(
         scope,
         session,
@@ -258,6 +282,7 @@ async def import_public_artifact(
         title=body.title,
         family=_public_family(body.family),
         framework=body.framework,
+        kept=False,
     )
     await artifacts_repo.create_version(
         scope,
@@ -295,7 +320,18 @@ async def import_public_artifact(
             "source license and rerun the artifact before relying on it."
         ),
     )
-    return _to_artifact(artifact)
+    user, _workspace = identity
+    limits = limits_for(tier_of(user, settings))
+    try:
+        filed = await artifacts_repo.keep_artifact(
+            scope,
+            session,
+            artifact.id,
+            workspace_artifact_limit=limits.private_artifacts,
+        )
+    except artifacts_repo.ArtifactCapReached as full:
+        raise _artifact_cap_refusal(full.held, full.limit) from full
+    return _to_artifact(filed)
 
 
 @router.get("/artifacts/{artifact_id}", response_model=ArtifactResource)

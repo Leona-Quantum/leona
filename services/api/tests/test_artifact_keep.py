@@ -59,6 +59,7 @@ async def test_a_new_artifact_is_kept_unless_the_caller_says_otherwise(scope, se
         title="t",
         family=Algorithm.BELL,
         framework=Framework.QISKIT,
+        kept=True,
     )
     assert session.added[-1].kept_at is not None
 

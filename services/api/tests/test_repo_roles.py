@@ -20,7 +20,13 @@ from majorana_api.repos import (
 
 VIEWER_BLOCKED_WRITES = [
     lambda s, db: artifacts.create_artifact(
-        s, db, slug="x", title="x", family="VQE", framework="qiskit"
+        s,
+        db,
+        slug="x",
+        title="x",
+        family="VQE",
+        framework="qiskit",
+        kept=True,
     ),
     lambda s, db: artifacts.create_version(
         s,
@@ -88,6 +94,12 @@ async def test_member_cannot_administer(call, session):
 @pytest.mark.parametrize("role", [Role.OWNER, Role.ADMIN])
 async def test_admin_roles_pass_gates(role, session):
     artifact = await artifacts.create_artifact(
-        make_scope(role), session, slug="x", title="x", family="VQE", framework="qiskit"
+        make_scope(role),
+        session,
+        slug="x",
+        title="x",
+        family="VQE",
+        framework="qiskit",
+        kept=True,
     )
     assert artifact in session.added

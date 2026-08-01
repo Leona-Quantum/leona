@@ -128,6 +128,7 @@ async def stage():
             title="Bell pair",
             family="Bell",
             framework="qiskit",
+            kept=True,
         )
         version = await artifacts_repo.create_version(
             alice_scope,
@@ -150,6 +151,7 @@ async def stage():
             title="Not in the project",
             family="Bell",
             framework="qiskit",
+            kept=True,
         )
         await session.commit()
 
@@ -735,6 +737,7 @@ async def test_a_copy_into_a_shared_project_is_not_refused_at_the_private_cap(st
                 title=f"filler {index}",
                 family="Bell",
                 framework="qiskit",
+                kept=True,
             )
         await session.commit()
         assert await artifacts_repo.count_kept_against_quota(bob.scope, session) == (
@@ -773,3 +776,92 @@ async def test_a_copy_into_another_workspaces_project_is_a_404_not_an_oracle(sta
         json={"target_project_id": stage["project_id"]},  # Alice's project, not Bob's
     )
     assert response.status_code == 404, response.text
+
+
+# --------------------------------------------------------------------------- #
+# The import route's allowance (2026-08-02, second PR)
+# --------------------------------------------------------------------------- #
+
+PUBLIC_IMPORT = {
+    "family": "Bell",
+    "framework": "qiskit",
+    "code": "from qiskit import QuantumCircuit\nqc = QuantumCircuit(2)\n",
+    "code_lang": "python",
+    "source_url": "https://example.org/atlas",
+    "source_license": "CC-BY-4.0",
+    "introduction": "An imported public reference.",
+    "explanation": "Two qubits entangled.",
+    "verification": "Not verified in this workspace.",
+}
+
+
+async def test_importing_a_public_reference_spends_the_artifact_allowance(stage):
+    """Measured over real HTTP before this was fixed: 35 imports, all 201, a
+    free-tier workspace holding 36 against a cap of 25.
+
+    The handler took `scope` and `session` and no `CurrentIdentity`, so it had no
+    account to resolve a tier from and could not have checked a cap. A route that
+    writes a metered row and does not take the identity is not enforcing an
+    allowance, whatever the rest of the service does.
+    """
+    alice = stage["alice"]
+    limits = limits_for(tier_of(alice.user, Settings(**SETTINGS_KWARGS)))
+    cap = limits.private_artifacts
+    assert cap is not None, "this test needs a metered tier to have a boundary to reach"
+
+    async with stage["factory"]() as session:
+        held = await artifacts_repo.count_kept_against_quota(alice.scope, session)
+
+    statuses = []
+    for index in range(cap - held + 3):
+        response = await alice.client.post(
+            "/v1/artifacts/import-public",
+            json={
+                **PUBLIC_IMPORT,
+                "source_slug": f"public-circuit-{index}-{uuid.uuid4().hex[:8]}",
+                "title": f"Public circuit {index}",
+                "source_title": f"Public circuit {index}",
+            },
+        )
+        statuses.append(response.status_code)
+
+    assert 429 in statuses, (
+        f"every import was accepted ({sorted(set(statuses))}); the cap is not on this route"
+    )
+    assert statuses.count(201) == cap - held, (
+        f"filed {statuses.count(201)} of the {cap - held} slots that were free"
+    )
+
+    async with stage["factory"]() as session:
+        final = await artifacts_repo.count_kept_against_quota(alice.scope, session)
+    assert final == cap, f"the workspace holds {final} against a cap of {cap}"
+
+
+async def test_re_importing_something_already_imported_spends_nothing(stage):
+    """Idempotent on the source slug, and that is load-bearing for the cap.
+
+    An account at its limit must still be able to open what it already has. If
+    the second import spent a slot, the refusal would arrive for a row the
+    workspace already holds — and the count would climb past the cap on repeat
+    requests, which is the bypass in a different shape.
+    """
+    alice = stage["alice"]
+    payload = {
+        **PUBLIC_IMPORT,
+        "source_slug": f"repeatable-{uuid.uuid4().hex[:8]}",
+        "title": "Repeatable reference",
+        "source_title": "Repeatable reference",
+    }
+    first = await alice.client.post("/v1/artifacts/import-public", json=payload)
+    assert first.status_code == 201, first.text
+
+    async with stage["factory"]() as session:
+        after_first = await artifacts_repo.count_kept_against_quota(alice.scope, session)
+
+    second = await alice.client.post("/v1/artifacts/import-public", json=payload)
+    assert second.status_code in (200, 201), second.text
+    assert second.json()["id"] == first.json()["id"]
+
+    async with stage["factory"]() as session:
+        after_second = await artifacts_repo.count_kept_against_quota(alice.scope, session)
+    assert after_second == after_first, "a repeat import spent a second slot"

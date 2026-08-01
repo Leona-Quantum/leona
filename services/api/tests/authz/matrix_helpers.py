@@ -86,6 +86,7 @@ async def _build_workspace(session, tag: str) -> WorkspaceData:
         title=f"authz probe {tag}",
         family="Bell",
         framework="qiskit",
+        kept=True,
     )
     version = await artifacts.create_version(
         owner_scope,

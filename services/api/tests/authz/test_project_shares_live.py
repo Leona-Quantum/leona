@@ -84,6 +84,7 @@ async def build_tenant(session, tag: str, *, with_content: bool = True) -> Tenan
         title=f"{tag} circuit",
         family="Bell",
         framework="qiskit",
+        kept=True,
     )
     tenant.version = await artifacts.create_version(
         scope,
@@ -108,6 +109,7 @@ async def build_tenant(session, tag: str, *, with_content: bool = True) -> Tenan
         title=f"{tag} unshared circuit",
         family="Bell",
         framework="qiskit",
+        kept=True,
     )
     await artifacts.create_version(
         scope,
@@ -576,6 +578,7 @@ async def test_deleting_the_owning_workspace_closes_every_grant(db, pair):
         title="team circuit",
         family="Bell",
         framework="qiskit",
+        kept=True,
     )
     await artifacts.create_version(
         team_scope,

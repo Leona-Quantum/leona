@@ -193,6 +193,7 @@ async def test_the_role_mapping_refuses_a_viewer_independently(db, pair):
         title="alice's own",
         family="Bell",
         framework="qiskit",
+        kept=True,
     )
     await projects.set_artifact_project(
         alice.scope, db, existing.id, alice.project.id, workspace_artifact_limit=None
@@ -370,6 +371,7 @@ async def test_a_zero_limit_means_edit_but_do_not_add(db, pair):
         title="alice's own",
         family="Bell",
         framework="qiskit",
+        kept=True,
     )
     await artifacts.create_version(
         alice.scope,
@@ -411,6 +413,7 @@ async def test_a_zero_limit_means_edit_but_do_not_add(db, pair):
         title="alice's second",
         family="Bell",
         framework="qiskit",
+        kept=True,
     )
     with pytest.raises(artifacts.ProjectFull):
         await projects.set_artifact_project(
@@ -438,6 +441,7 @@ async def test_the_cap_counts_only_what_the_project_actually_holds(db, pair):
         title="ungrouped",
         family="Bell",
         framework="qiskit",
+        kept=True,
     )
     assert loose.project_id is None
     doomed = await artifacts.create_artifact(
@@ -447,6 +451,7 @@ async def test_the_cap_counts_only_what_the_project_actually_holds(db, pair):
         title="deleted",
         family="Bell",
         framework="qiskit",
+        kept=True,
     )
     await projects.set_artifact_project(
         alice.scope, db, doomed.id, alice.project.id, workspace_artifact_limit=None
@@ -580,6 +585,7 @@ async def test_a_full_vault_does_not_refuse_a_contribution(db, pair):
             title=f"not in the project {index}",
             family="Bell",
             framework="qiskit",
+            kept=True,
         )
     assert await artifacts.count_kept_against_quota(alice.scope, db) == free_cap
     with pytest.raises(artifacts.ArtifactCapReached):

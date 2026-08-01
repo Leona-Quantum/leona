@@ -306,13 +306,38 @@ async def create_artifact(
     family: Algorithm,
     framework: Framework,
     parent_artifact_id: uuid.UUID | None = None,
-    kept: bool = True,
+    kept: bool,
 ) -> Artifact:
-    """Create an artifact.
+    """Create an artifact. Says nothing about allowances, and takes none.
 
-    `kept` defaults True so every existing caller — imports, the catalog staging
-    path, tests — keeps behaving as it did. Only the agent save path passes
-    False, and only when the workspace has not opted into automatic keeping.
+    ## `kept` is REQUIRED, and that is the whole point of this signature
+
+    It defaulted to True — "so every existing caller keeps behaving as it did" —
+    and a default that files an artifact is a default that spends a plan
+    allowance without one being passed. This function takes no limit and calls no
+    reservation, so `kept=True` here is the one way into the Vault that no cap
+    sees. Two callers were in exactly that state, both measured before this
+    changed:
+
+    - **`POST /v1/artifacts/import-public`** — 35 imports over real HTTP, all
+      201, a free-tier workspace holding 36 against a cap of 25. The handler took
+      no `CurrentIdentity` at all, so it had no tier to compare against and could
+      not have checked one.
+    - **The worker's auto-keep path** — `kept=self._auto_keep`, bounded in
+      practice only by the weekly run allowance.
+
+    (`shares.contribute_artifact` also files here and is correct: it lands in a
+    shared project, which is bounded by the project's own limit rather than by an
+    individual allowance.)
+
+    Making the argument required does not itself enforce anything. What it does
+    is stop the enforcement being *forgotten*: a new caller now has to write down
+    whether it is filing, and "filing" is the word that should make somebody ask
+    which allowance it spends. **The place that files with a cap is
+    `keep_artifact`** — it holds the workspace lock across the comparison and the
+    write, and it knows about project limits and shared projects. Prefer
+    `kept=False` here followed by `keep_artifact`; pass `kept=True` only where
+    something else bounds the row, and say what.
     """
     require_write(scope)
     if parent_artifact_id is not None:  # provenance edge must stay in-workspace

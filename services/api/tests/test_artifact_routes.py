@@ -17,7 +17,26 @@ import pytest
 from fastapi import HTTPException
 from majorana_contracts.enums import ExportStatus, Framework
 
+from majorana_api.orm import User
 from majorana_api.routes import artifacts as artifact_routes
+from majorana_api.settings import Settings
+from majorana_api.tiers import limits_for
+
+
+def _settings() -> Settings:
+    """A deployment with no allowlists, so the importer resolves to `free`.
+
+    Written out rather than defaulted: `tier_of` reads both allowlists, and a
+    Settings built from the ambient environment would give this test a different
+    tier on a machine where LEONA_DEVELOPER_EMAILS happens to be set.
+    """
+    return Settings(
+        workos_client_id="client_test",
+        workos_jwt_issuer="https://test.invalid",
+        workos_jwks_url="https://test.invalid/jwks",
+        web_origin="http://localhost:3000",
+        developer_emails=frozenset(),
+    )
 
 
 def _routes() -> set[tuple[str, str]]:
@@ -133,12 +152,33 @@ async def test_imported_public_reference_is_explicitly_not_fresh_verification(sc
         captured.update(values)
         captured["artifact_id"] = supplied_artifact_id
 
+    async def keep_artifact(_scope, _session, supplied_artifact_id, **values):
+        # The import files through `keep_artifact` since 2026-08-02, which is
+        # where the allowance is enforced. Recorded rather than ignored: a double
+        # that dropped the limit would let this test pass against a route that
+        # had stopped passing one.
+        captured["kept_artifact_id"] = supplied_artifact_id
+        captured["kept_limit"] = values.get("workspace_artifact_limit")
+        return SimpleNamespace(id=supplied_artifact_id)
+
     monkeypatch.setattr(artifact_routes.artifacts_repo, "get_artifact_by_slug", get_by_slug)
     monkeypatch.setattr(artifact_routes.artifacts_repo, "create_artifact", create_artifact)
     monkeypatch.setattr(artifact_routes.artifacts_repo, "create_version", create_version)
+    monkeypatch.setattr(artifact_routes.artifacts_repo, "keep_artifact", keep_artifact)
     monkeypatch.setattr(artifact_routes, "_to_artifact", lambda row: row.id)
 
-    result = await artifact_routes.import_public_artifact(body, scope, object())
+    result = await artifact_routes.import_public_artifact(
+        body,
+        scope,
+        object(),
+        (User(email="importer@example.com", plan=None), object()),
+        _settings(),
+    )
+
+    assert captured["kept_artifact_id"] == artifact_id
+    assert captured["kept_limit"] == limits_for("free").private_artifacts, (
+        "the import must file against the caller's own tier limit"
+    )
 
     assert result == artifact_id
     assert captured["artifact_id"] == artifact_id
