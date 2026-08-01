@@ -196,6 +196,7 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
     projectAll: string;
     projectUngrouped: string;
     projectEmpty: string;
+    ungroupedEmpty: string;
     workingCircuit: string;
     editingVersion: (version: string, framework: string) => string;
     newDraft: string;
@@ -626,6 +627,7 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
       projectAll: "All",
       projectUngrouped: "Ungrouped",
       projectEmpty: "Nothing filed under this project yet.",
+      ungroupedEmpty: "Every circuit is filed under a project.",
       workingCircuit: "Working circuit",
       editingVersion: (version, framework) => `Editing version ${version} · ${framework}`,
       newDraft: "A clean draft for exploring a circuit before it is saved.",
@@ -1073,6 +1075,7 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
       projectAll: "すべて",
       projectUngrouped: "未分類",
       projectEmpty: "このプロジェクトにはまだ何も入っていません。",
+      ungroupedEmpty: "すべての回路がいずれかのプロジェクトに入っています。",
       workingCircuit: "作業中の回路",
       editingVersion: (version, framework) => `バージョン${version}を編集中 · ${framework}`,
       newDraft: "保存する前の回路を試すための新しい下書きです。",

@@ -777,14 +777,20 @@ export function StudioWorkspace({ artifactId, newDraft = false, locale = "en", l
                 );
               }) : (
                 <p className="mj-studio-empty">
-                  {/* Three different nothings. An empty project told the reader
+                  {/* Four different nothings. An empty project told the reader
                       "no results match your search" while the search box was
-                      blank, which reads as the filter being broken. */}
+                      blank, which reads as the filter being broken — and
+                      Ungrouped is not a project, so it cannot borrow that
+                      sentence either. It is reachable: the tab is dropped once
+                      everything is filed, but the selection is not, so the last
+                      artifact leaving the bucket lands here. */}
                   {!artifacts.length
                     ? copy.empty
                     : query.trim()
                       ? copy.noSearchResults
-                      : copy.projectEmpty}
+                      : projectFilter.kind === "ungrouped"
+                        ? copy.ungroupedEmpty
+                        : copy.projectEmpty}
                 </p>
               )}
             </div>
