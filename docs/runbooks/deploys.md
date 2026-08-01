@@ -216,6 +216,7 @@ does not disturb secret-backed variables already on the service.
 | `SYSTEM_CATALOG_ENABLED` + the three `SYSTEM_CATALOG_*_ID`s | ✔ | ✔ |
 | `OPENAI_API_KEY`, `DEEPSEEK_API_KEY`, `VERCEL_TOKEN` (secrets) | — | ✔ |
 | `LEONA_DEVELOPER_EMAILS` | ✔ | ✔ |
+| `LEONA_TEAM_EMAILS` | ✔ | ✔ |
 | `DEPLOY_PROBE_TOKEN` (secret) | ✔ | — |
 
 A service's environment is **not** the repository's environment. The worker has
