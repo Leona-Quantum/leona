@@ -108,5 +108,15 @@ class SequencedSession:
     async def flush(self):
         pass
 
+    async def refresh(self, obj):
+        """No-op, to match `RecordingSession`.
+
+        Nothing reaches it today — the repo functions that refresh after a flush
+        are driven through `RecordingSession` — so its absence was invisible. It
+        is here because the next test to drive a creating function through this
+        double would get an `AttributeError` from the double rather than a
+        failure about the code under test.
+        """
+
     async def rollback(self):
         pass
