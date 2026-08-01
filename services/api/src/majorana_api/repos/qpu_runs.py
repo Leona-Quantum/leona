@@ -228,6 +228,55 @@ async def create_record(
     return record
 
 
+async def claim_submission_attempt(
+    scope: Scope, session: AsyncSession, record_id: uuid.UUID
+) -> bool:
+    """Stamp `submitted_at` on a QUEUED record. True if THIS caller stamped it.
+
+    The at-most-once mark for a provider call, and the reason it is a stamp
+    rather than a status change: `_ALLOWED_TRANSITIONS` has no QUEUED -> QUEUED
+    edge, and adding a SUBMITTING status would be a migration plus a fourth
+    state every reader has to learn. `submitted_at` already means exactly
+    "handed to the provider", which is the fact being recorded.
+
+    ## What it is for
+
+    `worker.handlers.handle_qpu_run` called `qpu.submit` and only then
+    transitioned the record to RUNNING. A submit that reached the provider and
+    failed on the way back — a read timeout, a reset connection — left the
+    record QUEUED with nothing written, so the queue redelivered the job (three
+    attempts by default) and the handler submitted AGAIN. Measured against the
+    real handler with a provider that accepts the job and loses the first
+    response: `provider.submit` called twice for one record, the attestation row
+    keeping only the SECOND provider job id, and the account's spend allowance
+    charged for one. The first job runs, bills, and is untracked.
+
+    Whoever loses the race matches zero rows and reads back False — the WHERE
+    clause repeats the `submitted_at IS NULL` predicate, the same fencing
+    `transition` uses for its from-status.
+
+    ## Why stamping BEFORE the call is the safe direction
+
+    It is deliberately pessimistic. If the provider never saw the request, this
+    row now claims a submission that did not happen, and the account is charged
+    for it by `_authorized_spend`. That is the error worth making: the other
+    direction bills the operator's provider account for jobs nobody is tracking,
+    and no amount of later reconciliation gets that money back.
+    """
+    require_write(scope)
+    result = await session.execute(
+        update(QpuRun)
+        .where(
+            QpuRun.id == record_id,
+            QpuRun.workspace_id == scope.workspace_id,
+            QpuRun.status == QpuRunStatus.QUEUED.value,
+            QpuRun.submitted_at.is_(None),
+        )
+        .values(submitted_at=dt.datetime.now(dt.UTC), updated_at=dt.datetime.now(dt.UTC))
+    )
+    return result.rowcount == 1
+
+
 async def get_record(scope: Scope, session: AsyncSession, record_id: uuid.UUID) -> QpuRun:
     stmt = select(QpuRun).where(QpuRun.id == record_id, QpuRun.workspace_id == scope.workspace_id)
     record = (await session.execute(stmt)).scalar_one_or_none()

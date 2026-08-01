@@ -130,6 +130,13 @@ def qpu_spend_refusal(spent: float, limit: float, estimate: float) -> HTTPExcept
 
     429 rather than 402: this is an allowance that refills, the same shape as
     `tier_allowance_refusal` next door, not a demand for payment.
+
+    The numeric fields are rounded to cents, and not only for tidiness. `spent`
+    is a sum of floats read back from a `Numeric` column, so it can land at
+    `25.000000000000004` — and a client that renders these fields rather than
+    parsing the sentence would put that on screen as an amount of money. The
+    sentence itself has always been formatted to two places; these now agree
+    with it rather than disagreeing in the twelfth decimal.
     """
     return HTTPException(
         status_code=429,
@@ -140,9 +147,9 @@ def qpu_spend_refusal(spent: float, limit: float, estimate: float) -> HTTPExcept
                 "authorized. Free-queue devices and browser simulation stay available."
             ),
             "reason": "qpu_spend_exhausted",
-            "spent_usd": spent,
-            "limit_usd": limit,
-            "estimate_usd": estimate,
+            "spent_usd": round(spent, 2),
+            "limit_usd": round(limit, 2),
+            "estimate_usd": round(estimate, 2),
         },
     )
 

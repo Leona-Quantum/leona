@@ -1171,7 +1171,12 @@ async def handle_qpu_run(
     The payload is a pointer plus the scope it resumes; every attested value
     is read from and written to the row. The gate re-check is defense in
     depth — the API checked it too, and a deployment that closed the gate
-    after enqueue must close the record rather than contact the provider."""
+    after enqueue must close the record rather than contact the provider.
+
+    **The provider is contacted at most once per record.** A `qpu.run` job is
+    redelivered on failure like any other, and this is the one handler where a
+    redelivery spends money: see `claim_submission_attempt` below, which is
+    stamped and committed before the submit rather than after it."""
     try:
         job = QpuRunJobPayload.model_validate(payload)
     except ValidationError as exc:
@@ -1195,6 +1200,37 @@ async def handle_qpu_run(
     qpu = provider or _default_qpu_provider()
 
     if status is QpuRunStatus.QUEUED:
+        # Claim the attempt and COMMIT it before the provider is contacted, so a
+        # redelivery of this job cannot contact them a second time.
+        #
+        # Without this the handler submitted, and only then wrote. A submit that
+        # reached the provider and failed on the way back — a read timeout, a
+        # reset connection — left the record QUEUED with nothing written, the
+        # queue redelivered the job, and the handler submitted again. Measured
+        # against this handler with a provider that accepts and loses the first
+        # response: two `provider.submit` calls for one record, the row keeping
+        # only the second provider job id. The first job runs, bills, and is
+        # tracked nowhere.
+        #
+        # The commit is what makes it work. Inside this handler's transaction the
+        # stamp would roll back with everything else when the submit raised, and
+        # the redelivery would find the record exactly as it left it.
+        if not await qpu_runs_repo.claim_submission_attempt(scope, session, record.id):
+            await qpu_runs_repo.transition(
+                scope,
+                session,
+                record.id,
+                QpuRunStatus.ERROR,
+                error=(
+                    "a submission for this record was already attempted and did not "
+                    "confirm; it is not retried because the provider may have accepted "
+                    f"it. Check the provider dashboard for {record.source_fingerprint} "
+                    "before submitting again."
+                ),
+            )
+            await session.commit()
+            return
+        await session.commit()
         submitted = await asyncio.to_thread(
             qpu.submit,
             QpuJobRequest(
@@ -1204,13 +1240,16 @@ async def handle_qpu_run(
                 source_fingerprint=record.source_fingerprint,
             ),
         )
+        # No `submitted_at` here: the claim above already stamped it, and that
+        # stamp is the moment the request left this process. Re-stamping now
+        # would move it later by the provider's whole round trip and make the
+        # 24h poll deadline start after the wait it is meant to bound.
         await qpu_runs_repo.transition(
             scope,
             session,
             record.id,
             QpuRunStatus.RUNNING,
             provider_job_id=submitted.provider_job_id,
-            submitted_at=datetime.now(UTC),
         )
     else:  # RUNNING: one poll
         if record.provider_job_id is None:

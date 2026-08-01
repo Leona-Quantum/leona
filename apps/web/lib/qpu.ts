@@ -141,7 +141,13 @@ export async function submitQpuRun(request: {
     body: JSON.stringify(request),
     cache: "no-store",
   });
-  const payload: unknown = await response.json();
+  // Parsed defensively, because the body is not always this API's. A proxy
+  // answering 502 with an HTML error page, or a gateway with an empty body,
+  // makes `response.json()` throw a raw SyntaxError — which escapes before any
+  // of the fallback below runs, so the person sees a parser's complaint instead
+  // of the sentence written for them. `null` here lets every reader treat it as
+  // "no readable body" rather than as a thrown parse error.
+  const payload: unknown = await response.json().catch(() => null);
   if (!response.ok) {
     // Read through the shared problem+json helpers rather than a parser of this
     // module's own. The one that was here read `payload.detail.blocked_reason`
@@ -159,6 +165,12 @@ export async function submitQpuRun(request: {
       refusalReason(payload) ?? (typeof amounts.blocked_reason === "string" ? amounts.blocked_reason : null),
       { spent: amounts.spent_usd, limit: amounts.limit_usd, estimate: amounts.estimate_usd },
     );
+  }
+  if (payload === null) {
+    // A 2xx whose body did not parse. Returning it as a record would put
+    // `undefined` in the status field and poll forever on `undefined` — say so
+    // instead, since a submission may well have been accepted.
+    throw new QpuSubmissionRefused(`qpu submission returned an unreadable body (${response.status})`, null);
   }
   return payload as QpuRunRecord;
 }

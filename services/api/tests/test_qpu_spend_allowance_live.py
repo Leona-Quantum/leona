@@ -409,15 +409,21 @@ async def test_another_accounts_spend_is_not_charged_to_this_one(account):
         )
         await session.commit()
 
-    async with factory() as session:
-        spent = await qpu_runs_repo.authorized_spend_since(
-            scope, session, dt.datetime.now(dt.timezone.utc) - TIER_WINDOW
-        )
-    assert spent == 0.0
-    mine = await client.post("/v1/qpu/submissions", json=_body(GARNET, 10_000, "mine"))
-    assert mine.status_code == 201, mine.text
-
-    await delete_committed_tenants(factory, [other_workspace.id], [other_user.id])
+    # `finally`, not a trailing statement: a failing assertion below would
+    # otherwise leave this stranger's workspace in the shared database, and
+    # `delete_committed_tenants` documents what that does to suites that never
+    # mention sharing — CI runs every live suite in ONE invocation against ONE
+    # database, so a test that fails must not also break its neighbours.
+    try:
+        async with factory() as session:
+            spent = await qpu_runs_repo.authorized_spend_since(
+                scope, session, dt.datetime.now(dt.timezone.utc) - TIER_WINDOW
+            )
+        assert spent == 0.0
+        mine = await client.post("/v1/qpu/submissions", json=_body(GARNET, 10_000, "mine"))
+        assert mine.status_code == 201, mine.text
+    finally:
+        await delete_committed_tenants(factory, [other_workspace.id], [other_user.id])
 
 
 @pytest.mark.parametrize("account", [TEAM_PLAN], indirect=True)
@@ -468,6 +474,105 @@ async def test_a_second_workspace_of_the_same_account_spends_the_same_budget(acc
         assert refused.status_code == 429, refused.text
     finally:
         await delete_committed_tenants(factory, [second_id], [])
+
+
+# ------------------------------------------------------ the at-most-once claim
+
+
+@pytest.mark.parametrize("account", [TEAM_PLAN], indirect=True)
+async def test_only_one_caller_can_claim_a_submission_attempt(account):
+    """The claim is a fenced UPDATE, not a read-then-write.
+
+    `worker.handlers.handle_qpu_run` stamps this before it contacts the provider
+    so that a redelivered job cannot contact them twice — and two workers can
+    hold the same job at the boundary of a lease expiry, which is exactly when
+    the second one must lose. Checked against real Postgres rather than against
+    the handler's double: the guarantee is in the WHERE clause, and a double
+    that returns True twice would make the handler's own tests agree with a
+    version of this function that has no guarantee at all.
+    """
+    client, factory, scope, _user = account
+    accepted = await client.post("/v1/qpu/submissions", json=_body(GARNET, 1_000, "claimed"))
+    assert accepted.status_code == 201, accepted.text
+    record_id = uuid.UUID(accepted.json()["id"])
+
+    async with factory() as session:
+        first = await qpu_runs_repo.claim_submission_attempt(scope, session, record_id)
+        await session.commit()
+    async with factory() as session:
+        second = await qpu_runs_repo.claim_submission_attempt(scope, session, record_id)
+        await session.commit()
+
+    assert first is True
+    assert second is False, "two callers both claimed the right to contact the provider"
+
+    async with factory() as session:
+        record = await qpu_runs_repo.get_record(scope, session, record_id)
+    assert record.submitted_at is not None
+    assert record.status == QpuRunStatus.QUEUED.value, (
+        "the claim must not move the record's status; the provider has not answered yet"
+    )
+
+
+@pytest.mark.parametrize("account", [TEAM_PLAN], indirect=True)
+async def test_a_claimed_submission_spends_even_if_it_never_confirms(account):
+    """The pessimistic direction, stated as a test.
+
+    Once the claim is stamped the request may have reached the provider, so the
+    account is charged whether or not it confirmed. The alternative — refunding
+    anything unconfirmed — bills the operator for jobs nobody is tracking, and
+    no later reconciliation gets that money back.
+    """
+    client, factory, scope, _user = account
+    accepted = await client.post("/v1/qpu/submissions", json=_body(GARNET, 10_000, "unconfirmed"))
+    assert accepted.status_code == 201, accepted.text
+    record_id = uuid.UUID(accepted.json()["id"])
+
+    async with factory() as session:
+        assert await qpu_runs_repo.claim_submission_attempt(scope, session, record_id)
+        await qpu_runs_repo.transition(
+            scope,
+            session,
+            record_id,
+            QpuRunStatus.ERROR,
+            error="a submission for this record was already attempted and did not confirm",
+        )
+        await session.commit()
+
+    async with factory() as session:
+        spent = await qpu_runs_repo.authorized_spend_since(
+            scope, session, dt.datetime.now(dt.timezone.utc) - TIER_WINDOW
+        )
+    assert spent == pytest.approx(14.80), (
+        "a submission that may have reached the provider was refunded"
+    )
+
+
+@pytest.mark.parametrize("account", [TEAM_PLAN], indirect=True)
+async def test_a_claim_cannot_reach_another_tenants_record(account):
+    """Workspace-scoped like every write in this layer: an id from outside the
+    scope matches zero rows and reads back False, the same answer as a record
+    that never existed."""
+    client, factory, scope, user = account
+    accepted = await client.post("/v1/qpu/submissions", json=_body(GARNET, 1_000, "mine-only"))
+    assert accepted.status_code == 201, accepted.text
+    record_id = uuid.UUID(accepted.json()["id"])
+
+    async with factory() as session:
+        stranger, stranger_workspace = await _provision(session, "outsider", plan=TEAM_PLAN)
+        await session.commit()
+    stranger_scope = Scope(user_id=stranger.id, workspace_id=stranger_workspace.id, role=Role.OWNER)
+    try:
+        async with factory() as session:
+            assert not await qpu_runs_repo.claim_submission_attempt(
+                stranger_scope, session, record_id
+            )
+            await session.commit()
+        async with factory() as session:
+            record = await qpu_runs_repo.get_record(scope, session, record_id)
+        assert record.submitted_at is None
+    finally:
+        await delete_committed_tenants(factory, [stranger_workspace.id], [stranger.id])
 
 
 # ---------------------------------------------------------------------- the lock
@@ -555,9 +660,12 @@ async def test_the_last_dollars_cannot_be_spent_twice_by_two_connections():
 
     task_a = asyncio.create_task(caller_a())
     task_b = asyncio.create_task(caller_b())
-    await asyncio.gather(task_a, task_b)
 
+    # The gather is INSIDE the try. A racer that raises — the failure mode this
+    # whole test exists to provoke — would otherwise skip the teardown entirely
+    # and leave its committed rows for the next suite in CI's single invocation.
     try:
+        await asyncio.gather(task_a, task_b)
         assert len(b_outcome) == 1
         assert isinstance(b_outcome[0], qpu_runs_repo.QpuSpendReached), (
             "the second caller reserved the same last dollar the first one did — "

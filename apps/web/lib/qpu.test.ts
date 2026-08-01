@@ -108,13 +108,45 @@ test("a 404 for an unknown device says what the server said", async () => {
 });
 
 test("a refusal with no readable body still says something true", async () => {
-  // A proxy answering 502 with HTML, or an empty body. The person gets a
-  // generic sentence rather than a thrown parse error inside the catch.
+  // A proxy answering 502 with HTML, or an empty body.
+  //
+  // The first version of this test asserted `error instanceof Error` — which a
+  // raw `SyntaxError` from `response.json()` satisfies perfectly, so it passed
+  // against a client that threw "Unexpected token '<'" at the user and never
+  // reached the fallback at all. An assertion loose enough to accept the bug is
+  // not a test of anything; this one names the type and the sentence.
   (globalThis as { fetch?: unknown }).fetch = async () => new Response("<html>", { status: 502 });
   await assert.rejects(
     () => submitQpuRun(REQUEST),
     (error: unknown) => {
-      assert.ok(error instanceof Error);
+      assert.ok(error instanceof QpuSubmissionRefused, `got ${(error as Error)?.name}`);
+      assert.equal((error as Error).message, "qpu submission failed (502)");
+      assert.equal((error as QpuSubmissionRefused).reason, null);
+      return true;
+    },
+  );
+});
+
+test("an empty body on a refusal is handled like an unreadable one", async () => {
+  (globalThis as { fetch?: unknown }).fetch = async () => new Response("", { status: 429 });
+  await assert.rejects(
+    () => submitQpuRun(REQUEST),
+    (error: unknown) => {
+      assert.ok(error instanceof QpuSubmissionRefused, `got ${(error as Error)?.name}`);
+      assert.equal((error as Error).message, "qpu submission failed (429)");
+      return true;
+    },
+  );
+});
+
+test("a 2xx whose body does not parse is reported, not returned as a record", async () => {
+  // Returning it would put `undefined` in `status` and poll `undefined` forever.
+  (globalThis as { fetch?: unknown }).fetch = async () => new Response("<html>", { status: 201 });
+  await assert.rejects(
+    () => submitQpuRun(REQUEST),
+    (error: unknown) => {
+      assert.ok(error instanceof QpuSubmissionRefused);
+      assert.match((error as Error).message, /unreadable body/);
       return true;
     },
   );
