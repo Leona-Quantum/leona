@@ -4,7 +4,7 @@ B's rows. The suite is a required CI gate — the moral replacement of the old
 RLS check (05-security.md §1)."""
 
 import pytest
-from matrix_helpers import ALL_ROLES, requires_db, scope_for
+from matrix_helpers import ALL_ROLES, any_team_grantee, requires_db, scope_for
 from majorana_contracts.enums import Role, RunMode, UsageKind, VerificationMethod
 
 from majorana_api.repos import (
@@ -26,7 +26,6 @@ from majorana_api.repos import (
 #: the Team plan and each is pinning a different rule. A grantee that always
 #: qualifies keeps them testing that rule. The gate itself is covered by
 #: test_project_sharing_tier_live.py, which varies this deliberately.
-ANY_TEAM_GRANTEE = lambda _grantee: True  # noqa: E731
 
 pytestmark = requires_db
 
@@ -238,7 +237,7 @@ async def test_no_grant_means_no_second_door(db, dataset):
                 b.project_id,
                 email="whoever@authz.test",
                 role="viewer",
-                grantee_may_receive=ANY_TEAM_GRANTEE,
+                grantee_allowance=any_team_grantee,
             )
         with pytest.raises(NotFoundError):
             await shares.revoke_share(sa, db, b.project_id, grantee_user_id=b.users[Role.OWNER])
@@ -260,7 +259,7 @@ async def test_granting_is_an_admin_action(db, dataset):
                 a.project_id,
                 email=f"b-{Role.MEMBER}@authz.test",
                 role="viewer",
-                grantee_may_receive=ANY_TEAM_GRANTEE,
+                grantee_allowance=any_team_grantee,
             )
         with pytest.raises(AuthzError):
             await shares.revoke_share(sa, db, a.project_id, grantee_user_id=b.users[Role.OWNER])

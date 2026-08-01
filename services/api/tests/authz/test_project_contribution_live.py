@@ -27,7 +27,7 @@ import hashlib
 import uuid
 
 import pytest
-from matrix_helpers import requires_db
+from matrix_helpers import any_team_grantee, requires_db
 from majorana_contracts import Scope
 from majorana_contracts.enums import Role, ShareRole
 from repo_test_helpers import delete_committed_tenants
@@ -48,7 +48,6 @@ from majorana_api.repos import (
 #: the Team plan and each is pinning a different rule. A grantee that always
 #: qualifies keeps them testing that rule. The gate itself is covered by
 #: test_project_sharing_tier_live.py, which varies this deliberately.
-ANY_TEAM_GRANTEE = lambda _grantee: True  # noqa: E731
 
 pytestmark = requires_db
 
@@ -90,7 +89,7 @@ async def grant(db, alice, bob, role=ShareRole.EDITOR, expires_at=None):
         email=bob.user.email,
         role=role,
         expires_at=expires_at,
-        grantee_may_receive=ANY_TEAM_GRANTEE,
+        grantee_allowance=any_team_grantee,
     )
     return share
 
@@ -690,7 +689,7 @@ async def test_an_ambiguous_email_is_refused_rather_than_guessed(db, pair):
             email=bob.user.email,
             role=ShareRole.EDITOR,
             expires_at=None,
-            grantee_may_receive=ANY_TEAM_GRANTEE,
+            grantee_allowance=any_team_grantee,
         )
     assert "2 accounts" in str(refusal.value)
 
@@ -709,7 +708,7 @@ async def test_a_single_account_is_still_found_case_insensitively(db, pair):
         email=bob.user.email.upper(),
         role=ShareRole.EDITOR,
         expires_at=None,
-        grantee_may_receive=ANY_TEAM_GRANTEE,
+        grantee_allowance=any_team_grantee,
     )
     assert grantee.id == bob.user.id
     assert share.grantee_user_id == bob.user.id

@@ -217,8 +217,9 @@ async def grant_project_share(
       before the project is even looked up, so a free account cannot use this
       route to learn which project ids exist.
     - **409** — the caller may share, but the address they typed belongs to an
-      account that may not receive one. The request is wrong, not the plan, and
-      the address is the part to change. That check runs inside `grant_share`,
+      account that may not receive one, or to one already in as many shared
+      projects as its plan allows. The request is wrong, not the plan, and the
+      address is the part to change. Both checks run inside `grant_share`,
       which is where the address becomes a row.
 
     `developer` satisfies both: it is the operator's and the collaborators'
@@ -231,8 +232,14 @@ async def grant_project_share(
     if not limits_for(tier_of(granter, settings)).project_sharing:
         raise _sharing_not_in_plan()
 
-    def _grantee_may_receive(grantee: UserRow) -> bool:
-        return limits_for(tier_of(grantee, settings)).project_sharing
+    def _grantee_allowance(grantee: UserRow) -> shares_repo.GranteeAllowance:
+        # One tier resolution, both answers. Two callables here would be two
+        # chances to resolve the same person's tier twice and disagree.
+        limits = limits_for(tier_of(grantee, settings))
+        return shares_repo.GranteeAllowance(
+            may_receive=limits.project_sharing,
+            max_shared_projects=limits.shared_projects,
+        )
 
     try:
         share, grantee = await shares_repo.grant_share(
@@ -242,7 +249,7 @@ async def grant_project_share(
             email=body.email,
             role=body.role,
             expires_at=body.expires_at,
-            grantee_may_receive=_grantee_may_receive,
+            grantee_allowance=_grantee_allowance,
         )
     except shares_repo.ShareError as exc:
         raise _share_refusal(exc) from exc
@@ -288,6 +295,25 @@ async def list_shared_projects(
     return [
         _to_shared_project(row) for row in await shares_repo.list_shared_projects(scope, session)
     ]
+
+
+@router.delete("/shared/projects/{project_id}", status_code=204)
+async def leave_shared_project(
+    project_id: uuid.UUID, scope: CurrentScope, session: DbSession
+) -> Response:
+    """Give up a grant somebody made to you.
+
+    The counterpart to `revoke_project_share`, and the only route on the grantee
+    side that removes anything. It exists because the membership allowance is
+    counted on this end: without it, an account at its cap would have to ask one
+    of the owners who granted it to revoke, out of band, before it could accept
+    a fifth project.
+
+    Removes the grant, never the work. Anything contributed into the project
+    stays in the owner's workspace.
+    """
+    await shares_repo.leave_shared_project(scope, session, project_id)
+    return Response(status_code=204)
 
 
 @router.get("/shared/projects/{project_id}", response_model=SharedProjectResource)

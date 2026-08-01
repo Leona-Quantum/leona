@@ -29,6 +29,8 @@ from majorana_api.repos import (
     usage,
     workspaces,
 )
+from majorana_api.repos.shares import GranteeAllowance
+from majorana_api.tiers import limits_for
 
 requires_db = pytest.mark.skipif(
     "DATABASE_URL" not in os.environ, reason="authz suite needs DATABASE_URL"
@@ -136,3 +138,25 @@ async def provision() -> tuple[WorkspaceData, WorkspaceData]:
     finally:
         await engine.dispose()
     return a, b
+
+
+def any_team_grantee(_grantee: object) -> GranteeAllowance:
+    """The permissive grantee allowance, DERIVED from the real team tier.
+
+    Written out as `GranteeAllowance(may_receive=True, max_shared_projects=None)`
+    it would be a double thinner than the thing it stands in for: `None` is
+    "unlimited", which is the developer tier's number, so every share test in
+    this suite would have been silently exempt from the membership cap and the
+    cap's own tests would have been the only ones that ever saw it.
+
+    Taking the real `team` row instead means these tests grant under the same
+    allowance a paying account has, and a change to that number reaches them.
+
+    Lived in three files as `lambda _grantee: True` before the allowance grew a
+    second field. One copy is one place to be wrong.
+    """
+    limits = limits_for("team")
+    return GranteeAllowance(
+        may_receive=limits.project_sharing,
+        max_shared_projects=limits.shared_projects,
+    )

@@ -9,6 +9,7 @@ import {
   expiresSoon,
   hasExpired,
   hasMoved,
+  leaveSharedProject,
   parseProjectShare,
   parseSharedProject,
   refusalSentence,
@@ -384,6 +385,56 @@ describe("the client functions the limit control depends on", () => {
     stub(() => json({ id: "p-1" }));
     try {
       await assert.rejects(() => setProjectArtifactLimit("p-1", 5));
+    } finally {
+      restore();
+    }
+  });
+});
+
+describe("leaving a project somebody shared with you", () => {
+  const originalFetch = globalThis.fetch;
+  const stub = (impl: (url: string, init?: RequestInit) => Promise<Response>) => {
+    globalThis.fetch = ((url: string, init?: RequestInit) => impl(String(url), init)) as typeof fetch;
+  };
+  const restore = () => {
+    globalThis.fetch = originalFetch;
+  };
+
+  it("deletes the caller's own membership and names nobody", async () => {
+    // The URL carries no user id. `revokeProjectShare` needs one because the
+    // owner is removing somebody else; this one must not have the shape that
+    // could be aimed at a different person.
+    const seen: { url: string; method?: string }[] = [];
+    stub((url, init) => {
+      seen.push({ url, method: init?.method });
+      return Promise.resolve(new Response(null, { status: 204 }));
+    });
+    try {
+      await leaveSharedProject("p 1/2");
+    } finally {
+      restore();
+    }
+    assert.deepEqual(seen, [{ url: "/api/shared/projects/p%201%2F2", method: "DELETE" }]);
+  });
+
+  it("treats an already-gone membership as success", async () => {
+    // The likeliest way to see a 404 is a second click, and "you are not in
+    // this project" is what was asked for either way.
+    stub(() => Promise.resolve(new Response(null, { status: 404 })));
+    try {
+      await leaveSharedProject("p-1");
+    } finally {
+      restore();
+    }
+  });
+
+  it("reports a refusal rather than navigating away from a project still shared", async () => {
+    // The caller redirects to /studio on success. A swallowed failure would
+    // send somebody away from a project they are still in and tell them
+    // nothing.
+    stub(() => Promise.resolve(new Response(null, { status: 500 })));
+    try {
+      await assert.rejects(() => leaveSharedProject("p-1"));
     } finally {
       restore();
     }

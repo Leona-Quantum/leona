@@ -61,6 +61,17 @@ export type TierLimits = {
    * about it gets a 403 from the control plane.
    */
   projectSharing: boolean;
+  /**
+   * How many of somebody else's projects this tier may be a member of at once.
+   * null means unlimited; 0 for a tier that cannot be granted one at all.
+   *
+   * Counts grants RECEIVED, not projects owned — a paying account is not
+   * capped at four of its own projects while a free one may create them
+   * without bound. Mirrored from `TierLimits.shared_projects`, which is again
+   * the copy that enforces: this one is here so the pricing page can state a
+   * number that a test ties to the server's.
+   */
+  sharedProjects: number | null;
 };
 
 /**
@@ -91,6 +102,7 @@ export const TIER_LIMITS: Record<AccountTier, TierLimits> = {
     qpuEstimates: true,
     persistentArtifacts: false,
     projectSharing: false,
+    sharedProjects: 0,
   },
   free: {
     agentRunsPerWeek: 5,
@@ -102,6 +114,7 @@ export const TIER_LIMITS: Record<AccountTier, TierLimits> = {
     qpuEstimates: true,
     persistentArtifacts: true,
     projectSharing: false,
+    sharedProjects: 0,
   },
   // The collaboration plan. The artifact allowance is the owner's number; the
   // browser-lane ceilings sit between free and developer because they bound the
@@ -112,7 +125,7 @@ export const TIER_LIMITS: Record<AccountTier, TierLimits> = {
   // sees the server's refusal, which is the correct direction for a divergence.
   team: {
     agentRunsPerWeek: 50,
-    privateArtifacts: 250,
+    privateArtifacts: 150,
     cpuSimQubits: 18,
     cpuSimOperations: 3_000,
     cpuSimShots: 32_768,
@@ -120,6 +133,7 @@ export const TIER_LIMITS: Record<AccountTier, TierLimits> = {
     qpuEstimates: true,
     persistentArtifacts: true,
     projectSharing: true,
+    sharedProjects: 4,
   },
   // Collaborators and the owner. "Unlimited" here means unlimited *product*
   // allowances. It is NOT a security tier: see grantsQpuSubmission below.
@@ -133,6 +147,7 @@ export const TIER_LIMITS: Record<AccountTier, TierLimits> = {
     qpuEstimates: true,
     persistentArtifacts: true,
     projectSharing: true,
+    sharedProjects: null,
   },
 };
 

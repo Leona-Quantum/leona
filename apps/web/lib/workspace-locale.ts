@@ -1989,6 +1989,16 @@ export const PROJECT_SHARE_COPY: Record<PublicLocale, {
   limitZeroHelp: string;
   limitSaved: (limit: number) => string;
   limitFailed: string;
+  /** Leaving a project somebody shared with you. Never offered to the owner —
+   *  this whole block belongs to the grantee's view. */
+  leave: string;
+  leaveConfirm: string;
+  leaveCancel: string;
+  leaving: string;
+  leaveFailed: string;
+  /** Says what leaving does NOT do, because the reasonable fear is that work
+   *  contributed into the project goes with it. It does not. */
+  leaveHelp: string;
 }> = {
   en: {
     share: "Share",
@@ -2078,6 +2088,13 @@ export const PROJECT_SHARE_COPY: Record<PublicLocale, {
     limitZeroHelp: "Set to 0, so people you share with can edit these circuits but not add any.",
     limitSaved: (limit) => `Shares may grow this project to ${limit} circuits.`,
     limitFailed: "That limit could not be saved.",
+    leave: "Leave project",
+    leaveConfirm: "Leave this project?",
+    leaveCancel: "Stay",
+    leaving: "Leaving…",
+    leaveFailed: "You could not be removed from this project.",
+    leaveHelp:
+      "You lose access to these circuits. Anything you added stays with the project, and its owner can share it with you again.",
   },
   ja: {
     share: "共有",
@@ -2163,5 +2180,12 @@ export const PROJECT_SHARE_COPY: Record<PublicLocale, {
     limitZeroHelp: "0 の場合、共有相手は既存の回路を編集できますが、追加はできません。",
     limitSaved: (limit) => `共有相手はこのプロジェクトを${limit}件まで増やせます。`,
     limitFailed: "上限を保存できませんでした。",
+    leave: "このプロジェクトから抜ける",
+    leaveConfirm: "このプロジェクトから抜けますか？",
+    leaveCancel: "そのまま残る",
+    leaving: "処理中…",
+    leaveFailed: "このプロジェクトから抜けられませんでした。",
+    leaveHelp:
+      "これらの回路にはアクセスできなくなります。あなたが追加した回路はプロジェクトに残り、所有者が再度共有することもできます。",
   },
 };
