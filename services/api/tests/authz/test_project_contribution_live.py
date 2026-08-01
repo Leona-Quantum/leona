@@ -411,20 +411,35 @@ async def test_the_cap_counts_only_what_the_project_actually_holds(db, pair):
     _access, artifact, _version = await contribute(db, bob, alice.project.id)
     assert artifact.project_id == alice.project.id
 
-    _access, count, limit = await shares.count_project_artifacts(bob.scope, db, alice.project.id)
-    assert (count, limit) == (1, 1)
+    # Asserted through `get_shared_project`, which is what the grantee's page
+    # actually calls. A dedicated counting helper would be a second place for
+    # these predicates to be written, and a test of a function the product does
+    # not use proves nothing about the product.
+    header = await shares.get_shared_project(bob.scope, db, alice.project.id)
+    assert (header.artifact_count, header.artifact_limit) == (1, 1)
 
 
 async def test_the_grantee_can_read_the_room_before_writing(db, pair):
+    """Through the header the page renders, not through a helper written for a test.
+
+    The count and the limit have to reach the grantee BEFORE they type something
+    and lose it to a 409, and they arrive on the same resource that names the
+    project — so the number the button is derived from is the number the refusal
+    is computed from.
+    """
     alice, bob = pair
     await projects.set_project_artifact_limit(alice.scope, db, alice.project.id, max_artifacts=7)
     await grant(db, alice, bob)
-    _access, count, limit = await shares.count_project_artifacts(bob.scope, db, alice.project.id)
-    assert (count, limit) == (0, 7)
+    header = await shares.get_shared_project(bob.scope, db, alice.project.id)
+    assert (header.artifact_count, header.artifact_limit) == (0, 7)
 
     _access, _artifact, _version = await contribute(db, bob, alice.project.id)
-    _access, count, limit = await shares.count_project_artifacts(bob.scope, db, alice.project.id)
-    assert (count, limit) == (1, 7)
+    header = await shares.get_shared_project(bob.scope, db, alice.project.id)
+    assert (header.artifact_count, header.artifact_limit) == (1, 7)
+
+    # And the LIST the sidebar renders agrees with the header the page renders.
+    listed = [row for row in await shares.list_shared_projects(bob.scope, db)]
+    assert [(r.artifact_count, r.artifact_limit) for r in listed] == [(1, 7)]
 
 
 async def test_only_an_admin_of_the_owning_workspace_may_move_the_limit(db, pair):

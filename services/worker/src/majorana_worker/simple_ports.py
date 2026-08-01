@@ -1667,7 +1667,13 @@ class ProductionSimplePipelinePorts:
             # What IS checked is that the derivation produced something. A circuit
             # with no trusted evidence has no result at all, and that is a real
             # contract failure with a real reason attached.
-            if not result_was_derived(execution.observation):
+            # `execution.result` as well, not `result_was_derived` alone. A
+            # misclassified PROGRAM binds RESULT through a form the classifier
+            # missed, derives nothing (its own result was already there), and
+            # would otherwise be told "the circuit produced no result" about a
+            # result sitting in front of it. Classification can never be perfect,
+            # so what is checked is whether a result EXISTS.
+            if not execution.result and not result_was_derived(execution.observation):
                 reason = execution.observation.get("result_derivation_error")
                 diagnostics.append(
                     "the circuit produced no result to report" + (f": {reason}" if reason else "")

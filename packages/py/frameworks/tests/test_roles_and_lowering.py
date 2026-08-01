@@ -90,6 +90,31 @@ def test_a_binding_the_naive_scan_would_miss_still_counts():
     assert classify_source("while (RESULT := next(it)):\n    pass") is ProgramRole.PROGRAM
 
 
+def test_every_form_python_binds_a_name_with_counts():
+    """Assignment is not the only one, and assuming it was misclassified programs.
+
+    A real program binding `RESULT` through any of these was classified CIRCUIT —
+    which is NOT the harmless direction: it takes the contract's circuit branch,
+    derives nothing (its own result is already there), and is then reported as
+    "the circuit produced no result to report" about a result sitting in front of
+    it. All five were confirmed broken before this was widened.
+    """
+    circuit = "FINAL_CIRCUIT = build()\n"
+    for label, tail in [
+        ("for", "for RESULT in [1]:\n    pass"),
+        ("with", "with open('x') as RESULT:\n    pass"),
+        ("except", "try:\n    pass\nexcept Exception as RESULT:\n    pass"),
+        ("def", "def RESULT():\n    pass"),
+        ("class", "class RESULT:\n    pass"),
+        ("import as", "import json as RESULT"),
+        ("from import as", "from json import loads as RESULT"),
+        ("comprehension", "[x for RESULT in [1]]"),
+        ("starred unpack", "*RESULT, last = [1, 2, 3]"),
+        ("nested unpack", "(a, (RESULT, b)) = (1, (2, 3))"),
+    ]:
+        assert classify_source(circuit + tail) is ProgramRole.PROGRAM, label
+
+
 def test_a_mention_that_is_not_a_binding_does_not_count():
     """Reading a name is not producing one. This is the false-PROGRAM direction.
 

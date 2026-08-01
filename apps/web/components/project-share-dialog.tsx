@@ -103,15 +103,29 @@ export function ProjectShareDialog({
   }, []);
 
   useEffect(() => {
-    void loadProjectArtifactLimit(projectId).then((value) => {
-      setLimit(value);
-      if (value !== null) setLimitDraft(String(value));
-    });
+    // `loadProjectArtifactLimit` resolves null on a non-OK response, but a
+    // network-level fetch failure REJECTS — and an unhandled rejection here
+    // would be an offline browser throwing past a dialog that is otherwise
+    // still usable. `refresh` above catches for the same reason. Null keeps the
+    // control hidden, which is the right answer when the number is unknown.
+    void loadProjectArtifactLimit(projectId)
+      .then((value) => {
+        setLimit(value);
+        if (value !== null) setLimitDraft(String(value));
+      })
+      .catch(() => setLimit(null));
   }, [projectId]);
 
   async function saveLimit() {
     const parsed = Number.parseInt(limitDraft, 10);
-    if (!Number.isFinite(parsed)) return;
+    if (!Number.isFinite(parsed)) {
+      // Clearing the field used to leave it blank with no notice and no
+      // restoration, so the input showed a value the project did not have.
+      // Putting the committed number back is the honest state: nothing was
+      // saved, and the field says so by showing what IS saved.
+      setLimitDraft(limit !== null ? String(limit) : "");
+      return;
+    }
     setBusy(true);
     setError(null);
     setNotice(null);

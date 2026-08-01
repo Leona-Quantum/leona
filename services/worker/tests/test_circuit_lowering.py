@@ -363,3 +363,33 @@ def test_the_summary_stays_a_valid_typed_projection_either_way(derived):
 
     summary = simple_pipeline_verification_summary(result_derived=derived)
     assert VerificationSummary.model_validate(summary)
+
+
+async def test_a_result_that_exists_is_never_reported_as_missing():
+    """The belt to the classifier's braces.
+
+    Classification is structural and can never be perfect. A PROGRAM binding
+    RESULT through a form the classifier misses lands in the circuit branch,
+    derives nothing — its own result was already captured — and would be told
+    "the circuit produced no result to report" about a result sitting right
+    there. What the contract checks is whether a result EXISTS, not how it got
+    there.
+    """
+    contract = await _check(
+        CIRCUIT,
+        result={"counts": {"00": 512, "11": 512}},
+        # No `result_origin`: nothing was derived, because nothing needed to be.
+        observation={"resource_metrics": _METRICS},
+    )
+    assert contract.passed, contract.diagnostics
+
+
+async def test_a_circuit_with_neither_a_result_nor_a_derivation_still_fails():
+    """The positive control for the line above — it must still be able to fail."""
+    contract = await _check(
+        CIRCUIT,
+        result={},
+        observation={"resource_metrics": _METRICS},
+    )
+    assert not contract.passed
+    assert any("no result to report" in d for d in contract.diagnostics)

@@ -96,28 +96,56 @@ def _bound_names(source: str) -> frozenset[str] | None:
 
     Walrus and annotated assignments are included for the same reason
     `_binds_final_circuit` includes them: `FINAL_CIRCUIT: QuantumCircuit = qc` is
-    ordinary typed Python and refusing to see it would be a trap.
+    ordinary typed Python and refusing to see it would be a trap. So are `for`,
+    `with ... as`, `except ... as`, comprehensions, `def`/`class` and
+    `import ... as` — assignment is not the only way Python binds a name.
     """
     try:
         tree = ast.parse(source)
     except SyntaxError:
         return None
     names: set[str] = set()
+
+    def collect(target: ast.expr | None) -> None:
+        if isinstance(target, ast.Name):
+            names.add(target.id)
+        elif isinstance(target, ast.Starred):
+            collect(target.value)
+        elif isinstance(target, (ast.Tuple, ast.List)):
+            # `RESULT, counts = run()` binds RESULT. Unpacking is how a program
+            # that computes two things at once usually writes it.
+            for element in target.elts:
+                collect(element)
+
     for node in ast.walk(tree):
-        targets: list[ast.expr] = []
         if isinstance(node, ast.Assign):
-            targets = list(node.targets)
-        elif isinstance(node, (ast.AnnAssign, ast.NamedExpr)):
-            targets = [node.target]
-        elif isinstance(node, ast.AugAssign):
-            targets = [node.target]
-        for target in targets:
-            if isinstance(target, ast.Name):
-                names.add(target.id)
-            elif isinstance(target, (ast.Tuple, ast.List)):
-                # `RESULT, counts = run()` binds RESULT. Unpacking is how a
-                # program that computes two things at once usually writes it.
-                names.update(element.id for element in target.elts if isinstance(element, ast.Name))
+            for target in node.targets:
+                collect(target)
+        elif isinstance(node, (ast.AnnAssign, ast.NamedExpr, ast.AugAssign)):
+            collect(node.target)
+        # Every OTHER form Python has for putting a name in scope. Assignment is
+        # not the only one, and treating it as the only one was not the harmless
+        # direction the first draft assumed: a real PROGRAM binding RESULT via
+        # `with ... as` was classified CIRCUIT, took the contract's circuit
+        # branch, derived nothing (its own RESULT was already there), and was
+        # then reported as "the circuit produced no result to report" — a failure
+        # on a program that reported one perfectly well. Five forms were
+        # confirmed misclassified before this was widened.
+        elif isinstance(node, (ast.For, ast.AsyncFor, ast.comprehension)):
+            collect(node.target)
+        elif isinstance(node, (ast.With, ast.AsyncWith)):
+            for item in node.items:
+                collect(item.optional_vars)
+        elif isinstance(node, ast.ExceptHandler):
+            if node.name:
+                names.add(node.name)
+        elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            names.add(node.name)
+        elif isinstance(node, (ast.Import, ast.ImportFrom)):
+            for alias in node.names:
+                names.add(alias.asname or alias.name.split(".")[0])
+        elif isinstance(node, (ast.Global, ast.Nonlocal)):
+            names.update(node.names)
     return frozenset(names)
 
 

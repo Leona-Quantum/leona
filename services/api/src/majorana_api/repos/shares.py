@@ -989,30 +989,6 @@ async def shared_project_owner(
     return access, owner
 
 
-async def count_project_artifacts(
-    scope: Scope, session: AsyncSession, project_id: uuid.UUID
-) -> tuple[SharedAccess, int, int]:
-    """How full a shared project is, and how full it may get.
-
-    Read through the grant so the grantee can be shown the room they have before
-    they write something and lose it to a refusal. Uses the same
-    `_visible_artifacts_of` predicates the listing uses, because a count that
-    disagrees with the list it describes is worse than no count.
-    """
-    access = await resolve_share(scope, session, project_id)
-    project = await get_project(_elevated(access, scope.user_id), session, access.project_id)
-    count = int(
-        (
-            await session.execute(
-                select(func.count(Artifact.id)).where(
-                    *_visible_artifacts_of(access.project_id, access.owner_workspace_id)
-                )
-            )
-        ).scalar_one()
-    )
-    return access, count, project_artifact_limit(project)
-
-
 async def contribute_artifact(
     scope: Scope,
     session: AsyncSession,
@@ -1122,7 +1098,14 @@ async def contribute_artifact(
                 "artifact plan limit; only its owner can make room"
             )
 
-    fingerprint = hashlib.sha256(f"{uuid7()}:{code}".encode()).hexdigest()
+    # Content, with no nonce. `create_version` treats the fingerprint as exact
+    # content identity and REINSTATES a matching row rather than writing a second
+    # one, so a nonce would mean a contributor who edits this circuit and then
+    # undoes the edit gets a third version holding bytes identical to the first.
+    # There is no collision to avoid — the artifact below is new and
+    # `uq_artifact_versions_fingerprint` is per artifact. Same rule as
+    # `create_shared_version`, the function this one sits beside.
+    fingerprint = hashlib.sha256(code.encode()).hexdigest()
     artifact = await artifacts_repo.create_artifact(
         elevated,
         session,

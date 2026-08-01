@@ -158,7 +158,17 @@ def compose_execution(spec: ExecutionSpec) -> str:
         _majorana_kept["evidence_dropped_keys"] = _majorana_dropped
         _majorana_kept["source_fingerprint"] = {spec.source_fingerprint!r}
         try:
-            _majorana_json_dumps(_majorana_kept)
+            # The size check above lives INSIDE the try that just raised, so it
+            # never ran for this path. While this handler replaced the observation
+            # with two keys it was bounded by accident; keeping every serializable
+            # key means the ceiling has to be applied again here, or one bad value
+            # in a large observation writes an unbounded sidecar — which the
+            # reader then rejects wholesale, turning a partial loss into a total
+            # one. `test_the_byte_ceiling_still_applies_to_a_RECOVERED_observation`
+            # fails without these three lines.
+            _majorana_recovered = _majorana_json_dumps(_majorana_kept)
+            if _majorana_len(_majorana_recovered.encode("utf-8")) > {MAX_OUTPUT_BYTES}:
+                raise _majorana_builtins.ValueError("protected_result_too_large")
             _majorana_observation = _majorana_kept
         except _majorana_exception:
             # A key that serializes alone but not together is not a thing json
