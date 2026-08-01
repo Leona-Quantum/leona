@@ -24,6 +24,25 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
     folderOrderFailed: string;
     folderRenameFailed: string;
     folderDeleteFailed: string;
+    /* Studio's Projects (migration 0041). Separate keys from the folder ones
+       above, not shared: one locale key used to render both sections, so
+       renaming it relabelled both — the owner's Folders/Projects distinction
+       only survives while the two have their own words. Every key here is
+       REQUIRED, never optional: `Record<PublicLocale, …>` is the whole of the
+       Japanese-parity gate, and a `?` defeats it silently. */
+    renameProject: (name: string) => string;
+    deleteProject: (name: string) => string;
+    deleteProjectTitle: string;
+    deleteProjectWarning: (name: string) => string;
+    projectMoveUp: (name: string) => string;
+    projectMoveDown: (name: string) => string;
+    projectCreateFailed: string;
+    projectOrderFailed: string;
+    projectRenameFailed: string;
+    projectDeleteFailed: string;
+    projectName: string;
+    createProject: string;
+    emptyProjects: string;
     recentsAbove: string;
     recentsBelow: string;
     recentsPositionLabel: string;
@@ -59,7 +78,6 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
     createChatFolder: string;
     saveFolder: string;
     cancelFolder: string;
-    createArtifactFolder: string;
     emptyProject: string;
     emptyChats: string;
     emptyArtifacts: string;
@@ -413,6 +431,20 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
       folderOrderFailed: "That order could not be saved.",
       folderRenameFailed: "That folder could not be renamed.",
       folderDeleteFailed: "That folder could not be deleted.",
+      renameProject: (name) => `Rename ${name}`,
+      deleteProject: (name) => `Delete ${name}`,
+      deleteProjectTitle: "Delete this project?",
+      deleteProjectWarning: (name) =>
+        `“${name}” will be removed. The artifacts inside it stay in your workspace.`,
+      projectMoveUp: (name) => `Move ${name} up`,
+      projectMoveDown: (name) => `Move ${name} down`,
+      projectCreateFailed: "That project could not be created.",
+      projectOrderFailed: "That order could not be saved.",
+      projectRenameFailed: "That project could not be renamed.",
+      projectDeleteFailed: "That project could not be deleted.",
+      projectName: "Project name",
+      createProject: "Create project",
+      emptyProjects: "Group artifacts by dragging them onto a project",
       recentsAbove: "Show recent chats above folders",
       recentsBelow: "Show recent chats below folders",
       recentsPositionLabel: "Recent chats position",
@@ -448,7 +480,6 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
       createChatFolder: "Create chat folder",
       saveFolder: "Save folder",
       cancelFolder: "Cancel folder creation",
-      createArtifactFolder: "Create artifact project",
       emptyProject: "No items yet",
       emptyChats: "Chats without a project appear here",
       emptyArtifacts: "Artifacts without a project appear here",
@@ -849,6 +880,20 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
       folderOrderFailed: "並び順を保存できませんでした。",
       folderRenameFailed: "フォルダの名前を変更できませんでした。",
       folderDeleteFailed: "フォルダを削除できませんでした。",
+      renameProject: (name) => `${name}の名前を変更`,
+      deleteProject: (name) => `${name}を削除`,
+      deleteProjectTitle: "このプロジェクトを削除しますか",
+      deleteProjectWarning: (name) =>
+        `「${name}」を削除します。中の回路・実行記録はワークスペースに残ります。`,
+      projectMoveUp: (name) => `${name}を上へ`,
+      projectMoveDown: (name) => `${name}を下へ`,
+      projectCreateFailed: "プロジェクトを作成できませんでした。",
+      projectOrderFailed: "並び順を保存できませんでした。",
+      projectRenameFailed: "プロジェクトの名前を変更できませんでした。",
+      projectDeleteFailed: "プロジェクトを削除できませんでした。",
+      projectName: "プロジェクト名",
+      createProject: "プロジェクトを作成",
+      emptyProjects: "回路・実行記録をプロジェクトにドラッグしてまとめられます",
       recentsAbove: "最近のチャットをフォルダの上に表示",
       recentsBelow: "最近のチャットをフォルダの下に表示",
       recentsPositionLabel: "最近のチャットの位置",
@@ -884,7 +929,6 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
       createChatFolder: "チャットフォルダを作成",
       saveFolder: "フォルダを保存",
       cancelFolder: "フォルダ作成をキャンセル",
-      createArtifactFolder: "回路・実行記録のプロジェクトを作成",
       emptyProject: "まだ項目がありません",
       emptyChats: "プロジェクトに属さないチャットがここに表示されます",
       emptyArtifacts: "プロジェクトに属さない回路・実行記録がここに表示されます",

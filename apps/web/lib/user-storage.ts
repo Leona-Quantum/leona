@@ -48,8 +48,17 @@ export const SCOPED_STORAGE_KEYS = [
   "majorana.library.v1",
   "majorana.deleted-artifacts.v1",
   "majorana.library-stars.v1",
+  // The browser-era Studio grouping. Kept in this list although nothing writes
+  // it any more (migration 0041 moved projects onto the workspace): a browser
+  // whose data predates account scoping needs these moved under the signing-in
+  // account BEFORE `hydrateArtifactProjects` looks for them, or adoption finds
+  // nothing on exactly the machine that had the projects.
   "majorana.artifact-folders.v1",
   "majorana.artifact-folder-assignments.v1",
+  "majorana.artifact-projects.v1",
+  // Per-account, not per-device — the same reasoning as the chat-folder flag
+  // above. On a second device adoption has not run and must be allowed to.
+  "majorana.artifact-projects-adopted.v1",
   "majorana.studio-circuits.v2",
   "majorana.studio-simulations.v1",
   "majorana.workspace-pins.v1",

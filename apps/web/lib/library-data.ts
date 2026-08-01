@@ -40,6 +40,11 @@ export interface LibraryArtifact {
   // What the program measured, stored on the version so a reopened artifact shows
   // numbers and not only a verdict. Absent on artifacts saved before 2026-07-26.
   measuredResult?: MeasuredResult | null;
+  // The Studio project this artifact is filed under (migration 0041), or absent
+  // for the ungrouped list. Before 0041 the assignment lived in its own
+  // localStorage map, which is why it did not survive a second device; the
+  // server now carries it on the artifact and this mirrors that answer.
+  projectId?: string;
 }
 
 const STORAGE_KEY = "majorana.library.v1";
@@ -270,6 +275,44 @@ export function restoreArtifact(id: string): LibraryArtifact[] {
   );
 }
 
+/**
+ * File one artifact under a project in the local mirror, or take it out.
+ *
+ * Optimistic: the sidebar groups from `artifact.projectId`, and waiting for the
+ * PATCH to land before moving the row would make a drag look like it did
+ * nothing. The server's answer replaces this on the next refresh either way.
+ */
+export function setArtifactProjectLocally(id: string, projectId?: string): LibraryArtifact[] {
+  return persist(
+    loadLibraryArtifacts({ includeArchived: true }).map((artifact) => {
+      if (artifact.id !== id) return artifact;
+      const next = { ...artifact };
+      if (projectId) next.projectId = projectId;
+      else delete next.projectId;
+      return next;
+    }),
+  );
+}
+
+/**
+ * Unfile every artifact that pointed at a deleted project.
+ *
+ * Not cosmetic: the sidebar renders the project sections from the project list
+ * and the ungrouped section from `!artifact.projectId`. An artifact still
+ * pointing at a project that no longer exists appears in neither — present in
+ * the workspace and on no screen.
+ */
+export function clearArtifactProjectLocally(projectId: string): LibraryArtifact[] {
+  return persist(
+    loadLibraryArtifacts({ includeArchived: true }).map((artifact) => {
+      if (artifact.projectId !== projectId) return artifact;
+      const next = { ...artifact };
+      delete next.projectId;
+      return next;
+    }),
+  );
+}
+
 /** Soft-delete server-side. Resolves when the row is really gone (or was never there). */
 async function deleteArtifactRemote(id: string): Promise<void> {
   const response = await fetch(`/api/artifacts/${encodeURIComponent(id)}`, { method: "DELETE" });
@@ -460,6 +503,11 @@ export function artifactFromResource(value: unknown): LibraryArtifact[] {
     checks: existing?.checks,
     criticSummary: existing?.criticSummary,
     verificationSummary,
+    // Read from the resource with NO fallback to `existing`, unlike the
+    // presentation fields above. The server owns the filing; falling back to the
+    // mirror would make "take this artifact out of its project" impossible to
+    // observe, because the absent field would keep resolving to the stale one.
+    projectId: typeof artifact.project_id === "string" ? artifact.project_id : undefined,
     source: existing?.source ?? (isPublicReference ? "public" : "run"),
   }];
 }
