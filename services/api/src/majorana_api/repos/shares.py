@@ -1119,9 +1119,7 @@ async def contribute_artifact(
         # project cap does not. The workspace lock is always the last one taken;
         # see `artifacts.reserve_artifact_slot` for why that ordering matters.
         try:
-            await artifacts_repo.reserve_artifact_slot(
-                session, access.owner_workspace_id, workspace_artifact_limit
-            )
+            await artifacts_repo.reserve_artifact_slot(elevated, session, workspace_artifact_limit)
         except artifacts_repo.ArtifactCapReached as full:
             raise ShareError(
                 f"the workspace that owns this project is at its {full.limit}-"

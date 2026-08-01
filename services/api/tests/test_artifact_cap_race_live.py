@@ -139,10 +139,10 @@ async def test_the_last_slot_cannot_be_filled_twice_by_two_connections():
                 await session.rollback()
                 b_outcome.append(full)
 
-    try:
-        a_task = asyncio.create_task(caller_a())
-        b_task = asyncio.create_task(caller_b())
+    a_task = asyncio.create_task(caller_a())
+    b_task = asyncio.create_task(caller_b())
 
+    try:
         # B must still be waiting on A's lock. Without it, B reads the same
         # pre-cap count A read and the cap is spent twice.
         await a_has_the_slot.wait()
@@ -165,5 +165,14 @@ async def test_the_last_slot_cannot_be_filled_twice_by_two_connections():
             f"the workspace holds {kept} kept artifacts against a cap of {FREE_ARTIFACT_CAP}"
         )
     finally:
+        # Cancelled before teardown, not merely awaited. If an assertion above
+        # fails, `caller_a` is still asleep INSIDE its transaction holding the
+        # workspace's FOR UPDATE lock — and `delete_committed_tenants` deletes
+        # that very workspace, so it would block on the lock its own test is
+        # holding and the suite would hang instead of reporting the failure.
+        for task in (a_task, b_task):
+            if not task.done():
+                task.cancel()
+        await asyncio.gather(a_task, b_task, return_exceptions=True)
         await delete_committed_tenants(factory, [workspace.id], [user.id])
         await engine.dispose()

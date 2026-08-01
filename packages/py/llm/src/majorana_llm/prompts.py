@@ -501,7 +501,7 @@ Return exactly one object satisfying the supplied intent_alignment schema."""
 
 # The paragraph below about hypothetical framing was added because the prompt
 # without it did not hold. Measured 2026-08-01 on deepseek-v4-pro, four framings
-# of "show me the output" x three samples: **5 of 12 replies fabricated a result
+# of "show me the output" x three samples: **4 of 12 replies fabricated a result
 # block** — one of them an "Execution complete" banner, a counts dict, and an
 # invitation to reopen an artifact that does not exist. With the paragraph, 0 of
 # 12, and the control ("what distribution should a Bell state produce and why")

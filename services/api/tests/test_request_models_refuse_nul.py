@@ -18,6 +18,7 @@ Two halves, and the second is the one that lasts:
 import importlib
 import inspect
 import pathlib
+from typing import Any
 
 import pytest
 from pydantic import BaseModel, ValidationError
@@ -134,3 +135,33 @@ def test_the_helper_says_no_to_things_that_are_not_text():
     assert not _has_nul(7)
     assert not _has_nul({"a": [1, 2, {"b": "fine"}]})
     assert _has_nul(["fine", ("also fine", "bad\x00")])
+
+
+def test_a_deeply_nested_body_does_not_recurse_the_guard_into_a_500():
+    """The guard must not be the thing that 500s.
+
+    A few kilobytes of nested arrays parses fine and, walked recursively, goes
+    past Python's recursion limit inside a validator — which is a 500 on the
+    exact payload shape this module exists to refuse. Depth here is well past
+    the default limit of 1000.
+    """
+    deep: Any = "bottom"
+    for _ in range(5000):
+        deep = [deep]
+    assert _has_nul(deep) is False
+    assert _Body(label="fine", payload={"deep": deep}).label == "fine"
+
+    poisoned: Any = "bad\x00"
+    for _ in range(5000):
+        poisoned = [poisoned]
+    assert _has_nul(poisoned) is True
+    with pytest.raises(ValidationError):
+        _Body(label="fine", payload={"deep": poisoned})
+
+
+def test_a_wide_and_deep_mapping_is_walked_too():
+    """Dicts nest as readily as lists, and their KEYS are walked as well."""
+    nested: Any = {"leaf": "bad\x00"}
+    for index in range(2000):
+        nested = {f"level{index}": nested}
+    assert _has_nul(nested) is True

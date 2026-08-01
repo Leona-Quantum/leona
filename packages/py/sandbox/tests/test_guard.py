@@ -106,3 +106,50 @@ def test_matplotlib_may_still_write_its_own_output():
     """
     code = "import matplotlib.pyplot as plt\nplt.plot([1,2])\nplt.savefig('/tmp/a.png')\n"
     assert check_python_code(code).ok, check_python_code(code).violations
+
+
+@pytest.mark.parametrize(
+    "code",
+    [
+        "import io as i\nf = i.open('/etc/passwd')",
+        "from io import open\nf = open('/etc/passwd')",
+        "from io import open as read\nf = read('/etc/passwd')",
+        "import numpy as n\nn.load('/tmp/x.npy')",
+        "from numpy import load\nload('/tmp/x.npy')",
+        "from numpy import load as grab\ngrab('/tmp/x.npy')",
+        "from numpy import fromfile, zeros\nfromfile('/etc/passwd')",
+    ],
+)
+def test_a_rename_does_not_get_past_the_denial(code):
+    """Substring checks see the spelling people write, not the one they rename to.
+
+    `import numpy as np` is how every file in this repository imports numpy, so
+    the aliased form is not an exotic evasion — it is the ordinary style. Each
+    line here reached a denied function cleanly before `_aliased_violations`.
+    """
+    result = check_python_code(code)
+    assert not result.ok, code
+
+
+@pytest.mark.parametrize(
+    "code",
+    [
+        "class Cost:\n    def eval(self, x):\n        return x\n",
+        "class Cost:\n    def  eval(self, x):\n        return x\n",
+        "def open(path):\n    return path\n",
+    ],
+)
+def test_a_definition_with_any_spacing_is_not_a_call(code):
+    """`(?<!def\\s)` is fixed-width, so it exempted one space and not two."""
+    assert check_python_code(code).ok, check_python_code(code).violations
+
+
+def test_the_alias_scan_leaves_ordinary_numpy_alone():
+    """The negative control. Denying `np.` wholesale would break every circuit."""
+    code = (
+        "import numpy as np\n"
+        "state = np.zeros(4)\n"
+        "state[0] = 1.0\n"
+        "print(np.linalg.norm(state), np.random.default_rng(1234).uniform())\n"
+    )
+    assert check_python_code(code).ok, check_python_code(code).violations

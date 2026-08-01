@@ -75,9 +75,9 @@ async def _provision(session, tag: str, *, plan: str = TEAM_PLAN):
     test asserting 403 on its fixture instead of on its subject.
 
     The plan is set on the row rather than through an allowlist because that is
-    the durable signal — `resolve_tier` reads `users.plan` before it reads any
-    environment variable, so this fixture does not depend on how the process was
-    configured.
+    the durable signal — `tiers.tier_of` resolves `users.plan` without consulting
+    any environment variable, so this fixture does not depend on how the process
+    was configured.
     """
     user, workspace = await system.get_or_provision_user(
         session,

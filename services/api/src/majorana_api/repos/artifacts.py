@@ -32,24 +32,27 @@ class ArtifactCapReached(RepoError):
         self.limit = limit
 
 
-async def count_kept(session: AsyncSession, workspace_id: uuid.UUID) -> int:
-    """Filed artifacts in a workspace — the number every plan cap is compared to.
+async def count_kept(scope: Scope, session: AsyncSession) -> int:
+    """Filed artifacts in this scope's workspace — what every plan cap compares to.
 
     One definition of "filed", in one place. The predicate (not deleted AND
     `kept_at` set) was written out at three call sites before this existed, and
     a cap comparing a differently-filtered count to the same limit is a cap that
     is wrong in one direction without anything failing.
 
-    Takes a raw `workspace_id` rather than a `Scope` on purpose: `shares.py`
-    counts the OWNING workspace of a shared project, which is by definition not
-    the caller's scope. The workspace-scoping invariant is satisfied by the
-    callers, each of which has already proven its right to the id it passes.
+    `Scope` first, and the workspace comes off it, like every other function in
+    this layer. An earlier draft took a bare `workspace_id` so that `shares.py`
+    could count the OWNING workspace of a shared project — which is a real need
+    and the wrong answer to it: `shares._elevated` already builds a `Scope`
+    pointing at exactly that workspace, and it is what should be passed. A
+    repository function with a raw id parameter is one call site away from being
+    handed an id nothing checked.
     """
     return int(
         (
             await session.execute(
                 select(func.count(Artifact.id)).where(
-                    Artifact.workspace_id == workspace_id,
+                    Artifact.workspace_id == scope.workspace_id,
                     Artifact.deleted_at.is_(None),
                     Artifact.kept_at.is_not(None),
                 )
@@ -58,9 +61,7 @@ async def count_kept(session: AsyncSession, workspace_id: uuid.UUID) -> int:
     )
 
 
-async def reserve_artifact_slot(
-    session: AsyncSession, workspace_id: uuid.UUID, limit: int | None
-) -> None:
+async def reserve_artifact_slot(scope: Scope, session: AsyncSession, limit: int | None) -> None:
     """Take the workspace's cap lock and refuse if it is already full.
 
     ## Why a lock, and why on the workspace row
@@ -100,9 +101,9 @@ async def reserve_artifact_slot(
     if limit is None:
         return
     await session.execute(
-        select(Workspace.id).where(Workspace.id == workspace_id).with_for_update()
+        select(Workspace.id).where(Workspace.id == scope.workspace_id).with_for_update()
     )
-    held = await count_kept(session, workspace_id)
+    held = await count_kept(scope, session)
     if held >= limit:
         raise ArtifactCapReached(held, limit)
 
@@ -252,7 +253,7 @@ async def keep_artifact(
     require_write(scope)
     artifact = await get_artifact(scope, session, artifact_id, for_update=True)
     if artifact.kept_at is None:
-        await reserve_artifact_slot(session, scope.workspace_id, workspace_artifact_limit)
+        await reserve_artifact_slot(scope, session, workspace_artifact_limit)
         artifact.kept_at = dt.datetime.now(dt.UTC)
         await session.flush()
     return artifact

@@ -52,16 +52,32 @@ NUL_REFUSAL = "text may not contain a NUL (\\u0000) character"
 def _has_nul(value: Any) -> bool:
     """Whether a NUL appears anywhere in a parsed JSON value.
 
-    Recurses through dicts and sequences, and checks dict KEYS as well as
-    values — a JSON object may be keyed by any string, and those keys reach the
-    same JSONB columns the values do.
+    Walks dicts and sequences, and checks dict KEYS as well as values — a JSON
+    object may be keyed by any string, and those keys reach the same JSONB
+    columns the values do.
+
+    **Iterative, with an explicit stack.** The recursive version was one line
+    shorter and could produce the exact failure this module exists to prevent:
+    a small body of deeply nested arrays (`[[[[...]]]]`, a few kilobytes) parses
+    fine and then walks past Python's recursion limit, and a `RecursionError`
+    inside a validator is a 500. A guard that 500s on a payload shape is not a
+    guard, it is a second way in.
+
+    No depth cap is needed once the walk is iterative: the work is bounded by
+    the size of the body, which the ASGI layer already bounds.
     """
-    if isinstance(value, str):
-        return "\x00" in value
-    if isinstance(value, dict):
-        return any(_has_nul(key) or _has_nul(item) for key, item in value.items())
-    if isinstance(value, (list, tuple, set)):
-        return any(_has_nul(item) for item in value)
+    stack: list[Any] = [value]
+    while stack:
+        current = stack.pop()
+        if isinstance(current, str):
+            if "\x00" in current:
+                return True
+        elif isinstance(current, dict):
+            for key, item in current.items():
+                stack.append(key)
+                stack.append(item)
+        elif isinstance(current, (list, tuple, set)):
+            stack.extend(current)
     return False
 
 

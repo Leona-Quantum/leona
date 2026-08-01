@@ -1599,7 +1599,10 @@ export const ACCOUNT_COPY: Record<PublicLocale, {
     spendTokens: (tokens, calls) => `${tokens} トークン・${calls} 回の呼び出し`,
     spendUnattributed: "モデル不明",
     spendNotBilled: "参考表示です。トークンは課金対象ではなく、いずれの上限にも数えられません。",
-    tierNames: { preview: "プレビュー", free: "Free", team: "Team", developer: "Developer" },
+    // Japanese throughout, matching `sidebar.tierLabel` above. These two tables
+    // name the same four tiers to the same reader, and they disagreed before —
+    // フリー in the sidebar, "Free" in account settings.
+    tierNames: { preview: "プレビュー", free: "フリー", team: "チーム", developer: "開発者" },
     usageEnforcement: "これらの上限は実行の送信時に適用されます。ブラウザーでのシミュレーションはお使いの端末上で常に利用できます。",
     billingTitle: "請求とクレジット",
     billingHelp: "将来予定している Leona Run と量子コンピュータ実行の料金体系です。現在、支払いは発生しません。",
