@@ -245,3 +245,57 @@ async def test_a_name_that_is_only_whitespace_is_refused(client):
     refused = await made.post("/v1/workspace/projects", json={"name": "   "})
     assert refused.status_code == 422
     assert (await made.get("/v1/workspace/projects")).json() == []
+
+
+async def test_a_refused_combined_patch_leaves_the_name_alone(client):
+    """The rename must not survive a refusal on the limit.
+
+    `update_workspace_project` applies the rename and then the limit, and the two
+    need different roles — write for the rename, ADMIN for the limit. A MEMBER
+    therefore gets the rename applied and then an `AuthzError`, which reads like a
+    partial write.
+
+    It is not one, and this MEASURES that rather than reasoning about FastAPI's
+    dependency teardown: `get_session` commits only after the handler returns, so
+    an exception propagating out of it skips the commit and the session rolls back
+    on close. Asserted over real HTTP because that ordering is a property of the
+    framework rather than of this route — the kind that changes under an upgrade
+    with nobody editing this file.
+    """
+    made, factory, scope = client
+    project = (await made.post("/v1/workspace/projects", json={"name": "keep this name"})).json()
+
+    app = create_app(SETTINGS)
+    app.state.engine = made._transport.app.state.engine
+    app.state.session_factory = factory
+    member = Scope(user_id=scope.user_id, workspace_id=scope.workspace_id, role=Role.MEMBER)
+    app.dependency_overrides[auth_deps.get_scope] = lambda: member
+    app.dependency_overrides[auth_deps.get_identity] = made._transport.app.dependency_overrides[
+        auth_deps.get_identity
+    ]
+
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://test"
+    ) as as_member:
+        refused = await as_member.patch(
+            f"/v1/workspace/projects/{project['id']}",
+            json={"name": "renamed by a member", "max_artifacts": 5},
+        )
+        # Positive control, and it is load-bearing: MEMBER is inside the write
+        # allowlist, so a rename-ONLY patch must succeed. Without this the 403
+        # could be the RENAME being refused rather than the limit, and "the name
+        # did not change" would be trivially true.
+        rename_only = await as_member.patch(
+            f"/v1/workspace/projects/{project['id']}", json={"name": "renamed by a member"}
+        )
+
+    assert refused.status_code == 403, refused.text
+    assert rename_only.status_code == 200, rename_only.text
+
+    # Put the name back, so the assertion below is about the REFUSED patch only.
+    await made.patch(f"/v1/workspace/projects/{project['id']}", json={"name": "keep this name"})
+
+    after = (await made.get("/v1/workspace/projects")).json()
+    row = next(item for item in after if item["id"] == project["id"])
+    assert row["name"] == "keep this name", "the rename must not survive the refusal"
+    assert row["max_artifacts"] == shares_repo.DEFAULT_PROJECT_ARTIFACT_LIMIT

@@ -59,7 +59,12 @@ class SandboxCandidateExecutor:
         lower_circuit = circuit_expected and program.role is ProgramRole.CIRCUIT
         spec = ExecutionSpec(
             code=program.normalized_source,
-            timeout_s=min(plan.expected_runtime_sec + 30, 120),
+            # A lowered circuit does strictly more work than it used to: the
+            # native sampler runs 2048 shots on top of the circuit's own
+            # execution. Without headroom a slow-but-passing circuit can cross the
+            # deadline and come back TIMEOUT, which is a worse answer than the
+            # contract failure it replaced. Still bounded by MAX_TIMEOUT_S.
+            timeout_s=min(plan.expected_runtime_sec + (60 if lower_circuit else 30), 120),
             qubits_estimate=plan.qubits_estimate,
             trusted_setup=program.trusted_setup(
                 circuit_expected=circuit_expected,

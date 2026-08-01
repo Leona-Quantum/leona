@@ -520,6 +520,34 @@ def measured_result_summary(result: dict[str, Any]) -> dict[str, Any] | None:
     return summary or None
 
 
+def _return_contract_check(result: dict[str, Any], observation: dict[str, Any]) -> dict[str, Any]:
+    """Did the SOURCE return what it said it would?
+
+    The third writer of a claim whose other two were already fixed, and it was
+    missed. This list is persisted in `feedback["basic_checks"]` and is sent to
+    the reviewer model, so a derived result made one run tell the reviewer the
+    return contract passed while telling the artifact there was no return to
+    contract with.
+
+    `n/a`, not `fail`: nothing went wrong. A circuit reported nothing because a
+    circuit reports nothing.
+    """
+    if result_was_derived(observation):
+        return {
+            "method": "return_contract",
+            "result": "n/a",
+            "details": {
+                "result_origin": "derived_from_circuit",
+                "result_keys": sorted(result),
+            },
+        }
+    return {
+        "method": "return_contract",
+        "result": "pass",
+        "details": {"result_keys": sorted(result)},
+    }
+
+
 def simple_pipeline_verification_summary(
     reference_methods: Sequence[VerificationMethod] = (),
     semantic_review_decision: SemanticReviewDecision = SemanticReviewDecision.READY,
@@ -1712,6 +1740,24 @@ class ProductionSimplePipelinePorts:
                     if not diagnostics
                     else "generated source did not satisfy the basic execution contract"
                 ),
+                # RESIDUAL, written down rather than silently left. A
+                # user-supplied circuit that produced NO trusted evidence —
+                # unmeasured AND past the statevector ceiling, or an SDK that
+                # would not import — still routes here, and the repair loop still
+                # hands it to a model. That is unchanged from before this feature
+                # rather than a regression, and it is the narrow case: any
+                # measured circuit, and any circuit within the statevector limit,
+                # now derives a result and passes.
+                #
+                # It is not closed here because there is nowhere correct to route
+                # it. `BasicContractResult` requires a failure to name PLANNING or
+                # GENERATION, and PLANNING does not preserve the user's source
+                # either: `candidate` is not reset across a replan, so the next
+                # `generate` sees a previous candidate and takes the model branch
+                # instead of `_initial_source`. Closing it means relaxing that
+                # invariant or resetting the candidate on replan — both changes to
+                # the shared pipeline contract, and neither belongs in a change
+                # that has already grown this far.
                 retry_target=(
                     SimpleRetryTarget.NONE if not diagnostics else SimpleRetryTarget.GENERATION
                 ),
@@ -1760,11 +1806,7 @@ class ProductionSimplePipelinePorts:
                 "result": "pass",
                 "details": {"source_fingerprint": candidate.source_fingerprint},
             },
-            {
-                "method": "return_contract",
-                "result": "pass",
-                "details": {"result_keys": sorted(execution.result)},
-            },
+            _return_contract_check(execution.result, execution.observation),
             _success_criteria_check(plan.plan, execution),
         ]
         reference_checks = _reference_checks(plan.plan, execution)

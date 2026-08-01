@@ -393,3 +393,32 @@ async def test_a_circuit_with_neither_a_result_nor_a_derivation_still_fails():
     )
     assert not contract.passed
     assert any("no result to report" in d for d in contract.diagnostics)
+
+
+def test_all_three_writers_of_the_return_contract_claim_agree():
+    """Three places state whether the source returned its result. Two were fixed.
+
+    The verification summary drops `return_contract` for a derived result, the
+    run's summary takes the same flag — and `fast_checks` said it PASSED, with
+    the derived keys as its evidence. That list is persisted in
+    `feedback["basic_checks"]` and sent to the reviewer model, so one circuit run
+    told the reviewer the return contract passed and told the artifact there was
+    no return to contract with.
+
+    `n/a` rather than `fail`: nothing went wrong, there was nothing to contract.
+    """
+    from majorana_worker.simple_ports import _return_contract_check
+
+    derived = _return_contract_check(
+        {"counts": {"00": 1}}, {"result_origin": "derived_from_circuit"}
+    )
+    assert derived["result"] == "n/a"
+    assert derived["details"]["result_origin"] == "derived_from_circuit"
+
+    returned = _return_contract_check({"counts": {"00": 1}}, {})
+    assert returned["result"] == "pass"
+    assert "result_origin" not in returned["details"]
+
+    # And it agrees with the summary, which is the whole point of extracting it.
+    summary = simple_pipeline_verification_summary(result_derived=True)
+    assert VerificationMethod.RETURN_CONTRACT.value not in {c["method"] for c in summary["checks"]}
