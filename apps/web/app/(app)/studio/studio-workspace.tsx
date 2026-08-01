@@ -5,6 +5,20 @@ import { SyntaxHighlightedCode, VerificationSummaryPanel, verificationHeadline }
 import { CopyIcon, SearchIcon } from "../../../components/icons";
 import { artifactFromResource, frameworkVariantsFromRemote, getLibraryArtifact, loadLibraryArtifacts, statusFromVerificationSummary, type LibraryArtifact } from "../../../lib/library-data";
 import { fetchArtifactPages } from "../../../lib/artifact-page";
+import {
+  ARTIFACT_PROJECTS_EVENT,
+  loadArtifactProjects,
+  type ArtifactProject,
+} from "../../../lib/artifact-projects";
+import {
+  ALL_PROJECTS,
+  discoveryTabs,
+  filterDiscoveryArtifacts,
+  projectOf,
+  sameFilter,
+  surviveProjectChange,
+  type ProjectFilter,
+} from "../../../lib/studio-discovery";
 import type { PublicLocale } from "../../../lib/public-locale";
 import { BUILDER_GATES, builderStepLabel, createBuilderStepId, generateBuilderCode, ROTATION_GATES, TWO_QUBIT_GATES, type BuilderCodeVariants, type BuilderGate, type BuilderStep, type CustomGateDefinition } from "../../../lib/studio-builder";
 import { loadStoredCircuit, saveStoredCircuit } from "../../../lib/studio-circuits";
@@ -85,6 +99,13 @@ export function StudioWorkspace({ artifactId, newDraft = false, locale = "en", l
   const [artifact, setArtifact] = useState<LibraryArtifact | null>(null);
   const [showEditor, setShowEditor] = useState(Boolean(artifactId || newDraft));
   const [query, setQuery] = useState("");
+  // The workspace's projects, read from the mirror the sidebar hydrates rather
+  // than fetched again here. `hydrateArtifactProjects` ends in
+  // `replaceArtifactProjects`, which emits ARTIFACT_PROJECTS_EVENT — this page
+  // listens for that and never calls hydrate itself, which is what keeps the
+  // two surfaces from taking turns refreshing each other forever.
+  const [artifactProjects, setArtifactProjects] = useState<ArtifactProject[]>([]);
+  const [projectFilter, setProjectFilter] = useState<ProjectFilter>(ALL_PROJECTS);
   const [title, setTitle] = useState("Untitled circuit");
   const [framework, setFramework] = useState<StudioFramework>("qiskit");
   const [drafts, setDrafts] = useState<BuilderCodeVariants>(() => ({ ...STARTER_CODES }));
@@ -131,6 +152,30 @@ export function StudioWorkspace({ artifactId, newDraft = false, locale = "en", l
   const [canvasCircuit, setCanvasCircuit] = useState<{ qubitCount: number; steps: BuilderStep[]; customGates: CustomGateDefinition[] }>(
     () => ({ qubitCount: STARTER_SEED.qubitCount, steps: STARTER_SEED.steps, customGates: STARTER_SEED.customGates }),
   );
+
+  // The project mirror, after mount and on every change the sidebar makes.
+  //
+  // Its own effect with no dependencies, because it must not be torn down and
+  // rebuilt when the route's artifact changes: creating a project in the rail
+  // while a circuit is open has to reach this list, and a listener that
+  // remounted on `artifactId` would still work but would re-read storage for
+  // no reason on every navigation.
+  useEffect(() => {
+    const read = () => {
+      const projects = loadArtifactProjects();
+      setArtifactProjects(projects);
+      // A project deleted from the rail while its tab is selected would
+      // otherwise pin this pane to an id nothing matches — an empty list under
+      // a tab that is no longer in the row, over circuits that still exist.
+      setProjectFilter((current) => {
+        const survived = surviveProjectChange(current, projects);
+        return sameFilter(survived, current) ? current : survived;
+      });
+    };
+    read();
+    window.addEventListener(ARTIFACT_PROJECTS_EVENT, read);
+    return () => window.removeEventListener(ARTIFACT_PROJECTS_EVENT, read);
+  }, []);
 
   // Local storage is read only after mount so the server and client render
   // the same initial markup; the artifact then hydrates through applyArtifact.
@@ -349,10 +394,12 @@ export function StudioWorkspace({ artifactId, newDraft = false, locale = "en", l
     setMessage(copy.rebuiltFromCode);
   }
 
-  const filteredArtifacts = artifacts.filter((item) => {
-    const normalized = query.trim().toLowerCase();
-    return !normalized || [item.title, item.family, item.framework, item.description, ...item.tags].join(" ").toLowerCase().includes(normalized);
+  const filteredArtifacts = filterDiscoveryArtifacts(artifacts, {
+    query,
+    filter: projectFilter,
+    projects: artifactProjects,
   });
+  const projectTabs = discoveryTabs(artifacts, artifactProjects);
 
   async function selectArtifact(id: string) {
     setMessage(null);
@@ -684,17 +731,62 @@ export function StudioWorkspace({ artifactId, newDraft = false, locale = "en", l
               <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={copy.searchPlaceholder} />
               <StudioDots />
             </label>
+            {/* No tabs at all until the workspace has a project — a lone "All"
+                is a control that does nothing, and this pane looked exactly as
+                it does now for everybody who has never made one. */}
+            {projectTabs.length ? (
+              <div className="mj-studio-projects" role="group" aria-label={copy.projectFilterLabel}>
+                {projectTabs.map((tab) => {
+                  const label =
+                    tab.filter.kind === "all"
+                      ? copy.projectAll
+                      : tab.filter.kind === "ungrouped"
+                        ? copy.projectUngrouped
+                        : tab.name;
+                  const active = sameFilter(tab.filter, projectFilter);
+                  return (
+                    <button
+                      key={`${tab.filter.kind}:${tab.filter.kind === "project" ? tab.filter.id : ""}`}
+                      type="button"
+                      className={`mj-studio-project-tab${active ? " is-active" : ""}`}
+                      aria-pressed={active}
+                      onClick={() => setProjectFilter(tab.filter)}
+                    >
+                      {label}
+                      <span className="mj-studio-project-count">{tab.count}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            ) : null}
             {artifactSyncError ? <p className="mj-studio-empty" role="alert">{copy.remoteSyncUnavailable}</p> : null}
             <div className="mj-studio-discovery-list">
-              {filteredArtifacts.length ? filteredArtifacts.map((item) => (
+              {filteredArtifacts.length ? filteredArtifacts.map((item) => {
+                // Named on the card only under "All". Repeating one project's
+                // name down a list already filtered to it is noise, and the
+                // tab above the list has just said it.
+                const project = projectFilter.kind === "all" ? projectOf(item, artifactProjects) : null;
+                return (
                 <article className="mj-studio-discovery-card" key={item.id}>
                   <button type="button" onClick={() => void selectArtifact(item.id)}>
                     <span className="mj-studio-artifact-mark" aria-hidden="true">{item.status === "verified" ? "✓" : "–"}</span><span className="sr-only">{item.status.replaceAll("_", " ")}</span>
-                    <span><strong>{item.title}</strong><small>{item.framework} · {item.family} · {formatDiscoveryDate(item.updatedAt, locale)}</small><em>{item.description}</em></span>
+                    <span><strong>{item.title}</strong><small>{item.framework} · {item.family} · {formatDiscoveryDate(item.updatedAt, locale)}{project ? <> · <span className="mj-studio-card-project">{project.name}</span></> : null}</small><em>{item.description}</em></span>
                   </button>
                   <a className="mj-secondary-button" href={`/run?artifact=${encodeURIComponent(item.id)}`}>{copy.openRun}</a>
                 </article>
-              )) : <p className="mj-studio-empty">{artifacts.length ? copy.noSearchResults : copy.empty}</p>}
+                );
+              }) : (
+                <p className="mj-studio-empty">
+                  {/* Three different nothings. An empty project told the reader
+                      "no results match your search" while the search box was
+                      blank, which reads as the filter being broken. */}
+                  {!artifacts.length
+                    ? copy.empty
+                    : query.trim()
+                      ? copy.noSearchResults
+                      : copy.projectEmpty}
+                </p>
+              )}
             </div>
           </section>
         )}
