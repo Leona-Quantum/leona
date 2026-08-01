@@ -130,10 +130,43 @@ def compose_execution(spec: ExecutionSpec) -> str:
                 "evidence_error": "protected_result_too_large",
             }}
     except _majorana_exception:
-        _majorana_observation = {{
-            "source_fingerprint": {spec.source_fingerprint!r},
-            "evidence_error": "protected_result_not_json_serializable",
-        }}
+        # One unserializable VALUE must not cost every other one.
+        #
+        # This used to replace the whole observation with an error, and the cost of
+        # that was found rather than reasoned about: `qml.to_openqasm` returns a
+        # transformed QNode, so `interchange_qasm` held a function, so every
+        # PennyLane run in the product lost its resource metrics, native
+        # statevector, sampled counts and optimization record — all of them
+        # serializable, all discarded for a neighbour. The observation is provider-
+        # owned evidence collected by several independent blocks; they fail
+        # independently and must survive independently.
+        #
+        # The names of the dropped keys are kept, so a gap is legible as a gap
+        # rather than looking like a block that never ran.
+        _majorana_dropped = []
+        _majorana_kept = {{}}
+        for _majorana_key, _majorana_value in _majorana_builtins.sorted(
+            _majorana_observation.items(), key=lambda _pair: _majorana_str(_pair[0])
+        ):
+            try:
+                _majorana_json_dumps({{_majorana_key: _majorana_value}})
+            except _majorana_exception:
+                _majorana_dropped.append(_majorana_str(_majorana_key))
+                continue
+            _majorana_kept[_majorana_key] = _majorana_value
+        _majorana_kept["evidence_error"] = "protected_result_not_json_serializable"
+        _majorana_kept["evidence_dropped_keys"] = _majorana_dropped
+        _majorana_kept["source_fingerprint"] = {spec.source_fingerprint!r}
+        try:
+            _majorana_json_dumps(_majorana_kept)
+            _majorana_observation = _majorana_kept
+        except _majorana_exception:
+            # A key that serializes alone but not together is not a thing json
+            # does; if it somehow happens, fall back to what this always did.
+            _majorana_observation = {{
+                "source_fingerprint": {spec.source_fingerprint!r},
+                "evidence_error": "protected_result_not_json_serializable",
+            }}
     with _majorana_open(
         {spec.protected_result_path!r}, "w", encoding="utf-8"
     ) as _majorana_result_file:

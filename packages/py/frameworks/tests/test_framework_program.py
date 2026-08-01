@@ -1,25 +1,69 @@
 import builtins
+import re
 
 import pytest
 
 from majorana_contracts.enums import Framework
 from majorana_frameworks import FrameworkProgram, extract_interchange_qasm
+from majorana_sandbox.spec import ExecutionSpec, compose_execution
 
 
 def _observer_scope(namespace, observation):
-    return {
+    """The names `compose_execution` binds before generated code runs.
+
+    Derived from the real preamble rather than typed out. A hand-written list
+    drifts, and the drift is silent in the direction that matters: this double
+    omitted `_majorana_builtins`, so an epilogue using it raised NameError HERE
+    while working perfectly in the sandbox — a test failure on correct code, and
+    the reverse (a name this double has and the real preamble does not) would be
+    a passing test for an epilogue that cannot run at all.
+
+    `test_the_observer_scope_matches_the_real_preamble` is the positive control:
+    it fails if this extraction ever finds nothing.
+    """
+    scope = {
         "_majorana_namespace": namespace,
         "_majorana_observation": observation,
-        "_majorana_exception": builtins.Exception,
-        "_majorana_getattr": builtins.getattr,
-        "_majorana_hasattr": builtins.hasattr,
-        "_majorana_int": builtins.int,
-        "_majorana_len": builtins.len,
-        "_majorana_list": builtins.list,
-        "_majorana_str": builtins.str,
-        "_majorana_sum": builtins.sum,
-        "_majorana_type": builtins.type,
+        "_majorana_builtins": builtins,
     }
+    for local, builtin in _preamble_builtin_names():
+        scope[local] = getattr(builtins, builtin)
+    return scope
+
+
+def _preamble_builtin_names() -> set[tuple[str, str]]:
+    """(local, builtin) pairs the real preamble binds.
+
+    Both halves, because they are not always the same word:
+    `_majorana_exception = _majorana_builtins.Exception`. Capturing only the
+    local name and reflecting it back at `builtins` looks for `exception`.
+    """
+    composed = compose_execution(
+        ExecutionSpec(
+            code="pass",
+            trusted_observer="pass",
+            protected_result_path="/tmp/unused.json",
+        )
+    )
+    return set(re.findall(r"(_majorana_\w+) = _majorana_builtins\.(\w+)", composed))
+
+
+def test_the_observer_scope_matches_the_real_preamble():
+    """The positive control for `_observer_scope`'s extraction.
+
+    A regex that matches nothing would silently return an EMPTY scope, and every
+    epilogue test would then fail on the first builtin it touches — or, worse,
+    an epilogue that happened to touch none would pass while proving nothing.
+    """
+    names = _preamble_builtin_names()
+    assert len(names) >= 8, names
+    assert {"len", "str", "type", "getattr"} <= {builtin for _local, builtin in names}
+    assert ("_majorana_exception", "Exception") in names, (
+        "the local name and the builtin are not always the same word"
+    )
+    scope = _observer_scope({}, {})
+    assert scope["_majorana_len"] is builtins.len
+    assert scope["_majorana_builtins"] is builtins
 
 
 def test_fingerprint_is_framework_aware_and_preserves_source_whitespace():

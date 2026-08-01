@@ -194,7 +194,14 @@ class PythonFrameworkAdapter:
         )
 
     def trusted_setup(self, *, circuit_expected: bool, collect_native_evidence: bool = True) -> str:
-        return ""
+        # `_majorana_construct_tape` is referenced by the tape branch of
+        # `trusted_observer`, which is emitted for every framework even though only
+        # PennyLane ever reaches it (Qiskit overrides the whole observer, Cirq takes
+        # the `all_operations` branch). Binding it to None here rather than leaving
+        # it undefined keeps a NameError out of a branch that is otherwise dead —
+        # the failure would surface as `resource_metrics_error` on a framework that
+        # has nothing to do with tapes.
+        return "_majorana_construct_tape = None\n" if circuit_expected else ""
 
     # `measurement_count` counts measured QUBITS, not measurement operations. Qiskit
     # makes those the same number — `qc.measure_all()` emits one instruction per
@@ -234,6 +241,9 @@ class PythonFrameworkAdapter:
             return ""
         optimized = any(name in self.optimization_calls for name in _calls(source))
         optimized_literal = "True" if optimized else "False"
+        _TAPE_IN_BASE_OBSERVER = _pennylane_tape_resolution(
+            "_majorana_tape", "_majorana_final_circuit", "_majorana_getattr", " " * 12
+        )
         return f"""
 _majorana_observation["native_optimization"] = {{"applied": {optimized_literal}}}
 _majorana_final_circuit = _majorana_namespace.get("FINAL_CIRCUIT")
@@ -252,11 +262,7 @@ if _majorana_final_circuit is not None:
             _majorana_qubits = _majorana_len(_majorana_final_circuit.all_qubits())
             _majorana_depth = _majorana_len(_majorana_final_circuit)
         else:
-            _majorana_tape = _majorana_getattr(_majorana_final_circuit, "tape", None)
-            if _majorana_tape is None:
-                _majorana_tape = _majorana_getattr(_majorana_final_circuit, "_tape", None)
-            if _majorana_tape is None:
-                _majorana_tape = _majorana_final_circuit
+{_TAPE_IN_BASE_OBSERVER}
             _majorana_operations = _majorana_list(_majorana_getattr(_majorana_tape, "operations", []))
             _majorana_measurements = [
                 op
@@ -441,6 +447,41 @@ def _majorana_native_evidence(
         _observation["native_sampled_error"] = _type(_exc).__name__
 """
 )
+
+def _pennylane_tape_resolution(target: str, source: str, getattr_name: str, indent: str) -> str:
+    """Generate the block that finds a PennyLane QNode's tape. Three call sites.
+
+    A QNode has NO tape until it has been traced. `qnode.tape` is None in
+    PennyLane 0.45 and `_tape` is not there either, so all three sites fell
+    through to "use the QNode itself" — and a QNode has no `operations` and no
+    `wires`. The consequence was `qubits: 0`, an empty measurement map and a
+    one-amplitude statevector for every PennyLane circuit in the product, plus a
+    ValueError out of the sampler.
+
+    It was invisible because `interchange_qasm` held an unserializable transform
+    in the same dict, so the whole observation was discarded before anyone could
+    read the zeros. Two defects hiding each other, both found by executing an
+    idiomatic `qml.counts()` QNode through the real sandbox.
+
+    `construct_tape(qnode)()` traces it without executing on a device. It is
+    tried BEFORE falling back to the object itself, and the fallback is kept:
+    `FINAL_CIRCUIT` may legitimately be bound to a tape already, in which case
+    the first getattr wins and none of this runs.
+    """
+    return "\n".join(
+        indent + line
+        for line in f"""{target} = {getattr_name}({source}, "tape", None)
+if {target} is None:
+    {target} = {getattr_name}({source}, "_tape", None)
+if {target} is None:
+    try:
+        {target} = _majorana_construct_tape({source})()
+    except _majorana_exception:
+        {target} = None
+if {target} is None:
+    {target} = {source}""".split("\n")
+    )
+
 
 _NATIVE_OBSERVER_CALL = """
 try:
@@ -709,7 +750,15 @@ class CirqAdapter(PythonFrameworkAdapter):
     def trusted_setup(self, *, circuit_expected: bool, collect_native_evidence: bool = True) -> str:
         if not circuit_expected:
             return ""
-        return _CIRQ_NATIVE_SETUP if collect_native_evidence else ""
+        # Prefixed with the base setup rather than replacing it. Cirq INHERITS the
+        # base observer, which carries the tape branch and its reference to
+        # `_majorana_construct_tape`; returning only the native setup left that
+        # name unbound. Cirq never reaches the branch today — it has
+        # `all_operations` — so this is a NameError waiting for a future edit
+        # rather than a live bug, which is exactly the kind that ships.
+        return super().trusted_setup(
+            circuit_expected=circuit_expected, collect_native_evidence=collect_native_evidence
+        ) + (_CIRQ_NATIVE_SETUP if collect_native_evidence else "")
 
     def trusted_observer(
         self,
@@ -776,11 +825,9 @@ def _majorana_native_evidence(
         _observation["native_sampled_error"] = "pennylane unavailable"
         return
     try:
-        _tape = _getattr(_qnode, "tape", None)
-        if _tape is None:
-            _tape = _getattr(_qnode, "_tape", None)
-        if _tape is None:
-            _tape = _qnode
+"""
+    + _pennylane_tape_resolution("_tape", "_qnode", "_getattr", " " * 8)
+    + """
         _operations = _list(_getattr(_tape, "operations", []))
         _tape_wires = _list(_getattr(_tape, "wires", []))
         try:
@@ -874,6 +921,11 @@ try:
     from pennylane import to_openqasm as _majorana_interchange_dumps
 except Exception:
     pass
+_majorana_construct_tape = None
+try:
+    from pennylane.workflow import construct_tape as _majorana_construct_tape
+except Exception:
+    pass
 """ + (_PENNYLANE_NATIVE_SETUP if collect_native_evidence else "")
 
     def trusted_observer(
@@ -900,11 +952,11 @@ except _majorana_exception:
     _majorana_interchange_dumps = None
 if _majorana_final_circuit is not None and _majorana_interchange_dumps is not None:
     try:
-        _majorana_tape = _majorana_getattr(_majorana_final_circuit, "tape", None)
-        if _majorana_tape is None:
-            _majorana_tape = _majorana_getattr(_majorana_final_circuit, "_tape", None)
-        if _majorana_tape is None:
-            _majorana_tape = _majorana_final_circuit
+"""
+            + _pennylane_tape_resolution(
+                "_majorana_tape", "_majorana_final_circuit", "_majorana_getattr", " " * 8
+            )
+            + """
         # A tape orders its wires by FIRST APPEARANCE, and `to_openqasm` maps them to
         # the QASM register POSITIONALLY. So `qml.QFT(wires=[2, 1, 0])` yields
         # `tape.wires == [0, 2, 1]`, and the export silently renames wire 2 to q[1]
@@ -922,11 +974,34 @@ if _majorana_final_circuit is not None and _majorana_interchange_dumps is not No
         except _majorana_exception:
             _majorana_qasm_wires = _majorana_tape_wires
         if _majorana_qasm_wires:
-            _majorana_observation["interchange_qasm"] = _majorana_interchange_dumps(
+            _majorana_interchange_value = _majorana_interchange_dumps(
                 _majorana_tape, wires=_majorana_qasm_wires
             )
         else:
-            _majorana_observation["interchange_qasm"] = _majorana_interchange_dumps(_majorana_tape)
+            _majorana_interchange_value = _majorana_interchange_dumps(_majorana_tape)
+        # `qml.to_openqasm` is a TRANSFORM, not a serializer. Applied to a QNode it
+        # returns a transformed QNode — a function — and the QASM string only
+        # appears when that is called. `qnode.tape` is None in PennyLane 0.45, so
+        # `_majorana_tape` falls through to the QNode itself and this branch is the
+        # one every PennyLane circuit takes.
+        #
+        # Storing the function was not a missing export. `json.dumps` cannot
+        # serialize a function, and `compose_execution` discarded the WHOLE
+        # observation on one bad value — so every PennyLane run lost its resource
+        # metrics, its native statevector, its sampled counts and its interchange
+        # together, and reported `protected_result_not_json_serializable` instead.
+        # Found by executing an idiomatic `qml.counts()` QNode through the real
+        # sandbox and reading the sidecar, not from the diff.
+        if _majorana_builtins.callable(_majorana_interchange_value):
+            _majorana_interchange_value = _majorana_interchange_value()
+        if _majorana_builtins.isinstance(_majorana_interchange_value, _majorana_str):
+            _majorana_observation["interchange_qasm"] = _majorana_interchange_value
+        else:
+            _majorana_observation["interchange_error"] = (
+                "to_openqasm returned "
+                + _majorana_type(_majorana_interchange_value).__name__
+                + ", not a string"
+            )
     except _majorana_exception as _majorana_interchange_exc:
         _majorana_observation["interchange_error"] = _majorana_type(_majorana_interchange_exc).__name__
 """
