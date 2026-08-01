@@ -23,6 +23,7 @@ everything is not a test of the refusal.
 
 import asyncio
 import datetime as dt
+import hashlib
 import uuid
 
 import pytest
@@ -698,3 +699,48 @@ async def test_a_single_account_is_still_found_case_insensitively(db, pair):
     )
     assert grantee.id == bob.user.id
     assert share.grantee_user_id == bob.user.id
+
+
+async def test_editing_a_contributed_circuit_and_undoing_reinstates_the_original(db, pair):
+    """The round trip the fingerprint fix exists for, which nothing else covered.
+
+    `create_version` treats the fingerprint as exact content identity and
+    REINSTATES a matching row rather than writing a second one. The first draft
+    mixed a `uuid7()` nonce into the contributed fingerprint, so the contribution
+    and a later edit back to those exact bytes hashed differently — and the
+    artifact ended up holding two versions with identical code, the thing
+    reinstatement exists to prevent.
+
+    Both writers now hash the content alone, so this is a two-version history:
+    the contribution, and the edit. Undoing returns to the first.
+    """
+    alice, bob = pair
+    await grant(db, alice, bob)
+    _access, artifact, first = await contribute(db, bob, alice.project.id, code=CODE)
+
+    edited = CODE + "FINAL_CIRCUIT.h(1)\n"
+    _a, _art, second = await shares.create_shared_version(
+        bob.scope,
+        db,
+        alice.project.id,
+        artifact.id,
+        expected_current_version_id=first.id,
+        code=edited,
+        code_lang="python",
+    )
+    assert second.id != first.id
+
+    _a, _art, undone = await shares.create_shared_version(
+        bob.scope,
+        db,
+        alice.project.id,
+        artifact.id,
+        expected_current_version_id=second.id,
+        code=CODE,
+        code_lang="python",
+    )
+    assert undone.id == first.id, "returning to identical bytes must reinstate, not duplicate"
+
+    versions = await artifacts.list_versions(alice.scope, db, artifact.id)
+    assert len(versions) == 2, [v.seq for v in versions]
+    assert first.fingerprint == hashlib.sha256(CODE.encode()).hexdigest()
