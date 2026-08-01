@@ -60,21 +60,31 @@ def _authorized_spend(scope: Scope, since: dt.datetime):
     submissions from two workspaces of the same account are exactly the case a
     workspace predicate would miss.
 
-    ## The one exclusion, and why it is not generosity
+    ## The one exclusion, and why it is about a fact rather than a status
 
-    A record that reached ERROR having never been handed to the provider —
-    `submitted_at IS NULL` — cost nothing anywhere. That is a real state with two
-    real producers in `worker.handlers`: the deployment gate closing between
-    enqueue and dequeue, and a payload the handler cannot parse. Charging for
-    those would mean an operator toggling the gate off for ten minutes burns
-    every affected account's week, which is a refusal the user cannot act on and
-    cannot understand.
+    A record that CLOSED without ever being handed to the provider —
+    `submitted_at IS NULL` and terminal — cost nothing anywhere. That is a real
+    state with real producers in `worker.handlers`: the deployment gate closing
+    between enqueue and dequeue, a payload the handler cannot parse, and a
+    dead-lettered job chain. Charging for those would mean an operator toggling
+    the gate off for ten minutes burns every affected account's week, which is a
+    refusal the user cannot act on and cannot understand.
 
-    Everything else counts, including a record that errored AFTER submission.
-    The provider bills for work it did, so a job that ran and then failed is
-    money spent; and at the moment of the check a QUEUED record has not been
-    billed either, but it is about to be, so treating "not yet billed" as "free"
-    would let a burst of pending submissions authorize the same dollars twice.
+    The predicate names `_TERMINAL` rather than ERROR alone, and that is the
+    difference between a rule that is right and a rule that is right by
+    accident. Every never-submitted record in the product today closes as ERROR,
+    so `status == ERROR` gave the same answer — but `_ALLOWED_TRANSITIONS`
+    permits QUEUED -> CANCELLED, so the first "cancel my hardware job" route
+    ever added would produce records that never reached a provider and went on
+    spending a week's budget, with nothing failing. What makes a submission cost
+    money is that it reached the provider, not which word closed it.
+
+    Everything else counts, including a record that errored or was cancelled
+    AFTER submission. The provider bills for work it did, so a job that ran and
+    then failed is money spent; and at the moment of the check a QUEUED record
+    has not been billed either, but it is about to be, so treating "not yet
+    billed" as "free" would let a burst of pending submissions authorize the
+    same dollars twice.
     """
     return (
         QpuRun.user_id == scope.user_id,
@@ -82,7 +92,7 @@ def _authorized_spend(scope: Scope, since: dt.datetime):
         not_(
             and_(
                 QpuRun.submitted_at.is_(None),
-                QpuRun.status == QpuRunStatus.ERROR.value,
+                QpuRun.status.in_([status.value for status in _TERMINAL]),
             )
         ),
     )

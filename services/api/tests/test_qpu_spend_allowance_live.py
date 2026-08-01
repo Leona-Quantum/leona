@@ -270,6 +270,64 @@ async def test_a_submission_that_never_reached_the_provider_does_not_spend(accou
 
 
 @pytest.mark.parametrize("account", [TEAM_PLAN], indirect=True)
+async def test_a_queued_record_cancelled_before_the_provider_saw_it_does_not_spend(account):
+    """The transition nothing produces YET, which is the point.
+
+    `_ALLOWED_TRANSITIONS` permits QUEUED -> CANCELLED and no code path takes
+    it, so a predicate written as `status == ERROR` answers this case correctly
+    today and would go on answering it correctly right up until somebody adds a
+    "cancel my hardware job" route — at which point cancelled submissions that
+    never reached a provider would spend a week's budget each, silently. The
+    rule is about whether the provider saw it.
+    """
+    client, factory, scope, _user = account
+    accepted = await client.post("/v1/qpu/submissions", json=_body(GARNET, 10_000, "cancelled"))
+    assert accepted.status_code == 201, accepted.text
+    record_id = uuid.UUID(accepted.json()["id"])
+
+    since = dt.datetime.now(dt.timezone.utc) - TIER_WINDOW
+    async with factory() as session:
+        await qpu_runs_repo.transition(scope, session, record_id, QpuRunStatus.CANCELLED)
+        await session.commit()
+
+    async with factory() as session:
+        record = await qpu_runs_repo.get_record(scope, session, record_id)
+        assert record.submitted_at is None, (
+            "the fixture staged a submitted record, not a queued one"
+        )
+        assert await qpu_runs_repo.authorized_spend_since(scope, session, since) == 0.0
+
+
+@pytest.mark.parametrize("account", [TEAM_PLAN], indirect=True)
+async def test_a_record_cancelled_after_submission_still_spends(account):
+    """A provider that accepted the job and then cancelled it has still run a
+    queue slot against the account. Same side of the predicate as an error after
+    submission, and the case that stops the rule above being a blanket refund."""
+    client, factory, scope, _user = account
+    accepted = await client.post("/v1/qpu/submissions", json=_body(GARNET, 10_000, "late-cancel"))
+    assert accepted.status_code == 201, accepted.text
+    record_id = uuid.UUID(accepted.json()["id"])
+
+    async with factory() as session:
+        await qpu_runs_repo.transition(
+            scope,
+            session,
+            record_id,
+            QpuRunStatus.RUNNING,
+            provider_job_id="provider-late",
+            submitted_at=dt.datetime.now(dt.UTC),
+        )
+        await qpu_runs_repo.transition(scope, session, record_id, QpuRunStatus.CANCELLED)
+        await session.commit()
+
+    async with factory() as session:
+        spent = await qpu_runs_repo.authorized_spend_since(
+            scope, session, dt.datetime.now(dt.timezone.utc) - TIER_WINDOW
+        )
+    assert spent == pytest.approx(14.80)
+
+
+@pytest.mark.parametrize("account", [TEAM_PLAN], indirect=True)
 async def test_a_record_that_errored_after_submission_still_spends(account):
     """The other side of the same predicate, and the one that costs money: a
     provider that ran the job and then failed it has billed for the work. A
