@@ -96,7 +96,9 @@ async def build_tenant(session, tag: str, *, with_content: bool = True) -> Tenan
         fingerprint=f"fp-{tag}-{uuid.uuid4().hex[:8]}",
         export_status="lossless",
     )
-    await projects.set_artifact_project(scope, session, tenant.artifact.id, tenant.project.id)
+    await projects.set_artifact_project(
+        scope, session, tenant.artifact.id, tenant.project.id, workspace_artifact_limit=None
+    )
     # A second artifact in the SAME workspace, filed nowhere. Everything the
     # grant must not reach is represented by this row.
     tenant.loose_artifact = await artifacts.create_artifact(
@@ -137,7 +139,7 @@ async def grant(db, alice: Tenant, bob: Tenant, role=ShareRole.VIEWER, expires_a
         email=bob.user.email,
         role=role,
         expires_at=expires_at,
-        grantee_allowance=any_team_grantee,
+        allowance_for=any_team_grantee,
     )
     assert grantee.id == bob.user.id
     return share
@@ -304,7 +306,9 @@ async def test_an_unkept_artifact_in_a_shared_project_stays_hidden(db, pair):
         framework="qiskit",
         kept=False,
     )
-    await projects.set_artifact_project(alice.scope, db, unkept.id, alice.project.id)
+    await projects.set_artifact_project(
+        alice.scope, db, unkept.id, alice.project.id, workspace_artifact_limit=None
+    )
     await grant(db, alice, bob)
 
     _access, rows = await shares.list_shared_artifacts(bob.scope, db, alice.project.id)
@@ -373,7 +377,7 @@ async def test_a_grantee_cannot_reshare_or_manage(db, pair):
             alice.project.id,
             email=carol.user.email,
             role=ShareRole.VIEWER,
-            grantee_allowance=any_team_grantee,
+            allowance_for=any_team_grantee,
         )
     with pytest.raises(NotFoundError):
         await shares.list_shares(bob.scope, db, alice.project.id)
@@ -384,7 +388,9 @@ async def test_a_grantee_cannot_reshare_or_manage(db, pair):
     with pytest.raises(NotFoundError):
         await projects.delete_project(bob.scope, db, alice.project.id)
     with pytest.raises(NotFoundError):
-        await projects.set_artifact_project(bob.scope, db, alice.artifact.id, None)
+        await projects.set_artifact_project(
+            bob.scope, db, alice.artifact.id, None, workspace_artifact_limit=None
+        )
 
 
 # --------------------------------------------------------------------------- #
@@ -582,14 +588,16 @@ async def test_deleting_the_owning_workspace_closes_every_grant(db, pair):
         fingerprint=f"team-{uuid.uuid4().hex[:8]}",
         export_status="unsupported",
     )
-    await projects.set_artifact_project(team_scope, db, team_artifact.id, team_project.id)
+    await projects.set_artifact_project(
+        team_scope, db, team_artifact.id, team_project.id, workspace_artifact_limit=None
+    )
     await shares.grant_share(
         team_scope,
         db,
         team_project.id,
         email=bob.user.email,
         role=ShareRole.VIEWER,
-        grantee_allowance=any_team_grantee,
+        allowance_for=any_team_grantee,
     )
     assert await shares.resolve_share(bob.scope, db, team_project.id)
 
@@ -620,7 +628,7 @@ async def test_revoke_all_reports_what_it_closed(db, pair):
         alice.project.id,
         email=carol.user.email,
         role=ShareRole.VIEWER,
-        grantee_allowance=any_team_grantee,
+        allowance_for=any_team_grantee,
     )
     assert await shares.revoke_all_shares(alice.scope, db, alice.project.id) == 2
     assert await shares.revoke_all_shares(alice.scope, db, alice.project.id) == 0
@@ -642,7 +650,7 @@ async def test_granting_to_yourself_is_refused(db, pair):
             alice.project.id,
             email=alice.user.email,
             role=ShareRole.VIEWER,
-            grantee_allowance=any_team_grantee,
+            allowance_for=any_team_grantee,
         )
 
 
@@ -657,7 +665,7 @@ async def test_granting_to_an_existing_member_is_refused(db, pair):
             alice.project.id,
             email=bob.user.email,
             role=ShareRole.VIEWER,
-            grantee_allowance=any_team_grantee,
+            allowance_for=any_team_grantee,
         )
 
 
@@ -670,7 +678,7 @@ async def test_granting_to_an_unknown_address_is_a_not_found(db, pair):
             alice.project.id,
             email="nobody-at-all@shares.test",
             role=ShareRole.VIEWER,
-            grantee_allowance=any_team_grantee,
+            allowance_for=any_team_grantee,
         )
 
 
@@ -682,7 +690,7 @@ async def test_the_email_match_is_case_and_space_insensitive(db, pair):
         alice.project.id,
         email=f"  {bob.user.email.upper()}  ",
         role=ShareRole.VIEWER,
-        grantee_allowance=any_team_grantee,
+        allowance_for=any_team_grantee,
     )
     assert await shares.resolve_share(bob.scope, db, alice.project.id)
 
@@ -729,7 +737,7 @@ async def test_the_share_count_is_capped(db, pair):
             alice.project.id,
             email=extra.user.email,
             role=ShareRole.VIEWER,
-            grantee_allowance=any_team_grantee,
+            allowance_for=any_team_grantee,
         )
     with pytest.raises(shares.ShareError):
         await shares.grant_share(
@@ -738,7 +746,7 @@ async def test_the_share_count_is_capped(db, pair):
             alice.project.id,
             email=bob.user.email,
             role=ShareRole.VIEWER,
-            grantee_allowance=any_team_grantee,
+            allowance_for=any_team_grantee,
         )
 
 
@@ -1024,7 +1032,7 @@ async def test_two_concurrent_grants_produce_one_row(db, pair):
                     alice.project.id,
                     email=bob.user.email,
                     role=role,
-                    grantee_allowance=any_team_grantee,
+                    allowance_for=any_team_grantee,
                 )
                 await session.commit()
                 return None

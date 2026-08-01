@@ -47,6 +47,7 @@ import { describeNextSlot, isMetered, parseUsage, type UsageSummary } from "../l
 import { titleFromPrompt } from "../lib/chat-title";
 import {
   ARTIFACT_PROJECTS_EVENT,
+  ArtifactAssignmentRefused,
   assignArtifactToRemoteProject,
   createRemoteArtifactProject,
   deleteRemoteArtifactProject,
@@ -124,6 +125,11 @@ export function Shell({
   const [projectSyncState, setProjectSyncState] = useState<"local" | "synced" | "error">("local");
   const [refreshTick, setRefreshTick] = useState(0);
   const [archiveNotice, setArchiveNotice] = useState<ChatSummary | null>(null);
+  // A refusal the server understood and the person can act on — a full project,
+  // or a move that would put the workspace past its plan allowance. Held apart
+  // from `archiveNotice` because it carries a server sentence rather than a
+  // locale string, and because it must not be undoable: the move did not happen.
+  const [assignRefusal, setAssignRefusal] = useState<string | null>(null);
 
   useEffect(() => {
     const saved = window.localStorage.getItem(SIDEBAR_STORAGE_KEY);
@@ -344,9 +350,16 @@ export function Shell({
             if (demoMode) return;
             try {
               await assignArtifactToRemoteProject(artifactId, projectId);
-            } catch {
-              // The mirror keeps the optimistic answer until the refresh below
+              setAssignRefusal(null);
+            } catch (caught) {
+              // A REFUSAL is the one failure with something true to say: the
+              // project is full, or the move would spend a plan slot there is
+              // not one of. Swallowing it left the row snapping back with no
+              // explanation, which is how a rule the person could act on reads
+              // as a bug. Everything else still falls through silently — the
+              // mirror keeps the optimistic answer until the refresh below
               // replaces it with whatever the workspace actually holds.
+              if (caught instanceof ArtifactAssignmentRefused) setAssignRefusal(caught.message);
             } finally {
               refreshAfterLocalChange();
             }
@@ -407,6 +420,26 @@ export function Shell({
           }}
           onDismiss={() => setArchiveNotice(null)}
         />
+      ) : null}
+      {assignRefusal ? (
+        <div className="mj-archive-notice" role="status" aria-live="polite">
+          {/* The server's own sentence, not a locale string. Every refusal this
+              route sends is composed with the numbers the refusal was measured
+              against, and re-writing it here would mean two places deciding what
+              a full project says. `project_sharing_not_in_plan` is the only
+              refusal in the product with a translated twin; the rest reach a
+              Japanese reader in English and that is tracked as one piece of
+              work rather than one sentence at a time. */}
+          <span>{assignRefusal}</span>
+          <button
+            type="button"
+            className="mj-archive-notice-close"
+            aria-label={locale === "ja" ? "閉じる" : "Dismiss"}
+            onClick={() => setAssignRefusal(null)}
+          >
+            ×
+          </button>
+        </div>
       ) : null}
     </AppShell>
   );

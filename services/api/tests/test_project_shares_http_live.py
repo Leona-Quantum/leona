@@ -42,7 +42,8 @@ from majorana_api.orm import User
 from majorana_api.repos import artifacts as artifacts_repo
 from majorana_api.repos import projects as projects_repo
 from majorana_api.repos import system
-from majorana_api.tiers import TEAM_PLAN
+from majorana_api.settings import Settings
+from majorana_api.tiers import TEAM_PLAN, limits_for, tier_of
 
 requires_db = pytest.mark.skipif(
     "DATABASE_URL" not in os.environ, reason="project share routes need DATABASE_URL"
@@ -139,7 +140,9 @@ async def stage():
             fingerprint=f"http-{uuid.uuid4().hex[:8]}",
             export_status="lossless",
         )
-        await projects_repo.set_artifact_project(alice_scope, session, artifact.id, project.id)
+        await projects_repo.set_artifact_project(
+            alice_scope, session, artifact.id, project.id, workspace_artifact_limit=None
+        )
         unshared = await artifacts_repo.create_artifact(
             alice_scope,
             session,
@@ -597,3 +600,176 @@ async def test_an_oversized_or_blank_contribution_is_refused_at_the_boundary(sta
 
     empty_code = await stage["bob"].client.post(path, json={**base, "title": "ok", "code": ""})
     assert empty_code.status_code == 422, empty_code.text
+
+
+# --------------------------------------------------------------------------- #
+# The two new refusals, over the wire (2026-08-02)
+# --------------------------------------------------------------------------- #
+
+
+async def test_a_full_project_refuses_a_move_with_409_and_not_429(stage):
+    """The status code IS the contract, and these two walls are different walls.
+
+    429 sends a user to the pricing page; 409 sends them to the project they are
+    filing into. The repository raises two different exception types and only the
+    route decides which becomes which, so a handler catching one branch for both
+    is invisible everywhere except here.
+    """
+    alice = stage["alice"]
+    limit = await alice.client.patch(
+        f"/v1/workspace/projects/{stage['project_id']}",
+        json={"max_artifacts": 1},
+    )
+    assert limit.status_code == 200, limit.text
+
+    response = await alice.client.patch(
+        f"/v1/artifacts/{stage['unshared_artifact_id']}/project",
+        json={"project_id": stage["project_id"]},
+    )
+    assert response.status_code == 409, response.text
+    # RFC 9457: the sentence a person reads is `title`, and the typed fields are
+    # its siblings. Reading `detail` here would be reading FastAPI's shape rather
+    # than the one the web client parses.
+    problem = response.json()
+    assert problem["reason"] == "project_artifact_limit_reached"
+    assert problem["limit"] == 1
+    assert problem["used"] == 1
+    assert "1 of its 1 artifacts" in problem["title"]
+
+    # Positive control: the same request against a project with room succeeds,
+    # so the 409 was the limit rather than the route refusing every move.
+    raised = await alice.client.patch(
+        f"/v1/workspace/projects/{stage['project_id']}",
+        json={"max_artifacts": 5},
+    )
+    assert raised.status_code == 200, raised.text
+    moved = await alice.client.patch(
+        f"/v1/artifacts/{stage['unshared_artifact_id']}/project",
+        json={"project_id": stage["project_id"]},
+    )
+    assert moved.status_code == 200, moved.text
+    assert moved.json()["project_id"] == stage["project_id"]
+
+
+async def test_a_zero_limit_says_so_rather_than_showing_a_full_up_counter(stage):
+    """ "holds 0 of its 0 artifacts" is arithmetically true and reads as a bug."""
+    alice = stage["alice"]
+    await alice.client.patch(
+        f"/v1/workspace/projects/{stage['project_id']}",
+        json={"max_artifacts": 0},
+    )
+    response = await alice.client.patch(
+        f"/v1/artifacts/{stage['unshared_artifact_id']}/project",
+        json={"project_id": stage["project_id"]},
+    )
+    assert response.status_code == 409, response.text
+    title = response.json()["title"]
+    assert "limit is 0" in title
+    assert "0 of its 0" not in title
+
+
+async def test_the_usage_endpoint_reports_the_count_the_cap_enforces(stage):
+    """A shared project's contents leave the allowance the screen shows.
+
+    The number on the account page and the number a refusal is measured against
+    have to be one number. They were the same integer until this change and are
+    not any more, so this reads the endpoint before and after the grant and
+    requires it to move.
+    """
+    alice = stage["alice"]
+    before = await alice.client.get("/v1/usage")
+    assert before.status_code == 200, before.text
+    filed_before = before.json()["artifacts"]["used"]
+    assert before.json()["shared_projects"]["used"] == 0
+
+    await _grant(stage, role="viewer")
+
+    after = await alice.client.get("/v1/usage")
+    assert after.status_code == 200, after.text
+    body = after.json()
+    assert body["artifacts"]["used"] == filed_before - 1, (
+        "the one artifact in the now-shared project should have left the allowance"
+    )
+    # ...and the sharing itself is now on the account's own ledger.
+    assert body["shared_projects"]["used"] == 1
+    assert body["shared_projects"]["limit"] == 4
+
+
+async def test_a_copy_into_a_shared_project_is_not_refused_at_the_private_cap(stage):
+    """The pre-check has to ask the same question the authoritative check asks.
+
+    `keep_artifact` skips the individual allowance entirely when the artifact
+    lands in a SHARED project. The copy route's cheap pre-check read only the
+    quota count, so a Team account at its private cap copying into one of its
+    OWN shared projects got a 429 from the pre-check for a write the check below
+    it would have accepted. Found by CodeRabbit on PR 216, two lines under a
+    comment claiming the two numbers agreed.
+
+    Driven from Bob's side, because Bob is the one who holds a grant and can
+    copy. His own project is shared back to Alice so that the copy's target
+    carries a live grant.
+    """
+    await _grant(stage, role="viewer")
+    bob, alice = stage["bob"], stage["alice"]
+
+    async with stage["factory"]() as session:
+        bobs_project = await projects_repo.create_project(bob.scope, session, name="Bob's shared")
+        await session.commit()
+
+    shared_back = await bob.client.post(
+        f"/v1/workspace/projects/{bobs_project.id}/shares",
+        json={"email": alice.user.email, "role": "viewer"},
+    )
+    assert shared_back.status_code == 201, shared_back.text
+
+    # Bob is now at the free tier's private cap. `_provision` puts both parties
+    # on the Team plan, so fill to THAT number rather than to a literal.
+    async with stage["factory"]() as session:
+        limits = limits_for(tier_of(bob.user, Settings(**SETTINGS_KWARGS)))
+        held = await artifacts_repo.count_kept_against_quota(bob.scope, session)
+        for index in range(limits.private_artifacts - held):
+            await artifacts_repo.create_artifact(
+                bob.scope,
+                session,
+                slug=f"fill-{index}-{uuid.uuid4().hex[:8]}",
+                title=f"filler {index}",
+                family="Bell",
+                framework="qiskit",
+            )
+        await session.commit()
+        assert await artifacts_repo.count_kept_against_quota(bob.scope, session) == (
+            limits.private_artifacts
+        )
+
+    # Into the UNGROUPED list: spends a slot, and there is none. The control that
+    # says Bob really is at his cap, so the success below is not a full-up
+    # fixture that never filled.
+    refused = await bob.client.post(
+        f"/v1/shared/projects/{stage['project_id']}/artifacts/{stage['artifact_id']}/copy",
+        json={},
+    )
+    assert refused.status_code == 429, refused.text
+    assert refused.json()["reason"] == "artifact_allowance_exhausted"
+
+    # Into his own SHARED project: spends nothing, so it must land.
+    accepted = await bob.client.post(
+        f"/v1/shared/projects/{stage['project_id']}/artifacts/{stage['artifact_id']}/copy",
+        json={"target_project_id": str(bobs_project.id)},
+    )
+    assert accepted.status_code == 201, accepted.text
+    assert accepted.json()["project_id"] == str(bobs_project.id)
+
+
+async def test_a_copy_into_another_workspaces_project_is_a_404_not_an_oracle(stage):
+    """The pre-check resolves the target through the caller's scope first.
+
+    `is_project_shared` takes a bare id. Asking it about an id the caller has not
+    been proven to own would make the 429 an oracle for "is that project shared?"
+    on any uuid — a small leak, and the reason the scoped getter runs first.
+    """
+    await _grant(stage, role="viewer")
+    response = await stage["bob"].client.post(
+        f"/v1/shared/projects/{stage['project_id']}/artifacts/{stage['artifact_id']}/copy",
+        json={"target_project_id": stage["project_id"]},  # Alice's project, not Bob's
+    )
+    assert response.status_code == 404, response.text

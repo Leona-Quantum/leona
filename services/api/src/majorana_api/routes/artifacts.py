@@ -66,6 +66,36 @@ def _artifact_cap_refusal(used: int, limit: int) -> HTTPException:
     )
 
 
+def _project_full_refusal(held: int, limit: int) -> HTTPException:
+    """A project is full — a different wall from the plan's, so a different sentence.
+
+    409 rather than 429: the plan allowance is a rate the account can wait out or
+    buy out of, and this is a container the caller can fix right now by choosing
+    a different project or raising the limit on this one. Telling both stories
+    with one status would send a user to the pricing page over a full folder.
+
+    Zero gets its own sentence for the same reason `contribute_artifact` gives it
+    one: "holds 0 of its 0" is arithmetically true and reads as a bug.
+    """
+    error = (
+        "This project does not accept circuits — its artifact limit is 0."
+        if limit == 0
+        else (
+            f"This project holds {held} of its {limit} artifacts. "
+            "Raise its limit or move something out, and this one will file."
+        )
+    )
+    return HTTPException(
+        status_code=409,
+        detail={
+            "error": error,
+            "reason": "project_artifact_limit_reached",
+            "used": held,
+            "limit": limit,
+        },
+    )
+
+
 class ImportPublicArtifactRequest(RequestModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -319,6 +349,11 @@ async def keep_artifact(
             artifact_id,
             workspace_artifact_limit=limits.private_artifacts,
         )
+    except artifacts_repo.ProjectFull as full:
+        # Reachable because an artifact can be staged into a project while
+        # unkept — `copy_shared_artifact` does exactly that — so filing is the
+        # moment it starts occupying a project slot.
+        raise _project_full_refusal(full.held, full.limit) from full
     except artifacts_repo.ArtifactCapReached as full:
         raise _artifact_cap_refusal(full.held, full.limit) from full
     metadata: dict | None = None
@@ -343,6 +378,8 @@ async def set_artifact_project(
     body: SetArtifactProjectRequest,
     scope: CurrentScope,
     session: DbSession,
+    identity: CurrentIdentity,
+    settings: Annotated[Settings, Depends(get_settings)],
 ) -> ArtifactResource:
     """File an artifact under a Studio project, or return it to the ungrouped list.
 
@@ -350,10 +387,28 @@ async def set_artifact_project(
     (`majorana.artifact-folder-assignments.v1`), so it did not survive a second
     device and could not be seen by anyone else in the workspace — the same shape
     as the Library delete that only hid a row locally.
+
+    Metered since 2026-08-02, which a drag between two folders does not look
+    like: a project's contents are capped whether it is shared or not, and a
+    shared project's contents spend no individual allowance — so this route can
+    both fill a project and move an artifact back into the Vault's ledger. The
+    tier is resolved here, like every other tier decision in this service, and
+    the comparisons happen under the repository's locks.
     """
-    artifact = await projects_repo.set_artifact_project(
-        scope, session, artifact_id, body.project_id
-    )
+    user, _workspace = identity
+    limits = limits_for(tier_of(user, settings))
+    try:
+        artifact = await projects_repo.set_artifact_project(
+            scope,
+            session,
+            artifact_id,
+            body.project_id,
+            workspace_artifact_limit=limits.private_artifacts,
+        )
+    except artifacts_repo.ProjectFull as full:
+        raise _project_full_refusal(full.held, full.limit) from full
+    except artifacts_repo.ArtifactCapReached as full:
+        raise _artifact_cap_refusal(full.held, full.limit) from full
     metadata: dict | None = None
     if artifact.current_version_id is not None:
         version = await artifacts_repo.get_version(scope, session, artifact.current_version_id)

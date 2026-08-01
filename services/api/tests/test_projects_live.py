@@ -212,7 +212,9 @@ async def test_filing_an_artifact_and_taking_it_back_out(scope, factory):
     artifact_id = await _artifact(scope, factory)
 
     async with factory() as session:
-        filed = await projects.set_artifact_project(scope, session, artifact_id, made["alpha"])
+        filed = await projects.set_artifact_project(
+            scope, session, artifact_id, made["alpha"], workspace_artifact_limit=None
+        )
         await session.commit()
     assert filed.project_id == made["alpha"]
 
@@ -222,7 +224,9 @@ async def test_filing_an_artifact_and_taking_it_back_out(scope, factory):
         ], "the filing must survive the session that made it"
 
     async with factory() as session:
-        unfiled = await projects.set_artifact_project(scope, session, artifact_id, None)
+        unfiled = await projects.set_artifact_project(
+            scope, session, artifact_id, None, workspace_artifact_limit=None
+        )
         await session.commit()
     assert unfiled.project_id is None
 
@@ -231,7 +235,9 @@ async def test_filing_under_a_project_from_another_workspace_is_not_found(scope,
     artifact_id = await _artifact(scope, factory)
     async with factory() as session:
         with pytest.raises(NotFoundError):
-            await projects.set_artifact_project(scope, session, artifact_id, uuid.uuid4())
+            await projects.set_artifact_project(
+                scope, session, artifact_id, uuid.uuid4(), workspace_artifact_limit=None
+            )
     async with factory() as session:
         assert (await artifacts.get_artifact(scope, session, artifact_id)).project_id is None
 
@@ -246,7 +252,9 @@ async def test_deleting_a_project_keeps_its_artifacts(scope, factory):
     made = await _make(scope, factory, "alpha")
     artifact_id = await _artifact(scope, factory)
     async with factory() as session:
-        await projects.set_artifact_project(scope, session, artifact_id, made["alpha"])
+        await projects.set_artifact_project(
+            scope, session, artifact_id, made["alpha"], workspace_artifact_limit=None
+        )
         await session.commit()
     async with factory() as session:
         await projects.delete_project(scope, session, made["alpha"])
@@ -269,7 +277,9 @@ async def test_deleting_a_project_unfiles_its_soft_deleted_artifacts_too(scope, 
     made = await _make(scope, factory, "alpha")
     artifact_id = await _artifact(scope, factory)
     async with factory() as session:
-        await projects.set_artifact_project(scope, session, artifact_id, made["alpha"])
+        await projects.set_artifact_project(
+            scope, session, artifact_id, made["alpha"], workspace_artifact_limit=None
+        )
         await session.commit()
     async with factory() as session:
         await artifacts.soft_delete_artifact(scope, session, artifact_id)

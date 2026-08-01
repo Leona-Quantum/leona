@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   ACCOUNT_TIERS,
+  DEFAULT_PROJECT_ARTIFACT_LIMIT,
   TIER_LIMITS,
   atLeastTier,
   developerEmails,
@@ -214,10 +215,37 @@ test("both published Team plans quote the same numbers", async () => {
     limits.agentRunsPerWeek,
     limits.privateArtifacts,
     limits.cpuSimQubits,
+    // The per-project limit is the second half of what bounds the shared
+    // bucket, so the page states it and this ties it to the same constant the
+    // server enforces. Without it the page could advertise "4 shared projects"
+    // while saying nothing about how much fits in one.
+    DEFAULT_PROJECT_ARTIFACT_LIMIT,
   ];
   for (const value of advertised) {
     const pattern = new RegExp(`(^|\\D)${value}(\\D|$)`);
     assert.match(en.features.join(" | "), pattern, `the English Team plan does not state ${value}`);
     assert.match(ja.features.join(" | "), pattern, `the Japanese Team plan does not state ${value}`);
+  }
+});
+
+test("both published plans say unshared projects are unlimited", async () => {
+  const { PRICING_COPY } = await import("./public-copy.ts");
+  // The owner's rule has two halves and only one of them is a number. A page
+  // that states the 4 without stating "unlimited private projects" reads as a
+  // cap on every project, which is what the product did before 2026-08-02 and
+  // is the thing the owner corrected.
+  for (const [language, unlimited] of [
+    ["en", /unlimited private projects/i],
+    ["ja", /無制限/],
+  ] as const) {
+    for (const name of ["Free", "Team"]) {
+      const plan = PRICING_COPY[language].plans.find((entry) => entry.name === name);
+      assert.ok(plan, `the ${name} plan disappeared from the ${language} pricing page`);
+      assert.match(
+        plan.features.join(" | "),
+        unlimited,
+        `the ${language} ${name} plan does not say unshared projects are unlimited`,
+      );
+    }
   }
 });

@@ -34,8 +34,8 @@ from ..request_models import RequestModel
 from ..orm import ProjectShare as ProjectShareRow
 from ..orm import User as UserRow
 from ..repos import artifacts as artifacts_repo
+from ..repos import projects as projects_repo
 from ..repos import shares as shares_repo
-from ..repos import workspaces as workspaces_repo
 from ..settings import Settings
 from ..tiers import limits_for, tier_of
 
@@ -218,9 +218,10 @@ async def grant_project_share(
       route to learn which project ids exist.
     - **409** — the caller may share, but the address they typed belongs to an
       account that may not receive one, or to one already in as many shared
-      projects as its plan allows. The request is wrong, not the plan, and the
-      address is the part to change. Both checks run inside `grant_share`,
-      which is where the address becomes a row.
+      projects as its plan allows — or the workspace's OWNER is, and this grant
+      would be a new shared project for them. The request is wrong, not the
+      plan. All three checks run inside `grant_share`, which is where the
+      address becomes a row.
 
     `developer` satisfies both: it is the operator's and the collaborators'
     tier, and an operator who could not share their own projects would be a
@@ -232,11 +233,14 @@ async def grant_project_share(
     if not limits_for(tier_of(granter, settings)).project_sharing:
         raise _sharing_not_in_plan()
 
-    def _grantee_allowance(grantee: UserRow) -> shares_repo.GranteeAllowance:
-        # One tier resolution, both answers. Two callables here would be two
-        # chances to resolve the same person's tier twice and disagree.
-        limits = limits_for(tier_of(grantee, settings))
-        return shares_repo.GranteeAllowance(
+    def _allowance_for(account: UserRow) -> shares_repo.ShareAllowance:
+        # One tier resolution, both answers, and now two subjects: `grant_share`
+        # asks this about the grantee AND about the owner of the workspace
+        # holding the project, whose shared-project allowance the grant also
+        # spends. One function for both is what stops the same question being
+        # answered two ways for two accounts in one request.
+        limits = limits_for(tier_of(account, settings))
+        return shares_repo.ShareAllowance(
             may_receive=limits.project_sharing,
             max_shared_projects=limits.shared_projects,
         )
@@ -249,7 +253,7 @@ async def grant_project_share(
             email=body.email,
             role=body.role,
             expires_at=body.expires_at,
-            grantee_allowance=_grantee_allowance,
+            allowance_for=_allowance_for,
         )
     except shares_repo.ShareError as exc:
         raise _share_refusal(exc) from exc
@@ -506,11 +510,37 @@ async def copy_shared_artifact(
     the keep, and the transaction rolls the whole thing back. Same outcome,
     three statements of work — so this refuses the common case early and the
     lock below is what makes the refusal true under concurrency.
+
+    **A pre-check has to ask the same question the check asks**, and this one has
+    two conditions to match now, not one. `keep_artifact` skips the individual
+    allowance entirely when the artifact lands in a SHARED project, so a copy
+    filed into one of the caller's own shared projects spends no slot — and a
+    pre-check reading only the count would refuse, at the cap, a write the
+    authoritative check accepts. Found by CodeRabbit on PR 216, in a comment I
+    had written two lines below claiming the two numbers agreed. They agree only
+    while the target project carries no live grant.
     """
     user, _workspace = identity
     limits = limits_for(tier_of(user, settings))
-    if limits.private_artifacts is not None:
-        _ws, _members, kept, _runs = await workspaces_repo.get_overview(scope, session)
+    # Asked before the count, because it decides whether the count is relevant
+    # at all. `None` target means the ungrouped list, which always spends a slot.
+    #
+    # `get_project` FIRST, and not only to be tidy: `is_project_shared` takes a
+    # bare id, and asking it about an id this caller has not been proven to own
+    # would turn the 429 below into an oracle for "is that project shared?" on
+    # any uuid. Resolving through the scoped getter makes another workspace's
+    # project a 404 here — the same answer `copy_shared_artifact` gives it a few
+    # lines down, just sooner.
+    target_is_shared = False
+    if body.target_project_id is not None:
+        await projects_repo.get_project(scope, session, body.target_project_id)
+        target_is_shared = await shares_repo.is_project_shared(session, body.target_project_id)
+    if limits.private_artifacts is not None and not target_is_shared:
+        # The QUOTA count, not `get_overview`'s Vault total. Those two numbers
+        # separated on 2026-08-02 and this is the one the cap below compares
+        # against, so reading the other here would refuse a copy the keep would
+        # then have accepted — a pre-check that is stricter than the check.
+        kept = await artifacts_repo.count_kept_against_quota(scope, session)
         if kept >= limits.private_artifacts:
             raise _artifact_cap_refusal(kept, limits.private_artifacts)
     try:
@@ -580,27 +610,24 @@ async def contribute_shared_artifact(
 ) -> ArtifactResource:
     """Add a new circuit to a project shared with you. EDITOR only.
 
-    ## Whose allowance this spends, and why the identity here is not the caller's
+    ## Which allowance this spends, and which one it stopped spending
 
-    Every other artifact write in this service reads the tier off `CurrentIdentity`
-    — the person making the request. This one must not. The row lands in the
-    OWNER's workspace and is counted on the OWNER's account page, so the limit
-    that applies is theirs, and a developer-tier contributor must not be able to
-    fill a free-tier owner's Vault because their own plan says unlimited.
+    The row lands in the OWNER's workspace, so until 2026-08-02 this route
+    resolved the OWNER's tier — not the caller's — and handed their
+    `private_artifacts` number to the repository, so that a developer-tier
+    contributor could not fill a free-tier owner's Vault.
 
-    `shared_project_owner` resolves that account behind the grant, and the
-    resolved number is handed to the repository, which enforces it **and** the
-    project's own cap under the project row lock. The `Settings` dependency is
-    still the caller's request-scoped one — it carries the deployment's developer
-    allowlist, which is a property of the deployment, not of who is asking.
+    That number no longer applies to this write. A contribution goes into a
+    shared project by construction (a live grant is what let the caller in), and
+    a shared project's contents are outside the individual allowance entirely.
+    What bounds it is the project's own limit, which the owner sets, enforced
+    under the project row lock. Resolving a tier here would now be resolving one
+    to ignore it — see `repos/shares.contribute_artifact` for why keeping the
+    comparison would have been worse than removing it.
 
     Refused with 409 and a sentence, not 403: at the moment of the refusal the
-    caller does have permission — the container is full. The two walls produce
-    different sentences because only one of them is one the contributor can do
-    anything about.
+    caller does have permission — the container is full.
     """
-    _access, owner = await shares_repo.shared_project_owner(scope, session, project_id)
-    limits = limits_for(tier_of(owner, settings))
     try:
         _access, artifact, version = await shares_repo.contribute_artifact(
             scope,
@@ -611,7 +638,6 @@ async def contribute_shared_artifact(
             framework=body.framework,
             code=body.code,
             code_lang=body.code_lang,
-            workspace_artifact_limit=limits.private_artifacts,
         )
     except shares_repo.ShareError as exc:
         raise _share_refusal(exc) from exc

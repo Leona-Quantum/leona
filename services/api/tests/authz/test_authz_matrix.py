@@ -65,14 +65,20 @@ async def test_cross_workspace_writes_rejected(db, dataset):
         with pytest.raises(NotFoundError):
             await projects.reorder_projects(sa, db, [b.project_id])
         with pytest.raises(NotFoundError):
-            await projects.set_artifact_project(sa, db, b.artifact_id, b.project_id)
+            await projects.set_artifact_project(
+                sa, db, b.artifact_id, b.project_id, workspace_artifact_limit=None
+            )
         # Both halves of the filing, separately. Our OWN artifact must not be
         # filable under their project, and theirs must not be filable under
         # ours — one shared check would pass while either half leaked.
         with pytest.raises(NotFoundError):
-            await projects.set_artifact_project(sa, db, a.artifact_id, b.project_id)
+            await projects.set_artifact_project(
+                sa, db, a.artifact_id, b.project_id, workspace_artifact_limit=None
+            )
         with pytest.raises(NotFoundError):
-            await projects.set_artifact_project(sa, db, b.artifact_id, a.project_id)
+            await projects.set_artifact_project(
+                sa, db, b.artifact_id, a.project_id, workspace_artifact_limit=None
+            )
         with pytest.raises(NotFoundError):
             await runs.add_verification_record(
                 sa, db, b.run_id, method=VerificationMethod.EXACT, result="fail"
@@ -166,7 +172,9 @@ async def test_role_gates_live(db, dataset):
     with pytest.raises(AuthzError):
         await projects.reorder_projects(viewer, db, [a.project_id])
     with pytest.raises(AuthzError):
-        await projects.set_artifact_project(viewer, db, a.artifact_id, None)
+        await projects.set_artifact_project(
+            viewer, db, a.artifact_id, None, workspace_artifact_limit=None
+        )
     with pytest.raises(AuthzError):
         await runs.append_run_event(viewer, db, a.run_id, type="run.error", payload={})
     member = scope_for(a, Role.MEMBER)
@@ -237,7 +245,7 @@ async def test_no_grant_means_no_second_door(db, dataset):
                 b.project_id,
                 email="whoever@authz.test",
                 role="viewer",
-                grantee_allowance=any_team_grantee,
+                allowance_for=any_team_grantee,
             )
         with pytest.raises(NotFoundError):
             await shares.revoke_share(sa, db, b.project_id, grantee_user_id=b.users[Role.OWNER])
@@ -259,7 +267,7 @@ async def test_granting_is_an_admin_action(db, dataset):
                 a.project_id,
                 email=f"b-{Role.MEMBER}@authz.test",
                 role="viewer",
-                grantee_allowance=any_team_grantee,
+                allowance_for=any_team_grantee,
             )
         with pytest.raises(AuthzError):
             await shares.revoke_share(sa, db, a.project_id, grantee_user_id=b.users[Role.OWNER])

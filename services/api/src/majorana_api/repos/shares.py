@@ -69,6 +69,15 @@ from ..ids import uuid7
 from ..orm import Artifact, ArtifactVersion, Membership, Project, ProjectShare, User, Workspace
 from . import artifacts as artifacts_repo
 from ._base import AuthzError, NotFoundError, require_admin, touched_now
+from ._project_limits import (
+    DEFAULT_PROJECT_ARTIFACT_LIMIT,
+    MAX_PROJECT_ARTIFACT_LIMIT,
+    count_project_artifacts,
+    is_project_shared,
+    live_share_predicates,
+    project_artifact_limit,
+)
+from ._project_limits import kept_artifacts_of as _visible_artifacts_of
 from .audit import record_audit
 from .projects import get_project, set_artifact_project
 
@@ -77,6 +86,11 @@ from .projects import get_project, set_artifact_project
 #: which demands verified physical PASS evidence. Without a ceiling here, sharing
 #: the same project with a thousand addresses would be that same publication with
 #: none of that gate, one grant at a time.
+#:
+#: Counts EXPIRED grants, unlike everything in `_project_limits`, and the
+#: difference is the point: a ceiling that exists to stop a grant list becoming a
+#: publication channel has to make a dead row keep its slot, or rotating
+#: short-lived grants past a thousand addresses is free.
 MAX_SHARES_PER_PROJECT = 50
 
 #: A grantee's edit is capped at the same size as a Studio source submitted with
@@ -84,21 +98,22 @@ MAX_SHARES_PER_PROJECT = 50
 #: else's workspace, so the bound belongs on the write rather than on the reader.
 MAX_SHARED_CODE_CHARS = 100_000
 
-#: What `projects.max_artifacts IS NULL` means (migration 0043). NOT unlimited:
-#: every project that predates the column is NULL and every one of them can be
-#: shared, so reading NULL as unbounded would make the column's own migration the
-#: hole it exists to close. Resolving it here rather than as a database DEFAULT
-#: means this number can be changed for everyone who never chose one.
-DEFAULT_PROJECT_ARTIFACT_LIMIT = 50
-
-#: The ceiling on what an owner may set, mirrored by `ck_projects_max_artifacts_range`.
-MAX_PROJECT_ARTIFACT_LIMIT = 500
-
-
-def project_artifact_limit(project: Project) -> int:
-    """The effective cap on a project's contents. One reader, three writers."""
-    limit = project.max_artifacts
-    return DEFAULT_PROJECT_ARTIFACT_LIMIT if limit is None else int(limit)
+#: Re-exported: the per-project limit and its predicates moved to
+#: `_project_limits` when `artifacts` and `projects` came to need them too, and
+#: neither may import this module. Kept importable from here because the routes,
+#: the tests and `repos/projects` all name them through `shares`.
+__all__ = [
+    "DEFAULT_PROJECT_ARTIFACT_LIMIT",
+    "MAX_PROJECT_ARTIFACT_LIMIT",
+    "MAX_SHARED_CODE_CHARS",
+    "MAX_SHARES_PER_PROJECT",
+    "ShareAllowance",
+    "ShareError",
+    "count_shared_project_memberships",
+    "count_shared_projects",
+    "grant_share",
+    "project_artifact_limit",
+]
 
 
 class ShareError(Exception):
@@ -106,24 +121,29 @@ class ShareError(Exception):
 
 
 @dataclass(frozen=True)
-class GranteeAllowance:
-    """What the RECEIVING account's plan permits. Resolved at the route.
+class ShareAllowance:
+    """What ONE account's plan permits about sharing. Resolved at the route.
 
     Two questions asked at the same moment about the same row, carried as one
     value rather than as two callables. That is not tidiness: both answers come
-    from a single `limits_for(tier_of(grantee, settings))`, and two callables
+    from a single `limits_for(tier_of(account, settings))`, and two callables
     are two chances to resolve the same person's tier twice and differently —
     the failure that would produce ("may receive, but counted against the wrong
     plan's cap") is invisible from either side.
+
+    Named for the *subject* rather than for the grantee, because `grant_share`
+    now asks it about two different accounts: the person receiving the grant,
+    and the owner of the workspace holding the project. Only the first has
+    `may_receive` read.
 
     The tier table itself is deliberately NOT read here. Every tier decision in
     this service lives at the route boundary; see `contribute_artifact` for the
     same argument in the direction that matters more.
     """
 
-    #: `TierLimits.project_sharing` for the grantee.
+    #: `TierLimits.project_sharing`. Read for a grantee, never for an owner.
     may_receive: bool
-    #: `TierLimits.shared_projects` for the grantee. `None` means unlimited.
+    #: `TierLimits.shared_projects`. `None` means unlimited.
     max_shared_projects: int | None
 
 
@@ -214,33 +234,103 @@ async def count_shares(scope: Scope, session: AsyncSession, project_id: uuid.UUI
     )
 
 
-async def count_shared_project_memberships(session: AsyncSession, user_id: uuid.UUID) -> int:
-    """How many live grants this person holds, across every owner.
+def _received_project_ids(user_id: uuid.UUID) -> Any:
+    """Projects granted TO this person and currently live.
 
-    Derived from `_live_share_predicates` and joined exactly the way
+    Derived from `live_share_predicates` and joined exactly the way
     `list_shared_projects` joins, so the number enforced below and the number of
     rows the person can actually see are the same number. Counted over a wider
     set — expired grants, projects in a deleted workspace — it would refuse a
     fifth membership to somebody showing three.
-
-    Takes no `Scope` on purpose. The subject is the GRANTEE, who is not the
-    caller: this is asked by the account doing the granting, about somebody
-    else's account, and there is no scope under which that is a scoped read.
     """
-    stmt = (
-        select(func.count(ProjectShare.id))
+    return (
+        select(ProjectShare.project_id)
         .select_from(ProjectShare)
         .join(Project, Project.id == ProjectShare.project_id)
         .join(Workspace, Workspace.id == Project.workspace_id)
-        .where(ProjectShare.grantee_user_id == user_id, *_live_share_predicates())
+        .where(ProjectShare.grantee_user_id == user_id, *live_share_predicates())
     )
+
+
+def _owned_and_shared_project_ids(user_id: uuid.UUID) -> Any:
+    """Projects in workspaces this person OWNS that carry a live grant.
+
+    The half that was missing. `owner_user_id` is the subject rather than the
+    account that happened to press Share: any admin of a workspace can grant, and
+    two grants on one project can have two different granters, so attributing the
+    project to a granter would count it twice or not at all. The owner is the
+    account `owned_workspaces` already meters, and the account that keeps the
+    rows.
+    """
+    return (
+        select(Project.id)
+        .select_from(ProjectShare)
+        .join(Project, Project.id == ProjectShare.project_id)
+        .join(Workspace, Workspace.id == Project.workspace_id)
+        .where(Workspace.owner_user_id == user_id, *live_share_predicates())
+    )
+
+
+async def count_shared_projects(session: AsyncSession, user_id: uuid.UUID) -> int:
+    """Shared projects this person is in, from BOTH directions.
+
+    The owner's cap, as the owner stated it across two sessions:
+
+    > "a person has only access to 4 projects total, whether they started it
+    > themselves or it was shared by another person"
+
+    > "unlimited non-shared projects can be created"
+
+    Together those say the ceiling is on SHARED projects and nothing else, so
+    this counts projects the person owns that carry a live grant plus projects
+    granted to them — and a project with no live grant is invisible to it,
+    however many of them somebody creates in their own Studio.
+
+    What shipped in session 52 counted only the second half, which made the cap
+    something an account could never reach by sharing its own work. Measured
+    before it was changed: an account that had shared six of its own projects
+    read `0`.
+
+    **A UNION of ids, counted distinct**, rather than two counts added. The two
+    sets should never overlap — `grant_share` refuses a grantee who is already a
+    member of the owning workspace, and an owner is always a member — but "two
+    refusals currently keep these disjoint" is not a thing to make a cap's
+    arithmetic depend on. Adding them would silently charge a person twice for
+    one project the day either refusal moves.
+
+    Takes no `Scope` on purpose. The subject is often NOT the caller: this is
+    asked by the account doing the granting, about somebody else's account, and
+    there is no scope under which that is a scoped read.
+    """
+    union = _received_project_ids(user_id).union(_owned_and_shared_project_ids(user_id))
+    stmt = select(func.count()).select_from(union.subquery())
     return int((await session.execute(stmt)).scalar_one())
 
 
-async def _reserve_membership_slot(session: AsyncSession, grantee: User, limit: int | None) -> None:
-    """Take the grantee's lock and refuse if their plan is already full.
+async def count_shared_project_memberships(session: AsyncSession, user_id: uuid.UUID) -> int:
+    """Live grants this person HOLDS. Kept as its own function, deliberately.
 
-    ## Why a lock, and why on the grantee's row
+    No longer what the cap compares against — `count_shared_projects` is — but
+    still the honest answer to "how many of somebody else's projects can this
+    person open", which is what `list_shared_projects` returns and what the
+    shared-with-me list shows. Folding it into the cap's number would make that
+    list's length and the cap's number the same integer, and they are not.
+    """
+    stmt = select(func.count()).select_from(_received_project_ids(user_id).subquery())
+    return int((await session.execute(stmt)).scalar_one())
+
+
+async def _reserve_share_slots(
+    session: AsyncSession,
+    *,
+    grantee: User,
+    grantee_limit: int | None,
+    owner_user_id: uuid.UUID | None,
+    owner_limit: int | None,
+) -> None:
+    """Take every affected user's lock, then refuse whichever plan is full.
+
+    ## Why a lock, and why on the user rows
 
     The two racers here are two grants made by DIFFERENT owners to the same
     person, so `_lock_project` serializes nothing: they hold different project
@@ -254,21 +344,65 @@ async def _reserve_membership_slot(session: AsyncSession, grantee: User, limit: 
     two sessions and pins the interleaving. Removing the `with_for_update()`
     below fails it with the fifth membership granted.
 
+    ## Two user rows now, and why they are locked in id order
+
+    Since the cap counts a person's OWN shared projects too, a grant can be the
+    thing that puts either account over: the grantee gains a project, and — when
+    this grant is the first live one on it — so does the owner of the workspace
+    that holds it. Locking both in the order they were named would deadlock on a
+    pair of requests nobody would think to try: Alice shares with Bob while Bob
+    shares with Alice, each holding the row the other wants. Sorting by id makes
+    the two locks a total order among themselves, so one of the two waits instead.
+
+    `owner_user_id is None` means this grant does not make the project newly
+    shared — it already carries a live grant — so the owner spends nothing and
+    their row is not locked at all.
+
     ## Lock ordering
 
     Taken AFTER `_lock_project`, always. Nothing in this service acquires a
     project lock while holding a user lock (`workspaces.update_display_name` is
     the only other writer that locks a user row, and it locks nothing else), so
-    project-then-user is a total order and there is no cycle to deadlock on.
+    artifact/project → workspace → user is a total order and there is no cycle
+    to deadlock on.
 
     `limit is None` takes no lock at all: an unlimited tier has nothing to
     serialize.
     """
-    if limit is None:
+    #: (user id, limit, is_the_grantee), in the order the two refusals should be
+    #: REPORTED — the owner's account first, because that is the one the person
+    #: reading the message can do something about. The locks below are taken in a
+    #: different order on purpose; see the two loops.
+    subjects: list[tuple[uuid.UUID, int, bool]] = []
+    if owner_user_id is not None and owner_limit is not None:
+        subjects.append((owner_user_id, owner_limit, False))
+    if grantee_limit is not None:
+        subjects.append((grantee.id, grantee_limit, True))
+    if not subjects:
         return
-    await session.execute(select(User.id).where(User.id == grantee.id).with_for_update())
-    held = await count_shared_project_memberships(session, grantee.id)
-    if held >= limit:
+    # Locks in ID order, which is what makes the pair deadlock-free.
+    for user_id, _limit, _is_grantee in sorted(subjects):
+        await session.execute(select(User.id).where(User.id == user_id).with_for_update())
+    # Checks in SEMANTIC order, which is a different thing and has to be, because
+    # both accounts can be full at once. Checking in the lock's order would make
+    # the sentence the granter reads depend on which id sorts first — and `uuid7`
+    # is time-ordered, so that is not a coin flip, it is *whoever signed up
+    # first*. Two accounts at their caps would be told to do two different things
+    # depending on their join dates, which is not a distinction this product
+    # makes anywhere else.
+    #
+    # Counted only once every lock is held. Counting as each row is locked would
+    # read the second account's total before the first row was frozen, which is
+    # the same read-then-write this function exists to close, one level up.
+    for user_id, limit, is_grantee in subjects:
+        held = await count_shared_projects(session, user_id)
+        if held < limit:
+            continue
+        if not is_grantee:
+            raise ShareError(
+                "this account is already in as many shared projects as its plan "
+                "allows; stop sharing one before sharing another"
+            )
         # Deliberately names no number and no plan. The granter typed an
         # address; the size of somebody else's allowance is not theirs to read,
         # for the same reason `may_receive`'s refusal does not name their plan.
@@ -318,6 +452,27 @@ async def _share_row(
         .scalars()
         .first()
     )
+
+
+async def _workspace_owner(session: AsyncSession, workspace_id: uuid.UUID) -> User:
+    """The account `workspaces.owner_user_id` points at.
+
+    Read rather than assumed to be `scope.user_id`: any ADMIN of a workspace may
+    share a project, and charging the shared-project slot to whoever pressed the
+    button would let a workspace hold unlimited shared projects by rotating which
+    admin does the sharing. The owner is the account `owned_workspaces` already
+    meters, which is what makes the two caps compose.
+    """
+    owner = (
+        await session.execute(
+            select(User)
+            .join(Workspace, Workspace.owner_user_id == User.id)
+            .where(Workspace.id == workspace_id)
+        )
+    ).scalar_one_or_none()
+    if owner is None:  # pragma: no cover - a workspace with no owner row
+        raise NotFoundError("workspace owner")
+    return owner
 
 
 async def _user_by_email(session: AsyncSession, email: str) -> User:
@@ -373,7 +528,7 @@ async def grant_share(
     email: str,
     role: ShareRole,
     expires_at: dt.datetime | None = None,
-    grantee_allowance: Callable[[User], GranteeAllowance],
+    allowance_for: Callable[[User], ShareAllowance],
 ) -> tuple[ProjectShare, User]:
     """Grant, or change the grant this person already holds. Admin only.
 
@@ -394,18 +549,18 @@ async def grant_share(
     - **An expiry already in the past.** It would be a grant that never grants,
       recorded as one that does.
     - **Past MAX_SHARES_PER_PROJECT.** See the constant.
-    - **Past the grantee's own membership allowance.** See
-      `_reserve_membership_slot`. This is the only refusal here whose subject is
-      the other account's plan rather than this project's state, and it is
-      checked LAST so that the cheap, local reasons answer first.
+    - **Past either account's shared-project allowance.** See
+      `_reserve_share_slots`. These are the only refusals here whose subject is
+      an account's plan rather than this project's state, and they are checked
+      LAST so that the cheap, local reasons answer first.
 
-    Both counted refusals are skipped when the person already holds a grant on
-    this project: a role change spends no new slot on either axis, and refusing
+    All three counted refusals are skipped when the person already holds a grant
+    on this project: a role change spends no new slot on any axis, and refusing
     one because a cap is exactly full would make demoting an editor to a viewer
     impossible at the boundary — the same reason `keep_artifact` skips the
     artifact cap for something already kept.
 
-    ## Why the grantee's plan is a callable and not a value
+    ## Why the plan is a callable and not a value
 
     Sharing is a Team-plan capability on BOTH ends, so the receiving account's
     tier has to be checked too. That account is not known until `_user_by_email`
@@ -419,8 +574,17 @@ async def grant_share(
     caller that could omit it would silently grant to anybody, and a gate
     enforced nowhere looks exactly like a gate that passes.
 
-    The granter's own tier is NOT checked here. It is checked at the route,
-    before this is called, because it needs no row from this session and
+    **One callable, applied to two accounts.** The owner's shared-project
+    allowance is now spent too — the cap counts a person's own shared projects —
+    and resolving that second number through a second callable would be two
+    chances to answer "how many shared projects may this tier hold" differently.
+    `may_receive` is meaningless for the owner and is deliberately not read for
+    them: they are not receiving anything, and a workspace whose owner has since
+    moved to a plan without sharing must still be able to hand a second seat to
+    a project it is already sharing.
+
+    The granter's own *capability* is NOT checked here. It is checked at the
+    route, before this is called, because it needs no row from this session and
     refusing it earlier means a 403 rather than a 409 — a different sentence,
     for a person who has to do a different thing about it.
     """
@@ -429,7 +593,7 @@ async def grant_share(
     grantee = await _user_by_email(session, email)
     if grantee.id == scope.user_id:
         raise ShareError("you already have access to this project")
-    allowance = grantee_allowance(grantee)
+    allowance = allowance_for(grantee)
     if not allowance.may_receive:
         # Deliberately says nothing about which plan they are on. The granter
         # typed an address; confirming what plan it holds would answer a
@@ -464,7 +628,22 @@ async def grant_share(
             raise ShareError(
                 f"a project can be shared with at most {MAX_SHARES_PER_PROJECT} people"
             )
-        await _reserve_membership_slot(session, grantee, allowance.max_shared_projects)
+        # Asked BEFORE the insert, and that ordering is the whole of it: after
+        # the flush every project is shared, and the owner would be charged a
+        # slot for the second grant on a project they were already sharing.
+        owner_pays = not await is_project_shared(session, project.id)
+        owner: User | None = None
+        if owner_pays:
+            owner = await _workspace_owner(session, project.workspace_id)
+        await _reserve_share_slots(
+            session,
+            grantee=grantee,
+            grantee_limit=allowance.max_shared_projects,
+            owner_user_id=owner.id if owner is not None else None,
+            # Resolved through the SAME callable as the grantee's, so the two
+            # numbers cannot come from two readings of the tier table.
+            owner_limit=(allowance_for(owner).max_shared_projects if owner is not None else None),
+        )
         share = ProjectShare(
             id=uuid7(),
             project_id=project.id,
@@ -595,20 +774,6 @@ def _access_from_row(share: ProjectShare, project: Project, workspace: Workspace
     )
 
 
-def _live_share_predicates() -> list[Any]:
-    """What makes a grant currently good. Written once, used by both readers.
-
-    `func.now()` rather than a Python timestamp so the clock that decides is the
-    database's — the same clock that stamped `created_at` — and so a caller
-    cannot influence it at all. Inside a transaction it is the transaction's
-    start time, which is what makes a request that reads twice see one answer.
-    """
-    return [
-        (ProjectShare.expires_at.is_(None)) | (ProjectShare.expires_at > func.now()),
-        Workspace.deleted_at.is_(None),
-    ]
-
-
 async def resolve_share(scope: Scope, session: AsyncSession, project_id: uuid.UUID) -> SharedAccess:
     """The ONE function that turns a grant into permission. Everything uses it.
 
@@ -632,7 +797,7 @@ async def resolve_share(scope: Scope, session: AsyncSession, project_id: uuid.UU
         .where(
             ProjectShare.project_id == project_id,
             ProjectShare.grantee_user_id == scope.user_id,
-            *_live_share_predicates(),
+            *live_share_predicates(),
         )
     )
     row = (await session.execute(stmt)).first()
@@ -687,25 +852,6 @@ async def _bound_artifact(
     if artifact.project_id != access.project_id or artifact.kept_at is None:
         raise NotFoundError("artifact")
     return elevated, access, artifact
-
-
-def _visible_artifacts_of(project_id: Any, workspace_id: Any) -> list[Any]:
-    """What a grantee can see inside a project — one list, four callers.
-
-    `workspace_id` is in here as well as `project_id`, and it is not redundant:
-    `artifacts.project_id` is a plain foreign key, so nothing in the DATABASE
-    stops a row in workspace B from pointing at a project in workspace A. Today
-    only `set_artifact_project` writes that column and it checks both halves —
-    but "one function currently gets it right" is not the guarantee to rest a
-    tenant boundary on, and adding the column here costs one predicate and lets
-    every one of these queries use `ix_artifacts_workspace_project`.
-    """
-    return [
-        Artifact.project_id == project_id,
-        Artifact.workspace_id == workspace_id,
-        Artifact.deleted_at.is_(None),
-        Artifact.kept_at.is_not(None),
-    ]
 
 
 @dataclass(frozen=True)
@@ -807,7 +953,7 @@ async def list_shared_projects(scope: Scope, session: AsyncSession) -> list[Shar
         .join(Project, Project.id == ProjectShare.project_id)
         .join(Workspace, Workspace.id == Project.workspace_id)
         .join(granter, granter.id == ProjectShare.granted_by_user_id, isouter=True)
-        .where(ProjectShare.grantee_user_id == scope.user_id, *_live_share_predicates())
+        .where(ProjectShare.grantee_user_id == scope.user_id, *live_share_predicates())
         .order_by(ProjectShare.created_at.desc(), ProjectShare.id.desc())
     )
     rows = []
@@ -1117,7 +1263,14 @@ async def copy_shared_artifact(
         ),
     )
     if target_project_id is not None:
-        await set_artifact_project(scope, session, copy.id, target_project_id)
+        # The copy is UNKEPT here, so this spends no project slot and cannot be
+        # refused; `keep_artifact` at the route is where a full target project
+        # says no. Passing `None` for the workspace limit is therefore not a
+        # hole: the only branch that reads it is the one that moves an artifact
+        # OUT of a shared project, and a row created a moment ago is in none.
+        await set_artifact_project(
+            scope, session, copy.id, target_project_id, workspace_artifact_limit=None
+        )
     await record_audit(
         elevated,
         session,
@@ -1132,36 +1285,6 @@ async def copy_shared_artifact(
     return access, await artifacts_repo.get_artifact(scope, session, copy.id)
 
 
-async def shared_project_owner(
-    scope: Scope, session: AsyncSession, project_id: uuid.UUID
-) -> tuple[SharedAccess, User]:
-    """The account whose allowance a contribution would spend.
-
-    A grantee's new artifact is a row in the OWNER's workspace, counted by
-    `workspaces.get_overview` and shown on the owner's account page. So the tier
-    that bounds it is the owner's, not the contributor's, and the contributor's
-    own plan is irrelevant to whether the write is allowed.
-
-    Behind `resolve_share`, so an address that holds no grant learns nothing —
-    including whether the project exists.
-    """
-    access = await resolve_share(scope, session, project_id)
-    owner = (
-        (
-            await session.execute(
-                select(User)
-                .join(Workspace, Workspace.owner_user_id == User.id)
-                .where(Workspace.id == access.owner_workspace_id)
-            )
-        )
-        .scalars()
-        .first()
-    )
-    if owner is None:  # pragma: no cover - workspaces.owner_user_id is NOT NULL
-        raise NotFoundError("workspace owner")
-    return access, owner
-
-
 async def contribute_artifact(
     scope: Scope,
     session: AsyncSession,
@@ -1172,7 +1295,6 @@ async def contribute_artifact(
     framework: str,
     code: str,
     code_lang: str,
-    workspace_artifact_limit: int | None,
 ) -> tuple[SharedAccess, Artifact, ArtifactVersion]:
     """Add a NEW circuit to a project shared with you. EDITOR only.
 
@@ -1185,21 +1307,25 @@ async def contribute_artifact(
     statement: `projects.max_artifacts` bounds the container, the owner sets it,
     and it is the reason this function can exist at all.
 
-    ## Two limits, and they are not the same limit
+    ## One limit, where there used to be two
 
-    - **The project cap** is the owner's *consent*: how much of their workspace
-      this project may become. Zero is legal and means "edit what is here, add
-      nothing".
-    - **The owning workspace's tier allowance** is what the owner's account can
-      *hold*. It is passed in rather than read here because the tier table lives
-      in `tiers.py` and is applied at the route boundary for every other artifact
-      write; a second copy of that resolution here would be a second thing to
-      drift. It is a REQUIRED argument, not a defaulted one, so a caller cannot
-      omit it and silently get no allowance check at all.
+    **The project cap** is the owner's *consent*: how much of their workspace
+    this project may become. Zero is legal and means "edit what is here, add
+    nothing". It is the only limit a contribution can hit.
 
-    They are refused separately because a contributor can do something about one
-    of them (ask for more room) and nothing at all about the other, and a single
-    "limit reached" sentence would leave them retrying against the wrong wall.
+    The owning workspace's tier allowance used to be checked here as well, and
+    that check is gone (2026-08-02). It was not removed to be permissive — it
+    stopped being a check at all. Under the owner's rule a shared project's
+    contents spend no individual allowance, so `count_kept_against_quota` cannot
+    see the row this function is about to write; comparing it to
+    `private_artifacts` would refuse a guest's contribution because of the
+    OWNER'S unrelated private Vault, and let it through when that Vault happened
+    to be empty. A cap that answers a question nobody asked is worse than no cap:
+    it reads, in the code and in CI, exactly like the missing one.
+
+    What bounds the guest's rows instead is the pair the owner named — this
+    project's limit, and how many shared projects one account may be in — whose
+    product is the whole shared bucket. `_project_limits` states it once.
 
     ## Why the project row is locked
 
@@ -1234,14 +1360,8 @@ async def contribute_artifact(
     # serialized against another contributor doing the same thing.
     project = await _lock_project(elevated, session, access.project_id)
     limit = project_artifact_limit(project)
-    held = int(
-        (
-            await session.execute(
-                select(func.count(Artifact.id)).where(
-                    *_visible_artifacts_of(access.project_id, access.owner_workspace_id)
-                )
-            )
-        ).scalar_one()
+    held = await count_project_artifacts(
+        session, project_id=access.project_id, workspace_id=access.owner_workspace_id
     )
     if held >= limit:
         # Zero gets its own sentence. "holds 0 of its 0-circuit limit" is
@@ -1253,22 +1373,6 @@ async def contribute_artifact(
             f"this project holds {held} of its {limit}-circuit limit; "
             "its owner can raise the limit or remove a circuit"
         )
-    if workspace_artifact_limit is not None:
-        # The project row is already locked; this adds the OWNING workspace's
-        # cap lock on top of it, in that order. `_lock_project` only serializes
-        # contributors to the SAME project — two grantees contributing to two
-        # different projects in one workspace both read the same count and both
-        # insert, which is the workspace cap failing in exactly the way the
-        # project cap does not. The workspace lock is always the last one taken;
-        # see `artifacts.reserve_artifact_slot` for why that ordering matters.
-        try:
-            await artifacts_repo.reserve_artifact_slot(elevated, session, workspace_artifact_limit)
-        except artifacts_repo.ArtifactCapReached as full:
-            raise ShareError(
-                f"the workspace that owns this project is at its {full.limit}-"
-                "artifact plan limit; only its owner can make room"
-            ) from full
-
     # Content, with no nonce. `create_version` treats the fingerprint as exact
     # content identity and REINSTATES a matching row rather than writing a second
     # one, so a nonce would mean a contributor who edits this circuit and then
@@ -1318,7 +1422,15 @@ async def contribute_artifact(
     # Filed into the project through the elevated scope, which resolves BOTH ids
     # against the owning workspace — so this cannot file the new row under a
     # different project, and it is the same function the owner's own drag uses.
-    await set_artifact_project(elevated, session, artifact.id, access.project_id)
+    #
+    # It re-checks the project cap this function has already checked, against the
+    # project row this function already holds locked, and the answer is the same
+    # because the new artifact is not in the project yet. Left in rather than
+    # bypassed: a second reading under the same lock costs one count, and the
+    # alternative is a filing path that trusts its caller checked.
+    await set_artifact_project(
+        elevated, session, artifact.id, access.project_id, workspace_artifact_limit=None
+    )
     await record_audit(
         elevated,
         session,

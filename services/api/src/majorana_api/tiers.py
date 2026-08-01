@@ -85,21 +85,34 @@ class TierLimits:
     #: Both ends are checked: the account granting and the account being granted
     #: to. See `routes/shares.grant_project_share`.
     project_sharing: bool
-    #: Projects this account may be a member of *through a share* — somebody
-    #: else's projects, granted to them. Counted per PERSON and enforced on the
-    #: receiving end, so it bounds what one account can be pulled into rather
-    #: than what one owner can give away (`MAX_SHARES_PER_PROJECT` does that).
+    #: SHARED projects this account may be in at once, counted per PERSON from
+    #: both directions: projects it owns that carry a live grant, plus projects
+    #: granted to it. `shares.count_shared_projects` is the one definition.
     #:
-    #: **It does NOT count the projects the account owns.** The owner's number
-    #: ("each person can be part of maximum 4 projects") is recorded in
-    #: OWNER_TODO with the other reading spelled out, because capping a paying
-    #: account's own projects at four while a free account may create them
-    #: without bound is the one reading that makes the plan worth less than the
-    #: plan below it.
+    #: **Unshared projects are unlimited on every tier and are not counted
+    #: here.** That is the owner's rule, given in two parts:
+    #:
+    #:   "a person has only access to 4 projects total, whether they started it
+    #:   themselves or it was shared by another person"
+    #:
+    #:   "unlimited non-shared projects can be created"
+    #:
+    #: Session 52 shipped the first half only as grants RECEIVED, which made
+    #: this a ceiling an account could never reach by sharing its own work —
+    #: measured at `0` for somebody who had shared six of their own projects.
+    #: The other reading available at the time, capping a paying account's own
+    #: private projects at four, is the one the owner ruled out.
+    #:
+    #: Together with the per-project artifact limit this is the whole bound on
+    #: the shared bucket: `shared_projects` × `project_artifact_limit(project)`.
+    #: There is deliberately no third number counting shared artifacts, because
+    #: a third number is a third thing to drift.
     #:
     #: `0` for a tier that cannot share at all: a tier whose `project_sharing`
     #: is later flipped true must not silently acquire an unbounded allowance,
     #: and `test_a_tier_that_cannot_share_has_no_membership_allowance` pins it.
+    #: Free stays `0` and needs no other number — its unshared projects, which
+    #: are all of them, are unlimited like everyone's.
     shared_projects: int | None
 
 

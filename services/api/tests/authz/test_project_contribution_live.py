@@ -3,8 +3,9 @@
 `test_project_shares_live.py` covers reading and editing what is already there.
 This is the write that CREATES a row in another tenant's workspace, which session
 49 deliberately did not build, and the reason it did not was accounting rather
-than authorization: a new artifact spends the owner's allowance, and nothing let
-the owner say how much of it a guest could spend.
+than authorization: nothing let the owner say how much of their workspace a guest
+could spend. `projects.max_artifacts` is that statement, and it is now the whole
+of the accounting — see section 3.
 
 So these cases are grouped by which wall is being tested:
 
@@ -12,8 +13,10 @@ So these cases are grouped by which wall is being tested:
    A viewer, a stranger, an expired grant and a revoked one each get nothing, and
    the contribution lands in the OWNER's workspace rather than the caller's.
 2. The project cap — the owner's consent, including zero.
-3. The owning workspace's plan allowance — which is the OWNER's, not the
-   contributor's, and which the contributor cannot do anything about.
+3. Which allowance the contribution spends. Since 2026-08-02 the answer is
+   "the project's, and only the project's": a shared project's contents are
+   outside the individual artifact allowance, so the owner's plan limit is not
+   a wall a contribution can hit.
 4. Concurrency — two contributors against the last slot.
 
 Every one of them has a positive control: the same call, one condition changed,
@@ -43,6 +46,7 @@ from majorana_api.repos import (
     shares,
     system,
 )
+from majorana_api.tiers import limits_for
 
 #: Tier gating is not what these suites are about: every one of them predates
 #: the Team plan and each is pinning a different rule. A grantee that always
@@ -89,12 +93,12 @@ async def grant(db, alice, bob, role=ShareRole.EDITOR, expires_at=None):
         email=bob.user.email,
         role=role,
         expires_at=expires_at,
-        grantee_allowance=any_team_grantee,
+        allowance_for=any_team_grantee,
     )
     return share
 
 
-async def contribute(db, caller, project_id, *, title="Bob's circuit", limit=None, code=CODE):
+async def contribute(db, caller, project_id, *, title="Bob's circuit", code=CODE):
     return await shares.contribute_artifact(
         caller.scope,
         db,
@@ -104,7 +108,6 @@ async def contribute(db, caller, project_id, *, title="Bob's circuit", limit=Non
         framework="qiskit",
         code=code,
         code_lang="python",
-        workspace_artifact_limit=limit,
     )
 
 
@@ -191,7 +194,9 @@ async def test_the_role_mapping_refuses_a_viewer_independently(db, pair):
         family="Bell",
         framework="qiskit",
     )
-    await projects.set_artifact_project(alice.scope, db, existing.id, alice.project.id)
+    await projects.set_artifact_project(
+        alice.scope, db, existing.id, alice.project.id, workspace_artifact_limit=None
+    )
     with pytest.raises(AuthzError):
         await shares.create_shared_version(
             bob.scope,
@@ -344,16 +349,19 @@ async def test_the_project_cap_refuses_the_one_past_it(db, pair):
 
 
 async def test_a_zero_limit_means_edit_but_do_not_add(db, pair):
-    """The permission an owner sharing finished work for review actually wants."""
+    """The permission an owner sharing finished work for review actually wants.
+
+    The limit is set AFTER the work is filed, which is both the real sequence —
+    fill a project, then freeze it — and the only one available since 2026-08-02:
+    the per-project limit binds every path that files into the project, the
+    OWNER'S included. It has to. An owner exempt from it would have an unbounded
+    artifact allowance the moment they shared a project, because a shared
+    project's contents are outside the individual allowance.
+    """
     alice, bob = pair
-    await projects.set_project_artifact_limit(alice.scope, db, alice.project.id, max_artifacts=0)
     await grant(db, alice, bob)
 
-    with pytest.raises(shares.ShareError) as refusal:
-        await contribute(db, bob, alice.project.id)
-    assert "does not accept new circuits" in str(refusal.value)
-
-    # ...but editing what is already there still works, which is what makes zero
+    # ...editing what is already there still works, which is what makes zero
     # a different thing from downgrading the grant to viewer.
     existing = await artifacts.create_artifact(
         alice.scope,
@@ -374,7 +382,15 @@ async def test_a_zero_limit_means_edit_but_do_not_add(db, pair):
         fingerprint=f"f-{uuid.uuid4().hex[:8]}",
         export_status="unsupported",
     )
-    existing = await projects.set_artifact_project(alice.scope, db, existing.id, alice.project.id)
+    existing = await projects.set_artifact_project(
+        alice.scope, db, existing.id, alice.project.id, workspace_artifact_limit=None
+    )
+    await projects.set_project_artifact_limit(alice.scope, db, alice.project.id, max_artifacts=0)
+
+    with pytest.raises(shares.ShareError) as refusal:
+        await contribute(db, bob, alice.project.id)
+    assert "does not accept new circuits" in str(refusal.value)
+
     _access, _artifact, version = await shares.create_shared_version(
         bob.scope,
         db,
@@ -385,6 +401,21 @@ async def test_a_zero_limit_means_edit_but_do_not_add(db, pair):
         code_lang="python",
     )
     assert version.code == "print(2)"
+
+    # And the owner is bound by the same zero. Without this the exemption above
+    # would be an unbounded allowance rather than a frozen project.
+    another = await artifacts.create_artifact(
+        alice.scope,
+        db,
+        slug=f"a2-{uuid.uuid4().hex[:8]}",
+        title="alice's second",
+        family="Bell",
+        framework="qiskit",
+    )
+    with pytest.raises(artifacts.ProjectFull):
+        await projects.set_artifact_project(
+            alice.scope, db, another.id, alice.project.id, workspace_artifact_limit=None
+        )
 
 
 async def test_the_cap_counts_only_what_the_project_actually_holds(db, pair):
@@ -417,7 +448,9 @@ async def test_the_cap_counts_only_what_the_project_actually_holds(db, pair):
         family="Bell",
         framework="qiskit",
     )
-    await projects.set_artifact_project(alice.scope, db, doomed.id, alice.project.id)
+    await projects.set_artifact_project(
+        alice.scope, db, doomed.id, alice.project.id, workspace_artifact_limit=None
+    )
     await artifacts.soft_delete_artifact(alice.scope, db, doomed.id)
 
     _access, artifact, _version = await contribute(db, bob, alice.project.id)
@@ -492,86 +525,86 @@ async def test_the_limit_is_not_reachable_across_workspaces(db, pair):
 
 
 # --------------------------------------------------------------------------- #
-# 3. The owning workspace's plan allowance
+# 3. Which allowance a contribution spends — and which one it stopped spending
 # --------------------------------------------------------------------------- #
 
 
-async def test_the_owners_plan_allowance_refuses_even_with_project_room(db, pair):
-    """The wall the contributor cannot do anything about, and it says so.
+async def test_the_project_limit_is_the_only_wall_a_contribution_hits(db, pair):
+    """The owner's plan allowance no longer bounds a contribution (2026-08-02).
 
-    Two separate sentences on purpose: "the project is full" is something the
-    contributor can ask to have changed, and "the owner's plan is full" is not.
-    A single "limit reached" would send them at the wrong wall.
-    """
-    alice, bob = pair
-    await projects.set_project_artifact_limit(alice.scope, db, alice.project.id, max_artifacts=50)
-    await grant(db, alice, bob)
+    It used to, and the reason it stopped is not permissiveness. A contribution
+    lands in a shared project by construction, and a shared project's contents
+    are outside `count_kept_against_quota` — so comparing this write to
+    `private_artifacts` compared it to a number that cannot see it. The refusal
+    would have fired on the owner's unrelated private Vault.
 
-    # One kept artifact already in Alice's workspace, and an allowance of one.
-    await contribute(db, bob, alice.project.id, title="first", limit=5)
-    with pytest.raises(shares.ShareError) as refusal:
-        await contribute(db, bob, alice.project.id, title="second", limit=1)
-    assert "plan limit" in str(refusal.value)
-    assert "1-artifact" in str(refusal.value)
-
-    # Positive control: the same call with a larger allowance succeeds, so the
-    # refusal was the allowance and not the project cap.
-    _access, artifact, _version = await contribute(
-        db, bob, alice.project.id, title="second", limit=5
-    )
-    assert artifact.title == "second"
-
-
-async def test_an_unlimited_owner_allowance_is_not_an_unlimited_project(db, pair):
-    """`workspace_artifact_limit=None` is a developer-tier owner. The cap still binds.
-
-    This is the case that would be silently unbounded if `max_artifacts IS NULL`
-    had been read as "no limit" — every project predating migration 0043 is NULL,
-    and the accounts most likely to own one have no workspace allowance either.
+    The wall that is left is the one the owner sets. Both halves are asserted
+    here so that deleting the refusal a second time cannot pass: the project's
+    own limit still refuses, and a full Vault does not.
     """
     alice, bob = pair
     await projects.set_project_artifact_limit(alice.scope, db, alice.project.id, max_artifacts=1)
     await grant(db, alice, bob)
 
-    await contribute(db, bob, alice.project.id, title="one", limit=None)
-    with pytest.raises(shares.ShareError):
-        await contribute(db, bob, alice.project.id, title="two", limit=None)
-
-
-async def test_the_allowance_counts_the_owners_whole_workspace_not_the_project(db, pair):
-    """Artifacts filed elsewhere in Alice's workspace still spend Alice's plan."""
-    alice, bob = pair
-    await grant(db, alice, bob)
-    elsewhere = await artifacts.create_artifact(
-        alice.scope,
-        db,
-        slug=f"else-{uuid.uuid4().hex[:8]}",
-        title="not in the project",
-        family="Bell",
-        framework="qiskit",
-    )
-    assert elsewhere.kept_at is not None
-    assert elsewhere.project_id is None
-
+    _access, first, _version = await contribute(db, bob, alice.project.id, title="first")
+    assert first.title == "first"
     with pytest.raises(shares.ShareError) as refusal:
-        await contribute(db, bob, alice.project.id, limit=1)
-    assert "plan limit" in str(refusal.value)
+        await contribute(db, bob, alice.project.id, title="second")
+    assert "1-circuit limit" in str(refusal.value)
+    assert "plan limit" not in str(refusal.value)
+
+    # Positive control: raising the OWNER'S project limit is what lets it in, so
+    # the refusal above was the project cap and nothing else.
+    await projects.set_project_artifact_limit(alice.scope, db, alice.project.id, max_artifacts=5)
+    _access, second, _version = await contribute(db, bob, alice.project.id, title="second")
+    assert second.title == "second"
 
 
-async def test_the_owner_resolved_for_the_allowance_is_the_workspace_owner(db, pair):
-    """Not the contributor. A developer-tier guest must not lift a free-tier cap."""
+async def test_a_full_vault_does_not_refuse_a_contribution(db, pair):
+    """Alice's own Vault is at a free tier's cap; Bob's contribution still lands.
+
+    The inverse of the test this replaces, which asserted that artifacts filed
+    elsewhere in Alice's workspace spent the allowance a contribution compared
+    against. Under the owner's rule they no longer meet: hers count against her
+    plan, the project's do not.
+    """
     alice, bob = pair
     await grant(db, alice, bob)
-    access, owner = await shares.shared_project_owner(bob.scope, db, alice.project.id)
-    assert owner.id == alice.user.id
-    assert owner.email == alice.user.email
-    assert access.owner_workspace_id == alice.workspace.id
+    free_cap = limits_for("free").private_artifacts
+    held = await artifacts.count_kept_against_quota(alice.scope, db)
+    for index in range(free_cap - held):
+        await artifacts.create_artifact(
+            alice.scope,
+            db,
+            slug=f"else-{index}-{uuid.uuid4().hex[:8]}",
+            title=f"not in the project {index}",
+            family="Bell",
+            framework="qiskit",
+        )
+    assert await artifacts.count_kept_against_quota(alice.scope, db) == free_cap
+    with pytest.raises(artifacts.ArtifactCapReached):
+        # The control: Alice really is at her cap, so the contribution below is
+        # not landing because the fixture failed to fill it.
+        await artifacts.reserve_artifact_slot(alice.scope, db, free_cap)
+
+    _access, artifact, _version = await contribute(db, bob, alice.project.id)
+    assert artifact.workspace_id == alice.workspace.id
 
 
-async def test_a_stranger_cannot_learn_who_owns_a_project(db, pair):
+async def test_a_contribution_does_not_spend_the_owners_allowance(db, pair):
+    """The count the cap reads must not move when a guest writes into the project."""
     alice, bob = pair
-    with pytest.raises(NotFoundError):
-        await shares.shared_project_owner(bob.scope, db, alice.project.id)
+    await grant(db, alice, bob)
+    before = await artifacts.count_kept_against_quota(alice.scope, db)
+    vault_before = await artifacts.count_kept(alice.scope, db)
+
+    await contribute(db, bob, alice.project.id)
+
+    assert await artifacts.count_kept_against_quota(alice.scope, db) == before
+    # ...but the Vault DOES list it. The two numbers differing by exactly this
+    # row is the whole of the change, and asserting only the first would pass
+    # against a version that lost the artifact entirely.
+    assert await artifacts.count_kept(alice.scope, db) == vault_before + 1
 
 
 # --------------------------------------------------------------------------- #
@@ -611,7 +644,6 @@ async def test_two_contributors_racing_the_last_slot_produce_one_artifact(db, pa
                     framework="qiskit",
                     code=CODE,
                     code_lang="python",
-                    workspace_artifact_limit=None,
                 )
                 await session.commit()
                 outcomes.append(f"wrote:{title}")
@@ -689,7 +721,7 @@ async def test_an_ambiguous_email_is_refused_rather_than_guessed(db, pair):
             email=bob.user.email,
             role=ShareRole.EDITOR,
             expires_at=None,
-            grantee_allowance=any_team_grantee,
+            allowance_for=any_team_grantee,
         )
     assert "2 accounts" in str(refusal.value)
 
@@ -708,7 +740,7 @@ async def test_a_single_account_is_still_found_case_insensitively(db, pair):
         email=bob.user.email.upper(),
         role=ShareRole.EDITOR,
         expires_at=None,
-        grantee_allowance=any_team_grantee,
+        allowance_for=any_team_grantee,
     )
     assert grantee.id == bob.user.id
     assert share.grantee_user_id == bob.user.id
