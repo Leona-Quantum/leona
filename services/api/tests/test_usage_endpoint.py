@@ -12,11 +12,13 @@ import datetime as dt
 
 import pytest
 from fastapi import HTTPException
-from majorana_contracts.enums import Framework, RunMode
+from majorana_contracts.enums import CHAT_USAGE_ROLE, Framework, RunMode
 from repo_test_helpers import compiled
 
 from majorana_api.orm import User, Workspace
 from majorana_api.repos import runs as runs_repo
+from majorana_api.repos import usage as usage_repo
+from majorana_api.repos.usage import TokenSpendRow
 from majorana_api.routes import runs as runs_routes
 from majorana_api.routes import usage as usage_routes
 from majorana_api.settings import Settings
@@ -44,8 +46,16 @@ def _identity(email: str = "someone@example.com", plan: str | None = None):
     return User(email=email, plan=plan), Workspace()
 
 
-def _wire(monkeypatch, *, executed: int, oldest: list[dt.datetime], kept: int = 0, owned: int = 1):
-    """Stand in for the three repositories the route reads, recording its calls."""
+def _wire(
+    monkeypatch,
+    *,
+    executed: int,
+    oldest: list[dt.datetime],
+    kept: int = 0,
+    owned: int = 1,
+    spend: list[TokenSpendRow] | None = None,
+):
+    """Stand in for the four repositories the route reads, recording its calls."""
     seen: dict = {}
 
     async def count_execute_runs_since(_scope, _session, since):
@@ -63,6 +73,10 @@ def _wire(monkeypatch, *, executed: int, oldest: list[dt.datetime], kept: int = 
     async def count_owned_workspaces(_session, *, user_id):
         return owned
 
+    async def token_spend_since(_scope, _session, since):
+        seen["spend_since"] = since
+        return spend or []
+
     monkeypatch.setattr(
         usage_routes.runs_repo, "count_execute_runs_since", count_execute_runs_since
     )
@@ -71,6 +85,7 @@ def _wire(monkeypatch, *, executed: int, oldest: list[dt.datetime], kept: int = 
     )
     monkeypatch.setattr(usage_routes.workspaces_repo, "get_overview", get_overview)
     monkeypatch.setattr(usage_routes.system, "count_owned_workspaces", count_owned_workspaces)
+    monkeypatch.setattr(usage_routes.usage_repo, "token_spend_since", token_spend_since)
     return seen
 
 
@@ -246,6 +261,179 @@ async def test_artifacts_and_workspaces_report_their_own_caps(scope, monkeypatch
 async def test_remaining_never_goes_negative(scope, monkeypatch):
     result, _ = await _usage(scope, monkeypatch, executed=0, oldest=[], kept=FREE_ARTIFACTS + 4)
     assert result.artifacts.remaining == 0
+
+
+# --- token spend -----------------------------------------------------------
+#
+# The allowance numbers above have a gate to disagree with. This block has no
+# gate at all — nothing refuses on tokens — so its failure mode is different and
+# quieter: a number that is simply wrong, on a screen where nothing else says
+# what the right one would have been. The tests are therefore about the two ways
+# it can be wrong without looking wrong: an event landing in the wrong bucket,
+# and an event landing in no bucket.
+
+
+def _spend(*rows: TokenSpendRow):
+    return usage_routes._fold_spend(rows, window_days=7)
+
+
+def test_the_chat_role_is_the_literal_already_in_the_ledger():
+    """`usage_events` is append-only — this string cannot be migrated.
+
+    Every chat row written since the last release carries `"chat"` in its meta
+    and the table's grant revokes UPDATE, so renaming the constant does not
+    rename the history: it makes every existing chat turn read as a run, on a
+    screen with nothing to check the number against. The pin belongs here and
+    not only in the worker's handler test, which asserts what is written.
+    """
+    assert CHAT_USAGE_ROLE == "chat"
+
+
+def test_chat_and_runs_partition_the_total():
+    report = _spend(
+        TokenSpendRow(role=CHAT_USAGE_ROLE, model="deepseek-chat", calls=4, tokens=9_000),
+        TokenSpendRow(role="circuit_plan", model="deepseek-chat", calls=2, tokens=5_000),
+        TokenSpendRow(role="verification_review", model="deepseek-reasoner", calls=1, tokens=800),
+    )
+
+    assert report.chat.tokens == 9_000
+    assert report.chat.calls == 4
+    assert report.runs.tokens == 5_800, "every non-chat role is a run stage"
+    assert report.runs.calls == 3
+    assert report.total.tokens == report.chat.tokens + report.runs.tokens
+    assert report.total.calls == report.chat.calls + report.runs.calls
+
+
+def test_an_unknown_role_counts_as_a_run_and_not_as_chat():
+    """The bucketing is `== "chat"`, never a list of the stages that exist.
+
+    Roles come from the agent request's `schema_name`, so the pipeline gaining a
+    stage renames this set without touching this file. Bucketing by exclusion
+    means a new stage is counted as a run — visible, if slightly coarse. The
+    other way round it would be counted as chat, and the one number this feature
+    exists to produce would drift upward every time the agent changed.
+    """
+    report = _spend(TokenSpendRow(role="a_stage_added_next_year", model="m", calls=1, tokens=10))
+
+    assert report.chat.tokens == 0
+    assert report.runs.tokens == 10
+
+
+def test_a_role_that_merely_contains_chat_is_not_chat():
+    report = _spend(TokenSpendRow(role="chat_summary_review", model="m", calls=1, tokens=10))
+    assert report.chat.tokens == 0
+
+
+def test_the_per_model_list_accounts_for_every_token():
+    """`by_model` is a partition of `total`, not a highlights list.
+
+    A per-model breakdown that dropped rows would still render, still look
+    plausible, and still be smaller than the total printed above it — the exact
+    shape of wrong that nobody reports.
+    """
+    report = _spend(
+        TokenSpendRow(role=CHAT_USAGE_ROLE, model="deepseek-chat", calls=1, tokens=100),
+        TokenSpendRow(role="circuit_plan", model="deepseek-chat", calls=1, tokens=50),
+        TokenSpendRow(role="circuit_plan", model="deepseek-reasoner", calls=1, tokens=700),
+        TokenSpendRow(role=CHAT_USAGE_ROLE, model="", calls=1, tokens=3),
+    )
+
+    assert sum(entry.tokens for entry in report.by_model) == report.total.tokens
+    assert sum(entry.calls for entry in report.by_model) == report.total.calls
+    # One model, spent by both chat and a run stage, is one row.
+    assert [(entry.model, entry.tokens) for entry in report.by_model] == [
+        ("deepseek-reasoner", 700),
+        ("deepseek-chat", 150),
+        ("", 3),
+    ]
+
+
+def test_an_event_with_no_model_keeps_its_tokens():
+    """A row whose meta never carried a model is unattributed, not absent."""
+    report = _spend(TokenSpendRow(role=CHAT_USAGE_ROLE, model="", calls=1, tokens=42))
+
+    assert report.total.tokens == 42
+    assert [entry.model for entry in report.by_model] == [""]
+
+
+def test_models_that_tie_have_a_stable_order():
+    """Two requests over the same rows must not swap two rows on a screen."""
+    rows = (
+        TokenSpendRow(role="circuit_plan", model="bravo", calls=1, tokens=500),
+        TokenSpendRow(role="circuit_plan", model="alpha", calls=1, tokens=500),
+    )
+    assert [entry.model for entry in _spend(*rows).by_model] == ["alpha", "bravo"]
+    assert [entry.model for entry in _spend(*reversed(rows)).by_model] == ["alpha", "bravo"]
+
+
+def test_a_workspace_that_has_spent_nothing_reports_zeroes_not_nulls():
+    """Null would make the client choose between "none" and "unknown"."""
+    report = _spend()
+
+    assert report.total.tokens == 0 and report.total.calls == 0
+    assert report.chat.tokens == 0 and report.runs.tokens == 0
+    assert report.by_model == []
+    assert report.window_days == 7
+
+
+def test_the_spend_query_is_scoped_to_the_workspace(scope):
+    """Unlike the allowance beside it, which is deliberately account-wide.
+
+    Copying `_spends_the_weekly_allowance`'s exemption into this query would
+    sum a second tenant's chat into this workspace's number — with a 200 and
+    nothing to notice it by.
+    """
+    sql, params = compiled(usage_repo.token_spend_stmt(scope, NOW))
+
+    assert scope.workspace_id in params.values()
+    assert "GROUP BY" in sql
+    assert "llm_tokens" in params.values(), "one kind, not every metered quantity"
+
+
+async def test_the_spend_window_is_the_one_the_runs_figure_used(scope, monkeypatch):
+    """One `now()` for the whole response — the two are read as one sentence."""
+    _result, seen = await _usage(
+        scope, monkeypatch, executed=1, oldest=[NOW - dt.timedelta(days=1)]
+    )
+    assert seen["spend_since"] == seen["count_since"]
+
+
+async def test_the_route_reports_the_folded_ledger(scope, monkeypatch):
+    result, _ = await _usage(
+        scope,
+        monkeypatch,
+        executed=0,
+        oldest=[],
+        spend=[
+            TokenSpendRow(role=CHAT_USAGE_ROLE, model="deepseek-chat", calls=6, tokens=12_345),
+            TokenSpendRow(role="circuit_plan", model="deepseek-chat", calls=2, tokens=2_000),
+        ],
+    )
+
+    assert result.spend.chat.tokens == 12_345
+    assert result.spend.runs.tokens == 2_000
+    assert result.spend.total.calls == 8
+    assert result.spend.window_days == TIER_WINDOW.days
+
+
+async def test_an_unmetered_account_still_gets_its_spend(scope, monkeypatch):
+    """Spend is not an allowance, so being unmetered does not silence it.
+
+    A developer account is the one most likely to want the number, and every
+    other block on this response goes null for it.
+    """
+    _wire(
+        monkeypatch,
+        executed=99,
+        oldest=[NOW],
+        spend=[TokenSpendRow(role=CHAT_USAGE_ROLE, model="m", calls=1, tokens=77)],
+    )
+    result = await usage_routes.usage(
+        _identity("dev@example.invalid", plan="developer"), scope, object(), _settings()
+    )
+
+    assert result.runs.limit is None
+    assert result.spend.chat.tokens == 77
 
 
 # --- the agreement the whole file is about ---------------------------------

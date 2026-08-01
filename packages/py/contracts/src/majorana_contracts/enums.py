@@ -459,6 +459,19 @@ class UsageKind(StrEnum):
     SANDBOX_SECONDS = "sandbox_seconds"
 
 
+#: `meta.role` on an `LLM_TOKENS` event that a chat turn spent, as opposed to a
+#: stage of an execute run (whose role is the agent request's `schema_name`).
+#:
+#: Here rather than as a literal in each service because the worker WRITES it
+#: and the API READS it, and a drift between the two is silent in the worst
+#: direction: `/v1/usage` would report zero chat spend on a workspace that had
+#: spent plenty, with every test still green on both sides of the boundary.
+#:
+#: Not a `CONTRACTS_VERSION` bump — the version log tracks the shape of the
+#: exported models, and this changes no schema in `openapi.json`.
+CHAT_USAGE_ROLE = "chat"
+
+
 class QpuProvider(StrEnum):
     """Hardware access route, not the device vendor (IonQ via Braket is `braket`)."""
 

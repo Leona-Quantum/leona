@@ -3,7 +3,14 @@
 import { useEffect, useState } from "react";
 import type { PublicLocale } from "../../../lib/public-locale";
 import { ACCOUNT_COPY } from "../../../lib/workspace-locale";
-import { describeNextSlot, isMetered, parseUsage, type UsageSummary } from "../../../lib/usage-summary";
+import {
+  describeNextSlot,
+  formatTokens,
+  isMetered,
+  parseUsage,
+  type SpendReport,
+  type UsageSummary,
+} from "../../../lib/usage-summary";
 
 /**
  * What this account has actually spent, beside the ceilings it is allowed.
@@ -110,6 +117,65 @@ export function UsageNow({
           <dd>{spent(usage.workspaces.used, usage.workspaces.limit)}</dd>
         </div>
       </dl>
+      {usage.spend ? <ModelSpend spend={usage.spend} locale={locale} /> : null}
+    </div>
+  );
+}
+
+/**
+ * What the workspace's conversations and runs actually consumed.
+ *
+ * Beneath the allowances rather than beside them because it is not one: it
+ * refuses nothing, and reading it as a fourth quota would be the obvious
+ * misunderstanding. Hence the separate heading, its own scope line — this is
+ * the workspace's number, while the runs above it are the account's — and the
+ * sentence saying nobody is charged for it.
+ *
+ * Rendered only when the control plane sent a coherent block; `parseSpend`
+ * already dropped anything that did not add up, so nothing here has to decide
+ * what to do about a total that disagrees with its own parts.
+ */
+function ModelSpend({ spend, locale }: { spend: SpendReport; locale: PublicLocale }) {
+  const copy = ACCOUNT_COPY[locale];
+  const line = (entry: { tokens: number; calls: number }) =>
+    copy.spendTokens(formatTokens(entry.tokens, locale), entry.calls);
+
+  return (
+    <div className="mj-usage-spend">
+      <h3>{copy.spendTitle}</h3>
+      <p className="mj-usage-spend-scope">{copy.spendScope(spend.windowDays)}</p>
+      {spend.total.tokens === 0 ? (
+        <p className="mj-usage-spend-empty">{copy.spendEmpty(spend.windowDays)}</p>
+      ) : (
+        <>
+          <dl className="mj-usage-list">
+            <div>
+              <dt>{copy.spendChat}</dt>
+              <dd>{line(spend.chat)}</dd>
+            </div>
+            <div>
+              <dt>{copy.spendRuns}</dt>
+              <dd>{line(spend.runs)}</dd>
+            </div>
+            <div>
+              <dt>{copy.spendTotal}</dt>
+              <dd>{line(spend.total)}</dd>
+            </div>
+          </dl>
+          {/* The model ids as the provider reported them. Not translated and
+              not prettified: this is the string a person would compare against
+              a provider's own console, and a friendly label would break that. */}
+          <ul className="mj-usage-spend-models">
+            {spend.byModel.map((entry) => (
+              <li key={entry.model}>
+                <span>{entry.model || copy.spendUnattributed}</span>
+                <span>{formatTokens(entry.tokens, locale)}</span>
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
+      <p className="mj-usage-spend-note">{copy.spendNotBilled}</p>
     </div>
   );
 }

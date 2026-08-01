@@ -1,7 +1,23 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import { describeNextSlot, isMetered, parseUsage } from "./usage-summary.ts";
+import { describeNextSlot, formatTokens, isMetered, parseUsage } from "./usage-summary.ts";
+
+/**
+ * Copied from an actual `GET /v1/usage` response, not composed by hand — three
+ * ledger rows through the real route against real Postgres. A fixture written
+ * from the type would agree with the parser and with nothing else.
+ */
+const SPEND = {
+  window_days: 7,
+  total: { tokens: 7000, calls: 3 },
+  chat: { tokens: 2000, calls: 2 },
+  runs: { tokens: 5000, calls: 1 },
+  by_model: [
+    { tokens: 5000, calls: 1, model: "deepseek-reasoner" },
+    { tokens: 2000, calls: 2, model: "deepseek-chat" },
+  ],
+};
 
 const FULL = {
   tier: "free",
@@ -99,6 +115,106 @@ describe("parseUsage", () => {
     const nan = structuredClone(FULL) as unknown as Record<string, Record<string, unknown>>;
     nan.runs.used = Number.NaN;
     assert.equal(parseUsage(nan), null);
+  });
+});
+
+describe("parseUsage — the spend block", () => {
+  const withSpend = (spend: unknown) => parseUsage({ ...FULL, spend });
+
+  it("reads a real response", () => {
+    const summary = withSpend(SPEND);
+    assert.ok(summary?.spend);
+    assert.equal(summary.spend.total.tokens, 7000);
+    assert.equal(summary.spend.chat.calls, 2);
+    assert.equal(summary.spend.runs.tokens, 5000);
+    assert.equal(summary.spend.windowDays, 7);
+    assert.deepEqual(
+      summary.spend.byModel.map((entry) => entry.model),
+      ["deepseek-reasoner", "deepseek-chat"],
+    );
+  });
+
+  // The asymmetry that makes this block different from every other field in
+  // the payload: the allowances shipped first, and a web deploy that lands
+  // before the API's must not blank them.
+  it("keeps the allowances when the API sends no spend at all", () => {
+    const summary = parseUsage(FULL);
+    assert.ok(summary);
+    assert.equal(summary.spend, null);
+    assert.equal(summary.runs.remaining, 3, "the allowances still parsed");
+  });
+
+  it("drops only the spend block when it is malformed, never the allowances", () => {
+    for (const broken of [null, "none", [], { total: SPEND.total }]) {
+      const summary = withSpend(broken);
+      assert.ok(summary, `a bad spend must not fail the whole payload: ${JSON.stringify(broken)}`);
+      assert.equal(summary.spend, null);
+      assert.equal(summary.artifacts.limit, 25);
+    }
+  });
+
+  // The panel prints total, chat and runs within a few centimetres of each
+  // other. A reader adds them up by eye; if they do not agree the page reads as
+  // broken, not the block.
+  it("refuses a total that is not the sum of the two lines under it", () => {
+    const drifted = structuredClone(SPEND);
+    drifted.chat.tokens = 1999;
+    assert.equal(withSpend(drifted)?.spend, null);
+  });
+
+  it("refuses a call count that does not add up either", () => {
+    const drifted = structuredClone(SPEND);
+    drifted.runs.calls = 4;
+    assert.equal(withSpend(drifted)?.spend, null);
+  });
+
+  it("refuses a per-model list that has lost tokens on the way", () => {
+    const truncated = structuredClone(SPEND);
+    truncated.by_model = [truncated.by_model[0]];
+    assert.equal(withSpend(truncated)?.spend, null);
+  });
+
+  it("accepts the unattributed row, whose model is the empty string", () => {
+    const summary = withSpend({
+      window_days: 7,
+      total: { tokens: 64, calls: 1 },
+      chat: { tokens: 0, calls: 0 },
+      runs: { tokens: 64, calls: 1 },
+      by_model: [{ tokens: 64, calls: 1, model: "" }],
+    });
+    assert.equal(summary?.spend?.byModel[0].model, "");
+  });
+
+  it("refuses a model entry that is not named", () => {
+    const unnamed = structuredClone(SPEND) as unknown as {
+      by_model: Record<string, unknown>[];
+    };
+    delete unnamed.by_model[0].model;
+    assert.equal(withSpend(unnamed)?.spend, null);
+  });
+
+  it("reports a workspace that has spent nothing as zeroes, not as absent", () => {
+    const summary = withSpend({
+      window_days: 7,
+      total: { tokens: 0, calls: 0 },
+      chat: { tokens: 0, calls: 0 },
+      runs: { tokens: 0, calls: 0 },
+      by_model: [],
+    });
+    assert.ok(summary?.spend);
+    assert.equal(summary.spend.total.tokens, 0);
+    assert.deepEqual(summary.spend.byModel, []);
+  });
+});
+
+describe("formatTokens", () => {
+  it("groups rather than abbreviates, so the figure stays comparable", () => {
+    assert.equal(formatTokens(1234567, "en"), "1,234,567");
+    assert.equal(formatTokens(0, "en"), "0");
+  });
+
+  it("uses the reader's locale", () => {
+    assert.equal(formatTokens(1234567, "ja"), "1,234,567");
   });
 });
 

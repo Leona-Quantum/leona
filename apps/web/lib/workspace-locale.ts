@@ -1368,6 +1368,18 @@ export const ACCOUNT_COPY: Record<PublicLocale, {
   usageEnforcedAs: (tier: string) => string;
   usageNextSlotOn: (date: string) => string;
   usageNextSlotWhen: (word: string) => string;
+  // Model spend. Never optional — a `?` here is how the Japanese principles
+  // section disappeared in PR 194, because `Record<PublicLocale, …>` cannot
+  // catch a field one locale is allowed to omit.
+  spendTitle: string;
+  spendScope: (days: number) => string;
+  spendEmpty: (days: number) => string;
+  spendChat: string;
+  spendRuns: string;
+  spendTotal: string;
+  spendTokens: (tokens: string, calls: number) => string;
+  spendUnattributed: string;
+  spendNotBilled: string;
   tierNames: Record<"demo" | "free" | "developer", string>;
   usageEnforcement: string;
   billingTitle: string;
@@ -1456,6 +1468,17 @@ export const ACCOUNT_COPY: Record<PublicLocale, {
       `Your runs are being enforced as ${tier}. The limits above are what this page resolved; these are what the control plane applies.`,
     usageNextSlotOn: (date) => `1 more frees up on ${date}`,
     usageNextSlotWhen: (word) => `1 more frees up ${word}`,
+    spendTitle: "Model usage",
+    spendScope: (days) => `This workspace, last ${days} days`,
+    spendEmpty: (days) => `No model usage in the last ${days} days`,
+    spendChat: "Chat",
+    spendRuns: "Agent runs",
+    spendTotal: "Total",
+    spendTokens: (tokens, calls) => `${tokens} tokens · ${calls} calls`,
+    spendUnattributed: "Unattributed",
+    // Said because a page that suddenly reports six-figure numbers reads like
+    // a bill arriving. Nothing in this deployment prices a token.
+    spendNotBilled: "Shown for visibility. Tokens are not charged for and count against no allowance.",
     tierNames: { demo: "Preview", free: "Free", developer: "Developer" },
     usageEnforcement: "These allowances are enforced when you submit a run. Browser simulation always stays available on your own hardware.",
     billingTitle: "Billing & credits",
@@ -1546,6 +1569,15 @@ export const ACCOUNT_COPY: Record<PublicLocale, {
       `実行は ${tier} として制限されています。上の上限はこのページが判定した値、以下はコントロールプレーンが実際に適用している値です。`,
     usageNextSlotOn: (date) => `${date}に1回分が戻ります`,
     usageNextSlotWhen: (word) => `${word}1回分が戻ります`,
+    spendTitle: "モデル使用量",
+    spendScope: (days) => `このワークスペース・直近${days}日間`,
+    spendEmpty: (days) => `直近${days}日間のモデル使用はありません`,
+    spendChat: "チャット",
+    spendRuns: "エージェント実行",
+    spendTotal: "合計",
+    spendTokens: (tokens, calls) => `${tokens} トークン・${calls} 回の呼び出し`,
+    spendUnattributed: "モデル不明",
+    spendNotBilled: "参考表示です。トークンは課金対象ではなく、いずれの上限にも数えられません。",
     tierNames: { demo: "プレビュー", free: "Free", developer: "Developer" },
     usageEnforcement: "これらの上限は実行の送信時に適用されます。ブラウザーでのシミュレーションはお使いの端末上で常に利用できます。",
     billingTitle: "請求とクレジット",

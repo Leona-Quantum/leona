@@ -23,6 +23,16 @@ raises on. A screen that says two runs remain and a submission that refuses are
 the worst possible disagreement here — worse than showing nothing, because the
 number is why the user believed they could run.
 
+**And one block that is not an allowance at all.** `spend` reports the model
+tokens this workspace burned in the same window. It refuses nothing and gates
+nothing — chat is unmetered on every tier — but the ledger it reads has been
+written on every execute run for months and on every chat turn since the last
+release, and until now no endpoint and no screen added the rows up. "What did
+chat cost last week" had no answer anywhere in the product, on the one surface
+with no allowance, no submission backstop, and thousands of tokens of history
+per turn. It is reported beside the allowances rather than on a page of its own
+because it answers the same question a person came to this page with.
+
 The response models are route-local on purpose. They cross the BFF boundary but
 not the contracts one: nothing outside this service constructs them, and keeping
 them here avoids a `CONTRACTS_VERSION` bump for a read-only projection whose
@@ -30,14 +40,17 @@ shape is this route's own business.
 """
 
 import datetime as dt
+from collections.abc import Sequence
 from typing import Annotated
 
 from fastapi import APIRouter, Depends
+from majorana_contracts.enums import CHAT_USAGE_ROLE
 from pydantic import BaseModel
 
 from ..auth.deps import CurrentIdentity, CurrentScope, DbSession, get_settings
 from ..repos import runs as runs_repo
 from ..repos import system
+from ..repos import usage as usage_repo
 from ..repos import workspaces as workspaces_repo
 from ..settings import Settings
 from ..tiers import TIER_WINDOW, limits_for, resolve_tier
@@ -63,6 +76,46 @@ class RunAllowance(Allowance):
     next_slot_at: dt.datetime | None
 
 
+class TokenSpend(BaseModel):
+    """Model tokens, and the number of provider calls that spent them.
+
+    No money. Nothing in this deployment prices a token — payments are hard-off
+    and the tier table meters runs, not tokens — so a currency figure here would
+    be this route inventing a rate card. `calls` is what makes the number
+    legible without one: 40,000 tokens over 2 calls and over 200 are different
+    facts about a workspace.
+    """
+
+    tokens: int
+    calls: int
+
+
+class ModelSpend(TokenSpend):
+    #: Provider model id exactly as the response reported it, never a label.
+    model: str
+
+
+class SpendReport(BaseModel):
+    """What this WORKSPACE spent on model tokens inside the same rolling window.
+
+    Not an allowance. Chat has no ceiling on any tier and this is not a step
+    toward giving it one — it is the answer to "what did chat cost last week",
+    which until now was written to the ledger and read by nothing.
+
+    `chat` and `runs` partition `total`: every event is one or the other, so the
+    two always add up and a reader can trust the split without checking.
+    """
+
+    window_days: int
+    total: TokenSpend
+    #: Chat turns — the surface with no allowance and no submission backstop.
+    chat: TokenSpend
+    #: Every other role, i.e. the stages of execute runs.
+    runs: TokenSpend
+    #: Descending by tokens. Empty when nothing was spent.
+    by_model: list[ModelSpend]
+
+
 class UsageResponse(BaseModel):
     tier: str
     runs: RunAllowance
@@ -70,6 +123,9 @@ class UsageResponse(BaseModel):
     #: not the account, and the client must not label it "your artifacts".
     artifacts: Allowance
     workspaces: Allowance
+    #: Per WORKSPACE, like `artifacts` and unlike `runs`. Additive in 2026-08:
+    #: a client built before it exists must keep rendering the allowances.
+    spend: SpendReport
 
 
 def _allowance(used: int, limit: int | None) -> Allowance:
@@ -78,6 +134,56 @@ def _allowance(used: int, limit: int | None) -> Allowance:
         limit=limit,
         remaining=None if limit is None else max(limit - used, 0),
         exhausted=limit is not None and used >= limit,
+    )
+
+
+def _fold_spend(rows: Sequence[usage_repo.TokenSpendRow], *, window_days: int) -> SpendReport:
+    """Grouped ledger rows → the three totals and the per-model list.
+
+    Pure arithmetic, deliberately: this is the part with a wrong answer that
+    looks right, and keeping it out of the query means every case below is a
+    plain function call in `test_usage_endpoint` rather than rows in a database.
+
+    The bucketing rule is one comparison — `role == CHAT_USAGE_ROLE` — and
+    everything else is a run. Written this way round on purpose. Listing the
+    agent's stage names instead would mean a new stage silently counted as chat,
+    and the roles come from `request.schema_name`, which changes whenever the
+    pipeline does.
+
+    `by_model` covers every event, including any whose meta carried no model at
+    all: its entry keeps the empty string rather than being dropped. A list that
+    quietly did not add up to `total` is the failure this shape avoids — the
+    client can render "unattributed" for it, and no tokens go missing on the way
+    to the screen.
+    """
+    chat_tokens = chat_calls = run_tokens = run_calls = 0
+    per_model: dict[str, list[int]] = {}
+    for row in rows:
+        if row.role == CHAT_USAGE_ROLE:
+            chat_tokens += row.tokens
+            chat_calls += row.calls
+        else:
+            run_tokens += row.tokens
+            run_calls += row.calls
+        totals = per_model.setdefault(row.model, [0, 0])
+        totals[0] += row.tokens
+        totals[1] += row.calls
+
+    by_model = sorted(
+        (
+            ModelSpend(model=model, tokens=tokens, calls=calls)
+            for model, (tokens, calls) in per_model.items()
+        ),
+        # Model id as the tiebreak so an equal-token pair does not reorder
+        # between two requests that read the same rows.
+        key=lambda entry: (-entry.tokens, entry.model),
+    )
+    return SpendReport(
+        window_days=window_days,
+        total=TokenSpend(tokens=chat_tokens + run_tokens, calls=chat_calls + run_calls),
+        chat=TokenSpend(tokens=chat_tokens, calls=chat_calls),
+        runs=TokenSpend(tokens=run_tokens, calls=run_calls),
+        by_model=by_model,
     )
 
 
@@ -124,6 +230,10 @@ async def usage(
 
     _workspace_row, _members, kept, _run_count = await workspaces_repo.get_overview(scope, session)
     owned = await system.count_owned_workspaces(session, user_id=user.id)
+    # The same `since` again: a window that started at a second `now()` would
+    # report spend from a period the runs figure beside it did not cover, and
+    # the two are read as one sentence about one week.
+    spend_rows = await usage_repo.token_spend_since(scope, session, since)
 
     return UsageResponse(
         tier=tier,
@@ -134,4 +244,5 @@ async def usage(
         ),
         artifacts=_allowance(kept, limits.private_artifacts),
         workspaces=_allowance(owned, limits.owned_workspaces),
+        spend=_fold_spend(spend_rows, window_days=TIER_WINDOW.days),
     )

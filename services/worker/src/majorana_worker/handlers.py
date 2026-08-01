@@ -14,6 +14,7 @@ from typing import Any, Awaitable, Callable
 
 from majorana_contracts import Scope
 from majorana_contracts.enums import (
+    CHAT_USAGE_ROLE,
     EvidenceStrength,
     Framework,
     ImportProvider,
@@ -883,7 +884,9 @@ async def _record_chat_usage(ctx: RunContext, store: RepoRunStateStore, response
             quantity=(response.input_tokens or 0) + (response.output_tokens or 0),
             meta={
                 "model": response.model,
-                "role": "chat",
+                # The one value `/v1/usage` separates chat spend by. Shared
+                # rather than written twice — see CHAT_USAGE_ROLE.
+                "role": CHAT_USAGE_ROLE,
                 "input_tokens": response.input_tokens,
                 "output_tokens": response.output_tokens,
                 "run_id": str(ctx.run_id),
