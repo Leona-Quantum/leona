@@ -55,7 +55,10 @@ interface Call {
 }
 
 /** Record every request and answer from a scripted workspace. */
-function withFetch(remote: Array<{ id: string; name: string; created_at: string }>): Call[] {
+function withFetch(
+  remote: Array<{ id: string; name: string; created_at: string }>,
+  options: { assignStatus?: number } = {},
+): Call[] {
   const calls: Call[] = [];
   (globalThis as { fetch?: unknown }).fetch = async (url: string, init?: RequestInit) => {
     const method = init?.method ?? "GET";
@@ -75,7 +78,8 @@ function withFetch(remote: Array<{ id: string; name: string; created_at: string 
       return new Response(JSON.stringify(created), { status: 201 });
     }
     if (/^\/api\/artifacts\/[^/]+\/project$/.test(url) && method === "PATCH") {
-      return new Response(JSON.stringify({ id: "artifact" }), { status: 200 });
+      const status = options.assignStatus ?? 200;
+      return new Response(status === 200 ? JSON.stringify({ id: "artifact" }) : null, { status });
     }
     throw new Error(`unscripted request: ${method} ${url}`);
   };
@@ -184,6 +188,43 @@ test("adoption maps a local project onto the workspace project of the same name"
   assert.deepEqual(
     calls.filter((call) => call.method === "PATCH").map((call) => call.body),
     [{ project_id: "server-1" }],
+  );
+});
+
+test("a 5xx on an assignment leaves adoption unfinished, so the next mount retries", async () => {
+  const storage = withStorage();
+  storage.setItem(
+    LEGACY_PROJECTS_KEY,
+    JSON.stringify([{ id: "local-1", name: "Bell states", createdAt: "2026-07-01T00:00:00.000Z" }]),
+  );
+  storage.setItem(LEGACY_ASSIGNMENTS_KEY, JSON.stringify({ "artifact-1": "local-1" }));
+  withFetch([], { assignStatus: 503 });
+
+  await hydrateArtifactProjects();
+
+  assert.equal(
+    storage.getItem(ADOPTED_KEY),
+    null,
+    "one flaky minute must not cost the person their whole grouping: the projects " +
+      "would exist and be empty, with no path back",
+  );
+});
+
+test("a 404 on an assignment does not hold adoption open forever", async () => {
+  const storage = withStorage();
+  storage.setItem(
+    LEGACY_PROJECTS_KEY,
+    JSON.stringify([{ id: "local-1", name: "Bell states", createdAt: "2026-07-01T00:00:00.000Z" }]),
+  );
+  storage.setItem(LEGACY_ASSIGNMENTS_KEY, JSON.stringify({ "artifact-1": "local-1" }));
+  withFetch([], { assignStatus: 404 });
+
+  await hydrateArtifactProjects();
+
+  assert.equal(
+    storage.getItem(ADOPTED_KEY),
+    "true",
+    "the artifact is gone server-side; retrying that forever would re-run the whole migration on every mount",
   );
 });
 

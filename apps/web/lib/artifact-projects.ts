@@ -178,6 +178,16 @@ export async function reorderArtifactProjects(projects: ArtifactProject[]): Prom
   }
 }
 
+/**
+ * The artifact does not exist in this workspace.
+ *
+ * Distinguished from every other failure because adoption treats them
+ * differently: a 404 is settled and must not hold the migration open, while a
+ * 5xx or a dropped connection means the assignment is still true and simply did
+ * not land.
+ */
+export class ArtifactGoneError extends Error {}
+
 export async function assignArtifactToRemoteProject(artifactId: string, projectId?: string): Promise<void> {
   const response = await fetch(`/api/artifacts/${encodeURIComponent(artifactId)}/project`, {
     method: "PATCH",
@@ -185,6 +195,7 @@ export async function assignArtifactToRemoteProject(artifactId: string, projectI
     body: JSON.stringify({ project_id: projectId || null }),
     cache: "no-store",
   });
+  if (response.status === 404) throw new ArtifactGoneError("Artifact is not in this workspace");
   if (!response.ok) throw new Error("Artifact project assignment could not be saved");
 }
 
@@ -287,24 +298,34 @@ export async function hydrateArtifactProjects(): Promise<{
 
   if (!adopted) {
     // Upload the browser-era assignments, mapped onto the workspace's project
-    // ids. Failures are swallowed per artifact rather than aborting: one
-    // artifact that has since been deleted server-side must not strand the
-    // other forty, and the flag below is what stops this being retried forever.
+    // ids. One artifact must not strand the other forty, so a failure is per
+    // artifact rather than an abort — but WHICH failure decides whether this
+    // ever runs again, and the two cases are not the same:
+    //
+    //   404  the artifact is gone server-side. Nothing to retry; the workspace
+    //        is right and this browser is stale.
+    //   any  5xx, a network error, an offline control plane. The assignment is
+    //   else still true and simply did not land.
+    //
+    // Marking adoption complete after the second kind loses the person's whole
+    // grouping to one flaky minute — the projects would exist and be empty, with
+    // no path back. So the flag is withheld and the next mount retries; the
+    // create is idempotent on the name, so nothing is duplicated by that retry.
     const known = new Set(projects.map((project) => project.id));
-    await Promise.all(
+    const outcomes = await Promise.all(
       Object.entries(loadLegacyArtifactAssignments()).map(async ([artifactId, localProjectId]) => {
         const projectId = localIdMap[localProjectId] ?? localProjectId;
-        if (!known.has(projectId)) return;
+        if (!known.has(projectId)) return true;
         try {
           await assignArtifactToRemoteProject(artifactId, projectId);
           setArtifactProjectLocally(artifactId, projectId);
-        } catch {
-          // The artifact is gone, or the control plane is unavailable. Either
-          // way the workspace list is the truth from here on.
+          return true;
+        } catch (error) {
+          return error instanceof ArtifactGoneError;
         }
       }),
     );
-    markProjectsAdopted();
+    if (outcomes.every(Boolean)) markProjectsAdopted();
   }
 
   return { projects, localIdMap };

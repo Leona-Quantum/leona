@@ -114,6 +114,12 @@ export function Shell({
   const [archivedArtifacts, setArchivedArtifacts] = useState<LibraryArtifact[]>([]);
   const [artifactProjects, setArtifactProjects] = useState<ArtifactProject[]>([]);
   const [folderSyncState, setFolderSyncState] = useState<"local" | "synced" | "error">("local");
+  // Its own state, not a reuse of folderSyncState. The two hydrates are
+  // independent calls against different endpoints: sharing one flag makes a
+  // failed chat-folder read badge the Projects header "local only" while the
+  // projects synced perfectly, and hides a genuinely failed project read behind
+  // a folder list that worked.
+  const [projectSyncState, setProjectSyncState] = useState<"local" | "synced" | "error">("local");
   const [refreshTick, setRefreshTick] = useState(0);
   const [archiveNotice, setArchiveNotice] = useState<ChatSummary | null>(null);
 
@@ -155,9 +161,14 @@ export function Shell({
       // answers one and not the other must not blank the rail that worked.
       try {
         const synced = await hydrateArtifactProjects();
-        if (active) setArtifactProjects(synced.projects);
+        if (active) {
+          setArtifactProjects(synced.projects);
+          setProjectSyncState("synced");
+        }
       } catch {
-        // The mirror set above is what the rail keeps showing.
+        // The mirror set above is what the rail keeps showing, and the header
+        // says so rather than presenting one browser's list as the workspace's.
+        if (active) setProjectSyncState("error");
       }
 
       try {
@@ -231,9 +242,13 @@ export function Shell({
       setChatFolders(loadChatFolders());
       setArtifactProjects(loadArtifactProjects());
     };
-    // A project change also moves artifacts between the rail's sections, and
-    // `artifact.projectId` lives in the library mirror — so the projects event
-    // refreshes the whole workspace, not just the two lists.
+    // ARTIFACT_PROJECTS_EVENT goes to the LIGHT handler, and must stay there:
+    // `hydrateArtifactProjects` ends in `replaceArtifactProjects`, which emits
+    // this event, so binding it to `refreshWorkspace` would hydrate → replace →
+    // emit → hydrate without end. CHAT_FOLDERS_EVENT is on the light handler for
+    // the same reason. Artifact rows move between sections through the
+    // `onAssignArtifactProject`/`onProjectDeleted` callbacks, which update the
+    // list the parent holds — not through this listener.
     window.addEventListener(CHAT_HISTORY_EVENT, refreshWorkspace);
     window.addEventListener(CHAT_FOLDERS_EVENT, refreshFolders);
     window.addEventListener(ARTIFACT_PROJECTS_EVENT, refreshFolders);
@@ -294,6 +309,7 @@ export function Shell({
           collapsed={sidebarCollapsed}
           demoMode={demoMode}
           folderSyncState={folderSyncState}
+          projectSyncState={projectSyncState}
           locale={locale}
           accountName={accountName}
           accountTier={accountTier}
@@ -449,6 +465,7 @@ function WorkspaceSidebar({
   collapsed,
   demoMode,
   folderSyncState,
+  projectSyncState,
   locale,
   accountName,
   accountTier,
@@ -475,6 +492,7 @@ function WorkspaceSidebar({
   collapsed: boolean;
   demoMode: boolean;
   folderSyncState: "local" | "synced" | "error";
+  projectSyncState: "local" | "synced" | "error";
   locale: PublicLocale;
   accountName?: string;
   workspaceName?: string;
@@ -697,11 +715,13 @@ function WorkspaceSidebar({
     event.preventDefault();
     const name = projectName.trim();
     if (!name) return;
-    setProjectName("");
-    setCreatingProject(false);
-    if (demoMode) return;
     try {
       await createRemoteArtifactProject(name);
+      // Cleared only on success. Resetting before the await means a refused
+      // create leaves an error banner and an empty box, so the person has to
+      // remember and retype the name they just lost.
+      setProjectName("");
+      setCreatingProject(false);
     } catch {
       setFolderError(copy.projectCreateFailed);
     }
@@ -923,11 +943,14 @@ function WorkspaceSidebar({
             </>
           ) : null}
 
+          {/* No create action in the public preview. Projects are workspace
+              rows and the demo has no workspace to write to, so offering the
+              button there is a form that accepts a name and produces nothing. */}
           <SidebarSectionHeader
             label={copy.projects}
-            status={folderSyncState === "error" ? copy.localOnly : undefined}
-            actionLabel={copy.createProject}
-            onAction={() => setCreatingProject(true)}
+            status={projectSyncState === "error" ? copy.localOnly : undefined}
+            actionLabel={demoMode ? undefined : copy.createProject}
+            onAction={demoMode ? undefined : () => setCreatingProject(true)}
           />
           {creatingProject ? (
             <form className="mj-sidebar-folder-form" onSubmit={submitProject}>
