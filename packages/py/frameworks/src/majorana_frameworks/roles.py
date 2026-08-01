@@ -189,11 +189,17 @@ def classify_source(source: str) -> ProgramRole:
 #:    made, so nothing downstream may check it against the same evidence it came
 #:    from. That comparison is `f(x) == f(x)` — it cannot fail, and a check that
 #:    cannot fail reported as PASS is worse than no check.
-#: 3. **A failure names EVERY reason, not the first.** An unmeasured circuit
+#: 3. **Every builtin it touches is the pre-bound `_majorana_` snapshot.** A bare
+#:    `isinstance` here would resolve through normal scoping at epilogue time —
+#:    after untrusted code has run, and `import builtins` is not on the guard's
+#:    denied list. That is the shadowing defence every other epilogue in
+#:    `adapters.py` already follows; the convention exists so nobody has to
+#:    assess the blast radius of one bare call at a time.
+#: 4. **A failure names EVERY reason, not the first.** An unmeasured circuit
 #:    past the statevector ceiling is refused by the sampler (no measurements)
 #:    AND by the statevector (too wide). Reporting one of those sends the reader
 #:    to fix half a problem; the order between them would be arbitrary anyway.
-#: 4. **It prefers counts to the statevector.** Counts are what a measured
+#: 5. **It prefers counts to the statevector.** Counts are what a measured
 #:    circuit produced and what `expected_output_keys` normally names; the
 #:    statevector is the fallback for a circuit with no measurements at all,
 #:    which is a legitimate thing to publish and impossible to sample.
@@ -201,14 +207,14 @@ DERIVE_RESULT_FROM_CIRCUIT = """
 if "result" not in _majorana_observation:
     _majorana_sampled = _majorana_observation.get("native_sampled")
     _majorana_sv = _majorana_observation.get("native_statevector")
-    if isinstance(_majorana_sampled, dict) and _majorana_sampled.get("counts"):
+    if _majorana_isinstance(_majorana_sampled, dict) and _majorana_sampled.get("counts"):
         _majorana_observation["result"] = {
             "counts": _majorana_sampled.get("counts"),
             "shots": _majorana_sampled.get("shots"),
         }
         _majorana_observation["result_origin"] = "derived_from_circuit"
         _majorana_observation["result_evidence"] = "native_sampled"
-    elif isinstance(_majorana_sv, dict) and _majorana_sv.get("amplitudes"):
+    elif _majorana_isinstance(_majorana_sv, dict) and _majorana_sv.get("amplitudes"):
         _majorana_observation["result"] = {
             "statevector": _majorana_sv.get("amplitudes"),
             "qubits": _majorana_sv.get("qubits"),

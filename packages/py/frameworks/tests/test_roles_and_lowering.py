@@ -334,3 +334,50 @@ def test_every_adapter_binds_the_tape_helper_its_observer_references():
         setup = adapter.trusted_setup(circuit_expected=True)
         if "_majorana_construct_tape" in observer:
             assert "_majorana_construct_tape" in setup, framework.value
+
+
+def test_the_epilogue_uses_only_pre_bound_builtins():
+    """The shadowing defence, enforced rather than remembered.
+
+    The epilogue runs AFTER untrusted code, inside a function, so a bare builtin
+    resolves through normal scoping — and `import builtins` is not on the guard's
+    denied list, so generated code can replace one. Every other epilogue in
+    `adapters.py` snapshots the builtins it uses; this one drifted to a bare
+    `isinstance` and nothing noticed, because it works perfectly until somebody
+    attacks it.
+
+    Checked by name against what `compose_execution` actually binds, so adding a
+    new builtin to the epilogue without binding it fails here rather than in
+    production.
+    """
+    import ast
+    import re
+
+    from majorana_sandbox.spec import ExecutionSpec, compose_execution
+
+    from majorana_frameworks.roles import DERIVE_RESULT_FROM_CIRCUIT
+
+    composed = compose_execution(
+        ExecutionSpec(code="pass", trusted_observer="pass", protected_result_path="/tmp/x.json")
+    )
+    bound = set(re.findall(r"(_majorana_\w+) = _majorana_builtins\.\w+", composed))
+    bound.add("_majorana_builtins")
+
+    tree = ast.parse(DERIVE_RESULT_FROM_CIRCUIT)
+    assigned = {
+        node.id
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Store)
+    }
+    called = {
+        node.func.id
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+    }
+    unbound = {name for name in called if name not in bound and name not in assigned}
+    assert not unbound, f"epilogue calls unbound builtin(s): {sorted(unbound)}"
+
+    # Positive control: the extraction found real bindings, so an empty `bound`
+    # cannot make this pass vacuously.
+    assert "_majorana_isinstance" in bound
+    assert len(bound) >= 8
