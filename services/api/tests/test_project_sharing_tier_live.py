@@ -391,9 +391,9 @@ async def test_leaving_takes_away_the_leaver_s_access_and_nobody_else_s():
         assert second.status_code == 201, second.text
 
         async with stage.grantee_client() as grantee:
-            assert (await grantee.delete(f"/v1/shared/projects/{stage.project_id}")).status_code == (
-                204
-            )
+            assert (
+                await grantee.delete(f"/v1/shared/projects/{stage.project_id}")
+            ).status_code == (204)
         async with stage.bystander_client() as bystander:
             still_there = await bystander.get(f"/v1/shared/projects/{stage.project_id}")
             assert still_there.status_code == 200, still_there.text
@@ -416,9 +416,7 @@ async def test_leaving_a_project_nobody_shared_is_a_404_not_a_probe():
             # A real project id in a real workspace, simply not shared with them.
             assert (await grantee.delete(f"/v1/shared/projects/{unshared}")).status_code == 404
             # And one that names nothing at all answers identically.
-            assert (
-                await grantee.delete(f"/v1/shared/projects/{uuid.uuid4()}")
-            ).status_code == 404
+            assert (await grantee.delete(f"/v1/shared/projects/{uuid.uuid4()}")).status_code == 404
     finally:
         await stage._cleanup()
 
