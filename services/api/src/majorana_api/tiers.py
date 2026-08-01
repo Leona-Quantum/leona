@@ -114,6 +114,32 @@ class TierLimits:
     #: Free stays `0` and needs no other number — its unshared projects, which
     #: are all of them, are unlimited like everyone's.
     shared_projects: int | None
+    #: US dollars of ESTIMATED on-demand hardware spend this account may
+    #: authorize in a trailing seven days. Per USER, like the run allowance and
+    #: for the same reason: a bill follows the account, not the tenant.
+    #:
+    #: This is the only limit here denominated in money, and it is the only one
+    #: whose absence was measured in money. Before it existed,
+    #: `POST /v1/qpu/submissions` compared the estimate it computes to nothing
+    #: at all: driven over real HTTP by a FREE account with the deployment gate
+    #: open, twenty-one requests were accepted for **$96,006.30** of authorized
+    #: IonQ Forte time — one of them a single 1,000,000-shot job at $80,000.30 —
+    #: while that same account was refused its sixth simulator run of the week.
+    #:
+    #: A dollar figure rather than a submission count because the submissions
+    #: are not fungible: the rate card spans $0.000425 to $0.08 per shot, so a
+    #: count that bounded IonQ Forte sensibly would bound Rigetti Cepheus at
+    #: 1/188th of the spend, and a count that bounded Cepheus sensibly would not
+    #: bound Forte at all.
+    #:
+    #: **Free-queue devices cost `0.0` and are never refused here.** IBM's Open
+    #: Plan is an included allowance, not per-shot billing, so its estimate
+    #: carries no total to charge — inventing one to meter it would be inventing
+    #: a number the vendor did not publish. What bounds it is the provider's own
+    #: 10-minutes-per-28-days allowance. Whether Leona should meter it a second
+    #: time is an owner question, recorded in OWNER_TODO rather than answered
+    #: here with a guess.
+    qpu_spend_usd_per_week: float | None
 
 
 #: Mirrors apps/web/lib/account-tier.ts for the limits with a server-side cost.
@@ -125,6 +151,15 @@ class TierLimits:
 #: 150 artifacts and 4 shared-project memberships — and the other two were
 #: chosen. All four are in OWNER_TODO so they stay a decision rather than a
 #: default nobody revisits.
+#:
+#: `qpu_spend_usd_per_week` is the fifth, and the two numbers in it were chosen
+#: differently from each other. Free's `0.0` is not a chosen number: an account
+#: that has paid nothing cannot authorize spend on somebody else's provider
+#: account, and free-queue hardware stays reachable because it costs `0.0` to
+#: submit. Team's `25.0` IS a chosen number, taken deliberately low because no
+#: revenue backs it yet — Stripe is unconfigured, so today every dollar here is
+#: the owner's. It buys roughly 17,000 shots on IQM Garnet or 300 on IonQ Forte.
+#: It is in OWNER_TODO to be raised once billing exists.
 TIER_LIMITS: dict[AccountTier, TierLimits] = {
     "free": TierLimits(
         agent_runs_per_week=5,
@@ -132,6 +167,7 @@ TIER_LIMITS: dict[AccountTier, TierLimits] = {
         owned_workspaces=3,
         project_sharing=False,
         shared_projects=0,
+        qpu_spend_usd_per_week=0.0,
     ),
     "team": TierLimits(
         agent_runs_per_week=50,
@@ -139,6 +175,7 @@ TIER_LIMITS: dict[AccountTier, TierLimits] = {
         owned_workspaces=10,
         project_sharing=True,
         shared_projects=4,
+        qpu_spend_usd_per_week=25.0,
     ),
     "developer": TierLimits(
         agent_runs_per_week=None,
@@ -146,6 +183,7 @@ TIER_LIMITS: dict[AccountTier, TierLimits] = {
         owned_workspaces=None,
         project_sharing=True,
         shared_projects=None,
+        qpu_spend_usd_per_week=None,
     ),
 }
 

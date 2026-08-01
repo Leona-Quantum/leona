@@ -7,9 +7,11 @@ open, POST /qpu/submissions writes the durable qpu_runs attestation row
 record. The worker owns every provider interaction after that.
 """
 
+import datetime as dt
 import uuid
+from typing import Annotated
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from majorana_contracts import QpuRunRecord
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -24,12 +26,14 @@ from majorana_qpu import (
     submission_block_reason,
 )
 
-from ..auth.deps import CurrentScope, DbSession
+from ..auth.deps import CurrentIdentity, CurrentScope, DbSession, get_settings
 from ..request_models import RequestModel
 from ..jobs import QPU_RUN_JOB_KIND
 from ..orm import QpuRun as QpuRunRow
 from ..repos import qpu_runs as qpu_runs_repo
 from ..repos import system
+from ..settings import Settings
+from ..tiers import TIER_WINDOW, limits_for, tier_of
 
 router = APIRouter()
 
@@ -115,15 +119,58 @@ def _to_qpu_run_resource(record: QpuRunRow) -> QpuRunRecord:
     )
 
 
+def qpu_spend_refusal(spent: float, limit: float, estimate: float) -> HTTPException:
+    """The refusal an account sees when a hardware submission does not fit.
+
+    Names all three numbers, because "you cannot do that" is unactionable for a
+    limit denominated in money: what the user needs to know is whether to wait
+    for the window to roll, pick a cheaper device, or drop the shot count. A
+    free account reads the `limit: 0.0` case, which is the honest sentence —
+    billed hardware is not part of that plan, and the free queue still is.
+
+    429 rather than 402: this is an allowance that refills, the same shape as
+    `tier_allowance_refusal` next door, not a demand for payment.
+    """
+    return HTTPException(
+        status_code=429,
+        detail={
+            "error": (
+                f"This submission is estimated at ${estimate:,.2f}. Your plan includes "
+                f"${limit:,.2f} of hardware time per week and ${spent:,.2f} is already "
+                "authorized. Free-queue devices and browser simulation stay available."
+            ),
+            "reason": "qpu_spend_exhausted",
+            "spent_usd": spent,
+            "limit_usd": limit,
+            "estimate_usd": estimate,
+        },
+    )
+
+
 @router.post("/qpu/submissions", response_model=QpuRunRecord, status_code=201)
 async def qpu_submit(
-    body: QpuSubmissionRequest, scope: CurrentScope, session: DbSession
+    body: QpuSubmissionRequest,
+    scope: CurrentScope,
+    session: DbSession,
+    identity: CurrentIdentity,
+    settings: Annotated[Settings, Depends(get_settings)],
 ) -> QpuRunRecord:
-    """Real submission: device validated, every deployment gate consulted, and
-    on an open path the durable qpu_run attestation row and the qpu.run job
-    are written in the same transaction — neither can become visible alone.
-    The estimate is snapshotted onto the row exactly as the rate card computes
-    it now, so the record proves what was agreed to at confirmation time."""
+    """Real submission: device validated, every deployment gate consulted, the
+    account's weekly hardware spend reserved under its own lock, and on an open
+    path the durable qpu_run attestation row and the qpu.run job are written in
+    the same transaction — neither can become visible alone. The estimate is
+    snapshotted onto the row exactly as the rate card computes it now, so the
+    record proves what was agreed to at confirmation time.
+
+    `identity` is here for one reason: without it this handler has no tier, and
+    a handler with no tier cannot check an allowance. It had none, and the
+    result was $96,006.30 accepted from a free account over twenty-one requests
+    — see `qpu_runs.reserve_qpu_spend_slot`, which carries the measurement.
+
+    The spend check runs AFTER the deployment gate deliberately. A closed
+    deployment is not the account's problem, and telling somebody their budget
+    is spent when nothing in this deployment could have submitted anything would
+    be the wrong sentence."""
     try:
         backend = backend_info(body.device_id)
     except UnknownDeviceError:
@@ -132,6 +179,22 @@ async def qpu_submit(
     if reason is not None:
         raise HTTPException(status_code=409, detail={"blocked_reason": reason.value})
     estimate = rate_card_estimate(body.device_id, body.shots)
+    user, _workspace = identity
+    limits = limits_for(tier_of(user, settings))
+    try:
+        await qpu_runs_repo.reserve_qpu_spend_slot(
+            scope,
+            session,
+            dt.datetime.now(dt.timezone.utc) - TIER_WINDOW,
+            limits.qpu_spend_usd_per_week,
+            # A free-queue device has no total to charge, and this `or 0.0` is
+            # the whole of how it stays free: the reservation returns on a zero
+            # estimate, so an account whose ceiling is $0 still reaches the IBM
+            # Open Plan queue.
+            estimate.total_usd or 0.0,
+        )
+    except qpu_runs_repo.QpuSpendReached as reached:
+        raise qpu_spend_refusal(reached.spent, reached.limit, reached.estimate) from reached
     record = await qpu_runs_repo.create_record(
         scope,
         session,

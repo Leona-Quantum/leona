@@ -31,7 +31,7 @@ import { CIRCUIT_FRAMEWORKS, circuitFramework, circuitFrameworkOrNull, isExecuta
 import { MAX_CPU_SEED, MAX_CPU_SHOTS, cpuSimulationEligibility, loadCpuSimulationRecords, runCpuSimulation, saveCpuSimulationRecord, sourceFingerprint, type CpuSimulationEligibility, type CpuSimulationLimits, type CpuSimulationRecord } from "../../../lib/studio-simulation";
 import { TIER_LIMITS } from "../../../lib/account-tier";
 import { formatShare, simulationChartData, simulationReading, type SimulationChartData, type SimulationReading } from "../../../lib/simulation-visual";
-import { fetchQpuBackends, fetchQpuEstimate, fetchQpuRun, fetchQpuSubmissionGate, formatUsd, submitQpuRun, type QpuBackendInfo, type QpuCostEstimate, type QpuRunRecord, type QpuSubmissionGate } from "../../../lib/qpu";
+import { QpuSubmissionRefused, fetchQpuBackends, fetchQpuEstimate, fetchQpuRun, fetchQpuSubmissionGate, formatUsd, submitQpuRun, type QpuBackendInfo, type QpuCostEstimate, type QpuRunRecord, type QpuSubmissionGate } from "../../../lib/qpu";
 import { WORKSPACE_COPY } from "../../../lib/workspace-locale";
 import { DEFAULT_RUN_SHOTS, sampling } from "../../../lib/studio-run-request";
 import { verificationFromMetadata, verificationFromResource, type VerificationCheck } from "../../../lib/verification-record";
@@ -1661,6 +1661,37 @@ function SimulationRecordCard({ record, family, copy }: { record: CpuSimulationR
   );
 }
 
+/**
+ * The sentence a refused hardware submission puts on screen.
+ *
+ * Keyed on the refusal's `reason` rather than on its message, because the
+ * control plane writes English and this lane renders Japanese too — the code is
+ * the only part of a refusal a locale can translate. Anything without a reason
+ * this lane knows falls back to the server's own sentence, which is still far
+ * better than what was there before the client learned to read the problem
+ * document at all: every refusal, whatever it said, arrived as its status code.
+ *
+ * A $0 ceiling gets its own sentence. "0 of your $0 weekly budget is used" is
+ * arithmetic, not an explanation — what a free account needs to be told is that
+ * billed hardware is not in the plan and the free queue still is.
+ */
+function hardwareRefusalText(cause: unknown, copy: StudioCopy): string {
+  if (!(cause instanceof QpuSubmissionRefused)) {
+    return cause instanceof Error ? cause.message : copy.hardwareEstimateFailed;
+  }
+  if (cause.reason === "qpu_spend_exhausted" && cause.estimateUsd !== null && cause.limitUsd !== null) {
+    return cause.limitUsd === 0
+      ? copy.hardwareSpendFreeTier(formatUsd(cause.estimateUsd))
+      : copy.hardwareSpendExhausted(
+          formatUsd(cause.estimateUsd),
+          formatUsd(cause.limitUsd),
+          formatUsd(cause.spentUsd ?? 0),
+        );
+  }
+  if (cause.reason) return copy.hardwareBlockedReason(cause.reason);
+  return cause.message;
+}
+
 function QpuLane({ artifact, shots, copy }: { artifact: LibraryArtifact | null; shots: string; copy: StudioCopy }) {
   const [backends, setBackends] = useState<QpuBackendInfo[] | null>(null);
   const [gate, setGate] = useState<QpuSubmissionGate | null>(null);
@@ -1737,7 +1768,7 @@ function QpuLane({ artifact, shots, copy }: { artifact: LibraryArtifact | null; 
     })
       .then(setQpuRun)
       .catch((cause: unknown) => {
-        setSubmitError(cause instanceof Error ? cause.message : copy.hardwareEstimateFailed);
+        setSubmitError(hardwareRefusalText(cause, copy));
       })
       .finally(() => setSubmitting(false));
   }

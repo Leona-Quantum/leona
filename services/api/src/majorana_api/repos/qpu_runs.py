@@ -4,6 +4,9 @@ Every mutation is workspace-scoped and status transitions are validated here,
 not by callers: a record that has reached a terminal state never changes
 again, and raw provider counts are written exactly once, with the transition
 that completes the record.
+
+This module also owns the weekly hardware SPEND allowance, because the number
+it compares against lives on these rows and nowhere else.
 """
 
 import datetime as dt
@@ -12,11 +15,11 @@ from typing import Any
 
 from majorana_contracts import Scope
 from majorana_contracts.enums import QpuRunStatus
-from sqlalchemy import select, update
+from sqlalchemy import and_, func, not_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..ids import uuid7
-from ..orm import QpuRun
+from ..orm import QpuRun, User
 from ._base import require_write
 
 _TERMINAL = {QpuRunStatus.DONE, QpuRunStatus.ERROR, QpuRunStatus.CANCELLED}
@@ -25,6 +28,157 @@ _ALLOWED_TRANSITIONS: dict[QpuRunStatus, set[QpuRunStatus]] = {
     QpuRunStatus.QUEUED: {QpuRunStatus.RUNNING, QpuRunStatus.ERROR, QpuRunStatus.CANCELLED},
     QpuRunStatus.RUNNING: {QpuRunStatus.DONE, QpuRunStatus.ERROR, QpuRunStatus.CANCELLED},
 }
+
+
+class QpuSpendReached(Exception):
+    """This submission does not fit in what is left of the weekly spend allowance.
+
+    Carries all three numbers because the refusal a user reads names them: what
+    the submission would cost, what has already been authorized, and the ceiling.
+    A caller that had to recount to build that sentence would be reading outside
+    the lock that made the numbers true.
+    """
+
+    def __init__(self, spent: float, limit: float, estimate: float) -> None:
+        super().__init__(
+            f"${estimate:,.2f} does not fit in ${limit:,.2f} with ${spent:,.2f} already authorized"
+        )
+        self.spent = spent
+        self.limit = limit
+        self.estimate = estimate
+
+
+def _authorized_spend(scope: Scope, since: dt.datetime):
+    """The rows that spend the weekly hardware allowance. ONE definition.
+
+    Written once for the same reason `runs._spends_the_weekly_allowance` is: the
+    gate refuses on this predicate and any surface that reports "you have $X
+    left" has to select the same rows, or the product refuses a submission on a
+    screen that had just said it would fit.
+
+    Per USER, not per workspace. A provider bill follows the account, and two
+    submissions from two workspaces of the same account are exactly the case a
+    workspace predicate would miss.
+
+    ## The one exclusion, and why it is not generosity
+
+    A record that reached ERROR having never been handed to the provider —
+    `submitted_at IS NULL` — cost nothing anywhere. That is a real state with two
+    real producers in `worker.handlers`: the deployment gate closing between
+    enqueue and dequeue, and a payload the handler cannot parse. Charging for
+    those would mean an operator toggling the gate off for ten minutes burns
+    every affected account's week, which is a refusal the user cannot act on and
+    cannot understand.
+
+    Everything else counts, including a record that errored AFTER submission.
+    The provider bills for work it did, so a job that ran and then failed is
+    money spent; and at the moment of the check a QUEUED record has not been
+    billed either, but it is about to be, so treating "not yet billed" as "free"
+    would let a burst of pending submissions authorize the same dollars twice.
+    """
+    return (
+        QpuRun.user_id == scope.user_id,
+        QpuRun.created_at >= since,
+        not_(
+            and_(
+                QpuRun.submitted_at.is_(None),
+                QpuRun.status == QpuRunStatus.ERROR.value,
+            )
+        ),
+    )
+
+
+def authorized_spend_stmt(scope: Scope, since: dt.datetime):
+    """The allowance sum as a statement, so a test can EXPLAIN this exact one.
+
+    Split out rather than restated in the test, for the reason
+    `runs.execute_allowance_stmt` gives: this query runs on every hardware
+    submission and `ix_qpu_runs_user_created` (migration 0044) exists solely to
+    serve it. A refactor that changed the predicates would silently drop back to
+    the sequential scan the index was added to remove, and a test carrying its
+    own copy of the SQL would keep passing while it happened.
+    """
+    return select(func.coalesce(func.sum(QpuRun.estimated_total_usd), 0)).where(
+        *_authorized_spend(scope, since)
+    )
+
+
+async def authorized_spend_since(scope: Scope, session: AsyncSession, since: dt.datetime) -> float:
+    """Dollars this account has authorized in the window, as a float.
+
+    `estimated_total_usd` is `Numeric`, so the driver hands back a `Decimal` and
+    every arithmetic comparison against the rate card — which computes in floats
+    and rounds to six places — would raise `TypeError` at the boundary. Converted
+    here, once, rather than at each call site.
+    """
+    total = (await session.execute(authorized_spend_stmt(scope, since))).scalar_one()
+    return float(total if total is not None else 0.0)
+
+
+#: Money is compared at six decimal places, which is where `pricing.estimate`
+#: rounds. Without it a sum of floats can land a fraction of a millionth of a
+#: cent above a limit it exactly equals, and refuse a submission that fits.
+_USD_PLACES = 6
+
+
+async def reserve_qpu_spend_slot(
+    scope: Scope,
+    session: AsyncSession,
+    since: dt.datetime,
+    limit: float | None,
+    estimate: float,
+) -> None:
+    """Take the account's lock and refuse a submission that does not fit.
+
+    ## Why this exists at all
+
+    `POST /v1/qpu/submissions` computed an estimate, wrote it onto the durable
+    row, and compared it to nothing. Measured over real HTTP against this schema,
+    with the deployment gate opened and a FREE-tier account: twenty submissions
+    of 10,000 shots on IonQ Forte were accepted for $16,006.00, and a single
+    1,000,000-shot submission for $80,000.30 — $96,006.30 authorized in
+    twenty-one requests by an account whose sixth *simulator* run of the week is
+    refused. The route took no `CurrentIdentity` at all, so it had no tier to
+    compare against and could not have checked one.
+
+    Every gate that route did consult — `MAJORANA_QPU_SUBMIT_ENABLED`, the
+    provider token, the provider dependency — is deployment-wide. Each answers
+    "may this DEPLOYMENT submit"; none answers "may this ACCOUNT spend". Those
+    are two operations, and only the first was implemented.
+
+    ## Why `>` and not `>=`
+
+    Every other reservation in this layer refuses on `held >= limit`, because it
+    is about to add exactly one to a count of whole things. This one is
+    continuous: the caller says what its submission would cost, and the question
+    is whether that amount FITS. `spent >= limit` would refuse the first
+    submission an empty allowance can obviously afford; `spent + estimate > limit`
+    admits exactly the submissions that stay inside it.
+
+    ## What takes no lock
+
+    `limit is None` — an unmetered tier has nothing to serialize.
+
+    `estimate == 0.0` — a free-queue submission adds nothing to the sum, so it
+    cannot carry any account over any ceiling, and there is nothing to serialize
+    against. This matters beyond the saved round trip: a free account's ceiling
+    is `0.0`, so a zero-cost submission is the ONLY kind it can make, and making
+    that path queue behind a row lock would put every free hardware submission
+    the product has through one exclusive lock per account.
+
+    ## Lock ordering
+
+    A user row is the last lock any path takes — `artifact → project →
+    workspace → user`. This route holds nothing else, so there is nothing here
+    to order against, and this is the same row `runs.reserve_execute_run_slot`
+    takes.
+    """
+    if limit is None or estimate == 0.0:
+        return
+    await session.execute(select(User.id).where(User.id == scope.user_id).with_for_update())
+    spent = await authorized_spend_since(scope, session, since)
+    if round(spent + estimate, _USD_PLACES) > round(limit, _USD_PLACES):
+        raise QpuSpendReached(spent, limit, estimate)
 
 
 async def create_record(
