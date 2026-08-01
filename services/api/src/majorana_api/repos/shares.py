@@ -105,6 +105,28 @@ class ShareError(Exception):
     """A grant was refused for a reason the caller should be told in words."""
 
 
+@dataclass(frozen=True)
+class GranteeAllowance:
+    """What the RECEIVING account's plan permits. Resolved at the route.
+
+    Two questions asked at the same moment about the same row, carried as one
+    value rather than as two callables. That is not tidiness: both answers come
+    from a single `limits_for(tier_of(grantee, settings))`, and two callables
+    are two chances to resolve the same person's tier twice and differently —
+    the failure that would produce ("may receive, but counted against the wrong
+    plan's cap") is invisible from either side.
+
+    The tier table itself is deliberately NOT read here. Every tier decision in
+    this service lives at the route boundary; see `contribute_artifact` for the
+    same argument in the direction that matters more.
+    """
+
+    #: `TierLimits.project_sharing` for the grantee.
+    may_receive: bool
+    #: `TierLimits.shared_projects` for the grantee. `None` means unlimited.
+    max_shared_projects: int | None
+
+
 class VersionConflict(Exception):
     """Someone else saved this artifact since the caller loaded it.
 
@@ -190,6 +212,73 @@ async def count_shares(scope: Scope, session: AsyncSession, project_id: uuid.UUI
             )
         ).scalar_one()
     )
+
+
+async def count_shared_project_memberships(session: AsyncSession, user_id: uuid.UUID) -> int:
+    """How many live grants this person holds, across every owner.
+
+    Derived from `_live_share_predicates` and joined exactly the way
+    `list_shared_projects` joins, so the number enforced below and the number of
+    rows the person can actually see are the same number. Counted over a wider
+    set — expired grants, projects in a deleted workspace — it would refuse a
+    fifth membership to somebody showing three.
+
+    Takes no `Scope` on purpose. The subject is the GRANTEE, who is not the
+    caller: this is asked by the account doing the granting, about somebody
+    else's account, and there is no scope under which that is a scoped read.
+    """
+    stmt = (
+        select(func.count(ProjectShare.id))
+        .select_from(ProjectShare)
+        .join(Project, Project.id == ProjectShare.project_id)
+        .join(Workspace, Workspace.id == Project.workspace_id)
+        .where(ProjectShare.grantee_user_id == user_id, *_live_share_predicates())
+    )
+    return int((await session.execute(stmt)).scalar_one())
+
+
+async def _reserve_membership_slot(session: AsyncSession, grantee: User, limit: int | None) -> None:
+    """Take the grantee's lock and refuse if their plan is already full.
+
+    ## Why a lock, and why on the grantee's row
+
+    The two racers here are two grants made by DIFFERENT owners to the same
+    person, so `_lock_project` serializes nothing: they hold different project
+    rows. What they share is the grantee, which makes the user row the only
+    thing both of them touch. Same argument `artifacts.reserve_artifact_slot`
+    makes for locking the workspace, and the reason both of them exist is that a
+    read-then-write with nothing held between them is not a cap.
+
+    A burst through one ASGI app cannot show this — one event loop finishes each
+    request before starting the next — so `test_membership_cap_race_live` drives
+    two sessions and pins the interleaving. Removing the `with_for_update()`
+    below fails it with the fifth membership granted.
+
+    ## Lock ordering
+
+    Taken AFTER `_lock_project`, always. Nothing in this service acquires a
+    project lock while holding a user lock (`workspaces.update_display_name` is
+    the only other writer that locks a user row, and it locks nothing else), so
+    project-then-user is a total order and there is no cycle to deadlock on.
+
+    `limit is None` takes no lock at all: an unlimited tier has nothing to
+    serialize.
+    """
+    if limit is None:
+        return
+    await session.execute(select(User.id).where(User.id == grantee.id).with_for_update())
+    held = await count_shared_project_memberships(session, grantee.id)
+    if held >= limit:
+        # Deliberately names no number and no plan. The granter typed an
+        # address; the size of somebody else's allowance is not theirs to read,
+        # for the same reason `may_receive`'s refusal does not name their plan.
+        # It does say the refusal is about the other account and not about the
+        # granter's own project, because without that the granter's next move is
+        # to go and look at a limit that is not the one they hit.
+        raise ShareError(
+            "that person is already in as many shared projects as their plan allows; "
+            "one has to be given up before another can be added"
+        )
 
 
 async def _lock_project(scope: Scope, session: AsyncSession, project_id: uuid.UUID) -> Project:
@@ -284,7 +373,7 @@ async def grant_share(
     email: str,
     role: ShareRole,
     expires_at: dt.datetime | None = None,
-    grantee_may_receive: Callable[[User], bool],
+    grantee_allowance: Callable[[User], GranteeAllowance],
 ) -> tuple[ProjectShare, User]:
     """Grant, or change the grant this person already holds. Admin only.
 
@@ -294,7 +383,7 @@ async def grant_share(
     wrong for half its uses. The unique index is what makes that true under two
     concurrent grants; the read-then-write below only makes the message nicer.
 
-    Five refusals, each for a different reason:
+    Six refusals, each for a different reason:
 
     - **Yourself.** A grant to the person making it is a no-op that looks like a
       permission, and it would appear in the list as a door that is not one.
@@ -305,13 +394,23 @@ async def grant_share(
     - **An expiry already in the past.** It would be a grant that never grants,
       recorded as one that does.
     - **Past MAX_SHARES_PER_PROJECT.** See the constant.
+    - **Past the grantee's own membership allowance.** See
+      `_reserve_membership_slot`. This is the only refusal here whose subject is
+      the other account's plan rather than this project's state, and it is
+      checked LAST so that the cheap, local reasons answer first.
+
+    Both counted refusals are skipped when the person already holds a grant on
+    this project: a role change spends no new slot on either axis, and refusing
+    one because a cap is exactly full would make demoting an editor to a viewer
+    impossible at the boundary — the same reason `keep_artifact` skips the
+    artifact cap for something already kept.
 
     ## Why the grantee's plan is a callable and not a value
 
     Sharing is a Team-plan capability on BOTH ends, so the receiving account's
     tier has to be checked too. That account is not known until `_user_by_email`
     resolves it, three lines below — the caller has an address, not a row — so a
-    resolved boolean could not have been passed in.
+    resolved value could not have been passed in.
 
     What is passed instead is the tier decision itself, which still lives at the
     route boundary where every other tier decision in this service lives (see
@@ -330,7 +429,8 @@ async def grant_share(
     grantee = await _user_by_email(session, email)
     if grantee.id == scope.user_id:
         raise ShareError("you already have access to this project")
-    if not grantee_may_receive(grantee):
+    allowance = grantee_allowance(grantee)
+    if not allowance.may_receive:
         # Deliberately says nothing about which plan they are on. The granter
         # typed an address; confirming what plan it holds would answer a
         # question they were not entitled to ask about somebody else's account.
@@ -364,6 +464,7 @@ async def grant_share(
             raise ShareError(
                 f"a project can be shared with at most {MAX_SHARES_PER_PROJECT} people"
             )
+        await _reserve_membership_slot(session, grantee, allowance.max_shared_projects)
         share = ProjectShare(
             id=uuid7(),
             project_id=project.id,
@@ -640,6 +741,48 @@ class SharedProjectRow:
     #: grantee's own header rather than only in the refusal, so an editor can see
     #: the room before they write something and lose it to a 409.
     artifact_limit: int
+
+
+async def leave_shared_project(scope: Scope, session: AsyncSession, project_id: uuid.UUID) -> None:
+    """Give up a grant made to you. The grantee's half of `revoke_share`.
+
+    It exists because the membership cap is enforced on the grantee and revoking
+    is not. Without this, a person at their allowance has no move of their own:
+    the only accounts that can free a slot are the owners who filled it, and
+    they would have to be asked out of band. A cap nobody can clear from the
+    side it is enforced on is a dead end rather than an allowance.
+
+    **Deletes the grant and nothing else.** Artifacts this person contributed
+    stay where they were contributed — they were filed into the owner's
+    workspace and belong to it, and removing them here would make leaving a
+    project a way to destroy somebody else's work. Same reasoning as
+    `revoke_share`, which also takes access away without taking anything back.
+
+    `resolve_share` runs first, so leaving a project that was never shared with
+    this person is the same 404 every other grantee route gives: this must not
+    become a way to ask whether an arbitrary project id exists.
+
+    Audited under the ELEVATED scope, so the row lands in the owner's log rather
+    than the leaver's own — somebody dropping out of a project is a fact about
+    the project, and the owner is the account that needs to see it. Same choice
+    `contribute_artifact` makes, for the same reason.
+    """
+    access = await resolve_share(scope, session, project_id)
+    await session.execute(
+        delete(ProjectShare).where(
+            ProjectShare.project_id == access.project_id,
+            ProjectShare.grantee_user_id == scope.user_id,
+        )
+    )
+    await record_audit(
+        _elevated(access, scope.user_id),
+        session,
+        action="project_share.left",
+        target_kind="project",
+        target_id=access.project_id,
+        meta={"grantee_user_id": str(scope.user_id), "role": access.role.value},
+    )
+    await session.flush()
 
 
 async def list_shared_projects(scope: Scope, session: AsyncSession) -> list[SharedProjectRow]:

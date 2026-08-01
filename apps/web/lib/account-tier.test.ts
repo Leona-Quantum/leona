@@ -156,6 +156,22 @@ test("every capability is monotonic up the ladder", () => {
       !lower.projectSharing || upper.projectSharing,
       `${ACCOUNT_TIERS[i]} loses sharing that ${ACCOUNT_TIERS[i - 1]} has`,
     );
+    assert.ok(
+      atLeast(upper.sharedProjects, lower.sharedProjects),
+      `${ACCOUNT_TIERS[i]} shared projects below ${ACCOUNT_TIERS[i - 1]}`,
+    );
+  }
+});
+
+test("a tier that cannot share has no membership allowance either", () => {
+  // The two fields say different things — one refuses granting, the other
+  // counts what has been received — and a tier that gains `projectSharing`
+  // without a number would gain an unbounded allowance with it, silently.
+  for (const tier of ACCOUNT_TIERS) {
+    const limits = limitsForTier(tier);
+    if (!limits.projectSharing) {
+      assert.equal(limits.sharedProjects, 0, `${tier} cannot share but may be in projects`);
+    }
   }
 });
 
@@ -175,4 +191,33 @@ test("the published Team plan quotes the artifact allowance the tier grants", as
   assert.ok(team, "the Team plan disappeared from the pricing page");
   const features = team.features.join(" | ");
   assert.match(features, new RegExp(`\\b${TIER_LIMITS.team.privateArtifacts}\\b`));
+  assert.match(features, new RegExp(`\\b${TIER_LIMITS.team.sharedProjects}\\b.*shared project`, "i"));
+});
+
+test("both published Team plans quote the same numbers", async () => {
+  // The Japanese page is a separate literal, so a number changed on one side
+  // stays wrong on the other until somebody reads both — that is exactly how
+  // the JA privacy section disappeared in PR 194. Nothing else on these lines
+  // can be compared across the two scripts, but digits are digits.
+  const { PRICING_COPY } = await import("./public-copy.ts");
+  const en = PRICING_COPY.en.plans.find((plan) => plan.name === "Team");
+  const ja = PRICING_COPY.ja.plans.find((plan) => plan.name === "Team");
+  assert.ok(en, "the Team plan disappeared from the English pricing page");
+  assert.ok(ja, "the Team plan disappeared from the Japanese pricing page");
+  // Each ALLOWANCE, asked for by name, rather than every digit on the line:
+  // the first version of this test compared all of them and failed on the "1"
+  // in 1人あたり, which is prose. What has to agree is the numbers the tier
+  // enforces, and those are these four.
+  const limits = TIER_LIMITS.team;
+  const advertised = [
+    limits.sharedProjects,
+    limits.agentRunsPerWeek,
+    limits.privateArtifacts,
+    limits.cpuSimQubits,
+  ];
+  for (const value of advertised) {
+    const pattern = new RegExp(`(^|\\D)${value}(\\D|$)`);
+    assert.match(en.features.join(" | "), pattern, `the English Team plan does not state ${value}`);
+    assert.match(ja.features.join(" | "), pattern, `the Japanese Team plan does not state ${value}`);
+  }
 });

@@ -8,6 +8,7 @@ import {
   contributeSharedArtifact,
   copySharedArtifact,
   hasMoved,
+  leaveSharedProject,
   loadSharedProject,
   loadSharedProjectArtifacts,
   saveSharedVersion,
@@ -62,6 +63,10 @@ export function SharedProjectView({
   const [newTitle, setNewTitle] = useState("");
   const [newCode, setNewCode] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  // Two-step, because leaving is not undoable by the person doing it: only the
+  // owner can grant the access back.
+  const [confirmingLeave, setConfirmingLeave] = useState(false);
+  const [leaving, setLeaving] = useState(false);
   // What the page was rendered from. Compared against the polled revision, and
   // held in a ref so the poller does not re-subscribe on every change.
   const seenRevision = useRef<string | null>(null);
@@ -237,6 +242,22 @@ export function SharedProjectView({
     }
   }
 
+  async function leave() {
+    setLeaving(true);
+    setError(null);
+    try {
+      await leaveSharedProject(projectId);
+      // A full reload rather than a router push: this page is no longer
+      // readable by this account, and the sidebar's own list of shared
+      // projects is loaded once on mount in `shell.tsx`.
+      window.location.assign("/studio");
+    } catch {
+      setError(copy.leaveFailed);
+      setLeaving(false);
+      setConfirmingLeave(false);
+    }
+  }
+
   if (failed) {
     return (
       <main className="mj-shared-project">
@@ -271,6 +292,36 @@ export function SharedProjectView({
         {project.role === "editor" && !canContribute(project) && project.artifactLimit > 0 ? (
           <p className="mj-share-empty">{copy.projectFull}</p>
         ) : null}
+        {confirmingLeave ? (
+          <div className="mj-shared-project-leave" role="group" aria-label={copy.leaveConfirm}>
+            <p>{copy.leaveConfirm}</p>
+            <p className="mj-share-empty">{copy.leaveHelp}</p>
+            <button
+              type="button"
+              className="mj-secondary-button"
+              disabled={leaving}
+              onClick={() => void leave()}
+            >
+              {leaving ? copy.leaving : copy.leave}
+            </button>
+            <button
+              type="button"
+              className="mj-secondary-button"
+              disabled={leaving}
+              onClick={() => setConfirmingLeave(false)}
+            >
+              {copy.leaveCancel}
+            </button>
+          </div>
+        ) : (
+          <button
+            type="button"
+            className="mj-secondary-button mj-shared-project-leave-open"
+            onClick={() => setConfirmingLeave(true)}
+          >
+            {copy.leave}
+          </button>
+        )}
       </header>
 
       {changed ? (

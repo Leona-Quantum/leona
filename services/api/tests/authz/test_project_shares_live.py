@@ -23,7 +23,7 @@ import datetime as dt
 import uuid
 
 import pytest
-from matrix_helpers import requires_db
+from matrix_helpers import any_team_grantee, requires_db
 from repo_test_helpers import delete_committed_tenants
 from majorana_contracts import Scope
 from majorana_contracts.enums import Role, ShareRole
@@ -48,7 +48,6 @@ from majorana_api.repos import (
 #: the Team plan and each is pinning a different rule. A grantee that always
 #: qualifies keeps them testing that rule. The gate itself is covered by
 #: test_project_sharing_tier_live.py, which varies this deliberately.
-ANY_TEAM_GRANTEE = lambda _grantee: True  # noqa: E731
 
 pytestmark = requires_db
 
@@ -138,7 +137,7 @@ async def grant(db, alice: Tenant, bob: Tenant, role=ShareRole.VIEWER, expires_a
         email=bob.user.email,
         role=role,
         expires_at=expires_at,
-        grantee_may_receive=ANY_TEAM_GRANTEE,
+        grantee_allowance=any_team_grantee,
     )
     assert grantee.id == bob.user.id
     return share
@@ -374,7 +373,7 @@ async def test_a_grantee_cannot_reshare_or_manage(db, pair):
             alice.project.id,
             email=carol.user.email,
             role=ShareRole.VIEWER,
-            grantee_may_receive=ANY_TEAM_GRANTEE,
+            grantee_allowance=any_team_grantee,
         )
     with pytest.raises(NotFoundError):
         await shares.list_shares(bob.scope, db, alice.project.id)
@@ -590,7 +589,7 @@ async def test_deleting_the_owning_workspace_closes_every_grant(db, pair):
         team_project.id,
         email=bob.user.email,
         role=ShareRole.VIEWER,
-        grantee_may_receive=ANY_TEAM_GRANTEE,
+        grantee_allowance=any_team_grantee,
     )
     assert await shares.resolve_share(bob.scope, db, team_project.id)
 
@@ -621,7 +620,7 @@ async def test_revoke_all_reports_what_it_closed(db, pair):
         alice.project.id,
         email=carol.user.email,
         role=ShareRole.VIEWER,
-        grantee_may_receive=ANY_TEAM_GRANTEE,
+        grantee_allowance=any_team_grantee,
     )
     assert await shares.revoke_all_shares(alice.scope, db, alice.project.id) == 2
     assert await shares.revoke_all_shares(alice.scope, db, alice.project.id) == 0
@@ -643,7 +642,7 @@ async def test_granting_to_yourself_is_refused(db, pair):
             alice.project.id,
             email=alice.user.email,
             role=ShareRole.VIEWER,
-            grantee_may_receive=ANY_TEAM_GRANTEE,
+            grantee_allowance=any_team_grantee,
         )
 
 
@@ -658,7 +657,7 @@ async def test_granting_to_an_existing_member_is_refused(db, pair):
             alice.project.id,
             email=bob.user.email,
             role=ShareRole.VIEWER,
-            grantee_may_receive=ANY_TEAM_GRANTEE,
+            grantee_allowance=any_team_grantee,
         )
 
 
@@ -671,7 +670,7 @@ async def test_granting_to_an_unknown_address_is_a_not_found(db, pair):
             alice.project.id,
             email="nobody-at-all@shares.test",
             role=ShareRole.VIEWER,
-            grantee_may_receive=ANY_TEAM_GRANTEE,
+            grantee_allowance=any_team_grantee,
         )
 
 
@@ -683,7 +682,7 @@ async def test_the_email_match_is_case_and_space_insensitive(db, pair):
         alice.project.id,
         email=f"  {bob.user.email.upper()}  ",
         role=ShareRole.VIEWER,
-        grantee_may_receive=ANY_TEAM_GRANTEE,
+        grantee_allowance=any_team_grantee,
     )
     assert await shares.resolve_share(bob.scope, db, alice.project.id)
 
@@ -730,7 +729,7 @@ async def test_the_share_count_is_capped(db, pair):
             alice.project.id,
             email=extra.user.email,
             role=ShareRole.VIEWER,
-            grantee_may_receive=ANY_TEAM_GRANTEE,
+            grantee_allowance=any_team_grantee,
         )
     with pytest.raises(shares.ShareError):
         await shares.grant_share(
@@ -739,7 +738,7 @@ async def test_the_share_count_is_capped(db, pair):
             alice.project.id,
             email=bob.user.email,
             role=ShareRole.VIEWER,
-            grantee_may_receive=ANY_TEAM_GRANTEE,
+            grantee_allowance=any_team_grantee,
         )
 
 
@@ -1025,7 +1024,7 @@ async def test_two_concurrent_grants_produce_one_row(db, pair):
                     alice.project.id,
                     email=bob.user.email,
                     role=role,
-                    grantee_may_receive=ANY_TEAM_GRANTEE,
+                    grantee_allowance=any_team_grantee,
                 )
                 await session.commit()
                 return None

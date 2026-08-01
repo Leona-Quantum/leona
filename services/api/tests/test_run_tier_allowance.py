@@ -16,6 +16,8 @@ import pytest
 from fastapi import HTTPException
 from majorana_contracts.enums import Framework, RunMode
 
+from repo_test_helpers import LockOnlySession
+
 from majorana_api.orm import User, Workspace
 from majorana_api.routes import runs
 from majorana_api.settings import Settings
@@ -69,7 +71,7 @@ async def test_a_free_account_is_refused_at_its_weekly_limit(scope, monkeypatch)
 
     with pytest.raises(HTTPException) as caught:
         await runs._enforce_execute_backstop(
-            _request(), scope, object(), _identity("someone@example.com"), _settings()
+            _request(), scope, LockOnlySession(), _identity("someone@example.com"), _settings()
         )
 
     assert caught.value.status_code == 429
@@ -86,7 +88,7 @@ async def test_a_free_account_is_refused_at_its_weekly_limit(scope, monkeypatch)
 async def test_one_run_below_the_limit_is_admitted(scope, monkeypatch):
     monkeypatch.setattr(runs.runs_repo, "count_execute_runs_since", _executed(FREE_WEEKLY - 1))
     await runs._enforce_execute_backstop(
-        _request(), scope, object(), _identity("someone@example.com"), _settings()
+        _request(), scope, LockOnlySession(), _identity("someone@example.com"), _settings()
     )
 
 
@@ -99,7 +101,11 @@ async def test_chat_traffic_is_never_metered_against_the_plan(scope, monkeypatch
     """
     monkeypatch.setattr(runs.runs_repo, "count_execute_runs_since", _executed(FREE_WEEKLY * 100))
     await runs._enforce_execute_backstop(
-        _request(RunMode.AUTO), scope, object(), _identity("someone@example.com"), _settings()
+        _request(RunMode.AUTO),
+        scope,
+        LockOnlySession(),
+        _identity("someone@example.com"),
+        _settings(),
     )
 
 
@@ -113,7 +119,7 @@ async def test_the_operator_is_never_throttled_by_a_missing_env_var(scope, monke
     monkeypatch.setattr(runs.runs_repo, "count_execute_runs_since", _executed(FREE_WEEKLY * 100))
     for email in ("local-dev@majorana.test", "deploy-probe@leonaquantum.com"):
         await runs._enforce_execute_backstop(
-            _request(), scope, object(), _identity(email), _settings()
+            _request(), scope, LockOnlySession(), _identity(email), _settings()
         )
 
 
@@ -122,7 +128,7 @@ async def test_a_developer_by_allowlist_or_by_plan_column_is_unmetered(scope, mo
     await runs._enforce_execute_backstop(
         _request(),
         scope,
-        object(),
+        LockOnlySession(),
         _identity("collaborator@example.com"),
         _settings(frozenset({"collaborator@example.com"})),
     )
@@ -130,7 +136,7 @@ async def test_a_developer_by_allowlist_or_by_plan_column_is_unmetered(scope, mo
     await runs._enforce_execute_backstop(
         _request(),
         scope,
-        object(),
+        LockOnlySession(),
         _identity("collaborator@example.com", plan="developer"),
         _settings(),
     )
@@ -142,7 +148,7 @@ async def test_the_window_matches_the_one_the_bff_measures(scope, monkeypatch):
 
     before = dt.datetime.now(dt.timezone.utc)
     await runs._enforce_execute_backstop(
-        _request(), scope, object(), _identity("someone@example.com"), _settings()
+        _request(), scope, LockOnlySession(), _identity("someone@example.com"), _settings()
     )
     after = dt.datetime.now(dt.timezone.utc)
 
@@ -165,7 +171,7 @@ async def test_the_tier_gate_is_checked_before_the_flat_backstop(scope, monkeypa
 
     with pytest.raises(HTTPException) as caught:
         await runs._enforce_execute_backstop(
-            _request(), scope, object(), _identity("someone@example.com"), _settings()
+            _request(), scope, LockOnlySession(), _identity("someone@example.com"), _settings()
         )
     assert caught.value.detail["reason"] == "run_allowance_exhausted"
 

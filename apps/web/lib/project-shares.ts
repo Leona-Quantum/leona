@@ -341,6 +341,23 @@ export async function revokeProjectShare(projectId: string, granteeUserId: strin
   if (!response.ok && response.status !== 404) throw new Error("Access could not be revoked");
 }
 
+/**
+ * Give up a grant somebody made to you.
+ *
+ * Takes no user id, unlike `revokeProjectShare` above: the control plane keys
+ * the removal on the caller's own identity, so there is nothing here to aim at
+ * a different person. A 404 is treated as success for the same reason revoking
+ * does — the grant being gone already is what was asked for, and the likeliest
+ * way to see one is a second click.
+ */
+export async function leaveSharedProject(projectId: string): Promise<void> {
+  const response = await fetch(`/api/shared/projects/${encodeURIComponent(projectId)}`, {
+    method: "DELETE",
+    cache: "no-store",
+  });
+  if (!response.ok && response.status !== 404) throw new Error("You could not leave this project");
+}
+
 export async function revokeAllProjectShares(projectId: string): Promise<void> {
   const response = await fetch(`/api/workspace/projects/${encodeURIComponent(projectId)}/shares`, {
     method: "DELETE",

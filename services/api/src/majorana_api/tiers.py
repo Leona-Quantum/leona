@@ -85,6 +85,22 @@ class TierLimits:
     #: Both ends are checked: the account granting and the account being granted
     #: to. See `routes/shares.grant_project_share`.
     project_sharing: bool
+    #: Projects this account may be a member of *through a share* — somebody
+    #: else's projects, granted to them. Counted per PERSON and enforced on the
+    #: receiving end, so it bounds what one account can be pulled into rather
+    #: than what one owner can give away (`MAX_SHARES_PER_PROJECT` does that).
+    #:
+    #: **It does NOT count the projects the account owns.** The owner's number
+    #: ("each person can be part of maximum 4 projects") is recorded in
+    #: OWNER_TODO with the other reading spelled out, because capping a paying
+    #: account's own projects at four while a free account may create them
+    #: without bound is the one reading that makes the plan worth less than the
+    #: plan below it.
+    #:
+    #: `0` for a tier that cannot share at all: a tier whose `project_sharing`
+    #: is later flipped true must not silently acquire an unbounded allowance,
+    #: and `test_a_tier_that_cannot_share_has_no_membership_allowance` pins it.
+    shared_projects: int | None
 
 
 #: Mirrors apps/web/lib/account-tier.ts for the limits with a server-side cost.
@@ -92,28 +108,31 @@ class TierLimits:
 #: server's refusal — which is the correct direction for a divergence.
 #:
 #: `team` is the plan the pricing page has advertised since before it existed
-#: ("Team workspaces and roles"). Its numbers other than the artifact allowance
-#: were chosen, not derived — the owner set 250 artifacts and left the rest to
-#: judgement, and they are recorded in OWNER_TODO so they stay a decision rather
-#: than a default nobody revisits.
+#: ("Team workspaces and roles"). Two of its numbers are the owner's —
+#: 150 artifacts and 4 shared-project memberships — and the other two were
+#: chosen. All four are in OWNER_TODO so they stay a decision rather than a
+#: default nobody revisits.
 TIER_LIMITS: dict[AccountTier, TierLimits] = {
     "free": TierLimits(
         agent_runs_per_week=5,
         private_artifacts=25,
         owned_workspaces=3,
         project_sharing=False,
+        shared_projects=0,
     ),
     "team": TierLimits(
         agent_runs_per_week=50,
-        private_artifacts=250,
+        private_artifacts=150,
         owned_workspaces=10,
         project_sharing=True,
+        shared_projects=4,
     ),
     "developer": TierLimits(
         agent_runs_per_week=None,
         private_artifacts=None,
         owned_workspaces=None,
         project_sharing=True,
+        shared_projects=None,
     ),
 }
 
