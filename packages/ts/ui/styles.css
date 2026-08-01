@@ -5812,9 +5812,12 @@ div.mj-rail-row:hover {
 .mj-circuit-stage {
   min-height: 310px;
   display: grid;
-  place-items: center;
+  place-items: start;
   padding: var(--sp-6);
   background: var(--bg-0);
+  overflow: auto;
+  max-height: 60vh;
+  scrollbar-width: thin;
 }
 .mj-circuit-svg {
   display: block;
@@ -5823,17 +5826,10 @@ div.mj-rail-row:hover {
   height: auto;
   color: var(--text-1);
 }
-/* Read-only wide diagram: a circuit past the six-wire editable limit is drawn
-   at its natural size and scrolled inside the stage, top-left aligned, rather
-   than shrunk to fit (which would make a 20-wire circuit unreadable). */
+/* A circuit is always drawn at its natural size and scrolled. The component
+   virtualizes offscreen wires and columns for both editable and read-only use. */
 .mj-circuit-sync--readonly {
   border-left-color: var(--accent);
-}
-.mj-circuit-stage--readonly {
-  place-items: start;
-  overflow: auto;
-  max-height: 60vh;
-  scrollbar-width: thin;
 }
 .mj-circuit-stage--readonly .mj-circuit-svg {
   width: auto;

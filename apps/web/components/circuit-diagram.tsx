@@ -1,8 +1,16 @@
 "use client";
 
-import type { KeyboardEvent, MouseEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type MouseEvent, type UIEvent } from "react";
 import { builderStepLabel, type BuilderStep, type CustomGateDefinition } from "../lib/studio-builder";
 import { formatGateParam } from "../lib/gate-param-label";
+import {
+  CIRCUIT_COLUMN_WIDTH,
+  CIRCUIT_LEFT_PAD,
+  CIRCUIT_ROW_HEIGHT,
+  CIRCUIT_TOP_PAD,
+  circuitDiagramWindow,
+  type CircuitDiagramViewport,
+} from "../lib/circuit-diagram-window";
 
 /** The circuit SVG, shared by every surface that draws a circuit.
  *
@@ -30,17 +38,12 @@ export interface CircuitDiagramInteraction {
   onStepKeyDown: (stepId: string, event: KeyboardEvent<SVGGElement>) => void;
 }
 
-const COLUMN_WIDTH = 52;
-const LEFT_PAD = 74;
-const TOP_PAD = 34;
-const ROW_HEIGHT = 52;
-
 /** Geometry is exported so a caller can size a scroll container to the diagram
  * it is about to draw without re-deriving these constants. */
 export function circuitDiagramSize(qubitCount: number, stepCount: number): { width: number; height: number } {
   return {
-    width: Math.max(560, LEFT_PAD + (stepCount + 2) * COLUMN_WIDTH + 40),
-    height: TOP_PAD + qubitCount * ROW_HEIGHT + 10,
+    width: Math.max(560, CIRCUIT_LEFT_PAD + (stepCount + 2) * CIRCUIT_COLUMN_WIDTH + 40),
+    height: CIRCUIT_TOP_PAD + qubitCount * CIRCUIT_ROW_HEIGHT + 10,
   };
 }
 
@@ -59,23 +62,58 @@ export function CircuitDiagram({
 }) {
   const { width, height } = circuitDiagramSize(qubitCount, steps.length);
   const readOnly = !interaction;
+  const stageRef = useRef<HTMLDivElement>(null);
+  const [viewport, setViewport] = useState<CircuitDiagramViewport>({ left: 0, top: 0, width: 1024, height: 640 });
+
+  useEffect(() => {
+    const stage = stageRef.current;
+    if (!stage) return;
+    const syncViewport = () => setViewport({
+      left: stage.scrollLeft,
+      top: stage.scrollTop,
+      width: stage.clientWidth,
+      height: stage.clientHeight,
+    });
+    syncViewport();
+    const observer = new ResizeObserver(syncViewport);
+    observer.observe(stage);
+    return () => observer.disconnect();
+  }, []);
+
+  const visible = useMemo(
+    () => circuitDiagramWindow(qubitCount, steps.length, viewport),
+    [qubitCount, steps.length, viewport],
+  );
+  const visibleQubits = useMemo(
+    () => Array.from({ length: visible.qubitEnd - visible.qubitStart }, (_, index) => visible.qubitStart + index),
+    [visible.qubitEnd, visible.qubitStart],
+  );
+  const visibleSteps = useMemo(
+    () => steps.slice(visible.stepStart, visible.stepEnd).map((step, offset) => ({ step, index: visible.stepStart + offset })),
+    [steps, visible.stepEnd, visible.stepStart],
+  );
+
+  function handleScroll(event: UIEvent<HTMLDivElement>) {
+    const stage = event.currentTarget;
+    setViewport({ left: stage.scrollLeft, top: stage.scrollTop, width: stage.clientWidth, height: stage.clientHeight });
+  }
 
   return (
-    <div className={`mj-circuit-stage${readOnly ? " mj-circuit-stage--readonly" : ""}`}>
+    <div ref={stageRef} onScroll={handleScroll} className={`mj-circuit-stage${readOnly ? " mj-circuit-stage--readonly" : ""}`}>
       <svg
         className="mj-circuit-svg"
         viewBox={`0 0 ${width} ${height}`}
         role="img"
         aria-label={ariaLabel}
-        style={readOnly ? { width, height, maxWidth: "none" } : { maxWidth: "100%" }}
+        style={{ width, height, maxWidth: "none" }}
       >
-        {Array.from({ length: qubitCount }, (_, q) => {
-          const y = TOP_PAD + q * ROW_HEIGHT;
+        {visibleQubits.map((q) => {
+          const y = CIRCUIT_TOP_PAD + q * CIRCUIT_ROW_HEIGHT;
           return (
             <g key={q}>
               <text className="mj-circuit-label" x="18" y={y + 5}>q{q}</text>
-              <line className="mj-circuit-wire" x1={LEFT_PAD - 16} y1={y} x2={width - 24} y2={y} />
-              {interaction ? (
+              <line className="mj-circuit-wire" x1={CIRCUIT_LEFT_PAD - 16} y1={y} x2={width - 24} y2={y} />
+              {interaction && visible.stepEnd === steps.length ? (
                 <g
                   className={`mj-circuit-gate mj-builder-slot${interaction.pendingQubits.includes(q) ? " is-selected" : ""}`}
                   role="button"
@@ -84,16 +122,21 @@ export function CircuitDiagram({
                   onClick={() => interaction.onPlaceOnQubit(q)}
                   onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); interaction.onPlaceOnQubit(q); } }}
                 >
-                  <rect x={LEFT_PAD + steps.length * COLUMN_WIDTH - 17} y={y - 17} width="34" height="34" rx="7" strokeDasharray="4 3" fill="transparent" />
-                  <text x={LEFT_PAD + steps.length * COLUMN_WIDTH} y={y + 5}>+</text>
+                  <rect x={CIRCUIT_LEFT_PAD + steps.length * CIRCUIT_COLUMN_WIDTH - 17} y={y - 17} width="34" height="34" rx="7" strokeDasharray="4 3" fill="transparent" />
+                  <text x={CIRCUIT_LEFT_PAD + steps.length * CIRCUIT_COLUMN_WIDTH} y={y + 5}>+</text>
                 </g>
               ) : null}
             </g>
           );
         })}
-        {steps.map((step, index) => {
-          const x = LEFT_PAD + index * COLUMN_WIDTH;
-          const yFor = (q: number) => TOP_PAD + q * ROW_HEIGHT;
+        {visibleSteps.map(({ step, index }) => {
+          const { min: minStepQubit, max: maxStepQubit } = step.qubits.reduce(
+            (bounds, qubit) => ({ min: Math.min(bounds.min, qubit), max: Math.max(bounds.max, qubit) }),
+            { min: Number.POSITIVE_INFINITY, max: Number.NEGATIVE_INFINITY },
+          );
+          if (maxStepQubit < visible.qubitStart || minStepQubit >= visible.qubitEnd) return null;
+          const x = CIRCUIT_LEFT_PAD + index * CIRCUIT_COLUMN_WIDTH;
+          const yFor = (q: number) => CIRCUIT_TOP_PAD + q * CIRCUIT_ROW_HEIGHT;
           const selected = interaction ? interaction.selectedStepIds.includes(step.id) : false;
           const label = builderStepLabel(step, customGates);
           const selectProps = interaction
@@ -114,12 +157,14 @@ export function CircuitDiagram({
               <g className={`mj-circuit-gate mj-circuit-custom-gate${selected ? " is-selected" : ""}`} key={step.id} {...selectProps}>
                 <title>{label}</title>
                 <line className="mj-circuit-control" x1={x} y1={yFor(minQubit)} x2={x} y2={yFor(maxQubit)} />
-                {step.qubits.map((qubit, qubitIndex) => (
+                {step.qubits.map((qubit, qubitIndex) => ({ qubit, qubitIndex }))
+                  .filter(({ qubit }) => qubit >= visible.qubitStart && qubit < visible.qubitEnd)
+                  .map(({ qubit, qubitIndex }) => (
                   <g key={`${step.id}-${qubit}`}>
                     <rect x={x - 17} y={yFor(qubit) - 17} width="34" height="34" rx="7" />
                     <text x={x} y={yFor(qubit) + 5}>{qubitIndex === 0 ? (custom?.name ?? "CG").slice(0, 5) : "·"}</text>
                   </g>
-                ))}
+                  ))}
               </g>
             );
           }

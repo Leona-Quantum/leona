@@ -148,9 +148,9 @@ const ghzSource = (n: number) => [
   "qc.measure_all()",
 ].join("\n");
 
-test("a circuit too wide for the canvas still simulates — drawing and executing are different limits", () => {
+test("a circuit beyond the former editor limit still simulates", () => {
   // Regression for a defect this lane hid: cpuSimulationEligibility reuses the
-  // canvas parser, whose six-wire grid limit silently became the *simulation*
+  // editor parser, whose former six-wire limit silently became the *simulation*
   // limit. Raising the simulation ceiling alone changed nothing, because a
   // 10-qubit circuit never got past the parser.
   const record = runCpuSimulation(

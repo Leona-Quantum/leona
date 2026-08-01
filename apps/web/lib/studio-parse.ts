@@ -5,51 +5,23 @@ export interface ParsedBuilderCircuit {
   steps: BuilderStep[];
 }
 
-/**
- * How wide a circuit the *editable canvas* renders. A UI number: the builder
- * grid draws one wire per qubit and stops being usable well before the
- * simulator does.
- */
-export const MAX_BUILDER_QUBITS = 6;
-
-/**
- * How wide a circuit the parser will reconstruct at all.
- *
- * Separate from MAX_BUILDER_QUBITS because conflating them was a real bug:
- * cpuSimulationEligibility reuses this parser, so the canvas's 6-wire drawing
- * limit silently became the *simulation* limit too, and raising the simulation
- * ceiling alone unlocked nothing — a 10-qubit circuit still came back
- * `source_unavailable`. "I cannot draw this on a six-wire grid" and "I cannot
- * execute this" are different claims and now have different numbers.
- *
- * The ceiling is still real, and still fail-closed: above it the parser returns
- * null rather than a partial circuit, exactly as before.
- */
+/** CPU simulation width budget. The editor does not use this limit. */
 export const MAX_PARSABLE_QUBITS = 24;
 
-/**
- * How wide a circuit the *read-only diagram viewer* will draw.
- *
- * Distinct from MAX_PARSABLE_QUBITS on purpose: that number caps what the
- * editable/simulation path reconstructs (24 is a real capability limit for CPU
- * simulation). Merely *looking* at a reconstructed diagram costs nothing but
- * SVG — a 26-qubit GHZ that fails honestly for execution should still be
- * viewable — so the viewing ceiling is higher and scrolls. Only the interchange
- * viewer (`reconstructInterchangeCircuit`) uses this; simulation eligibility is
- * unchanged.
- */
-export const MAX_VIEWABLE_QUBITS = 64;
+/** Source-to-source conversion budget. Editing and viewing are width-unbounded;
+ * conversion emits code proportional to the qubit count and remains bounded. */
+export const MAX_CONVERTIBLE_QUBITS = 64;
 
 /**
- * How many gate columns the read-only viewer will draw before it declines.
+ * How many decomposed gate columns an interchange import will accept.
  *
  * The diagram gives every reconstructed step its own ~52px column, and the
  * standard-gate reader *decomposes* multi-qubit gates: one `ccx` becomes ~15
  * primitive gates, `cswap` ~17. A wide circuit that is a few dozen Toffolis on
  * paper explodes into thousands of columns — an SVG tens of thousands of pixels
  * wide with a matching node count, which janks the browser and helps no one.
- * Past this bound the viewer shows an honest "too large to draw" message
- * instead. Independent of qubit count: a narrow-but-deep circuit trips it too.
+ * Past this bound interchange reconstruction reports `too_large`. Independent
+ * of qubit count: a narrow-but-deep circuit trips it too.
  */
 export const MAX_VIEWABLE_STEPS = 512;
 
@@ -83,9 +55,9 @@ const CIRQ_ROTATIONS: Record<string, BuiltinBuilderGate> = { rx: "RX", ry: "RY",
 export function parseBuilderCircuit(
   code: string,
   framework: "qiskit" | "pennylane" | "cirq" | "openqasm3",
-  // Defaults to the CANVAS width, so anything that does not deliberately ask
-  // for more keeps the old, narrower behaviour. Widening is opt-in.
-  maxQubits: number = MAX_BUILDER_QUBITS,
+  // Editing and parsing have no arbitrary width ceiling. Callers doing costly
+  // work (simulation or conversion) pass their own capability budget.
+  maxQubits: number = Number.POSITIVE_INFINITY,
 ): ParsedBuilderCircuit | null {
   const lines = code
     .replace(/\/\*[\s\S]*?\*\//g, "")
@@ -100,10 +72,14 @@ export function parseBuilderCircuit(
         ? parseCirq(lines)
         : parseOpenQasm3(lines);
   if (!parsed) return null;
-  const usedQubits = parsed.steps.flatMap((step) => step.qubits);
-  const qubitCount = Math.max(parsed.qubitCount, ...usedQubits.map((qubit) => qubit + 1), 1);
-  if (qubitCount > maxQubits) return null;
-  if (usedQubits.some((qubit) => qubit < 0)) return null;
+  let qubitCount = Math.max(parsed.qubitCount, 1);
+  for (const step of parsed.steps) {
+    for (const qubit of step.qubits) {
+      if (!Number.isSafeInteger(qubit) || qubit < 0) return null;
+      qubitCount = Math.max(qubitCount, qubit + 1);
+    }
+  }
+  if (!Number.isSafeInteger(qubitCount) || qubitCount < 1 || qubitCount > maxQubits) return null;
   return { qubitCount, steps: parsed.steps };
 }
 

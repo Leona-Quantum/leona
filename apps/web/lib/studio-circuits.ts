@@ -11,7 +11,6 @@ export interface StoredStudioCircuit {
 
 const STORAGE_KEY = "majorana.studio-circuits.v2";
 const MAX_STORED_CIRCUITS = 60;
-const MAX_STORED_QUBITS = 6;
 
 // Per-account storage (lib/user-storage.ts): a stored circuit is the user's work.
 function canUseStorage(): boolean {
@@ -75,7 +74,7 @@ function isStoredCircuit(value: unknown): value is StoredStudioCircuit {
   const candidate = value as Partial<StoredStudioCircuit>;
   if (
     !isNonEmptyString(candidate.artifactIdentity) ||
-    !isBoundedInteger(candidate.qubitCount, 1, MAX_STORED_QUBITS) ||
+    !isPositiveSafeInteger(candidate.qubitCount) ||
     typeof candidate.updatedAt !== "string" ||
     !Number.isFinite(Date.parse(candidate.updatedAt)) ||
     !Array.isArray(candidate.steps) ||
@@ -113,7 +112,7 @@ function isCustomGate(value: unknown): value is CustomGateDefinition {
   if (
     !isNonEmptyString(gate.id) ||
     !isNonEmptyString(gate.name) ||
-    !isBoundedInteger(qubitCount, 1, MAX_STORED_QUBITS) ||
+    !isPositiveSafeInteger(qubitCount) ||
     !Array.isArray(gate.steps) ||
     !hasUniqueIds(gate.steps)
   ) return false;
@@ -130,7 +129,11 @@ function isNonEmptyString(value: unknown): value is string {
 }
 
 function isBoundedInteger(value: unknown, min: number, max: number): value is number {
-  return typeof value === "number" && Number.isInteger(value) && value >= min && value <= max;
+  return typeof value === "number" && Number.isSafeInteger(value) && value >= min && value <= max;
+}
+
+function isPositiveSafeInteger(value: unknown): value is number {
+  return typeof value === "number" && Number.isSafeInteger(value) && value >= 1;
 }
 
 function hasUniqueIds(values: unknown[]): boolean {
