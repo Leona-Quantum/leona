@@ -139,7 +139,9 @@ async def stage():
             fingerprint=f"http-{uuid.uuid4().hex[:8]}",
             export_status="lossless",
         )
-        await projects_repo.set_artifact_project(alice_scope, session, artifact.id, project.id)
+        await projects_repo.set_artifact_project(
+            alice_scope, session, artifact.id, project.id, workspace_artifact_limit=None
+        )
         unshared = await artifacts_repo.create_artifact(
             alice_scope,
             session,

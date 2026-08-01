@@ -53,9 +53,10 @@ def _wire(
     oldest: list[dt.datetime],
     kept: int = 0,
     owned: int = 1,
+    shared_projects: int = 0,
     spend: list[TokenSpendRow] | None = None,
 ):
-    """Stand in for the four repositories the route reads, recording its calls."""
+    """Stand in for the five repositories the route reads, recording its calls."""
     seen: dict = {}
 
     async def count_execute_runs_since(_scope, _session, since):
@@ -67,11 +68,21 @@ def _wire(
         seen["oldest_count"] = count
         return oldest[:count]
 
-    async def get_overview(_scope, _session):
-        return object(), [], kept, 0
+    async def count_kept_against_quota(_scope, _session):
+        # Named for the function the route actually calls. It used to be
+        # `get_overview`, whose number is the Vault total — the route moved to
+        # the QUOTA count when the two stopped being the same integer, and a
+        # double still standing in for the old one would have kept passing
+        # against a route reading something else.
+        seen["counted_against_quota"] = True
+        return kept
 
     async def count_owned_workspaces(_session, *, user_id):
         return owned
+
+    async def count_shared_projects(_session, user_id):
+        seen["shared_projects_subject"] = user_id
+        return shared_projects
 
     async def token_spend_since(_scope, _session, since):
         seen["spend_since"] = since
@@ -83,8 +94,11 @@ def _wire(
     monkeypatch.setattr(
         usage_routes.runs_repo, "oldest_allowance_runs_since", oldest_allowance_runs_since
     )
-    monkeypatch.setattr(usage_routes.workspaces_repo, "get_overview", get_overview)
+    monkeypatch.setattr(
+        usage_routes.artifacts_repo, "count_kept_against_quota", count_kept_against_quota
+    )
     monkeypatch.setattr(usage_routes.system, "count_owned_workspaces", count_owned_workspaces)
+    monkeypatch.setattr(usage_routes.shares_repo, "count_shared_projects", count_shared_projects)
     monkeypatch.setattr(usage_routes.usage_repo, "token_spend_since", token_spend_since)
     return seen
 

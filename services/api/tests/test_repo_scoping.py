@@ -261,7 +261,9 @@ async def test_reorder_projects_lists_within_the_scope(scope, session):
 
 async def test_set_artifact_project_resolves_the_artifact_in_scope(scope, session):
     with pytest.raises(NotFoundError):
-        await projects.set_artifact_project(scope, session, uuid.uuid4(), uuid.uuid4())
+        await projects.set_artifact_project(
+            scope, session, uuid.uuid4(), uuid.uuid4(), workspace_artifact_limit=None
+        )
     assert_workspace_bound(session.statements[0], scope)
 
 
@@ -280,7 +282,9 @@ async def test_set_artifact_project_resolves_the_project_in_scope(scope):
     )
     scope = make_scope()
     with pytest.raises(NotFoundError):
-        await projects.set_artifact_project(scope, session, uuid.uuid4(), uuid.uuid4())
+        await projects.set_artifact_project(
+            scope, session, uuid.uuid4(), uuid.uuid4(), workspace_artifact_limit=None
+        )
     assert_workspace_bound(session.statements[1], scope)
 
 

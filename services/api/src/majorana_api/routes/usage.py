@@ -16,12 +16,21 @@ spent (nothing is pending) or when the tier is unlimited (nothing to wait for).
 
 **These numbers are read from the same rows the gates refuse on**, not
 recomputed alongside them. Runs share `_spends_the_weekly_allowance` with the
-gate in `routes/runs`; kept artifacts come from `get_overview`, which is the
-function the Vault cap in `routes/artifacts` compares against; owned workspaces
-come from `system.count_owned_workspaces`, which is what `create_workspace`
-raises on. A screen that says two runs remain and a submission that refuses are
-the worst possible disagreement here — worse than showing nothing, because the
-number is why the user believed they could run.
+gate in `routes/runs`; kept artifacts come from
+`artifacts.count_kept_against_quota`, the function `reserve_artifact_slot`
+compares against; owned workspaces come from `system.count_owned_workspaces`,
+which is what `create_workspace` raises on; shared projects come from
+`shares.count_shared_projects`, which is what `grant_share` reserves against. A
+screen that says two runs remain and a submission that refuses are the worst
+possible disagreement here — worse than showing nothing, because the number is
+why the user believed they could run.
+
+The artifact line moved off `get_overview` on 2026-08-02 and that was the point
+of the change, not a refactor: `get_overview` counts every filed row (what the
+Vault lists) and the cap counts every filed row OUTSIDE a shared project. They
+were the same integer until shared projects stopped spending the allowance, and
+the day they diverged this file would have started reporting a limit nothing
+enforces.
 
 **And one block that is not an allowance at all.** `spend` reports the model
 tokens this workspace burned in the same window. It refuses nothing and gates
@@ -48,10 +57,11 @@ from majorana_contracts.enums import CHAT_USAGE_ROLE
 from pydantic import BaseModel
 
 from ..auth.deps import CurrentIdentity, CurrentScope, DbSession, get_settings
+from ..repos import artifacts as artifacts_repo
 from ..repos import runs as runs_repo
+from ..repos import shares as shares_repo
 from ..repos import system
 from ..repos import usage as usage_repo
-from ..repos import workspaces as workspaces_repo
 from ..settings import Settings
 from ..tiers import TIER_WINDOW, limits_for, tier_of
 
@@ -121,8 +131,18 @@ class UsageResponse(BaseModel):
     runs: RunAllowance
     #: Kept artifacts, per WORKSPACE — this one is about the active workspace,
     #: not the account, and the client must not label it "your artifacts".
+    #:
+    #: Excludes artifacts sitting in a SHARED project (2026-08-02), because that
+    #: is what the refusal excludes. It is therefore smaller than the number of
+    #: rows the Vault lists whenever this workspace shares anything, and that
+    #: difference is the feature rather than a discrepancy to reconcile.
     artifacts: Allowance
     workspaces: Allowance
+    #: Shared projects this ACCOUNT is in — owned-and-shared plus received —
+    #: against `TierLimits.shared_projects`. Per account, like `runs` and unlike
+    #: `artifacts`. Additive in 2026-08: a client built before it exists must
+    #: keep rendering the allowances it already knows.
+    shared_projects: Allowance
     #: Per WORKSPACE, like `artifacts` and unlike `runs`. Additive in 2026-08:
     #: a client built before it exists must keep rendering the allowances.
     spend: SpendReport
@@ -228,8 +248,14 @@ async def usage(
         if len(oldest) >= needed:
             next_slot_at = oldest[needed - 1] + TIER_WINDOW
 
-    _workspace_row, _members, kept, _run_count = await workspaces_repo.get_overview(scope, session)
+    # The QUOTA count, not `get_overview`'s Vault total. An allowance reports
+    # what a refusal will be measured against, and since 2026-08-02 artifacts in
+    # a shared project are outside that measurement — reporting the total here
+    # would show "150 of 150" to an account the API would happily accept another
+    # artifact from.
+    kept = await artifacts_repo.count_kept_against_quota(scope, session)
     owned = await system.count_owned_workspaces(session, user_id=user.id)
+    shared_projects = await shares_repo.count_shared_projects(session, user.id)
     # The same `since` again: a window that started at a second `now()` would
     # report spend from a period the runs figure beside it did not cover, and
     # the two are read as one sentence about one week.
@@ -244,5 +270,6 @@ async def usage(
         ),
         artifacts=_allowance(kept, limits.private_artifacts),
         workspaces=_allowance(owned, limits.owned_workspaces),
+        shared_projects=_allowance(shared_projects, limits.shared_projects),
         spend=_fold_spend(spend_rows, window_days=TIER_WINDOW.days),
     )

@@ -29,7 +29,7 @@ from majorana_api.repos import (
     usage,
     workspaces,
 )
-from majorana_api.repos.shares import GranteeAllowance
+from majorana_api.repos.shares import ShareAllowance
 from majorana_api.tiers import limits_for
 
 requires_db = pytest.mark.skipif(
@@ -107,7 +107,9 @@ async def _build_workspace(session, tag: str) -> WorkspaceData:
     # cross-workspace probe against an empty project proves only that the
     # container is hidden, and the container is not the thing worth stealing.
     project = await projects.create_project(owner_scope, session, name=f"{tag} project")
-    await projects.set_artifact_project(owner_scope, session, artifact.id, project.id)
+    await projects.set_artifact_project(
+        owner_scope, session, artifact.id, project.id, workspace_artifact_limit=None
+    )
     await runs.append_run_event(owner_scope, session, run.id, type="run.queued", payload={})
     await runs.append_run_event(owner_scope, session, run.id, type="run.started", payload={})
     await runs.add_verification_record(
@@ -140,10 +142,10 @@ async def provision() -> tuple[WorkspaceData, WorkspaceData]:
     return a, b
 
 
-def any_team_grantee(_grantee: object) -> GranteeAllowance:
+def any_team_grantee(_grantee: object) -> ShareAllowance:
     """The permissive grantee allowance, DERIVED from the real team tier.
 
-    Written out as `GranteeAllowance(may_receive=True, max_shared_projects=None)`
+    Written out as `ShareAllowance(may_receive=True, max_shared_projects=None)`
     it would be a double thinner than the thing it stands in for: `None` is
     "unlimited", which is the developer tier's number, so every share test in
     this suite would have been silently exempt from the membership cap and the
@@ -156,7 +158,7 @@ def any_team_grantee(_grantee: object) -> GranteeAllowance:
     second field. One copy is one place to be wrong.
     """
     limits = limits_for("team")
-    return GranteeAllowance(
+    return ShareAllowance(
         may_receive=limits.project_sharing,
         max_shared_projects=limits.shared_projects,
     )

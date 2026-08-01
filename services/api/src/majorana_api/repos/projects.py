@@ -19,14 +19,23 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..ids import uuid7
 from ..orm import Artifact, Project
+from . import artifacts as artifacts_repo
 from ._base import NotFoundError, require_admin, require_write, touched_now
+from ._project_limits import MAX_PROJECT_ARTIFACT_LIMIT, is_project_shared
 from .artifacts import get_artifact
 
-
-#: Mirrors `ck_projects_max_artifacts_range` and `shares.MAX_PROJECT_ARTIFACT_LIMIT`.
-#: Defined here rather than imported from `shares` because `shares` imports THIS
-#: module; the constant is asserted equal in `test_project_artifact_limit.py`.
-MAX_PROJECT_ARTIFACT_LIMIT = 500
+__all__ = [
+    "MAX_PROJECT_ARTIFACT_LIMIT",
+    "create_project",
+    "delete_project",
+    "get_project",
+    "list_projects",
+    "normalize_name",
+    "rename_project",
+    "reorder_projects",
+    "set_artifact_project",
+    "set_project_artifact_limit",
+]
 
 
 def normalize_name(name: str) -> str:
@@ -225,6 +234,8 @@ async def set_artifact_project(
     session: AsyncSession,
     artifact_id: uuid.UUID,
     project_id: uuid.UUID | None,
+    *,
+    workspace_artifact_limit: int | None,
 ) -> Artifact:
     """File an artifact under a project, or (None) return it to the ungrouped list.
 
@@ -232,11 +243,56 @@ async def set_artifact_project(
     written, so filing workspace A's artifact under workspace B's project is a
     NotFound on whichever half the caller does not own — the same answer as a row
     that never existed.
+
+    ## Why a move is a metered operation
+
+    It reads like bookkeeping and it is not: under the owner's rule a shared
+    project's contents spend no individual allowance, so this function moves
+    artifacts between two different ledgers. Both directions had to be handled,
+    and only one of them refuses:
+
+    - **Into a project** — spends a slot in that project. This was the hole:
+      `contribute_artifact` guarded the per-project limit under a lock for
+      guests, and an owner moved artifacts into the very same project without
+      the limit being read at all. Measured against `dev` at 6 artifacts into a
+      project limited to 2.
+    - **Out of a shared project** into an unshared one (or out of every project)
+      — spends an individual slot, because the artifact becomes visible to
+      `count_kept_against_quota` again. Refused when there is no room, which is
+      the direction that stops "share a project, fill it, unshare it" being an
+      unlimited Vault.
+    - **Into a shared project** — frees an individual slot. Never refused.
+
+    `workspace_artifact_limit` is a REQUIRED keyword for the same reason
+    `keep_artifact` makes it one: a caller that could omit it would silently get
+    no cap check, and a cap enforced nowhere looks exactly like a cap that
+    passes. `None` means unlimited and must be passed explicitly.
+
+    Locks are taken artifact → project → workspace, the order the rest of this
+    layer uses. When a move is between two projects only the TARGET is locked:
+    the source is losing a row, and a cap is never breached by going down.
     """
     require_write(scope)
     artifact = await get_artifact(scope, session, artifact_id, for_update=True)
+    if artifact.project_id == project_id:
+        # A no-op move must not spend anything. Dragging a circuit back onto the
+        # project it is already in is an ordinary thing to do in the UI, and
+        # refusing it at a full project would be refusing a change of nothing.
+        return artifact
+    was_shared = artifact.project_id is not None and await is_project_shared(
+        session, artifact.project_id
+    )
+    now_shared = False
     if project_id is not None:
         await get_project(scope, session, project_id)
+        if artifact.kept_at is not None:
+            # Unkept artifacts occupy no project slot — the count is of kept
+            # rows — so staging one into a full project is allowed and
+            # `keep_artifact` is where it is refused.
+            await artifacts_repo.reserve_project_slot(scope, session, project_id)
+        now_shared = await is_project_shared(session, project_id)
+    if artifact.kept_at is not None and was_shared and not now_shared:
+        await artifacts_repo.reserve_artifact_slot(scope, session, workspace_artifact_limit)
     result = await session.execute(
         update(Artifact)
         .where(Artifact.id == artifact.id, Artifact.workspace_id == scope.workspace_id)

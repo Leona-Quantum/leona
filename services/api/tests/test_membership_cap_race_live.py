@@ -52,7 +52,7 @@ BLOCKED_FOR_S = 1.5
 #: taken from a `lambda ...: True` so that the cap under test is the real one:
 #: a double answering `max_shared_projects=None` would exempt this suite from
 #: the very thing it exists to measure.
-TEAM_ALLOWANCE = shares_repo.GranteeAllowance(
+TEAM_ALLOWANCE = shares_repo.ShareAllowance(
     may_receive=limits_for("team").project_sharing,
     max_shared_projects=TEAM_MEMBERSHIP_CAP,
 )
@@ -99,7 +99,7 @@ async def test_the_last_membership_cannot_be_granted_twice_by_two_owners():
                 project.id,
                 email=grantee.email,
                 role=ShareRole.VIEWER,
-                grantee_allowance=lambda _grantee: TEAM_ALLOWANCE,
+                allowance_for=lambda _grantee: TEAM_ALLOWANCE,
             )
 
         # The two contenders own DIFFERENT projects, so `_lock_project` holds
@@ -130,7 +130,7 @@ async def test_the_last_membership_cannot_be_granted_twice_by_two_owners():
                 project_a.id,
                 email=grantee.email,
                 role=ShareRole.VIEWER,
-                grantee_allowance=lambda _grantee: TEAM_ALLOWANCE,
+                allowance_for=lambda _grantee: TEAM_ALLOWANCE,
             )
             a_has_the_slot.set()
             # Held deliberately: this is the window in which the unlocked code
@@ -148,7 +148,7 @@ async def test_the_last_membership_cannot_be_granted_twice_by_two_owners():
                     project_b.id,
                     email=grantee.email,
                     role=ShareRole.VIEWER,
-                    grantee_allowance=lambda _grantee: TEAM_ALLOWANCE,
+                    allowance_for=lambda _grantee: TEAM_ALLOWANCE,
                 )
                 await session.commit()
                 b_outcome.append("granted")
