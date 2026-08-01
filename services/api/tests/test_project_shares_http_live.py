@@ -157,7 +157,88 @@ async def stage():
     finally:
         await alice.client.aclose()
         await bob.client.aclose()
+        await _tear_down(factory, [alice_ws.id, bob_ws.id], [alice_user.id, bob_user.id])
         await engine.dispose()
+
+
+async def _tear_down(factory, workspace_ids, user_ids) -> None:
+    """Delete everything this fixture committed. Not optional.
+
+    The fixture has to commit — two ASGI apps on two connections is the point,
+    and a fixture only one of them can see makes every cross-client assertion
+    vacuously true. The cost is that the `db` fixture's rollback cannot undo it,
+    so the rows are this file's to remove.
+
+    Skipping this is not a tidiness problem, it is a broken neighbour: with the
+    teardown absent, `test_catalog_bootstrap_import_live` finished
+    `completed_with_rejections` instead of `completed` and
+    `test_job_queue_live` recovered three stale jobs where it expected one —
+    two suites that never mention sharing, failing on a clean database, purely
+    because twenty workspaces they did not create were sitting in it.
+
+    Deleted in foreign-key order, and `users.active_workspace_id` is NULLed
+    first because it points at a workspace about to go.
+    """
+    from sqlalchemy import delete, select, update
+
+    from majorana_api.orm import (
+        Artifact,
+        ArtifactVersion,
+        AuditLog,
+        Membership,
+        Project,
+        ProjectShare,
+        User,
+        Workspace,
+    )
+
+    async with factory() as session:
+        artifact_ids = (
+            (
+                await session.execute(
+                    select(Artifact.id).where(Artifact.workspace_id.in_(workspace_ids))
+                )
+            )
+            .scalars()
+            .all()
+        )
+        project_ids = (
+            (
+                await session.execute(
+                    select(Project.id).where(Project.workspace_id.in_(workspace_ids))
+                )
+            )
+            .scalars()
+            .all()
+        )
+        if project_ids:
+            await session.execute(
+                delete(ProjectShare).where(ProjectShare.project_id.in_(project_ids))
+            )
+        if artifact_ids:
+            # The pointer goes FIRST. `artifacts.current_version_id` references
+            # the rows below, so deleting versions before clearing it is a
+            # foreign-key violation — which is exactly what the first draft did,
+            # and pytest reported it as ten teardown ERRORS beside a green
+            # "1453 passed" that a summarised console line did not mention.
+            await session.execute(
+                update(Artifact)
+                .where(Artifact.id.in_(artifact_ids))
+                .values(current_version_id=None, project_id=None)
+            )
+            await session.execute(
+                delete(ArtifactVersion).where(ArtifactVersion.artifact_id.in_(artifact_ids))
+            )
+            await session.execute(delete(Artifact).where(Artifact.id.in_(artifact_ids)))
+        await session.execute(delete(Project).where(Project.workspace_id.in_(workspace_ids)))
+        await session.execute(delete(AuditLog).where(AuditLog.workspace_id.in_(workspace_ids)))
+        await session.execute(delete(Membership).where(Membership.workspace_id.in_(workspace_ids)))
+        await session.execute(
+            update(User).where(User.id.in_(user_ids)).values(active_workspace_id=None)
+        )
+        await session.execute(delete(Workspace).where(Workspace.id.in_(workspace_ids)))
+        await session.execute(delete(User).where(User.id.in_(user_ids)))
+        await session.commit()
 
 
 async def _grant(stage, role="viewer", expires_at=None):
