@@ -147,13 +147,11 @@ async def test_source_that_is_neither_never_reaches_a_sandbox_at_all():
     of nothing, and report it as a contract failure two stages later.
     """
     sandbox = _RecordingSandbox()
-    output = await SandboxCandidateExecutor(sandbox).run_candidate(
-        _candidate("x = 1\n"), _plan()
-    )
+    output = await SandboxCandidateExecutor(sandbox).run_candidate(_candidate("x = 1\n"), _plan())
     assert sandbox.spec is None, "no sandbox should be created for source with no circuit"
-    assert any(
-        "FINAL_CIRCUIT" in d for d in output.observation.get("contract_diagnostics", [])
-    ), output.observation
+    assert any("FINAL_CIRCUIT" in d for d in output.observation.get("contract_diagnostics", [])), (
+        output.observation
+    )
 
 
 # --------------------------------------------------------------------------- #

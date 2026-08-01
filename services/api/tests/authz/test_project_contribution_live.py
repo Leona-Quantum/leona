@@ -41,7 +41,6 @@ from majorana_api.repos import (
     projects,
     shares,
     system,
-    workspaces,
 )
 
 pytestmark = requires_db
@@ -363,9 +362,7 @@ async def test_a_zero_limit_means_edit_but_do_not_add(db, pair):
         fingerprint=f"f-{uuid.uuid4().hex[:8]}",
         export_status="unsupported",
     )
-    existing = await projects.set_artifact_project(
-        alice.scope, db, existing.id, alice.project.id
-    )
+    existing = await projects.set_artifact_project(alice.scope, db, existing.id, alice.project.id)
     _access, _artifact, version = await shares.create_shared_version(
         bob.scope,
         db,
@@ -441,9 +438,7 @@ async def test_only_an_admin_of_the_owning_workspace_may_move_the_limit(db, pair
     alice, _bob = pair
     member = Scope(user_id=alice.user.id, workspace_id=alice.workspace.id, role=Role.MEMBER)
     with pytest.raises(AuthzError):
-        await projects.set_project_artifact_limit(
-            member, db, alice.project.id, max_artifacts=99
-        )
+        await projects.set_project_artifact_limit(member, db, alice.project.id, max_artifacts=99)
     project = await projects.set_project_artifact_limit(
         alice.scope, db, alice.project.id, max_artifacts=99
     )

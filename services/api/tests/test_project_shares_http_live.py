@@ -526,7 +526,12 @@ async def test_a_full_project_answers_409_with_a_sentence_the_web_can_show(stage
     # The project already holds Alice's own filed circuit, so it is at 1 of 1.
     refused = await stage["bob"].client.post(
         f"/v1/shared/projects/{stage['project_id']}/artifacts",
-        json={"title": "one too many", "family": "Bell", "framework": "qiskit", "code": CONTRIBUTED},
+        json={
+            "title": "one too many",
+            "family": "Bell",
+            "framework": "qiskit",
+            "code": CONTRIBUTED,
+        },
     )
     assert refused.status_code == 409, refused.text
     payload = refused.json()

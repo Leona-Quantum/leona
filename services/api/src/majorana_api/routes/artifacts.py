@@ -422,6 +422,11 @@ class ArtifactVersionSummary(BaseModel):
     #: What this version actually holds. The UI states these per row rather than
     #: assuming every version can do what the current one can.
     origin: str
+    #: "circuit" | "program" | "unknown". What this version's code IS, rather than
+    #: who wrote it: a circuit defines FINAL_CIRCUIT and reports nothing, a program
+    #: binds RESULT. The distinction is what makes a version transpilable or
+    #: runnable, and it was invisible until now — one `code` column held both.
+    program_role: str
     has_qasm: bool
     has_resource_estimates: bool
     has_framework_variants: bool
@@ -471,6 +476,7 @@ def _to_version_summary(
         verification_summary=parse_verification_summary(raw),
         created_at=row.created_at,
         origin=caps.origin,
+        program_role=caps.program_role,
         has_qasm=caps.has_qasm,
         has_resource_estimates=caps.has_resource_estimates,
         has_framework_variants=caps.has_framework_variants,

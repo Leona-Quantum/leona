@@ -1653,8 +1653,7 @@ class ProductionSimplePipelinePorts:
             if not result_was_derived(execution.observation):
                 reason = execution.observation.get("result_derivation_error")
                 diagnostics.append(
-                    "the circuit produced no result to report"
-                    + (f": {reason}" if reason else "")
+                    "the circuit produced no result to report" + (f": {reason}" if reason else "")
                 )
         else:
             missing_keys = [

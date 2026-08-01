@@ -23,18 +23,28 @@ from majorana_api.version_capabilities import (
     ORIGIN_STARTER_EXAMPLE,
     ORIGIN_STUDIO_DRAFT,
     ORIGIN_UNKNOWN,
+    CIRCUIT_ROLE,
+    PROGRAM_ROLE,
     capabilities_of,
     restore_losses,
 )
 
 
 def _version(**overrides):
+    """Every column `capabilities_of` reads, defaulted the way the row defaults.
+
+    `code` is `Mapped[str]` and NOT NULL, so it is never absent on a real row —
+    a double that omitted it passed for as long as nothing read it and broke the
+    moment something did. The default here is a program, because three of the
+    four writers store one; the circuit case is exercised explicitly below.
+    """
     row = {
         "qasm": None,
         "artifact_metadata": None,
         "export_status": "unsupported",
         "framework_variants": None,
         "resource_estimates": None,
+        "code": 'FINAL_CIRCUIT = build()\nRESULT = {"counts": {}}\n',
     }
     row.update(overrides)
     return SimpleNamespace(**row)
@@ -189,3 +199,59 @@ def test_losses_are_codes_so_the_web_can_translate_them():
         capabilities_of(worker_version()), capabilities_of(studio_draft_version())
     )
     assert all(loss.islower() and " " not in loss for loss in losses)
+
+
+# --------------------------------------------------------------------------- #
+# What the version IS, as opposed to who wrote it
+# --------------------------------------------------------------------------- #
+
+
+def test_a_version_says_whether_it_holds_a_circuit_or_a_program():
+    """The distinction one `code` column held silently until now.
+
+    A circuit can be transpiled, block-encoded and re-targeted; a program that
+    prints a number cannot. Nothing in the product could tell them apart, which
+    is why a repository circuit was executed as if it were a script and failed.
+    """
+    program = _version()
+    assert capabilities_of(program).program_role == PROGRAM_ROLE
+
+    circuit = _version(
+        code="from qiskit import QuantumCircuit\nFINAL_CIRCUIT = QuantumCircuit(2)\n"
+    )
+    assert capabilities_of(circuit).program_role == CIRCUIT_ROLE
+
+
+def test_the_role_is_read_from_the_code_and_not_from_the_writer():
+    """`origin` and `program_role` answer different questions about one row.
+
+    An agent run whose generation stopped after building the circuit is
+    `agent_run` AND a circuit. Deriving the role from the origin — the obvious
+    shortcut — would call it a program because agents write programs, and the
+    lowering that makes it runnable would never happen.
+    """
+    half_finished = _version(
+        artifact_metadata={"source": "simple_pipeline_candidate"},
+        code="from qiskit import QuantumCircuit\nFINAL_CIRCUIT = QuantumCircuit(2)\n",
+    )
+    caps = capabilities_of(half_finished)
+    assert caps.origin == ORIGIN_AGENT_RUN
+    assert caps.program_role == CIRCUIT_ROLE
+
+
+def test_a_legacy_row_with_neither_name_is_unknown_rather_than_a_guess():
+    assert capabilities_of(_version(code="print('hi')")).program_role == "unknown"
+    assert capabilities_of(_version(code="")).program_role == "unknown"
+
+
+def test_the_role_is_not_in_the_restore_losses():
+    """Restoring a circuit over a program is not a LOSS of capability.
+
+    It is a different kind of thing, and the losses list is for capabilities the
+    artifact would stop having. Listing the role there would make every restore
+    between the two interrupt the user with a warning about nothing.
+    """
+    program = capabilities_of(_version())
+    circuit = capabilities_of(_version(code="FINAL_CIRCUIT = build()"))
+    assert restore_losses(program, circuit) == []
+    assert restore_losses(circuit, program) == []

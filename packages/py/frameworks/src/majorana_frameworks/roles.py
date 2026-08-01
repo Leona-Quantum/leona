@@ -117,9 +117,7 @@ def _bound_names(source: str) -> frozenset[str] | None:
             elif isinstance(target, (ast.Tuple, ast.List)):
                 # `RESULT, counts = run()` binds RESULT. Unpacking is how a
                 # program that computes two things at once usually writes it.
-                names.update(
-                    element.id for element in target.elts if isinstance(element, ast.Name)
-                )
+                names.update(element.id for element in target.elts if isinstance(element, ast.Name))
     return frozenset(names)
 
 

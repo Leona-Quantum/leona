@@ -448,6 +448,7 @@ def _majorana_native_evidence(
 """
 )
 
+
 def _pennylane_tape_resolution(target: str, source: str, getattr_name: str, indent: str) -> str:
     """Generate the block that finds a PennyLane QNode's tape. Three call sites.
 
