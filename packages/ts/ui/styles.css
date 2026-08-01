@@ -2090,6 +2090,16 @@
   display: flex;
   gap: 2px;
   opacity: 0;
+  /* Opacity does not remove an element from hit testing. Without this the
+     invisible block sat over the right half of every folder and project row and
+     took the clicks: a click at the centre of a row reached these controls, not
+     the disclosure trigger, which is why a row could look unresponsive when
+     clicked anywhere but its name. `.mj-sidebar-chat-folder` two rules down has
+     always paired the two declarations; this one did not.
+
+     Restored together with the opacity below, so what can be clicked is exactly
+     what can be seen — never the wider set. */
+  pointer-events: none;
   background: linear-gradient(90deg, transparent, var(--bg-2) 18%);
   padding-left: var(--sp-3);
 }
@@ -2101,6 +2111,7 @@
 .mj-sidebar-folder-row:hover .mj-sidebar-folder-actions,
 .mj-sidebar-folder-actions:focus-within {
   opacity: 1;
+  pointer-events: auto;
 }
 .mj-sidebar-folder-actions button[disabled] {
   opacity: 0.35;

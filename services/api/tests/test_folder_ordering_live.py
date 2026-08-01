@@ -215,3 +215,49 @@ async def test_a_shared_position_falls_back_to_the_old_order(scope, factory):
             folder.position = 0
         await session.commit()
     assert await _names(scope, factory) == ["alpha", "beta", "gamma"]
+
+
+async def test_a_rename_moves_the_folders_updated_at(scope, factory):
+    """`updated_at` carries only a `server_default`, so an attribute assignment
+    and a flush leave it at the INSERT value and the row reports a stale time.
+
+    Live rather than mocked because that is the whole claim: the stamp has to
+    survive the round trip to Postgres and come back on a re-read, and a session
+    double returns whatever the instance happens to be holding.
+    """
+    made = await _make(scope, factory, "alpha")
+    async with factory() as session:
+        before = (await folders.get_folder(scope, session, made["alpha"])).updated_at
+
+    async with factory() as session:
+        await folders.rename_folder(scope, session, made["alpha"], name="renamed")
+        await session.commit()
+
+    async with factory() as session:
+        after = (await folders.get_folder(scope, session, made["alpha"])).updated_at
+    assert after > before, "a rename that does not move updated_at is invisible to any client"
+
+
+async def test_a_reorder_stamps_only_the_folders_that_moved(scope, factory):
+    """Stamping every folder would make a drag of two look like an edit to all.
+
+    `gamma` keeps position 2 in this arrangement, so its row must be untouched
+    while the two that swapped are stamped.
+    """
+    made = await _make(scope, factory, "alpha", "beta", "gamma")
+    async with factory() as session:
+        before = {
+            folder.name: folder.updated_at for folder in await folders.list_folders(scope, session)
+        }
+
+    async with factory() as session:
+        await folders.reorder_folders(scope, session, [made["beta"], made["alpha"], made["gamma"]])
+        await session.commit()
+
+    async with factory() as session:
+        after = {
+            folder.name: folder.updated_at for folder in await folders.list_folders(scope, session)
+        }
+    assert after["alpha"] > before["alpha"]
+    assert after["beta"] > before["beta"]
+    assert after["gamma"] == before["gamma"], "an unmoved folder must not report an edit"

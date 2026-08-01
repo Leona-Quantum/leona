@@ -11,7 +11,6 @@ authorization path to artifact rows, and every statement below binds
 functions with their own scoping proof, not as an extra branch inside these.
 """
 
-import datetime as dt
 import uuid
 
 from majorana_contracts import Scope
@@ -20,33 +19,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..ids import uuid7
 from ..orm import Artifact, Project
-from ._base import NotFoundError, require_write
+from ._base import NotFoundError, require_write, touched_now
 from .artifacts import get_artifact
 
 
 def normalize_name(name: str) -> str:
     return " ".join(name.strip().split())[:80]
-
-
-def _touched_now() -> dt.datetime:
-    """The stamp for an in-place edit, as a Python value rather than `func.now()`.
-
-    `updated_at` carries only a `server_default`, so an ORM attribute assignment
-    followed by a flush leaves it at its INSERT value and the resource reports a
-    stale time. Two things it deliberately is not:
-
-    - `onupdate=func.now()` on the column. SQLAlchemy marks an `onupdate`
-      attribute expired after the UPDATE, and the route's next read of it becomes
-      a lazy load outside the async greenlet — the exact 500 that
-      `set_artifact_project` was fixed for.
-    - `func.now()` assigned to the instance. That leaves a SQL expression object
-      on the attribute until something refreshes it, which is the same trap
-      wearing a different hat.
-
-    A plain UTC datetime is a value the instance keeps, so the row the caller
-    serializes is the row that was written.
-    """
-    return dt.datetime.now(dt.timezone.utc)
 
 
 async def list_projects(scope: Scope, session: AsyncSession) -> list[Project]:
@@ -162,7 +140,7 @@ async def rename_project(
         if clash is not None:
             raise ValueError(f"a project named {normalized!r} already exists")
     project.name = normalized
-    project.updated_at = _touched_now()
+    project.updated_at = touched_now()
     await session.flush()
     return project
 
@@ -223,7 +201,7 @@ async def reorder_projects(
     # `current` is already in list order, so the omitted projects keep their
     # relative arrangement rather than being reshuffled by dictionary order.
     tail = [project.id for project in current if project.id not in requested]
-    touched = _touched_now()
+    touched = touched_now()
     for index, project_id in enumerate([*ordered_ids, *tail]):
         project = known[project_id]
         # Only the rows that actually move are stamped. Rewriting `updated_at`

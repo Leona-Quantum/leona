@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..ids import uuid7
 from ..orm import Run, WorkspaceFolder
-from ._base import NotFoundError, require_write
+from ._base import NotFoundError, require_write, touched_now
 from .runs import get_run
 
 
@@ -122,6 +122,7 @@ async def rename_folder(
         if clash is not None:
             raise ValueError(f"a folder named {normalized!r} already exists")
     folder.name = normalized
+    folder.updated_at = touched_now()
     await session.flush()
     return folder
 
@@ -177,8 +178,15 @@ async def reorder_folders(
     # `current` is already in list order, so the omitted folders keep their
     # relative arrangement rather than being reshuffled by dictionary order.
     tail = [folder.id for folder in current if folder.id not in requested]
+    touched = touched_now()
     for index, folder_id in enumerate([*ordered_ids, *tail]):
-        known[folder_id].position = index
+        folder = known[folder_id]
+        # Only the rows that actually move are stamped. Rewriting `updated_at`
+        # on every folder in the workspace would make a drag that changed two
+        # positions look like an edit to all of them.
+        if folder.position != index:
+            folder.position = index
+            folder.updated_at = touched
     await session.flush()
     return await list_folders(scope, session)
 
