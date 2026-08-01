@@ -651,6 +651,7 @@ class RepoReviewArtifactSaver:
         parent_artifact_version_id: UUID | None = None,
         parent_artifact_fingerprint: str | None = None,
         auto_keep: bool = False,
+        artifact_limit: int | None = None,
     ) -> None:
         self._scope = scope
         self._session = session
@@ -664,6 +665,12 @@ class RepoReviewArtifactSaver:
         # add a query that can fail. Defaults False -- the direction where an
         # artifact still exists and can be kept by hand.
         self._auto_keep = auto_keep
+        # The owner's allowance, resolved at setup for exactly the same reason.
+        # `None` means unlimited. Auto-keep used to file straight past this by
+        # passing `kept=True` into `create_artifact`, which takes no limit and
+        # reserves nothing -- so a workspace that opted into auto-keep had no
+        # artifact cap at all, one run at a time.
+        self._artifact_limit = artifact_limit
 
     async def save(
         self,
@@ -705,9 +712,31 @@ class RepoReviewArtifactSaver:
                 family=plan.algorithm,
                 framework=candidate.framework,
                 parent_artifact_id=self._parent_artifact_id if save_as_copy else None,
-                kept=self._auto_keep,
+                # Never filed here. Filing is `keep_artifact`'s job, because that
+                # is where the workspace's cap lock is held across the comparison
+                # and the write.
+                kept=False,
             )
             artifact_id = artifact.id
+            if self._auto_keep:
+                try:
+                    await artifacts_repo.keep_artifact(
+                        self._scope,
+                        self._session,
+                        artifact.id,
+                        workspace_artifact_limit=self._artifact_limit,
+                    )
+                except artifacts_repo.ArtifactCapReached:
+                    # Left UNKEPT rather than raised. The run already succeeded
+                    # and has already been paid for in model tokens and sandbox
+                    # time; failing it here would destroy a result the account is
+                    # entitled to over a listing preference. The artifact exists,
+                    # the Run surface still shows it, and "Keep this" files it as
+                    # soon as the workspace has room -- which is exactly what a
+                    # workspace without auto-keep does for every run.
+                    pass
+                except artifacts_repo.ProjectFull:  # pragma: no cover - new rows have no project
+                    pass
 
         qasm = (
             conversion.qasm if conversion is not None and conversion.status == "available" else None

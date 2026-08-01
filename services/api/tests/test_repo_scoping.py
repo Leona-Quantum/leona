@@ -666,7 +666,13 @@ async def test_list_audit(scope, session):
 
 async def test_created_rows_carry_scope_workspace(scope, session):
     artifact = await artifacts.create_artifact(
-        scope, session, slug="s", title="t", family="VQE", framework="qiskit"
+        scope,
+        session,
+        slug="s",
+        title="t",
+        family="VQE",
+        framework="qiskit",
+        kept=True,
     )
     assert artifact.workspace_id == scope.workspace_id
 

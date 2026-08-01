@@ -86,6 +86,7 @@ async def _artifact(scope, factory) -> uuid.UUID:
             title="filed work",
             family="Bell",
             framework="qiskit",
+            kept=True,
         )
         await session.commit()
         return artifact.id

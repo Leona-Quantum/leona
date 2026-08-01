@@ -104,6 +104,7 @@ async def test_cross_workspace_writes_rejected(db, dataset):
                 family="Bell",
                 framework="qiskit",
                 parent_artifact_id=b.artifact_id,  # provenance edge across tenants
+                kept=True,
             )
     for role in ADMIN_ROLES:
         sa = scope_for(a, role)

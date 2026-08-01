@@ -103,6 +103,7 @@ async def test_a_duplicate_that_holds_real_work_blocks_the_merge(db):
         title="Work done under the new identity",
         family="Bell",
         framework="qiskit",
+        kept=True,
     )
     await db.flush()
 
@@ -195,6 +196,7 @@ async def test_a_plan_reports_what_each_account_stands_to_get_back(db):
         title="Real work",
         family="Bell",
         framework="qiskit",
+        kept=True,
     )
     await db.flush()
 
@@ -266,6 +268,7 @@ async def test_a_blocked_row_reports_the_memberships_it_would_strand(db):
         title="Work under the new identity",
         family="Bell",
         framework="qiskit",
+        kept=True,
     )
     await db.flush()
 

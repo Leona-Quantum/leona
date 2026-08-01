@@ -659,6 +659,17 @@ async def _handle_agent_execution(
     # expensive stage has already succeeded, and is the worst place to introduce
     # a query that can fail (0036).
     auto_keep_artifacts = await workspaces_repo.auto_keep_artifacts(scope, session)
+    # The owner's artifact allowance, resolved here for the same reason and from
+    # the same two environment variables the run allowance uses. `None` when the
+    # owner row is gone, which cannot happen to a live run and which reads as
+    # "unlimited" — the safe direction for a worker: an artifact the account is
+    # entitled to is never lost because a lookup came back empty.
+    owner = await session.get(User, scope.user_id)
+    artifact_limit = (
+        limits_for(tier_of(owner, EnvTierSources.from_env())).private_artifacts
+        if owner is not None
+        else None
+    )
     ports = ProductionSimplePipelinePorts(
         store=agent_store,
         observer=observer,
@@ -681,6 +692,7 @@ async def _handle_agent_execution(
             # keep it only as the last resort it is.
             title=ctx.conversation_title or ctx.task_prompt,
             auto_keep=auto_keep_artifacts,
+            artifact_limit=artifact_limit,
         ),
         task_prompt=ctx.task_prompt,
         framework=ctx.framework,
