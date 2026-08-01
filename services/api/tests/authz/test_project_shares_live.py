@@ -44,6 +44,12 @@ from majorana_api.repos import (
     workspaces,
 )
 
+#: Tier gating is not what these suites are about: every one of them predates
+#: the Team plan and each is pinning a different rule. A grantee that always
+#: qualifies keeps them testing that rule. The gate itself is covered by
+#: test_project_sharing_tier_live.py, which varies this deliberately.
+ANY_TEAM_GRANTEE = lambda _grantee: True  # noqa: E731
+
 pytestmark = requires_db
 
 
@@ -132,6 +138,7 @@ async def grant(db, alice: Tenant, bob: Tenant, role=ShareRole.VIEWER, expires_a
         email=bob.user.email,
         role=role,
         expires_at=expires_at,
+        grantee_may_receive=ANY_TEAM_GRANTEE,
     )
     assert grantee.id == bob.user.id
     return share
@@ -362,7 +369,12 @@ async def test_a_grantee_cannot_reshare_or_manage(db, pair):
     # there — the grant gave him contents, never the container.
     with pytest.raises(NotFoundError):
         await shares.grant_share(
-            bob.scope, db, alice.project.id, email=carol.user.email, role=ShareRole.VIEWER
+            bob.scope,
+            db,
+            alice.project.id,
+            email=carol.user.email,
+            role=ShareRole.VIEWER,
+            grantee_may_receive=ANY_TEAM_GRANTEE,
         )
     with pytest.raises(NotFoundError):
         await shares.list_shares(bob.scope, db, alice.project.id)
@@ -573,7 +585,12 @@ async def test_deleting_the_owning_workspace_closes_every_grant(db, pair):
     )
     await projects.set_artifact_project(team_scope, db, team_artifact.id, team_project.id)
     await shares.grant_share(
-        team_scope, db, team_project.id, email=bob.user.email, role=ShareRole.VIEWER
+        team_scope,
+        db,
+        team_project.id,
+        email=bob.user.email,
+        role=ShareRole.VIEWER,
+        grantee_may_receive=ANY_TEAM_GRANTEE,
     )
     assert await shares.resolve_share(bob.scope, db, team_project.id)
 
@@ -599,7 +616,12 @@ async def test_revoke_all_reports_what_it_closed(db, pair):
     carol = await build_tenant(db, "carol", with_content=False)
     await grant(db, alice, bob)
     await shares.grant_share(
-        alice.scope, db, alice.project.id, email=carol.user.email, role=ShareRole.VIEWER
+        alice.scope,
+        db,
+        alice.project.id,
+        email=carol.user.email,
+        role=ShareRole.VIEWER,
+        grantee_may_receive=ANY_TEAM_GRANTEE,
     )
     assert await shares.revoke_all_shares(alice.scope, db, alice.project.id) == 2
     assert await shares.revoke_all_shares(alice.scope, db, alice.project.id) == 0
@@ -616,7 +638,12 @@ async def test_granting_to_yourself_is_refused(db, pair):
     alice, _bob = pair
     with pytest.raises(shares.ShareError):
         await shares.grant_share(
-            alice.scope, db, alice.project.id, email=alice.user.email, role=ShareRole.VIEWER
+            alice.scope,
+            db,
+            alice.project.id,
+            email=alice.user.email,
+            role=ShareRole.VIEWER,
+            grantee_may_receive=ANY_TEAM_GRANTEE,
         )
 
 
@@ -626,7 +653,12 @@ async def test_granting_to_an_existing_member_is_refused(db, pair):
     await workspaces.add_member(alice.scope, db, user_id=bob.user.id, role=Role.MEMBER)
     with pytest.raises(shares.ShareError):
         await shares.grant_share(
-            alice.scope, db, alice.project.id, email=bob.user.email, role=ShareRole.VIEWER
+            alice.scope,
+            db,
+            alice.project.id,
+            email=bob.user.email,
+            role=ShareRole.VIEWER,
+            grantee_may_receive=ANY_TEAM_GRANTEE,
         )
 
 
@@ -639,6 +671,7 @@ async def test_granting_to_an_unknown_address_is_a_not_found(db, pair):
             alice.project.id,
             email="nobody-at-all@shares.test",
             role=ShareRole.VIEWER,
+            grantee_may_receive=ANY_TEAM_GRANTEE,
         )
 
 
@@ -650,6 +683,7 @@ async def test_the_email_match_is_case_and_space_insensitive(db, pair):
         alice.project.id,
         email=f"  {bob.user.email.upper()}  ",
         role=ShareRole.VIEWER,
+        grantee_may_receive=ANY_TEAM_GRANTEE,
     )
     assert await shares.resolve_share(bob.scope, db, alice.project.id)
 
@@ -696,10 +730,16 @@ async def test_the_share_count_is_capped(db, pair):
             alice.project.id,
             email=extra.user.email,
             role=ShareRole.VIEWER,
+            grantee_may_receive=ANY_TEAM_GRANTEE,
         )
     with pytest.raises(shares.ShareError):
         await shares.grant_share(
-            alice.scope, db, alice.project.id, email=bob.user.email, role=ShareRole.VIEWER
+            alice.scope,
+            db,
+            alice.project.id,
+            email=bob.user.email,
+            role=ShareRole.VIEWER,
+            grantee_may_receive=ANY_TEAM_GRANTEE,
         )
 
 
@@ -985,6 +1025,7 @@ async def test_two_concurrent_grants_produce_one_row(db, pair):
                     alice.project.id,
                     email=bob.user.email,
                     role=role,
+                    grantee_may_receive=ANY_TEAM_GRANTEE,
                 )
                 await session.commit()
                 return None

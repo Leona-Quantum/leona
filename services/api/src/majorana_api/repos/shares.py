@@ -55,6 +55,7 @@ list of forbidden operations that a new function could be added outside of.
 import datetime as dt
 import hashlib
 import uuid
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
@@ -283,6 +284,7 @@ async def grant_share(
     email: str,
     role: ShareRole,
     expires_at: dt.datetime | None = None,
+    grantee_may_receive: Callable[[User], bool],
 ) -> tuple[ProjectShare, User]:
     """Grant, or change the grant this person already holds. Admin only.
 
@@ -292,22 +294,50 @@ async def grant_share(
     wrong for half its uses. The unique index is what makes that true under two
     concurrent grants; the read-then-write below only makes the message nicer.
 
-    Four refusals, each for a different reason:
+    Five refusals, each for a different reason:
 
     - **Yourself.** A grant to the person making it is a no-op that looks like a
       permission, and it would appear in the list as a door that is not one.
     - **An existing member of this workspace.** They can already read everything
       here through the front door. A grant would be a second, revocable-looking
       path to something revoking it would not take away.
+    - **Somebody whose plan does not include sharing.** See below.
     - **An expiry already in the past.** It would be a grant that never grants,
       recorded as one that does.
     - **Past MAX_SHARES_PER_PROJECT.** See the constant.
+
+    ## Why the grantee's plan is a callable and not a value
+
+    Sharing is a Team-plan capability on BOTH ends, so the receiving account's
+    tier has to be checked too. That account is not known until `_user_by_email`
+    resolves it, three lines below — the caller has an address, not a row — so a
+    resolved boolean could not have been passed in.
+
+    What is passed instead is the tier decision itself, which still lives at the
+    route boundary where every other tier decision in this service lives (see
+    `contribute_artifact` on why the table is not read from the repository). It
+    is a REQUIRED keyword for the same reason `workspace_artifact_limit` is: a
+    caller that could omit it would silently grant to anybody, and a gate
+    enforced nowhere looks exactly like a gate that passes.
+
+    The granter's own tier is NOT checked here. It is checked at the route,
+    before this is called, because it needs no row from this session and
+    refusing it earlier means a 403 rather than a 409 — a different sentence,
+    for a person who has to do a different thing about it.
     """
     require_admin(scope)
     project = await _lock_project(scope, session, project_id)
     grantee = await _user_by_email(session, email)
     if grantee.id == scope.user_id:
         raise ShareError("you already have access to this project")
+    if not grantee_may_receive(grantee):
+        # Deliberately says nothing about which plan they are on. The granter
+        # typed an address; confirming what plan it holds would answer a
+        # question they were not entitled to ask about somebody else's account.
+        raise ShareError(
+            "that person's plan does not include shared projects; "
+            "they need a Team plan to receive one"
+        )
     member = (
         await session.execute(
             select(Membership.user_id).where(

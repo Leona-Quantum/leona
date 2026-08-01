@@ -29,7 +29,7 @@ from ..repos import runs as runs_repo
 from ..repos import system
 from ..settings import Settings
 from ..tiers import TIER_WINDOW as _TIER_WINDOW
-from ..tiers import limits_for, resolve_tier
+from ..tiers import limits_for, tier_of
 from ..verification_summary import parse_verification_summary
 
 router = APIRouter()
@@ -239,9 +239,7 @@ async def _enforce_execute_backstop(
     # where the decision is actually made, in the worker's mode resolution:
     # majorana_worker.handlers._resolve_mode.
     user, _workspace = identity
-    limits = limits_for(
-        resolve_tier(user.email, plan=user.plan, developer_emails=settings.developer_emails)
-    )
+    limits = limits_for(tier_of(user, settings))
     if body.mode == RunMode.EXECUTE and limits.agent_runs_per_week is not None:
         tier_used = await runs_repo.count_execute_runs_since(
             scope, session, dt.datetime.now(dt.timezone.utc) - TIER_WINDOW

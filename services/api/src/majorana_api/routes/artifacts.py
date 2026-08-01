@@ -32,7 +32,7 @@ from ..repos import projects as projects_repo
 from ..orm import Artifact as ArtifactRow
 from ..orm import ArtifactVersion as ArtifactVersionRow
 from ..settings import Settings
-from ..tiers import limits_for, resolve_tier
+from ..tiers import limits_for, tier_of
 from ..verification_summary import parse_verification_summary
 from ..version_capabilities import capabilities_of, restore_losses
 
@@ -310,9 +310,7 @@ async def keep_artifact(
     refusal into the 429 sentence the user reads.
     """
     user, _workspace = identity
-    limits = limits_for(
-        resolve_tier(user.email, plan=user.plan, developer_emails=settings.developer_emails)
-    )
+    limits = limits_for(tier_of(user, settings))
     try:
         artifact = await artifacts_repo.keep_artifact(
             scope,

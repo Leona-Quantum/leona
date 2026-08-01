@@ -97,6 +97,13 @@ class Settings:
     #: meters collaborators like free accounts; it cannot throttle the operator,
     #: whose identity is recognised without configuration.
     developer_emails: frozenset[str] = frozenset()
+    #: Addresses granted the TEAM tier by this service. Same parsing and the same
+    #: empty default as the developer list above, and the same reason for
+    #: existing: `users.plan` is the durable signal and billing will write it,
+    #: but nothing writes it today, so without this an operator could not put a
+    #: design partner on the tier that unlocks sharing except by hand in SQL.
+    #: An address on both lists resolves to developer — see `resolve_tier`.
+    team_emails: frozenset[str] = frozenset()
     # Post-deploy probe (NEXT.md §2 item 1, approved session 33). Empty disables
     # it, which is the state every environment except production is in. Unlike
     # the lock, this credential does not open the product: it may create a run
@@ -160,6 +167,7 @@ class Settings:
                 "MAJORANA_LOCAL_DEV_DISPLAY_NAME", "Local developer"
             ),
             developer_emails=parse_developer_emails(os.environ.get("LEONA_DEVELOPER_EMAILS")),
+            team_emails=parse_developer_emails(os.environ.get("LEONA_TEAM_EMAILS")),
             deploy_probe_token=os.environ.get("DEPLOY_PROBE_TOKEN", "").strip(),
             catalog_authority=CatalogAuthority.from_env(),
         )

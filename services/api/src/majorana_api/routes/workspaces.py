@@ -28,7 +28,7 @@ from ..repos import shares as shares_repo
 from ..repos import system
 from ..repos import workspaces as workspaces_repo
 from ..settings import Settings
-from ..tiers import limits_for, resolve_tier
+from ..tiers import limits_for, tier_of
 
 router = APIRouter()
 
@@ -451,9 +451,7 @@ async def transfer_ownership(
     _membership, target = await workspaces_repo.member_with_user(
         scope, session, user_id=body.user_id
     )
-    limits = limits_for(
-        resolve_tier(target.email, plan=target.plan, developer_emails=settings.developer_emails)
-    )
+    limits = limits_for(tier_of(target, settings))
     try:
         members = await workspaces_repo.transfer_ownership(
             scope,
@@ -514,9 +512,7 @@ async def create_workspace(
     artifact cap at all.
     """
     user, _personal = identity
-    limits = limits_for(
-        resolve_tier(user.email, plan=user.plan, developer_emails=settings.developer_emails)
-    )
+    limits = limits_for(tier_of(user, settings))
     try:
         workspace, membership = await system.create_team_workspace(
             session,

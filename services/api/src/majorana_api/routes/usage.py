@@ -53,7 +53,7 @@ from ..repos import system
 from ..repos import usage as usage_repo
 from ..repos import workspaces as workspaces_repo
 from ..settings import Settings
-from ..tiers import TIER_WINDOW, limits_for, resolve_tier
+from ..tiers import TIER_WINDOW, limits_for, tier_of
 
 router = APIRouter()
 
@@ -211,7 +211,7 @@ async def usage(
     settings: Annotated[Settings, Depends(get_settings)],
 ) -> UsageResponse:
     user, _workspace = identity
-    tier = resolve_tier(user.email, plan=user.plan, developer_emails=settings.developer_emails)
+    tier = tier_of(user, settings)
     limits = limits_for(tier)
 
     since = dt.datetime.now(dt.timezone.utc) - TIER_WINDOW

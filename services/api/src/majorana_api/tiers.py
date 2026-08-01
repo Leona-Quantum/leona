@@ -36,9 +36,9 @@ accounts", which is visible and recoverable, not to "the owner is locked out".
 
 import datetime as dt
 from dataclasses import dataclass
-from typing import Literal
+from typing import Literal, Protocol
 
-AccountTier = Literal["free", "developer"]
+AccountTier = Literal["free", "team", "developer"]
 
 #: The allowance window. It ROLLS — it is a trailing seven days, not a calendar
 #: week, so there is no Monday on which everyone's allowance returns at once.
@@ -53,9 +53,13 @@ AccountTier = Literal["free", "developer"]
 #: for not sharing a module across services applies to it.
 TIER_WINDOW = dt.timedelta(days=7)
 
-#: The web app also has a "demo" tier. It never reaches here: the demo surface is
-#: signed out, serves fixtures, and never presents a token.
-ACCOUNT_TIERS: tuple[AccountTier, ...] = ("free", "developer")
+#: The web app also has a signed-out "preview" tier. It never reaches here: that
+#: surface serves fixtures and never presents a token.
+#:
+#: Ordered from least to most capable, and read that way — `at_least` below is
+#: the only place a tier is compared to another tier, so a capability is a
+#: position in this tuple rather than a set of names each caller writes out.
+ACCOUNT_TIERS: tuple[AccountTier, ...] = ("free", "team", "developer")
 
 
 @dataclass(frozen=True)
@@ -73,15 +77,43 @@ class TierLimits:
     #: per workspace by design (it bounds one tenant's disk), so an account able
     #: to mint tenants without bound has no artifact cap at all.
     owned_workspaces: int | None
+    #: Whether this tier may share a project with somebody outside the workspace
+    #: that owns it. A capability, not an allowance — it refuses an operation
+    #: outright rather than counting one, which is why it is a bool here and has
+    #: no "used/limit" anywhere.
+    #:
+    #: Both ends are checked: the account granting and the account being granted
+    #: to. See `routes/shares.grant_project_share`.
+    project_sharing: bool
 
 
 #: Mirrors apps/web/lib/account-tier.ts for the limits with a server-side cost.
 #: If these ever disagree, the smaller one wins in practice and the user sees the
 #: server's refusal — which is the correct direction for a divergence.
+#:
+#: `team` is the plan the pricing page has advertised since before it existed
+#: ("Team workspaces and roles"). Its numbers other than the artifact allowance
+#: were chosen, not derived — the owner set 250 artifacts and left the rest to
+#: judgement, and they are recorded in OWNER_TODO so they stay a decision rather
+#: than a default nobody revisits.
 TIER_LIMITS: dict[AccountTier, TierLimits] = {
-    "free": TierLimits(agent_runs_per_week=5, private_artifacts=25, owned_workspaces=3),
+    "free": TierLimits(
+        agent_runs_per_week=5,
+        private_artifacts=25,
+        owned_workspaces=3,
+        project_sharing=False,
+    ),
+    "team": TierLimits(
+        agent_runs_per_week=50,
+        private_artifacts=250,
+        owned_workspaces=10,
+        project_sharing=True,
+    ),
     "developer": TierLimits(
-        agent_runs_per_week=None, private_artifacts=None, owned_workspaces=None
+        agent_runs_per_week=None,
+        private_artifacts=None,
+        owned_workspaces=None,
+        project_sharing=True,
     ),
 }
 
@@ -102,6 +134,12 @@ OPERATOR_IDENTITIES = frozenset(
 )
 
 DEVELOPER_PLAN = "developer"
+TEAM_PLAN = "team"
+
+#: `users.plan` values that name a tier, lowest first. A plan string that names
+#: none of them resolves to `free`, which is the safe direction: an unrecognised
+#: value must not grant anything.
+PLAN_TIERS: dict[str, AccountTier] = {TEAM_PLAN: "team", DEVELOPER_PLAN: "developer"}
 
 
 def normalize_email(email: str | None) -> str:
@@ -124,16 +162,108 @@ def resolve_tier(
     *,
     plan: str | None = None,
     developer_emails: frozenset[str] = frozenset(),
+    team_emails: frozenset[str] = frozenset(),
 ) -> AccountTier:
+    """The account's tier, from the strongest signal that names one.
+
+    Order is highest-tier-first and that is deliberate: an address on both
+    allowlists, or a `team` plan row belonging to a collaborator, resolves to
+    the more capable tier rather than to whichever check happened to run first.
+    An unrecognised `plan` value grants nothing.
+    """
     normalized = normalize_email(email)
     if normalized in OPERATOR_IDENTITIES:
         return "developer"
-    if (plan or "").strip().lower() == DEVELOPER_PLAN:
+    plan_tier = PLAN_TIERS.get((plan or "").strip().lower())
+    if plan_tier == "developer":
         return "developer"
     if normalized and normalized in developer_emails:
         return "developer"
+    if plan_tier == "team":
+        return "team"
+    if normalized and normalized in team_emails:
+        return "team"
     return "free"
+
+
+class TierSources(Protocol):
+    """The deployment-level half of a tier decision: who is on which allowlist."""
+
+    developer_emails: frozenset[str]
+    team_emails: frozenset[str]
+
+
+@dataclass(frozen=True)
+class EnvTierSources:
+    """`TierSources` read straight from the environment, for the worker.
+
+    `Settings` is the normal way to get these and the API uses it. The worker
+    cannot: constructing `Settings` in the job loop raised RuntimeError on every
+    AUTO run that resolved to EXECUTE in production, because the worker's
+    environment carries none of the web-facing values `Settings` validates —
+    which turned an allowance check into an outage.
+
+    So the worker reads the two variables and nothing else. This class exists so
+    it reads BOTH of them: the version of that code which named one variable
+    inline was one edit away from resolving every team account as free, in the
+    one service where that failure would refuse a run rather than merely display
+    a wrong number.
+    """
+
+    developer_emails: frozenset[str]
+    team_emails: frozenset[str]
+
+    @classmethod
+    def from_env(cls, environ: dict[str, str] | None = None) -> "EnvTierSources":
+        import os
+
+        source = os.environ if environ is None else environ
+        return cls(
+            developer_emails=parse_developer_emails(source.get("LEONA_DEVELOPER_EMAILS")),
+            team_emails=parse_developer_emails(source.get("LEONA_TEAM_EMAILS")),
+        )
+
+
+class Account(Protocol):
+    """The account half. Satisfied by the ORM `User` and by the worker's row."""
+
+    email: str | None
+    plan: str | None
+
+
+def tier_of(account: Account, sources: TierSources) -> AccountTier:
+    """The tier of an account, given the deployment's allowlists.
+
+    **Prefer this to calling `resolve_tier` directly.** `resolve_tier` takes the
+    allowlists as separate defaulted keyword arguments, so a caller that passes
+    one and forgets the other gets a tier that is wrong in the quiet direction —
+    a team account metered as free, refused at a limit it does not have, with
+    nothing failing anywhere. That is not hypothetical arithmetic: adding the
+    team list gave seven existing call sites the chance to make exactly that
+    mistake, and `test_tier_resolution_goes_through_one_helper` is what stops an
+    eighth from being written.
+
+    `resolve_tier` stays public and defaulted because the tests that pin the
+    resolution rules need to vary one input at a time.
+    """
+    return resolve_tier(
+        account.email,
+        plan=account.plan,
+        developer_emails=sources.developer_emails,
+        team_emails=sources.team_emails,
+    )
 
 
 def limits_for(tier: AccountTier) -> TierLimits:
     return TIER_LIMITS[tier]
+
+
+def at_least(tier: AccountTier, floor: AccountTier) -> bool:
+    """Whether `tier` sits at or above `floor` in ACCOUNT_TIERS.
+
+    The one place tiers are ordered. Every other check asks a capability by name
+    (`limits_for(tier).project_sharing`) rather than comparing tier strings,
+    because a comparison written at a call site is a comparison that has to be
+    revisited every time a tier is added between two others.
+    """
+    return ACCOUNT_TIERS.index(tier) >= ACCOUNT_TIERS.index(floor)

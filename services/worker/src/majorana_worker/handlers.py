@@ -68,7 +68,7 @@ from majorana_api.repos import qpu_runs as qpu_runs_repo
 from majorana_api.repos import system
 from majorana_api.repos import usage as usage_repo
 from majorana_api.repos import workspaces as workspaces_repo
-from majorana_api.tiers import limits_for, parse_developer_emails, resolve_tier
+from majorana_api.tiers import EnvTierSources, limits_for, tier_of
 
 from .agent_llm import MeteredAgentLLM
 from .agent_store import RepoAgentStore
@@ -482,13 +482,7 @@ async def _assert_execute_allowance(scope: Scope, session: AsyncSession) -> None
     user = await session.get(User, scope.user_id)
     if user is None:  # pragma: no cover - a run cannot outlive its owner
         return
-    limits = limits_for(
-        resolve_tier(
-            user.email,
-            plan=user.plan,
-            developer_emails=parse_developer_emails(os.environ.get("LEONA_DEVELOPER_EMAILS")),
-        )
-    )
+    limits = limits_for(tier_of(user, EnvTierSources.from_env()))
     if limits.agent_runs_per_week is None:
         return
     since = datetime.now(UTC) - _TIER_WINDOW

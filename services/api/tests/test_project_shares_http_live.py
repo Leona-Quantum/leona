@@ -42,6 +42,7 @@ from majorana_api.orm import User
 from majorana_api.repos import artifacts as artifacts_repo
 from majorana_api.repos import projects as projects_repo
 from majorana_api.repos import system
+from majorana_api.tiers import TEAM_PLAN
 
 requires_db = pytest.mark.skipif(
     "DATABASE_URL" not in os.environ, reason="project share routes need DATABASE_URL"
@@ -65,13 +66,27 @@ class Party:
         self.client = client
 
 
-async def _provision(session, tag: str):
+async def _provision(session, tag: str, *, plan: str = TEAM_PLAN):
+    """A party in this suite, on the Team plan unless a test says otherwise.
+
+    Sharing is a Team-plan capability on both ends, so a free-tier Alice cannot
+    reach any of the routes below and a free-tier Bob cannot be granted. That is
+    the product rule and it has its own suite; here it would only mean every
+    test asserting 403 on its fixture instead of on its subject.
+
+    The plan is set on the row rather than through an allowlist because that is
+    the durable signal — `resolve_tier` reads `users.plan` before it reads any
+    environment variable, so this fixture does not depend on how the process was
+    configured.
+    """
     user, workspace = await system.get_or_provision_user(
         session,
         workos_user_id=f"httpshare-{tag}-{uuid.uuid4()}",
         email=f"{tag}-{uuid.uuid4().hex[:8]}@httpshare.test",
         display_name=tag.title(),
     )
+    user.plan = plan
+    await session.flush()
     return user, workspace
 
 
