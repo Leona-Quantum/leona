@@ -507,6 +507,80 @@ class _ConversationLLM:
         )
 
 
+async def test_a_chat_turn_is_written_to_the_usage_ledger(monkeypatch):
+    """Chat is the one unmetered surface by policy — unmetered is not the same
+    as unrecorded. Execute runs go through MeteredAgentLLM; this path calls the
+    provider directly, so without this the tokens existed only inside one run's
+    chat.completed event and no cost question could be answered."""
+    recorded = []
+
+    async def record_usage(scope, session, **values):
+        recorded.append(values)
+
+    monkeypatch.setattr(handlers.usage_repo, "record_usage", record_usage)
+    run_id = uuid.uuid4()
+    sink = _RecordingSink()
+    ctx = RunContext(
+        run_id=run_id,
+        task_prompt="What is a Bell state?",
+        mode=RunMode.CHAT,
+        framework=Framework.QISKIT,
+        seed=None,
+        shots=None,
+        timeout_s=None,
+        sink=sink,
+    )
+    store = _FakeStore()
+    store._scope = object()
+    store._session = object()
+
+    await handlers._handle_conversation(ctx, store, _ConversationLLM())
+
+    assert len(recorded) == 1, "one chat turn is one ledger entry"
+    entry = recorded[0]
+    assert entry["quantity"] == 7, "input + output tokens, not one of them"
+    assert entry["meta"]["role"] == "chat", "chat spend must be separable from run spend"
+    assert entry["meta"]["run_id"] == str(run_id)
+    assert entry["event_id"] == uuid.uuid5(run_id, "usage:chat"), (
+        "a deterministic id is what stops a redelivered job counting the turn twice"
+    )
+
+
+async def test_a_metering_failure_does_not_take_away_the_answer(monkeypatch):
+    """The reader already has the response. Losing the turn because accounting
+    failed would be strictly worse than an incomplete ledger."""
+
+    attempts = []
+
+    async def exploding_usage(*_args, **_kwargs):
+        attempts.append(1)
+        raise RuntimeError("ledger unavailable")
+
+    monkeypatch.setattr(handlers.usage_repo, "record_usage", exploding_usage)
+    sink = _RecordingSink()
+    ctx = RunContext(
+        run_id=uuid.uuid4(),
+        task_prompt="What is a Bell state?",
+        mode=RunMode.CHAT,
+        framework=Framework.QISKIT,
+        seed=None,
+        shots=None,
+        timeout_s=None,
+        sink=sink,
+    )
+    store = _FakeStore()
+    store._scope = object()
+    store._session = object()
+
+    final = await handlers._handle_conversation(ctx, store, _ConversationLLM())
+
+    assert attempts, "the ledger must actually be attempted, or this passes vacuously"
+    assert final is RunStatus.SUCCEEDED
+    assert any(name == "chat.completed" for name, _ in sink.events), (
+        "the answer still reaches the reader"
+    )
+
+
 async def test_conversation_mode_answers_without_pipeline_or_sandbox():
     sink = _RecordingSink()
     ctx = RunContext(
