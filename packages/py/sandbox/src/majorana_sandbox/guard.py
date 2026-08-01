@@ -106,10 +106,29 @@ DENIED_SUBSTRINGS: tuple[str, ...] = (
     "smtplib",
     "telnetlib",
     "paramiko",
+    # `io` is allowed because matplotlib output goes through io.BytesIO, and
+    # `io.open` IS the `open` builtin — so denying the bare call below while
+    # leaving this reachable denied nothing. Measured: `io.open('/etc/passwd')`
+    # passed the guard cleanly.
+    "io.open",
+    # numpy is allowed for obvious reasons, and these four are its filesystem
+    # primitives. `np.load` additionally executes pickles when a caller asks it
+    # to. No circuit needs any of them; a name like `read_fromfile` matching is
+    # a false positive the author can rename around.
+    ".fromfile",
+    ".tofile",
+    "np.load",
+    "numpy.load",
 )
 
-# Builtins that must not appear as a direct (non-method) call. The negative
-# lookbehind avoids matching legitimate method calls like `expr.eval(...)`.
+# Builtins that must not appear as a direct (non-method) call.
+#
+# The negative lookbehind avoids matching legitimate method CALLS like
+# `expr.eval(...)`. It did not avoid matching a method DEFINITION — `def
+# eval(self, x)` has a space before the name, so a generated class that defined
+# one was blocked with the network-and-subprocess refusal message for something
+# that is neither. `def\s+` is excluded for that reason; a definition binds a
+# name, it does not invoke the builtin.
 DENIED_CALLS: tuple[str, ...] = ("__import__", "eval", "exec", "compile", "open", "breakpoint")
 
 _FROM_RE = re.compile(r"^from\s+([.\w]+)\s+import\b")
@@ -157,7 +176,7 @@ def check_python_code(code: str, extra_allowed: frozenset[str] = frozenset()) ->
             violations.append(f"denied_token:{token}")
 
     for name in DENIED_CALLS:
-        if re.search(rf"(?<![.\w]){re.escape(name)}\s*\(", code):
+        if re.search(rf"(?<!def\s)(?<![.\w]){re.escape(name)}\s*\(", code):
             violations.append(f"denied_call:{name}")
 
     unique = list(dict.fromkeys(violations))
