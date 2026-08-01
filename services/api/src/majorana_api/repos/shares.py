@@ -16,8 +16,11 @@ for.
 
 ## The two halves, and the two different predicates
 
-- **Granting** (`list_shares`, `grant_share`, `update_share`, `revoke_share`)
-  belongs to the workspace that OWNS the project. Every one of these binds
+- **Granting** (`list_shares`, `count_shares`, `grant_share`, `revoke_share`,
+  `revoke_all_shares`) belongs to the workspace that OWNS the project. There is
+  no separate `update_share`: `grant_share` is idempotent on the person, so
+  changing a role is granting again with a different one, and a second function
+  would be a second place for the refusals below to be forgotten. Every one binds
   `scope.workspace_id` through `projects.get_project`, exactly like the rest of
   the package, and needs ADMIN — a grant is a door into the tenant, so it is
   the same bar as adding a member.

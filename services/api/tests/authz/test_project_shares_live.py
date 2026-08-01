@@ -533,17 +533,64 @@ async def test_deleting_the_project_takes_its_grants_with_it(db, pair):
 
 
 async def test_deleting_the_owning_workspace_closes_every_grant(db, pair):
+    """Driven through `system.delete_workspace`, not by setting the column.
+
+    Stamping `deleted_at` by hand would prove only that the resolver reads that
+    column. What has to be true is that the PRODUCT's delete closes the grant,
+    and that depends on a fact this test would otherwise assume: that deleting a
+    workspace is a soft delete. If it ever became a hard one the grants would go
+    with it by foreign key and this would still pass — but if it became a
+    different soft flag, a hand-written `deleted_at` would keep passing while
+    every shared project stayed readable out of a deleted tenant.
+    """
     alice, bob = pair
-    await grant(db, alice, bob)
-    workspace = (
-        await db.execute(select(Workspace).where(Workspace.id == alice.workspace.id))
-    ).scalar_one()
-    workspace.deleted_at = dt.datetime.now(dt.timezone.utc)
+    # A personal workspace cannot be deleted, so the share is moved onto a team
+    # workspace of Alice's — which is also the realistic case for sharing.
+    team, _membership = await system.create_team_workspace(
+        db, owner=alice.user, name="Alice's team", owned_workspace_limit=None
+    )
+    team_scope = Scope(user_id=alice.user.id, workspace_id=team.id, role=Role.OWNER)
+    team_project = await projects.create_project(team_scope, db, name="team project")
+    team_artifact = await artifacts.create_artifact(
+        team_scope,
+        db,
+        slug=f"team-{uuid.uuid4().hex[:8]}",
+        title="team circuit",
+        family="Bell",
+        framework="qiskit",
+    )
+    await artifacts.create_version(
+        team_scope,
+        db,
+        team_artifact.id,
+        qasm_version=None,
+        qasm=None,
+        code="pass",
+        code_lang="python",
+        fingerprint=f"team-{uuid.uuid4().hex[:8]}",
+        export_status="unsupported",
+    )
+    await projects.set_artifact_project(team_scope, db, team_artifact.id, team_project.id)
+    await shares.grant_share(
+        team_scope, db, team_project.id, email=bob.user.email, role=ShareRole.VIEWER
+    )
+    assert await shares.resolve_share(bob.scope, db, team_project.id)
+
+    assert await system.delete_workspace(db, user=alice.user, workspace_id=team.id) is True
     await db.flush()
 
     with pytest.raises(NotFoundError):
-        await shares.resolve_share(bob.scope, db, alice.project.id)
-    assert await shares.list_shared_projects(bob.scope, db) == []
+        await shares.resolve_share(bob.scope, db, team_project.id)
+    assert [
+        row
+        for row in await shares.list_shared_projects(bob.scope, db)
+        if row.access.project_id == team_project.id
+    ] == []
+    # The row is still there — a deleted workspace is recoverable with a SQL
+    # prompt, and a grant erased by the delete would not come back with it.
+    assert (
+        await db.execute(select(Workspace.deleted_at).where(Workspace.id == team.id))
+    ).scalar_one() is not None
 
 
 async def test_revoke_all_reports_what_it_closed(db, pair):
@@ -683,9 +730,24 @@ async def test_an_editor_can_save_and_the_save_claims_nothing(db, pair):
 
 
 async def test_a_viewer_cannot_save(db, pair):
+    """Refused, and refused by the FIRST of the two gates.
+
+    A viewer is stopped twice: `_bound_artifact`'s explicit `need_edit` check,
+    and — if that were ever deleted — `require_write` inside `create_version`,
+    because `_elevated` maps a viewer grant to a VIEWER scope. That redundancy is
+    the design, but it also means removing the explicit check breaks no test:
+    deleting it and running this whole suite leaves everything green, which is
+    exactly what a mutation run reported.
+
+    So the assertion is on WHICH gate answers. The two raise different sentences,
+    and pinning the first one is what makes "two independent gates" a checkable
+    claim rather than a comment. If the explicit check is ever removed the
+    behaviour stays correct and this test still fails — which is the right
+    outcome for a deliberate defence being quietly dropped.
+    """
     alice, bob = pair
     await grant(db, alice, bob, role=ShareRole.VIEWER)
-    with pytest.raises(AuthzError):
+    with pytest.raises(AuthzError) as caught:
         await shares.create_shared_version(
             bob.scope,
             db,
@@ -695,6 +757,10 @@ async def test_a_viewer_cannot_save(db, pair):
             code="print('nope')",
             code_lang="python",
         )
+    assert "read-only" in str(caught.value), (
+        f"refused by {caught.value!r} — that is `require_write`, the SECOND gate. "
+        "The explicit editor check in `_bound_artifact` is gone."
+    )
 
 
 async def test_a_stale_save_is_refused_and_names_the_winner(db, pair):
