@@ -15,7 +15,7 @@ from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..ids import uuid7
-from ..orm import Run, RunEvent, VerificationRecord
+from ..orm import Run, RunEvent, User, VerificationRecord
 from . import artifacts as artifacts_repo
 from ._base import NotFoundError, require_write
 
@@ -131,6 +131,58 @@ async def count_execute_runs_since(scope: Scope, session: AsyncSession, since: d
     one bounds a tenant rather than an account.
     """
     return int((await session.execute(execute_allowance_stmt(scope, since))).scalar_one())
+
+
+class RunAllowanceReached(Exception):
+    """The account has spent its weekly execute allowance. Carries both numbers."""
+
+    def __init__(self, used: int, limit: int) -> None:
+        super().__init__(f"{used}/{limit} weekly execute runs used")
+        self.used = used
+        self.limit = limit
+
+
+async def reserve_execute_run_slot(
+    scope: Scope, session: AsyncSession, since: dt.datetime, limit: int | None
+) -> None:
+    """Take the account's lock and refuse if the weekly allowance is spent.
+
+    ## Why a lock, and why on the user's row
+
+    The route compared this count against the tier limit with nothing held
+    between the read and the write, which is the same shape
+    `artifacts.reserve_artifact_slot`, `shares._reserve_membership_slot` and
+    `system.reserve_owned_workspace_slot` all exist to close. Here it is the one
+    with money directly attached: every execute run buys provider tokens and
+    sandbox time, so a burst of concurrent submissions at the boundary is a
+    multiple of the plan's spend, once a week, for as long as nobody notices.
+
+    **Nothing downstream catches it.** The worker has a second allowance gate,
+    but `_assert_execute_allowance` runs only when it RESOLVES an AUTO run to
+    EXECUTE — an explicit `mode=execute` submission takes `resolve_mode`'s
+    passthrough branch, `decision.changed` is False, and the worker returns
+    before the check. So for the mode that says outright what it is, this route
+    is the only gate there is.
+
+    The allowance belongs to the ACCOUNT, not the tenant (see
+    `count_execute_runs_since`), so the row two concurrent submissions share is
+    the user — the workspace is not it, and two submissions from two workspaces
+    of the same account are the case a workspace lock would miss entirely.
+
+    ## Lock ordering
+
+    A user row is the last lock any path takes. This route holds nothing else,
+    so there is nothing here to order against.
+
+    `limit is None` takes no lock: an unmetered tier has nothing to serialize,
+    and this is the product's hottest write path.
+    """
+    if limit is None:
+        return
+    await session.execute(select(User.id).where(User.id == scope.user_id).with_for_update())
+    used = await count_execute_runs_since(scope, session, since)
+    if used >= limit:
+        raise RunAllowanceReached(used, limit)
 
 
 def _spends_the_weekly_allowance(scope: Scope, since: dt.datetime):

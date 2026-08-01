@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..orm import Artifact, Membership, Run, User, Workspace
 from ._base import AuthzError, NotFoundError, require_admin, require_owner
-from .system import WorkspaceLimitReached
+from .system import reserve_owned_workspace_slot
 
 
 async def get_workspace(scope: Scope, session: AsyncSession) -> Workspace:
@@ -297,19 +297,16 @@ async def transfer_ownership(
         raise AuthzError("scope owner does not match the workspace owner")
 
     membership, target = await member_with_user(scope, session, user_id=user_id)
-    if owned_workspace_limit is not None:
-        owned = int(
-            (
-                await session.execute(
-                    select(func.count(Workspace.id)).where(
-                        Workspace.owner_user_id == user_id,
-                        Workspace.deleted_at.is_(None),
-                    )
-                )
-            ).scalar_one()
-        )
-        if owned >= owned_workspace_limit:
-            raise WorkspaceLimitReached(owned, owned_workspace_limit)
+    # The recipient's allowance, under the recipient's lock. This used to be a
+    # second copy of `count_owned_workspaces`' statement written out inline,
+    # which made it both a duplicated predicate and — like the create path —
+    # a comparison against a count nothing was holding. Two transfers of two
+    # different workspaces to the same person hold two different workspace
+    # locks, so the lock above serializes neither of them.
+    #
+    # Taken AFTER the workspace lock, which is the ordering the helper's
+    # docstring requires: a user row is the last lock any path takes.
+    await reserve_owned_workspace_slot(session, owner_user_id=user_id, limit=owned_workspace_limit)
 
     caller_membership = await _member_row(scope, session, scope.user_id)
     workspace.owner_user_id = target.id

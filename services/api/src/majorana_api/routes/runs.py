@@ -241,12 +241,22 @@ async def _enforce_execute_backstop(
     # majorana_worker.handlers._resolve_mode.
     user, _workspace = identity
     limits = limits_for(tier_of(user, settings))
-    if body.mode == RunMode.EXECUTE and limits.agent_runs_per_week is not None:
-        tier_used = await runs_repo.count_execute_runs_since(
-            scope, session, dt.datetime.now(dt.timezone.utc) - TIER_WINDOW
-        )
-        if tier_used >= limits.agent_runs_per_week:
-            raise tier_allowance_refusal(tier_used, limits.agent_runs_per_week)
+    if body.mode == RunMode.EXECUTE:
+        # Reserved under the account's lock rather than merely counted: two
+        # submissions at the boundary used to read the same number and both
+        # pass, and this is the gate with provider spend behind it. The worker's
+        # own allowance check does NOT cover this case — it runs only when it
+        # resolves an AUTO run to EXECUTE, and an explicit mode takes
+        # `resolve_mode`'s passthrough branch.
+        try:
+            await runs_repo.reserve_execute_run_slot(
+                scope,
+                session,
+                dt.datetime.now(dt.timezone.utc) - TIER_WINDOW,
+                limits.agent_runs_per_week,
+            )
+        except runs_repo.RunAllowanceReached as reached:
+            raise tier_allowance_refusal(reached.used, reached.limit) from reached
 
     if body.mode == RunMode.EXECUTE and executed >= EXECUTE_BACKSTOP_LIMIT:
         raise _backstop_refusal("execute_backstop_exhausted", executed, EXECUTE_BACKSTOP_LIMIT)

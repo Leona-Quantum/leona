@@ -13,7 +13,7 @@ import datetime as dt
 import pytest
 from fastapi import HTTPException
 from majorana_contracts.enums import CHAT_USAGE_ROLE, Framework, RunMode
-from repo_test_helpers import compiled
+from repo_test_helpers import LockOnlySession, compiled
 
 from majorana_api.orm import User, Workspace
 from majorana_api.repos import runs as runs_repo
@@ -462,9 +462,10 @@ async def test_exhausted_says_yes_exactly_when_the_gate_refuses(executed, scope,
     request = runs_routes.CreateRunRequest(
         task_prompt="Build a Bell pair", framework=Framework.QISKIT, mode=RunMode.EXECUTE
     )
+    session = LockOnlySession()
     try:
         await runs_routes._enforce_execute_backstop(
-            request, scope, object(), _identity(), _settings()
+            request, scope, session, _identity(), _settings()
         )
         gate_refused = False
     except HTTPException as refusal:
@@ -472,3 +473,6 @@ async def test_exhausted_says_yes_exactly_when_the_gate_refuses(executed, scope,
         gate_refused = True
 
     assert reported.runs.exhausted is gate_refused
+    # The gate reserved rather than merely counted. Without this the double
+    # would happily stand in for a version that dropped the lock again.
+    assert session.statements, "the allowance gate issued no statement of its own"

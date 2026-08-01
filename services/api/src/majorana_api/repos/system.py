@@ -712,6 +712,50 @@ async def delete_workspace(session: AsyncSession, *, user: User, workspace_id: u
     return True
 
 
+async def reserve_owned_workspace_slot(
+    session: AsyncSession, *, owner_user_id: Any, limit: int | None
+) -> None:
+    """Take the owner's lock and refuse if their tier's allowance is full.
+
+    ## Why a lock, and why on the owner's row
+
+    `owned_workspaces` is not a product feature limit — `tiers.TierLimits` says
+    what it is for: it is what stops the per-workspace artifact cap from being
+    trivially bypassed, because an account able to mint tenants without bound
+    has no artifact cap at all. So a count compared against it with nothing held
+    between the read and the write is not a cap on workspaces, it is a cap on
+    every Vault allowance those workspaces carry.
+
+    Measured, not reasoned: two connections at the boundary both read 2 against
+    a free-tier limit of 3 and both created, and the account finished owning 4.
+    Removing the `with_for_update()` below fails
+    `test_workspace_cap_race_live` with the second caller reporting `created`.
+
+    Two creates by one account share no row of their own — they are creating
+    *different* workspaces — so the thing to lock is the OWNER. Same argument
+    `artifacts.reserve_artifact_slot` makes for the workspace and
+    `shares._reserve_membership_slot` makes for the grantee.
+
+    ## Lock ordering
+
+    **A user row is the last lock taken in every path that takes one.**
+    `transfer_ownership` holds the workspace before calling this; nothing
+    anywhere acquires a workspace, project or artifact lock while holding a
+    user row. That total order — artifact/project → workspace → user — is what
+    keeps these four writers deadlock-free, and it is the rule to preserve.
+
+    `limit is None` takes no lock at all: an unmetered tier has nothing to
+    serialize, and queueing every developer-tier create behind one row would be
+    a cost with no purchase.
+    """
+    if limit is None:
+        return
+    await session.execute(select(User.id).where(User.id == owner_user_id).with_for_update())
+    owned = await count_owned_workspaces(session, user_id=owner_user_id)
+    if owned >= limit:
+        raise WorkspaceLimitReached(owned, limit)
+
+
 async def count_owned_workspaces(session: AsyncSession, *, user_id: Any) -> int:
     """Live workspaces this user owns, personal included.
 
@@ -763,10 +807,7 @@ async def create_team_workspace(
     normalized = " ".join(name.strip().split())
     if not normalized:
         raise ValueError("workspace name cannot be blank")
-    if owned_workspace_limit is not None:
-        owned = await count_owned_workspaces(session, user_id=owner.id)
-        if owned >= owned_workspace_limit:
-            raise WorkspaceLimitReached(owned, owned_workspace_limit)
+    await reserve_owned_workspace_slot(session, owner_user_id=owner.id, limit=owned_workspace_limit)
     workspace = Workspace(
         id=uuid7(),
         kind="team",
