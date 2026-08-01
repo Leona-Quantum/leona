@@ -32,6 +32,7 @@ EXPORTED = [
     models.WorkspaceMember,
     models.WorkspaceOverview,
     models.WorkspaceSummary,
+    models.Project,
     models.Artifact,
     models.ArtifactVersion,
     models.CatalogProvenance,

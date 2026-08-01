@@ -54,6 +54,11 @@ export interface components {
              */
             parent_artifact_id: string | null;
             /**
+             * Project Id
+             * @default null
+             */
+            project_id: string | null;
+            /**
              * Slug
              * @description Unique; used for public pages
              */
@@ -854,6 +859,43 @@ export interface components {
              * @description Real weight of this edge (maxcut) or coefficient (qubo).
              */
             weight: number;
+        };
+        /**
+         * Project
+         * @description Studio's artifact grouping (migration 0041).
+         *
+         *     Deliberately identical in shape to `WorkspaceFolder` and deliberately not the
+         *     same model: Run's Folders group runs, Studio's Projects group artifacts, and
+         *     the owner's distinction between the two words is the reason one locale key
+         *     stopped rendering both sections.
+         *
+         *     `position` is absent for the same reason it is absent from `WorkspaceFolder`:
+         *     the order is carried by the JSON array, and putting the integer on the wire
+         *     would add a shared-contract field to say what the array already says.
+         */
+        Project: {
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Name */
+            name: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+            /**
+             * Workspace Id
+             * Format: uuid
+             */
+            workspace_id: string;
         };
         /**
          * PublicCatalogEntry

@@ -6,7 +6,7 @@ import uuid
 from types import SimpleNamespace
 
 import pytest
-from repo_test_helpers import Row, Rows, SequencedSession, compiled
+from repo_test_helpers import Row, Rows, SequencedSession, compiled, make_scope
 from majorana_contracts.enums import RunMode, RunStatus, UsageKind, VerificationMethod
 
 from majorana_api.repos import (
@@ -15,6 +15,7 @@ from majorana_api.repos import (
     artifacts,
     audit,
     folders,
+    projects,
     runs,
     usage,
     workspaces,
@@ -184,6 +185,103 @@ async def test_get_folder(scope, session):
     with pytest.raises(NotFoundError):
         await folders.get_folder(scope, session, uuid.uuid4())
     assert_workspace_bound(session.statements[0], scope)
+
+
+# The folder MUTATIONS had no statement-level cover until Projects were written
+# against the same shape and the gap became visible. Each one below reaches its
+# first statement through a scoped getter, which is exactly the property that
+# would be lost by a refactor that "helpfully" looked the row up by id alone.
+async def test_rename_folder_resolves_the_folder_in_scope(scope, session):
+    with pytest.raises(NotFoundError):
+        await folders.rename_folder(scope, session, uuid.uuid4(), name="renamed")
+    assert_workspace_bound(session.statements[0], scope)
+
+
+async def test_delete_folder_resolves_the_folder_in_scope(scope, session):
+    with pytest.raises(NotFoundError):
+        await folders.delete_folder(scope, session, uuid.uuid4())
+    assert_workspace_bound(session.statements[0], scope)
+
+
+async def test_reorder_folders_lists_within_the_scope(scope, session):
+    with pytest.raises(NotFoundError):
+        await folders.reorder_folders(scope, session, [uuid.uuid4()])
+    assert_workspace_bound(session.statements[0], scope)
+
+
+async def test_set_run_folder_resolves_the_run_in_scope(scope, session):
+    with pytest.raises(NotFoundError):
+        await folders.set_run_folder(scope, session, uuid.uuid4(), uuid.uuid4())
+    assert_workspace_bound(session.statements[0], scope)
+
+
+async def test_list_projects(scope, session):
+    await projects.list_projects(scope, session)
+    assert_workspace_bound(session.statements[0], scope)
+
+
+async def test_get_project(scope, session):
+    with pytest.raises(NotFoundError):
+        await projects.get_project(scope, session, uuid.uuid4())
+    assert_workspace_bound(session.statements[0], scope)
+
+
+async def test_create_project_binds_both_of_its_reads(scope, session):
+    """Two statements, and BOTH matter.
+
+    The duplicate-name check decides whether a row is created at all, and the
+    `max(position)` decides where it lands. An unbound name check would return
+    another workspace's project as "already exists" — leaking its existence and
+    then handing the caller a row it must not see.
+    """
+    project = await projects.create_project(scope, session, name="  Bell   states  ")
+    assert_workspace_bound(session.statements[0], scope)
+    assert_workspace_bound(session.statements[1], scope)
+    assert project.workspace_id == scope.workspace_id
+    assert project.name == "Bell states"
+
+
+async def test_rename_project_resolves_the_project_in_scope(scope, session):
+    with pytest.raises(NotFoundError):
+        await projects.rename_project(scope, session, uuid.uuid4(), name="renamed")
+    assert_workspace_bound(session.statements[0], scope)
+
+
+async def test_delete_project_resolves_the_project_in_scope(scope, session):
+    with pytest.raises(NotFoundError):
+        await projects.delete_project(scope, session, uuid.uuid4())
+    assert_workspace_bound(session.statements[0], scope)
+
+
+async def test_reorder_projects_lists_within_the_scope(scope, session):
+    with pytest.raises(NotFoundError):
+        await projects.reorder_projects(scope, session, [uuid.uuid4()])
+    assert_workspace_bound(session.statements[0], scope)
+
+
+async def test_set_artifact_project_resolves_the_artifact_in_scope(scope, session):
+    with pytest.raises(NotFoundError):
+        await projects.set_artifact_project(scope, session, uuid.uuid4(), uuid.uuid4())
+    assert_workspace_bound(session.statements[0], scope)
+
+
+async def test_set_artifact_project_resolves_the_project_in_scope(scope):
+    """The artifact being ours does not make the project ours.
+
+    Filing OUR artifact under ANOTHER workspace's project is the interesting
+    half: the first lookup succeeds, so a missing predicate on the second would
+    write a cross-tenant pointer that every later read then follows.
+    """
+    session = SequencedSession(
+        [
+            Row(SimpleNamespace(id=uuid.uuid4(), workspace_id=None, project_id=None)),
+            Row(None),  # the project lookup finds nothing in this scope
+        ]
+    )
+    scope = make_scope()
+    with pytest.raises(NotFoundError):
+        await projects.set_artifact_project(scope, session, uuid.uuid4(), uuid.uuid4())
+    assert_workspace_bound(session.statements[1], scope)
 
 
 async def test_update_run_status(scope, session):

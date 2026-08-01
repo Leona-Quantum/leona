@@ -107,6 +107,19 @@
             "description": "Provenance edge",
             "title": "Parent Artifact Id"
           },
+          "project_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Project Id"
+          },
           "slug": {
             "description": "Unique; used for public pages",
             "title": "Slug",
@@ -1634,6 +1647,47 @@
           "weight"
         ],
         "title": "ProblemTerm",
+        "type": "object"
+      },
+      "Project": {
+        "additionalProperties": false,
+        "description": "Studio's artifact grouping (migration 0041).\n\nDeliberately identical in shape to `WorkspaceFolder` and deliberately not the\nsame model: Run's Folders group runs, Studio's Projects group artifacts, and\nthe owner's distinction between the two words is the reason one locale key\nstopped rendering both sections.\n\n`position` is absent for the same reason it is absent from `WorkspaceFolder`:\nthe order is carried by the JSON array, and putting the integer on the wire\nwould add a shared-contract field to say what the array already says.",
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          },
+          "workspace_id": {
+            "format": "uuid",
+            "title": "Workspace Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "workspace_id",
+          "name",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "Project",
         "type": "object"
       },
       "PublicCatalogEntry": {
@@ -4583,7 +4637,7 @@
   "info": {
     "description": "Cross-boundary types only; API paths are owned by services/api.",
     "title": "majorana-contracts",
-    "version": "2.5.0"
+    "version": "2.6.0"
   },
   "openapi": "3.1.0",
   "paths": {}
