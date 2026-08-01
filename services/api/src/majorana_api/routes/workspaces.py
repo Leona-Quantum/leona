@@ -15,9 +15,10 @@ from majorana_contracts import (
     WorkspaceSummary,
 )
 from majorana_contracts.enums import Role, WorkspaceKind
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import ConfigDict, Field, field_validator
 
 from ..auth.deps import CurrentIdentity, CurrentScope, DbSession, get_settings
+from ..request_models import RequestModel
 from ..orm import Membership, Project, User
 from ..orm import Workspace as WorkspaceRow
 from ..orm import WorkspaceFolder
@@ -33,13 +34,13 @@ from ..tiers import limits_for, tier_of
 router = APIRouter()
 
 
-class WorkspaceSettingsRequest(BaseModel):
+class WorkspaceSettingsRequest(RequestModel):
     model_config = ConfigDict(extra="forbid")
 
     auto_keep_artifacts: bool
 
 
-class WorkspaceRefRequest(BaseModel):
+class WorkspaceRefRequest(RequestModel):
     """A workspace named in a body, never in a path.
 
     The three routes that take one — switch, acknowledge, leave — all act on the
@@ -57,7 +58,7 @@ class SwitchWorkspaceRequest(WorkspaceRefRequest):
     pass
 
 
-class CreateWorkspaceRequest(BaseModel):
+class CreateWorkspaceRequest(RequestModel):
     model_config = ConfigDict(extra="forbid")
 
     name: str = Field(min_length=1, max_length=120)
@@ -78,7 +79,7 @@ class CreateWorkspaceRequest(BaseModel):
 INVITABLE_ROLES = (Role.MEMBER, Role.VIEWER)
 
 
-class InviteMemberRequest(BaseModel):
+class InviteMemberRequest(RequestModel):
     model_config = ConfigDict(extra="forbid")
 
     email: str = Field(min_length=3, max_length=320)
@@ -100,7 +101,7 @@ class InviteMemberRequest(BaseModel):
         return value
 
 
-class MemberRoleRequest(BaseModel):
+class MemberRoleRequest(RequestModel):
     model_config = ConfigDict(extra="forbid")
 
     role: Role
@@ -116,7 +117,7 @@ class MemberRoleRequest(BaseModel):
         return value
 
 
-class TransferOwnershipRequest(BaseModel):
+class TransferOwnershipRequest(RequestModel):
     """The member who is to receive the workspace, by user id.
 
     Never an email. `add_member_by_email` exists one route away, and accepting an
@@ -129,7 +130,7 @@ class TransferOwnershipRequest(BaseModel):
     user_id: uuid.UUID
 
 
-class CreateFolderRequest(BaseModel):
+class CreateFolderRequest(RequestModel):
     model_config = ConfigDict(extra="forbid")
 
     name: str = Field(min_length=1, max_length=80)
@@ -143,7 +144,7 @@ class CreateFolderRequest(BaseModel):
         return normalized
 
 
-class ReorderFoldersRequest(BaseModel):
+class ReorderFoldersRequest(RequestModel):
     model_config = ConfigDict(extra="forbid")
 
     #: Every folder the client knows about, in the order it wants them shown.
@@ -153,7 +154,7 @@ class ReorderFoldersRequest(BaseModel):
     order: list[uuid.UUID] = Field(max_length=500)
 
 
-class CreateProjectRequest(BaseModel):
+class CreateProjectRequest(RequestModel):
     """Separate from `CreateFolderRequest` so the message names what failed.
 
     The two are structurally identical today. Sharing one model would mean a
@@ -174,7 +175,7 @@ class CreateProjectRequest(BaseModel):
         return normalized
 
 
-class ReorderProjectsRequest(BaseModel):
+class ReorderProjectsRequest(RequestModel):
     model_config = ConfigDict(extra="forbid")
 
     #: Every project the client knows about, in the order it wants them shown —
@@ -736,7 +737,7 @@ async def reorder_workspace_projects(
     return [_to_project(project) for project in projects]
 
 
-class UpdateProjectRequest(BaseModel):
+class UpdateProjectRequest(RequestModel):
     """A partial update. Omitted means unchanged; there is no way to send NULL.
 
     `max_artifacts` is deliberately not resettable to the platform default. The

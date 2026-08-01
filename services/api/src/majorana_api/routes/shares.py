@@ -30,6 +30,7 @@ from majorana_contracts.enums import Algorithm, Framework, ShareRole
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from ..auth.deps import CurrentIdentity, CurrentScope, DbSession, get_settings
+from ..request_models import RequestModel
 from ..orm import ProjectShare as ProjectShareRow
 from ..orm import User as UserRow
 from ..repos import artifacts as artifacts_repo
@@ -55,7 +56,7 @@ SHARED_ARTIFACT_LIMIT = 200
 SHARED_VERSION_LIMIT = 50
 
 
-class GrantShareRequest(BaseModel):
+class GrantShareRequest(RequestModel):
     model_config = ConfigDict(extra="forbid")
 
     #: The person is named by address, never by user id. An id would let this
@@ -92,7 +93,7 @@ class GrantShareRequest(BaseModel):
         return value
 
 
-class SaveSharedVersionRequest(BaseModel):
+class SaveSharedVersionRequest(RequestModel):
     model_config = ConfigDict(extra="forbid")
 
     #: What the editor believes is current. Required and nullable rather than
@@ -103,7 +104,7 @@ class SaveSharedVersionRequest(BaseModel):
     code_lang: str = Field(min_length=1, max_length=40)
 
 
-class CopySharedArtifactRequest(BaseModel):
+class CopySharedArtifactRequest(RequestModel):
     model_config = ConfigDict(extra="forbid")
 
     #: A project in the CALLER's workspace to file the copy under. Resolved
@@ -515,7 +516,7 @@ async def copy_shared_artifact(
     return _to_artifact(kept_copy, metadata)
 
 
-class ContributeArtifactRequest(BaseModel):
+class ContributeArtifactRequest(RequestModel):
     """A new circuit for a project somebody else owns.
 
     No `project_id` and no `workspace_id`: both come from the path and the grant.

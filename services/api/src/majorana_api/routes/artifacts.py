@@ -27,6 +27,7 @@ from pydantic import AnyHttpUrl, BaseModel, ConfigDict, Field
 from fastapi import Depends
 
 from ..auth.deps import CurrentIdentity, CurrentScope, DbSession, get_settings
+from ..request_models import RequestModel
 from ..repos import artifacts as artifacts_repo
 from ..repos import projects as projects_repo
 from ..orm import Artifact as ArtifactRow
@@ -65,7 +66,7 @@ def _artifact_cap_refusal(used: int, limit: int) -> HTTPException:
     )
 
 
-class ImportPublicArtifactRequest(BaseModel):
+class ImportPublicArtifactRequest(RequestModel):
     model_config = ConfigDict(extra="forbid")
 
     source_slug: str = Field(min_length=1, max_length=160)
@@ -327,7 +328,7 @@ async def keep_artifact(
     return _to_artifact(artifact, metadata)
 
 
-class SetArtifactProjectRequest(BaseModel):
+class SetArtifactProjectRequest(RequestModel):
     model_config = ConfigDict(extra="forbid")
 
     #: None files the artifact back into the ungrouped list. Explicit rather than
@@ -448,7 +449,7 @@ class ArtifactVersionPage(BaseModel):
     next_before_seq: int | None
 
 
-class RestoreVersionRequest(BaseModel):
+class RestoreVersionRequest(RequestModel):
     model_config = ConfigDict(extra="forbid")
 
     #: Set once the caller has been shown what the restore costs. Without it a

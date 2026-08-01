@@ -7,6 +7,7 @@ from majorana_contracts.enums import WorkspaceKind
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from ..auth.deps import CurrentIdentity, CurrentScope, DbSession, get_settings
+from ..request_models import RequestModel
 from ..repos import workspaces as workspaces_repo
 from ..settings import Settings
 from ..tiers import tier_of
@@ -44,7 +45,7 @@ class MeResponse(BaseModel):
     tier: str = "free"
 
 
-class UpdateMeRequest(BaseModel):
+class UpdateMeRequest(RequestModel):
     model_config = ConfigDict(extra="forbid")
 
     display_name: str | None = Field(default=None, max_length=120)

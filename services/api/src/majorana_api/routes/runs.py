@@ -18,9 +18,10 @@ from majorana_contracts import ConversationTurn
 from majorana_contracts import IllegalTransition, assert_transition, is_terminal
 from majorana_contracts import Run as RunResource
 from majorana_contracts.enums import ExportStatus, Framework, RunMode, RunStatus
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import ConfigDict, Field
 
 from ..auth.deps import CurrentIdentity, CurrentScope, DbSession, get_settings
+from ..request_models import RequestModel
 from ..jobs import RUN_EXECUTE_JOB_KIND
 from ..orm import Run as RunRow
 from ..repos import artifacts as artifacts_repo
@@ -38,7 +39,7 @@ SSE_POLL_INTERVAL_S = 1.0
 SSE_HEARTBEAT_EVERY_POLLS = 15
 
 
-class CreateRunRequest(BaseModel):
+class CreateRunRequest(RequestModel):
     model_config = ConfigDict(extra="forbid")
 
     task_prompt: str = Field(min_length=1, max_length=20_000)
@@ -59,7 +60,7 @@ class CreateRunRequest(BaseModel):
     conversation_id: uuid.UUID | None = None
 
 
-class SetRunFolderRequest(BaseModel):
+class SetRunFolderRequest(RequestModel):
     model_config = ConfigDict(extra="forbid")
 
     folder_id: uuid.UUID | None = None

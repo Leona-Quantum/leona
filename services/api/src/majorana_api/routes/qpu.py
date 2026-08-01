@@ -25,6 +25,7 @@ from majorana_qpu import (
 )
 
 from ..auth.deps import CurrentScope, DbSession
+from ..request_models import RequestModel
 from ..jobs import QPU_RUN_JOB_KIND
 from ..orm import QpuRun as QpuRunRow
 from ..repos import qpu_runs as qpu_runs_repo
@@ -42,7 +43,7 @@ class QpuBackendsResponse(BaseModel):
     backends: list[QpuBackendInfo]
 
 
-class QpuEstimateRequest(BaseModel):
+class QpuEstimateRequest(RequestModel):
     model_config = ConfigDict(extra="forbid")
 
     device_id: str = Field(min_length=1, max_length=120)
@@ -79,7 +80,7 @@ async def qpu_submission_gate(scope: CurrentScope) -> QpuSubmissionGateResponse:
     )
 
 
-class QpuSubmissionRequest(BaseModel):
+class QpuSubmissionRequest(RequestModel):
     model_config = ConfigDict(extra="forbid")
 
     device_id: str = Field(min_length=1, max_length=120)
