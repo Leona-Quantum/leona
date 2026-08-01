@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ShareRefused,
   expiresSoon,
@@ -53,6 +53,7 @@ export function ProjectShareDialog({
   const [error, setError] = useState<string | null>(null);
   const [confirmingStopAll, setConfirmingStopAll] = useState(false);
   const [forbidden, setForbidden] = useState(false);
+  const emailRef = useRef<HTMLInputElement | null>(null);
 
   const refresh = useCallback(async () => {
     try {
@@ -79,6 +80,20 @@ export function ProjectShareDialog({
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
+
+  // `role="dialog"` and `aria-modal` describe this as a modal; without moving
+  // focus into it they are only a description. A keyboard user would otherwise
+  // stay on the sidebar row underneath — tabbing through a rail they cannot see
+  // past — and a screen reader would announce nothing at all. Focus lands on
+  // the address field because that is the one thing this dialog is for, and it
+  // returns to whatever opened it, which is the share button on that row.
+  useEffect(() => {
+    const opener = document.activeElement;
+    emailRef.current?.focus();
+    return () => {
+      if (opener instanceof HTMLElement && document.contains(opener)) opener.focus();
+    };
+  }, []);
 
   async function submit(event: React.FormEvent) {
     event.preventDefault();
@@ -167,6 +182,7 @@ export function ProjectShareDialog({
               <label className="mj-share-field">
                 <span>{copy.emailLabel}</span>
                 <input
+                  ref={emailRef}
                   type="email"
                   autoComplete="off"
                   maxLength={320}
@@ -213,7 +229,16 @@ export function ProjectShareDialog({
         {!forbidden ? (
           <>
             <h3 className="mj-share-subtitle">{copy.peopleWithAccess}</h3>
-            {shares === null ? null : shares.length === 0 ? (
+            {/* Three states, three renders. `null` is "not read yet" and MUST
+                NOT look like the empty list: on a share dialog the difference
+                between "still loading" and "shared with nobody" is the
+                difference between waiting and believing you revoked something
+                you did not. */}
+            {shares === null ? (
+              <p className="mj-share-empty" aria-busy="true">
+                {copy.loading}
+              </p>
+            ) : shares.length === 0 ? (
               <p className="mj-share-empty">{copy.nobody}</p>
             ) : (
               <ul className="mj-share-list">

@@ -24,6 +24,7 @@ import uuid
 
 import pytest
 from matrix_helpers import requires_db
+from repo_test_helpers import delete_committed_tenants
 from majorana_contracts import Scope
 from majorana_contracts.enums import Role, ShareRole
 from sqlalchemy import select
@@ -31,7 +32,7 @@ from sqlalchemy.exc import IntegrityError
 
 from majorana_api.db import engine_from_env, session_factory
 from majorana_api.ids import uuid7
-from majorana_api.orm import Artifact, Project, ProjectShare, Workspace
+from majorana_api.orm import ProjectShare, Workspace
 from majorana_api.repos import (
     AuthzError,
     NotFoundError,
@@ -1007,21 +1008,15 @@ async def test_two_concurrent_grants_produce_one_row(db, pair):
         assert len(rows) == 1
         assert rows[0].role in {"viewer", "editor"}
     finally:
-        # The commit above put this test's fixture beyond the reach of the `db`
-        # fixture's rollback, as the session-scoped `dataset` does. Only what
-        # this test is ABOUT is removed: the grants, and the project they hang
-        # on, whose artifacts are first returned to the ungrouped list because
-        # `fk_artifacts_project_id` has no cascade and deleting the container
-        # must not delete the contents.
-        async with factory() as session:
-            await session.execute(
-                ProjectShare.__table__.delete().where(ProjectShare.project_id == alice.project.id)
-            )
-            await session.execute(
-                Artifact.__table__.update()
-                .where(Artifact.project_id == alice.project.id)
-                .values(project_id=None)
-            )
-            await session.execute(Project.__table__.delete().where(Project.id == alice.project.id))
-            await session.commit()
+        # The commit above put this fixture beyond the reach of the `db`
+        # fixture's rollback, so removing it is this test's job. Everything, not
+        # just the shares and the project it hangs on: leaving the workspaces
+        # behind is what broke two unrelated suites on a clean database, and
+        # "the existing session-scoped fixture leaves rows too" is a description
+        # of the same bug rather than a reason to repeat it.
+        await delete_committed_tenants(
+            factory,
+            [alice.workspace.id, bob.workspace.id],
+            [alice.user.id, bob.user.id],
+        )
         await engine.dispose()

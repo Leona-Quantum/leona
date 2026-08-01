@@ -144,10 +144,14 @@ export function SharedProjectView({
       });
       setNotice(copy.saved);
       await load();
-      // The save moved the pointer; the editor is now based on whatever the
-      // reload says is current, not on what it was opened with.
-      const refreshed = circuits.find((row) => row.id === circuit.id);
-      if (refreshed) setBaseVersionId(refreshed.currentVersionId);
+      // Cleared, not re-pointed. The obvious version of this reads the new
+      // current id out of `circuits` — but `load()` calls `setCircuits`, and
+      // `circuits` in this closure is still the array this render was built
+      // from, so that reads the id from BEFORE the save and writes a stale
+      // base back. The editor closes here and `openCircuit` re-reads the
+      // current version when it is opened again, so there is nothing to carry
+      // across; null is the honest value for "not editing anything".
+      setBaseVersionId(null);
       setOpen(null);
     } catch (caught) {
       if (caught instanceof ShareVersionConflict) {

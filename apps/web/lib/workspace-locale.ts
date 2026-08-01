@@ -1923,6 +1923,7 @@ export const PROJECT_SHARE_COPY: Record<PublicLocale, {
   granting: string;
   granted: (email: string) => string;
   grantFailed: string;
+  loading: string;
   nobody: string;
   peopleWithAccess: string;
   invitedBy: (email: string) => string;
@@ -1985,6 +1986,7 @@ export const PROJECT_SHARE_COPY: Record<PublicLocale, {
     granting: "Sharing…",
     granted: (email) => `${email} can now open this project.`,
     grantFailed: "This project could not be shared.",
+    loading: "Reading who has access…",
     nobody: "This project is not shared with anyone.",
     peopleWithAccess: "People with access",
     invitedBy: (email) => `Shared by ${email}`,
@@ -2054,6 +2056,7 @@ export const PROJECT_SHARE_COPY: Record<PublicLocale, {
     granting: "共有中…",
     granted: (email) => `${email} がこのプロジェクトを開けるようになりました。`,
     grantFailed: "このプロジェクトを共有できませんでした。",
+    loading: "アクセスできる人を読み込んでいます…",
     nobody: "このプロジェクトはまだ誰とも共有されていません。",
     peopleWithAccess: "アクセスできる人",
     invitedBy: (email) => `${email} が共有`,
