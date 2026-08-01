@@ -47,6 +47,14 @@ export interface SharedProject {
   expiresAt: string | null;
   sharedAt: string;
   artifactCount: number;
+  /**
+   * How far a contributor may grow this project (contracts 2.8.0).
+   *
+   * Read defensively — see `parseSharedProject`. A web build that lands before
+   * the API's sees no such field, and the whole page must not fail to parse over
+   * a number that only enables one button.
+   */
+  artifactLimit: number;
   /** Latest change to the project or anything in it. See `hasMoved` below. */
   revision: string;
 }
@@ -125,8 +133,28 @@ export function parseSharedProject(value: unknown): SharedProject | null {
     expiresAt: optionalString(value.expires_at),
     sharedAt: value.shared_at,
     artifactCount: Math.max(0, Math.trunc(value.artifact_count)),
+    // Absent is NOT a parse failure, unlike every field above it.
+    //
+    // The two services deploy separately and in either order. Every other field
+    // here has existed since sharing shipped, so its absence means the payload is
+    // not a shared project at all — but `artifact_limit` arrived in contracts
+    // 2.8.0, and a web deploy landing before the API's would otherwise turn a
+    // perfectly good "Shared with me" page into "no longer available".
+    //
+    // The fallback is 0, not the platform default: 0 hides the Add button, and an
+    // old API has no contribution route behind that button anyway. Guessing 50
+    // would render an action that 404s.
+    artifactLimit:
+      typeof value.artifact_limit === "number" && Number.isFinite(value.artifact_limit)
+        ? Math.max(0, Math.trunc(value.artifact_limit))
+        : 0,
     revision: value.revision,
   };
+}
+
+/** May this person add a circuit to this project right now? */
+export function canContribute(project: SharedProject): boolean {
+  return project.role === "editor" && project.artifactCount < project.artifactLimit;
 }
 
 /**
@@ -275,6 +303,49 @@ export async function revokeAllProjectShares(projectId: string): Promise<void> {
   if (!response.ok && response.status !== 404) throw new Error("Sharing could not be stopped");
 }
 
+/**
+ * How many circuits people you share this project with may add to it.
+ *
+ * Read off the owner's own project resource rather than off a share row: the
+ * limit is a property of the container, so it is the same number whether the
+ * project is shared with nobody or with fifty people.
+ */
+export async function loadProjectArtifactLimit(projectId: string): Promise<number | null> {
+  const response = await fetch("/api/workspace/projects", { cache: "no-store" });
+  if (!response.ok) return null;
+  const payload = (await response.json()) as unknown;
+  if (!Array.isArray(payload)) return null;
+  const row = payload.find((item) => isRecord(item) && item.id === projectId);
+  if (!isRecord(row)) return null;
+  // Absent means an API that predates contracts 2.8.0. Null, not a guessed
+  // default: the control that would be rendered from a guess writes a real
+  // number back, so guessing here would silently CHANGE the project's limit.
+  return typeof row.max_artifacts === "number" && Number.isFinite(row.max_artifacts)
+    ? Math.max(0, Math.trunc(row.max_artifacts))
+    : null;
+}
+
+export async function setProjectArtifactLimit(
+  projectId: string,
+  maxArtifacts: number,
+): Promise<number> {
+  const response = await fetch(`/api/workspace/projects/${encodeURIComponent(projectId)}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ max_artifacts: maxArtifacts }),
+    cache: "no-store",
+  });
+  if (response.status === 409 || response.status === 422) {
+    throw new ShareRefused((await refusalMessage(response)) ?? "That limit was refused");
+  }
+  if (!response.ok) throw new Error("That limit could not be saved");
+  const payload = (await response.json()) as unknown;
+  if (!isRecord(payload) || typeof payload.max_artifacts !== "number") {
+    throw new Error("That limit could not be saved");
+  }
+  return payload.max_artifacts;
+}
+
 // --------------------------------------------------------------------------
 // Using a grant
 // --------------------------------------------------------------------------
@@ -341,6 +412,38 @@ export async function saveSharedVersion(
   }
   if (response.status === 403) throw new ShareRefused("This project is shared with you read-only");
   if (!response.ok) throw new Error("That edit could not be saved");
+}
+
+/**
+ * Add a new circuit to a project somebody else owns.
+ *
+ * The 409 sentence is shown verbatim. The control plane writes two different
+ * ones — the project is full, or the owner's plan is — and only one of those is
+ * something the contributor can ask to have changed, so collapsing them into a
+ * single local string would send people at the wrong wall.
+ */
+export async function contributeSharedArtifact(
+  projectId: string,
+  input: { title: string; code: string; framework: string; family?: string },
+): Promise<unknown> {
+  const response = await fetch(`/api/shared/projects/${encodeURIComponent(projectId)}/artifacts`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      title: input.title.trim(),
+      family: input.family || "other",
+      framework: input.framework,
+      code: input.code,
+      code_lang: "python",
+    }),
+    cache: "no-store",
+  });
+  if (response.status === 409 || response.status === 422) {
+    throw new ShareRefused((await refusalMessage(response)) ?? "That circuit could not be added");
+  }
+  if (response.status === 403) throw new ShareRefused("This project is shared with you read-only");
+  if (!response.ok) throw new Error("That circuit could not be added");
+  return (await response.json()) as unknown;
 }
 
 export async function copySharedArtifact(

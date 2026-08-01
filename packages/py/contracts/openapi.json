@@ -1712,6 +1712,12 @@
             "title": "Id",
             "type": "string"
           },
+          "max_artifacts": {
+            "maximum": 500,
+            "minimum": 0,
+            "title": "Max Artifacts",
+            "type": "integer"
+          },
           "name": {
             "maxLength": 80,
             "minLength": 1,
@@ -1733,6 +1739,7 @@
           "id",
           "workspace_id",
           "name",
+          "max_artifacts",
           "created_at",
           "updated_at"
         ],
@@ -3697,6 +3704,12 @@
             "title": "Artifact Count",
             "type": "integer"
           },
+          "artifact_limit": {
+            "maximum": 500,
+            "minimum": 0,
+            "title": "Artifact Limit",
+            "type": "integer"
+          },
           "expires_at": {
             "anyOf": [
               {
@@ -3776,6 +3789,7 @@
           "role",
           "shared_at",
           "artifact_count",
+          "artifact_limit",
           "revision"
         ],
         "title": "SharedProject",
@@ -4874,7 +4888,7 @@
   "info": {
     "description": "Cross-boundary types only; API paths are owned by services/api.",
     "title": "majorana-contracts",
-    "version": "2.7.0"
+    "version": "2.8.0"
   },
   "openapi": "3.1.0",
   "paths": {}

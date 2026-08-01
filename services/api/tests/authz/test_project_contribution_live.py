@@ -132,17 +132,65 @@ async def test_an_editor_contributes_and_the_row_lands_in_the_owners_workspace(d
 
 
 async def test_a_viewer_cannot_contribute(db, pair):
+    """And it must be the EXPLICIT gate that says so, not the role mapping.
+
+    Two independent defences refuse a viewer here: `contribute_artifact`'s own
+    `may_edit` check, and `_elevated` mapping VIEWER to `Role.VIEWER` so
+    `require_write` refuses inside `create_artifact`. That redundancy is the
+    design — but it means the explicit gate can be DELETED with every test still
+    green, which is exactly what a mutation run found (and found in session 49
+    for the same reason on the edit path).
+
+    So this asserts which one answered. `require_write` says "role viewer cannot
+    write", a sentence about a workspace role that the caller does not hold and
+    that names none of the actual situation; the explicit gate says what is true.
+    If this ever reads "cannot write", the first gate is gone.
+    """
     alice, bob = pair
     await grant(db, alice, bob, role=ShareRole.VIEWER)
 
-    with pytest.raises(AuthzError):
+    with pytest.raises(AuthzError) as refusal:
         await contribute(db, bob, alice.project.id)
+    assert "shared with you read-only" in str(refusal.value)
+    assert "cannot write" not in str(refusal.value)
 
     # Positive control: the same call with the role changed succeeds, so the
     # refusal above is about the role and not about anything else in the fixture.
     await grant(db, alice, bob, role=ShareRole.EDITOR)
     _access, artifact, _version = await contribute(db, bob, alice.project.id)
     assert artifact.workspace_id == alice.workspace.id
+
+
+async def test_the_role_mapping_refuses_a_viewer_independently(db, pair):
+    """The second defence, tested where the first cannot mask it.
+
+    This is what makes the redundancy above real rather than assumed: with a
+    VIEWER grant, the elevated scope alone must be unable to write. Asserted
+    against `create_shared_version`, which reaches `require_write` through the
+    same mapping, so if EDITOR/VIEWER were ever mapped to ADMIN/MEMBER this fails
+    even though the explicit gate is untouched.
+    """
+    alice, bob = pair
+    await grant(db, alice, bob, role=ShareRole.VIEWER)
+    existing = await artifacts.create_artifact(
+        alice.scope,
+        db,
+        slug=f"ro-{uuid.uuid4().hex[:8]}",
+        title="alice's own",
+        family="Bell",
+        framework="qiskit",
+    )
+    await projects.set_artifact_project(alice.scope, db, existing.id, alice.project.id)
+    with pytest.raises(AuthzError):
+        await shares.create_shared_version(
+            bob.scope,
+            db,
+            alice.project.id,
+            existing.id,
+            expected_current_version_id=None,
+            code="print('nope')",
+            code_lang="python",
+        )
 
 
 async def test_no_grant_at_all_is_a_not_found(db, pair):

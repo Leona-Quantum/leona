@@ -441,3 +441,139 @@ async def test_stop_sharing_with_everybody(stage):
     assert (
         await stage["alice"].client.get(f"/v1/workspace/projects/{stage['project_id']}/shares")
     ).json() == []
+
+
+# --------------------------------------------------------------------------- #
+# Contributing a new circuit (migration 0043)
+# --------------------------------------------------------------------------- #
+
+CONTRIBUTED = "from qiskit import QuantumCircuit\nFINAL_CIRCUIT = QuantumCircuit(3)\n"
+
+
+async def test_an_editor_can_add_a_circuit_and_both_parties_then_see_it(stage):
+    """The round trip the repository test cannot make: two clients, one project.
+
+    Bob POSTs and Alice GETs. The assertion that matters is Alice's list — a
+    contribution that only Bob can see through his own grant would pass every
+    single-client test and be the wrong feature.
+    """
+    await _grant(stage, role="editor")
+
+    created = await stage["bob"].client.post(
+        f"/v1/shared/projects/{stage['project_id']}/artifacts",
+        json={"title": "GHZ state", "family": "GHZ", "framework": "qiskit", "code": CONTRIBUTED},
+    )
+    assert created.status_code == 201, created.text
+    body = created.json()
+    assert body["title"] == "GHZ state"
+    assert body["workspace_id"] == str(stage["alice"].workspace.id)
+    assert body["kept_at"] is not None
+    # Serialization touches every field of the resource, through the same mapper
+    # an owned artifact uses — a column the ORM left expired is a 500 here.
+    #
+    # And the resource claims NOTHING. `VerificationSummary.decision` is required,
+    # the stored summary has none, so `parse_verification_summary` drops the whole
+    # object rather than inventing a verdict — which is the same answer the
+    # grantee's own edits give, and the reason the Vault list renders absence
+    # rather than defaulting to verified.
+    assert body["verification_summary"] is None
+    assert body["verifier_decision"] is None
+    assert body["evidence_strength"] is None
+
+    hers = await stage["alice"].client.get("/v1/artifacts")
+    assert hers.status_code == 200
+    assert "GHZ state" in {row["title"] for row in hers.json()}
+
+    his = await stage["bob"].client.get("/v1/artifacts")
+    assert "GHZ state" not in {row["title"] for row in his.json()}
+
+
+async def test_a_viewer_gets_403_and_a_stranger_gets_404(stage):
+    """Two different sentences, and only the route decides which is sent.
+
+    403 means "this exists and you may not"; 404 means "as far as you are
+    concerned there is nothing here". Sending 403 to a stranger would confirm the
+    project id is real to anybody who guesses one.
+    """
+    body = {"title": "nope", "family": "Bell", "framework": "qiskit", "code": CONTRIBUTED}
+    path = f"/v1/shared/projects/{stage['project_id']}/artifacts"
+
+    stranger = await stage["bob"].client.post(path, json=body)
+    assert stranger.status_code == 404, stranger.text
+
+    await _grant(stage, role="viewer")
+    viewer = await stage["bob"].client.post(path, json=body)
+    assert viewer.status_code == 403, viewer.text
+
+    await _grant(stage, role="editor")
+    editor = await stage["bob"].client.post(path, json=body)
+    assert editor.status_code == 201, editor.text
+
+
+async def test_a_full_project_answers_409_with_a_sentence_the_web_can_show(stage):
+    """RFC 7807 `title`, not `detail`.
+
+    The web reads refusals from `title` — session 49 shipped a client reading
+    `payload.detail`, which this API never sends, so every share refusal would
+    have rendered a generic fallback. Asserted here rather than trusted.
+    """
+    await _grant(stage, role="editor")
+    limit = await stage["alice"].client.patch(
+        f"/v1/workspace/projects/{stage['project_id']}", json={"max_artifacts": 1}
+    )
+    assert limit.status_code == 200, limit.text
+
+    # The project already holds Alice's own filed circuit, so it is at 1 of 1.
+    refused = await stage["bob"].client.post(
+        f"/v1/shared/projects/{stage['project_id']}/artifacts",
+        json={"title": "one too many", "family": "Bell", "framework": "qiskit", "code": CONTRIBUTED},
+    )
+    assert refused.status_code == 409, refused.text
+    payload = refused.json()
+    assert "1-circuit limit" in payload["title"]
+    assert payload.get("detail") is None
+
+
+async def test_the_grantees_header_carries_the_limit_it_will_be_refused_by(stage):
+    """One number, read from the same place the refusal is computed from."""
+    await _grant(stage, role="editor")
+    await stage["alice"].client.patch(
+        f"/v1/workspace/projects/{stage['project_id']}", json={"max_artifacts": 4}
+    )
+    header = await stage["bob"].client.get(f"/v1/shared/projects/{stage['project_id']}")
+    assert header.status_code == 200, header.text
+    assert header.json()["artifact_limit"] == 4
+    assert header.json()["artifact_count"] == 1
+
+
+async def test_a_contribution_route_takes_no_workspace_from_the_caller(stage):
+    """`extra="forbid"`, so a caller-supplied scope is a 422 rather than ignored."""
+    await _grant(stage, role="editor")
+    response = await stage["bob"].client.post(
+        f"/v1/shared/projects/{stage['project_id']}/artifacts",
+        json={
+            "title": "smuggled",
+            "family": "Bell",
+            "framework": "qiskit",
+            "code": CONTRIBUTED,
+            "workspace_id": str(stage["bob"].workspace.id),
+        },
+    )
+    assert response.status_code == 422, response.text
+
+
+async def test_an_oversized_or_blank_contribution_is_refused_at_the_boundary(stage):
+    await _grant(stage, role="editor")
+    path = f"/v1/shared/projects/{stage['project_id']}/artifacts"
+    base = {"family": "Bell", "framework": "qiskit"}
+
+    too_big = await stage["bob"].client.post(
+        path, json={**base, "title": "huge", "code": "x" * 100_001}
+    )
+    assert too_big.status_code == 422, too_big.text
+
+    blank = await stage["bob"].client.post(path, json={**base, "title": "   ", "code": CONTRIBUTED})
+    assert blank.status_code == 422, blank.text
+
+    empty_code = await stage["bob"].client.post(path, json={**base, "title": "ok", "code": ""})
+    assert empty_code.status_code == 422, empty_code.text

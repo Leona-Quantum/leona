@@ -169,7 +169,15 @@ from .lifecycle import (
 # person outside the workspace that owns it (migration 0042). Additive: three new
 # names, no existing field changes meaning, and a client built against 2.6.0 never
 # asks for a shared project and so never sees one.
-CONTRACTS_VERSION = "2.7.0"
+# 2.8.0: Project.max_artifacts and SharedProject.artifact_limit — how far a share
+# grantee may grow a project (migration 0043). Additive in the sense that matters
+# here: both are server-to-client, so no client stops being able to CALL anything.
+# They are required on the model rather than optional because the server always
+# knows the number — `shares.project_artifact_limit` resolves an unset column — and
+# an optional one would invite a client to reimplement that default. A web build
+# that lands BEFORE the API's sees neither field, so `apps/web/lib/project-shares`
+# reads both defensively rather than parsing them as required.
+CONTRACTS_VERSION = "2.8.0"
 
 __all__ = [
     "CONTRACTS_VERSION",

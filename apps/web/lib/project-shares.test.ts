@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
 import {
+  canContribute,
   expiresSoon,
   hasExpired,
   hasMoved,
@@ -218,5 +219,77 @@ describe("refusals arrive as RFC 7807 problem documents", () => {
     assert.equal(conflictVersionId(ALREADY_A_MEMBER), null);
     assert.equal(conflictVersionId({ reason: "version_conflict" }), null);
     assert.equal(conflictVersionId({ current_version_id: "v-9" }), null);
+  });
+});
+
+
+describe("the contribution limit (contracts 2.8.0)", () => {
+  const SHARED = {
+    id: "p-1",
+    name: "Shared work",
+    owner_workspace_id: "w-1",
+    owner_workspace_name: "Alice's workspace",
+    role: "editor",
+    shared_at: "2026-08-01T09:00:00Z",
+    revision: "2026-08-01T10:00:00Z",
+    artifact_count: 2,
+    artifact_limit: 5,
+  };
+
+  it("parses the limit off the header", () => {
+    assert.equal(parseSharedProject(SHARED)?.artifactLimit, 5);
+  });
+
+  it("treats an ABSENT limit as zero rather than as a bad payload", () => {
+    // The two services deploy separately and in either order. A web build that
+    // lands first sees no `artifact_limit`, and the whole "Shared with me" page
+    // must not become "no longer available" over a number that only enables one
+    // button. Zero hides the button, which is right: the old API has no route
+    // behind it.
+    const { artifact_limit: _omitted, ...withoutLimit } = SHARED;
+    const parsed = parseSharedProject(withoutLimit);
+    assert.ok(parsed, "an older payload must still parse");
+    assert.equal(parsed.artifactLimit, 0);
+    assert.equal(canContribute(parsed), false);
+  });
+
+  it("still refuses a payload missing a field that predates the limit", () => {
+    // The positive control for the tolerance above: `artifact_count` has been
+    // there since sharing shipped, so its absence means this is not a shared
+    // project at all, and reading THAT defensively would hide a real problem.
+    const { artifact_count: _omitted, ...withoutCount } = SHARED;
+    assert.equal(parseSharedProject(withoutCount), null);
+  });
+
+  it("clamps a nonsense limit instead of trusting it", () => {
+    assert.equal(parseSharedProject({ ...SHARED, artifact_limit: -3 })?.artifactLimit, 0);
+    assert.equal(parseSharedProject({ ...SHARED, artifact_limit: 7.9 })?.artifactLimit, 7);
+    assert.equal(parseSharedProject({ ...SHARED, artifact_limit: Number.NaN })?.artifactLimit, 0);
+  });
+
+  it("lets an editor contribute only while there is room", () => {
+    const room = parseSharedProject(SHARED);
+    assert.ok(room);
+    assert.equal(canContribute(room), true);
+
+    const full = parseSharedProject({ ...SHARED, artifact_count: 5 });
+    assert.ok(full);
+    assert.equal(canContribute(full), false, "at the limit is full, not one short of it");
+
+    const over = parseSharedProject({ ...SHARED, artifact_count: 9 });
+    assert.ok(over);
+    assert.equal(canContribute(over), false, "the owner can lower the limit below the count");
+  });
+
+  it("never lets a VIEWER contribute, whatever the room says", () => {
+    const viewer = parseSharedProject({ ...SHARED, role: "viewer", artifact_limit: 500 });
+    assert.ok(viewer);
+    assert.equal(canContribute(viewer), false);
+  });
+
+  it("treats a zero limit as the owner saying no, not as missing data", () => {
+    const none = parseSharedProject({ ...SHARED, artifact_count: 0, artifact_limit: 0 });
+    assert.ok(none);
+    assert.equal(canContribute(none), false);
   });
 });

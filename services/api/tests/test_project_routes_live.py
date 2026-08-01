@@ -22,6 +22,7 @@ from majorana_api.auth import deps as auth_deps
 from majorana_api.db import engine_from_env, session_factory
 from majorana_api.orm import User
 from majorana_api.repos import artifacts as artifacts_repo
+from majorana_api.repos import shares as shares_repo
 from majorana_api.repos import system
 from majorana_api.settings import Settings
 
@@ -87,9 +88,17 @@ async def test_create_list_rename_and_delete_over_http(client):
     assert created.status_code == 201, created.text
     project = created.json()
     assert project["name"] == "Bell states"
-    assert set(project) == {"id", "workspace_id", "name", "created_at", "updated_at"}, (
-        "the resource is the contract; an extra field here is an unversioned change"
-    )
+    assert set(project) == {
+        "id",
+        "workspace_id",
+        "name",
+        "max_artifacts",
+        "created_at",
+        "updated_at",
+    }, "the resource is the contract; an extra field here is an unversioned change"
+    # Resolved, never NULL: the column is unset on a new project and the wire
+    # carries the platform default rather than making every client know it.
+    assert project["max_artifacts"] == shares_repo.DEFAULT_PROJECT_ARTIFACT_LIMIT
 
     listed = await made.get("/v1/workspace/projects")
     assert listed.status_code == 200
@@ -105,6 +114,39 @@ async def test_create_list_rename_and_delete_over_http(client):
     assert deleted.status_code == 204
     assert deleted.content == b"", "a 204 carrying a body breaks the web's DELETE proxy"
     assert (await made.get("/v1/workspace/projects")).json() == []
+
+
+async def test_the_patch_changes_the_name_the_limit_or_both(client):
+    """One PATCH, three shapes — and the rename-only body still works.
+
+    `name` was required on this route before migration 0043 and is optional now,
+    which is the widening direction: a web build that lands before this API deploy
+    keeps sending `{"name": ...}` and keeps working. The reverse — making
+    `max_artifacts` required — would have broken every existing client.
+    """
+    made, _factory, _scope = client
+    project = (await made.post("/v1/workspace/projects", json={"name": "limits"})).json()
+    path = f"/v1/workspace/projects/{project['id']}"
+
+    only_limit = await made.patch(path, json={"max_artifacts": 3})
+    assert only_limit.status_code == 200, only_limit.text
+    assert only_limit.json()["max_artifacts"] == 3
+    assert only_limit.json()["name"] == "limits"
+
+    both = await made.patch(path, json={"name": "limits renamed", "max_artifacts": 0})
+    assert both.status_code == 200, both.text
+    assert (both.json()["name"], both.json()["max_artifacts"]) == ("limits renamed", 0)
+
+    only_name = await made.patch(path, json={"name": "limits again"})
+    assert only_name.status_code == 200, only_name.text
+    assert only_name.json()["max_artifacts"] == 0, "a rename must not reset the limit"
+
+    assert (await made.patch(path, json={})).status_code == 422
+    assert (await made.patch(path, json={"max_artifacts": -1})).status_code == 422
+    assert (await made.patch(path, json={"max_artifacts": 501})).status_code == 422
+    assert (await made.patch(path, json={"max_artifacts": None})).status_code == 422, (
+        "the API can move the limit but must not un-choose it back to the default"
+    )
 
 
 async def test_the_order_route_is_not_swallowed_by_the_project_id_route(client):
