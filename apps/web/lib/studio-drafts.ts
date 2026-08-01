@@ -11,7 +11,7 @@ import {
   looksLikeOpenQasm3,
   parseCircuitSource,
 } from "./circuit-conversion.ts";
-import { MAX_VIEWABLE_QUBITS } from "./studio-parse.ts";
+import { MAX_CONVERTIBLE_QUBITS } from "./studio-parse.ts";
 import type { BuilderCodeVariants } from "./studio-builder.ts";
 
 /**
@@ -25,8 +25,8 @@ import type { BuilderCodeVariants } from "./studio-builder.ts";
  * 1. It chose its conversion source with the *editable builder's* parser, whose
  *    width ceiling is the six-wire canvas. A circuit written in exactly the
  *    portable gate subset the converter supports produced no conversions at all
- *    once it was seven qubits wide. Conversion parses at the viewing ceiling
- *    now; see convertCircuitSource.
+ *    once it was seven qubits wide. Conversion now has its own capability
+ *    budget, independent of the editor; see convertCircuitSource.
  * 2. Anything it could not convert became the empty string, so the editor opened
  *    blank with a one-line toast. Atlas's own public page has never done that —
  *    it falls back to the stored source under a "Source reference" label with a
@@ -91,10 +91,9 @@ export function studioDraftBundle(
 
   const candidates = (Object.entries(provided) as Array<[CircuitFrameworkKey, string]>)
     .map(([framework, code]) => ({ framework, code }));
-  // MAX_VIEWABLE_QUBITS, not the builder's width: picking the source for a
-  // source-to-source conversion has nothing to do with what the canvas can draw.
+  // Conversion has its own resource budget; editor width is unbounded.
   const source = candidates.find(({ framework, code }) => (
-    Boolean(parseCircuitSource(code, framework, MAX_VIEWABLE_QUBITS))
+    Boolean(parseCircuitSource(code, framework, MAX_CONVERTIBLE_QUBITS))
   )) ?? (qasm ? { framework: "openqasm3" as const, code: qasm } : undefined);
   const converted = source
     ? allCircuitConversionResults(source.code, source.framework, qasm)

@@ -9,7 +9,7 @@ import {
   type BuilderCodeVariants,
   type BuilderStep,
 } from "./studio-builder.ts";
-import { MAX_BUILDER_QUBITS, MAX_VIEWABLE_QUBITS, MAX_VIEWABLE_STEPS, parseBuilderCircuit, type ParsedBuilderCircuit } from "./studio-parse.ts";
+import { MAX_CONVERTIBLE_QUBITS, MAX_VIEWABLE_QUBITS, MAX_VIEWABLE_STEPS, parseBuilderCircuit, type ParsedBuilderCircuit } from "./studio-parse.ts";
 
 export type CircuitConversionFidelity = "deterministic_subset" | "standard_gate_decomposition";
 
@@ -40,15 +40,14 @@ export function generatePortableCircuitCode(portable: PortableCircuit): BuilderC
 }
 
 /**
- * Defaults to the canvas's width, NOT the parser's, so every existing caller
- * (canvas sync, artifact detail, corpus rendering) keeps drawing only what the
- * six-wire grid can honestly show. The simulation lane passes its own, wider
- * limit — executing a circuit and drawing it are different capabilities.
+ * Parsing has no editor-shaped ceiling; what bounds it is what can be drawn
+ * (`MAX_VIEWABLE_QUBITS`). Costlier callers — simulation, conversion — pass
+ * their own, narrower capability budget explicitly.
  */
 export function parseCircuitSource(
   code: string,
   framework: CircuitFrameworkKey | string,
-  maxQubits: number = MAX_BUILDER_QUBITS,
+  maxQubits: number = MAX_VIEWABLE_QUBITS,
 ): ParsedBuilderCircuit | null {
   const key = circuitFramework(framework).key;
   if (key !== "qiskit" && key !== "pennylane" && key !== "cirq" && key !== "openqasm3") return null;
@@ -56,19 +55,15 @@ export function parseCircuitSource(
 }
 
 /**
- * Rewriting a circuit from one SDK into another is not drawing it on the
- * six-wire grid, so this parses at the *viewing* ceiling rather than the
- * builder's. Before that distinction was made here, an 8-qubit circuit written
- * in exactly the portable gate subset this converter supports produced no
- * conversions at all — every target came back null and the Studio's framework
- * tabs opened empty — purely because the canvas cannot draw eight wires.
+ * Conversion emits output proportional to circuit size, so it retains a
+ * capability budget independent of the width-unbounded editor and viewer.
  */
 export function convertCircuitSource(
   code: string,
   sourceFramework: CircuitFrameworkKey | string,
   targetFramework: CircuitFrameworkKey,
   qasm?: string | null,
-  maxQubits: number = MAX_VIEWABLE_QUBITS,
+  maxQubits: number = MAX_CONVERTIBLE_QUBITS,
 ): CircuitConversion | null {
   const parsed = parseCircuitSource(code, sourceFramework, maxQubits)
     ?? (qasm && looksLikeOpenQasm3(qasm) ? parseCircuitSource(qasm, "openqasm3", maxQubits) : null);
@@ -101,7 +96,7 @@ export function allCircuitConversionResults(
   code: string,
   sourceFramework: CircuitFrameworkKey | string,
   qasm?: string | null,
-  maxQubits: number = MAX_VIEWABLE_QUBITS,
+  maxQubits: number = MAX_CONVERTIBLE_QUBITS,
 ): Partial<Record<CircuitFrameworkKey, CircuitConversion>> {
   return Object.fromEntries(
     CIRCUIT_FRAMEWORKS.flatMap(({ key }) => {
@@ -115,7 +110,7 @@ export function allCircuitConversions(
   code: string,
   sourceFramework: CircuitFrameworkKey | string,
   qasm?: string | null,
-  maxQubits: number = MAX_VIEWABLE_QUBITS,
+  maxQubits: number = MAX_CONVERTIBLE_QUBITS,
 ): Partial<BuilderCodeVariants> {
   return Object.fromEntries(
     Object.entries(allCircuitConversionResults(code, sourceFramework, qasm, maxQubits))
@@ -309,15 +304,14 @@ function buildQasmMeasurement(bit: string, bitIndex: string | undefined, qubit: 
  * Qiskit exporter that produces the stored QASM uses registers, gate names, and
  * per-qubit measurement the editable parser deliberately rejects.
  *
- * The width ceiling is the *viewer's* (`MAX_VIEWABLE_QUBITS`), not the editable
- * builder's or the simulator's: circuits wider than the six-wire editable grid
- * still reconstruct here so the Studio can show them read-only, and the viewing
- * ceiling is deliberately higher than the 24-qubit simulation ceiling because
- * looking at a diagram costs only SVG. Above the qubit ceiling, or past the
- * step-count guard (a decomposed gate set that would draw a pathological
- * diagram), it reports `too_large`; on malformed input or anything outside the
- * standard-gate subset it reports `unparsable`. The caller turns those into an
- * honest message instead of a circuit that lies.
+ * Display carries no editor-shaped width limit — the diagram virtualizes
+ * offscreen wires and columns, so width costs almost nothing to draw. The two
+ * bounds that remain are about what a browser can lay out at all: a width past
+ * `MAX_VIEWABLE_QUBITS` (an SVG taller than anything that renders) and a
+ * decomposed gate set past the step guard both report `too_large`. On malformed
+ * input, or anything outside the standard-gate subset, it reports `unparsable`.
+ * The caller turns those into an honest message instead of a circuit that lies —
+ * or, worse, a blank panel.
  */
 export type InterchangeReconstruction =
   | { kind: "ok"; circuit: ParsedBuilderCircuit }
@@ -340,8 +334,8 @@ export function reconstructInterchangeCircuit(
 
 /**
  * Thin boolean-shaped wrapper over `reconstructInterchangeCircuit` for callers
- * (and tests) that only want the circuit or null. An explicit `maxQubits` still
- * overrides the viewing ceiling — the seed passes none and gets the default.
+ * (and tests) that only want the circuit or null. An explicit `maxQubits` can
+ * impose a narrower capability budget; the default is the drawing ceiling.
  */
 export function parseInterchangeCircuit(
   qasm: string,

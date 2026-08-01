@@ -1,5 +1,6 @@
 import { BUILDER_GATES, ROTATION_GATES, TWO_QUBIT_GATES, type BuilderStep, type CustomGateDefinition } from "./studio-builder.ts";
 import { scopedStorage } from "./user-storage.ts";
+import { MAX_VIEWABLE_QUBITS } from "./studio-parse.ts";
 
 export interface StoredStudioCircuit {
   artifactIdentity: string;
@@ -11,7 +12,6 @@ export interface StoredStudioCircuit {
 
 const STORAGE_KEY = "majorana.studio-circuits.v2";
 const MAX_STORED_CIRCUITS = 60;
-const MAX_STORED_QUBITS = 6;
 
 // Per-account storage (lib/user-storage.ts): a stored circuit is the user's work.
 function canUseStorage(): boolean {
@@ -75,7 +75,7 @@ function isStoredCircuit(value: unknown): value is StoredStudioCircuit {
   const candidate = value as Partial<StoredStudioCircuit>;
   if (
     !isNonEmptyString(candidate.artifactIdentity) ||
-    !isBoundedInteger(candidate.qubitCount, 1, MAX_STORED_QUBITS) ||
+    !isDrawableQubitCount(candidate.qubitCount) ||
     typeof candidate.updatedAt !== "string" ||
     !Number.isFinite(Date.parse(candidate.updatedAt)) ||
     !Array.isArray(candidate.steps) ||
@@ -113,7 +113,7 @@ function isCustomGate(value: unknown): value is CustomGateDefinition {
   if (
     !isNonEmptyString(gate.id) ||
     !isNonEmptyString(gate.name) ||
-    !isBoundedInteger(qubitCount, 1, MAX_STORED_QUBITS) ||
+    !isDrawableQubitCount(qubitCount) ||
     !Array.isArray(gate.steps) ||
     !hasUniqueIds(gate.steps)
   ) return false;
@@ -130,7 +130,24 @@ function isNonEmptyString(value: unknown): value is string {
 }
 
 function isBoundedInteger(value: unknown, min: number, max: number): value is number {
-  return typeof value === "number" && Number.isInteger(value) && value >= min && value <= max;
+  return typeof value === "number" && Number.isSafeInteger(value) && value >= min && value <= max;
+}
+
+/**
+ * A stored circuit is the user's own work, so this is not a policy limit — it is
+ * the width the diagram can still be drawn at. Storage is the one place a
+ * qubitCount arrives without having passed a parser, and a hand-edited or
+ * corrupted entry claiming a few million wires would seed a canvas whose SVG no
+ * browser lays out. Rejecting it falls back to reconstruction from the source,
+ * which reports `too_large` honestly.
+ */
+function isDrawableQubitCount(value: unknown): value is number {
+  return (
+    typeof value === "number"
+    && Number.isSafeInteger(value)
+    && value >= 1
+    && value <= MAX_VIEWABLE_QUBITS
+  );
 }
 
 function hasUniqueIds(values: unknown[]): boolean {

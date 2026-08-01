@@ -301,7 +301,7 @@ export function UiFixtures() {
         artifact={{ framework: "qiskit", code: LLM_QISKIT, qasm: null }}
       />
       <DraftBundleFixture
-        title="Draft bundle — 8 qubits, wider than the canvas"
+        title="Draft bundle — 8 qubits, editable beyond the former limit"
         artifact={{ framework: "qiskit", code: WIDE_QISKIT, qasm: null }}
       />
 
@@ -352,11 +352,11 @@ export function UiFixtures() {
       <DiagramFixture qasm={ghzQasm(3)} title="Circuit diagram — narrow (3q GHZ)" />
       <DiagramFixture
         qasm={ghzQasm(10)}
-        title="Circuit diagram — read-only, wider than the editable builder (10q GHZ)"
+        title="Circuit diagram — editable, wider than the former builder (10q GHZ)"
       />
       <DiagramFixture
         qasm={ghzQasm(80)}
-        title="Circuit diagram — beyond the viewing ceiling (80q GHZ, must not draw)"
+        title="Circuit diagram — virtualized wide view (80q GHZ)"
       />
 
       <section>

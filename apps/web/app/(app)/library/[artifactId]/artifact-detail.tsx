@@ -15,7 +15,7 @@ import {
   frameworkCodeOptions as sharedFrameworkCodeOptions,
   type FrameworkCodeOption,
 } from "../../../../lib/framework-code-options";
-import { MAX_VIEWABLE_QUBITS, MAX_VIEWABLE_STEPS } from "../../../../lib/studio-parse";
+import { MAX_VIEWABLE_STEPS } from "../../../../lib/studio-parse";
 import { CircuitDiagram } from "../../../../components/circuit-diagram";
 import { artifactExportFilename, artifactExportManifest, artifactExportSource, fileExtension } from "../../../../lib/artifact-export";
 import { ARTIFACT_PANELS, type StudioPanel as ArtifactPanel } from "../../../../lib/studio-panels";
@@ -590,12 +590,10 @@ function CircuitDiagramPanel({ artifact, copy }: { artifact: LibraryArtifact; co
       // "no export to draw from" note. Worth having anyway — it costs one
       // parse attempt and strictly increases how many artifacts draw.
       //
-      // The viewing ceiling is passed explicitly because this parser defaults
-      // to the six-wire *editable* bound, which is not the bound that applies
-      // to a read-only drawing: a canonical 10q circuit parses with the
-      // ceiling passed and returns null without it.
+      // Width is unbounded for diagram reconstruction; only the interchange
+      // operation budget below can decline a pathological expansion.
       const parsed = artifact.code
-        ? parseCircuitSource(artifact.code, artifact.framework, MAX_VIEWABLE_QUBITS)
+        ? parseCircuitSource(artifact.code, artifact.framework)
         : null;
       if (!parsed) return null;
       if (parsed.steps.length > MAX_VIEWABLE_STEPS) {

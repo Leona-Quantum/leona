@@ -12,7 +12,7 @@ import { circuitSyncState, type CircuitSyncState } from "../../../lib/studio-syn
 import { looksLikeOpenQasm3, parseCircuitSource, parseInterchangeCircuit, reconstructInterchangeCircuit } from "../../../lib/circuit-conversion";
 import { canvasSeedCandidates, draftSourceFramework, studioDraftBundle, type StudioDraftBundle } from "../../../lib/studio-drafts";
 import { CircuitDiagram } from "../../../components/circuit-diagram";
-import { MAX_BUILDER_QUBITS, MAX_VIEWABLE_QUBITS, MAX_VIEWABLE_STEPS } from "../../../lib/studio-parse";
+import { MAX_VIEWABLE_QUBITS, MAX_VIEWABLE_STEPS } from "../../../lib/studio-parse";
 import { CIRCUIT_FRAMEWORKS, circuitFramework, circuitFrameworkOrNull, isExecutableCircuitFramework, type CircuitFrameworkKey } from "../../../lib/circuit-frameworks";
 import { MAX_CPU_SEED, MAX_CPU_SHOTS, cpuSimulationEligibility, loadCpuSimulationRecords, runCpuSimulation, saveCpuSimulationRecord, sourceFingerprint, type CpuSimulationEligibility, type CpuSimulationLimits, type CpuSimulationRecord } from "../../../lib/studio-simulation";
 import { TIER_LIMITS } from "../../../lib/account-tier";
@@ -241,17 +241,9 @@ export function StudioWorkspace({ artifactId, newDraft = false, locale = "en", l
     const key = `${next.id}:${seedCounter.current}`;
     const stored = loadStoredCircuit(next.id);
     const artifactIdentity = studioArtifactIdentity(next);
-    // A cached seed is trusted only if it is still drawable. An editable draft
-    // (<= the builder's width) is the user's own work and always kept whatever
-    // its depth. A wider cached seed is a persisted read-only reconstruction —
-    // and one persisted before this change had no step guard, so it can exceed
-    // the current bounds and would render the pathological SVG the guard exists
-    // to prevent. When it does, drop the cache and fall through to fresh
-    // reconstruction, which re-applies the guard (and surfaces too_large).
-    const cachedIsDrawable = stored
-      && (stored.qubitCount <= MAX_BUILDER_QUBITS
-        || (stored.qubitCount <= MAX_VIEWABLE_QUBITS && stored.steps.length <= MAX_VIEWABLE_STEPS));
-    if (stored?.artifactIdentity === artifactIdentity && cachedIsDrawable) {
+    // The diagram virtualizes both axes, so a valid cached user edit remains
+    // drawable regardless of circuit width or depth.
+    if (stored?.artifactIdentity === artifactIdentity) {
       return { seed: { key, artifactIdentity, qubitCount: stored.qubitCount, steps: stored.steps, customGates: stored.customGates }, note: copy.circuitRestored };
     }
     const hasOwnCode = Boolean(next.code || next.frameworkVariants || next.qasm);
@@ -261,24 +253,22 @@ export function StudioWorkspace({ artifactId, newDraft = false, locale = "en", l
     // it is what left artifacts opening to a blank canvas beside a perfectly
     // drawable circuit one tab away. See canvasSeedCandidates.
     const candidates = canvasSeedCandidates(next, activeDrafts, activeFramework, bundle.fallbacks);
-    // First choice: an editable circuit the six-wire builder can reconstruct.
+    // First choice: source the deterministic builder can reconstruct exactly.
     const parsed = hasOwnCode
       ? candidates.map((candidate) => parseCircuitSource(candidate.code, candidate.framework)).find(Boolean) ?? null
       : null;
     if (parsed) {
       return { seed: { key, artifactIdentity, qubitCount: parsed.qubitCount, steps: parsed.steps, customGates: [] }, note: copy.circuitRestored };
     }
-    // Fallback: reconstruct a read-only diagram from the stored interchange QASM
+    // Fallback: reconstruct a diagram from the stored interchange QASM
     // (or wider builder-shaped source). LLM-run artifacts store Qiskit qasm3
     // output — richer gates, a `meas` register, per-qubit measurement, and often
     // more than six qubits — which the editable parser rejects, so before this
     // fallback those artifacts opened to an empty canvas and showed no circuit
     // at all. The interchange reader draws the standard-gate subset up to the
-    // *viewing* ceiling (higher than the simulation ceiling — looking costs only
-    // SVG); anything above six qubits opens read-only (below, editable). It can
-    // also decline as too_large — a decomposed gate set that would draw a
-    // pathological diagram — which we surface honestly rather than as an empty
-    // canvas that looks like a bug.
+    // operation budget. Width is unbounded and every successfully reconstructed
+    // circuit is editable. A decomposition past the operation budget still
+    // declines honestly rather than opening a misleading partial canvas.
     // The stored interchange first, then the OpenQASM 3 draft the picker just
     // derived. An artifact whose export never ran has no stored qasm at all, and
     // for those the derived draft is the only interchange there is — without it
@@ -296,15 +286,14 @@ export function StudioWorkspace({ artifactId, newDraft = false, locale = "en", l
     // wasted work once the primary path succeeds.
     const fallback = interchange?.kind === "ok" || !hasOwnCode
       ? null
-      : candidates.map((candidate) => parseCircuitSource(candidate.code, candidate.framework, MAX_VIEWABLE_QUBITS)).find(Boolean) ?? null;
+      : candidates.map((candidate) => parseCircuitSource(candidate.code, candidate.framework)).find(Boolean) ?? null;
     const reconstructed = interchange?.kind === "ok"
       ? interchange.circuit
       : fallback && fallback.steps.length <= MAX_VIEWABLE_STEPS
         ? fallback
         : null;
     if (reconstructed) {
-      const note = reconstructed.qubitCount > MAX_BUILDER_QUBITS ? copy.circuitViewerReadonly : copy.circuitRestored;
-      return { seed: { key, artifactIdentity, qubitCount: reconstructed.qubitCount, steps: reconstructed.steps, customGates: [] }, note };
+      return { seed: { key, artifactIdentity, qubitCount: reconstructed.qubitCount, steps: reconstructed.steps, customGates: [] }, note: copy.circuitRestored };
     }
     const tooLargeToDraw = interchange?.kind === "too_large" || (fallback !== null && fallback.steps.length > MAX_VIEWABLE_STEPS);
     return { seed: { key, ...EMPTY_SEED, artifactIdentity }, note: hasOwnCode ? (tooLargeToDraw ? copy.circuitTooLargeToDraw : copy.circuitNotRebuildable) : null };
@@ -906,12 +895,6 @@ function CircuitBuilder({ seed, framework, selectedGate, onSelectGate, onApply, 
   const [builderMessage, setBuilderMessage] = useState<string | null>(null);
   const [applyConfirmPending, setApplyConfirmPending] = useState(false);
 
-  // A circuit wider than the six-wire editable grid opens as a read-only
-  // diagram: the drag-and-drop builder, its palette, and its edit controls all
-  // assume ≤6 wires, so for a reconstructed 10- or 20-qubit circuit we show the
-  // diagram (so it renders at all) but hide every affordance that would edit it.
-  const readOnly = qubitCount > MAX_BUILDER_QUBITS;
-
   // A pending confirmation describes one specific pair of a diagram and a
   // source. If either side moves — the code is edited again, the canvas is
   // changed, or the two come back into agreement — the armed button would be
@@ -959,7 +942,10 @@ function CircuitBuilder({ seed, framework, selectedGate, onSelectGate, onApply, 
   }
 
   function changeQubitCount(delta: number) {
-    const next = Math.min(6, Math.max(1, qubitCount + delta));
+    // Bounded by what can be drawn, not by the editor's old six-wire grid:
+    // without a ceiling here, holding "Add qubit" walks the canvas straight past
+    // any width a browser will lay out.
+    const next = Math.min(MAX_VIEWABLE_QUBITS, Math.max(1, qubitCount + delta));
     if (next === qubitCount) return;
     setQubitCount(next);
     setPendingQubits((current) => current.filter((qubit) => qubit < next));
@@ -1062,13 +1048,6 @@ function CircuitBuilder({ seed, framework, selectedGate, onSelectGate, onApply, 
       hidden={hidden}
       region={region}
     >
-      {readOnly ? (
-        <div className="mj-circuit-sync mj-circuit-sync--readonly" role="status">
-          <span>{copy.readonlyDiagram(qubitCount)}</span>
-        </div>
-      ) : null}
-
-      {readOnly ? null : (
       <div className="mj-builder-palette" role="toolbar" aria-label={copy.palette}>
         {BUILDER_GATES.map((gate) => (
           <button key={gate} type="button" className={`mj-builder-gate${armed === gate ? " is-active" : ""}`} aria-pressed={armed === gate} onClick={() => { onSelectGate(gate); setPendingQubits([]); setBuilderMessage(null); }}>
@@ -1084,9 +1063,8 @@ function CircuitBuilder({ seed, framework, selectedGate, onSelectGate, onApply, 
           </label>
         ) : null}
       </div>
-      )}
 
-      {!readOnly && customGates.length ? (
+      {customGates.length ? (
         <div className="mj-builder-custom-gates" aria-label={copy.customGates}>
           <span className="mj-section-label">{copy.customGates}</span>
           {customGates.map((gate) => {
@@ -1103,7 +1081,7 @@ function CircuitBuilder({ seed, framework, selectedGate, onSelectGate, onApply, 
         </div>
       ) : null}
 
-      {readOnly || syncState.kind === "in_sync" ? null : (
+      {syncState.kind === "in_sync" ? null : (
         <div className={`mj-circuit-sync mj-circuit-sync--${syncState.kind}`} role="status">
           <span>{syncState.kind === "diverged" ? copy.canvasOutOfDate : copy.canvasBeyondBuilder}</span>
           {syncState.kind === "diverged" ? (
@@ -1117,7 +1095,7 @@ function CircuitBuilder({ seed, framework, selectedGate, onSelectGate, onApply, 
         steps={steps}
         customGates={customGates}
         ariaLabel={copy.circuitAria(frameworkLabel(framework))}
-        interaction={readOnly ? undefined : {
+        interaction={{
           selectedStepIds,
           pendingQubits,
           selectedLabel,
@@ -1127,9 +1105,8 @@ function CircuitBuilder({ seed, framework, selectedGate, onSelectGate, onApply, 
         }}
       />
 
-      {readOnly ? null : (
       <div className="mj-builder-controls">
-        <button className="mj-secondary-button" type="button" onClick={() => changeQubitCount(1)} disabled={qubitCount >= 6}>{copy.addQubit}</button>
+        <button className="mj-secondary-button" type="button" onClick={() => changeQubitCount(1)} disabled={qubitCount >= MAX_VIEWABLE_QUBITS}>{copy.addQubit}</button>
         <button className="mj-secondary-button" type="button" onClick={() => changeQubitCount(-1)} disabled={qubitCount <= 1}>{copy.removeQubit}</button>
         <button className="mj-secondary-button" type="button" onClick={() => { const removed = steps[steps.length - 1]; setSteps((current) => current.slice(0, -1)); if (removed) setSelectedStepIds((current) => current.filter((id) => id !== removed.id)); setPendingQubits([]); }} disabled={!steps.length}>{copy.undo}</button>
         <button className="mj-secondary-button" type="button" onClick={() => { setSteps([]); setSelectedStepIds([]); setPendingQubits([]); setBuilderMessage(null); }} disabled={!steps.length}>{copy.clearAll}</button>
@@ -1161,9 +1138,8 @@ function CircuitBuilder({ seed, framework, selectedGate, onSelectGate, onApply, 
           <button className="mj-secondary-button" type="button" onClick={() => { setApplyConfirmPending(false); setBuilderMessage(null); }}>{copy.cancel}</button>
         ) : null}
       </div>
-      )}
 
-      {!readOnly && showCustomGateForm ? (
+      {showCustomGateForm ? (
         <form className="mj-builder-custom-form" onSubmit={(event) => { event.preventDefault(); createCustomGate(); }}>
           <label>
             <span>{copy.customGates}</span>
@@ -1177,16 +1153,14 @@ function CircuitBuilder({ seed, framework, selectedGate, onSelectGate, onApply, 
       {/* The gate's description was the inspector's headline card, one panel
           away from the palette it described. Folded away by default because it
           is reference material, not state. */}
-      {readOnly ? null : (
-        <details className="mj-sim-details mj-studio-gate-note">
-          <summary>{copy.selectedGate}: {selectedGate.startsWith("custom:") ? copy.customGateLabel : selectedGate}</summary>
-          <p>{selectedGate.startsWith("custom:") ? copy.customGateInspector : copy.gateDescriptions[selectedGate] ?? copy.gateDescriptions.H}</p>
-        </details>
-      )}
+      <details className="mj-sim-details mj-studio-gate-note">
+        <summary>{copy.selectedGate}: {selectedGate.startsWith("custom:") ? copy.customGateLabel : selectedGate}</summary>
+        <p>{selectedGate.startsWith("custom:") ? copy.customGateInspector : copy.gateDescriptions[selectedGate] ?? copy.gateDescriptions.H}</p>
+      </details>
 
       <div className="mj-studio-canvas-footer" aria-live="polite">
-        <span>{readOnly ? copy.readonlyDiagramHint : (builderMessage ?? (pendingQubits.length ? copy.pickTarget : selectedStepIds.length ? copy.selectedCount(selectedStepIds.length) : steps.length ? copy.builderHint : copy.builderEmpty))}</span>
-        <span className="mj-mono-muted">{steps.length ? steps.map((step) => builderStepLabel(step, customGates)).join(" → ") : "—"}</span>
+        <span>{builderMessage ?? (pendingQubits.length ? copy.pickTarget : selectedStepIds.length ? copy.selectedCount(selectedStepIds.length) : steps.length ? copy.builderHint : copy.builderEmpty)}</span>
+        <span className="mj-mono-muted">{steps.length ? (steps.length <= 40 ? steps.map((step) => builderStepLabel(step, customGates)).join(" → ") : `${steps.slice(0, 20).map((step) => builderStepLabel(step, customGates)).join(" → ")} → … (${steps.length} ops)`) : "—"}</span>
       </div>
     </StudioPanelSurface>
   );

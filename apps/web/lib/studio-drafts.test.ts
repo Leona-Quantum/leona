@@ -99,7 +99,7 @@ test("a source fallback reports the framework the code is really written in", ()
   assert.equal(draftSourceFramework(converted, "pennylane"), "pennylane");
 });
 
-test("a circuit wider than the canvas still converts — drawing and translating are different limits", () => {
+test("a circuit beyond the former editor limit still converts", () => {
   const wide = [
     "from qiskit import QuantumCircuit",
     "",

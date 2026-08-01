@@ -381,9 +381,6 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
     circuitNotRebuildable: string;
     sourceFallbackNote: (target: string, source: string) => string;
     circuitTooLargeToDraw: string;
-    circuitViewerReadonly: string;
-    readonlyDiagram: (qubits: number) => string;
-    readonlyDiagramHint: string;
     canvasOutOfDate: string;
     canvasBeyondBuilder: string;
     rebuildFromCode: string;
@@ -820,9 +817,6 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
       circuitNotRebuildable: "This artifact's code goes beyond the visual builder — edit it in the Code tab.",
       sourceFallbackNote: (target, source) => `No safe ${target} conversion exists for this circuit, so this tab shows the stored ${source} source — it is a source reference, not ${target} code. Exports and runs from this tab use ${source}.`,
       circuitTooLargeToDraw: "This circuit is too large to draw as a diagram — its qubit or gate count would render an unreadable canvas. The Code tab holds the full source to read and run.",
-      circuitViewerReadonly: "This circuit is wider than the editable builder, so it opens as a read-only diagram. Edit the circuit in the Code tab.",
-      readonlyDiagram: (qubits: number) => `Read-only diagram · ${qubits} qubits. Wider than the drag-and-drop builder (max 6) — reconstructed from the saved circuit so you can see it. The Code tab holds the source to edit and run.`,
-      readonlyDiagramHint: "Read-only view — reconstructed from the saved circuit. Edit the source in the Code tab.",
       canvasOutOfDate: "The Code tab has changed since this diagram was drawn, so the diagram no longer shows what will run.",
       canvasBeyondBuilder: "The code in the Code tab is outside what this editor can draw, so the diagram below is not a picture of it. The code is what runs.",
       rebuildFromCode: "Rebuild from code",
@@ -1253,9 +1247,6 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
       circuitNotRebuildable: "この回路のコードは回路エディタの対応範囲を超えています。コードタブで編集してください。",
       sourceFallbackNote: (target, source) => `この回路を${target}へ安全に変換できないため、保存済みの${source}ソースを表示しています。変換後のコードではありません。書き出しと実行には${source}を使用します。`,
       circuitTooLargeToDraw: "この回路は図として描画するには大きすぎます — 量子ビット数またはゲート数が多く、キャンバスが判読不能になります。全ソースはコードタブで確認・実行できます。",
-      circuitViewerReadonly: "この回路は編集可能なビルダーより幅が広いため、読み取り専用の図として開きます。回路の編集はコードタブで行ってください。",
-      readonlyDiagram: (qubits: number) => `読み取り専用の回路図 · ${qubits}量子ビット。ドラッグ＆ドロップの回路エディタ（最大6量子ビット）より広いため、保存された回路から再構成して表示しています。編集・実行するソースはコードタブにあります。`,
-      readonlyDiagramHint: "読み取り専用の表示 — 保存された回路から再構成しています。ソースの編集はコードタブで行ってください。",
       canvasOutOfDate: "この図を描いたあとにコードタブが変更されました。図は実行される内容と一致していません。",
       canvasBeyondBuilder: "コードタブのコードはこのエディタで描ける範囲を超えているため、下の図はその内容を表していません。実行されるのはコードです。",
       rebuildFromCode: "コードから再構築",
