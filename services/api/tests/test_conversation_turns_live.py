@@ -73,9 +73,7 @@ async def test_the_cap_keeps_the_newest_turns_not_the_oldest(scope, factory):
     conversation_id, created = await _conversation(scope, factory, turns=6)
 
     async with factory() as session:
-        rows = await runs_repo.list_conversation_runs(
-            scope, session, conversation_id, limit=4
-        )
+        rows = await runs_repo.list_conversation_runs(scope, session, conversation_id, limit=4)
 
     assert [row.id for row in rows] == created[-4:], (
         "the cap must fall on the oldest turns; keeping the first N leaves the "
@@ -106,9 +104,7 @@ async def test_a_second_workspace_reads_none_of_it(scope, factory):
             email=f"turns-other-{tag}@conversation.test",
         )
         await session.commit()
-    other = Scope(
-        user_id=other_owner.id, workspace_id=other_workspace.id, role=Role.OWNER
-    )
+    other = Scope(user_id=other_owner.id, workspace_id=other_workspace.id, role=Role.OWNER)
 
     async with factory() as session:
         rows = await runs_repo.list_conversation_runs(other, session, conversation_id)
