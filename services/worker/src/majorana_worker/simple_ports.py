@@ -50,6 +50,7 @@ from majorana_contracts.enums import (
 from majorana_contracts.plan import PauliTerm, Plan, VerificationPlan
 from majorana_verification import verify_brute_force, verify_exact_diag
 from majorana_frameworks import FrameworkProgram
+from majorana_frameworks.roles import ProgramRole, result_was_derived
 from majorana_llm import (
     LLMClient,
     LLMProviderError,
@@ -522,6 +523,8 @@ def measured_result_summary(result: dict[str, Any]) -> dict[str, Any] | None:
 def simple_pipeline_verification_summary(
     reference_methods: Sequence[VerificationMethod] = (),
     semantic_review_decision: SemanticReviewDecision = SemanticReviewDecision.READY,
+    *,
+    result_derived: bool = False,
 ) -> dict[str, object]:
     """Return the single typed trust projection for a successful simple run.
 
@@ -542,15 +545,31 @@ def simple_pipeline_verification_summary(
             "result": VerificationResultKind.PASS,
         },
         {
-            "method": VerificationMethod.RETURN_CONTRACT,
-            "result": VerificationResultKind.PASS,
-        },
-        {
             "method": VerificationMethod.SUCCESS_CRITERIA,
             "result": VerificationResultKind.PASS,
         },
     ]
     unverified = ["physical fidelity", "optimality"]
+    if result_derived:
+        # RETURN_CONTRACT is "the program reported what it said it would". A
+        # CIRCUIT reported nothing — the platform sampled it and made that the
+        # result — so claiming the check PASSED would be a false statement about
+        # source that never made a claim at all. It is DROPPED rather than marked
+        # failed: nothing went wrong, there was simply no return to contract with.
+        #
+        # The claim withdrawn beside it is the one that matters most. A derived
+        # result comes from the same trusted evidence any later check would
+        # compare it against, so agreement between them is `f(x) == f(x)` — a
+        # comparison that cannot fail, which is worse than no comparison.
+        unverified.insert(0, "reported output (the result was derived, not returned)")
+    else:
+        checks.insert(
+            1,
+            {
+                "method": VerificationMethod.RETURN_CONTRACT,
+                "result": VerificationResultKind.PASS,
+            },
+        )
     if not reference_methods:
         unverified.insert(0, "quantum correctness")
     else:
@@ -729,7 +748,19 @@ class RepoReviewArtifactSaver:
                 "residual_risks": residual_risks,
             },
             "verification_summary": simple_pipeline_verification_summary(
-                reference_methods, review.decision
+                reference_methods,
+                review.decision,
+                result_derived=result_was_derived(execution.observation),
+            ),
+            # What the run produced, and — when the source was a circuit — WHERE
+            # it came from. A reader looking at counts on a saved artifact cannot
+            # otherwise tell a program's own finding from a sample the platform
+            # took of a circuit that reported nothing, and those are different
+            # claims about the same numbers.
+            "result_origin": (
+                "derived_from_circuit"
+                if result_was_derived(execution.observation)
+                else "returned_by_program"
             ),
             "measured_result": measured_result_summary(execution.result),
             "export_manifest": {
@@ -1605,13 +1636,31 @@ class ProductionSimplePipelinePorts:
         candidate: CandidateRevision,
         execution: ExecutionEvidence,
     ) -> SimplePortResult[BasicContractResult]:
-        diagnostics = FrameworkProgram(candidate.framework, candidate.source).contract_diagnostics(
+        program = FrameworkProgram(candidate.framework, candidate.source)
+        diagnostics = program.contract_diagnostics(
             circuit_expected=self._circuit_expected(plan.plan)
         )
-        missing_keys = [
-            key for key in plan.plan.expected_output_keys if key not in execution.result
-        ]
-        diagnostics.extend(f"RESULT missing key {key!r}" for key in missing_keys)
+        if program.role is ProgramRole.CIRCUIT:
+            # `expected_output_keys` describes what a PROGRAM would report, and
+            # this source is a circuit: it reports what it measured, under the
+            # names the trusted sampler uses. Checking the plan's keys against a
+            # derived result is checking a circuit for not being a script — the
+            # failure that sent published circuits to a model to be rewritten.
+            #
+            # What IS checked is that the derivation produced something. A circuit
+            # with no trusted evidence has no result at all, and that is a real
+            # contract failure with a real reason attached.
+            if not result_was_derived(execution.observation):
+                reason = execution.observation.get("result_derivation_error")
+                diagnostics.append(
+                    "the circuit produced no result to report"
+                    + (f": {reason}" if reason else "")
+                )
+        else:
+            missing_keys = [
+                key for key in plan.plan.expected_output_keys if key not in execution.result
+            ]
+            diagnostics.extend(f"RESULT missing key {key!r}" for key in missing_keys)
         if self._circuit_expected(plan.plan):
             metrics = execution.observation.get("resource_metrics")
             if execution.observation.get("resource_metrics_error"):
