@@ -74,6 +74,8 @@ from .agent_llm import MeteredAgentLLM
 from .agent_store import RepoAgentStore
 from .context import RunContext
 from .intent import resolve_mode
+from majorana_frameworks.roles import result_was_derived
+
 from .runtime_ports import SandboxCandidateExecutor, TrustedOpenQASMConverter
 from .simple_events import SimpleEventObserver
 from .simple_ports import (
@@ -798,7 +800,15 @@ async def _finish_simple_pipeline(
             "\n".join(str(item)[:1000] for item in risks[:20]) if isinstance(risks, list) else None
         )
         reference_methods = passed_reference_methods(review)
-        summary = simple_pipeline_verification_summary(reference_methods, review.decision)
+        # The run's summary and the artifact's are two writers of one claim. A
+        # flag passed to one and not the other is how a run says the program
+        # returned its result while the artifact saved from that same execution
+        # says the platform derived it.
+        summary = simple_pipeline_verification_summary(
+            reference_methods,
+            review.decision,
+            result_derived=result_was_derived(execution.observation),
+        )
         final = await run_store.finish(
             RunStatus.SUCCEEDED,
             {

@@ -133,3 +133,29 @@ test("only the capability refusal is read as one", () => {
   assert.equal(restoreRefusalLosses(null), null);
   assert.equal(restoreRefusalLosses("gateway timeout"), null);
 });
+
+test("a version says whether its code is a circuit or a program", () => {
+  const row = { id: "v1", seq: 1, is_current: true };
+  assert.equal(
+    versionPageFromResource({ versions: [{ ...row, program_role: "circuit" }] }).versions[0]
+      .programRole,
+    "circuit",
+  );
+  assert.equal(
+    versionPageFromResource({ versions: [{ ...row, program_role: "program" }] }).versions[0]
+      .programRole,
+    "program",
+  );
+});
+
+test("an absent or unrecognised role falls back to unknown, never to program", () => {
+  // "unknown" is a real answer the server sends for source that binds neither
+  // name, so absent and unrecognised both land on it. Defaulting to "program"
+  // would label a circuit as a script — the mistake that got a published circuit
+  // executed as one.
+  const row = { id: "v1", seq: 1, is_current: true };
+  for (const value of [undefined, null, "", "script", 7, {}]) {
+    const parsed = versionPageFromResource({ versions: [{ ...row, program_role: value }] });
+    assert.equal(parsed.versions[0].programRole, "unknown");
+  }
+});

@@ -8,7 +8,13 @@ function upstreamUrl(projectId: string) {
   return controlPlaneUrl(`/v1/workspace/projects/${encodeURIComponent(projectId)}`);
 }
 
-/** Rename. The body is `{ name }` — the same shape create takes. */
+/**
+ * Rename, change the share contribution limit, or both.
+ *
+ * The body is forwarded verbatim — `{ name }`, `{ max_artifacts }`, or both — so
+ * this proxy needed no change when the second field arrived and needs none when a
+ * third does. The control plane owns which combinations are legal.
+ */
 export async function PATCH(request: Request, context: { params: Promise<{ projectId: string }> }) {
   const { projectId } = await context.params;
   const { accessToken } = await getMajoranaAuth({ ensureSignedIn: true });

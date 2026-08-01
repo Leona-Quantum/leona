@@ -4,6 +4,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ShareRefused,
   ShareVersionConflict,
+  canContribute,
+  contributeSharedArtifact,
   copySharedArtifact,
   hasMoved,
   loadSharedProject,
@@ -56,6 +58,10 @@ export function SharedProjectView({
   const [conflict, setConflict] = useState<ShareVersionConflict | null>(null);
   const [busy, setBusy] = useState(false);
   const [copying, setCopying] = useState<string | null>(null);
+  const [adding, setAdding] = useState(false);
+  const [newTitle, setNewTitle] = useState("");
+  const [newCode, setNewCode] = useState("");
+  const [submitting, setSubmitting] = useState(false);
   // What the page was rendered from. Compared against the polled revision, and
   // held in a ref so the poller does not re-subscribe on every change.
   const seenRevision = useRef<string | null>(null);
@@ -188,6 +194,35 @@ export function SharedProjectView({
     }
   }
 
+  async function addCircuit() {
+    if (submitting || !project) return;
+    setSubmitting(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const title = newTitle.trim();
+      await contributeSharedArtifact(projectId, {
+        title,
+        code: newCode,
+        // The project's own framework is not a thing — an artifact carries one
+        // and a project holds many. Python/Qiskit is the default everywhere else
+        // a circuit is created here, so it is the default that surprises least.
+        framework: "qiskit",
+      });
+      setNotice(copy.added(title));
+      setAdding(false);
+      setNewTitle("");
+      setNewCode("");
+      // Re-read rather than push the new row onto `circuits`: the header's count
+      // and limit have both moved, and the Add button is derived from them.
+      await load();
+    } catch (caught) {
+      setError(caught instanceof ShareRefused ? caught.message : copy.addFailed);
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
   async function copyHere(circuit: SharedCircuit) {
     setCopying(circuit.id);
     setError(null);
@@ -226,10 +261,16 @@ export function SharedProjectView({
             ? ` · ${copy.sharedBy(project.sharedByDisplayName || project.sharedByEmail)}`
             : ""}
           {` · ${copy.circuits(project.artifactCount)}`}
+          {project.role === "editor" && project.artifactLimit > 0
+            ? ` · ${copy.roomLeft(project.artifactCount, project.artifactLimit)}`
+            : ""}
         </p>
         <p className="mj-shared-project-role">
           {project.role === "editor" ? copy.canEditTag : copy.readOnlyTag}
         </p>
+        {project.role === "editor" && !canContribute(project) && project.artifactLimit > 0 ? (
+          <p className="mj-share-empty">{copy.projectFull}</p>
+        ) : null}
       </header>
 
       {changed ? (
@@ -243,6 +284,50 @@ export function SharedProjectView({
 
       {error ? <p className="mj-share-error">{error}</p> : null}
       {notice ? <p className="mj-share-notice">{notice}</p> : null}
+
+      {canContribute(project) ? (
+        adding ? (
+          <div className="mj-shared-circuit-editor">
+            <label htmlFor="mj-new-circuit-title">{copy.addCircuitTitleLabel}</label>
+            <input
+              id="mj-new-circuit-title"
+              value={newTitle}
+              placeholder={copy.addCircuitTitlePlaceholder}
+              onChange={(event) => setNewTitle(event.target.value)}
+            />
+            <label htmlFor="mj-new-circuit-code">{copy.addCircuitCodeLabel}</label>
+            <textarea
+              id="mj-new-circuit-code"
+              value={newCode}
+              spellCheck={false}
+              rows={12}
+              onChange={(event) => setNewCode(event.target.value)}
+            />
+            <div className="mj-shared-circuit-actions">
+              <button
+                type="button"
+                className="mj-primary-button"
+                disabled={submitting || !newTitle.trim() || !newCode.trim()}
+                onClick={() => void addCircuit()}
+              >
+                {submitting ? copy.addCircuitSubmitting : copy.addCircuitSubmit}
+              </button>
+              <button
+                type="button"
+                className="mj-secondary-button"
+                disabled={submitting}
+                onClick={() => setAdding(false)}
+              >
+                {copy.addCircuitCancel}
+              </button>
+            </div>
+          </div>
+        ) : (
+          <button type="button" className="mj-secondary-button" onClick={() => setAdding(true)}>
+            {copy.addCircuit}
+          </button>
+        )
+      ) : null}
 
       {circuits.length === 0 ? (
         <p className="mj-share-empty">{copy.noCircuits}</p>

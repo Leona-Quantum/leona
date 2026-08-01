@@ -907,6 +907,8 @@ export interface components {
              * Format: uuid
              */
             id: string;
+            /** Max Artifacts */
+            max_artifacts: number;
             /** Name */
             name: string;
             /**
@@ -1929,6 +1931,8 @@ export interface components {
         SharedProject: {
             /** Artifact Count */
             artifact_count: number;
+            /** Artifact Limit */
+            artifact_limit: number;
             /**
              * Expires At
              * @default null

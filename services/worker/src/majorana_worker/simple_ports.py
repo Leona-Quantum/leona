@@ -50,6 +50,7 @@ from majorana_contracts.enums import (
 from majorana_contracts.plan import PauliTerm, Plan, VerificationPlan
 from majorana_verification import verify_brute_force, verify_exact_diag
 from majorana_frameworks import FrameworkProgram
+from majorana_frameworks.roles import ProgramRole, result_was_derived
 from majorana_llm import (
     LLMClient,
     LLMProviderError,
@@ -519,9 +520,39 @@ def measured_result_summary(result: dict[str, Any]) -> dict[str, Any] | None:
     return summary or None
 
 
+def _return_contract_check(result: dict[str, Any], observation: dict[str, Any]) -> dict[str, Any]:
+    """Did the SOURCE return what it said it would?
+
+    The third writer of a claim whose other two were already fixed, and it was
+    missed. This list is persisted in `feedback["basic_checks"]` and is sent to
+    the reviewer model, so a derived result made one run tell the reviewer the
+    return contract passed while telling the artifact there was no return to
+    contract with.
+
+    `n/a`, not `fail`: nothing went wrong. A circuit reported nothing because a
+    circuit reports nothing.
+    """
+    if result_was_derived(observation):
+        return {
+            "method": "return_contract",
+            "result": "n/a",
+            "details": {
+                "result_origin": "derived_from_circuit",
+                "result_keys": sorted(result),
+            },
+        }
+    return {
+        "method": "return_contract",
+        "result": "pass",
+        "details": {"result_keys": sorted(result)},
+    }
+
+
 def simple_pipeline_verification_summary(
     reference_methods: Sequence[VerificationMethod] = (),
     semantic_review_decision: SemanticReviewDecision = SemanticReviewDecision.READY,
+    *,
+    result_derived: bool = False,
 ) -> dict[str, object]:
     """Return the single typed trust projection for a successful simple run.
 
@@ -542,15 +573,31 @@ def simple_pipeline_verification_summary(
             "result": VerificationResultKind.PASS,
         },
         {
-            "method": VerificationMethod.RETURN_CONTRACT,
-            "result": VerificationResultKind.PASS,
-        },
-        {
             "method": VerificationMethod.SUCCESS_CRITERIA,
             "result": VerificationResultKind.PASS,
         },
     ]
     unverified = ["physical fidelity", "optimality"]
+    if result_derived:
+        # RETURN_CONTRACT is "the program reported what it said it would". A
+        # CIRCUIT reported nothing — the platform sampled it and made that the
+        # result — so claiming the check PASSED would be a false statement about
+        # source that never made a claim at all. It is DROPPED rather than marked
+        # failed: nothing went wrong, there was simply no return to contract with.
+        #
+        # The claim withdrawn beside it is the one that matters most. A derived
+        # result comes from the same trusted evidence any later check would
+        # compare it against, so agreement between them is `f(x) == f(x)` — a
+        # comparison that cannot fail, which is worse than no comparison.
+        unverified.insert(0, "reported output (the result was derived, not returned)")
+    else:
+        checks.insert(
+            1,
+            {
+                "method": VerificationMethod.RETURN_CONTRACT,
+                "result": VerificationResultKind.PASS,
+            },
+        )
     if not reference_methods:
         unverified.insert(0, "quantum correctness")
     else:
@@ -729,7 +776,19 @@ class RepoReviewArtifactSaver:
                 "residual_risks": residual_risks,
             },
             "verification_summary": simple_pipeline_verification_summary(
-                reference_methods, review.decision
+                reference_methods,
+                review.decision,
+                result_derived=result_was_derived(execution.observation),
+            ),
+            # What the run produced, and — when the source was a circuit — WHERE
+            # it came from. A reader looking at counts on a saved artifact cannot
+            # otherwise tell a program's own finding from a sample the platform
+            # took of a circuit that reported nothing, and those are different
+            # claims about the same numbers.
+            "result_origin": (
+                "derived_from_circuit"
+                if result_was_derived(execution.observation)
+                else "returned_by_program"
             ),
             "measured_result": measured_result_summary(execution.result),
             "export_manifest": {
@@ -1605,13 +1664,53 @@ class ProductionSimplePipelinePorts:
         candidate: CandidateRevision,
         execution: ExecutionEvidence,
     ) -> SimplePortResult[BasicContractResult]:
-        diagnostics = FrameworkProgram(candidate.framework, candidate.source).contract_diagnostics(
+        program = FrameworkProgram(candidate.framework, candidate.source)
+        diagnostics = program.contract_diagnostics(
             circuit_expected=self._circuit_expected(plan.plan)
         )
-        missing_keys = [
-            key for key in plan.plan.expected_output_keys if key not in execution.result
-        ]
-        diagnostics.extend(f"RESULT missing key {key!r}" for key in missing_keys)
+        if program.role is ProgramRole.CIRCUIT:
+            # Two questions a reader will reasonably ask about this branch, both
+            # checked rather than assumed:
+            #
+            # 1. **Is skipping the plan's keys too permissive?** It would be, if a
+            #    supplied source were a starting point the agent may rewrite. It is
+            #    not: `intent.resolve_mode` short-circuits on `has_source_code`
+            #    with "Studio ran this … there is no intent left to infer". Running
+            #    the user's circuit rather than a model's replacement for it is the
+            #    decision this product already made.
+            # 2. **What happens downstream when the derived keys do not match
+            #    `success_criteria.primary_metric`?** Every consumer reads it with
+            #    `execution.result.get(metric)` and handles None, so the metric is
+            #    recorded as observed=None and any plan-declared reference check
+            #    FAILS rather than passing. `passed_reference_methods` then yields
+            #    nothing and the evidence grade stays STRUCTURAL. The mismatch
+            #    degrades honestly; it does not crash and it does not inflate.
+            #
+            # `expected_output_keys` describes what a PROGRAM would report, and
+            # this source is a circuit: it reports what it measured, under the
+            # names the trusted sampler uses. Checking the plan's keys against a
+            # derived result is checking a circuit for not being a script — the
+            # failure that sent published circuits to a model to be rewritten.
+            #
+            # What IS checked is that the derivation produced something. A circuit
+            # with no trusted evidence has no result at all, and that is a real
+            # contract failure with a real reason attached.
+            # `execution.result` as well, not `result_was_derived` alone. A
+            # misclassified PROGRAM binds RESULT through a form the classifier
+            # missed, derives nothing (its own result was already there), and
+            # would otherwise be told "the circuit produced no result" about a
+            # result sitting in front of it. Classification can never be perfect,
+            # so what is checked is whether a result EXISTS.
+            if not execution.result and not result_was_derived(execution.observation):
+                reason = execution.observation.get("result_derivation_error")
+                diagnostics.append(
+                    "the circuit produced no result to report" + (f": {reason}" if reason else "")
+                )
+        else:
+            missing_keys = [
+                key for key in plan.plan.expected_output_keys if key not in execution.result
+            ]
+            diagnostics.extend(f"RESULT missing key {key!r}" for key in missing_keys)
         if self._circuit_expected(plan.plan):
             metrics = execution.observation.get("resource_metrics")
             if execution.observation.get("resource_metrics_error"):
@@ -1641,6 +1740,24 @@ class ProductionSimplePipelinePorts:
                     if not diagnostics
                     else "generated source did not satisfy the basic execution contract"
                 ),
+                # RESIDUAL, written down rather than silently left. A
+                # user-supplied circuit that produced NO trusted evidence —
+                # unmeasured AND past the statevector ceiling, or an SDK that
+                # would not import — still routes here, and the repair loop still
+                # hands it to a model. That is unchanged from before this feature
+                # rather than a regression, and it is the narrow case: any
+                # measured circuit, and any circuit within the statevector limit,
+                # now derives a result and passes.
+                #
+                # It is not closed here because there is nowhere correct to route
+                # it. `BasicContractResult` requires a failure to name PLANNING or
+                # GENERATION, and PLANNING does not preserve the user's source
+                # either: `candidate` is not reset across a replan, so the next
+                # `generate` sees a previous candidate and takes the model branch
+                # instead of `_initial_source`. Closing it means relaxing that
+                # invariant or resetting the candidate on replan — both changes to
+                # the shared pipeline contract, and neither belongs in a change
+                # that has already grown this far.
                 retry_target=(
                     SimpleRetryTarget.NONE if not diagnostics else SimpleRetryTarget.GENERATION
                 ),
@@ -1689,11 +1806,7 @@ class ProductionSimplePipelinePorts:
                 "result": "pass",
                 "details": {"source_fingerprint": candidate.source_fingerprint},
             },
-            {
-                "method": "return_contract",
-                "result": "pass",
-                "details": {"result_keys": sorted(execution.result)},
-            },
+            _return_contract_check(execution.result, execution.observation),
             _success_criteria_check(plan.plan, execution),
         ]
         reference_checks = _reference_checks(plan.plan, execution)

@@ -102,7 +102,10 @@ async def test_simple_terminal_success_records_typed_advisory_outcome():
         candidate_id=candidate_id,
         source_fingerprint="a" * 64,
     )
-    execution = SimpleNamespace()
+    # `ExecutionEvidence.observation` is a required field with a default factory,
+    # so it is never absent on the real type. A double thinner than the thing it
+    # stands in for fails on the first caller that reads a real field.
+    execution = SimpleNamespace(observation={})
     review = SimpleNamespace(
         decision=SemanticReviewDecision.READY,
         feedback={"critic": {"residual_risks": ["AI review is advisory"]}},

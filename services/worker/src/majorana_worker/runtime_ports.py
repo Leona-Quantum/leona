@@ -17,6 +17,7 @@ from majorana_agent import (
 from majorana_contracts.enums import ArtifactType
 from majorana_contracts.plan import Plan
 from majorana_frameworks import FrameworkProgram, extract_interchange_qasm
+from majorana_frameworks.roles import ProgramRole
 from majorana_openqasm import OpenQASMError, normalize
 from majorana_sandbox import ExecutionSpec, GuardRejection, Sandbox
 from majorana_sandbox import run as sandbox_run
@@ -47,17 +48,32 @@ class SandboxCandidateExecutor:
                 observation={"contract_diagnostics": diagnostics},
             )
 
+        # A CIRCUIT reports nothing, so the trusted evidence is the only thing that
+        # can become its result. Native collection is off by default here for
+        # budget reasons (58118a1, "bounded budgets") and stays off for programs —
+        # but for a circuit the alternative is not "cheaper", it is a `RESULT
+        # missing key` failure whose retry target is GENERATION: one seeded
+        # 2048-shot sample of a circuit already capped at 27 qubits, against a
+        # model call plus a full re-execution, repeated until the budget runs out.
+        # Enabling it exactly here spends less, not more.
+        lower_circuit = circuit_expected and program.role is ProgramRole.CIRCUIT
         spec = ExecutionSpec(
             code=program.normalized_source,
-            timeout_s=min(plan.expected_runtime_sec + 30, 120),
+            # A lowered circuit does strictly more work than it used to: the
+            # native sampler runs 2048 shots on top of the circuit's own
+            # execution. Without headroom a slow-but-passing circuit can cross the
+            # deadline and come back TIMEOUT, which is a worse answer than the
+            # contract failure it replaced. Still bounded by MAX_TIMEOUT_S.
+            timeout_s=min(plan.expected_runtime_sec + (60 if lower_circuit else 30), 120),
             qubits_estimate=plan.qubits_estimate,
             trusted_setup=program.trusted_setup(
                 circuit_expected=circuit_expected,
-                collect_native_evidence=False,
+                collect_native_evidence=lower_circuit,
             ),
             trusted_observer=program.trusted_observer(
                 circuit_expected=circuit_expected,
-                collect_native_evidence=False,
+                collect_native_evidence=lower_circuit,
+                derive_result=lower_circuit,
             ),
             protected_result_path=f"/tmp/majorana-result-{uuid4().hex}.json",
             source_fingerprint=candidate.source_fingerprint,

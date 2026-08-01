@@ -39,12 +39,16 @@ export const RESTORE_LOSSES: readonly RestoreLoss[] = [
   "verification",
 ];
 
+/** What a version's code IS, as opposed to who wrote it. */
+export type ProgramRole = "circuit" | "program" | "unknown";
+
 export type ArtifactVersionSummary = {
   id: string;
   seq: number;
   isCurrent: boolean;
   createdAt: string | null;
   origin: VersionOrigin;
+  programRole: ProgramRole;
   verified: boolean;
   hasQasm: boolean;
   exportable: boolean;
@@ -67,10 +71,20 @@ const ORIGINS: readonly VersionOrigin[] = [
   "unknown",
 ];
 
+const PROGRAM_ROLES: readonly ProgramRole[] = ["circuit", "program", "unknown"];
+
 function origin(value: unknown): VersionOrigin {
   // An origin the web does not know about is "unknown", never the nearest
   // match: the label sits next to a restore button.
   return ORIGINS.includes(value as VersionOrigin) ? (value as VersionOrigin) : "unknown";
+}
+
+function programRole(value: unknown): ProgramRole {
+  // Same rule, and it matters more here: "unknown" is a real answer the server
+  // sends for source that binds neither name, so an absent field and an
+  // unrecognised one land on the honest value rather than on "program". Calling
+  // a circuit a program is what made one get executed as a script.
+  return PROGRAM_ROLES.includes(value as ProgramRole) ? (value as ProgramRole) : "unknown";
 }
 
 function losses(value: unknown): RestoreLoss[] {
@@ -88,6 +102,7 @@ function version(raw: unknown): ArtifactVersionSummary | null {
     isCurrent: row.is_current === true,
     createdAt: typeof row.created_at === "string" ? row.created_at : null,
     origin: origin(row.origin),
+    programRole: programRole(row.program_role),
     // Every capability defaults to absent. A field the server did not send is
     // not a capability the version has, and claiming otherwise is how a canvas
     // is asked to render QASM that is not there.

@@ -1961,6 +1961,22 @@ export const PROJECT_SHARE_COPY: Record<PublicLocale, {
   loadFailed: string;
   noCircuits: string;
   backToStudio: string;
+  addCircuit: string;
+  addCircuitTitleLabel: string;
+  addCircuitTitlePlaceholder: string;
+  addCircuitCodeLabel: string;
+  addCircuitSubmit: string;
+  addCircuitSubmitting: string;
+  addCircuitCancel: string;
+  added: (title: string) => string;
+  addFailed: string;
+  roomLeft: (used: number, limit: number) => string;
+  projectFull: string;
+  limitLabel: string;
+  limitHelp: string;
+  limitZeroHelp: string;
+  limitSaved: (limit: number) => string;
+  limitFailed: string;
 }> = {
   en: {
     share: "Share",
@@ -2031,6 +2047,23 @@ export const PROJECT_SHARE_COPY: Record<PublicLocale, {
     loadFailed: "This shared project could not be opened. The share may have been withdrawn.",
     noCircuits: "There are no circuits in this project yet.",
     backToStudio: "Back to Studio",
+    addCircuit: "Add a circuit",
+    addCircuitTitleLabel: "Name",
+    addCircuitTitlePlaceholder: "GHZ state, 4 qubits",
+    addCircuitCodeLabel: "Code",
+    addCircuitSubmit: "Add to this project",
+    addCircuitSubmitting: "Adding…",
+    addCircuitCancel: "Cancel",
+    added: (title) => `“${title}” was added to this project.`,
+    addFailed: "That circuit could not be added.",
+    roomLeft: (used, limit) => `${used} of ${limit} circuits`,
+    projectFull: "This project is full. Its owner can raise the limit or remove a circuit.",
+    limitLabel: "Circuits people you share with may add",
+    limitHelp:
+      "Anything added counts against this workspace's own artifact allowance, so this is the ceiling on what a share can spend.",
+    limitZeroHelp: "Set to 0, so people you share with can edit these circuits but not add any.",
+    limitSaved: (limit) => `Shares may grow this project to ${limit} circuits.`,
+    limitFailed: "That limit could not be saved.",
   },
   ja: {
     share: "共有",
@@ -2096,5 +2129,23 @@ export const PROJECT_SHARE_COPY: Record<PublicLocale, {
     loadFailed: "この共有プロジェクトを開けませんでした。共有が解除された可能性があります。",
     noCircuits: "このプロジェクトにはまだ回路がありません。",
     backToStudio: "Studio に戻る",
+    addCircuit: "回路を追加",
+    addCircuitTitleLabel: "名前",
+    addCircuitTitlePlaceholder: "GHZ状態・4量子ビット",
+    addCircuitCodeLabel: "コード",
+    addCircuitSubmit: "このプロジェクトに追加",
+    addCircuitSubmitting: "追加中…",
+    addCircuitCancel: "キャンセル",
+    added: (title) => `「${title}」をこのプロジェクトに追加しました。`,
+    addFailed: "この回路を追加できませんでした。",
+    roomLeft: (used, limit) => `${limit}件中${used}件の回路`,
+    projectFull:
+      "このプロジェクトは上限に達しています。上限の引き上げまたは回路の削除は所有者のみ行えます。",
+    limitLabel: "共有相手が追加できる回路数",
+    limitHelp:
+      "追加された回路はこのワークスペースのアーティファクト上限を消費します。共有によって使われる量の上限です。",
+    limitZeroHelp: "0 の場合、共有相手は既存の回路を編集できますが、追加はできません。",
+    limitSaved: (limit) => `共有相手はこのプロジェクトを${limit}件まで増やせます。`,
+    limitFailed: "上限を保存できませんでした。",
   },
 };
