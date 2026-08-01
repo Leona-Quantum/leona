@@ -50,6 +50,10 @@ def test_every_plan_candidate_endpoint_is_reachable_over_http():
         ("/vqe/research-candidates", "GET"),
         ("/vqe/research-candidates/{envelope_id}/{candidate_local_id}", "GET"),
         ("/vqe/research-candidates/{envelope_id}/reviews", "POST"),
+        (
+            "/vqe/research-candidates/{envelope_id}/reviews/{review_id}/materialize",
+            "POST",
+        ),
         ("/vqe/experiments", "POST"),
         ("/vqe/controlled-comparisons", "POST"),
         ("/vqe/controlled-comparisons/{comparison_spec_id}", "GET"),

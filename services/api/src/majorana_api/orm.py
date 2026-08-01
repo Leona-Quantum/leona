@@ -809,6 +809,74 @@ class VqeResearchCandidateReviewRequestRow(Base):
     created_at: Mapped[dt.datetime | None] = mapped_column(server_default=func.now())
 
 
+class VqeResearchCandidateMaterializationRow(Base):
+    """Append-only private Artifact materialized from one accepted review."""
+
+    __tablename__ = "vqe_research_candidate_materializations"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["envelope_id", "workspace_id"],
+            [
+                "vqe_research_candidate_envelopes.id",
+                "vqe_research_candidate_envelopes.workspace_id",
+            ],
+        ),
+        ForeignKeyConstraint(
+            ["review_id", "workspace_id"],
+            ["vqe_research_candidate_reviews.id", "vqe_research_candidate_reviews.workspace_id"],
+        ),
+        UniqueConstraint("id", "workspace_id"),
+        UniqueConstraint("workspace_id", "review_id"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True)
+    workspace_id: Mapped[uuid.UUID]
+    envelope_id: Mapped[uuid.UUID]
+    review_id: Mapped[uuid.UUID]
+    created_by_user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"))
+    artifact_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("artifacts.id"))
+    artifact_version_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("artifact_versions.id"))
+    materialization_schema_version: Mapped[str]
+    source_snapshot_sha256: Mapped[str]
+    evidence_bundle_sha256: Mapped[str]
+    review_sha256: Mapped[str]
+    reviewed_candidate_sha256: Mapped[str]
+    license_expression: Mapped[str]
+    license_gate: Mapped[str]
+    compatibility_contract_json: Mapped[dict[str, Any]] = mapped_column(JSONB)
+    compatibility_contract_sha256: Mapped[str]
+    materialized_bundle_json: Mapped[dict[str, Any]] = mapped_column(JSONB)
+    materialized_bundle_sha256: Mapped[str]
+    publication_eligible: Mapped[bool]
+    execution_eligible: Mapped[bool]
+    created_at: Mapped[dt.datetime | None] = mapped_column(server_default=func.now())
+
+
+class VqeResearchCandidateMaterializationRequestRow(Base):
+    """Transport replay ledger for an explicit materialization action."""
+
+    __tablename__ = "vqe_research_candidate_materialization_requests"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["materialization_id", "workspace_id"],
+            [
+                "vqe_research_candidate_materializations.id",
+                "vqe_research_candidate_materializations.workspace_id",
+            ],
+        ),
+        UniqueConstraint("workspace_id", "idempotency_key"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True)
+    workspace_id: Mapped[uuid.UUID]
+    materialization_id: Mapped[uuid.UUID]
+    requested_by_user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"))
+    idempotency_key: Mapped[str]
+    request_descriptor_json: Mapped[dict[str, Any]] = mapped_column(JSONB)
+    request_descriptor_sha256: Mapped[str]
+    created_at: Mapped[dt.datetime | None] = mapped_column(server_default=func.now())
+
+
 class Job(Base):
     __tablename__ = "jobs"
 

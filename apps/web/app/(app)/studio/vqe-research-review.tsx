@@ -61,7 +61,17 @@ type ReviewRecord = {
   review_kind: "workspace_human_review";
   independence_state: "not_asserted";
   review_sha256: string;
+  reviewed_candidate_sha256: string;
+  evidence_bundle_sha256: string;
   created_at: string | null;
+};
+
+type MaterializationRecord = {
+  id: string;
+  artifact_id: string;
+  artifact_version_id: string;
+  publication_eligible: false;
+  execution_eligible: false;
 };
 
 type ReviewView = {
@@ -141,6 +151,7 @@ export function VqeResearchReview({ locale }: { locale: PublicLocale }) {
   const [state, setState] = useState<"loading" | "ready" | "error">("loading");
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const [materialization, setMaterialization] = useState<MaterializationRecord | null>(null);
 
   const loadQueue = useCallback(async () => {
     setState("loading");
@@ -205,6 +216,7 @@ export function VqeResearchReview({ locale }: { locale: PublicLocale }) {
             : "accepted",
         );
         setOverallRationale("");
+        setMaterialization(null);
       })
       .catch((cause) => {
         if (!cancelled) {
@@ -332,6 +344,44 @@ export function VqeResearchReview({ locale }: { locale: PublicLocale }) {
     }
   }
 
+  async function materializeAcceptedReview() {
+    if (!view?.latest_review || view.latest_review.disposition !== "accepted") return;
+    setBusy(true);
+    setMessage(null);
+    try {
+      const review = view.latest_review;
+      const response = await fetch(
+        `/api/vqe/research-candidates/${encodeURIComponent(view.envelope_id)}/reviews/${encodeURIComponent(review.id)}/materialize`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Idempotency-Key": crypto.randomUUID(),
+          },
+          body: JSON.stringify({
+            expected_review_sha256: review.review_sha256,
+            expected_reviewed_candidate_sha256: review.reviewed_candidate_sha256,
+            expected_evidence_bundle_sha256: review.evidence_bundle_sha256,
+          }),
+        },
+      );
+      const payload = await response.json() as { materialization?: MaterializationRecord };
+      if (!response.ok || !payload.materialization) {
+        throw new Error(errorMessage(payload, `materialization failed (${response.status})`));
+      }
+      setMaterialization(payload.materialization);
+      setMessage(
+        ja
+          ? `非公開・非実行のArtifactを保存しました: ${payload.materialization.artifact_id}`
+          : `Saved a private, non-executable Artifact: ${payload.materialization.artifact_id}`,
+      );
+    } catch (cause) {
+      setMessage(cause instanceof Error ? cause.message : "materialization failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
     <main className="mj-studio-page">
       <section className="mj-studio-main">
@@ -349,8 +399,8 @@ export function VqeResearchReview({ locale }: { locale: PublicLocale }) {
           <strong>{ja ? "workspace内レビュー — 独立レビューではありません" : "Workspace review — not an independent review"}</strong>
           <p>
             {ja
-              ? "固定GitHub snapshotから再構築した証拠だけを使います。保存は追記型・非公開で、公開、materialize、性能主張は許可しません。"
-              : "Only evidence reconstructed from the pinned GitHub snapshot is used. Saves are append-only and private; publication, materialization, and performance claims remain blocked."}
+              ? "固定GitHub snapshotから再構築した証拠だけを使います。レビューは追記型・非公開です。accepted後の明示操作だけが非実行Artifactを作れますが、公開・canonical昇格・性能主張は許可しません。"
+              : "Only evidence reconstructed from the pinned GitHub snapshot is used. Reviews are append-only and private. An explicit action after acceptance may create a non-executable Artifact; publication, canonical promotion, and performance claims remain blocked."}
           </p>
         </div>
 
@@ -489,7 +539,26 @@ export function VqeResearchReview({ locale }: { locale: PublicLocale }) {
                 <button className="mj-secondary-button" type="button" disabled={busy} onClick={() => void loadQueue()}>
                   {ja ? "候補一覧を更新" : "Refresh queue"}
                 </button>
+                {view.latest_review?.disposition === "accepted" ? (
+                  <button
+                    className="mj-secondary-button"
+                    type="button"
+                    disabled={busy || Boolean(materialization)}
+                    onClick={() => void materializeAcceptedReview()}
+                  >
+                    {materialization
+                      ? (ja ? "非公開Artifact保存済み" : "Private Artifact saved")
+                      : (ja ? "accepted版を非公開Artifactへ保存" : "Save accepted version as private Artifact")}
+                  </button>
+                ) : null}
               </div>
+              {materialization ? (
+                <p>
+                  <a href={`/library/${encodeURIComponent(materialization.artifact_id)}`}>
+                    {ja ? "保存した非公開Artifactを開く" : "Open saved private Artifact"}
+                  </a>
+                </p>
+              ) : null}
             </div>
           </>
         ) : state === "ready" && selectedKey ? <p role="status">{ja ? "証拠を再構築中…" : "Reconstructing evidence…"}</p> : null}

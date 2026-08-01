@@ -15,6 +15,7 @@ const ALLOWED = [
   /^research-candidates$/,
   new RegExp(`^research-candidates/${UUID}/${CANDIDATE}$`),
   new RegExp(`^research-candidates/${UUID}/reviews$`),
+  new RegExp(`^research-candidates/${UUID}/reviews/${UUID}/materialize$`),
 ];
 
 /**

@@ -2,8 +2,9 @@
 
 The repository stores already-validated structured envelopes. It rechecks the
 canonical digest, source identity, bounded schema shape, and fail-closed
-lifecycle fields before writing. Review and materialization live in later,
-separate append-only records; this module cannot publish a candidate.
+lifecycle fields before writing. Review and materialization live in separate
+append-only records. Materialization remains private, structured-only, and
+cannot publish or qualify execution.
 """
 
 from __future__ import annotations
@@ -17,7 +18,10 @@ from collections.abc import Mapping
 from typing import Any
 
 from majorana_contracts import Scope
+from majorana_contracts.enums import Algorithm, ExportStatus
+from majorana_contracts.enums import Framework as ContractFramework
 from majorana_llm import DeclaredEvidenceInput, assemble_research_evidence_bundle
+from majorana_vqe.models import ComponentType
 from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -28,12 +32,15 @@ from ..orm import (
     GitHubRepositorySnapshotFileRow,
     GitHubRepositorySnapshotRow,
     VqeResearchCandidateEnvelopeRow,
+    VqeResearchCandidateMaterializationRequestRow,
+    VqeResearchCandidateMaterializationRow,
     VqeResearchCandidatePersistRequestRow,
     VqeResearchCandidateReviewRequestRow,
     VqeResearchCandidateReviewRow,
 )
 from ..vqe_metadata_assertions import EXTRACTOR_VERSION, extract_metadata_assertions
 from ..vqe_standard_sources import require_approved_github_source
+from . import artifacts as artifacts_repo
 from ._base import NotFoundError, RepoError, require_admin, require_write
 
 MAX_ENVELOPE_BYTES = 256 * 1024
@@ -42,6 +49,27 @@ _COMMIT_RE = re.compile(r"^[0-9a-f]{40}$")
 _PROVIDER_RE = re.compile(r"^[a-z0-9][a-z0-9_.-]{0,63}$")
 _EVIDENCE_ID_RE = re.compile(r"^ev_[a-z0-9][a-z0-9_.-]{0,63}$")
 _CANDIDATE_ID_RE = re.compile(r"^candidate_[a-z0-9][a-z0-9_.-]{0,63}$")
+_PRIVATE_METADATA_SPDX = frozenset({"Apache-2.0", "BSD-2-Clause", "BSD-3-Clause", "MIT"})
+_MATERIALIZATION_REQUIRED_FIELDS = {
+    "implementation": frozenset(
+        {
+            "name",
+            "component_type",
+            "provider",
+            "package",
+            "module",
+            "symbol",
+            "version",
+            "license_expression",
+            "repository_url",
+            "commit_sha",
+        }
+    ),
+    "component": frozenset({"name", "component_type", "license_expression"}),
+    "problem": frozenset({"name", "problem_family", "license_expression"}),
+    "dataset": frozenset({"name", "dataset_name", "license_expression"}),
+    "experiment": frozenset({"name", "workflow_roles", "license_expression"}),
+}
 _TOP_LEVEL_KEYS = frozenset(
     {
         "envelope_version",
@@ -111,6 +139,14 @@ class ResearchCandidateReviewIdempotencyConflictError(RepoError):
     """A review request key was reused for materially different content."""
 
 
+class ResearchCandidateMaterializationError(RepoError):
+    """An accepted review failed a transactional materialization gate."""
+
+
+class ResearchCandidateMaterializationIdempotencyConflictError(RepoError):
+    """A materialization key was reused for a different accepted review."""
+
+
 @dataclasses.dataclass(frozen=True)
 class PersistedResearchCandidateEnvelope:
     envelope_id: uuid.UUID
@@ -137,6 +173,14 @@ class PersistedResearchCandidateReview:
     review: VqeResearchCandidateReviewRow
     request_id: uuid.UUID
     replayed_review: bool
+    replayed_request: bool
+
+
+@dataclasses.dataclass(frozen=True)
+class PersistedResearchCandidateMaterialization:
+    materialization: VqeResearchCandidateMaterializationRow
+    request_id: uuid.UUID
+    replayed_materialization: bool
     replayed_request: bool
 
 
@@ -1006,5 +1050,424 @@ async def create_research_candidate_review(
         review=review,
         request_id=request.id,
         replayed_review=review.id != proposed_review_id,
+        replayed_request=request.id != proposed_request_id,
+    )
+
+
+def _review_identity_payload(review: VqeResearchCandidateReviewRow) -> dict[str, Any]:
+    return {
+        "review_schema_version": "atlas.research-candidate-review.v1",
+        "envelope_id": str(review.envelope_id),
+        "candidate_local_id": review.candidate_local_id,
+        "previous_review_id": str(review.previous_review_id) if review.previous_review_id else None,
+        "review_kind": review.review_kind,
+        "independence_state": review.independence_state,
+        "disposition": review.disposition,
+        "source_snapshot_sha256": review.source_snapshot_sha256,
+        "evidence_bundle_sha256": review.evidence_bundle_sha256,
+        "base_candidate_sha256": review.base_candidate_sha256,
+        "reviewed_candidate_sha256": review.reviewed_candidate_sha256,
+        "decisions": review.decisions_json,
+        "rationale": review.rationale,
+    }
+
+
+def _field_map(candidate: Mapping[str, Any]) -> dict[str, dict[str, Any]]:
+    fields = candidate.get("fields")
+    if not isinstance(fields, list):
+        raise ResearchCandidateMaterializationError("reviewed_candidate_fields_invalid")
+    result: dict[str, dict[str, Any]] = {}
+    for raw in fields:
+        if not isinstance(raw, dict) or not isinstance(raw.get("field"), str):
+            raise ResearchCandidateMaterializationError("reviewed_candidate_fields_invalid")
+        key = raw["field"]
+        if key in result:
+            raise ResearchCandidateMaterializationError("reviewed_candidate_field_duplicate")
+        result[key] = raw
+    return result
+
+
+def _build_private_materialization_contract(
+    review: VqeResearchCandidateReviewRow,
+    *,
+    evidence: tuple[dict[str, Any], ...],
+    source_repository_url: str,
+    source_commit_sha: str,
+) -> tuple[str, dict[str, Any], dict[str, Any]]:
+    """Validate accepted content and return license, contract, and bundle.
+
+    This intentionally supports only structured private metadata.  It does not
+    create a canonical component definition, copy source code, authorize
+    publication, or qualify an execution implementation.
+    """
+
+    candidate = review.reviewed_candidate_json
+    if not isinstance(candidate, dict):
+        raise ResearchCandidateMaterializationError("reviewed_candidate_invalid")
+    if candidate.get("unknowns") or candidate.get("conflicts"):
+        raise ResearchCandidateMaterializationError("reviewed_candidate_has_open_issues")
+    candidate_type = candidate.get("candidate_type")
+    if candidate_type not in _MATERIALIZATION_REQUIRED_FIELDS:
+        raise ResearchCandidateMaterializationError("reviewed_candidate_type_unsupported")
+    fields = _field_map(candidate)
+    missing = _MATERIALIZATION_REQUIRED_FIELDS[candidate_type] - fields.keys()
+    if missing:
+        raise ResearchCandidateMaterializationError("reviewed_candidate_required_fields_missing")
+
+    decision_by_subject = {
+        item.get("subject_id"): item
+        for item in review.decisions_json
+        if isinstance(item, dict) and isinstance(item.get("subject_id"), str)
+    }
+    if len(decision_by_subject) != len(review.decisions_json):
+        raise ResearchCandidateMaterializationError("review_decisions_invalid")
+    for field_name in fields:
+        decision = decision_by_subject.get(f"field:{field_name}")
+        if not isinstance(decision, dict) or decision.get("decision") not in {"accept", "edit"}:
+            raise ResearchCandidateMaterializationError("review_field_not_accepted")
+
+    license_field = fields["license_expression"]
+    license_decision = decision_by_subject.get("field:license_expression")
+    license_expression = license_field.get("value")
+    if (
+        not isinstance(license_expression, str)
+        or license_expression not in _PRIVATE_METADATA_SPDX
+        or not isinstance(license_decision, dict)
+        or license_decision.get("decision") != "accept"
+    ):
+        raise ResearchCandidateMaterializationError("license_gate_not_satisfied")
+    evidence_by_id = {item.get("evidence_id"): item for item in evidence}
+    license_evidence = [
+        evidence_by_id.get(evidence_id) for evidence_id in license_field.get("evidence_ids", [])
+    ]
+    if not license_evidence or not any(
+        item is not None and item.get("declared_value") == license_expression
+        for item in license_evidence
+    ):
+        raise ResearchCandidateMaterializationError("license_evidence_not_exact")
+
+    if candidate_type == "implementation":
+        for identity_field, expected in (
+            ("repository_url", source_repository_url),
+            ("commit_sha", source_commit_sha),
+        ):
+            decision = decision_by_subject.get(f"field:{identity_field}")
+            if (
+                fields[identity_field].get("value") != expected
+                or not isinstance(decision, dict)
+                or decision.get("decision") != "accept"
+            ):
+                raise ResearchCandidateMaterializationError("source_identity_field_mismatch")
+
+    component_type = fields.get("component_type", {}).get("value")
+    if candidate_type in {"implementation", "component"}:
+        try:
+            component_type = ComponentType(component_type).value
+        except (TypeError, ValueError) as exc:
+            raise ResearchCandidateMaterializationError(
+                "compatibility_component_type_unsupported"
+            ) from exc
+    else:
+        component_type = None
+
+    contract = {
+        "schema_version": "atlas.research-candidate-compatibility.v1",
+        "candidate_type": candidate_type,
+        "component_type": component_type,
+        "representation": "structured_private_metadata_only",
+        "registry_promotion": "blocked",
+        "execution_eligible": False,
+        "publication_eligible": False,
+        "source_code_included": False,
+    }
+    bundle = {
+        "schema_version": "atlas.research-candidate-materialization.v1",
+        "candidate": candidate,
+        "source": {
+            "repository_url": source_repository_url,
+            "commit_sha": source_commit_sha,
+            "snapshot_sha256": review.source_snapshot_sha256,
+            "evidence_bundle_sha256": review.evidence_bundle_sha256,
+        },
+        "review": {
+            "id": str(review.id),
+            "kind": review.review_kind,
+            "independence_state": review.independence_state,
+            "review_sha256": review.review_sha256,
+            "reviewed_candidate_sha256": review.reviewed_candidate_sha256,
+        },
+        "license": {
+            "expression": license_expression,
+            "gate": "source_declared_spdx_private_metadata_only_v1",
+            "publication_authority": False,
+        },
+        "compatibility": contract,
+        "publication_eligible": False,
+        "execution_eligible": False,
+    }
+    return license_expression, contract, bundle
+
+
+async def _find_materialization_request(
+    scope: Scope,
+    session: AsyncSession,
+    idempotency_key: str,
+) -> VqeResearchCandidateMaterializationRequestRow | None:
+    return (
+        (
+            await session.execute(
+                select(VqeResearchCandidateMaterializationRequestRow).where(
+                    VqeResearchCandidateMaterializationRequestRow.workspace_id
+                    == scope.workspace_id,
+                    VqeResearchCandidateMaterializationRequestRow.idempotency_key
+                    == idempotency_key,
+                )
+            )
+        )
+        .scalars()
+        .first()
+    )
+
+
+async def materialize_research_candidate_review(
+    scope: Scope,
+    session: AsyncSession,
+    *,
+    envelope_id: uuid.UUID,
+    review_id: uuid.UUID,
+    expected_review_sha256: str,
+    expected_reviewed_candidate_sha256: str,
+    expected_evidence_bundle_sha256: str,
+    idempotency_key: str,
+) -> PersistedResearchCandidateMaterialization:
+    """Materialize one accepted reviewed version in the caller transaction."""
+
+    require_admin(scope)
+    if not 1 <= len(idempotency_key) <= 255:
+        raise ResearchCandidateMaterializationError("invalid_idempotency_key")
+    descriptor = {
+        "operation": "materialize_vqe_research_candidate_review",
+        "envelope_id": str(envelope_id),
+        "review_id": str(review_id),
+        "expected_review_sha256": expected_review_sha256,
+        "expected_reviewed_candidate_sha256": expected_reviewed_candidate_sha256,
+        "expected_evidence_bundle_sha256": expected_evidence_bundle_sha256,
+    }
+    descriptor_sha256 = _sha256_json(descriptor)
+    existing_request = await _find_materialization_request(scope, session, idempotency_key)
+    if existing_request is not None:
+        if (
+            existing_request.request_descriptor_json != descriptor
+            or existing_request.request_descriptor_sha256 != descriptor_sha256
+        ):
+            raise ResearchCandidateMaterializationIdempotencyConflictError(
+                "idempotency key was already used for a different materialization"
+            )
+        existing = await session.get(
+            VqeResearchCandidateMaterializationRow,
+            existing_request.materialization_id,
+        )
+        if existing is None or existing.workspace_id != scope.workspace_id:
+            raise ResearchCandidateMaterializationError("materialization_request_target_missing")
+        return PersistedResearchCandidateMaterialization(
+            materialization=existing,
+            request_id=existing_request.id,
+            replayed_materialization=True,
+            replayed_request=True,
+        )
+
+    review = (
+        (
+            await session.execute(
+                select(VqeResearchCandidateReviewRow)
+                .where(
+                    VqeResearchCandidateReviewRow.id == review_id,
+                    VqeResearchCandidateReviewRow.workspace_id == scope.workspace_id,
+                    VqeResearchCandidateReviewRow.envelope_id == envelope_id,
+                )
+                .with_for_update()
+            )
+        )
+        .scalars()
+        .first()
+    )
+    if review is None:
+        raise NotFoundError("research candidate review")
+    if review.disposition != "accepted":
+        raise ResearchCandidateMaterializationError("review_not_accepted")
+    if (
+        review.review_sha256 != expected_review_sha256
+        or review.reviewed_candidate_sha256 != expected_reviewed_candidate_sha256
+        or review.evidence_bundle_sha256 != expected_evidence_bundle_sha256
+    ):
+        raise ResearchCandidateMaterializationError("stale_materialization_input")
+    if _sha256_json(review.reviewed_candidate_json) != review.reviewed_candidate_sha256:
+        raise ResearchCandidateMaterializationError("reviewed_candidate_digest_mismatch")
+    if _sha256_json(_review_identity_payload(review)) != review.review_sha256:
+        raise ResearchCandidateMaterializationError("review_digest_mismatch")
+
+    latest = await _latest_review(
+        scope,
+        session,
+        envelope_id=envelope_id,
+        candidate_local_id=review.candidate_local_id,
+    )
+    if latest is None or latest.id != review.id:
+        raise ResearchCandidateMaterializationError("review_is_not_latest")
+    view = await get_research_candidate_review_view(
+        scope,
+        session,
+        envelope_id=envelope_id,
+        candidate_local_id=review.candidate_local_id,
+    )
+    if (
+        view.candidate_sha256 != review.base_candidate_sha256
+        or view.source_snapshot_sha256 != review.source_snapshot_sha256
+        or view.evidence_bundle_sha256 != review.evidence_bundle_sha256
+    ):
+        raise ResearchCandidateMaterializationError("review_evidence_binding_mismatch")
+    envelope = await get_research_candidate_envelope(scope, session, envelope_id)
+    source = await session.get(GitHubRepositorySnapshotRow, envelope.source_snapshot_id)
+    if source is None:
+        raise ResearchCandidateMaterializationError("source_snapshot_missing")
+    license_expression, compatibility, bundle = _build_private_materialization_contract(
+        review,
+        evidence=view.evidence,
+        source_repository_url=source.canonical_repository_url,
+        source_commit_sha=source.commit_sha,
+    )
+    compatibility_sha256 = _sha256_json(compatibility)
+    bundle_sha256 = _sha256_json(bundle)
+
+    existing = (
+        (
+            await session.execute(
+                select(VqeResearchCandidateMaterializationRow).where(
+                    VqeResearchCandidateMaterializationRow.workspace_id == scope.workspace_id,
+                    VqeResearchCandidateMaterializationRow.review_id == review.id,
+                )
+            )
+        )
+        .scalars()
+        .first()
+    )
+    replayed_materialization = existing is not None
+    if existing is not None and (
+        existing.envelope_id != envelope_id
+        or existing.review_sha256 != review.review_sha256
+        or existing.reviewed_candidate_sha256 != review.reviewed_candidate_sha256
+        or existing.source_snapshot_sha256 != review.source_snapshot_sha256
+        or existing.evidence_bundle_sha256 != review.evidence_bundle_sha256
+        or existing.license_expression != license_expression
+        or existing.compatibility_contract_sha256 != compatibility_sha256
+        or existing.materialized_bundle_sha256 != bundle_sha256
+        or existing.publication_eligible
+        or existing.execution_eligible
+    ):
+        raise ResearchCandidateMaterializationError("stored_materialization_identity_mismatch")
+    if existing is None:
+        workspace_suffix = hashlib.sha256(str(scope.workspace_id).encode()).hexdigest()[:12]
+        slug = f"vqe-research-{review.review_sha256[:20]}-{workspace_suffix}"
+        artifact = await artifacts_repo.get_artifact_by_slug(scope, session, slug)
+        if artifact is not None:
+            raise ResearchCandidateMaterializationError("materialization_artifact_slug_collision")
+        title_field = _field_map(review.reviewed_candidate_json).get("name", {})
+        title = title_field.get("value")
+        if not isinstance(title, str) or not title.strip():
+            title = review.candidate_local_id
+        artifact = await artifacts_repo.create_artifact(
+            scope,
+            session,
+            slug=slug,
+            title=f"Reviewed VQE research candidate: {title.strip()[:160]}",
+            family=Algorithm.VQE,
+            # Legacy storage field only; the compatibility contract is
+            # explicitly framework-neutral and non-executable.
+            framework=ContractFramework.QISKIT,
+        )
+        version = await artifacts_repo.create_version(
+            scope,
+            session,
+            artifact.id,
+            qasm_version=None,
+            qasm=None,
+            metadata={
+                "source": "atlas_reviewed_vqe_research_candidate",
+                "materialization_schema_version": "atlas.research-candidate-materialization.v1",
+                "review_sha256": review.review_sha256,
+                "source_snapshot_sha256": review.source_snapshot_sha256,
+                "evidence_bundle_sha256": review.evidence_bundle_sha256,
+                "license_expression": license_expression,
+                "license_gate": "source_declared_spdx_private_metadata_only_v1",
+                "semantic_framework": "neutral",
+                "legacy_framework_field": "qiskit_non_semantic",
+                "publication": "blocked",
+                "execution": "blocked",
+            },
+            code=_canonical_json(bundle).decode(),
+            code_lang="json",
+            fingerprint=bundle_sha256,
+            export_status=ExportStatus.UNSUPPORTED,
+            export_reason="reviewed structured metadata is not a circuit export",
+            limitations=(
+                "Private reviewed metadata candidate only. Not a canonical component, "
+                "execution qualification, independent review, or publication approval."
+            ),
+        )
+        materialization_id = uuid7()
+        existing = VqeResearchCandidateMaterializationRow(
+            id=materialization_id,
+            workspace_id=scope.workspace_id,
+            envelope_id=envelope_id,
+            review_id=review.id,
+            created_by_user_id=scope.user_id,
+            artifact_id=artifact.id,
+            artifact_version_id=version.id,
+            materialization_schema_version="atlas.research-candidate-materialization.v1",
+            source_snapshot_sha256=review.source_snapshot_sha256,
+            evidence_bundle_sha256=review.evidence_bundle_sha256,
+            review_sha256=review.review_sha256,
+            reviewed_candidate_sha256=review.reviewed_candidate_sha256,
+            license_expression=license_expression,
+            license_gate="source_declared_spdx_private_metadata_only_v1",
+            compatibility_contract_json=compatibility,
+            compatibility_contract_sha256=compatibility_sha256,
+            materialized_bundle_json=bundle,
+            materialized_bundle_sha256=bundle_sha256,
+            publication_eligible=False,
+            execution_eligible=False,
+        )
+        session.add(existing)
+        await session.flush()
+
+    proposed_request_id = uuid7()
+    await session.execute(
+        pg_insert(VqeResearchCandidateMaterializationRequestRow)
+        .values(
+            id=proposed_request_id,
+            workspace_id=scope.workspace_id,
+            materialization_id=existing.id,
+            requested_by_user_id=scope.user_id,
+            idempotency_key=idempotency_key,
+            request_descriptor_json=descriptor,
+            request_descriptor_sha256=descriptor_sha256,
+        )
+        .on_conflict_do_nothing(index_elements=["workspace_id", "idempotency_key"])
+    )
+    request = await _find_materialization_request(scope, session, idempotency_key)
+    if request is None:
+        raise ResearchCandidateMaterializationError("materialization_request_insert_not_observable")
+    if (
+        request.materialization_id != existing.id
+        or request.request_descriptor_json != descriptor
+        or request.request_descriptor_sha256 != descriptor_sha256
+    ):
+        raise ResearchCandidateMaterializationIdempotencyConflictError(
+            "idempotency key raced with a different materialization"
+        )
+    return PersistedResearchCandidateMaterialization(
+        materialization=existing,
+        request_id=request.id,
+        replayed_materialization=replayed_materialization,
         replayed_request=request.id != proposed_request_id,
     )

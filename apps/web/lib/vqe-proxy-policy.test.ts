@@ -63,11 +63,25 @@ describe("authenticated VQE proxy policy", () => {
       true,
     );
     assert.equal(
+      isAllowedVqeProxyRequest(
+        `research-candidates/${SPEC_ID}/reviews/${SPEC_ID}/materialize`,
+        "POST",
+      ),
+      true,
+    );
+    assert.equal(
       isAllowedVqeProxyRequest(`research-candidates/${SPEC_ID}/reviews`, "GET"),
       false,
     );
     assert.equal(
       isAllowedVqeProxyRequest(`research-candidates/${SPEC_ID}/publish`, "POST"),
+      false,
+    );
+    assert.equal(
+      isAllowedVqeProxyRequest(
+        `research-candidates/${SPEC_ID}/reviews/not-a-uuid/materialize`,
+        "POST",
+      ),
       false,
     );
   });

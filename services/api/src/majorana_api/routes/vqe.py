@@ -245,6 +245,42 @@ class CreateResearchCandidateReviewResponse(BaseModel):
     replayed_request: bool
 
 
+class MaterializeResearchCandidateReviewRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    expected_review_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    expected_reviewed_candidate_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    expected_evidence_bundle_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+
+
+class ResearchCandidateMaterializationResource(BaseModel):
+    id: uuid.UUID
+    envelope_id: uuid.UUID
+    review_id: uuid.UUID
+    artifact_id: uuid.UUID
+    artifact_version_id: uuid.UUID
+    materialization_schema_version: Literal["atlas.research-candidate-materialization.v1"]
+    source_snapshot_sha256: str
+    evidence_bundle_sha256: str
+    review_sha256: str
+    reviewed_candidate_sha256: str
+    license_expression: str
+    license_gate: Literal["source_declared_spdx_private_metadata_only_v1"]
+    compatibility_contract: dict[str, Any]
+    compatibility_contract_sha256: str
+    materialized_bundle_sha256: str
+    publication_eligible: Literal[False]
+    execution_eligible: Literal[False]
+    created_at: dt.datetime | None
+
+
+class MaterializeResearchCandidateReviewResponse(BaseModel):
+    materialization: ResearchCandidateMaterializationResource
+    request_id: uuid.UUID
+    replayed_materialization: bool
+    replayed_request: bool
+
+
 class WorkflowSwapResource(BaseModel):
     artifact_id: uuid.UUID
     workflow_artifact_version_id: uuid.UUID
@@ -507,6 +543,29 @@ def _to_research_review_resource(row) -> ResearchCandidateReviewRecordResource:
         decisions=row.decisions_json,
         rationale=row.rationale,
         review_sha256=row.review_sha256,
+        created_at=row.created_at,
+    )
+
+
+def _to_research_materialization_resource(row) -> ResearchCandidateMaterializationResource:
+    return ResearchCandidateMaterializationResource(
+        id=row.id,
+        envelope_id=row.envelope_id,
+        review_id=row.review_id,
+        artifact_id=row.artifact_id,
+        artifact_version_id=row.artifact_version_id,
+        materialization_schema_version=row.materialization_schema_version,
+        source_snapshot_sha256=row.source_snapshot_sha256,
+        evidence_bundle_sha256=row.evidence_bundle_sha256,
+        review_sha256=row.review_sha256,
+        reviewed_candidate_sha256=row.reviewed_candidate_sha256,
+        license_expression=row.license_expression,
+        license_gate=row.license_gate,
+        compatibility_contract=row.compatibility_contract_json,
+        compatibility_contract_sha256=row.compatibility_contract_sha256,
+        materialized_bundle_sha256=row.materialized_bundle_sha256,
+        publication_eligible=row.publication_eligible,
+        execution_eligible=row.execution_eligible,
         created_at=row.created_at,
     )
 
@@ -925,6 +984,52 @@ async def create_research_candidate_review(
         review=_to_research_review_resource(persisted.review),
         request_id=persisted.request_id,
         replayed_review=persisted.replayed_review,
+        replayed_request=persisted.replayed_request,
+    )
+
+
+@router.post(
+    "/vqe/research-candidates/{envelope_id}/reviews/{review_id}/materialize",
+    response_model=MaterializeResearchCandidateReviewResponse,
+    status_code=201,
+)
+async def materialize_research_candidate_review(
+    envelope_id: uuid.UUID,
+    review_id: uuid.UUID,
+    body: MaterializeResearchCandidateReviewRequest,
+    scope: CurrentScope,
+    session: DbSession,
+    idempotency_key: Annotated[
+        str,
+        Header(alias="Idempotency-Key", min_length=1, max_length=200),
+    ],
+) -> MaterializeResearchCandidateReviewResponse:
+    try:
+        persisted = await research_candidates_repo.materialize_research_candidate_review(
+            scope,
+            session,
+            envelope_id=envelope_id,
+            review_id=review_id,
+            expected_review_sha256=body.expected_review_sha256,
+            expected_reviewed_candidate_sha256=body.expected_reviewed_candidate_sha256,
+            expected_evidence_bundle_sha256=body.expected_evidence_bundle_sha256,
+            idempotency_key=idempotency_key,
+        )
+    except research_candidates_repo.AuthzError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from None
+    except research_candidates_repo.NotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from None
+    except research_candidates_repo.ResearchCandidateMaterializationIdempotencyConflictError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from None
+    except research_candidates_repo.ResearchCandidateMaterializationError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail={"code": str(exc), "message": "research candidate materialization rejected"},
+        ) from None
+    return MaterializeResearchCandidateReviewResponse(
+        materialization=_to_research_materialization_resource(persisted.materialization),
+        request_id=persisted.request_id,
+        replayed_materialization=persisted.replayed_materialization,
         replayed_request=persisted.replayed_request,
     )
 

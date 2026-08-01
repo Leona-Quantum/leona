@@ -16,9 +16,11 @@ Updated: 2026-08-01
   private Qiskit Nature metadata bundle;
 - S8 private append-only persistence: implemented and qualified on fresh
   PostgreSQL 17 in feature-branch CI;
-- S9 evidence-bound human review queue: implemented and locally verified;
-  fresh-PostgreSQL CI qualification is pending this feature-branch push;
-- S10–S12 materialization, E2E, and release audit: not yet started.
+- S9 evidence-bound human review queue: implemented and qualified on fresh
+  PostgreSQL in feature-branch CI;
+- S10 accepted-review private materialization: implemented and locally
+  qualified on a fresh disposable PostgreSQL instance;
+- S11–S12 controlled E2E and release audit: not yet started.
 
 No live LLM provider was contacted in S0–S6. S7 used the owner-supplied
 DeepSeek credential for exactly one generation request with retries disabled.
@@ -255,15 +257,63 @@ They must not be described as independent scientific review. S9 cannot publish,
 materialize, execute, or make performance claims. The focused backend suite has
 40 passing tests, the complete web suite has 362 passing tests, TypeScript and
 UI token checks pass, and all five import-boundary contracts remain intact.
-Fresh-database migration and append-only enforcement remain a remote CI gate
-until the S9 commit is pushed.
+Fresh-database migration and append-only enforcement passed in feature-branch
+CI run `30694071038`; the private production control-plane workflow passed in
+run `30694071042`.
 
 ## Open gates
 
 S9 creates review evidence but does not make any candidate publishable. The
 single live S7 envelope reports ten unknowns, so no candidate from that response
 can be accepted without a later evidence-backed candidate version that resolves
-them. S10–S12 remain downstream gates for accepted-only transactional
-materialization, controlled end-to-end validation, and release audit. They must
-use the validated private envelope and its append-only reviews without
-manufacturing or substituting scripted provider output.
+them. S10 does not override that scientific gate. No candidate from the S7 live
+response was accepted or materialized during S10.
+
+## S10 accepted-review private materialization
+
+Migration `0049` introduces separate append-only materialization evidence and
+transport-idempotency records. Materialization is permitted only for the latest
+`accepted` workspace review, with exact expected review, reviewed-candidate,
+source-snapshot, and reconstructed-evidence digests. The repository rehashes the
+review and reviewed candidate, reconstructs the immutable Phase 8 evidence,
+rechecks source identity, and refuses unknowns, conflicts, rejected fields,
+stale review versions, unsupported component types, and unresolved license
+evidence.
+
+The license gate is deliberately narrow: the reviewed license expression must
+be an unchanged, source-declared SPDX identifier in the initial maintained-
+provider allowlist and must exactly equal cited immutable evidence. This gate
+authorizes private structured metadata storage only. It is not legal advice,
+license approval, source-code redistribution authority, or publication
+authority.
+
+A successful operation creates one ordinary private Artifact version containing
+canonical structured JSON plus one immutable materialization record. It does
+not create a `VqeComponentSpec`, publish a catalog entry, copy source code,
+qualify an execution implementation, or make a performance claim. Both
+`publication_eligible` and `execution_eligible` are fixed false by application
+logic and database constraints. The legacy Artifact framework column is marked
+explicitly non-semantic; the materialized compatibility contract remains
+framework-neutral.
+
+Artifact creation, Artifact version creation, materialization evidence, and the
+idempotency request ledger share the caller's database transaction. A stale
+digest therefore leaves no partial materialization. Local qualification used a
+fresh disposable PostgreSQL database and passed migration
+`upgrade -> downgrade 0048 -> upgrade`, stale-input rollback, successful private
+creation, idempotent replay, cross-workspace denial, and append-only mutation
+rejection. It also confirmed that downgrade is refused after append-only
+materialization evidence exists. The focused DB-free
+review/materialization/persistence/route suite has 43 passing tests. Remote
+fresh-database CI remains the final S10 gate until this feature-branch commit is
+pushed.
+
+## Open gates
+
+S10 is a private metadata materialization mechanism, not a publication or
+scientific acceptance mechanism. S11 must demonstrate a controlled
+compose/review/materialize/reopen path on disposable infrastructure, including
+unauthenticated, rejected, stale-version, and cross-workspace failures. S12 must
+then audit migrations, generated contracts, tenant isolation, UI behavior, and
+release claims. Neither step may manufacture acceptance for the one S7 live
+response or issue a second provider call.
