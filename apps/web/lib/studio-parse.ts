@@ -8,9 +8,29 @@ export interface ParsedBuilderCircuit {
 /** CPU simulation width budget. The editor does not use this limit. */
 export const MAX_PARSABLE_QUBITS = 24;
 
-/** Source-to-source conversion budget. Editing and viewing are width-unbounded;
- * conversion emits code proportional to the qubit count and remains bounded. */
+/** Source-to-source conversion budget. Conversion emits code proportional to the
+ * qubit count, so it stays well below the drawing ceiling. */
 export const MAX_CONVERTIBLE_QUBITS = 64;
+
+/**
+ * How wide a circuit any surface will reconstruct or draw.
+ *
+ * Not a UI taste limit — the six-wire editor ceiling this replaced is gone, and
+ * the diagram virtualizes offscreen wires so width costs almost nothing in DOM
+ * nodes. What it is NOT free in is *layout*: `circuitDiagramSize` gives every
+ * wire a 52px row, so the SVG's declared height is `52 * qubitCount`, and a
+ * browser stops rendering an element long before that number stops being a
+ * number. `qubit[1000000] q;` is one line of OpenQASM — reachable from an
+ * imported artifact, from the public corpus, from a hand-edited stored circuit —
+ * and it asks for a 52,000,034px-tall SVG, which does not draw at all. The
+ * failure is a blank panel, which is exactly what an honest "too large to draw"
+ * message exists to avoid.
+ *
+ * 4096 is far past any real device (IBM's largest is ~1,100 qubits) and keeps
+ * the tallest possible diagram near 213,000px, which browsers scroll happily.
+ * Above it, every entry point fails closed and says so.
+ */
+export const MAX_VIEWABLE_QUBITS = 4096;
 
 /**
  * How many decomposed gate columns an interchange import will accept.
@@ -55,9 +75,10 @@ const CIRQ_ROTATIONS: Record<string, BuiltinBuilderGate> = { rx: "RX", ry: "RY",
 export function parseBuilderCircuit(
   code: string,
   framework: "qiskit" | "pennylane" | "cirq" | "openqasm3",
-  // Editing and parsing have no arbitrary width ceiling. Callers doing costly
-  // work (simulation or conversion) pass their own capability budget.
-  maxQubits: number = Number.POSITIVE_INFINITY,
+  // No editor-shaped ceiling any more; the bound that remains is what can
+  // actually be drawn. Callers doing costlier work — simulation, conversion —
+  // pass their own, narrower capability budget.
+  maxQubits: number = MAX_VIEWABLE_QUBITS,
 ): ParsedBuilderCircuit | null {
   const lines = code
     .replace(/\/\*[\s\S]*?\*\//g, "")

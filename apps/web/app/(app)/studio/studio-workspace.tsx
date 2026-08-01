@@ -12,7 +12,7 @@ import { circuitSyncState, type CircuitSyncState } from "../../../lib/studio-syn
 import { looksLikeOpenQasm3, parseCircuitSource, parseInterchangeCircuit, reconstructInterchangeCircuit } from "../../../lib/circuit-conversion";
 import { canvasSeedCandidates, draftSourceFramework, studioDraftBundle, type StudioDraftBundle } from "../../../lib/studio-drafts";
 import { CircuitDiagram } from "../../../components/circuit-diagram";
-import { MAX_VIEWABLE_STEPS } from "../../../lib/studio-parse";
+import { MAX_VIEWABLE_QUBITS, MAX_VIEWABLE_STEPS } from "../../../lib/studio-parse";
 import { CIRCUIT_FRAMEWORKS, circuitFramework, circuitFrameworkOrNull, isExecutableCircuitFramework, type CircuitFrameworkKey } from "../../../lib/circuit-frameworks";
 import { MAX_CPU_SEED, MAX_CPU_SHOTS, cpuSimulationEligibility, loadCpuSimulationRecords, runCpuSimulation, saveCpuSimulationRecord, sourceFingerprint, type CpuSimulationEligibility, type CpuSimulationLimits, type CpuSimulationRecord } from "../../../lib/studio-simulation";
 import { TIER_LIMITS } from "../../../lib/account-tier";
@@ -942,7 +942,10 @@ function CircuitBuilder({ seed, framework, selectedGate, onSelectGate, onApply, 
   }
 
   function changeQubitCount(delta: number) {
-    const next = Math.max(1, qubitCount + delta);
+    // Bounded by what can be drawn, not by the editor's old six-wire grid:
+    // without a ceiling here, holding "Add qubit" walks the canvas straight past
+    // any width a browser will lay out.
+    const next = Math.min(MAX_VIEWABLE_QUBITS, Math.max(1, qubitCount + delta));
     if (next === qubitCount) return;
     setQubitCount(next);
     setPendingQubits((current) => current.filter((qubit) => qubit < next));
@@ -1103,7 +1106,7 @@ function CircuitBuilder({ seed, framework, selectedGate, onSelectGate, onApply, 
       />
 
       <div className="mj-builder-controls">
-        <button className="mj-secondary-button" type="button" onClick={() => changeQubitCount(1)}>{copy.addQubit}</button>
+        <button className="mj-secondary-button" type="button" onClick={() => changeQubitCount(1)} disabled={qubitCount >= MAX_VIEWABLE_QUBITS}>{copy.addQubit}</button>
         <button className="mj-secondary-button" type="button" onClick={() => changeQubitCount(-1)} disabled={qubitCount <= 1}>{copy.removeQubit}</button>
         <button className="mj-secondary-button" type="button" onClick={() => { const removed = steps[steps.length - 1]; setSteps((current) => current.slice(0, -1)); if (removed) setSelectedStepIds((current) => current.filter((id) => id !== removed.id)); setPendingQubits([]); }} disabled={!steps.length}>{copy.undo}</button>
         <button className="mj-secondary-button" type="button" onClick={() => { setSteps([]); setSelectedStepIds([]); setPendingQubits([]); setBuilderMessage(null); }} disabled={!steps.length}>{copy.clearAll}</button>

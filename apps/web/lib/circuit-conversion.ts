@@ -9,7 +9,7 @@ import {
   type BuilderCodeVariants,
   type BuilderStep,
 } from "./studio-builder.ts";
-import { MAX_CONVERTIBLE_QUBITS, MAX_VIEWABLE_STEPS, parseBuilderCircuit, type ParsedBuilderCircuit } from "./studio-parse.ts";
+import { MAX_CONVERTIBLE_QUBITS, MAX_VIEWABLE_QUBITS, MAX_VIEWABLE_STEPS, parseBuilderCircuit, type ParsedBuilderCircuit } from "./studio-parse.ts";
 
 export type CircuitConversionFidelity = "deterministic_subset" | "standard_gate_decomposition";
 
@@ -40,13 +40,14 @@ export function generatePortableCircuitCode(portable: PortableCircuit): BuilderC
 }
 
 /**
- * Parsing for the editor is width-unbounded. Costly callers such as simulation
- * and conversion pass their own capability budget explicitly.
+ * Parsing has no editor-shaped ceiling; what bounds it is what can be drawn
+ * (`MAX_VIEWABLE_QUBITS`). Costlier callers — simulation, conversion — pass
+ * their own, narrower capability budget explicitly.
  */
 export function parseCircuitSource(
   code: string,
   framework: CircuitFrameworkKey | string,
-  maxQubits: number = Number.POSITIVE_INFINITY,
+  maxQubits: number = MAX_VIEWABLE_QUBITS,
 ): ParsedBuilderCircuit | null {
   const key = circuitFramework(framework).key;
   if (key !== "qiskit" && key !== "pennylane" && key !== "cirq" && key !== "openqasm3") return null;
@@ -303,12 +304,14 @@ function buildQasmMeasurement(bit: string, bitIndex: string | undefined, qubit: 
  * Qiskit exporter that produces the stored QASM uses registers, gate names, and
  * per-qubit measurement the editable parser deliberately rejects.
  *
- * Display width has no arbitrary qubit ceiling: the diagram virtualizes wires
- * and columns. An explicit caller ceiling is still supported, and the
- * step-count guard prevents a decomposed gate set from creating a pathological
- * diagram), it reports `too_large`; on malformed input or anything outside the
- * standard-gate subset it reports `unparsable`. The caller turns those into an
- * honest message instead of a circuit that lies.
+ * Display carries no editor-shaped width limit — the diagram virtualizes
+ * offscreen wires and columns, so width costs almost nothing to draw. The two
+ * bounds that remain are about what a browser can lay out at all: a width past
+ * `MAX_VIEWABLE_QUBITS` (an SVG taller than anything that renders) and a
+ * decomposed gate set past the step guard both report `too_large`. On malformed
+ * input, or anything outside the standard-gate subset, it reports `unparsable`.
+ * The caller turns those into an honest message instead of a circuit that lies —
+ * or, worse, a blank panel.
  */
 export type InterchangeReconstruction =
   | { kind: "ok"; circuit: ParsedBuilderCircuit }
@@ -317,7 +320,7 @@ export type InterchangeReconstruction =
 
 export function reconstructInterchangeCircuit(
   qasm: string,
-  { maxQubits = Number.POSITIVE_INFINITY, maxSteps = MAX_VIEWABLE_STEPS }: { maxQubits?: number; maxSteps?: number } = {},
+  { maxQubits = MAX_VIEWABLE_QUBITS, maxSteps = MAX_VIEWABLE_STEPS }: { maxQubits?: number; maxSteps?: number } = {},
 ): InterchangeReconstruction {
   if (!looksLikeOpenQasm3(qasm)) return { kind: "unparsable" };
   const parsed = parseOpenQasm3StandardGates(qasm);
@@ -332,11 +335,11 @@ export function reconstructInterchangeCircuit(
 /**
  * Thin boolean-shaped wrapper over `reconstructInterchangeCircuit` for callers
  * (and tests) that only want the circuit or null. An explicit `maxQubits` can
- * impose a narrower capability budget; the default viewer is width-unbounded.
+ * impose a narrower capability budget; the default is the drawing ceiling.
  */
 export function parseInterchangeCircuit(
   qasm: string,
-  maxQubits: number = Number.POSITIVE_INFINITY,
+  maxQubits: number = MAX_VIEWABLE_QUBITS,
 ): ParsedBuilderCircuit | null {
   const result = reconstructInterchangeCircuit(qasm, { maxQubits });
   return result.kind === "ok" ? result.circuit : null;

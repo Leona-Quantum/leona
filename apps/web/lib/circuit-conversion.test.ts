@@ -9,7 +9,7 @@ import {
   parseInterchangeCircuit,
   reconstructInterchangeCircuit,
 } from "./circuit-conversion.ts";
-import { MAX_CONVERTIBLE_QUBITS, MAX_VIEWABLE_STEPS } from "./studio-parse.ts";
+import { MAX_CONVERTIBLE_QUBITS, MAX_VIEWABLE_QUBITS, MAX_VIEWABLE_STEPS } from "./studio-parse.ts";
 
 test("portable circuits emit non-empty source for every framework target", () => {
   const generated = generatePortableCircuitCode({
@@ -225,13 +225,31 @@ test("a 26-qubit GHZ reconstructs past the 24-qubit simulation ceiling", () => {
   assert.ok(parseInterchangeCircuit(ghzQasm(26)));
 });
 
-test("interchange viewing has no arbitrary qubit ceiling", () => {
+test("interchange viewing carries no editor-shaped qubit ceiling", () => {
   const wide = ghzQasm(MAX_CONVERTIBLE_QUBITS + 1);
   const result = reconstructInterchangeCircuit(wide);
   assert.equal(result.kind, "ok");
   assert.ok(result.kind === "ok");
   assert.equal(result.circuit.qubitCount, MAX_CONVERTIBLE_QUBITS + 1);
   assert.ok(parseInterchangeCircuit(wide));
+});
+
+test("a width past what a browser can draw reports too_large, not a blank panel", () => {
+  // `qubit[N] q;` is one line and needs no gates, so this arrives from an
+  // imported artifact or the public corpus as cheaply as any other QASM. Every
+  // wire is a 52px row in `circuitDiagramSize`, so an unbounded width asks for
+  // an SVG no browser lays out — and a diagram that silently does not draw is
+  // the failure the honest message exists to replace.
+  const enormous = "OPENQASM 3.0;\ninclude \"stdgates.inc\";\nqubit[1000000] q;\nh q[0];";
+  const result = reconstructInterchangeCircuit(enormous);
+  assert.equal(result.kind, "too_large");
+  assert.ok(result.kind === "too_large");
+  assert.equal(result.qubitCount, 1_000_000);
+  // The boolean wrapper fails closed above the ceiling too.
+  assert.equal(parseInterchangeCircuit(enormous), null);
+  // And the ceiling really is generous: one wire below it still draws.
+  const atCeiling = `OPENQASM 3.0;\ninclude "stdgates.inc";\nqubit[${MAX_VIEWABLE_QUBITS}] q;\nh q[0];`;
+  assert.equal(reconstructInterchangeCircuit(atCeiling).kind, "ok");
 });
 
 test("a decomposed gate set past the step guard reports too_large even when narrow", () => {

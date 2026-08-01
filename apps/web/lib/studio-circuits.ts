@@ -1,5 +1,6 @@
 import { BUILDER_GATES, ROTATION_GATES, TWO_QUBIT_GATES, type BuilderStep, type CustomGateDefinition } from "./studio-builder.ts";
 import { scopedStorage } from "./user-storage.ts";
+import { MAX_VIEWABLE_QUBITS } from "./studio-parse.ts";
 
 export interface StoredStudioCircuit {
   artifactIdentity: string;
@@ -74,7 +75,7 @@ function isStoredCircuit(value: unknown): value is StoredStudioCircuit {
   const candidate = value as Partial<StoredStudioCircuit>;
   if (
     !isNonEmptyString(candidate.artifactIdentity) ||
-    !isPositiveSafeInteger(candidate.qubitCount) ||
+    !isDrawableQubitCount(candidate.qubitCount) ||
     typeof candidate.updatedAt !== "string" ||
     !Number.isFinite(Date.parse(candidate.updatedAt)) ||
     !Array.isArray(candidate.steps) ||
@@ -112,7 +113,7 @@ function isCustomGate(value: unknown): value is CustomGateDefinition {
   if (
     !isNonEmptyString(gate.id) ||
     !isNonEmptyString(gate.name) ||
-    !isPositiveSafeInteger(qubitCount) ||
+    !isDrawableQubitCount(qubitCount) ||
     !Array.isArray(gate.steps) ||
     !hasUniqueIds(gate.steps)
   ) return false;
@@ -132,8 +133,21 @@ function isBoundedInteger(value: unknown, min: number, max: number): value is nu
   return typeof value === "number" && Number.isSafeInteger(value) && value >= min && value <= max;
 }
 
-function isPositiveSafeInteger(value: unknown): value is number {
-  return typeof value === "number" && Number.isSafeInteger(value) && value >= 1;
+/**
+ * A stored circuit is the user's own work, so this is not a policy limit — it is
+ * the width the diagram can still be drawn at. Storage is the one place a
+ * qubitCount arrives without having passed a parser, and a hand-edited or
+ * corrupted entry claiming a few million wires would seed a canvas whose SVG no
+ * browser lays out. Rejecting it falls back to reconstruction from the source,
+ * which reports `too_large` honestly.
+ */
+function isDrawableQubitCount(value: unknown): value is number {
+  return (
+    typeof value === "number"
+    && Number.isSafeInteger(value)
+    && value >= 1
+    && value <= MAX_VIEWABLE_QUBITS
+  );
 }
 
 function hasUniqueIds(values: unknown[]): boolean {
