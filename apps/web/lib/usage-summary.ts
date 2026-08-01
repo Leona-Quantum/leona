@@ -28,11 +28,39 @@ export type RunAllowance = Allowance & {
   nextSlotAt: string | null;
 };
 
+/** Model tokens and the provider calls that spent them. Never money. */
+export type TokenSpend = {
+  tokens: number;
+  calls: number;
+};
+
+export type ModelSpend = TokenSpend & {
+  /** Provider model id. Empty string when the event carried no model. */
+  model: string;
+};
+
+export type SpendReport = {
+  windowDays: number;
+  total: TokenSpend;
+  chat: TokenSpend;
+  runs: TokenSpend;
+  /** Descending by tokens, and a partition of `total` — see parseSpend. */
+  byModel: ModelSpend[];
+};
+
 export type UsageSummary = {
   tier: string;
   runs: RunAllowance;
   artifacts: Allowance;
   workspaces: Allowance;
+  /**
+   * Null when the control plane did not send one, or sent one that does not
+   * add up. Unlike every field above it, absence here is not a parse failure:
+   * `spend` arrived after the allowances did, so a web deploy that reaches
+   * users before the API's must keep showing the allowances rather than
+   * blanking the panel.
+   */
+  spend: SpendReport | null;
 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -66,6 +94,53 @@ function parseAllowance(value: unknown): Allowance | null {
   return { used, limit: limit.value, remaining: remaining.value, exhausted: value.exhausted };
 }
 
+function parseTokenSpend(value: unknown): TokenSpend | null {
+  if (!isRecord(value)) return null;
+  const tokens = readCount(value, "tokens");
+  const calls = readCount(value, "calls");
+  if (tokens === null || calls === null) return null;
+  return { tokens, calls };
+}
+
+/**
+ * The spend block, or null — and null for a payload that contradicts itself.
+ *
+ * The API documents two invariants: `chat` and `runs` partition `total`, and
+ * `by_model` covers every event. Both are checked here rather than trusted,
+ * because the panel prints all three next to each other and a reader adds them
+ * up by eye in about a second. A total that is not the sum of the two lines
+ * under it does not read as "one of these is stale" — it reads as the whole
+ * page being wrong, including the allowances above, which are fine.
+ *
+ * So a payload that fails either check renders nothing at all. That is a worse
+ * outcome than a correct panel and a better one than an incoherent panel, and
+ * it is the only branch here that could hide a real number: it is deliberate,
+ * and it can only fire on a response the API's own tests say is impossible.
+ */
+function parseSpend(value: unknown): SpendReport | null {
+  if (!isRecord(value)) return null;
+  const windowDays = readCount(value, "window_days");
+  const total = parseTokenSpend(value.total);
+  const chat = parseTokenSpend(value.chat);
+  const runs = parseTokenSpend(value.runs);
+  if (windowDays === null || !total || !chat || !runs) return null;
+  if (!Array.isArray(value.by_model)) return null;
+
+  const byModel: ModelSpend[] = [];
+  for (const entry of value.by_model) {
+    const spend = parseTokenSpend(entry);
+    if (!spend || !isRecord(entry) || typeof entry.model !== "string") return null;
+    byModel.push({ ...spend, model: entry.model });
+  }
+
+  if (chat.tokens + runs.tokens !== total.tokens) return null;
+  if (chat.calls + runs.calls !== total.calls) return null;
+  const attributed = byModel.reduce((sum, entry) => sum + entry.tokens, 0);
+  if (attributed !== total.tokens) return null;
+
+  return { windowDays, total, chat, runs, byModel };
+}
+
 export function parseUsage(payload: unknown): UsageSummary | null {
   if (!isRecord(payload)) return null;
   const runs = parseAllowance(payload.runs);
@@ -87,7 +162,21 @@ export function parseUsage(payload: unknown): UsageSummary | null {
     runs: { ...runs, windowDays, nextSlotAt: rawNext ?? null },
     artifacts,
     workspaces,
+    spend: parseSpend(payload.spend),
   };
+}
+
+/**
+ * A token count in the reader's own digits, grouped and never abbreviated.
+ *
+ * "1.3M" would be friendlier and is the wrong trade here: this is the only
+ * place in the product a person can see what their conversations actually
+ * consumed, and a figure they cannot compare against a provider's bill or
+ * against last week's is decoration. Grouping separators do the readability
+ * work without discarding anything.
+ */
+export function formatTokens(tokens: number, locale: "en" | "ja"): string {
+  return new Intl.NumberFormat(locale === "ja" ? "ja-JP" : "en-US").format(tokens);
 }
 
 /** A named day ("today") reads differently in a sentence than a dated one. */
