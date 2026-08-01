@@ -142,6 +142,26 @@ class WorkspaceFolder(_ResourceBase):
     updated_at: datetime
 
 
+class Project(_ResourceBase):
+    """Studio's artifact grouping (migration 0041).
+
+    Deliberately identical in shape to `WorkspaceFolder` and deliberately not the
+    same model: Run's Folders group runs, Studio's Projects group artifacts, and
+    the owner's distinction between the two words is the reason one locale key
+    stopped rendering both sections.
+
+    `position` is absent for the same reason it is absent from `WorkspaceFolder`:
+    the order is carried by the JSON array, and putting the integer on the wire
+    would add a shared-contract field to say what the array already says.
+    """
+
+    id: UUID
+    workspace_id: UUID
+    name: str = Field(min_length=1, max_length=80)
+    created_at: datetime
+    updated_at: datetime
+
+
 class Artifact(_ResourceBase):
     id: UUID
     workspace_id: UUID
@@ -169,6 +189,12 @@ class Artifact(_ResourceBase):
     # turn can fork from it — but it is not filed in the Vault. Distinct from
     # deleted_at: never kept is not the same as thrown away.
     kept_at: datetime | None = None
+    # The project this artifact is filed under (migration 0041), or None for the
+    # ungrouped list. Carried on the resource rather than fetched per artifact
+    # because the sidebar groups the whole list in one pass; a separate
+    # assignments call would be a second round trip that can disagree with the
+    # first.
+    project_id: UUID | None = None
     deleted_at: datetime | None = None
 
 

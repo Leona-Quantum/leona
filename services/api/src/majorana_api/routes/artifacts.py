@@ -28,6 +28,7 @@ from fastapi import Depends
 
 from ..auth.deps import CurrentIdentity, CurrentScope, DbSession, get_settings
 from ..repos import artifacts as artifacts_repo
+from ..repos import projects as projects_repo
 from ..repos import workspaces as workspaces_repo
 from ..orm import Artifact as ArtifactRow
 from ..orm import ArtifactVersion as ArtifactVersionRow
@@ -153,6 +154,7 @@ def _to_artifact(row: ArtifactRow, version_metadata: dict | None = None) -> Arti
         created_at=row.created_at,
         updated_at=row.updated_at,
         kept_at=row.kept_at,
+        project_id=row.project_id,
         deleted_at=row.deleted_at,
     )
 
@@ -317,6 +319,39 @@ async def keep_artifact(
             if kept >= limits.private_artifacts:
                 raise _artifact_cap_refusal(kept, limits.private_artifacts)
     artifact = await artifacts_repo.keep_artifact(scope, session, artifact_id)
+    metadata: dict | None = None
+    if artifact.current_version_id is not None:
+        version = await artifacts_repo.get_version(scope, session, artifact.current_version_id)
+        metadata = version.artifact_metadata
+    return _to_artifact(artifact, metadata)
+
+
+class SetArtifactProjectRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    #: None files the artifact back into the ungrouped list. Explicit rather than
+    #: a separate DELETE endpoint: "no project" is a value the drag-and-drop UI
+    #: sends as readily as any other, and one route keeps the two indivisible.
+    project_id: uuid.UUID | None = None
+
+
+@router.patch("/artifacts/{artifact_id}/project", response_model=ArtifactResource)
+async def set_artifact_project(
+    artifact_id: uuid.UUID,
+    body: SetArtifactProjectRequest,
+    scope: CurrentScope,
+    session: DbSession,
+) -> ArtifactResource:
+    """File an artifact under a Studio project, or return it to the ungrouped list.
+
+    Until migration 0041 this assignment lived in one browser's localStorage
+    (`majorana.artifact-folder-assignments.v1`), so it did not survive a second
+    device and could not be seen by anyone else in the workspace — the same shape
+    as the Library delete that only hid a row locally.
+    """
+    artifact = await projects_repo.set_artifact_project(
+        scope, session, artifact_id, body.project_id
+    )
     metadata: dict | None = None
     if artifact.current_version_id is not None:
         version = await artifacts_repo.get_version(scope, session, artifact.current_version_id)

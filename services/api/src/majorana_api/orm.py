@@ -99,6 +99,28 @@ class WorkspaceFolder(Base):
     updated_at: Mapped[dt.datetime | None] = mapped_column(server_default=func.now())
 
 
+class Project(Base):
+    """Studio's artifact grouping (migration 0041).
+
+    The Studio counterpart of `WorkspaceFolder`, which groups runs. Two tables
+    rather than one because the owner's distinction is real: Run's *Folders* and
+    Studio's *Projects* are different words for different things, and one row
+    cannot be in both lists without a `kind` column that every query would then
+    have to remember.
+    """
+
+    __tablename__ = "projects"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True)
+    workspace_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("workspaces.id"))
+    name: Mapped[str]
+    # Not unique — see migration 0040's note on folders. Ties fall back to
+    # (created_at, id), the order the table has before anybody drags anything.
+    position: Mapped[int] = mapped_column(Integer, server_default="0")
+    created_at: Mapped[dt.datetime | None] = mapped_column(server_default=func.now())
+    updated_at: Mapped[dt.datetime | None] = mapped_column(server_default=func.now())
+
+
 class Artifact(Base):
     __tablename__ = "artifacts"
 
@@ -121,6 +143,10 @@ class Artifact(Base):
     # and can be forked from) but deliberately NOT in the Vault list. This is
     # separate from deleted_at: never kept is not the same as thrown away.
     kept_at: Mapped[dt.datetime | None]
+    # Migration 0041. NULL = ungrouped, which is where every artifact starts and
+    # where it returns when its project is deleted. No cascade on the FK, on
+    # purpose: deleting the container must never delete the contents.
+    project_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("projects.id"))
     deleted_at: Mapped[dt.datetime | None]
     created_at: Mapped[dt.datetime | None] = mapped_column(server_default=func.now())
     updated_at: Mapped[dt.datetime | None] = mapped_column(server_default=func.now())

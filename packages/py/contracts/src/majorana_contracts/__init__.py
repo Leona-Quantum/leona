@@ -86,6 +86,7 @@ from .models import (
     Artifact,
     ArtifactVersion,
     CatalogProvenance,
+    Project,
     PublicCatalogEntry,
     QpuRunRecord,
     ResourceMetrics,
@@ -156,7 +157,11 @@ from .lifecycle import (
 # 2.5.0: WorkspaceInvitation — a membership the invited person has not been told
 # about yet, so an invite can announce itself instead of relying on the inviter
 # to mention it out of band (migration 0038).
-CONTRACTS_VERSION = "2.5.0"
+# 2.6.0: Project + Artifact.project_id — Studio's grouping moves out of the
+# browser's localStorage and onto the workspace (migration 0041). Additive: both
+# are optional to read and `project_id` defaults to None, so a client built
+# against 2.5.0 keeps working and simply shows every artifact ungrouped.
+CONTRACTS_VERSION = "2.6.0"
 
 __all__ = [
     "CONTRACTS_VERSION",
@@ -203,6 +208,7 @@ __all__ = [
     "Plan",
     "PlanParameters",
     "PlanProduced",
+    "Project",
     "PublicCatalogEntry",
     "PlannableVerificationMethod",
     "PublicationState",

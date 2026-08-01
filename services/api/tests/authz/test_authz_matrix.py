@@ -15,6 +15,7 @@ from majorana_api.repos import (
     artifacts,
     audit,
     folders,
+    projects,
     runs,
     usage,
     workspaces,
@@ -35,6 +36,8 @@ async def test_cross_workspace_reads_rejected(db, dataset):
             await runs.get_run(sa, db, b.run_id)
         with pytest.raises(NotFoundError):
             await folders.get_folder(sa, db, b.folder_id)
+        with pytest.raises(NotFoundError):
+            await projects.get_project(sa, db, b.project_id)
         assert await runs.list_run_events(sa, db, b.run_id) == []
         assert await runs.list_verification_records(sa, db, b.run_id) == []
 
@@ -49,6 +52,21 @@ async def test_cross_workspace_writes_rejected(db, dataset):
             await runs.update_run_status(sa, db, b.run_id, "cancelled")
         with pytest.raises(NotFoundError):
             await folders.set_run_folder(sa, db, b.run_id, b.folder_id)
+        with pytest.raises(NotFoundError):
+            await projects.rename_project(sa, db, b.project_id, name="taken")
+        with pytest.raises(NotFoundError):
+            await projects.delete_project(sa, db, b.project_id)
+        with pytest.raises(NotFoundError):
+            await projects.reorder_projects(sa, db, [b.project_id])
+        with pytest.raises(NotFoundError):
+            await projects.set_artifact_project(sa, db, b.artifact_id, b.project_id)
+        # Both halves of the filing, separately. Our OWN artifact must not be
+        # filable under their project, and theirs must not be filable under
+        # ours — one shared check would pass while either half leaked.
+        with pytest.raises(NotFoundError):
+            await projects.set_artifact_project(sa, db, a.artifact_id, b.project_id)
+        with pytest.raises(NotFoundError):
+            await projects.set_artifact_project(sa, db, b.artifact_id, a.project_id)
         with pytest.raises(NotFoundError):
             await runs.add_verification_record(
                 sa, db, b.run_id, method=VerificationMethod.EXACT, result="fail"
@@ -95,6 +113,7 @@ async def test_lists_and_aggregates_scoped(db, dataset):
         }
         assert {r.id for r in await runs.list_runs(sa, db, limit=1000)} == {a.run_id}
         assert {f.id for f in await folders.list_folders(sa, db)} == {a.folder_id}
+        assert {p.id for p in await projects.list_projects(sa, db)} == {a.project_id}
         member_ids = {m.user_id for m in await workspaces.list_members(sa, db)}
         assert set(a.users.values()) == member_ids
         assert (await workspaces.get_workspace(sa, db)).id == a.workspace_id
@@ -115,6 +134,8 @@ async def test_in_scope_access_works(db, dataset):
     assert (await artifacts.get_version(sa, db, a.version_id)).id == a.version_id
     assert (await runs.get_run(sa, db, a.run_id)).id == a.run_id
     assert (await folders.get_folder(sa, db, a.folder_id)).id == a.folder_id
+    assert (await projects.get_project(sa, db, a.project_id)).id == a.project_id
+    assert (await artifacts.get_artifact(sa, db, a.artifact_id)).project_id == a.project_id
     events = await runs.list_run_events(sa, db, a.run_id)
     assert [e.seq for e in events] == [1, 2]
     event = await runs.append_run_event(sa, db, a.run_id, type="run.finished", payload={})
@@ -130,6 +151,16 @@ async def test_role_gates_live(db, dataset):
         await folders.create_folder(viewer, db, name="viewer cannot create")
     with pytest.raises(AuthzError):
         await folders.set_run_folder(viewer, db, a.run_id, a.folder_id)
+    with pytest.raises(AuthzError):
+        await projects.create_project(viewer, db, name="viewer cannot create")
+    with pytest.raises(AuthzError):
+        await projects.rename_project(viewer, db, a.project_id, name="viewer cannot rename")
+    with pytest.raises(AuthzError):
+        await projects.delete_project(viewer, db, a.project_id)
+    with pytest.raises(AuthzError):
+        await projects.reorder_projects(viewer, db, [a.project_id])
+    with pytest.raises(AuthzError):
+        await projects.set_artifact_project(viewer, db, a.artifact_id, None)
     with pytest.raises(AuthzError):
         await runs.append_run_event(viewer, db, a.run_id, type="run.error", payload={})
     member = scope_for(a, Role.MEMBER)

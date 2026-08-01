@@ -5,6 +5,7 @@ import uuid
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Response
+from majorana_contracts import Project as ProjectResource
 from majorana_contracts import Workspace as WorkspaceResource
 from majorana_contracts import WorkspaceFolder as WorkspaceFolderResource
 from majorana_contracts import (
@@ -17,10 +18,11 @@ from majorana_contracts.enums import Role, WorkspaceKind
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from ..auth.deps import CurrentIdentity, CurrentScope, DbSession, get_settings
-from ..orm import Membership, User
+from ..orm import Membership, Project, User
 from ..orm import Workspace as WorkspaceRow
 from ..orm import WorkspaceFolder
 from ..repos import folders as folders_repo
+from ..repos import projects as projects_repo
 from ..repos import system
 from ..repos import workspaces as workspaces_repo
 from ..settings import Settings
@@ -149,6 +151,35 @@ class ReorderFoldersRequest(BaseModel):
     order: list[uuid.UUID] = Field(max_length=500)
 
 
+class CreateProjectRequest(BaseModel):
+    """Separate from `CreateFolderRequest` so the message names what failed.
+
+    The two are structurally identical today. Sharing one model would mean a
+    blank project name is refused with "folder name cannot be blank", which is a
+    sentence about a different part of the product.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    name: str = Field(min_length=1, max_length=80)
+
+    @field_validator("name")
+    @classmethod
+    def require_non_blank_name(cls, value: str) -> str:
+        normalized = " ".join(value.strip().split())
+        if not normalized:
+            raise ValueError("project name cannot be blank")
+        return normalized
+
+
+class ReorderProjectsRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    #: Every project the client knows about, in the order it wants them shown —
+    #: the whole list, for the reason given on `ReorderFoldersRequest`.
+    order: list[uuid.UUID] = Field(max_length=500)
+
+
 def _to_member(membership: Membership, user: User) -> WorkspaceMember:
     return WorkspaceMember(
         user_id=user.id,
@@ -167,6 +198,17 @@ def _to_folder(folder: WorkspaceFolder) -> WorkspaceFolderResource:
         name=folder.name,
         created_at=folder.created_at or now,
         updated_at=folder.updated_at or now,
+    )
+
+
+def _to_project(project: Project) -> ProjectResource:
+    now = dt.datetime.now(dt.timezone.utc)
+    return ProjectResource(
+        id=project.id,
+        workspace_id=project.workspace_id,
+        name=project.name,
+        created_at=project.created_at or now,
+        updated_at=project.updated_at or now,
     )
 
 
@@ -645,4 +687,73 @@ async def delete_workspace_folder(
 ) -> Response:
     """Delete the folder. The runs inside it survive, unfiled."""
     await folders_repo.delete_folder(scope, session, folder_id)
+    return Response(status_code=204)
+
+
+@router.get("/workspace/projects", response_model=list[ProjectResource])
+async def list_workspace_projects(scope: CurrentScope, session: DbSession) -> list[ProjectResource]:
+    """Studio's projects in the user's chosen order.
+
+    As with folders, the order is carried by the ARRAY and `projects.position`
+    stays server-side. Clients must preserve the order they receive rather than
+    re-sorting — the web's `loadChatFolders` once re-sorted by `createdAt` and
+    made every drag appear to work and then revert.
+    """
+    return [_to_project(project) for project in await projects_repo.list_projects(scope, session)]
+
+
+@router.post("/workspace/projects", response_model=ProjectResource, status_code=201)
+async def create_workspace_project(
+    body: CreateProjectRequest,
+    scope: CurrentScope,
+    session: DbSession,
+) -> ProjectResource:
+    try:
+        project = await projects_repo.create_project(scope, session, name=body.name)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return _to_project(project)
+
+
+@router.patch("/workspace/projects/order", response_model=list[ProjectResource])
+async def reorder_workspace_projects(
+    body: ReorderProjectsRequest,
+    scope: CurrentScope,
+    session: DbSession,
+) -> list[ProjectResource]:
+    """Set the whole workspace's project order from the list the client holds.
+
+    Declared BEFORE `/workspace/projects/{project_id}` on purpose: FastAPI
+    matches routes in declaration order, so the parameterised route would
+    otherwise swallow `/order` and try to parse it as a UUID.
+    """
+    try:
+        projects = await projects_repo.reorder_projects(scope, session, list(body.order))
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return [_to_project(project) for project in projects]
+
+
+@router.patch("/workspace/projects/{project_id}", response_model=ProjectResource)
+async def rename_workspace_project(
+    project_id: uuid.UUID,
+    body: CreateProjectRequest,
+    scope: CurrentScope,
+    session: DbSession,
+) -> ProjectResource:
+    try:
+        project = await projects_repo.rename_project(scope, session, project_id, name=body.name)
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return _to_project(project)
+
+
+@router.delete("/workspace/projects/{project_id}", status_code=204)
+async def delete_workspace_project(
+    project_id: uuid.UUID,
+    scope: CurrentScope,
+    session: DbSession,
+) -> Response:
+    """Delete the project. The artifacts inside it survive, ungrouped."""
+    await projects_repo.delete_project(scope, session, project_id)
     return Response(status_code=204)
