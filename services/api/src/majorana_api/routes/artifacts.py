@@ -4,6 +4,7 @@ The web surface is a renderer; artifact ownership and workspace scoping stay in
 the control plane's repository layer.
 """
 
+import datetime as dt
 import re
 import uuid
 from typing import Annotated, Any
@@ -11,6 +12,7 @@ from typing import Annotated, Any
 from fastapi import APIRouter, HTTPException
 from majorana_contracts import Artifact as ArtifactResource
 from majorana_contracts import ArtifactVersion as ArtifactVersionResource
+from majorana_contracts import VerificationSummary
 from majorana_contracts.enums import (
     Algorithm,
     EvidenceStrength,
@@ -32,16 +34,28 @@ from ..orm import ArtifactVersion as ArtifactVersionRow
 from ..settings import Settings
 from ..tiers import limits_for, resolve_tier
 from ..verification_summary import parse_verification_summary
+from ..version_capabilities import capabilities_of, restore_losses
 
 router = APIRouter()
 
+#: The version list is bounded like every other artifact query, and lower: the
+#: rows carry no code, so a page is small, but an artifact edited all afternoon
+#: can hold hundreds of versions and the panel showing them is a sidebar.
+VERSION_PAGE_DEFAULT = 25
+VERSION_PAGE_MAX = 100
 
-def _vault_cap_refusal(used: int, limit: int) -> HTTPException:
+
+def _artifact_cap_refusal(used: int, limit: int) -> HTTPException:
+    # This sentence has a twin in `apps/web/lib/run-allowance.ts`, which refuses
+    # the same submission client-side before it is sent. Two copies of a refusal
+    # is already a smell; two copies that WORD it differently tells the same
+    # person two different things about one rule, so they change together or
+    # not at all.
     return HTTPException(
         status_code=429,
         detail={
             "error": (
-                f"Your Vault holds {used} of {limit} artifacts on this plan. "
+                f"Your Studio holds {used} of {limit} artifacts on this plan. "
                 "Archive an artifact you no longer need and this one will file."
             ),
             "reason": "artifact_allowance_exhausted",
@@ -274,7 +288,7 @@ async def keep_artifact(
     identity: CurrentIdentity,
     settings: Annotated[Settings, Depends(get_settings)],
 ) -> ArtifactResource:
-    """Put a materialized run result into the Vault (migration 0036).
+    """File a materialized run result into the workspace (migration 0036).
 
     Every successful run materializes an artifact, because the Run surface's
     conversion tabs read the saved version and the next turn in a conversation
@@ -283,10 +297,10 @@ async def keep_artifact(
     artifact count.
 
     Idempotent — keeping something already kept returns it unchanged rather than
-    re-stamping, so a double click cannot reorder the Vault.
+    re-stamping, so a double click cannot reorder the artifact list.
 
-    This is where the per-tier Vault cap is enforced, because since migration
-    0036 it is the only place an artifact ENTERS the Vault by a user's choice.
+    This is where the per-tier artifact cap is enforced, because since migration
+    0036 it is the only place an artifact is FILED by a user's choice.
     The cap is checked before the write and skipped for an artifact that is
     already kept, so re-keeping never fails at the boundary.
     """
@@ -301,7 +315,7 @@ async def keep_artifact(
                 scope, session
             )
             if kept >= limits.private_artifacts:
-                raise _vault_cap_refusal(kept, limits.private_artifacts)
+                raise _artifact_cap_refusal(kept, limits.private_artifacts)
     artifact = await artifacts_repo.keep_artifact(scope, session, artifact_id)
     metadata: dict | None = None
     if artifact.current_version_id is not None:
@@ -340,4 +354,189 @@ async def get_current_version(
         raise HTTPException(status_code=404, detail="artifact version")
     return _to_version(
         await artifacts_repo.get_version(scope, session, artifact.current_version_id)
+    )
+
+
+# Route-local response models on purpose. These shapes are this endpoint's
+# presentation of rows the shared contracts already describe; putting them in
+# majorana_contracts would mean a CONTRACTS_VERSION bump, an openapi.json
+# regeneration and a contracts-gen regeneration for a list nothing outside this
+# service consumes.
+
+
+class ArtifactVersionSummary(BaseModel):
+    """One row of history. Deliberately carries no code and no QASM.
+
+    The panel that renders this lists versions; loading one is a separate,
+    explicit fetch. Sending every version's source down with the list is how a
+    sidebar becomes a megabyte.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    id: uuid.UUID
+    seq: int
+    is_current: bool
+    code_lang: str
+    fingerprint: str
+    export_status: ExportStatus
+    export_reason: str | None
+    limitations: str | None
+    verification_summary: VerificationSummary | None
+    created_at: dt.datetime | None
+    #: What this version actually holds. The UI states these per row rather than
+    #: assuming every version can do what the current one can.
+    origin: str
+    has_qasm: bool
+    has_resource_estimates: bool
+    has_framework_variants: bool
+    exportable: bool
+    verified: bool
+    #: Codes for what restoring THIS row would take away from the artifact as it
+    #: stands right now. Empty for the current version.
+    restore_losses: list[str]
+
+
+class ArtifactVersionPage(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    versions: list[ArtifactVersionSummary]
+    current_version_id: uuid.UUID | None
+    #: Pass back as `before_seq` for the next page; null when the list is short
+    #: enough that there is no next page.
+    next_before_seq: int | None
+
+
+class RestoreVersionRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    #: Set once the caller has been shown what the restore costs. Without it a
+    #: lossy restore is refused rather than performed quietly.
+    acknowledge_capability_loss: bool = False
+
+
+def _to_version_summary(
+    row: ArtifactVersionRow, *, current_version_id: uuid.UUID | None, losses: list[str]
+) -> ArtifactVersionSummary:
+    caps = capabilities_of(row)
+    raw = (
+        row.artifact_metadata.get("verification_summary")
+        if isinstance(row.artifact_metadata, dict)
+        else None
+    )
+    return ArtifactVersionSummary(
+        id=row.id,
+        seq=row.seq,
+        is_current=row.id == current_version_id,
+        code_lang=row.code_lang,
+        fingerprint=row.fingerprint,
+        export_status=ExportStatus(row.export_status),
+        export_reason=row.export_reason,
+        limitations=row.limitations,
+        verification_summary=parse_verification_summary(raw),
+        created_at=row.created_at,
+        origin=caps.origin,
+        has_qasm=caps.has_qasm,
+        has_resource_estimates=caps.has_resource_estimates,
+        has_framework_variants=caps.has_framework_variants,
+        exportable=caps.exportable,
+        verified=caps.verified,
+        restore_losses=losses,
+    )
+
+
+@router.get("/artifacts/{artifact_id}/versions", response_model=ArtifactVersionPage)
+async def list_artifact_versions(
+    artifact_id: uuid.UUID,
+    scope: CurrentScope,
+    session: DbSession,
+    before_seq: int | None = None,
+    limit: int = VERSION_PAGE_DEFAULT,
+) -> ArtifactVersionPage:
+    """This artifact's history, newest authored first.
+
+    Rows are ordered by `seq`, which is authoring order — NOT "which is
+    current". Restoring moves `artifacts.current_version_id` without writing a
+    row, so the current version is frequently not the highest seq. That is why
+    every row carries `is_current` instead of the client inferring it from
+    position.
+    """
+    artifact = await artifacts_repo.get_artifact(scope, session, artifact_id)
+    bounded = min(max(limit, 1), VERSION_PAGE_MAX)
+    rows = await artifacts_repo.list_versions(
+        scope, session, artifact_id, before_seq=before_seq, limit=bounded
+    )
+    current = next((row for row in rows if row.id == artifact.current_version_id), None)
+    if current is None and artifact.current_version_id is not None:
+        # The current version can be off this page once history is paged; the
+        # comparison it anchors has to be right on every page, so fetch it.
+        current = await artifacts_repo.get_version(scope, session, artifact.current_version_id)
+    current_caps = capabilities_of(current) if current is not None else None
+    return ArtifactVersionPage(
+        versions=[
+            _to_version_summary(
+                row,
+                current_version_id=artifact.current_version_id,
+                losses=(
+                    []
+                    if current_caps is None or row.id == artifact.current_version_id
+                    else restore_losses(current_caps, capabilities_of(row))
+                ),
+            )
+            for row in rows
+        ],
+        current_version_id=artifact.current_version_id,
+        next_before_seq=rows[-1].seq if len(rows) == bounded else None,
+    )
+
+
+@router.post(
+    "/artifacts/{artifact_id}/versions/{version_id}/restore",
+    response_model=ArtifactVersionResource,
+)
+async def restore_artifact_version(
+    artifact_id: uuid.UUID,
+    version_id: uuid.UUID,
+    body: RestoreVersionRequest,
+    scope: CurrentScope,
+    session: DbSession,
+) -> ArtifactVersionResource:
+    """Make an earlier version current again.
+
+    Restore is a pointer move, so the restored version arrives with exactly the
+    evidence and exports IT was saved with — not the current version's. For a
+    version the user typed in Studio that means no QASM, no exports and no
+    verdict, because that is what a Studio draft is.
+
+    Refused with 409 when the restore would take a capability away, unless the
+    caller acknowledges it. The alternative — restoring quietly — hands the
+    canvas a version it cannot render and tells the user nothing. The refusal
+    names the losses as codes so the web can say it in the user's language.
+    """
+    # Locked here, not inside the repo call, so the capability comparison and
+    # the pointer move see the same current version. Without the lock a
+    # concurrent save between the two would mean the user acknowledged losses
+    # that were computed against a version no longer current.
+    artifact = await artifacts_repo.get_artifact(scope, session, artifact_id, for_update=True)
+    target = await artifacts_repo.get_version(scope, session, version_id)
+    if target.artifact_id != artifact.id:
+        raise HTTPException(status_code=404, detail="artifact version")
+    if not body.acknowledge_capability_loss and artifact.current_version_id is not None:
+        current = await artifacts_repo.get_version(scope, session, artifact.current_version_id)
+        losses = restore_losses(capabilities_of(current), capabilities_of(target))
+        if losses:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "error": (
+                        "Restoring this version would leave the artifact without "
+                        + ", ".join(losses)
+                        + ". Confirm to restore it anyway."
+                    ),
+                    "reason": "restore_loses_capabilities",
+                    "losses": losses,
+                },
+            )
+    return _to_version(
+        await artifacts_repo.restore_version(scope, session, artifact_id, version_id)
     )

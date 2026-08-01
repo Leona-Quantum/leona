@@ -64,6 +64,24 @@ def _latest_sandbox_event(events):
     return next((event for event in reversed(events) if event.type == "sandbox.result"), None)
 
 
+def _latest_export_event(events):
+    """Return export evidence from the current or legacy event projection.
+
+    The fixed pipeline projects conversion evidence on ``code.finalized``. Older
+    tool-loop runs emitted a separate ``export.classified`` event, so the harness
+    accepts both while preferring the current durable event.
+    """
+
+    return next(
+        (
+            event
+            for event in reversed(events)
+            if event.type in {"code.finalized", "export.classified"}
+        ),
+        None,
+    )
+
+
 async def _latest_trusted_result(
     store: RepoAgentStore, run_id: UUID
 ) -> tuple[dict[str, Any] | None, str | None, str | None]:
@@ -72,9 +90,10 @@ async def _latest_trusted_result(
     The repository is the authority. A missing execution is an honest absence; a
     stale/mismatched execution is an integrity error and must not be scored.
     """
-    candidate = await store.latest_candidate(run_id)
-    if candidate is None:
+    candidates = await store.list_candidates(run_id)
+    if not candidates:
         return None, None, None
+    candidate = candidates[-1]
     execution = await store.execution_for(run_id, candidate.candidate_id)
     if execution is None:
         return None, str(candidate.candidate_id), None
@@ -204,14 +223,20 @@ async def run_case(
     terminal_reason = (
         terminal_event.payload.get("reason_code") if terminal_event is not None else None
     )
-    export_event = next((e for e in events if e.type == "export.classified"), None)
+    export_event = _latest_export_event(events)
     error_event = next((e for e in events if e.type == "run.error"), None)
     # A repair loop can emit several sandbox results. Score the terminal/latest
     # attempt; the first attempt may have failed before the repaired program printed
     # its promised result (bench-14 exposed this by omitting a key that the final
     # attempt did print).
     sandbox_event = _latest_sandbox_event(events)
-    export_status = export_event.payload.get("status") if export_event else None
+    export_status = (
+        export_event.payload.get(
+            "export_status" if export_event.type == "code.finalized" else "status"
+        )
+        if export_event
+        else None
+    )
     saved = "artifact.saved" in types
     qasm_emission = (sandbox_event.payload.get("qasm_emission") if sandbox_event else None) or {}
     evidence = CaseEvidence(

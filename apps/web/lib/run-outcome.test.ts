@@ -40,9 +40,10 @@ test("a fresh failed run without a summary is not mislabeled as legacy", () => {
     { type: "run.finished", status: "failed" },
   ]);
 
-  assert.equal(outcome?.eyebrow, "Run incomplete");
-  assert.equal(outcome?.title, "No accepted result was produced");
-  assert.equal(outcome?.callout?.title, "Starting point only");
+  assert.equal(outcome?.eyebrow, "Best available result");
+  assert.equal(outcome?.title, "The strongest candidate was preserved");
+  assert.equal(outcome?.callout?.title, "Why it was not accepted");
+  assert.equal(outcome?.tone, "warn");
   assert.equal(outcome?.code?.source, "print('best effort')");
   assert.doesNotMatch(JSON.stringify(outcome), /Legacy/);
 });
@@ -54,7 +55,7 @@ test("provider failures use stable user-facing copy", () => {
     {
       type: "run.error",
       stage: "generate",
-      message: "planner provider call failed (deepseek:rate_limited, HTTP 429)",
+      message: "planner provider call failed (rate_limited, HTTP 429)",
     },
     { type: "run.finished", status: "failed" },
   ]);
@@ -153,7 +154,7 @@ test("the simple pipeline is presented as executed and explicitly unverified", (
   assert.equal(outcome?.tone, "warn");
   assert.equal(outcome?.callout?.title, "Strict verification was not run");
   assert.match(outcome?.callout?.body ?? "", /Quantum Correctness/);
-  assert.ok(outcome?.badges.some((badge) => badge.label === "Saved to Vault"));
+  assert.ok(outcome?.badges.some((badge) => badge.label === "Saved"));
   assert.deepEqual(
     outcome?.facts.map((fact) => fact.label),
     ["Algorithm", "Framework", "Revision"],

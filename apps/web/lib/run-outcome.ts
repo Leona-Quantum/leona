@@ -124,7 +124,7 @@ function failureByCodeFamily(code: string): string | null {
   return null;
 }
 
-function friendlyFailure(
+export function friendlyFailure(
   message: string | undefined,
   stage: string | null | undefined,
   code?: string | undefined,
@@ -237,7 +237,7 @@ function badgesFor(
 ): RunOutcomeBadge[] {
   return [
     { label: trustLabel, tone },
-    { label: saved ? "Saved to Vault" : "Not saved", tone: saved ? "neutral" : "warn" },
+    { label: saved ? "Saved" : "Not saved", tone: saved ? "neutral" : "warn" },
   ];
 }
 
@@ -309,14 +309,14 @@ export function runOutcomeFromEvents(
     const checks = checksFrom(summary, best?.failed_checks);
     if (best) {
       return {
-        tone: "err",
-        eyebrow: "Run incomplete",
-        title: "No accepted result was produced",
-        description: "The closest candidate is available for inspection, but it did not complete the workflow.",
-        badges: badgesFor("err", "Unverified", false),
+        tone: "warn",
+        eyebrow: "Best available result",
+        title: "The strongest candidate was preserved",
+        description: "The generated result remains available for inspection, with its verification limits clearly marked.",
+        badges: badgesFor("warn", "Not verified", false),
         facts,
         callout: {
-          title: "Starting point only",
+          title: "Why it was not accepted",
           body: best.critic_summary
             ? `${best.critic_summary} ${failureDescription}`
             : failureDescription,

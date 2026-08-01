@@ -412,7 +412,7 @@ print(noon_qubit_embedding(2, np.pi / 8))
     updatedAt: "2026-07-17",
     description:
       "The maximally mixed state ρ = I/2ⁿ: the unique n-qubit state invariant under every unitary, carrying zero information and maximal (n-bit) von Neumann entropy.",
-    descriptionJa: "最大混合状態ρ = I/2ⁿ：あらゆるユニタリに対して不変な唯一のnビット量子ビット状態であり、情報を一切持たず、最大（nビット）のフォン・ノイマンエントロピーを持ちます。",
+    descriptionJa: "最大混合状態ρ = I/2ⁿは、あらゆるユニタリに対して不変な唯一のn量子ビット状態です。情報を持たず、最大値nビットのフォン・ノイマンエントロピーを持ちます。",
     introduction:
       "Every mixed-state construction in this catalog has the maximally mixed state as a limiting or reference case: it is the infinite-temperature limit of any Gibbs state, the reduced state of half a maximally entangled pair, and the fixed point of complete depolarization — making it the natural 'zero information' baseline against which every other state's purity and entanglement are measured.",
     introductionJa:

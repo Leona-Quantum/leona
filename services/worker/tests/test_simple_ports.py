@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from types import SimpleNamespace
+from typing import get_args
 from uuid import uuid4
 
 import pytest
@@ -802,6 +803,7 @@ async def test_second_intent_review_attempt_has_a_distinct_metering_request():
     outcome = await SimpleCircuitPipeline(ports=ports).run(uuid4())
 
     assert outcome.status is SimplePipelineStatus.SUCCEEDED
+    assert outcome.review is not None and outcome.review.attempt_seq == 1
     assert len(review_llm.requests) == 2
     assert '"review_attempt": 1' in review_llm.requests[0].user
     assert '"review_attempt": 2' in review_llm.requests[1].user
@@ -1203,6 +1205,45 @@ def test_failed_reference_check_routes_to_code_repair_not_inconclusive():
     assert routing == (SemanticReviewDecision.CODE_REPAIR, "reference_check_failed")
 
 
+def test_expected_range_that_excludes_reference_truth_routes_directly_to_replan():
+    plan, execution = _vqe_plan(-1.419)
+    plan = plan.model_copy(
+        update={
+            "success_criteria": plan.success_criteria.model_copy(
+                update={"expected_range": {"min": -1.0, "max": -0.5}}
+            )
+        }
+    )
+
+    routing = _reference_check_routing(
+        _reference_checks(plan, execution),
+        simple_ports_module._success_criteria_check(plan, execution),
+    )
+
+    assert routing == (
+        SemanticReviewDecision.REPLAN,
+        "success_criteria_excludes_reference_truth",
+    )
+
+
+def test_valid_tight_range_still_routes_an_inaccurate_candidate_to_code_repair():
+    plan, execution = _vqe_plan(-1.419)
+    plan = plan.model_copy(
+        update={
+            "success_criteria": plan.success_criteria.model_copy(
+                update={"expected_range": {"min": -1.14, "max": -1.13}}
+            )
+        }
+    )
+
+    routing = _reference_check_routing(
+        _reference_checks(plan, execution),
+        simple_ports_module._success_criteria_check(plan, execution),
+    )
+
+    assert routing == (SemanticReviewDecision.CODE_REPAIR, "reference_check_failed")
+
+
 def test_unusable_reference_declaration_is_blamed_on_the_plan():
     """A reference the verifier cannot use fails identically on every candidate.
 
@@ -1355,10 +1396,31 @@ async def _decide(payload: str, checks=None) -> SimpleIntentReviewResult:
             _critic(decision="code_repair", severity="minor", repair_instructions=["add cx"]),
             SemanticReviewDecision.CODE_REPAIR,
         ),
-        # An unhedged blocker is still a blocker, whatever the model called it.
+        # A reviewer that asks for another candidate while naming nothing to change
+        # has described a residual risk, not a defect — but only its GRADE says so.
+        # This case keeps its clean grade, so it does not spend a source revision.
+        (_critic(decision="code_repair"), SemanticReviewDecision.READY),
+        (_critic(decision="inconclusive"), SemanticReviewDecision.READY),
+        # An unhedged blocker is still a blocker, whatever the model called it, and
+        # whether or not it went on to itemise what it found. The empty list is a
+        # missing follow-up, not a retraction.
         (_critic(severity="blocking"), SemanticReviewDecision.CODE_REPAIR),
         (_critic(confidence="low"), SemanticReviewDecision.CODE_REPAIR),
-        (_critic(decision="replan", severity="major"), SemanticReviewDecision.REPLAN),
+        (
+            _critic(
+                severity="blocking",
+                failed_checks=["source omits the requested entangling gate"],
+            ),
+            SemanticReviewDecision.CODE_REPAIR,
+        ),
+        (
+            _critic(
+                decision="replan",
+                severity="major",
+                mismatches=["the Plan targets the wrong algorithm"],
+            ),
+            SemanticReviewDecision.REPLAN,
+        ),
         # A model that answers "cannot tell" anyway is routed, not parked.
         (_critic(decision="inconclusive", confidence="low"), SemanticReviewDecision.CODE_REPAIR),
     ],
@@ -1369,6 +1431,109 @@ async def test_every_review_outcome_names_an_actionable_next_step(payload, expec
     assert result.decision is expected
     assert result.decision is not SemanticReviewDecision.INCONCLUSIVE
     assert result.retry_target is not RetryTarget.VERIFICATION
+
+
+# --- A refusing grade can never be published as an acceptance -----------------
+#
+# The verdict ("does this review clear the candidate?") and its disposition
+# ("which layer gets the next attempt?") are two facts. Fusing them once already
+# shipped as a proposal to return READY whenever the reviewer had not itemised a
+# finding — which reads `failed_checks`/`mismatches`/`repair_instructions`, all
+# defaulting to `[]` in model-authored JSON, as permission rather than as the
+# absence of evidence they actually are. The grades below are read off
+# _IntentReviewOutput's own Literal annotations, so widening the schema without
+# deciding which side of the gate a new grade belongs on fails here rather than
+# silently defaulting to "accepting".
+
+
+def _declared_grades(field: str) -> tuple[str, ...]:
+    annotation = simple_ports_module._IntentReviewOutput.model_fields[field].annotation
+    return tuple(get_args(annotation))
+
+
+def test_the_grade_domains_are_exactly_partitioned_into_accepting_and_refusing():
+    severities = set(_declared_grades("severity"))
+    confidences = set(_declared_grades("confidence"))
+
+    assert severities == {"none", "minor", "major", "blocking"}
+    assert confidences == {"high", "medium", "low"}
+    assert simple_ports_module._ACCEPTING_SEVERITIES == frozenset({"none", "minor"})
+    assert simple_ports_module._ACCEPTING_CONFIDENCES == frozenset({"high", "medium"})
+    # Every declared grade is classified. A grade outside the accepting set is a
+    # refusal by construction, so a new enum member cannot arrive pre-approved.
+    assert simple_ports_module._ACCEPTING_SEVERITIES <= severities
+    assert simple_ports_module._ACCEPTING_CONFIDENCES <= confidences
+
+
+@pytest.mark.parametrize("severity", _declared_grades("severity"))
+@pytest.mark.parametrize("confidence", _declared_grades("confidence"))
+@pytest.mark.parametrize("decision", ["ready", "code_repair", "replan", "inconclusive"])
+async def test_a_refusing_grade_is_never_accepted_however_bare_the_review(
+    severity, confidence, decision
+):
+    """Sweep every grade with a review that itemises nothing at all.
+
+    An empty findings list is the shape that made this reachable: a reviewer can
+    grade a circuit `blocking` and still return no `failed_checks`, no
+    `mismatches` and no `repair_instructions`. Acceptance must follow the grade,
+    not the itemisation.
+    """
+
+    result = await _decide(
+        _critic(
+            decision=decision,
+            severity=severity,
+            confidence=confidence,
+            summary="graded without itemising anything",
+            passed_checks=[],
+            failed_checks=[],
+            mismatches=[],
+            repair_instructions=[],
+            residual_risks=[],
+        )
+    )
+
+    accepting = severity in {"none", "minor"} and confidence in {"high", "medium"}
+    assert (result.decision is SemanticReviewDecision.READY) is accepting, (
+        f"severity={severity!r} confidence={confidence!r} decision={decision!r} "
+        f"produced {result.decision!r}"
+    )
+    assert (result.reason_code == "intent_aligned") is accepting
+
+
+@pytest.mark.parametrize("severity", ["major", "blocking"])
+@pytest.mark.parametrize("reference_methods", [(), (VerificationMethod.EXACT_DIAG,)])
+async def test_a_blocking_review_never_reaches_the_user_as_an_aligned_run(
+    severity, reference_methods
+):
+    """The whole projection, not just the mapping.
+
+    READY is what `_summary_reason_code` turns into `ai_review_aligned`, and
+    `apps/web/lib/run-outcome.ts` renders that reason code as "The circuit
+    executed and matched the request" with an "Executed" badge. Asserting the
+    decision alone would still pass if a later refactor published a refusal under
+    an accepting reason code, so pin the sentence the user is shown.
+    """
+
+    result = await _decide(_critic(severity=severity, summary="the circuit is wrong"))
+
+    assert result.decision is not SemanticReviewDecision.READY
+    summary = simple_pipeline_verification_summary(reference_methods, result.decision)
+    assert not str(summary["reason_code"]).startswith("ai_review_aligned")
+    assert summary["reason_code"] == "trusted_evidence_without_review_acceptance"
+    # The user is told which claim was not established, rather than being left to
+    # infer that the reviewer signed off.
+    assert "intent alignment" in summary["unverified_claims"]
+
+
+async def test_a_deterministic_failure_outranks_an_unblemished_grade():
+    result = await _decide(
+        _critic(),
+        checks=[{"method": "success_criteria", "result": "fail"}],
+    )
+
+    assert result.decision is SemanticReviewDecision.CODE_REPAIR
+    assert result.reason_code != "intent_aligned"
 
 
 async def test_a_failed_deterministic_check_outranks_a_claimed_acceptance():

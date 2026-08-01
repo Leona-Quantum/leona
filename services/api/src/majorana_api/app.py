@@ -21,9 +21,10 @@ from .routes.catalog import router as catalog_router
 from .routes.me import router as me_router
 from .routes.qpu import router as qpu_router
 from .routes.runs import router as runs_router
+from .routes.usage import router as usage_router
 from .routes.vqe import router as vqe_router
-from .settings import Settings
 from .routes.workspaces import router as workspaces_router
+from .settings import Settings
 
 
 def _wire_observability(app: FastAPI) -> None:
@@ -122,6 +123,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(catalog_router, prefix="/v1")
     app.include_router(qpu_router, prefix="/v1")
     app.include_router(billing_router, prefix="/v1")
+    app.include_router(usage_router, prefix="/v1")
     app.include_router(vqe_router, prefix="/v1")
     _wire_observability(app)
     return app

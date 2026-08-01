@@ -62,16 +62,35 @@ def fetch_workos_identities(api_key: str, *, limit: int = 100) -> dict[str, str]
 
 def _render(plan: identity_migration.ReattachPlan) -> None:
     width = max((len(m.email) for m in plan.matches), default=10)
-    print(f"\n{'address'.ljust(width)}  {'action':<18} artifacts  runs  note")
-    print("-" * (width + 52))
+    print(f"\n{'address'.ljust(width)}  {'action':<18} artifacts  runs  shared  note")
+    print("-" * (width + 60))
     for m in plan.matches:
-        print(f"{m.email.ljust(width)}  {m.action:<18} {m.artifacts:>9}  {m.runs:>4}  {m.reason}")
+        print(
+            f"{m.email.ljust(width)}  {m.action:<18} {m.artifacts:>9}  {m.runs:>4}  "
+            f"{m.original_foreign_memberships:>6}  {m.reason}"
+        )
     print(
         f"\n{len(plan.actionable)} to reattach, {len(plan.blocked)} blocked, "
         f"{len(plan.matches) - len(plan.actionable) - len(plan.blocked)} already fine"
     )
     for m in plan.blocked:
         print(f"  BLOCKED {m.email}: {m.reason}")
+        if m.original_foreign_memberships:
+            # The specific harm a blocked row hides. Artifacts and runs are
+            # counted in workspaces the row OWNS, so a row can report 0/0,
+            # look empty, and still be the only identity holding access to
+            # somebody else's workspace — or to a system one.
+            print(
+                f"          ...and it still holds {m.original_foreign_memberships} membership(s) "
+                "in workspaces it does not own. Those stay on the old identity, "
+                "which can no longer sign in. Move them by hand."
+            )
+    stranded = sum(m.original_foreign_memberships for m in plan.blocked)
+    if stranded:
+        print(
+            f"\n{stranded} shared-workspace membership(s) are stranded on blocked rows. "
+            "Nothing in this script moves them."
+        )
 
 
 async def main() -> int:

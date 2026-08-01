@@ -9,7 +9,7 @@
  * — the app stays usable while the control plane is unreachable — but it means
  * the local half is never removed by a response that omits it. Keyed by account
  * alone, switching into a shared workspace would show the personal workspace's
- * chat titles and Vault entries beside the shared workspace's, and no amount of
+ * chat titles and saved artifacts beside the shared workspace's, and no amount of
  * refreshing would clear them.
  *
  * ## Why personal keeps the account-only key

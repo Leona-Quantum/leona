@@ -61,6 +61,11 @@ class AccountMatch:
     #: Work done under the NEW identity. Any at all blocks the merge.
     duplicate_artifacts: int = 0
     duplicate_runs: int = 0
+    #: Memberships the OLD row holds in workspaces it does NOT own — shared
+    #: workspaces it was invited into, and any system workspace it administers.
+    #: Re-keying carries these across with the row; being BLOCKED strands them,
+    #: and nothing else in this plan can show that. See `plan_reattachment`.
+    original_foreign_memberships: int = 0
     action: str = "none"
     reason: str = ""
 
@@ -181,6 +186,7 @@ async def plan_reattachment(session: AsyncSession, *, identities: dict[str, str]
         match.original_user_id = original.id
         match.original_sub = original.workos_user_id
         match.artifacts, match.runs = await _content_counts(session, original.id)
+        match.original_foreign_memberships = await count_foreign_memberships(session, original.id)
 
         if duplicate is None:
             match.action = "rekey"
@@ -236,6 +242,36 @@ async def count_memberships(session: AsyncSession, user_id) -> int:
         (
             await session.execute(
                 select(func.count()).select_from(Membership).where(Membership.user_id == user_id)
+            )
+        ).scalar_one()
+    )
+
+
+async def count_foreign_memberships(session: AsyncSession, user_id) -> int:
+    """Memberships in workspaces this user does NOT own.
+
+    The number an operator needs and could not previously see. `_content_counts`
+    answers "what work would this person get back", and it counts only workspaces
+    the row OWNS — correct for that question, because a guest's view of somebody
+    else's workspace is not their content.
+
+    But a re-key moves the *row*, so it carries every membership with it, while a
+    BLOCKED account keeps them on an identity that can no longer sign in. Nothing
+    in the rendered plan showed that, and the case is not hypothetical: after the
+    2026-07-30 production reattachment, `emistry@berkeley.edu` was blocked with
+    "0 artifacts, 0 runs" — a row that looked completely empty and safe to leave
+    alone. It also held admin on the public catalog workspace and collaborator
+    access to the owner's Vault, both of which the new identity did not have. The
+    dry run reported neither, because neither is content in a workspace that row
+    owned.
+    """
+    owned = select(Workspace.id).where(Workspace.owner_user_id == user_id)
+    return int(
+        (
+            await session.execute(
+                select(func.count())
+                .select_from(Membership)
+                .where(Membership.user_id == user_id, Membership.workspace_id.not_in(owned))
             )
         ).scalar_one()
     )

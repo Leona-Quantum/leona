@@ -10,7 +10,7 @@ def _module():
         / "db"
         / "migrations"
         / "versions"
-        / "0039_vqe_component_registry.py"
+        / "0041_vqe_component_registry.py"
     )
     spec = importlib.util.spec_from_file_location("migration_0035_append_only", path)
     assert spec is not None and spec.loader is not None
@@ -31,7 +31,7 @@ def test_vqe_migration_enforces_immutability_and_fail_closed_downgrade(monkeypat
     module.downgrade()
 
     rendered = "\n".join(str(statement) for statement in statements)
-    assert module.down_revision == "0038"
+    assert module.down_revision == "0040"
     assert "BEFORE UPDATE OR DELETE ON vqe_observations" in rendered
     assert "revoke update, delete on vqe_observations from app_rw" in rendered.lower()
     assert "trg_vqe_component_specs_append_only" in rendered

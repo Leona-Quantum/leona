@@ -1,3 +1,5 @@
+import pathlib
+import re
 from types import SimpleNamespace
 
 import pytest
@@ -5,10 +7,16 @@ import pytest
 from majorana_api.db import (
     DEFAULT_MAX_OVERFLOW,
     DEFAULT_POOL_SIZE,
+    _application_name,
     _clear_query_timer,
+    _fleet_file,
     _pool_setting,
     _validate_application_url,
+    fleet_peak_connections,
+    fleet_sizing,
 )
+
+FLEET = fleet_sizing()
 
 CLOUD_SQL_URL = (
     "postgresql+psycopg://app:secret@/majorana?host=/cloudsql/majorana-core:us-west1:majorana-pg"
@@ -54,15 +62,101 @@ def test_a_plain_postgres_host_is_accepted(monkeypatch):
     _validate_application_url("postgresql://pg:pg@localhost:5432/majorana_migrations")
 
 
-def test_the_pool_ceiling_fits_the_instance(monkeypatch):
-    """db-g1-small allows 50 connections. Two API instances plus one worker must
-    not be able to claim them all, or a deploy's migration step cannot connect.
+def test_the_whole_fleet_fits_under_the_instance_ceiling():
+    """db-g1-small allows 50. The fleet must not be able to claim them all, or a
+    deploy's migration step cannot connect and the deploy fails at the worst
+    possible moment.
+
+    This asserts the ACTUAL fleet — API maxScale plus the worker count — rather
+    than a hardcoded process count. The old version of this test asserted
+    `per_process * 3`, which stopped describing production the moment the worker
+    count moved off one, and would have passed while the real total was 60.
     """
-    per_process = DEFAULT_POOL_SIZE + DEFAULT_MAX_OVERFLOW
-    assert per_process * 3 <= 40, (
-        f"{per_process} connections × 3 processes leaves too little of the 50-connection "
-        "ceiling for migrations and operator access"
+    peak = fleet_peak_connections()
+    budget = FLEET.connection_budget
+    assert peak <= budget, (
+        f"the fleet can reach {peak} connections "
+        f"({FLEET.api_max_instances} api × {DEFAULT_POOL_SIZE}+{DEFAULT_MAX_OVERFLOW}, "
+        f"{FLEET.worker_instances} worker × {FLEET.worker_pool_size}+{FLEET.worker_max_overflow}) "
+        f"but only {budget} of the instance's {FLEET.instance_connection_ceiling} are available "
+        f"after {FLEET.superuser_reserved} superuser-reserved and {FLEET.operational_headroom} for "
+        "a deploy's Alembic step and one operator"
     )
+
+
+def test_the_budget_survives_a_deploy_not_just_a_quiet_afternoon():
+    """The rollout is the case that breaks, and the reason the count is capped.
+
+    `--min-instances` is revision-level, so while a `gcloud run deploy` is in
+    flight the outgoing revision is still in the traffic split and still holding
+    its minimum: both revisions run their full complement at once. Sizing for the
+    steady state passes every day and fails on the one operation that also needs
+    a connection for Alembic.
+    """
+    budget = FLEET.connection_budget
+    assert fleet_peak_connections(during_worker_rollout=True) <= budget
+    assert fleet_peak_connections(during_worker_rollout=False) < fleet_peak_connections(
+        during_worker_rollout=True
+    ), "the rollout case must actually be the larger of the two, or it is not a check"
+
+
+def test_where_the_worker_count_actually_runs_out():
+    """A positive control, and the answer to "can we turn it up?".
+
+    A budget assertion that holds for every input is the same as no assertion.
+    This pins the boundary rather than today's setting: whatever
+    infra/fleet.env says, three workers must fit and four must not, ONCE the
+    deploy-time doubling is counted. Change any other term — the API's maxScale,
+    either pool number, the instance tier — and this test moves, which is the
+    point. It fails if someone raises WORKER_INSTANCES past what fits, so that
+    edit is caught in CI rather than in production.
+
+    Three is the stress-test setting the owner asked to be able to reach; one is
+    the default because at today's usage the queue is empty and each always-on
+    instance is real money. Four is not blocked by the database at rest — it is
+    blocked by the deploy. Buying the fourth means shrinking the API pool,
+    raising the tier, or draining the old worker revision first.
+    """
+    budget = FLEET.connection_budget
+
+    def fits(workers: int) -> bool:
+        return fleet_peak_connections(workers=workers) <= budget
+
+    assert fits(3), "three workers were expected to fit, deploy included"
+    assert not fits(4), "four workers were expected to exceed the budget during a deploy"
+    assert fits(FLEET.worker_instances), (
+        f"infra/fleet.env deploys {FLEET.worker_instances} workers, which does not fit the budget"
+    )
+
+
+def test_the_worker_pool_is_sized_for_two_concurrent_sessions():
+    """The worker holds the job handler and its lease heartbeat at once, and
+    nothing else concurrently — see `_execute_with_heartbeat`. The pool proper
+    must cover that without reaching for overflow, since overflow connections are
+    opened and closed per use rather than kept.
+    """
+    assert FLEET.worker_pool_size >= 2
+    assert FLEET.worker_max_overflow >= 1, (
+        "no slack at all turns one unexpected session into a stall"
+    )
+
+
+def test_the_application_name_identifies_the_service(monkeypatch):
+    """`pg_stat_activity.application_name` is how the runbook says to measure the
+    pool before resizing it. Before this it was empty on every backend."""
+    monkeypatch.setenv("MAJORANA_SERVICE", "worker")
+    assert _application_name() == "majorana-worker"
+    monkeypatch.setenv("MAJORANA_SERVICE", "api")
+    assert _application_name() == "majorana-api"
+
+
+def test_an_unlabelled_process_does_not_impersonate_a_service(monkeypatch):
+    """Reading `majorana-api` off a backend that is actually something else is
+    worse than reading nothing: the whole point is attribution."""
+    monkeypatch.delenv("MAJORANA_SERVICE", raising=False)
+    assert _application_name() == "majorana-unset"
+    monkeypatch.setenv("MAJORANA_SERVICE", "   ")
+    assert _application_name() == "majorana-unset"
 
 
 def test_pool_settings_come_from_the_environment_when_set(monkeypatch):
@@ -81,6 +175,155 @@ def test_a_negative_pool_setting_is_refused(monkeypatch):
     monkeypatch.setenv("DB_POOL_SIZE", "-1")
     with pytest.raises(RuntimeError, match="must not be negative"):
         _pool_setting("DB_POOL_SIZE", DEFAULT_POOL_SIZE)
+
+
+def _deploy_workflow() -> str:
+    root = pathlib.Path(__file__).resolve()
+    for parent in root.parents:
+        candidate = parent / ".github" / "workflows" / "deploy.yml"
+        if candidate.exists():
+            return candidate.read_text(encoding="utf-8")
+    pytest.skip("deploy.yml is not present in this checkout")
+
+
+def test_the_deploy_reads_the_sizing_from_the_same_file_the_budget_does():
+    """The previous version of this test asserted the literal `--min-instances 3`
+    against db.py's constant, because the number lived in two files and only a
+    test connected them. It now lives in ONE file, infra/fleet.env, so what has
+    to be asserted changed: not that the two copies agree, but that there is no
+    second copy — that deploy.yml interpolates the variables rather than pasting
+    a number beside them.
+
+    A literal here would still deploy correctly today and drift the first time
+    somebody edits fleet.env and pushes, which is exactly the operation the file
+    exists to make safe.
+    """
+    workflow = _deploy_workflow()
+    assert "infra/fleet.env" in workflow, "deploy.yml does not read the fleet sizing file at all"
+    assert '--min-instances "$WORKER_INSTANCES" --max-instances "$WORKER_INSTANCES"' in workflow, (
+        "the worker deploy line does not take its instance count from infra/fleet.env"
+    )
+    assert '--max-instances "$API_MAX_INSTANCES" \\' in workflow, (
+        "the api deploy line does not take its instance count from infra/fleet.env"
+    )
+    scaling = re.findall(r"--(?:min|max)-instances +(\S+)", workflow)
+    literals = [value for value in scaling if value.strip('"').isdigit()]
+    assert not literals, (
+        f"deploy.yml pins a scaling flag to a literal: {literals}. "
+        "Every instance count comes from infra/fleet.env — see the 'load fleet sizing' step"
+    )
+
+
+def test_every_value_the_deploy_needs_survives_the_grep_that_exports_it():
+    """The export is `grep -E '^[A-Z_]+=[0-9]+$' infra/fleet.env >> $GITHUB_ENV`.
+
+    A key that does not match is not an error — grep simply does not print it,
+    the variable stays unset, and the failure lands much later as
+    `--min-instances ""` or `DB_POOL_SIZE=`, which gcloud reads as "clear this
+    setting" and ships a revision nobody sized. Rename a key, add a trailing
+    space, quote a value, and this is the test that notices.
+
+    This reproduces the workflow's own regex against the real file rather than
+    trusting that the two stayed in step.
+    """
+    workflow = _deploy_workflow()
+    pattern = re.search(r"grep -E '(\^\[A-Z_\]\+=\[0-9\]\+\$)' infra/fleet\.env", workflow)
+    assert pattern, "the 'load fleet sizing' step's export line is not shaped as expected"
+
+    exported = {
+        line.split("=", 1)[0]
+        for line in _fleet_file().read_text(encoding="utf-8").splitlines()
+        if re.fullmatch(r"[A-Z_]+=[0-9]+", line)
+    }
+    required = {
+        "WORKER_INSTANCES",
+        "WORKER_POOL_SIZE",
+        "WORKER_MAX_OVERFLOW",
+        "API_MAX_INSTANCES",
+    }
+    assert required <= exported, (
+        f"infra/fleet.env keys the deploy needs but the export regex would drop: "
+        f"{sorted(required - exported)}"
+    )
+    # And the parser and the shell must agree about what the file contains.
+    assert exported >= {
+        "INSTANCE_CONNECTION_CEILING",
+        "SUPERUSER_RESERVED",
+        "OPERATIONAL_HEADROOM",
+    }, "fleet_sizing() reads budget keys that the shell export would not see"
+
+
+def test_the_worker_pool_override_is_actually_deployed():
+    """The worker's pool size is not a default in code — it only takes effect
+    because deploy.yml sets DB_POOL_SIZE on the worker service. A rename or a
+    dropped flag turns the worker back into a 5+5 process, silently, and several
+    of those plus the api is 60 against a ceiling of 50."""
+    workflow = _deploy_workflow()
+    assert "DB_POOL_SIZE=$WORKER_POOL_SIZE" in workflow
+    assert "DB_MAX_OVERFLOW=$WORKER_MAX_OVERFLOW" in workflow
+    assert "MAJORANA_SERVICE=worker" in workflow
+    assert "MAJORANA_SERVICE=api" in workflow
+
+
+def test_the_deploy_refuses_to_run_with_a_key_missing():
+    """Belt to the grep's braces. The export step checks each key it needs before
+    exporting anything, so a malformed fleet.env fails the deploy at the top
+    rather than at `gcloud run deploy` with an empty flag.
+    """
+    workflow = _deploy_workflow()
+    guard = re.search(r'grep -qE "\^\$\{key\}=\[0-9\]\+\$" infra/fleet\.env \|\|', workflow)
+    assert guard, "the 'load fleet sizing' step no longer validates keys before exporting them"
+
+
+def test_no_runtime_module_reads_the_fleet_file():
+    """infra/ is NOT copied into the container image (services/api/Dockerfile
+    copies services/, packages/py/, evals/harness/ and db/). `fleet_sizing()`
+    therefore raises in production, which is correct — it is deploy-time
+    configuration — but only for as long as nothing on a request path calls it.
+
+    This is the guard. Tests and scripts may call it; nothing under a service's
+    or package's `src/` may.
+    """
+    root = _fleet_file().parent.parent
+    sources = [
+        path
+        for pattern in ("services/*/src/**/*.py", "packages/py/*/src/**/*.py")
+        for path in root.glob(pattern)
+    ]
+    assert sources, "found no service sources to scan — the glob is wrong, not the code"
+
+    offenders = [
+        f"{path.relative_to(root)}:{number}"
+        for path in sources
+        if path.name != "db.py"
+        for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1)
+        if "fleet_sizing(" in line or "fleet_peak_connections(" in line
+    ]
+    assert not offenders, (
+        "deploy-time fleet sizing is read from a request path; infra/fleet.env is "
+        f"not in the container image and this raises in production: {offenders}"
+    )
+
+
+def test_the_worker_env_is_updated_never_replaced():
+    """`--set-env-vars` replaces the whole environment. Neither service declares
+    DATABASE_URL here — it is live-service state — so a --set on either deploy
+    line ships a revision that cannot reach the database at all.
+
+    Comment lines are excluded deliberately: the reason this flag is forbidden is
+    written in a comment beside the deploy line, and a naive substring search
+    over the whole file fails on the explanation of its own rule.
+    """
+    commands = [
+        line
+        for line in _deploy_workflow().splitlines()
+        if not line.lstrip().startswith("#") and line.strip()
+    ]
+    offenders = [line.strip() for line in commands if "--set-env-vars" in line]
+    assert not offenders, (
+        "--set-env-vars replaces the entire container environment, including the "
+        f"DATABASE_URL that neither deploy declares; use --update-env-vars: {offenders}"
+    )
 
 
 def test_clear_query_timer_removes_one_matching_timer_without_raising():

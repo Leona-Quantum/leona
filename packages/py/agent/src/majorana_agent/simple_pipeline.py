@@ -317,7 +317,11 @@ class SimpleCircuitPipeline:
         # What forced the pending replan. A replan that then fails must not be
         # allowed to erase it — see _with_originating_cause.
         replan_cause: SimplePipelineFailure | None = None
-        seen_fingerprints: dict[str, int] = {}
+        # A source can be wrong under one Plan and correct under a materially
+        # revised Plan (for example when only an expected energy range was
+        # repaired). Count stagnation within the Plan semantics that judged the
+        # source, while retaining counts across byte-identical replans.
+        seen_fingerprints: dict[tuple[str, str], int] = {}
 
         while True:
             if plan is None or plan_feedback is not None:
@@ -406,13 +410,18 @@ class SimpleCircuitPipeline:
                 )
 
             counts["generation_attempts"] += 1
+            repair_context = self._generation_budget_feedback(
+                generation_feedback or self._history_feedback(attempts),
+                attempt=counts["generation_attempts"],
+                limit=self._budget.max_generation_attempts,
+            )
             generated = await self._invoke(
                 SimplePipelineStage.GENERATING,
                 lambda: self._ports.generate(
                     run_id,
                     plan,
                     candidate,
-                    generation_feedback or self._history_feedback(attempts),
+                    repair_context,
                 ),
             )
             if generated.failure is not None:
@@ -436,19 +445,6 @@ class SimpleCircuitPipeline:
                 )
             new_candidate = generated.value
             assert new_candidate is not None
-            repeat_failure = self._repeat_candidate_failure(new_candidate, seen_fingerprints)
-            if repeat_failure is not None:
-                return await self._recover_sound_candidate_or_fail(
-                    run_id,
-                    failure=repeat_failure,
-                    soundest=soundest,
-                    counts=counts,
-                    warnings=warnings,
-                    plan=plan,
-                    candidate=candidate,
-                    execution=execution,
-                    review=review,
-                )
             binding_failure = self._validate_candidate(run_id, plan, new_candidate, candidate)
             if binding_failure is not None:
                 return self._failed(
@@ -461,9 +457,46 @@ class SimpleCircuitPipeline:
                     warnings=warnings,
                 )
             candidate = new_candidate
-            generation_feedback = None
             execution = None
             review = None
+            repeat_failure = self._repeat_candidate_failure(
+                plan,
+                candidate,
+                seen_fingerprints,
+            )
+            if repeat_failure is not None:
+                self._record_attempt(
+                    attempts,
+                    candidate=candidate,
+                    reason=repeat_failure.code,
+                    diagnostics=[
+                        "The generated source is byte-identical to an earlier rejected revision."
+                    ],
+                    failure_signature=candidate.source_fingerprint,
+                )
+                if (
+                    soundest is None
+                    and counts["plan_attempts"] < self._budget.max_plan_attempts
+                    and counts["generation_attempts"] < self._budget.max_generation_attempts
+                ):
+                    # Repeating the same bytes proves that another code-only repair has
+                    # stopped making progress, not that the task itself is impossible.
+                    # Spend the remaining replan budget on a materially different
+                    # approach before giving up. The Plan fingerprint remains part of
+                    # the key, so a cosmetic/identical replan still terminates while a
+                    # materially changed Plan gets one honest evaluation.
+                    plan_feedback = self._feedback(repeat_failure, attempts)
+                    continue
+                return await self._recover_sound_candidate_or_fail(
+                    run_id,
+                    failure=repeat_failure,
+                    soundest=soundest,
+                    counts=counts,
+                    warnings=warnings,
+                    plan=plan,
+                    candidate=candidate,
+                )
+            generation_feedback = None
 
             executed = await self._execute(run_id, plan, candidate, counts)
             if isinstance(executed, SimplePipelineFailure):
@@ -1393,10 +1426,11 @@ class SimpleCircuitPipeline:
 
     @staticmethod
     def _repeat_candidate_failure(
+        plan: PlanRevision,
         candidate: CandidateRevision,
-        seen: dict[str, int],
+        seen: dict[tuple[str, str], int],
     ) -> SimplePipelineFailure | None:
-        """Stop a repair loop that keeps emitting the same bytes.
+        """Stop code-only repair when one Plan keeps emitting the same bytes.
 
         Observed in production (run 019f9ea8-deac-7650-babc-5925d7585211):
         `Convert a Bell state circuit to Cirq` routed to execute with
@@ -1405,22 +1439,27 @@ class SimpleCircuitPipeline:
         byte-identical**. Every one of those cost a model call and a sandbox
         execution to learn nothing.
 
-        It refuses the THIRD occurrence, not the second, and that is a real
-        distinction rather than caution. Two identical candidates have an
-        innocent explanation: a blocked review can ask for a repair, the
-        generator can return the same source, and the *reviewer* can then change
-        its verdict and pass it — `test_production_ports_regenerate_after_a_
-        blocked_review` pins exactly that path, and refusing at two broke it. By
-        a third the loop has evaluated identical bytes twice and is demonstrably
-        not moving. That still turns the observed eight attempts into three.
+        It signals on the THIRD occurrence, not the second, and that is a real
+        distinction rather than caution. Two identical candidates have an innocent
+        explanation: a blocked review can ask for a repair, the generator can return
+        the same source, and the *reviewer* can then change its verdict and pass it —
+        `test_production_ports_regenerate_after_a_blocked_review` pins exactly that
+        path, and refusing at two broke it. By a third, code-only repair is
+        demonstrably not moving. The controller may spend remaining plan budget on
+        one materially different approach. An unchanged Plan has the same semantic
+        fingerprint and therefore still terminates on the next candidate instead of
+        consuming all eight. A materially changed Plan gets a fresh evaluation:
+        correct source must not be rejected merely because an earlier Plan had a
+        faulty range or verification method.
 
         `source_fingerprint` is a SHA-256 over the framework-native source and is
         validated against it by CandidateRevision, so it cannot drift from what
         actually ran.
         """
         fingerprint = candidate.source_fingerprint
-        seen[fingerprint] = seen.get(fingerprint, 0) + 1
-        occurrences = seen[fingerprint]
+        key = (plan.plan_fingerprint, fingerprint)
+        seen[key] = seen.get(key, 0) + 1
+        occurrences = seen[key]
         if occurrences < 3:
             return None
         return SimplePipelineFailure(
@@ -1511,6 +1550,43 @@ class SimpleCircuitPipeline:
                 "reasons listed and must not be repeated"
             ),
             details={"prior_attempts": list(attempts)},
+        )
+
+    @staticmethod
+    def _generation_budget_feedback(
+        feedback: SimpleRepairFeedback | None,
+        *,
+        attempt: int,
+        limit: int,
+    ) -> SimpleRepairFeedback | None:
+        """Tell a repair how much room remains without turning the first attempt into one.
+
+        namekoQ's model sees the whole tool-loop transcript and can infer that it is
+        approaching the step ceiling. The fixed pipeline sends only the immediately
+        previous source plus compact defect history, so the generator otherwise cannot
+        distinguish candidate two from its final candidate. That encouraged broad
+        rewrites on the last attempt and could reintroduce already-fixed defects.
+
+        Initial generation deliberately keeps ``feedback=None``: production uses that
+        distinction to keep the first candidate deterministic. Repairs receive explicit
+        budget context, including a last-chance flag that the generation prompt turns
+        into a minimal, convergence-oriented instruction.
+        """
+
+        if feedback is None:
+            return None
+        details = dict(feedback.details)
+        details["candidate_budget"] = {
+            "attempt": attempt,
+            "limit": limit,
+            "remaining_after_this": max(0, limit - attempt),
+            "last_chance": attempt >= limit,
+        }
+        return SimpleRepairFeedback(
+            stage=feedback.stage,
+            code=feedback.code,
+            message=feedback.message,
+            details=details,
         )
 
     @staticmethod

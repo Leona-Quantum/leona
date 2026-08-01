@@ -18,7 +18,7 @@ subtle R>G>B tilt is the only "flavour"; low chroma), and chromatic color is rat
 one moss-green `--accent` plus three verdict signals. The warm tilt is inherited, not
 arbitrary: the agent was once called Nameko, after the amber-capped mushroom, and the
 palette was built around that. The name is retired (the agent is Nala, the surfaces are
-Vault and Atlas) but the tokens were kept — they were approved on their own merits, and
+Studio and Atlas) but the tokens were kept — they were approved on their own merits, and
 every surface still shares them. Verdict colors (`--ok` emerald, `--warn`
 amber, `--err` red) are **always paired with a glyph** so status never rides on hue alone
 (deuteranopia-safe): the rail dots carry ✓ / – / ✕, and the verdict banner leads with its

@@ -69,7 +69,7 @@ export const RAW_PUBLIC_REPOSITORY_ENTRIES: PublicRepositoryEntry[] = [
     introduction:
       "Hadamard is a good first record because its behavior is easy to inspect mathematically and in a measured distribution.",
     introductionJa:
-      "アダマールゲートは、数式と測定分布の両方で挙動を確認しやすい最初の参照レコードです。",
+      "アダマールゲートは、数式と測定分布の両方で挙動を確認しやすい、最も基本的な例です。",
     explanation:
       "Applied to |0⟩, H produces (|0⟩ + |1⟩)/√2. Applied to |1⟩, it produces (|0⟩ − |1⟩)/√2. The relative sign matters when later gates interfere amplitudes.",
     explanationJa:
@@ -213,7 +213,7 @@ export const RAW_PUBLIC_REPOSITORY_ENTRIES: PublicRepositoryEntry[] = [
     provenance: "Verified starter",
     updatedAt: "2026-07-10",
     description: "A two-qubit entanglement example with a return contract and distribution check.",
-    descriptionJa: "戻り値の契約と分布チェックを備えた、2量子ビットのエンタングルメント例です。",
+    descriptionJa: "出力形式と分布を確認できる、2量子ビットのエンタングルメント例です。",
     introduction:
       "The Bell state is compact enough for a first experiment and rich enough to show that measurement outcomes can be correlated without choosing a classical bit in advance.",
     introductionJa:
@@ -297,7 +297,7 @@ export const RAW_PUBLIC_REPOSITORY_ENTRIES: PublicRepositoryEntry[] = [
     provenance: "Framework example",
     updatedAt: "2026-07-09",
     description: "A reusable GHZ state preparation circuit with simulator-only evidence.",
-    descriptionJa: "シミュレータ検証の境界を明示した、再利用可能なGHZ状態準備回路です。",
+    descriptionJa: "シミュレータで検証した範囲を明示した、再利用可能なGHZ状態準備回路です。",
     introduction:
       "GHZ preparation extends the Bell-state pattern to a small register and makes the distinction between local operations and global correlation visible.",
     introductionJa:
@@ -374,15 +374,15 @@ export const RAW_PUBLIC_REPOSITORY_ENTRIES: PublicRepositoryEntry[] = [
     provenance: "Verified run",
     updatedAt: "2026-07-12",
     description: "A p=1 QAOA circuit with a classical MaxCut comparison and reproducible simulation evidence.",
-    descriptionJa: "古典MaxCut比較と再現可能なシミュレーション証拠を備えたp=1 QAOA回路です。",
+    descriptionJa: "古典MaxCutとの比較と、再現可能なシミュレーション結果を備えたp=1 QAOA回路です。",
     introduction:
       "This record moves from primitives to a small optimization workload: the objective, circuit, sampling boundary, and acceptance metric stay visible together.",
     introductionJa:
-      "目的関数、回路、サンプリングの境界、受入指標を一緒に確認できる小さな最適化ワークロードです。",
+      "目的関数、回路、サンプリング条件、判定基準を一緒に確認できる小規模な最適化例です。",
     explanation:
       "The cost Hamiltonian encodes the edges of a five-node ring. At p=1, the circuit is intentionally small; the public claim is about the recorded distribution check, not a hardware optimum claim.",
     explanationJa:
-      "コストハミルトニアンは5ノードリングの辺を符号化します。p=1で回路を小さく保ち、ハードウェア最適解ではなく記録された分布チェックを公開主張とします。",
+      "コストハミルトニアンは5ノードリングの辺を符号化します。p=1で回路を小さく保ち、実機上の最適性は主張せず、記録した分布の確認結果のみを示します。",
     tags: ["optimization", "maxcut", "qaoa", "simulation"],
     resources: [
       { label: "Qubits", value: "5" },
@@ -448,7 +448,7 @@ export const RAW_PUBLIC_REPOSITORY_ENTRIES: PublicRepositoryEntry[] = [
         year: "2018",
         url: "https://doi.org/10.1103/PhysRevA.97.022304",
         relevance: "Analyzes parameter setting and the ring-of-disagrees instance used by this record.",
-        relevanceJa: "このレコードと同じリング系インスタンスとパラメータ設定を分析します。",
+        relevanceJa: "この項目と同じリング型の問題とパラメータ設定を分析します。",
       },
     ],
     classicalComparison: {
@@ -566,7 +566,7 @@ export const RAW_PUBLIC_REPOSITORY_ENTRIES: PublicRepositoryEntry[] = [
     provenance: "Literature reference",
     updatedAt: "2026-07-14",
     description: "The cryptography-facing quantum algorithm record, with the assumptions that make its security relevance precise.",
-    descriptionJa: "暗号分野に関係する量子アルゴリズムを、セキュリティ上の前提とともに記録します。",
+    descriptionJa: "暗号に関わる量子アルゴリズムと、その安全性の前提を説明します。",
     introduction: "Shor's algorithm reduces factoring and discrete logarithms to period finding. It is industry-relevant primarily as a migration and risk-planning reference today, not as a near-term production attack.",
     introductionJa: "Shorのアルゴリズムは因数分解と離散対数を周期発見に帰着します。現在の主な産業的意義は、直近の攻撃ではなく移行とリスク計画です。",
     explanation: "Quantum phase estimation extracts a period from modular arithmetic; the classical continued-fraction step turns that period into candidate factors. The record keeps those quantum and classical halves separate.",
@@ -919,7 +919,7 @@ export const RAW_PUBLIC_REPOSITORY_ENTRIES: PublicRepositoryEntry[] = [
     provenance: "Literature reference",
     updatedAt: "2026-07-14",
     description: "A linear-algebra reference that forces the catalog to show input loading, conditioning, and output observability.",
-    descriptionJa: "入力ロード、条件数、出力観測可能性を明示する線形代数の参照レコードです。",
+    descriptionJa: "入力データの読み込み、条件数、出力として取得できる情報を明示した線形代数の参考例です。",
     introduction: "HHL is often cited for quantum linear systems, but it is best used as a requirements checklist: sparse access, a well-conditioned system, a state-preparation model, and an observable—not a free classical vector output.",
     introductionJa: "HHLは量子線形方程式の代表例ですが、疎性、条件数、状態準備、観測量を確認する要件チェックリストとして扱います。古典ベクトルを無料で出すものではありません。",
     explanation: "The algorithm estimates eigenvalue-dependent rotations via phase estimation and encodes solution amplitudes into a quantum state. The useful business question is which observable is needed, not whether every xᵢ can be printed.",
@@ -1003,7 +1003,7 @@ export const RAW_PUBLIC_REPOSITORY_ENTRIES: PublicRepositoryEntry[] = [
     provenance: "Literature reference",
     updatedAt: "2026-07-14",
     description: "A quantum feature-map record paired with a classical SVM so model quality and data costs stay visible.",
-    descriptionJa: "モデル品質とデータコストを可視化するため、量子特徴写像と古典SVMを対にした記録です。",
+    descriptionJa: "モデルの性能とデータ準備コストを比較するため、量子特徴写像と古典SVMを組み合わせた例です。",
     introduction: "Quantum kernels use a circuit to map inputs into a feature space and estimate similarities, then hand the kernel matrix to a classical learner. The meaningful benchmark is end-to-end predictive performance and cost.",
     introductionJa: "量子カーネルは回路で入力を特徴空間に写像し類似度を推定した後、カーネル行列を古典学習器に渡します。重要な比較は予測性能と総コストです。",
     explanation: "The circuit prepares |φ(x)⟩ and uses overlap or a related measurement to estimate K(x, y). The classical SVM still performs the optimization; the quantum part changes the feature map.",
@@ -1271,7 +1271,7 @@ export const RAW_PUBLIC_REPOSITORY_ENTRIES: PublicRepositoryEntry[] = [
     provenance: "Literature reference",
     updatedAt: "2026-07-14",
     description: "A fault-tolerance record for comparing physical error, syndrome extraction, decoder choice, and logical failure.",
-    descriptionJa: "物理誤り、シンドローム抽出、デコーダ、論理故障を比較するためのフォールトトレランス記録です。",
+    descriptionJa: "物理誤り、シンドローム抽出、デコーダ、論理故障を比較するためのフォールトトレランス項目です。",
     introduction: "Surface-code families are central to scalable fault tolerance because they use local stabilizer checks and planar connectivity. The XZZX variant illustrates why matching a code to biased noise can matter as much as the code name.",
     introductionJa: "表面符号系は局所シンドローム検査と平面接続を使うため、スケーラブルなフォールトトレランスの中心です。XZZXはノイズの偏りに符号を合わせる重要性を示します。",
     explanation: "Repeated stabilizer measurements produce a space-time syndrome. A decoder infers likely error chains, and the logical observable fails when the inferred correction differs by a nontrivial logical operator.",
@@ -1366,7 +1366,7 @@ export const RAW_PUBLIC_REPOSITORY_ENTRIES: PublicRepositoryEntry[] = [
     introduction:
       "The QFT record emphasizes the metadata researchers need before reuse: wire count, phase-rotation structure, and what the export check actually covers.",
     introductionJa:
-      "QFTレコードでは、再利用前に必要なワイヤ数、位相回転構造、エクスポート検査の範囲を重視します。",
+      "QFTでは、再利用前に量子ビット数、位相回転の構造、書き出し時に確認した範囲を重視します。",
     explanation:
       "Hadamards create the Fourier basis and controlled phase rotations encode relative phase relationships. The final swap layer is optional depending on bit-order convention, so the catalog keeps that choice explicit.",
     explanationJa:
@@ -1544,7 +1544,7 @@ export const ADDITIONAL_PUBLIC_REPOSITORY_ENTRIES: PublicRepositoryEntry[] = [
     provenance: "Curated reference",
     updatedAt: "2026-07-15",
     description: "A non-Clifford phase gate that marks the boundary between a compact Clifford set and universal synthesis.",
-    descriptionJa: "クリフォード集合と万能な合成の境界を示す、非クリフォード位相ゲートです。",
+    descriptionJa: "クリフォード集合と普遍ゲート合成における位置づけを示す、非クリフォード位相ゲートです。",
     introduction: "T is useful in resource discussions because its ideal matrix is simple while fault-tolerant cost can dominate.",
     introductionJa: "Tは理想行列が単純でもフォールトトレラントなコストが支配的になり得るため、リソース議論に有用です。",
     explanation: "T|0⟩ = |0⟩ and T|1⟩ = e^(iπ/4)|1⟩. Two T gates make S, and eight make the identity.",
@@ -1614,7 +1614,7 @@ export const ADDITIONAL_PUBLIC_REPOSITORY_ENTRIES: PublicRepositoryEntry[] = [
     description: "A routing primitive that exchanges two qubit states and makes hardware connectivity explicit.",
     descriptionJa: "2つの量子ビット状態を交換し、ハードウェア接続性を明示するルーティング演算です。",
     introduction: "SWAP belongs in a practical catalog because moving a state is often a compilation concern, not an algorithmic one.",
-    introductionJa: "SWAPは、状態の移動がアルゴリズムではなくコンパイル上の関心になることを示す実用的な記録です。",
+    introductionJa: "SWAPは、状態の移動がアルゴリズムではなくコンパイル時の課題になることを示す実用的な例です。",
     explanation: "SWAP exchanges the amplitudes associated with q[0] and q[1]. A compiler may decompose it into three CX gates when SWAP is not native.",
     explanationJa: "SWAPはq[0]とq[1]に対応する振幅を交換します。ネイティブでなければ、コンパイラは3つのCXに分解できます。",
     tags: ["routing", "two qubit", "connectivity"],
@@ -1686,7 +1686,7 @@ export const ADDITIONAL_PUBLIC_REPOSITORY_ENTRIES: PublicRepositoryEntry[] = [
     description: "A query circuit that recovers the hidden bit string in f(x) = s · x.",
     descriptionJa: "f(x) = s · xに埋め込まれた隠れたビット列を復元するクエリ回路です。",
     introduction: "Bernstein–Vazirani is a useful companion to Deutsch–Jozsa because it returns the hidden string rather than only its promise class.",
-    introductionJa: "Bernstein–Vaziraniは、約束クラスだけでなく隠れた文字列を返すため、Deutsch–Jozsaの補助記録になります。",
+    introductionJa: "Bernstein–Vaziraniは、関数の分類だけでなく隠れた文字列を返すため、Deutsch–Jozsaと比較できる例です。",
     explanation: "A parity oracle applies CX from every secret-bit position set to 1 into the output qubit. Hadamard interference then exposes s in the input register.",
     explanationJa: "パリティオラクルは秘密ビットが1の位置から出力量子ビットへCXを適用します。Hによる干渉で入力レジスタにsが現れます。",
     tags: ["query", "hidden string", "oracle", "Qiskit"],

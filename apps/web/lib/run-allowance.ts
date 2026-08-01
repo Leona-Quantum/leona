@@ -125,7 +125,7 @@ export function runAllowanceRefusal(verdict: RunAllowanceVerdict): AllowanceRefu
 export function artifactAllowanceRefusal(used: number, limit: number): AllowanceRefusal {
   return {
     error:
-      `Your Vault holds ${used} of ${limit} artifacts on this plan. ` +
+      `Your Studio holds ${used} of ${limit} artifacts on this plan. ` +
       "Archive an artifact you no longer need, or rerun against an existing one, " +
       "and the submission will go through.",
     reason: "artifact_allowance_exhausted",

@@ -1,6 +1,7 @@
 "use client";
 
 import type { DragEvent, FormEvent, ReactNode } from "react";
+import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { AppShell, BRAND_NAME, NAV_SURFACES, navSurfaceLabel } from "@majorana/ui";
@@ -26,11 +27,13 @@ import {
   collapseConversationChats,
   createChatFolder,
   createRemoteChatFolder,
-  daysUntilArchiveDeletion,
   deleteChat,
+  deleteRemoteChatFolder,
   hydrateChatFolders,
   loadChatFolders,
   loadChatHistory,
+  renameRemoteChatFolder,
+  reorderChatFolders,
   restoreChat,
   updateChat,
   type ChatFolder,
@@ -39,6 +42,8 @@ import {
 } from "../lib/chat-history";
 import { accountFirstName, accountInitials } from "../lib/account-identity";
 import type { AccountTier } from "../lib/account-tier";
+import { fetchArtifactPages } from "../lib/artifact-page";
+import { describeNextSlot, isMetered, parseUsage, type UsageSummary } from "../lib/usage-summary";
 import { titleFromPrompt } from "../lib/chat-title";
 import {
   ARTIFACT_FOLDERS_EVENT,
@@ -58,6 +63,16 @@ import { WORKSPACE_COPY } from "../lib/workspace-locale";
 // A viewport preference, not content: stays device-global rather than
 // per-account (see DEVICE_STORAGE_KEYS in lib/user-storage.ts).
 const SIDEBAR_STORAGE_KEY = "majorana.sidebar-collapsed.v1";
+// Same reasoning as SIDEBAR_STORAGE_KEY: where a rail section sits is a property
+// of this screen, not of the person. Someone who puts recents on top of their
+// laptop's narrow rail has not asked for that on their desktop.
+// A localStorage key, not a credential. gitleaks' default `generic-api-key`
+// rule fires on any high-entropy string assigned to a constant whose name ends
+// in KEY — which is what every storage key in this file is called, including
+// SIDEBAR_STORAGE_KEY above (that one only escapes because gitleaks scans a
+// PR's own commits). The marker has to sit on the flagged line itself.
+const RECENTS_POSITION_KEY = "majorana.recents-position.v1"; // gitleaks:allow
+type RecentsPosition = "above" | "below";
 type WorkspaceSurface = "run" | "studio";
 type DeleteTarget =
   | { kind: "chat"; item: ChatSummary }
@@ -97,6 +112,7 @@ export function Shell({
   const [artifactFolders, setArtifactFolders] = useState<ArtifactFolder[]>([]);
   const [folderSyncState, setFolderSyncState] = useState<"local" | "synced" | "error">("local");
   const [refreshTick, setRefreshTick] = useState(0);
+  const [archiveNotice, setArchiveNotice] = useState<ChatSummary | null>(null);
 
   useEffect(() => {
     const saved = window.localStorage.getItem(SIDEBAR_STORAGE_KEY);
@@ -132,12 +148,23 @@ export function Shell({
       }
 
       try {
-        const [runsResponse, artifactsResponse] = await Promise.all([
+        // Artifacts are paged rather than fetched once: an un-paged read returns
+        // the route's default of 50 and looks exactly like a workspace that
+        // holds 50. See lib/artifact-page.ts. Runs stay at one page — that list
+        // is the recent-chat rail and 50 is the intended ceiling, not an
+        // accident of the default.
+        const [runsResponse, artifactPages] = await Promise.all([
           fetch("/api/runs?limit=50", { cache: "no-store" }),
-          fetch("/api/artifacts", { cache: "no-store" }),
+          // A failed read falls back to the local mirror, as it did before this
+          // was paged. `complete: false` rather than true — nothing reads it
+          // here yet, and the first thing that does must not be told the empty
+          // list was the whole list.
+          fetchArtifactPages((query) => fetch(`/api/artifacts${query}`, { cache: "no-store" })).catch(
+            () => ({ rows: [] as unknown[], complete: false }),
+          ),
         ]);
         const runPayload = runsResponse.ok ? ((await runsResponse.json()) as unknown) : [];
-        const artifactPayload = artifactsResponse.ok ? ((await artifactsResponse.json()) as unknown) : [];
+        const artifactPayload = artifactPages.rows;
         const byId = new Map(Array.isArray(runPayload) ? runPayload.flatMap(chatFromRun).map((chat) => [chat.id, chat]) : []);
         for (const local of loadChatHistory({ includeDemo: false, includeArchived: true })) {
           const remote = byId.get(local.id);
@@ -244,6 +271,7 @@ export function Shell({
           onArchive={(chat) => {
             archiveChat(chat.id, chat);
             refreshAfterLocalChange();
+            setArchiveNotice(chat);
           }}
           onRestore={(chat) => {
             restoreChat(chat.id);
@@ -283,7 +311,67 @@ export function Shell({
       locale={locale}
     >
       {children}
+      {archiveNotice ? (
+        <ArchiveNotice
+          // The key is load-bearing, not decoration: archiving a second chat
+          // while the first banner is up must REMOUNT it, so the six seconds
+          // start again for the chat now named rather than expiring on the
+          // previous one's schedule.
+          key={archiveNotice.id}
+          chat={archiveNotice}
+          locale={locale}
+          onUndo={() => {
+            restoreChat(archiveNotice.id);
+            refreshAfterLocalChange();
+            setArchiveNotice(null);
+          }}
+          onDismiss={() => setArchiveNotice(null)}
+        />
+      ) : null}
     </AppShell>
+  );
+}
+
+const ARCHIVE_NOTICE_MS = 6000;
+
+/**
+ * The banner the owner asked for: "undo or view archived chat in settings".
+ *
+ * It exists because the archive list left the sidebar. Archiving used to be
+ * self-evidently reversible — the chat was visibly still there, one section
+ * down. Now it leaves the rail entirely, so the only moment the person can be
+ * told where it went is the moment it happens.
+ *
+ * `setTimeout`, not a CSS animation end or `requestAnimationFrame`: rAF does not
+ * fire in a background tab, and this banner has a real consequence (dismissing
+ * the only undo affordance) that must not depend on the tab being watched.
+ */
+function ArchiveNotice({ chat, locale, onUndo, onDismiss }: { chat: ChatSummary; locale: PublicLocale; onUndo: () => void; onDismiss: () => void }) {
+  const copy = WORKSPACE_COPY[locale].sidebar;
+  // `onDismiss` is a fresh closure on every parent render, so depending on it
+  // directly restarted the six seconds each time anything else in the shell
+  // re-rendered — a busy workspace would have kept the banner up indefinitely.
+  // The ref keeps the callback current without making it a dependency; the
+  // effect then runs exactly once per mount, and the caller's `key` is what
+  // makes a second archive a new mount.
+  const dismissRef = useRef(onDismiss);
+  dismissRef.current = onDismiss;
+  useEffect(() => {
+    const timer = window.setTimeout(() => dismissRef.current(), ARCHIVE_NOTICE_MS);
+    return () => window.clearTimeout(timer);
+  }, []);
+
+  return (
+    <div className="mj-archive-notice" role="status" aria-live="polite">
+      <span>{copy.chatArchived(chat.title)}</span>
+      <button type="button" className="mj-archive-notice-action" onClick={onUndo}>{copy.undo}</button>
+      {/* A <Link>, not an <a>: settings is an intercepted route now, and only
+          a client-side navigation opens it as a modal. As a plain anchor this
+          banner would throw away the Run the person is in the middle of, which
+          is the exact thing the modal exists to stop. */}
+      <Link className="mj-archive-notice-action" href="/account#archived">{copy.archivedInSettings}</Link>
+      <button type="button" className="mj-archive-notice-close" aria-label={copy.cancel} onClick={onDismiss}>×</button>
+    </div>
   );
 }
 
@@ -341,11 +429,65 @@ function WorkspaceSidebar({
   const [dragTarget, setDragTarget] = useState<string | null>(null);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const userMenuRef = useRef<HTMLDivElement | null>(null);
+  const [usage, setUsage] = useState<UsageSummary | null>(null);
+  const usageReadAt = useRef(0);
   const [creatingFolder, setCreatingFolder] = useState(false);
   const [folderName, setFolderName] = useState("");
   const [creatingArtifactFolder, setCreatingArtifactFolder] = useState(false);
   const [artifactFolderName, setArtifactFolderName] = useState("");
   const [deleteTarget, setDeleteTarget] = useState<DeleteTarget | null>(null);
+  const [folderDeleteTarget, setFolderDeleteTarget] = useState<ChatFolder | null>(null);
+  const [folderError, setFolderError] = useState<string | null>(null);
+  const [draggingFolder, setDraggingFolder] = useState<string | null>(null);
+  const [folderDragOver, setFolderDragOver] = useState<string | null>(null);
+  const [recentsPosition, setRecentsPosition] = useState<RecentsPosition>("below");
+  const [recentsOpen, setRecentsOpen] = useState(true);
+
+  // A layout preference for this rail on this screen, like the collapse state
+  // beside it — device-global rather than per-account (DEVICE_STORAGE_KEYS in
+  // lib/user-storage.ts). Read in an effect, not in the initial state, so the
+  // server and the first client render agree.
+  useEffect(() => {
+    const saved = window.localStorage.getItem(RECENTS_POSITION_KEY);
+    if (saved === "above" || saved === "below") setRecentsPosition(saved);
+  }, []);
+
+  function moveRecents(next: RecentsPosition) {
+    setRecentsPosition(next);
+    window.localStorage.setItem(RECENTS_POSITION_KEY, next);
+  }
+
+  async function moveFolder(from: number, to: number) {
+    if (from === to || from < 0 || to < 0 || to >= folders.length) return;
+    const next = [...folders];
+    const [moved] = next.splice(from, 1);
+    next.splice(to, 0, moved);
+    try {
+      await reorderChatFolders(next);
+    } catch {
+      // reorderChatFolders restores the previous order in the mirror before it
+      // rethrows, so the rail re-renders back to what the server still holds
+      // rather than showing an arrangement that was refused.
+      setFolderError(copy.folderOrderFailed);
+    }
+  }
+
+  async function renameFolder(folderId: string, name: string) {
+    try {
+      await renameRemoteChatFolder(folderId, name);
+    } catch {
+      setFolderError(copy.folderRenameFailed);
+    }
+  }
+
+  async function removeFolder(folder: ChatFolder) {
+    setFolderDeleteTarget(null);
+    try {
+      await deleteRemoteChatFolder(folder.id);
+    } catch {
+      setFolderError(copy.folderDeleteFailed);
+    }
+  }
   const runHref = demoMode ? "/demo?view=run" : "/run";
   const studioHref = demoMode ? "/demo?view=library" : "/studio";
   // Title and subtitle must never be the same string: before accountName was
@@ -389,15 +531,6 @@ function WorkspaceSidebar({
   const standaloneChats = unpinnedChats.filter((chat) => !chat.folderId);
   const standaloneArtifacts = unpinnedArtifacts.filter((artifact) => !getArtifactFolderId(artifact.id));
 
-  useEffect(() => {
-    if (!deleteTarget) return;
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setDeleteTarget(null);
-    };
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [deleteTarget]);
-
   // The account drawer used to close on mouseleave of its container, and the
   // panel was offset from the trigger by a gap — so the pointer crossed dead
   // space on the way up and the menu vanished under it. That is the owner's
@@ -422,6 +555,53 @@ function WorkspaceSidebar({
       window.removeEventListener("keydown", handleKeyDown);
     };
   }, [userMenuOpen]);
+
+  // The allowance numbers, read when the drawer opens rather than on every page
+  // load. Nobody needs them until they look, and this is one round trip to the
+  // control plane per look — re-read after thirty seconds because the thing
+  // most likely to have happened in between is the user spending a run.
+  //
+  // Every failure path here ends in the menu showing exactly what it showed
+  // before this existed: the link, and no numbers. A stale or invented count
+  // beside the words "usage & limits" is worse than none.
+  useEffect(() => {
+    if (!userMenuOpen || demoMode) return;
+    if (usage && Date.now() - usageReadAt.current < 30_000) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const response = await fetch("/api/usage", { cache: "no-store" });
+        if (!response.ok) return;
+        const summary = parseUsage(await response.json());
+        if (cancelled || !summary) return;
+        usageReadAt.current = Date.now();
+        setUsage(summary);
+      } catch {
+        // Offline, signed out mid-session, or the control plane is down. The
+        // drawer is not the place to report any of those.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [userMenuOpen, demoMode, usage]);
+
+  const usageLine = usage
+    ? !isMetered(usage)
+      ? copy.usageRunsUnlimited
+      : usage.runs.exhausted
+        ? copy.usageRunsNone
+        : copy.usageRunsLeft(usage.runs.remaining ?? 0, usage.runs.limit ?? 0)
+    : null;
+  const nextSlot =
+    usage && isMetered(usage) && usage.runs.nextSlotAt
+      ? describeNextSlot(usage.runs.nextSlotAt, locale)
+      : null;
+  const nextSlotLine = nextSlot
+    ? nextSlot.relative
+      ? copy.usageNextSlotWhen(nextSlot.text)
+      : copy.usageNextSlotOn(nextSlot.text)
+    : null;
 
   function toggleFolder(id: string) {
     setOpenFolders((current) => {
@@ -464,7 +644,7 @@ function WorkspaceSidebar({
 
   // HTML5 drag & drop: rows publish their id under a kind-specific type, folder
   // triggers and the standalone lists accept only the matching kind.
-  function dropProps(kind: "chat" | "artifact", targetKey: string, folderId?: string) {
+  function dropProps(kind: "chat" | "artifact", targetKey: string, folderId?: string): ChatDropProps {
     const mime = kind === "chat" ? "application/x-mj-chat" : "application/x-mj-artifact";
     return {
       onDragOver: (event: DragEvent<HTMLElement>) => {
@@ -515,10 +695,6 @@ function WorkspaceSidebar({
             <PlusIcon size={16} />
             <span className="mj-sidebar-copy">{copy.newChat}</span>
           </a>
-          <a className="mj-sidebar-library-link" href={demoMode ? "/demo?view=library" : "/library"} aria-label={copy.library} title={copy.library}>
-            <LibraryIcon size={16} />
-            <span className="mj-sidebar-copy">{copy.library}</span>
-          </a>
 
           {pinnedChats.length ? (
             <>
@@ -529,41 +705,94 @@ function WorkspaceSidebar({
             </>
           ) : null}
 
-          <SidebarSectionHeader label={copy.projects} status={folderSyncState === "synced" ? copy.synced : folderSyncState === "error" ? copy.localOnly : undefined} actionLabel={copy.createChatFolder} onAction={() => setCreatingFolder(true)} />
-          {creatingFolder ? (
-            <form className="mj-sidebar-folder-form" onSubmit={submitChatFolder}>
-              <input aria-label={copy.folderName} autoFocus maxLength={80} value={folderName} onChange={(event) => setFolderName(event.target.value)} placeholder={copy.folderName} />
-              <button type="submit" aria-label={copy.saveFolder} disabled={!folderName.trim()}>✓</button>
-              <button type="button" aria-label={copy.cancelFolder} onClick={() => { setCreatingFolder(false); setFolderName(""); }}>×</button>
-            </form>
-          ) : null}
-          <div className="mj-sidebar-folder-list">
-            {folders.map((folder) => {
-              const folderChats = unpinnedChats.filter((chat) => chat.folderId === folder.id);
-              return (
-                <div className="mj-sidebar-disclosure" key={folder.id}>
-                  <button className="mj-sidebar-folder-trigger" type="button" aria-expanded={openFolders.has(folder.id)} onClick={() => toggleFolder(folder.id)} {...dropProps("chat", `chat-folder-${folder.id}`, folder.id)}>
-                    <ChevronIcon className={openFolders.has(folder.id) ? "is-open" : ""} size={14} />
-                    <FolderIcon size={15} />
-                    <span className="mj-sidebar-copy">{folder.name}</span>
-                    <span className="mj-sidebar-folder-count">{folderChats.length}</span>
-                  </button>
-                  {openFolders.has(folder.id) ? (
-                    <div className="mj-sidebar-disclosure-items">
-                      {folderChats.length ? folderChats.map((chat) => <ChatRow key={chat.id} chat={chat} currentPath={currentPath} demoMode={demoMode} locale={locale} onArchive={onArchive} onDelete={(item) => setDeleteTarget({ kind: "chat", item })} onAssignFolder={assignFolder} onRename={onRenameChat} folders={folders} />) : <span className="mj-sidebar-empty mj-sidebar-copy">{copy.emptyProject}</span>}
-                    </div>
-                  ) : null}
+          {/* Two sections whose ORDER is the user's, per the owner's inbox:
+              "can also put the 'Recent Chats' either above or below all the
+              folders". Rendered from one array so the two orders cannot drift
+              into two different pieces of markup. */}
+          {(recentsPosition === "above" ? ["recents", "folders"] : ["folders", "recents"]).map((section) =>
+            section === "folders" ? (
+              <section key="folders" className="mj-sidebar-group" aria-label={copy.runFolders}>
+                <SidebarSectionHeader
+                  label={copy.runFolders}
+                  status={folderSyncState === "error" ? copy.localOnly : undefined}
+                  actionLabel={copy.createChatFolder}
+                  onAction={() => setCreatingFolder(true)}
+                />
+                {creatingFolder ? (
+                  <form className="mj-sidebar-folder-form" onSubmit={submitChatFolder}>
+                    <input aria-label={copy.folderName} autoFocus maxLength={80} value={folderName} onChange={(event) => setFolderName(event.target.value)} placeholder={copy.folderName} />
+                    <button type="submit" aria-label={copy.saveFolder} disabled={!folderName.trim()}>✓</button>
+                    <button type="button" aria-label={copy.cancelFolder} onClick={() => { setCreatingFolder(false); setFolderName(""); }}>×</button>
+                  </form>
+                ) : null}
+                <div className="mj-sidebar-folder-list">
+                  {folders.map((folder, index) => (
+                    <FolderRow
+                      key={folder.id}
+                      folder={folder}
+                      index={index}
+                      total={folders.length}
+                      chats={unpinnedChats.filter((chat) => chat.folderId === folder.id)}
+                      open={openFolders.has(folder.id)}
+                      onToggle={() => toggleFolder(folder.id)}
+                      currentPath={currentPath}
+                      demoMode={demoMode}
+                      locale={locale}
+                      folders={folders}
+                      dragOverKey={folderDragOver}
+                      onArchive={onArchive}
+                      onDeleteChat={(item) => setDeleteTarget({ kind: "chat", item })}
+                      onAssignFolder={assignFolder}
+                      onRenameChat={onRenameChat}
+                      onRenameFolder={(name) => void renameFolder(folder.id, name)}
+                      onDeleteFolder={() => setFolderDeleteTarget(folder)}
+                      onMove={(delta) => void moveFolder(index, index + delta)}
+                      onDragStartFolder={() => setDraggingFolder(folder.id)}
+                      onDragEndFolder={() => { setDraggingFolder(null); setFolderDragOver(null); }}
+                      onFolderDragOver={() => setFolderDragOver(folder.id)}
+                      onDropFolder={() => {
+                        const from = folders.findIndex((item) => item.id === draggingFolder);
+                        setFolderDragOver(null);
+                        setDraggingFolder(null);
+                        if (from >= 0 && from !== index) void moveFolder(from, index);
+                      }}
+                      chatDropProps={dropProps("chat", `chat-folder-${folder.id}`, folder.id)}
+                    />
+                  ))}
+                  {folders.length === 0 ? <span className="mj-sidebar-empty mj-sidebar-copy">{copy.emptyProject}</span> : null}
                 </div>
-              );
-            })}
-          </div>
-
-          <SidebarSectionHeader label={copy.chats} />
-          <nav className="mj-sidebar-chats" aria-label={copy.recentChats} {...dropProps("chat", "chat-standalone", undefined)}>
-            {standaloneChats.length ? standaloneChats.map((chat) => <ChatRow key={chat.id} chat={chat} currentPath={currentPath} demoMode={demoMode} locale={locale} onArchive={onArchive} onDelete={(item) => setDeleteTarget({ kind: "chat", item })} onAssignFolder={assignFolder} onRename={onRenameChat} folders={folders} />) : <span className="mj-sidebar-empty mj-sidebar-copy">{copy.emptyChats}</span>}
-          </nav>
-
-          <ArchiveSection chats={archivedChats} currentPath={currentPath} locale={locale} demoMode={demoMode} onRestore={onRestore} onDelete={onDeleteChat} />
+              </section>
+            ) : (
+              <section key="recents" className="mj-sidebar-group" aria-label={copy.recentChats}>
+                <div className="mj-sidebar-section-heading">
+                  <button
+                    className="mj-sidebar-recents-toggle"
+                    type="button"
+                    aria-expanded={recentsOpen}
+                    aria-label={recentsOpen ? copy.collapseRecents : copy.expandRecents}
+                    onClick={() => setRecentsOpen((value) => !value)}
+                  >
+                    <span className="mj-sidebar-section-label mj-sidebar-copy">{copy.recentChats}</span>
+                    <ChevronIcon className={recentsOpen ? "is-open" : ""} size={13} />
+                  </button>
+                  <button
+                    className="mj-sidebar-folder-add"
+                    type="button"
+                    aria-label={recentsPosition === "above" ? copy.recentsBelow : copy.recentsAbove}
+                    title={recentsPosition === "above" ? copy.recentsBelow : copy.recentsAbove}
+                    onClick={() => moveRecents(recentsPosition === "above" ? "below" : "above")}
+                  >
+                    {recentsPosition === "above" ? "↓" : "↑"}
+                  </button>
+                </div>
+                {recentsOpen ? (
+                  <nav className="mj-sidebar-chats" aria-label={copy.recentChats} {...dropProps("chat", "chat-standalone", undefined)}>
+                    {standaloneChats.length ? standaloneChats.map((chat) => <ChatRow key={chat.id} chat={chat} currentPath={currentPath} demoMode={demoMode} locale={locale} onArchive={onArchive} onDelete={(item) => setDeleteTarget({ kind: "chat", item })} onAssignFolder={assignFolder} onRename={onRenameChat} folders={folders} />) : <span className="mj-sidebar-empty mj-sidebar-copy">{copy.emptyChats}</span>}
+                  </nav>
+                ) : null}
+              </section>
+            ),
+          )}
         </div>
       ) : (
         <div className="mj-sidebar-scroll">
@@ -643,13 +872,45 @@ function WorkspaceSidebar({
             <div className="mj-sidebar-user-drawer" role="menu" aria-hidden={!userMenuOpen} inert={!userMenuOpen}>
               <div className="mj-sidebar-user-drawer-panel">
                 <div className="mj-sidebar-user-drawer-items">
-                  <a role="menuitem" href="/account"><SettingsIcon size={15} />{copy.settings}</a>
-                  <a role="menuitem" href="/account#usage">{copy.usageLimits}</a>
+                  {/* Both of these are <Link>, and that is the whole feature.
+                      /account is an intercepted route: Next.js turns it into
+                      the centred modal ONLY for client-side navigations, so a
+                      plain <a> here would quietly keep the old behaviour — a
+                      document load onto the full page, discarding whatever Run
+                      or Studio session was open. Nothing would look broken,
+                      which is why it is worth saying twice and why
+                      lib/account-entry-points.test.ts enforces it.
+
+                      The drawer is deliberately NOT closed on the way out. It
+                      stays open, and not inert, behind the dialog — which is
+                      what lets the modal hand focus back to the exact item that
+                      opened it. */}
+                  <Link role="menuitem" href="/account"><SettingsIcon size={15} />{copy.settings}</Link>
+                  <Link role="menuitem" className="mj-sidebar-usage" href="/account#usage">
+                    <span>{copy.usageLimits}</span>
+                    {usageLine ? (
+                      <span className="mj-sidebar-usage-detail" data-spent={usage?.runs.exhausted ? "" : undefined}>
+                        {usageLine}
+                        {nextSlotLine ? <small>{nextSlotLine}</small> : null}
+                      </span>
+                    ) : null}
+                  </Link>
+                  {/* Stays an anchor. /auth/sign-out is a route handler that
+                      clears the session and redirects; there is no page for a
+                      client-side navigation to render. */}
                   <a role="menuitem" className="is-danger" href="/auth/sign-out">{copy.signOut}</a>
                 </div>
               </div>
             </div>
-            <button className="mj-sidebar-user" type="button" aria-label={copy.accountMenu} aria-expanded={userMenuOpen} onClick={() => setUserMenuOpen((value) => !value)}>
+            {/* `data-modal-return-focus`: where a modal sends focus when it
+                cannot send it back to whatever opened it. The settings dialog
+                normally returns to the drawer item that was clicked, but a
+                click on that dialog's backdrop counts as a click outside the
+                drawer and dismisses it — putting that item inside an `inert`
+                subtree, where .focus() silently does nothing. This button is
+                the drawer's own toggle, and the same place Escape already
+                returns focus to, so it is the honest next-best answer. */}
+            <button className="mj-sidebar-user" type="button" data-modal-return-focus="" aria-label={copy.accountMenu} aria-expanded={userMenuOpen} onClick={() => setUserMenuOpen((value) => !value)}>
               <span className="mj-avatar">{sidebarInitial}</span>
               <span className="mj-sidebar-user-copy mj-sidebar-copy">
                 <strong>{sidebarGreeting}</strong>
@@ -671,6 +932,230 @@ function WorkspaceSidebar({
             setDeleteTarget(null);
           }}
         />
+      ) : null}
+      {folderDeleteTarget ? (
+        <ConfirmDialog
+          eyebrow={copy.runFolders}
+          title={copy.deleteFolderTitle}
+          body={copy.deleteFolderWarning(folderDeleteTarget.name)}
+          cancelLabel={copy.cancel}
+          confirmLabel={copy.delete}
+          onCancel={() => setFolderDeleteTarget(null)}
+          onConfirm={() => void removeFolder(folderDeleteTarget)}
+        />
+      ) : null}
+      {folderError ? (
+        <p className="mj-sidebar-error mj-sidebar-copy" role="status">
+          {folderError}
+          <button type="button" onClick={() => setFolderError(null)} aria-label={copy.cancel}>×</button>
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
+const FOLDER_MIME = "application/x-mj-folder";
+
+/** What `dropProps` returns. Named so FolderRow can forward it without casts. */
+type ChatDropProps = {
+  onDragOver: (event: DragEvent<HTMLElement>) => void;
+  onDragLeave: () => void;
+  onDrop: (event: DragEvent<HTMLElement>) => void;
+  "data-drag-over"?: true;
+};
+
+function FolderRow({
+  folder,
+  index,
+  total,
+  chats,
+  open,
+  onToggle,
+  currentPath,
+  demoMode,
+  locale,
+  folders,
+  dragOverKey,
+  onArchive,
+  onDeleteChat,
+  onAssignFolder,
+  onRenameChat,
+  onRenameFolder,
+  onDeleteFolder,
+  onMove,
+  onDragStartFolder,
+  onDragEndFolder,
+  onFolderDragOver,
+  onDropFolder,
+  chatDropProps,
+}: {
+  folder: ChatFolder;
+  index: number;
+  total: number;
+  chats: ChatSummary[];
+  open: boolean;
+  onToggle: () => void;
+  currentPath: string;
+  demoMode: boolean;
+  locale: PublicLocale;
+  folders: ChatFolder[];
+  dragOverKey: string | null;
+  onArchive: (chat: ChatSummary) => void;
+  onDeleteChat: (chat: ChatSummary) => void;
+  onAssignFolder: (chatId: string, folderId?: string) => void;
+  onRenameChat: (chat: ChatSummary, name: string) => void;
+  onRenameFolder: (name: string) => void;
+  onDeleteFolder: () => void;
+  onMove: (delta: number) => void;
+  onDragStartFolder: () => void;
+  onDragEndFolder: () => void;
+  onFolderDragOver: () => void;
+  onDropFolder: () => void;
+  chatDropProps: ChatDropProps;
+}) {
+  const copy = WORKSPACE_COPY[locale].sidebar;
+  const [renaming, setRenaming] = useState(false);
+  const [name, setName] = useState(folder.name);
+
+  return (
+    <div
+      className="mj-sidebar-disclosure"
+      data-folder-drop={dragOverKey === folder.id || undefined}
+      // Restores the chat-into-folder highlight. The old markup put
+      // `dropProps` straight on `.mj-sidebar-folder-trigger`, which is what
+      // `[data-drag-over]` styled; splitting the row into a wrapper moved the
+      // attribute off the element the rule targets, so the folder stopped
+      // lighting up when a chat was dragged over it.
+      data-chat-drop={chatDropProps["data-drag-over"] || undefined}
+      draggable={!demoMode && !renaming}
+      onDragStart={(event) => {
+        event.dataTransfer.setData(FOLDER_MIME, folder.id);
+        event.dataTransfer.effectAllowed = "move";
+        onDragStartFolder();
+      }}
+      onDragEnd={onDragEndFolder}
+      onDragOver={(event) => {
+        // Two drag kinds land on this row and they mean different things: a
+        // FOLDER dropped here reorders, a CHAT dropped here files. Reading the
+        // MIME rather than a component-level "am I dragging" flag is what keeps
+        // them apart — a chat dragged over a folder must never reorder it.
+        if (event.dataTransfer.types.includes(FOLDER_MIME)) {
+          event.preventDefault();
+          event.dataTransfer.dropEffect = "move";
+          onFolderDragOver();
+          return;
+        }
+        chatDropProps.onDragOver(event);
+      }}
+      onDragLeave={chatDropProps.onDragLeave}
+      onDrop={(event) => {
+        if (event.dataTransfer.types.includes(FOLDER_MIME)) {
+          event.preventDefault();
+          onDropFolder();
+          return;
+        }
+        chatDropProps.onDrop(event);
+      }}
+    >
+      {renaming ? (
+        <form
+          className="mj-sidebar-folder-form"
+          onSubmit={(event) => {
+            event.preventDefault();
+            const next = name.trim();
+            if (next && next !== folder.name) onRenameFolder(next);
+            setRenaming(false);
+          }}
+        >
+          <input
+            aria-label={copy.renameFolder(folder.name)}
+            autoFocus
+            maxLength={80}
+            value={name}
+            onChange={(event) => setName(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key !== "Escape") return;
+              event.preventDefault();
+              setName(folder.name);
+              setRenaming(false);
+            }}
+          />
+          <button type="submit" aria-label={copy.saveFolder} disabled={!name.trim()}>✓</button>
+          <button type="button" aria-label={copy.cancelFolder} onClick={() => { setName(folder.name); setRenaming(false); }}>×</button>
+        </form>
+      ) : (
+        <div className="mj-sidebar-folder-row">
+          <button
+            className="mj-sidebar-folder-trigger"
+            type="button"
+            aria-expanded={open}
+            onClick={onToggle}
+          >
+            {/* The icon IS the disclosure state, as in the reference the owner
+                sent — an open folder when expanded, a closed one when not. A
+                separate chevron beside it would say the same thing twice in a
+                rail this narrow. */}
+            <FolderIcon size={15} open={open} />
+            <span className="mj-sidebar-copy">{folder.name}</span>
+          </button>
+          {!demoMode ? (
+            <div className="mj-sidebar-folder-actions">
+              {/* Drag is the primary gesture; these are the keyboard and
+                  touch route to the same thing. A reorder that only works
+                  with a mouse is a reorder half the people cannot do. */}
+              <button
+                className="mj-sidebar-chat-action"
+                type="button"
+                aria-label={copy.folderMoveUp(folder.name)}
+                title={copy.folderMoveUp(folder.name)}
+                disabled={index === 0}
+                onClick={() => onMove(-1)}
+              >↑</button>
+              <button
+                className="mj-sidebar-chat-action"
+                type="button"
+                aria-label={copy.folderMoveDown(folder.name)}
+                title={copy.folderMoveDown(folder.name)}
+                disabled={index === total - 1}
+                onClick={() => onMove(1)}
+              >↓</button>
+              <button
+                className="mj-sidebar-chat-action"
+                type="button"
+                aria-label={copy.renameFolder(folder.name)}
+                title={copy.renameFolder(folder.name)}
+                onClick={() => { setName(folder.name); setRenaming(true); }}
+              >✎</button>
+              <button
+                className="mj-sidebar-chat-action mj-sidebar-chat-action--danger"
+                type="button"
+                aria-label={copy.deleteFolder(folder.name)}
+                title={copy.deleteFolder(folder.name)}
+                onClick={onDeleteFolder}
+              ><TrashIcon size={13} /></button>
+            </div>
+          ) : null}
+        </div>
+      )}
+      {open ? (
+        <div className="mj-sidebar-disclosure-items">
+          {chats.length
+            ? chats.map((chat) => (
+                <ChatRow
+                  key={chat.id}
+                  chat={chat}
+                  currentPath={currentPath}
+                  demoMode={demoMode}
+                  locale={locale}
+                  onArchive={onArchive}
+                  onDelete={onDeleteChat}
+                  onAssignFolder={onAssignFolder}
+                  onRename={onRenameChat}
+                  folders={folders}
+                />
+              ))
+            : <span className="mj-sidebar-empty mj-sidebar-copy">{copy.emptyProject}</span>}
+        </div>
       ) : null}
     </div>
   );
@@ -895,49 +1380,49 @@ function DeleteConfirmationDialog({ target, locale, onCancel, onConfirm }: { tar
   const title = target.item.title;
   const warning = target.kind === "chat" ? copy.deleteChatWarning(title) : copy.deleteArtifactWarning(title);
   return (
-    <div className="mj-delete-dialog-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onCancel(); }}>
-      <section className="mj-delete-dialog" role="dialog" aria-modal="true" aria-labelledby="mj-delete-dialog-title">
-        <p className="mj-eyebrow">{target.kind === "chat" ? copy.chats : copy.artifacts}</p>
-        <h2 id="mj-delete-dialog-title">{copy.deleteConfirmTitle}</h2>
-        <p>{warning}</p>
-        <div className="mj-delete-dialog-actions">
-          <button className="mj-secondary-button" type="button" onClick={onCancel}>{copy.cancel}</button>
-          <button className="mj-danger-button" type="button" onClick={onConfirm}>{copy.delete}</button>
-        </div>
-      </section>
-    </div>
+    <ConfirmDialog
+      eyebrow={target.kind === "chat" ? copy.chats : copy.artifacts}
+      title={copy.deleteConfirmTitle}
+      body={warning}
+      cancelLabel={copy.cancel}
+      confirmLabel={copy.delete}
+      onCancel={onCancel}
+      onConfirm={onConfirm}
+    />
   );
 }
 
-function ArchiveSection({ chats, currentPath, locale, demoMode, onRestore, onDelete }: { chats: ChatSummary[]; currentPath: string; locale: PublicLocale; demoMode: boolean; onRestore: (chat: ChatSummary) => void; onDelete: (chat: ChatSummary) => void }) {
-  const copy = WORKSPACE_COPY[locale].sidebar;
+/**
+ * The one destructive-confirmation shape. Chats, artifacts and folders share it.
+ *
+ * Escape lives HERE rather than in the caller. It used to be an effect beside
+ * `deleteTarget` in the sidebar, which meant the folder dialog — a second piece
+ * of state — silently had no keyboard dismissal at all. A modal that can only be
+ * closed with a pointer is a modal somebody gets stuck in.
+ */
+function ConfirmDialog({ eyebrow, title, body, cancelLabel, confirmLabel, onCancel, onConfirm }: { eyebrow: string; title: string; body: string; cancelLabel: string; confirmLabel: string; onCancel: () => void; onConfirm: () => void }) {
+  const cancelRef = useRef(onCancel);
+  cancelRef.current = onCancel;
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") cancelRef.current();
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, []);
+
   return (
-    <section className="mj-sidebar-archive" aria-label={copy.archive}>
-      <div className="mj-sidebar-section-heading">
-        <ArchiveIcon size={15} />
-        <span className="mj-sidebar-section-label mj-sidebar-copy">{copy.archive}</span>
-        <span className="mj-sidebar-section-status">{chats.length}</span>
-      </div>
-      {chats.length ? (
-        <div className="mj-sidebar-archive-list">
-          {chats.map((chat) => (
-            <div className="mj-sidebar-archived-row" key={chat.id}>
-              <a href={demoMode ? "/demo?view=run" : `/run/${chat.id}`} className="mj-sidebar-chat" title={chat.title}>
-                <span className="mj-sidebar-chat-title mj-sidebar-copy">{chat.title}</span>
-                <small>{copy.daysLeft(daysUntilArchiveDeletion(chat.archivedAt ?? new Date().toISOString()))}</small>
-              </a>
-              {!demoMode ? (
-                <div className="mj-sidebar-chat-actions">
-                  <button className="mj-sidebar-chat-action" type="button" aria-label={copy.restoreChat(chat.title)} title={copy.restoreChat(chat.title)} onClick={() => onRestore(chat)}>↶</button>
-                  <button className="mj-sidebar-chat-action mj-sidebar-chat-action--danger" type="button" aria-label={copy.deleteChat(chat.title)} title={copy.deleteChat(chat.title)} onClick={() => onDelete(chat)}><TrashIcon size={14} /></button>
-                </div>
-              ) : null}
-            </div>
-          ))}
+    <div className="mj-delete-dialog-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onCancel(); }}>
+      <section className="mj-delete-dialog" role="dialog" aria-modal="true" aria-labelledby="mj-delete-dialog-title">
+        <p className="mj-eyebrow">{eyebrow}</p>
+        <h2 id="mj-delete-dialog-title">{title}</h2>
+        <p>{body}</p>
+        <div className="mj-delete-dialog-actions">
+          <button className="mj-secondary-button" type="button" onClick={onCancel}>{cancelLabel}</button>
+          <button className="mj-danger-button" type="button" onClick={onConfirm}>{confirmLabel}</button>
         </div>
-      ) : <span className="mj-sidebar-empty mj-sidebar-copy">{copy.archiveEmpty}</span>}
-      <p className="mj-sidebar-archive-note mj-sidebar-copy">{copy.archiveRetention}</p>
-    </section>
+      </section>
+    </div>
   );
 }
 

@@ -30,7 +30,7 @@ const OPENQASM3_PAPER = {
   year: "2021",
   url: "https://arxiv.org/abs/2104.14722",
   relevance: "Defines the standard gate library (rx, ry, rz, p, u3-equivalent U, sx) used natively by the code snippets on this record.",
-  relevanceJa: "この記録のコードで使われるrx・ry・rz・p・U（u3相当）・sxなどの標準ゲートライブラリを定義します。",
+  relevanceJa: "この項目のコードで使うrx・ry・rz・p・U（u3相当）・sxなどの標準ゲートライブラリを定義します。",
 };
 
 const MCKAY_2017 = {

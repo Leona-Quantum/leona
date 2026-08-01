@@ -17,11 +17,11 @@ Domain home for the product surface (`apps/web` + `packages/ts/ui`), per
 | App shell + primary nav | `packages/ts/ui/src/app-shell.tsx`; labels ONLY in `src/nav-config.ts` |
 | Workspace sidebar/history | `apps/web/components/shell.tsx` + `apps/web/lib/chat-history.ts` |
 | Run composer | `apps/web/components/run-composer.tsx` (bottom dock; route owns submission) |
-| Compact live run progress | `packages/ts/ui/src/run-progress.tsx` + `apps/web/lib/run-progress.ts` |
+| Agent activity stream | `packages/ts/ui/src/agent-activity.tsx` + `apps/web/lib/run-activity.ts` |
 | Structured run outcome | `packages/ts/ui/src/run-outcome.tsx` + `apps/web/lib/run-outcome.ts` |
-| Vault list/detail | `apps/web/app/(app)/library` + `apps/web/lib/library-data.ts` |
+| Artifact list/detail | `/library` is retired (redirects into Studio); the list component and `apps/web/lib/library-data.ts` still back the `/demo` preview |
 | Studio editor/circuit workspace | `apps/web/app/(app)/studio` + `docs/ui/studio.md` |
-| Pipeline stage rail (S3, the brand) | `packages/ts/ui/src/stage-rail.tsx` |
+| Legacy pipeline fixture | `packages/ts/ui/src/stage-rail.tsx` + `run-view.tsx` (dev visual reference only) |
 | Verdict banner (S4) | `packages/ts/ui/src/verdict-banner.tsx` |
 | Empty states | `packages/ts/ui/src/empty-state.tsx` |
 | Route fixtures (all component states, screenshot source) | `apps/web/app/dev/ui` (404s in prod) |
@@ -34,7 +34,10 @@ Domain home for the product surface (`apps/web` + `packages/ts/ui`), per
 The usable authenticated workspace slice is now wired: `/run` has a bottom composer, example
 prompts, mode selection, and a persistent collapsible sidebar with recent API-backed runs;
 `/run/[taskId]` keeps the result scrollable above the composer and replays the live SSE event
-log; `/library` is the storage-only artifact list/detail surface; and `/studio` is the separate
+log through semantic activity disclosures. The composer stays compact until focused, replaces
+send with Stop during execution, and announces busy state accessibly. Failed runs that retain a
+candidate show it as a not-verified Best available result instead of discarding the deliverable.
+`/library` is retired and redirects into Studio; and `/studio` is the separate
 R&D editor with code, circuit, inspector, output, and framework-version surfaces.
 Account now reads identity, workspace, artifact/run counts, and members from the API, with an
 owner/admin path to attach an already-provisioned WorkOS user to the workspace. New API users
@@ -45,7 +48,7 @@ for a just-completed run while remote data settles.
 The public surface now includes a shared company shell/footer, a formal landing page, early-access
 pricing, contact, privacy, and terms routes, plus a searchable public Atlas catalog that
 exposes classification, verification, export status, and provenance without mixing in private
-Vault data. Public routes are explicitly allowed through the fail-closed middleware. The current
+workspace data. Public routes are explicitly allowed through the fail-closed middleware. The current
 catalog records are static reference data; save/publish actions and API-backed Atlas search
 remain follow-up work. Remaining work is the hosted verified-artifact acceptance run, fuller remote
 chat/history persistence, account meters and workspace selection, visual-diff automation, and the

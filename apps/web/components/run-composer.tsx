@@ -1,9 +1,10 @@
 "use client";
 
-import { useRef, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { ChevronIcon, PaperclipIcon } from "./icons";
 import type { PublicLocale } from "../lib/public-locale";
 import { COMPOSER_MODES, type ComposerMode } from "../lib/run-mode";
+import { ghostFrame } from "../lib/composer-ghost";
 
 export type ComposerFramework = "qiskit" | "pennylane" | "cirq";
 
@@ -30,6 +31,9 @@ export function RunComposer({
   onModeChange,
   framework,
   onFrameworkChange,
+  onStop,
+  stopping = false,
+  suggestions,
   centered = false,
   locale = "en",
 }: {
@@ -48,6 +52,11 @@ export function RunComposer({
   onModeChange?: (mode: ComposerMode) => void;
   framework?: ComposerFramework;
   onFrameworkChange?: (framework: ComposerFramework) => void;
+  /** Present only where a run can actually be cancelled. */
+  onStop?: () => void;
+  stopping?: boolean;
+  /** Prompts the placeholder types out; Tab accepts the one on screen. */
+  suggestions?: readonly string[];
   centered?: boolean;
   locale?: PublicLocale;
 }) {
@@ -56,39 +65,49 @@ export function RunComposer({
     ? {
         task: "メッセージ",
         attach: "ファイルを添付",
-        pending: "応答中",
+        pending: "実行中",
         send: "送信",
+        stop: "停止",
+        stopping: "停止しています",
         context: "コンテキスト",
         codeAttached: "コードを添付済み",
         removeContext: "コンテキストを外す",
-        hint: "Markdown · LaTeX",
         mode: "応答モード",
         modeAuto: "自動",
         modeExecute: "実行",
-        modeIdeate: "アイデア",
+        modeIdeate: "考える",
         modeExplain: "解説",
         framework: "回路フレームワーク",
+        tabHint: "Tab キーで例を入力できます",
       }
     : {
         task: "Message",
         attach: "Attach files",
-        pending: "Thinking",
+        pending: "Working",
         send: "Send",
+        stop: "Stop",
+        stopping: "Stopping",
         context: "Context",
         codeAttached: "code attached",
         removeContext: "Remove context",
-        hint: "Markdown · LaTeX",
         mode: "Response mode",
         modeAuto: "Auto",
         modeExecute: "Execute",
         modeIdeate: "Ideate",
         modeExplain: "Explain",
         framework: "Circuit framework",
+        tabHint: "Press Tab to use the suggested prompt",
       };
+  const ghost = useGhostPrompt(suggestions, value.length === 0);
 
   return (
     <div className={`mj-composer-dock${centered ? " mj-composer-dock--centered" : ""}`}>
-      <form className="mj-composer" onSubmit={onSubmit}>
+      <form className="mj-composer" onSubmit={onSubmit} aria-busy={pending}>
+        {pending ? (
+          <span className="sr-only" role="status" aria-live="polite" aria-atomic="true">
+            {stopping ? labels.stopping : labels.pending}
+          </span>
+        ) : null}
         {contextArtifact ? (
           <div className="mj-composer-context" aria-label={`${labels.context}: ${contextArtifact.title}`}>
             <PaperclipIcon size={14} />
@@ -122,16 +141,34 @@ export function RunComposer({
           value={value}
           onChange={(event) => onChange(event.target.value)}
           onKeyDown={(event) => {
-            if (event.key === "Enter" && !event.shiftKey) {
+            if (
+              event.key === "Enter"
+              && (event.metaKey || event.ctrlKey)
+              && !event.nativeEvent.isComposing
+            ) {
               event.preventDefault();
               event.currentTarget.form?.requestSubmit();
+              return;
+            }
+            // Tab only steals focus movement while there is something to accept
+            // and the box is empty, so the composer never becomes a keyboard trap.
+            if (
+              event.key === "Tab"
+              && !event.shiftKey
+              && !event.nativeEvent.isComposing
+              && !value
+              && ghost
+            ) {
+              event.preventDefault();
+              onChange(ghost.suggestion);
             }
           }}
-          placeholder={locale === "ja" ? "量子アルゴリズムについて何でも聞いてください…" : "Ask anything about quantum algorithms…"}
+          placeholder={ghost?.text || basePlaceholder(locale)}
           aria-label={labels.task}
-          rows={2}
-          disabled={pending}
+          aria-describedby={ghost ? "mj-composer-tab-hint" : undefined}
+          rows={1}
         />
+        {ghost ? <span className="sr-only" id="mj-composer-tab-hint">{labels.tabHint}</span> : null}
         <div className="mj-composer-controls">
           <div className="mj-composer-left">
             <button
@@ -166,7 +203,6 @@ export function RunComposer({
                 <select
                   aria-label={labels.mode}
                   value={mode}
-                  disabled={pending}
                   onChange={(event) => onModeChange(event.target.value as ComposerMode)}
                 >
                   {COMPOSER_MODES.map((option) => (
@@ -190,7 +226,6 @@ export function RunComposer({
                 <select
                   aria-label={labels.framework}
                   value={framework}
-                  disabled={pending}
                   onChange={(event) => onFrameworkChange(event.target.value as ComposerFramework)}
                 >
                   <option value="qiskit">Qiskit</option>
@@ -200,14 +235,31 @@ export function RunComposer({
                 <ChevronIcon size={12} />
               </label>
             ) : null}
-            <span className="mj-composer-model">{labels.hint}</span>
           </div>
           <div className="mj-composer-right">
             {error ? <span className="mj-composer-error" role="alert">{error}</span> : null}
-            <button className="mj-primary-button" type="submit" disabled={pending || !value.trim()}>
-              {pending ? labels.pending : labels.send}
-              <span className="mj-command-hint">⌘↵</span>
-            </button>
+            {/* Stop takes the send button's place rather than sitting beside it:
+                the control the reader is already looking at is the one that has
+                to cancel, and two buttons here would mean deciding which is
+                primary while a response is mid-flight. */}
+            {pending && onStop ? (
+              <button
+                className="mj-primary-button mj-composer-stop"
+                type="button"
+                disabled={stopping}
+                onClick={onStop}
+              >
+                {stopping ? labels.stopping : labels.stop}
+                <span className="mj-composer-stop-mark" aria-hidden="true" />
+              </button>
+            ) : (
+              <>
+                {!pending ? <kbd className="mj-command-hint">⌘/Ctrl ↵</kbd> : null}
+                <button className="mj-primary-button" type="submit" disabled={pending || !value.trim()}>
+                  {pending ? labels.pending : labels.send}
+                </button>
+              </>
+            )}
           </div>
         </div>
       </form>
@@ -217,4 +269,45 @@ export function RunComposer({
 
 function formatAttachmentSize(size: number): string {
   return size >= 1024 ? `${Math.round(size / 1024)} KB` : `${size} B`;
+}
+
+function basePlaceholder(locale: PublicLocale): string {
+  return locale === "ja"
+    ? "作りたい回路や検証したいことを入力してください…"
+    : "Ask anything about quantum algorithms…";
+}
+
+/**
+ * The typed-and-backspaced placeholder, driven off a clock rather than a counter.
+ *
+ * A 60 Hz animation frame would re-render the whole composer sixty times a
+ * second for a placeholder; the interval is set to the typing cadence instead.
+ * Under `prefers-reduced-motion` the suggestion is still offered — Tab accepts
+ * it exactly the same way — it just stops typing itself out.
+ */
+function useGhostPrompt(suggestions: readonly string[] | undefined, active: boolean) {
+  const [elapsedMs, setElapsedMs] = useState(0);
+  const [reduceMotion, setReduceMotion] = useState(false);
+  const hasSuggestions = Boolean(suggestions?.length);
+
+  useEffect(() => {
+    const query = window.matchMedia("(prefers-reduced-motion: reduce)");
+    const sync = () => setReduceMotion(query.matches);
+    sync();
+    query.addEventListener("change", sync);
+    return () => query.removeEventListener("change", sync);
+  }, []);
+
+  useEffect(() => {
+    if (!hasSuggestions || !active || reduceMotion) return;
+    const started = Date.now();
+    const timer = window.setInterval(() => setElapsedMs(Date.now() - started), 55);
+    return () => window.clearInterval(timer);
+  }, [hasSuggestions, active, reduceMotion]);
+
+  if (!suggestions?.length || !active) return null;
+  const frame = ghostFrame(reduceMotion ? 0 : elapsedMs, suggestions);
+  if (!frame) return null;
+  // Reduced motion gets the whole prompt sitting still rather than an empty box.
+  return reduceMotion ? { ...frame, text: frame.suggestion } : frame;
 }

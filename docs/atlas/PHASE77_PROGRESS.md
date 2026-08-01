@@ -169,7 +169,7 @@ Status: verified locally
   - Ruff, import-linter, raw-query scan, and `git diff --check`: passed.
   - Fresh PostgreSQL migration round trip
     (`upgrade head → downgrade base → upgrade head`): passed with one head at
-    revision 0043.
+    revision 0045.
 - The first post-merge remote `vqe-production-e2e` run correctly failed closed
   because its legacy job still presented a disposable Neon URL while
   `MAJORANA_ENV=production`. DEV moved production persistence to Cloud SQL on

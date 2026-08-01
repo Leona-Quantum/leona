@@ -59,7 +59,7 @@ async function fetchViewerUserId(accessToken: string): Promise<string | null> {
 }
 
 /**
- * The weekly run allowance and the Vault artifact cap, enforced where the
+ * The weekly run allowance and the saved-artifact cap, enforced where the
  * submission enters the product. Metered tiers pay one or two upstream list
  * reads per submission; unmetered tiers skip them entirely. If the usage read
  * itself fails the submission proceeds — a metering outage must degrade to
@@ -102,7 +102,7 @@ export async function POST(request: Request) {
       }
     }
     // A run without a parent artifact version can add a new artifact to the
-    // Vault; refuse it at the cap. Reruns against an existing version append
+    // workspace; refuse it at the cap. Reruns against an existing version append
     // evidence and stay allowed. `/v1/artifacts` counts kept artifacts only, so
     // a run the user never kept does not spend their allowance.
     if (limits.privateArtifacts !== null && !submission.artifact_version_id) {

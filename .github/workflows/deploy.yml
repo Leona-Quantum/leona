@@ -49,6 +49,30 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Load infra/fleet.env into the job environment so every `gcloud run
+      # deploy` below passes the numbers from that file rather than a literal
+      # copied beside it. The whole point of the file is that changing the
+      # worker count is ONE edit; a literal here would quietly make it two, and
+      # the second one is the one people forget.
+      #
+      # Filtered to KEY=INTEGER lines on purpose: $GITHUB_ENV rejects a comment
+      # line, and fleet.env is mostly comments — the reasoning for each number is
+      # the part worth keeping next to it.
+      #
+      # The keys are checked before they are exported, not after. An unmatched
+      # line does not fail the grep — it just does not export — and the failure
+      # then lands as `--min-instances ""` or `DB_POOL_SIZE=` further down, where
+      # gcloud reads it as "clear this setting" and ships a revision nobody sized.
+      - name: load fleet sizing
+        run: |
+          for key in WORKER_INSTANCES WORKER_POOL_SIZE WORKER_MAX_OVERFLOW API_MAX_INSTANCES; do
+            grep -qE "^${key}=[0-9]+$" infra/fleet.env || {
+              echo "::error::${key} is missing from infra/fleet.env or is not a plain integer"
+              exit 1
+            }
+          done
+          grep -E '^[A-Z_]+=[0-9]+$' infra/fleet.env >> "$GITHUB_ENV"
+
       - name: check deploy credentials
         id: creds
         run: echo "have=${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER != '' && secrets.GCP_DEPLOY_SERVICE_ACCOUNT != '' }}" >> "$GITHUB_OUTPUT"
@@ -208,9 +232,22 @@ jobs:
         if: steps.creds.outputs.have == 'true'
         id: api
         run: |
+          # --max-instances is stated for the same reason the worker's scaling
+          # flags are: the connection budget in docs/runbooks/database.md is only
+          # arithmetic if every term in it is pinned somewhere a reader can find.
+          # It comes from infra/fleet.env via the "load fleet sizing" step above,
+          # which is also where db.py reads it for that budget — one number, not
+          # two that have to be kept equal.
+          #
+          # --update-env-vars, never --set-env-vars: neither service's env is
+          # fully declared here yet (DATABASE_URL and the MAJORANA_* runtime
+          # settings are live-service state), so --set would wipe them and the
+          # revision would come up unable to reach the database.
           gcloud run deploy majorana-api --project "$GCP_PROJECT" --region "$GCP_REGION" \
             --image "$IMAGE_REPO:${{ steps.tag.outputs.tag }}" \
             --set-cloudsql-instances "$CLOUDSQL_INSTANCE" \
+            --max-instances "$API_MAX_INSTANCES" \
+            --update-env-vars MAJORANA_SERVICE=api \
             --no-traffic --tag verify
           # Parse the URL out with jq rather than a --format projection. Two
           # earlier attempts failed here (2026-07-19):
@@ -266,11 +303,40 @@ jobs:
         if: steps.creds.outputs.have == 'true'
         id: worker
         run: |
+          # How many workers run is NOT decided here — it is WORKER_INSTANCES in
+          # infra/fleet.env, loaded into the environment by the "load fleet
+          # sizing" step, and read by db.py's connection-budget arithmetic from
+          # the same file. One number, one edit, no second copy to forget.
+          #
+          # The queue supports any count. `claim_job` and
+          # `claim_pending_dead_letter` are `FOR UPDATE SKIP LOCKED` with lease
+          # tokens and heartbeats; `recover_stale_jobs` repeats its predicates on
+          # both UPDATEs, so a row another worker already moved no longer
+          # matches; the orphan reaper's `close_orphaned_run` writes
+          # deterministic uuid5 event ids onto a `fail_run_from_dead_letter` that
+          # no-ops on an already-terminal run, so a double reap completes one
+          # sequence rather than two. `worker_id` is "$hostname:$pid", so
+          # instances never collide on a lease.
+          #
+          # min == max on purpose. Cloud Run autoscales on request concurrency
+          # and this service serves only a static liveness responder, so it
+          # receives no request traffic and would never scale up on its own no
+          # matter what the maximum said. Parallel workers have to be always-on,
+          # which is real money: roughly $15-25/month each. That cost is the
+          # reason the default went back to 1 on 2026-08-01 — the queue is empty
+          # at today's usage, so the parallelism was being paid for and not used.
+          #
+          # DB_POOL_SIZE/DB_MAX_OVERFLOW come from the same file. They are not
+          # defaults in code: without them the worker is a 5+5 process, and
+          # several of those plus the API blows the instance's 50-connection
+          # ceiling. The worker holds at most two sessions at once (handler +
+          # heartbeat).
           gcloud run deploy majorana-worker --project "$GCP_PROJECT" --region "$GCP_REGION" \
             --image "$IMAGE_REPO:${{ steps.tag.outputs.tag }}" \
             --command majorana-worker \
             --set-cloudsql-instances "$CLOUDSQL_INSTANCE" \
-            --min-instances 1 --max-instances 1 --no-cpu-throttling
+            --update-env-vars MAJORANA_SERVICE=worker,DB_POOL_SIZE=$WORKER_POOL_SIZE,DB_MAX_OVERFLOW=$WORKER_MAX_OVERFLOW \
+            --min-instances "$WORKER_INSTANCES" --max-instances "$WORKER_INSTANCES" --no-cpu-throttling
           rev=$(gcloud run services describe majorana-worker \
             --project "$GCP_PROJECT" --region "$GCP_REGION" \
             --format="value(status.latestCreatedRevisionName)")

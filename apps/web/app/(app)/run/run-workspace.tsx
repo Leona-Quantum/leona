@@ -82,7 +82,7 @@ export function RunWorkspace({ demoMode = false, locale = "en" }: { demoMode?: b
       frameworkCurrent.current = hydrated.framework;
       setFramework(hydrated.framework);
       setArtifactHydration("ready");
-      setPrompt(`Use the saved Vault artifact “${artifact.title}” as context for my next question.`);
+      setPrompt(`Use the saved artifact “${artifact.title}” as context for my next question.`);
     }
 
     void loadContext().catch(() => {
@@ -245,6 +245,12 @@ export function RunWorkspace({ demoMode = false, locale = "en" }: { demoMode?: b
               attachments={attachments.map(({ name, size }) => ({ name, size }))}
               onRemoveAttachment={(name) => setAttachments((current) => current.filter((item) => item.name !== name))}
               onAttach={demoMode ? () => setError(locale === "ja" ? "公開プレビューでは添付を利用できません。" : "Attachments are unavailable in the public preview.") : undefined}
+              // The same prompts the example strip below offers, typed into the
+              // box itself. A blank composer with a generic placeholder is the
+              // hardest version of this product to start using; showing real
+              // questions being written is the cheapest way to answer "what can
+              // I even ask it".
+              suggestions={copy.examples.map((example) => example.prompt)}
               locale={locale}
             />
           </div>
@@ -268,7 +274,7 @@ export function RunWorkspace({ demoMode = false, locale = "en" }: { demoMode?: b
             <p className="mj-run-context-link" role="alert">Artifact context could not be loaded.</p>
           ) : null}
 
-          {contextArtifact ? <a className="mj-run-context-link" href={demoMode ? "/demo?view=library" : `/library/${contextArtifact.id}`}>{copy.contextLabel}: {contextArtifact.title} · {copy.viewArtifact}</a> : null}
+          {contextArtifact ? <a className="mj-run-context-link" href={demoMode ? "/demo?view=library" : `/studio?artifact=${encodeURIComponent(contextArtifact.id)}`}>{copy.contextLabel}: {contextArtifact.title} · {copy.viewArtifact}</a> : null}
 
           <ExampleStrip
             copy={copy}
@@ -321,38 +327,28 @@ function RunGreeting({ copy }: { copy: (typeof WORKSPACE_COPY)[PublicLocale]["ru
   );
 }
 
+/**
+ * One button, and the full set behind it.
+ *
+ * This has now shed two layers. It was a ticker printing the same paragraph the
+ * composer's placeholder types a few pixels above it; then a heading plus a row
+ * of title chips. The chips were a third listing of prompts on a screen that
+ * already types one and holds the rest one click away, and the heading named a
+ * section whose entire content was that duplication. What is left is the part
+ * neither of the others can do: reach every prompt, with its full sentence, on
+ * demand.
+ *
+ * `examplesTitle` stays as the section's accessible name. The heading is gone
+ * visually, but a landmark with no name is worse for a screen reader than one
+ * with a name nobody sees.
+ */
 function ExampleStrip({ copy, onPick }: { copy: (typeof WORKSPACE_COPY)[PublicLocale]["run"]; onPick: (prompt: string) => void }) {
-  const [index, setIndex] = useState(0);
   const [expanded, setExpanded] = useState(false);
-  const [paused, setPaused] = useState(false);
-  const examples = copy.examples;
   const allPrompts = [...copy.examples, ...copy.morePrompts];
 
-  useEffect(() => {
-    if (paused || expanded) return;
-    const timer = window.setInterval(() => setIndex((current) => (current + 1) % examples.length), 6000);
-    return () => window.clearInterval(timer);
-  }, [paused, expanded, examples.length]);
-
-  const active = examples[index];
   return (
-    <section className="mj-run-home-examples" aria-labelledby="examples-title">
-      <div className="mj-run-home-examples-head">
-        <h2 id="examples-title">{copy.examplesTitle}</h2>
-      </div>
-      <div
-        className="mj-example-strip"
-        onMouseEnter={() => setPaused(true)}
-        onMouseLeave={() => setPaused(false)}
-        onFocus={() => setPaused(true)}
-        onBlur={(event) => {
-          if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setPaused(false);
-        }}
-      >
-        <button className="mj-example-ticker" type="button" key={active.title} onClick={() => onPick(active.prompt)}>
-          <strong>{active.title}</strong>
-          <span>{active.prompt}</span>
-        </button>
+    <section className="mj-run-home-examples" aria-label={copy.examplesTitle}>
+      <div className="mj-example-strip">
         <button className="mj-secondary-button mj-example-more" type="button" aria-expanded={expanded} onClick={() => setExpanded((current) => !current)}>
           {expanded ? copy.examplesClose : copy.examplesMore}
         </button>

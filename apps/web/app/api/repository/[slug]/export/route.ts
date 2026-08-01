@@ -23,7 +23,7 @@ export async function POST(
   const libraryVariant = getPublicRepositoryLibraryVariant(entry);
   if (!libraryVariant) {
     return NextResponse.json(
-      { error: "This entry does not have a supported native Vault export yet." },
+      { error: "This entry does not have a supported native export yet." },
       { status: 422 },
     );
   }

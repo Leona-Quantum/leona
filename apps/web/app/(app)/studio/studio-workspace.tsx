@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type UIEvent } from "react";
-import { SyntaxHighlightedCode, VerificationSummaryPanel } from "@majorana/ui";
-import { CheckIcon, CopyIcon, PanelRightIcon, SearchIcon } from "../../../components/icons";
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode, type UIEvent } from "react";
+import { SyntaxHighlightedCode, VerificationSummaryPanel, verificationHeadline } from "@majorana/ui";
+import { CopyIcon, SearchIcon } from "../../../components/icons";
 import { artifactFromResource, frameworkVariantsFromRemote, getLibraryArtifact, loadLibraryArtifacts, statusFromVerificationSummary, type LibraryArtifact } from "../../../lib/library-data";
+import { fetchArtifactPages } from "../../../lib/artifact-page";
 import type { PublicLocale } from "../../../lib/public-locale";
 import { BUILDER_GATES, builderStepLabel, createBuilderStepId, generateBuilderCode, ROTATION_GATES, TWO_QUBIT_GATES, type BuilderCodeVariants, type BuilderGate, type BuilderStep, type CustomGateDefinition } from "../../../lib/studio-builder";
 import { loadStoredCircuit, saveStoredCircuit } from "../../../lib/studio-circuits";
@@ -21,10 +22,20 @@ import { WORKSPACE_COPY } from "../../../lib/workspace-locale";
 import { DEFAULT_RUN_SHOTS, sampling } from "../../../lib/studio-run-request";
 import { verificationFromMetadata, verificationFromResource, type VerificationCheck } from "../../../lib/verification-record";
 import { artifactExportManifest } from "../../../lib/artifact-export";
+import { restoreRefusalLosses, versionPageFromResource, type ArtifactVersionSummary, type RestoreLoss, type VersionOrigin } from "../../../lib/artifact-versions";
 import { studioVerificationDisplayState } from "../../../lib/verification-display";
+import { DEFAULT_STUDIO_PANEL, STUDIO_PANELS, type StudioPanel } from "../../../lib/studio-panels";
+import { PanelTabs, panelRegion } from "../../../components/panel-tabs";
 
-type StudioPanel = "canvas" | "code" | "simulation" | "versions";
+// Tab order is the working order: you write code, you run it, you look at what
+// you wrote, and then you read what the run said about it (Owner Inbox
+// 2026-07-31). "visual" was "canvas" and "summary" absorbed the old "versions"
+// tab, because a version list with no verdict beside it was never the thing
+// anyone opened it for. The list itself lives in lib/studio-panels so the order
+// can be asserted as a sequence.
 type StudioAction = "simulation" | "save";
+/** Panels that can be thrown full-screen. Both are things you look at closely. */
+type StudioPopout = "code" | "visual";
 
 type BuilderSeed = {
   key: string;
@@ -83,7 +94,7 @@ export function StudioWorkspace({ artifactId, newDraft = false, locale = "en", l
   // the parser — must resolve through this, never trust the selected tab alone.
   const [draftFallbacks, setDraftFallbacks] = useState<DraftBundle["fallbacks"]>({});
   const [code, setCode] = useState(STARTER_CODES.qiskit);
-  const [panel, setPanel] = useState<StudioPanel>("canvas");
+  const [panel, setPanel] = useState<StudioPanel>(DEFAULT_STUDIO_PANEL);
   const [selectedGate, setSelectedGate] = useState("H");
   const [busy, setBusy] = useState<StudioAction | null>(null);
   const [message, setMessage] = useState<string | null>(null);
@@ -91,7 +102,18 @@ export function StudioWorkspace({ artifactId, newDraft = false, locale = "en", l
   const [simulationRecords, setSimulationRecords] = useState<CpuSimulationRecord[]>([]);
   const [rerunPending, setRerunPending] = useState(false);
   const [copied, setCopied] = useState(false);
-  const [inspectorOpen, setInspectorOpen] = useState(true);
+  const [popout, setPopout] = useState<StudioPopout | null>(null);
+
+  /** Changing tab always closes a popout.
+   *
+   * Leaving it set is not merely untidy: only two panels can pop out, so
+   * switching away from a popped-out Code tab left `popout === "code"` with
+   * nothing rendering it, and returning to Code reopened it full-screen with no
+   * action from the user in between. */
+  function selectPanel(next: StudioPanel) {
+    setPanel(next);
+    setPopout(null);
+  }
   // Strings, not numbers: an empty seed field means "let the planner choose" and
   // a number state would have to encode that as 0, which is a valid seed.
   const [shots, setShots] = useState(String(DEFAULT_RUN_SHOTS));
@@ -117,13 +139,13 @@ export function StudioWorkspace({ artifactId, newDraft = false, locale = "en", l
     setArtifacts(loadLibraryArtifacts());
     setArtifactSyncError(false);
     setArtifactHydration(artifactId && !newDraft ? "loading" : "ready");
-    void fetch("/api/artifacts", { cache: "no-store" })
-      .then(async (response) => {
-        if (!response.ok) throw new Error("Artifact API unavailable");
-        return (await response.json()) as unknown;
-      })
-      .then((payload) => {
-        if (!active || !Array.isArray(payload)) return;
+    // Paged, not a single fetch: an un-paged read returns the route's default
+    // of 50 rows and is indistinguishable from a workspace that holds 50. Studio
+    // is now the only surface over these rows, so a truncated list here is the
+    // whole list as far as the person is concerned. See lib/artifact-page.ts.
+    void fetchArtifactPages((query) => fetch(`/api/artifacts${query}`, { cache: "no-store" }))
+      .then(({ rows: payload }) => {
+        if (!active) return;
         const remote = payload.flatMap((value) => artifactFromResource(value));
         const byId = new Map([...loadLibraryArtifacts(), ...remote].map((item) => [item.id, item]));
         setArtifacts([...byId.values()].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)));
@@ -202,6 +224,16 @@ export function StudioWorkspace({ artifactId, newDraft = false, locale = "en", l
     framework: sourceFramework,
     qasm: artifact?.code === code ? artifact.qasm : null,
   }, limits), [artifact?.id, artifact?.code, artifact?.qasm, code, sourceFramework, limits]);
+
+  // The full evidence panel used to sit above the tabs on every draft, so the
+  // most prominent block on a brand-new circuit was a grey box explaining that
+  // it had no evidence yet. It is one chip in the header now, and the panel
+  // itself lives in the tab that is about evidence.
+  const verificationDisplayState = studioVerificationDisplayState({
+    hydration: artifactHydration,
+    hasArtifact: Boolean(artifact),
+    stale: verificationStale,
+  });
 
   function seedForArtifact(next: LibraryArtifact, bundle: DraftBundle, activeFramework: StudioFramework): { seed: BuilderSeed; note: string | null } {
     const activeDrafts = bundle.codes;
@@ -293,7 +325,7 @@ export function StudioWorkspace({ artifactId, newDraft = false, locale = "en", l
     setDraftFallbacks(nextBundle.fallbacks);
     setFramework(nextFramework);
     setCode(nextDrafts[nextFramework]);
-    setPanel("canvas");
+    selectPanel(DEFAULT_STUDIO_PANEL);
     setRunId(null);
     setVerificationStale(false);
     if (!next) {
@@ -394,18 +426,18 @@ export function StudioWorkspace({ artifactId, newDraft = false, locale = "en", l
   }
 
   function openSimulation() {
-    setPanel("simulation");
+    selectPanel("simulation");
     setMessage(null);
   }
 
   function startCpuSimulation(confirmRerun = false) {
     if (!artifact) {
-      setPanel("simulation");
+      selectPanel("simulation");
       setMessage(copy.simulationArtifactRequired);
       return;
     }
     if (!cpuEligibility.eligible) {
-      setPanel("simulation");
+      selectPanel("simulation");
       setMessage(copy.cpuUnavailable(cpuEligibility.reason));
       return;
     }
@@ -498,7 +530,7 @@ export function StudioWorkspace({ artifactId, newDraft = false, locale = "en", l
 
   return (
     <div className="mj-studio-page">
-      <div className={`mj-studio-workspace${showEditor ? ` mj-studio-workspace--editor${inspectorOpen ? "" : " mj-studio-workspace--editor-solo"}` : " mj-studio-workspace--discovery"}`}>
+      <div className={`mj-studio-workspace${showEditor ? " mj-studio-workspace--editor mj-studio-workspace--editor-solo" : " mj-studio-workspace--discovery"}`}>
         {showEditor ? (
           <>
             <section className="mj-studio-main">
@@ -508,40 +540,35 @@ export function StudioWorkspace({ artifactId, newDraft = false, locale = "en", l
                   <input id="studio-title" className="mj-studio-title-input" value={title} onChange={(event) => setTitle(event.target.value)} />
                   <p>{artifact ? copy.editingVersion(artifact.currentVersionId ? artifact.currentVersionId.slice(0, 8) : (locale === "ja" ? "下書き" : "draft"), artifact.framework) : copy.newDraft}</p>
                 </div>
+                {/* Simulate and Copy code used to sit here as full-size buttons
+                    beside a tab bar that already contained both — three ways to
+                    reach two places. Each now lives once, inside the tab that
+                    owns it (Owner Inbox 2026-07-31). */}
                 <div className="mj-studio-actions">
-                  <button
-                    className={`mj-secondary-button mj-studio-inspector-toggle${inspectorOpen ? " is-open" : ""}`}
-                    type="button"
-                    aria-pressed={inspectorOpen}
-                    aria-label={inspectorOpen ? copy.hideInspector : copy.showInspector}
-                    title={inspectorOpen ? copy.hideInspector : copy.showInspector}
-                    onClick={() => setInspectorOpen((value) => !value)}
-                  >
-                    <PanelRightIcon size={15} open={inspectorOpen} />
-                  </button>
-                  <button className="mj-secondary-button" type="button" onClick={() => void copyCode()} title={copied ? copy.copied : copy.copyCode}><CopyIcon size={14} />{copied ? copy.copied : copy.copyCode}</button>
+                  {/* The chip is a shortcut to the evidence panel. On the tab
+                      that already renders that panel it would just be the same
+                      sentence twice. */}
+                  {panel === "summary" ? null : (
+                    <StudioVerdictChip
+                      summary={artifact?.verificationSummary ?? null}
+                      state={verificationDisplayState}
+                      onOpen={() => selectPanel("summary")}
+                      copy={copy}
+                    />
+                  )}
                   {artifact ? <button className="mj-secondary-button" type="button" onClick={downloadDraft}>{copy.downloadExport}</button> : null}
-                  <button className="mj-secondary-button" type="button" disabled={!code.trim()} onClick={openSimulation}>{copy.simulate}</button>
                   <button className="mj-primary-button" type="button" disabled={!code.trim() || busy !== null || !isExecutableCircuitFramework(framework) || !isExecutableCircuitFramework(sourceFramework)} onClick={() => void startRun()}>{busy === "save" ? copy.starting : copy.verifySave}</button>
                 </div>
               </div>
 
-              <VerificationSummaryPanel
-                summary={artifact?.verificationSummary ?? null}
-                state={studioVerificationDisplayState({
-                  hydration: artifactHydration,
-                  hasArtifact: Boolean(artifact),
-                  stale: verificationStale,
-                })}
+              <PanelTabs
+                panels={STUDIO_PANELS}
+                active={panel}
+                onSelect={selectPanel}
+                label={copy.view}
+                labelFor={(item) => (item === "code" ? copy.code : item === "simulation" ? copy.simulation : item === "visual" ? copy.visual : copy.summary)}
+                idPrefix="studio"
               />
-
-              <nav className="mj-studio-tabs" aria-label={copy.view}>
-                {(["canvas", "code", "simulation", "versions"] as StudioPanel[]).map((item) => (
-                  <button className={panel === item ? "is-active" : ""} type="button" key={item} onClick={() => setPanel(item)}>
-                    {item === "canvas" ? copy.circuit : item === "code" ? copy.code : item === "simulation" ? copy.simulation : copy.versions}
-                  </button>
-                ))}
-              </nav>
 
               {artifactId && !newDraft && artifactHydration !== "ready" ? (
                 <div className="mj-studio-empty" role={artifactHydration === "error" ? "alert" : "status"}>
@@ -555,7 +582,10 @@ export function StudioWorkspace({ artifactId, newDraft = false, locale = "en", l
                     framework={framework}
                     selectedGate={selectedGate}
                     onSelectGate={setSelectedGate}
-                    hidden={panel !== "canvas"}
+                    hidden={panel !== "visual"}
+                    region={panelRegion("studio", "visual")}
+                    popout={popout === "visual"}
+                    onTogglePopout={() => setPopout((current) => (current === "visual" ? null : "visual"))}
                     copy={copy}
                     syncState={canvasSync}
                     onRebuildFromCode={rebuildCanvasFromCode}
@@ -580,13 +610,32 @@ export function StudioWorkspace({ artifactId, newDraft = false, locale = "en", l
                       setMessage(copy.appliedToCode);
                     }}
                   />
-                  {panel === "code" ? <CodeEditor code={code} framework={framework} sourceFramework={sourceFramework} onChange={(next) => { setCode(next); setVerificationStale(Boolean(artifact)); }} onCopy={() => void copyCode()} copied={copied} copy={copy} /> : null}
+                  {panel === "code" ? (
+                    <CodeEditor
+                      code={code}
+                      framework={framework}
+                      sourceFramework={sourceFramework}
+                      onChange={(next) => { setCode(next); setVerificationStale(Boolean(artifact)); }}
+                      onCopy={() => void copyCode()}
+                      copied={copied}
+                      onFrameworkChange={changeFramework}
+                      note={draftNotes[framework] ?? null}
+                      popout={popout === "code"}
+                      region={panelRegion("studio", "code")}
+                      onTogglePopout={() => setPopout((current) => (current === "code" ? null : "code"))}
+                      copy={copy}
+                      locale={locale}
+                    />
+                  ) : null}
                   {panel === "simulation" ? (
                     <SimulationPanel
                       artifact={artifact}
                       eligibility={cpuEligibility}
                       records={simulationRecords}
                       shots={shots}
+                      seed={seed}
+                      onShotsChange={setShots}
+                      onSeedChange={setSeed}
                       rerunPending={rerunPending}
                       busy={busy === "simulation"}
                       onRun={() => startCpuSimulation()}
@@ -601,7 +650,25 @@ export function StudioWorkspace({ artifactId, newDraft = false, locale = "en", l
                       copy={copy}
                     />
                   ) : null}
-                  {panel === "versions" ? <VersionPanel artifact={artifact} runId={runId} stale={verificationStale} copy={copy} /> : null}
+                  {panel === "summary" ? (
+                    <SummaryPanel
+                      artifact={artifact}
+                      runId={runId}
+                      stale={verificationStale}
+                      state={verificationDisplayState}
+                      copy={copy}
+                      locale={locale}
+                      onRestored={(seq) => {
+                        // Re-hydrate rather than patching state: a restore
+                        // changes code, OpenQASM, variants, estimates and the
+                        // verdict together, and half of them arrive only from
+                        // the version resource.
+                        if (artifact) void selectArtifact(artifact.id);
+                        setVerificationStale(false);
+                        setMessage(copy.restoreDone(seq));
+                      }}
+                    />
+                  ) : null}
                 </>
               )}
 
@@ -612,72 +679,6 @@ export function StudioWorkspace({ artifactId, newDraft = false, locale = "en", l
               </footer>
             </section>
 
-            <aside className="mj-studio-inspector" aria-label={copy.inspector} hidden={!inspectorOpen}>
-              <div className="mj-studio-inspector-head">
-                <span className="mj-section-label">{copy.inspector}</span>
-                <span className="mj-mono-muted">{copy.liveDraft}</span>
-                <button className="mj-studio-inspector-close" type="button" aria-label={copy.hideInspector} title={copy.hideInspector} onClick={() => setInspectorOpen(false)}>×</button>
-              </div>
-              <label className="mj-studio-field">
-                <span>{locale === "ja" ? "フレームワーク" : "Framework"}</span>
-                <select value={framework} onChange={(event) => changeFramework(event.target.value as StudioFramework)}>
-                  {FRAMEWORK_OPTIONS.map((option) => <option value={option.value} key={option.value}>{option.label}</option>)}
-                </select>
-              </label>
-              <div className="mj-studio-inspector-card">
-                <span className="mj-section-label">{copy.selectedGate}</span>
-                <strong>{selectedGate.startsWith("custom:") ? copy.customGateLabel : selectedGate}</strong>
-                <p>{selectedGate.startsWith("custom:") ? copy.customGateInspector : copy.gateDescriptions[selectedGate] ?? copy.gateDescriptions.H}</p>
-              </div>
-              <div className="mj-studio-inspector-card">
-                <span className="mj-section-label">{copy.runContract}</span>
-                <dl className="mj-studio-contract">
-                  <div><dt>{copy.mode}</dt><dd>{copy.execute}</dd></div>
-                  <div><dt>{copy.source}</dt><dd>{artifact ? copy.existingVersion : copy.newDraftSource}</dd></div>
-                  <div><dt>{copy.evidence}</dt><dd>{copy.sandboxVerifier}</dd></div>
-                </dl>
-                {/* These inputs apply to the bounded CPU lane and are also passed
-                    through unchanged when the user explicitly starts Verify & save. */}
-                <div className="mj-studio-sampling">
-                  <label htmlFor="studio-shots">{copy.shots}</label>
-                  <input
-                    id="studio-shots"
-                    type="number"
-                    min={1}
-                    max={MAX_CPU_SHOTS}
-                    step={256}
-                    value={shots}
-                    onChange={(event) => setShots(event.target.value)}
-                    inputMode="numeric"
-                  />
-                  <label htmlFor="studio-seed">{copy.seed}</label>
-                  <input
-                    id="studio-seed"
-                    type="number"
-                    min={0}
-                    max={MAX_CPU_SEED}
-                    value={seed}
-                    placeholder={copy.seedAuto}
-                    onChange={(event) => setSeed(event.target.value)}
-                    inputMode="numeric"
-                  />
-                </div>
-                <p className="mj-studio-sampling-note">{copy.samplingNote}</p>
-              </div>
-              <div className="mj-studio-inspector-card">
-                <span className="mj-section-label">{copy.cpuLane}</span>
-                <p>{cpuEligibility.eligible ? copy.cpuEligible : copy.cpuUnavailable(cpuEligibility.reason)}</p>
-                <button className="mj-secondary-button" type="button" onClick={openSimulation}>{copy.openSimulation}</button>
-              </div>
-              <div className="mj-studio-framework-note">
-                <CheckIcon size={14} />
-                <span>{isExecutableCircuitFramework(framework)
-                  ? copy.frameworkNote
-                  : locale === "ja"
-                    ? "この形式はコピーとエクスポート用です。Leona Quantum のサンドボックス実行は Qiskit、PennyLane、Cirq に限定されています。"
-                    : "This format is available for copy and export. Leona Quantum sandbox execution is limited to Qiskit, PennyLane, and Cirq."}</span>
-              </div>
-            </aside>
           </>
         ) : (
           <section className="mj-studio-discovery">
@@ -714,6 +715,42 @@ export function StudioWorkspace({ artifactId, newDraft = false, locale = "en", l
 }
 
 type StudioCopy = (typeof WORKSPACE_COPY)[PublicLocale]["studio"];
+
+/**
+ * The header's one-line verdict, and the way into the evidence behind it.
+ *
+ * The full `VerificationSummaryPanel` used to sit above the tab bar on every
+ * draft, so the largest block on a new circuit was a box saying it had no
+ * evidence. The wording comes from `verificationHeadline` in the same module
+ * that renders the panel, so the chip and the panel cannot disagree about what
+ * an artifact's evidence amounts to.
+ */
+function StudioVerdictChip({
+  summary,
+  state,
+  onOpen,
+  copy,
+}: {
+  summary: Parameters<typeof verificationHeadline>[0];
+  state: Parameters<typeof verificationHeadline>[1];
+  onOpen: () => void;
+  copy: StudioCopy;
+}) {
+  const headline = verificationHeadline(summary, state);
+  return (
+    <button
+      className="mj-studio-verdict-chip"
+      type="button"
+      data-tone={headline.tone}
+      onClick={onOpen}
+      title={copy.openSummary}
+    >
+      <span aria-hidden="true">{headline.glyph}</span>
+      {headline.title}
+      <span className="sr-only">— {copy.openSummary}</span>
+    </button>
+  );
+}
 
 /**
  * Decorative studio companion (Owner Inbox 2026-07-19, replacing the walking
@@ -857,7 +894,7 @@ function StudioDots() {
 
 const ANGLE_OPTIONS = ["pi/8", "pi/4", "pi/2", "pi", "3*pi/2", "2*pi"];
 
-function CircuitBuilder({ seed, framework, selectedGate, onSelectGate, onApply, onCircuitChange, hidden, copy, syncState, onRebuildFromCode, sourceCode }: { seed: BuilderSeed; framework: StudioFramework; selectedGate: string; onSelectGate: (gate: string) => void; onApply: (codes: BuilderCodeVariants) => void; onCircuitChange?: (circuit: { qubitCount: number; steps: BuilderStep[]; customGates: CustomGateDefinition[] }) => void; hidden: boolean; copy: StudioCopy; syncState: CircuitSyncState; onRebuildFromCode: () => void; sourceCode: string }) {
+function CircuitBuilder({ seed, framework, selectedGate, onSelectGate, onApply, onCircuitChange, hidden, popout, onTogglePopout, region, copy, syncState, onRebuildFromCode, sourceCode }: { seed: BuilderSeed; framework: StudioFramework; selectedGate: string; onSelectGate: (gate: string) => void; onApply: (codes: BuilderCodeVariants) => void; onCircuitChange?: (circuit: { qubitCount: number; steps: BuilderStep[]; customGates: CustomGateDefinition[] }) => void; hidden: boolean; popout: boolean; onTogglePopout: () => void; region?: Record<string, string>; copy: StudioCopy; syncState: CircuitSyncState; onRebuildFromCode: () => void; sourceCode: string }) {
   const [qubitCount, setQubitCount] = useState(seed.qubitCount);
   const [steps, setSteps] = useState<BuilderStep[]>(seed.steps);
   const [pendingQubits, setPendingQubits] = useState<number[]>([]);
@@ -1013,12 +1050,18 @@ function CircuitBuilder({ seed, framework, selectedGate, onSelectGate, onApply, 
 
 
   return (
-    <section className="mj-studio-surface mj-studio-canvas" aria-label={copy.canvasLabel} hidden={hidden}>
-      <div className="mj-studio-surface-head">
-        <div><span className="mj-section-label">{copy.canvasLabel}</span><h2>{copy.generatedPreview}</h2></div>
-        <span className="mj-mono-muted">{frameworkLabel(framework)} · {qubitCount}q · {steps.length} ops</span>
-      </div>
-
+    <StudioPanelSurface
+      className="mj-studio-canvas"
+      label={copy.canvasLabel}
+      eyebrow={copy.canvasLabel}
+      heading={copy.generatedPreview}
+      meta={<span className="mj-mono-muted">{frameworkLabel(framework)} · {qubitCount}q · {steps.length} ops</span>}
+      popout={popout}
+      onTogglePopout={onTogglePopout}
+      copy={copy}
+      hidden={hidden}
+      region={region}
+    >
       {readOnly ? (
         <div className="mj-circuit-sync mj-circuit-sync--readonly" role="status">
           <span>{copy.readonlyDiagram(qubitCount)}</span>
@@ -1131,11 +1174,21 @@ function CircuitBuilder({ seed, framework, selectedGate, onSelectGate, onApply, 
         </form>
       ) : null}
 
+      {/* The gate's description was the inspector's headline card, one panel
+          away from the palette it described. Folded away by default because it
+          is reference material, not state. */}
+      {readOnly ? null : (
+        <details className="mj-sim-details mj-studio-gate-note">
+          <summary>{copy.selectedGate}: {selectedGate.startsWith("custom:") ? copy.customGateLabel : selectedGate}</summary>
+          <p>{selectedGate.startsWith("custom:") ? copy.customGateInspector : copy.gateDescriptions[selectedGate] ?? copy.gateDescriptions.H}</p>
+        </details>
+      )}
+
       <div className="mj-studio-canvas-footer" aria-live="polite">
         <span>{readOnly ? copy.readonlyDiagramHint : (builderMessage ?? (pendingQubits.length ? copy.pickTarget : selectedStepIds.length ? copy.selectedCount(selectedStepIds.length) : steps.length ? copy.builderHint : copy.builderEmpty))}</span>
         <span className="mj-mono-muted">{steps.length ? steps.map((step) => builderStepLabel(step, customGates)).join(" → ") : "—"}</span>
       </div>
-    </section>
+    </StudioPanelSurface>
   );
 }
 
@@ -1146,7 +1199,35 @@ function CircuitBuilder({ seed, framework, selectedGate, onSelectGate, onApply, 
  *   implementation" over Python and the highlighter must not tokenize Python as
  *   OpenQASM. The toast that explains the fallback is transient; this is not.
  */
-function CodeEditor({ code, framework, sourceFramework, onChange, onCopy, copied, copy }: { code: string; framework: StudioFramework; sourceFramework: StudioFramework; onChange: (code: string) => void; onCopy: () => void; copied: boolean; copy: StudioCopy }) {
+function CodeEditor({
+  code,
+  framework,
+  sourceFramework,
+  onChange,
+  onCopy,
+  copied,
+  onFrameworkChange,
+  note,
+  popout,
+  onTogglePopout,
+  region,
+  copy,
+  locale,
+}: {
+  code: string;
+  framework: StudioFramework;
+  sourceFramework: StudioFramework;
+  onChange: (code: string) => void;
+  onCopy: () => void;
+  copied: boolean;
+  onFrameworkChange: (framework: StudioFramework) => void;
+  note: string | null;
+  popout: boolean;
+  onTogglePopout: () => void;
+  region?: Record<string, string>;
+  copy: StudioCopy;
+  locale: PublicLocale;
+}) {
   const isSourceReference = sourceFramework !== framework;
   const heading = isSourceReference
     ? copy.sourceReferenceHeading(frameworkLabel(sourceFramework), frameworkLabel(framework))
@@ -1165,37 +1246,158 @@ function CodeEditor({ code, framework, sourceFramework, onChange, onCopy, copied
       highlightRef.current.scrollLeft = el.scrollLeft;
     }
   };
+  const executable = isExecutableCircuitFramework(framework);
   return (
-    <section className="mj-studio-surface mj-studio-code-panel" aria-label={copy.sourceEditor}>
-      <div className="mj-studio-surface-head"><div><span className="mj-section-label">{copy.sourceEditor}</span><h2>{heading}</h2></div><button className="mj-secondary-button" type="button" onClick={onCopy} title={copied ? copy.copied : copy.copyCode}><CopyIcon size={14} />{copied ? copy.copied : copy.copyCode}</button></div>
+    <StudioPanelSurface
+      className="mj-studio-code-panel"
+      label={copy.sourceEditor}
+      eyebrow={copy.sourceEditor}
+      heading={heading}
+      popout={popout}
+      onTogglePopout={onTogglePopout}
+      region={region}
+      copy={copy}
+      controls={
+        <>
+          {/* The framework picker lived in the inspector, one panel away from
+              the code it retargets, which is why the conversions read as absent
+              (Owner Inbox 2026-07-31). All eight are offered here; the four that
+              cannot be executed say so in the option itself. */}
+          <label className="mj-studio-framework-select">
+            <span className="sr-only">{locale === "ja" ? "フレームワーク" : "Framework"}</span>
+            <select value={framework} onChange={(event) => onFrameworkChange(event.target.value as StudioFramework)}>
+              {FRAMEWORK_OPTIONS.map((option) => <option value={option.value} key={option.value}>{option.label}</option>)}
+            </select>
+          </label>
+          <button className="mj-secondary-button" type="button" onClick={onCopy} title={copied ? copy.copied : copy.copyCode}><CopyIcon size={14} />{copied ? copy.copied : copy.copyCode}</button>
+        </>
+      }
+    >
       <div className="mj-studio-code-editor-wrap">
         <pre className="mj-studio-code-highlight" aria-hidden="true" ref={highlightRef}>
           <SyntaxHighlightedCode code={code + "\n"} language={sourceFramework} />
         </pre>
         <textarea className="mj-studio-code-editor" value={code} onChange={(event) => onChange(event.target.value)} onScroll={syncScroll} spellCheck={false} aria-label={`${frameworkLabel(sourceFramework)} ${copy.sourceEditorInput}`} />
       </div>
-      <p className="mj-studio-editor-note">{copy.editorNote}</p>
+      {/* Three separate things can be true of the text above, and each is only
+          printed when it is: it was rewritten through standard gates, it is
+          another framework's source shown under this tab's name, or the tab
+          cannot be executed. A blanket "conversions may be lossy" strip would
+          warn about stored native code that was never touched. */}
+      <div className="mj-studio-code-notes">
+        {note ? <p className="mj-studio-code-note" data-tone="warn">{note}</p> : null}
+        {isSourceReference ? <p className="mj-studio-code-note" data-tone="warn">{copy.conversionUnavailable(frameworkLabel(framework), frameworkLabel(sourceFramework))}</p> : null}
+        {!executable ? <p className="mj-studio-code-note">{copy.exportOnlyFramework}</p> : null}
+        <details className="mj-studio-code-about">
+          <summary>{copy.aboutConversions}</summary>
+          <p>{copy.conversionExplainer}</p>
+          <p className="mj-studio-editor-note">{copy.editorNote}</p>
+        </details>
+      </div>
+    </StudioPanelSurface>
+  );
+}
+
+/**
+ * The chrome every Studio tab shares: eyebrow, heading, its own controls, and a
+ * popout.
+ *
+ * The tabs had drifted into four different header shapes — one with a button on
+ * the right, one with a muted string, one with neither — which is most of why
+ * the surface read as four unrelated screens (Owner Inbox 2026-07-31: "clear
+ * sections, not verbose"). The popout is a plain full-viewport panel rather than
+ * a modal: nothing behind it needs to be blocked, and the four hand-rolled
+ * dialogs in this repo already share a missing focus trap that a fifth copy
+ * would inherit.
+ */
+function StudioPanelSurface({
+  className,
+  label,
+  eyebrow,
+  heading,
+  meta,
+  controls,
+  popout,
+  onTogglePopout,
+  copy,
+  children,
+  hidden = false,
+  region,
+}: {
+  className: string;
+  label: string;
+  eyebrow: string;
+  heading: string;
+  meta?: ReactNode;
+  controls?: ReactNode;
+  popout?: boolean;
+  onTogglePopout?: () => void;
+  copy: StudioCopy;
+  children: ReactNode;
+  hidden?: boolean;
+  /** role/id/aria-labelledby from panelRegion, so its tab points somewhere. */
+  region?: Record<string, string>;
+}) {
+  useEffect(() => {
+    if (!popout || !onTogglePopout) return;
+    const onKey = (event: globalThis.KeyboardEvent) => {
+      if (event.key === "Escape") onTogglePopout();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [popout, onTogglePopout]);
+
+  return (
+    <section
+      className={`mj-studio-surface ${className}${popout ? " is-popout" : ""}`}
+      aria-label={label}
+      hidden={hidden}
+      {...region}
+    >
+      <div className="mj-studio-surface-head">
+        <div>
+          <span className="mj-section-label">{eyebrow}</span>
+          <h2>{heading}</h2>
+        </div>
+        <div className="mj-studio-surface-controls">
+          {meta}
+          {controls}
+          {onTogglePopout ? (
+            <button
+              className="mj-icon-button"
+              type="button"
+              aria-pressed={Boolean(popout)}
+              aria-label={popout ? copy.collapsePanel : copy.expandPanel}
+              title={popout ? copy.collapsePanel : copy.expandPanel}
+              onClick={onTogglePopout}
+            >
+              <span aria-hidden="true">{popout ? "⤡" : "⤢"}</span>
+            </button>
+          ) : null}
+        </div>
+      </div>
+      {children}
     </section>
   );
 }
 
-/** The evidence the saved version actually carries.
+/** Where a circuit can be run, in one place, with each lane's real status.
  *
- * `LibraryArtifact` has carried `checks` and `criticSummary` since the Vault
- * detail page started rendering them, and this panel showed neither — a truncated
- * version id and, if a run had just been submitted, a link out. So the tab named
- * "Versions" in the surface whose whole job is producing verified artifacts was
- * the one place in the product that could not tell you what was verified.
- *
- * `checks` is populated when a version has been opened in the Vault; absent is
- * "not loaded here", not "nothing was checked", and the copy says so rather than
- * implying an empty list means an empty panel.
+ * Three lanes exist and they are not interchangeable: the browser CPU lane runs
+ * a bounded statevector locally and produces no evidence; the GPU lane has no
+ * provider attached yet; hardware runs on a real QPU and costs money. Grouping
+ * them makes the choice legible and stops the CPU lane's eligibility text from
+ * being printed twice — once as the panel's status line and once inside the box
+ * explaining what to do about it.
  */
 function SimulationPanel({
   artifact,
   eligibility,
   records,
   shots,
+  seed,
+  onShotsChange,
+  onSeedChange,
   rerunPending,
   busy,
   onRun,
@@ -1209,6 +1411,9 @@ function SimulationPanel({
   eligibility: CpuSimulationEligibility;
   records: CpuSimulationRecord[];
   shots: string;
+  seed: string;
+  onShotsChange: (value: string) => void;
+  onSeedChange: (value: string) => void;
   rerunPending: boolean;
   busy: boolean;
   onRun: () => void;
@@ -1225,18 +1430,53 @@ function SimulationPanel({
     ))
     : [];
   return (
-    <section className="mj-studio-surface mj-studio-simulation-panel" aria-label={copy.simulation}>
+    <section className="mj-studio-surface mj-studio-simulation-panel" aria-label={copy.simulation} {...panelRegion("studio", "simulation")}>
       <div className="mj-studio-surface-head">
         <div>
-          <span className="mj-section-label">{copy.cpuLane}</span>
+          <span className="mj-section-label">{copy.computeLanes}</span>
           <h2>{copy.simulation}</h2>
         </div>
-        <span className="mj-mono-muted">{eligibility.eligible ? copy.cpuEligible : copy.cpuUnavailable(eligibility.reason)}</span>
+        <div className="mj-studio-surface-controls">
+          {/* Shots and seed came from the inspector. They belong beside the run
+              control they parameterise, not in a panel you had to keep open on
+              a different tab to see them. */}
+          <label className="mj-studio-inline-field" htmlFor="studio-shots">
+            <span>{copy.shots}</span>
+            <input
+              id="studio-shots"
+              type="number"
+              min={1}
+              max={MAX_CPU_SHOTS}
+              step={256}
+              value={shots}
+              onChange={(event) => onShotsChange(event.target.value)}
+              inputMode="numeric"
+            />
+          </label>
+          <label className="mj-studio-inline-field" htmlFor="studio-seed">
+            <span>{copy.seed}</span>
+            <input
+              id="studio-seed"
+              type="number"
+              min={0}
+              max={MAX_CPU_SEED}
+              value={seed}
+              placeholder={copy.seedAuto}
+              onChange={(event) => onSeedChange(event.target.value)}
+              inputMode="numeric"
+            />
+          </label>
+        </div>
       </div>
       <div className="mj-studio-simulation-body">
-        <p className="mj-studio-simulation-boundary">{copy.simulationBoundary}</p>
+        <div className="mj-studio-lane">
+          <div className="mj-studio-lane-head">
+            <span className="mj-studio-lane-title">{copy.cpuLane}</span>
+            <span className="mj-mono-muted">{eligibility.eligible ? copy.cpuEligible : copy.cpuUnavailableShort}</span>
+          </div>
         <details className="mj-sim-details">
           <summary>{copy.simulationContextDetails}</summary>
+          <p className="mj-studio-simulation-boundary">{copy.simulationBoundary}</p>
           <dl className="mj-studio-contract">
             <div><dt>{copy.simulationArtifact}</dt><dd>{artifact?.title ?? copy.newDraftSource}</dd></div>
             <div><dt>{copy.sourceFingerprint}</dt><dd>{eligibility.sourceFingerprint}</dd></div>
@@ -1244,6 +1484,7 @@ function SimulationPanel({
             {eligibility.eligible ? <div><dt>{copy.simulationModel}</dt><dd>{simulationModelLabel(eligibility.model, copy)}</dd></div> : null}
             <div><dt>{copy.simulator}</dt><dd>{copy.browserCpu}</dd></div>
           </dl>
+          <p className="mj-studio-sampling-note">{copy.samplingNote}</p>
         </details>
 
         {eligibility.eligible ? (
@@ -1281,16 +1522,26 @@ function SimulationPanel({
             ) : null}
           </div>
         )}
+        </div>
 
-        {/* The GPU lane was a button that could never be pressed, next to a
-            paragraph explaining that it could never be pressed. A control that
-            exists only to be disabled is a promise the screen cannot keep; the
-            roadmap says this on the public site, which is where a roadmap
-            belongs. */}
-        <section className="mj-studio-hardware-lanes" aria-label={copy.hardwareLanes}>
-          <span className="mj-section-label">{copy.hardwareLanes}</span>
+        {/* The GPU lane is listed because it is a lane, and it says exactly what
+            is true of it — a provider is being arranged and nothing is wired to
+            it yet (Owner Inbox 2026-07-31). What it deliberately does NOT have
+            is a run button: an earlier version of this lane was a control that
+            existed only to be disabled, which was removed for being a promise
+            the screen could not keep. A named status is information; a dead
+            button is a lie. The control appears with the provider. */}
+        <div className="mj-studio-lane" data-state="pending">
+          <div className="mj-studio-lane-head">
+            <span className="mj-studio-lane-title">{copy.gpuLane}</span>
+            <span className="mj-mono-muted">{copy.gpuPending}</span>
+          </div>
+          <p>{copy.gpuExplainer}</p>
+        </div>
+
+        <div className="mj-studio-lane">
           <QpuLane artifact={artifact} shots={shots} copy={copy} />
-        </section>
+        </div>
 
         <section className="mj-studio-simulation-records" aria-label={copy.simulationResults}>
           <div className="mj-studio-simulation-records-head"><span className="mj-section-label">{copy.simulationResults}</span><span className="mj-mono-muted">{records.length}</span></div>
@@ -1543,18 +1794,54 @@ function simulationModelLabel(model: CpuSimulationRecord["model"], copy: StudioC
   return model === "direct_source" ? copy.directSourceModel : copy.standardDecompositionModel;
 }
 
-function VersionPanel({ artifact, runId, stale, copy }: { artifact: LibraryArtifact | null; runId: string | null; stale: boolean; copy: StudioCopy }) {
+/** What this circuit is, what was proved about it, and which versions exist.
+ *
+ * This is the old Versions tab with the evidence it was always missing. A
+ * version list without a verdict beside it answers a question nobody was
+ * asking: the reason to open a version history here is to find out whether the
+ * current version is trustworthy, and until now that meant leaving Studio for
+ * the artifact detail screen. The run contract came from the inspector for the same reason — it
+ * describes what the next Verify & save will do, which is a fact about this
+ * artifact's evidence, not a control.
+ *
+ * `checks` is populated when a version has been opened before; absent is
+ * "not loaded here", not "nothing was checked", and the copy says so rather
+ * than implying an empty list means an empty panel.
+ */
+function SummaryPanel({
+  artifact,
+  runId,
+  stale,
+  state,
+  copy,
+  locale,
+  onRestored,
+}: {
+  artifact: LibraryArtifact | null;
+  runId: string | null;
+  stale: boolean;
+  state: ReturnType<typeof studioVerificationDisplayState>;
+  copy: StudioCopy;
+  locale: PublicLocale;
+  onRestored: (seq: number) => void;
+}) {
   const checks: VerificationCheck[] = artifact?.checks ?? [];
   return (
-    <section className="mj-studio-surface mj-studio-version-panel" aria-label={copy.versionHistory}>
-      <div className="mj-studio-surface-head"><div><span className="mj-section-label">{copy.versionHistory}</span><h2>{artifact ? artifact.title : copy.newDraftSource}</h2></div><span className="mj-mono-muted">{copy.repositoryView}</span></div>
-      <div className="mj-studio-version-row"><span className="mj-studio-version-dot" /><div><strong>{artifact?.currentVersionId ? copy.currentVersion(artifact.currentVersionId.slice(0, 12)) : copy.draftNotSaved}</strong><p>{artifact ? copy.currentVersionNote : copy.draftVersionNote}</p></div></div>
-      {artifact ? (
-        <div className="mj-studio-version-evidence">
-          <span className="mj-section-label">{copy.evidence}</span>
-          <VerificationSummaryPanel summary={artifact.verificationSummary ?? null} state={stale ? "stale" : undefined} />
-          {artifact.criticSummary ? <p className="mj-studio-evidence-summary">{artifact.criticSummary}</p> : null}
-          {checks.length ? (
+    <section className="mj-studio-surface mj-studio-version-panel" aria-label={copy.summary} {...panelRegion("studio", "summary")}>
+      <div className="mj-studio-surface-head">
+        <div>
+          <span className="mj-section-label">{copy.summary}</span>
+          <h2>{artifact ? artifact.title : copy.newDraftSource}</h2>
+        </div>
+        <span className="mj-mono-muted">{artifact?.framework ?? ""}</span>
+      </div>
+
+      <div className="mj-studio-summary-section">
+        <span className="mj-section-label">{copy.evidence}</span>
+        <VerificationSummaryPanel summary={artifact?.verificationSummary ?? null} state={state} />
+        {artifact?.criticSummary ? <p className="mj-studio-evidence-summary">{artifact.criticSummary}</p> : null}
+        {artifact ? (
+          checks.length ? (
             <ul className="mj-verification-checks">
               {checks.map((check) => (
                 <li key={check.method}>
@@ -1566,17 +1853,270 @@ function VersionPanel({ artifact, runId, stale, copy }: { artifact: LibraryArtif
             </ul>
           ) : (
             <p className="mj-mono-muted">{copy.evidenceNotLoaded}</p>
-          )}
-          {artifact.id ? <p><a href={`/library/${encodeURIComponent(artifact.id)}`}>{copy.openFullRecord}</a></p> : null}
-        </div>
-      ) : null}
-      {runId ? <div className="mj-studio-version-row"><span className="mj-studio-version-dot is-pending" /><div><strong>{copy.verificationQueued}</strong><p><a href={`/run/${runId}`}>{runId.slice(0, 12)}</a> · {copy.verificationAttach(runId.slice(0, 12))}</p></div></div> : null}
+          )
+        ) : null}
+        {artifact?.id ? <p><a href={`/library/${encodeURIComponent(artifact.id)}`}>{copy.openFullRecord}</a></p> : null}
+      </div>
+
+      <div className="mj-studio-summary-section">
+        <span className="mj-section-label">{copy.versionHistory}</span>
+        {stale ? <div className="mj-studio-version-row"><span className="mj-studio-version-dot is-pending" /><div><strong>{copy.uncommittedEdits}</strong><p>{copy.uncommittedEditsNote}</p></div></div> : null}
+        {runId ? <div className="mj-studio-version-row"><span className="mj-studio-version-dot is-pending" /><div><strong>{copy.verificationQueued}</strong><p><a href={`/run/${runId}`}>{runId.slice(0, 12)}</a> · {copy.verificationAttach(runId.slice(0, 12))}</p></div></div> : null}
+        {artifact ? (
+          <VersionHistory artifact={artifact} copy={copy} locale={locale} onRestored={onRestored} />
+        ) : (
+          <div className="mj-studio-version-row"><span className="mj-studio-version-dot" /><div><strong>{copy.draftNotSaved}</strong><p>{copy.draftVersionNote}</p></div></div>
+        )}
+      </div>
+
+      <details className="mj-sim-details">
+        <summary>{copy.runContract}</summary>
+        <dl className="mj-studio-contract">
+          <div><dt>{copy.mode}</dt><dd>{copy.execute}</dd></div>
+          <div><dt>{copy.source}</dt><dd>{artifact ? copy.existingVersion : copy.newDraftSource}</dd></div>
+          <div><dt>{copy.evidence}</dt><dd>{copy.sandboxVerifier}</dd></div>
+        </dl>
+      </details>
     </section>
   );
 }
 
+function originLabel(origin: VersionOrigin, copy: StudioCopy): string {
+  if (origin === "agent_run") return copy.versionOriginAgentRun;
+  if (origin === "studio_draft") return copy.versionOriginStudioDraft;
+  if (origin === "imported_reference") return copy.versionOriginImportedReference;
+  if (origin === "starter_example") return copy.versionOriginStarterExample;
+  return copy.versionOriginUnknown;
+}
+
+function capabilityLabel(loss: RestoreLoss, copy: StudioCopy): string {
+  if (loss === "qasm") return copy.capabilityQasm;
+  if (loss === "export") return copy.capabilityExport;
+  if (loss === "resource_estimates") return copy.capabilityResourceEstimates;
+  if (loss === "framework_variants") return copy.capabilityFrameworkVariants;
+  return copy.capabilityVerification;
+}
+
+/** What a row HOLDS, in the same words the restore warning uses for losing it. */
+function heldCapabilities(row: ArtifactVersionSummary, copy: StudioCopy): string[] {
+  const held: string[] = [];
+  if (row.hasQasm) held.push(copy.capabilityQasm);
+  if (row.exportable) held.push(copy.capabilityExport);
+  if (row.hasResourceEstimates) held.push(copy.capabilityResourceEstimates);
+  if (row.hasFrameworkVariants) held.push(copy.capabilityFrameworkVariants);
+  if (row.verified) held.push(copy.capabilityVerification);
+  return held;
+}
+
+/**
+ * The artifact's versions, and the way back to one of them.
+ *
+ * Two things this deliberately does NOT do.
+ *
+ * It does not read "current" from the top of the list. Restoring moves
+ * `artifacts.current_version_id` and writes no row, so the current version is
+ * frequently not the newest `seq`; the server flags it and this reads the flag.
+ *
+ * It does not present versions as equivalent. A version the user typed in
+ * Studio has no OpenQASM, no exports, no estimates and no verdict — restoring
+ * one over a verified run is a real loss, so each row states what it holds and
+ * a lossy restore has to be confirmed against a list of what goes.
+ */
+function VersionHistory({
+  artifact,
+  copy,
+  locale,
+  onRestored,
+}: {
+  artifact: LibraryArtifact;
+  copy: StudioCopy;
+  locale: PublicLocale;
+  onRestored: (seq: number) => void;
+}) {
+  const [rows, setRows] = useState<ArtifactVersionSummary[] | null>(null);
+  const [failed, setFailed] = useState(false);
+  const [nextBeforeSeq, setNextBeforeSeq] = useState<number | null>(null);
+  const [confirming, setConfirming] = useState<{ row: ArtifactVersionSummary; losses: RestoreLoss[] } | null>(null);
+  const [restoring, setRestoring] = useState<string | null>(null);
+  const [restoreError, setRestoreError] = useState<string | null>(null);
+
+  const artifactId = artifact.id;
+  // Keyed on the current version too: after a restore the pointer moved, so
+  // every row's `is_current` and `restore_losses` are stale.
+  const currentVersionId = artifact.currentVersionId ?? null;
+
+  useEffect(() => {
+    let active = true;
+    setRows(null);
+    setFailed(false);
+    void fetch(`/api/artifacts/${encodeURIComponent(artifactId)}/versions`, { cache: "no-store" })
+      .then(async (response) => {
+        if (!response.ok) throw new Error("version history unavailable");
+        return (await response.json()) as unknown;
+      })
+      .then((payload) => {
+        if (!active) return;
+        const page = versionPageFromResource(payload);
+        setRows(page.versions);
+        setNextBeforeSeq(page.nextBeforeSeq);
+      })
+      .catch(() => {
+        if (active) setFailed(true);
+      });
+    return () => {
+      active = false;
+    };
+  }, [artifactId, currentVersionId]);
+
+  async function loadOlder() {
+    if (nextBeforeSeq === null) return;
+    const response = await fetch(
+      `/api/artifacts/${encodeURIComponent(artifactId)}/versions?before_seq=${nextBeforeSeq}`,
+      { cache: "no-store" },
+    );
+    if (!response.ok) {
+      setFailed(true);
+      return;
+    }
+    const page = versionPageFromResource(await response.json());
+    setRows((current) => [...(current ?? []), ...page.versions]);
+    setNextBeforeSeq(page.nextBeforeSeq);
+  }
+
+  async function restore(row: ArtifactVersionSummary, acknowledged: boolean) {
+    if (restoring) return;
+    setRestoring(row.id);
+    setRestoreError(null);
+    try {
+      const response = await fetch(
+        `/api/artifacts/${encodeURIComponent(artifactId)}/versions/${encodeURIComponent(row.id)}/restore`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ acknowledge_capability_loss: acknowledged }),
+        },
+      );
+      if (response.status === 409) {
+        // The list said this restore was free but the artifact moved under us.
+        // Ask, with the server's list — never resend acknowledged on its behalf.
+        const losses = restoreRefusalLosses(await response.json());
+        if (losses) {
+          setConfirming({ row, losses });
+          return;
+        }
+        throw new Error("restore refused");
+      }
+      if (!response.ok) throw new Error("restore failed");
+      setConfirming(null);
+      onRestored(row.seq);
+    } catch {
+      setRestoreError(copy.restoreFailed);
+    } finally {
+      setRestoring(null);
+    }
+  }
+
+  if (failed) return <p className="mj-mono-muted" role="alert">{copy.versionHistoryUnavailable}</p>;
+  if (rows === null) return <p className="mj-mono-muted" role="status">{copy.versionHistoryLoading}</p>;
+  if (!rows.length) return <p className="mj-mono-muted">{copy.versionHistoryEmpty}</p>;
+
+  return (
+    <>
+      {restoreError ? <p role="alert" className="mj-delete-dialog-error">{restoreError}</p> : null}
+      {rows.map((row) => {
+        const held = heldCapabilities(row, copy);
+        return (
+          <div className="mj-studio-version-row" key={row.id}>
+            <span className={`mj-studio-version-dot${row.isCurrent ? "" : " is-past"}`} />
+            <div>
+              <span className="mj-studio-version-meta">
+                <strong>{copy.versionLabel(row.seq)}</strong>
+                {row.isCurrent ? <span className="mj-mono-muted">{copy.versionCurrentBadge}</span> : null}
+                <span className="mj-mono-muted">{originLabel(row.origin, copy)}</span>
+              </span>
+              <p>
+                {held.length ? `${copy.versionHolds}: ${held.join(" · ")}` : copy.versionHoldsNothing}
+              </p>
+              {row.createdAt ? (
+                <p className="mj-mono-muted">
+                  {new Date(row.createdAt).toLocaleDateString(locale === "ja" ? "ja-JP" : "en-US", {
+                    month: "short",
+                    day: "numeric",
+                    year: "numeric",
+                  })}
+                </p>
+              ) : null}
+            </div>
+            {row.isCurrent ? null : (
+              <button
+                className="mj-secondary-button"
+                type="button"
+                disabled={restoring !== null}
+                onClick={() => {
+                  // A lossy restore opens the dialog straight from the list's
+                  // own loss codes; the server still refuses an unacknowledged
+                  // one, so this is a faster path to the same gate, not a
+                  // replacement for it.
+                  if (row.restoreLosses.length) setConfirming({ row, losses: row.restoreLosses });
+                  else void restore(row, false);
+                }}
+              >
+                {restoring === row.id ? copy.restoring : copy.restore}
+              </button>
+            )}
+          </div>
+        );
+      })}
+      {nextBeforeSeq !== null ? (
+        <button className="mj-secondary-button" type="button" onClick={() => void loadOlder()}>
+          {copy.versionShowOlder}
+        </button>
+      ) : null}
+      {confirming ? (
+        <div
+          className="mj-delete-dialog-backdrop"
+          role="presentation"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) setConfirming(null);
+          }}
+        >
+          <section className="mj-delete-dialog" role="dialog" aria-modal="true" aria-labelledby="mj-restore-dialog-title">
+            <p className="mj-eyebrow">{copy.versionHistory}</p>
+            <h2 id="mj-restore-dialog-title">{copy.restoreConfirmTitle}</h2>
+            <p>{copy.restoreConfirmBody(confirming.row.seq)}</p>
+            {confirming.losses.length ? (
+              <>
+                <p>{copy.restoreLossIntro}</p>
+                <ul>
+                  {confirming.losses.map((loss) => (
+                    <li key={loss}>{capabilityLabel(loss, copy)}</li>
+                  ))}
+                </ul>
+              </>
+            ) : null}
+            {restoreError ? <p role="alert" className="mj-delete-dialog-error">{restoreError}</p> : null}
+            <div className="mj-delete-dialog-actions">
+              <button className="mj-secondary-button" type="button" onClick={() => setConfirming(null)}>
+                {copy.restoreCancel}
+              </button>
+              <button
+                className="mj-danger-button"
+                type="button"
+                disabled={restoring !== null}
+                onClick={() => void restore(confirming.row, true)}
+              >
+                {restoring ? copy.restoring : copy.restoreConfirmAnyway}
+              </button>
+            </div>
+          </section>
+        </div>
+      ) : null}
+    </>
+  );
+}
+
 /** Never the bare word "Verified" for a structural pass — that conflation is what
- * the Vault list was fixed for, and Studio must not reintroduce it. */
+ * the retired artifact list was fixed for, and Studio must not reintroduce it. */
 async function loadArtifact(id: string): Promise<LibraryArtifact | null> {
   const response = await fetch(`/api/artifacts/${encodeURIComponent(id)}`, { cache: "no-store" });
   if (!response.ok) return null;
@@ -1594,7 +2134,7 @@ async function loadArtifact(id: string): Promise<LibraryArtifact | null> {
     artifact.resourceRows = resourceRowsFromRemote(version.resource_estimates);
     // The Versions panel is only useful if the checks arrive with the artifact.
     // Without this the panel could only ever show evidence for an artifact this
-    // browser had already opened in the Vault — i.e. almost never, which would
+    // browser had already opened once before — i.e. almost never, which would
     // make the whole panel look like it did not work.
     const record = verificationFromMetadata(version.metadata);
     artifact.checks = record.checks ?? artifact.checks;

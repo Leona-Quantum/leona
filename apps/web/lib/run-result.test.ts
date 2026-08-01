@@ -186,6 +186,12 @@ test("a failed verification still exposes protected results and best available c
       residual_risks: ["Energy missed the requested tolerance."],
     },
     {
+      type: "run.error",
+      stage: "verify",
+      code: "candidate_budget_exhausted",
+      message: "intent review did not align the candidate",
+    },
+    {
       type: "run.finished",
       status: "failed",
       residual_risks: "Verification did not accept this candidate.",
@@ -193,7 +199,7 @@ test("a failed verification still exposes protected results and best available c
   ]);
 
   assert.ok(result);
-  assert.equal(result.trust.label, "Best effort · not accepted");
+  assert.equal(result.trust.label, "Best available · not verified");
   assert.equal(result.values[0]?.value, "-1.12");
   assert.equal(result.code?.label, "Best available code");
   assert.equal(result.code?.source, "print('best revision 4')");
@@ -201,6 +207,8 @@ test("a failed verification still exposes protected results and best available c
     "Energy missed the requested tolerance.",
     "Verification did not accept this candidate.",
   ]);
+  assert.equal(result.notice?.title, "Why this result was not accepted");
+  assert.match(result.notice?.body ?? "", /repair attempts were used/i);
 });
 
 test("a failed run never pairs an older revision's result with newer best-effort code", () => {

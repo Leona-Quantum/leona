@@ -4,7 +4,7 @@ import { test } from "node:test";
 import { artifactFromResource, statusFromResource } from "./library-data.ts";
 
 // Trimmed verbatim from GET /v1/artifacts in production on 2026-07-20. The grade
-// fields are what the list resource has carried since the Vault list stopped
+// fields are what the list resource has carried since the artifact list stopped
 // fabricating "Verified"; Studio's own copy of this mapper never read them.
 const PHYSICAL = {
   id: "019f7f2f-47ee-78ab-aafd-c1f6281589cf",

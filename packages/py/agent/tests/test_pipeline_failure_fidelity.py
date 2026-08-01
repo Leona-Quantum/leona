@@ -7,6 +7,8 @@ pipeline works — they are about what it says and when it stops.
 
 from __future__ import annotations
 
+import hashlib
+import json
 from uuid import uuid4
 
 from majorana_agent import (
@@ -14,6 +16,7 @@ from majorana_agent import (
     CandidateRevision,
     ExecutionEvidence,
     ExecutionFailureKind,
+    PlanRevision,
     SimpleCircuitPipeline,
     SimpleFailureKind,
     SimplePipelineBudget,
@@ -191,7 +194,7 @@ class AlwaysTheSameSource(FakePorts):
         return SimplePortResult.success(BasicContractResult(passed=True))
 
 
-async def test_a_generator_that_repeats_itself_ends_the_run():
+async def test_a_generator_that_repeats_itself_replans_then_ends_finitely():
     ports = AlwaysTheSameSource()
     outcome = await SimpleCircuitPipeline(
         ports=ports,
@@ -202,12 +205,38 @@ async def test_a_generator_that_repeats_itself_ends_the_run():
     assert outcome.failure is not None
     assert outcome.failure.code == "candidate_not_converging"
     assert outcome.failure.retryable is False
-    assert outcome.failure.details["occurrences"] == 3
+    assert outcome.failure.details["occurrences"] == 4
 
-    # The point of the change: the observed run spent EIGHT generations and eight
-    # sandbox executions on byte-identical source. Three is the new ceiling for
-    # that shape, and it must be well under the budget or nothing was saved.
-    assert ports.generated == 3
+    # A third copy proves code-only repair is stuck, but unused plan budget can
+    # still change the approach. One final replan is attempted; if that also emits
+    # the same bytes, the run stops well before spending all eight candidates.
+    assert ports.generated == 4
+    assert outcome.counters.plan_attempts == 3
+    assert ports.calls.count("execute") == 2
+
+
+async def test_a_replan_can_escape_a_repeated_source_dead_end():
+    class ChangesApproachAfterReplan(AlwaysTheSameSource):
+        async def generate(self, run_id, plan, previous, feedback):
+            if plan.revision < 3:
+                return await super().generate(run_id, plan, previous, feedback)
+            return await FakePorts.generate(self, run_id, plan, previous, feedback)
+
+        async def run_execution(self, run_id, plan, candidate):
+            if candidate.source == self.SOURCE:
+                return await super().run_execution(run_id, plan, candidate)
+            return await FakePorts.run_execution(self, run_id, plan, candidate)
+
+    ports = ChangesApproachAfterReplan()
+    outcome = await SimpleCircuitPipeline(
+        ports=ports,
+        budget=SimplePipelineBudget(max_generation_attempts=8),
+    ).run(uuid4())
+
+    assert outcome.status is SimplePipelineStatus.SUCCEEDED
+    assert outcome.plan is not None and outcome.plan.revision == 3
+    assert outcome.candidate is not None and outcome.candidate.revision == 4
+    assert outcome.counters.generation_attempts == 4
 
 
 async def test_two_identical_candidates_are_not_treated_as_a_dead_loop():
@@ -218,7 +247,8 @@ async def test_two_identical_candidates_are_not_treated_as_a_dead_loop():
     regenerate_after_a_blocked_review` in the worker suite exercises exactly
     that. Two occurrences have an innocent explanation; three do not.
     """
-    seen: dict[str, int] = {}
+    seen: dict[tuple[str, str], int] = {}
+    plan = _plan_revision(uuid4(), 1)
     program = FrameworkProgram(framework=Framework.QISKIT, source=AlwaysTheSameSource.SOURCE)
 
     def _candidate(revision: int, parent) -> CandidateRevision:
@@ -235,15 +265,57 @@ async def test_two_identical_candidates_are_not_treated_as_a_dead_loop():
         )
 
     first = _candidate(1, None)
-    assert SimpleCircuitPipeline._repeat_candidate_failure(first, seen) is None
+    assert SimpleCircuitPipeline._repeat_candidate_failure(plan, first, seen) is None
     second = _candidate(2, first.candidate_id)
-    assert SimpleCircuitPipeline._repeat_candidate_failure(second, seen) is None
+    assert SimpleCircuitPipeline._repeat_candidate_failure(plan, second, seen) is None
     third = _candidate(3, second.candidate_id)
-    assert SimpleCircuitPipeline._repeat_candidate_failure(third, seen) is not None
+    assert SimpleCircuitPipeline._repeat_candidate_failure(plan, third, seen) is not None
+
+
+def test_same_source_is_evaluated_again_after_a_material_plan_change():
+    """A repaired success criterion must not blacklist otherwise correct code."""
+
+    run_id = uuid4()
+    first_plan = _plan_revision(run_id, 1)
+    revised_plan = first_plan.plan.model_copy(update={"expected_runtime_sec": 11})
+    revised_fingerprint = hashlib.sha256(
+        json.dumps(
+            revised_plan.model_dump(mode="json"),
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode()
+    ).hexdigest()
+    second_plan = PlanRevision(
+        plan_id=uuid4(),
+        run_id=run_id,
+        revision=2,
+        parent_plan_id=first_plan.plan_id,
+        plan=revised_plan,
+        plan_fingerprint=revised_fingerprint,
+        replan_reason="correct the invalid success criterion",
+    )
+    program = FrameworkProgram(framework=Framework.QISKIT, source=AlwaysTheSameSource.SOURCE)
+    candidate = CandidateRevision(
+        candidate_id=uuid4(),
+        run_id=run_id,
+        tool_call_id="same-source",
+        revision=1,
+        plan_id=first_plan.plan_id,
+        framework=Framework.QISKIT,
+        source=AlwaysTheSameSource.SOURCE,
+        source_fingerprint=program.fingerprint,
+    )
+    seen: dict[tuple[str, str], int] = {}
+
+    assert SimpleCircuitPipeline._repeat_candidate_failure(first_plan, candidate, seen) is None
+    assert SimpleCircuitPipeline._repeat_candidate_failure(first_plan, candidate, seen) is None
+    assert SimpleCircuitPipeline._repeat_candidate_failure(first_plan, candidate, seen) is not None
+    assert SimpleCircuitPipeline._repeat_candidate_failure(second_plan, candidate, seen) is None
 
 
 def test_different_source_never_trips_the_detector():
-    seen: dict[str, int] = {}
+    seen: dict[tuple[str, str], int] = {}
+    plan = _plan_revision(uuid4(), 1)
     for revision in range(1, 9):
         source = f"FINAL_CIRCUIT = {revision}\nRESULT = {{}}\n"
         program = FrameworkProgram(framework=Framework.QISKIT, source=source)
@@ -257,4 +329,4 @@ def test_different_source_never_trips_the_detector():
             source=source,
             source_fingerprint=program.fingerprint,
         )
-        assert SimpleCircuitPipeline._repeat_candidate_failure(candidate, seen) is None
+        assert SimpleCircuitPipeline._repeat_candidate_failure(plan, candidate, seen) is None

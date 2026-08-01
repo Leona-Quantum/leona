@@ -77,6 +77,19 @@ class Row:
         return self._value
 
 
+class Rows:
+    """Wraps a list of values for repo code that calls .scalars().all()."""
+
+    def __init__(self, values):
+        self._values = list(values)
+
+    def scalars(self):
+        return self
+
+    def all(self):
+        return self._values
+
+
 class SequencedSession:
     """Returns queued results in call order; records every statement/insert."""
 

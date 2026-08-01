@@ -11,7 +11,7 @@ document is the stop-and-report required before that gate.
 
 ## 1. What was built
 
-`db/migrations/versions/0039_vqe_component_registry.py` — four purely
+`db/migrations/versions/0041_vqe_component_registry.py` — four purely
 additive tables, matching the plan's Part II §8 field lists exactly:
 
 - `vqe_component_specs` (PK = `artifact_version_id`; component identity IS

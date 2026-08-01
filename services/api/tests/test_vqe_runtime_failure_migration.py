@@ -7,7 +7,7 @@ MIGRATION = (
     / "db"
     / "migrations"
     / "versions"
-    / "0040_vqe_runtime_failure_taxonomy.py"
+    / "0042_vqe_runtime_failure_taxonomy.py"
 )
 
 
@@ -38,7 +38,7 @@ def test_runtime_failure_taxonomy_migration_is_linear_and_reversible(monkeypatch
         lambda statement: operations.append(("execute", str(statement), {})),
     )
 
-    assert module.down_revision == "0039"
+    assert module.down_revision == "0041"
     module.upgrade()
     assert "output_limit_exceeded" in operations[-1][1][2]
     operations.clear()

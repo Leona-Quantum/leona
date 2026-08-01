@@ -1,0 +1,20 @@
+id: bench-23
+category: "I — Quantum error correction"
+prompt: >-
+  Implement and simulate the three-qubit bit-flip repetition code in Qiskit
+  for an arbitrary nontrivial logical state cos(0.37)|0> + sin(0.37)|1>.
+  Coherently extract the two parity syndromes into ancillas and correct each
+  of the three possible single-qubit X errors. Evaluate the encoded-state
+  fidelity separately for no error and X errors on data qubits 0, 1, and 2.
+  Return the minimum of those four fidelities as the top-level numeric RESULT
+  key worst_case_fidelity, and bind the complete qubit-1-error recovery
+  circuit to FINAL_CIRCUIT. Do not replace the recovery with a classical
+  hard-coded answer.
+framework: qiskit
+expect:
+  terminal_reason: ai_review_aligned
+  output_keys: ["worst_case_fidelity"]
+  expected_values:
+    worst_case_fidelity: 1.0
+  expected_value_tolerance: 0.000001
+  saves_artifact: true

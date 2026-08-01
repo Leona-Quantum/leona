@@ -65,6 +65,9 @@ export function RunOutcome({
       data-tone={outcome.tone}
       aria-label={`${outcome.eyebrow}. ${outcome.title}`}
     >
+      <span className="sr-only" role="status" aria-live="polite" aria-atomic="true">
+        {outcome.eyebrow}. {outcome.title}.
+      </span>
       <header className="mj-run-outcome-head">
         <div className="mj-run-outcome-identity">
           <span className="mj-run-outcome-glyph" aria-hidden="true">

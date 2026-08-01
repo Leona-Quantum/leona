@@ -28,6 +28,7 @@ from ..repos import folders as folders_repo
 from ..repos import runs as runs_repo
 from ..repos import system
 from ..settings import Settings
+from ..tiers import TIER_WINDOW as _TIER_WINDOW
 from ..tiers import limits_for, resolve_tier
 from ..verification_summary import parse_verification_summary
 
@@ -187,7 +188,9 @@ def _backstop_refusal(reason: str, used: int, limit: int) -> HTTPException:
 
 #: The tier allowance window. Same seven days the BFF measures, so a user cannot
 #: see two different "used" numbers depending on which service refused them.
-TIER_WINDOW = dt.timedelta(days=7)
+#: Defined in `tiers` now that `/v1/usage` reports against the same window; kept
+#: importable under this name because the gate's tests read `runs.TIER_WINDOW`.
+TIER_WINDOW = _TIER_WINDOW
 
 
 def tier_allowance_refusal(used: int, limit: int) -> HTTPException:

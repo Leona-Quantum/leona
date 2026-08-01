@@ -2,7 +2,7 @@
  * The measured distribution a saved artifact carries, read off its version metadata.
  *
  * The Run surface has always shown these numbers, but it reads them from the run's
- * event stream. An artifact reopened from Vault has no event stream — so a saved
+ * event stream. An artifact reopened from storage has no event stream — so a saved
  * Bell state showed three passing checks, a resource table and the code, and not one
  * number the program actually measured. The worker now stores a bounded projection
  * (`metadata.measured_result`); this parses it back.

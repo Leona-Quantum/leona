@@ -13,7 +13,7 @@ aws-us-west-2), on the free plan.
 | Storage | 10 GB SSD, auto-increase on. The data is ~50 MB |
 | Backups | daily 10:00 UTC, 7 retained. No HA replica |
 | Public IP | assigned, but **zero authorized networks** — nothing reaches it by IP |
-| Connections | `max_connections` 50 (see § Connection budget) |
+| Connections | `max_connections` 50; fleet worst case 44 during a deploy (see § Connection budget) |
 
 ## How each caller connects
 
@@ -52,13 +52,121 @@ has a public IP at all is that private IP needs VPC peering that was not set up.
 
 ## Connection budget
 
-`db-g1-small` allows 50. `db.py` sets `pool_size=5, max_overflow=5` explicitly —
-10 per process, so two API instances plus one worker reach 30 and leave room for
-a deploy's Alembic step, Postgres's superuser reservation and one operator.
+`db-g1-small` allows 50 and reserves 3 for superusers.
 
-SQLAlchemy's defaults (5 + 10) would let those same three processes reach 45 on
-their own. If you raise `maxScale` on either service, do this arithmetic again;
-`DB_POOL_SIZE` / `DB_MAX_OVERFLOW` are the knobs and both are read at startup.
+**Every term below except the API's own pool lives in `infra/fleet.env`, and that
+file is the only place it lives.** `deploy.yml` loads it into the job environment
+and passes the values straight to `gcloud run deploy`; `db.py`'s `fleet_sizing()`
+parses the same file for this arithmetic. There is no second copy to keep in step
+— that is the point of the file, and `test_the_deploy_reads_the_sizing_from_the_same_file_the_budget_does`
+fails if a literal reappears on a deploy line.
+
+| Term | Value | Where it is stated |
+|---|---|---|
+| API instances | 2 | `API_MAX_INSTANCES` in `infra/fleet.env` |
+| API pool, per instance | 5 + 5 | `DEFAULT_POOL_SIZE` / `DEFAULT_MAX_OVERFLOW` in `db.py` — the only sizing read on a request path |
+| Worker instances | **1** | `WORKER_INSTANCES` in `infra/fleet.env` |
+| Worker pool, per instance | 2 + 2 | `WORKER_POOL_SIZE` / `WORKER_MAX_OVERFLOW` in `infra/fleet.env`, deployed as `DB_POOL_SIZE`/`DB_MAX_OVERFLOW` |
+| Fleet at rest | 24 | `fleet_peak_connections(during_worker_rollout=False)` |
+| **Fleet during a deploy** | **28** | `fleet_peak_connections()` — both worker revisions hold their minimum |
+| Superuser reserved | 3 | Postgres |
+| Alembic + one operator | 2 | `OPERATIONAL_HEADROOM` |
+| **Budget** | **45** | |
+
+At three workers — the stress-test setting — those two rows read 32 and **44**,
+against the same budget of 45.
+
+`services/api/tests/test_database_configuration.py` asserts the sum, asserts that
+`deploy.yml` takes its numbers from `infra/fleet.env` rather than from a literal,
+asserts that the shell's export regex actually matches every key the deploy
+needs, and pins the boundary: **three workers fit, four do not.** Do not re-derive
+this by hand — edit `infra/fleet.env` and run that file.
+
+### Changing the worker count
+
+One edit:
+
+```bash
+# infra/fleet.env
+WORKER_INSTANCES=3    # 1 = serial (default), 3 = stress test, 4 does not fit
+```
+
+Commit, push to `dev`, and the next deploy runs that many. Nothing else changes:
+the deploy reads the file, the budget test reads the file, and raising it past
+what the budget allows fails CI rather than production. Turning it back down is
+the same edit — no revision surgery, because `--min-instances` is set on every
+deploy rather than being live-service state.
+
+**The binding constraint is the deploy, not the workload.** `--min-instances` is
+a *revision-level* setting, so while a `gcloud run deploy` is in flight the
+outgoing revision is still in the traffic split and still holding its minimum:
+both revisions run their full complement at once and the worker term doubles.
+Four workers is 36 connections at rest and **52 for the length of every deploy**,
+against a budget of 45 — and a deploy is precisely when a spare connection has to
+exist, because that is when Alembic wants one. Buying a fourth worker means
+shrinking the API's pool, raising the tier, or draining the old worker revision
+before the new one starts. It does not mean changing this number alone.
+
+**These are ceilings, not reservations.** SQLAlchemy opens connections on demand
+and keeps them up to `pool_size`; overflow connections are opened and closed per
+use. Measured against production on 2026-08-01 with the queue idle: **four
+backends on `majorana` for the entire fleet.** The budget is sized for the worst
+case because a burst that exhausts the ceiling takes the *next deploy's migration
+step* down with it, not because 36 connections are ever expected.
+
+**The worker holds at most two sessions at once** — the job handler and the
+concurrent heartbeat that fences its lease (`_execute_with_heartbeat`).
+Everything else in the loop opens one session and closes it before the next: the
+claim commits and exits its `async with` before dispatch, and the recover,
+dead-letter and reap sweeps run sequentially between cycles. That is why 2 + 2
+is enough where the API needs 5 + 5.
+
+**Measure before changing any of this:**
+
+```sql
+select coalesce(nullif(application_name, ''), '(unset)') as app, state, count(*)
+from pg_stat_activity where datname = 'majorana' group by 1, 2 order by 3 desc;
+```
+
+Every backend answered `(unset)` before 2026-08-01, which made that instruction
+impossible to follow. `MAJORANA_SERVICE` is now set on both Cloud Run services
+and `db.py` turns it into `application_name`, so an API backend and a worker
+backend are finally distinguishable. A backend reading `majorana-unset` is a
+process that did not get the env var — investigate rather than assume.
+
+### Why the worker count is `--min-instances`, and why it costs money
+
+Raising the worker's `--max-instances` alone changes nothing. Cloud Run scales on
+request concurrency and the worker serves only a static liveness responder on
+`$PORT`, so it receives no request traffic and the autoscaler never has a reason
+to add an instance. Parallel workers must be always-on, which bills continuously
+whether or not anything is queued — roughly **$15–25/month each**.
+
+The count has been an owner decision twice on 2026-08-01. First three, from a
+stated range of three to four, because runs were processed strictly serially
+product-wide and the queue — not page latency — was what a class or a launch
+would have felt. Then **back to one**, on the same day, because the queue is
+empty at today's usage and two extra always-on pollers are $30–50/month of
+capacity nobody is waiting on. Three rather than four was never a preference; it
+is the deploy-overlap arithmetic above.
+
+Because it moved twice in a day, the number stopped being a constant and became
+`WORKER_INSTANCES` in `infra/fleet.env` — one edit, no revision surgery, and the
+budget test refuses a value that does not fit.
+
+### Why N workers are safe
+
+The queue was built for this and no code changed to enable it. Each path has its
+own reason:
+
+- `claim_job` and `claim_pending_dead_letter` — `FOR UPDATE SKIP LOCKED` with
+  lease tokens, heartbeats and a recovery sweep.
+- `recover_stale_jobs` — repeats its predicates on both `UPDATE`s, so a row
+  another worker already moved no longer matches.
+- the orphan reaper — `close_orphaned_run` writes deterministic `uuid5` event ids
+  and `fail_run_from_dead_letter` no-ops on an already-terminal run, so two
+  workers reaping the same orphan complete one event sequence rather than two.
+- `worker_id` is `"$hostname:$pid"`, so instances never collide on a lease.
 
 ## Why the move happened
 
@@ -125,9 +233,29 @@ predate the dump.
 
 ## Rollback
 
-Neon is untouched and still holds the pre-cutover data. To go back: add a
-Secret Manager version to `DATABASE_URL` with the Neon **pooled** URL and to
-`DATABASE_URL_SECRET` with the Neon **direct** URL, then redeploy both services.
+**First: list the Cloud Run tags.** Every revision holds its own `DATABASE_URL`
+reference, and they all point at the secret's `:latest` version — so a rollback
+does not only change what the *current* revision reads. Any tagged revision is
+publicly addressable at its own URL (`deploys.md § A tag is a public URL`), and a
+tagged revision old enough to predate a cutover trusts whatever it trusted then.
+
+The specific trap, found 2026-07-31: revision 00017 was tagged `catalog` and
+reachable, trusted the **staging** WorkOS issuer, and could not reach the database
+only because it predates the Cloud SQL move and has no socket mounted. A Neon URL
+is a plain TCP host and needs no socket. Performing this rollback would have given
+that public, staging-authenticated, 2026-07-19 build full access to production
+data on its next cold start. The tags have been removed; check again before
+relying on that.
+
+```bash
+gcloud run services describe majorana-api --project majorana-core \
+  --region us-west1 --format=json | jq '.status.traffic[] | select(.tag) | {tag, revisionName, url}'
+# expect exactly one: verify -> the current revision
+```
+
+Then: add a Secret Manager version to `DATABASE_URL` with the Neon **pooled** URL
+and to `DATABASE_URL_SECRET` with the Neon **direct** URL, then redeploy both
+services.
 Note the guard in `db.py` refuses a Neon URL in a deployed environment — that is
 deliberate (a stale secret that still connects means two live databases), so a
 genuine rollback has to remove it, which is exactly the amount of friction it

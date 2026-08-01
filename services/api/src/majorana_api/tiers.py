@@ -34,10 +34,24 @@ A missing allowlist therefore degrades to "collaborators are metered like free
 accounts", which is visible and recoverable, not to "the owner is locked out".
 """
 
+import datetime as dt
 from dataclasses import dataclass
 from typing import Literal
 
 AccountTier = Literal["free", "developer"]
+
+#: The allowance window. It ROLLS — it is a trailing seven days, not a calendar
+#: week, so there is no Monday on which everyone's allowance returns at once.
+#: Runs come back one at a time, each seven days after it was spent.
+#:
+#: It lives here rather than beside the gate that refuses on it because two
+#: surfaces in this service now read it: `routes/runs` enforces it, and
+#: `routes/usage` reports the moment the next run frees up. A second copy of the
+#: number would let one of them say "in two days" while the other refused for
+#: three. The worker keeps its own copy on purpose (`handlers._TIER_WINDOW`) —
+#: that is a separate deploy unit, and the same reasoning the tier table gives
+#: for not sharing a module across services applies to it.
+TIER_WINDOW = dt.timedelta(days=7)
 
 #: The web app also has a "demo" tier. It never reaches here: the demo surface is
 #: signed out, serves fixtures, and never presents a token.

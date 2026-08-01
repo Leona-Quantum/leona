@@ -1,7 +1,7 @@
 /* Component styles for @majorana/ui — consumes tokens.css variables only.
  * No raw hex here (CI-enforced); values come from tokens.
  * Only permitted animations (spec §0.3): rail state transitions (150ms ease-out
- * opacity/color), skeleton shimmer, toast enter/exit. */
+ * opacity/color), skeleton/activity shimmer, the running-dot pulse, and toast enter/exit. */
 
 /* ---------- app shell ---------- */
 .mj-shell {
@@ -24,8 +24,16 @@
   padding: var(--sp-6) var(--sp-6) var(--sp-8);
   box-sizing: border-box;
 }
+/* `flex-wrap: wrap` is load-bearing, not cosmetic. The nav labels below are
+   `nowrap` + `flex-shrink: 0` so a Japanese label can never split mid-word
+   ("プロダク/ト"), and unbreakable items in a non-wrapping row do not stop
+   overflowing — they overflow silently. Measured on this branch before the
+   wrap was added: signed in, in Japanese, at a 900px viewport the header ran
+   962px wide inside an 852px box and clipped 109px off the primary CTA. The
+   labels stay atoms; the ROW is what gives way now. */
 .mj-public-header {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: var(--sp-6);
   padding: var(--sp-2) 0 var(--sp-8);
@@ -70,6 +78,11 @@
   text-decoration: none;
   font-size: var(--fs-13);
   font-weight: 500;
+  /* Japanese has no inter-word spaces, so the default break-anywhere behaviour
+     splits a label mid-word ("プロダク/ト") the moment flex shrinks it. Nav
+     labels are atoms: never wrap them, never let them be compressed. */
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 .mj-public-nav a:hover,
 .mj-public-nav a[aria-current="page"] {
@@ -118,6 +131,7 @@
   font: inherit;
   font-size: var(--fs-12);
   cursor: pointer;
+  white-space: nowrap;
 }
 .mj-theme-toggle button:hover {
   color: var(--text-0);
@@ -161,12 +175,67 @@
   font: inherit;
   font-size: var(--fs-12);
   cursor: pointer;
+  white-space: nowrap;
 }
 .mj-language-toggle button:hover,
 .mj-language-toggle button[aria-pressed="true"] {
   color: var(--bg-0);
   background: var(--text-0);
 }
+/* Japanese header fit.
+   Every label in this row is longer set in Japanese ("Contact" becomes
+   "お問い合わせ", "Open workspace" becomes "ワークスペースを開く"), so the header
+   runs out of room roughly 250px earlier than the English one does. With the
+   labels now unbreakable, that shortfall has to come from somewhere, so take it
+   in the order that costs the least meaning:
+     1. the theme toggle's words (the sun and moon glyphs already say it),
+     2. the gaps between groups,
+     3. the nav's own padding.
+   Keyed off :lang(ja) rather than a plain width query so the English header,
+   which still fits, keeps its labels. */
+@media (max-width: 1280px) {
+  :lang(ja) .mj-public-header > .mj-theme-toggle span {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    /* `clip-path` alone. The old `clip: rect(...)` companion is deprecated and
+       is only needed for browsers this app already excludes elsewhere. */
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+}
+@media (max-width: 1120px) {
+  :lang(ja) .mj-public-header {
+    gap: var(--sp-3);
+  }
+  :lang(ja) .mj-public-nav {
+    gap: var(--sp-2);
+  }
+  :lang(ja) .mj-public-nav a {
+    padding-inline: var(--sp-1);
+  }
+}
+
+/* Japanese line breaking for prose. Without kinsoku shori the browser is happy
+   to open a line with 。 、 or a small kana, which reads as broken typesetting
+   to a Japanese reader even when nothing overflows.
+   `:lang()` matches on INHERITED element language, and app/layout.tsx puts
+   `lang={locale}` on <html>, so this reaches every element in the document —
+   workspace included. That is correct for `line-break`, which only governs where
+   Japanese may break, and was wrong for the `overflow-wrap: normal` this rule
+   also carried: setting it *directly* on every element beat the `anywhere`
+   that .mj-chat-message and friends pass down to their children by inheritance,
+   so a run id or URL in a Japanese chat answer overflowed its column instead of
+   wrapping. Measured, not deduced: a 45-character run id in a 200px
+   .mj-chat-message reported scrollWidth 254 under lang="ja" and 200 under
+   lang="en". Do not reintroduce an overflow-wrap here. */
+:lang(ja) {
+  line-break: strict;
+}
+
 .mj-public-overline {
   margin: 0 0 var(--sp-4);
   color: var(--accent);
@@ -1381,9 +1450,25 @@
 }
 .mj-shell--workspace {
   display: flex;
+  /* dvh, not vh, and at every width. 100vh is the LARGE viewport — the height
+     the page would have if the browser's URL bar and toolbar were hidden — so a
+     vh shell puts its own bottom row, the Run composer, underneath that chrome
+     on any touch device, with `overflow: hidden` here leaving no way to scroll
+     to it. That is not a phone-only risk: a width breakpoint cannot express
+     "has retractable browser chrome", and tablets and phones in landscape are
+     wider than any breakpoint that would still deserve the name mobile.
+     What made vh look necessary was blank canvas appearing below the shell when
+     wheel input continued past the inner Run scroller. That is fixed properly
+     by the two lines under this one plus the html background in globals.css:
+     scroll chaining stops at this element, and the document behind it is no
+     longer a different colour if anything ever does show through. A dynamic
+     viewport reported transiently shorter than the layout viewport is a
+     device-emulation pane artifact — on a real desktop browser there is no
+     retractable chrome, so dvh and vh resolve to the same height. */
   min-height: 100dvh;
   height: 100dvh;
   overflow: hidden;
+  overscroll-behavior: none;
 }
 .mj-shell-body {
   min-width: 0;
@@ -1979,11 +2064,98 @@
   color: var(--text-0);
   background: var(--bg-2);
 }
-.mj-sidebar-folder-trigger svg:first-child {
+/* The folder icon no longer rotates: it SWAPS between a closed and an open
+   folder (components/icons.tsx). The chevron that used to sit beside it is gone
+   — in a rail this narrow, an arrow and an icon spent two columns saying one
+   thing. The rotation rule is kept only for the Recents disclosure below, which
+   still uses a real chevron because it has no icon of its own. */
+.mj-sidebar-group {
+  display: grid;
+  gap: var(--sp-1);
+}
+.mj-sidebar-folder-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+.mj-sidebar-folder-row .mj-sidebar-folder-trigger {
+  min-width: 0;
+}
+.mj-sidebar-folder-actions {
+  /* Overlaid rather than laid out, exactly like .mj-sidebar-chat-actions: four
+     controls in the flow would push every folder name into an ellipsis at the
+     rail's default width, whether or not the pointer is anywhere near. */
+  position: absolute;
+  right: var(--sp-1);
+  display: flex;
+  gap: 2px;
+  opacity: 0;
+  background: linear-gradient(90deg, transparent, var(--bg-2) 18%);
+  padding-left: var(--sp-3);
+}
+@media (prefers-reduced-motion: no-preference) {
+  .mj-sidebar-folder-actions {
+    transition: opacity 120ms ease-out;
+  }
+}
+.mj-sidebar-folder-row:hover .mj-sidebar-folder-actions,
+.mj-sidebar-folder-actions:focus-within {
+  opacity: 1;
+}
+.mj-sidebar-folder-actions button[disabled] {
+  opacity: 0.35;
+  cursor: default;
+}
+/* The drop indicator for a folder being dragged over another. A top border
+   rather than a background: it says "it will land here", where a fill only says
+   "this one is involved". */
+.mj-sidebar-disclosure[data-chat-drop="true"] .mj-sidebar-folder-trigger {
+  color: var(--text-0);
+  background: var(--bg-2);
+  border-color: var(--accent);
+}
+.mj-sidebar-disclosure[data-folder-drop="true"] {
+  box-shadow: inset 0 2px 0 0 var(--accent);
+  border-radius: var(--radius-control);
+}
+.mj-sidebar-disclosure[draggable="true"] .mj-sidebar-folder-trigger {
+  cursor: grab;
+}
+.mj-sidebar-recents-toggle {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1);
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+.mj-sidebar-recents-toggle svg {
   transition: transform 150ms ease-out;
 }
-.mj-sidebar-folder-trigger svg:first-child.is-open {
+.mj-sidebar-recents-toggle svg.is-open {
   transform: rotate(90deg);
+}
+.mj-sidebar-error {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  margin: var(--sp-1) var(--sp-2);
+  padding: var(--sp-2);
+  border: 1px solid var(--border-0);
+  border-radius: var(--radius-control);
+  color: var(--text-1);
+  background: var(--bg-2);
+  font-size: var(--fs-12);
+}
+.mj-sidebar-error button {
+  margin-left: auto;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
 }
 .mj-sidebar-empty {
   display: block;
@@ -2150,6 +2322,188 @@
 .mj-sidebar-chat-action--danger {
   color: var(--err);
 }
+/* The archive undo banner. Bottom-centre, above the composer's own chrome but
+   below any modal — it is an offer, not an interruption, and it disappears on
+   its own after six seconds. */
+.mj-archive-notice {
+  position: fixed;
+  z-index: 90;
+  bottom: var(--sp-5);
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  max-width: min(92vw, 620px);
+  padding: var(--sp-3) var(--sp-4);
+  border: 1px solid var(--border-0);
+  border-radius: var(--radius-card);
+  color: var(--text-0);
+  background: var(--bg-2);
+  box-shadow: var(--shadow-popover);
+  font-size: var(--fs-13);
+}
+.mj-archive-notice > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mj-archive-notice-action {
+  flex: none;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text-0);
+  font: inherit;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+.mj-archive-notice-close {
+  flex: none;
+  margin-left: var(--sp-1);
+  border: 0;
+  background: transparent;
+  color: var(--text-2);
+  font-size: var(--fs-14);
+  cursor: pointer;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .mj-archive-notice {
+    animation: mj-archive-notice-in 160ms ease-out;
+  }
+}
+@keyframes mj-archive-notice-in {
+  from { opacity: 0; transform: translate(-50%, 8px); }
+  to { opacity: 1; transform: translate(-50%, 0); }
+}
+.mj-archived-list {
+  display: grid;
+  gap: var(--sp-1);
+  margin-top: var(--sp-3);
+}
+.mj-archived-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-2);
+  border: 1px solid var(--border-0);
+  border-radius: var(--radius-control);
+}
+.mj-archived-row > a {
+  display: flex;
+  flex: 1;
+  align-items: baseline;
+  gap: var(--sp-2);
+  min-width: 0;
+  color: var(--text-0);
+  text-decoration: none;
+}
+.mj-archived-row > a > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mj-archived-row > a > small {
+  flex: none;
+  color: var(--text-2);
+  font-family: var(--font-mono);
+  font-size: var(--fs-12);
+}
+.mj-archived-row-actions {
+  display: flex;
+  flex: none;
+  gap: var(--sp-1);
+}
+.mj-archived-row-actions button {
+  border: 1px solid var(--border-0);
+  border-radius: var(--radius-control);
+  padding: 2px var(--sp-2);
+  background: transparent;
+  color: var(--text-1);
+  font: inherit;
+  cursor: pointer;
+}
+.mj-archived-row-actions button.is-danger:hover {
+  color: var(--err);
+  border-color: var(--err);
+}
+
+/* ---------- settings modal (the intercepted /account route) ---------- */
+/* Set on <body> for as long as a modal is up. The workspace surfaces scroll
+   inside their own panes rather than on the document, so this is usually a
+   no-op — but /account as a full page does scroll the document, and a wheel
+   gesture that runs out of modal must not start moving what is behind it.
+   `overscroll-behavior` below stops the chaining; this stops the rest. */
+.mj-modal-open {
+  overflow: hidden;
+}
+.mj-account-modal-backdrop {
+  position: fixed;
+  z-index: 100;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  /* Load-bearing, and it does not look it. `place-items: center` alone leaves
+     the row auto-sized to its content, and the dialog's `max-height: 100%`
+     then resolves against that content — i.e. against itself, which is no
+     constraint at all. Measured before this line: an 860px viewport, a 1252px
+     dialog, and a settings panel running off the bottom of the screen with
+     nothing to scroll. A definite row makes the percentage mean the viewport. */
+  grid-template-rows: minmax(0, 1fr);
+  padding: var(--sp-6);
+  background: color-mix(in srgb, var(--bg-0) 78%, transparent);
+}
+.mj-account-modal {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  width: min(100%, 860px);
+  /* The backdrop's padding is the breathing room; the dialog takes the rest.
+     Settings is long — preferences, identity, archive, usage, billing — so on
+     a short viewport this is a hard ceiling and the body below scrolls, rather
+     than the dialog growing off the screen. */
+  max-height: 100%;
+  border: 1px solid var(--border-0);
+  border-radius: var(--radius-card);
+  background: var(--bg-1);
+  box-shadow: var(--shadow-popover);
+}
+/* The shell takes focus on open so the dialog is announced; it is not a Tab
+   stop and does not need a ring of its own. */
+.mj-account-modal:focus-visible {
+  outline: none;
+}
+.mj-account-modal-close {
+  position: absolute;
+  z-index: 1;
+  top: var(--sp-4);
+  right: var(--sp-4);
+}
+.mj-account-modal-body {
+  min-height: 0;
+  flex: 1 1 auto;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: var(--sp-8);
+}
+/* The shared header ends in a Sign out button, and the close control sits over
+   the same corner — so the header gives way rather than the two overlapping.
+   Scoped to this component's class: a bare `.mj-page-header` rule would reach
+   the full page too. */
+.mj-account-modal .mj-page-header {
+  padding-right: var(--sp-10);
+}
+@media (max-width: 720px) {
+  .mj-account-modal-backdrop {
+    padding: var(--sp-3);
+  }
+  .mj-account-modal-body {
+    padding: var(--sp-5);
+  }
+}
+
 .mj-delete-dialog-backdrop {
   position: fixed;
   z-index: 100;
@@ -2271,6 +2625,37 @@
   font-weight: 500;
   cursor: pointer;
 }
+/* Hover/press feel, PUBLIC SURFACE ONLY. Colour was snapping instantly and a
+   press produced no feedback at all, which reads as a picture of a button
+   rather than a button.
+   Scoped to `.mj-public-site` on purpose: the unscoped version reached every
+   button in the authenticated workspace, under a section heading stating the
+   product shell was untouched. A press animation on a 44px marketing CTA and on
+   a 32px toolbar control you click forty times an hour are different decisions,
+   and only the first one was made here. Colour/transform only, so it stays on
+   the compositor; the reduced-motion block below turns it off. */
+.mj-public-site .mj-primary-button,
+.mj-public-site .mj-secondary-button {
+  transition:
+    background-color var(--dur-hover) var(--ease-out-ui),
+    border-color var(--dur-hover) var(--ease-out-ui),
+    color var(--dur-hover) var(--ease-out-ui),
+    transform var(--dur-press) var(--ease-out-ui);
+}
+.mj-public-site .mj-primary-button:active:not(:disabled),
+.mj-public-site .mj-secondary-button:active:not(:disabled) {
+  transform: translateY(1px);
+}
+@media (prefers-reduced-motion: reduce) {
+  .mj-public-site .mj-primary-button,
+  .mj-public-site .mj-secondary-button {
+    transition: none;
+  }
+  .mj-public-site .mj-primary-button:active:not(:disabled),
+  .mj-public-site .mj-secondary-button:active:not(:disabled) {
+    transform: none;
+  }
+}
 .mj-primary-button {
   border-color: var(--accent);
   color: var(--bg-0);
@@ -2286,6 +2671,17 @@
 .mj-secondary-button:hover {
   border-color: var(--text-1);
 }
+@media (prefers-reduced-motion: reduce) {
+  /* :active-level selector required — an element-level override loses
+     specificity to the :active transform above. */
+  .mj-primary-button,
+  .mj-secondary-button,
+  .mj-primary-button:active:not(:disabled),
+  .mj-secondary-button:active:not(:disabled) {
+    transition: none;
+    transform: none;
+  }
+}
 .mj-primary-button:disabled,
 .mj-secondary-button:disabled,
 .mj-composer-input:disabled {
@@ -2293,9 +2689,10 @@
   opacity: 0.65;
 }
 .mj-command-hint {
-  color: var(--bg-0);
+  color: var(--text-1);
   font-family: var(--font-mono);
   font-size: var(--fs-12);
+  font-weight: 400;
   opacity: 0.7;
 }
 
@@ -2550,7 +2947,7 @@
 .mj-composer {
   width: min(100%, var(--composer-max));
   margin: 0 auto;
-  padding: var(--sp-3);
+  padding: var(--sp-2) var(--sp-3);
   border: 1px solid var(--border-0);
   border-radius: var(--radius-card);
   background: var(--bg-1);
@@ -2558,8 +2955,10 @@
 .mj-composer-input {
   display: block;
   width: 100%;
-  min-height: 48px;
+  min-height: var(--sp-8);
+  max-height: calc(var(--sp-16) + var(--sp-16));
   box-sizing: border-box;
+  padding: var(--sp-1) 0;
   resize: vertical;
   border: 0;
   outline: none;
@@ -2567,6 +2966,9 @@
   background: transparent;
   font: inherit;
   line-height: 1.5;
+}
+.mj-composer:focus-within .mj-composer-input {
+  min-height: var(--sp-16);
 }
 .mj-composer-input::placeholder {
   color: var(--text-2);
@@ -2577,7 +2979,7 @@
   align-items: center;
   justify-content: space-between;
   gap: var(--sp-3);
-  margin-top: var(--sp-2);
+  margin-top: var(--sp-1);
 }
 .mj-composer-left,
 .mj-composer-right,
@@ -2606,13 +3008,18 @@
   right: var(--sp-2);
   pointer-events: none;
 }
-.mj-composer-model,
 .mj-composer-quota {
   color: var(--text-2);
   font-size: var(--fs-12);
-}
-.mj-composer-quota {
   font-family: var(--font-mono);
+}
+/* Stop stands where Send stands. Same box, same weight — the reader's hand is
+   already there and there is never a moment where both are offered. */
+.mj-composer-stop-mark {
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+  background: currentcolor;
 }
 .mj-composer-error {
   max-width: 260px;
@@ -2651,7 +3058,7 @@
   font-weight: 500;
 }
 .mj-composer-context small {
-  color: var(--text-2);
+  color: var(--text-1);
   font-size: var(--fs-12);
 }
 .mj-composer-context button {
@@ -2707,26 +3114,6 @@
 .mj-run-home-examples {
   margin-top: var(--sp-8);
 }
-.mj-run-home-examples-head {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: var(--sp-4);
-  margin-bottom: var(--sp-2);
-  padding: 0 var(--sp-2);
-}
-.mj-run-home-examples-head h2 {
-  margin: 0;
-  color: var(--text-1);
-  font-size: var(--fs-12);
-  font-weight: 500;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-}
-.mj-run-home-examples-head span {
-  color: var(--text-2);
-  font-size: var(--fs-12);
-}
 .mj-run-home-examples .mj-example-list {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -2775,43 +3162,20 @@
     transition: none;
   }
 }
+/* One button now, under a centred composer, so the row centres it. It used to
+   hold a run of title chips that filled the width and read as deliberate at the
+   left edge; a lone control there reads as a stray. */
 .mj-example-strip {
   display: flex;
-  align-items: stretch;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
   gap: var(--sp-2);
-}
-.mj-example-ticker {
-  display: grid;
-  flex: 1 1 auto;
-  min-width: 0;
-  gap: 2px;
-  padding: var(--sp-2) var(--sp-3);
-  border: 1px solid var(--border-0);
-  border-radius: var(--radius-control);
-  color: var(--text-0);
-  background: var(--bg-1);
-  text-align: left;
-  font: inherit;
-  cursor: pointer;
-}
-.mj-example-ticker:hover {
-  background: var(--bg-2);
-}
-.mj-example-ticker strong {
-  font-size: var(--fs-12);
-  font-weight: 500;
-}
-.mj-example-ticker span {
-  overflow: hidden;
-  color: var(--text-2);
-  font-size: var(--fs-12);
-  line-height: 1.4;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 .mj-example-more {
   flex: 0 0 auto;
   align-self: center;
+  min-height: 28px;
 }
 .mj-example-popout {
   display: grid;
@@ -2888,7 +3252,7 @@
   white-space: nowrap;
 }
 .mj-composer-attachment small {
-  color: var(--text-2);
+  color: var(--text-1);
 }
 .mj-composer-attachment button {
   width: 18px;
@@ -2976,7 +3340,7 @@
   width: min(100%, calc(var(--composer-max) + var(--sp-12)));
   gap: var(--sp-3);
 }
-.mj-chat-message--run > .mj-run-workflow,
+.mj-chat-message--run > .mj-agent-activity,
 .mj-chat-message--run > .mj-run-outcome {
   margin-bottom: 0;
 }
@@ -3112,217 +3476,237 @@
   color: var(--text-1);
   font-size: var(--fs-12);
 }
-.mj-run-workflow,
-.mj-run-progress {
-  overflow: hidden;
-  margin-bottom: var(--sp-4);
-  border: 1px solid var(--border-0);
-  border-radius: var(--radius-card);
-  background: var(--bg-1);
+
+/* Agent activity is the primary execution story on the conversation route.
+ * It deliberately has no enclosing card: narration, operations, and the final
+ * deliverable remain one continuous transcript. Each bordered row represents
+ * one semantic operation. */
+.mj-agent-activity {
+  display: grid;
+  gap: var(--sp-3);
+  margin-bottom: var(--sp-5);
 }
-.mj-run-workflow > .mj-run-progress {
-  margin: 0;
-  border: 0;
-  border-radius: 0;
-  background: transparent;
-}
-.mj-run-progress-head {
+.mj-agent-activity-head {
   display: flex;
-  align-items: center;
+  align-items: end;
   justify-content: space-between;
   gap: var(--sp-4);
-  padding: var(--sp-4);
+  padding: 0 var(--sp-1);
 }
-.mj-run-progress-heading {
+.mj-agent-activity-head > div {
   display: grid;
   min-width: 0;
   gap: var(--sp-1);
 }
-.mj-run-progress-heading strong {
+.mj-agent-activity-head strong {
   overflow: hidden;
   color: var(--text-0);
   font-size: var(--fs-13);
   font-weight: 500;
-  line-height: 1.35;
+  line-height: 1.4;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.mj-run-progress-label {
+.mj-agent-activity[aria-busy="true"] .mj-agent-activity-head strong {
+  color: var(--text-1);
+  background: linear-gradient(
+    110deg,
+    var(--text-1) 30%,
+    var(--text-0) 46%,
+    var(--accent) 50%,
+    var(--text-0) 54%,
+    var(--text-1) 70%
+  );
+  background-clip: text;
+  background-size: 240% 100%;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: mj-agent-text-shimmer 2.4s linear infinite;
+}
+.mj-agent-activity-label {
   display: flex;
   align-items: center;
   gap: var(--sp-2);
-  color: var(--text-2);
+  color: var(--text-1);
   font-family: var(--font-mono);
   font-size: var(--fs-12);
-  line-height: 1;
-  text-transform: uppercase;
   letter-spacing: 0.04em;
+  line-height: 1.2;
+  text-transform: uppercase;
 }
-.mj-run-progress-live-dot {
+.mj-agent-activity-live-dot {
   width: var(--sp-2);
   height: var(--sp-2);
   border-radius: 50%;
   background: var(--accent);
-  animation: mj-run-progress-pulse 1.2s ease-in-out infinite;
+  animation: mj-agent-activity-pulse 1.2s ease-in-out infinite;
 }
-.mj-run-progress-meta {
-  display: grid;
-  flex: 0 0 auto;
-  justify-items: end;
-  gap: var(--sp-1);
-}
-.mj-run-progress-count,
-.mj-run-progress-percent {
+.mj-agent-activity-count {
   flex: 0 0 auto;
   color: var(--text-1);
   font-family: var(--font-mono);
   font-size: var(--fs-12);
   font-variant-numeric: tabular-nums;
 }
-.mj-run-progress-percent {
-  color: var(--text-2);
-}
-.mj-run-progress-meter {
-  height: var(--sp-1);
-  background: var(--bg-2);
-}
-.mj-run-progress-meter > span {
-  display: block;
-  height: 100%;
-  background: var(--accent);
-}
-.mj-run-progress-list {
+.mj-agent-activity-list {
   display: grid;
-  margin: 0;
-  padding: var(--sp-2) var(--sp-3) var(--sp-3);
-  list-style: none;
+  gap: var(--sp-2);
 }
-.mj-run-progress-row {
+.mj-agent-activity-item {
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid var(--border-0);
+  border-radius: var(--radius-card);
+  background: var(--bg-0);
+}
+.mj-agent-activity-item[data-state="active"] {
+  border-color: var(--accent);
+  background: var(--bg-1);
+}
+.mj-agent-activity-item[data-state="warn"] {
+  border-left: 2px solid var(--warn);
+}
+.mj-agent-activity-item[data-state="error"] {
+  border-left: 2px solid var(--err);
+}
+.mj-agent-activity-item > summary {
   display: grid;
-  grid-template-columns: var(--sp-5) minmax(0, 1fr) auto;
+  grid-template-columns: auto auto minmax(0, 1fr) auto;
   align-items: center;
   gap: var(--sp-3);
   min-height: var(--sp-12);
-  padding: var(--sp-2);
-  border-radius: var(--radius-control);
-  color: var(--text-1);
+  padding: var(--sp-3) var(--sp-4);
+  cursor: pointer;
+  list-style: none;
 }
-.mj-run-progress-row[data-state="active"] {
-  color: var(--text-0);
-  background: var(--bg-2);
+.mj-agent-activity-item > summary::-webkit-details-marker {
+  display: none;
 }
-.mj-run-progress-row[data-state="error"] {
-  background: var(--bg-2);
-}
-.mj-run-progress-marker {
-  display: grid;
-  width: var(--sp-5);
-  height: var(--sp-5);
-  place-items: center;
-  border: 1px solid var(--border-0);
-  border-radius: 50%;
+.mj-agent-activity-chevron {
   color: var(--text-2);
   font-family: var(--font-mono);
-  font-size: var(--fs-12);
-  font-weight: 500;
+  font-size: var(--fs-16);
   line-height: 1;
 }
-.mj-run-progress-row[data-state="active"] .mj-run-progress-marker {
-  border-color: var(--accent);
+.mj-agent-activity-item[open] .mj-agent-activity-chevron {
+  transform: rotate(90deg);
+}
+.mj-agent-activity-kind-icon {
+  color: var(--text-1);
+}
+.mj-agent-activity-item[data-state="active"] .mj-agent-activity-kind-icon {
   color: var(--accent);
-  animation: mj-ring-fade 1.2s ease-in-out infinite;
 }
-.mj-run-progress-row[data-state="done"] .mj-run-progress-marker {
-  border-color: var(--ok);
-  color: var(--ok);
-}
-.mj-run-progress-row[data-state="error"] .mj-run-progress-marker {
-  border-color: var(--err);
-  color: var(--err);
-}
-.mj-run-progress-row[data-state="stopped"] .mj-run-progress-marker {
-  border-color: var(--warn);
-  color: var(--warn);
-}
-.mj-run-progress-copy {
+.mj-agent-activity-copy {
   display: grid;
   min-width: 0;
   gap: var(--sp-1);
 }
-.mj-run-progress-title {
-  color: currentColor;
+.mj-agent-activity-copy strong {
+  overflow: hidden;
+  color: var(--text-0);
   font-size: var(--fs-13);
   font-weight: 500;
-  line-height: 1.2;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
-.mj-run-progress-detail {
+.mj-agent-activity-copy > span {
   overflow: hidden;
-  color: var(--text-2);
+  color: var(--text-1);
   font-size: var(--fs-12);
   line-height: 1.25;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.mj-run-progress-row[data-state="active"] .mj-run-progress-detail {
+.mj-agent-activity-meta {
+  display: grid;
+  flex: 0 0 auto;
+  justify-items: end;
+  gap: var(--sp-1);
   color: var(--text-1);
-}
-.mj-run-progress-row[data-state="error"] .mj-run-progress-detail {
-  color: var(--text-1);
-}
-.mj-run-progress-state {
-  padding: var(--sp-1) var(--sp-2);
-  border: 1px solid transparent;
-  border-radius: var(--radius-control);
-  color: var(--text-2);
   font-family: var(--font-mono);
   font-size: var(--fs-12);
-  line-height: 1.2;
+  text-align: right;
 }
-.mj-run-progress-row[data-state="active"] .mj-run-progress-state {
-  border-color: var(--accent);
-  color: var(--accent);
-}
-.mj-run-progress-row[data-state="error"] .mj-run-progress-state {
-  border-color: var(--err);
-  color: var(--err);
-}
-.mj-run-progress-technical {
-  margin: 0;
-  border-top: 1px solid var(--border-0);
+.mj-agent-activity-meta small {
   color: var(--text-1);
-  font-size: var(--fs-12);
+  font: inherit;
 }
-.mj-run-progress-technical > summary {
+.mj-agent-activity-meta > span {
   display: flex;
   align-items: center;
-  gap: var(--sp-3);
-  width: 100%;
-  box-sizing: border-box;
-  padding: var(--sp-3) var(--sp-4);
-  cursor: pointer;
-  list-style: none;
+  gap: var(--sp-2);
+  color: var(--text-1);
 }
-.mj-run-progress-technical > summary::-webkit-details-marker {
-  display: none;
+.mj-agent-activity-meta > span[data-state="active"] {
+  color: var(--accent);
 }
-.mj-run-progress-technical > summary > span:last-child {
-  margin-left: auto;
-  color: var(--text-2);
-  font-family: var(--font-mono);
+.mj-agent-activity-meta > span[data-state="warn"] {
+  color: var(--warn);
 }
-.mj-run-progress-technical > summary::after {
-  content: "+";
-  color: var(--text-2);
-  font-family: var(--font-mono);
+.mj-agent-activity-meta > span[data-state="error"] {
+  color: var(--err);
 }
-.mj-run-progress-technical[open] > summary::after {
-  content: "−";
+.mj-agent-activity-meta > span > span {
+  display: grid;
+  width: var(--sp-4);
+  height: var(--sp-4);
+  place-items: center;
+  border: 1px solid currentColor;
+  border-radius: 50%;
+  font-size: var(--fs-12);
+  line-height: 1;
 }
-.mj-run-progress-technical-body {
+.mj-agent-activity-item[data-state="active"] .mj-agent-activity-meta > span > span {
+  animation: mj-ring-fade 1.2s ease-in-out infinite;
+}
+.mj-agent-activity-body {
   padding: var(--sp-4);
   border-top: 1px solid var(--border-0);
-  background: var(--bg-0);
+  background: var(--bg-1);
 }
+@media (max-width: 640px) {
+  .mj-agent-activity-head {
+    align-items: start;
+  }
+  .mj-agent-activity-head strong {
+    white-space: normal;
+  }
+  .mj-agent-activity-count {
+    display: none;
+  }
+  .mj-agent-activity-item > summary {
+    grid-template-columns: auto auto minmax(0, 1fr);
+  }
+  .mj-agent-activity-meta {
+    grid-column: 3;
+    justify-items: start;
+    text-align: left;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mj-agent-activity-live-dot,
+  .mj-agent-activity-item[data-state="active"] .mj-agent-activity-meta > span > span {
+    animation: none;
+  }
+  .mj-agent-activity[aria-busy="true"] .mj-agent-activity-head strong {
+    color: var(--text-1);
+    background: none;
+    -webkit-text-fill-color: currentColor;
+    animation: none;
+  }
+}
+@media (forced-colors: active) {
+  .mj-agent-activity[aria-busy="true"] .mj-agent-activity-head strong {
+    color: CanvasText;
+    background: none;
+    -webkit-text-fill-color: currentColor;
+    animation: none;
+  }
+}
+
 .mj-run-outcome {
   display: grid;
   gap: 0;
@@ -3379,7 +3763,7 @@
   gap: var(--sp-1);
 }
 .mj-run-outcome-heading > span {
-  color: var(--text-2);
+  color: var(--text-1);
   font-family: var(--font-mono);
   font-size: var(--fs-12);
   line-height: 1;
@@ -3455,7 +3839,7 @@
   background: var(--bg-0);
 }
 .mj-run-outcome-facts dt {
-  color: var(--text-2);
+  color: var(--text-1);
   font-size: var(--fs-12);
 }
 .mj-run-outcome-facts dd {
@@ -3520,12 +3904,12 @@
 }
 .mj-run-outcome-details > summary > span:last-child {
   margin-left: auto;
-  color: var(--text-2);
+  color: var(--text-1);
   font-family: var(--font-mono);
 }
 .mj-run-outcome-details > summary::after {
   content: "+";
-  color: var(--text-2);
+  color: var(--text-1);
   font-family: var(--font-mono);
 }
 .mj-run-outcome-details[open] > summary::after {
@@ -3586,7 +3970,7 @@
   border-radius: var(--radius-control);
   background: var(--bg-0);
 }
-@keyframes mj-run-progress-pulse {
+@keyframes mj-agent-activity-pulse {
   0%,
   100% {
     opacity: 1;
@@ -3595,29 +3979,16 @@
     opacity: 0.3;
   }
 }
-@media (prefers-reduced-motion: reduce) {
-  .mj-run-progress-live-dot,
-  .mj-run-progress-row[data-state="active"] .mj-run-progress-marker {
-    animation: none;
-  }
+@keyframes mj-agent-text-shimmer {
+  from { background-position: 100% 0; }
+  to { background-position: -100% 0; }
 }
 @media (max-width: 640px) {
   .mj-chat-message--run {
     width: 100%;
   }
-  .mj-run-progress-head,
   .mj-run-outcome-head {
     align-items: flex-start;
-  }
-  .mj-run-progress-heading strong {
-    white-space: normal;
-  }
-  .mj-run-progress-row {
-    grid-template-columns: var(--sp-5) minmax(0, 1fr);
-  }
-  .mj-run-progress-state {
-    grid-column: 2;
-    justify-self: start;
   }
   .mj-run-outcome-head {
     display: grid;
@@ -3651,6 +4022,24 @@
   gap: 4px;
   min-height: 28px;
 }
+/* The waiting state is a word plus the dots, not the dots alone: three pulsing
+   dots read identically at half a second and at forty, and this pipeline can
+   genuinely take a while. */
+.mj-chat-thinking-label {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  color: var(--text-2);
+  font-size: var(--fs-12);
+}
+.mj-chat-thinking-word {
+  color: var(--text-2);
+}
+.mj-chat-loading-dots {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
 .mj-chat-loading-dot {
   width: 6px;
   height: 6px;
@@ -3664,6 +4053,12 @@
   0%, 60%, 100% { opacity: 0.35; transform: translateY(0); }
   30% { opacity: 1; transform: translateY(-3px); }
 }
+@media (prefers-reduced-motion: reduce) {
+  .mj-chat-loading-dot {
+    animation: none;
+    opacity: 0.55;
+  }
+}
 .mj-run-waiting {
   margin: 0;
   color: var(--text-2);
@@ -3673,6 +4068,7 @@
   min-height: 0;
   flex: 1 1 auto;
   overflow-y: auto;
+  overscroll-behavior-y: contain;
   padding: var(--sp-6) var(--sp-12) var(--sp-8);
 }
 .mj-run-task-content {
@@ -4142,7 +4538,7 @@
   justify-content: flex-end;
   gap: var(--sp-2);
 }
-/* The Run surface's framework picker is the same control as the Vault one and
+/* The Run surface's framework picker is the same control as the artifact one and
  * must not drift into a raw browser select beside it. */
 .mj-artifact-code-actions select,
 .mj-run-code-actions select {
@@ -5259,6 +5655,135 @@ div.mj-rail-row:hover {
   font-size: var(--fs-14);
   font-weight: 500;
 }
+/* Each tab's own controls sit in its own header rather than in a shared strip
+   above the tab bar, so a control is never offered on a tab it does not act on.
+   The `> div` grid rule above would otherwise stack these vertically. */
+.mj-studio-surface-head > .mj-studio-surface-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--sp-2);
+}
+.mj-studio-framework-select select {
+  min-height: 32px;
+  padding: 0 var(--sp-2);
+  border: 1px solid var(--border-0);
+  border-radius: var(--radius-control);
+  color: var(--text-0);
+  background: var(--bg-1);
+  font: inherit;
+  font-size: var(--fs-12);
+}
+.mj-studio-inline-field {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  color: var(--text-2);
+  font-size: var(--fs-12);
+}
+.mj-studio-inline-field input {
+  width: 80px;
+  min-height: 32px;
+  padding: 0 var(--sp-2);
+  border: 1px solid var(--border-0);
+  border-radius: var(--radius-control);
+  color: var(--text-0);
+  background: var(--bg-1);
+  font: inherit;
+  font-family: var(--font-mono);
+  font-size: var(--fs-12);
+}
+/* One line of status in the page header, replacing a full evidence panel that
+   was rendered above the tabs on every draft. It is a button because the
+   evidence it summarizes is one tab away. */
+.mj-studio-verdict-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-height: 32px;
+  padding: 0 var(--sp-3);
+  border: 1px solid var(--border-0);
+  border-radius: var(--radius-control);
+  color: var(--text-1);
+  background: var(--bg-1);
+  font: inherit;
+  font-size: var(--fs-12);
+  cursor: pointer;
+}
+.mj-studio-verdict-chip:hover {
+  color: var(--text-0);
+  background: var(--bg-2);
+}
+.mj-studio-verdict-chip[data-tone="ok"] {
+  color: var(--ok);
+}
+.mj-studio-verdict-chip[data-tone="warn"] {
+  color: var(--warn);
+}
+.mj-studio-verdict-chip[data-tone="err"] {
+  color: var(--err);
+}
+.mj-studio-code-notes {
+  display: grid;
+  gap: var(--sp-2);
+  padding: 0 var(--sp-4) var(--sp-4);
+}
+.mj-studio-code-note {
+  margin: 0;
+  color: var(--text-2);
+  font-size: var(--fs-12);
+  line-height: 1.5;
+}
+.mj-studio-code-note[data-tone="warn"] {
+  color: var(--warn);
+}
+.mj-studio-code-about p {
+  margin: var(--sp-2) 0 0;
+  color: var(--text-2);
+  font-size: var(--fs-12);
+  line-height: 1.5;
+}
+/* One lane, one status line, one explanation. The CPU lane used to print its
+   eligibility twice — once beside the heading and once inside the box saying
+   what to do about it. */
+.mj-studio-lane {
+  display: grid;
+  gap: var(--sp-2);
+  padding: var(--sp-3);
+  border: 1px solid var(--border-0);
+  border-radius: var(--radius-card);
+  background: var(--bg-0);
+}
+.mj-studio-lane[data-state="pending"] {
+  border-style: dashed;
+}
+.mj-studio-lane-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--sp-3);
+}
+.mj-studio-lane-title {
+  color: var(--text-0);
+  font-size: var(--fs-13);
+  font-weight: 500;
+}
+.mj-studio-lane > p {
+  margin: 0;
+  color: var(--text-2);
+  font-size: var(--fs-12);
+  line-height: 1.5;
+}
+.mj-studio-summary-section {
+  display: grid;
+  gap: var(--sp-3);
+  padding: var(--sp-4);
+  border-bottom: 1px solid var(--border-0);
+}
+.mj-studio-gate-note {
+  margin: 0 var(--sp-4) var(--sp-3);
+}
 /* Says when the diagram no longer describes the code in the Code tab. Sits
    directly above the stage so the caveat and the drawing are read together. */
 .mj-circuit-sync {
@@ -5739,6 +6264,28 @@ div.mj-rail-row:hover {
 }
 .mj-studio-version-dot.is-pending {
   border-color: var(--accent);
+}
+/* A restored version is neither committed-and-current nor pending: it is an
+   earlier row the user can return to. Muted so the current row still reads as
+   the one in force. */
+.mj-studio-version-dot.is-past {
+  border-color: var(--text-2);
+}
+/* The text column takes the slack so the Restore control sits at the trailing
+   edge. `min-width: 0` because a long limitation line is an unbreakable flex
+   item otherwise, and clips with no error rather than wrapping. */
+.mj-studio-version-row > div {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.mj-studio-version-row .mj-secondary-button {
+  flex: 0 0 auto;
+}
+.mj-studio-version-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+  align-items: baseline;
 }
 .mj-studio-footer {
   justify-content: space-between;
@@ -6502,9 +7049,6 @@ div.mj-rail-row:hover {
   .mj-composer-right {
     justify-content: space-between;
   }
-  .mj-composer-model {
-    display: none;
-  }
   .mj-composer-error {
     max-width: 180px;
   }
@@ -6717,7 +7261,7 @@ div.mj-rail-row:hover {
   line-height: 1.5;
 }
 
-/* "Keep in Vault" on a finished run, with the reason it is being asked. */
+/* "Keep this result" on a finished run, with the reason it is being asked. */
 .mj-run-keep {
   display: inline-flex;
   gap: var(--sp-2);
@@ -7723,6 +8267,40 @@ div.mj-rail-row:hover {
 .mj-sidebar-user-drawer a.is-danger {
   color: var(--err);
 }
+/* "Usage & limits" carries the numbers now, so it is the one row that can be
+   two lines tall — and only once they have loaded. The row keeps its 30px
+   min-height and simply grows, so a drawer whose fetch has not answered (or
+   never will) is exactly the drawer that shipped before this existed rather
+   than a reserved empty gap.
+
+   Stacked, not label-left/number-right. The sidebar is ~220px wide and the
+   drawer inherits it: side by side, "Usage & limits" broke after the ampersand
+   and "1 more frees up tomorrow" took three lines beside it. Two columns
+   competing for 220px is not a layout, and the Japanese strings are longer
+   still. This was visible only on the rendered page — the markup was fine. */
+.mj-sidebar-user-drawer a.mj-sidebar-usage {
+  display: grid;
+  align-items: start;
+  gap: 1px;
+  padding-block: var(--sp-1);
+}
+.mj-sidebar-usage-detail {
+  display: grid;
+  gap: 1px;
+  color: var(--text-1);
+  font-variant-numeric: tabular-nums;
+}
+.mj-sidebar-usage-detail small {
+  font-size: var(--fs-12);
+  color: var(--text-2);
+}
+/* Spent, not broken: warn rather than err. An exhausted weekly allowance is the
+   plan working as sold, and colouring it like a failure sends people to support
+   for something support cannot fix — the same reason the refusal copy says
+   "your plan includes 5" instead of naming a backstop. */
+.mj-sidebar-usage-detail[data-spent] {
+  color: var(--warn);
+}
 .mj-sidebar-user-menu[data-open="true"] .mj-sidebar-user {
   border-color: var(--border-0);
   border-top-color: transparent;
@@ -7747,6 +8325,10 @@ div.mj-rail-row:hover {
   color: var(--text-2);
   font-size: var(--fs-13);
   text-decoration: none;
+  /* "サインアウト" was breaking after "サインアウ" for the same reason as the
+     nav labels. */
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 .mj-public-nav-signout:hover,
 .mj-public-nav-signout:focus-visible {
@@ -7780,6 +8362,32 @@ div.mj-rail-row:hover {
   margin: 0;
   color: var(--text-1);
   font-size: var(--fs-13);
+}
+/* "Right now" — what is spent, under the ceilings that say what is allowed.
+   Appears only once the numbers load, so it reserves no space. */
+.mj-usage-now {
+  margin-top: var(--sp-4);
+}
+.mj-usage-now h3 {
+  margin: 0 0 var(--sp-2);
+  color: var(--text-2);
+  font-size: var(--fs-12);
+  font-weight: 500;
+}
+.mj-usage-now-conflict {
+  margin: 0 0 var(--sp-2);
+  color: var(--warn);
+  font-size: var(--fs-12);
+}
+.mj-usage-now .mj-usage-list dd {
+  display: grid;
+  gap: 2px;
+  font-variant-numeric: tabular-nums;
+}
+.mj-usage-now .mj-usage-list dd small {
+  color: var(--text-2);
+  font-size: var(--fs-12);
+  font-variant-numeric: normal;
 }
 
 /* studio circuit builder */
@@ -8111,4 +8719,64 @@ div.mj-rail-row:hover {
 .mj-workspace-leave:disabled {
   cursor: wait;
   opacity: 0.65;
+}
+
+/* ---------- public surface polish (2026-07-31) ----------
+   The public site had been inheriting the workspace's control density and the
+   browser's line-breaking. Both are right for a tool and wrong for a landing
+   page, so the corrections below are scoped to .mj-public-site and never reach
+   the product shell. */
+
+/* 1. CTA scale. A 32px button with 12px of side padding is a toolbar control;
+      in a hero it reads as a footnote. Public CTAs get their own box.
+      Applied to EVERY primary/secondary button under `.mj-public-site` rather
+      than to an enumerated list of three containers: the enumerated version
+      reached the landing hero, the closing CTA and the pricing cards, and left
+      the contact form's submit at 32px — the most consequential button on the
+      marketing site, sitting a scroll away from its 44px siblings. Two button
+      sizes on one surface is worse than either size. The product shell is
+      unaffected: `.mj-public-site` is emitted only by components/public-site.tsx
+      and app/repository/error.tsx, and nothing under app/(app)/ carries it. */
+.mj-public-site .mj-primary-button,
+.mj-public-site .mj-secondary-button {
+  min-height: var(--control-h-cta);
+  padding: 0 var(--control-px-cta);
+  font-size: var(--fs-14);
+}
+
+/* 2. Headline breaking. Display type set at 44px wraps into orphans — a lone
+      trailing word is the single clearest tell of untended typography.
+      `balance` evens the ragged edge across the (few) lines of a heading;
+      `pretty` only protects the last line, which is what long body copy
+      wants. */
+.mj-public-site h1,
+.mj-public-site h2,
+.mj-public-site h3 {
+  text-wrap: balance;
+}
+.mj-company-hero-lede,
+.mj-company-hero-note,
+.mj-public-page-hero > p:last-child,
+.mj-pricing-description,
+.mj-pricing-note > p {
+  text-wrap: pretty;
+}
+
+/* 3. Prices are figures, not prose: line them up on the digit. */
+.mj-pricing-price {
+  font-variant-numeric: tabular-nums;
+}
+
+/* A run that asked to execute and was answered in chat because routing failed.
+   Not an error — the answer is real — so it is a note above it rather than a
+   banner, and it names the one action that gets the execution the user asked
+   for. */
+.mj-run-fallback-notice {
+  margin: 0 0 var(--sp-3);
+  padding: var(--sp-2) var(--sp-3);
+  border-left: 3px solid var(--warn);
+  color: var(--text-1);
+  background: var(--bg-2);
+  font-size: var(--fs-12);
+  line-height: 1.5;
 }

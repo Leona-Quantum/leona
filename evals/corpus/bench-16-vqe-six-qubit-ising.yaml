@@ -1,0 +1,19 @@
+id: bench-16
+category: "D — Six-qubit VQE"
+prompt: >-
+  Use Qiskit Statevector expectation values and a bounded scipy optimizer to
+  run VQE for this explicit 6-qubit Hamiltonian:
+  -1.0 ZIIIII -0.9 IZIIII -0.8 IIZIII -0.7 IIIZII -0.6 IIIIZI
+  -0.5 IIIIIZ +0.25 XXIIII +0.22 IXXIII +0.20 IIXXII
+  +0.18 IIIXXI +0.15 IIIIXX +0.12 XIIIIX.
+  Use an expressive but simulator-bounded ansatz, bind the optimized circuit
+  to FINAL_CIRCUIT, and return its variational energy as the top-level numeric
+  RESULT key energy.
+framework: qiskit
+expect:
+  terminal_reason: ai_review_aligned_with_reference_check
+  output_keys: ["energy"]
+  expected_values:
+    energy: -4.5718103975
+  expected_value_tolerance: 0.03
+  saves_artifact: true

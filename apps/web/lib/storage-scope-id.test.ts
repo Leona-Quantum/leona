@@ -10,7 +10,7 @@ const SHARED = { id: "ws-shared", isPersonal: false };
 describe("storageScopeId", () => {
   it("leaves the personal workspace on the key every account already uses", () => {
     // If this ever changes, every existing account's chats, folders, pins and
-    // Vault mirror move out from under them and need a migration to move back.
+    // artifact mirror move out from under them and need a migration to move back.
     assert.equal(storageScopeId(USER, PERSONAL), "u:user-abc");
     assert.equal(storageScopeId(USER), "u:user-abc");
     assert.equal(storageScopeId(USER, null), "u:user-abc");

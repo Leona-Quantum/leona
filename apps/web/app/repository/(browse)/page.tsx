@@ -26,7 +26,7 @@ export default async function RepositoryPage() {
         <h1 id="repository-heading">{isJapanese ? "公開研究データベース" : "Public research database"}</h1>
         <p>
           {isJapanese
-            ? "回路とアルゴリズムを検索し、仕組み、シミュレーション、コード、出典、ライセンス、検証の境界を確認できます。"
+            ? "回路とアルゴリズムを検索し、仕組み、シミュレーション結果、コード、出典、ライセンス、どこまで検証済みかを確認できます。"
             : "Search circuits and algorithms, then inspect how they work, what simulation shows, which code is available, and where source, license, and verification boundaries begin."}
         </p>
         <AtlasContentSwitch

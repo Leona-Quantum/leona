@@ -93,27 +93,28 @@ export function WelcomeNameForm({
 
   return (
     <form className="mj-auth-form" onSubmit={submit}>
-      <label>
-        <span>{copy.firstName}</span>
-        <input
-          name="firstName"
-          required
-          autoFocus
-          autoComplete="given-name"
-          defaultValue={initialFirstName}
-          maxLength={MAX_PROFILE_NAME_LENGTH}
-        />
-      </label>
-      <label>
-        <span>{copy.lastName}</span>
-        <input
-          name="lastName"
-          required
-          autoComplete="family-name"
-          defaultValue={initialLastName}
-          maxLength={MAX_PROFILE_NAME_LENGTH}
-        />
-      </label>
+      {(locale === "ja"
+        ? [
+            { name: "lastName", label: copy.lastName, autoComplete: "family-name", value: initialLastName },
+            { name: "firstName", label: copy.firstName, autoComplete: "given-name", value: initialFirstName },
+          ]
+        : [
+            { name: "firstName", label: copy.firstName, autoComplete: "given-name", value: initialFirstName },
+            { name: "lastName", label: copy.lastName, autoComplete: "family-name", value: initialLastName },
+          ]
+      ).map((field, index) => (
+        <label key={field.name}>
+          <span>{field.label}</span>
+          <input
+            name={field.name}
+            required
+            autoFocus={index === 0}
+            autoComplete={field.autoComplete}
+            defaultValue={field.value}
+            maxLength={MAX_PROFILE_NAME_LENGTH}
+          />
+        </label>
+      ))}
       {error ? <p className="mj-auth-form-error" role="alert">{error}</p> : null}
       <button className="mj-primary-button" type="submit" disabled={pending}>
         {pending ? copy.submitting : copy.submit}
