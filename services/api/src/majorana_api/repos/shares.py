@@ -369,21 +369,32 @@ async def _reserve_share_slots(
     `limit is None` takes no lock at all: an unlimited tier has nothing to
     serialize.
     """
-    #: (user id, limit, is_the_grantee) — built before anything is locked so the
-    #: sort below decides the order rather than the order the arguments arrived in.
+    #: (user id, limit, is_the_grantee), in the order the two refusals should be
+    #: REPORTED — the owner's account first, because that is the one the person
+    #: reading the message can do something about. The locks below are taken in a
+    #: different order on purpose; see the two loops.
     subjects: list[tuple[uuid.UUID, int, bool]] = []
-    if grantee_limit is not None:
-        subjects.append((grantee.id, grantee_limit, True))
     if owner_user_id is not None and owner_limit is not None:
         subjects.append((owner_user_id, owner_limit, False))
+    if grantee_limit is not None:
+        subjects.append((grantee.id, grantee_limit, True))
     if not subjects:
         return
+    # Locks in ID order, which is what makes the pair deadlock-free.
     for user_id, _limit, _is_grantee in sorted(subjects):
         await session.execute(select(User.id).where(User.id == user_id).with_for_update())
+    # Checks in SEMANTIC order, which is a different thing and has to be, because
+    # both accounts can be full at once. Checking in the lock's order would make
+    # the sentence the granter reads depend on which id sorts first — and `uuid7`
+    # is time-ordered, so that is not a coin flip, it is *whoever signed up
+    # first*. Two accounts at their caps would be told to do two different things
+    # depending on their join dates, which is not a distinction this product
+    # makes anywhere else.
+    #
     # Counted only once every lock is held. Counting as each row is locked would
-    # read the owner's total before the grantee's row was frozen, which is the
-    # same read-then-write this function exists to close, one level up.
-    for user_id, limit, is_grantee in sorted(subjects):
+    # read the second account's total before the first row was frozen, which is
+    # the same read-then-write this function exists to close, one level up.
+    for user_id, limit, is_grantee in subjects:
         held = await count_shared_projects(session, user_id)
         if held < limit:
             continue

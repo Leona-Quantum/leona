@@ -62,14 +62,18 @@ export type TierLimits = {
    */
   projectSharing: boolean;
   /**
-   * How many of somebody else's projects this tier may be a member of at once.
-   * null means unlimited; 0 for a tier that cannot be granted one at all.
+   * How many SHARED projects this tier may be in at once, counting both
+   * directions: projects it owns that carry a live grant, plus projects granted
+   * to it. null means unlimited; 0 for a tier that cannot be granted one at all.
    *
-   * Counts grants RECEIVED, not projects owned — a paying account is not
-   * capped at four of its own projects while a free one may create them
-   * without bound. Mirrored from `TierLimits.shared_projects`, which is again
-   * the copy that enforces: this one is here so the pricing page can state a
-   * number that a test ties to the server's.
+   * **Unshared projects are unlimited on every tier and are not counted here.**
+   * That is the owner's rule (2026-08-02): "unlimited non-shared projects can be
+   * created". The previous reading counted grants RECEIVED only, which made this
+   * a ceiling an account could never reach by sharing its own work.
+   *
+   * Mirrored from `TierLimits.shared_projects`, which is the copy that enforces:
+   * this one is here so the pricing page can state a number that a test ties to
+   * the server's.
    */
   sharedProjects: number | null;
 };
@@ -89,6 +93,20 @@ export type TierLimits = {
  * justifies, and it was the reason no researcher-scale circuit could be run
  * anywhere in the product.
  */
+/**
+ * Artifacts one project holds when its owner has not set a number, for every
+ * tier. Mirrors `_project_limits.DEFAULT_PROJECT_ARTIFACT_LIMIT` on the server,
+ * which is the copy that enforces.
+ *
+ * Not a field on `TierLimits`, because it is not one: the limit belongs to the
+ * project and the owner can change it per project. It lives here so the pricing
+ * page can state it and a test can tie that sentence to a number.
+ *
+ * Together with `sharedProjects` this is the whole bound on artifacts that
+ * escape `privateArtifacts` — 4 shared projects x 50 for the Team plan.
+ */
+export const DEFAULT_PROJECT_ARTIFACT_LIMIT = 50;
+
 export const TIER_LIMITS: Record<AccountTier, TierLimits> = {
   // Signed-out fixture preview. Nothing is persisted server-side by design, so
   // the limits here describe a walkthrough, not an allowance.

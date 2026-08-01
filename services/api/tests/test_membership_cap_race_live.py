@@ -112,9 +112,14 @@ async def test_the_last_membership_cannot_be_granted_twice_by_two_owners():
         project_b = await projects_repo.create_project(scope_b, session, name="Contended B")
         await session.commit()
 
-        staged = await shares_repo.count_shared_project_memberships(session, grantee.id)
+        # `count_shared_projects`, not `count_shared_project_memberships`: the
+        # cap reads the first and they agree only while the grantee owns no
+        # shared project of their own. Staging against the number the cap does
+        # NOT read would put this fixture one product change away from measuring
+        # a boundary the reservation is not at.
+        staged = await shares_repo.count_shared_projects(session, grantee.id)
         assert staged == TEAM_MEMBERSHIP_CAP - 1, (
-            f"staged {staged} memberships, not {TEAM_MEMBERSHIP_CAP - 1}: the two "
+            f"staged {staged} shared projects, not {TEAM_MEMBERSHIP_CAP - 1}: the two "
             "owners below would not be racing for the last one"
         )
 
@@ -192,3 +197,99 @@ async def test_the_last_membership_cannot_be_granted_twice_by_two_owners():
         await asyncio.gather(a_task, b_task, return_exceptions=True)
         await delete_committed_tenants(factory, workspace_ids, user_ids)
         await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_two_people_sharing_with_each_other_at_once_do_not_deadlock():
+    """The reason `_reserve_share_slots` locks its user rows in id order.
+
+    A grant now spends TWO accounts' shared-project allowances — the grantee's,
+    and the workspace owner's when the grant is the project's first — so one
+    transaction holds two user row locks. Two of them can be mirror images:
+
+        Alice shares her project with Bob   → locks {grantee Bob, owner Alice}
+        Bob shares his project with Alice   → locks {grantee Alice, owner Bob}
+
+    Taken in the order the arguments arrive, A holds Bob and wants Alice while B
+    holds Alice and wants Bob. Postgres breaks that with `deadlock detected`
+    (SQLSTATE 40P01) after `deadlock_timeout`, and the person who loses sees a
+    500 on an ordinary Share button. Sorting by id makes the pair a total order,
+    so one of them simply waits.
+
+    **Staged, not hoped for.** Both transactions must be past `_lock_project` and
+    short of any user lock at the same instant, which no amount of firing them
+    together guarantees. `is_project_shared` is called exactly in that window, so
+    the barrier goes there — it is the seam, not a sleep chosen to be long
+    enough.
+
+    Reverting the `sorted()` in `_reserve_share_slots` fails this with
+    DeadlockDetected.
+    """
+    engine = engine_from_env()
+    factory = session_factory(engine)
+    workspace_ids: list[uuid.UUID] = []
+    user_ids: list[uuid.UUID] = []
+
+    async with factory() as session:
+        alice, alice_ws, alice_scope = await _tenant(session, "mutual-alice")
+        bob, bob_ws, bob_scope = await _tenant(session, "mutual-bob")
+        workspace_ids += [alice_ws.id, bob_ws.id]
+        user_ids += [alice.id, bob.id]
+        alice_project = await projects_repo.create_project(alice_scope, session, name="Alice's")
+        bob_project = await projects_repo.create_project(bob_scope, session, name="Bob's")
+        await session.commit()
+
+    both_hold_their_project = asyncio.Barrier(2)
+    real_is_project_shared = shares_repo.is_project_shared
+
+    async def barriered(session, project_id):
+        answer = await real_is_project_shared(session, project_id)
+        # Past the project lock, before either user lock. Releasing both here is
+        # what makes the two user-lock acquisitions actually interleave.
+        await both_hold_their_project.wait()
+        return answer
+
+    outcomes: list[object] = []
+
+    async def grant(scope, project_id, recipient_email: str) -> None:
+        async with factory() as session:
+            try:
+                await shares_repo.grant_share(
+                    scope,
+                    session,
+                    project_id,
+                    email=recipient_email,
+                    role=ShareRole.VIEWER,
+                    allowance_for=lambda _account: TEAM_ALLOWANCE,
+                )
+                await session.commit()
+                outcomes.append("granted")
+            except Exception as exc:  # noqa: BLE001 - the failure IS the subject
+                await session.rollback()
+                outcomes.append(exc)
+
+    monkeypatched = shares_repo.is_project_shared
+    shares_repo.is_project_shared = barriered
+    try:
+        await asyncio.wait_for(
+            asyncio.gather(
+                grant(alice_scope, alice_project.id, bob.email),
+                grant(bob_scope, bob_project.id, alice.email),
+            ),
+            # Generous: Postgres' default deadlock_timeout is 1s, so an unsorted
+            # version reports well inside this. A test that hung here instead
+            # would say nothing about which failure happened.
+            timeout=30,
+        )
+    finally:
+        shares_repo.is_project_shared = monkeypatched
+        await delete_committed_tenants(factory, workspace_ids, user_ids)
+        await engine.dispose()
+
+    deadlocks = [
+        outcome
+        for outcome in outcomes
+        if getattr(getattr(outcome, "orig", None), "sqlstate", None) == "40P01"
+    ]
+    assert not deadlocks, f"the two user locks deadlocked: {deadlocks}"
+    assert outcomes == ["granted", "granted"], f"both mutual grants should land; got {outcomes}"

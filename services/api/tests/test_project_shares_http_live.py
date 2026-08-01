@@ -599,3 +599,96 @@ async def test_an_oversized_or_blank_contribution_is_refused_at_the_boundary(sta
 
     empty_code = await stage["bob"].client.post(path, json={**base, "title": "ok", "code": ""})
     assert empty_code.status_code == 422, empty_code.text
+
+
+# --------------------------------------------------------------------------- #
+# The two new refusals, over the wire (2026-08-02)
+# --------------------------------------------------------------------------- #
+
+
+async def test_a_full_project_refuses_a_move_with_409_and_not_429(stage):
+    """The status code IS the contract, and these two walls are different walls.
+
+    429 sends a user to the pricing page; 409 sends them to the project they are
+    filing into. The repository raises two different exception types and only the
+    route decides which becomes which, so a handler catching one branch for both
+    is invisible everywhere except here.
+    """
+    alice = stage["alice"]
+    limit = await alice.client.patch(
+        f"/v1/workspace/projects/{stage['project_id']}",
+        json={"max_artifacts": 1},
+    )
+    assert limit.status_code == 200, limit.text
+
+    response = await alice.client.patch(
+        f"/v1/artifacts/{stage['unshared_artifact_id']}/project",
+        json={"project_id": stage["project_id"]},
+    )
+    assert response.status_code == 409, response.text
+    # RFC 9457: the sentence a person reads is `title`, and the typed fields are
+    # its siblings. Reading `detail` here would be reading FastAPI's shape rather
+    # than the one the web client parses.
+    problem = response.json()
+    assert problem["reason"] == "project_artifact_limit_reached"
+    assert problem["limit"] == 1
+    assert problem["used"] == 1
+    assert "1 of its 1 artifacts" in problem["title"]
+
+    # Positive control: the same request against a project with room succeeds,
+    # so the 409 was the limit rather than the route refusing every move.
+    raised = await alice.client.patch(
+        f"/v1/workspace/projects/{stage['project_id']}",
+        json={"max_artifacts": 5},
+    )
+    assert raised.status_code == 200, raised.text
+    moved = await alice.client.patch(
+        f"/v1/artifacts/{stage['unshared_artifact_id']}/project",
+        json={"project_id": stage["project_id"]},
+    )
+    assert moved.status_code == 200, moved.text
+    assert moved.json()["project_id"] == stage["project_id"]
+
+
+async def test_a_zero_limit_says_so_rather_than_showing_a_full_up_counter(stage):
+    """ "holds 0 of its 0 artifacts" is arithmetically true and reads as a bug."""
+    alice = stage["alice"]
+    await alice.client.patch(
+        f"/v1/workspace/projects/{stage['project_id']}",
+        json={"max_artifacts": 0},
+    )
+    response = await alice.client.patch(
+        f"/v1/artifacts/{stage['unshared_artifact_id']}/project",
+        json={"project_id": stage["project_id"]},
+    )
+    assert response.status_code == 409, response.text
+    title = response.json()["title"]
+    assert "limit is 0" in title
+    assert "0 of its 0" not in title
+
+
+async def test_the_usage_endpoint_reports_the_count_the_cap_enforces(stage):
+    """A shared project's contents leave the allowance the screen shows.
+
+    The number on the account page and the number a refusal is measured against
+    have to be one number. They were the same integer until this change and are
+    not any more, so this reads the endpoint before and after the grant and
+    requires it to move.
+    """
+    alice = stage["alice"]
+    before = await alice.client.get("/v1/usage")
+    assert before.status_code == 200, before.text
+    filed_before = before.json()["artifacts"]["used"]
+    assert before.json()["shared_projects"]["used"] == 0
+
+    await _grant(stage, role="viewer")
+
+    after = await alice.client.get("/v1/usage")
+    assert after.status_code == 200, after.text
+    body = after.json()
+    assert body["artifacts"]["used"] == filed_before - 1, (
+        "the one artifact in the now-shared project should have left the allowance"
+    )
+    # ...and the sharing itself is now on the account's own ledger.
+    assert body["shared_projects"]["used"] == 1
+    assert body["shared_projects"]["limit"] == 4
