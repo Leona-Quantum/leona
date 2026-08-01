@@ -1641,6 +1641,23 @@ class ProductionSimplePipelinePorts:
             circuit_expected=self._circuit_expected(plan.plan)
         )
         if program.role is ProgramRole.CIRCUIT:
+            # Two questions a reader will reasonably ask about this branch, both
+            # checked rather than assumed:
+            #
+            # 1. **Is skipping the plan's keys too permissive?** It would be, if a
+            #    supplied source were a starting point the agent may rewrite. It is
+            #    not: `intent.resolve_mode` short-circuits on `has_source_code`
+            #    with "Studio ran this … there is no intent left to infer". Running
+            #    the user's circuit rather than a model's replacement for it is the
+            #    decision this product already made.
+            # 2. **What happens downstream when the derived keys do not match
+            #    `success_criteria.primary_metric`?** Every consumer reads it with
+            #    `execution.result.get(metric)` and handles None, so the metric is
+            #    recorded as observed=None and any plan-declared reference check
+            #    FAILS rather than passing. `passed_reference_methods` then yields
+            #    nothing and the evidence grade stays STRUCTURAL. The mismatch
+            #    degrades honestly; it does not crash and it does not inflate.
+            #
             # `expected_output_keys` describes what a PROGRAM would report, and
             # this source is a circuit: it reports what it measured, under the
             # names the trusted sampler uses. Checking the plan's keys against a
