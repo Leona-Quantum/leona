@@ -230,5 +230,11 @@ async def set_artifact_project(
     )
     if result.rowcount == 0:
         raise NotFoundError("artifact")
-    artifact.project_id = project_id
-    return artifact
+    # Re-read rather than patch the in-memory row and hand it back. `updated_at=
+    # func.now()` is a SQL expression the ORM cannot evaluate in Python, so this
+    # UPDATE synchronizes by EXPIRING the instance — and every attribute the
+    # caller then touches becomes a lazy load. Inside a route that load happens
+    # outside SQLAlchemy's greenlet and raises MissingGreenlet, which is a 500 on
+    # a write that has already succeeded. Caught here by driving the endpoint
+    # over HTTP; the repository-level tests never touch a second attribute.
+    return await get_artifact(scope, session, artifact_id)
