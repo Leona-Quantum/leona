@@ -22,6 +22,7 @@ from majorana_contracts.enums import (
     RunMode,
     RunStatus,
     Stage,
+    UsageKind,
     VerificationFailureClass,
     VerifierDecision,
 )
@@ -64,6 +65,7 @@ from majorana_api.repos import runs as runs_repo
 from majorana_api.repos import artifacts as artifacts_repo
 from majorana_api.repos import qpu_runs as qpu_runs_repo
 from majorana_api.repos import system
+from majorana_api.repos import usage as usage_repo
 from majorana_api.repos import workspaces as workspaces_repo
 from majorana_api.tiers import limits_for, parse_developer_emails, resolve_tier
 
@@ -837,6 +839,63 @@ async def _finish_simple_pipeline(
     )
 
 
+def _is_uuid(value: Any) -> bool:
+    try:
+        uuid.UUID(str(value))
+    except (ValueError, AttributeError, TypeError):
+        return False
+    return True
+
+
+async def _record_chat_usage(ctx: RunContext, store: RepoRunStateStore, response: Any) -> None:
+    """Write a chat turn's tokens to the usage ledger.
+
+    Execute runs have always been metered — `MeteredAgentLLM` records every call
+    it wraps. Chat does not go through it: this handler calls the provider
+    directly, so its tokens reached the `chat.completed` event and nowhere
+    durable. That event is a per-run projection, so "what did chat cost last
+    week" had no answer — on the one surface with no allowance, no submission
+    backstop, and up to 8,000 tokens of history per turn.
+
+    Two deliberate choices:
+
+    * The event id is derived from the run, so a redelivered job cannot count
+      the turn twice. It is not the stronger guarantee MeteredAgentLLM gets —
+      that one replays a *stored* response, while a retried chat turn calls the
+      provider again and legitimately spends different tokens. When the counts
+      differ the repository refuses the reused key, which is the honest outcome:
+      the first figure stands and the retry is visible in the logs rather than
+      silently overwriting it.
+    * Failing to meter never fails the turn. The answer has already been
+      generated and streamed to the reader; taking it away because accounting
+      hiccuped would be strictly worse than an incomplete ledger, and metering
+      here is for cost visibility, not enforcement.
+    """
+    scope = getattr(store, "_scope", None)
+    session = getattr(store, "_session", None)
+    if scope is None or session is None:
+        return
+    try:
+        await usage_repo.record_usage(
+            scope,
+            session,
+            kind=UsageKind.LLM_TOKENS,
+            quantity=(response.input_tokens or 0) + (response.output_tokens or 0),
+            meta={
+                "model": response.model,
+                "role": "chat",
+                "input_tokens": response.input_tokens,
+                "output_tokens": response.output_tokens,
+                "run_id": str(ctx.run_id),
+            },
+            event_id=uuid.uuid5(uuid.UUID(str(ctx.run_id)), "usage:chat")
+            if _is_uuid(ctx.run_id)
+            else None,
+        )
+    except Exception:
+        log.exception("chat turn %s completed but was not metered", ctx.run_id)
+
+
 async def _handle_conversation(
     ctx: RunContext, store: RepoRunStateStore, llm: LLMClient
 ) -> RunStatus:
@@ -908,6 +967,7 @@ async def _handle_conversation(
         )
 
     await flush_deltas()
+    await _record_chat_usage(ctx, store, response)
     interpretation = response.text.strip() or "The assistant returned an empty response."
     await ctx.sink.emit(
         "chat.completed",
