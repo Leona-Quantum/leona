@@ -190,6 +190,13 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
     searchPlaceholder: string;
     noSearchResults: string;
     empty: string;
+    // Project filtering in the discovery pane. Required in both locales — a
+    // `?` here is defeated silently by `Record<PublicLocale, …>`.
+    projectFilterLabel: string;
+    projectAll: string;
+    projectUngrouped: string;
+    projectEmpty: string;
+    ungroupedEmpty: string;
     workingCircuit: string;
     editingVersion: (version: string, framework: string) => string;
     newDraft: string;
@@ -616,6 +623,11 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
       searchPlaceholder: "Search by name, framework, or tag…",
       noSearchResults: "No artifacts match this search.",
       empty: "No saved artifacts yet. Start with the Bell-state draft.",
+      projectFilterLabel: "Filter by project",
+      projectAll: "All",
+      projectUngrouped: "Ungrouped",
+      projectEmpty: "Nothing filed under this project yet.",
+      ungroupedEmpty: "Every circuit is filed under a project.",
       workingCircuit: "Working circuit",
       editingVersion: (version, framework) => `Editing version ${version} · ${framework}`,
       newDraft: "A clean draft for exploring a circuit before it is saved.",
@@ -1059,6 +1071,11 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
       searchPlaceholder: "名前、フレームワーク、タグで検索…",
       noSearchResults: "検索に一致する回路・実行記録がありません。",
       empty: "保存された回路はありません。ベル状態の下書きから始められます。",
+      projectFilterLabel: "プロジェクトで絞り込む",
+      projectAll: "すべて",
+      projectUngrouped: "未分類",
+      projectEmpty: "このプロジェクトにはまだ何も入っていません。",
+      ungroupedEmpty: "すべての回路がいずれかのプロジェクトに入っています。",
       workingCircuit: "作業中の回路",
       editingVersion: (version, framework) => `バージョン${version}を編集中 · ${framework}`,
       newDraft: "保存する前の回路を試すための新しい下書きです。",

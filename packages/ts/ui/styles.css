@@ -5394,6 +5394,46 @@ div.mj-rail-row:hover {
 .mj-studio-search input::placeholder {
   color: var(--text-2);
 }
+/* Project filter above the discovery list. Rendered only when the workspace
+   has at least one project, so this row does not exist for most people. */
+.mj-studio-projects {
+  display: flex;
+  /* Wraps rather than scrolls: a workspace can hold more projects than fit on
+     one line, and an unbreakable row would clip the last tabs with no error. */
+  flex-wrap: wrap;
+  gap: var(--sp-1);
+  width: min(100%, 840px);
+  margin: 0 auto var(--sp-3);
+}
+.mj-studio-project-tab {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--sp-1);
+  padding: 6px var(--sp-2);
+  border: 1px solid var(--border-0);
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--text-2);
+  font: inherit;
+  font-size: var(--fs-12);
+  cursor: pointer;
+}
+.mj-studio-project-tab:hover {
+  color: var(--text-0);
+}
+.mj-studio-project-tab.is-active {
+  border-color: var(--accent);
+  color: var(--text-0);
+  background: var(--bg-2);
+}
+.mj-studio-project-count {
+  color: var(--text-2);
+  font-size: var(--fs-12);
+  font-variant-numeric: tabular-nums;
+}
+.mj-studio-card-project {
+  color: var(--text-1);
+}
 .mj-studio-discovery-list {
   display: grid;
   gap: var(--sp-2);
