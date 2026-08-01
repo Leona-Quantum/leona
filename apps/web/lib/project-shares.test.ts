@@ -2,7 +2,10 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
 import {
+  ShareRefused,
   canContribute,
+  loadProjectArtifactLimit,
+  setProjectArtifactLimit,
   expiresSoon,
   hasExpired,
   hasMoved,
@@ -291,5 +294,98 @@ describe("the contribution limit (contracts 2.8.0)", () => {
     const none = parseSharedProject({ ...SHARED, artifact_count: 0, artifact_limit: 0 });
     assert.ok(none);
     assert.equal(canContribute(none), false);
+  });
+});
+
+describe("the client functions the limit control depends on", () => {
+  const originalFetch = globalThis.fetch;
+  const stub = (impl: (url: string, init?: RequestInit) => Promise<Response>) => {
+    globalThis.fetch = ((url: string, init?: RequestInit) => impl(String(url), init)) as typeof fetch;
+  };
+  const restore = () => {
+    globalThis.fetch = originalFetch;
+  };
+  const json = (body: unknown, status = 200) =>
+    Promise.resolve(new Response(JSON.stringify(body), { status }));
+
+  it("reads the limit off the caller's own project", async () => {
+    stub(() => json([{ id: "p-1", max_artifacts: 12 }, { id: "p-2", max_artifacts: 3 }]));
+    try {
+      assert.equal(await loadProjectArtifactLimit("p-2"), 3);
+    } finally {
+      restore();
+    }
+  });
+
+  it("returns null rather than a guess when the field is absent", async () => {
+    // An API predating contracts 2.8.0. The control is HIDDEN on null — guessing
+    // a default here would render a number that saving then makes real, silently
+    // changing the project's limit to something nobody chose.
+    stub(() => json([{ id: "p-1" }]));
+    try {
+      assert.equal(await loadProjectArtifactLimit("p-1"), null);
+    } finally {
+      restore();
+    }
+  });
+
+  it("returns null for an unknown project and for a refused request", async () => {
+    stub(() => json([{ id: "other", max_artifacts: 9 }]));
+    try {
+      assert.equal(await loadProjectArtifactLimit("p-1"), null);
+    } finally {
+      restore();
+    }
+    stub(() => json({ error: "nope" }, 403));
+    try {
+      assert.equal(await loadProjectArtifactLimit("p-1"), null);
+    } finally {
+      restore();
+    }
+  });
+
+  it("REJECTS on a network failure, which is why the effect needs a catch", async () => {
+    // The component's `useEffect` had no `.catch`. A non-OK response resolves to
+    // null, but a network-level failure rejects — and this asserts that really is
+    // the shape, rather than the catch being defensive decoration.
+    stub(() => Promise.reject(new TypeError("Failed to fetch")));
+    try {
+      await assert.rejects(() => loadProjectArtifactLimit("p-1"));
+    } finally {
+      restore();
+    }
+  });
+
+  it("returns the number the server committed, not the one that was sent", async () => {
+    // The server clamps and normalises; echoing the request back would show a
+    // limit the project does not have.
+    stub(() => json({ id: "p-1", max_artifacts: 7 }));
+    try {
+      assert.equal(await setProjectArtifactLimit("p-1", 500), 7);
+    } finally {
+      restore();
+    }
+  });
+
+  it("surfaces a refusal as a sentence the dialog can show", async () => {
+    stub(() => json({ title: "an artifact limit must be between 0 and 500" }, 409));
+    try {
+      await assert.rejects(
+        () => setProjectArtifactLimit("p-1", 900),
+        (error: unknown) =>
+          error instanceof ShareRefused && /between 0 and 500/.test((error as Error).message),
+      );
+    } finally {
+      restore();
+    }
+  });
+
+  it("refuses a malformed success rather than reporting a limit it did not get", async () => {
+    stub(() => json({ id: "p-1" }));
+    try {
+      await assert.rejects(() => setProjectArtifactLimit("p-1", 5));
+    } finally {
+      restore();
+    }
   });
 });
