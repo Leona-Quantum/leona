@@ -41,6 +41,7 @@ from ..orm import VqeControlledComparisonRun as VqeControlledComparisonRunRow
 from ..orm import VqeControlledComparisonSpec as VqeControlledComparisonSpecRow
 from ..orm import VqeWorkflowComponent as VqeWorkflowComponentRow
 from ..repos import artifacts as artifacts_repo
+from ..repos import research_candidates as research_candidates_repo
 from ..repos import runs as runs_repo
 from ..repos import system
 from ..repos import vqe as vqe_repo
@@ -164,6 +165,84 @@ class CreateAnsatzMigrationRequest(BaseModel):
         "h2_uccsd_slsqp_to_hardware_efficient_slsqp",
     ]
     evaluator_provider: Literal["qiskit", "pennylane"]
+
+
+class ResearchReviewDecisionRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    subject_id: str = Field(min_length=1, max_length=160)
+    decision: Literal["accept", "reject", "edit", "acknowledge"]
+    edited_value: Any = None
+    rationale: str = Field(min_length=1, max_length=1000)
+
+
+class CreateResearchCandidateReviewRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    candidate_local_id: str = Field(pattern=r"^candidate_[a-z0-9][a-z0-9_.-]{0,63}$")
+    expected_envelope_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    expected_candidate_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    expected_evidence_bundle_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    disposition: Literal["accepted", "rejected", "needs_resolution"]
+    decisions: list[ResearchReviewDecisionRequest] = Field(min_length=1, max_length=120)
+    rationale: str = Field(min_length=1, max_length=2000)
+
+
+class ResearchCandidateReviewRecordResource(BaseModel):
+    id: uuid.UUID
+    previous_review_id: uuid.UUID | None
+    reviewer_user_id: uuid.UUID
+    review_kind: Literal["workspace_human_review"]
+    independence_state: Literal["not_asserted"]
+    disposition: Literal["accepted", "rejected", "needs_resolution"]
+    source_snapshot_sha256: str
+    evidence_bundle_sha256: str
+    base_candidate_sha256: str
+    reviewed_candidate: dict[str, Any]
+    reviewed_candidate_sha256: str
+    decisions: list[dict[str, Any]]
+    rationale: str
+    review_sha256: str
+    created_at: dt.datetime | None
+
+
+class ResearchCandidateReviewViewResource(BaseModel):
+    envelope_id: uuid.UUID
+    envelope_sha256: str
+    candidate: dict[str, Any]
+    candidate_sha256: str
+    source_snapshot_sha256: str
+    evidence_bundle_sha256: str
+    evidence: list[dict[str, Any]]
+    latest_review: ResearchCandidateReviewRecordResource | None
+
+
+class ResearchCandidateEnvelopeSummaryResource(BaseModel):
+    id: uuid.UUID
+    source_snapshot_id: uuid.UUID
+    envelope_sha256: str
+    input_bundle_sha256: str
+    provider: str
+    requested_model: str
+    served_model: str
+    machine_validation_state: str
+    human_review_state: Literal["unreviewed"]
+    publication_eligible: Literal[False]
+    materialization_eligible: Literal[False]
+    candidates: list[dict[str, Any]]
+    created_at: dt.datetime | None
+
+
+class ResearchCandidateEnvelopeListResponse(BaseModel):
+    envelopes: list[ResearchCandidateEnvelopeSummaryResource]
+    next_cursor: uuid.UUID | None
+
+
+class CreateResearchCandidateReviewResponse(BaseModel):
+    review: ResearchCandidateReviewRecordResource
+    request_id: uuid.UUID
+    replayed_review: bool
+    replayed_request: bool
 
 
 class WorkflowSwapResource(BaseModel):
@@ -408,6 +487,26 @@ def _to_experiment_resource(row: VqeExperimentRow) -> ExperimentResource:
         registry_resolution_json=row.registry_resolution_json,
         registry_resolution_sha256=row.registry_resolution_sha256,
         request_idempotency_key=row.request_idempotency_key,
+        created_at=row.created_at,
+    )
+
+
+def _to_research_review_resource(row) -> ResearchCandidateReviewRecordResource:
+    return ResearchCandidateReviewRecordResource(
+        id=row.id,
+        previous_review_id=row.previous_review_id,
+        reviewer_user_id=row.reviewer_user_id,
+        review_kind=row.review_kind,
+        independence_state=row.independence_state,
+        disposition=row.disposition,
+        source_snapshot_sha256=row.source_snapshot_sha256,
+        evidence_bundle_sha256=row.evidence_bundle_sha256,
+        base_candidate_sha256=row.base_candidate_sha256,
+        reviewed_candidate=row.reviewed_candidate_json,
+        reviewed_candidate_sha256=row.reviewed_candidate_sha256,
+        decisions=row.decisions_json,
+        rationale=row.rationale,
+        review_sha256=row.review_sha256,
         created_at=row.created_at,
     )
 
@@ -690,6 +789,143 @@ async def vqe_capabilities(scope: CurrentScope) -> CapabilitiesResponse:
                 ),
             ),
         ]
+    )
+
+
+# --- private research candidate review ---------------------------------
+
+
+@router.get(
+    "/vqe/research-candidates",
+    response_model=ResearchCandidateEnvelopeListResponse,
+)
+async def list_research_candidate_envelopes(
+    scope: CurrentScope,
+    session: DbSession,
+    cursor: uuid.UUID | None = None,
+    limit: Annotated[int, Query(ge=1, le=100)] = 50,
+) -> ResearchCandidateEnvelopeListResponse:
+    rows = await research_candidates_repo.list_research_candidate_envelopes(
+        scope,
+        session,
+        cursor=cursor,
+        limit=limit,
+    )
+    return ResearchCandidateEnvelopeListResponse(
+        envelopes=[
+            ResearchCandidateEnvelopeSummaryResource(
+                id=row.id,
+                source_snapshot_id=row.source_snapshot_id,
+                envelope_sha256=row.envelope_sha256,
+                input_bundle_sha256=row.input_bundle_sha256,
+                provider=row.provider,
+                requested_model=row.requested_model,
+                served_model=row.served_model,
+                machine_validation_state=row.machine_validation_state,
+                human_review_state=row.human_review_state,
+                publication_eligible=row.publication_eligible,
+                materialization_eligible=row.materialization_eligible,
+                candidates=[
+                    {
+                        "local_id": item["local_id"],
+                        "candidate_type": item["candidate_type"],
+                        "field_count": len(item["fields"]),
+                        "unknown_count": len(item["unknowns"]),
+                        "conflict_count": len(item["conflicts"]),
+                    }
+                    for item in row.envelope_json["response"]["candidates"]
+                ],
+                created_at=row.created_at,
+            )
+            for row in rows
+        ],
+        next_cursor=rows[-1].id if len(rows) == limit else None,
+    )
+
+
+@router.get(
+    "/vqe/research-candidates/{envelope_id}/{candidate_local_id}",
+    response_model=ResearchCandidateReviewViewResource,
+)
+async def get_research_candidate_review_view(
+    envelope_id: uuid.UUID,
+    candidate_local_id: str,
+    scope: CurrentScope,
+    session: DbSession,
+) -> ResearchCandidateReviewViewResource:
+    try:
+        view = await research_candidates_repo.get_research_candidate_review_view(
+            scope,
+            session,
+            envelope_id=envelope_id,
+            candidate_local_id=candidate_local_id,
+        )
+    except research_candidates_repo.NotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from None
+    except research_candidates_repo.ResearchCandidateReviewError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={"code": str(exc), "message": "candidate evidence is not reviewable"},
+        ) from None
+    return ResearchCandidateReviewViewResource(
+        envelope_id=view.envelope_id,
+        envelope_sha256=view.envelope_sha256,
+        candidate=view.candidate,
+        candidate_sha256=view.candidate_sha256,
+        source_snapshot_sha256=view.source_snapshot_sha256,
+        evidence_bundle_sha256=view.evidence_bundle_sha256,
+        evidence=list(view.evidence),
+        latest_review=(
+            _to_research_review_resource(view.latest_review) if view.latest_review else None
+        ),
+    )
+
+
+@router.post(
+    "/vqe/research-candidates/{envelope_id}/reviews",
+    response_model=CreateResearchCandidateReviewResponse,
+    status_code=201,
+)
+async def create_research_candidate_review(
+    envelope_id: uuid.UUID,
+    body: CreateResearchCandidateReviewRequest,
+    scope: CurrentScope,
+    session: DbSession,
+    idempotency_key: Annotated[
+        str,
+        Header(alias="Idempotency-Key", min_length=1, max_length=200),
+    ],
+) -> CreateResearchCandidateReviewResponse:
+    try:
+        persisted = await research_candidates_repo.create_research_candidate_review(
+            scope,
+            session,
+            envelope_id=envelope_id,
+            candidate_local_id=body.candidate_local_id,
+            expected_envelope_sha256=body.expected_envelope_sha256,
+            expected_candidate_sha256=body.expected_candidate_sha256,
+            expected_evidence_bundle_sha256=body.expected_evidence_bundle_sha256,
+            disposition=body.disposition,
+            decisions=[item.model_dump(mode="json") for item in body.decisions],
+            rationale=body.rationale,
+            idempotency_key=idempotency_key,
+        )
+    except research_candidates_repo.AuthzError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from None
+    except research_candidates_repo.NotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from None
+    except research_candidates_repo.ResearchCandidateReviewIdempotencyConflictError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from None
+    except research_candidates_repo.ResearchCandidateReviewError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail={"code": str(exc), "message": "research review rejected"},
+        ) from None
+    return CreateResearchCandidateReviewResponse(
+        review=_to_research_review_resource(persisted.review),
+        request_id=persisted.request_id,
+        replayed_review=persisted.replayed_review,
+        replayed_request=persisted.replayed_request,
     )
 
 

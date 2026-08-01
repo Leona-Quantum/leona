@@ -1,5 +1,6 @@
 const UUID =
   "[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}";
+const CANDIDATE = "candidate_[a-z0-9][a-z0-9_.-]{0,63}";
 
 const ALLOWED = [
   /^experiments$/,
@@ -11,6 +12,9 @@ const ALLOWED = [
   /^controlled-comparisons$/,
   new RegExp(`^controlled-comparisons/${UUID}$`),
   new RegExp(`^controlled-comparisons/${UUID}/runs$`),
+  /^research-candidates$/,
+  new RegExp(`^research-candidates/${UUID}/${CANDIDATE}$`),
+  new RegExp(`^research-candidates/${UUID}/reviews$`),
 ];
 
 /**
@@ -26,7 +30,8 @@ export function isAllowedVqeProxyRequest(path: string, method: string): boolean 
     return path !== "controlled-comparisons"
       && !path.endsWith("/runs")
       && !path.endsWith("/cancel")
-      && !path.endsWith("/materialize");
+      && !path.endsWith("/materialize")
+      && !path.endsWith("/reviews");
   }
   if (method === "POST") {
     return path === "experiments"
@@ -34,7 +39,8 @@ export function isAllowedVqeProxyRequest(path: string, method: string): boolean 
       || path.endsWith("/executions")
       || path.endsWith("/runs")
       || path.endsWith("/cancel")
-      || path.endsWith("/materialize");
+      || path.endsWith("/materialize")
+      || path.endsWith("/reviews");
   }
   return false;
 }

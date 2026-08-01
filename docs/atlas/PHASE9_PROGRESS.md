@@ -14,9 +14,11 @@ Updated: 2026-08-01
 - S6 offline contract evaluation: implemented, regenerated, and locally verified;
 - S7 owner-approved live dry run: completed once with DeepSeek V4 Flash and a
   private Qiskit Nature metadata bundle;
-- S8 private append-only persistence: implemented and locally contract-tested;
-  fresh-PostgreSQL CI qualification is pending the feature-branch push;
-- S9–S12 review, materialization, E2E, and release audit: not yet started.
+- S8 private append-only persistence: implemented and qualified on fresh
+  PostgreSQL 17 in feature-branch CI;
+- S9 evidence-bound human review queue: implemented and locally verified;
+  fresh-PostgreSQL CI qualification is pending this feature-branch push;
+- S10–S12 materialization, E2E, and release audit: not yet started.
 
 No live LLM provider was contacted in S0–S6. S7 used the owner-supplied
 DeepSeek credential for exactly one generation request with retries disabled.
@@ -216,8 +218,52 @@ claim DEV migrations had run.
 
 S7 is complete as a private operational qualification only. One accepted
 response does not authorize publication, model-quality claims, or automatic
-materialization. S8 has a local implementation but still requires its clean-DB
-CI result. S9–S12 remain downstream gates for human review, explicit
-materialization, end-to-end validation, and release audit. They must use the
-validated private envelope without manufacturing or substituting scripted
-provider output.
+materialization. S8 passed the fresh PostgreSQL 17 CI migration and live
+persistence path in feature-branch run `30681049171`; the private production
+control-plane workflow also passed in run `30681049158`.
+
+## S9 evidence-bound human review queue
+
+Migration `0048` introduces two append-only records that remain separate from
+the original model envelope:
+
+- `vqe_research_candidate_reviews` stores a human decision, a reviewed
+  candidate version, the exact source/evidence/base-candidate digests, and a
+  canonical scientific review digest; and
+- `vqe_research_candidate_review_requests` stores transport idempotency without
+  changing the scientific identity of the review.
+
+Both tables reject update and delete operations. Review creation is restricted
+to workspace owner/admin roles. Every detail request reconstructs the Phase 9
+evidence bundle from the already persisted immutable GitHub snapshot, reruns
+the exact deterministic Phase 8 extractor, verifies every selected file and
+snapshot digest, and requires the reconstructed bundle digest to equal the
+digest supplied to the one S7 model call. A stale or non-reconstructable input
+cannot be reviewed.
+
+The Studio review surface shows each proposed field, unknown, and conflict next
+to its cited path, locator, source SHA-256, and declared value. Decisions are
+not preselected and require an item-level rationale plus an overall rationale.
+An edit creates a new reviewed candidate with
+`review_provenance=workspace_human_edit`; it never changes the model envelope.
+Unknowns and conflicts can be acknowledged but remain open scientific issues,
+so a candidate containing either cannot receive the `accepted` disposition.
+
+Review records are deliberately labelled
+`review_kind=workspace_human_review` and `independence_state=not_asserted`.
+They must not be described as independent scientific review. S9 cannot publish,
+materialize, execute, or make performance claims. The focused backend suite has
+40 passing tests, the complete web suite has 362 passing tests, TypeScript and
+UI token checks pass, and all five import-boundary contracts remain intact.
+Fresh-database migration and append-only enforcement remain a remote CI gate
+until the S9 commit is pushed.
+
+## Open gates
+
+S9 creates review evidence but does not make any candidate publishable. The
+single live S7 envelope reports ten unknowns, so no candidate from that response
+can be accepted without a later evidence-backed candidate version that resolves
+them. S10–S12 remain downstream gates for accepted-only transactional
+materialization, controlled end-to-end validation, and release audit. They must
+use the validated private envelope and its append-only reviews without
+manufacturing or substituting scripted provider output.

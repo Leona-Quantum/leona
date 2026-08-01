@@ -48,4 +48,27 @@ describe("authenticated VQE proxy policy", () => {
       false,
     );
   });
+
+  it("permits only bounded private research review queue operations", () => {
+    assert.equal(isAllowedVqeProxyRequest("research-candidates", "GET"), true);
+    assert.equal(
+      isAllowedVqeProxyRequest(
+        `research-candidates/${SPEC_ID}/candidate_mapper`,
+        "GET",
+      ),
+      true,
+    );
+    assert.equal(
+      isAllowedVqeProxyRequest(`research-candidates/${SPEC_ID}/reviews`, "POST"),
+      true,
+    );
+    assert.equal(
+      isAllowedVqeProxyRequest(`research-candidates/${SPEC_ID}/reviews`, "GET"),
+      false,
+    );
+    assert.equal(
+      isAllowedVqeProxyRequest(`research-candidates/${SPEC_ID}/publish`, "POST"),
+      false,
+    );
+  });
 });

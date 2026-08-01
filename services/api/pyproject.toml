@@ -9,6 +9,7 @@ dependencies = [
     "majorana-openqasm",
     "majorana-qpu",
     "majorana-vqe",
+    "majorana-llm",
     "alembic>=1.16",
     "sqlalchemy[asyncio]>=2.0",
     "psycopg[binary]>=3.2",
@@ -26,6 +27,7 @@ majorana-contracts = { workspace = true }
 majorana-openqasm = { workspace = true }
 majorana-qpu = { workspace = true }
 majorana-vqe = { workspace = true }
+majorana-llm = { workspace = true }
 
 [build-system]
 requires = ["hatchling"]

@@ -1,6 +1,7 @@
 import { StudioWorkspace } from "./studio-workspace";
 import { VqeProofPanel } from "./vqe-proof-panel";
 import { VqeExperimentLauncher } from "./vqe-experiment-launcher";
+import { VqeResearchReview } from "./vqe-research-review";
 import { getPublicLocale } from "../../../lib/public-locale-server";
 import { getAccountTier } from "../../../lib/account-tier-server";
 import { parseVqeFramework } from "../../../lib/vqe-workflow-launch";
@@ -15,6 +16,7 @@ type StudioSearchParams = {
   vqeFramework?: string;
   vqeProvider?: string;
   vqeMigration?: string;
+  vqeReview?: string;
   vqeSwap?: string;
   vqeWorkflow?: string;
   vqeWorkflowKey?: string;
@@ -38,6 +40,9 @@ export default async function StudioPage({
         locale={locale}
       />
     );
+  }
+  if (params.vqeReview === "1") {
+    return <VqeResearchReview locale={locale} />;
   }
   if (params.vqe === "1" || params.vqeWorkflow || params.vqeWorkflowKey) {
     return (

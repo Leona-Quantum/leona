@@ -1102,6 +1102,89 @@ html[lang="ja"] .mj-company-hero-title-line {
   gap: var(--sp-5);
   margin-top: var(--sp-5);
 }
+
+/* Phase 9 private research review. Evidence remains visually adjacent to each
+ * decision, while publication and materialization stay outside this surface. */
+.mj-vqe-review-list {
+  display: grid;
+  gap: var(--sp-4);
+  margin-top: var(--sp-5);
+}
+.mj-vqe-review-card {
+  display: grid;
+  gap: var(--sp-4);
+  padding: var(--sp-4);
+  border: 1px solid var(--border-0);
+  border-radius: var(--radius-card);
+  background: var(--bg-1);
+}
+.mj-vqe-review-card h2,
+.mj-vqe-review-card p {
+  margin: 0;
+}
+.mj-vqe-review-card pre {
+  max-width: 100%;
+  margin: var(--sp-2) 0 0;
+  overflow: auto;
+  color: var(--text-1);
+  font-size: var(--fs-12);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.mj-vqe-review-evidence {
+  display: grid;
+  gap: var(--sp-2);
+  padding: var(--sp-3);
+  border-left: 2px solid var(--accent);
+  background: color-mix(in srgb, var(--accent) 5%, var(--bg-0));
+}
+.mj-vqe-review-evidence dl {
+  display: grid;
+  gap: var(--sp-1);
+  margin: 0;
+  padding-top: var(--sp-2);
+  border-top: 1px solid var(--border-0);
+}
+.mj-vqe-review-evidence dl div {
+  display: grid;
+  grid-template-columns: minmax(90px, 0.22fr) minmax(0, 1fr);
+  gap: var(--sp-2);
+}
+.mj-vqe-review-evidence dt {
+  color: var(--text-2);
+  font-size: var(--fs-12);
+}
+.mj-vqe-review-evidence dd {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+  color: var(--text-1);
+  font-family: var(--font-mono, monospace);
+  font-size: var(--fs-12);
+}
+.mj-vqe-review-card textarea,
+.mj-vqe-review-submit textarea {
+  width: 100%;
+  resize: vertical;
+  padding: 10px 12px;
+  border: 1px solid var(--border-0);
+  border-radius: var(--radius-control);
+  background: var(--bg-0);
+  color: var(--text-0);
+  font: inherit;
+}
+.mj-vqe-review-card textarea:focus-visible,
+.mj-vqe-review-submit textarea:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+.mj-vqe-review-submit {
+  display: grid;
+  gap: var(--sp-4);
+  margin-top: var(--sp-5);
+  padding-top: var(--sp-5);
+  border-top: 1px solid var(--border-0);
+}
 .mj-vqe-methods-heading {
   display: flex;
   align-items: end;

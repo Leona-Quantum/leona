@@ -569,6 +569,9 @@ export function VqeExperimentLauncher({
                 : (ja ? "実験を作成" : "Create experiment")}
             </button>
           )}
+          <a className="mj-secondary-button" href="/studio?vqeReview=1">
+            {ja ? "非公開研究候補をレビュー" : "Review private research candidates"}
+          </a>
           {savedSwap ? (
             <a
               className="mj-secondary-button"

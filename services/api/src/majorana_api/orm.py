@@ -748,6 +748,67 @@ class VqeResearchCandidatePersistRequestRow(Base):
     created_at: Mapped[dt.datetime | None] = mapped_column(server_default=func.now())
 
 
+class VqeResearchCandidateReviewRow(Base):
+    """Append-only human review and reviewed candidate version."""
+
+    __tablename__ = "vqe_research_candidate_reviews"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["envelope_id", "workspace_id"],
+            [
+                "vqe_research_candidate_envelopes.id",
+                "vqe_research_candidate_envelopes.workspace_id",
+            ],
+        ),
+        ForeignKeyConstraint(
+            ["previous_review_id", "workspace_id"],
+            ["vqe_research_candidate_reviews.id", "vqe_research_candidate_reviews.workspace_id"],
+        ),
+        UniqueConstraint("id", "workspace_id"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True)
+    workspace_id: Mapped[uuid.UUID]
+    envelope_id: Mapped[uuid.UUID]
+    previous_review_id: Mapped[uuid.UUID | None]
+    reviewer_user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"))
+    candidate_local_id: Mapped[str]
+    review_kind: Mapped[str]
+    independence_state: Mapped[str]
+    disposition: Mapped[str]
+    source_snapshot_sha256: Mapped[str]
+    evidence_bundle_sha256: Mapped[str]
+    base_candidate_sha256: Mapped[str]
+    reviewed_candidate_json: Mapped[dict[str, Any]] = mapped_column(JSONB)
+    reviewed_candidate_sha256: Mapped[str]
+    decisions_json: Mapped[list[dict[str, Any]]] = mapped_column(JSONB)
+    rationale: Mapped[str]
+    review_sha256: Mapped[str]
+    created_at: Mapped[dt.datetime | None] = mapped_column(server_default=func.now())
+
+
+class VqeResearchCandidateReviewRequestRow(Base):
+    """Transport replay ledger for append-only candidate reviews."""
+
+    __tablename__ = "vqe_research_candidate_review_requests"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["review_id", "workspace_id"],
+            ["vqe_research_candidate_reviews.id", "vqe_research_candidate_reviews.workspace_id"],
+        ),
+        UniqueConstraint("workspace_id", "idempotency_key"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True)
+    workspace_id: Mapped[uuid.UUID]
+    review_id: Mapped[uuid.UUID]
+    requested_by_user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"))
+    idempotency_key: Mapped[str]
+    request_descriptor_json: Mapped[dict[str, Any]] = mapped_column(JSONB)
+    request_descriptor_sha256: Mapped[str]
+    created_at: Mapped[dt.datetime | None] = mapped_column(server_default=func.now())
+
+
 class Job(Base):
     __tablename__ = "jobs"
 
