@@ -186,6 +186,34 @@ async def test_both_ends_on_the_team_plan_is_the_case_that_works():
         await stage._cleanup()
 
 
+async def test_me_reports_the_tier_this_service_enforces():
+    """The web app cannot resolve a plan-column tier and must be told it.
+
+    `apps/web/lib/account-tier.ts` resolves a tier from the email allowlists,
+    which is all a service with no database can do. An account on the Team plan
+    by its `users.plan` column therefore reads as `free` in the browser, and the
+    sidebar would offer it no Share button for a capability this service would
+    have allowed. `/v1/me` carrying the resolved tier is what closes that.
+    """
+    stage = await _stage(granter_plan=TEAM_PLAN, grantee_plan=TEAM_PLAN)
+    try:
+        response = await stage.client.get("/v1/me")
+        assert response.status_code == 200, response.text
+        assert response.json()["tier"] == "team", response.text
+    finally:
+        await stage._cleanup()
+
+
+async def test_me_reports_free_for_a_plan_string_nobody_recognises():
+    stage = await _stage(granter_plan=UNKNOWN_PLAN, grantee_plan=TEAM_PLAN)
+    try:
+        response = await stage.client.get("/v1/me")
+        assert response.status_code == 200, response.text
+        assert response.json()["tier"] == "free", response.text
+    finally:
+        await stage._cleanup()
+
+
 async def test_the_operator_tier_keeps_every_team_capability():
     """`developer` is the operator's and the collaborators' tier.
 

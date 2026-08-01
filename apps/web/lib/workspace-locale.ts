@@ -532,7 +532,7 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
       usageNextSlotOn: (date: string) => `1 more frees up on ${date}`,
       usageNextSlotWhen: (word: string) => `1 more frees up ${word}`,
       signOut: "Log out",
-      tierLabel: { demo: "Preview", free: "Free", developer: "Developer" },
+      tierLabel: { preview: "Preview", free: "Free", team: "Team", developer: "Developer" },
     },
     run: {
       previewStatus: "Public preview · view-only",
@@ -984,7 +984,7 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
       usageNextSlotOn: (date: string) => `${date}に1回分が戻ります`,
       usageNextSlotWhen: (word: string) => `${word}1回分が戻ります`,
       signOut: "ログアウト",
-      tierLabel: { demo: "プレビュー", free: "フリー", developer: "開発者" },
+      tierLabel: { preview: "プレビュー", free: "フリー", team: "チーム", developer: "開発者" },
     },
     run: {
       previewStatus: "公開プレビュー · 閲覧のみ",
@@ -1397,7 +1397,11 @@ export const ACCOUNT_COPY: Record<PublicLocale, {
   spendTokens: (tokens: string, calls: number) => string;
   spendUnattributed: string;
   spendNotBilled: string;
-  tierNames: Record<"demo" | "free" | "developer", string>;
+  // `Record<AccountTier, …>` rather than a hand-written union of the same
+  // strings. It was the second copy, and a second copy is what let a tier be
+  // added to the product while this table silently kept describing the old set
+  // — the failure surfacing far from here, at whichever line indexes into it.
+  tierNames: Record<AccountTier, string>;
   usageEnforcement: string;
   billingTitle: string;
   billingHelp: string;
@@ -1496,7 +1500,7 @@ export const ACCOUNT_COPY: Record<PublicLocale, {
     // Said because a page that suddenly reports six-figure numbers reads like
     // a bill arriving. Nothing in this deployment prices a token.
     spendNotBilled: "Shown for visibility. Tokens are not charged for and count against no allowance.",
-    tierNames: { demo: "Preview", free: "Free", developer: "Developer" },
+    tierNames: { preview: "Preview", free: "Free", team: "Team", developer: "Developer" },
     usageEnforcement: "These allowances are enforced when you submit a run. Browser simulation always stays available on your own hardware.",
     billingTitle: "Billing & credits",
     billingHelp: "How Leona Quantum will charge for agent runs and hardware. Shown for transparency — payments are not enabled.",
@@ -1595,7 +1599,7 @@ export const ACCOUNT_COPY: Record<PublicLocale, {
     spendTokens: (tokens, calls) => `${tokens} トークン・${calls} 回の呼び出し`,
     spendUnattributed: "モデル不明",
     spendNotBilled: "参考表示です。トークンは課金対象ではなく、いずれの上限にも数えられません。",
-    tierNames: { demo: "プレビュー", free: "Free", developer: "Developer" },
+    tierNames: { preview: "プレビュー", free: "Free", team: "Team", developer: "Developer" },
     usageEnforcement: "これらの上限は実行の送信時に適用されます。ブラウザーでのシミュレーションはお使いの端末上で常に利用できます。",
     billingTitle: "請求とクレジット",
     billingHelp: "将来予定している Leona Run と量子コンピュータ実行の料金体系です。現在、支払いは発生しません。",
@@ -1936,6 +1940,11 @@ export const PROJECT_SHARE_COPY: Record<PublicLocale, {
   stopAllCancel: string;
   close: string;
   adminOnly: string;
+  /** The caller's own plan does not include sharing. Keyed off the control
+   *  plane's `project_sharing_not_in_plan`, never off its English sentence. */
+  needsTeamPlan: string;
+  /** Shown on the disabled share control, before anything is attempted. */
+  needsTeamPlanHint: string;
   deleteWarning: (count: number) => string;
   sharedWithMe: string;
   sharedWithMeEmpty: string;
@@ -2018,6 +2027,8 @@ export const PROJECT_SHARE_COPY: Record<PublicLocale, {
     stopAllCancel: "Keep sharing",
     close: "Close",
     adminOnly: "Only an owner or admin can share a project.",
+    needsTeamPlan: "Sharing a project with someone outside your workspace is part of the Team plan. Your current plan does not include it.",
+    needsTeamPlanHint: "Sharing projects is part of the Team plan",
     deleteWarning: (count) =>
       count === 1
         ? "One person outside this workspace loses access when this project is deleted."
@@ -2102,6 +2113,8 @@ export const PROJECT_SHARE_COPY: Record<PublicLocale, {
     stopAllCancel: "共有を続ける",
     close: "閉じる",
     adminOnly: "プロジェクトを共有できるのはオーナーと管理者だけです。",
+    needsTeamPlan: "ワークスペース外の相手への共有は Team プランの機能です。現在のプランには含まれていません。",
+    needsTeamPlanHint: "プロジェクトの共有は Team プランの機能です",
     deleteWarning: (count) =>
       `このプロジェクトを削除すると、ワークスペース外の${count}人がアクセスできなくなります。`,
     sharedWithMe: "共有されたもの",

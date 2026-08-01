@@ -163,7 +163,15 @@ export function ProjectShareDialog({
       setNotice(copy.granted(address));
       await refresh();
     } catch (caught) {
-      setError(caught instanceof ShareRefused ? caught.message : copy.grantFailed);
+      // A plan refusal is rendered from this app's own locale table, keyed off
+      // the reason code. `caught.message` is the control plane's English
+      // sentence, which is right for a client that has no copy of its own and
+      // wrong for a Japanese reader looking at a Japanese dialog.
+      if (caught instanceof ShareRefused && caught.reason === "project_sharing_not_in_plan") {
+        setError(copy.needsTeamPlan);
+      } else {
+        setError(caught instanceof ShareRefused ? caught.message : copy.grantFailed);
+      }
     } finally {
       setBusy(false);
     }

@@ -12,9 +12,25 @@
  * it — see LEONA_DEVELOPER_EMAILS in .env.local.example.
  */
 
-export type AccountTier = "demo" | "free" | "developer";
+/**
+ * `preview` is not a plan. It is what a request with no identity resolves to —
+ * the signed-out fixture surface — and it was called "demo" until the Team plan
+ * arrived. The rename is not cosmetic: with a real tier in the list, a name
+ * that reads like a plan sitting where the least-capable plan should be is one
+ * misreading away from someone treating "signed out" as a tier that can be
+ * granted something. `preview` says what it is.
+ *
+ * Ordered least to most capable. `atLeastTier` is the only place that ordering
+ * is read; everything else asks for a capability by name.
+ */
+export type AccountTier = "preview" | "free" | "team" | "developer";
 
-export const ACCOUNT_TIERS: readonly AccountTier[] = ["demo", "free", "developer"] as const;
+export const ACCOUNT_TIERS: readonly AccountTier[] = [
+  "preview",
+  "free",
+  "team",
+  "developer",
+] as const;
 
 export type TierLimits = {
   /** null means unlimited. */
@@ -34,6 +50,17 @@ export type TierLimits = {
   qpuEstimates: boolean;
   /** Whether saved artifacts persist beyond the browser session. */
   persistentArtifacts: boolean;
+  /**
+   * Whether the tier may share a project with somebody outside the workspace
+   * that owns it.
+   *
+   * A capability rather than an allowance: it refuses an operation outright
+   * instead of counting one. Mirrored from `TierLimits.project_sharing` in
+   * services/api/src/majorana_api/tiers.py, which is the copy that ENFORCES —
+   * this one only decides whether the button is offered. A browser that lies
+   * about it gets a 403 from the control plane.
+   */
+  projectSharing: boolean;
 };
 
 /**
@@ -54,7 +81,7 @@ export type TierLimits = {
 export const TIER_LIMITS: Record<AccountTier, TierLimits> = {
   // Signed-out fixture preview. Nothing is persisted server-side by design, so
   // the limits here describe a walkthrough, not an allowance.
-  demo: {
+  preview: {
     agentRunsPerWeek: 0,
     privateArtifacts: 0,
     cpuSimQubits: 16,
@@ -63,6 +90,7 @@ export const TIER_LIMITS: Record<AccountTier, TierLimits> = {
     cpuSimRunsPer10Min: 10,
     qpuEstimates: true,
     persistentArtifacts: false,
+    projectSharing: false,
   },
   free: {
     agentRunsPerWeek: 5,
@@ -73,6 +101,25 @@ export const TIER_LIMITS: Record<AccountTier, TierLimits> = {
     cpuSimRunsPer10Min: 10,
     qpuEstimates: true,
     persistentArtifacts: true,
+    projectSharing: false,
+  },
+  // The collaboration plan. The artifact allowance is the owner's number; the
+  // browser-lane ceilings sit between free and developer because they bound the
+  // user's own hardware and cost the platform nothing.
+  //
+  // `privateArtifacts` mirrors `TIER_LIMITS["team"].private_artifacts` on the
+  // server. If the two ever disagree the smaller wins in practice and the user
+  // sees the server's refusal, which is the correct direction for a divergence.
+  team: {
+    agentRunsPerWeek: 50,
+    privateArtifacts: 250,
+    cpuSimQubits: 18,
+    cpuSimOperations: 3_000,
+    cpuSimShots: 32_768,
+    cpuSimRunsPer10Min: 20,
+    qpuEstimates: true,
+    persistentArtifacts: true,
+    projectSharing: true,
   },
   // Collaborators and the owner. "Unlimited" here means unlimited *product*
   // allowances. It is NOT a security tier: see grantsQpuSubmission below.
@@ -85,6 +132,7 @@ export const TIER_LIMITS: Record<AccountTier, TierLimits> = {
     cpuSimRunsPer10Min: 30,
     qpuEstimates: true,
     persistentArtifacts: true,
+    projectSharing: true,
   },
 };
 
@@ -104,6 +152,13 @@ function normalizeEmail(email: string | null | undefined): string {
   return (email ?? "").trim().toLowerCase();
 }
 
+function parseEmailList(raw: string | undefined): string[] {
+  return (raw ?? "")
+    .split(/[,\s]+/)
+    .map(normalizeEmail)
+    .filter((entry) => entry.includes("@"));
+}
+
 /**
  * Addresses granted the developer tier, from LEONA_DEVELOPER_EMAILS
  * (comma- or whitespace-separated). Empty by default and never hardcoded.
@@ -111,25 +166,50 @@ function normalizeEmail(email: string | null | undefined): string {
 export function developerEmails(
   raw: string | undefined = process.env.LEONA_DEVELOPER_EMAILS,
 ): string[] {
-  return (raw ?? "")
-    .split(/[,\s]+/)
-    .map(normalizeEmail)
-    .filter((entry) => entry.includes("@"));
+  return parseEmailList(raw);
+}
+
+/**
+ * Addresses granted the team tier, from LEONA_TEAM_EMAILS. Same parsing, same
+ * empty default, and the same variable the control plane reads — one value set
+ * in two places rather than two values in two places.
+ */
+export function teamEmails(raw: string | undefined = process.env.LEONA_TEAM_EMAILS): string[] {
+  return parseEmailList(raw);
 }
 
 export function resolveAccountTier(
   email: string | null | undefined,
-  options: { isDemoSurface?: boolean; allowlist?: string[] } = {},
+  options: {
+    isPreviewSurface?: boolean;
+    allowlist?: string[];
+    teamAllowlist?: string[];
+  } = {},
 ): AccountTier {
-  // The demo surface is a property of the request, not of the person: it serves
-  // fixtures and writes nothing, so it stays "demo" even if a developer opens
-  // it. Checked first for that reason.
-  if (options.isDemoSurface) return "demo";
+  // The preview surface is a property of the request, not of the person: it
+  // serves fixtures and writes nothing, so it stays "preview" even if a
+  // developer opens it. Checked first for that reason.
+  if (options.isPreviewSurface) return "preview";
   const normalized = normalizeEmail(email);
-  if (!normalized) return "demo";
+  if (!normalized) return "preview";
   if (OPERATOR_IDENTITIES.has(normalized)) return "developer";
-  const allowlist = options.allowlist ?? developerEmails();
-  return allowlist.includes(normalized) ? "developer" : "free";
+  // Highest first: an address on both lists resolves to the more capable tier
+  // rather than to whichever check happened to be written first.
+  if ((options.allowlist ?? developerEmails()).includes(normalized)) return "developer";
+  if ((options.teamAllowlist ?? teamEmails()).includes(normalized)) return "team";
+  return "free";
+}
+
+/**
+ * Whether `tier` sits at or above `floor`.
+ *
+ * The only place tiers are ordered. Everything else asks for a capability by
+ * name — `limitsForTier(tier).projectSharing` — because a comparison written at
+ * a call site has to be revisited every time a tier is added between two
+ * others, and the one that gets missed fails open or closed silently.
+ */
+export function atLeastTier(tier: AccountTier, floor: AccountTier): boolean {
+  return ACCOUNT_TIERS.indexOf(tier) >= ACCOUNT_TIERS.indexOf(floor);
 }
 
 export function limitsForTier(tier: AccountTier): TierLimits {

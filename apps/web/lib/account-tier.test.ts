@@ -3,6 +3,7 @@ import test from "node:test";
 import {
   ACCOUNT_TIERS,
   TIER_LIMITS,
+  atLeastTier,
   developerEmails,
   grantsQpuSubmission,
   isUnlimited,
@@ -44,24 +45,25 @@ test("the non-WorkOS operator identities are developer without any allowlist", (
   assert.equal(resolveAccountTier("deploy-probe@leonaquantum.com", { allowlist: [] }), "developer");
 });
 
-test("a missing identity is demo, never free", () => {
+test("a missing identity is preview, never free", () => {
   for (const email of [null, undefined, "", "   "]) {
-    assert.equal(resolveAccountTier(email, { allowlist: ALLOWLIST }), "demo");
+    assert.equal(resolveAccountTier(email, { allowlist: ALLOWLIST }), "preview");
   }
 });
 
-test("the demo surface outranks identity", () => {
+test("the preview surface outranks identity", () => {
   // A developer opening /demo still sees fixtures; the surface writes nothing.
   assert.equal(
-    resolveAccountTier("rui@keio.jp", { isDemoSurface: true, allowlist: ALLOWLIST }),
-    "demo",
+    resolveAccountTier("rui@keio.jp", { isPreviewSurface: true, allowlist: ALLOWLIST }),
+    "preview",
   );
 });
 
 test("only the developer tier is unlimited", () => {
   assert.equal(isUnlimited("developer"), true);
+  assert.equal(isUnlimited("team"), false);
   assert.equal(isUnlimited("free"), false);
-  assert.equal(isUnlimited("demo"), false);
+  assert.equal(isUnlimited("preview"), false);
 });
 
 test("developer ceilings are at or above every other tier", () => {
@@ -105,4 +107,72 @@ test("no tier grants QPU submission", () => {
   for (const tier of ACCOUNT_TIERS) {
     assert.equal(grantsQpuSubmission(tier), false, `${tier} must not bypass the QPU gate`);
   }
+});
+
+test("the team allowlist grants team, and developer still wins over it", () => {
+  const team = ["partner@example.org"];
+  assert.equal(
+    resolveAccountTier("partner@example.org", { allowlist: [], teamAllowlist: team }),
+    "team",
+  );
+  // On both lists resolves upward, not to whichever check runs first.
+  assert.equal(
+    resolveAccountTier("rui@keio.jp", { allowlist: ALLOWLIST, teamAllowlist: ["rui@keio.jp"] }),
+    "developer",
+  );
+  // And an address on neither is still free, not team.
+  assert.equal(
+    resolveAccountTier("stranger@example.com", { allowlist: [], teamAllowlist: team }),
+    "free",
+  );
+});
+
+test("sharing a project is a team capability and nothing below it has one", () => {
+  // The web copy of the rule the control plane enforces. If these disagree the
+  // browser offers a button that 403s, or hides one that would have worked.
+  assert.equal(limitsForTier("preview").projectSharing, false);
+  assert.equal(limitsForTier("free").projectSharing, false);
+  assert.equal(limitsForTier("team").projectSharing, true);
+  assert.equal(limitsForTier("developer").projectSharing, true);
+});
+
+test("every capability is monotonic up the ladder", () => {
+  // A tier inserted in the middle must not take something away from the tier
+  // above it. Written as a sweep rather than as four assertions so that adding
+  // a fifth tier is covered without editing this test.
+  for (let i = 1; i < ACCOUNT_TIERS.length; i += 1) {
+    const lower = limitsForTier(ACCOUNT_TIERS[i - 1]);
+    const upper = limitsForTier(ACCOUNT_TIERS[i]);
+    const atLeast = (a: number | null, b: number | null) => a === null || (b !== null && a >= b);
+    assert.ok(
+      atLeast(upper.agentRunsPerWeek, lower.agentRunsPerWeek),
+      `${ACCOUNT_TIERS[i]} runs below ${ACCOUNT_TIERS[i - 1]}`,
+    );
+    assert.ok(
+      atLeast(upper.privateArtifacts, lower.privateArtifacts),
+      `${ACCOUNT_TIERS[i]} artifacts below ${ACCOUNT_TIERS[i - 1]}`,
+    );
+    assert.ok(
+      !lower.projectSharing || upper.projectSharing,
+      `${ACCOUNT_TIERS[i]} loses sharing that ${ACCOUNT_TIERS[i - 1]} has`,
+    );
+  }
+});
+
+test("atLeastTier reads the ladder, not a hand-written comparison", () => {
+  assert.equal(atLeastTier("team", "team"), true);
+  assert.equal(atLeastTier("developer", "team"), true);
+  assert.equal(atLeastTier("free", "team"), false);
+  assert.equal(atLeastTier("preview", "free"), false);
+});
+
+test("the published Team plan quotes the artifact allowance the tier grants", async () => {
+  // Same pin as the Free plan above, for the same reason: the pricing page is
+  // prose, and prose that overstates an allowance is a promise the product
+  // breaks the first time somebody reaches it.
+  const { PRICING_COPY } = await import("./public-copy.ts");
+  const team = PRICING_COPY.en.plans.find((plan) => plan.name === "Team");
+  assert.ok(team, "the Team plan disappeared from the pricing page");
+  const features = team.features.join(" | ");
+  assert.match(features, new RegExp(`\\b${TIER_LIMITS.team.privateArtifacts}\\b`));
 });

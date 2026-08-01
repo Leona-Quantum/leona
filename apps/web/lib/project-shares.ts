@@ -71,7 +71,21 @@ export class ShareVersionConflict extends Error {
 }
 
 /** The server refused the grant and said why in a sentence worth showing. */
-export class ShareRefused extends Error {}
+export class ShareRefused extends Error {
+  /**
+   * The control plane's machine-readable reason, when it sent one.
+   *
+   * Carried beside the sentence rather than instead of it: a caller that knows
+   * the code renders its own translated copy, and one that does not still has
+   * something true to show.
+   */
+  readonly reason: string | null;
+
+  constructor(message: string, reason: string | null = null) {
+    super(message);
+    this.reason = reason;
+  }
+}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
@@ -235,12 +249,38 @@ export function conflictVersionId(payload: unknown): string | null {
   return optionalString(payload.current_version_id);
 }
 
+/**
+ * The machine-readable `reason` on a refusal, when it carries one.
+ *
+ * The `title` beside it is an English sentence written by the control plane,
+ * and this app renders Japanese. A reason code is the only part of a refusal
+ * that can be translated — everything keyed off the sentence would either read
+ * English to a Japanese reader or match on prose that changes.
+ */
+export function refusalReason(payload: unknown): string | null {
+  if (!isRecord(payload)) return null;
+  return typeof payload.reason === "string" && payload.reason ? payload.reason : null;
+}
+
 async function refusalMessage(response: Response): Promise<string | null> {
   try {
     return refusalSentence((await response.json()) as unknown);
   } catch {
     return null;
   }
+}
+
+async function refusal(response: Response): Promise<ShareRefused> {
+  let payload: unknown = null;
+  try {
+    payload = (await response.json()) as unknown;
+  } catch {
+    payload = null;
+  }
+  return new ShareRefused(
+    refusalSentence(payload) ?? "That share was refused",
+    refusalReason(payload),
+  );
 }
 
 // --------------------------------------------------------------------------
@@ -272,10 +312,16 @@ export async function grantProjectShare(
     cache: "no-store",
   });
   // 409 is the server refusing for a reason it can name — already a member,
-  // sharing with yourself, past the cap. 404 is an address with no account.
-  // Both are answers, not failures, so they arrive as sentences.
-  if (response.status === 409 || response.status === 422) {
-    throw new ShareRefused((await refusalMessage(response)) ?? "That share was refused");
+  // sharing with yourself, the recipient's plan, past the cap. 403 is the
+  // caller's own plan not including sharing at all. 404 is an address with no
+  // account. All three are answers, not failures, so they arrive as sentences.
+  //
+  // 403 was not handled here when sharing shipped, because nothing could
+  // produce one: every refusal the route had was a 409. It fell through to the
+  // generic "could not be shared", which is the sentence a person sees when
+  // there is nothing they can do — the opposite of what a plan refusal means.
+  if (response.status === 403 || response.status === 409 || response.status === 422) {
+    throw await refusal(response);
   }
   if (response.status === 404) {
     throw new ShareRefused("Nobody with that email address has a Leona account yet");

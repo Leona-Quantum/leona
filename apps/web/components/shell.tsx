@@ -41,7 +41,7 @@ import {
   type ChatSummary,
 } from "../lib/chat-history";
 import { accountFirstName, accountInitials } from "../lib/account-identity";
-import type { AccountTier } from "../lib/account-tier";
+import { ACCOUNT_TIERS, limitsForTier, type AccountTier } from "../lib/account-tier";
 import { fetchArtifactPages } from "../lib/artifact-page";
 import { describeNextSlot, isMetered, parseUsage, type UsageSummary } from "../lib/usage-summary";
 import { titleFromPrompt } from "../lib/chat-title";
@@ -533,6 +533,43 @@ function WorkspaceSidebar({
   const [folderError, setFolderError] = useState<string | null>(null);
   const [draggingFolder, setDraggingFolder] = useState<string | null>(null);
   const [folderDragOver, setFolderDragOver] = useState<string | null>(null);
+  // The tier the CONTROL PLANE resolved, which is the one that enforces.
+  //
+  // `accountTier` beside it is this app's own answer, resolved from the email
+  // allowlists in `account-tier.ts`. That resolution has no database, so it
+  // cannot see `users.plan` — an account put on the Team plan by its column
+  // reads as `free` here and would be shown a disabled Share button for a
+  // capability the API would have allowed. `/api/me` carries the real one.
+  //
+  // Null until it arrives, and the BFF's answer is used meanwhile: a control
+  // plane that is slow or down must not silently downgrade what the sidebar
+  // offers, and the API refuses anything this gets wrong anyway.
+  const [enforcedTier, setEnforcedTier] = useState<AccountTier | null>(null);
+  useEffect(() => {
+    if (demoMode) return undefined;
+    let active = true;
+    void fetch("/api/me", { cache: "no-store" })
+      .then((response) => (response.ok ? response.json() : null))
+      .then((payload: unknown) => {
+        if (!active || !payload || typeof payload !== "object") return;
+        const tier = (payload as { tier?: unknown }).tier;
+        // An unrecognised tier is not an error and not a downgrade — it means
+        // the control plane is ahead of this build. Keep this app's answer.
+        const known = ACCOUNT_TIERS.find((entry) => entry === tier);
+        if (known) setEnforcedTier(known);
+      })
+      .catch(() => {
+        // Same reasoning as the shared-projects effect below: an outage must
+        // not manufacture a downgrade.
+      });
+    return () => {
+      active = false;
+    };
+  }, [demoMode]);
+
+  const canShareProjects =
+    !demoMode && limitsForTier(enforcedTier ?? accountTier ?? "preview").projectSharing;
+
   // Fetched on mount and never mirrored. Its own effect rather than a branch of
   // the projects hydration for the reason that hydration already gives: two
   // independent lists, and a control plane that answers one and not the other
@@ -1010,6 +1047,7 @@ function WorkspaceSidebar({
                 onRenameProject={(name) => void renameProject(project.id, name)}
                 onDeleteProject={() => setProjectDeleteTarget(project)}
                 onShareProject={() => setShareTarget(project)}
+                canShare={canShareProjects}
                 onMove={(delta) => void moveProject(index, index + delta)}
                 dropProps={dropProps("artifact", `artifact-project-${project.id}`, project.id)}
               />
@@ -1453,6 +1491,7 @@ function ProjectRow({
   onRenameProject,
   onDeleteProject,
   onShareProject,
+  canShare,
   onMove,
   dropProps,
 }: {
@@ -1473,6 +1512,8 @@ function ProjectRow({
   onRenameProject: (name: string) => void;
   onDeleteProject: () => void;
   onShareProject: () => void;
+  /** Whether this account's plan includes sharing a project at all. */
+  canShare: boolean;
   onMove: (delta: number) => void;
   dropProps: ChatDropProps;
 }) {
@@ -1544,12 +1585,23 @@ function ProjectRow({
                 title={copy.renameProject(project.name)}
                 onClick={() => { setName(project.name); setRenaming(true); }}
               >✎</button>
+              {/* Disabled rather than hidden. A control that is simply absent
+                  reads as a feature the product does not have; one that is
+                  present and says why is the difference between "Leona cannot
+                  do this" and "your plan does not include this". The control
+                  plane refuses it either way — this only decides what the
+                  person is told before they try. */}
               <button
                 className="mj-sidebar-chat-action"
                 type="button"
-                aria-label={shareCopy.shareProject(project.name)}
-                title={shareCopy.shareProject(project.name)}
-                onClick={onShareProject}
+                disabled={!canShare}
+                aria-label={
+                  canShare ? shareCopy.shareProject(project.name) : shareCopy.needsTeamPlanHint
+                }
+                title={
+                  canShare ? shareCopy.shareProject(project.name) : shareCopy.needsTeamPlanHint
+                }
+                onClick={canShare ? onShareProject : undefined}
               >⤴</button>
               <button
                 className="mj-sidebar-chat-action mj-sidebar-chat-action--danger"

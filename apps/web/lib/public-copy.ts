@@ -231,7 +231,7 @@ export const PRICING_COPY: Record<PublicLocale, {
     plans: [
       { name: "Free", price: "$0", cadence: "while early access is open", description: "Enough to browse the public evidence and put the workbench through a real problem.", features: ["The full public Atlas", "5 agent runs a week", "25 private artifacts", "Browser simulation up to 16 qubits"], action: "Try the preview", tone: "quiet" },
       { name: "Pro", price: "Early access", cadence: "for individual researchers", description: "More room for private research, stronger model tiers, and export-aware workflows.", features: ["Higher run limits", "Private artifacts and versions", "Baselines and export matrix", "Priority access to new capabilities"], action: "Join early access", tone: "featured" },
-      { name: "Team", price: "Let’s talk", cadence: "for shared R&D and governance", description: "Shared workspaces, private corpora, auditability, and evaluation support as the product matures.", features: ["Team workspaces and roles", "Private corpus boundary", "Audit and governance workflows", "Design-partner conversations"], action: "Contact us", tone: "quiet" },
+      { name: "Team", price: "Let’s talk", cadence: "for research done with other people", description: "Share a project with someone outside your workspace — read-only, or read-and-edit so they can put work back — with a per-project limit you set.", features: ["Share a project with people outside your workspace", "50 agent runs a week", "250 private artifacts", "Browser simulation up to 18 qubits"], action: "Contact us", tone: "quiet" },
     ],
     note: { label: "A transparent starting point", title: "The product is live; paid billing is not.", body: "These plans describe the intended early-access packaging. Exact limits, credits, and checkout will be confirmed before paid billing is enabled. No card is required to explore the public Atlas or discuss a research workflow." },
   },
@@ -240,7 +240,7 @@ export const PRICING_COPY: Record<PublicLocale, {
     plans: [
       { name: "Free", price: "$0", cadence: "早期アクセス期間中", description: "公開されている回路と検証結果を確認し、実際の課題で一連の操作を試せます。", features: ["公開Atlasのすべて", "週5回のエージェント実行", "非公開の回路・実行記録25件", "16量子ビットまでのブラウザ実行"], action: "プレビューを試す", tone: "quiet" },
       { name: "Pro", price: "早期アクセス", cadence: "個人研究者向け", description: "非公開研究、上位AIモデル、エクスポート機能を利用できます。", features: ["実行上限の拡張", "非公開の回路・実行記録とバージョン管理", "古典計算との比較・各形式での書き出し", "新機能への優先アクセス"], action: "早期アクセスに参加", tone: "featured" },
-      { name: "Team", price: "ご相談ください", cadence: "共同研究と管理機能向け", description: "共有ワークスペース、非公開データ、監査、評価支援を段階的に提供します。", features: ["チームと権限", "非公開データの分離", "監査とガバナンス", "共同開発・導入相談"], action: "お問い合わせ", tone: "quiet" },
+      { name: "Team", price: "ご相談ください", cadence: "他の人と進める研究向け", description: "ワークスペースの外の相手にプロジェクトを共有できます。閲覧のみ、または編集可能（相手から回路を追加できます）を選べ、追加できる件数はプロジェクトごとに指定できます。", features: ["ワークスペース外の相手とプロジェクトを共有", "週50回のエージェント実行", "非公開の回路・実行記録250件", "18量子ビットまでのブラウザ実行"], action: "お問い合わせ", tone: "quiet" },
     ],
     note: { label: "早期アクセス版の提供内容", title: "サービスは利用できますが、有料プランの決済はまだ開始していません。", body: "ここに示すのは提供予定のプラン内容です。利用上限、クレジット、決済条件は、有料提供の開始前に確定します。公開Atlasの閲覧や研究の相談にカードは必要ありません。" },
   },

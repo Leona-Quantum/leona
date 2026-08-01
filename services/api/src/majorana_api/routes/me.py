@@ -1,11 +1,15 @@
 """GET /v1/me — the auth round-trip: verified identity + derived scope."""
 
-from fastapi import APIRouter
+from typing import Annotated
+
+from fastapi import APIRouter, Depends
 from majorana_contracts.enums import WorkspaceKind
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from ..auth.deps import CurrentIdentity, CurrentScope, DbSession
+from ..auth.deps import CurrentIdentity, CurrentScope, DbSession, get_settings
 from ..repos import workspaces as workspaces_repo
+from ..settings import Settings
+from ..tiers import tier_of
 
 router = APIRouter()
 
@@ -24,6 +28,20 @@ class MeResponse(BaseModel):
     #: workspace's chat titles and Vault inside another.
     is_personal_workspace: bool = True
     workspace_kind: str = "personal"
+    #: The tier THIS service resolved, which is the one that enforces.
+    #:
+    #: The web app resolves a tier of its own from the email allowlists, and
+    #: that resolution cannot see `users.plan` — it has no database. So an
+    #: account put on the Team plan by its column read as `free` in the browser
+    #: and was offered no Share button, while this service would have allowed
+    #: the grant. The client is a renderer; the tier is a fact it should be told
+    #: rather than guess.
+    #:
+    #: A plain `str` and not `AccountTier`: `MeResponse` is route-local by
+    #: design (it is not in `majorana_contracts` and does not reach
+    #: `openapi.json`), and a client that receives a tier it does not recognise
+    #: must degrade to its own answer rather than fail to parse the payload.
+    tier: str = "free"
 
 
 class UpdateMeRequest(BaseModel):
@@ -40,7 +58,7 @@ class UpdateMeRequest(BaseModel):
         return normalized or None
 
 
-def _me(user, workspace, scope) -> MeResponse:
+def _me(user, workspace, scope, settings: Settings) -> MeResponse:
     return MeResponse(
         user_id=str(user.id),
         email=user.email,
@@ -52,14 +70,20 @@ def _me(user, workspace, scope) -> MeResponse:
             workspace.kind == WorkspaceKind.PERSONAL and workspace.owner_user_id == user.id
         ),
         workspace_kind=str(workspace.kind),
+        tier=tier_of(user, settings),
     )
 
 
 @router.get("/me", response_model=MeResponse)
-async def me(identity: CurrentIdentity, scope: CurrentScope, session: DbSession) -> MeResponse:
+async def me(
+    identity: CurrentIdentity,
+    scope: CurrentScope,
+    session: DbSession,
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> MeResponse:
     user, _ = identity
     workspace = await workspaces_repo.get_workspace(scope, session)
-    return _me(user, workspace, scope)
+    return _me(user, workspace, scope, settings)
 
 
 @router.patch("/me", response_model=MeResponse)
@@ -67,6 +91,7 @@ async def update_me(
     body: UpdateMeRequest,
     scope: CurrentScope,
     session: DbSession,
+    settings: Annotated[Settings, Depends(get_settings)],
 ) -> MeResponse:
     user = await workspaces_repo.update_display_name(
         scope,
@@ -74,4 +99,4 @@ async def update_me(
         display_name=body.display_name,
     )
     workspace = await workspaces_repo.get_workspace(scope, session)
-    return _me(user, workspace, scope)
+    return _me(user, workspace, scope, settings)
