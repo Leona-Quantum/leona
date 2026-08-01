@@ -187,6 +187,7 @@ jobs:
         run: |
           uv run --package majorana-api alembic -c db/alembic.ini upgrade head
           uv run --all-extras pytest \
+            services/api/tests/test_artifact_cap_race_live.py \
             services/api/tests/test_artifact_versions_live.py \
             services/api/tests/test_catalog_attestation_live.py \
             services/api/tests/test_catalog_bootstrap_import_live.py \
@@ -199,6 +200,7 @@ jobs:
             services/api/tests/test_job_queue_live.py \
             services/api/tests/test_project_routes_live.py \
             services/api/tests/test_project_shares_http_live.py \
+            services/api/tests/test_project_sharing_tier_live.py \
             services/api/tests/test_projects_live.py \
             services/api/tests/test_run_terminal_live.py \
             services/api/tests/test_usage_allowance_live.py \

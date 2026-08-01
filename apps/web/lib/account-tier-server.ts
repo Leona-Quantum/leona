@@ -17,10 +17,10 @@ import {
  * numbers) to client components — never the allowlist, and never the raw env.
  */
 export async function getAccountTier(
-  options: { isDemoSurface?: boolean } = {},
+  options: { isPreviewSurface?: boolean } = {},
 ): Promise<{ tier: AccountTier; limits: TierLimits; email: string | null }> {
-  if (options.isDemoSurface) {
-    return { tier: "demo", limits: limitsForTier("demo"), email: null };
+  if (options.isPreviewSurface) {
+    return { tier: "preview", limits: limitsForTier("preview"), email: null };
   }
   const { user } = await getMajoranaAuth();
   const email = user?.email ?? null;

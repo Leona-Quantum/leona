@@ -14,8 +14,98 @@ from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..ids import uuid7
-from ..orm import Artifact, ArtifactVersion
-from ._base import NotFoundError, require_admin, require_write
+from ..orm import Artifact, ArtifactVersion, Workspace
+from ._base import NotFoundError, RepoError, require_admin, require_write
+
+
+class ArtifactCapReached(RepoError):
+    """The workspace already holds as many filed artifacts as its plan allows.
+
+    Carries both numbers because the refusal a user reads names them, and a
+    caller that had to recount to build the sentence would be reading outside
+    the lock that made the number true.
+    """
+
+    def __init__(self, held: int, limit: int) -> None:
+        super().__init__(f"workspace holds {held} of its {limit}-artifact plan limit")
+        self.held = held
+        self.limit = limit
+
+
+async def count_kept(scope: Scope, session: AsyncSession) -> int:
+    """Filed artifacts in this scope's workspace — what every plan cap compares to.
+
+    One definition of "filed", in one place. The predicate (not deleted AND
+    `kept_at` set) was written out at three call sites before this existed, and
+    a cap comparing a differently-filtered count to the same limit is a cap that
+    is wrong in one direction without anything failing.
+
+    `Scope` first, and the workspace comes off it, like every other function in
+    this layer. An earlier draft took a bare `workspace_id` so that `shares.py`
+    could count the OWNING workspace of a shared project — which is a real need
+    and the wrong answer to it: `shares._elevated` already builds a `Scope`
+    pointing at exactly that workspace, and it is what should be passed. A
+    repository function with a raw id parameter is one call site away from being
+    handed an id nothing checked.
+    """
+    return int(
+        (
+            await session.execute(
+                select(func.count(Artifact.id)).where(
+                    Artifact.workspace_id == scope.workspace_id,
+                    Artifact.deleted_at.is_(None),
+                    Artifact.kept_at.is_not(None),
+                )
+            )
+        ).scalar_one()
+    )
+
+
+async def reserve_artifact_slot(scope: Scope, session: AsyncSession, limit: int | None) -> None:
+    """Take the workspace's cap lock and refuse if it is already full.
+
+    ## Why a lock, and why on the workspace row
+
+    Before this, the cap was a read-then-write across two statements with
+    nothing held between them: the route counted with `get_overview` and the
+    repository wrote. Two callers at the boundary both read `24` and both file,
+    and the workspace ends up holding 26 against a cap of 25. Measured, not
+    reasoned: removing the `with_for_update()` below fails
+    `test_artifact_cap_race_live` with the second caller reporting `filed`.
+
+    That test needs **two connections** to show it, which is the part worth
+    carrying. An earlier version fired eight concurrent requests through one
+    ASGI app and passed against the unlocked code — one event loop runs each
+    request's read and write to completion before starting the next, so a burst
+    in one process cannot interleave. The API autoscales; two real requests are
+    two processes.
+
+    The lock has to be on something all the racers share, and what they share is
+    the workspace: they are filing *different* artifacts into it, so locking the
+    artifact row (which `keep_artifact` already did) serializes nothing. That is
+    the same argument `shares._lock_project` makes for the project cap — this is
+    the tier cap's missing half.
+
+    ## Lock ordering
+
+    **This lock is acquired LAST in every path that takes it**, after the
+    artifact row (`keep`) or the project row (`contribute`). Nothing acquires a
+    row lock after it. That is what keeps the three writers deadlock-free
+    without reordering any of them, and it is the rule to preserve if a fourth
+    is ever added.
+
+    `limit is None` means unlimited, and takes no lock at all: an unmetered tier
+    has nothing to serialize, and making every developer-tier keep queue behind
+    one row would be a cost with no purchase.
+    """
+    if limit is None:
+        return
+    await session.execute(
+        select(Workspace.id).where(Workspace.id == scope.workspace_id).with_for_update()
+    )
+    held = await count_kept(scope, session)
+    if held >= limit:
+        raise ArtifactCapReached(held, limit)
 
 
 async def list_artifacts(
@@ -134,17 +224,36 @@ async def create_artifact(
     return artifact
 
 
-async def keep_artifact(scope: Scope, session: AsyncSession, artifact_id: uuid.UUID) -> Artifact:
+async def keep_artifact(
+    scope: Scope,
+    session: AsyncSession,
+    artifact_id: uuid.UUID,
+    *,
+    workspace_artifact_limit: int | None,
+) -> Artifact:
     """Put a materialized-but-unkept artifact into the Vault.
 
     Idempotent, and deliberately does not re-stamp: keeping something twice must
     not move it to the top of a list ordered by when the user kept it. Reuses
     get_artifact, so an out-of-workspace or deleted id raises NotFoundError
     rather than silently keeping nothing.
+
+    `workspace_artifact_limit` is a REQUIRED keyword, not a defaulted one, for
+    the same reason `shares.contribute_artifact` makes it required: a caller
+    that could omit it would silently get no cap check at all, and a cap
+    enforced nowhere looks exactly like a cap that passes. `None` means
+    unlimited and must be passed explicitly.
+
+    The check lives here rather than at the route because it has to happen under
+    `reserve_artifact_slot`'s lock, and a route cannot hold a lock across the
+    repository call it is guarding. Re-keeping something already kept skips it
+    entirely — that spends no new slot, so an account sitting exactly at its cap
+    must not be refused for touching what it already has.
     """
     require_write(scope)
     artifact = await get_artifact(scope, session, artifact_id, for_update=True)
     if artifact.kept_at is None:
+        await reserve_artifact_slot(scope, session, workspace_artifact_limit)
         artifact.kept_at = dt.datetime.now(dt.UTC)
         await session.flush()
     return artifact

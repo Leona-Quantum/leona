@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { ACCOUNT_TIERS, type AccountTier } from "../../../lib/account-tier";
 import type { PublicLocale } from "../../../lib/public-locale";
 import { ACCOUNT_COPY } from "../../../lib/workspace-locale";
 import {
@@ -32,7 +33,7 @@ export function UsageNow({
 }: {
   locale: PublicLocale;
   /** The tier the ceilings above were rendered from — the WEB app's answer. */
-  renderedTier: "demo" | "free" | "developer";
+  renderedTier: AccountTier;
 }) {
   const copy = ACCOUNT_COPY[locale];
   const [usage, setUsage] = useState<UsageSummary | null>(null);
@@ -60,9 +61,7 @@ export function UsageNow({
   // `tier` is whatever string the control plane sent. Naming a tier this page
   // has no copy for would render "undefined"; an unrecognised one means the two
   // services are further apart than this banner can explain, so it says nothing.
-  const enforcedTier = (["demo", "free", "developer"] as const).find(
-    (known) => known === usage.tier,
-  );
+  const enforcedTier = ACCOUNT_TIERS.find((known) => known === usage.tier);
   const slot =
     metered && usage.runs.nextSlotAt ? describeNextSlot(usage.runs.nextSlotAt, locale) : null;
   const slotLine = slot

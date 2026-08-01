@@ -106,14 +106,84 @@ DENIED_SUBSTRINGS: tuple[str, ...] = (
     "smtplib",
     "telnetlib",
     "paramiko",
+    # `io` is allowed because matplotlib output goes through io.BytesIO, and
+    # `io.open` IS the `open` builtin — so denying the bare call below while
+    # leaving this reachable denied nothing. Measured: `io.open('/etc/passwd')`
+    # passed the guard cleanly.
+    "io.open",
+    # numpy is allowed for obvious reasons, and these four are its filesystem
+    # primitives. `np.load` additionally executes pickles when a caller asks it
+    # to. No circuit needs any of them; a name like `read_fromfile` matching is
+    # a false positive the author can rename around.
+    ".fromfile",
+    ".tofile",
+    "np.load",
+    "numpy.load",
 )
 
-# Builtins that must not appear as a direct (non-method) call. The negative
-# lookbehind avoids matching legitimate method calls like `expr.eval(...)`.
+# Builtins that must not appear as a direct (non-method) call.
+#
+# The negative lookbehind avoids matching legitimate method CALLS like
+# `expr.eval(...)`. It did not avoid matching a method DEFINITION — `def
+# eval(self, x)` has a space before the name, so a generated class that defined
+# one was blocked with the network-and-subprocess refusal message for something
+# that is neither. `def\s+` is excluded for that reason; a definition binds a
+# name, it does not invoke the builtin.
 DENIED_CALLS: tuple[str, ...] = ("__import__", "eval", "exec", "compile", "open", "breakpoint")
 
 _FROM_RE = re.compile(r"^from\s+([.\w]+)\s+import\b")
 _IMPORT_RE = re.compile(r"^import\s+(.+)$")
+
+#: `module.attribute` pairs that are denied wherever they are reachable from.
+#: DENIED_SUBSTRINGS above catches the spelling people actually write; this
+#: catches the spellings that reach the same function through a rename.
+#:
+#: Two shapes evade a substring check entirely:
+#:
+#:     import io as i          ->  i.open(...)
+#:     from io import open     ->  open(...)   (also `as read` -> read(...))
+#:
+#: Neither is exotic — the first is how numpy is imported in every file in this
+#: repository. So the aliases are resolved from the import lines and the denied
+#: attribute is then looked for under whatever name the code gave it.
+ALIASED_DENIALS: dict[str, frozenset[str]] = {
+    "io": frozenset({"open"}),
+    "numpy": frozenset({"load", "fromfile", "tofile", "save", "savetxt", "loadtxt"}),
+}
+
+_IMPORT_AS_RE = re.compile(r"^import\s+([.\w]+)(?:\s+as\s+(\w+))?\s*$")
+_FROM_IMPORT_NAMES_RE = re.compile(r"^from\s+([.\w]+)\s+import\s+(.+?)\s*$")
+
+
+def _aliased_violations(code: str) -> list[str]:
+    """Denied attributes reached under a name the import statement invented."""
+    violations: list[str] = []
+    for raw_line in code.splitlines():
+        line = raw_line.strip()
+
+        if module_import := _IMPORT_AS_RE.match(line):
+            module, alias = module_import.group(1), module_import.group(2)
+            denied = ALIASED_DENIALS.get(_top_level(module))
+            if denied and alias:
+                for attribute in denied:
+                    if re.search(rf"(?<![.\w]){re.escape(alias)}\.{attribute}\s*\(", code):
+                        violations.append(f"denied_alias:{alias}.{attribute}")
+            continue
+
+        if from_import := _FROM_IMPORT_NAMES_RE.match(line):
+            module, names = from_import.group(1), from_import.group(2)
+            denied = ALIASED_DENIALS.get(_top_level(module))
+            if not denied:
+                continue
+            for part in names.strip("()").split(","):
+                pieces = part.strip().split()
+                if not pieces:
+                    continue
+                imported = pieces[0]
+                bound = pieces[2] if len(pieces) >= 3 and pieces[1] == "as" else imported
+                if imported in denied:
+                    violations.append(f"denied_import_of:{module}.{imported} as {bound}")
+    return violations
 
 
 @dataclass
@@ -156,9 +226,15 @@ def check_python_code(code: str, extra_allowed: frozenset[str] = frozenset()) ->
         if token in code:
             violations.append(f"denied_token:{token}")
 
+    # Definitions are removed before the call scan rather than exempted inside
+    # it: a lookbehind is fixed-width, so `(?<!def\s)` exempts `def eval(` and
+    # not `def  eval(`, which Python accepts and which was still being refused.
+    without_definitions = re.sub(r"\bdef\s+\w+\s*\(", "def _(", code)
     for name in DENIED_CALLS:
-        if re.search(rf"(?<![.\w]){re.escape(name)}\s*\(", code):
+        if re.search(rf"(?<![.\w]){re.escape(name)}\s*\(", without_definitions):
             violations.append(f"denied_call:{name}")
+
+    violations.extend(_aliased_violations(code))
 
     unique = list(dict.fromkeys(violations))
     if not unique:

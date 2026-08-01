@@ -18,9 +18,10 @@ from majorana_contracts import ConversationTurn
 from majorana_contracts import IllegalTransition, assert_transition, is_terminal
 from majorana_contracts import Run as RunResource
 from majorana_contracts.enums import ExportStatus, Framework, RunMode, RunStatus
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import ConfigDict, Field
 
 from ..auth.deps import CurrentIdentity, CurrentScope, DbSession, get_settings
+from ..request_models import RequestModel
 from ..jobs import RUN_EXECUTE_JOB_KIND
 from ..orm import Run as RunRow
 from ..repos import artifacts as artifacts_repo
@@ -29,7 +30,7 @@ from ..repos import runs as runs_repo
 from ..repos import system
 from ..settings import Settings
 from ..tiers import TIER_WINDOW as _TIER_WINDOW
-from ..tiers import limits_for, resolve_tier
+from ..tiers import limits_for, tier_of
 from ..verification_summary import parse_verification_summary
 
 router = APIRouter()
@@ -38,7 +39,7 @@ SSE_POLL_INTERVAL_S = 1.0
 SSE_HEARTBEAT_EVERY_POLLS = 15
 
 
-class CreateRunRequest(BaseModel):
+class CreateRunRequest(RequestModel):
     model_config = ConfigDict(extra="forbid")
 
     task_prompt: str = Field(min_length=1, max_length=20_000)
@@ -59,7 +60,7 @@ class CreateRunRequest(BaseModel):
     conversation_id: uuid.UUID | None = None
 
 
-class SetRunFolderRequest(BaseModel):
+class SetRunFolderRequest(RequestModel):
     model_config = ConfigDict(extra="forbid")
 
     folder_id: uuid.UUID | None = None
@@ -239,9 +240,7 @@ async def _enforce_execute_backstop(
     # where the decision is actually made, in the worker's mode resolution:
     # majorana_worker.handlers._resolve_mode.
     user, _workspace = identity
-    limits = limits_for(
-        resolve_tier(user.email, plan=user.plan, developer_emails=settings.developer_emails)
-    )
+    limits = limits_for(tier_of(user, settings))
     if body.mode == RunMode.EXECUTE and limits.agent_runs_per_week is not None:
         tier_used = await runs_repo.count_execute_runs_since(
             scope, session, dt.datetime.now(dt.timezone.utc) - TIER_WINDOW

@@ -22,6 +22,12 @@ from majorana_api.repos import (
     workspaces,
 )
 
+#: Tier gating is not what these suites are about: every one of them predates
+#: the Team plan and each is pinning a different rule. A grantee that always
+#: qualifies keeps them testing that rule. The gate itself is covered by
+#: test_project_sharing_tier_live.py, which varies this deliberately.
+ANY_TEAM_GRANTEE = lambda _grantee: True  # noqa: E731
+
 pytestmark = requires_db
 
 
@@ -227,7 +233,12 @@ async def test_no_grant_means_no_second_door(db, dataset):
             await shares.list_shares(sa, db, b.project_id)
         with pytest.raises(NotFoundError):
             await shares.grant_share(
-                sa, db, b.project_id, email="whoever@authz.test", role="viewer"
+                sa,
+                db,
+                b.project_id,
+                email="whoever@authz.test",
+                role="viewer",
+                grantee_may_receive=ANY_TEAM_GRANTEE,
             )
         with pytest.raises(NotFoundError):
             await shares.revoke_share(sa, db, b.project_id, grantee_user_id=b.users[Role.OWNER])
@@ -244,7 +255,12 @@ async def test_granting_is_an_admin_action(db, dataset):
             await shares.list_shares(sa, db, a.project_id)
         with pytest.raises(AuthzError):
             await shares.grant_share(
-                sa, db, a.project_id, email=f"b-{Role.MEMBER}@authz.test", role="viewer"
+                sa,
+                db,
+                a.project_id,
+                email=f"b-{Role.MEMBER}@authz.test",
+                role="viewer",
+                grantee_may_receive=ANY_TEAM_GRANTEE,
             )
         with pytest.raises(AuthzError):
             await shares.revoke_share(sa, db, a.project_id, grantee_user_id=b.users[Role.OWNER])

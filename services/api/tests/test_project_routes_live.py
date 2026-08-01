@@ -76,7 +76,9 @@ async def _artifact(factory, scope) -> str:
             family="Bell",
             framework="qiskit",
         )
-        await artifacts_repo.keep_artifact(scope, session, artifact.id)
+        await artifacts_repo.keep_artifact(
+            scope, session, artifact.id, workspace_artifact_limit=None
+        )
         await session.commit()
         return str(artifact.id)
 

@@ -30,13 +30,14 @@ from majorana_contracts.enums import Algorithm, Framework, ShareRole
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from ..auth.deps import CurrentIdentity, CurrentScope, DbSession, get_settings
+from ..request_models import RequestModel
 from ..orm import ProjectShare as ProjectShareRow
 from ..orm import User as UserRow
 from ..repos import artifacts as artifacts_repo
 from ..repos import shares as shares_repo
 from ..repos import workspaces as workspaces_repo
 from ..settings import Settings
-from ..tiers import limits_for, resolve_tier
+from ..tiers import limits_for, tier_of
 
 # The two row→resource mappers, imported rather than copied. A shared artifact
 # must render EXACTLY as an owned one does — same verification grade, same
@@ -55,7 +56,7 @@ SHARED_ARTIFACT_LIMIT = 200
 SHARED_VERSION_LIMIT = 50
 
 
-class GrantShareRequest(BaseModel):
+class GrantShareRequest(RequestModel):
     model_config = ConfigDict(extra="forbid")
 
     #: The person is named by address, never by user id. An id would let this
@@ -92,7 +93,7 @@ class GrantShareRequest(BaseModel):
         return value
 
 
-class SaveSharedVersionRequest(BaseModel):
+class SaveSharedVersionRequest(RequestModel):
     model_config = ConfigDict(extra="forbid")
 
     #: What the editor believes is current. Required and nullable rather than
@@ -103,7 +104,7 @@ class SaveSharedVersionRequest(BaseModel):
     code_lang: str = Field(min_length=1, max_length=40)
 
 
-class CopySharedArtifactRequest(BaseModel):
+class CopySharedArtifactRequest(RequestModel):
     model_config = ConfigDict(extra="forbid")
 
     #: A project in the CALLER's workspace to file the copy under. Resolved
@@ -147,6 +148,27 @@ def _share_refusal(exc: shares_repo.ShareError) -> HTTPException:
     return HTTPException(status_code=409, detail=str(exc))
 
 
+def _sharing_not_in_plan() -> HTTPException:
+    """403, and it carries a `reason` the web keys its own sentence off.
+
+    The `error` string is the fallback for any client that does not know the
+    reason code — including `curl` and the API's own docs — so it has to stand
+    alone in English. The web app renders the Japanese version from its locale
+    table by matching `reason`, the same way it does for every other refusal
+    with a translated twin.
+    """
+    return HTTPException(
+        status_code=403,
+        detail={
+            "error": (
+                "Sharing a project with someone outside your workspace is part of "
+                "the Team plan. Your current plan does not include it."
+            ),
+            "reason": "project_sharing_not_in_plan",
+        },
+    )
+
+
 # --------------------------------------------------------------------------- #
 # Granting — the workspace that owns the project
 # --------------------------------------------------------------------------- #
@@ -176,6 +198,7 @@ async def grant_project_share(
     scope: CurrentScope,
     session: DbSession,
     identity: CurrentIdentity,
+    settings: Annotated[Settings, Depends(get_settings)],
 ) -> ProjectShareResource:
     """Share this project with somebody, or change what they may do with it.
 
@@ -183,7 +206,34 @@ async def grant_project_share(
     them here would mean the client has to know whether the person already had
     access to know which status to expect — and it asked to share with them
     either way.
+
+    ## Sharing is a Team-plan capability, on both ends
+
+    Two separate checks, with two different status codes, because the person
+    reading them has to do two different things:
+
+    - **403** — the caller's own plan does not include sharing. Nothing about
+      the request would make it work; they need a different plan. Refused here,
+      before the project is even looked up, so a free account cannot use this
+      route to learn which project ids exist.
+    - **409** — the caller may share, but the address they typed belongs to an
+      account that may not receive one. The request is wrong, not the plan, and
+      the address is the part to change. That check runs inside `grant_share`,
+      which is where the address becomes a row.
+
+    `developer` satisfies both: it is the operator's and the collaborators'
+    tier, and an operator who could not share their own projects would be a
+    regression dressed as a gate. The check is `limits.project_sharing`, not
+    `tier == "team"`, so a tier added above team inherits the capability instead
+    of being locked out by an equality nobody remembered to widen.
     """
+    granter, _personal_workspace = identity
+    if not limits_for(tier_of(granter, settings)).project_sharing:
+        raise _sharing_not_in_plan()
+
+    def _grantee_may_receive(grantee: UserRow) -> bool:
+        return limits_for(tier_of(grantee, settings)).project_sharing
+
     try:
         share, grantee = await shares_repo.grant_share(
             scope,
@@ -192,12 +242,10 @@ async def grant_project_share(
             email=body.email,
             role=body.role,
             expires_at=body.expires_at,
+            grantee_may_receive=_grantee_may_receive,
         )
     except shares_repo.ShareError as exc:
         raise _share_refusal(exc) from exc
-    # The granter is the caller, so it comes from the identity already resolved
-    # for this request rather than from a second lookup that could disagree.
-    granter, _personal_workspace = identity
     return _to_share(share, grantee, granter)
 
 
@@ -422,16 +470,19 @@ async def copy_shared_artifact(
 ) -> ArtifactResource:
     """Take a copy of a shared circuit into the caller's own workspace.
 
-    The Vault cap is checked HERE and not in the repository, mirroring
-    `keep_artifact`: that is the one place an artifact is filed by a user's
-    choice, and this is the second. The copy is created unkept, so a caller at
-    their cap gets a refusal instead of a row they cannot see — and the check
-    runs before anything is written rather than after.
+    The Vault cap is resolved HERE and enforced by `keep_artifact` below, which
+    holds the workspace's cap lock across the comparison and the write. It used
+    to be compared here, before the copy was written; that read nothing was
+    holding, so two concurrent copies at the boundary both passed it.
+
+    A cheap pre-check survives anyway, and is not redundant: without it a caller
+    already at their cap writes an artifact and a version, has them refused at
+    the keep, and the transaction rolls the whole thing back. Same outcome,
+    three statements of work — so this refuses the common case early and the
+    lock below is what makes the refusal true under concurrency.
     """
     user, _workspace = identity
-    limits = limits_for(
-        resolve_tier(user.email, plan=user.plan, developer_emails=settings.developer_emails)
-    )
+    limits = limits_for(tier_of(user, settings))
     if limits.private_artifacts is not None:
         _ws, _members, kept, _runs = await workspaces_repo.get_overview(scope, session)
         if kept >= limits.private_artifacts:
@@ -447,9 +498,17 @@ async def copy_shared_artifact(
     except shares_repo.ShareError as exc:
         raise _share_refusal(exc) from exc
     # Filed immediately: the caller asked for a copy in their Studio, and an
-    # unkept one would be invisible there. The cap above is what makes this safe
-    # to do without a second round trip.
-    kept_copy = await artifacts_repo.keep_artifact(scope, session, copy.id)
+    # unkept one would be invisible there. The cap is applied by this call, not
+    # by the pre-check above.
+    try:
+        kept_copy = await artifacts_repo.keep_artifact(
+            scope,
+            session,
+            copy.id,
+            workspace_artifact_limit=limits.private_artifacts,
+        )
+    except artifacts_repo.ArtifactCapReached as full:
+        raise _artifact_cap_refusal(full.held, full.limit) from full
     metadata = None
     if kept_copy.current_version_id is not None:
         version = await artifacts_repo.get_version(scope, session, kept_copy.current_version_id)
@@ -457,7 +516,7 @@ async def copy_shared_artifact(
     return _to_artifact(kept_copy, metadata)
 
 
-class ContributeArtifactRequest(BaseModel):
+class ContributeArtifactRequest(RequestModel):
     """A new circuit for a project somebody else owns.
 
     No `project_id` and no `workspace_id`: both come from the path and the grant.
@@ -515,9 +574,7 @@ async def contribute_shared_artifact(
     anything about.
     """
     _access, owner = await shares_repo.shared_project_owner(scope, session, project_id)
-    limits = limits_for(
-        resolve_tier(owner.email, plan=owner.plan, developer_emails=settings.developer_emails)
-    )
+    limits = limits_for(tier_of(owner, settings))
     try:
         _access, artifact, version = await shares_repo.contribute_artifact(
             scope,
