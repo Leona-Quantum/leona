@@ -1,7 +1,7 @@
 """Add bounded-output failure evidence for the VQE runtime.
 
-Revision ID: 0040
-Revises: 0039
+Revision ID: 0042
+Revises: 0041
 
 The application contract gained ``output_limit_exceeded`` so a deterministic
 runtime safety violation is not mislabeled as transient infrastructure
@@ -59,7 +59,7 @@ def downgrade() -> None:
                     where failure_code = 'output_limit_exceeded'
                 ) then
                     raise exception
-                        'cannot downgrade 0040: output-limit evidence exists';
+                        'cannot downgrade 0042: output-limit evidence exists';
                 end if;
             end $$;
             """

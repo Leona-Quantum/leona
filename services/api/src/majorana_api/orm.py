@@ -584,7 +584,7 @@ class ImportItem(Base):
 
 
 class GitHubRepositorySnapshotRow(Base):
-    """Private append-only Phase 7 source snapshot (migration 0041)."""
+    """Private append-only Phase 7 source snapshot (migration 0043)."""
 
     __tablename__ = "github_repository_snapshots"
 
@@ -681,6 +681,70 @@ class VqeComponentImplementationCandidateRow(Base):
     match_state: Mapped[str]
     candidate_json: Mapped[dict[str, Any]] = mapped_column(JSONB)
     candidate_sha256: Mapped[str]
+    created_at: Mapped[dt.datetime | None] = mapped_column(server_default=func.now())
+
+
+class VqeResearchCandidateEnvelopeRow(Base):
+    """Private validated LLM proposal; never reviewed or published in place."""
+
+    __tablename__ = "vqe_research_candidate_envelopes"
+    __table_args__ = (
+        UniqueConstraint("workspace_id", "envelope_sha256"),
+        UniqueConstraint("id", "workspace_id"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True)
+    workspace_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("workspaces.id"))
+    created_by_user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"))
+    source_snapshot_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("github_repository_snapshots.id")
+    )
+    envelope_version: Mapped[str]
+    prompt_version: Mapped[str]
+    policy_version: Mapped[str]
+    response_schema_version: Mapped[str]
+    repository_id: Mapped[int] = mapped_column(BigInteger)
+    commit_sha: Mapped[str]
+    snapshot_sha256: Mapped[str]
+    input_bundle_sha256: Mapped[str]
+    response_sha256: Mapped[str]
+    provider: Mapped[str]
+    requested_model: Mapped[str]
+    served_model: Mapped[str]
+    input_tokens: Mapped[int] = mapped_column(Integer)
+    output_tokens: Mapped[int] = mapped_column(Integer)
+    candidate_count: Mapped[int] = mapped_column(Integer)
+    machine_validation_state: Mapped[str]
+    human_review_state: Mapped[str]
+    publication_eligible: Mapped[bool]
+    materialization_eligible: Mapped[bool]
+    envelope_json: Mapped[dict[str, Any]] = mapped_column(JSONB)
+    envelope_sha256: Mapped[str]
+    created_at: Mapped[dt.datetime | None] = mapped_column(server_default=func.now())
+
+
+class VqeResearchCandidatePersistRequestRow(Base):
+    """Append-only transport replay ledger for one candidate envelope."""
+
+    __tablename__ = "vqe_research_candidate_persist_requests"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["envelope_id", "workspace_id"],
+            [
+                "vqe_research_candidate_envelopes.id",
+                "vqe_research_candidate_envelopes.workspace_id",
+            ],
+        ),
+        UniqueConstraint("workspace_id", "idempotency_key"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True)
+    workspace_id: Mapped[uuid.UUID]
+    envelope_id: Mapped[uuid.UUID]
+    created_by_user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"))
+    idempotency_key: Mapped[str]
+    request_descriptor_json: Mapped[dict[str, Any]] = mapped_column(JSONB)
+    request_descriptor_sha256: Mapped[str]
     created_at: Mapped[dt.datetime | None] = mapped_column(server_default=func.now())
 
 
@@ -795,7 +859,7 @@ class VqeComponentSpec(Base):
 
 class VqeWorkflowComponent(Base):
     """Links a Workflow ArtifactVersion to one of its component
-    ArtifactVersions with an explicit role and ordinal (migration 0039,
+    ArtifactVersions with an explicit role and ordinal (migration 0041,
     ADR-0024)."""
 
     __tablename__ = "vqe_workflow_components"
@@ -854,7 +918,7 @@ class VqeExecution(Base):
 
 
 class VqeObservation(Base):
-    """Append-only execution evidence (migration 0039, ADR-0026) — never
+    """Append-only execution evidence (migration 0041, ADR-0026) — never
     UPDATEd; a retry is a new row with an incremented `attempt`, never a
     mutation of a prior row."""
 

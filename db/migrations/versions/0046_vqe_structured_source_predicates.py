@@ -1,7 +1,7 @@
 """Add the container predicate for deterministic source extraction.
 
-Revision ID: 0044
-Revises: 0043
+Revision ID: 0046
+Revises: 0045
 
 This migration widens only the private append-only metadata assertion
 predicate allowlist. It creates no public component, claim, or artifact.
@@ -53,7 +53,7 @@ def downgrade() -> None:
         .scalar_one()
     )
     if count:
-        raise RuntimeError("cannot downgrade 0044 while container source evidence exists")
+        raise RuntimeError("cannot downgrade 0046 while container source evidence exists")
     op.drop_constraint(_CONSTRAINT, "github_metadata_assertions", type_="check")
     op.create_check_constraint(
         _CONSTRAINT,

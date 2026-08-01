@@ -1,7 +1,7 @@
 """Add immutable controlled VQE comparison plans and results.
 
-Revision ID: 0043
-Revises: 0042
+Revision ID: 0045
+Revises: 0044
 """
 
 from __future__ import annotations
@@ -169,7 +169,7 @@ def downgrade() -> None:
         .scalar_one()
     )
     if count:
-        raise RuntimeError("cannot downgrade 0043 while comparison evidence exists")
+        raise RuntimeError("cannot downgrade 0045 while comparison evidence exists")
     for table in reversed(_TABLES):
         op.execute(f"drop trigger if exists trg_{table}_append_only on {table}")
     op.execute(f"drop function if exists {_FUNCTION}()")

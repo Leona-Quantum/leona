@@ -1,6 +1,6 @@
 # Phase 9 progress — LLM-assisted extraction
 
-Updated: 2026-07-31
+Updated: 2026-08-01
 
 ## Current state
 
@@ -14,8 +14,9 @@ Updated: 2026-07-31
 - S6 offline contract evaluation: implemented, regenerated, and locally verified;
 - S7 owner-approved live dry run: completed once with DeepSeek V4 Flash and a
   private Qiskit Nature metadata bundle;
-- S8–S12 persistence, review, materialization, E2E, and release audit: not yet
-  started.
+- S8 private append-only persistence: implemented and locally contract-tested;
+  fresh-PostgreSQL CI qualification is pending the feature-branch push;
+- S9–S12 review, materialization, E2E, and release audit: not yet started.
 
 No live LLM provider was contacted in S0–S6. S7 used the owner-supplied
 DeepSeek credential for exactly one generation request with retries disabled.
@@ -171,11 +172,52 @@ wrap the provider in a retry client. The local qualification tests verify a
 single call, redaction, pre-provider identity rejection, output isolation, and
 mode `0600` behavior.
 
+## S8 private append-only persistence
+
+Migration `0047` adds two deliberately separate, workspace-scoped records:
+
+- `vqe_research_candidate_envelopes` stores the canonical validated scientific
+  proposal envelope; and
+- `vqe_research_candidate_persist_requests` stores transport idempotency and
+  replay identity.
+
+Both tables reject `UPDATE` and `DELETE` through PostgreSQL triggers. The
+application role is granted only `SELECT` and `INSERT`. An envelope can only be
+stored with the exact Phase 9 v1 prompt, policy, and response-schema versions,
+`schema_and_evidence_validated`, `unreviewed`, and both publication and
+materialization eligibility set to false. Persistence revalidates the bounded
+response shape, canonical JSON digest, repository and commit identity, and the
+SHA-256 of the already persisted GitHub snapshot audit manifest. It cannot
+review, publish, or materialize a candidate.
+
+Repository tests cover fail-closed validation, workspace predicates, read-only
+authorization, idempotent replay, idempotency conflict, immutable source
+binding, concurrent convergence, append-only enforcement, and cross-workspace
+denial. The focused local suite has 13 passing tests and one intentionally
+skipped live-PostgreSQL test. The live test is wired into the fresh-database CI
+job and must pass there before S8 is called remotely qualified.
+
+### DEV migration reconciliation
+
+After merging current `dev`, the DEV migrations own revisions `0039` and
+`0040`. The VQE chain was therefore moved without semantic changes to the
+single linear sequence `0041` through `0047`. Local Alembic inspection reports
+exactly one head at `0047`.
+
+The pre-existing disposable Neon VQE test branch reports revision `0039`, but
+read-only schema inspection shows the old VQE registry tables and neither the
+DEV `0039` allowance index nor the DEV `0040` folder-order column. It is an old
+feature history, not the merged linear history. No `stamp`, migration, or data
+mutation was performed against it. It must be recreated from the merged chain
+before it is used for a later live integration test; stamping it would falsely
+claim DEV migrations had run.
+
 ## Open gates
 
 S7 is complete as a private operational qualification only. One accepted
 response does not authorize publication, model-quality claims, or automatic
-materialization. S8–S12 remain downstream gates for append-only private
-persistence, human review, explicit materialization, end-to-end validation,
-and release audit. They must use the validated private envelope without
-manufacturing or substituting scripted provider output.
+materialization. S8 has a local implementation but still requires its clean-DB
+CI result. S9–S12 remain downstream gates for human review, explicit
+materialization, end-to-end validation, and release audit. They must use the
+validated private envelope without manufacturing or substituting scripted
+provider output.

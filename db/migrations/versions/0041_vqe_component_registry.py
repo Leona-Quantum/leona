@@ -1,7 +1,7 @@
 """VQE Registry and Portable Experiment Persistence (Phase 4.5, ADR-0030).
 
-Revision ID: 0039
-Revises: 0038
+Revision ID: 0041
+Revises: 0040
 
 Five purely additive tables. Component/Workflow registry identity is an existing
 ArtifactVersion (ADR-0024) — no parallel identity system. Enum-shaped text
@@ -419,7 +419,7 @@ def downgrade() -> None:
                OR EXISTS (SELECT 1 FROM vqe_executions)
                OR EXISTS (SELECT 1 FROM vqe_observations) THEN
                 RAISE EXCEPTION
-                    'cannot downgrade 0039: VQE registry or execution evidence exists';
+                    'cannot downgrade 0041: VQE registry or execution evidence exists';
             END IF;
         END $$
         """

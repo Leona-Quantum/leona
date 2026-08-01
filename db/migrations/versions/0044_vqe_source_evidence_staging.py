@@ -1,7 +1,7 @@
 """Add append-only VQE source assertions and implementation candidates.
 
-Revision ID: 0042
-Revises: 0041
+Revision ID: 0044
+Revises: 0043
 
 This is private staging. Rows are observations and proposals, not published
 Component Definitions, verified implementations, or scientific claims.
@@ -222,7 +222,7 @@ def downgrade() -> None:
         )
     ).scalar_one()
     if count:
-        raise RuntimeError("cannot downgrade 0042 while VQE source staging evidence exists")
+        raise RuntimeError("cannot downgrade 0044 while VQE source staging evidence exists")
 
     for table in reversed(_IMMUTABLE_TABLES):
         op.execute(f"drop trigger if exists trg_{table}_append_only on {table}")

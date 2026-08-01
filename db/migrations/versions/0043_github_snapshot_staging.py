@@ -1,7 +1,7 @@
 """Add immutable private staging for bounded GitHub metadata snapshots.
 
-Revision ID: 0041
-Revises: 0040
+Revision ID: 0043
+Revises: 0042
 
 Phase 7 S4 persists the already bounded and content-verified snapshot produced
 by ``github_snapshot.py``.  It deliberately does not create a public Artifact,
@@ -266,7 +266,7 @@ def downgrade() -> None:
         )
     ).scalar_one()
     if count:
-        raise RuntimeError("cannot downgrade 0041 while GitHub snapshot staging evidence exists")
+        raise RuntimeError("cannot downgrade 0043 while GitHub snapshot staging evidence exists")
 
     for table in reversed(_IMMUTABLE_TABLES):
         op.execute(f"drop trigger if exists trg_{table}_append_only on {table}")
