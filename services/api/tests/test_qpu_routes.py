@@ -335,3 +335,47 @@ def test_contract_enums_stay_in_lockstep_with_the_provider_package():
     assert {m.value for m in QpuRunStatus} == {m.value for m in QpuJobStatus}
     assert {m.value for m in QpuProvider} == {m.value for m in QpuProviderKey}
     assert {m.value for m in QpuEstimateBasis} == {m.value for m in EstimateBasis}
+
+
+async def test_the_gate_is_closed_when_the_rows_key_has_been_rotated_away(monkeypatch):
+    """A key rotated by REPLACEMENT closes the gate, rather than opening it.
+
+    The failure this pins was open in review and is worth stating exactly. The
+    gate used to ask two questions — is *a* key configured, and does a row exist
+    — and both are TRUE in the one case that matters. `credential_crypto` warns
+    that replacing `MAJORANA_CREDENTIAL_KEYS` instead of prepending to it makes
+    every stored credential undecryptable at once; when that happens
+    `storage_available()` still returns True, because some valid Fernet key is
+    configured. It is just not the one the row needs.
+
+    So the gate opened, `POST /v1/qpu/submissions` wrote the durable qpu_runs
+    attestation row, the job was enqueued, and the worker closed it as an errored
+    hardware run — the exact outcome the check is documented to prevent, arrived
+    at through the check.
+
+    Note what this test does NOT do: it never decrypts anything. It stages a row
+    whose `key_id` names a key that is no longer configured, which is the state
+    the gate has to recognise without holding the ciphertext.
+    """
+    from majorana_api.credential_crypto import key_id_for
+
+    retired, current = _a_key(), _a_key()
+    monkeypatch.setenv("MAJORANA_QPU_SUBMIT_ENABLED", "true")
+    monkeypatch.setenv("MAJORANA_CREDENTIAL_KEYS", current)
+
+    class _RowFromTheRetiredKey:
+        async def execute(self, statement):
+            from types import SimpleNamespace
+
+            return SimpleNamespace(scalar_one_or_none=lambda: key_id_for(retired))
+
+    response = await qpu_routes.qpu_submission_gate(scope=_scope(), session=_RowFromTheRetiredKey())
+    assert response.submission_available is False
+    assert response.blocked_reason == "credentials_unconfigured"
+
+    # And the control: prepending instead of replacing keeps that same row
+    # usable, which is the whole point of rotating that way round.
+    monkeypatch.setenv("MAJORANA_CREDENTIAL_KEYS", f"{current},{retired}")
+    response = await qpu_routes.qpu_submission_gate(scope=_scope(), session=_RowFromTheRetiredKey())
+    assert response.submission_available is True
+    assert response.blocked_reason is None

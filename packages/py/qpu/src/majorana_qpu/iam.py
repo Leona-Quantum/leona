@@ -98,16 +98,36 @@ class IbmVerificationUnavailable(Exception):
 Transport = Callable[[str, bytes, dict[str, str], float], "tuple[int, bytes]"]
 
 
+#: Bytes of an IAM response we are willing to read. A token response is a few
+#: hundred bytes and the largest refusal observed is under one kilobyte, so this
+#: is three orders of magnitude of headroom.
+#:
+#: It exists because `timeout=` on `urlopen` is a per-socket-operation timeout,
+#: NOT a deadline: a peer that sends one byte at a time resets it on every read.
+#: Measured against a local drip server — 3.66s elapsed under a 1.0s timeout,
+#: and it scales with the number of bytes sent — and an uncapped `read()` pulled
+#: back 41,943,059 bytes in a single call. That body flows into
+#: `_rejection_sentence` and out through the problem document's `title`, so an
+#: unbounded read turns a 44-character PUT into a 40 MB response and a 40 MB log
+#: line. Reaching this requires IBM's own IAM endpoint to misbehave, which is
+#: why it is a cap rather than an alarm.
+MAX_RESPONSE_BYTES = 64_000
+
+
 def _urlopen_post(url: str, body: bytes, headers: dict[str, str], timeout: float):
     request = urllib.request.Request(url, data=body, headers=headers, method="POST")
     try:
         with urllib.request.urlopen(request, timeout=timeout) as response:  # noqa: S310 - fixed https URL
-            return response.status, response.read()
+            # `read(N)` rather than `read()`. A truncated body simply fails to
+            # parse as JSON, which is already a handled path — the malformed
+            # response case — and reports "IBM's answer could not be read"
+            # rather than the process dying on memory.
+            return response.status, response.read(MAX_RESPONSE_BYTES)
     except urllib.error.HTTPError as exc:
         # A refusal is an HTTPError to urllib and an ANSWER to us: 400 carries
         # IBM's reason, and treating it as a transport failure would report
         # "could not reach IBM" for the most common case there is.
-        return exc.code, exc.read()
+        return exc.code, exc.read(MAX_RESPONSE_BYTES)
 
 
 def _scrub(text: str, secret: str) -> str:

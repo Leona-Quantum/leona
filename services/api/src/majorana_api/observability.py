@@ -15,12 +15,17 @@ from opentelemetry.sdk.trace import TracerProvider
 #: report. `api_key` is `PUT /v1/qpu/credentials` — an IBM Quantum API key in
 #: plaintext, in the body of a request that a 500 would ship to Sentry.
 #:
-#: This is not theoretical. sentry-sdk's `max_request_body_size` defaults to
-#: "medium", which attaches JSON request bodies up to 10 KB to every event, and
-#: that default is NOT gated behind `send_default_pii`. Without this scrubber,
-#: one unhandled exception anywhere on the connect path puts a user's provider
-#: credential into an external error tracker, permanently, with no way to know
-#: whose it was.
+#: sentry-sdk's `max_request_body_size` defaults to "medium", which attaches
+#: JSON request bodies up to 10 KB to every event, and that default is NOT gated
+#: behind `send_default_pii` — only cookies are.
+#:
+#: Belt and braces, and honestly labelled as such: sentry-sdk's own
+#: `EventScrubber` already filters `request.data` by field name and `api_key` is
+#: in its default denylist, so this was measured to be redundant for the job it
+#: was written for. It stays because it costs nothing and does not depend on a
+#: vendor default staying where it is.
+#:
+#: **It is not what stops the leak.** See `include_local_variables` below.
 #:
 #: Scrubbing by KEY rather than by route: a route can be renamed and a body can
 #: be captured by a middleware nobody remembered, but the field name is carried
@@ -57,6 +62,34 @@ def init_telemetry(service_name: str) -> TracerProvider | None:
             dsn=os.environ["SENTRY_DSN"],
             environment=os.environ.get("MAJORANA_ENV", "dev"),
             traces_sample_rate=0.1,
+            # THIS is what stops a provider credential reaching Sentry, and it
+            # was measured rather than reasoned about. `include_local_variables`
+            # defaults to True, so every frame's locals are attached to an event.
+            # sentry-sdk's own scrubber filters those BY VARIABLE NAME, and:
+            #
+            #   `api_key`     -> in the default denylist, filtered.
+            #   `body`        -> NOT in it. The FastAPI handler parameter on
+            #                    `PUT /v1/qpu/credentials` is named `body`, and
+            #                    its repr is a pydantic model repr reading
+            #                    `QpuCredentialRequest(provider='ibm',
+            #                    api_key='<the user's real key>', ...)`.
+            #   `credential`  -> NOT in it either (`credentials`, plural, IS).
+            #                    That is the worker's local holding the DECRYPTED
+            #                    token in `handlers.handle_qpu_run`.
+            #
+            # Both were captured end to end against a real `sentry_sdk.init`: a
+            # 500 anywhere in that handler shipped the plaintext key. The
+            # reachable trigger is ordinary — two concurrent first-time connects
+            # (a double-clicked button) race `upsert`'s get-then-insert, and the
+            # loser raises IntegrityError inside that frame.
+            #
+            # Turning locals off is the fix rather than adding "body" and
+            # "credential" to a denylist, because a denylist holds the names
+            # somebody thought of, and the next local holding a secret will have
+            # a name nobody thought of. The cost is real — no frame values in
+            # tracebacks — and it is the right trade in the two services that
+            # handle other people's provider credentials.
+            include_local_variables=False,
             before_send=_scrub_event,
         )
 

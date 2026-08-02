@@ -182,6 +182,23 @@ def load_cipher(environ: dict[str, str] | None = None) -> CredentialCipher:
     return CredentialCipher(_fernet=MultiFernet(fernets), key_id=key_id_for(keys[0]))
 
 
+def configured_key_ids(environ: dict[str, str] | None = None) -> frozenset[str]:
+    """`key_id` of every key this process could decrypt with. Empty when unset.
+
+    The set a stored row's `key_id` must be a member of for that row to be
+    readable here. `MultiFernet` decrypts under any configured key, so this is
+    exactly the membership question — no ordering, no "the newest one".
+
+    Note the deliberate asymmetry with `CredentialCipher.decrypt`, which does
+    NOT compare `key_id` against anything: once a ciphertext is in hand, the
+    honest test is whether it decrypts, and a row whose `key_id` had drifted
+    from reality should still be read if some key can read it. This function is
+    for the opposite situation — deciding whether to START work that will need a
+    decryption later, without doing the decryption now.
+    """
+    return frozenset(key_id_for(key) for key in _configured_keys(environ))
+
+
 def storage_available(environ: dict[str, str] | None = None) -> bool:
     """Whether this process could store a credential right now.
 

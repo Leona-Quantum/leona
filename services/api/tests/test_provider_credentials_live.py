@@ -207,7 +207,7 @@ async def test_the_repository_has_no_expression_for_another_users_row(two_accoun
 
     async with factory() as session:
         assert await credentials_repo.get(bob_scope, session, "ibm") is None
-        assert await credentials_repo.has_credential(bob_scope, session, "ibm") is False
+        assert await credentials_repo.credential_key_id(bob_scope, session, "ibm") is None
         assert await credentials_repo.delete(bob_scope, session, "ibm") is False
         await session.commit()
     assert len(await _rows_for(factory, alice.id)) == 1

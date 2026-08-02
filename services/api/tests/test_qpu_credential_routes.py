@@ -53,8 +53,11 @@ class FakeCredentialStore:
     async def get(self, scope, session, provider):
         return self.row
 
-    async def has_credential(self, scope, session, provider):
-        return self.row is not None
+    async def credential_key_id(self, scope, session, provider):
+        # The row's OWN key_id, not a stand-in for "a row exists". The gate
+        # compares it against the configured keys, so a double that returned a
+        # constant would make every rotation case unreachable from these tests.
+        return None if self.row is None else self.row.key_id
 
     async def upsert(self, scope, session, **kwargs):
         self.row = SimpleNamespace(
@@ -321,12 +324,31 @@ async def test_no_response_body_on_any_route_contains_the_pasted_key(
         )
         outcomes.append(("put-502", await http.put("/v1/qpu/credentials", json=_body())))
 
-        # 422 — a malformed body. FastAPI's default validation response embeds
+        # 422 — malformed bodies. FastAPI's default validation response embeds
         # the offending `input`; this app replaces it with a fixed body, which is
         # the only reason a validation error is not a credential disclosure.
+        #
+        # The shape matters, and the first version of this case had the wrong
+        # one. `{"api_key": KEY, "nope": 1}` raises `extra_forbidden`, whose
+        # `input` is the EXTRA value (`1`) — the key never enters the error
+        # object at all, so that case passed with the protection deleted.
+        # Measured: KEY_IN_ERRORS=False for `extra_forbidden`, and True for all
+        # three shapes below, which are the ones that embed the whole body.
+        for label, body in (
+            # RequestModel's NUL validator raises after the model is built, so
+            # `input` is the entire dict — key included.
+            ("nul-in-label", {"api_key": PASTED_KEY, "provider": "ibm", "label": "a\x00b"}),
+            # A non-string api_key: `input` is the whole body again.
+            ("api-key-wrong-type", {"api_key": [PASTED_KEY], "provider": "ibm"}),
+            # A body that is not an object at all.
+            ("body-not-an-object", [{"api_key": PASTED_KEY}]),
+        ):
+            outcomes.append((f"put-422-{label}", await http.put("/v1/qpu/credentials", json=body)))
+        # Kept as well, because `extra_forbidden` is still a real 422 and the
+        # sweep should cover it — it is simply not the case that proves anything.
         outcomes.append(
             (
-                "put-422",
+                "put-422-extra-forbidden",
                 await http.put("/v1/qpu/credentials", json={"api_key": PASTED_KEY, "nope": 1}),
             )
         )
@@ -342,11 +364,20 @@ async def test_no_response_body_on_any_route_contains_the_pasted_key(
     assert {name for name, _ in outcomes} == {
         "put-400",
         "put-502",
-        "put-422",
+        "put-422-nul-in-label",
+        "put-422-api-key-wrong-type",
+        "put-422-body-not-an-object",
+        "put-422-extra-forbidden",
         "put-200",
         "get-200",
         "delete-204",
     }
+    # Every 422 above really is one — a shape that 400s or 500s instead would
+    # leave the disclosure path this test exists for unexercised while the
+    # "key not in body" assertion below still passed.
+    for name, response in outcomes:
+        if name.startswith("put-422"):
+            assert response.status_code == 422, f"{name} returned {response.status_code}"
     for name, response in outcomes:
         assert PASTED_KEY not in response.text, f"{name} ({response.status_code}) echoed the key"
 

@@ -1196,8 +1196,7 @@ async def _qpu_credential_for(session: AsyncSession, scope: Any) -> tuple[str, s
     if record is None:
         raise _CredentialUnusable(
             "the account that submitted this run has no IBM Quantum credential "
-            "connected; it was disconnected before the job ran. Reconnect it and "
-            "submit again — nothing was sent to IBM."
+            "connected; it was disconnected before the job ran"
         )
     try:
         cipher = credential_crypto.load_cipher()
@@ -1208,10 +1207,37 @@ async def _qpu_credential_for(session: AsyncSession, scope: Any) -> tuple[str, s
         # database column and read by the user.
         raise _CredentialUnusable(
             f"the stored IBM Quantum credential for this account (key "
-            f"{record.key_id}) could not be decrypted by the worker; nothing was "
-            "sent to IBM. Reconnect the credential."
+            f"{record.key_id}) could not be decrypted by the worker"
         ) from None
     return token, record.instance
+
+
+def _credential_failure_message(cause: str, qpu_record: Any) -> str:
+    """The failure written onto the attestation row, with the RIGHT consequence.
+
+    The two `_CredentialUnusable` causes state what went wrong and stop there,
+    because what the user should do next does not follow from the cause — it
+    follows from whether IBM already has the job.
+
+    Both messages used to end "nothing was sent to IBM ... submit again", and
+    that block runs for the RUNNING branch too. Driven against a RUNNING record
+    carrying `provider_job_id`, the row was closed with a sentence telling the
+    user that nothing had been sent and to submit again — while their job was
+    running at IBM and spending their own 28-day Open Plan allowance. Doing what
+    the message said would have spent it twice.
+
+    `error` is the entire evidence a user gets for a failed hardware run, so a
+    confident wrong sentence here is worse than a vague right one.
+    """
+    job_id = getattr(qpu_record, "provider_job_id", None)
+    if not job_id:
+        return f"{cause}. Nothing was sent to IBM — reconnect the credential and submit again."
+    return (
+        f"{cause}. IBM job {job_id} had already been submitted and may still be "
+        "running on your IBM account; its result could not be collected. Reconnect "
+        "the credential, and check that job on IBM's dashboard before submitting "
+        "again — resubmitting spends your free-plan allowance a second time."
+    )
 
 
 async def handle_qpu_run(
@@ -1291,7 +1317,14 @@ async def handle_qpu_run(
             credential = await _qpu_credential_for(session, scope)
         except _CredentialUnusable as unusable:
             await qpu_runs_repo.transition(
-                scope, session, record.id, QpuRunStatus.ERROR, error=str(unusable)
+                scope,
+                session,
+                record.id,
+                QpuRunStatus.ERROR,
+                # Not `str(unusable)`. This block runs for the RUNNING branch as
+                # well as the QUEUED one, so the consequence depends on the
+                # record, not on the cause — see `_credential_failure_message`.
+                error=_credential_failure_message(str(unusable), record),
             )
             await session.commit()
             return

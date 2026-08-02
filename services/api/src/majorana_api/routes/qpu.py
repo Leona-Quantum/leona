@@ -112,16 +112,33 @@ async def qpu_estimate(body: QpuEstimateRequest, scope: CurrentScope) -> QpuCost
 async def _caller_can_submit(scope, session) -> bool:
     """Whether this caller holds a credential this deployment could actually use.
 
-    Two conditions, ANDed, and the second one is the non-obvious half: a stored
-    row whose key is no longer in `MAJORANA_CREDENTIAL_KEYS` cannot be decrypted
-    by the worker, so accepting a submission against it would produce a job that
-    fails hours later with a cause no user can act on. Reporting the caller as
-    unconfigured is fail-closed and it is what the operator-facing
-    `storage_available: false` on the status route exists to explain.
+    Not "is there a row" — **is there a row this deployment can still decrypt**.
+    A stored credential whose key has left `MAJORANA_CREDENTIAL_KEYS` cannot be
+    read by the worker, so accepting a submission against it writes a durable
+    attestation row and enqueues a job that fails hours later with a cause no
+    user can act on.
+
+    An earlier version of this function checked `storage_available()` and the
+    row's existence, which are both true in exactly the case that matters: a key
+    rotated by REPLACEMENT rather than by prepending. Measured — storage
+    available, row present, row undecryptable, gate open. Comparing the row's
+    own `key_id` against the configured keys' ids is what makes the docstring
+    above true rather than aspirational.
+
+    The comparison is deliberately stricter than `CredentialCipher.decrypt`,
+    which tries every key and does not look at `key_id` at all. That asymmetry
+    is correct: decrypt has the ciphertext and can simply try, while this has to
+    decide whether to begin work whose failure is expensive and late.
     """
-    if not credential_crypto.storage_available():
+    # Configured keys first, and the row only if there are any. Not merely an
+    # optimisation: with no key at all the answer cannot depend on the row, and
+    # `test_the_gate_is_closed_when_credential_storage_is_unavailable` fails the
+    # session outright if this path reads one — a deployment with no encryption
+    # key should not be issuing queries about secrets it could not use.
+    configured = credential_crypto.configured_key_ids()
+    if not configured:
         return False
-    return await credentials_repo.has_credential(scope, session, IBM_PROVIDER)
+    return await credentials_repo.credential_key_id(scope, session, IBM_PROVIDER) in configured
 
 
 @router.get("/qpu/submission-gate", response_model=QpuSubmissionGateResponse)
@@ -199,8 +216,23 @@ class QpuCredentialRequest(RequestModel):
 
     provider: Literal["ibm"] = IBM_PROVIDER
     api_key: str
-    #: An IBM Service CRN. Not a secret — it names an instance.
-    instance: str | None = Field(default=None, max_length=512)
+    #: An IBM Service CRN. Not a secret — it names an instance — which is
+    #: exactly why it is stored UNENCRYPTED and echoed back on every GET.
+    #:
+    #: Hence the `crn:` prefix, which is a security constraint rather than
+    #: validation for its own sake. This field sits directly beside the API key
+    #: field in the UI, both are optional-looking text inputs, and a user who
+    #: pastes their key into the wrong one would have it written to the row in
+    #: plaintext and returned to the browser on every status poll — past every
+    #: protection in this module. Refusing a value that is not shaped like a CRN
+    #: makes that specific mistake impossible rather than unlikely.
+    #:
+    #: The cost is real and accepted: `QiskitRuntimeService` also accepts an
+    #: instance NAME, and this refuses those. The UI labels the field "instance
+    #: CRN", IBM's REST path needs a CRN in the `Service-CRN` header, and the
+    #: field is optional — so the narrow shape is the right trade against
+    #: storing somebody's credential in a column nothing encrypts.
+    instance: str | None = Field(default=None, max_length=512, pattern=r"^crn:")
     label: str | None = Field(default=None, max_length=120)
 
 

@@ -1016,7 +1016,10 @@ async def test_a_record_whose_owner_disconnected_fails_terminally_and_names_why(
 
     assert captured["transition"]["status"].value == "error"
     assert "no IBM Quantum credential" in captured["transition"]["error"]
-    assert "nothing was sent to IBM" in captured["transition"]["error"]
+    # Case-insensitive: the consequence is now a sentence of its own, composed
+    # by `_credential_failure_message` from the record rather than baked into
+    # the cause. See the RUNNING-record test below for why it had to move.
+    assert "nothing was sent to ibm" in captured["transition"]["error"].lower()
     assert captured.get("claims") is None, "a missing credential spent the one attempt"
     assert "enqueued" not in captured
     assert session.commits == 1
@@ -1155,3 +1158,63 @@ async def test_qpu_dead_letter_closes_an_open_record(monkeypatch):
     assert captured["transition"]["status"].value == "error"
     assert "dead-lettered" in captured["transition"]["error"]
     assert session.commits == 1
+
+
+async def test_a_disconnected_credential_on_a_RUNNING_record_does_not_claim_nothing_was_sent(
+    monkeypatch,
+):
+    """The record is already at IBM, and the failure must not say otherwise.
+
+    Every other credential-failure test in this file stages a QUEUED record, and
+    that is how the bug survived: the credential block runs BEFORE the
+    QUEUED/RUNNING branch, so it also fires for a record the provider already
+    accepted. Both messages ended "nothing was sent to IBM ... submit again",
+    unconditionally.
+
+    Driven against a RUNNING record carrying `provider_job_id`, that closed the
+    row with a sentence telling the user nothing had been sent and to submit
+    again — while their job was running on their own IBM account, spending their
+    own ten-minutes-per-28-days Open Plan allowance. A user who did as they were
+    told would have spent it twice.
+
+    `error` is the whole of what a user gets for a failed hardware run, so the
+    assertions here are about what the sentence must NOT claim as much as what
+    it must say.
+    """
+    monkeypatch.setenv("MAJORANA_QPU_SUBMIT_ENABLED", "true")
+    monkeypatch.setattr(handlers, "submission_block_reason", lambda **_: None)
+    record = _qpu_record("running", provider_job_id="ibm-job-abc123")
+    captured = _patch_qpu_repo(monkeypatch, record)
+    monkeypatch.setattr(handlers, "credentials_repo", _CredentialStore(None))
+    session = _FakeQpuSession()
+
+    await handlers.handle_qpu_run(session, _qpu_payload_for(record))
+
+    error = captured["transition"]["error"]
+    assert captured["transition"]["status"].value == "error"
+    assert "no IBM Quantum credential" in error, "the cause must still be named"
+    assert "nothing was sent to IBM" not in error.lower(), (
+        "the job IS at IBM; claiming otherwise is the defect"
+    )
+    assert "ibm-job-abc123" in error, "the user needs the job id to check it themselves"
+    assert "allowance a second time" in error, "resubmitting has a cost worth naming"
+
+
+async def test_the_queued_case_still_says_nothing_was_sent(monkeypatch):
+    """The control for the test above.
+
+    Without this, narrowing the message to the RUNNING case could silently drop
+    the reassurance from the QUEUED one — where "nothing was sent to IBM" is
+    true, load-bearing, and the reason a user can safely retry.
+    """
+    monkeypatch.setenv("MAJORANA_QPU_SUBMIT_ENABLED", "true")
+    monkeypatch.setattr(handlers, "submission_block_reason", lambda **_: None)
+    record = _qpu_record("queued")
+    captured = _patch_qpu_repo(monkeypatch, record)
+    monkeypatch.setattr(handlers, "credentials_repo", _CredentialStore(None))
+
+    await handlers.handle_qpu_run(_FakeQpuSession(), _qpu_payload_for(record))
+
+    error = captured["transition"]["error"]
+    assert "Nothing was sent to IBM" in error
+    assert "submit again" in error

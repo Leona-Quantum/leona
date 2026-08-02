@@ -77,18 +77,29 @@ async def get(scope: Scope, session: AsyncSession, provider: str) -> ProviderCre
     return (await session.execute(stmt)).scalar_one_or_none()
 
 
-async def has_credential(scope: Scope, session: AsyncSession, provider: str) -> bool:
-    """Whether the caller holds a credential, without loading the ciphertext.
+async def credential_key_id(scope: Scope, session: AsyncSession, provider: str) -> str | None:
+    """The `key_id` of the caller's stored credential, or None if there is none.
 
-    Selects the id rather than the row. The submission gate asks this on a read
-    endpoint the Studio polls, and there is no reason for an encrypted secret to
-    travel from Postgres into this process to answer a boolean.
+    Selects one text column rather than the row. The submission gate asks this
+    on a read endpoint the Studio polls, and there is no reason for an encrypted
+    secret to travel from Postgres into this process to answer it.
+
+    It returns the `key_id` rather than a bool because the gate's real question
+    is not "is there a row" but "is there a row this deployment can still
+    DECRYPT". Those differ after a key rotation done by replacement instead of
+    by prepending — the exact mistake `credential_crypto` warns about — and the
+    bool version answered the easy question while its caller's docstring claimed
+    the hard one. Measured: with the key replaced, `storage_available()` stayed
+    True and the row no longer decrypted, so the gate opened, the durable
+    `qpu_runs` attestation row was written, the job was enqueued, and the worker
+    closed it as an errored hardware run hours later. That is precisely the
+    outcome the check exists to prevent.
     """
-    stmt = select(ProviderCredential.id).where(
+    stmt = select(ProviderCredential.key_id).where(
         ProviderCredential.user_id == scope.user_id,
         ProviderCredential.provider == provider,
     )
-    return (await session.execute(stmt)).scalar_one_or_none() is not None
+    return (await session.execute(stmt)).scalar_one_or_none()
 
 
 async def upsert(
