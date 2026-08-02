@@ -73,10 +73,22 @@ jobs:
           DATABASE_URL: postgresql://pg:pg@localhost:5432/majorana_live_llm
         run: uv run --package majorana-api alembic -c db/alembic.ini upgrade head
 
+      # MAJORANA_LIVE_LLM_REQUIRED is what makes this job's exit code mean
+      # something. `pytest` exits 0 for "1 skipped" exactly as it does for "1
+      # passed", so without it a missing secret would turn the one job that
+      # proves the live pipeline still works into a green tick that proved
+      # nothing. With it, the test module refuses to import when it cannot run,
+      # which is a collection ERROR; and a rename or a stale `-k` collects
+      # nothing, which pytest already reports as exit 5. Both non-zero.
+      #
+      # Deliberately enforced in the test module rather than by parsing a JUnit
+      # report here: the rule then travels with the test instead of living in a
+      # YAML step that a later edit can drop without noticing.
       - name: real provider, whole pipeline
         env:
           DATABASE_URL: postgresql://pg:pg@localhost:5432/majorana_live_llm
           MAJORANA_RUN_LIVE_LLM: "1"
+          MAJORANA_LIVE_LLM_REQUIRED: "1"
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
@@ -86,16 +98,7 @@ jobs:
             -k real_fixed_pipeline \
             -q --junitxml=live-e2e.xml
 
-      # The load-bearing check, and the reason the step above writes JUnit XML.
-      # pytest exits 0 for "1 skipped" exactly as it does for "1 passed", so the
-      # exit code cannot distinguish "the live pipeline works" from "the live
-      # test did not run" — which is precisely the failure this workflow exists
-      # to end. Assert on what ran, not on the exit code. `if: always()` so a
-      # skip is still caught when an earlier step failed for some other reason.
-      - name: the live test actually ran
-        if: always()
-        run: python3 scripts/assert_live_test_ran.py live-e2e.xml --expect 1
-
+      # Kept for the failure post-mortem, not as a gate — nothing parses it.
       - name: keep the report
         if: always()
         uses: actions/upload-artifact@v4
