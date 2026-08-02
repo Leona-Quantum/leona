@@ -233,7 +233,16 @@ describe("parseUsage — shared projects", () => {
   it("reads the allowance, counted per account from both directions", () => {
     const summary = parseUsage({ ...FULL, shared_projects: { used: 2, limit: 4, remaining: 2, exhausted: false } });
     assert.ok(summary);
-    assert.deepEqual(summary.sharedProjects, { used: 2, limit: 4, remaining: 2, exhausted: false });
+    // `pressure` is defaulted rather than parsed here: this payload omits it,
+    // which is what an API older than 2026-08-03 sends, and the parser must
+    // read that as "no warning" rather than as a broken response.
+    assert.deepEqual(summary.sharedProjects, {
+      used: 2,
+      limit: 4,
+      remaining: 2,
+      exhausted: false,
+      pressure: "ok",
+    });
   });
 
   it("reads a null limit as unlimited, the same as every other allowance", () => {
@@ -445,5 +454,48 @@ describe("describeNextSlot", () => {
 
   it("returns null for an unparseable date rather than 'Invalid Date'", () => {
     assert.equal(describeNextSlot("not-a-date", "en", NOW, UTC), null);
+  });
+});
+
+describe("parseUsage — pressure", () => {
+  it("carries the server's word through untouched", () => {
+    for (const word of ["ok", "approaching", "critical", "exhausted"] as const) {
+      const summary = parseUsage({
+        ...FULL,
+        artifacts: { used: 8, limit: 10, remaining: 2, exhausted: false, pressure: word },
+      });
+      assert.equal(summary?.artifacts.pressure, word, word);
+    }
+  });
+
+  // The deploy-window case. Vercel and Cloud Run ship independently, so this app
+  // is newer than the control plane for a few minutes on every release. Failing
+  // the parse there would blank the whole usage panel; defaulting loses only a
+  // warning that did not exist the day before.
+  it("defaults to ok when the API is older than the field", () => {
+    const summary = parseUsage(FULL);
+    assert.ok(summary);
+    assert.equal(summary.artifacts.pressure, "ok");
+    assert.equal(summary.workspaces.pressure, "ok");
+  });
+
+  // A word this app has never heard of has no styling and no sentence, so
+  // rendering it would produce an unstyled state rather than a warning.
+  it("treats an unrecognised level as absent rather than passing it through", () => {
+    const summary = parseUsage({
+      ...FULL,
+      artifacts: { used: 8, limit: 10, remaining: 2, exhausted: false, pressure: "catastrophic" },
+    });
+    assert.equal(summary?.artifacts.pressure, "ok");
+  });
+
+  it("does not invent a level from used and limit", () => {
+    // 95% spent, and the server said nothing. This app must not decide for it:
+    // the thresholds live in one place and this is not that place.
+    const summary = parseUsage({
+      ...FULL,
+      artifacts: { used: 95, limit: 100, remaining: 5, exhausted: false },
+    });
+    assert.equal(summary?.artifacts.pressure, "ok");
   });
 });
