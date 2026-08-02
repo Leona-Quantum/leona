@@ -15,6 +15,7 @@ from majorana_agent import (
     CandidateRevision,
     ConversionEvidence,
     ExecutionEvidence,
+    ExecutionFailureKind,
     ExecutionOutput,
     MaterializedArtifact,
     MemoryAgentStore,
@@ -44,7 +45,9 @@ from majorana_worker.simple_ports import (
     RepoReviewArtifactSaver,
     SimpleIntentReviewer,
     SimpleIntentReviewResult,
+    _bounded_repair_value,
     _dynamics_reference_call_args,
+    _invalid_field_snapshot,
     _reference_checks,
     _reference_check_routing,
     _preserve_replan_range_strength,
@@ -177,21 +180,50 @@ class Executor:
         )
 
 
+class ArtifactOnlyExecutor:
+    def __init__(self):
+        self.calls = 0
+
+    async def run_candidate(self, _candidate, plan):
+        self.calls += 1
+        return ExecutionOutput(
+            environment_fingerprint="e" * 64,
+            sandbox_provider="local",
+            exit_code=75,
+            failure_kind=ExecutionFailureKind.RESOURCE_LIMIT,
+            duration_ms=0,
+            result={},
+            observation={
+                "execution_status": "not_run",
+                "execution_reason_code": "local_statevector_capacity_exceeded",
+                "target_backend": "unassigned_external",
+                "qubits": plan.qubits_estimate,
+                "sandbox_runs": 0,
+            },
+        )
+
+
 class Reviewer:
     def __init__(self):
         self.calls = 0
 
-    async def review(self, _candidate, _execution, _plan, fast_checks, _attempt):
+    async def review(self, _candidate, execution, _plan, fast_checks, _attempt):
         self.calls += 1
-        assert {check["method"] for check in fast_checks} == {
-            "structural",
-            "return_contract",
-            "success_criteria",
-        }
-        assert (
-            next(check for check in fast_checks if check["method"] == "success_criteria")["result"]
-            == "pass"
-        )
+        methods = {check["method"] for check in fast_checks}
+        if execution.was_not_run:
+            assert methods == {
+                "structural",
+                "framework_boundary",
+                "execution_claims",
+            }
+        else:
+            assert methods == {"structural", "return_contract", "success_criteria"}
+            assert (
+                next(check for check in fast_checks if check["method"] == "success_criteria")[
+                    "result"
+                ]
+                == "pass"
+            )
         return SimpleIntentReviewResult(
             decision=SemanticReviewDecision.READY,
             critic={
@@ -227,6 +259,21 @@ class Saver:
             candidate_id=candidate.candidate_id,
             framework=candidate.framework,
             source_fingerprint=candidate.source_fingerprint,
+        )
+
+    async def save_unexecuted(self, candidate, execution, review, _plan):
+        self.calls += 1
+        assert execution.was_not_run
+        assert review is not None
+        review.assert_binding(candidate, execution)
+        return MaterializedArtifact(
+            artifact_id=uuid4(),
+            version_id=uuid4(),
+            version_seq=1,
+            candidate_id=candidate.candidate_id,
+            framework=candidate.framework,
+            source_fingerprint=candidate.source_fingerprint,
+            execution_status="not_run",
         )
 
 
@@ -335,6 +382,11 @@ async def test_plan_retry_receives_bounded_validation_issues():
     assert issue["path"] == "algorithm"
     assert issue["type"] == "enum"
     assert "VQE" in issue["message"]
+    assert feedback["details"]["invalid_fields"] == {"algorithm": "invented-algorithm"}
+    contract = repair_request["repair_contract"]
+    assert contract["mode"] == "schema_repair"
+    assert contract["invalid_fields"] == {"algorithm": "invented-algorithm"}
+    assert any("Preserve the requested framework" in item for item in contract["requirements"])
 
 
 def _constrained_reference_plan_payload() -> dict:
@@ -1121,6 +1173,53 @@ async def test_replay_reuses_all_durable_outputs_without_provider_or_sandbox_cal
     assert observer.results
 
 
+async def test_production_ports_materialize_large_source_without_claiming_execution():
+    ports, llm, _executor, reviewer, converter, saver, _observer = _ports()
+    payload = _plan_payload()
+    payload["qubits_estimate"] = 480
+    llm.texts[0] = json.dumps(payload)
+    llm.texts[1] = json.dumps(
+        {
+            "source": (
+                "from qiskit import QuantumCircuit\n\n"
+                "def build_circuit():\n"
+                "    return QuantumCircuit(480)\n"
+            )
+        }
+    )
+    artifact_executor = ArtifactOnlyExecutor()
+    ports._executor = artifact_executor
+
+    outcome = await SimpleCircuitPipeline(ports=ports).run(uuid4())
+
+    assert outcome.status is SimplePipelineStatus.SUCCEEDED
+    assert outcome.artifact is not None
+    assert outcome.artifact.execution_status == "not_run"
+    assert outcome.review is not None
+    assert outcome.review.decision is SemanticReviewDecision.READY
+    assert artifact_executor.calls == 1
+    assert reviewer.calls == 1
+    assert converter.calls == 0
+    assert saver.calls == 1
+
+
+async def test_generation_rejects_invalid_python_before_artifact_only_delivery():
+    ports, llm, *_ = _ports()
+    payload = _plan_payload()
+    payload["qubits_estimate"] = 480
+    llm.texts[0] = json.dumps(payload)
+    llm.texts[1] = json.dumps({"source": "def broken(:\n    pass\n"})
+    run_id = uuid4()
+
+    planned = await ports.plan(run_id, None, None)
+    assert planned.value is not None
+    generated = await ports.generate(run_id, planned.value, None, None)
+
+    assert generated.failure is not None
+    assert generated.failure.code == "generated_source_invalid"
+    assert generated.failure.retry_target is SimpleRetryTarget.GENERATION
+
+
 async def test_event_projection_failure_is_reconciled_without_failing_domain_work():
     class FlakyObserver(Observer):
         def __init__(self):
@@ -1285,6 +1384,151 @@ async def test_simple_intent_reviewer_is_one_advisory_call_over_trusted_evidence
     assert "sandbox_stdout" not in llm.requests[0].user
     assert '"counts"' in llm.requests[0].user
     assert '"review_attempt": 1' in llm.requests[0].user
+
+
+async def test_unexecuted_reviewer_uses_deep_static_prompt_without_result_evidence():
+    ports, *_ = _ports()
+    run_id = uuid4()
+    planned = await ports.plan(run_id, None, None)
+    generated = await ports.generate(run_id, planned.value, None, None)
+    assert planned.value is not None and generated.value is not None
+    execution = ExecutionEvidence(
+        execution_id=uuid4(),
+        candidate_id=generated.value.candidate_id,
+        source_fingerprint=generated.value.source_fingerprint,
+        environment_fingerprint="e" * 64,
+        sandbox_provider="local",
+        exit_code=75,
+        failure_kind=ExecutionFailureKind.RESOURCE_LIMIT,
+        duration_ms=0,
+        result={},
+        observation={
+            "execution_status": "not_run",
+            "execution_reason_code": "local_statevector_capacity_exceeded",
+            "target_backend": "unassigned_external",
+            "qubits": 480,
+            "sandbox_runs": 0,
+        },
+    )
+    llm = QueueLLM(
+        [
+            _critic(
+                summary="source is statically aligned",
+                static_readiness=_static_readiness(),
+                residual_risks=["Execution has not been observed."],
+                risk_assessments=[
+                    {
+                        "category": "execution_unverified",
+                        "detail": "Execution has not been observed.",
+                    }
+                ],
+            )
+        ]
+    )
+    reviewer = SimpleIntentReviewer(llm=llm, task_prompt="solve a 480-qubit assignment")
+
+    result = await reviewer.review(
+        generated.value,
+        execution,
+        planned.value.plan,
+        [
+            {"method": "structural", "result": "pass"},
+            {"method": "framework_boundary", "result": "pass"},
+            {"method": "execution_claims", "result": "pass"},
+        ],
+        1,
+    )
+
+    assert result.decision is SemanticReviewDecision.READY
+    assert result.reason_code == "static_intent_aligned"
+    assert "deep static review" in llm.requests[0].system
+    assert "variable-to-qubit mapping" in llm.requests[0].system
+    assert '"status": "not_run"' in llm.requests[0].user
+    assert '"result": {}' in llm.requests[0].user
+
+
+async def _review_unexecuted(payload: str) -> SimpleIntentReviewResult:
+    ports, *_ = _ports()
+    run_id = uuid4()
+    planned = await ports.plan(run_id, None, None)
+    generated = await ports.generate(run_id, planned.value, None, None)
+    assert planned.value is not None and generated.value is not None
+    execution = ExecutionEvidence(
+        execution_id=uuid4(),
+        candidate_id=generated.value.candidate_id,
+        source_fingerprint=generated.value.source_fingerprint,
+        environment_fingerprint="e" * 64,
+        sandbox_provider="local",
+        exit_code=75,
+        failure_kind=ExecutionFailureKind.RESOURCE_LIMIT,
+        duration_ms=0,
+        result={},
+        observation={
+            "execution_status": "not_run",
+            "execution_reason_code": "local_statevector_capacity_exceeded",
+            "qubits": 60,
+            "sandbox_runs": 0,
+        },
+    )
+    reviewer = SimpleIntentReviewer(llm=QueueLLM([payload]), task_prompt="large optimization")
+    return await reviewer.review(
+        generated.value,
+        execution,
+        planned.value.plan,
+        [{"method": "structural", "result": "pass"}],
+        1,
+    )
+
+
+async def test_static_formulation_risk_cannot_coexist_with_ready():
+    finding = "The sector penalty may change the objective among feasible portfolios."
+
+    result = await _review_unexecuted(
+        _critic(
+            decision="ready",
+            summary="ready apart from a possible penalty distortion",
+            static_readiness=_static_readiness(),
+            residual_risks=[finding],
+            risk_assessments=[{"category": "formulation_uncertainty", "detail": finding}],
+        )
+    )
+
+    assert result.decision is SemanticReviewDecision.REPLAN
+    assert result.reason_code == "static_plan_mismatch"
+    assert "static_risk.formulation_uncertainty" in result.critic["failed_checks"]
+
+
+async def test_static_placeholder_baseline_routes_to_code_repair():
+    finding = "The requested classical baseline is only a placeholder."
+
+    result = await _review_unexecuted(
+        _critic(
+            decision="ready",
+            summary="source is otherwise aligned",
+            static_readiness=_static_readiness(baseline_requirement_satisfied=False),
+            residual_risks=[finding],
+            risk_assessments=[{"category": "baseline_incomplete", "detail": finding}],
+        )
+    )
+
+    assert result.decision is SemanticReviewDecision.CODE_REPAIR
+    assert result.reason_code == "static_code_mismatch"
+    assert "static_readiness.baseline_requirement_satisfied" in result.critic["failed_checks"]
+
+
+async def test_static_unclassified_residual_risk_is_not_accepted():
+    result = await _review_unexecuted(
+        _critic(
+            decision="ready",
+            summary="source has an unclassified risk",
+            static_readiness=_static_readiness(),
+            residual_risks=["A possible source defect remains."],
+            risk_assessments=[],
+        )
+    )
+
+    assert result.decision is SemanticReviewDecision.CODE_REPAIR
+    assert "static_risk_classification" in result.critic["failed_checks"]
 
 
 async def test_ready_review_with_failed_nameko_check_is_not_accepted():
@@ -1741,6 +1985,117 @@ async def test_repo_review_saver_persists_every_deliverable_artifact_without_ver
     else:
         assert "Intent alignment was not established" in captured["version"]["limitations"]
     assert captured["run_binding"] == (run_id, version_id)
+
+
+async def test_repo_saver_persists_large_source_as_explicitly_unexecuted(monkeypatch):
+    run_id = uuid4()
+    source = "from qiskit import QuantumCircuit\n\ndef build():\n    return QuantumCircuit(480)\n"
+    program = FrameworkProgram(Framework.QISKIT, source)
+    candidate = CandidateRevision(
+        candidate_id=uuid4(),
+        run_id=run_id,
+        tool_call_id="simple:generate:1",
+        revision=1,
+        plan_id=uuid4(),
+        framework=Framework.QISKIT,
+        source=program.normalized_source,
+        source_fingerprint=program.fingerprint,
+    )
+    execution = ExecutionEvidence(
+        execution_id=uuid4(),
+        candidate_id=candidate.candidate_id,
+        source_fingerprint=candidate.source_fingerprint,
+        environment_fingerprint="e" * 64,
+        sandbox_provider="local",
+        exit_code=75,
+        failure_kind=ExecutionFailureKind.RESOURCE_LIMIT,
+        duration_ms=0,
+        result={},
+        observation={
+            "execution_status": "not_run",
+            "execution_reason_code": "local_statevector_capacity_exceeded",
+            "target_backend": "unassigned_external",
+            "qubits": 480,
+            "local_execution_ceiling_qubits": 25,
+            "sandbox_runs": 0,
+        },
+    )
+    review = SemanticReviewEvidence(
+        review_id=uuid4(),
+        candidate_id=candidate.candidate_id,
+        execution_id=execution.execution_id,
+        source_fingerprint=candidate.source_fingerprint,
+        attempt_seq=1,
+        decision=SemanticReviewDecision.READY,
+        confidence="high",
+        severity="none",
+        reason_code="static_intent_aligned",
+        retry_target=RetryTarget.NONE,
+        feedback={
+            "basic_checks": [
+                {"method": "structural", "result": "pass"},
+                {"method": "framework_boundary", "result": "pass"},
+                {"method": "execution_claims", "result": "pass"},
+            ],
+            "critic": {"summary": "source is statically aligned", "residual_risks": []},
+        },
+    )
+    payload = _plan_payload()
+    payload["qubits_estimate"] = 480
+    payload.pop("verification_plan")
+    plan = Plan.model_validate(payload)
+    artifact_id = uuid4()
+    version_id = uuid4()
+    captured = {}
+
+    async def create_artifact(_scope, _session, **values):
+        return SimpleNamespace(id=artifact_id)
+
+    async def create_version(_scope, _session, _artifact_id, **values):
+        captured["version"] = values
+        return SimpleNamespace(id=version_id, seq=1)
+
+    async def set_run_artifact_version(_scope, _session, _run_id, _version_id):
+        return None
+
+    monkeypatch.setattr(simple_ports_module.artifacts_repo, "create_artifact", create_artifact)
+    monkeypatch.setattr(simple_ports_module.artifacts_repo, "create_version", create_version)
+    monkeypatch.setattr(
+        simple_ports_module.runs_repo,
+        "set_run_artifact_version",
+        set_run_artifact_version,
+    )
+    saver = RepoReviewArtifactSaver(
+        scope=object(),
+        session=object(),
+        run_id=run_id,
+        parent_artifact_id=None,
+        title="Industrial assignment",
+    )
+
+    saved = await saver.save_unexecuted(candidate, execution, review, plan)
+
+    assert saved.execution_status == "not_run"
+    metadata = captured["version"]["metadata"]
+    assert metadata["execution"] == {
+        "status": "not_run",
+        "provider": "local",
+        "reason_code": "local_statevector_capacity_exceeded",
+        "target_backend": "unassigned_external",
+    }
+    assert metadata["measured_result"] is None
+    assert metadata["result_origin"] == "not_available"
+    assert metadata["review_summary"]["status"] == "static_aligned"
+    assert metadata["review_summary"]["decision"] == "ready"
+    assert metadata["verification_summary"]["decision"] == "inconclusive"
+    assert metadata["verification_summary"]["semantic_review_decision"] == "ready"
+    assert metadata["verification_summary"]["evidence_strength"] is None
+    assert metadata["verification_summary"]["reason_code"] == (
+        "artifact_static_review_ready_execution_not_run"
+    )
+    assert metadata["verification_summary"]["checks"] == []
+    assert captured["version"]["resource_estimates"]["qubits"] == 480
+    assert "no connected backend" in captured["version"]["limitations"]
 
 
 async def test_repo_review_saver_rejects_review_without_complete_evidence():
@@ -2734,6 +3089,17 @@ def _critic(**overrides) -> str:
     return json.dumps({**payload, **overrides})
 
 
+def _static_readiness(**overrides) -> dict[str, bool]:
+    payload = {
+        "objective_and_constraints_preserved": True,
+        "plan_source_consistent": True,
+        "backend_entrypoint_complete": True,
+        "baseline_requirement_satisfied": True,
+        "no_fabricated_results": True,
+    }
+    return {**payload, **overrides}
+
+
 async def _decide(payload: str, checks=None) -> SimpleIntentReviewResult:
     ports, *_ = _ports()
     run_id = uuid4()
@@ -3257,3 +3623,46 @@ def test_an_unusable_linear_system_primary_metric_returns_a_verdict_rather_than_
         # the Plan would send the repair loop to replanning a correct reference.
         assert check["details"].get("fault") != "plan"
         assert any("state_fidelity" in line for line in check["details"]["disagreements"]), unusable
+
+
+def test_a_repair_snapshot_of_untrusted_output_is_bounded_in_depth():
+    """The breadth caps bound how wide it gets; nothing bounded how deep.
+
+    The input is a JSON document a model wrote, walked to build the repair
+    prompt. Unbounded recursion over it is a stack overflow reachable from
+    provider output, on a path that only runs when a plan was ALREADY invalid —
+    so it would replace an actionable `plan_output_invalid` with an unexplained
+    stage crash.
+    """
+    depth = 400
+    nested: object = "leaf"
+    for _ in range(depth):
+        nested = {"next": nested}
+
+    snapshot = _bounded_repair_value(nested)
+
+    walked = 0
+    node = snapshot
+    while isinstance(node, dict) and "next" in node:
+        walked += 1
+        node = node["next"]
+    assert walked < depth, "the snapshot followed the whole document"
+    # And it says so rather than pretending the branch ended.
+    assert "truncated at depth" in str(node)
+
+
+def test_a_document_too_nested_for_json_to_parse_is_not_a_stage_crash():
+    """`json.loads` raises RecursionError, which is not a ValueError.
+
+    The handler beside it catches (StageOutputError, TypeError, ValueError), so
+    this one escaped and took the stage with it.
+    """
+    # Nested OBJECTS, not arrays: `extract_json` looks for an object and refuses
+    # a bare array outright, so an array payload never reaches `json.loads` and
+    # this test would pass without the handler it exists to pin. Verified at
+    # this depth to raise RecursionError out of `json.loads`.
+    depth = 20_000
+    payload = '{"a":' * depth + "1" + "}" * depth
+    issues = [{"loc": ("qubits_estimate",), "type": "int_parsing", "msg": "bad"}]
+
+    assert _invalid_field_snapshot(payload, issues) == {}

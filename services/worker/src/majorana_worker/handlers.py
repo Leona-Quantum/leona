@@ -86,6 +86,7 @@ from .simple_ports import (
     SimpleIntentReviewer,
     passed_reference_methods,
     simple_pipeline_verification_summary,
+    unexecuted_artifact_verification_summary,
 )
 
 log = logging.getLogger("majorana_worker")
@@ -817,14 +818,44 @@ async def _finish_simple_pipeline(
         execution = outcome.execution
         review = outcome.review
         artifact = outcome.artifact
-        if candidate is None or execution is None or review is None or artifact is None:
+        if candidate is None or execution is None or artifact is None:
             raise RuntimeError("simple pipeline succeeded without its durable evidence chain")
-        review.assert_binding(candidate, execution)
         if (
             artifact.candidate_id != candidate.candidate_id
             or artifact.source_fingerprint != candidate.source_fingerprint
         ):
-            raise RuntimeError("simple pipeline artifact is not bound to the executed candidate")
+            raise RuntimeError("simple pipeline artifact is not bound to the authored candidate")
+        if getattr(artifact, "execution_status", "executed") == "not_run":
+            if not execution.was_not_run:
+                raise RuntimeError("unexecuted artifact has inconsistent execution evidence")
+            if review is not None:
+                review.assert_binding(candidate, execution)
+            summary = unexecuted_artifact_verification_summary(review)
+            final = await run_store.finish(
+                RunStatus.SUCCEEDED,
+                {
+                    "status": RunStatus.SUCCEEDED,
+                    "verifier_decision": VerifierDecision.INCONCLUSIVE,
+                    "evidence_strength": None,
+                    "reason_code": summary["reason_code"],
+                    "residual_risks": (
+                        "Full execution was not run because no connected backend fits "
+                        "the authored artifact."
+                    ),
+                    "verification_summary": summary,
+                },
+                verifier_decision=VerifierDecision.INCONCLUSIVE,
+                verification_summary=summary,
+                residual_risks=(
+                    "Full execution was not run because no connected backend fits "
+                    "the authored artifact."
+                ),
+            )
+            _record_verification_summary(summary)
+            return final
+        if review is None:
+            raise RuntimeError("executed simple pipeline artifact lacks semantic review")
+        review.assert_binding(candidate, execution)
         critic = review.feedback.get("critic")
         risks = critic.get("residual_risks") if isinstance(critic, dict) else None
         residual_risks = (

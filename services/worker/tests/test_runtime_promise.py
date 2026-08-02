@@ -69,15 +69,16 @@ def test_the_promise_itself_has_not_grown_unnoticed() -> None:
     )
 
 
-def test_router_circuit_limit_matches_the_executor_memory_preflight() -> None:
+def test_router_distinguishes_local_capacity_from_artifact_authoring() -> None:
     from majorana_sandbox.spec import DEFAULT_MEMORY_MB
     from majorana_worker.runtime_ports import SandboxCandidateExecutor
 
     assert SandboxCandidateExecutor._statevector_memory_mb(25) < DEFAULT_MEMORY_MB
     assert SandboxCandidateExecutor._statevector_memory_mb(26) >= DEFAULT_MEMORY_MB
     router = " ".join(INTENT_ROUTER_SYSTEM_PROMPT.split())
-    assert "25 qubits the executable circuit/simulation maximum" in router
-    assert "26- or 27-qubit circuit is rejected" in router
+    assert "25 qubits the local execution maximum" in router
+    assert "execution explicitly marked not_run" in router
+    assert "artifact-only form" in router
 
 
 def test_selected_qiskit_rule_matches_current_statevector_storage_api() -> None:

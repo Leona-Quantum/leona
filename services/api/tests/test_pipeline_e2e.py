@@ -136,6 +136,89 @@ class _DeterministicSimpleLLM:
         )
 
 
+class _DeterministicLargeArtifactLLM:
+    """Provider-free 28-qubit artifact that must stop before sandbox creation."""
+
+    async def complete(self, request, *, on_delta=None):
+        del on_delta
+        if request.schema_name == "request_plan":
+            payload = {
+                "domain": "quantum information",
+                "framework": "qiskit",
+                "algorithm": "GHZ",
+                "problem_summary": "Author a backend-ready 28-qubit GHZ circuit",
+                "algorithm_rationale": "A Hadamard and CNOT chain prepares the GHZ state",
+                "parameters": {"shots": 1024, "seed": 7},
+                "qubits_estimate": 28,
+                "expected_runtime_sec": 30,
+                "success_criteria": {"primary_metric": "ghz_support_probability"},
+                "expected_output_keys": ["counts", "ghz_support_probability"],
+                "artifact_contract": {
+                    "artifact_type": "QuantumCircuit",
+                    "entry_point": "run",
+                    "expected_return_type": "dict",
+                    "return_shape": "counts and ghz_support_probability",
+                    "measurement_policy": "measure_all",
+                    "top_level_execution": "forbidden",
+                },
+            }
+        elif request.schema_name == "generate_circuit":
+            payload = {
+                "source": (
+                    "from qiskit import QuantumCircuit\n\n"
+                    "def build_circuit():\n"
+                    "    circuit = QuantumCircuit(28, 28)\n"
+                    "    circuit.h(0)\n"
+                    "    for qubit in range(27):\n"
+                    "        circuit.cx(qubit, qubit + 1)\n"
+                    "    circuit.measure(range(28), range(28))\n"
+                    "    return circuit\n\n"
+                    "def run(backend, shots=1024):\n"
+                    "    counts = backend.run(build_circuit(), shots=shots).result().get_counts()\n"
+                    "    total = sum(counts.values())\n"
+                    "    support = counts.get('0' * 28, 0) + counts.get('1' * 28, 0)\n"
+                    "    return {\n"
+                    "        'counts': counts,\n"
+                    "        'ghz_support_probability': support / total,\n"
+                    "    }\n\n"
+                    "FINAL_CIRCUIT = build_circuit()\n"
+                )
+            }
+        elif request.schema_name == "intent_alignment":
+            payload = {
+                "decision": "ready",
+                "confidence": "high",
+                "severity": "none",
+                "summary": "The request, Plan, backend entry point, and source agree statically.",
+                "passed_checks": [],
+                "failed_checks": [],
+                "mismatches": [],
+                "repair_instructions": [],
+                "residual_risks": ["Execution has not been observed."],
+                "risk_assessments": [
+                    {
+                        "category": "execution_unverified",
+                        "detail": "Execution has not been observed.",
+                    }
+                ],
+                "static_readiness": {
+                    "objective_and_constraints_preserved": True,
+                    "plan_source_consistent": True,
+                    "backend_entrypoint_complete": True,
+                    "baseline_requirement_satisfied": True,
+                    "no_fabricated_results": True,
+                },
+            }
+        else:
+            raise AssertionError(f"unexpected large-artifact call: {request.schema_name}")
+        return LLMResponse(
+            text=json.dumps(payload),
+            model=request.model,
+            input_tokens=1,
+            output_tokens=1,
+        )
+
+
 class _CountingSimpleLLM(_DeterministicSimpleLLM):
     def __init__(self) -> None:
         self.calls: list[str] = []
@@ -313,6 +396,62 @@ async def test_simple_run_persists_typed_advisory_outcome_end_to_end(env):
 
 
 @requires_db
+async def test_large_not_run_artifact_persists_end_to_end_without_sandbox(env):
+    """The real repository path accepts trusted preflight evidence, not failures."""
+
+    client, factory, scope = env
+    response = await client.post(
+        "/v1/runs",
+        json={
+            "task_prompt": (
+                "Create a backend-ready 28-qubit GHZ circuit with a run entry point; "
+                "do not claim that it was executed locally."
+            ),
+            "mode": "execute",
+            "framework": "qiskit",
+            "shots": 1024,
+            "seed": 7,
+        },
+        headers={"Idempotency-Key": f"large-not-run-e2e-{uuid.uuid4()}"},
+    )
+    assert response.status_code == 201, response.text
+    run = response.json()
+
+    await _work_until_run_processed(
+        factory,
+        run["id"],
+        llm=_DeterministicLargeArtifactLLM(),
+        sandbox=_MustNotRunSandbox(),
+    )
+
+    final = (await client.get(f"/v1/runs/{run['id']}")).json()
+    assert final["status"] == "succeeded"
+    assert final["artifact_version_id"]
+    assert final["verifier_decision"] == "inconclusive"
+    summary = final["verification_summary"]
+    assert summary["reason_code"] == "artifact_static_review_ready_execution_not_run"
+    assert summary["evidence_strength"] is None
+    assert summary["checks"] == []
+
+    async with factory() as session:
+        version = await artifacts_repo.get_version(
+            scope,
+            session,
+            uuid.UUID(final["artifact_version_id"]),
+        )
+    metadata = version.artifact_metadata
+    assert metadata["execution"] == {
+        "status": "not_run",
+        "provider": "must-not-run",
+        "reason_code": "local_statevector_capacity_exceeded",
+        "target_backend": "unassigned_external",
+    }
+    assert metadata["measured_result"] is None
+    assert metadata["review_summary"]["status"] == "static_aligned"
+    assert metadata["verification_summary"] == summary
+
+
+@requires_db
 @requires_live_llm
 async def test_run_executes_end_to_end_with_real_fixed_pipeline(env):
     client, factory, scope = env
@@ -348,7 +487,12 @@ async def test_run_executes_end_to_end_with_real_fixed_pipeline(env):
     events = (await client.get(f"/v1/runs/{run['id']}/events")).json()
     types = [e["type"] for e in events]
     assert types[0] == "run.queued"
-    assert types[1] == "run.started"
+    # `run.started` is no longer types[1]: mode resolution and titling both emit
+    # before the pipeline starts. What the ordering has to prove is that nothing
+    # the pipeline produces predates it, which is the assertion that survives a
+    # new pre-flight event being added ahead of it.
+    assert "run.started" in types
+    assert types.index("run.started") < types.index("plan.produced")
     assert types[-1] == "run.finished"
     assert "stage.started" not in types
     assert "stage.finished" not in types
@@ -372,13 +516,22 @@ async def test_run_executes_end_to_end_with_real_fixed_pipeline(env):
     saved = next(e for e in events if e["type"] == "artifact.saved")
     async with factory() as session:
         version = await artifacts_repo.get_version(scope, session, uuid.UUID(saved["version_id"]))
-    assert version.export_status == "lossless"
-    if version.qasm is not None:
-        assert version.qasm_version == "3.0"
-        assert version.qasm.startswith("OPENQASM 3.0;")
+    # This test runs against `_NonExecutingSandbox`, which returns canned Bell
+    # evidence without running the QASM epilogue — so nothing ever serializes
+    # FINAL_CIRCUIT and `lossless` is not reachable here. Asserting it made this
+    # the only test that drives a real provider through the whole pipeline AND
+    # made it impossible to pass, which is how it came to be one of the suites
+    # nothing runs. What matters at this seam is the honest direction: with no
+    # serialized circuit the product must report `unsupported` and must not
+    # invent interchange QASM to fill the column.
+    assert version.export_status == "unsupported"
+    assert version.qasm is None
+    assert version.qasm_version is None
     assert version.fingerprint == FrameworkProgram(Framework.QISKIT, version.code).fingerprint
     assert version.artifact_metadata["canonical_representation"] == "framework_code"
-    assert version.artifact_metadata["openqasm_role"] == "interchange"
+    # Same reason as export_status above: no serialized circuit, so the role is
+    # `unavailable` rather than `interchange`.
+    assert version.artifact_metadata["openqasm_role"] == "unavailable"
     assert version.artifact_metadata["verification_summary"]["decision"] == "inconclusive"
 
     # SSE replay of the stored run: same rows, same order.

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ast
 import hashlib
 import json
 import logging
@@ -89,6 +90,7 @@ from majorana_llm import (
     LLMClient,
     LLMProviderError,
     LLMRequest,
+    SIMPLE_ARTIFACT_REVIEW_SYSTEM_PROMPT,
     SIMPLE_BUSINESS_REFERENCE_EXTRACTION_SYSTEM_PROMPT,
     SIMPLE_DYNAMICS_REFERENCE_AUDIT_SYSTEM_PROMPT,
     SIMPLE_LINDBLAD_REFERENCE_EXTRACTION_SYSTEM_PROMPT,
@@ -214,6 +216,14 @@ class ReviewArtifactSaver(Protocol):
         plan: Plan,
     ) -> MaterializedArtifact: ...
 
+    async def save_unexecuted(
+        self,
+        candidate: CandidateRevision,
+        execution: ExecutionEvidence,
+        review: SemanticReviewEvidence | None,
+        plan: Plan,
+    ) -> MaterializedArtifact: ...
+
 
 class SimpleIntentReviewResult(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
@@ -333,6 +343,31 @@ def _decide(
     return SemanticReviewDecision.CODE_REPAIR
 
 
+class _StaticRiskAssessment(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    category: Literal[
+        "execution_unverified",
+        "hardware_unverified",
+        "sampling_uncertainty",
+        "formulation_uncertainty",
+        "implementation_uncertainty",
+        "baseline_incomplete",
+        "backend_contract_uncertainty",
+    ]
+    detail: str = Field(min_length=1, max_length=1_000)
+
+
+class _StaticReadiness(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    objective_and_constraints_preserved: bool
+    plan_source_consistent: bool
+    backend_entrypoint_complete: bool
+    baseline_requirement_satisfied: bool
+    no_fabricated_results: bool
+
+
 class _IntentReviewOutput(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
@@ -382,6 +417,48 @@ class _IntentReviewOutput(BaseModel):
         return normalized
 
 
+class _ArtifactIntentReviewOutput(_IntentReviewOutput):
+    """Static-only fields are schema-required only when execution was not run."""
+
+    risk_assessments: list[_StaticRiskAssessment] = Field(max_length=6)
+    static_readiness: _StaticReadiness
+
+
+_STATIC_REPLAN_FIELDS = frozenset({"objective_and_constraints_preserved"})
+_STATIC_BLOCKING_RISKS = frozenset(
+    {
+        "formulation_uncertainty",
+        "implementation_uncertainty",
+        "baseline_incomplete",
+        "backend_contract_uncertainty",
+    }
+)
+
+
+def _static_review_failures(output: _ArtifactIntentReviewOutput) -> tuple[list[str], bool]:
+    """Return deterministic static-review gates and whether Plan must change.
+
+    Execution, hardware, and sampling uncertainty are honest residual risks for an
+    unexecuted artifact. A risk that can change the objective, feasible set, source,
+    baseline, or backend contract is a defect and cannot coexist with READY.
+    """
+
+    failed = [
+        f"static_readiness.{name}"
+        for name, value in output.static_readiness.model_dump().items()
+        if value is not True
+    ]
+    force_replan = any(item.rsplit(".", 1)[-1] in _STATIC_REPLAN_FIELDS for item in failed)
+
+    if len(output.risk_assessments) != len(output.residual_risks):
+        failed.append("static_risk_classification")
+    for risk in output.risk_assessments:
+        if risk.category in _STATIC_BLOCKING_RISKS:
+            failed.append(f"static_risk.{risk.category}")
+            force_replan = force_replan or risk.category == "formulation_uncertainty"
+    return list(dict.fromkeys(failed)), force_replan
+
+
 class SimpleIntentReviewer:
     """One model call that advises on intent alignment without strict checks."""
 
@@ -397,10 +474,16 @@ class SimpleIntentReviewer:
         basic_checks: list[dict[str, Any]],
         attempt: int,
     ) -> SimpleIntentReviewResult:
+        artifact_only = execution.was_not_run
+        output_model = _ArtifactIntentReviewOutput if artifact_only else _IntentReviewOutput
         response = await self._llm.complete(
             LLMRequest(
                 model=model_for("verify"),
-                system=SIMPLE_REVIEW_SYSTEM_PROMPT,
+                system=(
+                    SIMPLE_ARTIFACT_REVIEW_SYSTEM_PROMPT
+                    if artifact_only
+                    else SIMPLE_REVIEW_SYSTEM_PROMPT
+                ),
                 user=json.dumps(
                     {
                         "request": self._task_prompt,
@@ -412,11 +495,18 @@ class SimpleIntentReviewer:
                             "source_fingerprint": candidate.source_fingerprint,
                         },
                         "execution": {
+                            "status": "not_run" if artifact_only else "executed",
                             "execution_id": str(execution.execution_id),
                             "source_fingerprint": execution.source_fingerprint,
                             "exit_code": execution.exit_code,
                             "result": execution.result,
                             "resource_metrics": execution.observation.get("resource_metrics"),
+                            "reason_code": execution.observation.get("execution_reason_code"),
+                            "target_backend": execution.observation.get("target_backend"),
+                            "declared_qubits": execution.observation.get("qubits"),
+                            "local_execution_ceiling_qubits": execution.observation.get(
+                                "local_execution_ceiling_qubits"
+                            ),
                         },
                         "basic_checks": basic_checks,
                         "known_reference": known_reference_for_task(self._task_prompt),
@@ -425,11 +515,11 @@ class SimpleIntentReviewer:
                     sort_keys=True,
                 ),
                 temperature=0.0,
-                response_schema=_IntentReviewOutput.model_json_schema(),
+                response_schema=output_model.model_json_schema(),
                 schema_name="intent_alignment",
             )
         )
-        output = _IntentReviewOutput.model_validate_json(extract_json(response.text))
+        output = output_model.model_validate_json(extract_json(response.text))
         deterministic_passed = [
             str(check.get("method"))
             for check in basic_checks
@@ -440,6 +530,12 @@ class SimpleIntentReviewer:
             for check in basic_checks
             if check.get("result") != "pass" and check.get("method")
         ]
+        force_replan = False
+        if artifact_only:
+            static_failed, force_replan = _static_review_failures(output)
+            deterministic_failed.extend(static_failed)
+            if force_replan:
+                output = output.model_copy(update={"decision": SemanticReviewDecision.REPLAN})
         output = output.model_copy(
             update={
                 "passed_checks": list(
@@ -458,11 +554,19 @@ class SimpleIntentReviewer:
             critic=output.model_dump(mode="json"),
             failure_class=failure_class,
             retry_target=retry_target,
-            reason_code={
-                SemanticReviewDecision.READY: "intent_aligned",
-                SemanticReviewDecision.CODE_REPAIR: "intent_code_mismatch",
-                SemanticReviewDecision.REPLAN: "intent_plan_mismatch",
-            }[decision],
+            reason_code=(
+                {
+                    SemanticReviewDecision.READY: "static_intent_aligned",
+                    SemanticReviewDecision.CODE_REPAIR: "static_code_mismatch",
+                    SemanticReviewDecision.REPLAN: "static_plan_mismatch",
+                }
+                if artifact_only
+                else {
+                    SemanticReviewDecision.READY: "intent_aligned",
+                    SemanticReviewDecision.CODE_REPAIR: "intent_code_mismatch",
+                    SemanticReviewDecision.REPLAN: "intent_plan_mismatch",
+                }
+            )[decision],
         )
 
 
@@ -666,6 +770,121 @@ def simple_pipeline_verification_summary(
     return summary.model_dump(mode="json")
 
 
+def unexecuted_artifact_verification_summary(
+    review: SemanticReviewEvidence | None = None,
+) -> dict[str, object]:
+    """Trust projection for source that no connected backend executed."""
+
+    reason_code = "artifact_generated_execution_not_run"
+    if review is not None:
+        reason_code = (
+            "artifact_static_review_ready_execution_not_run"
+            if review.decision is SemanticReviewDecision.READY
+            else "artifact_static_review_unresolved_execution_not_run"
+        )
+
+    return VerificationSummary(
+        decision=VerifierDecision.INCONCLUSIVE,
+        semantic_review_decision=review.decision if review is not None else None,
+        evidence_strength=None,
+        reason_code=reason_code,
+        candidate_defect_observed=False,
+        failure_class=VerificationFailureClass.EVIDENCE_GAP,
+        retry_target=RetryTarget.NONE,
+        unverified_claims=[
+            "reported output",
+            "quantum correctness",
+            "physical fidelity",
+            "optimality",
+            "intent alignment",
+        ],
+        checks=[],
+    ).model_dump(mode="json")
+
+
+def _artifact_review_status(
+    review: SemanticReviewEvidence | None,
+    *,
+    unexecuted: bool,
+) -> str:
+    if review is None:
+        return "not_available"
+    if unexecuted:
+        return (
+            "static_aligned"
+            if review.decision is SemanticReviewDecision.READY
+            else "static_not_accepted"
+        )
+    return "aligned" if review.decision is SemanticReviewDecision.READY else "not_accepted"
+
+
+def _artifact_review_advisory(
+    plan: Plan,
+    review: SemanticReviewEvidence | None,
+    reference_methods: Sequence[VerificationMethod],
+    *,
+    unexecuted: bool,
+) -> str:
+    if unexecuted and review is None:
+        return (
+            "The framework-native source was generated, but static AI review was "
+            "unavailable and no connected backend could execute this scale. No RESULT "
+            "or correctness claim was evaluated."
+        )
+    if unexecuted and review is not None:
+        if review.decision is SemanticReviewDecision.READY:
+            return (
+                "Static AI review found no concrete request/Plan/source mismatch, but "
+                "no connected backend executed this scale. No RESULT, quantum-"
+                "correctness, fidelity, optimality, or hardware claim was evaluated."
+            )
+        return (
+            "Static AI review left concrete issues unresolved when the bounded repair "
+            "budget ended. The source is retained for inspection, and no RESULT or "
+            "correctness claim was evaluated."
+        )
+    if review is not None and review.decision is not SemanticReviewDecision.READY:
+        return (
+            "The AI intent review did not accept this candidate within the run's "
+            "budget. It is delivered on its trusted evidence alone: it executed, "
+            "satisfied the basic result contract"
+            + (
+                f", and matched the Plan's declared reference "
+                f"({', '.join(method.value for method in reference_methods)})."
+                if reference_methods
+                else "."
+            )
+            + " Intent alignment was not established."
+        )
+    if reference_methods:
+        return (
+            "AI intent review is advisory. The reported "
+            f"{plan.success_criteria.primary_metric} was checked against the Plan's "
+            "declared reference "
+            f"({', '.join(method.value for method in reference_methods)}); no other "
+            "quantum property, and no claim of optimality, was evaluated."
+        )
+    return (
+        "AI intent review is advisory; strict quantum correctness and optimality "
+        "were not evaluated."
+    )
+
+
+def _artifact_export_reason(
+    qasm: str | None,
+    conversion: ConversionEvidence | None,
+    *,
+    unexecuted: bool,
+) -> str | None:
+    if qasm:
+        return None
+    if conversion is not None:
+        return conversion.reason
+    if unexecuted:
+        return "full execution not run; framework-native source is canonical"
+    return "framework export unavailable"
+
+
 def _summary_reason_code(
     reference_methods: Sequence[VerificationMethod],
     semantic_review_decision: SemanticReviewDecision,
@@ -730,6 +949,52 @@ class RepoReviewArtifactSaver:
         ):
             raise ValueError("conversion fingerprint/execution binding mismatch")
 
+        return await self._materialize(
+            candidate,
+            plan,
+            execution=execution,
+            review=review,
+            conversion=conversion,
+            execution_status="executed",
+        )
+
+    async def save_unexecuted(
+        self,
+        candidate: CandidateRevision,
+        execution: ExecutionEvidence,
+        review: SemanticReviewEvidence | None,
+        plan: Plan,
+    ) -> MaterializedArtifact:
+        if not execution.was_not_run:
+            raise ValueError("unexecuted artifact save requires trusted not-run preflight evidence")
+        if execution.candidate_id != candidate.candidate_id or (
+            execution.source_fingerprint != candidate.source_fingerprint
+        ):
+            raise ValueError("unexecuted artifact fingerprint/execution binding mismatch")
+        if review is not None:
+            review.assert_binding(candidate, execution)
+        return await self._materialize(
+            candidate,
+            plan,
+            execution=execution,
+            review=review,
+            conversion=None,
+            execution_status="not_run",
+        )
+
+    async def _materialize(
+        self,
+        candidate: CandidateRevision,
+        plan: Plan,
+        *,
+        execution: ExecutionEvidence,
+        review: SemanticReviewEvidence | None,
+        conversion: ConversionEvidence | None,
+        execution_status: Literal["executed", "not_run"],
+    ) -> MaterializedArtifact:
+        unexecuted = execution_status == "not_run"
+        if not unexecuted and review is None:
+            raise ValueError("executed materialization requires semantic review evidence")
         artifact_id = self._parent_artifact_id
         save_as_copy = (
             artifact_id is not None
@@ -777,17 +1042,13 @@ class RepoReviewArtifactSaver:
                     pass
 
         qasm = (
-            conversion.qasm if conversion is not None and conversion.status == "available" else None
+            conversion.qasm
+            if not unexecuted and conversion is not None and conversion.status == "available"
+            else None
         )
         export_status = ExportStatus.LOSSLESS if qasm else ExportStatus.UNSUPPORTED
-        export_reason = (
-            None
-            if qasm
-            else conversion.reason
-            if conversion is not None
-            else "framework export unavailable"
-        )
-        critic = review.feedback.get("critic")
+        export_reason = _artifact_export_reason(qasm, conversion, unexecuted=unexecuted)
+        critic = review.feedback.get("critic") if review is not None else None
         critic = critic if isinstance(critic, dict) else {}
         residual_risks = critic.get("residual_risks")
         residual_risks = (
@@ -795,69 +1056,68 @@ class RepoReviewArtifactSaver:
             if isinstance(residual_risks, list)
             else []
         )
-        review_status = (
-            "aligned" if review.decision is SemanticReviewDecision.READY else "not_accepted"
+        review_status = _artifact_review_status(review, unexecuted=unexecuted)
+        reference_methods = (
+            passed_reference_methods(review) if review is not None and not unexecuted else ()
         )
-        reference_methods = passed_reference_methods(review)
-        advisory = (
-            "AI intent review is advisory; strict quantum correctness and optimality "
-            "were not evaluated."
+        advisory = _artifact_review_advisory(
+            plan,
+            review,
+            reference_methods,
+            unexecuted=unexecuted,
         )
-        if review.decision is not SemanticReviewDecision.READY:
-            advisory = (
-                "The AI intent review did not accept this candidate within the run's "
-                "budget. It is delivered on its trusted evidence alone: it executed, "
-                "satisfied the basic result contract"
-                + (
-                    f", and matched the Plan's declared reference "
-                    f"({', '.join(m.value for m in reference_methods)})."
-                    if reference_methods
-                    else "."
-                )
-                + " Intent alignment was not established."
-            )
-        elif reference_methods:
-            advisory = (
-                "AI intent review is advisory. The reported "
-                f"{plan.success_criteria.primary_metric} was checked against the Plan's "
-                f"declared reference ({', '.join(m.value for m in reference_methods)}); "
-                "no other quantum property, and no claim of optimality, was evaluated."
-            )
         limitations = "\n".join(dict.fromkeys([*residual_risks, advisory]))
+        if unexecuted:
+            verification_summary = unexecuted_artifact_verification_summary(review)
+        else:
+            assert review is not None
+            verification_summary = simple_pipeline_verification_summary(
+                reference_methods,
+                review.decision,
+                result_derived=result_was_derived(execution.observation),
+            )
         metadata: dict[str, object] = {
             "source": "simple_pipeline_candidate",
             "candidate_id": str(candidate.candidate_id),
             "candidate_revision": candidate.revision,
             "source_fingerprint": candidate.source_fingerprint,
             "execution_id": str(execution.execution_id),
-            "semantic_review_id": str(review.review_id),
+            "semantic_review_id": str(review.review_id) if review is not None else None,
             "canonical_representation": "framework_code",
             "openqasm_role": "interchange" if qasm else "unavailable",
             "review_summary": {
                 "status": review_status,
-                "decision": review.decision.value,
-                "reason_code": review.reason_code,
-                "confidence": review.confidence,
-                "severity": review.severity,
+                "decision": review.decision.value if review is not None else None,
+                "reason_code": (
+                    review.reason_code
+                    if review is not None
+                    else "execution_not_run_no_semantic_review"
+                ),
+                "confidence": review.confidence if review is not None else None,
+                "severity": review.severity if review is not None else None,
                 "summary": critic.get("summary"),
                 "residual_risks": residual_risks,
             },
-            "verification_summary": simple_pipeline_verification_summary(
-                reference_methods,
-                review.decision,
-                result_derived=result_was_derived(execution.observation),
-            ),
+            "verification_summary": verification_summary,
             # What the run produced, and — when the source was a circuit — WHERE
             # it came from. A reader looking at counts on a saved artifact cannot
             # otherwise tell a program's own finding from a sample the platform
             # took of a circuit that reported nothing, and those are different
             # claims about the same numbers.
             "result_origin": (
-                "derived_from_circuit"
+                "not_available"
+                if unexecuted
+                else "derived_from_circuit"
                 if result_was_derived(execution.observation)
                 else "returned_by_program"
             ),
-            "measured_result": measured_result_summary(execution.result),
+            "measured_result": (None if unexecuted else measured_result_summary(execution.result)),
+            "execution": {
+                "status": execution_status,
+                "provider": execution.sandbox_provider,
+                "reason_code": execution.observation.get("execution_reason_code"),
+                "target_backend": execution.observation.get("target_backend"),
+            },
             "export_manifest": {
                 "review_status": review_status,
                 "warning": (
@@ -879,6 +1139,19 @@ class RepoReviewArtifactSaver:
                 ),
             }
         resource_metrics = execution.observation.get("resource_metrics")
+        if unexecuted:
+            resource_metrics = {
+                key: execution.observation[key]
+                for key in (
+                    "qubits",
+                    "estimated_memory_mb",
+                    "memory_limit_mb",
+                    "estimate_model",
+                    "local_execution_ceiling_qubits",
+                    "target_backend",
+                )
+                if key in execution.observation
+            }
         version = await artifacts_repo.create_version(
             self._scope,
             self._session,
@@ -905,6 +1178,7 @@ class RepoReviewArtifactSaver:
             candidate_id=candidate.candidate_id,
             framework=candidate.framework,
             source_fingerprint=candidate.source_fingerprint,
+            execution_status=execution_status,
         )
 
 
@@ -2175,23 +2449,108 @@ def _failure(
     )
 
 
-def _model_output_details(exception: Exception) -> dict[str, Any]:
+def _model_output_details(
+    exception: Exception,
+    *,
+    raw_output: str | None = None,
+) -> dict[str, Any]:
     """Bounded actionable diagnostics without returning raw model output."""
 
     details: dict[str, Any] = {"exception_type": type(exception).__name__}
     if isinstance(exception, ValidationError):
+        issues = exception.errors(include_url=False)
         details["validation_issues"] = [
             {
                 "path": ".".join(str(item) for item in issue["loc"]) or "$",
                 "type": issue["type"],
                 "message": issue["msg"][:500],
             }
-            for issue in exception.errors(include_url=False)[:12]
+            for issue in issues[:12]
         ]
+        invalid_fields = _invalid_field_snapshot(raw_output, issues)
+        if invalid_fields:
+            details["invalid_fields"] = invalid_fields
     elif isinstance(exception, StageOutputError):
         # StageOutputError messages contain only parser metadata, never raw output.
         details["parse_error"] = str(exception)[:500]
     return details
+
+
+def _invalid_field_snapshot(
+    raw_output: str | None,
+    issues: list[dict[str, Any]],
+) -> dict[str, Any]:
+    """Return only invalid values, never the model's complete untrusted response."""
+
+    if raw_output is None:
+        return {}
+    try:
+        payload = json.loads(extract_json(raw_output))
+    except (StageOutputError, TypeError, ValueError):
+        return {}
+    except RecursionError:
+        # `json.loads` raises this on a deeply nested document, and RecursionError
+        # is not a ValueError, so the handler above does not catch it. This whole
+        # function runs inside a failure path — the plan was already invalid — so
+        # letting it escape would replace an actionable `plan_output_invalid` with
+        # an unexplained stage crash.
+        return {}
+    snapshot: dict[str, Any] = {}
+    for issue in issues[:12]:
+        location = issue.get("loc")
+        if not isinstance(location, tuple | list) or not location:
+            continue
+        current: Any = payload
+        try:
+            for segment in location:
+                current = current[segment]
+        except (KeyError, IndexError, TypeError):
+            continue
+        path = ".".join(str(item) for item in location)
+        snapshot[path] = _bounded_repair_value(current)
+    return snapshot
+
+
+#: How deep `_bounded_repair_value` will follow untrusted model output. The
+#: breadth caps below bound how WIDE a snapshot gets; without this one it could
+#: still recurse to whatever depth a model nested, and the input is a JSON
+#: document the product did not write.
+_MAX_REPAIR_SNAPSHOT_DEPTH = 8
+
+
+def _bounded_repair_value(value: Any, depth: int = 0) -> Any:
+    if value is None or isinstance(value, bool | int | float):
+        return value
+    if isinstance(value, str):
+        return value[:500]
+    if depth >= _MAX_REPAIR_SNAPSHOT_DEPTH:
+        # Named rather than dropped: the repair prompt reads this snapshot, and a
+        # silently truncated branch reads as a field the model did not send.
+        return f"<{type(value).__name__} truncated at depth {_MAX_REPAIR_SNAPSHOT_DEPTH}>"
+    if isinstance(value, list):
+        return [_bounded_repair_value(item, depth + 1) for item in value[:8]]
+    if isinstance(value, dict):
+        return {
+            str(key)[:100]: _bounded_repair_value(item, depth + 1)
+            for key, item in list(value.items())[:12]
+        }
+    return f"<{type(value).__name__}>"
+
+
+def _plan_repair_contract(feedback: SimpleRepairFeedback | None) -> dict[str, Any] | None:
+    if feedback is None or feedback.code != "plan_output_invalid":
+        return None
+    return {
+        "mode": "schema_repair",
+        "validation_issues": feedback.details.get("validation_issues", []),
+        "invalid_fields": feedback.details.get("invalid_fields", {}),
+        "requirements": [
+            "Correct every listed validation path rather than regenerating blindly.",
+            "Preserve the requested framework, scale, objective, constraints, and outputs.",
+            "Keep valid sibling fields unchanged unless a cross-field validator requires it.",
+            "Do not delete requested evidence or baseline fields merely to satisfy the schema.",
+        ],
+    }
 
 
 # The only stages that ever call _provider_failure; each retries within the
@@ -3017,7 +3376,9 @@ class ProductionSimplePipelinePorts:
             "known_reference": known_reference_for_task(self._task_prompt),
             "previous_plan": previous.plan.model_dump(mode="json") if previous else None,
             "repair_feedback": asdict(feedback) if feedback else None,
+            "repair_contract": _plan_repair_contract(feedback),
         }
+        raw_plan_output: str | None = None
         try:
             response = await self._llm.complete(
                 LLMRequest(
@@ -3029,6 +3390,7 @@ class ProductionSimplePipelinePorts:
                     schema_name="request_plan",
                 )
             )
+            raw_plan_output = response.text
             draft = parse_simple_plan(response.text)
             plan = _apply_trusted_task_reference(
                 draft.to_durable_plan(
@@ -3047,7 +3409,7 @@ class ProductionSimplePipelinePorts:
                 retryable=True,
                 retry_target=SimpleRetryTarget.PLANNING,
                 exception=exc,
-                details=_model_output_details(exc),
+                details=_model_output_details(exc, raw_output=raw_plan_output),
             )
         except Exception as exc:
             return _provider_failure(
@@ -3235,6 +3597,7 @@ class ProductionSimplePipelinePorts:
                 )
         try:
             program = FrameworkProgram(self._framework, source)
+            ast.parse(program.normalized_source, filename="<majorana-generated>")
             candidate = CandidateRevision(
                 candidate_id=uuid5(run_id, f"candidate:{call_id}"),
                 run_id=run_id,
@@ -3246,7 +3609,7 @@ class ProductionSimplePipelinePorts:
                 source=program.normalized_source,
                 source_fingerprint=program.fingerprint,
             )
-        except (ValidationError, ValueError) as exc:
+        except (SyntaxError, ValidationError, ValueError) as exc:
             return _failure(
                 kind=SimpleFailureKind.MODEL_OUTPUT,
                 stage=stage,
@@ -3405,10 +3768,13 @@ class ProductionSimplePipelinePorts:
         observation = execution.observation or {}
         stderr = observation.get("sandbox_error") or observation.get("sandbox_stderr") or ""
         return {
+            "execution_status": "not_run" if execution.was_not_run else "executed",
             "exit_code": execution.exit_code,
             "failure_kind": execution.failure_kind.value if execution.failure_kind else None,
             "result": execution.result,
             "resource_metrics": observation.get("resource_metrics"),
+            "execution_reason_code": observation.get("execution_reason_code"),
+            "target_backend": observation.get("target_backend"),
             "diagnostics_stderr_tail": str(stderr)[-4_000:] or None,
         }
 
@@ -3555,23 +3921,60 @@ class ProductionSimplePipelinePorts:
                 exception=exc,
             )
 
-        success_criteria_check = _success_criteria_check(plan.plan, execution)
-        fast_checks = [
-            {
-                "method": "structural",
-                "result": "pass",
-                "details": {"source_fingerprint": candidate.source_fingerprint},
-            },
-            _return_contract_check(execution.result, execution.observation),
-            success_criteria_check,
-        ]
-        reference_checks = _reference_checks(plan.plan, execution)
-        fast_checks.extend(reference_checks)
-        if plan.plan.verification_plan is not None and (
-            plan.plan.verification_plan.exact_dynamics_reference is not None
-            or plan.plan.verification_plan.exact_lindblad_reference is not None
-            or plan.plan.verification_plan.exact_phase_estimation_reference is not None
-            or plan.plan.verification_plan.exact_linear_system_reference is not None
+        artifact_only = execution.was_not_run
+        success_criteria_check: dict[str, Any] | None = None
+        reference_checks: list[dict[str, Any]] = []
+        if artifact_only:
+            authoring_diagnostics = FrameworkProgram(
+                candidate.framework, candidate.source
+            ).contract_diagnostics(circuit_expected=False)
+            fast_checks = [
+                {
+                    "method": "structural",
+                    "result": "pass",
+                    "details": {"source_fingerprint": candidate.source_fingerprint},
+                },
+                {
+                    "method": "framework_boundary",
+                    "result": "pass" if not authoring_diagnostics else "fail",
+                    "details": {
+                        "selected_framework": candidate.framework.value,
+                        "diagnostics": authoring_diagnostics,
+                    },
+                },
+                {
+                    "method": "execution_claims",
+                    "result": "pass",
+                    "details": {
+                        "execution_status": "not_run",
+                        "reported_result": False,
+                        "sandbox_runs": 0,
+                        "reason_code": execution.observation.get("execution_reason_code"),
+                    },
+                },
+            ]
+        else:
+            success_criteria_check = _success_criteria_check(plan.plan, execution)
+            fast_checks = [
+                {
+                    "method": "structural",
+                    "result": "pass",
+                    "details": {"source_fingerprint": candidate.source_fingerprint},
+                },
+                _return_contract_check(execution.result, execution.observation),
+                success_criteria_check,
+            ]
+            reference_checks = _reference_checks(plan.plan, execution)
+            fast_checks.extend(reference_checks)
+        if (
+            not artifact_only
+            and plan.plan.verification_plan is not None
+            and (
+                plan.plan.verification_plan.exact_dynamics_reference is not None
+                or plan.plan.verification_plan.exact_lindblad_reference is not None
+                or plan.plan.verification_plan.exact_phase_estimation_reference is not None
+                or plan.plan.verification_plan.exact_linear_system_reference is not None
+            )
         ):
             # It uses the existing success_criteria method name so public/event/DB
             # enums remain stable, but it must still participate in deterministic
@@ -3603,9 +4006,13 @@ class ProductionSimplePipelinePorts:
                 role="review",
                 exception=exc,
             )
-        routing = _reference_check_routing(
-            reference_checks,
-            success_criteria_check=success_criteria_check,
+        routing = (
+            None
+            if artifact_only
+            else _reference_check_routing(
+                reference_checks,
+                success_criteria_check=success_criteria_check,
+            )
         )
         if routing is not None:
             # The advisory reviewer never gets to overturn a check that already
@@ -3760,7 +4167,57 @@ class ProductionSimplePipelinePorts:
         review: SemanticReviewEvidence,
         conversion: ConversionEvidence | None,
     ) -> SimplePortResult[MaterializedArtifact]:
+        return await self._save_candidate(
+            run_id,
+            plan,
+            candidate,
+            execution,
+            review=review,
+            conversion=conversion,
+        )
+
+    async def save_unexecuted(
+        self,
+        run_id: UUID,
+        plan: PlanRevision,
+        candidate: CandidateRevision,
+        execution: ExecutionEvidence,
+        review: SemanticReviewEvidence | None,
+    ) -> SimplePortResult[MaterializedArtifact]:
+        if not execution.was_not_run:
+            return _failure(
+                kind=SimpleFailureKind.INTEGRITY,
+                stage=SimplePipelineStage.SAVING,
+                code="unexecuted_artifact_evidence_invalid",
+                message="artifact-only save requires trusted not-run preflight evidence",
+            )
+        return await self._save_candidate(
+            run_id,
+            plan,
+            candidate,
+            execution,
+            review=review,
+            conversion=None,
+        )
+
+    async def _save_candidate(
+        self,
+        run_id: UUID,
+        plan: PlanRevision,
+        candidate: CandidateRevision,
+        execution: ExecutionEvidence,
+        *,
+        review: SemanticReviewEvidence | None,
+        conversion: ConversionEvidence | None,
+    ) -> SimplePortResult[MaterializedArtifact]:
         stage = SimplePipelineStage.SAVING
+        if not execution.was_not_run and review is None:
+            return _failure(
+                kind=SimpleFailureKind.INTEGRITY,
+                stage=stage,
+                code="executed_artifact_review_missing",
+                message="executed artifact save requires semantic review evidence",
+            )
         if self._saver is None:
             return _failure(
                 kind=SimpleFailureKind.PERSISTENCE,
@@ -3797,7 +4254,19 @@ class ProductionSimplePipelinePorts:
                 exception=exc,
             )
         try:
-            artifact = await self._saver.save(candidate, execution, review, conversion, plan.plan)
+            if execution.was_not_run:
+                artifact = await self._saver.save_unexecuted(
+                    candidate, execution, review, plan.plan
+                )
+            else:
+                assert review is not None
+                artifact = await self._saver.save(
+                    candidate,
+                    execution,
+                    review,
+                    conversion,
+                    plan.plan,
+                )
             await self._store.add_materialization(artifact)
             await self._store.set_candidate_status(
                 run_id, candidate.candidate_id, CandidateStatus.MATERIALIZED.value
