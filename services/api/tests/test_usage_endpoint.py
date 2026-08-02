@@ -55,8 +55,9 @@ def _wire(
     owned: int = 1,
     shared_projects: int = 0,
     spend: list[TokenSpendRow] | None = None,
+    hardware_spend_usd: float = 0.0,
 ):
-    """Stand in for the five repositories the route reads, recording its calls."""
+    """Stand in for the six repositories the route reads, recording its calls."""
     seen: dict = {}
 
     async def count_execute_runs_since(_scope, _session, since):
@@ -88,6 +89,13 @@ def _wire(
         seen["spend_since"] = since
         return spend or []
 
+    async def authorized_spend_since(_scope, _session, since):
+        # The reservation's own function, named for it. The hardware allowance is
+        # the one place the endpoint and a 429 must agree on a number, so the
+        # double stands in for the thing the gate calls and nothing else.
+        seen["hardware_spend_since"] = since
+        return hardware_spend_usd
+
     monkeypatch.setattr(
         usage_routes.runs_repo, "count_execute_runs_since", count_execute_runs_since
     )
@@ -100,12 +108,17 @@ def _wire(
     monkeypatch.setattr(usage_routes.system, "count_owned_workspaces", count_owned_workspaces)
     monkeypatch.setattr(usage_routes.shares_repo, "count_shared_projects", count_shared_projects)
     monkeypatch.setattr(usage_routes.usage_repo, "token_spend_since", token_spend_since)
+    monkeypatch.setattr(
+        usage_routes.qpu_runs_repo, "authorized_spend_since", authorized_spend_since
+    )
     return seen
 
 
-async def _usage(scope, monkeypatch, *, email: str = "someone@example.com", **wiring):
+async def _usage(
+    scope, monkeypatch, *, email: str = "someone@example.com", plan: str | None = None, **wiring
+):
     seen = _wire(monkeypatch, **wiring)
-    result = await usage_routes.usage(_identity(email), scope, object(), _settings())
+    result = await usage_routes.usage(_identity(email, plan=plan), scope, object(), _settings())
     return result, seen
 
 
@@ -490,3 +503,75 @@ async def test_exhausted_says_yes_exactly_when_the_gate_refuses(executed, scope,
     # The gate reserved rather than merely counted. Without this the double
     # would happily stand in for a version that dropped the lock again.
     assert session.statements, "the allowance gate issued no statement of its own"
+
+
+# --- the hardware allowance, which is the one denominated in money ----------
+
+
+async def test_the_hardware_allowance_is_reported_in_dollars_against_the_tier(scope, monkeypatch):
+    """Until now this ceiling existed only in the 429 that enforced it.
+
+    `POST /v1/qpu/submissions` refuses on a weekly DOLLAR limit, and nothing the
+    account page could read said the limit was there — so a user could not
+    anticipate the refusal, only be told about it afterwards.
+    """
+    result, seen = await _usage(
+        scope,
+        monkeypatch,
+        executed=0,
+        oldest=[],
+        hardware_spend_usd=6.25,
+    )
+
+    assert result.hardware_spend.used_usd == pytest.approx(6.25)
+    assert result.hardware_spend.limit_usd == pytest.approx(0.0)  # free tier
+    assert result.hardware_spend.window_days == TIER_WINDOW.days
+    # The same instant the runs figure used: two windows would be two different
+    # weeks presented as one sentence.
+    assert seen["hardware_spend_since"] == seen["count_since"]
+
+
+async def test_an_unmetered_account_reports_no_hardware_ceiling(scope, monkeypatch):
+    result, _ = await _usage(
+        scope,
+        monkeypatch,
+        executed=0,
+        oldest=[],
+        hardware_spend_usd=1234.5,
+        plan="developer",
+    )
+
+    assert result.hardware_spend.limit_usd is None
+    assert result.hardware_spend.remaining_usd is None
+    assert result.hardware_spend.exhausted is False
+    assert result.hardware_spend.used_usd == pytest.approx(1234.5)
+
+
+@pytest.mark.parametrize(
+    ("spent", "exhausted", "remaining"),
+    [
+        (0.0, True, 0.0),  # free's ceiling IS 0.0, so it starts exhausted
+        (12.0, False, 13.0),
+        (25.0, True, 0.0),  # exactly at the ceiling: nothing priced still fits
+        (30.0, True, 0.0),  # never negative
+    ],
+)
+async def test_remaining_and_exhausted_track_the_ceiling_without_going_negative(
+    scope, monkeypatch, spent, exhausted, remaining
+):
+    """`exhausted` is `>=` where the reservation is `>`, and that is deliberate.
+
+    The reservation asks whether ONE named estimate fits, so at exactly the limit
+    it still admits a $0 free-queue submission. This flag answers the different
+    question a client renders — can anything priced still be submitted — and at
+    exactly the ceiling the answer is no. A free-queue submission is unaffected
+    because that path returns before any comparison, not because of this flag.
+    """
+    plan = None if spent == 0.0 else "team"
+    result, _ = await _usage(
+        scope, monkeypatch, executed=0, oldest=[], hardware_spend_usd=spent, plan=plan
+    )
+
+    assert result.hardware_spend.exhausted is exhausted
+    assert result.hardware_spend.remaining_usd == pytest.approx(remaining)
+    assert result.hardware_spend.remaining_usd >= 0.0

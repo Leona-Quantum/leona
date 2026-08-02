@@ -58,6 +58,7 @@ from pydantic import BaseModel
 
 from ..auth.deps import CurrentIdentity, CurrentScope, DbSession, get_settings
 from ..repos import artifacts as artifacts_repo
+from ..repos import qpu_runs as qpu_runs_repo
 from ..repos import runs as runs_repo
 from ..repos import shares as shares_repo
 from ..repos import system
@@ -126,6 +127,35 @@ class SpendReport(BaseModel):
     by_model: list[ModelSpend]
 
 
+class HardwareSpendAllowance(BaseModel):
+    """The weekly hardware allowance, in DOLLARS, per ACCOUNT.
+
+    The only allowance the product denominates in money, and until now the only
+    one a client could not see: `POST /v1/qpu/submissions` refuses on it with a
+    429, and nothing on the account page said the ceiling existed, so the refusal
+    could not be anticipated — only explained after it happened.
+
+    Money, not a count, for the reason the limit itself is money: the rate card
+    spans $0.000425 to $0.08 per shot, so a submission count would bound IonQ
+    Forte and Rigetti Cepheus 188x differently.
+
+    `used` is the sum the reservation compares against — `authorized_spend_since`,
+    the same function, over the same `TIER_WINDOW`. Not a second sum written to
+    look like the first: a tally computed twice drifts, and this one has a
+    refusal on the other end of it.
+
+    A free-queue submission estimates `None`, counts as `0.0`, and is never
+    refused, so `limit` 0.0 is NOT a hardware ban — it means only the free queues
+    are reachable. `limit` null is unmetered (developer).
+    """
+
+    used_usd: float
+    limit_usd: float | None
+    remaining_usd: float | None
+    exhausted: bool
+    window_days: int
+
+
 class UsageResponse(BaseModel):
     tier: str
     runs: RunAllowance
@@ -146,6 +176,10 @@ class UsageResponse(BaseModel):
     #: Per WORKSPACE, like `artifacts` and unlike `runs`. Additive in 2026-08:
     #: a client built before it exists must keep rendering the allowances.
     spend: SpendReport
+    #: Per ACCOUNT, like `runs` and `shared_projects` and unlike `artifacts` —
+    #: the reservation locks the user row, so the workspace is not the unit.
+    #: Additive in 2026-08: a client built before it exists keeps rendering.
+    hardware_spend: HardwareSpendAllowance
 
 
 def _allowance(used: int, limit: int | None) -> Allowance:
@@ -260,6 +294,11 @@ async def usage(
     # report spend from a period the runs figure beside it did not cover, and
     # the two are read as one sentence about one week.
     spend_rows = await usage_repo.token_spend_since(scope, session, since)
+    # The reservation's own sum, not a second one shaped like it. `since` is the
+    # same instant again: reporting a ceiling against a window the refusal does
+    # not use is worse than reporting nothing, because it looks authoritative.
+    hardware_used = await qpu_runs_repo.authorized_spend_since(scope, session, since)
+    hardware_limit = limits.qpu_spend_usd_per_week
 
     return UsageResponse(
         tier=tier,
@@ -272,4 +311,19 @@ async def usage(
         workspaces=_allowance(owned, limits.owned_workspaces),
         shared_projects=_allowance(shared_projects, limits.shared_projects),
         spend=_fold_spend(spend_rows, window_days=TIER_WINDOW.days),
+        hardware_spend=HardwareSpendAllowance(
+            used_usd=hardware_used,
+            limit_usd=hardware_limit,
+            remaining_usd=(
+                None if hardware_limit is None else max(hardware_limit - hardware_used, 0.0)
+            ),
+            # `>=`, not the reservation's `>`: this answers "can anything more be
+            # submitted", and at exactly the limit the answer is no for every
+            # priced device. The reservation asks a different question — whether
+            # ONE named estimate fits — and a free-queue estimate of 0.0 still
+            # fits an exhausted allowance, which is why that path returns before
+            # any comparison rather than depending on this flag.
+            exhausted=hardware_limit is not None and hardware_used >= hardware_limit,
+            window_days=TIER_WINDOW.days,
+        ),
     )
