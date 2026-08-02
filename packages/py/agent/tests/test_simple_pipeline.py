@@ -1213,6 +1213,40 @@ async def test_slow_optional_export_is_cut_off_so_artifact_can_still_save():
     assert ports.calls[-1] == "save"
 
 
+async def test_an_upstream_timeout_is_not_reported_as_our_budget():
+    """A TimeoutError from inside the operation is not the stage running out of time.
+
+    Since Python 3.10 `socket.timeout` IS `TimeoutError`, so a provider read
+    timeout lands in the same `except` clause as our own `asyncio.timeout`. Both
+    used to claim the stage "stopped to preserve time for finalization" — naming
+    Leona's budget management as the cause when the budget was untouched.
+
+    Measured in production: a post-deploy probe reported
+    `stage_time_budget_exhausted` at the plan stage 97 ms into a stage that had
+    roughly 90 seconds, and the deploy gate's one diagnostic line blamed the
+    budget. Here the budget is enormous and the failure is instant, which is that
+    shape with the ambiguity removed.
+    """
+
+    class InstantlyTimingOutExportPorts(FakePorts):
+        async def export(self, *_args):
+            raise TimeoutError("upstream read timed out")
+
+    ports = InstantlyTimingOutExportPorts()
+    outcome = await SimpleCircuitPipeline(
+        ports=ports,
+        remaining_time_s=lambda: 10_000.0,
+    ).run(uuid4())
+
+    assert outcome.status is SimplePipelineStatus.SUCCEEDED
+    assert outcome.conversion is None
+    warning = outcome.warnings[-1]
+    assert warning.code == "stage_upstream_timed_out"
+    # The numbers that make the attribution checkable rather than asserted.
+    assert warning.details["elapsed_s"] < warning.details["stage_budget_s"]
+    assert ports.calls[-1] == "save"
+
+
 async def test_export_persistence_failure_does_not_discard_the_artifact():
     """Export is optional interchange data; failing to record it is not a reason to
     throw away the framework-native program the run exists to produce."""
