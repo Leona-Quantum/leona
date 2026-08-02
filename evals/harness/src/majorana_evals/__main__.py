@@ -6,11 +6,12 @@ worker cannot race the evaluation process.
   uv run --package majorana-evals python -m majorana_evals \
       --corpus evals/corpus --out evals/report.json --repetitions 1
 
-  # Add two reproducible fresh instances from each procedural family:
+  # Cross two independent unseen seeds, prompt surfaces, and repeated trials:
   uv run --package majorana-evals python -m majorana_evals \
       --corpus evals/holdout-v15 --out evals/report.json \
-      --procedural-seed 20260802 --procedural-cases-per-family 2 \
-      --procedural-prompt-variants 3
+      --procedural-seed 7319426802 --procedural-seed 9182746611 \
+      --procedural-cases-per-family 1 --procedural-prompt-variants 3 \
+      --repetitions 3
 
 Needs DATABASE_URL and (for a real baseline) provider keys — OPENAI_API_KEY +
 DEEPSEEK_API_KEY for the default profile, or ANTHROPIC_API_KEY with
@@ -22,6 +23,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import uuid
+from collections.abc import Sequence
 from pathlib import Path
 
 from majorana_contracts import Scope
@@ -44,22 +46,24 @@ from majorana_evals.schema import load_corpus
 def _load_eval_cases(
     corpus_dir: str,
     *,
-    procedural_seed: int | None,
+    procedural_seed: int | Sequence[int] | None,
     procedural_cases_per_family: int,
     procedural_prompt_variants: int = 1,
 ):
     cases = load_corpus(corpus_dir)
+    seeds = _normalize_procedural_seeds(procedural_seed)
     if procedural_cases_per_family:
-        if procedural_seed is None:
+        if not seeds:
             raise ValueError("procedural_seed is required when procedural cases are requested")
-        cases.extend(
-            generate_procedural_cases(
-                procedural_seed,
-                cases_per_family=procedural_cases_per_family,
-                prompt_variants_per_case=procedural_prompt_variants,
+        for seed in seeds:
+            cases.extend(
+                generate_procedural_cases(
+                    seed,
+                    cases_per_family=procedural_cases_per_family,
+                    prompt_variants_per_case=procedural_prompt_variants,
+                )
             )
-        )
-    elif procedural_seed is not None:
+    elif seeds:
         raise ValueError("procedural_cases_per_family is required with procedural_seed")
     elif procedural_prompt_variants != 1:
         raise ValueError("procedural_prompt_variants requires procedural cases")
@@ -69,18 +73,26 @@ def _load_eval_cases(
     return cases
 
 
+def _normalize_procedural_seeds(value: int | Sequence[int] | None) -> tuple[int, ...]:
+    seeds = () if value is None else (value,) if isinstance(value, int) else tuple(value)
+    if len(seeds) != len(set(seeds)):
+        raise ValueError("procedural seeds must be unique")
+    return seeds
+
+
 async def _main(
     corpus_dir: str,
     out: str,
     sandbox: str = "vercel",
     repetitions: int = 1,
-    procedural_seed: int | None = None,
+    procedural_seed: int | Sequence[int] | None = None,
     procedural_cases_per_family: int = 0,
     procedural_prompt_variants: int = 1,
 ) -> int:
+    procedural_seeds = _normalize_procedural_seeds(procedural_seed)
     cases = _load_eval_cases(
         corpus_dir,
-        procedural_seed=procedural_seed,
+        procedural_seed=procedural_seeds,
         procedural_cases_per_family=procedural_cases_per_family,
         procedural_prompt_variants=procedural_prompt_variants,
     )
@@ -110,7 +122,7 @@ async def _main(
                 "baseline run against real LLM providers "
                 f"(sandbox={sandbox}, repetitions={repetitions}, "
                 f"procedural={PROCEDURAL_GENERATOR_VERSION if procedural_cases_per_family else 'none'}, "
-                f"seed={procedural_seed if procedural_cases_per_family else 'none'}, "
+                f"seeds={','.join(map(str, procedural_seeds)) if procedural_cases_per_family else 'none'}, "
                 f"cases_per_family={procedural_cases_per_family}, "
                 f"prompt_variants={procedural_prompt_variants if procedural_cases_per_family else 'none'}, "
                 f"surface={PROCEDURAL_SURFACE_VERSION if procedural_cases_per_family and procedural_prompt_variants > 1 else 'none'})"
@@ -134,7 +146,12 @@ def main() -> None:
     parser.add_argument("--out", default="evals/report.json")
     parser.add_argument("--sandbox", choices=["vercel", "local"], default="vercel")
     parser.add_argument("--repetitions", type=int, default=1)
-    parser.add_argument("--procedural-seed", type=int)
+    parser.add_argument(
+        "--procedural-seed",
+        type=int,
+        action="append",
+        help="repeat for multiple independent unseen procedural seeds",
+    )
     parser.add_argument("--procedural-cases-per-family", type=int, default=0)
     parser.add_argument("--procedural-prompt-variants", type=int, default=1)
     args = parser.parse_args()
@@ -144,11 +161,14 @@ def main() -> None:
         parser.error("--procedural-cases-per-family must be between zero and twenty")
     if not 1 <= args.procedural_prompt_variants <= 3:
         parser.error("--procedural-prompt-variants must be between one and three")
-    if args.procedural_seed is not None and not 0 <= args.procedural_seed < 2**63:
+    procedural_seeds = args.procedural_seed or []
+    if any(not 0 <= seed < 2**63 for seed in procedural_seeds):
         parser.error("--procedural-seed must be in 0..2**63-1")
-    if args.procedural_cases_per_family and args.procedural_seed is None:
+    if len(procedural_seeds) != len(set(procedural_seeds)):
+        parser.error("--procedural-seed values must be unique")
+    if args.procedural_cases_per_family and not procedural_seeds:
         parser.error("--procedural-seed is required when procedural cases are requested")
-    if args.procedural_seed is not None and not args.procedural_cases_per_family:
+    if procedural_seeds and not args.procedural_cases_per_family:
         parser.error("--procedural-cases-per-family is required with --procedural-seed")
     if not args.procedural_cases_per_family and args.procedural_prompt_variants != 1:
         parser.error("--procedural-prompt-variants requires procedural cases")
