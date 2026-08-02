@@ -112,7 +112,18 @@ async def test_simple_terminal_success_records_typed_advisory_outcome():
     execution = SimpleNamespace(observation={})
     review = SimpleNamespace(
         decision=SemanticReviewDecision.READY,
-        feedback={"critic": {"residual_risks": ["AI review is advisory"]}},
+        severity="none",
+        # `basic_checks` is what the summary projects now, so a double that omits it
+        # describes a run in which nothing was ever examined — which is not the run
+        # this test is about.
+        feedback={
+            "critic": {"residual_risks": ["AI review is advisory"]},
+            "basic_checks": [
+                {"method": "structural", "result": "pass"},
+                {"method": "return_contract", "result": "pass"},
+                {"method": "success_criteria", "result": "pass"},
+            ],
+        },
         assert_binding=lambda _candidate, _execution: None,
     )
     artifact = SimpleNamespace(

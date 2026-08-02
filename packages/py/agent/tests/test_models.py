@@ -60,7 +60,7 @@ def _review(**overrides) -> SemanticReviewEvidence:
     return SemanticReviewEvidence(**{**payload, **overrides})
 
 
-def test_a_review_the_model_merely_disliked_is_still_deliverable():
+def test_a_review_the_model_merely_disliked_has_complete_evidence():
     """The durable stores refused anything but READY, so the best-effort delivery the
     orchestrator performs on budget exhaustion raised inside the store and destroyed
     the artifact at export instead. One definition now backs both."""
@@ -69,15 +69,22 @@ def test_a_review_the_model_merely_disliked_is_still_deliverable():
 
     assert review.decision is not SemanticReviewDecision.READY
     assert review.evidence_is_complete()
-    assert review.is_deliverable()
 
 
-def test_a_blocking_defect_is_not_deliverable():
-    assert not _review(severity="blocking").is_deliverable()
-    assert not _review(severity="major").is_deliverable()
+def test_the_deliverability_gate_is_gone_rather_than_relaxed():
+    """A tested predicate one import from the guards it used to gate is how the old
+    policy comes back. `evidence_is_complete` survives because it RANKS; nothing
+    named for admitting or refusing a candidate does."""
+
+    assert not hasattr(SemanticReviewEvidence, "is_deliverable")
 
 
-def test_a_failed_deterministic_check_is_not_deliverable():
+def test_a_blocking_defect_leaves_evidence_incomplete():
+    assert not _review(severity="blocking").evidence_is_complete()
+    assert not _review(severity="major").evidence_is_complete()
+
+
+def test_a_failed_deterministic_check_leaves_evidence_incomplete():
     review = _review(
         feedback={
             "basic_checks": [
@@ -87,17 +94,32 @@ def test_a_failed_deterministic_check_is_not_deliverable():
         }
     )
 
-    assert not review.is_deliverable()
+    assert not review.evidence_is_complete()
 
 
-def test_a_review_without_recorded_checks_is_not_deliverable():
+def test_a_review_without_recorded_checks_has_incomplete_evidence():
     """Absent evidence is not passing evidence."""
 
-    assert not _review(feedback={}).is_deliverable()
-    assert not _review(feedback={"basic_checks": []}).is_deliverable()
+    assert not _review(feedback={}).evidence_is_complete()
+    assert not _review(feedback={"basic_checks": []}).evidence_is_complete()
 
 
-def test_an_accepted_review_still_requires_complete_trusted_evidence():
+def test_the_record_gate_is_false_wherever_the_projection_would_be_empty():
+    """`has_recorded_checks` is the durable stores' promise that something is there
+    to label. The worker's projection keeps only mapping-shaped entries, so a gate
+    admitting a non-empty list of non-mappings would guarantee a record the
+    projection then empties — two readers of one predicate, disagreeing."""
+
+    assert not _review(feedback={}).has_recorded_checks()
+    assert not _review(feedback={"basic_checks": []}).has_recorded_checks()
+    assert not _review(feedback={"basic_checks": "structural"}).has_recorded_checks()
+    assert not _review(feedback={"basic_checks": ["structural", 7]}).has_recorded_checks()
+    assert _review(
+        feedback={"basic_checks": [{"method": "structural", "result": "fail"}]}
+    ).has_recorded_checks()
+
+
+def test_an_accepted_review_is_still_graded_on_its_trusted_evidence():
     review = _review(
         decision=SemanticReviewDecision.READY,
         failure_class=None,
@@ -105,4 +127,4 @@ def test_an_accepted_review_still_requires_complete_trusted_evidence():
         feedback={},
     )
 
-    assert not review.is_deliverable()
+    assert not review.evidence_is_complete()

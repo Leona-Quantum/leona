@@ -97,7 +97,12 @@ export function VerificationSummaryPanel({
 
   const title = titleFor(summary);
   const passed = summary.checks?.filter((check) => check.result === "pass") ?? [];
-  const unresolved = summary.checks?.filter((check) => check.result === "unavailable" || check.result === "error") ?? [];
+  // `skipped` belonged to no group, so a check that did not apply rendered
+  // nowhere at all — indistinguishable, to anyone counting what was examined,
+  // from a check that passed. The simple pipeline records exactly that for
+  // `return_contract` when the platform derived the result rather than the
+  // program returning one, so this is a real row, not a defensive branch.
+  const unresolved = summary.checks?.filter((check) => check.result === "unavailable" || check.result === "error" || check.result === "skipped") ?? [];
   const failed = summary.checks?.filter((check) => check.result === "fail") ?? [];
   const claims = summary.unverified_claims ?? [];
   const advisoryOutcome = isAdvisoryOutcome(summary);
@@ -127,7 +132,7 @@ export function VerificationSummaryPanel({
       </dl>
       {passed.length ? <CheckGroup title="Passed checks" checks={passed} /> : null}
       {failed.length ? <CheckGroup title="Failed checks" checks={failed} /> : null}
-      {unresolved.length ? <CheckGroup title="Unavailable or errored checks" checks={unresolved} /> : null}
+      {unresolved.length ? <CheckGroup title="Checks that did not establish anything" checks={unresolved} /> : null}
       {claims.length ? <div><h3>Unverified claims</h3><ul>{claims.map((claim) => <li key={claim}>{claim}</li>)}</ul></div> : null}
       <p><strong>Recommended next action</strong><br />{action}</p>
     </section>

@@ -31,8 +31,31 @@ from majorana_frameworks.roles import ProgramRole, classify_source
 from majorana_worker.runtime_ports import SandboxCandidateExecutor
 from majorana_worker.simple_ports import (
     ProductionSimplePipelinePorts,
+    _return_contract_check,
     simple_pipeline_verification_summary,
 )
+
+
+def _recorded(*, derived: bool = False, reference: bool = False) -> tuple[dict[str, object], ...]:
+    """The checks the executed path really records, built by the real builder.
+
+    `_return_contract_check` is called rather than restated: these tests exist to
+    pin that the summary agrees with the check, and a hand-written `"n/a"` here
+    would let the two drift apart while still passing.
+    """
+
+    checks: list[dict[str, object]] = [
+        {"method": "structural", "result": "pass"},
+        _return_contract_check(
+            {"counts": {"00": 1}},
+            {"result_origin": "derived_from_circuit"} if derived else {},
+        ),
+        {"method": "success_criteria", "result": "pass"},
+    ]
+    if reference:
+        checks.append({"method": "exact_diag", "result": "pass"})
+    return tuple(checks)
+
 
 CIRCUIT = """from qiskit import QuantumCircuit
 
@@ -312,16 +335,26 @@ def test_a_derived_result_does_not_claim_the_program_returned_it():
     statement about source that made no claim at all — and it would be an
     invisible one, since the check name reads the same either way.
     """
-    plain = simple_pipeline_verification_summary()
-    derived = simple_pipeline_verification_summary(result_derived=True)
+    plain = simple_pipeline_verification_summary(recorded_checks=_recorded())
+    derived = simple_pipeline_verification_summary(
+        result_derived=True, recorded_checks=_recorded(derived=True)
+    )
 
-    methods = {check["method"] for check in plain["checks"]}
-    assert VerificationMethod.RETURN_CONTRACT.value in methods
+    def result_for(summary, method):
+        return next(
+            (check["result"] for check in summary["checks"] if check["method"] == method.value),
+            None,
+        )
 
+    assert result_for(plain, VerificationMethod.RETURN_CONTRACT) == "pass"
+
+    # SKIPPED, not failed and not passed. Nothing went wrong; there was no return
+    # to contract with. It is NAMED rather than dropped from the list, because a
+    # check that silently disappears and a check that passed look identical to a
+    # reader counting what was examined.
+    assert result_for(derived, VerificationMethod.RETURN_CONTRACT) == "skipped"
+    assert not any(check["result"] == "fail" for check in derived["checks"])
     derived_methods = {check["method"] for check in derived["checks"]}
-    assert VerificationMethod.RETURN_CONTRACT.value not in derived_methods
-    # Dropped, not failed. Nothing went wrong; there was no return to contract with.
-    assert all(check["result"] == "pass" for check in derived["checks"])
     assert VerificationMethod.STRUCTURAL.value in derived_methods
     assert VerificationMethod.SUCCESS_CRITERIA.value in derived_methods
 
@@ -333,10 +366,15 @@ def test_a_derived_result_withdraws_the_claim_that_would_be_checked_against_itse
     check would compare it to. That comparison is `f(x) == f(x)`: it cannot fail,
     and a check that cannot fail reported as PASS is worse than no check.
     """
-    derived = simple_pipeline_verification_summary(result_derived=True)
+    derived = simple_pipeline_verification_summary(
+        result_derived=True, recorded_checks=_recorded(derived=True)
+    )
     assert any("derived, not returned" in claim for claim in derived["unverified_claims"])
     assert not any(
-        "derived" in claim for claim in simple_pipeline_verification_summary()["unverified_claims"]
+        "derived" in claim
+        for claim in simple_pipeline_verification_summary(recorded_checks=_recorded())[
+            "unverified_claims"
+        ]
     )
 
 
@@ -348,9 +386,17 @@ def test_lowering_changes_nothing_about_the_decision_or_the_grade():
     be easy to sample must not out-rank a program that was actually verified.
     """
     for methods in ((), (VerificationMethod.EXACT_DIAG,)):
-        plain = simple_pipeline_verification_summary(methods, SemanticReviewDecision.READY)
+        reference = bool(methods)
+        plain = simple_pipeline_verification_summary(
+            methods,
+            SemanticReviewDecision.READY,
+            recorded_checks=_recorded(reference=reference),
+        )
         derived = simple_pipeline_verification_summary(
-            methods, SemanticReviewDecision.READY, result_derived=True
+            methods,
+            SemanticReviewDecision.READY,
+            result_derived=True,
+            recorded_checks=_recorded(derived=True, reference=reference),
         )
         assert derived["decision"] == plain["decision"] == "inconclusive"
         assert derived["evidence_strength"] == plain["evidence_strength"]
@@ -361,7 +407,9 @@ def test_lowering_changes_nothing_about_the_decision_or_the_grade():
 def test_the_summary_stays_a_valid_typed_projection_either_way(derived):
     from majorana_contracts import VerificationSummary
 
-    summary = simple_pipeline_verification_summary(result_derived=derived)
+    summary = simple_pipeline_verification_summary(
+        result_derived=derived, recorded_checks=_recorded(derived=derived)
+    )
     assert VerificationSummary.model_validate(summary)
 
 
@@ -407,8 +455,6 @@ def test_all_three_writers_of_the_return_contract_claim_agree():
 
     `n/a` rather than `fail`: nothing went wrong, there was nothing to contract.
     """
-    from majorana_worker.simple_ports import _return_contract_check
-
     derived = _return_contract_check(
         {"counts": {"00": 1}}, {"result_origin": "derived_from_circuit"}
     )
@@ -419,6 +465,13 @@ def test_all_three_writers_of_the_return_contract_claim_agree():
     assert returned["result"] == "pass"
     assert "result_origin" not in returned["details"]
 
-    # And it agrees with the summary, which is the whole point of extracting it.
-    summary = simple_pipeline_verification_summary(result_derived=True)
-    assert VerificationMethod.RETURN_CONTRACT.value not in {c["method"] for c in summary["checks"]}
+    # And it agrees with the summary, which is the whole point of extracting it:
+    # the builder's "n/a" and the projection's "skipped" are one decision now,
+    # since the summary reads the recorded check instead of re-deciding from a flag.
+    summary = simple_pipeline_verification_summary(
+        result_derived=True, recorded_checks=_recorded(derived=True)
+    )
+    assert {
+        "method": VerificationMethod.RETURN_CONTRACT.value,
+        "result": "skipped",
+    } in summary["checks"]
