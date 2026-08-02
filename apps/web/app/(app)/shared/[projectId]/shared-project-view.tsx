@@ -262,33 +262,83 @@ export function SharedProjectView({
     return (
       <main className="mj-shared-project">
         <p className="mj-share-error">{copy.loadFailed}</p>
-        <a className="mj-secondary-button" href="/studio">
-          {copy.backToStudio}
-        </a>
+        <p className="mj-shared-project-actions">
+          <a className="mj-secondary-button" href="/studio">
+            {copy.backToStudio}
+          </a>
+        </p>
       </main>
     );
   }
 
-  if (!project) return <main className="mj-shared-project" aria-busy="true" />;
+  // Reserves the header's own height rather than collapsing to nothing, so the
+  // page does not jump the moment the grant resolves. It used to render an
+  // empty <main>, which is why arriving here flashed a blank column and then
+  // pushed everything down.
+  if (!project) {
+    return (
+      <main className="mj-shared-project" aria-busy="true">
+        <span className="sr-only" role="status">{copy.sharedWithMe}</span>
+        <div className="mj-shared-project-header">
+          <span className="mj-skeleton mj-skeleton--eyebrow" />
+          <span className="mj-skeleton mj-skeleton--title" />
+          <span className="mj-skeleton mj-skeleton--copy" />
+        </div>
+        <div className="mj-shared-circuit-list">
+          <span className="mj-skeleton mj-skeleton--panel" />
+        </div>
+      </main>
+    );
+  }
 
   return (
     <main className="mj-shared-project">
+      {/* The way out sits at the top, where a back link belongs, instead of at
+          the bottom of the page as a full-width bar. */}
+      <p className="mj-shared-project-back">
+        <a href="/studio">← {copy.backToStudio}</a>
+      </p>
+
       <header className="mj-shared-project-header">
-        <p className="mj-eyebrow">{copy.sharedWithMe}</p>
-        <h1>{project.name}</h1>
-        <p className="mj-shared-project-meta">
-          {copy.fromWorkspace(project.ownerWorkspaceName)}
-          {project.sharedByEmail
-            ? ` · ${copy.sharedBy(project.sharedByDisplayName || project.sharedByEmail)}`
-            : ""}
-          {` · ${copy.circuits(project.artifactCount)}`}
-          {project.role === "editor" && project.artifactLimit > 0
-            ? ` · ${copy.roomLeft(project.artifactCount, project.artifactLimit)}`
-            : ""}
-        </p>
-        <p className="mj-shared-project-role">
-          {project.role === "editor" ? copy.canEditTag : copy.readOnlyTag}
-        </p>
+        <div className="mj-shared-project-identity">
+          <div>
+            <p className="mj-eyebrow">{copy.sharedWithMe}</p>
+            <h1>{project.name}</h1>
+          </div>
+          {/* Leaving is a header action, not a bar across the content column:
+              `.mj-shared-project` is a stretch column, so every direct-child
+              button in it grew to the full 880px. */}
+          {confirmingLeave ? null : (
+            <button
+              type="button"
+              className="mj-secondary-button mj-shared-project-leave-open"
+              onClick={() => setConfirmingLeave(true)}
+            >
+              {copy.leave}
+            </button>
+          )}
+        </div>
+        {/* Discrete facts rather than one dot-joined sentence that wrapped
+            mid-clause. The bare circuit count is gone: `roomLeft` already reads
+            "3 of 12 circuits", so on an editor grant the same number was
+            printed twice in the same line. It stays as the whole fact for a
+            viewer grant, which has no limit to state. */}
+        <ul className="mj-shared-project-meta">
+          <li>{copy.fromWorkspace(project.ownerWorkspaceName)}</li>
+          {project.sharedByEmail ? (
+            <li>{copy.sharedBy(project.sharedByDisplayName || project.sharedByEmail)}</li>
+          ) : null}
+          <li>
+            {project.role === "editor" && project.artifactLimit > 0
+              ? copy.roomLeft(project.artifactCount, project.artifactLimit)
+              : copy.circuits(project.artifactCount)}
+          </li>
+          <li>
+            <span className="mj-shared-project-role" data-role={project.role}>
+              {project.role === "editor" ? copy.canEditTag : copy.readOnlyTag}
+            </span>
+          </li>
+        </ul>
         {project.role === "editor" && !canContribute(project) && project.artifactLimit > 0 ? (
           <p className="mj-share-empty">{copy.projectFull}</p>
         ) : null}
@@ -296,32 +346,26 @@ export function SharedProjectView({
           <div className="mj-shared-project-leave" role="group" aria-label={copy.leaveConfirm}>
             <p>{copy.leaveConfirm}</p>
             <p className="mj-share-empty">{copy.leaveHelp}</p>
-            <button
-              type="button"
-              className="mj-secondary-button"
-              disabled={leaving}
-              onClick={() => void leave()}
-            >
-              {leaving ? copy.leaving : copy.leave}
-            </button>
-            <button
-              type="button"
-              className="mj-secondary-button"
-              disabled={leaving}
-              onClick={() => setConfirmingLeave(false)}
-            >
-              {copy.leaveCancel}
-            </button>
+            <div className="mj-shared-project-leave-actions">
+              <button
+                type="button"
+                className="mj-secondary-button"
+                disabled={leaving}
+                onClick={() => void leave()}
+              >
+                {leaving ? copy.leaving : copy.leave}
+              </button>
+              <button
+                type="button"
+                className="mj-secondary-button"
+                disabled={leaving}
+                onClick={() => setConfirmingLeave(false)}
+              >
+                {copy.leaveCancel}
+              </button>
+            </div>
           </div>
-        ) : (
-          <button
-            type="button"
-            className="mj-secondary-button mj-shared-project-leave-open"
-            onClick={() => setConfirmingLeave(true)}
-          >
-            {copy.leave}
-          </button>
-        )}
+        ) : null}
       </header>
 
       {changed ? (
@@ -374,9 +418,11 @@ export function SharedProjectView({
             </div>
           </div>
         ) : (
-          <button type="button" className="mj-secondary-button" onClick={() => setAdding(true)}>
-            {copy.addCircuit}
-          </button>
+          <p className="mj-shared-project-actions">
+            <button type="button" className="mj-secondary-button" onClick={() => setAdding(true)}>
+              {copy.addCircuit}
+            </button>
+          </p>
         )
       ) : null}
 
@@ -388,22 +434,28 @@ export function SharedProjectView({
             <li key={circuit.id} className="mj-shared-circuit">
               <div className="mj-shared-circuit-row">
                 <strong>{circuit.title}</strong>
-                <button
-                  type="button"
-                  className="mj-secondary-button"
-                  aria-expanded={open === circuit.id}
-                  onClick={() => void openCircuit(circuit)}
-                >
-                  {copy.open}
-                </button>
-                <button
-                  type="button"
-                  className="mj-secondary-button"
-                  disabled={copying === circuit.id}
-                  onClick={() => void copyHere(circuit)}
-                >
-                  {copying === circuit.id ? copy.copying : copy.copyHere}
-                </button>
+                {/* Grouped so the two controls stay one aligned column down the
+                    list instead of each finding its own edge — on a narrow
+                    viewport the second one used to drop under the title while
+                    the first stayed beside it. */}
+                <span className="mj-shared-circuit-controls">
+                  <button
+                    type="button"
+                    className="mj-secondary-button"
+                    aria-expanded={open === circuit.id}
+                    onClick={() => void openCircuit(circuit)}
+                  >
+                    {copy.open}
+                  </button>
+                  <button
+                    type="button"
+                    className="mj-secondary-button"
+                    disabled={copying === circuit.id}
+                    onClick={() => void copyHere(circuit)}
+                  >
+                    {copying === circuit.id ? copy.copying : copy.copyHere}
+                  </button>
+                </span>
               </div>
 
               {open === circuit.id ? (
@@ -447,10 +499,6 @@ export function SharedProjectView({
           ))}
         </ul>
       )}
-
-      <a className="mj-secondary-button" href="/studio">
-        {copy.backToStudio}
-      </a>
     </main>
   );
 }

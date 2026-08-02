@@ -307,6 +307,10 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
     uncommittedEditsNote: string;
     footer: string;
     openRun: string;
+    /** How many rows the discovery list holds after the active filter. */
+    countCircuits: (count: number) => string;
+    /** Label for the artifact's last-changed date in the Summary fact strip. */
+    updated: string;
     inspector: string;
     liveDraft: string;
     selectedGate: string;
@@ -759,6 +763,8 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
       uncommittedEditsNote: "These edits exist only in this browser until a verification run saves them as the next version.",
       footer: "Edits stay in this browser until a verification run saves them as the next version.",
       openRun: "Open live run",
+      countCircuits: (count) => (count === 1 ? "1 circuit" : `${count} circuits`),
+      updated: "Updated",
       inspector: "Circuit inspector",
       liveDraft: "live draft",
       selectedGate: "Selected gate",
@@ -1217,6 +1223,8 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
       uncommittedEditsNote: "この編集はブラウザ内にのみ存在します。検証を実行すると次のバージョンとして保存されます。",
       footer: "編集内容はこのブラウザ内にのみ保持されます。検証を実行すると次のバージョンとして保存されます。",
       openRun: "実行を開く",
+      countCircuits: (count) => `${count} 件の回路`,
+      updated: "更新",
       inspector: "回路の詳細",
       liveDraft: "編集中",
       selectedGate: "選択中のゲート",
